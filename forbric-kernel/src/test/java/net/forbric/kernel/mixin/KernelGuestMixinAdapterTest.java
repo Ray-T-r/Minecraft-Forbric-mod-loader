@@ -135,6 +135,23 @@ class KernelGuestMixinAdapterTest {
 		return cw.toByteArray();
 	}
 
+	/** A mixin whose one injector lists SEVERAL candidate selectors — Mixin's require=1 alternatives idiom. */
+	private static byte[] multiSelectorMixin(String simpleName, String target, String... selectors) {
+		ClassWriter cw = beginMixin(simpleName, target);
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE, "onEither", "()V", null, null);
+		AnnotationVisitor inject = mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", false);
+		AnnotationVisitor methods = inject.visitArray("method");
+		for (String s : selectors) methods.visit(null, s);
+		methods.visitEnd();
+		inject.visitEnd();
+		mv.visitCode();
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(0, 1);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
 	/** A mixin that casts its target to {@code contract} — the dependent half of a cast contract. */
 	private static byte[] castingMixin(String simpleName, String target, String contract) {
 		ClassWriter cw = beginMixin(simpleName, target);
@@ -234,6 +251,43 @@ class KernelGuestMixinAdapterTest {
 
 		assertEquals(List.of("GoneMixin"), KernelGuestMixinAdapter.unfitMixins("example.mixins.json",
 				config(PKG.replace('/', '.'), "GoneMixin"), resolver(classes)));
+	}
+
+	@Test
+	void oneOfSeveralSelectorsResolvingIsAFullyAppliedInjector() {
+		// Mixin's `method` list is a set of CANDIDATES, not a conjunction: require=1 counts matches across the
+		// whole list, so mods ship alternative names to span mappings. Iris's LevelRenderer mixin carries both
+		// lambda$addSkyPass$0 and lambda$addSkyPass$8 for one handler; judging each selector separately reported
+		// 11 of its 41 anchors missing while the injector was installed the whole time.
+		String t = "net/minecraft/client/renderer/GameRenderer";
+		Map<String, byte[]> classes = new HashMap<>();
+		classes.put(t + ".class", target(t, "unused", Opcodes.ACC_PRIVATE, true));
+		classes.put(PKG + "/AltMixin.class", multiSelectorMixin("AltMixin", t, "renderUnderOldName", "render"));
+
+		String previous = System.setProperty("forbric.mixinFit", "strict");
+		try {
+			// FIT, not PARTIAL — so even strict keeps it.
+			assertEquals(List.of(), KernelGuestMixinAdapter.unfitMixins("example.mixins.json",
+					config(PKG.replace('/', '.'), "AltMixin"), resolver(classes)));
+		} finally {
+			if (previous == null) System.clearProperty("forbric.mixinFit");
+			else System.setProperty("forbric.mixinFit", previous);
+		}
+	}
+
+	@Test
+	void aRegexSelectorIsNotJudged() {
+		// fabric-permission-api-v1's CommandSourceStackMixin selects every builder with `/^with/
+		// desc=/CommandSourceStack;$/`. Matching that means reimplementing Mixin's selector engine; treating it
+		// as a literal method name reports a miss for something Mixin resolves fine. Un-judgeable → resolved.
+		String t = "net/minecraft/commands/CommandSourceStack";
+		Map<String, byte[]> classes = new HashMap<>();
+		classes.put(t + ".class", target(t, "unused", Opcodes.ACC_PRIVATE, true));
+		classes.put(PKG + "/RegexMixin.class",
+				multiSelectorMixin("RegexMixin", t, "/^with/ desc=/CommandSourceStack;$/"));
+
+		assertEquals(List.of(), KernelGuestMixinAdapter.unfitMixins("example.mixins.json",
+				config(PKG.replace('/', '.'), "RegexMixin"), resolver(classes)));
 	}
 
 	@Test

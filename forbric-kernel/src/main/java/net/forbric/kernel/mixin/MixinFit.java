@@ -247,18 +247,39 @@ public final class MixinFit {
 
 			AnnotationNode injector = injectorOf(m);
 			if (injector == null) continue;
-			for (String selector : stringList(value(injector, "method"))) {
+
+			// An injector's `method` is a list of CANDIDATE selectors, not a conjunction. Mixin's default
+			// require=1 counts matches across the whole list, so mods routinely ship alternative names to span
+			// mappings or MC versions — Iris's LevelRenderer mixin carries both `lambda$addSkyPass$0` AND
+			// `lambda$addSkyPass$8` for the same handler. Requiring EVERY selector to resolve reported those as
+			// missing anchors and made 11 of Iris's 41 look unapplied when the injector was installed the whole
+			// time. Judge the injector, not the selector: it is applied iff ANY selector resolves.
+			List<String> selectors = stringList(value(injector, "method"));
+			List<MethodNode> hits = new ArrayList<>();
+			List<String> misses = new ArrayList<>();
+			for (String selector : selectors) {
 				MethodNode targetMethod = resolveSelector(target, selector, resolver);
-				out.add(new Anchor("@Inject target", selector, targetMethod != null));
-				if (targetMethod == null) continue;
-				// Each @At(INVOKE/FIELD, target=…) must name an instruction inside THAT method.
-				for (AnnotationNode at : atNodes(injector)) {
-					String atValue = asString(value(at, "value"));
-					String atTarget = asString(value(at, "target"));
-					if (atTarget == null || atValue == null || !RESOLVABLE_AT.contains(atValue)) continue;
-					out.add(new Anchor("@At(" + atValue + ")", shortMember(atTarget) + " in " + selector,
-							containsMember(targetMethod, atTarget)));
+				if (targetMethod != null) hits.add(targetMethod); else misses.add(selector);
+			}
+			if (selectors.isEmpty()) continue;
+			String where = misses.isEmpty() ? String.join("|", selectors)
+					: hits.isEmpty() ? String.join("|", misses)
+					: String.join("|", misses) + " (" + hits.size() + "/" + selectors.size() + " selectors hit)";
+			out.add(new Anchor("@Inject target", where, !hits.isEmpty()));
+			if (hits.isEmpty()) continue;
+
+			// Each @At(INVOKE/FIELD, target=…) must name an instruction inside a method the injector actually
+			// bound to — again ANY, for the same require=1 reason.
+			for (AnnotationNode at : atNodes(injector)) {
+				String atValue = asString(value(at, "value"));
+				String atTarget = asString(value(at, "target"));
+				if (atTarget == null || atValue == null || !RESOLVABLE_AT.contains(atValue)) continue;
+				boolean anywhere = false;
+				for (MethodNode hit : hits) {
+					if (containsMember(hit, atTarget)) { anywhere = true; break; }
 				}
+				out.add(new Anchor("@At(" + atValue + ")",
+						shortMember(atTarget) + " in " + hits.get(0).name, anywhere));
 			}
 		}
 		return out;
@@ -406,6 +427,15 @@ public final class MixinFit {
 		String name = paren >= 0 ? s.substring(0, paren) : s;
 		String desc = paren >= 0 ? s.substring(paren) : null;
 		if (name.isEmpty()) return firstMethod(target, resolver);
+
+		// Mixin's full target-selector grammar also allows a REGEX name (/^with/) and an explicit
+		// `desc=` clause. fabric-permission-api-v1's CommandSourceStackMixin uses both at once
+		// (`/^with/ desc=/CommandSourceStack;$/`) to catch every withX() builder. Matching those means
+		// implementing Mixin's selector engine; treating them as a plain method name means reporting a
+		// miss for a selector Mixin resolves fine. Un-judgeable → RESOLVED, per the class conservatism note.
+		if (name.charAt(0) == '/' || name.indexOf(' ') >= 0 || name.indexOf('=') >= 0) {
+			return firstMethod(target, resolver);
+		}
 		return findMethod(target, name, desc, resolver);
 	}
 
