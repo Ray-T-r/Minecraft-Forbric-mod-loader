@@ -1,0 +1,33 @@
+diff --git a/src/main/java/net/fabricmc/loader/impl/launch/knot/KnotClassLoader.java b/src/main/java/net/fabricmc/loader/impl/launch/knot/KnotClassLoader.java
+index 7c32250..7b778f4 100644
+--- a/src/main/java/net/fabricmc/loader/impl/launch/knot/KnotClassLoader.java
++++ b/src/main/java/net/fabricmc/loader/impl/launch/knot/KnotClassLoader.java
+@@ -81,6 +81,28 @@ final class KnotClassLoader extends AbstractSecureClassLoader implements ClassLo
+ 		return urlLoader.findResource(name);
+ 	}
+ 
++	@Override
++	protected URL findResource(String moduleName, String name) throws IOException {
++		// Forbric: classes living in named modules mapped to this loader (the synthetic GAME module layer)
++		// resolve Class.getResourceAsStream through this module-aware overload. The JDK default returns null
++		// whenever moduleName != null, which would hide every layered jar's own resources (e.g. Forge's
++		// /forge_version.json). Knot's model is one flat classpath, so module resources ARE the flat resources.
++		return findResource(name);
++	}
++
++	@Override
++	protected Class<?> findClass(String moduleName, String name) {
++		// Forbric: same flat-classpath rule for module-scoped class lookup — Class.forName(Module, String) and
++		// ServiceLoader.load(layer, ...) route through this overload, whose JDK default is null for named
++		// modules. Loading through the normal Knot path keeps class identity and transforms; the caller
++		// (ClassLoader.loadClass(Module, String)) then verifies actual module membership itself.
++		try {
++			return loadClass(name);
++		} catch (ClassNotFoundException e) {
++			return null; // per the overload's contract: null when not found (never CNFE)
++		}
++	}
++
+ 	@Override
+ 	public Enumeration<URL> findResources(String name) throws IOException {
+ 		Objects.requireNonNull(name);

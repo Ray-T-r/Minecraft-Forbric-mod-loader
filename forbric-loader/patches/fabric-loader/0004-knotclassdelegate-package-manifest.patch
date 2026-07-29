@@ -1,0 +1,63 @@
+diff --git a/src/main/java/net/fabricmc/loader/impl/launch/knot/KnotClassDelegate.java b/src/main/java/net/fabricmc/loader/impl/launch/knot/KnotClassDelegate.java
+index 2446ae6..ffcc691 100644
+--- a/src/main/java/net/fabricmc/loader/impl/launch/knot/KnotClassDelegate.java
++++ b/src/main/java/net/fabricmc/loader/impl/launch/knot/KnotClassDelegate.java
+@@ -353,12 +353,27 @@ final class KnotClassDelegate<T extends ClassLoader & ClassLoaderAccess> impleme
+ 		int pkgDelimiterPos = name.lastIndexOf('.');
+ 
+ 		if (pkgDelimiterPos > 0) {
+-			// TODO: package definition stub
+ 			String pkgString = name.substring(0, pkgDelimiterPos);
+ 
+ 			if (classLoader.getPackageFwd(pkgString) == null) {
++				// Forbric: define the package with the owning jar's manifest attributes (per-package section
++				// first, then main attributes) instead of the all-null stub - FML's version checks
++				// (JarVersionLookupHandler -> Package.getImplementationVersion()) return null otherwise, which
++				// makes production FML reject its own language providers under Knot.
++				Manifest manifest = metadata.manifest;
++				java.util.jar.Attributes perPkg = manifest == null ? null
++						: manifest.getAttributes(pkgString.replace('.', '/') + "/");
++				java.util.jar.Attributes main = manifest == null ? null : manifest.getMainAttributes();
++
+ 				try {
+-					classLoader.definePackageFwd(pkgString, null, null, null, null, null, null, null);
++					classLoader.definePackageFwd(pkgString,
++							manifestValue(perPkg, main, java.util.jar.Attributes.Name.SPECIFICATION_TITLE),
++							manifestValue(perPkg, main, java.util.jar.Attributes.Name.SPECIFICATION_VERSION),
++							manifestValue(perPkg, main, java.util.jar.Attributes.Name.SPECIFICATION_VENDOR),
++							manifestValue(perPkg, main, java.util.jar.Attributes.Name.IMPLEMENTATION_TITLE),
++							manifestValue(perPkg, main, java.util.jar.Attributes.Name.IMPLEMENTATION_VERSION),
++							manifestValue(perPkg, main, java.util.jar.Attributes.Name.IMPLEMENTATION_VENDOR),
++							null);
+ 				} catch (IllegalArgumentException e) { // presumably concurrent package definition
+ 					if (classLoader.getPackageFwd(pkgString) == null) throw e; // still not defined?
+ 				}
+@@ -368,6 +383,13 @@ final class KnotClassDelegate<T extends ClassLoader & ClassLoaderAccess> impleme
+ 		return classLoader.defineClassFwd(name, input, 0, input.length, metadata.codeSource);
+ 	}
+ 
++	// Forbric: manifest attribute for a package definition - per-package section first, main attributes fallback.
++	private static String manifestValue(java.util.jar.Attributes perPkg, java.util.jar.Attributes main, java.util.jar.Attributes.Name name) {
++		String value = perPkg != null ? perPkg.getValue(name) : null;
++		if (value == null && main != null) value = main.getValue(name);
++		return value;
++	}
++
+ 	private Metadata getMetadata(String name) {
+ 		String fileName = LoaderUtil.getClassFileName(name);
+ 		URL url = classLoader.getResource(fileName);
+@@ -434,6 +456,14 @@ final class KnotClassDelegate<T extends ClassLoader & ClassLoaderAccess> impleme
+ 		try {
+ 			return getMixinTransformer().transformClassBytes(name, name, transformedClassArray);
+ 		} catch (Throwable t) {
++			// Forbric: a GUEST Fabric mixin config listed in -Dforbric.downgradeInjectionErrors whose required
++			// injector matches 0 targets on the Forge-patched merged base throws a fatal InjectionError. Skip
++			// that class's mixins (it loads vanilla-shaped) instead of crashing the client; forge/neoforge/
++			// forbric/wrapped configs are not in the set and still crash loudly.
++			if (net.forbric.loader.impl.transformer.ForbricMixinDowngrade.shouldSkip(name, t)) {
++				return transformedClassArray;
++			}
++
+ 			String msg = String.format("Mixin transformation of %s failed", name);
+ 			if (LOG_TRANSFORM_ERRORS) Log.warn(LogCategory.KNOT, msg, t);
+ 

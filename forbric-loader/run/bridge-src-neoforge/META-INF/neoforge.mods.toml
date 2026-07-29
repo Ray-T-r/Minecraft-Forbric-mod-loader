@@ -1,0 +1,20 @@
+modLoader="javafml"
+loaderVersion="[3,)"
+license="Apache-2.0"
+issueTrackerURL="https://example.invalid/forbric"
+
+[[mods]]
+modId="forbricneo"
+version="1.0.0"
+displayName="Forbric NeoForge Bridge"
+description='''
+Opens the Fabric-content registration window inside NeoForge's genuine registration span
+(GameData.postRegisterEvents), so Fabric mods register into the shared registries at the correct time.
+'''
+
+[[dependencies.forbricneo]]
+modId="neoforge"
+type="required"
+versionRange="[3,)"
+ordering="NONE"
+side="BOTH"

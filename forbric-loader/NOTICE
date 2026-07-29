@@ -1,0 +1,48 @@
+Forbric — a clean-room unified Minecraft mod loader
+Copyright 2026 The Forbric Project
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+================================================================================
+Substrate
+================================================================================
+Forbric reuses and adapts source code from Fabric Loader, which is licensed
+under the Apache License, Version 2.0.
+
+    Fabric Loader
+    Copyright 2016 FabricMC
+    https://github.com/FabricMC/fabric-loader
+
+Files derived from Fabric Loader retain the original FabricMC copyright header.
+
+================================================================================
+Forge-side code: clean-room
+================================================================================
+Forbric's Forge-compatibility code (the net.forbric.loader.impl.*.forge.*
+packages and related Forge metadata / mapping / access / lifecycle code) is an
+independent clean-room implementation written from public formats and
+specifications (the mods.toml schema, JarInJar metadata, modern Forge
+IEventBus/registry contracts, the Maven version-range grammar, and Mixin).
+
+It does NOT contain any source code from Forge Mod Loader (FML). FML, which is
+licensed under the GNU LGPL v2.1 or later, was consulted only as a behavioural
+reference. See CREDITS.md.
+
+================================================================================
+Mappings
+================================================================================
+Forbric does NOT bundle MCP mapping data, which is non-redistributable.
+Runtime mappings are generated from permitted sources only (Mojang official
+mappings, Fabric intermediary, and Yarn). See MAPPINGS.md.
+
+================================================================================
+Bundled third-party dependencies
+================================================================================
+- OW2 ASM ......................... BSD-3-Clause (org.ow2.asm)
+- Sponge Mixin .................... MIT (net.fabricmc:sponge-mixin)
+- MixinExtras ..................... MIT (io.github.llamalad7)
+- SAT4J .......................... EPL-1.0 / LGPL-2.1 (org.ow2.sat4j) — see each artifact's about.html
+- tiny-remapper .................. Apache-2.0 (net.fabricmc)
+- class-tweaker .................. Apache-2.0 (net.fabricmc)
+- mapping-io ..................... Apache-2.0 (net.fabricmc)
+- night-config ................... LGPL-3.0 (com.electronwill.night-config) — used as an unmodified library dependency

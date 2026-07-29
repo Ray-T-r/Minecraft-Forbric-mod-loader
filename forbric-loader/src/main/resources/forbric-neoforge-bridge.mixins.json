@@ -1,0 +1,28 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "net.forbric.loader.impl.forge.mixin",
+  "plugin": "net.forbric.loader.impl.forge.mixin.ForbricNeoBridgeMixinPlugin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "NeoRegistryBridgeMixin",
+    "NeoDualLifecycleMixin",
+    "PackRepositoryFabricCompatMixin",
+    "ForbricForgePackRepositoryMixin",
+    "ForbricFabricChannelRegistrationMixin",
+    "ForbricRegistrySyncBoundaryMixin",
+    "ForbricCommonNetworkTaskMixin",
+    "ForbricNeoRegistryManagerMixin"
+  ],
+  "client": [
+    "ForbricClientLevelModelDataMixin",
+    "ForbricClientDualLifecycleMixin",
+    "ForbricKnownPacksManagerMixin",
+    "ForbricLevelExtractorModelDataMixin",
+    "ForbricClientShutdownMixin",
+    "ForbricClientSmokeMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

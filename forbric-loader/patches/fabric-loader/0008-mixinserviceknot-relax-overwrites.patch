@@ -1,0 +1,97 @@
+diff --git a/src/main/java/net/fabricmc/loader/impl/launch/knot/MixinServiceKnot.java b/src/main/java/net/fabricmc/loader/impl/launch/knot/MixinServiceKnot.java
+index 06b60ff..3b2ff8c 100644
+--- a/src/main/java/net/fabricmc/loader/impl/launch/knot/MixinServiceKnot.java
++++ b/src/main/java/net/fabricmc/loader/impl/launch/knot/MixinServiceKnot.java
+@@ -206,7 +206,91 @@ public class MixinServiceKnot implements IMixinService, IClassProvider, IClassBy
+ 
+ 	@Override
+ 	public InputStream getResourceAsStream(String name) {
+-		return FabricLauncherBase.getLauncher().getResourceAsStream(name);
++		InputStream in = FabricLauncherBase.getLauncher().getResourceAsStream(name);
++		if (in == null) return in;
++
++		boolean relax = isForbricRelaxedConfig(name);
++		java.util.List<String> dropMixins = forbricSuppressedMixinsFor(name);
++		if (!relax && dropMixins.isEmpty()) return in;
++
++		// Forbric: rewrite this mixin config's JSON before Mixin parses it. Two independent transforms for the
++		// traditional-MinecraftForge / merged game base, whose binary patches diverge from the vanilla bytecode
++		// the guest mixins were written against:
++		//   (1) relax (-Dforbric.relaxMixinOverwrites): "overwrites":{"requireAnnotations":true} -> false and
++		//       "injectors":{"defaultRequire":N} -> 0, so an @Accessor byte-identical to a Forge-added getter, or
++		//       a DEFAULT-group injector whose @At anchor Forge moved, soft-skips while the rest of the mixin still
++		//       applies. Per-injection require/expect annotations still win; real conflicts still surface.
++		//   (2) per-mixin drop (-Dforbric.suppressMixins, entries "configName:MixinEntry"): remove the named
++		//       mixin(s) from this config's mixins/client/server arrays so a guest mixin that is STRUCTURALLY
++		//       incompatible with the merged base — e.g. a GuiRenderer client mixin that the merged NeoForge-re-typed
++		//       constructor breaks at RUNTIME after a clean apply (a null map, a ClassCastException in a pool the
++		//       mixin fed) — never registers. Surgical, unlike whole-config suppression: the mod's OTHER mixins
++		//       still apply. Used for coordinated GuiRenderer mixins that a per-mixin apply-error skip cannot reach.
++		try {
++			java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
++			byte[] chunk = new byte[8192];
++			int n;
++			while ((n = in.read(chunk)) > 0) buf.write(chunk, 0, n);
++			in.close();
++			String json = new String(buf.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
++			if (relax) {
++				json = json.replaceAll("(\"requireAnnotations\"\\s*:\\s*)true", "$1false")
++						.replaceAll("(\"defaultRequire\"\\s*:\\s*)\\d+", "$10");
++			}
++			for (String mixin : dropMixins) {
++				String token = java.util.regex.Pattern.quote("\"" + mixin + "\"");
++				json = json.replaceAll(",\\s*" + token, "")   // entry preceded by a comma (not first in the array)
++						.replaceAll(token + "\\s*,", "")       // entry followed by a comma (first in the array)
++						.replaceAll(token, "");                // sole entry
++			}
++			return new java.io.ByteArrayInputStream(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
++		} catch (IOException e) {
++			throw new RuntimeException("Forbric: failed rewriting mixin config " + name, e);
++		}
++	}
++
++	/**
++	 * Forbric: the mixin entry names to drop from mixin config {@code configName} before Mixin parses it, taken
++	 * from {@code -Dforbric.suppressMixins} (csv of {@code configName:MixinEntry}, where MixinEntry is the exact
++	 * string in the config's mixins/client/server array — e.g. {@code GuiRendererMixin} or
++	 * {@code advancement.AdvancementsScreenMixin}). Neither a config name nor a mixin entry contains a colon.
++	 */
++	private static java.util.List<String> forbricSuppressedMixinsFor(String configName) {
++		String csv = System.getProperty("forbric.suppressMixins");
++		if (csv == null || csv.isEmpty()) return java.util.Collections.emptyList();
++
++		java.util.List<String> out = new java.util.ArrayList<>();
++		for (String raw : csv.split(",")) {
++			String entry = raw.trim();
++			if (entry.isEmpty()) continue;
++
++			int colon = entry.indexOf(':');
++			if (colon <= 0 || colon >= entry.length() - 1) continue;
++			if (entry.substring(0, colon).trim().equals(configName)) {
++				out.add(entry.substring(colon + 1).trim());
++			}
++		}
++		return out;
++	}
++
++	private static boolean isForbricRelaxedConfig(String name) {
++		String csv = System.getProperty("forbric.relaxMixinOverwrites");
++		if (csv == null || csv.isEmpty()) return false;
++
++		for (String raw : csv.split(",")) {
++			String entry = raw.trim();
++			if (entry.isEmpty()) continue;
++
++			// Trailing "*" = prefix glob (e.g. "fabric-*" matches every Fabric API bundled config);
++			// otherwise exact match.
++			if (entry.endsWith("*")) {
++				if (name.startsWith(entry.substring(0, entry.length() - 1))) return true;
++			} else if (name.equals(entry)) {
++				return true;
++			}
++		}
++
++		return false;
+ 	}
+ 
+ 	@Override

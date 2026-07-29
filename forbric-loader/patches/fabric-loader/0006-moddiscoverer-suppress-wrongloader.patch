@@ -1,0 +1,65 @@
+diff --git a/src/main/java/net/fabricmc/loader/impl/discovery/ModDiscoverer.java b/src/main/java/net/fabricmc/loader/impl/discovery/ModDiscoverer.java
+index 1dd742c..9629eee 100644
+--- a/src/main/java/net/fabricmc/loader/impl/discovery/ModDiscoverer.java
++++ b/src/main/java/net/fabricmc/loader/impl/discovery/ModDiscoverer.java
+@@ -68,6 +68,38 @@ import net.fabricmc.loader.impl.util.log.Log;
+ import net.fabricmc.loader.impl.util.log.LogCategory;
+ 
+ public final class ModDiscoverer {
++	// Forbric: see the suppression check in discoverMods.
++	private static boolean isSuppressed(String id) {
++		String csv = System.getProperty("forbric.suppressMods", "");
++		if (csv.isEmpty()) return false;
++
++		for (String s : csv.split(",")) {
++			if (s.trim().equals(id)) return true;
++		}
++
++		return false;
++	}
++
++	// Forbric: suppress by SOURCE FILE NAME, for dual-manifest multiloader "unimod" jars whose Fabric and
++	// Forge identities share the same mod id (so id-based suppression would also drop the Forge wrap). On a
++	// Forge base Forbric loads the mod through its Forge identity (a re-wrapped jar under .forbric/cache); the
++	// original jar in mods/ carries a Fabric identity with loader-wrong mixins that must not be discovered.
++	private static boolean isSuppressedBySource(ModCandidateImpl candidate) {
++		String csv = System.getProperty("forbric.suppressModSources", "");
++		if (csv.isEmpty()) return false;
++
++		for (Path path : candidate.getPaths()) {
++			String name = path.getFileName() == null ? "" : path.getFileName().toString();
++
++			for (String s : csv.split(",")) {
++				String want = s.trim();
++				if (!want.isEmpty() && name.equals(want)) return true;
++			}
++		}
++
++		return false;
++	}
++
+ 	private final VersionOverrides versionOverrides;
+ 	private final DependencyOverrides depOverrides;
+ 	private final List<ModCandidateFinder> candidateFinders = new ArrayList<>();
+@@ -150,6 +182,21 @@ public final class ModDiscoverer {
+ 
+ 				try {
+ 					ModCandidateImpl candidate = future.get();
++
++					// Forbric: -Dforbric.suppressMods=<csv of ids> drops candidates by id. Used for
++					// "wrongloader trap" fabric.mod.json files inside dual-manifest FORGE jars (a fake
++					// Fabric mod whose entrypoint deliberately throws); Forbric loads the jar's real
++					// Forge identity instead.
++					if (candidate != null && isSuppressed(candidate.getId())) {
++						Log.info(LogCategory.DISCOVERY, "Suppressing mod candidate %s (forbric.suppressMods)", candidate.getId());
++						candidate = null;
++					}
++
++					if (candidate != null && isSuppressedBySource(candidate)) {
++						Log.info(LogCategory.DISCOVERY, "Suppressing mod candidate %s by source (forbric.suppressModSources) - loaded via its Forge identity instead", candidate.getId());
++						candidate = null;
++					}
++
+ 					if (candidate != null) candidates.add(candidate);
+ 				} catch (ExecutionException e) {
+ 					exception = ExceptionUtil.gatherExceptions(e, exception, exc -> new ModResolutionException("Mod discovery failed!", exc));

@@ -1,0 +1,245 @@
+plugins {
+	id 'java'
+	id 'java-library'
+}
+
+base {
+	archivesName = 'forbric-loader'
+}
+
+version = '0.1.0-SNAPSHOT'
+
+java {
+	// Loader core targets Java 17 bytecode (the substrate is Java 8/17 multi-release; the MRJ slice is added
+	// later). We compile with whatever JDK (>= 17) runs Gradle, pinning the output to release 17 — rather than
+	// requiring a separate JDK 17 toolchain — so the build runs on machines that only ship a newer JDK.
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
+}
+
+// Reuse the Apache-2.0 fabric-loader substrate by compiling its source roots alongside Forbric's.
+// (Reused as-is under net.fabricmc.* — see CREDITS.md / NOTICE. The Forge side and the unifying
+// layer are Forbric's own clean-room code under net.forbric.*.)
+def fabricLoader = file('../fabric-loader')
+
+sourceSets {
+	// Compile-only intermediary game-type stubs. The Forge-facing registration shim references real game
+	// types (Registry/ResourceKey/Identifier) by their runtime intermediary names; these minimal stubs give
+	// those names a compile-time definition (and a fake impl for unit tests). They are NOT packaged or on the
+	// runtime classpath, so at boot the names resolve to the live game classes on Knot's classloader.
+	stub {
+		java {
+			srcDir 'src/stub/java'
+		}
+	}
+	main {
+		compileClasspath += sourceSets.stub.output
+		java {
+			srcDir "${fabricLoader}/src/main/java"
+			srcDir "${fabricLoader}/src/main/legacyJava"
+			srcDir "${fabricLoader}/minecraft/src/main/java"
+			// The legacy LaunchWrapper launch path is not used (Forbric boots via Knot); skip it.
+			exclude '**/game/minecraft/launchwrapper/**'
+		}
+		resources {
+			// src/main/resources (Forbric's own forbric-loader.mixins.json) is included by default.
+			srcDir "${fabricLoader}/src/main/resources"            // Mixin service descriptors, i18n
+			srcDir "${fabricLoader}/minecraft/src/main/resources"  // GameProvider service descriptor
+		}
+	}
+	// Tests see the stubs as real fakes so the registration wiring is exercisable without a game boot.
+	test {
+		compileClasspath += sourceSets.stub.output
+		runtimeClasspath += sourceSets.stub.output
+	}
+}
+
+repositories {
+	maven {
+		name = 'Fabric'
+		url = 'https://maven.fabricmc.net/'
+	}
+	mavenCentral()
+}
+
+// Mods JiJ-nested into forbricruntime.jar (Knot-loaded), not placed on the parent classpath.
+configurations {
+	nestedMods
+}
+
+dependencies {
+	compileOnly 'org.jetbrains:annotations:23.0.0'
+	// The reused Minecraft game provider references these log bridges as optional handlers (provided at runtime by MC).
+	compileOnly 'org.apache.logging.log4j:log4j-api:2.24.3'
+	compileOnly 'org.slf4j:slf4j-api:2.0.16'
+
+	// --- Reused Apache-2.0 substrate deps (same coordinates as fabric-loader) ---
+	api "org.ow2.asm:asm:${project.asm_version}"
+	api "org.ow2.asm:asm-analysis:${project.asm_version}"
+	api "org.ow2.asm:asm-commons:${project.asm_version}"
+	api "org.ow2.asm:asm-tree:${project.asm_version}"
+	api "org.ow2.asm:asm-util:${project.asm_version}"
+	api "net.fabricmc:sponge-mixin:${project.mixin_version}"
+	api "org.ow2.sat4j:org.ow2.sat4j.core:${project.sat4j_version}"
+	api "org.ow2.sat4j:org.ow2.sat4j.pb:${project.sat4j_version}"
+	api "net.fabricmc:tiny-remapper:${project.tiny_remapper_version}"
+	api "net.fabricmc:class-tweaker:${project.class_tweaker_version}"
+	api "net.fabricmc:mapping-io:${project.mapping_io_version}"
+
+	// MixinExtras must NOT be parent-loaded — its runtime-generated LocalRef classes must be defined in Knot's
+	// transforming classloader alongside the game classes that reference them. So it is NOT an `api`/runtime dep;
+	// it is JiJ-nested into forbricruntime.jar (see the runtimeJar task) and discovered as a Knot-loaded mod,
+	// exactly as upstream fabric-loader ships it. Modern Fabric mods (Fabric API, Lithium, …) need it for
+	// implicit local capture.
+	nestedMods "io.github.llamalad7:mixinextras-fabric:${project.mixin_extras_version}"
+
+	// --- Clean-room Forge side: TOML reader for mods.toml (same lib Forge/NeoForge use) ---
+	api "com.electronwill.night-config:core:${project.night_config_version}"
+	api "com.electronwill.night-config:toml:${project.night_config_version}"
+	// JSON reader for fabric.mod.json (placeholder until the reused Fabric ModMetadataParser is wired in at P0)
+	api "com.electronwill.night-config:json:${project.night_config_version}"
+
+	testImplementation "org.junit.jupiter:junit-jupiter:${project.junit_version}"
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release = 17
+}
+
+// The reused loader's builtin fabric.mod.json ships a ${version} placeholder Gradle must expand to the
+// real fabric-loader version (parsed from the substrate's FabricLoaderImpl, like fabric-loader's own build).
+def fabricLoaderVersion = (file("${fabricLoader}/src/main/java/net/fabricmc/loader/impl/FabricLoaderImpl.java")
+		.text =~ /VERSION\s*=\s*"(.*?)"/)[0][1]
+
+processResources {
+	filesMatching('fabric.mod.json') {
+		expand version: fabricLoaderVersion
+	}
+}
+
+test {
+	useJUnitPlatform()
+}
+
+// The game-touching half of Forbric — the Forge-family runtime drivers (impl/forge/minecraftforge for the
+// traditional-Forge path, impl/forge/neoforge for the parked NeoForge path) — must be loaded by Knot's
+// transforming classloader, where the Mojmap-native game classes and the Knot-loaded real Forge runtime live,
+// so their reflective Class.forName / context classloader resolve them. They ship as a SEPARATE Knot-loaded mod
+// ("forbricruntime"); the loader-core jar excludes them. Which driver actually runs is decided by the preLaunch
+// entrypoints declared in src/runtime-meta/fabric.mod.json (each no-ops if its Forge family is absent at runtime).
+// NOTE: impl/forge/ModAnnotationScanner stays in the core jar — it runs at prep time (parent-loaded), before
+// Knot, to ASM-scan @Mod classes; only the driver packages go to the runtime module.
+def runtimeModPackages = ['net/forbric/loader/impl/forge/minecraftforge/**', 'net/forbric/loader/impl/forge/neoforge/**', 'net/forbric/loader/impl/forge/mixin/**', 'net/forbric/loader/impl/forge/runtime/**']
+
+jar {
+	// Loader core: parent-loaded. Exclude the runtime module and its mixin configs (declared by forbricruntime).
+	exclude runtimeModPackages
+	exclude 'forbric-loader.mixins.json'
+	exclude 'forbric-neoforge-bridge.mixins.json'
+}
+
+tasks.register('runtimeJar', Jar) {
+	archiveBaseName = 'forbricruntime'
+	dependsOn 'classes'
+	from(sourceSets.main.output) {
+		include runtimeModPackages
+		include 'forbric-loader.mixins.json'
+		include 'forbric-neoforge-bridge.mixins.json'
+	}
+	from 'src/runtime-meta' // fabric.mod.json declaring forbricruntime + the mixin config + the nested jar
+	// JiJ-nest MixinExtras at the stable path the fabric.mod.json "jars" entry references, so Knot loads it.
+	into('META-INF/jars') {
+		from configurations.nestedMods
+		rename '.*\\.jar', 'mixinextras-fabric.jar'
+	}
+}
+
+assemble.dependsOn 'runtimeJar'
+
+// Emits the full runtime classpath (Forbric classes + reused substrate + bundled deps) so the
+// launch script (run/launch-1.21.11.sh) can compose it with the Minecraft install classpath.
+tasks.register('printRuntimeClasspath') {
+	doLast {
+		println sourceSets.main.runtimeClasspath.asPath
+	}
+}
+
+// Emits build/forbric-libraries.json — the manifest the standalone forbric-installer consumes to lay
+// Forbric's jars into a launcher's libraries/ tree and write the version profile. Two categories:
+//   classpath   : forbric-loader core + reused substrate deps → listed in the profile's `libraries`
+//                 (launcher puts them on -cp, parent-loaded).
+//   knot-addmods: forbricruntime → staged into libraries/ but NOT listed in the profile; discovered via
+//                 -Dfabric.addMods so Knot loads it in its transforming classloader (see README arch note).
+// The installer version-coordinate for Forbric's own jars drops the -SNAPSHOT so launchers don't treat it
+// as a remote snapshot artifact.
+def forbricInstallerVersion = (version.toString() - '-SNAPSHOT')
+tasks.register('generateInstallerManifest') {
+	dependsOn 'jar', 'runtimeJar'
+	def outFile = layout.buildDirectory.file('forbric-libraries.json')
+	outputs.file(outFile)
+	// The manifest embeds sha1/size of the loader + runtime jars; without tracking them as inputs Gradle would
+	// treat the task as up-to-date after a source change and emit a STALE sha1 (→ installer "sha1 mismatch").
+	// Cheap to recompute, so just always regenerate.
+	outputs.upToDateWhen { false }
+	def runtimeCp = configurations.runtimeClasspath
+	def coreJarProvider = tasks.named('jar').flatMap { it.archiveFile }
+	def runtimeJarProvider = tasks.named('runtimeJar').flatMap { it.archiveFile }
+	def ver = forbricInstallerVersion
+	doLast {
+		def sha1 = { File f ->
+			def md = java.security.MessageDigest.getInstance('SHA-1')
+			f.withInputStream { ins ->
+				byte[] buf = new byte[64 * 1024]; int n
+				while ((n = ins.read(buf)) != -1) md.update(buf, 0, n)
+			}
+			md.digest().collect { String.format('%02x', it) }.join('')
+		}
+		// Maven-layout path for a coordinate — mirrors the installer's Util.coordinateToPath so the bundled
+		// resource path and the on-disk libraries/ path are derived identically and can never drift.
+		def coordToPath = { String coord ->
+			def p = coord.split(':')
+			def group = p[0].replace('.', '/')
+			def artifact = p[1]; def version = p[2]
+			def classifier = p.length > 3 ? "-${p[3]}" : ''
+			"${group}/${artifact}/${version}/${artifact}-${version}${classifier}.jar".toString()
+		}
+		def entry = { String coord, String category, File f ->
+			// file    : absolute source path — consumed by the installer build's bundler and the dev
+			//           `--manifest` path; STRIPPED from the copy that gets packed into the installer jar.
+			// resource: classpath-relative path the self-contained installer streams the jar from at runtime.
+			[coordinate: coord, category: category,
+			 file: f.absolutePath,
+			 resource: "/forbric/libs/${coordToPath(coord)}".toString(),
+			 sha1: sha1(f), size: f.length()]
+		}
+		def entries = []
+		// classpath: reused substrate deps (asm, mixin, sat4j, tiny-remapper, class-tweaker, mapping-io, night-config)
+		runtimeCp.resolvedConfiguration.resolvedArtifacts.each { art ->
+			def id = art.moduleVersion.id
+			entries << entry("${id.group}:${id.name}:${id.version}".toString(), 'classpath', art.file)
+		}
+		// classpath: forbric-loader core jar (the parent-loaded loader itself)
+		entries << entry("net.forbric:forbric-loader:${ver}".toString(), 'classpath', coreJarProvider.get().asFile)
+		// knot-addmods: forbricruntime (must be Knot-loaded via addMods, never on -cp)
+		entries << entry("net.forbric:forbricruntime:${ver}".toString(), 'knot-addmods', runtimeJarProvider.get().asFile)
+
+			// forge-bridge: the prebuilt clean-room Forge @Mod (Forbric's own bytecode — no Mojang classes, so it is
+			// licensing-safe to bundle) that opens the Fabric-content registration window inside Forge's genuine
+			// span. Bundled like forbricruntime; the installer stages it into the full-forge profile's mods/. It is
+			// produced by run/assemble-minecraftforge-runtime.sh, so it exists only after that has run — the
+			// full-forge install path errors clearly if it is absent from the manifest.
+			def bridgeJar = file('run/forge-runtime/forbric-bridge.jar')
+			if (bridgeJar.isFile()) {
+				entries << entry('net.forbric:forbric-bridge:26.2-65.0.1', 'forge-bridge', bridgeJar)
+			} else {
+				println "generateInstallerManifest: NOTE ${bridgeJar} absent — full-forge installs will fail until " +
+						"run/assemble-minecraftforge-runtime.sh has produced the bridge jar"
+			}
+
+		def manifest = [forbricVersion: ver, libraries: entries]
+		outFile.get().asFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(manifest))
+		println "generateInstallerManifest → ${outFile.get().asFile} (${entries.size()} entries)"
+	}
+}

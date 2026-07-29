@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "forbricruntime",
+  "version": "0.1.0",
+  "name": "Forbric Runtime (Forge bridge)",
+  "description": "The Knot-loaded half of Forbric: the reflective Forge-family runtime drivers (traditional MinecraftForge + NeoForge) that seed each FML environment and bring up @Mod classes beside Fabric mods — packaged as a mod so Knot's transforming classloader loads them where the Mojmap game classes and the real Forge-family runtime live. Both drivers are declared; each idles unless its runtime jar is staged (an instance carries exactly one Forge-family game base).",
+  "environment": "*",
+  "license": "Apache-2.0",
+  "entrypoints": {
+    "preLaunch": [
+      "net.forbric.loader.impl.forge.minecraftforge.ForbricMinecraftForgeRuntime",
+      "net.forbric.loader.impl.forge.neoforge.ForbricNeoForgeRuntime"
+    ]
+  },
+  "mixins": [
+    "forbric-loader.mixins.json",
+    "forbric-neoforge-bridge.mixins.json"
+  ],
+  "jars": [
+    { "file": "META-INF/jars/mixinextras-fabric.jar" }
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0"
+  }
+}

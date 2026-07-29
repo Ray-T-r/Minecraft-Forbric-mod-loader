@@ -1,0 +1,18 @@
+diff --git a/src/main/java/net/fabricmc/loader/impl/transformer/FabricTransformer.java b/src/main/java/net/fabricmc/loader/impl/transformer/FabricTransformer.java
+index 8a730e1..95c180d 100644
+--- a/src/main/java/net/fabricmc/loader/impl/transformer/FabricTransformer.java
++++ b/src/main/java/net/fabricmc/loader/impl/transformer/FabricTransformer.java
+@@ -29,6 +29,13 @@ import net.fabricmc.loader.impl.launch.FabricLauncherBase;
+ 
+ public final class FabricTransformer {
+ 	public static byte[] transform(boolean isDevelopment, EnvType envType, String name, byte[] bytes) {
++		// Forbric: route every class through the unified transform chain (Access Transformers, coremods, …)
++		// after the substrate's own built-in transforms, on the single pre-Mixin byte path. Pass-through
++		// until Forbric installs the chain.
++		return net.forbric.loader.impl.transformer.ForbricTransformBridge.apply(name, transformFabric(isDevelopment, envType, name, bytes));
++	}
++
++	private static byte[] transformFabric(boolean isDevelopment, EnvType envType, String name, byte[] bytes) {
+ 		Set<BuiltinTransform> transforms = FabricLoaderImpl.INSTANCE.getGameProvider().getBuiltinTransforms(name);
+ 		boolean transformAccess = transforms.contains(BuiltinTransform.WIDEN_ALL_PACKAGE_ACCESS) && FabricLauncherBase.getLauncher().getMappingConfiguration().requiresPackageAccessHack();
+ 		boolean environmentStrip = transforms.contains(BuiltinTransform.STRIP_ENVIRONMENT);

@@ -1,0 +1,33 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+issueTrackerURL="https://example.invalid/issues"
+
+[[mods]]
+modId="examplemod"
+version="${file.jarVersion}"
+displayName="Example Mod"
+description='''
+A sample Forge mod used to exercise the Forbric mods.toml parser.
+'''
+
+[[dependencies.examplemod]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.examplemod]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.21)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.examplemod]]
+modId="jei"
+mandatory=false
+versionRange="[15,)"
+ordering="AFTER"
+side="CLIENT"

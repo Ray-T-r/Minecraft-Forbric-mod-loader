@@ -1,0 +1,153 @@
+plugins {
+	id 'java'
+	id 'java-library'
+}
+
+base {
+	archivesName = 'forbric-kernel'
+}
+
+version = '0.1.0-SNAPSHOT'
+
+java {
+	// The sovereign kernel raises the floor to Java 21 (records, pattern switch, sealed types). The game itself
+	// needs Java 25, but the boot-side kernel bytecode only needs 21; we pin release 21 so the build runs on any
+	// JDK >= 21 without a separate toolchain (this machine ships JDK 25).
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
+}
+
+// Staged local artifacts the GAME-side (runtime) source set links against, compileOnly. Produced by the shared
+// forbric-loader pipeline (kept as-is): run/build-merged-base.sh + run/assemble-{minecraftforge,neoforge}-runtime.sh.
+// These are LGPL / Mojang-derived and are NEVER bundled — compileOnly linkage only, runtime-supplied by the user
+// or installer, exactly as the old system does. The kernel stays base-jar-parametric at launch (--gameJar).
+def stagedMergedBase   = file('../forbric-loader/run/merged-base/patched-mc-merged-26.2.jar')
+def stagedForgeRuntime = file('../forbric-loader/run/forge-runtime/forge-runtime.jar')
+def stagedNeoRuntime   = file('../forbric-loader/run/neoforge-runtime/neoforge-runtime.jar')
+def stagedGameJars = [stagedMergedBase, stagedForgeRuntime, stagedNeoRuntime].findAll { it.isFile() }
+
+sourceSets {
+	// `main` keeps the Gradle defaults (src/main/java, src/main/resources). Re-declaring them with srcDir would
+	// ADD the same directory a second time, and every resource would then be a duplicate entry — which fails
+	// processResources outright (it did, the moment the Mixin META-INF/services files landed).
+	//
+	// GAME side: everything that references net.minecraft.* / net.minecraftforge.* / net.neoforged.* /
+	// net.fabricmc.fabric.* — defined by ForbricClassLoader at runtime, packaged as forbric-kernel-runtime.jar and
+	// appended to the game classpath (NOT a fabric mod). Typed against the staged jars instead of reflected.
+	// If the staged jars are absent, this set has nothing to link against; the guard task below fails loudly with
+	// the build script to run, and `compileRuntimeJava` / `test` skip it so M0 (boot-side only) still builds.
+	runtime {
+		java { srcDir 'src/runtime/java' }
+		compileClasspath += sourceSets.main.output + files(stagedGameJars)
+		runtimeClasspath += sourceSets.main.output + files(stagedGameJars)
+	}
+}
+
+repositories {
+	maven {
+		name = 'Fabric'
+		url = 'https://maven.fabricmc.net/'
+	}
+	mavenCentral()
+}
+
+configurations {
+	// runtime source set inherits the boot-side library deps (asm etc.) for compilation.
+	runtimeImplementation.extendsFrom implementation
+	runtimeCompileOnly.extendsFrom compileOnly
+	// MixinExtras — JiJ-nested into the runtime jar (game-side), never parent-loaded (LocalRef generated-class law).
+	nestedMods
+}
+
+dependencies {
+	compileOnly 'org.jetbrains:annotations:23.0.0'
+	// log4j-api is provided by Minecraft at runtime; boot-side diagnostics link against it compileOnly and fall
+	// back to System.err when absent (unit tests, --scan tooling).
+	compileOnly 'org.apache.logging.log4j:log4j-api:2.24.3'
+
+	// --- Pure-bytecode / mapping / data machinery (same coordinates as the substrate) ---
+	api "org.ow2.asm:asm:${project.asm_version}"
+	api "org.ow2.asm:asm-analysis:${project.asm_version}"
+	api "org.ow2.asm:asm-commons:${project.asm_version}"
+	api "org.ow2.asm:asm-tree:${project.asm_version}"
+	api "org.ow2.asm:asm-util:${project.asm_version}"
+	api "net.fabricmc:sponge-mixin:${project.mixin_version}"
+	api "org.ow2.sat4j:org.ow2.sat4j.core:${project.sat4j_version}"
+	api "org.ow2.sat4j:org.ow2.sat4j.pb:${project.sat4j_version}"
+	api "net.fabricmc:tiny-remapper:${project.tiny_remapper_version}"
+	api "net.fabricmc:class-tweaker:${project.class_tweaker_version}"
+	api "net.fabricmc:mapping-io:${project.mapping_io_version}"
+
+	nestedMods "io.github.llamalad7:mixinextras-fabric:${project.mixin_extras_version}"
+
+	// The merged base's custom-payload codec patch (MergedBaseBuilder.patchCustomPayloadInterop) hard-references
+	// net.forbric.loader.impl.compat.ForbricCustomPayloadInterop — a purely-reflective cross-ecosystem payload-codec
+	// unifier (its only deps are ForbricLog + fabric-loader's Log, all bundled in this oracle jar). It is invoked on
+	// every custom_payload encode/decode, so world-join fails with NoClassDefFoundError without it. Supplied on the
+	// BOOT classpath (via printBootClasspath → each launch script's parent -cp): ForbricClassLoader's parent-fallback
+	// resolves it, and it reflects against the GAME loader (loaderFor(id,…)), so boot-loading is correct. runtimeOnly
+	// = zero compile coupling to the differential-oracle loader. TODO(kernel ③): reimplement natively (PayloadTable).
+	// forbricruntime carries ForbricForgeRuntimeInterop#forgeFluidType, which the merged-base compat transformer's
+	// re-added MinecraftForge getFluidType() bridge delegates to (the Forge/Neo FluidType ABI split).
+	runtimeOnly files('../forbric-loader/build/libs/forbric-loader-0.1.0-SNAPSHOT.jar',
+			'../forbric-loader/build/libs/forbricruntime-0.1.0-SNAPSHOT.jar')
+
+	// TOML (mods.toml) + JSON (fabric.mod.json) readers — same libs the ecosystems use.
+	api "com.electronwill.night-config:core:${project.night_config_version}"
+	api "com.electronwill.night-config:toml:${project.night_config_version}"
+	api "com.electronwill.night-config:json:${project.night_config_version}"
+
+	testImplementation "org.junit.jupiter:junit-jupiter:${project.junit_version}"
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release = 21
+}
+
+// The GAME-side set only compiles when the staged jars exist. Point developers at the pipeline otherwise.
+tasks.named('compileRuntimeJava') {
+	onlyIf {
+		if (stagedGameJars.isEmpty()) {
+			logger.lifecycle('compileRuntimeJava: SKIPPED — staged game jars absent. Run ' +
+					'../forbric-loader/run/build-merged-base.sh + assemble-{minecraftforge,neoforge}-runtime.sh first.')
+			return false
+		}
+		return true
+	}
+}
+
+test {
+	useJUnitPlatform()
+}
+
+// BOOT jar: parent-loaded kernel core (classloading, discovery, resolve, transform, mixin service, mapping, access,
+// metadata, vendored fabric api surface). No game types.
+//
+// MixinExtras rides along under META-INF/jars. It must NOT be parent-loaded (the LocalRef generated-class law: its
+// generated classes must share the game's loader), so the boot orchestrator extracts it and hands it to
+// ForbricClassLoader as an owned jar. Bundling keeps the kernel self-sufficient — no launcher-supplied path.
+jar {
+	archiveBaseName = 'forbric-kernel'
+	into('META-INF/jars') {
+		from configurations.nestedMods
+		rename '.*\\.jar', 'mixinextras-fabric.jar'
+	}
+}
+
+// GAME jar: forbric-kernel-runtime — the transforming-classloader-defined half; JiJ-nests MixinExtras.
+tasks.register('runtimeJar', Jar) {
+	archiveBaseName = 'forbric-kernel-runtime'
+	dependsOn 'compileRuntimeJava'
+	from sourceSets.runtime.output
+	into('META-INF/jars') {
+		from configurations.nestedMods
+		rename '.*\\.jar', 'mixinextras-fabric.jar'
+	}
+}
+
+// Emits the boot-side runtime classpath so launch scripts can compose it with the game classpath.
+tasks.register('printBootClasspath') {
+	doLast { println sourceSets.main.runtimeClasspath.asPath }
+}

@@ -1,0 +1,79 @@
+diff --git a/minecraft/src/main/java/net/fabricmc/loader/impl/game/minecraft/Hooks.java b/minecraft/src/main/java/net/fabricmc/loader/impl/game/minecraft/Hooks.java
+index f331bbd..43eb4da 100644
+--- a/minecraft/src/main/java/net/fabricmc/loader/impl/game/minecraft/Hooks.java
++++ b/minecraft/src/main/java/net/fabricmc/loader/impl/game/minecraft/Hooks.java
+@@ -33,6 +33,14 @@ public final class Hooks {
+ 	public static final String FABRIC = "fabric";
+ 	public static final String VANILLA = "vanilla";
+ 
++	/**
++	 * Forbric: when true, the "main" (ModInitializer) entrypoints are NOT invoked by these hooks — the
++	 * Forbric bridge mod invokes them inside Forge's genuine registration window (UNFREEZE_DATA..FREEZE_DATA),
++	 * because on a Forge-patched game base the registries are locked NamespacedWrappers by the time the
++	 * vanilla hook points run.
++	 */
++	private static final String FORBRIC_DEFER_MAIN = "forbric.fabricMainDeferred";
++
+ 	public static String insertBranding(final String brand) {
+ 		if (brand == null || brand.isEmpty()) {
+ 			Log.warn(LogCategory.GAME_PROVIDER, "Null or empty branding found!", new IllegalStateException());
+@@ -49,8 +57,44 @@ public final class Hooks {
+ 
+ 		FabricLoaderImpl loader = FabricLoaderImpl.INSTANCE;
+ 		loader.prepareModInit(runDir.toPath(), gameInstance);
+-		loader.invokeEntrypoints("main", ModInitializer.class, ModInitializer::onInitialize);
+-		loader.invokeEntrypoints("client", ClientModInitializer.class, ClientModInitializer::onInitializeClient);
++
++		if (!Boolean.getBoolean(FORBRIC_DEFER_MAIN)) {
++			loader.invokeEntrypoints("main", ModInitializer.class, ModInitializer::onInitialize);
++			loader.invokeEntrypoints("client", ClientModInitializer.class, ClientModInitializer::onInitializeClient);
++		} else {
++			// Forbric: on a Forge-patched base the BuiltInRegistries are locked NamespacedWrappers, and the deferred
++			// "main" window (bridge RegisterEvent) only fires later, during ClientModLoader. Fabric mods register
++			// content in BOTH "main" and "client" (e.g. particle types in onInitializeClient — fallingleaves), so run
++			// the deferred mains AND the client entrypoints inside ONE registry-unlock span here, before the client
++			// stage would otherwise hit a locked registry. Idempotent (RAN guard) so the later bridge firing no-ops.
++			runForbricClientInit(() ->
++					loader.invokeEntrypoints("client", ClientModInitializer.class, ClientModInitializer::onInitializeClient));
++		}
++	}
++
++	/**
++	 * Forbric: run the deferred Fabric {@code "main"} entrypoints and the {@code "client"} entrypoints inside one
++	 * registration-unlock span, via the Knot-loaded {@code ForbricClientWindow} dispatcher (reflection — that class
++	 * lives in the Knot-loaded {@code forbricruntime} jar, invisible to this parent-loaded hook; the thread context
++	 * classloader is the {@code KnotClassLoader} here). The dispatcher routes to whichever Forge family is staged
++	 * (traditional MinecraftForge or NeoForge). A genuine client-entrypoint failure propagates; only a missing
++	 * window class falls back to running the client stage directly.
++	 */
++	private static void runForbricClientInit(Runnable clientInit) {
++		ClassLoader cl = Thread.currentThread().getContextClassLoader();
++		if (cl == null) cl = Hooks.class.getClassLoader();
++		try {
++			Class.forName("net.forbric.loader.impl.forge.runtime.ForbricClientWindow", true, cl)
++					.getMethod("runClientInitUnlocked", Runnable.class).invoke(null, clientInit);
++		} catch (java.lang.reflect.InvocationTargetException e) {
++			Throwable cause = e.getCause() != null ? e.getCause() : e;
++			if (cause instanceof RuntimeException) throw (RuntimeException) cause;
++			if (cause instanceof Error) throw (Error) cause;
++			throw new RuntimeException(cause);
++		} catch (ReflectiveOperationException e) {
++			Log.warn(LogCategory.ENTRYPOINT, "Forbric: registry-unlock window unavailable; running client init directly", e);
++			clientInit.run();
++		}
+ 	}
+ 
+ 	public static void startServer(File runDir, Object gameInstance) {
+@@ -60,7 +104,11 @@ public final class Hooks {
+ 
+ 		FabricLoaderImpl loader = FabricLoaderImpl.INSTANCE;
+ 		loader.prepareModInit(runDir.toPath(), gameInstance);
+-		loader.invokeEntrypoints("main", ModInitializer.class, ModInitializer::onInitialize);
++
++		if (!Boolean.getBoolean(FORBRIC_DEFER_MAIN)) {
++			loader.invokeEntrypoints("main", ModInitializer.class, ModInitializer::onInitialize);
++		}
++
+ 		loader.invokeEntrypoints("server", DedicatedServerModInitializer.class, DedicatedServerModInitializer::onInitializeServer);
+ 	}
+ 
