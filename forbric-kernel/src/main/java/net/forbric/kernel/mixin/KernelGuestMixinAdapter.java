@@ -21,8 +21,10 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -31,7 +33,6 @@ import com.electronwill.nightconfig.json.JsonFormat;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -47,19 +48,26 @@ import net.forbric.kernel.util.ForbricLog;
  * never assigned, an {@code @Inject} anchor moved, a param was re-typed. Generic erasure lets many such mixins APPLY
  * with no error and then misbehave at runtime (the archetype: {@code fabric-rendering-v1}'s {@code GuiRendererMixin}
  * reads {@code GuiRenderer.pictureInPictureRenderers}, which the NeoForge-won merge never assigns → NPE). Whether a
- * mixin applies cleanly is therefore not a usable signal; the target class's provenance is.
+ * mixin applies cleanly is therefore not a usable signal.
  *
- * <p>So this scans each mixin's {@code @Mixin} target and drops the ones that target a class the merged base rebuilt
- * from Forge/NeoForge — {@link #OWNED_TARGETS} exact names plus {@link #OWNED_TARGET_PREFIXES} package prefixes,
- * the set proven in the old {@code forbric-loader} against full fabric-api + sodium/iris on the merged client.
- * PURE accessor/invoker mixins are KEPT even when they target an owned class: they inject no behaviour, and OTHER
- * code casts the target to the {@code @Accessor} interface they contribute — dropping one turns a working read into
- * a {@code ClassCastException}. Mixins on {@link MergedBaseMixinCompat#KEPT_MIXINS} are KEPT for the same reason one
- * level up: {@code @Mixin(Foo.class) class FooMixin implements Bar} is the mod's cast contract on {@code Foo}, so
- * suppressing it breaks every {@code (Bar) foo} the mod performs — that list explains why it is measured per mixin
- * rather than derived. Mixin also abandons the ENTIRE target class if one mixin fails during context
- * creation, so an owned-class mixin that would fail takes a co-located load-bearing mixin down with it; suppressing
- * it up front is what keeps the rest.
+ * <p><b>Provenance is not a usable signal either.</b> This used to drop every mixin whose target matched a
+ * hand-curated owned-class/package table. That was wrong at the root: the merged base IS NeoForge's patched
+ * Minecraft ({@code MergedBaseBuilder} takes NeoForge as the base and splices Forge in — {@code forge=195
+ * neo=10161 MERGED=611}), so "Forge/NeoForge owns this class" describes ~93% of the jar. Measured over the 163
+ * suppressions that rule actually made, 108 targeted a class byte-identical to NeoForge's own jar, and restoring
+ * them costs nothing. The table also could not see the failures that matter: fabric-block-api-v1 redirects
+ * {@code BlockState.isAir()} inside {@code LevelChunkSection.setBlockState}, which the merged base calls as
+ * {@code isEmpty()} — silently dead, on a class the table never listed.
+ *
+ * <p>So the question is asked directly instead: {@link MixinFit} resolves every anchor the mixin names — each
+ * {@code @Shadow} member, each injector's target method, each {@code @At(target=…)} — against the merged target's
+ * real bytecode, and reports whether they still exist. See {@link MixinFit.Result#shouldSuppress()} for why a
+ * partially-resolving mixin is kept by default rather than dropped.
+ *
+ * <p>Two exemptions survive. PURE accessor/invoker mixins are always kept: they inject no behaviour, and other code
+ * casts the target to the {@code @Accessor} interface they contribute. And whenever a mixin IS dropped, every mixin
+ * depending on an interface it contributed is dropped with it — see {@link MixinFit#contributedInterfaces} — because
+ * a lone drop converts the mod's {@code (Bar) foo} casts into {@code ClassCastException}s.
  *
  * <p>This runs at the point {@link ForbricMixinService} rewrites a config's JSON, so it needs no separate mod-jar
  * inventory: the config names its mixin package, and each mixin class is a game resource resolvable through the same
@@ -67,42 +75,6 @@ import net.forbric.kernel.util.ForbricLog;
  * break with no owned target); this removes the need to hand-list the owned-target ones.
  */
 public final class KernelGuestMixinAdapter {
-	/** Exact merged classes Forge/NeoForge rebuilt that a guest mixin must not inject into. */
-	private static final Set<String> OWNED_TARGETS = Set.of(
-			"net/minecraft/client/gui/GuiGraphicsExtractor",
-			"net/minecraft/client/renderer/EndFlashState",
-			"net/minecraft/client/renderer/GameRenderer",
-			"net/minecraft/client/renderer/ItemInHandRenderer",
-			"net/minecraft/client/renderer/LevelRenderer",
-			"net/minecraft/client/renderer/LightmapRenderStateExtractor",
-			"net/minecraft/client/renderer/OrderedSubmitNodeCollector",
-			"net/minecraft/client/renderer/Projection",
-			"net/minecraft/client/renderer/ScreenEffectRenderer",
-			"net/minecraft/client/renderer/SkyRenderer",
-			"net/minecraft/client/renderer/SubmitNodeCollection",
-			"net/minecraft/client/renderer/SubmitNodeStorage",
-			"net/minecraft/client/renderer/WeatherEffectRenderer",
-			"net/minecraft/server/network/config/SynchronizeRegistriesTask",
-			"net/minecraft/tags/TagNetworkSerialization");
-
-	/** Package prefixes of the merged renderer/model pipeline Forge/NeoForge rebuilt wholesale. */
-	private static final List<String> OWNED_TARGET_PREFIXES = List.of(
-			"net/minecraft/client/gui/render/",
-			"net/minecraft/client/particle/",
-			"net/minecraft/client/renderer/block/",
-			"net/minecraft/client/renderer/blockentity/",
-			"net/minecraft/client/renderer/chunk/",
-			"net/minecraft/client/renderer/debug/",
-			"net/minecraft/client/renderer/entity/",
-			"net/minecraft/client/renderer/extract/",
-			"net/minecraft/client/renderer/feature/",
-			"net/minecraft/client/renderer/fog/",
-			"net/minecraft/client/renderer/item/",
-			"net/minecraft/client/renderer/rendertype/",
-			"net/minecraft/client/renderer/state/",
-			"net/minecraft/client/resources/model/");
-
-	private static final String MIXIN_DESC = "Lorg/spongepowered/asm/mixin/Mixin;";
 	private static final String ACCESSOR_DESC = "Lorg/spongepowered/asm/mixin/gen/Accessor;";
 	private static final String INVOKER_DESC = "Lorg/spongepowered/asm/mixin/gen/Invoker;";
 
@@ -116,12 +88,11 @@ public final class KernelGuestMixinAdapter {
 
 	/**
 	 * The mixin entries in {@code configJson} (as they appear in its {@code mixins}/{@code client}/{@code server}
-	 * arrays) that target a Forge/NeoForge-owned merged class and are not pure accessors. {@code resource} resolves
-	 * a resource path ({@code some/pkg/Name.class}) to its bytes, or null. Best-effort: any parse/scan failure on
-	 * one entry skips that entry, never the config.
+	 * arrays) that no longer fit the merged base, plus anything transitively broken by dropping them.
+	 * {@code resource} resolves a resource path ({@code some/pkg/Name.class}) to its bytes, or null. Best-effort:
+	 * any parse/scan failure on one entry skips that entry, never the config.
 	 */
-	public static List<String> ownedNonAccessorMixins(String configName, byte[] configJson,
-			Function<String, byte[]> resource) {
+	public static List<String> unfitMixins(String configName, byte[] configJson, Function<String, byte[]> resource) {
 		if (!enabled()) return List.of();
 
 		UnmodifiableConfig config;
@@ -141,82 +112,74 @@ public final class KernelGuestMixinAdapter {
 		if (mixins.isEmpty()) return List.of();
 
 		String pkgPath = pkg.replace('.', '/');
+		Map<String, byte[]> loaded = new LinkedHashMap<>();
 		List<String> suppress = new ArrayList<>();
+
 		for (String mixin : mixins) {
 			byte[] classBytes = resource.apply(pkgPath + "/" + mixin.replace('.', '/') + ".class");
 			if (classBytes == null) continue;
+			loaded.put(mixin, classBytes);
 			try {
-				String target = mixinTarget(classBytes);
-				if (target == null || !isOwnedTarget(target)) continue;
-				if (isPureAccessorMixin(classBytes)) {
-					ForbricLog.debug("[Forbric/Mixin] keeping accessor/invoker mixin %s:%s though it targets "
-							+ "Forge/NeoForge-owned merged class %s", configName, mixin, target.replace('/', '.'));
-					continue;
-				}
-				if (isExplicitlyKept(configName, mixin)) {
-					ForbricLog.info("[Forbric/Mixin] keeping mixin %s:%s though it targets Forge/NeoForge-owned "
-							+ "merged class %s — it contributes an interface the mod casts the target to",
-							configName, mixin, target.replace('/', '.'));
+				if (isPureAccessorMixin(classBytes)) continue;
+				if (isExplicitlyKept(configName, mixin)) continue;
+
+				MixinFit.Result fit = MixinFit.evaluate(classBytes, resource);
+				if (!fit.shouldSuppress()) {
+					if (fit.verdict() == MixinFit.Verdict.PARTIAL) {
+						ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s applies only partially on the merged base "
+								+ "— %s (kept; -Dforbric.mixinFit=strict drops these)", configName, mixin,
+								fit.reason());
+					}
 					continue;
 				}
 				suppress.add(mixin);
-				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — targets Forge/NeoForge-owned "
-						+ "merged class %s (written against vanilla bytecode the merge rebuilt)", configName, mixin,
-						target.replace('/', '.'));
+				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — %s on the merged base (%s)",
+						configName, mixin, fit.verdict(), fit.reason());
 			} catch (RuntimeException perMixin) {
 				ForbricLog.debug("[Forbric/Mixin] could not scan guest mixin %s:%s — %s", configName, mixin,
 						String.valueOf(perMixin));
 			}
 		}
+
+		closeOverCastContracts(configName, loaded, suppress);
 		return suppress;
 	}
 
-	/** The internal name of the class a {@code @Mixin} targets ({@code value} Class or {@code targets} String), or null. */
-	private static String mixinTarget(byte[] classBytes) {
-		ClassNode node = new ClassNode();
-		new ClassReader(classBytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
-		String t = mixinTarget(node.visibleAnnotations);
-		return t != null ? t : mixinTarget(node.invisibleAnnotations);
-	}
+	/**
+	 * Drops every mixin that depends on a duck-type interface a dropped mixin was contributing, until nothing new is
+	 * dropped.
+	 *
+	 * <p>Without this, suppressing one half of a cast contract is worse than suppressing neither. Verified live:
+	 * {@code fabric-rendering-v1}'s {@code GuiRendererMixin implements GuiRendererExtensions} and is dropped as a
+	 * HAZARD (it {@code @Shadow}s the orphaned {@code pictureInPictureRenderers}); its sibling
+	 * {@code GameRendererMixin} does {@code checkcast GuiRendererExtensions} and resolves cleanly, so it would be
+	 * kept — and would then throw {@code ClassCastException} on a path that works today.
+	 */
+	private static void closeOverCastContracts(String configName, Map<String, byte[]> loaded, List<String> suppress) {
+		for (int round = 0; round < 8; round++) {
+			Set<String> contracts = new LinkedHashSet<>();
+			for (String dropped : suppress) {
+				byte[] bytes = loaded.get(dropped);
+				if (bytes != null) contracts.addAll(MixinFit.contributedInterfaces(MixinFit.parse(bytes)));
+			}
+			if (contracts.isEmpty()) return;
 
-	private static String mixinTarget(List<AnnotationNode> annotations) {
-		if (annotations == null) return null;
-		for (AnnotationNode a : annotations) {
-			if (!MIXIN_DESC.equals(a.desc) || a.values == null) continue;
-			for (int i = 0; i + 1 < a.values.size(); i += 2) {
-				Object key = a.values.get(i);
-				if ("value".equals(key) || "targets".equals(key)) {
-					String t = firstTarget(a.values.get(i + 1));
-					if (t != null) return t;
+			List<String> added = new ArrayList<>();
+			for (Map.Entry<String, byte[]> e : loaded.entrySet()) {
+				if (suppress.contains(e.getKey())) continue;
+				try {
+					if (!MixinFit.referencesAny(MixinFit.parse(e.getValue()), contracts)) continue;
+				} catch (RuntimeException unreadable) {
+					continue;
 				}
+				added.add(e.getKey());
+				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — it casts the target to an "
+						+ "interface a suppressed sibling contributes, which would ClassCastException",
+						configName, e.getKey());
 			}
+			if (added.isEmpty()) return;
+			suppress.addAll(added);
 		}
-		return null;
-	}
-
-	private static String firstTarget(Object value) {
-		if (value instanceof List<?> list) {
-			for (Object element : list) {
-				String t = firstTarget(element);
-				if (t != null) return t;
-			}
-			return null;
-		}
-		if (value instanceof Type type) return type.getInternalName();
-		if (value instanceof String s) {
-			String name = s.trim();
-			if (name.startsWith("L") && name.endsWith(";")) name = name.substring(1, name.length() - 1);
-			return name.replace('.', '/');
-		}
-		return null;
-	}
-
-	private static boolean isOwnedTarget(String target) {
-		if (OWNED_TARGETS.contains(target)) return true;
-		for (String prefix : OWNED_TARGET_PREFIXES) {
-			if (target.startsWith(prefix)) return true;
-		}
-		return false;
 	}
 
 	/**

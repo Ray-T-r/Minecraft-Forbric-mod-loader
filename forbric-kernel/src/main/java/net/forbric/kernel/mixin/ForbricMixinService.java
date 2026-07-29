@@ -330,8 +330,8 @@ public final class ForbricMixinService
 				// Derive, from THIS config, the mixins that target a Forge/NeoForge-owned merged class — the general
 				// form of MergedBaseMixinCompat's hand-listed renderer/pipeline entries. Each mixin class is a game
 				// resource resolvable through the same loader, so no separate mod-jar inventory is needed.
-				for (String owned : KernelGuestMixinAdapter.ownedNonAccessorMixins(name, bytes,
-						r -> readGameResource(r))) {
+				for (String owned : KernelGuestMixinAdapter.unfitMixins(name, bytes,
+						r -> readAdapterClass(r))) {
 					if (!drop.contains(owned)) drop.add(owned);
 				}
 			}
@@ -382,13 +382,49 @@ public final class ForbricMixinService
 		}
 	}
 
-	/** Reads a game resource ({@code some/pkg/Name.class}) to its bytes, or null — the adapter's class-byte source. */
+	/** Reads a game resource ({@code some/pkg/Name.class}) to its bytes, or null. */
 	private static byte[] readGameResource(String resourcePath) {
 		try (InputStream in = loader().getGameResourceAsStream(resourcePath)) {
 			return in == null ? null : in.readAllBytes();
 		} catch (IOException e) {
 			return null;
 		}
+	}
+
+	/** Cache for {@link #readAdapterClass}: ~70 configs re-request the same merged targets. */
+	private static final java.util.Map<String, byte[]> ADAPTER_CLASS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+	private static final byte[] NOT_FOUND = new byte[0];
+
+	/**
+	 * The class bytes {@link KernelGuestMixinAdapter} resolves mixin anchors against.
+	 *
+	 * <p>This MUST serve post-transform-chain bytes, not raw jar bytes: the chain both ADDS members (
+	 * {@code ForbricMergedBaseCompatTransformer.addMissingForgeKeyMappingLookupInitializer} installs the
+	 * {@code PUTSTATIC} for {@code KeyMapping.MAP}, which {@code merge-conflicts.txt} lists as "read but never
+	 * initialized") and REMOVES them ({@code dropInterfaceDefaultShadowingOverrides} deletes methods across
+	 * {@code net/minecraft/client/gui/**}). Resolving against the raw jar would judge the mixin against bytecode
+	 * that never reaches Mixin — the orphaned-field check in particular would report a false hazard on
+	 * {@code KeyMapping.MAP}.
+	 *
+	 * <p>Falls back to the raw resource for a MIXIN's own class, which is not a game class and so is not transformed.
+	 */
+	private static byte[] readAdapterClass(String resourcePath) {
+		byte[] cached = ADAPTER_CLASS_CACHE.get(resourcePath);
+		if (cached != null) return cached == NOT_FOUND ? null : cached;
+
+		byte[] bytes = null;
+		if (resourcePath.endsWith(".class")) {
+			String className = resourcePath.substring(0, resourcePath.length() - ".class".length()).replace('/', '.');
+			try {
+				bytes = loader().getPreMixinClassBytes(className);
+			} catch (Throwable notAGameClass) {
+				bytes = null;
+			}
+		}
+		if (bytes == null) bytes = readGameResource(resourcePath);
+
+		ADAPTER_CLASS_CACHE.put(resourcePath, bytes == null ? NOT_FOUND : bytes);
+		return bytes;
 	}
 
 	/** Whether {@code name} looks like a mixin config file — the only resources the owned-target scan should read. */
