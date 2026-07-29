@@ -106,8 +106,22 @@ public final class MergedBaseMixinCompat {
 	 * <p>{@code fabric-rendering-v1}'s {@code GuiRendererMixin} + {@code GameRendererMixin} USED to be hand-listed
 	 * here and are the reason {@link KernelGuestMixinAdapter} exists — the archetypal owned-target case (NeoForge won
 	 * {@code GuiRenderer.<init>}, re-typed its {@code List} param, orphaned the {@code pictureInPictureRenderers}
-	 * field the mixin {@code @Shadow}s; erasure hides it so the inject applies then reads null → NPE). The adapter now
-	 * derives both from the {@code net/minecraft/client/gui/render/} prefix, so they are gone from this list.
+	 * field the mixin {@code @Shadow}s; erasure hides it so the inject applies then reads null → NPE). Both are gone
+	 * from this list: {@link MixinFit}'s orphaned-{@code @Shadow} check names that hazard directly, and
+	 * {@link PostMixinFixups#seedOrphanedPipRenderers} repairs it at the source so the mixin can simply be KEPT.
+	 *
+	 * <p><b>{@code fabric-model-loading-api-v1}'s {@code ModelManagerMixin} is the measured case for dropping a
+	 * PARTIAL.</b> {@link MixinFit} rates it {@code 15/17}: everything resolves except
+	 * {@code @At(INVOKE) ModelManager.fromStream in lambda$loadBlockModels$2}, because the merged (NeoForge-patched)
+	 * {@code ModelManager} no longer reads model JSON through {@code fromStream} there. That is textbook
+	 * half-application — the mixin's {@code actuallyDeserializeModel} wrapper DOES install, so every model json is
+	 * handed to Fabric's deserializer registry with the stream half never wired up, and all 4666 block models die on
+	 * {@code JsonParseException: JSON data was null or empty}. The world then builds correctly out of the
+	 * missing-model cube, so the ONLY symptom is that every block is the magenta/black {@code missingno} checkerboard
+	 * while the GUI, fonts and item icons stay perfect — no crash, no error the renderer can attribute. Suppressed,
+	 * block models load (0 failures) and the world renders fully textured. This is precisely why PARTIAL defaults to
+	 * KEEP but is logged with its missing anchors: strict mode drops 107 mixins including Sodium's core render path,
+	 * whereas the log points at the one that actually matters. Pin measured PARTIALs here, one at a time.
 	 */
 	public static final List<String> SUPPRESSED_MIXINS = List.of(
 			"fabric-registry-sync-v0.mixins.json:RegistryDataLoaderMixin",
@@ -118,7 +132,9 @@ public final class MergedBaseMixinCompat {
 			"fabric-creative-tab-api-v1.client.mixins.json:CreativeModeInventoryScreenMixin",
 			// The two server-side auto-suppressions, pinned so the derived rule owns the client only.
 			"fabric-resource-loader-v1.mixins.json:SynchronizeRegistriesTaskMixin",
-			"jade.mixins.json:FogRendererMixin");
+			"jade.mixins.json:FogRendererMixin",
+			// Measured PARTIAL: half-applied, kills all 4666 block models → whole world is missingno. See above.
+			"fabric-model-loading-api-v1.mixins.json:ModelManagerMixin");
 
 	/**
 	 * Whole mixin configs to leave unregistered, because no sub-selection of their mixins is coherent.
