@@ -190,16 +190,16 @@ class KernelGuestMixinAdapterTest {
 
 	@Test
 	void dropsOrphanedShadowButKeepsAnIntactMixinOnTheSameOwnedPackage() {
-		String gui = "net/minecraft/client/gui/render/GuiRenderer";
+		String gui = "net/minecraft/client/gui/render/SomeGuiThing";
 		String ok = "net/minecraft/client/renderer/LevelRenderer";
 		Map<String, byte[]> classes = new HashMap<>();
 		// The archetype: private, declared, NEVER assigned.
-		classes.put(gui + ".class", target(gui, "pictureInPictureRenderers", Opcodes.ACC_PRIVATE, false));
+		classes.put(gui + ".class", target(gui, "orphanedRenderers", Opcodes.ACC_PRIVATE, false));
 		// Same owned package, but the shadowed field is assigned — under the OLD rule this was dropped too.
 		classes.put(ok + ".class", target(ok, "sectionsToRender", Opcodes.ACC_PRIVATE, true));
 
 		classes.put(PKG + "/GuiRendererMixin.class",
-				shadowingMixin("GuiRendererMixin", gui, "pictureInPictureRenderers"));
+				shadowingMixin("GuiRendererMixin", gui, "orphanedRenderers"));
 		classes.put(PKG + "/LevelRendererMixin.class",
 				shadowingMixin("LevelRendererMixin", ok, "sectionsToRender"));
 
@@ -240,14 +240,14 @@ class KernelGuestMixinAdapterTest {
 	void dropsTheDependentHalfOfACastContract() {
 		// GuiRendererMixin implements GuiRendererExtensions and is dropped as a HAZARD; GameRendererMixin resolves
 		// cleanly but casts to that interface, so keeping it alone would ClassCastException.
-		String gui = "net/minecraft/client/gui/render/GuiRenderer";
+		String gui = "net/minecraft/client/gui/render/SomeGuiThing";
 		String game = "net/minecraft/client/renderer/GameRenderer";
 		String contract = "net/fabricmc/fabric/impl/client/rendering/GuiRendererExtensions";
 		Map<String, byte[]> classes = new HashMap<>();
-		classes.put(gui + ".class", target(gui, "pictureInPictureRenderers", Opcodes.ACC_PRIVATE, false));
+		classes.put(gui + ".class", target(gui, "orphanedRenderers", Opcodes.ACC_PRIVATE, false));
 		classes.put(game + ".class", target(game, "unused", Opcodes.ACC_PRIVATE, true));
 		classes.put(PKG + "/GuiRendererMixin.class",
-				shadowingMixin("GuiRendererMixin", gui, "pictureInPictureRenderers", contract));
+				shadowingMixin("GuiRendererMixin", gui, "orphanedRenderers", contract));
 		classes.put(PKG + "/GameRendererMixin.class", castingMixin("GameRendererMixin", game, contract));
 
 		List<String> dropped = KernelGuestMixinAdapter.unfitMixins("example.mixins.json",
@@ -260,9 +260,9 @@ class KernelGuestMixinAdapterTest {
 
 	@Test
 	void keepsPureAccessorsEvenOnAnOrphanedTarget() {
-		String gui = "net/minecraft/client/gui/render/GuiRenderer";
+		String gui = "net/minecraft/client/gui/render/SomeGuiThing";
 		Map<String, byte[]> classes = new HashMap<>();
-		classes.put(gui + ".class", target(gui, "pictureInPictureRenderers", Opcodes.ACC_PRIVATE, false));
+		classes.put(gui + ".class", target(gui, "orphanedRenderers", Opcodes.ACC_PRIVATE, false));
 		classes.put(PKG + "/GuiRendererAccessor.class", accessorMixin("GuiRendererAccessor", gui));
 
 		assertTrue(KernelGuestMixinAdapter.unfitMixins("example.mixins.json",
@@ -272,10 +272,10 @@ class KernelGuestMixinAdapterTest {
 
 	@Test
 	void honoursTheExplicitKeepListOverTheDerivedVerdict() {
-		String gui = "net/minecraft/client/gui/render/GuiRenderer";
+		String gui = "net/minecraft/client/gui/render/SomeGuiThing";
 		Map<String, byte[]> classes = new HashMap<>();
-		classes.put(gui + ".class", target(gui, "pictureInPictureRenderers", Opcodes.ACC_PRIVATE, false));
-		classes.put(PKG + "/KeptMixin.class", shadowingMixin("KeptMixin", gui, "pictureInPictureRenderers"));
+		classes.put(gui + ".class", target(gui, "orphanedRenderers", Opcodes.ACC_PRIVATE, false));
+		classes.put(PKG + "/KeptMixin.class", shadowingMixin("KeptMixin", gui, "orphanedRenderers"));
 
 		System.setProperty("forbric.keepMixins", "example.mixins.json:KeptMixin");
 		try {
@@ -296,6 +296,22 @@ class KernelGuestMixinAdapterTest {
 
 		assertTrue(KernelGuestMixinAdapter.unfitMixins("example.mixins.json",
 				config(PKG.replace('/', '.'), "ForeignMixin"), resolver(classes)).isEmpty());
+	}
+
+	@Test
+	void anOrphanPostMixinFixupsSeedsIsNotAHazard() {
+		// GuiRenderer.pictureInPictureRenderers IS orphaned in the merged base, but PostMixinFixups seeds it with an
+		// empty map, so the mixins that @Shadow it work. Suppressing them instead broke MaLiLib: its MixinGameRenderer
+		// read the same map through mod-owned state and NPE'd during Minecraft.<init>.
+		String gui = "net/minecraft/client/gui/render/GuiRenderer";
+		Map<String, byte[]> classes = new HashMap<>();
+		classes.put(gui + ".class", target(gui, "pictureInPictureRenderers", Opcodes.ACC_PRIVATE, false));
+		classes.put(PKG + "/GuiRendererMixin.class",
+				shadowingMixin("GuiRendererMixin", gui, "pictureInPictureRenderers"));
+
+		assertTrue(KernelGuestMixinAdapter.unfitMixins("example.mixins.json",
+				config(PKG.replace('/', '.'), "GuiRendererMixin"), resolver(classes)).isEmpty(),
+				"a field the repair pass seeds must not be reported as an orphan");
 	}
 
 	@Test

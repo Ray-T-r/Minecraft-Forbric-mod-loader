@@ -301,6 +301,9 @@ public final class MixinFit {
 			// every @Shadow'd `static final int` — MAX_PAYLOAD_SIZE, FLAG_INSIDE_FACE, MAX_DESCRIPTION_WIDTH_PIXELS.
 			if (declared.value != null) continue;
 			if ((declared.access & Opcodes.ACC_PRIVATE) == 0) continue;
+			// PostMixinFixups seeds some orphans rather than letting them poison every reader; those are not
+			// hazards. This runs on pre-mixin (and therefore pre-repair) bytes, so it must be asked explicitly.
+			if (PostMixinFixups.isSeeded(target.name, f.name)) continue;
 			if (writesField(mixin, f.name)) continue;
 			if (nestWritesField(target, f.name, resolver)) continue;
 
