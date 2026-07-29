@@ -85,6 +85,15 @@ public final class MergedBaseMixinCompat {
 	 *       of the base. Cost: the {@code FabricCreativeModeInventoryScreen} duck interface is no longer implanted,
 	 *       so a Fabric mod extending creative-screen paging would ClassCastException — none of the current set
 	 *       does, and that API could never work correctly under the NeoForge pager anyway.</li>
+	 *   <li><b>resource-loader {@code SynchronizeRegistriesTaskMixin} + jade {@code FogRendererMixin}</b> — PINNED,
+	 *       not diagnosed. These two are the ONLY mixins {@link KernelGuestMixinAdapter} auto-suppresses on the
+	 *       SERVER (verified: {@code gate-m2b-boot.log} and {@code gate-m4-boot.log} each report exactly these two;
+	 *       gate-m1 and gate-m7-neo report none). Every other auto-suppression — 163 of them — is client-only.
+	 *       Naming them here freezes the server surface against the derived rule, so any change to that rule is
+	 *       provably client-only and cannot move gate-m1/m2b/m4/m7-neo. This matters because a resolution-based
+	 *       rule would otherwise KEEP {@code SynchronizeRegistriesTaskMixin} (its shadows and anchors all resolve),
+	 *       putting an untested change directly in the blast radius of "Loaded 1585 recipes" and the registered-
+	 *       content counts. Revisit only with a deliberate measurement, never as a side effect.</li>
 	 * </ul>
 	 *
 	 * <p>{@code fabric-resource-loader-v1}'s {@code PackRepositoryMixin} USED to be suppressed here — it made the
@@ -106,7 +115,10 @@ public final class MergedBaseMixinCompat {
 			"fabric-registry-sync-v0.mixins.json:MainMixin",
 			"fabric-registry-sync-v0.client.mixins.json:MinecraftMixin",
 			"fabric-loot-api-v3.mixins.json:ReloadableServerRegistriesMixin",
-			"fabric-creative-tab-api-v1.client.mixins.json:CreativeModeInventoryScreenMixin");
+			"fabric-creative-tab-api-v1.client.mixins.json:CreativeModeInventoryScreenMixin",
+			// The two server-side auto-suppressions, pinned so the derived rule owns the client only.
+			"fabric-resource-loader-v1.mixins.json:SynchronizeRegistriesTaskMixin",
+			"jade.mixins.json:FogRendererMixin");
 
 	/**
 	 * Whole mixin configs to leave unregistered, because no sub-selection of their mixins is coherent.
