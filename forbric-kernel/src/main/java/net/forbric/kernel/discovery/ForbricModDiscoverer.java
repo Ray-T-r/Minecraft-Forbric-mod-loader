@@ -33,6 +33,7 @@ import net.forbric.kernel.metadata.fabric.FabricModJsonReader;
 import net.forbric.kernel.metadata.forge.ForgeMetadataMapper;
 import net.forbric.kernel.metadata.forge.ForgeModsToml;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
+import net.forbric.kernel.util.ForbricLog;
 
 /**
  * Forbric's single mod-discovery pass: it scans a {@code mods/} directory and recognizes BOTH ecosystems'
@@ -123,14 +124,21 @@ public final class ForbricModDiscoverer {
 			accessTransformers.add(DEFAULT_AT);
 		}
 
-		// Most real Forge mods declare mixins via the manifest MixinConfigs attribute, not [[mixins]].
+		// Most real MinecraftForge mods declare mixins via the manifest MixinConfigs attribute, not [[mixins]] —
+		// GeckoLib ships exactly `MixinConfigs: geckolib.mixins.json` and nothing in its toml. That attribute is a
+		// MinecraftForge/ModLauncher convention: NeoForge reads [[mixins]] from the toml and never looks at the
+		// manifest. Feeding it to BOTH families made a universal jar's NeoForge mod claim the Forge-side config too
+		// (collective would have registered collective_forge.mixins.json AND collective_neoforge.mixins.json).
 		List<String> manifestMixins = new ArrayList<>();
 		Manifest manifest = jar.getManifest();
 		String attr = manifest == null ? null : manifest.getMainAttributes().getValue("MixinConfigs");
-		if (attr != null) {
+		if (attr != null && ecosystem == ModEcosystem.FORGE) {
 			for (String config : attr.split(",")) {
 				if (!config.strip().isEmpty()) manifestMixins.add(config.strip());
 			}
+		} else if (attr != null) {
+			ForbricLog.debug("[Forbric] ignoring manifest MixinConfigs '%s' for the %s side of %s — that attribute "
+					+ "is a MinecraftForge convention; NeoForge declares mixins in [[mixins]]", attr, ecosystem, source);
 		}
 
 		sink.addAll(ForgeMetadataMapper.toDiscoveredMods(toml, jarVersion, source, accessTransformers,

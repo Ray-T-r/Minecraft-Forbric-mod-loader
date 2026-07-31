@@ -53,10 +53,16 @@ public final class KernelMixinBootstrap {
 	/**
 	 * Initializes Mixin with {@code configs} and installs the weaver on {@code loader}.
 	 *
-	 * @param configs mixin config resource names, already filtered to the running side
+	 * @param declared mixin config resource names, already filtered to the running side; de-duplicated here
 	 */
-	public static void init(ForbricClassLoader loader, EnvType side, List<String> configs) {
+	public static void init(ForbricClassLoader loader, EnvType side, List<String> declared) {
 		if (initialized) throw new IllegalStateException("Mixin already bootstrapped");
+
+		// Registering the same name twice is not a correctness problem — Mixins.registerConfiguration dedupes — but
+		// it dedupes only AFTER Config.create has read and rewritten the JSON through
+		// ForbricMixinService.getResourceAsStream, which re-runs KernelGuestMixinAdapter and re-emits every
+		// "suppressed mixin" line. Now that two ecosystems feed this list, collapse it up front.
+		List<String> configs = List.copyOf(new java.util.LinkedHashSet<>(declared));
 
 		if (configs.isEmpty()) {
 			ForbricLog.info("[Forbric/Mixin] no mixin configs declared — Mixin not started");
