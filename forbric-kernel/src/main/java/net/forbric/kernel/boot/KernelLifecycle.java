@@ -128,7 +128,7 @@ public final class KernelLifecycle {
 		// spawning. Client-scoped (its integrated server shares these statics); the dedicated server path is untouched.
 		if (client) setupNeoForgeNetwork(cl);
 		// Step 3: register mods' @EventBusSubscriber game-event listeners (FML's AutomaticEventSubscriber, native).
-		KernelEventSubscribers.registerAll(cl, modJars);
+		KernelEventSubscribers.registerAll(cl, modJars, client);
 		// Step 3b: post the FML setup lifecycle at every NeoForge mod. Genuine NeoForge produces these inside
 		// CommonModLoader.load(), whose only client caller is ClientModLoader.finish() — which the kernel neuters
 		// because it also drives the discovery/registration the kernel owns. Nothing replaced the setup phases, so

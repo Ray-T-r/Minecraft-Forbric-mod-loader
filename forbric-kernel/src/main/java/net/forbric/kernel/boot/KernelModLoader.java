@@ -86,6 +86,21 @@ public final class KernelModLoader {
 
 	private static volatile Map<String, NeoIdentity> publishedNeo = Map.of();
 
+	/**
+	 * The traditional-Forge mods this kernel constructed, by mod id — the MinecraftForge counterpart of
+	 * {@link #publishedNeoMods()}.
+	 *
+	 * <p>Exposed for {@link KernelEventSubscribers}, which needs a subscriber's owning mod to answer two questions
+	 * FML answers from its own container registry: which {@code BusGroup} a {@code bus = MOD} subscriber belongs on,
+	 * and which container must be ACTIVE while registering (Forge's {@code bus = BOTH} routing resolves the mod bus
+	 * through {@code FMLJavaModLoadingContext.get()}). The handle used to die as a local in {@link KernelLifecycle}.
+	 */
+	public static Map<String, KernelForgeModContext.Handle> publishedForgeMods() {
+		return publishedForge;
+	}
+
+	private static volatile Map<String, KernelForgeModContext.Handle> publishedForge = Map.of();
+
 	/** Scans + constructs every {@code @Mod} in {@code modJars}. Best-effort per mod. */
 	public static List<ConstructedMod> constructMods(ForbricClassLoader loader, ClassLoader cl, List<Path> modJars,
 			boolean client) {
@@ -136,16 +151,21 @@ public final class KernelModLoader {
 
 		// Phase 3 — construct.
 		List<ConstructedMod> built = new ArrayList<>();
+		Map<String, KernelForgeModContext.Handle> forge = new LinkedHashMap<>();
 		for (ModAnnotationScanner.ModClassInfo info : claimed) {
 			try {
-				built.add(info.family == Family.MINECRAFTFORGE
+				ConstructedMod mod = info.family == Family.MINECRAFTFORGE
 						? constructForgeFamilyMod(cl, info)
-						: constructNeoFamilyMod(cl, info, neo.get(safeId(info)), client));
+						: constructNeoFamilyMod(cl, info, neo.get(safeId(info)), client);
+				built.add(mod);
+				// One handle per mod id — a mod may annotate several classes, and they share a bus group.
+				if (mod.forgeHandle() != null) forge.putIfAbsent(mod.modId(), mod.forgeHandle());
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/ModLoader] failed to construct @Mod " + info.className,
 						KernelBusSupport.unwrap(t));
 			}
 		}
+		publishedForge = Map.copyOf(forge);
 		return built;
 	}
 
