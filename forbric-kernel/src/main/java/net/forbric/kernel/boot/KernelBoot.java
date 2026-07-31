@@ -30,6 +30,7 @@ import net.fabricmc.api.EnvType;
 import net.forbric.kernel.access.ClassTweakerTransformer;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.metadata.DiscoveredMod;
 import net.forbric.kernel.metadata.ModEcosystem;
 import net.forbric.kernel.mixin.KernelMixinBootstrap;
 import net.forbric.kernel.transform.ClientPackHookInjector;
@@ -131,7 +132,8 @@ public final class KernelBoot {
 
 		// Forge/NeoForge mod jars (Mojmap-compiled like the merged base → load directly, no remap), plus the
 		// libraries they nest at META-INF/jarjar/ — see extractForgeFamilyJarJar.
-		List<Path> modJars = discoverForgeFamilyModJars(gameDir.resolve("mods"));
+		ForgeFamilyMods forgeFamily = discoverForgeFamilyModJars(gameDir.resolve("mods"));
+		List<Path> modJars = new ArrayList<>(forgeFamily.jars());
 		modJars.addAll(extractForgeFamilyJarJar(modJars, gameDir));
 		for (Path jar : modJars) owned.add(jar.toUri().toURL());
 
@@ -229,8 +231,44 @@ public final class KernelBoot {
 		KernelLifecycle.setRuntimeJars(runtimeJars);
 		KernelFabricEcosystem.bindGameLoader(loader);
 
+		// The FML loader IDENTITY must exist before Mixin starts, not with the rest of the seeding below.
+		//
+		// A mixin config may declare an IMixinConfigPlugin, and Mixin instantiates every plugin during select() —
+		// which fires on the FIRST game class load. That is always earlier than PassiveSeeder.seedAll, and seedAll
+		// itself loads game classes, so the dependency is circular: seeding FMLLoader triggers select(), and
+		// ferritecore's plugin needs FMLPaths.CONFIGDIR and FMLLoader.getCurrent() in its <clinit>. Unseeded it died
+		// on "Cannot invoke Path.resolve because FMLPaths.get() is null", then on "There is no current FML Loader",
+		// each time inside a class definition, which took the whole boot with it.
+		//
+		// Seeding here is safe precisely because the loader has no mixin transformer yet, so these loads cannot
+		// recurse into select(). The cost is that these few classes are never weavable — measured and acceptable:
+		// across every mod jar in the gates and the client, the only net/neoforged/fml class any guest mixin so much
+		// as names is ImmediateWindowHandler, which is not on this path. seedAll repeats both calls; both are
+		// idempotent.
+		PassiveSeeder.seedNeoForgePaths(loader, gameDir);
+		PassiveSeeder.seedNeoForgeLoader(loader, gameDir, side == Side.SERVER, side == Side.CLIENT);
+
 		// Mixin LAST in the pipeline but FIRST in time: installed before anything defines a targeted class.
-		KernelMixinBootstrap.init(loader, side.envType, KernelFabricEcosystem.mixinConfigs());
+		//
+		// Fabric first, Forge-family APPENDED. Within one environment Mixin selects by priority (the config's, then
+		// each @Mixin's); registration order is only the tiebreak among equal priorities, where a later-registered
+		// mixin applies AFTER an earlier one on the same target. Appending therefore leaves every existing
+		// Fabric-vs-Fabric ordering byte-identical — so gate-m2b cannot move for ordering reasons — and makes the
+		// newly-introduced, least-proven set the OUTER wrapper around a known-good stack rather than the inner one.
+		List<String> fabricConfigs = KernelFabricEcosystem.mixinConfigs();
+		List<String> forgeConfigs = KernelForgeFamilyMixins.select(forgeFamily.mixinConfigs());
+		List<String> mixinConfigs = new ArrayList<>(fabricConfigs);
+		for (String config : forgeConfigs) {
+			if (!mixinConfigs.contains(config)) mixinConfigs.add(config);
+		}
+		if (!forgeConfigs.isEmpty() || !forgeFamily.mixinConfigs().isEmpty()) {
+			ForbricLog.info("[Forbric/Mixin] mixin configs: %d Fabric + %d Forge-family (%d NeoForge, %d "
+					+ "MinecraftForge) — %s", fabricConfigs.size(), forgeConfigs.size(),
+					KernelForgeFamilyMixins.count(forgeFamily.mixinConfigs(), forgeConfigs, ModEcosystem.NEOFORGE),
+					KernelForgeFamilyMixins.count(forgeFamily.mixinConfigs(), forgeConfigs, ModEcosystem.FORGE),
+					forgeConfigs.isEmpty() ? "none kept" : String.join(", ", forgeConfigs));
+		}
+		KernelMixinBootstrap.init(loader, side.envType, mixinConfigs);
 
 		// Seed the minimum genuine-loader identity the merged base's patched <clinit>s read (no lifecycle). The
 		// Dist must match the side — a client seeded as DEDICATED_SERVER makes NeoForge reject the local player's
@@ -433,19 +471,27 @@ public final class KernelBoot {
 		return extracted;
 	}
 
-	private static List<Path> discoverForgeFamilyModJars(Path modsDir) {
+	/**
+	 * The Forge-family half of discovery: the jars the kernel must own, AND every mixin config they declare.
+	 *
+	 * <p>The configs used to be computed here and thrown away — this method collapsed the {@code DiscoveredMod} list
+	 * to one boolean. Nothing else on the boot path ever reads Forge-family metadata again (the {@code @Mod} pass is
+	 * a separate ASM scan that never opens a manifest), so that was the only place they could be captured.
+	 */
+	private record ForgeFamilyMods(List<Path> jars, List<KernelForgeFamilyMixins.ForgeMixinConfig> mixinConfigs) {
+	}
+
+	private static ForgeFamilyMods discoverForgeFamilyModJars(Path modsDir) {
 		List<Path> jars = new ArrayList<>();
-		if (!Files.isDirectory(modsDir)) return jars;
+		List<KernelForgeFamilyMixins.ForgeMixinConfig> configs = new ArrayList<>();
+		if (!Files.isDirectory(modsDir)) return new ForgeFamilyMods(jars, configs);
 		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
 		try (var entries = Files.list(modsDir)) {
 			List<Path> candidates = entries.filter(p -> p.getFileName().toString().endsWith(".jar"))
 					.filter(Files::isRegularFile).sorted().toList();
 			for (Path jar : candidates) {
 				try {
-					boolean forgeFamily = discoverer.discoverJar(jar).stream()
-							.anyMatch(m -> m.getEcosystem() == ModEcosystem.FORGE
-									|| m.getEcosystem() == ModEcosystem.NEOFORGE);
-					if (forgeFamily) jars.add(jar);
+					collectForgeFamily(discoverer, jar, jars, configs);
 				} catch (IOException e) {
 					ForbricLog.warn("could not inspect mod jar %s: %s", jar.getFileName(), e.getMessage());
 				}
@@ -453,7 +499,30 @@ public final class KernelBoot {
 		} catch (IOException e) {
 			ForbricLog.warn("could not list mods dir %s: %s", modsDir, e.getMessage());
 		}
-		return jars;
+		return new ForgeFamilyMods(jars, configs);
+	}
+
+	/**
+	 * Records {@code jar} as Forge-family (if it is) and appends the mixin configs it declares.
+	 *
+	 * <p>De-duplicated per jar: {@code ForgeMetadataMapper} copies one manifest's config list into EVERY
+	 * {@code DiscoveredMod} that manifest declares, so a toml with three {@code [[mods]]} yields the same list three
+	 * times. Cross-jar de-duplication and arbitration happen later, in {@link KernelForgeFamilyMixins}.
+	 */
+	private static void collectForgeFamily(ForbricModDiscoverer discoverer, Path jar, List<Path> jars,
+			List<KernelForgeFamilyMixins.ForgeMixinConfig> configs) throws IOException {
+		boolean forgeFamily = false;
+		java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+		for (DiscoveredMod mod : discoverer.discoverJar(jar)) {
+			if (!mod.getEcosystem().isForgeFamily()) continue;
+			forgeFamily = true;
+			for (String config : mod.getMixinConfigs()) {
+				if (seen.add(mod.getEcosystem() + " " + config)) {
+					configs.add(new KernelForgeFamilyMixins.ForgeMixinConfig(config, jar, mod.getEcosystem()));
+				}
+			}
+		}
+		if (forgeFamily) jars.add(jar);
 	}
 
 	/**

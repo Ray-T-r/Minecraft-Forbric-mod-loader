@@ -34,6 +34,7 @@ import net.forbric.kernel.fabric.KernelFabricLoader;
 import net.forbric.kernel.fabric.KernelModContainer;
 import net.forbric.kernel.fabric.KernelModMetadata;
 import net.forbric.kernel.mixin.MergedBaseMixinCompat;
+import net.forbric.kernel.mixin.MixinConfigPolicy;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -180,7 +181,7 @@ public final class KernelFabricEcosystem {
 			for (KernelModMetadata.MixinConfigDecl decl : ((KernelModContainer) mod).getMetadata().getMixinConfigs()) {
 				if (!decl.environment().matches(envType)) continue;
 
-				if (isDisabled(decl.config())) {
+				if (MixinConfigPolicy.isDisabled(decl.config())) {
 					ForbricLog.warn("[Forbric/Mixin] mixin config %s DISABLED by -Dforbric.disableMixinConfigs — "
 							+ "that module's mixins will not apply", decl.config());
 					continue;
@@ -191,56 +192,6 @@ public final class KernelFabricEcosystem {
 		}
 
 		return configs;
-	}
-
-	/**
-	 * Whether {@code config} must not be registered: either it is on the built-in merged-base incompatibility list
-	 * ({@link MergedBaseMixinCompat#DISABLED_CONFIGS}) or {@code -Dforbric.disableMixinConfigs} names it (csv; a
-	 * trailing {@code *} is a prefix glob). Registering nothing for a config is stronger than suppressing
-	 * individual mixins: it takes a whole module's mixins out of the picture, which is what an all-or-nothing
-	 * module (and bisecting) needs.
-	 *
-	 * <p>{@code -Dforbric.enableMixinConfigs} (csv) forces a config back ON over the built-in list. That list is a
-	 * record of what was true when each entry was measured, and the merged base keeps changing underneath it — so
-	 * re-testing an entry has to be one flag, not an edit-and-rebuild. It overrides only the built-in list, never an
-	 * explicit {@code -Dforbric.disableMixinConfigs} on the same command line.
-	 */
-	private static boolean isDisabled(String config) {
-		if (MergedBaseMixinCompat.enabled() && MergedBaseMixinCompat.DISABLED_CONFIGS.contains(config)
-				&& !isForceEnabled(config)) {
-			return true;
-		}
-
-		String csv = System.getProperty("forbric.disableMixinConfigs");
-		if (csv == null || csv.isEmpty()) return false;
-
-		for (String raw : csv.split(",")) {
-			String entry = raw.trim();
-			if (entry.isEmpty()) continue;
-
-			if (entry.endsWith("*")) {
-				if (config.startsWith(entry.substring(0, entry.length() - 1))) return true;
-			} else if (config.equals(entry)) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/** Whether {@code -Dforbric.enableMixinConfigs} (csv) names {@code config}, forcing it on over the built-in list. */
-	private static boolean isForceEnabled(String config) {
-		String csv = System.getProperty("forbric.enableMixinConfigs");
-		if (csv == null || csv.isEmpty()) return false;
-
-		for (String raw : csv.split(",")) {
-			if (config.equals(raw.trim())) {
-				ForbricLog.warn("[Forbric/Mixin] mixin config %s FORCE-ENABLED by -Dforbric.enableMixinConfigs over "
-						+ "the built-in merged-base incompatibility list — expect the recorded breakage", config);
-				return true;
-			}
-		}
-		return false;
 	}
 
 	/** Publishes the game object (the {@code MinecraftServer}) for {@code FabricLoader.getGameInstance()}. */
