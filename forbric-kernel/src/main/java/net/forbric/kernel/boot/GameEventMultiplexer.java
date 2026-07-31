@@ -16,7 +16,11 @@
 
 package net.forbric.kernel.boot;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
@@ -80,6 +84,114 @@ public final class GameEventMultiplexer {
 			ForbricLog.warn("[Forbric/EventMux] could not install Neo→Forge game-event bridge",
 					KernelBusSupport.unwrap(t));
 		}
+	}
+
+	/**
+	 * NeoForge {@code AddClientReloadListenersEvent} → MinecraftForge {@code RegisterClientReloadListenersEvent}.
+	 *
+	 * <p>Same shape as the tick bridge, one layer up: NeoForge won the client reload-listener path in the byte merge
+	 * (the base calls {@code neoforge/client/ClientHooks} and carries ZERO references to the MinecraftForge event),
+	 * so a traditional-Forge mod's {@code @SubscribeEvent RegisterClientReloadListenersEvent} handler is registered
+	 * on a bus nobody ever posts to. GeckoLib's whole client model/animation cache hangs off exactly that.
+	 *
+	 * <p>The two events have incompatible shapes — Forge's hands out a {@code ReloadableResourceManager} and takes
+	 * unnamed listeners, NeoForge's takes {@code (Identifier, listener)} pairs and sorts them in a dependency graph.
+	 * {@code ReloadableResourceManager} is a class, not an interface, so it cannot be proxied; instead a THROWAWAY
+	 * instance is used purely as a capture buffer ({@code registerReloadListener} delegates straight to it), and what
+	 * lands in it is then fed into NeoForge's graph under a synthesised {@code forbric:forge/…} name. Going through
+	 * the graph rather than registering on the real manager is deliberate: it is the officially-correct path on a
+	 * NeoForge-derived base and needs no assumption about whether a late direct registration is still honoured.
+	 *
+	 * @param modBus the NeoForge mod bus the game posts client mod-bus events to; {@code AddClientReloadListenersEvent}
+	 *               is an {@code IModBusEvent}, so the game bus would never see it
+	 */
+	public static void installClientReloadBridge(ClassLoader cl, Object modBus) {
+		if (modBus == null) {
+			ForbricLog.debug("[Forbric/EventMux] no NeoForge mod bus — skipping the client reload-listener bridge");
+			return;
+		}
+		try {
+			Class<?> neoEvent = Class.forName(
+					"net.neoforged.neoforge.client.event.AddClientReloadListenersEvent", false, cl);
+			Class<?> forgeEvent = Class.forName(
+					"net.minecraftforge.client.event.RegisterClientReloadListenersEvent", false, cl);
+			Class<?> rrmCls = Class.forName("net.minecraft.server.packs.resources.ReloadableResourceManager", false, cl);
+			Class<?> packTypeCls = Class.forName("net.minecraft.server.packs.PackType", false, cl);
+			Class<?> identifierCls = Class.forName("net.minecraft.resources.Identifier", false, cl);
+			Class<?> reloadListenerCls = Class.forName(
+					"net.minecraft.server.packs.resources.PreparableReloadListener", false, cl);
+			Class<?> eventBusCls = Class.forName("net.minecraftforge.eventbus.api.bus.EventBus", false, cl);
+
+			Constructor<?> scratchCtor = rrmCls.getConstructor(packTypeCls);
+			@SuppressWarnings({"unchecked", "rawtypes"})
+			Object clientPacks = Enum.valueOf((Class) packTypeCls, "CLIENT_RESOURCES");
+			// The manager's ctor seeds this with an empty ArrayList, so the field is safe to read straight after.
+			Field captured = rrmCls.getDeclaredField("listeners");
+			captured.setAccessible(true);
+
+			Constructor<?> forgeEventCtor = forgeEvent.getConstructor(rrmCls);
+			Object forgeBus = forgeEvent.getField("BUS").get(null);
+			// EventBus<E extends Event>, so post erases to post(Event) — not post(Object). Look it up by shape so a
+			// change to the bound does not silently disable the bridge.
+			Method found = null;
+			for (Method m : eventBusCls.getMethods()) {
+				if ("post".equals(m.getName()) && m.getParameterCount() == 1) {
+					found = m;
+					break;
+				}
+			}
+			if (found == null) throw new NoSuchMethodException(eventBusCls.getName() + ".post(<event>)");
+			Method post = found;
+			Method fromNamespaceAndPath = identifierCls.getMethod("fromNamespaceAndPath", String.class, String.class);
+			Method addToGraph = neoEvent.getMethod("addListener", identifierCls, reloadListenerCls);
+
+			Class<?> busCls = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
+			Class<?> prioCls = Class.forName("net.neoforged.bus.api.EventPriority", false, cl);
+			@SuppressWarnings({"unchecked", "rawtypes"})
+			Object lowest = Enum.valueOf((Class) prioCls, "LOWEST");
+			Method addListener = busCls.getMethod("addListener", prioCls, boolean.class, Class.class, Consumer.class);
+
+			Consumer<Object> bridge = event -> {
+				try {
+					Object scratch = scratchCtor.newInstance(clientPacks);
+					post.invoke(forgeBus, forgeEventCtor.newInstance(scratch));
+
+					List<?> listeners = (List<?>) captured.get(scratch);
+					int n = 0;
+					for (Object listener : listeners) {
+						Object id = fromNamespaceAndPath.invoke(null, "forbric",
+								"forge/" + sanitisePath(listener.getClass().getName()) + "_" + n);
+						addToGraph.invoke(event, id, listener);
+						n++;
+					}
+					if (n > 0) {
+						ForbricLog.info("[Forbric/EventMux] bridged %d Forge client reload listener(s) into "
+								+ "NeoForge's sorted graph", n);
+					} else {
+						ForbricLog.debug("[Forbric/EventMux] no Forge mod registered a client reload listener");
+					}
+				} catch (Throwable t) {
+					ForbricLog.warn("[Forbric/EventMux] could not bridge Forge client reload listeners",
+							KernelBusSupport.unwrap(t));
+				}
+			};
+			addListener.invoke(modBus, lowest, false, neoEvent, bridge);
+			ForbricLog.info("[Forbric/EventMux] installed the Neo→Forge client reload-listener bridge");
+		} catch (ClassNotFoundException single) {
+			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no reload-listener bridge needed");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/EventMux] could not install the client reload-listener bridge",
+					KernelBusSupport.unwrap(t));
+		}
+	}
+
+	/** A class name reduced to the {@code [a-z0-9._/-]} an {@code Identifier} path allows. */
+	private static String sanitisePath(String className) {
+		StringBuilder out = new StringBuilder(className.length());
+		for (char c : className.toLowerCase(Locale.ROOT).toCharArray()) {
+			out.append((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' ? c : '_');
+		}
+		return out.toString();
 	}
 
 	/** NeoForge {@code ServerTickEvent.Pre/Post} → Forge {@code ForgeEventFactory.onPre/PostServerTick}. */

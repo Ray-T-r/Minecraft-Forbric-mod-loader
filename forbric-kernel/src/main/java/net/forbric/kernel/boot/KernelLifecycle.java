@@ -122,6 +122,11 @@ public final class KernelLifecycle {
 		// attachments, configuration tasks, model data, …) never fired. Must precede step 2d — the network setup posts
 		// its Register*PayloadHandlersEvent to exactly these subscribers.
 		KernelEventSubscribers.registerNeoForgeInternal(cl, runtimeJars, baselineBus, client);
+		// Step 2c3 (client only): NeoForge won the client reload-listener path in the byte merge, so MinecraftForge's
+		// RegisterClientReloadListenersEvent is never posted and a Forge mod's handler for it sits on a dead bus.
+		// Bridge it off NeoForge's AddClientReloadListenersEvent, which ClientHooks.initClientHooks posts to the
+		// baseline mod bus during Minecraft.<init> — i.e. after this point, which is why the listener goes on now.
+		if (client) GameEventMultiplexer.installClientReloadBridge(cl, baselineBus);
 		// Step 2d (client only): run NeoForge's two-phase network setup, which posts the Register*PayloadHandlersEvent
 		// pair to the subscribers wired above so its built-in play payloads (neoforge:recipe_content, …) become
 		// sendable AND have client handlers. Without it the player is kicked "Invalid player data" right after
