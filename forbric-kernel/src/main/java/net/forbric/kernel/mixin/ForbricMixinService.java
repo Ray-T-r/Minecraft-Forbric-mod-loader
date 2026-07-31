@@ -505,17 +505,32 @@ public final class ForbricMixinService
 		guestConfigs = java.util.Set.copyOf(guests);
 	}
 
-	/** Kernel/ecosystem-runtime configs, never relaxed — a genuine failure in our own code must crash loudly. */
-	private static boolean isInfrastructureConfig(String config) {
-		return config.startsWith("forbric") || config.startsWith("forge.") || config.startsWith("neoforge.")
-				|| config.startsWith("minecraft.");
+	/**
+	 * Kernel configs, never relaxed — a genuine failure in our own code must crash loudly.
+	 *
+	 * <p>This used to also exclude {@code forge.}, {@code neoforge.} and {@code minecraft.}, on the theory that they
+	 * name the ecosystem runtimes' own configs. They do not reach here: the runtimes arrive via {@code --runtimeJar}
+	 * (see {@code KernelBoot}), which contributes nothing to mixin discovery, and discovery only scans
+	 * {@code <gameDir>/mods}. Meanwhile the moment Forge/NeoForge GUEST configs joined the registered set, those
+	 * prefixes became a live hazard: a guest config legitimately named {@code forge.mixins.json} or
+	 * {@code neoforge.mixins.json} would silently not be relaxed, so one unpatchable injector in it becomes a fatal
+	 * {@code MixinApplyError} instead of the soft skip that general relaxation exists to provide.
+	 *
+	 * <p>Keep {@code forbric}: the kernel authors no mixins today, but if it ever does, that one must fail loudly.
+	 */
+	static boolean isInfrastructureConfig(String config) {
+		return config.startsWith("forbric");
 	}
 
 	/**
 	 * Whether this config is relaxed: it came from a guest mod, or {@code -Dforbric.relaxMixinOverwrites} names it
 	 * (trailing {@code *} = prefix glob). {@code -Dforbric.relaxGuestMixins=off} restores strict behaviour.
+	 *
+	 * <p>Package-private rather than private so a test can pin which names relax without booting Mixin — the
+	 * distinction is invisible at runtime until exactly one injector fails, at which point it decides between a soft
+	 * skip and a fatal apply error.
 	 */
-	private static boolean isRelaxedConfig(String name) {
+	static boolean isRelaxedConfig(String name) {
 		if (guestConfigs.contains(name)) return true;
 
 		String csv = System.getProperty("forbric.relaxMixinOverwrites");
