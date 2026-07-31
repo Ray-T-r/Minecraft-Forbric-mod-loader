@@ -134,8 +134,16 @@ public final class KernelBoot {
 		// libraries they nest at META-INF/jarjar/ — see extractForgeFamilyJarJar.
 		ForgeFamilyMods forgeFamily = discoverForgeFamilyModJars(gameDir.resolve("mods"));
 		List<Path> modJars = new ArrayList<>(forgeFamily.jars());
-		modJars.addAll(extractForgeFamilyJarJar(modJars, gameDir));
+		List<Path> nested = extractForgeFamilyJarJar(modJars, gameDir);
+		modJars.addAll(nested);
 		for (Path jar : modJars) owned.add(jar.toUri().toURL());
+
+		// A nested mod's mixins are the same defect one level down. These jars already get everything else a
+		// top-level mod gets — they are owned, and KernelModLoader scans them for @Mod, which is how whitenoise
+		// (inside Mob Champions) is constructed — so leaving their configs out would be arbitrary. Pure libraries
+		// declare none and cost one manifest read.
+		List<KernelForgeFamilyMixins.ForgeMixinConfig> forgeMixinDecls = new ArrayList<>(forgeFamily.mixinConfigs());
+		forgeMixinDecls.addAll(discoverNestedForgeMixinConfigs(nested));
 
 		// Fabric mods (+ extracted JiJ children). Also Mojmap on this game version. Creates the FabricLoader.
 		List<Path> fabricJars = KernelFabricEcosystem.discover(side.envType, gameDir, gameVersion,
@@ -256,16 +264,16 @@ public final class KernelBoot {
 		// Fabric-vs-Fabric ordering byte-identical — so gate-m2b cannot move for ordering reasons — and makes the
 		// newly-introduced, least-proven set the OUTER wrapper around a known-good stack rather than the inner one.
 		List<String> fabricConfigs = KernelFabricEcosystem.mixinConfigs();
-		List<String> forgeConfigs = KernelForgeFamilyMixins.select(forgeFamily.mixinConfigs());
+		List<String> forgeConfigs = KernelForgeFamilyMixins.select(forgeMixinDecls);
 		List<String> mixinConfigs = new ArrayList<>(fabricConfigs);
 		for (String config : forgeConfigs) {
 			if (!mixinConfigs.contains(config)) mixinConfigs.add(config);
 		}
-		if (!forgeConfigs.isEmpty() || !forgeFamily.mixinConfigs().isEmpty()) {
+		if (!forgeConfigs.isEmpty() || !forgeMixinDecls.isEmpty()) {
 			ForbricLog.info("[Forbric/Mixin] mixin configs: %d Fabric + %d Forge-family (%d NeoForge, %d "
 					+ "MinecraftForge) — %s", fabricConfigs.size(), forgeConfigs.size(),
-					KernelForgeFamilyMixins.count(forgeFamily.mixinConfigs(), forgeConfigs, ModEcosystem.NEOFORGE),
-					KernelForgeFamilyMixins.count(forgeFamily.mixinConfigs(), forgeConfigs, ModEcosystem.FORGE),
+					KernelForgeFamilyMixins.count(forgeMixinDecls, forgeConfigs, ModEcosystem.NEOFORGE),
+					KernelForgeFamilyMixins.count(forgeMixinDecls, forgeConfigs, ModEcosystem.FORGE),
 					forgeConfigs.isEmpty() ? "none kept" : String.join(", ", forgeConfigs));
 		}
 		KernelMixinBootstrap.init(loader, side.envType, mixinConfigs);
@@ -479,6 +487,22 @@ public final class KernelBoot {
 	 * a separate ASM scan that never opens a manifest), so that was the only place they could be captured.
 	 */
 	private record ForgeFamilyMods(List<Path> jars, List<KernelForgeFamilyMixins.ForgeMixinConfig> mixinConfigs) {
+	}
+
+	/** The mixin configs declared by JarJar-extracted nested jars. Same pass, applied to the children. */
+	private static List<KernelForgeFamilyMixins.ForgeMixinConfig> discoverNestedForgeMixinConfigs(List<Path> nested) {
+		List<KernelForgeFamilyMixins.ForgeMixinConfig> configs = new ArrayList<>();
+		if (nested.isEmpty()) return configs;
+		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
+		List<Path> ignored = new ArrayList<>();
+		for (Path jar : nested) {
+			try {
+				collectForgeFamily(discoverer, jar, ignored, configs);
+			} catch (IOException e) {
+				ForbricLog.warn("could not inspect nested mod jar %s: %s", jar.getFileName(), e.getMessage());
+			}
+		}
+		return configs;
 	}
 
 	private static ForgeFamilyMods discoverForgeFamilyModJars(Path modsDir) {
