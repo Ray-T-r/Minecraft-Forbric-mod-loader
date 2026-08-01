@@ -374,8 +374,15 @@ public final class KernelLifecycle {
 			// be fired once NewRegistryEvent (inside) has created Forge's custom registries.
 			KernelForgeBaseline.register(cl, forgeHandles);
 			// Fabric mods' onInitialize() calls Registry.register(...) directly, so it belongs in this same unfrozen
-			// span. It runs BEFORE the bake below so the bake sees Fabric-registered content.
-			KernelFabricEcosystem.runMainEntrypoints();
+			// span. It runs BEFORE the bake below so the bake sees Fabric-registered content. The root registry is
+			// opened right here because NewRegistryEvent.fill() above re-froze it: a Fabric mod declaring its own
+			// registry goes through FabricRegistryBuilder, which is a plain Registry.register into that root.
+			rootRegistry(cl, true);
+			try {
+				KernelFabricEcosystem.runMainEntrypoints();
+			} finally {
+				rootRegistry(cl, false);
+			}
 			// Bake the ForgeRegistries. Note a DeferredRegister's RegistryObjects bind during their OWN registry's
 			// RegisterEvent above (DeferredRegister$EventDispatcher calls updateReference right after each register),
 			// not here — so a mod reading another mod's RegistryObject during RegisterEvent depends on the dispatch
@@ -895,6 +902,179 @@ public final class KernelLifecycle {
 	}
 
 	/**
+	 * Opens or closes the ROOT registry, which both ecosystems' {@code GameData} leaves alone.
+	 *
+	 * <p>Called immediately around the Fabric entrypoints rather than folded into {@link #unfreeze}: NeoForge's
+	 * {@code NewRegistryEvent.fill()} registers the mod-declared registries into the root and re-freezes it on the
+	 * way out, so an earlier unfreeze is undone before any Fabric code runs.
+	 *
+	 * <p>{@code unfreezeData} walks the registries INSIDE {@code BuiltInRegistries.REGISTRY} and unfreezes each;
+	 * the root holding them stays frozen. That is fine for Forge and NeoForge, whose mods declare a new registry
+	 * through {@code NewRegistryEvent} during a phase the kernel drives itself. Fabric has no such event — a mod
+	 * calls {@code FabricRegistryBuilder.buildAndRegister()} straight from {@code onInitialize}, which is a plain
+	 * {@code Registry.register} into the root. Lithostitched does exactly that and died on "Registry is already
+	 * frozen (trying to add key minecraft:root / lithostitched:modifier_type)" inside the kernel's own window,
+	 * where every other registry was open.
+	 */
+	private static void rootRegistry(ClassLoader cl, boolean open) {
+		try {
+			Class<?> builtIn = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
+
+			// REGISTRY is the public read view and on the merged base it is Forge-wrapped; WRITABLE_REGISTRY is the
+			// plain MappedRegistry that Registry.register actually validates against. Reopening only the first is
+			// the mistake that leaves this looking fixed while "Registry is already frozen" keeps being thrown.
+			for (String fieldName : new String[] {"REGISTRY", "WRITABLE_REGISTRY"}) {
+				Field field;
+				try {
+					field = builtIn.getDeclaredField(fieldName);
+				} catch (NoSuchFieldException notOnThisVersion) {
+					continue;
+				}
+				field.setAccessible(true);
+				Object root = field.get(null);
+				if (root == null) continue;
+
+				if (open) openRegistry(root); else root.getClass().getMethod("freeze").invoke(root);
+			}
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] no BuiltInRegistries to reopen — skipping");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not " + (open ? "unfreeze" : "freeze") + " the root registry "
+					+ "— a Fabric mod adding its own registry (FabricRegistryBuilder) may fail", unwrap(t));
+		}
+	}
+
+	/**
+	 * Reopens one registry for writing, whichever ecosystem owns it.
+	 *
+	 * <p>{@code unfreeze()} is a Forge-family ADDITION: vanilla's {@code MappedRegistry} declares only
+	 * {@code freeze()}, deliberately one-way. So a Forge-wrapped registry is reopened through its own method, and a
+	 * plain vanilla one by clearing the private flag {@code validateWrite} reads.
+	 */
+	private static void openRegistry(Object registry) throws Exception {
+		try {
+			registry.getClass().getMethod("unfreeze").invoke(registry);
+			return;
+		} catch (NoSuchMethodException vanilla) {
+			// falls through to the flag below
+		}
+
+		Class<?> mapped = Class.forName("net.minecraft.core.MappedRegistry", false, registry.getClass()
+				.getClassLoader());
+		Field frozen = mapped.getDeclaredField("frozen");
+		frozen.setAccessible(true);
+		frozen.setBoolean(registry, false);
+	}
+
+	/** What a reopened registration window has to put back when it closes. */
+	private record ReopenedRegistries(List<Object> lockedWrappers, List<Object> frozenForgeRegistries) {
+		static final ReopenedRegistries NONE = new ReopenedRegistries(List.of(), List.of());
+
+		int count() {
+			return lockedWrappers.size() + frozenForgeRegistries.size();
+		}
+	}
+
+	/**
+	 * Opens all THREE gates that stand between a late {@code Registry.register} and the registry it targets.
+	 *
+	 * <p>{@code unfreezeData} clears only the first. On the merged base every vanilla registry is additionally
+	 * wrapped by MinecraftForge, and Forge closes registration twice more:
+	 *
+	 * <ol>
+	 *   <li>vanilla {@code MappedRegistry.frozen} — cleared by {@code GameData.unfreezeData}</li>
+	 *   <li>{@code NamespacedWrapper.locked} — set by {@code GameData.postRegisterEvents} at the end of the main
+	 *       window. {@code ILockableRegistry} declares {@code lock()} and deliberately nothing to undo it, so the
+	 *       flag is cleared directly. Symptom while set: "Can not register to a locked registry."</li>
+	 *   <li>{@code ForgeRegistry.isFrozen} on the backing registry in {@code RegistryManager.ACTIVE} — this one
+	 *       does have {@code unfreeze()}. Symptom while set: "… is being added too late."</li>
+	 * </ol>
+	 *
+	 * <p>All three are Forge's answer to "a Forge mod should use {@code DeferredRegister}, not register late". A
+	 * Fabric mod has no such contract — it calls {@code Registry.register} directly, and on Fabric that keeps
+	 * working right through client init — so a window the kernel opens for Fabric code has to open all three.
+	 */
+	private static ReopenedRegistries reopenForgeRegistries(ClassLoader cl) {
+		List<Object> unlocked = new ArrayList<>();
+		List<Object> unfrozen = new ArrayList<>();
+
+		try {
+			Class<?> wrapper = Class.forName("net.minecraftforge.registries.NamespacedWrapper", false, cl);
+			Field lockedField = wrapper.getDeclaredField("locked");
+			lockedField.setAccessible(true);
+
+			for (Object registry : rootRegistries(cl)) {
+				if (!wrapper.isInstance(registry) || !lockedField.getBoolean(registry)) continue;
+
+				lockedField.setBoolean(registry, false);
+				unlocked.add(registry);
+			}
+		} catch (ClassNotFoundException | NoSuchFieldException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge registry lock to clear — skipping");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not clear the MinecraftForge registry lock", unwrap(t));
+		}
+
+		try {
+			Class<?> forgeRegistry = Class.forName("net.minecraftforge.registries.ForgeRegistry", false, cl);
+			Field isFrozen = forgeRegistry.getDeclaredField("isFrozen");
+			isFrozen.setAccessible(true);
+
+			for (Object registry : activeForgeRegistries(cl)) {
+				if (!isFrozen.getBoolean(registry)) continue;
+
+				forgeRegistry.getMethod("unfreeze").invoke(registry);
+				unfrozen.add(registry);
+			}
+		} catch (ClassNotFoundException | NoSuchFieldException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge ForgeRegistry to unfreeze — skipping");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not unfreeze the MinecraftForge registries", unwrap(t));
+		}
+
+		return new ReopenedRegistries(unlocked, unfrozen);
+	}
+
+	/** Puts back exactly what {@link #reopenForgeRegistries} opened, through Forge's own {@code lock}/{@code freeze}. */
+	private static void recloseForgeRegistries(ReopenedRegistries opened) {
+		for (Object registry : opened.frozenForgeRegistries()) {
+			invokeNoArg(registry, "freeze", "re-freeze a MinecraftForge registry");
+		}
+		for (Object registry : opened.lockedWrappers()) {
+			invokeNoArg(registry, "lock", "re-lock a MinecraftForge registry wrapper");
+		}
+	}
+
+	private static void invokeNoArg(Object target, String method, String what) {
+		try {
+			target.getClass().getMethod(method).invoke(target);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not " + what, unwrap(t));
+		}
+	}
+
+	/** Every registry in the root {@code BuiltInRegistries.REGISTRY}, plus the root itself. */
+	private static List<Object> rootRegistries(ClassLoader cl) throws Exception {
+		Class<?> builtIn = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
+		Object root = builtIn.getField("REGISTRY").get(null);
+		List<Object> all = new ArrayList<>();
+		all.add(root);
+
+		for (Object registry : (Iterable<?>) root) all.add(registry);
+		return all;
+	}
+
+	/** The {@code ForgeRegistry} instances backing {@code RegistryManager.ACTIVE}. */
+	private static List<Object> activeForgeRegistries(ClassLoader cl) throws Exception {
+		Class<?> managerCls = Class.forName("net.minecraftforge.registries.RegistryManager", false, cl);
+		Object active = managerCls.getField("ACTIVE").get(null);
+		Field registries = managerCls.getDeclaredField("registries");
+		registries.setAccessible(true);
+
+		return new ArrayList<>(((java.util.Map<?, ?>) registries.get(active)).values());
+	}
+
+	/**
 	 * BOTH ecosystems ship their own {@code GameData} (same API, different registry bookkeeping) and the kernel's
 	 * registration window must drive both — driving only MinecraftForge's left NeoForge's registry callbacks unfired,
 	 * so {@code NeoForgeRegistryCallbacks$BlockCallbacks.onBake} never rebuilt its blockstate→id map and the first
@@ -977,11 +1157,60 @@ public final class KernelLifecycle {
 		}
 	}
 
+	/**
+	 * Runs the Fabric client entrypoints with the registries REOPENED, because registering content from
+	 * {@code onInitializeClient} is ordinary Fabric practice and it has to keep working here.
+	 *
+	 * <p>On Fabric both entrypoint phases run at the head of {@code Minecraft.<init>}, and the freeze does not
+	 * happen until after that: {@code fabric-registry-sync-v0}'s {@code BuiltInRegistriesMixin} CANCELS the
+	 * {@code BuiltInRegistries.bootStrap()} vanilla performs during {@code Bootstrap}, and its {@code MainMixin}
+	 * re-runs it later in {@code Main.main}. The kernel owns registration instead and suppresses both of those
+	 * mixins, so by the time this hook fires its own window has already closed and every registry is frozen —
+	 * a mod registering here died, and if it swallowed the failure the damage surfaced far away. Xaero's World Map
+	 * registers its status effects from {@code loadCommon()} and catches Throwable into a field, so the only symptom
+	 * was {@code WorldMap.events} still being null a hundred ticks later, inside {@code Minecraft.runTick}.
+	 *
+	 * <p>Reopening is the smaller half of the job: the ids assigned here have to be rebuilt into NeoForge's
+	 * blockstate map and any late {@code BlockItem} linked back to its block, exactly as at the end of the main
+	 * window — otherwise the first block update fails to encode. Both run in a {@code finally} so a mod throwing
+	 * cannot leave the registries open.
+	 */
 	public static void onClientEntrypoints() {
+		ClassLoader cl = gameLoader;
+		ReopenedRegistries opened = ReopenedRegistries.NONE;
+		boolean reopened = false;
+
+		try {
+			unfreeze(cl);
+			rootRegistry(cl, true);
+			opened = reopenForgeRegistries(cl);
+			reopened = true;
+			ForbricLog.info("[Forbric/Lifecycle] registries reopened for the Fabric client entrypoints "
+					+ "(%d MinecraftForge gate(s) cleared)", opened.count());
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not reopen the registries for the Fabric client "
+					+ "entrypoints — a mod registering content from onInitializeClient will fail", unwrap(t));
+		}
+
 		try {
 			KernelFabricEcosystem.runClientEntrypoints();
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] client entrypoints failed", unwrap(t));
+		} finally {
+			if (reopened) closeClientEntrypointWindow(cl, opened);
+		}
+	}
+
+	/** Re-closes after the client entrypoints and redoes the id bookkeeping their registrations invalidated. */
+	private static void closeClientEntrypointWindow(ClassLoader cl, ReopenedRegistries opened) {
+		try {
+			linkBlockItems(cl);
+			recloseForgeRegistries(opened);
+			rootRegistry(cl, false);
+			freeze(cl);
+			rebuildNeoForgeBlockStateIds(cl);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not re-close after the Fabric client entrypoints", unwrap(t));
 		}
 	}
 }

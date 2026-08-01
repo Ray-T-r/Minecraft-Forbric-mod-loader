@@ -283,14 +283,51 @@ public final class KernelFabricEcosystem {
 			String id = c.getProvider().getMetadata().getId();
 
 			try {
-				action.accept(c.getEntrypoint());
+				T entrypoint = c.getEntrypoint();
+				action.accept(entrypoint);
 				count++;
 				ForbricLog.info("[Forbric/Fabric] invoked %s entrypoint of %s", key, id);
+				reportSwallowedFailure(key, id, entrypoint);
 			} catch (Throwable t) {
 				ForbricLog.error("[Forbric/Fabric] " + key + " entrypoint of " + id + " failed", t);
 			}
 		}
 
 		return count;
+	}
+
+	/**
+	 * Reports an initialization failure a mod caught and parked in one of its own fields instead of rethrowing.
+	 *
+	 * <p>{@code try { loadCommon(); loadClient(); } catch (Throwable t) { this.firstStageError = t; }} is a common
+	 * shape, and it turns a loader problem into a lie: the entrypoint returns normally, the kernel logs it as
+	 * invoked, and the mod then dies far away with something that names neither the cause nor the mod's own init.
+	 * Xaero's World Map does exactly this — its swallowed failure surfaced a hundred ticks later as
+	 * {@code "xaero.map.WorldMap.events" is null} inside {@code Minecraft.runTick}, with nothing in between.
+	 *
+	 * <p>So after a successful-looking entrypoint, any non-null {@code Throwable} field on the instance is surfaced
+	 * once, at the point it actually happened. This reads fields the mod declared on itself; it changes nothing.
+	 */
+	private static void reportSwallowedFailure(String key, String id, Object entrypoint) {
+		if (entrypoint == null) return;
+
+		for (java.lang.reflect.Field field : entrypoint.getClass().getDeclaredFields()) {
+			if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+					|| !Throwable.class.isAssignableFrom(field.getType())) {
+				continue;
+			}
+			try {
+				field.setAccessible(true);
+				Throwable parked = (Throwable) field.get(entrypoint);
+
+				if (parked != null) {
+					ForbricLog.warn("[Forbric/Fabric] " + key + " entrypoint of " + id + " returned normally but "
+							+ "caught its own failure into " + field.getName() + " — the mod is only PARTLY "
+							+ "initialised and will fail later somewhere unrelated", parked);
+				}
+			} catch (Throwable inaccessible) {
+				// A mod that hides the field from reflection simply keeps its secret; this is diagnostics only.
+			}
+		}
 	}
 }

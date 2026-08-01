@@ -24,11 +24,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import net.fabricmc.api.EnvType;
 
 import net.forbric.kernel.access.ClassTweakerTransformer;
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.classloading.LoaderProbePolicy;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.metadata.DiscoveredMod;
 import net.forbric.kernel.metadata.ModEcosystem;
@@ -37,6 +39,7 @@ import net.forbric.kernel.transform.ClientPackHookInjector;
 import net.forbric.kernel.transform.CommonNetworkInteropInjector;
 import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
 import net.forbric.kernel.transform.LifecycleHookInjector;
+import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
 import net.forbric.kernel.transform.RegistryHookRedirector;
 import net.forbric.kernel.transform.TransformChain;
@@ -170,6 +173,12 @@ public final class KernelBoot {
 		ForbricClassLoader loader = new ForbricClassLoader(owned.toArray(new URL[0]),
 				KernelBoot.class.getClassLoader());
 
+		// A jar that declares exactly ONE loader's manifest gets that loader's answer when its classes probe for a
+		// platform, so a Fabric mod cannot wander into a Forge branch it never ran on Fabric. Jars in both lists are
+		// universal — genuinely multi-platform, already arbitrated — and stay unowned here. See LoaderProbePolicy.
+		loader.setJarFamilies(singleFamilyJars(fabricJars, modJars));
+		LoaderProbePolicy.bindGuestLoader(loader);
+
 		TransformChain chain = new TransformChain();
 
 		// Fabric access wideners before Mixin (ACCESS phase): the weaver must see the widened members.
@@ -180,6 +189,11 @@ public final class KernelBoot {
 		// The Forge-family twin: every mod jar's META-INF/accesstransformer.cfg, in the same ACCESS phase.
 		net.forbric.kernel.access.AccessTransformer forgeAts = forgeFamilyAccessTransformer(modJars);
 		if (forgeAts != null) chain.register(TransformPhase.ACCESS, forgeAts);
+
+		// A guest mod's platform probe answers for the loader that mod was loaded as. Registered first in the phase:
+		// it rewrites only Class.forName call sites, so nothing later in the chain can be looking at what it edits.
+		LoaderProbeRewriter loaderProbes = new LoaderProbeRewriter(loader::familyOfClass);
+		if (LoaderProbePolicy.enabled()) chain.register(TransformPhase.COREMOD, loaderProbes);
 
 		LifecycleHookInjector lifecycleHook = side.injector();
 		chain.register(TransformPhase.COREMOD, lifecycleHook);
@@ -361,6 +375,28 @@ public final class KernelBoot {
 		}
 
 		return FALLBACK_GAME_VERSION;
+	}
+
+	/**
+	 * The owned jars that belong to exactly one loader family, for {@link LoaderProbePolicy}.
+	 *
+	 * <p>A jar in both lists carries both a {@code fabric.mod.json} and a Forge-family mods.toml: it is a genuine
+	 * multi-platform build whose own probes are how it finds out which half to run, so it is left out and keeps
+	 * seeing every loader. Everything else — the merged base, the runtime carriers, MC libraries — is never in
+	 * either list and is likewise unaffected.
+	 */
+	private static Map<Path, LoaderProbePolicy.Family> singleFamilyJars(List<Path> fabricJars, List<Path> modJars) {
+		Map<Path, LoaderProbePolicy.Family> families = new java.util.HashMap<>();
+		java.util.Set<Path> forgeFamily = new java.util.HashSet<>(modJars);
+
+		for (Path jar : fabricJars) {
+			if (!forgeFamily.contains(jar)) families.put(jar, LoaderProbePolicy.Family.FABRIC);
+		}
+		java.util.Set<Path> fabric = new java.util.HashSet<>(fabricJars);
+		for (Path jar : modJars) {
+			if (!fabric.contains(jar)) families.put(jar, LoaderProbePolicy.Family.FORGE_FAMILY);
+		}
+		return families;
 	}
 
 	/** Splits a {@code --libraryPath} classpath string into the jars that exist. Empty when not given. */
