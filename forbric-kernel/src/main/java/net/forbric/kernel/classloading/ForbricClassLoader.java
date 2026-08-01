@@ -53,6 +53,23 @@ public final class ForbricClassLoader extends URLClassLoader {
 		this.parent = parent;
 	}
 
+	/**
+	 * Adds a jar to the set this loader owns, at runtime, after boot.
+	 *
+	 * <p>{@code URLClassLoader} declares this {@code protected}, and mods that unpack their real payload during
+	 * {@code preLaunch} look for it with {@code getDeclaredMethod}, which does not search superclasses — so a
+	 * protected inherited method reads to them as absent. Essential's stage-2 loader probes for exactly this
+	 * signature and, not finding it, gives up with "Failed to add Essential jar to parent ClassLoader".
+	 *
+	 * <p>Overriding it public is also the honest contract: a jar added here is OWNED, so its classes go through the
+	 * whole pipeline (access tweakers, the compat chain, then Mixin) like any other mod's — which is what a mod
+	 * extending the classpath at runtime expects, and what Fabric's own {@code addToClassPath} gives it.
+	 */
+	@Override
+	public void addURL(URL url) {
+		super.addURL(url);
+	}
+
 	/** Installs the pre-mixin transform chain (Access, compat, the kernel redirectors). Call once, before any load. */
 	public void setTransformer(BiFunction<String, byte[], byte[]> transformer) {
 		this.transformer = transformer == null ? (n, b) -> b : transformer;

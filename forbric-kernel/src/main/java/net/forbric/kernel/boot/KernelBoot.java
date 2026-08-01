@@ -38,6 +38,7 @@ import net.forbric.kernel.mixin.KernelMixinBootstrap;
 import net.forbric.kernel.transform.ClientPackHookInjector;
 import net.forbric.kernel.transform.CommonNetworkInteropInjector;
 import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
+import net.forbric.kernel.transform.GuestMixinPluginGuard;
 import net.forbric.kernel.transform.LifecycleHookInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
@@ -179,6 +180,10 @@ public final class KernelBoot {
 		loader.setJarFamilies(singleFamilyJars(fabricJars, modJars));
 		LoaderProbePolicy.bindGuestLoader(loader);
 
+		// A mod that unpacks its real payload at preLaunch has no public API for adding it to the classpath and
+		// reaches into Fabric's internals for it. Installed before any mod class loads. See KernelFabricLauncher.
+		net.forbric.kernel.fabric.KernelFabricLauncher.install(loader, side.envType);
+
 		TransformChain chain = new TransformChain();
 
 		// Fabric access wideners before Mixin (ACCESS phase): the weaver must see the widened members.
@@ -194,6 +199,10 @@ public final class KernelBoot {
 		// it rewrites only Class.forName call sites, so nothing later in the chain can be looking at what it edits.
 		LoaderProbeRewriter loaderProbes = new LoaderProbeRewriter(loader::familyOfClass);
 		if (LoaderProbePolicy.enabled()) chain.register(TransformPhase.COREMOD, loaderProbes);
+
+		// One mod's mixin config plugin must not be able to abort config preparation for every other mod. Mixin
+		// guards plugin construction but not the calls, and a throw there escapes select(). See GuestMixinPluginGuard.
+		chain.register(TransformPhase.COREMOD, new GuestMixinPluginGuard());
 
 		LifecycleHookInjector lifecycleHook = side.injector();
 		chain.register(TransformPhase.COREMOD, lifecycleHook);

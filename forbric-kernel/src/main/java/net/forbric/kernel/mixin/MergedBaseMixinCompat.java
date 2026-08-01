@@ -134,7 +134,14 @@ public final class MergedBaseMixinCompat {
 			"fabric-resource-loader-v1.mixins.json:SynchronizeRegistriesTaskMixin",
 			"jade.mixins.json:FogRendererMixin",
 			// Measured PARTIAL: half-applied, kills all 4666 block models → whole world is missingno. See above.
-			"fabric-model-loading-api-v1.mixins.json:ModelManagerMixin");
+			"fabric-model-loading-api-v1.mixins.json:ModelManagerMixin",
+			// Essential's @Group(name=post_event, min=1) finds 0 injection sites in the merged Gui, and a mixin that
+			// FAILS TO APPLY costs its target every OTHER mod's mixins too — Mixin discards the whole transformed
+			// class and Gui reverts to raw vanilla bytes. fabric-screen-api-v1's GuiMixin adds `implements
+			// GuiExtensions` there, so the visible symptom was a ClassCastException from Fabric's own
+			// MinecraftMixin.onInit, naming neither Essential nor a group. MixinFit cannot predict this one: each
+			// member's anchor resolves, and only the GROUP's min=1 is unsatisfiable — see the @Group gap.
+			"mixins.essential.json:events.Mixin_GuiDrawScreenEvent_Priority");
 
 	/**
 	 * Whole mixin configs to leave unregistered, because no sub-selection of their mixins is coherent.

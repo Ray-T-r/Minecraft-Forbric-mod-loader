@@ -59,13 +59,14 @@ public final class KernelModMetadata implements ModMetadata {
 	private final List<MixinConfigDecl> mixinConfigs;
 	private final String accessWidener;
 	private final List<String> nestedJars;
+	private final Map<String, String> languageAdapters;
 
 	KernelModMetadata(String type, String id, Collection<String> provides, Version version, ModEnvironment environment,
 			Collection<ModDependency> dependencies, String name, String description, Collection<Person> authors,
 			Collection<Person> contributors, ContactInformation contact, Collection<String> license,
 			Map<Integer, String> icons, Map<String, CustomValue> customValues,
 			Map<String, List<EntrypointDecl>> entrypoints, List<MixinConfigDecl> mixinConfigs, String accessWidener,
-			List<String> nestedJars) {
+			List<String> nestedJars, Map<String, String> languageAdapters) {
 		this.type = type;
 		this.id = id;
 		this.provides = Collections.unmodifiableCollection(provides);
@@ -84,6 +85,7 @@ public final class KernelModMetadata implements ModMetadata {
 		this.mixinConfigs = Collections.unmodifiableList(mixinConfigs);
 		this.accessWidener = accessWidener;
 		this.nestedJars = Collections.unmodifiableList(nestedJars);
+		this.languageAdapters = Collections.unmodifiableMap(languageAdapters);
 	}
 
 	/**
@@ -102,7 +104,7 @@ public final class KernelModMetadata implements ModMetadata {
 
 		return new KernelModMetadata("builtin", id, List.of(), parsed, ModEnvironment.UNIVERSAL, List.of(), name, "",
 				List.of(), List.of(), ContactInformation.EMPTY, List.of(), Map.of(), Map.of(), Map.of(), List.of(),
-				null, List.of());
+				null, List.of(), Map.of());
 	}
 
 	// --- loader-facing (kernel) ---
@@ -115,6 +117,14 @@ public final class KernelModMetadata implements ModMetadata {
 	/** Declared mixin configs, each with the side it applies on. */
 	public List<MixinConfigDecl> getMixinConfigs() {
 		return mixinConfigs;
+	}
+
+	/**
+	 * The {@code languageAdapters} this mod provides: adapter name → the class implementing
+	 * {@code net.fabricmc.loader.api.LanguageAdapter}. Declared by one mod, named by others in their entrypoints.
+	 */
+	public Map<String, String> getLanguageAdapters() {
+		return languageAdapters;
 	}
 
 	/** The declared {@code accessWidener} / {@code .classtweaker} resource path, or {@code null}. */
