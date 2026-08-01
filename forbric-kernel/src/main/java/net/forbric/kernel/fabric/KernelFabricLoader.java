@@ -97,6 +97,7 @@ public final class KernelFabricLoader implements FabricLoader {
 			String[] launchArguments, String rawGameVersion) {
 		if (instance != null) throw new IllegalStateException("KernelFabricLoader already created");
 
+		KernelLanguageAdapters.reset();
 		instance = new KernelFabricLoader(envType, gameDir, configDir, launchArguments, rawGameVersion);
 		return instance;
 	}
@@ -104,6 +105,7 @@ public final class KernelFabricLoader implements FabricLoader {
 	/** The transforming loader that defines mod + game classes; entrypoints resolve through it. */
 	public void setGameLoader(ClassLoader loader) {
 		this.gameLoader = loader;
+		KernelLanguageAdapters.bindGameLoader(loader);
 	}
 
 	/** Publishes the {@code MinecraftServer} / {@code Minecraft} object for {@link #getGameInstance()}. */
@@ -130,6 +132,10 @@ public final class KernelFabricLoader implements FabricLoader {
 		for (String alias : metadata.getProvides()) {
 			modsById.putIfAbsent(alias, container);
 		}
+
+		// Registered at discovery, not at first use: an adapter is declared by ONE mod and named by others, so it
+		// has to be known before any entrypoint is constructed regardless of discovery order.
+		KernelLanguageAdapters.declare(metadata.getId(), metadata.getLanguageAdapters());
 
 		for (Map.Entry<String, List<EntrypointDecl>> entry : metadata.getEntrypoints().entrySet()) {
 			List<Entrypoint> sink = entrypointsByKey.computeIfAbsent(entry.getKey(), k -> new ArrayList<>());
@@ -297,6 +303,11 @@ public final class KernelFabricLoader implements FabricLoader {
 
 		/** Whether this declaration can yield an instance of {@code type}, without constructing it. */
 		boolean provides(Class<?> type) {
+			// Only the adapter knows how its language spells "this value implements that interface" — Kotlin's, for
+			// one, resolves an `object` through a synthetic INSTANCE field. Guessing here would silently drop the
+			// entrypoint; let the adapter answer at construction time instead.
+			if (!decl.isDefaultAdapter()) return true;
+
 			try {
 				String v = decl.value();
 				int sep = v.indexOf("::");
@@ -347,10 +358,10 @@ public final class KernelFabricLoader implements FabricLoader {
 
 		private Object construct(Class<?> type) throws Throwable {
 			if (!decl.isDefaultAdapter()) {
-				// Custom language adapters (e.g. fabric-language-kotlin) are an M2b concern: they are themselves
-				// mods providing a `languageAdapters` block, which the kernel does not yet honour.
-				throw new UnsupportedOperationException("language adapter '" + decl.adapter()
-						+ "' is not supported yet (kernel M2a implements the default adapter only)");
+				// A mod-provided adapter (fabric-language-kotlin and friends) builds the instance itself; it may
+				// hand anything it does not handle back through LanguageAdapter.getDefault(), which lands on the
+				// same resolution as the branch below. See KernelLanguageAdapters.
+				return KernelLanguageAdapters.get(decl.adapter()).create(provider, decl.value(), type);
 			}
 
 			String v = decl.value();

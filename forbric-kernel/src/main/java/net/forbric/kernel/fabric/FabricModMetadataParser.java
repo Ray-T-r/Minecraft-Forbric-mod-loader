@@ -91,7 +91,23 @@ public final class FabricModMetadataParser {
 				entrypoints(json),
 				mixins(json),
 				string(json, "accessWidener"),
-				nestedJars(json));
+				nestedJars(json),
+				languageAdapters(json));
+	}
+
+	/** {@code "languageAdapters": { "<name>": "the.LanguageAdapter" }} — declared by one mod, named by others. */
+	private static Map<String, String> languageAdapters(UnmodifiableConfig json) {
+		Map<String, String> result = new LinkedHashMap<>();
+		UnmodifiableConfig block = sub(json, "languageAdapters");
+		if (block == null) return result;
+
+		for (UnmodifiableConfig.Entry entry : block.entrySet()) {
+			Object value = entry.getValue();
+			if (value instanceof String className && !className.isBlank()) {
+				result.put(entry.getKey(), className);
+			}
+		}
+		return result;
 	}
 
 	private static Version parseVersion(String id, String raw) {
