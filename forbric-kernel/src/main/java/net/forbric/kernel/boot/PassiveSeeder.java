@@ -230,6 +230,64 @@ public final class PassiveSeeder {
 	}
 
 	/**
+	 * Runs NeoForge's OWN {@code NeoForgeRegistriesSetup.modifyRegistries(ModifyRegistriesEvent)} — the twin of
+	 * {@link #seedNeoForgeRegistries}, driven the same way (its handler directly, no bus, no mod dispatch).
+	 *
+	 * <p>{@code NeoForgeRegistriesSetup.setup(IEventBus)} only adds two listeners, {@code registerRegistries} and
+	 * {@code modifyRegistries}. The kernel drove the first and never the second, so everything the second does was
+	 * simply missing. It does two kinds of work:
+	 *
+	 * <ul>
+	 *   <li>{@code setSync(true)} over {@code VANILLA_SYNC_REGISTRIES} — which the kernel had HAND-REIMPLEMENTED in
+	 *       {@code KernelLifecycle.markVanillaRegistriesSynced}. That half was visible, so it got fixed; the rest
+	 *       was not.</li>
+	 *   <li>Five {@code addCallback} wirings that nothing replaced: {@code BLOCK}, {@code ITEM},
+	 *       {@code ATTRIBUTE}, {@code POINT_OF_INTEREST_TYPE}, and — the one that bites — <b>{@code ATTACHMENT_TYPES}
+	 *       ← {@code AttachmentSync.ATTACHMENT_TYPE_ADD_CALLBACK}</b>, the callback that mirrors every synced
+	 *       {@code AttachmentType} into {@code neoforge:synced_attachment_types}.</li>
+	 * </ul>
+	 *
+	 * <p>Without that last one a NeoForge mod using synced data attachments (Mutant Monsters via Puzzles Lib) kicks
+	 * the player the instant they join: the server sends {@code neoforge:sync_attachments}, whose codec looks the
+	 * attachment up by numeric id, and {@code IdMap.getIdOrThrow} throws
+	 * {@code Can't find id for AttachmentType … in Registry[neoforge:synced_attachment_types]} inside the encoder —
+	 * so the connection dies with a bare "Disconnected" and a clean world save, which reads like anything but a
+	 * registry bug.
+	 *
+	 * <p>Ordering is load-bearing in both directions: this must run AFTER {@link #seedNeoForgeRegistries} (the
+	 * callback is attached to a registry that call creates and roots) and BEFORE the {@code RegisterEvent} pass
+	 * (an {@code AddCallback} fires on ADD, so an attachment registered before it is attached is never mirrored).
+	 *
+	 * @return true if NeoForge's handler ran; false leaves the caller to fall back to the partial hand-rolled path
+	 */
+	public static boolean applyNeoForgeRegistryModifications(ClassLoader gameLoader) {
+		try {
+			Class<?> setupCls = Class.forName("net.neoforged.neoforge.registries.NeoForgeRegistriesSetup", false,
+					gameLoader);
+			Class<?> eventCls = Class.forName("net.neoforged.neoforge.registries.ModifyRegistriesEvent", false,
+					gameLoader);
+
+			Constructor<?> eventCtor = eventCls.getDeclaredConstructor();
+			eventCtor.setAccessible(true);
+
+			Method modifyRegistries = setupCls.getDeclaredMethod("modifyRegistries", eventCls);
+			modifyRegistries.setAccessible(true);
+			modifyRegistries.invoke(null, eventCtor.newInstance());
+
+			ForbricLog.info("[Forbric/Seed] applied NeoForge's registry modifications — vanilla registries marked "
+					+ "client-syncing and the block/item/attribute/POI/attachment callbacks wired (native)");
+			return true;
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/Seed] NeoForge registry setup not present — skipping registry modifications");
+			return false;
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Seed] could not apply NeoForge registry modifications — falling back to the "
+					+ "sync-flags-only path; synced data attachments will not work", unwrap(t));
+			return false;
+		}
+	}
+
+	/**
 	 * Seeds traditional Forge's {@code LoadingModListImpl.temp} with an empty {@code ModSorter$State} so
 	 * {@code LoadingModList.get()} doesn't NPE. Forge's {@code ServerStatusPing} touches
 	 * {@code ModList.<clinit>} → {@code LoadingModList.getModFiles()} right after {@code Done}. The NeoForge

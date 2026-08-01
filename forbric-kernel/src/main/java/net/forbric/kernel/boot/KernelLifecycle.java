@@ -103,7 +103,10 @@ public final class KernelLifecycle {
 		// registry: minecraft:item" when the vanilla registries carry doesSync()=false. NeoForgeRegistriesSetup
 		// normally sets these; the kernel doesn't run that setup, so mark them here (BaseMappedRegistry.setSync(true)).
 		// Without this, the player logs in but the clientbound update_recipes packet fails to encode → disconnect.
-		markVanillaRegistriesSynced(cl);
+		// Prefer NeoForge's own modifyRegistries handler: it does the setSync pass the kernel used to hand-roll AND
+		// the five addCallback wirings nothing replaced — including the one that mirrors synced AttachmentTypes into
+		// neoforge:synced_attachment_types, without which a mod using them kicks the player on join.
+		if (!PassiveSeeder.applyNeoForgeRegistryModifications(cl)) markVanillaRegistriesSynced(cl);
 		// Step 2: construct both ecosystem baselines + fire RegisterEvent so default content (e.g. minecraft:empty
 		// FluidType, default attributes) registers, and run the Fabric main + side entrypoints in the same window.
 		registerNeoForgeContent(cl, client);
