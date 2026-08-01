@@ -193,6 +193,10 @@ public final class ForbricClassLoader extends URLClassLoader {
 			bytes = read(resource);
 			if (bytes == null) return null;
 
+			// Before the chain runs: LoaderProbeRewriter needs to know which loader family owns this class in
+			// order to bake the right answer into its Class.forName call sites.
+			if (!jarFamilies.isEmpty()) rememberOrigin(name, resource);
+
 			byte[] transformed = transformer.apply(name, bytes);
 			if (transformed != null) bytes = transformed;
 		} else {
@@ -212,6 +216,48 @@ public final class ForbricClassLoader extends URLClassLoader {
 		definePackageIfNeeded(name, resource);
 		return defineClass(name, bytes, 0, bytes.length);
 	}
+
+	/**
+	 * Declares which owned jars belong to exactly one loader family, so {@link LoaderProbePolicy} can answer a
+	 * guest's platform probe for the loader that guest was actually loaded as. Jars absent from the map — the
+	 * merged base, the Forge/NeoForge runtime carriers, MC libraries, and any universal jar carrying more than
+	 * one manifest — are unowned and see every probe answer yes, as before. Call once, before any class loads.
+	 */
+	public void setJarFamilies(java.util.Map<java.nio.file.Path, LoaderProbePolicy.Family> byJar) {
+		jarFamilies.clear();
+		byJar.forEach((jar, family) -> {
+			try {
+				jarFamilies.put("jar:" + jar.toUri().toURL(), family);   // same spelling findResource will produce
+			} catch (java.net.MalformedURLException impossible) {
+				// a jar already on this loader's URL list cannot fail to spell itself
+			}
+		});
+	}
+
+	/**
+	 * The loader family of the jar {@code binaryName} is being defined from, or {@code null} if it is unowned —
+	 * the merged base, a runtime carrier, an MC library, a universal jar, or a kernel class.
+	 */
+	public LoaderProbePolicy.Family familyOfClass(String binaryName) {
+		return classFamilies.get(binaryName);
+	}
+
+	/**
+	 * Records the family of the jar a freshly defined class came from. The URL is {@code jar:file:/…/x.jar!/a/B.class};
+	 * only single-family jars are in the map, so an unowned origin simply records nothing.
+	 */
+	private void rememberOrigin(String name, URL resource) {
+		String url = resource.toString();
+		int bang = url.indexOf("!/");
+		if (bang < 0) return;
+
+		LoaderProbePolicy.Family family = jarFamilies.get(url.substring(0, bang));
+		if (family != null) classFamilies.put(name, family);
+	}
+
+	// Owned single-family jars, keyed by "jar:file:…!"-prefix; and the per-class answer derived from them.
+	private final ConcurrentHashMap<String, LoaderProbePolicy.Family> jarFamilies = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<String, LoaderProbePolicy.Family> classFamilies = new ConcurrentHashMap<>();
 
 	// Classes synthesized by a transformer rather than read from a jar, keyed by binary name.
 	private final ConcurrentHashMap<String, byte[]> generatedClasses = new ConcurrentHashMap<>();
