@@ -174,10 +174,10 @@ public final class KernelBoot {
 		ForbricClassLoader loader = new ForbricClassLoader(owned.toArray(new URL[0]),
 				KernelBoot.class.getClassLoader());
 
-		// A jar that declares exactly ONE loader's manifest gets that loader's answer when its classes probe for a
-		// platform, so a Fabric mod cannot wander into a Forge branch it never ran on Fabric. Jars in both lists are
-		// universal — genuinely multi-platform, already arbitrated — and stay unowned here. See LoaderProbePolicy.
-		loader.setJarFamilies(singleFamilyJars(fabricJars, modJars));
+		// Every mod jar probes as the loader the arbiter gave it, so a mod cannot wander into a branch it never ran
+		// on its own platform — and a universal jar answers as the ONE ecosystem it was arbitrated to. Plain
+		// libraries declare no manifest and stay unowned. See LoaderProbePolicy.
+		loader.setJarFamilies(probeFamilies(fabricJars, modJars));
 		LoaderProbePolicy.bindGuestLoader(loader);
 
 		// A mod that unpacks its real payload at preLaunch has no public API for adding it to the classpath and
@@ -387,23 +387,35 @@ public final class KernelBoot {
 	}
 
 	/**
-	 * The owned jars that belong to exactly one loader family, for {@link LoaderProbePolicy}.
+	 * Which loader family each owned mod jar probes as, for {@link LoaderProbePolicy}.
 	 *
-	 * <p>A jar in both lists carries both a {@code fabric.mod.json} and a Forge-family mods.toml: it is a genuine
-	 * multi-platform build whose own probes are how it finds out which half to run, so it is left out and keeps
-	 * seeing every loader. Everything else — the merged base, the runtime carriers, MC libraries — is never in
-	 * either list and is likewise unaffected.
+	 * <p>The answer is whatever {@link MultiLoaderArbiter} already decided. A jar declaring one manifest is owned by
+	 * that loader; a universal jar declaring several was arbitrated to exactly one, and its probes must agree with
+	 * that decision — the whole point of arbitration is that the jar behaves as ONE mod, and a universal jar that
+	 * still sees every loader defeats it. LambDynamicLights is the case that showed why: arbitrated to NeoForge, its
+	 * {@code yumi-mc-foundation} still detected Fabric as well, built both runtimes, took the first, and looked its
+	 * own mod up through a loader it had been suppressed on. That failure surfaced twice over — first as
+	 * {@code NoSuchElementException: No value present} killing its mixin config plugin, then as a permanent red
+	 * "Dev Version (Unsupported)" banner across the screen, because the version string it fell back to is the one
+	 * that decides {@code isDevMode()}.
+	 *
+	 * <p>A jar declaring no loader manifest at all is a plain library: {@code ownerOf} returns {@code null} and it
+	 * stays unowned, along with the merged base, the runtime carriers and the MC libraries.
 	 */
-	private static Map<Path, LoaderProbePolicy.Family> singleFamilyJars(List<Path> fabricJars, List<Path> modJars) {
-		Map<Path, LoaderProbePolicy.Family> families = new java.util.HashMap<>();
-		java.util.Set<Path> forgeFamily = new java.util.HashSet<>(modJars);
+	private static Map<Path, LoaderProbePolicy.Family> probeFamilies(List<Path> fabricJars, List<Path> modJars) {
+		Map<Path, LoaderProbePolicy.Family> families = new java.util.LinkedHashMap<>();
 
-		for (Path jar : fabricJars) {
-			if (!forgeFamily.contains(jar)) families.put(jar, LoaderProbePolicy.Family.FABRIC);
-		}
-		java.util.Set<Path> fabric = new java.util.HashSet<>(fabricJars);
-		for (Path jar : modJars) {
-			if (!fabric.contains(jar)) families.put(jar, LoaderProbePolicy.Family.FORGE_FAMILY);
+		for (List<Path> group : List.of(fabricJars, modJars)) {
+			for (Path jar : group) {
+				if (families.containsKey(jar)) continue;
+
+				MultiLoaderArbiter.Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
+				if (owner == null) continue;
+
+				families.put(jar, owner == MultiLoaderArbiter.Ecosystem.FABRIC
+						? LoaderProbePolicy.Family.FABRIC
+						: LoaderProbePolicy.Family.FORGE_FAMILY);
+			}
 		}
 		return families;
 	}
