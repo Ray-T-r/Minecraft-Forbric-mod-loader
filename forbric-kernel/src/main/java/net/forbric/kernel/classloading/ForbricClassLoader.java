@@ -26,6 +26,8 @@ import java.util.jar.Attributes;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 
+import net.forbric.kernel.util.ForbricLog;
+
 /**
  * The kernel's single sovereign transforming class loader — the one and only loader that defines the game +
  * ecosystem classes, applying the unified transform pipeline as each class is defined.
@@ -222,7 +224,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 			if (generated != null) {
 				definePackageIfNeeded(name, null);
-				return defineClass(name, generated, 0, generated.length);
+				return define(name, generated);
 			}
 		}
 
@@ -231,7 +233,44 @@ public final class ForbricClassLoader extends URLClassLoader {
 		if (bytes == null) return null;
 
 		definePackageIfNeeded(name, resource);
-		return defineClass(name, bytes, 0, bytes.length);
+		return define(name, bytes);
+	}
+
+	/**
+	 * {@code defineClass}, recovering from a RE-ENTRANT definition of the same class on this thread.
+	 *
+	 * <p>{@link #loadClass} takes the per-name lock and checks {@code findLoadedClass} first, so two threads cannot
+	 * race here. One thread can still get in twice: this method's own pipeline runs guest code before the class is
+	 * defined. {@code mixinTransformer.apply} on the FIRST game class triggers Mixin's one-shot {@code select()},
+	 * which constructs every guest config plugin, and a plugin's constructor or {@code <clinit>} may load anything.
+	 * If that graph reaches the class currently being defined, the inner {@code loadClass} re-enters the same
+	 * (reentrant) lock, still sees {@code findLoadedClass == null}, and defines it — then this outer call fails with
+	 * {@code LinkageError: attempted duplicate class definition}.
+	 *
+	 * <p>Observed on a 64-mod NeoForge pack: {@code net.neoforged.fml.ModList} is the first class the kernel loads
+	 * after Mixin bootstrap ({@code PassiveSeeder.seedNeoForgeModList}), so it is the one that pays. Seeding then
+	 * failed, {@code ModList.get()} stayed null, and the client died in {@code Options.<init>} at
+	 * {@code ClientHooks.onRegisterKeyMappings} — three steps away, with nothing connecting it back. The trigger is
+	 * NOT a plugin that names ModList; none does. It is transitive, which is why it appears only at pack scale.
+	 *
+	 * <p>The error means the class IS defined by this loader, and the inner definition went through this same
+	 * pipeline, so it is the same bytes. Returning it is loss-free and strictly better than failing the caller. The
+	 * recovery is logged once per class: it is not an error, but it does mean guest code ran mid-definition, and
+	 * that is worth being able to see.
+	 */
+	private Class<?> define(String name, byte[] bytes) {
+		try {
+			return defineClass(name, bytes, 0, bytes.length);
+		} catch (LinkageError duplicate) {
+			Class<?> already = findLoadedClass(name);
+			if (already == null) throw duplicate; // a genuine linkage problem, not re-entrancy
+			if (REENTRANT.add(name)) {
+				ForbricLog.debug("[Forbric/Loader] %s was defined re-entrantly (guest code loaded it from inside its "
+						+ "own transform, most likely a mixin config plugin's construction) — using the definition "
+						+ "that already completed", name);
+			}
+			return already;
+		}
 	}
 
 	/**
@@ -281,6 +320,9 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 	// Cache of jar path -> Manifest so the package version/vendor attributes are read once per jar.
 	private final ConcurrentHashMap<String, Manifest> manifestCache = new ConcurrentHashMap<>();
+	/** Classes recovered from a re-entrant definition; reported once each. See {@link #define}. */
+	private static final java.util.Set<String> REENTRANT = ConcurrentHashMap.newKeySet();
+
 	private static final Manifest NO_MANIFEST = new Manifest();
 
 	/**
