@@ -53,6 +53,8 @@ command_history.txt
 realms_persistence.json
 servers.dat*
 session.lock
+xaero/
+XaeroWaypoints_BACKUP*/
 
 # ---- macOS ----
 .DS_Store
