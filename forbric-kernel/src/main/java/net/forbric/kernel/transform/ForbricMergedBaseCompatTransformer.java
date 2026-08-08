@@ -28,7 +28,11 @@ import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.FrameNode;
+import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -61,6 +65,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= dropInterfaceDefaultShadowingOverrides(node);
 			changed |= tolerateEmptyCreativeTabStacks(node);
 			changed |= routePlaceItemHookToNeoForge(node);
+			changed |= bridgeOrphanedPipRenderers(node);
 			if (!changed) return classBytes;
 
 			ClassWriter writer = new ClassWriter(0);
@@ -611,5 +616,189 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		newArgs[0] = argument;
 		System.arraycopy(oldArgs, 0, newArgs, 1, oldArgs.length);
 		return Type.getMethodDescriptor(Type.getReturnType(methodDesc), newArgs);
+	}
+
+	private static final String GUI_RENDERER = "net/minecraft/client/gui/render/GuiRenderer";
+	private static final String PIP_RENDERERS = "pictureInPictureRenderers";
+	private static final String PIP_POOLS = "pictureInPictureRendererPools";
+	private static final String PIP_PREPARE = "preparePictureInPictureState";
+	private static final String PIP_BRIDGE = "forbric$prepareOrphanedPip";
+
+	/**
+	 * Makes a picture-in-picture renderer registered the VANILLA way draw again, by giving NeoForge's pooled lookup
+	 * a fallback to the map the merge orphaned.
+	 *
+	 * <p>{@code GuiRenderer} ends up with BOTH ecosystems' versions of the same job:
+	 *
+	 * <ul>
+	 *   <li>{@code preparePictureInPictureState(T, int)} — vanilla's. Reads {@code pictureInPictureRenderers}, a
+	 *       {@code Class -> PictureInPictureRenderer} map, and calls {@code prepare} on the one it finds. <b>Nothing
+	 *       calls it.</b></li>
+	 *   <li>{@code preparePictureInPictureState(T, int, boolean)} — NeoForge's, and the one {@code render()} calls.
+	 *       Reads {@code pictureInPictureRendererPools} instead, and returns false for a state class with no pool.</li>
+	 * </ul>
+	 *
+	 * <p>Every guest mod registers into the first map, because that is the only one vanilla has: Xaero's Minimap puts
+	 * its {@code MinimapPipRenderer} there, malilib its block-state element renderer. Both then draw nothing at all —
+	 * no exception, no log, the element is simply absent. Chasing it from the symptom is brutal, because every link
+	 * before this one is intact: the mixins apply, the hooks are called every frame, the mod's own state is live. The
+	 * lookup misses one map over.
+	 *
+	 * <p>So the null-pool branch now falls through to the orphaned map instead of returning false. Guest renderers get
+	 * exactly vanilla's contract — one instance per state class, {@code prepare} called directly — and NeoForge's
+	 * pooled renderers are untouched, which matters: a pool CLOSES the renderers a frame did not use, so handing a
+	 * guest's single long-lived instance to one would free its GL target out from under it.
+	 *
+	 * <p>The bridge method is synthesized from the descriptors of the orphaned overload itself rather than from
+	 * hard-coded names, so it stays correct if the merge shifts.
+	 */
+	private static boolean bridgeOrphanedPipRenderers(ClassNode node) {
+		if (!GUI_RENDERER.equals(node.name)) return false;
+		if (findField(node, PIP_RENDERERS) == null || findField(node, PIP_POOLS) == null) return false;
+		if (findMethodByName(node, PIP_BRIDGE) != null) return false;
+
+		MethodNode orphaned = null;
+		MethodNode live = null;
+		for (MethodNode method : node.methods) {
+			if (!PIP_PREPARE.equals(method.name)) continue;
+			if (Type.getReturnType(method.desc).getSort() == Type.BOOLEAN) live = method; else orphaned = method;
+		}
+		if (orphaned == null || live == null) return false;
+
+		// One source for the state type: the CALL SITE's. Deriving the bridge's descriptor from the orphaned overload
+		// instead would let the two drift apart if a future merge narrows one of them, and the only symptom would be a
+		// NoSuchMethodError on the first frame that actually reaches an orphaned renderer.
+		String stateDesc = Type.getArgumentTypes(live.desc)[0].getDescriptor();
+		MethodNode bridge = buildPipBridge(node, orphaned, stateDesc);
+		if (bridge == null || !redirectMissingPoolToBridge(node, live, stateDesc)) return false;
+
+		node.methods.add(bridge);
+		ForbricLog.warn("[Forbric/MergedBaseCompat] gave GuiRenderer's pooled picture-in-picture lookup a fallback to "
+				+ "the orphaned vanilla map — NeoForge won preparePictureInPictureState, so every guest-registered "
+				+ "GUI element (Xaero's minimap, malilib's overlays) was registered where nothing reads");
+		return true;
+	}
+
+	/**
+	 * Builds {@code boolean forbric$prepareOrphanedPip(state, i)} — vanilla's lookup, with a boolean saying whether
+	 * it found anything. Every field and call is cloned out of the orphaned overload, so nothing here is spelled twice;
+	 * {@code stateDesc} comes from the CALL SITE so the two cannot disagree.
+	 */
+	private static MethodNode buildPipBridge(ClassNode node, MethodNode orphaned, String stateDesc) {
+		FieldInsnNode renderers = null;
+		FieldInsnNode renderState = null;
+		FieldInsnNode dispatcher = null;
+		TypeInsnNode rendererCast = null;
+		MethodInsnNode mapGet = null;
+		MethodInsnNode prepare = null;
+
+		for (AbstractInsnNode insn = orphaned.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD) {
+				if (PIP_RENDERERS.equals(field.name)) renderers = field;
+				else if (renderState == null) renderState = field;
+				else if (dispatcher == null) dispatcher = field;
+			} else if (insn instanceof TypeInsnNode cast && cast.getOpcode() == Opcodes.CHECKCAST) {
+				rendererCast = cast;
+			} else if (insn instanceof MethodInsnNode call) {
+				if ("get".equals(call.name)) mapGet = call;
+				else if ("prepare".equals(call.name)) prepare = call;
+			}
+		}
+		if (renderers == null || renderState == null || dispatcher == null
+				|| rendererCast == null || mapGet == null || prepare == null) {
+			ForbricLog.debug("[Forbric/MergedBaseCompat] GuiRenderer's orphaned pip overload has an unexpected shape "
+					+ "— leaving the pooled lookup alone");
+			return null;
+		}
+
+		MethodNode bridge = new MethodNode(Opcodes.ASM9, Opcodes.ACC_PRIVATE | Opcodes.ACC_SYNTHETIC,
+				PIP_BRIDGE, "(" + stateDesc + "I)Z", null, null);
+		LabelNode miss = new LabelNode();
+		InsnList code = bridge.instructions;
+
+		code.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		code.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, renderers.name, renderers.desc));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		// Object.getClass rather than the interface's, so this holds however the state type is declared.
+		code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/Object", "getClass", "()Ljava/lang/Class;",
+				false));
+		code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, mapGet.owner, mapGet.name, mapGet.desc, true));
+		code.add(new TypeInsnNode(Opcodes.CHECKCAST, rendererCast.desc));
+		code.add(new VarInsnNode(Opcodes.ASTORE, 3));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 3));
+		code.add(new JumpInsnNode(Opcodes.IFNULL, miss));
+
+		code.add(new VarInsnNode(Opcodes.ALOAD, 3));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		code.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, renderState.name, renderState.desc));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		code.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, dispatcher.name, dispatcher.desc));
+		code.add(new VarInsnNode(Opcodes.ILOAD, 2));
+		code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, prepare.owner, prepare.name, prepare.desc, false));
+		code.add(new InsnNode(Opcodes.ICONST_1));
+		code.add(new InsnNode(Opcodes.IRETURN));
+
+		code.add(miss);
+		// Both paths reach here with slot 3 holding the (null) renderer, so the frame simply appends it.
+		code.add(new FrameNode(Opcodes.F_APPEND, 1, new Object[] {rendererCast.desc}, 0, null));
+		code.add(new InsnNode(Opcodes.ICONST_0));
+		code.add(new InsnNode(Opcodes.IRETURN));
+
+		bridge.maxStack = 5;
+		bridge.maxLocals = 4;
+		return bridge;
+	}
+
+	/** Rewrites the live overload's "no pool for this state class" early return into a call to the bridge. */
+	private static boolean redirectMissingPoolToBridge(ClassNode node, MethodNode live, String stateDesc) {
+		for (AbstractInsnNode insn = live.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (!(insn instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETFIELD
+					|| !PIP_POOLS.equals(field.name)) {
+				continue;
+			}
+
+			AbstractInsnNode jump = insn;
+			while (jump != null && !(jump instanceof JumpInsnNode)) jump = jump.getNext();
+			if (jump == null || jump.getOpcode() != Opcodes.IFNONNULL) break;
+
+			AbstractInsnNode falsy = jump.getNext();
+			while (falsy != null && falsy.getOpcode() == -1) falsy = falsy.getNext();   // labels / line numbers
+			if (falsy == null || falsy.getOpcode() != Opcodes.ICONST_0) break;
+
+			AbstractInsnNode ret = falsy.getNext();
+			while (ret != null && ret.getOpcode() == -1) ret = ret.getNext();
+			if (ret == null || ret.getOpcode() != Opcodes.IRETURN) break;
+
+			InsnList call = new InsnList();
+			call.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			call.add(new VarInsnNode(Opcodes.ALOAD, 1));
+			call.add(new VarInsnNode(Opcodes.ILOAD, 2));
+			call.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, node.name, PIP_BRIDGE, "(" + stateDesc + "I)Z", false));
+			live.instructions.insertBefore(falsy, call);
+			live.instructions.remove(falsy);
+			live.maxStack = Math.max(live.maxStack, 3);
+			return true;
+		}
+
+		ForbricLog.debug("[Forbric/MergedBaseCompat] GuiRenderer's pooled pip lookup has an unexpected shape "
+				+ "— leaving it alone");
+		return false;
+	}
+
+	private static FieldNode findField(ClassNode node, String name) {
+		if (node.fields == null) return null;
+		for (FieldNode field : node.fields) {
+			if (field.name.equals(name)) return field;
+		}
+		return null;
+	}
+
+	/** First method with this name, whatever its descriptor — distinct from {@link #findMethod(ClassNode,String,String)}. */
+	private static MethodNode findMethodByName(ClassNode node, String name) {
+		for (MethodNode method : node.methods) {
+			if (method.name.equals(name)) return method;
+		}
+		return null;
 	}
 }
