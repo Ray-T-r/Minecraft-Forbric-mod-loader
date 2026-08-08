@@ -42,6 +42,7 @@ import net.forbric.kernel.transform.GuestMixinPluginGuard;
 import net.forbric.kernel.transform.LifecycleHookInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
+import net.forbric.kernel.transform.PackMetadataFailSoftInjector;
 import net.forbric.kernel.transform.RegistryHookRedirector;
 import net.forbric.kernel.transform.TransformChain;
 import net.forbric.kernel.transform.TransformContext;
@@ -220,6 +221,12 @@ public final class KernelBoot {
 		// assets. (Registered unconditionally — the transformer only matches the two ClientModLoader classes, which a
 		// dedicated server never loads.)
 		chain.register(TransformPhase.COREMOD, new ClientPackHookInjector());
+
+		// A multiloader mod ships one pack.mcmeta carrying a section per loader, and on Forbric all three parsers are
+		// live — so a Fabric-only build gets its neoforge:overlays section read by NeoForge's parser and throws on a
+		// condition only a NeoForge build would have registered. Vanilla drops the ENTIRE pack for that. Registered
+		// unconditionally: the datapack path runs on a dedicated server too, and that is where it crashed.
+		chain.register(TransformPhase.COREMOD, new PackMetadataFailSoftInjector());
 
 		// Client only: fire the Fabric client entrypoints from inside Minecraft.<init> (before Options), the window
 		// Fabric uses — so a client entrypoint touching Minecraft.getInstance() (keymapping registration etc.) sees a
