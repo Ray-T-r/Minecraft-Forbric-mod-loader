@@ -39,6 +39,7 @@ import net.forbric.kernel.transform.ClientPackHookInjector;
 import net.forbric.kernel.transform.CommonNetworkInteropInjector;
 import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
 import net.forbric.kernel.transform.GuestMixinPluginGuard;
+import net.forbric.kernel.transform.HudElementBridgeInjector;
 import net.forbric.kernel.transform.LifecycleHookInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
@@ -228,6 +229,12 @@ public final class KernelBoot {
 		// unconditionally: the datapack path runs on a dedicated server too, and that is where it crashed.
 		chain.register(TransformPhase.COREMOD, new PackMetadataFailSoftInjector());
 
+		// Client only: NeoForge won Hud.extractRenderState, so the call sites fabric-rendering-v1's HudMixin anchors
+		// on no longer exist — as METHOD REFERENCES in the layer manager they exist as no bytecode at all, so no
+		// anchor resolution can reach them. Every Fabric mod's HUD element silently drew nothing. Matches only
+		// GuiLayerManager, which a dedicated server never loads.
+		chain.register(TransformPhase.COREMOD, new HudElementBridgeInjector());
+
 		// Client only: fire the Fabric client entrypoints from inside Minecraft.<init> (before Options), the window
 		// Fabric uses — so a client entrypoint touching Minecraft.getInstance() (keymapping registration etc.) sees a
 		// live instance. Matches only Minecraft.<init>, which a dedicated server never loads.
@@ -265,6 +272,7 @@ public final class KernelBoot {
 		Thread.currentThread().setContextClassLoader(loader);
 
 		KernelLifecycle.bind(loader);
+		KernelHudBridge.bind(loader);
 		KernelLifecycle.setModJars(modJars);
 		KernelLifecycle.setRuntimeJars(runtimeJars);
 		KernelFabricEcosystem.bindGameLoader(loader);
