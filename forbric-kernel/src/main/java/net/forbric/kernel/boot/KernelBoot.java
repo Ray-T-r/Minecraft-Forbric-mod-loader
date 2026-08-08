@@ -292,7 +292,11 @@ public final class KernelBoot {
 		// as names is ImmediateWindowHandler, which is not on this path. seedAll repeats both calls; both are
 		// idempotent.
 		PassiveSeeder.seedNeoForgePaths(loader, gameDir);
-		PassiveSeeder.seedNeoForgeLoader(loader, gameDir, side == Side.SERVER, side == Side.CLIENT);
+		// The mods dir is passed explicitly (not re-derived inside the seeder) because the LoadingModList seeded here
+		// must describe the SAME jars this boot decided to load — see discoverForgeFamilyModJars above, which walks
+		// exactly this directory. Two independent derivations of "where the mods are" is how they drift apart.
+		PassiveSeeder.seedNeoForgeLoader(loader, gameDir, gameDir.resolve("mods"), side == Side.SERVER,
+				side == Side.CLIENT);
 
 		// Mixin LAST in the pipeline but FIRST in time: installed before anything defines a targeted class.
 		//
