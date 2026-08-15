@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -219,6 +220,60 @@ class DuplicateModArbiterTest {
 				claim("/mods/sodium-neoforge.jar", Ecosystem.NEOFORGE, "sodium")));
 
 		assertTrue(d.suppressed(Path.of("/mods/sodium-neoforge.jar")));
+	}
+
+	@Test
+	void theLosingEcosystemGetsAPresenceAlias() {
+		// The A/B/C case: C ships a Fabric jar and a NeoForge jar, A is Fabric-only and B is NeoForge-only, both
+		// depend on C. Only one C jar survives — but the two builds are 98–100% the same classes, so B still links.
+		// What B loses is C's IDENTITY on its side, and that is what the alias restores.
+		System.setProperty("forbric.dupeIdPreference", "fabric,neoforge,minecraftforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				new Claim(Path.of("/mods/c-fabric.jar"), Ecosystem.FABRIC, List.of("c"), Map.of("c", "1.2.3")),
+				new Claim(Path.of("/mods/c-neoforge.jar"), Ecosystem.NEOFORGE, List.of("c"), Map.of("c", "1.2.3"))));
+
+		assertEquals(1, d.aliases().size());
+		assertEquals(new DuplicateModArbiter.Alias("c", Ecosystem.NEOFORGE, "1.2.3"), d.aliases().get(0));
+		assertEquals(1, d.aliasesFor(Ecosystem.NEOFORGE).size());
+		assertTrue(d.aliasesFor(Ecosystem.FABRIC).isEmpty(), "the winning side needs no alias");
+	}
+
+	@Test
+	void anAliasCarriesTheWinnersVersionNotTheLosers() {
+		// A dependency range is checked against whatever the alias reports, so it must describe the jar actually
+		// present — reporting the suppressed jar's version would answer for code that is not there.
+		System.setProperty("forbric.dupeIdPreference", "fabric,neoforge,minecraftforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				new Claim(Path.of("/mods/c-fabric.jar"), Ecosystem.FABRIC, List.of("c"), Map.of("c", "2.0.0")),
+				new Claim(Path.of("/mods/c-neoforge.jar"), Ecosystem.NEOFORGE, List.of("c"), Map.of("c", "1.0.0"))));
+
+		assertEquals("2.0.0", d.aliases().get(0).version());
+	}
+
+	@Test
+	void aThreeWayContestAliasesBothLosingEcosystems() {
+		System.setProperty("forbric.dupeIdPreference", "minecraftforge,fabric,neoforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/x-fabric.jar", Ecosystem.FABRIC, "x"),
+				claim("/mods/x-neoforge.jar", Ecosystem.NEOFORGE, "x"),
+				claim("/mods/x-forge.jar", Ecosystem.MINECRAFTFORGE, "x")));
+
+		assertEquals(2, d.aliases().size());
+		assertEquals(1, d.aliasesFor(Ecosystem.FABRIC).size());
+		assertEquals(1, d.aliasesFor(Ecosystem.NEOFORGE).size());
+	}
+
+	@Test
+	void aSameEcosystemTieNeedsNoAlias() {
+		// Both jars are NeoForge, so nothing lost its identity — the surviving jar already provides it.
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/architectury-21.0.2.jar", Ecosystem.NEOFORGE, "architectury"),
+				claim("/mods/architectury-21.0.6.jar", Ecosystem.NEOFORGE, "architectury")));
+
+		assertTrue(d.aliases().isEmpty());
 	}
 
 	@Test

@@ -147,8 +147,32 @@ public final class KernelModLoader {
 						KernelBusSupport.unwrap(t));
 			}
 		}
+		// Presence aliases: a mod whose NeoForge jar lost cross-jar arbitration is still HERE — the winner's jar is
+		// 98–100% the same classes — but without an entry ModList.get().isLoaded(id) answers false, and a NeoForge
+		// mod that gates an integration on that check silently disables it. A container with no @Mod behind it:
+		// identity only, since the winner already ran the mod's initialisation and registered its content.
+		Map<String, NeoIdentity> aliases = new LinkedHashMap<>();
+		for (DuplicateModArbiter.Alias alias
+				: DuplicateModArbiter.current().aliasesFor(MultiLoaderArbiter.Ecosystem.NEOFORGE)) {
+			if (neo.containsKey(alias.modId())) continue; // a real @Mod already owns it
+			try {
+				Object bus = KernelBusSupport.makeModBus(cl);
+				aliases.put(alias.modId(),
+						new NeoIdentity(bus, KernelModContainerFactory.create(loader, cl, alias.modId(), bus)));
+				ForbricLog.info("[Forbric/ModLoader] presence alias '%s' — its NeoForge jar lost arbitration, but "
+						+ "the winning jar supplies the classes; ModList.isLoaded now answers", alias.modId());
+			} catch (Throwable t) {
+				ForbricLog.warn("[Forbric/ModLoader] could not alias " + alias.modId() + " into ModList",
+						KernelBusSupport.unwrap(t));
+			}
+		}
+		// Aliases go into ModList but NOT into publishedNeo: nothing must post setup events at a mod that has no
+		// @Mod class here, and no caller should resolve an alias as if it were a constructed mod.
+		Map<String, NeoIdentity> published = new LinkedHashMap<>(neo);
+		published.putAll(aliases);
+
 		publishedNeo = Map.copyOf(neo);
-		publishNeoModList(cl, neo);
+		publishNeoModList(cl, published);
 
 		// Phase 3 — construct.
 		List<ConstructedMod> built = new ArrayList<>();

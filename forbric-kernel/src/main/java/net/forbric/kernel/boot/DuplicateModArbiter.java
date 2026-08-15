@@ -69,17 +69,49 @@ public final class DuplicateModArbiter {
 	static final String OWNER_OVERRIDE = "forbric.modOwner";
 
 	/** One jar's claim: the ecosystem it loads as, and the mod ids it declares under that ecosystem. */
-	public record Claim(Path jar, MultiLoaderArbiter.Ecosystem ecosystem, List<String> modIds) {
+	public record Claim(Path jar, MultiLoaderArbiter.Ecosystem ecosystem, List<String> modIds,
+			Map<String, String> versions) {
+		public Claim(Path jar, MultiLoaderArbiter.Ecosystem ecosystem, List<String> modIds) {
+			this(jar, ecosystem, modIds, Map.of());
+		}
+
+		String versionOf(String modId) {
+			return versions.getOrDefault(modId, "0");
+		}
 	}
 
-	/** Which jars must not be loaded, and who ended up owning each contested id. */
-	public record Decision(Set<Path> suppressedJars, Map<String, Path> ownerByModId) {
+	/**
+	 * A mod id whose jar for {@code ecosystem} was suppressed, so that ecosystem lost the mod's IDENTITY even
+	 * though the winner still supplies its classes.
+	 *
+	 * <p>This is the residual of arbitration, and it is narrow but real. Two builds of the same multiloader mod are
+	 * 98–100% the same classes — measured on the two packs: ferritecore and YACL are identical, lithostitched
+	 * differs by 2 + 8 platform-glue classes, Jade by 20 + 8. So a mod on the LOSING side still links against the
+	 * winner's copy and still sees the content the winner registered. What it cannot see is the mod itself:
+	 * {@code ModList.get().isLoaded(id)} answers false, and a mod that gates an integration on that check silently
+	 * disables it. Registering a presence-only container on the losing side closes exactly that gap and nothing
+	 * more.
+	 */
+	public record Alias(String modId, MultiLoaderArbiter.Ecosystem ecosystem, String version) {
+	}
+
+	/** Which jars must not be loaded, who owns each contested id, and which ecosystems need a presence alias. */
+	public record Decision(Set<Path> suppressedJars, Map<String, Path> ownerByModId, List<Alias> aliases) {
 		public boolean suppressed(Path jar) {
 			return jar != null && suppressedJars.contains(jar.toAbsolutePath());
 		}
 
+		/** The aliases this ecosystem must publish so {@code isLoaded(id)} answers for mods it lost. */
+		public List<Alias> aliasesFor(MultiLoaderArbiter.Ecosystem ecosystem) {
+			List<Alias> mine = new ArrayList<>();
+			for (Alias alias : aliases) {
+				if (alias.ecosystem() == ecosystem) mine.add(alias);
+			}
+			return mine;
+		}
+
 		public static Decision none() {
-			return new Decision(Set.of(), Map.of());
+			return new Decision(Set.of(), Map.of(), List.of());
 		}
 	}
 
@@ -87,6 +119,17 @@ public final class DuplicateModArbiter {
 	private static volatile Path cachedDir;
 
 	private DuplicateModArbiter() {
+	}
+
+	/**
+	 * The decision this boot already made, or {@link Decision#none()} if arbitration has not run.
+	 *
+	 * <p>For consumers that run after {@code KernelBoot} decided and must not re-scan — notably
+	 * {@code KernelModLoader}, which publishes the NeoForge presence aliases long after the mods directory was
+	 * walked.
+	 */
+	public static synchronized Decision current() {
+		return cached != null ? cached : Decision.none();
 	}
 
 	/** Forgets the decision — for tests, and so a re-launch in one process re-arbitrates. */
@@ -159,13 +202,24 @@ public final class DuplicateModArbiter {
 			suppressed.add(claim.jar().toAbsolutePath());
 		}
 
+		// Every ecosystem that lost its copy of a contested id needs the mod's IDENTITY back — see Alias.
+		List<Alias> aliases = new ArrayList<>();
 		for (String id : contested) {
-			ForbricLog.info("[Forbric/DupeId] mod id '%s' claimed by %d jars — loading %s (%s)", id,
-					byId.get(id).size(), winners.get(id).jar().getFileName(), winners.get(id).ecosystem());
+			Claim winner = winners.get(id);
+			Set<MultiLoaderArbiter.Ecosystem> lost = new LinkedHashSet<>();
+			for (Claim claimant : byId.get(id)) {
+				if (claimant.ecosystem() != winner.ecosystem()) lost.add(claimant.ecosystem());
+			}
+			for (MultiLoaderArbiter.Ecosystem ecosystem : lost) {
+				aliases.add(new Alias(id, ecosystem, winner.versionOf(id)));
+			}
+			ForbricLog.info("[Forbric/DupeId] mod id '%s' claimed by %d jars — loading %s (%s)%s", id,
+					byId.get(id).size(), winner.jar().getFileName(), winner.ecosystem(),
+					lost.isEmpty() ? "" : ", aliased into " + lost);
 		}
-		ForbricLog.info("[Forbric/DupeId] cross-jar arbitration: %d duplicate mod id(s), %d jar(s) suppressed",
-				contested.size(), suppressed.size());
-		return new Decision(Set.copyOf(suppressed), Map.copyOf(ownerByModId));
+		ForbricLog.info("[Forbric/DupeId] cross-jar arbitration: %d duplicate mod id(s), %d jar(s) suppressed, "
+				+ "%d presence alias(es)", contested.size(), suppressed.size(), aliases.size());
+		return new Decision(Set.copyOf(suppressed), Map.copyOf(ownerByModId), List.copyOf(aliases));
 	}
 
 	private static List<String> contestedOf(Claim claim, Map<String, Claim> winners) {
@@ -264,15 +318,16 @@ public final class DuplicateModArbiter {
 		for (Path jar : jars) {
 			MultiLoaderArbiter.Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
 			if (owner == null) continue; // a plain library — nobody claims it, so it cannot contest an id
+			Map<String, String> versions = new LinkedHashMap<>();
 			List<String> ids = owner == MultiLoaderArbiter.Ecosystem.FABRIC
-					? fabricIds(jar, envType)
-					: forgeFamilyIds(discoverer, jar, owner);
-			if (!ids.isEmpty()) claims.add(new Claim(jar, owner, ids));
+					? fabricIds(jar, envType, versions)
+					: forgeFamilyIds(discoverer, jar, versions);
+			if (!ids.isEmpty()) claims.add(new Claim(jar, owner, ids, Map.copyOf(versions)));
 		}
 		return claims;
 	}
 
-	private static List<String> fabricIds(Path jar, EnvType envType) {
+	private static List<String> fabricIds(Path jar, EnvType envType, Map<String, String> versions) {
 		try (JarFile zip = new JarFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(ForbricModDiscoverer.FABRIC_MANIFEST);
 			if (entry == null) return List.of();
@@ -282,6 +337,7 @@ public final class DuplicateModArbiter {
 				// The environment filter, mirrored from FabricModDiscovery: a jar the running side will drop must
 				// not win an id here, or the mod ends up loaded by nobody.
 				if (envType != null && !metadata.getEnvironment().matches(envType)) return List.of();
+				if (metadata.getVersion() != null) versions.put(metadata.getId(), metadata.getVersion().toString());
 				return List.of(metadata.getId());
 			}
 		} catch (Exception e) {
@@ -292,12 +348,14 @@ public final class DuplicateModArbiter {
 	}
 
 	private static List<String> forgeFamilyIds(ForbricModDiscoverer discoverer, Path jar,
-			MultiLoaderArbiter.Ecosystem owner) {
+			Map<String, String> versions) {
 		List<String> ids = new ArrayList<>();
 		try {
 			for (DiscoveredMod mod : discoverer.discoverJar(jar)) {
 				if (!mod.getEcosystem().isForgeFamily()) continue;
-				if (mod.getId() != null && !ids.contains(mod.getId())) ids.add(mod.getId());
+				if (mod.getId() == null || ids.contains(mod.getId())) continue;
+				ids.add(mod.getId());
+				if (mod.getVersion() != null) versions.put(mod.getId(), mod.getVersion());
 			}
 		} catch (Exception e) {
 			ForbricLog.debug("[Forbric/DupeId] could not read Forge-family metadata from %s: %s", jar.getFileName(),
