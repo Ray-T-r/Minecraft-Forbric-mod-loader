@@ -17,6 +17,7 @@
 package net.forbric.kernel.boot;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -178,8 +179,9 @@ public final class KernelModLoader {
 	 * listeners — which is why the universal jars (FallingTree, collective) never showed it — but a library mod
 	 * typically resolves its OWN container to get its event bus, and got an exception instead.
 	 *
-	 * <p>Only {@code mods}/{@code sortedContainers}/{@code indexedMods} are written. {@code modFiles} stays empty, so
-	 * the resource-pack path ({@code ResourcePackLoader.findResourcePacks} → {@code getModFiles}) is unchanged.
+	 * <p>Only {@code mods}/{@code sortedContainers}/{@code indexedMods} (via {@code setLoadedMods}) and
+	 * {@code sortedList} (via {@link #fillModInfos}) are written. {@code modFiles} stays empty, so the resource-pack
+	 * path ({@code ResourcePackLoader.findResourcePacks} → {@code getModFiles}) is unchanged.
 	 */
 	private static void publishNeoModList(ClassLoader cl, Map<String, NeoIdentity> neo) {
 		if (neo.isEmpty()) return;
@@ -201,6 +203,7 @@ public final class KernelModLoader {
 			Method setLoadedMods = modListCls.getDeclaredMethod("setLoadedMods", List.class);
 			setLoadedMods.setAccessible(true);
 			setLoadedMods.invoke(modList, containers);
+			publishModInfos(cl, modListCls, modList, containers);
 			ForbricLog.info("[Forbric/ModLoader] published %d NeoForge mod(s) into ModList %s — mods that resolve "
 					+ "their own container (event bus, config) now find themselves", containers.size(), neo.keySet());
 		} catch (ClassNotFoundException absent) {
@@ -209,6 +212,58 @@ public final class KernelModLoader {
 			ForbricLog.warn("[Forbric/ModLoader] could not publish NeoForge ModList "
 					+ "(mods that look themselves up will fail)", KernelBusSupport.unwrap(t));
 		}
+	}
+
+	/**
+	 * Fills {@code ModList.sortedList} — the field {@code getMods()} returns — with the published containers' own
+	 * {@code IModInfo}s.
+	 *
+	 * <p>{@code setLoadedMods} writes only {@code mods}/{@code sortedContainers}/{@code indexedMods}.
+	 * {@code sortedList} is a separate FINAL field written once in {@code ModList}'s private constructor, and
+	 * {@link PassiveSeeder#seedNeoForgeModList} necessarily constructs the singleton as
+	 * {@code ModList.of(List.of(), List.of())} — long before any mod is known. So {@code getModContainerById(id)}
+	 * answered correctly for every kernel-loaded mod while {@code getMods()} answered EMPTY. That split is invisible
+	 * until a mod ENUMERATES the list instead of asking for itself by id.
+	 *
+	 * <p>Sodium is where it turned fatal. Its {@code Minecraft.<init>} mixin calls
+	 * {@code ConfigLoaderForge.collectConfigEntryPoints}, which walks {@code getMods()} for the entry whose
+	 * {@code getModId()} is {@code "sodium"} in order to register SODIUM'S OWN config; against an empty list it
+	 * registers nothing and {@code ConfigManager.registerConfigs} throws {@code "Sodium mod config not found"} before
+	 * the window ever opens. The same walk is how every other mod declares a config entry point (via the
+	 * {@code sodium:config_api_user} mod property), and Sodium's {@code @Mod} ctor walks it again for FlawlessFrames
+	 * providers — that one silently.
+	 *
+	 * <p>{@code modFiles} is deliberately still NOT filled: it feeds the resource-pack path and
+	 * {@code getAllScanData()}, and carries the gate-m7-neo {@code revertToVanilla} risk. This writes only what
+	 * {@code getMods()} reads.
+	 */
+	private static void publishModInfos(ClassLoader cl, Class<?> modListCls, Object modList, List<Object> containers) {
+		try {
+			// The method is looked up on the abstract ModContainer, not on each container's own class: the
+			// implementations are a kernel-generated subclass and a genuine FMLModContainer, and only the declaring
+			// type guarantees a publicly accessible handle for both.
+			Class<?> modContainerCls = Class.forName("net.neoforged.fml.ModContainer", false, cl);
+			fillModInfos(modListCls, modList, containers, modContainerCls.getMethod("getModInfo"));
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ModLoader] could not fill ModList.getMods() — mods that ENUMERATE the mod list "
+					+ "(Sodium's config entry points, FlawlessFrames) will find nothing", KernelBusSupport.unwrap(t));
+		}
+	}
+
+	/** The reflective half of {@link #publishModInfos}, split out so a test can drive it with stand-in types. */
+	static void fillModInfos(Class<?> modListCls, Object modList, List<Object> containers, Method getModInfo)
+			throws Exception {
+		List<Object> infos = new ArrayList<>(containers.size());
+		for (Object container : containers) {
+			Object info = getModInfo.invoke(container);
+			// A container whose info is null would NPE every consumer that reads getModId() off the list.
+			if (info != null) infos.add(info);
+		}
+		// setAccessible(true) is enough for a NON-STATIC final field — the same JLS carve-out PassiveSeeder relies on.
+		Field sortedList = modListCls.getDeclaredField("sortedList");
+		sortedList.setAccessible(true);
+		sortedList.set(modList, infos);
+		ForbricLog.debug("[Forbric/ModLoader] ModList.getMods() now answers with %d mod(s)", infos.size());
 	}
 
 	/** Traditional MinecraftForge: a genuine BusGroup + FMLModContainer + FMLJavaModLoadingContext. */
