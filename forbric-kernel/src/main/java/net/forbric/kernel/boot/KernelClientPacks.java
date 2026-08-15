@@ -55,7 +55,7 @@ public final class KernelClientPacks {
 	}
 
 	/**
-	 * Adds a {@code RepositorySource} serving each of {@code jars} that actually carries a {@code pack.mcmeta}.
+	 * Adds a {@code RepositorySource} serving each of {@code jars} that actually carries client resources.
 	 * Best-effort: a failure costs assets (missing textures/shaders), never the boot.
 	 */
 	public static void addTo(Object packRepository, ClassLoader cl, List<Path> jars) {
@@ -63,10 +63,10 @@ public final class KernelClientPacks {
 		try {
 			List<Path> packJars = new ArrayList<>();
 			for (Path jar : jars) {
-				if (carriesPackMeta(jar)) packJars.add(jar);
+				if (carriesClientAssets(jar)) packJars.add(jar);
 			}
 			if (packJars.isEmpty()) {
-				ForbricLog.debug("[Forbric/ClientPacks] no ecosystem jar carries a pack.mcmeta — nothing to serve");
+				ForbricLog.debug("[Forbric/ClientPacks] no ecosystem jar carries client resources — nothing to serve");
 				return;
 			}
 
@@ -94,15 +94,32 @@ public final class KernelClientPacks {
 		}
 	}
 
-	/** Only jars that are actually resource packs — a jar without pack.mcmeta would be rejected/logged as broken. */
-	private static boolean carriesPackMeta(Path jar) {
+	/**
+	 * Jars that carry client resources: a {@code pack.mcmeta} OR an {@code assets/} directory.
+	 *
+	 * <p>This used to require {@code pack.mcmeta}, on the reasoning that a jar without one "would be rejected or
+	 * logged as broken". That is not true of this code path — {@link #buildPack} SYNTHESISES the
+	 * {@code Pack$Metadata} (title, forced-COMPATIBLE, no feature flags) and never reads the jar's own. The gate was
+	 * therefore dropping jars that would have served perfectly, and both genuine loaders serve every mod jar as a
+	 * pack whether or not it declares one.
+	 *
+	 * <p>What it cost, measured on the Odyssey pack: Sodium's real payload lives in a JiJ nested jar with 57 asset
+	 * entries and no {@code pack.mcmeta}, so its terrain shaders were never served —
+	 * {@code Couldn't find source for VERTEX shader (sodium:blocks/block_layer_opaque)}, then
+	 * {@code Pipeline contains invalid shader program} the first frame a chunk drew. Iris (38 entries), MoreCulling
+	 * (24), Sound Physics (10) and Lithium (5) were silently missing their assets for the same reason.
+	 *
+	 * <p>A jar with neither is still skipped — it has nothing to serve.
+	 */
+	private static boolean carriesClientAssets(Path jar) {
 		if (jar == null || !Files.isRegularFile(jar)) return false;
 		try (FileSystem fs = FileSystems.newFileSystem(jar, (ClassLoader) null)) {
 			for (Path root : fs.getRootDirectories()) {
 				if (Files.exists(root.resolve("pack.mcmeta"))) return true;
+				if (Files.isDirectory(root.resolve("assets"))) return true;
 			}
 		} catch (Throwable ignored) {
-			// unreadable / not a zip — not a pack
+			// unreadable / not a zip — nothing to serve
 		}
 		return false;
 	}

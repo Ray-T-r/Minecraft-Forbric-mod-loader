@@ -241,6 +241,11 @@ public final class KernelBoot {
 		// live instance. Matches only Minecraft.<init>, which a dedicated server never loads.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ClientEntrypointHookInjector());
 
+		// Client only: the NeoForge half of the same window, a few instructions later — after Minecraft.options is
+		// assigned. The two ecosystems need opposite states (Fabric: options still null; NeoForge: options present),
+		// so they cannot share one anchor. Matches only Minecraft.<init>, which a dedicated server never loads.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NeoClientSetupHookInjector());
+
 		// Arbitrate the c:version / c:register common-networking channel that Fabric and NeoForge both claim — without
 		// it a tri-in-one client is kicked "invalid packet" when Fabric's addon is handed a NeoForge payload. Matches
 		// only the Fabric addon + the server config listener, so it is inert until those classes load.

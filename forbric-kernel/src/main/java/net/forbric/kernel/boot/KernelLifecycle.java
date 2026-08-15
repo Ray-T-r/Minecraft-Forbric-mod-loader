@@ -130,13 +130,15 @@ public final class KernelLifecycle {
 		// Bridge it off NeoForge's AddClientReloadListenersEvent, which ClientHooks.initClientHooks posts to the
 		// baseline mod bus during Minecraft.<init> — i.e. after this point, which is why the listener goes on now.
 		if (client) GameEventMultiplexer.installClientReloadBridge(cl, baselineBus);
-		// Step 2d (client only): run NeoForge's two-phase network setup, which posts the Register*PayloadHandlersEvent
-		// pair to the subscribers wired above so its built-in play payloads (neoforge:recipe_content, …) become
-		// sendable AND have client handlers. Without it the player is kicked "Invalid player data" right after
-		// spawning. Client-scoped (its integrated server shares these statics); the dedicated server path is untouched.
-		if (client) setupNeoForgeNetwork(cl);
 		// Step 3: register mods' @EventBusSubscriber game-event listeners (FML's AutomaticEventSubscriber, native).
 		KernelEventSubscribers.registerAll(cl, modJars, client);
+		// Step 3a: let mods declare their DATAPACK registries. These are not the registries RegisterEvent fills —
+		// they are the per-world ones RegistryDataLoader builds from datapacks, and NeoForge collects them through
+		// DataPackRegistryEvent.NewRegistry into DataPackRegistriesHooks. Nothing posted that event, so the list
+		// stayed vanilla-only and lithostitched died the moment a world loaded: "Missing registry:
+		// lithostitched:worldgen_modifier" out of RegistryAccess.lookupOrThrow, on the server tick loop. Must run
+		// before any world is created; here is the first point where every mod's listeners are registered.
+		registerDataPackRegistries(cl);
 		// Step 3b: post the FML setup lifecycle at every NeoForge mod. Genuine NeoForge produces these inside
 		// CommonModLoader.load(), whose only client caller is ClientModLoader.finish() — which the kernel neuters
 		// because it also drives the discovery/registration the kernel owns. Nothing replaced the setup phases, so
@@ -144,6 +146,19 @@ public final class KernelLifecycle {
 		// (preInitClient -> TooltipOverlayHandler.init -> NeoForge.EVENT_BUS.register), which is why the tooltip
 		// stayed missing even after mod-bus delivery was fixed.
 		fireModSetupLifecycle(cl, client);
+		// Step 3c: NOW close the payload registration phase. NetworkRegistry.setup() posts
+		// RegisterPayloadHandlersEvent (payload types + codecs, incl. playToClient(neoforge:recipe_content)) and
+		// ClientNetworkRegistry.setup() then posts the client-handler event and validates every to-client payload has
+		// one — else the join negotiation rejects with "Incompatible client! (No Handler for …)".
+		//
+		// This used to run as step 2d, BEFORE the setup lifecycle, and that ordering was wrong: setup() flips
+		// NetworkRegistry's `setup` flag, after which any registration throws "Cannot register payload <id> after
+		// registration phase". Mods register payloads from FMLCommonSetupEvent — CreativeCore does, for itself and
+		// for EnhancedVisuals — so on the Odyssey pack their payloads never registered and the player was dropped
+		// with "Network Protocol Error" seconds after the world rendered. Genuine NeoForge closes the phase after
+		// mod loading, which is what this now matches. On the CLIENT it moves later still, to onClientEntrypoints,
+		// because client setup itself moved there.
+		if (!client) setupNeoForgeNetwork(cl);
 		// Step 4: start the game event buses so mods' game-event listeners actually dispatch — the buses buffer
 		// until start()/startup().
 		startGameBuses(cl);
@@ -721,6 +736,70 @@ public final class KernelLifecycle {
 	}
 
 	/**
+	 * Posts {@code DataPackRegistryEvent.NewRegistry} so mods can declare their own DATAPACK registries.
+	 *
+	 * <p>Distinct from {@code RegisterEvent}, which the kernel already fires: that one fills registries that exist,
+	 * while this one DECLARES per-world registries {@code RegistryDataLoader} must then build from datapacks.
+	 * NeoForge accumulates the declarations on the event and flushes them into
+	 * {@code DataPackRegistriesHooks.DATA_PACK_REGISTRIES} in its package-private {@code process()}.
+	 *
+	 * <p>One event instance posted to every bus and processed once — the shape FML uses, and required: the
+	 * declarations accumulate ON the event, so a per-mod instance would drop all but the last mod's.
+	 *
+	 * <p>The baseline bus is included deliberately. NeoForge declares its OWN datapack registries through this same
+	 * event ({@code neoforge:biome_modifier}, {@code neoforge:structure_modifier}), so posting it there is what
+	 * makes those resolvable — the gap that forced {@code ServerLifecycleHooks.runModifiers} to be neutered.
+	 */
+	private static void registerDataPackRegistries(ClassLoader cl) {
+		try {
+			Class<?> eventCls = Class.forName(
+					"net.neoforged.neoforge.registries.DataPackRegistryEvent$NewRegistry", false, cl);
+			Class<?> busCls = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
+			Class<?> baseEvent = Class.forName("net.neoforged.bus.api.Event", false, cl);
+			Class<?> hooksCls = Class.forName(
+					"net.neoforged.neoforge.registries.DataPackRegistriesHooks", false, cl);
+
+			int before = ((java.util.List<?>) hooksCls.getMethod("getDataPackRegistries").invoke(null)).size();
+
+			Object event = eventCls.getConstructor().newInstance();
+			Method post = busCls.getMethod("post", baseEvent);
+
+			int posted = 0;
+			if (baselineBus != null) {
+				post.invoke(baselineBus, event);
+				posted++;
+			}
+			for (java.util.Map.Entry<String, KernelModLoader.NeoIdentity> e
+					: KernelModLoader.publishedNeoMods().entrySet()) {
+				// The active container matters here too: a mod may resolve itself while building its codec.
+				KernelModLoader.setNeoActiveContainer(cl, e.getValue().container());
+				try {
+					post.invoke(e.getValue().bus(), event);
+					posted++;
+				} catch (Throwable perMod) {
+					ForbricLog.warn("[Forbric/Lifecycle] " + e.getKey()
+							+ " failed declaring its datapack registries", unwrap(perMod));
+				} finally {
+					KernelModLoader.setNeoActiveContainer(cl, null);
+				}
+			}
+
+			Method process = eventCls.getDeclaredMethod("process");
+			process.setAccessible(true);
+			process.invoke(event);
+
+			int after = ((java.util.List<?>) hooksCls.getMethod("getDataPackRegistries").invoke(null)).size();
+			ForbricLog.info("[Forbric/Lifecycle] posted datapack-registry declaration to %d bus(es) — %d datapack "
+					+ "registr(ies) declared, %d total", posted, after - before, after);
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] no NeoForge DataPackRegistryEvent — skipping");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not declare mods' datapack registries — a mod with its own "
+					+ "worldgen registry will fail with \"Missing registry\" the moment a world loads", unwrap(t));
+		}
+	}
+
+	/**
 	 * Posts {@code FMLCommonSetupEvent} → (client) {@code FMLClientSetupEvent} → {@code FMLLoadCompleteEvent} at
 	 * every NeoForge mod the kernel loaded, each on that mod's own bus, running the deferred work between phases.
 	 *
@@ -1243,8 +1322,21 @@ public final class KernelLifecycle {
 			if (reopened) closeClientEntrypointWindow(cl, opened);
 		}
 
-		// After the window closes, with the registries frozen again — the state genuine NeoForge fires these in.
+	}
+
+	/**
+	 * Invoked from {@code Minecraft.<init>} right after {@code this.options} is assigned
+	 * ({@code NeoClientSetupHookInjector}) — the NeoForge half of the client mod-loading window.
+	 *
+	 * <p>Separate from {@link #onClientEntrypoints}, which runs a few instructions earlier, because the two
+	 * ecosystems need opposite states: Fabric's keymapping registration requires {@code options} to still be null,
+	 * NeoForge's setup requires it to exist. See {@code NeoClientSetupHookInjector} for the full account.
+	 */
+	public static void onNeoClientSetup() {
+		ClassLoader cl = gameLoader;
 		fireClientSetupLifecycle(cl);
+		// And only then close the payload registration phase — see step 3c for why it cannot precede setup.
+		setupNeoForgeNetwork(cl);
 	}
 
 	/** Re-closes after the client entrypoints and redoes the id bookkeeping their registrations invalidated. */
