@@ -309,8 +309,13 @@ public final class KernelModLoader {
 		return new ConstructedMod(modId, info.className, info.family, bus, null);
 	}
 
-	/** Sets (or clears, with null) NeoForge's thread-local active {@code ModContainer}. Best-effort. */
-	private static void setNeoActiveContainer(ClassLoader cl, Object container) {
+	/**
+	 * Sets (or clears, with null) NeoForge's thread-local active {@code ModContainer}. Best-effort.
+	 *
+	 * <p>Package-visible because construction is not the only window that needs it: {@code KernelLifecycle} must
+	 * set it around each mod's SETUP events too — see the call there for what breaks without it.
+	 */
+	static void setNeoActiveContainer(ClassLoader cl, Object container) {
 		try {
 			Class<?> mlcCls = Class.forName("net.neoforged.fml.ModLoadingContext", false, cl);
 			Class<?> modContainer = Class.forName("net.neoforged.fml.ModContainer", false, cl);

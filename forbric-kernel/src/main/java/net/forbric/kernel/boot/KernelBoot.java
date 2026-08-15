@@ -45,6 +45,7 @@ import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
 import net.forbric.kernel.transform.PackMetadataFailSoftInjector;
 import net.forbric.kernel.transform.RegistryHookRedirector;
+import net.forbric.kernel.transform.NeoEnumExtensionInjector;
 import net.forbric.kernel.transform.TransformChain;
 import net.forbric.kernel.transform.TransformContext;
 import net.forbric.kernel.transform.TransformPhase;
@@ -265,6 +266,23 @@ public final class KernelBoot {
 						+ "ticking. Return false so vanilla fluid behavior proceeds (Forge/Neo FluidType ABI split)"));
 		addSideNeuters(side, neuter);
 		chain.register(TransformPhase.COREMOD, neuter);
+
+		// A NeoForge mod adds constants to vanilla enums by declaring them in META-INF/enumextensions.json; FML
+		// rewrites the enum's <clinit> and $VALUES at load. Nothing did that here, so Sophisticated Backpacks' model
+		// loader hit "No enum constant ItemDisplayContext.SOPHISTICATEDBACKPACKS_WORN" mid resource-reload and took
+		// the client down. Load the declarations, then let NeoForge's own RuntimeEnumExtender do the rewrite.
+		//
+		// LAST in the phase, and that placement is load-bearing rather than stylistic: loadEnumPrototypes resolves
+		// FML classes (RuntimeEnumExtender, EnumPrototype, ModLoadingIssue, the IModInfo chain), so wherever this
+		// call sits, every class it touches is DEFINED at that point — with only the transformers registered so far.
+		// Sitting it mid-list, ahead of the neuter, defined those classes unneutered and moved the client's crash
+		// EARLIER, into ModelManager.reload's shared state, with no hint of the connection.
+		//
+		// Registered only when some mod actually declares extensions, so the chain is untouched otherwise.
+		if (NeoEnumExtensions.load(loader, modJars) > 0) {
+			NeoEnumExtensionInjector enumExtensions = NeoEnumExtensionInjector.create(loader);
+			if (enumExtensions != null) chain.register(TransformPhase.COREMOD, enumExtensions);
+		}
 
 		TransformContext ctx = new TransformContext(side.envType, false, "named");
 		loader.setTransformer((name, bytes) -> chain.applyBeforeMixin(name, bytes, ctx));

@@ -756,12 +756,21 @@ public final class KernelLifecycle {
 
 			int fired = 0;
 			for (java.util.Map.Entry<String, KernelModLoader.NeoIdentity> e : mods.entrySet()) {
+				// The active container has to be set for the DISPATCH, not just for construction. A setup listener
+				// that registers anything through ModLoadingContext.get() reads getActiveContainer(), which with
+				// none set falls back to the "minecraft" container and throws "Where is minecraft???!". That killed
+				// CreativeCore's and Sound Physics' reload-listener registration outright, and CreativeCore then
+				// half-initialised: GuiStyle.mc stayed null ("Could not load default style"), and the next reload
+				// re-ran registerDefault and died on 'default' already exists — three failures, one missing line.
+				KernelModLoader.setNeoActiveContainer(cl, e.getValue().container());
 				try {
 					post.invoke(e.getValue().bus(), ctor.newInstance(e.getValue().container(), queue));
 					fired++;
 				} catch (Throwable perMod) {
 					ForbricLog.warn("[Forbric/Lifecycle] " + e.getKey() + " failed during " + label,
 							unwrap(perMod));
+				} finally {
+					KernelModLoader.setNeoActiveContainer(cl, null);
 				}
 			}
 			queueClass.getMethod("runTasks").invoke(queue);

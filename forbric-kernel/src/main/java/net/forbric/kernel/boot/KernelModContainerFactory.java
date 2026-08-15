@@ -163,7 +163,12 @@ public final class KernelModContainerFactory {
 	}
 
 	/** A minimal {@code IModInfo} answering the few fields the container/config path reads. */
-	private static Object proxyModInfo(Class<?> iModInfo, String modId) {
+	/**
+	 * Package-private so {@link NeoEnumExtensions} can hand NeoForge the same hardened {@code IModInfo} — its
+	 * {@code EnumPrototype.load} reports problems through {@code ModLoadingIssue.withAffectedMod}, which walks
+	 * {@code getOwningFile().getFile().getFilePath()} exactly like the listener error path below.
+	 */
+	static Object proxyModInfo(Class<?> iModInfo, String modId) {
 		// A non-null owning-file chain: NeoForge's error path ModContainer.acceptEvent → ModLoadingIssue
 		// .withAffectedMod dereferences getOwningFile().getFile().getFilePath() when ANY mod-bus event listener
 		// throws. With a null owning file that path NPEs and MASKS the real listener error (caught empirically on
@@ -212,9 +217,17 @@ public final class KernelModContainerFactory {
 			Class<?> iModFileInfo = Class.forName("net.neoforged.neoforgespi.language.IModFileInfo", false, cl);
 			Class<?> iModFile = Class.forName("net.neoforged.neoforgespi.locating.IModFile", false, cl);
 			java.nio.file.Path path = java.nio.file.Path.of("forbric-kernel", modId + ".jar");
+			// getScanResult() must be non-null, and it is reached from further away than it looks:
+			// ModList.getAllScanData() streams sortedList -> getOwningFile -> getFile -> getScanResult, so EVERY
+			// published mod is asked for one the moment anything calls getAllScanData(). Sodium does, right after
+			// its config walk, and NPE'd on the null (Minecraft.<init>, before the window). An EMPTY scan result is
+			// the honest answer — the kernel constructs @Mod classes from its own ASM scan and never builds FML's
+			// ModFileScanData — and it reads exactly like a mod file that declares no annotations.
+			Object scanData = emptyScanData(cl);
 			Object modFile = Proxy.newProxyInstance(cl, new Class<?>[] {iModFile}, (p, m, a) -> switch (m.getName()) {
 				case "getFilePath" -> path;
 				case "getModFileInfo" -> null; // set below via the enclosing IModFileInfo when asked
+				case "getScanResult" -> scanData;
 				case "toString" -> "KernelModFile[" + modId + "]";
 				case "hashCode" -> System.identityHashCode(p);
 				case "equals" -> p == (a == null ? null : a[0]);
@@ -258,6 +271,29 @@ public final class KernelModContainerFactory {
 			});
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/Container] no IConfigurable SPI — getConfig() stays null: %s",
+					String.valueOf(t));
+			return null;
+		}
+	}
+
+	/**
+	 * A fresh, empty {@code ModFileScanData} — public no-arg ctor, empty annotation/class sets.
+	 *
+	 * <p>Returns null if the SPI class is absent, which puts the proxy back on {@link #defaultReturn}'s null and is
+	 * no worse than before this existed.
+	 *
+	 * <p><b>Known gap this papers over, deliberately.</b> Annotation-driven discovery walks these: JEI, Jade and
+	 * Sophisticated Core find their plugins through {@code getAllScanData()}, and Sodium finds third-party config
+	 * entry points the same way. Against an empty set they all find nothing, load, and quietly do nothing. Producing
+	 * REAL scan data means running an FML-shaped annotation scan over every mod jar and is its own piece of work;
+	 * this only guarantees the walk does not NPE.
+	 */
+	private static Object emptyScanData(ClassLoader cl) {
+		try {
+			return Class.forName("net.neoforged.neoforgespi.language.ModFileScanData", false, cl)
+					.getConstructor().newInstance();
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/Container] no ModFileScanData SPI — scan result left null: %s",
 					String.valueOf(t));
 			return null;
 		}
