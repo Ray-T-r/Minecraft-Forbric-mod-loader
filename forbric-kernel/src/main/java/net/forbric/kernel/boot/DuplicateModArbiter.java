@@ -187,7 +187,7 @@ public final class DuplicateModArbiter {
 			ForbricLog.warn("[Forbric/DupeId] -D%s asks for '%s' from %s, but no such jar claims it — falling back "
 					+ "to the preference order", OWNER_OVERRIDE, modId, forced);
 		}
-		for (MultiLoaderArbiter.Ecosystem candidate : MultiLoaderArbiter.preference()) {
+		for (MultiLoaderArbiter.Ecosystem candidate : preference()) {
 			for (Claim claim : claimants) {
 				if (claim.ecosystem() == candidate) return claim;
 			}
@@ -195,6 +195,36 @@ public final class DuplicateModArbiter {
 		// Same ecosystem twice (two versions of one jar in mods/), or an ecosystem the preference does not list:
 		// keep the first by path, matching KernelFabricLoader's "keeping the first".
 		return claimants.get(0);
+	}
+
+	/**
+	 * {@code -Dforbric.dupeIdPreference}, falling back to the shared {@code -Dforbric.multiLoaderPreference}.
+	 *
+	 * <p>These started as ONE knob, on the reasoning that "prefer Fabric on this instance" should mean one thing.
+	 * Merging the two real packs disproved it: the two arbitrations answer different questions. Per-jar asks "this
+	 * jar ships both manifests — which of ITS OWN implementations do we run?", and the right answer is the one the
+	 * pack it came from was built around. Cross-jar asks "two different FILES claim this id — which project do we
+	 * keep?". Setting the shared knob to Fabric-first to resolve the second flipped the first as well, and every
+	 * universal jar in the NeoForge pack (CreativeCore, EnhancedVisuals, AmbientSounds — all shipping a
+	 * fabric.mod.json despite {@code _NEOFORGE_} filenames) started running its Fabric path instead of the tested
+	 * NeoForge one. EnhancedVisuals' entrypoint then failed and its renderer took the client down.
+	 *
+	 * <p>So they default to the same value and can be separated when an instance needs it.
+	 */
+	static List<MultiLoaderArbiter.Ecosystem> preference() {
+		String csv = System.getProperty("forbric.dupeIdPreference");
+		if (csv == null || csv.isBlank()) return MultiLoaderArbiter.preference();
+
+		List<MultiLoaderArbiter.Ecosystem> order = new ArrayList<>();
+		for (String raw : csv.split(",")) {
+			try {
+				order.add(MultiLoaderArbiter.Ecosystem.valueOf(raw.trim().toUpperCase(Locale.ROOT)));
+			} catch (IllegalArgumentException unknown) {
+				ForbricLog.warn("[Forbric/DupeId] ignoring unknown ecosystem '%s' in -Dforbric.dupeIdPreference",
+						raw.trim());
+			}
+		}
+		return order.isEmpty() ? MultiLoaderArbiter.preference() : order;
 	}
 
 	/** {@code -Dforbric.modOwner=sodium=fabric,lithostitched=neoforge} */

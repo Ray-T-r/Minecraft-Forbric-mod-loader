@@ -46,6 +46,7 @@ class DuplicateModArbiterTest {
 		System.clearProperty(DuplicateModArbiter.SWITCH);
 		System.clearProperty(DuplicateModArbiter.OWNER_OVERRIDE);
 		System.clearProperty("forbric.multiLoaderPreference");
+		System.clearProperty("forbric.dupeIdPreference");
 	}
 
 	private static Claim claim(String jar, Ecosystem eco, String... ids) {
@@ -192,6 +193,32 @@ class DuplicateModArbiterTest {
 		Decision d = DuplicateModArbiter.arbitrate(Path.of("/nonexistent/mods"), null);
 
 		assertTrue(d.suppressedJars().isEmpty());
+	}
+
+	@Test
+	void aDedicatedDupePreferenceOverridesTheSharedOne() {
+		// The two arbitrations answer different questions and must be separable: the shared knob still governs
+		// per-jar multiloader ownership while cross-jar ties resolve the other way. Merging the two real packs is
+		// exactly this case — Fabric wins duplicate ids, but the NeoForge pack's universal jars stay NeoForge.
+		System.setProperty("forbric.multiLoaderPreference", "neoforge,minecraftforge,fabric");
+		System.setProperty("forbric.dupeIdPreference", "fabric,neoforge,minecraftforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/sodium-fabric.jar", Ecosystem.FABRIC, "sodium"),
+				claim("/mods/sodium-neoforge.jar", Ecosystem.NEOFORGE, "sodium")));
+
+		assertTrue(d.suppressed(Path.of("/mods/sodium-neoforge.jar")), "the dedicated knob must win");
+	}
+
+	@Test
+	void theDupePreferenceFallsBackToTheSharedOneWhenUnset() {
+		System.setProperty("forbric.multiLoaderPreference", "fabric,neoforge,minecraftforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/sodium-fabric.jar", Ecosystem.FABRIC, "sodium"),
+				claim("/mods/sodium-neoforge.jar", Ecosystem.NEOFORGE, "sodium")));
+
+		assertTrue(d.suppressed(Path.of("/mods/sodium-neoforge.jar")));
 	}
 
 	@Test
