@@ -121,6 +121,17 @@ public final class KernelFabricEcosystem {
 			ForbricLog.info("[Forbric/Fabric] skipped %d Fabric registration(s) for jars a Forge family owns", suppressed);
 		}
 
+		// Presence aliases: a mod whose Fabric jar lost cross-jar arbitration is still HERE — the winner's jar is
+		// 98–100% the same classes — but without this, FabricLoader.isModLoaded(id) answers false and a Fabric mod
+		// that gates an integration on that check silently disables it. Register the identity, nothing else: no
+		// entrypoints, no mixins, no assets, all of which the winner already provides.
+		for (DuplicateModArbiter.Alias alias : dupes.aliasesFor(MultiLoaderArbiter.Ecosystem.FABRIC)) {
+			fabric.register(new KernelModContainer(
+					KernelModMetadata.builtin(alias.modId(), alias.version(), alias.modId()), null, null));
+			ForbricLog.info("[Forbric/Fabric] presence alias '%s' %s — its Fabric jar lost arbitration, but the "
+					+ "winning jar supplies the classes; isModLoaded now answers", alias.modId(), alias.version());
+		}
+
 		fabric.freeze();
 		loader = fabric;
 
