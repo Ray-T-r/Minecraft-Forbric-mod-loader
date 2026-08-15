@@ -788,9 +788,14 @@ public final class KernelLifecycle {
 			process.setAccessible(true);
 			process.invoke(event);
 
-			int after = ((java.util.List<?>) hooksCls.getMethod("getDataPackRegistries").invoke(null)).size();
-			ForbricLog.info("[Forbric/Lifecycle] posted datapack-registry declaration to %d bus(es) — %d datapack "
-					+ "registr(ies) declared, %d total", posted, after - before, after);
+			// Name what landed, not just how many: on the merged pack a count alone could not distinguish "the
+			// registry a mod needs is present" from "nine OTHER registries are present", and that ambiguity cost a
+			// diagnosis. RegistryData is a record whose toString carries the key.
+			java.util.List<?> now = (java.util.List<?>) hooksCls.getMethod("getDataPackRegistries").invoke(null);
+			java.util.List<String> added = new java.util.ArrayList<>();
+			for (int i = before; i < now.size(); i++) added.add(String.valueOf(now.get(i)));
+			ForbricLog.info("[Forbric/Lifecycle] posted datapack-registry declaration to %d bus(es) — %d declared "
+					+ "(%s), %d total", posted, now.size() - before, added, now.size());
 		} catch (ClassNotFoundException absent) {
 			ForbricLog.debug("[Forbric/Lifecycle] no NeoForge DataPackRegistryEvent — skipping");
 		} catch (Throwable t) {
