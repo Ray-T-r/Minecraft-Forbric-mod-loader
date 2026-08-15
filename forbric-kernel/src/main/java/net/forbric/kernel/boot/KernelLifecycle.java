@@ -736,11 +736,45 @@ public final class KernelLifecycle {
 		if (mods.isEmpty()) return;
 
 		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent", "common setup");
-		if (client) {
-			fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLClientSetupEvent", "client setup");
-		}
+		// On the CLIENT the remaining two phases are deferred to onClientEntrypoints — see fireClientSetupLifecycle.
+		if (client) return;
 		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent", "load complete");
 	}
+
+	/**
+	 * Posts {@code FMLClientSetupEvent} → {@code FMLLoadCompleteEvent} from INSIDE {@code Minecraft.<init>}, which is
+	 * the window genuine NeoForge uses (its {@code ClientModLoader.begin} runs there) and the only one where
+	 * {@code Minecraft.getInstance()} is live.
+	 *
+	 * <p>This is the same bug the Fabric client entrypoints already moved for, one ecosystem later. Fired from the
+	 * kernel's pre-{@code Minecraft} registration window instead, the whole setup lifecycle ran with the singleton
+	 * still null, and it cost three distinct failures on the Odyssey pack:
+	 * <ul>
+	 *   <li>five mods threw {@code "Render layers can only be set during client loading!"} — NeoForge gates that on
+	 *       a flag only set inside its own client-loading window;</li>
+	 *   <li>{@code DeferredWorkQueue.runTasks} then threw, so client setup never completed for anyone;</li>
+	 *   <li>CreativeCore's {@code GuiStyle.<clinit>} caches {@code Minecraft.getInstance()} into a static and got
+	 *       null, so every {@code GuiStyle.reload} threw at its first line. Its {@code catch} covers the whole
+	 *       method body — including the {@code clearRegistry} it never reached — and then re-registers the default
+	 *       style, so the SECOND resource reload died on {@code 'default' already exists} and took the client with
+	 *       it. One null static, three layers deep.</li>
+	 * </ul>
+	 *
+	 * <p>Deliberately outside the reopened-registry window {@link #onClientEntrypoints} holds for Fabric: on genuine
+	 * NeoForge these two phases run with the registries FROZEN, and a mod registering content from them is expected
+	 * to fail. Best-effort and once-only, so a second reload cannot re-post them.
+	 */
+	private static void fireClientSetupLifecycle(ClassLoader cl) {
+		if (!CLIENT_SETUP_FIRED.compareAndSet(false, true)) return;
+		java.util.Map<String, KernelModLoader.NeoIdentity> mods = KernelModLoader.publishedNeoMods();
+		if (mods.isEmpty()) return;
+
+		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLClientSetupEvent", "client setup");
+		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent", "load complete");
+	}
+
+	private static final java.util.concurrent.atomic.AtomicBoolean CLIENT_SETUP_FIRED =
+			new java.util.concurrent.atomic.AtomicBoolean();
 
 	private static void fireSetupPhase(ClassLoader cl, java.util.Map<String, KernelModLoader.NeoIdentity> mods,
 			String eventClassName, String label) {
@@ -1208,6 +1242,9 @@ public final class KernelLifecycle {
 		} finally {
 			if (reopened) closeClientEntrypointWindow(cl, opened);
 		}
+
+		// After the window closes, with the registries frozen again — the state genuine NeoForge fires these in.
+		fireClientSetupLifecycle(cl);
 	}
 
 	/** Re-closes after the client entrypoints and redoes the id bookkeeping their registrations invalidated. */
