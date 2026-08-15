@@ -119,8 +119,13 @@ public final class MultiLoaderArbiter {
 		return declared;
 	}
 
-	/** {@code -Dforbric.multiLoaderPreference} (csv of ecosystem names), else the documented default. */
-	private static List<Ecosystem> preference() {
+	/**
+	 * {@code -Dforbric.multiLoaderPreference} (csv of ecosystem names), else the documented default.
+	 *
+	 * <p>Package-visible so {@link DuplicateModArbiter} resolves cross-jar ties by the SAME order — one knob for
+	 * both arbitrations, which is the only way "prefer Fabric on this instance" can mean one thing.
+	 */
+	static List<Ecosystem> preference() {
 		String csv = System.getProperty("forbric.multiLoaderPreference");
 		if (csv == null || csv.isBlank()) return DEFAULT_PREFERENCE;
 

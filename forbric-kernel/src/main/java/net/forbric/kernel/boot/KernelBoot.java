@@ -137,9 +137,16 @@ public final class KernelBoot {
 		Path gameDir = extractGameDir(gameArgs, side.stripGameDir);
 		String gameVersion = detectGameVersion(gameJar);
 
+		// Two separate jars can declare the SAME mod id — inevitable the moment a Fabric pack and a NeoForge pack
+		// are merged. MultiLoaderArbiter cannot see that (it is keyed by jar path), and left alone both jars enter
+		// `owned` and shadow each other class-for-class, contribute each other's mixin configs, and register the
+		// same content twice. Decide once here; both discoveries below skip the losers.
+		DuplicateModArbiter.Decision dupes =
+				DuplicateModArbiter.arbitrate(gameDir.resolve("mods"), side.envType);
+
 		// Forge/NeoForge mod jars (Mojmap-compiled like the merged base → load directly, no remap), plus the
 		// libraries they nest at META-INF/jarjar/ — see extractForgeFamilyJarJar.
-		ForgeFamilyMods forgeFamily = discoverForgeFamilyModJars(gameDir.resolve("mods"));
+		ForgeFamilyMods forgeFamily = discoverForgeFamilyModJars(gameDir.resolve("mods"), dupes);
 		List<Path> modJars = new ArrayList<>(forgeFamily.jars());
 		List<Path> nested = extractForgeFamilyJarJar(modJars, gameDir);
 		modJars.addAll(nested);
@@ -154,7 +161,7 @@ public final class KernelBoot {
 
 		// Fabric mods (+ extracted JiJ children). Also Mojmap on this game version. Creates the FabricLoader.
 		List<Path> fabricJars = KernelFabricEcosystem.discover(side.envType, gameDir, gameVersion,
-				gameArgs.toArray(new String[0]));
+				gameArgs.toArray(new String[0]), dupes);
 		for (Path jar : fabricJars) {
 			if (!modJars.contains(jar)) owned.add(jar.toUri().toURL());   // a multiloader jar carries both manifests
 		}
@@ -604,7 +611,8 @@ public final class KernelBoot {
 		return configs;
 	}
 
-	private static ForgeFamilyMods discoverForgeFamilyModJars(Path modsDir) {
+	private static ForgeFamilyMods discoverForgeFamilyModJars(Path modsDir,
+			DuplicateModArbiter.Decision dupes) {
 		List<Path> jars = new ArrayList<>();
 		List<KernelForgeFamilyMixins.ForgeMixinConfig> configs = new ArrayList<>();
 		if (!Files.isDirectory(modsDir)) return new ForgeFamilyMods(jars, configs);
@@ -613,6 +621,13 @@ public final class KernelBoot {
 			List<Path> candidates = entries.filter(p -> p.getFileName().toString().endsWith(".jar"))
 					.filter(Files::isRegularFile).sorted().toList();
 			for (Path jar : candidates) {
+				// A jar another jar's copy of the same mod won is "not installed" — it contributes no classes, no
+				// mixin configs, no ATs and no JiJ children. That is what both genuine loaders would see, and it is
+				// the whole point: keeping it would leave the shadowing and the double mixin apply in place.
+				if (dupes.suppressed(jar)) {
+					ForbricLog.debug("[Forbric/DupeId] skipping Forge-family jar %s — superseded", jar.getFileName());
+					continue;
+				}
 				try {
 					collectForgeFamily(discoverer, jar, jars, configs);
 				} catch (IOException e) {

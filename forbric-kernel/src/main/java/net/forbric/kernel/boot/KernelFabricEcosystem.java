@@ -77,8 +77,20 @@ public final class KernelFabricEcosystem {
 	 * jars (mods + their extracted JiJ children) that must join the game class loader.
 	 */
 	public static List<Path> discover(EnvType envType, Path gameDir, String gameVersion, String[] launchArgs) {
+		return discover(envType, gameDir, gameVersion, launchArgs, DuplicateModArbiter.Decision.none());
+	}
+
+	/**
+	 * @param dupes cross-jar arbitration result; a Fabric jar another jar's copy of the same mod won is skipped
+	 *              ENTIRELY — not merely left unregistered, as a universal jar is. It must not reach the classpath
+	 *              either, or its classes still shadow the winner's (first-URL-wins) and its mixin configs still
+	 *              apply.
+	 */
+	public static List<Path> discover(EnvType envType, Path gameDir, String gameVersion, String[] launchArgs,
+			DuplicateModArbiter.Decision dupes) {
 		Path cacheDir = gameDir.resolve(".forbric-kernel").resolve("jij");
 		FabricModDiscovery discovery = new FabricModDiscovery(envType, cacheDir);
+		discovery.setSkip(dupes::suppressed);
 		discovery.discover(gameDir.resolve("mods"));
 
 		KernelFabricLoader fabric = KernelFabricLoader.create(envType, gameDir, gameDir.resolve("config"),

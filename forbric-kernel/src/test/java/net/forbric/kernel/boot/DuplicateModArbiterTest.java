@@ -1,0 +1,204 @@
+/*
+ * Copyright 2026 The Forbric Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package net.forbric.kernel.boot;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.file.Path;
+import java.util.List;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import net.forbric.kernel.boot.DuplicateModArbiter.Claim;
+import net.forbric.kernel.boot.DuplicateModArbiter.Decision;
+import net.forbric.kernel.boot.MultiLoaderArbiter.Ecosystem;
+
+/**
+ * Covers {@link DuplicateModArbiter}'s decision rules, driven through the pure {@code arbitrate(List<Claim>)} so no
+ * filesystem or real jars are involved. The scanning half (which parser reads which manifest, the {@code
+ * environment} filter, composing with {@link MultiLoaderArbiter}) is exercised by the real packs, not here.
+ */
+class DuplicateModArbiterTest {
+
+	@BeforeEach
+	@AfterEach
+	void clearState() {
+		DuplicateModArbiter.reset();
+		MultiLoaderArbiter.reset();
+		System.clearProperty(DuplicateModArbiter.SWITCH);
+		System.clearProperty(DuplicateModArbiter.OWNER_OVERRIDE);
+		System.clearProperty("forbric.multiLoaderPreference");
+	}
+
+	private static Claim claim(String jar, Ecosystem eco, String... ids) {
+		return new Claim(Path.of(jar), eco, List.of(ids));
+	}
+
+	@Test
+	void distinctIdsAreNeverSuppressed() {
+		// THE pass-through assertion: no existing gate stages the same mod id twice, so if this holds the whole
+		// arbitration is a provable no-op on all of them.
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/a.jar", Ecosystem.FABRIC, "alpha"),
+				claim("/mods/b.jar", Ecosystem.NEOFORGE, "beta"),
+				claim("/mods/c.jar", Ecosystem.MINECRAFTFORGE, "gamma")));
+
+		assertTrue(d.suppressedJars().isEmpty());
+		assertTrue(d.ownerByModId().isEmpty());
+	}
+
+	@Test
+	void aFabricNeoforgePairResolvesByTheGlobalPreference() {
+		System.setProperty("forbric.multiLoaderPreference", "fabric,neoforge,minecraftforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/sodium-fabric.jar", Ecosystem.FABRIC, "sodium"),
+				claim("/mods/sodium-neoforge.jar", Ecosystem.NEOFORGE, "sodium")));
+
+		assertTrue(d.suppressed(Path.of("/mods/sodium-neoforge.jar")), "the NeoForge copy must lose");
+		assertFalse(d.suppressed(Path.of("/mods/sodium-fabric.jar")));
+		assertEquals(Path.of("/mods/sodium-fabric.jar").toAbsolutePath(), d.ownerByModId().get("sodium"));
+	}
+
+	@Test
+	void flippingThePreferenceFlipsTheWinner() {
+		System.setProperty("forbric.multiLoaderPreference", "neoforge,minecraftforge,fabric");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/sodium-fabric.jar", Ecosystem.FABRIC, "sodium"),
+				claim("/mods/sodium-neoforge.jar", Ecosystem.NEOFORGE, "sodium")));
+
+		assertTrue(d.suppressed(Path.of("/mods/sodium-fabric.jar")));
+	}
+
+	@Test
+	void aPerModOverrideBeatsThePreference() {
+		System.setProperty("forbric.multiLoaderPreference", "fabric,neoforge,minecraftforge");
+		System.setProperty(DuplicateModArbiter.OWNER_OVERRIDE, "lithostitched=neoforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/litho-fabric.jar", Ecosystem.FABRIC, "lithostitched"),
+				claim("/mods/litho-neoforge.jar", Ecosystem.NEOFORGE, "lithostitched"),
+				claim("/mods/sodium-fabric.jar", Ecosystem.FABRIC, "sodium"),
+				claim("/mods/sodium-neoforge.jar", Ecosystem.NEOFORGE, "sodium")));
+
+		assertTrue(d.suppressed(Path.of("/mods/litho-fabric.jar")), "the override must win for lithostitched");
+		assertTrue(d.suppressed(Path.of("/mods/sodium-neoforge.jar")), "sodium still follows the preference");
+	}
+
+	@Test
+	void anOverrideNamingAnEcosystemWithNoClaimFallsBackRatherThanUnloadingTheMod() {
+		System.setProperty("forbric.multiLoaderPreference", "fabric,neoforge,minecraftforge");
+		System.setProperty(DuplicateModArbiter.OWNER_OVERRIDE, "sodium=minecraftforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/sodium-fabric.jar", Ecosystem.FABRIC, "sodium"),
+				claim("/mods/sodium-neoforge.jar", Ecosystem.NEOFORGE, "sodium")));
+
+		// A typo must never leave the mod loaded by nobody: exactly one jar survives, chosen by preference.
+		assertEquals(1, d.suppressedJars().size());
+		assertTrue(d.suppressed(Path.of("/mods/sodium-neoforge.jar")));
+	}
+
+	@Test
+	void anUnknownEcosystemInTheOverrideIsIgnored() {
+		System.setProperty("forbric.multiLoaderPreference", "fabric,neoforge,minecraftforge");
+		System.setProperty(DuplicateModArbiter.OWNER_OVERRIDE, "sodium=quilt");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/sodium-fabric.jar", Ecosystem.FABRIC, "sodium"),
+				claim("/mods/sodium-neoforge.jar", Ecosystem.NEOFORGE, "sodium")));
+
+		assertTrue(d.suppressed(Path.of("/mods/sodium-neoforge.jar")));
+	}
+
+	@Test
+	void partialOverlapSuppressesNothing() {
+		// The bundling jar declares foo AND foo_compat; only foo collides. Suppressing it would delete foo_compat,
+		// which nothing else provides.
+		System.setProperty("forbric.multiLoaderPreference", "fabric,neoforge,minecraftforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/foo-fabric.jar", Ecosystem.FABRIC, "foo"),
+				claim("/mods/foo-bundle-neoforge.jar", Ecosystem.NEOFORGE, "foo", "foo_compat")));
+
+		assertTrue(d.suppressedJars().isEmpty(), "a partially-overlapping jar must survive");
+		assertEquals(Path.of("/mods/foo-fabric.jar").toAbsolutePath(), d.ownerByModId().get("foo"));
+	}
+
+	@Test
+	void aFullySubsumedBundleIsSuppressed() {
+		// The mirror of the case above: every id the bundle declares is also claimed by winners, so nothing is
+		// orphaned and it can go.
+		System.setProperty("forbric.multiLoaderPreference", "fabric,neoforge,minecraftforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/foo-fabric.jar", Ecosystem.FABRIC, "foo"),
+				claim("/mods/compat-fabric.jar", Ecosystem.FABRIC, "foo_compat"),
+				claim("/mods/foo-bundle-neoforge.jar", Ecosystem.NEOFORGE, "foo", "foo_compat")));
+
+		assertTrue(d.suppressed(Path.of("/mods/foo-bundle-neoforge.jar")));
+		assertEquals(1, d.suppressedJars().size());
+	}
+
+	@Test
+	void twoJarsOfTheSameEcosystemKeepTheFirstByPath() {
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/architectury-21.0.2.jar", Ecosystem.NEOFORGE, "architectury"),
+				claim("/mods/architectury-21.0.6.jar", Ecosystem.NEOFORGE, "architectury")));
+
+		// Deterministic, not version-aware — the documented behaviour, and -Dforbric.modOwner cannot break a
+		// same-ecosystem tie either. Version-picking is out of scope; the log names both.
+		assertTrue(d.suppressed(Path.of("/mods/architectury-21.0.6.jar")));
+		assertFalse(d.suppressed(Path.of("/mods/architectury-21.0.2.jar")));
+	}
+
+	@Test
+	void threeWayContestLeavesExactlyOneSurvivor() {
+		System.setProperty("forbric.multiLoaderPreference", "minecraftforge,fabric,neoforge");
+
+		Decision d = DuplicateModArbiter.arbitrate(List.of(
+				claim("/mods/x-fabric.jar", Ecosystem.FABRIC, "x"),
+				claim("/mods/x-neoforge.jar", Ecosystem.NEOFORGE, "x"),
+				claim("/mods/x-forge.jar", Ecosystem.MINECRAFTFORGE, "x")));
+
+		assertEquals(2, d.suppressedJars().size());
+		assertFalse(d.suppressed(Path.of("/mods/x-forge.jar")));
+	}
+
+	@Test
+	void theOffSwitchDisablesArbitrationEntirely() {
+		System.setProperty(DuplicateModArbiter.SWITCH, "off");
+
+		// The off switch is checked in the scanning entry point, which is what a boot calls.
+		Decision d = DuplicateModArbiter.arbitrate(Path.of("/nonexistent/mods"), null);
+
+		assertTrue(d.suppressedJars().isEmpty());
+	}
+
+	@Test
+	void aMissingModsDirectoryIsNotAnError() {
+		Decision d = DuplicateModArbiter.arbitrate(Path.of("/nonexistent/mods"), null);
+
+		assertTrue(d.suppressedJars().isEmpty());
+		assertFalse(d.suppressed(Path.of("/nonexistent/mods/anything.jar")));
+	}
+}

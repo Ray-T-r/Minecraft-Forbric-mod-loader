@@ -50,9 +50,21 @@ public final class FabricModDiscovery {
 	private final List<KernelModContainer> containers = new ArrayList<>();
 	private final List<Path> classpathJars = new ArrayList<>();
 
+	/**
+	 * Top-level jars this scan must pretend are not installed — the losers of cross-jar mod-id arbitration.
+	 * Applied only to top-level jars: a suppressed jar never gets far enough for its nested children to matter,
+	 * and the winner brings its own.
+	 */
+	private java.util.function.Predicate<Path> skip = jar -> false;
+
 	public FabricModDiscovery(EnvType envType, Path cacheDir) {
 		this.envType = envType;
 		this.cacheDir = cacheDir;
+	}
+
+	/** Sets the top-level skip test (see {@link #skip}). */
+	public void setSkip(java.util.function.Predicate<Path> skip) {
+		if (skip != null) this.skip = skip;
 	}
 
 	/** Every discovered mod, parents before their nested children. */
@@ -82,6 +94,11 @@ public final class FabricModDiscovery {
 		}
 
 		for (Path jar : jars) {
+			if (skip.test(jar)) {
+				ForbricLog.debug("[Forbric/Fabric] skipping %s — superseded by another jar's copy of the same mod",
+						jar.getFileName());
+				continue;
+			}
 			discoverJar(jar, null);
 		}
 	}
