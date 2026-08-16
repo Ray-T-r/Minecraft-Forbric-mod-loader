@@ -560,14 +560,22 @@ public final class KernelBoot {
 		List<Path> extracted = new ArrayList<>();
 		java.util.Set<String> seen = new java.util.HashSet<>();
 
-		for (Path modJar : modJars) {
+		// A worklist, not a single pass: a nested library can nest libraries of its own, and one level of extraction
+		// leaves the innermost ones on nobody's classpath. Tectonic bundles apollib, apollib bundles json5-java, and
+		// Tectonic's @Mod constructor died on NoClassDefFoundError: de/marhali/json5/stream/Json5Lexer — its client
+		// class had constructed, so the mod looked present while its main class had never run.
+		java.util.Deque<Path> queue = new java.util.ArrayDeque<>(modJars);
+		while (!queue.isEmpty()) {
+			Path modJar = queue.poll();
 			try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(modJar.toFile())) {
 				for (var entries = zip.entries(); entries.hasMoreElements();) {
 					java.util.zip.ZipEntry entry = entries.nextElement();
 					String name = entry.getName();
-					if (entry.isDirectory() || !name.startsWith("META-INF/jarjar/") || !name.endsWith(".jar")) {
-						continue;
-					}
+					// Both conventions at every level: NeoForge nests at META-INF/jarjar/, Fabric at META-INF/jars/,
+					// and a multiloader library uses its own regardless of the jar that carries it — apollib is a
+					// NeoForge jar nesting json5 the Fabric way.
+					boolean nested = name.startsWith("META-INF/jarjar/") || name.startsWith("META-INF/jars/");
+					if (entry.isDirectory() || !nested || !name.endsWith(".jar")) continue;
 
 					String simple = name.substring(name.lastIndexOf('/') + 1);
 					if (!seen.add(simple)) continue;
@@ -578,6 +586,8 @@ public final class KernelBoot {
 						Files.copy(in, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 					}
 					extracted.add(target);
+					// Descend: what we just wrote may itself carry nested jars.
+					queue.add(target);
 					ForbricLog.info("[Forbric/Boot] extracted nested JarJar library %s from %s", simple,
 							modJar.getFileName());
 				}
