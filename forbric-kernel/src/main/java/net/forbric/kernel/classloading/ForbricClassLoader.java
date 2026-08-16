@@ -20,6 +20,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.jar.Attributes;
@@ -78,6 +80,40 @@ public final class ForbricClassLoader extends URLClassLoader {
 	}
 
 	/**
+	 * Jars that were SUPERSEDED by another copy of the same mod, consulted ONLY when a class is in no owned jar.
+	 *
+	 * <p>Cross-jar arbitration keeps one jar per mod id and drops the other, which is required: two builds of one
+	 * mod share most class NAMES but not their bytes (measured: 90 of Jade's 436 shared classes differ, 29 of
+	 * lithostitched's 346), so putting both on the classpath would mix two builds under first-URL-wins. What that
+	 * costs is the loser's handful of platform-only classes — 40 across the nine superseded jars of the merged pack,
+	 * 0 to 17 each.
+	 *
+	 * <p>Nothing in that pack referenced any of them, but a mod that IS built against the other side's platform
+	 * class would hit a bare {@code NoClassDefFoundError} with nothing pointing at the cause. Serving them as a
+	 * last resort closes that: because this is reached only after {@link #findResource} misses, it cannot shadow the
+	 * winner — the disjointness is structural rather than something to compute and trust.
+	 *
+	 * <p><b>Classes only, never resources.</b> The superseded jar's {@code *.mixins.json} and {@code assets/} must
+	 * stay unreachable — not applying them twice is the whole point of suppressing it.
+	 *
+	 * <p><b>This fixes linkage, not initialisation.</b> A platform class whose own side never ran its {@code @Mod} /
+	 * entrypoint may still fail on state that was never set up. That case needs the mod pinned to the other
+	 * ecosystem instead, which is what the rescue log line tells the user to do.
+	 */
+	public void setRescueJars(List<URL> jars) {
+		rescue = (jars == null || jars.isEmpty()) ? null : new URLClassLoader(jars.toArray(new URL[0]), null);
+	}
+
+	private volatile URLClassLoader rescue;
+	private static final Set<String> RESCUED = ConcurrentHashMap.newKeySet();
+
+	/** A class the owned jars do not have, from a superseded jar. Null when there is no rescue set or no such class. */
+	private URL rescueResource(String path) {
+		URLClassLoader superseded = rescue;
+		return superseded == null ? null : superseded.findResource(path);
+	}
+
+	/**
 	 * Offers a class synthesized by a transformer (class-tweaker enum extension) for definition on demand. The
 	 * bytes are used verbatim; the class is defined the first time something loads it.
 	 *
@@ -107,6 +143,8 @@ public final class ForbricClassLoader extends URLClassLoader {
 	public byte[] getPreMixinClassBytes(String name) {
 		String path = name.replace('.', '/') + ".class";
 		URL resource = findResource(path);
+		// Same last-resort as tryDefineGameClass, or Mixin would inspect different bytes than the ones defined.
+		if (resource == null) resource = rescueResource(path);
 
 		if (resource != null) {
 			byte[] raw = read(resource);
@@ -225,6 +263,21 @@ public final class ForbricClassLoader extends URLClassLoader {
 			if (generated != null) {
 				definePackageIfNeeded(name, null);
 				return define(name, generated);
+			}
+
+			// Last resort: a jar that cross-jar arbitration superseded. Reached only because no owned jar has this
+			// class, so it cannot shadow the winner — see setRescueJars.
+			resource = rescueResource(path);
+			if (resource != null) {
+				bytes = read(resource);
+				if (bytes == null) return null;
+				if (RESCUED.add(name)) {
+					ForbricLog.info("[Forbric/DupeId] served %s from a superseded jar — no loaded mod provides it. "
+							+ "If this mod then fails on uninitialised state, pin it to that ecosystem instead "
+							+ "(forbric-mods.txt, or -Dforbric.modOwner=<id>=<loader>)", name);
+				}
+				byte[] transformed = transformer.apply(name, bytes);
+				if (transformed != null) bytes = transformed;
 			}
 		}
 
