@@ -17,6 +17,7 @@
 package net.forbric.kernel.boot;
 
 import java.io.InputStream;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -67,6 +68,8 @@ import net.forbric.kernel.util.ForbricLog;
 public final class DuplicateModArbiter {
 	static final String SWITCH = "forbric.crossJarArbitration";
 	static final String OWNER_OVERRIDE = "forbric.modOwner";
+	/** The player-facing override file, next to {@code mods/}. See {@link #loadOverrideFile}. */
+	static final String OVERRIDE_FILE = "forbric-mods.txt";
 
 	/** One jar's claim: the ecosystem it loads as, and the mod ids it declares under that ecosystem. */
 	public record Claim(Path jar, MultiLoaderArbiter.Ecosystem ecosystem, List<String> modIds,
@@ -136,6 +139,7 @@ public final class DuplicateModArbiter {
 	public static synchronized void reset() {
 		cached = null;
 		cachedDir = null;
+		fileOverrides = Map.of();
 	}
 
 	/** Scans {@code modsDir} once and arbitrates. Repeat calls for the same directory return the same decision. */
@@ -147,7 +151,11 @@ public final class DuplicateModArbiter {
 		}
 		if (cached != null && modsDir != null && modsDir.equals(cachedDir)) return cached;
 
+		Path rundir = modsDir == null ? null : modsDir.getParent();
+		loadOverrideFile(rundir);
 		Decision decision = arbitrate(scan(modsDir, envType));
+		writeOverrideTemplate(rundir, decision);
+		MergeReport.write(rundir, modsDir, decision);
 		cached = decision;
 		cachedDir = modsDir;
 		return decision;
@@ -284,20 +292,108 @@ public final class DuplicateModArbiter {
 	/** {@code -Dforbric.modOwner=sodium=fabric,lithostitched=neoforge} */
 	private static MultiLoaderArbiter.Ecosystem overrideFor(String modId) {
 		String csv = System.getProperty(OWNER_OVERRIDE);
-		if (csv == null || csv.isBlank()) return null;
-		for (String raw : csv.split(",")) {
-			int eq = raw.indexOf('=');
-			if (eq <= 0) continue;
-			if (!raw.substring(0, eq).trim().equals(modId)) continue;
-			String eco = raw.substring(eq + 1).trim().toUpperCase(Locale.ROOT);
-			try {
-				return MultiLoaderArbiter.Ecosystem.valueOf(eco);
-			} catch (IllegalArgumentException unknown) {
-				ForbricLog.warn("[Forbric/DupeId] ignoring unknown ecosystem '%s' in -D%s", eco, OWNER_OVERRIDE);
-				return null;
+		if (csv != null && !csv.isBlank()) {
+			for (String raw : csv.split(",")) {
+				int eq = raw.indexOf('=');
+				if (eq <= 0) continue;
+				if (!raw.substring(0, eq).trim().equals(modId)) continue;
+				MultiLoaderArbiter.Ecosystem eco = ecosystem(raw.substring(eq + 1), "-D" + OWNER_OVERRIDE);
+				if (eco != null) return eco;
 			}
 		}
-		return null;
+		// The command line wins, so a launcher argument can always override a stale file.
+		return fileOverrides.get(modId);
+	}
+
+	/** Parsed {@code forbric-mods.txt}; empty until {@link #loadOverrideFile} runs, and after {@link #reset}. */
+	private static volatile Map<String, MultiLoaderArbiter.Ecosystem> fileOverrides = Map.of();
+
+	/**
+	 * Reads {@code <rundir>/forbric-mods.txt} — the way a player picks a side without touching JVM arguments.
+	 *
+	 * <p>Launchers make {@code -D} flags awkward to set and easy to lose; a text file next to {@code mods/} is
+	 * something anyone can edit, and {@link #writeOverrideTemplate} puts one there with every duplicate already
+	 * listed and commented out, so the edit is deleting a {@code #}.
+	 *
+	 * <p>Parsing is deliberately forgiving — blank lines, {@code #} comments (whole-line and trailing), any casing,
+	 * any spacing. A line that cannot be understood is warned about and SKIPPED: a typo must never be able to stop
+	 * a mod from loading, which is the same rule the ecosystem-name handling follows.
+	 */
+	private static void loadOverrideFile(Path rundir) {
+		fileOverrides = Map.of();
+		if (rundir == null) return;
+		Path file = rundir.resolve(OVERRIDE_FILE);
+		if (!Files.isRegularFile(file)) return;
+
+		Map<String, MultiLoaderArbiter.Ecosystem> parsed = new LinkedHashMap<>();
+		try {
+			int lineNo = 0;
+			for (String raw : Files.readAllLines(file)) {
+				lineNo++;
+				int hash = raw.indexOf('#');
+				String line = (hash >= 0 ? raw.substring(0, hash) : raw).trim();
+				if (line.isEmpty()) continue;
+
+				int eq = line.indexOf('=');
+				if (eq <= 0) {
+					ForbricLog.warn("[Forbric/DupeId] %s line %d: expected '<mod id> = <loader>', got '%s' — skipped",
+							OVERRIDE_FILE, lineNo, line);
+					continue;
+				}
+				MultiLoaderArbiter.Ecosystem eco = ecosystem(line.substring(eq + 1), OVERRIDE_FILE + " line " + lineNo);
+				if (eco != null) parsed.put(line.substring(0, eq).trim(), eco);
+			}
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/DupeId] could not read " + OVERRIDE_FILE + " — using the automatic choice", t);
+			return;
+		}
+		fileOverrides = Map.copyOf(parsed);
+		if (!parsed.isEmpty()) {
+			ForbricLog.info("[Forbric/DupeId] %s pins %s", OVERRIDE_FILE, parsed);
+		}
+	}
+
+	/**
+	 * Writes {@code forbric-mods.txt} the first time an instance has duplicates, pre-filled and fully commented out.
+	 *
+	 * <p>The point is that the player never has to compose anything: every duplicate is already there with the
+	 * choice the kernel made, so switching one is deleting a {@code #}. Never overwrites an existing file — that
+	 * file is the player's.
+	 *
+	 * <p>Best-effort. A read-only rundir must cost a debug line, not the boot.
+	 */
+	private static void writeOverrideTemplate(Path rundir, Decision decision) {
+		if (rundir == null || decision.ownerByModId().isEmpty()) return;
+		Path file = rundir.resolve(OVERRIDE_FILE);
+		if (Files.exists(file)) return;
+
+		try {
+			StringBuilder out = new StringBuilder();
+			for (String line : MergeReport.overrideTemplateHeader()) out.append(line).append('\n');
+			for (Map.Entry<String, Path> e : decision.ownerByModId().entrySet()) {
+				MultiLoaderArbiter.Ecosystem owner = MultiLoaderArbiter.ownerOf(e.getValue());
+				out.append("# ").append(e.getKey()).append(" = ")
+						.append(owner == null ? "fabric" : owner.name().toLowerCase(Locale.ROOT))
+						.append('\n');
+			}
+			Files.writeString(file, out.toString());
+			ForbricLog.info("[Forbric/DupeId] wrote %s — edit it to pick a different copy of any duplicated mod",
+					file);
+		} catch (IOException | RuntimeException e) {
+			ForbricLog.debug("[Forbric/DupeId] could not write %s: %s", OVERRIDE_FILE, String.valueOf(e));
+		}
+	}
+
+	/** Parses one ecosystem name, warning (and returning null) rather than throwing on anything unrecognised. */
+	private static MultiLoaderArbiter.Ecosystem ecosystem(String raw, String where) {
+		String name = raw.trim().toUpperCase(Locale.ROOT);
+		try {
+			return MultiLoaderArbiter.Ecosystem.valueOf(name);
+		} catch (IllegalArgumentException unknown) {
+			ForbricLog.warn("[Forbric/DupeId] %s: '%s' is not a loader — use fabric, neoforge or minecraftforge",
+					where, raw.trim());
+			return null;
+		}
 	}
 
 	/** Top-level jars only, sorted by path so ties are deterministic. */

@@ -322,7 +322,13 @@ public final class PassiveSeeder {
 					.filter(Files::isRegularFile).sorted().toList();
 		}
 
+		// The seeded list must describe the jars this boot actually loaded. This walk is its own pass over mods/, so
+		// it saw only MultiLoaderArbiter and reported a jar that cross-jar arbitration had already superseded — a
+		// mod would then resolve itself through FMLLoader.getLoadingModList() and find the copy that is NOT running.
+		DuplicateModArbiter.Decision dupes = DuplicateModArbiter.current();
+
 		for (Path jar : jars) {
+			if (dupes.suppressed(jar)) continue;
 			// Per-jar, not one pass over the whole directory: an unreadable or malformed manifest anywhere in a real
 			// mods folder must cost that one jar, not the entire seeded list.
 			List<DiscoveredMod> declared;
