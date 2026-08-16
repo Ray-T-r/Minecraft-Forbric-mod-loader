@@ -17,6 +17,7 @@
 package net.forbric.kernel.boot;
 
 import java.lang.reflect.Constructor;
+import java.nio.file.Path;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -51,11 +52,26 @@ public final class KernelModContainerFactory {
 
 	/** Builds a {@code ModContainer} for {@code modId} whose {@code getEventBus()} returns {@code bus}. */
 	public static Object create(ForbricClassLoader loader, ClassLoader cl, String modId, Object bus) throws Exception {
+		return create(loader, cl, modId, bus, null);
+	}
+
+	/**
+	 * @param jar the mod's real jar, so its {@code IModFile} can hand back the mod's OWN contents. A mod that reads
+	 *            files out of its own jar through the SPI —
+	 *            {@code getModInfo().getOwningFile().getFile().getContents()} — gets nothing without it. Tectonic
+	 *            builds its bundled datapack that way ({@code JarContentsPackResources} over
+	 *            {@code resourcepacks/tectonic}); against a null it produced a null Pack, and
+	 *            {@code PackRepository.discoverAvailable} then died on
+	 *            {@code Cannot invoke Pack.streamSelfAndChildren() because "pack" is null}, failing the world load.
+	 *            Null for a presence alias, which has no jar of its own.
+	 */
+	public static Object create(ForbricClassLoader loader, ClassLoader cl, String modId, Object bus, Path jar)
+			throws Exception {
 		Class<?> iModInfo = Class.forName("net.neoforged.neoforgespi.language.IModInfo", false, cl);
 		Class<?> iEventBus = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
 		Class<?> modContainer = Class.forName("net.neoforged.fml.ModContainer", false, cl);
 
-		Object modInfo = proxyModInfo(iModInfo, modId);
+		Object modInfo = proxyModInfo(iModInfo, modId, jar);
 
 		Object genuine = tryGenuineFmlContainer(cl, modId, bus, modInfo, modContainer);
 		if (genuine != null) return genuine;
@@ -169,6 +185,10 @@ public final class KernelModContainerFactory {
 	 * {@code getOwningFile().getFile().getFilePath()} exactly like the listener error path below.
 	 */
 	static Object proxyModInfo(Class<?> iModInfo, String modId) {
+		return proxyModInfo(iModInfo, modId, null);
+	}
+
+	static Object proxyModInfo(Class<?> iModInfo, String modId, Path jar) {
 		// A non-null owning-file chain: NeoForge's error path ModContainer.acceptEvent → ModLoadingIssue
 		// .withAffectedMod dereferences getOwningFile().getFile().getFilePath() when ANY mod-bus event listener
 		// throws. With a null owning file that path NPEs and MASKS the real listener error (caught empirically on
@@ -176,7 +196,7 @@ public final class KernelModContainerFactory {
 		// self[0] is back-filled with the IModInfo below so the owning-file proxy's getMods() can return [it]
 		// (NeoForge's title-screen version check does getModFileById(id).getMods().get(0)).
 		Object[] self = new Object[1];
-		Object owningFile = owningFileProxy(iModInfo.getClassLoader(), modId, self);
+		Object owningFile = owningFileProxy(iModInfo.getClassLoader(), modId, self, jar);
 		Object version = defaultArtifactVersion(iModInfo.getClassLoader());
 		Object config = configurableProxy(iModInfo.getClassLoader(), modId);
 		InvocationHandler h = (proxy, method, args) -> switch (method.getName()) {
@@ -212,11 +232,14 @@ public final class KernelModContainerFactory {
 	 * error/reporting paths that walk {@code getOwningFile().getFile().getFilePath()} do not NPE on the kernel's
 	 * synthetic containers. Returns null (the old behavior) if the SPI types are absent — never fails the caller.
 	 */
-	private static Object owningFileProxy(ClassLoader cl, String modId, Object[] modInfoHolder) {
+	private static Object owningFileProxy(ClassLoader cl, String modId, Object[] modInfoHolder, Path jar) {
 		try {
 			Class<?> iModFileInfo = Class.forName("net.neoforged.neoforgespi.language.IModFileInfo", false, cl);
 			Class<?> iModFile = Class.forName("net.neoforged.neoforgespi.locating.IModFile", false, cl);
-			java.nio.file.Path path = java.nio.file.Path.of("forbric-kernel", modId + ".jar");
+			// The REAL jar when we have one: a mod reading its own files through getContents() must get its own
+			// jar, not a placeholder. Only a presence alias has none.
+			java.nio.file.Path path = jar != null ? jar : java.nio.file.Path.of("forbric-kernel", modId + ".jar");
+			Object contents = jar == null ? null : jarContents(cl, jar);
 			// getScanResult() must be non-null, and it is reached from further away than it looks:
 			// ModList.getAllScanData() streams sortedList -> getOwningFile -> getFile -> getScanResult, so EVERY
 			// published mod is asked for one the moment anything calls getAllScanData(). Sodium does, right after
@@ -226,6 +249,7 @@ public final class KernelModContainerFactory {
 			Object scanData = emptyScanData(cl);
 			Object modFile = Proxy.newProxyInstance(cl, new Class<?>[] {iModFile}, (p, m, a) -> switch (m.getName()) {
 				case "getFilePath" -> path;
+				case "getContents" -> contents;
 				case "getModFileInfo" -> null; // set below via the enclosing IModFileInfo when asked
 				case "getScanResult" -> scanData;
 				case "toString" -> "KernelModFile[" + modId + "]";
@@ -295,6 +319,17 @@ public final class KernelModContainerFactory {
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/Container] no ModFileScanData SPI — scan result left null: %s",
 					String.valueOf(t));
+			return null;
+		}
+	}
+
+	/** {@code JarContents.ofPath(jar)} — NeoForge's own reader for a jar's files. Null if it cannot be built. */
+	private static Object jarContents(ClassLoader cl, Path jar) {
+		try {
+			return Class.forName("net.neoforged.fml.jarcontents.JarContents", false, cl)
+					.getMethod("ofPath", Path.class).invoke(null, jar);
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/Container] no JarContents for %s: %s", jar.getFileName(), String.valueOf(t));
 			return null;
 		}
 	}
