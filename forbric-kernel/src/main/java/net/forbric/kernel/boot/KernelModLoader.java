@@ -109,6 +109,9 @@ public final class KernelModLoader {
 		// constructor runs. A universal jar ships one @Mod per family; only the family that OWNS the jar may
 		// construct, or the same mod initialises once per live ecosystem (see MultiLoaderArbiter).
 		List<ModAnnotationScanner.ModClassInfo> claimed = new ArrayList<>();
+		// modId -> the jar it came from, so its container can hand the mod its OWN files (see
+		// KernelModContainerFactory.create's jar parameter).
+		Map<String, Path> jarOfMod = new LinkedHashMap<>();
 		for (Path jar : modJars) {
 			List<ModAnnotationScanner.ModClassInfo> mods;
 			try {
@@ -124,6 +127,7 @@ public final class KernelModLoader {
 				if (MultiLoaderArbiter.suppressedFor(jar, mine)) continue;
 
 				claimed.add(info);
+				if (info.modId != null) jarOfMod.putIfAbsent(info.modId, jar);
 			}
 		}
 
@@ -141,7 +145,8 @@ public final class KernelModLoader {
 
 			try {
 				Object bus = KernelBusSupport.makeModBus(cl);
-				neo.put(modId, new NeoIdentity(bus, KernelModContainerFactory.create(loader, cl, modId, bus)));
+				neo.put(modId, new NeoIdentity(bus,
+						KernelModContainerFactory.create(loader, cl, modId, bus, jarOfMod.get(modId))));
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/ModLoader] could not build ModContainer for NeoForge mod " + modId,
 						KernelBusSupport.unwrap(t));
