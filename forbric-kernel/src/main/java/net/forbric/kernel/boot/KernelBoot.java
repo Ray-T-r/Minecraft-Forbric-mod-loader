@@ -184,6 +184,11 @@ public final class KernelBoot {
 		ForbricClassLoader loader = new ForbricClassLoader(owned.toArray(new URL[0]),
 				KernelBoot.class.getClassLoader());
 
+		// The jars cross-jar arbitration superseded, as a LAST RESORT only — a mod built against the other side's
+		// platform-only class would otherwise get a bare NoClassDefFoundError. See ForbricClassLoader.setRescueJars
+		// for why this cannot shadow the winner, and for what it deliberately does not fix.
+		loader.setRescueJars(rescueUrls(dupes));
+
 		// Every mod jar probes as the loader the arbiter gave it, so a mod cannot wander into a branch it never ran
 		// on its own platform — and a universal jar answers as the ONE ecosystem it was arbitrated to. Plain
 		// libraries declare no manifest and stay unowned. See LoaderProbePolicy.
@@ -609,6 +614,19 @@ public final class KernelBoot {
 			}
 		}
 		return configs;
+	}
+
+	/** The superseded jars as URLs, sorted so the last-resort lookup order is stable run to run. */
+	private static List<URL> rescueUrls(DuplicateModArbiter.Decision dupes) {
+		List<URL> urls = new ArrayList<>();
+		for (Path jar : new java.util.TreeSet<>(dupes.suppressedJars())) {
+			try {
+				urls.add(jar.toUri().toURL());
+			} catch (Exception e) {
+				ForbricLog.debug("[Forbric/DupeId] could not offer %s as a rescue jar: %s", jar, String.valueOf(e));
+			}
+		}
+		return urls;
 	}
 
 	private static ForgeFamilyMods discoverForgeFamilyModJars(Path modsDir,
