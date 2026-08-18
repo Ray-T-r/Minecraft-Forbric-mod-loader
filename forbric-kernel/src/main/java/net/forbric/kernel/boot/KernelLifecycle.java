@@ -1100,6 +1100,41 @@ public final class KernelLifecycle {
 
 	private static void freeze(ClassLoader cl) {
 		invokeGameData(cl, "freezeData");
+		latchRegistriesLoaded(cl);
+	}
+
+	/**
+	 * Flips NeoForge's {@code registriesLoaded} latch, which nothing else in the kernel ever reaches.
+	 *
+	 * <p>It is a ONE-WAY latch, not a window: {@code CommonModLoader} initialises it false and sets it true once,
+	 * immediately after {@code GameData.freezeData()}, and nothing ever clears it. The only writer lives inside
+	 * {@code CommonModLoader.begin}, which the kernel excises because that same method drives the discovery and
+	 * registration the kernel owns — so the flag stayed false for the whole process.
+	 *
+	 * <p>Mods read it through {@code ClientModLoader.areRegistriesLoaded()} to check they are inside the loading
+	 * phase before touching render layers or anything else registration-shaped. With it false forever, Useful Food
+	 * threw {@code "Render layers can only be set during client loading!"} out of its own client setup — from a
+	 * helper it had copied from NeoForge, message and all, which is why the string is nowhere in the game jar.
+	 *
+	 * <p>Set here, right after the freeze, so it matches NeoForge's own placement and covers the dedicated server
+	 * too. Best-effort: an older runtime without the field must not cost anyone the registration window.
+	 */
+	private static void latchRegistriesLoaded(ClassLoader cl) {
+		try {
+			Class<?> common = Class.forName("net.neoforged.neoforge.internal.CommonModLoader", false, cl);
+			Field flag = common.getDeclaredField("registriesLoaded");
+			flag.setAccessible(true);
+			if (Boolean.TRUE.equals(flag.get(null))) return;
+			flag.setBoolean(null, true);
+			ForbricLog.debug("[Forbric/Lifecycle] latched CommonModLoader.registriesLoaded — mods gating on "
+					+ "areRegistriesLoaded() can now register render layers and the like");
+		} catch (ClassNotFoundException | NoSuchFieldException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] no CommonModLoader.registriesLoaded to latch: %s",
+					String.valueOf(absent));
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not latch CommonModLoader.registriesLoaded — mods gating on "
+					+ "areRegistriesLoaded() will refuse to register", unwrap(t));
+		}
 	}
 
 	/**
