@@ -995,6 +995,20 @@ public final class KernelLifecycle {
 		List<Object> registries = new ArrayList<>();
 		collectRegistryFields(cl, "net.minecraft.core.registries.BuiltInRegistries", registryCls, registries);
 		collectRegistryFields(cl, "net.neoforged.neoforge.registries.NeoForgeRegistries", registryCls, registries);
+		// …and every registry a MOD just created, which lives in no holder class the kernel can name. Those two
+		// holders are vanilla's and NeoForge's own static fields; a mod's custom registry is a static field on the
+		// mod. So the kernel posted RegisterEvent for every registry except the ones NewRegistryEvent had made one
+		// line earlier, and a DeferredRegister aimed at one never flushed — silently, because nothing fails when an
+		// event simply is not posted. Lithostitched's modifier types are registered exactly that way, so its
+		// lithostitched:modifier_type registry existed and was EMPTY, and the first world load died on "Unknown
+		// registry key in ResourceKey[minecraft:root / lithostitched:modifier_type]: lithostitched:add_features"
+		// with the blame landing on Tectonic, which merely referenced it.
+		//
+		// The root registry is the authority: NewRegistryEvent.fill() has just registered each new registry into it,
+		// which is the same place genuine NeoForge reads its registration order from. Appended AFTER the two holders
+		// rather than replacing them, so the order the gates have proven is untouched and the mod-created registries
+		// simply follow — which is also NeoForge's order, vanilla first.
+		collectRootRegistries(cl, registryCls, registries);
 
 		// REGISTRY-major / mod-minor, matching genuine NeoForge (RegistryManager walks registries, firing each mod's
 		// bus per registry). A DeferredRegister's DeferredHolders resolve during their own registry's event, so a mod
@@ -1091,6 +1105,43 @@ public final class KernelLifecycle {
 				Object reg = f.get(null);
 				if (reg != null && !out.contains(reg)) out.add(reg);
 			}
+		}
+	}
+
+	/**
+	 * Adds every registry inside the ROOT registry that the holder classes did not already name.
+	 *
+	 * <p>Runs after {@code NewRegistryEvent.fill()}, so this is where a mod's own registries appear. The root holds
+	 * itself as {@code minecraft:root} and the holder sweep already picked that up, so the identity dedupe leaves
+	 * the existing list untouched and only genuinely new registries are appended.
+	 */
+	private static void collectRootRegistries(ClassLoader cl, Class<?> registryCls, List<Object> out) {
+		try {
+			Object root = Class.forName("net.minecraft.core.registries.BuiltInRegistries", true, cl)
+					.getField("REGISTRY").get(null);
+			if (!(root instanceof Iterable<?> entries)) return;
+			int added = 0;
+			for (Object entry : entries) {
+				if (!registryCls.isInstance(entry)) continue;
+				// Identity, as everywhere else here: Registry does not override equals.
+				boolean known = false;
+				for (Object seen : out) {
+					if (seen == entry) {
+						known = true;
+						break;
+					}
+				}
+				if (known) continue;
+				out.add(entry);
+				added++;
+			}
+			if (added > 0) {
+				ForbricLog.debug("[Forbric/Lifecycle] %d mod-created registr(ies) joined the RegisterEvent sweep",
+						added);
+			}
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not enumerate the root registry — a mod's own registry will "
+					+ "stay empty and its datapack entries will fail to parse", unwrap(t));
 		}
 	}
 
