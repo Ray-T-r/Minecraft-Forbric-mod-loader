@@ -43,6 +43,7 @@ import net.forbric.kernel.transform.HudElementBridgeInjector;
 import net.forbric.kernel.transform.LifecycleHookInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
+import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import net.forbric.kernel.transform.NullPackGuardInjector;
 import net.forbric.kernel.transform.PackMetadataFailSoftInjector;
@@ -257,6 +258,10 @@ public final class KernelBoot {
 		// carries no descriptor because javac never lets one class have two. Drop the orphaned half before Mixin
 		// looks, or it binds to dead code and the injection silently does nothing.
 		chain.register(TransformPhase.COREMOD, new DuplicateLambdaPruneInjector());
+
+		// Inert unless -Dforbric.clientSmoke=true. It is what lets gate-m9 run a client unattended: enter a
+		// world, live in it, disconnect and stop, so the gate waits for an outcome instead of a timeout.
+		chain.register(TransformPhase.COREMOD, new ClientSmokeTickInjector());
 
 		// Client only: NeoForge won Hud.extractRenderState, so the call sites fabric-rendering-v1's HudMixin anchors
 		// on no longer exist — as METHOD REFERENCES in the layer manager they exist as no bytecode at all, so no
