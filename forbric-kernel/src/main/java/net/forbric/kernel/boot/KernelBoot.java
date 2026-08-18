@@ -43,6 +43,7 @@ import net.forbric.kernel.transform.HudElementBridgeInjector;
 import net.forbric.kernel.transform.LifecycleHookInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
+import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import net.forbric.kernel.transform.NullPackGuardInjector;
 import net.forbric.kernel.transform.PackMetadataFailSoftInjector;
 import net.forbric.kernel.transform.PackOverlayMutabilityInjector;
@@ -251,6 +252,11 @@ public final class KernelBoot {
 		// repository is built on a dedicated server too.
 		chain.register(TransformPhase.COREMOD, new PackOverlayMutabilityInjector());
 		chain.register(TransformPhase.COREMOD, new NullPackGuardInjector());
+
+		// A merged method keeps ONE body but BOTH ecosystems' lambdas, and a mixin's `method = "lambda$x$0"`
+		// carries no descriptor because javac never lets one class have two. Drop the orphaned half before Mixin
+		// looks, or it binds to dead code and the injection silently does nothing.
+		chain.register(TransformPhase.COREMOD, new DuplicateLambdaPruneInjector());
 
 		// Client only: NeoForge won Hud.extractRenderState, so the call sites fabric-rendering-v1's HudMixin anchors
 		// on no longer exist — as METHOD REFERENCES in the layer manager they exist as no bytecode at all, so no
