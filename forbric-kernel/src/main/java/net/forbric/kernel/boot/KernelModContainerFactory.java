@@ -240,6 +240,9 @@ public final class KernelModContainerFactory {
 			// jar, not a placeholder. Only a presence alias has none.
 			java.nio.file.Path path = jar != null ? jar : java.nio.file.Path.of("forbric-kernel", modId + ".jar");
 			Object contents = jar == null ? null : jarContents(cl, jar);
+			// LAZY: the index is only built if something actually asks. Most instances never do, and walking a
+			// hundred jars for nobody would be pure boot cost. Memoised in a one-slot holder.
+			Object[] scanResult = new Object[1];
 			// getScanResult() must be non-null, and it is reached from further away than it looks:
 			// ModList.getAllScanData() streams sortedList -> getOwningFile -> getFile -> getScanResult, so EVERY
 			// published mod is asked for one the moment anything calls getAllScanData(). Sodium does, right after
@@ -251,7 +254,13 @@ public final class KernelModContainerFactory {
 				case "getFilePath" -> path;
 				case "getContents" -> contents;
 				case "getModFileInfo" -> null; // set below via the enclosing IModFileInfo when asked
-				case "getScanResult" -> scanData;
+				case "getScanResult" -> {
+					if (scanResult[0] == null) {
+						Object real = jar == null ? null : net.forbric.kernel.discovery.ModFileScanner.scan(jar, cl);
+						scanResult[0] = real != null ? real : scanData;
+					}
+					yield scanResult[0];
+				}
 				case "toString" -> "KernelModFile[" + modId + "]";
 				case "hashCode" -> System.identityHashCode(p);
 				case "equals" -> p == (a == null ? null : a[0]);
