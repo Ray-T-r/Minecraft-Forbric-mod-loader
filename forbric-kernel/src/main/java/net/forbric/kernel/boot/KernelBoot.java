@@ -43,7 +43,9 @@ import net.forbric.kernel.transform.HudElementBridgeInjector;
 import net.forbric.kernel.transform.LifecycleHookInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
+import net.forbric.kernel.transform.NullPackGuardInjector;
 import net.forbric.kernel.transform.PackMetadataFailSoftInjector;
+import net.forbric.kernel.transform.PackOverlayMutabilityInjector;
 import net.forbric.kernel.transform.RegistryHookRedirector;
 import net.forbric.kernel.transform.NeoEnumExtensionInjector;
 import net.forbric.kernel.transform.TransformChain;
@@ -241,6 +243,14 @@ public final class KernelBoot {
 		// condition only a NeoForge build would have registered. Vanilla drops the ENTIRE pack for that. Registered
 		// unconditionally: the datapack path runs on a dedicated server too, and that is where it crashed.
 		chain.register(TransformPhase.COREMOD, new PackMetadataFailSoftInjector());
+
+		// The other half of "a multiloader pack.mcmeta must not cost you the pack", and the one that costs a
+		// WORLD: NeoForge's overlay-merge patch mutates a list fabric-api's PackMixin has just frozen, so
+		// readPackMetadata returns null, and a mod that passes that null on takes PackRepository down with it.
+		// Repair first, backstop second — KernelPackRepair says why both. Registered unconditionally: the pack
+		// repository is built on a dedicated server too.
+		chain.register(TransformPhase.COREMOD, new PackOverlayMutabilityInjector());
+		chain.register(TransformPhase.COREMOD, new NullPackGuardInjector());
 
 		// Client only: NeoForge won Hud.extractRenderState, so the call sites fabric-rendering-v1's HudMixin anchors
 		// on no longer exist — as METHOD REFERENCES in the layer manager they exist as no bytecode at all, so no
