@@ -378,6 +378,13 @@ public final class KernelLifecycle {
 						+ "declare their registry or attribute handlers there will not be reached", unwrap(t));
 			}
 
+			// FMLConstructModEvent, the phase genuine FML posts to each container the moment it is built. The
+			// kernel constructed the mods and went straight on, so anything a mod does there — and it is the
+			// earliest mod-bus phase there is — never happened. Posted after the subscribers are wired, so a
+			// handler declared on an @EventBusSubscriber receives it too.
+			fireSetupPhase(cl, KernelModLoader.publishedNeoMods(),
+					"net.neoforged.fml.event.lifecycle.FMLConstructModEvent", "construct");
+
 			// Each ecosystem's mods take their own RegisterEvent flavour: NeoForge's 2-arg event on an IEventBus, and
 			// traditional Forge's 3-arg (key, ForgeRegistry, Registry) on a BusGroup. Split them here; both streams
 			// run inside the one unfreeze/freeze window below.
@@ -435,6 +442,14 @@ public final class KernelLifecycle {
 			// (attribute_type, ticket_type, slot_display, entity_sub_predicate_type, …) silently disappeared.
 			// Only its tail is wanted, so call that directly.
 			invokeStaticOn(cl, "net.neoforged.neoforge.common.CommonHooks", "modifyAttributes");
+			// The rest of postRegisterEvents' tail, in its order. Cheap calls, and each one is a whole feature that
+			// simply did not exist: without fireSpawnPlacementEvent a mod's mob has no spawn rules and never
+			// generates, without BlockEntityTypeAddBlocksEvent a mod cannot attach its blocks to a vanilla block
+			// entity, and without registerModdedCategories its gamerules have no category to sit in.
+			// (CreativeModeTabRegistry.sortTabs is the kernel's sortNeoCreativeTabs, below, after the freeze.)
+			invokeStaticOn(cl, "net.minecraft.world.entity.SpawnPlacements", "fireSpawnPlacementEvent");
+			postModBusEvent(cl, "net.neoforged.neoforge.event.BlockEntityTypeAddBlocksEvent");
+			invokeStaticOn(cl, "net.minecraft.world.level.gamerules.GameRuleCategory", "registerModdedCategories");
 			linkBlockItems(cl);
 			freeze(cl);
 			rebuildNeoForgeBlockStateIds(cl);
@@ -911,9 +926,65 @@ public final class KernelLifecycle {
 		if (mods.isEmpty()) return;
 
 		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent", "common setup");
-		// On the CLIENT the remaining two phases are deferred to onClientEntrypoints — see fireClientSetupLifecycle.
+		// On the CLIENT the remaining phases are deferred to onClientEntrypoints — see fireClientSetupLifecycle.
 		if (client) return;
+		// The sided phase. The kernel used to jump straight from common setup to load complete, so on a dedicated
+		// server this event was never posted to anyone at all.
+		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLDedicatedServerSetupEvent",
+				"dedicated server setup");
+		fireRegistrationEvents(cl);
+		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.InterModEnqueueEvent", "IMC enqueue");
+		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.InterModProcessEvent", "IMC process");
 		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent", "load complete");
+	}
+
+	/**
+	 * Runs NeoForge's own {@code RegistrationEvents.init()} — the "Registration events" task of
+	 * {@code CommonModLoader.load}, between the sided setup and load complete.
+	 *
+	 * <p>One call, and a surprising amount behind it. It posts {@code RegisterCapabilitiesEvent} and
+	 * {@code RegisterDataMapTypesEvent}, and initialises five NeoForge built-ins besides — cauldron fluid content
+	 * and interactions, forced chunks, data component modifiers, POI extension. The kernel drives the lifecycle
+	 * itself and never replaced this step, so NOT ONE capability was registered in a Forbric instance, NeoForge's
+	 * own vanilla providers included, and no mod's data maps existed.
+	 *
+	 * <p>Called through NeoForge's method rather than reimplemented: the contents are its internals, they change
+	 * between versions, and a hand-rolled copy would rot silently. It is package-private, hence the declared
+	 * lookup. Once only — the client and server paths each reach this point, and both must not run it.
+	 */
+	private static void fireRegistrationEvents(ClassLoader cl) {
+		if (!REGISTRATION_EVENTS_FIRED.compareAndSet(false, true)) return;
+		try {
+			Class<?> events = Class.forName("net.neoforged.neoforge.internal.RegistrationEvents", false, cl);
+			Method init = events.getDeclaredMethod("init");
+			init.setAccessible(true);
+			init.invoke(null);
+			ForbricLog.info("[Forbric/Lifecycle] ran NeoForge's registration events — capabilities and data maps "
+					+ "are registered, and its cauldron/forced-chunk/data-component/POI built-ins initialised");
+		} catch (ClassNotFoundException | NoSuchMethodException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] no RegistrationEvents.init to run: %s", String.valueOf(absent));
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] NeoForge's registration events failed — capabilities and data "
+					+ "maps will be missing", unwrap(t));
+		}
+	}
+
+	private static final java.util.concurrent.atomic.AtomicBoolean REGISTRATION_EVENTS_FIRED =
+			new java.util.concurrent.atomic.AtomicBoolean();
+
+	/** Posts a no-arg mod-bus event through NeoForge's own fan-out, which walks the ModList the kernel published. */
+	private static void postModBusEvent(ClassLoader cl, String eventClassName) {
+		try {
+			Class<?> eventCls = Class.forName(eventClassName, false, cl);
+			Class<?> baseEvent = Class.forName("net.neoforged.bus.api.Event", false, cl);
+			Class<?> modLoader = Class.forName("net.neoforged.fml.ModLoader", false, cl);
+			modLoader.getMethod("postEvent", baseEvent)
+					.invoke(null, eventCls.getConstructor().newInstance());
+		} catch (ClassNotFoundException | NoSuchMethodException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] %s absent — skipping", eventClassName);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not post " + eventClassName, unwrap(t));
+		}
 	}
 
 	/**
@@ -945,6 +1016,11 @@ public final class KernelLifecycle {
 		if (mods.isEmpty()) return;
 
 		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLClientSetupEvent", "client setup");
+		// Same tail as the server's, and the same order CommonModLoader.load uses: sided setup, then the
+		// registration events, then IMC, then load complete.
+		fireRegistrationEvents(cl);
+		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.InterModEnqueueEvent", "IMC enqueue");
+		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.InterModProcessEvent", "IMC process");
 		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent", "load complete");
 	}
 

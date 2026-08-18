@@ -98,6 +98,16 @@ step "the server works (must PASS)"
 check "server reached Done"                "Done \(" "$LOG"
 check "clean shutdown"                     "Stopping server" "$LOG"
 
+step "the full FML mod lifecycle ran on the server side too"
+# CommonModLoader.load's task order: construct, common setup, SIDED setup, registration events, IMC, complete.
+# The kernel used to know only the first two and the last, so a dedicated server never posted its sided phase,
+# no capability was ever registered, and all IMC was dead.
+check "construct phase posted"       "posted FML construct to [0-9]+ NeoForge mod"              "$LOG"
+check "sided phase posted"           "posted FML dedicated server setup to [0-9]+ NeoForge mod" "$LOG"
+check "registration events ran"      "ran NeoForge.s registration events"                       "$LOG"
+check "IMC enqueued and processed"   "posted FML IMC (enqueue|process) to [0-9]+ NeoForge mod"  "$LOG" 2
+check_absent "no mod failed a phase" "failed during (construct|dedicated server setup|IMC)"     "$LOG"
+
 step "nothing quietly broken (must be ABSENT)"
 check_absent "no NoClassDefFound"          "NoClassDefFoundError" "$LOG"
 check_absent "no Tags not bound"           "Tags not bound" "$LOG"

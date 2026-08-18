@@ -79,6 +79,15 @@ check "left the world cleanly"        "ClientSmoke\] clean disconnect observed" 
 check "server side really ran"        "joined the game"                            "$LOG"
 check "datapacks fully loaded"        "Loaded [0-9]+ advancements"                 "$LOG"
 
+step "the full FML mod lifecycle ran, not just the phases the kernel used to know about"
+# Each of these was missing outright until the kernel started mirroring CommonModLoader.load's task order.
+check "construct phase posted"        "posted FML construct to [0-9]+ NeoForge mod"      "$LOG"
+check "client setup posted"           "posted FML client setup to [0-9]+ NeoForge mod"   "$LOG"
+check "registration events ran"       "ran NeoForge.s registration events"               "$LOG"
+check "IMC enqueued and processed"    "posted FML IMC (enqueue|process) to [0-9]+ NeoForge mod" "$LOG" 2
+check "load complete posted"          "posted FML load complete to [0-9]+ NeoForge mod"  "$LOG"
+check_absent "no mod failed a phase"  "failed during (construct|IMC enqueue|IMC process)" "$LOG"
+
 step "every failure that has cost a world load here (must be ABSENT)"
 # Each of these is a bug that actually happened on this pack; the wording is the log's, not ours to change lightly.
 check_absent "JEI found its plugins"        "plugins must not be empty"                        "$LOG"
