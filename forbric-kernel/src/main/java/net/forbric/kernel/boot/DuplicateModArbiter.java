@@ -153,7 +153,8 @@ public final class DuplicateModArbiter {
 
 		Path rundir = modsDir == null ? null : modsDir.getParent();
 		loadOverrideFile(rundir);
-		Decision decision = arbitrate(scan(modsDir, envType));
+		List<Alias> universalAliases = new ArrayList<>();
+		Decision decision = arbitrate(scan(modsDir, envType, universalAliases), universalAliases);
 		writeOverrideTemplate(rundir, decision);
 		MergeReport.write(rundir, modsDir, decision);
 		cached = decision;
@@ -163,6 +164,16 @@ public final class DuplicateModArbiter {
 
 	/** The pure half: decide from claims alone. Package-visible so tests can drive it without a filesystem. */
 	static Decision arbitrate(List<Claim> claims) {
+		return arbitrate(claims, List.of());
+	}
+
+	/**
+	 * The pure half, plus the aliases a universal jar's losing manifests need.
+	 *
+	 * <p>Those aliases must survive the no-contest early return below: an instance can have universal jars and no
+	 * duplicate ids at all, and that is the common case.
+	 */
+	static Decision arbitrate(List<Claim> claims, List<Alias> universalAliases) {
 		Map<String, List<Claim>> byId = new LinkedHashMap<>();
 		for (Claim claim : claims) {
 			for (String id : claim.modIds()) {
@@ -182,7 +193,11 @@ public final class DuplicateModArbiter {
 			winners.put(e.getKey(), winner);
 			ownerByModId.put(e.getKey(), winner.jar().toAbsolutePath());
 		}
-		if (contested.isEmpty()) return Decision.none();
+		if (contested.isEmpty()) {
+			if (universalAliases.isEmpty()) return Decision.none();
+			logUniversalAliases(universalAliases);
+			return new Decision(Set.of(), Map.of(), List.copyOf(universalAliases));
+		}
 
 		Set<Path> suppressed = new LinkedHashSet<>();
 		for (Claim claim : claims) {
@@ -211,7 +226,8 @@ public final class DuplicateModArbiter {
 		}
 
 		// Every ecosystem that lost its copy of a contested id needs the mod's IDENTITY back — see Alias.
-		List<Alias> aliases = new ArrayList<>();
+		List<Alias> aliases = new ArrayList<>(universalAliases);
+		logUniversalAliases(universalAliases);
 		for (String id : contested) {
 			Claim winner = winners.get(id);
 			Set<MultiLoaderArbiter.Ecosystem> lost = new LinkedHashSet<>();
@@ -228,6 +244,16 @@ public final class DuplicateModArbiter {
 		ForbricLog.info("[Forbric/DupeId] cross-jar arbitration: %d duplicate mod id(s), %d jar(s) suppressed, "
 				+ "%d presence alias(es)", contested.size(), suppressed.size(), aliases.size());
 		return new Decision(Set.copyOf(suppressed), Map.copyOf(ownerByModId), List.copyOf(aliases));
+	}
+
+	private static void logUniversalAliases(List<Alias> universalAliases) {
+		if (universalAliases.isEmpty()) return;
+		Map<MultiLoaderArbiter.Ecosystem, List<String>> byEcosystem = new LinkedHashMap<>();
+		for (Alias alias : universalAliases) {
+			byEcosystem.computeIfAbsent(alias.ecosystem(), k -> new ArrayList<>()).add(alias.modId());
+		}
+		ForbricLog.info("[Forbric/DupeId] %d universal jar identit(ies) handed back to the side that did not load "
+				+ "them, so isModLoaded still answers: %s", universalAliases.size(), byEcosystem);
 	}
 
 	private static List<String> contestedOf(Claim claim, Map<String, Claim> winners) {
@@ -396,8 +422,17 @@ public final class DuplicateModArbiter {
 		}
 	}
 
-	/** Top-level jars only, sorted by path so ties are deterministic. */
-	private static List<Claim> scan(Path modsDir, EnvType envType) {
+	/**
+	 * Top-level jars only, sorted by path so ties are deterministic.
+	 *
+	 * <p>{@code universalAliases} collects the other half of the identity problem. A UNIVERSAL jar — one file
+	 * carrying manifests for several loaders — enters as exactly ONE claim, under whichever ecosystem
+	 * {@link MultiLoaderArbiter} picked, so the cross-jar pass below never sees it as contested and never issues
+	 * an alias for it. But the losing side's identity is just as gone: the file is loaded once, and a Fabric mod
+	 * asking {@code isModLoaded("iris")} of a jar loaded as NeoForge got no for an answer even though every class
+	 * it wanted was present. Read those manifests here, where the file is already open, and hand their ids back.
+	 */
+	private static List<Claim> scan(Path modsDir, EnvType envType, List<Alias> universalAliases) {
 		List<Claim> claims = new ArrayList<>();
 		if (modsDir == null || !Files.isDirectory(modsDir)) return claims;
 
@@ -419,8 +454,34 @@ public final class DuplicateModArbiter {
 					? fabricIds(jar, envType, versions)
 					: forgeFamilyIds(discoverer, jar, versions);
 			if (!ids.isEmpty()) claims.add(new Claim(jar, owner, ids, Map.copyOf(versions)));
+			collectUniversalAliases(discoverer, jar, owner, envType, universalAliases);
 		}
 		return claims;
+	}
+
+	/**
+	 * Presence aliases for every ecosystem a universal jar declares but is not loaded as.
+	 *
+	 * <p>The id must come from the LOSING manifest, never the winner's — they are not always the same name. The
+	 * JourneyMap jar declares {@code journeymap} to NeoForge and {@code journeymap-wrongloader} to Fabric, the
+	 * latter being a deliberate marker so stock Fabric ignores the file. Aliasing the winner's id into Fabric
+	 * would answer a question nobody asked and leave the real one unanswered.
+	 */
+	private static void collectUniversalAliases(ForbricModDiscoverer discoverer, Path jar,
+			MultiLoaderArbiter.Ecosystem owner, EnvType envType, List<Alias> out) {
+		List<MultiLoaderArbiter.Ecosystem> declared = MultiLoaderArbiter.declaredBy(jar);
+		if (declared.size() < 2) return;
+
+		for (MultiLoaderArbiter.Ecosystem lost : declared) {
+			if (lost == owner) continue;
+			Map<String, String> versions = new LinkedHashMap<>();
+			List<String> ids = lost == MultiLoaderArbiter.Ecosystem.FABRIC
+					? fabricIds(jar, envType, versions)
+					: forgeFamilyIds(discoverer, jar, versions);
+			for (String id : ids) {
+				out.add(new Alias(id, lost, versions.get(id)));
+			}
+		}
 	}
 
 	private static List<String> fabricIds(Path jar, EnvType envType, Map<String, String> versions) {

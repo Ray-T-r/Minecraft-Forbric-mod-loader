@@ -106,8 +106,13 @@ public final class MultiLoaderArbiter {
 		return owner != null && owner != mine;
 	}
 
-	/** Which loader manifests the jar actually carries, in preference-independent (stable) order. */
-	private static List<Ecosystem> declaredBy(Path jar) {
+	/**
+	 * Which loader manifests the jar actually carries, in preference-independent (stable) order.
+	 *
+	 * <p>Public because a universal jar's LOSING ecosystems still have an identity that has to be handed back —
+	 * {@code DuplicateModArbiter} reads this to work out which manifests to publish presence aliases from.
+	 */
+	public static List<Ecosystem> declaredBy(Path jar) {
 		List<Ecosystem> declared = new ArrayList<>();
 		try (JarFile zip = new JarFile(jar.toFile())) {
 			if (zip.getEntry(ForbricModDiscoverer.NEOFORGE_MANIFEST) != null) declared.add(Ecosystem.NEOFORGE);
