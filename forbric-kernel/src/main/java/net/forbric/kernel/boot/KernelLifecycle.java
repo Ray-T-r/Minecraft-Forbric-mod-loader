@@ -130,8 +130,9 @@ public final class KernelLifecycle {
 		// Bridge it off NeoForge's AddClientReloadListenersEvent, which ClientHooks.initClientHooks posts to the
 		// baseline mod bus during Minecraft.<init> — i.e. after this point, which is why the listener goes on now.
 		if (client) GameEventMultiplexer.installClientReloadBridge(cl, baselineBus);
-		// Step 3: register mods' @EventBusSubscriber game-event listeners (FML's AutomaticEventSubscriber, native).
-		KernelEventSubscribers.registerAll(cl, modJars, client);
+		// Step 3 USED TO BE HERE: registering mods' @EventBusSubscriber classes. It has moved INSIDE
+		// registerNeoForgeContent, next to the constructors — see the comment at the new call site. Wiring them
+		// here meant every registration-phase event had already been posted to nobody.
 		// Step 3a: let mods declare their DATAPACK registries. These are not the registries RegisterEvent fills —
 		// they are the per-world ones RegistryDataLoader builds from datapacks, and NeoForge collects them through
 		// DataPackRegistryEvent.NewRegistry into DataPackRegistriesHooks. Nothing posted that event, so the list
@@ -353,7 +354,29 @@ public final class KernelLifecycle {
 			// NeoForge baseline unregistered (later surfacing as an unbound neoforge:fluid_type/water). Re-run after
 			// the client baseline in driveNativeRegistration too, for specs registered later; loading twice is
 			// harmless (each type is attempted independently and a redundant load is swallowed).
-			loadClientConfigs(cl);
+			// Wire every mod's @EventBusSubscriber classes NOW, while the registration window is still ahead of
+			// them. Genuine FML does this inside ModContainer.constructMod(), i.e. before registry init, so a
+			// subscriber-declared handler is attached by the time any registration event is posted. The kernel used
+			// to do it much later, after registerNeoForgeContent had already returned, and the cost was silent:
+			// earthmobsmod and bagus_lib declare their EntityAttributeCreationEvent handlers on a class-level
+			// @EventBusSubscriber, so CommonHooks.modifyAttributes below posted to an empty bus and every one of
+			// their entities came out attribute-less — 2250 "Entity <id> has no attributes" errors per freeze, and
+			// mobs that cannot spawn. The same was true of any RegisterEvent handler declared that way.
+			//
+			// AFTER loadClientConfigs, not before: this class-loads every subscriber, and a <clinit> that reads a
+			// config value must not run ahead of the specs. Still strictly later than genuine NeoForge, which loads
+			// these classes during construction — so nothing that survives real NeoForge can fail for being early
+			// here. Both game buses stay unstarted until startGameBuses, so early registration is buffered, not lost.
+			//
+			// Isolated: this now sits inside registerNeoForgeContent's try, and an escape would abort the whole
+			// registration window and be reported as "could not register ecosystem content", blaming the wrong
+			// thing entirely.
+			try {
+				KernelEventSubscribers.registerAll(cl, modJars, client);
+			} catch (Throwable t) {
+				ForbricLog.warn("[Forbric/Lifecycle] could not wire guest @EventBusSubscriber classes — mods that "
+						+ "declare their registry or attribute handlers there will not be reached", unwrap(t));
+			}
 
 			// Each ecosystem's mods take their own RegisterEvent flavour: NeoForge's 2-arg event on an IEventBus, and
 			// traditional Forge's 3-arg (key, ForgeRegistry, Registry) on a BusGroup. Split them here; both streams
@@ -797,7 +820,7 @@ public final class KernelLifecycle {
 			ForbricLog.info("[Forbric/Lifecycle] posted datapack-registry declaration to %d bus(es) — %d declared "
 					+ "(%s), %d total", posted, now.size() - before, added, now.size());
 
-			mirrorIntoFabricDynamicRegistries(cl, hooksCls, now.subList(before, now.size()));
+			mirrorIntoFabricDynamicRegistries(cl, now.subList(before, now.size()));
 		} catch (ClassNotFoundException absent) {
 			ForbricLog.debug("[Forbric/Lifecycle] no NeoForge DataPackRegistryEvent — skipping");
 		} catch (Throwable t) {
@@ -827,7 +850,7 @@ public final class KernelLifecycle {
 	 * <p>No-ops when fabric-api is absent — then nothing rewrites the list and NeoForge's own is used as-is.
 	 * Best-effort: a failure here costs a mod's worldgen registry, and is reported, but must not fail the boot.
 	 */
-	private static void mirrorIntoFabricDynamicRegistries(ClassLoader cl, Class<?> hooksCls, java.util.List<?> added) {
+	private static void mirrorIntoFabricDynamicRegistries(ClassLoader cl, java.util.List<?> added) {
 		if (added.isEmpty()) return;
 		try {
 			Class<?> dynamicCls = Class.forName(
@@ -835,33 +858,27 @@ public final class KernelLifecycle {
 			Class<?> keyCls = Class.forName("net.minecraft.resources.ResourceKey", false, cl);
 			Class<?> codecCls = Class.forName("com.mojang.serialization.Codec", false, cl);
 			Class<?> dataCls = Class.forName("net.minecraft.resources.RegistryDataLoader$RegistryData", false, cl);
-			Class<?> syncOptCls = Class.forName(
-					"net.fabricmc.fabric.api.event.registry.DynamicRegistries$SyncOption", false, cl);
-
 			Method key = dataCls.getMethod("key");
 			Method elementCodec = dataCls.getMethod("elementCodec");
 			Method register = dynamicCls.getMethod("register", keyCls, codecCls);
-			Method registerSynced = dynamicCls.getMethod("registerSynced", keyCls, codecCls,
-					java.lang.reflect.Array.newInstance(syncOptCls, 0).getClass());
-			Object noSyncOptions = java.lang.reflect.Array.newInstance(syncOptCls, 0);
 
 			// Fabric throws on a duplicate key, and a Fabric mod may legitimately have registered the same registry.
 			java.util.Set<Object> alreadyFabric = new java.util.HashSet<>();
 			for (Object data : (java.util.List<?>) dynamicCls.getMethod("getDynamicRegistries").invoke(null)) {
 				alreadyFabric.add(key.invoke(data));
 			}
-			java.util.Set<?> synced =
-					(java.util.Set<?>) hooksCls.getMethod("getSyncedCustomRegistries").invoke(null);
-
 			java.util.List<String> mirrored = new java.util.ArrayList<>();
 			for (Object data : added) {
 				Object registryKey = key.invoke(data);
 				if (!alreadyFabric.add(registryKey)) continue;
-				if (synced.contains(registryKey)) {
-					registerSynced.invoke(null, registryKey, elementCodec.invoke(data), noSyncOptions);
-				} else {
-					register.invoke(null, registryKey, elementCodec.invoke(data));
-				}
+				// PLAIN register, never registerSynced — even for a registry NeoForge does sync. The mirror exists
+				// for ONE reason: fabric-api's WorldLoaderMixin substitutes its own list at world load, so a
+				// NeoForge-declared registry has to appear in that list to survive. Sync is a different path and
+				// NeoForge already owns it for its own registries; claiming it on Fabric's side too puts the
+				// registry in BOTH synced sets, and the client's configuration-phase collector then reads it twice
+				// and dies on "Duplicate key ResourceKey[minecraft:root / bagus_lib:dialog]" inside
+				// ImmutableRegistryAccess — a join failure reported only as "Network Protocol Error".
+				register.invoke(null, registryKey, elementCodec.invoke(data));
 				mirrored.add(String.valueOf(registryKey));
 			}
 			if (!mirrored.isEmpty()) {
