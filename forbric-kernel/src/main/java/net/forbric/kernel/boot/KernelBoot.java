@@ -36,6 +36,8 @@ import net.forbric.kernel.metadata.DiscoveredMod;
 import net.forbric.kernel.metadata.ModEcosystem;
 import net.forbric.kernel.mixin.KernelMixinBootstrap;
 import net.forbric.kernel.transform.ClientPackHookInjector;
+import net.forbric.kernel.transform.DataPackHookInjector;
+import net.forbric.kernel.transform.RegistryAliasParityInjector;
 import net.forbric.kernel.transform.CommonNetworkInteropInjector;
 import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
 import net.forbric.kernel.transform.GuestMixinPluginGuard;
@@ -239,6 +241,14 @@ public final class KernelBoot {
 		// assets. (Registered unconditionally — the transformer only matches the two ClientModLoader classes, which a
 		// dedicated server never loads.)
 		chain.register(TransformPhase.COREMOD, new ClientPackHookInjector());
+
+		// A Forge-family mod's own data/ reaches the server datapack repository ONLY through this hook: the kernel
+		// leaves ModList.modFiles empty, so NeoForge's own mod-pack finder walks an empty list and adds nothing.
+		chain.register(TransformPhase.COREMOD, new DataPackHookInjector());
+
+		// …and the ids in that data only resolve if the Forge registry wrappers honour aliases, which their overrides
+		// of fabric-api's mixin targets silently stopped them doing.
+		chain.register(TransformPhase.COREMOD, new RegistryAliasParityInjector());
 
 		// A multiloader mod ships one pack.mcmeta carrying a section per loader, and on Forbric all three parsers are
 		// live — so a Fabric-only build gets its neoforge:overlays section read by NeoForge's parser and throws on a
