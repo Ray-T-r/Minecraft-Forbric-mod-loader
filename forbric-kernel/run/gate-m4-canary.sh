@@ -50,7 +50,11 @@ check "both Forge-family baselines"           "constructed NeoForge baseline mod
 check "traditional-Forge baseline"            "constructed traditional-Forge baseline mod ForgeMod" "$LOG"
 check "NeoForge @Mod constructed"             "constructed @Mod forbricneolive" "$LOG"
 check "MinecraftForge @Mod constructed"       "constructed @Mod forbriclive" "$LOG"
-check "MinecraftForge @EventBusSubscriber reg" "registered [0-9]+ @EventBusSubscriber" "$LOG"
+# NOT `check`: that counts LINES, so "registered 0 @EventBusSubscriber class(es)" would still pass it. The
+# subscriber wiring moved into the registration window, and the way that goes wrong is the count dropping
+# to zero while the line itself keeps being printed — so assert the NUMBER.
+EBS=$(grep -oE 'registered [0-9]+ @EventBusSubscriber' "$LOG" | grep -oE '[0-9]+' | head -1)
+assert_eq "MinecraftForge @EventBusSubscriber classes" 1 "${EBS:-none}"
 check "Fabric entrypoints ran"                "invoked [0-9]+ Fabric main entrypoint\(s\) \+ [0-9]+ server" "$LOG"
 check "Fabric JiJ nested mod ran"             "\[ForbricFabricLib\] JiJ nested mod initialized" "$LOG"
 
