@@ -572,14 +572,24 @@ public final class KernelBoot {
 	 * {@code technology/roughness/whitenoise/util/ResourceLocationHelper}. The mod looks broken while the real
 	 * cause is a loader gap, and the library is not separately downloadable, so there is no way around it.
 	 *
-	 * <p>Deduplicated by nested file name, keeping the FIRST occurrence — an approximation of Forge's JarJarSelector
-	 * version range resolution that is sufficient while nothing here ships two versions of one library. Bytecode is
-	 * never remapped: on MC 26.2 nested jars are Mojmap already, exactly like their host.
+	 * <p>Deduplicated by ARTIFACT, not by file name. Two mods can nest the same library under different file
+	 * names — cookingforblockheads carries {@code shogi-api-26.2.0.1-SNAPSHOT.jar} and shogi carries
+	 * {@code net.blay09.mods.shogi-api-26.2.0.3.jar}, the same {@code net.blay09.mods:shogi-api} at two versions —
+	 * and a name-keyed set extracts both, putting two builds of one library on the class loader. Forge's own
+	 * JarJarSelector resolves those by version range; the kernel reads {@code META-INF/jarjar/metadata.json} for
+	 * each child's {@code group:artifact} and keeps the highest version, which is the same answer for every case
+	 * that occurs in practice. A child with no metadata falls back to the file-name rule.
+	 *
+	 * <p>Bytecode is never remapped: on MC 26.2 nested jars are Mojmap already, exactly like their host.
 	 */
-	private static List<Path> extractForgeFamilyJarJar(List<Path> modJars, Path gameDir) {
+	// Package-private so the tests can drive the real extraction against real jars rather than a mock of it.
+	static List<Path> extractForgeFamilyJarJar(List<Path> modJars, Path gameDir) {
 		Path outDir = gameDir.resolve(".forbric-kernel").resolve("jarjar");
 		List<Path> extracted = new ArrayList<>();
 		java.util.Set<String> seen = new java.util.HashSet<>();
+		// extracted file -> "group:artifact" -> version, for the artifact-level resolution after the walk. The
+		// coordinate lives in the PARENT's metadata.json, not in the child, so it has to be captured here.
+		java.util.Map<Path, String[]> coordinates = new java.util.LinkedHashMap<>();
 
 		// A worklist, not a single pass: a nested library can nest libraries of its own, and one level of extraction
 		// leaves the innermost ones on nobody's classpath. Tectonic bundles apollib, apollib bundles json5-java, and
@@ -589,6 +599,7 @@ public final class KernelBoot {
 		while (!queue.isEmpty()) {
 			Path modJar = queue.poll();
 			try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(modJar.toFile())) {
+				java.util.Map<String, String[]> declared = jarJarCoordinates(zip);
 				for (var entries = zip.entries(); entries.hasMoreElements();) {
 					java.util.zip.ZipEntry entry = entries.nextElement();
 					String name = entry.getName();
@@ -607,6 +618,8 @@ public final class KernelBoot {
 						Files.copy(in, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 					}
 					extracted.add(target);
+					String[] coordinate = declared.get(name);
+					if (coordinate != null) coordinates.put(target, coordinate);
 					// Descend: what we just wrote may itself carry nested jars.
 					queue.add(target);
 					ForbricLog.info("[Forbric/Boot] extracted nested JarJar library %s from %s", simple,
@@ -618,7 +631,90 @@ public final class KernelBoot {
 			}
 		}
 
-		return extracted;
+		return resolveJarJarByArtifact(extracted, coordinates);
+	}
+
+	/**
+	 * Reads a jar's {@code META-INF/jarjar/metadata.json}: nested entry name -> {@code {group:artifact, version}}.
+	 *
+	 * <p>Empty for a jar without it, which is most of them — Fabric-style {@code META-INF/jars/} children carry no
+	 * such manifest, and those keep the file-name rule.
+	 */
+	private static java.util.Map<String, String[]> jarJarCoordinates(java.util.zip.ZipFile zip) {
+		java.util.zip.ZipEntry metadata = zip.getEntry("META-INF/jarjar/metadata.json");
+		if (metadata == null) return java.util.Map.of();
+
+		java.util.Map<String, String[]> out = new java.util.LinkedHashMap<>();
+		try (java.io.Reader reader = new java.io.InputStreamReader(zip.getInputStream(metadata),
+				java.nio.charset.StandardCharsets.UTF_8)) {
+			var root = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser().parse(reader);
+			List<? extends com.electronwill.nightconfig.core.UnmodifiableConfig> jars =
+					root.getOrElse("jars", List.of());
+			for (var entry : jars) {
+				com.electronwill.nightconfig.core.UnmodifiableConfig id = entry.get("identifier");
+				com.electronwill.nightconfig.core.UnmodifiableConfig version = entry.get("version");
+				String path = entry.getOrElse("path", (String) null);
+				if (path == null || id == null) continue;
+				String group = id.getOrElse("group", "");
+				String artifact = id.getOrElse("artifact", "");
+				if (group.isEmpty() && artifact.isEmpty()) continue;
+				out.put(path, new String[] {group + ":" + artifact,
+						version == null ? "0.0.0" : version.getOrElse("artifactVersion", "0.0.0")});
+			}
+		} catch (Exception e) {
+			ForbricLog.debug("[Forbric/Boot] could not read JarJar metadata from %s: %s", zip.getName(),
+					String.valueOf(e));
+		}
+		return out;
+	}
+
+	/**
+	 * Keeps one build per {@code group:artifact} — the highest version — and drops the rest from the classpath.
+	 *
+	 * <p>This is the step that makes the file-name dedupe above safe. Two mods nesting the same library under
+	 * different file names both get extracted, and without this both are on the class loader: two builds of one
+	 * library, whose classes share names but not bytes, resolved by whichever jar the loader reaches first.
+	 *
+	 * <p>The superseded file is left on disk rather than deleted — it is inside the kernel's own scratch directory,
+	 * deleting it buys nothing, and leaving it makes the decision inspectable after the fact.
+	 */
+	private static List<Path> resolveJarJarByArtifact(List<Path> extracted, java.util.Map<Path, String[]> coords) {
+		if (coords.isEmpty()) return extracted;
+
+		java.util.Map<String, Path> best = new java.util.LinkedHashMap<>();
+		java.util.Set<Path> superseded = new java.util.LinkedHashSet<>();
+		for (Path jar : extracted) {
+			String[] coordinate = coords.get(jar);
+			if (coordinate == null) continue; // no metadata — the file-name rule already decided
+			Path incumbent = best.get(coordinate[0]);
+			if (incumbent == null) {
+				best.put(coordinate[0], jar);
+				continue;
+			}
+			String incumbentVersion = coords.get(incumbent)[1];
+			Path loser = isNewer(coordinate[1], incumbentVersion) ? incumbent : jar;
+			Path winner = loser == incumbent ? jar : incumbent;
+			best.put(coordinate[0], winner);
+			superseded.add(loser);
+			ForbricLog.info("[Forbric/Boot] %s is nested twice — keeping %s, dropping %s (two builds of one library "
+					+ "on the class loader share class NAMES but not bytes)", coordinate[0],
+					winner.getFileName(), loser.getFileName());
+		}
+		if (superseded.isEmpty()) return extracted;
+
+		List<Path> kept = new ArrayList<>(extracted);
+		kept.removeAll(superseded);
+		return kept;
+	}
+
+	/** True when {@code candidate} sorts above {@code incumbent}. Unparseable versions never win. */
+	private static boolean isNewer(String candidate, String incumbent) {
+		try {
+			return net.forbric.kernel.fabric.KernelVersion.parse(candidate)
+					.compareTo(net.forbric.kernel.fabric.KernelVersion.parse(incumbent)) > 0;
+		} catch (Exception unparseable) {
+			return false;
+		}
 	}
 
 	/**
