@@ -1073,6 +1073,77 @@ public final class KernelLifecycle {
 	}
 
 	/** Fires RegisterEvent for every registry (vanilla BuiltInRegistries + NeoForgeRegistries) on each bus. */
+	/**
+	 * Sorts the collected registries into NeoForge's OWN registration order, read from NeoForge at runtime.
+	 *
+	 * <p>The kernel used to fire {@code RegisterEvent} in the order the registries were COLLECTED, which is the
+	 * order {@code BuiltInRegistries} happens to declare its static fields in. NeoForge does not: its
+	 * {@code GameData.getRegistrationOrder()} hoists three registries to the front —
+	 * {@code minecraft:attribute}, {@code minecraft:data_component_type} and {@code minecraft:particle_type} —
+	 * before vanilla's own order and then everything else. Those three are hoisted precisely because a mod's block
+	 * and item definitions REFERENCE them while being constructed.
+	 *
+	 * <p>What the field order cost: {@code BuiltInRegistries} declares {@code ITEM} 57 fields before
+	 * {@code DATA_COMPONENT_TYPE}, so a {@code DeferredRegister} item whose builder reads its own mod's
+	 * {@code DataComponentType} threw "Trying to access unbound value" from {@code DeferredHolder.value()} — and
+	 * because one throw ends that mod's listener, EVERY item it had not registered yet was skipped. Waystones
+	 * registered 31 of its 31 blocks and 11 of its 48 items; the other 37 (warp stones, scrolls, shards, and every
+	 * portstone/sharestone block item) simply were not there. It stayed invisible while nothing read a Forge-family
+	 * mod's {@code data/}, and surfaced the moment {@link KernelDataPacks} did: waystones adds those item ids to the
+	 * VANILLA {@code minecraft:enchantable/durability} tag, the tag dropped for dangling references, and vanilla's
+	 * own mending/unbreaking/vanishing_curse failed to parse with it.
+	 *
+	 * <p>Read from NeoForge rather than hardcoded here: it is their contract, it has changed before, and a list
+	 * copied into the kernel would go stale silently. Unknown registries — a mod's own, mostly — keep their relative
+	 * order at the end, which is where NeoForge puts them too. Fail soft: no order available means today's order.
+	 */
+	private static List<Object> inNeoForgeRegistrationOrder(ClassLoader cl, Class<?> registryCls,
+			List<Object> registries) {
+		if ("off".equalsIgnoreCase(System.getProperty("forbric.neoRegistrationOrder", "on"))) {
+			ForbricLog.warn("[Forbric/Lifecycle] NeoForge registration order DISABLED "
+					+ "(-Dforbric.neoRegistrationOrder=off) — RegisterEvent fires in field-declaration order, so a "
+					+ "mod whose items read their own data components loses them");
+			return registries;
+		}
+		try {
+			Class<?> gameData = Class.forName("net.neoforged.neoforge.registries.GameData", false, cl);
+			Object order = gameData.getMethod("getRegistrationOrder").invoke(null);
+			if (!(order instanceof java.util.Collection<?> ids) || ids.isEmpty()) return registries;
+
+			Map<String, Integer> rank = new java.util.HashMap<>();
+			int next = 0;
+			for (Object id : ids) rank.putIfAbsent(String.valueOf(id), next++);
+			int unranked = rank.size();
+
+			Method keyM = registryCls.getMethod("key");
+			Map<Object, Integer> ranked = new java.util.IdentityHashMap<>();
+			for (Object registry : registries) {
+				Object key = keyM.invoke(registry);
+				Object id = key.getClass().getMethod("identifier").invoke(key);
+				ranked.put(registry, rank.getOrDefault(String.valueOf(id), unranked));
+			}
+
+			List<Object> sorted = new ArrayList<>(registries);
+			// Stable, so everything NeoForge does not rank keeps the collection order the gates have proven.
+			sorted.sort(java.util.Comparator.comparingInt(r -> ranked.getOrDefault(r, unranked)));
+
+			int moved = 0;
+			for (int i = 0; i < sorted.size(); i++) {
+				if (sorted.get(i) != registries.get(i)) moved++;
+			}
+			if (moved > 0) {
+				ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent in NeoForge's registration order, not "
+						+ "BuiltInRegistries' field order — %d registr(ies) moved. attribute, data_component_type and "
+						+ "particle_type go first because mods' block and item builders read them", moved);
+			}
+			return sorted;
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] no NeoForge registration order available — firing RegisterEvent in "
+					+ "collection order; a mod whose items read their own data components may lose them", unwrap(t));
+			return registries;
+		}
+	}
+
 	private static int fireRegisterEvents(ClassLoader cl, List<Object> buses) throws Exception {
 		Class<?> registryCls = Class.forName("net.minecraft.core.Registry", false, cl);
 		Class<?> resourceKeyCls = Class.forName("net.minecraft.resources.ResourceKey", false, cl);
@@ -1102,6 +1173,11 @@ public final class KernelLifecycle {
 		// rather than replacing them, so the order the gates have proven is untouched and the mod-created registries
 		// simply follow — which is also NeoForge's order, vanilla first.
 		collectRootRegistries(cl, registryCls, registries);
+
+		// …and then in NEOFORGE'S order, not the order the fields happen to be declared in. See
+		// {@link #inNeoForgeRegistrationOrder}: BuiltInRegistries declares ITEM 57 fields before DATA_COMPONENT_TYPE,
+		// and a mod whose items name their own data components dies on that gap.
+		registries = inNeoForgeRegistrationOrder(cl, registryCls, registries);
 
 		// REGISTRY-major / mod-minor, matching genuine NeoForge (RegistryManager walks registries, firing each mod's
 		// bus per registry). A DeferredRegister's DeferredHolders resolve during their own registry's event, so a mod
@@ -1505,6 +1581,24 @@ public final class KernelLifecycle {
 		List<Path> jars = new ArrayList<>(runtimeJars);
 		jars.addAll(modJars);
 		KernelClientPacks.addTo(packRepository, cl, jars);
+	}
+
+	/**
+	 * Called from the game side: the head of {@code ResourcePackLoader.populatePackRepository(...)}, prepended by
+	 * {@code DataPackHookInjector}. This is the genuine loader's own choke point for mod packs, and the only place
+	 * with a handle on the SERVER datapack repository before it is read.
+	 *
+	 * <p>Filters to {@code SERVER_DATA} here rather than in the injector: the same method builds the client resource
+	 * repository too, and client assets are already served — correctly, and with synthesised metadata this path
+	 * deliberately does not use — by {@link #onClientResourcePacks}. Serving them twice would put every ecosystem
+	 * jar in the client repository under two ids.
+	 *
+	 * <p>Mod jars only, not {@code runtimeJars}: see {@link KernelDataPacks} for what that leaves out and why.
+	 */
+	public static void onServerDataPacks(Object packRepository, Object packType) {
+		if (!(packType instanceof Enum<?> type) || !"SERVER_DATA".equals(type.name())) return;
+		ClassLoader cl = gameLoader != null ? gameLoader : Thread.currentThread().getContextClassLoader();
+		KernelDataPacks.addTo(packRepository, packType, cl, modJars);
 	}
 
 	/** Variant for a traditional-Forge {@code ServerModLoader.load()V} (no-arg) redirect. */

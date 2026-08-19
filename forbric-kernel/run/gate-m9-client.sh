@@ -88,6 +88,18 @@ check "IMC enqueued and processed"    "posted FML IMC (enqueue|process) to [0-9]
 check "load complete posted"          "posted FML load complete to [0-9]+ NeoForge mod"  "$LOG"
 check_absent "no mod failed a phase"  "failed during (construct|IMC enqueue|IMC process)" "$LOG"
 
+step "a Forge-family mod's own content and data actually arrived (must PASS)"
+# Three fixes that only this pack exercises, each demonstrable: -Dforbric.modDataPacks=off,
+# -Dforbric.registryAliasParity=off, -Dforbric.neoRegistrationOrder=off each turn this gate RED.
+check "mod datapacks served"          "Forbric/DataPacks\] served [0-9]+ mod datapack"        "$LOG"
+check "registry alias parity restored" "Forbric/Aliases\] gave .* alias-resolving lookup"      "$LOG"
+check "NeoForge registration order"    "fired RegisterEvent in NeoForge.s registration order"  "$LOG"
+# A mod whose items name their own data components: with RegisterEvent in field order the item registry is filled
+# 57 registries too early, DeferredHolder.value() throws, and the mod loses every item it had not reached yet.
+check_absent "no unbound data component" "Trying to access unbound value"                      "$LOG"
+check_absent "no RegisterEvent listener failed" "RegisterEvent listener failed"                "$LOG"
+check_absent "no tag lost to a dangling id"     "Couldn.t load tag"                            "$LOG"
+
 step "every failure that has cost a world load here (must be ABSENT)"
 # Each of these is a bug that actually happened on this pack; the wording is the log's, not ours to change lightly.
 check_absent "JEI found its plugins"        "plugins must not be empty"                        "$LOG"

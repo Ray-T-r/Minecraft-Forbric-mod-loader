@@ -141,7 +141,21 @@ public final class MergedBaseMixinCompat {
 			// GuiExtensions` there, so the visible symptom was a ClassCastException from Fabric's own
 			// MinecraftMixin.onInit, naming neither Essential nor a group. MixinFit cannot predict this one: each
 			// member's anchor resolves, and only the GROUP's min=1 is unsatisfiable — see the @Group gap.
-			"mixins.essential.json:events.Mixin_GuiDrawScreenEvent_Priority");
+			"mixins.essential.json:events.Mixin_GuiDrawScreenEvent_Priority",
+			// zfastnoise gates its three optimisations behind its OWN mixin plugin, and that plugin cannot be
+			// constructed here: FastNoiseMixinPlugin.<init> triggers FastNoiseConfig.<clinit>, which reads its
+			// config through UnmodifiableConfig.get and dies on "StampedConfig does not support valueMap() yet".
+			// Mixin skips a plugin it cannot instantiate and then applies the config's mixins with no opinion —
+			// so all three apply, and every one of them reads the static fields of a class that is permanently in
+			// error state. The first chunk to generate dies on NoClassDefFoundError inside populateBiomes and
+			// takes the client with it. Suppressing them restores what the mod itself would have decided: with
+			// its config unreadable it applies no optimisation. Measured on the merged pack — the clinit failure
+			// is present in every run, green or red, and only became fatal once mod datapacks made the world
+			// generate chunks again. The four accessors are left alone; they carry no config dependency.
+			"zfastnoise.mixins.json:perf.noise.NoiseChunkGeneratorMixin",
+			"zfastnoise.mixins.json:perf.biome.NoiseChunkGeneratorMixin",
+			"zfastnoise.mixins.json:perf.surface.NoiseChunkGeneratorMixin",
+			"zfastnoise.mixins.json:perf.surface.BiomeMaterialRuleMixin");
 
 	/**
 	 * Whole mixin configs to leave unregistered, because no sub-selection of their mixins is coherent.
