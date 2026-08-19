@@ -107,6 +107,12 @@ check "sided phase posted"           "posted FML dedicated server setup to [0-9]
 check "registration events ran"      "ran NeoForge.s registration events"                       "$LOG"
 check "IMC enqueued and processed"   "posted FML IMC (enqueue|process) to [0-9]+ NeoForge mod"  "$LOG" 2
 check_absent "no mod failed a phase" "failed during (construct|dedicated server setup|IMC)"     "$LOG"
+# ModConfig.Type.SERVER is NOT one of the missing phases, which is worth pinning down rather than re-deriving:
+# ServerLifecycleHooks.handleServerAboutToStart loads it through the 3-arg ConfigTracker overload, and the kernel
+# never excised that call. The proof is the readme NeoForge's own server-config machinery writes into the world
+# folder — and the staging step deletes that folder, so the file can only have come from this run.
+[ -f "$RUNDIR/world/serverconfig/readme.txt" ] && SRVCFG=written || SRVCFG=missing
+assert_eq "SERVER-type configs loaded for the world" written "$SRVCFG"
 
 step "nothing quietly broken (must be ABSENT)"
 check_absent "no NoClassDefFound"          "NoClassDefFoundError" "$LOG"
