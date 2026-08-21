@@ -62,3 +62,61 @@ kernel_scan() {
 }
 
 filter_noise() { grep -vE 'WARNING: |native-access|Restricted method|--enable-native'; }
+
+# --- server process lifecycle -------------------------------------------------------------------------------
+# WHY BY PID AND NEVER BY NAME. `pkill -f KernelServerLaunch` has never matched anything on this machine: the
+# launcher's -cp runs to tens of thousands of characters and the main class sits past the range pgrep/pkill can
+# inspect. So every gate's `pgrep -f ... || break` broke on its FIRST iteration and every `pkill -9 -f ...` was
+# a no-op. The gates passed anyway — but only because a healthy server reaches "Stopping server" by itself. A
+# server that HUNG hung the gate with it, forever, on `wait "$BOOTPID"`. (Measured: 17 minutes before someone
+# noticed.) Kill the tree by pid instead, and leave the pid behind so an interrupted run can be reaped later.
+#
+# A name match would also be actively unsafe here: another session may have its own Minecraft running, and a
+# broad pattern is exactly how you kill someone else's game. Every kill below goes through a pid this gate
+# itself recorded.
+
+_pidfile() { echo "${1:-$KERNEL/run}/.forbric-gate.pid"; }
+
+kill_tree() {
+  local root="$1" pid
+  case "$root" in ''|*[!0-9]*) return 0;; esac
+  for pid in $(pgrep -P "$root" 2>/dev/null) "$root"; do kill -9 "$pid" 2>/dev/null; done
+}
+
+# reap_stale_server <rundir> — clean up a server left running by an INTERRUPTED earlier run of this same gate.
+# Replaces the old blanket pkill pre-clean, which could never have found anything anyway.
+reap_stale_server() {
+  local pf; pf="$(_pidfile "${1:-}")"
+  [ -f "$pf" ] || return 0
+  local stale; stale="$(cat "$pf" 2>/dev/null)"
+  rm -f "$pf"
+  case "$stale" in ''|*[!0-9]*) return 0;; esac
+  if kill -0 "$stale" 2>/dev/null; then
+    echo "[kernel] reaping server $stale left behind by an interrupted run"
+    kill_tree "$stale"
+    sleep 1
+  fi
+}
+
+record_server_pid() { echo "$2" > "$(_pidfile "$1")"; }
+
+# await_server <pid> <log> [limit-seconds] [grace-seconds] — wait for a clean stop, then guarantee it is gone.
+# Bounded on purpose: a hung server costs the timeout, not the afternoon.
+await_server() {
+  local pid="$1" log="$2" limit="${3:-90}" grace="${4:-20}" i
+  for i in $(seq 1 "$limit"); do
+    kill -0 "$pid" 2>/dev/null || { wait "$pid" 2>/dev/null; return 0; }
+    grep -qE 'Stopping server|Failed to start the minecraft server' "$log" 2>/dev/null && break
+    sleep 1
+  done
+  # "Stopping server" is printed when shutdown BEGINS, not when it ends — saving chunks and flushing the log come
+  # after it, and the gates assert on lines from that tail ("All dimensions are saved"). So let a server that has
+  # announced its stop leave on its own terms, and only reach for the hammer if it cannot do so inside the grace
+  # window. A flat sleep here would be a bet on how long a save takes.
+  for i in $(seq 1 "$grace"); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 1
+  done
+  kill_tree "$pid"
+  wait "$pid" 2>/dev/null
+}

@@ -50,7 +50,7 @@ step "stage fabric-api + Tectonic + the lithostitched build Tectonic links again
 # LithostitchedBuiltInRegistries, and the Fabric build creates those registries with FabricRegistryBuilder, which
 # writes the root registry from a NeoForge mod's constructor and fails "Registry is already frozen". That is the
 # mod set being wrong, not the kernel: on a real NeoForge instance Tectonic gets the NeoForge build too.
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; sleep 1
+reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
 for jar in "$PACK/fabric-api-0.155.2+26.2.jar" \
@@ -66,19 +66,10 @@ step "boot the merged base under the kernel (no compatibility flags)"
 ( sleep 90; echo stop ) | FORBRIC_JVM="${M10_EXTRA_JVM:-}" RUNDIR="$RUNDIR" \
   "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
-# Wait on the PID, not on `pgrep -f KernelServerLaunch`. On macOS pgrep/pkill only inspect the first slice of a
-# command line, and this launcher's -cp runs to tens of thousands of characters, so the main class name sits past
-# it: the name match never hits. The other server gates get away with it because the server reaches "Stopping
-# server" on its own; a server that HANGS — which is exactly what a chunk-gen failure does — left this gate
-# waiting forever the first time it went red. Kill the tree we started, by pid.
-for i in $(seq 1 240); do
-  kill -0 "$BOOTPID" 2>/dev/null || break
-  grep -qE 'Stopping server|Failed to start the minecraft server' "$LOG" 2>/dev/null && break
-  sleep 1
-done
-sleep 3
-for pid in $(pgrep -P "$BOOTPID" 2>/dev/null) "$BOOTPID"; do kill -9 "$pid" 2>/dev/null; done
-wait "$BOOTPID" 2>/dev/null
+record_server_pid "$RUNDIR" "$BOOTPID"
+# By pid, never by name — see the rationale on await_server in lib.sh. This gate is where it first mattered: a
+# chunk-gen failure hangs the server rather than stopping it, and the name match never hits.
+await_server "$BOOTPID" "$LOG" 240
 
 step "the two patches were reconciled rather than left to collide (must PASS)"
 # The repair has to have FIRED. If the anchor ever moves, the injector warns and passes the class through, and
@@ -94,7 +85,12 @@ check_absent "no null pack reached the repo"  "streamSelfAndChildren.* because .
 check_absent "no pack was skipped as null"    "Forbric/PackRepair\] a RepositorySource emitted a null pack" "$LOG"
 
 step "the Forge-family mods' own data/ reached the server datapack repository (must PASS)"
-check        "mod datapacks served"           "Forbric/DataPacks\] served [0-9]+ mod datapack" "$LOG"
+check "datapacks served"              "Forbric/DataPacks\] served [0-9]+ datapack"             "$LOG"
+# The carriers are where the c: convention-tag skeleton lives — 513 tag files that exist in NO other jar, and that
+# every cross-mod recipe is written against. Assert the NUMBER: the line keeps printing when the count goes to zero.
+CARRIERS=$(grep -aoE 'served [0-9]+ datapack\(s\).*— [0-9]+ loader carrier' "$LOG" | grep -oE '[0-9]+ loader' | grep -oE '[0-9]+' | head -1)
+assert_eq "loader carriers served" 2 "${CARRIERS:-none}"
+check "carriers sit below the mods"   "forbric/carrier/1-forge-runtime-interop, forbric/carrier/2-neoforge-runtime" "$LOG"
 check_absent "hook anchor still matches"      "no longer exists — Forge-family mods" "$LOG"
 # lithostitched's own mixin redirects vanilla's ruined-portal template selection into TemplateLists.getRandom, which
 # calls Optional.get() on the lithostitched:template_list registry. The registry is declared either way; only the

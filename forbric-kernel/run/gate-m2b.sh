@@ -21,7 +21,7 @@ step "stage fabric-api + Jade + the Fabric canary"
 "$KERNEL/run/build-fabric-canary.sh" >"$BUILD/gate-m2b-canary.log" 2>&1
 [ -f "$CANARY" ] || { echo "[kernel] FAIL canary build (see $BUILD/gate-m2b-canary.log)"; exit 1; }
 
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; sleep 1
+reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
 for jar in "$MODS/fabric-api-0.154.0+26.2.jar" "$MODS/Jade-mc26.2-Fabric-26.2.9.jar"; do
@@ -35,12 +35,8 @@ step "boot the merged base under the kernel (no compatibility flags)"
 : > "$LOG"
 ( sleep 40; echo stop ) | RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
-for i in $(seq 1 150); do
-  pgrep -f KernelServerLaunch >/dev/null 2>&1 || break
-  grep -qE 'Stopping server|Failed to start the minecraft server' "$LOG" 2>/dev/null && break
-  sleep 1
-done
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; wait "$BOOTPID" 2>/dev/null
+record_server_pid "$RUNDIR" "$BOOTPID"
+await_server "$BOOTPID" "$LOG" 150
 
 step "the Fabric substrate came up natively (must PASS)"
 check "fabric-api + Jade + canary discovered"  "discovered [0-9]{2,} Fabric mod\(s\)" "$LOG"

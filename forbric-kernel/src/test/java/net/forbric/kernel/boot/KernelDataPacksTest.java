@@ -51,6 +51,7 @@ class KernelDataPacksTest {
 	void forgetArbitration() {
 		MultiLoaderArbiter.reset();
 		System.clearProperty(KernelDataPacks.PROPERTY);
+		System.clearProperty(KernelDataPacks.LOADER_PROPERTY);
 	}
 
 	@Test
@@ -102,12 +103,53 @@ class KernelDataPacksTest {
 	}
 
 	@Test
-	void theKillSwitchIsHonoured() {
+	void theKillSwitchIsHonoured() throws Exception {
+		Path mod = jar("neo-with-data.jar", ForbricModDiscoverer.NEOFORGE_MANIFEST, "data/mymod/recipe/thing.json");
 		assertTrue(KernelDataPacks.enabled());
+		assertEquals(List.of(mod), KernelDataPacks.forgeFamilyJarsWithData(List.of(mod)));
+
+		// Not just the predicate — the SELECTION has to honour it, or the switch reads as working while serving
+		// everything anyway.
 		System.setProperty(KernelDataPacks.PROPERTY, "off");
 		assertFalse(KernelDataPacks.enabled());
+		assertEquals(List.of(), KernelDataPacks.forgeFamilyJarsWithData(List.of(mod)));
+
 		System.setProperty(KernelDataPacks.PROPERTY, "on");
 		assertTrue(KernelDataPacks.enabled());
+		assertEquals(List.of(mod), KernelDataPacks.forgeFamilyJarsWithData(List.of(mod)));
+	}
+
+	/** Best-effort means best-effort: this path must never be the reason a boot fails. */
+	@Test
+	void noInputIsNotAnError() {
+		assertEquals(List.of(), KernelDataPacks.forgeFamilyJarsWithData(null));
+		assertEquals(List.of(), KernelDataPacks.forgeFamilyJarsWithData(List.of()));
+	}
+
+	/**
+	 * The whole stack rests on string comparison, because PackRepository.discoverAvailable re-sorts each source's
+	 * packs into a TreeMap and discards the order they were emitted in. So assert the thing the game actually
+	 * sorts: carriers below mods, MinecraftForge below NeoForge.
+	 */
+	@Test
+	void packIdsSortIntoThePriorityStackTheGameWillApply() throws Exception {
+		Path forge = jar("forge-runtime-interop.jar", null, "data/forge/tags/item/tools.json");
+		Path neo = jar("neoforge-runtime.jar", null, "data/neoforge/damage_type/thing.json");
+		Path mod = jar("lithostitched-1.7.13-neoforge-26.2.jar", ForbricModDiscoverer.NEOFORGE_MANIFEST,
+				"data/lithostitched/recipe/x.json");
+		// A mod whose name sorts before both carriers' — the id, not the file name, has to carry the order.
+		Path early = jar("aaa-mod.jar", ForbricModDiscoverer.NEOFORGE_MANIFEST, "data/aaa/recipe/x.json");
+
+		List<String> sorted = new java.util.ArrayList<>(List.of(
+				KernelDataPacks.modPackId(mod), KernelDataPacks.carrierPackId(neo),
+				KernelDataPacks.modPackId(early), KernelDataPacks.carrierPackId(forge)));
+		java.util.Collections.sort(sorted);
+
+		assertEquals(List.of(
+				"forbric/carrier/1-forge-runtime-interop",
+				"forbric/carrier/2-neoforge-runtime",
+				"forbric/data/aaa-mod",
+				"forbric/data/lithostitched-1.7.13-neoforge-26.2"), sorted);
 	}
 
 	@Test
@@ -115,6 +157,55 @@ class KernelDataPacksTest {
 		assertEquals("lithostitched-1.7.13-neoforge-26.2",
 				KernelDataPacks.stripExtension("lithostitched-1.7.13-neoforge-26.2.jar"));
 		assertEquals("noextension", KernelDataPacks.stripExtension("noextension"));
+	}
+
+	/**
+	 * The carrier order is the arbitration rule for the 49 last-wins files the two carriers disagree on (30 loot
+	 * tables, 19 recipes), and it is read off the jar, not off the caller's argument order. NeoForge is emitted
+	 * last — later is higher priority — because the merged base IS NeoForge, and its versions of those files are
+	 * written against ingredient types only it registers.
+	 */
+	@Test
+	void neoForgeCarrierIsEmittedLastSoItWinsTheCollisions() throws Exception {
+		Path forge = jar("forge-runtime-interop.jar", null,
+				"data/forge/tags/item/tools.json", "data/c/tags/item/ingots.json");
+		Path neo = jar("neoforge-runtime.jar", null,
+				"data/neoforge/damage_type/thing.json", "data/c/tags/item/ingots.json");
+
+		// Passed NeoForge-first on purpose: the answer must not depend on how the launcher happens to list them.
+		assertEquals(List.of(forge, neo), KernelDataPacks.carriersWithData(List.of(neo, forge)));
+		assertEquals(List.of(forge, neo), KernelDataPacks.carriersWithData(List.of(forge, neo)));
+	}
+
+	@Test
+	void aCarrierWithNoDataIsNotServed() throws Exception {
+		Path empty = jar("carrier-no-data.jar", null, "net/neoforged/Thing.class");
+		assertEquals(List.of(), KernelDataPacks.carriersWithData(List.of(empty)));
+		assertEquals(List.of(), KernelDataPacks.carriersWithData(List.of()));
+		assertEquals(List.of(), KernelDataPacks.carriersWithData(null));
+	}
+
+	/**
+	 * An unrecognised carrier ranks below both known ones rather than being dropped: it still has data worth
+	 * serving, and it must not silently outrank the loader whose ingredient types the base actually registers.
+	 */
+	@Test
+	void anUnrecognisedCarrierSortsLowest() throws Exception {
+		Path neo = jar("neoforge-runtime.jar", null, "data/neoforge/damage_type/thing.json");
+		Path other = jar("something-else.jar", null, "data/whatever/tags/item/x.json");
+		assertEquals(List.of(other, neo), KernelDataPacks.carriersWithData(List.of(neo, other)));
+	}
+
+	@Test
+	void theLoaderDataKillSwitchIsSeparateFromTheModOne() throws Exception {
+		Path neo = jar("neoforge-runtime.jar", null, "data/neoforge/damage_type/thing.json");
+		assertTrue(KernelDataPacks.loaderDataEnabled());
+
+		System.setProperty(KernelDataPacks.LOADER_PROPERTY, "off");
+		assertFalse(KernelDataPacks.loaderDataEnabled());
+		assertEquals(List.of(), KernelDataPacks.carriersWithData(List.of(neo)));
+		// ... and turning the carriers off must not turn the MOD packs off with them.
+		assertTrue(KernelDataPacks.enabled());
 	}
 
 	private Path jar(String name, String manifest, String... entries) throws Exception {

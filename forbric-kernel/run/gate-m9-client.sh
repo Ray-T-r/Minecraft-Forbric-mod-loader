@@ -6,10 +6,9 @@
 # with -Dforbric.clientSmoke, then asserts the absence of each failure that has actually cost a world load here.
 # Those check_absent lines are the point of the gate — they are a list of bugs, each one paid for.
 #
-# WHY IT KILLS BY PID. The other gates pkill on the launcher class name, which is fine for a server. It is NOT
-# fine here: a developer (or a second agent session) may have their own Minecraft client open, and a name-matched
-# kill would take it down with no warning and no way to tell whose it was. This gate kills the process tree it
-# started and nothing else.
+# WHY IT KILLS BY PID. A developer (or a second agent session) may have their own Minecraft client open, and a
+# name-matched kill would take it down with no warning and no way to tell whose it was. This gate kills the
+# process tree it started and nothing else. The server gates now do the same, via await_server in lib.sh.
 #
 # The window between disconnect and exit is deliberate. Vanilla's own watchdog logs "Client shutdown from
 # post-main" ~15s after main returns if a non-daemon thread is still alive, which is how a leaked mod thread
@@ -91,7 +90,12 @@ check_absent "no mod failed a phase"  "failed during (construct|IMC enqueue|IMC 
 step "a Forge-family mod's own content and data actually arrived (must PASS)"
 # Three fixes that only this pack exercises, each demonstrable: -Dforbric.modDataPacks=off,
 # -Dforbric.registryAliasParity=off, -Dforbric.neoRegistrationOrder=off each turn this gate RED.
-check "mod datapacks served"          "Forbric/DataPacks\] served [0-9]+ mod datapack"        "$LOG"
+check "datapacks served"              "Forbric/DataPacks\] served [0-9]+ datapack"             "$LOG"
+# The carriers are where the c: convention-tag skeleton lives — 513 tag files that exist in NO other jar, and that
+# every cross-mod recipe is written against. Assert the NUMBER: the line keeps printing when the count goes to zero.
+CARRIERS=$(grep -aoE 'served [0-9]+ datapack\(s\).*— [0-9]+ loader carrier' "$LOG" | grep -oE '[0-9]+ loader' | grep -oE '[0-9]+' | head -1)
+assert_eq "loader carriers served" 2 "${CARRIERS:-none}"
+check "carriers sit below the mods"   "forbric/carrier/1-forge-runtime-interop, forbric/carrier/2-neoforge-runtime" "$LOG"
 check "registry alias parity restored" "Forbric/Aliases\] gave .* alias-resolving lookup"      "$LOG"
 check "NeoForge registration order"    "fired RegisterEvent in NeoForge.s registration order"  "$LOG"
 # A mod whose items name their own data components: with RegisterEvent in field order the item registry is filled
@@ -99,6 +103,16 @@ check "NeoForge registration order"    "fired RegisterEvent in NeoForge.s regist
 check_absent "no unbound data component" "Trying to access unbound value"                      "$LOG"
 check_absent "no RegisterEvent listener failed" "RegisterEvent listener failed"                "$LOG"
 check_absent "no tag lost to a dangling id"     "Couldn.t load tag"                            "$LOG"
+
+step "one NightConfig, and it is the working one (must PASS)"
+# The MinecraftForge carrier bundles NightConfig 3.7.4 at the UNSHADED package name, where
+# StampedConfig.valueMap() is a stub that throws. Child-first handed the game that copy and shadowed the working
+# 3.8.x on the parent classpath, so every config read that descends a dotted path into a nested table died.
+# zfastnoise is the visible victim — it reads config in its mixin PLUGIN's constructor, and Mixin responds to a
+# plugin it cannot build by applying that config's mixins with no opinion, which then killed chunk generation.
+# The positive assertion is the load-bearing one: the plugin only gets guarded once it has been CONSTRUCTED.
+check "a config-reading mixin plugin constructs" "guarded .*FastNoiseMixinPlugin"             "$LOG"
+check_absent "no NightConfig version split"      "StampedConfig does not support valueMap"      "$LOG"
 
 step "every failure that has cost a world load here (must be ABSENT)"
 # Each of these is a bug that actually happened on this pack; the wording is the log's, not ours to change lightly.

@@ -13,14 +13,14 @@ RUNDIR="$KERNEL/run/server-kernel"
 
 step "boot merged-base server under the kernel (zero mods), tick, clean stop"
 "$KERNEL/gradlew" --offline -q -p "$KERNEL" jar >/dev/null 2>&1
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; sleep 1
+reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" 2>/dev/null
 rm -rf "$RUNDIR/mods" 2>/dev/null; mkdir -p "$RUNDIR/mods"  # genuinely zero-mod
 : > "$LOG"
 # Feed "stop" once the server has actually reached Done and ticked a little, then let it shut down gracefully.
 # A fixed timer raced: if boot happens to finish right at the deadline, "stop" lands on the Done boundary (the
 # permission handler is still initialising) and the command dies with "An unexpected error occurred while trying to
-# execute that command" — the server then never stops and the gate burns its whole 90s poll before pkill.
+# execute that command" — the server then never stops and the gate burns its whole 90s poll before the hammer.
 (
   for i in $(seq 1 90); do
     grep -q 'Done (' "$LOG" 2>/dev/null && break
@@ -31,13 +31,8 @@ rm -rf "$RUNDIR/mods" 2>/dev/null; mkdir -p "$RUNDIR/mods"  # genuinely zero-mod
   echo stop
 ) | FORBRIC_JVM="-Dforbric.debug=true" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
-# Wait for a clean stop or a crash (up to ~90s).
-for i in $(seq 1 90); do
-  pgrep -f KernelServerLaunch >/dev/null 2>&1 || break
-  grep -qE 'Stopping server|Failed to start the minecraft server' "$LOG" 2>/dev/null && break
-  sleep 1
-done
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; wait "$BOOTPID" 2>/dev/null
+record_server_pid "$RUNDIR" "$BOOTPID"
+await_server "$BOOTPID" "$LOG" 90
 
 step "boot achievements (must PASS)"
 check "kernel loaded merged base through its own loader"  "sovereign kernel .* owned jar" "$LOG"
