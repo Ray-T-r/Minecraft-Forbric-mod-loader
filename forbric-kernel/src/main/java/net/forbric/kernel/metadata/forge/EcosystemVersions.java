@@ -35,10 +35,16 @@ import net.forbric.kernel.util.ForbricLog;
  * loads and fails later, somewhere else, in a shape that names neither the mod nor the version.
  *
  * <p>Measured cost of not having this: JEI 30.14.0.87 declares {@code neoforge [26.2.0.16-beta,)} and the carrier
- * is {@code 26.2.0.7-beta}. It loaded. Nine releases of drift later, {@code NeoForgeGuiPlugin} died on
+ * was {@code 26.2.0.7-beta}. It loaded. Nine releases of drift later, {@code NeoForgeGuiPlugin} died on
  * {@code NoClassDefFoundError: net/neoforged/neoforge/common/extensions/TooltipFlagExtension} — an interface that
  * genuinely does not exist in .7, where those methods are inlined on {@code TooltipFlag} instead. Tracing that
  * back to a version range took a disassembler. One warning line would have said it.
+ *
+ * <p>That warning is also what the carrier bump was decided on: the NeoForge carrier is now
+ * {@code 26.2.0.38-beta}, which does ship {@code TooltipFlagExtension}, and this audit reports nothing for the
+ * merged pack. Two things follow. Silence here is now the assertion (gate-m9-client pins the set to empty), and
+ * this class has done its job precisely when it has nothing to say — so resist deleting it as unused. And the
+ * example above is history, not the current state; do not read the version out of it.
  *
  * <p>It WARNS rather than rejects, deliberately. Rejecting is what a genuine loader does and would be the more
  * faithful choice, but it is also a decision to eject mods from a running pack, and that belongs to whoever

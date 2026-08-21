@@ -162,14 +162,19 @@ check_absent "no crash report"              "Preparing crash report"            
 step "the pack is honestly provisioned (must PASS)"
 # A genuine NeoForge refuses to launch when a mod's versionRange on neoforge is not satisfied. The kernel parses
 # those ranges and used to evaluate none of them, so an under-provisioned mod loaded and failed later somewhere
-# that named neither it nor the version: JEI 30.14.0.87 wants [26.2.0.16-beta,), the carrier is 26.2.0.7-beta, and
-# what that actually looked like was NeoForgeGuiPlugin dying on NoClassDefFoundError for TooltipFlagExtension —
-# an interface .7 genuinely does not have, because those methods are inlined on TooltipFlag there instead.
-# Pin the SET: this pack has exactly one such mod, and a second must be a decision, not a surprise.
+# that named neither it nor the version: JEI 30.14.0.87 wants [26.2.0.16-beta,), the carrier WAS 26.2.0.7-beta,
+# and what that actually looked like was NeoForgeGuiPlugin dying on NoClassDefFoundError for TooltipFlagExtension
+# — an interface .7 genuinely does not have, because those methods are inlined on TooltipFlag there instead.
+#
+# That audit is why the carrier is now 26.2.0.38-beta (see forbric-loader/run/assemble-neoforge-runtime.sh for
+# why .38 and not the newest .64): the bump is what closed the only entry this set ever had. So the expected
+# value is now "none" — and keeping the assertion, rather than deleting it with the finding, is the point. It
+# fails in both directions: a mod whose range outruns the carrier turns it red, and so does silently sliding
+# the carrier back. Anything appearing here must be a decision, not a surprise.
 check "ecosystem versions reported"   "Forbric/Versions\] this instance provides"                "$LOG"
 UNDERPROVISIONED=$(grep -aoE 'Forbric/Versions\] [a-z0-9_]+ requires' "$LOG" \
   | sed -E 's/.*\] ([a-z0-9_]+) requires/\1/' | sort -u | paste -sd, -)
-assert_eq "only the known under-provisioned mod" "jei" "${UNDERPROVISIONED:-none}"
+assert_eq "no under-provisioned mod" "none" "${UNDERPROVISIONED:-none}"
 
 step "nothing leaked past main"
 # Vanilla logs this ~15s after main returns when a non-daemon thread is still alive — a leaked mod thread.
