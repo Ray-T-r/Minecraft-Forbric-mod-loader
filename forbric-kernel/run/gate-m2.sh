@@ -20,7 +20,7 @@ if [ ! -f "$CANARY" ]; then echo "[kernel] FAIL canary build (see $BUILD/gate-m2
 echo "[kernel] canary built"
 
 step "boot the merged base under the kernel with ONLY the Fabric canary in mods/"
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; sleep 1
+reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
 cp "$CANARY" "$RUNDIR/mods/"
@@ -28,12 +28,8 @@ printf 'level-seed=forbrickernel\n' > "$RUNDIR/server.properties"
 : > "$LOG"
 ( sleep 22; echo stop ) | FORBRIC_JVM="-Dforbric.debug=true" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
-for i in $(seq 1 90); do
-  pgrep -f KernelServerLaunch >/dev/null 2>&1 || break
-  grep -qE 'Stopping server|Failed to start the minecraft server' "$LOG" 2>/dev/null && break
-  sleep 1
-done
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; wait "$BOOTPID" 2>/dev/null
+record_server_pid "$RUNDIR" "$BOOTPID"
+await_server "$BOOTPID" "$LOG" 90
 
 step "discovery + JiJ (must PASS)"
 check "Fabric mods discovered"                "discovered [0-9]+ Fabric mod\(s\) in [0-9]+ jar\(s\)" "$LOG"

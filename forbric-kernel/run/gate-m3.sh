@@ -15,7 +15,7 @@ CANARY="$OLD/run/neoforge-runtime/forbricneolive.jar"
 
 step "stage a real NeoForge @Mod + boot under the kernel"
 "$KERNEL/gradlew" --offline -q -p "$KERNEL" jar >/dev/null 2>&1
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; sleep 1
+reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" 2>/dev/null
 rm -rf "$RUNDIR/mods" 2>/dev/null; mkdir -p "$RUNDIR/mods"
 if [ -f "$CANARY" ]; then cp "$CANARY" "$RUNDIR/mods/"; else echo "[kernel] WARN canary mod absent: $CANARY"; fi
@@ -24,12 +24,8 @@ printf 'level-seed=forbrickernel\n' > "$RUNDIR/server.properties"
 : > "$LOG"
 ( sleep 22; echo stop ) | FORBRIC_JVM="-Dforbric.debug=true" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
-for i in $(seq 1 90); do
-  pgrep -f KernelServerLaunch >/dev/null 2>&1 || break
-  grep -qE 'Stopping server|Failed to start the minecraft server' "$LOG" 2>/dev/null && break
-  sleep 1
-done
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; wait "$BOOTPID" 2>/dev/null
+record_server_pid "$RUNDIR" "$BOOTPID"
+await_server "$BOOTPID" "$LOG" 90
 
 step "native ecosystem construction (must PASS)"
 check "NeoForge baseline mod constructed"        "constructed NeoForge baseline mod" "$LOG"

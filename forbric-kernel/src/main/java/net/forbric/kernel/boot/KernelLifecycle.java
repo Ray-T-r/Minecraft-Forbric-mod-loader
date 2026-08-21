@@ -115,11 +115,17 @@ public final class KernelLifecycle {
 		// ClientHooks.initClientHooks during Minecraft.<init> for reload listeners, entity renderers, sprite
 		// sources, client extensions — reaches NeoForge's built-in client handlers.
 		if (client) registerNeoForgeClientContent(cl);
-		// Step 2c (client only): load the NeoForge config specs the baselines just registered. Client-side
-		// listeners read CLIENT/COMMON values early (e.g. TagConventionLogWarningClient on ServerStartingEvent when
-		// entering a singleplayer world reads a CLIENT value) — an unloaded spec throws "Cannot get config value
-		// before config is loaded". Scoped to the client so the proven server path (gate-m3/m4) is untouched.
-		if (client) loadClientConfigs(cl);
+		// Step 2c: load the NeoForge config specs the baselines and the just-constructed mods registered. Listeners
+		// read CLIENT/COMMON values early (e.g. TagConventionLogWarningClient on ServerStartingEvent when entering a
+		// singleplayer world reads a CLIENT value) — an unloaded spec throws "Cannot get config value before config
+		// is loaded". This ran CLIENT-ONLY, on the reasoning that it left the proven server path alone; what it
+		// actually left alone was a dedicated server with NO STARTUP or COMMON config loaded at all. A mod that
+		// keys anything off its own config then has nothing to read: Balm sets a mod's active config from its
+		// ModConfigEvent.Loading listener, so with the event never fired Waystones' getActive() —
+		// Objects.requireNonNull(...) — threw NPE out of setupDynamicRegistries and the server died before Done.
+		// Only the CLIENT type is client-only; NeoForge loads STARTUP and COMMON on both sides, and SERVER is
+		// loaded separately, per-world, by ServerLifecycleHooks.handleServerAboutToStart.
+		loadEarlyConfigs(cl, client);
 		// Step 2c2: wire NeoForge's OWN @EventBusSubscriber classes from its runtime jar. NeoForge ships as a mod and
 		// FML scans its jar like any other; the kernel scanned only mod jars, so ~10 internal subscribers (network,
 		// attachments, configuration tasks, model data, …) never fired. Must precede step 2d — the network setup posts
@@ -265,11 +271,24 @@ public final class KernelLifecycle {
 	}
 
 	/**
-	 * Loads NeoForge's STARTUP/COMMON/CLIENT config specs (registered by the baselines just constructed) from the
-	 * config dir, so {@code ModConfigSpec.ConfigValue.get()} reads work later in the client/world lifecycle. Missing
-	 * files are fine — NeoForge writes defaults. Best-effort per type; a failure is logged, not fatal.
+	 * Loads NeoForge's STARTUP/COMMON (and, on the client, CLIENT) config specs — registered by the baselines and by
+	 * the mods constructed just before this — from the config dir, so {@code ModConfigSpec.ConfigValue.get()} reads
+	 * work later in the lifecycle. Loading a spec is also what posts {@code ModConfigEvent.Loading}, which is how a
+	 * config framework layered on NeoForge (Balm, for one) learns that a mod's config now has values; skip it and
+	 * such a mod reads null forever.
+	 *
+	 * <p>SERVER is deliberately absent: it is per-world and belongs to {@code
+	 * ServerLifecycleHooks.handleServerAboutToStart}, which the kernel does not excise.
+	 *
+	 * <p>Missing files are fine — NeoForge writes defaults. Best-effort per type; a failure is logged, not fatal.
 	 */
-	private static void loadClientConfigs(ClassLoader cl) {
+	private static void loadEarlyConfigs(ClassLoader cl, boolean client) {
+		if ("off".equalsIgnoreCase(System.getProperty("forbric.earlyConfigs", "on"))) {
+			ForbricLog.warn("[Forbric/Lifecycle] early config loading DISABLED (-Dforbric.earlyConfigs=off) — "
+					+ "no STARTUP or COMMON spec is loaded and ModConfigEvent.Loading never fires, so a mod that "
+					+ "reads its own config during world setup gets null");
+			return;
+		}
 		try {
 			Class<?> trackerCls = Class.forName("net.neoforged.fml.config.ConfigTracker", false, cl);
 			Object tracker = trackerCls.getField("INSTANCE").get(null);
@@ -279,7 +298,10 @@ public final class KernelLifecycle {
 			java.nio.file.Path configDir = (java.nio.file.Path) fmlPaths.getMethod("get").invoke(configDirEnum);
 			java.lang.reflect.Method loadConfigs =
 					trackerCls.getMethod("loadConfigs", typeCls, java.nio.file.Path.class);
-			for (String t : new String[] {"STARTUP", "COMMON", "CLIENT"}) {
+			String[] types = client
+					? new String[] {"STARTUP", "COMMON", "CLIENT"}
+					: new String[] {"STARTUP", "COMMON"};
+			for (String t : types) {
 				try {
 					Object type = Enum.valueOf(typeCls.asSubclass(Enum.class), t);
 					loadConfigs.invoke(tracker, type, configDir);
@@ -287,9 +309,10 @@ public final class KernelLifecycle {
 					ForbricLog.debug("[Forbric/Lifecycle] config load %s: %s", t, String.valueOf(unwrap(t2)));
 				}
 			}
-			ForbricLog.info("[Forbric/Lifecycle] loaded NeoForge configs (STARTUP+COMMON+CLIENT) from %s", configDir);
+			ForbricLog.info("[Forbric/Lifecycle] loaded NeoForge configs (%s) from %s",
+					String.join("+", types), configDir);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not load NeoForge client configs", unwrap(t));
+			ForbricLog.warn("[Forbric/Lifecycle] could not load NeoForge configs", unwrap(t));
 		}
 	}
 
@@ -363,7 +386,7 @@ public final class KernelLifecycle {
 			// their entities came out attribute-less — 2250 "Entity <id> has no attributes" errors per freeze, and
 			// mobs that cannot spawn. The same was true of any RegisterEvent handler declared that way.
 			//
-			// AFTER loadClientConfigs, not before: this class-loads every subscriber, and a <clinit> that reads a
+			// AFTER loadEarlyConfigs, not before: this class-loads every subscriber, and a <clinit> that reads a
 			// config value must not run ahead of the specs. Still strictly later than genuine NeoForge, which loads
 			// these classes during construction — so nothing that survives real NeoForge can fail for being early
 			// here. Both game buses stay unstarted until startGameBuses, so early registration is buffered, not lost.
@@ -1593,12 +1616,13 @@ public final class KernelLifecycle {
 	 * deliberately does not use — by {@link #onClientResourcePacks}. Serving them twice would put every ecosystem
 	 * jar in the client repository under two ids.
 	 *
-	 * <p>Mod jars only, not {@code runtimeJars}: see {@link KernelDataPacks} for what that leaves out and why.
+	 * <p>Both the mod jars and the ecosystem carriers, in that priority order: see {@link KernelDataPacks} for why
+	 * the carriers sit underneath, and which of them wins where the two of them disagree.
 	 */
 	public static void onServerDataPacks(Object packRepository, Object packType) {
 		if (!(packType instanceof Enum<?> type) || !"SERVER_DATA".equals(type.name())) return;
 		ClassLoader cl = gameLoader != null ? gameLoader : Thread.currentThread().getContextClassLoader();
-		KernelDataPacks.addTo(packRepository, packType, cl, modJars);
+		KernelDataPacks.addTo(packRepository, packType, cl, modJars, runtimeJars);
 	}
 
 	/** Variant for a traditional-Forge {@code ServerModLoader.load()V} (no-arg) redirect. */

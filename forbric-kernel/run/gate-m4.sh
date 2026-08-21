@@ -46,7 +46,7 @@ FORGE_MODS=(
 )
 
 step "stage real mods (Fabric: fabric-api + Jade; MinecraftForge: 5 Forge-only + 2 universal; NeoForge: baseline)"
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; sleep 1
+reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
 miss=0
@@ -71,12 +71,8 @@ step "boot all three ecosystems in one instance, run until both families have ti
   echo stop
 ) | RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
-for i in $(seq 1 200); do
-  pgrep -f KernelServerLaunch >/dev/null 2>&1 || break
-  grep -qE 'Stopping server|Failed to start the minecraft server' "$LOG" 2>/dev/null && break
-  sleep 1
-done
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; wait "$BOOTPID" 2>/dev/null
+record_server_pid "$RUNDIR" "$BOOTPID"
+await_server "$BOOTPID" "$LOG" 200
 
 step "all three ecosystems' REAL mods brought up in ONE instance (must PASS)"
 check "both Forge-family baselines"            "constructed NeoForge baseline mod" "$LOG"

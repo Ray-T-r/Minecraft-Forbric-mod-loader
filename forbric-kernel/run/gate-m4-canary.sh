@@ -23,7 +23,7 @@ step "stage one canary per ecosystem"
 "$KERNEL/run/build-fabric-canary.sh" >"$BUILD/gate-m4-canary.log" 2>&1
 [ -f "$FABRIC" ] || { echo "[kernel] FAIL Fabric canary build (see $BUILD/gate-m4-canary.log)"; exit 1; }
 
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; sleep 1
+reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
 miss=0
@@ -38,12 +38,8 @@ step "boot all three ecosystems in one instance"
 : > "$LOG"
 ( sleep 30; echo stop ) | RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
-for i in $(seq 1 130); do
-  pgrep -f KernelServerLaunch >/dev/null 2>&1 || break
-  grep -qE 'Stopping server|Failed to start the minecraft server' "$LOG" 2>/dev/null && break
-  sleep 1
-done
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; wait "$BOOTPID" 2>/dev/null
+record_server_pid "$RUNDIR" "$BOOTPID"
+await_server "$BOOTPID" "$LOG" 130
 
 step "all three ecosystems discovered + brought up in ONE instance (must PASS)"
 check "both Forge-family baselines"           "constructed NeoForge baseline mod" "$LOG"

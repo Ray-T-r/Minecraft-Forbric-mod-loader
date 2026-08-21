@@ -41,7 +41,7 @@ NEO_MODS=(
 
 step "stage pure-NeoForge mods"
 kernel_jar
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; sleep 1
+reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
 miss=0
@@ -70,12 +70,8 @@ step "boot the kernel with them, reach Done, stop cleanly"
   echo stop
 ) | RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
-for i in $(seq 1 240); do
-  pgrep -f KernelServerLaunch >/dev/null 2>&1 || break
-  grep -qE 'Stopping server|Failed to start the minecraft server' "$LOG" 2>/dev/null && break
-  sleep 1
-done
-pkill -9 -f "KernelServerLaunch" 2>/dev/null; wait "$BOOTPID" 2>/dev/null
+record_server_pid "$RUNDIR" "$BOOTPID"
+await_server "$BOOTPID" "$LOG" 240
 
 step "every pure-NeoForge @Mod constructed (must PASS)"
 check "ModList published to the mods"     "published [0-9]+ NeoForge mod\(s\) into ModList" "$LOG"

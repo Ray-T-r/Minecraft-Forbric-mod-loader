@@ -1,1 +1,12 @@
 run/client-merged-pack/
+
+# Gate bookkeeping: the pid of the server a gate started, so an interrupted run can be reaped by the next
+# one. Per-rundir and worthless the moment the machine reboots — never commit it.
+.forbric-gate.pid
+
+# Gate rundirs created by gate-m10 / gate-m11. Nothing in a rundir needs to be committed: the launcher
+# writes eula.txt when it is missing, the gates write their own server.properties and stage their own mods,
+# and the server regenerates a fresh management-server-secret on every boot — which is why the rundirs that
+# ARE tracked show up as noise in every diff.
+run/server-config/
+run/server-overlay/
