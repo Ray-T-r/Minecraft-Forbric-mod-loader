@@ -210,6 +210,51 @@ public final class ForbricNeoForgeRuntime implements PreLaunchEntrypoint {
 	 * Also loads {@code FMLPaths}/{@code FMLConfig} so config loading has real directories. Best-effort:
 	 * each miss logs and continues — the headless registration path needs none of this.
 	 */
+	/**
+	 * The NeoForge version to report through {@code FMLLoader.versionInfo}, read from the carrier actually
+	 * loaded rather than written down here.
+	 *
+	 * <p>This used to be the literal {@code "26.2.0.7-beta"}. That is exactly the kind of default that survives
+	 * a carrier bump and then lies: {@code assemble-neoforge-runtime.sh} moved the runtime jar to
+	 * 26.2.0.38-beta and nothing in this file would have noticed, so every mod asking FML what NeoForge this is
+	 * — including {@code VersionSupportMatrix}, built from this very object one block below — would have been
+	 * told a version whose classes are not the ones on the classpath. The assemble script writes
+	 * {@code Implementation-Version} into that jar's manifest precisely so it can be asked; ask it.
+	 *
+	 * <p>Order: the {@code forbric.neoforgeVersion} override, then the manifest reached through the loaded
+	 * class itself (package attributes first, then the code source, since which of the two is populated depends
+	 * on how the carrier was loaded), and only then a complaint. There is no literal fallback: a wrong version
+	 * here is silent and acts at a distance, whereas an empty one makes the range checks fail loudly and name the
+	 * cause.
+	 */
+	private static String neoForgeVersion(Class<?> carrierClass) {
+		String override = System.getProperty("forbric.neoforgeVersion");
+		if (override != null && !override.isBlank()) return override;
+
+		Package pkg = carrierClass.getPackage();
+		String fromPackage = pkg == null ? null : pkg.getImplementationVersion();
+		if (fromPackage != null && !fromPackage.isBlank()) return fromPackage;
+
+		try {
+			java.security.CodeSource source = carrierClass.getProtectionDomain().getCodeSource();
+			if (source != null && source.getLocation() != null) {
+				try (java.util.jar.JarFile jar =
+						new java.util.jar.JarFile(new java.io.File(source.getLocation().toURI()))) {
+					java.util.jar.Manifest manifest = jar.getManifest();
+					String value = manifest == null ? null
+							: manifest.getMainAttributes().getValue("Implementation-Version");
+					if (value != null && !value.isBlank()) return value;
+				}
+			}
+		} catch (Throwable ignored) {
+			// Not a plain jar on disk (nested, or served by the transforming loader) — fall through.
+		}
+
+		ForbricLog.warn("[Forbric/NeoFML] could not read the NeoForge carrier's Implementation-Version from %s;"
+				+ " reporting an empty version. Pass -Dforbric.neoforgeVersion=… if a mod needs it.", carrierClass);
+		return "";
+	}
+
 	private void wireLoader(ClassLoader cl, ModuleLayer gameLayer) {
 		try {
 			Class<?> fmlLoaderCls = Class.forName("net.neoforged.fml.loading.FMLLoader", false, cl);
@@ -225,7 +270,7 @@ public final class ForbricNeoForgeRuntime implements PreLaunchEntrypoint {
 			try {
 				Class<?> viCls = Class.forName("net.neoforged.fml.loading.VersionInfo", false, cl);
 				versionInfo = viCls.getConstructor(String.class, String.class, String.class).newInstance(
-						System.getProperty("forbric.neoforgeVersion", "26.2.0.7-beta"),
+						neoForgeVersion(viCls),
 						mcVersion(),
 						System.getProperty("forbric.neoformVersion", ""));
 				setField(fmlLoaderCls, loader, "versionInfo", versionInfo);

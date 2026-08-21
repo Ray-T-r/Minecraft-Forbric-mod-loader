@@ -23,13 +23,19 @@ import org.junit.jupiter.api.Test;
 
 class ForgeVersionRangeTest {
 
-	/** The case this class was written for, kept literal so it cannot drift into an abstraction. */
+	/**
+	 * The case this class was written for, kept literal so it cannot drift into an abstraction. The carrier has
+	 * since moved to 26.2.0.38-beta, which is why the last assertion is here: the fix for the JEI case has to be
+	 * expressible in this comparator, or the bump only looked correct.
+	 */
 	@Test
 	void theJeiCase() {
 		assertFalse(ForgeVersionRange.satisfies("[26.2.0.16-beta,)", "26.2.0.7-beta"),
-				"JEI declares [26.2.0.16-beta,) and the carrier is 26.2.0.7-beta — nine releases short");
+				"JEI declares [26.2.0.16-beta,) and the carrier was 26.2.0.7-beta — nine releases short");
 		assertTrue(ForgeVersionRange.satisfies("[26.2.0.16-beta,)", "26.2.0.16-beta"));
 		assertTrue(ForgeVersionRange.satisfies("[26.2.0.16-beta,)", "26.2.0.20-beta"));
+		assertTrue(ForgeVersionRange.satisfies("[26.2.0.16-beta,)", "26.2.0.38-beta"),
+				"and 26.2.0.38-beta, the carrier the audit's finding actually moved us to, does satisfy it");
 	}
 
 	@Test
