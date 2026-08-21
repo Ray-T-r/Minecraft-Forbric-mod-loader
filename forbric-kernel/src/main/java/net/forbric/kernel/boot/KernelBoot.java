@@ -32,6 +32,7 @@ import net.forbric.kernel.access.ClassTweakerTransformer;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.classloading.LoaderProbePolicy;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.metadata.forge.EcosystemVersions;
 import net.forbric.kernel.metadata.DiscoveredMod;
 import net.forbric.kernel.metadata.ModEcosystem;
 import net.forbric.kernel.mixin.KernelMixinBootstrap;
@@ -152,6 +153,9 @@ public final class KernelBoot {
 
 		// Forge/NeoForge mod jars (Mojmap-compiled like the merged base → load directly, no remap), plus the
 		// libraries they nest at META-INF/jarjar/ — see extractForgeFamilyJarJar.
+		// Learn what each carrier says its own version is BEFORE discovery reads the mods, so a mod whose
+		// versionRange this instance cannot satisfy says so as it is discovered rather than failing later.
+		EcosystemVersions.record(runtimeJars);
 		ForgeFamilyMods forgeFamily = discoverForgeFamilyModJars(gameDir.resolve("mods"), dupes);
 		List<Path> modJars = new ArrayList<>(forgeFamily.jars());
 		List<Path> nested = extractForgeFamilyJarJar(modJars, gameDir);

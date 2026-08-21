@@ -129,9 +129,47 @@ check_absent "no duplicate registry key"    "Duplicate key ResourceKey"         
 # every one a terralith biome from before that mod was dropped. That is a property of the save. The shape
 # that matters is a datapack ELEMENT failing to parse, which is what an unregistered modifier type produced.
 check_absent "no datapack element unparseable" "Failed to parse .* from pack"                 "$LOG"
+# A SimpleJsonResourceReloadListener names EVERY element it rejects, so assert the SET rather than the absence:
+# three are expected, and a fourth must turn this gate red. All three are mods (or a carrier) shipping data for a
+# contract that moved, and a genuine NeoForge 26.2 instance rejects each of them the same way:
+#   *:global_loot_modifiers  — the legacy Forge list file (replace/entries). NeoForge's LootModifierManager runs
+#     IGlobalLootModifier.DIRECT_CODEC over every file in loot_modifiers/ and has no list-file concept; its own
+#     GlobalLootModifierProvider stopped writing one. The MODIFIERS are fine — usefulfood:glow_squid and
+#     earthmobsmod:desert_in_ruby are not named here, and this loader names everything that fails.
+#   earthmobsmod:entities/tropical_slime — MC 26.2 split minecraft:type_specific into type_specific/lightning,
+#     /fishing_hook, /player, /cube_mob, /raider. The mod still ships the pre-split shape.
+UNPARSEABLE=$(grep -aoE "Couldn.t parse data file '[^']*'" "$LOG" | sed -E "s/.*'(.*)'/\1/" | sort -u | paste -sd, -)
+assert_eq "only the known-vestigial data files fail to parse" \
+  "earthmobsmod:entities/tropical_slime,forge:global_loot_modifiers,neoforge:global_loot_modifiers" "$UNPARSEABLE"
 check_absent "join negotiation succeeded"   "Network Protocol Error"                           "$LOG"
+# Same treatment for "was loaded too early": pin the SET, because two are upstream behaviour and a third would be
+# ours. Mixin's select() runs selectConfigs -> Extensions.select -> prepareConfigs, so EVERY guest config plugin
+# is constructed before ANY config is prepared. A game class that a plugin's static initialiser loads therefore
+# misses every mixin — on any Mixin platform, genuine Fabric and NeoForge included. Measured here with
+# -Dforbric.traceClassDefine=net.minecraft.world.level.BlockGetter, which named the chain Mixin will not:
+#   PluginHandle.<init> -> IrisMixinPlugin.<clinit> -> IrisPlatformHelpers.<clinit> -> ServiceLoader.findFirst()
+#   -> defining IrisForgeHelpers -> loadClass(BlockGetter).
+# Cost is lithium's raycast optimisation and a duck interface nothing in this pack calls. The kernel could defer
+# plugin construction behind a lazy proxy and beat upstream here — deliberately not done: no real loader does
+# that, and fidelity to the genuine contract is worth more than two recovered mixins.
+TOO_EARLY=$(grep -aoE 'Critical problem: [^ ]+ from mod' "$LOG" | sed -E 's/Critical problem: (.*) from mod/\1/' | sort -u | paste -sd, -)
+assert_eq "only the known plugin-clinit casualties load too early" \
+  "fabric-block-getter-api-v2.mixins.json:BlockGetterMixin,lithium.mixins.json:world.raycast.BlockGetterMixin" \
+  "$TOO_EARLY"
 check_absent "no registry load failure"     "Failed to load registries due to errors"          "$LOG"
 check_absent "no crash report"              "Preparing crash report"                           "$LOG"
+
+step "the pack is honestly provisioned (must PASS)"
+# A genuine NeoForge refuses to launch when a mod's versionRange on neoforge is not satisfied. The kernel parses
+# those ranges and used to evaluate none of them, so an under-provisioned mod loaded and failed later somewhere
+# that named neither it nor the version: JEI 30.14.0.87 wants [26.2.0.16-beta,), the carrier is 26.2.0.7-beta, and
+# what that actually looked like was NeoForgeGuiPlugin dying on NoClassDefFoundError for TooltipFlagExtension —
+# an interface .7 genuinely does not have, because those methods are inlined on TooltipFlag there instead.
+# Pin the SET: this pack has exactly one such mod, and a second must be a decision, not a surprise.
+check "ecosystem versions reported"   "Forbric/Versions\] this instance provides"                "$LOG"
+UNDERPROVISIONED=$(grep -aoE 'Forbric/Versions\] [a-z0-9_]+ requires' "$LOG" \
+  | sed -E 's/.*\] ([a-z0-9_]+) requires/\1/' | sort -u | paste -sd, -)
+assert_eq "only the known under-provisioned mod" "jei" "${UNDERPROVISIONED:-none}"
 
 step "nothing leaked past main"
 # Vanilla logs this ~15s after main returns when a non-daemon thread is still alive — a leaked mod thread.
