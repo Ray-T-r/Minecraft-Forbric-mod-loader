@@ -30,6 +30,7 @@ import java.util.zip.ZipEntry;
 import net.forbric.kernel.metadata.DiscoveredMod;
 import net.forbric.kernel.metadata.ModEcosystem;
 import net.forbric.kernel.metadata.fabric.FabricModJsonReader;
+import net.forbric.kernel.metadata.forge.EcosystemVersions;
 import net.forbric.kernel.metadata.forge.ForgeMetadataMapper;
 import net.forbric.kernel.metadata.forge.ForgeModsToml;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
@@ -117,6 +118,7 @@ public final class ForbricModDiscoverer {
 		try (InputStream in = jar.getInputStream(entry)) {
 			toml = ModsTomlParser.parse(in);
 		}
+		EcosystemVersions.audit(toml, source);
 
 		// Union of toml-declared ATs and the classic default path (if the jar actually carries it).
 		List<String> accessTransformers = new ArrayList<>(toml.getAccessTransformers());

@@ -312,6 +312,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 	 * that is worth being able to see.
 	 */
 	private Class<?> define(String name, byte[] bytes) {
+		traceDefine(name);
 		try {
 			return defineClass(name, bytes, 0, bytes.length);
 		} catch (LinkageError duplicate) {
@@ -375,6 +376,50 @@ public final class ForbricClassLoader extends URLClassLoader {
 	private final ConcurrentHashMap<String, Manifest> manifestCache = new ConcurrentHashMap<>();
 	/** Classes recovered from a re-entrant definition; reported once each. See {@link #define}. */
 	private static final java.util.Set<String> REENTRANT = ConcurrentHashMap.newKeySet();
+
+	/**
+	 * {@code -Dforbric.traceClassDefine=<binary name>[,<binary name>…]} — the classes to dump a stack for the first
+	 * time this loader defines one.
+	 *
+	 * <p>Read ONCE. {@link #define} is the hottest path in the loader — thousands of classes a boot — and
+	 * {@code System.getProperty} goes through a synchronized {@code Hashtable}, so reading it per definition would
+	 * put a global lock in front of every class the game loads to serve a switch that is off.
+	 */
+	private static final java.util.Set<String> TRACE_DEFINE = traceDefineTargets();
+
+	/** Names already dumped, so a class defined twice reports once. Empty and untouched while tracing is off. */
+	private static final java.util.Set<String> TRACED = ConcurrentHashMap.newKeySet();
+
+	static java.util.Set<String> traceDefineTargets() {
+		String want = System.getProperty("forbric.traceClassDefine");
+		if (want == null || want.isBlank()) return java.util.Set.of();
+
+		java.util.Set<String> targets = new java.util.LinkedHashSet<>();
+		for (String raw : want.split(",")) {
+			String name = raw.trim();
+			if (!name.isEmpty()) targets.add(name);
+		}
+		return java.util.Set.copyOf(targets);
+	}
+
+	/**
+	 * Logs a stack trace the first time one of {@link #TRACE_DEFINE} is defined.
+	 *
+	 * <p>For one question, which keeps coming back: WHO loaded this class, and why so early? Mixin answers
+	 * "target … was loaded too early" and names neither the caller nor the moment. The load is almost never
+	 * direct — a guest mixin config plugin's constructor, or a {@code <clinit>} reached from one, pulls in a graph
+	 * whose verification drags a supertype along, and the class is defined before its own mixin config has been
+	 * prepared. The stack is the only thing that names the actual chain; it is how the Iris plugin's
+	 * {@code ServiceLoader} lookup was found sitting under {@code net.minecraft.world.level.BlockGetter}.
+	 */
+	private static void traceDefine(String name) {
+		if (TRACE_DEFINE.isEmpty() || !TRACE_DEFINE.contains(name) || !TRACED.add(name)) return;
+
+		ForbricLog.warn("[Forbric/Trace] defining %s — stack follows", name);
+		for (StackTraceElement frame : new Throwable().getStackTrace()) {
+			ForbricLog.warn("[Forbric/Trace]     at %s", frame);
+		}
+	}
 
 	private static final Manifest NO_MANIFEST = new Manifest();
 
