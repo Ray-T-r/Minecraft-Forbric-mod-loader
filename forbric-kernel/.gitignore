@@ -10,3 +10,18 @@ run/client-merged-pack/
 # ARE tracked show up as noise in every diff.
 run/server-config/
 run/server-overlay/
+# Scratch rundir make-test-world.sh generates the m9 world fixture in. Deleted and rebuilt on every run.
+run/server-worldgen/
+
+# The rundirs that ARE tracked, minus the files the gates rewrite on every single run. These were committed
+# before the rule above existed and have dirtied `git status` ever since: server.properties is written by the
+# gate, eula.txt by the launcher, and the save/journeymap data by playing. Ignoring them is not enough on its
+# own — they had to be `git rm --cached`'d too, which is why they vanish from the tree in the same commit.
+run/*/server.properties
+run/*/eula.txt
+run/*/usercache.json
+run/*/banned-*.json
+run/*/ops.json
+run/*/whitelist.json
+run/*/.mixin.out/
+run/*/logs/

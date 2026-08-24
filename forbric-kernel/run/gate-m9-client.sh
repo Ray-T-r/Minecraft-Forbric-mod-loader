@@ -176,6 +176,65 @@ UNDERPROVISIONED=$(grep -aoE 'Forbric/Versions\] [a-z0-9_]+ requires' "$LOG" \
   | sed -E 's/.*\] ([a-z0-9_]+) requires/\1/' | sort -u | paste -sd, -)
 assert_eq "no under-provisioned mod" "none" "${UNDERPROVISIONED:-none}"
 
+step "every mod's own assets are reachable once the reload has run (must PASS)"
+# EnhancedVisuals emits 21 `Could not find any resources for 'damaged'!` during startup, and they look exactly
+# like the kernel failing to serve a Forge-family mod's assets. They are not: the mod's EVClient probes its
+# textures EAGERLY, before the resource reload that selects the ecosystem packs (measured: the warnings land at
+# log line 1654-1674, `Reloading ResourceManager:` — which lists forbric/EnhancedVisuals_… — starts at 1706), and
+# the reload then loads all 21 silently. Every one of those 20 names ships in the mod's own jar at exactly the
+# path it asks for, `assets/enhancedvisuals/visuals/<category>/<name>/<name><n>.png`.
+#
+# So the assertion is not "no such warning" — that would pin startup noise and go red the day a mod probes early.
+# It is "none of them SURVIVES the reload", which is the property that actually matters and the one that breaks
+# if ecosystem asset packs ever stop being served or lose a namespace.
+RELOAD_LINE=$(grep -an 'Reloading ResourceManager' "$GAMELOG" 2>/dev/null | head -1 | cut -d: -f1)
+if [ -n "$RELOAD_LINE" ]; then
+  UNRESOLVED=$(grep -an "Could not find any resources for" "$GAMELOG" 2>/dev/null \
+    | cut -d: -f1 | awk -v r="$RELOAD_LINE" '$1 > r' | wc -l | tr -d ' ')
+  assert_eq "no mod resource still unresolved after the reload" "0" "$UNRESOLVED"
+else
+  echo "[kernel] FAIL never saw a resource reload"; FAIL=1
+fi
+
+step "the lost BlockGetter interface injection still has no consumer (must PASS)"
+# fabric-block-getter-api-v2's BlockGetterMixin is one of the two mixins lost to a plugin <clinit> loading its
+# target early (pinned in the set above). It is an EMPTY interface-injection mixin: its whole job is to make
+# net.minecraft.world.level.BlockGetter implement FabricBlockGetter (getBlockEntityRenderData, hasBiomes,
+# getBiomeFabric). Losing it costs nothing while nothing casts to that interface — and today nothing does. The
+# only jar in this pack that implements it is Fabric Sodium's LevelSliceMixin, and Fabric Sodium LOSES
+# arbitration: the pack runs sodium-neoforge, whose LevelSlice keeps its own blockEntityRenderDataArrays and
+# never names FabricBlockGetter at all.
+#
+# That is a coincidence of this pack, not a property of the kernel, and it would stop holding silently — flip one
+# line in forbric-mods.txt to `sodium = fabric`, or add a mod that uses the render-data API, and the cast starts
+# throwing with nothing in the log pointing back here. Both triggers are asserted.
+BG_CONSUMERS=$(python3 - "$RUNDIR/mods" <<'PYEOF'
+import os, sys, zipfile, io
+needle = b"net/fabricmc/fabric/api/blockgetter/v2/FabricBlockGetter"
+found = set()
+def walk(data, top, depth=0):
+    try: z = zipfile.ZipFile(io.BytesIO(data))
+    except Exception: return
+    for n in z.namelist():
+        if n.endswith(".class"):
+            try:
+                if needle in z.read(n): found.add(top)
+            except Exception: pass
+        elif n.endswith(".jar") and depth < 2:
+            try: walk(z.read(n), top, depth + 1)
+            except Exception: pass
+d = sys.argv[1]
+for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+    if f.endswith(".jar"):
+        with open(os.path.join(d, f), "rb") as fh: walk(fh.read(), f)
+# fabric-api ships the interface itself; only third parties count as consumers.
+print(",".join(sorted(j for j in found if not j.startswith("fabric-api-"))) or "none")
+PYEOF
+)
+assert_eq "only the known-inert consumer of FabricBlockGetter" "[钠] sodium-fabric-0.9.1+mc26.2.jar" "$BG_CONSUMERS"
+SODIUM_SIDE=$(grep -aoE '^# sodium = [a-z]+' "$RUNDIR/forbric-mods.txt" 2>/dev/null | awk '{print $4}')
+assert_eq "and it is still the side that lost arbitration" "neoforge" "${SODIUM_SIDE:-unknown}"
+
 step "nothing leaked past main"
 # Vanilla logs this ~15s after main returns when a non-daemon thread is still alive — a leaked mod thread.
 check_absent "no thread leaked past main"   "Client shutdown from post-main"                   "$LOG"

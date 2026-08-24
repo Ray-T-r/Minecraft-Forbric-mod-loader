@@ -41,7 +41,48 @@ class ForbricMixinServiceTest {
 	void reset() {
 		System.clearProperty("forbric.relaxGuestMixins");
 		System.clearProperty("forbric.relaxMixinOverwrites");
+		System.clearProperty("forbric.suppressMixins");
+		System.clearProperty("forbric.keepMixins");
 		ForbricMixinService.setGuestConfigs(List.of());
+	}
+
+	/**
+	 * {@code -Dforbric.keepMixins} has to reach the SHIPPED suppression list, not just the adapter's derived one.
+	 * It did not, and the failure mode is the expensive kind: re-testing a hand-pinned entry changed nothing while
+	 * looking exactly like the mixin having been tried and re-suppressed. Both former pins
+	 * ({@code SynchronizeRegistriesTaskMixin}, jade's {@code FogRendererMixin}) were diagnosed only once this
+	 * worked.
+	 */
+	@Test
+	void keepMixinsOverridesTheShippedSuppressionList() {
+		String config = "fabric-registry-sync-v0.mixins.json";
+		assertTrue(ForbricMixinService.suppressedMixinsFor(config).contains("BootstrapMixin"),
+				"precondition: this entry ships in MergedBaseMixinCompat.SUPPRESSED_MIXINS");
+
+		System.setProperty("forbric.keepMixins", config + ":BootstrapMixin");
+		assertFalse(ForbricMixinService.suppressedMixinsFor(config).contains("BootstrapMixin"),
+				"an explicit keepMixins must beat the shipped default");
+		assertTrue(ForbricMixinService.suppressedMixinsFor(config).contains("MainMixin"),
+				"and must not disturb its siblings — it names one mixin, not the config");
+	}
+
+	@Test
+	void keepMixinsAlsoOverridesAnExplicitSuppressMixins() {
+		String config = "example.mixins.json";
+		System.setProperty("forbric.suppressMixins", config + ":SomeMixin");
+		assertTrue(ForbricMixinService.suppressedMixinsFor(config).contains("SomeMixin"));
+
+		System.setProperty("forbric.keepMixins", config + ":SomeMixin");
+		assertFalse(ForbricMixinService.suppressedMixinsFor(config).contains("SomeMixin"),
+				"keepMixins subtracts last, so it wins over suppressMixins too");
+	}
+
+	@Test
+	void keepMixinsForAnUnrelatedConfigChangesNothing() {
+		String config = "fabric-registry-sync-v0.mixins.json";
+		System.setProperty("forbric.keepMixins", "other.mixins.json:BootstrapMixin");
+		assertTrue(ForbricMixinService.suppressedMixinsFor(config).contains("BootstrapMixin"),
+				"the config name is part of the key — a same-named mixin elsewhere must not unpin this one");
 	}
 
 	@Test
