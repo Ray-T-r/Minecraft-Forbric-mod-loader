@@ -57,7 +57,13 @@ PY
 # add it explicitly so the dedicated-server console handler doesn't NoClassDefFound.
 JLINE="$(find "$MC/libraries/org/jline" -name 'jline-*-3.25.1.jar' 2>/dev/null | paste -sd: -)"
 
-CP="$BOOT_JAR:$BOOT_DEPS:$VANILLA_CP${JLINE:+:$JLINE}"
+
+# Game root metadata (version.json) on the PARENT -cp, as a resources-only jar. Mods that ask
+# getSystemClassLoader() for it — CustomSkinLoader's bootstrap picks its bytecode patch variant by the protocol
+# version it finds there — get null under Forbric otherwise, because the merged base belongs to
+# ForbricClassLoader. See run/game-metadata-jar.sh for why this must never carry class files.
+META_JAR="$("$HERE/game-metadata-jar.sh" "$MERGED" 2>/dev/null)" || META_JAR=""
+CP="$BOOT_JAR:$BOOT_DEPS:$VANILLA_CP${JLINE:+:$JLINE}${META_JAR:+:$META_JAR}"
 
 # Guest mixins are written against VANILLA bytecode; the merged base is vanilla+Forge+NeoForge byte-merged, so an
 # injection anchor a mixin expects may have moved. The KERNEL now relaxes EVERY discovered guest mod's mixin

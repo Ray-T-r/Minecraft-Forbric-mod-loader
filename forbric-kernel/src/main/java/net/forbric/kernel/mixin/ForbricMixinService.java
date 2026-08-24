@@ -438,10 +438,19 @@ public final class ForbricMixinService
 
 	/**
 	 * Mixin entries to drop from config {@code configName}: the built-in {@link MergedBaseMixinCompat} list plus
-	 * anything named by {@code -Dforbric.suppressMixins} (csv of {@code configName:MixinEntry}). Neither a config
-	 * name nor a mixin entry contains a colon.
+	 * anything named by {@code -Dforbric.suppressMixins} (csv of {@code configName:MixinEntry}), MINUS anything
+	 * named by {@code -Dforbric.keepMixins}. Neither a config name nor a mixin entry contains a colon.
+	 *
+	 * <p>{@code keepMixins} subtracts last, and it has to. {@link MergedBaseMixinCompat#KEPT_MIXINS} documents that
+	 * knob as "the inverse of {@code SUPPRESSED_MIXINS}", but until this method honoured it the only thing it could
+	 * actually override was {@link KernelGuestMixinAdapter}'s DERIVED auto-suppression — so an attempt to re-test a
+	 * hand-pinned entry (measured on {@code jade.mixins.json:FogRendererMixin}) changed nothing at all, and looked
+	 * from the log exactly like the mixin having been tried and re-suppressed. Doc and behaviour disagreeing is the
+	 * bug; a knob that silently no-ops on half its documented surface is worse than not having it, because it
+	 * answers a measurement question with a wrong answer instead of an error. The blunt {@code
+	 * -Dforbric.mergedBaseCompat=off} stays the way to drop the whole list at once.
 	 */
-	private static List<String> suppressedMixinsFor(String configName) {
+	static List<String> suppressedMixinsFor(String configName) { // package-private for ForbricMixinServiceTest
 		List<String> out = new ArrayList<>();
 
 		if (MergedBaseMixinCompat.enabled()) {
@@ -451,6 +460,13 @@ public final class ForbricMixinService
 		String csv = System.getProperty("forbric.suppressMixins");
 		if (csv != null && !csv.isEmpty()) {
 			collectSuppressed(List.of(csv.split(",")), configName, out);
+		}
+
+		String keep = System.getProperty("forbric.keepMixins");
+		if (keep != null && !keep.isEmpty() && !out.isEmpty()) {
+			List<String> kept = new ArrayList<>();
+			collectSuppressed(List.of(keep.split(",")), configName, kept);
+			out.removeAll(kept);
 		}
 
 		return out.isEmpty() ? Collections.emptyList() : out;

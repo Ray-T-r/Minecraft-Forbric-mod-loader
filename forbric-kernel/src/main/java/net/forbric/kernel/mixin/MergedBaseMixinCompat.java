@@ -85,15 +85,6 @@ public final class MergedBaseMixinCompat {
 	 *       of the base. Cost: the {@code FabricCreativeModeInventoryScreen} duck interface is no longer implanted,
 	 *       so a Fabric mod extending creative-screen paging would ClassCastException — none of the current set
 	 *       does, and that API could never work correctly under the NeoForge pager anyway.</li>
-	 *   <li><b>resource-loader {@code SynchronizeRegistriesTaskMixin} + jade {@code FogRendererMixin}</b> — PINNED,
-	 *       not diagnosed. These two are the ONLY mixins {@link KernelGuestMixinAdapter} auto-suppresses on the
-	 *       SERVER (verified: {@code gate-m2b-boot.log} and {@code gate-m4-boot.log} each report exactly these two;
-	 *       gate-m1 and gate-m7-neo report none). Every other auto-suppression — 163 of them — is client-only.
-	 *       Naming them here freezes the server surface against the derived rule, so any change to that rule is
-	 *       provably client-only and cannot move gate-m1/m2b/m4/m7-neo. This matters because a resolution-based
-	 *       rule would otherwise KEEP {@code SynchronizeRegistriesTaskMixin} (its shadows and anchors all resolve),
-	 *       putting an untested change directly in the blast radius of "Loaded 1585 recipes" and the registered-
-	 *       content counts. Revisit only with a deliberate measurement, never as a side effect.</li>
 	 * </ul>
 	 *
 	 * <p>{@code fabric-resource-loader-v1}'s {@code PackRepositoryMixin} USED to be suppressed here — it made the
@@ -130,9 +121,6 @@ public final class MergedBaseMixinCompat {
 			"fabric-registry-sync-v0.client.mixins.json:MinecraftMixin",
 			"fabric-loot-api-v3.mixins.json:ReloadableServerRegistriesMixin",
 			"fabric-creative-tab-api-v1.client.mixins.json:CreativeModeInventoryScreenMixin",
-			// The two server-side auto-suppressions, pinned so the derived rule owns the client only.
-			"fabric-resource-loader-v1.mixins.json:SynchronizeRegistriesTaskMixin",
-			"jade.mixins.json:FogRendererMixin",
 			// Measured PARTIAL: half-applied, kills all 4666 block models → whole world is missingno. See above.
 			"fabric-model-loading-api-v1.mixins.json:ModelManagerMixin",
 			// Essential's @Group(name=post_event, min=1) finds 0 injection sites in the merged Gui, and a mixin that
@@ -189,7 +177,32 @@ public final class MergedBaseMixinCompat {
 	 *       {@code RenderSystem.pollEvents} BEFORE {@code runTick}, so the throw never blocks it). Safe to keep: the
 	 *       merged {@code GuiGraphicsExtractor} still has the {@code minecraft} field it {@code @Shadow}s and the
 	 *       {@code containsPointInScissor} method it injects into.</li>
-	 * </ul>
+	 *   <li><b>Jade {@code FogRendererMixin}</b> — kept for a different reason: not a duck interface, just a
+	 *       measurement that came out the other way. The adapter auto-suppresses it because NeoForge won the merge
+	 *       of {@code FogRenderer.setupFog} ("forge hook lost" in the conflict report), and it had been pinned in
+	 *       {@link #SUPPRESSED_MIXINS} as UNDIAGNOSED. Diagnosed now: the mixin is four instructions that copy
+	 *       {@code FogData.renderDistanceStart/End} into two static fields on {@code JadeClient}, and the only
+	 *       reader guards on BOTH being 0 and returns early — so suppressing it cost exactly one thing, Jade's
+	 *       overlay no longer being distance-culled against fog, and cost it silently because Jade degrades by
+	 *       design. Kept it and measured: it applies with no partial-anchor warning and gate-m9 is green on all 41
+	 *       assertions. Note this entry only takes effect on the client; a dedicated server never loads
+	 *       {@code FogRenderer} at all, so the server gates cannot see it either way — which is why the pin it
+	 *       replaced was about freezing the SERVER surface and this one is not.</li>
+	 *   <li><b>resource-loader {@code SynchronizeRegistriesTaskMixin}</b> — the other former pin, and the one that
+	 *       was actually about the server. It and Jade's fog mixin were the ONLY two the adapter auto-suppresses
+	 *       server-side (the other 163 are client-only), so naming them in {@link #SUPPRESSED_MIXINS} froze the
+	 *       server surface against the derived rule. Nothing was ever wrong with this mixin: every shadow and
+	 *       anchor resolves, and it applies cleanly — it is 3 small injectors that let the server reuse the
+	 *       CLIENT's reported known-pack set when its own {@code requestedPacks} is a superset, instead of
+	 *       vanilla's stricter comparison. Measured with the pin lifted: gate-m2b 20/20, gate-m4 30/30, gate-m9
+	 *       39/39, and the three numbers the pin named — "Loaded 1585 recipes", {@code forge: 10}, {@code
+	 *       neoforge: 35} — all unmoved. Restored, because a half-disabled fabric-api module is worse than a
+	 *       measured one.
+	 *       <p><b>What that measurement does NOT cover, and the next person should not read into it:</b> every
+	 *       gate here negotiates over a MEMORY connection (singleplayer's integrated server) or boots a dedicated
+	 *       server nobody connects to. A real remote client and server with DIFFERENT pack sets — the case this
+	 *       mixin exists for — is still unexercised. Green here means "no regression in what is tested", not
+	 *       "correct in multiplayer".</li>
 	 *
 	 * <p>This is a hand list ON PURPOSE. The obvious generalisation — "keep every mixin that contributes a non-Mixin
 	 * interface" — was implemented and MEASURED: it keeps 27 mixins on a fabric-api + Jade client, including
@@ -203,5 +216,7 @@ public final class MergedBaseMixinCompat {
 	 * {@code -Dforbric.keepMixins=<config>:<MixinEntry>,…}.
 	 */
 	public static final List<String> KEPT_MIXINS = List.of(
-			"jade.mixins.json:GuiGraphicsExtractorMixin");
+			"jade.mixins.json:GuiGraphicsExtractorMixin",
+			"jade.mixins.json:FogRendererMixin",
+			"fabric-resource-loader-v1.mixins.json:SynchronizeRegistriesTaskMixin");
 }
