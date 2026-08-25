@@ -465,12 +465,33 @@ public final class MixinFit {
 		return false;
 	}
 
-	private record Member(String owner, String name, String desc) {
+	record Member(String owner, String name, String desc) { // package-private for MixinFitTest
 	}
 
 	/** Parses {@code Lowner;name(args)ret} and {@code Lowner;name:Ldesc;}. Returns null when the shape is unfamiliar. */
-	private static Member parseMember(String target) {
-		String s = target.trim();
+	/**
+	 * Splits a Mixin member target into owner/name/desc. Mixin accepts the owner in TWO forms and this used to
+	 * understand only one.
+	 *
+	 * <p>{@code Lnet/minecraft/client/CameraType;isFirstPerson()Z} — descriptor form, handled from the start.
+	 * {@code net/minecraft/client/CameraType.isFirstPerson()Z} — dotted form, equally legal and what Shoulder
+	 * Surfing, malilib and litematica actually write. On the dotted form the old code found no {@code L…;}, left
+	 * the owner null, and took everything before the {@code (} as the NAME — so it compared the method name
+	 * against {@code "net/minecraft/client/CameraType.isFirstPerson"} and never matched anything.
+	 *
+	 * <p>Consequence, and the reason this is worth a long comment: EVERY dotted {@code @At(target=…)} was reported
+	 * as an unresolved anchor, on every boot, forever. Nothing was wrongly suppressed — {@code PARTIAL} defaults to
+	 * KEEP — but the log said 11 of Shoulder Surfing's mixins were half-applied when the anchors were all present
+	 * (verified: {@code MouseHandler.turnPlayer} calls {@code CameraType.isFirstPerson} once in vanilla, in both
+	 * patched bases AND in the merge). A diagnostic that cries wolf is worse than none: it cost a full audit pass
+	 * to disbelieve. It would also have made {@code -Dforbric.mixinFit=strict} drop mixins that fit perfectly.
+	 */
+	static Member parseMember(String target) { // package-private for MixinFitTest
+		// Mixin's own parser ignores whitespace INSIDE a member descriptor, and mods rely on it: Shoulder Surfing
+		// writes "…EntityRenderer.createRenderState ()Lnet/…/EntityRenderState;" with a space before the descriptor.
+		// Keeping it turned the name into "createRenderState " and no instruction ever matched — the same
+		// cries-wolf failure as the dotted owner below, and visible in the report as a tell-tale double space.
+		String s = target.replaceAll("\\s+", "");
 		if (s.isEmpty() || s.indexOf('*') >= 0) return null;
 
 		String owner = null;
@@ -478,6 +499,19 @@ public final class MixinFit {
 		if (s.startsWith("L") && semi > 0) {
 			owner = s.substring(1, semi);
 			s = s.substring(semi + 1);
+		} else {
+			// Dotted form: the owner is everything before the LAST dot that precedes the descriptor/field separator.
+			int cut = s.length();
+			for (int i = 0; i < s.length(); i++) {
+				char c = s.charAt(i);
+				if (c == '(' || c == ':') { cut = i; break; }
+			}
+			int dot = s.lastIndexOf('.', cut - 1);
+			if (dot > 0) {
+				// A dotted owner may also use dots as package separators (com.example.Foo.bar) — internal names win.
+				owner = s.substring(0, dot).replace('.', '/');
+				s = s.substring(dot + 1);
+			}
 		}
 		int paren = s.indexOf('(');
 		if (paren >= 0) return new Member(owner, s.substring(0, paren), s.substring(paren));
