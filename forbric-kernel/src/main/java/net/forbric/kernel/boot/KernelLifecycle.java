@@ -1514,13 +1514,42 @@ public final class KernelLifecycle {
 		return new ReopenedRegistries(unlocked, unfrozen);
 	}
 
-	/** Puts back exactly what {@link #reopenForgeRegistries} opened, through Forge's own {@code lock}/{@code freeze}. */
-	private static void recloseForgeRegistries(ReopenedRegistries opened) {
+	/**
+	 * Puts back exactly what {@link #reopenForgeRegistries} opened — each gate by the same mechanism that opened it.
+	 *
+	 * <p>{@code ForgeRegistry} is public, so {@code freeze()} is reachable by reflection. {@code NamespacedWrapper}
+	 * is NOT: it is package-private, and {@code Method.invoke} on a public method of a package-private class throws
+	 * {@code IllegalAccessException} from outside the package however public the method looks. Calling
+	 * {@code lock()} therefore failed on all 30 wrappers, every boot, and only said so at WARN — so the registration
+	 * window the kernel opens for late Fabric registration was never closed again on the MinecraftForge side.
+	 *
+	 * <p>The fix is the symmetric one rather than {@code setAccessible} on the method, because
+	 * {@link #reopenForgeRegistries} opens this gate by writing the {@code locked} field directly and
+	 * {@code NamespacedWrapper.lock()} is, verbatim, {@code this.locked = true} — nothing else. Reversing a field
+	 * write with a field write cannot drift from what it undoes; going through the method could, the day Forge gives
+	 * {@code lock()} a body.
+	 */
+	private static void recloseForgeRegistries(ClassLoader cl, ReopenedRegistries opened) {
 		for (Object registry : opened.frozenForgeRegistries()) {
 			invokeNoArg(registry, "freeze", "re-freeze a MinecraftForge registry");
 		}
-		for (Object registry : opened.lockedWrappers()) {
-			invokeNoArg(registry, "lock", "re-lock a MinecraftForge registry wrapper");
+
+		List<Object> wrappers = opened.lockedWrappers();
+		if (wrappers.isEmpty()) return;
+
+		try {
+			Class<?> wrapper = Class.forName("net.minecraftforge.registries.NamespacedWrapper", false, cl);
+			Field lockedField = wrapper.getDeclaredField("locked");
+			lockedField.setAccessible(true);
+
+			for (Object registry : wrappers) {
+				lockedField.setBoolean(registry, true);
+			}
+			ForbricLog.debug("[Forbric/Lifecycle] re-locked %d MinecraftForge registry wrapper(s)", wrappers.size());
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not re-lock %d MinecraftForge registry wrapper(s) — late "
+					+ "registration into them stays possible for the rest of this run", wrappers.size());
+			ForbricLog.debug("[Forbric/Lifecycle] re-lock failure", unwrap(t));
 		}
 	}
 
@@ -1719,7 +1748,7 @@ public final class KernelLifecycle {
 	private static void closeClientEntrypointWindow(ClassLoader cl, ReopenedRegistries opened) {
 		try {
 			linkBlockItems(cl);
-			recloseForgeRegistries(opened);
+			recloseForgeRegistries(cl, opened);
 			rootRegistry(cl, false);
 			freeze(cl);
 			rebuildNeoForgeBlockStateIds(cl);
