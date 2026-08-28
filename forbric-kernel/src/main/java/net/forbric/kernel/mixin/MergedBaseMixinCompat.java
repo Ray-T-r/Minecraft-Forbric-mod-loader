@@ -85,6 +85,26 @@ public final class MergedBaseMixinCompat {
 	 *       of the base. Cost: the {@code FabricCreativeModeInventoryScreen} duck interface is no longer implanted,
 	 *       so a Fabric mod extending creative-screen paging would ClassCastException — none of the current set
 	 *       does, and that API could never work correctly under the NeoForge pager anyway.</li>
+	 *   <li><b>Shoulder Surfing {@code CapeLayerMixin} — the only entry here that arbitrates between two MODS
+	 *       rather than against the merged base.</b> Both it and CustomSkinLoader rewrite the SAME instruction:
+	 *       the {@code RenderTypes.entitySolid} call inside {@code CapeLayer.submit}. Shoulder Surfing gets there
+	 *       first, with an {@code @Redirect} — which does not wrap the call, it REPLACES it — and CustomSkinLoader's
+	 *       cape patch is raw ASM that scans for {@code INVOKESTATIC RenderTypes.entitySolid} and finds nothing
+	 *       left, reporting {@code matched protocol 776 but did not modify any bytecode}. Symptom: capes do not
+	 *       render with their alpha, which is the whole point of the patch.
+	 *       <p>This was originally written off as "CustomSkinLoader 15.0.1 versus MC 26.2, not ours", on the
+	 *       evidence that {@code CapeLayer.submit} is byte-identical between vanilla and the merge. That
+	 *       observation is true and the conclusion was wrong: the merge is innocent, but the conflict is real and
+	 *       it is ours to arbitrate, because we are the loader that put these two mods in one game.
+	 *       <p>Cost of this entry, measured rather than assumed: Shoulder Surfing's handler returns
+	 *       {@code entityTranslucentCullItemTarget} only when its {@code isPlayerTransparencyEnabled()} option is
+	 *       on, and plain {@code entitySolid} otherwise — so with that option at its default the mixin changes
+	 *       nothing at all while still consuming the call site. Suppressed, CustomSkinLoader's patch lands
+	 *       ({@code Transformed …CapeLayer with [customskinloader:render-patch]}, zero patch failures) and what
+	 *       is lost is one Shoulder Surfing option's effect on the cape specifically. Reverse it with
+	 *       {@code -Dforbric.keepMixins=shouldersurfing.common.mixins.json:CapeLayerMixin}, which restores the
+	 *       transparency option and re-breaks capes — the trade is genuinely two-sided, so it is left switchable
+	 *       rather than decided in code alone.</li>
 	 * </ul>
 	 *
 	 * <p>{@code fabric-resource-loader-v1}'s {@code PackRepositoryMixin} USED to be suppressed here — it made the
@@ -123,6 +143,9 @@ public final class MergedBaseMixinCompat {
 			"fabric-creative-tab-api-v1.client.mixins.json:CreativeModeInventoryScreenMixin",
 			// Measured PARTIAL: half-applied, kills all 4666 block models → whole world is missingno. See above.
 			"fabric-model-loading-api-v1.mixins.json:ModelManagerMixin",
+			// MOD-vs-MOD, not merged-base: Shoulder Surfing's @Redirect deletes the call site CustomSkinLoader's
+			// raw-ASM cape patch needs. See the javadoc entry below — this one arbitrates between two mods.
+			"shouldersurfing.common.mixins.json:CapeLayerMixin",
 			// Essential's @Group(name=post_event, min=1) finds 0 injection sites in the merged Gui, and a mixin that
 			// FAILS TO APPLY costs its target every OTHER mod's mixins too — Mixin discards the whole transformed
 			// class and Gui reverts to raw vanilla bytes. fabric-screen-api-v1's GuiMixin adds `implements
