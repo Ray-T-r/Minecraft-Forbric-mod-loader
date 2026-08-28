@@ -158,6 +158,12 @@ assert_eq "only the known plugin-clinit casualties load too early" \
   "$TOO_EARLY"
 check_absent "no registry load failure"     "Failed to load registries due to errors"          "$LOG"
 check_absent "no crash report"              "Preparing crash report"                           "$LOG"
+# Raw-ASM bytecode patching, the kind CustomSkinLoader does instead of Mixin, fails SILENTLY at WARN and takes a
+# whole feature with it. Two ways it has happened here, both fixed and both invisible without this line: the
+# protocol version reading 0 so it picked a pre-1.20.2 patch variant (see run/game-metadata-jar.sh), and Shoulder
+# Surfing's @Redirect DELETING the call site the cape patch scans for (see MergedBaseMixinCompat). Any new one is
+# a mod losing a feature, so it must be a decision rather than a line nobody reads.
+check_absent "no bytecode patch failed"     "did not modify any bytecode"                      "$LOG"
 
 step "the pack is honestly provisioned (must PASS)"
 # A genuine NeoForge refuses to launch when a mod's versionRange on neoforge is not satisfied. The kernel parses
