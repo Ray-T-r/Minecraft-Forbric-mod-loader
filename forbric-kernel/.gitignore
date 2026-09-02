@@ -12,6 +12,9 @@ run/server-config/
 run/server-overlay/
 # Scratch rundir make-test-world.sh generates the m9 world fixture in. Deleted and rebuilt on every run.
 run/server-worldgen/
+# gate-m12 wipes and re-stages both of these on every run, world included.
+run/mp-server/
+run/mp-client/
 
 # The rundirs that ARE tracked, minus the files the gates rewrite on every single run. These were committed
 # before the rule above existed and have dirtied `git status` ever since: server.properties is written by the
