@@ -296,7 +296,15 @@ public final class KernelBoot {
 		// Arbitrate the c:version / c:register common-networking channel that Fabric and NeoForge both claim — without
 		// it a tri-in-one client is kicked "invalid packet" when Fabric's addon is handed a NeoForge payload. Matches
 		// only the Fabric addon + the server config listener, so it is inert until those classes load.
-		chain.register(TransformPhase.COREMOD, new CommonNetworkInteropInjector());
+		// -Dforbric.commonNetworkInterop=off is how the two halves of this shim get told apart. Both are needed on a
+		// tri-in-one instance and they fail in opposite directions, so a single switch that removes both is the only
+		// honest way to ask "is the arbitration the cause?" of a networking symptom.
+		if (!"off".equalsIgnoreCase(System.getProperty("forbric.commonNetworkInterop", "on"))) {
+			chain.register(TransformPhase.COREMOD, new CommonNetworkInteropInjector());
+		} else {
+			ForbricLog.warn("[Forbric/Net] common-networking arbitration DISABLED — a tri-in-one client will be "
+					+ "kicked \"invalid packet\" when Fabric's addon is handed a NeoForge payload");
+		}
 
 		if (Boolean.getBoolean("forbric.kernel.registryRedirect")) {
 			chain.register(TransformPhase.COREMOD, new RegistryHookRedirector());

@@ -26,6 +26,8 @@ import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.MethodInsnNode;
+import java.util.Set;
+
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
@@ -62,7 +64,26 @@ import net.forbric.kernel.util.ForbricLog;
 public final class CommonNetworkInteropInjector implements ClassTransformer {
 	private static final String INTEROP = "net/forbric/loader/impl/compat/ForbricCustomPayloadInterop";
 
-	private static final String FABRIC_ADDON = "net.fabricmc.fabric.impl.networking.AbstractChanneledNetworkAddon";
+	/**
+	 * Every Fabric addon class that DECLARES its own {@code handle(CustomPacketPayload)}.
+	 *
+	 * <p>It was originally just {@code AbstractChanneledNetworkAddon}, on the reasonable assumption that one
+	 * injection into the base class covers every addon. It does not. The play addons inherit {@code handle} and so
+	 * were covered; both CONFIGURATION addons override it, and an override is not reached by a prologue spliced
+	 * into the superclass — so the whole configuration phase ran with no cross-ecosystem translation at all.
+	 *
+	 * <p>Nothing caught it because the symptom this shim was written for ("invalid packet" right after reaching the
+	 * world) is a PLAY-phase symptom, and until gate-m12 no test ever reached the configuration phase over a
+	 * socket: singleplayer negotiates in memory, and {@code RegistrySyncManager.configureClient} returns early for
+	 * the singleplayer owner. The configuration-phase cost was a server kicking its own client with "This server
+	 * requires Fabric Loader and Fabric API installed on your client!" — because the server's
+	 * {@code minecraft:register} reached the client as NeoForge's payload type, the client's Fabric addon did not
+	 * recognise it, never replied, and Fabric scored the peer NOT_RECEIVED.
+	 */
+	private static final Set<String> FABRIC_ADDONS = Set.of(
+			"net.fabricmc.fabric.impl.networking.AbstractChanneledNetworkAddon",
+			"net.fabricmc.fabric.impl.networking.client.ClientConfigurationNetworkAddon",
+			"net.fabricmc.fabric.impl.networking.server.ServerConfigurationNetworkAddon");
 	private static final String HANDLE = "handle";
 	private static final String HANDLE_DESC = "(Lnet/minecraft/network/protocol/common/custom/CustomPacketPayload;)Z";
 	private static final String HANDLE_HOOK = "handleFabricChannelRegistrationAddon";
@@ -85,7 +106,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
-		boolean fabricAddon = FABRIC_ADDON.equals(className);
+		boolean fabricAddon = FABRIC_ADDONS.contains(className);
 		boolean serverConfig = SERVER_CONFIG.equals(className);
 		if (!fabricAddon && !serverConfig) return classBytes;
 
