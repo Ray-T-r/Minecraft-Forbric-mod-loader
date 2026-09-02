@@ -52,6 +52,10 @@ MODS=(
   "$DL/forge-26.2/mcw-bridges-3.1.2-mc26.2forge.jar"
   "$DL/forge-26.2/collective-26.2.0-8.39.jar"
 )
+# M12_MODS replaces that set wholesale (space-separated paths). The reason it exists: when this gate goes red the
+# first question is always "is it the tri-ecosystem combination or the plumbing?", and the only way to answer it
+# is to run the same gate with one ecosystem's jars and compare.
+if [ -n "${M12_MODS:-}" ]; then read -r -a MODS <<< "$M12_MODS"; fi
 for m in "${MODS[@]}"; do
   [ -f "$m" ] || { echo "[kernel] SKIP-FATAL: missing mod $m" >&2; exit 3; }
 done
@@ -73,6 +77,11 @@ step "boot the dedicated server and hold it open"
 # A FIFO, not a pipe with a fixed sleep: the server must outlive the client by exactly as long as the client
 # takes, which nothing knows in advance.
 FIFO="$SRV/.stdin"; rm -f "$FIFO"; mkfifo "$FIFO"
+# M12_EXTRA_JVM reaches BOTH ends. It did not at first, and that cost a diagnostic round: a probe was added to
+# the server's networking path, the run produced zero lines, and "zero" was indistinguishable from "the code
+# never ran" when the truth was that the flag had only ever been passed to the client. A knob that silently
+# covers half the system under test is worse than no knob.
+FORBRIC_JVM="${M12_EXTRA_JVM:-}" \
 RUNDIR="$SRV" "$KERNEL/run/launch-kernel-server.sh" < "$FIFO" > "$SLOG" 2>&1 &
 SRVPID=$!
 record_server_pid "$SRV" "$SRVPID"

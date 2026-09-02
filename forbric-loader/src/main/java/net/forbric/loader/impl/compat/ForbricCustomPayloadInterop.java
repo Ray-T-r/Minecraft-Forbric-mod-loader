@@ -108,6 +108,17 @@ public final class ForbricCustomPayloadInterop {
 	 * {@code handle(...)} method should be considered complete and skipped.
 	 */
 	public static Boolean handleFabricChannelRegistrationAddon(Object addon, Object payload) {
+		// Every payload that reaches a Fabric channel addon, named, under -Dforbric.debug. Added because the one
+		// question this code could not answer from its own log was the only one that mattered when multiplayer
+		// broke: did the client's channel declaration reach the server at all, and did it arrive before or after
+		// fabric's configureClient ran? "Nothing in the log" answered neither.
+		if (ForbricLog.debugEnabled()) {
+			// System.out, not ForbricLog: this probe exists to answer "did this method run at all", and routing it
+			// through a logger makes a silent log pipeline indistinguishable from a method that never ran — which
+			// is exactly the confusion it was added to end.
+			System.out.println("[Forbric/Net] addon "
+					+ (addon == null ? "null" : addon.getClass().getSimpleName()) + " <- payload " + payloadId(payload));
+		}
 		bootstrapMirrors(loaderFor(addon, payload));
 		Boolean commonNegotiation = handleFabricCommonNegotiationAddon(addon, payload);
 		if (commonNegotiation != null) return commonNegotiation;
