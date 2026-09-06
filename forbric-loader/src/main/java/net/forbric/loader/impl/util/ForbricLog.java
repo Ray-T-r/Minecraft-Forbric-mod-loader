@@ -39,6 +39,10 @@ public final class ForbricLog {
 	private static final LogCategory CATEGORY = LogCategory.createCustom("Forbric");
 	private static final boolean DEBUG = Boolean.getBoolean("forbric.debug");
 
+	static {
+		GameLogBridge.installIfUnwired();
+	}
+
 	private ForbricLog() {
 	}
 

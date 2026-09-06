@@ -46,6 +46,7 @@ import net.forbric.kernel.transform.HudElementBridgeInjector;
 import net.forbric.kernel.transform.LifecycleHookInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
+import net.forbric.kernel.transform.ExitHookInjector;
 import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import net.forbric.kernel.transform.NullPackGuardInjector;
@@ -282,6 +283,11 @@ public final class KernelBoot {
 		// Inert unless -Dforbric.clientSmoke=true. It is what lets gate-m9 run a client unattended: enter a
 		// world, live in it, disconnect and stop, so the gate waits for an outcome instead of a timeout.
 		chain.register(TransformPhase.COREMOD, new ClientSmokeTickInjector());
+
+		// The loader's own Minecraft.close mixin never applies under the kernel, so its stop of the two loaders'
+		// config file-watchers (non-daemon executors once a config file changes) is injected here: on the client at
+		// Minecraft.close, on the dedicated server at DedicatedServer.onServerExit, which has no System.exit behind it.
+		chain.register(TransformPhase.COREMOD, new ExitHookInjector());
 
 		// Client only: NeoForge won Hud.extractRenderState, so the call sites fabric-rendering-v1's HudMixin anchors
 		// on no longer exist — as METHOD REFERENCES in the layer manager they exist as no bytecode at all, so no

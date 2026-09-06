@@ -129,6 +129,20 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	private static final String NEO_PACKAGE = "net/neoforged/";
 	private static final String NEO_SEND_INITIAL_CHANNELS = "sendInitialListeningChannels";
 
+	/**
+	 * NeoForge's client-side initialisation of a connection to a NON-NeoForge server, {@code ClientNetworkRegistry
+	 * .initializeOtherConnection}. Three call sites in {@code ClientConfigurationPacketListenerImpl} fire per join
+	 * (the brand payload on the Netty thread, the enabled-features packet, and the brand payload again on the render
+	 * thread after vanilla's re-dispatch) and only {@code handleConfigurationFinished} checks the listener's own
+	 * {@code initializedConnection} flag first; the other two run the whole thing again — every NeoForge mod's
+	 * default server config rebuilt ("Overwriting non-null config ..." twice per join), the payload filters
+	 * re-injected, the register payload re-sent. The two unguarded sites get the same flag check the third has,
+	 * so the flag keeps its NeoForge meaning: once per configuration phase, a reconfiguration starts afresh.
+	 */
+	private static final String INITIALIZE_OTHER = "initializeOtherConnection";
+	private static final String INITIALIZED_FLAG = "initializedConnection";
+	private static final String IS_OTHER = "isOther";
+
 	private static final String SERVER_CONFIG = "net.minecraft.server.network.ServerConfigurationPacketListenerImpl";
 	private static final String FINISH_TASK = "finishCurrentTask";
 	private static final String FINISH_TASK_DESC = "(Lnet/minecraft/server/network/ConfigurationTask$Type;)V";
@@ -192,7 +206,17 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				bumpStack(m, 3);
 				changed = true;
 				ForbricLog.info("[Forbric/Net] keeping MinecraftForge's channel bookkeeping in step at %s.%s", className, m.name);
-			} else if (clientConfig && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(HANDLE_PAYLOAD_DESC)) {
+			}
+			if (clientConfig) {
+				int guarded = guardOtherConnectionInitialisation(node, m);
+				if (guarded > 0) {
+					changed = true;
+					ForbricLog.info("[Forbric/Net] %s.%s now initialises a non-NeoForge connection once per configuration "
+							+ "phase — NeoForge re-entered ClientNetworkRegistry.initializeOtherConnection from here and "
+							+ "rebuilt every mod's default server config each time", className, m.name);
+				}
+			}
+			if (clientConfig && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(HANDLE_PAYLOAD_DESC)) {
 				if (shareMinecraftRegisterWithSuper(m)) {
 					changed = true;
 					ForbricLog.info("[Forbric/Net] letting minecraft:register reach BOTH stacks at %s.%s, Fabric first — "
@@ -250,6 +274,65 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 		body.add(new FrameNode(Opcodes.F_NEW, 2, new Object[] {args[0].getInternalName(), args[1].getInternalName()}, 0,
 				new Object[] {}));
 		return body;
+	}
+
+	/**
+	 * For every call to NeoForge's {@code initializeOtherConnection} in {@code m} that sits behind the shape
+	 * <pre>  ALOAD 0; GETFIELD connectionType; INVOKEVIRTUAL isOther; IFEQ L; ... INVOKESTATIC initializeOtherConnection</pre>
+	 * and is not already preceded by a check of {@code initializedConnection}, splice
+	 * <pre>  ALOAD 0; GETFIELD initializedConnection; IFNE L</pre>
+	 * in front of that guard. {@code L} is an existing branch target (it carries its own frame after EXPAND_FRAMES),
+	 * so no frame is authored. Returns how many sites were guarded.
+	 */
+	private static int guardOtherConnectionInitialisation(ClassNode node, MethodNode m) {
+		boolean hasFlag = false;
+		for (org.objectweb.asm.tree.FieldNode f : node.fields) {
+			if (INITIALIZED_FLAG.equals(f.name) && "Z".equals(f.desc)) hasFlag = true;
+		}
+		if (!hasFlag) return 0;
+		int guarded = 0;
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() != Opcodes.INVOKESTATIC) continue;
+			MethodInsnNode call = (MethodInsnNode) insn;
+			if (!INITIALIZE_OTHER.equals(call.name) || !call.owner.startsWith(NEO_PACKAGE)) continue;
+			// Walk back to the nearest `isOther` guard: INVOKEVIRTUAL isOther followed by IFEQ.
+			JumpInsnNode ifeq = null;
+			for (AbstractInsnNode back = call.getPrevious(); back != null; back = back.getPrevious()) {
+				if (back.getOpcode() == Opcodes.IFEQ) {
+					AbstractInsnNode test = previousOpcode(back);
+					if (test instanceof MethodInsnNode t && IS_OTHER.equals(t.name)) {
+						ifeq = (JumpInsnNode) back;
+						break;
+					}
+				}
+			}
+			if (ifeq == null) continue;
+			AbstractInsnNode isOther = previousOpcode(ifeq);
+			AbstractInsnNode getType = previousOpcode(isOther);
+			AbstractInsnNode loadThis = previousOpcode(getType);
+			if (getType == null || getType.getOpcode() != Opcodes.GETFIELD || loadThis == null
+					|| loadThis.getOpcode() != Opcodes.ALOAD || ((VarInsnNode) loadThis).var != 0) continue;
+			// Already guarded (NeoForge's own third site checks the flag right before): leave it.
+			AbstractInsnNode before = previousOpcode(loadThis);
+			AbstractInsnNode beforeThat = before == null ? null : previousOpcode(before);
+			if (beforeThat instanceof org.objectweb.asm.tree.FieldInsnNode f && INITIALIZED_FLAG.equals(f.name)) continue;
+			InsnList guard = new InsnList();
+			guard.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			guard.add(new org.objectweb.asm.tree.FieldInsnNode(Opcodes.GETFIELD, node.name, INITIALIZED_FLAG, "Z"));
+			guard.add(new JumpInsnNode(Opcodes.IFNE, ifeq.label));
+			m.instructions.insertBefore(loadThis, guard);
+			bumpStack(m, 1);
+			guarded++;
+		}
+		return guarded;
+	}
+
+	private static AbstractInsnNode previousOpcode(AbstractInsnNode from) {
+		if (from == null) return null;
+		for (AbstractInsnNode insn = from.getPrevious(); insn != null; insn = insn.getPrevious()) {
+			if (insn.getOpcode() >= 0) return insn;
+		}
+		return null;
 	}
 
 	/** {@code interop.onNeoChannelRegistration(connection, set, register);} at the head of the static register hooks — no branch. */

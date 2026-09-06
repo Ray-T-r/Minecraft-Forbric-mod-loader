@@ -40,6 +40,24 @@ kernel_jar() {
     grep -vE 'WARNING: |native-access|Restricted method|--enable-native' "$BUILD/kernel-jar.log" >&2
     exit 3
   fi
+  warn_stale_loader_jars
+}
+
+# The old loader's TWO jars sit on the kernel's boot classpath (forbric-loader = core, forbricruntime = the
+# net.forbric.loader.impl.forge.runtime module + its mixin configs) and neither is rebuilt by the kernel's build —
+# `./gradlew jar` in forbric-loader rebuilds only the core one, `runtimeJar` the other. A gate quietly running a
+# stale class from one of them cost a diagnostic round once; say so instead.
+warn_stale_loader_jars() {
+  local libs="$OLD/build/libs" newest newer
+  # Each jar holds different packages, so compare the sources against the LATEST build of either: a source newer
+  # than both jars was not built into anything.
+  newest=$(ls -t "$libs"/forbric-loader-0.1.0-SNAPSHOT.jar "$libs"/forbricruntime-0.1.0-SNAPSHOT.jar 2>/dev/null | head -1)
+  [ -n "$newest" ] || return 0
+  newer=$(find "$OLD/src/main" -type f -newer "$newest" 2>/dev/null | head -3)
+  if [ -n "$newer" ]; then
+    echo "[kernel] WARNING: loader sources are NEWER than both loader jars — rebuild them in forbric-loader (./gradlew jar runtimeJar):" >&2
+    echo "$newer" | sed 's#^#[kernel]     #' >&2
+  fi
 }
 
 # Build (offline) the boot-side classpath once and cache it. Sets $KERNEL_CP.
@@ -117,6 +135,12 @@ await_server() {
     kill -0 "$pid" 2>/dev/null || break
     sleep 1
   done
+  if kill -0 "$pid" 2>/dev/null; then
+    # A dedicated server has no System.exit: once "Stopping server" is out, only a leaked non-daemon thread keeps
+    # the JVM alive. That is a defect, not a slow save — count it.
+    echo "[kernel] FAIL server still alive ${grace}s after announcing its stop — killing it (a leaked non-daemon thread looks exactly like this)"
+    FAIL=1
+  fi
   kill_tree "$pid"
   wait "$pid" 2>/dev/null
 }
