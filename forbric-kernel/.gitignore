@@ -28,3 +28,7 @@ run/*/ops.json
 run/*/whitelist.json
 run/*/.mixin.out/
 run/*/logs/
+
+# gate-m13 stages a Paper+Grim server and a client here on every run.
+run/ac-server/
+run/ac-client/

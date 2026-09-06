@@ -44,6 +44,10 @@ public final class KernelClientSmoke {
 	private static final String WORLD = "forbric.clientSmokeWorld";
 	private static final String READY_TICKS = "forbric.clientSmokeReadyTicks";
 	private static final String DISCONNECT_TICKS = "forbric.clientSmokeDisconnectTicks";
+	/** {@code true}: after client-ready, drive the player through the movement drill (see {@link #drill}). */
+	public static final String DRILL = "forbric.clientSmokeDrill";
+	/** {@code true}: end the drill with one deliberately impossible move, so the gate can prove the anti-cheat is watching. */
+	public static final String DRILL_CONTROL = "forbric.clientSmokeDrillControl";
 
 	private static Object lastLevel;
 	private static int worldTicks;
@@ -51,6 +55,8 @@ public final class KernelClientSmoke {
 	private static boolean ready;
 	private static boolean disconnectRequested;
 	private static boolean stopRequested;
+	private static int drillTick = -1;
+	private static boolean drillDone;
 
 	private KernelClientSmoke() {
 	}
@@ -108,11 +114,154 @@ public final class KernelClientSmoke {
 			ready = true;
 			ForbricLog.info("[Forbric/ClientSmoke] client-ready after %d world tick(s)", worldTicks);
 		}
+		if (ready && !drillDone && Boolean.getBoolean(DRILL)) drill(minecraft, player);
 		if (!disconnectRequested && worldTicks >= Integer.getInteger(DISCONNECT_TICKS, 120)) {
 			disconnectRequested = true;
 			ForbricLog.info("[Forbric/ClientSmoke] requesting clean disconnect after %d world tick(s)", worldTicks);
 			invokeNoArg(minecraft, "disconnectWithSavingScreen");
 		}
+	}
+
+	/**
+	 * The movement drill: a fixed schedule of inputs a real player might produce, so a server-side anti-cheat has
+	 * something to judge. Everything goes through the same path a keyboard would — {@code KeyMapping.setDown} for
+	 * movement, {@code Minecraft.startAttack}/{@code startUseItem} for the hands, {@code Entity.setYRot/setXRot}
+	 * for the mouse — so the packets the server sees are the packets the real game produces for these inputs,
+	 * not a hand-rolled imitation of them. Phases are announced on the log so the gate can act on them (it
+	 * teleports the player into water on "swim-wait") and so a flag can be placed against what the player was
+	 * doing at the time.
+	 *
+	 * <p>The optional last phase is the positive control: one impossible move (six blocks in a tick). A drill that
+	 * produced zero flags proves nothing on its own — the anti-cheat might not be watching — so the gate demands
+	 * silence BEFORE this marker and at least one flag AFTER it.
+	 */
+	private static void drill(Object minecraft, Object player) {
+		drillTick++;
+		int t = drillTick;
+		drillPlayer = player;
+		Object options = fieldValue(minecraft, "options");
+		if (options == null) return;
+		if (t == 0) {
+			setRotation(player, 0f, 0f);
+			phase("walk");
+		}
+		if (t < 60) { key(options, "keyUp", true); return; }
+		if (t == 60) phase("sprint");
+		if (t < 140) { key(options, "keyUp", true); key(options, "keySprint", true); return; }
+		if (t == 140) phase("sprint-jump");
+		if (t < 220) { key(options, "keyUp", true); key(options, "keySprint", true); key(options, "keyJump", t % 10 == 0); return; }
+		if (t == 220) { phase("turn"); key(options, "keySprint", false); key(options, "keyJump", false); }
+		if (t < 300) { key(options, "keyUp", true); setRotation(player, yaw(player) + 4.5f, 0f); return; }
+		if (t == 300) { phase("strafe"); key(options, "keyUp", false); }
+		if (t < 330) { key(options, "keyLeft", true); return; }
+		if (t < 360) { key(options, "keyLeft", false); key(options, "keyRight", true); return; }
+		if (t == 360) { phase("backpedal"); key(options, "keyRight", false); }
+		if (t < 420) { key(options, "keyDown", true); return; }
+		if (t == 420) { phase("sneak-walk"); key(options, "keyDown", false); }
+		if (t < 480) { key(options, "keyShift", true); key(options, "keyUp", true); return; }
+		if (t == 480) { phase("attack"); key(options, "keyShift", false); key(options, "keyUp", false); }
+		if (t < 540) { if (t % 6 == 0) invokeNoArg(minecraft, "startAttack"); return; }
+		if (t == 540) { phase("place"); setRotation(player, yaw(player), 80f); }
+		if (t < 600) { key(options, "keyDown", true); if (t % 5 == 0) invokeNoArg(minecraft, "startUseItem"); return; }
+		if (t == 600) { phase("swim-wait"); key(options, "keyDown", false); setRotation(player, yaw(player), 0f); }
+		if (t < 660) return; // the gate teleports the player into the pool while this holds still
+		if (t == 660) phase("swim");
+		if (t < 710) { key(options, "keyUp", true); key(options, "keyJump", true); return; }
+		if (t < 760) { key(options, "keyJump", false); key(options, "keyUp", true); key(options, "keySprint", true); return; }
+		if (t == 760) { phase("idle"); key(options, "keyUp", false); key(options, "keySprint", false); }
+		if (t < 800) return;
+		if (Boolean.getBoolean(DRILL_CONTROL)) {
+			// Announce first, move three seconds later: the gate answers the announcement by writing a marker into
+			// the SERVER's log, and the anti-cheat's verdict on the move lands after that marker. Making the move on
+			// the same tick as the announcement lost the race by ~50 ms on the first run.
+			if (t == 800) phase("control-wait");
+			if (t < 860) return;
+			if (t == 860) {
+				phase("control");
+				ForbricLog.info("[Forbric/ClientSmoke] drill control: moving the player 6 blocks in one tick — "
+						+ "an anti-cheat that is watching must flag this");
+				setPos(player, x(player) + 6.0, y(player), z(player));
+			}
+			if (t < 920) { key(options, "keyUp", true); return; }
+			key(options, "keyUp", false);
+		}
+		drillDone = true;
+		ForbricLog.info("[Forbric/ClientSmoke] drill complete after %d drill tick(s) (%s)", t,
+				Boolean.getBoolean(DRILL_CONTROL) ? "with positive control" : "no positive control");
+	}
+
+	private static Object drillPlayer;
+
+	/**
+	 * One line per phase, with where the player is and what state it is in. The line is what makes "Grim had
+	 * nothing to say" mean something: a drill that never moved would be silent too, so the gate reads the position
+	 * off these to see that walking covered ground and that the swim phase happened in water.
+	 */
+	private static void phase(String name) {
+		Object p = drillPlayer;
+		ForbricLog.info("[Forbric/ClientSmoke] drill phase %s at world tick %d pos=(%.1f %.1f %.1f) inWater=%s sprinting=%s",
+				name, worldTicks, x(p), y(p), z(p), flag(p, "isInWater"), flag(p, "isSprinting"));
+	}
+
+	private static String flag(Object player, String getter) {
+		Object v = player == null ? null : invokeGetter(player, getter);
+		return v instanceof Boolean b ? String.valueOf(b) : "?";
+	}
+
+	private static void key(Object options, String name, boolean down) {
+		Object mapping = fieldValue(options, name);
+		if (mapping == null) return;
+		try {
+			mapping.getClass().getMethod("setDown", boolean.class).invoke(mapping, down);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			ForbricLog.debug("[Forbric/ClientSmoke] cannot press %s: %s", name, String.valueOf(e));
+		}
+	}
+
+	private static float yaw(Object player) {
+		Object v = invokeGetter(player, "getYRot");
+		return v instanceof Float f ? f : 0f;
+	}
+
+	private static double x(Object player) { return coord(player, "getX"); }
+	private static double y(Object player) { return coord(player, "getY"); }
+	private static double z(Object player) { return coord(player, "getZ"); }
+
+	private static double coord(Object player, String getter) {
+		Object v = player == null ? null : invokeGetter(player, getter);
+		return v instanceof Double d ? d : 0d;
+	}
+
+	private static void setRotation(Object player, float yRot, float xRot) {
+		try {
+			// Public on net.minecraft.world.entity.Entity, so resolved there rather than on LocalPlayer's class.
+			Class<?> entity = entityClass(player);
+			entity.getMethod("setYRot", float.class).invoke(player, yRot);
+			entity.getMethod("setXRot", float.class).invoke(player, xRot);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			ForbricLog.debug("[Forbric/ClientSmoke] cannot rotate the player: %s", String.valueOf(e));
+		}
+	}
+
+	private static void setPos(Object player, double x, double y, double z) {
+		try {
+			entityClass(player).getMethod("setPos", double.class, double.class, double.class).invoke(player, x, y, z);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			ForbricLog.warn("[Forbric/ClientSmoke] the control move could not be made — the positive control is void: " + e);
+		}
+	}
+
+	private static Object invokeGetter(Object owner, String name) {
+		try {
+			return entityClass(owner).getMethod(name).invoke(owner);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return null;
+		}
+	}
+
+	/** {@code net.minecraft.world.entity.Entity} as loaded by the game — the public class every getter used here lives on. */
+	private static Class<?> entityClass(Object player) throws ClassNotFoundException {
+		return Class.forName("net.minecraft.world.entity.Entity", false, player.getClass().getClassLoader());
 	}
 
 	/** Test seam: forget everything, so a second run in one JVM starts clean. */
@@ -123,6 +272,9 @@ public final class KernelClientSmoke {
 		ready = false;
 		disconnectRequested = false;
 		stopRequested = false;
+		drillTick = -1;
+		drillDone = false;
+		drillPlayer = null;
 	}
 
 	private static Object fieldValue(Object owner, String name) {
