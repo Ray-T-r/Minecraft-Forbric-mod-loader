@@ -110,11 +110,22 @@ public final class KernelLifecycle {
 		// Step 2: construct both ecosystem baselines + fire RegisterEvent so default content (e.g. minecraft:empty
 		// FluidType, default attributes) registers, and run the Fabric main + side entrypoints in the same window.
 		registerNeoForgeContent(cl, client);
-		// Step 2b (client only): construct ClientNeoForgeMod on the baseline bus + populate the ModList with the
-		// baseline container, so the game's ModLoader.postEvent(<client mod-bus event>) — fired from
-		// ClientHooks.initClientHooks during Minecraft.<init> for reload listeners, entity renderers, sprite
-		// sources, client extensions — reaches NeoForge's built-in client handlers.
+		// Step 2b (client only): construct ClientNeoForgeMod on the baseline bus, so the game's
+		// ModLoader.postEvent(<client mod-bus event>) — fired from ClientHooks.initClientHooks during
+		// Minecraft.<init> for reload listeners, entity renderers, sprite sources, client extensions — has NeoForge's
+		// built-in client handlers to reach.
 		if (client) registerNeoForgeClientContent(cl);
+		// Step 2b2 (BOTH sides): put the baseline container into ModList, so ModLoader.postEvent — NeoForge's only
+		// fan-out for the mod-bus events it posts ITSELF — reaches NeoForge's own listeners, not just the mods'.
+		// This ran as part of step 2b, i.e. client-only, on the reasoning that only the client posts mod-bus events
+		// from game code. The dedicated server posts one too, and it is the one that matters most over a socket:
+		// NetworkRegistry.setup() posts RegisterPayloadHandlersEvent, whose NeoForge-internal listener
+		// (NetworkInitialization.register, wired in step 2c2 to the baseline bus) registers every neoforge:* payload
+		// type. With the baseline absent from ModList that event fanned out to the mods alone, so no dedicated
+		// server the kernel ever booted could ENCODE a NeoForge payload — the first real client to join was dropped
+		// with "Failed to encode packet 'clientbound/minecraft:custom_payload' (neoforge:recipe_content)". Eleven
+		// gates certified those servers because none of them ever connected a client, and singleplayer never encodes.
+		publishNeoBaselineInModList(cl);
 		// Step 2c: load the NeoForge config specs the baselines and the just-constructed mods registered. Listeners
 		// read CLIENT/COMMON values early (e.g. TagConventionLogWarningClient on ServerStartingEvent when entering a
 		// singleplayer world reads a CLIENT value) — an unloaded spec throws "Cannot get config value before config
@@ -165,7 +176,7 @@ public final class KernelLifecycle {
 		// with "Network Protocol Error" seconds after the world rendered. Genuine NeoForge closes the phase after
 		// mod loading, which is what this now matches. On the CLIENT it moves later still, to onClientEntrypoints,
 		// because client setup itself moved there.
-		if (!client) setupNeoForgeNetwork(cl);
+		if (!client) setupNeoForgeNetwork(cl, false);
 		// Step 4: start the game event buses so mods' game-event listeners actually dispatch — the buses buffer
 		// until start()/startup().
 		startGameBuses(cl);
@@ -219,25 +230,65 @@ public final class KernelLifecycle {
 	 * {@code ModLoader} to that bus, populating {@code PAYLOAD_REGISTRATIONS} so payloads like
 	 * {@code neoforge:recipe_content} become sendable. Best-effort; failure only leaves payloads unregistered.
 	 */
-	private static void setupNeoForgeNetwork(ClassLoader cl) {
+	private static void setupNeoForgeNetwork(ClassLoader cl, boolean client) {
 		// Two-phase, in this order: NetworkRegistry.setup() posts RegisterPayloadHandlersEvent (payload TYPES + codecs,
 		// incl. playToClient(neoforge:recipe_content)); ClientNetworkRegistry.setup() then posts
 		// RegisterClientPayloadHandlersEvent (the CLIENT HANDLERS) and validates every to-client payload has one —
 		// else the join negotiation rejects with "Incompatible client! (No Handler for …)". Both events reach
 		// NeoForge's own handlers only because step 2c2 wired its runtime-jar @EventBusSubscribers.
 		invokeNetworkSetup(cl, "net.neoforged.neoforge.network.registration.NetworkRegistry");
-		invokeNetworkSetup(cl, "net.neoforged.neoforge.client.network.registration.ClientNetworkRegistry");
+		// The client half is client-only, as in genuine NeoForge (ClientModLoader runs it; ServerModLoader does not).
+		// It used to run on the dedicated server too, and passed — vacuously, because no NeoForge payload type was
+		// registered there for it to demand a handler for. The moment the server registered them (baseline in
+		// ModList) it failed with "Some clientbound payloads are missing client-side handlers", correctly: the
+		// handlers live in a Dist.CLIENT @EventBusSubscriber that step 2c2 rightly skips on a server.
+		if (client) invokeNetworkSetup(cl, "net.neoforged.neoforge.client.network.registration.ClientNetworkRegistry");
 	}
 
 	/** Runs a NeoForge {@code *NetworkRegistry.setup()} — it posts its Register*PayloadHandlersEvent via ModLoader. */
 	private static void invokeNetworkSetup(ClassLoader cl, String registryClass) {
 		try {
-			Class.forName(registryClass, false, cl).getMethod("setup").invoke(null);
-			ForbricLog.info("[Forbric/Lifecycle] %s.setup() — payload handlers registered",
-					registryClass.substring(registryClass.lastIndexOf('.') + 1));
+			Class<?> registry = Class.forName(registryClass, false, cl);
+			registry.getMethod("setup").invoke(null);
+			ForbricLog.info("[Forbric/Lifecycle] %s.setup() — payload handlers registered%s",
+					registryClass.substring(registryClass.lastIndexOf('.') + 1), describePayloadRegistrations(registry));
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] " + registryClass + ".setup() failed — NeoForge payloads incomplete "
 					+ "(join may fail 'No Handler for …')", unwrap(t));
+		}
+	}
+
+	/**
+	 * "; N payload type(s) registered {CONFIGURATION=a, PLAY=b}, NeoForge's own included: yes/no" — or "" when the
+	 * class has no {@code PAYLOAD_REGISTRATIONS} (the client registry). Logged with the setup line because the one
+	 * thing that line used to certify — "payload handlers registered" — was false for two months on every dedicated
+	 * server the kernel ever booted: {@code setup()} had run, and had registered nothing of NeoForge's, because the
+	 * event it posts fans out over {@code ModList} and the baseline container was not in it (see
+	 * {@link #publishModBusDelivery}). Zero gates saw it, since singleplayer never encodes a packet. A count that
+	 * says {@code PLAY=10, NeoForge's own included: no} would have.
+	 */
+	private static String describePayloadRegistrations(Class<?> registry) {
+		try {
+			java.lang.reflect.Field f = registry.getDeclaredField("PAYLOAD_REGISTRATIONS");
+			f.setAccessible(true);
+			java.util.Map<?, ?> byProtocol = (java.util.Map<?, ?>) f.get(null);
+			java.util.Map<String, Integer> counts = new java.util.TreeMap<>();
+			boolean natives = false;
+			int total = 0;
+			for (java.util.Map.Entry<?, ?> e : byProtocol.entrySet()) {
+				java.util.Map<?, ?> ids = (java.util.Map<?, ?>) e.getValue();
+				counts.put(String.valueOf(e.getKey()), ids.size());
+				total += ids.size();
+				for (Object id : ids.keySet()) {
+					if (String.valueOf(id).startsWith("neoforge:")) natives = true;
+				}
+			}
+			return "; " + total + " payload type(s) registered " + counts + ", NeoForge's own included: "
+					+ (natives ? "yes" : "NO");
+		} catch (NoSuchFieldException clientRegistry) {
+			return "";
+		} catch (Throwable t) {
+			return "; (could not read PAYLOAD_REGISTRATIONS: " + t + ")";
 		}
 	}
 
@@ -704,11 +755,20 @@ public final class KernelLifecycle {
 			Class<?> modContainer = Class.forName("net.neoforged.fml.ModContainer", false, cl);
 			clientMod.getConstructor(iEventBus, modContainer).newInstance(baselineBus, baselineContainer);
 			ForbricLog.info("[Forbric/Lifecycle] constructed ClientNeoForgeMod on the baseline bus");
-
-			publishModBusDelivery(cl);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not register NeoForge client content — the client's mod-bus "
 					+ "events (reload listeners, renderers) will not reach NeoForge", unwrap(t));
+		}
+	}
+
+	/** {@link #publishModBusDelivery} for both sides; a failure is logged, since the game still runs without it. */
+	private static void publishNeoBaselineInModList(ClassLoader cl) {
+		try {
+			publishModBusDelivery(cl);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not put the NeoForge baseline into ModList — NeoForge's own "
+					+ "mod-bus listeners (its payload types among them) will not receive the events NeoForge posts",
+					unwrap(t));
 		}
 	}
 
@@ -731,6 +791,13 @@ public final class KernelLifecycle {
 	 * <p>So the list is UNIONed instead of replaced: baseline first (genuine NeoForge also orders it first), then
 	 * whatever {@code publishNeoModList} installed. {@code indexedMods} is rebuilt to match so
 	 * {@code getModContainerById}/{@code isLoaded} answer for the baseline too.
+	 *
+	 * <p>Runs on the dedicated server as well, and did not always: it lived inside the client-only step, so every
+	 * server's ModList held the mods and not NeoForge. The server posts fewer mod-bus events from game code than the
+	 * client, but {@code NetworkRegistry.setup()}'s {@code RegisterPayloadHandlersEvent} is one of them, and its
+	 * NeoForge-internal listener is what registers {@code neoforge:recipe_content} and every other built-in payload
+	 * type. Without it a server can negotiate a NeoForge connection and then fail to encode the first NeoForge
+	 * payload it sends (gate-m12).
 	 */
 	private static void publishModBusDelivery(ClassLoader cl) throws Exception {
 		Class<?> modListCls = Class.forName("net.neoforged.fml.ModList", false, cl);
@@ -1741,7 +1808,7 @@ public final class KernelLifecycle {
 		ClassLoader cl = gameLoader;
 		fireClientSetupLifecycle(cl);
 		// And only then close the payload registration phase — see step 3c for why it cannot precede setup.
-		setupNeoForgeNetwork(cl);
+		setupNeoForgeNetwork(cl, true);
 	}
 
 	/** Re-closes after the client entrypoints and redoes the id bookkeeping their registrations invalidated. */

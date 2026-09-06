@@ -91,6 +91,9 @@ public final class ForbricCustomPayloadInterop {
 		Object fallbackCodec = fallbackCodec(fallback, id);
 
 		Object direct = uniqueCodec(local, fabric, neo, fallbackCodec);
+		probe(() -> "codec for " + id + " " + protocol + "/" + packetFlow + ": local=" + (local != null)
+				+ " fabric=" + (fabric != null) + " neo=" + (neo != null) + " fallback=" + (fallbackCodec != null)
+				+ (direct != null ? " -> direct " + direct.getClass().getSimpleName() : " -> proxy"));
 		if (direct != null) return direct;
 
 		ClassLoader loader = loaderFor(id, protocol, packetFlow);
@@ -108,39 +111,109 @@ public final class ForbricCustomPayloadInterop {
 	 * {@code handle(...)} method should be considered complete and skipped.
 	 */
 	public static Boolean handleFabricChannelRegistrationAddon(Object addon, Object payload) {
-		// Every payload that reaches a Fabric channel addon, named, under -Dforbric.debug. Added because the one
-		// question this code could not answer from its own log was the only one that mattered when multiplayer
-		// broke: did the client's channel declaration reach the server at all, and did it arrive before or after
-		// fabric's configureClient ran? "Nothing in the log" answered neither.
-		if (ForbricLog.debugEnabled()) {
-			// System.out, not ForbricLog: this probe exists to answer "did this method run at all", and routing it
-			// through a logger makes a silent log pipeline indistinguishable from a method that never ran — which
-			// is exactly the confusion it was added to end.
-			System.out.println("[Forbric/Net] addon "
-					+ (addon == null ? "null" : addon.getClass().getSimpleName()) + " <- payload " + payloadId(payload));
-		}
+		// Every decision this method makes, under -Dforbric.debug. Added because the one question the code could not
+		// answer from its own log was the only one that mattered when multiplayer broke: did the client's channel
+		// declaration reach the server at all, and if not, which of the five branches below swallowed it. Each
+		// branch that returns now says so; "nothing in the log" used to be the answer to all five.
+		probe(() -> "addon " + simpleName(addon) + " <- " + payloadId(payload) + " [" + simpleName(payload) + "]");
 		bootstrapMirrors(loaderFor(addon, payload));
 		Boolean commonNegotiation = handleFabricCommonNegotiationAddon(addon, payload);
-		if (commonNegotiation != null) return commonNegotiation;
+		if (commonNegotiation != null) {
+			probe(() -> "  common-networking negotiation handled it -> " + commonNegotiation);
+			return commonNegotiation;
+		}
 
 		Registration registration = registration(payload);
-		if (registration == null) return null;
+		if (registration == null) {
+			probe(() -> "  not a channel registration; leaving it to the addon's own body");
+			if (ForbricLog.debugEnabled()) describeFrozenRegistrySnapshot(payload);
+			return null;
+		}
+		probe(() -> "  " + (registration.register ? "register" : "unregister") + " " + registration.channels.size()
+				+ " channel(s): " + registration.channels);
 
 		Object connection = fieldValue(addon, "connection");
 		if (connection != null) {
 			syncNeoChannels(connection, registration.register, registration.channels);
+		} else {
+			probe(() -> "  no connection field on the addon; NeoForge's half was NOT told");
 		}
 
 		if (payload != null && payload.getClass().getName().equals(FABRIC_REGISTRATION_PAYLOAD)) {
+			probe(() -> "  already Fabric's own payload; its body will record the channels");
 			return null; // Fabric's own method will update its sendable channel set.
 		}
 
 		Object fabricPayload = createFabricRegistrationPayload(payload, registration.register, registration.channels);
-		if (fabricPayload != null) {
-			invokeReceiveRegistration(addon, registration.register, fabricPayload);
-			return Boolean.TRUE;
+		if (fabricPayload == null) {
+			probe(() -> "  could NOT synthesize Fabric's payload; Fabric's half was skipped");
+			return null;
 		}
-		return null;
+		boolean mirrored = invokeReceiveRegistration(addon, registration.register, fabricPayload);
+		probe(() -> "  mirrored into Fabric receiveRegistration: " + mirrored
+				+ "; sendable=" + channelSet(addon, "getSendableChannels")
+				+ " receivable=" + channelSet(addon, "getReceivableChannels"));
+		return Boolean.TRUE;
+	}
+
+	/**
+	 * Debug-only: for a NeoForge {@code neoforge:frozen_registry} payload, names the registry it carries, the
+	 * registry's runtime class, how many entries its {@code MappedRegistry.byKey} actually holds, and every snapshot
+	 * entry that is not a real local key. Written to explain "Failed to sync registries from the server:
+	 * NullPointerException: holder is null" out of {@code MappedRegistry.registerIdMapping}, which NeoForge's handler
+	 * reports without naming a registry. The first run of it ruled out aliases and missing entries (every remote
+	 * name was a real local key) and the second — the class and the {@code byKey} count — found the cause: the
+	 * seventeen registries that are MinecraftForge {@code NamespacedWrapper}s answer {@code containsKey} from their
+	 * delegate while their inherited {@code byKey} holds zero entries. See the kernel's RegistrySyncParityInjector.
+	 */
+	private static void describeFrozenRegistrySnapshot(Object payload) {
+		if (payload == null || !"neoforge:frozen_registry".equals(payloadId(payload))) return;
+		try {
+			Object registryName = invokeNoArg(payload, "registryName");
+			Object snapshot = invokeNoArg(payload, "snapshot");
+			Object ids = invokeNoArg(snapshot, "getIds");                       // Int2ObjectSortedMap<Identifier>
+			Object aliases = invokeNoArg(snapshot, "getAliases");
+			Collection<?> names = ids instanceof Map<?, ?> m ? m.values() : List.of();
+			ClassLoader loader = loaderFor(payload);
+			Class<?> builtIn = load(loader, "net.minecraft.core.registries.BuiltInRegistries");
+			Object root = builtIn == null ? null : staticField(builtIn, "REGISTRY");
+			Object registry = root == null ? null : invoke(root, "getValue", registryName);
+			if (registry == null) {
+				probe(() -> "  frozen registry " + registryName + ": " + names.size() + " id(s); NO local registry by that name");
+				return;
+			}
+			Object keySet = invokeNoArg(registry, "keySet");                     // Set<Identifier> — real keys only
+			List<Object> notReal = new ArrayList<>();
+			if (keySet instanceof Set<?> keys) {
+				for (Object name : names) if (!keys.contains(name)) notReal.add(name);
+			}
+			int localSize = keySet instanceof Set<?> keys ? keys.size() : -1;
+			Object byKey = fieldValue(registry, "byKey");
+			int byKeySize = byKey instanceof Map<?, ?> m ? m.size() : -1;
+			probe(() -> "  frozen registry " + registryName + " [" + registry.getClass().getName() + "]: " + names.size()
+					+ " remote id(s) vs " + localSize + " local key(s), MappedRegistry.byKey holds " + byKeySize
+					+ "; remote aliases=" + aliases + "; remote names that are not real local keys: " + notReal);
+		} catch (RuntimeException e) {
+			probe(() -> "  frozen registry probe failed: " + e);
+		}
+	}
+
+	/**
+	 * {@code System.out}, not {@code ForbricLog}: these probes exist to answer "did this branch run at all", and
+	 * routing them through a logger makes a silent log pipeline indistinguishable from code that never executed —
+	 * exactly the confusion they were added to end. The message is a supplier so nothing is built when debug is off.
+	 */
+	private static void probe(java.util.function.Supplier<String> message) {
+		if (ForbricLog.debugEnabled()) System.out.println("[Forbric/Net] " + message.get());
+	}
+
+	private static String simpleName(Object o) {
+		return o == null ? "null" : o.getClass().getSimpleName();
+	}
+
+	private static String channelSet(Object addon, String getter) {
+		Object channels = invokeNoArg(addon, getter);
+		return channels == null ? "?" : String.valueOf(channels);
 	}
 
 	/**
@@ -179,15 +252,23 @@ public final class ForbricCustomPayloadInterop {
 	}
 
 	private static void mirrorMergedPayloadRegistries(ClassLoader loader) {
-		if (load(loader, NEO_NETWORK_REGISTRY) == null) return;
+		if (load(loader, NEO_NETWORK_REGISTRY) == null) {
+			probe(() -> "mirror pass: NeoForge's NetworkRegistry is not visible from " + loader + "; nothing to mirror into");
+			return;
+		}
 
 		int mirrored = 0;
-		for (MirrorRegistration registration : reflectPacketLocalRegistrations(loader)) {
+		List<MirrorRegistration> local = reflectPacketLocalRegistrations(loader);
+		List<MirrorRegistration> fabric = reflectFabricRegistrations(loader);
+		for (MirrorRegistration registration : local) {
 			if (mirrorPayloadIntoNeo(loader, registration)) mirrored++;
 		}
-		for (MirrorRegistration registration : reflectFabricRegistrations(loader)) {
+		for (MirrorRegistration registration : fabric) {
 			if (mirrorPayloadIntoNeo(loader, registration)) mirrored++;
 		}
+		int mirroredCount = mirrored;
+		probe(() -> "mirror pass on " + loader + ": " + local.size() + " merged + " + fabric.size()
+				+ " Fabric registration(s) seen, " + mirroredCount + " mirrored into NeoForge");
 		if (mirrored > 0) {
 			ForbricLog.info("[Forbric] mirrored " + mirrored
 					+ " merged/Fabric custom payload registration(s) into NeoForge's decode registry");
@@ -365,13 +446,23 @@ public final class ForbricCustomPayloadInterop {
 			@SuppressWarnings("unchecked")
 			Map<Object, Map<Object, Object>> registrations = (Map<Object, Map<Object, Object>>) registrationsField.get(null);
 			Map<Object, Object> protocolMap = registrations.get(protocol);
-			if (protocolMap == null) return null;
+			if (protocolMap == null) {
+				probe(() -> "  neo: no registrations at all for protocol " + protocol + " (known: " + registrations.keySet() + ")");
+				return null;
+			}
 			Object registration = protocolMap.get(id);
-			if (registration == null) return null;
+			if (registration == null) {
+				probe(() -> "  neo: " + protocolMap.size() + " registration(s) under " + protocol + ", none for " + id);
+				return null;
+			}
 			Object expectedFlow = invokeNoArg(registration, "flow");
-			if (expectedFlow instanceof Optional<?> optional && optional.isPresent() && optional.get() != packetFlow) return null;
+			if (expectedFlow instanceof Optional<?> optional && optional.isPresent() && optional.get() != packetFlow) {
+				probe(() -> "  neo: " + id + " is registered for flow " + optional.get() + ", asked for " + packetFlow);
+				return null;
+			}
 			return registration;
 		} catch (ReflectiveOperationException | RuntimeException e) {
+			probe(() -> "  neo: registry lookup threw " + e);
 			return null;
 		}
 	}
@@ -671,14 +762,23 @@ public final class ForbricCustomPayloadInterop {
 		return null;
 	}
 
-	private static void invokeReceiveRegistration(Object addon, boolean register, Object fabricPayload) {
+	private static boolean invokeReceiveRegistration(Object addon, boolean register, Object fabricPayload) {
 		Method method = findMethod(addon.getClass(), "receiveRegistration", boolean.class, fabricPayload.getClass());
-		if (method == null) return;
+		if (method == null) {
+			// Silent before. This is the single point where the client's whole Fabric channel declaration is
+			// produced — receiveRegistration is the only caller of sendInitialChannelRegistrationPacket — so a
+			// quiet miss here reads downstream as "the server thinks you have no Fabric API".
+			ForbricLog.warn("[Forbric] no receiveRegistration(boolean," + fabricPayload.getClass().getName()
+					+ ") on " + addon.getClass().getName() + "; Fabric's channel set was left untouched");
+			return false;
+		}
 		try {
 			method.setAccessible(true);
 			method.invoke(addon, register, fabricPayload);
+			return true;
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			ForbricLog.warn("[Forbric] could not mirror channel-registration payload into Fabric networking", e);
+			ForbricLog.warn("[Forbric] could not mirror channel-registration payload into Fabric networking", unwrap(e));
+			return false;
 		}
 	}
 
