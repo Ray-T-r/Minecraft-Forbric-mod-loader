@@ -35,6 +35,7 @@ import net.minecraft.resources.Identifier;
 public final class ForbricFabricLive implements ModInitializer {
 	/** The registry entry this mod adds; the server entrypoint reads it back after the freeze. */
 	public static final Identifier CANARY_STAT = Identifier.fromNamespaceAndPath("forbricfabriclive", "canary");
+	public static final Identifier CANARY_BLOCK = Identifier.fromNamespaceAndPath("forbricfabriclive", "canary_block");
 
 	@Override
 	public void onInitialize() {
@@ -85,6 +86,37 @@ public final class ForbricFabricLive implements ModInitializer {
 		// The registration window must be OPEN: a Fabric mod registers content by calling Registry.register
 		// directly from onInitialize. CUSTOM_STAT is a Registry<Identifier>, so this needs no item/block plumbing.
 		Registry.register(BuiltInRegistries.CUSTOM_STAT, CANARY_STAT, CANARY_STAT);
+		// And one BLOCK, for gate-m14: a Forbric client that carries this canary registers its block before any
+		// other Fabric mod's, so every block a shared mod registers after it sits one id further along than on a
+		// server without the canary — which is exactly the difference a registry sync has to correct. A block
+		// with no model is fine: nothing renders it, the gate only asks the server to place one and the client to
+		// read its NAME back.
+		Registry.register(BuiltInRegistries.BLOCK, CANARY_BLOCK, new net.minecraft.world.level.block.Block(
+				net.minecraft.world.level.block.state.BlockBehaviour.Properties.of()
+						.setId(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.BLOCK, CANARY_BLOCK))));
+		System.out.println("[ForbricFabricLive] registered block " + CANARY_BLOCK + " at raw id "
+				+ BuiltInRegistries.BLOCK.getId(BuiltInRegistries.BLOCK.getValue(CANARY_BLOCK)));
+		// And one ITEM, for the same reason: item ids are what inventory sync carries, and unlike block states they
+		// have no neighbouring id to land harmlessly on — an unremapped item registry hands the player the wrong
+		// item, which is the cleanest thing a gate can read back.
+		// Built reflectively, not because the canary needs to be clever, but because naming Item's members makes
+		// javac complete Item's whole member table, which drags in the merged LivingEntity.class — and the byte-merge
+		// left a type-annotation attribute on it that javac refuses ("Cannot attach type annotations"). The game
+		// loads that class fine; only javac's reader is that strict.
+		try {
+			Class<?> itemCls = Class.forName("net.minecraft.world.item.Item");
+			Class<?> propsCls = Class.forName("net.minecraft.world.item.Item$Properties");
+			Object props = propsCls.getConstructor().newInstance();
+			props = propsCls.getMethod("setId", net.minecraft.resources.ResourceKey.class).invoke(props,
+					net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.ITEM, CANARY_BLOCK));
+			Object item = itemCls.getConstructor(propsCls).newInstance(props);
+			@SuppressWarnings({"unchecked", "rawtypes"})
+			Object registered = Registry.register((Registry) BuiltInRegistries.ITEM, CANARY_BLOCK, item);
+			System.out.println("[ForbricFabricLive] registered item " + CANARY_BLOCK + " at raw id "
+					+ ((net.minecraft.core.Registry<Object>) (Registry) BuiltInRegistries.ITEM).getId(registered));
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException("canary item could not be registered", e);
+		}
 		System.out.println("[ForbricFabricLive] registered custom stat, registry contains it="
 				+ BuiltInRegistries.CUSTOM_STAT.containsKey(CANARY_STAT));
 	}

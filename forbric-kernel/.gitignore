@@ -32,3 +32,6 @@ run/*/logs/
 # gate-m13 stages a Paper+Grim server and a client here on every run.
 run/ac-server/
 run/ac-client/
+# gate-m14 stages a pure Fabric server and a Forbric client here on every run.
+run/fab-server/
+run/fab-client/

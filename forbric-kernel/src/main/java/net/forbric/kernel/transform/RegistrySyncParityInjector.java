@@ -71,6 +71,7 @@ import net.forbric.kernel.util.ForbricLog;
 public final class RegistrySyncParityInjector implements ClassTransformer {
 	private static final String WRAPPER = "net.minecraftforge.registries.NamespacedWrapper";
 	private static final String NEO_REGISTRY_MANAGER = "net.neoforged.neoforge.registries.RegistryManager";
+	private static final String FABRIC_CLIENT_SYNC = "net.fabricmc.fabric.impl.client.registry.sync.ClientRegistrySyncHandler";
 
 	private static final String HOOK_OWNER = "net/forbric/kernel/boot/KernelForgeWrapperSync";
 	private static final String RESOURCE_KEY = "Lnet/minecraft/resources/ResourceKey;";
@@ -83,6 +84,13 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	private static final String APPLY_SNAPSHOT = "applySnapshot";
 	private static final String APPLY_SNAPSHOT_DESC = "(Ljava/util/Map;Z)Ljava/util/Set;";
 
+	/** fabric-api's {@code RemappableRegistry.remap}, which its mixin adds to {@code MappedRegistry} and the wrapper inherits. */
+	private static final String REMAP = "remap";
+	private static final String REMAP_DESC =
+			"(Lit/unimi/dsi/fastutil/objects/Object2IntMap;Lnet/fabricmc/fabric/impl/registry/sync/RemappableRegistry$RemapMode;)V";
+	private static final String FABRIC_APPLY = "apply";
+	private static final String FABRIC_APPLY_DESC = "(Lnet/fabricmc/fabric/impl/registry/sync/packet/RegistrySyncPayload;)V";
+
 	@Override
 	public String name() {
 		return "forbric-registry-sync-parity";
@@ -91,19 +99,31 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
-		if (WRAPPER.equals(className)) return giveWrapperNeoForgesContract(className, classBytes);
+		if (WRAPPER.equals(className)) return giveWrapperBothContracts(className, classBytes);
 		if (NEO_REGISTRY_MANAGER.equals(className)) return flushAroundApplySnapshot(className, classBytes);
+		if (FABRIC_CLIENT_SYNC.equals(className)) return flushAroundFabricApply(className, classBytes);
 		return classBytes;
 	}
 
-	/** Adds {@code clear(Z)} and {@code registerIdMapping(ResourceKey, I)} to the wrapper — unless it grew its own. */
-	private static byte[] giveWrapperNeoForgesContract(String className, byte[] classBytes) {
+	/**
+	 * Adds NeoForge's {@code clear(Z)} / {@code registerIdMapping(ResourceKey, I)} and fabric-api's
+	 * {@code remap(Object2IntMap, RemapMode)} to the wrapper — unless it grew its own.
+	 *
+	 * <p>fabric-api's half is the same disease with a quieter symptom: its {@code remap} is a mixin method that
+	 * rewrites the {@code MappedRegistry} fields it shadows, and on the wrapper those are the same empty fields —
+	 * so against a PURE Fabric server (where only fabric-api's sync runs) the seventeen wrapped registries kept
+	 * their local ids and nothing said so. With mod sets that differ between client and server, every block, item,
+	 * entity type and sound in those registries then decodes to the wrong one. The override stages the server's
+	 * ids exactly as the NeoForge one does, and {@code ClientRegistrySyncHandler.apply} flushes them.
+	 */
+	private static byte[] giveWrapperBothContracts(String className, byte[] classBytes) {
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
 
 		for (MethodNode m : node.methods) {
 			if ((m.name.equals(REGISTER_ID_MAPPING) && m.desc.equals(REGISTER_ID_MAPPING_DESC))
-					|| (m.name.equals(CLEAR) && m.desc.equals(CLEAR_DESC))) {
+					|| (m.name.equals(CLEAR) && m.desc.equals(CLEAR_DESC))
+					|| (m.name.equals(REMAP) && m.desc.equals(REMAP_DESC))) {
 				// A wrapper that overrides these itself has closed the gap natively; adding a second copy would
 				// be a duplicate-method ClassFormatError, so leave it be and say so.
 				ForbricLog.warn("[Forbric/RegistrySync] %s already declares %s%s — leaving Forge's own version in "
@@ -135,8 +155,21 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 		clear.maxLocals = 2;
 		node.methods.add(clear);
 
-		ForbricLog.info("[Forbric/RegistrySync] gave %s NeoForge's id-remap contract (clear, registerIdMapping) — "
-				+ "the server's ids are staged and applied through Forge's own injectSnapshot", className);
+		// public void remap(Object2IntMap<Identifier> ids, RemapMode mode) { KernelForgeWrapperSync.stageFabricRemap(this, ids, mode); }
+		MethodNode remap = new MethodNode(Opcodes.ACC_PUBLIC, REMAP, REMAP_DESC, null, null);
+		remap.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		remap.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		remap.instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+		remap.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "stageFabricRemap",
+				"(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V", false));
+		remap.instructions.add(new InsnNode(Opcodes.RETURN));
+		remap.maxStack = 3;
+		remap.maxLocals = 3;
+		node.methods.add(remap);
+
+		ForbricLog.info("[Forbric/RegistrySync] gave %s NeoForge's id-remap contract (clear, registerIdMapping) and "
+				+ "fabric-api's (remap) — the server's ids are staged and applied through Forge's own injectSnapshot",
+				className);
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();
@@ -181,6 +214,49 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 
 		ForbricLog.info("[Forbric/RegistrySync] flushing the Forge-wrapped registries' staged ids at %d return(s) of "
 				+ "%s.%s", returns, className, APPLY_SNAPSHOT);
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		node.accept(writer);
+		return writer.toByteArray();
+	}
+
+	/**
+	 * The fabric-api twin of {@link #flushAroundApplySnapshot}: {@code ClientRegistrySyncHandler.apply(payload)} is
+	 * where the client calls {@code remap} on every synced registry, so its returns are where the wrapped ones get
+	 * theirs applied. {@code void}, so a bare call before each {@code RETURN}; an exception path leaves the staging
+	 * to the next {@code beginSnapshotApplication}.
+	 */
+	private static byte[] flushAroundFabricApply(String className, byte[] classBytes) {
+		ClassNode node = new ClassNode();
+		new ClassReader(classBytes).accept(node, 0);
+
+		MethodNode target = null;
+		for (MethodNode m : node.methods) {
+			if (m.name.equals(FABRIC_APPLY) && m.desc.equals(FABRIC_APPLY_DESC) && (m.access & Opcodes.ACC_STATIC) != 0) {
+				target = m;
+				break;
+			}
+		}
+		if (target == null) {
+			ForbricLog.warn("[Forbric/RegistrySync] %s has no static %s%s — fabric-api's registry sync will stage ids on "
+					+ "the Forge-wrapped registries and never apply them; re-derive RegistrySyncParityInjector",
+					className, FABRIC_APPLY, FABRIC_APPLY_DESC);
+			return classBytes;
+		}
+
+		InsnList head = new InsnList();
+		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "beginSnapshotApplication", "()V", false));
+		target.instructions.insert(head);
+		int returns = 0;
+		for (AbstractInsnNode insn = target.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() != Opcodes.RETURN) continue;
+			InsnList flush = new InsnList();
+			flush.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "finishFabricRemap", "()V", false));
+			target.instructions.insertBefore(insn, flush);
+			returns++;
+		}
+
+		ForbricLog.info("[Forbric/RegistrySync] flushing the Forge-wrapped registries' staged ids at %d return(s) of "
+				+ "%s.%s", returns, className, FABRIC_APPLY);
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();

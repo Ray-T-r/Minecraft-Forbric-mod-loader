@@ -14,6 +14,10 @@ SRC="$KERNEL/canary/fabric"
 OUT="$KERNEL/run/canary"
 WORK="$BUILD/canary-fabric"
 MERGED="$OLD/run/merged-base/patched-mc-merged-26.2.jar"
+# The merged Block implements Forge's IForgeBlock and NeoForge's IBlockExtension, so a canary that touches
+# Block needs both carriers on the compile classpath — the same jars the launchers put on the runtime one.
+FORGE_RT="$OLD/run/merged-base/forge-runtime-interop.jar"; [ -f "$FORGE_RT" ] || FORGE_RT="$OLD/run/forge-runtime/forge-runtime.jar"
+NEO_RT="$OLD/run/neoforge-runtime/neoforge-runtime.jar"
 
 step "prerequisites"
 if [ ! -f "$MERGED" ]; then
@@ -54,7 +58,7 @@ DFU="$(find "$MC_DIR/libraries/com/mojang/datafixerupper" -name '*.jar' 2>/dev/n
 [ -n "$DFU" ] || { echo "[kernel] FAIL DataFixerUpper not found under $MC_DIR/libraries"; exit 1; }
 
 javac -nowarn -proc:none --release 21 \
-      -cp "$MERGED:$KERNEL_JAR:$NEO_RT:$DFU" \
+      -cp "$MERGED:$KERNEL_JAR:$FORGE_RT:$NEO_RT:$DFU" \
       -d "$WORK/live/classes" \
       $(find "$SRC/forbricfabriclive/src" -name '*.java') 2>&1 | grep -v '^Note:' || true
 [ -n "$(find "$WORK/live/classes" -name '*.class')" ] || { echo "[kernel] FAIL canary did not compile"; exit 1; }
