@@ -50,11 +50,14 @@ public class NetworkRegistry {
 		return codec;
 	}
 
+	// The kernel's CommonNetworkInteropInjector puts this call at the head of both methods on the live class.
 	public static void onMinecraftRegister(Connection connection, Set<Identifier> channels) {
+		net.forbric.loader.impl.compat.ForbricCustomPayloadInterop.onNeoChannelRegistration(connection, channels, true);
 		connection.channels.addAll(channels);
 	}
 
 	public static void onMinecraftUnregister(Connection connection, Set<Identifier> channels) {
+		net.forbric.loader.impl.compat.ForbricCustomPayloadInterop.onNeoChannelRegistration(connection, channels, false);
 		connection.channels.removeAll(channels);
 	}
 

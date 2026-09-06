@@ -55,6 +55,12 @@ public final class KernelClientSmoke {
 	 */
 	public static final String PROBE = "forbric.clientSmokeProbe";
 	private static final String PROBE_TICKS = "forbric.clientSmokeProbeTicks";
+	/**
+	 * {@code registry:namespace:path;…} (registry is {@code item} or {@code block}): entries whose raw ids to log at
+	 * three moments — before connecting, in the world, and after the clean disconnect. The three lines are what a
+	 * gate uses to see a remap happen AND be undone: the first and last must agree, the middle may differ.
+	 */
+	public static final String PROBE_IDS = "forbric.clientSmokeProbeIds";
 
 	private static Object lastLevel;
 	private static int worldTicks;
@@ -65,6 +71,7 @@ public final class KernelClientSmoke {
 	private static int drillTick = -1;
 	private static boolean drillDone;
 	private static boolean probed;
+	private static boolean idsLoggedBeforeConnect;
 
 	private KernelClientSmoke() {
 	}
@@ -95,9 +102,14 @@ public final class KernelClientSmoke {
 			// Out of a world. If we asked to leave one, that request has now been honoured.
 			lastLevel = null;
 			worldTicks = 0;
+			if (!idsLoggedBeforeConnect) {
+				idsLoggedBeforeConnect = true;
+				probeIds(minecraft, "before connecting");
+			}
 			if (disconnectRequested) {
 				disconnectRequested = false;
 				stopRequested = true;
+				probeIds(minecraft, "after disconnect");
 				ForbricLog.info("[Forbric/ClientSmoke] clean disconnect observed; stopping client");
 				invokeNoArg(minecraft, "stop");
 			}
@@ -127,6 +139,7 @@ public final class KernelClientSmoke {
 		if (ready && !probed && worldTicks >= Integer.getInteger(PROBE_TICKS, 160)) {
 			probed = true;
 			probeBlocks(level);
+			probeIds(minecraft, "in world");
 		}
 		if (!disconnectRequested && worldTicks >= Integer.getInteger(DISCONNECT_TICKS, 120)) {
 			disconnectRequested = true;
@@ -335,6 +348,32 @@ public final class KernelClientSmoke {
 		}
 	}
 
+	/** One line per configured entry: {@code registry id of item mcwbridges:andesite_bridge <moment>: N}. */
+	private static void probeIds(Object minecraft, String moment) {
+		String spec = System.getProperty(PROBE_IDS, "");
+		if (spec.isBlank()) return;
+		try {
+			ClassLoader cl = minecraft.getClass().getClassLoader();
+			Class<?> builtIn = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
+			Class<?> identifier = Class.forName("net.minecraft.resources.Identifier", false, cl);
+			Method parse = identifier.getMethod("parse", String.class);
+			Method getValue = Class.forName("net.minecraft.core.Registry", false, cl).getMethod("getValue", identifier);
+			Method getId = Class.forName("net.minecraft.core.IdMap", false, cl).getMethod("getId", Object.class);
+			for (String one : spec.split(";")) {
+				int colon = one.indexOf(':');
+				if (colon < 0) continue;
+				String registry = one.substring(0, colon).trim().toUpperCase(java.util.Locale.ROOT);
+				String name = one.substring(colon + 1).trim();
+				Object reg = builtIn.getField(registry).get(null);
+				Object value = getValue.invoke(reg, parse.invoke(null, name));
+				ForbricLog.info("[Forbric/ClientSmoke] registry id of %s %s %s: %s", registry.toLowerCase(java.util.Locale.ROOT),
+						name, moment, value == null ? "absent" : getId.invoke(reg, value));
+			}
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] registry id probe failed: " + t);
+		}
+	}
+
 	/** Test seam: forget everything, so a second run in one JVM starts clean. */
 	static void resetForTests() {
 		lastLevel = null;
@@ -348,6 +387,7 @@ public final class KernelClientSmoke {
 		drillPlayer = null;
 		lastPlayer = null;
 		probed = false;
+		idsLoggedBeforeConnect = false;
 	}
 
 	private static Object fieldValue(Object owner, String name) {

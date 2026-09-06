@@ -66,6 +66,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= tolerateEmptyCreativeTabStacks(node);
 			changed |= routePlaceItemHookToNeoForge(node);
 			changed |= bridgeOrphanedPipRenderers(node);
+			changed |= keepForgeOutboundProtocolCurrent(node);
 			if (!changed) return classBytes;
 
 			ClassWriter writer = new ClassWriter(0);
@@ -501,6 +502,64 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static boolean hasMethod(ClassNode node, String name, String desc) {
 		for (MethodNode method : node.methods) {
 			if (method.name.equals(name) && method.desc.equals(desc)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * MinecraftForge's network channels pick the vanilla packet type for an outgoing payload from
+	 * {@code Connection.getProtocol()}, which reads a Forge-added {@code outboundProtocol} field. Forge's patch keeps
+	 * that field current from inside {@code setupOutboundProtocol} — a lambda chained onto the pipeline task — and
+	 * NeoForge won the merge of that method, so the lambda survives in the class and nothing calls it. The
+	 * constructor still seeds the field with the handshake protocol on the CLIENT flow (the server flow leaves it
+	 * null, and {@code getProtocol} then falls back to the inbound field, which the merged
+	 * {@code setupInboundProtocol} does maintain — so the server side never showed this). A Forbric client thus
+	 * reports HANDSHAKING for the life of the connection and every Forge channel send from the client throws
+	 * "Unsupported protocol HANDSHAKING in Forge Networking Channel" — its own channel declaration
+	 * ({@code ChannelListManager.addChannels}) first of all, so the server's {@code Channel.isRemotePresent} never
+	 * saw the client's channels.
+	 *
+	 * <p>Store the new protocol at the head of {@code setupOutboundProtocol}. Synchronous rather than
+	 * pipeline-ordered, which for this field's one reader is the better contract: a payload built after the switch
+	 * must already be a packet of the new protocol, because the pipeline task is queued ahead of it.
+	 */
+	private static boolean keepForgeOutboundProtocolCurrent(ClassNode node) {
+		if (!"net/minecraft/network/Connection".equals(node.name)) return false;
+		String protocolInfo = "Lnet/minecraft/network/ProtocolInfo;";
+		if (!hasField(node, "outboundProtocol", protocolInfo)) return false;
+		MethodNode setup = findMethod(node, "setupOutboundProtocol", "(" + protocolInfo + ")V");
+		if (setup == null) return false;
+
+		// Coherent already (a single-ecosystem base, or a merge that kept Forge's body): the method stores the field
+		// itself, or still chains the lambda that does.
+		if (writesField(setup, "outboundProtocol")) return false;
+		for (AbstractInsnNode insn = setup.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (!(insn instanceof InvokeDynamicInsnNode indy)) continue;
+			for (Object arg : indy.bsmArgs) {
+				if (arg instanceof Handle handle && node.name.equals(handle.getOwner())) {
+					MethodNode lambda = findMethod(node, handle.getName(), handle.getDesc());
+					if (lambda != null && writesField(lambda, "outboundProtocol")) return false;
+				}
+			}
+		}
+
+		InsnList store = new InsnList();
+		store.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		store.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		store.add(new FieldInsnNode(Opcodes.PUTFIELD, node.name, "outboundProtocol", protocolInfo));
+		setup.instructions.insert(store);
+		setup.maxStack = Math.max(setup.maxStack, 2);
+		ForbricLog.warn("[Forbric/MergedBaseCompat] Connection.setupOutboundProtocol now updates MinecraftForge's "
+				+ "outboundProtocol — the merge dropped the lambda that did, so a client Connection reported HANDSHAKING "
+				+ "forever and every Forge channel send from the client threw");
+		return true;
+	}
+
+	private static boolean writesField(MethodNode method, String fieldName) {
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() == Opcodes.PUTFIELD && insn instanceof FieldInsnNode field && fieldName.equals(field.name)) {
+				return true;
+			}
 		}
 		return false;
 	}

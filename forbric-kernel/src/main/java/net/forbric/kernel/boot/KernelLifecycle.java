@@ -94,6 +94,13 @@ public final class KernelLifecycle {
 				+ "registering ecosystem baselines", side);
 		// Step 0: seed traditional Forge's empty LoadingModList (ServerStatusPing / client status touch it later).
 		PassiveSeeder.seedForgeLoadingModList(cl);
+		// Step 0b: give traditional Forge its sided executors. Forge's LogicalSidedProvider hands a mod's network
+		// handler the main thread to run on (CustomPayloadEvent.Context.enqueueWork); Forge fills it from
+		// ClientModLoader / ServerLifecycleHooks, both of which the kernel owns and neither of which runs. Left
+		// empty, the first Forge packet a mod handled on its main thread died in an NPE inside the dispatcher
+		// (gate-m15). Both suppliers are lazy — the client one asks Minecraft for its instance each time, the
+		// server one asks NeoForge's ServerLifecycleHooks for the current server, which the merged base keeps.
+		bridgeForgeSidedProviders(cl);
 		// Step 1: register NeoForge's baseline registries (neoforge:fluid_type, …) into the root. Correctly timed
 		// now (post-Bootstrap), unlike the pre-Main attempt which tripped "Not bootstrapped".
 		PassiveSeeder.seedNeoForgeRegistries(cl);
@@ -243,6 +250,41 @@ public final class KernelLifecycle {
 		// ModList) it failed with "Some clientbound payloads are missing client-side handlers", correctly: the
 		// handlers live in a Dist.CLIENT @EventBusSubscriber that step 2c2 rightly skips on a server.
 		if (client) invokeNetworkSetup(cl, "net.neoforged.neoforge.client.network.registration.ClientNetworkRegistry");
+	}
+
+	/**
+	 * {@code LogicalSidedProvider.setClient(() -> Minecraft.getInstance())} and
+	 * {@code setServer(() -> ServerLifecycleHooks.getCurrentServer())} — traditional Forge's view of "the game on
+	 * this side", resolved lazily so that neither the client instance nor a server has to exist yet. Best-effort.
+	 */
+	private static void bridgeForgeSidedProviders(ClassLoader cl) {
+		try {
+			Class<?> provider = Class.forName("net.minecraftforge.common.util.LogicalSidedProvider", false, cl);
+			java.util.function.Supplier<Object> clientSupplier = () -> {
+				try {
+					return Class.forName("net.minecraft.client.Minecraft", false, cl).getMethod("getInstance").invoke(null);
+				} catch (Throwable t) {
+					return null;
+				}
+			};
+			java.util.function.Supplier<Object> serverSupplier = () -> {
+				try {
+					return Class.forName("net.neoforged.neoforge.server.ServerLifecycleHooks", false, cl)
+							.getMethod("getCurrentServer").invoke(null);
+				} catch (Throwable t) {
+					return null;
+				}
+			};
+			provider.getMethod("setClient", java.util.function.Supplier.class).invoke(null, clientSupplier);
+			provider.getMethod("setServer", java.util.function.Supplier.class).invoke(null, serverSupplier);
+			ForbricLog.info("[Forbric/Lifecycle] bridged traditional Forge's LogicalSidedProvider to the live client / "
+					+ "NeoForge's current server — Forge network handlers can enqueue onto the main thread");
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] no traditional-Forge LogicalSidedProvider to bridge");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not bridge Forge's LogicalSidedProvider — a Forge mod's main-thread "
+					+ "packet handler will NPE", unwrap(t));
+		}
 	}
 
 	/** Runs a NeoForge {@code *NetworkRegistry.setup()} — it posts its Register*PayloadHandlersEvent via ModLoader. */

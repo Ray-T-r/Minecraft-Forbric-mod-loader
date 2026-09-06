@@ -93,6 +93,37 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	private static final String CUSTOM_PAYLOAD = "net/minecraft/network/protocol/common/custom/CustomPacketPayload";
 
 	private static final String CLIENT_CONFIG_LISTENER = "net.minecraft.client.multiplayer.ClientConfigurationPacketListenerImpl";
+	/**
+	 * Where MinecraftForge's own dispatch used to sit. Forge patches {@code handleCustomPayload} on both common
+	 * listeners to ask {@code ForgeHooks.onCustomPayload} first; NeoForge patched the same methods and won the
+	 * byte-merge, so the only surviving Forge call is the one in {@code ServerGamePacketListenerImpl}'s override.
+	 * A Forge mod's packet reaching the client, or the server in the configuration phase, therefore had no
+	 * dispatcher at all. These two get a prologue that hands a ForgePayload to Forge's hook and returns when it
+	 * took it.
+	 */
+	private static final String CLIENT_COMMON_LISTENER = "net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl";
+	private static final String SERVER_COMMON_LISTENER = "net.minecraft.server.network.ServerCommonPacketListenerImpl";
+	private static final String CLIENT_HANDLE_PAYLOAD_DESC = "(Lnet/minecraft/network/protocol/common/ClientboundCustomPayloadPacket;)V";
+	private static final String SERVER_HANDLE_PAYLOAD_DESC = "(Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;)V";
+	private static final String FORGE_DISPATCH_HOOK = "dispatchForgePayload";
+	private static final String FORGE_DISPATCH_HOOK_DESC = "(Ljava/lang/Object;Ljava/lang/Object;)Z";
+
+	/**
+	 * NeoForge's channel police and its register bookkeeping. {@code checkPacket} (client and server overloads)
+	 * refuses any payload whose channel NeoForge did not negotiate — which is every MinecraftForge channel, so a Forge
+	 * mod's client could not send on its own channel. Forge payloads are exempted. {@code onMinecraftRegister} /
+	 * {@code onMinecraftUnregister} are where every peer channel declaration lands on this base, with or without
+	 * fabric-api; Forge's own listener for that channel never runs here, so its bookkeeping is fed from there.
+	 */
+	private static final String NEO_NETWORK_REGISTRY = "net.neoforged.neoforge.network.registration.NetworkRegistry";
+	private static final String CHECK_PACKET = "checkPacket";
+	private static final String ON_REGISTER = "onMinecraftRegister";
+	private static final String ON_UNREGISTER = "onMinecraftUnregister";
+	private static final String REGISTER_DESC = "(Lnet/minecraft/network/Connection;Ljava/util/Set;)V";
+	private static final String IS_FORGE_PACKET = "isForgePayloadPacket";
+	private static final String IS_FORGE_PACKET_DESC = "(Ljava/lang/Object;)Z";
+	private static final String ON_NEO_REGISTRATION = "onNeoChannelRegistration";
+	private static final String ON_NEO_REGISTRATION_DESC = "(Ljava/lang/Object;Ljava/lang/Object;Z)V";
 	private static final String HANDLE_PAYLOAD = "handleCustomPayload";
 	private static final String HANDLE_PAYLOAD_DESC = "(Lnet/minecraft/network/protocol/common/ClientboundCustomPayloadPacket;)V";
 	private static final String NEO_PACKAGE = "net/neoforged/";
@@ -116,7 +147,10 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 		boolean fabricAddon = FABRIC_ADDONS.contains(className);
 		boolean serverConfig = SERVER_CONFIG.equals(className);
 		boolean clientConfig = CLIENT_CONFIG_LISTENER.equals(className);
-		if (!fabricAddon && !serverConfig && !clientConfig) return classBytes;
+		boolean clientCommon = CLIENT_COMMON_LISTENER.equals(className);
+		boolean serverCommon = SERVER_COMMON_LISTENER.equals(className);
+		boolean neoRegistry = NEO_NETWORK_REGISTRY.equals(className);
+		if (!fabricAddon && !serverConfig && !clientConfig && !clientCommon && !serverCommon && !neoRegistry) return classBytes;
 
 		ClassNode node = new ClassNode();
 		// EXPAND_FRAMES so every original frame is an absolute F_NEW node; the explicit frames we author at our own
@@ -138,6 +172,26 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				changed = true;
 				ForbricLog.info("[Forbric/Net] treating Fabric/NeoForge common-networking tasks as equivalent at %s.%s",
 						className, FINISH_TASK);
+			} else if ((clientCommon && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(CLIENT_HANDLE_PAYLOAD_DESC))
+					|| (serverCommon && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(SERVER_HANDLE_PAYLOAD_DESC))) {
+				String packetType = org.objectweb.asm.Type.getArgumentTypes(m.desc)[0].getInternalName();
+				m.instructions.insert(forgeDispatchPrologue(node.name, packetType));
+				bumpStack(m, 2);
+				changed = true;
+				ForbricLog.info("[Forbric/Net] handing MinecraftForge's payloads to ForgeHooks.onCustomPayload at %s.%s — "
+						+ "NeoForge won this method in the merge and Forge's dispatch went with it", className, HANDLE_PAYLOAD);
+			} else if (neoRegistry && m.name.equals(CHECK_PACKET) && (m.access & Opcodes.ACC_STATIC) != 0
+					&& org.objectweb.asm.Type.getArgumentTypes(m.desc).length == 2) {
+				m.instructions.insert(forgePacketExemptionPrologue(m.desc));
+				bumpStack(m, 1);
+				changed = true;
+				ForbricLog.info("[Forbric/Net] exempting MinecraftForge payloads from NeoForge's channel check at %s.%s%s",
+						className, CHECK_PACKET, m.desc);
+			} else if (neoRegistry && (m.name.equals(ON_REGISTER) || m.name.equals(ON_UNREGISTER)) && m.desc.equals(REGISTER_DESC)) {
+				m.instructions.insert(neoRegistrationPrologue(m.name.equals(ON_REGISTER)));
+				bumpStack(m, 3);
+				changed = true;
+				ForbricLog.info("[Forbric/Net] keeping MinecraftForge's channel bookkeeping in step at %s.%s", className, m.name);
 			} else if (clientConfig && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(HANDLE_PAYLOAD_DESC)) {
 				if (shareMinecraftRegisterWithSuper(m)) {
 					changed = true;
@@ -177,6 +231,51 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 		body.add(new FrameNode(Opcodes.F_NEW, 2, new Object[] {owner, CUSTOM_PAYLOAD}, 1,
 				new Object[] {"java/lang/Boolean"}));
 		body.add(new InsnNode(Opcodes.POP));                       // discard the null Boolean, run the original body
+		return body;
+	}
+
+	/**
+	 * {@code if (interop.isForgePayloadPacket(packet)) return;} at the head of a static
+	 * {@code checkPacket(Packet, <listener>)V}. Fall-through frame: the two parameters, empty stack — the entry frame.
+	 */
+	private static InsnList forgePacketExemptionPrologue(String desc) {
+		org.objectweb.asm.Type[] args = org.objectweb.asm.Type.getArgumentTypes(desc);
+		InsnList body = new InsnList();
+		LabelNode notForge = new LabelNode();
+		body.add(new VarInsnNode(Opcodes.ALOAD, 0)); // the packet
+		body.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, IS_FORGE_PACKET, IS_FORGE_PACKET_DESC, false));
+		body.add(new JumpInsnNode(Opcodes.IFEQ, notForge));
+		body.add(new InsnNode(Opcodes.RETURN));
+		body.add(notForge);
+		body.add(new FrameNode(Opcodes.F_NEW, 2, new Object[] {args[0].getInternalName(), args[1].getInternalName()}, 0,
+				new Object[] {}));
+		return body;
+	}
+
+	/** {@code interop.onNeoChannelRegistration(connection, set, register);} at the head of the static register hooks — no branch. */
+	private static InsnList neoRegistrationPrologue(boolean register) {
+		InsnList body = new InsnList();
+		body.add(new VarInsnNode(Opcodes.ALOAD, 0)); // the connection
+		body.add(new VarInsnNode(Opcodes.ALOAD, 1)); // the channel set
+		body.add(new InsnNode(register ? Opcodes.ICONST_1 : Opcodes.ICONST_0));
+		body.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, ON_NEO_REGISTRATION, ON_NEO_REGISTRATION_DESC, false));
+		return body;
+	}
+
+	/**
+	 * {@code if (interop.dispatchForgePayload(this, packet)) return;} — prepended to the void method. At the
+	 * fall-through label the stack is empty and both params live: locals=[this, packet] / stack=[], the entry frame.
+	 */
+	private static InsnList forgeDispatchPrologue(String owner, String packetType) {
+		InsnList body = new InsnList();
+		LabelNode notForge = new LabelNode();
+		body.add(new VarInsnNode(Opcodes.ALOAD, 0)); // this (the listener; its `connection` field is what Forge needs)
+		body.add(new VarInsnNode(Opcodes.ALOAD, 1)); // the packet
+		body.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, FORGE_DISPATCH_HOOK, FORGE_DISPATCH_HOOK_DESC, false));
+		body.add(new JumpInsnNode(Opcodes.IFEQ, notForge));
+		body.add(new InsnNode(Opcodes.RETURN));
+		body.add(notForge);
+		body.add(new FrameNode(Opcodes.F_NEW, 2, new Object[] {owner, packetType}, 0, new Object[] {}));
 		return body;
 	}
 
