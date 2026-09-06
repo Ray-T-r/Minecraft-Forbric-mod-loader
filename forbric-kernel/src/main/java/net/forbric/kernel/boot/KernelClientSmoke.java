@@ -48,6 +48,13 @@ public final class KernelClientSmoke {
 	public static final String DRILL = "forbric.clientSmokeDrill";
 	/** {@code true}: end the drill with one deliberately impossible move, so the gate can prove the anti-cheat is watching. */
 	public static final String DRILL_CONTROL = "forbric.clientSmokeDrillControl";
+	/**
+	 * {@code x,y,z;x,y,z;…}: block positions to read back after client-ready and log by registry name. What a gate
+	 * uses to see whether the client decodes the server's blocks as the server meant them — a registry-id mismatch
+	 * shows up here as the wrong name, while everything else about the session looks fine.
+	 */
+	public static final String PROBE = "forbric.clientSmokeProbe";
+	private static final String PROBE_TICKS = "forbric.clientSmokeProbeTicks";
 
 	private static Object lastLevel;
 	private static int worldTicks;
@@ -57,6 +64,7 @@ public final class KernelClientSmoke {
 	private static boolean stopRequested;
 	private static int drillTick = -1;
 	private static boolean drillDone;
+	private static boolean probed;
 
 	private KernelClientSmoke() {
 	}
@@ -105,6 +113,7 @@ public final class KernelClientSmoke {
 		}
 
 		worldTicks++;
+		lastPlayer = player;
 		if (!joined) {
 			joined = true;
 			ForbricLog.info("[Forbric/ClientSmoke] joined world via quick-play: %s",
@@ -115,6 +124,10 @@ public final class KernelClientSmoke {
 			ForbricLog.info("[Forbric/ClientSmoke] client-ready after %d world tick(s)", worldTicks);
 		}
 		if (ready && !drillDone && Boolean.getBoolean(DRILL)) drill(minecraft, player);
+		if (ready && !probed && worldTicks >= Integer.getInteger(PROBE_TICKS, 160)) {
+			probed = true;
+			probeBlocks(level);
+		}
 		if (!disconnectRequested && worldTicks >= Integer.getInteger(DISCONNECT_TICKS, 120)) {
 			disconnectRequested = true;
 			ForbricLog.info("[Forbric/ClientSmoke] requesting clean disconnect after %d world tick(s)", worldTicks);
@@ -191,6 +204,7 @@ public final class KernelClientSmoke {
 	}
 
 	private static Object drillPlayer;
+	private static Object lastPlayer;
 
 	/**
 	 * One line per phase, with where the player is and what state it is in. The line is what makes "Grim had
@@ -264,6 +278,63 @@ public final class KernelClientSmoke {
 		return Class.forName("net.minecraft.world.entity.Entity", false, player.getClass().getClassLoader());
 	}
 
+	/**
+	 * Reads back each configured position through the same lookups the game renders from — the client level's
+	 * block state, its block, that block's registry name — and logs one line per position.
+	 */
+	private static void probeBlocks(Object level) {
+		String spec = System.getProperty(PROBE, "");
+		if (spec.isBlank()) return;
+		try {
+			ClassLoader cl = level.getClass().getClassLoader();
+			var blockPos = Class.forName("net.minecraft.core.BlockPos", false, cl).getConstructor(int.class, int.class, int.class);
+			Method getBlockState = Class.forName("net.minecraft.world.level.BlockGetter", false, cl)
+					.getMethod("getBlockState", blockPos.getDeclaringClass());
+			Method getBlock = Class.forName("net.minecraft.world.level.block.state.BlockBehaviour$BlockStateBase", false, cl)
+					.getMethod("getBlock");
+			Object blocks = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl).getField("BLOCK").get(null);
+			Method getKey = Class.forName("net.minecraft.core.Registry", false, cl).getMethod("getKey", Object.class);
+			Method getId = Class.forName("net.minecraft.core.IdMap", false, cl).getMethod("getId", Object.class);
+			for (String one : spec.split(";")) {
+				String[] c = one.trim().split(",");
+				if (c.length != 3) continue;
+				Object pos = blockPos.newInstance(Integer.parseInt(c[0].trim()), Integer.parseInt(c[1].trim()), Integer.parseInt(c[2].trim()));
+				Object state = getBlockState.invoke(level, pos);
+				Object block = getBlock.invoke(state);
+				// The full state, not just the block: a block-STATE id that is off by one usually lands on another
+				// state of the same block, and only the properties give that away.
+				ForbricLog.info("[Forbric/ClientSmoke] block at (%s %s %s) is %s (registry id %s) state %s", c[0].trim(),
+						c[1].trim(), c[2].trim(), getKey.invoke(blocks, block), getId.invoke(blocks, block), state);
+			}
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] block probe failed: " + t);
+		}
+		probeHotbar(level);
+	}
+
+	/**
+	 * Logs what the player holds in hotbar slot 0, by registry name. Item ids travel in every inventory packet and
+	 * have no "neighbouring state" to hide an off-by-one in, so a server that gives the player one item and a client
+	 * that reads back another is the plainest registry-id mismatch there is.
+	 */
+	private static void probeHotbar(Object level) {
+		Object player = drillPlayer != null ? drillPlayer : lastPlayer;
+		if (player == null) return;
+		try {
+			ClassLoader cl = level.getClass().getClassLoader();
+			Object inventory = Class.forName("net.minecraft.world.entity.player.Player", false, cl).getMethod("getInventory").invoke(player);
+			Object stack = Class.forName("net.minecraft.world.Container", false, cl).getMethod("getItem", int.class).invoke(inventory, 0);
+			Object item = Class.forName("net.minecraft.world.item.ItemStack", false, cl).getMethod("getItem").invoke(stack);
+			Object items = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl).getField("ITEM").get(null);
+			Method getKey = Class.forName("net.minecraft.core.Registry", false, cl).getMethod("getKey", Object.class);
+			Method getId = Class.forName("net.minecraft.core.IdMap", false, cl).getMethod("getId", Object.class);
+			ForbricLog.info("[Forbric/ClientSmoke] hotbar slot 0 holds %s (registry id %s) x%s", getKey.invoke(items, item),
+					getId.invoke(items, item), stack.getClass().getMethod("getCount").invoke(stack));
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] hotbar probe failed: " + t);
+		}
+	}
+
 	/** Test seam: forget everything, so a second run in one JVM starts clean. */
 	static void resetForTests() {
 		lastLevel = null;
@@ -275,6 +346,8 @@ public final class KernelClientSmoke {
 		drillTick = -1;
 		drillDone = false;
 		drillPlayer = null;
+		lastPlayer = null;
+		probed = false;
 	}
 
 	private static Object fieldValue(Object owner, String name) {

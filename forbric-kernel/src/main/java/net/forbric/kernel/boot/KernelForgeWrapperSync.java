@@ -104,6 +104,29 @@ public final class KernelForgeWrapperSync {
 	}
 
 	/**
+	 * The wrapper's fabric-api {@code remap(Object2IntMap<Identifier> ids, RemapMode mode)}: stage the whole map.
+	 * fabric-api's {@code checkRemoteRemap} has already refused a server whose entries the client lacks, so every
+	 * name here resolves locally; local-only entries are Forge's to place after the server's, in {@code loadIds}.
+	 */
+	public static void stageFabricRemap(Object wrapper, Object ids, Object mode) {
+		if (!ENABLED || wrapper == null || !(ids instanceof Map<?, ?> map)) return;
+		Map<Object, Integer> staged = new LinkedHashMap<>();
+		for (Map.Entry<?, ?> e : map.entrySet()) {
+			if (e.getValue() instanceof Integer id) staged.put(e.getKey(), id);
+		}
+		synchronized (STAGED) {
+			STAGED.put(wrapper, staged);
+		}
+		ForbricLog.debug("[Forbric/RegistrySync] fabric-api remap (%s) staged %d id(s) for %s", mode, staged.size(),
+				describe(wrapper));
+	}
+
+	/** Every return of {@code ClientRegistrySyncHandler.apply}: fabric-api has remapped the rest; apply the wrapped ones. */
+	public static void finishFabricRemap() {
+		finishSnapshotApplication(Set.of());
+	}
+
+	/**
 	 * Every return of {@code RegistryManager.applySnapshot(Map, boolean)}: apply what was staged, unless NeoForge is
 	 * about to disconnect over {@code missing}.
 	 */
@@ -143,23 +166,45 @@ public final class KernelForgeWrapperSync {
 		Method getValue = registryCls.getMethod("getValue", identifierCls);
 		Method getId = Class.forName("net.minecraft.core.IdMap", false, cl).getMethod("getId", Object.class);
 
+		Method getKey = registryCls.getMethod("getKey", Object.class);
+
 		Map<Object, Object> snapshots = new HashMap<>();
 		Map<String, Integer> sizes = new TreeMap<>();
+		// Per wrapper: every local entry's id BEFORE, so the change can be measured and reported afterwards.
+		Map<Object, Map<Object, Integer>> before = new IdentityHashMap<>();
 		int moved = 0;
 		boolean blockMoved = false;
 		for (Map.Entry<Object, Map<Object, Integer>> e : staged.entrySet()) {
 			Object wrapper = e.getKey();
 			Map<Object, Integer> ids = e.getValue();
 			Object registryName = registryName(wrapper);
+			before.put(wrapper, localIds(wrapper, getKey, getId));
 
 			Object snapshot = snapshotCls.getConstructor().newInstance();
 			Object idMap = snapshotCls.getField("ids").get(snapshot);
 			Method put = idMap.getClass().getMethod("put", Object.class, int.class);
 			int movedHere = 0;
+			int next = 0;
 			for (Map.Entry<Object, Integer> id : ids.entrySet()) {
 				put.invoke(idMap, id.getKey(), id.getValue());
+				next = Math.max(next, id.getValue() + 1);
 				Object value = getValue.invoke(wrapper, id.getKey());
 				if (value != null && !id.getValue().equals(getId.invoke(wrapper, value))) movedHere++;
+			}
+			// Entries the server does not know — a client-only mod's blocks, say — get ids after the server's, in
+			// their local order. That is fabric-api's REMOTE-mode rule, and it is not Forge's: given a snapshot that
+			// omits them, loadIds drops them, and the first client to bring a canary block onto a pure Fabric server
+			// lost it (the loss guard below is what said so).
+			int kept = 0;
+			for (Map.Entry<Object, Integer> local : before.get(wrapper).entrySet()) {
+				if (ids.containsKey(local.getKey())) continue;
+				put.invoke(idMap, local.getKey(), next++);
+				kept++;
+			}
+			if (kept > 0) {
+				int keptHere = kept;
+				ForbricLog.info("[Forbric/RegistrySync] %s: %d local-only entr(ies) placed after the server's ids",
+						String.valueOf(registryName), keptHere);
 			}
 			snapshots.put(registryName, snapshot);
 			sizes.put(String.valueOf(registryName), ids.size());
@@ -178,9 +223,86 @@ public final class KernelForgeWrapperSync {
 			// A Multimap without isEmpty is not a thing; the summary line just goes without the detail.
 		}
 
+		// What actually changed, per wrapper — and the one thing that must not have: an entry disappearing. Forge's
+		// loadIds places the entries the server does not know after the server's; a registry that came back
+		// smaller would mean it did not, and that is a wrong-block world waiting to happen.
+		int lost = 0;
+		for (Map.Entry<Object, Map<Object, Integer>> e : before.entrySet()) {
+			Object wrapper = e.getKey();
+			Map<Object, Integer> after = localIds(wrapper, getKey, getId);
+			for (Object name : e.getValue().keySet()) {
+				if (!after.containsKey(name)) {
+					lost++;
+					ForbricLog.error("[Forbric/RegistrySync] " + describe(wrapper) + " LOST " + name + " in the remap");
+				}
+			}
+			announceRemapToFabric(cl, wrapper, e.getValue(), after);
+		}
+
 		if (blockMoved) rebuildBlockStateIds(cl);
 		ForbricLog.info("[Forbric/RegistrySync] %d Forge-wrapped registr(ies) followed the server's ids through Forge's own "
-				+ "injectSnapshot — %d id(s) moved%s: %s", staged.size(), moved, leftovers, sizes);
+				+ "injectSnapshot — %d id(s) moved, %d entr(ies) lost%s: %s", staged.size(), moved, lost, leftovers, sizes);
+	}
+
+	/** Every entry of the wrapper as name → id, read through the public Registry surface. */
+	private static Map<Object, Integer> localIds(Object wrapper, Method getKey, Method getId) throws Exception {
+		Map<Object, Integer> ids = new LinkedHashMap<>();
+		for (Object value : (Iterable<?>) wrapper) {
+			ids.put(getKey.invoke(wrapper, value), (Integer) getId.invoke(wrapper, value));
+		}
+		return ids;
+	}
+
+	/**
+	 * Fires fabric-api's {@code RegistryIdRemapCallback} for a wrapper whose ids moved — the event its own
+	 * {@code remap} would have fired, and what fabric-api's block/fluid state-id trackers and any mod caching raw
+	 * ids listen to. Built from the before/after maps, in the shape fabric-api's {@code RemapStateImpl} expects.
+	 * Best-effort: a fabric-api that changed the shape costs the notification, not the remap.
+	 */
+	private static void announceRemapToFabric(ClassLoader cl, Object wrapper, Map<Object, Integer> before,
+			Map<Object, Integer> after) {
+		try {
+			Object oldIdMap = Class.forName("it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap", false, cl)
+					.getConstructor().newInstance();
+			Object changes = Class.forName("it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap", false, cl)
+					.getConstructor().newInstance();
+			Method putOld = oldIdMap.getClass().getMethod("put", int.class, Object.class);
+			Method putChange = changes.getClass().getMethod("put", int.class, int.class);
+			int changed = 0;
+			for (Map.Entry<Object, Integer> e : before.entrySet()) {
+				putOld.invoke(oldIdMap, e.getValue(), e.getKey());
+				Integer now = after.get(e.getKey());
+				if (now != null && !now.equals(e.getValue())) {
+					putChange.invoke(changes, e.getValue(), now);
+					changed++;
+				}
+			}
+			if (changed == 0) return;
+
+			Class<?> stateCls = Class.forName("net.fabricmc.fabric.impl.registry.sync.RemapStateImpl", false, cl);
+			Class<?> registryCls = Class.forName("net.minecraft.core.Registry", false, cl);
+			Object state = stateCls.getConstructor(registryCls,
+					Class.forName("it.unimi.dsi.fastutil.ints.Int2ObjectMap", false, cl),
+					Class.forName("it.unimi.dsi.fastutil.ints.Int2IntMap", false, cl)).newInstance(wrapper, oldIdMap, changes);
+			// fabric_getRemapEvent is mixin-added to MappedRegistry; the wrapper inherits it. Event.invoker() hands
+			// back a RegistryIdRemapCallback whose onRemap(RemapState) fans out to every listener.
+			Method getEvent = wrapper.getClass().getMethod("fabric_getRemapEvent");
+			getEvent.setAccessible(true);
+			Object event = getEvent.invoke(wrapper);
+			Object invoker = event.getClass().getMethod("invoker").invoke(event);
+			Method onRemap = null;
+			for (Method m : invoker.getClass().getMethods()) {
+				if (m.getName().equals("onRemap") && m.getParameterCount() == 1) { onRemap = m; break; }
+			}
+			if (onRemap == null) return;
+			onRemap.setAccessible(true);
+			onRemap.invoke(invoker, state);
+			ForbricLog.info("[Forbric/RegistrySync] told fabric-api's remap listeners about %d moved id(s) in %s",
+					changed, describe(wrapper));
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/RegistrySync] could not fire fabric-api's RegistryIdRemapCallback for "
+					+ describe(wrapper) + " — listeners that cache raw ids were not told", unwrap(t));
+		}
 	}
 
 	/**
@@ -192,7 +314,19 @@ public final class KernelForgeWrapperSync {
 		try {
 			Class<?> neoGameData = Class.forName("net.neoforged.neoforge.registries.GameData", false, cl);
 			Object idMap = neoGameData.getMethod("getBlockStateIDMap").invoke(null);
-			idMap.getClass().getMethod("clear").invoke(idMap);
+			// NeoForge's map is a package-private nested IdMapper subclass whose clear() is package-private too —
+			// getMethod cannot see it; walk the class chain for the declared one.
+			Method clear = null;
+			for (Class<?> c = idMap.getClass(); c != null && clear == null; c = c.getSuperclass()) {
+				try {
+					clear = c.getDeclaredMethod("clear");
+				} catch (NoSuchMethodException keepLooking) {
+					// next superclass
+				}
+			}
+			if (clear == null) throw new NoSuchMethodException(idMap.getClass().getName() + ".clear()");
+			clear.setAccessible(true);
+			clear.invoke(idMap);
 			Method add = Class.forName("net.minecraft.core.IdMapper", false, cl).getMethod("add", Object.class);
 
 			Class<?> blockCls = Class.forName("net.minecraft.world.level.block.Block", false, cl);
