@@ -92,7 +92,7 @@ done
 
 step "connect the client, let the server place the two probe blocks, read them back"
 # The probe reads at world tick 160; the blocks are placed as soon as the client reports it joined (well before).
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=260 -Dforbric.clientSmokeProbe=0,-57,4;0,-57,6 ${M14_EXTRA_JVM:-}" \
+FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=260 -Dforbric.clientSmokeProbe=0,-57,4;0,-57,6 -Dforbric.clientSmokeProbeIds=item:mcwbridges:andesite_bridge ${M14_EXTRA_JVM:-}" \
 RUNDIR="$CLI" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$CLI/quickPlay/log.json" --quickPlayMultiplayer "127.0.0.1:$PORT" > "$CLOG" 2>&1 &
 CLIENT_PID=$!
@@ -150,6 +150,16 @@ check "fabric-api's remap listeners were told" "told fabric-api's remap listener
 check "the shared mod's block reads back as itself" "block at \(0 -57 4\) is $MOD_BLOCK"   "$CGAME"
 check "the shared mod's item reads back as itself"  "hotbar slot 0 holds $MOD_ITEM "        "$CGAME"
 check "the vanilla control reads back as itself"    "block at \(0 -57 6\) is $VANILLA_BLOCK" "$CGAME"
+
+step "and the disconnect put the ids back (must PASS)"
+# The client logs one entry's raw id before connecting, in the world, and after the clean disconnect. A working
+# sync moves it; a working revert moves it back — both are asserted, since either alone could be a no-op.
+idat() { grep -a "registry id of item mcwbridges:andesite_bridge $1:" "$CGAME" | sed -E 's/.*: ([-0-9a-z]+)$/\1/' | tail -1; }
+ID_BEFORE=$(idat "before connecting"); ID_IN=$(idat "in world"); ID_AFTER=$(idat "after disconnect")
+echo "[kernel] mcwbridges:andesite_bridge item id — before: ${ID_BEFORE:-?}, in world: ${ID_IN:-?}, after: ${ID_AFTER:-?}"
+if [ -n "$ID_BEFORE" ] && [ -n "$ID_IN" ] && [ "$ID_BEFORE" != "$ID_IN" ]; then echo "[kernel] PASS the sync moved the id ($ID_BEFORE -> $ID_IN)"; else echo "[kernel] FAIL the sync moved the id (${ID_BEFORE:-?} -> ${ID_IN:-?})"; FAIL=1; fi
+if [ -n "$ID_BEFORE" ] && [ "$ID_BEFORE" = "$ID_AFTER" ]; then echo "[kernel] PASS the disconnect put it back ($ID_AFTER)"; else echo "[kernel] FAIL the disconnect put it back (before ${ID_BEFORE:-?}, after ${ID_AFTER:-?})"; FAIL=1; fi
+check "the kernel reverted the synced registries" "reverted .* registr.* to their pre-connection ids" "$CGAME"
 
 step "neither side broke (must be ABSENT)"
 check "left cleanly"                   "ClientSmoke\] clean disconnect observed"          "$CLOG"

@@ -63,11 +63,17 @@ public final class KernelForgeWrapperSync {
 	private KernelForgeWrapperSync() {
 	}
 
-	/** Head of {@code RegistryManager.applySnapshot(Map, boolean)}: nothing staged by an aborted earlier pass survives. */
-	public static void beginSnapshotApplication() {
+	/**
+	 * Head of every remap entry point ({@code RegistryManager.applySnapshot}, {@code ClientRegistrySyncHandler.apply}):
+	 * nothing staged by an aborted earlier pass survives, and the pre-connection ids get captured for the disconnect
+	 * ({@link KernelRegistryRevert}). {@code gameClass} is the hooked class itself, pushed as a constant — the loader
+	 * to reflect through.
+	 */
+	public static void beginSnapshotApplication(Class<?> gameClass) {
 		synchronized (STAGED) {
 			STAGED.clear();
 		}
+		KernelRegistryRevert.captureIfNeeded(gameClass);
 	}
 
 	/** The wrapper's {@code clear(boolean)}: {@code false} opens a fresh staging map; {@code true} is not ours to honour. */

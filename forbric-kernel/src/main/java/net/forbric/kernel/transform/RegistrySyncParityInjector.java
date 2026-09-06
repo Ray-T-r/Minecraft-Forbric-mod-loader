@@ -23,6 +23,7 @@ import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
@@ -83,6 +84,8 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 
 	private static final String APPLY_SNAPSHOT = "applySnapshot";
 	private static final String APPLY_SNAPSHOT_DESC = "(Ljava/util/Map;Z)Ljava/util/Set;";
+	private static final String REVERT_TO_FROZEN = "revertToFrozen";
+	private static final String REVERT_OWNER = "net/forbric/kernel/boot/KernelRegistryRevert";
 
 	/** fabric-api's {@code RemappableRegistry.remap}, which its mixin adds to {@code MappedRegistry} and the wrapper inherits. */
 	private static final String REMAP = "remap";
@@ -196,7 +199,8 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 		}
 
 		InsnList head = new InsnList();
-		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "beginSnapshotApplication", "()V", false));
+		head.add(new LdcInsnNode(org.objectweb.asm.Type.getObjectType(node.name))); // a game class, for its loader
+		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "beginSnapshotApplication", "(Ljava/lang/Class;)V", false));
 		target.instructions.insert(head);
 
 		int returns = 0;
@@ -211,6 +215,24 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 			returns++;
 		}
 		target.maxStack = Math.max(target.maxStack, 2);
+
+		// revertToFrozen(): NeoForge's disconnect-time revert, which re-applies a snapshot GameData.freezeData takes
+		// — a freeze the kernel owns, so the snapshot never existed and the call used to be neutered. The kernel
+		// captures its own at the first remap (the head hook above) and this body now puts it back.
+		for (MethodNode m : node.methods) {
+			if (!m.name.equals(REVERT_TO_FROZEN) || !m.desc.equals("()V") || (m.access & Opcodes.ACC_STATIC) == 0) continue;
+			InsnList body = new InsnList();
+			body.add(new LdcInsnNode(org.objectweb.asm.Type.getObjectType(node.name)));
+			body.add(new MethodInsnNode(Opcodes.INVOKESTATIC, REVERT_OWNER, "revertToPreConnection", "(Ljava/lang/Class;)V", false));
+			body.add(new InsnNode(Opcodes.RETURN));
+			m.instructions = body;
+			m.tryCatchBlocks = null;
+			m.localVariables = null;
+			m.maxStack = 1;
+			m.maxLocals = 0;
+			ForbricLog.info("[Forbric/RegistrySync] %s.%s() now restores the kernel's own pre-connection snapshot", className,
+					REVERT_TO_FROZEN);
+		}
 
 		ForbricLog.info("[Forbric/RegistrySync] flushing the Forge-wrapped registries' staged ids at %d return(s) of "
 				+ "%s.%s", returns, className, APPLY_SNAPSHOT);
@@ -244,7 +266,8 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 		}
 
 		InsnList head = new InsnList();
-		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "beginSnapshotApplication", "()V", false));
+		head.add(new LdcInsnNode(org.objectweb.asm.Type.getObjectType(node.name)));
+		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, "beginSnapshotApplication", "(Ljava/lang/Class;)V", false));
 		target.instructions.insert(head);
 		int returns = 0;
 		for (AbstractInsnNode insn = target.instructions.getFirst(); insn != null; insn = insn.getNext()) {

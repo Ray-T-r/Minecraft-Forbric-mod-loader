@@ -56,6 +56,19 @@ public final class ForbricCustomPayloadInterop {
 	private static final String NEO_COMMON_VERSION_PAYLOAD = "net.neoforged.neoforge.network.payload.CommonVersionPayload";
 	private static final String NEO_COMMON_REGISTER_PAYLOAD = "net.neoforged.neoforge.network.payload.CommonRegisterPayload";
 	private static final String NEO_PAYLOAD_REGISTRATION = "net.neoforged.neoforge.network.registration.PayloadRegistration";
+	// Traditional MinecraftForge. Its custom-payload plumbing lost the byte-merge to NeoForge's on both the codec and
+	// the dispatch side, so the kernel routes to its public entry points from here: ForgeHooks.getCustomPayloadCodec
+	// for a channel it owns, ForgeHooks.onCustomPayload for a ForgePayload it should handle, and NetworkContext for
+	// the per-connection channel bookkeeping its channels consult before sending.
+	private static final String FORGE_NETWORK_REGISTRY = "net.minecraftforge.network.NetworkRegistry";
+	private static final String FORGE_HOOKS = "net.minecraftforge.common.ForgeHooks";
+	private static final String FORGE_PAYLOAD = "net.minecraftforge.network.ForgePayload";
+	private static final String FORGE_NETWORK_CONTEXT = "net.minecraftforge.network.NetworkContext";
+	private static final String FORGE_CHANNEL_LIST = "net.minecraftforge.network.ChannelListManager";
+	/** Vanilla's payload size caps, which Forge's codec provider takes as its second argument. */
+	private static final int CLIENTBOUND_MAX_PAYLOAD = 1048576;
+	private static final int SERVERBOUND_MAX_PAYLOAD = 32767;
+	private static final Map<Object, Boolean> FORGE_CHANNELS_DECLARED = Collections.synchronizedMap(new WeakHashMap<>());
 	private static final String CLIENTBOUND_CUSTOM_PAYLOAD_PACKET = "net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket";
 	private static final String SERVERBOUND_CUSTOM_PAYLOAD_PACKET = "net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket";
 	private static final String FORBRIC_MIRROR_VERSION = "forbric-bridge";
@@ -88,21 +101,23 @@ public final class ForbricCustomPayloadInterop {
 		Object fabricEntry = fabricTypeAndCodec(id, protocol, packetFlow);
 		Object fabric = typeAndCodecCodec(fabricEntry);
 		Object neo = neoCodec(id, protocol, packetFlow);
+		Object forge = forgeCodec(id, packetFlow);
 		Object fallbackCodec = fallbackCodec(fallback, id);
 
-		Object direct = uniqueCodec(local, fabric, neo, fallbackCodec);
+		Object direct = uniqueCodec(local, fabric, neo, forge, fallbackCodec);
 		probe(() -> "codec for " + id + " " + protocol + "/" + packetFlow + ": local=" + (local != null)
-				+ " fabric=" + (fabric != null) + " neo=" + (neo != null) + " fallback=" + (fallbackCodec != null)
+				+ " fabric=" + (fabric != null) + " neo=" + (neo != null) + " forge=" + (forge != null)
+				+ " fallback=" + (fallbackCodec != null)
 				+ (direct != null ? " -> direct " + direct.getClass().getSimpleName() : " -> proxy"));
 		if (direct != null) return direct;
 
 		ClassLoader loader = loaderFor(id, protocol, packetFlow);
 		Class<?> streamCodec = load(loader, "net.minecraft.network.codec.StreamCodec");
 		if (streamCodec == null) {
-			return firstNonNull(local, fabric, neo, fallbackCodec);
+			return firstNonNull(local, fabric, neo, forge, fallbackCodec);
 		}
 
-		CandidateSet candidates = new CandidateSet(id, local, fabricEntry, fabric, neo, fallbackCodec);
+		CandidateSet candidates = new CandidateSet(id, local, fabricEntry, fabric, neo, forge, fallbackCodec);
 		return Proxy.newProxyInstance(loader, new Class<?>[] { streamCodec }, new CodecInvocationHandler(candidates));
 	}
 
@@ -132,28 +147,48 @@ public final class ForbricCustomPayloadInterop {
 		probe(() -> "  " + (registration.register ? "register" : "unregister") + " " + registration.channels.size()
 				+ " channel(s): " + registration.channels);
 
+		// The order of the three halves below is a wire contract on BOTH ends, and each half pins one edge of it:
+		//
+		//  1. NeoForge's bookkeeping first (and Forge's, which rides on its head hook). On the server, Fabric's
+		//     receiveRegistration — the mirror in step 2 — runs startConfiguration() synchronously, and Fabric's
+		//     registry-sync task sends fabric:registry/sync from inside it; NeoForge's checkPacket vetoes any channel
+		//     the client has not declared, and it learns the client's channels from exactly this onMinecraftRegister.
+		//     Mirror first and the send throws "Payload fabric:registry/sync may not be sent to the client!" and
+		//     the handshake stalls for good.
+		//  2. Fabric's mirror. On the client this is what sends the client's own minecraft:register. Fabric's own
+		//     body would make exactly this receiveRegistration call and return true, so a payload that is already
+		//     Fabric's is mirrored here too rather than left to the body, which runs only after this method returns.
+		//  3. MinecraftForge's declaration last. It is one more minecraft:register, and a Fabric server treats the
+		//     FIRST register it receives as the client's complete declaration, running its registry-sync check on it
+		//     right there: a Forge-only list ahead of Fabric's, and the client is kicked with "This server requires
+		//     Fabric Loader and Fabric API installed on your client!". So the declaration is held back while
+		//     step 1 runs and sent only after Fabric's.
 		Object connection = fieldValue(addon, "connection");
 		if (connection != null) {
-			syncNeoChannels(connection, registration.register, registration.channels);
+			DECLARATION_DEFERRED.set(Boolean.TRUE);
+			try {
+				syncNeoChannels(connection, registration.register, registration.channels);
+			} finally {
+				DECLARATION_DEFERRED.set(Boolean.FALSE);
+			}
 		} else {
-			probe(() -> "  no connection field on the addon; NeoForge's half was NOT told");
+			probe(() -> "  no connection field on the addon; NeoForge's and Forge's halves were NOT told");
 		}
 
-		if (payload != null && payload.getClass().getName().equals(FABRIC_REGISTRATION_PAYLOAD)) {
-			probe(() -> "  already Fabric's own payload; its body will record the channels");
-			return null; // Fabric's own method will update its sendable channel set.
-		}
-
-		Object fabricPayload = createFabricRegistrationPayload(payload, registration.register, registration.channels);
+		Object fabricPayload = payload != null && payload.getClass().getName().equals(FABRIC_REGISTRATION_PAYLOAD)
+				? payload
+				: createFabricRegistrationPayload(payload, registration.register, registration.channels);
 		if (fabricPayload == null) {
 			probe(() -> "  could NOT synthesize Fabric's payload; Fabric's half was skipped");
-			return null;
+		} else {
+			boolean mirrored = invokeReceiveRegistration(addon, registration.register, fabricPayload);
+			probe(() -> "  mirrored into Fabric receiveRegistration: " + mirrored
+					+ "; sendable=" + channelSet(addon, "getSendableChannels")
+					+ " receivable=" + channelSet(addon, "getReceivableChannels"));
 		}
-		boolean mirrored = invokeReceiveRegistration(addon, registration.register, fabricPayload);
-		probe(() -> "  mirrored into Fabric receiveRegistration: " + mirrored
-				+ "; sendable=" + channelSet(addon, "getSendableChannels")
-				+ " receivable=" + channelSet(addon, "getReceivableChannels"));
-		return Boolean.TRUE;
+
+		if (connection != null && registration.register) declareForgeChannels(connection);
+		return fabricPayload == null ? null : Boolean.TRUE;
 	}
 
 	/**
@@ -503,14 +538,17 @@ public final class ForbricCustomPayloadInterop {
 		private final Object fabricType;
 		private final Object fabric;
 		private final Object neo;
+		private final Object forge;
 		private final Object fallback;
 
-		private CandidateSet(Object id, Object local, Object fabricEntry, Object fabric, Object neo, Object fallback) {
+		private CandidateSet(Object id, Object local, Object fabricEntry, Object fabric, Object neo, Object forge,
+				Object fallback) {
 			this.id = id;
 			this.local = local;
 			this.fabricType = typeAndCodecType(fabricEntry);
 			this.fabric = fabric;
 			this.neo = neo;
+			this.forge = forge;
 			this.fallback = fallback;
 		}
 
@@ -519,21 +557,151 @@ public final class ForbricCustomPayloadInterop {
 				String payloadClass = payload.getClass().getName();
 				if (payloadClass.startsWith("net.neoforged.")) return firstNonNull(neo, local, fabric, fallback);
 				if (payloadClass.startsWith("net.fabricmc.")) return firstNonNull(fabric, local, neo, fallback);
+				// A ForgePayload is Forge's own envelope for every channel it owns, minecraft:register included
+				// (ChannelListManager speaks it) — only Forge's codec knows how to write one.
+				if (payloadClass.startsWith("net.minecraftforge.")) return firstNonNull(forge, fallback);
 				Object payloadType = invokeNoArg(payload, "type");
 				if (fabric != null && fabricType != null && fabricType.equals(payloadType)) return fabric;
 				if (fabric != null && !payloadClass.startsWith("net.neoforged.")) return fabric;
 			}
-			return firstNonNull(local, neo, fabric, fallback);
+			return firstNonNull(local, neo, fabric, forge, fallback);
 		}
 
 		private Object selectDecode() {
+			// Forge sits last on purpose: it claims minecraft:register and the c: channels too, and those must keep
+			// decoding into the NeoForge/Fabric types the negotiator translates between. A channel only Forge knows
+			// — a Forge mod's own — reaches it because nobody earlier has a codec for that id.
 			if (isDinnerboneChannelRegistration(id)) {
-				return firstNonNull(neo, fabric, local, fallback);
+				return firstNonNull(neo, fabric, local, forge, fallback);
 			}
 			if (isCommonNegotiation(id)) {
-				return firstNonNull(neo, local, fabric, fallback);
+				return firstNonNull(neo, local, fabric, forge, fallback);
 			}
-			return firstNonNull(local, fabric, neo, fallback);
+			return firstNonNull(local, fabric, neo, forge, fallback);
+		}
+	}
+
+	/**
+	 * MinecraftForge's codec for {@code id}, when Forge has a channel by that name: {@code ForgeHooks
+	 * .getCustomPayloadCodec}, the same provider Forge's own patched packets use as their fallback. Null for every
+	 * other id — the provider would hand back a DiscardedPayload codec for those, which is not Forge's to decide.
+	 */
+	private static Object forgeCodec(Object id, Object packetFlow) {
+		ClassLoader loader = loaderFor(id, packetFlow);
+		Class<?> registry = load(loader, FORGE_NETWORK_REGISTRY);
+		Class<?> hooks = load(loader, FORGE_HOOKS);
+		if (registry == null || hooks == null || id == null) return null;
+		Object target = invokeStatic(registry, "findTarget", id);
+		if (target == null || target == INVOKE_FAILED) return null;
+		int max = packetFlow != null && "CLIENTBOUND".equals(String.valueOf(packetFlow)) ? CLIENTBOUND_MAX_PAYLOAD : SERVERBOUND_MAX_PAYLOAD;
+		Object codec = invokeStatic(hooks, "getCustomPayloadCodec", id, max);
+		return codec == INVOKE_FAILED ? null : codec;
+	}
+
+	/**
+	 * Called from the head of the client and server common listeners' {@code handleCustomPayload}, which NeoForge
+	 * won in the merge and Forge's {@code ForgeHooks.onCustomPayload} therefore vanished from (it survived only in
+	 * the play-phase server listener, which Forge overrides outright). Hands a {@code ForgePayload} — and nothing
+	 * else: minecraft:register decoded as NeoForge's type must not be pushed into Forge's ChannelListManager — to
+	 * Forge's dispatcher, and says whether it took it.
+	 */
+	public static boolean dispatchForgePayload(Object listener, Object packet) {
+		if (listener == null || packet == null) return false;
+		Object payload = invokeNoArg(packet, "payload");
+		if (payload == null || !FORGE_PAYLOAD.equals(payload.getClass().getName())) return false;
+		Object connection = fieldValue(listener, "connection");
+		if (connection == null) return false;
+		ClassLoader loader = loaderFor(payload);
+		Class<?> hooks = load(loader, FORGE_HOOKS);
+		Class<?> payloadApi = load(loader, "net.minecraft.network.protocol.common.custom.CustomPacketPayload");
+		Class<?> connectionCls = load(loader, "net.minecraft.network.Connection");
+		if (hooks == null || payloadApi == null || connectionCls == null) return false;
+		try {
+			Object handled = hooks.getMethod("onCustomPayload", payloadApi, connectionCls).invoke(null, payload, connection);
+			probe(() -> "forge dispatch of " + payloadId(payload) + " on " + listener.getClass().getSimpleName() + " -> " + handled);
+			if (!Boolean.TRUE.equals(handled)) {
+				ForbricLog.warn("[Forbric] no MinecraftForge handler took " + payloadId(payload) + " on "
+						+ listener.getClass().getSimpleName() + "; dropped, as Forge itself would");
+			}
+		} catch (Throwable t) {
+			// Loud: a Forge mod's packet that its own dispatcher rejects is a bug in this bridge or in the mod.
+			ForbricLog.warn("[Forbric] MinecraftForge's dispatcher threw on " + payloadId(payload) + " (" + listener.getClass().getSimpleName() + ")", unwrap(t));
+		}
+		// A ForgePayload is Forge's whether or not a handler took it. Falling through would hand it to NeoForge's
+		// body, whose answer to a channel it never negotiated is to kick the client — a verdict Forge never gives.
+		return true;
+	}
+
+	/**
+	 * Called from the head of NeoForge's {@code NetworkRegistry.checkPacket} (both overloads): a ForgePayload is not
+	 * NeoForge's to police. Its check compares the payload's channel with what NeoForge negotiated, and a Forge
+	 * channel is not in that list by construction — so a Forge mod's client could not even SEND on its own channel
+	 * ("Payload … may not be sent to the server!"). Says whether the packet carries a ForgePayload.
+	 */
+	public static boolean isForgePayloadPacket(Object packet) {
+		if (packet == null) return false;
+		Object payload = invokeNoArg(packet, "payload");
+		return payload != null && FORGE_PAYLOAD.equals(payload.getClass().getName());
+	}
+
+	/**
+	 * Called from the head of NeoForge's {@code NetworkRegistry.onMinecraftRegister}/{@code onMinecraftUnregister}
+	 * — the one place every peer channel declaration passes on this base, with or without fabric-api on board.
+	 * Keeps Forge's per-connection channel set in step, and announces the local Forge channels back the first
+	 * time the peer declares.
+	 */
+	public static void onNeoChannelRegistration(Object connection, Object channels, boolean register) {
+		if (connection == null || !(channels instanceof Collection<?> set)) return;
+		try {
+			syncForgeChannels(connection, register, set);
+			// Inside the Fabric-addon arbitration the declaration is sent later, after Fabric's own register — see
+			// handleFabricChannelRegistrationAddon. Without fabric-api this hook is the only place, so send it now.
+			if (register && !DECLARATION_DEFERRED.get()) declareForgeChannels(connection);
+		} catch (RuntimeException e) {
+			ForbricLog.warn("[Forbric] could not keep MinecraftForge's channel list in step", e);
+		}
+	}
+
+	/** Set while the Fabric-addon arbitration tells NeoForge's half, so the Forge declaration waits for Fabric's. */
+	private static final ThreadLocal<Boolean> DECLARATION_DEFERRED = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+	/**
+	 * Forge's per-connection view of what the peer listens on, kept from the same minecraft:register traffic the
+	 * negotiator already translates for NeoForge and Fabric — Forge's own listener for that channel never runs here.
+	 * {@code Channel.isRemotePresent} reads this set; a mod that checks it before sending would otherwise never send.
+	 */
+	private static void syncForgeChannels(Object connection, boolean register, Collection<?> channels) {
+		ClassLoader loader = loaderFor(connection);
+		Class<?> contextCls = load(loader, FORGE_NETWORK_CONTEXT);
+		if (contextCls == null) return;
+		Object context = invokeStatic(contextCls, "get", connection);
+		if (context == null || context == INVOKE_FAILED) return;
+		Object remote = fieldValue(context, "remoteChannels");
+		if (!(remote instanceof Collection<?>)) return;
+		@SuppressWarnings("unchecked")
+		Collection<Object> set = (Collection<Object>) remote;
+		if (register) set.addAll(channels);
+		else set.removeAll(channels);
+	}
+
+	/**
+	 * Announces the local Forge channels to the peer, once per connection, the first time the peer declares its own:
+	 * {@code ChannelListManager.addChannels(connection)} sends a minecraft:register naming every channel Forge
+	 * knows, exactly as Forge's RegisterChannelsTask would in a configuration phase the kernel does not run. A peer
+	 * without Forge reads it as an ordinary register.
+	 */
+	private static void declareForgeChannels(Object connection) {
+		if (connection == null || FORGE_CHANNELS_DECLARED.putIfAbsent(connection, Boolean.TRUE) != null) return;
+		ClassLoader loader = loaderFor(connection);
+		Class<?> manager = load(loader, FORGE_CHANNEL_LIST);
+		Class<?> connectionCls = load(loader, "net.minecraft.network.Connection");
+		if (manager == null || connectionCls == null) return;
+		try {
+			manager.getMethod("addChannels", connectionCls).invoke(null, connection);
+			probe(() -> "declared Forge's channels to the peer");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric] could not declare MinecraftForge's channels to the peer — a mod that asks "
+					+ "Channel.isRemotePresent before sending will think they are absent", unwrap(t));
 		}
 	}
 
@@ -778,8 +946,16 @@ public final class ForbricCustomPayloadInterop {
 			return true;
 		} catch (ReflectiveOperationException | RuntimeException e) {
 			ForbricLog.warn("[Forbric] could not mirror channel-registration payload into Fabric networking", unwrap(e));
+			// The loader's own log is not always wired on a dedicated server; under -Dforbric.debug say it here too.
+			probe(() -> "  receiveRegistration threw: " + stackTraceOf(unwrap(e)));
 			return false;
 		}
+	}
+
+	private static String stackTraceOf(Throwable t) {
+		java.io.StringWriter out = new java.io.StringWriter();
+		t.printStackTrace(new java.io.PrintWriter(out));
+		return out.toString();
 	}
 
 	private static void syncNeoChannels(Object connection, boolean register, Collection<?> channels) {

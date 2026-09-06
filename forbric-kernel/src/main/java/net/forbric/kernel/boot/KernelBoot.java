@@ -436,16 +436,11 @@ public final class KernelBoot {
 		if (side != Side.CLIENT) return;
 
 		// Leaving a world, Minecraft.disconnect calls NeoForge's RegistryManager.revertToFrozen — the client-only
-		// undo of server-synced registry ids back to a "frozen" snapshot. It does not survive the kernel's native
-		// registration: GameData.freezeData throws "already frozen" before its takeFrozenSnapshot tail runs, so
-		// frozenSnapshot stays null → applySnapshot(null) NPEs on the forEach; and even with the snapshot forced,
-		// applySnapshot's registerIdMapping hits a null Holder because the kernel-managed registry state does not
-		// round-trip through NeoForge's snapshot format. The kernel OWNS the registry lifecycle (it replaces this
-		// whole freeze/snapshot/revert machinery), so the revert is both unnecessary and unsound here — stub it, like
-		// the other NeoForge lifecycle hooks the kernel replaces. Client-only: no dedicated-server path calls it.
-		neuter.add(new MethodBodyNeuter.Target("net.neoforged.neoforge.registries.RegistryManager", "revertToFrozen",
-				"()V", "kernel owns the registry freeze/revert lifecycle; NeoForge's snapshot revert does not round-trip "
-				+ "against kernel-managed registries (disconnect-time NPE)"));
+		// undo of server-synced registry ids back to a "frozen" snapshot. NeoForge's own body cannot run here: the
+		// kernel owns the freeze, so GameData.freezeData never took the snapshot it re-applies (frozenSnapshot null
+		// → NPE). It used to be neutered for that; it is no longer, because RegistrySyncParityInjector REWRITES the
+		// body to apply the kernel's own pre-connection snapshot (KernelRegistryRevert) — and this neuter, registered
+		// after that injector, was emptying the rewritten body again. Do not add it back.
 
 		for (String owner : new String[] {
 				"net.neoforged.neoforge.client.loading.ClientModLoader",
