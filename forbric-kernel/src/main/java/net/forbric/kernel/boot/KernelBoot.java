@@ -254,6 +254,12 @@ public final class KernelBoot {
 		// of fabric-api's mixin targets silently stopped them doing.
 		chain.register(TransformPhase.COREMOD, new RegistryAliasParityInjector());
 
+		// …and NeoForge's configuration-phase registry sync remaps a registry through MappedRegistry fields those same
+		// wrappers never fill, so the first real client to connect was dropped with "Failed to sync registries from the
+		// server: NullPointerException". The wrapper gets NeoForge's remap contract and Forge's own injectSnapshot
+		// does the work.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistrySyncParityInjector());
+
 		// A multiloader mod ships one pack.mcmeta carrying a section per loader, and on Forbric all three parsers are
 		// live — so a Fabric-only build gets its neoforge:overlays section read by NeoForge's parser and throws on a
 		// condition only a NeoForge build would have registered. Vanilla drops the ENTIRE pack for that. Registered

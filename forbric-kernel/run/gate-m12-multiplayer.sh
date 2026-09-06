@@ -15,24 +15,31 @@
 # Deliberately NOT port 25565. A developer, or another agent session, may have a server on the default port; a
 # gate that silently connects to someone else's world would be both wrong and hard to notice.
 #
-# ⚠️ THIS GATE IS RED ON ITS FIRST RUN, AND THAT IS THE POINT. It found, immediately, a real bug that eleven
-# green gates could not see: the server kicks its own client with fabric-api's
-#     "This server requires Fabric Loader and Fabric API installed on your client!"  (namespace: neoforge)
-# even though that client is running the very same fabric-api.
+# THIS GATE ARRIVED RED AND EARNED ITS KEEP: four bugs that eleven green gates could not see, because none of them
+# ever connected a client over a socket and singleplayer negotiates in memory (no configuration-phase handshake,
+# no registry sync, no packet ever encoded). In the order they fell:
 #
-# Traced to fabric's RegistrySyncManager.configureClient, which reads:
-#     if (!DEBUG && server.isSingleplayerOwner(owner)) return;            ← why no other gate ever hit this
-#     if (!ServerConfigurationNetworking.canSend(handler, RegistrySyncPayload.ID)
-#             && !areAllRegistriesOptional(map)) { disconnect(...); }
-# canSend is false, i.e. the server does not yet believe the client can receive that payload — the client's
-# channel declaration has not been recorded on Fabric's side of the addon at the moment the check runs. The
-# wiring is not missing: CommonNetworkInteropInjector + ForbricCustomPayloadInterop already feed BOTH stacks
-# (invokeReceiveRegistration for Fabric, syncNeoChannels for NeoForge). The suspect is ORDERING — the same shim
-# "treats Fabric/NeoForge common-networking tasks as equivalent at finishCurrentTask", so the configuration
-# phase can advance on NeoForge's task before Fabric's registration has landed.
+#  1. The server kicked its own client: "This server requires Fabric Loader and Fabric API installed on your
+#     client!" NeoForge's patched ClientConfigurationPacketListenerImpl.handleCustomPayload answers the server's
+#     minecraft:register itself and RETURNS, never reaching the superclass where Fabric's dispatch hook lives — so the
+#     client declared NeoForge's channels only, and Fabric's ServerConfigurationNetworkAddon treats the FIRST register
+#     as the complete declaration (SENT -> RECEIVED -> startConfiguration -> configureClient -> canSend false -> kick).
+#     Fix: CommonNetworkInteropInjector splices the super call in BEFORE NeoForge's reply, so Fabric declares first.
+#  2. The server could not ENCODE neoforge:recipe_content (ClassCastException to DiscardedPayload): NeoForge's own
+#     payload types had never registered on ANY dedicated server the kernel booted — NetworkRegistry.setup() fans
+#     RegisterPayloadHandlersEvent out over ModList, and the baseline container was only put there on the client.
+#     Fix: publishModBusDelivery runs on both sides; the setup line now reports what actually registered.
+#  3. ClientNetworkRegistry.setup() ran on the server too and, once NeoForge's payloads existed, correctly failed
+#     "missing client-side handlers". Fix: client-only, as genuine NeoForge has it.
+#  4. The client died applying NeoForge's frozen-registry snapshot: NullPointerException "holder is null" in
+#     MappedRegistry.registerIdMapping. Seventeen builtin registries are MinecraftForge NamespacedWrappers whose
+#     inherited MappedRegistry fields stay empty; NeoForge remaps through exactly those fields. Fix:
+#     RegistrySyncParityInjector gives the wrapper NeoForge's clear/registerIdMapping contract and applies the staged
+#     ids through Forge's own GameData.injectSnapshot (KernelForgeWrapperSync).
 #
-# Left red on purpose rather than deleted or weakened: this is the first test that reaches the configuration
-# phase over a socket, and a gate that documents a real defect is worth more than one tuned to pass.
+# Each is pinned below by an assertion that fails on the log line it used to produce. Known gap, documented in
+# KernelForgeWrapperSync: fabric-api's own remap is a no-op on those seventeen wrappers, so a Forbric client on a
+# PURE Fabric server does not get them remapped — both ends Forbric is what this gate exercises.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -110,7 +117,9 @@ echo "[kernel] client pid=$CLIENT_PID (killed by pid only — another client may
 CGAME="$CLI/logs/latest.log"
 for i in $(seq 1 400); do
   kill -0 "$CLIENT_PID" 2>/dev/null || { echo "[kernel] client exited on its own after ~${i}s"; break; }
-  grep -qE 'ClientSmoke\] clean disconnect observed|Game crashed|Mod Loading has failed|Network Protocol Error|Failed to connect' \
+  # "Client disconnected with reason" is an outcome too: a kicked client sits on the disconnect screen for the
+  # whole 400 s budget otherwise, and nothing that happens there is evidence.
+  grep -qE 'ClientSmoke\] clean disconnect observed|Game crashed|Mod Loading has failed|Network Protocol Error|Failed to connect|Client disconnected with reason' \
        "$CGAME" 2>/dev/null && { echo "[kernel] outcome reached after ~${i}s"; break; }
   sleep 1
 done
@@ -140,6 +149,17 @@ check "client finished configuring"  "ClientSmoke\] joined world via quick-play"
 check_absent "no registry mismatch"  "Registry (mismatch|remapping failed)|Received unknown|Missing registry"  "$CLOG"
 check_absent "no unknown payload"    "Unknown custom packet|Unregistered payload|Payload may not be sent"      "$CLOG"
 check_absent "no protocol error"     "Network Protocol Error|Incompatible client|Outdated (client|server)"     "$CLOG"
+# The second bug this gate found: the server could not ENCODE neoforge:recipe_content, because NeoForge's own
+# payload types had never registered on any dedicated server (its container was missing from ModList, so the
+# registration event fanned out to mods only). Singleplayer never encodes, so no other gate could see it.
+check_absent "every payload encodes"  "Failed to encode packet"                          "$SLOG"
+check_absent "every payload decodes"  "Failed to decode packet|Failed decoding custom payload" "$CLOG"
+check "NeoForge's own payloads registered on the server" "NeoForge's own included: yes" "$SLOG"
+# The third: seventeen builtin registries are MinecraftForge wrappers, and NeoForge's registry sync remapped them
+# through MappedRegistry fields the wrapper never fills — NPE, "Failed to sync registries from the server". The
+# server's ids now reach them through Forge's own injectSnapshot; this line is that path reporting in.
+check "Forge-wrapped registries followed the server's ids" "Forge-wrapped registr.* followed the server's ids" "$CLOG"
+check_absent "client applied every registry sync" "Failed to sync registries|Failed to handle registry sync"  "$CLOG"
 
 step "it played and left cleanly (must PASS)"
 check "survived real simulation"     "ClientSmoke\] client-ready after"                 "$CLOG"

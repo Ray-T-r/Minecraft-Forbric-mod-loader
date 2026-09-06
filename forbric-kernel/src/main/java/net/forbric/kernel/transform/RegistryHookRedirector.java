@@ -57,6 +57,14 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>Scope note: for M1 (vanilla boot, zero mods) identity is fully correct — vanilla never consults
  * {@code RegistryManager}. The Forge {@code RegisterEvent}/{@code ForgeRegistry} path that some Forge mods
  * expect is a separate, native concern handled at M3 (kernel-driven dispatch), not by resurrecting the wrapper.
+ *
+ * <p><b>What this does NOT mean today.</b> "Never instantiated" holds for THIS seam only. Once the kernel constructs
+ * the traditional-Forge baseline ({@code KernelForgeBaseline}, so that {@code ForgeRegistries.BLOCKS} and
+ * {@code BuiltInRegistries.BLOCK} are one store), Forge's own {@code RegistryManager.injectForgeRegistry} replaces
+ * seventeen builtin registries in the root registry with {@code NamespacedWrapper}s — block, item, entity_type,
+ * fluid, attribute, sound_event, particle_type, … — and the rest of the kernel is written for that reality
+ * ({@code reopenForgeRegistries}, {@code RegistryAliasParityInjector}, {@code RegistrySyncParityInjector}). Read
+ * the paragraphs above as the history of why the FIRST creation stays plain, not as a description of the runtime.
  */
 public final class RegistryHookRedirector implements ClassTransformer {
 	public static final String GAMEDATA = "net.minecraftforge.registries.GameData";

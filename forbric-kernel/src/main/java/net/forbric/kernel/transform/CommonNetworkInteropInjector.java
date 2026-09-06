@@ -19,6 +19,7 @@ package net.forbric.kernel.transform;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FrameNode;
 import org.objectweb.asm.tree.InsnList;
@@ -91,6 +92,12 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 
 	private static final String CUSTOM_PAYLOAD = "net/minecraft/network/protocol/common/custom/CustomPacketPayload";
 
+	private static final String CLIENT_CONFIG_LISTENER = "net.minecraft.client.multiplayer.ClientConfigurationPacketListenerImpl";
+	private static final String HANDLE_PAYLOAD = "handleCustomPayload";
+	private static final String HANDLE_PAYLOAD_DESC = "(Lnet/minecraft/network/protocol/common/ClientboundCustomPayloadPacket;)V";
+	private static final String NEO_PACKAGE = "net/neoforged/";
+	private static final String NEO_SEND_INITIAL_CHANNELS = "sendInitialListeningChannels";
+
 	private static final String SERVER_CONFIG = "net.minecraft.server.network.ServerConfigurationPacketListenerImpl";
 	private static final String FINISH_TASK = "finishCurrentTask";
 	private static final String FINISH_TASK_DESC = "(Lnet/minecraft/server/network/ConfigurationTask$Type;)V";
@@ -108,7 +115,8 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		boolean fabricAddon = FABRIC_ADDONS.contains(className);
 		boolean serverConfig = SERVER_CONFIG.equals(className);
-		if (!fabricAddon && !serverConfig) return classBytes;
+		boolean clientConfig = CLIENT_CONFIG_LISTENER.equals(className);
+		if (!fabricAddon && !serverConfig && !clientConfig) return classBytes;
 
 		ClassNode node = new ClassNode();
 		// EXPAND_FRAMES so every original frame is an absolute F_NEW node; the explicit frames we author at our own
@@ -130,6 +138,16 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				changed = true;
 				ForbricLog.info("[Forbric/Net] treating Fabric/NeoForge common-networking tasks as equivalent at %s.%s",
 						className, FINISH_TASK);
+			} else if (clientConfig && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(HANDLE_PAYLOAD_DESC)) {
+				if (shareMinecraftRegisterWithSuper(m)) {
+					changed = true;
+					ForbricLog.info("[Forbric/Net] letting minecraft:register reach BOTH stacks at %s.%s, Fabric first — "
+							+ "NeoForge's override answered it alone and returned, and Fabric's server treats the first "
+							+ "register as the whole declaration", className, HANDLE_PAYLOAD);
+				} else {
+					ForbricLog.warn("[Forbric/Net] %s.%s no longer swallows minecraft:register the way this fix "
+							+ "expects; leaving it alone", className, HANDLE_PAYLOAD);
+				}
 			}
 		}
 		if (!changed) return classBytes;
@@ -178,6 +196,86 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 		body.add(notEquivalent);
 		body.add(new FrameNode(Opcodes.F_NEW, 2, new Object[] {owner, CONFIG_TASK_TYPE}, 0, new Object[] {}));
 		return body;
+	}
+
+	/**
+	 * Lets Fabric answer the server's {@code minecraft:register} — and answer it FIRST.
+	 *
+	 * <p>{@code minecraft:register} is the one channel BOTH ecosystems claim, and on the merged base they claim it
+	 * at two different depths of the same call chain. NeoForge patched the vanilla override:
+	 * <pre>
+	 *   ClientConfigurationPacketListenerImpl.handleCustomPayload(packet) {
+	 *       if (!initializedConnection &amp;&amp; packet.payload() instanceof MinecraftRegisterPayload) {
+	 *           ClientNetworkRegistry.sendInitialListeningChannels(this);   // NeoForge's channel list goes out
+	 *           return;                                                     // ← never reaches super
+	 *       }
+	 *       ...
+	 *       super.handleCustomPayload(packet);
+	 *   }
+	 * </pre>
+	 * while Fabric injects its dispatch at the HEAD of the SUPERCLASS's {@code handleCustomPayload}. On a real
+	 * NeoForge instance nothing is downstream of that {@code return}; on a real Fabric instance the override does
+	 * not exist. Only on a merged base does one ecosystem's early exit starve the other's entry point — and
+	 * Fabric's {@code ClientConfigurationNetworkAddon.receiveRegistration} is the SOLE caller of
+	 * {@code sendInitialChannelRegistrationPacket()}, so the client never declared a single Fabric channel.
+	 *
+	 * <p>Merely appending the super call before that {@code return} is not enough, and the reason is a contract on
+	 * the OTHER end of the wire. Fabric's {@code ServerConfigurationNetworkAddon.receiveRegistration} treats the
+	 * client's FIRST {@code minecraft:register} as its complete declaration: it flips {@code SENT → RECEIVED} and
+	 * calls {@code startConfiguration()} synchronously, which runs {@code RegistrySyncManager.configureClient} and
+	 * its {@code canSend(fabric:registry/sync)} check right there. If NeoForge's list has gone out first, that check
+	 * sees seven NeoForge channels and kicks with "This server requires Fabric Loader and Fabric API installed on
+	 * your client!" — while Fabric's list is one packet behind on the same socket. A pure Fabric server would do the
+	 * same, so this is the merged CLIENT's obligation: be a well-formed Fabric client, whose first register is
+	 * Fabric's. NeoForge's {@code NetworkRegistry.onMinecraftRegister} is purely additive and order-blind, so a
+	 * NeoForge server is indifferent to which list arrives first.
+	 *
+	 * <p>Hence the super call is spliced in BEFORE {@code sendInitialListeningChannels}, not before the
+	 * {@code return}: Fabric sees the payload (once — our addon prologue translates it and cancels the vanilla body)
+	 * and replies, then NeoForge replies, then the override returns as it always did. NeoForge's own guard stays
+	 * the condition — no duplicate of {@code initializedConnection} to drift — and no branch target is added, so
+	 * every original stack map frame stays valid.
+	 */
+	private static boolean shareMinecraftRegisterWithSuper(MethodNode m) {
+		// Follow the method's OWN super call rather than naming the superclass, so this tracks a renamed base class.
+		MethodInsnNode superCall = null;
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() != Opcodes.INVOKESPECIAL) continue;
+			MethodInsnNode call = (MethodInsnNode) insn;
+			if (call.name.equals(HANDLE_PAYLOAD) && call.desc.equals(HANDLE_PAYLOAD_DESC)) {
+				superCall = call;
+				break;
+			}
+		}
+		if (superCall == null) return false;
+
+		boolean patched = false;
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() != Opcodes.INVOKESTATIC) continue;
+			MethodInsnNode call = (MethodInsnNode) insn;
+			if (!call.name.equals(NEO_SEND_INITIAL_CHANNELS) || !call.owner.startsWith(NEO_PACKAGE)) continue;
+			// Only the early-exit branch: the NeoForge reply immediately followed by the return that skips super.
+			AbstractInsnNode exit = nextOpcode(call);
+			if (exit == null || exit.getOpcode() != Opcodes.RETURN) continue;
+			// Spliced between the argument push and the static call: the stack holds NeoForge's listener argument,
+			// we push two more and the invokespecial consumes exactly those two, leaving the argument in place.
+			InsnList first = new InsnList();
+			first.add(new VarInsnNode(Opcodes.ALOAD, 0)); // this
+			first.add(new VarInsnNode(Opcodes.ALOAD, 1)); // the packet
+			first.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, superCall.owner, superCall.name, superCall.desc, false));
+			m.instructions.insertBefore(call, first);
+			patched = true;
+		}
+		if (patched) bumpStack(m, 3);
+		return patched;
+	}
+
+	/** The next node that is a real instruction — labels, frames and line numbers all report opcode -1. */
+	private static AbstractInsnNode nextOpcode(AbstractInsnNode from) {
+		for (AbstractInsnNode insn = from.getNext(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() >= 0) return insn;
+		}
+		return null;
 	}
 
 	/** Our prologue pushes two references before the call; COMPUTE_MAXS still recomputes, this only raises the floor. */
