@@ -163,6 +163,8 @@ check "the kernel reverted the synced registries" "reverted .* registr.* to thei
 
 step "neither side broke (must be ABSENT)"
 check "left cleanly"                   "ClientSmoke\] clean disconnect observed"          "$CLOG"
+check "the client stopped its config file-watchers at close" "Forbric/Shutdown\\] stopped [0-9]+ config file-watcher" "$CLOG"
+check_absent "NeoForge loaded its default server configs once" "Overwriting non-null config" "$CLOG"
 check_absent "no client crash"         "Preparing crash report"                            "$CLOG"
 check_absent "no server crash"         "Preparing crash report|Encountered an unexpected exception" "$SLOG"
 check_absent "no thread leaked past main" "Client shutdown from post-main"                "$CLOG"

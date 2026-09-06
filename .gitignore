@@ -45,6 +45,8 @@ downloads/
 *.log
 *.log.gz
 config/
+# ...but not a source package that happens to be called config (test stand-ins for FML's config classes).
+!*/src/**/config/
 debug/
 usercache.json
 usernamecache.json
