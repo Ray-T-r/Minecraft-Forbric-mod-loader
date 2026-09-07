@@ -73,6 +73,7 @@ public final class GameEventMultiplexer {
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so
 			// the local player's integrated-server connection is rejected "Server is still starting" and singleplayer
 			// world-join fails. Re-emit the dropped Forge hook off NeoForge's surviving ServerStarted/Stopping events.
+			n += bridgeForgeServerAboutToStart(cl, neoBus, addListener, lowest, mcServer);
 			n += bridgeServerLifecycle(cl, neoBus, addListener, lowest, mcServer,
 					"net.neoforged.neoforge.event.server.ServerStartedEvent", "handleServerStarted", true);
 			n += bridgeServerLifecycle(cl, neoBus, addListener, lowest, mcServer,
@@ -245,6 +246,82 @@ public final class GameEventMultiplexer {
 	 * on a dedicated server it merely opens Forge's login gate and delivers the lifecycle event Forge mods expect,
 	 * neither of which the current (Neo-only) merged path did.
 	 */
+	/**
+	 * The one step earlier in the start sequence, forwarded piece by piece rather than whole.
+	 *
+	 * <p>MinecraftForge's {@code handleServerAboutToStart} does three unrelated things in a row: it reads the
+	 * per-world SERVER configs that its configuration-phase sync then pushes to joining clients, it applies Forge's
+	 * biome modifiers, and it posts its own {@code ServerAboutToStartEvent}. Nothing had been calling it, so Forge
+	 * mods' server configs stayed at their defaults on both ends of every connection and no Forge mod had ever
+	 * received that event.
+	 *
+	 * <p>Forwarding the method whole does not work here: the biome-modifier pass looks up a datapack registry
+	 * ({@code forge:biome_modifier}) that no baseline declares under the kernel, so it always throws — and being in
+	 * the middle, it would take the event with it every time. Each piece therefore gets its own guard, so a Forge
+	 * feature the kernel does not carry costs only itself.
+	 */
+	private static int bridgeForgeServerAboutToStart(ClassLoader cl, Object bus, Method addListener, Object prio,
+			Class<?> mcServer) throws Exception {
+		Class<?> evt = Class.forName("net.neoforged.neoforge.event.server.ServerAboutToStartEvent", false, cl);
+		Method getServer = evt.getMethod("getServer");
+		Class<?> forgeHooks = Class.forName("net.minecraftforge.server.ServerLifecycleHooks", false, cl);
+		Class<?> tracker = Class.forName("net.minecraftforge.fml.config.ConfigTracker", false, cl);
+		Class<?> typeCls = Class.forName("net.minecraftforge.fml.config.ModConfig$Type", false, cl);
+		Class<?> forgeEvent = Class.forName("net.minecraftforge.event.server.ServerAboutToStartEvent", false, cl);
+		@SuppressWarnings({"unchecked", "rawtypes"})
+		Object serverConfigs = Enum.valueOf((Class) typeCls, "SERVER");
+		Method configPath = forgeHooks.getDeclaredMethod("getServerConfigPath", mcServer);
+		configPath.setAccessible(true);
+		Method loadConfigs = tracker.getMethod("loadConfigs", typeCls, java.nio.file.Path.class);
+		Method runModifiers = forgeHooks.getDeclaredMethod("runModifiers", mcServer);
+		runModifiers.setAccessible(true);
+		Constructor<?> forgeEventCtor = forgeEvent.getConstructor(mcServer);
+		Object forgeBus = forgeEvent.getField("BUS").get(null);
+		Method post = KernelBusSupport.singleArgMethod(forgeBus.getClass(), "post");
+
+		AtomicBoolean warnedConfigs = new AtomicBoolean();
+		AtomicBoolean warnedModifiers = new AtomicBoolean();
+		AtomicBoolean warnedEvent = new AtomicBoolean();
+		Consumer<Object> listener = neoEvt -> {
+			Object server;
+			try {
+				server = getServer.invoke(neoEvt);
+			} catch (Throwable t) {
+				ForbricLog.warn("[Forbric/EventMux] NeoForge's about-to-start event carried no server; MinecraftForge's "
+						+ "server configs stay at their defaults", KernelBusSupport.unwrap(t));
+				return;
+			}
+			try {
+				loadConfigs.invoke(null, serverConfigs, configPath.invoke(null, server));
+			} catch (Throwable t) {
+				if (warnedConfigs.compareAndSet(false, true)) {
+					ForbricLog.warn("[Forbric/EventMux] could not load MinecraftForge's per-world SERVER configs — its "
+							+ "mods keep their defaults here and on every client that joins",
+							KernelBusSupport.unwrap(t));
+				}
+			}
+			try {
+				runModifiers.invoke(null, server);
+			} catch (Throwable t) {
+				if (warnedModifiers.compareAndSet(false, true)) {
+					ForbricLog.debug("[Forbric/EventMux] MinecraftForge's biome modifiers did not apply (%s) — nothing "
+							+ "declares its biome-modifier datapack registry under the kernel; the rest of its "
+							+ "server start is unaffected", String.valueOf(KernelBusSupport.unwrap(t)));
+				}
+			}
+			try {
+				post.invoke(forgeBus, forgeEventCtor.newInstance(server));
+			} catch (Throwable t) {
+				if (warnedEvent.compareAndSet(false, true)) {
+					ForbricLog.warn("[Forbric/EventMux] MinecraftForge's ServerAboutToStartEvent did not reach its mods",
+							KernelBusSupport.unwrap(t));
+				}
+			}
+		};
+		addListener.invoke(bus, prio, false, evt, listener);
+		return 1;
+	}
+
 	private static int bridgeServerLifecycle(ClassLoader cl, Object bus, Method addListener, Object prio,
 			Class<?> mcServer, String neoEventClass, String forgeMethod, boolean openLoginGate) throws Exception {
 		Class<?> evt = Class.forName(neoEventClass, false, cl);

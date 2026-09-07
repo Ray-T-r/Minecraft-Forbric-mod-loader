@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.WeakHashMap;
 
 import net.forbric.loader.impl.util.ForbricLog;
@@ -642,6 +643,119 @@ public final class ForbricCustomPayloadInterop {
 		if (packet == null) return false;
 		Object payload = invokeNoArg(packet, "payload");
 		return payload != null && FORGE_PAYLOAD.equals(payload.getClass().getName());
+	}
+
+	// --- MinecraftForge's login/configuration handshake ------------------------------------------------------------
+	//
+	// Forge's handshake is five configuration-phase tasks (register channels, mod versions, channel versions, sync
+	// registries, sync configs) that tell each end what the other is running and push the server's SERVER-type
+	// configs to the client. Three links of that chain lost the byte-merge to NeoForge, and the kernel's injected
+	// prologues call the three hooks below to restore them. Everything here is a no-op without MinecraftForge on
+	// board, and `-Dforbric.forgeHandshake=off` turns the whole thing off.
+
+	private static final String FORGE_NETWORK_REGISTRY_CLASS = "net.minecraftforge.network.NetworkRegistry";
+	private static final String FORGE_EVENT_FACTORY = "net.minecraftforge.event.ForgeEventFactory";
+	private static final String FORGE_HOOKS_COMMON = "net.minecraftforge.common.ForgeHooks";
+	private static final String FORGE_SYNC_REGISTRIES_TASK = "net.minecraftforge.network.tasks.SyncRegistriesTask";
+	private static final boolean FORGE_HANDSHAKE = !"off".equals(System.getProperty("forbric.forgeHandshake"));
+	private static final Map<Object, Boolean> FORGE_ACTIVATED = Collections.synchronizedMap(new WeakHashMap<>());
+	private static final Map<Object, Boolean> FORGE_CONFIG_COMPLETED = Collections.synchronizedMap(new WeakHashMap<>());
+
+	/**
+	 * Head of {@code Connection.channelActive}, once the channel field is set: installs MinecraftForge's
+	 * per-connection {@code ForgePacketHandler} on a CLIENT connection.
+	 *
+	 * <p>Forge does this from an {@code activationHandler} consumer its patch stores in {@code Connection.connect}
+	 * and invokes here. The merge kept the field but lost both the store and the invocation, so on a client the
+	 * {@code forge:handshake} channel attribute was never created — and every handler on Forge's configuration
+	 * channel dereferences it, so the first handshake packet to arrive would have died on a null. The server side
+	 * still installs it from {@code ServerLifecycleHooks.handleServerLogin}, which survived; doing it again here
+	 * would inject Forge's vanilla-connection packet filter while the connection is still typed VANILLA (the
+	 * intention has not been read yet), so this is deliberately client-only.
+	 */
+	public static void onConnectionActive(Object connection) {
+		if (!FORGE_HANDSHAKE || connection == null) return;
+		if (!"CLIENTBOUND".equals(String.valueOf(invokeNoArg(connection, "getReceiving")))) return;
+		if (FORGE_ACTIVATED.putIfAbsent(connection, Boolean.TRUE) != null) return;
+		Class<?> registry = load(loaderFor(connection), FORGE_NETWORK_REGISTRY_CLASS);
+		if (registry == null) return;
+		try {
+			registry.getMethod("onConnectionStart", connection.getClass()).invoke(null, connection);
+			probe(() -> "installed MinecraftForge's per-connection handler on the client connection");
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			ForbricLog.warn("[Forbric] could not start MinecraftForge's networking for this connection — its "
+					+ "handshake will not run and Forge mods will see a vanilla peer", unwrap(e));
+		}
+	}
+
+	/**
+	 * Called where NeoForge queues its own early configuration tasks: adds MinecraftForge's, which the merged
+	 * {@code startConfiguration}/{@code runConfiguration} (NeoForge's bodies) never gathers. Forge's own gate stays
+	 * the gate — its handler adds nothing unless the connection was typed MODDED by the client's intention marker.
+	 *
+	 * <p>{@code SyncRegistriesTask} is dropped. The kernel already remaps the seventeen Forge-wrapped registries
+	 * from NeoForge's snapshot (through Forge's own {@code injectSnapshot}), and Forge's task would apply a second
+	 * snapshot over that result — a re-map of already-remapped ids, from a client half that blocks the network
+	 * thread on the render thread while it does so. Everything else Forge gathers is kept, mod-added tasks included.
+	 */
+	public static void gatherForgeConfigurationTasks(Object listener) {
+		if (!FORGE_HANDSHAKE || listener == null) return;
+		Object connection = fieldValue(listener, "connection");
+		Object tasks = fieldValue(listener, "configurationTasks");
+		if (connection == null || !(tasks instanceof Collection<?>)) return;
+		ClassLoader loader = loaderFor(listener, connection);
+		Class<?> factory = load(loader, FORGE_EVENT_FACTORY);
+		Class<?> syncRegistries = load(loader, FORGE_SYNC_REGISTRIES_TASK);
+		if (factory == null) return;
+		@SuppressWarnings("unchecked")
+		Collection<Object> queue = (Collection<Object>) tasks;
+		List<String> added = new ArrayList<>();
+		List<String> skipped = new ArrayList<>();
+		Consumer<Object> sink = task -> {
+			if (task == null) return;
+			if (syncRegistries != null && syncRegistries.isInstance(task)) {
+				skipped.add(task.getClass().getSimpleName());
+				return;
+			}
+			queue.add(task);
+			added.add(task.getClass().getSimpleName());
+		};
+		try {
+			factory.getMethod("gatherLoginConfigTasks", connection.getClass(), Consumer.class)
+					.invoke(null, connection, sink);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			ForbricLog.warn("[Forbric] could not gather MinecraftForge's configuration tasks — its handshake will not "
+					+ "run, so Forge mods see a vanilla peer and their server configs are not synced", unwrap(e));
+			return;
+		}
+		if (added.isEmpty() && skipped.isEmpty()) return;
+		ForbricLog.info("[Forbric/Net] queued %d MinecraftForge configuration task(s) %s%s", added.size(), added,
+				skipped.isEmpty() ? "" : " (the kernel already synced the registries, so it skipped " + skipped + ")");
+	}
+
+	/**
+	 * End of the client's {@code handleConfigurationFinished}, before it tells the server it is entering play:
+	 * MinecraftForge's own "configuration complete" hook, which decides from the connection's type whether the
+	 * server is modded and, when it is not, loads every Forge mod's default SERVER config so their values are
+	 * readable in-world.
+	 *
+	 * <p>Forge reaches it from the tail of the code-of-conduct handler, which vanilla only calls when the server
+	 * configures a code of conduct — so on almost every connection it never ran. That path is left alone; this one
+	 * is deduplicated per connection so a server that does send one does not load the defaults twice.
+	 */
+	public static void onClientConfigurationFinished(Object listener) {
+		if (!FORGE_HANDSHAKE || listener == null) return;
+		Object connection = fieldValue(listener, "connection");
+		if (connection == null) return;
+		if (FORGE_CONFIG_COMPLETED.putIfAbsent(connection, Boolean.TRUE) != null) return;
+		Class<?> hooks = load(loaderFor(listener, connection), FORGE_HOOKS_COMMON);
+		if (hooks == null) return;
+		try {
+			hooks.getMethod("handleClientConfigurationComplete", connection.getClass()).invoke(null, connection);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			ForbricLog.warn("[Forbric] MinecraftForge's client-side configuration-complete hook failed — on a server "
+					+ "without Forge its mods keep unloaded server configs", unwrap(e));
+		}
 	}
 
 	/**
