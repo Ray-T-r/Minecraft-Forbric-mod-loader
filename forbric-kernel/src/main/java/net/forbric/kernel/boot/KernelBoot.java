@@ -47,6 +47,7 @@ import net.forbric.kernel.transform.LifecycleHookInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
 import net.forbric.kernel.transform.ExitHookInjector;
+import net.forbric.kernel.transform.ForgeBindingsLookupInjector;
 import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import net.forbric.kernel.transform.NullPackGuardInjector;
@@ -288,6 +289,11 @@ public final class KernelBoot {
 		// config file-watchers (non-daemon executors once a config file changes) is injected here: on the client at
 		// Minecraft.close, on the dedicated server at DedicatedServer.onServerExit, which has no System.exit behind it.
 		chain.register(TransformPhase.COREMOD, new ExitHookInjector());
+
+		// MinecraftForge's Bindings resolves its service provider through FML's module layer, which the kernel does
+		// not build — so every use of its config events (registering one, loading one on a world, syncing one to a
+		// client) died in that class initializer.
+		chain.register(TransformPhase.COREMOD, new ForgeBindingsLookupInjector());
 
 		// Client only: NeoForge won Hud.extractRenderState, so the call sites fabric-rendering-v1's HudMixin anchors
 		// on no longer exist — as METHOD REFERENCES in the layer manager they exist as no bytecode at all, so no

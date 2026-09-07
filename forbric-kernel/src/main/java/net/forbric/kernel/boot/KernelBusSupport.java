@@ -48,6 +48,18 @@ final class KernelBusSupport {
 		return builder.getClass().getMethod("build").invoke(builder);
 	}
 
+	/**
+	 * The single-argument method of that name on {@code owner}, found by shape rather than by signature: an event
+	 * bus's {@code post} erases to its own event bound, and naming that bound here would silently disable a bridge
+	 * the day it changes.
+	 */
+	static java.lang.reflect.Method singleArgMethod(Class<?> owner, String name) throws NoSuchMethodException {
+		for (java.lang.reflect.Method m : owner.getMethods()) {
+			if (m.getName().equals(name) && m.getParameterCount() == 1) return m;
+		}
+		throw new NoSuchMethodException(owner.getName() + "." + name + "(<one argument>)");
+	}
+
 	static Throwable unwrap(Throwable t) {
 		return t instanceof InvocationTargetException && t.getCause() != null ? t.getCause() : t;
 	}

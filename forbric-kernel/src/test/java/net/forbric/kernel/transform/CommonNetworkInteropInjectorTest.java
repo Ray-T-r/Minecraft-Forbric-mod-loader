@@ -17,7 +17,9 @@
 package net.forbric.kernel.transform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -56,6 +58,7 @@ class CommonNetworkInteropInjectorTest {
 	private static final String CONNECTION_TYPE = "net/neoforged/neoforge/network/connection/ConnectionType";
 	private static final String CLIENT_REGISTRY = "net/neoforged/neoforge/client/network/registration/ClientNetworkRegistry";
 	private static final String INITIALIZE_DESC = "(L" + LISTENER + ";)V";
+	private static final String INTEROP = "net/forbric/loader/impl/compat/ForbricCustomPayloadInterop";
 
 	@Test
 	void theUnguardedSiteGetsTheFlagCheckAndTheGuardedOneIsLeftAlone() throws Exception {
@@ -99,6 +102,116 @@ class CommonNetworkInteropInjectorTest {
 			if (delta > 0) new Analyzer<>(new BasicVerifier()).analyze(after.name, m);
 		}
 		assertEquals(2, added, "the brand-payload site and the enabled-features site — the third was already guarded");
+	}
+
+	@Test
+	void theMergedConnectionStartsForgesNetworkingWhenItGoesActive() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		String connection = "net/minecraft/network/Connection";
+		ClassNode node = transformed(connection);
+		MethodNode active = method(node, "channelActive", "(Lio/netty/channel/ChannelHandlerContext;)V");
+
+		int hooks = 0;
+		for (AbstractInsnNode insn : active.instructions) {
+			if (!(insn instanceof MethodInsnNode call) || !INTEROP.equals(call.owner)) continue;
+			assertEquals("onConnectionActive", call.name);
+			// It must land after the channel field is stored (Forge's own moment) and before the disconnect check.
+			AbstractInsnNode next = insn.getNext();
+			while (next != null && next.getOpcode() < 0) next = next.getNext();
+			assertEquals(Opcodes.ALOAD, next.getOpcode());
+			hooks++;
+		}
+		assertEquals(1, hooks, "exactly one activation hook");
+		assertTrue(storesFieldBefore(active, "channel", "onConnectionActive"),
+				"Forge's handler needs the netty channel, so the hook must follow the channel store");
+		new Analyzer<>(new BasicVerifier()).analyze(node.name, active);
+	}
+
+	@Test
+	void theMergedServerGathersForgesConfigurationTasksAfterNeoForges() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		ClassNode node = transformed("net/minecraft/server/network/ServerConfigurationPacketListenerImpl");
+		MethodNode run = method(node, "runConfiguration", "()V");
+
+		int index = 0, neo = -1, forge = -1;
+		for (AbstractInsnNode insn : run.instructions) {
+			if (insn instanceof MethodInsnNode call) {
+				if ("configureEarlyTasks".equals(call.name)) neo = index;
+				if (INTEROP.equals(call.owner) && "gatherForgeConfigurationTasks".equals(call.name)) forge = index;
+			}
+			index++;
+		}
+		assertTrue(neo >= 0, "NeoForge's early-task call is the anchor and must still be there");
+		assertTrue(forge > neo, "Forge's tasks are gathered after NeoForge's, into the same queue");
+		new Analyzer<>(new BasicVerifier()).analyze(node.name, run);
+	}
+
+	@Test
+	void configurationTasksStartThroughForgesContextInstead() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		ClassNode node = transformed("net/minecraft/server/network/ServerConfigurationPacketListenerImpl");
+		MethodNode start = method(node, "startNextTask", "()V");
+
+		MethodInsnNode dispatch = null;
+		for (AbstractInsnNode insn : start.instructions) {
+			if (insn instanceof MethodInsnNode call && "net/minecraft/server/network/ConfigurationTask".equals(call.owner)
+					&& "start".equals(call.name)) {
+				assertNull(dispatch, "one dispatch only");
+				dispatch = call;
+			}
+		}
+		assertNotNull(dispatch);
+		assertEquals("(Lnet/minecraftforge/network/config/ConfigurationTaskContext;)V", dispatch.desc,
+				"Forge's own tasks throw on the vanilla overload; every other task reaches it through the default");
+		AbstractInsnNode arg = dispatch.getPrevious();
+		while (arg != null && arg.getOpcode() < 0) arg = arg.getPrevious();
+		assertTrue(arg instanceof FieldInsnNode field && "taskContext".equals(field.name)
+				&& Opcodes.GETFIELD == field.getOpcode(), "the argument is the listener's own task context");
+		// Nothing builds the captured consumer any more (other lambdas in the method — the error message's string
+		// concatenation — are untouched).
+		for (AbstractInsnNode insn : start.instructions) {
+			if (!(insn instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy)) continue;
+			assertFalse(indy.desc.endsWith(")Ljava/util/function/Consumer;"),
+					"the packet-sending consumer is no longer built: " + indy.name + indy.desc);
+		}
+		new Analyzer<>(new BasicVerifier()).analyze(node.name, start);
+	}
+
+	@Test
+	void theClientRunsForgesConfigurationCompleteBeforeItEntersPlay() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		ClassNode node = transformed("net/minecraft/client/multiplayer/ClientConfigurationPacketListenerImpl");
+		MethodNode finished = method(node, "handleConfigurationFinished",
+				"(Lnet/minecraft/network/protocol/configuration/ClientboundFinishConfigurationPacket;)V");
+
+		int index = 0, neo = -1, forge = -1, reply = -1;
+		for (AbstractInsnNode insn : finished.instructions) {
+			if (insn instanceof MethodInsnNode call) {
+				if ("onConfigurationFinished".equals(call.name)) neo = index;
+				if (INTEROP.equals(call.owner) && "onClientConfigurationFinished".equals(call.name)) forge = index;
+				if ("send".equals(call.name) && reply < 0 && forge >= 0) reply = index;
+			}
+			index++;
+		}
+		assertTrue(neo >= 0 && forge > neo, "Forge's hook runs after NeoForge's own finish");
+		assertTrue(reply > forge, "…and before the client tells the server it is entering play");
+		new Analyzer<>(new BasicVerifier()).analyze(node.name, finished);
+	}
+
+	private static boolean storesFieldBefore(MethodNode m, String field, String hook) {
+		boolean stored = false;
+		for (AbstractInsnNode insn : m.instructions) {
+			if (insn.getOpcode() == Opcodes.PUTFIELD && field.equals(((FieldInsnNode) insn).name)) stored = true;
+			if (insn instanceof MethodInsnNode call && hook.equals(call.name)) return stored;
+		}
+		return false;
+	}
+
+	private static ClassNode transformed(String internalName) throws Exception {
+		byte[] in = readClass(internalName + ".class");
+		byte[] out = new CommonNetworkInteropInjector().transform(internalName.replace('/', '.'), in, null);
+		assertTrue(out != in, internalName + " must still need the injection — if it stopped, re-derive the anchors");
+		return parse(out);
 	}
 
 	// --- helpers -------------------------------------------------------------------------------------------------

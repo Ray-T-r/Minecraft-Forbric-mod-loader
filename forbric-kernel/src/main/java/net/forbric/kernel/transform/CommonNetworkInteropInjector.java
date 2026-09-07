@@ -24,6 +24,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FrameNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -143,6 +144,42 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	private static final String INITIALIZED_FLAG = "initializedConnection";
 	private static final String IS_OTHER = "isOther";
 
+	/**
+	 * MinecraftForge's login/configuration handshake — the five tasks that exchange mod and channel lists and push
+	 * the server's SERVER-type configs to the client. Three links lost the byte-merge and are re-tied here:
+	 * <ul>
+	 * <li>{@code Connection.channelActive} no longer invokes the activation handler that installs Forge's
+	 *     per-connection packet handler, so on a client the {@code forge:handshake} channel attribute was null and
+	 *     every handler on that channel would have died on it;</li>
+	 * <li>the merged {@code runConfiguration} is NeoForge's body, which never posts Forge's
+	 *     {@code GatherLoginConfigurationTasksEvent} — the sole producer of Forge's tasks;</li>
+	 * <li>the merged {@code startNextTask} dispatches through the vanilla {@code start(Consumer)} overload, and
+	 *     Forge's tasks answer it by throwing: they want the {@code ConfigurationTaskContext} overload, whose
+	 *     default implementation on the same interface delegates straight back to the Consumer one, so every
+	 *     vanilla, NeoForge and Fabric task is unaffected by the swap.</li>
+	 * </ul>
+	 * The fourth is the client's "configuration complete" hook, which Forge only reaches from a code-of-conduct
+	 * handler vanilla rarely calls.
+	 */
+	private static final String CONNECTION = "net.minecraft.network.Connection";
+	private static final String CHANNEL_ACTIVE = "channelActive";
+	private static final String CHANNEL_ACTIVE_DESC = "(Lio/netty/channel/ChannelHandlerContext;)V";
+	private static final String DELAYED_DISCONNECT = "delayedDisconnect";
+	private static final String ON_CONNECTION_ACTIVE = "onConnectionActive";
+	private static final String RUN_CONFIGURATION = "runConfiguration";
+	private static final String NEO_EARLY_TASKS = "configureEarlyTasks";
+	private static final String GATHER_FORGE_TASKS = "gatherForgeConfigurationTasks";
+	private static final String START_NEXT_TASK = "startNextTask";
+	private static final String CONFIGURATION_TASK = "net/minecraft/server/network/ConfigurationTask";
+	private static final String TASK_START = "start";
+	private static final String TASK_START_CONSUMER_DESC = "(Ljava/util/function/Consumer;)V";
+	private static final String FORGE_TASK_CONTEXT = "Lnet/minecraftforge/network/config/ConfigurationTaskContext;";
+	private static final String TASK_CONTEXT_FIELD = "taskContext";
+	private static final String HANDLE_CONFIG_FINISHED = "handleConfigurationFinished";
+	private static final String NEO_CONFIG_FINISHED = "onConfigurationFinished";
+	private static final String ON_CLIENT_CONFIG_FINISHED = "onClientConfigurationFinished";
+	private static final String OBJECT_HOOK_DESC = "(Ljava/lang/Object;)V";
+
 	private static final String SERVER_CONFIG = "net.minecraft.server.network.ServerConfigurationPacketListenerImpl";
 	private static final String FINISH_TASK = "finishCurrentTask";
 	private static final String FINISH_TASK_DESC = "(Lnet/minecraft/server/network/ConfigurationTask$Type;)V";
@@ -164,7 +201,9 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 		boolean clientCommon = CLIENT_COMMON_LISTENER.equals(className);
 		boolean serverCommon = SERVER_COMMON_LISTENER.equals(className);
 		boolean neoRegistry = NEO_NETWORK_REGISTRY.equals(className);
-		if (!fabricAddon && !serverConfig && !clientConfig && !clientCommon && !serverCommon && !neoRegistry) return classBytes;
+		boolean connection = CONNECTION.equals(className);
+		if (!fabricAddon && !serverConfig && !clientConfig && !clientCommon && !serverCommon && !neoRegistry
+				&& !connection) return classBytes;
 
 		ClassNode node = new ClassNode();
 		// EXPAND_FRAMES so every original frame is an absolute F_NEW node; the explicit frames we author at our own
@@ -206,6 +245,37 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				bumpStack(m, 3);
 				changed = true;
 				ForbricLog.info("[Forbric/Net] keeping MinecraftForge's channel bookkeeping in step at %s.%s", className, m.name);
+			} else if (connection && m.name.equals(CHANNEL_ACTIVE) && m.desc.equals(CHANNEL_ACTIVE_DESC)) {
+				if (startForgeNetworkingOnActivation(m)) {
+					bumpStack(m, 1);
+					changed = true;
+					ForbricLog.info("[Forbric/Net] %s.%s now starts MinecraftForge's networking for the connection — the "
+							+ "merge dropped the activation handler that installed its per-connection packet handler, so a "
+							+ "client had none and Forge's handshake could not be answered", className, CHANNEL_ACTIVE);
+				}
+			} else if (serverConfig && m.name.equals(RUN_CONFIGURATION)) {
+				if (gatherForgeTasksWithNeoForges(m)) {
+					bumpStack(m, 1);
+					changed = true;
+					ForbricLog.info("[Forbric/Net] %s.%s now gathers MinecraftForge's configuration tasks alongside "
+							+ "NeoForge's — the merged body is NeoForge's and never posted Forge's gather event, so its "
+							+ "mod list, channel list and server-config sync never ran", className, RUN_CONFIGURATION);
+				}
+			} else if (serverConfig && m.name.equals(START_NEXT_TASK)) {
+				if (startTasksThroughForgesContext(node, m)) {
+					changed = true;
+					ForbricLog.info("[Forbric/Net] %s.%s now starts configuration tasks through MinecraftForge's task "
+							+ "context — its own tasks refuse the vanilla overload, and every other task reaches it "
+							+ "through the interface default that delegates back", className, START_NEXT_TASK);
+				}
+			} else if (clientConfig && m.name.equals(HANDLE_CONFIG_FINISHED)) {
+				if (completeForgeConfiguration(m)) {
+					bumpStack(m, 1);
+					changed = true;
+					ForbricLog.info("[Forbric/Net] %s.%s now runs MinecraftForge's configuration-complete hook — Forge "
+							+ "reaches it only from a code-of-conduct handler vanilla rarely calls, so a Forge mod never "
+							+ "learned whether the server was modded", className, HANDLE_CONFIG_FINISHED);
+				}
 			}
 			if (clientConfig) {
 				int guarded = guardOtherConnectionInitialisation(node, m);
@@ -274,6 +344,85 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 		body.add(new FrameNode(Opcodes.F_NEW, 2, new Object[] {args[0].getInternalName(), args[1].getInternalName()}, 0,
 				new Object[] {}));
 		return body;
+	}
+
+	/**
+	 * {@code interop.onConnectionActive(this);} once {@code channelActive} has stored the channel — Forge's own
+	 * moment, before any packet. Anchored on the first read of {@code delayedDisconnect}, which directly follows the
+	 * channel/address stores in both the merged and the pristine bodies; the insertion is straight-line, so no frame
+	 * is authored and no existing branch target moves.
+	 */
+	private static boolean startForgeNetworkingOnActivation(MethodNode m) {
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() != Opcodes.GETFIELD) continue;
+			if (!DELAYED_DISCONNECT.equals(((org.objectweb.asm.tree.FieldInsnNode) insn).name)) continue;
+			AbstractInsnNode loadThis = previousOpcode(insn);
+			if (loadThis == null || loadThis.getOpcode() != Opcodes.ALOAD || ((VarInsnNode) loadThis).var != 0) return false;
+			InsnList call = new InsnList();
+			call.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			call.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, ON_CONNECTION_ACTIVE, OBJECT_HOOK_DESC, false));
+			m.instructions.insertBefore(loadThis, call);
+			return true;
+		}
+		return false;
+	}
+
+	/** {@code interop.gatherForgeConfigurationTasks(this);} right after NeoForge queues its own early tasks. */
+	private static boolean gatherForgeTasksWithNeoForges(MethodNode m) {
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() != Opcodes.INVOKESTATIC) continue;
+			MethodInsnNode call = (MethodInsnNode) insn;
+			if (!NEO_EARLY_TASKS.equals(call.name) || !call.owner.startsWith(NEO_PACKAGE)) continue;
+			InsnList hook = new InsnList();
+			hook.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			hook.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, GATHER_FORGE_TASKS, OBJECT_HOOK_DESC, false));
+			m.instructions.insert(call, hook);
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Swaps {@code task.start(this::send)} for {@code task.start(this.taskContext)} — the dispatch the pristine
+	 * Forge body uses. Both are one interface call on the same task reference, so the stack depth is unchanged; the
+	 * lambda that built the consumer becomes unreachable and is removed with it.
+	 */
+	private static boolean startTasksThroughForgesContext(ClassNode node, MethodNode m) {
+		boolean hasContext = false;
+		for (org.objectweb.asm.tree.FieldNode f : node.fields) {
+			if (TASK_CONTEXT_FIELD.equals(f.name) && FORGE_TASK_CONTEXT.equals(f.desc)) hasContext = true;
+		}
+		if (!hasContext) return false;
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() != Opcodes.INVOKEINTERFACE) continue;
+			MethodInsnNode call = (MethodInsnNode) insn;
+			if (!CONFIGURATION_TASK.equals(call.owner) || !TASK_START.equals(call.name)
+					|| !TASK_START_CONSUMER_DESC.equals(call.desc)) continue;
+			AbstractInsnNode consumer = previousOpcode(call);
+			if (!(consumer instanceof InvokeDynamicInsnNode)) return false;
+			AbstractInsnNode loadThis = previousOpcode(consumer);
+			if (loadThis == null || loadThis.getOpcode() != Opcodes.ALOAD || ((VarInsnNode) loadThis).var != 0) return false;
+			m.instructions.set(consumer, new org.objectweb.asm.tree.FieldInsnNode(Opcodes.GETFIELD, node.name,
+					TASK_CONTEXT_FIELD, FORGE_TASK_CONTEXT));
+			call.desc = "(" + FORGE_TASK_CONTEXT + ")V";
+			return true;
+		}
+		return false;
+	}
+
+	/** {@code interop.onClientConfigurationFinished(this);} after NeoForge's own finish, before the reply goes out. */
+	private static boolean completeForgeConfiguration(MethodNode m) {
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() != Opcodes.INVOKESTATIC) continue;
+			MethodInsnNode call = (MethodInsnNode) insn;
+			if (!NEO_CONFIG_FINISHED.equals(call.name) || !call.owner.startsWith(NEO_PACKAGE)) continue;
+			InsnList hook = new InsnList();
+			hook.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			hook.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, ON_CLIENT_CONFIG_FINISHED, OBJECT_HOOK_DESC, false));
+			m.instructions.insert(call, hook);
+			return true;
+		}
+		return false;
 	}
 
 	/**
