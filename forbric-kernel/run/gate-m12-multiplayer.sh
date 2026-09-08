@@ -37,9 +37,9 @@
 #     RegistrySyncParityInjector gives the wrapper NeoForge's clear/registerIdMapping contract and applies the staged
 #     ids through Forge's own GameData.injectSnapshot (KernelForgeWrapperSync).
 #
-# Each is pinned below by an assertion that fails on the log line it used to produce. Known gap, documented in
-# KernelForgeWrapperSync: fabric-api's own remap is a no-op on those seventeen wrappers, so a Forbric client on a
-# PURE Fabric server does not get them remapped — both ends Forbric is what this gate exercises.
+# Each is pinned below by an assertion that fails on the log line it used to produce. Both ends Forbric is what this
+# gate exercises; a Forbric client against a PURE Fabric server is gate-m14's job, and the wrappers follow that
+# server's ids there too.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
