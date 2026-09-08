@@ -1,0 +1,107 @@
+plugins {
+	id 'java'
+}
+
+group = 'net.forbric'
+version = '0.1.0'
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release = 17
+}
+
+// The installer carries Forbric's OWN jars and nothing else. The merged game base and the two Forge-family
+// runtimes embed Mojang, MinecraftForge and NeoForge code, so they are never bundled — the installer takes them
+// from a build on this machine (see ArtifactSource), which is also what the project's own scripts produce.
+def kernelDir = file('../forbric-kernel')
+def loaderDir = file('../forbric-loader')
+def genResources = layout.buildDirectory.dir('generated-resources')
+def isWindows = System.getProperty('os.name').toLowerCase().contains('win')
+
+tasks.register('buildForbricJars', Exec) {
+	description = "Build the kernel jar the installer bundles."
+	workingDir kernelDir
+	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', 'jar'] : ['./gradlew', 'jar'])
+	inputs.dir("${kernelDir}/src/main")
+	inputs.file("${kernelDir}/build.gradle")
+	outputs.dir("${kernelDir}/build/libs")
+}
+
+tasks.register('bundleForbric') {
+	description = "Copy Forbric's own jars into the installer's resources, with a manifest describing them."
+	dependsOn 'buildForbricJars'
+	// Without these the task is "up to date" the moment its output directory exists, and the installer keeps
+	// shipping whichever kernel jar it bundled first — an install that silently predates the fix you just made.
+	inputs.files(
+			file("${kernelDir}/build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar"),
+			file("${loaderDir}/build/libs/forbric-loader-0.1.0-SNAPSHOT.jar"),
+			file("${loaderDir}/build/libs/forbricruntime-0.1.0-SNAPSHOT.jar"))
+			.withPropertyName('forbricJars')
+			.withPathSensitivity(PathSensitivity.NONE)
+	outputs.dir(genResources)
+	doLast {
+		def outDir = genResources.get().asFile
+		def libsRoot = new File(outDir, 'forbric/libs')
+		libsRoot.deleteDir()
+		libsRoot.mkdirs()
+
+		def entries = []
+		def add = { String coordinate, File src ->
+			if (!src.isFile()) throw new GradleException("missing ${src} — build it first")
+			def parts = coordinate.split(':')
+			def rel = "${parts[0].replace('.', '/')}/${parts[1]}/${parts[2]}/${parts[1]}-${parts[2]}.jar"
+			def dest = new File(libsRoot, rel)
+			dest.parentFile.mkdirs()
+			dest.bytes = src.bytes
+			entries << [coordinate: coordinate, resource: "/forbric/libs/${rel}", path: rel,
+			            sha1: java.security.MessageDigest.getInstance('SHA-1').digest(src.bytes).encodeHex().toString(),
+			            size: src.length()]
+		}
+
+		// Forbric's own code (Apache-2.0).
+		add('net.forbric:forbric-kernel:' + project.version, new File(kernelDir, 'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar'))
+		add('net.forbric:forbric-loader:' + project.version, new File(loaderDir, 'build/libs/forbric-loader-0.1.0-SNAPSHOT.jar'))
+		add('net.forbric:forbricruntime:' + project.version, new File(loaderDir, 'build/libs/forbricruntime-0.1.0-SNAPSHOT.jar'))
+
+		// The kernel's own third-party dependencies, taken from the classpath the kernel itself reports so the
+		// installed profile cannot drift from what the gates run. All permissively licensed; staged locally so a
+		// launch needs no network and no guess about which Maven still carries a given version.
+		def command = isWindows ? ['cmd', '/c', 'gradlew.bat', '--offline', '-q', 'printBootClasspath']
+				: ['./gradlew', '--offline', '-q', 'printBootClasspath']
+		def process = new ProcessBuilder(command).directory(kernelDir).redirectErrorStream(true).start()
+		def cpOut = process.inputStream.text
+		if (process.waitFor() != 0) {
+			throw new GradleException("could not ask the kernel for its classpath:\n" + cpOut)
+		}
+		def cacheRoot = 'modules-2/files-2.1/'
+		cpOut.readLines().findAll { it.contains(File.pathSeparator) }.last()
+				.split(File.pathSeparator).each { String entry ->
+			def jar = new File(entry)
+			if (!jar.isFile() || !entry.contains(cacheRoot)) return   // Forbric's own jars are added above
+			// <cache>/files-2.1/<group>/<name>/<version>/<sha>/<file>.jar
+			def rest = entry.substring(entry.indexOf(cacheRoot) + cacheRoot.length()).split('/')
+			if (rest.length < 5) return
+			add("${rest[0]}:${rest[1]}:${rest[2]}".toString(), jar)
+		}
+		new File(outDir, 'forbric-kernel-libraries.json').text =
+				groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([version: project.version, libraries: entries]))
+		println "bundleForbric → ${entries.size()} jar(s), ${entries.sum { it.size } / 1024 / 1024} MB"
+	}
+}
+
+sourceSets.main.resources.srcDir genResources
+processResources.dependsOn 'bundleForbric'
+
+jar {
+	archiveBaseName = 'forbric-kernel-installer'
+	manifest {
+		attributes 'Main-Class': 'net.forbric.installer.kernel.Main'
+	}
+	// The kernel's own dependencies are resolved by the launcher from Maven; only Forbric's jars ride along.
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}

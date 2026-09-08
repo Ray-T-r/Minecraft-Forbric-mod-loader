@@ -71,6 +71,15 @@ import net.forbric.kernel.util.ForbricLog;
  */
 public final class RegistrySyncParityInjector implements ClassTransformer {
 	private static final String WRAPPER = "net.minecraftforge.registries.NamespacedWrapper";
+	/**
+	 * The anonymous {@code Registry.PendingTags} MinecraftForge's wrapper hands back from {@code prepareTagReload}.
+	 * On the merged base that interface extends NeoForge's {@code PendingTagsExtension}, which Forge's class was
+	 * never compiled against — so the first thing that asks a wrapped registry for its pending tag contents dies
+	 * with an {@code AbstractMethodError}, and it does it during a world load.
+	 */
+	private static final String WRAPPER_PENDING_TAGS = "net.minecraftforge.registries.NamespacedWrapper$3";
+	private static final String PENDING_BINDINGS = "val$newBindings";
+	private static final String IMMUTABLE_MAP = "Lcom/google/common/collect/ImmutableMap;";
 	private static final String NEO_REGISTRY_MANAGER = "net.neoforged.neoforge.registries.RegistryManager";
 	private static final String FABRIC_CLIENT_SYNC = "net.fabricmc.fabric.impl.client.registry.sync.ClientRegistrySyncHandler";
 
@@ -103,6 +112,7 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (WRAPPER.equals(className)) return giveWrapperBothContracts(className, classBytes);
+		if (WRAPPER_PENDING_TAGS.equals(className)) return giveWrapperPendingTagsItsContents(className, classBytes);
 		if (NEO_REGISTRY_MANAGER.equals(className)) return flushAroundApplySnapshot(className, classBytes);
 		if (FABRIC_CLIENT_SYNC.equals(className)) return flushAroundFabricApply(className, classBytes);
 		return classBytes;
@@ -119,6 +129,51 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	 * entity type and sound in those registries then decodes to the wrong one. The override stages the server's
 	 * ids exactly as the NeoForge one does, and {@code ClientRegistrySyncHandler.apply} flushes them.
 	 */
+	/**
+	 * Adds {@code contents()} to MinecraftForge's pending-tags class: the map of tag key to the holders that tag is
+	 * about to hold.
+	 *
+	 * <p>The class already keeps exactly that map — its own {@code getPending} looks a key up in it and its
+	 * {@code size} returns its size — so the method NeoForge's extension asks for is a plain read of the field
+	 * Forge already fills. Returning anything else, an empty map above all, would tell NeoForge's condition context
+	 * that a datapack's tags are empty when they are not.
+	 */
+	private static byte[] giveWrapperPendingTagsItsContents(String className, byte[] classBytes) {
+		ClassNode node = new ClassNode();
+		new ClassReader(classBytes).accept(node, 0);
+
+		for (MethodNode existing : node.methods) {
+			if ("contents".equals(existing.name)) return classBytes; // a carrier that already has it
+		}
+		boolean hasBindings = false;
+		for (org.objectweb.asm.tree.FieldNode field : node.fields) {
+			if (PENDING_BINDINGS.equals(field.name) && IMMUTABLE_MAP.equals(field.desc)) hasBindings = true;
+		}
+		if (!hasBindings) {
+			ForbricLog.warn("[Forbric/RegistrySync] %s no longer keeps its pending tags in %s — a world load will die "
+					+ "in NeoForge's condition context; re-derive this", className, PENDING_BINDINGS);
+			return classBytes;
+		}
+
+		// public Map contents() { return this.val$newBindings; }
+		MethodNode contents = new MethodNode(Opcodes.ACC_PUBLIC, "contents", "()Ljava/util/Map;", null, null);
+		contents.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		contents.instructions.add(new org.objectweb.asm.tree.FieldInsnNode(Opcodes.GETFIELD, node.name,
+				PENDING_BINDINGS, IMMUTABLE_MAP));
+		contents.instructions.add(new InsnNode(Opcodes.ARETURN));
+		contents.maxStack = 1;
+		contents.maxLocals = 1;
+		node.methods.add(contents);
+
+		ForbricLog.info("[Forbric/RegistrySync] gave %s NeoForge's pending-tags contract (contents) — the merged "
+				+ "Registry.PendingTags extends NeoForge's interface, and MinecraftForge's implementation of it "
+				+ "predates that", className);
+
+		ClassWriter writer = new ClassWriter(0);
+		node.accept(writer);
+		return writer.toByteArray();
+	}
+
 	private static byte[] giveWrapperBothContracts(String className, byte[] classBytes) {
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
