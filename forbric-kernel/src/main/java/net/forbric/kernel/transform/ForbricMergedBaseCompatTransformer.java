@@ -16,7 +16,9 @@
 
 package net.forbric.kernel.transform;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.objectweb.asm.ClassReader;
@@ -67,6 +69,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= routePlaceItemHookToNeoForge(node);
 			changed |= bridgeOrphanedPipRenderers(node);
 			changed |= keepForgeOutboundProtocolCurrent(node);
+			changed |= surviveTheMissingForgeModelDataManager(node);
 			if (!changed) return classBytes;
 
 			ClassWriter writer = new ClassWriter(0);
@@ -562,6 +565,76 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Stops the block-breaking overlay from crashing the render frame.
+	 *
+	 * <p>{@code LevelExtractor.extractBlockDestroyAnimation} asks the level for MinecraftForge's
+	 * {@code ModelDataManager} and dereferences it without a check. On a single-ecosystem base that is safe, because
+	 * Forge's own {@code ClientLevel} patch overrides the accessor; on the merged base NeoForge's override won, and
+	 * because the two return different types it does not override Forge's at all — so the call lands on Forge's
+	 * interface default, whose whole body is {@code return null}. Every frame drawn while any block is being broken
+	 * then dies with "Description: Render Frame", which is why this only showed up once, in a run where a break
+	 * animation happened to be on screen.
+	 *
+	 * <p>There is nothing to route it to: no path on this base ever builds a Forge-typed manager, so no Forge-typed
+	 * model data exists to find. The call therefore becomes the value Forge's own lookup returns for a position it
+	 * is not tracking — {@code ModelData.EMPTY} — which is what the overlay would have drawn with anyway. A mod's
+	 * dynamic model data still reaches the block itself through NeoForge's manager, which the level does have; only
+	 * the break overlay draws with defaults.
+	 */
+	private static boolean surviveTheMissingForgeModelDataManager(ClassNode node) {
+		if (!"net/minecraft/client/renderer/extract/LevelExtractor".equals(node.name)) return false;
+
+		boolean changed = false;
+		for (MethodNode m : node.methods) {
+			List<MethodInsnNode> lookups = new ArrayList<>();
+			for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn.getOpcode() == Opcodes.INVOKEVIRTUAL && insn instanceof MethodInsnNode call
+						&& FORGE_MODEL_DATA_MANAGER.equals(call.owner) && "getAtOrEmpty".equals(call.name)) {
+					lookups.add(call);
+				}
+			}
+			for (MethodInsnNode lookup : lookups) {
+				// The receiver expression, exactly: ALOAD this; GETFIELD level; INVOKEVIRTUAL getModelDataManager;
+				// then the position argument. Anything else means the method was rewritten upstream — leave it be.
+				AbstractInsnNode pos = previousRealInsn(lookup);
+				AbstractInsnNode manager = previousRealInsn(pos);
+				AbstractInsnNode level = previousRealInsn(manager);
+				AbstractInsnNode self = previousRealInsn(level);
+				if (pos == null || pos.getOpcode() != Opcodes.ALOAD
+						|| !(manager instanceof MethodInsnNode get) || !"getModelDataManager".equals(get.name)
+						|| level == null || level.getOpcode() != Opcodes.GETFIELD
+						|| self == null || self.getOpcode() != Opcodes.ALOAD) {
+					continue;
+				}
+				// The constant goes in where the receiver expression began, BEFORE the five are unlinked: a removed
+				// node's neighbours are no longer a usable anchor.
+				m.instructions.insertBefore(self,
+						new FieldInsnNode(Opcodes.GETSTATIC, FORGE_MODEL_DATA, "EMPTY", "L" + FORGE_MODEL_DATA + ";"));
+				for (AbstractInsnNode dead : new AbstractInsnNode[] {self, level, manager, pos, lookup}) {
+					m.instructions.remove(dead);
+				}
+				changed = true;
+			}
+		}
+		if (!changed) return false;
+		ForbricLog.warn("[Forbric/MergedBaseCompat] the block-breaking overlay no longer asks for MinecraftForge's "
+				+ "model-data manager — NeoForge won the level's accessor, so Forge's returned null and every frame "
+				+ "drawn while a block was being broken crashed the game");
+		return true;
+	}
+
+	private static final String FORGE_MODEL_DATA_MANAGER = "net/minecraftforge/client/model/data/ModelDataManager";
+	private static final String FORGE_MODEL_DATA = "net/minecraftforge/client/model/data/ModelData";
+
+	private static AbstractInsnNode previousRealInsn(AbstractInsnNode from) {
+		if (from == null) return null;
+		for (AbstractInsnNode insn = from.getPrevious(); insn != null; insn = insn.getPrevious()) {
+			if (insn.getOpcode() >= 0) return insn;
+		}
+		return null;
 	}
 
 	private static MethodNode findMethod(ClassNode node, String name, String desc) {

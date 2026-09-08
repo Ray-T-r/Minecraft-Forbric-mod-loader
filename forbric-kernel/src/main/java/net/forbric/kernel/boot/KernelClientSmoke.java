@@ -185,8 +185,24 @@ public final class KernelClientSmoke {
 		if (t < 420) { key(options, "keyDown", true); return; }
 		if (t == 420) { phase("sneak-walk"); key(options, "keyDown", false); }
 		if (t < 480) { key(options, "keyShift", true); key(options, "keyUp", true); return; }
-		if (t == 480) { phase("attack"); key(options, "keyShift", false); key(options, "keyUp", false); }
-		if (t < 540) { if (t % 6 == 0) invokeNoArg(minecraft, "startAttack"); return; }
+		// Held down, not tapped: a tap swings, a hold MINES — and only sustained mining puts a block into the
+		// level's destroy-progress map, which is the one thing that makes the game extract a block-breaking overlay
+		// each frame. That path crashed the render frame on the merged base for the life of the project and was
+		// only ever seen once, by accident, because nothing here had held the button down. Looking down first, so
+		// the crosshair is on the ground rather than on air.
+		if (t == 480) {
+			phase("mine");
+			key(options, "keyShift", false);
+			key(options, "keyUp", false);
+			setRotation(player, yaw(player), 80f);
+		}
+		if (t < 540) {
+			invokeWithBoolean(minecraft, "continueAttack", true);
+			// Twice, a few ticks apart: this is the only evidence that the game had a break overlay to draw, and
+			// therefore that the frame which draws it was exercised at all.
+			if (t == 520 || t == 538) reportBreakProgress(fieldValue(minecraft, "level"));
+			return;
+		}
 		if (t == 540) { phase("place"); setRotation(player, yaw(player), 80f); }
 		if (t < 600) { key(options, "keyDown", true); if (t % 5 == 0) invokeNoArg(minecraft, "startUseItem"); return; }
 		if (t == 600) { phase("swim-wait"); key(options, "keyDown", false); setRotation(player, yaw(player), 0f); }
@@ -403,6 +419,29 @@ public final class KernelClientSmoke {
 			}
 		}
 		return null;
+	}
+
+	/** How many blocks the client is currently drawing a break overlay for — what the render frame extracts. */
+	private static void reportBreakProgress(Object level) {
+		if (level == null) return;
+		try {
+			Object progress = level.getClass().getMethod("destructionProgress").invoke(level);
+			int showing = progress == null ? 0 : (int) progress.getClass().getMethod("size").invoke(progress);
+			ForbricLog.info("[Forbric/ClientSmoke] mining: %d block(s) showing break progress", showing);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			ForbricLog.debug("[Forbric/ClientSmoke] could not read the break-progress map: %s", String.valueOf(e));
+		}
+	}
+
+	/** A one-boolean call on the game object; used to hold a control down across ticks. */
+	private static void invokeWithBoolean(Object owner, String name, boolean value) {
+		try {
+			java.lang.reflect.Method method = owner.getClass().getDeclaredMethod(name, boolean.class);
+			method.setAccessible(true);
+			method.invoke(owner, value);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			ForbricLog.debug("[Forbric/ClientSmoke] could not call %s(%s): %s", name, value, String.valueOf(e));
+		}
 	}
 
 	private static void invokeNoArg(Object owner, String name) {

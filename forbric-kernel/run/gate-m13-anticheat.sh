@@ -9,7 +9,7 @@
 #
 # This gate does. It boots Paper 26.2 with GrimAC (the strictest open-source prediction anti-cheat, sensitised so
 # that EVERY violation prints — see the staging step), connects a Forbric client, and drives it through the
-# movement drill in KernelClientSmoke: walk, sprint, sprint-jump, turn, strafe, backpedal, sneak, attack, place
+# movement drill in KernelClientSmoke: walk, sprint, sprint-jump, turn, strafe, backpedal, sneak, mine, place
 # blocks, swim. Every input goes through the same path a keyboard would, so the packets are the real game's.
 #
 # POSITIVE CONTROL. The drill ends with one impossible move (six blocks in a tick). A run with zero flags proves
@@ -178,7 +178,11 @@ Z0=$(zof walk); Z1=$(zof sprint)
 echo "[kernel] z at the start of walk: ${Z0:-?}, at the start of sprint: ${Z1:-?}"
 if awk -v a="${Z0:-0}" -v b="${Z1:-0}" 'BEGIN{exit !(b - a > 5)}'; then echo "[kernel] PASS the walk phase covered ground ($Z0 -> $Z1)"; else echo "[kernel] FAIL the walk phase covered ground (${Z0:-?} -> ${Z1:-?})"; FAIL=1; fi
 check "the pool was dug"              "Successfully filled"                               "$SLOG"
-check "the land phases were on land"  "drill phase (sprint|sprint-jump|turn|strafe|backpedal|sneak-walk|attack|place) at .*inWater=false" "$CGAME" 8
+check "the land phases were on land"  "drill phase (sprint|sprint-jump|turn|strafe|backpedal|sneak-walk|mine|place) at .*inWater=false" "$CGAME" 8
+# Holding the button down is what puts a block into the level's break-progress map, and that map is what the render
+# frame turns into a breaking overlay — the one path on the merged base where the game asked MinecraftForge for a
+# model-data manager the merge had left it without. Zero here means the frame that used to crash was never drawn.
+check "the drill actually broke ground" "ClientSmoke\] mining: [1-9][0-9]* block\(s\) showing break progress" "$CGAME"
 check "the swim phase was in water"   "drill phase swim at .*inWater=true"                "$CGAME"
 check "sprinting actually engaged"    "drill phase sprint-jump at .*sprinting=true"       "$CGAME"
 
