@@ -196,7 +196,43 @@ public final class KernelModLoader {
 			}
 		}
 		publishedForge = Map.copyOf(forge);
+		publishForgeModList(cl, publishedForge);
 		return built;
+	}
+
+	/**
+	 * The traditional-Forge twin of {@link #publishNeoModList}: puts the constructed MinecraftForge mods into
+	 * {@code net.minecraftforge.fml.ModList} so its own {@code isLoaded} / {@code getModContainerById} answer.
+	 *
+	 * <p>That map is what a Forge mod asks about an optional dependency, and under the kernel it was empty — every
+	 * such question answered "absent" for mods that are right there. Separate from the loading list seeded in
+	 * {@link PassiveSeeder}: that one feeds {@code getMods()} (the mod INFO the handshake puts on the wire), this
+	 * one feeds the container lookups. Forge sorts the containers by their position in the loading list; a
+	 * container whose info is not in it sorts as -1, which is stable and harmless.
+	 */
+	private static void publishForgeModList(ClassLoader cl, Map<String, KernelForgeModContext.Handle> forge) {
+		if (forge.isEmpty()) return;
+		if ("off".equalsIgnoreCase(System.getProperty("forbric.publishModList", "on"))) return;
+		try {
+			Class<?> modListCls = Class.forName("net.minecraftforge.fml.ModList", false, cl);
+			Class<?> containerCls = Class.forName("net.minecraftforge.fml.ModContainer", false, cl);
+			List<Object> containers = new ArrayList<>();
+			for (KernelForgeModContext.Handle handle : forge.values()) {
+				if (containerCls.isInstance(handle.container())) containers.add(handle.container());
+			}
+			if (containers.isEmpty()) return;
+			Method setLoadedMods = modListCls.getDeclaredMethod("setLoadedMods", List.class);
+			setLoadedMods.setAccessible(true);
+			setLoadedMods.invoke(null, containers);
+			ForbricLog.info("[Forbric/ModLoader] published %d MinecraftForge mod(s) into its ModList %s — its own "
+					+ "isLoaded/getModContainerById answered \"absent\" for every one of them until now",
+					containers.size(), forge.keySet());
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/ModLoader] traditional-Forge ModList not present — nothing to publish");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ModLoader] could not publish into MinecraftForge's ModList — a Forge mod asking "
+					+ "whether another is loaded still gets no", KernelBusSupport.unwrap(t));
+		}
 	}
 
 	/**
