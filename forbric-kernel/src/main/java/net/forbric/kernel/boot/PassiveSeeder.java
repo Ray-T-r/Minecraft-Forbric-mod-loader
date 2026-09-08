@@ -221,6 +221,12 @@ public final class PassiveSeeder {
 
 	/** Lazily-resolved {@code sun.misc.Unsafe}, the JDK-only fallback for constructor-free allocation. */
 	private static volatile Object jdkUnsafe;
+	/**
+	 * The Forge-family mods this boot discovered, kept from the NeoForge seeding so traditional Forge's list can be
+	 * built from the SAME answer. Two independent passes over mods/ could disagree, and the two lists disagreeing
+	 * about which mods exist is precisely the bug this avoids.
+	 */
+	private static volatile List<DiscoveredMod> forgeFamilyMods = List.of();
 
 	/**
 	 * Seeds a {@code LoadingModList} that actually CONTAINS the Forge-family mods, so a mod that resolves ITSELF
@@ -260,6 +266,7 @@ public final class PassiveSeeder {
 		List<DiscoveredMod> mods;
 		try {
 			mods = arbitratedForgeFamilyMods(modsDir);
+			forgeFamilyMods = List.copyOf(mods);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Seed] could not discover Forge-family mods for the NeoForge LoadingModList — "
 					+ "falling back to the empty list", unwrap(t));
@@ -432,6 +439,152 @@ public final class PassiveSeeder {
 		setInstanceField(lmlCls, "sortedList", list, new ArrayList<>(modInfos));
 		setInstanceField(lmlCls, "modFiles", list, new ArrayList<>(fileInfos));
 		return list;
+	}
+
+	/**
+	 * Builds traditional Forge's {@code ModSorter$State} — one {@code ModFile}+{@code ModFileInfo} per jar, an
+	 * {@code ModInfo} per declared mod — from the same discovery answer the NeoForge list is seeded with.
+	 *
+	 * <p>What has to be right is narrow, because only one path ever reads these: {@code LoadingModListImpl}'s lazy
+	 * holder builds the list with {@code new LoadingModListImpl(state.files(), state.mods())}, and that constructor
+	 * touches exactly {@code ModFile.getModFileInfo}, {@code ModFileInfo.getMods}, {@code ModInfo.getModId} and
+	 * {@code ModInfo.getOwningFile}. {@code ModList}'s own initializer then adds {@code ModFileInfo.getFile}, and the
+	 * handshake's {@code ModVersions.create} adds {@code getDisplayName} and {@code getVersion}. The remaining fields
+	 * are filled anyway, with truthful empties, so a consumer this kernel has not met does not meet a null.
+	 *
+	 * <p>Deliberately NOT reached: {@code LoadingModListImpl.init}, which walks each file's access transformers and
+	 * touches the jars. Nothing calls it here — the lazy holder is the only builder — and seeding must stay a
+	 * description of what was loaded, not a second loading pass.
+	 */
+	private static Object buildForgeLoadingState(ClassLoader gameLoader, Constructor<?> stateCtor,
+			List<DiscoveredMod> mods) throws Exception {
+		Class<?> modFileCls = Class.forName("net.minecraftforge.fml.loading.moddiscovery.ModFile", false, gameLoader);
+		Class<?> fileInfoCls = Class.forName("net.minecraftforge.fml.loading.moddiscovery.ModFileInfo", false, gameLoader);
+		Class<?> modInfoCls = Class.forName("net.minecraftforge.fml.loading.moddiscovery.ModInfo", false, gameLoader);
+
+		// One file per JAR, N mods inside it: a mods.toml may declare several [[mods]], and the file is what the
+		// list keys its per-file map on.
+		Map<String, List<DiscoveredMod>> byJar = new LinkedHashMap<>();
+		for (DiscoveredMod mod : mods) {
+			byJar.computeIfAbsent(mod.getSource(), key -> new ArrayList<>()).add(mod);
+		}
+
+		List<Object> files = new ArrayList<>();
+		List<Object> modInfos = new ArrayList<>();
+		for (Map.Entry<String, List<DiscoveredMod>> jar : byJar.entrySet()) {
+			Object modFile = allocate(gameLoader, modFileCls);
+			Object fileInfo = allocate(gameLoader, fileInfoCls);
+			List<Object> ownMods = new ArrayList<>();
+			for (DiscoveredMod mod : jar.getValue()) {
+				Object modInfo = buildForgeModInfo(gameLoader, modInfoCls, fileInfo, mod);
+				ownMods.add(modInfo);
+				modInfos.add(modInfo);
+			}
+			fillForgeModFileInfo(gameLoader, fileInfoCls, fileInfo, modFile, List.copyOf(ownMods));
+			fillForgeModFile(modFileCls, modFile, fileInfo, Path.of(jar.getKey()), version(jar.getValue().get(0)));
+			files.add(modFile);
+		}
+		return stateCtor.newInstance(files, modInfos);
+	}
+
+	/** The jar's own entry: only {@code modFileInfo} is read while the list is built; the rest are truthful empties. */
+	private static void fillForgeModFile(Class<?> modFileCls, Object modFile, Object fileInfo, Path jar, String version)
+			throws Exception {
+		setInstanceField(modFileCls, "modFileInfo", modFile, fileInfo);
+		setInstanceField(modFileCls, "jarVersion", modFile, version);
+		setInstanceField(modFileCls, "fileProperties", modFile, Map.of());
+		setInstanceField(modFileCls, "loaders", modFile, List.of());
+		// An empty list, not null: whoever walks a file's access transformers must find none rather than throw. The
+		// kernel applies them itself, from its own pass over the same jars.
+		setInstanceField(modFileCls, "accessTransformers", modFile, List.of());
+		setOptionalInstanceField(modFileCls, "filePath", modFile, jar);
+	}
+
+	private static void fillForgeModFileInfo(ClassLoader gameLoader, Class<?> fileInfoCls, Object fileInfo,
+			Object modFile, List<Object> ownMods) throws Exception {
+		setInstanceField(fileInfoCls, "modFile", fileInfo, modFile);
+		setInstanceField(fileInfoCls, "mods", fileInfo, ownMods);
+		setInstanceField(fileInfoCls, "config", fileInfo, forgeEmptyConfigurable(gameLoader));
+		setInstanceField(fileInfoCls, "languageSpecs", fileInfo, List.of());
+		setInstanceField(fileInfoCls, "properties", fileInfo, Map.of());
+		setInstanceField(fileInfoCls, "usesServices", fileInfo, List.of());
+		// "" rather than null: the Mods screen writes the license into its info pane unguarded.
+		setInstanceField(fileInfoCls, "license", fileInfo, "");
+	}
+
+	/**
+	 * One mod's entry, through the record's own canonical constructor — {@code ModInfo} is a record, and a record's
+	 * fields refuse reflective writes however accessible they are made, so the field surgery that builds the two
+	 * classes around it is not an option here.
+	 *
+	 * <p>The arguments are matched by RECORD COMPONENT NAME rather than by position, so a carrier that adds or
+	 * reorders a component fails loudly on the one it cannot fill instead of silently putting a version where a
+	 * description belongs. {@code getDisplayName} and {@code getVersion} are what the handshake puts on the wire, so
+	 * they carry the discovered name and version; everything else is a truthful empty.
+	 */
+	private static Object buildForgeModInfo(ClassLoader gameLoader, Class<?> modInfoCls, Object owningFile,
+			DiscoveredMod mod) throws Exception {
+		Class<?> holderCls = Class.forName("net.minecraftforge.fml.loading.moddiscovery.ModInfo$Holder", false, gameLoader);
+		Constructor<?> holderCtor = holderCls.getDeclaredConstructor(Object.class);
+		holderCtor.setAccessible(true);
+
+		Map<String, Object> byComponent = new LinkedHashMap<>();
+		byComponent.put("getOwningFile", owningFile);
+		byComponent.put("getConfig", forgeEmptyConfigurable(gameLoader));
+		byComponent.put("getModId", mod.getId());
+		byComponent.put("getNamespace", mod.getId());
+		byComponent.put("getVersion", artifactVersion(gameLoader, version(mod)));
+		byComponent.put("getDisplayName", displayName(mod));
+		byComponent.put("getDescription", "");
+		byComponent.put("getLogoFile", Optional.empty());
+		byComponent.put("getLogoBlur", Boolean.FALSE);
+		byComponent.put("getUpdateURL", Optional.empty());
+		byComponent.put("getModURL", Optional.empty());
+		// Empty holders rather than null ones: dependency resolution does not run here, but anything that asks must
+		// get a list saying "nothing declared" instead of an NPE.
+		byComponent.put("dependencies", holderCtor.newInstance(List.of()));
+		byComponent.put("forgeFeatures", holderCtor.newInstance(List.of()));
+		byComponent.put("getModProperties", Map.of());
+
+		java.lang.reflect.RecordComponent[] components = modInfoCls.getRecordComponents();
+		if (components == null) {
+			throw new IllegalStateException(modInfoCls.getName() + " is no longer a record — re-derive its construction");
+		}
+		Class<?>[] types = new Class<?>[components.length];
+		Object[] args = new Object[components.length];
+		for (int i = 0; i < components.length; i++) {
+			String name = components[i].getName();
+			if (!byComponent.containsKey(name)) {
+				throw new IllegalStateException(modInfoCls.getName() + " gained a component this kernel cannot fill: "
+						+ name + " (" + components[i].getType().getName() + ")");
+			}
+			types[i] = components[i].getType();
+			args[i] = byComponent.get(name);
+		}
+		Constructor<?> canonical = modInfoCls.getDeclaredConstructor(types);
+		canonical.setAccessible(true);
+		return canonical.newInstance(args);
+	}
+
+	/** A Forge {@code IConfigurable} that truthfully reports "this declares nothing". */
+	private static Object forgeEmptyConfigurable(ClassLoader gameLoader) throws Exception {
+		Class<?> iConfigurable = Class.forName("net.minecraftforge.forgespi.language.IConfigurable", false, gameLoader);
+		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, (proxy, method, args) ->
+				"getConfigList".equals(method.getName()) ? List.of() : Optional.empty());
+	}
+
+	private static String displayName(DiscoveredMod mod) {
+		String name = mod.getDisplayName();
+		return name == null || name.isBlank() ? mod.getId() : name;
+	}
+
+	/** Sets a field that a future carrier version may not have — a rename must not cost the whole seeding. */
+	private static void setOptionalInstanceField(Class<?> owner, String name, Object target, Object value) {
+		try {
+			setInstanceField(owner, name, target, value);
+		} catch (Exception absent) {
+			ForbricLog.debug("[Forbric/Seed] %s has no field %s — leaving it at its default", owner.getSimpleName(), name);
+		}
 	}
 
 	/**
@@ -708,17 +861,35 @@ public final class PassiveSeeder {
 			Class<?> stateCls = Class.forName("net.minecraftforge.fml.loading.ModSorter$State", false, gameLoader);
 			Constructor<?> stateCtor = stateCls.getDeclaredConstructor(List.class, List.class);
 			stateCtor.setAccessible(true);
-			Object emptyState = stateCtor.newInstance(List.of(), List.of());
+
+			List<DiscoveredMod> mods = "off".equalsIgnoreCase(System.getProperty(SEED_SWITCH, "on"))
+					? List.of()
+					: forgeFamilyMods;
+			Object state = mods.isEmpty()
+					? stateCtor.newInstance(List.of(), List.of())
+					: buildForgeLoadingState(gameLoader, stateCtor, mods);
 
 			Class<?> lmlImpl = Class.forName("net.minecraftforge.fml.loading.LoadingModListImpl", true, gameLoader);
 			Field temp = lmlImpl.getDeclaredField("temp");
 			temp.setAccessible(true);
-			if (temp.get(null) == null) temp.set(null, emptyState);
-			ForbricLog.debug("[Forbric/Seed] seeded empty traditional-Forge LoadingModList (zero mods)");
+			if (temp.get(null) == null) temp.set(null, state);
+			if (mods.isEmpty()) {
+				ForbricLog.debug("[Forbric/Seed] seeded empty traditional-Forge LoadingModList (zero mods)");
+			} else {
+				StringBuilder ids = new StringBuilder();
+				for (DiscoveredMod mod : mods) {
+					if (ids.length() > 0) ids.append(", ");
+					ids.append(mod.getId());
+				}
+				ForbricLog.info("[Forbric/Seed] seeded traditional-Forge LoadingModList with %d mod(s) — ModList.getMods() "
+						+ "derives its whole contents from this once, and an empty one is what left MinecraftForge's "
+						+ "handshake telling every peer it runs no mods. [%s]", mods.size(), ids);
+			}
 		} catch (ClassNotFoundException absent) {
 			ForbricLog.debug("[Forbric/Seed] traditional-Forge LoadingModListImpl not present — skipping");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Seed] could not seed traditional-Forge LoadingModList", unwrap(t));
+			ForbricLog.warn("[Forbric/Seed] could not seed traditional-Forge LoadingModList — its ModList stays empty "
+					+ "and its mods tell every peer they are absent", unwrap(t));
 		}
 
 		// Traditional-Forge ModList keeps mods/indexedMods/sortedContainers as STATIC fields, null until mod

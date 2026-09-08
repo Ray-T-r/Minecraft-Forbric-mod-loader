@@ -9,10 +9,6 @@
 # the vanilla overload that Forge's own tasks refuse. So on Forbric every Forge mod saw a vanilla peer with an
 # empty mod list, and a server config a mod set in its world never reached the client.
 #
-# WHAT IT DOES NOT COVER YET. The mod list the two ends trade arrives empty, because traditional Forge builds it
-# from a ModList whose contents are fixed at class-init from a LoadingModList the kernel seeds empty on purpose.
-# The gate measures that rather than asserting it away.
-#
 # WHAT THIS PROVES. The gate writes a NON-DEFAULT value into the server's world config before the server boots.
 # The client ships the same mod with the same default. If the client ends up reading the server's value, Forge's
 # configuration-phase sync ran end to end; if the handshake is off, it reads its own default — which is exactly
@@ -135,13 +131,14 @@ check "the client sees a modded peer"           "ForbricLive/HS\] client Network
 check "the server sees a modded peer"           "ForbricLive/HS\] server NetworkContext type=MODDED"                        "$SLOG"
 check "the client learned the server's channels"  "ForbricLive/HS\] client NetworkContext .*remoteChannels=[1-9]"           "$CLOG"
 check "the server learned the client's channels"  "ForbricLive/HS\] server NetworkContext .*remoteChannels=[1-9]"           "$SLOG"
-# KNOWN GAP, measured rather than asserted away: the mod list the two ends trade is built from traditional Forge's
-# ModList.getMods(), whose backing list is derived once at class-initialisation time from a LoadingModList the
-# kernel deliberately seeds EMPTY (PassiveSeeder.seedForgeLoadingModList, which exists to stop Forge's status ping
-# NPEing). So the exchange runs and arrives, carrying nothing. A Forge mod that asks "does the peer have mod X"
-# gets no for everything; one that asks "is the peer modded" — the common check — is answered correctly above.
-# Seeding that list for real is its own change; when it lands, flip this to the positive assertion.
-check "the mod-list exchange still carries nothing (known gap)" "ForbricLive/HS\] (client|server) NetworkContext .*mods=\[\]" "$CLOG"
+# The mod list itself. It is built from traditional Forge's ModList.getMods(), whose contents are derived once at
+# class-initialisation time from the LoadingModList the kernel seeds — so an empty seed used to make both ends
+# announce that they run no mods at all. Both ends must now name each other's Forge-family mods.
+check "the client knows the server's Forge mods" "ForbricLive/HS\] client NetworkContext .*mods=\[[^]]*forbriclive" "$CLOG"
+check "the server knows the client's Forge mods" "ForbricLive/HS\] server NetworkContext .*mods=\[[^]]*forbriclive" "$SLOG"
+check "the list is the whole Forge family, not just this mod" "ForbricLive/HS\] client NetworkContext .*mods=\[[^]]*fallingtree" "$CLOG"
+check_absent "neither end announces an empty mod list" "NetworkContext .*mods=\[\]" "$CLOG"
+check "the kernel seeded MinecraftForge's loading list for real" "Seed\] seeded traditional-Forge LoadingModList with [1-9]" "$SLOG"
 
 step "nothing in that handshake failed (must be ABSENT)"
 check_absent "every payload encodes (server)"  "Failed to encode packet"                  "$SLOG"
