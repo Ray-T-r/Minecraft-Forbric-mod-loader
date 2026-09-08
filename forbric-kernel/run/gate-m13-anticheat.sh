@@ -161,6 +161,8 @@ check "Grim enabled"                  "Enabling GrimAC"                         
 check "client dialled Paper"          "Connecting to 127.0.0.1"                           "$CLOG"
 check "Paper accepted the join"       "$PLAYER joined the game"                           "$SLOG"
 check "client entered the world"      "ClientSmoke\] joined world via quick-play"         "$CLOG"
+check "the window title was read"     "ClientSmoke\] window title: Minecraft"              "$CLOG"
+check_absent "…and it names no single loader" "ClientSmoke\] window title: .*(NeoForge|Forge|Fabric)" "$CLOG"
 check_absent "no protocol error against a vanilla-protocol server" "Network Protocol Error|Failed to decode packet|Unknown custom packet|Client disconnected with reason: Internal" "$CLOG"
 
 step "the drill ran end to end (must PASS)"
