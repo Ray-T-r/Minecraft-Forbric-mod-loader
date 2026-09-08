@@ -42,3 +42,6 @@ run/fnet-client/
 # gate-m16 stages a Forge-handshake server and client here on every run.
 run/fhs-server/
 run/fhs-client/
+
+# gate-m17 installs into a throwaway directory here on every run.
+run/installed/
