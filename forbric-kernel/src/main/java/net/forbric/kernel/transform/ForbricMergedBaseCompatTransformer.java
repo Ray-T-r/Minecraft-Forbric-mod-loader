@@ -70,6 +70,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= bridgeOrphanedPipRenderers(node);
 			changed |= keepForgeOutboundProtocolCurrent(node);
 			changed |= surviveTheMissingForgeModelDataManager(node);
+			changed |= dropTheWindowTitlesLoaderBrand(node);
 			if (!changed) return classBytes;
 
 			ClassWriter writer = new ClassWriter(0);
@@ -628,6 +629,53 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	private static final String FORGE_MODEL_DATA_MANAGER = "net/minecraftforge/client/model/data/ModelDataManager";
 	private static final String FORGE_MODEL_DATA = "net/minecraftforge/client/model/data/ModelData";
+
+	/**
+	 * Takes the loader brand out of the window title.
+	 *
+	 * <p>{@code Minecraft.createTitle} builds "Minecraft" and then, when the game reports itself as modified, splices
+	 * in a space, the loader's name and an asterisk before the version — so the merged base, whose title patch is
+	 * NeoForge's, puts "NeoForge" on the window of an instance that is running Fabric, MinecraftForge and NeoForge
+	 * mods side by side. Naming one of the three is worse than naming none.
+	 *
+	 * <p>The brand and its leading space go; the asterisk stays, which is vanilla's own mark for a modified game and
+	 * leaves the title reading "Minecraft* 26.2". Only that one append chain is touched, so a title patch that
+	 * changes shape is left alone rather than half-rewritten.
+	 */
+	private static boolean dropTheWindowTitlesLoaderBrand(ClassNode node) {
+		if (!"net/minecraft/client/Minecraft".equals(node.name)) return false;
+		MethodNode createTitle = findMethod(node, "createTitle", "()Ljava/lang/String;");
+		if (createTitle == null) return false;
+
+		for (AbstractInsnNode insn = createTitle.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (!(insn instanceof LdcInsnNode brand) || !LOADER_BRANDS.contains(brand.cst)) continue;
+			AbstractInsnNode appendBrand = insn.getNext();
+			if (!isStringBuilderAppend(appendBrand, "(Ljava/lang/String;)Ljava/lang/StringBuilder;")) continue;
+			// The separator the brand arrives with: BIPUSH ' '; append(char). Without it the shape is not the one
+			// this fixup was written for.
+			AbstractInsnNode appendSpace = previousRealInsn(insn);
+			AbstractInsnNode space = previousRealInsn(appendSpace);
+			if (!isStringBuilderAppend(appendSpace, "(C)Ljava/lang/StringBuilder;")
+					|| space == null || space.getOpcode() != Opcodes.BIPUSH
+					|| ((org.objectweb.asm.tree.IntInsnNode) space).operand != ' ') {
+				continue;
+			}
+			for (AbstractInsnNode dead : new AbstractInsnNode[] {space, appendSpace, insn, appendBrand}) {
+				createTitle.instructions.remove(dead);
+			}
+			ForbricLog.info("[Forbric/MergedBaseCompat] took \"%s\" out of the window title — the merged base carries "
+					+ "one loader's title patch, and this instance runs all three ecosystems", brand.cst);
+			return true;
+		}
+		return false;
+	}
+
+	private static boolean isStringBuilderAppend(AbstractInsnNode insn, String desc) {
+		return insn instanceof MethodInsnNode call && "java/lang/StringBuilder".equals(call.owner)
+				&& "append".equals(call.name) && desc.equals(call.desc);
+	}
+
+	private static final java.util.Set<Object> LOADER_BRANDS = java.util.Set.of("NeoForge", "Forge", "Fabric");
 
 	private static AbstractInsnNode previousRealInsn(AbstractInsnNode from) {
 		if (from == null) return null;

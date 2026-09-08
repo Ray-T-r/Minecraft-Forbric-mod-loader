@@ -134,6 +134,7 @@ public final class KernelClientSmoke {
 		if (!ready && worldTicks >= Integer.getInteger(READY_TICKS, 60)) {
 			ready = true;
 			ForbricLog.info("[Forbric/ClientSmoke] client-ready after %d world tick(s)", worldTicks);
+			reportWindowTitle(minecraft);
 		}
 		if (ready && !drillDone && Boolean.getBoolean(DRILL)) drill(minecraft, player);
 		if (ready && !probed && worldTicks >= Integer.getInteger(PROBE_TICKS, 160)) {
@@ -419,6 +420,21 @@ public final class KernelClientSmoke {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * What the game would put on its window. Read from {@code createTitle} itself rather than from the window, which
+	 * only has a setter — and that method is the one the merged base carries a single loader's patch of, so this is
+	 * the only place the result is observable at all.
+	 */
+	private static void reportWindowTitle(Object minecraft) {
+		try {
+			java.lang.reflect.Method createTitle = minecraft.getClass().getDeclaredMethod("createTitle");
+			createTitle.setAccessible(true);
+			ForbricLog.info("[Forbric/ClientSmoke] window title: %s", createTitle.invoke(minecraft));
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			ForbricLog.debug("[Forbric/ClientSmoke] could not read the window title: %s", String.valueOf(e));
+		}
 	}
 
 	/** How many blocks the client is currently drawing a break overlay for — what the render frame extracts. */
