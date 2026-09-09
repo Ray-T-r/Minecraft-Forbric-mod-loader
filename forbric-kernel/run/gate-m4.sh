@@ -105,6 +105,12 @@ check "Jade server plugins load"               "Start loading plugin from Jade" 
 step "BOTH game-event families tick in the same loop (must PASS — the B-5 1:1 shape)"
 check "NeoForge+Forge tick 1:1 (Pre)"          "bridged 20 ServerTickEvent.Pre to MinecraftForge — 1:1 from NeoForge" "$LOG"
 check "NeoForge+Forge tick 1:1 (Post)"         "bridged 20 ServerTickEvent.Post to MinecraftForge — 1:1 from NeoForge" "$LOG"
+# The tick bridges are only two of five. The other three were installed in the same try{} and summed into one
+# unasserted number, so a setup failure in the first one silently skipped the rest -- including the one whose
+# absence leaves MinecraftForge's login gate permanently closed. Assert the whole declared set, by count.
+check "every declared Neo→Forge game-event bridge installed" \
+  "all 5 GAME_BUS bridge\(s\) installed" "$LOG"
+check_absent "and none reported missing"       "bridge\(s\) MISSING" "$LOG"
 
 step "the server works (must PASS)"
 check "vanilla datapack fully loaded"          "Loaded [0-9]+ recipes" "$LOG"
@@ -121,6 +127,24 @@ check_absent "no genuine FancyModLoader"       "gatherAndInitializeMods|dispatch
 check_absent "no genuine Fabric Loader"        "FabricLoaderImpl|KnotClassLoader" "$LOG"
 awk '/Done \(/{d=1} d' "$LOG" > "$BUILD/gate-m4-postdone.log"
 check_absent "no post-Done exception"          "Encountered an unexpected exception" "$BUILD/gate-m4-postdone.log"
+
+step "negative control: the same instance with -Dforbric.unifiedEvents=off"
+# Without this the tick-1:1 assertions above could be passing for a reason that has nothing to do with the
+# multiplexer -- e.g. the merged base firing both families' hooks after all. Turning the bridges off must take the
+# forwarding with it, and must NOT take the server down: a missing bridge is a degraded instance, not a broken one.
+CONTROL="$BUILD/gate-m4-control.log"
+reap_stale_server "$RUNDIR"
+rm -rf "$RUNDIR/world" "$RUNDIR/.forbric-kernel" 2>/dev/null
+( sleep 30; echo stop ) | RUNDIR="$RUNDIR" FORBRIC_JVM="-Dforbric.unifiedEvents=off" \
+  "$KERNEL/run/launch-kernel-server.sh" > "$CONTROL" 2>&1 &
+CTLPID=$!
+record_server_pid "$RUNDIR" "$CTLPID"
+await_server "$CTLPID" "$CONTROL" 200
+
+check "the control booted"                     "Done \(" "$CONTROL"
+check "the control says it installed no bridges" "installing no bridges" "$CONTROL"
+check_absent "and MinecraftForge gets no forwarded Pre tick"  "bridged 20 ServerTickEvent.Pre"  "$CONTROL"
+check_absent "and MinecraftForge gets no forwarded Post tick" "bridged 20 ServerTickEvent.Post" "$CONTROL"
 
 step "M4 result"
 if [ "$FAIL" -eq 0 ]; then
