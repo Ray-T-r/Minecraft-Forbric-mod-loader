@@ -28,7 +28,6 @@ import java.util.Map;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
-import net.forbric.kernel.discovery.ModAnnotationScanner.Family;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -63,7 +62,7 @@ public final class KernelModLoader {
 	 * the mod's own container active, or the id-less {@code RegisterHelper.register(String, T)} overload namespaces
 	 * its content under whichever container was active last.
 	 */
-	public record ConstructedMod(String modId, String className, Family family, Object bus,
+	public record ConstructedMod(String modId, String className, Ecosystem family, Object bus,
 			KernelForgeModContext.Handle forgeHandle) {}
 
 	/**
@@ -122,10 +121,7 @@ public final class KernelModLoader {
 				continue;
 			}
 			for (ModAnnotationScanner.ModClassInfo info : mods) {
-				Ecosystem mine = info.family == Family.MINECRAFTFORGE
-						? Ecosystem.FORGE
-						: Ecosystem.NEOFORGE;
-				if (MultiLoaderArbiter.suppressedFor(jar, mine)) continue;
+				if (MultiLoaderArbiter.suppressedFor(jar, info.family)) continue;
 
 				claimed.add(info);
 				if (info.modId != null) jarOfMod.putIfAbsent(info.modId, jar);
@@ -139,7 +135,7 @@ public final class KernelModLoader {
 		// regardless of construction order.
 		Map<String, NeoIdentity> neo = new LinkedHashMap<>();
 		for (ModAnnotationScanner.ModClassInfo info : claimed) {
-			if (info.family == Family.MINECRAFTFORGE) continue;
+			if (info.family == Ecosystem.FORGE) continue;
 
 			String modId = safeId(info);
 			if (neo.containsKey(modId)) continue;
@@ -185,7 +181,7 @@ public final class KernelModLoader {
 		Map<String, KernelForgeModContext.Handle> forge = new LinkedHashMap<>();
 		for (ModAnnotationScanner.ModClassInfo info : claimed) {
 			try {
-				ConstructedMod mod = info.family == Family.MINECRAFTFORGE
+				ConstructedMod mod = info.family == Ecosystem.FORGE
 						? constructForgeFamilyMod(cl, info)
 						: constructNeoFamilyMod(cl, info, neo.get(safeId(info)), client);
 				built.add(mod);

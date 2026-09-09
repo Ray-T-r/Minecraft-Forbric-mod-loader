@@ -18,26 +18,22 @@ package net.forbric.kernel.transform;
 
 import net.fabricmc.api.EnvType;
 
+import net.forbric.api.Ecosystem;
+
 /**
  * Immutable, per-invocation context handed to every {@link ClassTransformer}.
+ *
+ * <p><b>{@link #getEcosystem()} is attribution the chain does not yet fill in.</b> It was declared with the SPI and
+ * never wired: {@code withSource} had no callers and {@code getEcosystem} no readers, so every transformer ran as
+ * "unknown" and none could ask which ecosystem a class came from. That is a large part of why they identify
+ * ecosystems by hardcoding their class names instead. It now names the one {@link Ecosystem} type rather than a
+ * private four-valued enum that was missing NeoForge, so a consumer can be given one.
  *
  * <p>It lets transformers written for either ecosystem share one call signature: a Fabric built-in,
  * a Forge coremod, and a remapper all read the same environment, dev flag, canonical runtime
  * namespace, and the origin of the class currently being transformed.
  */
 public final class TransformContext {
-	/** Which loader a class (or transformer) originates from. */
-	public enum Ecosystem {
-		/** Vanilla game class. */
-		GAME,
-		/** A Fabric mod class. */
-		FABRIC,
-		/** A Forge mod class. */
-		FORGE,
-		/** Origin not yet attributed. */
-		UNKNOWN
-	}
-
 	private final EnvType envType;
 	private final boolean development;
 	private final String runtimeNamespace;
@@ -45,13 +41,12 @@ public final class TransformContext {
 	private final String sourceModId;
 
 	public TransformContext(EnvType envType, boolean development, String runtimeNamespace) {
-		this(envType, development, runtimeNamespace, Ecosystem.UNKNOWN, null);
+		this(envType, development, runtimeNamespace, null, null);
 	}
 
 	public TransformContext(EnvType envType, boolean development, String runtimeNamespace, Ecosystem ecosystem, String sourceModId) {
 		if (envType == null) throw new NullPointerException("envType");
 		if (runtimeNamespace == null) throw new NullPointerException("runtimeNamespace");
-		if (ecosystem == null) throw new NullPointerException("ecosystem");
 
 		this.envType = envType;
 		this.development = development;
@@ -75,7 +70,14 @@ public final class TransformContext {
 		return runtimeNamespace;
 	}
 
-	/** The ecosystem the class being transformed belongs to. */
+	/**
+	 * The ecosystem the class being transformed belongs to, or {@code null} for a game class or one whose origin
+	 * was not attributed.
+	 *
+	 * <p>Null rather than a {@code GAME}/{@code UNKNOWN} constant: those are not ecosystems, and putting them in
+	 * the shared vocabulary would force every switch over {@link Ecosystem} to handle two cases that can never
+	 * name a mod.
+	 */
 	public Ecosystem getEcosystem() {
 		return ecosystem;
 	}
@@ -95,7 +97,7 @@ public final class TransformContext {
 		return "TransformContext{env=" + envType
 				+ ", dev=" + development
 				+ ", ns=" + runtimeNamespace
-				+ ", ecosystem=" + ecosystem
+				+ ", ecosystem=" + (ecosystem == null ? "game" : ecosystem)
 				+ ", mod=" + sourceModId
 				+ '}';
 	}

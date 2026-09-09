@@ -32,6 +32,8 @@ import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
+import net.forbric.api.Ecosystem;
+
 class ModAnnotationScannerTest {
 	private static byte[] classBytes(String internalName, String modId) {
 		return classBytes(internalName, modId, ModAnnotationScanner.MOD_DESC_NEOFORGE);
@@ -104,8 +106,8 @@ class ModAnnotationScannerTest {
 		List<ModAnnotationScanner.ModClassInfo> mods = ModAnnotationScanner.scan(jar);
 
 		assertEquals(2, mods.size());
-		assertEquals(ModAnnotationScanner.Family.MINECRAFTFORGE, mods.get(0).family);
-		assertEquals(ModAnnotationScanner.Family.NEOFORGE, mods.get(1).family);
+		assertEquals(Ecosystem.FORGE, mods.get(0).family);
+		assertEquals(Ecosystem.NEOFORGE, mods.get(1).family);
 	}
 
 	private static void write(ZipOutputStream zip, String name, byte[] bytes) throws Exception {

@@ -68,7 +68,20 @@ import net.forbric.kernel.util.ForbricLog;
  */
 public final class LoaderProbePolicy {
 
-	/** Which loader family a guest class belongs to, for probe purposes. */
+	/**
+	 * Which loader family a guest class belongs to, for probe purposes.
+	 *
+	 * <p><b>Deliberately not {@link net.forbric.api.Ecosystem}, and deliberately two-valued.</b> When the kernel's
+	 * five ecosystem enums were collapsed into one, this one was kept, because it is not the same question.
+	 * {@code FORGE_FAMILY} is a GROUPING: a jar declaring {@code neoforge.mods.toml} still probes for
+	 * {@code net.minecraftforge.fml.loading.FMLLoader} and must be told yes, because on a real instance a mod of
+	 * either Forge family is running on FML. Splitting this into FORGE and NEOFORGE would make
+	 * {@link #forName(String, boolean, ClassLoader, String)} start answering "absent" to exactly those probes.
+	 *
+	 * <p>It is also not free to rename: {@link #name()} is baked into guest bytecode as an {@code LDC} by
+	 * {@code LoaderProbeRewriter} and compared back here, so the constant is part of an already-transformed
+	 * class's contract for the life of the process.
+	 */
 	public enum Family {
 		/** Loaded from a jar that declares only {@code fabric.mod.json}. */
 		FABRIC,
