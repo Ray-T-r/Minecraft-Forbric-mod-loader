@@ -15,6 +15,10 @@ run/server-worldgen/
 # gate-m12 wipes and re-stages both of these on every run, world included.
 run/mp-server/
 run/mp-client/
+# gate-m18 stages its three canaries and a fresh world on every run.
+run/server-presence/
+# Ad-hoc rundirs for reproducing a single mod's behaviour. Staged by hand from a real install, never by a gate.
+run/client-phys*/
 
 # The rundirs that ARE tracked, minus the files the gates rewrite on every single run. These were committed
 # before the rule above existed and have dirtied `git status` ever since: server.properties is written by the

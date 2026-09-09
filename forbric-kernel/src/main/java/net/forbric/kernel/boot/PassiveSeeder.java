@@ -273,8 +273,24 @@ public final class PassiveSeeder {
 			seedEmptyLoadingModList(gameLoader, fmlLoader, loaderInstance);
 			return;
 		}
-		if (mods.isEmpty()) {
-			// Zero Forge-family mods: the old code path exactly, so gate-m1 / gate-m2b cannot move.
+		// The Fabric mods go in TOO. Not to be loaded — nothing here loads anything — but because this list is
+		// what answers "is mod X installed" for a Forge-family mod, and the honest answer includes the mods the
+		// other ecosystem is running. Physics Mod reads exactly this seam (LoadingModList.getModFileById) to decide
+		// whether to render through Sodium's pipeline or vanilla's; told no next to a live Fabric Sodium, it drew
+		// its debris and ragdolls into a path Sodium no longer runs, so they were simply never visible.
+		//
+		// forgeFamilyMods above is deliberately NOT extended: that list is what traditional Forge's ModList is
+		// built from, and a MinecraftForge ModList is announced to servers in the handshake. Presence must not
+		// turn into "this client claims to run those mods".
+		List<DiscoveredMod> presence = new ArrayList<>(mods);
+		Set<String> presenceIds = new LinkedHashSet<>();
+		for (DiscoveredMod mod : mods) presenceIds.add(mod.getId());
+		for (DiscoveredMod mod : KernelForeignMods.fabricMods()) {
+			if (mod.getId() != null && mod.getSource() != null && presenceIds.add(mod.getId())) presence.add(mod);
+		}
+
+		if (presence.isEmpty()) {
+			// Zero mods of any family: the old code path exactly, so gate-m1 / gate-m2b cannot move.
 			seedEmptyLoadingModList(gameLoader, fmlLoader, loaderInstance);
 			return;
 		}
@@ -284,18 +300,19 @@ public final class PassiveSeeder {
 			field.setAccessible(true);
 			if (field.get(loaderInstance) != null) return; // a genuine list exists — never overwrite it
 
-			Object list = buildLoadingModList(gameLoader, mods);
+			Object list = buildLoadingModList(gameLoader, presence);
 			field.set(loaderInstance, list);
 
 			StringBuilder ids = new StringBuilder();
-			for (DiscoveredMod mod : mods) {
+			for (DiscoveredMod mod : presence) {
 				if (ids.length() > 0) ids.append(", ");
 				ids.append(mod.getId());
 			}
-			ForbricLog.info("[Forbric/Seed] seeded NeoForge LoadingModList with %d mod(s) — mods that resolve "
-					+ "themselves through FMLLoader.getLoadingModList() (Iris' version probe, "
-					+ "yumi/LambDynamicLights' mod lookup) find themselves; an empty list NPEs Iris at "
-					+ "Minecraft.<init>. [%s]", mods.size(), ids);
+			ForbricLog.info("[Forbric/Seed] seeded NeoForge LoadingModList with %d mod(s) (%d Forge-family, %d "
+					+ "Fabric for presence) — mods that resolve themselves through FMLLoader.getLoadingModList() "
+					+ "(Iris' version probe, yumi/LambDynamicLights' mod lookup) find themselves, and mods that ask "
+					+ "it about ANOTHER ecosystem's mod get the truth. [%s]", presence.size(), mods.size(),
+					presence.size() - mods.size(), ids);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Seed] could not seed a populated NeoForge LoadingModList — falling back to the "
 					+ "empty list; mods that look themselves up through it will not find themselves", unwrap(t));

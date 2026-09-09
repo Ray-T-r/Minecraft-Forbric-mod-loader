@@ -61,6 +61,14 @@ public final class KernelClientSmoke {
 	 * gate uses to see a remap happen AND be undone: the first and last must agree, the middle may differ.
 	 */
 	public static final String PROBE_IDS = "forbric.clientSmokeProbeIds";
+	/**
+	 * {@code tick[,tick…]}: world ticks at which to save a screenshot into {@code <gameDir>/screenshots}.
+	 *
+	 * <p>Every other marker this class produces is a log line, which can only ever say that code RAN. A feature
+	 * whose whole output is pixels — a mod's particles, a ragdoll, a shader pass — runs exactly the same when it
+	 * draws nothing, so a log-only gate calls that green. This is the seam for asserting on the frame itself.
+	 */
+	public static final String SCREENSHOTS = "forbric.clientSmokeScreenshots";
 
 	private static Object lastLevel;
 	private static int worldTicks;
@@ -71,6 +79,7 @@ public final class KernelClientSmoke {
 	private static int drillTick = -1;
 	private static boolean drillDone;
 	private static boolean probed;
+	private static final java.util.Set<Integer> shotsTaken = new java.util.HashSet<>();
 	private static boolean idsLoggedBeforeConnect;
 
 	private KernelClientSmoke() {
@@ -137,6 +146,7 @@ public final class KernelClientSmoke {
 			reportWindowTitle(minecraft);
 		}
 		if (ready && !drillDone && Boolean.getBoolean(DRILL)) drill(minecraft, player);
+		if (ready) screenshotIfDue(minecraft);
 		if (ready && !probed && worldTicks >= Integer.getInteger(PROBE_TICKS, 160)) {
 			probed = true;
 			probeBlocks(level);
@@ -420,6 +430,40 @@ public final class KernelClientSmoke {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Saves a screenshot when the current world tick is one of {@link #SCREENSHOTS}.
+	 *
+	 * <p>Runs on the render thread (this is called from {@code Minecraft.tick}), which is where the game's own
+	 * screenshot key takes it, so the frame is complete and the GPU read-back is legal. The file lands in
+	 * {@code <gameDir>/screenshots}; the log line names the tick so a gate can pair a picture with a drill phase.
+	 */
+	private static void screenshotIfDue(Object minecraft) {
+		String want = System.getProperty(SCREENSHOTS, "");
+		if (want.isBlank() || !shotsTaken.add(worldTicks)) return;
+		boolean due = false;
+		for (String tick : want.split(",")) {
+			try {
+				if (Integer.parseInt(tick.trim()) == worldTicks) {
+					due = true;
+					break;
+				}
+			} catch (RuntimeException malformed) {
+				// A malformed entry costs that entry, not the run.
+			}
+		}
+		if (!due) return;
+		try {
+			Class<?> screenshot = Class.forName("net.minecraft.client.Screenshot", true,
+					minecraft.getClass().getClassLoader());
+			java.lang.reflect.Method grab = screenshot.getMethod("grab", minecraft.getClass(), boolean.class);
+			grab.invoke(null, minecraft, false);
+			ForbricLog.info("[Forbric/ClientSmoke] screenshot requested at world tick %d", worldTicks);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] could not take a screenshot at world tick %d: %s", worldTicks,
+					String.valueOf(t));
+		}
 	}
 
 	/**

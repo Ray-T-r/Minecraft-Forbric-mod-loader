@@ -33,6 +33,8 @@ import net.forbric.kernel.fabric.FabricModDiscovery;
 import net.forbric.kernel.fabric.KernelFabricLoader;
 import net.forbric.kernel.fabric.KernelModContainer;
 import net.forbric.kernel.fabric.KernelModMetadata;
+import net.forbric.kernel.metadata.DiscoveredMod;
+import net.forbric.kernel.metadata.ModEcosystem;
 import net.forbric.kernel.mixin.MergedBaseMixinCompat;
 import net.forbric.kernel.mixin.MixinConfigPolicy;
 import net.forbric.kernel.util.ForbricLog;
@@ -132,8 +134,41 @@ public final class KernelFabricEcosystem {
 					+ "winning jar supplies the classes; isModLoaded now answers", alias.modId(), alias.version());
 		}
 
+		// The same identity problem across ECOSYSTEMS. A Fabric mod asking isModLoaded("jei") next to a NeoForge
+		// JEI was told no, because each loader only ever knew its own family's mods; the answer is almost always a
+		// compatibility branch, so a wrong no silently disables an integration that would have worked. Presence
+		// only, exactly like the arbitration aliases above: identity, no entrypoints, no mixins, no assets — the
+		// mod is really loaded, by the other family's lifecycle, which owns everything else about it.
+		int foreign = 0;
+		for (DiscoveredMod mod : KernelForeignMods.forgeFamilyMods()) {
+			if (mod.getId() == null || mod.getId().isBlank()) continue;
+			if (fabric.getModContainer(mod.getId()).isPresent()) continue;
+			fabric.register(new KernelModContainer(KernelModMetadata.builtin(mod.getId(),
+					mod.getVersion() == null ? "0" : mod.getVersion(),
+					mod.getDisplayName() == null ? mod.getId() : mod.getDisplayName()), null, null));
+			foreign++;
+		}
+		if (foreign > 0) {
+			ForbricLog.info("[Forbric/Fabric] %d Forge-family mod(s) registered for presence only — a Fabric mod "
+					+ "asking isModLoaded() about one of them now gets the truth instead of no", foreign);
+		}
+
 		fabric.freeze();
 		loader = fabric;
+
+		// The mirror image: what the Forge-family lists have to be seeded with so their mods can see these.
+		// Built-ins and the jar-less aliases above are left out — NeoForge's list is built per JAR, and those
+		// have no jar; "minecraft"/"java"/"fabricloader" are not mods a compatibility branch asks about anyway.
+		List<DiscoveredMod> fabricMods = new ArrayList<>();
+		for (ModContainer container : fabric.getAllMods()) {
+			if (!(container instanceof KernelModContainer kernel) || kernel.getJar() == null) continue;
+			String id = kernel.getMetadata().getId();
+			if (id == null || id.isBlank() || KernelForeignMods.isLoaded(id)) continue;
+			fabricMods.add(new DiscoveredMod(ModEcosystem.FABRIC, id,
+					String.valueOf(kernel.getMetadata().getVersion()), kernel.getMetadata().getName(),
+					List.of(), List.of(), null, kernel.getJar().toString()));
+		}
+		KernelForeignMods.publishFabric(fabricMods);
 
 		List<Path> jars = discovery.getClasspathJars();
 		ForbricLog.info("[Forbric/Fabric] discovered %d Fabric mod(s) in %d jar(s) (incl. nested)",

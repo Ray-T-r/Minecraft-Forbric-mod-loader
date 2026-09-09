@@ -29,3 +29,22 @@ build_one() { # <src-dir> <out-jar>
 }
 
 build_one "$HERE/livemod-src" "$HERE/forge-runtime/forbriclive.jar"
+
+# The NeoForge twin. It used to exist only as a binary nobody could rebuild, which is fine until a gate needs the
+# canary to report something new — then the one mod that could answer is the one that cannot be changed.
+build_neo() { # <src-dir> <out-jar>
+  local src="$1" out="$2" classes
+  local neo_rt="$HERE/neoforge-runtime/neoforge-runtime.jar"
+  local neo_mc="$HERE/neoforge-patched/patched-mc-neoforge-26.2.jar"
+  [ -f "$neo_rt" ] || { echo "neoforge-runtime.jar missing - run assemble-neoforge-runtime.sh" >&2; return 2; }
+  [ -f "$neo_mc" ] || { echo "patched-mc-neoforge-26.2.jar missing" >&2; return 2; }
+  classes="$WORK/testmod-classes-$(basename "$out" .jar)"
+  rm -rf "$classes"; mkdir -p "$classes/META-INF"
+  find "$src" -name '*.java' -print0 | xargs -0 javac --release 21 -proc:none \
+    -cp "$neo_rt:$neo_mc:$ANNOT:$VLIBS" -d "$classes"
+  cp "$src/META-INF/neoforge.mods.toml" "$classes/META-INF/neoforge.mods.toml"
+  (cd "$classes" && jar --create --file "$out" .)
+  echo "[testmods] wrote $out"
+}
+
+build_neo "$HERE/livemod-src-neoforge" "$HERE/neoforge-runtime/forbricneolive.jar"
