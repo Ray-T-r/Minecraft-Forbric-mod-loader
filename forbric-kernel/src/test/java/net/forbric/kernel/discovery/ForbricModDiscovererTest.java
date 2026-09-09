@@ -36,8 +36,8 @@ import java.util.zip.ZipEntry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.ModEcosystem;
 import net.forbric.kernel.metadata.UnifiedDependency;
 
 class ForbricModDiscovererTest {
@@ -109,7 +109,7 @@ class ForbricModDiscovererTest {
 		List<DiscoveredMod> found = new ForbricModDiscoverer().discoverJar(jar);
 
 		assertEquals(1, found.size());
-		assertEquals(ModEcosystem.NEOFORGE, found.get(0).getEcosystem());
+		assertEquals(Ecosystem.NEOFORGE, found.get(0).getEcosystem());
 		assertEquals("exampleneo", found.get(0).getId());
 	}
 
@@ -124,8 +124,8 @@ class ForbricModDiscovererTest {
 		List<DiscoveredMod> found = new ForbricModDiscoverer().discoverJar(jar);
 
 		assertEquals(2, found.size());
-		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == ModEcosystem.NEOFORGE).count());
-		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == ModEcosystem.FORGE).count());
+		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == Ecosystem.NEOFORGE).count());
+		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == Ecosystem.FORGE).count());
 		assertTrue(found.stream().allMatch(m -> "exampleforge".equals(m.getId())));
 	}
 
@@ -145,7 +145,7 @@ class ForbricModDiscovererTest {
 
 		DiscoveredMod fabric = byId(found, "examplefabric");
 		assertNotNull(fabric);
-		assertEquals(ModEcosystem.FABRIC, fabric.getEcosystem());
+		assertEquals(Ecosystem.FABRIC, fabric.getEcosystem());
 		assertEquals("2.3.4", fabric.getVersion());
 		assertEquals("Example Fabric Mod", fabric.getDisplayName());
 		assertTrue(fabric.getMixinConfigs().contains("examplefabric.mixins.json"));
@@ -155,7 +155,7 @@ class ForbricModDiscovererTest {
 
 		DiscoveredMod forge = byId(found, "exampleforge");
 		assertNotNull(forge);
-		assertEquals(ModEcosystem.FORGE, forge.getEcosystem());
+		assertEquals(Ecosystem.FORGE, forge.getEcosystem());
 		assertEquals("5.6.7", forge.getVersion(), "${file.jarVersion} should resolve from the manifest");
 		assertTrue(forge.getMixinConfigs().contains("exampleforge.mixins.json"));
 
@@ -176,8 +176,8 @@ class ForbricModDiscovererTest {
 		List<DiscoveredMod> found = new ForbricModDiscoverer().discoverJar(jar);
 
 		assertEquals(2, found.size());
-		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == ModEcosystem.FABRIC).count());
-		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == ModEcosystem.FORGE).count());
+		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == Ecosystem.FABRIC).count());
+		assertEquals(1, found.stream().filter(m -> m.getEcosystem() == Ecosystem.FORGE).count());
 	}
 
 	@Test

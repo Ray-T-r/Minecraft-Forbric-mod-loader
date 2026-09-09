@@ -24,13 +24,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.metadata.DiscoveredMod;
@@ -72,9 +72,9 @@ public final class DuplicateModArbiter {
 	static final String OVERRIDE_FILE = "forbric-mods.txt";
 
 	/** One jar's claim: the ecosystem it loads as, and the mod ids it declares under that ecosystem. */
-	public record Claim(Path jar, MultiLoaderArbiter.Ecosystem ecosystem, List<String> modIds,
+	public record Claim(Path jar, Ecosystem ecosystem, List<String> modIds,
 			Map<String, String> versions) {
-		public Claim(Path jar, MultiLoaderArbiter.Ecosystem ecosystem, List<String> modIds) {
+		public Claim(Path jar, Ecosystem ecosystem, List<String> modIds) {
 			this(jar, ecosystem, modIds, Map.of());
 		}
 
@@ -95,7 +95,7 @@ public final class DuplicateModArbiter {
 	 * disables it. Registering a presence-only container on the losing side closes exactly that gap and nothing
 	 * more.
 	 */
-	public record Alias(String modId, MultiLoaderArbiter.Ecosystem ecosystem, String version) {
+	public record Alias(String modId, Ecosystem ecosystem, String version) {
 	}
 
 	/** Which jars must not be loaded, who owns each contested id, and which ecosystems need a presence alias. */
@@ -105,7 +105,7 @@ public final class DuplicateModArbiter {
 		}
 
 		/** The aliases this ecosystem must publish so {@code isLoaded(id)} answers for mods it lost. */
-		public List<Alias> aliasesFor(MultiLoaderArbiter.Ecosystem ecosystem) {
+		public List<Alias> aliasesFor(Ecosystem ecosystem) {
 			List<Alias> mine = new ArrayList<>();
 			for (Alias alias : aliases) {
 				if (alias.ecosystem() == ecosystem) mine.add(alias);
@@ -230,11 +230,11 @@ public final class DuplicateModArbiter {
 		logUniversalAliases(universalAliases);
 		for (String id : contested) {
 			Claim winner = winners.get(id);
-			Set<MultiLoaderArbiter.Ecosystem> lost = new LinkedHashSet<>();
+			Set<Ecosystem> lost = new LinkedHashSet<>();
 			for (Claim claimant : byId.get(id)) {
 				if (claimant.ecosystem() != winner.ecosystem()) lost.add(claimant.ecosystem());
 			}
-			for (MultiLoaderArbiter.Ecosystem ecosystem : lost) {
+			for (Ecosystem ecosystem : lost) {
 				aliases.add(new Alias(id, ecosystem, winner.versionOf(id)));
 			}
 			ForbricLog.info("[Forbric/DupeId] mod id '%s' claimed by %d jars — loading %s (%s)%s", id,
@@ -248,7 +248,7 @@ public final class DuplicateModArbiter {
 
 	private static void logUniversalAliases(List<Alias> universalAliases) {
 		if (universalAliases.isEmpty()) return;
-		Map<MultiLoaderArbiter.Ecosystem, List<String>> byEcosystem = new LinkedHashMap<>();
+		Map<Ecosystem, List<String>> byEcosystem = new LinkedHashMap<>();
 		for (Alias alias : universalAliases) {
 			byEcosystem.computeIfAbsent(alias.ecosystem(), k -> new ArrayList<>()).add(alias.modId());
 		}
@@ -266,7 +266,7 @@ public final class DuplicateModArbiter {
 
 	/** Per-mod override first, then the global ecosystem preference, then first-by-path. */
 	private static Claim pick(String modId, List<Claim> claimants) {
-		MultiLoaderArbiter.Ecosystem forced = overrideFor(modId);
+		Ecosystem forced = overrideFor(modId);
 		if (forced != null) {
 			for (Claim claim : claimants) {
 				if (claim.ecosystem() == forced) return claim;
@@ -275,7 +275,7 @@ public final class DuplicateModArbiter {
 			ForbricLog.warn("[Forbric/DupeId] -D%s asks for '%s' from %s, but no such jar claims it — falling back "
 					+ "to the preference order", OWNER_OVERRIDE, modId, forced);
 		}
-		for (MultiLoaderArbiter.Ecosystem candidate : preference()) {
+		for (Ecosystem candidate : preference()) {
 			for (Claim claim : claimants) {
 				if (claim.ecosystem() == candidate) return claim;
 			}
@@ -299,15 +299,16 @@ public final class DuplicateModArbiter {
 	 *
 	 * <p>So they default to the same value and can be separated when an instance needs it.
 	 */
-	static List<MultiLoaderArbiter.Ecosystem> preference() {
+	static List<Ecosystem> preference() {
 		String csv = System.getProperty("forbric.dupeIdPreference");
 		if (csv == null || csv.isBlank()) return MultiLoaderArbiter.preference();
 
-		List<MultiLoaderArbiter.Ecosystem> order = new ArrayList<>();
+		List<Ecosystem> order = new ArrayList<>();
 		for (String raw : csv.split(",")) {
-			try {
-				order.add(MultiLoaderArbiter.Ecosystem.valueOf(raw.trim().toUpperCase(Locale.ROOT)));
-			} catch (IllegalArgumentException unknown) {
+			Ecosystem parsed = Ecosystem.parse(raw);
+			if (parsed != null) {
+				order.add(parsed);
+			} else {
 				ForbricLog.warn("[Forbric/DupeId] ignoring unknown ecosystem '%s' in -Dforbric.dupeIdPreference",
 						raw.trim());
 			}
@@ -316,14 +317,14 @@ public final class DuplicateModArbiter {
 	}
 
 	/** {@code -Dforbric.modOwner=sodium=fabric,lithostitched=neoforge} */
-	private static MultiLoaderArbiter.Ecosystem overrideFor(String modId) {
+	private static Ecosystem overrideFor(String modId) {
 		String csv = System.getProperty(OWNER_OVERRIDE);
 		if (csv != null && !csv.isBlank()) {
 			for (String raw : csv.split(",")) {
 				int eq = raw.indexOf('=');
 				if (eq <= 0) continue;
 				if (!raw.substring(0, eq).trim().equals(modId)) continue;
-				MultiLoaderArbiter.Ecosystem eco = ecosystem(raw.substring(eq + 1), "-D" + OWNER_OVERRIDE);
+				Ecosystem eco = ecosystem(raw.substring(eq + 1), "-D" + OWNER_OVERRIDE);
 				if (eco != null) return eco;
 			}
 		}
@@ -332,7 +333,7 @@ public final class DuplicateModArbiter {
 	}
 
 	/** Parsed {@code forbric-mods.txt}; empty until {@link #loadOverrideFile} runs, and after {@link #reset}. */
-	private static volatile Map<String, MultiLoaderArbiter.Ecosystem> fileOverrides = Map.of();
+	private static volatile Map<String, Ecosystem> fileOverrides = Map.of();
 
 	/**
 	 * Reads {@code <rundir>/forbric-mods.txt} — the way a player picks a side without touching JVM arguments.
@@ -351,7 +352,7 @@ public final class DuplicateModArbiter {
 		Path file = rundir.resolve(OVERRIDE_FILE);
 		if (!Files.isRegularFile(file)) return;
 
-		Map<String, MultiLoaderArbiter.Ecosystem> parsed = new LinkedHashMap<>();
+		Map<String, Ecosystem> parsed = new LinkedHashMap<>();
 		try {
 			int lineNo = 0;
 			for (String raw : Files.readAllLines(file)) {
@@ -366,7 +367,7 @@ public final class DuplicateModArbiter {
 							OVERRIDE_FILE, lineNo, line);
 					continue;
 				}
-				MultiLoaderArbiter.Ecosystem eco = ecosystem(line.substring(eq + 1), OVERRIDE_FILE + " line " + lineNo);
+				Ecosystem eco = ecosystem(line.substring(eq + 1), OVERRIDE_FILE + " line " + lineNo);
 				if (eco != null) parsed.put(line.substring(0, eq).trim(), eco);
 			}
 		} catch (Throwable t) {
@@ -397,9 +398,9 @@ public final class DuplicateModArbiter {
 			StringBuilder out = new StringBuilder();
 			for (String line : MergeReport.overrideTemplateHeader()) out.append(line).append('\n');
 			for (Map.Entry<String, Path> e : decision.ownerByModId().entrySet()) {
-				MultiLoaderArbiter.Ecosystem owner = MultiLoaderArbiter.ownerOf(e.getValue());
+				Ecosystem owner = MultiLoaderArbiter.ownerOf(e.getValue());
 				out.append("# ").append(e.getKey()).append(" = ")
-						.append(owner == null ? "fabric" : owner.name().toLowerCase(Locale.ROOT))
+						.append(owner == null ? "fabric" : owner.configId())
 						.append('\n');
 			}
 			Files.writeString(file, out.toString());
@@ -411,15 +412,16 @@ public final class DuplicateModArbiter {
 	}
 
 	/** Parses one ecosystem name, warning (and returning null) rather than throwing on anything unrecognised. */
-	private static MultiLoaderArbiter.Ecosystem ecosystem(String raw, String where) {
-		String name = raw.trim().toUpperCase(Locale.ROOT);
-		try {
-			return MultiLoaderArbiter.Ecosystem.valueOf(name);
-		} catch (IllegalArgumentException unknown) {
+	private static Ecosystem ecosystem(String raw, String where) {
+		// The file this reads is the PLAYER'S. It has always spelled traditional Forge "minecraftforge", which is
+		// why parsing goes through Ecosystem.parse rather than valueOf — the constant is FORGE, but an override
+		// someone wrote months ago must still read back.
+		Ecosystem parsed = Ecosystem.parse(raw);
+		if (parsed == null) {
 			ForbricLog.warn("[Forbric/DupeId] %s: '%s' is not a loader — use fabric, neoforge or minecraftforge",
 					where, raw.trim());
-			return null;
 		}
+		return parsed;
 	}
 
 	/**
@@ -447,10 +449,10 @@ public final class DuplicateModArbiter {
 		}
 
 		for (Path jar : jars) {
-			MultiLoaderArbiter.Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
+			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
 			if (owner == null) continue; // a plain library — nobody claims it, so it cannot contest an id
 			Map<String, String> versions = new LinkedHashMap<>();
-			List<String> ids = owner == MultiLoaderArbiter.Ecosystem.FABRIC
+			List<String> ids = owner == Ecosystem.FABRIC
 					? fabricIds(jar, envType, versions)
 					: forgeFamilyIds(discoverer, jar, versions);
 			if (!ids.isEmpty()) claims.add(new Claim(jar, owner, ids, Map.copyOf(versions)));
@@ -468,14 +470,14 @@ public final class DuplicateModArbiter {
 	 * would answer a question nobody asked and leave the real one unanswered.
 	 */
 	private static void collectUniversalAliases(ForbricModDiscoverer discoverer, Path jar,
-			MultiLoaderArbiter.Ecosystem owner, EnvType envType, List<Alias> out) {
-		List<MultiLoaderArbiter.Ecosystem> declared = MultiLoaderArbiter.declaredBy(jar);
+			Ecosystem owner, EnvType envType, List<Alias> out) {
+		List<Ecosystem> declared = MultiLoaderArbiter.declaredBy(jar);
 		if (declared.size() < 2) return;
 
-		for (MultiLoaderArbiter.Ecosystem lost : declared) {
+		for (Ecosystem lost : declared) {
 			if (lost == owner) continue;
 			Map<String, String> versions = new LinkedHashMap<>();
-			List<String> ids = lost == MultiLoaderArbiter.Ecosystem.FABRIC
+			List<String> ids = lost == Ecosystem.FABRIC
 					? fabricIds(jar, envType, versions)
 					: forgeFamilyIds(discoverer, jar, versions);
 			for (String id : ids) {

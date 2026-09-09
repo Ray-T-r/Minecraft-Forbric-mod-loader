@@ -22,7 +22,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import net.forbric.kernel.metadata.ModEcosystem;
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.mixin.MixinConfigPolicy;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -50,7 +50,7 @@ public final class KernelForgeFamilyMixins {
 	 * One declared Forge-family mixin config: the resource name, the jar that declared it, and which family's
 	 * manifest it came from.
 	 */
-	public record ForgeMixinConfig(String config, Path jar, ModEcosystem ecosystem) {
+	public record ForgeMixinConfig(String config, Path jar, Ecosystem ecosystem) {
 	}
 
 	/** Whether the Forge-family mixin path is on. Default ON — the switch exists for bisecting, not for shipping. */
@@ -75,9 +75,9 @@ public final class KernelForgeFamilyMixins {
 		int suppressed = 0;
 		int disabled = 0;
 		for (ForgeMixinConfig decl : declared) {
-			MultiLoaderArbiter.Ecosystem mine = decl.ecosystem() == ModEcosystem.NEOFORGE
-					? MultiLoaderArbiter.Ecosystem.NEOFORGE
-					: MultiLoaderArbiter.Ecosystem.MINECRAFTFORGE;
+			Ecosystem mine = decl.ecosystem() == Ecosystem.NEOFORGE
+					? Ecosystem.NEOFORGE
+					: Ecosystem.FORGE;
 			if (MultiLoaderArbiter.suppressedFor(decl.jar(), mine)) {
 				suppressed++;
 				ForbricLog.debug("[Forbric/Mixin] skipping %s — %s does not own %s", decl.config(), mine,
@@ -108,7 +108,7 @@ public final class KernelForgeFamilyMixins {
 	}
 
 	/** How many of {@code declared} came from each family — for the boot summary line. */
-	public static int count(List<ForgeMixinConfig> declared, List<String> selected, ModEcosystem family) {
+	public static int count(List<ForgeMixinConfig> declared, List<String> selected, Ecosystem family) {
 		int n = 0;
 		Set<String> counted = new LinkedHashSet<>();
 		for (ForgeMixinConfig decl : declared) {

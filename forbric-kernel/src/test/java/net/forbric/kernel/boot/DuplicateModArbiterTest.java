@@ -28,9 +28,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.boot.DuplicateModArbiter.Claim;
 import net.forbric.kernel.boot.DuplicateModArbiter.Decision;
-import net.forbric.kernel.boot.MultiLoaderArbiter.Ecosystem;
 
 /**
  * Covers {@link DuplicateModArbiter}'s decision rules, driven through the pure {@code arbitrate(List<Claim>)} so no
@@ -61,7 +61,7 @@ class DuplicateModArbiterTest {
 		Decision d = DuplicateModArbiter.arbitrate(List.of(
 				claim("/mods/a.jar", Ecosystem.FABRIC, "alpha"),
 				claim("/mods/b.jar", Ecosystem.NEOFORGE, "beta"),
-				claim("/mods/c.jar", Ecosystem.MINECRAFTFORGE, "gamma")));
+				claim("/mods/c.jar", Ecosystem.FORGE, "gamma")));
 
 		assertTrue(d.suppressedJars().isEmpty());
 		assertTrue(d.ownerByModId().isEmpty());
@@ -180,7 +180,7 @@ class DuplicateModArbiterTest {
 		Decision d = DuplicateModArbiter.arbitrate(List.of(
 				claim("/mods/x-fabric.jar", Ecosystem.FABRIC, "x"),
 				claim("/mods/x-neoforge.jar", Ecosystem.NEOFORGE, "x"),
-				claim("/mods/x-forge.jar", Ecosystem.MINECRAFTFORGE, "x")));
+				claim("/mods/x-forge.jar", Ecosystem.FORGE, "x")));
 
 		assertEquals(2, d.suppressedJars().size());
 		assertFalse(d.suppressed(Path.of("/mods/x-forge.jar")));
@@ -259,7 +259,7 @@ class DuplicateModArbiterTest {
 		Decision d = DuplicateModArbiter.arbitrate(List.of(
 				claim("/mods/x-fabric.jar", Ecosystem.FABRIC, "x"),
 				claim("/mods/x-neoforge.jar", Ecosystem.NEOFORGE, "x"),
-				claim("/mods/x-forge.jar", Ecosystem.MINECRAFTFORGE, "x")));
+				claim("/mods/x-forge.jar", Ecosystem.FORGE, "x")));
 
 		assertEquals(2, d.aliases().size());
 		assertEquals(1, d.aliasesFor(Ecosystem.FABRIC).size());

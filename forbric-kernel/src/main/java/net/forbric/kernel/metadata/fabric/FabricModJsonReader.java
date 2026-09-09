@@ -28,8 +28,8 @@ import java.util.Map;
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
 import com.electronwill.nightconfig.json.JsonFormat;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.ModEcosystem;
 import net.forbric.kernel.metadata.UnifiedDependency;
 
 /**
@@ -65,7 +65,7 @@ public final class FabricModJsonReader {
 		}
 
 		return new DiscoveredMod(
-				ModEcosystem.FABRIC,
+				Ecosystem.FABRIC,
 				id,
 				version,
 				name,

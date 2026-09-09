@@ -20,10 +20,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.jar.JarFile;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -48,13 +48,8 @@ import net.forbric.kernel.util.ForbricLog;
  * so its glue's hooks are the most likely to be intact.
  */
 public final class MultiLoaderArbiter {
-	/** Which loader family claims a jar. */
-	public enum Ecosystem {
-		NEOFORGE, MINECRAFTFORGE, FABRIC
-	}
-
 	private static final List<Ecosystem> DEFAULT_PREFERENCE =
-			List.of(Ecosystem.NEOFORGE, Ecosystem.MINECRAFTFORGE, Ecosystem.FABRIC);
+			List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE, Ecosystem.FABRIC);
 
 	/** jar path -> the ecosystem that owns it. Computed once per jar; discovery order is stable. */
 	private static final Map<String, Ecosystem> OWNERS = new LinkedHashMap<>();
@@ -116,7 +111,7 @@ public final class MultiLoaderArbiter {
 		List<Ecosystem> declared = new ArrayList<>();
 		try (JarFile zip = new JarFile(jar.toFile())) {
 			if (zip.getEntry(ForbricModDiscoverer.NEOFORGE_MANIFEST) != null) declared.add(Ecosystem.NEOFORGE);
-			if (zip.getEntry(ForbricModDiscoverer.FORGE_MANIFEST) != null) declared.add(Ecosystem.MINECRAFTFORGE);
+			if (zip.getEntry(ForbricModDiscoverer.FORGE_MANIFEST) != null) declared.add(Ecosystem.FORGE);
 			if (zip.getEntry(ForbricModDiscoverer.FABRIC_MANIFEST) != null) declared.add(Ecosystem.FABRIC);
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/MultiLoader] could not read %s: %s", jar.getFileName(), String.valueOf(t));
@@ -136,9 +131,12 @@ public final class MultiLoaderArbiter {
 
 		List<Ecosystem> order = new ArrayList<>();
 		for (String raw : csv.split(",")) {
-			try {
-				order.add(Ecosystem.valueOf(raw.trim().toUpperCase(Locale.ROOT)));
-			} catch (IllegalArgumentException unknown) {
+			// Ecosystem.parse, not valueOf: this knob has always taken "minecraftforge", and the constant is now
+			// spelled FORGE because run/diff-oracle.sh pins that spelling independently of kernel code.
+			Ecosystem parsed = Ecosystem.parse(raw);
+			if (parsed != null) {
+				order.add(parsed);
+			} else {
 				ForbricLog.warn("[Forbric/MultiLoader] ignoring unknown ecosystem '%s' in "
 						+ "-Dforbric.multiLoaderPreference", raw.trim());
 			}

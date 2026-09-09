@@ -19,8 +19,8 @@ package net.forbric.kernel.metadata.forge;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.ModEcosystem;
 import net.forbric.kernel.metadata.UnifiedDependency;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -64,18 +64,18 @@ public final class ForgeMetadataMapper {
 	public static List<DiscoveredMod> toDiscoveredMods(ForgeModsToml toml, String jarVersion, String source,
 			List<String> accessTransformers, List<String> extraMixinConfigs, java.util.function.Predicate<String> mixinConfigPresent) {
 		return toDiscoveredMods(toml, jarVersion, source, accessTransformers, extraMixinConfigs, mixinConfigPresent,
-				ModEcosystem.FORGE);
+				Ecosystem.FORGE);
 	}
 
 	/**
-	 * @param ecosystem which Forge-family ecosystem declared this toml — {@link ModEcosystem#NEOFORGE} when it
-	 *                  came from {@code META-INF/neoforge.mods.toml}, {@link ModEcosystem#FORGE} for the classic
+	 * @param ecosystem which Forge-family ecosystem declared this toml — {@link Ecosystem#NEOFORGE} when it
+	 *                  came from {@code META-INF/neoforge.mods.toml}, {@link Ecosystem#FORGE} for the classic
 	 *                  {@code META-INF/mods.toml}. Both files share the same schema; the ecosystem is decided by
 	 *                  which manifest the jar carried, not by the toml contents.
 	 */
 	public static List<DiscoveredMod> toDiscoveredMods(ForgeModsToml toml, String jarVersion, String source,
 			List<String> accessTransformers, List<String> extraMixinConfigs,
-			java.util.function.Predicate<String> mixinConfigPresent, ModEcosystem ecosystem) {
+			java.util.function.Predicate<String> mixinConfigPresent, Ecosystem ecosystem) {
 		List<String> declared = new ArrayList<>(toml.getMixinConfigs());
 		for (String config : extraMixinConfigs) {
 			if (!declared.contains(config)) declared.add(config);

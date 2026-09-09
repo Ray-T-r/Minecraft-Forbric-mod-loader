@@ -27,8 +27,8 @@ import java.util.jar.Manifest;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.ModEcosystem;
 import net.forbric.kernel.metadata.fabric.FabricModJsonReader;
 import net.forbric.kernel.metadata.forge.EcosystemVersions;
 import net.forbric.kernel.metadata.forge.ForgeMetadataMapper;
@@ -101,15 +101,15 @@ public final class ForbricModDiscoverer {
 			// Forge / NeoForge side — a jar may carry either or both (multiloader builds ship one toml per
 			// family). Each present manifest is reported truthfully under its own ecosystem; which family
 			// actually loads is a boot-time policy (the active game base), not a discovery concern.
-			discoverForgeFamily(jar, NEOFORGE_MANIFEST, ModEcosystem.NEOFORGE, jarVersion, source, result);
-			discoverForgeFamily(jar, FORGE_MANIFEST, ModEcosystem.FORGE, jarVersion, source, result);
+			discoverForgeFamily(jar, NEOFORGE_MANIFEST, Ecosystem.NEOFORGE, jarVersion, source, result);
+			discoverForgeFamily(jar, FORGE_MANIFEST, Ecosystem.FORGE, jarVersion, source, result);
 		}
 
 		return result;
 	}
 
 	/** Reads one Forge-family manifest ({@code mods.toml} / {@code neoforge.mods.toml}) into {@code sink}, if present. */
-	private static void discoverForgeFamily(JarFile jar, String manifestPath, ModEcosystem ecosystem,
+	private static void discoverForgeFamily(JarFile jar, String manifestPath, Ecosystem ecosystem,
 			String jarVersion, String source, List<DiscoveredMod> sink) throws IOException {
 		ZipEntry entry = jar.getEntry(manifestPath);
 		if (entry == null) return;
@@ -134,7 +134,7 @@ public final class ForbricModDiscoverer {
 		List<String> manifestMixins = new ArrayList<>();
 		Manifest manifest = jar.getManifest();
 		String attr = manifest == null ? null : manifest.getMainAttributes().getValue("MixinConfigs");
-		if (attr != null && ecosystem == ModEcosystem.FORGE) {
+		if (attr != null && ecosystem == Ecosystem.FORGE) {
 			for (String config : attr.split(",")) {
 				if (!config.strip().isEmpty()) manifestMixins.add(config.strip());
 			}

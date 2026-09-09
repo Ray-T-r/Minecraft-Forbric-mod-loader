@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -233,9 +234,9 @@ public final class KernelDataPacks {
 		}
 		List<Path> serve = new ArrayList<>();
 		for (Path jar : jars) {
-			MultiLoaderArbiter.Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
-			if (owner != MultiLoaderArbiter.Ecosystem.NEOFORGE
-					&& owner != MultiLoaderArbiter.Ecosystem.MINECRAFTFORGE) {
+			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
+			if (owner != Ecosystem.NEOFORGE
+					&& owner != Ecosystem.FORGE) {
 				continue;
 			}
 			if (carriesData(jar)) serve.add(jar);
