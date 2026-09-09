@@ -132,6 +132,19 @@ public final class KernelGuestMixinAdapter {
 					}
 					continue;
 				}
+				// UNFIT means "no anchor resolves against the merged base", which the adapter reads as dead weight.
+				// It is not dead weight when the anchor belongs to ANOTHER mod: a cross-mod compatibility mixin
+				// targets a member that mod's own mixin adds at runtime. See ForeignMixinTargets for the two Physics
+				// Mod cases (Sodium's SpriteCoordinateExpander.transform, Iris' VertexFormat.bindAttributesIris) that
+				// this rule was silently deleting. Keeping it is cheap — a relaxed injector soft-skips if the member
+				// really is absent — while dropping it removes a working feature with no error anywhere.
+				if (fit.verdict() == MixinFit.Verdict.UNFIT && ForeignMixinTargets.claimedByAnotherConfig(
+						configName, MixinFit.mixinTargets(MixinFit.parse(classBytes)), resource)) {
+					ForbricLog.info("[Forbric/Mixin] keeping guest mixin %s:%s — %s, but another loaded mod's mixin "
+							+ "targets the same class, so the missing member is that mod's to add (cross-mod "
+							+ "compatibility layer, not dead weight)", configName, mixin, fit.reason());
+					continue;
+				}
 				suppress.add(mixin);
 				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — %s on the merged base (%s)",
 						configName, mixin, fit.verdict(), fit.reason());
