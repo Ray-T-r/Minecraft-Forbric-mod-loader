@@ -32,6 +32,8 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Opcodes;
 
+import net.forbric.api.Ecosystem;
+
 /**
  * Scans a Forge/NeoForge mod jar with ASM for classes carrying {@code @Mod}, so Forbric can bring up each
  * mod entry without the mod's main class being named by hand. A single jar may declare several {@code @Mod}
@@ -47,20 +49,13 @@ public final class ModAnnotationScanner {
 	 * an EventBus 7 {@code BusGroup}, NeoForge wants ({@code IEventBus}, {@code Dist}, {@code ModContainer}) — so the
 	 * family has to survive discovery for {@code KernelModLoader} to route on it.
 	 */
-	public enum Family {
-		/** Traditional MinecraftForge — {@code net.minecraftforge.fml.common.Mod}. */
-		MINECRAFTFORGE,
-		/** NeoForge — {@code net.neoforged.fml.common.Mod}. */
-		NEOFORGE
-	}
-
 	/** A discovered {@code @Mod} class, its declared mod id, and the ecosystem that declared it. */
 	public static final class ModClassInfo {
 		public final String className; // binary (dot-separated) name
 		public final String modId;     // @Mod value, or null if absent
-		public final Family family;    // which ecosystem's @Mod annotation was found
+		public final Ecosystem family; // which ecosystem's @Mod annotation was found
 
-		ModClassInfo(String className, String modId, Family family) {
+		ModClassInfo(String className, String modId, Ecosystem family) {
 			this.className = className;
 			this.modId = modId;
 			this.family = family;
@@ -77,9 +72,9 @@ public final class ModAnnotationScanner {
 	/** NeoForge {@code @Mod} descriptor (the parked NeoForge path). */
 	public static final String MOD_DESC_NEOFORGE = "Lnet/neoforged/fml/common/Mod;";
 	/** Both Forge-family {@code @Mod} annotations share the same shape ({@code String value()}); recognise either. */
-	private static final java.util.Map<String, Family> MOD_DESCRIPTORS = java.util.Map.of(
-			MOD_DESC_MINECRAFTFORGE, Family.MINECRAFTFORGE,
-			MOD_DESC_NEOFORGE, Family.NEOFORGE);
+	private static final java.util.Map<String, Ecosystem> MOD_DESCRIPTORS = java.util.Map.of(
+			MOD_DESC_MINECRAFTFORGE, Ecosystem.FORGE,
+			MOD_DESC_NEOFORGE, Ecosystem.NEOFORGE);
 
 	private ModAnnotationScanner() {
 	}
@@ -119,7 +114,7 @@ public final class ModAnnotationScanner {
 	private static final class ModCollector extends ClassVisitor {
 		String className;
 		String modId;
-		Family family;
+		Ecosystem family;
 
 		ModCollector() {
 			super(Opcodes.ASM9);
@@ -132,7 +127,7 @@ public final class ModAnnotationScanner {
 
 		@Override
 		public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
-			Family found = MOD_DESCRIPTORS.get(descriptor);
+			Ecosystem found = MOD_DESCRIPTORS.get(descriptor);
 			if (found == null) return null;
 
 			family = found;

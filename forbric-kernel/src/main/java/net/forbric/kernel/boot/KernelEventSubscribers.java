@@ -30,6 +30,7 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Opcodes;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.util.ForbricLog;
@@ -93,7 +94,7 @@ public final class KernelEventSubscribers {
 	 * @param modId  the declared {@code modid()}, or null
 	 * @param bus    the declared {@code bus()}, defaulting to {@code BOTH} when absent
 	 */
-	record Subscriber(String className, ModAnnotationScanner.Family family, java.util.Set<String> dists,
+	record Subscriber(String className, Ecosystem family, java.util.Set<String> dists,
 			String modId, String bus) {
 	}
 
@@ -163,7 +164,7 @@ public final class KernelEventSubscribers {
 				String modId = ownerModId(sub, modsInJar);
 
 				try {
-					if (sub.family() == ModAnnotationScanner.Family.MINECRAFTFORGE) {
+					if (sub.family() == Ecosystem.FORGE) {
 						if (forge == null) continue;
 						if (registerForgeSubscriber(cl, loader, forge, sub, modId)) forgeClasses++;
 						else skippedOwner++;
@@ -352,7 +353,7 @@ public final class KernelEventSubscribers {
 		int skippedSide = 0;
 		for (Path jar : jars) {
 			for (Subscriber sub : scan(jar)) {
-				if (sub.family() != ModAnnotationScanner.Family.NEOFORGE) continue;
+				if (sub.family() != Ecosystem.NEOFORGE) continue;
 				if (!matchesSide(sub.dists(), client)) {
 					skippedSide++;
 					continue;
@@ -442,7 +443,7 @@ public final class KernelEventSubscribers {
 	static Subscriber scanClassBytes(byte[] bytes) {
 		try {
 			String[] name = new String[1];
-			ModAnnotationScanner.Family[] family = new ModAnnotationScanner.Family[1];
+			Ecosystem[] family = new Ecosystem[1];
 			String[] modId = new String[1];
 			String[] bus = new String[1];
 			java.util.Set<String> dists = new java.util.LinkedHashSet<>();
@@ -459,8 +460,8 @@ public final class KernelEventSubscribers {
 					// A universal jar's glue class can carry BOTH. First one wins and the other is ignored: the
 					// class can only be constructed once, and a second registration would double every listener.
 					if (family[0] != null) return null;
-					family[0] = forge ? ModAnnotationScanner.Family.MINECRAFTFORGE
-							: ModAnnotationScanner.Family.NEOFORGE;
+					family[0] = forge ? Ecosystem.FORGE
+							: Ecosystem.NEOFORGE;
 					return new AnnotationVisitor(Opcodes.ASM9) {
 						@Override
 						public void visit(String attr, Object value) {

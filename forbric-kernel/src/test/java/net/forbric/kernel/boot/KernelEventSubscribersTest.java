@@ -28,6 +28,7 @@ import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 
 /**
@@ -74,8 +75,8 @@ class KernelEventSubscribersTest {
 		var neo = KernelEventSubscribers.scanClassBytes(
 				subscriber("com/example/NeoEvents", EBS_NEO, "example", null, DIST_NEO));
 
-		assertEquals(ModAnnotationScanner.Family.MINECRAFTFORGE, forge.family());
-		assertEquals(ModAnnotationScanner.Family.NEOFORGE, neo.family());
+		assertEquals(Ecosystem.FORGE, forge.family());
+		assertEquals(Ecosystem.NEOFORGE, neo.family());
 		assertEquals("com.example.ForgeEvents", forge.className());
 	}
 
@@ -98,7 +99,7 @@ class KernelEventSubscribersTest {
 		annotate(cw, EBS_NEO, "example", null, DIST_NEO);
 		cw.visitEnd();
 
-		assertEquals(ModAnnotationScanner.Family.MINECRAFTFORGE,
+		assertEquals(Ecosystem.FORGE,
 				KernelEventSubscribers.scanClassBytes(cw.toByteArray()).family());
 	}
 
