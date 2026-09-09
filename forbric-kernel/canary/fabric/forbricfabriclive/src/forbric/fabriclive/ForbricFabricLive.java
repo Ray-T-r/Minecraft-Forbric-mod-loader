@@ -53,6 +53,12 @@ public final class ForbricFabricLive implements ModInitializer {
 				+ " java=" + loader.isModLoaded("java")
 				+ " fabricloader=" + loader.isModLoaded("fabricloader"));
 
+		// Mods of the OTHER ecosystems are running in this same instance, and this is the call a Fabric mod makes
+		// to decide whether to enable an integration with one of them. Answering it per-ecosystem does not disable
+		// a feature loudly — it takes the wrong branch in silence.
+		System.out.println("[ForbricFabricLive] foreign forbriclive=" + loader.isModLoaded("forbriclive")
+				+ " forbricneolive=" + loader.isModLoaded("forbricneolive"));
+
 		// The JiJ-nested library must have been extracted, discovered, and registered.
 		System.out.println("[ForbricFabricLive] jij nested lib loaded=" + loader.isModLoaded("forbricfabriclib"));
 

@@ -47,6 +47,7 @@ import net.forbric.kernel.transform.LifecycleHookInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
 import net.forbric.kernel.transform.ExitHookInjector;
+import net.forbric.kernel.transform.ForeignModPresenceInjector;
 import net.forbric.kernel.transform.ForgeBindingsLookupInjector;
 import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
@@ -169,6 +170,16 @@ public final class KernelBoot {
 		// versionRange this instance cannot satisfy says so as it is discovered rather than failing later.
 		EcosystemVersions.record(runtimeJars);
 		ForgeFamilyMods forgeFamily = discoverForgeFamilyModJars(gameDir.resolve("mods"), dupes);
+
+		// Presence, not loading. Every ecosystem keeps its own mod list, so a mod asking its own loader whether some
+		// OTHER family's mod is installed is told no — and that answer is usually a compatibility branch, not a
+		// display string. Published here, before the Fabric ecosystem is built, because that build reads it back.
+		try {
+			KernelForeignMods.publishForgeFamily(PassiveSeeder.arbitratedForgeFamilyMods(gameDir.resolve("mods")));
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Presence] could not list the Forge-family mods for cross-ecosystem presence — a "
+					+ "Fabric mod asking whether one of them is installed will be told no: %s", String.valueOf(t));
+		}
 		List<Path> modJars = new ArrayList<>(forgeFamily.jars());
 		List<Path> nested = extractForgeFamilyJarJar(modJars, gameDir);
 		modJars.addAll(nested);
@@ -304,6 +315,9 @@ public final class KernelBoot {
 		// not build — so every use of its config events (registering one, loading one on a world, syncing one to a
 		// client) died in that class initializer.
 		chain.register(TransformPhase.COREMOD, new ForgeBindingsLookupInjector());
+		// Each family's ModList.isLoaded can only see its own family's mods, and that answer is a compatibility
+		// branch far more often than a display string — a wrong "no" disables an integration in silence.
+		chain.register(TransformPhase.COREMOD, new ForeignModPresenceInjector());
 
 		// Client only: NeoForge won Hud.extractRenderState, so the call sites fabric-rendering-v1's HudMixin anchors
 		// on no longer exist — as METHOD REFERENCES in the layer manager they exist as no bytecode at all, so no
