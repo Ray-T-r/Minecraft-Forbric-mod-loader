@@ -28,13 +28,13 @@ import java.util.Map;
 
 import net.fabricmc.api.EnvType;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.access.ClassTweakerTransformer;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.classloading.LoaderProbePolicy;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.metadata.forge.EcosystemVersions;
 import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.ModEcosystem;
 import net.forbric.kernel.mixin.KernelMixinBootstrap;
 import net.forbric.kernel.transform.ClientPackHookInjector;
 import net.forbric.kernel.transform.DataPackHookInjector;
@@ -434,8 +434,8 @@ public final class KernelBoot {
 		if (!forgeConfigs.isEmpty() || !forgeMixinDecls.isEmpty()) {
 			ForbricLog.info("[Forbric/Mixin] mixin configs: %d Fabric + %d Forge-family (%d NeoForge, %d "
 					+ "MinecraftForge) — %s", fabricConfigs.size(), forgeConfigs.size(),
-					KernelForgeFamilyMixins.count(forgeMixinDecls, forgeConfigs, ModEcosystem.NEOFORGE),
-					KernelForgeFamilyMixins.count(forgeMixinDecls, forgeConfigs, ModEcosystem.FORGE),
+					KernelForgeFamilyMixins.count(forgeMixinDecls, forgeConfigs, Ecosystem.NEOFORGE),
+					KernelForgeFamilyMixins.count(forgeMixinDecls, forgeConfigs, Ecosystem.FORGE),
 					forgeConfigs.isEmpty() ? "none kept" : String.join(", ", forgeConfigs));
 		}
 		KernelMixinBootstrap.init(loader, side.envType, mixinConfigs);
@@ -543,10 +543,10 @@ public final class KernelBoot {
 			for (Path jar : group) {
 				if (families.containsKey(jar)) continue;
 
-				MultiLoaderArbiter.Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
+				Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
 				if (owner == null) continue;
 
-				families.put(jar, owner == MultiLoaderArbiter.Ecosystem.FABRIC
+				families.put(jar, owner == Ecosystem.FABRIC
 						? LoaderProbePolicy.Family.FABRIC
 						: LoaderProbePolicy.Family.FORGE_FAMILY);
 			}

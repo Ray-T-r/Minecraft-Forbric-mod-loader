@@ -29,12 +29,12 @@ import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.entrypoint.EntrypointContainer;
 import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.fabric.FabricModDiscovery;
 import net.forbric.kernel.fabric.KernelFabricLoader;
 import net.forbric.kernel.fabric.KernelModContainer;
 import net.forbric.kernel.fabric.KernelModMetadata;
 import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.ModEcosystem;
 import net.forbric.kernel.mixin.MergedBaseMixinCompat;
 import net.forbric.kernel.mixin.MixinConfigPolicy;
 import net.forbric.kernel.util.ForbricLog;
@@ -113,7 +113,7 @@ public final class KernelFabricEcosystem {
 		int suppressed = 0;
 		for (KernelModContainer container : discovery.getContainers()) {
 			Path jar = container.getJar();
-			if (jar != null && MultiLoaderArbiter.suppressedFor(jar, MultiLoaderArbiter.Ecosystem.FABRIC)) {
+			if (jar != null && MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FABRIC)) {
 				suppressed++;
 				continue;
 			}
@@ -127,7 +127,7 @@ public final class KernelFabricEcosystem {
 		// 98–100% the same classes — but without this, FabricLoader.isModLoaded(id) answers false and a Fabric mod
 		// that gates an integration on that check silently disables it. Register the identity, nothing else: no
 		// entrypoints, no mixins, no assets, all of which the winner already provides.
-		for (DuplicateModArbiter.Alias alias : dupes.aliasesFor(MultiLoaderArbiter.Ecosystem.FABRIC)) {
+		for (DuplicateModArbiter.Alias alias : dupes.aliasesFor(Ecosystem.FABRIC)) {
 			fabric.register(new KernelModContainer(
 					KernelModMetadata.builtin(alias.modId(), alias.version(), alias.modId()), null, null));
 			ForbricLog.info("[Forbric/Fabric] presence alias '%s' %s — its Fabric jar lost arbitration, but the "
@@ -164,7 +164,7 @@ public final class KernelFabricEcosystem {
 			if (!(container instanceof KernelModContainer kernel) || kernel.getJar() == null) continue;
 			String id = kernel.getMetadata().getId();
 			if (id == null || id.isBlank() || KernelForeignMods.isLoaded(id)) continue;
-			fabricMods.add(new DiscoveredMod(ModEcosystem.FABRIC, id,
+			fabricMods.add(new DiscoveredMod(Ecosystem.FABRIC, id,
 					String.valueOf(kernel.getMetadata().getVersion()), kernel.getMetadata().getName(),
 					List.of(), List.of(), null, kernel.getJar().toString()));
 		}

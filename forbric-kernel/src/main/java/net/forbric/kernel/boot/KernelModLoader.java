@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.discovery.ModAnnotationScanner.Family;
@@ -121,9 +122,9 @@ public final class KernelModLoader {
 				continue;
 			}
 			for (ModAnnotationScanner.ModClassInfo info : mods) {
-				MultiLoaderArbiter.Ecosystem mine = info.family == Family.MINECRAFTFORGE
-						? MultiLoaderArbiter.Ecosystem.MINECRAFTFORGE
-						: MultiLoaderArbiter.Ecosystem.NEOFORGE;
+				Ecosystem mine = info.family == Family.MINECRAFTFORGE
+						? Ecosystem.FORGE
+						: Ecosystem.NEOFORGE;
 				if (MultiLoaderArbiter.suppressedFor(jar, mine)) continue;
 
 				claimed.add(info);
@@ -158,7 +159,7 @@ public final class KernelModLoader {
 		// identity only, since the winner already ran the mod's initialisation and registered its content.
 		Map<String, NeoIdentity> aliases = new LinkedHashMap<>();
 		for (DuplicateModArbiter.Alias alias
-				: DuplicateModArbiter.current().aliasesFor(MultiLoaderArbiter.Ecosystem.NEOFORGE)) {
+				: DuplicateModArbiter.current().aliasesFor(Ecosystem.NEOFORGE)) {
 			if (neo.containsKey(alias.modId())) continue; // a real @Mod already owns it
 			try {
 				Object bus = KernelBusSupport.makeModBus(cl);

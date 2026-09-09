@@ -30,6 +30,7 @@ import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.metadata.UnifiedDependency;
 
 class WrapAsFabricModTest {
@@ -77,7 +78,7 @@ class WrapAsFabricModTest {
 		}
 
 		ForgeModRemapper.wrapAsFabricMod(jar, "neomod", "1.0.0", List.of("com.example.NeoMod"), List.of(),
-				List.of(), List.of(), null, net.forbric.kernel.metadata.ModEcosystem.NEOFORGE);
+				List.of(), List.of(), null, Ecosystem.NEOFORGE);
 
 		String json;
 		try (FileSystem fs = FileSystems.newFileSystem(jar, (ClassLoader) null)) {

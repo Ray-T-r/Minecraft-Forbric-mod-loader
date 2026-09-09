@@ -38,6 +38,7 @@ import net.fabricmc.tinyremapper.IMappingProvider;
 import net.fabricmc.tinyremapper.OutputConsumerPath;
 import net.fabricmc.tinyremapper.TinyRemapper;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.metadata.UnifiedDependency;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -210,7 +211,7 @@ public final class ForgeModRemapper {
 			List<String> forgeClasses, List<String> mixinConfigs, List<UnifiedDependency> dependencies,
 			List<String> nestedJarPaths, Set<String> presentModIds) throws IOException {
 		wrapAsFabricMod(remappedJar, modId, version, forgeClasses, mixinConfigs, dependencies, nestedJarPaths,
-				presentModIds, net.forbric.kernel.metadata.ModEcosystem.FORGE);
+				presentModIds, Ecosystem.FORGE);
 	}
 
 	/**
@@ -222,7 +223,7 @@ public final class ForgeModRemapper {
 	public static void wrapAsFabricMod(Path remappedJar, String modId, String version,
 			List<String> forgeClasses, List<String> mixinConfigs, List<UnifiedDependency> dependencies,
 			List<String> nestedJarPaths, Set<String> presentModIds,
-			net.forbric.kernel.metadata.ModEcosystem ecosystem) throws IOException {
+			Ecosystem ecosystem) throws IOException {
 		Map<String, String> depends = new LinkedHashMap<>();
 		Map<String, String> recommends = new LinkedHashMap<>();
 
@@ -268,7 +269,7 @@ public final class ForgeModRemapper {
 		}
 
 		String first = forgeClasses == null || forgeClasses.isEmpty() ? "" : forgeClasses.get(0);
-		String family = (ecosystem == null ? net.forbric.kernel.metadata.ModEcosystem.FORGE : ecosystem).familyId();
+		String family = (ecosystem == null ? Ecosystem.FORGE : ecosystem).familyId();
 		json.append("  \"custom\": {\n");
 		json.append("    \"forbric:forgeClass\": \"").append(first).append("\",\n");
 		json.append("    \"forbric:forgeClasses\": ").append(jsonStringArray(forgeClasses)).append(",\n");
@@ -346,7 +347,7 @@ public final class ForgeModRemapper {
 	 * FML's {@code FMLModContainer} to find the mod's module, so it must stay deterministic per mod id.
 	 */
 	private static void writeAutomaticModuleName(FileSystem fs, String modId,
-			net.forbric.kernel.metadata.ModEcosystem ecosystem) throws IOException {
+			Ecosystem ecosystem) throws IOException {
 		Path mf = fs.getPath("META-INF", "MANIFEST.MF");
 		Manifest manifest = new Manifest();
 		if (Files.exists(mf)) {
@@ -364,9 +365,9 @@ public final class ForgeModRemapper {
 		}
 	}
 
-	/** @see #automaticModuleName(String, net.forbric.kernel.metadata.ModEcosystem) */
+	/** @see #automaticModuleName(String, Ecosystem) */
 	public static String automaticModuleName(String modId) {
-		return automaticModuleName(modId, net.forbric.kernel.metadata.ModEcosystem.FORGE);
+		return automaticModuleName(modId, Ecosystem.FORGE);
 	}
 
 	/**
@@ -380,10 +381,10 @@ public final class ForgeModRemapper {
 	 *       {@code [a-z][a-z0-9_]*}, already valid Java module names — no prefix, no sanitize needed).</li>
 	 * </ul>
 	 */
-	public static String automaticModuleName(String modId, net.forbric.kernel.metadata.ModEcosystem ecosystem) {
+	public static String automaticModuleName(String modId, Ecosystem ecosystem) {
 		String seg = modId == null || modId.isEmpty() ? "mod" : modId.replaceAll("[^A-Za-z0-9_]", "_");
 		if (Character.isDigit(seg.charAt(0))) seg = "_" + seg;
-		if (ecosystem == net.forbric.kernel.metadata.ModEcosystem.NEOFORGE) return seg;
+		if (ecosystem == Ecosystem.NEOFORGE) return seg;
 		return "forbricmod." + seg;
 	}
 

@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelModMetadata;
@@ -120,7 +121,7 @@ public final class MergeReport {
 	}
 
 	/** One jar's declaration of one mod id. */
-	private record Entry(Path jar, MultiLoaderArbiter.Ecosystem ecosystem, Set<String> dependsOn) {
+	private record Entry(Path jar, Ecosystem ecosystem, Set<String> dependsOn) {
 	}
 
 	private static String render(DuplicateModArbiter.Decision decision, Map<String, List<Entry>> byId) {
@@ -211,9 +212,9 @@ public final class MergeReport {
 		}
 
 		for (Path jar : jars) {
-			MultiLoaderArbiter.Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
+			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
 			if (owner == null) continue;
-			if (owner == MultiLoaderArbiter.Ecosystem.FABRIC) {
+			if (owner == Ecosystem.FABRIC) {
 				addFabric(byId, jar, owner);
 			} else {
 				addForgeFamily(byId, jar, owner, discoverer);
@@ -222,7 +223,7 @@ public final class MergeReport {
 		return byId;
 	}
 
-	private static void addFabric(Map<String, List<Entry>> byId, Path jar, MultiLoaderArbiter.Ecosystem owner) {
+	private static void addFabric(Map<String, List<Entry>> byId, Path jar, Ecosystem owner) {
 		try (JarFile zip = new JarFile(jar.toFile())) {
 			ZipEntry manifest = zip.getEntry(ForbricModDiscoverer.FABRIC_MANIFEST);
 			if (manifest == null) return;
@@ -242,7 +243,7 @@ public final class MergeReport {
 	}
 
 	private static void addForgeFamily(Map<String, List<Entry>> byId, Path jar,
-			MultiLoaderArbiter.Ecosystem owner, ForbricModDiscoverer discoverer) {
+			Ecosystem owner, ForbricModDiscoverer discoverer) {
 		try {
 			for (DiscoveredMod mod : discoverer.discoverJar(jar)) {
 				if (!mod.getEcosystem().isForgeFamily() || mod.getId() == null) continue;

@@ -74,6 +74,12 @@ public final class DelegationPolicy {
 			"net.forbric.kernel.fabric.",
 			"net.forbric.kernel.util.",
 			"net.forbric.kernel.api.",
+			// The unified Forbric API. Parent-loaded for the same reason net.fabricmc.api. is: it is the
+			// vocabulary the kernel and all three compatibility layers share, so there must be exactly ONE
+			// copy of it in the JVM. Two copies would make an Ecosystem constant handed across the boot/game
+			// boundary fail == against itself, which is the kind of defect that reads as "the branch is just
+			// wrong" for a day.
+			"net.forbric.api.",
 	};
 
 	private static final String[] ALWAYS_GAME = {

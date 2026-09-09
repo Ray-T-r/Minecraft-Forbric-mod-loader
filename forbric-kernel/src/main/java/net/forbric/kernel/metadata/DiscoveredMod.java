@@ -19,6 +19,8 @@ package net.forbric.kernel.metadata;
 import java.util.Collections;
 import java.util.List;
 
+import net.forbric.api.Ecosystem;
+
 /**
  * One mod, normalized into Forbric's unified model regardless of which ecosystem declared it.
  *
@@ -28,7 +30,7 @@ import java.util.List;
  * (namespace, refmap, lifecycle) to apply.
  */
 public final class DiscoveredMod {
-	private final ModEcosystem ecosystem;
+	private final Ecosystem ecosystem;
 	private final String id;
 	private final String version;
 	private final String displayName;
@@ -38,12 +40,12 @@ public final class DiscoveredMod {
 	private final List<String> accessTransformers;
 	private final String source;
 
-	public DiscoveredMod(ModEcosystem ecosystem, String id, String version, String displayName,
+	public DiscoveredMod(Ecosystem ecosystem, String id, String version, String displayName,
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig, String source) {
 		this(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig, Collections.emptyList(), source);
 	}
 
-	public DiscoveredMod(ModEcosystem ecosystem, String id, String version, String displayName,
+	public DiscoveredMod(Ecosystem ecosystem, String id, String version, String displayName,
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig,
 			List<String> accessTransformers, String source) {
 		this.ecosystem = ecosystem;
@@ -57,7 +59,7 @@ public final class DiscoveredMod {
 		this.source = source;
 	}
 
-	public ModEcosystem getEcosystem() {
+	public Ecosystem getEcosystem() {
 		return ecosystem;
 	}
 

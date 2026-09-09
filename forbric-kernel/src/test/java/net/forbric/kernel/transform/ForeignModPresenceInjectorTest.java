@@ -43,9 +43,9 @@ import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.boot.KernelForeignMods;
 import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.ModEcosystem;
 
 /** Both families' {@code ModList.isLoaded} gains the cross-ecosystem answer, and nothing else moves. */
 class ForeignModPresenceInjectorTest {
@@ -136,7 +136,7 @@ class ForeignModPresenceInjectorTest {
 	}
 
 	private static DiscoveredMod fabric(String id) {
-		return new DiscoveredMod(ModEcosystem.FABRIC, id, "1.0", id, List.of(), List.of(), null, id + ".jar");
+		return new DiscoveredMod(Ecosystem.FABRIC, id, "1.0", id, List.of(), List.of(), null, id + ".jar");
 	}
 
 	/** {@code class X { boolean isLoaded(String id) { return false; } }}, static or instance. */
