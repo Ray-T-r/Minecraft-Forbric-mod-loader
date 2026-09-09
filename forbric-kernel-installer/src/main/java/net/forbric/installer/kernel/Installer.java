@@ -103,10 +103,12 @@ public final class Installer {
 		List<Object> game = new ArrayList<>();
 		game.add("--gameJar");
 		game.add(libraryRef(coordinate("net.forbric:patched-mc-merged", mcVersion)));
+		// Both runtimes travel in ONE flag, joined the way a classpath is. A launcher may read game arguments as a
+		// flag-to-value map and keep only the last occurrence of a repeated flag — PCL2 does, and says so — which
+		// would drop MinecraftForge's runtime and kill the game on the first net.minecraftforge class it touches.
 		game.add("--runtimeJar");
-		game.add(libraryRef(coordinate("net.forbric:forge-runtime", mcVersion)));
-		game.add("--runtimeJar");
-		game.add(libraryRef(coordinate("net.forbric:neoforge-runtime", mcVersion)));
+		game.add(libraryRef(coordinate("net.forbric:forge-runtime", mcVersion)) + java.io.File.pathSeparator
+				+ libraryRef(coordinate("net.forbric:neoforge-runtime", mcVersion)));
 		game.add("--libraryPath");
 		game.add(String.join(java.io.File.pathSeparator, mcLibraries));
 

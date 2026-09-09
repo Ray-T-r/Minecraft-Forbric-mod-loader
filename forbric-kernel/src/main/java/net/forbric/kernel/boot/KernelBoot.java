@@ -101,7 +101,8 @@ public final class KernelBoot {
 
 	/**
 	 * Runs the shared boot for {@code side}. {@code args} are the raw process args:
-	 * {@code --gameJar}/{@code --runtimeJar}/{@code --libraryPath} are consumed here; everything after {@code --}
+	 * {@code --gameJar}/{@code --runtimeJar}/{@code --libraryPath} are consumed here ({@code --runtimeJar} takes
+	 * either one jar or several joined by the platform path separator); everything after {@code --}
 	 * (and any unrecognized token) is forwarded to the game's {@code Main.main}.
 	 */
 	public static void launch(Side side, String[] args) throws Throwable {
@@ -127,9 +128,18 @@ public final class KernelBoot {
 				case "--runtimeJar" -> {
 					// Retained (not just owned): each ecosystem's runtime jar IS that ecosystem's own "mod" — FML
 					// scans it for @EventBusSubscriber exactly like a mod jar, so the kernel must too.
-					Path jar = new File(req(args, ++i, a)).toPath();
-					runtimeJars.add(jar);
-					owned.add(jar.toUri().toURL());
+					//
+					// One flag may carry several jars, separated the way a classpath is. Repeating the flag still works
+					// (every launch script in run/ does), but an installed profile must not depend on it: a launcher is
+					// free to read game arguments as a flag-to-value map and keep only the last occurrence, which drops a
+					// whole ecosystem's runtime and takes the game down on the first class that ecosystem owns.
+					for (String entry : req(args, ++i, a).split(File.pathSeparator)) {
+						if (entry.isBlank()) continue;
+						Path jar = new File(entry).toPath();
+						if (runtimeJars.contains(jar)) continue;
+						runtimeJars.add(jar);
+						owned.add(jar.toUri().toURL());
+					}
 				}
 				case "--libraryPath" -> libraryPath = req(args, ++i, a);
 				case "--" -> afterSep = true;
