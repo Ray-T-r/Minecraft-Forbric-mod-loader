@@ -39,7 +39,7 @@ import net.fabricmc.tinyremapper.OutputConsumerPath;
 import net.fabricmc.tinyremapper.TinyRemapper;
 
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.metadata.UnifiedDependency;
+import net.forbric.api.UnifiedDependency;
 import net.forbric.kernel.util.ForbricLog;
 
 /**

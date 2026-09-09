@@ -30,9 +30,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.api.ModPresence;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
-import net.forbric.kernel.metadata.DiscoveredMod;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -285,7 +286,7 @@ public final class PassiveSeeder {
 		List<DiscoveredMod> presence = new ArrayList<>(mods);
 		Set<String> presenceIds = new LinkedHashSet<>();
 		for (DiscoveredMod mod : mods) presenceIds.add(mod.getId());
-		for (DiscoveredMod mod : KernelForeignMods.fabricMods()) {
+		for (DiscoveredMod mod : ModPresence.fabricMods()) {
 			if (mod.getId() != null && mod.getSource() != null && presenceIds.add(mod.getId())) presence.add(mod);
 		}
 

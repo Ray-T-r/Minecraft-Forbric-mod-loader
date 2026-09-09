@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-package net.forbric.kernel.metadata;
+package net.forbric.api;
 
 import java.util.Collections;
 import java.util.List;
 
-import net.forbric.api.Ecosystem;
 
 /**
  * One mod, normalized into Forbric's unified model regardless of which ecosystem declared it.

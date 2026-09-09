@@ -43,9 +43,9 @@ import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.boot.KernelForeignMods;
-import net.forbric.kernel.metadata.DiscoveredMod;
+import net.forbric.api.ModPresence;
 
 /** Both families' {@code ModList.isLoaded} gains the cross-ecosystem answer, and nothing else moves. */
 class ForeignModPresenceInjectorTest {
@@ -53,19 +53,19 @@ class ForeignModPresenceInjectorTest {
 			.normalize();
 	private static final Path NEOFORGE = STAGE.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path FORGE = STAGE.resolve("forge-runtime/forge-runtime.jar");
-	private static final String PRESENCE = "net/forbric/kernel/boot/KernelForeignMods";
+	private static final String PRESENCE = "net/forbric/api/ModPresence";
 	private static final String NEO_MOD_LIST = "net.neoforged.fml.ModList";
 	private static final String FORGE_MOD_LIST = "net.minecraftforge.fml.ModList";
 
 	@AfterEach
 	void clearRegistry() {
-		KernelForeignMods.publishForgeFamily(List.of());
-		KernelForeignMods.publishFabric(List.of());
+		ModPresence.publishForgeFamily(List.of());
+		ModPresence.publishFabric(List.of());
 	}
 
 	@Test
 	void aSyntheticIsLoadedNowAnswersForAFabricMod() throws Exception {
-		KernelForeignMods.publishFabric(List.of(fabric("sodium")));
+		ModPresence.publishFabric(List.of(fabric("sodium")));
 
 		byte[] out = transform(NEO_MOD_LIST, syntheticModList(NEO_MOD_LIST.replace('.', '/'), false));
 		Class<?> loaded = define(NEO_MOD_LIST, out);
@@ -79,7 +79,7 @@ class ForeignModPresenceInjectorTest {
 
 	@Test
 	void theStaticOverloadReadsTheIdFromSlotZero() throws Exception {
-		KernelForeignMods.publishFabric(List.of(fabric("iris")));
+		ModPresence.publishFabric(List.of(fabric("iris")));
 
 		byte[] out = transform(FORGE_MOD_LIST, syntheticModList(FORGE_MOD_LIST.replace('.', '/'), true));
 		Class<?> loaded = define(FORGE_MOD_LIST, out);

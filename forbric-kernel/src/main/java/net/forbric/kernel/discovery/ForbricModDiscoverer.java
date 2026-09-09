@@ -27,8 +27,8 @@ import java.util.jar.Manifest;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.metadata.DiscoveredMod;
 import net.forbric.kernel.metadata.fabric.FabricModJsonReader;
 import net.forbric.kernel.metadata.forge.EcosystemVersions;
 import net.forbric.kernel.metadata.forge.ForgeMetadataMapper;

@@ -28,8 +28,8 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
-import net.forbric.kernel.metadata.DiscoveredMod;
 import net.forbric.kernel.util.ForbricLog;
 
 /**

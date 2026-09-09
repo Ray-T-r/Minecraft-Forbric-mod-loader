@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.metadata.UnifiedDependency;
+import net.forbric.api.UnifiedDependency;
 
 class WrapAsFabricModTest {
 	@Test

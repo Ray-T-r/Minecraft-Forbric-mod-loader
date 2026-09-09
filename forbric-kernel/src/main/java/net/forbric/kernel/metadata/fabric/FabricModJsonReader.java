@@ -28,9 +28,9 @@ import java.util.Map;
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
 import com.electronwill.nightconfig.json.JsonFormat;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.UnifiedDependency;
+import net.forbric.api.UnifiedDependency;
 
 /**
  * Reads a {@code fabric.mod.json} (schema v1) into Forbric's unified {@link DiscoveredMod} model.

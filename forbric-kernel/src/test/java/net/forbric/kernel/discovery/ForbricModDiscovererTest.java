@@ -36,9 +36,9 @@ import java.util.zip.ZipEntry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.UnifiedDependency;
+import net.forbric.api.UnifiedDependency;
 
 class ForbricModDiscovererTest {
 	private static final String FABRIC_JSON = "{\n"
