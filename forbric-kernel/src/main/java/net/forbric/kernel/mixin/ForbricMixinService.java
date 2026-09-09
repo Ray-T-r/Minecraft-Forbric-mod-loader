@@ -496,6 +496,14 @@ public final class ForbricMixinService
 	 */
 	private static volatile java.util.Set<String> guestConfigs = java.util.Set.of();
 
+	/** Every registered mixin config name, relaxed or not — the input {@link ForeignMixinTargets} indexes. */
+	private static volatile java.util.Set<String> registeredConfigs = java.util.Set.of();
+
+	/** Every mixin config registered this run, in registration order. Empty before {@link #setGuestConfigs}. */
+	public static java.util.Set<String> registeredConfigNames() {
+		return registeredConfigs;
+	}
+
 	/**
 	 * Records the guest mixin configs to relax. Called once, before any config is read.
 	 *
@@ -508,6 +516,17 @@ public final class ForbricMixinService
 	 * differential oracle, which relaxes every discovered guest mod's configs and excludes only infrastructure.)
 	 */
 	public static void setGuestConfigs(Collection<String> configs) {
+		// Recorded BEFORE the relax gate, and unconditionally: this list is also what tells the guest-mixin adapter
+		// which classes some OTHER mod's mixin will add members to (see ForeignMixinTargets). That question is
+		// independent of whether configs are relaxed, so -Dforbric.relaxGuestMixins=off must not empty it.
+		if (configs != null) {
+			java.util.Set<String> all = new java.util.LinkedHashSet<>();
+			for (String config : configs) {
+				if (config != null && !config.isEmpty()) all.add(config);
+			}
+			registeredConfigs = java.util.Set.copyOf(all);
+		}
+
 		if (configs == null || "off".equalsIgnoreCase(System.getProperty("forbric.relaxGuestMixins", "on"))) {
 			guestConfigs = java.util.Set.of();
 			return;
