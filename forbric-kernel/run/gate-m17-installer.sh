@@ -204,21 +204,54 @@ def flatten(section, key):
                     out.append(expand(v))
     return out
 
+def dedupe_pairs(argv):
+    """Collapse repeated game-argument flags, keeping the last value — the strictest thing a real launcher does.
+
+    A launcher is free to read the game arguments as a flag-to-value map rather than a list; PCL2 does, and
+    reports each collapse. A profile that needs a flag to appear twice loses one of them there and nowhere else,
+    so the simulation has to be at least as strict as the strictest launcher."""
+    value, order = {}, []
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        pair = token.startswith("--") and i + 1 < len(argv) and not argv[i + 1].startswith("--")
+        if token not in value:
+            order.append(token)
+        value[token] = argv[i + 1] if pair else None
+        i += 2 if pair else 1
+    out = []
+    for token in order:
+        out.append(token)
+        if value[token] is not None:
+            out.append(value[token])
+    return out
+
+game_args = flatten(child, "game")
+game_args += ["--quickPlayPath", os.path.join(dest, "quickPlay", "log.json"), "--quickPlaySingleplayer", world]
+deduped = dedupe_pairs(game_args)
+
 command = ["java"]
 if osname == "osx":
     command.append("-XstartOnFirstThread")
 command += flatten(child, "jvm")
 command += ["-cp", os.pathsep.join(classpath), child["mainClass"]]
-command += flatten(child, "game")
-command += ["--quickPlayPath", os.path.join(dest, "quickPlay", "log.json"), "--quickPlaySingleplayer", world]
+command += deduped
 
 with open(out, "w") as f:
     f.write("\n".join(command))
-print("[kernel]   classpath: %d jar(s); game args: %d; missing staged libraries: %s"
-      % (len(classpath), len(flatten(child, 'game')), missing or "none"))
+print("[kernel]   classpath: %d jar(s); game args: %d (%d dropped by launcher-style dedup); "
+      "missing staged libraries: %s"
+      % (len(classpath), len(deduped), len(game_args) - len(deduped), missing or "none"))
 PY
 PY_RC=$?
 assert_eq "the profile resolved like a launcher would" "0" "$PY_RC"
+
+# The profile has to survive that dedup with every ecosystem intact. It did not always: two --runtimeJar flags
+# collapsed into one, MinecraftForge's runtime never reached the kernel, and the game died on the first
+# net.minecraftforge class — after the kernel had logged a clean boot, so the game's own log said nothing.
+check "MinecraftForge's runtime survived the dedup" "/forge-runtime-[0-9.]+\.jar"     "$CMD_FILE"
+check "NeoForge's runtime survived the dedup"       "/neoforge-runtime-[0-9.]+\.jar"  "$CMD_FILE"
+check "the merged base survived the dedup"          "/patched-mc-merged-[0-9.]+\.jar" "$CMD_FILE"
 
 if [ "$PY_RC" -eq 0 ]; then
   echo "[kernel] launching the resolved command (mainClass $(grep -c . "$CMD_FILE") argv entries)"
