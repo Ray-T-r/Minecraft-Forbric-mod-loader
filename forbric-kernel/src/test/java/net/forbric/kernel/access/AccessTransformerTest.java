@@ -36,7 +36,8 @@ import net.forbric.kernel.transform.TransformContext;
 class AccessTransformerTest {
 	private static final String OWNER = "com/example/Target";
 
-	// A final class with a private final field and a private final method.
+	// A final class with a private final field and a private final method, plus a private object-returning
+	// method whose descriptor carries a class reference (so a dotted-descriptor AT line has something to match).
 	private static byte[] sampleClass() {
 		ClassWriter cw = new ClassWriter(0);
 		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL, OWNER, null, "java/lang/Object", null);
@@ -46,6 +47,12 @@ class AccessTransformerTest {
 		mv.visitInsn(Opcodes.RETURN);
 		mv.visitMaxs(0, 1);
 		mv.visitEnd();
+		MethodVisitor gm = cw.visitMethod(Opcodes.ACC_PRIVATE, "getElements", "()Ljava/util/List;", null, null);
+		gm.visitCode();
+		gm.visitInsn(Opcodes.ACONST_NULL);
+		gm.visitInsn(Opcodes.ARETURN);
+		gm.visitMaxs(1, 1);
+		gm.visitEnd();
 		cw.visitEnd();
 		return cw.toByteArray();
 	}
@@ -70,9 +77,12 @@ class AccessTransformerTest {
 			return null;
 		}
 
+		int getElementsAccess;
+
 		@Override
 		public MethodVisitor visitMethod(int access, String name, String desc, String sig, String[] ex) {
 			if (name.equals("hidden")) methodAccess = access;
+			if (name.equals("getElements")) getElementsAccess = access;
 			return null;
 		}
 	}
@@ -122,6 +132,26 @@ class AccessTransformerTest {
 		byte[] out = new AccessTransformer(List.of()).transform("com.example.Other", in,
 				new TransformContext(EnvType.CLIENT, false, "intermediary"));
 		assertEquals(in, out);
+	}
+
+	@Test
+	void widensMethodWhoseAtDescriptorUsesDottedClassNames() throws Exception {
+		// Physics Mod's real AT writes the return type of two members in dotted form, e.g.
+		//   public net.minecraft.client.renderer.block.model.BlockModel getElements()Ljava.util.List;
+		// The game's own AT reader tolerates the dots; the kernel must normalise them, or the descriptor never
+		// matches the method's slash-form descriptor, the widening is dropped, and the mod hits IllegalAccessError.
+		String cfg = "public com.example.Target getElements()Ljava.util.List;\n";
+		List<AtDirective> ds = AccessTransformerParser.parse(new StringReader(cfg));
+
+		assertEquals(1, ds.size());
+		assertEquals("()Ljava/util/List;", ds.get(0).memberDesc, "dotted descriptor normalised to slash form");
+
+		byte[] out = new AccessTransformer(ds).transform(OWNER.replace('/', '.'), sampleClass(),
+				new TransformContext(EnvType.CLIENT, false, "intermediary"));
+		Flags f = flagsOf(out);
+
+		assertTrue((f.getElementsAccess & Opcodes.ACC_PUBLIC) != 0, "dotted-descriptor method made public");
+		assertEquals(0, f.getElementsAccess & Opcodes.ACC_PRIVATE, "private bit cleared");
 	}
 
 	@Test
