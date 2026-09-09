@@ -26,6 +26,8 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -46,8 +48,8 @@ import net.forbric.kernel.util.ForbricLog;
  * real one. A mod that needs the container rather than the fact still gets an honest empty.
  */
 public final class ForeignModPresenceInjector implements ClassTransformer {
-	private static final String NEOFORGE_MOD_LIST = "net.neoforged.fml.ModList";
-	private static final String FORGE_MOD_LIST = "net.minecraftforge.fml.ModList";
+	private static final String NEOFORGE_MOD_LIST = ForeignType.MOD_LIST.binary(Ecosystem.NEOFORGE);
+	private static final String FORGE_MOD_LIST = ForeignType.MOD_LIST.binary(Ecosystem.FORGE);
 	private static final String IS_LOADED = "isLoaded";
 	private static final String IS_LOADED_DESC = "(Ljava/lang/String;)Z";
 	private static final String PRESENCE = "net/forbric/kernel/boot/KernelForeignMods";

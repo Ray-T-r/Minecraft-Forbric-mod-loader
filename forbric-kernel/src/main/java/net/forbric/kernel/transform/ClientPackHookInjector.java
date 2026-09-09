@@ -26,6 +26,8 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -51,8 +53,8 @@ public final class ClientPackHookInjector implements ClassTransformer {
 	private static final String HOOK_DESC = "(Ljava/lang/Object;)V";
 
 	private static final String[] OWNERS = {
-		"net.neoforged.neoforge.client.loading.ClientModLoader",
-		"net.minecraftforge.client.loading.ClientModLoader",
+		ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.NEOFORGE),
+		ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.FORGE),
 	};
 
 	@Override
