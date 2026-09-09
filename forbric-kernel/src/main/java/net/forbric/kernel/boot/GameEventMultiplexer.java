@@ -26,6 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
+import net.forbric.api.EventBridges;
+import net.forbric.api.GameEventBridge;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -53,6 +55,11 @@ public final class GameEventMultiplexer {
 
 	/** Installs the Neo→Forge tick bridges. No-op if either ecosystem is absent. Call after buses exist. */
 	public static void install(ClassLoader cl) {
+		if (!EventBridges.enabled()) {
+			ForbricLog.info("[Forbric/EventMux] -D%s=off — installing no bridges; each Forge family will receive "
+					+ "only the events whose hook won the byte merge", EventBridges.SWITCH_NAME);
+			return;
+		}
 		try {
 			Object neoBus = Class.forName("net.neoforged.neoforge.common.NeoForge", false, cl)
 					.getField("EVENT_BUS").get(null);
@@ -65,20 +72,27 @@ public final class GameEventMultiplexer {
 			Class<?> mcServer = Class.forName("net.minecraft.server.MinecraftServer", false, cl);
 			Class<?> factory = Class.forName("net.minecraftforge.event.ForgeEventFactory", false, cl);
 
-			int n = 0;
-			n += bridgeServerTick(cl, neoBus, addListener, lowest, factory, mcServer, "Pre", "onPreServerTick");
-			n += bridgeServerTick(cl, neoBus, addListener, lowest, factory, mcServer, "Post", "onPostServerTick");
+			// Each bridge is installed INDEPENDENTLY. They used to be five `n +=` calls in this one try, so the
+			// first setup failure skipped every bridge after it — and the cost of the ones skipped (see
+			// GameEventBridge.cost()) is silent: a listener on a bus nobody posts to. One failing bridge must cost
+			// only itself.
+			install(GameEventBridge.SERVER_TICK_PRE, () ->
+					bridgeServerTick(cl, neoBus, addListener, lowest, factory, mcServer, "Pre", "onPreServerTick"));
+			install(GameEventBridge.SERVER_TICK_POST, () ->
+					bridgeServerTick(cl, neoBus, addListener, lowest, factory, mcServer, "Post", "onPostServerTick"));
 			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
 			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so
 			// the local player's integrated-server connection is rejected "Server is still starting" and singleplayer
 			// world-join fails. Re-emit the dropped Forge hook off NeoForge's surviving ServerStarted/Stopping events.
-			n += bridgeForgeServerAboutToStart(cl, neoBus, addListener, lowest, mcServer);
-			n += bridgeServerLifecycle(cl, neoBus, addListener, lowest, mcServer,
-					"net.neoforged.neoforge.event.server.ServerStartedEvent", "handleServerStarted", true);
-			n += bridgeServerLifecycle(cl, neoBus, addListener, lowest, mcServer,
-					"net.neoforged.neoforge.event.server.ServerStoppingEvent", "handleServerStopping", false);
-			ForbricLog.info("[Forbric/EventMux] installed %d Neo→Forge game-event bridge(s) (single-owner, 1:1)", n);
+			install(GameEventBridge.SERVER_ABOUT_TO_START, () ->
+					bridgeForgeServerAboutToStart(cl, neoBus, addListener, lowest, mcServer));
+			install(GameEventBridge.SERVER_STARTED, () -> bridgeServerLifecycle(cl, neoBus, addListener, lowest,
+					mcServer, "net.neoforged.neoforge.event.server.ServerStartedEvent", "handleServerStarted", true));
+			install(GameEventBridge.SERVER_STOPPING, () -> bridgeServerLifecycle(cl, neoBus, addListener, lowest,
+					mcServer, "net.neoforged.neoforge.event.server.ServerStoppingEvent", "handleServerStopping", false));
+
+			EventBridges.verify(GameEventBridge.Pass.GAME_BUS);
 		} catch (ClassNotFoundException single) {
 			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no bridge needed");
 		} catch (Throwable t) {
@@ -107,6 +121,11 @@ public final class GameEventMultiplexer {
 	 *               is an {@code IModBusEvent}, so the game bus would never see it
 	 */
 	public static void installClientReloadBridge(ClassLoader cl, Object modBus) {
+		if (!EventBridges.enabled()) {
+			ForbricLog.info("[Forbric/EventMux] -D%s=off — skipping the client reload-listener bridge",
+					EventBridges.SWITCH_NAME);
+			return;
+		}
 		if (modBus == null) {
 			ForbricLog.debug("[Forbric/EventMux] no NeoForge mod bus — skipping the client reload-listener bridge");
 			return;
@@ -177,7 +196,9 @@ public final class GameEventMultiplexer {
 				}
 			};
 			addListener.invoke(modBus, lowest, false, neoEvent, bridge);
+			EventBridges.installed(GameEventBridge.CLIENT_RELOAD_LISTENERS);
 			ForbricLog.info("[Forbric/EventMux] installed the Neo→Forge client reload-listener bridge");
+			EventBridges.verify(GameEventBridge.Pass.CLIENT_MOD_BUS);
 		} catch (ClassNotFoundException single) {
 			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no reload-listener bridge needed");
 		} catch (Throwable t) {
@@ -366,6 +387,29 @@ public final class GameEventMultiplexer {
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/EventMux] could not pre-open Forge allowLogins gate: %s",
 					String.valueOf(KernelBusSupport.unwrap(t)));
+		}
+	}
+
+	/** One bridge's setup, so a failure can be caught per bridge instead of taking the rest of the pass with it. */
+	@FunctionalInterface
+	private interface Setup {
+		void run() throws Exception;
+	}
+
+	/**
+	 * Runs one bridge's setup and records it only if it succeeded.
+	 *
+	 * <p>Swallowing here is deliberate and is the opposite of what the old code did by accident: it caught at the
+	 * whole-pass level, so one failure silently cost every bridge after it. Catching per bridge means a failure
+	 * costs exactly its own feature, and {@link EventBridges#verify} then names what was lost.
+	 */
+	private static void install(GameEventBridge bridge, Setup setup) {
+		try {
+			setup.run();
+			EventBridges.installed(bridge);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/EventMux] bridge " + bridge + " (" + bridge.event() + ") did not install — "
+					+ bridge.cost(), KernelBusSupport.unwrap(t));
 		}
 	}
 }

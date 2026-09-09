@@ -82,12 +82,19 @@ check "datapacks fully loaded"        "Loaded [0-9]+ advancements"              
 
 step "the full FML mod lifecycle ran, not just the phases the kernel used to know about"
 # Each of these was missing outright until the kernel started mirroring CommonModLoader.load's task order.
-check "construct phase posted"        "posted FML construct to [0-9]+ NeoForge mod"      "$LOG"
-check "client setup posted"           "posted FML client setup to [0-9]+ NeoForge mod"   "$LOG"
+check "construct phase posted"        "posted FML construct to [1-9][0-9]* NeoForge mod"      "$LOG"
+check "client setup posted"           "posted FML client setup to [1-9][0-9]* NeoForge mod"   "$LOG"
 check "registration events ran"       "ran NeoForge.s registration events"               "$LOG"
-check "IMC enqueued and processed"    "posted FML IMC (enqueue|process) to [0-9]+ NeoForge mod" "$LOG" 2
-check "load complete posted"          "posted FML load complete to [0-9]+ NeoForge mod"  "$LOG"
+check "IMC enqueued and processed"    "posted FML IMC (enqueue|process) to [1-9][0-9]* NeoForge mod" "$LOG" 2
+check "load complete posted"          "posted FML load complete to [1-9][0-9]* NeoForge mod"  "$LOG"
 check_absent "no mod failed a phase"  "failed during (construct|IMC enqueue|IMC process)" "$LOG"
+
+# The client half of the Neo->Forge bridge inventory. This one bridge carries every MinecraftForge mod's client
+# reload listeners -- GeckoLib's whole model and animation cache hangs off it -- and it used to be reported only
+# by an unasserted "installed the ... bridge" line.
+check "the client-side bridge pass is complete" "all 1 CLIENT_MOD_BUS bridge\(s\) installed" "$LOG"
+check "the game-bus bridge pass is complete too" "all 5 GAME_BUS bridge\(s\) installed"      "$LOG"
+check_absent "no bridge reported missing"       "bridge\(s\) MISSING"                        "$LOG"
 
 step "a Forge-family mod's own content and data actually arrived (must PASS)"
 # Three fixes that only this pack exercises, each demonstrable: -Dforbric.modDataPacks=off,
