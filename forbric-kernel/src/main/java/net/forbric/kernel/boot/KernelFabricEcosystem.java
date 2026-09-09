@@ -29,12 +29,13 @@ import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.entrypoint.EntrypointContainer;
 import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.api.ModPresence;
 import net.forbric.kernel.fabric.FabricModDiscovery;
 import net.forbric.kernel.fabric.KernelFabricLoader;
 import net.forbric.kernel.fabric.KernelModContainer;
 import net.forbric.kernel.fabric.KernelModMetadata;
-import net.forbric.kernel.metadata.DiscoveredMod;
 import net.forbric.kernel.mixin.MergedBaseMixinCompat;
 import net.forbric.kernel.mixin.MixinConfigPolicy;
 import net.forbric.kernel.util.ForbricLog;
@@ -140,7 +141,7 @@ public final class KernelFabricEcosystem {
 		// only, exactly like the arbitration aliases above: identity, no entrypoints, no mixins, no assets — the
 		// mod is really loaded, by the other family's lifecycle, which owns everything else about it.
 		int foreign = 0;
-		for (DiscoveredMod mod : KernelForeignMods.forgeFamilyMods()) {
+		for (DiscoveredMod mod : ModPresence.forgeFamilyMods()) {
 			if (mod.getId() == null || mod.getId().isBlank()) continue;
 			if (fabric.getModContainer(mod.getId()).isPresent()) continue;
 			fabric.register(new KernelModContainer(KernelModMetadata.builtin(mod.getId(),
@@ -163,12 +164,12 @@ public final class KernelFabricEcosystem {
 		for (ModContainer container : fabric.getAllMods()) {
 			if (!(container instanceof KernelModContainer kernel) || kernel.getJar() == null) continue;
 			String id = kernel.getMetadata().getId();
-			if (id == null || id.isBlank() || KernelForeignMods.isLoaded(id)) continue;
+			if (id == null || id.isBlank() || ModPresence.isLoaded(id)) continue;
 			fabricMods.add(new DiscoveredMod(Ecosystem.FABRIC, id,
 					String.valueOf(kernel.getMetadata().getVersion()), kernel.getMetadata().getName(),
 					List.of(), List.of(), null, kernel.getJar().toString()));
 		}
-		KernelForeignMods.publishFabric(fabricMods);
+		ModPresence.publishFabric(fabricMods);
 
 		List<Path> jars = discovery.getClasspathJars();
 		ForbricLog.info("[Forbric/Fabric] discovered %d Fabric mod(s) in %d jar(s) (incl. nested)",

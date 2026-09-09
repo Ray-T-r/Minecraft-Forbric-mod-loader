@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package net.forbric.kernel.metadata;
+package net.forbric.api;
 
 /**
  * A mod dependency in Forbric's unified model, normalized from a Fabric {@code depends}/{@code recommends}

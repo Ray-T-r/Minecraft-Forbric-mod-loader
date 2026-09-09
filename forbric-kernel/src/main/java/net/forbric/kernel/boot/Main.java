@@ -23,9 +23,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import net.forbric.api.DiscoveredMod;
+import net.forbric.api.UnifiedDependency;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
-import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.UnifiedDependency;
 import net.forbric.kernel.util.ForbricLog;
 
 /**

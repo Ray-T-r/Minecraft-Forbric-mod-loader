@@ -28,6 +28,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.api.ModPresence;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -36,7 +37,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>{@code isLoaded} is the presence check Forge-family mods gate their compatibility branches on, and it reads
  * that family's own {@code indexedMods}. In this instance that map can only ever hold that family's mods, so a
  * NeoForge mod asking whether Sodium is installed is told no while a Fabric Sodium is running — and it then takes
- * the "no Sodium" branch, which is not a smaller feature but a wrong one. See {@code KernelForeignMods} for why
+ * the "no Sodium" branch, which is not a smaller feature but a wrong one. See {@code ModPresence} for why
  * that is invisible rather than loud.
  *
  * <p>The rewrite ORs the family's own answer with the kernel's cross-ecosystem one. Both operands are evaluated
@@ -52,7 +53,7 @@ public final class ForeignModPresenceInjector implements ClassTransformer {
 	private static final String FORGE_MOD_LIST = ForeignType.MOD_LIST.binary(Ecosystem.FORGE);
 	private static final String IS_LOADED = "isLoaded";
 	private static final String IS_LOADED_DESC = "(Ljava/lang/String;)Z";
-	private static final String PRESENCE = "net/forbric/kernel/boot/KernelForeignMods";
+	private static final String PRESENCE = "net/forbric/api/ModPresence";
 
 	@Override
 	public String name() {

@@ -19,9 +19,9 @@ package net.forbric.kernel.metadata.forge;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.UnifiedDependency;
+import net.forbric.api.UnifiedDependency;
 import net.forbric.kernel.util.ForbricLog;
 
 /** Maps a parsed Forge {@link ForgeModsToml} into Forbric's unified {@link DiscoveredMod} model. */

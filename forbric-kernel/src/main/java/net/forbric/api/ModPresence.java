@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 
-package net.forbric.kernel.boot;
+package net.forbric.api;
 
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import net.forbric.kernel.metadata.DiscoveredMod;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -45,8 +44,21 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>Publishing is done by whoever computed a list, once, during boot; readers are the seeders, the Fabric
  * registration, and the {@code isLoaded} fallback the transform chain injects. Everything degrades to "not
  * present", which is the pre-registry behaviour, if a publish never happens.
+ *
+ * <h2>Why this lives in {@code net.forbric.api}</h2>
+ *
+ * <p>It is the first domain where the three compatibility layers align to a Forbric-owned answer rather than to
+ * each other, so it is the first one to move out of {@code net.forbric.kernel.boot}. The move is what makes that
+ * real rather than nominal: {@code ForeignModPresenceInjector} rewrites both families' {@code ModList.isLoaded}
+ * to call {@code net/forbric/api/ModPresence.isLoaded}, so the bytecode crossing from game code into the kernel
+ * now lands on an API type instead of a boot-side internal.
+ *
+ * <p><b>Presence only, still.</b> {@code getModContainerById} is deliberately left alone. There genuinely is no
+ * NeoForge container for a Fabric mod, and inventing one would hand a caller a container with no event bus and no
+ * config where it expects a real one. The hub answers the question that has one true answer, and declines the one
+ * that does not — which is the shape every later domain should copy.
  */
-public final class KernelForeignMods {
+public final class ModPresence {
 	/**
 	 * Escape hatch: {@code -Dforbric.crossEcosystemPresence=off} restores the pre-fix behaviour, where every
 	 * ecosystem could only see its own mods. It exists so a gate can run the same instance both ways — a
@@ -59,7 +71,7 @@ public final class KernelForeignMods {
 	private static volatile List<DiscoveredMod> fabric = List.of();
 	private static volatile Set<String> ids = Set.of();
 
-	private KernelForeignMods() {
+	private ModPresence() {
 	}
 
 	/** Records the Forge-family (MinecraftForge + NeoForge) mods this boot loaded. */

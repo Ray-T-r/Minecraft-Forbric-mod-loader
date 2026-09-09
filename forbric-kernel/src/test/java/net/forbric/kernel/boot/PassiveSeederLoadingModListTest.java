@@ -41,7 +41,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-import net.forbric.kernel.metadata.DiscoveredMod;
+import net.forbric.api.DiscoveredMod;
 
 /**
  * Verifies, against the STAGED neoforge-runtime bytecode, that the kernel seeds a {@code LoadingModList} a mod can

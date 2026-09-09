@@ -28,34 +28,35 @@ import java.util.Map;
 
 import net.fabricmc.api.EnvType;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.api.ModPresence;
 import net.forbric.kernel.access.ClassTweakerTransformer;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.classloading.LoaderProbePolicy;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.metadata.forge.EcosystemVersions;
-import net.forbric.kernel.metadata.DiscoveredMod;
 import net.forbric.kernel.mixin.KernelMixinBootstrap;
 import net.forbric.kernel.transform.ClientPackHookInjector;
-import net.forbric.kernel.transform.DataPackHookInjector;
-import net.forbric.kernel.transform.RegistryAliasParityInjector;
+import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.CommonNetworkInteropInjector;
+import net.forbric.kernel.transform.DataPackHookInjector;
+import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
+import net.forbric.kernel.transform.ExitHookInjector;
 import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
+import net.forbric.kernel.transform.ForeignModPresenceInjector;
+import net.forbric.kernel.transform.ForgeBindingsLookupInjector;
 import net.forbric.kernel.transform.GuestMixinPluginGuard;
 import net.forbric.kernel.transform.HudElementBridgeInjector;
 import net.forbric.kernel.transform.LifecycleHookInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
-import net.forbric.kernel.transform.ExitHookInjector;
-import net.forbric.kernel.transform.ForeignModPresenceInjector;
-import net.forbric.kernel.transform.ForgeBindingsLookupInjector;
-import net.forbric.kernel.transform.ClientSmokeTickInjector;
-import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
+import net.forbric.kernel.transform.NeoEnumExtensionInjector;
 import net.forbric.kernel.transform.NullPackGuardInjector;
 import net.forbric.kernel.transform.PackMetadataFailSoftInjector;
 import net.forbric.kernel.transform.PackOverlayMutabilityInjector;
+import net.forbric.kernel.transform.RegistryAliasParityInjector;
 import net.forbric.kernel.transform.RegistryHookRedirector;
-import net.forbric.kernel.transform.NeoEnumExtensionInjector;
 import net.forbric.kernel.transform.TransformChain;
 import net.forbric.kernel.transform.TransformContext;
 import net.forbric.kernel.transform.TransformPhase;
@@ -175,7 +176,7 @@ public final class KernelBoot {
 		// OTHER family's mod is installed is told no — and that answer is usually a compatibility branch, not a
 		// display string. Published here, before the Fabric ecosystem is built, because that build reads it back.
 		try {
-			KernelForeignMods.publishForgeFamily(PassiveSeeder.arbitratedForgeFamilyMods(gameDir.resolve("mods")));
+			ModPresence.publishForgeFamily(PassiveSeeder.arbitratedForgeFamilyMods(gameDir.resolve("mods")));
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Presence] could not list the Forge-family mods for cross-ecosystem presence — a "
 					+ "Fabric mod asking whether one of them is installed will be told no: %s", String.valueOf(t));

@@ -30,12 +30,12 @@ import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.api.UnifiedDependency;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelModMetadata;
-import net.forbric.kernel.metadata.DiscoveredMod;
-import net.forbric.kernel.metadata.UnifiedDependency;
 import net.fabricmc.loader.api.metadata.ModDependency;
 import net.forbric.kernel.util.ForbricLog;
 
