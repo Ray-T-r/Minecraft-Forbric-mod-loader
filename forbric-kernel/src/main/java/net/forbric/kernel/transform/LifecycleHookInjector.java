@@ -24,6 +24,8 @@ import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -78,8 +80,8 @@ public final class LifecycleHookInjector implements ClassTransformer {
 	// Server triggers: NeoForge won the entry (load(Z)V); the Forge no-arg form is kept in case a base flips it.
 	// Same descriptor as the hook — keep the boolean on the stack, plain owner+name swap.
 	private static final Trigger[] SERVER_TRIGGERS = {
-			new Trigger("net/neoforged/neoforge/server/loading/ServerModLoader", "load", "(Z)V", "onServerModLoading", 0),
-			new Trigger("net/minecraftforge/server/loading/ServerModLoader", "load", "()V", "onServerModLoadingNoArg", 0),
+			new Trigger(ForeignType.SERVER_MOD_LOADER.internal(Ecosystem.NEOFORGE), "load", "(Z)V", "onServerModLoading", 0),
+			new Trigger(ForeignType.SERVER_MOD_LOADER.internal(Ecosystem.FORGE), "load", "()V", "onServerModLoadingNoArg", 0),
 	};
 
 	// Client trigger: ClientModLoader.begin()V in net.minecraft.client.main.Main.main — the EXACT client analogue of
@@ -94,8 +96,8 @@ public final class LifecycleHookInjector implements ClassTransformer {
 	// to a point never reached. Redirecting begin() here mirrors the proven server path and reaches the window.)
 	private static final String BEGIN = "begin";
 	private static final Trigger[] CLIENT_TRIGGERS = {
-			new Trigger("net/neoforged/neoforge/client/loading/ClientModLoader", BEGIN, "()V", "onClientModLoading", 0),
-			new Trigger("net/minecraftforge/client/loading/ClientModLoader", BEGIN, "()V", "onClientModLoading", 0),
+			new Trigger(ForeignType.CLIENT_MOD_LOADER.internal(Ecosystem.NEOFORGE), BEGIN, "()V", "onClientModLoading", 0),
+			new Trigger(ForeignType.CLIENT_MOD_LOADER.internal(Ecosystem.FORGE), BEGIN, "()V", "onClientModLoading", 0),
 	};
 
 	// The class + method carrying the trigger to rewrite. Server: Main.main. Client: Main.main (client entry), where

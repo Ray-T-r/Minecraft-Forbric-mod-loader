@@ -24,6 +24,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -1698,8 +1700,8 @@ public final class KernelLifecycle {
 	 * {@code clientbound/minecraft:block_update} failed to encode ("Can't find id for Block{minecraft:lava}").
 	 */
 	private static final String[] GAME_DATA_CLASSES = {
-		"net.minecraftforge.registries.GameData",
-		"net.neoforged.neoforge.registries.GameData",
+		ForeignType.GAME_DATA.binary(Ecosystem.FORGE),
+		ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE),
 	};
 
 	private static void invokeGameData(ClassLoader cl, String method) {
