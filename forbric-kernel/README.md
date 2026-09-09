@@ -28,8 +28,40 @@ Full plan: `~/.claude/plans/fabric-neo-forge-mod-eager-rabbit.md`.
   references `net.minecraft.*` / `net.minecraftforge.*` / `net.neoforged.*` / `net.fabricmc.fabric.*` —
   registry/lifecycle/event/network/resource machinery — typed against the staged jars, JiJ-nesting MixinExtras.
 
-The old "Knot classloader split" law survives as the kernel's own boot↔game split; boot→game crosses through
-`net.forbric.kernel.api.KernelHooks`, injected bytecode calls `net.forbric.kernel.runtime.Hooks`.
+The old "Knot classloader split" law survives as the kernel's own boot↔game split.
+
+**Status of the game side, stated honestly:** `src/runtime/java` is still empty, and neither
+`net.forbric.kernel.api.KernelHooks` nor `net.forbric.kernel.runtime.Hooks` exists — earlier revisions of this
+file described them as if they did. What actually happens today is that injected bytecode calls boot-side statics
+directly (thirteen distinct owners), and the only `net.forbric.kernel.runtime.*` classes are three synthesized at
+runtime with ASM by boot-side factories (`KernelModContainerFactory`, `KernelHudBridge`, `KernelGameLookup`).
+`DelegationPolicy` already reserves `net.forbric.kernel.runtime.` as game-side, so the slot is real; it is just
+unfilled.
+
+That gap is the structural reason cross-ecosystem fixes have taken the shape they have: with no typed landing
+place on the game side, each one is either a bytecode patch making one ecosystem satisfy another's expectations,
+or an `Object`-in/`Object`-out reflective shim.
+
+## The unified API (`net.forbric.api`)
+
+Being grown domain by domain: the vocabulary and services the kernel and all three compatibility layers align to,
+instead of accommodating each other pairwise. Parent-pinned in `DelegationPolicy` for the same reason
+`net.fabricmc.api.` is — exactly one copy per JVM.
+
+| type | what it replaced |
+|---|---|
+| `Ecosystem` | five different ecosystem enums (two with different spellings, one missing NeoForge, one dead) plus a hand-written translator |
+| `ForeignType` | pairs of adjacent Forge/NeoForge class-name literals at each call site |
+| `DiscoveredMod`, `UnifiedDependency` | moved here from `kernel.metadata`; the one mod model |
+| `ModPresence` | `boot.KernelForeignMods`; the one answer to "is mod X running", which injected bytecode now calls as `net/forbric/api/ModPresence.isLoaded` |
+
+Two rules it is built on, both learned the hard way:
+
+- **The hub carries per-family divergence as data; it does not average it away.** An earlier unified subscriber
+  registration broke three things at once (see `KernelEventSubscribers`' own javadoc). So `ForeignType` maps
+  *names* only — the two `ServerModLoader.load` triggers keep their different descriptors and different hooks.
+- **Not every grouping is a missing split.** `LoaderProbePolicy.Family` stays two-valued on purpose: a NeoForge
+  mod probing for MinecraftForge's `FMLLoader` must still be told yes.
 
 ## Shared assets (kept, not rewritten)
 
