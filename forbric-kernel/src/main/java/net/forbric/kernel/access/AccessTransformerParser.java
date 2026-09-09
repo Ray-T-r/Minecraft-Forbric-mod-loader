@@ -107,7 +107,13 @@ public final class AccessTransformerParser {
 		int paren = member.indexOf('(');
 		if (paren >= 0) {
 			String name = member.substring(0, paren);
-			String desc = member.substring(paren);
+			// A method descriptor is JVM internal form, so its class references use '/'. Some real ATs — Physics
+			// Mod's is one — write a dotted class name inside the descriptor (e.g. `)Lcom.mojang.blaze3d.pipeline
+			// .RenderPipeline;`); the game's own AT reader tolerates that, so we must too. Normalise '.' -> '/'
+			// exactly as the owner class on this line is normalised above, or the descriptor never matches the
+			// method's real (slash-form) descriptor and the widening is silently dropped — leaving the member
+			// private, so the mod dies with an IllegalAccessError the moment it touches it.
+			String desc = member.substring(paren).replace('.', '/');
 			return new AtDirective(className, name, desc, true, access, finalOp);
 		}
 
