@@ -36,7 +36,10 @@ kernel_jar
 echo "[kernel] inventory: booting with STRICT injection requirements, up to $MAX rounds"
 
 for round in $(seq 1 "$MAX"); do
-  pkill -9 -f KernelServerLaunch 2>/dev/null; sleep 1
+  # By PID, never by name. `pkill -f KernelServerLaunch` never matched anything here anyway (the launcher's -cp
+  # runs to tens of thousands of characters, past what pgrep/pkill inspect), and a name match is how you kill
+  # someone else's Minecraft — another session may have one open. lib.sh owns this; see the note there.
+  reap_stale_server "$RUNDIR"
   rm -rf "$RUNDIR/world" "$RUNDIR/.forbric-kernel" 2>/dev/null
   : > "$LOG"
 
@@ -47,12 +50,10 @@ for round in $(seq 1 "$MAX"); do
 
   ( sleep 40; echo stop ) | RUNDIR="$RUNDIR" FORBRIC_JVM="$JVM" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
   BOOTPID=$!
-  for i in $(seq 1 140); do
-    pgrep -f KernelServerLaunch >/dev/null 2>&1 || break
-    grep -qE 'Stopping server|Failed to start the minecraft server' "$LOG" 2>/dev/null && break
-    sleep 1
-  done
-  pkill -9 -f KernelServerLaunch 2>/dev/null; wait "$BOOTPID" 2>/dev/null
+  record_server_pid "$RUNDIR" "$BOOTPID"
+  # The old loop broke on its FIRST iteration for the same reason, so it never waited at all; a hung
+  # server then hung this tool on `wait`. await_server is bounded and kills the tree by pid.
+  await_server "$BOOTPID" "$LOG" 140
 
   if grep -qE 'Done \(' "$LOG"; then
     step "round $round: SERVER REACHED Done"
