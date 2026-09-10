@@ -114,7 +114,7 @@ public final class Main {
 
 	private static void runCli(Path mcDir, String mcVersion, String mode, Path manifest, boolean autoDownloadBase,
 			Remote remote) {
-		Consumer<String> log = System.out::println;
+		Consumer<String> log = consoleLog();
 		RemoteSource source = remote.source(log);
 		boolean useRemote = source != null && (remote.force || (manifest == null && !Installer.hasBundledManifest()));
 
@@ -139,6 +139,32 @@ public final class Main {
 			System.err.println("ERROR: " + e.getMessage());
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * A console sink that understands {@link Http#PROGRESS}: a transient line is rewritten in place with a
+	 * carriage return rather than scrolled, and is padded so a shorter update cannot leave the tail of a
+	 * longer one behind it. The first settled line after one closes it off with a newline.
+	 */
+	private static Consumer<String> consoleLog() {
+		int[] transientWidth = {-1};
+		return raw -> {
+			boolean progress = raw.startsWith(Http.PROGRESS);
+			String line = progress ? raw.substring(Http.PROGRESS.length()) : raw;
+			if (progress) {
+				int pad = Math.max(0, transientWidth[0] - line.length());
+				System.out.print("\r" + line + " ".repeat(pad));
+				System.out.flush();
+				transientWidth[0] = line.length();
+			} else {
+				if (transientWidth[0] >= 0) {
+					// Wipe the status line rather than leaving a stale percentage above the real output.
+					System.out.print("\r" + " ".repeat(transientWidth[0]) + "\r");
+					transientWidth[0] = -1;
+				}
+				System.out.println(line);
+			}
+		};
 	}
 
 	/**

@@ -261,8 +261,22 @@ final class InstallerGui {
 		}.execute();
 	}
 
-	private void appendLog(String line) {
-		log.append(line + "\n");
+	/**
+	 * Document offset where the live status line starts, or -1 when the log ends in a settled line. A running
+	 * download refreshes one line in place instead of scrolling hundreds past; when the next real line arrives
+	 * it takes that line's place, so the finished log carries no progress noise at all.
+	 */
+	private int transientStart = -1;
+
+	private void appendLog(String raw) {
+		boolean progress = raw.startsWith(Http.PROGRESS);
+		String line = progress ? raw.substring(Http.PROGRESS.length()) : raw;
+		if (transientStart >= 0) {
+			log.replaceRange("", transientStart, log.getDocument().getLength());
+		}
+		int start = log.getDocument().getLength();
+		log.append(progress ? line : line + "\n");
+		transientStart = progress ? start : -1;
 		log.setCaretPosition(log.getDocument().getLength());
 	}
 }

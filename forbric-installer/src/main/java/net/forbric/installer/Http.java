@@ -17,6 +17,8 @@
 package net.forbric.installer;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -38,8 +40,25 @@ import java.util.function.Consumer;
  * streams to a {@code .part} temp and atomically moves it into place — mirroring the dev scripts' {@code get()}
  * ({@code [ -f "$out" ] && return 0; curl -L ...}). {@link #ensureWithFallback} adds the scripts'
  * "Forge Maven, then Maven Central" fallback.
+ *
+ * <p>Every download reports progress through the log consumer. This is the only class that needs to: all of
+ * them — the release jars, Mojang's client jar, Forge's Maven artifacts — funnel through the two methods
+ * below. The bodies are streamed by hand rather than handed to {@code BodyHandlers.ofFile}, which writes the
+ * whole response with nothing observable in between; on the multi-megabyte downloads that is several silent
+ * minutes, indistinguishable from a hang.
  */
 final class Http {
+
+	/**
+	 * Marks a line as a transient status update: whatever is logged next REPLACES it instead of following it,
+	 * so a download reports live on one line rather than scrolling a hundred of them past. The marker is a
+	 * carriage return because that is already what it means to a terminal, so a consumer that knows nothing
+	 * about this convention still renders it about right.
+	 */
+	static final String PROGRESS = "\r";
+
+	/** How often a running download refreshes its line. Often enough to look alive, rare enough not to spam. */
+	private static final long REPORT_INTERVAL_NANOS = 250_000_000L;
 
 	private final HttpClient http;
 	private final Consumer<String> log;
@@ -67,11 +86,8 @@ final class Http {
 
 	/** Stream a URL straight to {@code dest} (overwriting); throws on non-200 and removes the partial file. */
 	void downloadToFile(String url, Path dest) throws IOException {
-		HttpResponse<Path> r = send(HttpRequest.newBuilder(URI.create(url)).GET().build(),
-				HttpResponse.BodyHandlers.ofFile(dest));
-		if (r.statusCode() != 200) {
-			deleteQuietly(dest);
-			throw new IOException("HTTP " + r.statusCode() + " downloading " + url);
+		if (!stream(url, dest)) {
+			throw new IOException("HTTP error downloading " + url);
 		}
 	}
 
@@ -119,13 +135,76 @@ final class Http {
 
 	/** Stream {@code url} to {@code dest}; return true on 200, false on any non-200 (partial removed). */
 	private boolean tryStream(String url, Path dest) throws IOException {
-		HttpResponse<Path> r = send(HttpRequest.newBuilder(URI.create(url)).GET().build(),
-				HttpResponse.BodyHandlers.ofFile(dest));
-		if (r.statusCode() != 200) {
-			deleteQuietly(dest);
-			return false;
+		return stream(url, dest);
+	}
+
+	/**
+	 * The one download primitive: stream a 200 body to {@code dest}, reporting progress as it goes. Returns
+	 * false on any non-200, having removed the partial file.
+	 */
+	private boolean stream(String url, Path dest) throws IOException {
+		String name = fileName(url);
+		info(PROGRESS + "  " + name + "  connecting...");
+		HttpResponse<InputStream> r = send(HttpRequest.newBuilder(URI.create(url)).GET().build(),
+				HttpResponse.BodyHandlers.ofInputStream());
+		try (InputStream in = r.body()) {
+			if (r.statusCode() != 200) {
+				deleteQuietly(dest);
+				return false;
+			}
+			// Absent on a chunked response, in which case we can still report bytes moved -- which is all the
+			// question "is it stuck?" actually needs.
+			long total = r.headers().firstValueAsLong("content-length").orElse(-1L);
+			if (dest.getParent() != null) Files.createDirectories(dest.getParent());
+			try (OutputStream out = Files.newOutputStream(dest)) {
+				copy(in, out, total, name);
+			}
 		}
 		return true;
+	}
+
+	private void copy(InputStream in, OutputStream out, long total, String name) throws IOException {
+		byte[] buf = new byte[65536];
+		long done = 0;
+		long lastReport = System.nanoTime();
+		boolean reported = false;
+		int n;
+		while ((n = in.read(buf)) != -1) {
+			out.write(buf, 0, n);
+			done += n;
+			long now = System.nanoTime();
+			if (now - lastReport >= REPORT_INTERVAL_NANOS) {
+				info(PROGRESS + progressLine(name, done, total));
+				lastReport = now;
+				reported = true;
+			}
+		}
+		// Land on a finished line rather than whatever fraction the last tick happened to catch. Skipped for a
+		// download small enough that nothing was ever reported -- there is nothing to correct.
+		if (reported) info(PROGRESS + progressLine(name, done, total < 0 ? done : total));
+	}
+
+	private static String progressLine(String name, long done, long total) {
+		if (total > 0) {
+			long pct = Math.min(100, done * 100 / total);
+			return String.format("  %s  %3d%%  %s / %s", name, pct, human(done), human(total));
+		}
+		return "  " + name + "  " + human(done);
+	}
+
+	private static String human(long bytes) {
+		if (bytes < 1024) return bytes + " B";
+		if (bytes < 1024 * 1024) return String.format("%.0f KB", bytes / 1024.0);
+		return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+	}
+
+	/** Last path segment of a URL, for labelling progress. Falls back to the whole URL. */
+	private static String fileName(String url) {
+		int q = url.indexOf('?');
+		String path = q >= 0 ? url.substring(0, q) : url;
+		int slash = path.lastIndexOf('/');
+		String name = slash >= 0 && slash + 1 < path.length() ? path.substring(slash + 1) : path;
+		return name.isEmpty() ? url : name;
 	}
 
 	private <T> HttpResponse<T> send(HttpRequest req, HttpResponse.BodyHandler<T> handler) throws IOException {
@@ -163,7 +242,8 @@ final class Http {
 		}
 	}
 
-	void info(String line) {
+	/** Emit a line to whoever is showing the install log, if anyone is. */
+	private void info(String line) {
 		if (log != null) log.accept(line);
 	}
 }
