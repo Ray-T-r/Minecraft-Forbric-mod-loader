@@ -63,8 +63,42 @@ java -jar forbric-installer.jar --headless [options] # no GUI
 | `--game-version <id>` | Base Minecraft version. Defaults to `1.21.11`, or `26.2` when the mode is `full-forge-26.2`. |
 | `--no-download-mc` | Do not fetch the base version from Mojang when it is missing. Downloading is on by default. |
 | `--manifest <path>` | Development override: read an external `forbric-libraries.json` instead of the manifest bundled in the installer jar. |
+| `--remote` | Download Forbric's jars from the GitHub release even when this installer bundles them. |
+| `--release <tag>` | Install a specific release tag instead of the one this installer was built against. Passing this discards the compiled-in manifest digest, since that digest describes a different release. |
+| `--mirror <url-prefix>` | Put a relay in front of every github.com request, for networks where github.com is slow or blocked — e.g. `--mirror https://your-relay.example/`. Maven URLs are not rewritten. |
+| `--offline` | Never download Forbric's jars. Fails, listing what it could not satisfy locally. |
 | `--headless` | Do not open the GUI. Also implied when the JVM reports a headless graphics environment. |
 | `--help`, `-h` | Print usage. |
+
+### Where the jars come from
+
+In order: a jar bundled inside this installer, then a local build named by `--manifest`, then the GitHub
+release. A slim installer (`./gradlew jar -Pslim`) carries no payload at all and always downloads, which is
+why it is 70 KB rather than 5 MB.
+
+Forbric's own jars come from the release. The third-party libraries come from their canonical Maven homes —
+`maven.fabricmc.net` for `net.fabricmc:*`, Maven Central for the rest — and fall back to the release only if
+those are unreachable.
+
+Downloads are verified twice over. Each jar is checked against the SHA-1 the manifest declares, and an
+already-present file counts as a cache hit only if its digest matches, so a truncated download heals itself
+instead of persisting. The manifest itself is checked against a SHA-256 compiled into the installer at
+release time: a digest carried in a manifest fetched from the same release as the jars would prove only that
+the transfer was not corrupted, since anyone who could replace the jars could replace the manifest too.
+A mismatch is fatal, not a warning. An installer built outside a release carries no such digest and says so.
+
+## Launching it without a terminal
+
+`packaging/Forbric-Installer.bat` (Windows) and `packaging/Forbric-Installer.command` (macOS) run the
+installer by double-click. Keep each one in the same folder as the jar. They find a Java runtime in
+`JAVA_HOME`, then on `PATH`, then in the Minecraft launcher's own `runtime` folder — a Minecraft player
+frequently has no system-wide JDK, and their launcher's runtime is the only Java on the machine.
+
+**On Windows, do not double-click the jar itself.** Windows' "always open with" dialog writes an association
+of the form `java.exe "%1"` — with no `-jar`. Java then reads the jar's path as a *class name*, prints
+`ClassNotFoundException`, and exits. All the user sees is a black console window that flashes and vanishes,
+with nothing to read. Use the `.bat`, which bypasses the association entirely. To fix the association itself,
+point it at `javaw.exe` with the argument `-jar "%1"`.
 
 The parser (`Main.parseOpts`) accepts one or two leading dashes for any flag. A flag consumes the next token as
 its value unless that token itself starts with `-`, in which case the flag is set to `true`. Tokens that start
