@@ -144,3 +144,51 @@ await_server() {
   kill_tree "$pid"
   wait "$pid" 2>/dev/null
 }
+
+# --- download caches ----------------------------------------------------------------------------------------
+# WHY THIS EXISTS. gate-m13 and gate-m14 both `rm -rf` their rundir to get a clean world, and that also deletes
+# the ~50 MB vanilla server jar their launcher downloaded on the previous run. So these two are the only gates
+# that need Mojang / FabricMC to be reachable AND fast at gate time. Measured on this machine over one afternoon,
+# that link swings between 30 KB/s and 2.2 MB/s and sometimes refuses TLS outright ("SSL peer shut down
+# incorrectly"), which turned both gates red for reasons with nothing to do with the kernel: Paperclip failed the
+# hash check on a truncated mojang_*.jar twice, at two different sizes, and fabric-installer timed out mid-read.
+#
+# Stashing the download outside the rundir keeps the wipe (clean world, clean config) while paying the download
+# once. The stash is VERIFIED before it is put back, because the failure that motivated this cached a truncated
+# jar and then failed on it every run until it was deleted by hand — a cache that can serve corruption is worse
+# than no cache.
+GATE_DOWNLOADS="$KERNEL/run/.gate-downloads"
+
+# stash_downloads <rundir> <name> <subpath>... — move caches aside, just before a rundir wipe.
+stash_downloads() {
+  local rundir="$1" name="$2"; shift 2
+  local keep="$GATE_DOWNLOADS/$name" sub
+  for sub in "$@"; do
+    [ -e "$rundir/$sub" ] || continue
+    mkdir -p "$keep/$(dirname "$sub")"
+    rm -rf "${keep:?}/$sub"
+    mv "$rundir/$sub" "$keep/$sub"
+  done
+}
+
+# restore_downloads <rundir> <name> <subpath>... — put verified caches back, after the rundir is recreated.
+# Any .jar under the stash that is not a readable zip is dropped, so the next run downloads it again.
+restore_downloads() {
+  local rundir="$1" name="$2"; shift 2
+  local keep="$GATE_DOWNLOADS/$name" sub jar
+  [ -d "$keep" ] || return 0
+
+  while IFS= read -r jar; do
+    [ -n "$jar" ] || continue
+    if ! unzip -qt "$jar" >/dev/null 2>&1; then
+      echo "[kernel] dropping a corrupt cached download: ${jar##*/} (it will be fetched again)"
+      rm -f "$jar"
+    fi
+  done <<< "$(find "$keep" -name '*.jar' 2>/dev/null)"
+
+  for sub in "$@"; do
+    [ -e "$keep/$sub" ] || continue
+    mkdir -p "$rundir/$(dirname "$sub")"
+    cp -R "$keep/$sub" "$rundir/$sub"
+  done
+}
