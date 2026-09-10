@@ -11,6 +11,11 @@ build/
 !/run/README.md
 !/run/bridge-src/
 !/run/bridge-src-neoforge/
+# Hand-written canary mod sources, same category as bridge-src above. run/build-testmods.sh is
+# tracked and compiles all three, so a clone without them cannot build the canaries the gates use.
+!/run/livemod-src/
+!/run/livemod-src-neoforge/
+!/run/testmod-src/
 !/run/merged-base/
 /run/merged-base/*
 !/run/merged-base/merge-conflicts.txt
