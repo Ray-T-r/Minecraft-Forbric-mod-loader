@@ -31,8 +31,8 @@ import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Redirects each ecosystem's {@code ClientModLoader.setupModResourcePacks(PackRepository)} into the kernel, so the
- * kernel can serve the ecosystem jars' assets to the REAL client {@code PackRepository}.
+ * Redirects {@code ClientModLoader.setupModResourcePacks(PackRepository)} into the kernel, so the kernel can serve
+ * the ecosystem jars' assets to the REAL client {@code PackRepository}.
  *
  * <p>{@code Minecraft.<init>} calls this genuine hook with the live repository, before the client's first resource
  * reload — exactly the point mod resources must be added. The kernel used to NEUTER it (letting the genuine client
@@ -52,6 +52,11 @@ public final class ClientPackHookInjector implements ClassTransformer {
 	// PackRepository into an Object parameter is a widening reference conversion — the verifier accepts it.
 	private static final String HOOK_DESC = "(Ljava/lang/Object;)V";
 
+	// NeoForge is the live one. MinecraftForge's ClientModLoader has NO setupModResourcePacks on the staged carrier
+	// — it takes the repository in begin(Minecraft, PackRepository, ReloadableResourceManager) instead — so that
+	// entry currently matches nothing. It is kept as a hedge for a base that flips which family wins this seam, the
+	// same way LifecycleHookInjector keeps Forge's no-arg ServerModLoader.load. ClientPackHookInjectorTest asserts
+	// BOTH halves of that, so if a carrier ever adds the method the hedge stops being inert and says so.
 	private static final String[] OWNERS = {
 		ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.NEOFORGE),
 		ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.FORGE),
