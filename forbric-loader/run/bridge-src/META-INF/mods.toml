@@ -1,0 +1,13 @@
+modLoader="javafml"
+loaderVersion="[65,)"
+license="Apache-2.0"
+issueTrackerURL="https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/issues"
+
+[[mods]]
+modId="forbric"
+version="1.0.0"
+displayName="Forbric Bridge"
+description='''
+Opens the Fabric-content registration window inside Forge's genuine registration span
+(UNFREEZE_DATA .. FREEZE_DATA), so Fabric mods register into the shared registries at the correct time.
+'''

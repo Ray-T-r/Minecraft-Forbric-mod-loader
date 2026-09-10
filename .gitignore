@@ -1,0 +1,33 @@
+# ---- Build output ----
+build/
+.gradle/
+out/
+bin/
+*.class
+
+# ---- The substrate checkout ----
+# bootstrap.sh clones fabric-loader here. It is upstream's code at an upstream tag plus this
+# repository's patches/ -- deliberately NOT vendored, so its provenance stays inspectable.
+/fabric-loader/
+
+# ---- Binaries ----
+# Game jars, mod jars, the merged base and the runtime carriers are produced by
+# forbric-loader/run/build-merged-base.sh + assemble-*.sh, never committed.
+*.jar
+# ...but the Gradle wrappers are. This negation is intentionally unanchored: the anchored form
+# (!gradle/wrapper/gradle-wrapper.jar) only matches at the repository root and silently leaves
+# every module's wrapper untracked, which makes ./gradlew fail on a fresh clone.
+!**/gradle/wrapper/gradle-wrapper.jar
+*.zip
+*.dylib
+*.so
+*.dll
+*-natives/
+
+# ---- Runtime state ----
+# A test run writes forbric-loader/fabricloader.log into the module root.
+*.log
+*.log.gz
+
+# ---- macOS ----
+.DS_Store

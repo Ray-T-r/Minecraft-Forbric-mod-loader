@@ -1,0 +1,42 @@
+Forbric — a clean-room unified Minecraft mod loader
+Copyright 2026 The Forbric Project
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repository contains two modules, both Apache-2.0:
+
+    forbric-loader/      the loader
+    forbric-installer/   the standalone installer that stages the loader into a
+                         Minecraft launcher
+
+================================================================================
+forbric-loader
+================================================================================
+forbric-loader is built against Fabric Loader, which is licensed under the
+Apache License, Version 2.0.
+
+    Fabric Loader
+    Copyright 2016 FabricMC
+    https://github.com/FabricMC/fabric-loader
+
+That substrate is NOT vendored into this repository. bootstrap.sh checks it out
+as a sibling directory at the pinned upstream release and applies
+forbric-loader/patches/fabric-loader/; forbric-loader/build.gradle then compiles
+its source roots alongside Forbric's own, so a jar built from this repository
+contains compiled FabricMC code.
+
+The substrate attribution, the clean-room statement for the Forge-side code, the
+no-MCP-mapping-data statement, and the list of bundled third-party dependencies
+and their licences are in forbric-loader/NOTICE. That file governs what a built
+loader jar redistributes; it is not restated here.
+
+See also forbric-loader/CREDITS.md (provenance) and forbric-loader/MAPPINGS.md
+(mapping sources).
+
+================================================================================
+forbric-installer
+================================================================================
+forbric-installer is Forbric's own code and depends on no third-party libraries
+(pure JDK). At install time it downloads and stages artifacts that are not part
+of this repository — game files from Mojang and Forge-family runtime jars — each
+of which keeps its own licence and its publisher's terms.

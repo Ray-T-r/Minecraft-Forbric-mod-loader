@@ -1,0 +1,195 @@
+// Standalone, dependency-free installer that makes the Forbric loader launchable from stock MC launchers
+// (PCL2 / HMCL) by writing a version profile and staging Forbric's jars into the launcher's libraries/ tree.
+// Pure JDK (no third-party deps) so the built jar is a single double-clickable artifact — and it is fully
+// self-contained: `bundleForbric` packs Forbric's jars + a portable manifest INTO the jar, so an end user
+// downloads one artifact, never builds source, and never points at an external manifest.
+plugins {
+	id 'java'
+}
+
+group = 'net.forbric'
+version = '0.1.0'
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release = 17
+}
+
+// ---- Self-contained bundle: pack Forbric's jars + a portable manifest INTO this installer jar ----
+def loaderDir      = file('../forbric-loader')
+def loaderBuildDir  = file("${loaderDir}/build")
+def loaderManifest = file("${loaderBuildDir}/forbric-libraries.json")
+def genResources   = layout.buildDirectory.dir('generated-resources')
+def isWindows      = System.getProperty('os.name').toLowerCase().contains('win')
+
+// Build the loader's jars + regenerate its installer manifest so our inputs are fresh. Shelling out to the
+// loader's own wrapper keeps the two builds decoupled (the installer stays pure-JDK, no Fabric maven / loom).
+tasks.register('generateLoaderArtifacts', Exec) {
+	description = 'Build the forbric-loader jars + manifest that get bundled into the installer.'
+	workingDir loaderDir
+	commandLine(isWindows
+			? ['cmd', '/c', 'gradlew.bat', 'jar', 'runtimeJar', 'generateInstallerManifest']
+			: ['./gradlew', 'jar', 'runtimeJar', 'generateInstallerManifest'])
+	inputs.dir("${loaderDir}/src")
+	inputs.file("${loaderDir}/build.gradle")
+	outputs.file(loaderManifest)
+	outputs.dir("${loaderBuildDir}/libs")
+}
+
+// Stage every manifest jar to /forbric/libs/<maven-path> and drop a portable (file-path-stripped) manifest at
+// the classpath root, so the packaged jar is fully self-contained and machine-independent.
+tasks.register('bundleForbric') {
+	description = "Copy Forbric's jars + a portable manifest into the installer's resources."
+	dependsOn 'generateLoaderArtifacts'
+	inputs.file(loaderManifest)
+	inputs.dir("${loaderBuildDir}/libs")
+	outputs.dir(genResources)
+	doLast {
+		if (!loaderManifest.exists()) {
+			throw new GradleException("missing ${loaderManifest} — run the forbric-loader build first "
+					+ "(check the monorepo layout: forbric-installer expects a sibling ../forbric-loader).")
+		}
+		def manifest = new groovy.json.JsonSlurper().parse(loaderManifest)
+		def outDir = genResources.get().asFile
+		def libsRoot = new File(outDir, 'forbric/libs')
+		def portable = [forbricVersion: manifest.forbricVersion, libraries: []]
+		manifest.libraries.each { lib ->
+			if (!lib.resource) {
+				throw new GradleException("manifest entry ${lib.coordinate} has no 'resource' path — rebuild "
+						+ "forbric-loader (generateInstallerManifest must emit the classpath-relative resource).")
+			}
+			def rel = (lib.resource as String) - '/forbric/libs/'
+			def src = new File(lib.file as String)
+			if (!src.isFile()) throw new GradleException("source jar for ${lib.coordinate} not found: ${src}")
+			def dest = new File(libsRoot, rel)
+			dest.parentFile.mkdirs()
+			dest.bytes = src.bytes
+			// Ship each entry WITHOUT the build-machine absolute 'file' path — the installer streams from 'resource'.
+			portable.libraries << [coordinate: lib.coordinate, category: lib.category,
+			                       resource: lib.resource, sha1: lib.sha1, size: lib.size]
+		}
+		new File(outDir, 'forbric-libraries.json').text =
+				groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(portable))
+		println "bundleForbric → ${libsRoot} (${manifest.libraries.size()} jars) + portable manifest"
+	}
+}
+
+// A "slim" installer carries no payload: it downloads Forbric's jars from the GitHub release instead. That is
+// the artifact you publish -- a few hundred KB rather than six megabytes -- and it can install a release built
+// after it was. The bundled build stays the default because it is the one that works with no network.
+//   ./gradlew jar                     bundled (self-contained, offline-capable)
+//   ./gradlew jar -Pslim              slim (downloads at install time)
+def slim = project.hasProperty('slim')
+if (!slim) {
+	sourceSets.main.resources.srcDir genResources
+	processResources.dependsOn 'bundleForbric'
+}
+
+// Bake the release coordinates into the jar. RemoteSource reads this at runtime; its manifestSha256 is the
+// trust anchor that makes the manifest's per-jar digests mean something, because it is the one digest an
+// attacker who controls the release cannot rewrite. Produced by `releaseAssets`, passed back in on the
+// installer build that follows it.
+if (project.hasProperty('releasePin')) {
+	def pin = file(project.property('releasePin'))
+	if (!pin.isFile()) throw new GradleException("releasePin file not found: ${pin}")
+	processResources {
+		from(pin) { rename '.*', 'forbric-release.properties' }
+		// `from` a file that has since vanished copies nothing and says nothing. That would produce an
+		// installer that looks pinned, is not, and only reveals it as a warning on a user's machine -- so
+		// check at execution time, not just at configuration time. (`clean jar -PreleasePin=build/...`
+		// deletes the pin before this task runs, which is exactly how this was found.)
+		doLast {
+			def landed = new File(destinationDir, 'forbric-release.properties')
+			if (!landed.isFile()) {
+				throw new GradleException("-PreleasePin was given but ${pin} did not reach the jar. If you ran"
+						+ " `clean` in the same invocation it deleted the pin first: re-run :releaseAssets,"
+						+ " then build without clean.")
+			}
+		}
+	}
+}
+
+jar {
+	archiveBaseName = 'forbric-installer'
+	manifest {
+		attributes 'Main-Class': 'net.forbric.installer.Main'
+	}
+}
+
+// ---- GitHub release assets: what gets uploaded, and the manifest the slim installer downloads ----
+//
+// Two-step on purpose. This task writes the manifest and the jars; you upload them; THEN you build the slim
+// installer with -PreleasePin pointing at the properties file written here. The order cannot be collapsed:
+// the pin is a digest of the manifest, so the manifest has to exist first.
+//
+//   ./gradlew releaseAssets -PreleaseTag=v0.1.0
+//   gh release create v0.1.0 build/release/assets/*
+//   ./gradlew jar -Pslim -PreleasePin=build/release/forbric-release.properties
+tasks.register('releaseAssets') {
+	description = 'Write build/release/: the jars to attach to a GitHub release + the manifest the installer downloads.'
+	dependsOn 'generateLoaderArtifacts'
+	def repo = project.findProperty('releaseRepo') ?: 'https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader'
+	def outRoot = layout.buildDirectory.dir('release')
+	outputs.dir(outRoot)
+	doLast {
+		def tag = project.findProperty('releaseTag')
+		if (!tag) throw new GradleException('releaseAssets needs -PreleaseTag=<tag>, e.g. -PreleaseTag=v0.1.0')
+		if (!loaderManifest.exists()) throw new GradleException("missing ${loaderManifest} - build forbric-loader first")
+
+		def manifest = new groovy.json.JsonSlurper().parse(loaderManifest)
+		def root = outRoot.get().asFile
+		def assets = new File(root, 'assets')
+		assets.deleteDir()
+		assets.mkdirs()
+
+		// The release manifest carries NEITHER 'file' NOR 'resource': every entry must be downloaded. That is
+		// what makes a slim installer actually go to the network rather than quietly preferring a payload.
+		def released = [forbricVersion: manifest.forbricVersion, release: [tag: tag, repo: repo], libraries: []]
+		manifest.libraries.each { lib ->
+			def src = new File(lib.file as String)
+			if (!src.isFile()) throw new GradleException("source jar for ${lib.coordinate} not found: ${src}")
+			// The asset name MUST be derived from the COORDINATE, not from the source file's name: the
+			// installer asks for the basename Util.coordinateToPath produces, and the loader's manifest drops
+			// -SNAPSHOT from the coordinate while the file on disk keeps it. Using src.name here publishes
+			// forbric-loader-0.1.0-SNAPSHOT.jar for a request that will be made for forbric-loader-0.1.0.jar,
+			// and every install 404s.
+			def parts = (lib.coordinate as String).split(':')
+			def basename = parts[1] + '-' + parts[2] + (parts.length > 3 ? '-' + parts[3] : '') + '.jar'
+			def dest = new File(assets, basename)
+			if (dest.exists()) throw new GradleException("two libraries would upload as the same asset name: ${basename}")
+			dest.bytes = src.bytes
+			released.libraries << [coordinate: lib.coordinate, category: lib.category,
+			                       sha1: lib.sha1, size: lib.size]
+		}
+
+		def manifestFile = new File(assets, 'forbric-libraries.json')
+		manifestFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(released))
+
+		def sha256 = java.security.MessageDigest.getInstance('SHA-256')
+				.digest(manifestFile.bytes).collect { String.format('%02x', it) }.join('')
+		def pin = new File(root, 'forbric-release.properties')
+		pin.text = "# Written by :releaseAssets. Baked into the installer jar via -PreleasePin.\n" +
+				"repo=${repo}\ntag=${tag}\nmanifestSha256=${sha256}\n"
+
+		println "releaseAssets -> ${assets} (${manifest.libraries.size()} jars + manifest)"
+		println "  manifest sha256 : ${sha256}"
+		println "  next            : gh release create ${tag} ${assets}/*"
+		println "                    ./gradlew jar -Pslim -PreleasePin=${pin}"
+	}
+}
+
+// ---- Release bundle: one zip with the runnable jar + double-click launch scripts ----
+tasks.register('releaseZip', Zip) {
+	description = 'Assemble build/dist/forbric-installer-<ver>.zip (runnable jar + .command/.bat launchers).'
+	dependsOn 'jar'
+	archiveFileName = "forbric-installer-${version}.zip"
+	destinationDirectory = layout.buildDirectory.dir('dist')
+	from(tasks.named('jar').flatMap { it.archiveFile }) { rename '.*', 'forbric-installer.jar' }
+	from('packaging/Forbric-Installer.command') { filePermissions { unix('0755') } }
+	from('packaging/Forbric-Installer.bat')
+}

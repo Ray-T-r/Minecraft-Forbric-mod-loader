@@ -1,0 +1,116 @@
+diff --git a/src/main/java/net/fabricmc/loader/impl/launch/FabricMixinBootstrap.java b/src/main/java/net/fabricmc/loader/impl/launch/FabricMixinBootstrap.java
+index fa85071..8333a22 100644
+--- a/src/main/java/net/fabricmc/loader/impl/launch/FabricMixinBootstrap.java
++++ b/src/main/java/net/fabricmc/loader/impl/launch/FabricMixinBootstrap.java
+@@ -27,6 +27,8 @@ import org.spongepowered.asm.mixin.FabricUtil;
+ import org.spongepowered.asm.mixin.MixinEnvironment;
+ import org.spongepowered.asm.mixin.Mixins;
+ import org.spongepowered.asm.mixin.extensibility.IMixinConfig;
++import org.spongepowered.asm.mixin.extensibility.IMixinErrorHandler;
++import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
+ import org.spongepowered.asm.mixin.transformer.Config;
+ 
+ import net.fabricmc.api.EnvType;
+@@ -58,6 +60,15 @@ public final class FabricMixinBootstrap {
+ 
+ 		MixinBootstrap.init();
+ 
++		// Forbric: on the traditional-MinecraftForge base, register a best-effort error handler that skips
++		// (WARN, not ERROR) a relaxed Fabric mixin config that hard-fails to apply — e.g. an @Accessor whose
++		// field Forge renamed, or an @Inject whose callback descriptor Forge's patch invalidated. This is the
++		// structural safety net that the config-JSON relaxation (require=0) cannot cover, so Fabric API loads
++		// on a best-effort basis instead of aborting the whole game on the first unpatchable module.
++		if (System.getProperty("forbric.relaxMixinOverwrites") != null) {
++			Mixins.registerErrorHandlerClass(ForbricMixinErrorHandler.class.getName());
++		}
++
+ 		if (FabricLauncherBase.getLauncher().isDevelopment()) {
+ 			MappingConfiguration config = FabricLauncherBase.getLauncher().getMappingConfiguration();
+ 			MappingTree mappings = config.getMappings();
+@@ -86,6 +97,11 @@ public final class FabricMixinBootstrap {
+ 
+ 		for (ModContainerImpl mod : loader.getModsInternal()) {
+ 			for (String config : mod.getMetadata().getMixinConfigs(side)) {
++				if (isForbricSuppressedConfig(config)) {
++					Log.info(LogCategory.MIXIN, "Forbric: suppressing mixin config %s of mod %s (forbric.suppressMixinConfigs)", config, mod.getMetadata().getId());
++					continue;
++				}
++
+ 				ModContainerImpl prev = configToModMap.putIfAbsent(config, mod);
+ 				if (prev != null) throw new RuntimeException(String.format("Non-unique Mixin config name %s used by the mods %s and %s", config, prev.getMetadata().getId(), mod.getMetadata().getId()));
+ 
+@@ -112,6 +128,74 @@ public final class FabricMixinBootstrap {
+ 		initialized = true;
+ 	}
+ 
++	/**
++	 * Forbric: mixin configs listed in {@code -Dforbric.suppressMixinConfigs} (comma-separated names) are not
++	 * registered. Used on the traditional-MinecraftForge game base, where the registry lifecycle (freeze
++	 * windows, id tracking, sync, persistence) is owned by Forge's GameData: Fabric mixin configs that manage
++	 * the same lifecycle for the vanilla base are redundant there, and their injection anchors do not survive
++	 * Forge's binary patches (e.g. Bootstrap.bootStrap no longer calls wrapStreams).
++	 */
++	private static boolean isForbricSuppressedConfig(String config) {
++		String csv = System.getProperty("forbric.suppressMixinConfigs");
++		if (csv == null || csv.isEmpty()) return false;
++
++		for (String entry : csv.split(",")) {
++			if (config.equals(entry.trim())) return true;
++		}
++
++		return false;
++	}
++
++	/** Forbric: {@code -Dforbric.relaxMixinOverwrites} glob match (trailing {@code *} = prefix), see {@link MixinServiceKnot}. */
++	private static boolean isForbricRelaxedConfig(String config) {
++		String csv = System.getProperty("forbric.relaxMixinOverwrites");
++		if (csv == null || csv.isEmpty() || config == null) return false;
++
++		for (String raw : csv.split(",")) {
++			String entry = raw.trim();
++			if (entry.isEmpty()) continue;
++
++			if (entry.endsWith("*")) {
++				if (config.startsWith(entry.substring(0, entry.length() - 1))) return true;
++			} else if (config.equals(entry)) {
++				return true;
++			}
++		}
++
++		return false;
++	}
++
++	/**
++	 * Forbric: downgrades a hard mixin failure to a skipped-with-warning for relaxed configs (see
++	 * {@link #isForbricRelaxedConfig}). Instantiated by Mixin via its class provider, so it must be public
++	 * with a public no-arg constructor.
++	 */
++	public static final class ForbricMixinErrorHandler implements IMixinErrorHandler {
++		public ForbricMixinErrorHandler() { }
++
++		@Override
++		public ErrorAction onPrepareError(IMixinConfig config, Throwable th, IMixinInfo mixin, ErrorAction action) {
++			return decide(config != null ? config.getName() : configNameOf(mixin), mixin, th);
++		}
++
++		@Override
++		public ErrorAction onApplyError(String targetClassName, Throwable th, IMixinInfo mixin, ErrorAction action) {
++			return decide(configNameOf(mixin), mixin, th);
++		}
++
++		private static String configNameOf(IMixinInfo mixin) {
++			return mixin != null && mixin.getConfig() != null ? mixin.getConfig().getName() : null;
++		}
++
++		private static ErrorAction decide(String configName, IMixinInfo mixin, Throwable th) {
++			if (!isForbricRelaxedConfig(configName)) return null; // keep default (ERROR)
++
++			Log.warn(LogCategory.MIXIN, "Forbric: skipping Fabric mixin %s from %s - unpatchable on the Forge base (%s)",
++					mixin != null ? mixin.getName() : "?", configName, th != null ? th.getClass().getSimpleName() + ": " + th.getMessage() : "?");
++			return ErrorAction.WARN;
++		}
++	}
++
+ 	private static final class MixinConfigDecorator {
+ 		static void apply(Map<String, ModContainerImpl> configToModMap) {
+ 			for (Config rawConfig : Mixins.getConfigs()) {

@@ -1,0 +1,66 @@
+diff --git a/minecraft/src/main/java/net/fabricmc/loader/impl/game/minecraft/patch/EntrypointPatch.java b/minecraft/src/main/java/net/fabricmc/loader/impl/game/minecraft/patch/EntrypointPatch.java
+index f8f2e9f..5c33839 100644
+--- a/minecraft/src/main/java/net/fabricmc/loader/impl/game/minecraft/patch/EntrypointPatch.java
++++ b/minecraft/src/main/java/net/fabricmc/loader/impl/game/minecraft/patch/EntrypointPatch.java
+@@ -442,10 +442,14 @@ public class EntrypointPatch extends GamePatch {
+ 					// That is the guaranteed to be dedicated server constructor
+ 					Log.debug(LogCategory.GAME_PATCH, "Server game instance has not be implemented yet for 20w22a");
+ 				} else {
+-					final ListIterator<AbstractInsnNode> serverStartIt = serverStartMethod.instructions.iterator();
+-
+-					// 1.16-pre1+ Find the only constructor which takes a Thread as it's first parameter
+-					MethodInsnNode dedicatedServerConstructor = (MethodInsnNode) findInsn(serverStartMethod, insn -> {
++					// 1.16-pre1+ find the constructor that takes a Thread as its first parameter (DedicatedServer).
++					// Forbric (MC 26.2 compat): on 26.2 the server is built inside a `MinecraftServer.spin(...)`
++					// lambda, not directly in this synthetic method, so fabric-loader 0.19.3's single-method scan
++					// misses it. Scan every method of the main class and capture the instance in whichever one
++					// actually contains the <init>; a miss is non-fatal so a newer Minecraft than this loader
++					// targets (e.g. the Mojmap/NeoForge-patched 26.2) still boots — only the best-effort
++					// game-instance capture is skipped (the entrypoint hook above is already injected).
++					java.util.function.Predicate<AbstractInsnNode> isThreadCtor = insn -> {
+ 						if (insn instanceof MethodInsnNode && ((MethodInsnNode) insn).name.equals("<init>")) {
+ 							Type constructorType = Type.getMethodType(((MethodInsnNode) insn).desc);
+ 
+@@ -457,18 +461,35 @@ public class EntrypointPatch extends GamePatch {
+ 						}
+ 
+ 						return false;
+-					}, false);
++					};
++
++					MethodNode ctorMethod = serverStartMethod;
++					MethodInsnNode dedicatedServerConstructor = (MethodInsnNode) findInsn(serverStartMethod, isThreadCtor, false);
+ 
+ 					if (dedicatedServerConstructor == null) {
+-						throw new RuntimeException("Could not find dedicated server constructor");
++						for (MethodNode candidate : mainClass.methods) {
++							MethodInsnNode found = (MethodInsnNode) findInsn(candidate, isThreadCtor, false);
++
++							if (found != null) {
++								ctorMethod = candidate;
++								dedicatedServerConstructor = found;
++								break;
++							}
++						}
+ 					}
+ 
+-					// Jump after the <init> call
+-					moveAfter(serverStartIt, dedicatedServerConstructor);
++					if (dedicatedServerConstructor == null) {
++						Log.warn(LogCategory.GAME_PATCH, "Could not find dedicated server constructor; skipping game-instance capture (newer Minecraft than this loader targets?)");
++					} else {
++						final ListIterator<AbstractInsnNode> serverStartIt = ctorMethod.instructions.iterator();
+ 
+-					// Duplicate dedicated server instance for loader
+-					serverStartIt.add(new InsnNode(Opcodes.DUP));
+-					serverStartIt.add(new MethodInsnNode(Opcodes.INVOKESTATIC, Hooks.INTERNAL_NAME, "setGameInstance", "(Ljava/lang/Object;)V", false));
++						// Jump after the <init> call
++						moveAfter(serverStartIt, dedicatedServerConstructor);
++
++						// Duplicate dedicated server instance for loader
++						serverStartIt.add(new InsnNode(Opcodes.DUP));
++						serverStartIt.add(new MethodInsnNode(Opcodes.INVOKESTATIC, Hooks.INTERNAL_NAME, "setGameInstance", "(Ljava/lang/Object;)V", false));
++					}
+ 				}
+ 
+ 				patched = true;

@@ -1,0 +1,20 @@
+modLoader="javafml"
+loaderVersion="[3,)"
+license="Apache-2.0"
+issueTrackerURL="https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/issues"
+
+[[mods]]
+modId="forbricneolive"
+version="1.0.0"
+displayName="Forbric NeoForge Live Canary"
+description='''
+Tri-in-one B-5 canary: counts NeoForge's own ServerTickEvent on the merged base, to verify (alongside the
+traditional-Forge canary) that both ecosystems' tick listeners fire and the Neo->Forge event bridge does not double-fire.
+'''
+
+[[dependencies.forbricneolive]]
+modId="neoforge"
+type="required"
+versionRange="[3,)"
+ordering="NONE"
+side="BOTH"

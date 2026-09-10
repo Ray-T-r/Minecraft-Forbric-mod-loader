@@ -1,0 +1,20 @@
+.gradle/
+build/
+*.class
+.idea/
+*.iml
+.DS_Store
+# run/ is mostly disposable game instances, but the merge-pipeline drivers and
+# the merge report ARE project source — track those, ignore the instances.
+/run/*
+!/run/*.sh
+!/run/README.md
+!/run/bridge-src/
+!/run/bridge-src-neoforge/
+# Sources of the canary/probe mods run/build-testmods.sh compiles, and the probe run/README.md documents.
+!/run/livemod-src/
+!/run/livemod-src-neoforge/
+!/run/testmod-src/
+!/run/merged-base/
+/run/merged-base/*
+!/run/merged-base/merge-conflicts.txt

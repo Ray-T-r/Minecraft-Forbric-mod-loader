@@ -1,0 +1,44 @@
+# This workflow exists to keep the bootstrap honest.
+#
+# Forbric does not vendor its fabric-loader substrate: bootstrap.sh clones it at the pinned
+# fabric_loader_ref and applies forbric-loader/patches/fabric-loader/, and only then does the build have
+# a complete source set. That is the fragile part of a clean clone -- if the pinned tag moves, a patch
+# stops applying, or the build stops compiling against the substrate, this job goes red.
+name: build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # forbric-loader/build.gradle pins its output to release 17 but compiles with whatever JDK runs
+      # Gradle, so any JDK >= 17 works. 21 is the current LTS and is supported by the checked-in Gradle
+      # wrapper (9.1); pinning it keeps CI on one known-good combination rather than tracking the runner
+      # image's default JDK.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Clones FabricMC/fabric-loader into ./fabric-loader, applies the patches, and verifies them.
+      - name: Bootstrap substrate
+        run: ./bootstrap.sh
+
+      - name: Build
+        run: cd forbric-loader && ./gradlew build
+
+      # forbric-loader/build.gradle's `assemble` produces both: the parent-loaded loader core and
+      # forbricruntime (the Knot-loaded half).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forbric-jars
+          path: forbric-loader/build/libs/*.jar
+          if-no-files-found: error
