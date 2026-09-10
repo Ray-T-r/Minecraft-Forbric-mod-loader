@@ -17,13 +17,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # forbric-loader/build.gradle pins its output to release 17 but compiles with whatever JDK runs
       # Gradle, so any JDK >= 17 works. 21 is the current LTS and is supported by the checked-in Gradle
       # wrapper (9.1); pinning it keeps CI on one known-good combination rather than tracking the runner
       # image's default JDK.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -37,7 +37,7 @@ jobs:
 
       # forbric-loader/build.gradle's `assemble` produces both: the parent-loaded loader core and
       # forbricruntime (the Knot-loaded half).
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: forbric-jars
           path: forbric-loader/build/libs/*.jar
