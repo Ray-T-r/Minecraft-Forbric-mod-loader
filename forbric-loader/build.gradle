@@ -7,7 +7,7 @@ base {
 	archivesName = 'forbric-loader'
 }
 
-version = '0.1.0-SNAPSHOT'
+version = '0.1.0'
 
 java {
 	// Loader core targets Java 17 bytecode (the substrate is Java 8/17 multi-release; the MRJ slice is added

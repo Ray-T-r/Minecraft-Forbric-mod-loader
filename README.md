@@ -79,7 +79,7 @@ What it does **not** do, and what you should not expect:
 - **No compatibility guarantee for arbitrary mods.** Both loader ecosystems are large; what has actually
   been run is what has actually been tested, and that is documented in
   [forbric-loader/README.md](forbric-loader/README.md), not promised here.
-- **No stable API, no support, no roadmap commitment.** The version is `0.1.0-SNAPSHOT`. Internals move.
+- **No stable API, no support, no roadmap commitment.** The version is `0.1.0`. Internals move.
 - An instance carries exactly one Forge-family game base. Both drivers (traditional MinecraftForge and
   NeoForge) are declared; each idles unless its runtime is present.
 
