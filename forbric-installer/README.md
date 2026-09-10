@@ -94,11 +94,29 @@ installer by double-click. Keep each one in the same folder as the jar. They fin
 `JAVA_HOME`, then on `PATH`, then in the Minecraft launcher's own `runtime` folder — a Minecraft player
 frequently has no system-wide JDK, and their launcher's runtime is the only Java on the machine.
 
-**On Windows, do not double-click the jar itself.** Windows' "always open with" dialog writes an association
-of the form `java.exe "%1"` — with no `-jar`. Java then reads the jar's path as a *class name*, prints
-`ClassNotFoundException`, and exits. All the user sees is a black console window that flashes and vanishes,
-with nothing to read. Use the `.bat`, which bypasses the association entirely. To fix the association itself,
-point it at `javaw.exe` with the argument `-jar "%1"`.
+### The Windows .jar association
+
+A jar double-clicks correctly on Windows only if the `.jar` association is right, and that lives in the
+registry, not in the jar. Nothing this project ships can change the outcome: if the association is wrong, the
+JVM fails before a single byte of the installer runs.
+
+The association a JDK installer writes is `javaw.exe -jar "%1" %*`, and that works. The one Windows' **"open
+with"** dialog writes is `<whatever.exe> "%1"` — **no `-jar`** — because that dialog has no idea a jar needs
+it. Java then reads the jar's path as a *class name*, throws `ClassNotFoundException` and exits. With
+`java.exe` the user sees a console window flash and vanish too fast to read; with `javaw.exe` they see
+nothing at all.
+
+Two things make this bite people who believe they have Java installed:
+
+- A Minecraft launcher's bundled runtime (`.minecraft/runtime/...`) is not an installed JDK. It registers no
+  file associations. Pointing "open with" at its `java.exe` produces exactly the broken association above.
+- `HKCU\...\Explorer\FileExts\.jar\UserChoice` **overrides** whatever a JDK installer later writes. So
+  installing a real JDK does not necessarily repair an association that was already hand-set — the stale user
+  choice keeps winning. Clearing that key, or re-picking the JDK's own registered Java entry in "open with",
+  is what actually switches it over.
+
+`packaging/Forbric-Installer.bat` sidesteps all of this by invoking Java itself, and is the reliable way to
+start the installer on a machine whose association is in an unknown state.
 
 The parser (`Main.parseOpts`) accepts one or two leading dashes for any flag. A flag consumes the next token as
 its value unless that token itself starts with `-`, in which case the flag is set to `true`. Tokens that start
