@@ -53,8 +53,11 @@ kernel_jar
 
 step "stage a Paper + GrimAC server (flat world, survival, port $PORT) and a client"
 reap_stale_server "$SRV"
+# Paperclip downloads the ~50 MB vanilla jar into cache/; keep it across the wipe (see lib.sh).
+stash_downloads "$SRV" ac-server cache
 rm -rf "$SRV" "$CLI"
 mkdir -p "$SRV/plugins/GrimAC" "$CLI/mods" "$CLI/quickPlay"
+restore_downloads "$SRV" ac-server cache
 cp "$GRIM" "$SRV/plugins/"
 # Sensitised Grim, derived from the defaults inside its own jar so nothing of Grim's is committed here: every
 # violation alerts to the console at 1 VL (the stock Simulation threshold is 100), verbose on, no update check.

@@ -56,8 +56,11 @@ kernel_jar
 
 step "stage a pure Fabric server (fabric-loader 0.19.5 + fabric-api + Macaw's Bridges) and a Forbric client with one mod more"
 reap_stale_server "$SRV"
+# fabric's ServerLauncher keeps the vanilla server jar and its libraries under .fabric/ (see lib.sh).
+stash_downloads "$SRV" fab-server .fabric
 rm -rf "$SRV" "$CLI"
 mkdir -p "$SRV/mods" "$CLI/mods" "$CLI/quickPlay"
+restore_downloads "$SRV" fab-server .fabric
 cp "$FABRIC_API" "$SHARED" "$SRV/mods/"
 cp "$FABRIC_API" "$SHARED" "$CANARY" "$CLI/mods/"
 printf 'eula=true\n' > "$SRV/eula.txt"
