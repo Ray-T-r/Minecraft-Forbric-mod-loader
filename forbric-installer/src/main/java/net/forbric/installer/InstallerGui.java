@@ -227,6 +227,9 @@ final class InstallerGui {
 
 		installButton.setEnabled(false);
 		log.setText("");
+		// The status-line offset points into the document we just emptied; leaving it set makes the next
+		// progress line replace a range that no longer exists.
+		transientStart = -1;
 		appendLog("Installing Forbric (" + mode + ") for " + mcVersion + " into " + mcDir + " ...\n");
 
 		new SwingWorker<Void, String>() {

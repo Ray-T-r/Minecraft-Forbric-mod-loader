@@ -114,7 +114,7 @@ public final class Main {
 
 	private static void runCli(Path mcDir, String mcVersion, String mode, Path manifest, boolean autoDownloadBase,
 			Remote remote) {
-		Consumer<String> log = consoleLog();
+		ConsoleLog log = new ConsoleLog();
 		RemoteSource source = remote.source(log);
 		boolean useRemote = source != null && (remote.force || (manifest == null && !Installer.hasBundledManifest()));
 
@@ -136,6 +136,9 @@ public final class Main {
 			if (!Files.isDirectory(mcDir)) Files.createDirectories(mcDir);
 			installer(manifest, useRemote, source).install(mcDir, mcVersion, mode, autoDownloadBase, log);
 		} catch (IOException e) {
+			// Close off the status line first: stdout ended mid-line, so without this the error lands on top
+			// of a frozen percentage and the shell prompt lands on top of that.
+			log.finish();
 			System.err.println("ERROR: " + e.getMessage());
 			System.exit(1);
 		}
@@ -144,27 +147,70 @@ public final class Main {
 	/**
 	 * A console sink that understands {@link Http#PROGRESS}: a transient line is rewritten in place with a
 	 * carriage return rather than scrolled, and is padded so a shorter update cannot leave the tail of a
-	 * longer one behind it. The first settled line after one closes it off with a newline.
+	 * longer one behind it. The first settled line after one wipes it.
+	 *
+	 * <p>When stdout is not a terminal, rewriting in place is not available -- redirecting a headless install
+	 * to a file is the standard thing to do when reporting a problem, and a ten-minute download would put a
+	 * few thousand carriage-returned ticks into it as one unreadable line. Progress is not dropped there,
+	 * though: it is thinned to one ordinary line per 10% so the log still shows movement. Dropping it would
+	 * leave nothing at all for the cases where Java cannot see a console but a person can -- Git Bash and a
+	 * number of IDE terminals among them.
 	 */
-	private static Consumer<String> consoleLog() {
-		int[] transientWidth = {-1};
-		return raw -> {
+	static final class ConsoleLog implements Consumer<String> {
+		private final boolean terminal = System.console() != null;
+		private int transientWidth = -1;
+		/** Last coarse progress step already printed in non-terminal mode, to thin the stream. */
+		private String lastStep = "";
+
+		@Override
+		public void accept(String raw) {
 			boolean progress = raw.startsWith(Http.PROGRESS);
+			if (progress && !terminal) {
+				String line = raw.substring(Http.PROGRESS.length());
+				String step = coarseStep(line);
+				if (step.equals(lastStep)) return;
+				lastStep = step;
+				System.out.println(line);
+				return;
+			}
 			String line = progress ? raw.substring(Http.PROGRESS.length()) : raw;
 			if (progress) {
-				int pad = Math.max(0, transientWidth[0] - line.length());
+				int pad = Math.max(0, transientWidth - line.length());
 				System.out.print("\r" + line + " ".repeat(pad));
 				System.out.flush();
-				transientWidth[0] = line.length();
+				transientWidth = line.length();
 			} else {
-				if (transientWidth[0] >= 0) {
-					// Wipe the status line rather than leaving a stale percentage above the real output.
-					System.out.print("\r" + " ".repeat(transientWidth[0]) + "\r");
-					transientWidth[0] = -1;
-				}
+				finish();
 				System.out.println(line);
 			}
-		};
+		}
+
+		/**
+		 * A key that changes only when the update is worth a fresh line: the file being fetched, and its
+		 * progress rounded down to 10%. Everything in between is the same news told again.
+		 */
+		private static String coarseStep(String line) {
+			int pct = line.indexOf('%');
+			if (pct < 0) return line.trim();
+			int start = pct;
+			while (start > 0 && Character.isDigit(line.charAt(start - 1))) start--;
+			String digits = line.substring(start, pct);
+			String name = line.substring(0, Math.max(0, start)).trim();
+			try {
+				return name + "|" + (Integer.parseInt(digits) / 10);
+			} catch (NumberFormatException e) {
+				return line.trim();
+			}
+		}
+
+		/** Wipe any status line still on screen, so the next thing printed starts on a clean line. */
+		void finish() {
+			if (transientWidth >= 0) {
+				System.out.print("\r" + " ".repeat(transientWidth) + "\r");
+				System.out.flush();
+				transientWidth = -1;
+			}
+		}
 	}
 
 	/**

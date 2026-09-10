@@ -110,7 +110,12 @@ final class RemoteSource {
 		}
 		// A pin only describes the release it was generated from. Asking for a different tag invalidates it.
 		String effectivePin = (trimToNull(tagOverride) == null || tagOverride.trim().equals(builtTag)) ? pin : null;
-		return new RemoteSource(http, log, base, effectivePin, trimToNull(mirror), tag);
+		// A relay is naturally typed without a trailing slash ("--mirror https://relay.example"); concatenating
+		// that straight onto "https://github.com/..." yields the host "relay.examplehttps", which resolves to
+		// nothing and reports as an offline network.
+		String relay = trimToNull(mirror);
+		if (relay != null && !relay.endsWith("/")) relay = relay + "/";
+		return new RemoteSource(http, log, base, effectivePin, relay, tag);
 	}
 
 	/** Human-readable description of where this source points, for the install log. */
@@ -186,11 +191,20 @@ final class RemoteSource {
 				http.downloadToFile(fallback, part);
 			}
 
-			if (lib.sha1 != null) {
-				String actual = Util.sha1(part);
-				if (!lib.sha1.equalsIgnoreCase(actual)) {
+			if (lib.sha1 != null && !lib.sha1.equalsIgnoreCase(Util.sha1(part))) {
+				// A 200 whose bytes are wrong is not a transport failure, so the fallback above never ran --
+				// but it is exactly what a proxy or captive portal returns when it answers a jar URL with an
+				// HTML block page. Give the release asset the same chance a connection error would have.
+				if (fallback == null) {
+					throw new IOException("sha1 mismatch downloading " + lib.coordinate + " from " + primary
+							+ " (manifest " + lib.sha1 + " vs downloaded " + Util.sha1(part) + ")");
+				}
+				log.accept("  " + primary + " returned the wrong bytes, trying the release asset");
+				http.downloadToFile(fallback, part);
+				String retried = Util.sha1(part);
+				if (!lib.sha1.equalsIgnoreCase(retried)) {
 					throw new IOException("sha1 mismatch downloading " + lib.coordinate
-							+ " (manifest " + lib.sha1 + " vs downloaded " + actual + ")");
+							+ " (manifest " + lib.sha1 + " vs downloaded " + retried + ")");
 				}
 			}
 			Files.move(part, dest, StandardCopyOption.REPLACE_EXISTING);
