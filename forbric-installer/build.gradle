@@ -21,7 +21,7 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 // ---- Self-contained bundle: pack Forbric's jars + a portable manifest INTO this installer jar ----
-def loaderDir      = file('../forbic-loader')
+def loaderDir      = file('../forbric-loader')
 def loaderBuildDir  = file("${loaderDir}/build")
 def loaderManifest = file("${loaderBuildDir}/forbric-libraries.json")
 def genResources   = layout.buildDirectory.dir('generated-resources')
@@ -30,7 +30,7 @@ def isWindows      = System.getProperty('os.name').toLowerCase().contains('win')
 // Build the loader's jars + regenerate its installer manifest so our inputs are fresh. Shelling out to the
 // loader's own wrapper keeps the two builds decoupled (the installer stays pure-JDK, no Fabric maven / loom).
 tasks.register('generateLoaderArtifacts', Exec) {
-	description = 'Build the forbic-loader jars + manifest that get bundled into the installer.'
+	description = 'Build the forbric-loader jars + manifest that get bundled into the installer.'
 	workingDir loaderDir
 	commandLine(isWindows
 			? ['cmd', '/c', 'gradlew.bat', 'jar', 'runtimeJar', 'generateInstallerManifest']
@@ -51,8 +51,8 @@ tasks.register('bundleForbric') {
 	outputs.dir(genResources)
 	doLast {
 		if (!loaderManifest.exists()) {
-			throw new GradleException("missing ${loaderManifest} — run the forbic-loader build first "
-					+ "(check the monorepo layout: forbric-installer expects a sibling ../forbic-loader).")
+			throw new GradleException("missing ${loaderManifest} — run the forbric-loader build first "
+					+ "(check the monorepo layout: forbric-installer expects a sibling ../forbric-loader).")
 		}
 		def manifest = new groovy.json.JsonSlurper().parse(loaderManifest)
 		def outDir = genResources.get().asFile
@@ -61,7 +61,7 @@ tasks.register('bundleForbric') {
 		manifest.libraries.each { lib ->
 			if (!lib.resource) {
 				throw new GradleException("manifest entry ${lib.coordinate} has no 'resource' path — rebuild "
-						+ "forbic-loader (generateInstallerManifest must emit the classpath-relative resource).")
+						+ "forbric-loader (generateInstallerManifest must emit the classpath-relative resource).")
 			}
 			def rel = (lib.resource as String) - '/forbric/libs/'
 			def src = new File(lib.file as String)
