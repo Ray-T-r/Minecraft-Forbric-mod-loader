@@ -16,6 +16,7 @@
 
 package net.forbric.api;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -51,11 +52,34 @@ public final class DiscoveredMod {
 		this.id = id;
 		this.version = version;
 		this.displayName = displayName;
-		this.dependencies = dependencies == null ? Collections.emptyList() : Collections.unmodifiableList(dependencies);
-		this.mixinConfigs = mixinConfigs == null ? Collections.emptyList() : Collections.unmodifiableList(mixinConfigs);
+		this.dependencies = frozen(dependencies);
+		this.mixinConfigs = frozen(mixinConfigs);
 		this.accessConfig = accessConfig;
-		this.accessTransformers = accessTransformers == null ? Collections.emptyList() : Collections.unmodifiableList(accessTransformers);
+		this.accessTransformers = frozen(accessTransformers);
 		this.source = source;
+	}
+
+	/**
+	 * An unmodifiable COPY, with null elements dropped.
+	 *
+	 * <p>{@code Collections.unmodifiableList} was here, and it returns a VIEW: the caller keeps a reference to the
+	 * backing list, so a mod record built from a list that is later added to reports members it was never
+	 * constructed with. Nothing does that today, which is why it has cost nothing — but this is a value type that
+	 * gets published into {@code ModPresence} and read from several threads during boot, and "unmodifiable" is a
+	 * promise callers are entitled to rely on.
+	 *
+	 * <p>Nulls are dropped rather than thrown on, for the reason {@code ModPresence.usable} records: a throwing
+	 * constructor here fails inside a caller that degrades to "no mods at all", so one bad element would cost the
+	 * whole list instead of itself.
+	 */
+	private static <T> List<T> frozen(List<T> values) {
+		if (values == null || values.isEmpty()) return Collections.emptyList();
+
+		List<T> copy = new ArrayList<>(values.size());
+		for (T value : values) {
+			if (value != null) copy.add(value);
+		}
+		return Collections.unmodifiableList(copy);
 	}
 
 	public Ecosystem getEcosystem() {
