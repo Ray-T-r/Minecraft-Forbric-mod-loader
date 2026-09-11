@@ -29,6 +29,8 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import net.forbric.api.DiscoveredMod;
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -81,7 +83,7 @@ public final class NeoEnumExtensions {
 
 		try {
 			Class<?> extender = Class.forName(EXTENDER, false, gameLoader);
-			Class<?> iModInfo = Class.forName("net.neoforged.neoforgespi.language.IModInfo", false, gameLoader);
+			Class<?> iModInfo = Class.forName(ForeignType.MOD_INFO_SPI.binary(Ecosystem.NEOFORGE), false, gameLoader);
 			Class<?> jarResource = Class.forName("net.neoforged.fml.jarcontents.JarResource", false, gameLoader);
 
 			ForbricModDiscoverer discoverer = new ForbricModDiscoverer();

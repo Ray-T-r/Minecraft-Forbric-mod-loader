@@ -184,6 +184,7 @@ public final class KernelBoot {
 		}
 		List<Path> modJars = new ArrayList<>(forgeFamily.jars());
 		List<Path> nested = extractForgeFamilyJarJar(modJars, gameDir);
+		nestedJarJarJars = List.copyOf(nested);
 		modJars.addAll(nested);
 		for (Path jar : modJars) owned.add(jar.toUri().toURL());
 
@@ -643,6 +644,25 @@ public final class KernelBoot {
 	 *
 	 * <p>Bytecode is never remapped: on MC 26.2 nested jars are Mojmap already, exactly like their host.
 	 */
+	/**
+	 * What {@link #extractForgeFamilyJarJar} actually put on the classpath this boot, or {@code null} before it has
+	 * run.
+	 *
+	 * <p>Recorded because a diagnostic that asks "is this mod installed" has no other way to find out. The
+	 * Forge-family mod list is a walk of {@code mods/}, and a JarJar-nested mod is not in {@code mods/} — it is
+	 * unpacked here and then loaded exactly like a top-level one. A checker that consults only the walk therefore
+	 * reports Journeymap's {@code commonnetworking} and LambDynamicLights' {@code spruceui} as missing while the
+	 * boot log, four lines earlier, says it extracted them. The {@code null} state matters as much as the list:
+	 * "extraction has not run" and "extraction found nothing" must not look the same to a caller that is about to
+	 * accuse a mod of a missing dependency.
+	 */
+	private static volatile List<Path> nestedJarJarJars;
+
+	/** @see #nestedJarJarJars */
+	public static List<Path> nestedJarJarJars() {
+		return nestedJarJarJars;
+	}
+
 	// Package-private so the tests can drive the real extraction against real jars rather than a mock of it.
 	static List<Path> extractForgeFamilyJarJar(List<Path> modJars, Path gameDir) {
 		Path outDir = gameDir.resolve(".forbric-kernel").resolve("jarjar");

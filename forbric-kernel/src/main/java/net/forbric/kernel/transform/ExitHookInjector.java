@@ -30,16 +30,17 @@ import org.objectweb.asm.tree.MethodNode;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Calls the loader's {@code ForbricClientShutdown.stopLeakedBackgroundExecutors} at each side's end of life —
+ * Calls {@link net.forbric.kernel.interop.ClientShutdown#stopLeakedBackgroundExecutors} at each side's end of life —
  * every return of {@code Minecraft.close()} on the client, of {@code DedicatedServer.onServerExit()} on the
  * dedicated server — so a JVM whose config file-watchers grew a non-daemon executor during the session can still
  * end. On a client that executor holds the process open until vanilla's 15-second shutdown watchdog crashes it;
  * a dedicated server has no watchdog and no {@code System.exit} at all, so it just sits there forever after
  * "Stopping server" (the gates had been quietly killing it after their grace period).
  *
- * <p>The loader carries a mixin for the client half ({@code ForbricClientShutdownMixin}, in its
- * {@code forbric-neoforge-bridge.mixins.json}) — and the kernel never applies the loader's own mixin configs, so
- * under the kernel that hook had never run once. Nothing noticed for a long time because night-config's
+ * <p>The previous-generation loader reached the client half through a mixin
+ * ({@code ForbricClientShutdownMixin}, in its {@code forbric-neoforge-bridge.mixins.json}) — and the kernel never
+ * applies that loader's mixin configs, so under the kernel the hook had never run once; this injector is how it
+ * runs now, and the hook itself is a kernel class. Nothing noticed for a long time because night-config's
  * executors only get a thread when a watched config file actually changes; the runs where one did, hung.
  * FML's own shutdown would close these watchers; the kernel drives both loaders' lifecycles and does not run it.
  *
@@ -53,7 +54,7 @@ public final class ExitHookInjector implements ClassTransformer {
 			"net.minecraft.client.Minecraft", "close",
 			"net.minecraft.server.dedicated.DedicatedServer", "onServerExit");
 	private static final String VOID = "()V";
-	private static final String HOOK_OWNER = "net/forbric/loader/impl/forge/runtime/ForbricClientShutdown";
+	private static final String HOOK_OWNER = "net/forbric/kernel/interop/ClientShutdown";
 	private static final String HOOK_NAME = "stopLeakedBackgroundExecutors";
 	private static final String HOOK_DESC = "(Ljava/lang/ClassLoader;)V";
 	private boolean announced;
@@ -100,7 +101,7 @@ public final class ExitHookInjector implements ClassTransformer {
 		return writer.toByteArray();
 	}
 
-	/** {@code ForbricClientShutdown.stopLeakedBackgroundExecutors(Minecraft.class.getClassLoader());} */
+	/** {@code ClientShutdown.stopLeakedBackgroundExecutors(Minecraft.class.getClassLoader());} */
 	private static InsnList hookCall(String owner) {
 		InsnList call = new InsnList();
 		call.add(new LdcInsnNode(Type.getObjectType(owner)));

@@ -245,7 +245,7 @@ public final class KernelLifecycle {
 		// RegisterClientPayloadHandlersEvent (the CLIENT HANDLERS) and validates every to-client payload has one —
 		// else the join negotiation rejects with "Incompatible client! (No Handler for …)". Both events reach
 		// NeoForge's own handlers only because step 2c2 wired its runtime-jar @EventBusSubscribers.
-		invokeNetworkSetup(cl, "net.neoforged.neoforge.network.registration.NetworkRegistry");
+		invokeNetworkSetup(cl, ForeignType.NETWORK_REGISTRY.binary(Ecosystem.NEOFORGE));
 		// The client half is client-only, as in genuine NeoForge (ClientModLoader runs it; ServerModLoader does not).
 		// It used to run on the dedicated server too, and passed — vacuously, because no NeoForge payload type was
 		// registered there for it to demand a handler for. The moment the server registered them (baseline in
@@ -884,7 +884,7 @@ public final class KernelLifecycle {
 		// otherwise touch. Seed it with the baseline's mod-file info so the main menu renders (getResult →
 		// PENDING_CHECK, no network). Rebuild the map (it may be immutable) rather than mutate in place.
 		try {
-			Class<?> iModInfo = Class.forName("net.neoforged.neoforgespi.language.IModInfo", false, cl);
+			Class<?> iModInfo = Class.forName(ForeignType.MOD_INFO_SPI.binary(Ecosystem.NEOFORGE), false, cl);
 			Object modInfo = modContainerClass(cl).getMethod("getModInfo").invoke(baselineContainer);
 			Object fileInfo = iModInfo.getMethod("getOwningFile").invoke(modInfo);
 			String modId = (String) iModInfo.getMethod("getModId").invoke(modInfo);

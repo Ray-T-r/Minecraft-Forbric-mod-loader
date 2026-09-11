@@ -34,6 +34,8 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 
 /**
  * Arbitrates the common-networking channel that Fabric and NeoForge <em>both</em> claim on a tri-in-one instance.
@@ -45,11 +47,12 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code net.fabricmc.…CommonVersionPayload} → {@code ClassCastException} → the client is kicked "The server sent an
  * invalid packet" right after reaching the world.
  *
- * <p>The translation logic already lives in {@code ForbricCustomPayloadInterop} (reused from the differential
- * oracle, on the boot classpath): given the addon and the incoming payload it runs the negotiation for BOTH stacks
+ * <p>The translation logic lives in {@link net.forbric.kernel.interop.PayloadInterop} — boot-side, purely
+ * reflective, and a kernel class since the interop hooks were brought over from the previous-generation loader:
+ * given the addon and the incoming payload it runs the negotiation for BOTH stacks
  * — extracting the version, feeding Fabric's {@code onCommonVersionPacket} and NeoForge's {@code checkCommonVersion}
- * — and reports whether it fully handled the packet. This injector installs the two call sites the oracle used to
- * reach via mixins, but as kernel-native head injections (the kernel authors no mixins of its own):
+ * — and reports whether it fully handled the packet. This injector installs the two call sites the old loader
+ * reached via mixins, but as kernel-native head injections (the kernel authors no mixins of its own):
  * <ul>
  *   <li>{@code AbstractChanneledNetworkAddon.handle(CustomPacketPayload)} — a guest Fabric class the kernel's
  *       transforming loader also defines. If the interop reports the packet handled, return its verdict before
@@ -64,7 +67,7 @@ import net.forbric.kernel.util.ForbricLog;
  * (the same widening-reference trick {@link ClientPackHookInjector} relies on).
  */
 public final class CommonNetworkInteropInjector implements ClassTransformer {
-	private static final String INTEROP = "net/forbric/loader/impl/compat/ForbricCustomPayloadInterop";
+	private static final String INTEROP = "net/forbric/kernel/interop/PayloadInterop";
 
 	/**
 	 * Every Fabric addon class that DECLARES its own {@code handle(CustomPacketPayload)}.
@@ -116,7 +119,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * {@code onMinecraftUnregister} are where every peer channel declaration lands on this base, with or without
 	 * fabric-api; Forge's own listener for that channel never runs here, so its bookkeeping is fed from there.
 	 */
-	private static final String NEO_NETWORK_REGISTRY = "net.neoforged.neoforge.network.registration.NetworkRegistry";
+	private static final String NEO_NETWORK_REGISTRY = ForeignType.NETWORK_REGISTRY.binary(Ecosystem.NEOFORGE);
 	private static final String CHECK_PACKET = "checkPacket";
 	private static final String ON_REGISTER = "onMinecraftRegister";
 	private static final String ON_UNREGISTER = "onMinecraftUnregister";

@@ -99,7 +99,9 @@ public final class ForgeMetadataMapper {
 				deps.add(new UnifiedDependency(
 						dep.getModId(),
 						ForgeVersionRangeTranslator.toFabricPredicate(dep.getVersionRange()),
-						dep.isMandatory()));
+						dep.isMandatory(),
+						dep.getOrdering(),
+						dep.getSide()));
 			}
 
 			result.add(new DiscoveredMod(

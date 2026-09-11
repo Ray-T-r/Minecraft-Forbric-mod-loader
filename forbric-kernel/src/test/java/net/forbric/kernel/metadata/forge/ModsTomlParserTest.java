@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.InputStream;
 
 import org.junit.jupiter.api.Test;
+import net.forbric.api.UnifiedDependency;
 
 class ModsTomlParserTest {
 	private ForgeModsToml parseSample() {
@@ -70,12 +71,12 @@ class ModsTomlParserTest {
 		assertEquals("forge", forge.getModId());
 		assertTrue(forge.isMandatory());
 		assertEquals("[47,)", forge.getVersionRange());
-		assertEquals(ForgeDependency.Side.BOTH, forge.getSide());
+		assertEquals(UnifiedDependency.Side.BOTH, forge.getSide());
 
 		ForgeDependency jei = mod.getDependencies().get(2);
 		assertEquals("jei", jei.getModId());
 		assertFalse(jei.isMandatory());
-		assertEquals(ForgeDependency.Ordering.AFTER, jei.getOrdering());
-		assertEquals(ForgeDependency.Side.CLIENT, jei.getSide());
+		assertEquals(UnifiedDependency.Ordering.AFTER, jei.getOrdering());
+		assertEquals(UnifiedDependency.Side.CLIENT, jei.getSide());
 	}
 }

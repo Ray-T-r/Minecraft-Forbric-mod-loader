@@ -50,7 +50,7 @@ class ExitHookInjectorTest {
 					"patched-mc-merged-26.2.jar").normalize();
 	private static final String MINECRAFT = "net/minecraft/client/Minecraft";
 	private static final String MINECRAFT_NAME = "net.minecraft.client.Minecraft";
-	private static final String HOOK_OWNER = "net/forbric/loader/impl/forge/runtime/ForbricClientShutdown";
+	private static final String HOOK_OWNER = "net/forbric/kernel/interop/ClientShutdown";
 
 	@Test
 	void hooksEveryReturnOfASyntheticCloseWithTwoExits() throws Exception {
@@ -61,6 +61,7 @@ class ExitHookInjectorTest {
 		MethodNode close = method(node, "close");
 		assertEquals(2, hookCallsBeforeReturns(close), "both exits hooked");
 		assertEquals(2, countCalls(close, HOOK_OWNER, "stopLeakedBackgroundExecutors"), "and no extra call anywhere");
+		InteropHookAssertions.assertEveryInteropCallResolves(out);
 		new Analyzer<>(new BasicVerifier()).analyze(node.name, close);
 	}
 
@@ -74,6 +75,7 @@ class ExitHookInjectorTest {
 		MethodNode close = method(node, "close");
 		assertTrue(hookCallsBeforeReturns(close) >= 1);
 		assertEquals(hookCallsBeforeReturns(close), countCalls(close, HOOK_OWNER, "stopLeakedBackgroundExecutors"));
+		InteropHookAssertions.assertEveryInteropCallResolves(out);
 		new Analyzer<>(new BasicVerifier()).analyze(node.name, close);
 	}
 
@@ -88,6 +90,7 @@ class ExitHookInjectorTest {
 		MethodNode exit = method(node, "onServerExit");
 		assertTrue(hookCallsBeforeReturns(exit) >= 1);
 		assertEquals(hookCallsBeforeReturns(exit), countCalls(exit, HOOK_OWNER, "stopLeakedBackgroundExecutors"));
+		InteropHookAssertions.assertEveryInteropCallResolves(out);
 		new Analyzer<>(new BasicVerifier()).analyze(node.name, exit);
 	}
 
