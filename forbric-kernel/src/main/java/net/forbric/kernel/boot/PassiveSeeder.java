@@ -32,6 +32,7 @@ import java.util.Set;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.api.ModPresence;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.util.ForbricLog;
@@ -87,7 +88,7 @@ public final class PassiveSeeder {
 	 */
 	public static void seedNeoForgePaths(ClassLoader gameLoader, Path gameDir) {
 		try {
-			Class<?> fmlPaths = Class.forName("net.neoforged.fml.loading.FMLPaths", false, gameLoader);
+			Class<?> fmlPaths = Class.forName(ForeignType.FML_PATHS.binary(Ecosystem.NEOFORGE), false, gameLoader);
 			Method load = fmlPaths.getMethod("loadAbsolutePaths", Path.class);
 			load.invoke(null, gameDir.toAbsolutePath());
 			ForbricLog.debug("[Forbric/Seed] initialized NeoForge FMLPaths at %s", gameDir.toAbsolutePath());
@@ -105,7 +106,7 @@ public final class PassiveSeeder {
 	 */
 	public static void seedNeoForgeModList(ClassLoader gameLoader) {
 		try {
-			Class<?> modList = Class.forName("net.neoforged.fml.ModList", false, gameLoader);
+			Class<?> modList = Class.forName(ForeignType.MOD_LIST.binary(Ecosystem.NEOFORGE), false, gameLoader);
 			Method get = modList.getMethod("get");
 			if (get.invoke(null) != null) return;
 			// of(modFiles, modInfos) constructs and installs the singleton INSTANCE.
@@ -153,7 +154,7 @@ public final class PassiveSeeder {
 	public static void seedNeoForgeLoader(ClassLoader gameLoader, Path gameDir, Path modsDir, boolean production,
 			boolean client) {
 		try {
-			Class<?> fmlLoader = Class.forName("net.neoforged.fml.loading.FMLLoader", false, gameLoader);
+			Class<?> fmlLoader = Class.forName(ForeignType.FML_LOADER.binary(Ecosystem.NEOFORGE), false, gameLoader);
 
 			Method getCurrentOrNull = fmlLoader.getDeclaredMethod("getCurrentOrNull");
 			getCurrentOrNull.setAccessible(true);
@@ -162,7 +163,7 @@ public final class PassiveSeeder {
 				return;
 			}
 
-			Class<?> distClass = Class.forName("net.neoforged.api.distmarker.Dist", false, gameLoader);
+			Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.NEOFORGE), false, gameLoader);
 			String distName = client ? "CLIENT" : "DEDICATED_SERVER";
 			Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), distName);
 
@@ -243,7 +244,7 @@ public final class PassiveSeeder {
 	 * force-enables its dev-mode banner).
 	 *
 	 * <p>Why those probes run AT ALL on a Fabric-flavoured mod: multi-platform mods detect their platform by class
-	 * presence ({@code Class.forName("net.neoforged.fml.loading.FMLLoader")}). On a normal instance exactly one
+	 * presence ({@code Class.forName(ForeignType.FML_LOADER.binary(Ecosystem.NEOFORGE))}). On a normal instance exactly one
 	 * family answers; on the merged base ALL of them do, so the NeoForge branch runs even for a jar that was built
 	 * for Fabric. The kernel cannot make that branch not run, so it must make the branch's data true.
 	 *
@@ -414,8 +415,8 @@ public final class PassiveSeeder {
 	 */
 	static Object buildLoadingModList(ClassLoader gameLoader, List<DiscoveredMod> mods) throws Exception {
 		Class<?> lmlCls = Class.forName("net.neoforged.fml.loading.LoadingModList", false, gameLoader);
-		Class<?> fileInfoCls = Class.forName("net.neoforged.fml.loading.moddiscovery.ModFileInfo", false, gameLoader);
-		Class<?> modInfoCls = Class.forName("net.neoforged.fml.loading.moddiscovery.ModInfo", false, gameLoader);
+		Class<?> fileInfoCls = Class.forName(ForeignType.MOD_FILE_INFO.binary(Ecosystem.NEOFORGE), false, gameLoader);
+		Class<?> modInfoCls = Class.forName(ForeignType.MOD_INFO.binary(Ecosystem.NEOFORGE), false, gameLoader);
 
 		Method of = lmlCls.getMethod("of", List.class, List.class, List.class, List.class, List.class, Map.class);
 		Object list = of.invoke(null, List.of(), List.of(), List.of(), List.of(), List.of(), Map.of());
@@ -468,9 +469,9 @@ public final class PassiveSeeder {
 	 */
 	private static Object buildForgeLoadingState(ClassLoader gameLoader, Constructor<?> stateCtor,
 			List<DiscoveredMod> mods) throws Exception {
-		Class<?> modFileCls = Class.forName("net.minecraftforge.fml.loading.moddiscovery.ModFile", false, gameLoader);
-		Class<?> fileInfoCls = Class.forName("net.minecraftforge.fml.loading.moddiscovery.ModFileInfo", false, gameLoader);
-		Class<?> modInfoCls = Class.forName("net.minecraftforge.fml.loading.moddiscovery.ModInfo", false, gameLoader);
+		Class<?> modFileCls = Class.forName(ForeignType.MOD_FILE.binary(Ecosystem.FORGE), false, gameLoader);
+		Class<?> fileInfoCls = Class.forName(ForeignType.MOD_FILE_INFO.binary(Ecosystem.FORGE), false, gameLoader);
+		Class<?> modInfoCls = Class.forName(ForeignType.MOD_INFO.binary(Ecosystem.FORGE), false, gameLoader);
 
 		// One file per JAR, N mods inside it: a mods.toml may declare several [[mods]], and the file is what the
 		// list keys its per-file map on.
@@ -635,7 +636,7 @@ public final class PassiveSeeder {
 	 */
 	private static Object buildModFile(ClassLoader gameLoader, Object fileInfo, Path jar, String id, String version) {
 		try {
-			Class<?> modFileCls = Class.forName("net.neoforged.fml.loading.moddiscovery.ModFile", false, gameLoader);
+			Class<?> modFileCls = Class.forName(ForeignType.MOD_FILE.binary(Ecosystem.NEOFORGE), false, gameLoader);
 			Class<?> contentsCls = Class.forName("net.neoforged.fml.jarcontents.JarContents", false, gameLoader);
 			Class<?> typeCls = Class.forName("net.neoforged.neoforgespi.locating.IModFile$Type", false, gameLoader);
 
@@ -780,7 +781,7 @@ public final class PassiveSeeder {
 			Class.forName("net.neoforged.neoforge.registries.NeoForgeRegistries", true, gameLoader);
 
 			Class<?> setupCls = Class.forName("net.neoforged.neoforge.registries.NeoForgeRegistriesSetup", false, gameLoader);
-			Class<?> eventCls = Class.forName("net.neoforged.neoforge.registries.NewRegistryEvent", false, gameLoader);
+			Class<?> eventCls = Class.forName(ForeignType.NEW_REGISTRY_EVENT.binary(Ecosystem.NEOFORGE), false, gameLoader);
 
 			Constructor<?> eventCtor = eventCls.getDeclaredConstructor();
 			eventCtor.setAccessible(true);
@@ -905,7 +906,7 @@ public final class PassiveSeeder {
 		// Traditional-Forge ModList keeps mods/indexedMods/sortedContainers as STATIC fields, null until mod
 		// loading. ServerStatusPing → ModList.forEachModContainer iterates indexedMods → NPE. Seed empties.
 		try {
-			Class<?> modList = Class.forName("net.minecraftforge.fml.ModList", true, gameLoader);
+			Class<?> modList = Class.forName(ForeignType.MOD_LIST.binary(Ecosystem.FORGE), true, gameLoader);
 			setStaticIfNull(modList, "mods", List.of());
 			setStaticIfNull(modList, "indexedMods", Map.of());
 			setStaticIfNull(modList, "sortedContainers", List.of());
@@ -925,7 +926,7 @@ public final class PassiveSeeder {
 	 */
 	public static void seedForgeFmlLoader(ClassLoader gameLoader, Path gameDir, boolean production) {
 		try {
-			Class<?> fmlLoader = Class.forName("net.minecraftforge.fml.loading.FMLLoader", false, gameLoader);
+			Class<?> fmlLoader = Class.forName(ForeignType.FML_LOADER.binary(Ecosystem.FORGE), false, gameLoader);
 			setStaticIfNull(fmlLoader, "gamePath", gameDir.toAbsolutePath());
 			setStaticIfNull(fmlLoader, "naming", "mojmap");
 			Field productionField = fmlLoader.getDeclaredField("production");
@@ -934,13 +935,13 @@ public final class PassiveSeeder {
 			Field distField = fmlLoader.getDeclaredField("dist");
 			distField.setAccessible(true);
 			if (distField.get(null) == null) {
-				Class<?> distClass = Class.forName("net.minecraftforge.api.distmarker.Dist", false, gameLoader);
+				Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.FORGE), false, gameLoader);
 				distField.set(null, Enum.valueOf(distClass.asSubclass(Enum.class), "DEDICATED_SERVER"));
 			}
 
 			// Traditional-Forge FMLPaths + FMLConfig (ForgeMod's config registration reads FMLConfig; ConfigFileType
 			// Handler.<clinit> NPEs if FMLConfig.load() hasn't populated its backing file config).
-			Class<?> fmlPaths = Class.forName("net.minecraftforge.fml.loading.FMLPaths", false, gameLoader);
+			Class<?> fmlPaths = Class.forName(ForeignType.FML_PATHS.binary(Ecosystem.FORGE), false, gameLoader);
 			fmlPaths.getMethod("loadAbsolutePaths", Path.class).invoke(null, gameDir.toAbsolutePath());
 			Class<?> fmlConfig = Class.forName("net.minecraftforge.fml.loading.FMLConfig", false, gameLoader);
 			fmlConfig.getMethod("load").invoke(null);

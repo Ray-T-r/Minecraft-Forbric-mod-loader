@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.util.ForbricLog;
@@ -211,8 +212,8 @@ public final class KernelModLoader {
 		if (forge.isEmpty()) return;
 		if ("off".equalsIgnoreCase(System.getProperty("forbric.publishModList", "on"))) return;
 		try {
-			Class<?> modListCls = Class.forName("net.minecraftforge.fml.ModList", false, cl);
-			Class<?> containerCls = Class.forName("net.minecraftforge.fml.ModContainer", false, cl);
+			Class<?> modListCls = Class.forName(ForeignType.MOD_LIST.binary(Ecosystem.FORGE), false, cl);
+			Class<?> containerCls = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.FORGE), false, cl);
 			List<Object> containers = new ArrayList<>();
 			for (KernelForgeModContext.Handle handle : forge.values()) {
 				if (containerCls.isInstance(handle.container())) containers.add(handle.container());
@@ -254,7 +255,7 @@ public final class KernelModLoader {
 		}
 
 		try {
-			Class<?> modListCls = Class.forName("net.neoforged.fml.ModList", false, cl);
+			Class<?> modListCls = Class.forName(ForeignType.MOD_LIST.binary(Ecosystem.NEOFORGE), false, cl);
 			Object modList = modListCls.getMethod("get").invoke(null);
 			if (modList == null) return;
 
@@ -304,7 +305,7 @@ public final class KernelModLoader {
 			// The method is looked up on the abstract ModContainer, not on each container's own class: the
 			// implementations are a kernel-generated subclass and a genuine FMLModContainer, and only the declaring
 			// type guarantees a publicly accessible handle for both.
-			Class<?> modContainerCls = Class.forName("net.neoforged.fml.ModContainer", false, cl);
+			Class<?> modContainerCls = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
 			fillModInfos(modListCls, modList, containers, modContainerCls.getMethod("getModInfo"));
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ModLoader] could not fill ModList.getMods() — mods that ENUMERATE the mod list "
@@ -379,8 +380,8 @@ public final class KernelModLoader {
 	 */
 	static void setNeoActiveContainer(ClassLoader cl, Object container) {
 		try {
-			Class<?> mlcCls = Class.forName("net.neoforged.fml.ModLoadingContext", false, cl);
-			Class<?> modContainer = Class.forName("net.neoforged.fml.ModContainer", false, cl);
+			Class<?> mlcCls = Class.forName(ForeignType.MOD_LOADING_CONTEXT.binary(Ecosystem.NEOFORGE), false, cl);
+			Class<?> modContainer = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
 			Object mlc = mlcCls.getMethod("get").invoke(null);
 			mlcCls.getMethod("setActiveContainer", modContainer).invoke(mlc, container);
 		} catch (Throwable t) {
@@ -394,8 +395,8 @@ public final class KernelModLoader {
 			boolean client) throws Exception {
 		Class<?> modCls = Class.forName(className, true, cl);
 		Class<?> iEventBus = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
-		Class<?> distClass = Class.forName("net.neoforged.api.distmarker.Dist", false, cl);
-		Class<?> modContainer = Class.forName("net.neoforged.fml.ModContainer", false, cl);
+		Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.NEOFORGE), false, cl);
+		Class<?> modContainer = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
 		Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), client ? "CLIENT" : "DEDICATED_SERVER");
 
 		Constructor<?> best = null;

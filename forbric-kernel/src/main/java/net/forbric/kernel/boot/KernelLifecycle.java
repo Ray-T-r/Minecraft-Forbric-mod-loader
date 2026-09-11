@@ -204,7 +204,7 @@ public final class KernelLifecycle {
 	 */
 	private static void rebuildNeoForgeBlockStateIds(ClassLoader cl) {
 		try {
-			Class<?> gameData = Class.forName("net.neoforged.neoforge.registries.GameData", false, cl);
+			Class<?> gameData = Class.forName(ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), false, cl);
 			Object idMap = gameData.getMethod("getBlockStateIDMap").invoke(null);
 			Class<?> idMapper = Class.forName("net.minecraft.core.IdMapper", false, cl);
 			if ((Integer) idMapper.getMethod("size").invoke(idMap) > 0) return; // NeoForge kept it — leave it alone
@@ -271,7 +271,7 @@ public final class KernelLifecycle {
 			};
 			java.util.function.Supplier<Object> serverSupplier = () -> {
 				try {
-					return Class.forName("net.neoforged.neoforge.server.ServerLifecycleHooks", false, cl)
+					return Class.forName(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.NEOFORGE), false, cl)
 							.getMethod("getCurrentServer").invoke(null);
 				} catch (Throwable t) {
 					return null;
@@ -385,10 +385,10 @@ public final class KernelLifecycle {
 			return;
 		}
 		try {
-			Class<?> trackerCls = Class.forName("net.neoforged.fml.config.ConfigTracker", false, cl);
+			Class<?> trackerCls = Class.forName(ForeignType.CONFIG_TRACKER.binary(Ecosystem.NEOFORGE), false, cl);
 			Object tracker = trackerCls.getField("INSTANCE").get(null);
-			Class<?> typeCls = Class.forName("net.neoforged.fml.config.ModConfig$Type", false, cl);
-			Class<?> fmlPaths = Class.forName("net.neoforged.fml.loading.FMLPaths", false, cl);
+			Class<?> typeCls = Class.forName(ForeignType.MOD_CONFIG_TYPE.binary(Ecosystem.NEOFORGE), false, cl);
+			Class<?> fmlPaths = Class.forName(ForeignType.FML_PATHS.binary(Ecosystem.NEOFORGE), false, cl);
 			Object configDirEnum = fmlPaths.getField("CONFIGDIR").get(null);
 			java.nio.file.Path configDir = (java.nio.file.Path) fmlPaths.getMethod("get").invoke(configDirEnum);
 			java.lang.reflect.Method loadConfigs =
@@ -442,7 +442,7 @@ public final class KernelLifecycle {
 	 */
 	private static void registerNeoForgeContent(ClassLoader cl, boolean client) {
 		try {
-			Class<?> distClass = Class.forName("net.neoforged.api.distmarker.Dist", false, cl);
+			Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.NEOFORGE), false, cl);
 			Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), client ? "CLIENT" : "DEDICATED_SERVER");
 
 			// The NeoForge baseline mod on its own bus. Captured so the client step can add ClientNeoForgeMod to
@@ -453,7 +453,7 @@ public final class KernelLifecycle {
 			baselineContainer = container;
 			Class<?> neoForgeMod = Class.forName("net.neoforged.neoforge.common.NeoForgeMod", false, cl);
 			Class<?> iEventBus = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
-			Class<?> modContainer = Class.forName("net.neoforged.fml.ModContainer", false, cl);
+			Class<?> modContainer = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
 			neoForgeMod.getConstructor(iEventBus, distClass, modContainer)
 					.newInstance(bus, dist, container);
 			ForbricLog.info("[Forbric/Lifecycle] constructed NeoForge baseline mod on a native bus (dist=%s)",
@@ -525,7 +525,7 @@ public final class KernelLifecycle {
 			// empty and the first clientbound block_update cannot encode ("Can't find id for Block{minecraft:lava}").
 			// NOT MinecraftForge's: its vanillaSnapshot LOCKS the vanilla wrappers, and every later register in this
 			// window then throws "Can not register to a locked registry" (gate-m1 RED).
-			invokeGameDataOn(cl, "net.neoforged.neoforge.registries.GameData", "vanillaSnapshot");
+			invokeGameDataOn(cl, ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), "vanillaSnapshot");
 			unfreeze(cl);
 			// MOD buses only — buses.get(0) is the baseline, whose registries PassiveSeeder already registered at
 			// seed time; posting there re-collects them and fill() dies on "Attempted duplicate registration".
@@ -550,7 +550,7 @@ public final class KernelLifecycle {
 			// RegisterEvent above (DeferredRegister$EventDispatcher calls updateReference right after each register),
 			// not here — so a mod reading another mod's RegistryObject during RegisterEvent depends on the dispatch
 			// order, not on this bake.
-			invokeGameDataOn(cl, "net.minecraftforge.registries.GameData", "postRegisterEvents");
+			invokeGameDataOn(cl, ForeignType.GAME_DATA.binary(Ecosystem.FORGE), "postRegisterEvents");
 			// NeoForge's postRegisterEvents is NOT the bake — it is the dispatch loop the kernel REPLACES: it walks
 			// getRegistrationOrder() and re-fires RegisterEvent through ModLoader.postEventWrapContainerInModOrder.
 			// While ModList was empty that was a silent no-op, so calling it looked harmless. Once the kernel
@@ -796,7 +796,7 @@ public final class KernelLifecycle {
 		try {
 			Class<?> clientMod = Class.forName("net.neoforged.neoforge.client.ClientNeoForgeMod", false, cl);
 			Class<?> iEventBus = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
-			Class<?> modContainer = Class.forName("net.neoforged.fml.ModContainer", false, cl);
+			Class<?> modContainer = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
 			clientMod.getConstructor(iEventBus, modContainer).newInstance(baselineBus, baselineContainer);
 			ForbricLog.info("[Forbric/Lifecycle] constructed ClientNeoForgeMod on the baseline bus");
 		} catch (Throwable t) {
@@ -844,7 +844,7 @@ public final class KernelLifecycle {
 	 * payload it sends (gate-m12).
 	 */
 	private static void publishModBusDelivery(ClassLoader cl) throws Exception {
-		Class<?> modListCls = Class.forName("net.neoforged.fml.ModList", false, cl);
+		Class<?> modListCls = Class.forName(ForeignType.MOD_LIST.binary(Ecosystem.NEOFORGE), false, cl);
 		Object modList = modListCls.getMethod("get").invoke(null);
 
 		Field modsField = modListCls.getDeclaredField("mods");
@@ -1203,7 +1203,7 @@ public final class KernelLifecycle {
 
 	/** The game-side {@code net.neoforged.fml.ModContainer} class. */
 	private static Class<?> modContainerClass(ClassLoader cl) throws ClassNotFoundException {
-		return Class.forName("net.neoforged.fml.ModContainer", false, cl);
+		return Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
 	}
 
 	/** Fires RegisterEvent for every registry (vanilla BuiltInRegistries + NeoForgeRegistries) on each bus. */
@@ -1240,7 +1240,7 @@ public final class KernelLifecycle {
 			return registries;
 		}
 		try {
-			Class<?> gameData = Class.forName("net.neoforged.neoforge.registries.GameData", false, cl);
+			Class<?> gameData = Class.forName(ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), false, cl);
 			Object order = gameData.getMethod("getRegistrationOrder").invoke(null);
 			if (!(order instanceof java.util.Collection<?> ids) || ids.isEmpty()) return registries;
 
@@ -1283,7 +1283,7 @@ public final class KernelLifecycle {
 		Class<?> resourceKeyCls = Class.forName("net.minecraft.resources.ResourceKey", false, cl);
 		Class<?> eventCls = Class.forName("net.neoforged.bus.api.Event", false, cl);
 		Class<?> busCls = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
-		Class<?> registerEventCls = Class.forName("net.neoforged.neoforge.registries.RegisterEvent", false, cl);
+		Class<?> registerEventCls = Class.forName(ForeignType.REGISTER_EVENT.binary(Ecosystem.NEOFORGE), false, cl);
 
 		Constructor<?> regEventCtor = registerEventCls.getDeclaredConstructor(resourceKeyCls, registryCls);
 		regEventCtor.setAccessible(true);
@@ -1361,7 +1361,7 @@ public final class KernelLifecycle {
 	 */
 	private static void postNeoNewRegistryEvent(ClassLoader cl, List<Object> buses) {
 		try {
-			Class<?> eventCls = Class.forName("net.neoforged.neoforge.registries.NewRegistryEvent", false, cl);
+			Class<?> eventCls = Class.forName(ForeignType.NEW_REGISTRY_EVENT.binary(Ecosystem.NEOFORGE), false, cl);
 			Constructor<?> ctor = eventCls.getDeclaredConstructor();
 			ctor.setAccessible(true);
 			Object event = ctor.newInstance();
@@ -1685,7 +1685,7 @@ public final class KernelLifecycle {
 
 	/** The {@code ForgeRegistry} instances backing {@code RegistryManager.ACTIVE}. */
 	private static List<Object> activeForgeRegistries(ClassLoader cl) throws Exception {
-		Class<?> managerCls = Class.forName("net.minecraftforge.registries.RegistryManager", false, cl);
+		Class<?> managerCls = Class.forName(ForeignType.REGISTRY_MANAGER.binary(Ecosystem.FORGE), false, cl);
 		Object active = managerCls.getField("ACTIVE").get(null);
 		Field registries = managerCls.getDeclaredField("registries");
 		registries.setAccessible(true);

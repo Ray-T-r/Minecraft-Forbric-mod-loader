@@ -30,6 +30,7 @@ import net.fabricmc.api.EnvType;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.api.ModPresence;
 import net.forbric.kernel.access.ClassTweakerTransformer;
 import net.forbric.kernel.classloading.ForbricClassLoader;
@@ -355,7 +356,7 @@ public final class KernelBoot {
 		}
 
 		MethodBodyNeuter neuter = new MethodBodyNeuter()
-				.add(new MethodBodyNeuter.Target("net.neoforged.neoforge.server.ServerLifecycleHooks",
+				.add(new MethodBodyNeuter.Target(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.NEOFORGE),
 						"runModifiers", "(Lnet/minecraft/server/MinecraftServer;)V",
 						"NeoForge biome/structure modifiers need neoforge:biome_modifier datapack registry"))
 				.add(new MethodBodyNeuter.Target("net.minecraft.world.level.levelgen.feature.MonsterRoomFeature",
@@ -480,8 +481,8 @@ public final class KernelBoot {
 		// after that injector, was emptying the rewritten body again. Do not add it back.
 
 		for (String owner : new String[] {
-				"net.neoforged.neoforge.client.loading.ClientModLoader",
-				"net.minecraftforge.client.loading.ClientModLoader"}) {
+				ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.NEOFORGE),
+				ForeignType.CLIENT_MOD_LOADER.binary(Ecosystem.FORGE)}) {
 			// begin() is NOT neutered: its call at Main.main bc 814 is the redirect target (→ onClientModLoading), so
 			// its genuine body is never reached from there. Neutering it instead defers registration to a point never
 			// reached and hangs the boot (empirically). The LATER client mod-loading calls in Minecraft.<init> are the

@@ -29,6 +29,8 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -69,7 +71,7 @@ public final class KernelModContainerFactory {
 			throws Exception {
 		Class<?> iModInfo = Class.forName("net.neoforged.neoforgespi.language.IModInfo", false, cl);
 		Class<?> iEventBus = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
-		Class<?> modContainer = Class.forName("net.neoforged.fml.ModContainer", false, cl);
+		Class<?> modContainer = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
 
 		Object modInfo = proxyModInfo(iModInfo, modId, jar);
 
@@ -107,7 +109,7 @@ public final class KernelModContainerFactory {
 	private static Object tryGenuineFmlContainer(ClassLoader cl, String modId, Object bus, Object modInfo,
 			Class<?> modContainer) {
 		try {
-			Class<?> fmlContainer = Class.forName("net.neoforged.fml.javafmlmod.FMLModContainer", false, cl);
+			Class<?> fmlContainer = Class.forName(ForeignType.FML_MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
 			Class<?> unsafe = Class.forName("net.minecraftforge.unsafe.UnsafeHacks", false, cl);
 			Method newInstance = unsafe.getMethod("newInstance", Class.class);
 			Method setField = unsafe.getMethod("setField", java.lang.reflect.Field.class, Object.class, Object.class);

@@ -42,6 +42,8 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -210,10 +212,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		for (AbstractInsnNode insn = clinit.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 			if (insn.getOpcode() != Opcodes.RETURN) continue;
 			clinit.instructions.insertBefore(insn, new TypeInsnNode(Opcodes.NEW,
-					"net/minecraftforge/client/settings/KeyMappingLookup"));
+					ForeignType.KEY_MAPPING_LOOKUP.internal(Ecosystem.FORGE)));
 			clinit.instructions.insertBefore(insn, new InsnNode(Opcodes.DUP));
 			clinit.instructions.insertBefore(insn, new MethodInsnNode(Opcodes.INVOKESPECIAL,
-					"net/minecraftforge/client/settings/KeyMappingLookup", "<init>", "()V", false));
+					ForeignType.KEY_MAPPING_LOOKUP.internal(Ecosystem.FORGE), "<init>", "()V", false));
 			clinit.instructions.insertBefore(insn, new FieldInsnNode(Opcodes.PUTSTATIC,
 					"net/minecraft/client/KeyMapping", "MAP", forgeLookup));
 			inserted = true;
@@ -266,9 +268,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				field.desc = neoLookup;
 				changed = true;
 			} else if (insn instanceof MethodInsnNode call
-					&& "net/minecraftforge/client/settings/KeyMappingLookup".equals(call.owner)
+					&& ForeignType.KEY_MAPPING_LOOKUP.internal(Ecosystem.FORGE).equals(call.owner)
 					&& "getAll".equals(call.name)) {
-				call.owner = "net/neoforged/neoforge/client/settings/KeyMappingLookup";
+				call.owner = ForeignType.KEY_MAPPING_LOOKUP.internal(Ecosystem.NEOFORGE);
 				changed = true;
 			}
 		}

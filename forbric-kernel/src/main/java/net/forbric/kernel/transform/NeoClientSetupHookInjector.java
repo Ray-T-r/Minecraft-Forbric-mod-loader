@@ -24,6 +24,8 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -60,7 +62,7 @@ import net.forbric.kernel.util.ForbricLog;
  */
 public final class NeoClientSetupHookInjector implements ClassTransformer {
 	private static final String MINECRAFT = "net.minecraft.client.Minecraft";
-	private static final String CLIENT_MOD_LOADER = "net/neoforged/neoforge/client/loading/ClientModLoader";
+	private static final String CLIENT_MOD_LOADER = ForeignType.CLIENT_MOD_LOADER.internal(Ecosystem.NEOFORGE);
 	private static final String FINISH = "finish";
 	private static final String HOOK_OWNER = "net/forbric/kernel/boot/KernelLifecycle";
 	private static final String HOOK_NAME = "onNeoClientSetup";
