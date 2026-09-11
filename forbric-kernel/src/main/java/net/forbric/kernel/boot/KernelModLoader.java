@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.classloading.ForbricClassLoader;
@@ -105,7 +106,7 @@ public final class KernelModLoader {
 
 	/** Scans + constructs every {@code @Mod} in {@code modJars}. Best-effort per mod. */
 	public static List<ConstructedMod> constructMods(ForbricClassLoader loader, ClassLoader cl, List<Path> modJars,
-			boolean client) {
+			Side side) {
 		// Phase 1 — scan and ARBITRATE everything first, so the full NeoForge mod set is known before any mod's
 		// constructor runs. A universal jar ships one @Mod per family; only the family that OWNS the jar may
 		// construct, or the same mod initialises once per live ecosystem (see MultiLoaderArbiter).
@@ -184,7 +185,7 @@ public final class KernelModLoader {
 			try {
 				ConstructedMod mod = info.family == Ecosystem.FORGE
 						? constructForgeFamilyMod(cl, info)
-						: constructNeoFamilyMod(cl, info, neo.get(safeId(info)), client);
+						: constructNeoFamilyMod(cl, info, neo.get(safeId(info)), side);
 				built.add(mod);
 				// One handle per mod id — a mod may annotate several classes, and they share a bus group.
 				if (mod.forgeHandle() != null) forge.putIfAbsent(mod.modId(), mod.forgeHandle());
@@ -349,7 +350,7 @@ public final class KernelModLoader {
 
 	/** NeoForge: the mod's pre-published bus + ModContainer, ctor filled by parameter type. */
 	private static ConstructedMod constructNeoFamilyMod(ClassLoader cl, ModAnnotationScanner.ModClassInfo info,
-			NeoIdentity identity, boolean client) throws Exception {
+			NeoIdentity identity, Side side) throws Exception {
 		String modId = safeId(info);
 		if (identity == null) {
 			throw new IllegalStateException("no ModContainer was built for NeoForge @Mod " + modId);
@@ -364,7 +365,7 @@ public final class KernelModLoader {
 		// its construction and clear it after, so nothing later registers under a stale namespace.
 		setNeoActiveContainer(cl, container);
 		try {
-			instance = constructNeoMod(cl, info.className, bus, container, client);
+			instance = constructNeoMod(cl, info.className, bus, container, side);
 		} finally {
 			setNeoActiveContainer(cl, null);
 		}
@@ -392,12 +393,12 @@ public final class KernelModLoader {
 
 	/** Constructs a NeoForge {@code @Mod} by filling its (widest public) constructor's params by type. */
 	private static Object constructNeoMod(ClassLoader cl, String className, Object bus, Object container,
-			boolean client) throws Exception {
+			Side side) throws Exception {
 		Class<?> modCls = Class.forName(className, true, cl);
 		Class<?> iEventBus = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
 		Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.NEOFORGE), false, cl);
 		Class<?> modContainer = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
-		Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), client ? "CLIENT" : "DEDICATED_SERVER");
+		Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), side.distName());
 
 		Constructor<?> best = null;
 		for (Constructor<?> c : modCls.getConstructors()) {

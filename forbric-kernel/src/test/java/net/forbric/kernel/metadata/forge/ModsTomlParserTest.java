@@ -71,12 +71,12 @@ class ModsTomlParserTest {
 		assertEquals("forge", forge.getModId());
 		assertTrue(forge.isMandatory());
 		assertEquals("[47,)", forge.getVersionRange());
-		assertEquals(UnifiedDependency.Side.BOTH, forge.getSide());
+		assertEquals(UnifiedDependency.SideScope.BOTH, forge.getSideScope());
 
 		ForgeDependency jei = mod.getDependencies().get(2);
 		assertEquals("jei", jei.getModId());
 		assertFalse(jei.isMandatory());
 		assertEquals(UnifiedDependency.Ordering.AFTER, jei.getOrdering());
-		assertEquals(UnifiedDependency.Side.CLIENT, jei.getSide());
+		assertEquals(UnifiedDependency.SideScope.CLIENT, jei.getSideScope());
 	}
 }

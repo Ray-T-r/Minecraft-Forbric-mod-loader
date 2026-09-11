@@ -29,7 +29,7 @@ import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.entrypoint.EntrypointContainer;
 import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
 
-import net.forbric.api.UnifiedDependency;
+import net.forbric.api.Side;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModPresence;
@@ -325,13 +325,9 @@ public final class KernelFabricEcosystem {
 	 * dedicated server, so "can I load Minecraft.class" answers the wrong question. Callers that would have to
 	 * guess should treat {@code null} as "do not judge side-scoped things" rather than picking a side.
 	 */
-	public static UnifiedDependency.Side physicalSide() {
+	public static Side physicalSide() {
 		KernelFabricLoader current = loader;
-		if (current == null) return null;
-		EnvType env = current.getEnvironmentType();
-		if (env == EnvType.CLIENT) return UnifiedDependency.Side.CLIENT;
-		if (env == EnvType.SERVER) return UnifiedDependency.Side.SERVER;
-		return null;
+		return current == null ? null : Side.parse(String.valueOf(current.getEnvironmentType()));
 	}
 
 	public static boolean runClientEntrypoints() {

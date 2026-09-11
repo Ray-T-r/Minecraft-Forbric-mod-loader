@@ -27,7 +27,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import net.forbric.api.UnifiedDependency.Ordering;
-import net.forbric.api.UnifiedDependency.Side;
+import net.forbric.api.UnifiedDependency.SideScope;
 import net.forbric.kernel.metadata.forge.ForgeMetadataMapper;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
 
@@ -39,16 +39,16 @@ class UnifiedDependencyTest {
 	void theThreeArgumentFormStillMeansNoOrderingAndBothSides() {
 		UnifiedDependency dep = new UnifiedDependency("sodium", ">=0.5", true);
 		assertEquals(Ordering.NONE, dep.getOrdering());
-		assertEquals(Side.BOTH, dep.getSide());
+		assertEquals(SideScope.BOTH, dep.getSideScope());
 		assertTrue(dep.appliesOn(Side.CLIENT));
-		assertTrue(dep.appliesOn(Side.SERVER));
+		assertTrue(dep.appliesOn(Side.DEDICATED_SERVER));
 	}
 
 	@Test
 	void aSideScopedRequirementDoesNotApplyOnTheOtherSide() {
-		UnifiedDependency clientOnly = new UnifiedDependency("jei", "*", true, Ordering.AFTER, Side.CLIENT);
+		UnifiedDependency clientOnly = new UnifiedDependency("jei", "*", true, Ordering.AFTER, SideScope.CLIENT);
 		assertTrue(clientOnly.appliesOn(Side.CLIENT));
-		assertFalse(clientOnly.appliesOn(Side.SERVER),
+		assertFalse(clientOnly.appliesOn(Side.DEDICATED_SERVER),
 				"a client-only requirement judged on a dedicated server is a false report of a missing mod");
 	}
 
@@ -57,8 +57,8 @@ class UnifiedDependencyTest {
 		assertEquals(Ordering.NONE, Ordering.parse("sideways"));
 		assertEquals(Ordering.NONE, Ordering.parse(null));
 		assertEquals(Ordering.AFTER, Ordering.parse(" after "));
-		assertEquals(Side.BOTH, Side.parse("holographic"));
-		assertEquals(Side.CLIENT, Side.parse("CLIENT"));
+		assertEquals(SideScope.BOTH, SideScope.parse("holographic"));
+		assertEquals(SideScope.CLIENT, SideScope.parse("CLIENT"));
 	}
 
 	@Test
@@ -97,7 +97,7 @@ class UnifiedDependencyTest {
 		UnifiedDependency jei = mods.get(0).getDependencies().get(0);
 		assertEquals("jei", jei.getModId());
 		assertEquals(Ordering.AFTER, jei.getOrdering());
-		assertEquals(Side.CLIENT, jei.getSide());
+		assertEquals(SideScope.CLIENT, jei.getSideScope());
 		assertTrue(jei.isSatisfiedBy("15.3.0"), "and the Maven range still translated into an evaluable predicate");
 		assertFalse(jei.isSatisfiedBy("16.0.0"));
 	}

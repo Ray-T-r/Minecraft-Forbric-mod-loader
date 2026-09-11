@@ -30,7 +30,7 @@ import java.util.Locale;
  * <h2>What the Forge families say that Fabric has no word for</h2>
  *
  * <p>A Forge {@code [[dependencies]]} entry carries two axes Fabric's {@code depends} map cannot express: load
- * {@link Ordering ordering} relative to the other mod, and the physical {@link Side side} the requirement applies
+ * {@link Ordering ordering} relative to the other mod, and the {@link SideScope sides} the requirement applies
  * to. Both were read by the parser and then dropped on the floor here, which made this type's name a promise it
  * did not keep. They are carried as DATA, per family, exactly as they were written — not folded into some average
  * that both families would then be slightly wrong about.
@@ -54,12 +54,19 @@ public final class UnifiedDependency {
 		}
 	}
 
-	/** The physical side a requirement applies to. A Fabric entry is always {@link #BOTH}. */
-	public enum Side {
+	/**
+	 * Which sides a requirement applies to — a SET of physical sides, not one of them.
+	 *
+	 * <p>Deliberately not {@link Side}. Forge's {@code side} key takes {@code BOTH} as well, and {@code BOTH} is
+	 * not a side anything runs on; collapsing the two would make "applies everywhere" and "applies on the client"
+	 * the same kind of value and invite exactly the comparison that is wrong. A Fabric entry is always
+	 * {@link #BOTH} — {@code depends} has no side axis.
+	 */
+	public enum SideScope {
 		BOTH, CLIENT, SERVER;
 
 		/** Parses a Forge {@code side} value; anything unrecognised or absent is {@link #BOTH}. */
-		public static Side parse(String value) {
+		public static SideScope parse(String value) {
 			if (value == null) return BOTH;
 			try {
 				return valueOf(value.trim().toUpperCase(Locale.ROOT));
@@ -68,9 +75,10 @@ public final class UnifiedDependency {
 			}
 		}
 
-		/** True if a requirement scoped to this side applies while running on {@code physical}. */
-		public boolean appliesOn(Side physical) {
-			return this == BOTH || physical == BOTH || this == physical;
+		/** True if a requirement with this scope is in force while running on {@code physical}. */
+		public boolean includes(Side physical) {
+			if (this == BOTH || physical == null) return true;
+			return this == CLIENT ? physical.isClient() : !physical.isClient();
 		}
 	}
 
@@ -78,19 +86,19 @@ public final class UnifiedDependency {
 	private final String versionConstraint;
 	private final boolean mandatory;
 	private final Ordering ordering;
-	private final Side side;
+	private final SideScope side;
 
 	public UnifiedDependency(String modId, String versionConstraint, boolean mandatory) {
-		this(modId, versionConstraint, mandatory, Ordering.NONE, Side.BOTH);
+		this(modId, versionConstraint, mandatory, Ordering.NONE, SideScope.BOTH);
 	}
 
 	public UnifiedDependency(String modId, String versionConstraint, boolean mandatory,
-			Ordering ordering, Side side) {
+			Ordering ordering, SideScope side) {
 		this.modId = modId;
 		this.versionConstraint = versionConstraint == null || versionConstraint.isEmpty() ? "*" : versionConstraint;
 		this.mandatory = mandatory;
 		this.ordering = ordering == null ? Ordering.NONE : ordering;
-		this.side = side == null ? Side.BOTH : side;
+		this.side = side == null ? SideScope.BOTH : side;
 	}
 
 	public String getModId() {
@@ -112,8 +120,8 @@ public final class UnifiedDependency {
 		return ordering;
 	}
 
-	/** The physical side this requirement applies to. */
-	public Side getSide() {
+	/** Which sides this requirement applies to. */
+	public SideScope getSideScope() {
 		return side;
 	}
 
@@ -128,9 +136,9 @@ public final class UnifiedDependency {
 		return VersionPredicate.matches(versionConstraint, version);
 	}
 
-	/** True if this requirement is in force while running on {@code physical} ({@link Side#BOTH} if unknown). */
+	/** True if this requirement is in force while running on {@code physical}; a {@code null} side means yes. */
 	public boolean appliesOn(Side physical) {
-		return side.appliesOn(physical);
+		return side.includes(physical);
 	}
 
 	@Override
@@ -138,6 +146,6 @@ public final class UnifiedDependency {
 		return modId + " " + versionConstraint
 				+ (mandatory ? "" : " (optional)")
 				+ (ordering == Ordering.NONE ? "" : " " + ordering)
-				+ (side == Side.BOTH ? "" : " " + side + "-only");
+				+ (side == SideScope.BOTH ? "" : " " + side + "-only");
 	}
 }

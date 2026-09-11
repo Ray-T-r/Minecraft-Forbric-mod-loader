@@ -100,6 +100,16 @@ public final class KernelBoot {
 		LifecycleHookInjector injector() {
 			return this == SERVER ? LifecycleHookInjector.forServer() : LifecycleHookInjector.forClient();
 		}
+
+		/**
+		 * The neutral spelling of this side.
+		 *
+		 * <p>This enum is the BOOT side: it also carries the entry class and the arg-stripping rule, neither of
+		 * which means anything to the ecosystems. {@link net.forbric.api.Side} is what crosses into them.
+		 */
+		public net.forbric.api.Side api() {
+			return this == SERVER ? net.forbric.api.Side.DEDICATED_SERVER : net.forbric.api.Side.CLIENT;
+		}
 	}
 
 	/**
@@ -418,8 +428,8 @@ public final class KernelBoot {
 		// The mods dir is passed explicitly (not re-derived inside the seeder) because the LoadingModList seeded here
 		// must describe the SAME jars this boot decided to load — see discoverForgeFamilyModJars above, which walks
 		// exactly this directory. Two independent derivations of "where the mods are" is how they drift apart.
-		PassiveSeeder.seedNeoForgeLoader(loader, gameDir, gameDir.resolve("mods"), side == Side.SERVER,
-				side == Side.CLIENT);
+		PassiveSeeder.seedNeoForgeLoader(loader, gameDir, gameDir.resolve("mods"), side.api(),
+				side == Side.SERVER);
 
 		// Mixin LAST in the pipeline but FIRST in time: installed before anything defines a targeted class.
 		//
@@ -446,7 +456,7 @@ public final class KernelBoot {
 		// Seed the minimum genuine-loader identity the merged base's patched <clinit>s read (no lifecycle). The
 		// Dist must match the side — a client seeded as DEDICATED_SERVER makes NeoForge reject the local player's
 		// integrated-server connection ("Server is still starting").
-		PassiveSeeder.seedAll(loader, gameDir, side == Side.SERVER, side == Side.CLIENT);
+		PassiveSeeder.seedAll(loader, gameDir, side.api(), side == Side.SERVER);
 
 		// Fabric preLaunch entrypoints, after Mixin is up and before any game class loads (their contract).
 		KernelFabricEcosystem.runPreLaunch();

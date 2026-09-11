@@ -26,6 +26,7 @@ import java.util.Set;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.api.Side;
 import net.forbric.api.UnifiedDependency;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.metadata.forge.EcosystemVersions;
@@ -86,7 +87,7 @@ public final class DependencyAudit {
 	 * dedicated server is a false accusation, and a false accusation in a boot log costs more than a silence.
 	 */
 	public static void report(List<DiscoveredMod> present, List<Path> nestedJars,
-			UnifiedDependency.Side physicalSide) {
+			Side physicalSide) {
 		if (present == null || present.isEmpty()) return;
 
 		Map<String, DiscoveredMod> byId = new LinkedHashMap<>();
@@ -111,7 +112,7 @@ public final class DependencyAudit {
 				if (NON_MOD_IDS.contains(wanted)) continue;
 				if (EcosystemVersions.provided(wanted) != null) continue; // EcosystemVersions.audit owns these
 
-				if (dep.getSide() != UnifiedDependency.Side.BOTH) {
+				if (dep.getSideScope() != UnifiedDependency.SideScope.BOTH) {
 					if (physicalSide == null) {
 						sideSkipped++;
 						continue;
