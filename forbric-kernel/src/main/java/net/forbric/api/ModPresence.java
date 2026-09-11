@@ -76,14 +76,33 @@ public final class ModPresence {
 
 	/** Records the Forge-family (MinecraftForge + NeoForge) mods this boot loaded. */
 	public static void publishForgeFamily(List<DiscoveredMod> mods) {
-		forgeFamily = mods == null ? List.of() : List.copyOf(mods);
+		forgeFamily = usable(mods);
 		reindex();
 	}
 
 	/** Records the Fabric mods this boot loaded, nested ones included. */
 	public static void publishFabric(List<DiscoveredMod> mods) {
-		fabric = mods == null ? List.of() : List.copyOf(mods);
+		fabric = usable(mods);
 		reindex();
+	}
+
+	/**
+	 * A defensive copy with unusable entries dropped.
+	 *
+	 * <p>{@code List.copyOf} was here, and it rejects a null element by throwing — which made {@link #add}'s
+	 * null guard unreachable and turned one bad entry into a failed publish. Both callers publish inside a
+	 * {@code catch (Throwable)} that degrades to "no presence at all", so the cost of a single null would have
+	 * been every cross-ecosystem answer reverting to "not installed": the exact silence this registry exists to
+	 * end, arriving through the code meant to prevent it.
+	 */
+	private static List<DiscoveredMod> usable(List<DiscoveredMod> mods) {
+		if (mods == null || mods.isEmpty()) return List.of();
+
+		List<DiscoveredMod> copy = new java.util.ArrayList<>(mods.size());
+		for (DiscoveredMod mod : mods) {
+			if (mod != null) copy.add(mod);
+		}
+		return List.copyOf(copy);
 	}
 
 	/** The Forge-family mods, for the Fabric side's presence registrations. Empty before the publish. */
