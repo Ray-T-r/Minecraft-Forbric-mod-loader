@@ -428,8 +428,7 @@ public final class KernelBoot {
 		// The mods dir is passed explicitly (not re-derived inside the seeder) because the LoadingModList seeded here
 		// must describe the SAME jars this boot decided to load — see discoverForgeFamilyModJars above, which walks
 		// exactly this directory. Two independent derivations of "where the mods are" is how they drift apart.
-		PassiveSeeder.seedNeoForgeLoader(loader, gameDir, gameDir.resolve("mods"), side.api(),
-				side == Side.SERVER);
+		PassiveSeeder.seedNeoForgeLoader(loader, gameDir, gameDir.resolve("mods"), side.api());
 
 		// Mixin LAST in the pipeline but FIRST in time: installed before anything defines a targeted class.
 		//
@@ -456,7 +455,7 @@ public final class KernelBoot {
 		// Seed the minimum genuine-loader identity the merged base's patched <clinit>s read (no lifecycle). The
 		// Dist must match the side — a client seeded as DEDICATED_SERVER makes NeoForge reject the local player's
 		// integrated-server connection ("Server is still starting").
-		PassiveSeeder.seedAll(loader, gameDir, side.api(), side == Side.SERVER);
+		PassiveSeeder.seedAll(loader, gameDir, side.api());
 
 		// Fabric preLaunch entrypoints, after Mixin is up and before any game class loads (their contract).
 		KernelFabricEcosystem.runPreLaunch();

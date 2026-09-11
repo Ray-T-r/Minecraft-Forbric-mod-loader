@@ -61,21 +61,35 @@ public final class PassiveSeeder {
 	}
 
 	/**
+	 * FML's dev-vs-shipped flag, which for a Forbric instance is always "shipped".
+	 *
+	 * <p>It used to be a parameter, and {@code KernelBoot} filled it with {@code side == Side.SERVER} — so every
+	 * client boot announced {@code production=false}, telling both ecosystems they were running out of a Gradle
+	 * workspace. That is not a spelling mistake anyone would make with the axes named: it happened because the
+	 * side and this flag were two adjacent booleans in the same signature.
+	 *
+	 * <p>{@code false} is what FML sets when the game is launched from a mod-development workspace: unobfuscated
+	 * names, dev-only resource paths, relaxed checks. Nothing the kernel does resembles that — the gates and the
+	 * installer both launch from built jars — and the dedicated server has been telling the truth about it all
+	 * along. A constant rather than a parameter, because a parameter invites a caller to have an opinion, and the
+	 * only opinion available here was the wrong one.
+	 */
+	private static final boolean PRODUCTION = true;
+
+	/**
 	 * Seeds every genuine-loader identity the merged base needs before the game entry runs. Best-effort per family.
 	 *
 	 * <p>{@code side} selects the seeded {@code Dist}. It is load-bearing: with the wrong dist, NeoForge's client
 	 * code (and the integrated server's connection handshake) treats the client as a dedicated server — e.g. the
 	 * local player's MODDED connection is rejected "Server is still starting".
 	 *
-	 * <p>{@code production} is FML's own dev-vs-shipped flag and is a SEPARATE axis from the side. They used to be
-	 * two adjacent booleans here, which is how {@code KernelBoot} came to pass "is this the server" as the
-	 * production flag: both orders compile and mean opposite things. One of them is an enum now.
+	 * <p>The dev-vs-shipped flag is not a parameter — see {@link #PRODUCTION} for why it stopped being one.
 	 */
-	public static void seedAll(ClassLoader gameLoader, Path gameDir, Side side, boolean production) {
-		seedNeoForgeLoader(gameLoader, gameDir, side, production);
+	public static void seedAll(ClassLoader gameLoader, Path gameDir, Side side) {
+		seedNeoForgeLoader(gameLoader, gameDir, side);
 		seedNeoForgeModList(gameLoader);
 		seedNeoForgePaths(gameLoader, gameDir);
-		seedForgeFmlLoader(gameLoader, gameDir, side, production);
+		seedForgeFmlLoader(gameLoader, gameDir, side);
 		// NOTE: NeoForge baseline-registry registration is NOT done here — NeoForgeRegistriesSetup.<clinit> touches
 		// game registries and throws "Not bootstrapped" pre-Main. It runs post-Bootstrap via KernelLifecycle
 		// (the redirected ServerModLoader.load window). See KernelLifecycle.onServerModLoading.
@@ -140,8 +154,8 @@ public final class PassiveSeeder {
 	 * No-ops if a loader is already current or the class is absent.
 	 */
 
-	public static void seedNeoForgeLoader(ClassLoader gameLoader, Path gameDir, Side side, boolean production) {
-		seedNeoForgeLoader(gameLoader, gameDir, gameDir.resolve("mods"), side, production);
+	public static void seedNeoForgeLoader(ClassLoader gameLoader, Path gameDir, Side side) {
+		seedNeoForgeLoader(gameLoader, gameDir, gameDir.resolve("mods"), side);
 	}
 
 	/**
@@ -150,8 +164,7 @@ public final class PassiveSeeder {
 	 * same directory {@code KernelBoot} walks for Forge-family discovery — the explicit parameter exists so the
 	 * caller that already knows the mods dir passes ITS answer rather than re-deriving one that could drift.
 	 */
-	public static void seedNeoForgeLoader(ClassLoader gameLoader, Path gameDir, Path modsDir, Side side,
-			boolean production) {
+	public static void seedNeoForgeLoader(ClassLoader gameLoader, Path gameDir, Path modsDir, Side side) {
 		try {
 			Class<?> fmlLoader = Class.forName(ForeignType.FML_LOADER.binary(Ecosystem.NEOFORGE), false, gameLoader);
 
@@ -170,7 +183,7 @@ public final class PassiveSeeder {
 			Constructor<?> ctor = fmlLoader.getDeclaredConstructor(
 					ClassLoader.class, String[].class, distClass, boolean.class, Path.class);
 			ctor.setAccessible(true);
-			Object loader = ctor.newInstance(gameLoader, new String[0], dist, production, gameDir);
+			Object loader = ctor.newInstance(gameLoader, new String[0], dist, PRODUCTION, gameDir);
 
 			// The ctor may or may not self-register; makeCurrent() (guarded) ensures getCurrent() resolves.
 			if (getCurrentOrNull.invoke(null) == null) {
@@ -182,7 +195,7 @@ public final class PassiveSeeder {
 			seedNeoForgeLoadingModList(gameLoader, fmlLoader, loader, modsDir);
 
 			ForbricLog.info("[Forbric/Seed] NeoForge FMLLoader seeded (dist=%s, production=%s) — "
-					+ "environment identity only, no lifecycle", distName, production);
+					+ "environment identity only, no lifecycle", distName, PRODUCTION);
 		} catch (ClassNotFoundException absent) {
 			ForbricLog.debug("[Forbric/Seed] NeoForge FMLLoader not present — skipping");
 		} catch (Throwable t) {
@@ -945,14 +958,14 @@ public final class PassiveSeeder {
 	 * <p>Reported at INFO rather than DEBUG for the same reason: this value decides which half of every
 	 * traditional-Forge mod runs, so it belongs in a log a user can hand over.
 	 */
-	public static void seedForgeFmlLoader(ClassLoader gameLoader, Path gameDir, Side side, boolean production) {
+	public static void seedForgeFmlLoader(ClassLoader gameLoader, Path gameDir, Side side) {
 		try {
 			Class<?> fmlLoader = Class.forName(ForeignType.FML_LOADER.binary(Ecosystem.FORGE), false, gameLoader);
 			setStaticIfNull(fmlLoader, "gamePath", gameDir.toAbsolutePath());
 			setStaticIfNull(fmlLoader, "naming", "mojmap");
 			Field productionField = fmlLoader.getDeclaredField("production");
 			productionField.setAccessible(true);
-			productionField.setBoolean(null, production);
+			productionField.setBoolean(null, PRODUCTION);
 			Field distField = fmlLoader.getDeclaredField("dist");
 			distField.setAccessible(true);
 			Object existing = distField.get(null);
@@ -960,7 +973,7 @@ public final class PassiveSeeder {
 				Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.FORGE), false, gameLoader);
 				distField.set(null, Enum.valueOf(distClass.asSubclass(Enum.class), side.distName()));
 				ForbricLog.info("[Forbric/Seed] traditional-Forge dist seeded %s (production=%s) — this is what "
-						+ "every MinecraftForge mod's side check reads", side.distName(), production);
+						+ "every MinecraftForge mod's side check reads", side.distName(), PRODUCTION);
 			} else {
 				ForbricLog.info("[Forbric/Seed] traditional-Forge dist was already %s; leaving it (running %s)",
 						existing, side.distName());
