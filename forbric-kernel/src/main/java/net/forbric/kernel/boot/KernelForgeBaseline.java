@@ -20,6 +20,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -86,8 +88,8 @@ public final class KernelForgeBaseline {
 	 */
 	private static int fireNewRegistryEvent(ClassLoader cl) {
 		try {
-			Class<?> newRegCls = Class.forName("net.minecraftforge.registries.NewRegistryEvent", false, cl);
-			Class<?> regManager = Class.forName("net.minecraftforge.registries.RegistryManager", false, cl);
+			Class<?> newRegCls = Class.forName(ForeignType.NEW_REGISTRY_EVENT.binary(Ecosystem.FORGE), false, cl);
+			Class<?> regManager = Class.forName(ForeignType.REGISTRY_MANAGER.binary(Ecosystem.FORGE), false, cl);
 			Object active = regManager.getField("ACTIVE").get(null);
 			Field rf = regManager.getDeclaredField("registries");
 			rf.setAccessible(true);

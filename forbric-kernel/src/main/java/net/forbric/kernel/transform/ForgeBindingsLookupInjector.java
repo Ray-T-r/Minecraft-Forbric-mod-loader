@@ -27,6 +27,8 @@ import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -46,7 +48,7 @@ import net.forbric.kernel.util.ForbricLog;
  */
 public final class ForgeBindingsLookupInjector implements ClassTransformer {
 	private static final String BINDINGS = "net.minecraftforge.fml.Bindings";
-	private static final String FML_LOADER = "net/minecraftforge/fml/loading/FMLLoader";
+	private static final String FML_LOADER = ForeignType.FML_LOADER.internal(Ecosystem.FORGE);
 	private static final String GAME_LAYER = "getGameLayer";
 	private static final String SERVICE_LOADER = "java/util/ServiceLoader";
 	private static final String LOAD = "load";

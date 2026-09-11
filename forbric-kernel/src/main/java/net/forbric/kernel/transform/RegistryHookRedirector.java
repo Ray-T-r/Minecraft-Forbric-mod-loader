@@ -25,6 +25,8 @@ import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -67,7 +69,7 @@ import net.forbric.kernel.util.ForbricLog;
  * the paragraphs above as the history of why the FIRST creation stays plain, not as a description of the runtime.
  */
 public final class RegistryHookRedirector implements ClassTransformer {
-	public static final String GAMEDATA = "net.minecraftforge.registries.GameData";
+	public static final String GAMEDATA = ForeignType.GAME_DATA.binary(Ecosystem.FORGE);
 	private static final String GET_WRAPPER = "getWrapper";
 	// (ResourceKey, WritableRegistry) -> WritableRegistry   (erased)
 	private static final String GET_WRAPPER_DESC =

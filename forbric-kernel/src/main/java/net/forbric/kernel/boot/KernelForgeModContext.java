@@ -26,6 +26,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -56,9 +58,9 @@ import net.forbric.kernel.util.ForbricLog;
  * the {@code null} they used to receive.
  */
 public final class KernelForgeModContext {
-	private static final String FML_MOD_CONTAINER = "net.minecraftforge.fml.javafmlmod.FMLModContainer";
+	private static final String FML_MOD_CONTAINER = ForeignType.FML_MOD_CONTAINER.binary(Ecosystem.FORGE);
 	private static final String FML_JAVA_CTX = "net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext";
-	private static final String MOD_CONTAINER = "net.minecraftforge.fml.ModContainer";
+	private static final String MOD_CONTAINER = ForeignType.MOD_CONTAINER.binary(Ecosystem.FORGE);
 	private static final String BUS_GROUP = "net.minecraftforge.eventbus.api.bus.BusGroup";
 
 	/** A manufactured traditional-Forge loading context: what a {@code @Mod} ctor and the kernel each need. */
@@ -106,7 +108,7 @@ public final class KernelForgeModContext {
 		// / the activity + dependency maps all NPE on a null.
 		@SuppressWarnings({"unchecked", "rawtypes"})
 		Object configs = new java.util.EnumMap(
-				Class.forName("net.minecraftforge.fml.config.ModConfig$Type", false, cl).asSubclass(Enum.class));
+				Class.forName(ForeignType.MOD_CONFIG_TYPE.binary(Ecosystem.FORGE), false, cl).asSubclass(Enum.class));
 		uset(setField, mcCls, "configs", container, configs);
 		uset(setField, mcCls, "extensionPoints", container, new java.util.concurrent.ConcurrentHashMap<>());
 		usetIfPresent(setField, mcCls, "activityMap", container, new java.util.HashMap<>());
@@ -121,7 +123,7 @@ public final class KernelForgeModContext {
 	/** Makes {@code container} the active {@code ModLoadingContext} (what {@code *.get()} reads). */
 	public static void setActiveContainer(ClassLoader cl, Object container) throws Exception {
 		Class<?> mcCls = Class.forName(MOD_CONTAINER, false, cl);
-		Class<?> mlcCls = Class.forName("net.minecraftforge.fml.ModLoadingContext", false, cl);
+		Class<?> mlcCls = Class.forName(ForeignType.MOD_LOADING_CONTEXT.binary(Ecosystem.FORGE), false, cl);
 		Object mlc = mlcCls.getMethod("get").invoke(null);
 		Method setActive = mlcCls.getDeclaredMethod("setActiveContainer", mcCls);
 		setActive.setAccessible(true);
@@ -187,7 +189,7 @@ public final class KernelForgeModContext {
 	 */
 	public static int fireRegisterEvents(ClassLoader cl, List<Handle> handles) throws Exception {
 		if (handles.isEmpty()) return 0;
-		Class<?> registerEventCls = Class.forName("net.minecraftforge.registries.RegisterEvent", false, cl);
+		Class<?> registerEventCls = Class.forName(ForeignType.REGISTER_EVENT.binary(Ecosystem.FORGE), false, cl);
 		Class<?> resourceKeyCls = Class.forName("net.minecraft.resources.ResourceKey", false, cl);
 		Class<?> registryCls = Class.forName("net.minecraft.core.Registry", false, cl);
 		Class<?> forgeRegCls = Class.forName("net.minecraftforge.registries.ForgeRegistry", false, cl);
@@ -226,7 +228,7 @@ public final class KernelForgeModContext {
 		Class<?> resourceKeyCls = Class.forName("net.minecraft.resources.ResourceKey", false, cl);
 		Class<?> forgeRegCls = Class.forName("net.minecraftforge.registries.ForgeRegistry", false, cl);
 		Class<?> builtin = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
-		Class<?> regManager = Class.forName("net.minecraftforge.registries.RegistryManager", false, cl);
+		Class<?> regManager = Class.forName(ForeignType.REGISTRY_MANAGER.binary(Ecosystem.FORGE), false, cl);
 		Object active = regManager.getField("ACTIVE").get(null);
 		Method getRegistry = regManager.getMethod("getRegistry", resourceKeyCls);
 		Method keyM = registryCls.getMethod("key");
@@ -288,7 +290,7 @@ public final class KernelForgeModContext {
 
 	private static Object buildBusGroup(ClassLoader cl, String modId) throws Exception {
 		Class<?> busGroupCls = Class.forName(BUS_GROUP, false, cl);
-		Class<?> modBusEvent = Class.forName("net.minecraftforge.fml.event.IModBusEvent", false, cl);
+		Class<?> modBusEvent = Class.forName(ForeignType.MOD_BUS_EVENT.binary(Ecosystem.FORGE), false, cl);
 		return busGroupCls.getMethod("create", String.class, Class.class)
 				.invoke(null, "modBusFor" + modId, modBusEvent);
 	}

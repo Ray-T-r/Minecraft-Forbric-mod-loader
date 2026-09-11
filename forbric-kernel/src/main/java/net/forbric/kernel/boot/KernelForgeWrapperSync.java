@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -163,7 +165,7 @@ public final class KernelForgeWrapperSync {
 
 	private static void apply(ClassLoader cl, Map<Object, Map<Object, Integer>> staged) throws Exception {
 		Class<?> snapshotCls = Class.forName("net.minecraftforge.registries.ForgeRegistry$Snapshot", false, cl);
-		Class<?> gameData = Class.forName("net.minecraftforge.registries.GameData", false, cl);
+		Class<?> gameData = Class.forName(ForeignType.GAME_DATA.binary(Ecosystem.FORGE), false, cl);
 		Class<?> identifierCls = Class.forName("net.minecraft.resources.Identifier", false, cl);
 		Method injectSnapshot = gameData.getMethod("injectSnapshot", Map.class, boolean.class, boolean.class);
 		// Resolved on the PUBLIC interfaces, not on the wrapper: NamespacedWrapper is package-private, and a Method
@@ -318,7 +320,7 @@ public final class KernelForgeWrapperSync {
 	 */
 	private static void rebuildBlockStateIds(ClassLoader cl) {
 		try {
-			Class<?> neoGameData = Class.forName("net.neoforged.neoforge.registries.GameData", false, cl);
+			Class<?> neoGameData = Class.forName(ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), false, cl);
 			Object idMap = neoGameData.getMethod("getBlockStateIDMap").invoke(null);
 			// NeoForge's map is a package-private nested IdMapper subclass whose clear() is package-private too —
 			// getMethod cannot see it; walk the class chain for the declared one.

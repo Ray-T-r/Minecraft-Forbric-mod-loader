@@ -31,6 +31,7 @@ import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Opcodes;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.util.ForbricLog;
@@ -311,7 +312,7 @@ public final class KernelEventSubscribers {
 								.getField("EVENT_BUS").get(null),
 						Class.forName("net.neoforged.bus.api.SubscribeEvent", false, cl),
 						Class.forName("net.neoforged.bus.api.Event", false, cl),
-						Class.forName("net.neoforged.fml.event.IModBusEvent", false, cl),
+						Class.forName(ForeignType.MOD_BUS_EVENT.binary(Ecosystem.NEOFORGE), false, cl),
 						Class.forName("net.neoforged.bus.api.IEventBus", false, cl).getMethod("register", Object.class));
 			} catch (Throwable t) {
 				ForbricLog.debug("[Forbric/EBS] NeoForge bus API absent");

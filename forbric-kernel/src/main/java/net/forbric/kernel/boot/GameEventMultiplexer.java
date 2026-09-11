@@ -26,7 +26,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.api.EventBridges;
+import net.forbric.api.ForeignType;
 import net.forbric.api.GameEventBridge;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -283,12 +285,12 @@ public final class GameEventMultiplexer {
 	 */
 	private static int bridgeForgeServerAboutToStart(ClassLoader cl, Object bus, Method addListener, Object prio,
 			Class<?> mcServer) throws Exception {
-		Class<?> evt = Class.forName("net.neoforged.neoforge.event.server.ServerAboutToStartEvent", false, cl);
+		Class<?> evt = Class.forName(ForeignType.SERVER_ABOUT_TO_START_EVENT.binary(Ecosystem.NEOFORGE), false, cl);
 		Method getServer = evt.getMethod("getServer");
-		Class<?> forgeHooks = Class.forName("net.minecraftforge.server.ServerLifecycleHooks", false, cl);
-		Class<?> tracker = Class.forName("net.minecraftforge.fml.config.ConfigTracker", false, cl);
-		Class<?> typeCls = Class.forName("net.minecraftforge.fml.config.ModConfig$Type", false, cl);
-		Class<?> forgeEvent = Class.forName("net.minecraftforge.event.server.ServerAboutToStartEvent", false, cl);
+		Class<?> forgeHooks = Class.forName(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.FORGE), false, cl);
+		Class<?> tracker = Class.forName(ForeignType.CONFIG_TRACKER.binary(Ecosystem.FORGE), false, cl);
+		Class<?> typeCls = Class.forName(ForeignType.MOD_CONFIG_TYPE.binary(Ecosystem.FORGE), false, cl);
+		Class<?> forgeEvent = Class.forName(ForeignType.SERVER_ABOUT_TO_START_EVENT.binary(Ecosystem.FORGE), false, cl);
 		@SuppressWarnings({"unchecked", "rawtypes"})
 		Object serverConfigs = Enum.valueOf((Class) typeCls, "SERVER");
 		Method configPath = forgeHooks.getDeclaredMethod("getServerConfigPath", mcServer);
@@ -347,7 +349,7 @@ public final class GameEventMultiplexer {
 			Class<?> mcServer, String neoEventClass, String forgeMethod, boolean openLoginGate) throws Exception {
 		Class<?> evt = Class.forName(neoEventClass, false, cl);
 		Method getServer = evt.getMethod("getServer");
-		Class<?> forgeHooks = Class.forName("net.minecraftforge.server.ServerLifecycleHooks", false, cl);
+		Class<?> forgeHooks = Class.forName(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.FORGE), false, cl);
 		Method forgeHandle = forgeHooks.getMethod(forgeMethod, mcServer);
 		AtomicBoolean warned = new AtomicBoolean();
 		Consumer<Object> listener = neoEvt -> {
@@ -379,7 +381,7 @@ public final class GameEventMultiplexer {
 	 */
 	private static void forceAllowLogins(ClassLoader cl) {
 		try {
-			Class<?> forgeHooks = Class.forName("net.minecraftforge.server.ServerLifecycleHooks", false, cl);
+			Class<?> forgeHooks = Class.forName(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.FORGE), false, cl);
 			java.lang.reflect.Field f = forgeHooks.getDeclaredField("allowLogins");
 			f.setAccessible(true);
 			Object atomic = f.get(null);

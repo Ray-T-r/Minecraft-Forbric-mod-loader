@@ -18,6 +18,9 @@ package net.forbric.kernel.boot;
 
 import java.lang.reflect.InvocationTargetException;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
+
 /** Shared reflective helpers for the kernel's native ecosystem-event plumbing. */
 final class KernelBusSupport {
 	private KernelBusSupport() {
@@ -35,7 +38,7 @@ final class KernelBusSupport {
 		Class<?> busBuilder = Class.forName("net.neoforged.bus.api.BusBuilder", false, cl);
 		Object builder = busBuilder.getMethod("builder").invoke(null);
 		try {
-			Class<?> modBusEvent = Class.forName("net.neoforged.fml.event.IModBusEvent", false, cl);
+			Class<?> modBusEvent = Class.forName(ForeignType.MOD_BUS_EVENT.binary(Ecosystem.NEOFORGE), false, cl);
 			builder = busBuilder.getMethod("markerType", Class.class).invoke(builder, modBusEvent);
 		} catch (Throwable ignored) {
 			// markerType is best-effort

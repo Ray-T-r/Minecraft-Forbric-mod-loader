@@ -28,6 +28,8 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -80,7 +82,7 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	private static final String WRAPPER_PENDING_TAGS = "net.minecraftforge.registries.NamespacedWrapper$3";
 	private static final String PENDING_BINDINGS = "val$newBindings";
 	private static final String IMMUTABLE_MAP = "Lcom/google/common/collect/ImmutableMap;";
-	private static final String NEO_REGISTRY_MANAGER = "net.neoforged.neoforge.registries.RegistryManager";
+	private static final String NEO_REGISTRY_MANAGER = ForeignType.REGISTRY_MANAGER.binary(Ecosystem.NEOFORGE);
 	private static final String FABRIC_CLIENT_SYNC = "net.fabricmc.fabric.impl.client.registry.sync.ClientRegistrySyncHandler";
 
 	private static final String HOOK_OWNER = "net/forbric/kernel/boot/KernelForgeWrapperSync";

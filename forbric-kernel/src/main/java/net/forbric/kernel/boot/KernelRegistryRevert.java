@@ -20,6 +20,8 @@ import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Set;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -42,7 +44,7 @@ import net.forbric.kernel.util.ForbricLog;
  * case, and one where every registry would otherwise be torn down and rebuilt for nothing.
  */
 public final class KernelRegistryRevert {
-	private static final String REGISTRY_MANAGER = "net.neoforged.neoforge.registries.RegistryManager";
+	private static final String REGISTRY_MANAGER = ForeignType.REGISTRY_MANAGER.binary(Ecosystem.NEOFORGE);
 	private static final String SNAPSHOT_TYPE = REGISTRY_MANAGER + "$SnapshotType";
 	private static final String REMAPPABLE = "net.fabricmc.fabric.impl.registry.sync.RemappableRegistry";
 	private static final String WRAPPER = "net.minecraftforge.registries.NamespacedWrapper";

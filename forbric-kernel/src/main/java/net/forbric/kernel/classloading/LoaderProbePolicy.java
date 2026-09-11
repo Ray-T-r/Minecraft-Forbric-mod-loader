@@ -18,6 +18,8 @@ package net.forbric.kernel.classloading;
 
 import java.util.Map;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -97,8 +99,8 @@ public final class LoaderProbePolicy {
 	private static final Map<String, Family> PROBES = Map.of(
 			"net.fabricmc.loader.api.FabricLoader", Family.FABRIC,
 			"net.fabricmc.loader.impl.FabricLoaderImpl", Family.FABRIC,
-			"net.minecraftforge.fml.loading.FMLLoader", Family.FORGE_FAMILY,
-			"net.neoforged.fml.loading.FMLLoader", Family.FORGE_FAMILY);
+			ForeignType.FML_LOADER.binary(Ecosystem.FORGE), Family.FORGE_FAMILY,
+			ForeignType.FML_LOADER.binary(Ecosystem.NEOFORGE), Family.FORGE_FAMILY);
 
 	private static final boolean ENABLED = !"off".equalsIgnoreCase(System.getProperty("forbric.loaderProbes", "on"));
 
