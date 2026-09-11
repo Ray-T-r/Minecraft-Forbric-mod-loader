@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -58,7 +59,7 @@ class CommonNetworkInteropInjectorTest {
 	private static final String CONNECTION_TYPE = "net/neoforged/neoforge/network/connection/ConnectionType";
 	private static final String CLIENT_REGISTRY = "net/neoforged/neoforge/client/network/registration/ClientNetworkRegistry";
 	private static final String INITIALIZE_DESC = "(L" + LISTENER + ";)V";
-	private static final String INTEROP = "net/forbric/loader/impl/compat/ForbricCustomPayloadInterop";
+	private static final String INTEROP = "net/forbric/kernel/interop/PayloadInterop";
 
 	@Test
 	void theUnguardedSiteGetsTheFlagCheckAndTheGuardedOneIsLeftAlone() throws Exception {
@@ -196,6 +197,30 @@ class CommonNetworkInteropInjectorTest {
 		assertTrue(neo >= 0 && forge > neo, "Forge's hook runs after NeoForge's own finish");
 		assertTrue(reply > forge, "…and before the client tells the server it is entering play");
 		new Analyzer<>(new BasicVerifier()).analyze(node.name, finished);
+	}
+
+	/**
+	 * Every hook this injector splices into the real merged listeners resolves to a real method.
+	 *
+	 * <p>The tests above assert that a call was emitted, where it sits, and what it is handed — none of them
+	 * assert the call goes anywhere. Owner, name and descriptor are three independent strings here, so renaming
+	 * or re-signing the hook leaves all of them green and moves the failure to a {@code NoSuchMethodError} thrown
+	 * from inside the game's packet handling.
+	 */
+	@Test
+	void everyHookSplicedIntoTheRealListenersResolves() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		for (String entry : List.of(
+				"net/minecraft/network/Connection",
+				"net/minecraft/server/network/ServerConfigurationPacketListenerImpl",
+				"net/minecraft/client/multiplayer/ClientConfigurationPacketListenerImpl",
+				"net/minecraft/client/multiplayer/ClientCommonPacketListenerImpl",
+				"net/minecraft/server/network/ServerCommonPacketListenerImpl")) {
+			byte[] in = readClass(entry + ".class");
+			byte[] out = new CommonNetworkInteropInjector().transform(entry.replace('/', '.'), in, null);
+			assertTrue(out != in, entry + " must still need the injection");
+			InteropHookAssertions.assertEveryInteropCallResolves(out);
+		}
 	}
 
 	private static boolean storesFieldBefore(MethodNode m, String field, String hook) {

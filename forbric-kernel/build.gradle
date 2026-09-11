@@ -80,18 +80,6 @@ dependencies {
 
 	nestedMods "io.github.llamalad7:mixinextras-fabric:${project.mixin_extras_version}"
 
-	// The merged base's custom-payload codec patch (MergedBaseBuilder.patchCustomPayloadInterop) hard-references
-	// net.forbric.loader.impl.compat.ForbricCustomPayloadInterop — a purely-reflective cross-ecosystem payload-codec
-	// unifier (its only deps are ForbricLog + fabric-loader's Log, all bundled in this oracle jar). It is invoked on
-	// every custom_payload encode/decode, so world-join fails with NoClassDefFoundError without it. Supplied on the
-	// BOOT classpath (via printBootClasspath → each launch script's parent -cp): ForbricClassLoader's parent-fallback
-	// resolves it, and it reflects against the GAME loader (loaderFor(id,…)), so boot-loading is correct. runtimeOnly
-	// = zero compile coupling to the differential-oracle loader. TODO(kernel ③): reimplement natively (PayloadTable).
-	// forbricruntime carries ForbricForgeRuntimeInterop#forgeFluidType, which the merged-base compat transformer's
-	// re-added MinecraftForge getFluidType() bridge delegates to (the Forge/Neo FluidType ABI split).
-	runtimeOnly files('../forbric-loader/build/libs/forbric-loader-0.1.0-SNAPSHOT.jar',
-			'../forbric-loader/build/libs/forbricruntime-0.1.0-SNAPSHOT.jar')
-
 	// TOML (mods.toml) + JSON (fabric.mod.json) readers — same libs the ecosystems use.
 	api "com.electronwill.night-config:core:${project.night_config_version}"
 	api "com.electronwill.night-config:toml:${project.night_config_version}"

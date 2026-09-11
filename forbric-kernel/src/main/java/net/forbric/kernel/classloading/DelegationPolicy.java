@@ -73,6 +73,14 @@ public final class DelegationPolicy {
 			"net.forbric.kernel.discovery.",
 			"net.forbric.kernel.fabric.",
 			"net.forbric.kernel.util.",
+			// The reflective interop hooks that GUEST bytecode calls into (PayloadInterop, ClientShutdown,
+			// ForgeRuntimeInterop). They name no game type — every game/ecosystem class they touch is reached
+			// reflectively through the loader of the object handed to them — so they are boot-side like the rest
+			// of the kernel. Pinning them here is not cosmetic: each holds process-wide state keyed by ClassLoader
+			// (PayloadInterop.MIRRORED_LOADERS, FORGE_CHANNELS_DECLARED; ClientShutdown's executor bookkeeping),
+			// and a second copy defined game-side would start that bookkeeping over from empty while the first
+			// copy still believed it had done the work.
+			"net.forbric.kernel.interop.",
 			"net.forbric.kernel.api.",
 			// The unified Forbric API. Parent-loaded for the same reason net.fabricmc.api. is: it is the
 			// vocabulary the kernel and all three compatibility layers share, so there must be exactly ONE

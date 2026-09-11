@@ -69,7 +69,7 @@ public final class KernelModContainerFactory {
 	 */
 	public static Object create(ForbricClassLoader loader, ClassLoader cl, String modId, Object bus, Path jar)
 			throws Exception {
-		Class<?> iModInfo = Class.forName("net.neoforged.neoforgespi.language.IModInfo", false, cl);
+		Class<?> iModInfo = Class.forName(ForeignType.MOD_INFO_SPI.binary(Ecosystem.NEOFORGE), false, cl);
 		Class<?> iEventBus = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
 		Class<?> modContainer = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
 
@@ -297,7 +297,7 @@ public final class KernelModContainerFactory {
 	 */
 	private static Object configurableProxy(ClassLoader cl, String modId) {
 		try {
-			Class<?> iConfigurable = Class.forName("net.neoforged.neoforgespi.language.IConfigurable", false, cl);
+			Class<?> iConfigurable = Class.forName(ForeignType.CONFIGURABLE.binary(Ecosystem.NEOFORGE), false, cl);
 			return Proxy.newProxyInstance(cl, new Class<?>[] {iConfigurable}, (p, m, a) -> switch (m.getName()) {
 				case "toString" -> "KernelModConfig[" + modId + "]";
 				case "hashCode" -> System.identityHashCode(p);

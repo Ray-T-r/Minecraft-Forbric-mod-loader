@@ -59,6 +59,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		try {
+			boolean namedOldLoader = stillNamesTheOldLoader(classBytes);
 			ClassNode node = new ClassNode();
 			new ClassReader(classBytes).accept(node, 0);
 			boolean changed = repairLambdaBootstrapHandles(node);
@@ -73,16 +74,85 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= keepForgeOutboundProtocolCurrent(node);
 			changed |= surviveTheMissingForgeModelDataManager(node);
 			changed |= dropTheWindowTitlesLoaderBrand(node);
-			if (!changed) return classBytes;
+			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
-			ClassWriter writer = new ClassWriter(0);
-			node.accept(writer);
-			return writer.toByteArray();
+			byte[] result = classBytes;
+			if (changed) {
+				ClassWriter writer = new ClassWriter(0);
+				node.accept(writer);
+				result = writer.toByteArray();
+			}
+			if (namedOldLoader && stillNamesTheOldLoader(result)) {
+				// Not fatal here, but it WILL be at link time, in a stack that points at the game rather than at
+				// this transformer. Name it while the cause is still legible.
+				ForbricLog.error("[Forbric/MergedBaseCompat] %s still names %s after adoption — a reference shape "
+								+ "this pass does not rewrite. It will fail to link.",
+						className, LEGACY_INTEROP_PACKAGE.replace('/', '.'));
+			}
+			return result;
 		} catch (RuntimeException e) {
 			ForbricLog.warn("[Forbric/MergedBaseCompat] could not inspect " + className, e);
 			return classBytes;
 		}
 	}
+
+	/**
+	 * Rewrites calls the merged base makes to the kernel's reflective interop hooks under their OLD owner names.
+	 *
+	 * <p>The merged base is built by the previous-generation loader's {@code MergedBaseBuilder}, which splices an
+	 * {@code INVOKESTATIC net/forbric/loader/impl/compat/ForbricCustomPayloadInterop.findCodec} into the merged
+	 * {@code CustomPacketPayload} codec provider. Those three helper classes now live in the kernel
+	 * ({@code net.forbric.kernel.interop}) and the old loader jars are no longer on the boot classpath, so the
+	 * baked-in owner names no longer resolve — the symptom is a {@code NoClassDefFoundError} inside the netty
+	 * encoder the moment anything sends a custom payload, i.e. every world join.
+	 *
+	 * <p>This is a permanent adaptation, not a one-off migration step: the base-building pipeline belongs to the
+	 * other repository and keeps emitting the names it knows. The kernel owns what its own base links against, so
+	 * it retargets them here rather than requiring a 35 MB artifact to be rebuilt in lockstep.
+	 *
+	 * <p>The only shape the builder emits is a method owner. Anything else carrying the legacy prefix — a field
+	 * owner, a {@code new}, a class constant — would survive this pass and fail at link time far away from here,
+	 * so {@link #stillNamesTheOldLoader} re-reads the finished bytes and says so out loud.
+	 */
+	private static boolean adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(ClassNode node) {
+		boolean changed = false;
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof MethodInsnNode call)) continue;
+				String adopted = LEGACY_INTEROP_OWNERS.get(call.owner);
+				if (adopted == null) continue;
+				call.owner = adopted;
+				changed = true;
+			}
+		}
+		if (changed) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] adopted old-loader interop hooks named by %s",
+					node.name.replace('/', '.'));
+		}
+		return changed;
+	}
+
+	/** True if {@code classBytes} still mentions the old loader's package anywhere — a link error waiting to happen. */
+	static boolean stillNamesTheOldLoader(byte[] classBytes) {
+		byte[] needle = LEGACY_INTEROP_PACKAGE.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+		outer:
+		for (int i = 0; i + needle.length <= classBytes.length; i++) {
+			for (int j = 0; j < needle.length; j++) {
+				if (classBytes[i + j] != needle[j]) continue outer;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	private static final String LEGACY_INTEROP_PACKAGE = "net/forbric/loader/impl/";
+	/** Old owner → the kernel class that now carries the method, for hooks the merged base still names. */
+	private static final Map<String, String> LEGACY_INTEROP_OWNERS = Map.of(
+			"net/forbric/loader/impl/compat/ForbricCustomPayloadInterop", "net/forbric/kernel/interop/PayloadInterop",
+			"net/forbric/loader/impl/forge/runtime/ForbricClientShutdown", "net/forbric/kernel/interop/ClientShutdown",
+			"net/forbric/loader/impl/forge/runtime/ForbricForgeRuntimeInterop",
+			"net/forbric/kernel/interop/ForgeRuntimeInterop");
 
 	private static boolean repairLambdaBootstrapHandles(ClassNode node) {
 		Map<String, MethodNode> methods = new HashMap<>();
@@ -183,7 +253,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"getFluidType", "()Lnet/minecraftforge/fluids/FluidType;", null, null);
 		bridge.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		bridge.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,
-				"net/forbric/loader/impl/forge/runtime/ForbricForgeRuntimeInterop",
+				"net/forbric/kernel/interop/ForgeRuntimeInterop",
 				"forgeFluidType", "(Ljava/lang/Object;)Ljava/lang/Object;", false));
 		bridge.instructions.add(new TypeInsnNode(Opcodes.CHECKCAST, "net/minecraftforge/fluids/FluidType"));
 		bridge.instructions.add(new InsnNode(Opcodes.ARETURN));

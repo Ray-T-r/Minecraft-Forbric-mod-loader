@@ -104,6 +104,16 @@ class ForeignTypeTest {
 	 * this enum. It is deliberately about PAIRS, not about every foreign name: a site that only ever names one
 	 * family has no second half to forget, and forcing it through a two-column table would be ceremony. The
 	 * hazard being guarded is specifically "handled one, forgot the other".
+	 *
+	 * <p>Two families' names count as the same concept when the SIMPLE name matches, not when the package path
+	 * after the root matches. The first version compared paths and therefore saw nothing wrong with three real
+	 * pairs: {@code forgespi.language.IModInfo} against {@code neoforgespi.language.IModInfo} (a THIRD NeoForge
+	 * root the table did not know about), the same for {@code IConfigurable}, and
+	 * {@code network.NetworkRegistry} against {@code network.registration.NetworkRegistry}, which do not even
+	 * agree on the sub-package. Matching on the simple name is strictly more sensitive, so it cannot miss what
+	 * path-matching caught. It can in principle pair two unrelated classes that happen to share a simple name;
+	 * the failure prints both fully-qualified names so that is obvious, and the answer then is an explicit
+	 * exclusion with a reason, not a looser rule.
 	 */
 	@Test
 	void noConceptIsStillWrittenOutUnderBothFamiliesOutsideThisEnum() throws Exception {
@@ -124,9 +134,7 @@ class ForeignTypeTest {
 					// could have a forgotten other half, and a two-column table has nothing to offer them.
 					if (dotted.endsWith(".") || !Character.isUpperCase(lastSegment(dotted).charAt(0))) continue;
 					Ecosystem eco = dotted.startsWith("net.minecraftforge.") ? Ecosystem.FORGE : Ecosystem.NEOFORGE;
-					String tail = dotted.startsWith("net.minecraftforge.") ? dotted.substring(19)
-							: dotted.startsWith("net.neoforged.neoforge.") ? dotted.substring(23)
-							: dotted.substring(14);
+					String tail = lastSegment(dotted);
 					byTail.computeIfAbsent(tail, k -> new TreeMap<>()).put(eco, dotted);
 					where.computeIfAbsent(tail, k -> new TreeSet<>()).add(f.getFileName().toString());
 				}
@@ -135,7 +143,8 @@ class ForeignTypeTest {
 
 		List<String> inlinePairs = byTail.entrySet().stream()
 				.filter(e -> e.getValue().size() == 2)
-				.map(e -> "  " + e.getKey() + "  (" + String.join(", ", where.get(e.getKey())) + ")")
+				.map(e -> "  " + e.getKey() + ": " + String.join(" / ", e.getValue().values())
+						+ "  (" + String.join(", ", where.get(e.getKey())) + ")")
 				.toList();
 
 		assertTrue(inlinePairs.isEmpty(),

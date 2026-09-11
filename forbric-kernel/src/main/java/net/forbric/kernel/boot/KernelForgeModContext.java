@@ -298,7 +298,7 @@ public final class KernelForgeModContext {
 	/** A minimal Forge-flavoured {@code IModInfo}; returns null (the old behaviour) if the SPI type is absent. */
 	private static Object modInfoProxy(ClassLoader cl, String modId) {
 		try {
-			Class<?> iModInfo = Class.forName("net.minecraftforge.forgespi.language.IModInfo", false, cl);
+			Class<?> iModInfo = Class.forName(ForeignType.MOD_INFO_SPI.binary(Ecosystem.FORGE), false, cl);
 			Object version = defaultArtifactVersion(cl);
 			InvocationHandler h = (proxy, method, args) -> switch (method.getName()) {
 				case "getModId", "getNamespace", "getDisplayName" -> modId;

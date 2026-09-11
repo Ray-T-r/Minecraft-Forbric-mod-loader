@@ -27,6 +27,7 @@ import java.util.Map;
 
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
 import com.electronwill.nightconfig.toml.TomlParser;
+import net.forbric.api.UnifiedDependency;
 
 /**
  * Clean-room reader for a modern Forge {@code META-INF/mods.toml} (and the NeoForge
@@ -110,8 +111,8 @@ public final class ModsTomlParser {
 					getString(dep, "modId"),
 					mandatory,
 					getString(dep, "versionRange"),
-					ForgeDependency.Ordering.parse(getString(dep, "ordering")),
-					ForgeDependency.Side.parse(getString(dep, "side"))));
+					UnifiedDependency.Ordering.parse(getString(dep, "ordering")),
+					UnifiedDependency.Side.parse(getString(dep, "side"))));
 		}
 
 		return result;

@@ -21,18 +21,22 @@ package net.forbric.api;
  *
  * <p>The two Forge-family ecosystems ship the same concept under different names, and the kernel has to name both
  * because it drives both. Written inline that is two string constants sitting next to each other at every site --
- * 22 such concepts across transform/ and boot/ -- and each pair is an invitation to handle one family and forget
+ * 25 such concepts across transform/, boot/ and interop/ -- and each pair is an invitation to handle one family and forget
  * the other. {@code ClientPackHookInjector} and {@code ForeignModPresenceInjector} both carry exactly that shape.
  *
  * <h2>Why a table of pairs and not a prefix rule</h2>
  *
- * <p>Because there is no prefix rule. NeoForge splits across TWO roots: what descends from FML keeps
- * {@code net.neoforged.} ({@code fml.*}, {@code bus.*}, {@code api.distmarker.*}) while the mod-facing game API sits
- * under {@code net.neoforged.neoforge.} ({@code registries.*}, {@code client.*}, {@code common.*}, {@code event.*}).
- * MinecraftForge has one root for both. So {@code fml.ModList} pairs
+ * <p>Because there is no prefix rule. NeoForge splits across THREE roots: what descends from FML keeps
+ * {@code net.neoforged.} ({@code fml.*}, {@code bus.*}, {@code api.distmarker.*}); the mod-facing game API sits
+ * under {@code net.neoforged.neoforge.} ({@code registries.*}, {@code client.*}, {@code common.*}, {@code event.*});
+ * and the loader SPI the two families share by shape sits under {@code net.neoforged.neoforgespi.}
+ * ({@code language.IModInfo}, {@code language.IConfigurable}) against MinecraftForge's {@code forgespi.*}.
+ * MinecraftForge has one root for all three. So {@code fml.ModList} pairs
  * {@code net.minecraftforge.fml.ModList} with {@code net.neoforged.fml.ModList}, while {@code registries.GameData}
  * pairs {@code net.minecraftforge.registries.GameData} with {@code net.neoforged.neoforge.registries.GameData}.
- * A swap-the-prefix helper gets the second one wrong, silently, and a name that does not resolve here does not
+ * The package path does not have to match either: {@code NetworkRegistry} is {@code network.NetworkRegistry} on
+ * one side and {@code network.registration.NetworkRegistry} on the other.
+ * A swap-the-prefix helper gets these wrong, silently, and a name that does not resolve here does not
  * throw -- it just means a transform never fires.
  *
  * <h2>What this deliberately does NOT unify</h2>
@@ -49,6 +53,8 @@ public enum ForeignType {
 			"net.neoforged.neoforge.client.loading.ClientModLoader"),
 	CONFIG_TRACKER("net.minecraftforge.fml.config.ConfigTracker",
 			"net.neoforged.fml.config.ConfigTracker"),
+	CONFIGURABLE("net.minecraftforge.forgespi.language.IConfigurable",
+			"net.neoforged.neoforgespi.language.IConfigurable"),
 	DIST("net.minecraftforge.api.distmarker.Dist",
 			"net.neoforged.api.distmarker.Dist"),
 	FML_LOADER("net.minecraftforge.fml.loading.FMLLoader",
@@ -73,12 +79,16 @@ public enum ForeignType {
 			"net.neoforged.fml.loading.moddiscovery.ModFileInfo"),
 	MOD_INFO("net.minecraftforge.fml.loading.moddiscovery.ModInfo",
 			"net.neoforged.fml.loading.moddiscovery.ModInfo"),
+	MOD_INFO_SPI("net.minecraftforge.forgespi.language.IModInfo",
+			"net.neoforged.neoforgespi.language.IModInfo"),
 	MOD_LIST("net.minecraftforge.fml.ModList",
 			"net.neoforged.fml.ModList"),
 	MOD_LOADING_CONTEXT("net.minecraftforge.fml.ModLoadingContext",
 			"net.neoforged.fml.ModLoadingContext"),
 	NEW_REGISTRY_EVENT("net.minecraftforge.registries.NewRegistryEvent",
 			"net.neoforged.neoforge.registries.NewRegistryEvent"),
+	NETWORK_REGISTRY("net.minecraftforge.network.NetworkRegistry",
+			"net.neoforged.neoforge.network.registration.NetworkRegistry"),
 	REGISTER_EVENT("net.minecraftforge.registries.RegisterEvent",
 			"net.neoforged.neoforge.registries.RegisterEvent"),
 	REGISTRY_MANAGER("net.minecraftforge.registries.RegistryManager",

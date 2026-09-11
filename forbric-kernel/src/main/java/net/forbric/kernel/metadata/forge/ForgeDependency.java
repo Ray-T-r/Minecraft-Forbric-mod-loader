@@ -16,46 +16,22 @@
 
 package net.forbric.kernel.metadata.forge;
 
-import java.util.Locale;
+import net.forbric.api.UnifiedDependency;
+import net.forbric.api.UnifiedDependency.Ordering;
+import net.forbric.api.UnifiedDependency.Side;
 
 /**
  * One {@code [[dependencies.<modId>]]} entry from a Forge {@code mods.toml}.
  *
- * <p>This is the raw, clean-room representation. Translating {@link #getVersionRange() Maven version
- * ranges} into Fabric {@code VersionPredicate}s and feeding {@link #getOrdering() ordering} / {@link #getSide() side}
- * into the unified resolver is done later by the discovery layer (milestone P4).
+ * <p>This is the raw, clean-room representation: the Maven {@link #getVersionRange() version range} exactly as
+ * the file wrote it. {@code ForgeMetadataMapper} translates it into a {@link UnifiedDependency}, whose predicate
+ * dialect is the one Forbric evaluates.
+ *
+ * <p>The {@link #getOrdering() ordering} and {@link #getSide() side} axes are the unified enums rather than
+ * Forge-specific copies. They were Forge-specific once, which meant two identical three-valued enums with two
+ * identical parsers — and a mapper that could only cross the gap by dropping them, which is exactly what it did.
  */
 public final class ForgeDependency {
-	/** Forge load ordering relative to the named mod. */
-	public enum Ordering {
-		NONE, BEFORE, AFTER;
-
-		static Ordering parse(String value) {
-			if (value == null) return NONE;
-
-			try {
-				return valueOf(value.trim().toUpperCase(Locale.ROOT));
-			} catch (IllegalArgumentException e) {
-				return NONE;
-			}
-		}
-	}
-
-	/** Physical side(s) a dependency applies to. */
-	public enum Side {
-		BOTH, CLIENT, SERVER;
-
-		static Side parse(String value) {
-			if (value == null) return BOTH;
-
-			try {
-				return valueOf(value.trim().toUpperCase(Locale.ROOT));
-			} catch (IllegalArgumentException e) {
-				return BOTH;
-			}
-		}
-	}
-
 	private final String modId;
 	private final boolean mandatory;
 	private final String versionRange;

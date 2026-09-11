@@ -16,6 +16,8 @@
 
 package net.forbric.kernel.metadata.forge;
 
+import net.forbric.api.VersionPredicate;
+
 /**
  * Evaluates a Maven version range — the syntax {@code mods.toml} writes {@code versionRange} in — against a
  * concrete version.
@@ -23,11 +25,8 @@ package net.forbric.kernel.metadata.forge;
  * <p>{@link ForgeVersionRangeTranslator} converts the same syntax into Fabric's predicate STRING, which is what a
  * Fabric-shaped metadata object wants. This answers the other question: is it actually satisfied, here, now.
  *
- * <p>Comparison splits on {@code . - +} and compares segment by segment: numeric against numeric numerically,
- * anything else lexicographically. Where one version runs out of segments, what the OTHER has left decides:
- * trailing zeros are padding, so {@code 1.0.0} equals {@code 1.0}; a trailing non-zero number makes it the larger,
- * so {@code 26.2.0.7.1} follows {@code 26.2.0.7}; and a trailing qualifier makes it the SMALLER — {@code 1.0-beta}
- * precedes {@code 1.0}, the semver pre-release rule, and the reason a {@code -beta} NeoForge compares sanely.
+ * <p>Only the RANGE syntax is Forge's. Ordering versions is not — {@link VersionPredicate} holds the segment
+ * rules for every ecosystem, and this compares through it.
  */
 public final class ForgeVersionRange {
 	private ForgeVersionRange() {
@@ -95,63 +94,14 @@ public final class ForgeVersionRange {
 		return -1;
 	}
 
-	/** Compares two version strings; see the class javadoc for the segment rules. */
-	public static int compare(String a, String b) {
-		String[] left = split(a);
-		String[] right = split(b);
-		int n = Math.max(left.length, right.length);
-
-		for (int i = 0; i < n; i++) {
-			if (i >= left.length) return -tailSign(right, i);
-			if (i >= right.length) return tailSign(left, i);
-
-			String x = left[i];
-			String y = right[i];
-			Long xn = asNumber(x);
-			Long yn = asNumber(y);
-			int cmp;
-			if (xn != null && yn != null) {
-				cmp = Long.compare(xn, yn);
-			} else if (xn != null) {
-				cmp = 1; // 1.0.1 > 1.0.beta — a number outranks a qualifier at the same position
-			} else if (yn != null) {
-				cmp = -1;
-			} else {
-				cmp = x.compareToIgnoreCase(y);
-			}
-			if (cmp != 0) return cmp;
-		}
-		return 0;
-	}
-
 	/**
-	 * How the segments from {@code index} on weigh against a version that simply ended: {@code +1} if they make it
-	 * larger, {@code -1} smaller, {@code 0} identical. Trailing zeros are padding — that is the whole reason this
-	 * is not just "longer wins".
+	 * Compares two version strings.
+	 *
+	 * <p>Delegates to {@link VersionPredicate#compare}: the segment rules are not a Forge thing, they are how
+	 * Forbric orders versions from every ecosystem, and two copies of them would be two chances to disagree about
+	 * whether {@code 1.0-beta} precedes {@code 1.0}.
 	 */
-	private static int tailSign(String[] parts, int index) {
-		for (int i = index; i < parts.length; i++) {
-			Long value = asNumber(parts[i]);
-			if (value == null) return -1; // a qualifier: pre-release, so it precedes the bare version
-			if (value != 0L) return 1;
-		}
-		return 0;
-	}
-
-	private static String[] split(String version) {
-		String[] parts = version.trim().split("[.\\-+]");
-		return parts.length == 0 ? new String[] {version.trim()} : parts;
-	}
-
-	private static Long asNumber(String part) {
-		if (part.isEmpty()) return null;
-		for (int i = 0; i < part.length(); i++) {
-			if (part.charAt(i) < '0' || part.charAt(i) > '9') return null;
-		}
-		try {
-			return Long.valueOf(part);
-		} catch (NumberFormatException tooBig) {
-			return null;
-		}
+	public static int compare(String a, String b) {
+		return VersionPredicate.compare(a, b);
 	}
 }

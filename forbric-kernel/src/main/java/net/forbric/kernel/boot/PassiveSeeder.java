@@ -297,6 +297,17 @@ public final class PassiveSeeder {
 			return;
 		}
 
+		// The one point in the boot where BOTH ecosystems' mods are known together, which is the only vantage from
+		// which a cross-ecosystem requirement can be judged at all. Diagnostic only — it never changes what loads,
+		// and it is caught here because a diagnostic must never be able to fail the window it reports on: the next
+		// statement seeds the list every Forge-family mod resolves itself through.
+		try {
+			DependencyAudit.report(presence, KernelBoot.nestedJarJarJars(),
+					KernelFabricEcosystem.physicalSide());
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/Deps] dependency audit failed, skipping it: %s", String.valueOf(t));
+		}
+
 		try {
 			Field field = fmlLoader.getDeclaredField("loadingModList");
 			field.setAccessible(true);
@@ -579,7 +590,7 @@ public final class PassiveSeeder {
 
 	/** A Forge {@code IConfigurable} that truthfully reports "this declares nothing". */
 	private static Object forgeEmptyConfigurable(ClassLoader gameLoader) throws Exception {
-		Class<?> iConfigurable = Class.forName("net.minecraftforge.forgespi.language.IConfigurable", false, gameLoader);
+		Class<?> iConfigurable = Class.forName(ForeignType.CONFIGURABLE.binary(Ecosystem.FORGE), false, gameLoader);
 		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, (proxy, method, args) ->
 				"getConfigList".equals(method.getName()) ? List.of() : Optional.empty());
 	}
@@ -719,7 +730,7 @@ public final class PassiveSeeder {
 
 	/** An {@code IConfigurable} that truthfully reports "this declares nothing": empty Optional / empty List. */
 	private static Object emptyConfigurable(ClassLoader gameLoader) throws Exception {
-		Class<?> iConfigurable = Class.forName("net.neoforged.neoforgespi.language.IConfigurable", false, gameLoader);
+		Class<?> iConfigurable = Class.forName(ForeignType.CONFIGURABLE.binary(Ecosystem.NEOFORGE), false, gameLoader);
 		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, (proxy, method, args) ->
 				switch (method.getName()) {
 					case "getConfigList" -> List.of();
