@@ -26,7 +26,8 @@ package net.forbric.api;
  * {@code ForgeVersionRangeTranslator} on the way in, so nothing downstream has to know which ecosystem a
  * requirement came from — which is the entire point of a unified dependency.
  *
- * <p><b>Comparison</b> splits on {@code . - +} and compares segment by segment: numeric against numeric
+ * <p><b>Comparison</b> splits on {@code .} and {@code -}, ignores {@code +} build metadata, and compares
+ * segment by segment: numeric against numeric
  * numerically, anything else lexicographically, a number outranking a qualifier at the same position. Where one
  * version runs out of segments, what the OTHER has left decides: trailing zeros are padding, so {@code 1.0.0}
  * equals {@code 1.0}; a trailing non-zero number makes it larger, so {@code 26.2.0.7.1} follows {@code 26.2.0.7};
@@ -166,8 +167,8 @@ public final class VersionPredicate {
 			return compare(version, wanted) == 0;
 		}
 
-		String[] want = wanted.split("[.\\-+]");
-		String[] have = version.split("[.\\-+]");
+		String[] want = split(wanted);
+		String[] have = split(version);
 		for (int i = 0; i < want.length; i++) {
 			String segment = want[i];
 			if (segment.equalsIgnoreCase("x") || segment.equals("*")) return true; // matches this and every tail
@@ -219,9 +220,21 @@ public final class VersionPredicate {
 		return 0;
 	}
 
+	/**
+	 * Version text as comparable segments, with BUILD METADATA dropped.
+	 *
+	 * <p>Semver's two suffixes are not the same thing and must not be split the same way: {@code -} introduces a
+	 * pre-release, which orders BELOW the plain version, while {@code +} introduces build metadata, which is
+	 * ignored for ordering entirely. Splitting on both made {@code 6.3.3+72073ef09e} compare as a pre-release of
+	 * {@code 6.3.3} and therefore fail {@code >=6.3.3} — and fabric-api stamps a build hash onto every module
+	 * version, so that is most of the Fabric ecosystem. Every mod in a real pack reported its dependency unmet.
+	 */
 	private static String[] split(String version) {
-		String[] parts = version.trim().split("[.\\-+]");
-		return parts.length == 0 ? new String[] {version.trim()} : parts;
+		String trimmed = version.trim();
+		int build = trimmed.indexOf('+');
+		if (build >= 0) trimmed = trimmed.substring(0, build);
+		String[] parts = trimmed.split("[.\\-]");
+		return parts.length == 0 ? new String[] {trimmed} : parts;
 	}
 
 	private static Long asNumber(String part) {
