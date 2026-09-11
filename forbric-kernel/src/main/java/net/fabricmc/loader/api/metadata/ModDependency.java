@@ -29,7 +29,7 @@ import net.fabricmc.loader.api.Version;
  * Those pull in the whole {@code metadata.version} predicate/interval algebra, which nothing in the shipped
  * ecosystem calls: a constant-pool scan of fabric-api 0.154.0 (43 modules) finds zero references to
  * {@code ModDependency} at all, and the kernel resolves dependencies with its own unified model
- * ({@code net.forbric.kernel.metadata.UnifiedDependency}). They are omitted rather than stubbed, so a caller
+ * ({@code net.forbric.api.UnifiedDependency}). They are omitted rather than stubbed, so a caller
  * fails loudly at link time instead of silently receiving an empty collection. Restore them with the version
  * algebra if a real mod is found to need them.
  */

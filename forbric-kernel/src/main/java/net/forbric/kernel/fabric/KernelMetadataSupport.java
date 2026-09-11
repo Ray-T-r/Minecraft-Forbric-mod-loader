@@ -26,6 +26,7 @@ import net.fabricmc.loader.api.Version;
 import net.fabricmc.loader.api.metadata.ContactInformation;
 import net.fabricmc.loader.api.metadata.ModDependency;
 import net.fabricmc.loader.api.metadata.Person;
+import net.forbric.api.VersionPredicate;
 
 /** Small value implementations behind the kernel's Fabric metadata model. */
 public final class KernelMetadataSupport {
@@ -127,75 +128,15 @@ public final class KernelMetadataSupport {
 	/**
 	 * Evaluates one Fabric version predicate against {@code version}.
 	 *
-	 * <p>Supported: {@code *} (any), the comparison operators {@code >=  <=  >  <  =}, and the range shorthands
-	 * {@code ~} (same major+minor, at least this patch) and {@code ^} (same major, at least this version). A
-	 * space-separated conjunction ({@code ">=1.0 <2.0"}) requires every term. An unparseable term yields
-	 * {@code false} rather than throwing, so one malformed constraint cannot abort a whole load.
+	 * <p>Delegates to {@link VersionPredicate}, which is the one place Forbric knows this dialect. There used to be
+	 * a second engine here, and the two disagreed about {@code ^}: this one implemented Fabric's
+	 * {@code SAME_TO_NEXT_MAJOR} correctly while the other had an npm-style rule, so the same {@code depends}
+	 * string could be satisfied for a mod and unsatisfied for the boot diagnostic looking at the same mod.
+	 *
+	 * <p>Strict, not lenient: this answer admits or rejects a dependency rather than describing one, so a
+	 * predicate nobody could parse must not resolve to "fine".
 	 */
 	static boolean matchesPredicate(String predicate, Version version) {
-		if (predicate == null) return true;
-
-		String p = predicate.trim();
-		if (p.isEmpty() || p.equals("*")) return true;
-
-		// Conjunction: every space-separated term must hold.
-		if (p.indexOf(' ') >= 0) {
-			for (String term : p.split("\\s+")) {
-				if (!matchesPredicate(term, version)) return false;
-			}
-
-			return true;
-		}
-
-		String op = "=";
-
-		for (String candidate : new String[] {">=", "<=", ">", "<", "=", "~", "^"}) {
-			if (p.startsWith(candidate)) {
-				op = candidate;
-				p = p.substring(candidate.length()).trim();
-				break;
-			}
-		}
-
-		Version bound;
-
-		try {
-			bound = KernelVersion.parse(p);
-		} catch (Exception e) {
-			return false;
-		}
-
-		switch (op) {
-			case ">=": return version.compareTo(bound) >= 0;
-			case "<=": return version.compareTo(bound) <= 0;
-			case ">": return version.compareTo(bound) > 0;
-			case "<": return version.compareTo(bound) < 0;
-			case "=": return version.compareTo(bound) == 0;
-			case "~": return atLeastAndBelow(version, bound, 2);
-			case "^": return atLeastAndBelow(version, bound, 1);
-			default: return false;
-		}
-	}
-
-	/**
-	 * {@code version >= bound} and below the next increment of the component at {@code pinnedComponents - 1} —
-	 * i.e. {@code ~1.2.3} accepts {@code [1.2.3, 1.3.0)} and {@code ^1.2.3} accepts {@code [1.2.3, 2.0.0)}.
-	 * Non-semantic versions fall back to plain equality, which is all their ordering supports.
-	 */
-	private static boolean atLeastAndBelow(Version version, Version bound, int pinnedComponents) {
-		if (!(version instanceof SemanticVersion) || !(bound instanceof SemanticVersion)) {
-			return version.compareTo(bound) == 0;
-		}
-
-		if (version.compareTo(bound) < 0) return false;
-
-		SemanticVersion v = (SemanticVersion) version;
-		SemanticVersion b = (SemanticVersion) bound;
-
-		for (int i = 0; i < pinnedComponents; i++) {
-			if (v.getVersionComponent(i) != b.getVersionComponent(i)) return false;
-		}
-
-		return true;
+		return VersionPredicate.matchesStrictly(predicate, version == null ? null : version.getFriendlyString());
 	}
 }
