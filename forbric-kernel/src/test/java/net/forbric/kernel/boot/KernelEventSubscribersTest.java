@@ -30,6 +30,7 @@ import org.objectweb.asm.Opcodes;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
+import net.forbric.api.Side;
 
 /**
  * Covers the two things that silently mis-routed a subscriber before: which family declared it, and where its
@@ -131,18 +132,18 @@ class KernelEventSubscribersTest {
 
 	@Test
 	void anUndeclaredSideRunsEverywhere() {
-		assertTrue(KernelEventSubscribers.matchesSide(Set.of(), true));
-		assertTrue(KernelEventSubscribers.matchesSide(Set.of(), false));
+		assertTrue(KernelEventSubscribers.matchesSide(Set.of(), Side.CLIENT));
+		assertTrue(KernelEventSubscribers.matchesSide(Set.of(), Side.DEDICATED_SERVER));
 	}
 
 	@Test
 	void aClientOnlySubscriberIsSkippedOnADedicatedServer() {
 		// GeckoLibClient is @Dist.CLIENT and gate-m4 is a dedicated server; it used to be loaded and registered
 		// there anyway.
-		assertTrue(KernelEventSubscribers.matchesSide(Set.of("CLIENT"), true));
-		assertFalse(KernelEventSubscribers.matchesSide(Set.of("CLIENT"), false));
-		assertFalse(KernelEventSubscribers.matchesSide(Set.of("DEDICATED_SERVER"), true));
-		assertTrue(KernelEventSubscribers.matchesSide(Set.of("CLIENT", "DEDICATED_SERVER"), false));
+		assertTrue(KernelEventSubscribers.matchesSide(Set.of("CLIENT"), Side.CLIENT));
+		assertFalse(KernelEventSubscribers.matchesSide(Set.of("CLIENT"), Side.DEDICATED_SERVER));
+		assertFalse(KernelEventSubscribers.matchesSide(Set.of("DEDICATED_SERVER"), Side.CLIENT));
+		assertTrue(KernelEventSubscribers.matchesSide(Set.of("CLIENT", "DEDICATED_SERVER"), Side.DEDICATED_SERVER));
 	}
 
 	// --- busGroupChoice: the piece that silently mis-routes if wrong -------------------------------------------

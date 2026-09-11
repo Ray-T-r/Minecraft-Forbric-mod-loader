@@ -112,7 +112,7 @@ public final class ModsTomlParser {
 					mandatory,
 					getString(dep, "versionRange"),
 					UnifiedDependency.Ordering.parse(getString(dep, "ordering")),
-					UnifiedDependency.Side.parse(getString(dep, "side"))));
+					UnifiedDependency.SideScope.parse(getString(dep, "side"))));
 		}
 
 		return result;

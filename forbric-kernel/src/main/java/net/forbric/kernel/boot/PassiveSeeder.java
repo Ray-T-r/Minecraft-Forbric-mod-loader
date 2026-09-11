@@ -34,6 +34,7 @@ import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.api.ModPresence;
+import net.forbric.api.Side;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -59,18 +60,19 @@ public final class PassiveSeeder {
 	private PassiveSeeder() {
 	}
 
-	/** Seeds every genuine-loader identity the merged base needs before the game entry runs. Best-effort per family. */
-	public static void seedAll(ClassLoader gameLoader, Path gameDir, boolean production) {
-		seedAll(gameLoader, gameDir, production, false);
-	}
-
 	/**
-	 * {@code client} selects the seeded {@code Dist} (CLIENT vs DEDICATED_SERVER). It is load-bearing: with the wrong
-	 * dist, NeoForge's client code (and the integrated server's connection handshake) treats the client as a
-	 * dedicated server — e.g. the local player's MODDED connection is rejected "Server is still starting".
+	 * Seeds every genuine-loader identity the merged base needs before the game entry runs. Best-effort per family.
+	 *
+	 * <p>{@code side} selects the seeded {@code Dist}. It is load-bearing: with the wrong dist, NeoForge's client
+	 * code (and the integrated server's connection handshake) treats the client as a dedicated server — e.g. the
+	 * local player's MODDED connection is rejected "Server is still starting".
+	 *
+	 * <p>{@code production} is FML's own dev-vs-shipped flag and is a SEPARATE axis from the side. They used to be
+	 * two adjacent booleans here, which is how {@code KernelBoot} came to pass "is this the server" as the
+	 * production flag: both orders compile and mean opposite things. One of them is an enum now.
 	 */
-	public static void seedAll(ClassLoader gameLoader, Path gameDir, boolean production, boolean client) {
-		seedNeoForgeLoader(gameLoader, gameDir, production, client);
+	public static void seedAll(ClassLoader gameLoader, Path gameDir, Side side, boolean production) {
+		seedNeoForgeLoader(gameLoader, gameDir, side, production);
 		seedNeoForgeModList(gameLoader);
 		seedNeoForgePaths(gameLoader, gameDir);
 		seedForgeFmlLoader(gameLoader, gameDir, production);
@@ -137,12 +139,9 @@ public final class PassiveSeeder {
 	 * {@code FMLLoader.getCurrent()} / {@code FMLEnvironment.isProduction()} answer instead of throwing.
 	 * No-ops if a loader is already current or the class is absent.
 	 */
-	public static void seedNeoForgeLoader(ClassLoader gameLoader, Path gameDir, boolean production) {
-		seedNeoForgeLoader(gameLoader, gameDir, production, false);
-	}
 
-	public static void seedNeoForgeLoader(ClassLoader gameLoader, Path gameDir, boolean production, boolean client) {
-		seedNeoForgeLoader(gameLoader, gameDir, gameDir.resolve("mods"), production, client);
+	public static void seedNeoForgeLoader(ClassLoader gameLoader, Path gameDir, Side side, boolean production) {
+		seedNeoForgeLoader(gameLoader, gameDir, gameDir.resolve("mods"), side, production);
 	}
 
 	/**
@@ -151,8 +150,8 @@ public final class PassiveSeeder {
 	 * same directory {@code KernelBoot} walks for Forge-family discovery — the explicit parameter exists so the
 	 * caller that already knows the mods dir passes ITS answer rather than re-deriving one that could drift.
 	 */
-	public static void seedNeoForgeLoader(ClassLoader gameLoader, Path gameDir, Path modsDir, boolean production,
-			boolean client) {
+	public static void seedNeoForgeLoader(ClassLoader gameLoader, Path gameDir, Path modsDir, Side side,
+			boolean production) {
 		try {
 			Class<?> fmlLoader = Class.forName(ForeignType.FML_LOADER.binary(Ecosystem.NEOFORGE), false, gameLoader);
 
@@ -164,7 +163,7 @@ public final class PassiveSeeder {
 			}
 
 			Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.NEOFORGE), false, gameLoader);
-			String distName = client ? "CLIENT" : "DEDICATED_SERVER";
+			String distName = side.distName();
 			Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), distName);
 
 			// private FMLLoader(ClassLoader, String[], Dist, boolean production, Path gameDir)

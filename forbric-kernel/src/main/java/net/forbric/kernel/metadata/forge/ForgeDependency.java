@@ -18,7 +18,7 @@ package net.forbric.kernel.metadata.forge;
 
 import net.forbric.api.UnifiedDependency;
 import net.forbric.api.UnifiedDependency.Ordering;
-import net.forbric.api.UnifiedDependency.Side;
+import net.forbric.api.UnifiedDependency.SideScope;
 
 /**
  * One {@code [[dependencies.<modId>]]} entry from a Forge {@code mods.toml}.
@@ -27,7 +27,7 @@ import net.forbric.api.UnifiedDependency.Side;
  * the file wrote it. {@code ForgeMetadataMapper} translates it into a {@link UnifiedDependency}, whose predicate
  * dialect is the one Forbric evaluates.
  *
- * <p>The {@link #getOrdering() ordering} and {@link #getSide() side} axes are the unified enums rather than
+ * <p>The {@link #getOrdering() ordering} and {@link #getSideScope() side} axes are the unified enums rather than
  * Forge-specific copies. They were Forge-specific once, which meant two identical three-valued enums with two
  * identical parsers — and a mapper that could only cross the gap by dropping them, which is exactly what it did.
  */
@@ -36,14 +36,14 @@ public final class ForgeDependency {
 	private final boolean mandatory;
 	private final String versionRange;
 	private final Ordering ordering;
-	private final Side side;
+	private final SideScope side;
 
-	public ForgeDependency(String modId, boolean mandatory, String versionRange, Ordering ordering, Side side) {
+	public ForgeDependency(String modId, boolean mandatory, String versionRange, Ordering ordering, SideScope side) {
 		this.modId = modId;
 		this.mandatory = mandatory;
 		this.versionRange = versionRange == null ? "" : versionRange;
 		this.ordering = ordering == null ? Ordering.NONE : ordering;
-		this.side = side == null ? Side.BOTH : side;
+		this.side = side == null ? SideScope.BOTH : side;
 	}
 
 	public String getModId() {
@@ -64,7 +64,7 @@ public final class ForgeDependency {
 		return ordering;
 	}
 
-	public Side getSide() {
+	public SideScope getSideScope() {
 		return side;
 	}
 

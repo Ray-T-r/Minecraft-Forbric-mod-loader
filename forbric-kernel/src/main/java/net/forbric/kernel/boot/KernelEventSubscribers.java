@@ -30,6 +30,7 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Opcodes;
 
+import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.classloading.ForbricClassLoader;
@@ -117,8 +118,8 @@ public final class KernelEventSubscribers {
 	}
 
 	/** Whether a subscriber declaring {@code dists} runs on this side. An empty {@code value()} means every side. */
-	static boolean matchesSide(java.util.Set<String> dists, boolean client) {
-		return dists.isEmpty() || dists.contains(client ? "CLIENT" : "DEDICATED_SERVER");
+	static boolean matchesSide(java.util.Set<String> dists, Side side) {
+		return dists.isEmpty() || dists.contains(side.distName());
 	}
 
 	/** Maps a MinecraftForge {@code bus()} attribute to the group to pass FML. See {@link BusChoice}. */
@@ -129,7 +130,7 @@ public final class KernelEventSubscribers {
 	}
 
 	/** Scans + registers every guest mod's {@code @EventBusSubscriber} class, each on its own family's bus. */
-	public static void registerAll(ClassLoader cl, List<Path> modJars, boolean client) {
+	public static void registerAll(ClassLoader cl, List<Path> modJars, Side side) {
 		if (!(cl instanceof ForbricClassLoader)) {
 			ForbricLog.debug("[Forbric/EBS] not running under the sovereign loader — skipping @EventBusSubscriber");
 			return;
@@ -153,10 +154,10 @@ public final class KernelEventSubscribers {
 			List<ModAnnotationScanner.ModClassInfo> modsInJar = null; // scanned lazily, only if a modid() is missing
 
 			for (Subscriber sub : subscribers) {
-				if (!matchesSide(sub.dists(), client)) {
+				if (!matchesSide(sub.dists(), side)) {
 					skippedSide++;
 					ForbricLog.debug("[Forbric/EBS] skipping %s — declares %s, running %s", sub.className(),
-							sub.dists(), client ? "CLIENT" : "DEDICATED_SERVER");
+							sub.dists(), side.distName());
 					continue;
 				}
 				if (sub.modId() == null || sub.modId().isBlank()) {
@@ -343,7 +344,7 @@ public final class KernelEventSubscribers {
 	 * <p>Separate from {@link #registerAll} only in WHICH jars and WHICH bus: the per-method routing itself is
 	 * shared, in {@link #wireNeoSubscriber}.
 	 */
-	public static void registerNeoForgeInternal(ClassLoader cl, List<Path> jars, Object modBus, boolean client) {
+	public static void registerNeoForgeInternal(ClassLoader cl, List<Path> jars, Object modBus, Side side) {
 		NeoBusApi api = NeoBusApi.resolve(cl);
 		if (api == null) {
 			ForbricLog.debug("[Forbric/EBS] NeoForge bus API absent — skipping internal @EventBusSubscriber scan");
@@ -355,7 +356,7 @@ public final class KernelEventSubscribers {
 		for (Path jar : jars) {
 			for (Subscriber sub : scan(jar)) {
 				if (sub.family() != Ecosystem.NEOFORGE) continue;
-				if (!matchesSide(sub.dists(), client)) {
+				if (!matchesSide(sub.dists(), side)) {
 					skippedSide++;
 					continue;
 				}

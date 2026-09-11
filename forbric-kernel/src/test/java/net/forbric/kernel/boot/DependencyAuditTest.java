@@ -36,7 +36,8 @@ import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.UnifiedDependency;
 import net.forbric.api.UnifiedDependency.Ordering;
-import net.forbric.api.UnifiedDependency.Side;
+import net.forbric.api.Side;
+import net.forbric.api.UnifiedDependency.SideScope;
 
 /**
  * Covers the cross-ecosystem dependency audit.
@@ -104,9 +105,9 @@ class DependencyAuditTest {
 	@Test
 	void aClientOnlyRequirementIsNotReportedOnAServer() {
 		UnifiedDependency clientOnly =
-				new UnifiedDependency("jei", "*", true, Ordering.NONE, Side.CLIENT);
+				new UnifiedDependency("jei", "*", true, Ordering.NONE, SideScope.CLIENT);
 		String onServer = capture(() -> DependencyAudit.report(List.of(
-				mod(Ecosystem.FORGE, "servermod", "1.0.0", clientOnly)), List.of(), Side.SERVER));
+				mod(Ecosystem.FORGE, "servermod", "1.0.0", clientOnly)), List.of(), Side.DEDICATED_SERVER));
 		assertFalse(onServer.contains("jei"), onServer);
 
 		String onClient = capture(() -> DependencyAudit.report(List.of(
@@ -122,7 +123,7 @@ class DependencyAuditTest {
 	void withNoKnownSideASideScopedRequirementIsNotJudged() {
 		String log = capture(() -> DependencyAudit.report(List.of(
 				mod(Ecosystem.FORGE, "servermod", "1.0.0",
-						new UnifiedDependency("jei", "*", true, Ordering.NONE, Side.CLIENT))), List.of(), null));
+						new UnifiedDependency("jei", "*", true, Ordering.NONE, SideScope.CLIENT))), List.of(), null));
 
 		assertFalse(log.contains("jei"), log);
 	}

@@ -101,7 +101,7 @@ public final class ForgeMetadataMapper {
 						ForgeVersionRangeTranslator.toFabricPredicate(dep.getVersionRange()),
 						dep.isMandatory(),
 						dep.getOrdering(),
-						dep.getSide()));
+						dep.getSideScope()));
 			}
 
 			result.add(new DiscoveredMod(

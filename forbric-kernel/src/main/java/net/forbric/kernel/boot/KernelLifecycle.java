@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.classloading.ForbricClassLoader;
@@ -76,7 +77,7 @@ public final class KernelLifecycle {
 	 * {@code Bootstrap.bootStrap}. Drives native ecosystem registration. {@code dedicated} is the original argument.
 	 */
 	public static void onServerModLoading(boolean dedicated) {
-		driveNativeRegistration("server");
+		driveNativeRegistration(Side.DEDICATED_SERVER);
 	}
 
 	/**
@@ -86,14 +87,13 @@ public final class KernelLifecycle {
 	 * {@code client} entrypoints rather than {@code server} ones, driven by {@code KernelFabricLoader}'s env type.
 	 */
 	public static void onClientModLoading() {
-		driveNativeRegistration("client");
+		driveNativeRegistration(Side.CLIENT);
 	}
 
-	private static void driveNativeRegistration(String side) {
+	private static void driveNativeRegistration(Side side) {
 		ClassLoader cl = gameLoader != null ? gameLoader : Thread.currentThread().getContextClassLoader();
-		boolean client = "client".equals(side);
 		ForbricLog.info("[Forbric/Lifecycle] kernel %s mod-loading window (native, no FancyModLoader) — "
-				+ "registering ecosystem baselines", side);
+				+ "registering ecosystem baselines", side.distName());
 		// Step 0: seed traditional Forge's empty LoadingModList (ServerStatusPing / client status touch it later).
 		PassiveSeeder.seedForgeLoadingModList(cl);
 		// Step 0b: give traditional Forge its sided executors. Forge's LogicalSidedProvider hands a mod's network
@@ -118,12 +118,12 @@ public final class KernelLifecycle {
 		if (!PassiveSeeder.applyNeoForgeRegistryModifications(cl)) markVanillaRegistriesSynced(cl);
 		// Step 2: construct both ecosystem baselines + fire RegisterEvent so default content (e.g. minecraft:empty
 		// FluidType, default attributes) registers, and run the Fabric main + side entrypoints in the same window.
-		registerNeoForgeContent(cl, client);
+		registerNeoForgeContent(cl, side);
 		// Step 2b (client only): construct ClientNeoForgeMod on the baseline bus, so the game's
 		// ModLoader.postEvent(<client mod-bus event>) — fired from ClientHooks.initClientHooks during
 		// Minecraft.<init> for reload listeners, entity renderers, sprite sources, client extensions — has NeoForge's
 		// built-in client handlers to reach.
-		if (client) registerNeoForgeClientContent(cl);
+		if (side.isClient()) registerNeoForgeClientContent(cl);
 		// Step 2b2 (BOTH sides): put the baseline container into ModList, so ModLoader.postEvent — NeoForge's only
 		// fan-out for the mod-bus events it posts ITSELF — reaches NeoForge's own listeners, not just the mods'.
 		// This ran as part of step 2b, i.e. client-only, on the reasoning that only the client posts mod-bus events
@@ -145,17 +145,17 @@ public final class KernelLifecycle {
 		// Objects.requireNonNull(...) — threw NPE out of setupDynamicRegistries and the server died before Done.
 		// Only the CLIENT type is client-only; NeoForge loads STARTUP and COMMON on both sides, and SERVER is
 		// loaded separately, per-world, by ServerLifecycleHooks.handleServerAboutToStart.
-		loadEarlyConfigs(cl, client);
+		loadEarlyConfigs(cl, side);
 		// Step 2c2: wire NeoForge's OWN @EventBusSubscriber classes from its runtime jar. NeoForge ships as a mod and
 		// FML scans its jar like any other; the kernel scanned only mod jars, so ~10 internal subscribers (network,
 		// attachments, configuration tasks, model data, …) never fired. Must precede step 2d — the network setup posts
 		// its Register*PayloadHandlersEvent to exactly these subscribers.
-		KernelEventSubscribers.registerNeoForgeInternal(cl, runtimeJars, baselineBus, client);
+		KernelEventSubscribers.registerNeoForgeInternal(cl, runtimeJars, baselineBus, side);
 		// Step 2c3 (client only): NeoForge won the client reload-listener path in the byte merge, so MinecraftForge's
 		// RegisterClientReloadListenersEvent is never posted and a Forge mod's handler for it sits on a dead bus.
 		// Bridge it off NeoForge's AddClientReloadListenersEvent, which ClientHooks.initClientHooks posts to the
 		// baseline mod bus during Minecraft.<init> — i.e. after this point, which is why the listener goes on now.
-		if (client) GameEventMultiplexer.installClientReloadBridge(cl, baselineBus);
+		if (side.isClient()) GameEventMultiplexer.installClientReloadBridge(cl, baselineBus);
 		// Step 3 USED TO BE HERE: registering mods' @EventBusSubscriber classes. It has moved INSIDE
 		// registerNeoForgeContent, next to the constructors — see the comment at the new call site. Wiring them
 		// here meant every registration-phase event had already been posted to nobody.
@@ -172,7 +172,7 @@ public final class KernelLifecycle {
 		// they never fired for anyone: AppleSkin registers its food tooltip from FMLClientSetupEvent
 		// (preInitClient -> TooltipOverlayHandler.init -> NeoForge.EVENT_BUS.register), which is why the tooltip
 		// stayed missing even after mod-bus delivery was fixed.
-		fireModSetupLifecycle(cl, client);
+		fireModSetupLifecycle(cl, side);
 		// Step 3c: NOW close the payload registration phase. NetworkRegistry.setup() posts
 		// RegisterPayloadHandlersEvent (payload types + codecs, incl. playToClient(neoforge:recipe_content)) and
 		// ClientNetworkRegistry.setup() then posts the client-handler event and validates every to-client payload has
@@ -185,7 +185,7 @@ public final class KernelLifecycle {
 		// with "Network Protocol Error" seconds after the world rendered. Genuine NeoForge closes the phase after
 		// mod loading, which is what this now matches. On the CLIENT it moves later still, to onClientEntrypoints,
 		// because client setup itself moved there.
-		if (!client) setupNeoForgeNetwork(cl, false);
+		if (!side.isClient()) setupNeoForgeNetwork(cl, side);
 		// Step 4: start the game event buses so mods' game-event listeners actually dispatch — the buses buffer
 		// until start()/startup().
 		startGameBuses(cl);
@@ -239,7 +239,7 @@ public final class KernelLifecycle {
 	 * {@code ModLoader} to that bus, populating {@code PAYLOAD_REGISTRATIONS} so payloads like
 	 * {@code neoforge:recipe_content} become sendable. Best-effort; failure only leaves payloads unregistered.
 	 */
-	private static void setupNeoForgeNetwork(ClassLoader cl, boolean client) {
+	private static void setupNeoForgeNetwork(ClassLoader cl, Side side) {
 		// Two-phase, in this order: NetworkRegistry.setup() posts RegisterPayloadHandlersEvent (payload TYPES + codecs,
 		// incl. playToClient(neoforge:recipe_content)); ClientNetworkRegistry.setup() then posts
 		// RegisterClientPayloadHandlersEvent (the CLIENT HANDLERS) and validates every to-client payload has one —
@@ -251,7 +251,8 @@ public final class KernelLifecycle {
 		// registered there for it to demand a handler for. The moment the server registered them (baseline in
 		// ModList) it failed with "Some clientbound payloads are missing client-side handlers", correctly: the
 		// handlers live in a Dist.CLIENT @EventBusSubscriber that step 2c2 rightly skips on a server.
-		if (client) invokeNetworkSetup(cl, "net.neoforged.neoforge.client.network.registration.ClientNetworkRegistry");
+		if (side.isClient()) invokeNetworkSetup(cl,
+				"net.neoforged.neoforge.client.network.registration.ClientNetworkRegistry");
 	}
 
 	/**
@@ -377,7 +378,7 @@ public final class KernelLifecycle {
 	 *
 	 * <p>Missing files are fine — NeoForge writes defaults. Best-effort per type; a failure is logged, not fatal.
 	 */
-	private static void loadEarlyConfigs(ClassLoader cl, boolean client) {
+	private static void loadEarlyConfigs(ClassLoader cl, Side side) {
 		if ("off".equalsIgnoreCase(System.getProperty("forbric.earlyConfigs", "on"))) {
 			ForbricLog.warn("[Forbric/Lifecycle] early config loading DISABLED (-Dforbric.earlyConfigs=off) — "
 					+ "no STARTUP or COMMON spec is loaded and ModConfigEvent.Loading never fires, so a mod that "
@@ -393,7 +394,7 @@ public final class KernelLifecycle {
 			java.nio.file.Path configDir = (java.nio.file.Path) fmlPaths.getMethod("get").invoke(configDirEnum);
 			java.lang.reflect.Method loadConfigs =
 					trackerCls.getMethod("loadConfigs", typeCls, java.nio.file.Path.class);
-			String[] types = client
+			String[] types = side.isClient()
 					? new String[] {"STARTUP", "COMMON", "CLIENT"}
 					: new String[] {"STARTUP", "COMMON"};
 			for (String t : types) {
@@ -440,10 +441,10 @@ public final class KernelLifecycle {
 	 * window surrounds the registration; because the kernel drives ONE pass (no dual-ecosystem refreeze), the
 	 * "Tags not bound" wall of the old weld does not arise.
 	 */
-	private static void registerNeoForgeContent(ClassLoader cl, boolean client) {
+	private static void registerNeoForgeContent(ClassLoader cl, Side side) {
 		try {
 			Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.NEOFORGE), false, cl);
-			Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), client ? "CLIENT" : "DEDICATED_SERVER");
+			Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), side.distName());
 
 			// The NeoForge baseline mod on its own bus. Captured so the client step can add ClientNeoForgeMod to
 			// the same bus + route the game's mod-bus events to its container.
@@ -457,12 +458,12 @@ public final class KernelLifecycle {
 			neoForgeMod.getConstructor(iEventBus, distClass, modContainer)
 					.newInstance(bus, dist, container);
 			ForbricLog.info("[Forbric/Lifecycle] constructed NeoForge baseline mod on a native bus (dist=%s)",
-					client ? "CLIENT" : "DEDICATED_SERVER");
+					side.distName());
 			Object baselineBus = bus;
 
 			// Real Forge-family @Mods, each on its own bus.
 			List<KernelModLoader.ConstructedMod> mods =
-					KernelModLoader.constructMods((ForbricClassLoader) cl, cl, modJars, client);
+					KernelModLoader.constructMods((ForbricClassLoader) cl, cl, modJars, side);
 
 			// Load the config specs those constructors just registered, BEFORE any RegisterEvent fires. Genuine
 			// NeoForge loads STARTUP/COMMON right after construction and only then posts the registry events, and
@@ -490,7 +491,7 @@ public final class KernelLifecycle {
 			// registration window and be reported as "could not register ecosystem content", blaming the wrong
 			// thing entirely.
 			try {
-				KernelEventSubscribers.registerAll(cl, modJars, client);
+				KernelEventSubscribers.registerAll(cl, modJars, side);
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/Lifecycle] could not wire guest @EventBusSubscriber classes — mods that "
 						+ "declare their registry or attribute handlers there will not be reached", unwrap(t));
@@ -1055,13 +1056,13 @@ public final class KernelLifecycle {
 	 * <p>Best-effort per phase and per mod — a mod that throws in its own setup must not abort the boot, exactly as
 	 * genuine FML collects such failures rather than dying at the first one.
 	 */
-	private static void fireModSetupLifecycle(ClassLoader cl, boolean client) {
+	private static void fireModSetupLifecycle(ClassLoader cl, Side side) {
 		java.util.Map<String, KernelModLoader.NeoIdentity> mods = KernelModLoader.publishedNeoMods();
 		if (mods.isEmpty()) return;
 
 		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent", "common setup");
 		// On the CLIENT the remaining phases are deferred to onClientEntrypoints — see fireClientSetupLifecycle.
-		if (client) return;
+		if (side.isClient()) return;
 		// The sided phase. The kernel used to jump straight from common setup to load complete, so on a dedicated
 		// server this event was never posted to anyone at all.
 		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLDedicatedServerSetupEvent",
@@ -1852,7 +1853,7 @@ public final class KernelLifecycle {
 		ClassLoader cl = gameLoader;
 		fireClientSetupLifecycle(cl);
 		// And only then close the payload registration phase — see step 3c for why it cannot precede setup.
-		setupNeoForgeNetwork(cl, true);
+		setupNeoForgeNetwork(cl, Side.CLIENT);
 	}
 
 	/** Re-closes after the client entrypoints and redoes the id bookkeeping their registrations invalidated. */
