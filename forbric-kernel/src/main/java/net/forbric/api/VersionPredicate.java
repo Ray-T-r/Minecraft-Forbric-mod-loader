@@ -33,9 +33,22 @@ package net.forbric.api;
  * and a trailing qualifier makes it SMALLER — {@code 1.0-beta} precedes {@code 1.0}, the semver pre-release rule,
  * and the reason a {@code -beta} NeoForge compares sanely.
  *
- * <p><b>Everything here fails OPEN.</b> A predicate this cannot parse, or an absent version, counts as satisfied.
- * These answers feed diagnostics — "this mod's requirement is not met" — and a requirement we cannot read is not
- * evidence that anything is wrong. Failing closed would turn every unusual predicate into a false accusation.
+ * <p><b>Two failure directions, one engine.</b> {@link #matches} treats an unreadable predicate as satisfied and
+ * {@link #matchesStrictly} treats it as unsatisfied. Both are right for their callers — a diagnostic must not
+ * accuse a mod over a predicate it could not read, and a resolver must not admit a dependency it could not check —
+ * and the point of putting them here is that the difference is now a named argument instead of two separate
+ * implementations that drifted apart. There were two: this class and {@code KernelMetadataSupport}, and they
+ * disagreed about {@code ^}, which is the most common shape in the Fabric ecosystem.
+ *
+ * <h2>The shorthands are Fabric's, verified against Fabric Loader</h2>
+ *
+ * <p>{@code ~} and {@code ^} are read off {@code VersionComparisonOperator} in fabric-loader 0.19.5:
+ * {@code ~} is {@code SAME_TO_NEXT_MINOR} (same major AND same minor, at or above the floor) and {@code ^} is
+ * {@code SAME_TO_NEXT_MAJOR} (same major, at or above the floor). There is NO npm-style "leftmost non-zero"
+ * rule — {@code ^0.15.0} admits {@code 0.16.0} here, as it does under Fabric. An earlier version of this class
+ * implemented npm's rule on the reasoning that most Fabric mods are 0.x and a plain major bound lets every
+ * breaking release through. That reasoning is sound and irrelevant: a mod that loads under Fabric has to load
+ * under Forbric, so the dialect is not ours to improve.
  */
 public final class VersionPredicate {
 	private VersionPredicate() {
@@ -43,41 +56,97 @@ public final class VersionPredicate {
 
 	/** True if {@code version} satisfies {@code predicate}. {@code "*"}, blank, and unparseable all mean yes. */
 	public static boolean matches(String predicate, String version) {
-		if (predicate == null || predicate.isBlank() || version == null || version.isBlank()) return true;
+		return matches(predicate, version, true);
+	}
+
+	/**
+	 * As {@link #matches}, but an unreadable predicate counts as NOT satisfied.
+	 *
+	 * <p>For callers that admit or reject a dependency rather than describe one: letting a predicate nobody could
+	 * parse resolve to "fine" is how an unchecked requirement gets through.
+	 */
+	public static boolean matchesStrictly(String predicate, String version) {
+		return matches(predicate, version, false);
+	}
+
+	private static boolean matches(String predicate, String version, boolean openOnUnreadable) {
+		if (predicate == null || predicate.isBlank()) return true;
+		if (version == null || version.isBlank()) return openOnUnreadable;
 
 		// "||" is OR between whole predicates; a space inside one is AND. Fabric's own precedence.
 		for (String alternative : predicate.split("\\|\\|")) {
-			if (allClausesMatch(alternative, version)) return true;
+			if (allClausesMatch(alternative, version, openOnUnreadable)) return true;
 		}
 		return false;
 	}
 
-	private static boolean allClausesMatch(String alternative, String version) {
+	private static boolean allClausesMatch(String alternative, String version, boolean openOnUnreadable) {
 		String trimmed = alternative.trim();
 		if (trimmed.isEmpty()) return true;
 
 		for (String clause : trimmed.split("\\s+")) {
-			if (!clauseMatches(clause, version)) return false;
+			if (!clauseMatches(clause, version, openOnUnreadable)) return false;
 		}
 		return true;
 	}
 
-	private static boolean clauseMatches(String clause, String version) {
+	private static boolean clauseMatches(String clause, String version, boolean openOnUnreadable) {
 		if (clause.equals("*") || clause.isEmpty()) return true;
 
-		if (clause.startsWith(">=")) return compare(version, clause.substring(2).trim()) >= 0;
-		if (clause.startsWith("<=")) return compare(version, clause.substring(2).trim()) <= 0;
-		if (clause.startsWith(">")) return compare(version, clause.substring(1).trim()) > 0;
-		if (clause.startsWith("<")) return compare(version, clause.substring(1).trim()) < 0;
-		// "~1.2.3" allows patch updates: >=1.2.3 and <1.3. "^1.2.3" allows minor ones too: >=1.2.3 and <2.
-		if (clause.startsWith("~")) return tildeRange(clause.substring(1).trim(), version);
-		if (clause.startsWith("^")) return caretRange(clause.substring(1).trim(), version);
-		if (clause.startsWith("=")) return equalOrWildcard(clause.substring(1).trim(), version);
+		if (clause.startsWith(">=")) return bounded(clause.substring(2).trim(), version, openOnUnreadable, 0);
+		if (clause.startsWith("<=")) return bounded(clause.substring(2).trim(), version, openOnUnreadable, 1);
+		if (clause.startsWith(">")) return bounded(clause.substring(1).trim(), version, openOnUnreadable, 2);
+		if (clause.startsWith("<")) return bounded(clause.substring(1).trim(), version, openOnUnreadable, 3);
+		// Fabric's two shorthands: ~ pins major+minor, ^ pins major. Both also require >= the floor.
+		if (clause.startsWith("~")) return samePrefixAndAtLeast(clause.substring(1).trim(), version, 2, openOnUnreadable);
+		if (clause.startsWith("^")) return samePrefixAndAtLeast(clause.substring(1).trim(), version, 1, openOnUnreadable);
+		if (clause.startsWith("=")) return equalOrWildcard(clause.substring(1).trim(), version, openOnUnreadable);
 
-		// Not an operator and not version-shaped — nothing we can hold a version against. Fail open rather than
-		// report a mismatch against a string we did not understand.
-		if (!isVersionShaped(clause)) return true;
-		return equalOrWildcard(clause, version);
+		// Not an operator and not version-shaped — nothing we can hold a version against.
+		if (!isVersionShaped(clause)) return openOnUnreadable;
+		return equalOrWildcard(clause, version, openOnUnreadable);
+	}
+
+	/** One comparison against {@code floor}: 0 is {@code >=}, 1 {@code <=}, 2 {@code >}, 3 {@code <}. */
+	private static boolean bounded(String floor, String version, boolean openOnUnreadable, int mode) {
+		if (!isVersionShaped(floor)) return openOnUnreadable;
+		int cmp = compare(version, floor);
+		return switch (mode) {
+			case 0 -> cmp >= 0;
+			case 1 -> cmp <= 0;
+			case 2 -> cmp > 0;
+			default -> cmp < 0;
+		};
+	}
+
+	/**
+	 * Fabric's {@code SAME_TO_NEXT_MINOR}/{@code SAME_TO_NEXT_MAJOR}: at or above {@code floor}, and identical in
+	 * its first {@code pinned} numeric components.
+	 *
+	 * <p>Written as "same prefix" rather than as an upper bound because that is how Fabric writes it, and the two
+	 * differ where a component is missing or non-numeric. A component the floor does not have counts as 0, and a
+	 * non-numeric component on either side falls back to plain equality — the same fallback Fabric's operator
+	 * makes for a version that is not semantic, because nothing else about its ordering is defined.
+	 */
+	private static boolean samePrefixAndAtLeast(String floor, String version, int pinned, boolean openOnUnreadable) {
+		if (!isVersionShaped(floor)) return openOnUnreadable;
+		if (compare(version, floor) < 0) return false;
+
+		String[] have = split(version);
+		String[] want = split(floor);
+		for (int i = 0; i < pinned; i++) {
+			Long h = component(have, i);
+			Long w = component(want, i);
+			if (h == null || w == null) return compare(version, floor) == 0; // not semantic — equality is all there is
+			if (!h.equals(w)) return false;
+		}
+		return true;
+	}
+
+	/** Numeric component {@code i}, 0 for one past the end, or {@code null} when it is not a number. */
+	private static Long component(String[] parts, int i) {
+		if (i >= parts.length) return 0L;
+		return asNumber(parts[i]);
 	}
 
 	private static boolean isVersionShaped(String clause) {
@@ -90,58 +159,9 @@ public final class VersionPredicate {
 		return !clause.isEmpty();
 	}
 
-	/** {@code ~1.2.3} and {@code ~1.2} both bound at the next MINOR; {@code ~1} bounds at the next major. */
-	private static boolean tildeRange(String floor, String version) {
-		return inBoundedRange(floor, version, Math.min(2, segments(floor)));
-	}
-
-	/**
-	 * {@code ^} bounds at the leftmost NON-ZERO segment, not simply at the major.
-	 *
-	 * <p>This is not pedantry about npm's rules: most Fabric mods are versioned {@code 0.x}, so reading
-	 * {@code ^0.15.0} as "anything below 1" accepts every future breaking release of exactly the mods where a
-	 * major bump never happens. Bumping the leftmost non-zero segment makes it {@code <0.16}, which is what the
-	 * author meant.
-	 */
-	private static boolean caretRange(String floor, String version) {
-		String[] parts = floor.split("[.\\-+]");
-		int bumpAt = 1;
-		for (int i = 0; i < parts.length; i++) {
-			Long value = asNumber(parts[i]);
-			if (value != null && value != 0L) {
-				bumpAt = i + 1;
-				break;
-			}
-			if (i == parts.length - 1) bumpAt = parts.length; // every segment is zero: bump the last
-		}
-		return inBoundedRange(floor, version, bumpAt);
-	}
-
-	private static int segments(String version) {
-		return version.isEmpty() ? 0 : version.split("[.\\-+]").length;
-	}
-
-	/** {@code floor <= version} and {@code version} below the next value of segment {@code bumpAt} (1-based). */
-	private static boolean inBoundedRange(String floor, String version, int bumpAt) {
-		if (floor.isEmpty()) return true;
-		if (compare(version, floor) < 0) return false;
-
-		String[] parts = floor.split("[.\\-+]");
-		int index = Math.min(bumpAt, parts.length) - 1;
-		if (index < 0) return true;
-
-		Long value = asNumber(parts[index]);
-		if (value == null) return true; // a qualifier where a number was expected — no ceiling we can name
-
-		StringBuilder ceiling = new StringBuilder();
-		for (int i = 0; i < index; i++) ceiling.append(parts[i]).append('.');
-		ceiling.append(value + 1);
-		return compare(version, ceiling.toString()) < 0;
-	}
-
 	/** An exact version, or one with {@code x}/{@code *} wildcard segments ({@code "1.2.x"}). */
-	private static boolean equalOrWildcard(String wanted, String version) {
-		if (wanted.isEmpty()) return true;
+	private static boolean equalOrWildcard(String wanted, String version, boolean openOnUnreadable) {
+		if (wanted.isEmpty()) return openOnUnreadable;
 		if (wanted.indexOf('x') < 0 && wanted.indexOf('X') < 0 && wanted.indexOf('*') < 0) {
 			return compare(version, wanted) == 0;
 		}

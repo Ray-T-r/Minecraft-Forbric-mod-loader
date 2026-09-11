@@ -60,39 +60,67 @@ class VersionPredicateTest {
 		assertFalse(VersionPredicate.matches(">=47 <48 || >=50", "49"));
 	}
 
+	/**
+	 * Read off {@code VersionComparisonOperator} in fabric-loader 0.19.5: {@code ~} is
+	 * {@code SAME_TO_NEXT_MINOR} and {@code ^} is {@code SAME_TO_NEXT_MAJOR}, each additionally requiring the
+	 * version to be at or above the floor. Both are implemented there as "same first N components", not as an
+	 * upper bound, and the difference shows wherever a component is missing.
+	 */
 	@Test
-	void tildeHoldsTheMinorAndCaretHoldsTheMajor() {
+	void tildePinsMajorAndMinorAndCaretPinsMajor() {
 		assertTrue(VersionPredicate.matches("~1.2.3", "1.2.9"));
 		assertFalse(VersionPredicate.matches("~1.2.3", "1.3.0"));
-		assertFalse(VersionPredicate.matches("~1.2.3", "1.2.2"));
+		assertFalse(VersionPredicate.matches("~1.2.3", "1.2.2"), "below the floor");
 
 		assertTrue(VersionPredicate.matches("^1.2.3", "1.9.0"));
 		assertFalse(VersionPredicate.matches("^1.2.3", "2.0.0"));
+		assertFalse(VersionPredicate.matches("^1.2.3", "1.2.2"), "below the floor");
 	}
 
 	/**
-	 * {@code ~} bounds at the next minor however many segments were written; only {@code ~1} has no minor to bump
-	 * and falls back to the major.
+	 * A component the floor does not write counts as 0, because that is what "same first N components" means when
+	 * one side is shorter — so {@code ~1} pins the minor to 0 rather than admitting all of {@code 1.x}.
 	 */
 	@Test
-	void tildeBoundsAtTheMinorEvenWhenThePatchWasNotWritten() {
+	void aMissingComponentInTheFloorCountsAsZeroRatherThanAsAWildcard() {
 		assertTrue(VersionPredicate.matches("~1.2", "1.2.9"));
 		assertFalse(VersionPredicate.matches("~1.2", "1.3"));
-		assertTrue(VersionPredicate.matches("~1", "1.9"));
-		assertFalse(VersionPredicate.matches("~1", "2.0"));
+		assertTrue(VersionPredicate.matches("~1", "1.0.5"));
+		assertFalse(VersionPredicate.matches("~1", "1.9"));
 	}
 
 	/**
-	 * The case that actually matters on this platform: nearly every Fabric mod is versioned {@code 0.x}, and a
-	 * caret read as "below the next major" would accept every future breaking release of exactly those mods,
-	 * because their major never moves.
+	 * The 0.x case, and the one this class used to get wrong: npm bounds a caret at the leftmost non-zero segment,
+	 * so {@code ^0.15.0} would stop at {@code 0.16}. Fabric does not — {@code ^} is plainly
+	 * {@code SAME_TO_NEXT_MAJOR}, and nearly every Fabric mod is 0.x, so the difference decides a great many real
+	 * dependencies. Matching the ecosystem beats being right about semver: a mod that loads under Fabric has to
+	 * load under Forbric.
 	 */
 	@Test
-	void caretBoundsAtTheLeftmostNonZeroSegment() {
+	void caretPinsOnlyTheMajorEvenWhenTheMajorIsZero() {
 		assertTrue(VersionPredicate.matches("^0.15.0", "0.15.9"));
-		assertFalse(VersionPredicate.matches("^0.15.0", "0.16.0"));
-		assertTrue(VersionPredicate.matches("^0.0.3", "0.0.3"));
-		assertFalse(VersionPredicate.matches("^0.0.3", "0.1.0"));
+		assertTrue(VersionPredicate.matches("^0.15.0", "0.16.0"), "Fabric admits this; npm would not");
+		assertTrue(VersionPredicate.matches("^0.0.3", "0.1.0"));
+		assertFalse(VersionPredicate.matches("^0.15.0", "1.0.0"));
+	}
+
+	/**
+	 * The two failure directions, on the same engine. A diagnostic must not accuse a mod over a predicate it could
+	 * not read; a resolver must not admit a dependency it could not check.
+	 */
+	@Test
+	void anUnreadablePredicateIsOpenForMatchesAndClosedForMatchesStrictly() {
+		assertTrue(VersionPredicate.matches("@@nonsense@@", "1.0.0"));
+		assertFalse(VersionPredicate.matchesStrictly("@@nonsense@@", "1.0.0"));
+
+		assertTrue(VersionPredicate.matches(">=@@@", "1.0.0"));
+		assertFalse(VersionPredicate.matchesStrictly(">=@@@", "1.0.0"));
+
+		// A predicate both CAN read still answers the same either way.
+		assertTrue(VersionPredicate.matches(">=1.0", "1.1"));
+		assertTrue(VersionPredicate.matchesStrictly(">=1.0", "1.1"));
+		assertFalse(VersionPredicate.matches(">=2.0", "1.1"));
+		assertFalse(VersionPredicate.matchesStrictly(">=2.0", "1.1"));
 	}
 
 	@Test
