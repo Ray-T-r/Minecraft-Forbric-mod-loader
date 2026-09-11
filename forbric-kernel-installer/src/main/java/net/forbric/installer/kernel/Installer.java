@@ -52,32 +52,47 @@ public final class Installer {
 		this.log = log;
 	}
 
+	/** Convenience for callers with no {@code --jdk} preference and no release to fetch from. */
+	public String install(Path mcDir, String mcVersion, Path artifactDir) throws IOException {
+		return install(mcDir, mcVersion, artifactDir, null, null);
+	}
+
+	/** Convenience for callers with no release to fetch from. */
+	public String install(Path mcDir, String mcVersion, Path artifactDir, Path explicitJdk) throws IOException {
+		return install(mcDir, mcVersion, artifactDir, explicitJdk, null);
+	}
+
 	/**
 	 * @param mcDir      the Minecraft directory the launcher uses
 	 * @param mcVersion  the base version, e.g. {@code 26.2}
-	 * @param artifactDir where to look for the locally built game artifacts, or null to search the checkout
+	 * @param artifactDir prebuilt game artifacts to use instead of building them, or null to build
+	 * @param explicitJdk a JVM to build with, or null to find one
+	 * @param remote      a published release to take Forbric's jars from, or null to require a bundled payload
 	 * @return the id of the version written
 	 */
-	public String install(Path mcDir, String mcVersion, Path artifactDir) throws IOException {
+	public String install(Path mcDir, String mcVersion, Path artifactDir, Path explicitJdk, RemoteSource remote)
+			throws IOException {
 		Path versions = mcDir.resolve("versions");
 		Path libraries = mcDir.resolve("libraries");
 		String id = mcVersion + "-forbric";
 
 		log.accept("Minecraft directory: " + mcDir);
-		GameArtifacts artifacts = GameArtifacts.locate(mcVersion, artifactDir);
-		for (Map.Entry<String, Path> e : artifacts.all().entrySet()) log.accept("  found " + e.getValue());
 
+		// The vanilla base has to exist before the artifacts are built, not after: its jar is one of the merge's
+		// three inputs, and NFRT reuses the client and server the launcher already fetched.
 		Map<String, Object> baseJson = ensureBaseVersion(versions, mcVersion);
 		List<String> mcLibraries = minecraftLibraryPaths(baseJson);
 		log.accept(mcLibraries.size() + " Minecraft libraries the kernel will own");
 
+		Map<String, Path> artifacts = obtainGameArtifacts(mcDir, mcVersion, artifactDir, explicitJdk);
+
 		List<Map<String, Object>> libraryEntries = new ArrayList<>();
-		libraryEntries.addAll(stageBundledJars(libraries));
+		libraryEntries.addAll(stageBundledJars(libraries, remote));
 		libraryEntries.addAll(stageGameArtifacts(libraries, artifacts, mcVersion));
 
 		Path profile = versions.resolve(id).resolve(id + ".json");
 		Files.createDirectories(profile.getParent());
-		Files.writeString(profile, Json.write(profile(id, mcVersion, libraryEntries, mcLibraries, artifacts)),
+		Files.writeString(profile, Json.write(profile(id, mcVersion, libraryEntries, mcLibraries)),
 				StandardCharsets.UTF_8);
 		log.accept("wrote " + profile);
 
@@ -93,7 +108,7 @@ public final class Installer {
 	// --- the profile ------------------------------------------------------------------------------------------
 
 	private Map<String, Object> profile(String id, String mcVersion, List<Map<String, Object>> libraries,
-			List<String> mcLibraries, GameArtifacts artifacts) {
+			List<String> mcLibraries) {
 		Map<String, Object> profile = new LinkedHashMap<>();
 		profile.put("id", id);
 		profile.put("inheritsFrom", mcVersion);
@@ -177,40 +192,134 @@ public final class Installer {
 	// --- staging ----------------------------------------------------------------------------------------------
 
 	/** Forbric's own jars and the kernel's dependencies, carried inside this installer. */
-	private List<Map<String, Object>> stageBundledJars(Path libraries) throws IOException {
-		Object manifest;
+	/** One jar the installed profile needs on its classpath. */
+	static final class Lib {
+		final String coordinate;
+		/** Classpath location inside a self-contained installer jar; null in a slim build. */
+		final String resource;
+		final String path;
+		final String sha1;
+		final long size;
+
+		Lib(String coordinate, String resource, String path, String sha1, long size) {
+			this.coordinate = coordinate;
+			this.resource = resource;
+			this.path = path;
+			this.sha1 = sha1;
+			this.size = size;
+		}
+	}
+
+	/** True when this installer carries its payload, so it can install with no network at all. */
+	static boolean hasBundledManifest() {
 		try (InputStream in = Installer.class.getResourceAsStream(BUNDLE_MANIFEST)) {
-			if (in == null) {
-				throw new IOException("this installer carries no library manifest — it was built without its "
-						+ "bundleForbric step");
-			}
-			manifest = Json.parse(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+			return in != null;
+		} catch (IOException unreadable) {
+			return false;
+		}
+	}
+
+	private static List<Lib> parseManifest(String json) throws IOException {
+		Object root;
+		try {
+			root = Json.parse(json);
+		} catch (RuntimeException malformed) {
+			throw new IOException("malformed library manifest: " + malformed.getMessage(), malformed);
 		}
 		@SuppressWarnings("unchecked")
-		List<Object> entries = (List<Object>) ((Map<String, Object>) manifest).get("libraries");
-		List<Map<String, Object>> written = new ArrayList<>();
+		List<Object> entries = (List<Object>) ((Map<String, Object>) root).get("libraries");
+		if (entries == null) throw new IOException("library manifest has no \"libraries\" array");
+		List<Lib> libs = new ArrayList<>();
 		for (Object entry : entries) {
 			@SuppressWarnings("unchecked")
-			Map<String, Object> lib = (Map<String, Object>) entry;
-			String resource = (String) lib.get("resource");
-			String path = (String) lib.get("path");
-			Path dest = libraries.resolve(path);
-			Files.createDirectories(dest.getParent());
-			try (InputStream in = Installer.class.getResourceAsStream(resource)) {
-				if (in == null) throw new IOException("missing bundled jar " + resource);
-				Files.write(dest, in.readAllBytes());
+			Map<String, Object> m = (Map<String, Object>) entry;
+			libs.add(new Lib((String) m.get("coordinate"), (String) m.get("resource"), (String) m.get("path"),
+					(String) m.get("sha1"),
+					m.get("size") instanceof Number ? ((Number) m.get("size")).longValue() : 0L));
+		}
+		return libs;
+	}
+
+	/** The manifest this installer was built with, or null when it is slim. */
+	static String bundledManifest() throws IOException {
+		try (InputStream in = Installer.class.getResourceAsStream(BUNDLE_MANIFEST)) {
+			if (in == null) return null;
+			return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+		}
+	}
+
+	/**
+	 * Stages the Forbric and kernel-dependency jars, taking each from the payload when this installer carries
+	 * one and from the release otherwise.
+	 *
+	 * <p>The digest is re-checked after the write whichever source supplied the bytes, because "it came from
+	 * inside the jar" and "it is the right jar" are different claims.
+	 */
+	private List<Map<String, Object>> stageBundledJars(Path libraries, RemoteSource remote) throws IOException {
+		String json = bundledManifest();
+		if (json == null) {
+			if (remote == null) {
+				throw new IOException("this installer carries no library manifest and no release to fetch one"
+						+ " from — it was built slim without a release pin");
 			}
-			written.add(libraryEntry((String) lib.get("coordinate"), path, dest));
+			json = remote.manifestJson();
+		}
+		List<Lib> libs = parseManifest(json);
+
+		List<Map<String, Object>> written = new ArrayList<>();
+		for (Lib lib : libs) {
+			Path dest = libraries.resolve(lib.path);
+			Files.createDirectories(dest.getParent());
+			boolean staged = false;
+			// --remote means "take these from the release even though I am carrying them", which is how a
+			// release's own assets get exercised before anyone else downloads them.
+			if (lib.resource != null && !(remote != null && remote.forced())) {
+				try (InputStream in = Installer.class.getResourceAsStream(lib.resource)) {
+					if (in != null) {
+						Files.write(dest, in.readAllBytes());
+						staged = true;
+					}
+				}
+			}
+			if (!staged) {
+				if (remote == null) {
+					throw new IOException("missing bundled jar " + lib.resource + " for " + lib.coordinate
+							+ " and no release to fetch it from");
+				}
+				remote.fetchInto(lib, dest);
+			}
+			if (lib.sha1 != null && !lib.sha1.equalsIgnoreCase(Util.sha1(dest))) {
+				throw new IOException("sha1 mismatch for " + lib.coordinate + " at " + dest);
+			}
+			written.add(libraryEntry(lib.coordinate, lib.path, dest));
 		}
 		log.accept("staged " + written.size() + " Forbric and kernel-dependency jar(s) into " + libraries);
 		return written;
 	}
 
-	/** The three locally built jars, copied under net.forbric coordinates so the profile can name them. */
-	private List<Map<String, Object>> stageGameArtifacts(Path libraries, GameArtifacts artifacts, String mcVersion)
+	/**
+	 * Gets the three game artifacts: from {@code --artifacts} when a complete set is there, otherwise built.
+	 *
+	 * <p>A supplied directory is a fast path, not a requirement. It used to be the only path — the installer
+	 * looked for prebuilt jars and refused to continue without them, which worked on the machine that had built
+	 * them and nowhere else.
+	 */
+	private Map<String, Path> obtainGameArtifacts(Path mcDir, String mcVersion, Path artifactDir, Path explicitJdk)
 			throws IOException {
+		if (artifactDir != null) {
+			Map<String, Path> found = GameArtifacts.locate(mcVersion, artifactDir).all();
+			for (Map.Entry<String, Path> e : found.entrySet()) log.accept("  using " + e.getValue());
+			return found;
+		}
+		JdkLocator.Jvm jvm = JdkLocator.locate(mcDir, explicitJdk, line -> log.accept("build JVM: " + line));
+		return new ArtifactBuilder(log).build(mcDir, mcVersion, jvm);
+	}
+
+	/** The three locally built jars, copied under net.forbric coordinates so the profile can name them. */
+	private List<Map<String, Object>> stageGameArtifacts(Path libraries, Map<String, Path> artifacts,
+			String mcVersion) throws IOException {
 		List<Map<String, Object>> written = new ArrayList<>();
-		for (Map.Entry<String, Path> found : artifacts.all().entrySet()) {
+		for (Map.Entry<String, Path> found : artifacts.entrySet()) {
 			String coordinate = coordinate(found.getKey(), mcVersion);
 			String path = Util.coordinateToPath(coordinate);
 			Path dest = libraries.resolve(path);
