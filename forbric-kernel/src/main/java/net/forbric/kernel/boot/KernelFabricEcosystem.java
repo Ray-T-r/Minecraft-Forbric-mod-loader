@@ -28,6 +28,8 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.entrypoint.EntrypointContainer;
 import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
+import net.fabricmc.loader.api.metadata.ModDependency;
+import net.fabricmc.loader.api.metadata.ModMetadata;
 
 import net.forbric.api.Side;
 import net.forbric.api.DiscoveredMod;
@@ -40,6 +42,8 @@ import net.forbric.kernel.fabric.KernelModMetadata;
 import net.forbric.kernel.mixin.MergedBaseMixinCompat;
 import net.forbric.kernel.mixin.MixinConfigPolicy;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.api.UnifiedDependency;
+import net.forbric.kernel.fabric.KernelMetadataSupport;
 
 /**
  * Drives the Fabric ecosystem natively: discovery &rarr; {@link KernelFabricLoader} &rarr; entrypoints.
@@ -168,7 +172,7 @@ public final class KernelFabricEcosystem {
 			if (id == null || id.isBlank() || ModPresence.isLoaded(id)) continue;
 			fabricMods.add(new DiscoveredMod(Ecosystem.FABRIC, id,
 					String.valueOf(kernel.getMetadata().getVersion()), kernel.getMetadata().getName(),
-					List.of(), List.of(), null, kernel.getJar().toString()));
+					unifiedDependencies(kernel.getMetadata()), List.of(), null, kernel.getJar().toString()));
 		}
 		ModPresence.publishFabric(fabricMods);
 
@@ -318,6 +322,38 @@ public final class KernelFabricEcosystem {
 	 *
 	 * @return true if this call ran them, false if already run or off the client
 	 */
+	/**
+	 * A Fabric mod's declared dependencies in the unified model.
+	 *
+	 * <p>These used to be {@code List.of()} — not because Fabric mods declare none, but because nobody filled them
+	 * in. A {@link DiscoveredMod} reporting an empty dependency list is indistinguishable from one that genuinely
+	 * has none, so {@code DependencyAudit} silently judged only the Forge families and nothing said so.
+	 *
+	 * <p>Only POSITIVE kinds cross over. A {@code breaks}/{@code conflicts} entry is a requirement that a mod be
+	 * ABSENT, and carrying it here as a dependency would make the audit report "requires X — not installed" about
+	 * a mod that must not be installed. {@link UnifiedDependency} has no negative sense yet, and inventing one
+	 * that nothing evaluates is how this field came to lie in the first place.
+	 *
+	 * <p>Fabric declares no side or ordering axis, so both stay neutral rather than being guessed at from the
+	 * mod's {@code environment} — that says where the MOD runs, not where its requirement applies.
+	 */
+	static List<UnifiedDependency> unifiedDependencies(ModMetadata metadata) {
+		List<UnifiedDependency> out = new ArrayList<>();
+		for (ModDependency dep : metadata.getDependencies()) {
+			if (!dep.getKind().isPositive()) continue;
+			out.add(new UnifiedDependency(dep.getModId(), constraintOf(dep), !dep.getKind().isSoft()));
+		}
+		return out;
+	}
+
+	/** The predicate as declared; the array form is OR-joined, which is what {@code VersionPredicate} reads. */
+	private static String constraintOf(ModDependency dep) {
+		if (dep instanceof KernelMetadataSupport.SimpleModDependency simple && !simple.getConstraints().isEmpty()) {
+			return String.join(" || ", simple.getConstraints());
+		}
+		return "*";
+	}
+
 	/**
 	 * The physical side this boot is running on, or {@code null} while the Fabric side has not been brought up.
 	 *

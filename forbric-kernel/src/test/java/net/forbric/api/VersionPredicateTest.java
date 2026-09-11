@@ -132,6 +132,23 @@ class VersionPredicateTest {
 		assertFalse(VersionPredicate.matches("1.2.x", "1.3.0"));
 	}
 
+	/**
+	 * Semver's two suffixes are not the same thing, and getting them confused was not academic: fabric-api stamps
+	 * a build hash onto every module version, so reading {@code 6.3.3+72073ef09e} as a PRE-release of
+	 * {@code 6.3.3} made it fail {@code >=6.3.3} — and on a real pack that meant several mods were reported as
+	 * having unmet dependencies that were in fact met.
+	 */
+	@Test
+	void buildMetadataIsIgnoredWhilePreReleaseStillOrdersBelow() {
+		assertEquals(0, VersionPredicate.compare("6.3.3+72073ef09e", "6.3.3"));
+		assertTrue(VersionPredicate.matches(">=6.3.3", "6.3.3+72073ef09e"));
+		assertTrue(VersionPredicate.matches("<=0.9.1", "0.9.1+mc26.2"));
+		assertTrue(VersionPredicate.matches("=1.2.3", "1.2.3+build7"));
+
+		assertTrue(VersionPredicate.compare("1.0-beta", "1.0") < 0, "a dash is still a pre-release");
+		assertFalse(VersionPredicate.matches(">=1.0", "1.0-beta"));
+	}
+
 	@Test
 	void trailingZerosArePaddingAndAQualifierPrecedesTheBareVersion() {
 		assertEquals(0, VersionPredicate.compare("1.0.0", "1.0"));
