@@ -75,7 +75,7 @@ public final class PassiveSeeder {
 		seedNeoForgeLoader(gameLoader, gameDir, side, production);
 		seedNeoForgeModList(gameLoader);
 		seedNeoForgePaths(gameLoader, gameDir);
-		seedForgeFmlLoader(gameLoader, gameDir, production);
+		seedForgeFmlLoader(gameLoader, gameDir, side, production);
 		// NOTE: NeoForge baseline-registry registration is NOT done here — NeoForgeRegistriesSetup.<clinit> touches
 		// game registries and throws "Not bootstrapped" pre-Main. It runs post-Bootstrap via KernelLifecycle
 		// (the redirected ServerModLoader.load window). See KernelLifecycle.onServerModLoading.
@@ -933,8 +933,19 @@ public final class PassiveSeeder {
 	 * {@code naming}) so its accessors answer instead of returning null. e.g. {@code UsernameCache.<clinit>} (touched
 	 * by {@code MinecraftForge.initialize} during ForgeMod construction) resolves {@code FMLLoader.getGamePath()}.
 	 * Identity only, no lifecycle.
+	 *
+	 * <p>The {@code dist} used to be the literal {@code DEDICATED_SERVER}, with no side argument to say otherwise.
+	 * On a Forbric CLIENT that made traditional MinecraftForge answer "dedicated server" to every question about
+	 * which half of the game it was on — {@code FMLEnvironment.dist}, {@code FMLLoader.getDist()},
+	 * {@code DistExecutor}'s branch selection, the runtime {@code @OnlyIn} checks. Nothing throws when that is
+	 * wrong; the mod simply takes its server branch on a client, which is the same silent shape as a mod told the
+	 * wrong thing about another mod's presence. The NeoForge seeder three methods up has carried a comment about
+	 * exactly this hazard for its own dist since it was written.
+	 *
+	 * <p>Reported at INFO rather than DEBUG for the same reason: this value decides which half of every
+	 * traditional-Forge mod runs, so it belongs in a log a user can hand over.
 	 */
-	public static void seedForgeFmlLoader(ClassLoader gameLoader, Path gameDir, boolean production) {
+	public static void seedForgeFmlLoader(ClassLoader gameLoader, Path gameDir, Side side, boolean production) {
 		try {
 			Class<?> fmlLoader = Class.forName(ForeignType.FML_LOADER.binary(Ecosystem.FORGE), false, gameLoader);
 			setStaticIfNull(fmlLoader, "gamePath", gameDir.toAbsolutePath());
@@ -944,10 +955,17 @@ public final class PassiveSeeder {
 			productionField.setBoolean(null, production);
 			Field distField = fmlLoader.getDeclaredField("dist");
 			distField.setAccessible(true);
-			if (distField.get(null) == null) {
+			Object existing = distField.get(null);
+			if (existing == null) {
 				Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.FORGE), false, gameLoader);
-				distField.set(null, Enum.valueOf(distClass.asSubclass(Enum.class), "DEDICATED_SERVER"));
+				distField.set(null, Enum.valueOf(distClass.asSubclass(Enum.class), side.distName()));
+				ForbricLog.info("[Forbric/Seed] traditional-Forge dist seeded %s (production=%s) — this is what "
+						+ "every MinecraftForge mod's side check reads", side.distName(), production);
+			} else {
+				ForbricLog.info("[Forbric/Seed] traditional-Forge dist was already %s; leaving it (running %s)",
+						existing, side.distName());
 			}
+			seedForgeLaunchHandler(gameLoader, fmlLoader, side);
 
 			// Traditional-Forge FMLPaths + FMLConfig (ForgeMod's config registration reads FMLConfig; ConfigFileType
 			// Handler.<clinit> NPEs if FMLConfig.load() hasn't populated its backing file config).
@@ -961,6 +979,41 @@ public final class PassiveSeeder {
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Seed] could not seed traditional-Forge FMLLoader identity", unwrap(t));
 		}
+	}
+
+	/**
+	 * Gives traditional Forge its {@code CommonLaunchHandler}, which is null under the kernel because nothing runs
+	 * ModLauncher's {@code setupLaunchHandler}.
+	 *
+	 * <p>This was invisible for as long as the dist was hardcoded to {@code DEDICATED_SERVER}: {@code FluidType}'s
+	 * constructor calls {@code initClient()} only on the client, and {@code initClient} asks
+	 * {@code FMLLoader.getLaunchHandler().isData()}. Telling Forge the truth about the side therefore reached a
+	 * second thing the kernel had never seeded, and the NPE landed inside {@code ForgeMod}'s own
+	 * {@code RegisterEvent} handler — where it aborted the WHOLE traditional-Forge baseline registration, so
+	 * {@code ForgeMod.EMPTY_TYPE} was never bound and the first {@code ServerPlayer} construction died on
+	 * "Registry Object not present: minecraft:empty". The player was dropped with "Invalid player data", six
+	 * layers away from the cause.
+	 *
+	 * <p>Forge's own {@code ForgeProdLaunchHandler.Client}/{@code .Server} is used rather than a stand-in: its
+	 * constructor takes no arguments and does nothing but record the launch type, and using the real class means
+	 * the dist, the {@code isData} flag and the handler name all come from Forge's answer rather than the
+	 * kernel's guess at it. A Forbric instance is a shipped one — the dev handlers describe a Gradle workspace.
+	 */
+	private static void seedForgeLaunchHandler(ClassLoader gameLoader, Class<?> fmlLoader, Side side)
+			throws Exception {
+		Field handlerField = fmlLoader.getDeclaredField("commonLaunchHandler");
+		handlerField.setAccessible(true);
+		if (handlerField.get(null) != null) return;
+
+		Class<?> handlerClass = Class.forName("net.minecraftforge.fml.loading.targets.ForgeProdLaunchHandler$"
+				+ (side.isClient() ? "Client" : "Server"), false, gameLoader);
+		Object handler = handlerClass.getDeclaredConstructor().newInstance();
+		handlerField.set(null, handler);
+
+		String name = String.valueOf(handlerClass.getMethod("name").invoke(handler));
+		setStaticIfNull(fmlLoader, "launchHandlerName", name);
+		ForbricLog.info("[Forbric/Seed] traditional-Forge launch handler seeded (%s) — FluidType.initClient and "
+				+ "anything else asking getLaunchHandler() now gets an answer instead of null", name);
 	}
 
 	private static void setStaticIfNull(Class<?> owner, String field, Object value) throws Exception {
