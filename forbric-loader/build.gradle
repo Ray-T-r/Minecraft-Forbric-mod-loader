@@ -47,6 +47,16 @@ sourceSets {
 			srcDir "${fabricLoader}/minecraft/src/main/resources"  // GameProvider service descriptor
 		}
 	}
+	// The byte-merge tools. They are ordinary Java and always were — build-merged-base.sh just javac'd them on
+	// the fly against ASM jars it scavenged out of ~/.gradle/caches, which is why a machine that had never built
+	// the loader could not run a merge. Compiled here instead, and shipped as one self-contained jar (see
+	// mergeToolsJar) so the installer and the dev script run the same bytes.
+	tools {
+		java {
+			srcDir 'src/tools/java'
+		}
+	}
+
 	// Tests see the stubs as real fakes so the registration wiring is exercisable without a game boot.
 	test {
 		compileClasspath += sourceSets.stub.output
@@ -72,6 +82,11 @@ dependencies {
 	// The reused Minecraft game provider references these log bridges as optional handlers (provided at runtime by MC).
 	compileOnly 'org.apache.logging.log4j:log4j-api:2.24.3'
 	compileOnly 'org.slf4j:slf4j-api:2.0.16'
+
+	// The merge tools need ASM and nothing else; they are deliberately NOT on the loader's own classpath.
+	toolsImplementation "org.ow2.asm:asm:${project.asm_version}"
+	toolsImplementation "org.ow2.asm:asm-tree:${project.asm_version}"
+	toolsImplementation "org.ow2.asm:asm-commons:${project.asm_version}"
 
 	// --- Reused Apache-2.0 substrate deps (same coordinates as fabric-loader) ---
 	api "org.ow2.asm:asm:${project.asm_version}"
@@ -157,6 +172,27 @@ tasks.register('runtimeJar', Jar) {
 }
 
 assemble.dependsOn 'runtimeJar'
+
+// One self-contained jar holding the byte-merge tools and the ASM they need, run as
+//   java -Xmx4g -cp forbric-merge-tools.jar net.forbric.tools.MergedBaseBuilder <args>
+// A single-entry -cp rather than a Main-Class dispatcher: there are two entry points, and one path on the
+// command line is also the only form that needs no thought about ';' vs ':' on Windows.
+tasks.register('mergeToolsJar', Jar) {
+	description = 'The byte-merge tools plus ASM, as one jar the installer can ship and run.'
+	archiveBaseName = 'forbric-merge-tools'
+	dependsOn 'toolsClasses'
+	from sourceSets.tools.output
+	from({ configurations.toolsRuntimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }) {
+		// ASM is BSD-3; keep its own notices out of the way but do not strip them.
+		exclude 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'META-INF/*.EC'
+		exclude 'module-info.class'
+	}
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+assemble.dependsOn 'mergeToolsJar'
+
+
 
 // Emits the full runtime classpath (Forbric classes + reused substrate + bundled deps) so the
 // launch script (run/launch-1.21.11.sh) can compose it with the Minecraft install classpath.

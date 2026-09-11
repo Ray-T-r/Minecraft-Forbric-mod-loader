@@ -165,6 +165,7 @@ final class InstallerGui {
 	private void runInstall() {
 		install.setEnabled(false);
 		log.setText("");
+		transientStart = -1;   // the cleared document has no live line in it any more
 		String mcVersion = String.valueOf(gameVersion.getSelectedItem());
 		Path dir = Util.path(directory.getText().trim());
 		String artifactText = artifacts.getText().trim();
@@ -172,7 +173,10 @@ final class InstallerGui {
 
 		new Thread(() -> {
 			try {
-				new Installer(this::append).install(dir, mcVersion, artifactDir);
+				// The window needs the release for exactly the reason the CLI does: a slim installer carries no
+				// jars, and without a source for them the only thing the button can do is fail.
+				RemoteSource remote = RemoteSource.create(new Http(this::append), this::append, null, null, false);
+				new Installer(this::append).install(dir, mcVersion, artifactDir, null, remote);
 			} catch (Exception e) {
 				append("");
 				append("Install failed: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
@@ -182,9 +186,27 @@ final class InstallerGui {
 		}, "forbric-install").start();
 	}
 
-	private void append(String line) {
+	/**
+	 * Document offset where the live status line starts, or -1 when the log ends in a settled line.
+	 *
+	 * <p>A running download refreshes ONE line in place instead of scrolling hundreds past. Without this the
+	 * hardened {@link Http}'s byte-progress arrives as ordinary lines and a 250 MB build phase writes thousands
+	 * of near-identical rows into the document — which is both unreadable and a steady leak of Swing document
+	 * memory over a multi-minute install.
+	 */
+	private int transientStart = -1;
+
+	private void append(String raw) {
 		SwingUtilities.invokeLater(() -> {
-			log.append(line + System.lineSeparator());
+			boolean progress = raw.startsWith(Http.PROGRESS);
+			String line = progress ? raw.substring(Http.PROGRESS.length()) : raw;
+			if (transientStart >= 0) {
+				log.replaceRange("", transientStart, log.getDocument().getLength());
+			}
+			int start = log.getDocument().getLength();
+			log.append(progress ? line : line + System.lineSeparator());
+			// A settled line ends the live one, so the finished log carries no progress noise at all.
+			transientStart = progress ? start : -1;
 			log.setCaretPosition(log.getDocument().getLength());
 		});
 	}

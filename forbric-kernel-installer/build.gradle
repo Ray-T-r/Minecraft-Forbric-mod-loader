@@ -21,6 +21,10 @@ tasks.withType(JavaCompile).configureEach {
 def kernelDir = file('../forbric-kernel')
 def loaderDir = file('../forbric-loader')
 def genResources = layout.buildDirectory.dir('generated-resources')
+// The merge tools ride in EVERY build, slim included. They are 284 KB and they are what turns a
+// machine with no prebuilt artifacts into one that can make them; fetching them over the network
+// would add a way for the build step to fail before it starts, to save a quarter of a megabyte.
+def genTools = layout.buildDirectory.dir('generated-tools')
 def isWindows = System.getProperty('os.name').toLowerCase().contains('win')
 
 tasks.register('buildForbricJars', Exec) {
@@ -32,22 +36,37 @@ tasks.register('buildForbricJars', Exec) {
 	outputs.dir("${kernelDir}/build/libs")
 }
 
+// The byte-merge tools, shaded with the ASM they need. Not a library of the installer's — it is run as a
+// subprocess (4 GB heap, which this JVM cannot grant itself), so it travels as a resource and is unpacked.
+tasks.register('buildMergeTools', Exec) {
+	description = "Build the merge-tools jar the installer ships and runs."
+	workingDir loaderDir
+	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', 'mergeToolsJar'] : ['./gradlew', 'mergeToolsJar'])
+	inputs.dir("${loaderDir}/src/tools")
+	inputs.file("${loaderDir}/build.gradle")
+	outputs.dir("${loaderDir}/build/libs")
+}
+
 tasks.register('bundleForbric') {
 	description = "Copy Forbric's own jars into the installer's resources, with a manifest describing them."
-	dependsOn 'buildForbricJars'
+	dependsOn 'buildForbricJars', 'buildMergeTools'
 	// Without these the task is "up to date" the moment its output directory exists, and the installer keeps
 	// shipping whichever kernel jar it bundled first — an install that silently predates the fix you just made.
 	inputs.files(
 			file("${kernelDir}/build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar"),
 			file("${loaderDir}/build/libs/forbric-loader-0.1.0-SNAPSHOT.jar"),
-			file("${loaderDir}/build/libs/forbricruntime-0.1.0-SNAPSHOT.jar"))
+			file("${loaderDir}/build/libs/forbricruntime-0.1.0-SNAPSHOT.jar"),
+			file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0-SNAPSHOT.jar"))
 			.withPropertyName('forbricJars')
 			.withPathSensitivity(PathSensitivity.NONE)
 	outputs.dir(genResources)
 	doLast {
+		// Clear the WHOLE output directory, not just forbric/libs. It once also held the merge-tools jar; when
+		// that moved to its own task the stale copy stayed behind and collided with the new one, which
+		// processResources reports as a duplicate entry rather than as the stale output it is.
 		def outDir = genResources.get().asFile
+		outDir.deleteDir()
 		def libsRoot = new File(outDir, 'forbric/libs')
-		libsRoot.deleteDir()
 		libsRoot.mkdirs()
 
 		def entries = []
@@ -94,8 +113,135 @@ tasks.register('bundleForbric') {
 	}
 }
 
-sourceSets.main.resources.srcDir genResources
-processResources.dependsOn 'bundleForbric'
+// The merge tools are staged, never listed in the libraries manifest: they are a build tool the installer
+// runs as a subprocess, not something the installed profile puts on a classpath.
+tasks.register('bundleTools') {
+	description = "Copy the merge-tools jar into the installer's resources."
+	dependsOn 'buildMergeTools'
+	inputs.file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0-SNAPSHOT.jar")
+			.withPropertyName('mergeTools').withPathSensitivity(PathSensitivity.NONE)
+	outputs.dir(genTools)
+	doLast {
+		def src = new File(loaderDir, 'build/libs/forbric-merge-tools-0.1.0-SNAPSHOT.jar')
+		if (!src.isFile()) throw new GradleException("missing ${src} — build it first")
+		def dest = new File(genTools.get().asFile, 'forbric/tools/forbric-merge-tools.jar')
+		dest.parentFile.mkdirs()
+		dest.bytes = src.bytes
+		println "bundleTools → ${src.length() / 1024} KB"
+	}
+}
+
+sourceSets.main.resources.srcDir genTools
+processResources.dependsOn 'bundleTools'
+
+// A slim installer carries no library payload and downloads it from the release at install time. The bundled
+// build stays the default because it is the one that works with no network.
+//   ./gradlew jar             bundled (self-contained)
+//   ./gradlew jar -Pslim      slim (downloads Forbric's jars at install time)
+def slim = project.hasProperty('slim')
+if (!slim) {
+	sourceSets.main.resources.srcDir genResources
+	processResources.dependsOn 'bundleForbric'
+}
+
+// Bake the release coordinates into the jar. RemoteSource reads this at runtime; its manifestSha256 is the
+// trust anchor that makes the manifest's per-jar digests mean something, because it is the one digest an
+// attacker who controls the release cannot rewrite.
+if (project.hasProperty('releasePin')) {
+	def pin = file(project.property('releasePin'))
+	if (!pin.isFile()) throw new GradleException("releasePin file not found: ${pin}")
+	processResources {
+		from(pin) { rename '.*', 'forbric-release.properties' }
+		// `from` a file that has since vanished copies nothing and says nothing — that would produce an
+		// installer that looks pinned, is not, and only says so as a warning on a user's machine. So check at
+		// execution time too: `clean jar -PreleasePin=build/...` deletes the pin before this task runs.
+		doLast {
+			def landed = new File(destinationDir, 'forbric-release.properties')
+			if (!landed.isFile()) {
+				throw new GradleException("-PreleasePin was given but ${pin} did not reach the jar. If you ran"
+						+ " `clean` in the same invocation it deleted the pin first: re-run :releaseAssets,"
+						+ " then build without clean.")
+			}
+		}
+	}
+}
+
+// ---- GitHub release assets: what gets uploaded, and the manifest a slim installer downloads ----
+//
+// Two-step on purpose, and the order cannot be collapsed: the pin is a digest of the manifest, so the manifest
+// has to exist before the installer that pins it is built.
+//
+//   ./gradlew releaseAssets -PreleaseTag=v0.1.0
+//   gh release create v0.1.0 build/release/assets/*
+//   ./gradlew jar -Pslim -PreleasePin=build/release/forbric-release.properties     (NOT with `clean`)
+//   gh release upload v0.1.0 build/libs/forbric-kernel-installer-*.jar
+tasks.register('releaseAssets') {
+	description = 'Write build/release/: the jars to attach to a GitHub release + the manifest the installer downloads.'
+	dependsOn 'bundleForbric'
+	def repo = project.findProperty('releaseRepo') ?: 'https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader'
+	def outRoot = layout.buildDirectory.dir('release')
+	outputs.dir(outRoot)
+	doLast {
+		def tag = project.findProperty('releaseTag')
+		if (!tag) throw new GradleException('releaseAssets needs -PreleaseTag=<tag>, e.g. -PreleaseTag=v0.1.0')
+		def staged = new File(genResources.get().asFile, 'forbric-kernel-libraries.json')
+		if (!staged.isFile()) throw new GradleException("missing ${staged} — run :bundleForbric first")
+		def manifest = new groovy.json.JsonSlurper().parse(staged)
+
+		def root = outRoot.get().asFile
+		def assets = new File(root, 'assets')
+		assets.deleteDir()
+		assets.mkdirs()
+
+		// The released manifest carries NO 'resource' field: every entry must be downloaded. That is what makes
+		// a slim installer actually go to the network instead of quietly preferring a payload it does not have.
+		def released = [version: manifest.version, release: [tag: tag, repo: repo], libraries: []]
+		manifest.libraries.each { lib ->
+			def src = new File(genResources.get().asFile, (lib.resource as String).substring(1))
+			if (!src.isFile()) throw new GradleException("staged jar for ${lib.coordinate} not found: ${src}")
+			// The asset name MUST come from the COORDINATE, never from the source file's name: the installer
+			// asks for the basename Util.coordinateToPath produces. A name derived any other way 404s at
+			// install time for every user, and never on the machine that published it.
+			def parts = (lib.coordinate as String).split(':')
+			def basename = parts[1] + '-' + parts[2] + (parts.length > 3 ? '-' + parts[3] : '') + '.jar'
+			def dest = new File(assets, basename)
+			if (dest.exists()) throw new GradleException("two libraries would upload as the same asset: ${basename}")
+			dest.bytes = src.bytes
+			released.libraries << [coordinate: lib.coordinate, path: lib.path, sha1: lib.sha1, size: lib.size]
+		}
+
+		def manifestFile = new File(assets, 'forbric-kernel-libraries.json')
+		manifestFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(released))
+
+		def sha256 = java.security.MessageDigest.getInstance('SHA-256')
+				.digest(manifestFile.bytes).collect { String.format('%02x', it) }.join('')
+		def pin = new File(root, 'forbric-release.properties')
+		pin.text = "# Written by :releaseAssets. Baked into the installer jar via -PreleasePin.\n" +
+				"repo=${repo}\ntag=${tag}\nmanifestSha256=${sha256}\n"
+
+		println "releaseAssets -> ${assets} (${released.libraries.size()} jars + manifest)"
+		println "  manifest sha256 : ${sha256}"
+		println "  next            : gh release create ${tag} ${assets}/*"
+		println "                    ./gradlew jar -Pslim -PreleasePin=${pin}"
+	}
+}
+
+// ---- Release bundle: the runnable jar plus the double-click launchers ----
+//
+// The launchers are not a convenience. A Minecraft player often has NO system Java at all — the only JVM on the
+// machine is the one the launcher downloaded for the game, which is not on PATH and not what the .jar file
+// association points at. These scripts search JAVA_HOME, then PATH, then the launcher's own runtime folder, so
+// double-clicking works on exactly the machine that has no Java of its own. Dropping them silently breaks the
+// README's promise that you do not need to install Java yourself.
+tasks.register('releaseZip', Zip) {
+	description = 'Assemble build/dist/forbric-kernel-installer-<ver>.zip (runnable jar + .command/.bat launchers).'
+	dependsOn 'jar'
+	archiveFileName = "forbric-kernel-installer-${version}.zip"
+	destinationDirectory = layout.buildDirectory.dir('dist')
+	from(tasks.named('jar').flatMap { it.archiveFile })
+	from('packaging/Forbric-Installer.command') { filePermissions { unix('0755') } }
+	from('packaging/Forbric-Installer.bat')
+}
 
 jar {
 	archiveBaseName = 'forbric-kernel-installer'
