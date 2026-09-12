@@ -82,7 +82,7 @@ running both real runtimes together is possible at all.
    | Field | What to put |
    | --- | --- |
    | Minecraft folder | your `.minecraft`. It guesses; fix it if you use a custom folder. |
-   | Mode | **`full-forge-26.2`** — Fabric + MinecraftForge on 26.2. This is the one that runs Forge mods. (`intermediary-v1` is a lighter mode on 1.21.11 with no Forge-family runtime at all, so treat it as Fabric-only.) |
+   | Mode | **`full-forge-26.2`** — Fabric + MinecraftForge on 26.2. This is the one that runs Forge mods. |
    | Download the base version | leave it ticked. |
 
 5. Press install and wait. **The first install takes a few minutes.** It is downloading Minecraft and
