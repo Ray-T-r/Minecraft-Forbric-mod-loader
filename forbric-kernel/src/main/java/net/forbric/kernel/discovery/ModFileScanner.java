@@ -60,6 +60,8 @@ import net.forbric.kernel.util.ForbricLog;
  * with "plugins must not be empty" exactly as it did with no index at all.
  */
 public final class ModFileScanner {
+	private static final String GAME_SIDE = "net.forbric.kernel.runtime.KernelScanData";
+
 	private ModFileScanner() {
 	}
 
@@ -68,47 +70,46 @@ public final class ModFileScanner {
 	 * tests can assert the member-name SHAPES without a live NeoForge SPI on the classpath — the shapes are the whole
 	 * contract here, and getting one wrong is invisible until a mod's plugin system quietly finds nothing.
 	 */
-	record Found(String annotationDesc, ElementType target, String ownerInternalName, String memberName,
+	public record Found(String annotationDesc, ElementType target, String ownerInternalName, String memberName,
 			Map<String, Object> values) {
+	}
+
+	/**
+	 * One class triple, in the shape {@code ModFileScanData.ClassData} takes.
+	 *
+	 * <p>This was an {@code Object[]} of length three, read back positionally as {@code c[0]}/{@code c[1]}/
+	 * {@code c[2]} and handed straight to a reflectively-resolved constructor. Two unchecked things in a row: the
+	 * array said nothing about what belonged in each slot, and the constructor lookup said nothing about whether
+	 * it still took them in that order. Swapping {@code name} and {@code parent} would have compiled, run, and
+	 * produced an index in which every class claims to extend itself — which no mod would report, they would just
+	 * find nothing.
+	 */
+	public record ClassEntry(Type name, Type parent, Set<Type> interfaces) {
 	}
 
 	/**
 	 * Scans {@code jar} and returns a populated {@code ModFileScanData}, or null if one cannot be built.
 	 *
-	 * @param gameLoader the loader holding the NeoForge SPI — all game types are reached reflectively, as everywhere
-	 *                   on the kernel's boot side
+	 * <p>Two halves with a clean line between them. The ASM pass ({@link #collect}) names no game type and stays
+	 * here, on the boot side, where the rest of the kernel's bytecode machinery lives. Turning its output into the
+	 * NeoForge SPI's own records is the only part that needs game types, and it now lives on the GAME side
+	 * ({@code net.forbric.kernel.runtime.KernelScanData}) where a compiler checks it.
+	 *
+	 * <p>That materialisation used to be three {@code Class.forName} calls, two constructor lookups by exact
+	 * parameter list, and two {@code getMethod} calls — six independent strings holding up an index whose only
+	 * failure mode is that mods quietly find nothing in it.
+	 *
+	 * @param gameLoader the loader holding the NeoForge SPI
 	 */
 	public static Object scan(Path jar, ClassLoader gameLoader) {
 		try {
-			Class<?> scanDataCls = Class.forName(
-					"net.neoforged.neoforgespi.language.ModFileScanData", false, gameLoader);
-			Class<?> annotationDataCls = Class.forName(
-					"net.neoforged.neoforgespi.language.ModFileScanData$AnnotationData", false, gameLoader);
-			Class<?> classDataCls = Class.forName(
-					"net.neoforged.neoforgespi.language.ModFileScanData$ClassData", false, gameLoader);
-
 			List<Found> found = new ArrayList<>();
-			List<Object[]> classes = new ArrayList<>();
+			List<ClassEntry> classes = new ArrayList<>();
 			collect(jar, found, classes);
-			if (found.isEmpty() && classes.isEmpty()) return scanDataCls.getConstructor().newInstance();
 
-			Object scanData = scanDataCls.getConstructor().newInstance();
-			@SuppressWarnings("unchecked")
-			Set<Object> annotations = (Set<Object>) scanDataCls.getMethod("getAnnotations").invoke(scanData);
-			@SuppressWarnings("unchecked")
-			Set<Object> classSet = (Set<Object>) scanDataCls.getMethod("getClasses").invoke(scanData);
-
-			Constructor<?> annotationCtor = annotationDataCls.getConstructor(
-					Type.class, ElementType.class, Type.class, String.class, Map.class);
-			for (Found f : found) {
-				annotations.add(annotationCtor.newInstance(
-						Type.getType(f.annotationDesc()), f.target(),
-						Type.getObjectType(f.ownerInternalName()), f.memberName(), f.values()));
-			}
-			Constructor<?> classCtor = classDataCls.getConstructor(Type.class, Type.class, Set.class);
-			for (Object[] c : classes) {
-				classSet.add(classCtor.newInstance(c[0], c[1], c[2]));
-			}
+			Object scanData = Class.forName(GAME_SIDE, true, gameLoader)
+					.getMethod("build", List.class, List.class)
+					.invoke(null, found, classes);
 
 			ForbricLog.debug("[Forbric/Scan] %s: %d annotation(s) over %d class(es)", jar.getFileName(),
 					found.size(), classes.size());
@@ -123,7 +124,7 @@ public final class ModFileScanner {
 	 * The ASM pass on its own — every annotation occurrence and every class triple in {@code jar}. Package-private:
 	 * this half needs no game classes, so it is the half the tests can reach.
 	 */
-	static void collect(Path jar, List<Found> found, List<Object[]> classes) throws Exception {
+	public static void collect(Path jar, List<Found> found, List<ClassEntry> classes) throws Exception {
 		try (JarFile zip = new JarFile(jar.toFile())) {
 			for (var entries = zip.entries(); entries.hasMoreElements();) {
 				ZipEntry entry = entries.nextElement();
@@ -148,10 +149,10 @@ public final class ModFileScanner {
 	/** Records every annotation, visible or not, on the class and on each member, plus the class/super/interfaces triple. */
 	private static final class Collector extends ClassVisitor {
 		private final List<Found> found;
-		private final List<Object[]> classes;
+		private final List<ClassEntry> classes;
 		private String internalName;
 
-		Collector(List<Found> found, List<Object[]> classes) {
+		Collector(List<Found> found, List<ClassEntry> classes) {
 			super(Opcodes.ASM9);
 			this.found = found;
 			this.classes = classes;
@@ -167,10 +168,10 @@ public final class ModFileScanner {
 			}
 			// A null superclass stays null, the way FML records it. Only java/lang/Object itself has none, but a
 			// consumer comparing parent() against null has to get the same answer it would from genuine FML.
-			classes.add(new Object[] {
+			classes.add(new ClassEntry(
 					Type.getObjectType(name),
 					superName == null ? null : Type.getObjectType(superName),
-					parents});
+					parents));
 		}
 
 		@Override

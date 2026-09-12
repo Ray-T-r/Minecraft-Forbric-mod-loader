@@ -102,6 +102,10 @@ public final class KernelRuntimeClasses {
 				new Call("setActiveContainer", void.class, Object.class),
 				new Call("constructMod", Object.class, String.class, KernelForgeModContext.Handle.class),
 				new Call("startup", void.class, Object.class))));
+		// Materialises the kernel's own annotation scan into NeoForge's ModFileScanData. The scan itself is
+		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
+		CLASSES.put("net.forbric.kernel.runtime.KernelScanData", new Entry(Origin.COMPILED, List.of(
+				new Call("build", Object.class, List.class, List.class))));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));

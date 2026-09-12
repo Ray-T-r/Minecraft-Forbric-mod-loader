@@ -262,14 +262,28 @@ class KernelRuntimeClassesTest {
 		}
 	}
 
-	/** A seam signature may only use types the BOOT side can name — otherwise it could not be declared here. */
+	/**
+	 * A seam signature may only carry types that are ONE class in the JVM.
+	 *
+	 * <p>The boot side and the game side are different loaders, so a type either side could define its own copy
+	 * of is not a shared vocabulary — it is two types with the same name, and a value crossing the seam in one
+	 * would fail its own {@code instanceof}. The invariant is therefore "parent-loaded", not "in some package":
+	 * the JDK, or something {@code DelegationPolicy} pins to the parent. That is what lets the seam carry
+	 * {@code org.objectweb.asm.Type} and {@code ModFileScanner}'s records as well as {@code Object} — each is
+	 * pinned, so both sides resolve the same class — while still rejecting anything game-side, which could not be
+	 * named on the boot side at all, and any library that is merely on one classpath.
+	 */
 	private static void assertSeamType(String binary, KernelRuntimeClasses.Call call, Class<?> t) {
-		String pkg = t.isPrimitive() || t.getPackage() == null ? "java.lang" : t.getPackage().getName();
-		assertTrue(pkg.startsWith("java.") || pkg.startsWith("net.forbric."),
-				binary + "." + call.name() + " crosses the boot/game seam carrying " + t.getName()
-						+ ". Game objects have to cross as Object: a signature naming a game type cannot be "
-						+ "declared on the boot side at all, and one naming a library type ties the seam to a "
-						+ "jar that may be loaded on only one of the two sides");
+		if (t.isPrimitive()) return; // void and the primitives are the same everywhere
+
+		String name = t.getName();
+		boolean jdk = name.startsWith("java.") || name.startsWith("javax.");
+
+		assertTrue(jdk || DelegationPolicy.alwaysParent(name),
+				binary + "." + call.name() + " crosses the boot/game seam carrying " + name
+						+ ", which DelegationPolicy does not pin to the parent. Game objects have to cross as "
+						+ "Object; anything else must be a type both loaders resolve to the SAME class, or the "
+						+ "two sides are not speaking about the same thing");
 	}
 
 	@Test
