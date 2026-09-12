@@ -23,6 +23,7 @@ import java.util.List;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Reflect;
 
 /**
  * Constructs the traditional-MinecraftForge baseline mod ({@code net.minecraftforge.common.ForgeMod}) and fires
@@ -77,7 +78,7 @@ public final class KernelForgeBaseline {
 					+ "RegisterEvent x%d on %d bus(es) [baseline + %d mod(s)]", created, n, all.size(),
 					modHandles.size());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Forge] could not register traditional-Forge baseline", KernelBusSupport.unwrap(t));
+			ForbricLog.warn("[Forbric/Forge] could not register traditional-Forge baseline", Reflect.unwrap(t));
 		}
 	}
 
@@ -105,7 +106,7 @@ public final class KernelForgeBaseline {
 			return ((java.util.Map<?, ?>) rf.get(active)).size() - before;
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Forge] NewRegistryEvent failed — Forge custom registries (fluid_type etc.) "
-					+ "will not exist", KernelBusSupport.unwrap(t));
+					+ "will not exist", Reflect.unwrap(t));
 			return 0;
 		}
 	}

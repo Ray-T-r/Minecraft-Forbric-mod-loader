@@ -23,7 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.InputStream;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -96,16 +95,6 @@ class KernelBusSupportTest {
 		assertThrows(NoSuchMethodException.class, () -> KernelBusSupport.singleArgMethod(Sample.class, "absent"));
 	}
 
-	@Test
-	void unwrapPeelsAnInvocationTargetExceptionAndNothingElse() {
-		RuntimeException real = new IllegalStateException("the real one");
-
-		assertSame(real, KernelBusSupport.unwrap(new InvocationTargetException(real)));
-		assertSame(real, KernelBusSupport.unwrap(real), "a plain throwable is its own cause here");
-
-		InvocationTargetException causeless = new InvocationTargetException(null);
-		assertSame(causeless, KernelBusSupport.unwrap(causeless), "an ITE with no cause must not become null");
-	}
 
 	// --- helpers ------------------------------------------------------------------------------------------------
 

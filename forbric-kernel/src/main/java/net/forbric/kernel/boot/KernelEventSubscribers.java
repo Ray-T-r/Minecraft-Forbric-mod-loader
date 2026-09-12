@@ -36,6 +36,7 @@ import net.forbric.api.ForeignType;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Reflect;
 
 /**
  * Registers a Forge-family mod's {@code @Mod$EventBusSubscriber} classes on the game event bus — the kernel's
@@ -177,7 +178,7 @@ public final class KernelEventSubscribers {
 						neoMethods += wireNeoSubscriber(cl, sub.className(), modBus, neo);
 					}
 				} catch (Throwable t) {
-					Throwable real = KernelBusSupport.unwrap(t);
+					Throwable real = Reflect.unwrap(t);
 					StringBuilder chain = new StringBuilder();
 					for (Throwable x = real; x != null; x = x.getCause()) chain.append("\n      caused by: ").append(x);
 					ForbricLog.warn("[Forbric/EBS] could not register " + sub.className() + chain, real);
@@ -369,7 +370,7 @@ public final class KernelEventSubscribers {
 					wired += wireNeoSubscriber(cl, sub.className(), modBus, api);
 				} catch (Throwable t) {
 					ForbricLog.debug("[Forbric/EBS] could not wire NeoForge-internal %s: %s", sub.className(),
-							String.valueOf(KernelBusSupport.unwrap(t)));
+							String.valueOf(Reflect.unwrap(t)));
 				}
 			}
 		}
@@ -428,7 +429,7 @@ public final class KernelEventSubscribers {
 			}
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/EBS] could not scan %s: %s", jar.getFileName(),
-					String.valueOf(KernelBusSupport.unwrap(t)));
+					String.valueOf(Reflect.unwrap(t)));
 		}
 		return found;
 	}

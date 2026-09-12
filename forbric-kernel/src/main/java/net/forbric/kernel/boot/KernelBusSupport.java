@@ -16,7 +16,6 @@
 
 package net.forbric.kernel.boot;
 
-import java.lang.reflect.InvocationTargetException;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
@@ -61,9 +60,5 @@ final class KernelBusSupport {
 			if (m.getName().equals(name) && m.getParameterCount() == 1) return m;
 		}
 		throw new NoSuchMethodException(owner.getName() + "." + name + "(<one argument>)");
-	}
-
-	static Throwable unwrap(Throwable t) {
-		return t instanceof InvocationTargetException && t.getCause() != null ? t.getCause() : t;
 	}
 }

@@ -33,6 +33,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Reflect;
 
 /**
  * Feeds NeoForge's own {@code RuntimeEnumExtender} the {@code META-INF/enumextensions.json} of every Forge-family
@@ -124,7 +125,7 @@ public final class NeoEnumExtensions {
 			return 0;
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/EnumExt] could not load enum extension declarations — mods that add vanilla "
-					+ "enum constants will fail on the first lookup", KernelBusSupport.unwrap(t));
+					+ "enum constants will fail on the first lookup", Reflect.unwrap(t));
 			return 0;
 		}
 	}
