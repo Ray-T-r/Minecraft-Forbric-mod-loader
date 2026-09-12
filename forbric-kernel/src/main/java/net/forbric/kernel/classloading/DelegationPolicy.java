@@ -81,7 +81,6 @@ public final class DelegationPolicy {
 			// and a second copy defined game-side would start that bookkeeping over from empty while the first
 			// copy still believed it had done the work.
 			"net.forbric.kernel.interop.",
-			"net.forbric.kernel.api.",
 			// The unified Forbric API. Parent-loaded for the same reason net.fabricmc.api. is: it is the
 			// vocabulary the kernel and all three compatibility layers share, so there must be exactly ONE
 			// copy of it in the JVM. Two copies would make an Ecosystem constant handed across the boot/game

@@ -16,8 +16,17 @@
 
 package net.forbric.kernel.classloading;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
 
@@ -73,5 +82,45 @@ class DelegationPolicyTest {
 	void unlistedLibrariesFallThroughToChildFirst() {
 		assertFalse(DelegationPolicy.alwaysParent("com.google.common.collect.ImmutableList"));
 		assertFalse(DelegationPolicy.alwaysGame("com.google.common.collect.ImmutableList"));
+	}
+
+	/**
+	 * Every {@code net.forbric.} package this file pins must be a package that EXISTS.
+	 *
+	 * <p>A pin on a package with no sources is not inert, it is misleading: it reads as a reserved slot, so the
+	 * next person looking for where a kernel-owned API goes finds two candidate answers and no way to tell which
+	 * one the code means. {@code net.forbric.kernel.api.} was pinned here for exactly that long — named in the
+	 * README as the home of a {@code KernelHooks} that was never written, while the real unified API grew in
+	 * {@code net.forbric.api.} next to it.
+	 *
+	 * <p>The scan reads the SOURCE rather than calling {@link DelegationPolicy#alwaysParent} in a loop, because
+	 * the defect is a name present in the list that nothing satisfies — and a list that cannot be enumerated
+	 * cannot be checked for that. It is the same reason {@code ApiLayeringTest} reads source: the thing being
+	 * asserted about is the text, not the behaviour.
+	 */
+	@Test
+	void everyPinnedForbricPackageExists() throws Exception {
+		Path root = Path.of(System.getProperty("user.dir"));
+		Path source = root.resolve("src/main/java/net/forbric/kernel/classloading/DelegationPolicy.java");
+		assumeTrue(Files.isRegularFile(source), "DelegationPolicy source not present");
+
+		Matcher pins = Pattern.compile("\"(net\\.forbric\\.[A-Za-z0-9_.]*)\\.\"").matcher(Files.readString(source));
+		List<String> missing = new ArrayList<>();
+		int found = 0;
+		while (pins.find()) {
+			found++;
+			String pkg = pins.group(1).replace('.', '/');
+			// Two source sets can satisfy a pin: the boot side, and the game side that ALWAYS_GAME reserves.
+			if (!Files.isDirectory(root.resolve("src/main/java/" + pkg))
+					&& !Files.isDirectory(root.resolve("src/runtime/java/" + pkg))) {
+				missing.add(pins.group(1));
+			}
+		}
+
+		assertTrue(found > 1, "the scan matched nothing, which would make the assertion vacuous");
+		assertEquals(List.of(), missing,
+				"these packages are pinned but have no sources. Either the package was renamed and the pin was left "
+						+ "behind, or the pin is a reservation — and a reservation nothing satisfies belongs in a "
+						+ "comment, not in the list the classloader actually consults");
 	}
 }
