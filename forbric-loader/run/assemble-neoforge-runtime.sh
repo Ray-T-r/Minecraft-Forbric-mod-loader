@@ -32,20 +32,22 @@
 # [26.2.0.16-beta,), the one range 26.2.0.7-beta failed. Going past .38 buys nothing until jei and the
 # sophisticated* pair publish builds compiled against the new event classes; when they do, re-run the check:
 #     diff <(class list of the old neoforge-runtime.jar) <(class list of the new one)
-#   and scan the mods for anything that only the old side declares. forbric-kernel/run/gate-m9-client.sh keeps
-#   the version audit honest from the other direction (it asserts WHICH mods are under-provisioned).
+#   and scan the mods for anything that only the old side declares. Check it from the other direction too —
+#   every mod's declared `neoforge` versionRange against the build being moved to — so an under-provisioned
+#   mod is named up front instead of failing somewhere far away at runtime.
 #
-# Two libraries in that config.json are deliberately NOT listed below, because the KERNEL supplies them on the
-# parent classpath (both are pinned to ALWAYS_PARENT in DelegationPolicy, so the kernel's copy is the only one
-# NeoForge can see) — bumping NeoForge means checking them, not copying them:
-#   org.ow2.asm            .38-beta wants 9.9.1, .64 wants 9.10.1; forbric-kernel/gradle.properties is 9.10.1.
+# Two libraries in that config.json are deliberately NOT listed below, because they already come from the parent
+# classpath and not from this jar: they are the loader's own dependencies (forbric-loader declares both, and the
+# installer stages them as `classpath` libraries), so the parent-loaded copy is the one NeoForge ends up seeing.
+# Bumping NeoForge therefore means checking them, not copying them:
+#   org.ow2.asm            .38-beta wants 9.9.1, .64 wants 9.10.1; forbric-loader/gradle.properties is 9.10.1.
 #   com.electronwill.night-config
-#                          .38-beta wants 3.8.3, .64 wants 3.9.0; the kernel pins 3.8.1. Measured rather than
+#                          .38-beta wants 3.8.3, .64 wants 3.9.0; this tree pins 3.8.1. Measured rather than
 #                          assumed: of the 70 distinct NightConfig members referenced by the universal jar plus
 #                          fancymodloader loader, ZERO are missing from 3.8.1, and 3.9.0 is purely additive over
 #                          it (8 new classes — FileWatcher$NamedDaemonThreadFactory, the io.IoUtils family,
-#                          TomlVersion — none referenced, none removed). 3.8.1 stays, which also keeps the
-#                          kernel's --offline builds working. Re-run that comparison on the next bump: a
+#                          TomlVersion — none referenced, none removed). 3.8.1 stays, which also keeps --offline
+#                          builds working. Re-run that comparison on the next bump: a
 #                          NightConfig mismatch here is not a link error, it is the StampedConfig.valueMap()
 #                          class of failure that took a whole session to find last time.
 set -euo pipefail

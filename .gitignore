@@ -26,8 +26,10 @@ bin/
 # ---- Reference material — NOT part of this Apache-2.0 clean-room project ----
 # FML/ holds 257 genuine LGPL net.minecraftforge.fml source files. Keeping it
 # out of this repository's history is what preserves the clean-room provenance
-# the whole project depends on. Same for the upstream fabric-loader checkout.
+# the whole project depends on.
 /FML/
+# fabric-loader/ is where bootstrap.sh clones the substrate: upstream's code at an upstream tag plus
+# forbric-loader/patches/. Deliberately NOT vendored, so its provenance stays inspectable.
 /fabric-loader/
 
 # ---- Test-instance runtime state ----

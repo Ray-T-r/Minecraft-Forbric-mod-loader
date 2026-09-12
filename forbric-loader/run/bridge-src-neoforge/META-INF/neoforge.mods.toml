@@ -1,7 +1,7 @@
 modLoader="javafml"
 loaderVersion="[3,)"
 license="Apache-2.0"
-issueTrackerURL="https://example.invalid/forbric"
+issueTrackerURL="https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/issues"
 
 [[mods]]
 modId="forbricneo"

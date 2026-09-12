@@ -32,12 +32,12 @@ import net.forbric.loader.impl.util.ForbricLog;
  * end: a client at the end of {@code Minecraft.close()} instead of hanging until vanilla's 15-second
  * {@code ClientShutdownWatchdog} files a "Client shutdown from post-main" crash, a dedicated server at the end of
  * {@code onServerExit()} instead of sitting there forever after "Stopping server" (it has no watchdog and no
- * {@code System.exit}). The class keeps its client-era name; the kernel calls it on both sides.
+ * {@code System.exit}). The class keeps its client-era name; it is called on both sides.
  *
  * <p>Both leaks are night-config's {@code FileWatcher}: each of its per-filesystem watchers owns a
  * {@code Executors.newScheduledThreadPool(1)} built with no thread factory — a non-daemon worker parked forever on
- * {@code DelayedWorkQueue.take}, so the JVM cannot exit while one exists. FML's own shutdown would close them; the
- * kernel drives both loaders' lifecycles itself and does not run that path. There are TWO owners, and until this
+ * {@code DelayedWorkQueue.take}, so the JVM cannot exit while one exists. FML's own shutdown would close them;
+ * Forbric drives both loaders' lifecycles itself and never runs that path. There are TWO owners, and until this
  * class knew both it only ever stopped one:
  * <ul>
  * <li>NeoForge's {@code ConfigTracker} watches through night-config's {@code FileWatcher.defaultInstance()};</li>

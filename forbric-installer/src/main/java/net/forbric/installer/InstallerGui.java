@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 The Forbric Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package net.forbric.installer;
 
 import java.awt.BorderLayout;
@@ -59,12 +75,15 @@ final class InstallerGui {
 
 	private final Path initialMcDir;
 	private final Path initialManifest;
+	private final Main.Remote remote;
 	private String targetVersion;   // the base version the mode targets (flips with the mode box)
 	private String selectedMode;
 
-	InstallerGui(Path mcDir, String mcVersion, String mode, Path manifest, boolean autoDownloadBase) {
+	InstallerGui(Path mcDir, String mcVersion, String mode, Path manifest, boolean autoDownloadBase,
+			Main.Remote remote) {
 		this.initialMcDir = mcDir;
 		this.initialManifest = manifest;
+		this.remote = remote;
 		this.targetVersion = mcVersion;
 		this.selectedMode = mode;
 		this.autoDownloadBox.setSelected(autoDownloadBase);
@@ -208,16 +227,23 @@ final class InstallerGui {
 
 		installButton.setEnabled(false);
 		log.setText("");
+		// The status-line offset points into the document we just emptied; leaving it set makes the next
+		// progress line replace a range that no longer exists.
+		transientStart = -1;
 		appendLog("Installing Forbric (" + mode + ") for " + mcVersion + " into " + mcDir + " ...\n");
 
 		new SwingWorker<Void, String>() {
 			@Override
 			protected Void doInBackground() {
 				try {
-					// Dev override (--manifest) still works; otherwise use the manifest + jars bundled in this jar.
-					Installer installer = (initialManifest != null)
-							? Installer.fromManifest(initialManifest)
-							: Installer.fromBundledManifest();
+					// Same precedence as the CLI, decided by the same code: an explicit --manifest, else the
+					// release when forced or when nothing is bundled, else the bundled jars with the release
+					// left attached as a fallback.
+					RemoteSource source = remote.source(this::publish);
+					boolean useRemote = source != null
+							&& (remote.force || (initialManifest == null && !Installer.hasBundledManifest()));
+					publish("Jars from: " + Main.describeSource(initialManifest, useRemote, source));
+					Installer installer = Main.installer(initialManifest, useRemote, source);
 					installer.install(mcDir, mcVersion, mode, autoDownloadBase, this::publish);
 				} catch (Exception ex) {
 					publish("ERROR: " + ex.getMessage());
@@ -238,8 +264,22 @@ final class InstallerGui {
 		}.execute();
 	}
 
-	private void appendLog(String line) {
-		log.append(line + "\n");
+	/**
+	 * Document offset where the live status line starts, or -1 when the log ends in a settled line. A running
+	 * download refreshes one line in place instead of scrolling hundreds past; when the next real line arrives
+	 * it takes that line's place, so the finished log carries no progress noise at all.
+	 */
+	private int transientStart = -1;
+
+	private void appendLog(String raw) {
+		boolean progress = raw.startsWith(Http.PROGRESS);
+		String line = progress ? raw.substring(Http.PROGRESS.length()) : raw;
+		if (transientStart >= 0) {
+			log.replaceRange("", transientStart, log.getDocument().getLength());
+		}
+		int start = log.getDocument().getLength();
+		log.append(progress ? line : line + "\n");
+		transientStart = progress ? start : -1;
 		log.setCaretPosition(log.getDocument().getLength());
 	}
 }

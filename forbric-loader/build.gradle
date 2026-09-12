@@ -7,7 +7,7 @@ base {
 	archivesName = 'forbric-loader'
 }
 
-version = '0.1.0-SNAPSHOT'
+version = '0.1.0'
 
 java {
 	// Loader core targets Java 17 bytecode (the substrate is Java 8/17 multi-release; the MRJ slice is added
@@ -47,16 +47,6 @@ sourceSets {
 			srcDir "${fabricLoader}/minecraft/src/main/resources"  // GameProvider service descriptor
 		}
 	}
-	// The byte-merge tools. They are ordinary Java and always were — build-merged-base.sh just javac'd them on
-	// the fly against ASM jars it scavenged out of ~/.gradle/caches, which is why a machine that had never built
-	// the loader could not run a merge. Compiled here instead, and shipped as one self-contained jar (see
-	// mergeToolsJar) so the installer and the dev script run the same bytes.
-	tools {
-		java {
-			srcDir 'src/tools/java'
-		}
-	}
-
 	// Tests see the stubs as real fakes so the registration wiring is exercisable without a game boot.
 	test {
 		compileClasspath += sourceSets.stub.output
@@ -82,11 +72,6 @@ dependencies {
 	// The reused Minecraft game provider references these log bridges as optional handlers (provided at runtime by MC).
 	compileOnly 'org.apache.logging.log4j:log4j-api:2.24.3'
 	compileOnly 'org.slf4j:slf4j-api:2.0.16'
-
-	// The merge tools need ASM and nothing else; they are deliberately NOT on the loader's own classpath.
-	toolsImplementation "org.ow2.asm:asm:${project.asm_version}"
-	toolsImplementation "org.ow2.asm:asm-tree:${project.asm_version}"
-	toolsImplementation "org.ow2.asm:asm-commons:${project.asm_version}"
 
 	// --- Reused Apache-2.0 substrate deps (same coordinates as fabric-loader) ---
 	api "org.ow2.asm:asm:${project.asm_version}"
@@ -128,9 +113,66 @@ tasks.withType(JavaCompile).configureEach {
 def fabricLoaderVersion = (file("${fabricLoader}/src/main/java/net/fabricmc/loader/impl/FabricLoaderImpl.java")
 		.text =~ /VERSION\s*=\s*"(.*?)"/)[0][1]
 
+// --- Identity of the built loader jar ------------------------------------------------------------------
+// The substrate's own fabric.mod.json is what declares the builtin "fabricloader" mod, and Forbric ships a
+// BUILD of fabric-loader, so `id` must stay exactly "fabricloader": every Fabric mod declares a dependency
+// on that id, and so does forbricruntime (src/runtime-meta/fabric.mod.json). Changing it would break mod
+// resolution for the whole ecosystem.
+//
+// What must NOT stay is the rest of the identity. Shipped unmodified, the file tells the user this is
+// FabricMC's build and sends Forbric's bugs to FabricMC's issue tracker -- neither is true, and neither is
+// fair to them. So the display name, description and contact block are rewritten here, while FabricMC keeps
+// its authorship credit.
+//
+// Each substitution is asserted after the copy. If upstream reformats the file and a match silently stops
+// applying, the build FAILS rather than publishing a jar with the wrong contact details.
+def forbricRepo = 'https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader'
+def substrateIdentity = [
+		['"name": "Fabric Loader"',
+		 '"name": "Fabric Loader (Forbric build)"'],
+		['"description": "The base mod loader."',
+		 '"description": "The base mod loader. This is Forbric\'s build of FabricMC\'s fabric-loader ' +
+				 '(see the fabric_loader_ref pin in gradle.properties), carrying Forbric\'s substrate patches. ' +
+				 'Report problems with this build to Forbric, not to FabricMC."'],
+		['"homepage": "https://fabricmc.net"',
+		 '"homepage": "' + forbricRepo + '"'],
+		['"issues": "https://github.com/FabricMC/fabric-loader/issues"',
+		 '"issues": "' + forbricRepo + '/issues"'],
+		['"sources": "https://github.com/FabricMC/fabric-loader"',
+		 '"sources": "' + forbricRepo + '"'],
+		['"FabricMC"',
+		 '"FabricMC",\n    "The Forbric Project"'],
+]
+
 processResources {
 	filesMatching('fabric.mod.json') {
 		expand version: fabricLoaderVersion
+		filter { String line ->
+			substrateIdentity.each { pair -> line = line.replace(pair[0], pair[1]) }
+			line
+		}
+	}
+
+	doLast {
+		def emitted = new File(destinationDir, 'fabric.mod.json')
+		if (!emitted.isFile()) {
+			throw new GradleException('processResources emitted no fabric.mod.json -- the substrate checkout ' +
+					'is missing or its resource root moved. Run ./bootstrap.sh from the repository root.')
+		}
+		def text = emitted.text
+		// Assert on the REPLACEMENT being present, not on the original being absent: the authors
+		// substitution deliberately keeps "FabricMC" and appends to it, so "original is gone" is the
+		// wrong invariant and would fail on a correct build.
+		def missed = substrateIdentity.findAll { pair -> !text.contains(pair[1]) }
+		if (!missed.isEmpty()) {
+			throw new GradleException('the substrate fabric.mod.json was not rewritten: ' +
+					missed.collect { it[0] } + ' did not match. fabric-loader ' +
+					"${project.fabric_loader_ref} reformatted the file; update substrateIdentity in build.gradle.")
+		}
+		if (!text.contains('"id": "fabricloader"')) {
+			throw new GradleException('the builtin mod id is no longer "fabricloader" -- every Fabric mod ' +
+					'depends on that id, so this jar would resolve nothing.')
+		}
 	}
 }
 
@@ -148,11 +190,18 @@ test {
 // Knot, to ASM-scan @Mod classes; only the driver packages go to the runtime module.
 def runtimeModPackages = ['net/forbric/loader/impl/forge/minecraftforge/**', 'net/forbric/loader/impl/forge/neoforge/**', 'net/forbric/loader/impl/forge/mixin/**', 'net/forbric/loader/impl/forge/runtime/**']
 
+// Apache-2.0 section 4(a) and 4(d): a binary redistribution must carry a copy of the License and the
+// NOTICE. Both jars contain compiled Apache-2.0 code that is not Forbric's -- fabric-loader in the core jar,
+// and MixinExtras (MIT) nested inside forbricruntime -- so both need them. Until these jars were published
+// this never triggered; now that the installer downloads them, it does.
+def licenceFiles = { spec -> spec.from('LICENSE'); spec.from('NOTICE') }
+
 jar {
 	// Loader core: parent-loaded. Exclude the runtime module and its mixin configs (declared by forbricruntime).
 	exclude runtimeModPackages
 	exclude 'forbric-loader.mixins.json'
 	exclude 'forbric-neoforge-bridge.mixins.json'
+	metaInf { licenceFiles(delegate) }
 }
 
 tasks.register('runtimeJar', Jar) {
@@ -169,30 +218,10 @@ tasks.register('runtimeJar', Jar) {
 		from configurations.nestedMods
 		rename '.*\\.jar', 'mixinextras-fabric.jar'
 	}
+	metaInf { licenceFiles(delegate) }
 }
 
 assemble.dependsOn 'runtimeJar'
-
-// One self-contained jar holding the byte-merge tools and the ASM they need, run as
-//   java -Xmx4g -cp forbric-merge-tools.jar net.forbric.tools.MergedBaseBuilder <args>
-// A single-entry -cp rather than a Main-Class dispatcher: there are two entry points, and one path on the
-// command line is also the only form that needs no thought about ';' vs ':' on Windows.
-tasks.register('mergeToolsJar', Jar) {
-	description = 'The byte-merge tools plus ASM, as one jar the installer can ship and run.'
-	archiveBaseName = 'forbric-merge-tools'
-	dependsOn 'toolsClasses'
-	from sourceSets.tools.output
-	from({ configurations.toolsRuntimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }) {
-		// ASM is BSD-3; keep its own notices out of the way but do not strip them.
-		exclude 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'META-INF/*.EC'
-		exclude 'module-info.class'
-	}
-	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-
-assemble.dependsOn 'mergeToolsJar'
-
-
 
 // Emits the full runtime classpath (Forbric classes + reused substrate + bundled deps) so the
 // launch script (run/launch-1.21.11.sh) can compose it with the Minecraft install classpath.
