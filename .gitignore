@@ -70,3 +70,6 @@ XaeroWaypoints_BACKUP*/
 
 # ---- macOS ----
 .DS_Store
+
+# ---- Claude ----
+CLAUDE.md
