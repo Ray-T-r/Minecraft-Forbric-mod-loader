@@ -19,11 +19,6 @@ package net.forbric.kernel.boot;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;
 
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.Type;
-
 import net.forbric.kernel.classloading.ForbricClassLoader;
 
 /**
@@ -36,14 +31,19 @@ import net.forbric.kernel.classloading.ForbricClassLoader;
  * {@code LambdaMetafactory} then rejects the caller ({@code LambdaConversionException: Invalid caller}).
  *
  * <p>The only way to mint a full-power lookup for a class is from code running in that class's own module. So the
- * kernel defines a one-method helper class DIRECTLY into {@link ForbricClassLoader} (via
- * {@link ForbricClassLoader#defineRuntimeClass}); calling its {@code lookup()} yields a lookup whose class is
- * game-side and in the game loader's unnamed module. {@link #privateLookupIn} then teleports that WITHIN the game
- * module — a full-power result LambdaMetafactory accepts.
+ * helper whose {@code lookup()} is called lives in {@code net.forbric.kernel.runtime} — the kernel's game-side
+ * source set, which {@code DelegationPolicy} pins {@code ALWAYS_GAME} — and is therefore defined by
+ * {@link ForbricClassLoader}, in the game loader's unnamed module. {@link #privateLookupIn} then teleports that
+ * WITHIN the game module, a full-power result LambdaMetafactory accepts.
+ *
+ * <p>The helper used to be emitted here as five ASM calls, because before the game-side source set had a
+ * delivery path there was nowhere to compile it. It is now compiled from
+ * {@code net.forbric.kernel.runtime.KernelGameLookupHelper} and carried inside the boot jar. Its absence is
+ * reported ONCE at boot by {@link KernelRuntimeClasses}; the throw here is the second line of defence, and says
+ * the same thing, because whoever reaches it may not have the top of the log.
  */
 public final class KernelGameLookup {
 	private static final String HELPER = "net.forbric.kernel.runtime.KernelGameLookupHelper";
-	private static final String HELPER_INTERNAL = HELPER.replace('.', '/');
 
 	private static volatile MethodHandles.Lookup gameLookup;
 
@@ -58,7 +58,14 @@ public final class KernelGameLookup {
 		synchronized (KernelGameLookup.class) {
 			if (gameLookup != null) return gameLookup;
 
-			Class<?> helper = loader.defineRuntimeClass(HELPER, generate());
+			Class<?> helper;
+			try {
+				helper = Class.forName(HELPER, true, loader);
+			} catch (ClassNotFoundException absent) {
+				throw new ClassNotFoundException(HELPER + " — the kernel's game-side jar is not on the loader. "
+						+ "This boot jar was built without the staged game artifacts; rebuild with them present "
+						+ "(../forbric-loader/run/) via ./gradlew jar", absent);
+			}
 			Method lookupM = helper.getMethod("lookup");
 			gameLookup = (MethodHandles.Lookup) lookupM.invoke(null);
 			return gameLookup;
@@ -72,27 +79,5 @@ public final class KernelGameLookup {
 	public static MethodHandles.Lookup privateLookupIn(Class<?> target, ForbricClassLoader loader)
 			throws ReflectiveOperationException {
 		return MethodHandles.privateLookupIn(target, get(loader));
-	}
-
-	/**
-	 * {@code public final class KernelGameLookupHelper { public static Lookup lookup() { return
-	 * MethodHandles.lookup(); } }} — the smallest class whose {@code lookup()} returns a full-power, game-side
-	 * lookup.
-	 */
-	private static byte[] generate() {
-		ClassWriter cw = new ClassWriter(0);
-		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL, HELPER_INTERNAL, null, "java/lang/Object", null);
-
-		String lookupDesc = "()" + Type.getDescriptor(MethodHandles.Lookup.class);
-		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "lookup", lookupDesc, null, null);
-		mv.visitCode();
-		mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/invoke/MethodHandles", "lookup",
-				"()Ljava/lang/invoke/MethodHandles$Lookup;", false);
-		mv.visitInsn(Opcodes.ARETURN);
-		mv.visitMaxs(1, 0);
-		mv.visitEnd();
-
-		cw.visitEnd();
-		return cw.toByteArray();
 	}
 }

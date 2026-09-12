@@ -229,7 +229,6 @@ public final class KernelBoot {
 
 		ForbricClassLoader loader = new ForbricClassLoader(owned.toArray(new URL[0]),
 				KernelBoot.class.getClassLoader());
-
 		// The jars cross-jar arbitration superseded, as a LAST RESORT only — a mod built against the other side's
 		// platform-only class would otherwise get a bare NoClassDefFoundError. See ForbricClassLoader.setRescueJars
 		// for why this cannot shadow the winner, and for what it deliberately does not fix.
@@ -451,6 +450,13 @@ public final class KernelBoot {
 					forgeConfigs.isEmpty() ? "none kept" : String.join(", ", forgeConfigs));
 		}
 		KernelMixinBootstrap.init(loader, side.envType, mixinConfigs);
+
+		// The kernel's OWN game-side half, proven here rather than assumed: loaded through the finished pipeline,
+		// checked to have landed on the game loader. Deliberately not earlier -- these classes should take exactly
+		// the path every game class takes, and before this point the transformer and Mixin are not yet installed.
+		// Deliberately not later either: the next line starts seeding the ecosystems, and a kernel missing its own
+		// game side should say so before it touches theirs. See KernelRuntimeClasses.
+		KernelRuntimeClasses.verify(loader);
 
 		// Seed the minimum genuine-loader identity the merged base's patched <clinit>s read (no lifecycle). The
 		// Dist must match the side — a client seeded as DEDICATED_SERVER makes NeoForge reject the local player's
