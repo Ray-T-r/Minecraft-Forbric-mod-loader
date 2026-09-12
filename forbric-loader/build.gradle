@@ -32,6 +32,14 @@ sourceSets {
 			srcDir 'src/stub/java'
 		}
 	}
+	// The byte-merge tools (MergedBaseBuilder, RuntimeInteropPatcher, MergedLinkChecker). They are build-time
+	// programs, not loader code: they read jars and write jars, they never run inside the game, and nothing in
+	// src/main references them. So they compile on their own, against ASM alone, and ship in their own jar.
+	tools {
+		java {
+			srcDir 'src/tools/java'
+		}
+	}
 	main {
 		compileClasspath += sourceSets.stub.output
 		java {
@@ -98,6 +106,14 @@ dependencies {
 	api "com.electronwill.night-config:toml:${project.night_config_version}"
 	// JSON reader for fabric.mod.json (placeholder until the reused Fabric ModMetadataParser is wired in at P0)
 	api "com.electronwill.night-config:json:${project.night_config_version}"
+
+	// The merge tools see ASM and nothing else — the same three artifacts run/build-merged-base.sh puts on
+	// javac's classpath when it compiles them by hand. They are `implementation`, not `api`: what mergeToolsJar
+	// shades is exactly this list, so an accidental extra dependency shows up as a bigger jar, not as a
+	// NoClassDefFoundError in the installer's subprocess.
+	toolsImplementation "org.ow2.asm:asm:${project.asm_version}"
+	toolsImplementation "org.ow2.asm:asm-commons:${project.asm_version}"
+	toolsImplementation "org.ow2.asm:asm-tree:${project.asm_version}"
 
 	testImplementation "org.junit.jupiter:junit-jupiter:${project.junit_version}"
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -222,6 +238,26 @@ tasks.register('runtimeJar', Jar) {
 }
 
 assemble.dependsOn 'runtimeJar'
+
+// The merge tools, shaded with the ASM they need. The installer ships this jar as a resource and runs it as a
+// subprocess (4 GB heap, which the installer's own JVM cannot grant itself), so it has to be self-contained:
+// there is no classpath to put ASM on at that point. Shading three small libraries is what buys that.
+//
+// It is deliberately NOT wired into `assemble`. Building it means resolving ASM, and the two things that want
+// it -- forbric-kernel-installer's buildMergeTools task and anyone reproducing run/build-merged-base.sh -- ask
+// for it by name.
+tasks.register('mergeToolsJar', Jar) {
+	description = "Build the merge-tools jar (net.forbric.tools + shaded ASM) the installer runs as a subprocess."
+	archiveBaseName = 'forbric-merge-tools'
+	from sourceSets.tools.output
+	from { configurations.toolsRuntimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+	// ASM's own jar metadata: signatures (meaningless once the classes are repacked, and fatal if kept -- the
+	// JVM rejects a signed entry whose jar has changed), module descriptors (this jar is a classpath jar, and a
+	// module-info from one shaded library would describe only that library), and index/manifest files.
+	exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'META-INF/INDEX.LIST'
+	exclude 'META-INF/MANIFEST.MF', 'META-INF/versions/**/module-info.class', 'module-info.class'
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
 
 // Emits the full runtime classpath (Forbric classes + reused substrate + bundled deps) so the
 // launch script (run/launch-1.21.11.sh) can compose it with the Minecraft install classpath.

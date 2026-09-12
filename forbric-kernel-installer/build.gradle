@@ -56,7 +56,7 @@ tasks.register('bundleForbric') {
 			file("${kernelDir}/build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar"),
 			file("${loaderDir}/build/libs/forbric-loader-0.1.0-SNAPSHOT.jar"),
 			file("${loaderDir}/build/libs/forbricruntime-0.1.0-SNAPSHOT.jar"),
-			file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0-SNAPSHOT.jar"))
+			file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0.jar"))
 			.withPropertyName('forbricJars')
 			.withPathSensitivity(PathSensitivity.NONE)
 	outputs.dir(genResources)
@@ -118,11 +118,14 @@ tasks.register('bundleForbric') {
 tasks.register('bundleTools') {
 	description = "Copy the merge-tools jar into the installer's resources."
 	dependsOn 'buildMergeTools'
-	inputs.file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0-SNAPSHOT.jar")
+	// The loader dropped the -SNAPSHOT qualifier at 0.1.0, so this is the name :mergeToolsJar writes. Asking
+	// for the old one still "worked" for as long as a jar built before that release sat in build/libs: the
+	// bundled tools would have been whatever was last built under the old name, silently, forever.
+	inputs.file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0.jar")
 			.withPropertyName('mergeTools').withPathSensitivity(PathSensitivity.NONE)
 	outputs.dir(genTools)
 	doLast {
-		def src = new File(loaderDir, 'build/libs/forbric-merge-tools-0.1.0-SNAPSHOT.jar')
+		def src = new File(loaderDir, 'build/libs/forbric-merge-tools-0.1.0.jar')
 		if (!src.isFile()) throw new GradleException("missing ${src} — build it first")
 		def dest = new File(genTools.get().asFile, 'forbric/tools/forbric-merge-tools.jar')
 		dest.parentFile.mkdirs()
