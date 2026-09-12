@@ -19,10 +19,11 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 @Mod("forbriclive")
 public class ForbricLiveMod {
 	/**
-	 * A traditional-Forge network channel, for gate-m15: the server pings the first player it sees on the tick
-	 * event (bridged from NeoForge's, so it fires on Forbric; Forge's own PlayerLoggedInEvent is not), the client
-	 * logs the ping and pongs back, the server logs the pong. Both lines are what the gate asserts — one per
-	 * direction, through SimpleChannel's encode, Forge's ForgePayload, and the dispatch on each side.
+	 * A traditional-Forge network channel. The server pings the first player it sees on the tick event (bridged
+	 * from NeoForge's, so it fires on Forbric; Forge's own PlayerLoggedInEvent is not), the client logs the ping
+	 * and pongs back, the server logs the pong. The two log lines — one per direction — are the observable
+	 * result, and they only appear if the whole chain worked: SimpleChannel's encode, Forge's ForgePayload, and
+	 * the dispatch on each side.
 	 */
 	public static final net.minecraftforge.network.SimpleChannel NET = net.minecraftforge.network.ChannelBuilder
 			.named(Identifier.fromNamespaceAndPath("forbriclive", "net"))
@@ -65,16 +66,16 @@ public class ForbricLiveMod {
 	}
 
 	/**
-	 * A traditional-Forge SERVER config, for gate-m16. The gate pre-writes a non-default value into the server's
-	 * world before it boots; the client must end up reading THAT value, which can only happen if Forge's
-	 * configuration-phase config sync ran over the socket.
+	 * A traditional-Forge SERVER config. Write a non-default value into the server's world before it boots and
+	 * the client must end up reading THAT value, which can only happen if Forge's configuration-phase config
+	 * sync ran over the socket.
 	 */
 	public static final net.minecraftforge.common.ForgeConfigSpec.ConfigValue<String> GREETING;
 	public static final net.minecraftforge.common.ForgeConfigSpec SERVER_SPEC;
 
 	static {
 		net.minecraftforge.common.ForgeConfigSpec.Builder b = new net.minecraftforge.common.ForgeConfigSpec.Builder();
-		GREETING = b.comment("gate-m16 pre-writes this into <world>/serverconfig before the server boots").define("greeting", "default");
+		GREETING = b.comment("set this in <world>/serverconfig before the server boots to test config sync").define("greeting", "default");
 		SERVER_SPEC = b.build();
 	}
 
@@ -118,7 +119,7 @@ public class ForbricLiveMod {
 	/**
 	 * Whether the mods of the OTHER two ecosystems, which are running in this same instance, are visible through
 	 * the presence checks a MinecraftForge mod actually makes. A wrong answer here disables an integration in
-	 * silence, so gate-m18 asserts both these lines and their negative control.
+	 * silence, so both these lines are logged and are worth checking against a negative control.
 	 *
 	 * <p>The NeoForge lookup is asked from here on purpose: both runtimes are loaded in this instance, and it is
 	 * the seam a real multi-platform mod hits after detecting NeoForge by class presence — which on the merged

@@ -6,14 +6,32 @@ This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 ================================================================================
 Substrate
 ================================================================================
-Forbric reuses and adapts source code from Fabric Loader, which is licensed
-under the Apache License, Version 2.0.
+Forbric is built on Fabric Loader, which is licensed under the Apache License,
+Version 2.0.
 
     Fabric Loader
     Copyright 2016 FabricMC
     https://github.com/FabricMC/fabric-loader
 
-Files derived from Fabric Loader retain the original FabricMC copyright header.
+THIS REPOSITORY CONTAINS NO FABRIC LOADER SOURCE CODE. The substrate is a
+separate checkout of the upstream repository above, at the release pinned as
+`fabric_loader_ref` in forbric-loader/gradle.properties (0.19.3): bootstrap.sh
+fetches it into a sibling directory, and forbric-loader/build.gradle compiles
+its source roots alongside Forbric's own. Nothing here is therefore a file
+"derived from Fabric Loader", and no file in this repository carries a FabricMC
+copyright header.
+
+What this repository does carry is the set of changes Forbric needs in that
+upstream code: the patches under forbric-loader/patches/fabric-loader/. They are
+unified diffs against the pinned release, so they quote short excerpts of
+upstream's source as context; those excerpts remain Copyright FabricMC under the
+Apache License, Version 2.0.
+
+The BUILT jar is a different matter from this repository. Because the substrate
+is compiled into it, forbric-loader-<version>.jar contains compiled Apache-2.0
+Fabric Loader code, Copyright FabricMC, which retains upstream's copyright and
+is redistributed under the Apache License, Version 2.0. Anyone redistributing
+the built jar is redistributing that code and must carry this NOTICE with it.
 
 ================================================================================
 Forge-side code: clean-room
@@ -28,6 +46,10 @@ It does NOT contain any source code from Forge Mod Loader (FML). FML, which is
 licensed under the GNU LGPL v2.1 or later, was consulted only as a behavioural
 reference. See CREDITS.md.
 
+The MinecraftForge and NeoForge runtimes themselves are not redistributed here
+either: they are fetched and assembled at run time by the scripts under
+forbric-loader/run/, and loaded from the user's own machine.
+
 ================================================================================
 Mappings
 ================================================================================
@@ -36,11 +58,21 @@ Runtime mappings are generated from permitted sources only (Mojang official
 mappings, Fabric intermediary, and Yarn). See MAPPINGS.md.
 
 ================================================================================
-Bundled third-party dependencies
+Third-party dependencies
 ================================================================================
+Nested inside the built forbricruntime jar (JarInJar, at
+META-INF/jars/mixinextras-fabric.jar, so that Knot's transforming class loader
+defines it — it must not be parent-loaded; see the `nestedMods` configuration
+and the `runtimeJar` task in build.gradle):
+
+- MixinExtras ..................... MIT (io.github.llamalad7)
+
+Resolved as ordinary dependencies. They are not shaded into Forbric's jars; they
+sit beside them on the class path (the installer stages them into a launcher's
+libraries/ tree):
+
 - OW2 ASM ......................... BSD-3-Clause (org.ow2.asm)
 - Sponge Mixin .................... MIT (net.fabricmc:sponge-mixin)
-- MixinExtras ..................... MIT (io.github.llamalad7)
 - SAT4J .......................... EPL-1.0 / LGPL-2.1 (org.ow2.sat4j) — see each artifact's about.html
 - tiny-remapper .................. Apache-2.0 (net.fabricmc)
 - class-tweaker .................. Apache-2.0 (net.fabricmc)

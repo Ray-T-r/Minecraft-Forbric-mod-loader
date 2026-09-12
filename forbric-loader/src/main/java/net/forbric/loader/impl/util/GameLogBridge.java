@@ -28,17 +28,23 @@ import net.fabricmc.loader.impl.util.log.LogLevel;
  * Routes fabric-loader's {@link Log} — which {@link ForbricLog} writes to — into the game's log4j, the way
  * fabric-loader's own launcher does once the game is up.
  *
- * <p>Nothing else does that under the kernel, and fabric-loader's default handler is a buffer: it prints only once a
- * message at ERROR arrives (replaying what it held) or someone finishes its configuration, and otherwise keeps every
- * line until the JVM exits. Which is why a dedicated server's log never showed a single loader-side warning — the
- * Fabric-mirror exception that stalled a whole configuration handshake among them — while a client occasionally
- * printed a burst of them after some unrelated ERROR. Wired here, every line lands in the game log with the game's
- * own timestamp, thread and level, next to the kernel's.
+ * <p>Nothing else does that when Forbric boots the game itself — fabric-loader's own launcher is not the entry
+ * point here — and fabric-loader's default handler is a buffer: it prints only once a message at ERROR arrives
+ * (replaying what it held) or someone finishes its configuration, and otherwise keeps every line until the JVM
+ * exits. Which is why a dedicated server's log never showed a single loader-side warning — the Fabric-mirror
+ * exception that stalled a whole configuration handshake among them — while a client occasionally printed a burst
+ * of them after some unrelated ERROR. Wired here, every line lands in the game log with the game's own timestamp,
+ * thread and level, interleaved with everything else written to it.
  *
  * <p>Installs only when {@code Log} still holds its built-in handler (a launcher that already wired log4j keeps its
  * handler) and only when log4j is actually present (unit tests keep the built-in one). {@code Log.init} replays the
  * buffered lines into the new handler, so nothing logged before this class loaded is lost. Levels map one to one;
  * fabric-loader's DEBUG/TRACE are forwarded only under {@code -Dforbric.debug}, like {@link ForbricLog#debug}.
+ *
+ * <p>When there is no log4j to route into, nothing is printed: that is the normal case for tests and tooling, and a
+ * line on stderr from every one of them would be noise. A host that expects the routing to succeed — anything that
+ * launches the real game — can set {@code -Dforbric.logDiagnostics} to have that failure reported on stderr;
+ * {@code -Dforbric.debug} and {@code -Dforbric.clientSmoke} imply it.
  */
 final class GameLogBridge implements LogHandler {
 	private static final String BUILTIN_HANDLER = "net.fabricmc.loader.impl.util.log.BuiltinLogHandler";
@@ -76,10 +82,11 @@ final class GameLogBridge implements LogHandler {
 					+ "log from here on (the built-in handler only printed after an ERROR; on a dedicated server that was never)",
 					null, false, false);
 		} catch (Throwable noLog4jOrNoSuchField) {
-			// Tests and tooling have no log4j: the built-in handler stays. In a game that is a real loss of
-			// diagnostics, so say so on stderr — the one channel that is always there.
+			// Tests and tooling have no log4j: the built-in handler stays, silently, because there it is expected.
+			// In a game it is a real loss of diagnostics, so whoever knows they are in one says so on stderr — the
+			// one channel that is always there.
 			if (System.getProperty("forbric.debug") != null || System.getProperty("forbric.clientSmoke") != null
-					|| System.getProperty("java.class.path", "").contains("forbric-kernel")) {
+					|| System.getProperty("forbric.logDiagnostics") != null) {
 				System.err.println("[Forbric/Log] could not route fabric-loader's log into the game log: " + noLog4jOrNoSuchField);
 			}
 		}

@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 The Forbric Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package net.forbric.installer;
 
 import java.io.IOException;
@@ -64,10 +80,32 @@ final class Installer {
 
 	final String forbricVersion;
 	final List<Lib> libs;
+	/** A published release to fetch entries from when neither a bundled resource nor a local file has them. */
+	private RemoteSource remote;
 
 	private Installer(String forbricVersion, List<Lib> libs) {
 		this.forbricVersion = forbricVersion;
 		this.libs = libs;
+	}
+
+	/**
+	 * Attach a release as a fallback source. Bundled and on-disk jars still win — this only decides what happens
+	 * where the old code had nothing left to try and threw.
+	 */
+	Installer withRemote(RemoteSource remote) {
+		this.remote = remote;
+		return this;
+	}
+
+	/**
+	 * Load the manifest from a published GitHub release instead of from this jar or from disk. The manifest a
+	 * release publishes carries neither {@code resource} nor {@code file}, so every jar is then downloaded — which
+	 * is what lets a small installer with no payload install a loader it was never built with.
+	 */
+	static Installer fromRemote(RemoteSource remote) throws IOException {
+		Installer i = fromJson(remote.manifestJson(), "release " + remote.describe());
+		i.remote = remote;
+		return i;
 	}
 
 	/** Parse an on-disk {@code forbric-libraries.json} (dev / {@code --manifest} path). */
@@ -147,24 +185,26 @@ final class Installer {
 			Path dest = libDir.resolve(rel);
 			Files.createDirectories(dest.getParent());
 
-			// Prefer a jar bundled inside this installer (self-contained release); otherwise copy from the
-			// absolute source path of an on-disk/--manifest build (dev). sha1 is verified after the write either
-			// way, so "what landed on disk is correct" holds regardless of the source.
+			// Three sources, in order of how much they can be trusted to be present and correct: a jar bundled
+			// inside this installer (self-contained release), the absolute path of an on-disk/--manifest build
+			// (dev), and finally a published release (RemoteSource). sha1 is verified after the write whichever
+			// one supplied the bytes, so "what landed on disk is correct" holds regardless of the source.
 			InputStream bundled = l.resource != null ? Installer.class.getResourceAsStream(l.resource) : null;
+			Path src = l.file != null ? Util.path(l.file) : null;
 			if (bundled != null) {
 				try (InputStream in = bundled) {
 					Files.copy(in, dest, StandardCopyOption.REPLACE_EXISTING);
 				}
-			} else {
-				if (l.file == null) {
-					throw new IOException("no source for " + l.coordinate
-							+ " (manifest entry has neither a bundled resource nor a file path)");
-				}
-				Path src = Util.path(l.file);
-				if (!Files.isRegularFile(src)) {
-					throw new IOException("manifest jar not found on disk: " + src + " (build Forbric first?)");
-				}
+			} else if (src != null && Files.isRegularFile(src)) {
 				Files.copy(src, dest, StandardCopyOption.REPLACE_EXISTING);
+			} else if (remote != null) {
+				remote.fetchInto(l, dest);
+			} else if (src != null) {
+				throw new IOException("manifest jar not found on disk: " + src + " (build Forbric first, or"
+						+ " run with --remote to download it from the release)");
+			} else {
+				throw new IOException("no source for " + l.coordinate + " (the manifest entry has no bundled"
+						+ " resource and no file path, and no release was configured to download it from)");
 			}
 
 			String actual = Util.sha1(dest);

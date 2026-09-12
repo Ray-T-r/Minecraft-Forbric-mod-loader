@@ -37,9 +37,9 @@ import net.minecraftforge.network.tasks.SyncConfigTask;
 import net.minecraftforge.network.tasks.SyncRegistriesTask;
 
 /**
- * The three hooks the kernel's injected prologues call to re-tie MinecraftForge's handshake: who starts its
- * networking (clients only), which of its configuration tasks are queued (all but the registry sync), and that the
- * client's configuration-complete hook runs once per connection.
+ * The three hooks that re-tie MinecraftForge's handshake, each called from a prologue at the head of the merged
+ * method it belongs to: who starts its networking (clients only), which of its configuration tasks are queued (all
+ * but the registry sync), and that the client's configuration-complete hook runs once per connection.
  */
 class ForbricForgeHandshakeTest {
 	/** A stand-in for the listeners the prologues pass: the hooks read its {@code connection} field. */
@@ -104,7 +104,7 @@ class ForbricForgeHandshakeTest {
 		assertTrue(listener.configurationTasks.peek() instanceof SyncConfigTask);
 		for (ConfigurationTask task : listener.configurationTasks) {
 			assertFalse(task instanceof SyncRegistriesTask,
-					"the kernel already remapped the registries; a second snapshot would remap the remap");
+					"the registries are already remapped by then; a second snapshot would remap the remap");
 		}
 	}
 

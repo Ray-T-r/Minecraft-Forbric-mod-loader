@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 The Forbric Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package net.forbric.installer;
 
 import java.awt.GraphicsEnvironment;
@@ -7,6 +23,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import javax.swing.SwingUtilities;
 
@@ -18,8 +35,13 @@ import javax.swing.SwingUtilities;
  *   java -jar forbric-installer.jar --headless \
  *        --mc-dir "~/Library/Application Support/minecraft" \
  *        --game-version 1.21.11 \
- *        --manifest /path/to/forbic-loader/build/forbric-libraries.json
+ *        --manifest /path/to/forbric-loader/build/forbric-libraries.json
  * </pre>
+ *
+ * <p>Where the jars come from, in order: one bundled inside this installer, then a local build named by
+ * {@code --manifest}, then the published GitHub release. An installer built without a payload therefore still
+ * installs — it downloads. {@code --remote} forces the release even when a payload is bundled, and
+ * {@code --offline} forbids the network entirely.
  */
 public final class Main {
 
@@ -41,39 +63,171 @@ public final class Main {
 		Path manifest = (explicitManifest != null && !explicitManifest.isBlank()) ? Util.path(explicitManifest) : null;
 		// Auto-download the base vanilla version if it is missing (default on; --no-download-mc opts out).
 		boolean autoDownloadBase = !opt.containsKey("no-download-mc");
+		Remote remote = Remote.from(opt);
 
 		boolean headless = opt.containsKey("headless") || GraphicsEnvironment.isHeadless();
 		if (headless) {
-			runCli(mcDir, mcVersion, mode, manifest, autoDownloadBase);
+			runCli(mcDir, mcVersion, mode, manifest, autoDownloadBase, remote);
 		} else {
 			final Path mf = manifest;
 			final String m = mode;
-			SwingUtilities.invokeLater(() -> new InstallerGui(mcDir, mcVersion, m, mf, autoDownloadBase).show());
+			SwingUtilities.invokeLater(() ->
+					new InstallerGui(mcDir, mcVersion, m, mf, autoDownloadBase, remote).show());
 		}
 	}
 
-	private static void runCli(Path mcDir, String mcVersion, String mode, Path manifest, boolean autoDownloadBase) {
+	/**
+	 * The release-download options, parsed once and passed to whichever front end runs. Kept as a small value so
+	 * the CLI and the GUI cannot drift on what {@code --remote}/{@code --offline} mean.
+	 */
+	static final class Remote {
+		/** Fetch the manifest from the release even when this installer bundles one. */
+		final boolean force;
+		/** Never touch the network for Forbric's jars. */
+		final boolean offline;
+		/** An explicit release tag, or null for the one this installer was built against. */
+		final String tag;
+		/** A URL prefix for github.com requests (a ghproxy-style relay), or null. */
+		final String mirror;
+
+		private Remote(boolean force, boolean offline, String tag, String mirror) {
+			this.force = force;
+			this.offline = offline;
+			this.tag = tag;
+			this.mirror = mirror;
+		}
+
+		static Remote from(Map<String, String> opt) {
+			return new Remote(opt.containsKey("remote"), opt.containsKey("offline"),
+					blankToNull(opt.get("release")), blankToNull(opt.get("mirror")));
+		}
+
+		/** The source to download from, or null when {@code --offline} rules it out. */
+		RemoteSource source(Consumer<String> log) {
+			return offline ? null : RemoteSource.create(new Http(log), log, tag, mirror);
+		}
+
+		private static String blankToNull(String s) {
+			return (s == null || s.isBlank()) ? null : s;
+		}
+	}
+
+	private static void runCli(Path mcDir, String mcVersion, String mode, Path manifest, boolean autoDownloadBase,
+			Remote remote) {
+		ConsoleLog log = new ConsoleLog();
+		RemoteSource source = remote.source(log);
+		boolean useRemote = source != null && (remote.force || (manifest == null && !Installer.hasBundledManifest()));
+
 		System.out.println("Forbric installer (headless)");
 		System.out.println("  minecraft dir : " + mcDir);
 		System.out.println("  mode          : " + mode);
 		System.out.println("  game version  : " + mcVersion);
-		System.out.println("  manifest      : " + (manifest != null ? manifest : "(bundled)"));
+		System.out.println("  jars from     : " + describeSource(manifest, useRemote, source));
 		System.out.println("  download base : " + autoDownloadBase);
 		System.out.println();
-		if (manifest == null && !Installer.hasBundledManifest()) {
-			System.err.println("ERROR: this installer jar carries no bundled manifest. Rebuild it with "
-					+ "`./gradlew jar` in forbric-installer/ (that bundles Forbric's jars), or pass "
+		if (manifest == null && !Installer.hasBundledManifest() && source == null) {
+			System.err.println("ERROR: this installer jar carries no bundled manifest and --offline forbids "
+					+ "downloading one. Drop --offline to fetch the release, rebuild the installer with "
+					+ "`./gradlew jar` in forbric-installer/ to bundle the jars, or pass "
 					+ "--manifest <forbric-libraries.json> for a dev build.");
 			System.exit(2);
 		}
 		try {
 			if (!Files.isDirectory(mcDir)) Files.createDirectories(mcDir);
-			Installer installer = (manifest != null) ? Installer.fromManifest(manifest) : Installer.fromBundledManifest();
-			installer.install(mcDir, mcVersion, mode, autoDownloadBase, System.out::println);
+			installer(manifest, useRemote, source).install(mcDir, mcVersion, mode, autoDownloadBase, log);
 		} catch (IOException e) {
+			// Close off the status line first: stdout ended mid-line, so without this the error lands on top
+			// of a frozen percentage and the shell prompt lands on top of that.
+			log.finish();
 			System.err.println("ERROR: " + e.getMessage());
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * A console sink that understands {@link Http#PROGRESS}: a transient line is rewritten in place with a
+	 * carriage return rather than scrolled, and is padded so a shorter update cannot leave the tail of a
+	 * longer one behind it. The first settled line after one wipes it.
+	 *
+	 * <p>When stdout is not a terminal, rewriting in place is not available -- redirecting a headless install
+	 * to a file is the standard thing to do when reporting a problem, and a ten-minute download would put a
+	 * few thousand carriage-returned ticks into it as one unreadable line. Progress is not dropped there,
+	 * though: it is thinned to one ordinary line per 10% so the log still shows movement. Dropping it would
+	 * leave nothing at all for the cases where Java cannot see a console but a person can -- Git Bash and a
+	 * number of IDE terminals among them.
+	 */
+	static final class ConsoleLog implements Consumer<String> {
+		private final boolean terminal = System.console() != null;
+		private int transientWidth = -1;
+		/** Last coarse progress step already printed in non-terminal mode, to thin the stream. */
+		private String lastStep = "";
+
+		@Override
+		public void accept(String raw) {
+			boolean progress = raw.startsWith(Http.PROGRESS);
+			if (progress && !terminal) {
+				String line = raw.substring(Http.PROGRESS.length());
+				String step = coarseStep(line);
+				if (step.equals(lastStep)) return;
+				lastStep = step;
+				System.out.println(line);
+				return;
+			}
+			String line = progress ? raw.substring(Http.PROGRESS.length()) : raw;
+			if (progress) {
+				int pad = Math.max(0, transientWidth - line.length());
+				System.out.print("\r" + line + " ".repeat(pad));
+				System.out.flush();
+				transientWidth = line.length();
+			} else {
+				finish();
+				System.out.println(line);
+			}
+		}
+
+		/**
+		 * A key that changes only when the update is worth a fresh line: the file being fetched, and its
+		 * progress rounded down to 10%. Everything in between is the same news told again.
+		 */
+		private static String coarseStep(String line) {
+			int pct = line.indexOf('%');
+			if (pct < 0) return line.trim();
+			int start = pct;
+			while (start > 0 && Character.isDigit(line.charAt(start - 1))) start--;
+			String digits = line.substring(start, pct);
+			String name = line.substring(0, Math.max(0, start)).trim();
+			try {
+				return name + "|" + (Integer.parseInt(digits) / 10);
+			} catch (NumberFormatException e) {
+				return line.trim();
+			}
+		}
+
+		/** Wipe any status line still on screen, so the next thing printed starts on a clean line. */
+		void finish() {
+			if (transientWidth >= 0) {
+				System.out.print("\r" + " ".repeat(transientWidth) + "\r");
+				System.out.flush();
+				transientWidth = -1;
+			}
+		}
+	}
+
+	/**
+	 * Pick the manifest source. Shared with the GUI so the two front ends cannot disagree: an explicit
+	 * {@code --manifest} always wins, {@code --remote} (or having nothing local) goes to the release, and
+	 * otherwise the bundled manifest is used with the release left attached as a fallback for missing entries.
+	 */
+	static Installer installer(Path manifest, boolean useRemote, RemoteSource source) throws IOException {
+		if (manifest != null) return Installer.fromManifest(manifest).withRemote(source);
+		if (useRemote) return Installer.fromRemote(source);
+		return Installer.fromBundledManifest().withRemote(source);
+	}
+
+	static String describeSource(Path manifest, boolean useRemote, RemoteSource source) {
+		if (manifest != null) return manifest.toString();
+		if (useRemote) return "GitHub release " + source.describe();
+		return source != null ? "bundled (release " + source.describe() + " as fallback)" : "bundled";
 	}
 
 	private static Map<String, String> parseOpts(String[] args) {
@@ -107,6 +261,13 @@ public final class Main {
 		System.out.println("  --no-download-mc       do NOT download the base version if it is missing");
 		System.out.println("  --manifest <path>      dev override: external forbric-libraries.json");
 		System.out.println("                         (default: the manifest + jars bundled in this installer)");
+		System.out.println("  --remote               download Forbric's jars from the GitHub release even if");
+		System.out.println("                         this installer bundles them");
+		System.out.println("  --release <tag>        install a specific release tag instead of the one this");
+		System.out.println("                         installer was built against");
+		System.out.println("  --mirror <url-prefix>  put a relay in front of github.com, for networks where it");
+		System.out.println("                         is slow or blocked (e.g. https://ghproxy.example/)");
+		System.out.println("  --offline              never download Forbric's jars; fail if they are not local");
 		System.out.println("  --headless             no GUI");
 		System.out.println("  --help                 this message");
 	}

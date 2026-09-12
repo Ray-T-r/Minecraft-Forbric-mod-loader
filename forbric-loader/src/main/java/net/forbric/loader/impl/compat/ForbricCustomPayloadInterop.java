@@ -58,7 +58,7 @@ public final class ForbricCustomPayloadInterop {
 	private static final String NEO_COMMON_REGISTER_PAYLOAD = "net.neoforged.neoforge.network.payload.CommonRegisterPayload";
 	private static final String NEO_PAYLOAD_REGISTRATION = "net.neoforged.neoforge.network.registration.PayloadRegistration";
 	// Traditional MinecraftForge. Its custom-payload plumbing lost the byte-merge to NeoForge's on both the codec and
-	// the dispatch side, so the kernel routes to its public entry points from here: ForgeHooks.getCustomPayloadCodec
+	// the dispatch side, so Forbric routes to its public entry points from here: ForgeHooks.getCustomPayloadCodec
 	// for a channel it owns, ForgeHooks.onCustomPayload for a ForgePayload it should handle, and NetworkContext for
 	// the per-connection channel bookkeeping its channels consult before sending.
 	private static final String FORGE_NETWORK_REGISTRY = "net.minecraftforge.network.NetworkRegistry";
@@ -200,7 +200,9 @@ public final class ForbricCustomPayloadInterop {
 	 * reports without naming a registry. The first run of it ruled out aliases and missing entries (every remote
 	 * name was a real local key) and the second — the class and the {@code byKey} count — found the cause: the
 	 * seventeen registries that are MinecraftForge {@code NamespacedWrapper}s answer {@code containsKey} from their
-	 * delegate while their inherited {@code byKey} holds zero entries. See the kernel's RegistrySyncParityInjector.
+	 * delegate while their inherited {@code byKey} holds zero entries. The fix belongs to whatever drives the
+	 * registry remap on this side: those wrappers have to be fed the remote snapshot through MinecraftForge's own
+	 * {@code injectSnapshot}, which fills the delegate, rather than through {@code MappedRegistry}'s id mapping.
 	 */
 	private static void describeFrozenRegistrySnapshot(Object payload) {
 		if (payload == null || !"neoforge:frozen_registry".equals(payloadId(payload))) return;
@@ -649,9 +651,9 @@ public final class ForbricCustomPayloadInterop {
 	//
 	// Forge's handshake is five configuration-phase tasks (register channels, mod versions, channel versions, sync
 	// registries, sync configs) that tell each end what the other is running and push the server's SERVER-type
-	// configs to the client. Three links of that chain lost the byte-merge to NeoForge, and the kernel's injected
-	// prologues call the three hooks below to restore them. Everything here is a no-op without MinecraftForge on
-	// board, and `-Dforbric.forgeHandshake=off` turns the whole thing off.
+	// configs to the client. Three links of that chain lost the byte-merge to NeoForge; the three hooks below
+	// restore them, called from a prologue at the head of the corresponding merged method. Everything here is a
+	// no-op without MinecraftForge on board, and `-Dforbric.forgeHandshake=off` turns the whole thing off.
 
 	private static final String FORGE_NETWORK_REGISTRY_CLASS = "net.minecraftforge.network.NetworkRegistry";
 	private static final String FORGE_EVENT_FACTORY = "net.minecraftforge.event.ForgeEventFactory";
@@ -693,8 +695,8 @@ public final class ForbricCustomPayloadInterop {
 	 * {@code startConfiguration}/{@code runConfiguration} (NeoForge's bodies) never gathers. Forge's own gate stays
 	 * the gate — its handler adds nothing unless the connection was typed MODDED by the client's intention marker.
 	 *
-	 * <p>{@code SyncRegistriesTask} is dropped. The kernel already remaps the seventeen Forge-wrapped registries
-	 * from NeoForge's snapshot (through Forge's own {@code injectSnapshot}), and Forge's task would apply a second
+	 * <p>{@code SyncRegistriesTask} is dropped. The seventeen Forge-wrapped registries are already remapped from
+	 * NeoForge's snapshot by then (through Forge's own {@code injectSnapshot}), and Forge's task would apply a second
 	 * snapshot over that result — a re-map of already-remapped ids, from a client half that blocks the network
 	 * thread on the render thread while it does so. Everything else Forge gathers is kept, mod-added tasks included.
 	 */
@@ -730,7 +732,7 @@ public final class ForbricCustomPayloadInterop {
 		}
 		if (added.isEmpty() && skipped.isEmpty()) return;
 		ForbricLog.info("[Forbric/Net] queued %d MinecraftForge configuration task(s) %s%s", added.size(), added,
-				skipped.isEmpty() ? "" : " (the kernel already synced the registries, so it skipped " + skipped + ")");
+				skipped.isEmpty() ? "" : " (the registries were already synced, so it skipped " + skipped + ")");
 	}
 
 	/**
@@ -801,7 +803,7 @@ public final class ForbricCustomPayloadInterop {
 	/**
 	 * Announces the local Forge channels to the peer, once per connection, the first time the peer declares its own:
 	 * {@code ChannelListManager.addChannels(connection)} sends a minecraft:register naming every channel Forge
-	 * knows, exactly as Forge's RegisterChannelsTask would in a configuration phase the kernel does not run. A peer
+	 * knows, exactly as Forge's RegisterChannelsTask would in a configuration phase that does not run here. A peer
 	 * without Forge reads it as an ordinary register.
 	 */
 	private static void declareForgeChannels(Object connection) {

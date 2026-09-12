@@ -1,0 +1,72 @@
+# This workflow exists to keep the bootstrap honest.
+#
+# Forbric does not vendor its fabric-loader substrate: bootstrap.sh clones it at the pinned
+# fabric_loader_ref and applies forbric-loader/patches/fabric-loader/, and only then does the build have
+# a complete source set. That is the fragile part of a clean clone -- if the pinned tag moves, a patch
+# stops applying, or the build stops compiling against the substrate, this job goes red.
+name: build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # forbric-loader/build.gradle pins its output to release 17 but compiles with whatever JDK runs
+      # Gradle, so any JDK >= 17 works. 21 is the current LTS and is supported by the checked-in Gradle
+      # wrapper (9.1); pinning it keeps CI on one known-good combination rather than tracking the runner
+      # image's default JDK.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Clones FabricMC/fabric-loader into ./fabric-loader, applies the patches, and verifies them.
+      - name: Bootstrap substrate
+        run: ./bootstrap.sh
+
+      - name: Build
+        run: cd forbric-loader && ./gradlew build
+
+      # forbric-loader/build.gradle's `assemble` produces both: the parent-loaded loader core and
+      # forbricruntime (the Knot-loaded half).
+      - uses: actions/upload-artifact@v5
+        with:
+          name: forbric-jars
+          path: forbric-loader/build/libs/*.jar
+          if-no-files-found: error
+
+  # The kernel is a second, independent build with its own wrapper. It is here for one specific reason:
+  # forbric-kernel/build.gradle wires its GAME-side source set at CONFIGURATION time, and only when the
+  # staged game artifacts are present. Those artifacts embed Mojang/Forge/NeoForge code and are built on
+  # the user's own machine, so they are never in this repository and never on a runner -- which makes this
+  # job the honest test of the claim that their absence costs a clean clone nothing. If that ever stops
+  # being true, the boot jar silently ships without its game-side half, and this goes red instead.
+  kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The kernel pins `options.release = 21` but needs no specific JDK to compile; 21 matches the floor.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # No bootstrap step: the kernel does not compile the fabric-loader substrate. It vendors the small
+      # net.fabricmc.api surface it needs and is otherwise its own code.
+      - name: Build and test
+        run: cd forbric-kernel && ./gradlew jar test
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: forbric-kernel-jar
+          path: forbric-kernel/build/libs/*.jar
+          if-no-files-found: error
