@@ -17,7 +17,6 @@
 package net.forbric.kernel.boot;
 
 import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Locale;
@@ -148,9 +147,11 @@ public final class GameEventMultiplexer {
 			Constructor<?> scratchCtor = rrmCls.getConstructor(packTypeCls);
 			@SuppressWarnings({"unchecked", "rawtypes"})
 			Object clientPacks = Enum.valueOf((Class) packTypeCls, "CLIENT_RESOURCES");
-			// The manager's ctor seeds this with an empty ArrayList, so the field is safe to read straight after.
-			Field captured = rrmCls.getDeclaredField("listeners");
-			captured.setAccessible(true);
+			// Read through the PUBLIC accessor, not the private field it returns. `javap -c` shows getListeners
+			// is `getfield listeners; areturn` — the same bytes the old getDeclaredField + setAccessible pair
+			// reached, minus a private name to keep in step and minus the access override. The manager's ctor
+			// seeds the list with an empty ArrayList, so it is safe to read straight after construction.
+			Method captured = rrmCls.getMethod("getListeners");
 
 			Constructor<?> forgeEventCtor = forgeEvent.getConstructor(rrmCls);
 			Object forgeBus = forgeEvent.getField("BUS").get(null);
@@ -179,7 +180,7 @@ public final class GameEventMultiplexer {
 					Object scratch = scratchCtor.newInstance(clientPacks);
 					post.invoke(forgeBus, forgeEventCtor.newInstance(scratch));
 
-					List<?> listeners = (List<?>) captured.get(scratch);
+					List<?> listeners = (List<?>) captured.invoke(scratch);
 					int n = 0;
 					for (Object listener : listeners) {
 						Object id = fromNamespaceAndPath.invoke(null, "forbric",
