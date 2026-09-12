@@ -107,10 +107,22 @@ check "and by the side the override named" "ForbricNestLib\] claimed by forge" "
 check_absent "no duplicate registration either way" "ForbricNestLib\] DUPLICATE registration" "$FLIP"
 check_absent "no entrypoint failure either way" "entrypoint of .* failed" "$FLIP"
 
+step "negative control 2: the losing side's visibility really does come from ModPresence"
+# Pins the MECHANISM the identity assertion depends on. Decision.aliasesFor(Ecosystem.FORGE) has no consumer, so
+# what makes the Forge side still see a library whose jar it lost is the cross-ecosystem presence rewrite — not
+# the arbiter's alias. Turn that off and exactly the Forge side must go dark, while Fabric (which owns the
+# container) stays true. If both stayed true, the assertion above would be passing for a reason nobody chose.
+PRESENCE="$BUILD/gate-m19-nopresence.log"
+boot "$PRESENCE" "-Dforbric.crossEcosystemPresence=off"
+check "the Forge side loses sight of it without ModPresence" \
+  "ForbricNestParent\] forge sees forbricnestlib=false" "$PRESENCE"
+check "while the side that owns the container still sees it" \
+  "ForbricNestParent\] fabric sees forbricnestlib=true" "$PRESENCE"
+
 step "M19 result"
 if [ "${FAIL:-0}" -eq 0 ]; then
   echo "[kernel] ✅ M19 GATE GREEN — a library nested by a Fabric mod and a MinecraftForge mod is constructed once"
 else
-  echo "[kernel] ❌ M19 GATE RED — see $LOG / $CONTROL / $BUILD/gate-m19-flipped.log"
+  echo "[kernel] ❌ M19 GATE RED — see $LOG / $CONTROL / $BUILD/gate-m19-flipped.log / $BUILD/gate-m19-nopresence.log"
   exit 1
 fi
