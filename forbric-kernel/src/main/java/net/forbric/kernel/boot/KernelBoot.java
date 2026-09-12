@@ -35,6 +35,7 @@ import net.forbric.api.ModPresence;
 import net.forbric.kernel.access.ClassTweakerTransformer;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.classloading.LoaderProbePolicy;
+import net.forbric.kernel.fabric.FabricModDiscovery;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.metadata.forge.EcosystemVersions;
 import net.forbric.kernel.mixin.KernelMixinBootstrap;
@@ -174,7 +175,9 @@ public final class KernelBoot {
 		// are merged. MultiLoaderArbiter cannot see that (it is keyed by jar path), and left alone both jars enter
 		// `owned` and shadow each other class-for-class, contribute each other's mixin configs, and register the
 		// same content twice. Decide once here; both discoveries below skip the losers.
-		DuplicateModArbiter.Decision dupes =
+		// Phase one: the jars the user actually put in mods/. Phase two (arbitrateNested, below) adds what those
+		// jars nest -- it cannot run here, because the nested jars do not exist until these have been walked.
+		DuplicateModArbiter.Decision topLevelDupes =
 				DuplicateModArbiter.arbitrate(gameDir.resolve("mods"), side.envType);
 
 		// Forge/NeoForge mod jars (Mojmap-compiled like the merged base → load directly, no remap), plus the
@@ -182,7 +185,7 @@ public final class KernelBoot {
 		// Learn what each carrier says its own version is BEFORE discovery reads the mods, so a mod whose
 		// versionRange this instance cannot satisfy says so as it is discovered rather than failing later.
 		EcosystemVersions.record(runtimeJars);
-		ForgeFamilyMods forgeFamily = discoverForgeFamilyModJars(gameDir.resolve("mods"), dupes);
+		ForgeFamilyMods forgeFamily = discoverForgeFamilyModJars(gameDir.resolve("mods"), topLevelDupes);
 
 		// Presence, not loading. Every ecosystem keeps its own mod list, so a mod asking its own loader whether some
 		// OTHER family's mod is installed is told no — and that answer is usually a compatibility branch, not a
@@ -195,6 +198,23 @@ public final class KernelBoot {
 		}
 		List<Path> modJars = new ArrayList<>(forgeFamily.jars());
 		List<Path> nested = extractForgeFamilyJarJar(modJars, gameDir);
+
+		// The Fabric walk runs HERE rather than after this block, and registers nothing yet. Both families extract
+		// nested jars out of their mods, and neither walk can see the other's -- so "two jars claim this id" is a
+		// question with only half its evidence until both have run. Each loader deduplicates only within its own
+		// family (KernelFabricLoader.register keeps the first Fabric id, KernelModLoader the first @Mod), so a
+		// library nested by a Fabric mod AND by a MinecraftForge mod used to load and INITIALISE twice. Xaero's
+		// xaerolib is the worked example: its second construction threw on a duplicate config channel, but only
+		// after XaeroLib.<init> had overwritten INSTANCE with the half-built object, and a live mixin then called
+		// into it and took the client down on a render frame.
+		FabricModDiscovery fabricScan = KernelFabricEcosystem.scan(side.envType, gameDir, topLevelDupes);
+		List<Path> allNested = new ArrayList<>(nested);
+		for (Path jar : fabricScan.getClasspathJars()) {
+			if (!modJars.contains(jar) && !nested.contains(jar)) allNested.add(jar);
+		}
+		final DuplicateModArbiter.Decision dupes = DuplicateModArbiter.arbitrateNested(side.envType, allNested);
+		nested = nested.stream().filter(jar -> !dupes.suppressed(jar)).toList();
+
 		nestedJarJarJars = List.copyOf(nested);
 		modJars.addAll(nested);
 		for (Path jar : modJars) owned.add(jar.toUri().toURL());
@@ -207,7 +227,7 @@ public final class KernelBoot {
 		forgeMixinDecls.addAll(discoverNestedForgeMixinConfigs(nested));
 
 		// Fabric mods (+ extracted JiJ children). Also Mojmap on this game version. Creates the FabricLoader.
-		List<Path> fabricJars = KernelFabricEcosystem.discover(side.envType, gameDir, gameVersion,
+		List<Path> fabricJars = KernelFabricEcosystem.build(fabricScan, side.envType, gameDir, gameVersion,
 				gameArgs.toArray(new String[0]), dupes);
 		for (Path jar : fabricJars) {
 			if (!modJars.contains(jar)) owned.add(jar.toUri().toURL());   // a multiloader jar carries both manifests

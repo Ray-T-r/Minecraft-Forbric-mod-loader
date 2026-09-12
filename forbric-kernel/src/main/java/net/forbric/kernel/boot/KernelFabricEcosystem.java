@@ -96,11 +96,36 @@ public final class KernelFabricEcosystem {
 	 */
 	public static List<Path> discover(EnvType envType, Path gameDir, String gameVersion, String[] launchArgs,
 			DuplicateModArbiter.Decision dupes) {
+		return build(scan(envType, gameDir, dupes), envType, gameDir, gameVersion, launchArgs, dupes);
+	}
+
+	/**
+	 * The FIRST half: walk {@code mods/}, extract the JiJ children, build the containers — and register nothing.
+	 *
+	 * <p>Split from {@link #build} so the nested jars of BOTH families are known before either family loads one.
+	 * Cross-ecosystem arbitration cannot happen any earlier: the Forge family's nested jars come out of
+	 * {@code KernelBoot.extractForgeFamilyJarJar} and Fabric's come out of here, so until both have run, "two jars
+	 * claim this id" is a question with only half its evidence. Registering here as well would settle the question
+	 * by whichever walk happened to run first, which is the ordering accident this split exists to remove.
+	 */
+	public static FabricModDiscovery scan(EnvType envType, Path gameDir, DuplicateModArbiter.Decision dupes) {
 		Path cacheDir = gameDir.resolve(".forbric-kernel").resolve("jij");
 		FabricModDiscovery discovery = new FabricModDiscovery(envType, cacheDir);
 		discovery.setSkip(dupes::suppressed);
 		discovery.discover(gameDir.resolve("mods"));
+		return discovery;
+	}
 
+	/**
+	 * The SECOND half: build the loader and register what {@code dupes} did not suppress.
+	 *
+	 * @param dupes the FINAL decision, i.e. after {@code DuplicateModArbiter.arbitrateNested} — a nested jar that
+	 *              lost must not be registered AND must not reach the classpath, or its classes still shadow the
+	 *              winner's and its mixin configs still apply. That is the whole defect for a mod like Xaero's
+	 *              xaerolib: its losing half's mixins stayed live and called into the half-built winner.
+	 */
+	public static List<Path> build(FabricModDiscovery discovery, EnvType envType, Path gameDir, String gameVersion,
+			String[] launchArgs, DuplicateModArbiter.Decision dupes) {
 		KernelFabricLoader fabric = KernelFabricLoader.create(envType, gameDir, gameDir.resolve("config"),
 				launchArgs, gameVersion);
 
@@ -117,13 +142,25 @@ public final class KernelFabricEcosystem {
 		// it (see MultiLoaderArbiter). The jar stays on the classpath either way — the owning family needs its
 		// classes; only the Fabric-side registration (and with it the entrypoints) is skipped.
 		int suppressed = 0;
+		int lostNested = 0;
 		for (KernelModContainer container : discovery.getContainers()) {
 			Path jar = container.getJar();
 			if (jar != null && MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FABRIC)) {
 				suppressed++;
 				continue;
 			}
+			// Cross-jar arbitration, which by now has seen the nested jars too. Unlike the universal-jar case
+			// above, this jar does not stay on the classpath (see build's @param dupes) — the winner's copy is
+			// the same library, and leaving the loser's would keep its platform mixins live.
+			if (jar != null && dupes.suppressed(jar)) {
+				lostNested++;
+				continue;
+			}
 			fabric.register(container);
+		}
+		if (lostNested > 0) {
+			ForbricLog.info("[Forbric/Fabric] skipped %d Fabric registration(s) whose mod id another jar won",
+					lostNested);
 		}
 		if (suppressed > 0) {
 			ForbricLog.info("[Forbric/Fabric] skipped %d Fabric registration(s) for jars a Forge family owns", suppressed);
@@ -176,7 +213,10 @@ public final class KernelFabricEcosystem {
 		}
 		ModPresence.publishFabric(fabricMods);
 
-		List<Path> jars = discovery.getClasspathJars();
+		List<Path> jars = new ArrayList<>();
+		for (Path jar : discovery.getClasspathJars()) {
+			if (!dupes.suppressed(jar)) jars.add(jar);
+		}
 		ForbricLog.info("[Forbric/Fabric] discovered %d Fabric mod(s) in %d jar(s) (incl. nested)",
 				discovery.getContainers().size(), jars.size());
 
