@@ -38,7 +38,9 @@ import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 
 import net.forbric.kernel.classloading.DelegationPolicy;
 import net.forbric.kernel.classloading.ForbricClassLoader;
@@ -141,23 +143,124 @@ class KernelRuntimeClassesTest {
 
 	// --- the boot-time check ------------------------------------------------------------------------------
 
-	private static byte[] emptyClass(String internalName) {
-		ClassWriter cw = new ClassWriter(0);
+	/**
+	 * A stand-in for a game-side class: the registered static methods, each returning null.
+	 *
+	 * <p>Built from {@link KernelRuntimeClasses#callsOn} rather than from a hand-written list, so the stand-in
+	 * tracks the registry automatically. A test that hard-coded the signatures would keep passing after the
+	 * registry grew, which is the failure this whole file exists to prevent.
+	 */
+	private static byte[] standIn(String internalName, List<KernelRuntimeClasses.Call> calls, String renameTo) {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL, internalName, null, "java/lang/Object", null);
+
+		for (KernelRuntimeClasses.Call call : calls) {
+			Type[] params = new Type[call.parameters().length];
+			for (int i = 0; i < params.length; i++) params[i] = Type.getType(call.parameters()[i]);
+			String name = renameTo != null ? renameTo : call.name();
+			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, name,
+					Type.getMethodDescriptor(Type.getType(call.returns()), params), null, null);
+			mv.visitCode();
+			mv.visitInsn(Opcodes.ACONST_NULL);
+			mv.visitInsn(Opcodes.ARETURN);
+			mv.visitMaxs(0, 0);
+			mv.visitEnd();
+		}
+
 		cw.visitEnd();
 		return cw.toByteArray();
 	}
 
 	private static URL jarWith(Path jar, List<String> binaryNames) throws Exception {
+		return jarWith(jar, binaryNames, null);
+	}
+
+	private static URL jarWith(Path jar, List<String> binaryNames, String renameEveryMethodTo) throws Exception {
 		try (OutputStream out = Files.newOutputStream(jar); ZipOutputStream zip = new ZipOutputStream(out)) {
 			for (String binary : binaryNames) {
 				String internal = binary.replace('.', '/');
 				zip.putNextEntry(new ZipEntry(internal + ".class"));
-				zip.write(emptyClass(internal));
+				zip.write(standIn(internal, KernelRuntimeClasses.callsOn(binary), renameEveryMethodTo));
 				zip.closeEntry();
 			}
 		}
 		return jar.toUri().toURL();
+	}
+
+	@Test
+	void verifyFailsWhenAGameSideMethodWasRenamedWithoutItsCaller(@TempDir Path dir) throws Exception {
+		URL runtimeJar = jarWith(dir.resolve("forbric-kernel-runtime.jar"), KernelRuntimeClasses.compiled(),
+				"somethingElse");
+
+		try (ForbricClassLoader loader =
+				new ForbricClassLoader(new URL[] {runtimeJar}, getClass().getClassLoader())) {
+			assertFalse(KernelRuntimeClasses.verify(loader),
+					"the class is present but the boot side calls a name it no longer has. Both sides compile — "
+							+ "the call site spells the name as a string — so nothing but this check stands "
+							+ "between the rename and a NoSuchMethodException inside mod construction");
+		}
+	}
+
+	@Test
+	void verifyFailsWhenAGameSideMethodQuietlyChangedItsReturnType(@TempDir Path dir) throws Exception {
+		Path jar = dir.resolve("forbric-kernel-runtime.jar");
+		try (OutputStream out = Files.newOutputStream(jar); ZipOutputStream zip = new ZipOutputStream(out)) {
+			for (String binary : KernelRuntimeClasses.compiled()) {
+				String internal = binary.replace('.', '/');
+				zip.putNextEntry(new ZipEntry(internal + ".class"));
+				zip.write(returningObject(internal, KernelRuntimeClasses.callsOn(binary)));
+				zip.closeEntry();
+			}
+		}
+
+		try (ForbricClassLoader loader =
+				new ForbricClassLoader(new URL[] {jar.toUri().toURL()}, getClass().getClassLoader())) {
+			assertFalse(KernelRuntimeClasses.verify(loader),
+					"the name and parameters still resolve, so getMethod succeeds — and the caller then casts "
+							+ "the result to a type it is not. That is a ClassCastException at a call site with "
+							+ "no clue in it about which side changed");
+		}
+	}
+
+	/** The same methods, every one of them widened to return Object. */
+	private static byte[] returningObject(String internalName, List<KernelRuntimeClasses.Call> calls) {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL, internalName, null, "java/lang/Object", null);
+
+		for (KernelRuntimeClasses.Call call : calls) {
+			Type[] params = new Type[call.parameters().length];
+			for (int i = 0; i < params.length; i++) params[i] = Type.getType(call.parameters()[i]);
+			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, call.name(),
+					Type.getMethodDescriptor(Type.getType(Object.class), params), null, null);
+			mv.visitCode();
+			mv.visitInsn(Opcodes.ACONST_NULL);
+			mv.visitInsn(Opcodes.ARETURN);
+			mv.visitMaxs(0, 0);
+			mv.visitEnd();
+		}
+
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	@Test
+	void everyRegisteredCallCrossesTheSeamInTypesBothSidesCanName(@TempDir Path dir) throws Exception {
+		for (String binary : KernelRuntimeClasses.all().keySet()) {
+			for (KernelRuntimeClasses.Call call : KernelRuntimeClasses.callsOn(binary)) {
+				for (Class<?> t : call.parameters()) assertSeamType(binary, call, t);
+				assertSeamType(binary, call, call.returns());
+			}
+		}
+	}
+
+	/** A seam signature may only use types the BOOT side can name — otherwise it could not be declared here. */
+	private static void assertSeamType(String binary, KernelRuntimeClasses.Call call, Class<?> t) {
+		String pkg = t.isPrimitive() || t.getPackage() == null ? "java.lang" : t.getPackage().getName();
+		assertTrue(pkg.startsWith("java.") || pkg.startsWith("net.forbric."),
+				binary + "." + call.name() + " crosses the boot/game seam carrying " + t.getName()
+						+ ". Game objects have to cross as Object: a signature naming a game type cannot be "
+						+ "declared on the boot side at all, and one naming a library type ties the seam to a "
+						+ "jar that may be loaded on only one of the two sides");
 	}
 
 	@Test

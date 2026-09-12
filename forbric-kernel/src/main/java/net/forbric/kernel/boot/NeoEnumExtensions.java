@@ -149,8 +149,8 @@ public final class NeoEnumExtensions {
 	 * whatever the declaration was actually rejected for — the same trap {@code KernelModContainerFactory}'s
 	 * listener-error path documents, which is why this reuses its hardened proxy rather than growing a second one.
 	 */
-	private static Object modInfo(Class<?> iModInfo, String modId) {
-		return KernelModContainerFactory.proxyModInfo(iModInfo, modId);
+	private static Object modInfo(Class<?> iModInfo, String modId) throws Exception {
+		return KernelModContainerFactory.modInfo(iModInfo.getClassLoader(), modId);
 	}
 
 	/**

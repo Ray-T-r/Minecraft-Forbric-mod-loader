@@ -28,7 +28,6 @@ import java.util.Map;
 import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
-import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -105,8 +104,7 @@ public final class KernelModLoader {
 	private static volatile Map<String, KernelForgeModContext.Handle> publishedForge = Map.of();
 
 	/** Scans + constructs every {@code @Mod} in {@code modJars}. Best-effort per mod. */
-	public static List<ConstructedMod> constructMods(ForbricClassLoader loader, ClassLoader cl, List<Path> modJars,
-			Side side) {
+	public static List<ConstructedMod> constructMods(ClassLoader cl, List<Path> modJars, Side side) {
 		// Phase 1 — scan and ARBITRATE everything first, so the full NeoForge mod set is known before any mod's
 		// constructor runs. A universal jar ships one @Mod per family; only the family that OWNS the jar may
 		// construct, or the same mod initialises once per live ecosystem (see MultiLoaderArbiter).
@@ -145,7 +143,7 @@ public final class KernelModLoader {
 			try {
 				Object bus = KernelBusSupport.makeModBus(cl);
 				neo.put(modId, new NeoIdentity(bus,
-						KernelModContainerFactory.create(loader, cl, modId, bus, jarOfMod.get(modId))));
+						KernelModContainerFactory.create(cl, modId, bus, jarOfMod.get(modId))));
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/ModLoader] could not build ModContainer for NeoForge mod " + modId,
 						KernelBusSupport.unwrap(t));
@@ -162,7 +160,7 @@ public final class KernelModLoader {
 			try {
 				Object bus = KernelBusSupport.makeModBus(cl);
 				aliases.put(alias.modId(),
-						new NeoIdentity(bus, KernelModContainerFactory.create(loader, cl, alias.modId(), bus)));
+						new NeoIdentity(bus, KernelModContainerFactory.create(cl, alias.modId(), bus)));
 				ForbricLog.info("[Forbric/ModLoader] presence alias '%s' — its NeoForge jar lost arbitration, but "
 						+ "the winning jar supplies the classes; ModList.isLoaded now answers", alias.modId());
 			} catch (Throwable t) {
