@@ -1,0 +1,9 @@
+modLoader="javafml"
+loaderVersion="[65,)"
+license="Apache-2.0"
+
+[[mods]]
+modId="forbricnestlib"
+version="1.0.0"
+displayName="Forbric Nested-Duplicate Canary Library (Forge build)"
+description='''The MinecraftForge build of the same library the Fabric parent nests. Same mod id, different jar, different ecosystem — the shape that made Xaero's xaerolib initialise twice.'''

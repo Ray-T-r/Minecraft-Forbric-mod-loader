@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "forbricnestlib",
+  "version": "1.0.0",
+  "name": "Forbric Nested-Duplicate Canary Library (Fabric build)",
+  "description": "The Fabric build of a library that a Fabric mod and a MinecraftForge mod each nest. Its twin under META-INF/jarjar of the Forge parent claims the same id.",
+  "license": "Apache-2.0",
+  "environment": "*",
+  "entrypoints": { "main": [ "forbric.nestlib.NestLibFabric" ] }
+}
