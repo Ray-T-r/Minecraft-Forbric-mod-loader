@@ -962,6 +962,13 @@ public final class PassiveSeeder {
 					? new ForgeLoadingLists(List.of(), List.of())
 					: buildForgeLoadingLists(gameLoader, mods);
 			ForgeLoadingList.publish(lists.files(), lists.modInfos());
+			// The timing claim is made HERE, by the only caller that can know it: this runs before
+			// KernelMixinBootstrap.init, and the late fallback in seedForgeLoadingModList does not. ForgeLoadingList
+			// .publish itself says nothing about when, because both callers reach it and a gate reading a timing
+			// guarantee out of a line the callee wrote would stay green through exactly this regression.
+			ForbricLog.info("[Forbric/ForgeList] published MinecraftForge's LoadingModList BEFORE Mixin starts — "
+					+ "%d mod(s). Its list is built by a one-shot class initializer, so the answer has to exist "
+					+ "before the first guest mixin plugin can ask for it.", lists.modInfos().size());
 		} catch (Throwable t) {
 			// Deliberately does NOT publish an empty list as a fallback. Reading an unpublished list throws with a
 			// stack naming the reader; publishing an empty one here would freeze "no mods" into a final field and
@@ -1024,7 +1031,15 @@ public final class PassiveSeeder {
 			// ForgeLoadingList.publish keeps the FIRST writer, so this is a no-op then. It matters when the early
 			// pass could not build a list: the holder still gets a real answer here, exactly as it did before this
 			// fix existed, instead of the run dying on a list that was computable all along.
+			boolean late = !ForgeLoadingList.isPublished();
 			ForgeLoadingList.publish(lists.files(), lists.modInfos());
+			if (late) {
+				// Everything downstream still works — but only because nothing happened to read LoadingModList
+				// during Mixin this run. Next run, with one more mod, it might.
+				ForbricLog.warn("[Forbric/ForgeList] MinecraftForge's LoadingModList was published LATE, from the "
+						+ "mod-loading window — the pre-Mixin pass did not produce one. Anything that reads "
+						+ "LoadingModList before this point poisons its one-shot holder for the whole run.");
+			}
 			Object state = stateCtor.newInstance(lists.files(), lists.modInfos());
 
 			// Still written, even though the rewritten holder no longer reads it: LoadingModListImpl.init is

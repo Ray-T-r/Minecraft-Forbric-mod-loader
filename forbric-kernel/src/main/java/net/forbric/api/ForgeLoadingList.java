@@ -120,15 +120,18 @@ public final class ForgeLoadingList {
 			return;
 		}
 		published = new Lists(List.copyOf(modFiles), List.copyOf(modInfos));
+		// Deliberately says nothing about WHEN this happened. Whether the publish beat Mixin is the caller's fact,
+		// not this method's, and a gate that reads its own timing guarantee out of a line written by the layer that
+		// cannot know it is a gate that stays green through the regression it exists to catch.
 		if (modInfos.isEmpty()) {
 			ForbricLog.info("[Forbric/ForgeList] this instance has no MinecraftForge-family mods — publishing an "
 					+ "EMPTY LoadingModList. That is the answer, not a failure: its handshake will truthfully say "
 					+ "mods=[]. A list that is merely unknown is never published, and reading one throws.");
 		} else {
-			ForbricLog.info("[Forbric/ForgeList] published MinecraftForge's LoadingModList before Mixin starts: "
-					+ "%d file(s), %d mod(s). Its lazy holder now reads this instead of LoadingModListImpl.temp, so "
-					+ "whoever touches LoadingModList first — a mixin plugin during prepareConfigs, ServerStatusPing, "
-					+ "a coremod — gets the real list instead of poisoning the holder for the whole run.",
+			ForbricLog.info("[Forbric/ForgeList] MinecraftForge's LoadingModList is now %d file(s), %d mod(s). Its "
+					+ "lazy holder reads this instead of LoadingModListImpl.temp, so whoever touches LoadingModList "
+					+ "first — a mixin plugin during prepareConfigs, ServerStatusPing, a coremod — gets the real "
+					+ "list instead of poisoning the holder for the whole run.",
 					modFiles.size(), modInfos.size());
 		}
 	}

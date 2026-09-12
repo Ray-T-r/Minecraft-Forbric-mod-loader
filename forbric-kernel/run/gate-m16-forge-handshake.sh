@@ -139,6 +139,22 @@ check "the server knows the client's Forge mods" "ForbricLive/HS\] server Networ
 check "the list is the whole Forge family, not just this mod" "ForbricLive/HS\] client NetworkContext .*mods=\[[^]]*fallingtree" "$CLOG"
 check_absent "neither end announces an empty mod list" "NetworkContext .*mods=\[\]" "$CLOG"
 check "the kernel seeded MinecraftForge's loading list for real" "Seed\] seeded traditional-Forge LoadingModList with [1-9]" "$SLOG"
+# ...and that the list exists BEFORE anything can ask for it. The seed above runs in the mod-loading window, and
+# MinecraftForge's list is built by a one-shot class initializer with no exception table: whoever touches
+# LoadingModList before that seed used to NPE inside it and leave the class permanently erroneous, which costs the
+# whole run its Forge mod list and puts mods=[] on the wire. Nothing in this gate happens to touch it early, so
+# without these four lines the gate is green with or without the fix — it would only catch the regression on the
+# day some mod's mixin plugin asked first.
+check "the list exists before Mixin starts (server)" "ForgeList\] published MinecraftForge's LoadingModList BEFORE Mixin starts — [1-9]" "$SLOG"
+check "the list exists before Mixin starts (client)" "ForgeList\] published MinecraftForge's LoadingModList BEFORE Mixin starts — [1-9]" "$CLOG"
+check_absent "and not late, from the mod-loading window (server)" "ForgeList\] .*published LATE" "$SLOG"
+check_absent "and not late, from the mod-loading window (client)" "ForgeList\] .*published LATE" "$CLOG"
+check "the lazy holder no longer reads temp (server)" "ForgeList\] .*LazyInit now builds MinecraftForge's LoadingModList from the kernel's published list" "$SLOG"
+check "the lazy holder no longer reads temp (client)" "ForgeList\] .*LazyInit now builds MinecraftForge's LoadingModList from the kernel's published list" "$CLOG"
+# The read side. Seeding succeeds whether or not the holder is already poisoned — LoadingModListImpl's own
+# initializer always succeeds, so only reading the list back can tell the two apart.
+check_absent "the list reads back as the kernel built it (server)" "ForgeList\] .*(UNREADABLE|but the kernel built)" "$SLOG"
+check_absent "the list reads back as the kernel built it (client)" "ForgeList\] .*(UNREADABLE|but the kernel built)" "$CLOG"
 
 step "nothing in that handshake failed (must be ABSENT)"
 check_absent "every payload encodes (server)"  "Failed to encode packet"                  "$SLOG"
