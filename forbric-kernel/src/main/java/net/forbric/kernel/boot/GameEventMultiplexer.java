@@ -72,16 +72,18 @@ public final class GameEventMultiplexer {
 			Method addListener = busCls.getMethod("addListener", prioCls, boolean.class, Class.class, Consumer.class);
 
 			Class<?> mcServer = Class.forName("net.minecraft.server.MinecraftServer", false, cl);
-			Class<?> factory = Class.forName("net.minecraftforge.event.ForgeEventFactory", false, cl);
+			// Resolved for its ABSENCE, not its presence: the tick forward itself is game-side now and names this
+			// class as a type. Probing it here keeps the graceful path below — a Neo-only instance throws
+			// ClassNotFoundException at THIS line and is reported as "only one Forge family present" at debug,
+			// instead of the game-side class failing to link and being reported as a warning per bridge.
+			Class.forName("net.minecraftforge.event.ForgeEventFactory", false, cl);
 
 			// Each bridge is installed INDEPENDENTLY. They used to be five `n +=` calls in this one try, so the
 			// first setup failure skipped every bridge after it — and the cost of the ones skipped (see
 			// GameEventBridge.cost()) is silent: a listener on a bus nobody posts to. One failing bridge must cost
 			// only itself.
-			install(GameEventBridge.SERVER_TICK_PRE, () ->
-					bridgeServerTick(cl, neoBus, addListener, lowest, factory, mcServer, "Pre", "onPreServerTick"));
-			install(GameEventBridge.SERVER_TICK_POST, () ->
-					bridgeServerTick(cl, neoBus, addListener, lowest, factory, mcServer, "Post", "onPostServerTick"));
+			install(GameEventBridge.SERVER_TICK_PRE, () -> tickBridge(cl, "installPre").invoke(null, neoBus));
+			install(GameEventBridge.SERVER_TICK_POST, () -> tickBridge(cl, "installPost").invoke(null, neoBus));
 			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
 			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so
@@ -211,6 +213,19 @@ public final class GameEventMultiplexer {
 		}
 	}
 
+	/**
+	 * One entry point on the game-side tick bridge, resolved by name because this file cannot name it.
+	 *
+	 * <p>Written as a complete string literal on purpose: {@code KernelRuntimeClassesTest} finds game-side names
+	 * by scanning boot-side sources for exactly this shape, and a name assembled from a constant and a suffix
+	 * would slip past it — leaving the class unregistered, the boot-time seam check blind to it, and a renamed
+	 * method a mid-game {@code NoSuchMethodException} instead of one line at startup.
+	 */
+	private static Method tickBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameTickEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
 	/** A class name reduced to the {@code [a-z0-9._/-]} an {@code Identifier} path allows. */
 	private static String sanitisePath(String className) {
 		StringBuilder out = new StringBuilder(className.length());
@@ -221,45 +236,6 @@ public final class GameEventMultiplexer {
 	}
 
 	/** NeoForge {@code ServerTickEvent.Pre/Post} → Forge {@code ForgeEventFactory.onPre/PostServerTick}. */
-	private static int bridgeServerTick(ClassLoader cl, Object bus, Method addListener, Object prio, Class<?> factory,
-			Class<?> mcServer, String kind, String forgeMethod) throws Exception {
-		Class<?> base = Class.forName("net.neoforged.neoforge.event.tick.ServerTickEvent", false, cl);
-		Class<?> evt = Class.forName("net.neoforged.neoforge.event.tick.ServerTickEvent$" + kind, false, cl);
-		Method hasTime = base.getMethod("hasTime");
-		Method getServer = base.getMethod("getServer");
-		Method fire = factory.getMethod(forgeMethod, BooleanSupplier.class, mcServer);
-		AtomicBoolean warned = new AtomicBoolean();
-		AtomicInteger forwarded = new AtomicInteger();
-		Consumer<Object> listener = neoEvt -> {
-			try {
-				Object server = getServer.invoke(neoEvt);
-				BooleanSupplier haveTime = () -> {
-					try {
-						return (Boolean) hasTime.invoke(neoEvt);
-					} catch (Throwable t) {
-						return true;
-					}
-				};
-				fire.invoke(null, haveTime, server);
-				// Proof of the B-5 1:1 shape that works with REAL mods (which don't count ticks): this listener is
-				// the NeoForge tick firing, and each forward is the MinecraftForge tick — so N forwards means both
-				// families ticked N times in the same loop, once each. Log once at the threshold; it fires per tick.
-				if (forwarded.incrementAndGet() == TICK_PROOF_THRESHOLD) {
-					ForbricLog.info("[Forbric/EventMux] bridged %d ServerTickEvent.%s to MinecraftForge — 1:1 from "
-							+ "NeoForge (both game-event families tick in one loop)", TICK_PROOF_THRESHOLD, kind);
-				}
-			} catch (Throwable t) {
-				// Log ONCE (fires every tick) — degrade to NeoForge-only ticks rather than spam.
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] " + forgeMethod + " forward failed; Forge-family mods won't "
-							+ "receive this tick event", Reflect.unwrap(t));
-				}
-			}
-		};
-		addListener.invoke(bus, prio, false, evt, listener);
-		return 1;
-	}
-
 	/**
 	 * NeoForge {@code Server{Started,Stopping}Event} → MinecraftForge {@code ServerLifecycleHooks.handle*}. The
 	 * re-emission fires MinecraftForge's own lifecycle event (so Forge-family mods observe start/stop) AND flips its
