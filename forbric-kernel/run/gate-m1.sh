@@ -36,6 +36,10 @@ await_server "$BOOTPID" "$LOG" 90
 
 step "boot achievements (must PASS)"
 check "kernel loaded merged base through its own loader"  "sovereign kernel .* owned jar" "$LOG"
+# The kernel's OWN game-side half. Asserted with a literal count and not [0-9]+, because [0-9]+ matches 0 and a
+# kernel that delivered nothing would read exactly like one that delivered everything. The right-hand number is
+# how many net.forbric.kernel.runtime classes KernelRuntimeClasses marks COMPILED; when that grows, this grows.
+check "kernel's own game-side classes linked"             "game-side kernel classes: 1/1 linked" "$LOG"
 check "genuine server-loading lifecycle redirected"       "(redirected|excised) genuine loader trigger .*ServerModLoader.load" "$LOG"
 check "native ecosystem registration ran"                 "fired RegisterEvent x[0-9]+ on [0-9]+ bus" "$LOG"
 check "server reached Done"                               "Done \(" "$LOG"

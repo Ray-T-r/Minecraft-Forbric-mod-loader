@@ -21,9 +21,15 @@ java {
 // forbric-loader pipeline (kept as-is): run/build-merged-base.sh + run/assemble-{minecraftforge,neoforge}-runtime.sh.
 // These are LGPL / Mojang-derived and are NEVER bundled — compileOnly linkage only, runtime-supplied by the user
 // or installer, exactly as the old system does. The kernel stays base-jar-parametric at launch (--gameJar).
-def stagedMergedBase   = file('../forbric-loader/run/merged-base/patched-mc-merged-26.2.jar')
-def stagedForgeRuntime = file('../forbric-loader/run/forge-runtime/forge-runtime.jar')
-def stagedNeoRuntime   = file('../forbric-loader/run/neoforge-runtime/neoforge-runtime.jar')
+//
+// The root is overridable with -Pforbric.stagedRoot=<dir> for ONE reason: the claim that a machine WITHOUT
+// staged artifacts still builds an unchanged boot jar has to be testable on a machine that has them. Pointing
+// it at a directory that does not exist reproduces that machine exactly, in one command, without moving a
+// 35MB file another session may be running from.
+def stagedRoot         = file(project.findProperty('forbric.stagedRoot') ?: '../forbric-loader/run')
+def stagedMergedBase   = new File(stagedRoot, 'merged-base/patched-mc-merged-26.2.jar')
+def stagedForgeRuntime = new File(stagedRoot, 'forge-runtime/forge-runtime.jar')
+def stagedNeoRuntime   = new File(stagedRoot, 'neoforge-runtime/neoforge-runtime.jar')
 def stagedGameJars = [stagedMergedBase, stagedForgeRuntime, stagedNeoRuntime].findAll { it.isFile() }
 
 sourceSets {
@@ -124,14 +130,40 @@ jar {
 	}
 }
 
-// GAME jar: forbric-kernel-runtime — the transforming-classloader-defined half; JiJ-nests MixinExtras.
+// GAME jar: forbric-kernel-runtime — the half ForbricClassLoader defines, compiled against the staged jars.
+//
+// It does NOT nest MixinExtras. The boot jar above already carries it and KernelBundledJars extracts it; a
+// second copy here would ride inside an owned jar where nothing reads nested jars, so it would be a megabyte of
+// dead weight AND a second place to update when the version moves. One bundler owns it.
 tasks.register('runtimeJar', Jar) {
 	archiveBaseName = 'forbric-kernel-runtime'
 	dependsOn 'compileRuntimeJava'
 	from sourceSets.runtime.output
-	into('META-INF/jars') {
-		from configurations.nestedMods
-		rename '.*\\.jar', 'mixinextras-fabric.jar'
+}
+
+// Carry the game-side jar INSIDE the boot jar, next to MixinExtras and delivered the same way — so the kernel
+// stays one file and neither a launcher nor the installer has to learn a new path.
+//
+// Wired at CONFIGURATION time and only when the staged jars are present. That is the whole reason this is an
+// `if` and not an `onlyIf`: `onlyIf` skips the task but keeps the wiring, so a machine without staged artifacts
+// would still get an `into` block sourced from a jar that was never built — which packs an EMPTY runtime jar,
+// and an empty one is worse than none at all (every game-side class then fails to link at the moment of use,
+// far from the cause). With the wiring itself absent, `gradlew jar` on such a machine is byte-identical to what
+// it was before this block existed, and the boot-side gate is untouched.
+//
+// Nothing is lost there either: this jar links against Mojang/Forge/Neo types, so a machine that cannot build
+// it also cannot run the game that would load it. Its prerequisites ARE the game's prerequisites.
+//
+// This is a SIBLING of the MixinExtras block on purpose. `rename` is a property of the CopySpec it sits in, so
+// putting this `from` inside that block would rename the runtime jar to mixinextras-fabric.jar and silently
+// replace the wrong file.
+if (!stagedGameJars.isEmpty()) {
+	jar {
+		dependsOn 'runtimeJar'
+		into('META-INF/jars') {
+			from tasks.named('runtimeJar').flatMap { it.archiveFile }
+			rename '.*\\.jar', 'forbric-kernel-runtime.jar'
+		}
 	}
 }
 

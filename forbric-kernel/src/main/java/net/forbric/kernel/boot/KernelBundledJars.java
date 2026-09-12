@@ -26,44 +26,69 @@ import java.util.List;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Extracts the libraries bundled inside the kernel's own jar that must live on the GAME side.
+ * Extracts the jars bundled inside the kernel's own jar that must live on the GAME side.
  *
- * <p>Only MixinExtras so far. It cannot be parent-loaded: it generates classes (the {@code LocalRef} machinery)
- * that must share a loader with the game classes they touch, and mods reference its annotations from woven
- * bytecode. So it is bundled at {@code META-INF/jars/mixinextras-fabric.jar}, extracted here, and handed to
- * {@code ForbricClassLoader} as an owned jar — while {@code DelegationPolicy} pins
- * {@code com.llamalad7.mixinextras.} to the game side.
+ * <p>Both of them are here for the same structural reason and neither can be parent-loaded: MixinExtras
+ * generates classes (the {@code LocalRef} machinery) that must share a loader with the game classes they touch,
+ * and the kernel's own game-side half is pinned {@code ALWAYS_GAME} by {@code DelegationPolicy} precisely so
+ * that it can name game types. Carrying them inside the boot jar keeps the kernel ONE file — no launcher
+ * argument, no installer step, nothing for a profile to get wrong.
+ *
+ * <p>The two differ in what their absence MEANS, and that difference is carried as data rather than averaged
+ * into one warning. A missing MixinExtras is a degraded run: most of fabric-api stops applying its mixins, and
+ * saying so is the most the kernel can do. A missing game-side jar is a BROKEN KERNEL — it means the boot jar
+ * was built on a machine with no staged artifacts, so every class the kernel itself will ask for game-side is
+ * simply not there. That one names the build command, because the reader can fix it in one line.
  */
 public final class KernelBundledJars {
-	private static final String[] BUNDLED = {"mixinextras-fabric.jar"};
+	/**
+	 * A jar carried at {@code META-INF/jars/} in the boot jar.
+	 *
+	 * @param fileName  the entry name inside the boot jar, and the name it is extracted under
+	 * @param onMissing what to tell the reader when it is not in the boot jar — the consequence first, then the
+	 *                  fix if there is one. Never a bare "not found": by the time anyone reads this line they
+	 *                  already know something is missing; what they do not know is what it costs them.
+	 */
+	private record Bundled(String fileName, String onMissing) {
+	}
+
+	private static final Bundled[] BUNDLED = {
+		new Bundled("mixinextras-fabric.jar",
+				"mods using MixinExtras (most of fabric-api) will fail to apply their mixins"),
+		new Bundled("forbric-kernel-runtime.jar",
+				"this boot jar was built with no staged game artifacts, so the kernel's own game-side classes are "
+						+ "absent and anything that needs one will fail to link — rebuild with the staged jars in "
+						+ "place (../forbric-loader/run/) via: ./gradlew jar"),
+	};
 
 	private KernelBundledJars() {
 	}
 
 	/**
 	 * Extracts every bundled game-side jar into {@code <gameDir>/.forbric-kernel/lib/} and returns their paths.
-	 * A jar already extracted at the same size is reused.
 	 */
 	public static List<Path> extract(Path gameDir) {
 		Path libDir = gameDir.resolve(".forbric-kernel").resolve("lib");
 		List<Path> extracted = new ArrayList<>();
 
-		for (String name : BUNDLED) {
+		for (Bundled bundled : BUNDLED) {
+			String name = bundled.fileName();
 			Path target = libDir.resolve(name);
 
 			try (InputStream in = KernelBundledJars.class.getResourceAsStream("/META-INF/jars/" + name)) {
 				if (in == null) {
-					ForbricLog.warn("[Forbric/Boot] bundled library %s is missing from the kernel jar — mods using "
-							+ "MixinExtras (most of fabric-api) will fail to apply their mixins", name);
+					ForbricLog.warn("[Forbric/Boot] bundled jar %s is missing from the kernel jar — %s",
+							name, bundled.onMissing());
 					continue;
 				}
 
 				Files.createDirectories(libDir);
 				Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
 				extracted.add(target);
-				ForbricLog.debug("[Forbric/Boot] extracted bundled game-side library %s", name);
+				ForbricLog.debug("[Forbric/Boot] extracted bundled game-side jar %s", name);
 			} catch (Exception e) {
-				ForbricLog.warn("[Forbric/Boot] could not extract bundled library %s: %s", name, String.valueOf(e));
+				ForbricLog.warn("[Forbric/Boot] could not extract bundled jar %s: %s — %s",
+						name, String.valueOf(e), bundled.onMissing());
 			}
 		}
 
