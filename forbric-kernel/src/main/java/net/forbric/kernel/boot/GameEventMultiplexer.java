@@ -31,6 +31,7 @@ import net.forbric.api.EventBridges;
 import net.forbric.api.ForeignType;
 import net.forbric.api.GameEventBridge;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Reflect;
 
 /**
  * Re-emits game events the merged base's byte-merge left firing on only ONE ecosystem's hook, so the other
@@ -99,7 +100,7 @@ public final class GameEventMultiplexer {
 			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no bridge needed");
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/EventMux] could not install Neo→Forge game-event bridge",
-					KernelBusSupport.unwrap(t));
+					Reflect.unwrap(t));
 		}
 	}
 
@@ -194,7 +195,7 @@ public final class GameEventMultiplexer {
 					}
 				} catch (Throwable t) {
 					ForbricLog.warn("[Forbric/EventMux] could not bridge Forge client reload listeners",
-							KernelBusSupport.unwrap(t));
+							Reflect.unwrap(t));
 				}
 			};
 			addListener.invoke(modBus, lowest, false, neoEvent, bridge);
@@ -205,7 +206,7 @@ public final class GameEventMultiplexer {
 			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no reload-listener bridge needed");
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/EventMux] could not install the client reload-listener bridge",
-					KernelBusSupport.unwrap(t));
+					Reflect.unwrap(t));
 		}
 	}
 
@@ -250,7 +251,7 @@ public final class GameEventMultiplexer {
 				// Log ONCE (fires every tick) — degrade to NeoForge-only ticks rather than spam.
 				if (warned.compareAndSet(false, true)) {
 					ForbricLog.warn("[Forbric/EventMux] " + forgeMethod + " forward failed; Forge-family mods won't "
-							+ "receive this tick event", KernelBusSupport.unwrap(t));
+							+ "receive this tick event", Reflect.unwrap(t));
 				}
 			}
 		};
@@ -311,7 +312,7 @@ public final class GameEventMultiplexer {
 				server = getServer.invoke(neoEvt);
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/EventMux] NeoForge's about-to-start event carried no server; MinecraftForge's "
-						+ "server configs stay at their defaults", KernelBusSupport.unwrap(t));
+						+ "server configs stay at their defaults", Reflect.unwrap(t));
 				return;
 			}
 			try {
@@ -320,7 +321,7 @@ public final class GameEventMultiplexer {
 				if (warnedConfigs.compareAndSet(false, true)) {
 					ForbricLog.warn("[Forbric/EventMux] could not load MinecraftForge's per-world SERVER configs — its "
 							+ "mods keep their defaults here and on every client that joins",
-							KernelBusSupport.unwrap(t));
+							Reflect.unwrap(t));
 				}
 			}
 			try {
@@ -329,7 +330,7 @@ public final class GameEventMultiplexer {
 				if (warnedModifiers.compareAndSet(false, true)) {
 					ForbricLog.debug("[Forbric/EventMux] MinecraftForge's biome modifiers did not apply (%s) — nothing "
 							+ "declares its biome-modifier datapack registry under the kernel; the rest of its "
-							+ "server start is unaffected", String.valueOf(KernelBusSupport.unwrap(t)));
+							+ "server start is unaffected", String.valueOf(Reflect.unwrap(t)));
 				}
 			}
 			try {
@@ -337,7 +338,7 @@ public final class GameEventMultiplexer {
 			} catch (Throwable t) {
 				if (warnedEvent.compareAndSet(false, true)) {
 					ForbricLog.warn("[Forbric/EventMux] MinecraftForge's ServerAboutToStartEvent did not reach its mods",
-							KernelBusSupport.unwrap(t));
+							Reflect.unwrap(t));
 				}
 			}
 		};
@@ -367,7 +368,7 @@ public final class GameEventMultiplexer {
 			} catch (Throwable t) {
 				if (warned.compareAndSet(false, true)) {
 					ForbricLog.warn("[Forbric/EventMux] " + forgeMethod + " forward failed; Forge-family mods won't "
-							+ "observe this server-lifecycle event", KernelBusSupport.unwrap(t));
+							+ "observe this server-lifecycle event", Reflect.unwrap(t));
 				}
 			}
 		};
@@ -388,7 +389,7 @@ public final class GameEventMultiplexer {
 			atomic.getClass().getMethod("set", boolean.class).invoke(atomic, true);
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/EventMux] could not pre-open Forge allowLogins gate: %s",
-					String.valueOf(KernelBusSupport.unwrap(t)));
+					String.valueOf(Reflect.unwrap(t)));
 		}
 	}
 
@@ -411,7 +412,7 @@ public final class GameEventMultiplexer {
 			EventBridges.installed(bridge);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/EventMux] bridge " + bridge + " (" + bridge.event() + ") did not install — "
-					+ bridge.cost(), KernelBusSupport.unwrap(t));
+					+ bridge.cost(), Reflect.unwrap(t));
 		}
 	}
 }

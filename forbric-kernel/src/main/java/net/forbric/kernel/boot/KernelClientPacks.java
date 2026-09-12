@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Reflect;
 
 /**
  * Serves the ecosystem jars' CLIENT ASSETS (shaders, textures, models, lang) to the real client
@@ -90,7 +91,7 @@ public final class KernelClientPacks {
 					+ "(forced-compatible): %s", ids.size(), ids);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ClientPacks] could not serve ecosystem assets to the client PackRepository "
-					+ "(ecosystem shaders/textures will be missing)", KernelBusSupport.unwrap(t));
+					+ "(ecosystem shaders/textures will be missing)", Reflect.unwrap(t));
 		}
 	}
 

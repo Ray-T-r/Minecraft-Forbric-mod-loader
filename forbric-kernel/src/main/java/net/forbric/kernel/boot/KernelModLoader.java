@@ -30,6 +30,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Reflect;
 
 /**
  * Constructs discovered Forge-family {@code @Mod} classes natively — the M3 keystone for real mods.
@@ -146,7 +147,7 @@ public final class KernelModLoader {
 						KernelModContainerFactory.create(cl, modId, bus, jarOfMod.get(modId))));
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/ModLoader] could not build ModContainer for NeoForge mod " + modId,
-						KernelBusSupport.unwrap(t));
+						Reflect.unwrap(t));
 			}
 		}
 		// Presence aliases: a mod whose NeoForge jar lost cross-jar arbitration is still HERE — the winner's jar is
@@ -165,7 +166,7 @@ public final class KernelModLoader {
 						+ "the winning jar supplies the classes; ModList.isLoaded now answers", alias.modId());
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/ModLoader] could not alias " + alias.modId() + " into ModList",
-						KernelBusSupport.unwrap(t));
+						Reflect.unwrap(t));
 			}
 		}
 		// Aliases go into ModList but NOT into publishedNeo: nothing must post setup events at a mod that has no
@@ -189,7 +190,7 @@ public final class KernelModLoader {
 				if (mod.forgeHandle() != null) forge.putIfAbsent(mod.modId(), mod.forgeHandle());
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/ModLoader] failed to construct @Mod " + info.className,
-						KernelBusSupport.unwrap(t));
+						Reflect.unwrap(t));
 			}
 		}
 		publishedForge = Map.copyOf(forge);
@@ -228,7 +229,7 @@ public final class KernelModLoader {
 			ForbricLog.debug("[Forbric/ModLoader] traditional-Forge ModList not present — nothing to publish");
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ModLoader] could not publish into MinecraftForge's ModList — a Forge mod asking "
-					+ "whether another is loaded still gets no", KernelBusSupport.unwrap(t));
+					+ "whether another is loaded still gets no", Reflect.unwrap(t));
 		}
 	}
 
@@ -272,7 +273,7 @@ public final class KernelModLoader {
 			ForbricLog.debug("[Forbric/ModLoader] NeoForge ModList not present — nothing to publish");
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ModLoader] could not publish NeoForge ModList "
-					+ "(mods that look themselves up will fail)", KernelBusSupport.unwrap(t));
+					+ "(mods that look themselves up will fail)", Reflect.unwrap(t));
 		}
 	}
 
@@ -308,7 +309,7 @@ public final class KernelModLoader {
 			fillModInfos(modListCls, modList, containers, modContainerCls.getMethod("getModInfo"));
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ModLoader] could not fill ModList.getMods() — mods that ENUMERATE the mod list "
-					+ "(Sodium's config entry points, FlawlessFrames) will find nothing", KernelBusSupport.unwrap(t));
+					+ "(Sodium's config entry points, FlawlessFrames) will find nothing", Reflect.unwrap(t));
 		}
 	}
 
@@ -385,7 +386,7 @@ public final class KernelModLoader {
 			mlcCls.getMethod("setActiveContainer", modContainer).invoke(mlc, container);
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/ModLoader] could not set NeoForge active container: %s",
-					String.valueOf(KernelBusSupport.unwrap(t)));
+					String.valueOf(Reflect.unwrap(t)));
 		}
 	}
 

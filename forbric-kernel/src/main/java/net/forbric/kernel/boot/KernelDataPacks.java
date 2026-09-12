@@ -31,6 +31,7 @@ import java.util.function.Function;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Reflect;
 
 /**
  * Serves a Forge-family mod jar's own {@code data/} — its recipes, tags, loot tables, advancements and datapack
@@ -143,7 +144,7 @@ public final class KernelDataPacks {
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/DataPacks] could not serve datapacks (the c: convention tags and every "
 					+ "Forge-family mod's recipes, tags and worldgen data will be missing)",
-					KernelBusSupport.unwrap(t));
+					Reflect.unwrap(t));
 		}
 	}
 
@@ -295,7 +296,7 @@ public final class KernelDataPacks {
 			return read.invoke(null, location, resources, packType, selection);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/DataPacks] could not build a datapack over %s — that mod's data/ will be "
-					+ "missing: %s", jar.getFileName(), String.valueOf(KernelBusSupport.unwrap(t)));
+					+ "missing: %s", jar.getFileName(), String.valueOf(Reflect.unwrap(t)));
 			return null;
 		}
 	}

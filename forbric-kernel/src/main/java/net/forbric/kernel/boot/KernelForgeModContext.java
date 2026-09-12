@@ -26,6 +26,7 @@ import java.util.Map;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Reflect;
 
 /**
  * The kernel's native traditional-MinecraftForge per-mod loading context: a {@code BusGroup} +
@@ -237,12 +238,12 @@ public final class KernelForgeModContext {
 					targets.add(new Object[] {key, wrapper, forgeReg});
 				} catch (Throwable perReg) {
 					ForbricLog.debug("[Forbric/Forge] skip custom-registry RegisterEvent target: %s",
-							String.valueOf(KernelBusSupport.unwrap(perReg)));
+							String.valueOf(Reflect.unwrap(perReg)));
 				}
 			}
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Forge] could not enumerate custom Forge registries for RegisterEvent "
-					+ "(fluid_type etc. may stay unbound)", KernelBusSupport.unwrap(t));
+					+ "(fluid_type etc. may stay unbound)", Reflect.unwrap(t));
 		}
 		return targets;
 	}
