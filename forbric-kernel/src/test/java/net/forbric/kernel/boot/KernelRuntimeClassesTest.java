@@ -161,14 +161,23 @@ class KernelRuntimeClassesTest {
 			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, name,
 					Type.getMethodDescriptor(Type.getType(call.returns()), params), null, null);
 			mv.visitCode();
-			mv.visitInsn(Opcodes.ACONST_NULL);
-			mv.visitInsn(Opcodes.ARETURN);
+			emitReturn(mv, call.returns());
 			mv.visitMaxs(0, 0);
 			mv.visitEnd();
 		}
 
 		cw.visitEnd();
 		return cw.toByteArray();
+	}
+
+	/** A body that satisfies the verifier for whatever the seam declares — void included. */
+	private static void emitReturn(MethodVisitor mv, Class<?> returns) {
+		if (returns == void.class) {
+			mv.visitInsn(Opcodes.RETURN);
+			return;
+		}
+		mv.visitInsn(Opcodes.ACONST_NULL);
+		mv.visitInsn(Opcodes.ARETURN);
 	}
 
 	private static URL jarWith(Path jar, List<String> binaryNames) throws Exception {

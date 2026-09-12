@@ -94,6 +94,14 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelContainers", new Entry(Origin.COMPILED, List.of(
 				new Call("container", Object.class, String.class, Object.class, Path.class),
 				new Call("modInfo", Object.class, String.class, Path.class))));
+		// The traditional-Forge loading context: BusGroup + FMLModContainer + FMLJavaModLoadingContext, and the
+		// IModInfo they carry. A separate factory from KernelContainers because traditional Forge differs from
+		// NeoForge at every joint the kernel touches. See KernelForgeModContext.
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeContainers", new Entry(Origin.COMPILED, List.of(
+				new Call("create", KernelForgeModContext.Handle.class, String.class),
+				new Call("setActiveContainer", void.class, Object.class),
+				new Call("constructMod", Object.class, String.class, KernelForgeModContext.Handle.class),
+				new Call("startup", void.class, Object.class))));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));

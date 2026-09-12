@@ -18,13 +18,10 @@ package net.forbric.kernel.boot;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
@@ -58,10 +55,11 @@ import net.forbric.kernel.util.ForbricLog;
  * the {@code null} they used to receive.
  */
 public final class KernelForgeModContext {
-	private static final String FML_MOD_CONTAINER = ForeignType.FML_MOD_CONTAINER.binary(Ecosystem.FORGE);
 	private static final String FML_JAVA_CTX = "net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext";
-	private static final String MOD_CONTAINER = ForeignType.MOD_CONTAINER.binary(Ecosystem.FORGE);
 	private static final String BUS_GROUP = "net.minecraftforge.eventbus.api.bus.BusGroup";
+	private static final String GAME_SIDE = "net.forbric.kernel.runtime.KernelForgeContainers";
+
+	private static final java.util.Map<String, Method> GAME_SIDE_CALLS = new java.util.concurrent.ConcurrentHashMap<>();
 
 	/** A manufactured traditional-Forge loading context: what a {@code @Mod} ctor and the kernel each need. */
 	public record Handle(String modId, Object busGroup, Object container, Object jctx) {}
@@ -85,49 +83,12 @@ public final class KernelForgeModContext {
 	 * using its ctor arg) resolves to this same context.
 	 */
 	public static Handle create(ClassLoader cl, String modId) throws Exception {
-		Class<?> unsafe = Class.forName("net.minecraftforge.unsafe.UnsafeHacks", false, cl);
-		Method newInstance = unsafe.getMethod("newInstance", Class.class);
-		Method setField = unsafe.getMethod("setField", Field.class, Object.class, Object.class);
-
-		Class<?> fmcCls = Class.forName(FML_MOD_CONTAINER, false, cl);
-		Class<?> jctxCls = Class.forName(FML_JAVA_CTX, false, cl);
-		Class<?> mcCls = Class.forName(MOD_CONTAINER, false, cl);
-
-		Object busGroup = buildBusGroup(cl, modId);
-		Object container = newInstance.invoke(null, fmcCls);
-		Object jctx = newInstance.invoke(null, jctxCls);
-
-		uset(setField, jctxCls, "container", jctx, container);
-		uset(setField, fmcCls, "eventBusGroup", container, busGroup);
-		// FMLModContainer.context backs its contextExtension supplier; genuine Forge sets it in the ctor we skipped.
-		usetIfPresent(setField, fmcCls, "context", container, jctx);
-		uset(setField, mcCls, "modId", container, modId);
-		uset(setField, mcCls, "namespace", container, modId);
-		uset(setField, mcCls, "contextExtension", container, (java.util.function.Supplier<Object>) () -> jctx);
-		// ModContainer's ctor (skipped by UnsafeHacks.newInstance) initializes these; addConfig / registerExtensionPoint
-		// / the activity + dependency maps all NPE on a null.
-		@SuppressWarnings({"unchecked", "rawtypes"})
-		Object configs = new java.util.EnumMap(
-				Class.forName(ForeignType.MOD_CONFIG_TYPE.binary(Ecosystem.FORGE), false, cl).asSubclass(Enum.class));
-		uset(setField, mcCls, "configs", container, configs);
-		uset(setField, mcCls, "extensionPoints", container, new java.util.concurrent.ConcurrentHashMap<>());
-		usetIfPresent(setField, mcCls, "activityMap", container, new java.util.HashMap<>());
-		usetIfPresent(setField, mcCls, "dependencies", container, new java.util.HashSet<>());
-		// getModInfo() is null without this (the ctor arg we skipped); Forge's own config + display-test paths read it.
-		usetIfPresent(setField, mcCls, "modInfo", container, modInfoProxy(cl, modId));
-
-		setActiveContainer(cl, container);
-		return new Handle(modId, busGroup, container, jctx);
+		return (Handle) call(cl, "create", String.class).invoke(null, modId);
 	}
 
 	/** Makes {@code container} the active {@code ModLoadingContext} (what {@code *.get()} reads). */
 	public static void setActiveContainer(ClassLoader cl, Object container) throws Exception {
-		Class<?> mcCls = Class.forName(MOD_CONTAINER, false, cl);
-		Class<?> mlcCls = Class.forName(ForeignType.MOD_LOADING_CONTEXT.binary(Ecosystem.FORGE), false, cl);
-		Object mlc = mlcCls.getMethod("get").invoke(null);
-		Method setActive = mlcCls.getDeclaredMethod("setActiveContainer", mcCls);
-		setActive.setAccessible(true);
-		setActive.invoke(mlc, container);
+		call(cl, "setActiveContainer", Object.class).invoke(null, container);
 	}
 
 	/**
@@ -135,30 +96,28 @@ public final class KernelForgeModContext {
 	 * that traditional-Forge mods declare, and stores the instance on the container.
 	 */
 	public static Object constructMod(ClassLoader cl, String modClassName, Handle handle) throws Exception {
-		Class<?> unsafe = Class.forName("net.minecraftforge.unsafe.UnsafeHacks", false, cl);
-		Method setField = unsafe.getMethod("setField", Field.class, Object.class, Object.class);
-		Class<?> fmcCls = Class.forName(FML_MOD_CONTAINER, false, cl);
-		Class<?> jctxCls = Class.forName(FML_JAVA_CTX, false, cl);
-
-		Class<?> modCls = Class.forName(modClassName, true, cl);
-		Object mod;
-		try {
-			Constructor<?> c = modCls.getDeclaredConstructor(jctxCls);
-			c.setAccessible(true);
-			mod = c.newInstance(handle.jctx());
-		} catch (NoSuchMethodException noCtxCtor) {
-			Constructor<?> c = modCls.getDeclaredConstructor();
-			c.setAccessible(true);
-			mod = c.newInstance();
-		}
-		usetIfPresent(setField, fmcCls, "modInstance", handle.container(), mod);
-		usetIfPresent(setField, fmcCls, "modClass", handle.container(), modCls);
-		return mod;
+		return call(cl, "constructMod", String.class, Handle.class).invoke(null, modClassName, handle);
 	}
 
 	/** Opens the EventBus 7 {@code startup()} gate on {@code busGroup} — no event dispatches before this. */
 	public static void startup(ClassLoader cl, Object busGroup) throws Exception {
-		Class.forName(BUS_GROUP, false, cl).getMethod("startup").invoke(busGroup);
+		call(cl, "startup", Object.class).invoke(null, busGroup);
+	}
+
+	/**
+	 * Resolves a method on the game-side factory, memoised per name.
+	 *
+	 * <p>The class is looked up through {@code cl} and never as a literal: this whole file is boot-side, and a
+	 * literal would be a game type the boot loader cannot name. {@link KernelRuntimeClasses} checks at boot that
+	 * every one of these resolves, so a rename on the game side is one line at the top of the log instead of a
+	 * {@code NoSuchMethodException} in the middle of a mod's construction.
+	 */
+	private static Method call(ClassLoader cl, String name, Class<?>... parameters) throws Exception {
+		Method cached = GAME_SIDE_CALLS.get(name);
+		if (cached != null) return cached;
+		Method m = Class.forName(GAME_SIDE, true, cl).getMethod(name, parameters);
+		GAME_SIDE_CALLS.put(name, m);
+		return m;
 	}
 
 	/**
@@ -293,68 +252,6 @@ public final class KernelForgeModContext {
 		Class<?> modBusEvent = Class.forName(ForeignType.MOD_BUS_EVENT.binary(Ecosystem.FORGE), false, cl);
 		return busGroupCls.getMethod("create", String.class, Class.class)
 				.invoke(null, "modBusFor" + modId, modBusEvent);
-	}
-
-	/** A minimal Forge-flavoured {@code IModInfo}; returns null (the old behaviour) if the SPI type is absent. */
-	private static Object modInfoProxy(ClassLoader cl, String modId) {
-		try {
-			Class<?> iModInfo = Class.forName(ForeignType.MOD_INFO_SPI.binary(Ecosystem.FORGE), false, cl);
-			Object version = defaultArtifactVersion(cl);
-			InvocationHandler h = (proxy, method, args) -> switch (method.getName()) {
-				case "getModId", "getNamespace", "getDisplayName" -> modId;
-				case "getDescription" -> "";
-				// Non-null like the NeoForge twin: a mod-list UI renders getVersion().toString() unguarded.
-				case "getVersion" -> version;
-				case "getModProperties" -> Map.of();
-				case "getDependencies", "getForgeFeatures" -> List.of();
-				case "getUpdateURL", "getModURL", "getLogoFile" -> Optional.empty();
-				case "getLogoBlur" -> Boolean.FALSE;
-				case "toString" -> "KernelForgeModInfo[" + modId + "]";
-				case "hashCode" -> System.identityHashCode(proxy);
-				case "equals" -> proxy == (args == null ? null : args[0]);
-				default -> defaultReturn(method);
-			};
-			return Proxy.newProxyInstance(cl, new Class<?>[] {iModInfo}, h);
-		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Forge] no Forge IModInfo SPI — container modInfo left null: %s", String.valueOf(t));
-			return null;
-		}
-	}
-
-	private static Object defaultReturn(Method method) {
-		Class<?> r = method.getReturnType();
-		if (r == boolean.class) return Boolean.FALSE;
-		if (r == int.class) return 0;
-		if (r == Optional.class) return Optional.empty();
-		if (r == List.class) return List.of();
-		if (r == Map.class) return Map.of();
-		return null;
-	}
-
-	/** A non-null placeholder {@code ArtifactVersion} (reflective — no compile dep on maven-artifact), or null if absent. */
-	private static Object defaultArtifactVersion(ClassLoader cl) {
-		try {
-			return Class.forName("org.apache.maven.artifact.versioning.DefaultArtifactVersion", true, cl)
-					.getConstructor(String.class).newInstance("0.0");
-		} catch (Throwable t) {
-			return null;
-		}
-	}
-
-	private static void uset(Method setField, Class<?> owner, String fieldName, Object target, Object value)
-			throws Exception {
-		setField.invoke(null, owner.getDeclaredField(fieldName), target, value);
-	}
-
-	/** Same as {@link #uset} but tolerates the field being absent — for fields that vary across Forge revisions. */
-	private static void usetIfPresent(Method setField, Class<?> owner, String fieldName, Object target, Object value) {
-		if (value == null) return;
-		try {
-			uset(setField, owner, fieldName, target, value);
-		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Forge] optional field %s.%s not set: %s", owner.getSimpleName(), fieldName,
-					String.valueOf(KernelBusSupport.unwrap(t)));
-		}
 	}
 
 	static Method single(Class<?> cls, String name) {
