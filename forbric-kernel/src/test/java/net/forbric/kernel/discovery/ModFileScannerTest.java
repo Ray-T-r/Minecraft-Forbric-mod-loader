@@ -167,18 +167,18 @@ class ModFileScannerTest {
 			write(zip, "com/example/Child.class", child.toByteArray());
 		}
 
-		List<Object[]> classes = new ArrayList<>();
+		List<ModFileScanner.ClassEntry> classes = new ArrayList<>();
 		ModFileScanner.collect(jar, new ArrayList<>(), classes);
 
 		assertEquals(2, classes.size());
-		Object[] root = classes.stream()
-				.filter(c -> c[0].equals(Type.getObjectType("java/lang/Object"))).findFirst().orElseThrow();
-		assertNull(root[1], "a null superclass must stay null, not become java/lang/Object");
+		ModFileScanner.ClassEntry root = classes.stream()
+				.filter(c -> c.name().equals(Type.getObjectType("java/lang/Object"))).findFirst().orElseThrow();
+		assertNull(root.parent(), "a null superclass must stay null, not become java/lang/Object");
 
-		Object[] child = classes.stream()
-				.filter(c -> c[0].equals(Type.getObjectType("com/example/Child"))).findFirst().orElseThrow();
-		assertEquals(Type.getObjectType("com/example/Parent"), child[1]);
-		assertEquals(java.util.Set.of(Type.getObjectType("com/example/Iface")), child[2]);
+		ModFileScanner.ClassEntry child = classes.stream()
+				.filter(c -> c.name().equals(Type.getObjectType("com/example/Child"))).findFirst().orElseThrow();
+		assertEquals(Type.getObjectType("com/example/Parent"), child.parent());
+		assertEquals(java.util.Set.of(Type.getObjectType("com/example/Iface")), child.interfaces());
 	}
 
 	@Test
@@ -194,7 +194,7 @@ class ModFileScannerTest {
 		}
 
 		List<ModFileScanner.Found> found = new ArrayList<>();
-		List<Object[]> classes = new ArrayList<>();
+		List<ModFileScanner.ClassEntry> classes = new ArrayList<>();
 		ModFileScanner.collect(jar, found, classes);
 
 		assertEquals(0, found.size());
