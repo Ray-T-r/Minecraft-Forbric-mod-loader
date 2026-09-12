@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "forbricnestfab",
+  "version": "1.0.0",
+  "name": "Forbric Nested-Duplicate Canary (Fabric parent)",
+  "description": "Nests the Fabric build of forbricnestlib, the way Xaero's minimap nests xaerolib.",
+  "license": "Apache-2.0",
+  "environment": "*",
+  "entrypoints": { "main": [ "forbric.nestparent.NestParentFabric" ] },
+  "jars": [ { "file": "META-INF/jars/forbricnestlib-fabric.jar" } ],
+  "depends": { "fabricloader": ">=0.18.4", "minecraft": "*" }
+}
