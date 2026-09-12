@@ -35,7 +35,7 @@ for j in fabric-api-0.155.2+26.2.jar balm-neoforge-26.2-26.2.0.4.jar shogi-neofo
   cp "$src" "$RUNDIR/mods/"
 done
 echo "[kernel] staged: $(ls "$RUNDIR/mods" | paste -sd' ' -)"
-printf 'level-seed=forbrickernel\n' > "$RUNDIR/server.properties"
+seed_server_properties "$RUNDIR"
 
 step "boot to Done and stop cleanly"
 : > "$LOG"

@@ -46,7 +46,7 @@ for pat in $WORLDGEN_PATTERNS; do
 done
 echo "[make-world] generating with: $(ls "$GEN/mods" | paste -sd' ' -)"
 
-printf 'level-name=%s\nonline-mode=false\nmax-tick-time=-1\nview-distance=6\nspawn-protection=0\nsync-chunk-writes=false\n' "$WORLD" > "$GEN/server.properties"
+printf 'level-name=%s\nserver-port=%s\nonline-mode=false\nmax-tick-time=-1\nview-distance=6\nspawn-protection=0\nsync-chunk-writes=false\n' "$WORLD" "$GATE_PORT" > "$GEN/server.properties"
 printf 'eula=true\n' > "$GEN/eula.txt"
 
 # Drive it through the same PID-based lifecycle the gates use, NOT a bare pipe. Measured the hard way: the first

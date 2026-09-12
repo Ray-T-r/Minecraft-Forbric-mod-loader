@@ -14,7 +14,9 @@ set -uo pipefail
 MC="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 KERNEL="$(cd "$HERE/.." && pwd)"
-OLD="$(cd "$KERNEL/../forbric-loader" && pwd)"
+# Same FORBRIC_OLD knob lib.sh uses: one variable points a second working tree at the staged artifacts
+# instead of needing MERGED, FORGE_RT and NEO_RT set individually.
+OLD="$(cd "${FORBRIC_OLD:-$KERNEL/../forbric-loader}" && pwd)"
 STAGE="$OLD/run"
 
 MERGED="${MERGED:-$STAGE/merged-base/patched-mc-merged-26.2.jar}"

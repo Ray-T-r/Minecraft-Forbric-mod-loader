@@ -58,7 +58,7 @@ for jar in "$PACK/fabric-api-0.155.2+26.2.jar" \
            "$PACK/tectonic-3.0.27-neoforge-26.2.jar"; do
   if [ -f "$jar" ]; then cp "$jar" "$RUNDIR/mods/"; else echo "[kernel] WARN absent: $jar"; fi
 done
-printf 'level-seed=forbrickernel\n' > "$RUNDIR/server.properties"
+seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
 step "boot the merged base under the kernel (no compatibility flags)"

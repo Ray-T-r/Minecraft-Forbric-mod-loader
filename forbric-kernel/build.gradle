@@ -26,7 +26,10 @@ java {
 // staged artifacts still builds an unchanged boot jar has to be testable on a machine that has them. Pointing
 // it at a directory that does not exist reproduces that machine exactly, in one command, without moving a
 // 35MB file another session may be running from.
-def stagedRoot         = file(project.findProperty('forbric.stagedRoot') ?: '../forbric-loader/run')
+// -Pforbric.stagedRoot wins; then FORBRIC_OLD, which is the one variable the run/ scripts also read, so a
+// second working tree needs exactly one export rather than a different knob per tool.
+def stagedRoot         = file(project.findProperty('forbric.stagedRoot')
+		?: (System.getenv('FORBRIC_OLD') ? System.getenv('FORBRIC_OLD') + '/run' : '../forbric-loader/run'))
 def stagedMergedBase   = new File(stagedRoot, 'merged-base/patched-mc-merged-26.2.jar')
 def stagedForgeRuntime = new File(stagedRoot, 'forge-runtime/forge-runtime.jar')
 def stagedNeoRuntime   = new File(stagedRoot, 'neoforge-runtime/neoforge-runtime.jar')
