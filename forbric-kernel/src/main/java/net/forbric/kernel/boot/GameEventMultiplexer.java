@@ -91,10 +91,9 @@ public final class GameEventMultiplexer {
 			// world-join fails. Re-emit the dropped Forge hook off NeoForge's surviving ServerStarted/Stopping events.
 			install(GameEventBridge.SERVER_ABOUT_TO_START, () ->
 					bridgeForgeServerAboutToStart(cl, neoBus, addListener, lowest, mcServer));
-			install(GameEventBridge.SERVER_STARTED, () -> bridgeServerLifecycle(cl, neoBus, addListener, lowest,
-					mcServer, "net.neoforged.neoforge.event.server.ServerStartedEvent", "handleServerStarted", true));
-			install(GameEventBridge.SERVER_STOPPING, () -> bridgeServerLifecycle(cl, neoBus, addListener, lowest,
-					mcServer, "net.neoforged.neoforge.event.server.ServerStoppingEvent", "handleServerStopping", false));
+			install(GameEventBridge.SERVER_STARTED, () -> lifecycleBridge(cl, "installStarted").invoke(null, neoBus));
+			install(GameEventBridge.SERVER_STOPPING,
+					() -> lifecycleBridge(cl, "installStopping").invoke(null, neoBus));
 
 			EventBridges.verify(GameEventBridge.Pass.GAME_BUS);
 		} catch (ClassNotFoundException single) {
@@ -226,6 +225,12 @@ public final class GameEventMultiplexer {
 				.getMethod(entry, Object.class);
 	}
 
+	/** One entry point on the game-side server-lifecycle bridge. Complete literal, for the reason above. */
+	private static Method lifecycleBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameServerLifecycle", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
 	/** A class name reduced to the {@code [a-z0-9._/-]} an {@code Identifier} path allows. */
 	private static String sanitisePath(String className) {
 		StringBuilder out = new StringBuilder(className.length());
@@ -236,17 +241,6 @@ public final class GameEventMultiplexer {
 	}
 
 	/** NeoForge {@code ServerTickEvent.Pre/Post} → Forge {@code ForgeEventFactory.onPre/PostServerTick}. */
-	/**
-	 * NeoForge {@code Server{Started,Stopping}Event} → MinecraftForge {@code ServerLifecycleHooks.handle*}. The
-	 * re-emission fires MinecraftForge's own lifecycle event (so Forge-family mods observe start/stop) AND flips its
-	 * {@code allowLogins} gate — which the local singleplayer client's handshake ({@code handleServerLogin}) checks.
-	 *
-	 * <p>{@code openLoginGate}: on the {@code Started} bridge we FORCE {@code allowLogins=true} first (before calling
-	 * the Forge hook), so a throwing Forge-mod {@code ServerStartedEvent} listener cannot leave the login gate closed
-	 * and block world-join — the hook sets the flag as its LAST action, after posting the event. Runs on both sides;
-	 * on a dedicated server it merely opens Forge's login gate and delivers the lifecycle event Forge mods expect,
-	 * neither of which the current (Neo-only) merged path did.
-	 */
 	/**
 	 * The one step earlier in the start sequence, forwarded piece by piece rather than whole.
 	 *
@@ -321,53 +315,6 @@ public final class GameEventMultiplexer {
 		};
 		addListener.invoke(bus, prio, false, evt, listener);
 		return 1;
-	}
-
-	private static int bridgeServerLifecycle(ClassLoader cl, Object bus, Method addListener, Object prio,
-			Class<?> mcServer, String neoEventClass, String forgeMethod, boolean openLoginGate) throws Exception {
-		Class<?> evt = Class.forName(neoEventClass, false, cl);
-		Method getServer = evt.getMethod("getServer");
-		Class<?> forgeHooks = Class.forName(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.FORGE), false, cl);
-		Method forgeHandle = forgeHooks.getMethod(forgeMethod, mcServer);
-		AtomicBoolean warned = new AtomicBoolean();
-		Consumer<Object> listener = neoEvt -> {
-			Object server = null;
-			try {
-				server = getServer.invoke(neoEvt);
-			} catch (Throwable ignored) {
-				// getServer is a stable accessor; if it somehow fails, still try to open the gate below.
-			}
-			if (openLoginGate) {
-				forceAllowLogins(cl);
-			}
-			try {
-				forgeHandle.invoke(null, server);
-			} catch (Throwable t) {
-				if (warned.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] " + forgeMethod + " forward failed; Forge-family mods won't "
-							+ "observe this server-lifecycle event", Reflect.unwrap(t));
-				}
-			}
-		};
-		addListener.invoke(bus, prio, false, evt, listener);
-		return 1;
-	}
-
-	/**
-	 * Force MinecraftForge's {@code ServerLifecycleHooks.allowLogins} true. The field is {@code private static final}
-	 * but references a mutable {@code AtomicBoolean}, so we flip the value, not the field — no final-field surgery.
-	 */
-	private static void forceAllowLogins(ClassLoader cl) {
-		try {
-			Class<?> forgeHooks = Class.forName(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.FORGE), false, cl);
-			java.lang.reflect.Field f = forgeHooks.getDeclaredField("allowLogins");
-			f.setAccessible(true);
-			Object atomic = f.get(null);
-			atomic.getClass().getMethod("set", boolean.class).invoke(atomic, true);
-		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/EventMux] could not pre-open Forge allowLogins gate: %s",
-					String.valueOf(Reflect.unwrap(t)));
-		}
 	}
 
 	/** One bridge's setup, so a failure can be caught per bridge instead of taking the rest of the pass with it. */

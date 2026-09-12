@@ -111,6 +111,11 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameTickEvents", new Entry(Origin.COMPILED, List.of(
 				new Call("installPre", void.class, Object.class),
 				new Call("installPost", void.class, Object.class))));
+		// The Neo->Forge server start/stop re-emission, which also opens MinecraftForge's login gate. Separate
+		// from the tick bridge so a carrier missing one pair's types cannot take the other down with it.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerLifecycle", new Entry(Origin.COMPILED, List.of(
+				new Call("installStarted", void.class, Object.class),
+				new Call("installStopping", void.class, Object.class))));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));
