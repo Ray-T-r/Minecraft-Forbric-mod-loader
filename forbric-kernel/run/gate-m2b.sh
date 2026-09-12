@@ -28,7 +28,7 @@ for jar in "$MODS/fabric-api-0.154.0+26.2.jar" "$MODS/Jade-mc26.2-Fabric-26.2.9.
   if [ -f "$jar" ]; then cp "$jar" "$RUNDIR/mods/"; else echo "[kernel] WARN absent: $jar"; fi
 done
 cp "$CANARY" "$RUNDIR/mods/"
-printf 'level-seed=forbrickernel\n' > "$RUNDIR/server.properties"
+seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
 step "boot the merged base under the kernel (no compatibility flags)"

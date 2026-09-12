@@ -16,6 +16,10 @@ step "boot merged-base server under the kernel (zero mods), tick, clean stop"
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" 2>/dev/null
 rm -rf "$RUNDIR/mods" 2>/dev/null; mkdir -p "$RUNDIR/mods"  # genuinely zero-mod
+# This gate used to write no server.properties at all, so it ran on whichever file the last gate to use this
+# rundir left behind -- m2 and m3 share it. The baseline gate should not inherit another gate's settings, and
+# it certainly should not inherit its port.
+seed_server_properties "$RUNDIR"
 : > "$LOG"
 # Feed "stop" once the server has actually reached Done and ticked a little, then let it shut down gracefully.
 # A fixed timer raced: if boot happens to finish right at the deadline, "stop" lands on the Done boundary (the

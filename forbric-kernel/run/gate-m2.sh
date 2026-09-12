@@ -24,7 +24,7 @@ reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
 cp "$CANARY" "$RUNDIR/mods/"
-printf 'level-seed=forbrickernel\n' > "$RUNDIR/server.properties"
+seed_server_properties "$RUNDIR"
 : > "$LOG"
 ( sleep 22; echo stop ) | FORBRIC_JVM="-Dforbric.debug=true" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!

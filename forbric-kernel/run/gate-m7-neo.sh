@@ -55,7 +55,7 @@ for jar in "$RUNDIR/mods"/*.jar; do
     echo "[kernel] FAIL $(basename "$jar") is not a pure NeoForge jar"; exit 1
   fi
 done
-printf 'level-seed=forbrickernel\n' > "$RUNDIR/server.properties"
+seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
 step "boot the kernel with them, reach Done, stop cleanly"

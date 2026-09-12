@@ -35,7 +35,7 @@ for jar in "$FABRIC" "$FORGE" "$NEO"; do
   if [ -f "$jar" ]; then cp "$jar" "$RUNDIR/mods/"; else echo "[kernel] MISSING: $jar"; miss=1; fi
 done
 [ "$miss" -eq 0 ] || { echo "[kernel] FAIL a canary jar is missing"; exit 1; }
-printf 'level-seed=forbrickernel\n' > "$RUNDIR/server.properties"
+seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
 boot() { # boot <log> [extra jvm flags]

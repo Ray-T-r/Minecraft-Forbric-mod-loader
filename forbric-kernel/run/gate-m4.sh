@@ -54,7 +54,7 @@ for jar in "$FABRIC_API" "$JADE" "${FORGE_MODS[@]}"; do
   if [ -f "$jar" ]; then cp "$jar" "$RUNDIR/mods/"; else echo "[kernel] MISSING: $jar"; miss=1; fi
 done
 [ "$miss" -eq 0 ] || { echo "[kernel] FAIL a real mod jar is missing (see $DL)"; exit 1; }
-printf 'level-seed=forbrickernel\n' > "$RUNDIR/server.properties"
+seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
 step "boot all three ecosystems in one instance, run until both families have ticked 20×"

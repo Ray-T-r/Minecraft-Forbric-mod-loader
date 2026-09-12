@@ -3,10 +3,41 @@
 set -uo pipefail
 
 KERNEL="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OLD="$(cd "$KERNEL/../forbric-loader" && pwd)"
+
+# Where the staged game artifacts, the downloaded mod packs and the built canaries live. Fourteen gates read
+# from it, and NONE of it is in git -- it is all build output and downloads, so a fresh checkout has none of it.
+#
+# Overridable because that is what makes a second checkout usable at all. Running two gates at once means two
+# working trees (the boot jar is rewritten in place on one path, so one tree cannot serve two live JVMs), and a
+# second worktree's own ../forbric-loader is empty. Point FORBRIC_OLD at the real one and nothing needs copying.
+OLD="${FORBRIC_OLD:-$KERNEL/../forbric-loader}"
+if [ -d "$OLD" ]; then
+  OLD="$(cd "$OLD" && pwd)"
+else
+  # Say so here rather than letting RUN_OLD become "/run" and every gate fail looking in a directory at the
+  # filesystem root, which is what used to happen.
+  echo "[kernel] FATAL: no staged tree at $OLD — set FORBRIC_OLD to a checkout that has forbric-loader/run/" >&2
+  exit 3
+fi
 RUN_OLD="$OLD/run"
 BUILD="$KERNEL/build"
 FAIL=0
+
+# The port the single-server gates bind. They share one by default because they are meant to run one at a
+# time; give each concurrent run its own GATE_PORT and they stop fighting over 25565.
+#
+# It has to be written explicitly. Every one of these gates truncates server.properties to a single line, and a
+# truncated file makes the server regenerate every default it no longer finds -- including server-port. So the
+# port was never chosen, it was whatever vanilla's default happened to be, and two runs collided silently: the
+# loser prints "FAILED TO BIND TO PORT" and then still prints "Stopping server", so the clean-shutdown check
+# passes and the gate reads like a kernel regression.
+GATE_PORT="${GATE_PORT:-25565}"
+
+# Writes the server.properties the single-server gates all wrote by hand, with the port made explicit.
+# seed_server_properties <rundir>
+seed_server_properties() {
+  printf 'level-seed=forbrickernel\nserver-port=%s\n' "$GATE_PORT" > "$1/server.properties"
+}
 
 step() { printf '\n[kernel] ==== %s ====\n' "$1"; }
 

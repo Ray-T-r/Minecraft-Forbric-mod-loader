@@ -35,7 +35,7 @@ for jar in "$MODS/fabric-api-0.155.2+26.2.jar" \
   if [ -f "$jar" ]; then cp "$jar" "$RUNDIR/mods/"; else echo "[kernel] WARN absent: $jar"; fi
 done
 # Fixed seed so the terrain — and therefore the tripwire's coverage — is reproducible run to run.
-printf 'level-seed=forbrickernel\n' > "$RUNDIR/server.properties"
+seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
 step "boot the merged base under the kernel (no compatibility flags)"
