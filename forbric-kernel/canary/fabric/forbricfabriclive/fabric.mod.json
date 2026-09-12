@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "forbricfabriclive",
+  "version": "1.0.0",
+  "name": "Forbric Fabric Live Canary",
+  "description": "Proves the sovereign kernel runs a real Fabric mod: entrypoints, custom keys, JiJ, registry writes.",
+  "license": "Apache-2.0",
+  "environment": "*",
+  "authors": ["The Forbric Project"],
+  "entrypoints": {
+    "preLaunch": [
+      "forbric.fabriclive.LivePreLaunch"
+    ],
+    "main": [
+      "forbric.fabriclive.ForbricFabricLive"
+    ],
+    "server": [
+      "forbric.fabriclive.ForbricFabricLiveServer"
+    ],
+    "forbric:probe": [
+      "forbric.fabriclive.ProbeImpl",
+      "forbric.fabriclive.ProbeImpl::STATIC_PROBE"
+    ]
+  },
+  "jars": [
+    { "file": "META-INF/jars/forbricfabriclib.jar" }
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.4",
+    "minecraft": "*"
+  },
+  "custom": {
+    "forbric:canary": {
+      "kind": "fabric",
+      "expects": ["entrypoints", "jij", "registry"]
+    }
+  }
+}

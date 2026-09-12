@@ -1,0 +1,52 @@
+run/client-merged-pack/
+
+# Gate bookkeeping: the pid of the server a gate started, so an interrupted run can be reaped by the next
+# one. Per-rundir and worthless the moment the machine reboots — never commit it.
+.forbric-gate.pid
+
+# Gate rundirs created by gate-m10 / gate-m11. Nothing in a rundir needs to be committed: the launcher
+# writes eula.txt when it is missing, the gates write their own server.properties and stage their own mods,
+# and the server regenerates a fresh management-server-secret on every boot — which is why the rundirs that
+# ARE tracked show up as noise in every diff.
+run/server-config/
+run/server-overlay/
+# Scratch rundir make-test-world.sh generates the m9 world fixture in. Deleted and rebuilt on every run.
+run/server-worldgen/
+# gate-m12 wipes and re-stages both of these on every run, world included.
+run/mp-server/
+run/mp-client/
+# gate-m18 stages its three canaries and a fresh world on every run.
+run/server-presence/
+# Ad-hoc rundirs for reproducing a single mod's behaviour. Staged by hand from a real install, never by a gate.
+run/client-phys*/
+
+# The rundirs that ARE tracked, minus the files the gates rewrite on every single run. These were committed
+# before the rule above existed and have dirtied `git status` ever since: server.properties is written by the
+# gate, eula.txt by the launcher, and the save/journeymap data by playing. Ignoring them is not enough on its
+# own — they had to be `git rm --cached`'d too, which is why they vanish from the tree in the same commit.
+run/*/server.properties
+run/*/eula.txt
+run/*/usercache.json
+run/*/banned-*.json
+run/*/ops.json
+run/*/whitelist.json
+run/*/.mixin.out/
+run/*/logs/
+
+# gate-m13 stages a Paper+Grim server and a client here on every run.
+run/ac-server/
+run/.gate-downloads/
+run/ac-client/
+# gate-m14 stages a pure Fabric server and a Forbric client here on every run.
+run/fab-server/
+run/fab-client/
+# gate-m15 stages a Forge-networking server and client here on every run.
+run/fnet-server/
+run/fnet-client/
+
+# gate-m16 stages a Forge-handshake server and client here on every run.
+run/fhs-server/
+run/fhs-client/
+
+# gate-m17 installs into a throwaway directory here on every run.
+run/installed/

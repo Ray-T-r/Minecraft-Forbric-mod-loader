@@ -4,6 +4,15 @@ For mod and loader developers. This document is precise rather than gentle: it s
 actually does, in the order it does it, naming the real types. If you want the player-facing version,
 read the [README](README.md).
 
+> **Which generation this describes.** There are two in this repository, and this document is about the
+> first. `forbric-loader/` is the *weld*: real fabric-loader/Knot as host, with FML and FancyModLoader
+> reflectively driven alongside it. `forbric-kernel/` is a ground-up rewrite that deletes the weld — one
+> transforming class loader, one lifecycle, one registry model, with the two Forge-family universal jars
+> demoted to passive ABI carriers and no genuine loader lifecycle booting at all. The installer on the
+> release page installs the kernel. Its own design is in
+> [forbric-kernel/README.md](forbric-kernel/README.md); everything below still describes the weld, and is
+> kept because the kernel is a reaction to it and reads better with it in view.
+
 Terminology used throughout:
 
 | Term | Meaning here |

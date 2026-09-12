@@ -1,0 +1,366 @@
+/*
+ * Copyright 2026 The Forbric Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package net.forbric.installer.kernel;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
+
+/**
+ * Writes a Forbric version into an ordinary Minecraft directory, so any launcher that reads Mojang's version
+ * format can start it.
+ *
+ * <p>The profile inherits from vanilla, which is what lets the launcher resolve assets, natives and the base
+ * libraries by itself; on top of that it carries the kernel as {@code mainClass}, Forbric's jars and the kernel's
+ * dependencies as libraries, and — as game arguments — the three jars the kernel opens the game with. The
+ * kernel's own argument parser takes those four flags out and forwards everything else to the game, so the
+ * launcher's own arguments can arrive in any order around them.
+ *
+ * <p>The Minecraft libraries are listed explicitly rather than left to the classpath: the kernel has to OWN them
+ * (mods weave into DataFixerUpper and friends), and only the version JSON knows which ones this version uses.
+ */
+public final class Installer {
+	static final String MAIN_CLASS = "net.forbric.kernel.boot.KernelClientLaunch";
+	private static final String BUNDLE_MANIFEST = "/forbric-kernel-libraries.json";
+	private static final String LIBRARY_DIR = "${library_directory}";
+
+	private final Consumer<String> log;
+
+	public Installer(Consumer<String> log) {
+		this.log = log;
+	}
+
+	/** Convenience for callers with no {@code --jdk} preference and no release to fetch from. */
+	public String install(Path mcDir, String mcVersion, Path artifactDir) throws IOException {
+		return install(mcDir, mcVersion, artifactDir, null, null);
+	}
+
+	/** Convenience for callers with no release to fetch from. */
+	public String install(Path mcDir, String mcVersion, Path artifactDir, Path explicitJdk) throws IOException {
+		return install(mcDir, mcVersion, artifactDir, explicitJdk, null);
+	}
+
+	/**
+	 * @param mcDir      the Minecraft directory the launcher uses
+	 * @param mcVersion  the base version, e.g. {@code 26.2}
+	 * @param artifactDir prebuilt game artifacts to use instead of building them, or null to build
+	 * @param explicitJdk a JVM to build with, or null to find one
+	 * @param remote      a published release to take Forbric's jars from, or null to require a bundled payload
+	 * @return the id of the version written
+	 */
+	public String install(Path mcDir, String mcVersion, Path artifactDir, Path explicitJdk, RemoteSource remote)
+			throws IOException {
+		Path versions = mcDir.resolve("versions");
+		Path libraries = mcDir.resolve("libraries");
+		String id = mcVersion + "-forbric";
+
+		log.accept("Minecraft directory: " + mcDir);
+
+		// The vanilla base has to exist before the artifacts are built, not after: its jar is one of the merge's
+		// three inputs, and NFRT reuses the client and server the launcher already fetched.
+		Map<String, Object> baseJson = ensureBaseVersion(versions, mcVersion);
+		List<String> mcLibraries = minecraftLibraryPaths(baseJson);
+		log.accept(mcLibraries.size() + " Minecraft libraries the kernel will own");
+
+		Map<String, Path> artifacts = obtainGameArtifacts(mcDir, mcVersion, artifactDir, explicitJdk);
+
+		List<Map<String, Object>> libraryEntries = new ArrayList<>();
+		libraryEntries.addAll(stageBundledJars(libraries, remote));
+		libraryEntries.addAll(stageGameArtifacts(libraries, artifacts, mcVersion));
+
+		Path profile = versions.resolve(id).resolve(id + ".json");
+		Files.createDirectories(profile.getParent());
+		Files.writeString(profile, Json.write(profile(id, mcVersion, libraryEntries, mcLibraries)),
+				StandardCharsets.UTF_8);
+		log.accept("wrote " + profile);
+
+		Path mods = mcDir.resolve("mods");
+		Files.createDirectories(mods);
+		log.accept("");
+		log.accept("Installed. In your launcher, pick the version \"" + id + "\".");
+		log.accept("Fabric, MinecraftForge and NeoForge mods all go in " + mods
+				+ " (a launcher with per-version isolation uses versions/" + id + "/mods instead).");
+		return id;
+	}
+
+	// --- the profile ------------------------------------------------------------------------------------------
+
+	private Map<String, Object> profile(String id, String mcVersion, List<Map<String, Object>> libraries,
+			List<String> mcLibraries) {
+		Map<String, Object> profile = new LinkedHashMap<>();
+		profile.put("id", id);
+		profile.put("inheritsFrom", mcVersion);
+		profile.put("type", "release");
+		profile.put("mainClass", MAIN_CLASS);
+
+		List<Object> game = new ArrayList<>();
+		game.add("--gameJar");
+		game.add(libraryRef(coordinate("net.forbric:patched-mc-merged", mcVersion)));
+		// Both runtimes travel in ONE flag, joined the way a classpath is. A launcher may read game arguments as a
+		// flag-to-value map and keep only the last occurrence of a repeated flag — PCL2 does, and says so — which
+		// would drop MinecraftForge's runtime and kill the game on the first net.minecraftforge class it touches.
+		game.add("--runtimeJar");
+		game.add(libraryRef(coordinate("net.forbric:forge-runtime", mcVersion)) + java.io.File.pathSeparator
+				+ libraryRef(coordinate("net.forbric:neoforge-runtime", mcVersion)));
+		game.add("--libraryPath");
+		game.add(String.join(java.io.File.pathSeparator, mcLibraries));
+
+		Map<String, Object> arguments = new LinkedHashMap<>();
+		arguments.put("game", game);
+		arguments.put("jvm", new ArrayList<>());
+		profile.put("arguments", arguments);
+		profile.put("libraries", new ArrayList<Object>(libraries));
+		return profile;
+	}
+
+	private static String coordinate(String groupAndName, String version) {
+		return groupAndName + ":" + version;
+	}
+
+	private static String libraryRef(String coordinate) {
+		return LIBRARY_DIR + "/" + Util.coordinateToPath(coordinate);
+	}
+
+	/**
+	 * Every library the base version lists, as a launcher-substituted path. Entries whose rules exclude this
+	 * platform are skipped — a Windows natives jar has no business on a macOS classpath, and the kernel only ever
+	 * opens files that exist.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<String> minecraftLibraryPaths(Map<String, Object> baseJson) {
+		List<String> paths = new ArrayList<>();
+		Object libs = baseJson.get("libraries");
+		if (!(libs instanceof List<?> list)) return paths;
+		for (Object entry : list) {
+			if (!(entry instanceof Map<?, ?> lib)) continue;
+			if (!appliesToThisPlatform((Map<String, Object>) lib)) continue;
+			Object name = lib.get("name");
+			Map<String, Object> downloads = (Map<String, Object>) lib.get("downloads");
+			Map<String, Object> artifact = downloads == null ? null : (Map<String, Object>) downloads.get("artifact");
+			Object path = artifact == null ? null : artifact.get("path");
+			if (path instanceof String p) paths.add(LIBRARY_DIR + "/" + p);
+			else if (name instanceof String n) paths.add(LIBRARY_DIR + "/" + Util.coordinateToPath(n));
+		}
+		return paths;
+	}
+
+	/** Mojang's rule list, read the way a launcher reads it: last matching rule wins, default allow. */
+	@SuppressWarnings("unchecked")
+	private static boolean appliesToThisPlatform(Map<String, Object> lib) {
+		Object rules = lib.get("rules");
+		if (!(rules instanceof List<?> list) || list.isEmpty()) return true;
+		String os = osName();
+		boolean allowed = false;
+		for (Object entry : list) {
+			if (!(entry instanceof Map<?, ?> rule)) continue;
+			Map<String, Object> osSpec = (Map<String, Object>) rule.get("os");
+			if (osSpec != null && !os.equals(osSpec.get("name"))) continue;
+			allowed = "allow".equals(rule.get("action"));
+		}
+		return allowed;
+	}
+
+	private static String osName() {
+		String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+		if (os.contains("win")) return "windows";
+		if (os.contains("mac")) return "osx";
+		return "linux";
+	}
+
+	// --- staging ----------------------------------------------------------------------------------------------
+
+	/** Forbric's own jars and the kernel's dependencies, carried inside this installer. */
+	/** One jar the installed profile needs on its classpath. */
+	static final class Lib {
+		final String coordinate;
+		/** Classpath location inside a self-contained installer jar; null in a slim build. */
+		final String resource;
+		final String path;
+		final String sha1;
+		final long size;
+
+		Lib(String coordinate, String resource, String path, String sha1, long size) {
+			this.coordinate = coordinate;
+			this.resource = resource;
+			this.path = path;
+			this.sha1 = sha1;
+			this.size = size;
+		}
+	}
+
+	/** True when this installer carries its payload, so it can install with no network at all. */
+	static boolean hasBundledManifest() {
+		try (InputStream in = Installer.class.getResourceAsStream(BUNDLE_MANIFEST)) {
+			return in != null;
+		} catch (IOException unreadable) {
+			return false;
+		}
+	}
+
+	private static List<Lib> parseManifest(String json) throws IOException {
+		Object root;
+		try {
+			root = Json.parse(json);
+		} catch (RuntimeException malformed) {
+			throw new IOException("malformed library manifest: " + malformed.getMessage(), malformed);
+		}
+		@SuppressWarnings("unchecked")
+		List<Object> entries = (List<Object>) ((Map<String, Object>) root).get("libraries");
+		if (entries == null) throw new IOException("library manifest has no \"libraries\" array");
+		List<Lib> libs = new ArrayList<>();
+		for (Object entry : entries) {
+			@SuppressWarnings("unchecked")
+			Map<String, Object> m = (Map<String, Object>) entry;
+			libs.add(new Lib((String) m.get("coordinate"), (String) m.get("resource"), (String) m.get("path"),
+					(String) m.get("sha1"),
+					m.get("size") instanceof Number ? ((Number) m.get("size")).longValue() : 0L));
+		}
+		return libs;
+	}
+
+	/** The manifest this installer was built with, or null when it is slim. */
+	static String bundledManifest() throws IOException {
+		try (InputStream in = Installer.class.getResourceAsStream(BUNDLE_MANIFEST)) {
+			if (in == null) return null;
+			return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+		}
+	}
+
+	/**
+	 * Stages the Forbric and kernel-dependency jars, taking each from the payload when this installer carries
+	 * one and from the release otherwise.
+	 *
+	 * <p>The digest is re-checked after the write whichever source supplied the bytes, because "it came from
+	 * inside the jar" and "it is the right jar" are different claims.
+	 */
+	private List<Map<String, Object>> stageBundledJars(Path libraries, RemoteSource remote) throws IOException {
+		String json = bundledManifest();
+		if (json == null) {
+			if (remote == null) {
+				throw new IOException("this installer carries no library manifest and no release to fetch one"
+						+ " from — it was built slim without a release pin");
+			}
+			json = remote.manifestJson();
+		}
+		List<Lib> libs = parseManifest(json);
+
+		List<Map<String, Object>> written = new ArrayList<>();
+		for (Lib lib : libs) {
+			Path dest = libraries.resolve(lib.path);
+			Files.createDirectories(dest.getParent());
+			boolean staged = false;
+			// --remote means "take these from the release even though I am carrying them", which is how a
+			// release's own assets get exercised before anyone else downloads them.
+			if (lib.resource != null && !(remote != null && remote.forced())) {
+				try (InputStream in = Installer.class.getResourceAsStream(lib.resource)) {
+					if (in != null) {
+						Files.write(dest, in.readAllBytes());
+						staged = true;
+					}
+				}
+			}
+			if (!staged) {
+				if (remote == null) {
+					throw new IOException("missing bundled jar " + lib.resource + " for " + lib.coordinate
+							+ " and no release to fetch it from");
+				}
+				remote.fetchInto(lib, dest);
+			}
+			if (lib.sha1 != null && !lib.sha1.equalsIgnoreCase(Util.sha1(dest))) {
+				throw new IOException("sha1 mismatch for " + lib.coordinate + " at " + dest);
+			}
+			written.add(libraryEntry(lib.coordinate, lib.path, dest));
+		}
+		log.accept("staged " + written.size() + " Forbric and kernel-dependency jar(s) into " + libraries);
+		return written;
+	}
+
+	/**
+	 * Gets the three game artifacts: from {@code --artifacts} when a complete set is there, otherwise built.
+	 *
+	 * <p>A supplied directory is a fast path, not a requirement. It used to be the only path — the installer
+	 * looked for prebuilt jars and refused to continue without them, which worked on the machine that had built
+	 * them and nowhere else.
+	 */
+	private Map<String, Path> obtainGameArtifacts(Path mcDir, String mcVersion, Path artifactDir, Path explicitJdk)
+			throws IOException {
+		if (artifactDir != null) {
+			Map<String, Path> found = GameArtifacts.locate(mcVersion, artifactDir).all();
+			for (Map.Entry<String, Path> e : found.entrySet()) log.accept("  using " + e.getValue());
+			return found;
+		}
+		JdkLocator.Jvm jvm = JdkLocator.locate(mcDir, explicitJdk, line -> log.accept("build JVM: " + line));
+		return new ArtifactBuilder(log).build(mcDir, mcVersion, jvm);
+	}
+
+	/** The three locally built jars, copied under net.forbric coordinates so the profile can name them. */
+	private List<Map<String, Object>> stageGameArtifacts(Path libraries, Map<String, Path> artifacts,
+			String mcVersion) throws IOException {
+		List<Map<String, Object>> written = new ArrayList<>();
+		for (Map.Entry<String, Path> found : artifacts.entrySet()) {
+			String coordinate = coordinate(found.getKey(), mcVersion);
+			String path = Util.coordinateToPath(coordinate);
+			Path dest = libraries.resolve(path);
+			Files.createDirectories(dest.getParent());
+			Files.copy(found.getValue(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			written.add(libraryEntry(coordinate, path, dest));
+		}
+		log.accept("staged " + written.size() + " game artifact(s) built on this machine");
+		return written;
+	}
+
+	private static Map<String, Object> libraryEntry(String coordinate, String path, Path file) throws IOException {
+		Map<String, Object> artifact = new LinkedHashMap<>();
+		artifact.put("path", path);
+		artifact.put("sha1", Util.sha1(file));
+		artifact.put("size", Files.size(file));
+		Map<String, Object> downloads = new LinkedHashMap<>();
+		downloads.put("artifact", artifact);
+		Map<String, Object> entry = new LinkedHashMap<>();
+		entry.put("name", coordinate);
+		entry.put("downloads", downloads);
+		return entry;
+	}
+
+	// --- the base version -------------------------------------------------------------------------------------
+
+	/** Reads the base version's JSON, downloading it (and its client jar) when the directory has none. */
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> ensureBaseVersion(Path versions, String mcVersion) throws IOException {
+		Path dir = versions.resolve(mcVersion);
+		Path json = dir.resolve(mcVersion + ".json");
+		if (!Files.isRegularFile(json) || !Files.isRegularFile(dir.resolve(mcVersion + ".jar"))) {
+			log.accept("base version " + mcVersion + " is missing — downloading it from Mojang");
+			new MojangDownloader(log).downloadClient(mcVersion, dir);
+		}
+		try {
+			Object parsed = Json.parse(Files.readString(json, StandardCharsets.UTF_8));
+			if (!(parsed instanceof Map)) throw new IOException(json + " is not a version JSON");
+			return (Map<String, Object>) parsed;
+		} catch (UncheckedIOException e) {
+			throw e.getCause();
+		}
+	}
+}

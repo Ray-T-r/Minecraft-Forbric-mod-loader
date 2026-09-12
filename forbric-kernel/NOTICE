@@ -1,0 +1,38 @@
+Forbric Kernel — a sovereign unified Minecraft mod loader (Fabric + Forge + NeoForge)
+Copyright 2026 The Forbric Project
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+================================================================================
+Reused / vendored: Fabric Loader (Apache-2.0)
+================================================================================
+The Forbric Kernel reuses and adapts source code from Fabric Loader, which is
+licensed under the Apache License, Version 2.0.
+
+    Fabric Loader
+    Copyright 2016 FabricMC
+    https://github.com/FabricMC/fabric-loader
+
+Vendored / adapted from Fabric Loader (files retain the original FabricMC
+copyright header):
+
+  - net.fabricmc.api.*   (the mod-facing environment/entrypoint annotations,
+                          kept under their original names so Fabric mods link)
+
+Pure-bytecode / mapping / data machinery under net.forbric.kernel.* (the
+transform pipeline, Access Transformer engine, mapping spine, metadata parsers,
+unified discovery) is Forbric's own clean-room code, adapted here from the
+forbric-loader module (also Apache-2.0, The Forbric Project).
+
+================================================================================
+NOT reused: Forge Mod Loader (FML) / FancyModLoader (LGPL)
+================================================================================
+The kernel's Forge/NeoForge compatibility is an independent clean-room
+implementation written from public formats and runtime contracts (the mods.toml
+schema, JarInJar metadata, the IEventBus/registry API contracts, the Maven
+version-range grammar, Mixin). It contains NO source from FML or FancyModLoader
+(GNU LGPL v2.1+), which were consulted only as behavioural references.
+
+The genuine Forge / NeoForge universal jars are NEVER bundled — they are
+runtime-supplied (compileOnly linkage only) and act solely as passive ABI
+carriers. No FML/FancyModLoader lifecycle is booted or reflectively driven.
