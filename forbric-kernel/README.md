@@ -17,7 +17,8 @@ The two wall categories a rewrite does *not* eliminate — guest-mixin/ABI misma
 and cross-ecosystem registry/tag/resource/network semantics (D) — become first-class kernel workstreams
 (the mixin adapter layer; the single-freeze registry model that makes "Tags not bound" structurally impossible).
 
-Full plan: `~/.claude/plans/fabric-neo-forge-mod-eager-rabbit.md`.
+The milestone plan this was built against is not in the repository; what it asserted is, as the gate
+scripts under `run/` — one per milestone, each asserting on the real logs of a real instance.
 
 ## Architecture (two sides, no JPMS module layer)
 

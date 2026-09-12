@@ -50,3 +50,9 @@ run/fhs-client/
 
 # gate-m17 installs into a throwaway directory here on every run.
 run/installed/
+# JourneyMap's own output inside a tracked rundir — map tiles, chunk caches, waypoints — plus the two files
+# the client writes into client-kernel. These sat tracked for months alongside the rules above, because an
+# ignore rule has no effect on a file git already follows: the `git rm --cached` half was never done.
+run/*/journeymap/
+run/client-kernel/data/
+run/client-kernel/debug-profile.json

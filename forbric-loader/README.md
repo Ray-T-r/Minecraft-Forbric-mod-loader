@@ -3,8 +3,7 @@
 A **clean-room unified Minecraft mod loader** that natively loads both **Fabric** mods
 (`fabric.mod.json`) and modern **Forge** mods (`mods.toml`) in one Minecraft 26.2 instance.
 
-- Architecture, rationale and the full P0–P8 roadmap:
-  `~/.claude/plans/forbric-minecraft-mod-forge-fabric-mod-rippling-backus.md`
+- Architecture and rationale: [introduction.md](../introduction.md)
 - Licensing & provenance: [CREDITS.md](CREDITS.md), [MAPPINGS.md](MAPPINGS.md), [NOTICE](NOTICE)
 
 ## Approach in one paragraph
