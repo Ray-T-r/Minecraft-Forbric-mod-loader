@@ -27,7 +27,6 @@ import java.util.Map;
 import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
-import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -449,7 +448,7 @@ public final class KernelLifecycle {
 			// The NeoForge baseline mod on its own bus. Captured so the client step can add ClientNeoForgeMod to
 			// the same bus + route the game's mod-bus events to its container.
 			Object bus = KernelBusSupport.makeModBus(cl);
-			Object container = KernelModContainerFactory.create((ForbricClassLoader) cl, cl, "neoforge", bus);
+			Object container = KernelModContainerFactory.create(cl, "neoforge", bus);
 			baselineBus = bus;
 			baselineContainer = container;
 			Class<?> neoForgeMod = Class.forName("net.neoforged.neoforge.common.NeoForgeMod", false, cl);
@@ -463,7 +462,7 @@ public final class KernelLifecycle {
 
 			// Real Forge-family @Mods, each on its own bus.
 			List<KernelModLoader.ConstructedMod> mods =
-					KernelModLoader.constructMods((ForbricClassLoader) cl, cl, modJars, side);
+					KernelModLoader.constructMods(cl, modJars, side);
 
 			// Load the config specs those constructors just registered, BEFORE any RegisterEvent fires. Genuine
 			// NeoForge loads STARTUP/COMMON right after construction and only then posts the registry events, and
