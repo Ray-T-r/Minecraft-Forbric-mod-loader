@@ -34,6 +34,7 @@ import java.util.Set;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.api.ForgeLoadingList;
 import net.forbric.api.ModPresence;
 import net.forbric.api.Side;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
@@ -216,7 +217,7 @@ public final class PassiveSeeder {
 			field.setAccessible(true);
 			if (field.get(loaderInstance) != null) return; // already built
 
-			Class<?> lmlCls = Class.forName("net.neoforged.fml.loading.LoadingModList", false, gameLoader);
+			Class<?> lmlCls = Class.forName(ForeignType.LOADING_MOD_LIST.binary(Ecosystem.NEOFORGE), false, gameLoader);
 			// of(modFiles, gameLibraries, plugins, modInfos, issues, dependencies) — all empty for zero mods.
 			Method of = lmlCls.getMethod("of", List.class, List.class, List.class, List.class, List.class, Map.class);
 			Object empty = of.invoke(null, List.of(), List.of(), List.of(), List.of(), List.of(), Map.of());
@@ -438,7 +439,7 @@ public final class PassiveSeeder {
 	 * merely answers "not there", which is what an empty list answers today.
 	 */
 	static Object buildLoadingModList(ClassLoader gameLoader, List<DiscoveredMod> mods) throws Exception {
-		Class<?> lmlCls = Class.forName("net.neoforged.fml.loading.LoadingModList", false, gameLoader);
+		Class<?> lmlCls = Class.forName(ForeignType.LOADING_MOD_LIST.binary(Ecosystem.NEOFORGE), false, gameLoader);
 		Class<?> fileInfoCls = Class.forName(ForeignType.MOD_FILE_INFO.binary(Ecosystem.NEOFORGE), false, gameLoader);
 		Class<?> modInfoCls = Class.forName(ForeignType.MOD_INFO.binary(Ecosystem.NEOFORGE), false, gameLoader);
 
@@ -477,11 +478,23 @@ public final class PassiveSeeder {
 	}
 
 	/**
-	 * Builds traditional Forge's {@code ModSorter$State} — one {@code ModFile}+{@code ModFileInfo} per jar, an
+	 * The two lists {@code LoadingModListImpl}'s constructor takes, built once and handed to BOTH readers: the
+	 * {@code ModSorter$State} MinecraftForge's own {@code init} path expects, and {@link ForgeLoadingList}, which
+	 * is what the rewritten lazy holder actually reads. Keeping them one value is what stops those two from being
+	 * independently derived and quietly disagreeing.
+	 *
+	 * @param files    MinecraftForge {@code ModFile}s, one per jar
+	 * @param modInfos MinecraftForge {@code ModInfo}s, one per declared mod
+	 */
+	private record ForgeLoadingLists(List<Object> files, List<Object> modInfos) {
+	}
+
+	/**
+	 * Builds the contents of traditional Forge's loading list — one {@code ModFile}+{@code ModFileInfo} per jar, a
 	 * {@code ModInfo} per declared mod — from the same discovery answer the NeoForge list is seeded with.
 	 *
 	 * <p>What has to be right is narrow, because only one path ever reads these: {@code LoadingModListImpl}'s lazy
-	 * holder builds the list with {@code new LoadingModListImpl(state.files(), state.mods())}, and that constructor
+	 * holder builds the list with {@code new LoadingModListImpl(files, mods)}, and that constructor
 	 * touches exactly {@code ModFile.getModFileInfo}, {@code ModFileInfo.getMods}, {@code ModInfo.getModId} and
 	 * {@code ModInfo.getOwningFile}. {@code ModList}'s own initializer then adds {@code ModFileInfo.getFile}, and the
 	 * handshake's {@code ModVersions.create} adds {@code getDisplayName} and {@code getVersion}. The remaining fields
@@ -491,8 +504,8 @@ public final class PassiveSeeder {
 	 * touches the jars. Nothing calls it here — the lazy holder is the only builder — and seeding must stay a
 	 * description of what was loaded, not a second loading pass.
 	 */
-	private static Object buildForgeLoadingState(ClassLoader gameLoader, Constructor<?> stateCtor,
-			List<DiscoveredMod> mods) throws Exception {
+	private static ForgeLoadingLists buildForgeLoadingLists(ClassLoader gameLoader, List<DiscoveredMod> mods)
+			throws Exception {
 		Class<?> modFileCls = Class.forName(ForeignType.MOD_FILE.binary(Ecosystem.FORGE), false, gameLoader);
 		Class<?> fileInfoCls = Class.forName(ForeignType.MOD_FILE_INFO.binary(Ecosystem.FORGE), false, gameLoader);
 		Class<?> modInfoCls = Class.forName(ForeignType.MOD_INFO.binary(Ecosystem.FORGE), false, gameLoader);
@@ -519,7 +532,7 @@ public final class PassiveSeeder {
 			fillForgeModFile(modFileCls, modFile, fileInfo, Path.of(jar.getKey()), version(jar.getValue().get(0)));
 			files.add(modFile);
 		}
-		return stateCtor.newInstance(files, modInfos);
+		return new ForgeLoadingLists(files, modInfos);
 	}
 
 	/** The jar's own entry: only {@code modFileInfo} is read while the list is built; the rest are truthful empties. */
@@ -904,6 +917,92 @@ public final class PassiveSeeder {
 	}
 
 	/**
+	 * Publishes MinecraftForge's mod list to {@link ForgeLoadingList} BEFORE Mixin is installed, so the rewritten
+	 * {@code LoadingModListImpl$1LazyInit} has a real answer no matter who touches {@code LoadingModList} first.
+	 *
+	 * <p>This exists because the seed twenty lines below is too late and cannot tell that it is. That initializer
+	 * is a one-shot with an empty exception table: a caller arriving before {@link KernelLifecycle}'s mod-loading
+	 * window — a guest mixin plugin resolving "is mod X present" during {@code prepareConfigs},
+	 * {@code ServerStatusPing} on the first ping, anything reached from a static initializer — used to NPE inside
+	 * it and leave the class permanently erroneous. Seeding afterwards then still succeeded and still logged
+	 * success, because the class that goes erroneous is the nested holder, not {@code LoadingModListImpl}.
+	 *
+	 * <p><b>Its own discovery pass, not {@code forgeFamilyMods}.</b> That field is only written on the NeoForge
+	 * seeding path, which skips itself entirely when no NeoForge carrier is present — so on an instance carrying
+	 * MinecraftForge alone it is still {@code List.of()} here, and publishing from it would freeze an empty list
+	 * into a {@code static final} that can never be replaced. The trade this whole fix exists to refuse is exactly
+	 * "crash becomes silent empty list", and reading a field that is empty for a reason unrelated to the answer is
+	 * how that trade sneaks back in. {@code arbitratedForgeFamilyMods} is deterministic for a given mods directory,
+	 * so asking it again here agrees with the other caller by construction rather than by hope.
+	 *
+	 * <p>Nothing is published if discovery throws: {@link ForgeLoadingList} then keeps answering "no list yet",
+	 * which is loud. An empty list is published only when the directory genuinely holds no MinecraftForge-family
+	 * mod, which is a truthful answer and is logged as one.
+	 *
+	 * @param modsDir passed in rather than derived here, for the same reason
+	 *                {@code seedNeoForgeLoader} takes it: two derivations of "where the mods are" is how they drift
+	 */
+	public static void publishForgeLoadingList(ClassLoader gameLoader, Path modsDir) {
+		if ("off".equalsIgnoreCase(System.getProperty(SEED_SWITCH, "on"))) {
+			ForbricLog.debug("[Forbric/ForgeList] -D%s=off — not publishing MinecraftForge's LoadingModList",
+					SEED_SWITCH);
+			return;
+		}
+		try {
+			// Absence of the carrier, not a failure: with no MinecraftForge the holder is never defined, the
+			// transform never fires, and nobody will ever call ForgeLoadingList.
+			Class.forName("net.minecraftforge.fml.loading.LoadingModListImpl", false, gameLoader);
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/ForgeList] no MinecraftForge carrier — nothing to publish");
+			return;
+		}
+		try {
+			List<DiscoveredMod> mods = arbitratedForgeFamilyMods(modsDir);
+			ForgeLoadingLists lists = mods.isEmpty()
+					? new ForgeLoadingLists(List.of(), List.of())
+					: buildForgeLoadingLists(gameLoader, mods);
+			ForgeLoadingList.publish(lists.files(), lists.modInfos());
+		} catch (Throwable t) {
+			// Deliberately does NOT publish an empty list as a fallback. Reading an unpublished list throws with a
+			// stack naming the reader; publishing an empty one here would freeze "no mods" into a final field and
+			// put MinecraftForge's handshake on the wire saying this instance runs none.
+			ForbricLog.warn("[Forbric/ForgeList] could not build MinecraftForge's LoadingModList before Mixin — "
+					+ "nothing published, so the first read of LoadingModList will throw instead of quietly "
+					+ "reporting zero mods", unwrap(t));
+		}
+	}
+
+	/**
+	 * Reads MinecraftForge's list back through the same door its mods do, and says so when the two disagree.
+	 *
+	 * <p>The seed above cannot detect its own failure: {@code LoadingModListImpl}'s initializer only fetches a
+	 * logger and always succeeds, so {@code Class.forName} resolves, the {@code temp} write lands, and the "seeded
+	 * N mod(s)" line prints — all while the nested holder is erroneous and every read fails. The write side is
+	 * green in both worlds. Only the READ side can tell them apart.
+	 */
+	private static void verifyForgeLoadingModList(ClassLoader gameLoader, int expectedMods) {
+		try {
+			Class<?> lml = Class.forName(ForeignType.LOADING_MOD_LIST.binary(Ecosystem.FORGE), true, gameLoader);
+			Object got = lml.getMethod("getMods").invoke(null);
+			int actual = got instanceof List<?> list ? list.size() : -1;
+			if (actual == expectedMods) {
+				ForbricLog.debug("[Forbric/ForgeList] LoadingModList.getMods() reads back %d mod(s) — the list the "
+						+ "handshake announces is the list the kernel built", actual);
+			} else {
+				ForbricLog.error("[Forbric/ForgeList] LoadingModList.getMods() reads back %d mod(s) but the kernel "
+						+ "built %d — MinecraftForge's mods will announce themselves wrongly to every peer",
+						actual, expectedMods);
+			}
+		} catch (ClassNotFoundException absent) {
+			// No carrier; the seed above already said so.
+		} catch (Throwable t) {
+			ForbricLog.error("[Forbric/ForgeList] MinecraftForge's LoadingModList is UNREADABLE even though seeding "
+					+ "reported success — its lazy holder was poisoned by an earlier reader, so every mod list "
+					+ "query for the rest of this run fails and its handshake will say mods=[]", unwrap(t));
+		}
+	}
+
+	/**
 	 * Seeds traditional Forge's {@code LoadingModListImpl.temp} with an empty {@code ModSorter$State} so
 	 * {@code LoadingModList.get()} doesn't NPE. Forge's {@code ServerStatusPing} touches
 	 * {@code ModList.<clinit>} → {@code LoadingModList.getModFiles()} right after {@code Done}. The NeoForge
@@ -918,14 +1017,24 @@ public final class PassiveSeeder {
 			List<DiscoveredMod> mods = "off".equalsIgnoreCase(System.getProperty(SEED_SWITCH, "on"))
 					? List.of()
 					: forgeFamilyMods;
-			Object state = mods.isEmpty()
-					? stateCtor.newInstance(List.of(), List.of())
-					: buildForgeLoadingState(gameLoader, stateCtor, mods);
+			ForgeLoadingLists lists = mods.isEmpty()
+					? new ForgeLoadingLists(List.of(), List.of())
+					: buildForgeLoadingLists(gameLoader, mods);
+			// LATE publish, as a fallback only. publishForgeLoadingList ran before Mixin and normally owns this;
+			// ForgeLoadingList.publish keeps the FIRST writer, so this is a no-op then. It matters when the early
+			// pass could not build a list: the holder still gets a real answer here, exactly as it did before this
+			// fix existed, instead of the run dying on a list that was computable all along.
+			ForgeLoadingList.publish(lists.files(), lists.modInfos());
+			Object state = stateCtor.newInstance(lists.files(), lists.modInfos());
 
+			// Still written, even though the rewritten holder no longer reads it: LoadingModListImpl.init is
+			// MinecraftForge's own path through this field and costs nothing to keep honest.
 			Class<?> lmlImpl = Class.forName("net.minecraftforge.fml.loading.LoadingModListImpl", true, gameLoader);
 			Field temp = lmlImpl.getDeclaredField("temp");
 			temp.setAccessible(true);
 			if (temp.get(null) == null) temp.set(null, state);
+			// The read side, because the write side above succeeds whether or not the holder is already poisoned.
+			verifyForgeLoadingModList(gameLoader, ForgeLoadingList.publishedModCount());
 			if (mods.isEmpty()) {
 				ForbricLog.debug("[Forbric/Seed] seeded empty traditional-Forge LoadingModList (zero mods)");
 			} else {

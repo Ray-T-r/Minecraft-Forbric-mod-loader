@@ -47,6 +47,7 @@ import net.forbric.kernel.transform.ExitHookInjector;
 import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
 import net.forbric.kernel.transform.ForeignModPresenceInjector;
 import net.forbric.kernel.transform.ForgeBindingsLookupInjector;
+import net.forbric.kernel.transform.ForgeLoadingListHolderInjector;
 import net.forbric.kernel.transform.GuestMixinPluginGuard;
 import net.forbric.kernel.transform.HudElementBridgeInjector;
 import net.forbric.kernel.transform.LifecycleHookInjector;
@@ -330,6 +331,12 @@ public final class KernelBoot {
 		// Each family's ModList.isLoaded can only see its own family's mods, and that answer is a compatibility
 		// branch far more often than a display string — a wrong "no" disables an integration in silence.
 		chain.register(TransformPhase.COREMOD, new ForeignModPresenceInjector());
+		// MinecraftForge builds its LoadingModList in a lazy holder that reads a field the genuine loader would have
+		// filled. A class initializer is a ONE-SHOT with no exception table, so the first caller to arrive before the
+		// kernel seeds that field NPE'd inside it and left the class permanently erroneous -- while the seeder, which
+		// only ever touches the write side, went on logging success. Make the holder read the kernel's published list
+		// instead, so WHEN it is first touched stops mattering. See PassiveSeeder.publishForgeLoadingList.
+		chain.register(TransformPhase.COREMOD, new ForgeLoadingListHolderInjector());
 
 		// Client only: NeoForge won Hud.extractRenderState, so the call sites fabric-rendering-v1's HudMixin anchors
 		// on no longer exist — as METHOD REFERENCES in the layer manager they exist as no bytecode at all, so no
@@ -428,6 +435,10 @@ public final class KernelBoot {
 		// must describe the SAME jars this boot decided to load — see discoverForgeFamilyModJars above, which walks
 		// exactly this directory. Two independent derivations of "where the mods are" is how they drift apart.
 		PassiveSeeder.seedNeoForgeLoader(loader, gameDir, gameDir.resolve("mods"), side.api());
+		// MinecraftForge's twin, and it has to be HERE rather than in the mod-loading window where its seed lives:
+		// its list is built by a one-shot class initializer, so the answer must exist before anything can ask. The
+		// most likely early asker is a guest mixin plugin during prepareConfigs, which is the next line but one.
+		PassiveSeeder.publishForgeLoadingList(loader, gameDir.resolve("mods"));
 
 		// Mixin LAST in the pipeline but FIRST in time: installed before anything defines a targeted class.
 		//

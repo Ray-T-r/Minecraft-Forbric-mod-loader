@@ -67,6 +67,8 @@ public enum ForeignType {
 			"net.neoforged.neoforge.registries.GameData"),
 	KEY_MAPPING_LOOKUP("net.minecraftforge.client.settings.KeyMappingLookup",
 			"net.neoforged.neoforge.client.settings.KeyMappingLookup"),
+	LOADING_MOD_LIST("net.minecraftforge.fml.loading.LoadingModList",
+			"net.neoforged.fml.loading.LoadingModList"),
 	MOD_BUS_EVENT("net.minecraftforge.fml.event.IModBusEvent",
 			"net.neoforged.fml.event.IModBusEvent"),
 	MOD_CONFIG_TYPE("net.minecraftforge.fml.config.ModConfig$Type",
