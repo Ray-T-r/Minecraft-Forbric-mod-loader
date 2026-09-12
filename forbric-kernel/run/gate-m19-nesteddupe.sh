@@ -73,8 +73,13 @@ step "both parents still ran (must PASS)"
 # because the winner's copy carries the same shared classes.
 check "the Fabric parent came up"  "ForbricNestParent\] fabric parent up" "$LOG"
 check "the MinecraftForge parent came up" "ForbricNestParent\] forge parent up" "$LOG"
-check "the losing family kept the library's IDENTITY" \
-  "presence alias 'forbricnestlib'|aliased into \[(FORGE|FABRIC)\]" "$LOG"
+# Asked from inside the mods, not read off the arbiter's own sentence. "aliased into [FORGE]" would match a line
+# this kernel writes about itself and prove only that it wrote it — and it would be wrong to trust here, because
+# Decision.aliasesFor(Ecosystem.FORGE) has NO consumer: the identity has to come back to the Forge side through
+# ModPresence instead. So the canaries call isLoaded/isModLoaded and the gate reads their answer.
+check "the Forge side can still see the library it lost"  "ForbricNestParent\] forge sees forbricnestlib=true"  "$LOG"
+check "the Fabric side can see it too"                    "ForbricNestParent\] fabric sees forbricnestlib=true" "$LOG"
+check_absent "neither side was told it is absent" "ForbricNestParent\] (forge|fabric) sees forbricnestlib=false" "$LOG"
 
 step "nothing else broke (must be ABSENT)"
 check_absent "no crash report" "Preparing crash report" "$LOG"
@@ -89,10 +94,23 @@ check "the control really disabled arbitration" "cross-jar arbitration DISABLED"
 check "and the library was then claimed twice, or tried to be" \
   "ForbricNestLib\] DUPLICATE registration|ForbricNestLib\] claimed by" "$CONTROL" 2
 
+step "the OTHER direction is enforced too (must PASS)"
+# With the default preference the Fabric build wins, so only the Forge-side withdrawal is ever exercised — the
+# suppression of a losing FABRIC nested jar runs through a different seam (KernelFabricEcosystem.build's register
+# loop and its classpath filter) and would stay dead code the gate never touches. -Dforbric.modOwner flips it.
+FLIP="$BUILD/gate-m19-flipped.log"
+boot "$FLIP" "-Dforbric.modOwner=forbricnestlib=forge"
+check "the override reached a nested jar" \
+  "nested mod id 'forbricnestlib' is claimed by 2 jars across .* loading forbricnestlib-forge" "$FLIP"
+assert_eq "still claimed exactly once" "1" "$(grep -acE '\[ForbricNestLib\] claimed by' "$FLIP")"
+check "and by the side the override named" "ForbricNestLib\] claimed by forge" "$FLIP"
+check_absent "no duplicate registration either way" "ForbricNestLib\] DUPLICATE registration" "$FLIP"
+check_absent "no entrypoint failure either way" "entrypoint of .* failed" "$FLIP"
+
 step "M19 result"
 if [ "${FAIL:-0}" -eq 0 ]; then
   echo "[kernel] ✅ M19 GATE GREEN — a library nested by a Fabric mod and a MinecraftForge mod is constructed once"
 else
-  echo "[kernel] ❌ M19 GATE RED — see $LOG / $CONTROL"
+  echo "[kernel] ❌ M19 GATE RED — see $LOG / $CONTROL / $BUILD/gate-m19-flipped.log"
   exit 1
 fi

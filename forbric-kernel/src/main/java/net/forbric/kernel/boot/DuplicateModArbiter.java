@@ -210,7 +210,12 @@ public final class DuplicateModArbiter {
 			if (claim != null) nestedClaims.add(claim);
 		}
 		if (nestedClaims.isEmpty()) return phase1;
-		return arbitrateNested(phase1, topLevelClaims, nestedClaims);
+		// Published, not just returned. KernelModLoader reads current() long after the mods directory was walked,
+		// to hand NeoForge the presence aliases (KernelModLoader:159), and PassiveSeeder reads it to skip
+		// suppressed jars. Leaving the nested half out of the cache would mean the answer this boot acted on and
+		// the answer those two see are different answers.
+		cached = arbitrateNested(phase1, topLevelClaims, nestedClaims);
+		return cached;
 	}
 
 	/**
