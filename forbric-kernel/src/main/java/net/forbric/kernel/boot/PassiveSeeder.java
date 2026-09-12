@@ -19,6 +19,7 @@ package net.forbric.kernel.boot;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -538,7 +539,7 @@ public final class PassiveSeeder {
 			Object modFile, List<Object> ownMods) throws Exception {
 		setInstanceField(fileInfoCls, "modFile", fileInfo, modFile);
 		setInstanceField(fileInfoCls, "mods", fileInfo, ownMods);
-		setInstanceField(fileInfoCls, "config", fileInfo, forgeEmptyConfigurable(gameLoader));
+		setInstanceField(fileInfoCls, "config", fileInfo, emptyConfigurable(gameLoader, Ecosystem.FORGE));
 		setInstanceField(fileInfoCls, "languageSpecs", fileInfo, List.of());
 		setInstanceField(fileInfoCls, "properties", fileInfo, Map.of());
 		setInstanceField(fileInfoCls, "usesServices", fileInfo, List.of());
@@ -564,7 +565,7 @@ public final class PassiveSeeder {
 
 		Map<String, Object> byComponent = new LinkedHashMap<>();
 		byComponent.put("getOwningFile", owningFile);
-		byComponent.put("getConfig", forgeEmptyConfigurable(gameLoader));
+		byComponent.put("getConfig", emptyConfigurable(gameLoader, Ecosystem.FORGE));
 		byComponent.put("getModId", mod.getId());
 		byComponent.put("getNamespace", mod.getId());
 		byComponent.put("getVersion", artifactVersion(gameLoader, version(mod)));
@@ -600,11 +601,41 @@ public final class PassiveSeeder {
 		return canonical.newInstance(args);
 	}
 
-	/** A Forge {@code IConfigurable} that truthfully reports "this declares nothing". */
-	private static Object forgeEmptyConfigurable(ClassLoader gameLoader) throws Exception {
-		Class<?> iConfigurable = Class.forName(ForeignType.CONFIGURABLE.binary(Ecosystem.FORGE), false, gameLoader);
-		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, (proxy, method, args) ->
-				"getConfigList".equals(method.getName()) ? List.of() : Optional.empty());
+	/**
+	 * The answers an {@code IConfigurable} gives when the mod declares no config section — for EITHER family.
+	 *
+	 * <p>There were two of these, one per family, and only one of them was right. The Forge copy answered
+	 * everything except {@code getConfigList} with {@code Optional.empty()}, and a dynamic {@link Proxy} routes
+	 * {@code toString}/{@code hashCode}/{@code equals} to the handler as well — so asking a seeded Forge mod's
+	 * config for its hash code returned an {@code Optional} where an {@code int} was declared, and the proxy
+	 * threw {@link ClassCastException} on the way out. Those three are reached by ordinary things: a record whose
+	 * component this is hashes it, a log line prints it, a collection compares it.
+	 *
+	 * <p>The two families differ in exactly one thing here — WHICH interface — so that is the parameter, and the
+	 * answers are one implementation. They are not otherwise symmetrical and this does not pretend they are:
+	 * traditional Forge's {@code IConfigurable} declares two extra DEFAULT methods
+	 * ({@code getConfigElement(String)}, {@code getConfigList(String)}) that NeoForge's does not. A Proxy routes
+	 * default methods to the handler too — their default bodies never run — which is precisely why this
+	 * dispatches on the method NAME and not on the exact signature.
+	 */
+	private static final InvocationHandler EMPTY_CONFIGURABLE = (proxy, method, args) ->
+			switch (method.getName()) {
+				case "getConfigList" -> List.of();
+				case "toString" -> "KernelSeededConfig";
+				case "hashCode" -> System.identityHashCode(proxy);
+				case "equals" -> proxy == (args == null ? null : args[0]);
+				default -> method.getReturnType() == List.class ? List.of() : Optional.empty();
+			};
+
+	/** The handler itself, so a test can drive it without the game types. See EmptyConfigurableTest. */
+	static InvocationHandler emptyConfigurableHandler() {
+		return EMPTY_CONFIGURABLE;
+	}
+
+	/** An {@code IConfigurable} of {@code family} reporting "this mod declares nothing". */
+	private static Object emptyConfigurable(ClassLoader gameLoader, Ecosystem family) throws Exception {
+		Class<?> iConfigurable = Class.forName(ForeignType.CONFIGURABLE.binary(family), false, gameLoader);
+		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, EMPTY_CONFIGURABLE);
 	}
 
 	private static String displayName(DiscoveredMod mod) {
@@ -633,7 +664,7 @@ public final class PassiveSeeder {
 	 */
 	private static void fillModFileInfo(ClassLoader gameLoader, Class<?> fileInfoCls, Object fileInfo, Path jar,
 			DiscoveredMod first, List<Object> ownMods) throws Exception {
-		setInstanceField(fileInfoCls, "config", fileInfo, emptyConfigurable(gameLoader));
+		setInstanceField(fileInfoCls, "config", fileInfo, emptyConfigurable(gameLoader, Ecosystem.NEOFORGE));
 		setInstanceField(fileInfoCls, "mods", fileInfo, ownMods);
 		setInstanceField(fileInfoCls, "languageSpecs", fileInfo, List.of());
 		setInstanceField(fileInfoCls, "properties", fileInfo, Map.of());
@@ -724,7 +755,7 @@ public final class PassiveSeeder {
 		setInstanceField(modInfoCls, "dependencies", modInfo, List.of());
 		setInstanceField(modInfoCls, "features", modInfo, List.of());
 		setInstanceField(modInfoCls, "properties", modInfo, Map.of());
-		setInstanceField(modInfoCls, "config", modInfo, emptyConfigurable(gameLoader));
+		setInstanceField(modInfoCls, "config", modInfo, emptyConfigurable(gameLoader, Ecosystem.NEOFORGE));
 		// logoBlur stays at its allocation default (false).
 		return modInfo;
 	}
@@ -740,18 +771,6 @@ public final class PassiveSeeder {
 				.getConstructor(String.class).newInstance(version);
 	}
 
-	/** An {@code IConfigurable} that truthfully reports "this declares nothing": empty Optional / empty List. */
-	private static Object emptyConfigurable(ClassLoader gameLoader) throws Exception {
-		Class<?> iConfigurable = Class.forName(ForeignType.CONFIGURABLE.binary(Ecosystem.NEOFORGE), false, gameLoader);
-		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, (proxy, method, args) ->
-				switch (method.getName()) {
-					case "getConfigList" -> List.of();
-					case "toString" -> "KernelSeededConfig";
-					case "hashCode" -> System.identityHashCode(proxy);
-					case "equals" -> proxy == (args == null ? null : args[0]);
-					default -> method.getReturnType() == List.class ? List.of() : Optional.empty();
-				});
-	}
 
 	/**
 	 * Allocates {@code type} WITHOUT running any constructor.
