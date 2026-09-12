@@ -51,7 +51,7 @@ check "MinecraftForge @Mod constructed"       "constructed @Mod forbriclive" "$L
 # to zero while the line itself keeps being printed — so assert the NUMBER.
 EBS=$(grep -oE 'registered [0-9]+ @EventBusSubscriber' "$LOG" | grep -oE '[0-9]+' | head -1)
 assert_eq "MinecraftForge @EventBusSubscriber classes" 1 "${EBS:-none}"
-check "Fabric entrypoints ran"                "invoked [0-9]+ Fabric main entrypoint\(s\) \+ [0-9]+ server" "$LOG"
+check "Fabric entrypoints ran"                "invoked [1-9][0-9]* Fabric main entrypoint\(s\) \+ [1-9][0-9]* server" "$LOG"
 check "Fabric JiJ nested mod ran"             "\[ForbricFabricLib\] JiJ nested mod initialized" "$LOG"
 
 step "BOTH game-event families tick in the same loop (must PASS — the B-5 1:1 shape)"

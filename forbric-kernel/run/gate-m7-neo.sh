@@ -74,7 +74,7 @@ record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 240
 
 step "every pure-NeoForge @Mod constructed (must PASS)"
-check "ModList published to the mods"     "published [0-9]+ NeoForge mod\(s\) into ModList" "$LOG"
+check "ModList published to the mods"     "published [1-9][0-9]* NeoForge mod\(s\) into ModList" "$LOG"
 check "ferritecore"                        "constructed @Mod ferritecore \(NeoForge," "$LOG"
 check "appleskin"                          "constructed @Mod appleskin \(NeoForge," "$LOG"
 check "balm (both @Mod classes, one bus)"  "constructed @Mod balm \(NeoForge," "$LOG" 2
@@ -83,7 +83,7 @@ check "architectury (needs ModList self-lookup)" "constructed @Mod architectury 
 check_absent "no @Mod construction failure" "failed to construct @Mod" "$LOG"
 
 step "content registered, and the baseline NOT rolled back (must PASS)"
-check "a pure-NeoForge mod registered real content" "registered content: bookshelf: [0-9]+ entr" "$LOG"
+check "a pure-NeoForge mod registered real content" "registered content: bookshelf: [1-9][0-9]* entr" "$LOG"
 # These two are the revertToVanilla() tripwire — see the header.
 check "NeoForge baseline intact (35)"      "registered content: neoforge: 35 entr" "$LOG"
 check "MinecraftForge baseline intact (10)" "registered content: forge: 10 entr" "$LOG"
@@ -98,10 +98,10 @@ step "the full FML mod lifecycle ran on the server side too"
 # CommonModLoader.load's task order: construct, common setup, SIDED setup, registration events, IMC, complete.
 # The kernel used to know only the first two and the last, so a dedicated server never posted its sided phase,
 # no capability was ever registered, and all IMC was dead.
-check "construct phase posted"       "posted FML construct to [0-9]+ NeoForge mod"              "$LOG"
-check "sided phase posted"           "posted FML dedicated server setup to [0-9]+ NeoForge mod" "$LOG"
+check "construct phase posted"       "posted FML construct to [1-9][0-9]* NeoForge mod"              "$LOG"
+check "sided phase posted"           "posted FML dedicated server setup to [1-9][0-9]* NeoForge mod" "$LOG"
 check "registration events ran"      "ran NeoForge.s registration events"                       "$LOG"
-check "IMC enqueued and processed"   "posted FML IMC (enqueue|process) to [0-9]+ NeoForge mod"  "$LOG" 2
+check "IMC enqueued and processed"   "posted FML IMC (enqueue|process) to [1-9][0-9]* NeoForge mod"  "$LOG" 2
 check_absent "no mod failed a phase" "failed during (construct|dedicated server setup|IMC)"     "$LOG"
 # ModConfig.Type.SERVER is NOT one of the missing phases, which is worth pinning down rather than re-deriving:
 # ServerLifecycleHooks.handleServerAboutToStart loads it through the 3-arg ConfigTracker overload, and the kernel

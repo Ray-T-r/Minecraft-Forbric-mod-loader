@@ -52,7 +52,7 @@ sed 's/^/[kernel]   /' "$LOG" | cut -c1-180
 step "the install wrote what a launcher needs (must PASS)"
 assert_eq "the installer exited cleanly" "0" "$INSTALL_RC"
 check "it wrote a version profile"     "wrote .*versions/26.2-forbric/26.2-forbric.json" "$LOG"
-check "it staged Forbric's own jars"   "staged [0-9]+ Forbric and kernel-dependency jar" "$LOG"
+check "it staged Forbric's own jars"   "staged [1-9][0-9]* Forbric and kernel-dependency jar" "$LOG"
 check "it staged the game artifacts"   "staged 3 game artifact"                          "$LOG"
 check_absent "it never claimed to ship Minecraft" "bundled (merged|game) base"            "$LOG"
 [ -f "$DEST/versions/26.2-forbric/26.2-forbric.json" ] && echo "[kernel] PASS the profile exists" \

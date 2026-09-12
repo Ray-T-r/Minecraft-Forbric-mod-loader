@@ -85,7 +85,7 @@ check_absent "no null pack reached the repo"  "streamSelfAndChildren.* because .
 check_absent "no pack was skipped as null"    "Forbric/PackRepair\] a RepositorySource emitted a null pack" "$LOG"
 
 step "the Forge-family mods' own data/ reached the server datapack repository (must PASS)"
-check "datapacks served"              "Forbric/DataPacks\] served [0-9]+ datapack"             "$LOG"
+check "datapacks served"              "Forbric/DataPacks\] served [1-9][0-9]* datapack"             "$LOG"
 # The carriers are where the c: convention-tag skeleton lives — 513 tag files that exist in NO other jar, and that
 # every cross-mod recipe is written against. Assert the NUMBER: the line keeps printing when the count goes to zero.
 CARRIERS=$(grep -aoE 'served [0-9]+ datapack\(s\).*— [0-9]+ loader carrier' "$LOG" | grep -oE '[0-9]+ loader' | grep -oE '[0-9]+' | head -1)
