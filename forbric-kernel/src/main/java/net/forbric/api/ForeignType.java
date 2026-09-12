@@ -93,8 +93,6 @@ public enum ForeignType {
 			"net.neoforged.neoforge.registries.RegisterEvent"),
 	REGISTRY_MANAGER("net.minecraftforge.registries.RegistryManager",
 			"net.neoforged.neoforge.registries.RegistryManager"),
-	SERVER_ABOUT_TO_START_EVENT("net.minecraftforge.event.server.ServerAboutToStartEvent",
-			"net.neoforged.neoforge.event.server.ServerAboutToStartEvent"),
 	SERVER_LIFECYCLE_HOOKS("net.minecraftforge.server.ServerLifecycleHooks",
 			"net.neoforged.neoforge.server.ServerLifecycleHooks"),
 	SERVER_MOD_LOADER("net.minecraftforge.server.loading.ServerModLoader",

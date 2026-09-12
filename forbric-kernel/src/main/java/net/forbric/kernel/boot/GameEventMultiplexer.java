@@ -16,18 +16,9 @@
 
 package net.forbric.kernel.boot;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
-import java.util.List;
-import java.util.Locale;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BooleanSupplier;
-import java.util.function.Consumer;
 
-import net.forbric.api.Ecosystem;
 import net.forbric.api.EventBridges;
-import net.forbric.api.ForeignType;
 import net.forbric.api.GameEventBridge;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
@@ -65,18 +56,13 @@ public final class GameEventMultiplexer {
 		try {
 			Object neoBus = Class.forName("net.neoforged.neoforge.common.NeoForge", false, cl)
 					.getField("EVENT_BUS").get(null);
-			Class<?> busCls = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
-			Class<?> prioCls = Class.forName("net.neoforged.bus.api.EventPriority", false, cl);
-			@SuppressWarnings({"unchecked", "rawtypes"})
-			Object lowest = Enum.valueOf((Class) prioCls, "LOWEST");
-			Method addListener = busCls.getMethod("addListener", prioCls, boolean.class, Class.class, Consumer.class);
-
-			Class<?> mcServer = Class.forName("net.minecraft.server.MinecraftServer", false, cl);
-			// Resolved for its ABSENCE, not its presence: the tick forward itself is game-side now and names this
-			// class as a type. Probing it here keeps the graceful path below — a Neo-only instance throws
-			// ClassNotFoundException at THIS line and is reported as "only one Forge family present" at debug,
-			// instead of the game-side class failing to link and being reported as a warning per bridge.
+			// Resolved for their ABSENCE, not their presence. Every bridge below is game-side now and names these
+			// families as TYPES, so a single-family instance would fail to LINK a game-side class — which arrives
+			// as a LinkageError per bridge and reads as five warnings about a broken kernel. Probing one class
+			// from each family here turns that back into what it is: a ClassNotFoundException at THIS line, and
+			// one debug line saying there is only one family to bridge between.
 			Class.forName("net.minecraftforge.event.ForgeEventFactory", false, cl);
+			Class.forName("net.neoforged.neoforge.event.tick.ServerTickEvent", false, cl);
 
 			// Each bridge is installed INDEPENDENTLY. They used to be five `n +=` calls in this one try, so the
 			// first setup failure skipped every bridge after it — and the cost of the ones skipped (see
@@ -89,8 +75,8 @@ public final class GameEventMultiplexer {
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so
 			// the local player's integrated-server connection is rejected "Server is still starting" and singleplayer
 			// world-join fails. Re-emit the dropped Forge hook off NeoForge's surviving ServerStarted/Stopping events.
-			install(GameEventBridge.SERVER_ABOUT_TO_START, () ->
-					bridgeForgeServerAboutToStart(cl, neoBus, addListener, lowest, mcServer));
+			install(GameEventBridge.SERVER_ABOUT_TO_START,
+					() -> aboutToStartBridge(cl).invoke(null, neoBus));
 			install(GameEventBridge.SERVER_STARTED, () -> lifecycleBridge(cl, "installStarted").invoke(null, neoBus));
 			install(GameEventBridge.SERVER_STOPPING,
 					() -> lifecycleBridge(cl, "installStopping").invoke(null, neoBus));
@@ -134,73 +120,8 @@ public final class GameEventMultiplexer {
 			return;
 		}
 		try {
-			Class<?> neoEvent = Class.forName(
-					"net.neoforged.neoforge.client.event.AddClientReloadListenersEvent", false, cl);
-			Class<?> forgeEvent = Class.forName(
-					"net.minecraftforge.client.event.RegisterClientReloadListenersEvent", false, cl);
-			Class<?> rrmCls = Class.forName("net.minecraft.server.packs.resources.ReloadableResourceManager", false, cl);
-			Class<?> packTypeCls = Class.forName("net.minecraft.server.packs.PackType", false, cl);
-			Class<?> identifierCls = Class.forName("net.minecraft.resources.Identifier", false, cl);
-			Class<?> reloadListenerCls = Class.forName(
-					"net.minecraft.server.packs.resources.PreparableReloadListener", false, cl);
-			Class<?> eventBusCls = Class.forName("net.minecraftforge.eventbus.api.bus.EventBus", false, cl);
-
-			Constructor<?> scratchCtor = rrmCls.getConstructor(packTypeCls);
-			@SuppressWarnings({"unchecked", "rawtypes"})
-			Object clientPacks = Enum.valueOf((Class) packTypeCls, "CLIENT_RESOURCES");
-			// Read through the PUBLIC accessor, not the private field it returns. `javap -c` shows getListeners
-			// is `getfield listeners; areturn` — the same bytes the old getDeclaredField + setAccessible pair
-			// reached, minus a private name to keep in step and minus the access override. The manager's ctor
-			// seeds the list with an empty ArrayList, so it is safe to read straight after construction.
-			Method captured = rrmCls.getMethod("getListeners");
-
-			Constructor<?> forgeEventCtor = forgeEvent.getConstructor(rrmCls);
-			Object forgeBus = forgeEvent.getField("BUS").get(null);
-			// EventBus<E extends Event>, so post erases to post(Event) — not post(Object). Look it up by shape so a
-			// change to the bound does not silently disable the bridge.
-			Method found = null;
-			for (Method m : eventBusCls.getMethods()) {
-				if ("post".equals(m.getName()) && m.getParameterCount() == 1) {
-					found = m;
-					break;
-				}
-			}
-			if (found == null) throw new NoSuchMethodException(eventBusCls.getName() + ".post(<event>)");
-			Method post = found;
-			Method fromNamespaceAndPath = identifierCls.getMethod("fromNamespaceAndPath", String.class, String.class);
-			Method addToGraph = neoEvent.getMethod("addListener", identifierCls, reloadListenerCls);
-
-			Class<?> busCls = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
-			Class<?> prioCls = Class.forName("net.neoforged.bus.api.EventPriority", false, cl);
-			@SuppressWarnings({"unchecked", "rawtypes"})
-			Object lowest = Enum.valueOf((Class) prioCls, "LOWEST");
-			Method addListener = busCls.getMethod("addListener", prioCls, boolean.class, Class.class, Consumer.class);
-
-			Consumer<Object> bridge = event -> {
-				try {
-					Object scratch = scratchCtor.newInstance(clientPacks);
-					post.invoke(forgeBus, forgeEventCtor.newInstance(scratch));
-
-					List<?> listeners = (List<?>) captured.invoke(scratch);
-					int n = 0;
-					for (Object listener : listeners) {
-						Object id = fromNamespaceAndPath.invoke(null, "forbric",
-								"forge/" + sanitisePath(listener.getClass().getName()) + "_" + n);
-						addToGraph.invoke(event, id, listener);
-						n++;
-					}
-					if (n > 0) {
-						ForbricLog.info("[Forbric/EventMux] bridged %d Forge client reload listener(s) into "
-								+ "NeoForge's sorted graph", n);
-					} else {
-						ForbricLog.debug("[Forbric/EventMux] no Forge mod registered a client reload listener");
-					}
-				} catch (Throwable t) {
-					ForbricLog.warn("[Forbric/EventMux] could not bridge Forge client reload listeners",
-							Reflect.unwrap(t));
-				}
-			};
-			addListener.invoke(modBus, lowest, false, neoEvent, bridge);
+			Class.forName("net.forbric.kernel.runtime.KernelGameClientReload", true, cl)
+					.getMethod("install", Object.class).invoke(null, modBus);
 			EventBridges.installed(GameEventBridge.CLIENT_RELOAD_LISTENERS);
 			ForbricLog.info("[Forbric/EventMux] installed the Neo→Forge client reload-listener bridge");
 			EventBridges.verify(GameEventBridge.Pass.CLIENT_MOD_BUS);
@@ -231,90 +152,10 @@ public final class GameEventMultiplexer {
 				.getMethod(entry, Object.class);
 	}
 
-	/** A class name reduced to the {@code [a-z0-9._/-]} an {@code Identifier} path allows. */
-	private static String sanitisePath(String className) {
-		StringBuilder out = new StringBuilder(className.length());
-		for (char c : className.toLowerCase(Locale.ROOT).toCharArray()) {
-			out.append((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' ? c : '_');
-		}
-		return out.toString();
-	}
-
-	/** NeoForge {@code ServerTickEvent.Pre/Post} → Forge {@code ForgeEventFactory.onPre/PostServerTick}. */
-	/**
-	 * The one step earlier in the start sequence, forwarded piece by piece rather than whole.
-	 *
-	 * <p>MinecraftForge's {@code handleServerAboutToStart} does three unrelated things in a row: it reads the
-	 * per-world SERVER configs that its configuration-phase sync then pushes to joining clients, it applies Forge's
-	 * biome modifiers, and it posts its own {@code ServerAboutToStartEvent}. Nothing had been calling it, so Forge
-	 * mods' server configs stayed at their defaults on both ends of every connection and no Forge mod had ever
-	 * received that event.
-	 *
-	 * <p>Forwarding the method whole does not work here: the biome-modifier pass looks up a datapack registry
-	 * ({@code forge:biome_modifier}) that no baseline declares under the kernel, so it always throws — and being in
-	 * the middle, it would take the event with it every time. Each piece therefore gets its own guard, so a Forge
-	 * feature the kernel does not carry costs only itself.
-	 */
-	private static int bridgeForgeServerAboutToStart(ClassLoader cl, Object bus, Method addListener, Object prio,
-			Class<?> mcServer) throws Exception {
-		Class<?> evt = Class.forName(ForeignType.SERVER_ABOUT_TO_START_EVENT.binary(Ecosystem.NEOFORGE), false, cl);
-		Method getServer = evt.getMethod("getServer");
-		Class<?> forgeHooks = Class.forName(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.FORGE), false, cl);
-		Class<?> tracker = Class.forName(ForeignType.CONFIG_TRACKER.binary(Ecosystem.FORGE), false, cl);
-		Class<?> typeCls = Class.forName(ForeignType.MOD_CONFIG_TYPE.binary(Ecosystem.FORGE), false, cl);
-		Class<?> forgeEvent = Class.forName(ForeignType.SERVER_ABOUT_TO_START_EVENT.binary(Ecosystem.FORGE), false, cl);
-		@SuppressWarnings({"unchecked", "rawtypes"})
-		Object serverConfigs = Enum.valueOf((Class) typeCls, "SERVER");
-		Method configPath = forgeHooks.getDeclaredMethod("getServerConfigPath", mcServer);
-		configPath.setAccessible(true);
-		Method loadConfigs = tracker.getMethod("loadConfigs", typeCls, java.nio.file.Path.class);
-		Method runModifiers = forgeHooks.getDeclaredMethod("runModifiers", mcServer);
-		runModifiers.setAccessible(true);
-		Constructor<?> forgeEventCtor = forgeEvent.getConstructor(mcServer);
-		Object forgeBus = forgeEvent.getField("BUS").get(null);
-		Method post = KernelBusSupport.singleArgMethod(forgeBus.getClass(), "post");
-
-		AtomicBoolean warnedConfigs = new AtomicBoolean();
-		AtomicBoolean warnedModifiers = new AtomicBoolean();
-		AtomicBoolean warnedEvent = new AtomicBoolean();
-		Consumer<Object> listener = neoEvt -> {
-			Object server;
-			try {
-				server = getServer.invoke(neoEvt);
-			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/EventMux] NeoForge's about-to-start event carried no server; MinecraftForge's "
-						+ "server configs stay at their defaults", Reflect.unwrap(t));
-				return;
-			}
-			try {
-				loadConfigs.invoke(null, serverConfigs, configPath.invoke(null, server));
-			} catch (Throwable t) {
-				if (warnedConfigs.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] could not load MinecraftForge's per-world SERVER configs — its "
-							+ "mods keep their defaults here and on every client that joins",
-							Reflect.unwrap(t));
-				}
-			}
-			try {
-				runModifiers.invoke(null, server);
-			} catch (Throwable t) {
-				if (warnedModifiers.compareAndSet(false, true)) {
-					ForbricLog.debug("[Forbric/EventMux] MinecraftForge's biome modifiers did not apply (%s) — nothing "
-							+ "declares its biome-modifier datapack registry under the kernel; the rest of its "
-							+ "server start is unaffected", String.valueOf(Reflect.unwrap(t)));
-				}
-			}
-			try {
-				post.invoke(forgeBus, forgeEventCtor.newInstance(server));
-			} catch (Throwable t) {
-				if (warnedEvent.compareAndSet(false, true)) {
-					ForbricLog.warn("[Forbric/EventMux] MinecraftForge's ServerAboutToStartEvent did not reach its mods",
-							Reflect.unwrap(t));
-				}
-			}
-		};
-		addListener.invoke(bus, prio, false, evt, listener);
-		return 1;
+	/** The game-side about-to-start bridge. Complete literal, for the reason above. */
+	private static Method aboutToStartBridge(ClassLoader cl) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameServerAboutToStart", true, cl)
+				.getMethod("install", Object.class);
 	}
 
 	/** One bridge's setup, so a failure can be caught per bridge instead of taking the rest of the pass with it. */

@@ -116,6 +116,13 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerLifecycle", new Entry(Origin.COMPILED, List.of(
 				new Call("installStarted", void.class, Object.class),
 				new Call("installStopping", void.class, Object.class))));
+		// MinecraftForge's about-to-start, forwarded in three separately guarded pieces because its middle
+		// piece always throws under the kernel. See KernelGameServerAboutToStart.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerAboutToStart", new Entry(Origin.COMPILED, List.of(
+				new Call("install", void.class, Object.class))));
+		// The only MOD-bus bridge: Forge's client reload listeners into NeoForge's sorted graph.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientReload", new Entry(Origin.COMPILED, List.of(
+				new Call("install", void.class, Object.class))));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));
