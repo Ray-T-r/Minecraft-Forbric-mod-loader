@@ -106,6 +106,11 @@ public final class KernelRuntimeClasses {
 		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
 		CLASSES.put("net.forbric.kernel.runtime.KernelScanData", new Entry(Origin.COMPILED, List.of(
 				new Call("build", Object.class, List.class, List.class))));
+		// The Neo->Forge server-tick re-emission. Two entries rather than one taking the kind, because the two
+		// MinecraftForge hooks share a descriptor and a crossed pairing would compile. See KernelGameTickEvents.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameTickEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installPre", void.class, Object.class),
+				new Call("installPost", void.class, Object.class))));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));
