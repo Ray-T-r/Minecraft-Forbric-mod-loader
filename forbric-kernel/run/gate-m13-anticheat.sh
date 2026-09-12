@@ -205,7 +205,7 @@ check_absent "not kicked before the control" "$PLAYER lost connection"          
 
 step "neither side broke (must be ABSENT)"
 check "left cleanly"                  "ClientSmoke\] clean disconnect observed"          "$CLOG"
-check "the client stopped its config file-watchers at close" "Forbric/Shutdown\\] stopped [0-9]+ config file-watcher" "$CLOG"
+check "the client stopped its config file-watchers at close" "Forbric/Shutdown\\] stopped [1-9][0-9]* config file-watcher" "$CLOG"
 check_absent "NeoForge loaded its default server configs once" "Overwriting non-null config" "$CLOG"
 check_absent "no client crash"        "Preparing crash report"                            "$CLOG"
 check_absent "no server crash"        "Preparing crash report|Encountered an unexpected exception" "$SLOG"

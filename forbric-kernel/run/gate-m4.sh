@@ -86,9 +86,9 @@ check "real MinecraftForge @Mod (GeckoLib)"    "constructed @Mod geckolib \(trad
 # Fabric-side PlayerMixin cannot apply on the merged base and would otherwise be a fatal MixinApplyError).
 check "real third-party NeoForge @Mods"        "constructed @Mod [a-z_]+ \(NeoForge," "$LOG" 3
 check "universal jars arbitrated to ONE family" "declares 3 loaders — loading it as" "$LOG" 2
-check "Fabric side yields the universal jars"  "skipped [0-9]+ Fabric registration\(s\)" "$LOG"
-check "real Fabric mods discovered"            "discovered [0-9]+ Fabric mod\(s\)" "$LOG"
-check "real Fabric main entrypoints ran"       "invoked [0-9]+ Fabric main entrypoint\(s\)" "$LOG"
+check "Fabric side yields the universal jars"  "skipped [1-9][0-9]* Fabric registration\(s\)" "$LOG"
+check "real Fabric mods discovered"            "discovered [1-9][0-9]* Fabric mod\(s\)" "$LOG"
+check "real Fabric main entrypoints ran"       "invoked [1-9][0-9]* Fabric main entrypoint\(s\)" "$LOG"
 
 step "each ecosystem registered its REAL content into the one shared registry set (must PASS)"
 check "MinecraftForge content (Macaw's 304)"   "registered content: mcwbridges: 304 entr" "$LOG"
@@ -97,9 +97,9 @@ check "MinecraftForge content (Macaw's 304)"   "registered content: mcwbridges: 
 # 303 blocks/items existed but were unreachable in the creative menu and its search. Assert the tab by name so a
 # regression shows up as "the content is invisible in game" rather than as a count that still looks plausible.
 check "Macaw's CreativeModeTab exists"         "registered content: mcwbridges: .*creative_mode_tab=1" "$LOG"
-check "MinecraftForge content (GeckoLib)"      "registered content: geckolib: [0-9]+ entr" "$LOG"
+check "MinecraftForge content (GeckoLib)"      "registered content: geckolib: [1-9][0-9]* entr" "$LOG"
 check "NeoForge baseline content (35)"         "registered content: neoforge: 35 entr" "$LOG"
-check "Fabric mod content (Jade)"              "registered content: jade: [0-9]+ entr" "$LOG"
+check "Fabric mod content (Jade)"              "registered content: jade: [1-9][0-9]* entr" "$LOG"
 check "Jade server plugins load"               "Start loading plugin from Jade" "$LOG"
 
 step "BOTH game-event families tick in the same loop (must PASS — the B-5 1:1 shape)"
@@ -113,7 +113,7 @@ check "every declared Neo→Forge game-event bridge installed" \
 check_absent "and none reported missing"       "bridge\(s\) MISSING" "$LOG"
 
 step "the server works (must PASS)"
-check "vanilla datapack fully loaded"          "Loaded [0-9]+ recipes" "$LOG"
+check "vanilla datapack fully loaded"          "Loaded [1-9][0-9]* recipes" "$LOG"
 check "server reached Done"                    "Done \(" "$LOG"
 check "clean shutdown"                         "Stopping server" "$LOG"
 

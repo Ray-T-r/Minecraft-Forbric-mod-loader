@@ -164,8 +164,8 @@ check_absent "client applied every registry sync" "Failed to sync registries|Fai
 step "it played and left cleanly (must PASS)"
 check "survived real simulation"     "ClientSmoke\] client-ready after"                 "$CLOG"
 check "left cleanly"                 "ClientSmoke\] clean disconnect observed"          "$CLOG"
-check "the client stopped its config file-watchers at close" "Forbric/Shutdown\\] stopped [0-9]+ config file-watcher" "$CLOG"
-check "the server stopped its config file-watchers at exit" "Forbric/Shutdown\\] stopped [0-9]+ config file-watcher" "$SLOG"
+check "the client stopped its config file-watchers at close" "Forbric/Shutdown\\] stopped [1-9][0-9]* config file-watcher" "$CLOG"
+check "the server stopped its config file-watchers at exit" "Forbric/Shutdown\\] stopped [1-9][0-9]* config file-watcher" "$SLOG"
 check "server saw the disconnect"    "lost connection|left the game"                    "$SLOG"
 # The line above is satisfied by a KICK as well as by a goodbye, so it cannot stand alone. This is the one that
 # actually says the handshake succeeded — and it is the one currently RED (see the header).

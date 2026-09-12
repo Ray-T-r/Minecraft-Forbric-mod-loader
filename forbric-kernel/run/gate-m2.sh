@@ -32,7 +32,7 @@ record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 90
 
 step "discovery + JiJ (must PASS)"
-check "Fabric mods discovered"                "discovered [0-9]+ Fabric mod\(s\) in [0-9]+ jar\(s\)" "$LOG"
+check "Fabric mods discovered"                "discovered [1-9][0-9]* Fabric mod\(s\) in [1-9][0-9]* jar\(s\)" "$LOG"
 check "FabricLoader ready with entrypoint keys" "FabricLoader ready" "$LOG"
 check "JiJ nested lib was extracted + initialized" "\[ForbricFabricLib\] JiJ nested mod initialized" "$LOG"
 check "nested lib sees its parent mod"        "JiJ nested mod initialized \(parent visible=true\)" "$LOG"

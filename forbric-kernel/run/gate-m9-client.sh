@@ -78,7 +78,7 @@ check "the window title was read"      "ClientSmoke\] window title: Minecraft"  
 check_absent "…and it names no single loader" "ClientSmoke\] window title: .*(NeoForge|Forge|Fabric)" "$LOG"
 check "left the world cleanly"        "ClientSmoke\] clean disconnect observed"    "$LOG"
 check "server side really ran"        "joined the game"                            "$LOG"
-check "datapacks fully loaded"        "Loaded [0-9]+ advancements"                 "$LOG"
+check "datapacks fully loaded"        "Loaded [1-9][0-9]* advancements"                 "$LOG"
 
 step "the full FML mod lifecycle ran, not just the phases the kernel used to know about"
 # Each of these was missing outright until the kernel started mirroring CommonModLoader.load's task order.
@@ -99,7 +99,7 @@ check_absent "no bridge reported missing"       "bridge\(s\) MISSING"           
 step "a Forge-family mod's own content and data actually arrived (must PASS)"
 # Three fixes that only this pack exercises, each demonstrable: -Dforbric.modDataPacks=off,
 # -Dforbric.registryAliasParity=off, -Dforbric.neoRegistrationOrder=off each turn this gate RED.
-check "datapacks served"              "Forbric/DataPacks\] served [0-9]+ datapack"             "$LOG"
+check "datapacks served"              "Forbric/DataPacks\] served [1-9][0-9]* datapack"             "$LOG"
 # The carriers are where the c: convention-tag skeleton lives — 513 tag files that exist in NO other jar, and that
 # every cross-mod recipe is written against. Assert the NUMBER: the line keeps printing when the count goes to zero.
 CARRIERS=$(grep -aoE 'served [0-9]+ datapack\(s\).*— [0-9]+ loader carrier' "$LOG" | grep -oE '[0-9]+ loader' | grep -oE '[0-9]+' | head -1)

@@ -41,7 +41,7 @@ check "kernel loaded merged base through its own loader"  "sovereign kernel .* o
 # how many net.forbric.kernel.runtime classes KernelRuntimeClasses marks COMPILED; when that grows, this grows.
 check "kernel's own game-side classes linked"             "game-side kernel classes: 4/4 linked" "$LOG"
 check "genuine server-loading lifecycle redirected"       "(redirected|excised) genuine loader trigger .*ServerModLoader.load" "$LOG"
-check "native ecosystem registration ran"                 "fired RegisterEvent x[0-9]+ on [0-9]+ bus" "$LOG"
+check "native ecosystem registration ran"                 "fired RegisterEvent x[1-9][0-9]* on [1-9][0-9]* bus" "$LOG"
 check "server reached Done"                               "Done \(" "$LOG"
 check "server ticked + shut down cleanly"                 "Stopping server" "$LOG"
 check "worlds saved on shutdown"                          "All dimensions are saved" "$LOG"
