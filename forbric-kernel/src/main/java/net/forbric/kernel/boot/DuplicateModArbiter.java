@@ -121,6 +121,14 @@ public final class DuplicateModArbiter {
 	private static volatile Decision cached;
 	private static volatile Path cachedDir;
 
+	/**
+	 * What the top-level pass claimed, kept so the nested pass can arbitrate over the UNION rather than over the
+	 * nested jars alone. Without them a nested jar could only ever be compared with other nested jars, and a
+	 * library nested beside a top-level copy of itself would still load twice.
+	 */
+	private static volatile List<Claim> topLevelClaims = List.of();
+	private static volatile List<Alias> topLevelAliases = List.of();
+
 	private DuplicateModArbiter() {
 	}
 
@@ -139,6 +147,8 @@ public final class DuplicateModArbiter {
 	public static synchronized void reset() {
 		cached = null;
 		cachedDir = null;
+		topLevelClaims = List.of();
+		topLevelAliases = List.of();
 		fileOverrides = Map.of();
 	}
 
@@ -154,12 +164,160 @@ public final class DuplicateModArbiter {
 		Path rundir = modsDir == null ? null : modsDir.getParent();
 		loadOverrideFile(rundir);
 		List<Alias> universalAliases = new ArrayList<>();
-		Decision decision = arbitrate(scan(modsDir, envType, universalAliases), universalAliases);
+		List<Claim> claims = scan(modsDir, envType, universalAliases);
+		topLevelClaims = List.copyOf(claims);
+		topLevelAliases = List.copyOf(universalAliases);
+		Decision decision = arbitrate(claims, universalAliases);
 		writeOverrideTemplate(rundir, decision);
 		MergeReport.write(rundir, modsDir, decision);
 		cached = decision;
 		cachedDir = modsDir;
 		return decision;
+	}
+
+	/**
+	 * The SECOND pass: the same arbitration, over the nested jars both families extract out of their mods.
+	 *
+	 * <p>A JarJar/JiJ child is not in {@code mods/}, so {@link #arbitrate(Path, EnvType)} never saw it — and each
+	 * loader only dedupes against its own family ({@code KernelFabricLoader.register} drops a duplicate Fabric id,
+	 * {@code KernelModLoader} the same for {@code @Mod}), so nobody was checking across. A library nested by a
+	 * Fabric mod AND by a MinecraftForge mod therefore loaded twice, once per ecosystem, and initialised twice.
+	 * Xaero's is the worked example: {@code xaerominimap-fabric} nests {@code xaerolib-fabric},
+	 * {@code xaeroworldmap-forge} nests {@code xaerolib-forge}, and the second {@code XaeroLib.<init>} died on
+	 * "Attempted to register a duplicate config channel: xaerolib:main" — but only AFTER its superclass
+	 * constructor had already overwritten {@code XaeroLib.INSTANCE} with the half-built object, so a live mixin
+	 * then called into it and took the client down on a render frame.
+	 *
+	 * <p>Arbitrated over the UNION of the top-level claims and the nested ones, not over the nested ones alone:
+	 * a nested copy must also lose to a top-level jar of the same mod. The top-level half of the answer is then
+	 * held fixed — those jars' discovery has already run by the time this is called, so re-deciding them would
+	 * describe a load that did not happen. A union that WOULD have changed one is a bug in the ordering, and says
+	 * so rather than pretending.
+	 *
+	 * @param nestedJars every nested jar both families extracted, in extraction order
+	 * @return a decision that suppresses everything phase one did, plus the nested losers
+	 */
+	public static synchronized Decision arbitrateNested(EnvType envType, List<Path> nestedJars) {
+		Decision phase1 = current();
+		if ("off".equalsIgnoreCase(System.getProperty(SWITCH, "on"))) return phase1;
+		if (nestedJars == null || nestedJars.isEmpty()) return phase1;
+
+		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
+		List<Claim> nestedClaims = new ArrayList<>();
+		List<Alias> ignored = new ArrayList<>();
+		for (Path jar : nestedJars) {
+			Claim claim = claimOf(discoverer, jar, envType, ignored);
+			if (claim != null) nestedClaims.add(claim);
+		}
+		if (nestedClaims.isEmpty()) return phase1;
+		return arbitrateNested(phase1, topLevelClaims, nestedClaims);
+	}
+
+	/**
+	 * The pure half of the nested pass, so tests can drive it without a filesystem — the same split as
+	 * {@link #arbitrate(List, List)}.
+	 */
+	static Decision arbitrateNested(Decision phase1, List<Claim> topLevel, List<Claim> nestedClaims) {
+		// Everything that can claim an id, so a nested copy is also weighed against a TOP-LEVEL jar of the same
+		// mod — a library nested inside a Fabric mod must still lose to the NeoForge build the user installed.
+		Map<String, List<Claim>> byId = new LinkedHashMap<>();
+		for (Claim claim : topLevel) {
+			if (phase1.suppressed(claim.jar())) continue;   // already lost phase one; it is not a live claimant
+			for (String id : claim.modIds()) byId.computeIfAbsent(id, k -> new ArrayList<>()).add(claim);
+		}
+		Set<Path> nestedPaths = new LinkedHashSet<>();
+		for (Claim claim : nestedClaims) {
+			nestedPaths.add(claim.jar().toAbsolutePath());
+			for (String id : claim.modIds()) byId.computeIfAbsent(id, k -> new ArrayList<>()).add(claim);
+		}
+
+		Set<Path> suppressed = new LinkedHashSet<>(phase1.suppressedJars());
+		Map<String, Path> owners = new LinkedHashMap<>(phase1.ownerByModId());
+		List<Alias> aliases = new ArrayList<>(phase1.aliases());
+		int contested = 0;
+		for (Map.Entry<String, List<Claim>> e : byId.entrySet()) {
+			List<Claim> claimants = e.getValue();
+			if (claimants.size() < 2) continue;
+
+			// ONLY a cross-ECOSYSTEM contest. Same-family duplicates are the ordinary shape of JarJar — one
+			// library nested by five mods that each bundle it — and both loaders already keep the first and ignore
+			// the rest, without taking anything off the classpath. Withdrawing those jars is not a smaller
+			// version of this fix, it is a different and much larger change: it took Sodium's NeoForge build off
+			// the classpath (its real mod jar is nested inside a wrapper that declares the same id) and its
+			// ServiceLoader lookup then failed. What no loader handles, and what this pass exists for, is the
+			// SAME id claimed by two ecosystems, because each family only ever deduplicates within itself.
+			Set<Ecosystem> families = new LinkedHashSet<>();
+			boolean anyNested = false;
+			for (Claim claim : claimants) {
+				families.add(claim.ecosystem());
+				if (nestedPaths.contains(claim.jar().toAbsolutePath())) anyNested = true;
+			}
+			if (!anyNested || families.size() < 2) continue;
+
+			Claim winner = pick(e.getKey(), claimants, nestedPreference());
+			// A top-level jar is past the point of being withdrawn: phase one already handed it to its family's
+			// discovery. If the preference would pick a nested jar over one, keep the top-level jar and say so.
+			if (nestedPaths.contains(winner.jar().toAbsolutePath())) {
+				Claim installed = null;
+				for (Claim claim : claimants) {
+					if (!nestedPaths.contains(claim.jar().toAbsolutePath())) { installed = claim; break; }
+				}
+				if (installed != null) {
+					ForbricLog.warn("[Forbric/DupeId] '%s' would be taken from the nested %s, but the top-level %s "
+							+ "is already loaded and cannot be withdrawn — keeping the top-level one",
+							e.getKey(), winner.jar().getFileName(), installed.jar().getFileName());
+					winner = installed;
+				}
+			}
+
+			contested++;
+			owners.put(e.getKey(), winner.jar().toAbsolutePath());
+			Set<Ecosystem> lost = new LinkedHashSet<>();
+			for (Claim claim : claimants) {
+				if (claim == winner) continue;
+				if (claim.ecosystem() != winner.ecosystem()) lost.add(claim.ecosystem());
+				// SUBSET RULE, as in the top-level pass: a jar may only lose if every id it declares is also
+				// claimed by someone else, or a library bundling foo + foo_compat is withdrawn because foo alone
+				// collided and foo_compat ends up loaded by nobody.
+				if (!nestedPaths.contains(claim.jar().toAbsolutePath())) continue;
+				List<String> orphaned = new ArrayList<>();
+				for (String id : claim.modIds()) {
+					List<Claim> others = byId.getOrDefault(id, List.of());
+					if (others.size() < 2) orphaned.add(id);
+				}
+				if (!orphaned.isEmpty()) {
+					ForbricLog.warn("[Forbric/DupeId] keeping the nested %s despite losing '%s' — it also declares "
+							+ "%s, which nothing else provides", claim.jar().getFileName(), e.getKey(), orphaned);
+					continue;
+				}
+				suppressed.add(claim.jar().toAbsolutePath());
+			}
+			// The winner's version, but fall back to any claimant that declared one: an alias exists so
+			// isModLoaded answers, and a mod comparing the version it gets back against a range is better served
+			// by the losing jar's real number than by versionOf's "0" placeholder.
+			String version = winner.versionOf(e.getKey());
+			if ("0".equals(version)) {
+				for (Claim claim : claimants) {
+					String declared = claim.versionOf(e.getKey());
+					if (!"0".equals(declared)) { version = declared; break; }
+				}
+			}
+			for (Ecosystem ecosystem : lost) aliases.add(new Alias(e.getKey(), ecosystem, version));
+			ForbricLog.info("[Forbric/DupeId] nested mod id '%s' is claimed by %d jars across %s — loading %s (%s). "
+					+ "Each loader only deduplicates within its own family, so without this it would have been "
+					+ "constructed once per ecosystem%s", e.getKey(), claimants.size(), families,
+					winner.jar().getFileName(), winner.ecosystem(),
+					lost.isEmpty() ? "" : ", aliased into " + lost);
+		}
+		if (contested == 0) {
+			ForbricLog.debug("[Forbric/DupeId] nested pass: %d nested jar(s), no mod id claimed by more than one "
+					+ "ecosystem — nothing to arbitrate", nestedClaims.size());
+			return phase1;
+		}
+		ForbricLog.info("[Forbric/DupeId] nested pass: %d nested jar(s), %d mod id(s) claimed across ecosystems, "
+				+ "%d nested jar(s) suppressed", nestedClaims.size(), contested,
+				suppressed.size() - phase1.suppressedJars().size());
+		return new Decision(Set.copyOf(suppressed), Map.copyOf(owners), List.copyOf(aliases));
 	}
 
 	/** The pure half: decide from claims alone. Package-visible so tests can drive it without a filesystem. */
@@ -174,6 +332,15 @@ public final class DuplicateModArbiter {
 	 * duplicate ids at all, and that is the common case.
 	 */
 	static Decision arbitrate(List<Claim> claims, List<Alias> universalAliases) {
+		return arbitrate(claims, universalAliases, "top-level");
+	}
+
+	/**
+	 * @param pass which walk these claims came from, so the two passes' log lines cannot be mistaken for each
+	 *             other. A gate reading "cross-jar arbitration: 0 duplicate mod id(s)" has to know WHICH walk
+	 *             found none — the top-level one finding none says nothing about the nested one.
+	 */
+	static Decision arbitrate(List<Claim> claims, List<Alias> universalAliases, String pass) {
 		Map<String, List<Claim>> byId = new LinkedHashMap<>();
 		for (Claim claim : claims) {
 			for (String id : claim.modIds()) {
@@ -241,8 +408,8 @@ public final class DuplicateModArbiter {
 					byId.get(id).size(), winner.jar().getFileName(), winner.ecosystem(),
 					lost.isEmpty() ? "" : ", aliased into " + lost);
 		}
-		ForbricLog.info("[Forbric/DupeId] cross-jar arbitration: %d duplicate mod id(s), %d jar(s) suppressed, "
-				+ "%d presence alias(es)", contested.size(), suppressed.size(), aliases.size());
+		ForbricLog.info("[Forbric/DupeId] cross-jar arbitration (%s): %d duplicate mod id(s), %d jar(s) suppressed, "
+				+ "%d presence alias(es)", pass, contested.size(), suppressed.size(), aliases.size());
 		return new Decision(Set.copyOf(suppressed), Map.copyOf(ownerByModId), List.copyOf(aliases));
 	}
 
@@ -266,6 +433,10 @@ public final class DuplicateModArbiter {
 
 	/** Per-mod override first, then the global ecosystem preference, then first-by-path. */
 	private static Claim pick(String modId, List<Claim> claimants) {
+		return pick(modId, claimants, preference());
+	}
+
+	private static Claim pick(String modId, List<Claim> claimants, List<Ecosystem> order) {
 		Ecosystem forced = overrideFor(modId);
 		if (forced != null) {
 			for (Claim claim : claimants) {
@@ -275,7 +446,7 @@ public final class DuplicateModArbiter {
 			ForbricLog.warn("[Forbric/DupeId] -D%s asks for '%s' from %s, but no such jar claims it — falling back "
 					+ "to the preference order", OWNER_OVERRIDE, modId, forced);
 		}
-		for (Ecosystem candidate : preference()) {
+		for (Ecosystem candidate : order) {
 			for (Claim claim : claimants) {
 				if (claim.ecosystem() == candidate) return claim;
 			}
@@ -314,6 +485,45 @@ public final class DuplicateModArbiter {
 			}
 		}
 		return order.isEmpty() ? MultiLoaderArbiter.preference() : order;
+	}
+
+	/**
+	 * {@code -Dforbric.nestedDupePreference}, defaulting to FABRIC-first — deliberately the OPPOSITE of the
+	 * top-level order, because the two are not the same question.
+	 *
+	 * <p>The top-level order is NeoForge-first because a duplicate there is two builds of a mod the user chose,
+	 * and the pack they built it around is the one whose glue is most likely intact. A nested jar is not chosen by
+	 * anyone: it is a library its parents happened to bundle, and both families' parents call it. So the question
+	 * is not "which build was this pack tested with" but "which platform's bootstrap is ready by the time the
+	 * consumers run" — and on this kernel that is Fabric's, measured rather than reasoned:
+	 *
+	 * <p>Xaero's {@code xaerolib} is nested by a Fabric minimap and a MinecraftForge world map. Its Fabric
+	 * bootstrap sets {@code XaeroLib.client} from {@code onInitializeClient}, which the kernel runs inside
+	 * {@code Minecraft.<init>} — before any tick. Its MinecraftForge bootstrap sets the same field from
+	 * {@code FMLClientSetupEvent}. Letting MinecraftForge win left the Fabric minimap's first-tick hook calling
+	 * {@code XaeroLib.getClient()} on a null: "Cannot invoke XaeroLibClient.getBufferProvider() because the return
+	 * value of XaeroLib.getClient() is null", at {@code CustomRenderTypes.applyFixedOrder}. Letting Fabric win
+	 * produced a clean boot with BOTH mods up — the world map is a traditional-Forge {@code @Mod} and did not
+	 * mind at all.
+	 *
+	 * <p>That is one library, so this is a default and not a law: {@code -Dforbric.modOwner=<id>=<ecosystem>}
+	 * overrides it per mod, and this knob replaces the order wholesale.
+	 */
+	static List<Ecosystem> nestedPreference() {
+		String csv = System.getProperty("forbric.nestedDupePreference");
+		if (csv == null || csv.isBlank()) return List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE, Ecosystem.FORGE);
+
+		List<Ecosystem> order = new ArrayList<>();
+		for (String raw : csv.split(",")) {
+			Ecosystem parsed = Ecosystem.parse(raw);
+			if (parsed != null) {
+				order.add(parsed);
+			} else {
+				ForbricLog.warn("[Forbric/DupeId] ignoring unknown ecosystem '%s' in -Dforbric.nestedDupePreference",
+						raw.trim());
+			}
+		}
+		return order.isEmpty() ? List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE, Ecosystem.FORGE) : order;
 	}
 
 	/** {@code -Dforbric.modOwner=sodium=fabric,lithostitched=neoforge} */
@@ -449,16 +659,29 @@ public final class DuplicateModArbiter {
 		}
 
 		for (Path jar : jars) {
-			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
-			if (owner == null) continue; // a plain library — nobody claims it, so it cannot contest an id
-			Map<String, String> versions = new LinkedHashMap<>();
-			List<String> ids = owner == Ecosystem.FABRIC
-					? fabricIds(jar, envType, versions)
-					: forgeFamilyIds(discoverer, jar, versions);
-			if (!ids.isEmpty()) claims.add(new Claim(jar, owner, ids, Map.copyOf(versions)));
-			collectUniversalAliases(discoverer, jar, owner, envType, universalAliases);
+			Claim claim = claimOf(discoverer, jar, envType, universalAliases);
+			if (claim != null) claims.add(claim);
 		}
 		return claims;
+	}
+
+	/**
+	 * One jar's claim on the ids it declares, or {@code null} for a plain library — nobody claims it, so it cannot
+	 * contest an id.
+	 *
+	 * <p>Split out of {@link #scan} so the nested pass can build claims for jars that are not in {@code mods/}:
+	 * a JarJar/JiJ child is extracted to {@code .forbric-kernel/}, and the walk that produced this decision never
+	 * goes there.
+	 */
+	private static Claim claimOf(ForbricModDiscoverer discoverer, Path jar, EnvType envType, List<Alias> aliasesOut) {
+		Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
+		if (owner == null) return null;
+		Map<String, String> versions = new LinkedHashMap<>();
+		List<String> ids = owner == Ecosystem.FABRIC
+				? fabricIds(jar, envType, versions)
+				: forgeFamilyIds(discoverer, jar, versions);
+		collectUniversalAliases(discoverer, jar, owner, envType, aliasesOut);
+		return ids.isEmpty() ? null : new Claim(jar, owner, ids, Map.copyOf(versions));
 	}
 
 	/**
