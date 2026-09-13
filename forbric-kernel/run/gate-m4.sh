@@ -74,6 +74,21 @@ BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 200
 
+step "one list holds all three ecosystems' mods (must PASS)"
+# Every family's own Mods screen reads its own family's registry and is complete for the loader it was written
+# against -- which on this instance is never the whole answer. Assert the NUMBERS, not the sentence: the line
+# would still print with a zero in it, and a zero for a family is exactly the regression.
+CAT=$(grep -oE 'Catalog\] [0-9]+ mod\(s\) for the unified Mods screen: [0-9]+ Fabric, [0-9]+ NeoForge, [0-9]+ MinecraftForge' "$LOG" | head -1)
+if [ -n "$CAT" ]; then
+  set -- $(echo "$CAT" | grep -oE '[0-9]+')
+  assert_eq "the catalogue counts add up"  "$1" "$(( $2 + $3 + $4 ))"
+  [ "${2:-0}" -ge 1 ] && echo "[kernel] PASS Fabric mods in the catalogue ($2)"        || { echo "[kernel] FAIL no Fabric mod in the catalogue"; FAIL=1; }
+  [ "${3:-0}" -ge 1 ] && echo "[kernel] PASS NeoForge mods in the catalogue ($3)"      || { echo "[kernel] FAIL no NeoForge mod in the catalogue"; FAIL=1; }
+  [ "${4:-0}" -ge 1 ] && echo "[kernel] PASS MinecraftForge mods in the catalogue ($4)" || { echo "[kernel] FAIL no MinecraftForge mod in the catalogue"; FAIL=1; }
+else
+  echo "[kernel] FAIL the unified mod catalogue was never published"; FAIL=1
+fi
+
 step "all three ecosystems' REAL mods brought up in ONE instance (must PASS)"
 check "both Forge-family baselines"            "constructed NeoForge baseline mod" "$LOG"
 check "traditional-Forge baseline"             "constructed traditional-Forge baseline mod ForgeMod" "$LOG"
