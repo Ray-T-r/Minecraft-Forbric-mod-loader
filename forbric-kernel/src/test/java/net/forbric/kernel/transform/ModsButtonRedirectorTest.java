@@ -115,6 +115,48 @@ class ModsButtonRedirectorTest {
 		assertTrue(!built.contains(NEO) && !built.contains(FORGE), built.toString());
 	}
 
+	/**
+	 * The label moves too, because the redirect alone is invisible.
+	 *
+	 * <p>Mod Menu inserts its own small "Mods" icon button next to the Forge family's; the two are the same size
+	 * and the same word. A working redirect on a button a player cannot pick out reads as "nothing happened" —
+	 * which is how it was reported before this existed.
+	 */
+	@Test
+	void theButtonSaysWhoseListItOpens() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		ClassNode before = parse(readClass(PAUSE + ".class"));
+		assertTrue(constants(before).contains(ModsButtonRedirector.FML_MODS_KEY),
+				"the base must still label the button with the Forge families' key");
+
+		ClassNode after = parse(transform(PAUSE, readClass(PAUSE + ".class")));
+		assertTrue(constants(after).contains(ModsButtonRedirector.FORBRIC_LABEL), "the new label must be there");
+		assertTrue(!constants(after).contains(ModsButtonRedirector.FML_MODS_KEY),
+				"and the old key must be gone, or both buttons still say the same word");
+	}
+
+	/** A literal, not a translation key: the language is loaded long after this class, and a missing key renders raw. */
+	@Test
+	void theLabelIsBuiltAsALiteralAndNotAKey() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		ClassNode node = parse(transform(PAUSE, readClass(PAUSE + ".class")));
+		boolean sawLiteral = false;
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			AbstractInsnNode prev = null;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof MethodInsnNode call && "net/minecraft/network/chat/Component".equals(call.owner)
+						&& prev instanceof org.objectweb.asm.tree.LdcInsnNode ldc
+						&& ModsButtonRedirector.FORBRIC_LABEL.equals(ldc.cst)) {
+					assertEquals("literal", call.name, "a key would render as the key itself");
+					sawLiteral = true;
+				}
+				if (insn.getOpcode() >= 0) prev = insn;
+			}
+		}
+		assertTrue(sawLiteral, "the label must still be built through Component");
+	}
+
 	@Test
 	void aSecondPassLeavesTheRedirectedClassAlone() throws Exception {
 		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
@@ -137,6 +179,19 @@ class ModsButtonRedirectorTest {
 	}
 
 	// --- helpers ---------------------------------------------------------------------------------------------
+
+	private static List<String> constants(ClassNode node) {
+		List<String> out = new ArrayList<>();
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc && ldc.cst instanceof String s) {
+					out.add(s);
+				}
+			}
+		}
+		return out;
+	}
 
 	private static List<String> constructed(ClassNode node) {
 		List<String> out = new ArrayList<>();

@@ -175,6 +175,7 @@ public final class KernelClientSmoke {
 	private static boolean modsScreenClosed;
 	private static int modsScreenFramesAtOpen;
 	private static boolean configScreenTried;
+	private static boolean pauseButtonTried;
 
 	/**
 	 * Opens the kernel's unified Mods screen the way the pause menu's button does, leaves it up long enough to be
@@ -199,6 +200,11 @@ public final class KernelClientSmoke {
 				ForbricLog.info("[Forbric/ClientSmoke] opened the unified Mods screen at world tick %d", worldTicks);
 				return;
 			}
+			if (!pauseButtonTried) {
+				pauseButtonTried = true;
+				pressTheRealModsButton(minecraft, cl);
+				return;
+			}
 			if (modsScreenOpened && !configScreenTried && worldTicks >= due + MODS_SCREEN_HOLD / 2) {
 				configScreenTried = true;
 				openAConfigScreen(minecraft, cl);
@@ -215,6 +221,59 @@ public final class KernelClientSmoke {
 		} catch (Throwable t) {
 			modsScreenClosed = true;
 			ForbricLog.warn("[Forbric/ClientSmoke] the unified Mods screen could not be opened", t);
+		}
+	}
+
+	/**
+	 * Does what a player does: opens the pause menu and presses the mods button.
+	 *
+	 * <p>Everything else here reaches the unified screen by NAME, which proves the screen works and proves
+	 * nothing about the button. The redirect is a bytecode rewrite inside {@code PauseScreen}, and a rewrite that
+	 * logs "re-pointed" has only established that the transformer ran on some bytes — not that those bytes are
+	 * the ones the game defined, and not that the button a player can see is bound to them. This presses it and
+	 * reports the class that ends up in front of the player, which is the only form of the claim that can be
+	 * wrong in the way that matters.
+	 *
+	 * <p>Every button on the screen is listed first, because the pause menu on a modded instance has more than
+	 * one mods button — Mod Menu inserts its own next to the Forge family's — and "the button did not work" and
+	 * "that was a different button" look identical from the outside.
+	 */
+	private static void pressTheRealModsButton(Object minecraft, ClassLoader cl) {
+		try {
+			Class<?> pauseCls = Class.forName("net.minecraft.client.gui.screens.PauseScreen", true, cl);
+			Object pause = pauseCls.getConstructor(boolean.class).newInstance(true);
+			setScreen(minecraft, pause);
+			// init() runs off setScreen; the widgets do not exist before it.
+			Object buttons = pauseCls.getMethod("children").invoke(pause);
+			Class<?> buttonCls = Class.forName("net.minecraft.client.gui.components.AbstractButton", true, cl);
+			Object target = null;
+			for (Object child : (java.util.List<?>) buttons) {
+				if (child == null || !buttonCls.isInstance(child)) continue;
+				Object message = child.getClass().getMethod("getMessage").invoke(child);
+				String text = (String) message.getClass().getMethod("getString").invoke(message);
+				ForbricLog.info("[Forbric/ClientSmoke] pause-menu button: %s \"%s\"",
+						child.getClass().getName(), text);
+				if (target == null && !child.getClass().getName().startsWith("com.terraformersmc")
+						&& text.toLowerCase(java.util.Locale.ROOT).contains("mod")) {
+					target = child;
+				}
+			}
+			if (target == null) {
+				ForbricLog.warn("[Forbric/ClientSmoke] no Forge-family mods button on the pause menu to press");
+				return;
+			}
+			ForbricLog.info("[Forbric/ClientSmoke] pressing the pause menu's mods button (%s)",
+					target.getClass().getName());
+			// onPress takes the input that caused it in 26.2; null is what a synthetic press has to pass, and
+			// every handler here ignores it.
+			Class<?> input = Class.forName("net.minecraft.client.input.InputWithModifiers", true, cl);
+			buttonCls.getMethod("onPress", input).invoke(target, (Object) null);
+			Object now = currentScreen(minecraft);
+			ForbricLog.info("[Forbric/ClientSmoke] the mods button opened: %s",
+					now == null ? "<none>" : now.getClass().getName());
+			setScreen(minecraft, null);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] could not press the pause menu's mods button", t);
 		}
 	}
 

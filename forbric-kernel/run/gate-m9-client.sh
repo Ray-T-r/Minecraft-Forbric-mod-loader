@@ -255,6 +255,16 @@ step "the unified Mods screen opens and draws (must PASS)"
 # so a mistake in either is a crash mid-frame on someone else's machine. The smoke opens it the way the pause
 # menu does, holds it, and reads back the frame count the screen itself kept -- "no exception reached the caller"
 # would still be true of a screen the crash handler had replaced.
+# THE assertion, and the one that was missing: a player presses the pause menu's mods button. Everything else
+# here reaches the screen by NAME, which proves the screen and proves nothing about the button — and the button
+# is what a player has. The pause menu on a modded instance carries more than one "Mods" button (Mod Menu inserts
+# its own next to the Forge family's), so the label is asserted too: a redirect nobody can tell took effect reads
+# as "nothing happened", which is exactly how it was reported.
+check "the Forge-family mods button is labelled as ours" \
+  "pause-menu button: net\.minecraft\..*SpriteIconButton.* \"Mods \(Forbric\)\"" "$LOG"
+check "pressing it opens the unified list" \
+  "the mods button opened: net\.forbric\.kernel\.runtime\.KernelModListScreen"   "$LOG"
+check_absent "and pressing it did not fail" "could not press the pause menu's mods button" "$LOG"
 check "the screen opened"  "ClientSmoke\] opened the unified Mods screen" "$LOG"
 FRAMES=$(grep -oE 'unified Mods screen drew [0-9]+ frame' "$LOG" | grep -oE '[0-9]+' | head -1)
 ROWS=$(grep -oE 'frame\(s\) listing [0-9]+ mod' "$LOG" | grep -oE '[0-9]+' | head -1)
