@@ -250,6 +250,16 @@ assert_eq "only the known-inert consumer of FabricBlockGetter" "[钠] sodium-fab
 SODIUM_SIDE=$(grep -aoE '^# sodium = [a-z]+' "$RUNDIR/forbric-mods.txt" 2>/dev/null | awk '{print $4}')
 assert_eq "and it is still the side that lost arbitration" "neoforge" "${SODIUM_SIDE:-unknown}"
 
+step "the world is on disk before the process ends (must PASS)"
+# A real player Alt+F4'd and lost a minute of play: IntegratedServer.stopServer runs teardownPublishedState
+# FIRST and unguarded, and MinecraftServer.stopServer -- which writes players and worlds -- second, so one throw
+# on the way out ended the process with level.dat at the last autosave. The repair is a two-instruction exception
+# range; what is asserted here is the OUTCOME, because a handler that exists and a save that runs are different
+# claims and only the second is the one that matters.
+check "the save ran on the way out"        "Saving worlds"                                    "$LOG"
+check "and it finished"                    "ThreadedAnvilChunkStorage: All dimensions are saved" "$LOG"
+check_absent "nothing aborted the stop"    "Exception stopping the server"                    "$LOG"
+
 step "nothing leaked past main"
 # Vanilla logs this ~15s after main returns when a non-daemon thread is still alive — a leaked mod thread.
 check_absent "no thread leaked past main"   "Client shutdown from post-main"                   "$LOG"

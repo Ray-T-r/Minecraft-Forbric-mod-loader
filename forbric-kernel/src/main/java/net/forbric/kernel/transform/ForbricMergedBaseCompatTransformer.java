@@ -39,6 +39,7 @@ import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TryCatchBlockNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
@@ -74,6 +75,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= keepForgeOutboundProtocolCurrent(node);
 			changed |= surviveTheMissingForgeModelDataManager(node);
 			changed |= dropTheWindowTitlesLoaderBrand(node);
+			changed |= keepTheSaveOffTheTeardownsFailurePath(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -714,6 +716,110 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * leaves the title reading "Minecraft* 26.2". Only that one append chain is touched, so a title patch that
 	 * changes shape is left alone rather than half-rewritten.
 	 */
+	private static final String INTEGRATED_SERVER = "net/minecraft/client/server/IntegratedServer";
+	private static final String TEARDOWN_PUBLISHED_STATE = "teardownPublishedState";
+	private static final String FORBRIC_LOG = "net/forbric/kernel/util/ForbricLog";
+
+	/**
+	 * Stops a throw in {@code IntegratedServer.teardownPublishedState} from costing the world save.
+	 *
+	 * <p>{@code IntegratedServer.stopServer()} is two calls and a return:
+	 *
+	 * <pre>
+	 *   0: aload_0; invokevirtual teardownPublishedState:()V
+	 *   4: aload_0; invokespecial MinecraftServer.stopServer:()V
+	 *   8: return
+	 * </pre>
+	 *
+	 * <p>with no exception table. Everything durable happens in the SECOND call — {@code MinecraftServer
+	 * .stopServer} is where "Saving players", {@code PlayerList.saveAll}, "Saving worlds" and the chunk flush
+	 * live — so anything the first call throws takes the entire save with it. {@code MinecraftServer.runServer}
+	 * catches it one frame up and logs "Exception stopping the server", which reads like a tidy-up problem.
+	 *
+	 * <p>It is not hypothetical. Measured on a real install: an Alt+F4 with a chat glyph still unbaked ran
+	 * {@code teardownPublishedState -> updateCommandsAllowedForOtherPlayers -> LocalPlayer.refreshChatAbilities},
+	 * which re-splits the chat log, which bakes a glyph, which asserts the render thread — on the server thread.
+	 * The region files still reached disk because the chunk storage closes itself, but {@code level.dat} was an
+	 * autosave old, so the player's position, inventory and the world clock were sixty seconds behind.
+	 *
+	 * <p>Not the kernel's damage: this ordering is byte-identical in the untouched MinecraftForge base and the
+	 * untouched NeoForge base, so it is upstream shape. It is repaired here anyway because this is a base the
+	 * kernel owns and the cost is a player's data.
+	 *
+	 * <p>The wrap is deliberately narrow — the try covers the teardown call and nothing else — and the order is
+	 * left exactly as upstream wrote it. Reordering the two calls would also have saved first, but it would have
+	 * moved when the LAN pinger stops and when the multiplayer scope flips, which is a behaviour change to buy
+	 * something a two-instruction exception range already buys.
+	 */
+	private static boolean keepTheSaveOffTheTeardownsFailurePath(ClassNode node) {
+		if (!INTEGRATED_SERVER.equals(node.name)) return false;
+		MethodNode stop = findMethod(node, "stopServer", "()V");
+		if (stop == null || stop.instructions == null || stop.instructions.size() == 0) return false;
+		// An exception table here means a previous pass already wrapped it, or the shape is not the one read
+		// above. Either way this pass has nothing it can safely say about the body.
+		if (stop.tryCatchBlocks != null && !stop.tryCatchBlocks.isEmpty()) return false;
+
+		MethodInsnNode teardown = null;
+		for (AbstractInsnNode insn : stop.instructions) {
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKEVIRTUAL
+					&& TEARDOWN_PUBLISHED_STATE.equals(call.name) && "()V".equals(call.desc)) {
+				teardown = call;
+				break;
+			}
+		}
+		if (teardown == null) return false;
+		// The receiver push has to be inside the protected range too, or the handler would be entered with a
+		// half-built stack. Only the `aload_0; invokevirtual` pair is a shape this pass understands.
+		AbstractInsnNode receiver = previousReal(teardown.getPrevious());
+		if (!(receiver instanceof VarInsnNode load) || load.getOpcode() != Opcodes.ALOAD || load.var != 0) {
+			return false;
+		}
+		// And the save must actually be downstream of it — wrapping a teardown that nothing follows would cost
+		// the report without buying the save.
+		if (!callsSuperStopServer(teardown)) return false;
+
+		LabelNode start = new LabelNode();
+		LabelNode end = new LabelNode();
+		LabelNode handler = new LabelNode();
+		LabelNode after = new LabelNode();
+		stop.instructions.insertBefore(receiver, start);
+
+		InsnList tail = new InsnList();
+		tail.add(end);
+		tail.add(new JumpInsnNode(Opcodes.GOTO, after));
+		tail.add(handler);
+		tail.add(new FrameNode(Opcodes.F_FULL, 1, new Object[] { node.name }, 1,
+				new Object[] { "java/lang/Throwable" }));
+		tail.add(new LdcInsnNode("[Forbric/Shutdown] the integrated server's published-state teardown threw on the "
+				+ "way out - saving the world anyway. Upstream runs that teardown BEFORE MinecraftServer"
+				+ ".stopServer, which is where players and worlds are written, so this used to end the process "
+				+ "with level.dat still at the last autosave"));
+		tail.add(new InsnNode(Opcodes.SWAP));
+		tail.add(new MethodInsnNode(Opcodes.INVOKESTATIC, FORBRIC_LOG, "warn",
+				"(Ljava/lang/String;Ljava/lang/Throwable;)V", false));
+		tail.add(after);
+		tail.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+		stop.instructions.insert(teardown, tail);
+
+		stop.tryCatchBlocks.add(new TryCatchBlockNode(start, end, handler, "java/lang/Throwable"));
+		stop.maxStack = Math.max(stop.maxStack, 2);
+		ForbricLog.info("[Forbric/MergedBaseCompat] IntegratedServer.stopServer now saves even if the published-state "
+				+ "teardown throws — upstream runs the teardown first and unguarded, so one throw on the way out "
+				+ "skipped the player and world save entirely");
+		return true;
+	}
+
+	/** Whether the super call that performs the save still follows the teardown in this body. */
+	private static boolean callsSuperStopServer(MethodInsnNode teardown) {
+		for (AbstractInsnNode insn = teardown.getNext(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
+					&& "stopServer".equals(call.name) && "()V".equals(call.desc)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static boolean dropTheWindowTitlesLoaderBrand(ClassNode node) {
 		if (!"net/minecraft/client/Minecraft".equals(node.name)) return false;
 		MethodNode createTitle = findMethod(node, "createTitle", "()Ljava/lang/String;");
