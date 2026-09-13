@@ -57,6 +57,17 @@ public enum ForeignType {
 			"net.neoforged.neoforgespi.language.IConfigurable"),
 	DIST("net.minecraftforge.api.distmarker.Dist",
 			"net.neoforged.api.distmarker.Dist"),
+	// The mod-lifecycle phases. Paired because the kernel posts each one at BOTH families and the two events are
+	// different classes on different bus shapes -- naming either half inline is how one family silently stops
+	// receiving a phase, which is exactly what happened to traditional MinecraftForge until 2026-09-13.
+	FML_CLIENT_SETUP_EVENT("net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent",
+			"net.neoforged.fml.event.lifecycle.FMLClientSetupEvent"),
+	FML_COMMON_SETUP_EVENT("net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent",
+			"net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent"),
+	FML_DEDICATED_SERVER_SETUP_EVENT("net.minecraftforge.fml.event.lifecycle.FMLDedicatedServerSetupEvent",
+			"net.neoforged.fml.event.lifecycle.FMLDedicatedServerSetupEvent"),
+	FML_LOAD_COMPLETE_EVENT("net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent",
+			"net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent"),
 	FML_LOADER("net.minecraftforge.fml.loading.FMLLoader",
 			"net.neoforged.fml.loading.FMLLoader"),
 	FML_MOD_CONTAINER("net.minecraftforge.fml.javafmlmod.FMLModContainer",
@@ -69,6 +80,10 @@ public enum ForeignType {
 			"net.neoforged.neoforge.client.settings.KeyMappingLookup"),
 	LOADING_MOD_LIST("net.minecraftforge.fml.loading.LoadingModList",
 			"net.neoforged.fml.loading.LoadingModList"),
+	INTER_MOD_ENQUEUE_EVENT("net.minecraftforge.fml.event.lifecycle.InterModEnqueueEvent",
+			"net.neoforged.fml.event.lifecycle.InterModEnqueueEvent"),
+	INTER_MOD_PROCESS_EVENT("net.minecraftforge.fml.event.lifecycle.InterModProcessEvent",
+			"net.neoforged.fml.event.lifecycle.InterModProcessEvent"),
 	MOD_BUS_EVENT("net.minecraftforge.fml.event.IModBusEvent",
 			"net.neoforged.fml.event.IModBusEvent"),
 	MOD_CONFIG_TYPE("net.minecraftforge.fml.config.ModConfig$Type",

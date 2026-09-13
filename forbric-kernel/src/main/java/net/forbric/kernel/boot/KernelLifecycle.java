@@ -28,6 +28,7 @@ import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Reflect;
 
 /**
  * The kernel-owned server lifecycle hook that runs where the merged base used to call the genuine
@@ -1059,17 +1060,27 @@ public final class KernelLifecycle {
 		java.util.Map<String, KernelModLoader.NeoIdentity> mods = KernelModLoader.publishedNeoMods();
 		if (mods.isEmpty()) return;
 
-		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent", "common setup");
+		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "common setup");
+		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.FORGE), "COMMON_SETUP",
+				"common setup");
 		// On the CLIENT the remaining phases are deferred to onClientEntrypoints — see fireClientSetupLifecycle.
 		if (side.isClient()) return;
 		// The sided phase. The kernel used to jump straight from common setup to load complete, so on a dedicated
 		// server this event was never posted to anyone at all.
-		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLDedicatedServerSetupEvent",
+		fireSetupPhase(cl, mods, ForeignType.FML_DEDICATED_SERVER_SETUP_EVENT.binary(Ecosystem.NEOFORGE),
 				"dedicated server setup");
+		fireForgeSetupPhase(cl, ForeignType.FML_DEDICATED_SERVER_SETUP_EVENT.binary(Ecosystem.FORGE),
+				"SIDED_SETUP", "dedicated server setup");
 		fireRegistrationEvents(cl);
-		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.InterModEnqueueEvent", "IMC enqueue");
-		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.InterModProcessEvent", "IMC process");
-		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent", "load complete");
+		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_ENQUEUE_EVENT.binary(Ecosystem.NEOFORGE), "IMC enqueue");
+		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_ENQUEUE_EVENT.binary(Ecosystem.FORGE), "ENQUEUE_IMC",
+				"IMC enqueue");
+		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_PROCESS_EVENT.binary(Ecosystem.NEOFORGE), "IMC process");
+		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT.binary(Ecosystem.FORGE), "PROCESS_IMC",
+				"IMC process");
+		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT.binary(Ecosystem.NEOFORGE), "load complete");
+		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT.binary(Ecosystem.FORGE), "COMPLETE",
+				"load complete");
 	}
 
 	/**
@@ -1147,15 +1158,53 @@ public final class KernelLifecycle {
 	private static void fireClientSetupLifecycle(ClassLoader cl) {
 		if (!CLIENT_SETUP_FIRED.compareAndSet(false, true)) return;
 		java.util.Map<String, KernelModLoader.NeoIdentity> mods = KernelModLoader.publishedNeoMods();
-		if (mods.isEmpty()) return;
-
-		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLClientSetupEvent", "client setup");
+		// NOT an early return on an empty NeoForge set any more: the traditional-Forge phases below are a
+		// different family's, and an instance carrying only MinecraftForge mods would have skipped them for a
+		// reason that has nothing to do with it.
+		fireSetupPhase(cl, mods, ForeignType.FML_CLIENT_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "client setup");
+		fireForgeSetupPhase(cl, ForeignType.FML_CLIENT_SETUP_EVENT.binary(Ecosystem.FORGE), "SIDED_SETUP",
+				"client setup");
 		// Same tail as the server's, and the same order CommonModLoader.load uses: sided setup, then the
 		// registration events, then IMC, then load complete.
 		fireRegistrationEvents(cl);
-		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.InterModEnqueueEvent", "IMC enqueue");
-		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.InterModProcessEvent", "IMC process");
-		fireSetupPhase(cl, mods, "net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent", "load complete");
+		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_ENQUEUE_EVENT.binary(Ecosystem.NEOFORGE), "IMC enqueue");
+		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_ENQUEUE_EVENT.binary(Ecosystem.FORGE), "ENQUEUE_IMC",
+				"IMC enqueue");
+		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_PROCESS_EVENT.binary(Ecosystem.NEOFORGE), "IMC process");
+		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT.binary(Ecosystem.FORGE), "PROCESS_IMC",
+				"IMC process");
+		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT.binary(Ecosystem.NEOFORGE), "load complete");
+		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT.binary(Ecosystem.FORGE), "COMPLETE",
+				"load complete");
+	}
+
+	/**
+	 * The traditional-MinecraftForge half of a setup phase.
+	 *
+	 * <p>Separate from {@link #fireSetupPhase} because the two families' buses are not the same shape, not because
+	 * the phases differ: NeoForge posts on a per-mod {@code IEventBus}, EventBus 7 resolves the bus from the event
+	 * plus that mod's {@code BusGroup}. Folding them would be the averaging-away this repo's {@code ForeignType}
+	 * javadoc warns about; the divergence stays as data at the call site, which is why every call above comes in
+	 * pairs.
+	 *
+	 * <p>Best-effort: a family that is not present resolves no event class and says so once at debug.
+	 */
+	private static void fireForgeSetupPhase(ClassLoader cl, String eventClassName, String stage, String label) {
+		java.util.List<KernelForgeModContext.Handle> handles =
+				new java.util.ArrayList<>(KernelModLoader.publishedForgeMods().values());
+		if (handles.isEmpty()) return;
+		try {
+			int fired = KernelForgeModContext.fireSetupPhase(cl, handles, eventClassName, stage, label);
+			if (fired > 0) {
+				ForbricLog.info("[Forbric/Lifecycle] posted FML %s to %d traditional-Forge mod(s), then ran what "
+						+ "they deferred — a mod that does its real work from this event did nothing at all before",
+						label, fired);
+			}
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] no traditional-MinecraftForge %s on this carrier", label);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not post traditional-Forge " + label, Reflect.unwrap(t));
+		}
 	}
 
 	private static final java.util.concurrent.atomic.AtomicBoolean CLIENT_SETUP_FIRED =

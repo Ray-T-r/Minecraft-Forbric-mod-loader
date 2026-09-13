@@ -113,7 +113,54 @@ public class ForbricLiveMod {
 		net.minecraftforge.fml.event.config.ModConfigEvent.Reloading.getBus(ctx.getModBusGroup())
 				.addListener(e -> logConfig("RELOADING", e.getConfig()));
 		System.out.println("[ForbricLive/CFG] registered SERVER config forbriclive-server.toml (greeting default 'default')");
+		registerSetupLifecycle(ctx);
 		reportForeignMods();
+	}
+
+	/**
+	 * The mod-loading lifecycle a real traditional-Forge mod actually initialises from.
+	 *
+	 * <p>This is the canary for a gap that shipped: the kernel posted FMLCommonSetupEvent and its siblings to
+	 * NeoForge mods only, so every traditional-MinecraftForge mod that does its real work from setup did nothing
+	 * at all — no error, no warning, just a mod that loaded and then sat there. Biomes O' Plenty is the case that
+	 * found it: its whole TerraBlender region registration hangs off commonSetup -> enqueueWork, so worldgen came
+	 * out vanilla while the mod reported itself loaded and its blocks and items were all present.
+	 *
+	 * <p>Two lines per phase on purpose. The first says the event was DELIVERED; the second says what the listener
+	 * DEFERRED actually ran. They fail independently: posting the event without draining ModLoadingStage's
+	 * DeferredWorkQueue prints the first and never the second, which is precisely the half-fix that would look
+	 * right in a log that only asserted delivery.
+	 */
+	private static void registerSetupLifecycle(FMLJavaModLoadingContext ctx) {
+		Object group = ctx.getModBusGroup();
+		phase("common setup", net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent.getBus(
+				(net.minecraftforge.eventbus.api.bus.BusGroup) group));
+		phase("dedicated server setup", net.minecraftforge.fml.event.lifecycle.FMLDedicatedServerSetupEvent.getBus(
+				(net.minecraftforge.eventbus.api.bus.BusGroup) group));
+		phase("IMC enqueue", net.minecraftforge.fml.event.lifecycle.InterModEnqueueEvent.getBus(
+				(net.minecraftforge.eventbus.api.bus.BusGroup) group));
+		phase("IMC process", net.minecraftforge.fml.event.lifecycle.InterModProcessEvent.getBus(
+				(net.minecraftforge.eventbus.api.bus.BusGroup) group));
+		phase("load complete", net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent.getBus(
+				(net.minecraftforge.eventbus.api.bus.BusGroup) group));
+		// Registered through the same seam, but the class is only loadable where the client half of the base is:
+		// a failure here must cost this one phase, not the four above it.
+		try {
+			phase("client setup", net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent.getBus(
+					(net.minecraftforge.eventbus.api.bus.BusGroup) group));
+		} catch (Throwable serverOnly) {
+			System.out.println("[ForbricLive/SETUP] client setup not observable here: " + serverOnly);
+		}
+	}
+
+	/** Subscribes one phase and prints the delivered line, plus a deferred line that only the queue can print. */
+	private static <T extends net.minecraftforge.fml.event.lifecycle.ParallelDispatchEvent> void phase(
+			String label, net.minecraftforge.eventbus.api.bus.EventBus<T> bus) {
+		bus.addListener(event -> {
+			System.out.println("[ForbricLive/SETUP] " + label + " DELIVERED to a traditional-Forge mod");
+			event.enqueueWork(() -> System.out.println(
+					"[ForbricLive/SETUP] " + label + " DEFERRED work ran"));
+		});
 	}
 
 	/**
