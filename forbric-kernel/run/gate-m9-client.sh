@@ -39,7 +39,7 @@ rm -f "$RUNDIR/logs/latest.log"
 step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar 2>/dev/null | wc -l | tr -d ' ') mods, no compatibility flags)"
 # M9_EXTRA_JVM is how the gate's teeth are demonstrated: switch a fix off and this must go RED. Verified with
 # -Dforbric.pruneDuplicateLambdas=off, which brings back StubException and the failed world load.
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
+FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1 &
 CLIENT_PID=$!
@@ -249,6 +249,20 @@ PYEOF
 assert_eq "only the known-inert consumer of FabricBlockGetter" "[钠] sodium-fabric-0.9.1+mc26.2.jar" "$BG_CONSUMERS"
 SODIUM_SIDE=$(grep -aoE '^# sodium = [a-z]+' "$RUNDIR/forbric-mods.txt" 2>/dev/null | awk '{print $4}')
 assert_eq "and it is still the side that lost arbitration" "neoforge" "${SODIUM_SIDE:-unknown}"
+
+step "the unified Mods screen opens and draws (must PASS)"
+# The only thing here no unit test can reach: a Screen's init and its draw run when a player clicks the button,
+# so a mistake in either is a crash mid-frame on someone else's machine. The smoke opens it the way the pause
+# menu does, holds it, and reads back the frame count the screen itself kept -- "no exception reached the caller"
+# would still be true of a screen the crash handler had replaced.
+check "the screen opened"  "ClientSmoke\] opened the unified Mods screen" "$LOG"
+FRAMES=$(grep -oE 'unified Mods screen drew [0-9]+ frame' "$LOG" | grep -oE '[0-9]+' | head -1)
+ROWS=$(grep -oE 'frame\(s\) listing [0-9]+ mod' "$LOG" | grep -oE '[0-9]+' | head -1)
+[ "${FRAMES:-0}" -ge 1 ] && echo "[kernel] PASS it actually rendered ($FRAMES frames)" \
+  || { echo "[kernel] FAIL the Mods screen drew no frames (got ${FRAMES:-none}) — constructed is not rendered"; FAIL=1; }
+[ "${ROWS:-0}" -ge 1 ] && echo "[kernel] PASS and it listed mods ($ROWS rows)" \
+  || { echo "[kernel] FAIL the Mods screen listed nothing (got ${ROWS:-none})"; FAIL=1; }
+check_absent "the screen did not throw" "the unified Mods screen could not be opened" "$LOG"
 
 step "the world is on disk before the process ends (must PASS)"
 # A real player Alt+F4'd and lost a minute of play: IntegratedServer.stopServer runs teardownPublishedState

@@ -120,6 +120,11 @@ public final class KernelRuntimeClasses {
 		// piece always throws under the kernel. See KernelGameServerAboutToStart.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerAboutToStart", new Entry(Origin.COMPILED, List.of(
 				new Call("install", void.class, Object.class))));
+		// The unified Mods screen. Named by ModsButtonRedirector as an ASM internal name rather than called, so
+		// it has no Call entries — the seam is the class existing and carrying a (Screen) constructor, and a
+		// missing runtime jar would otherwise surface as a NoClassDefFoundError the moment a player opens the
+		// pause menu.
+		CLASSES.put("net.forbric.kernel.runtime.KernelModListScreen", new Entry(Origin.COMPILED, List.of()));
 		// The only MOD-bus bridge: Forge's client reload listeners into NeoForge's sorted graph.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientReload", new Entry(Origin.COMPILED, List.of(
 				new Call("install", void.class, Object.class))));

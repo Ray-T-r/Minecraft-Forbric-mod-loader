@@ -70,6 +70,17 @@ public final class KernelClientSmoke {
 	 */
 	public static final String SCREENSHOTS = "forbric.clientSmokeScreenshots";
 
+	/**
+	 * World tick at which to open the unified Mods screen, hold it, and close it again.
+	 *
+	 * <p>A screen is the one thing here no unit test can prove: its {@code init} and its draw run only when a
+	 * player clicks the button, so a mistake in either is a crash in the middle of a frame on someone else's
+	 * machine. This opens it on a real client and reads back how many frames it drew.
+	 */
+	public static final String MODS_SCREEN = "forbric.clientSmokeModsScreen";
+	/** Ticks to leave it open. Long enough for frames to be drawn, short enough not to move the disconnect. */
+	private static final int MODS_SCREEN_HOLD = 20;
+
 	private static Object lastLevel;
 	private static int worldTicks;
 	private static boolean joined;
@@ -147,6 +158,7 @@ public final class KernelClientSmoke {
 		}
 		if (ready && !drillDone && Boolean.getBoolean(DRILL)) drill(minecraft, player);
 		if (ready) screenshotIfDue(minecraft);
+		if (ready) modsScreenIfDue(minecraft);
 		if (ready && !probed && worldTicks >= Integer.getInteger(PROBE_TICKS, 160)) {
 			probed = true;
 			probeBlocks(level);
@@ -157,6 +169,55 @@ public final class KernelClientSmoke {
 			ForbricLog.info("[Forbric/ClientSmoke] requesting clean disconnect after %d world tick(s)", worldTicks);
 			invokeNoArg(minecraft, "disconnectWithSavingScreen");
 		}
+	}
+
+	private static boolean modsScreenOpened;
+	private static boolean modsScreenClosed;
+	private static int modsScreenFramesAtOpen;
+
+	/**
+	 * Opens the kernel's unified Mods screen the way the pause menu's button does, leaves it up long enough to be
+	 * drawn, and closes it.
+	 *
+	 * <p>What is reported is the FRAME COUNT the screen itself kept, not the fact that no exception reached here:
+	 * a screen that threw during init would be replaced by the crash handler and a "no exception" claim from this
+	 * method would still be true. Frames drawn is the only thing that says it rendered.
+	 */
+	private static void modsScreenIfDue(Object minecraft) {
+		int due = Integer.getInteger(MODS_SCREEN, 0);
+		if (due <= 0 || modsScreenClosed) return;
+		try {
+			ClassLoader cl = minecraft.getClass().getClassLoader();
+			Class<?> screenCls = Class.forName("net.forbric.kernel.runtime.KernelModListScreen", true, cl);
+			if (!modsScreenOpened && worldTicks >= due) {
+				modsScreenOpened = true;
+				modsScreenFramesAtOpen = (int) screenCls.getMethod("framesDrawn").invoke(null);
+				Object screen = screenCls.getConstructor(
+						Class.forName("net.minecraft.client.gui.screens.Screen", false, cl)).newInstance((Object) null);
+				setScreen(minecraft, screen);
+				ForbricLog.info("[Forbric/ClientSmoke] opened the unified Mods screen at world tick %d", worldTicks);
+				return;
+			}
+			if (modsScreenOpened && worldTicks >= due + MODS_SCREEN_HOLD) {
+				modsScreenClosed = true;
+				int frames = (int) screenCls.getMethod("framesDrawn").invoke(null) - modsScreenFramesAtOpen;
+				int rows = (int) screenCls.getMethod("rowsBuilt").invoke(null);
+				ForbricLog.info("[Forbric/ClientSmoke] the unified Mods screen drew %d frame(s) listing %d mod(s) "
+						+ "from every ecosystem, then closed", frames, rows);
+				setScreen(minecraft, null);
+			}
+		} catch (Throwable t) {
+			modsScreenClosed = true;
+			ForbricLog.warn("[Forbric/ClientSmoke] the unified Mods screen could not be opened", t);
+		}
+	}
+
+	/** {@code Minecraft.gui.setScreen} — 26.2 moved it off Minecraft itself. */
+	private static void setScreen(Object minecraft, Object screen) throws Exception {
+		Object gui = fieldValue(minecraft, "gui");
+		Class<?> screenCls = Class.forName("net.minecraft.client.gui.screens.Screen", false,
+				minecraft.getClass().getClassLoader());
+		gui.getClass().getMethod("setScreen", screenCls).invoke(gui, screen);
 	}
 
 	/**

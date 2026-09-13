@@ -302,6 +302,10 @@ public final class KernelBoot {
 		// dedicated server never loads.)
 		chain.register(TransformPhase.COREMOD, new ClientPackHookInjector());
 
+		// The pause menu's mods button opened NeoForge's list, which is every mod NeoForge loaded and, on this
+		// instance, a fraction of what is installed. It now opens the kernel's, which reads ModCatalog.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ModsButtonRedirector());
+
 		// A Forge-family mod's own data/ reaches the server datapack repository ONLY through this hook: the kernel
 		// leaves ModList.modFiles empty, so NeoForge's own mod-pack finder walks an empty list and adds nothing.
 		chain.register(TransformPhase.COREMOD, new DataPackHookInjector());

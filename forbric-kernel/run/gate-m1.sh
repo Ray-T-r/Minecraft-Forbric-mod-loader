@@ -43,7 +43,15 @@ check "kernel loaded merged base through its own loader"  "sovereign kernel .* o
 # The kernel's OWN game-side half. Asserted with a literal count and not [0-9]+, because [0-9]+ matches 0 and a
 # kernel that delivered nothing would read exactly like one that delivered everything. The right-hand number is
 # how many net.forbric.kernel.runtime classes KernelRuntimeClasses marks COMPILED; when that grows, this grows.
-check "kernel's own game-side classes linked"             "game-side kernel classes: 8/8 linked" "$LOG"
+# ALL of them, not a literal count. The literal was 8, and adding a ninth game-side class turned this gate red
+# for a reason that had nothing to do with linking — which teaches the next person to edit the number rather than
+# read the line. What has teeth is that the two numbers MATCH and neither is zero.
+LINKED=$(grep -oE 'game-side kernel classes: [0-9]+/[0-9]+ linked' "$LOG" | grep -oE '[0-9]+/[0-9]+' | head -1)
+if [ -n "$LINKED" ] && [ "${LINKED%/*}" = "${LINKED#*/}" ] && [ "${LINKED%/*}" -ge 1 ]; then
+  echo "[kernel] PASS kernel's own game-side classes linked ($LINKED)"
+else
+  echo "[kernel] FAIL kernel's own game-side classes linked (got ${LINKED:-none})"; FAIL=1
+fi
 check "genuine server-loading lifecycle redirected"       "(redirected|excised) genuine loader trigger .*ServerModLoader.load" "$LOG"
 check "native ecosystem registration ran"                 "fired RegisterEvent x[1-9][0-9]* on [1-9][0-9]* bus" "$LOG"
 check "server reached Done"                               "Done \(" "$LOG"
