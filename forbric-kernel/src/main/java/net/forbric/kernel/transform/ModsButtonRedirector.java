@@ -61,16 +61,54 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	private static final String FACTORY_DESC = "(Ljava/lang/String;)Lnet/minecraft/network/chat/MutableComponent;";
 
 	/**
-	 * The screens that carry a mods button. Both are client-only, so a dedicated server never reaches this pass.
+	 * The marker a class must contain before it is worth parsing.
+	 *
+	 * <p>This pass used to run on a fixed list of two screens, and that list was wrong in the way a fixed list of
+	 * call sites usually is. The title screen's Forge-family mods button is not built in {@code TitleScreen} at
+	 * all -- it is {@code neoforge.client.gui.widget.ModsButton}, a widget whose own {@code create} builds it and
+	 * whose own lambda opens the old list. So the pass reported a site re-pointed in {@code TitleScreen} (a dead
+	 * one, left by the byte merge) while the button a player can actually see went on opening NeoForge's list.
+	 *
+	 * <p>The claim is therefore made about the instance and not about a list of files: NO class constructs a
+	 * family's own mod-list screen. Every class is eligible, and the raw bytes are scanned for these markers
+	 * first, because parsing every class the game loads to find a handful is a cost paid thousands of times.
 	 */
-	private static final Set<String> CARRIERS = Set.of(
-			"net/minecraft/client/gui/screens/PauseScreen",
-			"net/minecraft/client/gui/screens/TitleScreen");
+	private static final byte[][] MARKERS = {
+			"ModListScreen".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+			FML_MODS_KEY.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+	};
+
+	/**
+	 * The two classes that may still name themselves: they ARE the screens being replaced, and rewriting their
+	 * own internals would be rewriting the thing nothing is supposed to reach any more.
+	 */
+	private static final Set<String> EXEMPT = Set.of(
+			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE),
+			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE));
 
 	/** Named through {@link ForeignType} so neither family's spelling can be the one that quietly stops matching. */
 	private static final Set<String> REPLACED = Set.of(
 			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE),
 			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE));
+
+	/** Raw-byte constant-pool scan. Cheap, and wrong only in the direction that costs one wasted parse. */
+	private static boolean carriesAMarker(byte[] classBytes) {
+		for (byte[] marker : MARKERS) {
+			if (indexOf(classBytes, marker) >= 0) return true;
+		}
+		return false;
+	}
+
+	private static int indexOf(byte[] haystack, byte[] needle) {
+		outer:
+		for (int i = 0; i <= haystack.length - needle.length; i++) {
+			for (int j = 0; j < needle.length; j++) {
+				if (haystack[i + j] != needle[j]) continue outer;
+			}
+			return i;
+		}
+		return -1;
+	}
 
 	/**
 	 * Relabels the button so a player can tell it apart from the other one.
@@ -116,7 +154,8 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		String internal = className.replace('.', '/');
-		if (!CARRIERS.contains(internal)) return classBytes;
+		if (EXEMPT.contains(internal) || internal.startsWith("net/forbric/")) return classBytes;
+		if (!carriesAMarker(classBytes)) return classBytes;
 		try {
 			ClassNode node = new ClassNode();
 			new ClassReader(classBytes).accept(node, 0);

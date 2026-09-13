@@ -202,6 +202,7 @@ public final class KernelClientSmoke {
 			}
 			if (!pauseButtonTried) {
 				pauseButtonTried = true;
+				listTheTitleScreensButtons(minecraft, cl);
 				pressTheRealModsButton(minecraft, cl);
 				return;
 			}
@@ -221,6 +222,51 @@ public final class KernelClientSmoke {
 		} catch (Throwable t) {
 			modsScreenClosed = true;
 			ForbricLog.warn("[Forbric/ClientSmoke] the unified Mods screen could not be opened", t);
+		}
+	}
+
+	/**
+	 * The title screen's icon row, in the order it is laid out.
+	 *
+	 * <p>Asked because "which of these five squares is yours" is a real question with a measurable answer, and
+	 * five unlabelled icons in a row is exactly the shape in which two mods buttons become indistinguishable.
+	 *
+	 * <p>And PRESSED, for the reason the pause menu's is: the title screen's Forge-family button is not built in
+	 * TitleScreen at all but in a widget class of its own, so a redirect measured only on the pause menu was
+	 * measured on the wrong half of the feature and reported as working while this one still opened the old list.
+	 */
+	private static void listTheTitleScreensButtons(Object minecraft, ClassLoader cl) {
+		try {
+			Class<?> titleCls = Class.forName("net.minecraft.client.gui.screens.TitleScreen", true, cl);
+			Object title = titleCls.getConstructor().newInstance();
+			setScreen(minecraft, title);
+			Class<?> buttonCls = Class.forName("net.minecraft.client.gui.components.AbstractButton", true, cl);
+			Object target = null;
+			int n = 0;
+			for (Object child : (java.util.List<?>) titleCls.getMethod("children").invoke(title)) {
+				if (child == null || !buttonCls.isInstance(child)) continue;
+				Object message = child.getClass().getMethod("getMessage").invoke(child);
+				String text = (String) message.getClass().getMethod("getString").invoke(message);
+				Object rect = child.getClass().getMethod("getRectangle").invoke(child);
+				ForbricLog.info("[Forbric/ClientSmoke] title-screen button #%d: %s \"%s\" at %s", ++n,
+						child.getClass().getName(), text, rect);
+				if (target == null && !child.getClass().getName().startsWith("com.terraformersmc")
+						&& text.toLowerCase(java.util.Locale.ROOT).contains("mod")) {
+					target = child;
+				}
+			}
+			if (target == null) {
+				ForbricLog.warn("[Forbric/ClientSmoke] no Forge-family mods button on the title screen to press");
+				return;
+			}
+			Class<?> input = Class.forName("net.minecraft.client.input.InputWithModifiers", true, cl);
+			buttonCls.getMethod("onPress", input).invoke(target, (Object) null);
+			Object now = currentScreen(minecraft);
+			ForbricLog.info("[Forbric/ClientSmoke] the title screen's mods button opened: %s",
+					now == null ? "<none>" : now.getClass().getName());
+			setScreen(minecraft, null);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] could not press the title screen's mods button", t);
 		}
 	}
 

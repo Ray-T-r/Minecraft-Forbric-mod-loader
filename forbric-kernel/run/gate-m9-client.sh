@@ -260,6 +260,16 @@ step "the unified Mods screen opens and draws (must PASS)"
 # is what a player has. The pause menu on a modded instance carries more than one "Mods" button (Mod Menu inserts
 # its own next to the Forge family's), so the label is asserted too: a redirect nobody can tell took effect reads
 # as "nothing happened", which is exactly how it was reported.
+# BOTH screens, because they do not share a button. The title screen's is not built in TitleScreen at all -- it
+# is neoforge.client.gui.widget.ModsButton, a widget whose own create() builds it and whose own lambda opens the
+# old list -- so the first version of this redirect reported a site re-pointed in TitleScreen (a dead one the
+# byte merge left) while the button a player can see went on opening NeoForge's list. Asserting only the pause
+# menu measured the wrong half and called the feature done.
+check "the title screen's mods button is labelled as ours" \
+  "title-screen button #[0-9]+: net\.neoforged\..*ModsButton \"Mods \(Forbric\)\"" "$LOG"
+check "pressing it opens the unified list" \
+  "the title screen's mods button opened: net\.forbric\.kernel\.runtime\.KernelModListScreen" "$LOG"
+check_absent "and pressing it did not fail" "could not press the title screen's mods button" "$LOG"
 check "the Forge-family mods button is labelled as ours" \
   "pause-menu button: net\.minecraft\..*SpriteIconButton.* \"Mods \(Forbric\)\"" "$LOG"
 check "pressing it opens the unified list" \
