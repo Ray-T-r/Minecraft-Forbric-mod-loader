@@ -77,6 +77,21 @@ final class Http {
 	 * A watchdog closes the stream instead, which surfaces as a retryable failure.
 	 */
 	private static final long STALL_SECONDS = 30;
+	/**
+	 * How long to wait for a server to say anything at all.
+	 *
+	 * <p>{@code connectTimeout} bounds the TCP and TLS handshake and NOTHING after it, and the stall watchdog in
+	 * {@link #copy} only starts once there is a body to read. Between the two sat an unbounded wait: a peer that
+	 * completes the handshake and then never sends response headers hangs the installer forever. Measured on a
+	 * real machine behind a proxy — an established connection to piston-data.mojang.com, a zero-byte server.jar,
+	 * three minutes, seven seconds of CPU. Every other download had already succeeded, so it read as "still
+	 * going" rather than as a failure.
+	 *
+	 * <p>This bounds the wait for HEADERS only, not the transfer: the body arrives through
+	 * {@code BodyHandlers.ofInputStream}, so {@code send} returns as soon as the headers do, and a slow 60 MB
+	 * download is not on this clock. The body's own clock is {@link #STALL_SECONDS}.
+	 */
+	private static final long HEADER_SECONDS = Long.getLong("forbric.httpHeaderTimeoutSeconds", 45L);
 
 	private final HttpClient http;
 	private final Consumer<String> log;
@@ -98,7 +113,7 @@ final class Http {
 		IOException last = null;
 		for (int attempt = 1; attempt <= ATTEMPTS; attempt++) {
 			try {
-				HttpResponse<byte[]> r = send(HttpRequest.newBuilder(URI.create(url)).GET().build(),
+				HttpResponse<byte[]> r = send(request(url).build(),
 						HttpResponse.BodyHandlers.ofByteArray());
 				if (r.statusCode() != 200) throw new IOException("HTTP " + r.statusCode() + " for " + url);
 				return r.body();
@@ -183,6 +198,11 @@ final class Http {
 	 * the HTTP status. A non-200 removes the partial file and is NOT retried -- the server answered, and
 	 * asking again will get the same answer. Transport failures are retried, because they usually will not.
 	 */
+	/** Every request, with the header-wait bounded. See {@link #HEADER_SECONDS}. */
+	private static HttpRequest.Builder request(String url) {
+		return HttpRequest.newBuilder(URI.create(url)).GET().timeout(Duration.ofSeconds(HEADER_SECONDS));
+	}
+
 	private int stream(String url, Path dest) throws IOException {
 		IOException last = null;
 		for (int attempt = 1; attempt <= ATTEMPTS; attempt++) {
@@ -203,7 +223,7 @@ final class Http {
 	private int streamOnce(String url, Path dest) throws IOException {
 		String name = fileName(url);
 		info(PROGRESS + "  " + name + "  connecting...");
-		HttpResponse<InputStream> r = send(HttpRequest.newBuilder(URI.create(url)).GET().build(),
+		HttpResponse<InputStream> r = send(request(url).build(),
 				HttpResponse.BodyHandlers.ofInputStream());
 		long done = 0;
 		try (InputStream in = r.body()) {

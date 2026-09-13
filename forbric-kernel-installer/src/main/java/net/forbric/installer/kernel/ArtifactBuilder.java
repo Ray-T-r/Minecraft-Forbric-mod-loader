@@ -119,7 +119,7 @@ final class ArtifactBuilder {
 		ArtifactResult neoPatched = new NfrtRunner(http, tools, build.resolve("nfrt"),
 				build.resolve("nfrt-work"), log)
 				.run(jvm, mcDir, out.resolve("patched-mc-neoforge-" + mcVersion + ".jar"),
-						nfa.patchedMcCoordinate());
+						nfa.patchedMcCoordinate(), mcVersion, build.resolve("dl").resolve("server.jar"));
 
 		// ---- the merge, and the interop patch the merge makes necessary ----
 		log.accept("");
