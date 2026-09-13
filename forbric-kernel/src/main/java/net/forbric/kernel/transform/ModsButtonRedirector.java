@@ -23,6 +23,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
@@ -52,6 +53,13 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	static final String KERNEL_SCREEN = "net/forbric/kernel/runtime/KernelModListScreen";
 	private static final String SCREEN_CTOR = "(Lnet/minecraft/client/gui/screens/Screen;)V";
 
+	/** The translation key the Forge families label their mods button with. */
+	static final String FML_MODS_KEY = "fml.menu.mods";
+	/** What it says instead. Not a translation key -- see renameTheButton. */
+	static final String FORBRIC_LABEL = "Mods (Forbric)";
+	private static final String COMPONENT = "net/minecraft/network/chat/Component";
+	private static final String FACTORY_DESC = "(Ljava/lang/String;)Lnet/minecraft/network/chat/MutableComponent;";
+
 	/**
 	 * The screens that carry a mods button. Both are client-only, so a dedicated server never reaches this pass.
 	 */
@@ -63,6 +71,41 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	private static final Set<String> REPLACED = Set.of(
 			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE),
 			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE));
+
+	/**
+	 * Relabels the button so a player can tell it apart from the other one.
+	 *
+	 * <p>On a modded instance the pause menu has more than one mods button: Mod Menu inserts its own small icon
+	 * button next to the Forge family's, and the two are the same size, the same shape and both say "Mods". The
+	 * redirect was measured working -- pressed in a live client, the Forge-family button opens the unified list --
+	 * and still read as "nothing happened", because the button that was pressed was the other one. A rewrite
+	 * nobody can tell took effect is not finished.
+	 *
+	 * <p>{@code Component.translatable(key)} becomes {@code Component.literal(text)}: both are static factories on
+	 * the same interface with the same descriptor, so this is a constant and a method name, no stack change. A
+	 * literal rather than a key of our own, because a key resolves through the active language, which is loaded
+	 * from resource packs long after this class is -- an untranslated key renders as the key itself, which is
+	 * worse than the name it replaces.
+	 */
+	private static int renameTheButton(ClassNode node) {
+		int renamed = 0;
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (!(insn instanceof LdcInsnNode ldc) || !FML_MODS_KEY.equals(ldc.cst)) continue;
+				AbstractInsnNode next = insn.getNext();
+				while (next != null && next.getOpcode() < 0) next = next.getNext();
+				if (!(next instanceof MethodInsnNode call) || !COMPONENT.equals(call.owner)
+						|| !"translatable".equals(call.name) || !FACTORY_DESC.equals(call.desc)) {
+					continue;
+				}
+				ldc.cst = FORBRIC_LABEL;
+				call.name = "literal";
+				renamed++;
+			}
+		}
+		return renamed;
+	}
 
 	@Override
 	public String name() {
@@ -92,12 +135,14 @@ public final class ModsButtonRedirector implements ClassTransformer {
 					}
 				}
 			}
-			if (redirected == 0) return classBytes;
+			int renamed = renameTheButton(node);
+			if (redirected == 0 && renamed == 0) return classBytes;
 			ClassWriter writer = new ClassWriter(0);
 			node.accept(writer);
-			ForbricLog.info("[Forbric/ModsButton] %s's mods button now opens the unified list (%d construction "
-					+ "site(s) re-pointed) — each family's own screen lists only its own family, which on this "
-					+ "instance is never the whole answer", internal, redirected);
+			ForbricLog.info("[Forbric/ModsButton] %s's mods button now opens the unified list and says so (%d "
+					+ "construction site(s) re-pointed, %d label(s) renamed) — each family's own screen lists "
+					+ "only its own family, which on this instance is never the whole answer", internal,
+					redirected, renamed);
 			return writer.toByteArray();
 		} catch (RuntimeException e) {
 			ForbricLog.warn("[Forbric/ModsButton] could not re-point " + internal + "'s mods button — it will open "
