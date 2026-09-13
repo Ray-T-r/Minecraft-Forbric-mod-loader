@@ -315,6 +315,15 @@ public final class PassiveSeeder {
 		// which a cross-ecosystem requirement can be judged at all. Diagnostic only — it never changes what loads,
 		// and it is caught here because a diagnostic must never be able to fail the window it reports on: the next
 		// statement seeds the list every Forge-family mod resolves itself through.
+		// The same vantage, for the same reason, one question further on: a player's Mods screen needs every
+		// family's mods too, and every family's own screen can only list its own. Diagnostic-adjacent and caught
+		// the same way — a screen that cannot be built must never cost the seeding below.
+		try {
+			KernelModCatalog.publish(presence);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Catalog] could not build the unified mod list — the Mods screen will fall "
+					+ "back to whatever one family's own registry knows", unwrap(t));
+		}
 		try {
 			DependencyAudit.report(presence, KernelBoot.nestedJarJarJars(),
 					KernelFabricEcosystem.physicalSide());
