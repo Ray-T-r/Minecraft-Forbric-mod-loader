@@ -283,6 +283,19 @@ check "the Forge-family mods button is labelled as ours" \
 check "pressing it opens the unified list" \
   "the mods button opened: net\.forbric\.kernel\.runtime\.KernelModListScreen"   "$LOG"
 check_absent "and pressing it did not fail" "could not press the pause menu's mods button" "$LOG"
+# The double-click shortcut, exercised through a row's own mouseClicked with doubled=true -- the same call the
+# widget makes on the second click. Calling the resolver by name proves the resolver and says nothing about
+# whether the flag is wired to it, which is the exact shape of the mods-button bug.
+# NOT "opened: <something>": the line prints either way, and when the shortcut is not wired what it names is the
+# mod list itself — which the obvious pattern matches. Mutation-testing this assertion is what caught that. What
+# has teeth is that the screen in front of the player is no longer the list.
+DBL=$(grep -oE "double-clicking [a-z0-9_]+ in the unified list opened: [A-Za-z0-9_.$]+" "$LOG" | head -1)
+case "${DBL:-}" in
+  "") echo "[kernel] FAIL double-clicking a row never reported a screen"; FAIL=1 ;;
+  *KernelModListScreen) echo "[kernel] FAIL double-clicking a row left the list up — the shortcut is not wired"; FAIL=1 ;;
+  *) echo "[kernel] PASS ${DBL#double-clicking }" ;;
+esac
+check_absent "and the double-click did not fail" "could not double-click a row" "$LOG"
 check "the screen opened"  "ClientSmoke\] opened the unified Mods screen" "$LOG"
 FRAMES=$(grep -oE 'unified Mods screen drew [0-9]+ frame' "$LOG" | grep -oE '[0-9]+' | head -1)
 ROWS=$(grep -oE 'frame\(s\) listing [0-9]+ mod' "$LOG" | grep -oE '[0-9]+' | head -1)
