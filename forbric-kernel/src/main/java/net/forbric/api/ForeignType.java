@@ -84,6 +84,11 @@ public enum ForeignType {
 			"net.neoforged.fml.event.lifecycle.InterModEnqueueEvent"),
 	INTER_MOD_PROCESS_EVENT("net.minecraftforge.fml.event.lifecycle.InterModProcessEvent",
 			"net.neoforged.fml.event.lifecycle.InterModProcessEvent"),
+	// The two families' Mods screens. Paired because the kernel REPLACES both: which one the merged pause menu's
+	// button is bound to is a byte-merge outcome, and naming only the winner would make the replacement quietly
+	// conditional on a merge detail that has changed before.
+	MOD_LIST_SCREEN("net.minecraftforge.client.gui.ModListScreen",
+			"net.neoforged.neoforge.client.gui.ModListScreen"),
 	MOD_BUS_EVENT("net.minecraftforge.fml.event.IModBusEvent",
 			"net.neoforged.fml.event.IModBusEvent"),
 	MOD_CONFIG_TYPE("net.minecraftforge.fml.config.ModConfig$Type",

@@ -35,6 +35,19 @@ def stagedForgeRuntime = new File(stagedRoot, 'forge-runtime/forge-runtime.jar')
 def stagedNeoRuntime   = new File(stagedRoot, 'neoforge-runtime/neoforge-runtime.jar')
 def stagedGameJars = [stagedMergedBase, stagedForgeRuntime, stagedNeoRuntime].findAll { it.isFile() }
 
+// Minecraft's OWN libraries, for the game-side set only. A game-side class cannot build a piece of text without
+// brigadier: net.minecraft.network.chat.Component extends com.mojang.brigadier.Message, so javac needs it to read
+// the Component class file at all. It is not on Maven Central (Mojang's own maven serves it), the game supplies it
+// at runtime, and the kernel never ships it — so it is taken from the same local Minecraft install the staged
+// artifacts were derived from, and its absence is not fatal: it costs the game-side set, which already skips when
+// the staged jars are absent.
+def mcLibraries = file(project.findProperty('forbric.mcLibraries')
+		?: (System.getenv('MC_DIR') ? System.getenv('MC_DIR') + '/libraries'
+				: System.getProperty('user.home') + '/Library/Application Support/minecraft/libraries'))
+def stagedMcLibraries = mcLibraries.isDirectory()
+		? fileTree(mcLibraries) { include 'com/mojang/brigadier/**/*.jar' }.files.sort { it.name }.takeRight(1)
+		: []
+
 sourceSets {
 	// `main` keeps the Gradle defaults (src/main/java, src/main/resources). Re-declaring them with srcDir would
 	// ADD the same directory a second time, and every resource would then be a duplicate entry — which fails
@@ -47,8 +60,8 @@ sourceSets {
 	// the build script to run, and `compileRuntimeJava` / `test` skip it so M0 (boot-side only) still builds.
 	runtime {
 		java { srcDir 'src/runtime/java' }
-		compileClasspath += sourceSets.main.output + files(stagedGameJars)
-		runtimeClasspath += sourceSets.main.output + files(stagedGameJars)
+		compileClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries)
+		runtimeClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries)
 	}
 }
 
