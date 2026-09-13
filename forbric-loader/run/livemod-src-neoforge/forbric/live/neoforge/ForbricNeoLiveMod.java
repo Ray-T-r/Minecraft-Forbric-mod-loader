@@ -22,12 +22,45 @@ public class ForbricNeoLiveMod {
 	public ForbricNeoLiveMod(IEventBus modBus) {
 		System.out.println("[ForbricNeoLive] @Mod(\"forbricneolive\") constructed by the real NeoForge ModLoader");
 		reportForeignMods();
+		registerSetupLifecycle(modBus);
 		NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, event -> {
 			int n = TICKS.incrementAndGet();
 			if (n == 20) {
 				System.out.println("[ForbricNeoLive] 20 server ticks observed (NeoForge native) - the merged game loop "
 						+ "posts NeoForge's ServerTickEvent to NeoForge mods");
 			}
+		});
+	}
+
+	/**
+	 * The same setup lifecycle the traditional-Forge canary subscribes to, on this family's bus shape.
+	 *
+	 * <p>Its job in the gate is to be the control the Forge half never had: the kernel used to post these phases
+	 * to NeoForge mods ONLY, so asserting the Forge lines alone cannot tell "both families now get it" apart from
+	 * "the delivery moved from one family to the other". Both canaries print the same two lines per phase, and the
+	 * gate asserts both sets from one boot.
+	 */
+	private void registerSetupLifecycle(IEventBus modBus) {
+		phase(modBus, "common setup", net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent.class);
+		phase(modBus, "dedicated server setup",
+				net.neoforged.fml.event.lifecycle.FMLDedicatedServerSetupEvent.class);
+		phase(modBus, "IMC enqueue", net.neoforged.fml.event.lifecycle.InterModEnqueueEvent.class);
+		phase(modBus, "IMC process", net.neoforged.fml.event.lifecycle.InterModProcessEvent.class);
+		phase(modBus, "load complete", net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent.class);
+		try {
+			phase(modBus, "client setup", net.neoforged.fml.event.lifecycle.FMLClientSetupEvent.class);
+		} catch (Throwable serverOnly) {
+			System.out.println("[ForbricNeoLive/SETUP] client setup not observable here: " + serverOnly);
+		}
+	}
+
+	/** Subscribes one phase and prints the delivered line, plus a deferred line only the work queue can print. */
+	private static <T extends net.neoforged.fml.event.lifecycle.ParallelDispatchEvent> void phase(
+			IEventBus modBus, String label, Class<T> type) {
+		modBus.addListener(type, event -> {
+			System.out.println("[ForbricNeoLive/SETUP] " + label + " DELIVERED to a NeoForge mod");
+			event.enqueueWork(() -> System.out.println(
+					"[ForbricNeoLive/SETUP] " + label + " DEFERRED work ran"));
 		});
 	}
 

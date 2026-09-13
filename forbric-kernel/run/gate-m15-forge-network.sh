@@ -125,6 +125,15 @@ check_absent "server declared its Forge channels" "could not declare MinecraftFo
 check "server sees the client's channel"  "PING sent from the server .*peer declares the channel: true"     "$SLOG"
 check "client sees the server's channel"  "PING received on the client.*peer declares the channel: true"   "$CLOG"
 
+step "the CLIENT half of the setup lifecycle reached the Forge mod (must PASS)"
+# M21 proves the five server-side phases; FMLClientSetupEvent only exists on a client, and this gate is already
+# booting one with the Forge canary in it. The phase is where a traditional-Forge mod builds its renderers, its
+# key mappings and its screens — the kernel posted it to NeoForge mods only, and the mod that found it was a
+# world map whose client init never ran, which surfaced as a crash on world join rather than as a missing feature.
+check "client setup delivered to the Forge mod"  "ForbricLive/SETUP\] client setup DELIVERED to a traditional-Forge mod" "$CLOG"
+check "and what it deferred ran"                 "ForbricLive/SETUP\] client setup DEFERRED work ran"                    "$CLOG"
+check "the kernel says which family it posted to" "posted FML client setup to [1-9][0-9]* traditional-Forge mod\(s\)"   "$CLOG"
+
 step "it played and left cleanly (must PASS)"
 check "survived real simulation"     "ClientSmoke\] client-ready after"                 "$CLOG"
 check "left cleanly"                 "ClientSmoke\] clean disconnect observed"          "$CLOG"

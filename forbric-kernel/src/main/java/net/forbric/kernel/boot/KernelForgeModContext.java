@@ -147,6 +147,79 @@ public final class KernelForgeModContext {
 	 * {@code creative_mode_tab} has no Forge wrapper, so while it was skipped every mod's creative tab silently
 	 * failed to exist and its content was unreachable in the creative menu.
 	 */
+	/**
+	 * Posts one traditional-MinecraftForge mod-lifecycle event at every mod, then runs what they deferred.
+	 *
+	 * <p>The kernel posted these to NeoForge mods and to nobody else, for as long as there has been a
+	 * traditional-Forge side. The two families' buses are not the same shape and the NeoForge path could not
+	 * simply be pointed at them: NeoForge dispatches on an {@code IEventBus} instance held per mod, while
+	 * EventBus 7 resolves a bus from the EVENT plus that mod's {@code BusGroup} —
+	 * {@code FMLCommonSetupEvent.getBus(ctx.getModBusGroup())}, which is how a real mod subscribes
+	 * (disassembled from BiomesOPlentyForge's constructor).
+	 *
+	 * <p>What it cost while missing: every traditional-Forge mod that does its real work from setup did nothing.
+	 * BiomesOPlenty registered its 498 blocks and 503 items — those come from {@code RegisterEvent}, which the
+	 * kernel did post — and then generated no biomes at all, because the call that registers them with
+	 * TerraBlender hangs off {@code FMLCommonSetupEvent}: {@code commonSetup} → {@code enqueueWork} →
+	 * {@code BiomesOPlenty.init} → {@code ModBiomes.setupTerraBlender} → {@code Regions.register}. The world came
+	 * out looking vanilla with every BOP block still in the creative menu, and nothing anywhere said why. Xaero's
+	 * world map lost its minimap integration the same way, off {@code FMLClientSetupEvent}.
+	 *
+	 * <p><b>The deferred queue is half the work.</b> {@code ParallelDispatchEvent.enqueueWork} does not run the
+	 * runnable; it files it on the {@code DeferredWorkQueue} that the {@code ModLoadingStage} itself owns. Posting
+	 * the event without draining that queue afterwards delivers the event and still runs none of the work — which
+	 * for BOP is precisely the call that was missing. Drained once per phase, after every mod has seen it, which
+	 * is the order genuine FML uses.
+	 *
+	 * @param stage the {@code ModLoadingStage} constant this phase belongs to; it carries the queue
+	 * @return how many mods the event reached
+	 */
+	public static int fireSetupPhase(ClassLoader cl, List<Handle> handles, String eventClassName, String stage,
+			String label) throws Exception {
+		if (handles.isEmpty()) return 0;
+		Class<?> eventCls = Class.forName(eventClassName, false, cl);
+		Class<?> busGroupCls = Class.forName(BUS_GROUP, false, cl);
+		Class<?> containerCls = Class.forName("net.minecraftforge.fml.ModContainer", false, cl);
+		Class<?> stageCls = Class.forName("net.minecraftforge.fml.ModLoadingStage", false, cl);
+
+		Object stageValue = Enum.valueOf(stageCls.asSubclass(Enum.class), stage);
+		Constructor<?> ctor = eventCls.getDeclaredConstructor(containerCls, stageCls);
+		ctor.setAccessible(true);
+		Method getBus = eventCls.getMethod("getBus", busGroupCls);
+
+		int fired = 0;
+		try {
+			for (Handle handle : handles) {
+				try {
+					Object bus = getBus.invoke(null, handle.busGroup());
+					// The mod that is registering must be the active container while its listener runs, exactly as
+					// in fireRegisterEvents — otherwise whatever it registers is namespaced under the last one.
+					setActiveContainer(cl, handle.container());
+					single(bus.getClass(), "post").invoke(bus, ctor.newInstance(handle.container(), stageValue));
+					fired++;
+				} catch (Throwable t) {
+					// Per mod, as genuine FML does: it collects these rather than dying on the first, and one mod's
+					// broken setup must not cost every mod after it the same phase.
+					ForbricLog.warn("[Forbric/Lifecycle] " + handle.modId() + " threw during traditional-Forge "
+							+ label, Reflect.unwrap(t));
+				}
+			}
+		} finally {
+			setActiveContainer(cl, null);
+		}
+
+		// Now the work they filed. Before this line the event has been delivered and nothing it asked for has run.
+		try {
+			Object queue = stageCls.getMethod("getDeferredWorkQueue").invoke(stageValue);
+			if (queue != null) queue.getClass().getMethod("runTasks").invoke(queue);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] traditional-Forge " + label + " was delivered but its deferred "
+					+ "work did not run — a mod that registers from enqueueWork has done nothing",
+					Reflect.unwrap(t));
+		}
+		return fired;
+	}
+
 	public static int fireRegisterEvents(ClassLoader cl, List<Handle> handles) throws Exception {
 		if (handles.isEmpty()) return 0;
 		Class<?> registerEventCls = Class.forName(ForeignType.REGISTER_EVENT.binary(Ecosystem.FORGE), false, cl);
