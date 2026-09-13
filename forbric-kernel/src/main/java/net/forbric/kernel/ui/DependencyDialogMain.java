@@ -66,13 +66,15 @@ public final class DependencyDialogMain {
 	public static void main(String[] args) {
 		if (args.length < 1) System.exit(CONTINUE);
 		List<DependencyReport.Row> rows;
+		List<DependencyReport.MixinRow> mixins;
 		try {
 			rows = DependencyReport.read(Path.of(args[0]));
+			mixins = DependencyReport.readMixins(Path.of(args[0]));
 		} catch (Throwable unreadable) {
 			System.exit(CONTINUE);
 			return;
 		}
-		if (rows.isEmpty()) System.exit(CONTINUE);
+		if (rows.isEmpty() && mixins.isEmpty()) System.exit(CONTINUE);
 
 		try {
 			UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -80,17 +82,18 @@ public final class DependencyDialogMain {
 			// The cross-platform look and feel is not worth failing a warning over.
 		}
 
-		JTextArea body = new JTextArea(describe(rows));
+		JTextArea body = new JTextArea(describe(rows) + describeMixins(mixins));
 		body.setEditable(false);
 		body.setLineWrap(false);
 		body.setFont(new java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 12));
 		JScrollPane scroll = new JScrollPane(body);
-		scroll.setPreferredSize(new java.awt.Dimension(720, Math.min(120 + rows.size() * 48, 460)));
+		scroll.setPreferredSize(new java.awt.Dimension(760,
+				Math.min(120 + (rows.size() + mixins.size()) * 52, 500)));
 
 		int answer;
 		try {
 			answer = JOptionPane.showOptionDialog(null, scroll,
-					"Forbric — a mod is missing something it requires",
+					title(rows, mixins),
 					JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, null,
 					// "Launch anyway" is the INITIAL value, so it is the one the keyboard default triggers.
 					// The policy this dialog belongs to is that continuing is what happens unless the player
@@ -106,6 +109,19 @@ public final class DependencyDialogMain {
 	}
 
 	/**
+	 * The window title, which has to match what is actually in the dialog.
+	 *
+	 * <p>A fixed "a mod is missing something it requires" is a lie on a run where the only finding is a mixin
+	 * that did not attach: both mods are installed and neither is missing anything. A player who reads the title
+	 * and stops there would go looking for a download that does not exist.
+	 */
+	static String title(List<DependencyReport.Row> rows, List<DependencyReport.MixinRow> mixins) {
+		if (rows.isEmpty()) return "Forbric — two mods do not fit each other";
+		if (mixins.isEmpty()) return "Forbric — a mod is missing something it requires";
+		return "Forbric — some mods are missing requirements, and some do not fit each other";
+	}
+
+	/**
 	 * The text of the dialog.
 	 *
 	 * <p>It says which mod wants what, which ECOSYSTEM that mod belongs to — a player looking for the download
@@ -115,6 +131,7 @@ public final class DependencyDialogMain {
 	 * to assume the worst.
 	 */
 	static String describe(List<DependencyReport.Row> rows) {
+		if (rows.isEmpty()) return "";
 		StringBuilder text = new StringBuilder();
 		text.append(rows.size() == 1 ? "One mod is missing something it requires:\n\n"
 				: rows.size() + " mods are missing something they require:\n\n");
@@ -132,6 +149,30 @@ public final class DependencyDialogMain {
 		text.append("\nForbric will launch anyway if you ask it to. A mod whose requirement is unmet usually\n")
 				.append("fails somewhere that names neither mod — an empty world, a missing block, or a crash\n")
 				.append("during world creation — so this is worth fixing before you play.\n");
+		return text.toString();
+	}
+
+	/**
+	 * The second kind of problem, and the one nothing else can report.
+	 *
+	 * <p>Both mods are installed and each is inside the version range the other declares, so every dependency
+	 * check — Forbric's and stock Fabric's alike — says this pack is fine. What does not fit is the bytecode: a
+	 * mixin written to attach to the other mod found nothing to attach to. It is worded as "did not attach"
+	 * rather than "will crash", because an unresolved anchor is all the kernel actually knows.
+	 */
+	static String describeMixins(List<DependencyReport.MixinRow> mixins) {
+		if (mixins.isEmpty()) return "";
+		StringBuilder text = new StringBuilder();
+		text.append(mixins.size() == 1
+				? "\nA mod could not attach to another mod it was built for:\n\n"
+				: "\n" + mixins.size() + " mods could not attach to other mods they were built for:\n\n");
+		for (DependencyReport.MixinRow row : mixins) {
+			text.append("  • ").append(row.owner()).append("  —  ").append(row.mixin()).append('\n');
+			text.append("      could not find ").append(row.anchors()).append('\n');
+		}
+		text.append("\nBoth mods ARE installed, and each is inside the version range the other asks for — so\n")
+				.append("nothing reports this as a missing dependency, because it is not one. The two builds\n")
+				.append("simply do not fit. One of them needs a different version.\n");
 		return text.toString();
 	}
 }

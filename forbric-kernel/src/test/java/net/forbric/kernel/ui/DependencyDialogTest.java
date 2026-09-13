@@ -120,6 +120,52 @@ class DependencyDialogTest {
 		assertTrue(text.contains("installed: 0.8.1"), text);
 	}
 
+	private static DependencyReport.MixinRow mixinBreak() {
+		return new DependencyReport.MixinRow("mixins.iris.compat.sodium.json", "MixinRenderRegionManager",
+				"@At(INVOKE) RenderRegionManager.clearAllCachedBatches in uploadResults");
+	}
+
+	@Test
+	void bothKindsSurviveTheRoundTripAndStaySeparate() throws Exception {
+		Path file = tmp.resolve("both.tsv");
+		DependencyReport.write(file, List.of(absent()), List.of(mixinBreak()));
+
+		assertEquals(List.of(absent()), DependencyReport.read(file), "the section marker must not become a row");
+		assertEquals(List.of(mixinBreak()), DependencyReport.readMixins(file));
+	}
+
+	@Test
+	void aMixinOnlyReportStillCarriesItsSection() throws Exception {
+		Path file = tmp.resolve("mixinonly.tsv");
+		DependencyReport.write(file, List.of(), List.of(mixinBreak()));
+
+		assertTrue(DependencyReport.read(file).isEmpty());
+		assertEquals(1, DependencyReport.readMixins(file).size());
+	}
+
+	@Test
+	void theMixinSectionDoesNotClaimItWillCrash() {
+		String text = DependencyDialogMain.describeMixins(List.of(mixinBreak()));
+
+		// The kernel knows an anchor did not resolve. It does NOT know what that costs at runtime, and a dialog
+		// that says "will crash" states something its own layer cannot establish.
+		assertFalse(text.toLowerCase(java.util.Locale.ROOT).contains("crash"), text);
+		assertTrue(text.contains("could not attach"), text);
+		// And it must say why no dependency check caught this, or the player will assume one should have.
+		assertTrue(text.contains("inside the version range"), text);
+	}
+
+	@Test
+	void theTitleMatchesWhatIsActuallyInTheDialog() {
+		// A fixed "missing something it requires" is false when the only finding is a mixin that did not attach:
+		// both mods are installed. A player who reads the title and stops would hunt for a download that is
+		// already there.
+		assertTrue(DependencyDialogMain.title(List.of(), List.of(mixinBreak())).contains("do not fit"));
+		assertTrue(DependencyDialogMain.title(List.of(absent()), List.of()).contains("missing something"));
+		String both = DependencyDialogMain.title(List.of(absent()), List.of(mixinBreak()));
+		assertTrue(both.contains("missing") && both.contains("do not fit"), both);
+	}
+
 	@Test
 	void continuingIsTheKeyboardDefault() throws Exception {
 		// Read from the source, because JOptionPane's initial value is not observable without showing the

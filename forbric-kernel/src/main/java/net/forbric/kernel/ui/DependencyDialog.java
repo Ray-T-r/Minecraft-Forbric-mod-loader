@@ -86,22 +86,35 @@ public final class DependencyDialog {
 	 *                 the loud direction hangs a server
 	 */
 	public static void offer(List<DependencyReport.Row> rows, boolean isClient) {
-		if (rows == null || rows.isEmpty()) return;
+		offer(rows, List.of(), isClient);
+	}
+
+	/**
+	 * @param mixins mixins that were written to attach to another mod and did not. A different problem from an
+	 *               unmet dependency and reported separately, because no dependency check can see it: both mods
+	 *               are installed and each is inside the range the other declares
+	 */
+	public static void offer(List<DependencyReport.Row> rows, List<DependencyReport.MixinRow> mixins,
+			boolean isClient) {
+		if (rows == null) rows = List.of();
+		if (mixins == null) mixins = List.of();
+		if (rows.isEmpty() && mixins.isEmpty()) return;
+		int findings = rows.size() + mixins.size();
 		if (!isClient) {
-			ForbricLog.debug("[Forbric/Deps] not the client — the %d unmet requirement(s) stay in the log", rows.size());
+			ForbricLog.debug("[Forbric/Deps] not the client — the %d finding(s) stay in the log", findings);
 			return;
 		}
 		String mode = System.getProperty(SWITCH, "on");
 		if ("off".equalsIgnoreCase(mode)) {
-			ForbricLog.info("[Forbric/Deps] -D%s=off — %d unmet requirement(s) reported in the log only",
-					SWITCH, rows.size());
+			ForbricLog.info("[Forbric/Deps] -D%s=off — %d finding(s) reported in the log only",
+					SWITCH, findings);
 			return;
 		}
 		boolean dryRun = DRY_RUN.equalsIgnoreCase(mode);
 		if (java.awt.GraphicsEnvironment.isHeadless()) {
 			// Measured safe to ask: on a JVM started with -XstartOnFirstThread this returns in ~12ms and starts
 			// no AWT thread, so the guard cannot be the thing that breaks the window it is guarding.
-			ForbricLog.info("[Forbric/Deps] headless — %d unmet requirement(s) reported in the log only", rows.size());
+			ForbricLog.info("[Forbric/Deps] headless — %d finding(s) reported in the log only", findings);
 			return;
 		}
 
@@ -109,11 +122,11 @@ public final class DependencyDialog {
 		try {
 			// The dry run differs ONLY in the child's flags, so what a gate exercises is this method, this fork
 			// and this exit code — not a stand-in for them.
-			answer = ask(rows, dryRun ? List.of("-Djava.awt.headless=true") : List.of());
+			answer = ask(rows, mixins, dryRun ? List.of("-Djava.awt.headless=true") : List.of());
 			if (dryRun) {
-				ForbricLog.info("[Forbric/Deps] -D%s=dryRun — forked the dialog for %d unmet requirement(s) with "
+				ForbricLog.info("[Forbric/Deps] -D%s=dryRun — forked the dialog for %d finding(s) with "
 						+ "no display; it answered %d (launch anyway) without drawing anything",
-						SWITCH, rows.size(), answer);
+						SWITCH, findings, answer);
 			}
 		} catch (Throwable failed) {
 			ForbricLog.warn("[Forbric/Deps] could not show the unmet-dependency dialog — the warnings above are "
@@ -121,17 +134,20 @@ public final class DependencyDialog {
 			return;
 		}
 		if (answer == DependencyDialogMain.QUIT) {
-			ForbricLog.warn("[Forbric/Deps] the player chose to quit rather than launch with %d unmet "
-					+ "requirement(s). This is their decision, not the kernel refusing — -D%s=off launches "
-					+ "without asking.", rows.size(), SWITCH);
+			ForbricLog.warn("[Forbric/Deps] the player chose to quit rather than launch with %d finding(s). "
+					+ "This is their decision, not the kernel refusing — -D%s=off launches without asking.",
+					findings, SWITCH);
 			System.exit(1);
 		}
-		ForbricLog.info("[Forbric/Deps] launching anyway with %d unmet requirement(s), at the player's choice",
-				rows.size());
+		ForbricLog.info("[Forbric/Deps] launching anyway with %d finding(s), at the player's choice", findings);
 	}
 
 	static int ask(List<DependencyReport.Row> rows) throws Exception {
-		return ask(rows, List.of());
+		return ask(rows, List.of(), List.of());
+	}
+
+	static int ask(List<DependencyReport.Row> rows, List<String> extraJvmArgs) throws Exception {
+		return ask(rows, List.of(), extraJvmArgs);
 	}
 
 	/**
@@ -141,10 +157,11 @@ public final class DependencyDialog {
 	 *                     THIS method — the real fork, the real child, the real exit code — with
 	 *                     {@code -Djava.awt.headless=true} instead of a copy of it that proves nothing
 	 */
-	static int ask(List<DependencyReport.Row> rows, List<String> extraJvmArgs) throws Exception {
+	static int ask(List<DependencyReport.Row> rows, List<DependencyReport.MixinRow> mixins,
+			List<String> extraJvmArgs) throws Exception {
 		Path report = Files.createTempFile("forbric-deps", ".tsv");
 		try {
-			DependencyReport.write(report, rows);
+			DependencyReport.write(report, rows, mixins);
 			List<String> command = new ArrayList<>();
 			command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
 			command.addAll(extraJvmArgs);
