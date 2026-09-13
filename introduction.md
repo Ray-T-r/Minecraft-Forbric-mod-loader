@@ -566,7 +566,12 @@ Break one of these and the failure will usually surface far from the cause.
   drivers are always declared; each idles unless its runtime is staged.
 - No compatibility guarantee for arbitrary mods. What has been run is documented in
   [`forbric-loader/README.md`](forbric-loader/README.md), not promised here.
-- Version `0.1.0`. No stable API.
+- Version `0.2.0`. No stable API.
+
+> The one-Forge-family limit above is the **weld's**, and is the main thing the kernel changed for
+> players: since 0.2.0 the installer builds the merged base itself, so an installed instance carries
+> Fabric, traditional MinecraftForge and NeoForge together with no hand-built artifacts. Do not carry
+> this section's boundary over to what the release installs.
 
 ## 17. Further reading
 
