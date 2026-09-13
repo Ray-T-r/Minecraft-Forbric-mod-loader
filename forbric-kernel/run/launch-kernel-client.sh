@@ -78,7 +78,12 @@ echo "[kernel-launch] natives = $NATIVES"
 echo "[kernel-launch] mods: $(ls "$RUNDIR/mods" 2>/dev/null | paste -sd' ' -)"
 cd "$RUNDIR"
 
-exec java -XstartOnFirstThread -Djava.library.path="$NATIVES" ${FORBRIC_JVM:-} \
+# The unmet-dependency dialog is OFF for every gate and developer run: this script is driven unattended, and a
+# window nobody can see reads as a hang rather than a failure. A real install launches through the installer's
+# version profile, which does not pass this, so a player still gets it. FORBRIC_DEP_DIALOG=dryRun exercises the
+# whole fork with no display -- see gate-m20-depdialog.sh.
+exec java -XstartOnFirstThread -Djava.library.path="$NATIVES" \
+  -Dforbric.dependencyDialog="${FORBRIC_DEP_DIALOG:-off}" ${FORBRIC_JVM:-} \
   -cp "$CP" net.forbric.kernel.boot.KernelClientLaunch \
   --gameJar "$MERGED" --runtimeJar "$FORGE_RT" --runtimeJar "$NEO_RT" \
   --libraryPath "$VANILLA_CP" \

@@ -117,6 +117,11 @@ tasks.named('compileRuntimeJava') {
 
 test {
 	useJUnitPlatform()
+	// No unit test may fork a window. DependencyAuditTest drives DependencyAudit.report with Side.CLIENT and
+	// deliberately unmet requirements, which is exactly the input that opens one -- and a test suite that stops
+	// on an invisible dialog looks like a hang, not a failure. DependencyDialogTest drives the fork itself, with
+	// its own explicit flags, so it does not need this to be on.
+	systemProperty 'forbric.dependencyDialog', 'off'
 }
 
 // BOOT jar: parent-loaded kernel core (classloading, discovery, resolve, transform, mixin service, mapping, access,
