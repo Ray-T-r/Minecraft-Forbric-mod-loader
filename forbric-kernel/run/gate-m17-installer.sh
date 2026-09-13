@@ -58,6 +58,34 @@ check_absent "it never claimed to ship Minecraft" "bundled (merged|game) base"  
 [ -f "$DEST/versions/26.2-forbric/26.2-forbric.json" ] && echo "[kernel] PASS the profile exists" \
   || { echo "[kernel] FAIL the profile exists"; FAIL=1; }
 
+step "a launcher reads the profile as MODDED (must PASS)"
+# How launchers actually decide: serialise the whole version JSON and run substring matches over the text. PCL2
+# does exactly that, in a first-match chain — Fabric, then MinecraftForge (only when NeoForge is absent), then
+# NeoForge. A Forbric profile carried none of those strings, so it was read as vanilla, which is not a label: an
+# unmodded version gets the SHARED .minecraft/mods folder instead of this version's own, so every mod downloaded
+# through the launcher landed where the instance does not look.
+PROFILE="$DEST/versions/26.2-forbric/26.2-forbric.json"
+if grep -q 'net\.fabricmc:fabric-loader' "$PROFILE"; then
+  echo "[kernel] PASS the profile names a loader coordinate a launcher matches on"
+else
+  echo "[kernel] FAIL the profile names no loader — a launcher will call this vanilla"; FAIL=1
+fi
+# Exactly ONE answer. A second coordinate does not say "all three" to a first-match chain; it makes the answer
+# depend on which branch a given launcher tests first, so two launchers disagree about one file.
+for other in 'net\.neoforge' 'minecraftforge'; do
+  if grep -q "$other" "$PROFILE"; then
+    echo "[kernel] FAIL the profile also names $other — the detection chain now has two answers"; FAIL=1
+  else
+    echo "[kernel] PASS the profile does not also name $other"
+  fi
+done
+# And the declaration must not have become classpath: a real fabric-loader on -cp would fight the kernel.
+if python3 -c "import json,sys; j=json.load(open(sys.argv[1])); sys.exit(0 if not any('fabric-loader' in str(l.get('name','')) for l in j['libraries']) else 1)" "$PROFILE"; then
+  echo "[kernel] PASS it is metadata, not a library the launcher would put on the classpath"
+else
+  echo "[kernel] FAIL a fabric-loader jar reached libraries[] — that would be loaded, not just read"; FAIL=1
+fi
+
 step "give the directory the vanilla libraries a launcher would have downloaded"
 # The installer stages only what it owns; the base version's own libraries are the launcher's job. Copying them
 # from the real install is what makes this a launcher simulation rather than a half-populated directory.
