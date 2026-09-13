@@ -104,7 +104,10 @@ check "datapacks served"              "Forbric/DataPacks\] served [1-9][0-9]* da
 # every cross-mod recipe is written against. Assert the NUMBER: the line keeps printing when the count goes to zero.
 CARRIERS=$(grep -aoE 'served [0-9]+ datapack\(s\).*— [0-9]+ loader carrier' "$LOG" | grep -oE '[0-9]+ loader' | grep -oE '[0-9]+' | head -1)
 assert_eq "loader carriers served" 2 "${CARRIERS:-none}"
-check "carriers sit below the mods"   "forbric/carrier/1-forge-runtime-interop, forbric/carrier/2-neoforge-runtime" "$LOG"
+# The ORDER, not the file names. This asserted the basenames of one machine's staged artifacts, so pointing the
+# gate at another machine's — a user's own install, where the same jars are named forge-runtime-26.2.jar — failed
+# it for a reason that has nothing to do with where the carriers sit. What it is about is 1- before 2-.
+check "carriers sit below the mods"   "forbric/carrier/1-forge-runtime[^,]*, forbric/carrier/2-neoforge-runtime" "$LOG"
 check "registry alias parity restored" "Forbric/Aliases\] gave .* alias-resolving lookup"      "$LOG"
 check "NeoForge registration order"    "fired RegisterEvent in NeoForge.s registration order"  "$LOG"
 # A mod whose items name their own data components: with RegisterEvent in field order the item registry is filled

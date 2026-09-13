@@ -22,6 +22,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -85,7 +86,8 @@ final class NfrtRunner {
 	 * @param mcDir the Minecraft directory, handed to NFRT as a {@code --launcher-dir} so it reuses the client
 	 *              and server jars the launcher already downloaded instead of fetching its own
 	 */
-	ArtifactResult run(JdkLocator.Jvm jvm, Path mcDir, Path outJar, String coordinate) throws IOException {
+	ArtifactResult run(JdkLocator.Jvm jvm, Path mcDir, Path outJar, String coordinate, String mcVersion,
+			Path serverJar) throws IOException {
 		if (Files.isRegularFile(outJar) && Files.size(outJar) > 0) {
 			log.accept("[neoform] up-to-date: " + outJar.getFileName());
 			return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
@@ -93,6 +95,7 @@ final class NfrtRunner {
 		Files.createDirectories(outJar.getParent());
 		Files.createDirectories(nfrtHome);
 		Files.createDirectories(workDir);
+		seedArtifacts(mcDir, mcVersion, serverJar);
 
 		Path tool = fetchTool();
 
@@ -139,6 +142,43 @@ final class NfrtRunner {
 	}
 
 	/** NeoFormRuntime's own fat jar, cached beside the other tools. */
+	/**
+	 * Hands NFRT the two Minecraft jars this install already has, instead of letting it fetch them again.
+	 *
+	 * <p>NFRT is a separate process with its own downloader and its own (absent) read timeout. It wants
+	 * {@code minecraft_<version>_{client,server}.jar}; the client jar is the user's own installed one and the
+	 * server jar has already been downloaded and SHA-1 verified by {@code PatchedMcBuilder} a step earlier. So
+	 * the second fetch buys nothing and can cost everything: measured on a real machine, NFRT's own copy of that
+	 * 58 MB server jar sat at zero bytes for eleven minutes behind a proxy, with the installer's completed copy
+	 * on disk a few directories away. Nothing in the installer's own timeout work reaches inside a subprocess —
+	 * the only way to make that download safe is not to make it.
+	 *
+	 * <p>Best-effort and never fatal: a jar that cannot be linked or copied leaves NFRT to fetch it as before,
+	 * which is exactly the behaviour this replaces.
+	 */
+	private void seedArtifacts(Path mcDir, String mcVersion, Path serverJar) {
+		if (mcVersion == null || mcVersion.isBlank()) return;
+		Path artifacts = nfrtHome.resolve("artifacts");
+		Path client = mcDir.resolve("versions").resolve(mcVersion).resolve(mcVersion + ".jar");
+		seedOne(artifacts, client, "minecraft_" + mcVersion + "_client.jar");
+		seedOne(artifacts, serverJar, "minecraft_" + mcVersion + "_server.jar");
+	}
+
+	private void seedOne(Path artifacts, Path source, String name) {
+		if (source == null) return;
+		try {
+			if (!Files.isRegularFile(source) || Files.size(source) == 0) return;
+			Path target = artifacts.resolve(name);
+			if (Files.isRegularFile(target) && Files.size(target) > 0) return;
+			Files.createDirectories(artifacts);
+			Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+			log.accept("[neoform] seeded " + name + " from " + source.getFileName()
+					+ " — NFRT would otherwise download it again");
+		} catch (IOException | RuntimeException notSeeded) {
+			log.accept("[neoform] could not seed " + name + " (" + notSeeded + ") — NFRT will fetch it");
+		}
+	}
+
 	private Path fetchTool() throws IOException {
 		String coordinate = Pins.nfrtCoordinate();
 		String rel = Util.coordinateToPath(coordinate);
