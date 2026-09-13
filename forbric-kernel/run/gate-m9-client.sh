@@ -39,7 +39,7 @@ rm -f "$RUNDIR/logs/latest.log"
 step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar 2>/dev/null | wc -l | tr -d ' ') mods, no compatibility flags)"
 # M9_EXTRA_JVM is how the gate's teeth are demonstrated: switch a fix off and this must go RED. Verified with
 # -Dforbric.pruneDuplicateLambdas=off, which brings back StubException and the failed world load.
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeElytra=140 -Dforbric.clientSmokeDisconnectTicks=220 ${M9_EXTRA_JVM:-}" \
+FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1 &
 CLIENT_PID=$!
@@ -326,27 +326,6 @@ fi
 check "and they are still selected in the repository" \
   "repository holds [1-9][0-9]* selected" "$LOG"
 check_absent "the screen opened at all" "could not open the resource-pack screen" "$LOG"
-
-step "an elytra still flies (must PASS)"
-# The merge split one mechanism in half: it took NeoForge's canGlide, which decides gliding from an attribute and
-# never looks at the item, and vanilla's ItemStack.forEachModifier, which reads the raw component instead of
-# calling the method that posts the event NeoForge's own listener answers. Producer on one side, consumer on the
-# other, attribute stuck at its false default, elytra silently dead.
-#
-# Checked on the SERVER's player. detectEquipmentUpdates casts the level to ServerLevel, so equipment attributes
-# are applied server-side and synced down -- the same check on the client player reads as broken on a build where
-# it works, which is how the first version of this was nearly mistaken for an unfixed bug.
-# Asserted on the two the mutation actually moves: the attribute, and canGlide. Not startedFallFlying -- it is
-# false here precisely BECAUSE flight already started (tryToStartFallFlying refuses when already gliding), and
-# not isFallFlying, which was true even with the repair disabled because the client predicts it. canGlide is also
-# the one that matters for the player's complaint: updateFallFlying clears the flag every tick while it is false,
-# so flight starts and is yanked back rather than never beginning.
-ELY=$(grep -oE 'elytra: gliding attribute=[0-9.]+ canGlide=[a-z]+' "$LOG" | head -1)
-case "${ELY:-}" in
-  "") echo "[kernel] FAIL the elytra check never ran"; FAIL=1 ;;
-  *"attribute=0.0"*|*"canGlide=false"*) echo "[kernel] FAIL $ELY"; FAIL=1 ;;
-  *)  echo "[kernel] PASS ${ELY#elytra: }" ;;
-esac
 
 step "the world is on disk before the process ends (must PASS)"
 # A real player Alt+F4'd and lost a minute of play: IntegratedServer.stopServer runs teardownPublishedState

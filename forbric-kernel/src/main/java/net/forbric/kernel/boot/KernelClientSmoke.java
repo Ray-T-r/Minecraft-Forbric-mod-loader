@@ -82,6 +82,8 @@ public final class KernelClientSmoke {
 	public static final String MODS_BUTTON_SHOT = "forbric.clientSmokeModsButtonShot";
 	/** World tick at which to equip an elytra and try to glide. */
 	public static final String ELYTRA = "forbric.clientSmokeElytra";
+	/** Altitude to drop from. Absolute, because the world keeps whatever the last run left behind. */
+	public static final String ELYTRA_ALTITUDE = "forbric.clientSmokeElytraAltitude";
 	/** Ticks to leave it open. Long enough for frames to be drawn, short enough not to move the disconnect. */
 	private static final int MODS_SCREEN_HOLD = 20;
 
@@ -257,67 +259,155 @@ public final class KernelClientSmoke {
 	 * attribute asked for in the same tick it was equipped is asked before anything could have applied it — and
 	 * would read as broken on a working build.
 	 */
+	private static double elytraStartX;
+	private static double elytraStartY;
+	private static double elytraStartZ;
+	private static boolean elytraStarted;
+	private static boolean elytraEnteredFlight;
+	private static String elytraSample;
+
+	/**
+	 * The whole elytra flight, in the order a player experiences it: equip, jump off, enter flight, STAY in it.
+	 *
+	 * <p>Staying in it is the half that was broken and the half a single predicate cannot show. {@code canGlide}
+	 * being false did not stop flight from starting — {@code updateFallFlying} runs every tick and clears the
+	 * flag when it is false, so the player got a moment of flight and was yanked back. A check that only asked
+	 * whether flight STARTED would have passed on the broken build.
+	 *
+	 * <p>Everything is done to the SERVER's player and on the server's thread. Equipment attributes are applied
+	 * server-side ({@code detectEquipmentUpdates} casts the level to {@code ServerLevel}) and flight is
+	 * server-authoritative; the client only predicts, which is why the client's own {@code isFallFlying} reads
+	 * true even on a build where the server refuses.
+	 */
 	private static void elytraCheck(Object minecraft, Object player) {
 		int due = Integer.getInteger(ELYTRA, 0);
-		if (due <= 0 || elytraStage > 1 || worldTicks < due) return;
+		if (due <= 0 || elytraStage > 3 || worldTicks < due) return;
 		try {
 			ClassLoader cl = minecraft.getClass().getClassLoader();
-			// The SERVER's player, not the client's. detectEquipmentUpdates casts the level to ServerLevel, so
-			// equipment attributes are applied server-side and synced down -- a client-side check of this can
-			// never see them rise, and reads as broken on a build where it works.
 			Object server = accessible(minecraft.getClass(), "getSingleplayerServer").invoke(minecraft);
 			if (server == null) {
-				elytraStage = 2;
-				ForbricLog.info("[Forbric/ClientSmoke] no integrated server — elytra is a server-side check");
+				elytraStage = 4;
+				ForbricLog.info("[Forbric/ClientSmoke] elytra: no integrated server — this is a server-side check");
 				return;
 			}
 			Object list = accessible(server.getClass(), "getPlayerList").invoke(server);
 			java.util.List<?> players = (java.util.List<?>) accessible(list.getClass(), "getPlayers").invoke(list);
 			if (players.isEmpty()) return;
-			Object serverPlayer = players.get(0);
+			Object p = players.get(0);
 
-			if (elytraStage == 0) {
-				elytraStage = 1;
-				Class<?> items = Class.forName("net.minecraft.world.item.Items", true, cl);
-				Class<?> itemLike = Class.forName("net.minecraft.world.level.ItemLike", true, cl);
-				Class<?> stackCls = Class.forName("net.minecraft.world.item.ItemStack", true, cl);
-				Class<?> slotCls = Class.forName("net.minecraft.world.entity.EquipmentSlot", true, cl);
-				Object elytra = stackCls.getConstructor(itemLike).newInstance(items.getField("ELYTRA").get(null));
-				Object chest = Enum.valueOf(slotCls.asSubclass(Enum.class), "CHEST");
-				// On the server's own thread: equipping from another thread is a data race on the entity, and a
-				// race that usually works is worse than one that never does.
-				java.lang.reflect.Method setSlot =
-						accessible(serverPlayer.getClass(), "setItemSlot", slotCls, stackCls);
-				accessible(server.getClass(), "execute", Runnable.class).invoke(server, (Runnable) () -> {
-					try {
-						setSlot.invoke(serverPlayer, chest, elytra);
-						setPos(serverPlayer, posOf(serverPlayer, "getX"), posOf(serverPlayer, "getY") + 60.0,
-								posOf(serverPlayer, "getZ"));
-					} catch (Throwable t) {
-						ForbricLog.warn("[Forbric/ClientSmoke] could not equip the elytra", t);
+			switch (elytraStage) {
+				case 0 -> {
+					elytraStage = 1;
+					elytraEquippedAt = worldTicks;
+					onServer(server, () -> {
+						Class<?> stackCls = Class.forName("net.minecraft.world.item.ItemStack", true, cl);
+						Class<?> slotCls = Class.forName("net.minecraft.world.entity.EquipmentSlot", true, cl);
+						Object elytra = stackCls.getConstructor(
+										Class.forName("net.minecraft.world.level.ItemLike", true, cl))
+								.newInstance(Class.forName("net.minecraft.world.item.Items", true, cl)
+										.getField("ELYTRA").get(null));
+						accessible(p.getClass(), "setItemSlot", slotCls, stackCls).invoke(p,
+								Enum.valueOf(slotCls.asSubclass(Enum.class), "CHEST"), elytra);
+						// teleportTo, not setPos: setPos moves the server's entity without telling the client,
+						// and the client then keeps sending the position it still believes in, so the server
+						// snaps back and the player never actually falls. The first version of this measured
+						// zero movement for exactly that reason.
+						// An ABSOLUTE altitude, not a relative one. The world persists between runs, so "+80
+						// blocks" stacked up run after run until the player sat at y=892, far above the world and
+						// no longer ticking — it had velocity and never moved.
+						accessible(p.getClass(), "teleportTo", double.class, double.class, double.class)
+								.invoke(p, posOf(p, "getX"), Double.valueOf(
+										Double.parseDouble(System.getProperty(ELYTRA_ALTITUDE, "200"))),
+										posOf(p, "getZ"));
+						// A clean slate: if the flag is already set, "did flight start" cannot be asked.
+						accessible(p.getClass(), "setSharedFlag", int.class, boolean.class)
+								.invoke(p, 7, Boolean.FALSE);
+						elytraStartX = posOf(p, "getX");
+						elytraStartY = posOf(p, "getY");
+						elytraStartZ = posOf(p, "getZ");
+					});
+					ForbricLog.info("[Forbric/ClientSmoke] elytra 1/3: equipped, 80 blocks up, flight flag cleared");
+				}
+				case 1 -> {
+					// Long enough for the server to collect the equipment change and apply the attribute.
+					if (worldTicks < elytraEquippedAt + 10) return;
+					elytraStage = 2;
+					elytraEquippedAt = worldTicks;
+					onServer(server, () -> {
+						elytraStarted = (Boolean) accessible(p.getClass(), "tryToStartFallFlying").invoke(p);
+					});
+					// The CLIENT's position is the one that moves. In singleplayer the server accepts the
+					// client's position packets rather than simulating the player, so the server entity's own
+					// motion is zero however well the glide is going — the first version of this measured that
+					// and called a working glide a fall.
+					elytraStartX = posOf(player, "getX");
+					elytraStartY = posOf(player, "getY");
+					elytraStartZ = posOf(player, "getZ");
+					ForbricLog.info("[Forbric/ClientSmoke] elytra 2/3: asked to start flight");
+				}
+				case 2 -> {
+					if (elytraSample == null) {
+						elytraSample = String.valueOf(
+								accessible(player.getClass(), "getDeltaMovement").invoke(player));
 					}
-				});
-				elytraEquippedAt = worldTicks;
-				ForbricLog.info("[Forbric/ClientSmoke] equipped an elytra on the SERVER player, 60 blocks up");
-				return;
+					if (worldTicks < elytraEquippedAt + 2) return;
+					elytraStage = 3;
+					elytraEquippedAt = worldTicks;
+					onServer(server, () -> {
+						elytraEnteredFlight = (Boolean) accessible(p.getClass(), "isFallFlying").invoke(p);
+					});
+				}
+				default -> {
+					// The sustain window. updateFallFlying gets ~40 chances to cancel it in here.
+					if (worldTicks < elytraEquippedAt + 40) return;
+					elytraStage = 4;
+					boolean sustained = (Boolean) accessible(p.getClass(), "isFallFlying").invoke(p);
+					double dx = posOf(player, "getX") - elytraStartX;
+					double dz = posOf(player, "getZ") - elytraStartZ;
+					double horizontal = Math.sqrt(dx * dx + dz * dz);
+					double fell = elytraStartY - posOf(player, "getY");
+					ForbricLog.info("[Forbric/ClientSmoke] elytra 3/3: started=%s entered=%s sustained=%s "
+							+ "glidedHorizontally=%.1f fell=%.1f attribute=%s canGlide=%s",
+							elytraStarted, elytraEnteredFlight, sustained, horizontal, fell,
+							glidingAttribute(p, cl), accessible(p.getClass(), "canGlide").invoke(p));
+					ForbricLog.info("[Forbric/ClientSmoke] elytra positions: start=%.1f,%.1f,%.1f now=%.1f,%.1f,%.1f"
+							+ " onGround=%s motion=%s", elytraStartX, elytraStartY, elytraStartZ, posOf(p, "getX"),
+							posOf(p, "getY"), posOf(p, "getZ"),
+							accessible(p.getClass(), "onGround").invoke(p),
+							accessible(p.getClass(), "getDeltaMovement").invoke(p));
+					ForbricLog.info("[Forbric/ClientSmoke] elytra motion early=%s late=%s", elytraSample,
+							accessible(player.getClass(), "getDeltaMovement").invoke(player));
+					ForbricLog.info("[Forbric/ClientSmoke] elytra client player: %.1f,%.1f,%.1f motion=%s "
+							+ "fallFlying=%s paused=%s", posOf(player, "getX"), posOf(player, "getY"),
+							posOf(player, "getZ"), accessible(player.getClass(), "getDeltaMovement").invoke(player),
+							accessible(player.getClass(), "isFallFlying").invoke(player),
+							accessible(minecraft.getClass(), "isPaused").invoke(minecraft));
+				}
 			}
-			// 15 ticks: long enough for the server to collect the equipment change and apply the attribute (one
-			// or two ticks), short enough that a player dropped 60 blocks is still in the air -- tryToStartFallFlying
-			// refuses on the ground, and a check made after landing reports a working build as broken.
-			if (worldTicks < elytraEquippedAt + 15) return;
-			elytraStage = 2;
-
-			double attribute = glidingAttribute(serverPlayer, cl);
-			boolean canGlide = (Boolean) accessible(serverPlayer.getClass(), "canGlide").invoke(serverPlayer);
-			boolean started =
-					(Boolean) accessible(serverPlayer.getClass(), "tryToStartFallFlying").invoke(serverPlayer);
-			boolean flying = (Boolean) accessible(serverPlayer.getClass(), "isFallFlying").invoke(serverPlayer);
-			ForbricLog.info("[Forbric/ClientSmoke] elytra: gliding attribute=%s canGlide=%s startedFallFlying=%s "
-					+ "isFallFlying=%s", attribute, canGlide, started, flying);
 		} catch (Throwable t) {
-			elytraStage = 2;
+			elytraStage = 4;
 			ForbricLog.warn("[Forbric/ClientSmoke] could not check elytra flight", t);
 		}
+	}
+
+	/** Anything that touches the entity goes on the server's own thread; a race that usually works is worse. */
+	private static void onServer(Object server, ThrowingRunnable body) throws Exception {
+		java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+		accessible(server.getClass(), "execute", Runnable.class).invoke(server, (Runnable) () -> {
+			try {
+				body.run();
+			} catch (Throwable t) {
+				ForbricLog.warn("[Forbric/ClientSmoke] elytra step failed on the server thread", t);
+			} finally {
+				done.countDown();
+			}
+		});
+		done.await(5, java.util.concurrent.TimeUnit.SECONDS);
+	}
+
+	@FunctionalInterface
+	private interface ThrowingRunnable {
+		void run() throws Exception;
 	}
 
 	/** Invokes a no-arg method on the player and reports what happened, root cause first. */
