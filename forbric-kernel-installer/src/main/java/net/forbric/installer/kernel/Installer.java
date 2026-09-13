@@ -114,6 +114,7 @@ public final class Installer {
 		profile.put("inheritsFrom", mcVersion);
 		profile.put("type", "release");
 		profile.put("mainClass", MAIN_CLASS);
+		profile.put("forbric", launcherIdentity());
 
 		List<Object> game = new ArrayList<>();
 		game.add("--gameJar");
@@ -133,6 +134,44 @@ public final class Installer {
 		profile.put("arguments", arguments);
 		profile.put("libraries", new ArrayList<Object>(libraries));
 		return profile;
+	}
+
+	/**
+	 * The Fabric Loader API level the kernel implements, as a maven coordinate.
+	 *
+	 * <p>Pinned by {@code InstallerLoaderBrandTest} in the kernel against
+	 * {@code KernelFabricEcosystem.FABRIC_LOADER_API_LEVEL}, because this module does not compile against the
+	 * kernel — it builds the kernel jar as a subprocess — so nothing else would notice the two drifting apart.
+	 */
+	private static final String DECLARED_LOADER = "net.fabricmc:fabric-loader:0.19.3";
+
+	/**
+	 * What this profile tells a LAUNCHER it is. Metadata only: no launcher loads anything named here, and the
+	 * classpath is {@code libraries} as before.
+	 *
+	 * <p>It exists because launchers decide "is this instance modded" by searching this file's TEXT for a
+	 * loader's maven coordinate — PCL2 serialises the whole version JSON and runs {@code Contains} over it — and
+	 * a Forbric instance has none, so it was read as vanilla. That is not a cosmetic label: a launcher gives an
+	 * unmodded version the shared {@code .minecraft/mods} folder rather than this version's own, so every mod
+	 * downloaded through the launcher landed in a directory the instance does not read, and the path had to be
+	 * corrected by hand every time.
+	 *
+	 * <p>ONE coordinate, not three. A launcher's detection is a first-match chain over one string, so listing all
+	 * three ecosystems would not make it answer "all three" — it would make the answer depend on which branch
+	 * that launcher happens to test first. Fabric is declared because it is the ecosystem most of a Forbric pack
+	 * comes from in practice and because that is the API level the kernel implements most completely; the other
+	 * two are named in {@code ecosystems} below in prose, deliberately NOT as coordinates, so they carry the
+	 * truth without moving the answer. Swap {@link #DECLARED_LOADER} to change which one a launcher sees.
+	 */
+	private static Map<String, Object> launcherIdentity() {
+		Map<String, Object> identity = new LinkedHashMap<>();
+		identity.put("comment", "Metadata for launchers, not classpath. Forbric runs Fabric, traditional Forge and "
+				+ "NeoForge mods in one instance; a launcher can only be told about one loader, so it is told "
+				+ "about the one below. Change 'declares' if you want the launcher to offer a different "
+				+ "ecosystem's builds by default.");
+		identity.put("declares", DECLARED_LOADER);
+		identity.put("ecosystems", List.of("fabric", "forge", "neoforge"));
+		return identity;
 	}
 
 	private static String coordinate(String groupAndName, String version) {
