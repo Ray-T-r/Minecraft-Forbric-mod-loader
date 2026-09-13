@@ -220,6 +220,7 @@ public final class KernelClientSmoke {
 			}
 			if (modsScreenOpened && !configScreenTried && worldTicks >= due + MODS_SCREEN_HOLD / 2) {
 				configScreenTried = true;
+				doubleClickARowInTheModList(minecraft, cl);
 				openAConfigScreen(minecraft, cl);
 				return;
 			}
@@ -412,6 +413,81 @@ public final class KernelClientSmoke {
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ClientSmoke] could not press the pause menu's mods button", t);
 		}
+	}
+
+	/**
+	 * Double-clicks a row in the unified list, the way a player does.
+	 *
+	 * <p>Calling the resolver by name proves the resolver. The shortcut is a {@code doubled} flag arriving on a
+	 * row's own {@code mouseClicked}, and nothing about the resolver says that flag is wired to anything — the
+	 * mods button was measured working for exactly that reason and still opened the wrong screen for a week.
+	 *
+	 * <p>The row picked is one whose mod HAS a config, because a double click on a mod without one is supposed
+	 * to do nothing, and "nothing happened" is indistinguishable from "the shortcut is not wired".
+	 */
+	private static void doubleClickARowInTheModList(Object minecraft, ClassLoader cl) {
+		try {
+			Object screen = currentScreen(minecraft);
+			if (screen == null || !screen.getClass().getName().endsWith("KernelModListScreen")) {
+				ForbricLog.warn("[Forbric/ClientSmoke] the unified list is not open — cannot double-click a row");
+				return;
+			}
+			Class<?> configs = Class.forName("net.forbric.kernel.runtime.KernelModConfigScreens", true, cl);
+			Object wanted = null;
+			for (String ecosystem : new String[] {"NEOFORGE", "FORGE", "FABRIC"}) {
+				wanted = configs.getMethod("firstWithConfig", String.class).invoke(null, ecosystem);
+				if (wanted != null) break;
+			}
+			if (wanted == null) {
+				ForbricLog.info("[Forbric/ClientSmoke] no mod here has a config — nothing to double-click");
+				return;
+			}
+			String modId = (String) wanted.getClass().getMethod("modId").invoke(wanted);
+			// Matched on the DISPLAY NAME: a row narrates itself as "<name>, <ecosystem>", and a mod's name and
+			// its id are routinely different words.
+			String modName = (String) wanted.getClass().getMethod("name").invoke(wanted);
+			Object row = rowFor(screen, modName);
+			if (row == null) {
+				ForbricLog.warn("[Forbric/ClientSmoke] %s has a config but no row in the unified list", modId);
+				return;
+			}
+			// The row's own handler, with doubled=true: the same call the widget makes on the second click.
+			Class<?> eventCls = Class.forName("net.minecraft.client.input.MouseButtonEvent", true, cl);
+			// setAccessible because a row is a private inner class of the screen -- which is right for it and is
+			// a harness problem, not a reason to widen the screen's API for a test.
+			java.lang.reflect.Method click =
+					row.getClass().getMethod("mouseClicked", eventCls, boolean.class);
+			click.setAccessible(true);
+			click.invoke(row, null, true);
+			Object now = currentScreen(minecraft);
+			ForbricLog.info("[Forbric/ClientSmoke] double-clicking %s in the unified list opened: %s", modId,
+					now == null ? "<none>" : now.getClass().getName());
+			setScreen(minecraft, screen);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] could not double-click a row in the unified list", t);
+		}
+	}
+
+	/** The list row narrating {@code modName}, found by walking the screen's widgets. */
+	private static Object rowFor(Object screen, String modName) throws Exception {
+		for (Object child : (java.util.List<?>) screen.getClass().getMethod("children").invoke(screen)) {
+            if (child == null) continue;
+			java.lang.reflect.Method children;
+			try {
+				children = child.getClass().getMethod("children");
+			} catch (NoSuchMethodException leaf) {
+				continue;
+			}
+			for (Object row : (java.util.List<?>) children.invoke(child)) {
+				if (row == null || !row.getClass().getName().contains("KernelModListScreen")) continue;
+				java.lang.reflect.Method narrate = row.getClass().getMethod("getNarration");
+				narrate.setAccessible(true);
+				Object narration = narrate.invoke(row);
+				String text = (String) narration.getClass().getMethod("getString").invoke(narration);
+				if (text.startsWith(modName)) return row;
+			}
+		}
+		return null;
 	}
 
 	/**

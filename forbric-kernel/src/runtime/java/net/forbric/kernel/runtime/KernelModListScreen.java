@@ -187,6 +187,11 @@ public final class KernelModListScreen extends Screen {
 		if (bundled > 0) {
 			g.text(this.font, Component.literal("bundles " + bundled + " jar(s)"), x, y + 4, DIM);
 		}
+		// Said on the screen rather than left to be discovered: a double click that does something is only a
+		// shortcut if someone knows it is there.
+		if (this.config != null && this.config.visible) {
+			g.text(this.font, Component.literal("double-click to configure"), x, this.height - 44, DIM);
+		}
 	}
 
 	/**
@@ -287,10 +292,19 @@ public final class KernelModListScreen extends Screen {
 			return Component.literal(this.entry.name() + ", " + label(this.entry.ecosystem()));
 		}
 
+		/**
+		 * Select on a click, open the config on a double click.
+		 *
+		 * <p>The Config button is still there and is still what says whether a mod HAS one; this is the shortcut
+		 * for the mod already under the cursor. A double click on a mod with no config does nothing rather than
+		 * flashing an empty screen — {@code openConfig} already returns without a screen in that case, and a mod
+		 * with no settings to change is the ordinary case, not an error worth reporting.
+		 */
 		@Override
 		public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubled) {
 			KernelModListScreen.this.list.setSelected(this);
 			KernelModListScreen.this.selectionChanged();
+			if (doubled) KernelModListScreen.this.openConfig();
 			return true;
 		}
 	}
