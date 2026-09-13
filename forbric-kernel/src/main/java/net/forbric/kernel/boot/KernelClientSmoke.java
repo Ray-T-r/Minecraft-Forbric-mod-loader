@@ -174,6 +174,7 @@ public final class KernelClientSmoke {
 	private static boolean modsScreenOpened;
 	private static boolean modsScreenClosed;
 	private static int modsScreenFramesAtOpen;
+	private static boolean configScreenTried;
 
 	/**
 	 * Opens the kernel's unified Mods screen the way the pause menu's button does, leaves it up long enough to be
@@ -198,6 +199,11 @@ public final class KernelClientSmoke {
 				ForbricLog.info("[Forbric/ClientSmoke] opened the unified Mods screen at world tick %d", worldTicks);
 				return;
 			}
+			if (modsScreenOpened && !configScreenTried && worldTicks >= due + MODS_SCREEN_HOLD / 2) {
+				configScreenTried = true;
+				openAConfigScreen(minecraft, cl);
+				return;
+			}
 			if (modsScreenOpened && worldTicks >= due + MODS_SCREEN_HOLD) {
 				modsScreenClosed = true;
 				int frames = (int) screenCls.getMethod("framesDrawn").invoke(null) - modsScreenFramesAtOpen;
@@ -210,6 +216,59 @@ public final class KernelClientSmoke {
 			modsScreenClosed = true;
 			ForbricLog.warn("[Forbric/ClientSmoke] the unified Mods screen could not be opened", t);
 		}
+	}
+
+	/**
+	 * Opens one mod's config screen through the unified resolver, preferring a mod that is NOT Fabric's.
+	 *
+	 * <p>Fabric's answer is Mod Menu's, and Mod Menu already opened Fabric mods' configs before any of this
+	 * existed — so a Fabric-only success would prove nothing that was ever in doubt. What was in doubt is the
+	 * other two registries, which no screen on this instance had ever asked.
+	 *
+	 * <p>What is reported is the class of the screen that ended up in front of the player. "The resolver returned
+	 * something" is not the same claim: a screen that throws in its own constructor never reaches the player, and
+	 * one that throws while drawing takes the client with it — which is itself the assertion, since the gate
+	 * requires the client to go on and leave the world cleanly.
+	 */
+	private static void openAConfigScreen(Object minecraft, ClassLoader cl) {
+		try {
+			Class<?> configs = Class.forName("net.forbric.kernel.runtime.KernelModConfigScreens", true, cl);
+			ForbricLog.info("[Forbric/ClientSmoke] mods with a config screen, by ecosystem: %s",
+					configs.getMethod("summary").invoke(null));
+			Object entry = null;
+			String from = null;
+			for (String ecosystem : new String[] {"NEOFORGE", "FORGE", "FABRIC"}) {
+				entry = configs.getMethod("firstWithConfig", String.class).invoke(null, ecosystem);
+				if (entry != null) {
+					from = ecosystem;
+					break;
+				}
+			}
+			if (entry == null) {
+				ForbricLog.info("[Forbric/ClientSmoke] no mod in this pack registers a config screen — nothing to "
+						+ "open");
+				return;
+			}
+			String modId = (String) entry.getClass().getMethod("modId").invoke(entry);
+			Object screen = configs.getMethod("openById", String.class, Object.class)
+					.invoke(null, modId, currentScreen(minecraft));
+			if (screen == null) {
+				ForbricLog.warn("[Forbric/ClientSmoke] %s (%s) reported a config screen and then produced none",
+						modId, from);
+				return;
+			}
+			setScreen(minecraft, screen);
+			Object now = currentScreen(minecraft);
+			ForbricLog.info("[Forbric/ClientSmoke] opened %s's config screen from the unified list (%s): %s", modId,
+					from, now == null ? "<none>" : now.getClass().getName());
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] could not open a config screen from the unified list", t);
+		}
+	}
+
+	private static Object currentScreen(Object minecraft) throws Exception {
+		Object gui = fieldValue(minecraft, "gui");
+		return gui == null ? null : gui.getClass().getMethod("screen").invoke(gui);
 	}
 
 	/** {@code Minecraft.gui.setScreen} — 26.2 moved it off Minecraft itself. */
