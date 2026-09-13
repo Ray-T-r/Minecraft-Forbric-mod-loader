@@ -231,6 +231,12 @@ game_args += ["--quickPlayPath", os.path.join(dest, "quickPlay", "log.json"), "-
 deduped = dedupe_pairs(game_args)
 
 command = ["java"]
+# This gate is the one place that launches the way a real launcher does -- it does NOT go through
+# run/launch-kernel-client.sh, so it does not inherit that script's opt-out. And this pack HAS unmet hard
+# dependencies (taxfreelevels -> cloth_config, and the two yumi_commons mods), which is exactly the input that
+# opens the dialog. Unattended, that is a hang rather than a failure. A real player would see the dialog here,
+# and should; a gate has nobody to click it.
+command.append("-Dforbric.dependencyDialog=off")
 if osname == "osx":
     command.append("-XstartOnFirstThread")
 command += flatten(child, "jvm")

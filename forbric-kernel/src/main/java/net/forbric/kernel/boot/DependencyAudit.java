@@ -56,6 +56,26 @@ import net.forbric.kernel.util.ForbricLog;
  * for the same reason — an unreadable constraint is not evidence of a problem.
  */
 public final class DependencyAudit {
+	/**
+	 * One hard requirement this instance does not meet.
+	 *
+	 * @param requiredBy          the mod id that declared the requirement
+	 * @param requiredByName      its display name, for a reader who knows the mod by its name and not its id
+	 * @param requiredByEcosystem which family declared it — a player looking for the download needs to know
+	 *                            whether to fetch the Fabric build or the Forge one
+	 * @param requiredId          the mod id it asked for
+	 * @param requiredRange       the version constraint as declared
+	 * @param installedVersion    the version that IS installed, or {@code null} when nothing provides the id at
+	 *                            all. This is the whole difference between "install it" and "change its version",
+	 *                            which is the difference between the two things a player can do about it.
+	 */
+	public record Unmet(String requiredBy, String requiredByName, Ecosystem requiredByEcosystem,
+			String requiredId, String requiredRange, String installedVersion) {
+		public boolean absent() {
+			return installedVersion == null;
+		}
+	}
+
 	private DependencyAudit() {
 	}
 
@@ -101,6 +121,10 @@ public final class DependencyAudit {
 
 		List<String> missing = new ArrayList<>();
 		List<String> unsatisfied = new ArrayList<>();
+		// The same two findings as structured values. The prose above is what the log has always said and what a
+		// gate would grep; this is what a dialog can lay out in a table. Built alongside rather than parsed back
+		// out of the strings, because a formatter is not a data source.
+		List<Unmet> unmet = new ArrayList<>();
 		int crossEcosystem = 0;
 		int sideSkipped = 0;
 
@@ -127,12 +151,16 @@ public final class DependencyAudit {
 					if (indexComplete) {
 						missing.add(describe(mod) + " requires " + dep.getModId() + " "
 								+ dep.getVersionConstraint() + " — not installed");
+						unmet.add(new Unmet(mod.getId(), mod.getDisplayName(), mod.getEcosystem(),
+								dep.getModId(), String.valueOf(dep.getVersionConstraint()), null));
 					}
 					continue;
 				}
 				if (!dep.isSatisfiedBy(provider.getVersion())) {
 					unsatisfied.add(describe(mod) + " requires " + dep.getModId() + " " + dep.getVersionConstraint()
 							+ " but " + describe(provider) + " is version " + provider.getVersion());
+					unmet.add(new Unmet(mod.getId(), mod.getDisplayName(), mod.getEcosystem(),
+							dep.getModId(), String.valueOf(dep.getVersionConstraint()), provider.getVersion()));
 					continue;
 				}
 				if (provider.getEcosystem() != mod.getEcosystem()) crossEcosystem++;
@@ -162,6 +190,34 @@ public final class DependencyAudit {
 		if (!indexComplete) {
 			ForbricLog.debug("[Forbric/Deps] JarJar extraction has not run, so nothing was reported as missing — "
 					+ "a nested provider would have looked absent");
+		}
+
+		// Everything above is the log, unchanged. This is the same findings put where a player will see them —
+		// the WARNs are one line each in a ten-thousand-line file, and what they predict arrives much later
+		// wearing another mod's name. Client only, and it never changes what loads; see DependencyDialog.
+		offerDialog(unmet, physicalSide);
+	}
+
+	/**
+	 * Hands the findings to the dialog, if there are any.
+	 *
+	 * <p>Wrapped, because this class is a diagnostic and a diagnostic must never be able to fail the boot it
+	 * reports on. The caller in {@code PassiveSeeder} wraps it too; this second net exists because the failure
+	 * modes here are a child process and a windowing system rather than the audit's own arithmetic, and those
+	 * deserve their own sentence in the log.
+	 */
+	private static void offerDialog(List<Unmet> unmet, Side physicalSide) {
+		if (unmet.isEmpty()) return;
+		try {
+			List<net.forbric.kernel.ui.DependencyReport.Row> rows = new ArrayList<>();
+			for (Unmet one : unmet) {
+				rows.add(new net.forbric.kernel.ui.DependencyReport.Row(one.requiredBy(), one.requiredByName(),
+						one.requiredByEcosystem() == null ? "?" : one.requiredByEcosystem().toString(),
+						one.requiredId(), one.requiredRange(), one.installedVersion()));
+			}
+			net.forbric.kernel.ui.DependencyDialog.offer(rows, physicalSide != null && physicalSide.isClient());
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/Deps] could not offer the unmet-dependency dialog: %s", String.valueOf(t));
 		}
 	}
 
