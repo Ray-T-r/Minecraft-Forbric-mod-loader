@@ -75,7 +75,7 @@ check "the server still reports the unmet requirement" \
 # The guard that matters. launch-kernel-server.sh passes -Djava.awt.headless=true, so BOTH the side check and the
 # headless check would stop it; asserting the absence of the fork covers whichever one fired.
 check "the SIDE check is what stopped it, by name" \
-  "Forbric/Deps\] not the client — the 1 unmet requirement\(s\) stay in the log" "$SLOG"
+  "Forbric/Deps\] not the client — the 1 finding\(s\) stay in the log" "$SLOG"
 check_absent "and opened no dialog" "Forbric/Deps\] (launching anyway|dryRun|the player chose)" "$SLOG"
 
 step "a client reaches the player — the whole path, with nothing to click"
@@ -98,9 +98,9 @@ check "the client reported the same unmet requirement" \
 # Written by DependencyDialog, which is the only layer that knows the child was forked and what it answered --
 # the audit that found the requirement cannot establish either.
 check "it forked the real dialog child and read its answer" \
-  "Forbric/Deps\] -Dforbric.dependencyDialog=dryRun — forked the dialog for 1 unmet requirement\(s\)" "$CLOG"
+  "Forbric/Deps\] -Dforbric.dependencyDialog=dryRun — forked the dialog for 1 finding\(s\)" "$CLOG"
 check "and the boot continued, which is what an unanswerable dialog must always mean" \
-  "Forbric/Deps\] launching anyway with 1 unmet requirement\(s\)" "$CLOG"
+  "Forbric/Deps\] launching anyway with 1 finding\(s\)" "$CLOG"
 check_absent "nothing quit the game on the player's behalf" "Forbric/Deps\] the player chose to quit" "$CLOG"
 
 step "negative control: with the dialog off, the finding is still reported"
@@ -115,7 +115,7 @@ done
 kill_tree "$OPID"
 cat "$CGAME" >> "$OFFLOG" 2>/dev/null
 check "the switch really turned it off" \
-  "Forbric/Deps\] -Dforbric.dependencyDialog=off — 1 unmet requirement\(s\) reported in the log only" "$OFFLOG"
+  "Forbric/Deps\] -Dforbric.dependencyDialog=off — 1 finding\(s\) reported in the log only" "$OFFLOG"
 check "and the WARN a gate has always been able to grep is unchanged" \
   "Forbric/Deps\] forbricdepcanary .* requires forbricnosuchmod >=1.0.0 — not installed. It is being loaded anyway" "$OFFLOG"
 check_absent "no child was forked" "forked the dialog" "$OFFLOG"

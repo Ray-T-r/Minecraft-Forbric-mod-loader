@@ -51,10 +51,27 @@ public final class DependencyReport {
 		}
 	}
 
+	/**
+	 * A mixin that was written to attach to another mod and did not.
+	 *
+	 * @param owner   the mod whose mixin config this is
+	 * @param mixin   the mixin class
+	 * @param anchors the injection points that did not resolve
+	 */
+	public record MixinRow(String owner, String mixin, String anchors) {
+	}
+
+	/** Separates the two sections. A mod id can never be a bare double hyphen. */
+	private static final String SECTION = "--";
+
 	private DependencyReport() {
 	}
 
 	public static void write(Path file, List<Row> rows) throws IOException {
+		write(file, rows, List.of());
+	}
+
+	public static void write(Path file, List<Row> rows, List<MixinRow> mixins) throws IOException {
 		StringBuilder out = new StringBuilder();
 		for (Row row : rows) {
 			out.append(field(row.requiredBy())).append('\t')
@@ -65,6 +82,14 @@ public final class DependencyReport {
 					.append(row.installedVersion() == null ? ABSENT : field(row.installedVersion()))
 					.append('\n');
 		}
+		if (!mixins.isEmpty()) {
+			out.append(SECTION).append('\n');
+			for (MixinRow row : mixins) {
+				out.append(field(row.owner())).append('\t')
+						.append(field(row.mixin())).append('\t')
+						.append(field(row.anchors())).append('\n');
+			}
+		}
 		Files.writeString(file, out.toString(), StandardCharsets.UTF_8);
 	}
 
@@ -72,12 +97,26 @@ public final class DependencyReport {
 		List<Row> rows = new ArrayList<>();
 		for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
 			if (line.isBlank()) continue;
+			if (SECTION.equals(line)) break;
 			// -1: keep trailing empties, so a row whose last field is blank still has six columns and is
 			// rejected below rather than silently becoming a five-column row with everything shifted.
 			String[] parts = line.split("\t", -1);
 			if (parts.length != 6) continue;
 			rows.add(new Row(parts[0], parts[1], parts[2], parts[3], parts[4],
 					ABSENT.equals(parts[5]) ? null : parts[5]));
+		}
+		return rows;
+	}
+
+	public static List<MixinRow> readMixins(Path file) throws IOException {
+		List<MixinRow> rows = new ArrayList<>();
+		boolean inSection = false;
+		for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+			if (SECTION.equals(line)) { inSection = true; continue; }
+			if (!inSection || line.isBlank()) continue;
+			String[] parts = line.split("\t", -1);
+			if (parts.length != 3) continue;
+			rows.add(new MixinRow(parts[0], parts[1], parts[2]));
 		}
 		return rows;
 	}

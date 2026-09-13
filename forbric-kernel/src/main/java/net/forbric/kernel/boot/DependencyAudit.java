@@ -207,7 +207,9 @@ public final class DependencyAudit {
 	 * deserve their own sentence in the log.
 	 */
 	private static void offerDialog(List<Unmet> unmet, Side physicalSide) {
-		if (unmet.isEmpty()) return;
+		List<net.forbric.kernel.mixin.ForeignMixinBreaks.Break> breaks =
+				net.forbric.kernel.mixin.ForeignMixinBreaks.all();
+		if (unmet.isEmpty() && breaks.isEmpty()) return;
 		try {
 			List<net.forbric.kernel.ui.DependencyReport.Row> rows = new ArrayList<>();
 			for (Unmet one : unmet) {
@@ -215,7 +217,13 @@ public final class DependencyAudit {
 						one.requiredByEcosystem() == null ? "?" : one.requiredByEcosystem().toString(),
 						one.requiredId(), one.requiredRange(), one.installedVersion()));
 			}
-			net.forbric.kernel.ui.DependencyDialog.offer(rows, physicalSide != null && physicalSide.isClient());
+			List<net.forbric.kernel.ui.DependencyReport.MixinRow> mixinRows = new ArrayList<>();
+			for (var one : breaks) {
+				mixinRows.add(new net.forbric.kernel.ui.DependencyReport.MixinRow(
+						one.config(), one.mixin(), String.join(", ", one.anchors())));
+			}
+			net.forbric.kernel.ui.DependencyDialog.offer(rows, mixinRows,
+					physicalSide != null && physicalSide.isClient());
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/Deps] could not offer the unmet-dependency dialog: %s", String.valueOf(t));
 		}

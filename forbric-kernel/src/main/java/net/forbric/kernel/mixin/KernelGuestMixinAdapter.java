@@ -123,9 +123,28 @@ public final class KernelGuestMixinAdapter {
 				if (isPureAccessorMixin(classBytes)) continue;
 				if (isExplicitlyKept(configName, mixin)) continue;
 
-				MixinFit.Result fit = MixinFit.evaluate(classBytes, resource);
+				MixinFit.Result fit = MixinFit.evaluate(classBytes, resource,
+						net.forbric.kernel.classloading.DelegationPolicy::alwaysGame);
 				if (!fit.shouldSuppress()) {
-					if (fit.verdict() == MixinFit.Verdict.PARTIAL) {
+					if (!fit.foreign().isEmpty()) {
+						// A DIFFERENT thing from the line below, and the reason the two are separated. An anchor
+						// that misses on a merged-base class is routine -- 1226 such anchors across every gate log
+						// in this repo, on runs that pass. An anchor that misses on ANOTHER MOD's class is not:
+						// across those same 1226 there is not one. It means two mods that were built to fit each
+						// other no longer do, and the failure that follows names neither of them. Iris 1.11.2
+						// beside Sodium 0.9.2-beta.1 is the worked example: its @Redirect wanted a call to
+						// RenderRegion.clearAllCachedBatches inside RenderRegionManager.uploadResults, that Sodium
+						// stopped making the call, and the client died a render frame later on "Unsupported
+						// stride: 36".
+						//
+						// Says "did not attach", not "will crash". Whether it crashes is not something this layer
+						// can establish -- it knows an anchor did not resolve and nothing more.
+						ForbricLog.warn("[Forbric/Mixin] %s:%s targets ANOTHER MOD and did not attach — %s. Both "
+								+ "mods are installed and each is within the version range the other declares, so "
+								+ "nothing else will report this; one of them needs a different version.",
+								configName, mixin, String.join(", ", fit.foreign()));
+						ForeignMixinBreaks.record(configName, mixin, fit.foreign());
+					} else if (fit.verdict() == MixinFit.Verdict.PARTIAL) {
 						ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s applies only partially on the merged base "
 								+ "— %s (kept; -Dforbric.mixinFit=strict drops these)", configName, mixin,
 								fit.reason());

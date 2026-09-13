@@ -108,7 +108,8 @@ public final class MixinFit {
 	 * @param resolved   how many anchors resolved
 	 * @param total      how many anchors were checked
 	 */
-	public record Result(Verdict verdict, List<String> unresolved, int resolved, int total) {
+	public record Result(Verdict verdict, List<String> unresolved, int resolved, int total,
+			List<String> foreign) {
 		/**
 		 * Whether the caller should drop this mixin.
 		 *
@@ -162,20 +163,40 @@ public final class MixinFit {
 	 * answers. A null return means "not a merged-base class", which counts as resolved.
 	 */
 	public static Result evaluate(byte[] mixinBytes, Function<String, byte[]> targetResolver) {
+		// Everything is the game's unless a caller says otherwise, which is the pre-existing behaviour: no target
+		// is foreign, so no mixin is reported as a cross-mod break. Callers that can classify pass the predicate.
+		return evaluate(mixinBytes, targetResolver, name -> true);
+	}
+
+	/**
+	 * @param gameClass whether a binary class name belongs to the game or a carrier rather than to a guest mod.
+	 *                  {@code DelegationPolicy::alwaysGame} is the production answer — it already knows which
+	 *                  packages are the game, and reusing it keeps this from becoming a second prefix rule that
+	 *                  drifts from the first
+	 */
+	public static Result evaluate(byte[] mixinBytes, Function<String, byte[]> targetResolver,
+			java.util.function.Predicate<String> gameClass) {
 		ClassNode mixin = read(mixinBytes, false);
 		List<String> targets = mixinTargets(mixin);
-		if (targets.isEmpty()) return new Result(Verdict.FIT, List.of(), 0, 0);
+		if (targets.isEmpty()) return new Result(Verdict.FIT, List.of(), 0, 0, List.of());
 
 		List<String> unresolved = new ArrayList<>();
 		List<String> orphaned = new ArrayList<>();
 		int resolved = 0;
 		int total = 0;
 
+		List<String> foreign = new ArrayList<>();
 		for (String targetName : targets) {
 			byte[] targetBytes = targetResolver.apply(targetName + ".class");
-			// Not a class we can see (JDK, another mod, a mixin-generated type): nothing to prove, assume it fits.
+			// Not a class we can see (JDK, a mixin-generated type): nothing to prove, assume it fits.
 			if (targetBytes == null) continue;
 			ClassNode target = read(targetBytes, true);
+			// Whether this target belongs to the game/carriers or to ANOTHER MOD. The distinction is the whole
+			// value of the signal: an anchor that does not resolve on a merged-base class is routine (1226 of
+			// them across every gate log in this repo, all of them on runs that pass), while one that does not
+			// resolve on another mod's class means two mods that were built to fit no longer do. Across those
+			// same 1226 there is not one of the latter.
+			boolean gameOwned = gameClass.test(targetName.replace('/', '.'));
 
 			for (Anchor anchor : anchorsOf(mixin, target, targetResolver)) {
 				total++;
@@ -183,6 +204,7 @@ public final class MixinFit {
 					resolved++;
 				} else {
 					unresolved.add(anchor.describe(targetName));
+					if (!gameOwned) foreign.add(anchor.describe(targetName));
 				}
 			}
 			orphaned.addAll(orphanedShadowFields(mixin, target, targetResolver));
@@ -190,9 +212,10 @@ public final class MixinFit {
 
 		// An orphaned @Shadow field is the silent case: it resolves (the field is still declared) and then reads
 		// null at runtime. It outranks the count-based verdicts precisely because nothing else detects it.
-		if (!orphaned.isEmpty()) return new Result(Verdict.HAZARD, orphaned, resolved, total);
-		if (total == 0 || unresolved.isEmpty()) return new Result(Verdict.FIT, List.of(), resolved, total);
-		return new Result(resolved == 0 ? Verdict.UNFIT : Verdict.PARTIAL, unresolved, resolved, total);
+		if (!orphaned.isEmpty()) return new Result(Verdict.HAZARD, orphaned, resolved, total, List.of());
+		if (total == 0 || unresolved.isEmpty()) return new Result(Verdict.FIT, List.of(), resolved, total, List.of());
+		return new Result(resolved == 0 ? Verdict.UNFIT : Verdict.PARTIAL, unresolved, resolved, total,
+				List.copyOf(foreign));
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------

@@ -17,6 +17,7 @@
 package net.forbric.kernel.mixin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,80 @@ import org.junit.jupiter.api.Test;
  * and would have made {@code -Dforbric.mixinFit=strict} drop mixins that fit.
  */
 class MixinFitTest {
+	/**
+	 * A mixin targeting one class, with one {@code @Shadow} field that the target does not have — the simplest
+	 * anchor that can fail.
+	 */
+	private static byte[] shadowMixin(String target) {
+		org.objectweb.asm.ClassWriter cw =
+				new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, "test/TheMixin",
+				null, "java/lang/Object", null);
+		org.objectweb.asm.AnnotationVisitor mixin =
+				cw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+		org.objectweb.asm.AnnotationVisitor targets = mixin.visitArray("targets");
+		targets.visit(null, target);
+		targets.visitEnd();
+		mixin.visitEnd();
+		org.objectweb.asm.FieldVisitor fv = cw.visitField(0, "notThere", "I", null, null);
+		fv.visitAnnotation("Lorg/spongepowered/asm/mixin/Shadow;", false).visitEnd();
+		fv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** An empty class, so the {@code @Shadow} above cannot resolve against it. */
+	private static byte[] emptyClass(String name) {
+		org.objectweb.asm.ClassWriter cw =
+				new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, name, null,
+				"java/lang/Object", null);
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/**
+	 * The discriminator this repo now reports on, and the reason it is worth reporting.
+	 *
+	 * <p>An anchor that misses on a merged-base class is routine — measured across every gate log here, 1226 of
+	 * them, all on runs that pass. One that misses on ANOTHER MOD's class did not occur once in that same set,
+	 * and the one real instance found was Iris beside a Sodium build it no longer fits. Same unresolved anchor,
+	 * completely different meaning, so {@code evaluate} has to tell them apart.
+	 */
+	@Test
+	void anAnchorThatMissesOnAnotherModsClassIsSeparatedFromOneThatMissesOnTheGame() {
+		String target = "net/example/OtherMod";
+		java.util.function.Function<String, byte[]> resolver =
+				name -> (target + ".class").equals(name) ? emptyClass(target) : null;
+
+		MixinFit.Result asGame = MixinFit.evaluate(shadowMixin(target), resolver, name -> true);
+		assertEquals(MixinFit.Verdict.UNFIT, asGame.verdict(), "the anchor misses either way");
+		assertTrue(asGame.foreign().isEmpty(), "a merged-base miss is routine and must stay quiet");
+
+		MixinFit.Result asMod = MixinFit.evaluate(shadowMixin(target), resolver, name -> false);
+		assertEquals(1, asMod.foreign().size(), "a miss on another mod's class is the signal");
+		assertTrue(asMod.foreign().get(0).contains("notThere"), asMod.foreign().toString());
+	}
+
+	@Test
+	void anAnchorThatRESOLVESIsNeverReportedAsForeign() {
+		// The obvious way to get this wrong: report every cross-mod mixin instead of every cross-mod mixin that
+		// did not attach. Every pack is full of the former.
+		String target = "net/example/OtherMod";
+		org.objectweb.asm.ClassWriter cw =
+				new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, target, null,
+				"java/lang/Object", null);
+		cw.visitField(0, "notThere", "I", null, null).visitEnd();
+		cw.visitEnd();
+		byte[] withField = cw.toByteArray();
+
+		MixinFit.Result fit = MixinFit.evaluate(shadowMixin(target),
+				name -> (target + ".class").equals(name) ? withField : null, name -> false);
+		assertEquals(MixinFit.Verdict.FIT, fit.verdict());
+		assertTrue(fit.foreign().isEmpty(), "it attached — there is nothing to tell the player");
+	}
+
 	@Test
 	void descriptorFormOwnerIsStripped() {
 		MixinFit.Member m = MixinFit.parseMember("Lnet/minecraft/client/CameraType;isFirstPerson()Z");
