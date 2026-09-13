@@ -114,7 +114,58 @@ public class ForbricLiveMod {
 				.addListener(e -> logConfig("RELOADING", e.getConfig()));
 		System.out.println("[ForbricLive/CFG] registered SERVER config forbriclive-server.toml (greeting default 'default')");
 		registerSetupLifecycle(ctx);
+		registerConfigScreen(ctx);
 		reportForeignMods();
+	}
+
+	/**
+	 * A traditional-Forge config screen, registered the way a real Forge mod registers one.
+	 *
+	 * <p>The canary for the third branch of the unified Mods screen's Config button. Fabric's answer is Mod
+	 * Menu's and NeoForge's is an extension point on its own container; MinecraftForge's is a THIRD registry with
+	 * a third shape — {@code ConfigScreenHandler.ConfigScreenFactory}, a record holding a
+	 * {@code BiFunction<Minecraft, Screen, Screen>} — and without a Forge mod that registers one, that branch has
+	 * no coverage at all. Traditional Forge does not auto-generate a screen from config specs the way NeoForge
+	 * does, so registering specs is not enough.
+	 *
+	 * <p>Client-only: registering it on a dedicated server would pull client classes into a process that has no
+	 * business loading them.
+	 */
+	private static void registerConfigScreen(FMLJavaModLoadingContext ctx) {
+		if (net.minecraftforge.fml.loading.FMLEnvironment.dist
+				!= net.minecraftforge.api.distmarker.Dist.CLIENT) {
+			return;
+		}
+		try {
+			ctx.getContainer().registerExtensionPoint(
+					net.minecraftforge.client.ConfigScreenHandler.ConfigScreenFactory.class,
+					() -> new net.minecraftforge.client.ConfigScreenHandler.ConfigScreenFactory(
+							(mc, parent) -> new ForbricLiveConfigScreen(parent)));
+			System.out.println("[ForbricLive/CFG] registered a traditional-Forge config screen factory");
+		} catch (Throwable t) {
+			System.out.println("[ForbricLive/CFG] could not register a config screen factory: " + t);
+		}
+	}
+
+	/** The screen that factory produces. It only has to exist, open, and say so. */
+	public static final class ForbricLiveConfigScreen extends net.minecraft.client.gui.screens.Screen {
+		private final net.minecraft.client.gui.screens.Screen parent;
+
+		public ForbricLiveConfigScreen(net.minecraft.client.gui.screens.Screen parent) {
+			super(net.minecraft.network.chat.Component.literal("ForbricLive config"));
+			this.parent = parent;
+			System.out.println("[ForbricLive/CFG] the traditional-Forge config screen was constructed");
+		}
+
+		@Override
+		protected void init() {
+			System.out.println("[ForbricLive/CFG] the traditional-Forge config screen opened");
+		}
+
+		@Override
+		public void onClose() {
+			this.minecraft.gui.setScreen(this.parent);
+		}
 	}
 
 	/**

@@ -125,6 +125,12 @@ public final class KernelRuntimeClasses {
 		// missing runtime jar would otherwise surface as a NoClassDefFoundError the moment a player opens the
 		// pause menu.
 		CLASSES.put("net.forbric.kernel.runtime.KernelModListScreen", new Entry(Origin.COMPILED, List.of()));
+		// The three config-screen registries behind that screen's Config button. Called by the client smoke,
+		// which is the only thing that can prove a screen belonging to another mod actually opens.
+		CLASSES.put("net.forbric.kernel.runtime.KernelModConfigScreens", new Entry(Origin.COMPILED, List.of(
+				new Call("summary", String.class),
+				new Call("firstWithConfig", net.forbric.api.ModCatalog.Entry.class, String.class),
+				new Call("openById", Object.class, String.class, Object.class))));
 		// The only MOD-bus bridge: Forge's client reload listeners into NeoForge's sorted graph.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientReload", new Entry(Origin.COMPILED, List.of(
 				new Call("install", void.class, Object.class))));

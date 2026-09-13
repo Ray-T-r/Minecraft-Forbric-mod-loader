@@ -60,6 +60,7 @@ public final class KernelModListScreen extends Screen {
 	private final Screen parent;
 	private ModList list;
 	private EditBox search;
+	private Button config;
 
 	/**
 	 * Frames actually drawn, and rows actually built — read by the client smoke harness.
@@ -99,6 +100,8 @@ public final class KernelModListScreen extends Screen {
 		this.list.setX(0);
 		addRenderableWidget(this.list);
 
+		this.config = addRenderableWidget(Button.builder(Component.literal("Config"), b -> openConfig())
+				.bounds(this.width - 110, this.height - 26, 100, 20).build());
 		addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
 				.bounds(this.width / 2 - 100, this.height - 26, 200, 20).build());
 
@@ -116,6 +119,7 @@ public final class KernelModListScreen extends Screen {
 		this.list.replaceEntries(rows);
 		rowsBuilt = rows.size();
 		if (!rows.isEmpty() && this.list.getSelected() == null) this.list.setSelected(rows.get(0));
+		selectionChanged();
 	}
 
 	private static boolean matches(ModCatalog.Entry e, String needle) {
@@ -175,6 +179,27 @@ public final class KernelModListScreen extends Screen {
 		if (!e.description().isEmpty()) {
 			g.textWithWordWrap(this.font, FormattedText.of(e.description()), x, y, wrap, BRIGHT);
 		}
+	}
+
+	/**
+	 * Shows the Config button only when the selected mod's own ecosystem has a factory registered for it.
+	 *
+	 * <p>Asked on selection, not per frame: the answer needs a registry lookup in one of three places, and a
+	 * button that dims and brightens as the highlight moves is worth one lookup per move, not sixty per second.
+	 */
+	private void selectionChanged() {
+		if (this.config == null) return;
+		Row row = this.list == null ? null : this.list.getSelected();
+		this.config.visible = row != null && KernelModConfigScreens.has(row.entry);
+	}
+
+	private void openConfig() {
+		Row row = this.list == null ? null : this.list.getSelected();
+		if (row == null) return;
+		Screen screen = KernelModConfigScreens.open(row.entry, this);
+		// Null here means the factory changed its mind between the probe and the press, or threw. Staying put is
+		// the only sane answer: setScreen(null) would drop the player into the world with the menu gone.
+		if (screen != null) this.minecraft.gui.setScreen(screen);
 	}
 
 	private static String summary() {
@@ -257,6 +282,7 @@ public final class KernelModListScreen extends Screen {
 		@Override
 		public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubled) {
 			KernelModListScreen.this.list.setSelected(this);
+			KernelModListScreen.this.selectionChanged();
 			return true;
 		}
 	}

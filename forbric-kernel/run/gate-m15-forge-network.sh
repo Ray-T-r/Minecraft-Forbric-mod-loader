@@ -72,7 +72,7 @@ fi
 step "connect a real client and let the canary ping it"
 # Ready at 60, the server pings within a second of seeing the player, the pong comes straight back; 200 ticks is
 # ample and keeps the run short.
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=200 ${M15_EXTRA_JVM:-}" \
+FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=200 ${M15_EXTRA_JVM:-}" \
 RUNDIR="$CLI" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$CLI/quickPlay/log.json" --quickPlayMultiplayer "127.0.0.1:$PORT" > "$CLOG" 2>&1 &
 CLIENT_PID=$!
@@ -133,6 +133,19 @@ step "the CLIENT half of the setup lifecycle reached the Forge mod (must PASS)"
 check "client setup delivered to the Forge mod"  "ForbricLive/SETUP\] client setup DELIVERED to a traditional-Forge mod" "$CLOG"
 check "and what it deferred ran"                 "ForbricLive/SETUP\] client setup DEFERRED work ran"                    "$CLOG"
 check "the kernel says which family it posted to" "posted FML client setup to [1-9][0-9]* traditional-Forge mod\(s\)"   "$CLOG"
+
+step "a traditional-Forge mod's config screen opens from the unified Mods list (must PASS)"
+# The third branch of the Config button, and the one with no other coverage. Fabric's answer is Mod Menu's and
+# NeoForge's is an extension point on its own container; MinecraftForge's is a third registry with a third shape
+# (a record holding a BiFunction<Minecraft, Screen, Screen>), and no client pack in these gates carries a
+# traditional-Forge mod that registers one -- so the canary registers one the way a real Forge mod does.
+check "the Forge mod registered a config factory" \
+  "ForbricLive/CFG\] registered a traditional-Forge config screen factory" "$CLOG"
+check "the unified list counted it"   "config screen, by ecosystem: .*[1-9][0-9]* MinecraftForge" "$CLOG"
+check "and opening it ran the mod's own screen" \
+  "ForbricLive/CFG\] the traditional-Forge config screen opened"           "$CLOG"
+check "the smoke says which family it came from" \
+  "opened forbriclive's config screen from the unified list \(FORGE\)"     "$CLOG"
 
 step "it played and left cleanly (must PASS)"
 check "survived real simulation"     "ClientSmoke\] client-ready after"                 "$CLOG"
