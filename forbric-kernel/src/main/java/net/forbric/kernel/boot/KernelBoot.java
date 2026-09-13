@@ -357,6 +357,26 @@ public final class KernelBoot {
 		// Minecraft.close, on the dedicated server at DedicatedServer.onServerExit, which has no System.exit behind it.
 		chain.register(TransformPhase.COREMOD, new ExitHookInjector());
 
+		// …and RESOLVE its target now, rather than at the moment it is called.
+		//
+		// The hook is spliced into Minecraft.close, so without this the first and only attempt to load
+		// ClientShutdown happens while the game is shutting down. Measured on a real install: three
+		// "Game shutdown / NoClassDefFoundError: net/forbric/kernel/interop/ClientShutdown" crash reports, from
+		// sessions whose kernel jar had been REPLACED on disk while they were running (a developer redeploying
+		// mid-session); a session started after the last write exited clean. The class was in both jars the whole
+		// time — it simply was not loaded yet when the file underneath it changed.
+		//
+		// A jar swapped under a live JVM is one way to reach that. A jar on a network or removable volume is
+		// another, and so is anything that closes the loader early. None of them should be able to turn a quit into
+		// a crash report, and a class the shutdown path cannot do without has no business being resolved for the
+		// first time during shutdown.
+		try {
+			Class.forName(ExitHookInjector.HOOK_OWNER.replace('/', '.'), true, KernelBoot.class.getClassLoader());
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Boot] could not preload the exit hook — a quit will still work, but if the "
+					+ "kernel jar becomes unreadable before then it will end as a crash report instead", t);
+		}
+
 		// MinecraftForge's Bindings resolves its service provider through FML's module layer, which the kernel does
 		// not build — so every use of its config events (registering one, loading one on a world, syncing one to a
 		// client) died in that class initializer.

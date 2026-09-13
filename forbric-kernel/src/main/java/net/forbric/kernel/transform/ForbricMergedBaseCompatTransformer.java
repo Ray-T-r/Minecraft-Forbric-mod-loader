@@ -76,6 +76,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= surviveTheMissingForgeModelDataManager(node);
 			changed |= dropTheWindowTitlesLoaderBrand(node);
 			changed |= keepTheSaveOffTheTeardownsFailurePath(node);
+			changed |= askNeoForgeWhatAnItemsAttributesAre(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -716,6 +717,84 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * leaves the title reading "Minecraft* 26.2". Only that one append chain is touched, so a title patch that
 	 * changes shape is left alone rather than half-rewritten.
 	 */
+	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
+	private static final String ATTRIBUTE_MODIFIERS_TYPE = "net/minecraft/world/item/component/ItemAttributeModifiers";
+	private static final String DATA_COMPONENTS = "net/minecraft/core/component/DataComponents";
+	private static final String NEO_ATTRIBUTES = "getAttributeModifiers";
+
+	/**
+	 * Gives an item's attributes back to the mod that computes them — which is what elytra flight hangs off.
+	 *
+	 * <p>The merge split one mechanism down the middle. {@code LivingEntity.canGlide} came from NeoForge, and
+	 * NeoForge's version does not look at the item at all: it asks whether the entity has the
+	 * {@code neoforge:gliding_flight} attribute above zero. {@code ItemStack.forEachModifier} came from vanilla
+	 * (Forge leaves it alone), and vanilla's version reads the raw {@code ATTRIBUTE_MODIFIERS} component. NeoForge's
+	 * version calls {@code getAttributeModifiers()}, whose whole purpose is to post
+	 * {@code ItemAttributeModifierEvent} — and {@code NeoForgeMod.onItemAttributeModifiers} is the ONLY thing
+	 * anywhere that adds the gliding attribute, off the item's {@code minecraft:glider} component.
+	 *
+	 * <p>So the producer was on one side of the merge and the consumer on the other: the attribute is a
+	 * {@code BooleanAttribute} defaulting to false, nothing ever raises it, {@code canGlide()} is permanently
+	 * false, {@code tryToStartFallFlying} refuses and {@code updateFallFlying} clears the flag every tick. Elytra
+	 * simply does not work, with no error anywhere.
+	 *
+	 * <p>The damage is wider than elytra — every mod that adds a modifier through that event was being ignored, and
+	 * elytra is only the case vanilla itself routes through it. The repair points the read at NeoForge's computed
+	 * answer: four instructions become one, same stack shape, no branch and no frame.
+	 *
+	 * <p>The merge-conflict report does not list this method. NeoForge's patch here is an unqualified call to a
+	 * method on {@code ItemStack} itself — an interface default from {@code IItemStackExtension}, which the merged
+	 * class still implements — so it names nothing under {@code net/neoforged/} for a detector to notice.
+	 */
+	private static boolean askNeoForgeWhatAnItemsAttributesAre(ClassNode node) {
+		if (!ITEM_STACK.equals(node.name)) return false;
+		boolean changed = false;
+		for (MethodNode method : node.methods) {
+			if (!"forEachModifier".equals(method.name) || method.instructions == null) continue;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof FieldInsnNode type) || type.getOpcode() != Opcodes.GETSTATIC
+						|| !DATA_COMPONENTS.equals(type.owner) || !"ATTRIBUTE_MODIFIERS".equals(type.name)) {
+					continue;
+				}
+				AbstractInsnNode empty = nextReal(type);
+				AbstractInsnNode fetch = nextReal(empty);
+				AbstractInsnNode cast = nextReal(fetch);
+				// The exact vanilla shape and nothing else: getOrDefault(ATTRIBUTE_MODIFIERS, EMPTY) then a cast.
+				if (!(empty instanceof FieldInsnNode e) || e.getOpcode() != Opcodes.GETSTATIC
+						|| !ATTRIBUTE_MODIFIERS_TYPE.equals(e.owner) || !"EMPTY".equals(e.name)) {
+					continue;
+				}
+				if (!(fetch instanceof MethodInsnNode f) || !"getOrDefault".equals(f.name)) continue;
+				if (!(cast instanceof TypeInsnNode c) || c.getOpcode() != Opcodes.CHECKCAST
+						|| !ATTRIBUTE_MODIFIERS_TYPE.equals(c.desc)) {
+					continue;
+				}
+				AbstractInsnNode after = cast.getNext();
+				method.instructions.insert(cast, new MethodInsnNode(Opcodes.INVOKEVIRTUAL, ITEM_STACK,
+						NEO_ATTRIBUTES, "()L" + ATTRIBUTE_MODIFIERS_TYPE + ";", false));
+				for (AbstractInsnNode dead : new AbstractInsnNode[] { type, empty, fetch, cast }) {
+					method.instructions.remove(dead);
+				}
+				insn = after == null ? method.instructions.getLast() : after;
+				changed = true;
+			}
+		}
+		if (changed) {
+			ForbricLog.info("[Forbric/MergedBaseCompat] ItemStack.forEachModifier now asks NeoForge what an item's "
+					+ "attributes are instead of reading the raw component — the merge took NeoForge's canGlide, which "
+					+ "reads an attribute only NeoForge's ItemAttributeModifierEvent ever sets, and vanilla's reader, "
+					+ "which never posts it. Elytra flight was the visible half of that");
+		}
+		return changed;
+	}
+
+	/** The next instruction that is not a label, line number or frame. */
+	private static AbstractInsnNode nextReal(AbstractInsnNode cursor) {
+		AbstractInsnNode next = cursor == null ? null : cursor.getNext();
+		while (next != null && next.getOpcode() < 0) next = next.getNext();
+		return next;
+	}
+
 	private static final String INTEGRATED_SERVER = "net/minecraft/client/server/IntegratedServer";
 	private static final String TEARDOWN_PUBLISHED_STATE = "teardownPublishedState";
 	private static final String FORBRIC_LOG = "net/forbric/kernel/util/ForbricLog";

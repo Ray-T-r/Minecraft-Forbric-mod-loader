@@ -54,7 +54,11 @@ public final class ExitHookInjector implements ClassTransformer {
 			"net.minecraft.client.Minecraft", "close",
 			"net.minecraft.server.dedicated.DedicatedServer", "onServerExit");
 	private static final String VOID = "()V";
-	private static final String HOOK_OWNER = "net/forbric/kernel/interop/ClientShutdown";
+	/**
+	 * Public so the boot can resolve it eagerly: this hook runs during shutdown, and a class first loaded then is
+	 * a class that can be missing then. See the preload in {@code KernelBoot}.
+	 */
+	public static final String HOOK_OWNER = "net/forbric/kernel/interop/ClientShutdown";
 	private static final String HOOK_NAME = "stopLeakedBackgroundExecutors";
 	private static final String HOOK_DESC = "(Ljava/lang/ClassLoader;)V";
 	private boolean announced;
