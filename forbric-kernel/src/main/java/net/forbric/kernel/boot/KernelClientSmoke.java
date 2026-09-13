@@ -80,6 +80,8 @@ public final class KernelClientSmoke {
 	public static final String MODS_SCREEN = "forbric.clientSmokeModsScreen";
 	/** Take a screenshot of the pause menu with the mods button on it, instead of pressing it. */
 	public static final String MODS_BUTTON_SHOT = "forbric.clientSmokeModsButtonShot";
+	/** World tick at which to equip an elytra and try to glide. */
+	public static final String ELYTRA = "forbric.clientSmokeElytra";
 	/** Ticks to leave it open. Long enough for frames to be drawn, short enough not to move the disconnect. */
 	private static final int MODS_SCREEN_HOLD = 20;
 
@@ -159,6 +161,7 @@ public final class KernelClientSmoke {
 			reportWindowTitle(minecraft);
 		}
 		if (ready && !drillDone && Boolean.getBoolean(DRILL)) drill(minecraft, player);
+		if (ready) elytraCheck(minecraft, player);
 		if (ready) screenshotIfDue(minecraft);
 		if (ready) modsScreenIfDue(minecraft);
 		if (ready && !probed && worldTicks >= Integer.getInteger(PROBE_TICKS, 160)) {
@@ -236,6 +239,206 @@ public final class KernelClientSmoke {
 			modsScreenClosed = true;
 			ForbricLog.warn("[Forbric/ClientSmoke] the unified Mods screen could not be opened", t);
 		}
+	}
+
+	private static int elytraStage;
+	private static int elytraEquippedAt;
+
+	/**
+	 * Equips an elytra, drops the player into the air and asks whether they can glide.
+	 *
+	 * <p>{@code canGlide()} is the exact predicate that was false: the merge took NeoForge's version, which
+	 * decides gliding from the {@code neoforge:gliding_flight} attribute alone, and vanilla's
+	 * {@code forEachModifier}, which never posts the event that sets it. So this reports THREE things, because
+	 * they fail separately and only the last one is the player's complaint: the attribute reaching the entity,
+	 * {@code canGlide} agreeing, and fall-flying actually starting.
+	 *
+	 * <p>Split across ticks on purpose. Equipment changes are collected on the entity's own tick, so an
+	 * attribute asked for in the same tick it was equipped is asked before anything could have applied it — and
+	 * would read as broken on a working build.
+	 */
+	private static void elytraCheck(Object minecraft, Object player) {
+		int due = Integer.getInteger(ELYTRA, 0);
+		if (due <= 0 || elytraStage > 1 || worldTicks < due) return;
+		try {
+			ClassLoader cl = minecraft.getClass().getClassLoader();
+			// The SERVER's player, not the client's. detectEquipmentUpdates casts the level to ServerLevel, so
+			// equipment attributes are applied server-side and synced down -- a client-side check of this can
+			// never see them rise, and reads as broken on a build where it works.
+			Object server = accessible(minecraft.getClass(), "getSingleplayerServer").invoke(minecraft);
+			if (server == null) {
+				elytraStage = 2;
+				ForbricLog.info("[Forbric/ClientSmoke] no integrated server — elytra is a server-side check");
+				return;
+			}
+			Object list = accessible(server.getClass(), "getPlayerList").invoke(server);
+			java.util.List<?> players = (java.util.List<?>) accessible(list.getClass(), "getPlayers").invoke(list);
+			if (players.isEmpty()) return;
+			Object serverPlayer = players.get(0);
+
+			if (elytraStage == 0) {
+				elytraStage = 1;
+				Class<?> items = Class.forName("net.minecraft.world.item.Items", true, cl);
+				Class<?> itemLike = Class.forName("net.minecraft.world.level.ItemLike", true, cl);
+				Class<?> stackCls = Class.forName("net.minecraft.world.item.ItemStack", true, cl);
+				Class<?> slotCls = Class.forName("net.minecraft.world.entity.EquipmentSlot", true, cl);
+				Object elytra = stackCls.getConstructor(itemLike).newInstance(items.getField("ELYTRA").get(null));
+				Object chest = Enum.valueOf(slotCls.asSubclass(Enum.class), "CHEST");
+				// On the server's own thread: equipping from another thread is a data race on the entity, and a
+				// race that usually works is worse than one that never does.
+				java.lang.reflect.Method setSlot =
+						accessible(serverPlayer.getClass(), "setItemSlot", slotCls, stackCls);
+				accessible(server.getClass(), "execute", Runnable.class).invoke(server, (Runnable) () -> {
+					try {
+						setSlot.invoke(serverPlayer, chest, elytra);
+						setPos(serverPlayer, posOf(serverPlayer, "getX"), posOf(serverPlayer, "getY") + 60.0,
+								posOf(serverPlayer, "getZ"));
+					} catch (Throwable t) {
+						ForbricLog.warn("[Forbric/ClientSmoke] could not equip the elytra", t);
+					}
+				});
+				elytraEquippedAt = worldTicks;
+				ForbricLog.info("[Forbric/ClientSmoke] equipped an elytra on the SERVER player, 60 blocks up");
+				return;
+			}
+			// 15 ticks: long enough for the server to collect the equipment change and apply the attribute (one
+			// or two ticks), short enough that a player dropped 60 blocks is still in the air -- tryToStartFallFlying
+			// refuses on the ground, and a check made after landing reports a working build as broken.
+			if (worldTicks < elytraEquippedAt + 15) return;
+			elytraStage = 2;
+
+			double attribute = glidingAttribute(serverPlayer, cl);
+			boolean canGlide = (Boolean) accessible(serverPlayer.getClass(), "canGlide").invoke(serverPlayer);
+			boolean started =
+					(Boolean) accessible(serverPlayer.getClass(), "tryToStartFallFlying").invoke(serverPlayer);
+			boolean flying = (Boolean) accessible(serverPlayer.getClass(), "isFallFlying").invoke(serverPlayer);
+			ForbricLog.info("[Forbric/ClientSmoke] elytra: gliding attribute=%s canGlide=%s startedFallFlying=%s "
+					+ "isFallFlying=%s", attribute, canGlide, started, flying);
+		} catch (Throwable t) {
+			elytraStage = 2;
+			ForbricLog.warn("[Forbric/ClientSmoke] could not check elytra flight", t);
+		}
+	}
+
+	/** Invokes a no-arg method on the player and reports what happened, root cause first. */
+	private static String force(Object player, String name) {
+		try {
+			accessible(player.getClass(), name).invoke(player);
+			return "ok";
+		} catch (Throwable t) {
+			return String.valueOf(t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null
+					? t.getCause() : t);
+		}
+	}
+
+	/** The collector, with a previous-equipment map that makes every slot count as changed. */
+	private static String forceCollect(Object player, ClassLoader cl) {
+		try {
+			Class<?> slots = Class.forName("net.minecraft.world.entity.EquipmentSlot", true, cl);
+			Object emptyStack = Class.forName("net.minecraft.world.item.ItemStack", true, cl)
+					.getField("EMPTY").get(null);
+			@SuppressWarnings({"unchecked", "rawtypes"})
+			java.util.Map<Object, Object> previous = new java.util.EnumMap(slots.asSubclass(Enum.class));
+			for (Object slot : slots.getEnumConstants()) previous.put(slot, emptyStack);
+			accessible(player.getClass(), "collectEquipmentChanges", java.util.Map.class).invoke(player, previous);
+			return "ok";
+		} catch (Throwable t) {
+			return String.valueOf(t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null
+					? t.getCause() : t);
+		}
+	}
+
+	/**
+	 * Where the gliding attribute stops coming from, said as data rather than inferred.
+	 *
+	 * <p>{@code modifiers} is what {@code ItemStack.getAttributeModifiers()} answers for the equipped elytra —
+	 * empty means NeoForge's {@code ItemAttributeModifierEvent} listener never ran. {@code onPlayer} is whether
+	 * the player's {@code AttributeMap} even has an instance to put it in — false means the modifier is computed
+	 * and then dropped on the floor. They are different bugs with the same symptom.
+	 */
+	private static String elytraProbe(Object player, ClassLoader cl) {
+		StringBuilder out = new StringBuilder();
+		try {
+			Class<?> slotCls = Class.forName("net.minecraft.world.entity.EquipmentSlot", true, cl);
+			Object chest = Enum.valueOf(slotCls.asSubclass(Enum.class), "CHEST");
+			Object stack = accessible(player.getClass(), "getItemBySlot", slotCls).invoke(player, chest);
+			Object mods = accessible(stack.getClass(), "getAttributeModifiers").invoke(stack);
+			Object list = accessible(mods.getClass(), "modifiers").invoke(mods);
+			out.append("elytraModifiers=").append(((java.util.List<?>) list).size());
+			for (Object m : (java.util.List<?>) list) out.append(' ').append(m);
+		} catch (Throwable t) {
+			out.append("elytraModifiers=<").append(t).append('>');
+		}
+		try {
+			Class<?> neoMod = Class.forName("net.neoforged.neoforge.common.NeoForgeMod", true, cl);
+			Object holder = neoMod.getField("GLIDING_FLIGHT").get(null);
+			Class<?> holderCls = Class.forName("net.minecraft.core.Holder", true, cl);
+			Object map = accessible(player.getClass(), "getAttributes").invoke(player);
+			Object instance = accessible(map.getClass(), "getInstance", holderCls).invoke(map, holder);
+			out.append(" attributeOnPlayer=").append(instance != null);
+		} catch (Throwable t) {
+			out.append(" attributeOnPlayer=<").append(t).append('>');
+		}
+		// The method the repair actually rewrote, and the one collectEquipmentChanges calls. Proving
+		// getAttributeModifiers() returns the modifier proves the EVENT; this proves the hand-off.
+		try {
+			Class<?> slotCls = Class.forName("net.minecraft.world.entity.EquipmentSlot", true, cl);
+			Object chest = Enum.valueOf(slotCls.asSubclass(Enum.class), "CHEST");
+			Object stack = accessible(player.getClass(), "getItemBySlot", slotCls).invoke(player, chest);
+			int[] seen = {0};
+			java.util.function.BiConsumer<Object, Object> sink = (h, m) -> seen[0]++;
+			accessible(stack.getClass(), "forEachModifier", slotCls, java.util.function.BiConsumer.class)
+					.invoke(stack, chest, sink);
+			out.append(" forEachModifierYields=").append(seen[0]);
+		} catch (Throwable t) {
+			out.append(" forEachModifierYields=<").append(t).append('>');
+		}
+		return out.toString();
+	}
+
+	/** The NeoForge attribute the merged base's canGlide reads, or -1 if it cannot be asked. */
+	private static double glidingAttribute(Object player, ClassLoader cl) {
+		try {
+			Class<?> neoMod = Class.forName("net.neoforged.neoforge.common.NeoForgeMod", true, cl);
+			Object holder = neoMod.getField("GLIDING_FLIGHT").get(null);
+			Class<?> holderCls = Class.forName("net.minecraft.core.Holder", true, cl);
+			return (Double) player.getClass().getMethod("getAttributeValue", holderCls).invoke(player, holder);
+		} catch (Throwable t) {
+			return -1;
+		}
+	}
+
+	private static double posOf(Object player, String getter) throws Exception {
+		return (Double) accessible(player.getClass(), getter).invoke(player);
+	}
+
+	/** A declared method anywhere up the hierarchy, opened up — canGlide and tryToStartFallFlying are protected. */
+	private static java.lang.reflect.Method accessible(Class<?> from, String name, Class<?>... params)
+			throws NoSuchMethodException {
+		java.util.Deque<Class<?>> queue = new java.util.ArrayDeque<>();
+		queue.add(from);
+		java.util.Set<Class<?>> seen = new java.util.HashSet<>();
+		while (!queue.isEmpty()) {
+			Class<?> c = queue.poll();
+			if (c == null || !seen.add(c)) continue;
+			for (java.lang.reflect.Method m : c.getDeclaredMethods()) {
+				if (!m.getName().equals(name) || m.getParameterCount() != params.length) continue;
+				boolean matches = true;
+				for (int i = 0; i < params.length; i++) {
+					if (!m.getParameterTypes()[i].isAssignableFrom(params[i])) matches = false;
+				}
+				if (!matches) continue;
+				m.setAccessible(true);
+				return m;
+			}
+			// INTERFACES too: the method this was written to reach (ItemStack.getAttributeModifiers) is a default
+			// on IItemStackExtension and is declared on no class in the chain. A superclass-only walk reported it
+			// missing, which reads exactly like the game not having it.
+			// ArrayDeque rejects null, and getSuperclass() is null for Object and for every interface.
+			if (c.getSuperclass() != null) queue.add(c.getSuperclass());
+			java.util.Collections.addAll(queue, c.getInterfaces());
+		}
+		throw new NoSuchMethodException(name);
 	}
 
 	/**

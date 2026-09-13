@@ -36,7 +36,9 @@ if ! "$KERNEL/gradlew" --offline -q -p "$KERNEL" jar >/tmp/forbric-kernel-jar.lo
   grep -vE 'WARNING: |native-access|Restricted method|--enable-native' /tmp/forbric-kernel-jar.log >&2
   exit 3
 fi
-BOOT_JAR="$(ls "$KERNEL"/build/libs/forbric-kernel-*.jar | head -1)"
+# Overridable so a gate can hand the JVM a COPY and then do something to that copy while the game runs --
+# which is how "the kernel jar was replaced mid-session" is reproduced without touching the real build output.
+BOOT_JAR="${FORBRIC_BOOT_JAR:-$(ls "$KERNEL"/build/libs/forbric-kernel-*.jar | head -1)}"
 BOOT_DEPS="$("$KERNEL/gradlew" --offline -q -p "$KERNEL" printBootClasspath 2>/dev/null | grep -vE 'WARNING|native|Restricted|enable' | tail -1)"
 
 # MC 26.2 libraries (parent-loaded), resolved from the Mojang install's version json. Includes LWJGL.
