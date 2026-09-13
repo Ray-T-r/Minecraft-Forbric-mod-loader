@@ -65,6 +65,16 @@ public final class KernelModCatalog {
 	 *             holds all three families at once
 	 */
 	public static void publish(List<DiscoveredMod> mods) {
+		publish(mods, null);
+	}
+
+	/**
+	 * @param modsDir the directory a player drops jars into. A mod whose jar is directly in it was INSTALLED; one
+	 *                whose jar is anywhere else was extracted out of another jar and is bundled. Null means the
+	 *                distinction cannot be drawn, and then everything counts as installed -- which is the old
+	 *                behaviour, and wrong in the direction that shows too much rather than too little.
+	 */
+	public static void publish(List<DiscoveredMod> mods, Path modsDir) {
 		if (mods == null || mods.isEmpty()) {
 			ModCatalog.publish(List.of());
 			return;
@@ -80,15 +90,41 @@ public final class KernelModCatalog {
 			Display d = jar.getOrDefault(mod.getId(), Display.EMPTY);
 			entries.add(new ModCatalog.Entry(mod.getEcosystem(), mod.getId(),
 					d.name.isEmpty() ? mod.getDisplayName() : d.name, mod.getVersion(), d.description, d.authors,
-					fileName(mod.getSource()), d.icon));
+					fileName(mod.getSource()), d.icon, bundledBy(mod.getSource(), modsDir)));
 		}
 		ModCatalog.publish(entries);
-		ForbricLog.info("[Forbric/Catalog] %d mod(s) for the unified Mods screen: %d Fabric, %d NeoForge, %d "
-						+ "MinecraftForge — each family's own screen can only list its own, which on this instance "
-						+ "is never the whole answer",
+		ForbricLog.info("[Forbric/Catalog] %d installed mod(s) for the unified Mods screen: %d Fabric, %d NeoForge,"
+						+ " %d MinecraftForge — plus %d jar(s) they carry inside themselves, which are running and "
+						+ "are not what a player means by \"my mods\"",
 				ModCatalog.all().size(), ModCatalog.count(Ecosystem.FABRIC), ModCatalog.count(Ecosystem.NEOFORGE),
-				ModCatalog.count(Ecosystem.FORGE));
+				ModCatalog.count(Ecosystem.FORGE), ModCatalog.everything().size() - ModCatalog.all().size());
 	}
+
+	/**
+	 * Which installed jar carries this one, or {@code ""} if a player put it in {@code mods/} themselves.
+	 *
+	 * <p>Decided by WHERE the jar is, not by what it declares, because that is the thing the kernel actually
+	 * knows: a jar directly in {@code mods/} is one someone chose, and every other jar reaching discovery was
+	 * unpacked out of one by the kernel itself. Fabric's extraction keeps the parent in the path
+	 * ({@code .forbric-kernel/jij/<parent>/…}) so that name survives; the Forge families' JarJar extraction
+	 * flattens into one directory, and there the honest answer is "bundled, parent unknown" rather than a guess.
+	 */
+	static String bundledBy(String source, Path modsDir) {
+		if (source == null || source.isBlank() || modsDir == null) return "";
+		Path jar = Path.of(source).toAbsolutePath().normalize();
+		Path parent = jar.getParent();
+		if (parent != null && parent.equals(modsDir.toAbsolutePath().normalize())) return "";
+		// .forbric-kernel/jij/<parent-mod-id>/<child>.jar
+		if (parent != null && parent.getParent() != null
+				&& JIJ_DIR.equals(String.valueOf(parent.getParent().getFileName()))) {
+			return String.valueOf(parent.getFileName());
+		}
+		return UNKNOWN_PARENT;
+	}
+
+	private static final String JIJ_DIR = "jij";
+	/** A bundled jar whose parent the extraction layout does not record. Still bundled; just unattributed. */
+	static final String UNKNOWN_PARENT = "?";
 
 	/** The display-only fields, per mod id, that discovery does not keep. */
 	record Display(String name, String description, List<String> authors, String icon) {

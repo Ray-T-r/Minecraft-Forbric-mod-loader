@@ -319,7 +319,7 @@ public final class PassiveSeeder {
 		// family's mods too, and every family's own screen can only list its own. Diagnostic-adjacent and caught
 		// the same way — a screen that cannot be built must never cost the seeding below.
 		try {
-			KernelModCatalog.publish(presence);
+			KernelModCatalog.publish(presence, modsDir);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Catalog] could not build the unified mod list — the Mods screen will fall "
 					+ "back to whatever one family's own registry knows", unwrap(t));

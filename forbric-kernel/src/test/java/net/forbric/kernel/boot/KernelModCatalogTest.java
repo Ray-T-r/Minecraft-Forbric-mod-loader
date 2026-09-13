@@ -52,7 +52,7 @@ class KernelModCatalogTest {
 		KernelModCatalog.publish(List.of(
 				mod(Ecosystem.FABRIC, "voxy", "0.2.19", fabric),
 				mod(Ecosystem.FORGE, "biomesoplenty", "26.2.0.0.28", forge),
-				mod(Ecosystem.NEOFORGE, "iris", "1.11.2", neo)));
+				mod(Ecosystem.NEOFORGE, "iris", "1.11.2", neo)), dir);
 
 		assertEquals(3, ModCatalog.all().size());
 		assertEquals(1, ModCatalog.count(Ecosystem.FABRIC));
@@ -63,7 +63,7 @@ class KernelModCatalogTest {
 	@Test
 	void theDisplayFieldsDiscoveryDoesNotKeepAreReadBackFromTheJar(@TempDir Path dir) throws Exception {
 		Path jar = fabricJar(dir, "voxy", "Voxy", "A level-of-detail renderer.", "assets/voxy/icon.png");
-		KernelModCatalog.publish(List.of(mod(Ecosystem.FABRIC, "voxy", "0.2.19", jar)));
+		KernelModCatalog.publish(List.of(mod(Ecosystem.FABRIC, "voxy", "0.2.19", jar)), dir);
 
 		ModCatalog.Entry e = ModCatalog.all().get(0);
 		assertEquals("Voxy", e.name());
@@ -78,7 +78,7 @@ class KernelModCatalogTest {
 	@Test
 	void aForgeFamilyModGetsItsTomlDescription(@TempDir Path dir) throws Exception {
 		Path jar = forgeJar(dir, "META-INF/mods.toml", "terrablender", "TerraBlender", "A biome API.");
-		KernelModCatalog.publish(List.of(mod(Ecosystem.FORGE, "terrablender", "26.2.0.0.2", jar)));
+		KernelModCatalog.publish(List.of(mod(Ecosystem.FORGE, "terrablender", "26.2.0.0.2", jar)), dir);
 		assertEquals("A biome API.", ModCatalog.all().get(0).description());
 		assertEquals("TerraBlender", ModCatalog.all().get(0).name());
 	}
@@ -93,7 +93,7 @@ class KernelModCatalogTest {
 	void anUnreadableJarCostsTheDescriptionAndNotTheMod(@TempDir Path dir) throws Exception {
 		Path jar = dir.resolve("broken.jar");
 		Files.write(jar, "not a zip".getBytes(StandardCharsets.UTF_8));
-		KernelModCatalog.publish(List.of(mod(Ecosystem.FABRIC, "broken", "1.0", jar)));
+		KernelModCatalog.publish(List.of(mod(Ecosystem.FABRIC, "broken", "1.0", jar)), dir);
 
 		assertEquals(1, ModCatalog.all().size());
 		ModCatalog.Entry e = ModCatalog.all().get(0);
@@ -103,8 +103,8 @@ class KernelModCatalogTest {
 	}
 
 	@Test
-	void aMissingJarIsNotAnError() {
-		KernelModCatalog.publish(List.of(mod(Ecosystem.FABRIC, "gone", "1.0", Path.of("/nowhere/gone.jar"))));
+	void aMissingJarIsNotAnError(@TempDir Path dir) {
+		KernelModCatalog.publish(List.of(mod(Ecosystem.FABRIC, "gone", "1.0", Path.of("/nowhere/gone.jar"))), null);
 		assertEquals(1, ModCatalog.all().size());
 	}
 
@@ -117,7 +117,7 @@ class KernelModCatalogTest {
 		KernelModCatalog.publish(List.of(
 				mod(Ecosystem.FABRIC, "zoomify", "1", a),
 				mod(Ecosystem.FORGE, "biomesoplenty", "1", b),
-				mod(Ecosystem.FABRIC, "modmenu", "1", c)));
+				mod(Ecosystem.FABRIC, "modmenu", "1", c)), dir);
 
 		assertEquals(List.of("biomesoplenty", "modmenu", "zoomify"),
 				ModCatalog.all().stream().map(ModCatalog.Entry::modId).toList());
@@ -143,16 +143,83 @@ class KernelModCatalogTest {
 					""");
 		}
 		KernelModCatalog.publish(List.of(
-				mod(Ecosystem.FORGE, "one", "1", jar), mod(Ecosystem.FORGE, "two", "1", jar)));
+				mod(Ecosystem.FORGE, "one", "1", jar), mod(Ecosystem.FORGE, "two", "1", jar)), dir);
 
 		assertEquals(2, ModCatalog.all().size());
 		assertEquals("the first one", entry("one").description());
 		assertEquals("the second one", entry("two").description());
 	}
 
+	/**
+	 * A jar a mod carries inside itself is not a mod the player installed.
+	 *
+	 * <p>This is the whole difference between a list of sixteen things someone chose and a list of ninety-one,
+	 * most of which are fabric-api's own modules and somebody's Kotlin runtime. Both sets are running; only one
+	 * of them is what "what have I installed" is asking.
+	 */
+	@Test
+	void aBundledJarIsNotSomethingThePlayerInstalled(@TempDir Path dir) throws Exception {
+		Path mods = Files.createDirectories(dir.resolve("mods"));
+		Path jij = Files.createDirectories(dir.resolve(".forbric-kernel/jij/fabric-api"));
+		Path installed = fabricJar(mods, "fabric-api", "Fabric API", "", "");
+		Path carried = fabricJar(jij, "fabric-biome-api-v1", "Fabric Biome API", "", "");
+
+		KernelModCatalog.publish(List.of(
+				mod(Ecosystem.FABRIC, "fabric-api", "0.160.0", installed),
+				mod(Ecosystem.FABRIC, "fabric-biome-api-v1", "1.0", carried)), mods);
+
+		assertEquals(List.of("fabric-api"), ModCatalog.all().stream().map(ModCatalog.Entry::modId).toList(),
+				"only the jar in mods/ is something the player installed");
+		assertEquals(2, ModCatalog.everything().size(), "both are still RUNNING and both are still recorded");
+		assertEquals(1, ModCatalog.count(Ecosystem.FABRIC), "the per-family count is of installed mods");
+	}
+
+	/** Fabric's extraction keeps the parent in the path, so the bundled jar can say who brought it. */
+	@Test
+	void aBundledJarNamesTheModThatCarriesIt(@TempDir Path dir) throws Exception {
+		Path mods = Files.createDirectories(dir.resolve("mods"));
+		Path jij = Files.createDirectories(dir.resolve(".forbric-kernel/jij/fabric-api"));
+		KernelModCatalog.publish(List.of(
+				mod(Ecosystem.FABRIC, "fabric-api", "1", fabricJar(mods, "fabric-api", "Fabric API", "", "")),
+				mod(Ecosystem.FABRIC, "fabric-biome-api-v1", "1",
+						fabricJar(jij, "fabric-biome-api-v1", "Biome API", "", ""))), mods);
+
+		assertEquals(List.of("fabric-biome-api-v1"),
+				ModCatalog.bundledBy("fabric-api").stream().map(ModCatalog.Entry::modId).toList());
+	}
+
+	/**
+	 * The Forge families' JarJar extraction flattens into one directory, so the parent is not recoverable there.
+	 *
+	 * <p>It is still bundled — which is the part that decides whether it is listed — and the honest answer to
+	 * "brought by whom" is that the layout does not say, rather than a guess that would read as fact.
+	 */
+	@Test
+	void aJarJarChildIsBundledEvenWhenItsParentIsNotRecorded(@TempDir Path dir) throws Exception {
+		Path mods = Files.createDirectories(dir.resolve("mods"));
+		Path jarjar = Files.createDirectories(dir.resolve(".forbric-kernel/jarjar"));
+		KernelModCatalog.publish(List.of(
+				mod(Ecosystem.NEOFORGE, "iris", "1", forgeJar(mods, "META-INF/neoforge.mods.toml", "iris", "Iris", "")),
+				mod(Ecosystem.NEOFORGE, "spruceui", "1",
+						forgeJar(jarjar, "META-INF/neoforge.mods.toml", "spruceui", "SpruceUI", ""))), mods);
+
+		assertEquals(List.of("iris"), ModCatalog.all().stream().map(ModCatalog.Entry::modId).toList());
+		assertEquals(KernelModCatalog.UNKNOWN_PARENT,
+				ModCatalog.everything().stream().filter(e -> e.modId().equals("spruceui")).findFirst()
+						.orElseThrow().bundledBy());
+	}
+
+	/** No mods dir means the distinction cannot be drawn, and then nothing is hidden. */
+	@Test
+	void withoutAModsDirectoryEverythingCountsAsInstalled(@TempDir Path dir) throws Exception {
+		Path jar = fabricJar(dir, "voxy", "Voxy", "", "");
+		KernelModCatalog.publish(List.of(mod(Ecosystem.FABRIC, "voxy", "1", jar)), null);
+		assertEquals(1, ModCatalog.all().size(), "showing too much beats hiding a mod that is really there");
+	}
+
 	@Test
 	void publishingNothingEmptiesTheList(@TempDir Path dir) throws Exception {
-		KernelModCatalog.publish(List.of(mod(Ecosystem.FABRIC, "x", "1", fabricJar(dir, "x", "X", "", ""))));
+		KernelModCatalog.publish(List.of(mod(Ecosystem.FABRIC, "x", "1", fabricJar(dir, "x", "X", "", ""))), dir);
 		assertTrue(ModCatalog.all().size() > 0);
 		KernelModCatalog.publish(List.of());
 		assertEquals(List.of(), ModCatalog.all());
@@ -161,7 +228,7 @@ class KernelModCatalogTest {
 	/** The screen renders these straight; a null in any of them is a crash mid-frame, not a blank line. */
 	@Test
 	void noFieldIsEverNull() {
-		ModCatalog.Entry e = new ModCatalog.Entry(Ecosystem.FABRIC, "x", null, null, null, null, null, null);
+		ModCatalog.Entry e = new ModCatalog.Entry(Ecosystem.FABRIC, "x", null, null, null, null, null, null, null);
 		assertEquals("x", e.name(), "a nameless mod falls back to its id rather than rendering nothing");
 		assertEquals("", e.version());
 		assertEquals("", e.description());
@@ -172,7 +239,8 @@ class KernelModCatalogTest {
 
 	@Test
 	void theListIsImmutableToItsReaders() {
-		ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "x", "X", "1", "", List.of(), "x.jar", "")));
+		ModCatalog.publish(List.of(
+				new ModCatalog.Entry(Ecosystem.FABRIC, "x", "X", "1", "", List.of(), "x.jar", "", "")));
 		List<ModCatalog.Entry> once = ModCatalog.all();
 		assertSame(once, ModCatalog.all());
 		org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, once::clear);

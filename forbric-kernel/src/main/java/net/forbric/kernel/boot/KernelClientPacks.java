@@ -159,7 +159,16 @@ public final class KernelClientPacks {
 				.newInstance(true, posCls.getField("TOP").get(null), true);
 
 		Constructor<?> packCtor = packCls.getConstructor(locCls, suppCls, metaCls, selCls);
-		return packCtor.newInstance(location, resources, metadata, selection);
+		Object pack = packCtor.newInstance(location, resources, metadata, selection);
+		// HIDDEN, and still required. These are a mod's own assets, not a resource pack anyone chose: they were
+		// appearing in the player's resource-pack screen as ten rows they cannot turn off and did not add.
+		//
+		// isHidden gates LISTING only, never application -- getAvailableIds/getSelectedIds filter on it, while
+		// openAllSelected and getSelectedPacks do not, and rebuildSelected re-inserts every isRequired() pack
+		// regardless. So required=true is what keeps them applied, and hidden is what keeps them out of the
+		// screen; neither substitutes for the other. Pack.hidden() is the copy-with helper and preserves the
+		// location, the resources and the whole selection config.
+		return packCls.getMethod("hidden").invoke(pack);
 	}
 
 	/** A {@code RepositorySource} proxy whose {@code loadPacks(Consumer)} emits our packs. */

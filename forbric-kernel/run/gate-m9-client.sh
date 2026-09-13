@@ -284,6 +284,28 @@ ROWS=$(grep -oE 'frame\(s\) listing [0-9]+ mod' "$LOG" | grep -oE '[0-9]+' | hea
   || { echo "[kernel] FAIL the Mods screen listed nothing (got ${ROWS:-none})"; FAIL=1; }
 check_absent "the screen did not throw" "the unified Mods screen could not be opened" "$LOG"
 
+step "a mod's assets are applied but are not resource packs the player has to see (must PASS)"
+# Pack.isHidden gates LISTING, never application: getAvailableIds/getSelectedIds filter on it, openAllSelected
+# and getSelectedPacks do not, and rebuildSelected re-inserts every required pack regardless. The byte merge kept
+# NeoForge's Pack (so the flag exists) and vanilla's TransferableSelectionList (so nothing read it), which put
+# every ecosystem's asset pack in the player's list as a row they did not add and cannot remove.
+#
+# Counted from the SCREEN's own rows and not from the repository: the repository's id accessors already filter
+# hidden packs and would report success whether or not the screen does.
+check "the filter is back on the screen" \
+  "PackScreen\] restored the hidden-pack filter" "$LOG"
+PACKROWS=$(grep -oE 'resource-pack screen lists [0-9]+ pack row\(s\), [0-9]+ of them' "$LOG" | grep -oE '[0-9]+' | tail -1)
+if [ -n "$PACKROWS" ] && [ "$PACKROWS" -eq 0 ]; then
+  echo "[kernel] PASS no ecosystem asset pack is listed in the resource-pack screen"
+else
+  echo "[kernel] FAIL the resource-pack screen still lists ${PACKROWS:-?} of the kernel's packs"; FAIL=1
+fi
+# …and they are still APPLIED. A screen with nothing in it would pass the check above and cost every mod its
+# textures, which is the failure this assertion exists to tell apart from success.
+check "and they are still selected in the repository" \
+  "repository holds [1-9][0-9]* selected" "$LOG"
+check_absent "the screen opened at all" "could not open the resource-pack screen" "$LOG"
+
 step "the world is on disk before the process ends (must PASS)"
 # A real player Alt+F4'd and lost a minute of play: IntegratedServer.stopServer runs teardownPublishedState
 # FIRST and unguarded, and MinecraftServer.stopServer -- which writes players and worlds -- second, so one throw

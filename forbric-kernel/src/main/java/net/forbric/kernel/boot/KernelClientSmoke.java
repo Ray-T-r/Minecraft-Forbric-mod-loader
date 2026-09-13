@@ -202,6 +202,7 @@ public final class KernelClientSmoke {
 			}
 			if (!pauseButtonTried) {
 				pauseButtonTried = true;
+				openTheResourcePackScreen(minecraft, cl);
 				listTheTitleScreensButtons(minecraft, cl);
 				pressTheRealModsButton(minecraft, cl);
 				return;
@@ -222,6 +223,77 @@ public final class KernelClientSmoke {
 		} catch (Throwable t) {
 			modsScreenClosed = true;
 			ForbricLog.warn("[Forbric/ClientSmoke] the unified Mods screen could not be opened", t);
+		}
+	}
+
+	/**
+	 * Opens the resource-pack screen and counts what is listed in it.
+	 *
+	 * <p>A mod's own assets are served into the repository as required packs, and required is what keeps them
+	 * applied. They are also marked hidden, and hidden is what is supposed to keep them off this screen — but the
+	 * byte merge kept the flag and dropped every reader of it, so ten rows a player did not add and cannot remove
+	 * appeared in their resource-pack list.
+	 *
+	 * <p>Counted from the SCREEN's own row widgets rather than from the repository, because the repository's id
+	 * accessors already filter hidden packs and would report success whether or not the screen does.
+	 */
+	private static void openTheResourcePackScreen(Object minecraft, ClassLoader cl) {
+		try {
+			Object repo = minecraft.getClass().getMethod("getResourcePackRepository").invoke(minecraft);
+			int inRepository = ((java.util.Collection<?>) repo.getClass().getMethod("getSelectedPacks")
+					.invoke(repo)).size();
+			Class<?> screenCls = Class.forName("net.minecraft.client.gui.screens.packs.PackSelectionScreen", true, cl);
+			Class<?> repoCls = Class.forName("net.minecraft.server.packs.repository.PackRepository", false, cl);
+			Class<?> componentCls = Class.forName("net.minecraft.network.chat.Component", false, cl);
+			Object title = componentCls.getMethod("empty").invoke(null);
+			Object screen = screenCls.getConstructor(repoCls, java.util.function.Consumer.class,
+							java.nio.file.Path.class, componentCls)
+					.newInstance(repo, (java.util.function.Consumer<Object>) ignored -> { },
+							java.nio.file.Path.of("."), title);
+			setScreen(minecraft, screen);
+
+			int rows = 0;
+			int forbricRows = 0;
+			Class<?> rowCls = Class.forName(
+					"net.minecraft.client.gui.screens.packs.TransferableSelectionList$PackEntry", true, cl);
+			for (Object listed : listedRows(screen, rowCls)) {
+				rows++;
+				if (String.valueOf(listed).contains("forbric/")) forbricRows++;
+			}
+			ForbricLog.info("[Forbric/ClientSmoke] the resource-pack screen lists %d pack row(s), %d of them the "
+					+ "kernel's ecosystem asset packs (repository holds %d selected)", rows, forbricRows,
+					inRepository);
+			setScreen(minecraft, null);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] could not open the resource-pack screen", t);
+		}
+	}
+
+	/** Every pack row across both columns of the pack screen, by walking its widget tree. */
+	private static java.util.List<Object> listedRows(Object screen, Class<?> rowCls) throws Exception {
+		java.util.List<Object> out = new java.util.ArrayList<>();
+		collectRows(screen, rowCls, out, 0);
+		return out;
+	}
+
+	private static void collectRows(Object node, Class<?> rowCls, java.util.List<Object> out, int depth)
+			throws Exception {
+		if (node == null || depth > 4) return;
+		java.lang.reflect.Method children;
+		try {
+			children = node.getClass().getMethod("children");
+		} catch (NoSuchMethodException leaf) {
+			return;
+		}
+		for (Object child : (java.util.List<?>) children.invoke(node)) {
+			if (child == null) continue;
+			if (rowCls.isInstance(child)) {
+				// PackEntry has no id accessor; its narration is the pack's own title, which for the kernel's
+				// packs is the id itself.
+				out.add(String.valueOf(child.getClass().getMethod("getNarration").invoke(child)));
+			} else {
+				collectRows(child, rowCls, out, depth + 1);
+			}
 		}
 	}
 
