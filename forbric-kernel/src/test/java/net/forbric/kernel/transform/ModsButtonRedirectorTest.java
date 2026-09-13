@@ -157,6 +157,63 @@ class ModsButtonRedirectorTest {
 		assertTrue(sawLiteral, "the label must still be built through Component");
 	}
 
+	/**
+	 * The icon moves with the label.
+	 *
+	 * <p>A button wearing NeoForge's logo while opening a list of every ecosystem's mods is a picture that is
+	 * wrong about what the button does, and the picture is the first thing a player reads.
+	 */
+	@Test
+	void theButtonWearsTheKernelsOwnIcon() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		List<String> before = constants(parse(readClass(PAUSE + ".class")));
+		assertTrue(before.contains(ModsButtonRedirector.FML_SPRITE_NAMESPACE)
+				&& before.contains(ModsButtonRedirector.FML_SPRITE_PATH),
+				"the base must still point the button at the Forge family's sprite");
+
+		List<String> after = constants(parse(transform(PAUSE, readClass(PAUSE + ".class"))));
+		assertTrue(after.contains(ModsButtonRedirector.FORBRIC_SPRITE_NAMESPACE)
+				&& after.contains(ModsButtonRedirector.FORBRIC_SPRITE_PATH), "ours must be there");
+		assertTrue(!after.contains(ModsButtonRedirector.FML_SPRITE_PATH),
+				"and theirs gone — a half-rewrite names a texture nobody ships, which renders as magenta");
+	}
+
+	/**
+	 * Both halves of the identifier move, or neither does.
+	 *
+	 * <p>{@code Identifier.fromNamespaceAndPath} takes two adjacent constants. Swapping one leaves
+	 * {@code forbric:icon/neo_logo} or {@code neoforge:icon/forbric_logo}, and a GUI sprite that resolves to
+	 * nothing is a magenta square rather than an error — so nothing downstream would report it.
+	 */
+	@Test
+	void theNamespaceAndThePathMoveTogether() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		ClassNode node = parse(transform(PAUSE, readClass(PAUSE + ".class")));
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			AbstractInsnNode prev = null;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc
+						&& ModsButtonRedirector.FORBRIC_SPRITE_PATH.equals(ldc.cst)) {
+					assertTrue(prev instanceof org.objectweb.asm.tree.LdcInsnNode ns
+									&& ModsButtonRedirector.FORBRIC_SPRITE_NAMESPACE.equals(ns.cst),
+							"our sprite path must follow our namespace, not the one it replaced");
+				}
+				if (insn.getOpcode() >= 0) prev = insn;
+			}
+		}
+	}
+
+	/** The texture the rewritten identifier names has to be a file the kernel actually ships. */
+	@Test
+	void theIconIsShippedAtThePathTheIdentifierResolvesTo() {
+		Path icon = Path.of(System.getProperty("user.dir"), "src", "runtime", "resources", "assets",
+				ModsButtonRedirector.FORBRIC_SPRITE_NAMESPACE, "textures", "gui", "sprites",
+				ModsButtonRedirector.FORBRIC_SPRITE_PATH + ".png");
+		assertTrue(Files.isRegularFile(icon), "a GUI sprite resolves <ns>:<path> to assets/<ns>/textures/gui/"
+				+ "sprites/<path>.png, and a missing one renders as magenta rather than failing: " + icon);
+	}
+
 	@Test
 	void aSecondPassLeavesTheRedirectedClassAlone() throws Exception {
 		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");

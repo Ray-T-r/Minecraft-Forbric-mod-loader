@@ -233,8 +233,12 @@ public final class KernelBoot {
 			if (!modJars.contains(jar)) owned.add(jar.toUri().toURL());   // a multiloader jar carries both manifests
 		}
 
-		// Game-side bundled libraries (MixinExtras).
-		for (Path jar : KernelBundledJars.extract(gameDir)) owned.add(jar.toUri().toURL());
+		// Game-side bundled libraries (MixinExtras) and the kernel's own runtime jar. The latter also carries
+		// the kernel's client assets -- the Mods button's icon lives in it -- so its extracted path is handed to
+		// the lifecycle for the client pack repository as well as to the class loader.
+		List<Path> bundled = KernelBundledJars.extract(gameDir);
+		for (Path jar : bundled) owned.add(jar.toUri().toURL());
+		KernelLifecycle.setKernelAssetJars(bundled);
 
 		// The MC libraries, owned LAST (nothing shadows the merged base). Owned, not merely parent-visible: mods
 		// mixin into them (fabric-dimension-api-v1 → DataFixerUpper's TaggedChoice). See ForbricClassLoader.

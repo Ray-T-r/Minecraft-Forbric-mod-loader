@@ -57,6 +57,12 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	static final String FML_MODS_KEY = "fml.menu.mods";
 	/** What it says instead. Not a translation key -- see renameTheButton. */
 	static final String FORBRIC_LABEL = "Mods (Forbric)";
+	/** The sprite the Forge families point their mods button at. */
+	static final String FML_SPRITE_NAMESPACE = "neoforge";
+	static final String FML_SPRITE_PATH = "icon/neo_logo";
+	/** Ours, shipped in the kernel's own game-side jar and served to the client pack repository with it. */
+	static final String FORBRIC_SPRITE_NAMESPACE = "forbric";
+	static final String FORBRIC_SPRITE_PATH = "icon/forbric_logo";
 	private static final String COMPONENT = "net/minecraft/network/chat/Component";
 	private static final String FACTORY_DESC = "(Ljava/lang/String;)Lnet/minecraft/network/chat/MutableComponent;";
 
@@ -76,6 +82,7 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	private static final byte[][] MARKERS = {
 			"ModListScreen".getBytes(java.nio.charset.StandardCharsets.UTF_8),
 			FML_MODS_KEY.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+			FML_SPRITE_PATH.getBytes(java.nio.charset.StandardCharsets.UTF_8),
 	};
 
 	/**
@@ -90,6 +97,36 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	private static final Set<String> REPLACED = Set.of(
 			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE),
 			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE));
+
+	/**
+	 * Points the button at the kernel's own icon.
+	 *
+	 * <p>The label alone left two identical squares on the pause menu, one of them wearing NeoForge's logo while
+	 * opening a list of every ecosystem's mods -- a picture that is now wrong about what the button does, and the
+	 * first thing a player reads.
+	 *
+	 * <p>The identifier is built from two adjacent constants ({@code ldc "neoforge"; ldc "icon/neo_logo";
+	 * Identifier.fromNamespaceAndPath}) at every site, so both move together or neither does: half a rewrite is an
+	 * identifier for a texture nobody ships, and a missing GUI sprite is a magenta square rather than an error.
+	 * The texture itself rides in the kernel's own game-side jar, which is served to the client pack repository
+	 * alongside every mod's -- a sprite is resolved through the resource manager like any other asset.
+	 */
+	private static int reskinTheButton(ClassNode node) {
+		int reskinned = 0;
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (!(insn instanceof LdcInsnNode namespace) || !FML_SPRITE_NAMESPACE.equals(namespace.cst)) continue;
+				AbstractInsnNode next = insn.getNext();
+				while (next != null && next.getOpcode() < 0) next = next.getNext();
+				if (!(next instanceof LdcInsnNode path) || !FML_SPRITE_PATH.equals(path.cst)) continue;
+				namespace.cst = FORBRIC_SPRITE_NAMESPACE;
+				path.cst = FORBRIC_SPRITE_PATH;
+				reskinned++;
+			}
+		}
+		return reskinned;
+	}
 
 	/** Raw-byte constant-pool scan. Cheap, and wrong only in the direction that costs one wasted parse. */
 	private static boolean carriesAMarker(byte[] classBytes) {
@@ -175,11 +212,12 @@ public final class ModsButtonRedirector implements ClassTransformer {
 				}
 			}
 			int renamed = renameTheButton(node);
+			renamed += reskinTheButton(node);
 			if (redirected == 0 && renamed == 0) return classBytes;
 			ClassWriter writer = new ClassWriter(0);
 			node.accept(writer);
 			ForbricLog.info("[Forbric/ModsButton] %s's mods button now opens the unified list and says so (%d "
-					+ "construction site(s) re-pointed, %d label(s) renamed) — each family's own screen lists "
+					+ "construction site(s) re-pointed, %d label(s)+icon(s) changed) — each family's own screen lists "
 					+ "only its own family, which on this instance is never the whole answer", internal,
 					redirected, renamed);
 			return writer.toByteArray();

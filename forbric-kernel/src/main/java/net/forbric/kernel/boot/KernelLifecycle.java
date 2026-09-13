@@ -73,6 +73,19 @@ public final class KernelLifecycle {
 	}
 
 	/**
+	 * The kernel's own game-side jars, which carry its client assets.
+	 *
+	 * <p>One asset in particular: the Mods button's icon. A GUI sprite is resolved through the resource manager
+	 * like any other, so a texture the kernel ships is only findable if the kernel's jar is a pack the repository
+	 * knows about — which is the same mechanism every mod's assets already travel on, pointed at ourselves.
+	 */
+	public static void setKernelAssetJars(List<Path> jars) {
+		kernelAssetJars = jars == null ? List.of() : jars;
+	}
+
+	private static volatile List<Path> kernelAssetJars = List.of();
+
+	/**
 	 * Invoked from {@code net.minecraft.server.Main.main} (redirected from {@code ServerModLoader.load}) after
 	 * {@code Bootstrap.bootStrap}. Drives native ecosystem registration. {@code dedicated} is the original argument.
 	 */
@@ -1792,6 +1805,7 @@ public final class KernelLifecycle {
 		ClassLoader cl = gameLoader != null ? gameLoader : Thread.currentThread().getContextClassLoader();
 		List<Path> jars = new ArrayList<>(runtimeJars);
 		jars.addAll(modJars);
+		jars.addAll(kernelAssetJars);
 		KernelClientPacks.addTo(packRepository, cl, jars);
 	}
 

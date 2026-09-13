@@ -265,6 +265,14 @@ step "the unified Mods screen opens and draws (must PASS)"
 # old list -- so the first version of this redirect reported a site re-pointed in TitleScreen (a dead one the
 # byte merge left) while the button a player can see went on opening NeoForge's list. Asserting only the pause
 # menu measured the wrong half and called the feature done.
+# The icon too. A button wearing NeoForge's logo while opening every ecosystem's mods is a picture that is wrong
+# about what the button does, and a GUI sprite that resolves to nothing renders as a magenta square rather than
+# failing — so the absence of an error proves nothing on its own. Assert the rewrite AND that the pack carrying
+# the texture reached the client repository.
+check "the widget's icon is the kernel's own" \
+  "ModsButton's mods button now opens the unified list and says so \\([0-9]+ construction site\\(s\\) re-pointed, [1-9][0-9]* label" "$LOG"
+check "the kernel's own assets reached the pack repository" "forbric/forbric-kernel-runtime" "$LOG"
+check_absent "and its sprite resolved"  "Missing sprite: forbric" "$LOG"
 check "the title screen's mods button is labelled as ours" \
   "title-screen button #[0-9]+: net\.neoforged\..*ModsButton \"Mods \(Forbric\)\"" "$LOG"
 check "pressing it opens the unified list" \
