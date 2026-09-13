@@ -78,6 +78,8 @@ public final class KernelClientSmoke {
 	 * machine. This opens it on a real client and reads back how many frames it drew.
 	 */
 	public static final String MODS_SCREEN = "forbric.clientSmokeModsScreen";
+	/** Take a screenshot of the pause menu with the mods button on it, instead of pressing it. */
+	public static final String MODS_BUTTON_SHOT = "forbric.clientSmokeModsButtonShot";
 	/** Ticks to leave it open. Long enough for frames to be drawn, short enough not to move the disconnect. */
 	private static final int MODS_SCREEN_HOLD = 20;
 
@@ -176,6 +178,7 @@ public final class KernelClientSmoke {
 	private static int modsScreenFramesAtOpen;
 	private static boolean configScreenTried;
 	private static boolean pauseButtonTried;
+	private static int shotDueAt = -1;
 
 	/**
 	 * Opens the kernel's unified Mods screen the way the pause menu's button does, leaves it up long enough to be
@@ -198,6 +201,14 @@ public final class KernelClientSmoke {
 						Class.forName("net.minecraft.client.gui.screens.Screen", false, cl)).newInstance((Object) null);
 				setScreen(minecraft, screen);
 				ForbricLog.info("[Forbric/ClientSmoke] opened the unified Mods screen at world tick %d", worldTicks);
+				return;
+			}
+			if (shotDueAt > 0) {
+				if (worldTicks >= shotDueAt) {
+					shotDueAt = -1;
+					pauseButtonTried = true;
+					shoot(minecraft);
+				}
 				return;
 			}
 			if (!pauseButtonTried) {
@@ -382,6 +393,14 @@ public final class KernelClientSmoke {
 			}
 			ForbricLog.info("[Forbric/ClientSmoke] pressing the pause menu's mods button (%s)",
 					target.getClass().getName());
+			// One frame of the pause menu with the button on it, so the icon is something that can be LOOKED at
+			// rather than inferred from the absence of a missing-sprite warning. Deferred by a few ticks:
+			// Screenshot.grab captures the last frame DRAWN, and on the tick a screen is set none has been.
+			if (Boolean.getBoolean(MODS_BUTTON_SHOT)) {
+				shotDueAt = worldTicks + 5;
+				pauseButtonTried = false;
+				return;
+			}
 			// onPress takes the input that caused it in 26.2; null is what a synthetic press has to pass, and
 			// every handler here ignores it.
 			Class<?> input = Class.forName("net.minecraft.client.input.InputWithModifiers", true, cl);
@@ -440,6 +459,16 @@ public final class KernelClientSmoke {
 					from, now == null ? "<none>" : now.getClass().getName());
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ClientSmoke] could not open a config screen from the unified list", t);
+		}
+	}
+
+	private static void shoot(Object minecraft) {
+		try {
+			Class.forName("net.minecraft.client.Screenshot", true, minecraft.getClass().getClassLoader())
+					.getMethod("grab", minecraft.getClass(), boolean.class).invoke(null, minecraft, false);
+			ForbricLog.info("[Forbric/ClientSmoke] screenshot of the pause menu's mods button requested");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] could not screenshot the pause menu", t);
 		}
 	}
 
