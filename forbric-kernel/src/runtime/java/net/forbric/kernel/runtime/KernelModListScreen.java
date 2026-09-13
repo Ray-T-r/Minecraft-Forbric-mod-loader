@@ -178,6 +178,14 @@ public final class KernelModListScreen extends Screen {
 		}
 		if (!e.description().isEmpty()) {
 			g.textWithWordWrap(this.font, FormattedText.of(e.description()), x, y, wrap, BRIGHT);
+			y += 12 * (1 + this.font.split(FormattedText.of(e.description()), wrap).size());
+		}
+		// What this jar carries inside itself. Not listed as mods of their own -- they are not what anyone
+		// installed -- but a player looking for "why is Kotlin here" should find the answer on the mod that
+		// brought it, not have it missing from the screen entirely.
+		int bundled = ModCatalog.bundledBy(e.modId()).size();
+		if (bundled > 0) {
+			g.text(this.font, Component.literal("bundles " + bundled + " jar(s)"), x, y + 4, DIM);
 		}
 	}
 

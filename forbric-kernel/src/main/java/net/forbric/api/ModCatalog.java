@@ -62,7 +62,7 @@ public final class ModCatalog {
 	 * that can turn it into a texture anyway.
 	 */
 	public record Entry(Ecosystem ecosystem, String modId, String name, String version, String description,
-			List<String> authors, String jar, String iconPath) {
+			List<String> authors, String jar, String iconPath, String bundledBy) {
 		public Entry {
 			if (ecosystem == null) throw new NullPointerException("ecosystem");
 			if (modId == null || modId.isBlank()) throw new IllegalArgumentException("modId");
@@ -72,6 +72,18 @@ public final class ModCatalog {
 			authors = authors == null ? List.of() : List.copyOf(authors);
 			jar = orEmpty(jar);
 			iconPath = orEmpty(iconPath);
+			bundledBy = orEmpty(bundledBy);
+		}
+
+		/**
+		 * Whether this mod is a jar a player put in {@code mods/}, rather than one a mod carries inside itself.
+		 *
+		 * <p>The distinction is the difference between a list of sixteen things someone chose and a list of
+		 * ninety-one, most of which are fabric-api's own modules and somebody's Kotlin runtime. Both are running
+		 * and both are honestly "installed"; only one of them is what a player means by "my mods".
+		 */
+		public boolean installed() {
+			return bundledBy.isEmpty();
 		}
 
 		private static String orEmpty(String s) {
@@ -91,6 +103,7 @@ public final class ModCatalog {
 					.thenComparing(Entry::modId);
 
 	private static volatile List<Entry> entries = List.of();
+	private static volatile List<Entry> installed = List.of();
 
 	private ModCatalog() {
 	}
@@ -108,17 +121,34 @@ public final class ModCatalog {
 		}
 		sorted.sort(BY_NAME);
 		entries = List.copyOf(sorted);
+		installed = sorted.stream().filter(Entry::installed).toList();
 	}
 
-	/** Every mod, name-sorted. Empty before boot publishes, never null. */
+	/**
+	 * The mods a player installed: one entry per jar in {@code mods/}, name-sorted.
+	 *
+	 * <p>This is what a Mods screen shows. The jars a mod carries inside itself are running too, and
+	 * {@link #everything()} still has them, but they are not what the question "what have I installed" is asking
+	 * -- on a real pack they outnumber the answer five to one.
+	 */
 	public static List<Entry> all() {
+		return installed;
+	}
+
+	/** Every mod, bundled ones included. For anything counting what is RUNNING rather than what was chosen. */
+	public static List<Entry> everything() {
 		return entries;
+	}
+
+	/** What {@code modId}'s jar carries inside it, name-sorted. Empty for most mods. */
+	public static List<Entry> bundledBy(String modId) {
+		return entries.stream().filter(e -> e.bundledBy().equals(modId)).toList();
 	}
 
 	/** How many mods each ecosystem contributed, for the one-line boot summary and for the screen's subtitle. */
 	public static int count(Ecosystem ecosystem) {
 		int n = 0;
-		for (Entry e : entries) {
+		for (Entry e : installed) {
 			if (e.ecosystem() == ecosystem) n++;
 		}
 		return n;
@@ -127,5 +157,6 @@ public final class ModCatalog {
 	/** Test seam. */
 	static void reset() {
 		entries = List.of();
+		installed = List.of();
 	}
 }

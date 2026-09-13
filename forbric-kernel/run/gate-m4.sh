@@ -78,7 +78,10 @@ step "one list holds all three ecosystems' mods (must PASS)"
 # Every family's own Mods screen reads its own family's registry and is complete for the loader it was written
 # against -- which on this instance is never the whole answer. Assert the NUMBERS, not the sentence: the line
 # would still print with a zero in it, and a zero for a family is exactly the regression.
-CAT=$(grep -oE 'Catalog\] [0-9]+ mod\(s\) for the unified Mods screen: [0-9]+ Fabric, [0-9]+ NeoForge, [0-9]+ MinecraftForge' "$LOG" | head -1)
+#
+# INSTALLED mods, i.e. the jars in mods/. The jars those carry inside themselves are running too, and are not
+# what a player means by "my mods" -- on a real pack they outnumber the answer five to one.
+CAT=$(grep -oE 'Catalog\] [0-9]+ installed mod\(s\) for the unified Mods screen: [0-9]+ Fabric, [0-9]+ NeoForge, [0-9]+ MinecraftForge' "$LOG" | head -1)
 if [ -n "$CAT" ]; then
   set -- $(echo "$CAT" | grep -oE '[0-9]+')
   assert_eq "the catalogue counts add up"  "$1" "$(( $2 + $3 + $4 ))"

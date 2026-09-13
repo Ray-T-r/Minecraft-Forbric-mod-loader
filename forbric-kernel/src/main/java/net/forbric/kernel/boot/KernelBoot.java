@@ -302,6 +302,11 @@ public final class KernelBoot {
 		// dedicated server never loads.)
 		chain.register(TransformPhase.COREMOD, new ClientPackHookInjector());
 
+		// …and keep the packs it serves OUT of the player's resource-pack screen. Pack.isHidden survived the
+		// merge; the screen-side filter that reads it did not.
+		chain.register(TransformPhase.COREMOD,
+				new net.forbric.kernel.transform.PackScreenHiddenFilterInjector());
+
 		// The pause menu's mods button opened NeoForge's list, which is every mod NeoForge loaded and, on this
 		// instance, a fraction of what is installed. It now opens the kernel's, which reads ModCatalog.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ModsButtonRedirector());
