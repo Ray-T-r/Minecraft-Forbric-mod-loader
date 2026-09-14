@@ -79,7 +79,7 @@ final class MergedBaseTool {
 	ArtifactResult merge(JdkLocator.Jvm jvm, Path vanilla, Path forgePatched, Path neoPatched,
 	                     Path forgeRuntime, Path neoforgeRuntime, Path outJar, Path report,
 	                     String coordinate) throws IOException {
-		if (Files.isRegularFile(outJar) && Files.size(outJar) > 0) {
+		if (BuildStamp.isFresh(outJar)) {
 			log.accept("[merge] up-to-date: " + outJar.getFileName());
 			return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
 		}
@@ -99,6 +99,7 @@ final class MergedBaseTool {
 		}
 		long size = Files.size(outJar);
 		log.accept("[merge] wrote " + outJar.getFileName() + " (" + (size / (1024 * 1024)) + " MB)");
+		BuildStamp.write(outJar);
 		return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), size);
 	}
 
@@ -108,7 +109,7 @@ final class MergedBaseTool {
 	 */
 	ArtifactResult interop(JdkLocator.Jvm jvm, Path forgeRuntime, Path outJar, String coordinate)
 			throws IOException {
-		if (Files.isRegularFile(outJar) && Files.size(outJar) > 0) {
+		if (BuildStamp.isFresh(outJar)) {
 			log.accept("[interop] up-to-date: " + outJar.getFileName());
 			return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
 		}
@@ -123,6 +124,7 @@ final class MergedBaseTool {
 		if (!Files.isRegularFile(outJar) || Files.size(outJar) == 0) {
 			throw new IOException("the interop patch did not produce " + outJar);
 		}
+		BuildStamp.write(outJar);
 		return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
 	}
 

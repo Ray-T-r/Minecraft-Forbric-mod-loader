@@ -70,7 +70,7 @@ final class NeoForgeRuntimeBuilder {
 	/** Build (or reuse) the merged runtime jar; returns its coordinate/path/sha1/size. */
 	ArtifactResult build(ForgeArtifacts.UserdevConfig cfg) throws IOException {
 		String coordinate = nfa.runtimeCoordinate();
-		if (Files.isRegularFile(outJar) && Files.size(outJar) > 0) {
+		if (BuildStamp.isFresh(outJar)) {
 			log.accept("[neoforge-runtime] up-to-date: " + outJar.getFileName());
 			return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
 		}
@@ -100,6 +100,7 @@ final class NeoForgeRuntimeBuilder {
 		String sha1 = Util.sha1(outJar);
 		long size = Files.size(outJar);
 		log.accept("[neoforge-runtime] wrote " + outJar.getFileName() + " (" + (size / (1024 * 1024)) + " MB)");
+		BuildStamp.write(outJar);
 		return new ArtifactResult(coordinate, outJar, sha1, size);
 	}
 

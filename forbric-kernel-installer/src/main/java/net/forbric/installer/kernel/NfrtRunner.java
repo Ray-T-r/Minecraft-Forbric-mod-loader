@@ -88,7 +88,7 @@ final class NfrtRunner {
 	 */
 	ArtifactResult run(JdkLocator.Jvm jvm, Path mcDir, Path outJar, String coordinate, String mcVersion,
 			Path serverJar) throws IOException {
-		if (Files.isRegularFile(outJar) && Files.size(outJar) > 0) {
+		if (BuildStamp.isFresh(outJar)) {
 			log.accept("[neoform] up-to-date: " + outJar.getFileName());
 			return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
 		}
@@ -138,6 +138,7 @@ final class NfrtRunner {
 
 		long size = Files.size(outJar);
 		log.accept("[neoform] wrote " + outJar.getFileName() + " (" + (size / (1024 * 1024)) + " MB)");
+		BuildStamp.write(outJar);
 		return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), size);
 	}
 

@@ -321,6 +321,36 @@ check_absent "no client crash"             "Preparing crash report"             
 check_absent "nothing the installer staged went missing" \
   "(NoClassDefFoundError|ClassNotFoundException).*(net/forbric|net\\.forbric|net/minecraft|org/apache/logging|com/mojang|org/objectweb/asm|org/spongepowered)" "$CLOG"
 
+# ---------------------------------------------------------------------------------------------------------
+# The cache. Everything above installs into an EMPTY directory, which is why the reuse path went untested for
+# so long: the bug it hides only exists on a machine that has built before. Moving the NeoForge pin from
+# 26.2.0.38-beta to 26.2.0.88 and re-running on the user's own machine printed "neoforge=26.2.0.88" in the pin
+# line and then "[neoforge-runtime] up-to-date", and installed the OLD carrier. Nothing failed. None of the
+# artifacts carries its version in its filename, and "the file exists" was the whole freshness test.
+#
+# These two phases run LAST on purpose: the second one rebuilds an artifact, and nothing downstream should be
+# resolved from a half-refreshed cache.
+step "a second install into the same directory reuses what is already built"
+java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-2.log" 2>&1
+REUSED=$(grep -cE "^\[(forge-runtime|patched|neoforge-runtime|neoform|merge|interop)\] up-to-date" "$BUILD/gate-m17-install-2.log")
+assert_eq "every artifact came from the cache" "6" "$REUSED"
+
+step "and a pin that no longer matches is NOT served from it"
+# Only forge-runtime's stamp is disturbed, because the stamp is the whole pin set: in real use all six move
+# together, and tampering with one is the cheapest honest probe of the DECISION. forge-runtime is also the
+# quickest of the six to rebuild.
+FR_STAMP="$DEST/.forbric-build/out/forge-runtime.jar.pins"
+if [ ! -f "$FR_STAMP" ]; then
+  echo "[kernel] FAIL no stamp beside forge-runtime.jar — nothing records what built it"; FAIL=$((FAIL+1))
+else
+  echo "mc=26.2 forge=PRETEND-OTHER neoforge=PRETEND-OTHER nfrt=0 result=none" > "$FR_STAMP"
+  java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-3.log" 2>&1
+  check_absent "the stale artifact is rebuilt, not reused" "^\[forge-runtime\] up-to-date" \
+    "$BUILD/gate-m17-install-3.log"
+  check "and it says so"       "^\[forge-runtime\] (fetching|merging|wrote)" "$BUILD/gate-m17-install-3.log"
+  check "the others still hit" "^\[neoform\] up-to-date"                     "$BUILD/gate-m17-install-3.log"
+fi
+
 step "M17 result"
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] ✅ M17 GATE GREEN — the installer's own version profile, resolved the way a launcher resolves it, boots the tri-ecosystem game"
