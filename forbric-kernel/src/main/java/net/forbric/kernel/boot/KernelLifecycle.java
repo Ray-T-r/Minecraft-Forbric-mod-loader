@@ -1254,7 +1254,10 @@ public final class KernelLifecycle {
 					KernelModLoader.setNeoActiveContainer(cl, null);
 				}
 			}
-			queueClass.getMethod("runTasks").invoke(queue);
+			// Off the caller's thread, because that is where NeoForge runs it and mods can tell the difference —
+			// see NeoDeferredWork for the resource-manager window this was landing in.
+			Method runTasks = queueClass.getMethod("runTasks");
+			NeoDeferredWork.runBlocking(NeoDeferredWork.syncExecutor(cl), () -> runTasks.invoke(queue));
 			ForbricLog.info("[Forbric/Lifecycle] posted FML %s to %d NeoForge mod(s)", label, fired);
 		} catch (ClassNotFoundException absent) {
 			ForbricLog.debug("[Forbric/Lifecycle] %s absent — skipping %s", eventClassName, label);
