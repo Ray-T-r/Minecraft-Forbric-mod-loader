@@ -36,15 +36,23 @@ final class Pins {
 	static final String FORGE = "26.2-65.0.1";
 
 	/**
-	 * NeoForge — deliberately <strong>not</strong> the newest build.
+	 * NeoForge, on the first release line rather than a beta.
 	 *
-	 * <p>Diffing the runtime jars' class sets against every mod's constant pool showed that {@code .40-beta}
-	 * deletes {@code ContainerScreenEvent} (which jei and sophisticatedcore call) and {@code .43-beta} deletes
-	 * {@code PlayerInteractEvent$EntityInteractSpecific} (sophisticatedbackpacks). {@code .38-beta} is the
-	 * highest build where the whole reference pack still links, and it is also the first that ships the
-	 * {@code TooltipFlagExtension} whose absence was killing JEI.
+	 * <p>This used to be {@code 26.2.0.38-beta}, because {@code .40-beta} deletes {@code ContainerScreenEvent}
+	 * and {@code .43-beta} deletes {@code PlayerInteractEvent$EntityInteractSpecific}, and the reference pack's
+	 * jei / sophisticatedcore / sophisticatedbackpacks still called them. Two things ended that:
+	 * {@code .57} and up are releases rather than betas, and the title screen brands whatever build it is running,
+	 * so a beta carrier tells every player it is a beta; and JEI now declares {@code neoforge [26.2.0.67,)}, which
+	 * {@code .38-beta} does not satisfy — staying put had become the thing that froze the pack.
+	 *
+	 * <p>Re-measured at the bump: {@code .38-beta → .88} removes 12 classes and adds 24; of the 98 jars in the
+	 * reference pack exactly two named anything removed, and the current builds of those mods name none of it.
+	 * Every {@code neoforge} versionRange declared in the pack is satisfied. The one thing only the class diff
+	 * caught is that {@code client.gui.ModListScreen} moved to {@code client.gui.modlist} — which the kernel's
+	 * mods-button redirect names, and which would have failed silently. {@code ForeignTypeCarrierTest} now checks
+	 * every such name against the carrier.
 	 */
-	static final String NEOFORGE = "26.2.0.38-beta";
+	static final String NEOFORGE = "26.2.0.88";
 
 	/**
 	 * NeoFormRuntime, pinned to the build actually validated rather than the newest published one.

@@ -51,7 +51,23 @@ import net.forbric.kernel.util.ForbricLog;
  */
 public final class ModsButtonRedirector implements ClassTransformer {
 	static final String KERNEL_SCREEN = "net/forbric/kernel/runtime/KernelModListScreen";
-	private static final String SCREEN_CTOR = "(Lnet/minecraft/client/gui/screens/Screen;)V";
+	private static final String SCREEN = "Lnet/minecraft/client/gui/screens/Screen;";
+	private static final String SCREEN_CTOR = "(" + SCREEN + ")V";
+	/**
+	 * A family may open its list through a static factory instead of {@code new}.
+	 *
+	 * <p>NeoForge 26.2.0.88 does: {@code ModsButton}'s press lambda is
+	 * {@code Gui.setScreen(ModListScreen.create(screen))}, where {@code .38-beta} had {@code new ModListScreen(...)}
+	 * in {@code PauseScreen} itself. Only the construction moved -- the label key and the sprite are unchanged --
+	 * so a pass that handled the {@code NEW} alone would have gone on relabelling the button and repainting its
+	 * icon while it still opened NeoForge's own list. That is worse than not firing at all, because the button
+	 * then lies about what it does.
+	 *
+	 * <p>The rewritten call returns {@code KernelModListScreen} rather than {@code Screen}: every use of the
+	 * original return value accepts a {@code Screen}, and the narrower type verifies wherever the wider one would
+	 * plus wherever the family's own type is required.
+	 */
+	private static final String FACTORY = "create";
 
 	/** The translation key the Forge families label their mods button with. */
 	static final String FML_MODS_KEY = "fml.menu.mods";
@@ -208,6 +224,12 @@ public final class ModsButtonRedirector implements ClassTransformer {
 							&& "<init>".equals(call.name) && SCREEN_CTOR.equals(call.desc)
 							&& REPLACED.contains(call.owner)) {
 						call.owner = KERNEL_SCREEN;
+					} else if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
+							&& FACTORY.equals(call.name) && REPLACED.contains(call.owner)
+							&& ("(" + SCREEN + ")L" + call.owner + ";").equals(call.desc)) {
+						call.owner = KERNEL_SCREEN;
+						call.desc = "(" + SCREEN + ")L" + KERNEL_SCREEN + ";";
+						redirected++;
 					}
 				}
 			}

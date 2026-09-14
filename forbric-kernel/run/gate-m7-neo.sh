@@ -85,7 +85,10 @@ check_absent "no @Mod construction failure" "failed to construct @Mod" "$LOG"
 step "content registered, and the baseline NOT rolled back (must PASS)"
 check "a pure-NeoForge mod registered real content" "registered content: bookshelf: [1-9][0-9]* entr" "$LOG"
 # These two are the revertToVanilla() tripwire — see the header.
-check "NeoForge baseline intact (35)"      "registered content: neoforge: 35 entr" "$LOG"
+# 35 until NeoForge 26.2.0.88, which adds incoming_rpc_method=3 (its new server/jsonrpc API) and
+# changes nothing else in the breakdown. The number is a canary for "NeoForge still registers its own built-ins",
+# so it is pinned exactly and re-derived from the log when the carrier moves.
+check "NeoForge baseline intact (38)"      "registered content: neoforge: 38 entr" "$LOG"
 check "MinecraftForge baseline intact (10)" "registered content: forge: 10 entr" "$LOG"
 check_absent "no double-registration"      "Adding duplicate key" "$LOG"
 check_absent "no registry rollback"        "Rolling back to VANILLA state" "$LOG"

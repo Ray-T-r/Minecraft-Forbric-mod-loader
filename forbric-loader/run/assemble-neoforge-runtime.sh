@@ -14,45 +14,51 @@
 # Output: $OUT (default run/neoforge-runtime/neoforge-runtime.jar), cached — rebuilt only if missing, so
 # DELETE IT when bumping the version below or you will keep shipping the old NeoForge.
 #
-# Pinned to NeoForge 26.2.0.38-beta. The runtime lib versions below come from ITS userdev config.json; bump
-# NF_VERSION and those versions together. (26.2.0.38-beta happens to pin exactly what 26.2.0.7-beta did — the
-# only thing that moved between them is neoform 26.2-1 -> 26.2-2, which is an input to the PATCHED-MC build,
-# not to this list. Do not infer from that that the list is inert: at 26.2.0.64 six of them move.)
+# Pinned to NeoForge 26.2.0.88. The runtime lib versions below come from ITS userdev config.json; bump
+# NF_VERSION and those versions together. (Six of the fourteen moved at this bump: fancymodloader
+# loader/earlydisplay 11.0.13 -> 11.0.16, JarJarSelector/JarJarMetadata 0.5.0 -> 0.5.1, maven-artifact
+# 3.9.9 -> 3.9.16, plexus-utils 3.5.1 -> 3.6.1. The config still lists exactly 40 entries and the same 14
+# survive the "already on the classpath" filter, so nothing was added or dropped.)
 #
-# WHY .38-beta AND NOT THE NEWEST. 26.2 goes up to 26.2.0.64, and .57+ are stable rather than beta, so the
-# newest is tempting. It is also wrong for this instance, measured rather than guessed:
-#   * 26.2.0.40-beta deletes net.neoforged.neoforge.client.event.ContainerScreenEvent (folded into ScreenEvent).
-#     jei-26.2-neoforge-30.14.0.87 and sophisticatedcore-26.2-1.4.90.2199 both still reference it.
-#   * 26.2.0.43-beta deletes PlayerInteractEvent$EntityInteractSpecific. sophisticatedbackpacks-26.2-3.25.83.2018
-#     still references it.
-#   * (26.2.0.45-beta..53-beta also move client.gui.ModListScreen to client.gui.modlist; nothing in the packs
-#     touches that one.)
-# .38-beta is therefore the highest build on which every mod in run/client-merged-pack still LINKS, and it is
-# already high enough to satisfy every neoforge versionRange those mods declare — including jei's
-# [26.2.0.16-beta,), the one range 26.2.0.7-beta failed. Going past .38 buys nothing until jei and the
-# sophisticated* pair publish builds compiled against the new event classes; when they do, re-run the check:
+# WHY .88, AND WHAT IT COST. This was 26.2.0.38-beta, chosen because .40-beta deleted
+# net.neoforged.neoforge.client.event.ContainerScreenEvent and .43-beta deleted
+# PlayerInteractEvent$EntityInteractSpecific, and the packs' jei / sophisticatedcore / sophisticatedbackpacks
+# still referenced them. Two things changed:
+#   * .57 and up are stable rather than beta, and the title screen brands the build it is running, so a beta
+#     carrier says "beta" to every player.
+#   * jei 30.32.0.215 now declares neoforge [26.2.0.67,) — the old pin no longer satisfies JEI at all, which
+#     inverts the original argument: staying on .38-beta is what freezes the pack, not moving off it.
+# Re-measured rather than assumed, .38-beta -> .88 removes 12 classes and adds 24. Of the 98 jars in
+# run/client-merged-pack exactly two referenced anything removed (jei and sophisticatedcore, both
+# ContainerScreenEvent); the current builds of all three of those mods reference none of it. Every `neoforge`
+# versionRange declared anywhere in the pack is open above and below 26.3.0, so .88 satisfies all 45.
+#
+# The one thing the class diff caught that no mod would have: NeoForge moved client.gui.ModListScreen to
+# client.gui.modlist.ModListScreen. The kernel's mods-button redirect names that class, and a wrong name there
+# does not throw — see ForeignTypeCarrierTest, which now checks every ForeignType name against these jars.
+#
+# When bumping again, re-run both directions:
 #     diff <(class list of the old neoforge-runtime.jar) <(class list of the new one)
-#   and scan the mods for anything that only the old side declares. Check it from the other direction too —
-#   every mod's declared `neoforge` versionRange against the build being moved to — so an under-provisioned
-#   mod is named up front instead of failing somewhere far away at runtime.
+#   and scan the mods for anything only the old side declares; then check every mod's declared `neoforge`
+#   versionRange against the build being moved to, so an under-provisioned mod is named up front instead of
+#   failing somewhere far away at runtime.
 #
 # Two libraries in that config.json are deliberately NOT listed below, because they already come from the parent
 # classpath and not from this jar: they are the loader's own dependencies (forbric-loader declares both, and the
 # installer stages them as `classpath` libraries), so the parent-loaded copy is the one NeoForge ends up seeing.
 # Bumping NeoForge therefore means checking them, not copying them:
-#   org.ow2.asm            .38-beta wants 9.9.1, .64 wants 9.10.1; forbric-loader/gradle.properties is 9.10.1.
+#   org.ow2.asm            .88 wants 9.10.1; forbric-loader/gradle.properties is 9.10.1. Match.
 #   com.electronwill.night-config
-#                          .38-beta wants 3.8.3, .64 wants 3.9.0; this tree pins 3.8.1. Measured rather than
-#                          assumed: of the 70 distinct NightConfig members referenced by the universal jar plus
-#                          fancymodloader loader, ZERO are missing from 3.8.1, and 3.9.0 is purely additive over
-#                          it (8 new classes — FileWatcher$NamedDaemonThreadFactory, the io.IoUtils family,
-#                          TomlVersion — none referenced, none removed). 3.8.1 stays, which also keeps --offline
-#                          builds working. Re-run that comparison on the next bump: a
-#                          NightConfig mismatch here is not a link error, it is the StampedConfig.valueMap()
-#                          class of failure that took a whole session to find last time.
+#                          .88 wants 3.9.0; this tree pins 3.8.1. Measured again at this bump, not assumed: the
+#                          universal jar plus fancymodloader loader 11.0.16 reference 70 distinct NightConfig
+#                          members across 19 classes, and 3.8.1 provides all 70. 3.9.0 removes nothing and adds
+#                          8 classes, none referenced. 3.8.1 stays, which also keeps --offline builds working.
+#                          Re-run that comparison on the next bump: a NightConfig mismatch here is not a link
+#                          error, it is the StampedConfig.valueMap() class of failure that took a whole session
+#                          to find last time.
 set -euo pipefail
 
-NF_VERSION="${NF_VERSION:-26.2.0.38-beta}"
+NF_VERSION="${NF_VERSION:-26.2.0.88}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 OUT="${OUT:-$HERE/neoforge-runtime/neoforge-runtime.jar}"
 WORK="${WORK:-$HERE/neoforge-runtime/work}"
@@ -74,19 +80,19 @@ if [ -f "$OUT" ]; then echo "[assemble] runtime up-to-date: $OUT"; fi
 NEOFORGED="https://maven.neoforged.net/releases"
 CENTRAL="https://repo1.maven.org/maven2"
 declare -a LIBS=(
- "$NEOFORGED|net/neoforged/fancymodloader/loader/11.0.13/loader-11.0.13.jar"
- "$NEOFORGED|net/neoforged/fancymodloader/earlydisplay/11.0.13/earlydisplay-11.0.13.jar"
+ "$NEOFORGED|net/neoforged/fancymodloader/loader/11.0.16/loader-11.0.16.jar"
+ "$NEOFORGED|net/neoforged/fancymodloader/earlydisplay/11.0.16/earlydisplay-11.0.16.jar"
  "$NEOFORGED|net/neoforged/bus/8.0.5/bus-8.0.5.jar"
  "$NEOFORGED|net/neoforged/accesstransformers/11.0.2/accesstransformers-11.0.2.jar"
  "$NEOFORGED|net/neoforged/accesstransformers/at-parser/11.0.2/at-parser-11.0.2.jar"
- "$NEOFORGED|net/neoforged/JarJarSelector/0.5.0/JarJarSelector-0.5.0.jar"
- "$NEOFORGED|net/neoforged/JarJarMetadata/0.5.0/JarJarMetadata-0.5.0.jar"
+ "$NEOFORGED|net/neoforged/JarJarSelector/0.5.1/JarJarSelector-0.5.1.jar"
+ "$NEOFORGED|net/neoforged/JarJarMetadata/0.5.1/JarJarMetadata-0.5.1.jar"
  "$NEOFORGED|net/neoforged/mergetool/2.0.7/mergetool-2.0.7-api.jar"
  "$NEOFORGED|net/neoforged/srgutils/1.0.10/srgutils-1.0.10.jar"
  "$CENTRAL|net/jodah/typetools/0.6.3/typetools-0.6.3.jar"
  "$CENTRAL|net/minecrell/terminalconsoleappender/1.3.0/terminalconsoleappender-1.3.0.jar"
- "$CENTRAL|org/apache/maven/maven-artifact/3.9.9/maven-artifact-3.9.9.jar"
- "$CENTRAL|org/codehaus/plexus/plexus-utils/3.5.1/plexus-utils-3.5.1.jar"
+ "$CENTRAL|org/apache/maven/maven-artifact/3.9.16/maven-artifact-3.9.16.jar"
+ "$CENTRAL|org/codehaus/plexus/plexus-utils/3.6.1/plexus-utils-3.6.1.jar"
  "$CENTRAL|org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
 )
 if [ ! -f "$OUT" ]; then

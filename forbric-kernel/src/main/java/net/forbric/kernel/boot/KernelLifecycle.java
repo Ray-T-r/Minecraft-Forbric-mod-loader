@@ -984,11 +984,81 @@ public final class KernelLifecycle {
 					+ "(%s), %d total", posted, now.size() - before, added, now.size());
 
 			mirrorIntoFabricDynamicRegistries(cl, now.subList(before, now.size()));
+			mirrorFabricDynamicRegistriesIntoNeoForge(cl, eventCls, hooksCls);
 		} catch (ClassNotFoundException absent) {
 			ForbricLog.debug("[Forbric/Lifecycle] no NeoForge DataPackRegistryEvent — skipping");
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not declare mods' datapack registries — a mod with its own "
 					+ "worldgen registry will fail with \"Missing registry\" the moment a world loads", unwrap(t));
+		}
+	}
+
+	/**
+	 * The same mirror in the other direction: Fabric-declared dynamic registries into NeoForge's list.
+	 *
+	 * <p><b>Both directions are needed because which list wins is not ours to decide.</b>
+	 * {@link #mirrorIntoFabricDynamicRegistries} exists because fabric-api's {@code WorldLoaderMixin} replaces the
+	 * loader's argument with Fabric's own list. That mixin stopped applying at NeoForge 26.2.0.88, which widened
+	 * {@code RegistryDataLoader.load} from four parameters to five — fabric-api is compiled against vanilla's
+	 * four-parameter signature, so its {@code @At(INVOKE)} anchor no longer resolves. Nothing about that is
+	 * reported as an error: the mixin simply applies partially, Fabric's substitution never happens, NeoForge's
+	 * list is used as-is, and every registry a FABRIC mod declared is missing at world load.
+	 *
+	 * <p>What that cost, measured: lithostitched declares {@code lithostitched:fast_noise_config} through Fabric's
+	 * API, and its own worldgen regions then failed to parse with
+	 * {@code Registry does not exist: ResourceKey[minecraft:root / lithostitched:fast_noise_config]} — nested four
+	 * levels deep inside a density-function {@code Codec.either}, which is where the real message was hiding —
+	 * and the server refused to load its datapacks at all.
+	 *
+	 * <p>Mirroring both ways makes the instance correct under either outcome: whichever list {@code WorldLoader}
+	 * ends up passing, it holds every registry either ecosystem declared. Declared through a second
+	 * {@code NewRegistry} event rather than by touching NeoForge's private list, so NeoForge's own bookkeeping
+	 * ({@code DataPackRegistriesHooks.addRegistryCodec}) runs exactly as it does for its own mods.
+	 *
+	 * <p>Unsynced on purpose, for the same reason the other direction is: sync is a separate path that the
+	 * declaring side already owns, and claiming it twice puts the registry in both synced sets, which the client's
+	 * configuration-phase collector reads twice and dies on.
+	 */
+	private static void mirrorFabricDynamicRegistriesIntoNeoForge(ClassLoader cl, Class<?> eventCls,
+			Class<?> hooksCls) {
+		try {
+			Class<?> dynamicCls = Class.forName(
+					"net.fabricmc.fabric.api.event.registry.DynamicRegistries", false, cl);
+			Class<?> keyCls = Class.forName("net.minecraft.resources.ResourceKey", false, cl);
+			Class<?> codecCls = Class.forName("com.mojang.serialization.Codec", false, cl);
+			Class<?> dataCls = Class.forName("net.minecraft.resources.RegistryDataLoader$RegistryData", false, cl);
+			Method key = dataCls.getMethod("key");
+			Method elementCodec = dataCls.getMethod("elementCodec");
+
+			java.util.Set<Object> alreadyNeo = new java.util.HashSet<>();
+			for (Object data : (java.util.List<?>) hooksCls.getMethod("getDataPackRegistries").invoke(null)) {
+				alreadyNeo.add(key.invoke(data));
+			}
+
+			Object event = eventCls.getConstructor().newInstance();
+			Method declare = eventCls.getMethod("dataPackRegistry", keyCls, codecCls);
+			java.util.List<String> mirrored = new java.util.ArrayList<>();
+			for (Object data : (java.util.List<?>) dynamicCls.getMethod("getDynamicRegistries").invoke(null)) {
+				Object registryKey = key.invoke(data);
+				if (!alreadyNeo.add(registryKey)) continue;
+				declare.invoke(event, registryKey, elementCodec.invoke(data));
+				mirrored.add(String.valueOf(registryKey));
+			}
+			if (mirrored.isEmpty()) return;
+
+			Method process = eventCls.getDeclaredMethod("process");
+			process.setAccessible(true);
+			process.invoke(event);
+			ForbricLog.info("[Forbric/Lifecycle] mirrored %d Fabric-declared datapack registr(ies) into NeoForge's "
+					+ "list too — from NeoForge 26.2.0.88 the loader's argument is NeoForge's own (fabric-api's "
+					+ "WorldLoaderMixin no longer anchors on the widened RegistryDataLoader.load), so a "
+					+ "Fabric-declared registry is invisible at world load without this: %s",
+					mirrored.size(), mirrored);
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] fabric-api dynamic registries absent — nothing to mirror back");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not mirror Fabric's datapack registries into NeoForge's "
+					+ "list — a Fabric mod's worldgen registry may be missing at world load", unwrap(t));
 		}
 	}
 

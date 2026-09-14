@@ -142,17 +142,19 @@ check_absent "no duplicate registry key"    "Duplicate key ResourceKey"         
 # that matters is a datapack ELEMENT failing to parse, which is what an unregistered modifier type produced.
 check_absent "no datapack element unparseable" "Failed to parse .* from pack"                 "$LOG"
 # A SimpleJsonResourceReloadListener names EVERY element it rejects, so assert the SET rather than the absence:
-# three are expected, and a fourth must turn this gate red. All three are mods (or a carrier) shipping data for a
+# two are expected, and a third must turn this gate red. Both are mods (or a carrier) shipping data for a
 # contract that moved, and a genuine NeoForge 26.2 instance rejects each of them the same way:
 #   *:global_loot_modifiers  — the legacy Forge list file (replace/entries). NeoForge's LootModifierManager runs
 #     IGlobalLootModifier.DIRECT_CODEC over every file in loot_modifiers/ and has no list-file concept; its own
 #     GlobalLootModifierProvider stopped writing one. The MODIFIERS are fine — usefulfood:glow_squid and
 #     earthmobsmod:desert_in_ruby are not named here, and this loader names everything that fails.
-#   earthmobsmod:entities/tropical_slime — MC 26.2 split minecraft:type_specific into type_specific/lightning,
-#     /fishing_hook, /player, /cube_mob, /raider. The mod still ships the pre-split shape.
+#   (earthmobsmod:entities/tropical_slime used to be the third. The mod left the pack when the carrier moved to
+#     NeoForge 26.2.0.88: its EntityFluidInteraction mixin calls isInFluid(TagKey) with its own earthmobsmod:mud
+#     tag, and from .88 that path goes through getFluidTypeByTag, which knows water and lava and throws on
+#     anything else — verified against the stock NeoForge-patched jar, so it is not a Forbric failure.)
 UNPARSEABLE=$(grep -aoE "Couldn.t parse data file '[^']*'" "$LOG" | sed -E "s/.*'(.*)'/\1/" | sort -u | paste -sd, -)
 assert_eq "only the known-vestigial data files fail to parse" \
-  "earthmobsmod:entities/tropical_slime,forge:global_loot_modifiers,neoforge:global_loot_modifiers" "$UNPARSEABLE"
+  "forge:global_loot_modifiers,neoforge:global_loot_modifiers" "$UNPARSEABLE"
 check_absent "join negotiation succeeded"   "Network Protocol Error"                           "$LOG"
 # Same treatment for "was loaded too early": pin the SET, because two are upstream behaviour and a third would be
 # ours. Mixin's select() runs selectConfigs -> Extensions.select -> prepareConfigs, so EVERY guest config plugin
@@ -281,8 +283,12 @@ check "the title screen's mods button is labelled as ours" \
 check "pressing it opens the unified list" \
   "the title screen's mods button opened: net\.forbric\.kernel\.runtime\.KernelModListScreen" "$LOG"
 check_absent "and pressing it did not fail" "could not press the title screen's mods button" "$LOG"
+# Asserted on the LABEL, not on the widget class. NeoForge 26.2.0.88 moved the pause menu's mods button out of
+# PauseScreen into its own neoforge.client.gui.widget.ModsButton, so a pattern that also pinned
+# net.minecraft...SpriteIconButton went red while the button said exactly what it was supposed to say. The claim
+# here is what a player reads off the button; which class draws it is upstream's business.
 check "the Forge-family mods button is labelled as ours" \
-  "pause-menu button: net\.minecraft\..*SpriteIconButton.* \"Mods \(Forbric\)\"" "$LOG"
+  "pause-menu button: [^ ]+ \"Mods \(Forbric\)\"" "$LOG"
 check "pressing it opens the unified list" \
   "the mods button opened: net\.forbric\.kernel\.runtime\.KernelModListScreen"   "$LOG"
 check_absent "and pressing it did not fail" "could not press the pause menu's mods button" "$LOG"

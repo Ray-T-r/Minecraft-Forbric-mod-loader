@@ -142,6 +142,15 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * default server config rebuilt ("Overwriting non-null config ..." twice per join), the payload filters
 	 * re-injected, the register payload re-sent. The two unguarded sites get the same flag check the third has,
 	 * so the flag keeps its NeoForge meaning: once per configuration phase, a reconfiguration starts afresh.
+	 *
+	 * <p><b>NeoForge 26.2.0.88 fixed this upstream and the splice now does nothing, by design.</b> The
+	 * {@code initializedConnection} field is gone; {@code initializeOtherConnection} hops to the connection's event
+	 * loop and goes through {@code runConnectionInitialization}, which takes a per-connection lock and returns
+	 * early when the {@code CONNECTION_INITIALIZED} channel attribute is already set. That is a strictly better
+	 * guard than a per-listener boolean, so {@link #guardOtherConnectionInitialisation} finds no field and installs
+	 * nothing. The code stays because the carrier is a pin that moves, and re-deriving this from scratch cost a
+	 * session once already; {@code CommonNetworkInteropInjectorTest} asserts that on a carrier without the field
+	 * NeoForge's own guard is present, so a carrier that drops BOTH goes red instead of quietly regressing.
 	 */
 	private static final String INITIALIZE_OTHER = "initializeOtherConnection";
 	private static final String INITIALIZED_FLAG = "initializedConnection";
