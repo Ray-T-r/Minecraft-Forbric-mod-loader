@@ -211,9 +211,17 @@ final class InstallerGui {
 		});
 	}
 
-	/** The version this installer was built at, from its own manifest; "dev" when run from a class directory. */
+	/**
+	 * The version this installer was built at, read from its own jar manifest.
+	 *
+	 * <p>The fallback is {@code "dev"} and must stay a non-version: it is reached when there is no manifest to
+	 * read — running from a class directory, or from a jar whose build forgot {@code Implementation-Version}.
+	 * It used to be the literal {@code "0.1.0"}, which is a claim rather than an admission, and it was wrong
+	 * from the moment the version moved: the jar never carried the attribute, so EVERY build took the fallback
+	 * and an installer built at 0.2.0 showed a user "0.1.0". A version that cannot be determined has to say so.
+	 */
 	private static String loaderVersion() {
 		String version = InstallerGui.class.getPackage().getImplementationVersion();
-		return version == null ? "0.1.0" : version;
+		return version == null ? "dev" : version;
 	}
 }
