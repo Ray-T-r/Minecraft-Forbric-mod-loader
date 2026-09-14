@@ -47,6 +47,10 @@ class InstallerLoaderBrandTest {
 			"forbric-kernel-installer", "src", "main", "java", "net", "forbric", "installer", "kernel",
 			"Installer.java").normalize();
 
+	private static final Path GUI_SOURCE = INSTALLER_SOURCE.resolveSibling("InstallerGui.java");
+	private static final Path INSTALLER_BUILD = Path.of(System.getProperty("user.dir"), "..",
+			"forbric-kernel-installer", "build.gradle").normalize();
+
 	private static final Pattern DECLARED = Pattern.compile(
 			"DECLARED_LOADER\\s*=\\s*\"net\\.fabricmc:fabric-loader:([^\"]+)\"");
 
@@ -58,6 +62,37 @@ class InstallerLoaderBrandTest {
 				+ "another ecosystem, move this test with it");
 		assertEquals(KernelFabricEcosystem.FABRIC_LOADER_API_LEVEL, m.group(1),
 				"the version the installer tells a launcher about must be the one the kernel provides");
+	}
+
+	/**
+	 * The installer's jar must carry its own version, and the fallback must not pretend to be one.
+	 *
+	 * <p>The window shows this number to the user. It read {@code Package.getImplementationVersion()} with a
+	 * literal {@code "0.1.0"} fallback, and the jar task never set the attribute — so the lookup returned null
+	 * on every build ever made, the fallback always won, and an installer built at 0.2.0 told the user it was
+	 * 0.1.0. It was reported by a user, not by any build.
+	 *
+	 * <p>Two halves, and both are needed: the attribute makes the real answer available, and a non-version
+	 * fallback means that if the attribute ever goes missing again the window says {@code dev} instead of
+	 * quietly naming a version that was true once.
+	 */
+	@Test
+	void theInstallersOwnVersionIsReadFromItsManifestAndNeverGuessed() throws Exception {
+		assumeTrue(Files.isRegularFile(GUI_SOURCE), "installer module absent — skipping (" + GUI_SOURCE + ")");
+		assumeTrue(Files.isRegularFile(INSTALLER_BUILD), "installer build file absent");
+
+		String gradle = Files.readString(INSTALLER_BUILD, StandardCharsets.UTF_8);
+		assertTrue(gradle.contains("'Implementation-Version': project.version"),
+				"the jar task must stamp the version it was built at, or the window can only guess");
+
+		String gui = Files.readString(GUI_SOURCE, StandardCharsets.UTF_8);
+		Matcher fallback = Pattern.compile("getImplementationVersion\\(\\);\\s*return version == null \\? \"([^\"]*)\"")
+				.matcher(gui);
+		assertTrue(fallback.find(), "loaderVersion() must still read the manifest with an explicit fallback");
+		String value = fallback.group(1);
+		assertFalse(value.matches(".*\\d+\\.\\d+.*"),
+				"the fallback must not look like a version — it is what the window shows when the real one "
+						+ "cannot be determined, and \"" + value + "\" is a claim rather than an admission");
 	}
 
 	/**
