@@ -17,6 +17,7 @@
 package net.forbric.installer.kernel;
 
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -61,11 +62,23 @@ final class InstallerGui {
 	private void show() {
 		frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
 		frame.setLayout(new BorderLayout(0, 8));
-		frame.add(header(), BorderLayout.NORTH);
-		frame.add(form(), BorderLayout.CENTER);
-		frame.add(footer(), BorderLayout.SOUTH);
+
+		// The form belongs with the header, not in CENTER. CENTER is the slot BorderLayout gives the leftover
+		// space to — and takes it back from first when there is none, which clipped the last row ("Built
+		// artifacts" and its Browse button) right off the bottom. The log is the thing that should grow.
+		JPanel top = new JPanel(new BorderLayout(0, 8));
+		top.add(header(), BorderLayout.NORTH);
+		top.add(form(), BorderLayout.CENTER);
+
+		frame.add(top, BorderLayout.NORTH);
+		frame.add(logPane(), BorderLayout.CENTER);
+		frame.add(buttons(), BorderLayout.SOUTH);
 		frame.pack();
-		frame.setMinimumSize(new Dimension(640, frame.getHeight()));
+		// Wide enough that the header reads in full: it is one line and JLabel ellipsises rather than wraps, so
+		// a window narrower than the sentence silently truncates it to "… NeoForge mods i…".
+		Dimension packed = frame.getSize();
+		frame.setMinimumSize(new Dimension(Math.max(760, packed.width), packed.height));
+		frame.setSize(frame.getMinimumSize());
 		frame.setLocationRelativeTo(null);
 		frame.setVisible(true);
 	}
@@ -76,6 +89,9 @@ final class InstallerGui {
 		panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 0, 12));
 		JLabel title = new JLabel("Forbric — Fabric, MinecraftForge and NeoForge mods in one game");
 		title.setFont(title.getFont().deriveFont(title.getFont().getSize2D() + 3f));
+		// BoxLayout positions a child by its own alignmentX, and these two did not agree: the title floated
+		// while the paragraph below it sat left, which is why the heading appeared shoved to one side.
+		title.setAlignmentX(Component.LEFT_ALIGNMENT);
 		panel.add(title);
 		panel.add(Box.createVerticalStrut(6));
 		JTextArea intro = new JTextArea("Installs a version your usual launcher can start. The game base and the "
@@ -86,6 +102,8 @@ final class InstallerGui {
 		intro.setWrapStyleWord(true);
 		intro.setOpaque(false);
 		intro.setBorder(null);
+		intro.setFocusable(false);
+		intro.setAlignmentX(Component.LEFT_ALIGNMENT);
 		intro.setFont(title.getFont().deriveFont(title.getFont().getSize2D() - 3f));
 		panel.add(intro);
 		return panel;
@@ -131,15 +149,20 @@ final class InstallerGui {
 		}
 	}
 
-	private JPanel footer() {
-		JPanel panel = new JPanel(new BorderLayout(0, 8));
-		panel.setBorder(BorderFactory.createEmptyBorder(8, 12, 12, 12));
+	/** The log, which is the one thing here that should take the leftover space. */
+	private JScrollPane logPane() {
 		log.setEditable(false);
-		panel.add(new JScrollPane(log), BorderLayout.CENTER);
-		JPanel buttons = new JPanel(new BorderLayout());
+		JScrollPane pane = new JScrollPane(log);
+		pane.setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 12));
+		pane.setPreferredSize(new Dimension(0, 240));
+		return pane;
+	}
+
+	private JPanel buttons() {
+		JPanel panel = new JPanel(new BorderLayout());
+		panel.setBorder(BorderFactory.createEmptyBorder(8, 12, 12, 12));
 		install.addActionListener(e -> runInstall());
-		buttons.add(install, BorderLayout.LINE_END);
-		panel.add(buttons, BorderLayout.SOUTH);
+		panel.add(install, BorderLayout.LINE_END);
 		return panel;
 	}
 
