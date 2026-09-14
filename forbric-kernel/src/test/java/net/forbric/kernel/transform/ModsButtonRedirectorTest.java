@@ -26,6 +26,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -52,17 +54,36 @@ class ModsButtonRedirectorTest {
 			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
 					"patched-mc-merged-26.2.jar").normalize();
 
+	/**
+	 * The Forge-family button does not live in one fixed class, and pinning it to one is the mistake the
+	 * transformer's own javadoc is about. It was {@code PauseScreen} on NeoForge 26.2.0.38-beta; on 26.2.0.88 the
+	 * NeoForge half moved out to {@code neoforge.client.gui.widget.ModsButton}, which is not in the merged base at
+	 * all — it is in the runtime jar. So these tests FIND the carriers the same way the transformer does, by
+	 * marker, across both staged jars, and then assert against whatever they turn out to be.
+	 */
+	private static final Path NEO_RUNTIME =
+			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "neoforge-runtime",
+					"neoforge-runtime.jar").normalize();
+
 	private static final String PAUSE = "net/minecraft/client/gui/screens/PauseScreen";
-	private static final String TITLE = "net/minecraft/client/gui/screens/TitleScreen";
 	private static final String NEO = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE);
 	private static final String FORGE = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE);
 
 	@Test
-	void theStagedPauseScreenStillBuildsAFamilysOwnModList() throws Exception {
-		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
-		List<String> built = constructed(parse(readClass(PAUSE + ".class")));
-		assertTrue(built.contains(NEO), "the base must still construct NeoForge's ModListScreen — if it stopped, "
-				+ "the button moved and this redirect needs re-deriving");
+	void theStagedGameStillOpensAFamilysOwnModListSomewhere() throws Exception {
+		Map<String, byte[]> carriers = carriers();
+		assumeTrue(!carriers.isEmpty(), "staged jars absent");
+
+		Map<String, List<String>> opened = new TreeMap<>();
+		for (Map.Entry<String, byte[]> e : carriers.entrySet()) {
+			List<String> families = opensAFamilysList(parse(e.getValue()));
+			if (!families.isEmpty()) opened.put(e.getKey(), families);
+		}
+		assertTrue(opened.values().stream().flatMap(List::stream).anyMatch(NEO::equals),
+				"something in the staged jars must still open NeoForge's own ModListScreen — if nothing does, the "
+						+ "button moved again and this redirect needs re-deriving. Carriers found: " + opened);
+		assertTrue(opened.values().stream().flatMap(List::stream).anyMatch(FORGE::equals),
+				"and MinecraftForge's, got " + opened);
 	}
 
 	/**
@@ -73,24 +94,29 @@ class ModsButtonRedirectorTest {
 	 * changed before, and the symptom would be a mods button that silently lists one family again.
 	 */
 	@Test
-	void bothFamiliesModListsAreRePointedAtTheUnifiedOne() throws Exception {
-		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
-		byte[] in = readClass(PAUSE + ".class");
-		byte[] out = transform(PAUSE, in);
-		assertTrue(out != in, "the staged base must still need the redirect");
+	void everyCarrierIsRePointedAtTheUnifiedOne() throws Exception {
+		Map<String, byte[]> carriers = carriers();
+		assumeTrue(!carriers.isEmpty(), "staged jars absent");
 
-		ClassNode node = parse(out);
-		List<String> built = constructed(node);
-		assertTrue(built.contains(ModsButtonRedirector.KERNEL_SCREEN), "the kernel's screen must be constructed");
-		assertTrue(!built.contains(NEO) && !built.contains(FORGE),
-				"no family's own mod list may still be constructed here, got " + built);
+		int repointed = 0;
+		for (Map.Entry<String, byte[]> e : carriers.entrySet()) {
+			if (opensAFamilysList(parse(e.getValue())).isEmpty()) continue;
+			byte[] out = transform(e.getKey(), e.getValue());
+			assertTrue(out != e.getValue(), e.getKey() + " opens a family's list and must still need the redirect");
+			List<String> left = opensAFamilysList(parse(out));
+			assertTrue(left.isEmpty(), "no family's own mod list may still be opened from " + e.getKey()
+					+ ", got " + left);
+			assertTrue(opensTheKernelsList(parse(out)), e.getKey() + " must open the kernel's screen instead");
+			repointed++;
+		}
+		assertTrue(repointed >= 2, "both families' carriers must be re-pointed, got " + repointed);
 	}
 
 	/** The constructor call has to move with the NEW, or the class does not link. */
 	@Test
 	void theConstructorCallMovesWithTheAllocation() throws Exception {
 		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
-		ClassNode node = parse(transform(PAUSE, readClass(PAUSE + ".class")));
+		ClassNode node = parse(transform(PAUSE, readClass(MERGED_BASE, PAUSE + ".class")));
 		for (MethodNode method : node.methods) {
 			if (method.instructions == null) continue;
 			for (AbstractInsnNode insn : method.instructions) {
@@ -104,17 +130,6 @@ class ModsButtonRedirectorTest {
 		}
 	}
 
-	@Test
-	void theTitleScreensButtonIsRedirectedToo() throws Exception {
-		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
-		byte[] in = readClass(TITLE + ".class");
-		byte[] out = transform(TITLE, in);
-		assertTrue(out != in, "the title screen carries a mods button of its own");
-		List<String> built = constructed(parse(out));
-		assertTrue(built.contains(ModsButtonRedirector.KERNEL_SCREEN));
-		assertTrue(!built.contains(NEO) && !built.contains(FORGE), built.toString());
-	}
-
 	/**
 	 * The label moves too, because the redirect alone is invisible.
 	 *
@@ -124,13 +139,12 @@ class ModsButtonRedirectorTest {
 	 */
 	@Test
 	void theButtonSaysWhoseListItOpens() throws Exception {
-		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
-		ClassNode before = parse(readClass(PAUSE + ".class"));
-		assertTrue(constants(before).contains(ModsButtonRedirector.FML_MODS_KEY),
-				"the base must still label the button with the Forge families' key");
+		Map.Entry<String, byte[]> carrier = carrierCarrying(ModsButtonRedirector.FML_MODS_KEY);
+		assumeTrue(carrier != null, "staged jars absent");
 
-		ClassNode after = parse(transform(PAUSE, readClass(PAUSE + ".class")));
-		assertTrue(constants(after).contains(ModsButtonRedirector.FORBRIC_LABEL), "the new label must be there");
+		ClassNode after = parse(transform(carrier.getKey(), carrier.getValue()));
+		assertTrue(constants(after).contains(ModsButtonRedirector.FORBRIC_LABEL),
+				"the new label must be there in " + carrier.getKey());
 		assertTrue(!constants(after).contains(ModsButtonRedirector.FML_MODS_KEY),
 				"and the old key must be gone, or both buttons still say the same word");
 	}
@@ -138,8 +152,9 @@ class ModsButtonRedirectorTest {
 	/** A literal, not a translation key: the language is loaded long after this class, and a missing key renders raw. */
 	@Test
 	void theLabelIsBuiltAsALiteralAndNotAKey() throws Exception {
-		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
-		ClassNode node = parse(transform(PAUSE, readClass(PAUSE + ".class")));
+		Map.Entry<String, byte[]> carrier = carrierCarrying(ModsButtonRedirector.FML_MODS_KEY);
+		assumeTrue(carrier != null, "staged jars absent");
+		ClassNode node = parse(transform(carrier.getKey(), carrier.getValue()));
 		boolean sawLiteral = false;
 		for (MethodNode method : node.methods) {
 			if (method.instructions == null) continue;
@@ -165,13 +180,10 @@ class ModsButtonRedirectorTest {
 	 */
 	@Test
 	void theButtonWearsTheKernelsOwnIcon() throws Exception {
-		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
-		List<String> before = constants(parse(readClass(PAUSE + ".class")));
-		assertTrue(before.contains(ModsButtonRedirector.FML_SPRITE_NAMESPACE)
-				&& before.contains(ModsButtonRedirector.FML_SPRITE_PATH),
-				"the base must still point the button at the Forge family's sprite");
+		Map.Entry<String, byte[]> carrier = carrierCarrying(ModsButtonRedirector.FML_SPRITE_PATH);
+		assumeTrue(carrier != null, "staged jars absent");
 
-		List<String> after = constants(parse(transform(PAUSE, readClass(PAUSE + ".class"))));
+		List<String> after = constants(parse(transform(carrier.getKey(), carrier.getValue())));
 		assertTrue(after.contains(ModsButtonRedirector.FORBRIC_SPRITE_NAMESPACE)
 				&& after.contains(ModsButtonRedirector.FORBRIC_SPRITE_PATH), "ours must be there");
 		assertTrue(!after.contains(ModsButtonRedirector.FML_SPRITE_PATH),
@@ -187,8 +199,9 @@ class ModsButtonRedirectorTest {
 	 */
 	@Test
 	void theNamespaceAndThePathMoveTogether() throws Exception {
-		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
-		ClassNode node = parse(transform(PAUSE, readClass(PAUSE + ".class")));
+		Map.Entry<String, byte[]> carrier = carrierCarrying(ModsButtonRedirector.FML_SPRITE_PATH);
+		assumeTrue(carrier != null, "staged jars absent");
+		ClassNode node = parse(transform(carrier.getKey(), carrier.getValue()));
 		for (MethodNode method : node.methods) {
 			if (method.instructions == null) continue;
 			AbstractInsnNode prev = null;
@@ -217,7 +230,7 @@ class ModsButtonRedirectorTest {
 	@Test
 	void aSecondPassLeavesTheRedirectedClassAlone() throws Exception {
 		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
-		byte[] once = transform(PAUSE, readClass(PAUSE + ".class"));
+		byte[] once = transform(PAUSE, readClass(MERGED_BASE, PAUSE + ".class"));
 		assertSame(once, transform(PAUSE, once), "nothing left to re-point means nothing to rewrite");
 	}
 
@@ -225,13 +238,13 @@ class ModsButtonRedirectorTest {
 	@Test
 	void anyOtherClassIsHandedBackUntouched() throws Exception {
 		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
-		byte[] unrelated = readClass("net/minecraft/client/gui/screens/ChatScreen.class");
+		byte[] unrelated = readClass(MERGED_BASE, "net/minecraft/client/gui/screens/ChatScreen.class");
 		assertSame(unrelated, transform("net/minecraft/client/gui/screens/ChatScreen", unrelated));
 	}
 
 	@Test
 	void theTwoFamiliesAreNamedThroughForeignTypeAndDiffer() {
-		assertEquals("net/neoforged/neoforge/client/gui/ModListScreen", NEO);
+		assertEquals("net/neoforged/neoforge/client/gui/modlist/ModListScreen", NEO);
 		assertEquals("net/minecraftforge/client/gui/ModListScreen", FORGE);
 	}
 
@@ -250,19 +263,80 @@ class ModsButtonRedirectorTest {
 		return out;
 	}
 
-	private static List<String> constructed(ClassNode node) {
+	/**
+	 * Which families' own mod list this class opens, by either shape: {@code new ModListScreen(screen)} or the
+	 * static {@code ModListScreen.create(screen)} NeoForge moved to at 26.2.0.88.
+	 */
+	private static List<String> opensAFamilysList(ClassNode node) {
 		List<String> out = new ArrayList<>();
 		for (MethodNode method : node.methods) {
 			if (method.instructions == null) continue;
 			for (AbstractInsnNode insn : method.instructions) {
 				if (insn instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW
-						&& type.desc.endsWith("ModListScreen")) {
+						&& (NEO.equals(type.desc) || FORGE.equals(type.desc))) {
 					out.add(type.desc);
+				} else if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
+						&& (NEO.equals(call.owner) || FORGE.equals(call.owner))
+						&& call.desc.startsWith("(Lnet/minecraft/client/gui/screens/Screen;)")) {
+					out.add(call.owner);
 				}
 			}
 		}
 		return out;
 	}
+
+	private static boolean opensTheKernelsList(ClassNode node) {
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW
+						&& ModsButtonRedirector.KERNEL_SCREEN.equals(type.desc)) return true;
+				if (insn instanceof MethodInsnNode call
+						&& ModsButtonRedirector.KERNEL_SCREEN.equals(call.owner)) return true;
+			}
+		}
+		return false;
+	}
+
+	/** The first staged carrier whose constants contain {@code marker}, or null when nothing is staged. */
+	private static Map.Entry<String, byte[]> carrierCarrying(String marker) throws Exception {
+		for (Map.Entry<String, byte[]> e : carriers().entrySet()) {
+			if (constants(parse(e.getValue())).contains(marker)) return e;
+		}
+		return null;
+	}
+
+	/**
+	 * Every class in the staged jars that mentions a mods-button marker, excluding the screens being replaced.
+	 * Scanned once: the merged base alone is tens of thousands of entries.
+	 */
+	private static Map<String, byte[]> carriers() throws Exception {
+		if (CARRIERS != null) return CARRIERS;
+		Map<String, byte[]> found = new TreeMap<>();
+		for (Path jar : List.of(MERGED_BASE, NEO_RUNTIME)) {
+			if (!Files.isRegularFile(jar)) continue;
+			try (ZipFile zip = new ZipFile(jar.toFile())) {
+				for (ZipEntry entry : zip.stream().toList()) {
+					if (!entry.getName().endsWith(".class")) continue;
+					String internal = entry.getName().substring(0, entry.getName().length() - 6);
+					if (NEO.equals(internal) || FORGE.equals(internal)) continue;
+					byte[] bytes;
+					try (InputStream in = zip.getInputStream(entry)) {
+						bytes = in.readAllBytes();
+					}
+					String raw = new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1);
+					if (raw.contains("ModListScreen") || raw.contains(ModsButtonRedirector.FML_MODS_KEY)
+							|| raw.contains(ModsButtonRedirector.FML_SPRITE_PATH)) {
+						found.putIfAbsent(internal, bytes);
+					}
+				}
+			}
+		}
+		CARRIERS = found;
+		return found;
+	}
+
+	private static Map<String, byte[]> CARRIERS;
 
 	private static byte[] transform(String internal, byte[] bytes) {
 		return new ModsButtonRedirector().transform(internal.replace('/', '.'), bytes, null);
@@ -274,10 +348,10 @@ class ModsButtonRedirectorTest {
 		return node;
 	}
 
-	private static byte[] readClass(String entry) throws Exception {
-		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
+	private static byte[] readClass(Path jar, String entry) throws Exception {
+		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry e = zip.getEntry(entry);
-			assertTrue(e != null, entry + " must be in the staged merged base");
+			assertTrue(e != null, entry + " must be in " + jar.getFileName());
 			try (InputStream in = zip.getInputStream(e)) {
 				return in.readAllBytes();
 			}

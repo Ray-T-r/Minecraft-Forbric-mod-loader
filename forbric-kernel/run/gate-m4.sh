@@ -116,7 +116,10 @@ check "MinecraftForge content (Macaw's 304)"   "registered content: mcwbridges: 
 # regression shows up as "the content is invisible in game" rather than as a count that still looks plausible.
 check "Macaw's CreativeModeTab exists"         "registered content: mcwbridges: .*creative_mode_tab=1" "$LOG"
 check "MinecraftForge content (GeckoLib)"      "registered content: geckolib: [1-9][0-9]* entr" "$LOG"
-check "NeoForge baseline content (35)"         "registered content: neoforge: 35 entr" "$LOG"
+# 35 until NeoForge 26.2.0.88, which adds incoming_rpc_method=3 (its new server/jsonrpc API) and
+# changes nothing else in the breakdown. The number is a canary for "NeoForge still registers its own built-ins",
+# so it is pinned exactly and re-derived from the log when the carrier moves.
+check "NeoForge baseline content (38)"         "registered content: neoforge: 38 entr" "$LOG"
 check "Fabric mod content (Jade)"              "registered content: jade: [1-9][0-9]* entr" "$LOG"
 check "Jade server plugins load"               "Start loading plugin from Jade" "$LOG"
 

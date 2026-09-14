@@ -35,7 +35,23 @@ class ForgeVersionRangeTest {
 		assertTrue(ForgeVersionRange.satisfies("[26.2.0.16-beta,)", "26.2.0.16-beta"));
 		assertTrue(ForgeVersionRange.satisfies("[26.2.0.16-beta,)", "26.2.0.20-beta"));
 		assertTrue(ForgeVersionRange.satisfies("[26.2.0.16-beta,)", "26.2.0.38-beta"),
-				"and 26.2.0.38-beta, the carrier the audit's finding actually moved us to, does satisfy it");
+				"and 26.2.0.38-beta, the carrier the audit's finding first moved us to, does satisfy it");
+	}
+
+	/**
+	 * The same case a carrier later, and the reason the pin moved again: a release version against ranges written
+	 * in betas. JEI 30.32 declares {@code [26.2.0.67,)}, which {@code 26.2.0.38-beta} does not satisfy — the old
+	 * pin had become the thing holding the pack back — and the sophisticated* pair declare
+	 * {@code [26.2.0.53-beta,26.3.0)}, which a release-suffixed {@code 26.2.0.88} has to satisfy on both bounds.
+	 */
+	@Test
+	void theJeiCaseOneCarrierLater() {
+		assertFalse(ForgeVersionRange.satisfies("[26.2.0.67,)", "26.2.0.38-beta"),
+				"the old pin does not satisfy what JEI now asks for");
+		assertTrue(ForgeVersionRange.satisfies("[26.2.0.67,)", "26.2.0.88"));
+		assertTrue(ForgeVersionRange.satisfies("[26.2.0.53-beta,26.3.0)", "26.2.0.88"),
+				"a release build must compare above a beta lower bound, and below the 26.3.0 ceiling");
+		assertFalse(ForgeVersionRange.satisfies("[26.2.0.53-beta,26.3.0)", "26.3.0"));
 	}
 
 	@Test

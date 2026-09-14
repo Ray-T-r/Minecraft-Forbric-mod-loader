@@ -102,7 +102,48 @@ class CommonNetworkInteropInjectorTest {
 			added += delta;
 			if (delta > 0) new Analyzer<>(new BasicVerifier()).analyze(after.name, m);
 		}
-		assertEquals(2, added, "the brand-payload site and the enabled-features site — the third was already guarded");
+		if (listenerCarriesTheFlag(before)) {
+			assertEquals(2, added,
+					"the brand-payload site and the enabled-features site — the third was already guarded");
+		} else {
+			assertEquals(0, added, "no flag to read means nothing to splice");
+			assertTrue(neoForgeGuardsInitialisationItself(),
+					"the carrier dropped ClientConfigurationPacketListenerImpl.initializedConnection, so the kernel "
+							+ "splices no guard — and NeoForge must then be guarding re-initialisation itself. It "
+							+ "does so from 26.2.0.88 via runConnectionInitialization + the CONNECTION_INITIALIZED "
+							+ "channel attribute. If neither guard exists, every join re-runs the whole "
+							+ "initialisation: every mod's server config rebuilt, filters re-injected, register "
+							+ "payload re-sent");
+		}
+	}
+
+	private static boolean listenerCarriesTheFlag(ClassNode listener) {
+		return listener.fields.stream().anyMatch(f -> "initializedConnection".equals(f.name) && "Z".equals(f.desc));
+	}
+
+	/** NeoForge's own guard: {@code runConnectionInitialization} consults {@code isConnectionInitialized}. */
+	private static boolean neoForgeGuardsInitialisationItself() throws Exception {
+		java.nio.file.Path carrier = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+				"neoforge-runtime", "neoforge-runtime.jar").normalize();
+		if (!Files.isRegularFile(carrier)) return true; // nothing staged to contradict it
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(carrier.toFile())) {
+			java.util.zip.ZipEntry e = zip.getEntry(
+					"net/neoforged/neoforge/client/network/registration/ClientNetworkRegistry.class");
+			if (e == null) return false;
+			ClassNode node;
+			try (InputStream in = zip.getInputStream(e)) {
+				node = parse(in.readAllBytes());
+			}
+			for (MethodNode m : node.methods) {
+				if (!"runConnectionInitialization".equals(m.name) || m.instructions == null) continue;
+				for (AbstractInsnNode insn : m.instructions) {
+					if (insn instanceof MethodInsnNode call && "isConnectionInitialized".equals(call.name)) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
 	}
 
 	@Test

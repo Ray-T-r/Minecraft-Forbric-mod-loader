@@ -40,9 +40,9 @@ import net.forbric.kernel.util.ForbricLog;
  * genuinely does not exist in .7, where those methods are inlined on {@code TooltipFlag} instead. Tracing that
  * back to a version range took a disassembler. One warning line would have said it.
  *
- * <p>That warning is also what the carrier bump was decided on: the NeoForge carrier is now
- * {@code 26.2.0.38-beta}, which does ship {@code TooltipFlagExtension}, and this audit reports nothing for the
- * merged pack. Two things follow. Silence here is now the assertion (gate-m9-client pins the set to empty), and
+ * <p>That warning is also what the carrier bump was decided on: the NeoForge carrier moved to
+ * {@code 26.2.0.38-beta}, which does ship {@code TooltipFlagExtension}, and is now {@code 26.2.0.88} — the first
+ * release line rather than a beta. This audit reports nothing for the merged pack at either. Two things follow. Silence here is now the assertion (gate-m9-client pins the set to empty), and
  * this class has done its job precisely when it has nothing to say — so resist deleting it as unused. And the
  * example above is history, not the current state; do not read the version out of it.
  *
