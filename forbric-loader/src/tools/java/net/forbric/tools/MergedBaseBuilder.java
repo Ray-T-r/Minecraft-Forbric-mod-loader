@@ -101,6 +101,7 @@ public final class MergedBaseBuilder {
 	private final List<String> structuralConflicts = new ArrayList<>();
 	private int classesTakenVanilla, classesTakenForge, classesTakenNeo, classesMerged, classesForgeOnly;
 	private int splicedMethods, splicedFields, mergedInterfaces, conflictMethods, conflictFields;
+	private int lambdasRealigned;
 	private int superclassRebased, diamondDefaultsResolved, duplicateFieldsResolved, fieldInitPreserved;
 	private int collisionMethodsDropped, classAccessWidened, bridgedConstructors, exclusiveFieldsInitialized;
 	private int divergentAnonymousMaterialized, divergentAnonymousCallSitesRewritten;
@@ -872,6 +873,7 @@ public final class MergedBaseBuilder {
 			// else (neither hooked): keep the base's body — semantically vanilla on both sides, nothing lost.
 		}
 
+		realignCapturedLambdas(baseN, parse(baseIsForge ? frg : neu), otherN, baseMethods);
 		resolveDuplicateFieldNames(baseN);
 		resolveDiamondDefaults(baseN);
 		Set<String> allExclusiveAdded = new LinkedHashSet<>(baseExclusiveAddedFields);
@@ -882,6 +884,101 @@ public final class MergedBaseBuilder {
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		baseN.accept(cw);
 		return cw.toByteArray();
+	}
+
+	/**
+	 * Puts every captured lambda back on the same side as the method that captures it.
+	 *
+	 * <p>A lambda body is spliced by the same "the other side hooked here and the base did not" rule as any other
+	 * method, and that rule is wrong for a lambda: a lambda is not called, it is NAMED — by the method handle in
+	 * its capturing method's {@code invokedynamic}. So when the base keeps {@code M} and the other side's
+	 * {@code lambda$M$N} wins the splice, {@code M}'s own call site silently resolves to a body from the other
+	 * compile, and the button does whatever the OTHER side's button did.
+	 *
+	 * <p>That is not theoretical and it is not rare enough to ignore. On NeoForge 26.2.0.88 it made
+	 * {@code PauseScreen}'s "Save and Quit to Title" open the mods list: NeoForge's patch shifted the lambda
+	 * numbering by one, so MinecraftForge's mods-button {@code lambda$createPauseMenu$11(Button)} collided with
+	 * vanilla's disconnect lambda of the same name and descriptor, won the splice, and the disconnect button's
+	 * {@code invokedynamic} — still NeoForge's, since NeoForge's {@code createPauseMenu} was kept — resolved to
+	 * it. An exhaustive scan of the merged base found seven of these across 10,956 two-sided classes, every one
+	 * of them a Forge body reached from a Neo-kept method, including {@code TitleScreen.init}.
+	 *
+	 * <p>The rule is exact rather than heuristic: the capturing method's body is compared against both sides, and
+	 * only when it matches one of them (so its side is known) is each captured lambda forced to that same side.
+	 * A method whose body matches neither — spliced, rewritten, repaired elsewhere in this builder — is left
+	 * alone, because its side is not a fact.
+	 *
+	 * <p>The displaced body is not re-homed: its only caller was the capturing method that lost, so nothing kept
+	 * can still reach it. When a lambda is genuinely captured from BOTH sides' surviving methods the choice is
+	 * real, and that is recorded as a conflict instead of being made silently — it has not happened yet.
+	 */
+	private void realignCapturedLambdas(ClassNode baseN, ClassNode pristineBase, ClassNode otherN,
+			Map<String, MethodNode> baseMethods) {
+		// The base side as it was BEFORE the method merge ran: baseN is mutated in place, so its own index no
+		// longer tells you what the base compile said. Getting this wrong is silent — the pass simply never fires.
+		Map<String, MethodNode> pristine = methodMap(pristineBase);
+		Map<String, MethodNode> otherMethods = methodMap(otherN);
+		Map<String, String> claimedBy = new LinkedHashMap<>();
+		for (MethodNode m : new ArrayList<>(baseN.methods)) {
+			if (m.instructions == null || m.name.startsWith("lambda$")) continue;
+			MethodNode inBase = pristine.get(m.name + m.desc);
+			MethodNode inOther = otherMethods.get(m.name + m.desc);
+			if (inOther == null) continue;
+
+			// Which compile is this body from? Only a body that IS one of the two answers the question.
+			String kept = bodyText(m);
+			boolean fromBase = inBase != null && kept.equals(bodyText(inBase));
+			boolean fromOther = kept.equals(bodyText(inOther));
+			if (fromBase == fromOther) continue; // neither, or indistinguishable: not a fact, leave it
+			Map<String, MethodNode> sideMethods = fromBase ? pristine : otherMethods;
+			String sideName = fromBase ? "base" : "other";
+
+			for (AbstractInsnNode insn : m.instructions) {
+				if (!(insn instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy)) continue;
+				for (Object arg : indy.bsmArgs) {
+					if (!(arg instanceof org.objectweb.asm.Handle h)) continue;
+					if (!h.getOwner().equals(baseN.name) || !h.getName().startsWith("lambda$")) continue;
+					String key = h.getName() + h.getDesc();
+					MethodNode want = sideMethods.get(key);
+					MethodNode have = baseMethods.get(key);
+					if (want == null || have == null) continue;
+					String previous = claimedBy.putIfAbsent(key, sideName);
+					if (previous != null && !previous.equals(sideName)) {
+						conflicts.add(baseN.name + "#" + key + " (captured from BOTH sides' surviving methods — "
+								+ "left as merged; one of the two call sites resolves to the other compile's body)");
+						continue;
+					}
+					if (bodyText(have).equals(bodyText(want))) continue;
+					replaceMethod(baseN, key, want, baseMethods);
+					lambdasRealigned++;
+				}
+			}
+		}
+	}
+
+	/** A body rendered for equality across two compiles of the same source: opcodes and their operands. */
+	private static String bodyText(MethodNode m) {
+		if (m.instructions == null) return "";
+		StringBuilder sb = new StringBuilder();
+		for (AbstractInsnNode i : m.instructions) {
+			if (i.getOpcode() < 0) continue;
+			sb.append(i.getOpcode()).append(':');
+			if (i instanceof MethodInsnNode c) sb.append(c.owner).append('.').append(c.name).append(c.desc);
+			else if (i instanceof FieldInsnNode f) sb.append(f.owner).append('.').append(f.name).append(f.desc);
+			else if (i instanceof TypeInsnNode t) sb.append(t.desc);
+			else if (i instanceof org.objectweb.asm.tree.LdcInsnNode l) sb.append(l.cst);
+			else if (i instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode d) {
+				sb.append(d.name).append(d.desc);
+				for (Object a : d.bsmArgs) {
+					if (a instanceof org.objectweb.asm.Handle h) {
+						sb.append('|').append(h.getOwner()).append('.').append(h.getName()).append(h.getDesc());
+					}
+				}
+			} else if (i instanceof org.objectweb.asm.tree.IntInsnNode n) sb.append(n.operand);
+			else if (i instanceof org.objectweb.asm.tree.VarInsnNode v) sb.append(v.var);
+			sb.append(';');
+		}
+		return sb.toString();
 	}
 
 	/**
@@ -1586,6 +1683,7 @@ public final class MergedBaseBuilder {
 				+ " interfaces=" + mergedInterfaces + " diamond-defaults-resolved=" + diamondDefaultsResolved
 				+ " duplicate-fields-resolved=" + duplicateFieldsResolved + " field-init-preserved=" + fieldInitPreserved
 				+ " bridged-constructors=" + bridgedConstructors + " exclusive-fields-initialized=" + exclusiveFieldsInitialized
+				+ " lambdas-realigned-to-their-capturer=" + lambdasRealigned
 				+ " divergent-anonymous-materialized=" + divergentAnonymousMaterialized
 				+ " (call sites repointed=" + divergentAnonymousCallSitesRewritten + ")"
 				+ " custom-payload-interop=" + customPayloadInteropPatched);

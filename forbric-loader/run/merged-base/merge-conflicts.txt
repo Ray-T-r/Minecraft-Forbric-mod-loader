@@ -1,5 +1,5 @@
 [merge] classes: vanilla=0 forge-only-ns=3 forge=193 neo=10163 MERGED=612 (of which superclass-rebased-to-forge=2)
-[merge] spliced into merged classes: methods=661 fields=138 interfaces=49 diamond-defaults-resolved=18073 duplicate-fields-resolved=10 field-init-preserved=6 bridged-constructors=1 exclusive-fields-initialized=11 divergent-anonymous-materialized=2 (call sites repointed=2) custom-payload-interop=1
+[merge] spliced into merged classes: methods=661 fields=138 interfaces=49 diamond-defaults-resolved=18073 duplicate-fields-resolved=10 field-init-preserved=6 bridged-constructors=1 exclusive-fields-initialized=11 lambdas-realigned-to-their-capturer=7 divergent-anonymous-materialized=2 (call sites repointed=2) custom-payload-interop=1
 [merge] CONFLICTS: methods=1000 fields=8 STRUCTURAL(superclass/field)=23 collision-methods-dropped=3 class-access-widened=6
 
 === STRUCTURAL conflicts (superclass / field-init) — not auto-resolvable at bytecode level: 
@@ -57,6 +57,8 @@ net/minecraft/client/MouseHandler#onButton(JLnet/minecraft/client/input/MouseBut
 net/minecraft/client/MouseHandler#onScroll(JDD)V (forge hook lost)
 net/minecraft/client/MouseHandler#handleAccumulatedMovement()V (forge hook lost)
 net/minecraft/client/Options#setForgeKeybindProperties()V (forge hook lost)
+net/minecraft/client/Options#lambda$load$0(Lnet/minecraft/nbt/CompoundTag;Ljava/lang/String;)V (captured from BOTH sides' surviving methods — left as merged; one of the two call sites resolves to the other compile's body)
+net/minecraft/client/Options#lambda$load$1(Ljava/lang/String;)V (captured from BOTH sides' surviving methods — left as merged; one of the two call sites resolves to the other compile's body)
 net/minecraft/client/Screenshot#lambda$grab$2(Ljava/io/File;Ljava/lang/String;Ljava/util/function/Consumer;Lcom/mojang/blaze3d/platform/NativeImage;)V (forge hook lost)
 net/minecraft/client/color/block/BlockColors#createDefault()Lnet/minecraft/client/color/block/BlockColors; (forge hook lost)
 net/minecraft/client/color/block/BlockColors#register(Ljava/util/List;[Lnet/minecraft/world/level/block/Block;)V (forge hook lost)
@@ -800,6 +802,7 @@ net/minecraft/world/item/context/BlockPlaceContext#<init>(Lnet/minecraft/world/l
 net/minecraft/world/item/context/UseOnContext#<init>(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/InteractionHand;Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/phys/BlockHitResult;)V (forge hook lost)
 net/minecraft/world/item/crafting/Ingredient#<init>(Lnet/minecraft/core/HolderSet;)V (kept neo body to preserve base-added field init; forge hook lost)
 net/minecraft/world/item/crafting/Ingredient#<clinit>()V (forge hook lost)
+net/minecraft/world/item/crafting/Ingredient#lambda$new$0(Ljava/util/List;)V (captured from BOTH sides' surviving methods — left as merged; one of the two call sites resolves to the other compile's body)
 net/minecraft/world/item/crafting/RecipeManager#<init>(Lnet/minecraft/core/HolderLookup$Provider;)V (kept neo body to preserve base-added field init; forge hook lost)
 net/minecraft/world/item/crafting/RecipeManager#prepare(Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/util/profiling/ProfilerFiller;)Lnet/minecraft/world/item/crafting/RecipeMap; (forge hook lost)
 net/minecraft/world/item/crafting/ShapelessRecipe#matches(Lnet/minecraft/world/item/crafting/CraftingInput;Lnet/minecraft/world/level/Level;)Z (forge hook lost)
@@ -841,6 +844,7 @@ net/minecraft/world/level/block/Block#shouldRenderFace(Lnet/minecraft/world/leve
 net/minecraft/world/level/block/Block#popExperience(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/core/BlockPos;I)V (forge hook lost)
 net/minecraft/world/level/block/Block#getExplosionResistance()F (forge hook lost)
 net/minecraft/world/level/block/Block#<clinit>()V (forge hook lost)
+net/minecraft/world/level/block/Block#lambda$dropResources$2(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/item/ItemStack;)V (captured from BOTH sides' surviving methods — left as merged; one of the two call sites resolves to the other compile's body)
 net/minecraft/world/level/block/BucketPickup#getPickupSound()Ljava/util/Optional; (forge hook lost)
 net/minecraft/world/level/block/BushBlock#<init>(Lnet/minecraft/world/level/block/state/BlockBehaviour$Properties;)V (forge hook lost)
 net/minecraft/world/level/block/ButtonBlock#<init>(Lnet/minecraft/world/level/block/state/properties/BlockSetType;ILnet/minecraft/world/level/block/state/BlockBehaviour$Properties;)V (forge hook lost)
