@@ -128,11 +128,23 @@ final class MergedBaseTool {
 		return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
 	}
 
-	/** Copies the bundled tools jar out to disk, because a subprocess needs a path, not a resource. */
+	/**
+	 * Copies the bundled tools jar out to disk, because a subprocess needs a path, not a resource.
+	 *
+	 * <p><b>Unconditionally</b>, overwriting whatever is there. It used to return the existing file when one was
+	 * present, which is the same "the file exists, so it must be current" mistake {@link BuildStamp} was written
+	 * to fix, one level further down — and it defeated that fix completely: the new stamp correctly invalidated
+	 * every artifact, and the rebuild then ran the PREVIOUS installer's merge tool, left behind in
+	 * {@code .forbric-build/tools}. The merged base came out with the bug the new tool exists to fix, and the
+	 * install log said it had rebuilt everything, because it had.
+	 *
+	 * <p>Like the artifact cache, this only ever misbehaves on a machine that has installed before — the gate
+	 * wipes its directory, so a gated install always unpacked into an empty one. It is 280 KB; there is nothing
+	 * to save by being clever about it.
+	 */
 	private Path unpackTools() throws IOException {
 		Files.createDirectories(toolsDir);
 		Path dest = toolsDir.resolve("forbric-merge-tools.jar");
-		if (Files.isRegularFile(dest) && Files.size(dest) > 0) return dest;
 		try (InputStream in = MergedBaseTool.class.getResourceAsStream(TOOLS_RESOURCE)) {
 			if (in == null) {
 				throw new IOException("this installer was built without " + TOOLS_RESOURCE

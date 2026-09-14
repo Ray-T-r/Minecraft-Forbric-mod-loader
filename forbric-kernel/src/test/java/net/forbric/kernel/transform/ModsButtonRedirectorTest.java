@@ -82,8 +82,11 @@ class ModsButtonRedirectorTest {
 		assertTrue(opened.values().stream().flatMap(List::stream).anyMatch(NEO::equals),
 				"something in the staged jars must still open NeoForge's own ModListScreen — if nothing does, the "
 						+ "button moved again and this redirect needs re-deriving. Carriers found: " + opened);
-		assertTrue(opened.values().stream().flatMap(List::stream).anyMatch(FORGE::equals),
-				"and MinecraftForge's, got " + opened);
+		// MinecraftForge's own site is NOT required. On the merged base NeoForge's createPauseMenu is the body
+		// that wins, so the pause menu carries NeoForge's button and MinecraftForge's construction site survives
+		// only as dead code — and once the builder started putting captured lambdas back on their capturer's
+		// side, that dead body stopped existing at all. One live Forge-family button, re-pointed, is the whole
+		// claim; requiring two was describing a merge artefact.
 	}
 
 	/**
@@ -109,7 +112,8 @@ class ModsButtonRedirectorTest {
 			assertTrue(opensTheKernelsList(parse(out)), e.getKey() + " must open the kernel's screen instead");
 			repointed++;
 		}
-		assertTrue(repointed >= 2, "both families' carriers must be re-pointed, got " + repointed);
+		assertTrue(repointed >= 1, "at least one carrier opens a family's own list and must be re-pointed, got "
+				+ repointed);
 	}
 
 	/** The constructor call has to move with the NEW, or the class does not link. */

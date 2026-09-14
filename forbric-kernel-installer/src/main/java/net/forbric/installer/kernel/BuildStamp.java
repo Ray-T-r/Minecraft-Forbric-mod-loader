@@ -50,6 +50,44 @@ final class BuildStamp {
 	private BuildStamp() {
 	}
 
+	/**
+	 * The key an artifact is stamped with: the pins, plus a digest of the merge tools that ride in this installer.
+	 *
+	 * <p>The tools are not a pin and they change without one — the merge tool's lambda-realignment pass changed no
+	 * version at all and changed every merged class it fixed. Keying only on pins would have served the old merged
+	 * base out of the cache to exactly the people who needed the new one.
+	 */
+	private static String key() {
+		return Pins.stamp() + " tools=" + toolsDigest();
+	}
+
+	private static volatile String toolsDigest;
+
+	/** SHA-1 of the bundled merge-tools jar, or {@code "absent"} when this installer carries none. */
+	private static String toolsDigest() {
+		String cached = toolsDigest;
+		if (cached != null) return cached;
+		String computed = "absent";
+		try (java.io.InputStream in = BuildStamp.class.getResourceAsStream(TOOLS_RESOURCE)) {
+			if (in != null) {
+				java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-1");
+				byte[] buf = new byte[8192];
+				for (int n; (n = in.read(buf)) > 0; ) md.update(buf, 0, n);
+				StringBuilder sb = new StringBuilder();
+				for (byte b : md.digest()) sb.append(String.format("%02x", b));
+				computed = sb.toString();
+			}
+		} catch (Exception unreadable) {
+			// An unreadable tools jar means an unstable key, which would rebuild every time. "unknown" is stable
+			// and still changes nothing that pins already cover.
+			computed = "unknown";
+		}
+		toolsDigest = computed;
+		return computed;
+	}
+
+	private static final String TOOLS_RESOURCE = "/forbric/tools/forbric-merge-tools.jar";
+
 	/** The sibling file that records what produced {@code artifact}. */
 	private static Path stampFile(Path artifact) {
 		return artifact.resolveSibling(artifact.getFileName() + ".pins");
@@ -61,7 +99,7 @@ final class BuildStamp {
 			if (!Files.isRegularFile(artifact) || Files.size(artifact) == 0) return false;
 			Path stamp = stampFile(artifact);
 			if (!Files.isRegularFile(stamp)) return false;
-			return Pins.stamp().equals(Files.readString(stamp, StandardCharsets.UTF_8).trim());
+			return key().equals(Files.readString(stamp, StandardCharsets.UTF_8).trim());
 		} catch (IOException unreadable) {
 			return false;
 		}
@@ -75,7 +113,7 @@ final class BuildStamp {
 	 */
 	static void write(Path artifact) {
 		try {
-			Files.writeString(stampFile(artifact), Pins.stamp() + System.lineSeparator(), StandardCharsets.UTF_8);
+			Files.writeString(stampFile(artifact), key() + System.lineSeparator(), StandardCharsets.UTF_8);
 		} catch (IOException ignored) {
 			// Nothing to do: an unstamped artifact is treated as stale, which is correct, just slower.
 		}

@@ -351,6 +351,30 @@ else
   check "the others still hit" "^\[neoform\] up-to-date"                     "$BUILD/gate-m17-install-3.log"
 fi
 
+step "the merge tool itself is not served from the previous install"
+# The layer below the artifact cache, and the reason the first fixed installer still produced a broken merged
+# base on a machine that had installed before: the bundled tools jar was unpacked into .forbric-build/tools
+# only when one was not already there. The artifact stamps invalidated correctly and the rebuild then ran the
+# PREVIOUS installer's merge tool.
+TOOLS="$DEST/.forbric-build/tools/forbric-merge-tools.jar"
+WANT="$BUILD/gate-m17-tools-bundled.jar"
+unzip -p "$JAR" forbric/tools/forbric-merge-tools.jar > "$WANT" 2>/dev/null
+if [ ! -s "$WANT" ]; then
+  echo "[kernel] FAIL the installer carries no bundled merge tools"; FAIL=$((FAIL+1))
+else
+  # The tool is unpacked by the merge step, so the merge has to actually RUN — disturb its stamp too, or the
+  # install is served entirely from cache, never asks for the tool, and the tampered file survives while
+  # nothing is wrong. (That is how this assertion failed the first time it was written.)
+  printf 'not a jar at all' > "$TOOLS"
+  echo "mc=26.2 forge=PRETEND-OTHER neoforge=PRETEND-OTHER nfrt=0 result=none tools=none" \
+    > "$DEST/.forbric-build/out/patched-mc-merged-26.2.jar.pins"
+  java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-4.log" 2>&1
+  check_absent "the merge re-runs, so the tool is actually asked for" "^\[merge\] up-to-date" \
+    "$BUILD/gate-m17-install-4.log"
+  assert_eq "the stale tool is replaced by the bundled one" \
+    "$(shasum -a 1 "$WANT" | cut -d' ' -f1)" "$(shasum -a 1 "$TOOLS" | cut -d' ' -f1)"
+fi
+
 step "M17 result"
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] ✅ M17 GATE GREEN — the installer's own version profile, resolved the way a launcher resolves it, boots the tri-ecosystem game"
