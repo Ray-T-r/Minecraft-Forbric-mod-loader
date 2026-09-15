@@ -336,6 +336,31 @@ check "and they are still selected in the repository" \
   "repository holds [1-9][0-9]* selected" "$LOG"
 check_absent "the screen opened at all" "could not open the resource-pack screen" "$LOG"
 
+step "a config registered too late for the early pass is still opened (must PASS)"
+# The early config pass runs once, before mod content registration. A mod registering a config from a Fabric
+# client entrypoint is past it, and nothing else opens a non-STARTUP config -- the carrier eagerly opens STARTUP
+# only. The mod then reads a config that was registered and never loaded, and what it gets is not a default but
+# "Cannot get config value before config is loaded", thrown wherever it first asked. ShoulderSurfing asks from a
+# mixin in Minecraft.<init>, so the whole client dies.
+check "the late pass opened what the early one could not" \
+  "Forbric/Lifecycle\] opened [1-9][0-9]* late-registered NeoForge config\(s\)" "$LOG"
+check_absent "and nothing read a config before it was loaded" \
+  "Cannot get config value before config is loaded" "$LOG"
+# The late pass opens only what has no loaded config yet. Re-opening one the early pass already did warns and
+# installs a SECOND file watcher, so every later edit of that file fires the reload twice.
+check_absent "and nothing was opened twice" "Attempted to load config .* more than once|Overwriting non-null config" "$LOG"
+
+step "a Fabric mod shipping its own copy of a Forge-family class is named (must PASS)"
+# ForgeConfigAPIPort ships net.neoforged.fml.config.* so Fabric mods can use NeoForge's config API. Under Forbric
+# that package is ALWAYS_GAME, so the carrier's copy wins and the port's own compiled call sites meet an API they
+# were not built against -- registerConfig takes a ModContainer here and a mod-id String there. Unreported, that
+# surfaces as a NoSuchMethodError in whichever mod registered a config, several steps later.
+check "the audit names the port and the class" \
+  "Forbric/PortAudit\] ForgeConfigAPIPort.*ConfigTracker.* does NOT match the carrier" "$LOG"
+check "and it says which member differs" \
+  "Forbric/PortAudit\].*registerConfig.*Lnet/neoforged/fml/ModContainer;" "$LOG"
+check_absent "nothing actually failed on that API" "NoSuchMethodError.*ConfigTracker" "$LOG"
+
 step "the world is on disk before the process ends (must PASS)"
 # A real player Alt+F4'd and lost a minute of play: IntegratedServer.stopServer runs teardownPublishedState
 # FIRST and unguarded, and MinecraftServer.stopServer -- which writes players and worlds -- second, so one throw
