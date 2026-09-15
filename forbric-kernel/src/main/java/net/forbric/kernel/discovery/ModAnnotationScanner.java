@@ -55,7 +55,8 @@ public final class ModAnnotationScanner {
 		public final String modId;     // @Mod value, or null if absent
 		public final Ecosystem family; // which ecosystem's @Mod annotation was found
 
-		ModClassInfo(String className, String modId, Ecosystem family) {
+		/** Public so code outside this package — the loader's own tests — can state a scan result directly. */
+		public ModClassInfo(String className, String modId, Ecosystem family) {
 			this.className = className;
 			this.modId = modId;
 			this.family = family;

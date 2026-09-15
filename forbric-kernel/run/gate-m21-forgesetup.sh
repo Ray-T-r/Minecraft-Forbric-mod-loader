@@ -62,6 +62,16 @@ for p in "common setup" "dedicated server setup" "IMC enqueue" "IMC process" "lo
   check "Neo: $p deferred ran"  "\[ForbricNeoLive/SETUP\] $p DEFERRED work ran"           "$LOG"
 done
 
+step "a MinecraftForge mod finds its OWN container during its constructor (must PASS)"
+# The libraryferret/awesomedungeonocean shape: a constructor reaches a class initializer that does
+# ModList.getModContainerById(self).orElseThrow() and takes the bus off it. The kernel used to publish the
+# MinecraftForge containers AFTER the construction loop, so this answered "Mod with ID ... not found" — and a
+# class initializer is a one-shot, so that mod's registries never existed and the save would not open.
+check "own container resolvable from its own ctor" \
+  "\[ForbricLive/SELF\] own container during ctor: present=true fmlContainer=true busGroup=true" "$LOG"
+check "and it is the active namespace during that ctor" \
+  "\[ForbricLive/SELF\].*activeNamespace=forbriclive" "$LOG"
+
 step "each phase drains its OWN queue, in order (must PASS)"
 # A single drain at the very end would satisfy every check above while giving a mod its deferred work AFTER the
 # phases that are supposed to see the result of it. Assert the interleaving: common setup's deferred work has to

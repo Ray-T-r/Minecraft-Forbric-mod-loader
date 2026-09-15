@@ -106,6 +106,7 @@ public class ForbricLiveMod {
 
 	public ForbricLiveMod(FMLJavaModLoadingContext ctx) {
 		System.out.println("[ForbricLive] constructed by the real ModLoader; game-event listeners auto-register via @EventBusSubscriber");
+		reportOwnContainer();
 		System.out.println("[ForbricLive/NET] channel " + NET.getName() + " built (protocol v" + NET.getProtocolVersion() + ")");
 		ctx.registerConfig(net.minecraftforge.fml.config.ModConfig.Type.SERVER, SERVER_SPEC);
 		net.minecraftforge.fml.event.config.ModConfigEvent.Loading.getBus(ctx.getModBusGroup())
@@ -116,6 +117,27 @@ public class ForbricLiveMod {
 		registerSetupLifecycle(ctx);
 		registerConfigScreen(ctx);
 		reportForeignMods();
+	}
+
+	/**
+	 * Reproduces what a real library mod does FIRST: resolve its own container out of {@code ModList}.
+	 *
+	 * <p>This is libraryferret's and awesomedungeonocean's exact shape —
+	 * {@code RegistryProviderForgeImpl.getIEventBus} does {@code ModList.getModContainerById(id).orElseThrow()},
+	 * casts to {@code FMLModContainer} and takes its bus group — and it runs from a class initializer their
+	 * constructor reaches, so a "not found" there is permanent for the rest of the run. Printing the active
+	 * namespace too, because {@code getActiveNamespace()} answers "minecraft" rather than throwing when no
+	 * container is active, which makes a mod's id-less registrations land silently under the wrong mod.
+	 */
+	private static void reportOwnContainer() {
+		java.util.Optional<? extends net.minecraftforge.fml.ModContainer> own =
+				net.minecraftforge.fml.ModList.getModContainerById("forbriclive");
+		net.minecraftforge.fml.javafmlmod.FMLModContainer fml =
+				own.orElse(null) instanceof net.minecraftforge.fml.javafmlmod.FMLModContainer c ? c : null;
+		System.out.println("[ForbricLive/SELF] own container during ctor: present=" + own.isPresent()
+				+ " fmlContainer=" + (fml != null)
+				+ " busGroup=" + (fml != null && fml.getModBusGroup() != null)
+				+ " activeNamespace=" + net.minecraftforge.fml.ModLoadingContext.get().getActiveNamespace());
 	}
 
 	/**
