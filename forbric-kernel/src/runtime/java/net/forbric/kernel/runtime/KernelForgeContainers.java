@@ -64,9 +64,14 @@ public final class KernelForgeContainers {
 	}
 
 	/**
-	 * Manufactures the {@code BusGroup} + container + context for {@code modId} and makes the container the active
-	 * {@code ModLoadingContext} — so a {@code @Mod} constructor calling {@code FMLJavaModLoadingContext.get()}
-	 * (rather than using its argument) resolves to this same context.
+	 * Manufactures the {@code BusGroup} + container + context for {@code modId}. Identity only — it needs no
+	 * {@code @Mod} class, which is what lets the kernel publish every MinecraftForge container into
+	 * {@code ModList} before any constructor runs; {@link #constructMod} marries the class in afterwards.
+	 *
+	 * <p>It deliberately does NOT make the container active any more. It used to, and with creation and
+	 * construction adjacent that read as "this is the mod loading right now" — which stopped being true the
+	 * moment they were separated. Both callers set it explicitly around the constructor instead, which also
+	 * clears it afterwards; the side effect never was.
 	 */
 	public static Handle create(String modId) throws Exception {
 		BusGroup busGroup = BusGroup.create("modBusFor" + modId, IModBusEvent.class);
@@ -89,7 +94,6 @@ public final class KernelForgeContainers {
 		// getModInfo() is null without this (the ctor arg we skipped); Forge's own config + display-test paths read it.
 		usetIfPresent(ModContainer.class, "modInfo", container, new KernelForgeModInfo(modId));
 
-		setActiveContainer(container);
 		return new Handle(modId, busGroup, container, jctx);
 	}
 

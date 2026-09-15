@@ -522,7 +522,12 @@ public final class KernelLifecycle {
 			// run inside the one unfreeze/freeze window below.
 			List<Object> buses = new ArrayList<>();
 			buses.add(baselineBus);
-			List<KernelForgeModContext.Handle> forgeHandles = new ArrayList<>();
+			// The published map, not a per-entry list: it is already one handle per mod ID, it is the same source
+			// fireForgeSetupPhase reads, and two @Mod classes sharing an ID now share ONE handle — a per-entry
+			// list would hold it twice and fire the whole RegisterEvent stream twice on that BusGroup, so the
+			// mod's DeferredRegisters would register their content twice.
+			List<KernelForgeModContext.Handle> forgeHandles =
+					new ArrayList<>(KernelModLoader.publishedForgeMods().values());
 			// Dedupe by IDENTITY: a NeoForge mod has ONE bus shared by all its @Mod classes (balm ships
 			// NeoForgeBalm + NeoForgeBalmClient, FallingTree the same), so a per-entry list would fire
 			// RegisterEvent twice on that bus and register the mod's content twice.
@@ -530,7 +535,6 @@ public final class KernelLifecycle {
 					java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 			for (KernelModLoader.ConstructedMod m : mods) {
 				if (m.bus() != null && seenBuses.add(m.bus())) buses.add(m.bus());
-				if (m.forgeHandle() != null) forgeHandles.add(m.forgeHandle());
 			}
 
 			// Capture the post-Bootstrap vanilla registry state for NEOFORGE only, before the window opens. NeoForge's

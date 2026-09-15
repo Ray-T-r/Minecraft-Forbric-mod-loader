@@ -59,7 +59,15 @@ public final class KernelForgeBaseline {
 		}
 		try {
 			KernelForgeModContext.Handle baseline = KernelForgeModContext.create(cl, "forge");
-			Object mod = KernelForgeModContext.constructMod(cl, FORGE_MOD, baseline);
+			// create() no longer makes its container active — it is called for every mod long before any of them
+			// constructs now — so the constructor's window is opened and closed here, the way the mod path does it.
+			KernelForgeModContext.setActiveContainer(cl, baseline.container());
+			Object mod;
+			try {
+				mod = KernelForgeModContext.constructMod(cl, FORGE_MOD, baseline);
+			} finally {
+				KernelForgeModContext.setActiveContainer(cl, null);
+			}
 			ForbricLog.info("[Forbric/Forge] constructed traditional-Forge baseline mod ForgeMod -> %s", mod);
 			KernelForgeModContext.startup(cl, baseline.busGroup());
 			// Forge's CUSTOM registries (forge:fluid_type, holder_set_type, biome/structure_modifier_serializers, …)
