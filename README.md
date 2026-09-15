@@ -153,8 +153,6 @@ Minecraft folder was modified. (If you want the space back too, the build cache 
 
 - **No promise that any particular mod works.** Three mod ecosystems is an enormous surface, and only a
   fraction of it has ever been run. Expect trial and error.
-- **The installer's window has never been tested end to end.** The command line has; the graphical path
-  is the same code behind a form, but nothing automated exercises the form itself.
 - **Builds are not reproducible.** Installing twice on the same machine produces game jars with
   different checksums — the decompile-and-merge pipeline does not promise byte-for-byte output. What is
   checked is behaviour: the jars a real install produced are run through the project's own gates.
