@@ -165,6 +165,53 @@ class PortingLayerAbiInjectorTest {
 		assertSame(drifted, out, "a port this shim no longer recognises must be left exactly as it is");
 	}
 
+	/**
+	 * The consumer's half, and the one that is not in the port's jar at all: ShoulderSurfing hands
+	 * {@code ConfigurationScreen::new} to the port's screen-factory registry. The mismatch is a method handle in
+	 * an invokedynamic, so it fails when the lambda's call site LINKS — which is why the NoSuchMethodError came
+	 * from a line of code that constructs nothing.
+	 */
+	@Test
+	void aMethodReferenceToThePortsScreenConstructorIsReAimedAtTheCarriers() throws Exception {
+		Path ss = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "mods",
+				"ShoulderSurfing-Fabric-26.2-5.0.11.jar").normalize();
+		assumeTrue(Files.isRegularFile(ss), "ShoulderSurfing not staged — skipping");
+		byte[] in;
+		try (ZipFile jar = new ZipFile(ss.toFile())) {
+			ZipEntry e = jar.getEntry("com/github/exopandora/shouldersurfing/fabric/ShoulderSurfingFabric.class");
+			assumeTrue(e != null, "the client entrypoint moved in this build");
+			try (InputStream stream = jar.getInputStream(e)) {
+				in = stream.readAllBytes();
+			}
+		}
+
+		byte[] out = new PortingLayerAbiInjector().transform(
+				"com.github.exopandora.shouldersurfing.fabric.ShoulderSurfingFabric", in, null);
+		ClassNode node = new ClassNode();
+		new ClassReader(out).accept(node, 0);
+
+		boolean reaimed = false;
+		for (MethodNode m : node.methods) {
+			for (AbstractInsnNode insn : m.instructions) {
+				if (!(insn instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy)) continue;
+				for (Object arg : indy.bsmArgs) {
+					if (!(arg instanceof org.objectweb.asm.Handle h)) continue;
+					assertTrue(!"net/neoforged/neoforge/client/gui/ConfigurationScreen".equals(h.getOwner()),
+							"a handle to the port's screen constructor survived; it does not exist on the carrier");
+					if ("net/forbric/kernel/runtime/KernelConfigPortBridge".equals(h.getOwner())
+							&& "configurationScreen".equals(h.getName())) {
+						assertEquals(Opcodes.H_INVOKESTATIC, h.getTag());
+						assertEquals("(Ljava/lang/String;Lnet/minecraft/client/gui/screens/Screen;)"
+								+ "Lnet/minecraft/client/gui/screens/Screen;", h.getDesc(),
+								"the factory must match the lambda's instantiated type exactly");
+						reaimed = true;
+					}
+				}
+			}
+		}
+		assertTrue(reaimed, "the ConfigurationScreen::new reference must be re-aimed at the kernel's factory");
+	}
+
 	@Test
 	void anUnrelatedClassIsUntouched() {
 		byte[] bytes = {(byte) 0xCA, (byte) 0xFE};

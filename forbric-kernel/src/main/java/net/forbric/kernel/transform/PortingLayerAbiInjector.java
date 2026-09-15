@@ -17,11 +17,13 @@
 package net.forbric.kernel.transform;
 
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -64,7 +66,7 @@ import net.forbric.kernel.util.ForbricLog;
 public final class PortingLayerAbiInjector implements ClassTransformer {
 
 	private static final String CONFIG_REGISTRY = "fuzs/forgeconfigapiport/fabric/impl/core/ConfigRegistryImpl";
-	private static final String SPEC_ADAPTER = "fuzs/forgeconfigapiport/fabric/impl/core/ForgeConfigSpecAdapter";
+	private static final String ADAPTER_INTERNAL = "fuzs/forgeconfigapiport/fabric/impl/core/ForgeConfigSpecAdapter";
 	private static final String TRACKER = "net/neoforged/fml/config/ConfigTracker";
 	private static final String BRIDGE = "net/forbric/kernel/runtime/KernelConfigPortBridge";
 	private static final String MOD_CONFIG = "Lnet/neoforged/fml/config/ModConfig;";
@@ -73,6 +75,12 @@ public final class PortingLayerAbiInjector implements ClassTransformer {
 	private static final String BY_ID_3 = "(" + TYPE + SPEC + "Ljava/lang/String;)" + MOD_CONFIG;
 	private static final String BY_ID_4 = "(" + TYPE + SPEC + "Ljava/lang/String;Ljava/lang/String;)" + MOD_CONFIG;
 	private static final String VALIDATE_SPEC = "validateSpec";
+	private static final String CONFIG_SCREEN = "net/neoforged/neoforge/client/gui/ConfigurationScreen";
+	private static final String SCREEN = "Lnet/minecraft/client/gui/screens/Screen;";
+	/** The port's shape: a mod ID where real NeoForge takes a ModContainer. */
+	private static final String SCREEN_CTOR_BY_ID = "(Ljava/lang/String;" + SCREEN + ")V";
+	private static final String SCREEN_FACTORY = "configurationScreen";
+	private static final String SCREEN_FACTORY_DESC = "(Ljava/lang/String;" + SCREEN + ")" + SCREEN;
 
 	/** What the port looks like on the version this was written against. Anything else and the shim stands down. */
 	private static final int EXPECTED_REGISTER_SITES = 4;
@@ -87,10 +95,13 @@ public final class PortingLayerAbiInjector implements ClassTransformer {
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
-		if (!"fuzs.forgeconfigapiport.fabric.impl.core.ConfigRegistryImpl".equals(className)
-				&& !"fuzs.forgeconfigapiport.fabric.impl.core.ForgeConfigSpecAdapter".equals(className)) {
-			return classBytes;
-		}
+		boolean port = "fuzs.forgeconfigapiport.fabric.impl.core.ConfigRegistryImpl".equals(className)
+				|| "fuzs.forgeconfigapiport.fabric.impl.core.ForgeConfigSpecAdapter".equals(className);
+		// The screen constructor is named by the port's CONSUMERS, not by the port, so it can be in any class.
+		// Scanned at the byte level first: parsing every class that loads would be a real cost, and a class that
+		// does not carry the name in its constant pool cannot reference it.
+		boolean namesTheScreen = !port && contains(classBytes, CONFIG_SCREEN);
+		if (!port && !namesTheScreen) return classBytes;
 		if ("off".equalsIgnoreCase(System.getProperty(SWITCH, "on"))) {
 			ForbricLog.warn("[Forbric/PortShim] ABI shim DISABLED (-D%s=off) — ForgeConfigAPIPort will call a "
 					+ "ConfigTracker method real NeoForge does not have, and every mod registering a config "
@@ -100,9 +111,10 @@ public final class PortingLayerAbiInjector implements ClassTransformer {
 		try {
 			ClassNode node = new ClassNode();
 			new ClassReader(classBytes).accept(node, 0);
-			boolean changed = CONFIG_REGISTRY.equals(node.name)
-					? routeRegistrationsThroughTheBridge(node)
-					: addTheValidateSpecTheCarrierCalls(node);
+			boolean changed;
+			if (CONFIG_REGISTRY.equals(node.name)) changed = routeRegistrationsThroughTheBridge(node);
+			else if (ADAPTER_INTERNAL.equals(node.name)) changed = addTheValidateSpecTheCarrierCalls(node);
+			else changed = routeTheConfigScreenThroughTheBridge(node);
 			if (!changed) return classBytes;
 			ClassWriter writer = new ClassWriter(0);
 			node.accept(writer);
@@ -154,6 +166,73 @@ public final class PortingLayerAbiInjector implements ClassTransformer {
 				+ "— it asks for a mod-id-keyed ConfigTracker.registerConfig, and real NeoForge %s takes a "
 				+ "ModContainer", sites, "26.2.x");
 		return true;
+	}
+
+	/**
+	 * Re-aims a {@code ConfigurationScreen} built from a mod ID at the one the carrier actually has.
+	 *
+	 * <p>The carrier's constructor takes a {@code ModContainer}; the port's copy takes the mod ID, and mods
+	 * written against the port name THAT constructor in their own code. ShoulderSurfing hands
+	 * {@code ConfigurationScreen::new} to the port's screen-factory registry, so the reference is a method handle
+	 * in an {@code invokedynamic} rather than a call — it fails when the lambda's call site links, which is why
+	 * the {@code NoSuchMethodError} came from a line that constructs nothing and its own frame was the only one
+	 * on the stack.
+	 *
+	 * <p>Both forms are handled. The handle is swapped for a static factory of the same instantiated type
+	 * ({@code (String, Screen) -> Screen}), which is what the lambda already promised. A direct
+	 * {@code NEW}/{@code DUP}/{@code INVOKESPECIAL} is left alone and reported: rewriting it means deleting the
+	 * {@code NEW} and the {@code DUP}, which moves every offset in the method, and the only such site known is in
+	 * the port's own ModMenu integration behind an {@code isDevelopmentEnvironment} check that is false in a
+	 * player's instance.
+	 */
+	private static boolean routeTheConfigScreenThroughTheBridge(ClassNode node) {
+		int rerouted = 0;
+		int direct = 0;
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof InvokeDynamicInsnNode indy) {
+					for (int i = 0; i < indy.bsmArgs.length; i++) {
+						if (!(indy.bsmArgs[i] instanceof Handle h)) continue;
+						if (h.getTag() != Opcodes.H_NEWINVOKESPECIAL || !CONFIG_SCREEN.equals(h.getOwner())
+								|| !SCREEN_CTOR_BY_ID.equals(h.getDesc())) {
+							continue;
+						}
+						indy.bsmArgs[i] = new Handle(Opcodes.H_INVOKESTATIC, BRIDGE, SCREEN_FACTORY,
+								SCREEN_FACTORY_DESC, false);
+						rerouted++;
+					}
+				} else if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
+						&& CONFIG_SCREEN.equals(call.owner) && SCREEN_CTOR_BY_ID.equals(call.desc)) {
+					direct++;
+				}
+			}
+		}
+		if (direct > 0) {
+			ForbricLog.warn("[Forbric/PortShim] %s constructs ConfigurationScreen from a mod id directly in %d "
+					+ "place(s) — that shape belongs to ForgeConfigAPIPort's copy, not to real NeoForge, and this "
+					+ "shim only re-aims the method-reference form. Those sites will still fail",
+					node.name.replace('/', '.'), direct);
+		}
+		if (rerouted == 0) return false;
+		ForbricLog.warn("[Forbric/PortShim] re-aimed %d ConfigurationScreen reference(s) in %s at the carrier's own "
+				+ "constructor — it takes a ModContainer where ForgeConfigAPIPort's copy takes a mod id, and a "
+				+ "method reference to the wrong one fails when its lambda links, not where it is written",
+				rerouted, node.name.replace('/', '.'));
+		return true;
+	}
+
+	/** Whether {@code bytes} contains {@code text} as raw ASCII — a constant-pool pre-filter, not a parse. */
+	private static boolean contains(byte[] bytes, String text) {
+		byte[] needle = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+		outer:
+		for (int i = 0; i + needle.length <= bytes.length; i++) {
+			for (int j = 0; j < needle.length; j++) {
+				if (bytes[i + j] != needle[j]) continue outer;
+			}
+			return true;
+		}
+		return false;
 	}
 
 	private static boolean addTheValidateSpecTheCarrierCalls(ClassNode node) {
