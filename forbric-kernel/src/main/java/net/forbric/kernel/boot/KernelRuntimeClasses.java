@@ -134,6 +134,11 @@ public final class KernelRuntimeClasses {
 		// The only MOD-bus bridge: Forge's client reload listeners into NeoForge's sorted graph.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientReload", new Entry(Origin.COMPILED, List.of(
 				new Call("install", void.class, Object.class))));
+		// The merged base's ParticleResources carries two same-named `providers` fields — vanilla's int-keyed one
+		// and NeoForge's Identifier-keyed one — and only NeoForge's is written. This turns the other into a live
+		// view of it, because fabric-api reads that field DIRECTLY.
+		CLASSES.put("net.forbric.kernel.runtime.KernelParticleProviders", new Entry(Origin.COMPILED, List.of(
+				new Call("intKeyedView", Object.class, java.util.Map.class))));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));

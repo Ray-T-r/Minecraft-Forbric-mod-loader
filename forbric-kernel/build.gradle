@@ -44,9 +44,21 @@ def stagedGameJars = [stagedMergedBase, stagedForgeRuntime, stagedNeoRuntime].fi
 def mcLibraries = file(project.findProperty('forbric.mcLibraries')
 		?: (System.getenv('MC_DIR') ? System.getenv('MC_DIR') + '/libraries'
 				: System.getProperty('user.home') + '/Library/Application Support/minecraft/libraries'))
-def stagedMcLibraries = mcLibraries.isDirectory()
-		? fileTree(mcLibraries) { include 'com/mojang/brigadier/**/*.jar' }.files.sort { it.name }.takeRight(1)
-		: []
+// One jar PER PATTERN, never one across all of them: a single fileTree over several includes and a global
+// takeRight(1) keeps whichever name sorts last and silently drops the rest — with brigadier and datafixerupper
+// in the same tree, 'd' > 'b' and brigadier disappears. Last-by-NAME within a pattern is not version-aware
+// either ("10.0.21" sorts before "9.0.19"); that is tolerable only because any version of these two satisfies
+// javac's need to READ the class files, which is all they are here for.
+def lastByNameUnder = { String pattern ->
+	mcLibraries.isDirectory()
+			? fileTree(mcLibraries) { include pattern }.files.sort { it.name }.takeRight(1)
+			: []
+}
+// datafixerupper for the same reason as brigadier, one type further in: net.minecraft.core.Registry implements
+// com.mojang.serialization.Keyable, so javac cannot read Registry — and so cannot read BuiltInRegistries —
+// without it. KernelParticleProviders needs the particle registry to translate its keys.
+def stagedMcLibraries = lastByNameUnder('com/mojang/brigadier/**/*.jar') +
+		lastByNameUnder('com/mojang/datafixerupper/**/*.jar')
 
 sourceSets {
 	// `main` keeps the Gradle defaults (src/main/java, src/main/resources). Re-declaring them with srcDir would
@@ -106,6 +118,14 @@ dependencies {
 	api "com.electronwill.night-config:core:${project.night_config_version}"
 	api "com.electronwill.night-config:toml:${project.night_config_version}"
 	api "com.electronwill.night-config:json:${project.night_config_version}"
+
+	// fastutil, for the GAME side only. ParticleResources' vanilla-typed `providers` field is an Int2ObjectMap,
+	// and KernelParticleProviders has to hand it one. None of the three staged artifacts carries fastutil (zero
+	// it/unimi entries in any of them) — Minecraft supplies it at runtime, exactly like brigadier. Pinned from
+	// Maven rather than picked out of the local launcher's library tree, which holds several versions and would
+	// make the runtime set's classpath a function of what that launcher happened to cache. compileOnly, never
+	// bundled, and never resolved on a machine with no staged jars: compileRuntimeJava is already skipped there.
+	runtimeCompileOnly 'it.unimi.dsi:fastutil:8.5.18'
 
 	testImplementation "org.junit.jupiter:junit-jupiter:${project.junit_version}"
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
