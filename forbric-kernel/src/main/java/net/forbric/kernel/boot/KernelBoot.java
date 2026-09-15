@@ -52,6 +52,7 @@ import net.forbric.kernel.transform.ForgeLoadingListHolderInjector;
 import net.forbric.kernel.transform.GuestMixinPluginGuard;
 import net.forbric.kernel.transform.HudElementBridgeInjector;
 import net.forbric.kernel.transform.LifecycleHookInjector;
+import net.forbric.kernel.transform.PortingLayerAbiInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
 import net.forbric.kernel.transform.NeoEnumExtensionInjector;
@@ -248,6 +249,13 @@ public final class KernelBoot {
 			libCount++;
 		}
 
+		// A Fabric mod shipping its own net.neoforged.* / net.minecraftforge.* loses those classes to the carrier
+		// by design. Say so, and say where the two disagree, while the jar names are still in hand — the failure
+		// otherwise surfaces in whichever dependent first calls the API, several lifecycle steps later.
+		List<Path> shadowCandidates = new ArrayList<>(fabricJars);
+		for (Path jar : modJars) if (!shadowCandidates.contains(jar)) shadowCandidates.add(jar);
+		PortingLayerAudit.report(shadowCandidates, runtimeJars);
+
 		ForbricLog.info("[Forbric/Boot] sovereign kernel — %s %s, %d owned jar(s), %d Forge-family mod(s), "
 				+ "%d Fabric jar(s), %d MC library jar(s)", side.name().toLowerCase(), gameVersion, owned.size(),
 				modJars.size(), fabricJars.size(), libCount);
@@ -384,6 +392,10 @@ public final class KernelBoot {
 		// Each family's ModList.isLoaded can only see its own family's mods, and that answer is a compatibility
 		// branch far more often than a display string — a wrong "no" disables an integration in silence.
 		chain.register(TransformPhase.COREMOD, new ForeignModPresenceInjector());
+		// A Fabric "porting layer" ships its own net.neoforged.* so Fabric mods can use that API; under Forbric the
+		// carrier's copy wins, and the port's own compiled call sites then meet an API it was not built against.
+		// PortingLayerAudit reports every such skew; this adapts the one that is fatal.
+		chain.register(TransformPhase.COREMOD, new PortingLayerAbiInjector());
 		// MinecraftForge builds its LoadingModList in a lazy holder that reads a field the genuine loader would have
 		// filled. A class initializer is a ONE-SHOT with no exception table, so the first caller to arrive before the
 		// kernel seeds that field NPE'd inside it and left the class permanently erroneous -- while the seeder, which

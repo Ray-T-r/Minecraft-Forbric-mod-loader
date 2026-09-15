@@ -425,6 +425,82 @@ public final class KernelLifecycle {
 		}
 	}
 
+	/**
+	 * Opens NeoForge configs that were registered after {@link #loadEarlyConfigs} had already run.
+	 *
+	 * <p>The early pass happens once, before mod content registration. A Fabric mod registering a config from a
+	 * CLIENT entrypoint is therefore too late for it, and nothing else opens a non-STARTUP config — the carrier's
+	 * {@code registerConfig} eagerly opens STARTUP only. The mod then reads a config that was registered and never
+	 * loaded, and what it gets is not an empty config but "Cannot get config value before config is loaded",
+	 * thrown from wherever it first asked. ShoulderSurfing asks from a mixin in {@code Minecraft.<init>}.
+	 *
+	 * <p>General on purpose: it fixes any late registrar, not the one that exposed it, and it cannot double-open
+	 * because it opens only what has no loaded config yet. {@code ConfigTracker.loadConfigs} would have been the
+	 * obvious call and is the wrong one — it re-opens every config of the type, and the carrier's second open
+	 * warns and installs a SECOND file watcher, so every later edit of that file fires the reload twice.
+	 *
+	 * <p>Never SERVER: those are per-world and belong to the server-about-to-start hook, which loads them from the
+	 * world directory. Opening them here would load them from the wrong place and overwrite them from the right
+	 * one a moment later.
+	 */
+	private static void openLateConfigs(ClassLoader cl, Side side, String when) {
+		if ("off".equalsIgnoreCase(System.getProperty("forbric.earlyConfigs", "on"))) return;
+		try {
+			Class<?> trackerCls = Class.forName(ForeignType.CONFIG_TRACKER.binary(Ecosystem.NEOFORGE), false, cl);
+			Class<?> typeCls = Class.forName(ForeignType.MOD_CONFIG_TYPE.binary(Ecosystem.NEOFORGE), false, cl);
+			Class<?> configsCls = Class.forName("net.neoforged.fml.config.ModConfigs", false, cl);
+			Class<?> configCls = Class.forName("net.neoforged.fml.config.ModConfig", false, cl);
+			Class<?> fmlPaths = Class.forName(ForeignType.FML_PATHS.binary(Ecosystem.NEOFORGE), false, cl);
+			Object configDirEnum = fmlPaths.getField("CONFIGDIR").get(null);
+			java.nio.file.Path configDir = (java.nio.file.Path) fmlPaths.getMethod("get").invoke(configDirEnum);
+
+			// Package-private static on the carrier, and the only entry point that opens ONE config. Reached the
+			// same way the kernel reaches every other unexported seam.
+			java.lang.reflect.Method openConfig = trackerCls.getDeclaredMethod("openConfig", configCls,
+					java.nio.file.Path.class, java.nio.file.Path.class);
+			openConfig.setAccessible(true);
+			java.lang.reflect.Method getConfigSet = configsCls.getMethod("getConfigSet", typeCls);
+			java.lang.reflect.Method getLoadedConfig = configCls.getMethod("getLoadedConfig");
+			java.lang.reflect.Method getModId = configCls.getMethod("getModId");
+
+			List<String> opened = new ArrayList<>();
+			for (String t : lateConfigTypes(side)) {
+				Object type = Enum.valueOf(typeCls.asSubclass(Enum.class), t);
+				Object set = getConfigSet.invoke(null, type);
+				if (!(set instanceof java.util.Collection<?> configs)) continue;
+				for (Object config : List.copyOf(configs)) {
+					if (getLoadedConfig.invoke(config) != null) continue;
+					try {
+						openConfig.invoke(null, config, configDir, null);
+						opened.add(getModId.invoke(config) + ":" + t);
+					} catch (Throwable failed) {
+						ForbricLog.warn("[Forbric/Lifecycle] could not open a late-registered config for "
+								+ getModId.invoke(config), unwrap(failed));
+					}
+				}
+			}
+			if (!opened.isEmpty()) {
+				ForbricLog.info("[Forbric/Lifecycle] opened %d late-registered NeoForge config(s) after %s %s — "
+						+ "they were registered after the early pass, and nothing else would have loaded them",
+						opened.size(), when, opened);
+			}
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not open late-registered NeoForge configs", unwrap(t));
+		}
+	}
+
+	/**
+	 * Which config types {@link #openLateConfigs} may open, for a side.
+	 *
+	 * <p>SERVER is absent from both, and that absence is load-bearing rather than an oversight: a SERVER config is
+	 * per-world and is loaded from the world directory by the server-about-to-start hook. Opening one here would
+	 * load it from the global config directory, and the carrier's own warning for that ("Overwriting non-null
+	 * config") is asserted absent by two gates.
+	 */
+	static List<String> lateConfigTypes(Side side) {
+		return side.isClient() ? List.of("STARTUP", "COMMON", "CLIENT") : List.of("STARTUP", "COMMON");
+	}
+
 	/** Starts NeoForge's global game bus + Forge's DEFAULT BusGroup so game-event listeners dispatch. */
 	private static void startGameBuses(ClassLoader cl) {
 		// Bridge merge-lost game events (Neo won the tick hook → forward to Forge) BEFORE starting the buses.
@@ -563,6 +639,11 @@ public final class KernelLifecycle {
 				KernelFabricEcosystem.runMainEntrypoints();
 			} finally {
 				rootRegistry(cl, false);
+				// The server-side twin: these entrypoints run BEFORE loadEarlyConfigs, so a config registered here
+				// would in fact be caught by it. This is for the STARTUP/COMMON config registered by anything on
+				// this path that the early pass has already passed over — it opens only what is still unopened, so
+				// on the common path it finds nothing and says nothing.
+				openLateConfigs(cl, side, "the Fabric main entrypoints");
 			}
 			// Bake the ForgeRegistries. Note a DeferredRegister's RegistryObjects bind during their OWN registry's
 			// RegisterEvent above (DeferredRegister$EventDispatcher calls updateReference right after each register),
@@ -1976,6 +2057,9 @@ public final class KernelLifecycle {
 			ForbricLog.warn("[Forbric/Lifecycle] client entrypoints failed", unwrap(t));
 		} finally {
 			if (reopened) closeClientEntrypointWindow(cl, opened);
+			// A CLIENT config registered from a Fabric client entrypoint missed the early pass entirely, and
+			// nothing else opens one. Reading it then throws rather than returning a default.
+			openLateConfigs(cl, Side.CLIENT, "the Fabric client entrypoints");
 		}
 
 	}
