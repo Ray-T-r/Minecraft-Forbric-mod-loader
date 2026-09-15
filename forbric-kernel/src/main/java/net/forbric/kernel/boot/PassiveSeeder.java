@@ -79,6 +79,25 @@ public final class PassiveSeeder {
 	private static final boolean PRODUCTION = true;
 
 	/**
+	 * Whether {@link #seedForgeFmlLoader} has COMPLETED. Kernel-owned rather than "is some foreign field set yet",
+	 * so a partial failure — the launch handler landed, {@code FMLConfig.load()} threw — still retries on the next
+	 * call instead of being mistaken for a finished job. What the guard actually prevents is a second
+	 * {@code FMLConfig.load()}: {@code loadFrom} builds a fresh {@code CommentedFileConfig} over the old one
+	 * without closing it and then saves.
+	 */
+	private static boolean forgeIdentitySeeded;
+
+	/** Whether {@link #seedForgeFmlLoader} ran to completion. Package-visible for the test that pins the retry. */
+	static boolean forgeIdentitySeeded() {
+		return forgeIdentitySeeded;
+	}
+
+	/** Puts the completion flag back, so a test can seed more than one classloader in one JVM. */
+	static void resetForgeIdentityForTests() {
+		forgeIdentitySeeded = false;
+	}
+
+	/**
 	 * Seeds every genuine-loader identity the merged base needs before the game entry runs. Best-effort per family.
 	 *
 	 * <p>{@code side} selects the seeded {@code Dist}. It is load-bearing: with the wrong dist, NeoForge's client
@@ -91,12 +110,15 @@ public final class PassiveSeeder {
 		seedNeoForgeLoader(gameLoader, gameDir, side);
 		seedNeoForgeModList(gameLoader);
 		seedNeoForgePaths(gameLoader, gameDir);
+		// Normally a no-op by now: KernelBoot seeds the MinecraftForge identity pre-Mixin, because its
+		// FMLEnvironment is a one-shot that the first guest mixin plugin's <clinit> would otherwise decide. Kept
+		// here so seedAll still means "every identity" on any path that skipped that block.
 		seedForgeFmlLoader(gameLoader, gameDir, side);
 		// NOTE: NeoForge baseline-registry registration is NOT done here — NeoForgeRegistriesSetup.<clinit> touches
 		// game registries and throws "Not bootstrapped" pre-Main. It runs post-Bootstrap via KernelLifecycle
 		// (the redirected ServerModLoader.load window). See KernelLifecycle.onServerModLoading.
-		// Traditional-Forge FMLEnvironment (static dist/production) is seeded lazily if/when a Forge-patched
-		// <clinit> demands it; added here once M1 boot surfaces that landmine.
+		// Traditional-Forge FMLEnvironment is no longer left to whoever touches it first: seedForgeFmlLoader
+		// decides it, from the pre-Mixin window in KernelBoot. See verifyForgeFmlEnvironment.
 	}
 
 	/**
@@ -1109,8 +1131,21 @@ public final class PassiveSeeder {
 	 *
 	 * <p>Reported at INFO rather than DEBUG for the same reason: this value decides which half of every
 	 * traditional-Forge mod runs, so it belongs in a log a user can hand over.
+	 *
+	 * <p><b>WHEN this runs is part of the contract.</b> It is called from {@code KernelBoot}'s pre-Mixin block,
+	 * not from {@link #seedAll}, because {@code FMLEnvironment} caches these values in {@code static final}
+	 * fields the first time anything touches it — and a guest mixin config may declare an
+	 * {@code IMixinConfigPlugin} whose own {@code <clinit>} reads {@code FMLEnvironment.dist} while Mixin is
+	 * preparing configs, which is before {@code seedAll}. Seeded afterwards, {@code dist} is null for the rest of
+	 * the run and nothing says so: supermartijn642's CoreLib lost every mixin to it ("Error loading companion
+	 * plugin class") and libIPN's Kotlin constructor died on "dist must not be null". NeoForge's
+	 * {@code FMLEnvironment} needs none of this — it is stateless, two static methods and no fields.
 	 */
 	public static void seedForgeFmlLoader(ClassLoader gameLoader, Path gameDir, Side side) {
+		if (forgeIdentitySeeded) {
+			ForbricLog.debug("[Forbric/Seed] traditional-Forge FMLLoader identity already seeded — not re-seeding");
+			return;
+		}
 		try {
 			Class<?> fmlLoader = Class.forName(ForeignType.FML_LOADER.binary(Ecosystem.FORGE), false, gameLoader);
 			setStaticIfNull(fmlLoader, "gamePath", gameDir.toAbsolutePath());
@@ -1130,6 +1165,10 @@ public final class PassiveSeeder {
 				ForbricLog.info("[Forbric/Seed] traditional-Forge dist was already %s; leaving it (running %s)",
 						existing, side.distName());
 			}
+			// Immediately: FMLEnvironment caches exactly the three fields written above, and the rest of this
+			// method (launch handler, FMLPaths, FMLConfig) can fail without that being wrong. Deciding the
+			// one-shot here means a failure further down costs those things, not the dist.
+			verifyForgeFmlEnvironment(gameLoader, side);
 			seedForgeLaunchHandler(gameLoader, fmlLoader, side);
 
 			// Traditional-Forge FMLPaths + FMLConfig (ForgeMod's config registration reads FMLConfig; ConfigFileType
@@ -1138,11 +1177,49 @@ public final class PassiveSeeder {
 			fmlPaths.getMethod("loadAbsolutePaths", Path.class).invoke(null, gameDir.toAbsolutePath());
 			Class<?> fmlConfig = Class.forName("net.minecraftforge.fml.loading.FMLConfig", false, gameLoader);
 			fmlConfig.getMethod("load").invoke(null);
+			forgeIdentitySeeded = true;
 			ForbricLog.debug("[Forbric/Seed] seeded traditional-Forge FMLLoader identity + FMLPaths + FMLConfig");
 		} catch (ClassNotFoundException absent) {
 			ForbricLog.debug("[Forbric/Seed] traditional-Forge FMLLoader not present — skipping");
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Seed] could not seed traditional-Forge FMLLoader identity", unwrap(t));
+		}
+	}
+
+	/**
+	 * DECIDES {@code FMLEnvironment} here, one line after the values it caches were written, and reads it back.
+	 *
+	 * <p>{@code FMLEnvironment.<clinit>} is four assignments from {@code FMLLoader}'s getters into {@code public
+	 * static final} fields, with no exception table — it cannot fail and it cannot be repeated. That makes it
+	 * unlike the {@code LoadingModList} holder, which went ERRONEOUS and could at least be caught: here the first
+	 * reader simply wins, quietly, and every later {@code FMLEnvironment.dist} in the process is whatever that
+	 * reader saw. Forcing the initializer at a kernel-owned point ends the race rather than hoping to win it.
+	 *
+	 * <p>Then it checks the answer, because "seeded" and "is what we seeded" are different claims and only the
+	 * second one is the one mods depend on. Reported at ERROR when they disagree: with a null or wrong dist,
+	 * {@code AutomaticEventSubscriber} skips every {@code @EventBusSubscriber} and nothing throws.
+	 */
+	private static void verifyForgeFmlEnvironment(ClassLoader gameLoader, Side side) {
+		try {
+			Class<?> env = Class.forName(ForeignType.FML_ENVIRONMENT.binary(Ecosystem.FORGE), true, gameLoader);
+			Object seen = env.getField("dist").get(null);
+			if (seen == null) {
+				ForbricLog.error("[Forbric/Seed] MinecraftForge FMLEnvironment is null after seeding — something "
+						+ "read it before the kernel seeded FMLLoader, and its fields are static final, so dist is "
+						+ "null for the REST OF THIS RUN: every @EventBusSubscriber is skipped and every dist "
+						+ "branch takes the wrong side, all without throwing");
+			} else if (!side.distName().equals(String.valueOf(seen))) {
+				ForbricLog.error("[Forbric/Seed] MinecraftForge FMLEnvironment disagrees with this side: it says "
+						+ "dist=%s, the kernel is running %s — decided by an earlier reader and unchangeable",
+						seen, side.distName());
+			} else {
+				ForbricLog.info("[Forbric/Seed] MinecraftForge FMLEnvironment decided here: dist=%s production=%s",
+						seen, PRODUCTION);
+			}
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/Seed] traditional-Forge FMLEnvironment not present — nothing to decide");
+		} catch (Throwable t) {
+			ForbricLog.error("[Forbric/Seed] could not read back MinecraftForge's FMLEnvironment", unwrap(t));
 		}
 	}
 
