@@ -68,6 +68,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= addMissingForgeFluidTypeBridge(node);
 			changed |= addMissingForgeKeyMappingLookupInitializer(node);
 			changed |= routeKeyMappingClickToPopulatedLookup(node);
+			changed |= giveTheVanillaParticleMapAViewOfTheLiveOne(node);
 			changed |= dropInterfaceDefaultShadowingOverrides(node);
 			changed |= tolerateEmptyCreativeTabStacks(node);
 			changed |= routePlaceItemHookToNeoForge(node);
@@ -150,6 +151,13 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	private static final String LEGACY_INTEROP_PACKAGE = "net/forbric/loader/impl/";
+
+	private static final String PARTICLE_RESOURCES = "net/minecraft/client/particle/ParticleResources";
+	/** NeoForge's retyping of vanilla's {@code providers}: the one the merged {@code <init>} actually writes. */
+	private static final String NAME_KEYED = "Ljava/util/Map;";
+	/** Vanilla's own descriptor for it, and the one fabric-api reads. */
+	private static final String ID_KEYED = "Lit/unimi/dsi/fastutil/ints/Int2ObjectMap;";
+	private static final String KERNEL_PARTICLES = "net/forbric/kernel/runtime/KernelParticleProviders";
 	/** Old owner → the kernel class that now carries the method, for hooks the merged base still names. */
 	private static final Map<String, String> LEGACY_INTEROP_OWNERS = Map.of(
 			"net/forbric/loader/impl/compat/ForbricCustomPayloadInterop", "net/forbric/kernel/interop/PayloadInterop",
@@ -353,6 +361,119 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "— the merge left it reading the Forge-side MAP, which is never written, so every consumeClick key "
 				+ "(inventory/chat/command/drop) was dead");
 		return true;
+	}
+
+	/**
+	 * Gives {@code ParticleResources}' vanilla-typed {@code providers} field a live view of the one that is written.
+	 *
+	 * <p>The same failure class as {@link #routeKeyMappingClickToPopulatedLookup}, at field level. Vanilla declares
+	 * {@code providers} as {@code Int2ObjectMap} keyed by particle id; NeoForge 26.2.0.88 RE-TYPES that field to
+	 * {@code Map<Identifier, ?>}. Same name, different descriptor is legal, so the merge keeps both and the
+	 * surviving {@code <init>} writes only NeoForge's. The vanilla-typed one is null for the life of the process.
+	 *
+	 * <p>The merge tool sees this pair and correctly declines to delete either — deleting the unwritten one trades
+	 * an NPE for a {@code NoSuchFieldError} at the same instruction — and it cannot repair it: its
+	 * exclusive-added-field initializer is scoped to fields an ecosystem ADDED, and this is a RE-TYPED VANILLA
+	 * field, outside that set by construction. So the repair belongs here, where the whole class is in hand.
+	 *
+	 * <p>A view rather than a second map, because the two halves have to stay ONE mechanism. fabric-api's
+	 * {@code DirectParticleProviderRegistry.register} reads the field DIRECTLY — {@code getfield providers} of the
+	 * {@code Int2ObjectMap} descriptor, then {@code PARTICLE_TYPE.getId(type)}, then {@code put(int, provider)} —
+	 * so rewriting accessors cannot reach it, and an empty map of its own would swallow the registration and leave
+	 * the particle silently unrendered. Writes through the int-keyed face have to be visible to
+	 * {@code ParticleEngine.makeParticle}, which reads the {@code Identifier}-keyed one.
+	 *
+	 * <p>The insert goes immediately after {@code <init>}'s write of the live map and BEFORE its
+	 * {@code registerProviders()} call, not before {@code RETURN}: fabric-api's {@code ParticleResourcesMixin}
+	 * injects at {@code registerProviders}'s RETURN, so a repair placed at the end of the constructor is still too
+	 * late and reproduces the crash while looking correct.
+	 *
+	 * <p>It also repoints {@code getProvider} at the live map. MinecraftForge added {@code providersByName} and
+	 * filled it from its own {@code register}, which the merge dropped — so the merged class initializes it, from
+	 * a synthetic default AFTER {@code registerProviders} has already run, and nothing ever puts anything in it.
+	 * The two maps held the same thing by construction (both keyed {@code getKey(type)}, same descriptor), so this
+	 * is a rename.
+	 */
+	private static boolean giveTheVanillaParticleMapAViewOfTheLiveOne(ClassNode node) {
+		if (!PARTICLE_RESOURCES.equals(node.name)) return false;
+		// Only when the merge actually split it. A single-ecosystem or rebuilt base is already coherent.
+		if (!hasField(node, "providers", NAME_KEYED) || !hasField(node, "providers", ID_KEYED)) return false;
+
+		MethodNode init = findMethod(node, "<init>", "()V");
+		if (init == null) return false;
+
+		FieldInsnNode anchor = null;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.PUTFIELD
+						|| !node.name.equals(field.owner) || !"providers".equals(field.name)) {
+					continue;
+				}
+				if (ID_KEYED.equals(field.desc)) {
+					// Already written by something — a rebuilt base, or this pass having run before. Stand down:
+					// this is also what makes the pass idempotent.
+					return false;
+				}
+				if (!NAME_KEYED.equals(field.desc)) continue;
+				if (anchor != null || method != init) {
+					ForbricLog.warn("[Forbric/MergedBaseCompat] ParticleResources writes its provider map more than "
+							+ "once, or outside <init> — the view below would capture a map that is later replaced, "
+							+ "so it is not installed");
+					return false;
+				}
+				anchor = field;
+			}
+		}
+		if (anchor == null) return false;
+
+		InsnList view = new InsnList();
+		view.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		view.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		view.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, "providers", NAME_KEYED));
+		view.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_PARTICLES, "intKeyedView",
+				"(Ljava/util/Map;)Ljava/lang/Object;", false));
+		view.add(new TypeInsnNode(Opcodes.CHECKCAST, ID_KEYED.substring(1, ID_KEYED.length() - 1)));
+		view.add(new FieldInsnNode(Opcodes.PUTFIELD, node.name, "providers", ID_KEYED));
+		init.instructions.insert(anchor, view);
+		init.maxStack = Math.max(init.maxStack, 2);
+
+		routeGetProviderAtTheLiveMap(node);
+
+		ForbricLog.warn("[Forbric/MergedBaseCompat] ParticleResources had two `providers` fields and only one was "
+				+ "ever written — the vanilla-typed one, which fabric-api's particle registry reads directly, was "
+				+ "null, so any mod using that API crashed inside Minecraft.<init>. It is now a live view of the "
+				+ "map that IS written");
+		return true;
+	}
+
+	/**
+	 * Points {@code getProvider} at the live map instead of the empty {@code providersByName}.
+	 *
+	 * <p>Only when nothing outside {@code <init>} writes {@code providersByName}: if a base ever keeps
+	 * MinecraftForge's {@code register}, the field is live again and must be left alone. The declaration stays
+	 * either way — removing it would break any access widener that named it, for no gain.
+	 */
+	private static void routeGetProviderAtTheLiveMap(ClassNode node) {
+		if (!hasField(node, "providersByName", NAME_KEYED)) return;
+		for (MethodNode method : node.methods) {
+			if ("<init>".equals(method.name)) continue;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTFIELD
+						&& node.name.equals(field.owner) && "providersByName".equals(field.name)) {
+					return; // a live producer survived; nothing to reroute
+				}
+			}
+		}
+		MethodNode getProvider = findMethod(node, "getProvider",
+				"(Lnet/minecraft/core/particles/ParticleType;)Lnet/minecraft/client/particle/ParticleProvider;");
+		if (getProvider == null) return;
+		for (AbstractInsnNode insn = getProvider.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD
+					&& node.name.equals(field.owner) && "providersByName".equals(field.name)
+					&& NAME_KEYED.equals(field.desc)) {
+				field.name = "providers";
+			}
+		}
 	}
 
 	/**
