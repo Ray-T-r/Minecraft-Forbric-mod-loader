@@ -1,176 +1,163 @@
 # Forbric
 
-**A mod loader that runs Fabric, Forge and NeoForge mods in the same Minecraft, at the same time.**
+**One Minecraft instance that runs Fabric mods, Forge mods and NeoForge mods at the same time.**
+
+Version 0.2.0 · Minecraft 26.2
 
 ## What it does
 
-Minecraft modding is split three ways. **Fabric** is one loader. **Forge** is another. **NeoForge** is a
-third — it broke away from Forge a few years ago and is now a separate loader with its own mods, not
-simply a newer Forge.
+Minecraft mods come in three kinds, and normally you have to pick one. A mod is built for **Fabric**, or
+for **Forge**, or for **NeoForge**, and it only works on the one it was built for. Put a Fabric mod into
+a Forge game and nothing happens. So most people keep several separate setups, and whichever one they
+start, most of their mods are sitting in the other ones.
 
-A mod is built for exactly one of the three. Put a Fabric mod into a Forge instance and nothing happens —
-same file extension, wrong machine, like a PlayStation disc in an Xbox. So you keep separate profiles,
-and whichever one you launch, most of your mod list is sitting unused in the other two.
+Forbric is a fourth thing you install instead of those three. You put **every** mod into **one** folder —
+Fabric, Forge and NeoForge mixed together, no sorting — and Forbric opens each file, works out what kind
+it is, and loads it. All of them are running in the same world at the same time.
 
-Forbric is a loader you install instead of any of them. You drop every jar into one `mods` folder —
-Fabric, Forge and NeoForge together, no sorting — and it opens each one, works out which kind it is, and
-loads it.
+It also gives you one list of everything you have installed. The pause menu and the title screen get a
+Forbric mods button, and from that list you can open any mod's own settings screen, whichever of the
+three it belongs to.
 
-**All three run in one instance.** That is what changed in 0.2.0: the installer now builds the merged
-base that carries Fabric, traditional MinecraftForge *and* NeoForge together, so a NeoForge mod and a
-Forge mod and a Fabric mod are all live in the same world at the same time. In 0.1.0 an instance carried
-one Forge family and you had to build the combined base by hand.
+**You may have heard of Kilt or Sinytra Connector.** Those are mods you add to a normal loader, and they
+re-create one side's features inside the other — a translator in the room. Forbric is the loader itself:
+the real Forge and the real NeoForge are running inside the game, next to Fabric, so nothing is being
+translated. Connector is mature and Forbric is not, so if Connector already runs the mods you want, use
+Connector. Forbric is for the cases it cannot reach.
 
-It is version 0.2.0 and it is a research project. Read [What it cannot do yet](#what-it-cannot-do-yet)
-before you plan a modpack around it.
+## How to install
 
-## How is this different from Kilt or Sinytra Connector?
+### Before you start
 
-You may already have seen mods that promise something similar. They are a different kind of thing.
-
-**Kilt** and **Sinytra Connector** are *mods*. You still run a normal loader, and the mod re-creates the
-other side's API inside it. Connector, for example, is installed on NeoForge and re-implements Fabric's
-API so that Fabric mods can run there. Kilt did the mirror image on Fabric.
-
-Think of it as an interpreter standing in the room. It listens to the visiting mod, translates, and
-speaks to the host loader on its behalf. It works — but the mod is only ever talking to the interpreter,
-so anything the interpreter has not learned to say does not get through.
-
-**Forbric is the loader itself.** It starts the game, and the real MinecraftForge and NeoForge runtimes
-are present inside that same game, next to Fabric's. A Forge mod calling Forge's event system is calling
-the real Forge event system, not a re-creation of it. Nobody is translating; all three are actually
-present.
-
-| | Kilt / Sinytra Connector | Forbric |
-| --- | --- | --- |
-| What it is | a mod you add to a loader | the loader |
-| The other side's API | re-implemented by the compat layer | the real thing, running |
-| Direction | one-way (Fabric mods on NeoForge, or the reverse) | all three at once, in one instance |
-| Limits | whatever the layer has re-implemented | whatever actually breaks when three runtimes share a game |
-| Maturity | years of use, large communities | version 0.2.0, a research project |
-
-**So which should you use?** If Connector already runs the mods you want, use Connector — it is mature
-and Forbric is not. Forbric is for the cases it cannot reach, and for people who want to see whether
-running all three real runtimes together is possible at all.
-
-## What you need
-
-- A launcher that supports custom versions — **PCL2** or **HMCL**.
-- **Minecraft 26.2**, already installed once, so the installer has the base version to build from.
-- Java. If you can already play Minecraft you have it; the installer will find the copy your launcher
+- A launcher that can start custom versions — **PCL2** or **HMCL**.
+- **Java.** If you can already play Minecraft, you have it. The installer finds the copy your launcher
   downloaded, even if you never installed Java yourself.
+- **An internet connection**, and about 730 MB of free disk while it works (about 190 MB is kept
+  afterwards).
 
-## Install
+You do **not** need to install Minecraft 26.2 first. If you do not have it, the installer downloads it.
+
+### Install
 
 1. Open the [latest release](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/releases/latest).
-2. Download two files into the **same folder**:
-   - `forbric-kernel-installer-0.2.0.jar`
-   - `Forbric-Installer.bat` on Windows, or `Forbric-Installer.command` on macOS.
-     On Linux you do not need the second file.
-3. Double-click the `.bat` / `.command`. From a terminal it is:
 
-   ```bash
-   java -jar forbric-kernel-installer-0.2.0.jar
-   ```
+2. Download **two** files into the **same folder**:
 
-   > **Windows:** double-click the `.bat`, **not** the `.jar`. See
-   > [If something goes wrong](#if-something-goes-wrong) for why.
+   | You are on | Download |
+   | --- | --- |
+   | Windows | `forbric-kernel-installer-0.2.0.jar` **and** `Forbric-Installer.bat` |
+   | macOS | `forbric-kernel-installer-0.2.0.jar` **and** `Forbric-Installer.command` |
+   | Linux | `forbric-kernel-installer-0.2.0.jar` (run it with `java -jar`) |
 
-   To check whether your machine is ready before installing anything:
+3. **Double-click the `.bat` or `.command` — not the jar.** On Windows, double-clicking the jar often
+   just flashes a black window and does nothing, because Windows tends to remember a broken setting for
+   `.jar` files. The script starts Java itself and does not depend on that setting. (Installing Java
+   does not fix it; the bad setting keeps winning.)
 
-   ```bash
-   java -jar forbric-kernel-installer-0.2.0.jar --doctor
-   ```
+   On macOS the first time, you may need to right-click the file and choose **Open**, then confirm. That
+   is macOS being careful about downloads, not an error.
 
-   It prints the Minecraft folder it found, the JVMs it can build with, the pinned Forge/NeoForge
-   versions, and how much disk the build needs. It writes nothing.
+4. **A window opens.** The only field that matters is **Game directory** — your `.minecraft` folder. It
+   is usually filled in correctly. If not:
 
-4. A window opens. The field that matters is **Game directory** — your `.minecraft`. It guesses; fix it
-   if you use a custom folder. Leave the rest alone unless you know why you are changing it.
+   - Windows — `C:\Users\<your name>\AppData\Roaming\.minecraft`
+   - macOS — `~/Library/Application Support/minecraft`
+   - Linux — `~/.minecraft`
 
-5. Press install and wait. **The first install takes a few minutes** — about four and a half on a recent
-   desktop, longer on a slow link. It is downloading Minecraft's, Forge's and NeoForge's own files and
-   assembling them on your computer; they cannot be shipped ready-made, for licensing reasons. Installs
-   after that reuse what is on disk and are quick.
+   Leave everything else alone.
 
-6. Open PCL2 or HMCL. A new version called **`26.2-forbric`** is in the list. Launch it like any other
-   version.
+5. **Press install and wait.** The first install takes several minutes. It is downloading Minecraft's,
+   Forge's and NeoForge's own files and putting them together on your computer, because those files
+   cannot legally be handed out ready-made. Stay connected while it runs. Installing again later reuses
+   what is already on disk and is quick.
 
-Nothing you already have is touched. Your Fabric, Forge and NeoForge installs, your worlds and your
-other mod folders are exactly as they were.
+6. **Open PCL2 or HMCL.** A new version called **`26.2-forbric`** is in the list. Start it like any
+   other version.
 
-## Adding mods
+> Want to check your computer first? Run this — it looks only, and writes nothing:
+>
+> ```bash
+> java -jar forbric-kernel-installer-0.2.0.jar --doctor
+> ```
 
-The installer prints the folder when it finishes. With a launcher that isolates versions — PCL2 and HMCL
-both can — it is:
+### Where to put mods
 
-```
-.minecraft/versions/26.2-forbric/mods/
-```
+The installer prints the folder when it finishes.
 
-Otherwise it is the shared `.minecraft/mods/`.
+- If your launcher keeps each version separate (PCL2 and HMCL both can):
+  `.minecraft/versions/26.2-forbric/mods/`
+- Otherwise the shared `.minecraft/mods/`.
 
-Put your jars in there. Fabric mods, Forge mods and NeoForge mods go in the **same** folder — Forbric
-opens each jar and reads what is inside to decide which kind it is. You never have to tell it.
+**Fabric, Forge and NeoForge mods all go in the same folder.** You never have to tell Forbric which is
+which.
 
 One thing to watch: a popular mod is usually published as a Fabric build, a Forge build *and* a NeoForge
-build. Download **one** of them, not several. Forbric will notice two builds of the same mod and pick
-one, but it is better to choose yourself than to find out which it picked.
+build. Download **one** of them, not several. Forbric will notice and pick one, but it is better that
+you choose.
 
-## Did it work?
+If you download mods through your launcher's own mod browser, it will offer you Fabric builds by
+default. A launcher can only be told about one kind, so Forbric tells it Fabric. Any of the three still
+work — this only changes what the browser suggests first.
 
-- The pause menu has a **Forbric mods button** — three overlapping squares, and the tooltip says
-  *Mods (Forbric)*. It opens a single list of every mod in the instance, each row tagged with the loader
-  it came from. Select a mod and press **Config**, or double-click its row, to open that mod's own
-  settings screen — whichever of the three it belongs to.
-- `logs/latest.log` inside the version folder starts with a Forbric banner, followed by a line per mod
-  it found. If a mod is missing from the game, search the log for its name — the reason is usually
-  written there in plain English.
+### Did it work?
 
-Note that a modded pause menu often has **two** mods buttons: Mod Menu, if you have it, inserts its own
-next to Forbric's. The one that says *Mods (Forbric)* is the one that lists all three ecosystems.
+Open the pause menu. There is a button with **three overlapping squares**, and the tooltip says
+*Mods (Forbric)*. It opens one list of every mod you installed, each row labelled with the kind it is.
+Select a mod and press **Config**, or double-click the row, to open that mod's own settings.
 
-## Updating and uninstalling
+If you have Mod Menu installed, there will be **two** mods buttons. The one that says *Mods (Forbric)* is
+the one that lists all three kinds.
 
-**Updating Forbric:** run the installer again with the same settings. It overwrites the version in
-place, and your mods folder is untouched.
-
-**Uninstalling:** delete `.minecraft/versions/26.2-forbric/`. That is all of it. Nothing else in your
-Minecraft folder was modified. (If you want the space back too, the build cache lives in
-`.minecraft/.forbric-build/` and the staged jars in `.minecraft/libraries/net/forbric/`.)
-
-## If something goes wrong
+### If something goes wrong
 
 | What you see | What to do |
 | --- | --- |
-| **Windows: double-clicking the jar flashes a black window and nothing happens** | Windows' *"always open with"* dialog wrote a broken association for `.jar` files, and Java quits before the installer even starts. Use `Forbric-Installer.bat` — it starts Java itself and ignores the association. Note that *installing Java does not reliably fix this*; the bad choice keeps winning until you clear it. |
-| **The installer sits on a download and never finishes** | It should not any more — every download now has a deadline and says so when it passes one. If it still stalls, the usual cause is a proxy or VPN intercepting Mojang's servers. `--doctor` first, then try with the proxy off. |
-| **The game crashes on startup** | Open `logs/latest.log` in the version folder. Look for the first line that names a mod. Then remove half your mods and try again — repeat, and you will find the culprit in a few rounds. |
-| **A mod is installed but does nothing** | Check the log for its name. The most common cause is a mod built for a different Minecraft version; the second is having two builds of the same mod installed at once. |
-| **A mod needs a dependency you do not have** | Forbric puts a window in front of you before the game starts, naming the mod, what it needs, and what is installed instead. You can launch anyway. |
+| **The game crashes when it starts** | Open `logs/latest.log`. Remove half your mods and try again — repeat, and you will find the one at fault in a few rounds. |
+| **A mod is installed but does nothing** | Usually it was built for a different Minecraft version, or you have two builds of the same mod installed. Search `logs/latest.log` for its name. |
+| **A mod is missing something it needs** | Forbric shows you a window before the game starts, naming the mod and what it needs. You can launch anyway. |
+| **The install seems stuck** | Usually a proxy or VPN sitting between you and Mojang's servers. Run `--doctor`, then try with it off. |
 
-## What it cannot do yet
+### Updating and uninstalling
 
-- **No promise that any particular mod works.** Three mod ecosystems is an enormous surface, and only a
-  fraction of it has ever been run. Expect trial and error.
-- **Builds are not reproducible.** Installing twice on the same machine produces game jars with
-  different checksums — the decompile-and-merge pipeline does not promise byte-for-byte output. What is
-  checked is behaviour: the jars a real install produced are run through the project's own gates.
-- **No support, no roadmap, no stable API.** Version 0.2.0. Things move.
+**To update**, run the installer again with the same settings. Your mods folder is left alone.
+
+**To uninstall**, delete `.minecraft/versions/26.2-forbric/`. To get the disk space back as well, also
+delete `.minecraft/.forbric-build/` and `.minecraft/libraries/net/forbric/`.
+
+## What we promise
+
+**Your existing Minecraft is not touched.** Forbric installs alongside everything else. Your Fabric,
+Forge and NeoForge setups, your worlds, and your other mod folders are exactly as they were.
+
+**Uninstalling is deleting a folder.** Nothing is scattered around your system, and nothing is left
+running when you are not playing.
+
+**Nothing is hidden.** All the source code is here and the licence is Apache-2.0. This repository
+contains no Minecraft, Forge or NeoForge code — all of that is fetched from their own servers and
+assembled on your machine when you install.
+
+And what we do **not** promise:
+
+**We cannot promise any particular mod works.** Three kinds of mods is an enormous range, and only a
+small part of it has ever been tried. Expect some trial and error, and do not plan a big modpack around
+Forbric yet.
+
+**This is a research project at version 0.2.0.** There is no support, no roadmap, and things will change.
 
 Forbric is not affiliated with Mojang, FabricMC, MinecraftForge or NeoForged.
 
-## For mod developers
+---
 
-**Your mod does not need to change.** Forbric loads it in its own ecosystem's real runtime. Nothing is
+### For mod developers
+
+**Your mod does not need to change.** Forbric loads it in its own ecosystem's real runtime — nothing is
 re-implemented, so there is no compatibility layer to code against.
 
-- **[forbric-kernel/README.md](forbric-kernel/README.md)** — the kernel, which is what the installer
-  installs: its architecture, the unified API, and how the three ecosystems are reduced to adapters over
-  kernel-owned services.
-- **[introduction.md](introduction.md)** — the architecture of `forbric-loader`, the previous-generation
-  "weld" the kernel replaced. Still accurate about that module, which is still in the tree and still
-  builds the shared game artifacts; it does **not** describe the kernel.
+- [forbric-kernel/README.md](forbric-kernel/README.md) — the kernel, which is what the installer
+  installs.
+- [introduction.md](introduction.md) — the architecture of `forbric-loader`, the previous-generation
+  "weld" the kernel replaced. It is still in the tree and still builds the shared game artifacts; it
+  does **not** describe the kernel.
 
 To build from source you need `git` and a JDK 21 or newer:
 
@@ -181,13 +168,8 @@ cd Minecraft-Forbric-mod-loader
 cd forbric-kernel && ./gradlew build
 ```
 
-## Licence
+### Licence
 
-Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
-
-This repository contains **no Minecraft code, no Forge or NeoForge code and no name-mapping data**. All
-of it is fetched from Mojang's, Forge's and NeoForged's own servers and assembled on your machine at
-install time. Forbric's Forge-family half was written from public specifications rather than copied,
-which is what keeps the whole project under one permissive licence. Details in
+Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). The clean-room boundary is documented in
 [forbric-loader/CREDITS.md](forbric-loader/CREDITS.md) and
 [forbric-loader/MAPPINGS.md](forbric-loader/MAPPINGS.md).
