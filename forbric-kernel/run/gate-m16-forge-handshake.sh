@@ -156,6 +156,26 @@ check "the lazy holder no longer reads temp (client)" "ForgeList\] .*LazyInit no
 check_absent "the list reads back as the kernel built it (server)" "ForgeList\] .*(UNREADABLE|but the kernel built)" "$SLOG"
 check_absent "the list reads back as the kernel built it (client)" "ForgeList\] .*(UNREADABLE|but the kernel built)" "$CLOG"
 
+# The same trap one class over, and the reason the canary now ships a mixin config plugin whose <clinit> reads
+# FMLEnvironment.dist. FMLEnvironment caches FMLLoader's answers into public static final fields, decided once by
+# whoever touches the class first — and Mixin constructs every declared IMixinConfigPlugin while preparing
+# configs, which is before the kernel's main seeding pass. Seeded afterwards, dist is null for the whole run and
+# nothing throws: AutomaticEventSubscriber's Set.contains(null) skips every @EventBusSubscriber, and every
+# DistExecutor branch takes the wrong side. Asserting non-null separately from the VALUE, because a null dist and
+# a wrong-side dist are different bugs and one check cannot tell them apart.
+check "the Forge dist is decided before the first guest mixin plugin (server)" \
+  "ForbricLive/PLUGIN\] prepareConfigs saw dist=DEDICATED_SERVER" "$SLOG"
+check "the Forge dist is decided before the first guest mixin plugin (client)" \
+  "ForbricLive/PLUGIN\] prepareConfigs saw dist=CLIENT" "$CLOG"
+check_absent "and it is never null (server)" "ForbricLive/PLUGIN\] prepareConfigs saw dist=null" "$SLOG"
+check_absent "and it is never null (client)" "ForbricLive/PLUGIN\] prepareConfigs saw dist=null" "$CLOG"
+check_absent "the kernel's own read-back agrees (server)" "Seed\] MinecraftForge FMLEnvironment (is null|disagrees)" "$SLOG"
+check_absent "the kernel's own read-back agrees (client)" "Seed\] MinecraftForge FMLEnvironment (is null|disagrees)" "$CLOG"
+# The independent second detector: the canary's config-screen registration is behind its own dist==CLIENT guard
+# and returns silently when the dist is wrong, which is precisely the shape of the damage.
+check "a dist-gated registration actually ran (client)" \
+  "ForbricLive/CFG\] registered a traditional-Forge config screen factory" "$CLOG"
+
 step "nothing in that handshake failed (must be ABSENT)"
 check_absent "every payload encodes (server)"  "Failed to encode packet"                  "$SLOG"
 check_absent "every payload encodes (client)"  "Failed to encode packet"                  "$CLOG"

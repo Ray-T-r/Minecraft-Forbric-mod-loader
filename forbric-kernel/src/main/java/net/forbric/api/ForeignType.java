@@ -68,6 +68,13 @@ public enum ForeignType {
 			"net.neoforged.fml.event.lifecycle.FMLDedicatedServerSetupEvent"),
 	FML_LOAD_COMPLETE_EVENT("net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent",
 			"net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent"),
+	/**
+	 * The one-shot cache of {@link #FML_LOADER}'s answers. MinecraftForge's is four {@code public static final}
+	 * fields decided by a {@code <clinit>} that cannot throw, so whoever touches it first decides them forever;
+	 * NeoForge's is stateless. The kernel reads these fields back to check its own seeding took.
+	 */
+	FML_ENVIRONMENT("net.minecraftforge.fml.loading.FMLEnvironment",
+			"net.neoforged.fml.loading.FMLEnvironment"),
 	FML_LOADER("net.minecraftforge.fml.loading.FMLLoader",
 			"net.neoforged.fml.loading.FMLLoader"),
 	FML_MOD_CONTAINER("net.minecraftforge.fml.javafmlmod.FMLModContainer",

@@ -7,3 +7,6 @@ modId="forbriclive"
 version="1.0.0"
 displayName="Forbric Live Canary"
 description='''Gameplay-event + persistence canary for Forbric stage 5.'''
+
+[[mixins]]
+config="forbriclive.mixins.json"

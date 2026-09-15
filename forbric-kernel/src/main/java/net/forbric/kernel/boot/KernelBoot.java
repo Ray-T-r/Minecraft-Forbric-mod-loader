@@ -481,13 +481,28 @@ public final class KernelBoot {
 		// Seeding here is safe precisely because the loader has no mixin transformer yet, so these loads cannot
 		// recurse into select(). The cost is that these few classes are never weavable — measured and acceptable:
 		// across every mod jar in the gates and the client, the only net/neoforged/fml class any guest mixin so much
-		// as names is ImmediateWindowHandler, which is not on this path. seedAll repeats both calls; both are
-		// idempotent.
+		// as names is ImmediateWindowHandler, which is not on this path. seedAll repeats three of the four calls
+		// below — seedNeoForgePaths, seedNeoForgeLoader and seedForgeFmlLoader, all idempotent — and does NOT
+		// repeat publishForgeLoadingList.
+		//
+		// WHERE THE RACE ACTUALLY IS, because it is not where it looks: the transformer goes in inside
+		// KernelMixinBootstrap.init, but gotoPhase(INIT)/gotoPhase(DEFAULT) there does NOT prepare configs. Mixin
+		// prepares them, and constructs every IMixinConfigPlugin, on the FIRST class that passes through the
+		// transformer — which is KernelRuntimeClasses.verify(loader) below, not the init call. `initialize=false`
+		// is no help either: a class is transformed when it is DEFINED.
 		PassiveSeeder.seedNeoForgePaths(loader, gameDir);
 		// The mods dir is passed explicitly (not re-derived inside the seeder) because the LoadingModList seeded here
 		// must describe the SAME jars this boot decided to load — see discoverForgeFamilyModJars above, which walks
 		// exactly this directory. Two independent derivations of "where the mods are" is how they drift apart.
 		PassiveSeeder.seedNeoForgeLoader(loader, gameDir, gameDir.resolve("mods"), side.api());
+		// MinecraftForge's FMLLoader identity, for a reason its NeoForge twin does not have: NeoForge's
+		// FMLEnvironment is stateless, so seeding it late could only THROW, which is loud. MinecraftForge's
+		// CACHES FMLLoader's answers into four public static final fields in a <clinit> that cannot throw — every
+		// getter it calls is a bare getstatic — so whoever touches it first decides `dist` FOREVER, and a guest
+		// mixin plugin's own <clinit> during prepareConfigs is exactly such a toucher. Seeded afterwards, dist is
+		// permanently null: AutomaticEventSubscriber's Set.contains(null) then skips every @EventBusSubscriber,
+		// and ModLoader/ConfigTracker/RuntimeDistCleaner all take the wrong branch. Nothing throws.
+		PassiveSeeder.seedForgeFmlLoader(loader, gameDir, side.api());
 		// MinecraftForge's twin, and it has to be HERE rather than in the mod-loading window where its seed lives:
 		// its list is built by a one-shot class initializer, so the answer must exist before anything can ask. The
 		// most likely early asker is a guest mixin plugin during prepareConfigs, which is the next line but one.

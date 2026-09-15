@@ -16,14 +16,23 @@ ANNOT="$WORK/dl/annotations-24.1.0.jar"
 [ -f "$ANNOT" ] || curl -sS -L -o "$ANNOT" "$CENTRAL/org/jetbrains/annotations/24.1.0/annotations-24.1.0.jar"
 VLIBS="$(find "$MC/libraries" -name '*.jar' 2>/dev/null | paste -sd: -)"
 
+# Mixin is NOT in forge-runtime.jar (zero org/spongepowered/asm entries); it comes from the Minecraft library
+# tree, the same place the rest of $VLIBS does. Resolved explicitly rather than left to $VLIBS happening to
+# contain it, so a missing one fails here with its name instead of as an unresolved symbol.
+MIXIN="$(find "$MC/libraries/net/fabricmc/sponge-mixin" -name '*.jar' 2>/dev/null | sort | tail -1)"
+[ -n "$MIXIN" ] || { echo "sponge-mixin jar not found under $MC/libraries/net/fabricmc/sponge-mixin" >&2; exit 2; }
+
 build_one() { # <src-dir> <out-jar>
   local src="$1" out="$2" classes
   classes="$WORK/testmod-classes-$(basename "$out" .jar)"
   rm -rf "$classes"; mkdir -p "$classes"
   find "$src" -name '*.java' -print0 | xargs -0 javac --release 17 -proc:none \
-    -cp "$RUNTIME:$PATCHED:$ANNOT:$VLIBS" -d "$classes"
+    -cp "$RUNTIME:$PATCHED:$ANNOT:$MIXIN:$VLIBS" -d "$classes"
   mkdir -p "$classes/META-INF"
   cp "$src/META-INF/mods.toml" "$classes/META-INF/mods.toml"
+  # The mixin config must land at the JAR ROOT: ForgeMetadataMapper DROPS a declared config whose entry is
+  # missing, with only a warn — so a misplaced file makes the fixture silently do nothing.
+  [ -f "$src/forbriclive.mixins.json" ] && cp "$src/forbriclive.mixins.json" "$classes/"
   (cd "$classes" && jar --create --file "$out" .)
   echo "[testmods] wrote $out"
 }

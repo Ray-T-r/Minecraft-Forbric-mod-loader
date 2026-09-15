@@ -28,8 +28,8 @@ import java.util.Locale;
  * others and compile — which two of them did:
  *
  * <ul>
- *   <li>{@code PassiveSeeder.seedForgeFmlLoader} hardcodes {@code DEDICATED_SERVER}, so on a Forbric CLIENT,
- *       traditional MinecraftForge believes it is a dedicated server.</li>
+ *   <li>{@code PassiveSeeder.seedForgeFmlLoader} used to hardcode {@code DEDICATED_SERVER}, so on a Forbric
+ *       CLIENT, traditional MinecraftForge believed it was a dedicated server.</li>
  *   <li>{@code KernelBoot} passed {@code side == Side.SERVER} as FML's {@code production} flag, which is the
  *       dev-vs-shipped axis and has nothing to do with which side is running — so every client boot announced
  *       {@code production=false}.</li>
