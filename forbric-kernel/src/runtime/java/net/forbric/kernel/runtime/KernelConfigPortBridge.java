@@ -19,6 +19,8 @@ package net.forbric.kernel.runtime;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import net.minecraft.client.gui.screens.Screen;
+
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.config.ConfigTracker;
 import net.neoforged.fml.config.IConfigSpec;
@@ -54,7 +56,7 @@ public final class KernelConfigPortBridge {
 
 	private static final Map<String, ModContainer> CONTAINERS = new ConcurrentHashMap<>();
 
-	private static ModContainer containerFor(String modId) {
+	static ModContainer containerFor(String modId) {
 		return CONTAINERS.computeIfAbsent(modId, id -> (ModContainer) KernelContainers.container(id, null, null));
 	}
 
@@ -75,5 +77,22 @@ public final class KernelConfigPortBridge {
 	public static ModConfig registerConfig(ConfigTracker tracker, ModConfig.Type type, IConfigSpec spec,
 			String modId, String fileName) {
 		return tracker.registerConfig(type, spec, containerFor(modId), fileName);
+	}
+
+	/**
+	 * The mod-ID-keyed config screen the porting layer's consumers compiled against.
+	 *
+	 * <p>Same skew, one class over and one step further out: the port ships its own
+	 * {@code ConfigurationScreen} whose constructor takes a mod ID where real NeoForge's takes a
+	 * {@code ModContainer}, and mods written for the port name that constructor THEMSELVES. ShoulderSurfing hands
+	 * {@code ConfigurationScreen::new} to the port's screen-factory registry, so the mismatch is not even a call —
+	 * it is a method handle in an {@code invokedynamic}, resolved when the lambda's call site links, which is why
+	 * it surfaced as a {@code NoSuchMethodError} from a line that constructs nothing.
+	 *
+	 * <p>Returns {@code Screen} rather than {@code ConfigurationScreen} so it matches the instantiated type of
+	 * that lambda exactly; the factory's functional interface produces a {@code Screen}.
+	 */
+	public static Screen configurationScreen(String modId, Screen parent) {
+		return new net.neoforged.neoforge.client.gui.ConfigurationScreen(containerFor(modId), parent);
 	}
 }
