@@ -391,7 +391,8 @@ Minecraft-Forbric-mod-loader/
 ├── introduction.md                 this document
 ├── LICENSE, NOTICE                 Apache-2.0 + substrate/dependency attribution
 ├── bootstrap.sh                    clone ../fabric-loader at fabric_loader_ref, apply patches, verify
-├── .github/workflows/build.yml     CI: bootstrap + build + upload both jars
+├── .github/workflows/build.yml     CI: two independent jobs — `build` (bootstrap + gradlew build +
+│                                   upload both loader jars) and `kernel` (gradlew jar test + upload)
 │
 ├── fabric-loader/                  gitignored. Upstream's checkout at the pinned tag. Never edited
 │                                   here, never committed
@@ -443,16 +444,46 @@ Minecraft-Forbric-mod-loader/
 │   ├── src/tools/                  MergedBaseBuilder, MergedLinkChecker, RuntimeInteropPatcher
 │   └── run/                        the instance pipeline (§13)
 │
-└── forbric-installer/              pure-JDK, zero-dependency installer
-    ├── src/main/java/net/forbric/installer/
-    │   ├── Main, InstallerGui              CLI + Swing shell over the same Installer
-    │   ├── Installer                       stage jars into libraries/, write versions/<id>/<id>.json
-    │   ├── MojangDownloader                vanilla client acquisition
-    │   ├── ForgeArtifacts, ForgeTool       Forge coordinates + running Forge's own fatjar tools
-    │   ├── ForgeRuntimeBuilder             merge forge-universal + declared libs → forge-runtime.jar
-    │   ├── PatchedMcBuilder                BUNDLER_EXTRACT → mergetool → binarypatcher → AT →
-    │   │                                   covariant self() injection
-    │   └── Http, Json, Util, Zips, RemoteSource, ArtifactResult
+├── forbric-installer/              the weld's installer. Pure-JDK, zero-dependency. NOT the one on
+│   │                               the release page — see forbric-kernel-installer/ below
+│   ├── src/main/java/net/forbric/installer/
+│   │   ├── Main, InstallerGui              CLI + Swing shell over the same Installer
+│   │   ├── Installer                       stage jars into libraries/, write versions/<id>/<id>.json
+│   │   ├── MojangDownloader                vanilla client acquisition
+│   │   ├── ForgeArtifacts, ForgeTool       Forge coordinates + running Forge's own fatjar tools
+│   │   ├── ForgeRuntimeBuilder             merge forge-universal + declared libs → forge-runtime.jar
+│   │   ├── PatchedMcBuilder                BUNDLER_EXTRACT → mergetool → binarypatcher → AT →
+│   │   │                                   covariant self() injection
+│   │   └── Http, Json, Util, Zips, RemoteSource, ArtifactResult
+│   └── packaging/                          double-click launchers (Windows .bat, macOS .command)
+│
+│   ── the second generation. Nothing below is described by this document ──────────────────────────
+│
+├── forbric-kernel/                 the sovereign kernel: its own Gradle build, its own wrapper, no
+│   │                               fabric-loader substrate and so no bootstrap step. This is what an
+│   │                               installed 0.2.0 instance runs. Design: forbric-kernel/README.md
+│   ├── src/main/java/net/forbric/
+│   │   ├── api/                            net.forbric.api — the unified API the three compat layers
+│   │   │                                   align to (Ecosystem, DiscoveredMod, ModCatalog,
+│   │   │                                   ForeignType, UnifiedDependency, VersionPredicate)
+│   │   └── kernel/                         access, boot, classloading, discovery, fabric, interop,
+│   │                                       mapping, metadata, mixin, transform, ui, util
+│   ├── src/runtime/                        the GAME side — compiled only when the staged game
+│   │                                       artifacts are present (KernelModListScreen lives here)
+│   ├── src/test/                           585 unit tests
+│   ├── canary/, run/                       the test mods and the gate scripts
+│
+└── forbric-kernel-installer/       THE INSTALLER ON THE RELEASE PAGE. Pure-JDK, zero-dependency.
+    │                               Unlike forbric-installer/ it BUILDS the three game jars it may
+    │                               not ship, on the machine that will run them
+    ├── src/main/java/net/forbric/installer/kernel/
+    │   ├── Main, InstallerGui              no arguments → the window; any argument → headless
+    │   ├── Doctor                          --doctor: every precondition, writes nothing
+    │   ├── Pins                            the upstream versions, each with why it is that number
+    │   ├── ArtifactBuilder                 orchestrates the build, caches under <dir>/.forbric-build
+    │   ├── NfrtRunner                      drives NeoFormRuntime (decompile/patch/recompile MC)
+    │   ├── ForgeRuntimeBuilder, NeoForgeRuntimeBuilder, PatchedMcBuilder, MergedBaseTool
+    │   └── Http, Json, Util, Zips, JdkLocator, RemoteSource, BuildStamp
     └── packaging/                          double-click launchers (Windows .bat, macOS .command)
 ```
 
@@ -487,9 +518,12 @@ committed — patched jars, runtime carriers, instances, logs, worlds are all ig
 | `verify-substrate-patches.sh` | the eight patches still match, diffed against the pinned tag (so it holds whether they are committed or working-tree changes) |
 | `regress-real-mods.sh`, `regress-merged-client.sh` | the standing gates: patches, unit tests, headless boot with real third-party mods |
 
-CI (`.github/workflows/build.yml`) runs `bootstrap.sh` then `gradlew build` on every push. Its purpose is
-specifically to keep the *bootstrap* honest: because the substrate is fetched rather than vendored, a
-moved tag or a patch that stops applying breaks a clean clone, and this is what catches it.
+CI (`.github/workflows/build.yml`) has two independent jobs on every push. `build` runs `bootstrap.sh`
+then `gradlew build`, to keep the *bootstrap* honest: because the substrate is fetched rather than
+vendored, a moved tag or a patch that stops applying breaks a clean clone, and this is what catches it.
+`kernel` runs `gradlew jar test` in `forbric-kernel/` with no bootstrap — it is there to prove that the
+staged game artifacts' absence costs a clean clone nothing, since the kernel wires its game-side source
+set at configuration time and only when those artifacts are present.
 
 ## 14. System properties
 
@@ -575,10 +609,12 @@ Break one of these and the failure will usually surface far from the cause.
 
 ## 17. Further reading
 
+- [`forbric-kernel/README.md`](forbric-kernel/README.md) — **the kernel**, which is what the 0.2.0
+  installer installs. Start here if you want the generation that ships
 - [`forbric-loader/README.md`](forbric-loader/README.md) — per-area implementation state
 - [`forbric-loader/run/README.md`](forbric-loader/run/README.md) — the instance pipeline in detail
-- [`forbric-installer/README.md`](forbric-installer/README.md) — install modes, the profile contract,
-  acquisition order and the trust anchor
+- [`forbric-installer/README.md`](forbric-installer/README.md) — the weld's installer: install modes,
+  the profile contract, acquisition order and the trust anchor
 - [`forbric-loader/CREDITS.md`](forbric-loader/CREDITS.md) — the clean-room boundary
 - [`forbric-loader/MAPPINGS.md`](forbric-loader/MAPPINGS.md) — the mapping position
 
