@@ -101,7 +101,11 @@ public final class KernelForgeKeyBindings {
 	 * silently drop a modifier the player had bound.
 	 */
 	public static Object toForgeModifier(Object neo) {
-		if (neo == null) return null;
+		// NONE, not null. MinecraftForge's own KeyMappingLookup.put reads this accessor and immediately uses the
+		// result as an EnumMap key — computeIfAbsent on a null bucket, which is an NPE raised inside Forge's code
+		// and blamed on the mod that was constructing a key binding. There is also no such thing as a "null
+		// modifier" in either family: an unmodified binding IS NONE, which is what the field is initialised to.
+		if (neo == null) return KeyModifier.NONE;
 		String name = ((net.neoforged.neoforge.client.settings.KeyModifier) neo).name();
 		if ("CONTROL_OR_COMMAND".equals(name)) return KeyModifier.CONTROL;
 		try {
