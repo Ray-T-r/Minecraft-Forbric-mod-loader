@@ -186,6 +186,13 @@ public final class KernelLifecycle {
 		// (preInitClient -> TooltipOverlayHandler.init -> NeoForge.EVENT_BUS.register), which is why the tooltip
 		// stayed missing even after mod-bus delivery was fixed.
 		fireModSetupLifecycle(cl, side);
+		// Step 3b2: the late-config pass, in the one place it is honest. loadEarlyConfigs (step 2c) ran before
+		// construction's own events, so a mod that registers a config from FMLConstructModEvent or common setup —
+		// and a Fabric mod registering one through the ForgeConfigAPIPort — has a config that is registered and
+		// never loaded. Reading it then throws "Cannot get config value before config is loaded" rather than
+		// returning a default, from wherever the mod first asked. This opens only what has no loaded config yet, so
+		// it cannot re-open what step 2c already did; on a pack where nothing registers late it says nothing.
+		openLateConfigs(cl, side, "the mod setup lifecycle");
 		// Step 3c: NOW close the payload registration phase. NetworkRegistry.setup() posts
 		// RegisterPayloadHandlersEvent (payload types + codecs, incl. playToClient(neoforge:recipe_content)) and
 		// ClientNetworkRegistry.setup() then posts the client-handler event and validates every to-client payload has
@@ -407,9 +414,14 @@ public final class KernelLifecycle {
 			java.nio.file.Path configDir = (java.nio.file.Path) fmlPaths.getMethod("get").invoke(configDirEnum);
 			java.lang.reflect.Method loadConfigs =
 					trackerCls.getMethod("loadConfigs", typeCls, java.nio.file.Path.class);
+			// STARTUP is deliberately absent. ConfigTracker.registerConfig opens a STARTUP config EAGERLY, at
+			// registration (javap: it loads Type.STARTUP at offset 58 and calls openConfig at 73), so naming it
+			// here asks the carrier to open every one of them a SECOND time — which it does, warning "Opening a
+			// config that was already loaded" and firing ModConfigEvent.Loading again. openLateConfigs still
+			// covers STARTUP, and it opens only what has no loaded config yet.
 			String[] types = side.isClient()
-					? new String[] {"STARTUP", "COMMON", "CLIENT"}
-					: new String[] {"STARTUP", "COMMON"};
+					? new String[] {"COMMON", "CLIENT"}
+					: new String[] {"COMMON"};
 			for (String t : types) {
 				try {
 					Object type = Enum.valueOf(typeCls.asSubclass(Enum.class), t);
@@ -639,11 +651,15 @@ public final class KernelLifecycle {
 				KernelFabricEcosystem.runMainEntrypoints();
 			} finally {
 				rootRegistry(cl, false);
-				// The server-side twin: these entrypoints run BEFORE loadEarlyConfigs, so a config registered here
-				// would in fact be caught by it. This is for the STARTUP/COMMON config registered by anything on
-				// this path that the early pass has already passed over — it opens only what is still unopened, so
-				// on the common path it finds nothing and says nothing.
-				openLateConfigs(cl, side, "the Fabric main entrypoints");
+				// No late-config pass here. It used to sit in this finally, and the comment that justified it said
+				// the quiet part: these entrypoints run BEFORE loadEarlyConfigs, "so a config registered here would
+				// in fact be caught by it". It was caught by it — TWICE. This pass opened each one, and
+				// loadEarlyConfigs then ran ConfigTracker.loadConfigs over the WHOLE type, which re-opens a config
+				// that already has one: "Opening a config that was already loaded" per config, ModConfigEvent.Loading
+				// delivered a second time (a Loading handler that appends to a list or registers a listener does it
+				// twice), the file re-read and a second watcher installed. The late pass now runs AFTER the setup
+				// lifecycle instead, where it is the "only what is still unopened" pass it claims to be — see
+				// driveNativeRegistration.
 			}
 			// Bake the ForgeRegistries. Note a DeferredRegister's RegistryObjects bind during their OWN registry's
 			// RegisterEvent above (DeferredRegister$EventDispatcher calls updateReference right after each register),
