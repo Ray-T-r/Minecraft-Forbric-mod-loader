@@ -52,6 +52,7 @@ import net.forbric.kernel.transform.ForgeLoadingListHolderInjector;
 import net.forbric.kernel.transform.GuestMixinPluginGuard;
 import net.forbric.kernel.transform.HudElementBridgeInjector;
 import net.forbric.kernel.transform.LifecycleHookInjector;
+import net.forbric.kernel.transform.MergedBaseFrameRecomputer;
 import net.forbric.kernel.transform.PortingLayerAbiInjector;
 import net.forbric.kernel.transform.LoaderProbeRewriter;
 import net.forbric.kernel.transform.MethodBodyNeuter;
@@ -469,6 +470,19 @@ public final class KernelBoot {
 			NeoEnumExtensionInjector enumExtensions = NeoEnumExtensionInjector.create(loader);
 			if (enumExtensions != null) chain.register(TransformPhase.COREMOD, enumExtensions);
 		}
+
+		// LAST in the chain, because it has to see every edit the coremod phase made: a transformer that adds a
+		// branch leaves a frame of its own, and the recomputation must be over the final shape. A mod compiled
+		// against one ecosystem can name a superclass the merge took off that hierarchy — MinecraftForge's
+		// CapabilityProvider above Entity is the live case — and such a class fails VERIFICATION, before any of
+		// its code runs, naming a type its author never wrote. See MergedBaseFrameRecomputer.
+		chain.register(TransformPhase.FABRIC_BUILTIN, new MergedBaseFrameRecomputer(path -> {
+			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
+				return in == null ? null : in.readAllBytes();
+			} catch (java.io.IOException unreadable) {
+				return null;
+			}
+		}));
 
 		TransformContext ctx = new TransformContext(side.envType, false, "named");
 		loader.setTransformer((name, bytes) -> chain.applyBeforeMixin(name, bytes, ctx));
