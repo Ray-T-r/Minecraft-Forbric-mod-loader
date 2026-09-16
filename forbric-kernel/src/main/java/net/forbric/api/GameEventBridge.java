@@ -82,6 +82,15 @@ public enum GameEventBridge {
 	PLAYER_CHANGED_DIMENSION(Pass.GAME_BUS, "PlayerEvent.PlayerChangedDimensionEvent",
 			"MinecraftForge mods never see a dimension change, so per-dimension state is not swapped when a "
 					+ "player enters the Nether or the End"),
+	LIVING_DEATH(Pass.GAME_BUS, "LivingDeathEvent",
+			"a MinecraftForge mod that prevents or reacts to a death — graves, keep-inventory, totems — does "
+					+ "nothing at all, and because the event is cancellable its listener runs, decides, and is "
+					+ "ignored, which looks like it works"),
+	LIVING_DROPS(Pass.GAME_BUS, "LivingDropsEvent",
+			"a MinecraftForge mod that adds, removes or suppresses mob drops has no effect"),
+	ENTITY_JOIN_LEVEL(Pass.GAME_BUS, "EntityJoinLevelEvent",
+			"a MinecraftForge mod that refuses an entity entry to the world — mob filters, anti-farm rules, spawn "
+					+ "control — is overruled silently"),
 	CLIENT_TICK_PRE(Pass.CLIENT_GAME_BUS, "ClientTickEvent.Pre",
 			"a MinecraftForge mod polls its key bindings from the client tick (consumeClick drains a counter and "
 					+ "has to be drained every tick), so its keys bind, appear in the Controls screen and do "

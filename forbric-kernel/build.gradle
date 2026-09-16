@@ -150,6 +150,15 @@ tasks.named('compileRuntimeJava') {
 
 test {
 	useJUnitPlatform()
+	// The GAME-side output is an INPUT to these tests, and Gradle cannot see that on its own.
+	//
+	// Several tests load src/runtime classes through a URLClassLoader over build/classes/java/runtime -- it is the
+	// only way to drive game-side code off-game, and it is a file path rather than a declared dependency. So
+	// `test` was UP-TO-DATE after a runtime-source edit: the suite reported green against the PREVIOUS compile,
+	// and a mutation check on any of those classes silently proved nothing. That trap is written down in the wall
+	// ledger from the last time it cost a day; this is the fix rather than the note.
+	dependsOn tasks.named('compileRuntimeJava')
+	inputs.files(sourceSets.runtime.output).withPropertyName('gameSideClasses').optional()
 	// No unit test may fork a window. DependencyAuditTest drives DependencyAudit.report with Side.CLIENT and
 	// deliberately unmet requirements, which is exactly the input that opens one -- and a test suite that stops
 	// on an invisible dialog looks like a hang, not a failure. DependencyDialogTest drives the fork itself, with

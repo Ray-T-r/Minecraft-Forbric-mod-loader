@@ -103,6 +103,15 @@ public final class GameEventMultiplexer {
 					() -> playerBridge(cl, "installRespawn").invoke(null, neoBus));
 			install(GameEventBridge.PLAYER_CHANGED_DIMENSION,
 					() -> playerBridge(cl, "installChangedDimension").invoke(null, neoBus));
+			// The CANCELLABLE ones, which are a different kind of forward: a MinecraftForge mod cancelling one is
+			// the whole point of listening, so the bridge carries its veto back onto the NeoForge event rather
+			// than merely observing. See KernelGameEntityEvents for why that is sound.
+			install(GameEventBridge.LIVING_DEATH,
+					() -> entityBridge(cl, "installLivingDeath").invoke(null, neoBus));
+			install(GameEventBridge.LIVING_DROPS,
+					() -> entityBridge(cl, "installLivingDrops").invoke(null, neoBus));
+			install(GameEventBridge.ENTITY_JOIN_LEVEL,
+					() -> entityBridge(cl, "installEntityJoinLevel").invoke(null, neoBus));
 			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
 			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so
@@ -188,6 +197,12 @@ public final class GameEventMultiplexer {
 	 */
 	private static Method tickBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameTickEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side cancellable-entity bridge. Complete literal, for the reason above. */
+	private static Method entityBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameEntityEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 

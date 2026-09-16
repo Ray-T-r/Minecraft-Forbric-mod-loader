@@ -118,6 +118,22 @@ class GameEventBridgeInventoryTest {
 	}
 
 	/**
+	 * The cancellable ones. A MinecraftForge mod cancelling a death, a drop or an entity join is the whole point
+	 * of listening, so these are not observers — the forward carries the veto back onto the NeoForge event.
+	 */
+	@Test
+	void theCancellableEntityEventsAreBridged() throws Exception {
+		List<String> installed = bridgesNamedBy("install");
+		assumeTrue(!installed.isEmpty(), "GameEventMultiplexer not compiled yet");
+
+		for (String bridge : List.of("LIVING_DEATH", "LIVING_DROPS", "ENTITY_JOIN_LEVEL")) {
+			assertTrue(installed.contains(bridge),
+					bridge + " is not installed — a MinecraftForge mod's listener runs, decides and is ignored, "
+							+ "which looks like it works");
+		}
+	}
+
+	/**
 	 * The client ticks must be their own pass. They name types in NeoForge's client event package, so a dedicated
 	 * server must not resolve them — and as GAME_BUS they would be reported missing on every server boot, which
 	 * turns the verify line from a signal into noise.
