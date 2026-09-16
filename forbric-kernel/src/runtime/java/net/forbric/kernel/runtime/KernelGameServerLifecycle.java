@@ -28,6 +28,8 @@ import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.event.server.ServerLifecycleEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
+import net.neoforged.neoforge.event.server.ServerStartingEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 
 /**
@@ -77,6 +79,47 @@ public final class KernelGameServerLifecycle {
 	public static void installStopping(Object neoBus) {
 		subscribe((IEventBus) neoBus, ServerStoppingEvent.class, "handleServerStopping", false,
 				server -> ServerLifecycleHooks.handleServerStopping(server));
+	}
+
+	/**
+	 * NeoForge {@code ServerStartingEvent} → MinecraftForge {@code handleServerStarting}.
+	 *
+	 * <p>Three things live in that hook and none of them had any other way to happen (javap, in order):
+	 * {@code LanguageHook.loadLanguagesOnServer} on a dedicated server, {@code PermissionAPI
+	 * .initializePermissionAPI()}, and the {@code ServerStartingEvent} post itself. The middle one is why this is
+	 * not merely a missing listener: {@code PermissionAPI.getPermission} dereferences a handler that
+	 * {@code initializePermissionAPI} is the only thing that ever sets, so every MinecraftForge mod asking a
+	 * permission question — spark's {@code /spark} command gate is the one that showed it — got an NPE out of
+	 * Forge's own API rather than an answer.
+	 */
+	public static void installStarting(Object neoBus) {
+		subscribe((IEventBus) neoBus, ServerStartingEvent.class, "handleServerStarting", false,
+				server -> ServerLifecycleHooks.handleServerStarting(server));
+	}
+
+	/**
+	 * NeoForge {@code ServerStoppedEvent} → MinecraftForge {@code handleServerStopped}.
+	 *
+	 * <p>The stop half of the pair that matters across worlds in one process. Forge's hook posts
+	 * {@code ServerStoppedEvent}, clears {@code currentServer} and {@code LogicalSidedProvider}, and — the part
+	 * with a lasting cost — calls {@code ConfigTracker.unloadConfigs(SERVER, worldPath)}. Without it a Forge mod's
+	 * per-world SERVER config is never unloaded, so opening a second singleplayer world in the same session reads
+	 * the FIRST world's values, and each world stacks another file watcher that is never closed.
+	 *
+	 * <p>{@code currentServer} is cleared explicitly as well, because the kernel's about-to-start bridge is what
+	 * sets it (Forge's own about-to-start hook never runs here) and the clearing half has to match.
+	 */
+	public static void installStopped(Object neoBus) {
+		subscribe((IEventBus) neoBus, ServerStoppedEvent.class, "handleServerStopped", false,
+				server -> {
+					try {
+						ServerLifecycleHooks.handleServerStopped(server);
+					} finally {
+						// Even if the hook threw: leaving a dead server published is worse than publishing none,
+						// because a Forge mod broadcasting on the next world would reach the old one's player list.
+						KernelGameServerAboutToStart.forgetCurrentServer();
+					}
+				});
 	}
 
 	/** The MinecraftForge side of one lifecycle step. */

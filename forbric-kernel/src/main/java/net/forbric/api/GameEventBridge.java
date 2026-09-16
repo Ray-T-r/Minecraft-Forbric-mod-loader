@@ -49,6 +49,15 @@ public enum GameEventBridge {
 					+ "— including the local player's on an integrated server, which fails singleplayer world-join"),
 	SERVER_STOPPING(Pass.GAME_BUS, "ServerStoppingEvent",
 			"MinecraftForge mods never learn the server is going away, so their shutdown work is skipped"),
+	SERVER_STARTING(Pass.GAME_BUS, "ServerStartingEvent",
+			"MinecraftForge's PermissionAPI is never initialised, so every permission question a Forge mod asks "
+					+ "NPEs inside Forge's own API; a dedicated server also loads no server-side language file, and "
+					+ "ServerStartingEvent listeners — where mods start schedulers and world-bound managers — never "
+					+ "run"),
+	SERVER_STOPPED(Pass.GAME_BUS, "ServerStoppedEvent",
+			"MinecraftForge's per-world SERVER configs are never unloaded, so a second world opened in the same "
+					+ "session reads the FIRST world's values and each world leaks another file watcher; "
+					+ "ServerStoppedEvent listeners never clean up either"),
 	CLIENT_RELOAD_LISTENERS(Pass.CLIENT_MOD_BUS, "RegisterClientReloadListenersEvent",
 			"a MinecraftForge mod's client reload listeners are registered on a bus nobody posts to — GeckoLib's "
 					+ "whole client model and animation cache hangs off exactly this");

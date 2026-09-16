@@ -114,12 +114,15 @@ public final class KernelRuntimeClasses {
 		// The Neo->Forge server start/stop re-emission, which also opens MinecraftForge's login gate. Separate
 		// from the tick bridge so a carrier missing one pair's types cannot take the other down with it.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerLifecycle", new Entry(Origin.COMPILED, List.of(
+				new Call("installStarting", void.class, Object.class),
 				new Call("installStarted", void.class, Object.class),
-				new Call("installStopping", void.class, Object.class))));
+				new Call("installStopping", void.class, Object.class),
+				new Call("installStopped", void.class, Object.class))));
 		// MinecraftForge's about-to-start, forwarded in three separately guarded pieces because its middle
 		// piece always throws under the kernel. See KernelGameServerAboutToStart.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerAboutToStart", new Entry(Origin.COMPILED, List.of(
-				new Call("install", void.class, Object.class))));
+				new Call("install", void.class, Object.class),
+				new Call("forgetCurrentServer", void.class))));
 		// The unified Mods screen. Named by ModsButtonRedirector as an ASM internal name rather than called, so
 		// it has no Call entries — the seam is the class existing and carrying a (Screen) constructor, and a
 		// missing runtime jar would otherwise surface as a NoClassDefFoundError the moment a player opens the
