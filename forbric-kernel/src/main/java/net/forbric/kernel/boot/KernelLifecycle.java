@@ -179,6 +179,20 @@ public final class KernelLifecycle {
 		// lithostitched:worldgen_modifier" out of RegistryAccess.lookupOrThrow, on the server tick loop. Must run
 		// before any world is created; here is the first point where every mod's listeners are registered.
 		registerDataPackRegistries(cl);
+		// Step 3a2: open the game event buses — HERE, not after the setup lifecycle.
+		//
+		// Genuine NeoForge starts NeoForge.EVENT_BUS at the end of CommonModLoader.begin, immediately after its
+		// "Config loading" task and before load() posts common setup (javap: getstatic NeoForge.EVENT_BUS;
+		// invokeinterface IEventBus.start right after the second runInitTask). The kernel started it last, after
+		// every setup phase — and IEventBus.post on a bus that has not started RETURNS SILENTLY (`getfield
+		// shutdown; ifeq; return`). So a mod that posts its own API event during FMLConstructModEvent, RegisterEvent
+		// or common setup — the "register with me" shape addon mods are built on — posted into nothing: no
+		// listener ran, no error, no log, and the posting mod carried on with an empty result.
+		//
+		// Everything the kernel wires onto these buses (the Neo→Forge bridges inside startGameBuses, NeoForge's own
+		// @EventBusSubscriber classes in step 2c2, the client reload bridge in 2c3) is already registered by this
+		// point, and adding a listener to a started bus is allowed anyway.
+		startGameBuses(cl);
 		// Step 3b: post the FML setup lifecycle at every NeoForge mod. Genuine NeoForge produces these inside
 		// CommonModLoader.load(), whose only client caller is ClientModLoader.finish() — which the kernel neuters
 		// because it also drives the discovery/registration the kernel owns. Nothing replaced the setup phases, so
@@ -206,9 +220,6 @@ public final class KernelLifecycle {
 		// mod loading, which is what this now matches. On the CLIENT it moves later still, to onClientEntrypoints,
 		// because client setup itself moved there.
 		if (!side.isClient()) setupNeoForgeNetwork(cl, side);
-		// Step 4: start the game event buses so mods' game-event listeners actually dispatch — the buses buffer
-		// until start()/startup().
-		startGameBuses(cl);
 	}
 
 	/**
@@ -566,6 +577,8 @@ public final class KernelLifecycle {
 	 * "Tags not bound" wall of the old weld does not arise.
 	 */
 	private static void registerNeoForgeContent(ClassLoader cl, Side side) {
+		// Whether the registration window was opened, and so whether the finally below owes it a close.
+		boolean closeWindow = false;
 		try {
 			Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.NEOFORGE), false, cl);
 			Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), side.distName());
@@ -656,6 +669,17 @@ public final class KernelLifecycle {
 			// window then throws "Can not register to a locked registry" (gate-m1 RED).
 			invokeGameDataOn(cl, ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), "vanillaSnapshot");
 			unfreeze(cl);
+			// From here the registries are OPEN, and everything that closes them again lives in the finally below.
+			// It used to live inline at the end of this try, so anything that threw in between — a Class.forName for
+			// a carrier type that was renamed, NeoForgeRegistries failing to initialise, an Error escaping the
+			// baseline or the Fabric entrypoints — left every registry writable for the rest of the run and skipped
+			// linkBlockItems, the blockstate-id rebuild, the creative-tab sort and the registriesLoaded latch. The
+			// symptoms are the ones this file already documents one by one: Block.asItem() returns AIR so a mod's
+			// creative tab is empty and its blocks cannot be picked, the first block_update fails to encode with
+			// "Can't find id for Block{minecraft:lava}" and kicks the player at spawn, and mods gating on
+			// areRegistriesLoaded() refuse to register render layers. The only report was one WARN saying the
+			// registration window "could not register ecosystem content", which names none of that.
+			closeWindow = true;
 			// MOD buses only — buses.get(0) is the baseline, whose registries PassiveSeeder already registered at
 			// seed time; posting there re-collects them and fill() dies on "Attempted duplicate registration".
 			postNeoNewRegistryEvent(cl, buses.subList(1, buses.size()));
@@ -706,18 +730,58 @@ public final class KernelLifecycle {
 			invokeStaticOn(cl, "net.minecraft.world.entity.SpawnPlacements", "fireSpawnPlacementEvent");
 			postModBusEvent(cl, "net.neoforged.neoforge.event.BlockEntityTypeAddBlocksEvent");
 			invokeStaticOn(cl, "net.minecraft.world.level.gamerules.GameRuleCategory", "registerModdedCategories");
-			linkBlockItems(cl);
-			freeze(cl);
-			rebuildNeoForgeBlockStateIds(cl);
-			sortNeoCreativeTabs(cl);
-			if (Boolean.getBoolean("forbric.tabProbe")) startCreativeTabProbe(cl);
 			ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent x%d on %d bus(es) [NeoForge baseline + %d mod(s)] "
 					+ "+ %d traditional-Forge mod bus(es) + baked Forge registries", n, buses.size(),
 					buses.size() - 1, forgeHandles.size());
 			logRegisteredContent(cl);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not register ecosystem content", unwrap(t));
+		} finally {
+			// Only when the window was actually opened: before unfreeze there is nothing to put back, and freezing
+			// a registry the kernel never opened would close one the caller still owns.
+			if (closeWindow) closeRegistrationWindow(cl);
 		}
+	}
+
+	/**
+	 * Closes the registration window and redoes the bookkeeping the open window invalidated.
+	 *
+	 * <p>Each of these four is a failure the kernel has already paid for once, so they are named rather than
+	 * folded: {@code linkBlockItems} fills {@code Item.BY_BLOCK} (without it {@code Block.asItem()} is AIR and a
+	 * mod's creative tab collapses to empty), {@code freeze} also latches {@code registriesLoaded},
+	 * {@code rebuildNeoForgeBlockStateIds} re-adds the blockstate ids the open window's clear callback dropped, and
+	 * {@code sortNeoCreativeTabs} puts window-registered tabs into the strip the creative screen actually reads.
+	 *
+	 * <p>Best-effort as a whole AND per step, because this runs in a finally: it must not replace the exception
+	 * that brought it here.
+	 */
+	private static void closeRegistrationWindow(ClassLoader cl) {
+		try {
+			linkBlockItems(cl);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not link block->item mappings while closing the registration "
+					+ "window", unwrap(t));
+		}
+		try {
+			freeze(cl);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not re-freeze the registries — they stay writable for the "
+					+ "rest of this run", unwrap(t));
+		}
+		try {
+			rebuildNeoForgeBlockStateIds(cl);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not rebuild the blockstate->id map — the first block update "
+					+ "will fail to encode", unwrap(t));
+		}
+		try {
+			sortNeoCreativeTabs(cl);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not re-sort the creative tabs — a mod's tab may be missing "
+					+ "from the strip", unwrap(t));
+		}
+		// After the sort, which is what it reports on.
+		if (Boolean.getBoolean("forbric.tabProbe")) startCreativeTabProbe(cl);
 	}
 
 	/**
