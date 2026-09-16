@@ -192,7 +192,7 @@ public final class KernelLifecycle {
 		// Everything the kernel wires onto these buses (the Neo→Forge bridges inside startGameBuses, NeoForge's own
 		// @EventBusSubscriber classes in step 2c2, the client reload bridge in 2c3) is already registered by this
 		// point, and adding a listener to a started bus is allowed anyway.
-		startGameBuses(cl);
+		startGameBuses(cl, side);
 		// Step 3b: post the FML setup lifecycle at every NeoForge mod. Genuine NeoForge produces these inside
 		// CommonModLoader.load(), whose only client caller is ClientModLoader.finish() — which the kernel neuters
 		// because it also drives the discovery/registration the kernel owns. Nothing replaced the setup phases, so
@@ -532,9 +532,11 @@ public final class KernelLifecycle {
 	 * fails to start is total — every game-event listener of that family, of every mod, is on a bus nothing
 	 * dispatches, and the game then runs with no visible error at all.
 	 */
-	private static void startGameBuses(ClassLoader cl) {
+	private static void startGameBuses(ClassLoader cl, Side side) {
 		// Bridge merge-lost game events (Neo won the tick hook → forward to Forge) BEFORE starting the buses.
-		GameEventMultiplexer.install(cl);
+		// The side decides whether the CLIENT-only game-bus bridges go on: they name NeoForge's client event
+		// package, which a dedicated server must never be made to resolve.
+		GameEventMultiplexer.install(cl, side.isClient());
 		startBus(cl, "net.neoforged.neoforge.common.NeoForge", "EVENT_BUS",
 				"net.neoforged.bus.api.IEventBus", "start", "NeoForge.EVENT_BUS");
 		startBus(cl, "net.minecraftforge.eventbus.api.bus.BusGroup", "DEFAULT",

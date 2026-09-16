@@ -129,8 +129,12 @@ check "NeoForge+Forge tick 1:1 (Post)"         "bridged 20 ServerTickEvent.Post 
 # The tick bridges are only two of five. The other three were installed in the same try{} and summed into one
 # unasserted number, so a setup failure in the first one silently skipped the rest -- including the one whose
 # absence leaves MinecraftForge's login gate permanently closed. Assert the whole declared set, by count.
+# By "complete", not by a fixed count. The inventory grows as more merge-lost hooks are bridged, and a hardcoded
+# number turns every such addition into a red gate that says nothing about what actually broke. The kernel prints
+# a MISSING line instead of "all N" when the set is short, so the wording carries the assertion and the
+# check_absent below is what gives it teeth.
 check "every declared Neo→Forge game-event bridge installed" \
-  "all 5 GAME_BUS bridge\(s\) installed" "$LOG"
+  "EventMux\] all [0-9][0-9]* GAME_BUS bridge\(s\) installed" "$LOG"
 check_absent "and none reported missing"       "bridge\(s\) MISSING" "$LOG"
 
 step "the server works (must PASS)"

@@ -48,6 +48,16 @@ public final class GameEventMultiplexer {
 
 	/** Installs the Neo→Forge tick bridges. No-op if either ecosystem is absent. Call after buses exist. */
 	public static void install(ClassLoader cl) {
+		install(cl, false);
+	}
+
+	/**
+	 * @param client whether the CLIENT game-bus bridges may go on too. They name types in NeoForge's client event
+	 *               package, which a dedicated server must never be made to resolve — which is also why they are
+	 *               their own {@link GameEventBridge.Pass}, verified separately, rather than reported missing on
+	 *               every server boot.
+	 */
+	public static void install(ClassLoader cl, boolean client) {
 		if (!EventBridges.enabled()) {
 			ForbricLog.info("[Forbric/EventMux] -D%s=off — installing no bridges; each Forge family will receive "
 					+ "only the events whose hook won the byte merge", EventBridges.SWITCH_NAME);
@@ -70,6 +80,15 @@ public final class GameEventMultiplexer {
 			// only itself.
 			install(GameEventBridge.SERVER_TICK_PRE, () -> tickBridge(cl, "installPre").invoke(null, neoBus));
 			install(GameEventBridge.SERVER_TICK_POST, () -> tickBridge(cl, "installPost").invoke(null, neoBus));
+			// The other three ticks the merge left NeoForge-only. Only the SERVER tick was ever bridged, which is
+			// what made this so hard to see: ticking looked healthy in every log and every gate while a Forge mod's
+			// per-level and per-player work never ran at all — and, on the client, while its key bindings did
+			// nothing when pressed, because consumeClick is drained from the client tick.
+			install(GameEventBridge.LEVEL_TICK_PRE, () -> tickBridge(cl, "installLevelPre").invoke(null, neoBus));
+			install(GameEventBridge.LEVEL_TICK_POST, () -> tickBridge(cl, "installLevelPost").invoke(null, neoBus));
+			install(GameEventBridge.PLAYER_TICK_PRE, () -> tickBridge(cl, "installPlayerPre").invoke(null, neoBus));
+			install(GameEventBridge.PLAYER_TICK_POST,
+					() -> tickBridge(cl, "installPlayerPost").invoke(null, neoBus));
 			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
 			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so
@@ -86,6 +105,14 @@ public final class GameEventMultiplexer {
 					() -> lifecycleBridge(cl, "installStopped").invoke(null, neoBus));
 
 			EventBridges.verify(GameEventBridge.Pass.GAME_BUS);
+
+			if (client) {
+				install(GameEventBridge.CLIENT_TICK_PRE,
+						() -> clientTickBridge(cl, "installPre").invoke(null, neoBus));
+				install(GameEventBridge.CLIENT_TICK_POST,
+						() -> clientTickBridge(cl, "installPost").invoke(null, neoBus));
+				EventBridges.verify(GameEventBridge.Pass.CLIENT_GAME_BUS);
+			}
 		} catch (ClassNotFoundException single) {
 			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no bridge needed");
 		} catch (Throwable t) {
@@ -147,6 +174,12 @@ public final class GameEventMultiplexer {
 	 */
 	private static Method tickBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameTickEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side CLIENT tick bridge. Complete literal, for the reason above. */
+	private static Method clientTickBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameClientTickEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 

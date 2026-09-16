@@ -110,6 +110,15 @@ public final class KernelRuntimeClasses {
 		// MinecraftForge hooks share a descriptor and a crossed pairing would compile. See KernelGameTickEvents.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameTickEvents", new Entry(Origin.COMPILED, List.of(
 				new Call("installPre", void.class, Object.class),
+				new Call("installPost", void.class, Object.class),
+				new Call("installLevelPre", void.class, Object.class),
+				new Call("installLevelPost", void.class, Object.class),
+				new Call("installPlayerPre", void.class, Object.class),
+				new Call("installPlayerPost", void.class, Object.class))));
+		// The CLIENT tick, in its own class because it names NeoForge's client event package — a dedicated server
+		// must never be made to resolve those types, and keeping them apart means it never loads the class.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientTickEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installPre", void.class, Object.class),
 				new Call("installPost", void.class, Object.class))));
 		// The Neo->Forge server start/stop re-emission, which also opens MinecraftForge's login gate. Separate
 		// from the tick bridge so a carrier missing one pair's types cannot take the other down with it.
