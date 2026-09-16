@@ -93,6 +93,22 @@ public final class DependencyAudit {
 			"java", "fml", "fabricloader", "fabric", "mixinextras", "minecraft", "forge", "neoforge");
 
 	/**
+	 * Indexes a mod under its id AND every {@code provides} alias.
+	 *
+	 * <p>A dependency names whatever id its author was given, and for Fabric that is often an alias: LibJF ships
+	 * {@code "id":"libjf-base"}/{@code "provides":["libjf_base"]}, and respackopts requires {@code libjf_base}.
+	 * Indexing only the id made this report three installed mods as NOT INSTALLED, in a dialog whose whole job is
+	 * to be believed.
+	 */
+	private static void index(Map<String, DiscoveredMod> byId, DiscoveredMod mod) {
+		if (mod == null) return;
+		if (mod.getId() != null) byId.putIfAbsent(mod.getId().toLowerCase(Locale.ROOT), mod);
+		for (String alias : mod.getAliases()) {
+			if (alias != null && !alias.isBlank()) byId.putIfAbsent(alias.toLowerCase(Locale.ROOT), mod);
+		}
+	}
+
+	/**
 	 * Reports unmet hard dependencies among {@code present}.
 	 *
 	 * <p>{@code nestedJars} is what JarJar extraction unpacked this boot ({@link KernelBoot#nestedJarJarJars()}).
@@ -111,13 +127,9 @@ public final class DependencyAudit {
 		if (present == null || present.isEmpty()) return;
 
 		Map<String, DiscoveredMod> byId = new LinkedHashMap<>();
-		for (DiscoveredMod mod : present) {
-			if (mod.getId() != null) byId.putIfAbsent(mod.getId().toLowerCase(Locale.ROOT), mod);
-		}
+		for (DiscoveredMod mod : present) index(byId, mod);
 		boolean indexComplete = nestedJars != null;
-		for (DiscoveredMod mod : nestedMods(nestedJars)) {
-			if (mod.getId() != null) byId.putIfAbsent(mod.getId().toLowerCase(Locale.ROOT), mod);
-		}
+		for (DiscoveredMod mod : nestedMods(nestedJars)) index(byId, mod);
 
 		List<String> missing = new ArrayList<>();
 		List<String> unsatisfied = new ArrayList<>();

@@ -147,7 +147,19 @@ public final class ModPresence {
 		ForbricLog.debug("[Forbric/Presence] %s", summary());
 	}
 
+	/**
+	 * Indexes a mod under its id AND every alias it declares.
+	 *
+	 * <p>The aliases are not a nicety: LibJF's modules are all {@code "id":"libjf-base"} with
+	 * {@code "provides":["libjf_base"]}, and {@code libjf_base} is the id every dependent names. Indexing only
+	 * the id answers "is libjf_base loaded" with a confident no while it is running — which is the one failure
+	 * shape this registry exists to prevent.
+	 */
 	private static void add(Set<String> into, DiscoveredMod mod) {
-		if (mod != null && mod.getId() != null && !mod.getId().isBlank()) into.add(mod.getId());
+		if (mod == null) return;
+		if (mod.getId() != null && !mod.getId().isBlank()) into.add(mod.getId());
+		for (String alias : mod.getAliases()) {
+			if (alias != null && !alias.isBlank()) into.add(alias);
+		}
 	}
 }
