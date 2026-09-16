@@ -137,6 +137,78 @@ class MergedBaseKeyMappingFaceTest {
 		assumeTrue(checked > 0, "this base declares no MinecraftForge-typed KeyMapping constructor");
 	}
 
+	/**
+	 * WHERE the mirror lands, which is the whole of it.
+	 *
+	 * <p>The constructor's own tail registers the binding: {@code GETSTATIC KeyMapping.MAP},
+	 * {@code KeyMappingLookup.put(key, this)}, {@code RETURN}. That put reads the mapping back through
+	 * {@code getKeyModifier()} — the MinecraftForge-faced accessor this transformer adds, which reads the
+	 * NEOFORGE field. Mirroring before the RETURN put the write after the read, so the field was still null at
+	 * the put, and MinecraftForge's lookup did {@code computeIfAbsent} on the result. Every Forge-typed key
+	 * binding died in its own {@code <clinit>} with an NPE raised inside MinecraftForge's own code.
+	 *
+	 * <p>Assert the ORDER, not merely the presence: the previous test passes either way.
+	 */
+	@Test
+	void theLiveFieldsAreWrittenBeforeTheConstructorRegistersTheBinding() throws IOException {
+		ClassNode node = repaired();
+		int checked = 0;
+		for (MethodNode m : node.methods) {
+			if (!"<init>".equals(m.name) || !m.desc.contains(MF_CONTEXT)) continue;
+
+			int firstLookup = -1;
+			int lastLiveWrite = -1;
+			int i = 0;
+			for (AbstractInsnNode insn : m.instructions) {
+				if (firstLookup < 0 && insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC
+						&& "MAP".equals(f.name)) {
+					firstLookup = i;
+				}
+				if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTFIELD
+						&& (NEO_CONTEXT.equals(f.desc) || NEO_MODIFIER.equals(f.desc))) {
+					lastLiveWrite = i;
+				}
+				i++;
+			}
+			if (firstLookup < 0) continue; // a delegating constructor; it has no registration of its own
+			checked++;
+			assertTrue(lastLiveWrite >= 0 && lastLiveWrite < firstLookup,
+					m.desc + " writes the NeoForge fields at " + lastLiveWrite + " but reaches the key lookup at "
+							+ firstLookup + " — the lookup reads those fields back through the adapted "
+							+ "getKeyModifier(), so a write that comes after it is an NPE inside MinecraftForge");
+		}
+		assumeTrue(checked > 0, "this base has no MinecraftForge-typed constructor that registers a binding");
+	}
+
+	/**
+	 * And WHICH lookup it registers into. Both {@code getAll} overloads read NeoForge's {@code MAP}, so a binding
+	 * put into MinecraftForge's would sit in a map nothing ever reads: the key exists, binds, shows in the
+	 * Controls screen and never fires. The two {@code put} methods are descriptor-identical, so this is a field
+	 * descriptor and an owner and nothing else.
+	 */
+	@Test
+	void theConstructorRegistersIntoTheLookupTheGameReads() throws IOException {
+		ClassNode node = repaired();
+		int checked = 0;
+		for (MethodNode m : node.methods) {
+			if (!"<init>".equals(m.name) || !m.desc.contains(MF_CONTEXT)) continue;
+			for (AbstractInsnNode insn : m.instructions) {
+				if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && "MAP".equals(f.name)) {
+					checked++;
+					assertTrue(f.desc.startsWith("Lnet/neoforged/"),
+							m.desc + " registers into " + f.desc + ", which nothing reads — the binding would "
+									+ "exist, bind and never fire");
+				}
+				if (insn instanceof MethodInsnNode call && "put".equals(call.name)
+						&& call.owner.endsWith("KeyMappingLookup")) {
+					assertTrue(call.owner.startsWith("net/neoforged/"),
+							m.desc + " calls " + call.owner + ".put, so the binding lands in the dead lookup");
+				}
+			}
+		}
+		assumeTrue(checked > 0, "this base has no MinecraftForge-typed constructor that registers a binding");
+	}
+
 	@Test
 	void aSecondPassLeavesTheClassAlone() throws IOException {
 		byte[] once = new ForbricMergedBaseCompatTransformer()
@@ -171,8 +243,14 @@ class MergedBaseKeyMappingFaceTest {
 			assertEquals("CONTROL", name(toForge.invoke(null, enumConstant(neoMod, "CONTROL_OR_COMMAND"))),
 					"NeoForge's extra constant means \"control, or command on macOS\", which is what "
 							+ "MinecraftForge's CONTROL does. NONE would silently drop a modifier the player bound");
-			assertEquals(null, toForge.invoke(null, new Object[] {null}), "null stays null");
-			assertEquals(null, toNeo.invoke(null, new Object[] {null}), "null stays null");
+			// NONE, not null, on the way OUT. MinecraftForge's KeyMappingLookup.put reads this accessor and uses
+			// the result as an EnumMap key straight away — computeIfAbsent on a null bucket, which is an NPE
+			// raised inside Forge's code and blamed on whichever mod was constructing a key binding. There is no
+			// such thing as a null modifier in either family: unmodified IS NONE, which is what the field starts
+			// as. Null still passes through unchanged on the way IN, where nothing dereferences it.
+			assertEquals("NONE", name(toForge.invoke(null, new Object[] {null})),
+					"a null modifier must adapt to NONE, or MinecraftForge's own lookup NPEs on it");
+			assertEquals(null, toNeo.invoke(null, new Object[] {null}), "null stays null going the other way");
 		}
 	}
 

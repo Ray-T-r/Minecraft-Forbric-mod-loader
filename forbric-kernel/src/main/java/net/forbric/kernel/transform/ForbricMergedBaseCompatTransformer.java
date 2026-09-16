@@ -596,26 +596,94 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * would re-enter the lookup registration the constructor has already done.
 	 */
 	private static int mirrorForgeConstructorsIntoTheLiveFields(ClassNode node) {
+		String forgeLookup = "L" + ForeignType.KEY_MAPPING_LOOKUP.internal(Ecosystem.FORGE) + ";";
+		String neoLookup = "L" + ForeignType.KEY_MAPPING_LOOKUP.internal(Ecosystem.NEOFORGE) + ";";
+
 		int mirrored = 0;
 		for (MethodNode m : node.methods) {
 			if (!"<init>".equals(m.name) || m.instructions == null) continue;
 			if (!m.desc.contains(MF_CONTEXT) && !m.desc.contains(MF_MODIFIER)) continue;
+
+			// WHERE, not just what. The constructor's own tail registers the binding:
+			//
+			//     88  ALL.put(name, this)
+			//     99  GETSTATIC KeyMapping.MAP : Lnet/minecraftforge/.../KeyMappingLookup;
+			//    102  ALOAD key ; ALOAD this
+			//    105  INVOKEVIRTUAL  net/minecraftforge/.../KeyMappingLookup.put(Key, KeyMapping)V
+			//    108  RETURN
+			//
+			// and that put reads the mapping back through getKeyModifier() — the MinecraftForge-faced accessor
+			// this transformer adds, which reads the NEOFORGE field. Mirroring before the RETURN put the write
+			// AFTER the read, so the Neo field was still null at offset 105, toForgeModifier answered for a null,
+			// and Forge's lookup did computeIfAbsent on the result. Every Forge-typed key binding died in its
+			// own <clinit> with an NPE raised inside MinecraftForge's code.
+			//
+			// So the mirror goes before the FIRST access of either lookup, and if there is none it falls back to
+			// the RETURNs — the shorter constructors delegate and have no put of their own.
+			AbstractInsnNode anchor = firstLookupAccess(m, forgeLookup, neoLookup);
 			boolean any = false;
-			for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (insn.getOpcode() != Opcodes.RETURN) continue;
-				InsnList mirror = new InsnList();
-				mirror.add(field(node, "keyConflictContext", MF_CONTEXT, NEO_CONTEXT, "toNeoContext"));
-				mirror.add(field(node, "keyModifier", MF_MODIFIER, NEO_MODIFIER, "toNeoModifier"));
-				mirror.add(field(node, "keyModifierDefault", MF_MODIFIER, NEO_MODIFIER, "toNeoModifier"));
-				m.instructions.insertBefore(insn, mirror);
+			if (anchor != null) {
+				m.instructions.insertBefore(anchor, mirrorFields(node));
 				any = true;
+			} else {
+				for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+					if (insn.getOpcode() != Opcodes.RETURN) continue;
+					m.instructions.insertBefore(insn, mirrorFields(node));
+					any = true;
+				}
 			}
+
+			// And the registration itself. Both getAll overloads read NeoForge's MAP (routeKeyMappingClickToPopulatedLookup
+			// points the last one that did not at it), so a binding put into MinecraftForge's lookup is in a map
+			// nothing ever reads: the key would exist, bind, show in the Controls screen and never fire. The two
+			// put methods are descriptor-identical — (InputConstants$Key, KeyMapping)V — so this is a field
+			// descriptor and an owner, nothing more.
+			if (retargetLookupRegistration(m, forgeLookup, neoLookup)) any = true;
+
 			if (any) {
-				m.maxStack = Math.max(m.maxStack, 2);
+				m.maxStack = Math.max(m.maxStack, 3);
 				mirrored++;
 			}
 		}
 		return mirrored;
+	}
+
+	/** The three field copies, as one list. Built per insertion point because an InsnList can only be added once. */
+	private static InsnList mirrorFields(ClassNode node) {
+		InsnList mirror = new InsnList();
+		mirror.add(field(node, "keyConflictContext", MF_CONTEXT, NEO_CONTEXT, "toNeoContext"));
+		mirror.add(field(node, "keyModifier", MF_MODIFIER, NEO_MODIFIER, "toNeoModifier"));
+		mirror.add(field(node, "keyModifierDefault", MF_MODIFIER, NEO_MODIFIER, "toNeoModifier"));
+		return mirror;
+	}
+
+	/** The first read of either family's {@code MAP}, which is where the constructor starts registering. */
+	private static AbstractInsnNode firstLookupAccess(MethodNode m, String forgeLookup, String neoLookup) {
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() == Opcodes.GETSTATIC && insn instanceof FieldInsnNode field
+					&& "MAP".equals(field.name)
+					&& (forgeLookup.equals(field.desc) || neoLookup.equals(field.desc))) {
+				return insn;
+			}
+		}
+		return null;
+	}
+
+	/** Points a constructor's own {@code MAP.put} at the lookup the game reads. True when anything moved. */
+	private static boolean retargetLookupRegistration(MethodNode m, String forgeLookup, String neoLookup) {
+		boolean changed = false;
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() == Opcodes.GETSTATIC && insn instanceof FieldInsnNode field
+					&& "MAP".equals(field.name) && forgeLookup.equals(field.desc)) {
+				field.desc = neoLookup;
+				changed = true;
+			} else if (insn instanceof MethodInsnNode call && "put".equals(call.name)
+					&& ForeignType.KEY_MAPPING_LOOKUP.internal(Ecosystem.FORGE).equals(call.owner)) {
+				call.owner = ForeignType.KEY_MAPPING_LOOKUP.internal(Ecosystem.NEOFORGE);
+				changed = true;
+			}
+		}
+		return changed;
 	}
 
 	/** {@code this.<neo> = convert(this.<forge>)}, or nothing when either field is absent. */
