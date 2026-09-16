@@ -63,7 +63,28 @@ public final class DependencyDialogMain {
 	private DependencyDialogMain() {
 	}
 
+	/**
+	 * Takes Java2D off the Direct3D pipeline on Windows before anything is drawn.
+	 *
+	 * <p>Measured, not guessed: on the machine that reported this, the Windows look and feel hands Swing an
+	 * ordinary palette — panel 240/240/240, text area white, text black — and this dialog sets no colour of its
+	 * own, yet it painted itself yellow with blue and red text. Nothing computed those colours; they were painted
+	 * wrong, which is a rendering-pipeline fault rather than a theming one.
+	 *
+	 * <p>The installer already carries this exact workaround, for the same symptom in the other window, so this is
+	 * a known hazard on this platform rather than a hunch. Only when the caller has no opinion, and only on
+	 * Windows, so it never overrides a deliberate {@code -Dsun.java2d.d3d}.
+	 *
+	 * <p>The cost is software rendering for one modal warning, which nothing animates.
+	 */
+	private static void avoidOverlayRenderingCorruption() {
+		if (!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win")) return;
+		if (System.getProperty("sun.java2d.d3d") != null) return;
+		System.setProperty("sun.java2d.d3d", "false");
+	}
+
 	public static void main(String[] args) {
+		avoidOverlayRenderingCorruption();
 		if (args.length < 1) System.exit(CONTINUE);
 		List<DependencyReport.Row> rows;
 		List<DependencyReport.MixinRow> mixins;
