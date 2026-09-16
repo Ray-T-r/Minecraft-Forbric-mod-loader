@@ -146,6 +146,48 @@ class CommonNetworkInteropInjectorTest {
 		}
 	}
 
+	/**
+	 * The play-phase server handler must fall through to NeoForge when MinecraftForge does not take the payload.
+	 *
+	 * <p>The merged {@code ServerGamePacketListenerImpl.handleCustomPayload} is MinecraftForge's override and its
+	 * whole body is: ask {@code ForgeHooks.onCustomPayload}, {@code POP} the answer, {@code RETURN}. It never
+	 * calls {@code super}, and NeoForge's dispatch lives on exactly that super. So a NeoForge mod's play-phase
+	 * packet to the server arrived, was offered to MinecraftForge, declined and stopped — no exception, no log,
+	 * the mod's server handler simply never ran. Every GUI button, keybind action and config-sync request a
+	 * NeoForge mod sends upward was dead, singleplayer included.
+	 */
+	@Test
+	void thePlayServerHandlerFallsThroughToNeoForge() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		String listener = "net/minecraft/server/network/ServerGamePacketListenerImpl";
+		ClassNode node = transformed(listener);
+		MethodNode handler = method(node, "handleCustomPayload",
+				"(Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;)V");
+
+		boolean popsTheAnswer = false;
+		boolean callsSuper = false;
+		boolean branches = false;
+		for (AbstractInsnNode insn : handler.instructions) {
+			if (insn.getOpcode() == Opcodes.POP) popsTheAnswer = true;
+			if (insn.getOpcode() == Opcodes.IFNE) branches = true;
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
+					&& "net/minecraft/server/network/ServerCommonPacketListenerImpl".equals(call.owner)
+					&& "handleCustomPayload".equals(call.name)) {
+				callsSuper = true;
+			}
+		}
+
+		assertFalse(popsTheAnswer,
+				"the hook's answer must be branched on, not discarded — discarding it is the whole defect");
+		assertTrue(branches, "MinecraftForge taking the payload must skip the fall-through");
+		assertTrue(callsSuper,
+				"and not taking it must reach ServerCommonPacketListenerImpl.handleCustomPayload, which is where "
+						+ "NeoForge's dispatcher lives");
+		// The frame authored at the branch target has to be right, or the class fails verification at link time
+		// and every play-phase packet on the server becomes a VerifyError instead.
+		new Analyzer<>(new BasicVerifier()).analyze(node.name, handler);
+	}
+
 	@Test
 	void theMergedConnectionStartsForgesNetworkingWhenItGoesActive() throws Exception {
 		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
