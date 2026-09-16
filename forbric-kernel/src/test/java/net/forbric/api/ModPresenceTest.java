@@ -145,6 +145,24 @@ class ModPresenceTest {
 		assertEquals("sodium", ModPresence.fabricMods().get(0).getId());
 	}
 
+	/**
+	 * A Fabric mod answers to its {@code provides} aliases as well as its id, and the whole point of this
+	 * registry is that the answer crossing into game code is the TRUE one — the transform chain routes both
+	 * Forge families' {@code ModList.isLoaded} through here. Every LibJF module is named through an alias
+	 * ({@code libjf-base} provides {@code libjf_base}), so indexing ids alone answered a confident no about a
+	 * library that was running.
+	 */
+	@org.junit.jupiter.api.Test
+	void aModAnswersToItsProvidesAliasesToo() {
+		ModPresence.publishFabric(List.of(
+				mod(Ecosystem.FABRIC, "libjf-base").withAliases(List.of("libjf_base"))));
+
+		assertTrue(ModPresence.isLoaded("libjf-base"));
+		assertTrue(ModPresence.isLoaded("libjf_base"),
+				"a NeoForge mod asking about libjf_base must not be told no while it is loaded");
+		assertFalse(ModPresence.isLoaded("libjf_base_v2"));
+	}
+
 	private static DiscoveredMod mod(Ecosystem ecosystem, String id) {
 		return new DiscoveredMod(ecosystem, id, "1.0.0", id, List.of(), List.of(), null, id + ".jar");
 	}

@@ -72,7 +72,24 @@ public final class FabricModJsonReader {
 				deps,
 				readMixins(json),
 				getString(json, "accessWidener"),
-				source);
+				source).withAliases(readProvides(json));
+	}
+
+	/**
+	 * {@code provides}: the other ids this mod answers to.
+	 *
+	 * <p>Not an optional nicety. Every LibJF module is named this way — {@code "id":"libjf-base"} with
+	 * {@code "provides":["libjf_base"]} — and {@code libjf_base} is the id its dependents actually name. Dropped,
+	 * it makes an installed mod look missing.
+	 */
+	private static List<String> readProvides(UnmodifiableConfig json) {
+		Object value = json.get("provides");
+		if (!(value instanceof List<?> list)) return List.of();
+		List<String> out = new ArrayList<>();
+		for (Object o : list) {
+			if (o instanceof String alias && !alias.isBlank()) out.add(alias);
+		}
+		return out;
 	}
 
 	/** A fabric.mod.json depends value is a predicate string or an array of them (OR-joined). */

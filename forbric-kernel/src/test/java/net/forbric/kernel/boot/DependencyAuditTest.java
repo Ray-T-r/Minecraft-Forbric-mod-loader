@@ -58,6 +58,35 @@ class DependencyAuditTest {
 		assertTrue(log.contains("not installed"), log);
 	}
 
+	/**
+	 * A dependency names whatever id its author was handed, and on Fabric that is often an ALIAS rather than the
+	 * mod id. LibJF is the case that found this: every module is {@code "id":"libjf-base"} with
+	 * {@code "provides":["libjf_base"]}, and {@code libjf_base} is what respackopts requires. Indexed by id
+	 * alone, the audit told a player that three mods sitting in their mods folder were NOT INSTALLED.
+	 */
+	@Test
+	void aProviderFoundOnlyByItsAliasIsStillFound() {
+		String log = capture(() -> DependencyAudit.report(List.of(
+				mod(Ecosystem.NEOFORGE, "respackopts", "26.2.2", dep("libjf_base", ">=26.2.2", true)),
+				mod(Ecosystem.FABRIC, "libjf-base", "26.2.2").withAliases(List.of("libjf_base"))),
+				List.of(), Side.CLIENT));
+
+		assertFalse(log.contains("not installed"),
+				"libjf-base provides libjf_base and is right there: " + log);
+	}
+
+	/** And the alias must not hide a genuine version mismatch — it resolves the id, it does not excuse the range. */
+	@Test
+	void anAliasedProviderIsStillVersionChecked() {
+		String log = capture(() -> DependencyAudit.report(List.of(
+				mod(Ecosystem.NEOFORGE, "respackopts", "26.2.2", dep("libjf_base", ">=26.2.2", true)),
+				mod(Ecosystem.FABRIC, "libjf-base", "26.1.0").withAliases(List.of("libjf_base"))),
+				List.of(), Side.CLIENT));
+
+		assertTrue(log.contains("26.1.0"), log);
+		assertFalse(log.contains("not installed"), log);
+	}
+
 	@Test
 	void aPresentButOutOfRangeProviderIsNamedWithBothVersions() {
 		String log = capture(() -> DependencyAudit.report(List.of(

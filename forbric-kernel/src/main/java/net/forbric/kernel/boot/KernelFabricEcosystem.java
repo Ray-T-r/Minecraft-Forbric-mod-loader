@@ -207,9 +207,12 @@ public final class KernelFabricEcosystem {
 			if (!(container instanceof KernelModContainer kernel) || kernel.getJar() == null) continue;
 			String id = kernel.getMetadata().getId();
 			if (id == null || id.isBlank() || ModPresence.isLoaded(id)) continue;
+			// The provides aliases ride along. FabricLoader resolves them itself, but the Forge-family lists and
+			// ModPresence are built from THIS list, and every LibJF module is named through an alias.
 			fabricMods.add(new DiscoveredMod(Ecosystem.FABRIC, id,
 					String.valueOf(kernel.getMetadata().getVersion()), kernel.getMetadata().getName(),
-					unifiedDependencies(kernel.getMetadata()), List.of(), null, kernel.getJar().toString()));
+					unifiedDependencies(kernel.getMetadata()), List.of(), null, kernel.getJar().toString())
+					.withAliases(List.copyOf(kernel.getMetadata().getProvides())));
 		}
 		ModPresence.publishFabric(fabricMods);
 

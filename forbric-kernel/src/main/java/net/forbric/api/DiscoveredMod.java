@@ -39,6 +39,7 @@ public final class DiscoveredMod {
 	private final String accessConfig;
 	private final List<String> accessTransformers;
 	private final String source;
+	private final List<String> aliases;
 
 	public DiscoveredMod(Ecosystem ecosystem, String id, String version, String displayName,
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig, String source) {
@@ -48,6 +49,13 @@ public final class DiscoveredMod {
 	public DiscoveredMod(Ecosystem ecosystem, String id, String version, String displayName,
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig,
 			List<String> accessTransformers, String source) {
+		this(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig, accessTransformers,
+				source, Collections.emptyList());
+	}
+
+	private DiscoveredMod(Ecosystem ecosystem, String id, String version, String displayName,
+			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig,
+			List<String> accessTransformers, String source, List<String> aliases) {
 		this.ecosystem = ecosystem;
 		this.id = id;
 		this.version = version;
@@ -57,6 +65,32 @@ public final class DiscoveredMod {
 		this.accessConfig = accessConfig;
 		this.accessTransformers = frozen(accessTransformers);
 		this.source = source;
+		this.aliases = frozen(aliases);
+	}
+
+	/**
+	 * A copy of this mod that also answers to {@code aliases} — Fabric's {@code provides}.
+	 *
+	 * <p>A copy rather than a tenth constructor argument: every existing caller passes what it has, and a
+	 * mod's aliases are known in exactly one place, where its own metadata is read.
+	 */
+	public DiscoveredMod withAliases(List<String> aliases) {
+		return new DiscoveredMod(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig,
+				accessTransformers, source, aliases);
+	}
+
+	/**
+	 * Other ids this mod answers to, beyond {@link #getId()}.
+	 *
+	 * <p>Fabric's {@code provides}, and it is not decoration: LibJF's modules are ALL named this way — the mod
+	 * id is {@code libjf-base} and the id everything depends on is {@code libjf_base}. A consumer that indexes
+	 * only {@link #getId()} reports a mod that is right there as absent, and answers {@code isModLoaded} with a
+	 * confident, wrong no.
+	 *
+	 * <p>MinecraftForge and NeoForge have no equivalent, so this is empty for them.
+	 */
+	public List<String> getAliases() {
+		return aliases;
 	}
 
 	/**
