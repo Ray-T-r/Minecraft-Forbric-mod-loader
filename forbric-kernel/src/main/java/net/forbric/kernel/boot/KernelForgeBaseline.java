@@ -57,8 +57,13 @@ public final class KernelForgeBaseline {
 			ForbricLog.debug("[Forbric/Forge] traditional-Forge ForgeMod not present — skipping");
 			return;
 		}
+		// The baseline's own bring-up and the RegisterEvent pass are separated deliberately. They used to share one
+		// try, so a ForgeMod that failed to construct took the whole pass with it — including every real mod's
+		// RegisterEvent, which has nothing to do with ForgeMod. The mods can register without the baseline; what
+		// they lose is forge:fluid_type and friends, which is a smaller loss than registering nothing at all.
+		KernelForgeModContext.Handle baseline = null;
 		try {
-			KernelForgeModContext.Handle baseline = KernelForgeModContext.create(cl, "forge");
+			baseline = KernelForgeModContext.create(cl, "forge");
 			// create() no longer makes its container active — it is called for every mod long before any of them
 			// constructs now — so the constructor's window is opened and closed here, the way the mod path does it.
 			KernelForgeModContext.setActiveContainer(cl, baseline.container());
@@ -70,6 +75,14 @@ public final class KernelForgeBaseline {
 			}
 			ForbricLog.info("[Forbric/Forge] constructed traditional-Forge baseline mod ForgeMod -> %s", mod);
 			KernelForgeModContext.startup(cl, baseline.busGroup());
+		} catch (Throwable t) {
+			baseline = null;
+			ForbricLog.warn("[Forbric/Forge] the traditional-Forge baseline mod (ForgeMod) did not come up — its own "
+					+ "content (forge:fluid_type and the rest) will be missing, but every real MinecraftForge mod "
+					+ "still gets its RegisterEvent", Reflect.unwrap(t));
+		}
+
+		try {
 			// Forge's CUSTOM registries (forge:fluid_type, holder_set_type, biome/structure_modifier_serializers, …)
 			// are created by ForgeMod's DeferredRegister subscribers to NewRegistryEvent — never by GameData.init(),
 			// which only wraps the vanilla BuiltInRegistries. The kernel fires RegisterEvent but never NewRegistryEvent,
@@ -79,14 +92,16 @@ public final class KernelForgeBaseline {
 			int created = fireNewRegistryEvent(cl);
 
 			List<KernelForgeModContext.Handle> all = new java.util.ArrayList<>();
-			all.add(baseline);
+			if (baseline != null) all.add(baseline);
 			all.addAll(modHandles);
 			int n = KernelForgeModContext.fireRegisterEvents(cl, all);
 			ForbricLog.info("[Forbric/Forge] created %d custom registr(ies) via NewRegistryEvent + fired Forge "
-					+ "RegisterEvent x%d on %d bus(es) [baseline + %d mod(s)]", created, n, all.size(),
-					modHandles.size());
+					+ "RegisterEvent x%d on %d bus(es) [%s + %d mod(s)]", created, n, all.size(),
+					baseline == null ? "NO baseline" : "baseline", modHandles.size());
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Forge] could not register traditional-Forge baseline", Reflect.unwrap(t));
+			ForbricLog.warn("[Forbric/Forge] the traditional-Forge RegisterEvent pass failed as a whole — this is "
+					+ "not one mod's listener throwing (those are isolated and named individually); nothing a "
+					+ "MinecraftForge mod declares through DeferredRegister has registered", Reflect.unwrap(t));
 		}
 	}
 

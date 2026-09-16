@@ -232,27 +232,85 @@ public final class KernelForgeModContext {
 		regEventCtor.setAccessible(true);
 		Method getBus = registerEventCls.getMethod("getBus", busGroupCls);
 
-		// Resolve each mod's (container, event bus, post) once — the registry-major loops below reuse them N×.
+		// Resolve each mod's (id, container, event bus, post) once — the registry-major loops below reuse them N×.
 		List<Object[]> dispatch = new ArrayList<>();
 		for (Handle handle : handles) {
 			Object eventBus = getBus.invoke(null, handle.busGroup());
-			dispatch.add(new Object[] {handle.container(), eventBus, single(eventBus.getClass(), "post")});
+			dispatch.add(new Object[] {handle.container(), eventBus, single(eventBus.getClass(), "post"),
+					handle.modId()});
 		}
 
 		List<Object[]> targets = registerEventTargets(cl);
+		// One mod's listener must not take the stream down with it. EventBus 7's post has no exception table, so a
+		// DeferredRegister supplier that throws — an unbound cross-registry RegistryObject, a config value read
+		// before its spec is loaded, a NoClassDefFoundError out of a JiJ dependency — used to propagate out of this
+		// whole method. The caller (KernelForgeBaseline.register) catches once, for everything, so the cost was:
+		// every MinecraftForge mod after the failing one in this registry, every remaining registry for ALL of them,
+		// and the ForgeMod baseline's own content — reported as one line, naming neither the mod nor the registry.
+		// It then surfaced six layers away as "Registry Object not present: minecraft:empty" or a player kicked with
+		// "Invalid player data". The NeoForge twin (KernelLifecycle.fireRegisterEvents) has isolated per bus since
+		// BUG 14; this is the same guarantee for the other family, one step finer — per bus AND per registry, so a
+		// mod that fails on BLOCK can still register its ITEMs if it is able to.
 		try {
-			for (Object[] t : targets) {
-				for (Object[] d : dispatch) {
-					setActiveContainer(cl, d[0]);
-					((Method) d[2]).invoke(d[1], regEventCtor.newInstance(t[0], t[2], t[1]));
-				}
-			}
+			dispatchIsolated(targets, dispatch,
+					mod -> setActiveContainer(cl, mod[0]),
+					(mod, target) -> ((Method) mod[2]).invoke(mod[1],
+							regEventCtor.newInstance(target[0], target[2], target[1])));
 		} finally {
 			// Genuine Forge clears it after each dispatch; leaving a stale container active would silently namespace
 			// whatever registers next (Fabric mains, the bake) under the last mod.
 			setActiveContainer(cl, null);
 		}
 		return targets.size();
+	}
+
+	/** Makes one mod's container active before it is posted to. */
+	@FunctionalInterface
+	interface Activate {
+		void apply(Object[] mod) throws Exception;
+	}
+
+	/** Posts one registry target at one mod. */
+	@FunctionalInterface
+	interface PostOne {
+		void apply(Object[] mod, Object[] target) throws Exception;
+	}
+
+	/**
+	 * The registry-major dispatch loop, with each (registry, mod) pair isolated. Split out so a test can drive it
+	 * without game classes — the isolation is the whole point and there is no other way to assert it off-game.
+	 *
+	 * <p>Registry-major / mod-minor is preserved: a {@code DeferredRegister}'s {@code RegistryObject}s bind during
+	 * their OWN registry's event, so every mod must fire for BLOCK before any fires for ITEM.
+	 *
+	 * <p>Stack once per mod. A mod that fails on one registry usually fails on the next twenty, and twenty identical
+	 * stacks bury the first one; every failure still gets a line naming both the mod and the registry.
+	 *
+	 * @return how many (registry, mod) pairs were attempted
+	 */
+	static int dispatchIsolated(List<Object[]> targets, List<Object[]> mods, Activate activate, PostOne post) {
+		java.util.Set<String> reported = new java.util.LinkedHashSet<>();
+		int attempted = 0;
+		for (Object[] target : targets) {
+			for (Object[] mod : mods) {
+				attempted++;
+				String modId = String.valueOf(mod[3]);
+				try {
+					activate.apply(mod);
+					post.apply(mod, target);
+				} catch (Throwable perMod) {
+					if (reported.add(modId)) {
+						ForbricLog.warn("[Forbric/Forge] " + modId + " threw handling RegisterEvent for " + target[0]
+								+ " — that registration is lost; every other MinecraftForge mod and the ForgeMod "
+								+ "baseline still register", Reflect.unwrap(perMod));
+					} else {
+						ForbricLog.warn("[Forbric/Forge] %s also threw handling RegisterEvent for %s", modId,
+								String.valueOf(target[0]));
+					}
+				}
+			}
+		}
+		return attempted;
 	}
 
 	/** {key, vanillaRegistryOrNull, forgeRegistry} for every Forge-backed registry, vanilla-wrapped and custom. */
