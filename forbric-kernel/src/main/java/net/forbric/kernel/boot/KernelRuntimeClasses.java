@@ -115,6 +115,13 @@ public final class KernelRuntimeClasses {
 				new Call("installLevelPost", void.class, Object.class),
 				new Call("installPlayerPre", void.class, Object.class),
 				new Call("installPlayerPost", void.class, Object.class))));
+		// Commands and the player lifecycle: the merged base calls only NeoForge's hooks at those sites.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGamePlayerEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installCommands", void.class, Object.class),
+				new Call("installLoggedIn", void.class, Object.class),
+				new Call("installLoggedOut", void.class, Object.class),
+				new Call("installRespawn", void.class, Object.class),
+				new Call("installChangedDimension", void.class, Object.class))));
 		// The CLIENT tick, in its own class because it names NeoForge's client event package — a dedicated server
 		// must never be made to resolve those types, and keeping them apart means it never loads the class.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientTickEvents", new Entry(Origin.COMPILED, List.of(

@@ -94,6 +94,19 @@ else
 fi
 check "and to the NeoForge mods too" "posted FML common setup to [1-9][0-9]* NeoForge mod\(s\)" "$LOG"
 
+step "the merge-lost GAME events reach a real MinecraftForge mod too (must PASS)"
+# Setup phases are the mod-bus half. The GAME bus is the other half, and on the merged base almost all of it went
+# to NeoForge: Commands carries 7 references to net.neoforged and 0 to net.minecraftforge, PlayerList 13 to 0.
+# The cost is not a missing callback, it is a missing FEATURE with no log line -- a Forge mod's commands DO NOT
+# EXIST, and the player typing one is told "Unknown command" while the mod loaded cleanly. The canary registers a
+# real node rather than logging, so the node count proves it reached the LIVE dispatcher and not a copy.
+check "a MinecraftForge mod's command reaches the live dispatcher" \
+  "ForbricLive\] RegisterCommandsEvent RECEIVED - /forbriclive registered into the live dispatcher \([1-9][0-9]*" "$LOG"
+# handleServerStarting is also the only caller of PermissionAPI.initializePermissionAPI, so its absence made
+# every permission question any Forge mod asked NPE inside Forge's own API.
+check "and ServerStartingEvent, which also initialises PermissionAPI" \
+  "ForbricLive\] ServerStartingEvent RECEIVED" "$LOG"
+
 step "nothing quietly broken by the extra posts (must be ABSENT)"
 check_absent "no NoClassDefFound"        "NoClassDefFoundError"                          "$LOG"
 check_absent "no phase failed to post"   "could not post traditional-Forge"              "$LOG"

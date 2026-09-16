@@ -261,6 +261,52 @@ public class ForbricLiveMod {
 	public static final class GameEvents {
 		private static final AtomicInteger TICKS = new AtomicInteger();
 
+		/**
+		 * The bridge that decides whether this mod's commands exist at all.
+		 *
+		 * <p>On the merged base {@code Commands} calls only NeoForge's {@code EventHooks.onCommandRegister}, so
+		 * without a re-emission this listener never runs, the node is never added, and a player typing
+		 * {@code /forbriclive} is told "Unknown command" — while the mod itself loaded cleanly and reports no
+		 * problem anywhere. Registering a real node rather than just logging is the point: the gate asserts the
+		 * node is in the live dispatcher, which only a genuine registration can produce.
+		 */
+		@SubscribeEvent
+		public static void onRegisterCommands(net.minecraftforge.event.RegisterCommandsEvent event) {
+			event.getDispatcher().register(
+					com.mojang.brigadier.builder.LiteralArgumentBuilder
+							.<net.minecraft.commands.CommandSourceStack>literal("forbriclive")
+							.executes(ctx -> 1));
+			System.out.println("[ForbricLive] RegisterCommandsEvent RECEIVED - /forbriclive registered into the live "
+					+ "dispatcher (" + event.getDispatcher().getRoot().getChildren().size() + " root nodes)");
+		}
+
+		/** Login. {@code PlayerList} on the merged base is 13 NeoForge hook references to 0 MinecraftForge. */
+		@SubscribeEvent
+		public static void onPlayerLoggedIn(
+				net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent event) {
+			System.out.println("[ForbricLive] PlayerLoggedInEvent RECEIVED for "
+					+ event.getEntity().getGameProfile().name());
+		}
+
+		/** Logout, the other half of the pair a mod needs to keep per-player state honest. */
+		@SubscribeEvent
+		public static void onPlayerLoggedOut(
+				net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
+			System.out.println("[ForbricLive] PlayerLoggedOutEvent RECEIVED for "
+					+ event.getEntity().getGameProfile().name());
+		}
+
+		/**
+		 * The hook that also initialises MinecraftForge's PermissionAPI. Without the re-emission, not only does
+		 * this listener never run — every permission question any Forge mod asks NPEs inside Forge's own API,
+		 * because {@code initializePermissionAPI} is the only thing that ever sets the handler it reads.
+		 */
+		@SubscribeEvent
+		public static void onServerStarting(net.minecraftforge.event.server.ServerStartingEvent event) {
+			System.out.println("[ForbricLive] ServerStartingEvent RECEIVED - PermissionAPI is initialised by this "
+					+ "same hook");
+		}
+
 		@SubscribeEvent
 		public static void onServerStarted(ServerStartedEvent event) {
 			System.out.println("[ForbricLive] ServerStartedEvent RECEIVED - the patched game's event posts reach mod listeners");
