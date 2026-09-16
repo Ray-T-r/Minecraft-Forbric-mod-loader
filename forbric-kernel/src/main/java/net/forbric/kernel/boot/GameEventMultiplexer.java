@@ -77,9 +77,13 @@ public final class GameEventMultiplexer {
 			// world-join fails. Re-emit the dropped Forge hook off NeoForge's surviving ServerStarted/Stopping events.
 			install(GameEventBridge.SERVER_ABOUT_TO_START,
 					() -> aboutToStartBridge(cl).invoke(null, neoBus));
+			install(GameEventBridge.SERVER_STARTING,
+					() -> lifecycleBridge(cl, "installStarting").invoke(null, neoBus));
 			install(GameEventBridge.SERVER_STARTED, () -> lifecycleBridge(cl, "installStarted").invoke(null, neoBus));
 			install(GameEventBridge.SERVER_STOPPING,
 					() -> lifecycleBridge(cl, "installStopping").invoke(null, neoBus));
+			install(GameEventBridge.SERVER_STOPPED,
+					() -> lifecycleBridge(cl, "installStopped").invoke(null, neoBus));
 
 			EventBridges.verify(GameEventBridge.Pass.GAME_BUS);
 		} catch (ClassNotFoundException single) {

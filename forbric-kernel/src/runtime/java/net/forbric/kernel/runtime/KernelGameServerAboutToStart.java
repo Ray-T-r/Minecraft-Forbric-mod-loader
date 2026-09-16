@@ -87,6 +87,16 @@ public final class KernelGameServerAboutToStart {
 				return;
 			}
 
+			// FIRST, and before anything that can throw. Forge's own handleServerAboutToStart writes currentServer
+			// at offset 1 and calls LogicalSidedProvider.setServer at 10 — ahead of the config load, the biome
+			// modifiers and the event — because everything after it may need to reach the server it just recorded.
+			// The kernel re-emitted this hook piece by piece and reproduced every piece EXCEPT this one, so
+			// ServerLifecycleHooks.getCurrentServer() stayed null for the whole run. That is not a cosmetic gap:
+			// PacketDistributor.ALL / DIMENSION / NEAR resolve their player list through it, so a MinecraftForge
+			// mod broadcasting a sync packet NPEs inside Forge's own dispatcher, and the crash report blames the
+			// mod. The old weld set it; the kernel did not, which makes it a regression against the oracle.
+			recordCurrentServer(server);
+
 			try {
 				ConfigTracker.loadConfigs(ModConfig.Type.SERVER, (Path) configPath.invoke(null, server));
 			} catch (Throwable t) {
@@ -121,4 +131,51 @@ public final class KernelGameServerAboutToStart {
 		// Four-argument overload with LOWEST, as everywhere in this package.
 		((IEventBus) neoBus).addListener(EventPriority.LOWEST, false, ServerAboutToStartEvent.class, listener);
 	}
+
+	/**
+	 * Publishes the server on MinecraftForge's two "which server is running" seams.
+	 *
+	 * <p>{@code currentServer} is {@code private static} — javap confirms it, and there is no setter — so the
+	 * field is written reflectively. {@code LogicalSidedProvider.setServer} is public and takes a supplier;
+	 * {@link net.forbric.kernel.boot.KernelLifecycle} already installs a lazy one at boot, and this overwrites it
+	 * with one that answers THIS server directly, which is what Forge's own hook does.
+	 *
+	 * <p>Best-effort and reported once: a mod that never broadcasts will not notice, and one that does gets a
+	 * line naming the cause instead of an NPE from inside Forge's packet dispatcher.
+	 */
+	private static void recordCurrentServer(MinecraftServer server) {
+		try {
+			java.lang.reflect.Field current = ServerLifecycleHooks.class.getDeclaredField("currentServer");
+			current.setAccessible(true);
+			current.set(null, server);
+		} catch (Throwable t) {
+			if (WARNED_CURRENT_SERVER.compareAndSet(false, true)) {
+				ForbricLog.warn("[Forbric/EventMux] could not publish the running server on MinecraftForge's "
+						+ "ServerLifecycleHooks.currentServer — getCurrentServer() stays null, so a Forge mod's "
+						+ "PacketDistributor.ALL/DIMENSION/NEAR broadcast NPEs inside Forge's own dispatcher",
+						Reflect.unwrap(t));
+			}
+		}
+		try {
+			net.minecraftforge.common.util.LogicalSidedProvider.setServer(() -> server);
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/EventMux] could not point LogicalSidedProvider at this server: %s",
+					String.valueOf(Reflect.unwrap(t)));
+		}
+	}
+
+	/** Cleared when the server stops, so a second world in the same process does not see the first one. */
+	public static void forgetCurrentServer() {
+		try {
+			java.lang.reflect.Field current = ServerLifecycleHooks.class.getDeclaredField("currentServer");
+			current.setAccessible(true);
+			current.set(null, null);
+			net.minecraftforge.common.util.LogicalSidedProvider.setServer(() -> null);
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/EventMux] could not clear MinecraftForge's currentServer: %s",
+					String.valueOf(Reflect.unwrap(t)));
+		}
+	}
+
+	private static final AtomicBoolean WARNED_CURRENT_SERVER = new AtomicBoolean();
 }
