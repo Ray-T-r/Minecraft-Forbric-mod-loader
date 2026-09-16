@@ -68,6 +68,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= addMissingForgeFluidTypeBridge(node);
 			changed |= addMissingForgeKeyMappingLookupInitializer(node);
 			changed |= routeKeyMappingClickToPopulatedLookup(node);
+			changed |= giveKeyMappingItsMinecraftForgeFace(node);
 			changed |= giveTheVanillaParticleMapAViewOfTheLiveOne(node);
 			changed |= dropInterfaceDefaultShadowingOverrides(node);
 			changed |= tolerateEmptyCreativeTabStacks(node);
@@ -151,6 +152,14 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	private static final String LEGACY_INTEROP_PACKAGE = "net/forbric/loader/impl/";
+
+	private static final String KEY_MAPPING = "net/minecraft/client/KeyMapping";
+	private static final String MF_CONTEXT = "Lnet/minecraftforge/client/settings/IKeyConflictContext;";
+	private static final String NEO_CONTEXT = "Lnet/neoforged/neoforge/client/settings/IKeyConflictContext;";
+	private static final String MF_MODIFIER = "Lnet/minecraftforge/client/settings/KeyModifier;";
+	private static final String NEO_MODIFIER = "Lnet/neoforged/neoforge/client/settings/KeyModifier;";
+	private static final String INPUT_KEY = "Lcom/mojang/blaze3d/platform/InputConstants$Key;";
+	private static final String KERNEL_KEYS = "net/forbric/kernel/runtime/KernelForgeKeyBindings";
 
 	private static final String PARTICLE_RESOURCES = "net/minecraft/client/particle/ParticleResources";
 	/** NeoForge's retyping of vanilla's {@code providers}: the one the merged {@code <init>} actually writes. */
@@ -474,6 +483,158 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				field.name = "providers";
 			}
 		}
+	}
+
+	/**
+	 * Gives {@code KeyMapping} back the MinecraftForge-typed accessors the merge dropped, and makes them mean
+	 * something.
+	 *
+	 * <p>Two halves of one defect, both found by onekeyminer dying in its client setup with
+	 * {@code AbstractMethodError: KeyMapping.setKeyConflictContext(…IKeyConflictContext) is abstract}.
+	 *
+	 * <p>First: the merged class kept NeoForge's accessors and MinecraftForge's constructors and FIELDS, but not
+	 * MinecraftForge's accessors — an abstract method has no body for the splice to take. Any Forge mod that
+	 * configures a keybinding therefore fails, and it fails in a class initializer, so the mod loses everything
+	 * downstream of it.
+	 *
+	 * <p>Second, and the reason re-adding the methods over the MinecraftForge fields would have been worse than
+	 * the crash: those fields are DEAD. Every live consumer reads NeoForge's — {@code same()} resolves conflicts
+	 * through the NeoForge-typed {@code getKeyConflictContext}, and {@code isActiveAndMatches} /
+	 * {@code setToDefault} / {@code isConflictContextAndModifierActive} all delegate into
+	 * {@code IKeyMappingExtension}. A setter that wrote the MinecraftForge field would stop the crash and leave
+	 * the binding behaving as though the mod had never set a context at all.
+	 *
+	 * <p>So the MinecraftForge face is adapted onto the NeoForge state, in both directions, through
+	 * {@code KernelForgeKeyBindings}. The same reason applies to the MinecraftForge-typed CONSTRUCTORS, which
+	 * write only the dead fields and leave the NeoForge ones null — a mod using one gets a mapping whose first
+	 * conflict check is a NullPointerException. Each of them gains a tail that mirrors what it wrote into the
+	 * fields the game reads.
+	 */
+	private static boolean giveKeyMappingItsMinecraftForgeFace(ClassNode node) {
+		if (!KEY_MAPPING.equals(node.name)) return false;
+		// Only when the merge actually split it: both sides' state present, only one side's accessors.
+		if (!hasField(node, "keyConflictContext", MF_CONTEXT) || !hasField(node, "keyConflictContext", NEO_CONTEXT)) {
+			return false;
+		}
+		if (findMethod(node, "setKeyConflictContext", "(" + MF_CONTEXT + ")V") != null) return false;
+
+		addAdapted(node, "setKeyConflictContext", "(" + MF_CONTEXT + ")V", "(" + NEO_CONTEXT + ")V",
+				"toNeoContext", MF_CONTEXT, NEO_CONTEXT);
+		addAdapted(node, "getKeyConflictContext", "()" + MF_CONTEXT, "()" + NEO_CONTEXT,
+				"toForgeContext", NEO_CONTEXT, MF_CONTEXT);
+		addAdapted(node, "getKeyModifier", "()" + MF_MODIFIER, "()" + NEO_MODIFIER,
+				"toForgeModifier", NEO_MODIFIER, MF_MODIFIER);
+		addAdapted(node, "getDefaultKeyModifier", "()" + MF_MODIFIER, "()" + NEO_MODIFIER,
+				"toForgeModifier", NEO_MODIFIER, MF_MODIFIER);
+		addSetKeyModifierAndCode(node);
+		int mirrored = mirrorForgeConstructorsIntoTheLiveFields(node);
+
+		ForbricLog.warn("[Forbric/MergedBaseCompat] gave KeyMapping its MinecraftForge accessors back and pointed "
+				+ "them at the NeoForge state the game actually reads — the merge kept both ecosystems' fields but "
+				+ "only one side's accessors, and the other side's fields are read by nothing (%d constructor(s) "
+				+ "also mirrored)", mirrored);
+		return true;
+	}
+
+	/**
+	 * Adds {@code name+forgeDesc} as a one-line delegate to {@code name+neoDesc}, converting through the kernel.
+	 *
+	 * <p>A getter pair differs only in return type, which no Java source can express and the JVM is perfectly
+	 * happy with — the descriptor is part of the identity.
+	 */
+	private static void addAdapted(ClassNode node, String name, String forgeDesc, String neoDesc,
+			String converter, String fromDesc, String toDesc) {
+		boolean setter = forgeDesc.endsWith(")V");
+		MethodNode m = new MethodNode(Opcodes.ACC_PUBLIC, name, forgeDesc, null, null);
+		m.visitVarInsn(Opcodes.ALOAD, 0);
+		if (setter) {
+			m.visitVarInsn(Opcodes.ALOAD, 1);
+			m.visitMethodInsn(Opcodes.INVOKESTATIC, KERNEL_KEYS, converter,
+					"(Ljava/lang/Object;)Ljava/lang/Object;", false);
+			m.visitTypeInsn(Opcodes.CHECKCAST, internal(toDesc));
+			m.visitMethodInsn(Opcodes.INVOKEVIRTUAL, node.name, name, neoDesc, false);
+			m.visitInsn(Opcodes.RETURN);
+			m.maxStack = 2;
+			m.maxLocals = 2;
+		} else {
+			m.visitMethodInsn(Opcodes.INVOKEVIRTUAL, node.name, name, neoDesc, false);
+			m.visitMethodInsn(Opcodes.INVOKESTATIC, KERNEL_KEYS, converter,
+					"(Ljava/lang/Object;)Ljava/lang/Object;", false);
+			m.visitTypeInsn(Opcodes.CHECKCAST, internal(toDesc));
+			m.visitInsn(Opcodes.ARETURN);
+			m.maxStack = 1;
+			m.maxLocals = 1;
+		}
+		node.methods.add(m);
+	}
+
+	/** The two-argument setter, whose second argument passes through untouched. */
+	private static void addSetKeyModifierAndCode(ClassNode node) {
+		String forgeDesc = "(" + MF_MODIFIER + INPUT_KEY + ")V";
+		String neoDesc = "(" + NEO_MODIFIER + INPUT_KEY + ")V";
+		if (findMethod(node, "setKeyModifierAndCode", forgeDesc) != null) return;
+		if (findMethod(node, "setKeyModifierAndCode", neoDesc) == null) return;
+		MethodNode m = new MethodNode(Opcodes.ACC_PUBLIC, "setKeyModifierAndCode", forgeDesc, null, null);
+		m.visitVarInsn(Opcodes.ALOAD, 0);
+		m.visitVarInsn(Opcodes.ALOAD, 1);
+		m.visitMethodInsn(Opcodes.INVOKESTATIC, KERNEL_KEYS, "toNeoModifier",
+				"(Ljava/lang/Object;)Ljava/lang/Object;", false);
+		m.visitTypeInsn(Opcodes.CHECKCAST, internal(NEO_MODIFIER));
+		m.visitVarInsn(Opcodes.ALOAD, 2);
+		m.visitMethodInsn(Opcodes.INVOKEVIRTUAL, node.name, "setKeyModifierAndCode", neoDesc, false);
+		m.visitInsn(Opcodes.RETURN);
+		m.maxStack = 3;
+		m.maxLocals = 3;
+		node.methods.add(m);
+	}
+
+	/**
+	 * Copies what a MinecraftForge-typed constructor wrote into the fields the game reads.
+	 *
+	 * <p>Appended before every RETURN rather than woven into the assignments: the constructor may write its
+	 * fields in any order, and only at the end is the final value known. Fields, not the new setters — a setter
+	 * would re-enter the lookup registration the constructor has already done.
+	 */
+	private static int mirrorForgeConstructorsIntoTheLiveFields(ClassNode node) {
+		int mirrored = 0;
+		for (MethodNode m : node.methods) {
+			if (!"<init>".equals(m.name) || m.instructions == null) continue;
+			if (!m.desc.contains(MF_CONTEXT) && !m.desc.contains(MF_MODIFIER)) continue;
+			boolean any = false;
+			for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn.getOpcode() != Opcodes.RETURN) continue;
+				InsnList mirror = new InsnList();
+				mirror.add(field(node, "keyConflictContext", MF_CONTEXT, NEO_CONTEXT, "toNeoContext"));
+				mirror.add(field(node, "keyModifier", MF_MODIFIER, NEO_MODIFIER, "toNeoModifier"));
+				mirror.add(field(node, "keyModifierDefault", MF_MODIFIER, NEO_MODIFIER, "toNeoModifier"));
+				m.instructions.insertBefore(insn, mirror);
+				any = true;
+			}
+			if (any) {
+				m.maxStack = Math.max(m.maxStack, 2);
+				mirrored++;
+			}
+		}
+		return mirrored;
+	}
+
+	/** {@code this.<neo> = convert(this.<forge>)}, or nothing when either field is absent. */
+	private static InsnList field(ClassNode node, String name, String fromDesc, String toDesc, String converter) {
+		InsnList out = new InsnList();
+		if (!hasField(node, name, fromDesc) || !hasField(node, name, toDesc)) return out;
+		out.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		out.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		out.add(new FieldInsnNode(Opcodes.GETFIELD, node.name, name, fromDesc));
+		out.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_KEYS, converter,
+				"(Ljava/lang/Object;)Ljava/lang/Object;", false));
+		out.add(new TypeInsnNode(Opcodes.CHECKCAST, internal(toDesc)));
+		out.add(new FieldInsnNode(Opcodes.PUTFIELD, node.name, name, toDesc));
+		return out;
+	}
+
+	/** {@code Lsome/Type;} to {@code some/Type}. */
+	private static String internal(String descriptor) {
+		return descriptor.substring(1, descriptor.length() - 1);
 	}
 
 	/**
