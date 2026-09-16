@@ -1226,7 +1226,14 @@ public final class KernelLifecycle {
 	 */
 	private static void fireModSetupLifecycle(ClassLoader cl, Side side) {
 		java.util.Map<String, KernelModLoader.NeoIdentity> mods = KernelModLoader.publishedNeoMods();
-		if (mods.isEmpty()) return;
+		// NOT an early return on an empty NeoForge set. Every fireForgeSetupPhase below belongs to the OTHER family,
+		// and fireRegistrationEvents belongs to neither: on a pack whose Forge-family mods are all traditional
+		// MinecraftForge (a classic Forge modpack), publishedNeoMods() is empty while publishedForgeMods() is not,
+		// and this return skipped all four MinecraftForge phases plus NeoForge's own RegistrationEvents.init.
+		// That is the BiomesOPlenty/TerraBlender "the world came out looking vanilla" failure this method's own
+		// javadoc describes, with nothing anywhere saying so. fireSetupPhase and fireForgeSetupPhase each no-op on
+		// an empty set of their own family, so the guard buys nothing. The CLIENT twin (fireClientSetupLifecycle)
+		// dropped the same guard for the same reason; the server path never followed.
 
 		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "common setup");
 		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.FORGE), "COMMON_SETUP",
@@ -1380,6 +1387,11 @@ public final class KernelLifecycle {
 
 	private static void fireSetupPhase(ClassLoader cl, java.util.Map<String, KernelModLoader.NeoIdentity> mods,
 			String eventClassName, String label) {
+		// The NeoForge twin of fireForgeSetupPhase's own empty guard. Its caller no longer returns early on an
+		// empty NeoForge set (a classic MinecraftForge pack has none), so this is where "no mods of THIS family"
+		// stops: without it every phase would build a DeferredWorkQueue, hand it to the sync executor and log
+		// "posted FML <phase> to 0 NeoForge mod(s)" eight times on a pack that has no NeoForge mod at all.
+		if (mods.isEmpty()) return;
 		try {
 			Class<?> eventClass = Class.forName(eventClassName, false, cl);
 			Class<?> queueClass = Class.forName("net.neoforged.fml.DeferredWorkQueue", false, cl);
