@@ -27,6 +27,7 @@ import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.LineNumberNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import java.util.Set;
 
@@ -107,6 +108,14 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 */
 	private static final String CLIENT_COMMON_LISTENER = "net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl";
 	private static final String SERVER_COMMON_LISTENER = "net.minecraft.server.network.ServerCommonPacketListenerImpl";
+	/**
+	 * The PLAY-phase server listener, whose {@code handleCustomPayload} is MinecraftForge's override — and the
+	 * override does not call {@code super}. See {@link #letNeoForgePayloadsThrough}.
+	 */
+	private static final String SERVER_GAME_LISTENER = "net.minecraft.server.network.ServerGamePacketListenerImpl";
+	/** The hook that override consults, and whose answer it throws away. */
+	private static final String FORGE_HOOKS = "net/minecraftforge/common/ForgeHooks";
+	private static final String ON_CUSTOM_PAYLOAD = "onCustomPayload";
 	private static final String CLIENT_HANDLE_PAYLOAD_DESC = "(Lnet/minecraft/network/protocol/common/ClientboundCustomPayloadPacket;)V";
 	private static final String SERVER_HANDLE_PAYLOAD_DESC = "(Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;)V";
 	private static final String FORGE_DISPATCH_HOOK = "dispatchForgePayload";
@@ -212,10 +221,11 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 		boolean clientConfig = CLIENT_CONFIG_LISTENER.equals(className);
 		boolean clientCommon = CLIENT_COMMON_LISTENER.equals(className);
 		boolean serverCommon = SERVER_COMMON_LISTENER.equals(className);
+		boolean serverGame = SERVER_GAME_LISTENER.equals(className);
 		boolean neoRegistry = NEO_NETWORK_REGISTRY.equals(className);
 		boolean connection = CONNECTION.equals(className);
-		if (!fabricAddon && !serverConfig && !clientConfig && !clientCommon && !serverCommon && !neoRegistry
-				&& !connection) return classBytes;
+		if (!fabricAddon && !serverConfig && !clientConfig && !clientCommon && !serverCommon && !serverGame
+				&& !neoRegistry && !connection) return classBytes;
 
 		ClassNode node = new ClassNode();
 		// EXPAND_FRAMES so every original frame is an absolute F_NEW node; the explicit frames we author at our own
@@ -245,6 +255,14 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				changed = true;
 				ForbricLog.info("[Forbric/Net] handing MinecraftForge's payloads to ForgeHooks.onCustomPayload at %s.%s — "
 						+ "NeoForge won this method in the merge and Forge's dispatch went with it", className, HANDLE_PAYLOAD);
+			} else if (serverGame && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(SERVER_HANDLE_PAYLOAD_DESC)) {
+				if (letNeoForgePayloadsThrough(m)) {
+					changed = true;
+					ForbricLog.info("[Forbric/Net] %s.%s now falls through to NeoForge's dispatcher when "
+							+ "MinecraftForge does not take the payload — it is Forge's override and never called "
+							+ "super, so a NeoForge mod's play-phase packet to the server reached nobody",
+							className, HANDLE_PAYLOAD);
+				}
 			} else if (neoRegistry && m.name.equals(CHECK_PACKET) && (m.access & Opcodes.ACC_STATIC) != 0
 					&& org.objectweb.asm.Type.getArgumentTypes(m.desc).length == 2) {
 				m.instructions.insert(forgePacketExemptionPrologue(m.desc));
@@ -510,6 +528,73 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * {@code if (interop.dispatchForgePayload(this, packet)) return;} — prepended to the void method. At the
 	 * fall-through label the stack is empty and both params live: locals=[this, packet] / stack=[], the entry frame.
 	 */
+	/**
+	 * Makes MinecraftForge's play-phase override fall through to NeoForge's dispatcher.
+	 *
+	 * <p>The merged {@code ServerGamePacketListenerImpl.handleCustomPayload} is MinecraftForge's patch and it is
+	 * three instructions long (javap):
+	 *
+	 * <pre>
+	 *    0  ALOAD 1 ; INVOKEVIRTUAL packet.payload()
+	 *    4  ALOAD 0 ; GETFIELD connection
+	 *    8  INVOKESTATIC ForgeHooks.onCustomPayload(payload, connection)Z
+	 *   11  POP
+	 *   12  RETURN
+	 * </pre>
+	 *
+	 * <p>The {@code POP} is the bug. Forge's hook answers "was this mine, and did I take it" and the override
+	 * throws the answer away, then returns — without ever calling {@code super}. NeoForge's own dispatch lives on
+	 * {@code ServerCommonPacketListenerImpl}, which is exactly that super, so a NeoForge mod's play-phase packet
+	 * to the server arrived, was offered to MinecraftForge, declined, and stopped. No exception, no log: the
+	 * mod's server-side handler simply never ran, while clientbound traffic and both other families' packets
+	 * worked. Every GUI button, keybind action and config-sync request a NeoForge mod sends upward was dead, in
+	 * singleplayer too, because the integrated server takes the same path.
+	 *
+	 * <p>So the {@code POP} becomes a branch: if MinecraftForge took it, return; otherwise call super. Written
+	 * against the POP that FOLLOWS the hook rather than against an offset, so a carrier that adds an instruction
+	 * before it does not silently land the branch somewhere else — and if that pattern is not found, nothing is
+	 * rewritten and the caller reports no change.
+	 *
+	 * @return whether the method was rewritten
+	 */
+	private static boolean letNeoForgePayloadsThrough(MethodNode m) {
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC) continue;
+			if (!FORGE_HOOKS.equals(call.owner) || !ON_CUSTOM_PAYLOAD.equals(call.name)) continue;
+
+			AbstractInsnNode next = call.getNext();
+			while (next != null && (next instanceof LabelNode || next instanceof LineNumberNode
+					|| next instanceof FrameNode)) {
+				next = next.getNext();
+			}
+			if (next == null || next.getOpcode() != Opcodes.POP) continue;
+
+			LabelNode taken = new LabelNode();
+			InsnList fallThrough = new InsnList();
+			fallThrough.add(new JumpInsnNode(Opcodes.IFNE, taken));
+			fallThrough.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			fallThrough.add(new VarInsnNode(Opcodes.ALOAD, 1));
+			// invokespecial on the DIRECT superclass: ServerGamePacketListenerImpl extends
+			// ServerCommonPacketListenerImpl, and that is where NeoForge's handleModdedPayload path lives.
+			fallThrough.add(new MethodInsnNode(Opcodes.INVOKESPECIAL,
+					SERVER_COMMON_LISTENER.replace('.', '/'), HANDLE_PAYLOAD, SERVER_HANDLE_PAYLOAD_DESC, false));
+			fallThrough.add(taken);
+			// The class is read with EXPAND_FRAMES, so every frame here is absolute and this one has to be too.
+			// Both arms reach the label with the same state: this and the packet, nothing on the stack.
+			fallThrough.add(new FrameNode(Opcodes.F_NEW, 2,
+					new Object[] {SERVER_GAME_LISTENER.replace('.', '/'),
+							org.objectweb.asm.Type.getArgumentTypes(SERVER_HANDLE_PAYLOAD_DESC)[0]
+									.getInternalName()},
+					0, new Object[0]));
+
+			m.instructions.insertBefore(next, fallThrough);
+			m.instructions.remove(next);
+			bumpStack(m, 2);
+			return true;
+		}
+		return false;
+	}
+
 	private static InsnList forgeDispatchPrologue(String owner, String packetType) {
 		InsnList body = new InsnList();
 		LabelNode notForge = new LabelNode();
