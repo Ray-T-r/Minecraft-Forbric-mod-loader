@@ -1,0 +1,181 @@
+/*
+ * Copyright 2026 The Forbric Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package net.forbric.kernel.boot;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import net.forbric.api.EventBridges;
+import net.forbric.api.GameEventBridge;
+import net.forbric.kernel.util.ForbricLog;
+
+/**
+ * Names the MinecraftForge game events that are still DEAD on the merged base, and which mod is listening for
+ * one.
+ *
+ * <h2>Why this exists at all</h2>
+ *
+ * <p>Every failure in this class of bug looks the same from the outside: the mod loads, reports nothing wrong,
+ * registers its listener, and the listener never runs. There is no exception, no warning, and nothing in any log
+ * connects the missing behaviour to the missing hook. The kernel has paid for that shape repeatedly — a Forge
+ * mod's commands not existing, its key bindings doing nothing, its protection rules silently not applying — and
+ * each time the diagnosis came from reading the merged base's bytecode by hand, months later.
+ *
+ * <p>So the inventory is turned around: instead of only recording what IS bridged, this records what is known to
+ * be dead and not yet bridged, and says so once per boot, naming the event. It is a diagnosis printed before the
+ * symptom rather than after it.
+ *
+ * <h2>How the list was established, and how to re-establish it</h2>
+ *
+ * <p>Each entry is a call site read out of the merged jar with {@code javap -p -c}, counting which family's hook
+ * survived at it. For example {@code ServerPlayerGameMode} contains
+ * {@code net/neoforged/neoforge/common/CommonHooks.fireBlockBreak}, {@code .onRightClickBlock},
+ * {@code .onLeftClickBlock} and {@code .onItemRightClick} — and ZERO references to any
+ * {@code net/minecraftforge/} hook. {@code ServerGamePacketListenerImpl} has NeoForge's
+ * {@code getServerChatSubmittedDecorator} and no MinecraftForge chat hook; {@code Level} has NeoForge's
+ * {@code onNeighborNotify}; {@code LivingEntity} has NeoForge's {@code onLivingFall}.
+ *
+ * <p>It is DATA, deliberately, not a scan: scanning a 30MB merged jar for hook references on every boot would
+ * cost more than it is worth, and the answer only changes when the merged base is rebuilt. When it is rebuilt,
+ * re-run the survey and update this map — the audit itself will not notice a base that grew a hook back, it will
+ * only over-report, which is the safe direction.
+ *
+ * <p>Anything the kernel does bridge is subtracted live from {@link EventBridges#installed()}, so an entry does
+ * not have to be deleted here the day a bridge for it lands.
+ */
+public final class DeadEventAudit {
+	/** {@code -Dforbric.deadEventAudit=off} silences it. The gap does not go away; only the line does. */
+	static final String PROPERTY = "forbric.deadEventAudit";
+
+	/**
+	 * MinecraftForge event class (internal name) → what a player loses, for events the merged base no longer
+	 * posts and the kernel does not bridge. See the class javadoc for how each was established.
+	 */
+	private static final Map<String, String> DEAD = deadEvents();
+
+	private static Map<String, String> deadEvents() {
+		Map<String, String> dead = new LinkedHashMap<>();
+		// ServerPlayerGameMode: four NeoForge hooks, zero MinecraftForge ones.
+		dead.put("net/minecraftforge/event/level/BlockEvent$BreakEvent",
+				"block breaking is neither observed nor preventable — claim and protection mods do not protect, "
+						+ "and block-logging mods record nothing");
+		dead.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$RightClickBlock",
+				"right-clicking a block is neither observed nor preventable");
+		dead.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$LeftClickBlock",
+				"left-clicking a block is neither observed nor preventable");
+		dead.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$RightClickItem",
+				"using an item in hand is neither observed nor preventable");
+		// ServerGamePacketListenerImpl carries NeoForge's chat decorator and no MinecraftForge chat hook.
+		dead.put("net/minecraftforge/event/ServerChatEvent",
+				"chat messages cannot be seen, edited or blocked — chat-formatting and moderation mods do nothing");
+		// Level: NeoForge's onNeighborNotify only.
+		dead.put("net/minecraftforge/event/level/BlockEvent$NeighborNotifyEvent",
+				"block updates propagating to neighbours are invisible to MinecraftForge mods");
+		// LivingEntity: NeoForge's onLivingFall only.
+		dead.put("net/minecraftforge/event/entity/living/LivingFallEvent",
+				"fall damage cannot be modified or cancelled");
+		// ItemStack keeps MinecraftForge's onItemTooltip, so the dead one here is NeoForge's — recorded on the
+		// other side of the ledger because the audit only walks MinecraftForge listeners today.
+		return Map.copyOf(dead);
+	}
+
+	/** The bridge that covers an event, when one does. Keeps an entry from being reported once it is bridged. */
+	private static final Map<String, GameEventBridge> BRIDGED = bridged();
+
+	private static Map<String, GameEventBridge> bridged() {
+		Map<String, GameEventBridge> map = new LinkedHashMap<>();
+		map.put("net/minecraftforge/event/RegisterCommandsEvent", GameEventBridge.REGISTER_COMMANDS);
+		map.put("net/minecraftforge/event/entity/player/PlayerEvent$PlayerLoggedInEvent",
+				GameEventBridge.PLAYER_LOGGED_IN);
+		map.put("net/minecraftforge/event/entity/player/PlayerEvent$PlayerLoggedOutEvent",
+				GameEventBridge.PLAYER_LOGGED_OUT);
+		map.put("net/minecraftforge/event/entity/living/LivingDeathEvent", GameEventBridge.LIVING_DEATH);
+		map.put("net/minecraftforge/event/entity/living/LivingDropsEvent", GameEventBridge.LIVING_DROPS);
+		map.put("net/minecraftforge/event/entity/EntityJoinLevelEvent", GameEventBridge.ENTITY_JOIN_LEVEL);
+		return Map.copyOf(map);
+	}
+
+	private DeadEventAudit() {
+	}
+
+	static boolean enabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
+	}
+
+	/** One mod listening for one event that will never arrive. */
+	public record Finding(String modId, String event, String cost) {
+	}
+
+	/**
+	 * The findings for a set of (mod id → subscribed MinecraftForge event internal names).
+	 *
+	 * <p>Pure, so the reporting and the judgement can be tested apart. An event that IS bridged is not a finding
+	 * even though it appears in the dead set, because the bridge is what makes it arrive.
+	 */
+	static List<Finding> audit(Map<String, Set<String>> subscribedByMod, Set<GameEventBridge> installed) {
+		List<Finding> findings = new ArrayList<>();
+		for (Map.Entry<String, Set<String>> mod : subscribedByMod.entrySet()) {
+			for (String event : mod.getValue()) {
+				GameEventBridge bridge = BRIDGED.get(event);
+				if (bridge != null) {
+					// A bridgeable event is dead exactly when its bridge is not in — which is the case worth
+					// reporting, because a bridge can fail to install on a runtime the kernel did not expect and
+					// nothing else would notice. Its cost sentence is already written, on the bridge.
+					if (!installed.contains(bridge)) findings.add(new Finding(mod.getKey(), event, bridge.cost()));
+					continue;
+				}
+				String cost = DEAD.get(event);
+				if (cost == null) continue;
+				findings.add(new Finding(mod.getKey(), event, cost));
+			}
+		}
+		return findings;
+	}
+
+	/**
+	 * Reports what a boot found. One line per event, naming every mod waiting on it, because the same dead event
+	 * is usually subscribed by several mods and a line each would bury the list.
+	 */
+	public static void report(Map<String, Set<String>> subscribedByMod) {
+		if (!enabled()) {
+			ForbricLog.debug("[Forbric/DeadEvents] -D%s=off — not reporting merge-lost game events", PROPERTY);
+			return;
+		}
+		List<Finding> findings = audit(subscribedByMod, EventBridges.installed());
+		if (findings.isEmpty()) return;
+
+		Map<String, Set<String>> modsByEvent = new LinkedHashMap<>();
+		Map<String, String> costByEvent = new LinkedHashMap<>();
+		for (Finding finding : findings) {
+			modsByEvent.computeIfAbsent(finding.event(), k -> new LinkedHashSet<>()).add(finding.modId());
+			costByEvent.putIfAbsent(finding.event(), finding.cost());
+		}
+
+		ForbricLog.warn("[Forbric/DeadEvents] %d MinecraftForge game event(s) the merged base no longer posts have "
+				+ "listeners waiting on them. Those listeners will not run, and nothing else will say so.",
+				modsByEvent.size());
+		for (Map.Entry<String, Set<String>> entry : modsByEvent.entrySet()) {
+			ForbricLog.warn("[Forbric/DeadEvents]   %s — %s (waiting: %s)",
+					entry.getKey().substring(entry.getKey().lastIndexOf('/') + 1),
+					costByEvent.get(entry.getKey()), entry.getValue());
+		}
+	}
+}

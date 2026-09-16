@@ -67,6 +67,79 @@ class KernelEventSubscribersTest {
 		av.visitEnd();
 	}
 
+	/**
+	 * A subscriber whose {@code @SubscribeEvent} methods take the given event types.
+	 *
+	 * <p>Both families' annotations are accepted by the scan, so the descriptor is a parameter here too: the
+	 * audit judges only MinecraftForge event types, and a NeoForge subscriber's types simply never match.
+	 */
+	private static byte[] subscriberListening(String internalName, String ebsDescriptor,
+			String subscribeDescriptor, String... eventTypes) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null);
+		annotate(cw, ebsDescriptor, "example", null, DIST_FORGE);
+		for (int i = 0; i < eventTypes.length; i++) {
+			var mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "on" + i,
+					"(L" + eventTypes[i] + ";)V", null, null);
+			mv.visitAnnotation(subscribeDescriptor, true).visitEnd();
+			mv.visitCode();
+			mv.visitInsn(Opcodes.RETURN);
+			mv.visitMaxs(0, 1);
+			mv.visitEnd();
+		}
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	// --- what it subscribes TO, which is what tells a dead listener from a live one ------------------------------
+
+	/**
+	 * The scan is the only place that knows which events a MinecraftForge subscriber waits on: registration is
+	 * handed to FML, which never reports back what it wired. Without this, the kernel cannot say "this mod is
+	 * waiting for an event that will never arrive" — see DeadEventAudit.
+	 */
+	@Test
+	void collectsTheEventTypesASubscriberWaitsOn() {
+		var sub = KernelEventSubscribers.scanClassBytes(subscriberListening("com/example/Events", EBS_FORGE,
+				"Lnet/minecraftforge/eventbus/api/listener/SubscribeEvent;",
+				"net/minecraftforge/event/ServerChatEvent",
+				"net/minecraftforge/event/level/BlockEvent$BreakEvent"));
+
+		assertEquals(java.util.Set.of("net/minecraftforge/event/ServerChatEvent",
+						"net/minecraftforge/event/level/BlockEvent$BreakEvent"),
+				sub.subscribedEvents());
+	}
+
+	/**
+	 * A one-argument method is not a listener just because it takes an event type. Two shapes are checked: no
+	 * annotation at all, and an annotation that is not {@code @SubscribeEvent} — the second is the one that
+	 * catches a scan which collects on ANY annotation, which no plain-method case can.
+	 */
+	@Test
+	void ignoresAOneArgMethodThatIsNotSubscribed() {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/Plain", null, "java/lang/Object", null);
+		annotate(cw, EBS_FORGE, "example", null, DIST_FORGE);
+		emit(cw, "helper", "net/minecraftforge/event/ServerChatEvent", null);
+		emit(cw, "deprecatedHelper", "net/minecraftforge/event/level/BlockEvent$BreakEvent",
+				"Ljava/lang/Deprecated;");
+		cw.visitEnd();
+
+		assertTrue(KernelEventSubscribers.scanClassBytes(cw.toByteArray()).subscribedEvents().isEmpty(),
+				"a one-argument method must be collected only when it carries @SubscribeEvent — otherwise the "
+						+ "audit reports events nobody is waiting for and the reader learns to ignore it");
+	}
+
+	/** One static one-arg method, optionally annotated with {@code annotation}. */
+	private static void emit(ClassWriter cw, String name, String eventType, String annotation) {
+		var mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, name, "(L" + eventType + ";)V", null, null);
+		if (annotation != null) mv.visitAnnotation(annotation, true).visitEnd();
+		mv.visitCode();
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(0, 1);
+		mv.visitEnd();
+	}
+
 	// --- which family declared it — the bit the old scan threw away ---------------------------------------------
 
 	@Test

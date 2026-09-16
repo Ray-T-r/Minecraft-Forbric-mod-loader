@@ -75,6 +75,8 @@ import net.forbric.kernel.util.Reflect;
  * had for NeoForge's own internal subscribers.
  */
 public final class KernelEventSubscribers {
+	private static final String SUBSCRIBE_FORGE = "Lnet/minecraftforge/eventbus/api/listener/SubscribeEvent;";
+	private static final String SUBSCRIBE_NEO = "Lnet/neoforged/bus/api/SubscribeEvent;";
 	private static final String EBS_FORGE = "Lnet/minecraftforge/fml/common/Mod$EventBusSubscriber;";
 	private static final String EBS_NEO = "Lnet/neoforged/fml/common/EventBusSubscriber;";
 
@@ -98,7 +100,12 @@ public final class KernelEventSubscribers {
 	 * @param bus    the declared {@code bus()}, defaulting to {@code BOTH} when absent
 	 */
 	record Subscriber(String className, Ecosystem family, java.util.Set<String> dists,
-			String modId, String bus) {
+			String modId, String bus, java.util.Set<String> subscribedEvents) {
+
+		/** The five-field form callers and tests use when the subscribed event types are not needed. */
+		Subscriber(String className, Ecosystem family, java.util.Set<String> dists, String modId, String bus) {
+			this(className, family, dists, modId, bus, java.util.Set.of());
+		}
 	}
 
 	/** Which {@code BusGroup} a MinecraftForge subscriber's listeners belong on. */
@@ -149,6 +156,10 @@ public final class KernelEventSubscribers {
 		int neoMethods = 0;
 		int skippedSide = 0;
 		int skippedOwner = 0;
+		// modId -> the event types its subscribers wait on. Collected here because this is the one pass that reads
+		// every subscriber class of every mod; DeadEventAudit turns it into the one line that says a listener will
+		// never run.
+		java.util.Map<String, java.util.Set<String>> subscribedByMod = new java.util.LinkedHashMap<>();
 		for (Path jar : modJars) {
 			List<Subscriber> subscribers = scan(jar);
 			if (subscribers.isEmpty()) continue;
@@ -165,6 +176,13 @@ public final class KernelEventSubscribers {
 					if (modsInJar == null) modsInJar = scanModClasses(jar);
 				}
 				String modId = ownerModId(sub, modsInJar);
+
+				if (!sub.subscribedEvents().isEmpty()) {
+					subscribedByMod
+							.computeIfAbsent(modId == null ? sub.className() : modId,
+								k -> new java.util.LinkedHashSet<>())
+							.addAll(sub.subscribedEvents());
+				}
 
 				try {
 					if (sub.family() == Ecosystem.FORGE) {
@@ -196,6 +214,9 @@ public final class KernelEventSubscribers {
 					+ "%d skipped as wrong-side, %d skipped (owning mod has no bus)",
 					forgeClasses, neoMethods, skippedSide, skippedOwner);
 		}
+		// Everything above is about listeners the kernel DID wire. This is about the ones it wired onto a hook the
+		// merged base no longer calls — registered successfully, and never to be reached.
+		DeadEventAudit.report(subscribedByMod);
 	}
 
 	/**
@@ -450,7 +471,31 @@ public final class KernelEventSubscribers {
 			String[] modId = new String[1];
 			String[] bus = new String[1];
 			java.util.Set<String> dists = new java.util.LinkedHashSet<>();
+			// The EVENT TYPES this class subscribes to, collected in the same pass. Nothing else knows them: the
+			// MinecraftForge path hands registration to FML, which never reports back what it wired, so without
+			// this the kernel cannot say "this mod is waiting for an event that will never arrive".
+			// See DeadEventAudit.
+			java.util.Set<String> events = new java.util.LinkedHashSet<>();
 			new ClassReader(bytes).accept(new ClassVisitor(Opcodes.ASM9) {
+				@Override
+				public org.objectweb.asm.MethodVisitor visitMethod(int access, String methodName, String desc,
+						String signature, String[] exceptions) {
+					org.objectweb.asm.Type[] params = org.objectweb.asm.Type.getArgumentTypes(desc);
+					if (params.length != 1 || params[0].getSort() != org.objectweb.asm.Type.OBJECT) return null;
+					String eventType = params[0].getInternalName();
+					return new org.objectweb.asm.MethodVisitor(Opcodes.ASM9) {
+						@Override
+						public AnnotationVisitor visitAnnotation(String annotation, boolean visible) {
+							// Either family's @SubscribeEvent. The audit judges only MinecraftForge event types,
+							// so collecting both costs nothing and misses nothing.
+							if (SUBSCRIBE_FORGE.equals(annotation) || SUBSCRIBE_NEO.equals(annotation)) {
+								events.add(eventType);
+							}
+							return null;
+						}
+					};
+				}
+
 				@Override
 				public void visit(int v, int access, String n, String sig, String sup, String[] itf) {
 					name[0] = n;
@@ -493,7 +538,7 @@ public final class KernelEventSubscribers {
 			if (family[0] == null) return null;
 			// Absent bus() is Bus.BOTH — Forge's own default, and the one that routes per event type.
 			return new Subscriber(name[0].replace('/', '.'), family[0], dists, modId[0],
-					bus[0] == null ? "BOTH" : bus[0]);
+					bus[0] == null ? "BOTH" : bus[0], java.util.Set.copyOf(events));
 		} catch (Throwable t) {
 			return null;
 		}
