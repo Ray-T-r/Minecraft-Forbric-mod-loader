@@ -122,6 +122,12 @@ public final class KernelRuntimeClasses {
 				new Call("installLoggedOut", void.class, Object.class),
 				new Call("installRespawn", void.class, Object.class),
 				new Call("installChangedDimension", void.class, Object.class))));
+		// The cancellable entity events: these carry a MinecraftForge mod's veto back onto the NeoForge event,
+		// so a renamed entry point costs a whole class of mods their ability to say no.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameEntityEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installLivingDeath", void.class, Object.class),
+				new Call("installLivingDrops", void.class, Object.class),
+				new Call("installEntityJoinLevel", void.class, Object.class))));
 		// The CLIENT tick, in its own class because it names NeoForge's client event package — a dedicated server
 		// must never be made to resolve those types, and keeping them apart means it never loads the class.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientTickEvents", new Entry(Origin.COMPILED, List.of(
