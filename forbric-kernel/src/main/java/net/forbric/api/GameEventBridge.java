@@ -58,6 +58,22 @@ public enum GameEventBridge {
 			"MinecraftForge's per-world SERVER configs are never unloaded, so a second world opened in the same "
 					+ "session reads the FIRST world's values and each world leaks another file watcher; "
 					+ "ServerStoppedEvent listeners never clean up either"),
+	LEVEL_TICK_PRE(Pass.GAME_BUS, "LevelTickEvent.Pre",
+			"MinecraftForge mods stop receiving the level tick, so per-world work — weather and time managers, "
+					+ "world-bound schedulers, chunk bookkeeping — never runs"),
+	LEVEL_TICK_POST(Pass.GAME_BUS, "LevelTickEvent.Post",
+			"as LEVEL_TICK_PRE, for the post-tick half"),
+	PLAYER_TICK_PRE(Pass.GAME_BUS, "PlayerTickEvent.Pre",
+			"MinecraftForge mods stop receiving the per-player tick, so their timers do not advance and whatever "
+					+ "they attached to the player is never ticked"),
+	PLAYER_TICK_POST(Pass.GAME_BUS, "PlayerTickEvent.Post",
+			"as PLAYER_TICK_PRE, for the post-tick half"),
+	CLIENT_TICK_PRE(Pass.CLIENT_GAME_BUS, "ClientTickEvent.Pre",
+			"a MinecraftForge mod polls its key bindings from the client tick (consumeClick drains a counter and "
+					+ "has to be drained every tick), so its keys bind, appear in the Controls screen and do "
+					+ "nothing at all when pressed"),
+	CLIENT_TICK_POST(Pass.CLIENT_GAME_BUS, "ClientTickEvent.Post",
+			"as CLIENT_TICK_PRE, for the post-tick half"),
 	CLIENT_RELOAD_LISTENERS(Pass.CLIENT_MOD_BUS, "RegisterClientReloadListenersEvent",
 			"a MinecraftForge mod's client reload listeners are registered on a bus nobody posts to — GeckoLib's "
 					+ "whole client model and animation cache hangs off exactly this");
@@ -66,6 +82,12 @@ public enum GameEventBridge {
 	public enum Pass {
 		/** Installed on the NeoForge game event bus once the buses exist. Both sides. */
 		GAME_BUS,
+		/**
+		 * Installed on the NeoForge game event bus, but only on the client — the event types live in NeoForge's
+		 * client package and a dedicated server must never be made to resolve them. Verified as its own pass so a
+		 * server does not report them missing on every boot.
+		 */
+		CLIENT_GAME_BUS,
 		/** Installed on the baseline mod bus during client mod loading. Client only. */
 		CLIENT_MOD_BUS
 	}

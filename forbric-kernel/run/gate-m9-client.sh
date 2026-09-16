@@ -93,7 +93,10 @@ check_absent "no mod failed a phase"  "failed during (construct|IMC enqueue|IMC 
 # reload listeners -- GeckoLib's whole model and animation cache hangs off it -- and it used to be reported only
 # by an unasserted "installed the ... bridge" line.
 check "the client-side bridge pass is complete" "all 1 CLIENT_MOD_BUS bridge\(s\) installed" "$LOG"
-check "the game-bus bridge pass is complete too" "all 5 GAME_BUS bridge\(s\) installed"      "$LOG"
+# By "complete", not by count -- see gate-m4 for why. The client ticks are their own pass because they name
+# NeoForge's client event package, which a dedicated server must never resolve.
+check "the game-bus bridge pass is complete too" "EventMux\] all [0-9][0-9]* GAME_BUS bridge\(s\) installed"      "$LOG"
+check "the client game-bus bridges went on too" "EventMux\] all [0-9][0-9]* CLIENT_GAME_BUS bridge\(s\) installed" "$LOG"
 check_absent "no bridge reported missing"       "bridge\(s\) MISSING"                        "$LOG"
 
 step "a Forge-family mod's own content and data actually arrived (must PASS)"
@@ -342,8 +345,20 @@ step "a config registered too late for the early pass is still opened (must PASS
 # only. The mod then reads a config that was registered and never loaded, and what it gets is not a default but
 # "Cannot get config value before config is loaded", thrown wherever it first asked. ShoulderSurfing asks from a
 # mixin in Minecraft.<init>, so the whole client dies.
-check "the late pass opened what the early one could not" \
-  "Forbric/Lifecycle\] opened [1-9][0-9]* late-registered NeoForge config\(s\)" "$LOG"
+# This used to assert that the LATE pass opened 18 configs. It did -- and then loadEarlyConfigs, which runs after
+# it used to, opened all 18 again through ConfigTracker.loadConfigs (a sweep of the whole type that does not skip
+# a config with a loaded one). So the assertion pinned the double open: 36 "Opening a config that was already
+# loaded" warnings per boot on the main thread, ModConfigEvent.Loading delivered twice to every one of those mods,
+# each file re-read and a second watcher installed. The early pass now runs first and covers them, so the late
+# pass correctly finds nothing left -- which is why the count assertion had to go rather than be retargeted.
+#
+# What is asserted instead is the OUTCOME: the early pass ran over both types, the config that used to crash the
+# client is loaded, and no config is opened twice during boot. The Server-thread double open at world join (16 per
+# run, the per-world SERVER configs) is a SEPARATE defect and is deliberately not covered here yet.
+check "the early pass loads both boot-time config types" \
+  "Forbric/Lifecycle\] loaded NeoForge configs \(COMMON\+CLIENT\)" "$LOG"
+check_absent "and no config is opened twice during boot" \
+  "\[main/WARN\]: Opening a config that was already loaded" "$LOG"
 check_absent "and nothing read a config before it was loaded" \
   "Cannot get config value before config is loaded" "$LOG"
 # The late pass opens only what has no loaded config yet. Re-opening one the early pass already did warns and

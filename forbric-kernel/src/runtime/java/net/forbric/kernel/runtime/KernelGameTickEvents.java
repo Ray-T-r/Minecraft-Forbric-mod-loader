@@ -24,9 +24,13 @@ import java.util.function.Consumer;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
 import net.minecraftforge.event.ForgeEventFactory;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.event.tick.LevelTickEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 /**
@@ -74,10 +78,103 @@ public final class KernelGameTickEvents {
 				(haveTime, server) -> ForgeEventFactory.onPostServerTick(haveTime, server));
 	}
 
+	/**
+	 * NeoForge {@code LevelTickEvent.Pre} → MinecraftForge {@code onPreLevelTick}.
+	 *
+	 * <p>The level tick is where a mod does per-world work that must not run per entity: weather and time
+	 * managers, world-bound schedulers, chunk bookkeeping. On the merged base every {@code tick} in
+	 * {@code MinecraftServer} and {@code Minecraft} calls NeoForge's {@code EventHooks.fireLevelTickPre/Post} and
+	 * MinecraftForge's site is gone, so a Forge mod's {@code LevelTickEvent} listener never ran — silently, and
+	 * with the SERVER tick bridged and visibly working, which is what made the gap look like it was not there.
+	 *
+	 * <p>Argument ORDER differs between the families: NeoForge carries (hasTime, level), MinecraftForge takes
+	 * (level, haveTime). Writing the two hooks out rather than parameterising them keeps that visible in a diff.
+	 */
+	public static void installLevelPre(Object neoBus) {
+		subscribeLevel((IEventBus) neoBus, LevelTickEvent.Pre.class, "Pre",
+				(level, haveTime) -> ForgeEventFactory.onPreLevelTick(level, haveTime));
+	}
+
+	/** NeoForge {@code LevelTickEvent.Post} → MinecraftForge {@code onPostLevelTick}. See {@link #installLevelPre}. */
+	public static void installLevelPost(Object neoBus) {
+		subscribeLevel((IEventBus) neoBus, LevelTickEvent.Post.class, "Post",
+				(level, haveTime) -> ForgeEventFactory.onPostLevelTick(level, haveTime));
+	}
+
+	/**
+	 * NeoForge {@code PlayerTickEvent.Pre} → MinecraftForge {@code onPlayerPreTick}.
+	 *
+	 * <p>The per-player tick, where a Forge mod advances its own timers, applies its effects and ticks whatever it
+	 * attached to the player. {@code Player.tick} on the merged base calls only
+	 * {@code EventHooks.firePlayerTickPre/Post}.
+	 */
+	public static void installPlayerPre(Object neoBus) {
+		subscribePlayer((IEventBus) neoBus, PlayerTickEvent.Pre.class, "Pre",
+				player -> ForgeEventFactory.onPlayerPreTick(player));
+	}
+
+	/** NeoForge {@code PlayerTickEvent.Post} → MinecraftForge {@code onPlayerPostTick}. */
+	public static void installPlayerPost(Object neoBus) {
+		subscribePlayer((IEventBus) neoBus, PlayerTickEvent.Post.class, "Post",
+				player -> ForgeEventFactory.onPlayerPostTick(player));
+	}
+
 	/** The MinecraftForge side of one tick, named so the two pairings above read as one line each. */
 	@FunctionalInterface
 	private interface ForgeTick {
 		void fire(BooleanSupplier haveTime, MinecraftServer server);
+	}
+
+	/** The MinecraftForge side of one level tick. Note the argument order, which is not NeoForge's. */
+	@FunctionalInterface
+	private interface ForgeLevelTick {
+		void fire(Level level, BooleanSupplier haveTime);
+	}
+
+	/** The MinecraftForge side of one player tick. */
+	@FunctionalInterface
+	private interface ForgePlayerTick {
+		void fire(Player player);
+	}
+
+	private static <E extends LevelTickEvent> void subscribeLevel(IEventBus bus, Class<E> event, String kind,
+			ForgeLevelTick forge) {
+		AtomicBoolean warned = new AtomicBoolean();
+		bus.addListener(EventPriority.LOWEST, false, event, neoEvent -> {
+			try {
+				// Lazy and fail-OPEN, for the reasons spelled out in subscribe: "is there time left this tick" is
+				// answered live on all three legs, and returning false on a surprise would stop the other family's
+				// deferred work with no exception and nothing in the log.
+				BooleanSupplier haveTime = () -> {
+					try {
+						return neoEvent.hasTime();
+					} catch (Throwable t) {
+						return true;
+					}
+				};
+				forge.fire(neoEvent.getLevel(), haveTime);
+			} catch (Throwable t) {
+				if (warned.compareAndSet(false, true)) {
+					ForbricLog.warn("[Forbric/EventMux] on" + kind + "LevelTick forward failed; MinecraftForge mods "
+							+ "will not receive the level tick", Reflect.unwrap(t));
+				}
+			}
+		});
+	}
+
+	private static <E extends PlayerTickEvent> void subscribePlayer(IEventBus bus, Class<E> event, String kind,
+			ForgePlayerTick forge) {
+		AtomicBoolean warned = new AtomicBoolean();
+		bus.addListener(EventPriority.LOWEST, false, event, neoEvent -> {
+			try {
+				forge.fire(neoEvent.getEntity());
+			} catch (Throwable t) {
+				if (warned.compareAndSet(false, true)) {
+					ForbricLog.warn("[Forbric/EventMux] onPlayer" + kind + "Tick forward failed; MinecraftForge mods "
+							+ "will not receive the player tick", Reflect.unwrap(t));
+				}
+			}
+		});
 	}
 
 	private static <E extends ServerTickEvent> void subscribe(IEventBus bus, Class<E> event, String kind,
