@@ -513,25 +513,48 @@ public final class KernelLifecycle {
 		return side.isClient() ? List.of("STARTUP", "COMMON", "CLIENT") : List.of("STARTUP", "COMMON");
 	}
 
-	/** Starts NeoForge's global game bus + Forge's DEFAULT BusGroup so game-event listeners dispatch. */
+	/**
+	 * Starts NeoForge's global game bus + Forge's DEFAULT BusGroup so game-event listeners dispatch.
+	 *
+	 * <p>Absent and failed are split here for the same reason as in {@link #invokeGameDataOn}: a single-family
+	 * instance legitimately has only one of these two buses, and that is a debug line. A bus that is PRESENT and
+	 * fails to start is total — every game-event listener of that family, of every mod, is on a bus nothing
+	 * dispatches, and the game then runs with no visible error at all.
+	 */
 	private static void startGameBuses(ClassLoader cl) {
 		// Bridge merge-lost game events (Neo won the tick hook → forward to Forge) BEFORE starting the buses.
 		GameEventMultiplexer.install(cl);
+		startBus(cl, "net.neoforged.neoforge.common.NeoForge", "EVENT_BUS",
+				"net.neoforged.bus.api.IEventBus", "start", "NeoForge.EVENT_BUS");
+		startBus(cl, "net.minecraftforge.eventbus.api.bus.BusGroup", "DEFAULT",
+				"net.minecraftforge.eventbus.api.bus.BusGroup", "startup", "Forge BusGroup.DEFAULT");
+	}
+
+	/**
+	 * Resolves one family's game bus and opens it, reporting absence and failure differently.
+	 *
+	 * @param holder the class holding the bus as a static field, {@code field} the field, {@code api} the type
+	 *               declaring the start method, {@code start} that method, {@code label} what to call it in the log
+	 */
+	private static void startBus(ClassLoader cl, String holder, String field, String api, String start,
+			String label) {
+		Object bus;
 		try {
-			Class<?> neoForge = Class.forName("net.neoforged.neoforge.common.NeoForge", false, cl);
-			Object bus = neoForge.getField("EVENT_BUS").get(null);
-			Class.forName("net.neoforged.bus.api.IEventBus", false, cl).getMethod("start").invoke(bus);
-			ForbricLog.info("[Forbric/Lifecycle] started NeoForge.EVENT_BUS (game events now dispatch)");
+			bus = Class.forName(holder, false, cl).getField(field).get(null);
+		} catch (ClassNotFoundException | NoSuchFieldException | LinkageError absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] no %s on this runtime — nothing to start", label);
+			return;
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Lifecycle] could not start NeoForge.EVENT_BUS: %s", String.valueOf(unwrap(t)));
+			ForbricLog.warn("[Forbric/Lifecycle] could not read " + label + " — every game-event listener of that "
+					+ "family is on a bus nothing will dispatch", unwrap(t));
+			return;
 		}
 		try {
-			Class<?> busGroup = Class.forName("net.minecraftforge.eventbus.api.bus.BusGroup", false, cl);
-			Object def = busGroup.getField("DEFAULT").get(null);
-			busGroup.getMethod("startup").invoke(def);
-			ForbricLog.info("[Forbric/Lifecycle] started Forge BusGroup.DEFAULT (game events now dispatch)");
+			Class.forName(api, false, cl).getMethod(start).invoke(bus);
+			ForbricLog.info("[Forbric/Lifecycle] started %s (game events now dispatch)", label);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Lifecycle] could not start Forge BusGroup.DEFAULT: %s", String.valueOf(unwrap(t)));
+			ForbricLog.warn("[Forbric/Lifecycle] " + label + " is present but did NOT start — every game-event "
+					+ "listener of that family, in every mod, is now on a bus nothing dispatches", unwrap(t));
 		}
 	}
 
@@ -1308,19 +1331,57 @@ public final class KernelLifecycle {
 	private static final java.util.concurrent.atomic.AtomicBoolean REGISTRATION_EVENTS_FIRED =
 			new java.util.concurrent.atomic.AtomicBoolean();
 
-	/** Posts a no-arg mod-bus event through NeoForge's own fan-out, which walks the ModList the kernel published. */
+	/**
+	 * Posts a no-arg mod-bus event at every published container, one container at a time.
+	 *
+	 * <p>It used to hand the event to {@code ModLoader.postEvent}, NeoForge's own fan-out. That walks the ModList
+	 * in order and calls {@code ModContainer.acceptEvent}, which rethrows the first listener failure as a
+	 * {@code ModLoadingException} — so one mod throwing ended the fan-out and every mod AFTER it in the list never
+	 * saw the event, with a single kernel WARN naming the event and not the mod. For
+	 * {@code BlockEntityTypeAddBlocksEvent} that means a mod's blocks are simply never attached to the vanilla
+	 * block entity they extend, silently, because of a different mod's bug.
+	 *
+	 * <p>Genuine NeoForge is entitled to that behaviour: it turns the exception into a loading-error SCREEN and
+	 * stops. The kernel does not have that screen and carries on booting, so aborting the fan-out costs mods their
+	 * registration and tells nobody. Dispatching per container is the same delivery with the failure contained,
+	 * and each failure names the mod it belongs to.
+	 *
+	 * <p>The baseline container goes first, as it does in {@code ModList}, so NeoForge's own handlers still run
+	 * before the mods'.
+	 */
 	private static void postModBusEvent(ClassLoader cl, String eventClassName) {
+		Object event;
+		Method acceptEvent;
 		try {
 			Class<?> eventCls = Class.forName(eventClassName, false, cl);
 			Class<?> baseEvent = Class.forName("net.neoforged.bus.api.Event", false, cl);
-			Class<?> modLoader = Class.forName("net.neoforged.fml.ModLoader", false, cl);
-			modLoader.getMethod("postEvent", baseEvent)
-					.invoke(null, eventCls.getConstructor().newInstance());
+			event = eventCls.getConstructor().newInstance();
+			acceptEvent = modContainerClass(cl).getMethod("acceptEvent", baseEvent);
 		} catch (ClassNotFoundException | NoSuchMethodException absent) {
 			ForbricLog.debug("[Forbric/Lifecycle] %s absent — skipping", eventClassName);
+			return;
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not post " + eventClassName, unwrap(t));
+			ForbricLog.warn("[Forbric/Lifecycle] could not build " + eventClassName, unwrap(t));
+			return;
 		}
+
+		java.util.Map<String, Object> byId = new java.util.LinkedHashMap<>();
+		if (baselineContainer != null) byId.put("neoforge", baselineContainer);
+		KernelModLoader.publishedNeoMods().forEach((id, identity) -> byId.put(id, identity.container()));
+		if (byId.isEmpty()) return;
+
+		int delivered = 0;
+		for (java.util.Map.Entry<String, Object> e : byId.entrySet()) {
+			try {
+				acceptEvent.invoke(e.getValue(), event);
+				delivered++;
+			} catch (Throwable perMod) {
+				ForbricLog.warn("[Forbric/Lifecycle] " + e.getKey() + " threw during " + eventClassName
+						+ " — its own registration from that event is lost, every other mod still gets it",
+						unwrap(perMod));
+			}
+		}
+		ForbricLog.debug("[Forbric/Lifecycle] posted %s to %d container(s)", eventClassName, delivered);
 	}
 
 	/**
@@ -1963,14 +2024,46 @@ public final class KernelLifecycle {
 		invokeGameDataOn(cl, className, method);
 	}
 
-	/** One ecosystem's {@code GameData} only — for steps whose semantics differ between the two families. */
+	/**
+	 * One ecosystem's {@code GameData} only — for steps whose semantics differ between the two families.
+	 *
+	 * <p><b>ABSENT and FAILED are not the same thing, and this method used to report them the same way.</b> The
+	 * absence of a class is ordinary: only one Forge family may be present, and {@link #invokeGameData} deliberately
+	 * asks both. A method that is THERE and THREW is the opposite of ordinary, and every caller here is a whole
+	 * feature: the registry bake, the freeze/unfreeze pair, {@code CommonHooks.modifyAttributes},
+	 * {@code SpawnPlacements.fireSpawnPlacementEvent}, {@code GameRuleCategory.registerModdedCategories}.
+	 *
+	 * <p>What that cost, and why it was invisible: {@code modifyAttributes} walks {@code ModList} in order and
+	 * {@code ModContainer.acceptEvent} rethrows the first failure as a {@code ModLoadingException}, so ONE mod
+	 * throwing in its {@code EntityAttributeCreationEvent} handler ends the dispatch — every mod after it in the
+	 * list gets no attributes, its entities log "Entity … has no attributes" by the hundred and cannot spawn. The
+	 * kernel's only trace of that was a {@code debug} line, off unless {@code -Dforbric.debug} is set.
+	 *
+	 * <p>So the two are split: a missing class stays at debug, an invocation that threw is a WARN naming the step
+	 * and what it cost, with the real exception attached rather than its {@code toString}.
+	 */
 	private static void invokeGameDataOn(ClassLoader cl, String className, String method) {
+		Class<?> owner;
 		try {
-			Class.forName(className, false, cl).getMethod(method).invoke(null);
-		} catch (ClassNotFoundException absent) {
+			owner = Class.forName(className, false, cl);
+		} catch (ClassNotFoundException | LinkageError absent) {
 			ForbricLog.debug("[Forbric/Lifecycle] %s absent — skipping %s", className, method);
+			return;
+		}
+		java.lang.reflect.Method hook;
+		try {
+			hook = owner.getMethod(method);
+		} catch (NoSuchMethodException gone) {
+			ForbricLog.warn("[Forbric/Lifecycle] %s has no %s() — the kernel expected that hook on this carrier, and "
+					+ "whatever it does is now simply not done", className, method);
+			return;
+		}
+		try {
+			hook.invoke(null);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Lifecycle] %s.%s unavailable: %s", className, method, String.valueOf(unwrap(t)));
+			ForbricLog.warn("[Forbric/Lifecycle] " + className + "." + method + "() THREW — it exists and did not "
+					+ "finish, so whatever it drives is half-done (an attribute/spawn-placement event aborts at the "
+					+ "first failing mod, and every mod after it in the list is skipped)", unwrap(t));
 		}
 	}
 
