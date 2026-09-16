@@ -99,6 +99,25 @@ class GameEventBridgeInventoryTest {
 	}
 
 	/**
+	 * Commands and the player lifecycle. {@code Commands} on the merged base is 7 NeoForge references to 0
+	 * MinecraftForge and {@code PlayerList} is 13 to 0, so without these a Forge mod's commands do not exist —
+	 * "Unknown command" for a mod that loaded cleanly — and nothing it does on join, leave, respawn or a
+	 * dimension change ever runs.
+	 */
+	@Test
+	void commandsAndThePlayerLifecycleAreBridged() throws Exception {
+		List<String> installed = bridgesNamedBy("install");
+		assumeTrue(!installed.isEmpty(), "GameEventMultiplexer not compiled yet");
+
+		for (String bridge : List.of("REGISTER_COMMANDS", "PLAYER_LOGGED_IN", "PLAYER_LOGGED_OUT",
+				"PLAYER_RESPAWN", "PLAYER_CHANGED_DIMENSION")) {
+			assertTrue(installed.contains(bridge),
+					bridge + " is not installed — the merged base calls only NeoForge's hook at that site, so the "
+							+ "MinecraftForge listener sits on a bus nobody posts to");
+		}
+	}
+
+	/**
 	 * The client ticks must be their own pass. They name types in NeoForge's client event package, so a dedicated
 	 * server must not resolve them — and as GAME_BUS they would be reported missing on every server boot, which
 	 * turns the verify line from a signal into noise.

@@ -68,6 +68,20 @@ public enum GameEventBridge {
 					+ "they attached to the player is never ticked"),
 	PLAYER_TICK_POST(Pass.GAME_BUS, "PlayerTickEvent.Post",
 			"as PLAYER_TICK_PRE, for the post-tick half"),
+	REGISTER_COMMANDS(Pass.GAME_BUS, "RegisterCommandsEvent",
+			"a MinecraftForge mod's commands DO NOT EXIST — the player types one and gets \"Unknown command\", "
+					+ "while the mod itself loaded cleanly and reports no problem"),
+	PLAYER_LOGGED_IN(Pass.GAME_BUS, "PlayerEvent.PlayerLoggedInEvent",
+			"MinecraftForge mods never learn a player joined, so join messages, login rewards and per-player "
+					+ "state restored on connect do not happen"),
+	PLAYER_LOGGED_OUT(Pass.GAME_BUS, "PlayerEvent.PlayerLoggedOutEvent",
+			"MinecraftForge mods never learn a player left, so per-player cleanup and saves on disconnect are "
+					+ "skipped"),
+	PLAYER_RESPAWN(Pass.GAME_BUS, "PlayerEvent.PlayerRespawnEvent",
+			"MinecraftForge mods never see a respawn, so whatever they restore or grant on death is lost"),
+	PLAYER_CHANGED_DIMENSION(Pass.GAME_BUS, "PlayerEvent.PlayerChangedDimensionEvent",
+			"MinecraftForge mods never see a dimension change, so per-dimension state is not swapped when a "
+					+ "player enters the Nether or the End"),
 	CLIENT_TICK_PRE(Pass.CLIENT_GAME_BUS, "ClientTickEvent.Pre",
 			"a MinecraftForge mod polls its key bindings from the client tick (consumeClick drains a counter and "
 					+ "has to be drained every tick), so its keys bind, appear in the Controls screen and do "

@@ -89,6 +89,20 @@ public final class GameEventMultiplexer {
 			install(GameEventBridge.PLAYER_TICK_PRE, () -> tickBridge(cl, "installPlayerPre").invoke(null, neoBus));
 			install(GameEventBridge.PLAYER_TICK_POST,
 					() -> tickBridge(cl, "installPlayerPost").invoke(null, neoBus));
+			// Commands and the player lifecycle. Measured on the merged base: Commands is 7 NeoForge references to
+			// 0 MinecraftForge, PlayerList is 13 to 0. So a Forge mod's commands do not exist — the player types
+			// one and gets "Unknown command" while the mod loaded cleanly — and nothing it does on join, leave,
+			// respawn or a dimension change ever runs.
+			install(GameEventBridge.REGISTER_COMMANDS,
+					() -> playerBridge(cl, "installCommands").invoke(null, neoBus));
+			install(GameEventBridge.PLAYER_LOGGED_IN,
+					() -> playerBridge(cl, "installLoggedIn").invoke(null, neoBus));
+			install(GameEventBridge.PLAYER_LOGGED_OUT,
+					() -> playerBridge(cl, "installLoggedOut").invoke(null, neoBus));
+			install(GameEventBridge.PLAYER_RESPAWN,
+					() -> playerBridge(cl, "installRespawn").invoke(null, neoBus));
+			install(GameEventBridge.PLAYER_CHANGED_DIMENSION,
+					() -> playerBridge(cl, "installChangedDimension").invoke(null, neoBus));
 			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
 			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so
@@ -174,6 +188,12 @@ public final class GameEventMultiplexer {
 	 */
 	private static Method tickBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameTickEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side player/command bridge. Complete literal, for the reason above. */
+	private static Method playerBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGamePlayerEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 
