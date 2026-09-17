@@ -79,6 +79,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= dropTheWindowTitlesLoaderBrand(node);
 			changed |= keepTheSaveOffTheTeardownsFailurePath(node);
 			changed |= askNeoForgeWhatAnItemsAttributesAre(node);
+			changed |= readTheSpawnReasonThatIsActuallyWritten(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -163,6 +164,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	private static final String PARTICLE_RESOURCES = "net/minecraft/client/particle/ParticleResources";
 	/** NeoForge's retyping of vanilla's {@code providers}: the one the merged {@code <init>} actually writes. */
+	/** {@code EntitySpawnReason}, the type of both of the merged {@code Mob}'s spawn fields. */
+	private static final String SPAWN_REASON = "Lnet/minecraft/world/entity/EntitySpawnReason;";
 	private static final String NAME_KEYED = "Ljava/util/Map;";
 	/** Vanilla's own descriptor for it, and the one fabric-api reads. */
 	private static final String ID_KEYED = "Lit/unimi/dsi/fastutil/ints/Int2ObjectMap;";
@@ -453,6 +456,56 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "null, so any mod using that API crashed inside Minecraft.<init>. It is now a live view of the "
 				+ "map that IS written");
 		return true;
+	}
+
+	/**
+	 * Points {@code Mob.getSpawnReason()} at the spawn field the game actually writes.
+	 *
+	 * <p>The merge left {@code Mob} carrying both families' spawn fields under different names —
+	 * {@code spawnType} and {@code spawnReason} — and every producer writes {@code spawnType}. {@code javap} on
+	 * the merged {@code Mob}: two {@code putfield spawnType}, zero {@code putfield spawnReason}. So
+	 * {@code getSpawnReason()} returned null for every mob that has ever existed.
+	 *
+	 * <p>What that costs is a whole category of mod behaviour rather than a crash: "was this mob spawned
+	 * naturally, from a spawner, by a spawn egg, or by a command" is how mob-drop, anti-farm, difficulty and
+	 * quest mods decide whether to act at all, and a null sends every one of them down the same branch — usually
+	 * the one that does nothing, silently.
+	 *
+	 * <p>Only the read moves. The field declaration stays, because an access widener or a mixin may name it, and
+	 * removing it would cost more than the dead field does.
+	 */
+	private static boolean readTheSpawnReasonThatIsActuallyWritten(ClassNode node) {
+		if (!"net/minecraft/world/entity/Mob".equals(node.name)) return false;
+		if (!hasField(node, "spawnReason", SPAWN_REASON) || !hasField(node, "spawnType", SPAWN_REASON)) return false;
+
+		// If anything ever writes spawnReason, the field is live and must be left alone — the same guard the
+		// particle-map reroute uses, and for the same reason: a future base may keep the other family's producer.
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTFIELD
+						&& node.name.equals(field.owner) && "spawnReason".equals(field.name)) {
+					return false;
+				}
+			}
+		}
+
+		boolean changed = false;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD
+						&& node.name.equals(field.owner) && "spawnReason".equals(field.name)
+						&& SPAWN_REASON.equals(field.desc)) {
+					field.name = "spawnType";
+					changed = true;
+				}
+			}
+		}
+		if (changed) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] Mob.getSpawnReason() read a field nothing ever writes, so "
+					+ "it answered null for every mob — mods that branch on how a mob was spawned (spawner, egg, "
+					+ "command, natural) all took the same branch. It now reads the field the game writes");
+		}
+		return changed;
 	}
 
 	/**
