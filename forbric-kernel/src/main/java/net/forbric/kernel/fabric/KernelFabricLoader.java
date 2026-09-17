@@ -91,10 +91,41 @@ public final class KernelFabricLoader implements FabricLoader {
 	private KernelFabricLoader(EnvType envType, Path gameDir, Path configDir, String[] launchArguments,
 			String rawGameVersion) {
 		this.envType = envType;
-		this.gameDir = gameDir;
-		this.configDir = configDir;
+		// Absolute, and the config directory made. A mod reads getGameDir()/getConfigDir() to decide where to put
+		// its own files, and both answers used to be whatever the launcher happened to pass: a RELATIVE path
+		// resolves against the process's working directory, which is not the game directory for every launcher,
+		// so a mod wrote its files somewhere else entirely. And a mod writing straight into the config directory
+		// got a NoSuchFileException on a first run, because nothing had created it.
+		this.gameDir = absolute(gameDir);
+		this.configDir = created(absolute(configDir));
 		this.launchArguments = launchArguments == null ? new String[0] : launchArguments.clone();
 		this.rawGameVersion = rawGameVersion;
+	}
+
+	/** A path a mod can resolve against without knowing the process's working directory. Null stays null. */
+	static Path absolute(Path path) {
+		try {
+			return path == null ? null : path.toAbsolutePath().normalize();
+		} catch (Throwable unresolvable) {
+			return path;
+		}
+	}
+
+	/**
+	 * The config directory, created if it is not there.
+	 *
+	 * <p>Fabric creates it before any mod can ask, and a mod that writes its config on first run has no reason to
+	 * create it itself. Failure to create is not fatal here: the mod's own write will fail and say so with its
+	 * own name on it, which is better than failing the boot for every other mod.
+	 */
+	static Path created(Path dir) {
+		try {
+			if (dir != null) java.nio.file.Files.createDirectories(dir);
+		} catch (Throwable notCreated) {
+			ForbricLog.debug("[Forbric/Fabric] could not create the config directory %s: %s", dir,
+					String.valueOf(notCreated));
+		}
+		return dir;
 	}
 
 	/** The live instance, or {@code null} if the kernel has not created it yet ({@code FabricLoader.getInstance()}). */
