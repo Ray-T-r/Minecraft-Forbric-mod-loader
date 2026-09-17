@@ -102,7 +102,12 @@ check "real MinecraftForge @Mod (GeckoLib)"    "constructed @Mod geckolib \(trad
 # The two UNIVERSAL jars (FallingTree, collective) are claimed for exactly one family and give the gate its real
 # third-party NeoForge @Mods. collective loads at all only because guest-config relaxation is now general (its
 # Fabric-side PlayerMixin cannot apply on the merged base and would otherwise be a fatal MixinApplyError).
-check "real third-party NeoForge @Mods"        "constructed @Mod [a-z_]+ \(NeoForge," "$LOG" 3
+# Two, not three. The third line was FallingTree's CLIENT-only @Mod class being constructed on a DEDICATED
+# SERVER — its own annotation says dist = {CLIENT}, and the kernel ignored that. Counting it made the gate assert
+# the defect. FallingTree and collective are the two that belong here; the client half is asserted skipped below.
+check "real third-party NeoForge @Mods"        "constructed @Mod [a-z_]+ \(NeoForge," "$LOG" 2
+check "and FallingTree's client half stays off the server" \
+  "@Mod fallingtree \(.*FallingTreeClient\) declares it belongs to \[CLIENT\]" "$LOG"
 check "universal jars arbitrated to ONE family" "declares 3 loaders — loading it as" "$LOG" 2
 check "Fabric side yields the universal jars"  "skipped [1-9][0-9]* Fabric registration\(s\)" "$LOG"
 check "real Fabric mods discovered"            "discovered [1-9][0-9]* Fabric mod\(s\)" "$LOG"

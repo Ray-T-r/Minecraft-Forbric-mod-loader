@@ -50,6 +50,15 @@ check "NeoForge @Mod constructed"             "constructed @Mod forbricneolive" 
 # regardless. Sodium's client entry point is the real case; on a dedicated server its constructor reaches a
 # client-only type and throws with the mod's name on it. This gate is a dedicated server, so the canary's
 # client-only @Mod must be reported and skipped.
+# A17: the kernel asked the config tracker to load STARTUP configs during its early pass, on top of the tracker
+# already opening each one at registration (javap, ConfigTracker.registerConfig offsets 53..73) — so every STARTUP
+# config opened twice, fired its Loading event twice and stacked a second file watcher. The second ask was
+# removed; this proves nothing was lost. Reading a value out of a spec that was never opened throws, so an answer
+# here means the config really did load.
+check "a STARTUP config still loads, by the path that always did the work" \
+  "\[ForbricNeoLive\] STARTUP config loaded, startupProbe=startup-default" "$LOG"
+check_absent "and no config is opened twice" "Opening a config that was already loaded" "$LOG"
+
 check "a client-only @Mod is recognised as client-only" \
   "@Mod forbricneoclientonly .*declares it belongs to \[CLIENT\]" "$LOG"
 check_absent "and its constructor never runs on a server" \
