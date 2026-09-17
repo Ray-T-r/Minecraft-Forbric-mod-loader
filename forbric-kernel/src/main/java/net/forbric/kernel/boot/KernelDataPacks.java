@@ -16,8 +16,6 @@
 
 package net.forbric.kernel.boot;
 
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -25,9 +23,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 import net.forbric.api.DiscoveredMod;
@@ -137,10 +133,8 @@ public final class KernelDataPacks {
 		}
 
 		try {
-			Object source = buildSource(cl, packs, ids);
-			Class<?> repoCls = Class.forName("net.minecraft.server.packs.repository.PackRepository", false, cl);
-			Class<?> sourceCls = Class.forName("net.minecraft.server.packs.repository.RepositorySource", false, cl);
-			repoCls.getMethod("addPackFinder", sourceCls).invoke(packRepository, source);
+			gameSide(cl).getMethod("addSource", Object.class, List.class, String.class)
+					.invoke(null, packRepository, packs, "ForbricKernelModDataPackSource" + ids);
 			ForbricLog.info("[Forbric/DataPacks] served %d datapack(s) to the server PackRepository — %d loader "
 					+ "carrier(s) (the c: convention tags live only here) below %d mod pack(s) (a Forge-family "
 					+ "mod's own data/ is invisible otherwise, because ModList.modFiles is empty): %s",
@@ -299,37 +293,11 @@ public final class KernelDataPacks {
 		return dot > 0 ? name.substring(0, dot) : name;
 	}
 
-	/**
-	 * One {@code Pack} over {@code jar}, built by NeoForge's own {@code readWithOptionalMeta}.
-	 *
-	 * <p>The selection config is NeoForge's own {@code MOD_PACK_SELECTION_CONFIG} shape —
-	 * {@code (required=false, TOP, fixed=false)}. Not required, because that is how a genuine instance treats a mod
-	 * pack: the server auto-enables a pack it has not seen before ("Found new data pack …, loading it
-	 * automatically"), and forcing it would take away the operator's ability to turn a mod's data off. TOP, so mod
-	 * data overrides vanilla's and a user datapack added later still overrides the mod's.
-	 */
+	/** One {@code Pack} over {@code jar}; the shape it is given is written down where it is built, game-side. */
 	private static Object buildPack(ClassLoader cl, String id, Path jar, Object packType) {
 		try {
-			Class<?> loaderCls = Class.forName("net.neoforged.neoforge.resource.ResourcePackLoader", false, cl);
-			Class<?> locCls = Class.forName("net.minecraft.server.packs.PackLocationInfo", false, cl);
-			Class<?> suppCls = Class.forName("net.minecraft.server.packs.repository.Pack$ResourcesSupplier", false, cl);
-			Class<?> typeCls = Class.forName("net.minecraft.server.packs.PackType", false, cl);
-			Class<?> selCls = Class.forName("net.minecraft.server.packs.PackSelectionConfig", false, cl);
-			Class<?> posCls = Class.forName("net.minecraft.server.packs.repository.Pack$Position", false, cl);
-			Class<?> srcCls = Class.forName("net.minecraft.server.packs.repository.PackSource", false, cl);
-			Class<?> componentCls = Class.forName("net.minecraft.network.chat.Component", false, cl);
-			Class<?> fileSuppCls =
-					Class.forName("net.minecraft.server.packs.FilePackResources$FileResourcesSupplier", false, cl);
-
-			Object title = componentCls.getMethod("literal", String.class).invoke(null, id);
-			Object resources = fileSuppCls.getConstructor(Path.class).newInstance(jar);
-			Object location = locCls.getConstructor(String.class, componentCls, srcCls, Optional.class)
-					.newInstance(id, title, srcCls.getField("BUILT_IN").get(null), Optional.empty());
-			Object selection = selCls.getConstructor(boolean.class, posCls, boolean.class)
-					.newInstance(false, posCls.getField("TOP").get(null), false);
-
-			Method read = loaderCls.getMethod("readWithOptionalMeta", locCls, suppCls, typeCls, selCls);
-			return read.invoke(null, location, resources, packType, selection);
+			return gameSide(cl).getMethod("buildPack", String.class, Path.class, Object.class)
+					.invoke(null, id, jar, packType);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/DataPacks] could not build a datapack over %s — that mod's data/ will be "
 					+ "missing: %s", jar.getFileName(), String.valueOf(Reflect.unwrap(t)));
@@ -337,22 +305,13 @@ public final class KernelDataPacks {
 		}
 	}
 
-	/** A {@code RepositorySource} proxy whose {@code loadPacks(Consumer)} emits our packs. */
-	private static Object buildSource(ClassLoader cl, List<Object> packs, List<String> ids) throws Exception {
-		Class<?> sourceCls = Class.forName("net.minecraft.server.packs.repository.RepositorySource", false, cl);
-		return Proxy.newProxyInstance(cl, new Class<?>[] {sourceCls}, (proxy, method, args) -> switch (method.getName()) {
-			case "loadPacks" -> {
-				if (args != null && args.length == 1 && args[0] instanceof Consumer<?> consumer) {
-					@SuppressWarnings("unchecked")
-					Consumer<Object> sink = (Consumer<Object>) consumer;
-					for (Object pack : packs) sink.accept(pack);
-				}
-				yield null;
-			}
-			case "toString" -> "ForbricKernelModDataPackSource" + ids;
-			case "hashCode" -> System.identityHashCode(proxy);
-			case "equals" -> proxy == (args == null ? null : args[0]);
-			default -> null;
-		});
+	/**
+	 * The game-side half: building a {@code Pack} and handing a {@code RepositorySource} over.
+	 *
+	 * <p>Everything above this line is policy that names no game type — which jars carry data, who owns them,
+	 * what each pack is called and in what order they stack — and is tested as such.
+	 */
+	private static Class<?> gameSide(ClassLoader cl) throws ClassNotFoundException {
+		return Class.forName("net.forbric.kernel.runtime.KernelDataPackSource", true, cl);
 	}
 }
