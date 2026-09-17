@@ -51,6 +51,27 @@ either: they are fetched and assembled at run time by the scripts under
 forbric-loader/run/, and loaded from the user's own machine.
 
 ================================================================================
+Source files under other projects' package names
+================================================================================
+Some files in this repository live under net.minecraft.*, net.minecraftforge.*,
+net.neoforged.*, net.fabricmc.* or com.electronwill.* and carry a Forbric
+copyright header. That is not a claim over anyone else's code.
+
+They are compile-only stand-ins, written by hand for this project, and the
+package name is dictated by the ABI they have to satisfy rather than by where
+they came from. They exist because a test or a compile needs a type of that
+exact name to link against, and the real one is supplied by the game or by a
+runtime carrier that this repository does not and may not redistribute. Most
+are a handful of lines; several are empty classes.
+
+They live only in source sets that are never published as a jar:
+forbric-loader/src/stub/java and forbric-loader/src/test/java.
+
+No source from Mojang, MinecraftForge, NeoForged, FabricMC or night-config was
+copied into them. The files that ARE adapted from Fabric Loader keep upstream's
+own copyright header and are listed above.
+
+================================================================================
 Mappings
 ================================================================================
 Forbric does NOT bundle MCP mapping data, which is non-redistributable.
