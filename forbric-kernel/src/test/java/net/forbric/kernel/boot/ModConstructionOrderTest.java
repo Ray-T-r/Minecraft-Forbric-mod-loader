@@ -181,6 +181,19 @@ class ModConstructionOrderTest {
 	}
 
 	@Test
+	void theEscapeHatchStopsTheSortToo() {
+		// It did not, and that was worse than useless: with ordering off the sort had nothing to sort by, but it
+		// still moved every item whose id the order does not name to the end. The list came out different, so the
+		// caller reported "now in dependency order" while producing file-name order — a log line that was the
+		// opposite of the truth.
+		System.setProperty(ModConstructionOrder.SWITCH, "name");
+		List<String> items = List.of("zzzlib:Main", "architectury:Main", "unknown:Main");
+
+		assertEquals(items, ModConstructionOrder.sort(
+				items, s -> s.split(":")[0], List.of("architectury", "zzzlib")));
+	}
+
+	@Test
 	void sortingAppliesTheOrderToWhateverCarriesTheId() {
 		Function<String, String> id = s -> s.split(":")[0];
 

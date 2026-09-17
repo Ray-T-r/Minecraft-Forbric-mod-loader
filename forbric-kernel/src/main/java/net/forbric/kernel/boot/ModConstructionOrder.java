@@ -153,6 +153,11 @@ public final class ModConstructionOrder {
 	 * already was.
 	 */
 	public static <T> List<T> sort(List<T> items, java.util.function.Function<T, String> idOf, List<String> order) {
+		// The escape hatch has to actually escape. Without this the sort still ran — it just had nothing to sort
+		// BY — and moved every item whose id the order does not name to the end, which is a reordering of its own
+		// and made the caller report "dependency order" while producing file-name order.
+		if (!enabled()) return items;
+
 		Map<String, Integer> rank = new LinkedHashMap<>();
 		for (int i = 0; i < order.size(); i++) rank.putIfAbsent(order.get(i), i);
 
