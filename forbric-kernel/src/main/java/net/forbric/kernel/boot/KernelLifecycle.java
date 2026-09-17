@@ -1363,24 +1363,19 @@ public final class KernelLifecycle {
 		if (side.isClient()) return;
 
 		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "common setup");
-		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.FORGE), "COMMON_SETUP",
-				"common setup");
+		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
 		// The sided phase. The kernel used to jump straight from common setup to load complete, so on a dedicated
 		// server this event was never posted to anyone at all.
 		fireSetupPhase(cl, mods, ForeignType.FML_DEDICATED_SERVER_SETUP_EVENT.binary(Ecosystem.NEOFORGE),
 				"dedicated server setup");
-		fireForgeSetupPhase(cl, ForeignType.FML_DEDICATED_SERVER_SETUP_EVENT.binary(Ecosystem.FORGE),
-				"SIDED_SETUP", "dedicated server setup");
+		fireForgeSetupPhase(cl, ForeignType.FML_DEDICATED_SERVER_SETUP_EVENT, "dedicated server setup");
 		fireRegistrationEvents(cl);
 		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_ENQUEUE_EVENT.binary(Ecosystem.NEOFORGE), "IMC enqueue");
-		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_ENQUEUE_EVENT.binary(Ecosystem.FORGE), "ENQUEUE_IMC",
-				"IMC enqueue");
+		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_ENQUEUE_EVENT, "IMC enqueue");
 		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_PROCESS_EVENT.binary(Ecosystem.NEOFORGE), "IMC process");
-		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT.binary(Ecosystem.FORGE), "PROCESS_IMC",
-				"IMC process");
+		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
 		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT.binary(Ecosystem.NEOFORGE), "load complete");
-		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT.binary(Ecosystem.FORGE), "COMPLETE",
-				"load complete");
+		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 	}
 
 	/**
@@ -1503,23 +1498,18 @@ public final class KernelLifecycle {
 		// — the same move the client setup phases themselves already made, one phase earlier. Both families, and
 		// before the sided phase, which is the order genuine NeoForge's CommonModLoader.load uses.
 		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "common setup");
-		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.FORGE), "COMMON_SETUP",
-				"common setup");
+		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
 		fireSetupPhase(cl, mods, ForeignType.FML_CLIENT_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "client setup");
-		fireForgeSetupPhase(cl, ForeignType.FML_CLIENT_SETUP_EVENT.binary(Ecosystem.FORGE), "SIDED_SETUP",
-				"client setup");
+		fireForgeSetupPhase(cl, ForeignType.FML_CLIENT_SETUP_EVENT, "client setup");
 		// Same tail as the server's, and the same order CommonModLoader.load uses: sided setup, then the
 		// registration events, then IMC, then load complete.
 		fireRegistrationEvents(cl);
 		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_ENQUEUE_EVENT.binary(Ecosystem.NEOFORGE), "IMC enqueue");
-		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_ENQUEUE_EVENT.binary(Ecosystem.FORGE), "ENQUEUE_IMC",
-				"IMC enqueue");
+		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_ENQUEUE_EVENT, "IMC enqueue");
 		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_PROCESS_EVENT.binary(Ecosystem.NEOFORGE), "IMC process");
-		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT.binary(Ecosystem.FORGE), "PROCESS_IMC",
-				"IMC process");
+		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
 		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT.binary(Ecosystem.NEOFORGE), "load complete");
-		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT.binary(Ecosystem.FORGE), "COMPLETE",
-				"load complete");
+		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 	}
 
 	/**
@@ -1533,18 +1523,20 @@ public final class KernelLifecycle {
 	 *
 	 * <p>Best-effort: a family that is not present resolves no event class and says so once at debug.
 	 */
-	private static void fireForgeSetupPhase(ClassLoader cl, String eventClassName, String stage, String label) {
+	private static void fireForgeSetupPhase(ClassLoader cl, ForeignType event, String label) {
 		java.util.List<KernelForgeModContext.Handle> handles =
 				new java.util.ArrayList<>(KernelModLoader.publishedForgeMods().values());
 		if (handles.isEmpty()) return;
 		try {
-			int fired = KernelForgeModContext.fireSetupPhase(cl, handles, eventClassName, stage, label);
+			int fired = KernelForgeModContext.fireSetupPhase(cl, handles, event, label);
 			if (fired > 0) {
 				ForbricLog.info("[Forbric/Lifecycle] posted FML %s to %d traditional-Forge mod(s), then ran what "
 						+ "they deferred — a mod that does its real work from this event did nothing at all before",
 						label, fired);
 			}
-		} catch (ClassNotFoundException absent) {
+		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
+			// NoClassDefFoundError as well as CNFE: the event types are named game-side now, so a carrier without
+			// them fails when KernelForgeSetup links rather than when Class.forName is called.
 			ForbricLog.debug("[Forbric/Lifecycle] no traditional-MinecraftForge %s on this carrier", label);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not post traditional-Forge " + label, Reflect.unwrap(t));
