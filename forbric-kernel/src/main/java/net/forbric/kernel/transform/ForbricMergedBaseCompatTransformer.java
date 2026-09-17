@@ -88,6 +88,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= giveFeaturesPerStepItsVanillaDescriptorBack(node);
 			changed |= letDungeonsGenerateWithoutTheDataMap(node);
 			changed |= guardNeoForgesWorldModifierPass(node);
+			changed |= letForeignResourceConditionsThrough(node);
 			changed |= dropInterfaceDefaultShadowingOverrides(node);
 			changed |= tolerateEmptyCreativeTabStacks(node);
 			changed |= routePlaceItemHookToNeoForge(node);
@@ -200,6 +201,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			"(Lnet/minecraft/util/RandomSource;)Lnet/minecraft/world/entity/EntityType;";
 	private static final String NEO_SERVER_LIFECYCLE_HOOKS = "net/neoforged/neoforge/server/ServerLifecycleHooks";
 	private static final String RUN_MODIFIERS = "(Lnet/minecraft/server/MinecraftServer;)V";
+
+	private static final String ICONDITION = "net/neoforged/neoforge/common/conditions/ICondition";
+	private static final String CODEC_DESC = "Lcom/mojang/serialization/Codec;";
+	private static final String KERNEL_NEO_CONDITIONS = "net/forbric/kernel/runtime/KernelNeoConditions";
 	/** NeoForge's retyping of vanilla's {@code providers}: the one the merged {@code <init>} actually writes. */
 	/**
 	 * The methods measured to be merge-injected in this shape, and worth removing.
@@ -656,6 +661,62 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "writes that field directly — threw NoSuchFieldError and the server did not start. The field is "
 				+ "vanilla-typed again (%d access site(s), %d read(s) retargeted, %d invalidation(s) guarded)",
 				sites.size(), gets.size(), invalidations.size());
+		return true;
+	}
+
+	/**
+	 * Stops one ecosystem's condition dialect from failing the other ecosystem's data files — and with them the
+	 * whole registry load.
+	 *
+	 * <p>The merged {@code RegistryLoadTask$PendingRegistration.loadFromResource} carries NeoForge's patch: stock
+	 * Minecraft's body calls {@code Decoder.parse} straight, and the merged one wraps every element in
+	 * {@code ConditionalOps.createConditionalCodec} first. There is no switch on it and no per-pack scoping, so
+	 * EVERY datapack-registry element from EVERY pack is judged by NeoForge's evaluator.
+	 *
+	 * <p>A multi-loader mod ships one data tree carrying BOTH dialects — {@code "fabric:load_conditions"} and
+	 * {@code "neoforge:conditions"} in the same file — which is what Architectury emits. Its Fabric build
+	 * registers the condition type on the Fabric side only, so the NeoForge dispatch cannot resolve the id and
+	 * {@code RegistryDataLoader} escalates that into "Failed to load registries due to errors". The server does
+	 * not start and the world does not open: a fatal, produced by ordinary mod output.
+	 *
+	 * <p>{@code ICondition.CODEC} is a registry dispatch built in one static initializer and reused everywhere,
+	 * including by {@code LIST_CODEC} two instructions later, so ONE insertion covers datapack registries,
+	 * recipes, loot tables and advancements alike. The kernel's wrapper decodes an unknown type as a condition
+	 * that does not veto, leaving the judgement to the ecosystem that owns the id.
+	 *
+	 * <p>Inserted rather than replaced, and stack-neutral: a {@code Codec} goes in and a {@code Codec} comes out,
+	 * so the existing {@code PUTSTATIC} is untouched and there is no frame to recompute.
+	 */
+	private static boolean letForeignResourceConditionsThrough(ClassNode node) {
+		if (!ICONDITION.equals(node.name)) return false;
+		MethodNode clinit = findMethod(node, "<clinit>", "()V");
+		if (clinit == null) return false;
+
+		FieldInsnNode target = null;
+		for (AbstractInsnNode insn = clinit.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTSTATIC
+					&& ICONDITION.equals(field.owner) && "CODEC".equals(field.name)
+					&& CODEC_DESC.equals(field.desc)) {
+				if (target != null) {
+					ForbricLog.warn("[Forbric/MergedBaseCompat] ICondition.CODEC is assigned more than once — not "
+							+ "wrapping it, because only one of the assignments would be the one that survives");
+					return false;
+				}
+				target = field;
+			}
+		}
+		if (target == null) return false;
+		if (target.getPrevious() instanceof MethodInsnNode already
+				&& KERNEL_NEO_CONDITIONS.equals(already.owner)) {
+			return false;                       // already wrapped: idempotent
+		}
+
+		clinit.instructions.insertBefore(target, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_NEO_CONDITIONS,
+				"lenient", "(" + CODEC_DESC + ")" + CODEC_DESC, false));
+		ForbricLog.info("[Forbric/MergedBaseCompat] NeoForge's resource-condition codec now tolerates a condition "
+				+ "type it does not own — the merged base runs that evaluator over EVERY datapack element from "
+				+ "every pack, so a Fabric mod's own condition used to fail the whole registry load and the world "
+				+ "with it");
 		return true;
 	}
 

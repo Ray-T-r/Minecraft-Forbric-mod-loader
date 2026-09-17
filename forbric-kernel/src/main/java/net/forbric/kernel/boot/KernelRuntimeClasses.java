@@ -238,6 +238,10 @@ public final class KernelRuntimeClasses {
 		// their descriptors are the ones the merged base and the carrier already had — game types, not the JDK
 		// types this registry's own seams use. Listed with no calls for that reason, as KernelConfigPortBridge is.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoWorldgen", new Entry(Origin.COMPILED, List.of()));
+		// NeoForge's condition evaluator runs over every datapack element from every pack in the merged base, so
+		// a Fabric mod's own condition id failed the whole registry load. This wraps ICondition.CODEC; the call
+		// site is an inserted instruction in that class's <clinit>, in Codec, which no JDK type can stand for.
+		CLASSES.put("net.forbric.kernel.runtime.KernelNeoConditions", new Entry(Origin.COMPILED, List.of()));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));
