@@ -20,7 +20,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.security.CodeSource;
+import java.security.ProtectionDomain;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
@@ -49,6 +52,10 @@ public final class ForbricClassLoader extends URLClassLoader {
 	}
 
 	private final ClassLoader parent;
+
+	/** One {@link ProtectionDomain} per owned jar, keyed by the jar URL's spelling. See {@link #domainFor}. */
+	private final Map<String, ProtectionDomain> domains = new ConcurrentHashMap<>();
+
 	private volatile BiFunction<String, byte[], byte[]> transformer = (n, b) -> b;
 	private volatile BiFunction<String, byte[], byte[]> mixinTransformer = (n, b) -> b;
 
@@ -262,7 +269,8 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 			if (generated != null) {
 				definePackageIfNeeded(name, null);
-				return define(name, generated);
+				// No jar to point at: a synthesized class genuinely has no code source.
+				return define(name, generated, null);
 			}
 
 			// Last resort: a jar that cross-jar arbitration superseded. Reached only because no owned jar has this
@@ -286,7 +294,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 		if (bytes == null) return null;
 
 		definePackageIfNeeded(name, resource);
-		return define(name, bytes);
+		return define(name, bytes, domainFor(resource));
 	}
 
 	/**
@@ -311,10 +319,10 @@ public final class ForbricClassLoader extends URLClassLoader {
 	 * recovery is logged once per class: it is not an error, but it does mean guest code ran mid-definition, and
 	 * that is worth being able to see.
 	 */
-	private Class<?> define(String name, byte[] bytes) {
+	private Class<?> define(String name, byte[] bytes, ProtectionDomain domain) {
 		traceDefine(name);
 		try {
-			return defineClass(name, bytes, 0, bytes.length);
+			return defineClass(name, bytes, 0, bytes.length, domain);
 		} catch (LinkageError duplicate) {
 			Class<?> already = findLoadedClass(name);
 			if (already == null) throw duplicate; // a genuine linkage problem, not re-entrancy
@@ -325,6 +333,49 @@ public final class ForbricClassLoader extends URLClassLoader {
 			}
 			return already;
 		}
+	}
+
+	/**
+	 * The {@link ProtectionDomain} for a class read out of {@code resource}, or null when it has no jar.
+	 *
+	 * <p>Classes were defined with no protection domain at all, so {@code SomeClass.class.getProtectionDomain()
+	 * .getCodeSource()} answered null for every mod. That is not an exotic call: a mod that ships data next to
+	 * its own classes uses it to find its own jar — JourneyMap and spark both do — and a null there is an NPE
+	 * inside the mod, blamed on the mod. Sodium's own startup checks read it too, to work out what it was loaded
+	 * from.
+	 *
+	 * <p>The code source is the JAR, not the class entry inside it: {@code jar:file:/x.jar!/a/B.class} becomes
+	 * {@code file:/x.jar}, which is the spelling every one of those callers expects to turn back into a path.
+	 *
+	 * <p>Permissions are left to the loader (the {@code null} permission set plus {@code this}), which is how
+	 * {@link URLClassLoader} itself builds them.
+	 */
+	private ProtectionDomain domainFor(URL resource) {
+		String spelling = jarUrlOf(resource);
+		if (spelling == null) return null;
+
+		ProtectionDomain cached = domains.get(spelling);
+		if (cached != null) return cached;
+
+		try {
+			ProtectionDomain built = new ProtectionDomain(
+					new CodeSource(new URL(spelling), (java.security.CodeSigner[]) null), null, this, null);
+			ProtectionDomain raced = domains.putIfAbsent(spelling, built);
+			return raced != null ? raced : built;
+		} catch (Throwable t) {
+			// A code source is a nicety; failing to build one must not cost the class its definition.
+			ForbricLog.debug("[Forbric/Loader] no code source for %s: %s", spelling, String.valueOf(t));
+			return null;
+		}
+	}
+
+	/** The containing jar's URL spelling for a {@code jar:...!/entry} URL, the URL itself otherwise, or null. */
+	static String jarUrlOf(URL resource) {
+		if (resource == null) return null;
+		if (!"jar".equals(resource.getProtocol())) return resource.toString();
+		String file = resource.getFile();
+		int bang = file.indexOf("!/");
+		return bang < 0 ? null : file.substring(0, bang);
 	}
 
 	/**

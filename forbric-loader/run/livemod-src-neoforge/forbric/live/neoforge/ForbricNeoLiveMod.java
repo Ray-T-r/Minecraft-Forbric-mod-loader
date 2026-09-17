@@ -104,6 +104,28 @@ public class ForbricNeoLiveMod {
 		}
 		System.out.println("[ForbricNeoLive] foreign forbricfabriclive isLoaded=" + modList + " modFile=" + modFile);
 		reportOwnModFile();
+		reportOwnCodeSource();
+	}
+
+	/**
+	 * {@code getProtectionDomain().getCodeSource()} — how a mod finds the jar it was loaded from when it ships
+	 * data beside its own classes. JourneyMap and spark both read it, and Sodium's startup checks do too. The
+	 * kernel defined every class with no protection domain at all, so it answered null and the mod NPE'd on its
+	 * own line.
+	 */
+	private static void reportOwnCodeSource() {
+		try {
+			java.security.CodeSource source = ForbricNeoLiveMod.class.getProtectionDomain().getCodeSource();
+			if (source == null || source.getLocation() == null) {
+				System.out.println("[ForbricNeoLive] own code source is NULL");
+				return;
+			}
+			java.io.File jar = new java.io.File(source.getLocation().toURI());
+			System.out.println("[ForbricNeoLive] own code source resolves to a real file: " + jar.getName()
+					+ " exists=" + jar.isFile());
+		} catch (Throwable t) {
+			System.out.println("[ForbricNeoLive] own code source FAILED: " + t);
+		}
 	}
 
 	/**
