@@ -93,6 +93,12 @@ else
   printf '[kernel] FAIL kernel posted common setup to no traditional-Forge mod (got %s)\n' "${FIRED:-none}"; FAIL=1
 fi
 check "and to the NeoForge mods too" "posted FML common setup to [1-9][0-9]* NeoForge mod\(s\)" "$LOG"
+# The EARLIEST mod-bus phase, and until 2026-09-17 no MinecraftForge mod ever received it: the kernel named
+# NeoForge's event class inline, so there was no second half for anyone to notice was missing. Asserted with the
+# same [1-9] shape, because "posted to 0" is exactly the regression.
+check "and the earliest phase of all reaches them" \
+  "posted FML construct to [1-9][0-9]* traditional-Forge mod\(s\)" "$LOG"
+check "and reaches the NeoForge mods" "posted FML construct to [1-9][0-9]* NeoForge mod\(s\)" "$LOG"
 
 step "the merge-lost GAME events reach a real MinecraftForge mod too (must PASS)"
 # Setup phases are the mod-bus half. The GAME bus is the other half, and on the merged base almost all of it went

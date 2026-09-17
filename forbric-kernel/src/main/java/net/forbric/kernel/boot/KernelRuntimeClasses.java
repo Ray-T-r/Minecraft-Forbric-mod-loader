@@ -143,6 +143,11 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelConfigLoad", new Entry(Origin.COMPILED, List.of(
 				new Call("loadEarly", void.class, List.class),
 				new Call("openLate", List.class, List.class))));
+		// The NeoForge setup phases. A twin of KernelForgeSetup rather than a merge of it: NeoForge dispatches on
+		// a per-mod IEventBus while EventBus 7 resolves a bus from the EVENT plus that mod's BusGroup, and folding
+		// the two would be the averaging-away ForeignType's javadoc warns about. See KernelNeoSetup.
+		CLASSES.put("net.forbric.kernel.runtime.KernelNeoSetup", new Entry(Origin.COMPILED, List.of(
+				new Call("firePhase", int.class, Map.class, net.forbric.api.ForeignType.class, String.class))));
 		// Materialises the kernel's own annotation scan into NeoForge's ModFileScanData. The scan itself is
 		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
 		CLASSES.put("net.forbric.kernel.runtime.KernelScanData", new Entry(Origin.COMPILED, List.of(
