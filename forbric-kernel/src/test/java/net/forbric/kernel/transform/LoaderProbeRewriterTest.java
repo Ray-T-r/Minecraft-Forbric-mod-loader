@@ -80,7 +80,7 @@ class LoaderProbeRewriterTest {
 
 	@Test
 	void theThreeArgOverloadGainsTheFamilyArgument() {
-		MethodInsnNode call = redirectedCall(rewrite(threeArgProbe(), LoaderProbePolicy.Family.FORGE_FAMILY));
+		MethodInsnNode call = redirectedCall(rewrite(threeArgProbe(), LoaderProbePolicy.Family.FORGE));
 
 		assertNotNull(call, "Class.forName(String, boolean, ClassLoader) was not redirected");
 		assertEquals("(Ljava/lang/String;ZLjava/lang/ClassLoader;Ljava/lang/String;)Ljava/lang/Class;", call.desc);
@@ -110,7 +110,7 @@ class LoaderProbeRewriterTest {
 
 	@Test
 	void theRewrittenMethodStillVerifies() throws Exception {
-		ClassNode node = parse(rewrite(threeArgProbe(), LoaderProbePolicy.Family.FORGE_FAMILY));
+		ClassNode node = parse(rewrite(threeArgProbe(), LoaderProbePolicy.Family.FORGE));
 		new Analyzer<>(new BasicVerifier()).analyze(node.name, method(node, "probe"));
 	}
 
