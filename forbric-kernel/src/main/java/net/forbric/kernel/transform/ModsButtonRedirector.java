@@ -145,22 +145,34 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	}
 
 	/** Raw-byte constant-pool scan. Cheap, and wrong only in the direction that costs one wasted parse. */
-	private static boolean carriesAMarker(byte[] classBytes) {
-		for (byte[] marker : MARKERS) {
-			if (indexOf(classBytes, marker) >= 0) return true;
+	/**
+	 * Whether the class mentions any of the markers, in ONE pass over its bytes.
+	 *
+	 * <p>It used to be a pass per marker, and the answer is almost always no — every class the game loads reaches
+	 * this transformer and a handful mention the mods screen — so the common case walked the whole class three
+	 * times to say so. Each position is now tested against every marker before moving on, which is the same
+	 * comparisons over a third of the memory traffic.
+	 */
+	static boolean carriesAMarker(byte[] classBytes) {
+		if (classBytes == null) return false;
+		int longest = 0;
+		for (byte[] marker : MARKERS) longest = Math.max(longest, marker.length);
+		if (classBytes.length < longest) return false;
+
+		for (int i = 0; i <= classBytes.length - 1; i++) {
+			for (byte[] marker : MARKERS) {
+				if (i + marker.length > classBytes.length) continue;
+				if (matchesAt(classBytes, i, marker)) return true;
+			}
 		}
 		return false;
 	}
 
-	private static int indexOf(byte[] haystack, byte[] needle) {
-		outer:
-		for (int i = 0; i <= haystack.length - needle.length; i++) {
-			for (int j = 0; j < needle.length; j++) {
-				if (haystack[i + j] != needle[j]) continue outer;
-			}
-			return i;
+	private static boolean matchesAt(byte[] haystack, int at, byte[] needle) {
+		for (int j = 0; j < needle.length; j++) {
+			if (haystack[at + j] != needle[j]) return false;
 		}
-		return -1;
+		return true;
 	}
 
 	/**

@@ -17,6 +17,7 @@
 package net.forbric.kernel.transform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -360,5 +361,33 @@ class ModsButtonRedirectorTest {
 				return in.readAllBytes();
 			}
 		}
+	}
+
+	/**
+	 * The reject path, pinned directly because it is invisible from behaviour: a class with no marker and a class
+	 * that was parsed and found to need nothing both come back byte-identical. Only the COST differs, and this is
+	 * the only place that difference is assertable.
+	 */
+	@org.junit.jupiter.api.Test
+	void aClassMentioningNoneOfTheMarkersIsRejectedFromItsBytes() {
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/Unrelated", null, "java/lang/Object", null);
+		cw.visitEnd();
+
+		assertFalse(ModsButtonRedirector.carriesAMarker(cw.toByteArray()));
+		assertFalse(ModsButtonRedirector.carriesAMarker(new byte[0]));
+		assertFalse(ModsButtonRedirector.carriesAMarker(null));
+	}
+
+	@org.junit.jupiter.api.Test
+	void aClassNamingTheScreenIsLetThrough() {
+		// A false negative here silently drops the redirect, which is far worse than the scan it saves.
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/Pause", null, "java/lang/Object", null);
+		cw.visitField(Opcodes.ACC_STATIC, "screen", "Lnet/minecraftforge/client/gui/ModListScreen;", null, null)
+				.visitEnd();
+		cw.visitEnd();
+
+		assertTrue(ModsButtonRedirector.carriesAMarker(cw.toByteArray()));
 	}
 }
