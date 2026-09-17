@@ -1454,68 +1454,21 @@ public final class KernelLifecycle {
 	}
 
 	private static int fireRegisterEvents(ClassLoader cl, List<Object> buses) throws Exception {
-		Class<?> registryCls = Class.forName("net.minecraft.core.Registry", false, cl);
-		Class<?> resourceKeyCls = Class.forName("net.minecraft.resources.ResourceKey", false, cl);
-		Class<?> eventCls = Class.forName("net.neoforged.bus.api.Event", false, cl);
-		Class<?> busCls = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
-		Class<?> registerEventCls = Class.forName(ForeignType.REGISTER_EVENT.binary(Ecosystem.NEOFORGE), false, cl);
-
-		Constructor<?> regEventCtor = registerEventCls.getDeclaredConstructor(resourceKeyCls, registryCls);
-		regEventCtor.setAccessible(true);
-		Method keyM = registryCls.getMethod("key");
-		Method postM = busCls.getMethod("post", eventCls);
-
-		List<Object> registries = new ArrayList<>();
-		collectRegistryFields(cl, "net.minecraft.core.registries.BuiltInRegistries", registryCls, registries);
-		collectRegistryFields(cl, "net.neoforged.neoforge.registries.NeoForgeRegistries", registryCls, registries);
-		// …and every registry a MOD just created, which lives in no holder class the kernel can name. Those two
-		// holders are vanilla's and NeoForge's own static fields; a mod's custom registry is a static field on the
-		// mod. So the kernel posted RegisterEvent for every registry except the ones NewRegistryEvent had made one
-		// line earlier, and a DeferredRegister aimed at one never flushed — silently, because nothing fails when an
-		// event simply is not posted. Lithostitched's modifier types are registered exactly that way, so its
-		// lithostitched:modifier_type registry existed and was EMPTY, and the first world load died on "Unknown
-		// registry key in ResourceKey[minecraft:root / lithostitched:modifier_type]: lithostitched:add_features"
-		// with the blame landing on Tectonic, which merely referenced it.
-		//
-		// The root registry is the authority: NewRegistryEvent.fill() has just registered each new registry into it,
-		// which is the same place genuine NeoForge reads its registration order from. Appended AFTER the two holders
-		// rather than replacing them, so the order the gates have proven is untouched and the mod-created registries
-		// simply follow — which is also NeoForge's order, vanilla first.
-		collectRootRegistries(cl, registryCls, registries);
-
-		// …and then in NEOFORGE'S order, not the order the fields happen to be declared in. See
-		// {@link #inNeoForgeRegistrationOrder}: BuiltInRegistries declares ITEM 57 fields before DATA_COMPONENT_TYPE,
-		// and a mod whose items name their own data components dies on that gap.
-		registries = inNeoForgeRegistrationOrder(cl, registryCls, registries);
-
-		// REGISTRY-major / mod-minor, matching genuine NeoForge (RegistryManager walks registries, firing each mod's
-		// bus per registry). A DeferredRegister's DeferredHolders resolve during their own registry's event, so a mod
-		// registering minecraft:item must see every mod's blocks already registered — which only holds if all buses
-		// fire for BLOCK before any fires for ITEM. (NeoForge content is explicitly namespaced by DeferredRegister, so
-		// unlike the traditional-Forge twin there is no active-container to track here.)
-		// One mod's listener must not take the window down with it. Genuine NeoForge wraps each container's dispatch
-		// and collects the failure as a ModLoadingIssue, so the other mods AND the baseline still register; the
-		// kernel let the exception propagate, so a single mod throwing (Mob Champions reading a not-yet-loaded
-		// config) aborted registerNeoForgeContent entirely — the NeoForge baseline never registered its own content
-		// and the client died much later, and misleadingly, on an unbound neoforge:fluid_type/water. Report each
-		// once, then carry on.
-		java.util.Set<Object> broken =
-				java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-		for (Object registry : registries) {
-			Object key = keyM.invoke(registry);
-			for (Object bus : buses) {
-				try {
-					postM.invoke(bus, regEventCtor.newInstance(key, registry));
-				} catch (Throwable t) {
-					if (broken.add(bus)) {
-						ForbricLog.warn("[Forbric/Lifecycle] a NeoForge mod's RegisterEvent listener failed on %s — "
-								+ "that mod's remaining content is skipped, every other mod and the baseline still "
-								+ "register", key, unwrap(t));
-					}
-				}
-			}
+		boolean neoOrder = !"off".equalsIgnoreCase(System.getProperty("forbric.neoRegistrationOrder", "on"));
+		if (!neoOrder) {
+			ForbricLog.warn("[Forbric/Lifecycle] NeoForge registration order DISABLED "
+					+ "(-Dforbric.neoRegistrationOrder=off) — RegisterEvent fires in field-declaration order, so a "
+					+ "mod whose items read their own data components loses them");
 		}
-		return registries.size();
+		Class<?> gameSide = neoRegistryClass(cl);
+		Object registries = gameSide.getMethod("collect", boolean.class).invoke(null, neoOrder);
+		return (int) gameSide.getMethod("fireRegisterEvents", List.class, List.class)
+				.invoke(null, buses, registries);
+	}
+
+	/** The game-side half of NeoForge's registry phase. */
+	private static Class<?> neoRegistryClass(ClassLoader cl) throws ClassNotFoundException {
+		return Class.forName("net.forbric.kernel.runtime.KernelNeoRegistries", true, cl);
 	}
 
 	/**
@@ -1536,90 +1489,14 @@ public final class KernelLifecycle {
 	 */
 	private static void postNeoNewRegistryEvent(ClassLoader cl, List<Object> buses) {
 		try {
-			Class<?> eventCls = Class.forName(ForeignType.NEW_REGISTRY_EVENT.binary(Ecosystem.NEOFORGE), false, cl);
-			Constructor<?> ctor = eventCls.getDeclaredConstructor();
-			ctor.setAccessible(true);
-			Object event = ctor.newInstance();
-
-			Class<?> busCls = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
-			Method post = busCls.getMethod("post", Class.forName("net.neoforged.bus.api.Event", false, cl));
-			int delivered = 0;
-			for (Object bus : buses) {
-				try {
-					post.invoke(bus, event);
-					delivered++;
-				} catch (Throwable perBus) {
-					ForbricLog.warn("[Forbric/Lifecycle] a NeoForge mod's NewRegistryEvent listener failed — that "
-							+ "mod's custom registries are skipped, the rest still register", unwrap(perBus));
-				}
-			}
-
+			int delivered = (int) neoRegistryClass(cl).getMethod("postNewRegistryEvent", List.class)
+					.invoke(null, buses);
 			ForbricLog.info("[Forbric/Lifecycle] posted NewRegistryEvent to %d NeoForge mod bus(es) — mods create "
 					+ "their own registries (and do their earliest mod-bus setup) before RegisterEvent", delivered);
-
-			// Separate from the delivery above: mods have already been notified by this point, so a fill() failure
-			// must not be reported as "could not post" — the earliest-phase setup mods hang off this event
-			// (WhiteNoise's config load) has happened either way.
-			try {
-				Method fill = eventCls.getDeclaredMethod("fill");
-				fill.setAccessible(true);
-				fill.invoke(event);
-			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/Lifecycle] NewRegistryEvent.fill failed — mod-declared custom registries "
-						+ "may be missing (delivery to the mod buses itself succeeded)", unwrap(t));
-			}
-		} catch (ClassNotFoundException absent) {
+		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
 			ForbricLog.debug("[Forbric/Lifecycle] no NewRegistryEvent type — skipping");
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not post NeoForge NewRegistryEvent", unwrap(t));
-		}
-	}
-
-	private static void collectRegistryFields(ClassLoader cl, String holder, Class<?> registryCls, List<Object> out)
-			throws Exception {
-		Class<?> c = Class.forName(holder, true, cl);
-		for (Field f : c.getFields()) {
-			if (registryCls.isAssignableFrom(f.getType())) {
-				Object reg = f.get(null);
-				if (reg != null && !out.contains(reg)) out.add(reg);
-			}
-		}
-	}
-
-	/**
-	 * Adds every registry inside the ROOT registry that the holder classes did not already name.
-	 *
-	 * <p>Runs after {@code NewRegistryEvent.fill()}, so this is where a mod's own registries appear. The root holds
-	 * itself as {@code minecraft:root} and the holder sweep already picked that up, so the identity dedupe leaves
-	 * the existing list untouched and only genuinely new registries are appended.
-	 */
-	private static void collectRootRegistries(ClassLoader cl, Class<?> registryCls, List<Object> out) {
-		try {
-			Object root = Class.forName("net.minecraft.core.registries.BuiltInRegistries", true, cl)
-					.getField("REGISTRY").get(null);
-			if (!(root instanceof Iterable<?> entries)) return;
-			int added = 0;
-			for (Object entry : entries) {
-				if (!registryCls.isInstance(entry)) continue;
-				// Identity, as everywhere else here: Registry does not override equals.
-				boolean known = false;
-				for (Object seen : out) {
-					if (seen == entry) {
-						known = true;
-						break;
-					}
-				}
-				if (known) continue;
-				out.add(entry);
-				added++;
-			}
-			if (added > 0) {
-				ForbricLog.debug("[Forbric/Lifecycle] %d mod-created registr(ies) joined the RegisterEvent sweep",
-						added);
-			}
-		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not enumerate the root registry — a mod's own registry will "
-					+ "stay empty and its datapack entries will fail to parse", unwrap(t));
 		}
 	}
 
