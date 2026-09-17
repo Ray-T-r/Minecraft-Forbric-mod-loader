@@ -630,6 +630,14 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		if (sites.isEmpty()) return false;
 
 		field.desc = SUPPLIER_DESC;
+		// And the ACCESS the descriptor implies, which is not a tidy-up. fabric-api asks for exactly this field by
+		// (owner, name, DESCRIPTOR) in fabric-biome-api-v1.classtweaker — "accessible" and "mutable" — and the
+		// kernel applies class tweakers in the ACCESS phase, one phase BEFORE this one. So the request could not
+		// have matched the ClearableLazy-typed declaration and the field is still private final here. Restoring
+		// the descriptor alone therefore does not fix the boot, it only changes which error ends it:
+		// NoSuchFieldError becomes IllegalAccessError, at the same cross-class PUTFIELD in BiomeModificationImpl.
+		field.access = (field.access & ~(Opcodes.ACC_PRIVATE | Opcodes.ACC_PROTECTED | Opcodes.ACC_FINAL))
+				| Opcodes.ACC_PUBLIC;
 		// The generic signature is metadata, but a stale one contradicts the descriptor for anything that reads
 		// both (reflection, and this project's own artifact scans). Swap the prefix when it is the expected shape.
 		if (field.signature != null) {
