@@ -390,6 +390,10 @@ public final class KernelBoot {
 		// not build — so every use of its config events (registering one, loading one on a world, syncing one to a
 		// client) died in that class initializer.
 		chain.register(TransformPhase.COREMOD, new ForgeBindingsLookupInjector());
+		// FMLLoader's three ModLauncher-backed methods. The kernel replaces ModLauncher, so Launcher.INSTANCE is
+		// null and all three NPE — getNameFunction most of all, because ObfuscationReflectionHelper goes through
+		// it and mods call that from static initialisers, which turns one NPE into a permanently erroneous class.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeLauncherInfoInjector());
 		// Each family's ModList.isLoaded can only see its own family's mods, and that answer is a compatibility
 		// branch far more often than a display string — a wrong "no" disables an integration in silence.
 		chain.register(TransformPhase.COREMOD, new ForeignModPresenceInjector());

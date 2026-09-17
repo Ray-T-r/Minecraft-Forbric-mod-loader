@@ -305,6 +305,30 @@ public class ForbricLiveMod {
 		public static void onServerStarting(net.minecraftforge.event.server.ServerStartingEvent event) {
 			System.out.println("[ForbricLive] ServerStartingEvent RECEIVED - PermissionAPI is initialised by this "
 					+ "same hook");
+			walkModFiles();
+		}
+
+		/**
+		 * What ShoulderSurfing-Forge and collective do from their own listeners: walk every mod file and ask it
+		 * for a resource. Both accessors go through the ModFile's SecureJar, so a seeded file without one NPEs
+		 * inside MinecraftForge's own code — and because toString goes the same way, even LOGGING the failure NPEs.
+		 */
+		private static void walkModFiles() {
+			try {
+				int files = 0;
+				int resolved = 0;
+				for (net.minecraftforge.forgespi.language.IModFileInfo info : net.minecraftforge.fml.ModList
+						.getModFiles()) {
+					files++;
+					java.nio.file.Path path = info.getFile().getFilePath();
+					java.nio.file.Path toml = info.getFile().findResource("META-INF", "mods.toml");
+					if (path != null && toml != null) resolved++;
+				}
+				System.out.println("[ForbricLive] walked " + files + " mod file(s), " + resolved
+						+ " answered getFilePath and findResource");
+			} catch (Throwable t) {
+				System.out.println("[ForbricLive] walking ModList.getModFiles() FAILED: " + t);
+			}
 		}
 
 		@SubscribeEvent
