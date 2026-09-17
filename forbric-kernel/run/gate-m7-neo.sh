@@ -77,7 +77,14 @@ step "every pure-NeoForge @Mod constructed (must PASS)"
 check "ModList published to the mods"     "published [1-9][0-9]* NeoForge mod\(s\) into ModList" "$LOG"
 check "ferritecore"                        "constructed @Mod ferritecore \(NeoForge," "$LOG"
 check "appleskin"                          "constructed @Mod appleskin \(NeoForge," "$LOG"
-check "balm (both @Mod classes, one bus)"  "constructed @Mod balm \(NeoForge," "$LOG" 2
+# balm ships TWO @Mod classes under one id: a common one and a client-only one (dist = {CLIENT}). This gate runs
+# a DEDICATED SERVER, so exactly ONE of them belongs here. The assertion used to demand 2 — which only held
+# because the kernel ignored the annotation and constructed both, and on a real client-only entry point that is a
+# crash inside the mod. Asserted as an exact count: ">=1" would still pass if both came back.
+assert_eq "balm (its server-side @Mod only)" 1 \
+  "$(grep -cE "constructed @Mod balm \(NeoForge," "$LOG")"
+check "balm's client-only @Mod stayed off the server" \
+  "@Mod balm \(net.blay09.mods.balm.neoforge.client.*declares it belongs to \[CLIENT\]" "$LOG"
 check "bookshelf (needs a real FMLModContainer)" "constructed @Mod bookshelf \(NeoForge," "$LOG"
 check "architectury (needs ModList self-lookup)" "constructed @Mod architectury \(NeoForge," "$LOG"
 check_absent "no @Mod construction failure" "failed to construct @Mod" "$LOG"

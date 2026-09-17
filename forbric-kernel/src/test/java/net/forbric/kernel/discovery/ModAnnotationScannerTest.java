@@ -17,7 +17,9 @@
 package net.forbric.kernel.discovery;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.OutputStream;
 import java.nio.file.Files;
@@ -51,6 +53,74 @@ class ModAnnotationScannerTest {
 
 		cw.visitEnd();
 		return cw.toByteArray();
+	}
+
+	@Test
+	void readsTheSidesANeoForgeModDeclares(@TempDir Path dir) throws Exception {
+		// Sodium's SodiumForgeMod is annotated @Mod(value = "sodium", dist = {Dist.CLIENT}) and was being
+		// constructed on dedicated servers, where the first client type its constructor touches throws.
+		Path jar = dir.resolve("sodium.jar");
+
+		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
+			ClassWriter cw = new ClassWriter(0);
+			cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "me/jellysquid/SodiumForgeMod", null, "java/lang/Object", null);
+			AnnotationVisitor av = cw.visitAnnotation(ModAnnotationScanner.MOD_DESC_NEOFORGE, true);
+			av.visit("value", "sodium");
+			AnnotationVisitor array = av.visitArray("dist");
+			array.visitEnum(null, "Lnet/neoforged/api/distmarker/Dist;", "CLIENT");
+			array.visitEnd();
+			av.visitEnd();
+			cw.visitEnd();
+			write(zip, "me/jellysquid/SodiumForgeMod.class", cw.toByteArray());
+		}
+
+		ModAnnotationScanner.ModClassInfo mod = ModAnnotationScanner.scan(jar).get(0);
+
+		assertEquals(java.util.Set.of("CLIENT"), mod.dists);
+		assertTrue(mod.runsOn("CLIENT"));
+		assertFalse(mod.runsOn("DEDICATED_SERVER"),
+				"a client-only @Mod must not be constructed on a dedicated server");
+	}
+
+	@Test
+	void aModThatDeclaresNoSideRunsOnBoth(@TempDir Path dir) throws Exception {
+		// The annotation's own default, and the only honest reading of a @Mod that says nothing. Traditional
+		// MinecraftForge's @Mod has no dist() at all, so every Forge-family mod lands here.
+		Path jar = dir.resolve("plain.jar");
+
+		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
+			write(zip, "com/example/Both.class", classBytes("com/example/Both", "both"));
+		}
+
+		ModAnnotationScanner.ModClassInfo mod = ModAnnotationScanner.scan(jar).get(0);
+
+		assertTrue(mod.dists.isEmpty());
+		assertTrue(mod.runsOn("CLIENT"));
+		assertTrue(mod.runsOn("DEDICATED_SERVER"));
+	}
+
+	@Test
+	void readsBothSidesWhenTheModListsThem(@TempDir Path dir) throws Exception {
+		Path jar = dir.resolve("two.jar");
+
+		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
+			ClassWriter cw = new ClassWriter(0);
+			cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/Two", null, "java/lang/Object", null);
+			AnnotationVisitor av = cw.visitAnnotation(ModAnnotationScanner.MOD_DESC_NEOFORGE, true);
+			av.visit("value", "two");
+			AnnotationVisitor array = av.visitArray("dist");
+			array.visitEnum(null, "Lnet/neoforged/api/distmarker/Dist;", "CLIENT");
+			array.visitEnum(null, "Lnet/neoforged/api/distmarker/Dist;", "DEDICATED_SERVER");
+			array.visitEnd();
+			av.visitEnd();
+			cw.visitEnd();
+			write(zip, "com/example/Two.class", cw.toByteArray());
+		}
+
+		ModAnnotationScanner.ModClassInfo mod = ModAnnotationScanner.scan(jar).get(0);
+
+		assertEquals(java.util.Set.of("CLIENT", "DEDICATED_SERVER"), mod.dists);
+		assertTrue(mod.runsOn("DEDICATED_SERVER"));
 	}
 
 	@Test

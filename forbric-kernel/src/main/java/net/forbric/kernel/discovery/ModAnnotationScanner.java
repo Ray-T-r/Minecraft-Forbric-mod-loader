@@ -55,11 +55,36 @@ public final class ModAnnotationScanner {
 		public final String modId;     // @Mod value, or null if absent
 		public final Ecosystem family; // which ecosystem's @Mod annotation was found
 
+		/**
+		 * The sides this {@code @Mod} declares it belongs to, by {@code Dist} constant name, or empty for "both".
+		 *
+		 * <p>NeoForge's {@code @Mod} carries {@code Dist[] dist()}; MinecraftForge's does not, so a traditional
+		 * Forge class is always empty here. Sodium's {@code SodiumForgeMod} declares {@code dist = {CLIENT}} and
+		 * was being constructed on dedicated servers, where the first client type its constructor touches is a
+		 * {@code NoClassDefFoundError} attributed to the mod.
+		 */
+		public final java.util.Set<String> dists;
+
 		/** Public so code outside this package — the loader's own tests — can state a scan result directly. */
 		public ModClassInfo(String className, String modId, Ecosystem family) {
+			this(className, modId, family, java.util.Set.of());
+		}
+
+		public ModClassInfo(String className, String modId, Ecosystem family, java.util.Set<String> dists) {
 			this.className = className;
 			this.modId = modId;
 			this.family = family;
+			this.dists = dists == null ? java.util.Set.of() : java.util.Set.copyOf(dists);
+		}
+
+		/**
+		 * Whether this {@code @Mod} belongs on a side whose {@code Dist} constant is {@code distName}.
+		 *
+		 * <p>An empty declaration means both sides, which is the annotation's own default and the only honest
+		 * reading of a {@code @Mod} that says nothing.
+		 */
+		public boolean runsOn(String distName) {
+			return dists.isEmpty() || dists.contains(distName);
 		}
 
 		@Override
@@ -109,13 +134,16 @@ public final class ModAnnotationScanner {
 
 		ModCollector collector = new ModCollector();
 		new ClassReader(bytes).accept(collector, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
-		return collector.family != null ? new ModClassInfo(collector.className, collector.modId, collector.family) : null;
+		return collector.family != null
+				? new ModClassInfo(collector.className, collector.modId, collector.family, collector.dists)
+				: null;
 	}
 
 	private static final class ModCollector extends ClassVisitor {
 		String className;
 		String modId;
 		Ecosystem family;
+		final java.util.Set<String> dists = new java.util.LinkedHashSet<>();
 
 		ModCollector() {
 			super(Opcodes.ASM9);
@@ -136,6 +164,19 @@ public final class ModAnnotationScanner {
 				@Override
 				public void visit(String name, Object value) {
 					if ("value".equals(name) && value instanceof String) modId = (String) value;
+				}
+
+				@Override
+				public AnnotationVisitor visitArray(String name) {
+					// NeoForge's @Mod(dist = {Dist.CLIENT}). The constants arrive as visitEnum, and only their
+					// NAMES are kept: the Dist class belongs to the game side, which this scanner runs before.
+					if (!"dist".equals(name)) return null;
+					return new AnnotationVisitor(Opcodes.ASM9) {
+						@Override
+						public void visitEnum(String unused, String descriptor, String value) {
+							if (value != null) dists.add(value);
+						}
+					};
 				}
 			};
 		}

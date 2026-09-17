@@ -212,7 +212,20 @@ public final class KernelModLoader {
 		// Phase 3 — construct.
 		List<ConstructedMod> built = new ArrayList<>();
 		Set<String> constructed = new LinkedHashSet<>();
+		// @Mod classes this side is not supposed to construct. They keep their container — the mod IS installed,
+		// and a neighbour asking about it must be told so — they simply do not run here.
+		Set<String> otherSide = new LinkedHashSet<>();
 		for (ModAnnotationScanner.ModClassInfo info : claimed) {
+			// NeoForge's @Mod declares which sides it belongs to, and the kernel constructed every class on every
+			// side regardless. Sodium's SodiumForgeMod says dist = {CLIENT}; on a dedicated server its constructor
+			// reaches a client-only type and dies with a NoClassDefFoundError blamed on the mod.
+			if (!info.runsOn(side.distName())) {
+				otherSide.add(safeId(info));
+				ForbricLog.info("[Forbric/ModLoader] @Mod %s (%s) declares it belongs to %s — not constructing it "
+						+ "on %s, which is what its own annotation asks for", safeId(info), info.className,
+						info.dists, side.distName());
+				continue;
+			}
 			try {
 				ConstructedMod mod = info.family == Ecosystem.FORGE
 						? constructForgeFamilyMod(cl, info, forge.get(safeId(info)))
@@ -249,7 +262,7 @@ public final class KernelModLoader {
 		// Presence aliases are deliberately kept: they have no @Mod class here by construction, so "did not
 		// construct" is their normal state, not a failure. And the withdrawn mod's FILE entry stays in the by-id
 		// map, because its jar really is present — what comes out is the container.
-		Set<String> neoBuilt = new LinkedHashSet<>();
+		Set<String> neoBuilt = new LinkedHashSet<>(otherSide);
 		for (ConstructedMod mod : built) {
 			if (mod.forgeHandle() == null) neoBuilt.add(mod.modId());
 		}
