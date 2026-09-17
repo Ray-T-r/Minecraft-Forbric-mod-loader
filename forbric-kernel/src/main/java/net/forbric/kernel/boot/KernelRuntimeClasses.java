@@ -109,6 +109,12 @@ public final class KernelRuntimeClasses {
 		// be made to resolve. See KernelForgeSetup.
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeSetup", new Entry(Origin.COMPILED, List.of(
 				new Call("firePhase", int.class, List.class, net.forbric.api.ForeignType.class, String.class))));
+		// Which registries traditional Forge's RegisterEvent is posted for, and how one is built and posted. The
+		// dispatch LOOP stays boot-side (KernelForgeModContext.dispatchIsolated) because it names no game type and
+		// the per-(registry, mod) isolation is the property worth asserting off-game. See KernelForgeRegistries.
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeRegistries", new Entry(Origin.COMPILED, List.of(
+				new Call("targets", List.class),
+				new Call("post", void.class, Object.class, Object[].class))));
 		// Materialises the kernel's own annotation scan into NeoForge's ModFileScanData. The scan itself is
 		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
 		CLASSES.put("net.forbric.kernel.runtime.KernelScanData", new Entry(Origin.COMPILED, List.of(
