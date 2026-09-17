@@ -34,6 +34,7 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -286,17 +287,10 @@ public final class PostMixinFixups {
 	 * be a string literal — and the structural check that follows settles it.
 	 */
 	static boolean mentionsAMixinHandler(byte[] bytes) {
-		if (bytes == null) return false;
-		byte[] needle = HANDLER_PREFIX.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
-		outer:
-		for (int i = 0; i <= bytes.length - needle.length; i++) {
-			for (int j = 0; j < needle.length; j++) {
-				if (bytes[i + j] != needle[j]) continue outer;
-			}
-			return true;
-		}
-		return false;
+		return ByteScan.contains(bytes, HANDLER_NEEDLE);
 	}
+
+	private static final byte[] HANDLER_NEEDLE = ByteScan.needle(HANDLER_PREFIX);
 
 	/** Quick reject: does this class even have several constructors, one of which calls a Mixin handler? */
 	private static boolean hasWovenConstructorPair(byte[] bytes) {

@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
+import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
 
 import org.objectweb.asm.ClassReader;
@@ -118,6 +119,15 @@ public final class MergedBaseFrameRecomputer implements ClassTransformer {
 			"net/minecraft/commands/execution/CustomCommandExecutor$WithErrorHandling",
 	};
 
+	/** {@link #NEEDLES} as bytes, built once. A class file stores these names as ASCII in its constant pool. */
+	private static final byte[][] NEEDLE_BYTES = toNeedles(NEEDLES);
+
+	private static byte[][] toNeedles(String[] names) {
+		byte[][] out = new byte[names.length][];
+		for (int i = 0; i < names.length; i++) out[i] = ByteScan.needle(names[i]);
+		return out;
+	}
+
 	private final Function<String, byte[]> classBytes;
 	/** {@code internalName -> {superName, "1" if interface}}. Process-wide; the hierarchy does not change. */
 	private final Map<String, String[]> hierarchy = new ConcurrentHashMap<>();
@@ -170,13 +180,15 @@ public final class MergedBaseFrameRecomputer implements ClassTransformer {
 		}
 	}
 
-	/** Raw-byte gate, before any parse. Every needle is ASCII, and ISO-8859-1 is a byte-for-byte widening. */
+	/**
+	 * Raw-byte gate, before any parse — and without a copy.
+	 *
+	 * <p>This ran for every class the game loads and began by turning the WHOLE class into a {@code String}: an
+	 * allocation the size of the class, thousands of times, to ask a question that needs no allocation at all.
+	 * It then scanned that string once per needle. Both are gone; see {@link ByteScan}.
+	 */
 	private static boolean namesALostAncestor(byte[] bytes) {
-		String text = new String(bytes, StandardCharsets.ISO_8859_1);
-		for (String needle : NEEDLES) {
-			if (text.indexOf(needle) >= 0) return true;
-		}
-		return false;
+		return ByteScan.containsAny(bytes, NEEDLE_BYTES);
 	}
 
 	private static int majorVersion(byte[] bytes) {
