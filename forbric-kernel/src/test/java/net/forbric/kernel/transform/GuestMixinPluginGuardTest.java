@@ -169,4 +169,37 @@ class GuestMixinPluginGuardTest {
 		mv.visitMaxs(0, 0);
 		mv.visitEnd();
 	}
+
+	/**
+	 * The rejection is the hot path: every class the game loads reaches this transformer, and about three in a
+	 * hundred-jar pack are plugins. It used to cost a full ClassNode — every method and instruction of every
+	 * class parsed and allocated — to read one line of the header.
+	 */
+	@org.junit.jupiter.api.Test
+	void aClassThatIsNotAPluginIsRejectedFromTheHeaderAlone() {
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/Ordinary", null, "java/lang/Object",
+				new String[] {"java/lang/Runnable"});
+		cw.visitEnd();
+
+		assertFalse(GuestMixinPluginGuard.declaresThePluginInterface(cw.toByteArray()));
+	}
+
+	@org.junit.jupiter.api.Test
+	void aPluginIsRecognisedFromTheHeaderAlone() {
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/Plugin", null, "java/lang/Object",
+				new String[] {"org/spongepowered/asm/mixin/extensibility/IMixinConfigPlugin"});
+		cw.visitEnd();
+
+		assertTrue(GuestMixinPluginGuard.declaresThePluginInterface(cw.toByteArray()));
+	}
+
+	@org.junit.jupiter.api.Test
+	void bytesThatAreNotAClassAnswerNoRatherThanThrowing() {
+		// Something else in the chain will fail on these and say so properly; a guard is not the place to raise it.
+		assertFalse(GuestMixinPluginGuard.declaresThePluginInterface(new byte[] {1, 2, 3}));
+		assertFalse(GuestMixinPluginGuard.declaresThePluginInterface(new byte[0]));
+		assertFalse(GuestMixinPluginGuard.declaresThePluginInterface(null));
+	}
 }
