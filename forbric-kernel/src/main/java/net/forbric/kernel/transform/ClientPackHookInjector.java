@@ -85,18 +85,31 @@ public final class ClientPackHookInjector implements ClassTransformer {
 		boolean changed = false;
 		for (MethodNode m : node.methods) {
 			if (!m.name.equals(METHOD) || !m.desc.equals(DESC)) continue;
-			InsnList body = new InsnList();
-			body.add(new VarInsnNode(Opcodes.ALOAD, 0)); // the PackRepository (the method is static)
-			body.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, HOOK_NAME, HOOK_DESC, false));
-			body.add(new InsnNode(Opcodes.RETURN));
-			m.instructions = body;
-			m.tryCatchBlocks.clear();
-			if (m.localVariables != null) m.localVariables.clear();
-			m.maxStack = 1;
-			m.maxLocals = 1;
+			// PREPENDS, never replaces — the same shape DataPackHookInjector uses on the server side, and for the
+			// same reason, learned the hard way here.
+			//
+			// This used to assign a whole new body: call the kernel hook, return. That threw away the one thing in
+			// the original that the kernel does not replace. The carrier's body is
+			//
+			//     ResourcePackLoader.populatePackRepository(repo, CLIENT_RESOURCES, false)
+			//     DataPackConfig.DEFAULT.addModPacks(getPackNames(SERVER_DATA))
+			//
+			// and populatePackRepository ends by constructing an AddPackFindersEvent and posting it through
+			// ModLoader — which is how EVERY mod of both Forge families registers a built-in client resource pack.
+			// With the body gone the event was never posted: an optional pack simply did not appear in the resource
+			// pack screen, and an alwaysActive one left the mod rendering missing textures, with no crash, no log
+			// and nothing naming the loader. The rest of the original is inert under the kernel (findResourcePacks
+			// walks ModList.getModFiles(), which the kernel deliberately leaves empty), so keeping it costs a
+			// no-op walk and buys back the event.
+			InsnList prologue = new InsnList();
+			prologue.add(new VarInsnNode(Opcodes.ALOAD, 0)); // the PackRepository (the method is static)
+			prologue.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, HOOK_NAME, HOOK_DESC, false));
+			m.instructions.insert(prologue);
+			m.maxStack = Math.max(m.maxStack, 1);
 			changed = true;
-			ForbricLog.info("[Forbric/ClientPacks] redirected %s.%s → KernelLifecycle.%s — the kernel now owns client "
-					+ "mod resource packs", className, METHOD, HOOK_NAME);
+			ForbricLog.info("[Forbric/ClientPacks] prepended KernelLifecycle.%s to %s.%s — the kernel serves the "
+					+ "ecosystem jars' assets and the carrier's own body still posts AddPackFindersEvent, which is "
+					+ "how mods register built-in client packs", HOOK_NAME, className, METHOD);
 		}
 		if (!changed) return classBytes;
 

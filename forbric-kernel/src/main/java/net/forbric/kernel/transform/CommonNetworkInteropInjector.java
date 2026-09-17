@@ -116,6 +116,35 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	/** The hook that override consults, and whose answer it throws away. */
 	private static final String FORGE_HOOKS = "net/minecraftforge/common/ForgeHooks";
 	private static final String ON_CUSTOM_PAYLOAD = "onCustomPayload";
+	/**
+	 * {@code -Dforbric.playPayloadFallThrough=on} enables the play-phase fall-through. DEFAULT OFF, and the
+	 * default is the point.
+	 *
+	 * <p>The defect it addresses is real and measured: the merged
+	 * {@code ServerGamePacketListenerImpl.handleCustomPayload} is MinecraftForge's override, its whole body asks
+	 * {@code ForgeHooks.onCustomPayload}, POPs the answer and returns, and it never calls {@code super} — where
+	 * NeoForge's dispatcher lives. So a NeoForge mod's play-phase packet to the server reached nobody, in
+	 * singleplayer too.
+	 *
+	 * <p>The fall-through fixes that and uncovers something bigger. fabric-api mixes into the SUPER
+	 * ({@code ServerCommonPacketListenerImpl.handleCustomPayload}), so the fall-through is the first time
+	 * fabric-api's server-play handler has ever been reached on this base — and it immediately threw
+	 * {@code IllegalStateException: Unknown addon} and ended the connection, taking gate-m9's world join with it.
+	 * That is not a reason to think the fall-through is wrong; it is evidence that Fabric's own server-play
+	 * receive is shadowed by the same override and has never run either, which is a second defect sitting under
+	 * this one and needs its own fix.
+	 *
+	 * <p>Until that is understood, the default stays at the old behaviour: a NeoForge mod's upward packet is
+	 * silently dropped. Silently dropping a packet is smaller than disconnecting the player, and the switch keeps
+	 * the work reachable for whoever picks the Fabric half up.
+	 */
+	static boolean playFallThroughEnabled() {
+		return "on".equalsIgnoreCase(System.getProperty("forbric.playPayloadFallThrough", "off"));
+	}
+
+	/** Asks whether NeoForge registered this payload, so the fall-through only reaches payloads it owns. */
+	private static final String NEO_OWNS_HOOK = "neoForgeWillHandle";
+	private static final String NEO_OWNS_HOOK_DESC = "(Ljava/lang/Object;)Z";
 	private static final String CLIENT_HANDLE_PAYLOAD_DESC = "(Lnet/minecraft/network/protocol/common/ClientboundCustomPayloadPacket;)V";
 	private static final String SERVER_HANDLE_PAYLOAD_DESC = "(Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;)V";
 	private static final String FORGE_DISPATCH_HOOK = "dispatchForgePayload";
@@ -256,7 +285,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				ForbricLog.info("[Forbric/Net] handing MinecraftForge's payloads to ForgeHooks.onCustomPayload at %s.%s — "
 						+ "NeoForge won this method in the merge and Forge's dispatch went with it", className, HANDLE_PAYLOAD);
 			} else if (serverGame && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(SERVER_HANDLE_PAYLOAD_DESC)) {
-				if (letNeoForgePayloadsThrough(m)) {
+				if (playFallThroughEnabled() && letNeoForgePayloadsThrough(m)) {
 					changed = true;
 					ForbricLog.info("[Forbric/Net] %s.%s now falls through to NeoForge's dispatcher when "
 							+ "MinecraftForge does not take the payload — it is Forge's override and never called "
@@ -572,6 +601,18 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 			LabelNode taken = new LabelNode();
 			InsnList fallThrough = new InsnList();
 			fallThrough.add(new JumpInsnNode(Opcodes.IFNE, taken));
+			// GATED, and the gate is not optional. Falling through unconditionally hands EVERY declined payload to
+			// NeoForge's dispatcher, which is strict about ids it does not know — a Fabric mod's play payload
+			// arriving here ended the connection with "IllegalStateException: Unknown addon", so a client that
+			// used to join could no longer stay in a world. The question that makes it safe is whether NeoForge
+			// registered this payload at all; if it did not, the method returns exactly as it did before.
+			fallThrough.add(new VarInsnNode(Opcodes.ALOAD, 1));
+			fallThrough.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
+					org.objectweb.asm.Type.getArgumentTypes(SERVER_HANDLE_PAYLOAD_DESC)[0].getInternalName(),
+					"payload", "()L" + CUSTOM_PAYLOAD + ";", false));
+			fallThrough.add(new MethodInsnNode(Opcodes.INVOKESTATIC, INTEROP, NEO_OWNS_HOOK,
+					NEO_OWNS_HOOK_DESC, false));
+			fallThrough.add(new JumpInsnNode(Opcodes.IFEQ, taken));
 			fallThrough.add(new VarInsnNode(Opcodes.ALOAD, 0));
 			fallThrough.add(new VarInsnNode(Opcodes.ALOAD, 1));
 			// invokespecial on the DIRECT superclass: ServerGamePacketListenerImpl extends

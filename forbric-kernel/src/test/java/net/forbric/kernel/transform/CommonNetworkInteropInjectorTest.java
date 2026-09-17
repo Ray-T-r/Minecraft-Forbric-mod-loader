@@ -159,6 +159,29 @@ class CommonNetworkInteropInjectorTest {
 	@Test
 	void thePlayServerHandlerFallsThroughToNeoForge() throws Exception {
 		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
+		// The rewrite is behind a switch that defaults OFF — see playFallThroughEnabled for why — so the test
+		// turns it on for itself. What is asserted is the SHAPE of the rewrite when it does run, which is what a
+		// future edit could break without anyone noticing.
+		String previous = System.getProperty("forbric.playPayloadFallThrough");
+		System.setProperty("forbric.playPayloadFallThrough", "on");
+		try {
+			assertFallThroughShape();
+		} finally {
+			if (previous == null) System.clearProperty("forbric.playPayloadFallThrough");
+			else System.setProperty("forbric.playPayloadFallThrough", previous);
+		}
+	}
+
+	/** The default must be the old behaviour: a disconnected player is worse than a dropped packet. */
+	@Test
+	void thePlayFallThroughIsOffByDefault() {
+		assertFalse(CommonNetworkInteropInjector.playFallThroughEnabled(),
+				"the fall-through reaches fabric-api's own server-play handler for the first time on this base, and "
+						+ "that handler throws \"Unknown addon\" and ends the connection — until the Fabric half is "
+						+ "fixed, the default stays at the silent drop");
+	}
+
+	private void assertFallThroughShape() throws Exception {
 		String listener = "net/minecraft/server/network/ServerGamePacketListenerImpl";
 		ClassNode node = transformed(listener);
 		MethodNode handler = method(node, "handleCustomPayload",
@@ -183,6 +206,21 @@ class CommonNetworkInteropInjectorTest {
 		assertTrue(callsSuper,
 				"and not taking it must reach ServerCommonPacketListenerImpl.handleCustomPayload, which is where "
 						+ "NeoForge's dispatcher lives");
+
+		// GATED. Falling through unconditionally was measured to be worse than the bug: NeoForge's dispatcher is
+		// strict about ids it does not know, so a Fabric mod's play payload arriving here ended the connection
+		// with "IllegalStateException: Unknown addon" and a client that used to join could no longer stay in a
+		// world. The fall-through must ask whether NeoForge owns the payload first.
+		boolean gated = false;
+		for (AbstractInsnNode insn : handler.instructions) {
+			if (insn instanceof MethodInsnNode call && INTEROP.equals(call.owner)
+					&& "neoForgeWillHandle".equals(call.name)) {
+				gated = true;
+			}
+		}
+		assertTrue(gated,
+				"the fall-through must be gated on NeoForge actually owning the payload — ungated it disconnects "
+						+ "the player on the first Fabric play payload");
 		// The frame authored at the branch target has to be right, or the class fails verification at link time
 		// and every play-phase packet on the server becomes a VerifyError instead.
 		new Analyzer<>(new BasicVerifier()).analyze(node.name, handler);
