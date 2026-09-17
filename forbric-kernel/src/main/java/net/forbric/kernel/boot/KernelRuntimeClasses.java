@@ -148,6 +148,13 @@ public final class KernelRuntimeClasses {
 		// the two would be the averaging-away ForeignType's javadoc warns about. See KernelNeoSetup.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoSetup", new Entry(Origin.COMPILED, List.of(
 				new Call("firePhase", int.class, Map.class, net.forbric.api.ForeignType.class, String.class))));
+		// NeoForge's registry phase: NewRegistryEvent, then RegisterEvent for every registry in NeoForge's own
+		// order. The twin of KernelForgeRegistries; which buses and which order stay boot-side, as does the
+		// unfreeze/freeze window it all runs inside. See KernelNeoRegistries.
+		CLASSES.put("net.forbric.kernel.runtime.KernelNeoRegistries", new Entry(Origin.COMPILED, List.of(
+				new Call("collect", List.class, boolean.class),
+				new Call("fireRegisterEvents", int.class, List.class, List.class),
+				new Call("postNewRegistryEvent", int.class, List.class))));
 		// Materialises the kernel's own annotation scan into NeoForge's ModFileScanData. The scan itself is
 		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
 		CLASSES.put("net.forbric.kernel.runtime.KernelScanData", new Entry(Origin.COMPILED, List.of(
