@@ -695,9 +695,41 @@ public final class PayloadInterop {
 	 */
 	public static boolean isForgePayloadPacket(Object packet) {
 		if (packet == null) return false;
-		Object payload = invokeNoArg(packet, "payload");
-		return payload != null && FORGE_PAYLOAD.equals(payload.getClass().getName());
+		Method accessor = payloadAccessor(packet.getClass());
+		if (accessor == null) return false;
+		try {
+			Object payload = accessor.invoke(packet);
+			return payload != null && FORGE_PAYLOAD.equals(payload.getClass().getName());
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return false;
+		}
 	}
+
+	/**
+	 * The {@code payload()} accessor for a packet class, resolved once per class and then remembered.
+	 *
+	 * <p>This is on the hot path and was not cached. {@link #isForgePayloadPacket} runs at the head of the
+	 * outbound-packet check, so it is reached for EVERY packet the game sends — and it went through the generic
+	 * reflective lookup each time, which walks the class's whole superclass chain calling
+	 * {@code getDeclaredMethod} and then every interface. Most packets have no {@code payload()} at all, so the
+	 * common case was the most expensive one: the full walk, a {@code NoSuchMethodException} constructed and
+	 * discarded at each step, and a defensive copy of the {@code Method} array behind each call.
+	 *
+	 * <p>{@link ClassValue} rather than a map: it is keyed by class without keeping the class alive, needs no
+	 * lock, and a miss is cached as a null exactly like a hit.
+	 */
+	static Method payloadAccessor(Class<?> packetClass) {
+		return PAYLOAD_ACCESSOR.get(packetClass);
+	}
+
+	private static final ClassValue<Method> PAYLOAD_ACCESSOR = new ClassValue<>() {
+		@Override
+		protected Method computeValue(Class<?> type) {
+			Method accessor = findMethod(type, "payload");
+			if (accessor != null) accessor.setAccessible(true);
+			return accessor;
+		}
+	};
 
 	// --- MinecraftForge's login/configuration handshake ------------------------------------------------------------
 	//

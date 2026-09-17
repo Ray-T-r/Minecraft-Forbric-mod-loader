@@ -75,6 +75,24 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 	private static final String GUARD = "net/forbric/kernel/transform/GuestMixinPluginGuard";
 	private static final String ALIAS_PREFIX = "forbric$unguarded$";
 
+	/**
+	 * Whether the class declares Mixin's config-plugin interface, read from the class header alone.
+	 *
+	 * <p>Unreadable bytes answer no: something else in the chain will fail on them and say so properly, and a
+	 * guard is not the place to raise it.
+	 */
+	static boolean declaresThePluginInterface(byte[] classBytes) {
+		if (classBytes == null || classBytes.length == 0) return false;
+		try {
+			for (String iface : new ClassReader(classBytes).getInterfaces()) {
+				if (PLUGIN_INTERFACE.equals(iface)) return true;
+			}
+		} catch (Throwable unreadable) {
+			return false;
+		}
+		return false;
+	}
+
 	/** The interface's methods, all of which Mixin calls without a guard of its own. */
 	private static final Set<String> GUARDED = Set.of(
 			"onLoad", "getRefMapperConfig", "shouldApplyMixin", "acceptTargets", "getMixins", "preApply", "postApply");
@@ -85,10 +103,15 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
+		// Header only, before anything else. Every class the game loads passes through here and about three of
+		// them in a hundred-jar pack are mixin config plugins, so the decision that matters is the rejection —
+		// and it used to cost a full ClassNode: every method, every instruction, of every class, parsed and
+		// allocated only to read one line of the header. ClassReader.getInterfaces() reads the constant pool and
+		// the interface table and stops.
+		if (!declaresThePluginInterface(classBytes)) return classBytes;
+
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
-
-		if (node.interfaces == null || !node.interfaces.contains(PLUGIN_INTERFACE)) return classBytes;
 
 		int wrapped = 0;
 		for (MethodNode method : node.methods.toArray(new MethodNode[0])) {

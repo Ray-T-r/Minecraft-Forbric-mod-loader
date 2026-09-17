@@ -119,7 +119,14 @@ public final class PostMixinFixups {
 	 * are a prefix of the wide one's with identical types, so the local slots it loads are valid unchanged.
 	 */
 	private static byte[] replayDelegatedConstructorInjections(String internal, byte[] bytes) {
-		// Cheap pre-check: this only ever applies to a class with several constructors, one of which Mixin wove.
+		// Cheapest pre-check first, on the raw bytes. This runs for EVERY class the game loads, and the one below
+		// it — cheap only by comparison — still parses the whole class including every instruction of every
+		// method. A class Mixin never wove cannot contain a handler name, and a method name lives in the constant
+		// pool as plain ASCII, so a byte scan settles it without parsing anything.
+		if (!mentionsAMixinHandler(bytes)) return bytes;
+
+		// Then the structural check: this only ever applies to a class with several constructors, one of which
+		// Mixin wove.
 		if (!hasWovenConstructorPair(bytes)) return bytes;
 
 		ClassNode node = new ClassNode();
@@ -268,6 +275,27 @@ public final class PostMixinFixups {
 			if (!handler[i].equals(wide[i])) return false;
 		}
 		return true;
+	}
+
+	/**
+	 * Whether the raw class bytes mention a Mixin handler name at all.
+	 *
+	 * <p>A method name is stored in the constant pool as modified UTF-8, and {@code handler$} is pure ASCII, so
+	 * it appears verbatim in the bytes of any class that has one. A class without the sequence provably has no
+	 * such method, which makes a "no" here final rather than a guess. A "yes" is only a hint — the constant could
+	 * be a string literal — and the structural check that follows settles it.
+	 */
+	static boolean mentionsAMixinHandler(byte[] bytes) {
+		if (bytes == null) return false;
+		byte[] needle = HANDLER_PREFIX.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+		outer:
+		for (int i = 0; i <= bytes.length - needle.length; i++) {
+			for (int j = 0; j < needle.length; j++) {
+				if (bytes[i + j] != needle[j]) continue outer;
+			}
+			return true;
+		}
+		return false;
 	}
 
 	/** Quick reject: does this class even have several constructors, one of which calls a Mixin handler? */
