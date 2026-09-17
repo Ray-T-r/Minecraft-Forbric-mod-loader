@@ -83,6 +83,22 @@ check "datapacks fully loaded"        "Loaded [1-9][0-9]* advancements"         
 step "the full FML mod lifecycle ran, not just the phases the kernel used to know about"
 # Each of these was missing outright until the kernel started mirroring CommonModLoader.load's task order.
 check "construct phase posted"        "posted FML construct to [1-9][0-9]* NeoForge mod"      "$LOG"
+# A1: mods were constructed in jar-file-name order, which is not an order. A mod whose jar sorts before a library
+# it requires ran first and called that library before it had initialised — the error then comes out of the
+# library, blamed on the library. Two real dependency pairs from this pack, each with the library's name sorting
+# AFTER its user, so alphabetical order gets both of them wrong.
+check "construction is in dependency order" \
+  "Forbric/Order\] construction order is dependency order" "$LOG"
+for PAIR in "balm:cookingforblockheads" "creativecore:ambientsounds"; do
+  LIB="${PAIR%%:*}"; USER_MOD="${PAIR##*:}"
+  LIB_AT=$(grep -nE "constructed @Mod $LIB " "$LOG" | head -1 | cut -d: -f1)
+  USER_AT=$(grep -nE "constructed @Mod $USER_MOD " "$LOG" | head -1 | cut -d: -f1)
+  if [ -n "$LIB_AT" ] && [ -n "$USER_AT" ] && [ "$LIB_AT" -lt "$USER_AT" ]; then
+    printf '[kernel] PASS %s is constructed before %s (line %s < %s)\n' "$LIB" "$USER_MOD" "$LIB_AT" "$USER_AT"
+  else
+    printf '[kernel] FAIL %s is constructed before %s (lib=%s user=%s)\n' "$LIB" "$USER_MOD" "${LIB_AT:-none}" "${USER_AT:-none}"; FAIL=1
+  fi
+done
 check "client setup posted"           "posted FML client setup to [1-9][0-9]* NeoForge mod"   "$LOG"
 # B3: common setup used to be posted from the kernel's pre-Minecraft window, on the main thread, with
 # Minecraft.getInstance() still null — and common setup is exactly where a mod does its dist-guarded client

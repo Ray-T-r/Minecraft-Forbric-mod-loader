@@ -27,6 +27,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
+import net.forbric.api.ModPresence;
 import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
@@ -130,6 +131,13 @@ public final class KernelModLoader {
 				if (info.modId != null) jarOfMod.putIfAbsent(info.modId, jar);
 			}
 		}
+
+		// Phase 1b — put them in DEPENDENCY order. Until now this list was in jar-file-name order, alphabetically,
+		// which is not an order at all: a mod whose jar sorts before a library it requires was constructed first
+		// and called that library's API before the library had initialised. What comes back is an error inside the
+		// library, attributed to the library, on a line that has nothing to do with the cause. Both real loaders
+		// sort by dependency before they construct anything.
+		claimed = orderByDependency(claimed);
 
 		// Phase 2 — build every NeoForge mod's identity. Both families' identities are PUBLISHED below, before
 		// phase 3, because a mod's constructor may ask its family's ModList about ITSELF, and against the kernel's
@@ -301,6 +309,38 @@ public final class KernelModLoader {
 			else dropped.add(entry.getKey());
 		}
 		return kept;
+	}
+
+	/**
+	 * The claimed {@code @Mod} classes in dependency order.
+	 *
+	 * <p>The order comes from what discovery already parsed out of every mod's own metadata — its requirements
+	 * and its explicit load-order declarations — through {@link ModConstructionOrder}. Mods the registry has not
+	 * heard of keep their place rather than being moved to either end.
+	 */
+	private static List<ModAnnotationScanner.ModClassInfo> orderByDependency(
+			List<ModAnnotationScanner.ModClassInfo> claimed) {
+		try {
+			List<net.forbric.api.DiscoveredMod> known = new ArrayList<>(ModPresence.forgeFamilyMods());
+			known.addAll(ModPresence.fabricMods());
+			if (known.isEmpty()) return claimed;
+
+			List<String> order = ModConstructionOrder.of(known);
+			List<ModAnnotationScanner.ModClassInfo> sorted =
+					ModConstructionOrder.sort(claimed, info -> info.modId, order);
+
+			if (!sorted.equals(claimed)) {
+				ForbricLog.info("[Forbric/Order] construction order is dependency order, not jar-file order — a mod "
+						+ "that needs another to have run now does (-Dforbric.modOrder=name to go back): %s",
+						sorted.stream().map(KernelModLoader::safeId).distinct().toList());
+			}
+			return sorted;
+		} catch (Throwable t) {
+			// An order is an improvement, never a precondition. Losing it must not cost the pack its mods.
+			ForbricLog.warn("[Forbric/Order] could not order mods by dependency; using the order they were found in",
+					Reflect.unwrap(t));
+			return claimed;
+		}
 	}
 
 	/** Makes a MinecraftForge loading context per mod ID. Separate from the game classes so a test can drive it. */
