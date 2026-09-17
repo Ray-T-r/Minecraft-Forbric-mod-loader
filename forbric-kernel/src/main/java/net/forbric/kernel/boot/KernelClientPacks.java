@@ -88,7 +88,8 @@ public final class KernelClientPacks {
 			Class<?> sourceCls = Class.forName("net.minecraft.server.packs.repository.RepositorySource", false, cl);
 			repoCls.getMethod("addPackFinder", sourceCls).invoke(packRepository, source);
 			ForbricLog.info("[Forbric/ClientPacks] served %d ecosystem asset pack(s) to the client PackRepository "
-					+ "(forced-compatible): %s", ids.size(), ids);
+					+ "(forced-compatible), %d of them declaring overlays: %s", ids.size(), withOverlays(cl, packs),
+					ids);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ClientPacks] could not serve ecosystem assets to the client PackRepository "
 					+ "(ecosystem shaders/textures will be missing)", Reflect.unwrap(t));
@@ -158,8 +159,16 @@ public final class KernelClientPacks {
 		Object selection = selCls.getConstructor(boolean.class, posCls, boolean.class)
 				.newInstance(true, posCls.getField("TOP").get(null), true);
 
-		Constructor<?> packCtor = packCls.getConstructor(locCls, suppCls, metaCls, selCls);
-		Object pack = packCtor.newInstance(location, resources, metadata, selection);
+		// NeoForge's own reader first: it opens the jar's real pack.mcmeta and builds the Metadata from it, which
+		// is where a pack's OVERLAYS live. The kernel synthesised that record with an empty overlay list, so a
+		// Forge-family mod declaring overlays — the mechanism a mod uses to ship one set of assets per game
+		// version — had them dropped without a word. Their reader forces COMPATIBLE exactly as the synthesis
+		// below does, so nothing is lost on that axis, and it fills in the feature flags too.
+		Object pack = readWithTheJarsOwnMeta(cl, location, resources, selection);
+		if (pack == null) {
+			Constructor<?> packCtor = packCls.getConstructor(locCls, suppCls, metaCls, selCls);
+			pack = packCtor.newInstance(location, resources, metadata, selection);
+		}
 		// HIDDEN, and still required. These are a mod's own assets, not a resource pack anyone chose: they were
 		// appearing in the player's resource-pack screen as ten rows they cannot turn off and did not add.
 		//
@@ -169,6 +178,62 @@ public final class KernelClientPacks {
 		// screen; neither substitutes for the other. Pack.hidden() is the copy-with helper and preserves the
 		// location, the resources and the whole selection config.
 		return packCls.getMethod("hidden").invoke(pack);
+	}
+
+	/**
+	 * How many of the built packs declare overlays.
+	 *
+	 * <p>The number is the evidence, and it is why this is counted rather than assumed: the kernel used to
+	 * synthesise each pack's metadata with an EMPTY overlay list, so this would have been zero however many mods
+	 * declared them. An overlay is how a mod ships one set of assets per game version, so losing them means a mod
+	 * quietly serving the wrong textures — or none.
+	 */
+	private static int withOverlays(ClassLoader cl, List<Object> packs) {
+		int declaring = 0;
+		try {
+			Class<?> packCls = Class.forName("net.minecraft.server.packs.repository.Pack", false, cl);
+			java.lang.reflect.Field metadata = packCls.getDeclaredField("metadata");
+			metadata.setAccessible(true);
+			java.lang.reflect.Method overlays = metadata.getType().getMethod("overlays");
+
+			for (Object pack : packs) {
+				Object declared = overlays.invoke(metadata.get(pack));
+				if (declared instanceof List<?> list && !list.isEmpty()) declaring++;
+			}
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/ClientPacks] could not count declared overlays: %s",
+					String.valueOf(Reflect.unwrap(t)));
+		}
+		return declaring;
+	}
+
+	/**
+	 * A {@code Pack} built from the jar's own {@code pack.mcmeta}, or null when that is not possible.
+	 *
+	 * <p>{@code ResourcePackLoader.readWithOptionalMeta} is NeoForge's, and it is what a genuine instance uses
+	 * for exactly these packs: it reads the metadata section, falls back to a default when the file is absent,
+	 * forces {@code COMPATIBLE} so a pack built for another game version is still served, and carries across the
+	 * two things the kernel's own synthesis could not — the declared overlays and the feature flags.
+	 *
+	 * <p>Null rather than a throw on any failure. The caller then synthesises the metadata as before, which is
+	 * worse but not broken: a mod keeps its assets and loses only its overlays.
+	 */
+	private static Object readWithTheJarsOwnMeta(ClassLoader cl, Object location, Object resources, Object selection) {
+		try {
+			Class<?> loaderCls = Class.forName("net.neoforged.neoforge.resource.ResourcePackLoader", false, cl);
+			Class<?> locCls = Class.forName("net.minecraft.server.packs.PackLocationInfo", false, cl);
+			Class<?> suppCls = Class.forName("net.minecraft.server.packs.repository.Pack$ResourcesSupplier", false, cl);
+			Class<?> typeCls = Class.forName("net.minecraft.server.packs.PackType", false, cl);
+			Class<?> selCls = Class.forName("net.minecraft.server.packs.PackSelectionConfig", false, cl);
+
+			Method read = loaderCls.getMethod("readWithOptionalMeta", locCls, suppCls, typeCls, selCls);
+			Object clientResources = typeCls.getField("CLIENT_RESOURCES").get(null);
+			return read.invoke(null, location, resources, clientResources, selection);
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/ClientPacks] could not read a pack's own metadata, synthesising it "
+					+ "(its overlays will not apply): %s", String.valueOf(Reflect.unwrap(t)));
+			return null;
+		}
 	}
 
 	/** A {@code RepositorySource} proxy whose {@code loadPacks(Consumer)} emits our packs. */
