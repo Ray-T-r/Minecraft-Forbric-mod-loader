@@ -116,6 +116,13 @@ check "every seeded ModFile answers getFilePath and findResource" \
 check_absent "no failure walking ModList.getModFiles()" \
   "ForbricLive\] walking ModList.getModFiles\(\) FAILED" "$LOG"
 
+# B5: each Forge family ships an access transformer that widens the GAME for every mod of that family, and only
+# mod jars' files were ever fed in. Where the merge kept one family's method body it kept that body's access too,
+# so the other family's widening was gone — MenuScreens.register, which every MinecraftForge GUI mod calls during
+# client setup, came out private. The carriers' files are now applied too.
+check "the runtime carriers' access transformers are applied" \
+  "Forbric/AT\] applying [0-9]+ Forge-family access-transformer directive\(s\) from [0-9]+ jar\(s\), [1-9][0-9]* of them from the runtime carriers" "$LOG"
+
 step "nothing quietly broken by the extra posts (must be ABSENT)"
 check_absent "no NoClassDefFound"        "NoClassDefFoundError"                          "$LOG"
 check_absent "no phase failed to post"   "could not post traditional-Forge"              "$LOG"
