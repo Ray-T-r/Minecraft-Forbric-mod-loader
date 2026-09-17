@@ -1049,7 +1049,7 @@ public final class KernelBoot {
 			if (!mod.getEcosystem().isForgeFamily()) continue;
 			forgeFamily = true;
 			for (String config : mod.getMixinConfigs()) {
-				if (seen.add(mod.getEcosystem() + " " + config)) {
+				if (seen.add(mod.getEcosystem() + "\0" + config)) {
 					configs.add(new KernelForgeFamilyMixins.ForgeMixinConfig(config, jar, mod.getEcosystem()));
 				}
 			}

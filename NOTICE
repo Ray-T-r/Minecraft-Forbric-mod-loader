@@ -3,11 +3,17 @@ Copyright 2026 The Forbric Project
 
 Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-This repository contains two modules, both Apache-2.0:
+This repository contains four modules, all Apache-2.0:
 
-    forbric-loader/      the loader
-    forbric-installer/   the standalone installer that stages the loader into a
-                         Minecraft launcher
+    forbric-kernel/            the sovereign kernel — the current loader, which
+                               runs Fabric, MinecraftForge and NeoForge mods in
+                               one instance
+    forbric-kernel-installer/  the standalone installer for the kernel; it builds
+                               the game artifacts on the user's own machine
+    forbric-loader/            the first-generation loader, kept as a differential
+                               oracle and still built by CI
+    forbric-installer/         the standalone installer for that first-generation
+                               loader
 
 ================================================================================
 forbric-loader
@@ -32,6 +38,27 @@ loader jar redistributes; it is not restated here.
 
 See also forbric-loader/CREDITS.md (provenance) and forbric-loader/MAPPINGS.md
 (mapping sources).
+
+================================================================================
+forbric-kernel
+================================================================================
+The kernel does NOT compile the Fabric Loader substrate. It vendors only the
+small mod-facing net.fabricmc surface it needs — those files keep their original
+FabricMC copyright headers — and is otherwise its own clean-room code.
+
+Its substrate attribution, its clean-room statement for the Forge-side code, its
+no-MCP-mapping-data statement and its list of bundled third-party dependencies
+and their licences are in forbric-kernel/NOTICE. That file governs what a built
+kernel jar redistributes; it is not restated here.
+
+================================================================================
+forbric-kernel-installer
+================================================================================
+forbric-kernel-installer is Forbric's own code. At install time it downloads and
+BUILDS, on the user's own machine, artifacts that are not part of this
+repository — game files from Mojang and the Forge-family runtime jars — each of
+which keeps its own licence and its publisher's terms. Those artifacts are never
+published by this project.
 
 ================================================================================
 forbric-installer

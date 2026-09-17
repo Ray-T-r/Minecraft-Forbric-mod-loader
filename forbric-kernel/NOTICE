@@ -36,3 +36,42 @@ version-range grammar, Mixin). It contains NO source from FML or FancyModLoader
 The genuine Forge / NeoForge universal jars are NEVER bundled — they are
 runtime-supplied (compileOnly linkage only) and act solely as passive ABI
 carriers. No FML/FancyModLoader lifecycle is booted or reflectively driven.
+
+================================================================================
+Mappings
+================================================================================
+Forbric does NOT bundle MCP mapping data, which is non-redistributable. Runtime
+mappings are generated from permitted sources only (Mojang official mappings,
+Fabric intermediary, and Yarn).
+
+================================================================================
+Third-party dependencies
+================================================================================
+Nested INSIDE the built forbric-kernel jar (JarInJar, at
+META-INF/jars/mixinextras-fabric.jar, so that the kernel's own transforming
+class loader defines it — it must not be parent-loaded; see the `nestedMods`
+configuration and the `jar` task in build.gradle). This one is physically
+redistributed by this project and its licence requires the notice below be
+kept with it:
+
+- MixinExtras ..................... MIT (io.github.llamalad7)
+
+Resolved as ordinary dependencies. They are NOT shaded into the kernel jar; they
+sit beside it on the class path (the installer stages them into a launcher's
+libraries/ tree):
+
+- OW2 ASM ......................... BSD-3-Clause (org.ow2.asm)
+- Sponge Mixin .................... MIT (net.fabricmc:sponge-mixin)
+- SAT4J ........................... EPL-1.0 / LGPL-2.1 (org.ow2.sat4j) — see each artifact's about.html
+- tiny-remapper ................... Apache-2.0 (net.fabricmc)
+- class-tweaker ................... Apache-2.0 (net.fabricmc)
+- mapping-io ...................... Apache-2.0 (net.fabricmc)
+- night-config .................... LGPL-3.0 (com.electronwill.night-config) — used as an unmodified library dependency
+
+Compile-time only, never redistributed and never on a runtime class path this
+project controls. The game supplies each of these at runtime:
+
+- JetBrains annotations ........... Apache-2.0 (org.jetbrains)
+- log4j-api ....................... Apache-2.0 (org.apache.logging.log4j)
+- fastutil ........................ Apache-2.0 (it.unimi.dsi) — game-side source set
+- Guava ........................... Apache-2.0 (com.google.guava) — game-side source set
