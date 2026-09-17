@@ -227,6 +227,11 @@ public final class KernelRuntimeClasses {
 		// view of it, because fabric-api reads that field DIRECTLY.
 		CLASSES.put("net.forbric.kernel.runtime.KernelParticleProviders", new Entry(Origin.COMPILED, List.of(
 				new Call("intKeyedView", Object.class, java.util.Map.class))));
+		// The merged base gave ChunkGenerator.featuresPerStep MinecraftForge's ClearableLazy descriptor and lost
+		// vanilla's, which fabric-api's biome API writes directly. The transformer puts vanilla's back; this is
+		// the one use that still needs MinecraftForge's type. See ForbricMergedBaseCompatTransformer.
+		CLASSES.put("net.forbric.kernel.runtime.KernelChunkGenerator", new Entry(Origin.COMPILED, List.of(
+				new Call("invalidate", void.class, java.util.function.Supplier.class))));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));
