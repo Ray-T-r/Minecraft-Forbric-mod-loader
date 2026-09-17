@@ -390,7 +390,7 @@ Minecraft-Forbric-mod-loader/
 ├── README.md                       player-facing
 ├── introduction.md                 this document
 ├── LICENSE, NOTICE                 Apache-2.0 + substrate/dependency attribution
-├── bootstrap.sh                    clone ../fabric-loader at fabric_loader_ref, apply patches, verify
+├── bootstrap.sh                    clone ./fabric-loader at fabric_loader_ref, apply patches, verify
 ├── .github/workflows/build.yml     CI: two independent jobs — `build` (bootstrap + gradlew build +
 │                                   upload both loader jars) and `kernel` (gradlew jar test + upload)
 │
@@ -483,14 +483,14 @@ Minecraft-Forbric-mod-loader/
     │   ├── ArtifactBuilder                 orchestrates the build, caches under <dir>/.forbric-build
     │   ├── NfrtRunner                      drives NeoFormRuntime (decompile/patch/recompile MC)
     │   ├── ForgeRuntimeBuilder, NeoForgeRuntimeBuilder, PatchedMcBuilder, MergedBaseTool
-    │   └── Http, Json, Util, Zips, JdkLocator, RemoteSource, BuildStamp
+    │   └── Http, Json, Util, Zips, JdkLocator, RemoteSource
     └── packaging/                          double-click launchers (Windows .bat, macOS .command)
 ```
 
 ## 13. Build, run and test
 
 ```bash
-./bootstrap.sh                          # clone ../fabric-loader at fabric_loader_ref, apply the
+./bootstrap.sh                          # clone ./fabric-loader at fabric_loader_ref, apply the
                                         # eight patches, then verify them.  --check verifies only
 cd forbric-loader && ./gradlew build    # compile both source trees, run 65 unit tests,
                                         # emit forbric-loader-*.jar + forbricruntime-*.jar
