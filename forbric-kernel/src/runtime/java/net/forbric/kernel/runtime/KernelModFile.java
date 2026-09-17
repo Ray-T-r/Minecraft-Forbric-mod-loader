@@ -41,18 +41,24 @@ import net.neoforged.neoforgespi.locating.ModFileDiscoveryAttributes;
  * of this interface's ten methods were named; the other six were answered by that fallback, and nothing anywhere
  * said so. Written as a class, javac lists all ten and each one is now a line with a reason next to it.
  *
- * <p><b>Every answer below is exactly what the proxy produced</b>, deliberately, so this change cannot move
- * behaviour. Three of them are almost certainly wrong — {@link #getId()}, {@link #getFileName()} and
- * {@link #getType()} return null where a real mod file has an obvious value, and {@link #getModFileInfo()}
- * returns null even though the enclosing {@link KernelModFileInfo} is right there. They are left as they were
- * because "probably right" is not evidence, and the value of this class is that they are now arguable in a diff
- * instead of invisible. Changing one is a separate change with its own gate run.
+ * <p>The class was first written answering every one of those the way the proxy had, deliberately, so that the
+ * rewrite could not move behaviour — and it recorded that four of them were almost certainly wrong. This is that
+ * separate change: {@link #getId()}, {@link #getFileName()}, {@link #getType()} and {@link #getModFileInfo()}
+ * now answer with the values a real mod file has. Each was null, and null is not a value any consumer expects
+ * from them: a mod filtering the file list by type dropped every kernel-loaded mod, and a mod walking from a
+ * file back to its info — the direction NeoForge's own error path takes — dereferenced null.
  */
 public final class KernelModFile implements IModFile {
 	private final String modId;
 	private final Path path;
 	private final JarContents contents;
 	private final Path jar;
+
+	/**
+	 * The info that owns this file. Set by {@link KernelModFileInfo}'s constructor, which is what builds this
+	 * object: the two refer to each other, so one of them has to be filled in second.
+	 */
+	private IModFileInfo modFileInfo;
 
 	/** Memoised: most instances are never asked, and walking a hundred jars for nobody is pure boot cost. */
 	private ModFileScanData scanResult;
@@ -115,35 +121,42 @@ public final class KernelModFile implements IModFile {
 		return scanResult;
 	}
 
-	// --- answered the way the proxy's defaultReturn answered them -----------------------------------------
-
-	/** Null, as before. A real mod file would say {@code modId}; nothing has been shown to read it here. */
+	/** The mod's id, which is what a real mod file's id is. */
 	@Override
 	public String getId() {
-		return null;
+		return modId;
 	}
 
-	/** Null, as before. A real mod file would say the jar's file name. */
+	/** The jar's file name, or the placeholder path's for a mod that has no jar. Never null. */
 	@Override
 	public String getFileName() {
-		return null;
-	}
-
-	/** Null, as before. The honest value would be {@code Type.MOD}; nothing has been shown to read it here. */
-	@Override
-	public IModFile.Type getType() {
-		return null;
+		Path name = path.getFileName();
+		return name == null ? modId + ".jar" : name.toString();
 	}
 
 	/**
-	 * Null, as before — even though {@link KernelModFileInfo} holds this object and could be handed back. The
-	 * proxy carried a comment claiming it was "set below via the enclosing IModFileInfo when asked", which it
-	 * never was; a class cannot carry that kind of untrue comment for long, which is part of the point.
+	 * {@code MOD}, which is what every file the kernel publishes is.
+	 *
+	 * <p>Null was not a neutral answer: consumers filter the file list by type, and one comparing against
+	 * {@code Type.MOD} dropped every kernel-loaded mod from whatever it was building.
 	 */
 	@Override
-	public IModFileInfo getModFileInfo() {
-		return null;
+	public IModFile.Type getType() {
+		return IModFile.Type.MOD;
 	}
+
+	/** The info that owns this file — the walk back up, which NeoForge's own error path takes. */
+	@Override
+	public IModFileInfo getModFileInfo() {
+		return modFileInfo;
+	}
+
+	/** Called once by {@link KernelModFileInfo}'s constructor. */
+	void setModFileInfo(IModFileInfo info) {
+		this.modFileInfo = info;
+	}
+
+	// --- answered the way the proxy's defaultReturn answered them -----------------------------------------
 
 	/** Empty, as before. The mods of this file are reached through {@code IModFileInfo.getMods()} instead. */
 	@Override

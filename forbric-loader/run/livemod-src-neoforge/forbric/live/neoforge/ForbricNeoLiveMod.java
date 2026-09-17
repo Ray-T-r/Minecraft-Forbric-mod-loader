@@ -101,7 +101,15 @@ public class ForbricNeoLiveMod {
 				System.out.println("[ForbricNeoLive] getModFileById(self) returned NULL");
 				return;
 			}
-			System.out.println("[ForbricNeoLive] getModFileById(self) answered, file=" + info.getFile().getFileName());
+			System.out.println("[ForbricNeoLive] getModFileById(self) answered, file=" + info.getFile().getFileName()
+					+ " id=" + info.getFile().getId() + " type=" + info.getFile().getType());
+			java.util.List<? extends net.neoforged.neoforgespi.language.IModInfo> mine = info.getMods();
+			if (mine.isEmpty()) {
+				System.out.println("[ForbricNeoLive] own metadata: the file reports NO mods");
+				return;
+			}
+			System.out.println("[ForbricNeoLive] own metadata: name=" + mine.get(0).getDisplayName()
+					+ " version=" + mine.get(0).getVersion());
 		} catch (Throwable t) {
 			System.out.println("[ForbricNeoLive] getModFileById(self) FAILED: " + t);
 		}

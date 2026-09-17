@@ -43,15 +43,17 @@ import net.neoforged.neoforgespi.locating.ForgeFeature;
  * <p>Its one unnamed method was {@link #getLoader()}, which the fallback answered with null. It still does.
  */
 public final class KernelModInfo implements IModInfo {
-	private static final ArtifactVersion UNKNOWN_VERSION = new DefaultArtifactVersion("0.0");
-
 	private final String modId;
 	private final IModFileInfo owningFile;
 	private final IConfigurable config;
+	private final String displayName;
+	private final ArtifactVersion version;
 
 	public KernelModInfo(String modId, Path jar) {
 		this.modId = modId;
 		this.config = new KernelConfigurable(modId);
+		this.displayName = KernelModMetadata.displayNameOf(modId);
+		this.version = new DefaultArtifactVersion(KernelModMetadata.versionOf(modId));
 
 		// The owning file's getMods() has to return THIS object, so it is handed a slot to read back from.
 		IModInfo[] self = new IModInfo[1];
@@ -69,9 +71,10 @@ public final class KernelModInfo implements IModInfo {
 		return modId;
 	}
 
+	/** The name discovery read out of the mod's own metadata, or the id when it declares none. */
 	@Override
 	public String getDisplayName() {
-		return modId;
+		return displayName;
 	}
 
 	@Override
@@ -83,11 +86,12 @@ public final class KernelModInfo implements IModInfo {
 	 * Never null: {@code ModListScreen.init} renders each mod's version through
 	 * {@code MavenVersionTranslator.artifactVersionToString(getVersion())}, which calls {@code toString()}
 	 * unguarded. A null crashed the Mods screen the instant it opened, and then its tick NPE'd on the half-built
-	 * modList. "0.0" is the conventional unknown-version placeholder.
+	 * modList. "0.0" is the conventional unknown-version placeholder, and it is now only the fallback: the real
+	 * version comes from the mod's own metadata, which discovery has already parsed.
 	 */
 	@Override
 	public ArtifactVersion getVersion() {
-		return UNKNOWN_VERSION;
+		return version;
 	}
 
 	/**

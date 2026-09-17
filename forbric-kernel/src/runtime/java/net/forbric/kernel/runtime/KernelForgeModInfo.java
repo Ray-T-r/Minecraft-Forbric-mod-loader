@@ -66,12 +66,14 @@ import net.minecraftforge.forgespi.locating.ForgeFeature;
  * not a line in this file.
  */
 public final class KernelForgeModInfo implements IModInfo {
-	private static final ArtifactVersion UNKNOWN_VERSION = new DefaultArtifactVersion("0.0");
-
 	private final String modId;
+	private final String displayName;
+	private final ArtifactVersion version;
 
 	public KernelForgeModInfo(String modId) {
 		this.modId = modId;
+		this.displayName = KernelModMetadata.displayNameOf(modId);
+		this.version = new DefaultArtifactVersion(KernelModMetadata.versionOf(modId));
 	}
 
 	@Override
@@ -84,9 +86,10 @@ public final class KernelForgeModInfo implements IModInfo {
 		return modId;
 	}
 
+	/** The name discovery read out of the mod's own metadata, or the id when it declares none. */
 	@Override
 	public String getDisplayName() {
-		return modId;
+		return displayName;
 	}
 
 	@Override
@@ -94,10 +97,13 @@ public final class KernelForgeModInfo implements IModInfo {
 		return "";
 	}
 
-	/** Non-null like the NeoForge twin: a mod-list UI renders {@code getVersion().toString()} unguarded. */
+	/**
+	 * Non-null like the NeoForge twin: a mod-list UI renders {@code getVersion().toString()} unguarded. The real
+	 * version comes from the mod's own metadata now; "0.0" is only the fallback.
+	 */
 	@Override
 	public ArtifactVersion getVersion() {
-		return UNKNOWN_VERSION;
+		return version;
 	}
 
 	@Override

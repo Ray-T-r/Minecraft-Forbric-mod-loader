@@ -72,9 +72,15 @@ check "a MinecraftForge mod sees the Fabric mod"  "\[ForbricLive\] foreign forbr
 # A3: ModList.get().getModFileById(MODID).getFile() — the lookup a mod makes about ITSELF. The kernel filled that
 # map for the NeoForge baseline alone, so every kernel-loaded mod got null and the next dereference NPE'd.
 check "a NeoForge mod can resolve its OWN mod file by id" \
-  "\[ForbricNeoLive\] getModFileById\(self\) answered, file=" "$LOG"
+  "\[ForbricNeoLive\] getModFileById\(self\) answered, file=forbricneolive.jar id=forbricneolive type=MOD" "$LOG"
 check_absent "getModFileById did not answer null for a loaded mod" \
   "\[ForbricNeoLive\] getModFileById\(self\) (returned NULL|FAILED)" "$LOG"
+
+# A4: the SPI objects were built from an id and a jar path, so every mod reported version 0.0 and its id as its
+# display name. The values are asserted literally — the mod declares both in its own metadata file, and a
+# regression here reads as "0.0"/"forbricneolive", which is exactly what a count-free pattern would still match.
+check "a mod's own version and display name come from its metadata" \
+  "\[ForbricNeoLive\] own metadata: name=Forbric NeoForge Live Canary version=1.0.0" "$LOG"
 
 step "nothing quietly broken by the wider lists (must be ABSENT)"
 check_absent "no NoClassDefFound"       "NoClassDefFoundError"        "$LOG"
