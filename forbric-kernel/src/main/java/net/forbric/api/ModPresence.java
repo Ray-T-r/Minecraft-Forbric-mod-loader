@@ -16,8 +16,10 @@
 
 package net.forbric.api;
 
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import net.forbric.kernel.util.ForbricLog;
@@ -70,6 +72,7 @@ public final class ModPresence {
 	private static volatile List<DiscoveredMod> forgeFamily = List.of();
 	private static volatile List<DiscoveredMod> fabric = List.of();
 	private static volatile Set<String> ids = Set.of();
+	private static volatile Map<String, DiscoveredMod> byId = Map.of();
 
 	private ModPresence() {
 	}
@@ -139,12 +142,50 @@ public final class ModPresence {
 		return !"off".equalsIgnoreCase(System.getProperty(SWITCH, "on"));
 	}
 
+	/**
+	 * Everything discovery learned about a loaded mod — version, display name, dependencies — or null.
+	 *
+	 * <p>Read from game code, which is why it is here and not somewhere boot-side: the SPI objects the kernel
+	 * hands NeoForge used to answer "0.0" for every mod's version and the mod id for its display name, because
+	 * they were built from an id and a jar path and nothing else. The Mods screen showed a list of ids at version
+	 * 0.0, and a mod comparing another mod's version got a number that is below everything.
+	 *
+	 * <p>Deliberately NOT gated by {@link #SWITCH}. That switch answers a cross-ecosystem question — should a
+	 * Fabric mod be able to see a Forge mod — and a mod's own version is not that question. Turning the switch
+	 * off must not put "0.0" back.
+	 *
+	 * <p>Indexed by id and by alias, like {@link #ids}: whoever asks holds one name for the mod and does not know
+	 * which of the two it is.
+	 */
+	public static DiscoveredMod metadata(String id) {
+		try {
+			return id == null ? null : byId.get(id);
+		} catch (Throwable t) {
+			return null;
+		}
+	}
+
 	private static void reindex() {
 		Set<String> merged = new LinkedHashSet<>();
 		for (DiscoveredMod mod : forgeFamily) add(merged, mod);
 		for (DiscoveredMod mod : fabric) add(merged, mod);
 		ids = Set.copyOf(merged);
+
+		// First publish wins, so a presence alias cannot overwrite the real mod's own metadata.
+		Map<String, DiscoveredMod> index = new LinkedHashMap<>();
+		for (DiscoveredMod mod : forgeFamily) index(index, mod);
+		for (DiscoveredMod mod : fabric) index(index, mod);
+		byId = Map.copyOf(index);
+
 		ForbricLog.debug("[Forbric/Presence] %s", summary());
+	}
+
+	private static void index(Map<String, DiscoveredMod> into, DiscoveredMod mod) {
+		if (mod == null) return;
+		if (mod.getId() != null && !mod.getId().isBlank()) into.putIfAbsent(mod.getId(), mod);
+		for (String alias : mod.getAliases()) {
+			if (alias != null && !alias.isBlank()) into.putIfAbsent(alias, mod);
+		}
 	}
 
 	/**

@@ -56,6 +56,7 @@ public final class KernelModFileInfo implements IModFileInfo {
 	KernelModFileInfo(String modId, Path jar, IModInfo[] owner) {
 		this.modId = modId;
 		this.file = new KernelModFile(modId, jar);
+		this.file.setModFileInfo(this);
 		this.owner = owner;
 	}
 

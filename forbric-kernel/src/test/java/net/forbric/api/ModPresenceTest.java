@@ -18,6 +18,7 @@ package net.forbric.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -161,6 +162,47 @@ class ModPresenceTest {
 		assertTrue(ModPresence.isLoaded("libjf_base"),
 				"a NeoForge mod asking about libjf_base must not be told no while it is loaded");
 		assertFalse(ModPresence.isLoaded("libjf_base_v2"));
+	}
+
+	/**
+	 * The SPI objects the kernel hands NeoForge are built from a mod id and a jar path, so they answered "0.0"
+	 * for every version and the id for every display name. The real values were parsed at discovery and simply
+	 * never carried across; this lookup is the carry.
+	 */
+	@org.junit.jupiter.api.Test
+	void carriesWhatDiscoveryLearnedAboutALoadedMod() {
+		ModPresence.publishFabric(List.of(
+				new DiscoveredMod(Ecosystem.FABRIC, "sodium", "0.6.13", "Sodium",
+						List.of(), List.of(), null, "sodium.jar")));
+
+		DiscoveredMod found = ModPresence.metadata("sodium");
+		assertEquals("0.6.13", found.getVersion());
+		assertEquals("Sodium", found.getDisplayName());
+		assertNull(ModPresence.metadata("not-installed"));
+		assertNull(ModPresence.metadata(null), "a null id must answer null, not throw");
+	}
+
+	@org.junit.jupiter.api.Test
+	void metadataAnswersThroughAnAliasToo() {
+		// Whoever asks holds one name for the mod and does not know whether it is the id or a provides alias.
+		ModPresence.publishFabric(List.of(
+				mod(Ecosystem.FABRIC, "libjf-base").withAliases(List.of("libjf_base"))));
+
+		assertEquals("libjf-base", ModPresence.metadata("libjf_base").getId());
+	}
+
+	@org.junit.jupiter.api.Test
+	void metadataIgnoresTheCrossEcosystemSwitch() {
+		// That switch answers "should a Fabric mod see a Forge mod". A mod's own version is not that question,
+		// and turning the switch off must not put "0.0" back on the Mods screen.
+		ModPresence.publishForgeFamily(List.of(mod(Ecosystem.NEOFORGE, "jei")));
+		System.setProperty("forbric.crossEcosystemPresence", "off");
+		try {
+			assertFalse(ModPresence.isLoaded("jei"), "the switch must still turn presence off");
+			assertEquals("1.0.0", ModPresence.metadata("jei").getVersion());
+		} finally {
+			System.clearProperty("forbric.crossEcosystemPresence");
+		}
 	}
 
 	private static DiscoveredMod mod(Ecosystem ecosystem, String id) {
