@@ -143,7 +143,10 @@ public final class KernelFabricEcosystem {
 		// classes; only the Fabric-side registration (and with it the entrypoints) is skipped.
 		int suppressed = 0;
 		int lostNested = 0;
-		for (KernelModContainer container : discovery.getContainers()) {
+		// In DEPENDENCY order, not discovery order. Registration order is the order FabricLoader hands entry
+		// points back in, and therefore the order onInitialize runs in — so a mod whose jar sorted before a
+		// library it requires initialised first and called that library before it was ready.
+		for (KernelModContainer container : orderByDependency(discovery.getContainers())) {
 			Path jar = container.getJar();
 			if (jar != null && MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FABRIC)) {
 				suppressed++;
@@ -365,6 +368,44 @@ public final class KernelFabricEcosystem {
 	 *
 	 * @return true if this call ran them, false if already run or off the client
 	 */
+	/**
+	 * The containers in dependency order.
+	 *
+	 * <p>Registration order is the order FabricLoader hands entry points back in, and therefore the order
+	 * {@code onInitialize} runs in. It was discovery order — jar file name, alphabetically — so a mod whose file
+	 * sorted before a library it requires initialised first and called that library's API before the library had
+	 * set itself up. The requirements are already parsed; they were simply never used for this.
+	 *
+	 * <p>Best effort: an order is an improvement, never a precondition, and losing it must not cost the pack its
+	 * mods.
+	 */
+	private static List<KernelModContainer> orderByDependency(List<KernelModContainer> containers) {
+		try {
+			List<DiscoveredMod> known = new ArrayList<>(containers.size());
+			for (KernelModContainer container : containers) {
+				String id = container.getMetadata().getId();
+				if (id == null || id.isBlank()) continue;
+				known.add(new DiscoveredMod(Ecosystem.FABRIC, id,
+						String.valueOf(container.getMetadata().getVersion()), container.getMetadata().getName(),
+						unifiedDependencies(container.getMetadata()), List.of(), null, id)
+						.withAliases(List.copyOf(container.getMetadata().getProvides())));
+			}
+			if (known.isEmpty()) return containers;
+
+			List<KernelModContainer> sorted = ModConstructionOrder.sort(containers,
+					c -> c.getMetadata().getId(), ModConstructionOrder.of(known));
+			if (!sorted.equals(containers)) {
+				ForbricLog.info("[Forbric/Order] %d Fabric mod(s) initialise in dependency order, not jar-file "
+						+ "order (-Dforbric.modOrder=name to go back)", sorted.size());
+			}
+			return sorted;
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Order] could not order Fabric mods by dependency; using discovery order",
+					t);
+			return containers;
+		}
+	}
+
 	/**
 	 * A Fabric mod's declared dependencies in the unified model.
 	 *
