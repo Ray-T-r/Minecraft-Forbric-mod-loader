@@ -67,6 +67,19 @@ import net.forbric.kernel.util.ForbricLog;
  * base, the runtime carriers and the kernel's own classes have no family here and probe as before.
  *
  * <p>Escape hatch: {@code -Dforbric.loaderProbes=off} restores the pre-policy behaviour (every probe answers yes).
+ *
+ * <h2>Not installed</h2>
+ *
+ * <p><b>Nothing in the kernel switches this on.</b> {@code ForbricClassLoader.setJarFamilies} has no caller, so
+ * the per-jar family map is empty for the whole run; with it empty the loader never records a class's origin,
+ * {@code familyOfClass} answers null for everything, and {@link net.forbric.kernel.transform.LoaderProbeRewriter}
+ * is never even constructed — it appears in no production code path, only in its own unit test. Every probe
+ * therefore answers yes today, exactly as if the escape hatch were set.
+ *
+ * <p>This is recorded rather than quietly fixed because switching it on is a behaviour change, not a repair: it
+ * would start telling live mods that a loader they can see is absent, and which mods change branch as a result
+ * is not something the current gates would show. Whoever wires it up owns that decision and should bring a gate
+ * with them.
  */
 public final class LoaderProbePolicy {
 
