@@ -26,10 +26,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.api.ModPresence;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 
@@ -125,8 +128,9 @@ public final class KernelDataPacks {
 		List<String> ids = new ArrayList<>();
 		int loaderPacks = collect(cl, packType, carriersWithData(runtimeJars), packs, ids,
 				KernelDataPacks::carrierPackId);
+		Set<String> takenModIds = new java.util.LinkedHashSet<>();
 		int modPacks = collect(cl, packType, forgeFamilyJarsWithData(jars), packs, ids,
-				KernelDataPacks::modPackId);
+				jar -> modPackId(jar, KernelDataPacks::firstModIdIn, takenModIds));
 		if (packs.isEmpty()) {
 			ForbricLog.debug("[Forbric/DataPacks] nothing carries data/ — no datapack to serve");
 			return;
@@ -196,9 +200,41 @@ public final class KernelDataPacks {
 		return "forbric/carrier/" + carrierRank(jar) + "-" + stripExtension(jar.getFileName().toString());
 	}
 
-	/** A mod's pack id. Sorts after every carrier id, so a mod overrides its loader. */
-	static String modPackId(Path jar) {
+	/**
+	 * A mod's pack id. Sorts after every carrier id, so a mod overrides its loader.
+	 *
+	 * <p><b>Derived from the mod's ID, not its file name.</b> A world records which datapacks it has enabled, by
+	 * id, in its save. With the file name in the id, updating or renaming a mod changed that id — so every world
+	 * created before the update came back reporting a datapack it no longer has and one it has never seen, which
+	 * is the "Experimental Settings / Create Backup" dialog, on every old world, after every mod update. A mod's
+	 * id is the one name about it that does not change.
+	 *
+	 * <p>Falls back to the file name when the id is unknown or already taken. Two jars answering to one id would
+	 * silently collapse into one pack — {@code PackRepository.discoverAvailable} drains each source into a map
+	 * keyed by id — and losing a mod's data outright is far worse than an id that moves when the file is renamed.
+	 */
+	static String modPackId(Path jar, Function<Path, String> modIdOf, Set<String> taken) {
+		String modId = modIdOf == null ? null : modIdOf.apply(jar);
+		if (modId != null && !modId.isBlank() && taken.add("forbric/data/" + modId)) {
+			return "forbric/data/" + modId;
+		}
 		return "forbric/data/" + stripExtension(jar.getFileName().toString());
+	}
+
+	/**
+	 * The id of the first mod discovery found in {@code jar}, or null.
+	 *
+	 * <p>A jar may declare several mods; the first is used, and it is the same first every launch because the
+	 * registry preserves discovery order. This reads the registry rather than re-parsing the jar, so it costs a
+	 * map lookup.
+	 */
+	static String firstModIdIn(Path jar) {
+		if (jar == null) return null;
+		String source = jar.toString();
+		for (DiscoveredMod mod : ModPresence.forgeFamilyMods()) {
+			if (source.equals(mod.getSource())) return mod.getId();
+		}
+		return null;
 	}
 
 	/** Higher rank = later in the sorted order = wins a last-wins collision. */

@@ -126,6 +126,44 @@ class KernelDataPacksTest {
 		assertEquals(List.of(), KernelDataPacks.forgeFamilyJarsWithData(List.of()));
 	}
 
+	/** The file-name fallback: no mod id is known for these fixtures, which is the path this exercises. */
+	private static String modPackIdByFileName(Path jar) {
+		return KernelDataPacks.modPackId(jar, j -> null, new java.util.LinkedHashSet<>());
+	}
+
+	@org.junit.jupiter.api.Test
+	void aModsPackIdComesFromItsModIdNotItsFileName() {
+		// A world records the datapacks it has enabled BY ID. With the file name in the id, updating a mod changed
+		// it, so every world made before the update reported a datapack it no longer has and one it has never seen
+		// — which is the "Experimental Settings / Create Backup" dialog, on every old world, after every update.
+		java.util.Set<String> taken = new java.util.LinkedHashSet<>();
+
+		assertEquals("forbric/data/waystones", KernelDataPacks.modPackId(
+				Path.of("waystones-26.2-1.2.3.jar"), j -> "waystones", taken));
+		assertEquals("forbric/data/waystones", KernelDataPacks.modPackId(
+				Path.of("waystones-26.2-1.2.4.jar"), j -> "waystones", new java.util.LinkedHashSet<>()),
+				"the same mod, updated, has to keep the same id");
+	}
+
+	@org.junit.jupiter.api.Test
+	void aSecondJarClaimingTheSameModIdFallsBackToItsFileName() {
+		// Two packs under one id would silently collapse into one — discoverAvailable keys its map by id — and
+		// losing a mod's data outright is far worse than an id that moves when the file is renamed.
+		java.util.Set<String> taken = new java.util.LinkedHashSet<>();
+
+		assertEquals("forbric/data/jei", KernelDataPacks.modPackId(Path.of("jei-a.jar"), j -> "jei", taken));
+		assertEquals("forbric/data/jei-b", KernelDataPacks.modPackId(Path.of("jei-b.jar"), j -> "jei", taken));
+	}
+
+	@org.junit.jupiter.api.Test
+	void anUnknownModIdFallsBackToTheFileName() {
+		// A jar discovery never indexed still has to get a pack, or its recipes and tags are simply absent.
+		assertEquals("forbric/data/mystery-1.0", KernelDataPacks.modPackId(
+				Path.of("mystery-1.0.jar"), j -> null, new java.util.LinkedHashSet<>()));
+		assertEquals("forbric/data/blank-1.0", KernelDataPacks.modPackId(
+				Path.of("blank-1.0.jar"), j -> "  ", new java.util.LinkedHashSet<>()));
+	}
+
 	/**
 	 * The whole stack rests on string comparison, because PackRepository.discoverAvailable re-sorts each source's
 	 * packs into a TreeMap and discards the order they were emitted in. So assert the thing the game actually
@@ -141,8 +179,8 @@ class KernelDataPacksTest {
 		Path early = jar("aaa-mod.jar", ForbricModDiscoverer.NEOFORGE_MANIFEST, "data/aaa/recipe/x.json");
 
 		List<String> sorted = new java.util.ArrayList<>(List.of(
-				KernelDataPacks.modPackId(mod), KernelDataPacks.carrierPackId(neo),
-				KernelDataPacks.modPackId(early), KernelDataPacks.carrierPackId(forge)));
+				modPackIdByFileName(mod), KernelDataPacks.carrierPackId(neo),
+				modPackIdByFileName(early), KernelDataPacks.carrierPackId(forge)));
 		java.util.Collections.sort(sorted);
 
 		assertEquals(List.of(

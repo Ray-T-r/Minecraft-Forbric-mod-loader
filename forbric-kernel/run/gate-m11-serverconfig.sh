@@ -59,6 +59,15 @@ TYPES=$(grep -oE 'loaded NeoForge configs \([A-Z+]+\)' "$LOG" | head -1 | grep -
 assert_eq "config types loaded on a server" "COMMON" "${TYPES:-none}"
 check_absent "no config opened twice" "Opening a config that was already loaded" "$LOG"
 
+# A world records the datapacks it has enabled BY ID. The id used to carry the jar's file name, so updating or
+# renaming a mod changed it, and every world made before the update came back reporting a datapack it no longer
+# has and one it has never seen — the "Experimental Settings / Create Backup" dialog, on every old world, after
+# every update. The id is the mod's own now, which does not change when the file does.
+check "a mod's datapack id is its mod id" \
+  "Forbric/DataPacks\] served .*forbric/data/balm(,|\])" "$LOG"
+check_absent "and carries no version or file name" \
+  "forbric/data/balm-[a-z]+-[0-9]" "$LOG"
+
 step "the config-driven mod stack came up (must PASS)"
 check "waystones constructed"         "constructed @Mod waystones"                  "$LOG"
 check "balm constructed"              "constructed @Mod balm"                       "$LOG"
