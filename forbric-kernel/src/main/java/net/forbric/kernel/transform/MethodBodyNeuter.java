@@ -50,16 +50,24 @@ public final class MethodBodyNeuter implements ClassTransformer {
 	public record Target(String ownerBinaryName, String methodName, String descriptor, String reason) {}
 
 	private final Set<Target> targets = new LinkedHashSet<>();
+	/**
+	 * The owners of {@link #targets}, for the reject path.
+	 *
+	 * <p>That path is every class the game loads, and it used to open a stream and allocate a lambda capture per
+	 * class to walk a handful of targets and find no match. A set lookup answers the same question with no
+	 * allocation at all.
+	 */
+	private final Set<String> owners = new java.util.HashSet<>();
 
 	public MethodBodyNeuter add(Target t) {
 		targets.add(t);
+		owners.add(t.ownerBinaryName());
 		return this;
 	}
 
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
-		boolean owns = targets.stream().anyMatch(t -> t.ownerBinaryName().equals(className));
-		if (!owns) return classBytes;
+		if (!owners.contains(className)) return classBytes;
 
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);

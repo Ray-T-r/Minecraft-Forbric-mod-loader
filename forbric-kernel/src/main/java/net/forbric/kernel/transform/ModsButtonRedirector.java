@@ -30,6 +30,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -154,25 +155,7 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	 * comparisons over a third of the memory traffic.
 	 */
 	static boolean carriesAMarker(byte[] classBytes) {
-		if (classBytes == null) return false;
-		int longest = 0;
-		for (byte[] marker : MARKERS) longest = Math.max(longest, marker.length);
-		if (classBytes.length < longest) return false;
-
-		for (int i = 0; i <= classBytes.length - 1; i++) {
-			for (byte[] marker : MARKERS) {
-				if (i + marker.length > classBytes.length) continue;
-				if (matchesAt(classBytes, i, marker)) return true;
-			}
-		}
-		return false;
-	}
-
-	private static boolean matchesAt(byte[] haystack, int at, byte[] needle) {
-		for (int j = 0; j < needle.length; j++) {
-			if (haystack[at + j] != needle[j]) return false;
-		}
-		return true;
+		return ByteScan.containsAny(classBytes, MARKERS);
 	}
 
 	/**
