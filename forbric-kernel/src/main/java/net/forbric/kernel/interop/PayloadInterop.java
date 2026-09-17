@@ -82,16 +82,40 @@ public final class PayloadInterop {
 
 	public static void bootstrapMirrors(ClassLoader cl) {
 		ClassLoader loader = cl != null ? cl : loaderFor();
+
+		// Lock-free fast path. This is called at the head of the codec lookup and of the channel-registration
+		// handler, so it is on the packet path — and after the first call for a loader it has nothing to do but
+		// still took a monitor every time, on the Netty threads. There is one game loader in practice, so a
+		// single volatile read settles it; anything else falls through to the map exactly as before, and a stale
+		// read costs one extra trip down the slow path, which is idempotent.
+		if (loader == mirroredLoader) return;
+
 		synchronized (MIRRORED_LOADERS) {
-			if (MIRRORED_LOADERS.putIfAbsent(loader, Boolean.TRUE) != null) return;
+			if (MIRRORED_LOADERS.putIfAbsent(loader, Boolean.TRUE) != null) {
+				mirroredLoader = loader;
+				return;
+			}
 		}
 
 		try {
 			mirrorMergedPayloadRegistries(loader);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric] could not bootstrap merged custom-payload mirrors", unwrap(t));
+		} finally {
+			// Published even when the mirroring threw: the map already says "done for this loader", so the fast
+			// path and the slow path must agree, or every later packet pays the monitor for a retry that the map
+			// will refuse anyway.
+			mirroredLoader = loader;
 		}
 	}
+
+	/**
+	 * The loader {@link #bootstrapMirrors} last completed for, read without a lock.
+	 *
+	 * <p>Not a cache of the work — {@link #MIRRORED_LOADERS} is still what decides whether it runs. This only
+	 * lets the common case answer "already done" without taking a monitor on a packet thread.
+	 */
+	private static volatile ClassLoader mirroredLoader;
 
 	/**
 	 * Called from bytecode patched into merged {@code CustomPacketPayload$1$forbricneo.findCodec(...)}.
