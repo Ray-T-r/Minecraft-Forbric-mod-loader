@@ -82,6 +82,13 @@ check_absent "getModFileById did not answer null for a loaded mod" \
 check "a mod's own version and display name come from its metadata" \
   "\[ForbricNeoLive\] own metadata: name=Forbric NeoForge Live Canary version=1.0.0" "$LOG"
 
+# A16: classes were defined with NO protection domain, so getCodeSource() answered null for every mod. A mod that
+# ships data beside its own classes reads that to find its own jar (JourneyMap, spark, Sodium's startup checks),
+# and a null is an NPE on the mod's own line. exists=true is the point: a code source naming a file that is not
+# there would satisfy a weaker pattern.
+check "a mod can find the jar it was loaded from" \
+  "\[ForbricNeoLive\] own code source resolves to a real file: forbricneolive.jar exists=true" "$LOG"
+
 step "nothing quietly broken by the wider lists (must be ABSENT)"
 check_absent "no NoClassDefFound"       "NoClassDefFoundError"        "$LOG"
 check_absent "no entrypoint failed"     "entrypoint of .* failed"     "$LOG"
