@@ -60,6 +60,7 @@ public final class KernelForgeModContext {
 	private static final String BUS_GROUP = "net.minecraftforge.eventbus.api.bus.BusGroup";
 	private static final String GAME_SIDE = "net.forbric.kernel.runtime.KernelForgeContainers";
 	private static final String GAME_SIDE_SETUP = "net.forbric.kernel.runtime.KernelForgeSetup";
+	private static final String GAME_SIDE_REGISTRIES = "net.forbric.kernel.runtime.KernelForgeRegistries";
 
 	private static final java.util.Map<String, Method> GAME_SIDE_CALLS = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -193,26 +194,20 @@ public final class KernelForgeModContext {
 	 * failed to exist and its content was unreachable in the creative menu.
 	 */
 	public static int fireRegisterEvents(ClassLoader cl, List<Handle> handles) throws Exception {
+		// Before naming the game-side class, for the same reason fireSetupPhase checks first: KernelForgeRegistries
+		// names MinecraftForge's registry types, and a NeoForge-only instance has none of them.
 		if (handles.isEmpty()) return 0;
-		Class<?> registerEventCls = Class.forName(ForeignType.REGISTER_EVENT.binary(Ecosystem.FORGE), false, cl);
-		Class<?> resourceKeyCls = Class.forName("net.minecraft.resources.ResourceKey", false, cl);
-		Class<?> registryCls = Class.forName("net.minecraft.core.Registry", false, cl);
-		Class<?> forgeRegCls = Class.forName("net.minecraftforge.registries.ForgeRegistry", false, cl);
-		Class<?> busGroupCls = Class.forName(BUS_GROUP, false, cl);
 
-		Constructor<?> regEventCtor = registerEventCls.getDeclaredConstructor(resourceKeyCls, forgeRegCls, registryCls);
-		regEventCtor.setAccessible(true);
-		Method getBus = registerEventCls.getMethod("getBus", busGroupCls);
+		@SuppressWarnings("unchecked")
+		List<Object[]> targets = (List<Object[]>) call(cl, GAME_SIDE_REGISTRIES, "targets").invoke(null);
+		Method post = call(cl, GAME_SIDE_REGISTRIES, "post", Object.class, Object[].class);
 
-		// Resolve each mod's (id, container, event bus, post) once — the registry-major loops below reuse them N×.
+		// {container, busGroup, modId} per mod — the registry-major loop below reuses these once per registry.
 		List<Object[]> dispatch = new ArrayList<>();
 		for (Handle handle : handles) {
-			Object eventBus = getBus.invoke(null, handle.busGroup());
-			dispatch.add(new Object[] {handle.container(), eventBus, single(eventBus.getClass(), "post"),
-					handle.modId()});
+			dispatch.add(new Object[] {handle.container(), handle.busGroup(), handle.modId()});
 		}
 
-		List<Object[]> targets = registerEventTargets(cl);
 		// One mod's listener must not take the stream down with it. EventBus 7's post has no exception table, so a
 		// DeferredRegister supplier that throws — an unbound cross-registry RegistryObject, a config value read
 		// before its spec is loaded, a NoClassDefFoundError out of a JiJ dependency — used to propagate out of this
@@ -226,8 +221,7 @@ public final class KernelForgeModContext {
 		try {
 			dispatchIsolated(targets, dispatch,
 					mod -> setActiveContainer(cl, mod[0]),
-					(mod, target) -> ((Method) mod[2]).invoke(mod[1],
-							regEventCtor.newInstance(target[0], target[2], target[1])));
+					(mod, target) -> post.invoke(null, mod[1], target));
 		} finally {
 			// Genuine Forge clears it after each dispatch; leaving a stale container active would silently namespace
 			// whatever registers next (Fabric mains, the bake) under the last mod.
@@ -266,7 +260,7 @@ public final class KernelForgeModContext {
 		for (Object[] target : targets) {
 			for (Object[] mod : mods) {
 				attempted++;
-				String modId = String.valueOf(mod[3]);
+				String modId = String.valueOf(mod[2]);
 				try {
 					activate.apply(mod);
 					post.apply(mod, target);
@@ -283,72 +277,6 @@ public final class KernelForgeModContext {
 			}
 		}
 		return attempted;
-	}
-
-	/** {key, vanillaRegistryOrNull, forgeRegistry} for every Forge-backed registry, vanilla-wrapped and custom. */
-	private static List<Object[]> registerEventTargets(ClassLoader cl) throws Exception {
-		Class<?> registryCls = Class.forName("net.minecraft.core.Registry", false, cl);
-		Class<?> resourceKeyCls = Class.forName("net.minecraft.resources.ResourceKey", false, cl);
-		Class<?> forgeRegCls = Class.forName("net.minecraftforge.registries.ForgeRegistry", false, cl);
-		Class<?> builtin = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
-		Class<?> regManager = Class.forName(ForeignType.REGISTRY_MANAGER.binary(Ecosystem.FORGE), false, cl);
-		Object active = regManager.getField("ACTIVE").get(null);
-		Method getRegistry = regManager.getMethod("getRegistry", resourceKeyCls);
-		Method keyM = registryCls.getMethod("key");
-
-		List<Object[]> targets = new ArrayList<>();
-		java.util.Set<Object> covered = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-		for (Field f : builtin.getFields()) {
-			if (!registryCls.isAssignableFrom(f.getType())) continue;
-			Object vanilla = f.get(null);
-			Object key = keyM.invoke(vanilla);
-			Object forgeReg = getRegistry.invoke(active, key);
-			if (forgeReg != null) {
-				targets.add(new Object[] {key, vanilla, forgeReg});
-				covered.add(forgeReg);
-			} else {
-				// VANILLA-ONLY registry (creative_mode_tab, trigger_type, the loot serializers, …). Forge wraps only
-				// the registries it needs to extend, but genuine GameData.postRegisterEvents walks EVERY registry and
-				// constructs RegisterEvent with a NULL ForgeRegistry for these — RegisterHelper then registers through
-				// the vanilla Registry. Requiring a wrapper here silently dropped them, and a DeferredRegister created
-				// on a vanilla ResourceKey never flushed: Macaw's Bridges registered its 303 blocks/items but its
-				// CreativeModeTab was never created, so none of its content could appear in the creative menu or its
-				// search. Costs nothing when no mod targets the registry — the event just has no subscribers.
-				targets.add(new Object[] {key, vanilla, null});
-			}
-		}
-
-		try {
-			Field registriesField = regManager.getDeclaredField("registries");
-			registriesField.setAccessible(true);
-			Map<?, ?> all = (Map<?, ?>) registriesField.get(active);
-			Method getRegistryKey = forgeRegCls.getMethod("getRegistryKey");
-			Method getWrapper = forgeRegCls.getDeclaredMethod("getWrapper"); // nullable; never throws
-			getWrapper.setAccessible(true);
-			for (Object forgeReg : all.values()) {
-				if (forgeReg == null || !covered.add(forgeReg)) continue;
-				// Per-item: some custom registries (serializer/datapack registries) have no NamespacedWrapper. Skipping
-				// ONE must not abort the rest (an earlier all-loop try/catch dropped fluid_type). The RegisterEvent's
-				// Registry arg is only stored (registerFluids etc. register via the ForgeRegistry), so null is fine.
-				try {
-					Object key = getRegistryKey.invoke(forgeReg);
-					Object wrapper = null;
-					try {
-						wrapper = getWrapper.invoke(forgeReg);
-					} catch (Throwable noWrapper) {
-						// leave null
-					}
-					targets.add(new Object[] {key, wrapper, forgeReg});
-				} catch (Throwable perReg) {
-					ForbricLog.debug("[Forbric/Forge] skip custom-registry RegisterEvent target: %s",
-							String.valueOf(Reflect.unwrap(perReg)));
-				}
-			}
-		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Forge] could not enumerate custom Forge registries for RegisterEvent "
-					+ "(fluid_type etc. may stay unbound)", Reflect.unwrap(t));
-		}
-		return targets;
 	}
 
 	static Method single(Class<?> cls, String name) {

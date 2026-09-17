@@ -292,6 +292,13 @@ class KernelRuntimeClassesTest {
 	 */
 	private static void assertSeamType(String binary, KernelRuntimeClasses.Call call, Class<?> t) {
 		if (t.isPrimitive()) return; // void and the primitives are the same everywhere
+		// An array is loaded by its component's loader, so Object[] is legal exactly when Object is. Its own
+		// getName() is "[Ljava.lang.Object;", which matches neither branch below — the check rejected every array
+		// until the seam first carried one.
+		if (t.isArray()) {
+			assertSeamType(binary, call, t.getComponentType());
+			return;
+		}
 
 		String name = t.getName();
 		boolean jdk = name.startsWith("java.") || name.startsWith("javax.");
