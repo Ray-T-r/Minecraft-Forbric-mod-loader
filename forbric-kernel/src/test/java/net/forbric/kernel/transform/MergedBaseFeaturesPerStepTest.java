@@ -73,6 +73,28 @@ class MergedBaseFeaturesPerStepTest {
 	}
 
 	/**
+	 * The assertion that rejects "restored the descriptor, kept the access".
+	 *
+	 * <p>fabric-api asks for this field by (owner, name, DESCRIPTOR) in {@code fabric-biome-api-v1.classtweaker} —
+	 * {@code accessible} and {@code mutable} — and the kernel applies class tweakers one phase EARLIER than this
+	 * repair. So that request could never have matched the {@code ClearableLazy}-typed declaration, and a repair
+	 * that fixes only the descriptor leaves the field {@code private final}: the cross-class {@code PUTFIELD} in
+	 * {@code BiomeModificationImpl} then throws {@code IllegalAccessError} instead of {@code NoSuchFieldError},
+	 * the server still does not start, and every test that looks only at descriptors still passes.
+	 */
+	@Test
+	void theFieldIsAlsoWriteableFromAnotherClass() throws Exception {
+		for (FieldNode field : repaired().fields) {
+			if (!"featuresPerStep".equals(field.name)) continue;
+			assertTrue((field.access & org.objectweb.asm.Opcodes.ACC_PUBLIC) != 0,
+					"featuresPerStep is not public — fabric-api's putfield comes from another class");
+			assertTrue((field.access & org.objectweb.asm.Opcodes.ACC_FINAL) == 0,
+					"featuresPerStep is still final — a putfield from outside the declaring class is rejected "
+							+ "outright, whatever the descriptor says");
+		}
+	}
+
+	/**
 	 * The assertion that rejects "add a second field for fabric-api to write". A vanilla-typed field nothing reads
 	 * would satisfy the descriptor, boot the server, and leave the biome modification silently unapplied — which
 	 * is worse than the crash, because nothing says so.
