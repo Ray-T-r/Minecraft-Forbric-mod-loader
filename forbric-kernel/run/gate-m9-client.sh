@@ -360,6 +360,15 @@ step "a mod's assets are applied but are not resource packs the player has to se
 #
 # Counted from the SCREEN's own rows and not from the repository: the repository's id accessors already filter
 # hidden packs and would report success whether or not the screen does.
+# A8 (overlays half): the kernel SYNTHESISED each pack's metadata with an empty overlay list, so a mod declaring
+# overlays — the mechanism for shipping one set of assets per game version — had them dropped without a word.
+# The packs are now read through the loader's own reader, which fills them in. The count is the evidence: under
+# the old code it was zero however many mods declared them.
+check "mod packs carry the overlays they declare" \
+  "ClientPacks\] served [0-9]+ ecosystem asset pack\(s\).*, [1-9][0-9]* of them declaring overlays" "$LOG"
+check_absent "and no pack fell back to synthesised metadata" \
+  "could not read a pack's own metadata" "$LOG"
+
 check "the filter is back on the screen" \
   "PackScreen\] restored the hidden-pack filter" "$LOG"
 PACKROWS=$(grep -oE 'resource-pack screen lists [0-9]+ pack row\(s\), [0-9]+ of them' "$LOG" | grep -oE '[0-9]+' | tail -1)
