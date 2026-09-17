@@ -22,6 +22,7 @@ public class ForbricNeoLiveMod {
 	public ForbricNeoLiveMod(IEventBus modBus) {
 		System.out.println("[ForbricNeoLive] @Mod(\"forbricneolive\") constructed by the real NeoForge ModLoader");
 		reportForeignMods();
+		registerStartupConfig();
 		registerSetupLifecycle(modBus);
 		NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, event -> {
 			int n = TICKS.incrementAndGet();
@@ -31,6 +32,32 @@ public class ForbricNeoLiveMod {
 				reportActiveContainerFallback();
 			}
 		});
+	}
+
+	/**
+	 * Registers a STARTUP config and reads it back immediately.
+	 *
+	 * <p>The kernel used to ask the config tracker to load STARTUP configs during its early pass, on top of the
+	 * tracker already opening each one the moment it is registered — so every STARTUP config opened twice, fired
+	 * its Loading event twice and stacked a second file watcher. The second ask was removed, and this is what
+	 * proves nothing was lost: reading a value out of a spec that was never opened throws, so an answer here means
+	 * the config really did load, by the path that was always doing the work.
+	 */
+	private static void registerStartupConfig() {
+		try {
+			net.neoforged.neoforge.common.ModConfigSpec.Builder builder =
+					new net.neoforged.neoforge.common.ModConfigSpec.Builder();
+			net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<String> value =
+					builder.define("startupProbe", "startup-default");
+			net.neoforged.neoforge.common.ModConfigSpec spec = builder.build();
+
+			net.neoforged.fml.ModLoadingContext.get().getActiveContainer()
+					.registerConfig(net.neoforged.fml.config.ModConfig.Type.STARTUP, spec);
+
+			System.out.println("[ForbricNeoLive] STARTUP config loaded, startupProbe=" + value.get());
+		} catch (Throwable t) {
+			System.out.println("[ForbricNeoLive] STARTUP config FAILED: " + t);
+		}
 	}
 
 	/**

@@ -50,7 +50,14 @@ step "the config lifecycle ran on the server side (must PASS)"
 # ServerLifecycleHooks.handleServerAboutToStart, which the kernel does not excise (gate-m7-neo asserts that one).
 check "early configs loaded"          "Forbric/Lifecycle\] loaded NeoForge configs" "$LOG"
 TYPES=$(grep -oE 'loaded NeoForge configs \([A-Z+]+\)' "$LOG" | head -1 | grep -oE '\([A-Z+]+\)' | tr -d '()')
-assert_eq "config types loaded on a server" "STARTUP+COMMON" "${TYPES:-none}"
+# This said STARTUP+COMMON, which described the type list the kernel passed rather than anything that happened:
+# no mod in this gate has a STARTUP config, so the two readings were indistinguishable here. STARTUP is now left
+# out of that list on purpose — javap on ConfigTracker.registerConfig shows it opens a STARTUP config at the
+# moment it is registered (offsets 53..73), so asking for it again opened every one of them twice, fired their
+# Loading event twice and stacked a second file watcher. gate-m4 proves a STARTUP config still loads, with a mod
+# that actually has one.
+assert_eq "config types loaded on a server" "COMMON" "${TYPES:-none}"
+check_absent "no config opened twice" "Opening a config that was already loaded" "$LOG"
 
 step "the config-driven mod stack came up (must PASS)"
 check "waystones constructed"         "constructed @Mod waystones"                  "$LOG"
