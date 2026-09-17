@@ -1075,6 +1075,15 @@ public final class KernelLifecycle {
 			for (Object c : containers) {
 				indexed.put((String) getModId.invoke(c), c);
 			}
+			// "minecraft" goes into the by-id index and NOWHERE else. ModLoadingContext.getActiveContainer()
+			// falls back to getModContainerById("minecraft").orElseThrow() when no container is active, and the
+			// throw it reaches says "Where is minecraft???!" — so a mod registering an extension point outside a
+			// window the kernel wraps got an exception out of NeoForge rather than a container. The container's
+			// own getEventBus() returns null by design, which is why it must not join the list the mod-bus
+			// fan-out walks.
+			indexed.computeIfAbsent("minecraft", id -> minecraftContainerOrNull(cl));
+			indexed.values().removeIf(java.util.Objects::isNull);
+
 			Field f = modListCls.getDeclaredField("indexedMods");
 			f.setAccessible(true);
 			f.set(modList, indexed);
@@ -1098,6 +1107,22 @@ public final class KernelLifecycle {
 		ForbricLog.info("[Forbric/Lifecycle] NeoForge mod-bus delivery covers %d container(s) — baseline + every "
 				+ "loaded mod (ModLoader.postEvent fans out over this list, and the Mods screen lists it)",
 				containers.size());
+	}
+
+	/**
+	 * NeoForge's own {@code "minecraft"} container, or null if it cannot be built.
+	 *
+	 * <p>Null rather than a throw: failing to publish this costs one fallback lookup, while letting it abort the
+	 * index rebuild would cost every mod its container.
+	 */
+	private static Object minecraftContainerOrNull(ClassLoader cl) {
+		try {
+			return KernelModContainerFactory.minecraftContainer(cl);
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/Lifecycle] could not publish the 'minecraft' container: %s",
+					String.valueOf(unwrap(t)));
+			return null;
+		}
 	}
 
 	/**

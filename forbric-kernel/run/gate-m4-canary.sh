@@ -56,6 +56,13 @@ check "Fabric JiJ nested mod ran"             "\[ForbricFabricLib\] JiJ nested m
 
 step "BOTH game-event families tick in the same loop (must PASS — the B-5 1:1 shape)"
 check "NeoForge tick fires natively"          "\[ForbricNeoLive\] 20 server ticks observed \(NeoForge native\)" "$LOG"
+
+# ModLoadingContext.getActiveContainer() falls back to getModContainerById("minecraft").orElseThrow() when no
+# container is active, and the kernel published none — so a mod registering an extension point from outside a
+# kernel-wrapped window got NeoForge's own "Where is minecraft???!". Asked from a GAME-bus listener on purpose:
+# from a mod constructor the kernel has a container active and the fallback is never reached.
+check "getActiveContainer falls back to the minecraft container" \
+  "\[ForbricNeoLive\] getActiveContainer\(\) with none active answered minecraft" "$LOG"
 check "MinecraftForge tick fires via multiplexer" "\[ForbricLive\] 20 server ticks observed - the game loop posts TickEvent" "$LOG"
 check "Fabric content survived the freeze"    "onInitializeServer .*registered content survives=true" "$LOG"
 

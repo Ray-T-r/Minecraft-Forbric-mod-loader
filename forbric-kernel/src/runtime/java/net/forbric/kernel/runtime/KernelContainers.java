@@ -25,6 +25,7 @@ import net.minecraftforge.unsafe.UnsafeHacks;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.javafmlmod.FMLModContainer;
+import net.neoforged.fml.mclanguageprovider.MinecraftModContainer;
 import net.neoforged.neoforgespi.language.IModInfo;
 
 /**
@@ -55,6 +56,23 @@ public final class KernelContainers {
 	 */
 	public static Object modInfo(String modId, Path jar) {
 		return new KernelModInfo(modId, jar);
+	}
+
+	/**
+	 * The {@code "minecraft"} container, which NeoForge treats as always present and the kernel never published.
+	 *
+	 * <p>{@code javap} on {@code ModLoadingContext.getActiveContainer}: when no container is active it falls back
+	 * to {@code ModList.get().getModContainerById("minecraft").orElseThrow(...)}, and the supplier behind that
+	 * throw is the one that says "Where is minecraft???!". So any mod calling a context-sensitive registration —
+	 * {@code registerExtensionPoint} is the common one — from OUTSIDE a window the kernel wraps did not get a
+	 * wrong answer, it got an exception out of NeoForge's own code with a message that names nothing useful.
+	 *
+	 * <p>NeoForge's own {@code MinecraftModContainer} is used rather than a kernel stand-in, and its
+	 * {@code getEventBus()} returns null by design — which is exactly why the caller publishes it into the
+	 * by-id index ONLY, and never into the list the mod-bus fan-out walks.
+	 */
+	public static Object minecraftContainer() {
+		return new MinecraftModContainer(new KernelModInfo("minecraft", null));
 	}
 
 	/**

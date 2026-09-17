@@ -28,8 +28,26 @@ public class ForbricNeoLiveMod {
 			if (n == 20) {
 				System.out.println("[ForbricNeoLive] 20 server ticks observed (NeoForge native) - the merged game loop "
 						+ "posts NeoForge's ServerTickEvent to NeoForge mods");
+				reportActiveContainerFallback();
 			}
 		});
+	}
+
+	/**
+	 * {@code ModLoadingContext.getActiveContainer()} from a GAME-bus listener, where no container is active.
+	 *
+	 * <p>That fallback path ends in {@code getModContainerById("minecraft").orElseThrow()}, and the kernel never
+	 * published a "minecraft" container — so a mod registering an extension point outside a kernel-wrapped window
+	 * got NeoForge's own "Where is minecraft???!" thrown at it. Asked from the mod constructor this proves
+	 * nothing: the kernel sets the active container there. It has to be asked from here.
+	 */
+	private static void reportActiveContainerFallback() {
+		try {
+			net.neoforged.fml.ModContainer active = net.neoforged.fml.ModLoadingContext.get().getActiveContainer();
+			System.out.println("[ForbricNeoLive] getActiveContainer() with none active answered " + active.getModId());
+		} catch (Throwable t) {
+			System.out.println("[ForbricNeoLive] getActiveContainer() with none active FAILED: " + t);
+		}
 	}
 
 	/**
