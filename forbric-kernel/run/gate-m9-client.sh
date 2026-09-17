@@ -371,12 +371,21 @@ check_absent "and no pack fell back to synthesised metadata" \
 
 check "the filter is back on the screen" \
   "PackScreen\] restored the hidden-pack filter" "$LOG"
+# EXACTLY ONE row, and it is the parent. Seventy-odd rows would be the old "every mod is a row the player did
+# not add" problem; zero would mean the player has no way to put their own pack above a mod's textures, which is
+# what required+fixed+TOP on every mod pack used to guarantee.
+#
+# The count itself was measuring nothing until now: it read each row's NARRATION, which is the pack's title, and
+# matched it against "forbric/". That only worked while the kernel titled each pack after its own id, so the
+# moment a pack got a real title the count answered "none" whatever the screen held. It reads the row's pack id
+# now.
 PACKROWS=$(grep -oE 'resource-pack screen lists [0-9]+ pack row\(s\), [0-9]+ of them' "$LOG" | grep -oE '[0-9]+' | tail -1)
-if [ -n "$PACKROWS" ] && [ "$PACKROWS" -eq 0 ]; then
-  echo "[kernel] PASS no ecosystem asset pack is listed in the resource-pack screen"
+if [ -n "$PACKROWS" ] && [ "$PACKROWS" -eq 1 ]; then
+  echo "[kernel] PASS the kernel's assets are one movable row, not one per mod"
 else
-  echo "[kernel] FAIL the resource-pack screen still lists ${PACKROWS:-?} of the kernel's packs"; FAIL=1
+  echo "[kernel] FAIL the resource-pack screen lists ${PACKROWS:-?} of the kernel's packs, expected exactly 1"; FAIL=1
 fi
+check "and that row is the parent pack" "rows: \[.*forbric/mod_resources" "$LOG"
 # …and they are still APPLIED. A screen with nothing in it would pass the check above and cost every mod its
 # textures, which is the failure this assertion exists to tell apart from success.
 check "and they are still selected in the repository" \
