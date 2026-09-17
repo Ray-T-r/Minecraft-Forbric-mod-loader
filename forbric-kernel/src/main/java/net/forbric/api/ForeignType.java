@@ -104,6 +104,8 @@ public enum ForeignType {
 			"net.neoforged.fml.ModContainer"),
 	MOD_FILE("net.minecraftforge.fml.loading.moddiscovery.ModFile",
 			"net.neoforged.fml.loading.moddiscovery.ModFile"),
+	MOD_FILE_TYPE("net.minecraftforge.forgespi.locating.IModFile$Type",
+			"net.neoforged.neoforgespi.locating.IModFile$Type"),
 	MOD_FILE_INFO("net.minecraftforge.fml.loading.moddiscovery.ModFileInfo",
 			"net.neoforged.fml.loading.moddiscovery.ModFileInfo"),
 	MOD_INFO("net.minecraftforge.fml.loading.moddiscovery.ModInfo",

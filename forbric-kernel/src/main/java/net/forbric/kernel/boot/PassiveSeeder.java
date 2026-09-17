@@ -566,7 +566,21 @@ public final class PassiveSeeder {
 		return new ForgeLoadingLists(files, modInfos);
 	}
 
-	/** The jar's own entry: only {@code modFileInfo} is read while the list is built; the rest are truthful empties. */
+	/**
+	 * The jar's own entry.
+	 *
+	 * <p>{@code modFileInfo} is what the list build reads; the rest are truthful empties — except the jar itself,
+	 * which is not optional and used to be missing.
+	 *
+	 * <p><b>The field that was written for years and does not exist.</b> This method ended with
+	 * {@code setOptionalInstanceField(modFileCls, "filePath", ...)}, and {@code ModFile} has no {@code filePath}
+	 * field: javap shows the path lives behind {@code private final SecureJar jar}, and every path accessor —
+	 * {@code getFilePath}, {@code getFileName}, {@code findResource}, {@code toString} — goes through it. Being
+	 * "optional", the write failed silently at debug level, so the seeded ModFile carried a NULL SecureJar and
+	 * every one of those accessors NPE'd. ShoulderSurfing-Forge walks {@code ModList.getModFiles()} calling
+	 * {@code findResource} on each from its config-loading listener, so its init never completed; and because
+	 * {@code toString} goes the same way, any attempt to LOG the failure NPE'd too and hid the real one.
+	 */
 	private static void fillForgeModFile(Class<?> modFileCls, Object modFile, Object fileInfo, Path jar, String version)
 			throws Exception {
 		setInstanceField(modFileCls, "modFileInfo", modFile, fileInfo);
@@ -576,7 +590,42 @@ public final class PassiveSeeder {
 		// An empty list, not null: whoever walks a file's access transformers must find none rather than throw. The
 		// kernel applies them itself, from its own pass over the same jars.
 		setInstanceField(modFileCls, "accessTransformers", modFile, List.of());
-		setOptionalInstanceField(modFileCls, "filePath", modFile, jar);
+		fillForgeModFileJar(modFileCls, modFile, jar);
+	}
+
+	/**
+	 * Gives a seeded {@code ModFile} the real jar behind it, and marks it a MOD.
+	 *
+	 * <p>MinecraftForge's own {@code SecureJar.from(Path...)} is NOT used, and the reason is not a preference:
+	 * it initialises {@code cpw.mods.jarhandling.impl.Jar}, which demands ModLauncher's
+	 * {@code UnionFileSystemProvider} and throws without it. The kernel replaces ModLauncher, so that call throws
+	 * once and then hands back {@code NoClassDefFoundError} forever. {@link ForgeSecureJarStandIn} implements the
+	 * interface over a plain zip file system instead. The class is loaded without initialising it — only its
+	 * interface shape is wanted here.
+	 *
+	 * <p>Warn rather than debug on failure, and say what it costs. The previous silence is the whole reason this
+	 * was shipped broken: a mod walking the mod files got an NPE out of MinecraftForge's own accessor, and the
+	 * kernel's log said nothing at all.
+	 */
+	private static void fillForgeModFileJar(Class<?> modFileCls, Object modFile, Path jar) {
+		try {
+			Class<?> secureJar = Class.forName("cpw.mods.jarhandling.SecureJar", false, modFileCls.getClassLoader());
+			setInstanceField(modFileCls, "jar", modFile, ForgeSecureJarStandIn.create(secureJar, jar));
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Seed] could not give the seeded MinecraftForge ModFile for " + jar.getFileName()
+					+ " its jar — getFilePath, getFileName, findResource and toString all read it, so a mod walking "
+					+ "ModList.getModFiles() will NPE inside MinecraftForge's own accessor", unwrap(t));
+		}
+		// Type.MOD, not null: a consumer filtering the list by type would otherwise drop every seeded file, and a
+		// null here reaches a switch in MinecraftForge's own code.
+		try {
+			Class<?> type = Class.forName(ForeignType.MOD_FILE_TYPE.binary(Ecosystem.FORGE), true,
+					modFileCls.getClassLoader());
+			setOptionalInstanceField(modFileCls, "modFileType", modFile,
+					Enum.valueOf(type.asSubclass(Enum.class), "MOD"));
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/Seed] could not set the seeded ModFile's type: %s", String.valueOf(unwrap(t)));
+		}
 	}
 
 	private static void fillForgeModFileInfo(ClassLoader gameLoader, Class<?> fileInfoCls, Object fileInfo,
@@ -736,7 +785,7 @@ public final class PassiveSeeder {
 		try {
 			Class<?> modFileCls = Class.forName(ForeignType.MOD_FILE.binary(Ecosystem.NEOFORGE), false, gameLoader);
 			Class<?> contentsCls = Class.forName("net.neoforged.fml.jarcontents.JarContents", false, gameLoader);
-			Class<?> typeCls = Class.forName("net.neoforged.neoforgespi.locating.IModFile$Type", false, gameLoader);
+			Class<?> typeCls = Class.forName(ForeignType.MOD_FILE_TYPE.binary(Ecosystem.NEOFORGE), false, gameLoader);
 
 			Object modFile = allocate(gameLoader, modFileCls);
 			setInstanceField(modFileCls, "contents", modFile, contentsCls.getMethod("empty", Path.class)

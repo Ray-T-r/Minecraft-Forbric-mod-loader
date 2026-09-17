@@ -17,6 +17,8 @@
 package net.fabricmc.loader.api.metadata;
 
 import java.util.HashMap;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 import net.fabricmc.loader.api.Version;
@@ -24,14 +26,17 @@ import net.fabricmc.loader.api.Version;
 /**
  * A dependency declared by a mod.
  *
- * <p><b>Forbric v1 deviation.</b> Upstream also exposes {@code getVersionRequirements()} (a
- * {@code Collection<VersionPredicate>}) and {@code getVersionIntervals()} (a {@code List<VersionInterval>}).
- * Those pull in the whole {@code metadata.version} predicate/interval algebra, which nothing in the shipped
- * ecosystem calls: a constant-pool scan of fabric-api 0.154.0 (43 modules) finds zero references to
- * {@code ModDependency} at all, and the kernel resolves dependencies with its own unified model
- * ({@code net.forbric.api.UnifiedDependency}). They are omitted rather than stubbed, so a caller
- * fails loudly at link time instead of silently receiving an empty collection. Restore them with the version
- * algebra if a real mod is found to need them.
+ * <p><b>The omission that was argued, and the half of it that was wrong.</b> These two methods were left out on
+ * the grounds that nothing in the shipped ecosystem reads a dependency's requirement objects — a constant-pool
+ * scan of fabric-api 0.154.0 finds zero references to {@code ModDependency} at all — and that omitting rather
+ * than stubbing makes a caller fail loudly instead of silently receiving an empty collection.
+ *
+ * <p>That reasoning was about the INSTANCE side and it still holds. What it missed is that the types it avoided
+ * naming have STATIC entry points mods call with no dependency involved: {@code VersionPredicate.parse} is an
+ * {@code invokestatic} in ShoulderSurfing-Fabric's {@code Platform.parseVersionPredicateSilent} and in
+ * conditional-mixin's version gate. Absent, those raised {@code NoClassDefFoundError} — past the
+ * {@code catch (Exception)} those call sites wrap themselves in. The package is vendored now, so these two can
+ * be answered honestly rather than omitted.
  */
 public interface ModDependency {
 	Kind getKind();
@@ -39,6 +44,28 @@ public interface ModDependency {
 	String getModId();
 
 	boolean matches(Version version);
+
+	/**
+	 * The requirements this dependency declares, parsed.
+	 *
+	 * <p>Empty when the requirement is unreadable, which is the same thing {@link #matches} does with it: a
+	 * dependency the kernel could not parse does not constrain anything, and a caller enumerating requirements
+	 * must see the same set the matcher used.
+	 */
+	default Collection<net.fabricmc.loader.api.metadata.version.VersionPredicate> getVersionRequirements() {
+		return List.of();
+	}
+
+	/**
+	 * The ranges those requirements admit.
+	 *
+	 * <p>Empty by default for the reason {@code VersionPredicate.getInterval()} answers null: a requirement like
+	 * {@code ">=1.0 <2.0 !=1.5"} is not one range, and inventing a bound a caller would trust is worse than
+	 * saying nothing.
+	 */
+	default List<net.fabricmc.loader.api.metadata.version.VersionInterval> getVersionIntervals() {
+		return List.of();
+	}
 
 	enum Kind {
 		DEPENDS("depends", true, false),

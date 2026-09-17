@@ -107,6 +107,15 @@ check "a MinecraftForge mod's command reaches the live dispatcher" \
 check "and ServerStartingEvent, which also initialises PermissionAPI" \
   "ForbricLive\] ServerStartingEvent RECEIVED" "$LOG"
 
+# B9: a seeded MinecraftForge ModFile used to carry a null SecureJar, so getFilePath/findResource — which
+# ShoulderSurfing-Forge and collective call on EVERY mod file from their own listeners — NPE'd inside Forge's own
+# accessor. Assert every walked file answered both, not merely that the walk did not throw: a walk over zero
+# files would also "not throw".
+check "every seeded ModFile answers getFilePath and findResource" \
+  "ForbricLive\] walked [1-9][0-9]* mod file\(s\), [1-9][0-9]* answered getFilePath and findResource" "$LOG"
+check_absent "no failure walking ModList.getModFiles()" \
+  "ForbricLive\] walking ModList.getModFiles\(\) FAILED" "$LOG"
+
 step "nothing quietly broken by the extra posts (must be ABSENT)"
 check_absent "no NoClassDefFound"        "NoClassDefFoundError"                          "$LOG"
 check_absent "no phase failed to post"   "could not post traditional-Forge"              "$LOG"
