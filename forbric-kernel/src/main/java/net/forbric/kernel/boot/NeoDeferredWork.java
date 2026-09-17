@@ -52,14 +52,14 @@ import net.forbric.kernel.util.ForbricLog;
  * same single-thread serialisation between phases, and the context classloader a mod sees is the one it would
  * see under NeoForge.
  */
-final class NeoDeferredWork {
+public final class NeoDeferredWork {
 	private static final String WORK_MANAGER = "net.neoforged.fml.ModWorkManager";
 
 	private NeoDeferredWork() {
 	}
 
 	/** A runnable that may throw — reflection's {@code invoke} does. */
-	interface ThrowingRunnable {
+	public interface ThrowingRunnable {
 		void run() throws Throwable;
 	}
 
@@ -68,7 +68,7 @@ final class NeoDeferredWork {
 	 * {@code ModWorkManager} — in which case the caller runs the work itself, which is what the kernel did before
 	 * and is still better than not running it.
 	 */
-	static Executor syncExecutor(ClassLoader cl) {
+	public static Executor syncExecutor(ClassLoader cl) {
 		try {
 			Class<?> workManager = Class.forName(WORK_MANAGER, false, cl);
 			Object executor = workManager.getMethod("syncExecutor").invoke(null);
@@ -87,7 +87,7 @@ final class NeoDeferredWork {
 	 *
 	 * <p>A {@code null} executor runs {@code tasks} on the calling thread.
 	 */
-	static void runBlocking(Executor sync, ThrowingRunnable tasks) throws Throwable {
+	public static void runBlocking(Executor sync, ThrowingRunnable tasks) throws Throwable {
 		if (sync == null) {
 			tasks.run();
 			return;

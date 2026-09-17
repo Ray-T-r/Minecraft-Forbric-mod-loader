@@ -28,6 +28,7 @@ import net.minecraftforge.fml.ModContainer;
 import net.minecraftforge.fml.ModLoadingStage;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.fml.event.lifecycle.FMLConstructModEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLDedicatedServerSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent;
 import net.minecraftforge.fml.event.lifecycle.InterModEnqueueEvent;
@@ -129,6 +130,7 @@ public final class KernelForgeSetup {
 	 */
 	static ModLoadingStage stageOf(ForeignType event) {
 		return switch (event) {
+			case FML_CONSTRUCT_MOD_EVENT -> ModLoadingStage.CONSTRUCT;
 			case FML_COMMON_SETUP_EVENT -> ModLoadingStage.COMMON_SETUP;
 			// Both sided events share one stage, and so one queue — the server posts one, the client the other.
 			case FML_CLIENT_SETUP_EVENT, FML_DEDICATED_SERVER_SETUP_EVENT -> ModLoadingStage.SIDED_SETUP;
@@ -142,6 +144,8 @@ public final class KernelForgeSetup {
 	/** Builds and posts the one event {@code kind} names on {@code group}'s bus for it. */
 	private static void post(ForeignType kind, ModContainer container, BusGroup group, ModLoadingStage stage) {
 		switch (kind) {
+			case FML_CONSTRUCT_MOD_EVENT ->
+					FMLConstructModEvent.getBus(group).post(new FMLConstructModEvent(container, stage));
 			case FML_COMMON_SETUP_EVENT ->
 					FMLCommonSetupEvent.getBus(group).post(new FMLCommonSetupEvent(container, stage));
 			case FML_CLIENT_SETUP_EVENT ->

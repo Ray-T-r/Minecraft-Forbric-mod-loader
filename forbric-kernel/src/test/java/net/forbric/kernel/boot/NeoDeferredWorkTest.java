@@ -153,14 +153,16 @@ class NeoDeferredWorkTest {
 	 */
 	@Test
 	void theNeoForgeSetupPhaseRunsItsQueueThroughThisHelper() throws Exception {
-		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
-				"net", "forbric", "kernel", "boot", "KernelLifecycle.class");
-		assumeTrue(Files.isRegularFile(compiled), "KernelLifecycle not compiled yet");
+		// The phase itself is game-side now (KernelNeoSetup); only the "is there anyone to post to" guard and the
+		// logging stayed in KernelLifecycle. The assertion follows the code rather than the file it used to be in.
+		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime",
+				"net", "forbric", "kernel", "runtime", "KernelNeoSetup.class");
+		assumeTrue(Files.isRegularFile(compiled), "KernelNeoSetup not compiled yet (no staged game jars)");
 
 		ClassNode node = new ClassNode();
 		new ClassReader(Files.readAllBytes(compiled)).accept(node, 0);
-		MethodNode phase = node.methods.stream().filter(m -> "fireSetupPhase".equals(m.name)).findFirst()
-				.orElseThrow(() -> new AssertionError("fireSetupPhase is gone"));
+		MethodNode phase = node.methods.stream().filter(m -> "firePhase".equals(m.name)).findFirst()
+				.orElseThrow(() -> new AssertionError("firePhase is gone"));
 
 		boolean throughHelper = false;
 		for (AbstractInsnNode insn : phase.instructions.toArray()) {
@@ -171,8 +173,9 @@ class NeoDeferredWorkTest {
 			}
 		}
 		assertTrue(throughHelper,
-				"fireSetupPhase must run the DeferredWorkQueue through NeoDeferredWork.runBlocking, not on its own "
-						+ "thread — on the client its own thread is the render thread, inside Minecraft.<init>");
+				"the NeoForge setup phase must run the DeferredWorkQueue through NeoDeferredWork.runBlocking, not "
+						+ "on its own thread — on the client its own thread is the render thread, inside "
+						+ "Minecraft.<init>");
 	}
 
 	/** If the carrier ever drops this, {@link NeoDeferredWork#syncExecutor} goes quiet and the bug comes back. */

@@ -60,6 +60,14 @@ public enum ForeignType {
 	// The mod-lifecycle phases. Paired because the kernel posts each one at BOTH families and the two events are
 	// different classes on different bus shapes -- naming either half inline is how one family silently stops
 	// receiving a phase, which is exactly what happened to traditional MinecraftForge until 2026-09-13.
+	/**
+	 * The earliest mod-bus phase there is: genuine FML posts it at each container the moment it is built.
+	 *
+	 * <p>Pairing it is what showed that only NeoForge mods were getting it — the kernel named NeoForge's class
+	 * inline and there was no second half for anyone to notice was missing.
+	 */
+	FML_CONSTRUCT_MOD_EVENT("net.minecraftforge.fml.event.lifecycle.FMLConstructModEvent",
+			"net.neoforged.fml.event.lifecycle.FMLConstructModEvent"),
 	FML_CLIENT_SETUP_EVENT("net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent",
 			"net.neoforged.fml.event.lifecycle.FMLClientSetupEvent"),
 	FML_COMMON_SETUP_EVENT("net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent",

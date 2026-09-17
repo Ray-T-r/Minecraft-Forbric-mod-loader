@@ -565,8 +565,12 @@ public final class KernelLifecycle {
 			// kernel constructed the mods and went straight on, so anything a mod does there — and it is the
 			// earliest mod-bus phase there is — never happened. Posted after the subscribers are wired, so a
 			// handler declared on an @EventBusSubscriber receives it too.
-			fireSetupPhase(cl, KernelModLoader.publishedNeoMods(),
-					"net.neoforged.fml.event.lifecycle.FMLConstructModEvent", "construct");
+			fireSetupPhase(cl, KernelModLoader.publishedNeoMods(), ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
+			// The other family's half of the same phase. It had no half at all: the kernel named NeoForge's event
+			// class inline here, so every MinecraftForge mod went from construction straight to RegisterEvent and
+			// whatever it does in the earliest mod-bus phase never happened. Pairing the two names in ForeignType
+			// is what made the absence visible.
+			fireForgeSetupPhase(cl, ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
 
 			// Each ecosystem's mods take their own RegisterEvent flavour: NeoForge's 2-arg event on an IEventBus, and
 			// traditional Forge's 3-arg (key, ForgeRegistry, Registry) on a BusGroup. Split them here; both streams
@@ -1171,19 +1175,18 @@ public final class KernelLifecycle {
 		// here handed those mods a null and the failure surfaced later, in rendering, with nothing pointing back.
 		if (side.isClient()) return;
 
-		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "common setup");
+		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
 		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
 		// The sided phase. The kernel used to jump straight from common setup to load complete, so on a dedicated
 		// server this event was never posted to anyone at all.
-		fireSetupPhase(cl, mods, ForeignType.FML_DEDICATED_SERVER_SETUP_EVENT.binary(Ecosystem.NEOFORGE),
-				"dedicated server setup");
+		fireSetupPhase(cl, mods, ForeignType.FML_DEDICATED_SERVER_SETUP_EVENT, "dedicated server setup");
 		fireForgeSetupPhase(cl, ForeignType.FML_DEDICATED_SERVER_SETUP_EVENT, "dedicated server setup");
 		fireRegistrationEvents(cl);
-		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_ENQUEUE_EVENT.binary(Ecosystem.NEOFORGE), "IMC enqueue");
+		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_ENQUEUE_EVENT, "IMC enqueue");
 		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_ENQUEUE_EVENT, "IMC enqueue");
-		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_PROCESS_EVENT.binary(Ecosystem.NEOFORGE), "IMC process");
+		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
 		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
-		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT.binary(Ecosystem.NEOFORGE), "load complete");
+		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 	}
 
@@ -1306,18 +1309,18 @@ public final class KernelLifecycle {
 		// Common setup FIRST, and on the client it is posted from here rather than from the pre-Minecraft window
 		// — the same move the client setup phases themselves already made, one phase earlier. Both families, and
 		// before the sided phase, which is the order genuine NeoForge's CommonModLoader.load uses.
-		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "common setup");
+		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
 		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
-		fireSetupPhase(cl, mods, ForeignType.FML_CLIENT_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "client setup");
+		fireSetupPhase(cl, mods, ForeignType.FML_CLIENT_SETUP_EVENT, "client setup");
 		fireForgeSetupPhase(cl, ForeignType.FML_CLIENT_SETUP_EVENT, "client setup");
 		// Same tail as the server's, and the same order CommonModLoader.load uses: sided setup, then the
 		// registration events, then IMC, then load complete.
 		fireRegistrationEvents(cl);
-		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_ENQUEUE_EVENT.binary(Ecosystem.NEOFORGE), "IMC enqueue");
+		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_ENQUEUE_EVENT, "IMC enqueue");
 		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_ENQUEUE_EVENT, "IMC enqueue");
-		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_PROCESS_EVENT.binary(Ecosystem.NEOFORGE), "IMC process");
+		fireSetupPhase(cl, mods, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
 		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
-		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT.binary(Ecosystem.NEOFORGE), "load complete");
+		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 	}
 
@@ -1356,48 +1359,18 @@ public final class KernelLifecycle {
 			new java.util.concurrent.atomic.AtomicBoolean();
 
 	private static void fireSetupPhase(ClassLoader cl, java.util.Map<String, KernelModLoader.NeoIdentity> mods,
-			String eventClassName, String label) {
-		// The NeoForge twin of fireForgeSetupPhase's own empty guard. Its caller no longer returns early on an
-		// empty NeoForge set (a classic MinecraftForge pack has none), so this is where "no mods of THIS family"
-		// stops: without it every phase would build a DeferredWorkQueue, hand it to the sync executor and log
-		// "posted FML <phase> to 0 NeoForge mod(s)" eight times on a pack that has no NeoForge mod at all.
+			ForeignType event, String label) {
+		// The NeoForge twin of fireForgeSetupPhase's own empty guard, and it comes before the game-side class is
+		// named for the same reason: without it every phase would build a DeferredWorkQueue, hand it to the sync
+		// executor and log "posted FML <phase> to 0 NeoForge mod(s)" eight times on a pack that has no NeoForge mod.
 		if (mods.isEmpty()) return;
 		try {
-			Class<?> eventClass = Class.forName(eventClassName, false, cl);
-			Class<?> queueClass = Class.forName("net.neoforged.fml.DeferredWorkQueue", false, cl);
-			Class<?> busClass = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
-			Class<?> baseEvent = Class.forName("net.neoforged.bus.api.Event", false, cl);
-
-			Object queue = queueClass.getConstructor(String.class).newInstance(label);
-			java.lang.reflect.Constructor<?> ctor = eventClass.getConstructor(modContainerClass(cl), queueClass);
-			Method post = busClass.getMethod("post", baseEvent);
-
-			int fired = 0;
-			for (java.util.Map.Entry<String, KernelModLoader.NeoIdentity> e : mods.entrySet()) {
-				// The active container has to be set for the DISPATCH, not just for construction. A setup listener
-				// that registers anything through ModLoadingContext.get() reads getActiveContainer(), which with
-				// none set falls back to the "minecraft" container and throws "Where is minecraft???!". That killed
-				// CreativeCore's and Sound Physics' reload-listener registration outright, and CreativeCore then
-				// half-initialised: GuiStyle.mc stayed null ("Could not load default style"), and the next reload
-				// re-ran registerDefault and died on 'default' already exists — three failures, one missing line.
-				KernelModLoader.setNeoActiveContainer(cl, e.getValue().container());
-				try {
-					post.invoke(e.getValue().bus(), ctor.newInstance(e.getValue().container(), queue));
-					fired++;
-				} catch (Throwable perMod) {
-					ForbricLog.warn("[Forbric/Lifecycle] " + e.getKey() + " failed during " + label,
-							unwrap(perMod));
-				} finally {
-					KernelModLoader.setNeoActiveContainer(cl, null);
-				}
-			}
-			// Off the caller's thread, because that is where NeoForge runs it and mods can tell the difference —
-			// see NeoDeferredWork for the resource-manager window this was landing in.
-			Method runTasks = queueClass.getMethod("runTasks");
-			NeoDeferredWork.runBlocking(NeoDeferredWork.syncExecutor(cl), () -> runTasks.invoke(queue));
+			int fired = (int) Class.forName("net.forbric.kernel.runtime.KernelNeoSetup", true, cl)
+					.getMethod("firePhase", java.util.Map.class, ForeignType.class, String.class)
+					.invoke(null, mods, event, label);
 			ForbricLog.info("[Forbric/Lifecycle] posted FML %s to %d NeoForge mod(s)", label, fired);
-		} catch (ClassNotFoundException absent) {
-			ForbricLog.debug("[Forbric/Lifecycle] %s absent — skipping %s", eventClassName, label);
+		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] %s absent — skipping %s", event, label);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not post FML " + label, unwrap(t));
 		}

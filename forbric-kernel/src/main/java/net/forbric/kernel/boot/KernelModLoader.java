@@ -667,7 +667,7 @@ public final class KernelModLoader {
 	 * <p>Package-visible because construction is not the only window that needs it: {@code KernelLifecycle} must
 	 * set it around each mod's SETUP events too — see the call there for what breaks without it.
 	 */
-	static void setNeoActiveContainer(ClassLoader cl, Object container) {
+	public static void setNeoActiveContainer(ClassLoader cl, Object container) {
 		try {
 			Class<?> mlcCls = Class.forName(ForeignType.MOD_LOADING_CONTEXT.binary(Ecosystem.NEOFORGE), false, cl);
 			Class<?> modContainer = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
