@@ -45,6 +45,15 @@ step "all three ecosystems discovered + brought up in ONE instance (must PASS)"
 check "both Forge-family baselines"           "constructed NeoForge baseline mod" "$LOG"
 check "traditional-Forge baseline"            "constructed traditional-Forge baseline mod ForgeMod" "$LOG"
 check "NeoForge @Mod constructed"             "constructed @Mod forbricneolive" "$LOG"
+
+# A2: NeoForge's @Mod declares which sides it belongs to, and the kernel constructed every @Mod on every side
+# regardless. Sodium's client entry point is the real case; on a dedicated server its constructor reaches a
+# client-only type and throws with the mod's name on it. This gate is a dedicated server, so the canary's
+# client-only @Mod must be reported and skipped.
+check "a client-only @Mod is recognised as client-only" \
+  "@Mod forbricneoclientonly .*declares it belongs to \[CLIENT\]" "$LOG"
+check_absent "and its constructor never runs on a server" \
+  "ForbricNeoClientOnly\] client-only @Mod CONSTRUCTED" "$LOG"
 check "MinecraftForge @Mod constructed"       "constructed @Mod forbriclive" "$LOG"
 # NOT `check`: that counts LINES, so "registered 0 @EventBusSubscriber class(es)" would still pass it. The
 # subscriber wiring moved into the registration window, and the way that goes wrong is the count dropping
