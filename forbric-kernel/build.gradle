@@ -159,6 +159,11 @@ test {
 	// ledger from the last time it cost a day; this is the fix rather than the note.
 	dependsOn tasks.named('compileRuntimeJava')
 	inputs.files(sourceSets.runtime.output).withPropertyName('gameSideClasses').optional()
+	// The merged game the real-bytecode tests read. Without this, rebuilding it leaves the test task UP-TO-DATE
+	// and every one of those tests silently keeps its previous verdict — which is exactly what happened the
+	// first time the base was rebuilt: a green run that had not looked at the new jar at all.
+	inputs.files(files('../forbric-loader/run/merged-base/patched-mc-merged-26.2.jar'))
+			.withPropertyName('mergedBase').optional()
 	// No unit test may fork a window. DependencyAuditTest drives DependencyAudit.report with Side.CLIENT and
 	// deliberately unmet requirements, which is exactly the input that opens one -- and a test suite that stops
 	// on an invisible dialog looks like a hang, not a failure. DependencyDialogTest drives the fork itself, with

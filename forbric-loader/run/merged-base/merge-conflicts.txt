@@ -1,6 +1,6 @@
 [merge] classes: vanilla=0 forge-only-ns=3 forge=193 neo=10163 MERGED=612 (of which superclass-rebased-to-forge=2)
-[merge] spliced into merged classes: methods=661 fields=138 interfaces=49 diamond-defaults-resolved=18073 duplicate-fields-resolved=10 field-init-preserved=6 bridged-constructors=1 exclusive-fields-initialized=11 lambdas-realigned-to-their-capturer=7 divergent-anonymous-materialized=2 (call sites repointed=2) custom-payload-interop=1
-[merge] CONFLICTS: methods=1000 fields=8 STRUCTURAL(superclass/field)=23 collision-methods-dropped=3 class-access-widened=6
+[merge] spliced into merged classes: methods=661 fields=138 interfaces=49 diamond-defaults-resolved=17074 duplicate-fields-resolved=10 field-init-preserved=6 bridged-constructors=1 exclusive-fields-initialized=11 lambdas-realigned-to-their-capturer=7 divergent-anonymous-materialized=2 (call sites repointed=2) custom-payload-interop=1
+[merge] CONFLICTS: methods=1000 fields=8 STRUCTURAL(superclass/field)=15 collision-methods-dropped=3 class-access-widened=6
 
 === STRUCTURAL conflicts (superclass / field-init) — not auto-resolvable at bytecode level: 
 ===   * (superclass: forge=… vs neo=…): both inject a DIFFERENT real superclass (no multiple 
@@ -11,25 +11,17 @@ net/minecraft/client/KeyMapping#MAP (read by a winning method but never initiali
 net/minecraft/client/data/models/ModelProvider$BlockStateGeneratorCollector#known (exclusive-added field with no surviving writer and no default-constructible type java/util/function/Supplier — left null)
 net/minecraft/client/data/models/ModelProvider$ItemInfoCollector#known (exclusive-added field with no surviving writer and no default-constructible type java/util/function/Supplier — left null)
 net/minecraft/client/gui/screens/TitleScreen#modUpdateNotification (exclusive-added field with no surviving writer and no default-constructible type net/minecraftforge/client/gui/TitleScreenModUpdateIndicator — left null)
-net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen#currentPage (exclusive-added field with no surviving writer and no default-constructible type net/minecraftforge/client/gui/CreativeTabsScreenPage — left null)
-net/minecraft/client/multiplayer/ClientLevel#modelDataManager (exclusive-added field with no surviving writer and no default-constructible type net/minecraftforge/client/model/data/ModelDataManager — left null)
 net/minecraft/client/multiplayer/ServerData#forgeData (exclusive-added field with no surviving writer and no default-constructible type net/minecraftforge/client/ExtendedServerListData — left null)
 net/minecraft/client/particle/ParticleResources#providers (read by a winning method but never initialized — cross-method field dependency)
 net/minecraft/client/renderer/block/dispatch/WeightedVariants#first (exclusive-added field with no surviving writer and no default-constructible type net/minecraft/client/renderer/block/dispatch/BlockStateModel — left null)
-net/minecraft/client/resources/model/ModelManager#modelBakery (exclusive-added field with no surviving writer and no default-constructible type net/minecraft/client/resources/model/ModelBakery — left null)
-net/minecraft/server/ReloadableServerResources#context (exclusive-added field with no surviving writer and no default-constructible type net/minecraftforge/common/crafting/conditions/ICondition$IContext — left null)
-net/minecraft/server/dedicated/DedicatedServer#dediLanPinger (exclusive-added field with no surviving writer and no default-constructible type net/minecraft/client/server/LanServerPinger — left null)
 net/minecraft/world/entity/Entity (superclass: forge=net/minecraftforge/common/capabilities/CapabilityProvider$Entities vs neo=net/neoforged/neoforge/attachment/AttachmentHolder)
 net/minecraft/world/entity/Mob#spawnReason (exclusive-added field with no surviving writer and no default-constructible type net/minecraft/world/entity/EntitySpawnReason — left null)
 net/minecraft/world/entity/boss/enderdragon/EnderDragonPart (superclass: forge=net/minecraftforge/entity/PartEntity vs neo=net/neoforged/neoforge/entity/PartEntity)
 net/minecraft/world/entity/projectile/arrow/AbstractArrow#ignoredEntities (exclusive-added field with no surviving writer and no default-constructible type it/unimi/dsi/fastutil/ints/IntOpenHashSet — left null)
 net/minecraft/world/inventory/Slot#background (exclusive-added field with no surviving writer and no default-constructible type net/minecraft/resources/Identifier — left null)
 net/minecraft/world/level/Level (superclass: forge=net/minecraftforge/common/capabilities/CapabilityProvider$Levels vs neo=net/neoforged/neoforge/attachment/AttachmentHolder)
-net/minecraft/world/level/biome/Biome#modifiableBiomeInfo (exclusive-added field with no surviving writer and no default-constructible type net/minecraftforge/common/world/ModifiableBiomeInfo — left null)
 net/minecraft/world/level/block/entity/BlockEntity (superclass: forge=net/minecraftforge/common/capabilities/CapabilityProvider$BlockEntities vs neo=net/neoforged/neoforge/attachment/AttachmentHolder)
 net/minecraft/world/level/chunk/LevelChunk#capProvider (exclusive-added field with no surviving writer and no default-constructible type net/minecraftforge/common/capabilities/CapabilityProvider$AsField$LevelChunks — left null)
-net/minecraft/world/level/levelgen/structure/Structure#modifiableStructureInfo (exclusive-added field with no surviving writer and no default-constructible type net/minecraftforge/common/world/ModifiableStructureInfo — left null)
-net/minecraft/world/level/material/Fluid#forgeFluidType (exclusive-added field with no surviving writer and no default-constructible type net/minecraftforge/fluids/FluidType — left null)
 
 === both-modified methods where one side's hook is LOST (see suffix for which) ===
 com/mojang/blaze3d/platform/Window#<init>(Lcom/mojang/blaze3d/platform/WindowEventHandler;Lcom/mojang/blaze3d/platform/DisplayData;Ljava/lang/String;ZLjava/lang/String;Lcom/mojang/blaze3d/platform/MonitorManager;Lcom/mojang/blaze3d/systems/GpuBackend;)V (forge hook lost)
