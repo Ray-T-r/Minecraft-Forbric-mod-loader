@@ -285,8 +285,10 @@ public final class KernelBoot {
 				ClassTweakerTransformer.create(KernelFabricEcosystem.accessWideners(), loader::putGeneratedClass);
 		if (accessWideners != null) chain.register(TransformPhase.ACCESS, accessWideners);
 
-		// The Forge-family twin: every mod jar's META-INF/accesstransformer.cfg, in the same ACCESS phase.
-		net.forbric.kernel.access.AccessTransformer forgeAts = forgeFamilyAccessTransformer(modJars);
+		// The Forge-family twin: every mod jar's META-INF/accesstransformer.cfg, in the same ACCESS phase — and
+		// the two runtime carriers' own, which the merged base needs just as much. See the method.
+		net.forbric.kernel.access.AccessTransformer forgeAts =
+				forgeFamilyAccessTransformer(modJars, runtimeJars);
 		if (forgeAts != null) chain.register(TransformPhase.ACCESS, forgeAts);
 
 		// A guest mod's platform probe answers for the loader that mod was loaded as. Registered first in the phase:
@@ -709,12 +711,31 @@ public final class KernelBoot {
 	 *
 	 * <p>Names are Mojmap and the merged base runs Mojmap, so the directives are used as parsed — no remap step.
 	 * Best-effort per jar: one unreadable AT file must not stop the others.
+	 *
+	 * <h2>The carriers' own files, which is the larger half</h2>
+	 *
+	 * <p>{@code carrierJars} are read for the same files, and they are not an afterthought. Each Forge family
+	 * ships an access transformer that widens the GAME for every mod of that family, and the genuine loader
+	 * applies it before anything else runs. The merged base keeps whichever family's method body won the merge,
+	 * along with that body's access flags — so where the two families patched the same method, the loser's
+	 * widening is simply gone.
+	 *
+	 * <p>{@code MenuScreens.register} is the one that matters most: traditional MinecraftForge's file declares it
+	 * public, the merged base has it private, and it is the single line EVERY MinecraftForge mod with a GUI runs
+	 * during client setup. Without this the mod dies there with an illegal-access error and its screens never
+	 * register. Re-applying a widening that is already in place is a no-op, so feeding both families' files in is
+	 * safe as well as correct.
 	 */
-	private static net.forbric.kernel.access.AccessTransformer forgeFamilyAccessTransformer(List<Path> modJars) {
+	private static net.forbric.kernel.access.AccessTransformer forgeFamilyAccessTransformer(List<Path> modJars,
+			List<Path> carrierJars) {
 		List<net.forbric.kernel.access.AtDirective> directives = new ArrayList<>();
 		int jarsWithAts = 0;
 
-		for (Path jar : modJars) {
+		List<Path> all = new ArrayList<>(carrierJars);
+		all.addAll(modJars);
+		int carrierDirectives = 0;
+
+		for (Path jar : all) {
 			try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
 				boolean any = false;
 				for (java.util.Enumeration<? extends java.util.zip.ZipEntry> e = zip.entries(); e.hasMoreElements();) {
@@ -734,6 +755,7 @@ public final class KernelBoot {
 					}
 				}
 				if (any) jarsWithAts++;
+				if (carrierJars.contains(jar)) carrierDirectives = directives.size();
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/AT] could not read access transformers from " + jar.getFileName(), t);
 			}
@@ -741,9 +763,12 @@ public final class KernelBoot {
 
 		if (directives.isEmpty()) return null;
 
-		ForbricLog.info("[Forbric/AT] applying %d Forge-family access-transformer directive(s) from %d mod jar(s) "
-				+ "— without these a mod touching a private vanilla member dies with IllegalAccessError",
-				directives.size(), jarsWithAts);
+		ForbricLog.info("[Forbric/AT] applying %d Forge-family access-transformer directive(s) from %d jar(s), %d of "
+				+ "them from the runtime carriers — the carriers' file is what makes the game's own members "
+				+ "reachable to every mod of that family, and where the merge kept the other family's method body "
+				+ "it kept that body's access too (MenuScreens.register, which every MinecraftForge GUI mod calls, "
+				+ "came out private)",
+				directives.size(), jarsWithAts, carrierDirectives);
 		return new net.forbric.kernel.access.AccessTransformer(directives);
 	}
 
