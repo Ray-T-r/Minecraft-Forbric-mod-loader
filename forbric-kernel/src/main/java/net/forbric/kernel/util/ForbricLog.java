@@ -120,28 +120,48 @@ public final class ForbricLog {
 	private enum Level { INFO, WARN, ERROR }
 
 	private static void logFormat(Level level, String format, Object... args) {
-		String msg;
-		Throwable exc;
-		if (args.length == 0) {
-			msg = format;
-			exc = null;
-		} else {
-			Object lastArg = args[args.length - 1];
-			Object[] newArgs;
-			if (lastArg instanceof Throwable && getRequiredArgs(format) < args.length) {
-				exc = (Throwable) lastArg;
-				newArgs = Arrays.copyOf(args, args.length - 1);
-			} else {
-				exc = null;
-				newArgs = args;
-			}
-			try {
-				msg = String.format(format, newArgs);
-			} catch (IllegalFormatException e) {
-				msg = "Format error: fmt=[" + format + "] args=" + Arrays.toString(args);
-			}
+		Rendered rendered = render(format, args);
+		emit(level, rendered.message(), rendered.thrown());
+	}
+
+	/** What a formatted call turns into: the line to print and the exception to print under it. */
+	record Rendered(String message, Throwable thrown) {}
+
+	/**
+	 * Works out the message and the exception, without emitting anything.
+	 *
+	 * <p>Separate from {@link #logFormat} so it can be tested for what it decides rather than for what reaches
+	 * the log, which depends on whether a logging backend is on the classpath.
+	 */
+	static Rendered render(String format, Object... args) {
+		if (args == null || args.length == 0) return new Rendered(format, null);
+
+		Object lastArg = args[args.length - 1];
+		Throwable thrown = null;
+		Object[] remaining = args;
+		if (lastArg instanceof Throwable trailing && getRequiredArgs(format) < args.length) {
+			thrown = trailing;
+			remaining = Arrays.copyOf(args, args.length - 1);
 		}
-		emit(level, msg, exc);
+
+		try {
+			return new Rendered(String.format(format, remaining), thrown);
+		} catch (IllegalFormatException notAFormat) {
+			// Almost always a message built by concatenation that happens to contain a literal '%' — a mod id, a
+			// file name, "100% done". getRequiredArgs counts that as a conversion, so a trailing Throwable looked
+			// like the argument for it, and formatting then threw. The old fallback replaced the whole message
+			// with "Format error: …" and dropped the exception, so a warning about a real failure became a
+			// warning about this method, with no stack trace and no way back to the cause.
+			//
+			// The message is the format string as written, which is exactly right when it was never a format
+			// string, and the trailing Throwable is the exception it always was.
+			if (thrown == null && lastArg instanceof Throwable trailing) {
+				thrown = trailing;
+				remaining = Arrays.copyOf(args, args.length - 1);
+			}
+			String tail = remaining.length == 0 ? "" : " " + Arrays.toString(remaining);
+			return new Rendered(format + tail, thrown);
+		}
 	}
 
 	private static void emit(Level level, String msg, Throwable exc) {
