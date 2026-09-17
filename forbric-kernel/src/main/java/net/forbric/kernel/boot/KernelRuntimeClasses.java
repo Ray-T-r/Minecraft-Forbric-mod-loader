@@ -103,6 +103,12 @@ public final class KernelRuntimeClasses {
 				new Call("setActiveContainer", void.class, Object.class),
 				new Call("constructMod", Object.class, String.class, KernelForgeModContext.Handle.class),
 				new Call("startup", void.class, Object.class))));
+		// The traditional-Forge setup phases: build one mod-lifecycle event, post it at every MinecraftForge mod,
+		// drain the stage's deferred queue. Separate from KernelForgeContainers because a phase is a different
+		// question from a container, and because this one names six event types a NeoForge-only instance must never
+		// be made to resolve. See KernelForgeSetup.
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeSetup", new Entry(Origin.COMPILED, List.of(
+				new Call("firePhase", int.class, List.class, net.forbric.api.ForeignType.class, String.class))));
 		// Materialises the kernel's own annotation scan into NeoForge's ModFileScanData. The scan itself is
 		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
 		CLASSES.put("net.forbric.kernel.runtime.KernelScanData", new Entry(Origin.COMPILED, List.of(

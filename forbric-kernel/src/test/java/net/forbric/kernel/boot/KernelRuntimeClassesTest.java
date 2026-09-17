@@ -170,10 +170,27 @@ class KernelRuntimeClassesTest {
 		return cw.toByteArray();
 	}
 
-	/** A body that satisfies the verifier for whatever the seam declares — void included. */
+	/**
+	 * A body that satisfies the verifier for whatever the seam declares — void and primitives included.
+	 *
+	 * <p>It returned null for everything that was not void until the seam first carried a primitive, at which
+	 * point every stand-in jar in this file failed to verify. Worth a line because the failure looked like the
+	 * new entry was wrong rather than the generator: {@code ACONST_NULL} is not an int.
+	 */
 	private static void emitReturn(MethodVisitor mv, Class<?> returns) {
 		if (returns == void.class) {
 			mv.visitInsn(Opcodes.RETURN);
+			return;
+		}
+		if (returns.isPrimitive()) {
+			Type type = Type.getType(returns);
+			switch (type.getSort()) {
+				case Type.LONG -> mv.visitInsn(Opcodes.LCONST_0);
+				case Type.FLOAT -> mv.visitInsn(Opcodes.FCONST_0);
+				case Type.DOUBLE -> mv.visitInsn(Opcodes.DCONST_0);
+				default -> mv.visitInsn(Opcodes.ICONST_0); // boolean, byte, char, short, int
+			}
+			mv.visitInsn(type.getOpcode(Opcodes.IRETURN));
 			return;
 		}
 		mv.visitInsn(Opcodes.ACONST_NULL);
