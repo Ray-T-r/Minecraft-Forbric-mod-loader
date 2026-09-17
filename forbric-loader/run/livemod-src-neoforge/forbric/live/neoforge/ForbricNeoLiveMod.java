@@ -85,5 +85,25 @@ public class ForbricNeoLiveMod {
 			System.out.println("[ForbricNeoLive] LoadingModList lookup unavailable: " + absent);
 		}
 		System.out.println("[ForbricNeoLive] foreign forbricfabriclive isLoaded=" + modList + " modFile=" + modFile);
+		reportOwnModFile();
+	}
+
+	/**
+	 * The lookup a mod makes about ITSELF: ModList.get().getModFileById(MODID).getFile(). It reads a map the
+	 * kernel used to fill for the NeoForge baseline alone, so every kernel-loaded mod got null back and the very
+	 * next dereference NPE'd — with nothing in the log to say why.
+	 */
+	private static void reportOwnModFile() {
+		try {
+			net.neoforged.neoforgespi.language.IModFileInfo info =
+					net.neoforged.fml.ModList.get().getModFileById("forbricneolive");
+			if (info == null) {
+				System.out.println("[ForbricNeoLive] getModFileById(self) returned NULL");
+				return;
+			}
+			System.out.println("[ForbricNeoLive] getModFileById(self) answered, file=" + info.getFile().getFileName());
+		} catch (Throwable t) {
+			System.out.println("[ForbricNeoLive] getModFileById(self) FAILED: " + t);
+		}
 	}
 }

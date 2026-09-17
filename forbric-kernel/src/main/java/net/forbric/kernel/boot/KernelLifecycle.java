@@ -1085,23 +1085,12 @@ public final class KernelLifecycle {
 
 		// NeoForge's title-screen version-check overlay (NeoForgeVersionCheck.getStatus →
 		// ModList.getModFileById("neoforge").getMods().get(0)) reads the `fileById` map, which our routing does not
-		// otherwise touch. Seed it with the baseline's mod-file info so the main menu renders (getResult →
-		// PENDING_CHECK, no network). Rebuild the map (it may be immutable) rather than mutate in place.
+		// otherwise touch. It used to be seeded here with the BASELINE'S entry alone, which rendered the main menu
+		// and left getModFileById(anyOtherMod) answering null — an NPE inside any mod that resolves its own file by
+		// id. The whole container list goes in now, baseline included, through the same helper the publish pass
+		// uses, so the two passes cannot disagree about what the map holds.
 		try {
-			Class<?> iModInfo = Class.forName(ForeignType.MOD_INFO_SPI.binary(Ecosystem.NEOFORGE), false, cl);
-			Object modInfo = modContainerClass(cl).getMethod("getModInfo").invoke(baselineContainer);
-			Object fileInfo = iModInfo.getMethod("getOwningFile").invoke(modInfo);
-			String modId = (String) iModInfo.getMethod("getModId").invoke(modInfo);
-			if (fileInfo != null) {
-				Field f = modListCls.getDeclaredField("fileById");
-				f.setAccessible(true);
-				@SuppressWarnings("unchecked")
-				java.util.Map<String, Object> existing = (java.util.Map<String, Object>) f.get(modList);
-				java.util.Map<String, Object> merged =
-						new java.util.HashMap<>(existing == null ? java.util.Map.of() : existing);
-				merged.put(modId, fileInfo);
-				f.set(modList, merged);
-			}
+			KernelModLoader.publishFileById(cl, modListCls, modList, containers);
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/Lifecycle] could not seed ModList.fileById (title version-check may NPE): %s",
 					String.valueOf(unwrap(t)));
