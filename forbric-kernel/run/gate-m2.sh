@@ -45,6 +45,13 @@ check "custom entrypoint key resolved 2 probes" "custom entrypoint key 'forbric:
 check "plain-class entrypoint form"           "probe via plain-class entrypoint" "$LOG"
 check "Class::STATIC_FIELD entrypoint form"   "probe via Class::STATIC_FIELD entrypoint" "$LOG"
 
+# A7: working out which declarations can satisfy the requested type used to load each candidate class WITH
+# initialisation, so a declaration that is never constructed still ran its static initialiser — at enumeration
+# time, before the mod's own moment, and permanently erroneous if it threw. NeverConstructedProbe is declared
+# under this same key and is not a Runnable, so nothing may construct it and nothing may initialise it.
+check_absent "an unused entrypoint's class is never initialised" \
+  "ForbricFabricLive\] NeverConstructedProbe static initialiser RAN" "$LOG"
+
 # preLaunch must precede the game's own boot banner; main must follow it.
 PRE=$(grep -n 'preLaunch entrypoint' "$LOG" | head -1 | cut -d: -f1)
 STARTING=$(grep -nE 'Starting minecraft server|Loaded [0-9]+ recipes' "$LOG" | head -1 | cut -d: -f1)

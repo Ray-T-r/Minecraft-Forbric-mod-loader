@@ -61,6 +61,16 @@ import net.forbric.kernel.util.ForbricLog;
 public final class KernelFabricLoader implements FabricLoader {
 	private static volatile KernelFabricLoader instance;
 
+	/**
+	 * The launch arguments a sanitised read must not contain, with the value that follows each.
+	 *
+	 * <p>The same four Fabric removes. {@code --accessToken} is the one that matters: it is a live session
+	 * credential, and a mod asks for the SANITISED arguments precisely when it is about to write them somewhere
+	 * that leaves the machine.
+	 */
+	private static final java.util.Set<String> SENSITIVE_ARGUMENTS =
+			java.util.Set.of("--accessToken", "--username", "--uuid", "--xuid");
+
 	private final EnvType envType;
 	private final Path gameDir;
 	private final Path configDir;
@@ -278,9 +288,31 @@ public final class KernelFabricLoader implements FabricLoader {
 
 	@Override
 	public String[] getLaunchArguments(boolean sanitize) {
-		// The kernel's server launch never carries credentials; on the client (M5) the account token args must be
-		// stripped here before this returns anything to a mod.
-		return launchArguments.clone();
+		return sanitize ? sanitized(launchArguments) : launchArguments.clone();
+	}
+
+	/**
+	 * The launch arguments with the player's credentials removed.
+	 *
+	 * <p>{@code sanitize} was accepted and ignored, so a mod asking for the SANITISED arguments — which is what a
+	 * mod does before writing them into a crash report, a debug dump or a log it uploads — got the real ones,
+	 * {@code --accessToken} included. That token is a live session credential. Fabric strips the same four, and
+	 * the value that follows each flag goes with it.
+	 *
+	 * <p>Unknown flags are kept: the caller asked for the launch arguments, not for a whitelist, and dropping
+	 * something the kernel does not recognise would quietly change what a mod sees.
+	 */
+	static String[] sanitized(String[] arguments) {
+		List<String> out = new ArrayList<>(arguments.length);
+		for (int i = 0; i < arguments.length; i++) {
+			if (SENSITIVE_ARGUMENTS.contains(arguments[i])) {
+				// Skip its value too. A flag at the very end has none, and must not run off the array.
+				if (i + 1 < arguments.length) i++;
+				continue;
+			}
+			out.add(arguments[i]);
+		}
+		return out.toArray(new String[0]);
 	}
 
 	private ClassLoader entrypointLoader() {
@@ -395,11 +427,24 @@ public final class KernelFabricLoader implements FabricLoader {
 			throw new NoSuchMethodException("no static member '" + member + "' on " + owner.getName());
 		}
 
+		/**
+		 * Resolves an entrypoint class WITHOUT running its static initialiser.
+		 *
+		 * <p>It used to initialise, and {@link #provides} calls this for every candidate — so asking for the
+		 * entrypoints of ONE key ran the static initialiser of every entrypoint class of every mod, including
+		 * ones that were never going to be constructed and ones belonging to the other side's phase entirely.
+		 * A mod that does real work in a static initialiser therefore did it at the wrong moment, and if that
+		 * work threw, the class stayed permanently erroneous: a class initialiser is a one-shot.
+		 *
+		 * <p>Nothing is lost by waiting. Every path in {@code construct} initialises the class as a side effect
+		 * of what it does next — {@code newInstance}, a static field read, a method handle invocation — so the
+		 * initialiser still runs, at the moment the entrypoint is actually used.
+		 */
 		private Class<?> loadClass(String name) throws ClassNotFoundException {
 			Class<?> cls = resolvedClass;
 			if (cls != null && cls.getName().equals(name)) return cls;
 
-			cls = Class.forName(name, true, entrypointLoader());
+			cls = Class.forName(name, false, entrypointLoader());
 			resolvedClass = cls;
 			return cls;
 		}
