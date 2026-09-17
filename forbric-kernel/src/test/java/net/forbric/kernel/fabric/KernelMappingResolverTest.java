@@ -39,19 +39,23 @@ class KernelMappingResolverTest {
 		MappingResolver resolver = new KernelMappingResolver();
 		assertTrue(resolver.getNamespaces().contains(resolver.getCurrentRuntimeNamespace()),
 				"a runtime namespace missing from getNamespaces() is a resolver that disowns its own answers");
-		assertEquals("named", resolver.getCurrentRuntimeNamespace(),
-				"Mojmap is 'named'; any other spelling makes mods take their intermediary path");
+		// "official", not "named". javap on MappingConfiguration in fabric-loader 0.19.5: the runtime namespace
+		// comes from fabric.runtimeMappingNamespace and falls back to the literal "official". The kernel runs the
+		// game under Mojang's own names, which is exactly what that namespace means — so a mod comparing against
+		// it now matches, where "named" is a spelling no real instance of this loader reports.
+		assertEquals("official", resolver.getCurrentRuntimeNamespace(),
+				"a mod branching on the runtime namespace must see what a real instance reports");
 	}
 
 	@Test
 	void everyLookupIsTheIdentityInBothDirections() {
 		MappingResolver resolver = new KernelMappingResolver();
 		assertEquals("net.minecraft.client.Minecraft",
-				resolver.mapClassName("named", "net.minecraft.client.Minecraft"));
+				resolver.mapClassName("official", "net.minecraft.client.Minecraft"));
 		assertEquals("net.minecraft.client.Minecraft",
-				resolver.unmapClassName("named", "net.minecraft.client.Minecraft"));
-		assertEquals("tick", resolver.mapMethodName("named", "net.minecraft.client.Minecraft", "tick", "()V"));
-		assertEquals("level", resolver.mapFieldName("named", "net.minecraft.client.Minecraft", "level",
+				resolver.unmapClassName("official", "net.minecraft.client.Minecraft"));
+		assertEquals("tick", resolver.mapMethodName("official", "net.minecraft.client.Minecraft", "tick", "()V"));
+		assertEquals("level", resolver.mapFieldName("official", "net.minecraft.client.Minecraft", "level",
 				"Lnet/minecraft/client/multiplayer/ClientLevel;"));
 	}
 

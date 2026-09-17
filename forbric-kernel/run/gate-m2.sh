@@ -63,7 +63,11 @@ fi
 
 step "FabricLoader API surface answers correctly (must PASS)"
 check "builtin mods resolvable"               "builtins minecraft=true java=true fabricloader=true" "$LOG"
-check "runtime namespace is named (Mojmap)"   "namespace=named" "$LOG"
+# "official", not "named". javap on MappingConfiguration in fabric-loader 0.19.5: the runtime namespace comes
+# from fabric.runtimeMappingNamespace and falls back to the literal "official". The kernel runs the game under
+# Mojang's own names, which is what that namespace means — so a mod comparing against it now matches, where
+# "named" was a spelling no real instance of this loader reports and sent such a mod down its other branch.
+check "runtime namespace is what a real loader reports" "namespace=official" "$LOG"
 check "game version detected from version.json" "gameVersion=26.2" "$LOG"
 check "metadata + customValue round-trip"     "customKind=fabric customExpects=3" "$LOG"
 check "findPath reaches inside the mod jar"   "findPath\(fabric.mod.json\) present=true" "$LOG"
