@@ -673,9 +673,9 @@ public final class KernelBoot {
 				Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
 				if (owner == null) continue;
 
-				families.put(jar, owner == Ecosystem.FABRIC
-						? LoaderProbePolicy.Family.FABRIC
-						: LoaderProbePolicy.Family.FORGE_FAMILY);
+				// One for one with the arbitrated ecosystem. It used to collapse both Forge families into one
+				// constant, which told a NeoForge-only mod that traditional MinecraftForge's loader class exists.
+				families.put(jar, LoaderProbePolicy.familyOf(owner));
 			}
 		}
 		return families;

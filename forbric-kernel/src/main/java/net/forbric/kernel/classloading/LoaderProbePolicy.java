@@ -67,41 +67,46 @@ import net.forbric.kernel.util.ForbricLog;
  * base, the runtime carriers and the kernel's own classes have no family here and probe as before.
  *
  * <p>Escape hatch: {@code -Dforbric.loaderProbes=off} restores the pre-policy behaviour (every probe answers yes).
- *
- * <h2>Not installed</h2>
- *
- * <p><b>Nothing in the kernel switches this on.</b> {@code ForbricClassLoader.setJarFamilies} has no caller, so
- * the per-jar family map is empty for the whole run; with it empty the loader never records a class's origin,
- * {@code familyOfClass} answers null for everything, and {@link net.forbric.kernel.transform.LoaderProbeRewriter}
- * is never even constructed — it appears in no production code path, only in its own unit test. Every probe
- * therefore answers yes today, exactly as if the escape hatch were set.
- *
- * <p>This is recorded rather than quietly fixed because switching it on is a behaviour change, not a repair: it
- * would start telling live mods that a loader they can see is absent, and which mods change branch as a result
- * is not something the current gates would show. Whoever wires it up owns that decision and should bring a gate
- * with them.
+
  */
 public final class LoaderProbePolicy {
 
 	/**
-	 * Which loader family a guest class belongs to, for probe purposes.
+	 * Which loader a guest class belongs to, for probe purposes.
 	 *
-	 * <p><b>Deliberately not {@link net.forbric.api.Ecosystem}, and deliberately two-valued.</b> When the kernel's
-	 * five ecosystem enums were collapsed into one, this one was kept, because it is not the same question.
-	 * {@code FORGE_FAMILY} is a GROUPING: a jar declaring {@code neoforge.mods.toml} still probes for
-	 * {@code net.minecraftforge.fml.loading.FMLLoader} and must be told yes, because on a real instance a mod of
-	 * either Forge family is running on FML. Splitting this into FORGE and NEOFORGE would make
-	 * {@link #forName(String, boolean, ClassLoader, String)} start answering "absent" to exactly those probes.
+	 * <p><b>Three-valued, and it used to be two.</b> The two Forge families were grouped under one
+	 * {@code FORGE_FAMILY} constant on the reasoning that a NeoForge mod "is running on FML" and should be told
+	 * yes when it probes for MinecraftForge's loader. That reasoning does not survive contact with the class
+	 * names: the two families' marker classes are {@code net.minecraftforge.fml.loading.FMLLoader} and
+	 * {@code net.neoforged.fml.loading.FMLLoader}, and on a real NeoForge instance the first one is absent. That
+	 * probe is a mod asking "is TRADITIONAL Forge here", and the grouping answered yes to a NeoForge-only mod,
+	 * sending it down the branch written for the other family.
 	 *
-	 * <p>It is also not free to rename: {@link #name()} is baked into guest bytecode as an {@code LDC} by
+	 * <p>The case the grouping was protecting — a genuinely multi-platform jar that probes to find out which half
+	 * of itself to run — is already exempt by a different rule: a jar carrying more than one loader's manifest
+	 * has no family here at all, and its probes are answered as before.
+	 *
+	 * <p>Not free to rename: {@link #name()} is baked into guest bytecode as an {@code LDC} by
 	 * {@code LoaderProbeRewriter} and compared back here, so the constant is part of an already-transformed
 	 * class's contract for the life of the process.
 	 */
 	public enum Family {
 		/** Loaded from a jar that declares only {@code fabric.mod.json}. */
 		FABRIC,
-		/** Loaded from a jar that declares only a Forge or NeoForge mods.toml. */
-		FORGE_FAMILY
+		/** Loaded from a jar that declares only a traditional MinecraftForge {@code mods.toml}. */
+		FORGE,
+		/** Loaded from a jar that declares only a {@code neoforge.mods.toml}. */
+		NEOFORGE
+	}
+
+	/** The {@link Family} for an arbitrated ecosystem, one for one. */
+	public static Family familyOf(Ecosystem ecosystem) {
+		if (ecosystem == null) return null;
+		return switch (ecosystem) {
+			case FABRIC -> Family.FABRIC;
+			case FORGE -> Family.FORGE;
+			case NEOFORGE -> Family.NEOFORGE;
+		};
 	}
 
 	/**
@@ -112,8 +117,8 @@ public final class LoaderProbePolicy {
 	private static final Map<String, Family> PROBES = Map.of(
 			"net.fabricmc.loader.api.FabricLoader", Family.FABRIC,
 			"net.fabricmc.loader.impl.FabricLoaderImpl", Family.FABRIC,
-			ForeignType.FML_LOADER.binary(Ecosystem.FORGE), Family.FORGE_FAMILY,
-			ForeignType.FML_LOADER.binary(Ecosystem.NEOFORGE), Family.FORGE_FAMILY);
+			ForeignType.FML_LOADER.binary(Ecosystem.FORGE), Family.FORGE,
+			ForeignType.FML_LOADER.binary(Ecosystem.NEOFORGE), Family.NEOFORGE);
 
 	private static final boolean ENABLED = !"off".equalsIgnoreCase(System.getProperty("forbric.loaderProbes", "on"));
 
