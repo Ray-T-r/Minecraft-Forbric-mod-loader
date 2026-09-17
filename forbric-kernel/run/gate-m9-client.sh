@@ -84,6 +84,21 @@ step "the full FML mod lifecycle ran, not just the phases the kernel used to kno
 # Each of these was missing outright until the kernel started mirroring CommonModLoader.load's task order.
 check "construct phase posted"        "posted FML construct to [1-9][0-9]* NeoForge mod"      "$LOG"
 check "client setup posted"           "posted FML client setup to [1-9][0-9]* NeoForge mod"   "$LOG"
+# B3: common setup used to be posted from the kernel's pre-Minecraft window, on the main thread, with
+# Minecraft.getInstance() still null — and common setup is exactly where a mod does its dist-guarded client
+# initialisation (caching that singleton into a static, or handing work to its executor). Genuine NeoForge posts
+# it from inside Minecraft's own constructor. The THREAD is the evidence: before the fix this line said [main].
+check "common setup posted inside Minecraft's constructor" \
+  "\[Render thread/INFO\]: \[Forbric/Lifecycle\] posted FML common setup to [1-9][0-9]* NeoForge mod" "$LOG"
+check_absent "and not from the window before it exists" \
+  "\[main/INFO\]: \[Forbric/Lifecycle\] posted FML common setup" "$LOG"
+COMMON_AT=$(grep -nE "posted FML common setup to" "$LOG" | head -1 | cut -d: -f1)
+CLIENT_AT=$(grep -nE "posted FML client setup to" "$LOG" | head -1 | cut -d: -f1)
+if [ -n "$COMMON_AT" ] && [ -n "$CLIENT_AT" ] && [ "$COMMON_AT" -lt "$CLIENT_AT" ]; then
+  printf '[kernel] PASS common setup precedes the sided phase (line %s < %s)\n' "$COMMON_AT" "$CLIENT_AT"
+else
+  printf '[kernel] FAIL common setup precedes the sided phase (common=%s client=%s)\n' "${COMMON_AT:-none}" "${CLIENT_AT:-none}"; FAIL=1
+fi
 check "registration events ran"       "ran NeoForge.s registration events"               "$LOG"
 check "IMC enqueued and processed"    "posted FML IMC (enqueue|process) to [1-9][0-9]* NeoForge mod" "$LOG" 2
 check "load complete posted"          "posted FML load complete to [1-9][0-9]* NeoForge mod"  "$LOG"

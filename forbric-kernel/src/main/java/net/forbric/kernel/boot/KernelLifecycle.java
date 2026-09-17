@@ -1354,11 +1354,17 @@ public final class KernelLifecycle {
 		// an empty set of their own family, so the guard buys nothing. The CLIENT twin (fireClientSetupLifecycle)
 		// dropped the same guard for the same reason; the server path never followed.
 
+		// On the CLIENT every phase, common setup included, is deferred to fireClientSetupLifecycle. This method
+		// runs BEFORE `new Minecraft(...)`, so Minecraft.getInstance() is still null here — and common setup is
+		// exactly where a mod does its dist-guarded client initialisation: caching the singleton into a static
+		// field, or handing work to Minecraft.execute. Genuine NeoForge posts common setup from
+		// ClientModLoader.finish(), inside Minecraft's own constructor, where the singleton exists. Posting it
+		// here handed those mods a null and the failure surfaced later, in rendering, with nothing pointing back.
+		if (side.isClient()) return;
+
 		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "common setup");
 		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.FORGE), "COMMON_SETUP",
 				"common setup");
-		// On the CLIENT the remaining phases are deferred to onClientEntrypoints — see fireClientSetupLifecycle.
-		if (side.isClient()) return;
 		// The sided phase. The kernel used to jump straight from common setup to load complete, so on a dedicated
 		// server this event was never posted to anyone at all.
 		fireSetupPhase(cl, mods, ForeignType.FML_DEDICATED_SERVER_SETUP_EVENT.binary(Ecosystem.NEOFORGE),
@@ -1493,6 +1499,12 @@ public final class KernelLifecycle {
 		// NOT an early return on an empty NeoForge set any more: the traditional-Forge phases below are a
 		// different family's, and an instance carrying only MinecraftForge mods would have skipped them for a
 		// reason that has nothing to do with it.
+		// Common setup FIRST, and on the client it is posted from here rather than from the pre-Minecraft window
+		// — the same move the client setup phases themselves already made, one phase earlier. Both families, and
+		// before the sided phase, which is the order genuine NeoForge's CommonModLoader.load uses.
+		fireSetupPhase(cl, mods, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "common setup");
+		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT.binary(Ecosystem.FORGE), "COMMON_SETUP",
+				"common setup");
 		fireSetupPhase(cl, mods, ForeignType.FML_CLIENT_SETUP_EVENT.binary(Ecosystem.NEOFORGE), "client setup");
 		fireForgeSetupPhase(cl, ForeignType.FML_CLIENT_SETUP_EVENT.binary(Ecosystem.FORGE), "SIDED_SETUP",
 				"client setup");
@@ -2276,6 +2288,11 @@ public final class KernelLifecycle {
 	public static void onNeoClientSetup() {
 		ClassLoader cl = gameLoader;
 		fireClientSetupLifecycle(cl);
+		// Common setup now runs in there, and registering a config is one of the things mods do from it. On the
+		// server the pass right after the setup lifecycle catches those; the client had no equivalent once the
+		// phases moved here, so a config registered from client-side common setup was registered and never
+		// loaded — and reading it throws rather than returning a default.
+		openLateConfigs(cl, Side.CLIENT, "the client setup lifecycle");
 		// And only then close the payload registration phase — see step 3c for why it cannot precede setup.
 		setupNeoForgeNetwork(cl, Side.CLIENT);
 	}

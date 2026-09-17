@@ -27,6 +27,7 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -40,9 +41,10 @@ import org.objectweb.asm.tree.MethodNode;
  * MinecraftForge pack is empty while {@code publishedForgeMods()} is full, so all four MinecraftForge phases
  * and NeoForge's own {@code RegistrationEvents.init} were skipped with no log line anywhere.
  *
- * <p>The invariant it pins: no {@code RETURN} may precede the first {@code fireForgeSetupPhase} call. The
- * {@code if (side.isClient()) return;} that follows it is deliberately allowed — the client's remaining phases
- * move to {@code fireClientSetupLifecycle}, which has no such guard at all.
+ * <p>The invariant it pins: the only {@code RETURN} that may precede the first {@code fireForgeSetupPhase} call
+ * is the SIDE guard. The client's phases all live in {@code fireClientSetupLifecycle} now, common setup
+ * included, so a return on {@code side.isClient()} is correct here — a return on "no NeoForge mods" is the
+ * defect, and the two are told apart by what the branch tests.
  */
 class KernelLifecycleSetupPhaseReachTest {
 	@Test
@@ -58,21 +60,95 @@ class KernelLifecycleSetupPhaseReachTest {
 
 		int firstReturn = -1;
 		int firstForgePhase = -1;
+		int firstIsClient = -1;
+		int firstIsEmpty = -1;
 		AbstractInsnNode[] insns = setup.instructions.toArray();
 		for (int i = 0; i < insns.length; i++) {
 			if (firstReturn < 0 && insns[i].getOpcode() == Opcodes.RETURN) firstReturn = i;
-			if (firstForgePhase < 0 && insns[i] instanceof MethodInsnNode call
-					&& "fireForgeSetupPhase".equals(call.name)) {
-				firstForgePhase = i;
-			}
+			if (!(insns[i] instanceof MethodInsnNode call)) continue;
+			if (firstForgePhase < 0 && "fireForgeSetupPhase".equals(call.name)) firstForgePhase = i;
+			if (firstIsClient < 0 && "isClient".equals(call.name)) firstIsClient = i;
+			if (firstIsEmpty < 0 && "isEmpty".equals(call.name)) firstIsEmpty = i;
 		}
 
 		assertTrue(firstForgePhase >= 0,
 				"fireModSetupLifecycle no longer posts any traditional-MinecraftForge setup phase");
-		assertTrue(firstReturn < 0 || firstReturn > firstForgePhase,
-				"fireModSetupLifecycle returns before it reaches the first fireForgeSetupPhase — a pack whose "
-						+ "Forge-family mods are all traditional MinecraftForge gets no FMLCommonSetupEvent at all, "
-						+ "which is the 'the world came out looking vanilla' failure");
+		assertTrue(firstIsEmpty < 0 || firstIsEmpty > firstForgePhase,
+				"fireModSetupLifecycle tests a collection for emptiness before it reaches the first "
+						+ "fireForgeSetupPhase — a pack whose Forge-family mods are all traditional MinecraftForge "
+						+ "then gets no FMLCommonSetupEvent at all, which is the 'the world came out looking "
+						+ "vanilla' failure");
+		assertTrue(firstReturn < 0 || firstReturn > firstForgePhase
+						|| (firstIsClient >= 0 && firstIsClient < firstReturn),
+				"the only early return allowed here is the side guard — the client's phases, common setup "
+						+ "included, are posted from fireClientSetupLifecycle instead");
+	}
+
+	/**
+	 * On the client, common setup must be posted from inside {@code Minecraft}'s constructor, before the sided
+	 * phase.
+	 *
+	 * <p>{@code fireModSetupLifecycle} runs BEFORE {@code new Minecraft(...)}, so the singleton is still null
+	 * there — and common setup is where a mod does its dist-guarded client initialisation, caching that singleton
+	 * into a static field or handing work to its executor. Genuine NeoForge posts common setup from
+	 * {@code ClientModLoader.finish()}, inside that constructor. A shape test again, and for the same reason: the
+	 * calls resolve game classes reflectively, so the order of the phase constants is what is assertable.
+	 */
+	@Test
+	void theClientPostsCommonSetupBeforeTheSidedPhase() throws Exception {
+		MethodNode client = method("fireClientSetupLifecycle");
+
+		int common = -1;
+		int sided = -1;
+		AbstractInsnNode[] insns = client.instructions.toArray();
+		for (int i = 0; i < insns.length; i++) {
+			if (!(insns[i] instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETSTATIC) continue;
+			if (common < 0 && "FML_COMMON_SETUP_EVENT".equals(field.name)) common = i;
+			if (sided < 0 && "FML_CLIENT_SETUP_EVENT".equals(field.name)) sided = i;
+		}
+
+		assertTrue(common >= 0,
+				"fireClientSetupLifecycle no longer posts common setup — on the client nothing else does, and a "
+						+ "mod caching Minecraft.getInstance() from it gets null");
+		assertTrue(sided >= 0, "fireClientSetupLifecycle no longer posts client setup");
+		assertTrue(common < sided, "common setup comes before the sided phase, as in CommonModLoader.load");
+	}
+
+	/**
+	 * And the pre-Minecraft window must NOT post it any more, or it is posted twice — once into a null singleton.
+	 */
+	@Test
+	void theWindowBeforeMinecraftExistsDoesNotPostClientCommonSetup() throws Exception {
+		MethodNode setup = method("fireModSetupLifecycle");
+
+		int isClient = -1;
+		int common = -1;
+		AbstractInsnNode[] insns = setup.instructions.toArray();
+		for (int i = 0; i < insns.length; i++) {
+			if (insns[i] instanceof MethodInsnNode call && isClient < 0 && "isClient".equals(call.name)) {
+				isClient = i;
+			}
+			if (insns[i] instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
+					&& common < 0 && "FML_COMMON_SETUP_EVENT".equals(field.name)) {
+				common = i;
+			}
+		}
+
+		assertTrue(isClient >= 0, "fireModSetupLifecycle no longer looks at the side at all");
+		assertTrue(common < 0 || isClient < common,
+				"the side is checked AFTER common setup is posted, so the client posts it here too — with "
+						+ "Minecraft.getInstance() still null");
+	}
+
+	private static MethodNode method(String name) throws Exception {
+		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
+				"net", "forbric", "kernel", "boot", "KernelLifecycle.class");
+		assumeTrue(Files.isRegularFile(compiled), "KernelLifecycle not compiled yet");
+
+		ClassNode node = new ClassNode();
+		new ClassReader(Files.readAllBytes(compiled)).accept(node, 0);
+		return node.methods.stream().filter(m -> name.equals(m.name)).findFirst()
+				.orElseThrow(() -> new AssertionError(name + " is gone"));
 	}
 
 	/**
