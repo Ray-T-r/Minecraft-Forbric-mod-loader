@@ -86,6 +86,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= giveKeyMappingItsMinecraftForgeFace(node);
 			changed |= giveTheVanillaParticleMapAViewOfTheLiveOne(node);
 			changed |= giveFeaturesPerStepItsVanillaDescriptorBack(node);
+			changed |= letDungeonsGenerateWithoutTheDataMap(node);
+			changed |= guardNeoForgesWorldModifierPass(node);
 			changed |= dropInterfaceDefaultShadowingOverrides(node);
 			changed |= tolerateEmptyCreativeTabStacks(node);
 			changed |= routePlaceItemHookToNeoForge(node);
@@ -190,6 +192,14 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String SUPPLIER = "java/util/function/Supplier";
 	private static final String SUPPLIER_DESC = "L" + SUPPLIER + ";";
 	private static final String KERNEL_CHUNK_GENERATOR = "net/forbric/kernel/runtime/KernelChunkGenerator";
+
+	private static final String KERNEL_NEO_WORLDGEN = "net/forbric/kernel/runtime/KernelNeoWorldgen";
+	private static final String MONSTER_ROOM_FEATURE = "net/minecraft/world/level/levelgen/feature/MonsterRoomFeature";
+	private static final String MONSTER_ROOM_HOOKS = "net/neoforged/neoforge/common/MonsterRoomHooks";
+	private static final String RANDOM_MONSTER_ROOM_MOB =
+			"(Lnet/minecraft/util/RandomSource;)Lnet/minecraft/world/entity/EntityType;";
+	private static final String NEO_SERVER_LIFECYCLE_HOOKS = "net/neoforged/neoforge/server/ServerLifecycleHooks";
+	private static final String RUN_MODIFIERS = "(Lnet/minecraft/server/MinecraftServer;)V";
 	/** NeoForge's retyping of vanilla's {@code providers}: the one the merged {@code <init>} actually writes. */
 	/**
 	 * The methods measured to be merge-injected in this shape, and worth removing.
@@ -646,6 +656,97 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "writes that field directly — threw NoSuchFieldError and the server did not start. The field is "
 				+ "vanilla-typed again (%d access site(s), %d read(s) retargeted, %d invalidation(s) guarded)",
 				sites.size(), gets.size(), invalidations.size());
+		return true;
+	}
+
+	/**
+	 * Lets monster rooms generate again, by giving the NeoForge data map a vanilla fallback.
+	 *
+	 * <p>The merged {@code MonsterRoomFeature.randomEntityId} is two instructions:
+	 * {@code invokestatic MonsterRoomHooks.getRandomMonsterRoomMob}. That reads a static {@code WeightedList} which
+	 * only a {@code DataMapsUpdatedEvent} listener fills, and nothing in a Forbric instance had ever loaded a data
+	 * map — a constant-pool scan of the whole merged base finds {@code DataMapLoader} named by nothing at all,
+	 * because the merge kept MinecraftForge's {@code ReloadableServerResources}. So the list was null and the
+	 * feature threw.
+	 *
+	 * <p>The kernel's previous answer was a {@code MethodBodyNeuter} on {@code MonsterRoomFeature.place}, which
+	 * does not fail — it means no dungeon, and therefore no spawner and no dungeon chest, in EVERY world every
+	 * player generates, with or without mods. A whole piece of vanilla, switched off silently, for everyone.
+	 *
+	 * <p>{@link net.forbric.kernel.runtime.KernelNeoWorldgen} now loads the data maps for real, so the primary
+	 * path works and a NeoForge mod's additions count. This redirect is what makes that recoverable rather than
+	 * load-bearing: when the data map is missing anyway, dungeons still generate from vanilla's own set. The two
+	 * sets are the same distribution — vanilla's {@code MOBS} array is {@code {SKELETON, ZOMBIE, ZOMBIE, SPIDER}}
+	 * and NeoForge's shipped data map is skeleton 100 / spider 100 / zombie 200 — so the fallback is vanilla's
+	 * behaviour and not an approximation of it.
+	 *
+	 * <p>One instruction for one: the call is static, takes the same argument and returns the same type, so
+	 * nothing on the stack or in a frame moves.
+	 */
+	private static boolean letDungeonsGenerateWithoutTheDataMap(ClassNode node) {
+		if (!MONSTER_ROOM_FEATURE.equals(node.name)) return false;
+		int redirected = 0;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
+						|| !MONSTER_ROOM_HOOKS.equals(call.owner)
+						|| !"getRandomMonsterRoomMob".equals(call.name)
+						|| !RANDOM_MONSTER_ROOM_MOB.equals(call.desc)) {
+					continue;
+				}
+				call.owner = KERNEL_NEO_WORLDGEN;
+				call.name = "randomMonsterRoomMob";
+				redirected++;
+			}
+		}
+		if (redirected == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] MonsterRoomFeature now picks its mob through the kernel "
+				+ "(%d call site(s)) — NeoForge's data map when it has one, vanilla's own set when it does not. "
+				+ "The alternative was the neutered place() this replaces, which meant no dungeon in any world",
+				redirected);
+		return true;
+	}
+
+	/**
+	 * Puts NeoForge's biome/structure modifier pass behind a guard instead of behind a neuter.
+	 *
+	 * <p>{@code ServerLifecycleHooks.runModifiers} was neutered because {@code neoforge:biome_modifier} was not a
+	 * declared datapack registry, and its first instruction is a {@code lookupOrThrow} for exactly that. It IS
+	 * declared now — the kernel posts NeoForge's {@code DataPackRegistryEvent.NewRegistry} and both modifier
+	 * registries come back among the declared ones — so the neuter costs every NeoForge mod that adds ores, mobs
+	 * or features to a biome through {@code data/<ns>/neoforge/biome_modifier/*.json}.
+	 *
+	 * <p>Simply dropping the neuter is not the same thing, and the difference matters: the merged
+	 * {@code DedicatedServer} and {@code IntegratedServer} both call NeoForge's {@code handleServerAboutToStart},
+	 * which calls {@code runModifiers} FIRST and posts {@code ServerAboutToStartEvent} after it. An unguarded
+	 * {@code lookupOrThrow} there does not cost the modifiers, it costs the boot — and it would do so on a
+	 * user's machine, over a registry whose presence depends on what the kernel managed to declare that run.
+	 *
+	 * <p>So the CALL SITE moves to the kernel, which runs the same private method reflectively inside a
+	 * try/catch and reports the modifier COUNTS either way. Counting is the point: "ran without throwing" and
+	 * "applied something" are different claims, and only the second one tells a declared-but-empty registry
+	 * apart from a working pipeline.
+	 */
+	private static boolean guardNeoForgesWorldModifierPass(ClassNode node) {
+		if (!NEO_SERVER_LIFECYCLE_HOOKS.equals(node.name)) return false;
+		int guarded = 0;
+		for (MethodNode method : node.methods) {
+			if (!"handleServerAboutToStart".equals(method.name)) continue;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
+						|| !NEO_SERVER_LIFECYCLE_HOOKS.equals(call.owner)
+						|| !"runModifiers".equals(call.name) || !RUN_MODIFIERS.equals(call.desc)) {
+					continue;
+				}
+				call.owner = KERNEL_NEO_WORLDGEN;
+				call.name = "beforeServerStart";
+				guarded++;
+			}
+		}
+		if (guarded == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] NeoForge's biome/structure modifier pass now runs through the "
+				+ "kernel's guard (%d call site(s)) — it used to be neutered outright, so every mod that changes a "
+				+ "biome through a neoforge:biome_modifier did nothing at all", guarded);
 		return true;
 	}
 
