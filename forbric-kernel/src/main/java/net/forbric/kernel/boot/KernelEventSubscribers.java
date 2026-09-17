@@ -229,6 +229,8 @@ public final class KernelEventSubscribers {
 		// Everything above is about listeners the kernel DID wire. This is about the ones it wired onto a hook the
 		// merged base no longer calls — registered successfully, and never to be reached.
 		DeadEventAudit.report(subscribedByMod);
+		// Everything above is about listeners. This is about a whole subsystem the merged game does not carry.
+		CapabilityUseAudit.report();
 	}
 
 	/**
@@ -453,10 +455,16 @@ public final class KernelEventSubscribers {
 		List<Subscriber> found = new ArrayList<>();
 		try (FileSystem fs = FileSystems.newFileSystem(jar, (ClassLoader) null)) {
 			for (Path root : fs.getRootDirectories()) {
+				String jarName = jar.getFileName() == null ? jar.toString() : jar.getFileName().toString();
 				try (Stream<Path> walk = Files.walk(root)) {
 					walk.filter(p -> p.toString().endsWith(".class")).forEach(p -> {
-						Subscriber s = scanClass(p);
+						byte[] bytes = read(p);
+						if (bytes == null) return;
+						Subscriber s = scanClassBytes(bytes);
 						if (s != null) found.add(s);
+						// Free ride on a pass that is already reading every class of every Forge-family jar.
+						// See CapabilityUseAudit for what it is looking for and why it can only warn.
+						CapabilityUseAudit.note(jarName, bytes);
 					});
 				}
 			}
@@ -468,9 +476,14 @@ public final class KernelEventSubscribers {
 	}
 
 	static Subscriber scanClass(Path classFile) {
+		byte[] bytes = read(classFile);
+		return bytes == null ? null : scanClassBytes(bytes);
+	}
+
+	private static byte[] read(Path classFile) {
 		try {
-			return scanClassBytes(Files.readAllBytes(classFile));
-		} catch (Throwable t) {
+			return Files.readAllBytes(classFile);
+		} catch (Throwable unreadable) {
 			return null;
 		}
 	}
