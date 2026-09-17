@@ -81,8 +81,35 @@ public final class ForbricModDiscoverer {
 		return result;
 	}
 
+	/**
+	 * What a jar's own metadata files say, remembered per jar.
+	 *
+	 * <p>Seven different passes ask about the same jar during one boot — discovery, the dependency audit, the
+	 * seeder, the merge report, the enum-extension loader, duplicate arbitration and the boot list — and each ask
+	 * opened the zip, re-read every metadata file in it and re-ran the parse. It also re-ran the WARNINGS: a
+	 * single jar's "dropping declared mixin config" line appeared four times in one boot, which reads like four
+	 * problems.
+	 *
+	 * <p>Safe to remember because a jar's contents do not change while the game runs. Failures are not
+	 * remembered: an unreadable jar throws again on the next ask, which is more honest than answering from a
+	 * cached error.
+	 */
+	private final java.util.Map<Path, List<DiscoveredMod>> discovered = new java.util.concurrent.ConcurrentHashMap<>();
+
 	/** Discovers the mod(s) declared by a single jar. May return a Fabric mod, Forge mod(s), or both. */
 	public List<DiscoveredMod> discoverJar(Path jarPath) throws IOException {
+		List<DiscoveredMod> remembered = discovered.get(jarPath);
+		if (remembered != null) return remembered;
+
+		// Stored unmodifiable: seven callers share this list now, and one of them quietly adding to it would
+		// change what the other six see. Any such caller fails here and immediately rather than later and
+		// somewhere else.
+		List<DiscoveredMod> parsed = List.copyOf(parseJar(jarPath));
+		discovered.put(jarPath, parsed);
+		return parsed;
+	}
+
+	private List<DiscoveredMod> parseJar(Path jarPath) throws IOException {
 		List<DiscoveredMod> result = new ArrayList<>();
 		String source = jarPath.toString();
 
