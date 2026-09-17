@@ -81,6 +81,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= askNeoForgeWhatAnItemsAttributesAre(node);
 			changed |= readTheSpawnReasonThatIsActuallyWritten(node);
 			changed |= giveTheUnwrittenLoggerAValue(node);
+			changed |= addTheMissingCapabilityLifecycleStubs(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -165,6 +166,14 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	private static final String PARTICLE_RESOURCES = "net/minecraft/client/particle/ParticleResources";
 	/** NeoForge's retyping of vanilla's {@code providers}: the one the merged {@code <init>} actually writes. */
+	/**
+	 * The classes MinecraftForge rooted its capability system at, and the merge rooted at NeoForge's attachment
+	 * holder instead. {@code LevelChunk} is absent on purpose: it kept both methods through the merge.
+	 */
+	private static final java.util.Set<String> CAPABILITY_ROOTS = java.util.Set.of(
+			"net/minecraft/world/entity/Entity",
+			"net/minecraft/world/level/block/entity/BlockEntity",
+			"net/minecraft/world/level/Level");
 	/** {@code org.slf4j.Logger}, the one unwritten static the merge leaves that has an obvious correct value. */
 	private static final String LOGGER_DESC = "Lorg/slf4j/Logger;";
 	/** {@code EntitySpawnReason}, the type of both of the merged {@code Mob}'s spawn fields. */
@@ -459,6 +468,50 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "null, so any mod using that API crashed inside Minecraft.<init>. It is now a live view of the "
 				+ "map that IS written");
 		return true;
+	}
+
+	/**
+	 * Gives the three root game types the capability lifecycle methods their own merged code calls.
+	 *
+	 * <p>The merge put each root class under NeoForge's {@code AttachmentHolder}, which dropped MinecraftForge's
+	 * capability superclass and the two lifecycle methods that came with it — while keeping MinecraftForge's
+	 * method BODIES further down. {@code javap} on the merged {@code BlockEntity}: {@code onChunkUnloaded()} is
+	 * MinecraftForge's body and its one instruction is {@code invokevirtual BlockEntity.invalidateCaps}, a method
+	 * that resolves nowhere. Walking {@code BlockEntity} to {@code Object} finds no declaration, and the one
+	 * interface that could supply a default declares only {@code onChunkUnloaded} itself.
+	 *
+	 * <p>Nothing in the merged base calls that today — NeoForge's half removed the call site — so this is not a
+	 * live crash. It is a live TRAP: a MinecraftForge mod's block entity that overrides {@code invalidateCaps} and
+	 * calls {@code super}, which is ordinary in storage and machinery mods, links against a method that is not
+	 * there and dies at that call with a message naming neither the merge nor the kernel.
+	 *
+	 * <p>No-ops, deliberately, and this is NOT a capability system. There is nothing here to invalidate or revive:
+	 * the merged classes carry no MinecraftForge capability provider. A no-op makes the call link and do the
+	 * nothing that is already happening. Actually attaching capabilities means giving these classes a provider,
+	 * which is a merge-tool change, not a transformer one.
+	 */
+	private static boolean addTheMissingCapabilityLifecycleStubs(ClassNode node) {
+		if (!CAPABILITY_ROOTS.contains(node.name)) return false;
+
+		boolean changed = false;
+		for (String name : new String[] {"invalidateCaps", "reviveCaps"}) {
+			if (findMethod(node, name, "()V") != null) continue;
+
+			MethodNode stub = new MethodNode(Opcodes.ACC_PUBLIC, name, "()V", null, null);
+			stub.instructions.add(new InsnNode(Opcodes.RETURN));
+			stub.maxStack = 0;
+			stub.maxLocals = 1;
+			node.methods.add(stub);
+			changed = true;
+		}
+
+		if (changed) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] %s had no capability lifecycle methods while its own merged "
+					+ "code still calls them — a MinecraftForge mod overriding one and calling super would have "
+					+ "died on a method that resolves nowhere. They now exist and do nothing, which is what is "
+					+ "already happening: these classes carry no capability provider.", node.name.replace('/', '.'));
+		}
+		return changed;
 	}
 
 	/**
