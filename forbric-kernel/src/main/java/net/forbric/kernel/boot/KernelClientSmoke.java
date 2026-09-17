@@ -542,6 +542,25 @@ public final class KernelClientSmoke {
 	 * <p>Counted from the SCREEN's own row widgets rather than from the repository, because the repository's id
 	 * accessors already filter hidden packs and would report success whether or not the screen does.
 	 */
+	/** The pack id behind a listed row, or null if this row shape no longer carries one. */
+	private static String rowPackId(Object row) {
+		// Up the chain: the listed row may be a subclass of the entry type that declares the field.
+		for (Class<?> c = row.getClass(); c != null; c = c.getSuperclass()) {
+			try {
+				java.lang.reflect.Field pack = c.getDeclaredField("pack");
+				pack.setAccessible(true);
+				Object entry = pack.get(row);
+				if (entry == null) return null;
+				return String.valueOf(entry.getClass().getMethod("getId").invoke(entry));
+			} catch (NoSuchFieldException keepLooking) {
+				continue;
+			} catch (Throwable t) {
+				return null;
+			}
+		}
+		return null;
+	}
+
 	private static void openTheResourcePackScreen(Object minecraft, ClassLoader cl) {
 		try {
 			Object repo = minecraft.getClass().getMethod("getResourcePackRepository").invoke(minecraft);
@@ -559,15 +578,21 @@ public final class KernelClientSmoke {
 
 			int rows = 0;
 			int forbricRows = 0;
+			java.util.List<String> listedIds = new java.util.ArrayList<>();
 			Class<?> rowCls = Class.forName(
 					"net.minecraft.client.gui.screens.packs.TransferableSelectionList$PackEntry", true, cl);
 			for (Object listed : listedRows(screen, rowCls)) {
 				rows++;
-				if (String.valueOf(listed).contains("forbric/")) forbricRows++;
+				// The row's own id, not its toString. A row is a GUI widget and prints as one, so matching on its
+				// text answered "none of them" whatever the screen held — which made this count agree with any
+				// outcome, including the one it was meant to detect.
+				String id = rowPackId(listed);
+				listedIds.add(id == null ? "?" : id);
+				if (id != null && id.startsWith("forbric/")) forbricRows++;
 			}
 			ForbricLog.info("[Forbric/ClientSmoke] the resource-pack screen lists %d pack row(s), %d of them the "
-					+ "kernel's ecosystem asset packs (repository holds %d selected)", rows, forbricRows,
-					inRepository);
+					+ "kernel's ecosystem asset packs (repository holds %d selected); rows: %s", rows, forbricRows,
+					inRepository, listedIds);
 			setScreen(minecraft, null);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ClientSmoke] could not open the resource-pack screen", t);
@@ -593,9 +618,10 @@ public final class KernelClientSmoke {
 		for (Object child : (java.util.List<?>) children.invoke(node)) {
 			if (child == null) continue;
 			if (rowCls.isInstance(child)) {
-				// PackEntry has no id accessor; its narration is the pack's own title, which for the kernel's
-				// packs is the id itself.
-				out.add(String.valueOf(child.getClass().getMethod("getNarration").invoke(child)));
+				// The row itself, not its narration. Narration is the pack's TITLE, which only happened to be the
+				// id while the kernel titled its packs after themselves — so a count keyed on it agreed with any
+				// outcome the moment a pack got a real title. See rowPackId.
+				out.add(child);
 			} else {
 				collectRows(child, rowCls, out, depth + 1);
 			}

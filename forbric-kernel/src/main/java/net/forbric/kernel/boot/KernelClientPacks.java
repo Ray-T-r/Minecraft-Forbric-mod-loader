@@ -75,7 +75,7 @@ public final class KernelClientPacks {
 			List<String> ids = new ArrayList<>();
 			for (Path jar : packJars) {
 				String id = "forbric/" + stripExtension(jar.getFileName().toString());
-				Object pack = buildPack(cl, id, jar);
+				Object pack = buildPack(cl, id, jar, true);
 				if (pack != null) {
 					packs.add(pack);
 					ids.add(id);
@@ -83,7 +83,36 @@ public final class KernelClientPacks {
 			}
 			if (packs.isEmpty()) return;
 
-			Object source = buildSource(cl, packs, ids);
+			// One VISIBLE parent holding the mod packs as hidden children, which is the shape a genuine instance
+			// has. Each mod pack used to be served on its own as required + fixed + TOP: applied always, listed
+			// never, and above everything — so a player's OWN resource pack could not override a mod's texture,
+			// at all, by any means. The parent is required (the assets still always apply) but NOT fixed, so it
+			// can be dragged below a pack the player added.
+			//
+			// Its id is the kernel's own. The NeoForge carrier already publishes a "mod_resources" parent of its
+			// own — empty, because its mod-file list is not what the kernel loads from — and two packs sharing an
+			// id silently collapse into one inside PackRepository's map.
+			Object parent = buildParentPack(cl, packs);
+			Object source;
+			if (parent != null) {
+				source = buildSource(cl, List.of(parent), List.of(PARENT_ID));
+			} else {
+				// No parent, so nothing carries "required" for the set — and the children were built without it.
+				// Serving them as they stand would apply NONE of them. Rebuild them the old way instead: each one
+				// required and fixed, which costs the player the ability to override a mod texture but costs them
+				// no textures.
+				packs = new ArrayList<>();
+				ids = new ArrayList<>();
+				for (Path jar : packJars) {
+					String id = "forbric/" + stripExtension(jar.getFileName().toString());
+					Object pack = buildPack(cl, id, jar, false);
+					if (pack != null) {
+						packs.add(pack);
+						ids.add(id);
+					}
+				}
+				source = buildSource(cl, packs, ids);
+			}
 			Class<?> repoCls = Class.forName("net.minecraft.server.packs.repository.PackRepository", false, cl);
 			Class<?> sourceCls = Class.forName("net.minecraft.server.packs.repository.RepositorySource", false, cl);
 			repoCls.getMethod("addPackFinder", sourceCls).invoke(packRepository, source);
@@ -132,7 +161,7 @@ public final class KernelClientPacks {
 	}
 
 	/** {@code Pack(PackLocationInfo, FileResourcesSupplier, Metadata(forced COMPATIBLE), PackSelectionConfig)}. */
-	private static Object buildPack(ClassLoader cl, String id, Path jar) throws Exception {
+	private static Object buildPack(ClassLoader cl, String id, Path jar, boolean asChild) throws Exception {
 		Class<?> packCls = Class.forName("net.minecraft.server.packs.repository.Pack", false, cl);
 		Class<?> metaCls = Class.forName("net.minecraft.server.packs.repository.Pack$Metadata", false, cl);
 		Class<?> suppCls = Class.forName("net.minecraft.server.packs.repository.Pack$ResourcesSupplier", false, cl);
@@ -155,9 +184,11 @@ public final class KernelClientPacks {
 		Object metadata = metaCls.getConstructor(componentCls, compatCls, flagsCls, List.class)
 				.newInstance(title, compatCls.getField("COMPATIBLE").get(null), flagsCls.getMethod("of").invoke(null),
 						List.of());
-		// required=true + TOP + fixed: ecosystem assets must always be on, above user packs, and not user-removable.
+		// As a CHILD: not required and not fixed on its own, because the parent carries both for the whole set.
+		// Standalone (only when the parent could not be built): required and fixed, so the assets still apply.
+		// Hidden either way — a mod's assets are not a pack the player chose to add.
 		Object selection = selCls.getConstructor(boolean.class, posCls, boolean.class)
-				.newInstance(true, posCls.getField("TOP").get(null), true);
+				.newInstance(!asChild, posCls.getField("TOP").get(null), !asChild);
 
 		// NeoForge's own reader first: it opens the jar's real pack.mcmeta and builds the Metadata from it, which
 		// is where a pack's OVERLAYS live. The kernel synthesised that record with an empty overlay list, so a
@@ -178,6 +209,71 @@ public final class KernelClientPacks {
 		// screen; neither substitutes for the other. Pack.hidden() is the copy-with helper and preserves the
 		// location, the resources and the whole selection config.
 		return packCls.getMethod("hidden").invoke(pack);
+	}
+
+	/** The kernel's own parent pack id. Deliberately not the carrier's, which already exists and would collide. */
+	static final String PARENT_ID = "forbric/mod_resources";
+
+	/**
+	 * One visible, movable pack holding every mod's assets as hidden children, or null if it cannot be built.
+	 *
+	 * <p>This is the shape a genuine instance has, and the reason it matters is what the flat version did: each
+	 * mod pack was served required, fixed and pinned to the top, so it was applied always, listed never, and
+	 * above every pack the player had. A player could not override a mod's texture by any means — the pack they
+	 * added sat below all seventy of them and there was no way to move it.
+	 *
+	 * <p>Required stays on the parent, so the assets still always apply and a player cannot accidentally turn
+	 * their mods' textures off. Fixed does not, so the one row CAN be dragged below a pack they added, which is
+	 * the whole point.
+	 *
+	 * <p>Null rather than a throw: the caller then serves the packs flat, exactly as before, which is worse for
+	 * the player but loses no assets.
+	 */
+	private static Object buildParentPack(ClassLoader cl, List<Object> children) {
+		try {
+			Class<?> packCls = Class.forName("net.minecraft.server.packs.repository.Pack", false, cl);
+			Class<?> suppCls = Class.forName("net.minecraft.server.packs.repository.Pack$ResourcesSupplier", false, cl);
+			Class<?> posCls = Class.forName("net.minecraft.server.packs.repository.Pack$Position", false, cl);
+			Class<?> locCls = Class.forName("net.minecraft.server.packs.PackLocationInfo", false, cl);
+			Class<?> selCls = Class.forName("net.minecraft.server.packs.PackSelectionConfig", false, cl);
+			Class<?> srcCls = Class.forName("net.minecraft.server.packs.repository.PackSource", false, cl);
+			Class<?> typeCls = Class.forName("net.minecraft.server.packs.PackType", false, cl);
+			Class<?> componentCls = Class.forName("net.minecraft.network.chat.Component", false, cl);
+			Class<?> metaCls = Class.forName("net.minecraft.server.packs.metadata.pack.PackMetadataSection", false, cl);
+			Class<?> rangeCls = Class.forName("net.minecraft.util.InclusiveRange", false, cl);
+			Class<?> emptyCls = Class.forName(
+					"net.neoforged.neoforge.resource.EmptyPackResources$EmptyResourcesSupplier", false, cl);
+			Class<?> sharedCls = Class.forName("net.minecraft.SharedConstants", false, cl);
+			Class<?> worldVersionCls = Class.forName("net.minecraft.WorldVersion", false, cl);
+
+			Object clientResources = typeCls.getField("CLIENT_RESOURCES").get(null);
+			Object title = componentCls.getMethod("literal", String.class).invoke(null, "Mod Resources");
+
+			// The pack format of the running game, so the parent never reads as out of date for its own version.
+			Object version = sharedCls.getMethod("getCurrentVersion").invoke(null);
+			Object packFormat = worldVersionCls.getMethod("packVersion", typeCls).invoke(version, clientResources);
+			Object range = rangeCls.getConstructor(Comparable.class).newInstance(packFormat);
+			Object metadata = metaCls.getConstructor(componentCls, rangeCls).newInstance(title, range);
+			Object resources = emptyCls.getConstructor(metaCls).newInstance(metadata);
+
+			Object location = locCls.getConstructor(String.class, componentCls, srcCls, Optional.class)
+					.newInstance(PARENT_ID, title, srcCls.getField("DEFAULT").get(null), Optional.empty());
+			// required, TOP, NOT fixed — see this method's javadoc for why each of the three is what it is.
+			Object selection = selCls.getConstructor(boolean.class, posCls, boolean.class)
+					.newInstance(true, posCls.getField("TOP").get(null), false);
+
+			Object parent = packCls
+					.getMethod("readMetaAndCreate", locCls, suppCls, typeCls, selCls)
+					.invoke(null, location, resources, clientResources, selection);
+			if (parent == null) return null;
+
+			return packCls.getMethod("withChildren", List.class).invoke(parent, List.copyOf(children));
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientPacks] could not build the parent asset pack; serving each mod's assets "
+					+ "on its own instead, which means a player's own resource pack cannot override a mod texture",
+					Reflect.unwrap(t));
+			return null;
+		}
 	}
 
 	/**
