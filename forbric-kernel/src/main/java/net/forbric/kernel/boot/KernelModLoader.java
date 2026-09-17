@@ -205,7 +205,7 @@ public final class KernelModLoader {
 		}
 
 		publishedNeo = Map.copyOf(neo);
-		publishNeoModList(cl, published);
+		publishNeoModList(cl, published, false);
 		publishedForge = Map.copyOf(forge);
 		publishForgeModList(cl, publishedForge, false);
 
@@ -231,20 +231,63 @@ public final class KernelModLoader {
 		// back a container that passes instanceof FMLModContainer and yields a live-looking BusGroup that nothing
 		// will ever post a RegisterEvent on.
 		if (constructed.size() != forge.size()) {
-			Map<String, KernelForgeModContext.Handle> kept = new LinkedHashMap<>();
 			List<String> dropped = new ArrayList<>();
-			for (Map.Entry<String, KernelForgeModContext.Handle> e : forge.entrySet()) {
-				if (constructed.contains(e.getKey())) kept.put(e.getKey(), e.getValue());
-				else dropped.add(e.getKey());
-			}
-			publishedForge = Map.copyOf(kept);
+			publishedForge = Map.copyOf(keepConstructed(forge, constructed, dropped));
 			// allowEmpty: "every MinecraftForge mod failed" must publish an EMPTY list, not leave the full one up.
 			publishForgeModList(cl, publishedForge, true);
 			ForbricLog.warn("[Forbric/ModLoader] withdrew %d MinecraftForge container(s) from ModList — their @Mod "
 					+ "constructor threw, so nothing will ever fire RegisterEvent on the bus those containers "
 					+ "hand out %s", dropped.size(), dropped);
 		}
+
+		// The NeoForge twin of the withdrawal above, which only the MinecraftForge half used to have. A NeoForge
+		// mod whose constructor threw stayed in ModList holding a container that passes instanceof FMLModContainer
+		// and hands out a live-looking bus — so a LIBRARY mod resolving it and registering onto that bus was
+		// registering into nothing, and a mod asking whether its dependency's container exists was told yes about
+		// a mod that never finished loading.
+		//
+		// Presence aliases are deliberately kept: they have no @Mod class here by construction, so "did not
+		// construct" is their normal state, not a failure. And the withdrawn mod's FILE entry stays in the by-id
+		// map, because its jar really is present — what comes out is the container.
+		Set<String> neoBuilt = new LinkedHashSet<>();
+		for (ConstructedMod mod : built) {
+			if (mod.forgeHandle() == null) neoBuilt.add(mod.modId());
+		}
+		if (neoBuilt.size() != neo.size()) {
+			List<String> droppedNeo = new ArrayList<>();
+			Map<String, NeoIdentity> keptNeo = keepConstructed(neo, neoBuilt, droppedNeo);
+			publishedNeo = Map.copyOf(keptNeo);
+
+			Map<String, NeoIdentity> republish = new LinkedHashMap<>(keptNeo);
+			republish.putAll(aliases);
+			// allowEmpty: "every NeoForge mod failed and there are no aliases" must publish an EMPTY list rather
+			// than leave the full one standing.
+			publishNeoModList(cl, republish, true);
+			ForbricLog.warn("[Forbric/ModLoader] withdrew %d NeoForge container(s) from ModList — their @Mod "
+					+ "constructor threw, so the bus those containers hand out is one nothing will ever post "
+					+ "to %s", droppedNeo.size(), droppedNeo);
+		}
 		return built;
+	}
+
+	/**
+	 * The published entries whose {@code @Mod} constructor actually ran, in their original order.
+	 *
+	 * <p>Both families withdraw the same way, and the reason is the same on both: a container left standing for a
+	 * mod that never constructed passes {@code instanceof} and hands out a live-looking event bus that nothing
+	 * will ever post to. So a library mod resolving it registers into nothing, and the failure surfaces much
+	 * later somewhere that names neither mod.
+	 *
+	 * @param dropped receives the ids that come out, in order, for the log line
+	 */
+	static <T> Map<String, T> keepConstructed(Map<String, T> published, Set<String> constructed,
+			List<String> dropped) {
+		Map<String, T> kept = new LinkedHashMap<>();
+		for (Map.Entry<String, T> entry : published.entrySet()) {
+			if (constructed.contains(entry.getKey())) kept.put(entry.getKey(), entry.getValue());
+			else dropped.add(entry.getKey());
+		}
+		return kept;
 	}
 
 	/** Makes a MinecraftForge loading context per mod ID. Separate from the game classes so a test can drive it. */
@@ -360,8 +403,8 @@ public final class KernelModLoader {
 	 * {@code sortedList} (via {@link #fillModInfos}) are written. {@code modFiles} stays empty, so the resource-pack
 	 * path ({@code ResourcePackLoader.findResourcePacks} → {@code getModFiles}) is unchanged.
 	 */
-	private static void publishNeoModList(ClassLoader cl, Map<String, NeoIdentity> neo) {
-		if (neo.isEmpty()) return;
+	private static void publishNeoModList(ClassLoader cl, Map<String, NeoIdentity> neo, boolean allowEmpty) {
+		if (neo.isEmpty() && !allowEmpty) return;
 		if ("off".equalsIgnoreCase(System.getProperty("forbric.publishModList", "on"))) {
 			ForbricLog.warn("[Forbric/ModLoader] ModList publishing DISABLED — mods that resolve their own "
 					+ "container will fail (-Dforbric.publishModList=off)");

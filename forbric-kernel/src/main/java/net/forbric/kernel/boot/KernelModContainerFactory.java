@@ -44,6 +44,7 @@ public final class KernelModContainerFactory {
 
 	private static volatile Method containerMethod;
 	private static volatile Method modInfoMethod;
+	private static volatile Method minecraftMethod;
 
 	private KernelModContainerFactory() {
 	}
@@ -91,6 +92,23 @@ public final class KernelModContainerFactory {
 			modInfoMethod = m;
 		}
 		return invoke(m, modId, jar);
+	}
+
+	/**
+	 * The {@code "minecraft"} container NeoForge falls back to when nothing else is active.
+	 *
+	 * <p>{@code ModLoadingContext.getActiveContainer()} ends in
+	 * {@code getModContainerById("minecraft").orElseThrow()}, so with none published a mod registering an
+	 * extension point outside a kernel-wrapped window got NeoForge's own "Where is minecraft???!" instead of a
+	 * container.
+	 */
+	static Object minecraftContainer(ClassLoader cl) throws Exception {
+		Method m = minecraftMethod;
+		if (m == null) {
+			m = gameSide(cl).getMethod("minecraftContainer");
+			minecraftMethod = m;
+		}
+		return invoke(m);
 	}
 
 	private static Class<?> gameSide(ClassLoader cl) throws ClassNotFoundException {
