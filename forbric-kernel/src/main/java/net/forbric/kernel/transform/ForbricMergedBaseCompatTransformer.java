@@ -51,6 +51,21 @@ import net.forbric.kernel.util.ForbricLog;
  * Repairs class-local bytecode invariants that can drift when two patched Minecraft bases are merged.
  */
 public final class ForbricMergedBaseCompatTransformer implements ClassTransformer {
+	/**
+	 * Reads another class's bytes, for the one repair that has to look up the superclass chain. Null when the
+	 * transformer was built without one, in which case that repair stands down rather than guessing.
+	 */
+	private final java.util.function.Function<String, byte[]> classBytes;
+
+	/** Without a resolver: every repair except the shadowing-override one, which needs to read other classes. */
+	public ForbricMergedBaseCompatTransformer() {
+		this(null);
+	}
+
+	public ForbricMergedBaseCompatTransformer(java.util.function.Function<String, byte[]> classBytes) {
+		this.classBytes = classBytes;
+	}
+
 	@Override
 	public String name() {
 		return "forbric-merged-base-compat";
@@ -82,6 +97,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= readTheSpawnReasonThatIsActuallyWritten(node);
 			changed |= giveTheUnwrittenLoggerAValue(node);
 			changed |= addTheMissingCapabilityLifecycleStubs(node);
+			changed |= dropStubsThatBypassARealSuperclassMethod(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -166,6 +182,18 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	private static final String PARTICLE_RESOURCES = "net/minecraft/client/particle/ParticleResources";
 	/** NeoForge's retyping of vanilla's {@code providers}: the one the merged {@code <init>} actually writes. */
+	/**
+	 * The methods measured to be merge-injected in this shape, and worth removing.
+	 *
+	 * <p>Derived, not guessed: every pure interface-default delegate in the merged base that shadows a real
+	 * superclass method was differenced against both unmerged bases. 253 of 256 exist only after the merge, but
+	 * three do not — vanilla writes the same shape on purpose — so the shape alone cannot decide. This entry is
+	 * the one whose occurrences are all merge-introduced and whose bypassed method does something visible: it is
+	 * what applies a team's colour and prefix to a name.
+	 */
+	private static final java.util.Set<String> MEASURED_MERGE_STUBS =
+			java.util.Set.of("getDisplayName()Lnet/minecraft/network/chat/Component;");
+
 	/**
 	 * The classes MinecraftForge rooted its capability system at, and the merge rooted at NeoForge's attachment
 	 * holder instead. {@code LevelChunk} is absent on purpose: it kept both methods through the merge.
@@ -468,6 +496,134 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "null, so any mod using that API crashed inside Minecraft.<init>. It is now a live view of the "
 				+ "map that IS written");
 		return true;
+	}
+
+	/**
+	 * Removes a method whose whole body delegates to an interface default, when a SUPERCLASS has a real one.
+	 *
+	 * <h2>What the merge does</h2>
+	 *
+	 * <p>It injects these delegates blindly. Measured across the whole merged base against both unmerged bases:
+	 * 256 methods are pure {@code Iface.super.<same method>} delegates that shadow a superclass with a real
+	 * implementation, and 253 of them exist in neither unmerged base — so they are the merge's doing. The three
+	 * that are not are vanilla's own and are left alone by the rule below, because their superclass merely
+	 * delegates the same way.
+	 *
+	 * <p>What that costs depends on the method. {@code VehicleEntity.getDisplayName()} shadows
+	 * {@code Entity.getDisplayName()}, which is the method that applies team colours and prefixes — so a boat or
+	 * minecart loses its team formatting in every name it is shown under.
+	 *
+	 * <h2>Why THIS rule and not the older one</h2>
+	 *
+	 * <p>{@link #dropInterfaceDefaultShadowingOverrides} does the same thing for a hand-kept allowlist, and that
+	 * allowlist exists because a wider version once crashed every GUI screen at the title with
+	 * {@code IncompatibleClassChangeError: Conflicting default methods}: {@code getRectangle} is supplied as a
+	 * default by two unrelated interfaces, so removing the override left two competing candidates.
+	 *
+	 * <p>The condition here cannot hit that. A concrete superclass method always wins over any interface default,
+	 * so when the chain HAS one there is nothing for defaults to compete over — the crash happened precisely in
+	 * classes whose chain had none. That makes this rule both wider and safer than the list it complements, and
+	 * it needs no list to maintain.
+	 *
+	 * <h2>Why it is still limited to one method</h2>
+	 *
+	 * <p>Because VANILLA writes this shape on purpose too. {@code AbstractContainerWidget.nextFocusPath} is a
+	 * pure delegate over a superclass with a real implementation, and it is present in BOTH unmerged bases — so
+	 * "delegate over a real superclass method" alone does not mean "merge damage", and a rule keyed on the shape
+	 * would quietly change vanilla's own behaviour. A first version of this rule did exactly that, and the test
+	 * beside it caught it.
+	 *
+	 * <p>So the shape is necessary but not sufficient, and the set is measured rather than guessed: every such
+	 * method in the merged base was differenced against both unmerged bases, and
+	 * {@code getDisplayName()Lnet/minecraft/network/chat/Component;} is the entry whose 20 occurrences are all
+	 * merge-introduced AND whose bypassed implementation does something a player can see. Widening it means
+	 * repeating that measurement, not adding a name.
+	 *
+	 * <p>Stands down entirely without a class resolver: it cannot answer its own question without reading the
+	 * superclass chain, and guessing is what the allowlist exists to avoid.
+	 */
+	private boolean dropStubsThatBypassARealSuperclassMethod(ClassNode node) {
+		if (classBytes == null || node.superName == null || node.methods == null) return false;
+
+		List<MethodNode> shadowing = new java.util.ArrayList<>();
+		for (MethodNode method : node.methods) {
+			if ((method.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT)) != 0) continue;
+			if (!MEASURED_MERGE_STUBS.contains(method.name + method.desc)) continue;
+			if (!isPureInterfaceDelegate(method)) continue;
+			if (!superclassHasARealImplementation(node.superName, method.name, method.desc)) continue;
+			shadowing.add(method);
+		}
+		if (shadowing.isEmpty()) return false;
+
+		node.methods.removeAll(shadowing);
+		for (MethodNode dropped : shadowing) {
+			ForbricLog.debug("[Forbric/MergedBaseCompat] dropped %s.%s%s — its whole body handed off to an "
+					+ "interface default while its superclass has a real implementation",
+					node.name.replace('/', '.'), dropped.name, dropped.desc);
+		}
+		return true;
+	}
+
+	/** Whether {@code method}'s entire body is {@code SomeInterface.super.<this very method>(args…)}. */
+	private static boolean isPureInterfaceDelegate(MethodNode method) {
+		if (method.instructions == null) return false;
+
+		List<AbstractInsnNode> body = new java.util.ArrayList<>();
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() >= 0) body.add(insn);
+		}
+
+		Type[] args = Type.getArgumentTypes(method.desc);
+		// this + one load per parameter + the interface-default call + the return, and NOTHING else.
+		if (body.size() != args.length + 3) return false;
+
+		if (!(body.get(0) instanceof VarInsnNode self) || self.getOpcode() != Opcodes.ALOAD || self.var != 0) {
+			return false;
+		}
+
+		int slot = 1;
+		for (int i = 0; i < args.length; i++) {
+			if (!(body.get(1 + i) instanceof VarInsnNode load)
+					|| load.getOpcode() != args[i].getOpcode(Opcodes.ILOAD) || load.var != slot) {
+				return false;
+			}
+			slot += args[i].getSize();
+		}
+
+		if (!(body.get(args.length + 1) instanceof MethodInsnNode call)) return false;
+		if (call.getOpcode() != Opcodes.INVOKESPECIAL || !call.itf) return false;
+		return call.name.equals(method.name) && call.desc.equals(method.desc);
+	}
+
+	/**
+	 * Whether the superclass chain declares this method with a body that is NOT itself such a delegate.
+	 *
+	 * <p>A superclass that delegates the same way is not something to be shadowed — removing the subclass's copy
+	 * would change nothing — and those are exactly the three cases that exist in the unmerged bases too.
+	 *
+	 * <p>A class the resolver cannot produce ends the walk with "no": the honest answer when the chain cannot be
+	 * read is that nothing is known to be shadowed, and the method stays.
+	 */
+	private boolean superclassHasARealImplementation(String superName, String name, String desc) {
+		for (String at = superName; at != null; ) {
+			byte[] bytes = classBytes.apply(at.replace('.', '/') + ".class");
+			if (bytes == null) return false;
+
+			ClassNode parent = new ClassNode();
+			try {
+				new ClassReader(bytes).accept(parent, ClassReader.SKIP_FRAMES);
+			} catch (RuntimeException unreadable) {
+				return false;
+			}
+
+			for (MethodNode m : parent.methods) {
+				if (!m.name.equals(name) || !m.desc.equals(desc)) continue;
+				if ((m.access & Opcodes.ACC_ABSTRACT) != 0) return false;
+				return !isPureInterfaceDelegate(m);
+			}
+			at = parent.superName;
+		}
+		return false;
 	}
 
 	/**

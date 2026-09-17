@@ -309,7 +309,17 @@ public final class KernelBoot {
 		// that merged in as an INSTANCE method, its static twin renamed lambda$spawn$2) → IncompatibleClassChangeError
 		// when the player spawns. Also re-adds the MinecraftForge getFluidType() bridge the NeoForge-won Fluid classes
 		// dropped (the Forge/Neo FluidType ABI split).
-		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer());
+		// With a class resolver: one of its repairs has to read the superclass chain to tell a stub that bypasses
+		// a real implementation from one that bypasses nothing. Reads a RESOURCE rather than loading a class, for
+		// the same reason MergedBaseFrameRecomputer does — loading one here would define it before the chain that
+		// is still being built can see it.
+		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer(path -> {
+			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
+				return in == null ? null : in.readAllBytes();
+			} catch (java.io.IOException unreadable) {
+				return null;
+			}
+		}));
 
 		// Client only: hand the kernel the live PackRepository at the vanilla-woven
 		// ClientModLoader.setupModResourcePacks call inside Minecraft.<init>, so it can serve the ecosystem jars'
