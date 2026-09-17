@@ -138,6 +138,11 @@ public final class KernelRuntimeClasses {
 				new Call("startCreativeTabProbe", void.class),
 				new Call("linkBlockItems", int.class),
 				new Call("logRegisteredContent", void.class))));
+		// Loading NeoForge's configs: the early pass and the late pass that catches what it could not have seen.
+		// WHICH types each covers stays boot-side, where lateConfigTypes has a test. See KernelConfigLoad.
+		CLASSES.put("net.forbric.kernel.runtime.KernelConfigLoad", new Entry(Origin.COMPILED, List.of(
+				new Call("loadEarly", void.class, List.class),
+				new Call("openLate", List.class, List.class))));
 		// Materialises the kernel's own annotation scan into NeoForge's ModFileScanData. The scan itself is
 		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
 		CLASSES.put("net.forbric.kernel.runtime.KernelScanData", new Entry(Origin.COMPILED, List.of(

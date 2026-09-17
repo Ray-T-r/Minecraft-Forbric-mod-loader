@@ -390,36 +390,18 @@ public final class KernelLifecycle {
 					+ "reads its own config during world setup gets null");
 			return;
 		}
+		// STARTUP is deliberately absent — see the game side, which explains what naming it would cost.
+		List<String> types = side.isClient() ? List.of("COMMON", "CLIENT") : List.of("COMMON");
 		try {
-			Class<?> trackerCls = Class.forName(ForeignType.CONFIG_TRACKER.binary(Ecosystem.NEOFORGE), false, cl);
-			Object tracker = trackerCls.getField("INSTANCE").get(null);
-			Class<?> typeCls = Class.forName(ForeignType.MOD_CONFIG_TYPE.binary(Ecosystem.NEOFORGE), false, cl);
-			Class<?> fmlPaths = Class.forName(ForeignType.FML_PATHS.binary(Ecosystem.NEOFORGE), false, cl);
-			Object configDirEnum = fmlPaths.getField("CONFIGDIR").get(null);
-			java.nio.file.Path configDir = (java.nio.file.Path) fmlPaths.getMethod("get").invoke(configDirEnum);
-			java.lang.reflect.Method loadConfigs =
-					trackerCls.getMethod("loadConfigs", typeCls, java.nio.file.Path.class);
-			// STARTUP is deliberately absent. ConfigTracker.registerConfig opens a STARTUP config EAGERLY, at
-			// registration (javap: it loads Type.STARTUP at offset 58 and calls openConfig at 73), so naming it
-			// here asks the carrier to open every one of them a SECOND time — which it does, warning "Opening a
-			// config that was already loaded" and firing ModConfigEvent.Loading again. openLateConfigs still
-			// covers STARTUP, and it opens only what has no loaded config yet.
-			String[] types = side.isClient()
-					? new String[] {"COMMON", "CLIENT"}
-					: new String[] {"COMMON"};
-			for (String t : types) {
-				try {
-					Object type = Enum.valueOf(typeCls.asSubclass(Enum.class), t);
-					loadConfigs.invoke(tracker, type, configDir);
-				} catch (Throwable t2) {
-					ForbricLog.debug("[Forbric/Lifecycle] config load %s: %s", t, String.valueOf(unwrap(t2)));
-				}
-			}
-			ForbricLog.info("[Forbric/Lifecycle] loaded NeoForge configs (%s) from %s",
-					String.join("+", types), configDir);
+			configClass(cl).getMethod("loadEarly", List.class).invoke(null, types);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not load NeoForge configs", unwrap(t));
 		}
+	}
+
+	/** The game-side half of config loading. */
+	private static Class<?> configClass(ClassLoader cl) throws ClassNotFoundException {
+		return Class.forName("net.forbric.kernel.runtime.KernelConfigLoad", true, cl);
 	}
 
 	/**
@@ -443,40 +425,9 @@ public final class KernelLifecycle {
 	private static void openLateConfigs(ClassLoader cl, Side side, String when) {
 		if ("off".equalsIgnoreCase(System.getProperty("forbric.earlyConfigs", "on"))) return;
 		try {
-			Class<?> trackerCls = Class.forName(ForeignType.CONFIG_TRACKER.binary(Ecosystem.NEOFORGE), false, cl);
-			Class<?> typeCls = Class.forName(ForeignType.MOD_CONFIG_TYPE.binary(Ecosystem.NEOFORGE), false, cl);
-			Class<?> configsCls = Class.forName("net.neoforged.fml.config.ModConfigs", false, cl);
-			Class<?> configCls = Class.forName("net.neoforged.fml.config.ModConfig", false, cl);
-			Class<?> fmlPaths = Class.forName(ForeignType.FML_PATHS.binary(Ecosystem.NEOFORGE), false, cl);
-			Object configDirEnum = fmlPaths.getField("CONFIGDIR").get(null);
-			java.nio.file.Path configDir = (java.nio.file.Path) fmlPaths.getMethod("get").invoke(configDirEnum);
-
-			// Package-private static on the carrier, and the only entry point that opens ONE config. Reached the
-			// same way the kernel reaches every other unexported seam.
-			java.lang.reflect.Method openConfig = trackerCls.getDeclaredMethod("openConfig", configCls,
-					java.nio.file.Path.class, java.nio.file.Path.class);
-			openConfig.setAccessible(true);
-			java.lang.reflect.Method getConfigSet = configsCls.getMethod("getConfigSet", typeCls);
-			java.lang.reflect.Method getLoadedConfig = configCls.getMethod("getLoadedConfig");
-			java.lang.reflect.Method getModId = configCls.getMethod("getModId");
-
-			List<String> opened = new ArrayList<>();
-			for (String t : lateConfigTypes(side)) {
-				Object type = Enum.valueOf(typeCls.asSubclass(Enum.class), t);
-				Object set = getConfigSet.invoke(null, type);
-				if (!(set instanceof java.util.Collection<?> configs)) continue;
-				for (Object config : List.copyOf(configs)) {
-					if (getLoadedConfig.invoke(config) != null) continue;
-					try {
-						openConfig.invoke(null, config, configDir, null);
-						opened.add(getModId.invoke(config) + ":" + t);
-					} catch (Throwable failed) {
-						ForbricLog.warn("[Forbric/Lifecycle] could not open a late-registered config for "
-								+ getModId.invoke(config), unwrap(failed));
-					}
-				}
-			}
-			if (!opened.isEmpty()) {
+			Object result = configClass(cl).getMethod("openLate", List.class)
+					.invoke(null, lateConfigTypes(side));
+			if (result instanceof List<?> opened && !opened.isEmpty()) {
 				ForbricLog.info("[Forbric/Lifecycle] opened %d late-registered NeoForge config(s) after %s %s — "
 						+ "they were registered after the early pass, and nothing else would have loaded them",
 						opened.size(), when, opened);
