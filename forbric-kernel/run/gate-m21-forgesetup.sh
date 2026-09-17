@@ -111,6 +111,16 @@ check "and ServerStartingEvent, which also initialises PermissionAPI" \
 # ShoulderSurfing-Forge and collective call on EVERY mod file from their own listeners — NPE'd inside Forge's own
 # accessor. Assert every walked file answered both, not merely that the walk did not throw: a walk over zero
 # files would also "not throw".
+# A11: MinecraftForge lets a mod add a constant to certain vanilla enums by calling a factory on them, and in the
+# shipped game that factory's whole body throws "Enum not extended" — their loader rewrites it while the class is
+# defined, and the kernel replaces that loader. Mods call it from a static initialiser, which runs once and is
+# erroneous forever after, so the mod dies rather than merely losing a constant. The count is asserted too: a
+# factory that returned an EXISTING constant would also "not throw".
+check "a MinecraftForge mod can add a constant to a vanilla enum" \
+  "ForbricLive\] MobCategory.create gave us FORBRIC_CANARY, values went [0-9]+ -> [0-9]+" "$LOG"
+check_absent "and the factory is no longer a stub that throws" \
+  "ForbricLive\] MobCategory.create FAILED" "$LOG"
+
 check "every seeded ModFile answers getFilePath and findResource" \
   "ForbricLive\] walked [1-9][0-9]* mod file\(s\), [1-9][0-9]* answered getFilePath and findResource" "$LOG"
 check_absent "no failure walking ModList.getModFiles()" \
