@@ -156,6 +156,7 @@ public final class KernelEventSubscribers {
 		int neoMethods = 0;
 		int skippedSide = 0;
 		int skippedOwner = 0;
+		int skippedFamily = 0;
 		// modId -> the event types its subscribers wait on. Collected here because this is the one pass that reads
 		// every subscriber class of every mod; DeadEventAudit turns it into the one line that says a listener will
 		// never run.
@@ -166,6 +167,16 @@ public final class KernelEventSubscribers {
 			List<ModAnnotationScanner.ModClassInfo> modsInJar = null; // scanned lazily, only if a modid() is missing
 
 			for (Subscriber sub : subscribers) {
+				// A universal jar ships one @EventBusSubscriber per family, and MultiLoaderArbiter has already
+				// decided which family owns this jar. Registering both means the SAME handler runs twice for
+				// every event both families post — double drops, double damage, double packets — and the mod has
+				// no way to notice: each call looks like the only one.
+				if (MultiLoaderArbiter.suppressedFor(jar, sub.family())) {
+					skippedFamily++;
+					ForbricLog.debug("[Forbric/EBS] skipping %s — %s does not own %s", sub.className(),
+							sub.family(), jar.getFileName());
+					continue;
+				}
 				if (!matchesSide(sub.dists(), side)) {
 					skippedSide++;
 					ForbricLog.debug("[Forbric/EBS] skipping %s — declares %s, running %s", sub.className(),
@@ -209,10 +220,11 @@ public final class KernelEventSubscribers {
 		if (total > 0) {
 			ForbricLog.info("[Forbric/EBS] registered %d @EventBusSubscriber class(es) on the game bus", total);
 		}
-		if (total > 0 || skippedSide > 0 || skippedOwner > 0) {
+		if (total > 0 || skippedSide > 0 || skippedOwner > 0 || skippedFamily > 0) {
 			ForbricLog.info("[Forbric/EBS] %d MinecraftForge class(es) + %d NeoForge listener method(s); "
-					+ "%d skipped as wrong-side, %d skipped (owning mod has no bus)",
-					forgeClasses, neoMethods, skippedSide, skippedOwner);
+					+ "%d skipped as wrong-side, %d skipped (owning mod has no bus), %d skipped as the other "
+					+ "family's half of a universal jar",
+					forgeClasses, neoMethods, skippedSide, skippedOwner, skippedFamily);
 		}
 		// Everything above is about listeners the kernel DID wire. This is about the ones it wired onto a hook the
 		// merged base no longer calls — registered successfully, and never to be reached.
