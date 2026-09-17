@@ -85,6 +85,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= routeKeyMappingClickToPopulatedLookup(node);
 			changed |= giveKeyMappingItsMinecraftForgeFace(node);
 			changed |= giveTheVanillaParticleMapAViewOfTheLiveOne(node);
+			changed |= giveFeaturesPerStepItsVanillaDescriptorBack(node);
 			changed |= dropInterfaceDefaultShadowingOverrides(node);
 			changed |= tolerateEmptyCreativeTabStacks(node);
 			changed |= routePlaceItemHookToNeoForge(node);
@@ -181,6 +182,14 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String KERNEL_KEYS = "net/forbric/kernel/runtime/KernelForgeKeyBindings";
 
 	private static final String PARTICLE_RESOURCES = "net/minecraft/client/particle/ParticleResources";
+
+	private static final String CHUNK_GENERATOR = "net/minecraft/world/level/chunk/ChunkGenerator";
+	private static final String FEATURES_PER_STEP = "featuresPerStep";
+	private static final String CLEARABLE_LAZY = "net/minecraftforge/common/util/ClearableLazy";
+	private static final String CLEARABLE_LAZY_DESC = "L" + CLEARABLE_LAZY + ";";
+	private static final String SUPPLIER = "java/util/function/Supplier";
+	private static final String SUPPLIER_DESC = "L" + SUPPLIER + ";";
+	private static final String KERNEL_CHUNK_GENERATOR = "net/forbric/kernel/runtime/KernelChunkGenerator";
 	/** NeoForge's retyping of vanilla's {@code providers}: the one the merged {@code <init>} actually writes. */
 	/**
 	 * The methods measured to be merge-injected in this shape, and worth removing.
@@ -495,6 +504,148 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "ever written — the vanilla-typed one, which fabric-api's particle registry reads directly, was "
 				+ "null, so any mod using that API crashed inside Minecraft.<init>. It is now a live view of the "
 				+ "map that IS written");
+		return true;
+	}
+
+	/**
+	 * Gives {@code ChunkGenerator.featuresPerStep} vanilla's descriptor back, and routes the one use that needed
+	 * MinecraftForge's through a guard.
+	 *
+	 * <h2>Why this one is not the ParticleResources shape</h2>
+	 *
+	 * <p>{@link #giveTheVanillaParticleMapAViewOfTheLiveOne} repairs a field the merge kept TWICE, one of them
+	 * unwritten. This is the other half of that family, and the worse half: MinecraftForge RE-TYPES the vanilla
+	 * field — {@code Supplier<List<StepFeatureData>>} becomes its own {@code ClearableLazy<...>}, so that
+	 * {@code refreshFeaturesPerStep()} has something to invalidate — and the merge keeps only MinecraftForge's
+	 * declaration. Vanilla's descriptor does not exist at all, so there is no unwritten field to give a view to.
+	 *
+	 * <p>A whole-artifact census of the merged base against stock 26.2 finds six vanilla fields in this state;
+	 * this is the one that costs a boot. fabric-api's {@code fabric-biome-api-v1} does not use an {@code @Accessor}
+	 * — {@code BiomeModificationImpl.lambda$finalizeWorldGen$1} is a plain access-widened
+	 * {@code putfield ChunkGenerator.featuresPerStep : Ljava/util/function/Supplier;} — so it gets
+	 * {@code NoSuchFieldError} and the DEDICATED SERVER DOES NOT START the moment any Fabric biome modification
+	 * applies. Installing balm, a library a large part of the Fabric ecosystem depends on, is enough to trigger it.
+	 * lithostitched's {@code @Accessor setFeaturesPerStep(Supplier)} fails to bind for the same reason, from the
+	 * other ecosystem.
+	 *
+	 * <h2>Why the repair is to move the field back rather than to add a second one</h2>
+	 *
+	 * <p>Because both descriptors can be satisfied by ONE field: {@code ClearableLazy extends Lazy extends
+	 * Supplier}, so the value MinecraftForge's constructor already stores IS a {@code Supplier}. Declaring the
+	 * field with vanilla's descriptor therefore keeps every existing reader correct while making the vanilla
+	 * descriptor — the one two ecosystems' mods spell — exist again. Adding a second, vanilla-typed field instead
+	 * would give fabric-api somewhere to write that nothing reads: the biome list would never be recomputed, the
+	 * server would boot, and the modification would silently not apply. That is the failure this project has paid
+	 * for more than once, and it is worse than the crash.
+	 *
+	 * <p>The rewrite is small and complete because the field has exactly FOUR instruction sites, all inside
+	 * {@code ChunkGenerator} itself — verified by a constant-pool scan of the whole merged base and of both
+	 * carriers, which find no other class naming it:
+	 * <ul>
+	 *   <li>{@code <init>}: {@code PUTFIELD} of {@code ClearableLazy.concurrentOf(...)} — descriptor only;</li>
+	 *   <li>{@code validate()} and {@code applyBiomeDecoration(...)}: {@code GETFIELD} then
+	 *       {@code ClearableLazy.get()} — retargeted to {@code Supplier.get()}, same descriptor, same stack;</li>
+	 *   <li>{@code refreshFeaturesPerStep()}: {@code GETFIELD} then {@code ClearableLazy.invalidate()} — the one
+	 *       use a plain {@code Supplier} cannot serve, so it goes to {@code KernelChunkGenerator.invalidate}.</li>
+	 * </ul>
+	 *
+	 * <p>A bare {@code CHECKCAST} in {@code refreshFeaturesPerStep} would compile and look right, and then throw
+	 * {@code ClassCastException} in worldgen the first time a Fabric modification had replaced the value — turning
+	 * this fix into a different crash for the same mods. The guard also reports that state once, which is the only
+	 * place either ecosystem could learn that MinecraftForge's refresh has become a no-op.
+	 *
+	 * <p>Stands down whole if it meets a site it does not recognise: a half-rewritten field is a
+	 * {@code NoSuchFieldError} somewhere less legible than here. Idempotent by the same guard — after one pass no
+	 * {@code ClearableLazy}-typed declaration remains, so the second pass finds nothing.
+	 */
+	private static boolean giveFeaturesPerStepItsVanillaDescriptorBack(ClassNode node) {
+		if (!CHUNK_GENERATOR.equals(node.name)) return false;
+		FieldNode field = null;
+		for (FieldNode candidate : node.fields) {
+			if (FEATURES_PER_STEP.equals(candidate.name) && CLEARABLE_LAZY_DESC.equals(candidate.desc)) {
+				field = candidate;
+			}
+		}
+		// Absent means vanilla's descriptor is already the only one — a rebuilt base, or this pass having run.
+		if (field == null) return false;
+		if (hasField(node, FEATURES_PER_STEP, SUPPLIER_DESC)) {
+			// Both declarations present is the ParticleResources shape, not this one, and retyping would then
+			// produce two fields with the same name AND descriptor, which is not a legal class.
+			ForbricLog.warn("[Forbric/MergedBaseCompat] ChunkGenerator declares featuresPerStep with BOTH "
+					+ "descriptors — that is the duplicate-field shape, which this repair must not touch");
+			return false;
+		}
+
+		// Collect first, rewrite second: every site has to be one of the three known shapes, or none is changed.
+		List<FieldInsnNode> sites = new ArrayList<>();
+		List<MethodInsnNode> gets = new ArrayList<>();
+		List<MethodInsnNode> invalidations = new ArrayList<>();
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof FieldInsnNode access) || !node.name.equals(access.owner)
+						|| !FEATURES_PER_STEP.equals(access.name) || !CLEARABLE_LAZY_DESC.equals(access.desc)) {
+					continue;
+				}
+				sites.add(access);
+				if (access.getOpcode() == Opcodes.PUTFIELD) continue;
+				if (access.getOpcode() != Opcodes.GETFIELD) {
+					ForbricLog.warn("[Forbric/MergedBaseCompat] ChunkGenerator.featuresPerStep is accessed as a "
+							+ "STATIC field in %s%s — not a shape this repair knows, so the field keeps "
+							+ "MinecraftForge's descriptor and fabric-api's biome API stays broken",
+							method.name, method.desc);
+					return false;
+				}
+				AbstractInsnNode next = access.getNext();
+				if (next instanceof MethodInsnNode call && CLEARABLE_LAZY.equals(call.owner)) {
+					if ("get".equals(call.name) && "()Ljava/lang/Object;".equals(call.desc)) {
+						gets.add(call);
+						continue;
+					}
+					if ("invalidate".equals(call.name) && "()V".equals(call.desc)) {
+						invalidations.add(call);
+						continue;
+					}
+				}
+				ForbricLog.warn("[Forbric/MergedBaseCompat] ChunkGenerator.featuresPerStep is read in %s%s and then "
+						+ "used in a way this repair does not recognise — standing down whole rather than leaving "
+						+ "the field half-retyped", method.name, method.desc);
+				return false;
+			}
+		}
+		if (sites.isEmpty()) return false;
+
+		field.desc = SUPPLIER_DESC;
+		// The generic signature is metadata, but a stale one contradicts the descriptor for anything that reads
+		// both (reflection, and this project's own artifact scans). Swap the prefix when it is the expected shape.
+		if (field.signature != null) {
+			String lazyPrefix = "L" + CLEARABLE_LAZY + "<";
+			field.signature = field.signature.startsWith(lazyPrefix)
+					? SUPPLIER_DESC.substring(0, SUPPLIER_DESC.length() - 1) + "<"
+							+ field.signature.substring(lazyPrefix.length())
+					: null;
+		}
+		for (FieldInsnNode access : sites) {
+			access.desc = SUPPLIER_DESC;
+		}
+		for (MethodInsnNode get : gets) {
+			get.owner = SUPPLIER;
+			get.itf = true;
+		}
+		for (MethodInsnNode invalidate : invalidations) {
+			// GETFIELD leaves exactly the receiver on the stack, which is this static call's only argument, so the
+			// replacement is one instruction for one instruction: no stack depth change, no frame to recompute.
+			invalidate.setOpcode(Opcodes.INVOKESTATIC);
+			invalidate.owner = KERNEL_CHUNK_GENERATOR;
+			invalidate.name = "invalidate";
+			invalidate.desc = "(" + SUPPLIER_DESC + ")V";
+			invalidate.itf = false;
+		}
+
+		ForbricLog.warn("[Forbric/MergedBaseCompat] ChunkGenerator.featuresPerStep carried MinecraftForge's "
+				+ "ClearableLazy descriptor and vanilla's had stopped existing, so fabric-api's biome API — which "
+				+ "writes that field directly — threw NoSuchFieldError and the server did not start. The field is "
+				+ "vanilla-typed again (%d access site(s), %d read(s) retargeted, %d invalidation(s) guarded)",
+				sites.size(), gets.size(), invalidations.size());
 		return true;
 	}
 
