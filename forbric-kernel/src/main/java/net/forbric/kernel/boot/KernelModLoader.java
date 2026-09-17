@@ -421,10 +421,73 @@ public final class KernelModLoader {
 			// type guarantees a publicly accessible handle for both.
 			Class<?> modContainerCls = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
 			fillModInfos(modListCls, modList, containers, modContainerCls.getMethod("getModInfo"));
+			publishFileById(cl, modListCls, modList, containers);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ModLoader] could not fill ModList.getMods() — mods that ENUMERATE the mod list "
 					+ "(Sodium's config entry points, FlawlessFrames) will find nothing", Reflect.unwrap(t));
 		}
+	}
+
+	/**
+	 * Makes {@code ModList.getModFileById(id)} answer for every loaded mod.
+	 *
+	 * <p>{@code javap} on NeoForge's {@code ModList}: {@code getModFileById} is {@code fileById.get(id)} followed by
+	 * a checkcast to {@code IModFileInfo}, and nothing else in the kernel's routing ever wrote that map. So the
+	 * method returned null for every mod the kernel loaded, and {@code ModList.get().getModFileById(MODID)
+	 * .getFile()...} — a common enough line that it appears in mods' own version checks and resource lookups —
+	 * NPE'd on the spot with nothing in the log.
+	 *
+	 * <p>Each mod's file comes from its own {@code IModInfo.getOwningFile()}, which is the same object NeoForge's
+	 * own discovery would have put there.
+	 */
+	static void publishFileById(ClassLoader cl, Class<?> modListCls, Object modList, List<Object> containers)
+			throws Exception {
+		Class<?> modContainerCls = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
+		Class<?> modInfoCls = Class.forName(ForeignType.MOD_INFO_SPI.binary(Ecosystem.NEOFORGE), false, cl);
+		int added = fillFileById(modListCls, modList, containers, modContainerCls.getMethod("getModInfo"),
+				modInfoCls.getMethod("getModId"), modInfoCls.getMethod("getOwningFile"));
+		ForbricLog.debug("[Forbric/ModLoader] ModList.getModFileById now answers for %d mod(s)", added);
+	}
+
+	/**
+	 * The reflective half of {@link #publishFileById}, split out so a test can drive it with stand-in types.
+	 *
+	 * <p>Merges rather than replaces, because more than one pass publishes containers and the later one must not
+	 * drop what the earlier one answered for. A container that cannot produce a file is skipped rather than
+	 * aborting the map: one odd mod must not be what costs every other mod its {@code getModFileById}.
+	 *
+	 * @return how many ids the map gained
+	 */
+	static int fillFileById(Class<?> modListCls, Object modList, List<Object> containers, Method getModInfo,
+			Method getModId, Method getOwningFile) throws Exception {
+		Field field = modListCls.getDeclaredField("fileById");
+		field.setAccessible(true);
+
+		Map<String, Object> merged = new LinkedHashMap<>();
+		if (field.get(modList) instanceof Map<?, ?> existing) {
+			for (Map.Entry<?, ?> entry : existing.entrySet()) {
+				if (entry.getKey() != null) merged.put(String.valueOf(entry.getKey()), entry.getValue());
+			}
+		}
+
+		int added = 0;
+		for (Object container : containers) {
+			try {
+				Object info = getModInfo.invoke(container);
+				if (info == null) continue;
+				Object file = getOwningFile.invoke(info);
+				if (file == null) continue;
+				Object id = getModId.invoke(info);
+				if (!(id instanceof String modId) || modId.isEmpty()) continue;
+				if (merged.put(modId, file) == null) added++;
+			} catch (ReflectiveOperationException oneMod) {
+				ForbricLog.debug("[Forbric/ModLoader] a container could not name its mod file: %s",
+						String.valueOf(Reflect.unwrap(oneMod)));
+			}
+		}
+
+		field.set(modList, merged);
+		return added;
 	}
 
 	/** The reflective half of {@link #publishModInfos}, split out so a test can drive it with stand-in types. */

@@ -69,6 +69,13 @@ check "a NeoForge mod sees the Fabric mod (LoadingModList)" \
   "\[ForbricNeoLive\] foreign forbricfabriclive .*modFile=true" "$LOG"
 check "a MinecraftForge mod sees the Fabric mod"  "\[ForbricLive\] foreign forbricfabriclive isLoaded=true" "$LOG"
 
+# A3: ModList.get().getModFileById(MODID).getFile() — the lookup a mod makes about ITSELF. The kernel filled that
+# map for the NeoForge baseline alone, so every kernel-loaded mod got null and the next dereference NPE'd.
+check "a NeoForge mod can resolve its OWN mod file by id" \
+  "\[ForbricNeoLive\] getModFileById\(self\) answered, file=" "$LOG"
+check_absent "getModFileById did not answer null for a loaded mod" \
+  "\[ForbricNeoLive\] getModFileById\(self\) (returned NULL|FAILED)" "$LOG"
+
 step "nothing quietly broken by the wider lists (must be ABSENT)"
 check_absent "no NoClassDefFound"       "NoClassDefFoundError"        "$LOG"
 check_absent "no entrypoint failed"     "entrypoint of .* failed"     "$LOG"
