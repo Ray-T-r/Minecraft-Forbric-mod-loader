@@ -234,33 +234,7 @@ public final class KernelLifecycle {
 	 * is already populated.
 	 */
 	private static void rebuildNeoForgeBlockStateIds(ClassLoader cl) {
-		try {
-			Class<?> gameData = Class.forName(ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), false, cl);
-			Object idMap = gameData.getMethod("getBlockStateIDMap").invoke(null);
-			Class<?> idMapper = Class.forName("net.minecraft.core.IdMapper", false, cl);
-			if ((Integer) idMapper.getMethod("size").invoke(idMap) > 0) return; // NeoForge kept it — leave it alone
-			java.lang.reflect.Method add = idMapper.getMethod("add", Object.class);
-
-			Class<?> blockCls = Class.forName("net.minecraft.world.level.block.Block", false, cl);
-			java.lang.reflect.Method getStateDefinition = blockCls.getMethod("getStateDefinition");
-			Class<?> stateDefCls = Class.forName("net.minecraft.world.level.block.state.StateDefinition", false, cl);
-			java.lang.reflect.Method getPossibleStates = stateDefCls.getMethod("getPossibleStates");
-
-			Object blockRegistry = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl)
-					.getField("BLOCK").get(null);
-			int states = 0;
-			for (Object block : (Iterable<?>) blockRegistry) {
-				for (Object state : (java.util.List<?>) getPossibleStates.invoke(getStateDefinition.invoke(block))) {
-					add.invoke(idMap, state);
-					states++;
-				}
-			}
-			ForbricLog.info("[Forbric/Lifecycle] rebuilt NeoForge blockstate→id map (%d states) — the registration "
-					+ "window's clear callback had emptied it", states);
-		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not rebuild NeoForge blockstate→id map "
-					+ "(block_update packets will fail to encode)", unwrap(t));
-		}
+		contentCall(cl, "rebuildBlockStateIds", "rebuild the NeoForge blockstate→id map");
 	}
 
 	/**
@@ -805,86 +779,12 @@ public final class KernelLifecycle {
 	 * same registry and keeps the tab.
 	 */
 	private static void sortNeoCreativeTabs(ClassLoader cl) {
-		try {
-			Class<?> registry = Class.forName("net.neoforged.neoforge.common.CreativeModeTabRegistry", false, cl);
-			java.lang.reflect.Method sorted = registry.getMethod("getSortedCreativeModeTabs");
-			java.lang.reflect.Method name = registry.getMethod("getName", Class.forName(
-					"net.minecraft.world.item.CreativeModeTab", false, cl));
-
-			// sortTabs() REPLACES SORTED_TABS but only APPENDS to DEFAULT_TABS — it re-adds the four special tabs
-			// (hotbar/search/op/inventory) on every call and never clears. The special tabs' screen column is
-			// indexOf % (size/2) + 5, so a duplicated list (size 8) yields columns 5..8 and the tab-sprite array
-			// (length 7) overflows: ArrayIndexOutOfBoundsException: Index 7 in extractTabButton the moment the
-			// creative screen renders. The baseline bring-up already sorted once, so OUR re-sort is always a second
-			// call — clear the list first to make the call idempotent.
-			java.lang.reflect.Field defaults = registry.getDeclaredField("DEFAULT_TABS");
-			defaults.setAccessible(true);
-			((java.util.List<?>) defaults.get(null)).clear();
-
-			int before = ((java.util.List<?>) sorted.invoke(null)).size();
-			registry.getMethod("sortTabs").invoke(null);
-
-			java.util.List<?> after = (java.util.List<?>) sorted.invoke(null);
-			StringBuilder names = new StringBuilder();
-			for (Object tab : after) {
-				if (names.length() > 0) names.append(", ");
-				names.append(name.invoke(null, tab));
-			}
-			ForbricLog.info("[Forbric/Lifecycle] re-sorted NeoForge creative tabs %d -> %d (special tabs: %d, must "
-					+ "stay 4): [%s] (the creative screen's tab strip reads ONLY this list; the baseline sort "
-					+ "predates the kernel's registration window, so window-registered tabs were searchable but "
-					+ "had no tab)", before, after.size(), ((java.util.List<?>) defaults.get(null)).size(), names);
-		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not re-sort NeoForge creative tabs "
-					+ "(mod creative tabs may be missing from the tab strip)", unwrap(t));
-		}
+		contentCall(cl, "sortCreativeTabs", "re-sort the NeoForge creative tabs");
 	}
 
-	/**
-	 * {@code -Dforbric.tabProbe} — dumps every non-vanilla creative tab's live state every 3s.
-	 *
-	 * <p>Pure diagnostic for the "tab registered + sorted + searchable, but the strip does not draw it" class of
-	 * bug: the strip's render-time predicate is {@code shouldDisplay()} = {@code hasAnyItems()} for CATEGORY tabs,
-	 * so this reports exactly the fields that predicate reads, straight from the live objects.
-	 */
+	/** {@code -Dforbric.tabProbe} — dumps every non-vanilla creative tab's live state every 3s. */
 	private static void startCreativeTabProbe(ClassLoader cl) {
-		Thread probe = new Thread(() -> {
-			try {
-				Class<?> builtin = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
-				Class<?> tabCls = Class.forName("net.minecraft.world.item.CreativeModeTab", false, cl);
-				Class<?> registryCls = Class.forName("net.minecraft.core.Registry", false, cl);
-				Object tabRegistry = builtin.getField("CREATIVE_MODE_TAB").get(null);
-				java.lang.reflect.Method getKey = registryCls.getMethod("getKey", Object.class);
-				java.lang.reflect.Method shouldDisplay = tabCls.getMethod("shouldDisplay");
-				java.lang.reflect.Method getType = tabCls.getMethod("getType");
-				java.lang.reflect.Field display = tabCls.getDeclaredField("displayItems");
-				java.lang.reflect.Field search = tabCls.getDeclaredField("displayItemsSearchTab");
-				display.setAccessible(true);
-				search.setAccessible(true);
-				Class<?> sortReg = Class.forName("net.neoforged.neoforge.common.CreativeModeTabRegistry", false, cl);
-				java.lang.reflect.Method sorted = sortReg.getMethod("getSortedCreativeModeTabs");
-
-				while (true) {
-					for (Object tab : (Iterable<?>) tabRegistry) {
-						String key = String.valueOf(getKey.invoke(tabRegistry, tab));
-						if (key.startsWith("minecraft:")) continue;
-
-						java.util.Collection<?> d = (java.util.Collection<?>) display.get(tab);
-						java.util.Collection<?> s = (java.util.Collection<?>) search.get(tab);
-						boolean inSorted = ((java.util.List<?>) sorted.invoke(null)).contains(tab);
-						ForbricLog.info("[Forbric/TabProbe] %s type=%s display=%d search=%d shouldDisplay=%s "
-								+ "inSorted=%s identity=%08x", key, getType.invoke(tab),
-								d == null ? -1 : d.size(), s == null ? -1 : s.size(),
-								shouldDisplay.invoke(tab), inSorted, System.identityHashCode(tab));
-					}
-					Thread.sleep(3000);
-				}
-			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/TabProbe] probe died", unwrap(t));
-			}
-		}, "forbric-tab-probe");
-		probe.setDaemon(true);
-		probe.start();
+		contentCall(cl, "startCreativeTabProbe", "start the creative-tab probe");
 	}
 
 	/**
@@ -907,32 +807,7 @@ public final class KernelLifecycle {
 	 * link-up must never be able to fail the registration window.
 	 */
 	private static void linkBlockItems(ClassLoader cl) {
-		try {
-			Class<?> itemCls = Class.forName("net.minecraft.world.item.Item", false, cl);
-			Class<?> blockItemCls = Class.forName("net.minecraft.world.item.BlockItem", false, cl);
-			Class<?> builtin = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
-
-			@SuppressWarnings("unchecked")
-			java.util.Map<Object, Object> byBlock =
-					(java.util.Map<Object, Object>) itemCls.getField("BY_BLOCK").get(null);
-			Object itemRegistry = builtin.getField("ITEM").get(null);
-			java.lang.reflect.Method getBlock = blockItemCls.getMethod("getBlock");
-
-			int linked = 0;
-			for (Object item : (Iterable<?>) itemRegistry) {
-				if (!blockItemCls.isInstance(item)) continue;
-
-				Object block = getBlock.invoke(item);
-				if (block != null && byBlock.putIfAbsent(block, item) == null) linked++;
-			}
-			if (linked > 0) {
-				ForbricLog.info("[Forbric/Lifecycle] linked %d block->item mapping(s) that Forge's registry "
-						+ "add-callback would have made (Block.asItem() returns AIR without them)", linked);
-			}
-		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not link block->item mappings "
-					+ "(modded blocks may have no item form)", unwrap(t));
-		}
+		contentCall(cl, "linkBlockItems", "link block->item mappings");
 	}
 
 	/**
@@ -944,40 +819,23 @@ public final class KernelLifecycle {
 	 * diagnostic must never be able to fail the window it reports on.
 	 */
 	private static void logRegisteredContent(ClassLoader cl) {
+		contentCall(cl, "logRegisteredContent", "summarise registered content");
+	}
+
+	/**
+	 * Calls one no-arg method on the game-side registry-content class.
+	 *
+	 * <p>Each of those five already reports its own failure in the terms of what it was repairing, so this only
+	 * has to cover the class not being there at all — which on a machine whose boot jar was built without the
+	 * staged artifacts is the same message for all five, and {@code KernelRuntimeClasses.verify} has already said
+	 * it once at the top of the log.
+	 */
+	private static void contentCall(ClassLoader cl, String method, String what) {
 		try {
-			Class<?> registryCls = Class.forName("net.minecraft.core.Registry", false, cl);
-			Class<?> builtin = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
-			Method keySet = registryCls.getMethod("keySet");
-
-			// namespace -> registry -> count, skipping vanilla's own content (the overwhelming majority). Namespaces
-			// come off the id's toString ("namespace:path") rather than a getNamespace() on a named ResourceLocation
-			// class — the kernel must not pin a vanilla type name just to count things.
-			Map<String, Map<String, Integer>> byNamespace = new java.util.TreeMap<>();
-			for (Field f : builtin.getFields()) {
-				if (!registryCls.isAssignableFrom(f.getType())) continue;
-				Object registry = f.get(null);
-				String regName = f.getName().toLowerCase(java.util.Locale.ROOT);
-				for (Object id : (java.util.Set<?>) keySet.invoke(registry)) {
-					String s = String.valueOf(id);
-					int colon = s.indexOf(':');
-					String ns = colon < 0 ? s : s.substring(0, colon);
-					if ("minecraft".equals(ns)) continue;
-					byNamespace.computeIfAbsent(ns, k -> new java.util.TreeMap<>())
-							.merge(regName, 1, Integer::sum);
-				}
-			}
-
-			if (byNamespace.isEmpty()) {
-				ForbricLog.info("[Forbric/Lifecycle] registered content: none outside minecraft:");
-				return;
-			}
-			for (Map.Entry<String, Map<String, Integer>> e : byNamespace.entrySet()) {
-				int total = e.getValue().values().stream().mapToInt(Integer::intValue).sum();
-				ForbricLog.info("[Forbric/Lifecycle] registered content: %s: %d entr(ies) %s", e.getKey(), total,
-						e.getValue());
-			}
+			Class.forName("net.forbric.kernel.runtime.KernelRegistryContent", true, cl)
+					.getMethod(method).invoke(null);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not summarise registered content", unwrap(t));
+			ForbricLog.warn("[Forbric/Lifecycle] could not " + what, unwrap(t));
 		}
 	}
 

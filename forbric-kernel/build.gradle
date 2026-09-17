@@ -127,6 +127,13 @@ dependencies {
 	// bundled, and never resolved on a machine with no staged jars: compileRuntimeJava is already skipped there.
 	runtimeCompileOnly 'it.unimi.dsi:fastutil:8.5.18'
 
+	// Guava, GAME side only, for the same reason and on the same terms as fastutil: several vanilla signatures
+	// return com.google.common.collect.ImmutableList (StateDefinition.getPossibleStates among them), so javac
+	// cannot read those methods without it. Minecraft supplies it at runtime; the kernel never ships it. Pinned
+	// from Maven rather than the local launcher's tree, which holds three versions here — any of them satisfies
+	// javac's need to READ the class files, which is all this is for, so the pin is about reproducibility.
+	runtimeCompileOnly 'com.google.guava:guava:33.6.0-jre'
+
 	testImplementation "org.junit.jupiter:junit-jupiter:${project.junit_version}"
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
