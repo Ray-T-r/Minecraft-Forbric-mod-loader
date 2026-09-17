@@ -608,6 +608,58 @@ public final class PayloadInterop {
 	 * else: minecraft:register decoded as NeoForge's type must not be pushed into Forge's ChannelListManager — to
 	 * Forge's dispatcher, and says whether it took it.
 	 */
+	/**
+	 * Whether NeoForge itself registered a handler for this PLAY-phase payload.
+	 *
+	 * <p>Called from the rewritten {@code ServerGamePacketListenerImpl.handleCustomPayload} (see
+	 * {@code CommonNetworkInteropInjector.letNeoForgePayloadsThrough}), which falls through to NeoForge's
+	 * dispatcher when MinecraftForge declines a payload. Falling through UNCONDITIONALLY is wrong and was
+	 * measured to be wrong: NeoForge's dispatcher is strict about what it does not recognise, and a Fabric mod's
+	 * play payload sent through the same listener ended the connection with
+	 * {@code IllegalStateException: Unknown addon} — a client that used to join now could not stay in a world.
+	 *
+	 * <p>So the fall-through is gated on the one question that makes it safe: is this a payload NeoForge knows?
+	 * If it is, NeoForge's dispatcher is exactly where it should go, and that is the population that was being
+	 * dropped. If it is not — a Fabric payload, an unregistered id, anything at all in doubt — the answer is
+	 * false and the method returns as it did before. Fail-CLOSED on purpose: the old behaviour silently dropped a
+	 * NeoForge mod's packet, the new failure mode disconnects the player, and those are not the same size.
+	 *
+	 * @param payload the {@code CustomPacketPayload} the packet carried
+	 */
+	public static boolean neoForgeWillHandle(Object payload) {
+		if (payload == null) return false;
+		try {
+			ClassLoader loader = loaderFor(payload);
+			Class<?> registryClass = load(loader, NEO_NETWORK_REGISTRY);
+			if (registryClass == null) return false;
+
+			Object id = invokeNoArg(invokeNoArg(payload, "type"), "id");
+			if (id == null) return false;
+
+			Field registrationsField = findField(registryClass, "PAYLOAD_REGISTRATIONS");
+			if (registrationsField == null) return false;
+			registrationsField.setAccessible(true);
+			Object raw = registrationsField.get(null);
+			if (!(raw instanceof Map<?, ?> byProtocol)) return false;
+
+			// Any protocol: the play listener only ever sees PLAY, but reading the protocol constant reflectively
+			// to compare would add a failure mode for no gain — an id registered under any protocol is an id
+			// NeoForge owns, which is the whole question here.
+			for (Object protocolMap : byProtocol.values()) {
+				if (protocolMap instanceof Map<?, ?> ids && ids.containsKey(id)) {
+					probe(() -> "  neo owns " + id + " — handing the play payload to its dispatcher");
+					return true;
+				}
+			}
+			probe(() -> "  neo does not own " + id + " — not falling through (a Fabric payload here would end the "
+					+ "connection with \"Unknown addon\")");
+			return false;
+		} catch (Throwable t) {
+			probe(() -> "  could not ask NeoForge whether it owns this payload (" + t + ") — not falling through");
+			return false;
+		}
+	}
+
 	public static boolean dispatchForgePayload(Object listener, Object packet) {
 		if (listener == null || packet == null) return false;
 		Object payload = invokeNoArg(packet, "payload");

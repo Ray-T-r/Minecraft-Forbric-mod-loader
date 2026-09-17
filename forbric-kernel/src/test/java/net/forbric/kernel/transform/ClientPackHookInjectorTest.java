@@ -104,9 +104,39 @@ class ClientPackHookInjectorTest {
 
 		ClassNode node = parse(out);
 		MethodNode m = method(node, METHOD, DESC);
-		assertEquals(3, m.instructions.size(), "the body should be exactly ALOAD/INVOKESTATIC/RETURN");
 		assertNotNull(hookCall(m), "the kernel hook call is missing");
+
+		// PREPENDED, not replaced, and this is the assertion that matters. The rewrite used to assign a whole new
+		// body of exactly ALOAD/INVOKESTATIC/RETURN — which threw away the carrier's own
+		// populatePackRepository call, and with it the AddPackFindersEvent it posts at the end. That event is how
+		// EVERY Forge-family mod registers a built-in client resource pack, so an optional pack stopped appearing
+		// in the resource-pack screen and an alwaysActive one left the mod rendering missing textures, silently.
+		// So: the kernel hook comes FIRST, and the original body is still there behind it.
+		assertSame(m.instructions.getFirst(), firstReal(m),
+				"the kernel hook must be the first thing the method does, before the carrier touches the repository");
+		assertEquals(Opcodes.ALOAD, firstReal(m).getOpcode());
+		assertTrue(postsThePackFinderEvent(m),
+				"the carrier's own populatePackRepository call must survive — it is the only thing that posts "
+						+ "AddPackFindersEvent, and nothing else in the kernel does");
 		new Analyzer<>(new BasicVerifier()).analyze(node.name, m);
+	}
+
+	/** The first instruction that is not a label, line number or frame. */
+	private static org.objectweb.asm.tree.AbstractInsnNode firstReal(MethodNode m) {
+		org.objectweb.asm.tree.AbstractInsnNode insn = m.instructions.getFirst();
+		while (insn != null && insn.getOpcode() < 0) insn = insn.getNext();
+		return insn;
+	}
+
+	/** Whether the method still reaches the carrier call whose tail posts {@code AddPackFindersEvent}. */
+	private static boolean postsThePackFinderEvent(MethodNode m) {
+		for (org.objectweb.asm.tree.AbstractInsnNode insn : m.instructions) {
+			if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call
+					&& "populatePackRepository".equals(call.name)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** The hedge really is inert today: handed the real MinecraftForge class, the injector changes nothing. */
