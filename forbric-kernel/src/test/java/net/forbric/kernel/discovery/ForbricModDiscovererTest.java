@@ -19,6 +19,7 @@ package net.forbric.kernel.discovery;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.OutputStream;
@@ -205,5 +206,36 @@ class ForbricModDiscovererTest {
 		assertNotNull(forge);
 		assertTrue(forge.getMixinConfigs().contains("multimixin.mixins.json"), "present config kept");
 		assertFalse(forge.getMixinConfigs().contains("multimixin.neoforge.mixins.json"), "absent config dropped");
+	}
+
+	/**
+	 * Seven passes ask about the same jar during one boot — discovery, the dependency audit, the seeder, the
+	 * merge report, the enum-extension loader, duplicate arbitration and the boot list. Each ask used to open the
+	 * zip, re-read every metadata file and re-run the parse, and re-emit the warnings with it: one jar's
+	 * "dropping declared mixin config" line appeared four times in a real boot, reading like four problems.
+	 */
+	@org.junit.jupiter.api.Test
+	void aJarIsParsedOnceHoweverOftenItIsAskedAbout(@TempDir Path dir) throws Exception {
+		Path jar = writeJar(dir, "example.jar",
+				Map.of(ForbricModDiscoverer.FABRIC_MANIFEST, FABRIC_JSON), null);
+		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
+
+		java.util.List<net.forbric.api.DiscoveredMod> first = discoverer.discoverJar(jar);
+		java.util.List<net.forbric.api.DiscoveredMod> again = discoverer.discoverJar(jar);
+
+		assertSame(first, again, "the jar was opened and parsed a second time for the same answer");
+		assertEquals("examplefabric", first.get(0).getId());
+	}
+
+	@org.junit.jupiter.api.Test
+	void theRememberedAnswerCannotBeChangedByOneCaller(@TempDir Path dir) throws Exception {
+		// Seven callers share this list now. One of them quietly adding to it would change what the other six
+		// see, so the list refuses rather than letting that happen somewhere unrelated and much later.
+		Path jar = writeJar(dir, "example.jar",
+				Map.of(ForbricModDiscoverer.FABRIC_MANIFEST, FABRIC_JSON), null);
+
+		java.util.List<net.forbric.api.DiscoveredMod> mods = new ForbricModDiscoverer().discoverJar(jar);
+
+		org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, () -> mods.clear());
 	}
 }
