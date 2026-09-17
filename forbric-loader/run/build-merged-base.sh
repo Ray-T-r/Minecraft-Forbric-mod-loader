@@ -34,7 +34,8 @@ rm -rf "$BUILD"; mkdir -p "$BUILD" "$(dirname "$OUT")"
 echo "[build-merged-base] compiling merge tools (ASM: $(basename "$ASM"), $(basename "$ASM_TREE"), $(basename "$ASM_COMMONS")) …"
 javac --release 17 -cp "$CP" -d "$BUILD" \
   "$PROJECT/src/tools/java/net/forbric/tools/MergedBaseBuilder.java" \
-  "$PROJECT/src/tools/java/net/forbric/tools/RuntimeInteropPatcher.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/RuntimeInteropPatcher.java" \
+  "$PROJECT/src/tools/java/net/forbric/tools/MergedLinkChecker.java"
 
 echo "[build-merged-base] vanilla=$(basename "$VANILLA")  forge=$(basename "$FORGE")  neo=$(basename "$NEO")"
 java -Xmx4g -cp "$BUILD:$CP" net.forbric.tools.MergedBaseBuilder "$VANILLA" "$FORGE" "$NEO" "$OUT" "$REPORT" "$FORGE_RT" "$NEO_RT"
@@ -47,3 +48,18 @@ echo "[build-merged-base] merged base -> $OUT ($(du -h "$OUT" | cut -f1))"
 FORGE_RT_PATCHED="${FORGE_RT_PATCHED:-$HERE/merged-base/forge-runtime-interop.jar}"
 echo "[build-merged-base] patching cross-runtime interop gaps into $FORGE_RT_PATCHED"
 java -cp "$BUILD:$CP" net.forbric.tools.RuntimeInteropPatcher "$FORGE_RT" "$FORGE_RT_PATCHED"
+
+# What the merge left pointing at nothing. A reference into a merged class that resolves nowhere is a
+# NoSuchMethodError or NoSuchFieldError waiting for whichever mod reaches it first, named after the mod rather
+# than after the merge, so it is worth seeing at build time instead.
+#
+# ONLY the merged jar and the two carriers. Handing it a libraries tree buries the answer: those jars carry
+# obfuscated and SRG-named classes whose references resolve nowhere by design, and the count goes from 24 to
+# over sixteen thousand.
+#
+# Reported, not enforced. There are known dangling references today — Forge's biome and structure modifiers, its
+# datapack condition context, and the capability methods the merge dropped — and failing the build on them would
+# only mean nobody can rebuild the base. The number is the thing to watch: it should go DOWN.
+echo "[build-merged-base] checking what the merge left dangling …"
+java -cp "$BUILD:$CP" net.forbric.tools.MergedLinkChecker "$OUT" "$NEO_RT" "$FORGE_RT_PATCHED" \
+  || echo "[build-merged-base] (dangling references reported above — see the comment in this script)"
