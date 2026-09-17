@@ -59,13 +59,15 @@ class CarrierAccessTransformerTest {
 	private static final String MENU_SCREENS = "net/minecraft/client/gui/screens/MenuScreens.class";
 
 	@Test
-	void theMergedBaseReallyDoesNarrowTheMethod() throws Exception {
-		// The premise. If a future merged base already has it public, this repair is unnecessary and this is
-		// where that shows up rather than in a silently redundant transform.
+	void theCarrierFeedIsBeltAndBracesNowThatTheMergeWidensIt() throws Exception {
+		// This asserted the opposite until the merge tool learned to keep the wider of the two ecosystems'
+		// access, which it now does — so the base ships this method public and the carrier feed no longer has to
+		// rescue it. The feed stays: it costs nothing, and it is what covers a base built before that fix.
 		MethodNode register = registerIn(original());
 
-		assertFalse((register.access & Opcodes.ACC_PUBLIC) != 0,
-				"the merged base already exposes MenuScreens.register — the carrier AT feed may be redundant now");
+		assertTrue((register.access & Opcodes.ACC_PUBLIC) != 0,
+				"the merged base should widen this at build time now; if it does not, the merge tool's access "
+						+ "reconciliation has regressed and only the carrier feed is holding this up");
 	}
 
 	@Test

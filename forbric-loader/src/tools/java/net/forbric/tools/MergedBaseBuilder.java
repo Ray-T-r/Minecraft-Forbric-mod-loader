@@ -108,6 +108,8 @@ public final class MergedBaseBuilder {
 	private int customPayloadInteropPatched;
 	/** The three input class sets, kept as fields so per-class merge helpers can inspect sibling classes. */
 	private Map<String, byte[]> vanillaClasses = Map.of(), forgeClasses = Map.of(), neoClasses = Map.of();
+	/** How many surviving methods kept the other side's wider access. See {@link #mostPermissive}. */
+	private int accessWidened;
 	/** interface internal name -> the name+desc keys of its DEFAULT (non-abstract) methods. */
 	private final Map<String, Set<String>> interfaceDefaults = new LinkedHashMap<>();
 	/** interface internal name -> its OWN direct {@code extends} list — for walking the transitive closure. */
@@ -347,6 +349,11 @@ public final class MergedBaseBuilder {
 					+ " delegating constructor(s) across " + bridgedOwners.size() + " class(es)");
 		}
 
+		if (accessWidened > 0) {
+			System.out.println("[merge] access reconciliation: " + accessWidened + " surviving method(s) kept the "
+					+ "wider of the two ecosystems' access — each side widens what its own mods need, and the "
+					+ "narrower survivor used to discard the other's");
+		}
 		System.out.println("[merge] writing " + outJar);
 		Files.createDirectories(outJar.toAbsolutePath().getParent());
 		try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(outJar))) {
@@ -599,6 +606,12 @@ public final class MergedBaseBuilder {
 			String key = e.getKey();
 			List<String> owners = e.getValue();
 			if (owners.size() < 2 || ownMethods.contains(key)) continue;
+			// A concrete SUPERCLASS method already resolves this for the class: a class implementation always
+			// wins over any interface default, so there is no conflict to break and no stub to add. Adding one
+			// anyway is not merely redundant — it SHADOWS that implementation, and the class silently gets the
+			// interface's version instead of its parent's. Measured across this base: 253 such stubs, including
+			// every vehicle's getDisplayName, which is what applies a team's colour and prefix to a name.
+			if (superclassDeclaresConcretely(cn.superName, key)) continue;
 
 			int split = key.indexOf('(');
 			String name = key.substring(0, split);
@@ -620,6 +633,83 @@ public final class MergedBaseBuilder {
 			changed = true;
 		}
 		return changed;
+	}
+
+	/**
+	 * Whether any superclass declares {@code key} with a body.
+	 *
+	 * <p>Read from the INPUT jars rather than the merged output, because this runs while the merged output is
+	 * still being produced and a superclass may not have been written yet. The two ecosystems agree about the
+	 * vanilla hierarchy, which is all this question needs; whichever jar answers first is consulted.
+	 *
+	 * <p>A chain that cannot be followed answers "no", which keeps the old behaviour for that class rather than
+	 * guessing — a missing stub is a conflict at first call, which is loud, while a wrong one is silent.
+	 */
+	private boolean superclassDeclaresConcretely(String superName, String key) {
+		for (String at = superName; at != null && !"java/lang/Object".equals(at); ) {
+			ClassNode parent = headerOf(at);
+			if (parent == null) return false;
+
+			for (MethodNode m : parent.methods) {
+				if (!(m.name + m.desc).equals(key)) continue;
+				return (m.access & Opcodes.ACC_ABSTRACT) == 0;
+			}
+			at = parent.superName;
+		}
+		return false;
+	}
+
+	/** A class's declarations without its code, from whichever input jar carries it. Null when none does. */
+	private ClassNode headerOf(String internalName) {
+		byte[] bytes = forgeClasses.get(internalName);
+		if (bytes == null) bytes = neoClasses.get(internalName);
+		if (bytes == null) bytes = vanillaClasses.get(internalName);
+		if (bytes == null) return null;
+
+		try {
+			ClassNode node = new ClassNode();
+			new ClassReader(bytes).accept(node,
+					ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+			return node;
+		} catch (RuntimeException unreadable) {
+			return null;
+		}
+	}
+
+	/**
+	 * The wider of two access flag sets: the broader visibility, and not final unless BOTH are.
+	 *
+	 * <p>Only those two axes. Everything else — static, abstract, synthetic, bridge — describes what the method
+	 * IS, and taking one side's answer for that would change the method rather than widen it.
+	 */
+	static int mostPermissive(int kept, int a, int b) {
+		// Everything that is not visibility comes from the SURVIVING method and is never reconciled. An earlier
+		// version took these from one input instead, and the two sides can disagree about ACC_STATIC — flipping
+		// that bit shifts every local variable slot by one, so the body no longer matches its own stack map and
+		// the class fails verification. Caught by gate-m1: AbstractFurnaceBlockEntity.consumeFuel came out with
+		// frames describing five locals for a three-local method, and the server would not start.
+		int shared = kept & ~(Opcodes.ACC_PUBLIC | Opcodes.ACC_PROTECTED | Opcodes.ACC_PRIVATE | Opcodes.ACC_FINAL);
+
+		int rank = Math.max(visibilityRank(kept), Math.max(visibilityRank(a), visibilityRank(b)));
+		int visibility = switch (rank) {
+			case 3 -> Opcodes.ACC_PUBLIC;
+			case 2 -> Opcodes.ACC_PROTECTED;
+			case 0 -> Opcodes.ACC_PRIVATE;
+			default -> 0; // package-private carries no bit
+		};
+
+		boolean allFinal = (kept & Opcodes.ACC_FINAL) != 0
+				&& (a & Opcodes.ACC_FINAL) != 0
+				&& (b & Opcodes.ACC_FINAL) != 0;
+		return shared | visibility | (allFinal ? Opcodes.ACC_FINAL : 0);
+	}
+
+	/** private < package-private < protected < public. */
+	private static int visibilityRank(int access) {
+		if ((access & Opcodes.ACC_PUBLIC) != 0) return 3;
+		if ((access & Opcodes.ACC_PROTECTED) != 0) return 2;
+		if ((access & Opcodes.ACC_PRIVATE) != 0) return 0;
+		return 1;
 	}
 
 	/** {@code public <returnType> name(args) { return InterfaceOwner.super.name(args); }} */
@@ -871,6 +961,21 @@ public final class MergedBaseBuilder {
 				conflicts.add(name + "#" + om.name + om.desc + (baseIsForge ? " (neo hook lost)" : " (forge hook lost)"));
 			}
 			// else (neither hooked): keep the base's body — semantically vanilla on both sides, nothing lost.
+
+			// Whichever body survived, it keeps the WIDER of the two sides' access. Each ecosystem widens members
+			// its mods need through its own access-transformer file, and those widenings are already baked into
+			// the patched jar this merge reads. Keeping only the surviving body's flags therefore discards the
+			// other side's widening wherever both sides touched a method — and MenuScreens.register, the single
+			// call every traditional-Forge mod with a GUI makes during client setup, came out private that way.
+			// Widening never breaks a caller: every call site that linked against the narrower form still links.
+			MethodNode kept = baseMethods.get(key);
+			if (kept != null) {
+				int widened = mostPermissive(kept.access, bm.access, om.access);
+				if (widened != kept.access) {
+					kept.access = widened;
+					accessWidened++;
+				}
+			}
 		}
 
 		realignCapturedLambdas(baseN, parse(baseIsForge ? frg : neu), otherN, baseMethods);
@@ -997,8 +1102,16 @@ public final class MergedBaseBuilder {
 		Set<String> writtenAnywhere = new LinkedHashSet<>();
 		for (MethodNode m : cn.methods) writtenAnywhere.addAll(writtenFieldKeys(m, cn.name));
 
+		// What the class actually still HAS. resolveDuplicateFieldNames runs immediately before this and can
+		// remove a field whose name collided with the other ecosystem's — and the exclusive-added set was
+		// collected before that. Emitting a PUTFIELD for a field that is no longer declared is a
+		// NoSuchFieldError raised inside the constructor, so the class cannot be instantiated at all.
+		Set<String> stillDeclared = new LinkedHashSet<>();
+		for (FieldNode f : cn.fields) stillDeclared.add(f.name + " " + f.desc);
+
 		for (String key : exclusiveAdded) {
 			if (writtenAnywhere.contains(key)) continue; // already initialized by some surviving method
+			if (!stillDeclared.contains(key)) continue;  // removed since the set was collected — see above
 			int sp = key.indexOf(' ');
 			String fName = key.substring(0, sp);
 			String fDesc = key.substring(sp + 1);
