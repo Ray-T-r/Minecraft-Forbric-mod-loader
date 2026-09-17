@@ -84,6 +84,37 @@ public final class ForbricClassLoader extends URLClassLoader {
 	/** Installs the pre-mixin transform chain (Access, compat, the kernel redirectors). Call once, before any load. */
 	public void setTransformer(BiFunction<String, byte[], byte[]> transformer) {
 		this.transformer = transformer == null ? (n, b) -> b : transformer;
+		// Anything remembered before the chain existed was remembered UNTRANSFORMED. Mixin would then inspect
+		// bytes that do not match the ones this loader defines, which is the one way this cache could be wrong.
+		preMixin.clear();
+		chainInstalled = true;
+	}
+
+	/**
+	 * Transformed bytes Mixin has already been shown, kept so it need not be rebuilt.
+	 *
+	 * <p>{@link #getPreMixinClassBytes} re-read the jar and re-ran the WHOLE transform chain on every call, and
+	 * Mixin asks repeatedly for the same classes — each anchor it resolves walks its target's superclass chain,
+	 * and the chains of the game's own types are asked about again and again.
+	 *
+	 * <p>Soft references rather than a plain map: these are whole class files and the set Mixin asks about is not
+	 * bounded by anything the kernel controls, so the JVM is left free to drop them under memory pressure. A drop
+	 * costs one rebuild, which is what every call used to cost.
+	 */
+	private final java.util.Map<String, java.lang.ref.SoftReference<byte[]>> preMixin = new ConcurrentHashMap<>();
+
+	/** False until the transform chain is installed; see {@link #setTransformer}. */
+	private volatile boolean chainInstalled;
+
+	private byte[] rememberedPreMixin(String name) {
+		java.lang.ref.SoftReference<byte[]> held = preMixin.get(name);
+		return held == null ? null : held.get();
+	}
+
+	private void rememberPreMixin(String name, byte[] bytes) {
+		// Never before the chain is installed: the answer would be the untransformed class, and it would then be
+		// handed out for the rest of the run.
+		if (chainInstalled) preMixin.put(name, new java.lang.ref.SoftReference<>(bytes));
 	}
 
 	/**
@@ -127,7 +158,10 @@ public final class ForbricClassLoader extends URLClassLoader {
 	 * @param internalName the ASM internal name ({@code a/b/C})
 	 */
 	public void putGeneratedClass(String internalName, byte[] bytes) {
-		generatedClasses.put(internalName.replace('/', '.'), bytes);
+		String binary = internalName.replace('/', '.');
+		generatedClasses.put(binary, bytes);
+		// Whatever Mixin was shown for this name before is no longer what the loader will define.
+		preMixin.remove(binary);
 	}
 
 	/**
@@ -148,6 +182,9 @@ public final class ForbricClassLoader extends URLClassLoader {
 	 * (superclasses, interfaces), which are never transformed. {@code null} if the class has no bytes anywhere.
 	 */
 	public byte[] getPreMixinClassBytes(String name) {
+		byte[] remembered = rememberedPreMixin(name);
+		if (remembered != null) return remembered;
+
 		String path = name.replace('.', '/') + ".class";
 		URL resource = findResource(path);
 		// Same last-resort as tryDefineGameClass, or Mixin would inspect different bytes than the ones defined.
@@ -158,7 +195,9 @@ public final class ForbricClassLoader extends URLClassLoader {
 			if (raw == null) return null;
 
 			byte[] transformed = transformer.apply(name, raw);
-			return transformed == null ? raw : transformed;
+			byte[] result = transformed == null ? raw : transformed;
+			rememberPreMixin(name, result);
+			return result;
 		}
 
 		try (InputStream in = parent.getResourceAsStream(path)) {
