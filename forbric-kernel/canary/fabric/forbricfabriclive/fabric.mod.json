@@ -19,7 +19,8 @@
     ],
     "forbric:probe": [
       "forbric.fabriclive.ProbeImpl",
-      "forbric.fabriclive.ProbeImpl::STATIC_PROBE"
+      "forbric.fabriclive.ProbeImpl::STATIC_PROBE",
+      "forbric.fabriclive.NeverConstructedProbe"
     ]
   },
   "jars": [
