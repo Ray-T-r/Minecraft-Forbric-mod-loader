@@ -65,7 +65,8 @@ public final class NeoEnumExtensions {
 	static final String SWITCH = "forbric.enumExtensions";
 
 	private static final String DECLARATION = "META-INF/enumextensions.json";
-	private static final String EXTENDER = "net.neoforged.fml.common.asm.enumextension.RuntimeEnumExtender";
+	private static final String EXTENDER =
+			net.forbric.api.ForeignType.RUNTIME_ENUM_EXTENDER.binary(net.forbric.api.Ecosystem.NEOFORGE);
 
 	private NeoEnumExtensions() {
 	}

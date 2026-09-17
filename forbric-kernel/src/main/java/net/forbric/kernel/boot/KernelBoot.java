@@ -477,6 +477,15 @@ public final class KernelBoot {
 			if (enumExtensions != null) chain.register(TransformPhase.COREMOD, enumExtensions);
 		}
 
+		// The traditional-MinecraftForge twin. Unconditional, unlike the NeoForge one above: NeoForge's model is a
+		// declaration file per mod, so "did anyone declare anything" is answerable up front, while MinecraftForge's
+		// is a mod calling create(...) at runtime — there is nothing to count beforehand. Their own processor
+		// declines every class outside two packages, and declines everything unless MinecraftForge's mod list holds
+		// more than two mods, so this is inert on a pack without traditional-Forge mods by their rule.
+		net.forbric.kernel.transform.ForgeEnumExtensionInjector forgeEnums =
+				net.forbric.kernel.transform.ForgeEnumExtensionInjector.create(loader);
+		if (forgeEnums != null) chain.register(TransformPhase.COREMOD, forgeEnums);
+
 		// LAST in the chain, because it has to see every edit the coremod phase made: a transformer that adds a
 		// branch leaves a frame of its own, and the recomputation must be over the final shape. A mod compiled
 		// against one ecosystem can name a superclass the merge took off that hierarchy — MinecraftForge's

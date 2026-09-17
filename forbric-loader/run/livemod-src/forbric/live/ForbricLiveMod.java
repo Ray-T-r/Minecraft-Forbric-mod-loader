@@ -306,6 +306,28 @@ public class ForbricLiveMod {
 			System.out.println("[ForbricLive] ServerStartingEvent RECEIVED - PermissionAPI is initialised by this "
 					+ "same hook");
 			walkModFiles();
+			addAnEnumConstant();
+		}
+
+		/**
+		 * What a MinecraftForge mod does to add its own mob category, arm pose or item display context.
+		 *
+		 * <p>In the shipped game that factory is a stub whose whole body throws "Enum not extended" — the real
+		 * loader rewrites it while the class is being defined, and the kernel replaces that loader. Mods call it
+		 * from a static initialiser, which only runs once, so the exception does not cost them a constant: it
+		 * kills the mod and everything that touches it.
+		 */
+		private static void addAnEnumConstant() {
+			try {
+				int before = net.minecraft.world.entity.MobCategory.values().length;
+				net.minecraft.world.entity.MobCategory added = net.minecraft.world.entity.MobCategory
+						.create("FORBRIC_CANARY", "forbric_canary", "forbric_canary", 1, true, false, 128);
+				int after = net.minecraft.world.entity.MobCategory.values().length;
+				System.out.println("[ForbricLive] MobCategory.create gave us " + added.name()
+						+ ", values went " + before + " -> " + after);
+			} catch (Throwable t) {
+				System.out.println("[ForbricLive] MobCategory.create FAILED: " + t);
+			}
 		}
 
 		/**

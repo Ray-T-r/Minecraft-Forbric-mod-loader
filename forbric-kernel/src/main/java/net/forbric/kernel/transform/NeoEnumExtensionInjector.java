@@ -26,6 +26,8 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -66,7 +68,7 @@ public final class NeoEnumExtensionInjector implements ClassTransformer {
 	public static NeoEnumExtensionInjector create(ClassLoader gameLoader) {
 		try {
 			Class<?> extenderCls = Class.forName(
-					"net.neoforged.fml.common.asm.enumextension.RuntimeEnumExtender", false, gameLoader);
+					ForeignType.RUNTIME_ENUM_EXTENDER.binary(Ecosystem.NEOFORGE), false, gameLoader);
 			Class<?> selection = Class.forName(
 					"net.neoforged.neoforgespi.transformation.ClassProcessor$SelectionContext", false, gameLoader);
 			Class<?> transformation = Class.forName(

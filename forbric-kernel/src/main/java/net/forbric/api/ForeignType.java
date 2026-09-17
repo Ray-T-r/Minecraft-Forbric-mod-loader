@@ -106,6 +106,13 @@ public enum ForeignType {
 			"net.neoforged.fml.loading.moddiscovery.ModFile"),
 	MOD_FILE_TYPE("net.minecraftforge.forgespi.locating.IModFile$Type",
 			"net.neoforged.neoforgespi.locating.IModFile$Type"),
+	/**
+	 * Each family's rewriter for enums a mod may add constants to. Same job, and the two are reached the same
+	 * way — the kernel supplies the class node and their compiled processor does the rewrite — but they sit in
+	 * different packages and take different arguments, so both injectors name this and neither may drift alone.
+	 */
+	RUNTIME_ENUM_EXTENDER("net.minecraftforge.fml.common.asm.RuntimeEnumExtender",
+			"net.neoforged.fml.common.asm.enumextension.RuntimeEnumExtender"),
 	MOD_FILE_INFO("net.minecraftforge.fml.loading.moddiscovery.ModFileInfo",
 			"net.neoforged.fml.loading.moddiscovery.ModFileInfo"),
 	MOD_INFO("net.minecraftforge.fml.loading.moddiscovery.ModInfo",
