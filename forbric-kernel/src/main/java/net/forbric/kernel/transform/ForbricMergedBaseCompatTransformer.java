@@ -80,6 +80,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= keepTheSaveOffTheTeardownsFailurePath(node);
 			changed |= askNeoForgeWhatAnItemsAttributesAre(node);
 			changed |= readTheSpawnReasonThatIsActuallyWritten(node);
+			changed |= giveTheUnwrittenLoggerAValue(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -164,6 +165,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	private static final String PARTICLE_RESOURCES = "net/minecraft/client/particle/ParticleResources";
 	/** NeoForge's retyping of vanilla's {@code providers}: the one the merged {@code <init>} actually writes. */
+	/** {@code org.slf4j.Logger}, the one unwritten static the merge leaves that has an obvious correct value. */
+	private static final String LOGGER_DESC = "Lorg/slf4j/Logger;";
 	/** {@code EntitySpawnReason}, the type of both of the merged {@code Mob}'s spawn fields. */
 	private static final String SPAWN_REASON = "Lnet/minecraft/world/entity/EntitySpawnReason;";
 	private static final String NAME_KEYED = "Ljava/util/Map;";
@@ -456,6 +459,69 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "null, so any mod using that API crashed inside Minecraft.<init>. It is now a live view of the "
 				+ "map that IS written");
 		return true;
+	}
+
+	/**
+	 * Fills in a {@code static final Logger} that survived the merge with nothing left to assign it.
+	 *
+	 * <p>When both families patch the same class, one family's {@code <clinit>} wins whole and the loser's
+	 * assignments go with it — including assignments to fields the loser ADDED, which are kept as declarations.
+	 * Such a field is then null forever, and there is no diagnostic: the class links, loads and works until
+	 * something reads it.
+	 *
+	 * <p>A scan of the whole merged base finds exactly one logger in this state,
+	 * {@code ResourceManagerRegistryLoadTask.LOGGER}, and it is read from the branch that handles a datapack
+	 * entry a condition has switched OFF — which is what a Forge-family datapack does whenever it guards content
+	 * on another mod being installed. So the branch meant to say "skipping this entry" threw instead, and the
+	 * world would not open.
+	 *
+	 * <p>Only loggers, and only unwritten ones. A logger has one obvious correct value and building it needs
+	 * nothing from the class; the other seven unwritten statics in this base carry codecs and callbacks that
+	 * cannot be invented here and need the merge itself to stop dropping them.
+	 */
+	private static boolean giveTheUnwrittenLoggerAValue(ClassNode node) {
+		boolean changed = false;
+		for (FieldNode field : node.fields) {
+			if ((field.access & Opcodes.ACC_STATIC) == 0) continue;
+			if (!LOGGER_DESC.equals(field.desc)) continue;
+			if (writesStatic(node, field.name)) continue;
+
+			MethodNode clinit = findMethod(node, "<clinit>", "()V");
+			if (clinit == null) {
+				clinit = new MethodNode(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+				clinit.instructions.add(new InsnNode(Opcodes.RETURN));
+				node.methods.add(clinit);
+			}
+
+			// At the TOP of <clinit>, not before the RETURN: anything else the initialiser does may log, and a
+			// repair that lands last would leave exactly the window this is closing.
+			InsnList assign = new InsnList();
+			assign.add(new LdcInsnNode(Type.getObjectType(node.name)));
+			assign.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "org/slf4j/LoggerFactory", "getLogger",
+					"(Ljava/lang/Class;)Lorg/slf4j/Logger;", false));
+			assign.add(new FieldInsnNode(Opcodes.PUTSTATIC, node.name, field.name, LOGGER_DESC));
+			clinit.instructions.insert(assign);
+			clinit.maxStack = Math.max(clinit.maxStack, 1);
+
+			ForbricLog.warn("[Forbric/MergedBaseCompat] %s.%s is a logger the merge left with no assignment, so it "
+					+ "was null forever and whichever branch reads it threw instead of logging. It is now "
+					+ "initialised.", node.name.replace('/', '.'), field.name);
+			changed = true;
+		}
+		return changed;
+	}
+
+	/** Whether anything in {@code node} assigns the static field {@code name}. */
+	private static boolean writesStatic(ClassNode node, String name) {
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTSTATIC
+						&& node.name.equals(field.owner) && name.equals(field.name)) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/**
