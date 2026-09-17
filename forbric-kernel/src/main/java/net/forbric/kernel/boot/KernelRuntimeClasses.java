@@ -115,6 +115,20 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeRegistries", new Entry(Origin.COMPILED, List.of(
 				new Call("targets", List.class),
 				new Call("post", void.class, Object.class, Object[].class))));
+		// Serving a Forge-family mod jar's own data/ to the server datapack repository. The POLICY — which jars
+		// carry data, who owns them, what each pack is called and how they stack — stays boot-side in
+		// KernelDataPacks, where it names no game type and is tested as such. See KernelDataPackSource.
+		CLASSES.put("net.forbric.kernel.runtime.KernelDataPackSource", new Entry(Origin.COMPILED, List.of(
+				new Call("buildPack", Object.class, String.class, Path.class, Object.class),
+				new Call("addSource", void.class, Object.class, List.class, String.class))));
+		// Serving an ecosystem jar's assets/ to the CLIENT resource repository: every Pack, the visible parent
+		// that lets a player's own pack sit above mod textures, the overlay count and the RepositorySource. The
+		// policy stays boot-side in KernelClientPacks. See KernelClientPackSource.
+		CLASSES.put("net.forbric.kernel.runtime.KernelClientPackSource", new Entry(Origin.COMPILED, List.of(
+				new Call("buildPack", Object.class, String.class, Path.class, boolean.class),
+				new Call("buildParentPack", Object.class, String.class, List.class),
+				new Call("withOverlays", int.class, List.class),
+				new Call("addSource", void.class, Object.class, List.class, String.class))));
 		// Materialises the kernel's own annotation scan into NeoForge's ModFileScanData. The scan itself is
 		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
 		CLASSES.put("net.forbric.kernel.runtime.KernelScanData", new Entry(Origin.COMPILED, List.of(

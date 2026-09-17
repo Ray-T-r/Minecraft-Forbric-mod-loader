@@ -16,17 +16,12 @@
 
 package net.forbric.kernel.boot;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import java.util.function.Consumer;
 
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
@@ -93,9 +88,13 @@ public final class KernelClientPacks {
 			// own — empty, because its mod-file list is not what the kernel loads from — and two packs sharing an
 			// id silently collapse into one inside PackRepository's map.
 			Object parent = buildParentPack(cl, packs);
-			Object source;
+			List<Object> source;
+			// What the source EMITS and what the log REPORTS are different lists on the parent path: one pack goes
+			// to the repository, and `ids` stays the children it carries, which is what a reader needs to see.
+			String describedAs;
 			if (parent != null) {
-				source = buildSource(cl, List.of(parent), List.of(PARENT_ID));
+				source = List.of(parent);
+				describedAs = "ForbricKernelClientPackSource" + List.of(PARENT_ID);
 			} else {
 				// No parent, so nothing carries "required" for the set — and the children were built without it.
 				// Serving them as they stand would apply NONE of them. Rebuild them the old way instead: each one
@@ -111,11 +110,11 @@ public final class KernelClientPacks {
 						ids.add(id);
 					}
 				}
-				source = buildSource(cl, packs, ids);
+				source = packs;
+				describedAs = "ForbricKernelClientPackSource" + ids;
 			}
-			Class<?> repoCls = Class.forName("net.minecraft.server.packs.repository.PackRepository", false, cl);
-			Class<?> sourceCls = Class.forName("net.minecraft.server.packs.repository.RepositorySource", false, cl);
-			repoCls.getMethod("addPackFinder", sourceCls).invoke(packRepository, source);
+			gameSide(cl).getMethod("addSource", Object.class, List.class, String.class)
+					.invoke(null, packRepository, source, describedAs);
 			ForbricLog.info("[Forbric/ClientPacks] served %d ecosystem asset pack(s) to the client PackRepository "
 					+ "(forced-compatible), %d of them declaring overlays: %s", ids.size(), withOverlays(cl, packs),
 					ids);
@@ -160,55 +159,20 @@ public final class KernelClientPacks {
 		return dot > 0 ? name.substring(0, dot) : name;
 	}
 
-	/** {@code Pack(PackLocationInfo, FileResourcesSupplier, Metadata(forced COMPATIBLE), PackSelectionConfig)}. */
+	/** One hidden {@code Pack} over {@code jar}; the shape it is given is written down game-side. */
 	private static Object buildPack(ClassLoader cl, String id, Path jar, boolean asChild) throws Exception {
-		Class<?> packCls = Class.forName("net.minecraft.server.packs.repository.Pack", false, cl);
-		Class<?> metaCls = Class.forName("net.minecraft.server.packs.repository.Pack$Metadata", false, cl);
-		Class<?> suppCls = Class.forName("net.minecraft.server.packs.repository.Pack$ResourcesSupplier", false, cl);
-		Class<?> posCls = Class.forName("net.minecraft.server.packs.repository.Pack$Position", false, cl);
-		Class<?> locCls = Class.forName("net.minecraft.server.packs.PackLocationInfo", false, cl);
-		Class<?> selCls = Class.forName("net.minecraft.server.packs.PackSelectionConfig", false, cl);
-		Class<?> srcCls = Class.forName("net.minecraft.server.packs.repository.PackSource", false, cl);
-		Class<?> compatCls = Class.forName("net.minecraft.server.packs.repository.PackCompatibility", false, cl);
-		Class<?> fileSuppCls =
-				Class.forName("net.minecraft.server.packs.FilePackResources$FileResourcesSupplier", false, cl);
-		Class<?> flagsCls = Class.forName("net.minecraft.world.flag.FeatureFlagSet", false, cl);
-		Class<?> componentCls = Class.forName("net.minecraft.network.chat.Component", false, cl);
+		return gameSide(cl).getMethod("buildPack", String.class, Path.class, boolean.class)
+				.invoke(null, id, jar, asChild);
+	}
 
-		Method literal = componentCls.getMethod("literal", String.class);
-		Object title = literal.invoke(null, id);
-
-		Object resources = fileSuppCls.getConstructor(Path.class).newInstance(jar);
-		Object location = locCls.getConstructor(String.class, componentCls, srcCls, Optional.class)
-				.newInstance(id, title, srcCls.getField("BUILT_IN").get(null), Optional.empty());
-		Object metadata = metaCls.getConstructor(componentCls, compatCls, flagsCls, List.class)
-				.newInstance(title, compatCls.getField("COMPATIBLE").get(null), flagsCls.getMethod("of").invoke(null),
-						List.of());
-		// As a CHILD: not required and not fixed on its own, because the parent carries both for the whole set.
-		// Standalone (only when the parent could not be built): required and fixed, so the assets still apply.
-		// Hidden either way — a mod's assets are not a pack the player chose to add.
-		Object selection = selCls.getConstructor(boolean.class, posCls, boolean.class)
-				.newInstance(!asChild, posCls.getField("TOP").get(null), !asChild);
-
-		// NeoForge's own reader first: it opens the jar's real pack.mcmeta and builds the Metadata from it, which
-		// is where a pack's OVERLAYS live. The kernel synthesised that record with an empty overlay list, so a
-		// Forge-family mod declaring overlays — the mechanism a mod uses to ship one set of assets per game
-		// version — had them dropped without a word. Their reader forces COMPATIBLE exactly as the synthesis
-		// below does, so nothing is lost on that axis, and it fills in the feature flags too.
-		Object pack = readWithTheJarsOwnMeta(cl, location, resources, selection);
-		if (pack == null) {
-			Constructor<?> packCtor = packCls.getConstructor(locCls, suppCls, metaCls, selCls);
-			pack = packCtor.newInstance(location, resources, metadata, selection);
-		}
-		// HIDDEN, and still required. These are a mod's own assets, not a resource pack anyone chose: they were
-		// appearing in the player's resource-pack screen as ten rows they cannot turn off and did not add.
-		//
-		// isHidden gates LISTING only, never application -- getAvailableIds/getSelectedIds filter on it, while
-		// openAllSelected and getSelectedPacks do not, and rebuildSelected re-inserts every isRequired() pack
-		// regardless. So required=true is what keeps them applied, and hidden is what keeps them out of the
-		// screen; neither substitutes for the other. Pack.hidden() is the copy-with helper and preserves the
-		// location, the resources and the whole selection config.
-		return packCls.getMethod("hidden").invoke(pack);
+	/**
+	 * The game-side half: every {@code Pack}, the parent, the overlay count and the {@code RepositorySource}.
+	 *
+	 * <p>What stays above this line is policy that names no game type — which jars carry assets, what each pack
+	 * is called, and the decision to fall back to flat packs when the parent cannot be built.
+	 */
+	private static Class<?> gameSide(ClassLoader cl) throws ClassNotFoundException {
+		return Class.forName("net.forbric.kernel.runtime.KernelClientPackSource", true, cl);
 	}
 
 	/** The kernel's own parent pack id. Deliberately not the carrier's, which already exists and would collide. */
@@ -231,43 +195,8 @@ public final class KernelClientPacks {
 	 */
 	private static Object buildParentPack(ClassLoader cl, List<Object> children) {
 		try {
-			Class<?> packCls = Class.forName("net.minecraft.server.packs.repository.Pack", false, cl);
-			Class<?> suppCls = Class.forName("net.minecraft.server.packs.repository.Pack$ResourcesSupplier", false, cl);
-			Class<?> posCls = Class.forName("net.minecraft.server.packs.repository.Pack$Position", false, cl);
-			Class<?> locCls = Class.forName("net.minecraft.server.packs.PackLocationInfo", false, cl);
-			Class<?> selCls = Class.forName("net.minecraft.server.packs.PackSelectionConfig", false, cl);
-			Class<?> srcCls = Class.forName("net.minecraft.server.packs.repository.PackSource", false, cl);
-			Class<?> typeCls = Class.forName("net.minecraft.server.packs.PackType", false, cl);
-			Class<?> componentCls = Class.forName("net.minecraft.network.chat.Component", false, cl);
-			Class<?> metaCls = Class.forName("net.minecraft.server.packs.metadata.pack.PackMetadataSection", false, cl);
-			Class<?> rangeCls = Class.forName("net.minecraft.util.InclusiveRange", false, cl);
-			Class<?> emptyCls = Class.forName(
-					"net.neoforged.neoforge.resource.EmptyPackResources$EmptyResourcesSupplier", false, cl);
-			Class<?> sharedCls = Class.forName("net.minecraft.SharedConstants", false, cl);
-			Class<?> worldVersionCls = Class.forName("net.minecraft.WorldVersion", false, cl);
-
-			Object clientResources = typeCls.getField("CLIENT_RESOURCES").get(null);
-			Object title = componentCls.getMethod("literal", String.class).invoke(null, "Mod Resources");
-
-			// The pack format of the running game, so the parent never reads as out of date for its own version.
-			Object version = sharedCls.getMethod("getCurrentVersion").invoke(null);
-			Object packFormat = worldVersionCls.getMethod("packVersion", typeCls).invoke(version, clientResources);
-			Object range = rangeCls.getConstructor(Comparable.class).newInstance(packFormat);
-			Object metadata = metaCls.getConstructor(componentCls, rangeCls).newInstance(title, range);
-			Object resources = emptyCls.getConstructor(metaCls).newInstance(metadata);
-
-			Object location = locCls.getConstructor(String.class, componentCls, srcCls, Optional.class)
-					.newInstance(PARENT_ID, title, srcCls.getField("DEFAULT").get(null), Optional.empty());
-			// required, TOP, NOT fixed — see this method's javadoc for why each of the three is what it is.
-			Object selection = selCls.getConstructor(boolean.class, posCls, boolean.class)
-					.newInstance(true, posCls.getField("TOP").get(null), false);
-
-			Object parent = packCls
-					.getMethod("readMetaAndCreate", locCls, suppCls, typeCls, selCls)
-					.invoke(null, location, resources, clientResources, selection);
-			if (parent == null) return null;
-
-			return packCls.getMethod("withChildren", List.class).invoke(parent, List.copyOf(children));
+			return gameSide(cl).getMethod("buildParentPack", String.class, List.class)
+					.invoke(null, PARENT_ID, children);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ClientPacks] could not build the parent asset pack; serving each mod's assets "
 					+ "on its own instead, which means a player's own resource pack cannot override a mod texture",
@@ -285,69 +214,12 @@ public final class KernelClientPacks {
 	 * quietly serving the wrong textures — or none.
 	 */
 	private static int withOverlays(ClassLoader cl, List<Object> packs) {
-		int declaring = 0;
 		try {
-			Class<?> packCls = Class.forName("net.minecraft.server.packs.repository.Pack", false, cl);
-			java.lang.reflect.Field metadata = packCls.getDeclaredField("metadata");
-			metadata.setAccessible(true);
-			java.lang.reflect.Method overlays = metadata.getType().getMethod("overlays");
-
-			for (Object pack : packs) {
-				Object declared = overlays.invoke(metadata.get(pack));
-				if (declared instanceof List<?> list && !list.isEmpty()) declaring++;
-			}
+			return (int) gameSide(cl).getMethod("withOverlays", List.class).invoke(null, packs);
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/ClientPacks] could not count declared overlays: %s",
 					String.valueOf(Reflect.unwrap(t)));
+			return 0;
 		}
-		return declaring;
-	}
-
-	/**
-	 * A {@code Pack} built from the jar's own {@code pack.mcmeta}, or null when that is not possible.
-	 *
-	 * <p>{@code ResourcePackLoader.readWithOptionalMeta} is NeoForge's, and it is what a genuine instance uses
-	 * for exactly these packs: it reads the metadata section, falls back to a default when the file is absent,
-	 * forces {@code COMPATIBLE} so a pack built for another game version is still served, and carries across the
-	 * two things the kernel's own synthesis could not — the declared overlays and the feature flags.
-	 *
-	 * <p>Null rather than a throw on any failure. The caller then synthesises the metadata as before, which is
-	 * worse but not broken: a mod keeps its assets and loses only its overlays.
-	 */
-	private static Object readWithTheJarsOwnMeta(ClassLoader cl, Object location, Object resources, Object selection) {
-		try {
-			Class<?> loaderCls = Class.forName("net.neoforged.neoforge.resource.ResourcePackLoader", false, cl);
-			Class<?> locCls = Class.forName("net.minecraft.server.packs.PackLocationInfo", false, cl);
-			Class<?> suppCls = Class.forName("net.minecraft.server.packs.repository.Pack$ResourcesSupplier", false, cl);
-			Class<?> typeCls = Class.forName("net.minecraft.server.packs.PackType", false, cl);
-			Class<?> selCls = Class.forName("net.minecraft.server.packs.PackSelectionConfig", false, cl);
-
-			Method read = loaderCls.getMethod("readWithOptionalMeta", locCls, suppCls, typeCls, selCls);
-			Object clientResources = typeCls.getField("CLIENT_RESOURCES").get(null);
-			return read.invoke(null, location, resources, clientResources, selection);
-		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/ClientPacks] could not read a pack's own metadata, synthesising it "
-					+ "(its overlays will not apply): %s", String.valueOf(Reflect.unwrap(t)));
-			return null;
-		}
-	}
-
-	/** A {@code RepositorySource} proxy whose {@code loadPacks(Consumer)} emits our packs. */
-	private static Object buildSource(ClassLoader cl, List<Object> packs, List<String> ids) throws Exception {
-		Class<?> sourceCls = Class.forName("net.minecraft.server.packs.repository.RepositorySource", false, cl);
-		return Proxy.newProxyInstance(cl, new Class<?>[] {sourceCls}, (proxy, method, args) -> switch (method.getName()) {
-			case "loadPacks" -> {
-				if (args != null && args.length == 1 && args[0] instanceof Consumer<?> consumer) {
-					@SuppressWarnings("unchecked")
-					Consumer<Object> sink = (Consumer<Object>) consumer;
-					for (Object pack : packs) sink.accept(pack);
-				}
-				yield null;
-			}
-			case "toString" -> "ForbricKernelClientPackSource" + ids;
-			case "hashCode" -> System.identityHashCode(proxy);
-			case "equals" -> proxy == (args == null ? null : args[0]);
-			default -> null;
-		});
 	}
 }
