@@ -232,6 +232,12 @@ public final class KernelRuntimeClasses {
 		// the one use that still needs MinecraftForge's type. See ForbricMergedBaseCompatTransformer.
 		CLASSES.put("net.forbric.kernel.runtime.KernelChunkGenerator", new Entry(Origin.COMPILED, List.of(
 				new Call("invalidate", void.class, java.util.function.Supplier.class))));
+		// NeoForge worldgen the merge left with no driver: its data maps (nothing named DataMapLoader at all),
+		// its biome/structure modifier pass, and the monster-room mob pick that the kernel used to answer by
+		// neutering the whole dungeon feature. Its two entry points are called from REWRITTEN CALL SITES, so
+		// their descriptors are the ones the merged base and the carrier already had — game types, not the JDK
+		// types this registry's own seams use. Listed with no calls for that reason, as KernelConfigPortBridge is.
+		CLASSES.put("net.forbric.kernel.runtime.KernelNeoWorldgen", new Entry(Origin.COMPILED, List.of()));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));

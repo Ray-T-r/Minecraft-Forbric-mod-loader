@@ -454,13 +454,15 @@ public final class KernelBoot {
 			ForbricLog.info("[Forbric/Boot] registry-wrapper redirect ENABLED (experimental)");
 		}
 
+		// Two targets used to sit above this one and no longer do, because their reasons stopped being true:
+		//   NeoForge ServerLifecycleHooks.runModifiers — "needs neoforge:biome_modifier datapack registry". The
+		//     kernel declares it now, and the pass is guarded at its call site instead
+		//     (guardNeoForgesWorldModifierPass), so a failure costs the modifiers rather than the boot.
+		//   MonsterRoomFeature.place — "MONSTER_ROOM_MOBS datamap not yet loaded". Neutering the whole feature
+		//     meant no dungeon, no spawner and no dungeon chest in EVERY world, for everyone, mods or no mods.
+		//     KernelNeoWorldgen loads the data maps for real and the mob pick falls back to vanilla's own set.
+		// A neuter is a promise that the method cannot work here; both promises had expired.
 		MethodBodyNeuter neuter = new MethodBodyNeuter()
-				.add(new MethodBodyNeuter.Target(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.NEOFORGE),
-						"runModifiers", "(Lnet/minecraft/server/MinecraftServer;)V",
-						"NeoForge biome/structure modifiers need neoforge:biome_modifier datapack registry"))
-				.add(new MethodBodyNeuter.Target("net.minecraft.world.level.levelgen.feature.MonsterRoomFeature",
-						"place", "(Lnet/minecraft/world/level/levelgen/feature/FeaturePlaceContext;)Z",
-						"NeoForge MONSTER_ROOM_MOBS datamap not yet loaded"))
 				.add(new MethodBodyNeuter.Target("net.minecraftforge.fluids.FluidInteractionRegistry",
 						"canInteract", "(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;)Z",
 						"MinecraftForge fluid-interaction hook calls its own getFluidType() (net.minecraftforge FluidType) "
