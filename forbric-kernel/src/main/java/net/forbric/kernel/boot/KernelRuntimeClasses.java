@@ -247,6 +247,9 @@ public final class KernelRuntimeClasses {
 		// attributesView() is called from a REWRITTEN CALL SITE and so carries the descriptor that site had.
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeAttributes", new Entry(Origin.COMPILED, List.of(
 				new Call("fireForgeAttributeEvents", void.class))));
+		// NeoForge refuses to NAME a client reload listener a mixin added, and throws inside Minecraft.<init>.
+		// Called from a REWRITTEN CALL SITE, so it carries that site's game-typed descriptor.
+		CLASSES.put("net.forbric.kernel.runtime.KernelClientReloadNames", new Entry(Origin.COMPILED, List.of()));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));
