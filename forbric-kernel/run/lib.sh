@@ -41,17 +41,38 @@ seed_server_properties() {
 
 step() { printf '\n[kernel] ==== %s ====\n' "$1"; }
 
+# Is there anything here to read at all? A log the run never wrote, or wrote empty, is not evidence either way,
+# and the two helpers below must not pretend otherwise.
+#
+# This existed as a hole for check_absent's whole history: `grep -c` on a missing file prints nothing and exits
+# 1, `|| true` swallowed the exit code, and `${got:-0}` turned the empty output into 0 — which is exactly the
+# value that means PASS. gate-m9-client.sh alone has ~30 absence checks, and its `cat "$GAMELOG" >> "$LOG"` is
+# `|| true`, so a run that produced no game log disarmed all thirty of them silently. There is no legitimate
+# caller: every one of the 206 call sites reads a log its own run produced.
+readable() {
+  [ -s "$1" ]
+}
+
 # check <what> <grep-pattern> <file> [required-count]
 check() {
   local what="$1" pat="$2" file="$3" want="${4:-1}" got
+  if ! readable "$file"; then
+    printf '[kernel] FAIL %s (no log to read: %s)\n' "$what" "$file"; FAIL=1; return
+  fi
   got=$(grep -cE "$pat" "$file" 2>/dev/null || true)
   if [ "${got:-0}" -ge "$want" ]; then printf '[kernel] PASS %s (%s)\n' "$what" "$got"
   else printf '[kernel] FAIL %s (want>=%s got %s)\n' "$what" "$want" "${got:-0}"; FAIL=1; fi
 }
 
 # check_absent <what> <grep-pattern> <file> — fails if the pattern appears at all.
+#
+# A missing or empty log FAILS here rather than passing. "The pattern is not in the log" and "there is no log"
+# are different answers, and only the first one is the one this assertion is making.
 check_absent() {
   local what="$1" pat="$2" file="$3" got
+  if ! readable "$file"; then
+    printf '[kernel] FAIL %s (no log to read: %s)\n' "$what" "$file"; FAIL=1; return
+  fi
   got=$(grep -cE "$pat" "$file" 2>/dev/null || true)
   if [ "${got:-0}" -eq 0 ]; then printf '[kernel] PASS %s (absent)\n' "$what"
   else printf '[kernel] FAIL %s (present x%s)\n' "$what" "$got"; FAIL=1; fi
