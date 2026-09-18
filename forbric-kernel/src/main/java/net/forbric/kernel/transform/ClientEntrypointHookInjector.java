@@ -56,6 +56,14 @@ public final class ClientEntrypointHookInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		return AnchorSet.of(new AnchorSet.Anchor(MINECRAFT, AnchorSet.Severity.REQUIRED,
+				"Fabric mods' client entrypoints would never run: no keybinds, no client-side registration, no "
+						+ "renderers -- and, because this transformer returns the class untouched when the anchor "
+						+ "is gone, no error and no log line either"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0 || !MINECRAFT.equals(className)) return classBytes;
 

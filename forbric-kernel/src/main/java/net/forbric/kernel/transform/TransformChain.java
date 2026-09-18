@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.Set;
 
 /**
  * The single ordered, pluggable class-transformation pipeline.
@@ -63,6 +64,20 @@ public final class TransformChain {
 	private final EnumMap<TransformPhase, List<ClassTransformer>> sorted = new EnumMap<>(TransformPhase.class);
 	private int registrationCounter;
 
+	/** What each transformer promised to edit, and whether it did. See {@link AnchorLedger}. */
+	private final AnchorLedger ledger = new AnchorLedger();
+
+	/**
+	 * The class names any transformer declared, so {@link #apply} can decide in ONE hash lookup whether this
+	 * class is worth accounting for at all.
+	 *
+	 * <p>Inverting it matters. Asking each of the thirty-odd transformers in turn would put a map lookup per
+	 * transformer on every class the game loads; asking once per class puts a single failed lookup on the
+	 * ~30 000 classes that declare nothing. Rebuilt lazily and dropped on every {@link #register}, because a
+	 * transformer registered after the set was built would otherwise be invisible to it.
+	 */
+	private volatile Set<String> watched;
+
 	/** Registers a transformer with default ordering (sort index 0, no pre-depends). */
 	public void register(TransformPhase phase, ClassTransformer transformer) {
 		register(phase, transformer, 0);
@@ -93,6 +108,11 @@ public final class TransformChain {
 		phases.computeIfAbsent(phase, p -> new ArrayList<>())
 				.add(new Entry(transformer, sortIndex, registrationCounter++, deps));
 		sorted.remove(phase); // invalidate cache for this phase
+
+		for (AnchorSet.Anchor anchor : transformer.anchors().anchors()) {
+			ledger.declare(transformer.name(), anchor);
+		}
+		watched = null; // a late registration must reach the watch set too
 	}
 
 	/** Runs the full pre-Mixin pipeline ({@code RAW_PATCH} .. {@code FABRIC_BUILTIN}). */
@@ -116,14 +136,36 @@ public final class TransformChain {
 
 		TransformPhase[] all = TransformPhase.values();
 
+		// Account only on the full pipeline. A partial range legitimately never reaches a transformer in a later
+		// phase, and scoring that as "declined" would invent a defect out of the caller's choice of range.
+		boolean account = fromInclusive == TransformPhase.RAW_PATCH
+				&& toInclusive == TransformPhase.LAST_CHAIN_PHASE
+				&& watchedClasses().contains(className);
+
 		for (int i = fromInclusive.ordinal(); i <= toInclusive.ordinal(); i++) {
 			for (ClassTransformer t : ordered(all[i])) {
+				byte[] before = bytes;
 				byte[] result = t.transform(className, bytes, context);
 				if (result != null) bytes = result;
+				if (account) ledger.record(t.name(), className, bytes != before);
 			}
 		}
 
 		return bytes;
+	}
+
+	/** The anchor books for this chain. */
+	public AnchorLedger ledger() {
+		return ledger;
+	}
+
+	private Set<String> watchedClasses() {
+		Set<String> cached = watched;
+		if (cached == null) {
+			cached = ledger.watchedClasses();
+			watched = cached;
+		}
+		return cached;
 	}
 
 	/** The deterministically-ordered transformers for a phase (computed once, then cached). */

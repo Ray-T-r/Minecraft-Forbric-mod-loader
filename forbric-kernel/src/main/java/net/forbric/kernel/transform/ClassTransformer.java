@@ -40,4 +40,19 @@ public interface ClassTransformer {
 	default String name() {
 		return getClass().getName();
 	}
+
+	/**
+	 * The classes this transformer must edit when they are loaded, so that its failing to edit one is noticed.
+	 *
+	 * <p>Returning {@link AnchorSet#undeclared()} is the pre-migration default and means only that this
+	 * transformer has not been converted yet. A transformer that genuinely has no fixed target says so with
+	 * {@link AnchorSet#scanned(String)}, which keeps "cannot declare" distinguishable from "has not declared".
+	 *
+	 * <p>What is declared here is a class name and nothing else. The hit signal is the one {@link #transform}
+	 * already contracts for -- the same array back means no edit -- so this never restates the match, and
+	 * therefore cannot disagree with it.
+	 */
+	default AnchorSet anchors() {
+		return AnchorSet.undeclared();
+	}
 }

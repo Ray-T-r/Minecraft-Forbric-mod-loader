@@ -175,6 +175,14 @@ test {
 	// first time the base was rebuilt: a green run that had not looked at the new jar at all.
 	inputs.files(files('../forbric-loader/run/merged-base/patched-mc-merged-26.2.jar'))
 			.withPropertyName('mergedBase').optional()
+	// The two carriers, for exactly the same reason, one artifact over. About twenty test classes read them --
+	// ForeignTypeCarrierTest checks every ForeignType name against them, CarrierAccessTransformerTest reads the
+	// real AT out of them -- and none of that was declared. So a carrier upgrade, which is the single event those
+	// tests exist to catch, left `test` UP-TO-DATE and every one of them silently kept its previous verdict.
+	inputs.files(files('../forbric-loader/run/forge-runtime/forge-runtime.jar'))
+			.withPropertyName('forgeCarrier').optional()
+	inputs.files(files('../forbric-loader/run/neoforge-runtime/neoforge-runtime.jar'))
+			.withPropertyName('neoforgeCarrier').optional()
 	// No unit test may fork a window. DependencyAuditTest drives DependencyAudit.report with Side.CLIENT and
 	// deliberately unmet requirements, which is exactly the input that opens one -- and a test suite that stops
 	// on an invisible dialog looks like a hang, not a failure. DependencyDialogTest drives the fork itself, with
