@@ -219,6 +219,33 @@ public final class KernelBoot {
 
 		nestedJarJarJars = List.copyOf(nested);
 		modJars.addAll(nested);
+
+		// THE MC LIBRARIES GO IN AHEAD OF THE MODS, and the order is the whole policy.
+		//
+		// They are owned rather than merely parent-visible because mods mixin into them
+		// (fabric-dimension-api-v1 targets DataFixerUpper's TaggedChoice), and they sit AFTER the merged base and
+		// the carriers so nothing shadows those. What changed is that they used to sit after the MOD jars too, and
+		// URLClassLoader answers from the first URL that HAS the class — so a mod jar that bundles a copy of a
+		// library the game already has WON.
+		//
+		// That is not hypothetical and it is not a degradation. PlayerDataSyncReloaded ships 226
+		// com.google.gson.* classes at the UNSHADED package name, gson 2.10.1, against the 2.14.0 Minecraft 26.2
+		// itself uses; its copy won, and the game died in SharedConstants.tryDetectVersion with
+		// NoSuchMethodError JsonReader.setStrictness — reading version.json, before a single mod had loaded. The
+		// same shape had already been paid for once as a hand-written pin: DelegationPolicy's NightConfig entry
+		// exists because a CARRIER bundles an unshaded old copy.
+		//
+		// Ordering is the general form of that pin and needs no list. A class present only in a mod jar is
+		// unaffected, because the library jars do not have it; a class present in BOTH now comes from the copy
+		// the merged base was compiled against. That is also what the genuine loaders do — Knot and FML put
+		// Minecraft's libraries on the same loader ahead of mods — so a mod relying on winning here was relying on
+		// something that does not hold on its own platform either.
+		int libCount = 0;
+		for (Path lib : libraryJars(libraryPath)) {
+			owned.add(lib.toUri().toURL());
+			libCount++;
+		}
+
 		for (Path jar : modJars) owned.add(jar.toUri().toURL());
 
 		// A nested mod's mixins are the same defect one level down. These jars already get everything else a
@@ -241,14 +268,6 @@ public final class KernelBoot {
 		List<Path> bundled = KernelBundledJars.extract(gameDir);
 		for (Path jar : bundled) owned.add(jar.toUri().toURL());
 		KernelLifecycle.setKernelAssetJars(bundled);
-
-		// The MC libraries, owned LAST (nothing shadows the merged base). Owned, not merely parent-visible: mods
-		// mixin into them (fabric-dimension-api-v1 → DataFixerUpper's TaggedChoice). See ForbricClassLoader.
-		int libCount = 0;
-		for (Path lib : libraryJars(libraryPath)) {
-			owned.add(lib.toUri().toURL());
-			libCount++;
-		}
 
 		// A Fabric mod shipping its own net.neoforged.* / net.minecraftforge.* loses those classes to the carrier
 		// by design. Say so, and say where the two disagree, while the jar names are still in hand — the failure
