@@ -17,6 +17,7 @@
 package net.forbric.kernel.transform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -430,5 +431,76 @@ class ModsButtonRedirectorTest {
 		cw.visitEnd();
 
 		assertTrue(ModsButtonRedirector.carriesAMarker(cw.toByteArray()));
+	}
+
+	@Test
+	void aClassThatCarriesTheLabelButBuildsNoScreenIsNotToldItOpensTheUnifiedList() {
+		// The failure this asserts against is one the tree has already had: TitleScreen carried the label while
+		// the real construction had moved into NeoForge's own ModsButton widget, and the redirector printed
+		// "now opens the unified list" with "0 construction site(s) re-pointed" in the same sentence. A
+		// relabelled button that still opens one family's list is worse than an untouched one, because it now
+		// tells the player something untrue.
+		byte[] labelOnly = labelOnlyClass();
+
+		String log = capture(() -> assertNotNull(transform("forbric/test/LabelOnly", labelOnly)));
+
+		assertFalse(log.contains("now opens the unified list"),
+				"nothing re-pointed, so the button does not open the unified list: " + log);
+		assertTrue(log.contains("NO construction site"), "and the report has to say which half is missing: " + log);
+	}
+
+	@Test
+	void aClassThatBuildsTheScreenAndCarriesTheLabelIsToldBothHalvesLanded() {
+		// The other direction, so the assertion above cannot pass by the log simply never saying anything. Uses
+		// the real carrier rather than a fixture, because that is where both halves genuinely coexist.
+		Map<String, byte[]> carriers = CARRIERS;
+		assumeTrue(carriers != null && !carriers.isEmpty(), "staged carriers absent");
+
+		Map.Entry<String, byte[]> both = null;
+		for (Map.Entry<String, byte[]> candidate : carriers.entrySet()) {
+			ClassNode node = parse(candidate.getValue());
+			if (!opensAFamilysList(node).isEmpty() && constants(node).contains(ModsButtonRedirector.FML_MODS_KEY)) {
+				both = candidate;
+				break;
+			}
+		}
+		assumeTrue(both != null, "no staged class carries both the label and a construction site");
+
+		final Map.Entry<String, byte[]> target = both;
+		String log = capture(() -> transform(target.getKey(), target.getValue()));
+		assertTrue(log.contains("now opens the unified list"),
+				"both halves landed, so the full sentence is the true one: " + log);
+	}
+
+	private static byte[] labelOnlyClass() {
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "forbric/test/LabelOnly", null, "java/lang/Object", null);
+		org.objectweb.asm.MethodVisitor mv =
+				cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "label", "()Ljava/lang/Object;", null, null);
+		mv.visitCode();
+		mv.visitLdcInsn(ModsButtonRedirector.FML_MODS_KEY);
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, "net/minecraft/network/chat/Component", "translatable",
+				"(Ljava/lang/String;)Lnet/minecraft/network/chat/MutableComponent;", false);
+		mv.visitInsn(Opcodes.ARETURN);
+		mv.visitMaxs(1, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	private static String capture(Runnable body) {
+		java.io.PrintStream originalOut = System.out;
+		java.io.PrintStream originalErr = System.err;
+		java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+		java.io.PrintStream sink = new java.io.PrintStream(buffer, true, java.nio.charset.StandardCharsets.UTF_8);
+		System.setOut(sink);
+		System.setErr(sink);
+		try {
+			body.run();
+		} finally {
+			System.setOut(originalOut);
+			System.setErr(originalErr);
+		}
+		return buffer.toString(java.nio.charset.StandardCharsets.UTF_8);
 	}
 }

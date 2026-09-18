@@ -219,6 +219,15 @@ public final class ModsButtonRedirector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// Scans every class for its markers rather than naming targets, because the button's construction site
+		// has already moved once between carrier versions -- from TitleScreen to a widget class of NeoForge's
+		// own. Which classes carry it is therefore not something to write down.
+		return AnchorSet.scanned("finds its call sites by constant-pool marker, because they have already moved "
+				+ "between carrier versions once");
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		String internal = className.replace('.', '/');
@@ -253,10 +262,26 @@ public final class ModsButtonRedirector implements ClassTransformer {
 			if (redirected == 0 && renamed == 0) return classBytes;
 			ClassWriter writer = new ClassWriter(0);
 			node.accept(writer);
-			ForbricLog.info("[Forbric/ModsButton] %s's mods button now opens the unified list and says so (%d "
-					+ "construction site(s) re-pointed, %d label(s)+icon(s) changed) — each family's own screen lists "
-					+ "only its own family, which on this instance is never the whole answer", internal,
-					redirected, renamed);
+			// The two halves are reported separately because they are separate claims, and conflating them is
+			// how this line came to say something false. "Opens the unified list" is true only when a
+			// construction site was re-pointed; a class that carries the label but builds its screen elsewhere --
+			// which is exactly what TitleScreen did once, while the real construction had moved to NeoForge's own
+			// ModsButton widget -- got the same sentence with a zero in it. A relabelled button that still opens
+			// one family's list is worse than an unchanged one: it tells the player something untrue.
+			if (redirected > 0 && renamed > 0) {
+				ForbricLog.info("[Forbric/ModsButton] %s's mods button now opens the unified list and says so (%d "
+						+ "construction site(s) re-pointed, %d label(s)+icon(s) changed) — each family's own screen "
+						+ "lists only its own family, which on this instance is never the whole answer", internal,
+						redirected, renamed);
+			} else if (redirected > 0) {
+				ForbricLog.info("[Forbric/ModsButton] %s's mods button now opens the unified list (%d construction "
+						+ "site(s) re-pointed); its label is set elsewhere", internal, redirected);
+			} else {
+				ForbricLog.warn("[Forbric/ModsButton] relabelled %s's mods button (%d label(s)+icon(s)) but found "
+						+ "NO construction site to re-point — if the button is built in this class at all, it "
+						+ "still opens one family's list under a label that now claims otherwise", internal,
+						renamed);
+			}
 			return writer.toByteArray();
 		} catch (RuntimeException e) {
 			ForbricLog.warn("[Forbric/ModsButton] could not re-point " + internal + "'s mods button — it will open "
