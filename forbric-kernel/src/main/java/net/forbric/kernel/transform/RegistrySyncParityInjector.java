@@ -111,6 +111,26 @@ public final class RegistrySyncParityInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// The middle one is pinned by ANONYMOUS ORDINAL, and anonymous numbering shifts whenever the enclosing
+		// source does -- which on a byte-merged base it does. That is precisely the anchor most worth watching.
+		return AnchorSet.of(
+				new AnchorSet.Anchor(WRAPPER, AnchorSet.Severity.REQUIRED,
+						"the Forge registry wrapper would satisfy only one ecosystem's contract, and the other's "
+								+ "mods would find their registries unusable"),
+				// HEDGE, and the live ledger is what corrected this: the staged carrier ALREADY declares
+				// contents(), so this repair correctly declines every boot. "Handed the class and made no edit"
+				// is therefore the healthy answer here, not a finding. The anonymous-class ordinal that addresses
+				// this target is guarded by RegistrySyncParityInjectorTest, which is where that belongs.
+				new AnchorSet.Anchor(WRAPPER_PENDING_TAGS, AnchorSet.Severity.HEDGE,
+						"nothing today: this carrier already implements contents(). Kept for one that does not, "
+								+ "where its absence would kill a world load inside NeoForge's condition context"),
+				new AnchorSet.Anchor(NEO_REGISTRY_MANAGER, AnchorSet.Severity.REQUIRED,
+						"the kernel's own pre-connection registry snapshot would never be applied, so ids would "
+								+ "not revert after a multiplayer disconnect"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (WRAPPER.equals(className)) return giveWrapperBothContracts(className, classBytes);

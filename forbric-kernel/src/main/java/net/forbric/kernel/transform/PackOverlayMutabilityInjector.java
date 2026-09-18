@@ -87,6 +87,14 @@ public final class PackOverlayMutabilityInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		if (!KernelPackRepair.enabled()) return AnchorSet.scanned("switched off by -Dforbric.packRepair");
+		return AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
+				"two correct pack patches would collide on an immutable list, and the pack that lost would not "
+						+ "load -- with the exception naming neither mod"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (!TARGET.equals(className) || !KernelPackRepair.enabled()) return classBytes;

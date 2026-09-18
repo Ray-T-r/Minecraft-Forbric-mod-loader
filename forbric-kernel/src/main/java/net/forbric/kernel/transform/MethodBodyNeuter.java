@@ -59,10 +59,41 @@ public final class MethodBodyNeuter implements ClassTransformer {
 	 */
 	private final Set<String> owners = new java.util.HashSet<>();
 
+	/**
+	 * Set once {@link #anchors()} has been read, so a target added afterwards cannot go undeclared.
+	 *
+	 * <p>The chain asks for anchors at registration time, and every {@code add} in KernelBoot happens before the
+	 * register call. That ordering is load-bearing and nothing else enforces it: a target added later would be
+	 * neutered but unwatched, which is the same silence this whole mechanism exists to remove.
+	 */
+	private boolean declared;
+
 	public MethodBodyNeuter add(Target t) {
+		if (declared) {
+			throw new IllegalStateException("target added after the chain read this neuter's anchors, so it would "
+					+ "be applied but never watched: " + t.ownerBinaryName() + "." + t.methodName() + t.descriptor());
+		}
 		targets.add(t);
 		owners.add(t.ownerBinaryName());
 		return this;
+	}
+
+	@Override
+	public AnchorSet anchors() {
+		declared = true;
+		if (targets.isEmpty()) return AnchorSet.scanned("no methods are neutered on this side");
+		java.util.List<AnchorSet.Anchor> anchors = new java.util.ArrayList<>();
+		for (String owner : owners) {
+			java.util.List<String> methods = new java.util.ArrayList<>();
+			for (Target t : targets) {
+				if (t.ownerBinaryName().equals(owner)) methods.add(t.methodName() + t.descriptor());
+			}
+			anchors.add(new AnchorSet.Anchor(owner, AnchorSet.Severity.REQUIRED,
+					"the neuter for " + String.join(", ", methods) + " would not be applied, and a neuter is a "
+							+ "promise that the method cannot work here -- so the method it was hiding runs again "
+							+ "and throws where nothing expects it to"));
+		}
+		return AnchorSet.of(anchors.toArray(new AnchorSet.Anchor[0]));
 	}
 
 	@Override

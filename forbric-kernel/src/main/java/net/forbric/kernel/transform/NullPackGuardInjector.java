@@ -72,6 +72,19 @@ public final class NullPackGuardInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// Declared only while the repair is switched on. With -Dforbric.packRepair=off the transformer returns
+		// every class untouched BY REQUEST, and reporting that as a vanished anchor would be a lie in the one
+		// direction this mechanism must never lie.
+		if (!KernelPackRepair.enabled()) {
+			return AnchorSet.scanned("switched off by -Dforbric.packRepair");
+		}
+		return AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
+				"a null pack from a third-party RepositorySource would take world loading down with an NPE that "
+						+ "names neither the pack nor the mod that supplied it"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (!TARGET.equals(className) || !KernelPackRepair.enabled()) return classBytes;

@@ -69,6 +69,19 @@ public final class ExitHookInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// Both sides are declared; whichever one this run is not is simply never loaded, which the books record
+		// as absent rather than as a finding.
+		String cost = "background executors a mod left running would outlive the game, so quitting looks like a "
+				+ "hang to the launcher and gets reported as a crash";
+		java.util.List<AnchorSet.Anchor> anchors = new java.util.ArrayList<>();
+		for (String owner : new java.util.TreeSet<>(EXIT_METHODS.keySet())) {
+			anchors.add(new AnchorSet.Anchor(owner, AnchorSet.Severity.REQUIRED, cost));
+		}
+		return AnchorSet.of(anchors.toArray(new AnchorSet.Anchor[0]));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		String exitMethod = EXIT_METHODS.get(className);

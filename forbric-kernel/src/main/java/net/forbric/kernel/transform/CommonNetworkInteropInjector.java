@@ -243,6 +243,15 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// Eight target classes and about as many independent repairs behind one `changed` flag, and at least one
+		// of them is deliberately inert on the current carrier. So a matched class that comes back unedited is
+		// not yet evidence of anything; these need per-repair claims.
+		return AnchorSet.scanned("several independent repairs across eight classes, one of them intentionally "
+				+ "inert since NeoForge 26.2.0.88");
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		boolean fabricAddon = FABRIC_ADDONS.contains(className);

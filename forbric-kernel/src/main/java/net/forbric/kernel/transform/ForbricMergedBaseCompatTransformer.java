@@ -72,6 +72,15 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// Twenty-nine independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
+		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
+		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
+		// exists for, and it needs one claim per repair rather than one anchor per class.
+		return AnchorSet.scanned("29 independent repairs across the whole base, each needing its own claim");
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		try {

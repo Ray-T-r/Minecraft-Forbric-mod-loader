@@ -93,6 +93,15 @@ public final class PortingLayerAbiInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// The targets are a MOD's own classes (ForgeConfigAPIPort's), not the game's. Whether they are present is
+		// the player's business, so declaring them as anchors would make the audit permanently red on every
+		// instance that does not have that mod installed.
+		return AnchorSet.scanned("targets ForgeConfigAPIPort's own classes, which are present only if the player "
+				+ "installed it");
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		boolean port = "fuzs.forgeconfigapiport.fabric.impl.core.ConfigRegistryImpl".equals(className)

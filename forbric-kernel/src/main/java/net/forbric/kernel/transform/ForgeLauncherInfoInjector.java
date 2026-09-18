@@ -77,6 +77,15 @@ public final class ForgeLauncherInfoInjector implements ClassTransformer {
 		return "forbric-forge-launcher-info";
 	}
 
+	@Override
+	public AnchorSet anchors() {
+		// Declared only while the repair is on. Returning every class untouched BY REQUEST is not a vanished
+		// anchor, and reporting it as one would be a lie in the one direction this mechanism must not lie.
+		if (!enabled()) return AnchorSet.scanned("switched off by -D" + PROPERTY);
+		return AnchorSet.of(new AnchorSet.Anchor(FML_LOADER, AnchorSet.Severity.REQUIRED,
+				"ObfuscationReflectionHelper would NPE in whichever MinecraftForge mod reached for it first"));
+	}
+
 	static boolean enabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
 	}

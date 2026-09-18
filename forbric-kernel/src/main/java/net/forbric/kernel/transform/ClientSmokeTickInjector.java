@@ -60,6 +60,17 @@ public final class ClientSmokeTickInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// The smoke controller is a test harness and is off in every real run, so there is normally nothing to
+		// watch. When it IS on, a missed anchor means the harness silently drives nothing -- which is exactly the
+		// shape that makes a gate green and meaningless.
+		if (!KernelClientSmoke.enabled()) return AnchorSet.scanned("the client smoke harness is not enabled");
+		return AnchorSet.of(new AnchorSet.Anchor(MINECRAFT, AnchorSet.Severity.REQUIRED,
+				"the smoke controller would never tick, so every gate that drives the client through it would "
+						+ "report on a client nobody touched"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (!MINECRAFT.equals(className) || !KernelClientSmoke.enabled()) return classBytes;

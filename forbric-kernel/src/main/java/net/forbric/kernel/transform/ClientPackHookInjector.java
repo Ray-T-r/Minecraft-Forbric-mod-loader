@@ -68,6 +68,21 @@ public final class ClientPackHookInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// The two halves differ, and the difference is the point. NeoForge's ClientModLoader is the live seam;
+		// MinecraftForge's has no setupModResourcePacks on the staged carrier at all, and that entry is kept
+		// deliberately so it starts working by itself if a base ever flips which family wins here. Reporting the
+		// second one every boot is how a reader learns to skip the first.
+		return AnchorSet.of(
+				new AnchorSet.Anchor(OWNERS[0], AnchorSet.Severity.REQUIRED,
+						"the kernel would never receive the live PackRepository, so no mod's client assets are "
+								+ "served -- missing textures and models, with nothing in the log naming the loader"),
+				new AnchorSet.Anchor(OWNERS[1], AnchorSet.Severity.HEDGE,
+						"nothing today: this carrier has no setupModResourcePacks. Kept so that a base which "
+								+ "flips this seam to MinecraftForge is noticed rather than silently unhooked"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		boolean target = false;

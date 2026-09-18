@@ -99,6 +99,15 @@ public final class ForgeLoadingListHolderInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// This one already refuses to boot when its seam is gone, and that refusal stays the primary signal. The
+		// declaration is here so the BUILD can see the same thing before a player does.
+		return AnchorSet.of(new AnchorSet.Anchor(HOLDER, AnchorSet.Severity.REQUIRED,
+				"MinecraftForge's LoadingModList would be poisoned for the whole run while the seeder still "
+						+ "reported success -- which is why this transformer refuses to boot instead"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (!HOLDER.equals(className)) return classBytes;

@@ -68,6 +68,13 @@ public final class HudElementBridgeInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		return AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
+				"every guest-registered HUD element -- Xaero's minimap, malilib's overlays -- would be registered "
+						+ "somewhere nothing reads, and simply not draw"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (!TARGET.equals(className)) return classBytes;

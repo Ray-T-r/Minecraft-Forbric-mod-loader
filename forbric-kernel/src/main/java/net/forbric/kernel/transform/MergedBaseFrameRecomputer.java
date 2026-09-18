@@ -142,6 +142,13 @@ public final class MergedBaseFrameRecomputer implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// Runs last in the chain and only on classes some EARLIER transformer already changed. Its correct answer
+		// for almost every class is the bytes it was given.
+		return AnchorSet.scanned("recomputes frames only where an earlier transformer already edited the class");
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] input, TransformContext context) {
 		if (input == null || input.length < 10) return input;
 		if (!namesALostAncestor(input)) return input;

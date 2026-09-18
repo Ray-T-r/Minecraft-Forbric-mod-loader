@@ -73,6 +73,13 @@ public final class NeoClientSetupHookInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		return AnchorSet.of(new AnchorSet.Anchor(MINECRAFT, AnchorSet.Severity.REQUIRED,
+				"NeoForge mods would never receive their client setup phase, and the kernel's own client-side "
+						+ "registration window would never open"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0 || !MINECRAFT.equals(className)) return classBytes;
 

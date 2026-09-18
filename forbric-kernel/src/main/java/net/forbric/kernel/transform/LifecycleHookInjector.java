@@ -207,4 +207,14 @@ public final class LifecycleHookInjector implements ClassTransformer {
 	public String name() {
 		return "forbric:lifecycle-hook-injector";
 	}
+
+	@Override
+	public AnchorSet anchors() {
+		// The one FATAL in the tree, and not a new policy: KernelBoot already refuses to boot when this seam is
+		// missed. Declaring it puts the same fact in the books so the summary and the build-time audit can see it
+		// too.
+		return AnchorSet.of(new AnchorSet.Anchor(transformClass, AnchorSet.Severity.FATAL,
+				"the genuine loader's own mod-loading lifecycle would run alongside the kernel's, which is the "
+						+ "one thing this architecture cannot survive"));
+	}
 }

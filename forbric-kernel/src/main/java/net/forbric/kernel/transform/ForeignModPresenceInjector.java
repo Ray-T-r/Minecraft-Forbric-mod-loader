@@ -61,6 +61,16 @@ public final class ForeignModPresenceInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		String cost = "a mod asking its own loader whether another ecosystem's mod is installed would be told no "
+				+ "while that mod is running. Physics Mod took that branch next to a live Fabric Sodium: loaded, "
+				+ "mixins applied, no error anywhere, and nothing on screen";
+		return AnchorSet.of(
+				new AnchorSet.Anchor(NEOFORGE_MOD_LIST, AnchorSet.Severity.REQUIRED, cost),
+				new AnchorSet.Anchor(FORGE_MOD_LIST, AnchorSet.Severity.REQUIRED, cost));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (!NEOFORGE_MOD_LIST.equals(className) && !FORGE_MOD_LIST.equals(className)) return classBytes;

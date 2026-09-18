@@ -97,6 +97,15 @@ public final class PackMetadataFailSoftInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// Matched by nest-member prefix rather than by name, on purpose: anonymous numbering shifts whenever the
+		// enclosing source does, and on a byte-merged base it shifts often. Most of the classes that match the
+		// prefix are correctly left alone, so "handed a class and made no edit" is the normal case here and
+		// cannot be read as a failure. This one needs a per-repair claim, not a per-class anchor.
+		return AnchorSet.scanned("matches ResourceMetadata's nest members structurally; most correctly go untouched");
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (!className.startsWith(NEST_PREFIX)) return classBytes;

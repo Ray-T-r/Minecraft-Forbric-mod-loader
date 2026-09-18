@@ -65,6 +65,13 @@ public final class DataPackHookInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		return AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
+				"the kernel would never see the server's datapack repository, so no Forge-family mod's data/ "
+						+ "reaches it -- recipes, loot tables and tags from those mods simply are not there"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (!TARGET.equals(className)) return classBytes;

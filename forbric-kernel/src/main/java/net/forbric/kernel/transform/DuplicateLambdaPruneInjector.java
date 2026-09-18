@@ -79,6 +79,15 @@ public final class DuplicateLambdaPruneInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		// Decided per class by structure -- a lambda whose name another method in the same class shares, and
+		// which nothing reaches. Most classes correctly come back untouched, so "no edit" carries no information
+		// here; this one needs a per-repair claim rather than a per-class anchor.
+		return AnchorSet.scanned("prunes orphaned lambda bodies wherever the merge left a duplicate name; the "
+				+ "overwhelming majority of classes correctly go untouched");
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if ("off".equalsIgnoreCase(String.valueOf(System.getProperty(PROPERTY, "on")).trim())) return classBytes;

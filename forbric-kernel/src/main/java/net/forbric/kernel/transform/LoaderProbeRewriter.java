@@ -136,4 +136,12 @@ public final class LoaderProbeRewriter implements ClassTransformer {
 	public String name() {
 		return "loader-probe-rewriter";
 	}
+
+	@Override
+	public AnchorSet anchors() {
+		// Rewrites Class.forName call sites inside GUEST classes, so which classes it touches is a property of
+		// the installed mods rather than of the game.
+		return AnchorSet.scanned("rewrites loader probes inside guest mod classes, which depend on which mods "
+				+ "are installed");
+	}
 }

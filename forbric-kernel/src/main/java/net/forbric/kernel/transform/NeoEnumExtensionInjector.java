@@ -133,4 +133,10 @@ public final class NeoEnumExtensionInjector implements ClassTransformer {
 	public String name() {
 		return "forbric:neo-enum-extension";
 	}
+
+	@Override
+	public AnchorSet anchors() {
+		return AnchorSet.scanned("acts on whichever carrier enum a mod asked to extend, which depends entirely "
+				+ "on which mods are installed");
+	}
 }

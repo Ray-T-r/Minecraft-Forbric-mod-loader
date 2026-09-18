@@ -80,6 +80,17 @@ public final class RegistryAliasParityInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		String cost = "a registry lookup through a renamed id would miss, so content a mod moved between "
+				+ "versions stops resolving in existing worlds";
+		java.util.List<AnchorSet.Anchor> anchors = new java.util.ArrayList<>();
+		for (String target : new java.util.TreeSet<>(TARGETS)) {
+			anchors.add(new AnchorSet.Anchor(target, AnchorSet.Severity.REQUIRED, cost));
+		}
+		return AnchorSet.of(anchors.toArray(new AnchorSet.Anchor[0]));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (!TARGETS.contains(className)) return classBytes;

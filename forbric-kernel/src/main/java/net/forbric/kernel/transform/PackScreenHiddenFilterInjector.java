@@ -79,6 +79,13 @@ public final class PackScreenHiddenFilterInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		return AnchorSet.of(new AnchorSet.Anchor(LIST.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+				"packs a mod marked hidden would be listed in the resource-pack screen, which is the half of "
+						+ "isHidden the merge left without a reader"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (!LIST.equals(className.replace('.', '/'))) return classBytes;

@@ -61,6 +61,13 @@ public final class ForgeBindingsLookupInjector implements ClassTransformer {
 	}
 
 	@Override
+	public AnchorSet anchors() {
+		return AnchorSet.of(new AnchorSet.Anchor(BINDINGS, AnchorSet.Severity.REQUIRED,
+				"MinecraftForge's config-event service would keep asking a module layer that does not exist under "
+						+ "the kernel, so its mods' config events never fire"));
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0 || !BINDINGS.equals(className)) return classBytes;
 		ClassNode node = new ClassNode();

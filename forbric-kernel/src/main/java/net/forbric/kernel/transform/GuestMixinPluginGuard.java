@@ -214,4 +214,10 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 	public String name() {
 		return "guest-mixin-plugin-guard";
 	}
+
+	@Override
+	public AnchorSet anchors() {
+		return AnchorSet.scanned("targets whatever guest class implements IMixinConfigPlugin, which depends "
+				+ "entirely on which mods are installed");
+	}
 }

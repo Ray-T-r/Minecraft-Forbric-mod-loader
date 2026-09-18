@@ -121,4 +121,13 @@ public final class RegistryHookRedirector implements ClassTransformer {
 	public String name() {
 		return "forbric:registry-hook-redirector";
 	}
+
+	@Override
+	public AnchorSet anchors() {
+		// Registered only under -Dforbric.kernel.registryRedirect, so on a normal run it is never in the chain at
+		// all and declares nothing. When it IS in, the seam is the whole of what it does.
+		return AnchorSet.of(new AnchorSet.Anchor(GAMEDATA, AnchorSet.Severity.REQUIRED,
+				"the experimental plain-registry redirect would not be applied, and this transformer already "
+						+ "throws rather than let that pass quietly"));
+	}
 }
