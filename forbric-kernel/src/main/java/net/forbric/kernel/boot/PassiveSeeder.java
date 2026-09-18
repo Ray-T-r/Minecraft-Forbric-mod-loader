@@ -346,12 +346,16 @@ public final class PassiveSeeder {
 			ForbricLog.warn("[Forbric/Catalog] could not build the unified mod list — the Mods screen will fall "
 					+ "back to whatever one family's own registry knows", unwrap(t));
 		}
-		try {
-			DependencyAudit.report(presence, KernelBoot.nestedJarJarJars(),
-					KernelFabricEcosystem.physicalSide());
-		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Deps] dependency audit failed, skipping it: %s", String.valueOf(t));
-		}
+		// The audit itself is NOT run here, and that is a fix rather than a rearrangement. Its second section
+		// lists mixins that were written to attach to another mod and did not -- data that KernelGuestMixinAdapter
+		// records while Mixin PARSES each config, which happens in KernelMixinBootstrap.init, roughly thirty lines
+		// after the call that reaches this method. So the reader ran before the writer, every time, and
+		// ForeignMixinBreaks.all() was always empty: that section of the dialog has never displayed anything.
+		// gate-m20 could not see it because it drives the dialog with synthetic rows.
+		//
+		// Which is the same shape as everything else in this area: a diagnostic wired to a moment where its data
+		// does not exist yet. The list is held here and KernelBoot asks for the audit once Mixin has run.
+		pendingAudit = List.copyOf(presence);
 
 		try {
 			Field field = fmlLoader.getDeclaredField("loadingModList");
@@ -1315,5 +1319,23 @@ public final class PassiveSeeder {
 
 	private static Throwable unwrap(Throwable t) {
 		return t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null ? t.getCause() : t;
+	}
+
+	/** The mods the audit will judge, held until Mixin has registered its configs. See above. */
+	private static volatile List<DiscoveredMod> pendingAudit = List.of();
+
+	/**
+	 * Runs the dependency audit, now that every source it reads from has actually been written.
+	 *
+	 * <p>Still diagnostic-only and still caught: an audit must never be able to fail the boot it reports on.
+	 */
+	public static void reportDependencies() {
+		List<DiscoveredMod> present = pendingAudit;
+		if (present.isEmpty()) return;
+		try {
+			DependencyAudit.report(present, KernelBoot.nestedJarJarJars(), KernelFabricEcosystem.physicalSide());
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/Deps] dependency audit failed, skipping it: %s", String.valueOf(t));
+		}
 	}
 }

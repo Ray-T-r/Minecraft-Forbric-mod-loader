@@ -630,6 +630,12 @@ public final class KernelBoot {
 		}
 		KernelMixinBootstrap.init(loader, side.envType, mixinConfigs);
 
+		// AFTER Mixin, because half of what the audit reports is written during it. KernelGuestMixinAdapter
+		// records a mixin that was written to attach to another mod and did not while Mixin parses each config,
+		// and the audit -- which reads that list and shows it to the player -- used to run thirty lines earlier,
+		// inside the seeder. It always read an empty list, so that section of the dialog had never once appeared.
+		PassiveSeeder.reportDependencies();
+
 		// The kernel's OWN game-side half, proven here rather than assumed: loaded through the finished pipeline,
 		// checked to have landed on the game loader. Deliberately not earlier -- these classes should take exactly
 		// the path every game class takes, and before this point the transformer and Mixin are not yet installed.
