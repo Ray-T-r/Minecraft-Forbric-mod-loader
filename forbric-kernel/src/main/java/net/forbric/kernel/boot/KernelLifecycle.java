@@ -614,7 +614,20 @@ public final class KernelLifecycle {
 			// MOD buses only — buses.get(0) is the baseline, whose registries PassiveSeeder already registered at
 			// seed time; posting there re-collects them and fill() dies on "Attempted duplicate registration".
 			postNeoNewRegistryEvent(cl, buses.subList(1, buses.size()));
-			int n = fireRegisterEvents(cl, buses);
+			// Isolated for the same reason KernelEventSubscribers.registerAll above is, and this one is wider.
+			// fireRegisterEvents resolves a GAME-side class reflectively, so a LinkageError inside it escapes to
+			// the outer catch and skips EVERYTHING below: the traditional-Forge baseline, the Fabric mods' main
+			// entrypoints, the attribute events, the spawn-placement event, BlockEntityTypeAddBlocksEvent and the
+			// modded creative-tab categories. The one WARN that reported it said "could not register ecosystem
+			// content", which names none of that -- it blames the window for what one call inside it did.
+			int n = 0;
+			try {
+				n = fireRegisterEvents(cl, buses);
+			} catch (Throwable t) {
+				ForbricLog.warn("[Forbric/Lifecycle] could not fire RegisterEvent — mods that register content "
+						+ "through DeferredRegister or RegisterEvent will have none of it. The rest of the "
+						+ "registration window below still runs", unwrap(t));
+			}
 			// Traditional-Forge baseline: construct ForgeMod + fire the 3-arg Forge RegisterEvent so ForgeMod's own
 			// DeferredRegisters (e.g. the empty forge:fluid_type read by EntityFluidInteraction) register. The real
 			// Forge mods' buses ride along: their DeferredRegisters flush off the same event stream, and it can only

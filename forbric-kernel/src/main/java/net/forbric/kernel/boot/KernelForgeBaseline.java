@@ -121,12 +121,33 @@ public final class KernelForgeBaseline {
 
 			Object event = newRegCls.getDeclaredConstructor().newInstance();
 			Object bus = newRegCls.getField("BUS").get(null);
-			KernelForgeModContext.single(bus.getClass(), "post").invoke(bus, event);
+
+			// The post and the fill are separated on purpose. This is traditional Forge's GLOBAL bus, so every
+			// mod's NewRegistryEvent listener runs inside one call and there is no seam to isolate them at. What
+			// there IS a seam for is the consequence: one listener throwing used to take fill() down with it, and
+			// with it EVERY Forge custom registry in the instance -- forge:fluid_type, holder_set_type, the
+			// modifier serializers -- including the ones listeners that already ran had created. Filling anyway
+			// keeps those. This is the same shape as the deferred-work drain in KernelNeoSetup: the failure is
+			// one mod's, and the cost should be too.
+			boolean posted = true;
+			try {
+				KernelForgeModContext.single(bus.getClass(), "post").invoke(bus, event);
+			} catch (Throwable t) {
+				posted = false;
+				ForbricLog.warn("[Forbric/Forge] a traditional-Forge mod's NewRegistryEvent listener failed — the "
+						+ "registries collected before it are still created below, the ones after it are not",
+						Reflect.unwrap(t));
+			}
+
 			Method fill = newRegCls.getDeclaredMethod("fill");
 			fill.setAccessible(true);
 			fill.invoke(event);
 
-			return ((java.util.Map<?, ?>) rf.get(active)).size() - before;
+			int created = ((java.util.Map<?, ?>) rf.get(active)).size() - before;
+			if (!posted) {
+				ForbricLog.warn("[Forbric/Forge] %d Forge custom registr(ies) survived that failure", created);
+			}
+			return created;
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Forge] NewRegistryEvent failed — Forge custom registries (fluid_type etc.) "
 					+ "will not exist", Reflect.unwrap(t));
