@@ -13,13 +13,50 @@ if "$KERNEL/gradlew" --offline -q -p "$KERNEL" jar 2>&1 | filter_noise | grep -i
   echo "[kernel] FAIL build"; FAIL=1
 else echo "[kernel] PASS build"; fi
 
+# The verdict comes from the JUnit XML, not from gradle's exit code, and the task is forced to RUN.
+#
+# Both halves were wrong. `[0-9]+ tests completed` is a string gradle prints only when tests FAIL, so `n` was
+# empty on every green run and this gate has never once reported a test count -- it printed "(all green)"
+# unconditionally. And an UP-TO-DATE test task exits 0, so the gate reported PASS for a run in which not one
+# test executed: build/gate-m0-test.log from the last sweep before this change reads "7 actionable tasks: 7
+# up-to-date", under a line saying "PASS unit tests (all green)".
+#
+# UP-TO-DATE would be sound if every input were declared, and twice now one was not (the merged base, then the
+# game-side classes -- see build.gradle). A gate is the wrong place to trust that, so cleanTest empties the
+# results directory first: whatever is parsed below was produced by this run or does not exist.
 step "2. ported unit tests"
 TESTLOG="$BUILD/gate-m0-test.log"
-if "$KERNEL/gradlew" --offline -p "$KERNEL" test >"$TESTLOG" 2>&1; then
-  n=$(grep -oE '[0-9]+ tests completed' "$TESTLOG" | tail -1)
-  echo "[kernel] PASS unit tests (${n:-all green})"
+RESULTS="$KERNEL/build/test-results/test"
+"$KERNEL/gradlew" --offline -p "$KERNEL" cleanTest test >"$TESTLOG" 2>&1
+rc=$?
+SUMMARY=$(python3 - "$RESULTS" <<'PYEOF'
+import glob, os, sys, xml.etree.ElementTree as ET
+tests = skipped = failures = errors = 0
+files = glob.glob(os.path.join(sys.argv[1], "*.xml"))
+for f in files:
+    try:
+        r = ET.parse(f).getroot()
+    except Exception:
+        continue
+    tests    += int(r.get("tests", 0))
+    skipped  += int(r.get("skipped", 0))
+    failures += int(r.get("failures", 0))
+    errors   += int(r.get("errors", 0))
+print(f"{len(files)} {tests} {skipped} {failures} {errors}")
+PYEOF
+)
+read -r xmls tests skipped failures errors <<<"$SUMMARY"
+if [ "$rc" -ne 0 ]; then
+  echo "[kernel] FAIL unit tests — gradle exited $rc, see $TESTLOG"; FAIL=1
+elif [ "${xmls:-0}" -eq 0 ] || [ "${tests:-0}" -eq 0 ]; then
+  echo "[kernel] FAIL unit tests — the task produced no results ($xmls report file(s), $tests test(s)); see $TESTLOG"
+  FAIL=1
+elif [ "${failures:-0}" -ne 0 ] || [ "${errors:-0}" -ne 0 ]; then
+  echo "[kernel] FAIL unit tests — $failures failed, $errors errored of $tests; see $TESTLOG"; FAIL=1
 else
-  echo "[kernel] FAIL unit tests — see $TESTLOG"; FAIL=1
+  # skipped is printed, not asserted. Most of them are assumeTrue guards on staged artifacts, and what the right
+  # floor is belongs to the change that declares those artifacts as inputs -- not here.
+  echo "[kernel] PASS unit tests ($tests ran, $skipped skipped, 0 failed)"
 fi
 
 step "3. --scan across both merged mod sets"
