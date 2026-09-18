@@ -137,7 +137,13 @@ check "the server learned the client's channels"  "ForbricLive/HS\] server Netwo
 check "the client knows the server's Forge mods" "ForbricLive/HS\] client NetworkContext .*mods=\[[^]]*forbriclive" "$CLOG"
 check "the server knows the client's Forge mods" "ForbricLive/HS\] server NetworkContext .*mods=\[[^]]*forbriclive" "$SLOG"
 check "the list is the whole Forge family, not just this mod" "ForbricLive/HS\] client NetworkContext .*mods=\[[^]]*fallingtree" "$CLOG"
-check_absent "neither end announces an empty mod list" "NetworkContext .*mods=\[\]" "$CLOG"
+check "the server knows the client's whole family too" "ForbricLive/HS\] server NetworkContext .*mods=\[[^]]*fallingtree" "$SLOG"
+# Each end logs its PEER's list, so CLOG holds what the SERVER announced and SLOG what the CLIENT announced.
+# "Neither end" needs both files, and this one read only CLOG — the client announcing an empty list was never
+# checked at all. The canary logs this once per run, so the checks above already redden on mods=[]; these keep
+# the claim true on the day it logs once per connection instead.
+check_absent "the server announced no empty mod list" "NetworkContext .*mods=\[\]" "$CLOG"
+check_absent "the client announced no empty mod list" "NetworkContext .*mods=\[\]" "$SLOG"
 check "the kernel seeded MinecraftForge's loading list for real" "Seed\] seeded traditional-Forge LoadingModList with [1-9]" "$SLOG"
 # ...and that the list exists BEFORE anything can ask for it. The seed above runs in the mod-loading window, and
 # MinecraftForge's list is built by a one-shot class initializer with no exception table: whoever touches

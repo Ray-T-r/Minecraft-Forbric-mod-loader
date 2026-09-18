@@ -55,7 +55,16 @@ check "Jade (real third-party mod) loaded"     "invoked main entrypoint of jade"
 step "the server actually works (must PASS)"
 check "vanilla datapack fully loaded"          "Loaded 1585 recipes" "$LOG"
 check "server reached Done"                    "Done \(" "$LOG"
-check "server ticked + shut down cleanly"      "Stopping server" "$LOG"
+# "Stopping the server" is the /stop command's OWN feedback (commands.stop.stopping in en_us), and the console
+# queue is drained only by tickConnection(), which runs only inside tickServer() — so that line cannot exist
+# unless the tick loop ran and was still running when this gate fed it "stop" on stdin. Bare "Stopping server"
+# is stopServer(), which runServer() reaches on EVERY exit path including ones that never ticked at all (see
+# the GATE_PORT note in lib.sh): evidence that shutdown began, not that the server ticked and not that it
+# finished — await_server is what fails a server that cannot finish. The alternation covers a merged base that
+# lost en_us and renders the raw key. Dedicated-server gates only: an integrated server prints the bare line
+# and never the command's, so this pair must not be copied into a client gate.
+check "server ticked (the stop command ran)"   "Stopping the server|commands\.stop\.stopping" "$LOG"
+check "shutdown began"                         "Stopping server" "$LOG"
 
 step "nothing was quietly broken (must be ABSENT)"
 check_absent "no empty dynamic registries"     "Registry must be non-empty" "$LOG"
@@ -67,13 +76,37 @@ check_absent "no genuine FancyModLoader"       "gatherAndInitializeMods|dispatch
 awk '/Done \(/{d=1} d' "$LOG" > "$BUILD/gate-m2b-postdone.log"
 check_absent "no post-Done exception"          "Encountered an unexpected exception" "$BUILD/gate-m2b-postdone.log"
 
-step "known, documented merged-base concessions (informational)"
-echo "[kernel] suppressed mixins: $(grep -c 'suppressed mixin' "$LOG")"
-grep -oE 'suppressed mixin [A-Za-z0-9_.$]+ from [a-z0-9.-]+' "$LOG" | sed 's/^/[kernel]   /' | sort -u
-echo "[kernel] disabled configs:  $(grep -c 'DISABLED by' "$LOG")"
-grep -oE 'mixin config [a-z0-9.-]+ DISABLED' "$LOG" | sed 's/^/[kernel]   /' | sort -u
-echo "[kernel] soft-skipped mixins (could not apply, rest of their config did):"
-grep -oE 'failed [a-z0-9.-]+\.mixins\.json:[A-Za-z0-9_.$]+' "$LOG" | sed 's/^failed /[kernel]   /' | sort -u
+step "the merged-base concessions are EXACTLY the documented ones (must PASS)"
+# These three were printed and asserted on nothing, which made them decoration: anything that suppressed three
+# times as many guest mixins printed a bigger number and the gate still went green. No other check here can see
+# it either — suppression edits the mixin OUT of the config JSON before Mixin ever reads it
+# (ForbricMixinService.getResourceAsStream), so there is nothing left to raise a MixinTransformerError. The
+# count IS the detector.
+#
+# grep -a throughout, deliberately: one NUL byte anywhere in the log makes grep treat it as binary and print
+# nothing at all, so an unflagged `grep -c` here yields an EMPTY count rather than a number.
+SUPPRESSED=$(grep -aoE 'suppressed mixin .*' "$LOG" | sort -u)
+[ -n "$SUPPRESSED" ] && echo "$SUPPRESSED" | sed 's/^/[kernel]   /'
+# Exactly the server-side entries of MergedBaseMixinCompat.SUPPRESSED_MIXINS that this mod set reaches. Each one
+# costs a real feature and is justified where it is declared. Re-derive the set with run/mixin-inventory.sh
+# before changing this number — never bump it to match a new log, which is how a ledger of debts turns into a
+# record of whatever happened last.
+assert_eq "suppressed mixins are the documented set" 4 "$(printf '%s' "$SUPPRESSED" | grep -c .)"
+# DISABLED_CONFIGS ships EMPTY on purpose (a whole-config entry hides which single mixin is at fault) and this
+# gate passes no -Dforbric.disableMixinConfigs, so zero is the only correct answer and a count was never the
+# right assertion. `.*` and not `[^ ]+`: the Fabric path renders the config through MixinConfigOwners.describe,
+# which returns "<mod id> (<config>)" the moment publish() moves ahead of it — a space the tighter pattern
+# cannot span, and the assertion would then pass forever on the path it exists to cover.
+check_absent "no mixin config disabled wholesale" "mixin config .* DISABLED" "$LOG"
+# Soft-skips: an UPPER bound, not an equality. Both of these are known, costed misfits, and landing a fix for
+# one must not turn this gate red — but a third appearing is a new silent feature loss. Counted off the same
+# de-duplicated list that is printed, because Mixin logs one line per TARGET: one mixin failing on two targets
+# would otherwise show two entries and fail with a number nobody can match to them.
+SOFTLIST=$(grep -aoE 'failed [^ ]+ from mod [A-Za-z0-9_.-]+' "$LOG" | sed 's/^failed //' | sort -u)
+[ -n "$SOFTLIST" ] && echo "$SOFTLIST" | sed 's/^/[kernel]   /'
+SOFT=$(printf '%s' "$SOFTLIST" | grep -c .)
+if [ "$SOFT" -le 2 ]; then printf '[kernel] PASS soft-skipped mixins within the documented two (%s)\n' "$SOFT"
+else printf '[kernel] FAIL soft-skipped mixins grew past the documented two (%s)\n' "$SOFT"; FAIL=1; fi
 
 step "M2b result"
 if [ "$FAIL" -eq 0 ]; then

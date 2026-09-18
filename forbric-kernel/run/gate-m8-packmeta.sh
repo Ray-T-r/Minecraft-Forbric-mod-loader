@@ -55,7 +55,16 @@ step "the mods actually ran and the server works (must PASS)"
 check "both mods' entrypoints invoked"        "invoked main entrypoint of (lithostitched|terralith)" "$LOG" 2
 check "vanilla datapack fully loaded"         "Loaded 1585 recipes" "$LOG"
 check "server reached Done"                   "Done \(" "$LOG"
-check "server ticked + shut down cleanly"     "Stopping server" "$LOG"
+# "Stopping the server" is the /stop command's OWN feedback (commands.stop.stopping in en_us), and the console
+# queue is drained only by tickConnection(), which runs only inside tickServer() — so that line cannot exist
+# unless the tick loop ran and was still running when this gate fed it "stop" on stdin. Bare "Stopping server"
+# is stopServer(), which runServer() reaches on EVERY exit path including ones that never ticked at all (see
+# the GATE_PORT note in lib.sh): evidence that shutdown began, not that the server ticked and not that it
+# finished — await_server is what fails a server that cannot finish. The alternation covers a merged base that
+# lost en_us and renders the raw key. Dedicated-server gates only: an integrated server prints the bare line
+# and never the command's, so this pair must not be copied into a client gate.
+check "server ticked (the stop command ran)"  "Stopping the server|commands\.stop\.stopping" "$LOG"
+check "shutdown began"                        "Stopping server" "$LOG"
 
 step "nothing was quietly broken (must be ABSENT)"
 # The crash this gate exists for. A tripwire — see the header note on its coverage.

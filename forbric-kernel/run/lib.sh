@@ -53,13 +53,18 @@ readable() {
   [ -s "$1" ]
 }
 
+# -a on every grep below, and it is not cosmetic. A single NUL byte anywhere in a log makes grep treat the whole
+# file as binary: `grep -c` then prints NOTHING rather than a count, `${got:-0}` turns that into 0, and every
+# absence check silently passes while every positive one silently fails. Mod output puts NUL bytes in these logs
+# often enough that this project has a note about it elsewhere in the tree.
+
 # check <what> <grep-pattern> <file> [required-count]
 check() {
   local what="$1" pat="$2" file="$3" want="${4:-1}" got
   if ! readable "$file"; then
     printf '[kernel] FAIL %s (no log to read: %s)\n' "$what" "$file"; FAIL=1; return
   fi
-  got=$(grep -cE "$pat" "$file" 2>/dev/null || true)
+  got=$(grep -acE "$pat" "$file" 2>/dev/null || true)
   if [ "${got:-0}" -ge "$want" ]; then printf '[kernel] PASS %s (%s)\n' "$what" "$got"
   else printf '[kernel] FAIL %s (want>=%s got %s)\n' "$what" "$want" "${got:-0}"; FAIL=1; fi
 }
@@ -73,7 +78,7 @@ check_absent() {
   if ! readable "$file"; then
     printf '[kernel] FAIL %s (no log to read: %s)\n' "$what" "$file"; FAIL=1; return
   fi
-  got=$(grep -cE "$pat" "$file" 2>/dev/null || true)
+  got=$(grep -acE "$pat" "$file" 2>/dev/null || true)
   if [ "${got:-0}" -eq 0 ]; then printf '[kernel] PASS %s (absent)\n' "$what"
   else printf '[kernel] FAIL %s (present x%s)\n' "$what" "$got"; FAIL=1; fi
 }
