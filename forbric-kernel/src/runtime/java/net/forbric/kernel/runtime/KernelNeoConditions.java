@@ -90,6 +90,8 @@ public final class KernelNeoConditions {
 	};
 
 	private static final Set<String> REPORTED = Collections.newSetFromMap(new ConcurrentHashMap<>());
+	private static final java.util.concurrent.atomic.AtomicBoolean OVERLAY_RISK =
+			new java.util.concurrent.atomic.AtomicBoolean();
 
 	private KernelNeoConditions() {
 	}
@@ -167,5 +169,17 @@ public final class KernelNeoConditions {
 				+ "could not judge it and used to fail the whole registry load with it. It is being ignored here "
 				+ "instead; the ecosystem that owns that id decides. %d distinct condition(s) so far",
 				type, REPORTED.size());
+		if (OVERLAY_RISK.compareAndSet(false, true)) {
+			// Known and unfixed, and said out loud rather than left to be discovered in a world. For a DATA
+			// element "ignored" is safe: the owning ecosystem's evaluator judges it afterwards, which is the whole
+			// design. For a pack.mcmeta OVERLAY entry there is no afterwards — Pack.readPackMetadata takes the
+			// UNION of both sections' overlays, so a condition this evaluator cannot judge stops vetoing and the
+			// directory mounts. Measured on Terralith: with "vanilla_stone_gen": false in its config, the six
+			// placed_feature files under enable.vanilla_stone_gen carry no conditions of their own and override
+			// vanilla granite, diorite and andesite generation anyway. No crash and no other log line.
+			ForbricLog.warn("[Forbric/Conditions] if a condition of that kind gates a pack.mcmeta OVERLAY rather "
+					+ "than a data file, ignoring it MOUNTS the overlay — content a mod's own config may have "
+					+ "turned off can end up in your world with nothing else saying so. Known and not yet fixed");
+		}
 	}
 }

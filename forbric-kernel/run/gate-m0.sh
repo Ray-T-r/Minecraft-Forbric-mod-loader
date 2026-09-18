@@ -53,10 +53,16 @@ elif [ "${xmls:-0}" -eq 0 ] || [ "${tests:-0}" -eq 0 ]; then
   FAIL=1
 elif [ "${failures:-0}" -ne 0 ] || [ "${errors:-0}" -ne 0 ]; then
   echo "[kernel] FAIL unit tests — $failures failed, $errors errored of $tests; see $TESTLOG"; FAIL=1
+elif [ "${skipped:-0}" -gt 10 ]; then
+  # A ceiling, now that it can be one. Every remaining skip is an assumeTrue on a staged artifact, and on a
+  # machine that can run this gate the artifacts are there -- so a suite that starts skipping in bulk is a suite
+  # that has quietly stopped checking the bytecode claims, which is exactly how a green run comes to mean
+  # nothing. It was 0 when this ceiling was set.
+  echo "[kernel] FAIL unit tests — $skipped of $tests skipped; on a machine with the staged artifacts that means "
+  echo "[kernel]      those assertions are no longer reading them. See $TESTLOG"
+  FAIL=1
 else
-  # skipped is printed, not asserted. Most of them are assumeTrue guards on staged artifacts, and what the right
-  # floor is belongs to the change that declares those artifacts as inputs -- not here.
-  echo "[kernel] PASS unit tests ($tests ran, $skipped skipped, 0 failed)"
+  echo "[kernel] PASS unit tests ($((tests - skipped)) ran, $skipped skipped, 0 failed)"
 fi
 
 step "3. --scan across both merged mod sets"

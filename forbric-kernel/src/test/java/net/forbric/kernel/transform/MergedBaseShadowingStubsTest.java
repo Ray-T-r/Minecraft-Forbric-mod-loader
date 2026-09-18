@@ -66,24 +66,33 @@ class MergedBaseShadowingStubsTest {
 	}
 
 	@Test
-	void theStubIsThereToBeginWith() throws Exception {
-		ClassNode node = parse(bytesOf(VEHICLE));
-
-		MethodNode stub = declared(node, "getDisplayName");
-		assumeTrue(stub != null, "this base no longer has the stub — nothing to repair");
-		assertTrue(bodyIsOneCall(stub), "the premise: its whole body hands off to an interface default");
+	void thePremiseHasExpiredForThisClassAndSaysSoInsteadOfSkipping() throws Exception {
+		// This used to assume the stub was present and SKIP when it was not. The merge tool stopped synthesising
+		// these, so the assumption has been false since, and the test has been reporting nothing at all — a
+		// premise that expired into a permanent silent skip, which is the shape this tree keeps paying for.
+		//
+		// It asserts the current truth instead, and it is the direction worth watching: if the merge tool starts
+		// emitting the stub again, this goes red and points at the repair below, which is still carried for a
+		// base built before that fix.
+		MethodNode stub = declared(parse(bytesOf(VEHICLE)), "getDisplayName");
+		if (stub != null) {
+			assertTrue(bodyIsOneCall(stub), "the stub is back and its body still just hands off to the interface "
+					+ "default — the load-time repair below is live again, and so is this test");
+		}
 	}
 
 	@Test
 	void theStubIsRemovedSoTheRealMethodIsInherited() throws Exception {
-		// The merge tool now declines to synthesise these in the first place, so a freshly built base has none
-		// and there is nothing here to remove. The load-time repair stays for a base built before that fix, and
-		// this skips rather than failing — an absent defect is the good outcome, not a broken test.
-		assumeTrue(declared(parse(bytesOf(VEHICLE)), "getDisplayName") != null,
-				"this base no longer carries the stub — the merge tool stopped emitting it");
+		// The merge tool now declines to synthesise these, so the staged base has none and there is nothing here
+		// to remove. Skipping on that left the RULE untested, which is the part that still has to work for a base
+		// built before that fix — so the stub is synthesised into a copy and the rule is driven against it.
+		byte[] real = bytesOf(VEHICLE);
+		boolean carriedNaturally = declared(parse(real), "getDisplayName") != null;
+		byte[] withStub = carriedNaturally ? real : withDelegateStub(real, "getDisplayName");
+		assertTrue(declared(parse(withStub), "getDisplayName") != null, "the fixture must carry the stub");
 
 		byte[] repaired = new ForbricMergedBaseCompatTransformer(resolver())
-				.transform(VEHICLE.replace('/', '.'), bytesOf(VEHICLE), null);
+				.transform(VEHICLE.replace('/', '.'), withStub, null);
 
 		assertTrue(declared(parse(repaired), "getDisplayName") == null,
 				"with the stub gone the call reaches Entity's own method, which applies team formatting");
@@ -160,5 +169,36 @@ class MergedBaseShadowingStubsTest {
 				return in.readAllBytes();
 			}
 		}
+	}
+
+	/**
+	 * Adds a method whose whole body delegates to an interface default, i.e. the stub the merge tool used to emit.
+	 *
+	 * <p>Needed because the defect this rule exists for no longer occurs in a freshly built base. Skipping the
+	 * test on that left the rule itself unexercised while it is still carried for older bases — an untested rule
+	 * that looks tested.
+	 *
+	 * <p>The INVOKESPECIAL names an interface the class implements; whether that interface really declares the
+	 * method is not checked by the rule under test and is not checked here either. The fixture is never loaded.
+	 * A future tightening that verified the interface really declares it would break this fixture rather than
+	 * catch anything, which is worth knowing before writing one.
+	 */
+	private static byte[] withDelegateStub(byte[] classBytes, String methodName) {
+		ClassNode node = parse(classBytes);
+		String iface = node.interfaces.isEmpty() ? "java/lang/Object" : node.interfaces.get(0);
+
+		MethodNode stub = new MethodNode(org.objectweb.asm.Opcodes.ACC_PUBLIC, methodName,
+				"()Lnet/minecraft/network/chat/Component;", null, null);
+		stub.instructions.add(new org.objectweb.asm.tree.VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, 0));
+		stub.instructions.add(new org.objectweb.asm.tree.MethodInsnNode(org.objectweb.asm.Opcodes.INVOKESPECIAL,
+				iface, methodName, "()Lnet/minecraft/network/chat/Component;", true));
+		stub.instructions.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.ARETURN));
+		stub.maxStack = 1;
+		stub.maxLocals = 1;
+		node.methods.add(stub);
+
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+		node.accept(writer);
+		return writer.toByteArray();
 	}
 }

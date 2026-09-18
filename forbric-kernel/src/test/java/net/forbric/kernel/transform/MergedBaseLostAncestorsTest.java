@@ -82,7 +82,15 @@ class MergedBaseLostAncestorsTest {
 			}
 		}
 
-		assumeTrue(lost.size() < 40, "this does not look like a real merged base (" + lost.size() + " losses)");
+		// This used to be `assumeTrue(lost.size() < 40, …)`, which turned a BADLY merged base — the one case
+		// where this test has something urgent to say — into a silent skip. It fails now, and it speaks only when
+		// the real oracle below is already broken: a future rebuild that legitimately loses forty types and
+		// updates LOST_ANCESTORS to match would otherwise go red here for the wrong reason, and this file's own
+		// javadoc says a rebuild with different choices is allowed to change the answer.
+		if (lost.size() >= 40 && !lost.equals(new TreeSet<>(MergedBaseFrameRecomputer.LOST_ANCESTORS))) {
+			org.junit.jupiter.api.Assertions.fail("this does not look like a merged base at all (" + lost.size()
+					+ " lost ancestors) — rebuild it before reading anything into this run");
+		}
 		assertEquals(lost, new TreeSet<>(MergedBaseFrameRecomputer.LOST_ANCESTORS),
 				"the transformer's at-risk set must be EXACTLY what the staged artifacts lost. A type that is "
 						+ "missing means a mod naming it still fails verification; a type that does not belong "
