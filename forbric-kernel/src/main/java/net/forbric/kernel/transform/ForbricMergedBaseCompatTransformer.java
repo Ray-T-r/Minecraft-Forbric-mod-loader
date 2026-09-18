@@ -89,6 +89,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= letDungeonsGenerateWithoutTheDataMap(node);
 			changed |= guardNeoForgesWorldModifierPass(node);
 			changed |= letForeignResourceConditionsThrough(node);
+			changed |= letFabricResourceConditionsDecide(node);
 			changed |= serveDefaultAttributesBothEcosystems(node);
 			changed |= nameTheReloadListenersNeoForgeRefusesToName(node);
 			changed |= dropInterfaceDefaultShadowingOverrides(node);
@@ -207,6 +208,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String ICONDITION = "net/neoforged/neoforge/common/conditions/ICondition";
 	private static final String CODEC_DESC = "Lcom/mojang/serialization/Codec;";
 	private static final String KERNEL_NEO_CONDITIONS = "net/forbric/kernel/runtime/KernelNeoConditions";
+
+	private static final String CONDITIONAL_OPS = "net/neoforged/neoforge/common/conditions/ConditionalOps";
+	private static final String CONDITIONAL_FACTORY =
+			"(Lcom/mojang/serialization/Codec;Ljava/lang/String;)Lcom/mojang/serialization/Codec;";
+	private static final String KERNEL_FABRIC_CONDITIONS = "net/forbric/kernel/runtime/KernelFabricConditions";
 
 	private static final String DEFAULT_ATTRIBUTES = "net/minecraft/world/entity/ai/attributes/DefaultAttributes";
 	private static final String NEO_COMMON_HOOKS = "net/neoforged/neoforge/common/CommonHooks";
@@ -821,6 +827,70 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		ForbricLog.info("[Forbric/MergedBaseCompat] a client reload listener NeoForge cannot name is now given one "
 				+ "(%d lookup(s) redirected) — it used to throw inside Minecraft.<init> over a Fabric mod adding a "
 				+ "listener by mixin, which is how Fabric mods have always added them", redirected);
+		return true;
+	}
+
+	/**
+	 * Gives {@code fabric:load_conditions} an evaluator again, at the one place every consumer funnels through.
+	 *
+	 * <p>The other half of {@link #letForeignResourceConditionsThrough}. That one stopped NeoForge's evaluator
+	 * failing a whole world load over an id it does not own; this one makes the answer come from the mod that
+	 * does own it. fabric-api reads that key from exactly two mixins and the merged base defeats both — one
+	 * anchors at a {@code Decoder.parse} NeoForge's patch replaced with {@code Codec.parse}, the other targets a
+	 * lambda whose descriptor the same patch changed — and the kernel's own {@code defaultRequire} rewrite turns
+	 * the first into a SILENT soft-skip. So every Fabric mod's conditional data file has loaded unconditionally
+	 * here, and a config toggle meant to gate content did nothing.
+	 *
+	 * <p>{@code ConditionalOps} has four public factories and all four funnel into
+	 * {@code createConditionalCodecWithConditions(Codec, String)}, so wrapping that one covers the datapack
+	 * registries, recipes, loot tables and advancements together. A per-call-site patch would have missed
+	 * recipes, which reach it through {@code scanDirectoryWithModifier} rather than {@code scanDirectory}.
+	 *
+	 * <p>Inserted immediately before the method's single {@code ARETURN}, where the finished {@code Codec} is
+	 * already the only thing on the stack: a {@code Codec} goes in and a {@code Codec} comes out, so nothing
+	 * moves and there is no frame to recompute. More than one {@code ARETURN} means the method is not the shape
+	 * this reasoning was checked against, and the pass stands down whole rather than wrapping one exit.
+	 */
+	private static boolean letFabricResourceConditionsDecide(ClassNode node) {
+		if (!CONDITIONAL_OPS.equals(node.name)) return false;
+		MethodNode factory = findMethod(node, "createConditionalCodecWithConditions", CONDITIONAL_FACTORY);
+		if (factory == null) return false;
+
+		AbstractInsnNode exit = null;
+		for (AbstractInsnNode insn = factory.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() != Opcodes.ARETURN) continue;
+			if (exit != null) {
+				ForbricLog.warn("[Forbric/MergedBaseCompat] ConditionalOps' codec factory has more than one exit — "
+						+ "not wrapping it, because wrapping one of them would judge some data files and not "
+						+ "others with no way to tell which");
+				return false;
+			}
+			exit = insn;
+		}
+		if (exit == null) return false;
+		if (exit.getPrevious() instanceof MethodInsnNode already
+				&& KERNEL_FABRIC_CONDITIONS.equals(already.owner)) {
+			return false;                       // already wrapped: idempotent
+		}
+
+		factory.instructions.insertBefore(exit, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FABRIC_CONDITIONS,
+				"alsoAskFabric", "(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;", false));
+
+		int funnelled = 0;
+		for (MethodNode method : node.methods) {
+			if (method == factory) continue;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof MethodInsnNode call && CONDITIONAL_OPS.equals(call.owner)
+						&& call.name.startsWith("createConditionalCodec")) {
+					funnelled++;
+					break;
+				}
+			}
+		}
+		ForbricLog.info("[Forbric/MergedBaseCompat] fabric:load_conditions has an evaluator again: ConditionalOps' "
+				+ "one codec factory is wrapped and %d other public entry point(s) funnel through it — datapack "
+				+ "registries, recipes, loot tables and advancements all decode through it. fabric-api's own two "
+				+ "mixins for this cannot apply on the merged base", funnelled);
 		return true;
 	}
 
