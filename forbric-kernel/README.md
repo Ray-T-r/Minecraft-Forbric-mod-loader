@@ -31,17 +31,14 @@ scripts under `run/` — one per milestone, each asserting on the real logs of a
 
 The old "Knot classloader split" law survives as the kernel's own boot↔game split.
 
-**Status of the game side, stated honestly:** `src/runtime/java` is still empty, and neither
-`net.forbric.kernel.api.KernelHooks` nor `net.forbric.kernel.runtime.Hooks` exists — earlier revisions of this
-file described them as if they did. What actually happens today is that injected bytecode calls boot-side statics
-directly (thirteen distinct owners), and the only `net.forbric.kernel.runtime.*` classes are three synthesized at
-runtime with ASM by boot-side factories (`KernelModContainerFactory`, `KernelHudBridge`, `KernelGameLookup`).
-`DelegationPolicy` already reserves `net.forbric.kernel.runtime.` as game-side, so the slot is real; it is just
-unfilled.
+**Status of the game side:** filled. `src/runtime/java` is 39 files and about 6000 lines, compiled against the
+staged jars and shipped as `forbric-kernel-runtime.jar` — registry and lifecycle drivers, both families' setup
+phases, the condition evaluators, the pack sources, the unified Mods screen. An earlier revision of this file
+said it was empty, which was true when it was written and stopped being true without the sentence changing.
 
-That gap is the structural reason cross-ecosystem fixes have taken the shape they have: with no typed landing
-place on the game side, each one is either a bytecode patch making one ecosystem satisfy another's expectations,
-or an `Object`-in/`Object`-out reflective shim.
+Injected bytecode still calls some boot-side statics directly, and a few classes are still synthesized at
+runtime with ASM by boot-side factories (`KernelModContainerFactory`, `KernelHudBridge`, `KernelGameLookup`) —
+those are the cases that cannot be compiled at all, and each says why where it lives.
 
 ## The unified API (`net.forbric.api`)
 
@@ -55,6 +52,7 @@ instead of accommodating each other pairwise. Parent-pinned in `DelegationPolicy
 | `ForeignType` | pairs of adjacent Forge/NeoForge class-name literals at each call site |
 | `DiscoveredMod`, `UnifiedDependency` | moved here from `kernel.metadata`; the one mod model |
 | `ModPresence` | `boot.KernelForeignMods`; the one answer to "is mod X running", which injected bytecode now calls as `net/forbric/api/ModPresence.isLoaded` |
+| `ModCatalog` | the one list a player sees, and what became of each mod — `OK`, `DEGRADED` or `FAILED` |
 
 Two rules it is built on, both learned the hard way:
 
@@ -73,27 +71,35 @@ Mojang-derived artifacts are never bundled.
 
 ## Milestones
 
-| | status | gate |
-|---|---|---|
-| **M0** scaffold + ported libs + oracle | ✅ green | `run/gate-m0.sh` |
-| **M1** merged base boots to Done (zero mods) | ✅ green — server Done, ticks, clean shutdown, zero genuine lifecycle | `run/gate-m1.sh` |
-| M2 Fabric ecosystem native | — | `run/gate-m2.sh` |
-| **M3** Forge-family native lifecycle + real @Mod | ✅ green (server) — both baselines (ForgeMod + NeoForgeMod) + real @Mod constructed natively; tick/event-bus → M4 | `run/gate-m3.sh` |
-| M4 tri-in-one server | — | `run/gate-m4.sh` |
-| M5 merged client to title | — | `run/gate-m5.sh` |
-| M6 world join (beat the old system) | — | `run/gate-m6.sh` |
-| M7 mixin adapter (category C) | — | `run/gate-m7.sh` |
-| M8 installer + cutover | — | `run/gate-m8.sh` |
+There are 25 gate scripts under `run/`, each asserting on the real logs of a real instance. The milestone table
+that used to be here listed `gate-m5.sh` and `gate-m6.sh`, which have never existed, and recorded M2 and M4
+onwards as unfinished long after their gates were passing — so the scripts themselves are the list now:
 
-The old `forbric-loader` is kept runnable as the **differential oracle**: on the same mod set and merged base,
-wherever it reaches, the kernel must reach — and from M6 on, further (world join).
+| gate | what it proves |
+|---|---|
+| `gate-m0` | build + the whole unit suite (asserted from the JUnit XML, not gradle's exit code) + discovery vs an independent parser |
+| `gate-m1` / `gate-m3` | merged base boots to Done with zero mods; both Forge-family baselines + a real `@Mod`, natively |
+| `gate-m2` / `gate-m2b` | a real Fabric mod, then full fabric-api, with no Fabric Loader anywhere |
+| `gate-m4` / `gate-m4-canary` / `gate-m7-neo` | real third-party mods of all three families in one server; pure NeoForge |
+| `gate-m9-client` | the client half: a 97-jar pack into a world, the unified Mods screen, a clean exit |
+| `gate-m12` … `gate-m16` | multiplayer over a real socket, an anti-cheat's opinion, a pure Fabric server, both Forge families' networking |
+| `gate-m17` | the installer, resolved and launched the way a launcher does it |
+| `gate-m24` | a mod that fails on purpose: the others still load and the failure is attributed |
+
+The rest (`m8`, `m10`, `m11`, `m18`–`m23`) each pin one previously-shipped defect. Sixteen of the twenty-five
+had not been run for a day when that was last measured, and one of them had been red the whole time — which is
+why `gate-m0` now refuses to report on a test task that did not execute.
+
+The old `forbric-loader` is kept runnable as the **differential oracle**, and still builds the shared game
+artifacts the kernel consumes.
 
 ## Build & run
 
 ```sh
-./gradlew --offline test          # ported unit tests (transform/access/mapping/metadata/discovery)
+./gradlew --offline test          # the unit suite; ~a third of it reads the staged game jars and
+                                  # SKIPS without them, which is why gate-m0 asserts on the results
 ./gradlew --offline jar           # boot jar
-./run/gate-m0.sh                  # M0 gate: build + tests + scan + differential oracle
+./run/gate-m0.sh                  # build + the suite (tests>0, no failures, skip ceiling) + the oracle
 # unified discovery over a mods/ dir → deterministic JSON (the oracle anchor):
 java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out.json
 ```
