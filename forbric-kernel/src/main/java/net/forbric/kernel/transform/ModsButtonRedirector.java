@@ -111,9 +111,29 @@ public final class ModsButtonRedirector implements ClassTransformer {
 			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE));
 
 	/** Named through {@link ForeignType} so neither family's spelling can be the one that quietly stops matching. */
+	/**
+	 * A name NeoForge used to have, and no longer does.
+	 *
+	 * <p>Between 26.2.0.38-beta and 26.2.0.88 NeoForge moved {@code client.gui.ModListScreen} to
+	 * {@code client.gui.modlist.ModListScreen}. {@link ForeignType#MOD_LIST_SCREEN} names the CURRENT one, which
+	 * is right and is what the carrier ships — but a mod compiled against the older NeoForge still emits
+	 * {@code new net/neoforged/neoforge/client/gui/ModListScreen(Screen)}, and on this instance that class simply
+	 * does not exist. It is not a degraded button: titlescreenfixer's mixin puts that constructor inside
+	 * {@code TitleScreen}, so the client died in {@code Minecraft.<init>} with
+	 * {@code NoClassDefFoundError: net/neoforged/neoforge/client/gui/ModListScreen} before reaching a screen.
+	 *
+	 * <p>Re-pointing the old name costs nothing — every construction of it was going to open a mods list, and the
+	 * kernel's unified one is the answer this instance wants anyway — and it turns a dead client into a working
+	 * button. Deliberately NOT in {@code ForeignType}: that table pairs the two ecosystems' CURRENT names, and a
+	 * historical alias with no counterpart on the other side would break the pairing that makes it checkable.
+	 */
+	private static final String NEOFORGE_PRE_88_MOD_LIST_SCREEN =
+			"net/neoforged/neoforge/client/gui/ModListScreen";
+
 	private static final Set<String> REPLACED = Set.of(
 			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE),
-			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE));
+			ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE),
+			NEOFORGE_PRE_88_MOD_LIST_SCREEN);
 
 	/**
 	 * Points the button at the kernel's own icon.
