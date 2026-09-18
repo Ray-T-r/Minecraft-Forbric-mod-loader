@@ -100,6 +100,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= letForeignResourceConditionsThrough(node);
 			changed |= letForeignResourceConditionsThroughMinecraftForge(node);
 			changed |= letFabricResourceConditionsDecide(node);
+			changed |= translateAGuestsPrivateSkipMarker(node);
 			changed |= serveDefaultAttributesBothEcosystems(node);
 			changed |= nameTheReloadListenersNeoForgeRefusesToName(node);
 			changed |= dropInterfaceDefaultShadowingOverrides(node);
@@ -220,6 +221,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String KERNEL_NEO_CONDITIONS = "net/forbric/kernel/runtime/KernelNeoConditions";
 	private static final String FORGE_ICONDITION = ForeignType.ICONDITION.internal(Ecosystem.FORGE);
 	private static final String KERNEL_FORGE_CONDITIONS = "net/forbric/kernel/runtime/KernelForgeConditions";
+	private static final String JSON_RELOAD_LISTENER = "net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener";
+	private static final String DATA_RESULT = "Lcom/mojang/serialization/DataResult;";
 
 	private static final String CONDITIONAL_OPS = "net/neoforged/neoforge/common/conditions/ConditionalOps";
 	private static final String CONDITIONAL_FACTORY =
@@ -775,6 +778,71 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * {@code <clinit>} offsets 24-35 show it is {@code CODEC.orElse(FalseCondition.INSTANCE)}, so an unparseable
 	 * condition evaluates FALSE and the element is dropped. Silently missing content is worse than the crash.
 	 */
+	/**
+	 * Converts a guest mixin's private "skip this file" sentinel before the merged reader casts it and dies.
+	 *
+	 * <p>fabric-api's {@code SimpleJsonResourceReloadListenerMixin} is a producer and a consumer that only work
+	 * as a pair, and on the merged base exactly one of them applies. The producer — a {@code @WrapOperation} on
+	 * {@code Codec.parse} — returns {@code DataResult.success(SKIP_DATA_MARKER)}, a bare {@code new Object()},
+	 * when a file's conditions say no. The consumer, an {@code @Inject} that recognises the marker, targets
+	 * {@code lambda$scanDirectory$0(Codec,Identifier,Map,Object)}; the merge left the class carrying TWO methods
+	 * of that name and the live {@code invokedynamic} binds the OTHER one,
+	 * {@code (Identifier,Identifier,Map,Optional)}. So the marker reaches {@code DataResult.ifSuccess}, whose
+	 * consumer casts it to {@code Optional}, and the datapack load dies: "can't proceed with server load".
+	 *
+	 * <p>Both {@code scanDirectory} and {@code scanDirectoryWithModifier} are repaired, not just the one observed
+	 * failing. They are the same shape with the same consumer contract, the second is the one recipes use, and
+	 * this file already carries the lesson about patching a call site instead of the funnel and silently missing
+	 * every recipe.
+	 *
+	 * <p>The {@code ifSuccess} CALL is replaced rather than its receiver wrapped, and that is not a style
+	 * choice. The {@code invokedynamic} that builds the consumer pops three captured values first, so the
+	 * {@code DataResult} is buried under them and is never on top of the stack at any instruction boundary
+	 * before the call — an insertion there operates on the captured Map instead, which is an
+	 * {@code IncompatibleClassChangeError} at the first datapack. An {@code invokestatic} of the same
+	 * {@code (DataResult, Consumer) -> DataResult} shape moves nothing.
+	 *
+	 * <p>Idempotent by construction: the second pass finds no {@code ifSuccess} left to replace.
+	 */
+	private static boolean translateAGuestsPrivateSkipMarker(ClassNode node) {
+		if (!JSON_RELOAD_LISTENER.equals(node.name)) return false;
+
+		int repaired = 0;
+		for (MethodNode method : node.methods) {
+			if (!"scanDirectory".equals(method.name) && !"scanDirectoryWithModifier".equals(method.name)) continue;
+			if (method.instructions == null) continue;
+
+			AbstractInsnNode call = null;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof MethodInsnNode m && "ifSuccess".equals(m.name)
+						&& "com/mojang/serialization/DataResult".equals(m.owner)) {
+					if (call != null) {
+						ForbricLog.warn("[Forbric/MergedBaseCompat] %s.%s has more than one DataResult.ifSuccess — "
+								+ "not repairing it, because which one receives the guest's skip marker is no "
+								+ "longer decidable from the shape", node.name, method.name);
+						call = null;
+						break;
+					}
+					call = insn;
+				}
+			}
+			if (call == null) continue;
+
+			method.instructions.set(call, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FABRIC_CONDITIONS,
+					"ifSuccessWithoutAForeignSkipMarker",
+					"(" + DATA_RESULT + "Ljava/util/function/Consumer;)" + DATA_RESULT, false));
+			repaired++;
+		}
+		if (repaired == 0) return false;
+
+		ForbricLog.info("[Forbric/MergedBaseCompat] a guest mixin's private skip marker is now translated before "
+				+ "%s casts it (%d reader(s) repaired) — fabric-api's condition mixin applies only half here, and "
+				+ "the half that runs produces a bare Object where the half that does not would have removed the "
+				+ "file. Unrepaired, one condition-gated data file whose condition is false stops the server "
+				+ "starting at all", node.name, repaired);
+		return true;
+	}
+
 	private static boolean letForeignResourceConditionsThroughMinecraftForge(ClassNode node) {
 		if (!FORGE_ICONDITION.equals(node.name)) return false;
 		MethodNode clinit = findMethod(node, "<clinit>", "()V");

@@ -19,7 +19,10 @@ package net.forbric.kernel.runtime;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.util.Collections;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.gson.JsonObject;
@@ -205,5 +208,71 @@ public final class KernelFabricConditions {
 	/** Test seam: how many elements carrying the key were judged, and how many of them were rejected. */
 	static int[] countsForTest() {
 		return new int[] {JUDGED.get(), REJECTED.get()};
+	}
+
+	/**
+	 * Turns a guest mixin's private "skip this file" sentinel into the one the merged consumer understands.
+	 *
+	 * <h2>The half-applied pair</h2>
+	 *
+	 * <p>fabric-api's {@code SimpleJsonResourceReloadListenerMixin} is two injectors that only work together. The
+	 * producer is a {@code @WrapOperation} on {@code Codec.parse} inside {@code scanDirectory}: when a file's
+	 * {@code fabric:load_conditions} say no, it returns {@code DataResult.success(SKIP_DATA_MARKER)}, where the
+	 * marker is a bare {@code new Object()}. The consumer is an {@code @Inject} on {@code lambda$scanDirectory$0}
+	 * that recognises the marker and cancels the map-put.
+	 *
+	 * <p>On the merged base the producer applies and the consumer does not. The merge left the class carrying TWO
+	 * methods named {@code lambda$scanDirectory$0} — NeoForge's {@code (Identifier,Identifier,Map,Optional)} and
+	 * vanilla's {@code (Codec,Identifier,Map,Object)} — and the live {@code invokedynamic} binds the first. So
+	 * fabric's {@code @Inject}, written against the second, attaches to nothing, and the bare Object flows into
+	 * {@code DataResult.ifSuccess} whose consumer casts it to {@code Optional}: ClassCastException, datapack load
+	 * fails, "can't proceed with server load", and the server never starts.
+	 *
+	 * <p>It needs no unusual mod set. Any instance with fabric-api plus any mod shipping a condition-gated file
+	 * under a plain {@code scanDirectory} listener — an advancement, a loot table — whose condition evaluates
+	 * false will reach it.
+	 *
+	 * <h2>Why Optional.empty()</h2>
+	 *
+	 * <p>Because that is the merged consumer's OWN vocabulary for "this file's conditions were not met" — it is
+	 * what the surviving lambda already does with an empty value, and it logs exactly that. The substitution says
+	 * what fabric's unattached {@code skipData} would have said.
+	 *
+	 * <p>Anything non-{@code Optional} reaching this point is already fatal at the cast one instruction later, so
+	 * this cannot cost a file that would otherwise have loaded. What it could do is hide a FUTURE producer-side
+	 * defect behind a skip, which is what the warning is for: the class of the value is named, once.
+	 */
+	/**
+	 * Stands in for {@code DataResult.ifSuccess} at the two readers, filtering the marker out on the way through.
+	 *
+	 * <p>It replaces the call rather than wrapping its receiver because of where the receiver sits: the
+	 * {@code invokedynamic} that builds the consumer pops three captured values first, so the {@code DataResult}
+	 * is buried under them and there is no instruction boundary at which it is on top. Swapping
+	 * {@code invokeinterface ifSuccess(Consumer)DataResult} for an {@code invokestatic} of the same shape moves
+	 * nothing on the stack at all.
+	 */
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	public static DataResult ifSuccessWithoutAForeignSkipMarker(DataResult parsed, java.util.function.Consumer consumer) {
+		return ((DataResult) withoutAForeignSkipMarker(parsed)).ifSuccess(consumer);
+	}
+
+	public static DataResult<?> withoutAForeignSkipMarker(DataResult<?> parsed) {
+		if (parsed == null) return null;
+		Object value = parsed.result().orElse(null);
+		if (value == null || value instanceof Optional) return parsed;
+
+		reportSkipMarker(value.getClass());
+		return DataResult.success(Optional.empty());
+	}
+
+	private static final Set<String> MARKERS = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
+	private static void reportSkipMarker(Class<?> type) {
+		if (!MARKERS.add(type.getName())) return;
+		ForbricLog.warn("[Forbric/Conditions] a data file was skipped by a guest mixin that could not finish the "
+				+ "job: it produced %s where the merged reader expects Optional, because the merge left two "
+				+ "methods named lambda$scanDirectory$0 and the half that mod patches is not the half that runs. "
+				+ "Treated as 'conditions not met', which is what its other half would have done — without this "
+				+ "the datapack load dies and the server does not start", type.getName());
 	}
 }

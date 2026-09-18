@@ -47,7 +47,18 @@ await_server "$BOOTPID" "$LOG" 180
 
 step "no pack was dropped over a section its loader cannot parse (must PASS)"
 check_absent "no pack metadata read failed"   "Failed to read pack .* metadata" "$LOG"
-check        "fail-soft fired on the NeoForge section" "Forbric/PackMeta.*neoforge:overlays" "$LOG"
+# This used to assert that fail-soft FIRED on the neoforge:overlays section, and that assertion was pinning a
+# bug rather than an invariant: the section could not parse because its condition type was unknown to NeoForge,
+# and fail-soft dropping it was the symptom. Since the condition leniency landed, the section parses, so
+# fail-soft correctly never fires here. What is asserted instead is the mechanism that now handles it.
+check        "the unknown condition type was tolerated, not fatal" \
+  "Forbric/Conditions\] resource condition 'terralith:config' is not in NeoForge" "$LOG"
+# A guest mixin's half-applied pair leaves a bare Object where the merged reader casts to Optional; unrepaired
+# that is a ClassCastException and the server never starts. Both halves: the conversion must HAPPEN (a run that
+# stops exercising this path is a run that proves nothing about it) and the cast must never blow up.
+check        "a foreign skip marker was converted, not thrown" \
+  "Forbric/Conditions\] a data file was skipped by a guest mixin" "$LOG"
+check_absent "nothing was cast to Optional and failed" "cannot be cast to class java.util.Optional" "$LOG"
 check        "lithostitched's data loaded"    "lithostitched" "$LOG"
 check        "terralith's data loaded"        "terralith" "$LOG"
 
