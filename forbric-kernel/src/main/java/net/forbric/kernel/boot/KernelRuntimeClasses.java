@@ -242,6 +242,11 @@ public final class KernelRuntimeClasses {
 		// a Fabric mod's own condition id failed the whole registry load. This wraps ICondition.CODEC; the call
 		// site is an inserted instruction in that class's <clinit>, in Codec, which no JDK type can stand for.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoConditions", new Entry(Origin.COMPILED, List.of()));
+		// Both ecosystems collect mod entity attributes into a map of their own and the merge kept only NeoForge's
+		// reader in DefaultAttributes, so a traditional MinecraftForge mod's entities had no attributes at all.
+		// attributesView() is called from a REWRITTEN CALL SITE and so carries the descriptor that site had.
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeAttributes", new Entry(Origin.COMPILED, List.of(
+				new Call("fireForgeAttributeEvents", void.class))));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));

@@ -643,7 +643,14 @@ public final class KernelLifecycle {
 			// RegisterEvent above (DeferredRegister$EventDispatcher calls updateReference right after each register),
 			// not here — so a mod reading another mod's RegistryObject during RegisterEvent depends on the dispatch
 			// order, not on this bake.
-			invokeGameDataOn(cl, ForeignType.GAME_DATA.binary(Ecosystem.FORGE), "postRegisterEvents");
+			// NOT MinecraftForge's GameData.postRegisterEvents, which the kernel called here for years and which
+			// NEVER ONCE RAN: its second instruction block is `new LinkedHashSet<>(GameData.vanillaRegistryOrder)`
+			// and that field is written only by GameData.vanillaSnapshot(), which the kernel deliberately does not
+			// call on this side (it LOCKS the vanilla wrappers — see the NeoForge-only snapshot above). So it threw
+			// NPE at instruction 36 on every boot and the warning it produced described the symptom. What it would
+			// have reached is the same dispatch loop the kernel already drives itself, plus the attribute events —
+			// so the attribute events are what is called, directly, the way NeoForge's tail already is.
+			invokeStaticOn(cl, "net.forbric.kernel.runtime.KernelForgeAttributes", "fireForgeAttributeEvents");
 			// NeoForge's postRegisterEvents is NOT the bake — it is the dispatch loop the kernel REPLACES: it walks
 			// getRegistrationOrder() and re-fires RegisterEvent through ModLoader.postEventWrapContainerInModOrder.
 			// While ModList was empty that was a silent no-op, so calling it looked harmless. Once the kernel
