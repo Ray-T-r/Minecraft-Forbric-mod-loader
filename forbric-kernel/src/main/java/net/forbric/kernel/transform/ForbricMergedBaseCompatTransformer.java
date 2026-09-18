@@ -89,6 +89,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= letDungeonsGenerateWithoutTheDataMap(node);
 			changed |= guardNeoForgesWorldModifierPass(node);
 			changed |= letForeignResourceConditionsThrough(node);
+			changed |= serveDefaultAttributesBothEcosystems(node);
 			changed |= dropInterfaceDefaultShadowingOverrides(node);
 			changed |= tolerateEmptyCreativeTabStacks(node);
 			changed |= routePlaceItemHookToNeoForge(node);
@@ -205,6 +206,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String ICONDITION = "net/neoforged/neoforge/common/conditions/ICondition";
 	private static final String CODEC_DESC = "Lcom/mojang/serialization/Codec;";
 	private static final String KERNEL_NEO_CONDITIONS = "net/forbric/kernel/runtime/KernelNeoConditions";
+
+	private static final String DEFAULT_ATTRIBUTES = "net/minecraft/world/entity/ai/attributes/DefaultAttributes";
+	private static final String NEO_COMMON_HOOKS = "net/neoforged/neoforge/common/CommonHooks";
+	private static final String ATTRIBUTES_VIEW = "()Ljava/util/Map;";
+	private static final String KERNEL_FORGE_ATTRIBUTES = "net/forbric/kernel/runtime/KernelForgeAttributes";
 	/** NeoForge's retyping of vanilla's {@code providers}: the one the merged {@code <init>} actually writes. */
 	/**
 	 * The methods measured to be merge-injected in this shape, and worth removing.
@@ -725,6 +731,47 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "type it does not own — the merged base runs that evaluator over EVERY datapack element from "
 				+ "every pack, so a Fabric mod's own condition used to fail the whole registry load and the world "
 				+ "with it");
+		return true;
+	}
+
+	/**
+	 * Makes {@code DefaultAttributes} read BOTH ecosystems' mod-attribute maps, not just the one that won the merge.
+	 *
+	 * <p>Both families collect a mod's entity attributes into a map of their own —
+	 * {@code ForgeHooks.FORGE_ATTRIBUTES} and NeoForge's {@code CommonHooks} equivalent — and vanilla's
+	 * {@code DefaultAttributes} is the single consumer both patch. The merge keeps one patch, and it kept
+	 * NeoForge's: {@code javap} of the merged class shows {@code getSupplier} and {@code hasSupplier} each calling
+	 * {@code CommonHooks.getAttributesView()}, and a constant-pool scan of the whole merged base finds
+	 * {@code EntityAttributeCreationEvent} named nowhere.
+	 *
+	 * <p>So a traditional MinecraftForge mod's attributes went into a map with no reader — the producer/consumer
+	 * split this project has hit at field level before, here at method level. An {@code AttributeSupplier} is what
+	 * gives a living entity its health and movement and an entity without one is refused, so it is not a
+	 * degradation: {@code cursed_breeding} logged "has no attributes" 348 times in one boot and its mobs could not
+	 * exist.
+	 *
+	 * <p>Both call sites take no arguments and return {@code Map}, so each is an owner/name replacement on one
+	 * instruction with nothing on the stack moved.
+	 */
+	private static boolean serveDefaultAttributesBothEcosystems(ClassNode node) {
+		if (!DEFAULT_ATTRIBUTES.equals(node.name)) return false;
+		int redirected = 0;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
+						|| !NEO_COMMON_HOOKS.equals(call.owner) || !"getAttributesView".equals(call.name)
+						|| !ATTRIBUTES_VIEW.equals(call.desc)) {
+					continue;
+				}
+				call.owner = KERNEL_FORGE_ATTRIBUTES;
+				call.name = "attributesView";
+				redirected++;
+			}
+		}
+		if (redirected == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] DefaultAttributes now reads both ecosystems' mod-attribute maps "
+				+ "(%d call site(s)) — the merge kept only NeoForge's reader, so a traditional MinecraftForge mod's "
+				+ "entities had no attributes and could not exist", redirected);
 		return true;
 	}
 
