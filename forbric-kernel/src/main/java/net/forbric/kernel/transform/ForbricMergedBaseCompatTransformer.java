@@ -90,6 +90,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= guardNeoForgesWorldModifierPass(node);
 			changed |= letForeignResourceConditionsThrough(node);
 			changed |= serveDefaultAttributesBothEcosystems(node);
+			changed |= nameTheReloadListenersNeoForgeRefusesToName(node);
 			changed |= dropInterfaceDefaultShadowingOverrides(node);
 			changed |= tolerateEmptyCreativeTabStacks(node);
 			changed |= routePlaceItemHookToNeoForge(node);
@@ -211,6 +212,14 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String NEO_COMMON_HOOKS = "net/neoforged/neoforge/common/CommonHooks";
 	private static final String ATTRIBUTES_VIEW = "()Ljava/util/Map;";
 	private static final String KERNEL_FORGE_ATTRIBUTES = "net/forbric/kernel/runtime/KernelForgeAttributes";
+
+	private static final String ADD_CLIENT_RELOAD_LISTENERS =
+			"net/neoforged/neoforge/client/event/AddClientReloadListenersEvent";
+	private static final String VANILLA_CLIENT_LISTENERS =
+			"net/neoforged/neoforge/client/resources/VanillaClientListeners";
+	private static final String NAME_FOR_CLASS =
+			"(Ljava/lang/Class;)Lnet/minecraft/resources/Identifier;";
+	private static final String KERNEL_RELOAD_NAMES = "net/forbric/kernel/runtime/KernelClientReloadNames";
 	/** NeoForge's retyping of vanilla's {@code providers}: the one the merged {@code <init>} actually writes. */
 	/**
 	 * The methods measured to be merge-injected in this shape, and worth removing.
@@ -772,6 +781,46 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		ForbricLog.info("[Forbric/MergedBaseCompat] DefaultAttributes now reads both ecosystems' mod-attribute maps "
 				+ "(%d call site(s)) — the merge kept only NeoForge's reader, so a traditional MinecraftForge mod's "
 				+ "entities had no attributes and could not exist", redirected);
+		return true;
+	}
+
+	/**
+	 * Lets a Fabric mod add a client reload listener the way Fabric mods always have, without killing the client.
+	 *
+	 * <p>{@code AddClientReloadListenersEvent.lookupName} names each listener already in the resource manager by
+	 * asking {@code VanillaClientListeners.getNameForClass}, and when that returns null it THROWS: "A non-vanilla
+	 * reload listener … was added via mixin before the AddClientReloadListenerEvent!". The assertion is written
+	 * for an instance whose only mods are NeoForge mods. Adding a listener by mixin is ordinary Fabric practice —
+	 * there is no event for it to go through — so on a tri-ecosystem instance it fires on CORRECT mod code, from
+	 * inside {@code ClientHooks.initClientHooks}, which runs inside {@code Minecraft.<init>}: vistas took the whole
+	 * client down before it drew a frame.
+	 *
+	 * <p>The name is a sort key and a registry key and nothing else, so a synthesised one leaves the listener
+	 * registered, sorted and RUNNING — which is the difference between this and swallowing the exception. Only
+	 * the lookup inside this event is redirected: NeoForge's own {@code ClientNeoForgeMod} asks the same method
+	 * about its own listeners, and those are in the table.
+	 *
+	 * <p>One instruction: same opcode, same descriptor, same stack.
+	 */
+	private static boolean nameTheReloadListenersNeoForgeRefusesToName(ClassNode node) {
+		if (!ADD_CLIENT_RELOAD_LISTENERS.equals(node.name)) return false;
+		int redirected = 0;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
+						|| !VANILLA_CLIENT_LISTENERS.equals(call.owner)
+						|| !"getNameForClass".equals(call.name) || !NAME_FOR_CLASS.equals(call.desc)) {
+					continue;
+				}
+				call.owner = KERNEL_RELOAD_NAMES;
+				call.name = "nameFor";
+				redirected++;
+			}
+		}
+		if (redirected == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] a client reload listener NeoForge cannot name is now given one "
+				+ "(%d lookup(s) redirected) — it used to throw inside Minecraft.<init> over a Fabric mod adding a "
+				+ "listener by mixin, which is how Fabric mods have always added them", redirected);
 		return true;
 	}
 
