@@ -300,4 +300,71 @@ class KernelModCatalogTest {
 		zip.write(content.getBytes(StandardCharsets.UTF_8));
 		zip.closeEntry();
 	}
+
+	@Test
+	void aFailedModIsMarkedAndStaysInTheList() {
+		ModCatalog.publish(List.of(newEntry("alpha"), newEntry("beta")));
+		ModCatalog.mark("alpha", ModCatalog.Status.FAILED, "its @Mod constructor threw");
+
+		assertEquals(2, ModCatalog.all().size(), "a mod that did not finish loading is still installed, and its "
+				+ "classes are still loaded — dropping the row would send a player to reinstall what is there");
+		assertEquals(1, ModCatalog.failures().size());
+		assertEquals("alpha", ModCatalog.failures().get(0).modId());
+		assertEquals("its @Mod constructor threw", ModCatalog.failures().get(0).statusDetail());
+	}
+
+	@Test
+	void markingAModThatIsNotInTheCatalogueInventsNothing() {
+		// Aliases, `provides` ids, the NeoForge baseline container and presence-only ids all reach the call sites
+		// that use mark(), and none of them is a mod a player installed. A Mods screen listing things that do not
+		// exist would be worse than one that says nothing.
+		ModCatalog.publish(List.of(newEntry("alpha")));
+		ModCatalog.mark("a-mod-nobody-installed", ModCatalog.Status.FAILED, "nowhere");
+
+		assertEquals(1, ModCatalog.all().size());
+		assertEquals(0, ModCatalog.failures().size());
+	}
+
+	@Test
+	void aFailureOutranksALaterDegradation() {
+		ModCatalog.publish(List.of(newEntry("alpha")));
+		ModCatalog.mark("alpha", ModCatalog.Status.FAILED, "its @Mod constructor threw");
+		ModCatalog.mark("alpha", ModCatalog.Status.DEGRADED, "it threw during common setup");
+
+		assertEquals(ModCatalog.Status.FAILED, ModCatalog.failures().get(0).status(),
+				"a mod that did not finish loading and then also missed a phase is still, first and last, a mod "
+						+ "that did not finish loading");
+		assertEquals("its @Mod constructor threw", ModCatalog.failures().get(0).statusDetail());
+
+		// The other direction, so this is not passing because mark() simply never lowers anything.
+		ModCatalog.publish(List.of(newEntry("beta")));
+		ModCatalog.mark("beta", ModCatalog.Status.DEGRADED, "it threw during common setup");
+		ModCatalog.mark("beta", ModCatalog.Status.FAILED, "its entrypoint threw");
+		assertEquals(ModCatalog.Status.FAILED, ModCatalog.failures().get(0).status());
+	}
+
+	@Test
+	void markingDoesNotDisturbTheNameSort() {
+		ModCatalog.publish(List.of(newEntry("zulu"), newEntry("alpha"), newEntry("mike")));
+		ModCatalog.mark("mike", ModCatalog.Status.DEGRADED, "it threw during common setup");
+
+		List<String> ids = new java.util.ArrayList<>();
+		for (ModCatalog.Entry e : ModCatalog.all()) ids.add(e.modId());
+		assertEquals(List.of("alpha", "mike", "zulu"), ids,
+				"the order decides what a player reads first; rebuilding the list must not reorder it");
+	}
+
+	@Test
+	void aModNothingWentWrongWithIsNotAFailure() {
+		ModCatalog.publish(List.of(newEntry("alpha")));
+		ModCatalog.mark("alpha", ModCatalog.Status.OK, "nothing happened");
+
+		assertEquals(0, ModCatalog.failures().size(), "OK is not a thing to report");
+	}
+
+
+	/** A minimal catalogue row, for the status tests that publish directly rather than through discovery. */
+	private static ModCatalog.Entry newEntry(String id) {
+		return new ModCatalog.Entry(Ecosystem.FABRIC, id, id, "1.0", "", List.of(), id + ".jar", "", "");
+	}
 }

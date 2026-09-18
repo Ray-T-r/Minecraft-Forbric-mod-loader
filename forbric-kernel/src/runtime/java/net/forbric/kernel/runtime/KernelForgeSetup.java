@@ -22,6 +22,7 @@ import net.forbric.api.ForeignType;
 import net.forbric.kernel.boot.KernelForgeModContext.Handle;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
+import net.forbric.api.ModCatalog;
 import net.minecraftforge.eventbus.api.bus.BusGroup;
 import net.minecraftforge.fml.DeferredWorkQueue;
 import net.minecraftforge.fml.ModContainer;
@@ -98,6 +99,7 @@ public final class KernelForgeSetup {
 				} catch (Throwable t) {
 					ForbricLog.warn("[Forbric/Lifecycle] " + handle.modId() + " threw during traditional-Forge "
 							+ label, Reflect.unwrap(t));
+					ModCatalog.mark(handle.modId(), ModCatalog.Status.DEGRADED, "it threw during " + label);
 				}
 			}
 		} finally {

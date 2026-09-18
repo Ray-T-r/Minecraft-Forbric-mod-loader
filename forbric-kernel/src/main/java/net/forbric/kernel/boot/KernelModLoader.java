@@ -34,6 +34,7 @@ import net.forbric.api.ForeignType;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
+import net.forbric.api.ModCatalog;
 
 /**
  * Constructs discovered Forge-family {@code @Mod} classes natively — the M3 keystone for real mods.
@@ -259,6 +260,7 @@ public final class KernelModLoader {
 			ForbricLog.warn("[Forbric/ModLoader] withdrew %d MinecraftForge container(s) from ModList — their @Mod "
 					+ "constructor threw, so nothing will ever fire RegisterEvent on the bus those containers "
 					+ "hand out %s", dropped.size(), dropped);
+			markWithdrawn(dropped, "its @Mod constructor threw");
 		}
 
 		// The NeoForge twin of the withdrawal above, which only the MinecraftForge half used to have. A NeoForge
@@ -287,6 +289,7 @@ public final class KernelModLoader {
 			ForbricLog.warn("[Forbric/ModLoader] withdrew %d NeoForge container(s) from ModList — their @Mod "
 					+ "constructor threw, so the bus those containers hand out is one nothing will ever post "
 					+ "to %s", droppedNeo.size(), droppedNeo);
+			markWithdrawn(droppedNeo, "its @Mod constructor threw");
 		}
 		return built;
 	}
@@ -716,5 +719,20 @@ public final class KernelModLoader {
 
 	private static String safeId(ModAnnotationScanner.ModClassInfo info) {
 		return info.modId != null ? info.modId : info.className;
+	}
+
+	/**
+	 * Records the withdrawn mods in the catalogue, so the Mods screen and the load report can say so.
+	 *
+	 * <p>Package-private and taking plain ids, so it stays a list/map operation a unit test can drive -- the same
+	 * reason {@code keepConstructed} beside it is shaped that way.
+	 *
+	 * <p>The wording is "did not finish loading", not "is not running": a withdrawn mod's classes are still
+	 * loaded, its mixins still applied, and isLoaded(id) deliberately still answers true.
+	 */
+	static void markWithdrawn(List<String> modIds, String why) {
+		for (String id : modIds) {
+			ModCatalog.mark(id, ModCatalog.Status.FAILED, why);
+		}
 	}
 }

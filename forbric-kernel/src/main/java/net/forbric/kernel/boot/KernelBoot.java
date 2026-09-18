@@ -557,6 +557,9 @@ public final class KernelBoot {
 		KernelLifecycle.bind(loader);
 		KernelHudBridge.bind(loader);
 		KernelLifecycle.setModJars(modJars);
+		// Where the load report goes, and the shutdown hook that writes it if loading never finishes -- which is
+		// exactly the boot whose reader needs the file most.
+		KernelLoadReport.setRunDir(gameDir);
 		KernelLifecycle.setRuntimeJars(runtimeJars);
 		KernelFabricEcosystem.bindGameLoader(loader);
 

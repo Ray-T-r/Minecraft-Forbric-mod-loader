@@ -45,6 +45,7 @@ import net.forbric.kernel.mixin.MixinConfigPolicy;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.api.UnifiedDependency;
 import net.forbric.kernel.fabric.KernelMetadataSupport;
+import net.forbric.api.ModCatalog;
 
 /**
  * Drives the Fabric ecosystem natively: discovery &rarr; {@link KernelFabricLoader} &rarr; entrypoints.
@@ -485,6 +486,7 @@ public final class KernelFabricEcosystem {
 				reportSwallowedFailure(key, id, entrypoint);
 			} catch (Throwable t) {
 				ForbricLog.error("[Forbric/Fabric] " + key + " entrypoint of " + id + " failed", t);
+				ModCatalog.mark(id, ModCatalog.Status.FAILED, "its " + key + " entrypoint threw");
 			}
 		}
 
@@ -519,6 +521,8 @@ public final class KernelFabricEcosystem {
 					ForbricLog.warn("[Forbric/Fabric] " + key + " entrypoint of " + id + " returned normally but "
 							+ "caught its own failure into " + field.getName() + " — the mod is only PARTLY "
 							+ "initialised and will fail later somewhere unrelated", parked);
+					ModCatalog.mark(id, ModCatalog.Status.DEGRADED,
+							"its " + key + " entrypoint swallowed its own failure");
 				}
 			} catch (Throwable inaccessible) {
 				// A mod that hides the field from reflection simply keeps its secret; this is diagnostics only.

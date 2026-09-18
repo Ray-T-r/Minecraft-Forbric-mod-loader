@@ -53,6 +53,14 @@ public final class KernelModListScreen extends Screen {
 	/** Panel wash, so mod names stay legible over whatever the world happens to look like behind them. */
 	private static final int PANEL = 0xC0000000;
 	private static final int SELECTED = 0x60FFFFFF;
+	/**
+	 * Rows for mods something went wrong with.
+	 *
+	 * <p>The marker is a character rather than colour alone: colour alone is not readable to everyone, and this
+	 * row is the one carrying the information a player most needs.
+	 */
+	private static final int BROKEN = 0xFFE06C6C;
+	private static final String BROKEN_MARK = "! ";
 	private static final int PAD = 6;
 	private static final int SEARCH_Y = 32;
 	private static final int LIST_TOP = 54;
@@ -133,6 +141,11 @@ public final class KernelModListScreen extends Screen {
 	}
 
 	private static boolean matches(ModCatalog.Entry e, String needle) {
+		if (e.status() != ModCatalog.Status.OK
+				&& ("broken".contains(needle) || "failed".contains(needle) || needle.startsWith("!"))) {
+			// So that a player who can SEE something is wrong can also filter down to it.
+			return true;
+		}
 		return e.name().toLowerCase(Locale.ROOT).contains(needle)
 				|| e.modId().toLowerCase(Locale.ROOT).contains(needle)
 				|| label(e.ecosystem()).toLowerCase(Locale.ROOT).contains(needle);
@@ -178,6 +191,18 @@ public final class KernelModListScreen extends Screen {
 		y += 12;
 		g.text(this.font, Component.literal(label(e.ecosystem())), x, y, tag(e.ecosystem()));
 		y += 14;
+		if (e.status() != ModCatalog.Status.OK) {
+			// The wording is the careful part. A withdrawn mod's classes are loaded and its mixins applied, so
+			// "not running" would be untrue and would send someone to reinstall what is already there.
+			String what = e.status() == ModCatalog.Status.FAILED
+					? "This mod did not finish loading"
+					: "Part of this mod did not run";
+			String detail = e.statusDetail().isEmpty() ? "" : " \u2014 " + e.statusDetail();
+			g.textWithWordWrap(this.font, FormattedText.of(what + detail), x, y, wrap, BROKEN);
+			y += 12 * (1 + this.font.split(FormattedText.of(what + detail), wrap).size());
+			g.text(this.font, Component.literal("see .forbric-kernel/load-report.txt"), x, y, DIM);
+			y += 14;
+		}
 		if (!e.authors().isEmpty()) {
 			g.text(this.font, Component.literal("by " + String.join(", ", e.authors())), x, y, DIM);
 			y += 12;
@@ -226,9 +251,13 @@ public final class KernelModListScreen extends Screen {
 	}
 
 	private static String summary() {
-		return ModCatalog.count(Ecosystem.FABRIC) + " Fabric   "
+		String counts = ModCatalog.count(Ecosystem.FABRIC) + " Fabric   "
 				+ ModCatalog.count(Ecosystem.NEOFORGE) + " NeoForge   "
 				+ ModCatalog.count(Ecosystem.FORGE) + " MinecraftForge";
+		int broken = ModCatalog.failures().size();
+		// "did not finish loading", never "not running": a withdrawn mod's classes ARE loaded and its mixins ARE
+		// applied. Telling a player it is absent sends them to reinstall something that is already there.
+		return broken == 0 ? counts : counts + "   \u00a7c" + broken + " did not finish loading";
 	}
 
 	private static String label(Ecosystem ecosystem) {
@@ -285,7 +314,9 @@ public final class KernelModListScreen extends Screen {
 			if (KernelModListScreen.this.list.getSelected() == this) {
 				g.fill(x - 2, y - 2, x + getContentWidth() + 2, y + getContentHeight() + 1, SELECTED);
 			}
-			g.text(KernelModListScreen.this.font, trim(this.entry.name(), getContentWidth()), x, y, BRIGHT);
+			boolean broken = this.entry.status() != ModCatalog.Status.OK;
+			String name = broken ? BROKEN_MARK + this.entry.name() : this.entry.name();
+			g.text(KernelModListScreen.this.font, trim(name, getContentWidth()), x, y, broken ? BROKEN : BRIGHT);
 			g.text(KernelModListScreen.this.font, label(this.entry.ecosystem()), x, y + 11,
 					tag(this.entry.ecosystem()));
 		}

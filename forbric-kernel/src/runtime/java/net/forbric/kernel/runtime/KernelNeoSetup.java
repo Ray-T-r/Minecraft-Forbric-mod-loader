@@ -23,6 +23,7 @@ import net.forbric.kernel.boot.KernelModLoader;
 import net.forbric.kernel.boot.NeoDeferredWork;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
+import net.forbric.api.ModCatalog;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.DeferredWorkQueue;
 import net.neoforged.fml.ModContainer;
@@ -75,6 +76,7 @@ public final class KernelNeoSetup {
 			} catch (Throwable perMod) {
 				ForbricLog.warn("[Forbric/Lifecycle] " + e.getKey() + " failed during " + label,
 						Reflect.unwrap(perMod));
+				ModCatalog.mark(e.getKey(), ModCatalog.Status.DEGRADED, "it threw during " + label);
 			} finally {
 				KernelModLoader.setNeoActiveContainer(KernelNeoSetup.class.getClassLoader(), null);
 			}

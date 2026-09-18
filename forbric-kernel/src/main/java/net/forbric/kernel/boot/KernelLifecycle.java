@@ -1208,6 +1208,10 @@ public final class KernelLifecycle {
 		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
 		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
+
+		// Loading is over on this side, so whatever went wrong during it is now the whole story rather than a
+		// partial one. A clean run writes no file and says one line.
+		KernelLoadReport.write();
 	}
 
 	/**
@@ -1342,6 +1346,10 @@ public final class KernelLifecycle {
 		fireForgeSetupPhase(cl, ForeignType.INTER_MOD_PROCESS_EVENT, "IMC process");
 		fireSetupPhase(cl, mods, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
 		fireForgeSetupPhase(cl, ForeignType.FML_LOAD_COMPLETE_EVENT, "load complete");
+
+		// The client's own end of loading. Same reason as the server twin: at this point what went wrong is the
+		// whole story, and this is the last moment before the player is looking at a title screen.
+		KernelLoadReport.write();
 	}
 
 	/**

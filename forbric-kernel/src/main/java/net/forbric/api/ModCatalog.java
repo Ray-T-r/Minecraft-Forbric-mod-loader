@@ -62,7 +62,18 @@ public final class ModCatalog {
 	 * that can turn it into a texture anyway.
 	 */
 	public record Entry(Ecosystem ecosystem, String modId, String name, String version, String description,
-			List<String> authors, String jar, String iconPath, String bundledBy) {
+			List<String> authors, String jar, String iconPath, String bundledBy, Status status,
+			String statusDetail) {
+
+		/**
+		 * The nine-argument form every existing caller uses. A mod is {@link Status#OK} until something says
+		 * otherwise, and the catalogue is built before anything can.
+		 */
+		public Entry(Ecosystem ecosystem, String modId, String name, String version, String description,
+				List<String> authors, String jar, String iconPath, String bundledBy) {
+			this(ecosystem, modId, name, version, description, authors, jar, iconPath, bundledBy, Status.OK, "");
+		}
+
 		public Entry {
 			if (ecosystem == null) throw new NullPointerException("ecosystem");
 			if (modId == null || modId.isBlank()) throw new IllegalArgumentException("modId");
@@ -73,6 +84,14 @@ public final class ModCatalog {
 			jar = orEmpty(jar);
 			iconPath = orEmpty(iconPath);
 			bundledBy = orEmpty(bundledBy);
+			status = status == null ? Status.OK : status;
+			statusDetail = orEmpty(statusDetail);
+		}
+
+		/** The same mod, with what became of it. */
+		public Entry withStatus(Status newStatus, String detail) {
+			return new Entry(ecosystem, modId, name, version, description, authors, jar, iconPath, bundledBy,
+					newStatus, detail);
 		}
 
 		/**
@@ -98,6 +117,23 @@ public final class ModCatalog {
 	 * this mod here" — depend on knowing which loader built it, which on this instance is the one thing they
 	 * should never have to know.
 	 */
+	/**
+	 * What became of a mod during loading.
+	 *
+	 * <p>The wording matters and is deliberate. A mod whose constructor threw has had its container withdrawn
+	 * from ModList, but its classes are still loaded, its mixins still applied, and {@code isLoaded(id)} still
+	 * answers true ON PURPOSE. So the honest description is "did not finish loading", never "is not running" —
+	 * the second would send a player to reinstall something that is already there.
+	 */
+	public enum Status {
+		/** Nothing reported a problem. */
+		OK,
+		/** Part of this mod did not run: a setup phase threw, an entrypoint failed, its mixins were suppressed. */
+		DEGRADED,
+		/** This mod did not finish loading: its constructor or its entrypoint threw and its container was withdrawn. */
+		FAILED
+	}
+
 	private static final Comparator<Entry> BY_NAME =
 			Comparator.comparing((Entry e) -> e.name().toLowerCase(Locale.ROOT))
 					.thenComparing(Entry::modId);
@@ -109,7 +145,7 @@ public final class ModCatalog {
 	}
 
 	/** Publishes the catalogue. The last caller wins; duplicate ids are collapsed, first ecosystem to claim wins. */
-	public static void publish(List<Entry> found) {
+	public static synchronized void publish(List<Entry> found) {
 		if (found == null) {
 			entries = List.of();
 			return;
@@ -155,6 +191,49 @@ public final class ModCatalog {
 	}
 
 	/** Test seam. */
+	/**
+	 * Records what became of one mod, if the catalogue has it.
+	 *
+	 * <p>Two rules, and they are the whole correctness of this.
+	 *
+	 * <p><b>Never invent a row.</b> An id the catalogue does not have is dropped without a word. Aliases,
+	 * {@code provides} ids, the NeoForge baseline container and presence-only ids all reach the call sites that
+	 * use this, and none of them is a mod a player installed. A Mods screen listing things that do not exist
+	 * would be worse than one that says nothing.
+	 *
+	 * <p><b>FAILED is sticky and outranks DEGRADED.</b> A mod whose constructor threw and which then also missed
+	 * a setup phase is still, first and last, a mod that did not finish loading.
+	 */
+	public static synchronized void mark(String modId, Status status, String detail) {
+		if (modId == null || status == null || status == Status.OK) return;
+
+		List<Entry> updated = new ArrayList<>(entries.size());
+		boolean found = false;
+		for (Entry e : entries) {
+			if (!e.modId().equals(modId)) {
+				updated.add(e);
+				continue;
+			}
+			found = true;
+			Status kept = e.status() == Status.FAILED ? Status.FAILED : status;
+			String keptDetail = kept == e.status() && !e.statusDetail().isEmpty() ? e.statusDetail() : detail;
+			updated.add(e.withStatus(kept, keptDetail));
+		}
+		if (!found) return;
+
+		entries = List.copyOf(updated);
+		installed = updated.stream().filter(Entry::installed).toList();
+	}
+
+	/** The mods something went wrong with, name-sorted. Empty is the ordinary case. */
+	public static List<Entry> failures() {
+		List<Entry> out = new ArrayList<>();
+		for (Entry e : entries) {
+			if (e.status() != Status.OK) out.add(e);
+		}
+		return List.copyOf(out);
+	}
+
 	static void reset() {
 		entries = List.of();
 		installed = List.of();
