@@ -379,6 +379,47 @@ class ModsButtonRedirectorTest {
 		assertFalse(ModsButtonRedirector.carriesAMarker(null));
 	}
 
+	/**
+	 * A mod built against a NeoForge older than 26.2.0.88 still constructs the name NeoForge has since moved, and
+	 * on this instance that class does not exist. titlescreenfixer's mixin puts exactly this constructor inside
+	 * {@code TitleScreen}, so the client died in {@code Minecraft.<init>} with NoClassDefFoundError before drawing
+	 * anything — a whole dead client for one renamed class. Re-pointing it costs nothing: every construction of it
+	 * was going to open a mods list, and the kernel's is the one this instance wants.
+	 */
+	@org.junit.jupiter.api.Test
+	void theNameNeoForgeMovedIsRePointedToo() {
+		String moved = "net/neoforged/neoforge/client/gui/ModListScreen";
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/OldMod", null, "java/lang/Object", null);
+		org.objectweb.asm.MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "open",
+				"(Lnet/minecraft/client/gui/screens/Screen;)V", null, null);
+		mv.visitCode();
+		mv.visitTypeInsn(Opcodes.NEW, moved);
+		mv.visitInsn(Opcodes.DUP);
+		mv.visitVarInsn(Opcodes.ALOAD, 1);
+		mv.visitMethodInsn(Opcodes.INVOKESPECIAL, moved, "<init>",
+				"(Lnet/minecraft/client/gui/screens/Screen;)V", false);
+		mv.visitInsn(Opcodes.POP);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(3, 2);
+		mv.visitEnd();
+		cw.visitEnd();
+
+		ClassNode out = parse(transform("com/example/OldMod", cw.toByteArray()));
+		for (MethodNode method : out.methods) {
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW) {
+					assertEquals(ModsButtonRedirector.KERNEL_SCREEN, type.desc,
+							"the moved name must be re-pointed at the kernel's list, not left to NoClassDefFoundError");
+				}
+				if (insn instanceof MethodInsnNode call && "<init>".equals(call.name)) {
+					assertEquals(ModsButtonRedirector.KERNEL_SCREEN, call.owner,
+							"and so must its constructor, or NEW and INVOKESPECIAL disagree");
+				}
+			}
+		}
+	}
+
 	@org.junit.jupiter.api.Test
 	void aClassNamingTheScreenIsLetThrough() {
 		// A false negative here silently drops the redirect, which is far worse than the scan it saves.

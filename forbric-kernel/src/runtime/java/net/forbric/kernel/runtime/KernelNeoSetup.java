@@ -82,8 +82,25 @@ public final class KernelNeoSetup {
 
 		// Off the caller's thread, because that is where NeoForge runs it and mods can tell the difference — see
 		// NeoDeferredWork for the resource-manager window this was landing in.
-		NeoDeferredWork.runBlocking(
-				NeoDeferredWork.syncExecutor(KernelNeoSetup.class.getClassLoader()), queue::runTasks);
+		//
+		// GUARDED, and the MinecraftForge twin already was: KernelForgeSetup wraps its own drain and this one did
+		// not, which is the asymmetry that pairing exists to expose. DeferredWorkQueue.runTasks does NOT abort at
+		// the first failure — it collects each one as a suppressed cause (and NeoForge's own captureException has
+		// already logged "Mod '<id>' encountered an error in a deferred task") and throws at the END. Letting that
+		// escape cost the phase REPORT: bucket_of_frog's task threw NoClassDefFoundError for a class upstream
+		// NeoForge had deleted, and "posted FML common setup to 23 NeoForge mod(s)" never printed at all. Every
+		// other mod's setup had in fact completed; nothing said so, and gate-m9's assertion on that line went red
+		// for a reason that had nothing to do with the 23.
+		try {
+			NeoDeferredWork.runBlocking(
+					NeoDeferredWork.syncExecutor(KernelNeoSetup.class.getClassLoader()), queue::runTasks);
+		} catch (Throwable drained) {
+			Throwable[] failures = Reflect.unwrap(drained).getSuppressed();
+			ForbricLog.warn("[Forbric/Lifecycle] " + (failures.length == 0 ? 1 : failures.length)
+					+ " deferred task(s) failed during " + label + " — each owning mod is named above by NeoForge's "
+					+ "own report, and is left half-loaded. The other mods' " + label + " completed",
+					Reflect.unwrap(drained));
+		}
 		return fired;
 	}
 
