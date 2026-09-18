@@ -95,25 +95,49 @@ public final class KernelForgeAttributes {
 		if (cached != null) return cached;
 		Map<EntityType<? extends LivingEntity>, AttributeSupplier> neo = neoAttributes();
 		Map<EntityType<? extends LivingEntity>, AttributeSupplier> forge = forgeAttributes();
-		cached = forge == null ? neo : (neo == null ? forge : new Both(neo, forge));
+		if (neo == null || forge == null) {
+			// NOT cached. One side unreachable is the shape that makes a fix look applied and be dead: the first
+			// DefaultAttributes lookup can happen before the other ecosystem's hooks class is loadable, and
+			// pinning THAT answer would serve one ecosystem's map for the rest of the process with no further
+			// sign. Answer with what there is, and ask again next time.
+			return forge == null ? neo : (neo == null ? forge : null);
+		}
+		cached = new Both(neo, forge);
 		view = cached;
 		return cached;
 	}
 
-	private static Map<EntityType<? extends LivingEntity>, AttributeSupplier> neoAttributes() {
+	/**
+	 * One ecosystem's map, or null with a reason said once.
+	 *
+	 * <p>Silence here was the risk: a {@code catch} returning null with no log is indistinguishable from an
+	 * ecosystem that simply has no mods, and the difference is every one of that ecosystem's entities.
+	 */
+	private static Map<EntityType<? extends LivingEntity>, AttributeSupplier> attributesOf(
+			String ecosystem, java.util.function.Supplier<Map<EntityType<? extends LivingEntity>,
+					AttributeSupplier>> source) {
 		try {
-			return CommonHooks.getAttributesView();
+			return source.get();
 		} catch (Throwable t) {
+			if (UNREACHABLE.add(ecosystem)) {
+				ForbricLog.warn("[Forbric/Attributes] " + ecosystem + "'s mod-attribute map could not be read — its "
+						+ "mods' living entities will be refused for having no attributes. Asked again on the next "
+						+ "lookup rather than remembered, so a load-order accident does not become permanent",
+						Reflect.unwrap(t));
+			}
 			return null;
 		}
 	}
 
+	private static final Set<String> UNREACHABLE =
+			java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+
+	private static Map<EntityType<? extends LivingEntity>, AttributeSupplier> neoAttributes() {
+		return attributesOf("NeoForge", CommonHooks::getAttributesView);
+	}
+
 	private static Map<EntityType<? extends LivingEntity>, AttributeSupplier> forgeAttributes() {
-		try {
-			return ForgeHooks.getAttributesView();
-		} catch (Throwable t) {
-			return null;
-		}
+		return attributesOf("MinecraftForge", ForgeHooks::getAttributesView);
 	}
 
 	private static int size(Map<?, ?> map) {
