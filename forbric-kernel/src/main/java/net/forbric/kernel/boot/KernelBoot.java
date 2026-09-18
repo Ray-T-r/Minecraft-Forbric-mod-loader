@@ -39,6 +39,7 @@ import net.forbric.kernel.fabric.FabricModDiscovery;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.metadata.forge.EcosystemVersions;
 import net.forbric.kernel.mixin.KernelMixinBootstrap;
+import net.forbric.kernel.mixin.MixinConfigOwners;
 import net.forbric.kernel.transform.ClientPackHookInjector;
 import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.CommonNetworkInteropInjector;
@@ -605,18 +606,27 @@ public final class KernelBoot {
 		// mixin applies AFTER an earlier one on the same target. Appending therefore leaves every existing
 		// Fabric-vs-Fabric ordering byte-identical — so gate-m2b cannot move for ordering reasons — and makes the
 		// newly-introduced, least-proven set the OUTER wrapper around a known-good stack rather than the inner one.
-		List<String> fabricConfigs = KernelFabricEcosystem.mixinConfigs();
-		List<String> forgeConfigs = KernelForgeFamilyMixins.select(forgeMixinDecls);
-		List<String> mixinConfigs = new ArrayList<>(fabricConfigs);
-		for (String config : forgeConfigs) {
-			if (!mixinConfigs.contains(config)) mixinConfigs.add(config);
+		List<MixinConfigOwners.Owned> fabricConfigs = KernelFabricEcosystem.mixinConfigs();
+		List<MixinConfigOwners.Owned> forgeConfigs = KernelForgeFamilyMixins.select(forgeMixinDecls);
+		List<MixinConfigOwners.Owned> ownedConfigs = new ArrayList<>(fabricConfigs);
+		List<String> mixinConfigs = new ArrayList<>();
+		for (MixinConfigOwners.Owned one : fabricConfigs) mixinConfigs.add(one.config());
+		for (MixinConfigOwners.Owned one : forgeConfigs) {
+			ownedConfigs.add(one);
+			if (!mixinConfigs.contains(one.config())) mixinConfigs.add(one.config());
 		}
+		// Published BEFORE registration, not after: Mixin parses each config and constructs its plugin inside
+		// addConfiguration, and the kernel's own adapter reports on individual mixins from inside that parse. A
+		// map published afterwards would be correct and would arrive after every line that needed it.
+		MixinConfigOwners.publish(ownedConfigs);
 		if (!forgeConfigs.isEmpty() || !forgeMixinDecls.isEmpty()) {
+			List<String> described = new ArrayList<>();
+			for (MixinConfigOwners.Owned one : forgeConfigs) described.add(MixinConfigOwners.describe(one.config()));
 			ForbricLog.info("[Forbric/Mixin] mixin configs: %d Fabric + %d Forge-family (%d NeoForge, %d "
 					+ "MinecraftForge) — %s", fabricConfigs.size(), forgeConfigs.size(),
 					KernelForgeFamilyMixins.count(forgeMixinDecls, forgeConfigs, Ecosystem.NEOFORGE),
 					KernelForgeFamilyMixins.count(forgeMixinDecls, forgeConfigs, Ecosystem.FORGE),
-					forgeConfigs.isEmpty() ? "none kept" : String.join(", ", forgeConfigs));
+					described.isEmpty() ? "none kept" : String.join(", ", described));
 		}
 		KernelMixinBootstrap.init(loader, side.envType, mixinConfigs);
 
@@ -1088,8 +1098,14 @@ public final class KernelBoot {
 			if (!mod.getEcosystem().isForgeFamily()) continue;
 			forgeFamily = true;
 			for (String config : mod.getMixinConfigs()) {
-				if (seen.add(mod.getEcosystem() + "\0" + config)) {
-					configs.add(new KernelForgeFamilyMixins.ForgeMixinConfig(config, jar, mod.getEcosystem()));
+				// The mod id is part of the key on purpose. ForgeMetadataMapper copies one manifest's config list
+				// into EVERY DiscoveredMod that manifest declares, so a toml with three [[mods]] offers the same
+				// config under three different ids. Keeping only the first would pick one of them and be quietly
+				// wrong about the other two; keeping all three lets MixinConfigOwners see that nobody owns it
+				// unambiguously and report the file name instead of a name that might be the wrong one.
+				if (seen.add(mod.getEcosystem() + "\0" + mod.getId() + "\0" + config)) {
+					configs.add(new KernelForgeFamilyMixins.ForgeMixinConfig(config, mod.getId(), jar,
+							mod.getEcosystem()));
 				}
 			}
 		}

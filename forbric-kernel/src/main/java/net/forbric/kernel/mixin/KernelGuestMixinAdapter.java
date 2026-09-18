@@ -142,11 +142,11 @@ public final class KernelGuestMixinAdapter {
 						ForbricLog.warn("[Forbric/Mixin] %s:%s targets ANOTHER MOD and did not attach — %s. Both "
 								+ "mods are installed and each is within the version range the other declares, so "
 								+ "nothing else will report this; one of them needs a different version.",
-								configName, mixin, String.join(", ", fit.foreign()));
+								MixinConfigOwners.describe(configName), mixin, String.join(", ", fit.foreign()));
 						ForeignMixinBreaks.record(configName, mixin, fit.foreign());
 					} else if (fit.verdict() == MixinFit.Verdict.PARTIAL) {
 						ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s applies only partially on the merged base "
-								+ "— %s (kept; -Dforbric.mixinFit=strict drops these)", configName, mixin,
+								+ "— %s (kept; -Dforbric.mixinFit=strict drops these)", MixinConfigOwners.describe(configName), mixin,
 								fit.reason());
 					}
 					continue;
@@ -161,14 +161,14 @@ public final class KernelGuestMixinAdapter {
 						configName, MixinFit.mixinTargets(MixinFit.parse(classBytes)), resource)) {
 					ForbricLog.info("[Forbric/Mixin] keeping guest mixin %s:%s — %s, but another loaded mod's mixin "
 							+ "targets the same class, so the missing member is that mod's to add (cross-mod "
-							+ "compatibility layer, not dead weight)", configName, mixin, fit.reason());
+							+ "compatibility layer, not dead weight)", MixinConfigOwners.describe(configName), mixin, fit.reason());
 					continue;
 				}
 				suppress.add(mixin);
 				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — %s on the merged base (%s)",
-						configName, mixin, fit.verdict(), fit.reason());
+						MixinConfigOwners.describe(configName), mixin, fit.verdict(), fit.reason());
 			} catch (RuntimeException perMixin) {
-				ForbricLog.debug("[Forbric/Mixin] could not scan guest mixin %s:%s — %s", configName, mixin,
+				ForbricLog.debug("[Forbric/Mixin] could not scan guest mixin %s:%s — %s", MixinConfigOwners.describe(configName), mixin,
 						String.valueOf(perMixin));
 			}
 		}

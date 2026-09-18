@@ -373,7 +373,8 @@ public final class ForbricMixinService
 				json = json.replaceAll(",\\s*" + token, "")
 						.replaceAll(token + "\\s*,", "")
 						.replaceAll(token, "");
-				ForbricLog.info("[Forbric/Mixin] suppressed mixin %s from %s", mixin, name);
+				ForbricLog.info("[Forbric/Mixin] suppressed mixin %s from %s", mixin,
+						MixinConfigOwners.describe(name));
 			}
 
 			return new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));

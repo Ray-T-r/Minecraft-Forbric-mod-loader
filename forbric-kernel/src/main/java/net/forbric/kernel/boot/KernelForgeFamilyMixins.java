@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Set;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.mixin.MixinConfigOwners;
 import net.forbric.kernel.mixin.MixinConfigPolicy;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -47,10 +48,13 @@ public final class KernelForgeFamilyMixins {
 	}
 
 	/**
-	 * One declared Forge-family mixin config: the resource name, the jar that declared it, and which family's
-	 * manifest it came from.
+	 * One declared Forge-family mixin config: the resource name, the mod that declared it, the jar it came from,
+	 * and which family's manifest declared it.
+	 *
+	 * <p>The mod id was in scope where these are built and was being dropped. It is the only thing that lets a
+	 * failure name something a player recognises.
 	 */
-	public record ForgeMixinConfig(String config, Path jar, Ecosystem ecosystem) {
+	public record ForgeMixinConfig(String config, String modId, Path jar, Ecosystem ecosystem) {
 	}
 
 	/** Whether the Forge-family mixin path is on. Default ON — the switch exists for bisecting, not for shipping. */
@@ -62,7 +66,7 @@ public final class KernelForgeFamilyMixins {
 	 * The configs to register, in declaration order, after arbitration / the master switch / the disable gate /
 	 * de-duplication by name.
 	 */
-	public static List<String> select(List<ForgeMixinConfig> declared) {
+	public static List<MixinConfigOwners.Owned> select(List<ForgeMixinConfig> declared) {
 		if (declared == null || declared.isEmpty()) return List.of();
 		if (!enabled()) {
 			ForbricLog.warn("[Forbric/Mixin] -Dforbric.forgeFamilyMixins=off — dropping all %d Forge-family mixin "
@@ -70,7 +74,7 @@ public final class KernelForgeFamilyMixins {
 			return List.of();
 		}
 
-		List<String> out = new ArrayList<>();
+		List<MixinConfigOwners.Owned> out = new ArrayList<>();
 		Set<String> seen = new LinkedHashSet<>();
 		int suppressed = 0;
 		int disabled = 0;
@@ -80,15 +84,15 @@ public final class KernelForgeFamilyMixins {
 					: Ecosystem.FORGE;
 			if (MultiLoaderArbiter.suppressedFor(decl.jar(), mine)) {
 				suppressed++;
-				ForbricLog.debug("[Forbric/Mixin] skipping %s — %s does not own %s", decl.config(), mine,
-						decl.jar().getFileName());
+				ForbricLog.debug("[Forbric/Mixin] skipping %s's %s — %s does not own %s", decl.modId(),
+						decl.config(), mine, decl.jar().getFileName());
 				continue;
 			}
 
 			if (MixinConfigPolicy.isDisabled(decl.config())) {
 				disabled++;
-				ForbricLog.warn("[Forbric/Mixin] mixin config %s DISABLED — that module's mixins will not apply",
-						decl.config());
+				ForbricLog.warn("[Forbric/Mixin] %s's mixin config %s DISABLED — that module's mixins will not "
+						+ "apply", decl.modId(), decl.config());
 				continue;
 			}
 
@@ -97,7 +101,7 @@ public final class KernelForgeFamilyMixins {
 						decl.config());
 				continue;
 			}
-			out.add(decl.config());
+			out.add(new MixinConfigOwners.Owned(decl.config(), decl.modId(), decl.ecosystem()));
 		}
 
 		if (suppressed > 0 || disabled > 0) {
@@ -108,12 +112,15 @@ public final class KernelForgeFamilyMixins {
 	}
 
 	/** How many of {@code declared} came from each family — for the boot summary line. */
-	public static int count(List<ForgeMixinConfig> declared, List<String> selected, Ecosystem family) {
+	public static int count(List<ForgeMixinConfig> declared, List<MixinConfigOwners.Owned> selected,
+			Ecosystem family) {
 		int n = 0;
 		Set<String> counted = new LinkedHashSet<>();
+		Set<String> kept = new LinkedHashSet<>();
+		for (MixinConfigOwners.Owned one : selected) kept.add(one.config());
 		for (ForgeMixinConfig decl : declared) {
 			if (decl.ecosystem() != family) continue;
-			if (!selected.contains(decl.config())) continue;
+			if (!kept.contains(decl.config())) continue;
 			if (counted.add(decl.config())) n++;
 		}
 		return n;

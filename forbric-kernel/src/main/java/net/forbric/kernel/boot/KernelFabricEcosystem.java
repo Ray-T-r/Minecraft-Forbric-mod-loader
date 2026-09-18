@@ -36,6 +36,7 @@ import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModPresence;
 import net.forbric.kernel.fabric.FabricModDiscovery;
+import net.forbric.kernel.mixin.MixinConfigOwners;
 import net.forbric.kernel.fabric.KernelFabricLoader;
 import net.forbric.kernel.fabric.KernelModContainer;
 import net.forbric.kernel.fabric.KernelModMetadata;
@@ -279,11 +280,11 @@ public final class KernelFabricEcosystem {
 	 * <p>A config declared {@code {"config": "...", "environment": "client"}} is dropped on a dedicated server —
 	 * its mixins target client-only classes that do not exist here, and registering it would fail the whole config.
 	 */
-	public static List<String> mixinConfigs() {
+	public static List<MixinConfigOwners.Owned> mixinConfigs() {
 		if (loader == null) return List.of();
 
 		EnvType envType = loader.getEnvironmentType();
-		List<String> configs = new ArrayList<>();
+		List<MixinConfigOwners.Owned> configs = new ArrayList<>();
 
 		for (ModContainer mod : loader.getAllMods()) {
 			if (!(mod instanceof KernelModContainer)) continue;
@@ -293,11 +294,13 @@ public final class KernelFabricEcosystem {
 
 				if (MixinConfigPolicy.isDisabled(decl.config())) {
 					ForbricLog.warn("[Forbric/Mixin] mixin config %s DISABLED by -Dforbric.disableMixinConfigs — "
-							+ "that module's mixins will not apply", decl.config());
+							+ "that module's mixins will not apply",
+							MixinConfigOwners.describe(decl.config()));
 					continue;
 				}
 
-				configs.add(decl.config());
+				configs.add(new MixinConfigOwners.Owned(decl.config(), mod.getMetadata().getId(),
+						Ecosystem.FABRIC));
 			}
 		}
 
