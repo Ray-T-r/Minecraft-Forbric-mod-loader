@@ -58,7 +58,11 @@ def lastByNameUnder = { String pattern ->
 // com.mojang.serialization.Keyable, so javac cannot read Registry — and so cannot read BuiltInRegistries —
 // without it. KernelParticleProviders needs the particle registry to translate its keys.
 def stagedMcLibraries = lastByNameUnder('com/mojang/brigadier/**/*.jar') +
-		lastByNameUnder('com/mojang/datafixerupper/**/*.jar')
+		lastByNameUnder('com/mojang/datafixerupper/**/*.jar') +
+		// gson, for the same reason and one layer out: fabric-api's resource-condition evaluator takes a
+		// JsonObject, so KernelFabricConditions cannot name its own argument without it. Taken from the same
+		// local Minecraft install as the other two, never bundled — the game supplies it at runtime.
+		lastByNameUnder('com/google/code/gson/**/*.jar')
 
 sourceSets {
 	// `main` keeps the Gradle defaults (src/main/java, src/main/resources). Re-declaring them with srcDir would

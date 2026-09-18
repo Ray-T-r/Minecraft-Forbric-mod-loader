@@ -250,6 +250,10 @@ public final class KernelRuntimeClasses {
 		// NeoForge refuses to NAME a client reload listener a mixin added, and throws inside Minecraft.<init>.
 		// Called from a REWRITTEN CALL SITE, so it carries that site's game-typed descriptor.
 		CLASSES.put("net.forbric.kernel.runtime.KernelClientReloadNames", new Entry(Origin.COMPILED, List.of()));
+		// fabric-api's own two mixins for fabric:load_conditions cannot apply on the merged base, so nothing
+		// evaluated them. Wrapped into ConditionalOps' one codec factory by an inserted instruction, in Codec,
+		// which no JDK type can stand for.
+		CLASSES.put("net.forbric.kernel.runtime.KernelFabricConditions", new Entry(Origin.COMPILED, List.of()));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));
