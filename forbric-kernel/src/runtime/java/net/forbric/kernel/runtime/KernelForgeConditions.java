@@ -1,0 +1,171 @@
+/*
+ * Copyright 2026 The Forbric Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package net.forbric.kernel.runtime;
+
+import java.util.Collections;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+import com.mojang.datafixers.util.Pair;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
+import com.mojang.serialization.DynamicOps;
+import com.mojang.serialization.MapCodec;
+
+import net.minecraft.resources.Identifier;
+import net.minecraftforge.common.crafting.conditions.ICondition;
+import net.minecraftforge.registries.ForgeRegistries;
+
+import net.forbric.kernel.util.ForbricLog;
+
+/**
+ * The MinecraftForge half of the same wall {@link KernelNeoConditions} holds up on the NeoForge side.
+ *
+ * <h2>Why there are three evaluators and this is the third</h2>
+ *
+ * <p>The merged {@code ResourceManagerRegistryLoadTask} carries BOTH ecosystems' patches at once, which javap on
+ * the staged base shows plainly: {@code load} calls
+ * {@code net/minecraftforge/common/crafting/conditions/ConditionCodec.wrap} at offset 15, while its own
+ * {@code lambda$load$1} builds NeoForge's {@code ConditionalOps}. {@code LootPool} names the same MinecraftForge
+ * class. So MinecraftForge's condition evaluator is live, global, and strict — over every datapack-registry
+ * element and every loot pool, whichever ecosystem shipped the file.
+ *
+ * <p>Its failure path is the one already paid for once on the NeoForge side. {@code OptionalConditionalDecoder}
+ * parses the {@code forge:condition} value through {@code ICondition.CODEC}; a registry dispatch that cannot
+ * resolve the type returns {@code DataResult.error}, which becomes "Failed to load registries due to errors",
+ * which is a world that does not open. The NeoForge half of this was fixed when waystones demonstrated it; this
+ * is the mirror that had not been hit yet by the mods tested so far.
+ *
+ * <h2>Not SAFE_CODEC</h2>
+ *
+ * <p>MinecraftForge already ships something that looks like the answer and is not.
+ * {@code ICondition.SAFE_CODEC} is {@code CODEC.orElse(FalseCondition.INSTANCE)} — verified in {@code <clinit>}
+ * at offsets 24-35 — so a condition it cannot parse evaluates to FALSE and the element is DROPPED. That turns a
+ * loud failure into content silently missing, which is worse than the crash it replaces and is the exact shape
+ * this project keeps paying for.
+ *
+ * <p>A condition type MinecraftForge does not own is not MinecraftForge's to judge. It decodes to a condition
+ * that does not veto, the element loads, and the ecosystem that owns the id decides. Failing the parse loses the
+ * element, the registry and the world; ignoring one condition's opinion loses one condition's opinion.
+ */
+public final class KernelForgeConditions {
+
+	/** Decoded in place of a condition whose type belongs to another ecosystem's registry. */
+	private static final ICondition FOREIGN = new ICondition() {
+		@Override
+		public boolean test(ICondition.IContext context, DynamicOps<?> ops) {
+			return true;
+		}
+
+		@Override
+		public MapCodec<? extends ICondition> codec() {
+			// Never registered, so it can be decoded and never re-encoded. encode() below refuses first, with a
+			// message that says which of those two happened.
+			return MapCodec.unit(this);
+		}
+
+		@Override
+		public String toString() {
+			return "forbric:foreign-condition";
+		}
+	};
+
+	private static final Set<String> REPORTED = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
+	private KernelForgeConditions() {
+	}
+
+	/**
+	 * Wraps MinecraftForge's own {@code ICondition} codec, which is what {@code ICondition.<clinit>} hands over.
+	 *
+	 * <p>One inserted instruction, stack-neutral: the dispatch codec goes in, the lenient one comes out, and the
+	 * existing {@code PUTSTATIC} stores it. {@code OPTIONAL_FEILD_CODEC} and {@code SAFE_CODEC} are both derived
+	 * from {@code CODEC} later in the same {@code <clinit>} (offsets 21 and 35), so wrapping at the store covers
+	 * all three readers without naming any of them.
+	 */
+	public static Codec<ICondition> lenient(Codec<ICondition> strict) {
+		return new Codec<>() {
+			@Override
+			public <T> DataResult<Pair<ICondition, T>> decode(DynamicOps<T> ops, T input) {
+				String foreign = foreignType(ops, input);
+				if (foreign != null) {
+					report(foreign);
+					return DataResult.success(Pair.of(FOREIGN, ops.empty()));
+				}
+				return strict.decode(ops, input);
+			}
+
+			@Override
+			public <T> DataResult<T> encode(ICondition value, DynamicOps<T> ops, T prefix) {
+				if (value == FOREIGN) {
+					return DataResult.error(() -> "a resource condition belonging to another ecosystem was read "
+							+ "and cannot be written back");
+				}
+				return strict.encode(value, ops, prefix);
+			}
+
+			@Override
+			public String toString() {
+				return "Forbric(" + strict + ")";
+			}
+		};
+	}
+
+	/**
+	 * The {@code type} of this condition when it names something MinecraftForge's registry does not have, else
+	 * null.
+	 *
+	 * <p>Anything unreadable returns null, which hands the input back to the strict codec: a malformed condition
+	 * has to keep producing MinecraftForge's own error, or this leniency would swallow genuinely broken data.
+	 * The registry itself is consulted rather than an error MESSAGE being pattern-matched — a message is
+	 * upstream's to reword, and a leniency that silently stops applying is a shape with a price tag on it here.
+	 */
+	private static <T> String foreignType(DynamicOps<T> ops, T input) {
+		try {
+			Optional<Map<T, T>> map = ops.getMapValues(input)
+					.map(stream -> stream.collect(java.util.stream.Collectors.toMap(Pair::getFirst,
+							Pair::getSecond, (a, b) -> b)))
+					.result();
+			if (map.isEmpty()) return null;
+			T type = null;
+			for (Map.Entry<T, T> entry : map.get().entrySet()) {
+				if (ops.getStringValue(entry.getKey()).result().filter("type"::equals).isPresent()) {
+					type = entry.getValue();
+				}
+			}
+			if (type == null) return null;
+			Optional<String> name = ops.getStringValue(type).result();
+			if (name.isEmpty()) return null;
+			Identifier id = Identifier.tryParse(name.get());
+			if (id == null) return null;
+			return ForgeRegistries.CONDITION_SERIALIZERS.get().containsKey(id) ? null : name.get();
+		} catch (Throwable t) {
+			return null;
+		}
+	}
+
+	private static void report(String type) {
+		if (!REPORTED.add(type)) return;
+		ForbricLog.warn("[Forbric/Conditions] resource condition '%s' is not in MinecraftForge's condition "
+				+ "registry, so its evaluator — which the merged base runs over every datapack-registry element "
+				+ "and every loot pool — could not judge it and used to fail the whole registry load with it. It "
+				+ "is being ignored here instead; the ecosystem that owns that id decides. %d distinct "
+				+ "condition(s) so far", type, REPORTED.size());
+	}
+}

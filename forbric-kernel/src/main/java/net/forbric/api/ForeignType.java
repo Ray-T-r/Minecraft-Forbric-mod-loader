@@ -133,6 +133,13 @@ public enum ForeignType {
 			"net.neoforged.fml.ModLoadingContext"),
 	NEW_REGISTRY_EVENT("net.minecraftforge.registries.NewRegistryEvent",
 			"net.neoforged.neoforge.registries.NewRegistryEvent"),
+	/**
+	 * The resource-condition type both families dispatch datapack elements through. They are separate registries
+	 * with separate dialects, and the merged base runs BOTH evaluators over every element from every pack — so a
+	 * condition one family cannot resolve used to fail the whole registry load, and the world with it.
+	 */
+	ICONDITION("net.minecraftforge.common.crafting.conditions.ICondition",
+			"net.neoforged.neoforge.common.conditions.ICondition"),
 	NETWORK_REGISTRY("net.minecraftforge.network.NetworkRegistry",
 			"net.neoforged.neoforge.network.registration.NetworkRegistry"),
 	REGISTER_EVENT("net.minecraftforge.registries.RegisterEvent",

@@ -98,6 +98,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= letDungeonsGenerateWithoutTheDataMap(node);
 			changed |= guardNeoForgesWorldModifierPass(node);
 			changed |= letForeignResourceConditionsThrough(node);
+			changed |= letForeignResourceConditionsThroughMinecraftForge(node);
 			changed |= letFabricResourceConditionsDecide(node);
 			changed |= serveDefaultAttributesBothEcosystems(node);
 			changed |= nameTheReloadListenersNeoForgeRefusesToName(node);
@@ -214,9 +215,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String NEO_SERVER_LIFECYCLE_HOOKS = "net/neoforged/neoforge/server/ServerLifecycleHooks";
 	private static final String RUN_MODIFIERS = "(Lnet/minecraft/server/MinecraftServer;)V";
 
-	private static final String ICONDITION = "net/neoforged/neoforge/common/conditions/ICondition";
+	private static final String ICONDITION = ForeignType.ICONDITION.internal(Ecosystem.NEOFORGE);
 	private static final String CODEC_DESC = "Lcom/mojang/serialization/Codec;";
 	private static final String KERNEL_NEO_CONDITIONS = "net/forbric/kernel/runtime/KernelNeoConditions";
+	private static final String FORGE_ICONDITION = ForeignType.ICONDITION.internal(Ecosystem.FORGE);
+	private static final String KERNEL_FORGE_CONDITIONS = "net/forbric/kernel/runtime/KernelForgeConditions";
 
 	private static final String CONDITIONAL_OPS = "net/neoforged/neoforge/common/conditions/ConditionalOps";
 	private static final String CONDITIONAL_FACTORY =
@@ -755,6 +758,54 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "type it does not own — the merged base runs that evaluator over EVERY datapack element from "
 				+ "every pack, so a Fabric mod's own condition used to fail the whole registry load and the world "
 				+ "with it");
+		return true;
+	}
+
+	/**
+	 * The same wrap on MinecraftForge's {@code ICondition.CODEC} — the THIRD strict evaluator, and the one that
+	 * had not been hit yet.
+	 *
+	 * <p>The merged {@code ResourceManagerRegistryLoadTask.load} calls
+	 * {@code ConditionCodec.wrap} at offset 15 while its own {@code lambda$load$1} builds NeoForge's
+	 * {@code ConditionalOps}: both ecosystems' evaluators are live in the same method, over every datapack
+	 * registry element. {@code LootPool} names the MinecraftForge one too. So a mod whose condition type only
+	 * MinecraftForge cannot resolve fails a world load exactly the way waystones did on the NeoForge side.
+	 *
+	 * <p>Not {@code SAFE_CODEC}, which MinecraftForge already ships and which looks like the answer:
+	 * {@code <clinit>} offsets 24-35 show it is {@code CODEC.orElse(FalseCondition.INSTANCE)}, so an unparseable
+	 * condition evaluates FALSE and the element is dropped. Silently missing content is worse than the crash.
+	 */
+	private static boolean letForeignResourceConditionsThroughMinecraftForge(ClassNode node) {
+		if (!FORGE_ICONDITION.equals(node.name)) return false;
+		MethodNode clinit = findMethod(node, "<clinit>", "()V");
+		if (clinit == null) return false;
+
+		FieldInsnNode target = null;
+		for (AbstractInsnNode insn = clinit.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTSTATIC
+					&& FORGE_ICONDITION.equals(field.owner) && "CODEC".equals(field.name)
+					&& CODEC_DESC.equals(field.desc)) {
+				if (target != null) {
+					ForbricLog.warn("[Forbric/MergedBaseCompat] MinecraftForge's ICondition.CODEC is assigned more "
+							+ "than once — not wrapping it, because only one of the assignments would survive");
+					return false;
+				}
+				target = field;
+			}
+		}
+		if (target == null) return false;
+		if (target.getPrevious() instanceof MethodInsnNode already
+				&& KERNEL_FORGE_CONDITIONS.equals(already.owner)) {
+			return false;                       // already wrapped: idempotent
+		}
+
+		clinit.instructions.insertBefore(target, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FORGE_CONDITIONS,
+				"lenient", "(" + CODEC_DESC + ")" + CODEC_DESC, false));
+		ForbricLog.info("[Forbric/MergedBaseCompat] MinecraftForge's resource-condition codec now tolerates a "
+				+ "condition type it does not own — the merged base runs that evaluator over every datapack "
+				+ "registry element AND every loot pool, so another ecosystem's condition used to fail the whole "
+				+ "registry load and the world with it. OPTIONAL_FEILD_CODEC and SAFE_CODEC derive from CODEC "
+				+ "later in the same <clinit>, so all three readers inherit this");
 		return true;
 	}
 

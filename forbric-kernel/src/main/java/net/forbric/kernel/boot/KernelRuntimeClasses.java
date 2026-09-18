@@ -242,6 +242,10 @@ public final class KernelRuntimeClasses {
 		// a Fabric mod's own condition id failed the whole registry load. This wraps ICondition.CODEC; the call
 		// site is an inserted instruction in that class's <clinit>, in Codec, which no JDK type can stand for.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoConditions", new Entry(Origin.COMPILED, List.of()));
+		// The THIRD evaluator, and the one nothing covered: the merged ResourceManagerRegistryLoadTask.load calls
+		// MinecraftForge's ConditionCodec.wrap while its own lambda builds NeoForge's ConditionalOps, and LootPool
+		// names the MinecraftForge one too. Same shape as above, same reason it carries no stand-in descriptor.
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeConditions", new Entry(Origin.COMPILED, List.of()));
 		// Both ecosystems collect mod entity attributes into a map of their own and the merge kept only NeoForge's
 		// reader in DefaultAttributes, so a traditional MinecraftForge mod's entities had no attributes at all.
 		// attributesView() is called from a REWRITTEN CALL SITE and so carries the descriptor that site had.
