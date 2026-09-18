@@ -87,15 +87,30 @@ public final class KernelBoot {
 
 	/** The two boot sides. */
 	public enum Side {
-		SERVER(EnvType.SERVER, LifecycleHookInjector.SERVER_MAIN, true),
-		CLIENT(EnvType.CLIENT, LifecycleHookInjector.CLIENT_MAIN, false);
+		SERVER(EnvType.SERVER, LifecycleHookInjector.SERVER_MAIN, true,
+				"net.minecraft.server.dedicated.DedicatedServer"),
+		CLIENT(EnvType.CLIENT, LifecycleHookInjector.CLIENT_MAIN, false,
+				"net.minecraft.client.gui.screens.TitleScreen");
 
 		final EnvType envType;
 		final String entryClass;
+		/**
+		 * The class whose loading means "far enough along that the anchor census is worth reading".
+		 *
+		 * <p>Server: vanilla's own Main builds the PackRepository and the WorldStem BEFORE constructing this, so
+		 * every server-side target the kernel cares about has already been through the chain. ExitHookInjector
+		 * already treats this class as the server's end-of-life owner.
+		 *
+		 * <p>Client: the title screen is the moment the player starts looking, and by then Minecraft, Options,
+		 * ClientModLoader, PackRepository, Pack, ModList and GuiLayerManager have all been defined.
+		 * KernelClientSmoke already resolves exactly this class as its "we are up" landmark.
+		 */
+		final String censusLandmark;
 		/** The dedicated server rejects {@code --gameDir}; the client accepts it. */
 		final boolean stripGameDir;
 
-		Side(EnvType envType, String entryClass, boolean stripGameDir) {
+		Side(EnvType envType, String entryClass, boolean stripGameDir, String censusLandmark) {
+			this.censusLandmark = censusLandmark;
 			this.envType = envType;
 			this.entryClass = entryClass;
 			this.stripGameDir = stripGameDir;
@@ -531,6 +546,9 @@ public final class KernelBoot {
 		}));
 
 		TransformContext ctx = new TransformContext(side.envType, false, "named");
+		// One summary, at the point where "never loaded" starts meaning something. The per-repair failures are
+		// already loud where they happen and do not wait for this.
+		chain.reportWhenLoaded(side.censusLandmark);
 		loader.setTransformer((name, bytes) -> chain.applyBeforeMixin(name, bytes, ctx));
 
 		Thread.currentThread().setContextClassLoader(loader);

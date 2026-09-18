@@ -58,6 +58,15 @@ check "server reached Done"                               "Done \(" "$LOG"
 check "server ticked + shut down cleanly"                 "Stopping server" "$LOG"
 check "worlds saved on shutdown"                          "All dimensions are saved" "$LOG"
 
+# The anchor census, which is the one line that proves the bytecode repairs are still landing. Two assertions,
+# because either alone is weak: the summary must FIRE (a census that never runs looks exactly like a clean one),
+# and no repair may have been handed its target class and declined it. That second line is the whole mechanism:
+# a repair whose anchor a carrier moved goes silent otherwise, and is found months later by someone noticing the
+# feature is gone.
+check        "the anchor census ran"          "Forbric/Anchor\] [0-9]+ of [1-9][0-9]* declared repair" "$LOG"
+check_absent "every declared repair landed"   "Forbric/Anchor\] [0-9]+ of [0-9]+ declared repair\(s\) landed, and" "$LOG"
+check_absent "no repair was handed its target and declined" "Forbric/Anchor\] .* made no edit" "$LOG"
+
 step "no crash after Done (must be ABSENT)"
 # Everything logged after the Done line; a post-Done 'Encountered an unexpected exception' is a failure.
 awk '/Done \(/{d=1} d' "$LOG" > "$BUILD/gate-m1-postdone.log"

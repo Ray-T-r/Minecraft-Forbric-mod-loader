@@ -74,6 +74,13 @@ step "the client entered a world and left it cleanly (must PASS)"
 check "smoke controller armed"        "ClientSmoke\] armed on Minecraft.tick"      "$LOG"
 check "joined a world"                "ClientSmoke\] joined world via quick-play"  "$LOG"
 check "survived real simulation"      "ClientSmoke\] client-ready after"           "$LOG"
+
+# The anchor census on the side that has the most repairs to lose. It must FIRE -- a census that never ran looks
+# exactly like a clean one -- and nothing may have been handed its target class and declined it. Every miss here
+# is a feature gone with no other symptom, which is how four of them arrived together with a carrier upgrade.
+check        "the anchor census ran"        "Forbric/Anchor\] [0-9]+ of [1-9][0-9]* declared repair" "$LOG"
+check_absent "every declared repair landed" "Forbric/Anchor\] [0-9]+ of [0-9]+ declared repair\(s\) landed, and" "$LOG"
+check_absent "no repair was handed its target and declined" "Forbric/Anchor\] .* made no edit" "$LOG"
 check "the window title was read"      "ClientSmoke\] window title: Minecraft"     "$LOG"
 check_absent "…and it names no single loader" "ClientSmoke\] window title: .*(NeoForge|Forge|Fabric)" "$LOG"
 check "left the world cleanly"        "ClientSmoke\] clean disconnect observed"    "$LOG"

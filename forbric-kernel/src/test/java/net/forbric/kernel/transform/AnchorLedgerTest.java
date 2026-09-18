@@ -101,17 +101,30 @@ class AnchorLedgerTest {
 	}
 
 	@Test
-	void aHedgeThatNeverMatchesIsNotADefect() {
-		// ClientPackHookInjector and LifecycleHookInjector both carry a target they expect never to match, so
-		// that they start working by themselves if a carrier grows the method. Reporting those every boot is how
-		// a reader learns to skip the lines that matter.
+	void aHedgeThatDeclinesIsRecordedButIsNotADefect() {
+		// ClientPackHookInjector, LifecycleHookInjector and RegistrySyncParityInjector all carry a target they
+		// expect never to match, so that they start working by themselves if a carrier ever grows the method.
+		// Filing those as defects every boot is exactly how a reader learns to skip the lines that matter -- and
+		// the first live run of this mechanism did precisely that, reddening gate-m1 over a repair that was
+		// declining correctly.
 		AnchorLedger ledger = new AnchorLedger();
 		ledger.declare(T, new Anchor("a.Hedge", Severity.HEDGE, "nothing today; it would wake up on its own"));
 		ledger.record(T, "a.Hedge", false);
 
 		AnchorLedger.Report r = ledger.report();
-		assertEquals(1, r.misses().size(), "it is still recorded");
-		assertEquals(Severity.HEDGE, r.misses().get(0).severity(), "but it carries the severity that says so");
+		assertTrue(r.clean(), "a hedge that found nothing to do must not make the books dirty");
+		assertEquals(0, r.misses().size());
+		assertEquals(1, r.hedged().size(), "but it stays visible, because a hedge that wakes up is worth knowing");
+
+		// The other direction: the same shape at REQUIRED is a defect, so this is not passing because hedged and
+		// misses are the same empty list.
+		AnchorLedger atRequired = new AnchorLedger();
+		atRequired.declare(T, required("a.Hedge"));
+		atRequired.record(T, "a.Hedge", false);
+
+		assertFalse(atRequired.report().clean());
+		assertEquals(1, atRequired.report().misses().size());
+		assertEquals(0, atRequired.report().hedged().size());
 	}
 
 	@Test

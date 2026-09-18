@@ -61,18 +61,26 @@ public final class AnchorLedger {
 	/**
 	 * What the books say.
 	 *
+	 * <p>Three buckets rather than two, because "seen and declined" means opposite things at opposite
+	 * severities. At REQUIRED or FATAL it is a defect. At HEDGE it is the expected answer: those targets are
+	 * carried precisely so that a carrier which ever grows the method is noticed, and on today's carriers they
+	 * are supposed to match nothing. Filing a hedge as a defect turns the summary into a line the reader learns
+	 * to skip, which is the failure mode this whole mechanism is trying to avoid.
+	 *
 	 * @param declared how many anchors were declared in total
 	 * @param hit      how many were seen and edited
-	 * @param misses   seen and declined — defects
+	 * @param misses   seen and declined at REQUIRED or FATAL — defects
+	 * @param hedged   seen and declined at HEDGE — the expected answer, kept visible but not a defect
 	 * @param absent   never seen — context, not a defect
 	 */
-	public record Report(int declared, int hit, List<Miss> misses, List<Absent> absent) {
+	public record Report(int declared, int hit, List<Miss> misses, List<Miss> hedged, List<Absent> absent) {
 		public Report {
 			misses = List.copyOf(misses);
+			hedged = List.copyOf(hedged);
 			absent = List.copyOf(absent);
 		}
 
-		/** True when no declared anchor was handed its class and refused it. */
+		/** True when no declared anchor was handed its class and refused it at a severity that matters. */
 		public boolean clean() {
 			return misses.isEmpty();
 		}
@@ -131,6 +139,7 @@ public final class AnchorLedger {
 	/** Everything the books know, for the end-of-boot summary and for tests. */
 	public Report report() {
 		List<Miss> misses = new ArrayList<>();
+		List<Miss> hedged = new ArrayList<>();
 		List<Absent> absent = new ArrayList<>();
 		int hit = 0;
 
@@ -146,16 +155,19 @@ public final class AnchorLedger {
 			if (row.edited) {
 				hit++;
 			} else if (row.seen) {
-				misses.add(new Miss(row.transformer, row.anchor.binaryName(), row.anchor.severity(),
-						row.anchor.cost()));
+				Miss miss = new Miss(row.transformer, row.anchor.binaryName(), row.anchor.severity(),
+						row.anchor.cost());
+				(row.anchor.severity() == Severity.HEDGE ? hedged : misses).add(miss);
 			} else {
 				absent.add(new Absent(row.transformer, row.anchor.binaryName(), row.anchor.severity()));
 			}
 		}
 
-		misses.sort(Comparator.comparing(Miss::transformer).thenComparing(Miss::className));
+		Comparator<Miss> byName = Comparator.comparing(Miss::transformer).thenComparing(Miss::className);
+		misses.sort(byName);
+		hedged.sort(byName);
 		absent.sort(Comparator.comparing(Absent::transformer).thenComparing(Absent::className));
-		return new Report(snapshot.size(), hit, misses, absent);
+		return new Report(snapshot.size(), hit, misses, hedged, absent);
 	}
 
 	/** The class names any transformer has declared, so the chain can watch only those. */

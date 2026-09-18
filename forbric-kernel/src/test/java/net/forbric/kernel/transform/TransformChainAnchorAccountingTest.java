@@ -130,4 +130,58 @@ class TransformChainAnchorAccountingTest {
 		assertTrue(chain.ledger().report().clean(),
 				"only the full pipeline can say a transformer had its chance and declined");
 	}
+
+	@Test
+	void theCensusFiresOnceWhenItsLandmarkLoads() {
+		TransformChain chain = new TransformChain();
+		chain.register(TransformPhase.COREMOD, declaring("declines", false, new AtomicInteger()));
+		chain.reportWhenLoaded("a.Landmark");
+
+		chain.applyBeforeMixin(TARGET, new byte[] {1}, CTX);
+		String first = capture(() -> chain.applyBeforeMixin("a.Landmark", new byte[] {1}, CTX));
+		String second = capture(() -> chain.applyBeforeMixin("a.Landmark", new byte[] {1}, CTX));
+
+		assertTrue(first.contains("did NOT"), "the summary must name the repairs that declined: " + first);
+		assertTrue(first.contains("declines"), "and which transformer they were: " + first);
+		assertEquals("", second, "a landmark loaded twice must not report twice");
+	}
+
+	@Test
+	void theCensusSaysSoWhenEverythingLanded() {
+		// The other direction, so the assertion above cannot pass on a summary that says "did NOT" no matter what.
+		TransformChain chain = new TransformChain();
+		chain.register(TransformPhase.COREMOD, declaring("edits", true, new AtomicInteger()));
+		chain.reportWhenLoaded("a.Landmark");
+
+		chain.applyBeforeMixin(TARGET, new byte[] {1}, CTX);
+		String log = capture(() -> chain.applyBeforeMixin("a.Landmark", new byte[] {1}, CTX));
+
+		assertTrue(log.contains("1 of 1 declared repair(s) landed"), log);
+		assertFalse(log.contains("did NOT"), log);
+	}
+
+	@Test
+	void aChainWithNoLandmarkNeverReports() {
+		TransformChain chain = new TransformChain();
+		chain.register(TransformPhase.COREMOD, declaring("declines", false, new AtomicInteger()));
+
+		assertEquals("", capture(() -> chain.applyBeforeMixin("a.Landmark", new byte[] {1}, CTX)),
+				"the summary is opt-in; a chain built by a test or a tool must stay quiet");
+	}
+
+	private static String capture(Runnable body) {
+		java.io.PrintStream originalOut = System.out;
+		java.io.PrintStream originalErr = System.err;
+		java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+		java.io.PrintStream sink = new java.io.PrintStream(buffer, true, java.nio.charset.StandardCharsets.UTF_8);
+		System.setOut(sink);
+		System.setErr(sink);
+		try {
+			body.run();
+		} finally {
+			System.setOut(originalOut);
+			System.setErr(originalErr);
+		}
+		return buffer.toString(java.nio.charset.StandardCharsets.UTF_8);
+	}
 }

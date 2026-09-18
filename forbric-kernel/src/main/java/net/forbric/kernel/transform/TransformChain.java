@@ -26,6 +26,8 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 
+import net.forbric.kernel.util.ForbricLog;
+
 /**
  * The single ordered, pluggable class-transformation pipeline.
  *
@@ -151,12 +153,52 @@ public final class TransformChain {
 			}
 		}
 
+		if (landmark != null) censusIfLandmark(className);
 		return bytes;
 	}
 
 	/** The anchor books for this chain. */
 	public AnchorLedger ledger() {
 		return ledger;
+	}
+
+	/**
+	 * Reports the anchor books once, the first time {@code landmark} passes through.
+	 *
+	 * <p>The loud half of the books needs no checkpoint -- "the class was loaded and the transformer declined it"
+	 * is reported where it happens, because there it has no other reading. What needs one is the SUMMARY, and in
+	 * particular the "never loaded" half, which is only meaningful once loading is far enough along to mean
+	 * something.
+	 *
+	 * <p>So the checkpoint is a class, not a lifecycle hook. Both obvious hooks -- NeoForge's client setup and
+	 * the server datapack window -- only run if ANOTHER transformer's anchor held, and building the anchor audit
+	 * on top of an anchor that can silently vanish is the bug it exists to prevent. A landmark class depends on
+	 * nothing but the chain the books already live in.
+	 */
+	public void reportWhenLoaded(String landmark) {
+		this.landmark = landmark;
+	}
+
+	private volatile String landmark;
+	private final java.util.concurrent.atomic.AtomicBoolean reported = new java.util.concurrent.atomic.AtomicBoolean();
+
+	private void censusIfLandmark(String className) {
+		if (!className.equals(landmark) || !reported.compareAndSet(false, true)) return;
+
+		AnchorLedger.Report r = ledger.report();
+		if (r.clean()) {
+			ForbricLog.info("[Forbric/Anchor] %d of %d declared repair(s) landed; %d target(s) were never loaded "
+					+ "on this side, and %d hedge(s) correctly found nothing to do", r.hit(), r.declared(),
+					r.absent().size(), r.hedged().size());
+		} else {
+			ForbricLog.error("[Forbric/Anchor] %d of %d declared repair(s) landed, and %d did NOT -- their target "
+					+ "classes were loaded and the repair declined them. Each one is a feature that is gone with "
+					+ "no other symptom:", r.hit(), r.declared(), r.misses().size());
+			for (AnchorLedger.Miss miss : r.misses()) {
+				ForbricLog.error("[Forbric/Anchor]   %s on %s: %s", miss.transformer(), miss.className(),
+						miss.cost());
+			}
+		}
 	}
 
 	private Set<String> watchedClasses() {
