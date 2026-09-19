@@ -1,0 +1,221 @@
+package net.forbric.kernel.compat;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class PushAndRunTest {
+    @TempDir Path temp;
+
+    @Test
+    void dryRunStagesExactlyFourArtifactsAndKeepsLauncherFiles() throws Exception {
+        Path mods = Files.createDirectory(temp.resolve("mods"));
+        Files.writeString(mods.resolve("a?b.jar"), "fixture");
+        Path profile = profile();
+        var result = DriverTools.script("push-and-run.py", Map.of(), "--dry-run", "--label", "baseline",
+                "--mc", "D:\\FixtureMC", "--version", "test-profile", "--mods", mods.toString(),
+                "--version-json", profile.toString(), "--output", temp.resolve("unused-output").toString());
+        assertEquals(0, result.exit(), result.output());
+        assertEquals(4, result.output().lines().filter(line -> line.startsWith("PUT_ARTIFACT ")).count());
+        String clean = result.output().lines().filter(line -> line.startsWith("CLEAN ")).findFirst().orElseThrow();
+        assertTrue(clean.contains("\"config\"") && clean.contains("\"saves\"") && clean.contains("\"mods\""));
+        for (String preserved : new String[] {"options.txt", "natives", ".zip", "PCL"}) assertFalse(clean.contains(preserved));
+        assertTrue(result.output().contains(".forbric-sweep.pid"));
+        assertTrue(result.output().contains("taskkill /T /F /PID $line"));
+        assertFalse(result.output().contains("taskkill /IM"));
+        assertTrue(result.output().contains("MOD a?b.jar -> a_b.jar"));
+        assertFalse(Files.exists(temp.resolve("unused-output")), "dry run must not create report artifacts");
+    }
+
+    @Test
+    void filenameCollisionsAndTheInstallationRootAreRejectedBeforeCleanup() throws Exception {
+        Path mods = Files.createDirectory(temp.resolve("mods"));
+        Files.writeString(mods.resolve("a?b.jar"), "one");
+        Files.writeString(mods.resolve("a*b.jar"), "two");
+        var collision = DriverTools.script("push-and-run.py", Map.of(), "--dry-run", "--label", "baseline",
+                "--mc", "D:\\FixtureMC", "--version", "test-profile", "--mods", mods.toString(),
+                "--version-json", profile().toString());
+        assertEquals(2, collision.exit(), collision.output());
+        assertTrue(collision.output().contains("sanitized filename collision"));
+        var unsafe = DriverTools.script("push-and-run.py", Map.of(), "--dry-run", "--label", "baseline",
+                "--mc", "D:\\FixtureMC", "--instance", "d:\\fixturemc", "--version", "test-profile");
+        assertEquals(2, unsafe.exit(), unsafe.output());
+        assertTrue(unsafe.output().contains("dedicated instance directory"));
+    }
+
+    @Test
+    void aStaleRunningFileIsTerminalWhenItsRecordedProcessIsGone() throws Exception {
+        var result = python("""
+                import json
+                answers = iter(['FORBRIC_PID=42\\nFORBRIC_STARTED=123',
+                                json.dumps(dict(alive=False, result=dict(state='running', pid=42)))])
+                commands = []
+                def remote(command):
+                    commands.append(command)
+                    return next(answers)
+                m.remote = remote
+                m.time.sleep = lambda _: (_ for _ in ()).throw(AssertionError('dead process must not be polled forever'))
+                try:
+                    m.run_job(args, 'server', 'D:\\\\fixture-tools', output, 'run-server-test.py')
+                    raise AssertionError('stale running file was accepted')
+                except RuntimeError as error:
+                    assert 'ended before publishing a result' in str(error), str(error)
+                assert 'Get-Process -Id 42' in commands[1]
+                assert 'StartTime.ToUniversalTime().Ticks -eq 123' in commands[1]
+                assert json.loads((output / 'server-handle.json').read_text())['pid'] == 42
+                assert json.loads((output / 'server-result.json').read_text())['returncode'] == 2
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
+    void observationFailuresRetainAndRepollTheSameLiveJob() throws Exception {
+        var result = python("""
+                import json
+                commands = []
+                def remote(command):
+                    commands.append(command)
+                    if len(commands) == 1: return 'FORBRIC_PID=42\\nFORBRIC_STARTED=123'
+                    if len(commands) == 2: raise RuntimeError('temporary transport interruption')
+                    if len(commands) == 3: return json.dumps(dict(alive=True, result=dict(state='running', pid=42)))
+                    return json.dumps(dict(alive=False, result=dict(state='done', pid=42, returncode=0, started_ns=100)))
+                m.remote = remote
+                m.time.sleep = lambda _: None
+                assert m.run_job(args, 'client', 'D:\\\\fixture-tools', output, 'run-client-test.py') == 0
+                assert sum('Start-Process' in command for command in commands) == 1
+                assert all('Get-Process -Id 42' in command for command in commands[1:])
+                assert json.loads((output / 'client-result.json').read_text())['state'] == 'done'
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
+    void aFailedJobStartStillCollectsAndWritesAFailureReport() throws Exception {
+        var result = python("""
+                import json
+                def failed(_): raise RuntimeError('fixture Start-Process failed')
+                m.remote = failed
+                try:
+                    m.run_job(args, 'server', 'D:\\\\fixture-tools', output, 'run-server-test.py')
+                    raise AssertionError('failed start was accepted')
+                except RuntimeError as error:
+                    failure = str(error)
+                collected = []
+                def collect(*_):
+                    collected.append(True)
+                    artifacts = output / 'artifacts'
+                    artifacts.mkdir()
+                    return artifacts
+                m.collect = collect
+                assert m.finish_run(args, output, 'D:\\\\fixture-run', -1, -1, 'fixture-time', [failure]) == 1
+                assert collected == [True]
+                report = (output / 'report.md').read_text()
+                assert 'fixture Start-Process failed' in report and '**FAIL**' in report
+                assert json.loads((output / 'server-result.json').read_text())['state'] == 'unproven'
+                assert (output / 'errors.json').is_file()
+                assert 'chosen-world' in (output / 'region.txt').read_text()
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
+    void collectorActuallyRunsAndKeepsRemoteTimestampsForFrameFreshness() throws Exception {
+        var result = python("""
+                import json, subprocess
+                root = output / 'fixture-instance'; root.mkdir()
+                drivers = output / 'fixture-drivers'; drivers.mkdir()
+                shots = root / 'screenshots'; shots.mkdir()
+                (shots / 'fresh.png').write_bytes(b'fixture')
+                regions = root / 'server-gen/chosen-world/dimensions/minecraft/overworld/region'
+                regions.mkdir(parents=True)
+                (regions / 'r.0.0.mca').write_bytes(b'region-fixture')
+                (drivers / 'client-status.json').write_text('{}')
+                hidden = root / '.forbric-compat'; hidden.mkdir()
+                (hidden / 'old.log').write_text('old run')
+                m.remote = lambda _: ''
+                m.put = lambda *arguments: None
+                def get(source, destination):
+                    subprocess.run([sys.executable, str(output / 'collect.py'), str(root), str(drivers), str(destination)], check=True)
+                m.get = get
+                args.instance = str(root)
+                artifacts = m.collect(args, str(drivers), output)
+                index = json.loads((artifacts / 'files.json').read_text())
+                names = [entry['name'] for entry in index]
+                assert 'instance/screenshots/fresh.png' in names
+                assert 'instance/server-gen/chosen-world/dimensions/minecraft/overworld/region/r.0.0.mca' in names
+                assert 'driver/client-status.json' in names
+                assert not any('old.log' in name for name in names)
+                assert next(entry for entry in index if entry['name'].endswith('fresh.png'))['mtime_ns'] > 0
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
+    void reportUsesTheChosenWorldAndRemoteScreenshotTimes() throws Exception {
+        var result = python("""
+                import json
+                artifacts = output / 'artifacts'; artifacts.mkdir()
+                (artifacts / 'files.json').write_text(json.dumps([
+                    dict(name='instance/screenshots/z-old.png', mtime_ns=90, size=1),
+                    dict(name='instance/screenshots/a-fresh.png', mtime_ns=150, size=1)]))
+                (output / 'client-result.json').write_text(json.dumps(dict(started_ns=100)))
+                commands = []
+                def check(command, destination):
+                    commands.append(command)
+                    destination.write_text('unreadable: 0\\ndungeons: 1\\n')
+                    return True
+                m.check = check
+                assert m.report(args, output, artifacts, 0, 0, 'fixture-time') == 0
+                frame = next(command for command in commands if any('frame-verdict.py' in x for x in command))
+                region = next(command for command in commands if any('region-probe.py' in x for x in command))
+                assert frame[-1].endswith('a-fresh.png'), frame
+                assert '/chosen-world/dimensions/minecraft/overworld/region' in region[-2].replace('\\\\', '/'), region
+                (output / 'client-result.json').write_text(json.dumps(dict(started_ns=1000)))
+                assert m.report(args, output, artifacts, 0, 0, 'fixture-time') == 1
+                assert 'no-fresh-screenshot' in (output / 'frame.txt').read_text()
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
+    void shellEntryPointForwardsArgumentsToThePythonDriver() throws Exception {
+        var result = DriverTools.run(Map.of(), "-c",
+                "import subprocess,sys; sys.exit(subprocess.call(['bash',sys.argv[1],'--help']))",
+                DriverTools.COMPAT.resolve("push-and-run.sh").toString());
+        assertEquals(0, result.exit(), result.output());
+        assertTrue(result.output().contains("--bisect") && result.output().contains("--quarantine"));
+    }
+
+    private DriverTools.Result python(String body) throws Exception {
+        String prefix = """
+                import importlib.util, pathlib, sys
+                from types import SimpleNamespace
+                spec = importlib.util.spec_from_file_location('push', sys.argv[1])
+                m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+                output = pathlib.Path(sys.argv[2])
+                args = SimpleNamespace(instance='D:\\\\fixture-instance', mc='D:\\\\fixture-mc', version='fixture',
+                    label='fixture', python='python', world='chosen-world', timeout=120, java=None, jvm=[],
+                    bisect=None, manifest=None, mods=None)
+                """;
+        return DriverTools.run(Map.of(), "-c", prefix + body, DriverTools.COMPAT.resolve("push-and-run.py").toString(), temp.toString());
+    }
+
+    private Path profile() throws Exception {
+        return Files.writeString(temp.resolve("profile.json"), """
+                {"libraries":[
+                  {"name":"net.forbric:forbric-kernel:1","downloads":{"artifact":{"path":"net/forbric/kernel/1/kernel.jar"}}},
+                  {"name":"net.forbric:patched-mc-merged:1","downloads":{"artifact":{"path":"net/forbric/merged/1/merged.jar"}}},
+                  {"name":"net.forbric:forge-runtime:1","downloads":{"artifact":{"path":"net/forbric/forge/1/forge.jar"}}},
+                  {"name":"net.forbric:neoforge-runtime:1","downloads":{"artifact":{"path":"net/forbric/neo/1/neo.jar"}}},
+                  {"name":"fixture:unchanged:1","downloads":{"artifact":{"path":"fixture/unchanged.jar"}}}
+                ]}
+                """);
+    }
+}
