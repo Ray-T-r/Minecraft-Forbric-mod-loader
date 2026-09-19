@@ -60,4 +60,34 @@ class KernelClientSmokeTest {
 		System.setProperty(KernelClientSmoke.ENABLED, "true");
 		assertDoesNotThrow(() -> KernelClientSmoke.onClientTick(null));
 	}
+
+	@Test
+	void screenshotTicksMatchWholeNumbersAndNotSubstrings() {
+		assertTrue(KernelClientSmoke.screenshotDue("100", 100));
+		assertFalse(KernelClientSmoke.screenshotDue("100", 10));
+		assertFalse(KernelClientSmoke.screenshotDue("100", 99));
+		assertFalse(KernelClientSmoke.screenshotDue("100", 101));
+	}
+
+	@Test
+	void screenshotTicksAcceptWhitespaceListsAndDuplicates() {
+		assertTrue(KernelClientSmoke.screenshotDue(" 60, 100 ,100, 140 ", 100));
+		assertTrue(KernelClientSmoke.screenshotDue(" 60, 100 ,100, 140 ", 140));
+		assertFalse(KernelClientSmoke.screenshotDue("60,100,140", 120));
+	}
+
+	@Test
+	void malformedScreenshotTicksDoNotHideLaterValidEntries() {
+		assertTrue(KernelClientSmoke.screenshotDue("garbage,,2147483648,100.0,100,", 100));
+		assertFalse(KernelClientSmoke.screenshotDue("garbage,2147483648,100.0", 100));
+		assertFalse(KernelClientSmoke.screenshotDue("-1", -1));
+	}
+
+	@Test
+	void anEmptyScreenshotSettingDisablesScreenshots() {
+		assertFalse(KernelClientSmoke.screenshotDue("", 100));
+		assertFalse(KernelClientSmoke.screenshotDue(" \t ", 100));
+		assertFalse(KernelClientSmoke.screenshotDue(",,,", 100));
+		assertFalse(KernelClientSmoke.screenshotDue(null, 100));
+	}
 }

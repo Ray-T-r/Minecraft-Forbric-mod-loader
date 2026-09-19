@@ -1161,20 +1161,7 @@ public final class KernelClientSmoke {
 	 * {@code <gameDir>/screenshots}; the log line names the tick so a gate can pair a picture with a drill phase.
 	 */
 	private static void screenshotIfDue(Object minecraft) {
-		String want = System.getProperty(SCREENSHOTS, "");
-		if (want.isBlank() || !shotsTaken.add(worldTicks)) return;
-		boolean due = false;
-		for (String tick : want.split(",")) {
-			try {
-				if (Integer.parseInt(tick.trim()) == worldTicks) {
-					due = true;
-					break;
-				}
-			} catch (RuntimeException malformed) {
-				// A malformed entry costs that entry, not the run.
-			}
-		}
-		if (!due) return;
+		if (!screenshotDue(System.getProperty(SCREENSHOTS, ""), worldTicks) || !shotsTaken.add(worldTicks)) return;
 		try {
 			Class<?> screenshot = Class.forName("net.minecraft.client.Screenshot", true,
 					minecraft.getClass().getClassLoader());
@@ -1185,6 +1172,19 @@ public final class KernelClientSmoke {
 			ForbricLog.warn("[Forbric/ClientSmoke] could not take a screenshot at world tick %d: %s", worldTicks,
 					String.valueOf(t));
 		}
+	}
+
+	/** Parse the diagnostic's comma-separated world ticks without linking any game class. */
+	static boolean screenshotDue(String ticks, int worldTick) {
+		if (ticks == null || ticks.isBlank() || worldTick < 0) return false;
+		for (String tick : ticks.split(",")) {
+			try {
+				if (Integer.parseInt(tick.trim()) == worldTick) return true;
+			} catch (NumberFormatException malformed) {
+				// A malformed entry costs that entry, not the run or a later valid entry.
+			}
+		}
+		return false;
 	}
 
 	/**
