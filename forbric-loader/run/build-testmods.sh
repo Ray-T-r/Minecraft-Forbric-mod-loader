@@ -33,6 +33,7 @@ build_one() { # <src-dir> <out-jar>
   # The mixin config must land at the JAR ROOT: ForgeMetadataMapper DROPS a declared config whose entry is
   # missing, with only a warn — so a misplaced file makes the fixture silently do nothing.
   [ -f "$src/forbriclive.mixins.json" ] && cp "$src/forbriclive.mixins.json" "$classes/"
+  if [ -d "$src/data" ]; then cp -R "$src/data" "$classes/"; fi
   (cd "$classes" && jar --create --file "$out" .)
   echo "[testmods] wrote $out"
 }
@@ -52,6 +53,7 @@ build_neo() { # <src-dir> <out-jar>
   find "$src" -name '*.java' -print0 | xargs -0 javac --release 21 -proc:none \
     -cp "$neo_rt:$neo_mc:$ANNOT:$VLIBS" -d "$classes"
   cp "$src/META-INF/neoforge.mods.toml" "$classes/META-INF/neoforge.mods.toml"
+  if [ -d "$src/data" ]; then cp -R "$src/data" "$classes/"; fi
   (cd "$classes" && jar --create --file "$out" .)
   echo "[testmods] wrote $out"
 }
