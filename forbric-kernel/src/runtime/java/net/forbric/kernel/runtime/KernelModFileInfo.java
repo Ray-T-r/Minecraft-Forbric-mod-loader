@@ -35,7 +35,8 @@ import net.neoforged.neoforgespi.locating.IModFile;
  * was invisible until this chain existed.
  *
  * <p>Three of this interface's ten methods were named by the proxy this replaces; the other seven fell through
- * to a default. They are all stated below, each answering exactly what that default produced.
+ * to a default. The version string now follows the carriers' first-mod contract as well: a null there prevented
+ * Player Animation Library from constructing when it checked whether its own version contained "dev".
  *
  * <p>The one worth arguing about is {@link #getConfig()}: it returns null here, while {@code IModInfo.getConfig()}
  * on the very same mod is carefully non-null because a null there crashes the Mods screen on every tick. The two
@@ -84,10 +85,13 @@ public final class KernelModFileInfo implements IModFileInfo {
 		return null;
 	}
 
-	/** Null, as before. A real mod file info would report the mod's version string. */
+	/**
+	 * Both carriers report the first mod's resolved version, not the raw jar manifest's version. The owner is
+	 * back-filled before this file info is published, and already carries discovery's TOML/manifest substitutions.
+	 */
 	@Override
 	public String versionString() {
-		return null;
+		return getMods().getFirst().getVersion().toString();
 	}
 
 	/** Empty, as before. The kernel constructs mods itself and asks FML for no language loader. */
