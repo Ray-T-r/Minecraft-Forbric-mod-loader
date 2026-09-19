@@ -256,13 +256,8 @@ public final class KernelBoot {
 		// the merged base was compiled against. That is also what the genuine loaders do — Knot and FML put
 		// Minecraft's libraries on the same loader ahead of mods — so a mod relying on winning here was relying on
 		// something that does not hold on its own platform either.
-		int libCount = 0;
-		for (Path lib : libraryJars(libraryPath)) {
-			owned.add(lib.toUri().toURL());
-			libCount++;
-		}
-
-		for (Path jar : modJars) owned.add(jar.toUri().toURL());
+		List<Path> minecraftLibraries = libraryJars(libraryPath);
+		int libCount = minecraftLibraries.size();
 
 		// A nested mod's mixins are the same defect one level down. These jars already get everything else a
 		// top-level mod gets — they are owned, and KernelModLoader scans them for @Mod, which is how whitenoise
@@ -274,16 +269,17 @@ public final class KernelBoot {
 		// Fabric mods (+ extracted JiJ children). Also Mojmap on this game version. Creates the FabricLoader.
 		List<Path> fabricJars = KernelFabricEcosystem.build(fabricScan, side.envType, gameDir, gameVersion,
 				gameArgs.toArray(new String[0]), dupes);
-		for (Path jar : fabricJars) {
-			if (!modJars.contains(jar)) owned.add(jar.toUri().toURL());   // a multiloader jar carries both manifests
-		}
 
 		// Game-side bundled libraries (MixinExtras) and the kernel's own runtime jar. The latter also carries
 		// the kernel's client assets -- the Mods button's icon lives in it -- so its extracted path is handed to
 		// the lifecycle for the client pack repository as well as to the class loader.
 		List<Path> bundled = KernelBundledJars.extract(gameDir);
-		for (Path jar : bundled) owned.add(jar.toUri().toURL());
+		owned = KernelOwnedClasspath.compose(owned, minecraftLibraries, modJars, fabricJars, bundled);
 		KernelLifecycle.setKernelAssetJars(bundled);
+		if (!KernelOwnedClasspath.bundledFirst()) {
+			ForbricLog.warn("[Forbric/Boot] -D%s=off — guest jars precede kernel-supplied game libraries",
+					KernelOwnedClasspath.SWITCH);
+		}
 
 		// A Fabric mod shipping its own net.neoforged.* / net.minecraftforge.* loses those classes to the carrier
 		// by design. Say so, and say where the two disagree, while the jar names are still in hand — the failure
@@ -632,6 +628,7 @@ public final class KernelBoot {
 					described.isEmpty() ? "none kept" : String.join(", ", described));
 		}
 		KernelMixinBootstrap.init(loader, side.envType, mixinConfigs);
+		reportMixinExtrasSource(loader);
 
 		// AFTER Mixin, because half of what the audit reports is written during it. KernelGuestMixinAdapter
 		// records a mixin that was written to attach to another mod and did not while Mixin parses each config,
@@ -758,6 +755,19 @@ public final class KernelBoot {
 			}
 		}
 		return families;
+	}
+
+	/** The version log alone cannot distinguish the supplied library from a guest's older copy. */
+	private static void reportMixinExtrasSource(ForbricClassLoader loader) {
+		try {
+			Class<?> bootstrap = Class.forName("com.llamalad7.mixinextras.MixinExtrasBootstrap", false, loader);
+			var source = bootstrap.getProtectionDomain().getCodeSource();
+			ForbricLog.info("[Forbric/Boot] MixinExtras sources: class=%s; config=%s; game-side=%s",
+					source == null ? "<unknown>" : source.getLocation(),
+					loader.findResource("mixinextras.init.mixins.json"), bootstrap.getClassLoader() == loader);
+		} catch (ClassNotFoundException absent) {
+			// KernelMixinBootstrap already reported the absent library and its consequence.
+		}
 	}
 
 	/** Splits a {@code --libraryPath} classpath string into the jars that exist. Empty when not given. */

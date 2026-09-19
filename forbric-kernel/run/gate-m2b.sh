@@ -9,6 +9,12 @@
 # NO compatibility flags are passed. The merged-base incompatibilities are shipped defaults in
 # MergedBaseMixinCompat, so an installed instance boots as-is. Each entry there costs a real feature and is
 # documented at its declaration; `run/mixin-inventory.sh` rediscovers the list from scratch.
+#
+# Optional reproduction of the real nested-library collision (all existing assertions remain enabled):
+# M2B_FABRIC_API=/path/to/fabric-api-0.161.0+26.2.jar \
+# M2B_BADPACKETS=/path/to/badpackets-forge-0.12.2.jar run/gate-m2b.sh
+# RED: add M2B_EXTRA_JVM=-Dforbric.kernelBundledFirst=off. The nested MixinExtras 0.3.5 then wins over
+# the supplied version, so the version/source assertions fail; the newer FAPI also requires EXPRESSION.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -16,6 +22,16 @@ LOG="$BUILD/gate-m2b-boot.log"; mkdir -p "$BUILD"
 RUNDIR="$KERNEL/run/server-fabric-api"
 MODS="$RUN_OLD/server-merged/mods"
 CANARY="$KERNEL/run/canary/forbricfabriclive.jar"
+FABRIC_API="${M2B_FABRIC_API:-$MODS/fabric-api-0.154.0+26.2.jar}"
+MEX_VERSION=$(sed -n 's/^mixin_extras_version[[:space:]]*=[[:space:]]*//p' "$KERNEL/gradle.properties")
+MEX_PATTERN=${MEX_VERSION//./\\.}
+[ -n "$MEX_VERSION" ] || { echo '[kernel] FAIL MixinExtras version missing from gradle.properties'; exit 1; }
+if [ -n "${M2B_FABRIC_API:-}" ] && [ ! -f "$FABRIC_API" ]; then
+  echo "[kernel] FAIL requested Fabric API fixture absent: $FABRIC_API"; exit 1
+fi
+if [ -n "${M2B_BADPACKETS:-}" ] && [ ! -f "$M2B_BADPACKETS" ]; then
+  echo "[kernel] FAIL requested badpackets fixture absent: $M2B_BADPACKETS"; exit 1
+fi
 
 step "stage fabric-api + Jade + the Fabric canary"
 "$KERNEL/run/build-fabric-canary.sh" >"$BUILD/gate-m2b-canary.log" 2>&1
@@ -24,16 +40,18 @@ step "stage fabric-api + Jade + the Fabric canary"
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
-for jar in "$MODS/fabric-api-0.154.0+26.2.jar" "$MODS/Jade-mc26.2-Fabric-26.2.9.jar"; do
+for jar in "$FABRIC_API" "$MODS/Jade-mc26.2-Fabric-26.2.9.jar"; do
   if [ -f "$jar" ]; then cp "$jar" "$RUNDIR/mods/"; else echo "[kernel] WARN absent: $jar"; fi
 done
+[ -z "${M2B_BADPACKETS:-}" ] || cp "$M2B_BADPACKETS" "$RUNDIR/mods/"
 cp "$CANARY" "$RUNDIR/mods/"
 seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
-step "boot the merged base under the kernel (no compatibility flags)"
+step "boot the merged base under the kernel"
 : > "$LOG"
-( sleep 40; echo stop ) | RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
+( sleep 40; echo stop ) | RUNDIR="$RUNDIR" FORBRIC_JVM="${FORBRIC_JVM:-} ${M2B_EXTRA_JVM:-}" \
+  "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 150
@@ -42,6 +60,13 @@ step "the Fabric substrate came up natively (must PASS)"
 check "fabric-api + Jade + canary discovered"  "discovered [0-9]{2,} Fabric mod\(s\)" "$LOG"
 check "Mixin up, kernel is the service"        "Mixin up on the sovereign kernel" "$LOG"
 check "MixinExtras initialized game-side"      "MixinExtras [0-9.]+ initialized \(game-side\)" "$LOG"
+check "kernel-supplied MixinExtras version"    "MixinExtras $MEX_PATTERN initialized \(game-side\)" "$LOG"
+check "MixinExtras class and config from bundle" \
+  'MixinExtras sources: class=[^;]*/\.forbric-kernel/lib/mixinextras-fabric\.jar; config=[^;]*/\.forbric-kernel/lib/mixinextras-fabric\.jar!/mixinextras\.init\.mixins\.json; game-side=true' "$LOG"
+if [ -n "${M2B_BADPACKETS:-}" ]; then
+  check "old MixinExtras wrapper actually staged" 'extracted nested JarJar library mixinextras-forge-0\.3\.5\.jar from badpackets' "$LOG"
+  check "old MixinExtras common child actually staged" 'extracted nested JarJar library MixinExtras-0\.3\.5\.jar from mixinextras-forge-0\.3\.5\.jar' "$LOG"
+fi
 check "access wideners merged + applied"       "merged [1-9][0-9]* class tweaker\(s\).*target class" "$LOG"
 check "MC libraries owned by the game loader"  "[0-9]{2,} MC library jar\(s\)" "$LOG"
 
@@ -70,6 +95,8 @@ step "nothing was quietly broken (must be ABSENT)"
 check_absent "no empty dynamic registries"     "Registry must be non-empty" "$LOG"
 check_absent "no Fabric entrypoint failed"     "entrypoint of .* failed" "$LOG"
 check_absent "no fatal mixin error"            "MixinTransformerError|InjectionError" "$LOG"
+check_absent "MixinExtras EXPRESSION supported" 'MIXINEXTRAS:EXPRESSION is not a valid injection point specifier' "$LOG"
+check_absent "no invalid partially applied handler" 'VerifyError' "$LOG"
 check_absent "no Tags not bound"               "Tags not bound" "$LOG"
 check_absent "no genuine Fabric Loader"        "FabricLoaderImpl|KnotClassLoader" "$LOG"
 check_absent "no genuine FancyModLoader"       "gatherAndInitializeMods|dispatchParallelEvent" "$LOG"

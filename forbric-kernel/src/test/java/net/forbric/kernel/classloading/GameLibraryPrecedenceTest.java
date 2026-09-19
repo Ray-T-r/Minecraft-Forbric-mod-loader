@@ -25,6 +25,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -65,28 +66,33 @@ class GameLibraryPrecedenceTest {
 				+ "KernelBoot builds is not cosmetic");
 	}
 
-	/**
-	 * The order itself, read from the source that establishes it.
-	 *
-	 * <p>Asserted here rather than by booting, because the thing that can regress is a line moving: the library
-	 * loop sat after the mod loop for the whole life of the loader, with a comment explaining only its position
-	 * relative to the merged base. Nothing would have caught it moving back.
-	 */
+	/** Drive the same composer as KernelBoot, then ask the real game loader which library actually won. */
 	@Test
-	void kernelBootAddsTheMcLibrariesBeforeTheModJars() throws Exception {
-		Path source = Path.of(System.getProperty("user.dir"), "src", "main", "java", "net", "forbric", "kernel",
-				"boot", "KernelBoot.java").normalize();
-		assertTrue(Files.isRegularFile(source), "KernelBoot.java not found at " + source);
-		String text = Files.readString(source);
-
-		int libraries = text.indexOf("for (Path lib : libraryJars(libraryPath))");
-		int mods = text.indexOf("for (Path jar : modJars) owned.add(");
-		assertTrue(libraries > 0, "the MC library jars are no longer added to the owned set by that loop");
-		assertTrue(mods > 0, "the mod jars are no longer added to the owned set by that loop");
-		assertTrue(libraries < mods,
-				"the MC libraries must be owned BEFORE the mod jars. After them, a mod that bundles an unshaded "
-						+ "copy of a library the game already has wins, and the game dies on the older copy's API "
-						+ "before any mod has loaded");
+	void kernelBootAddsTheMcLibrariesBeforeTheModJars(@TempDir Path dir) throws Exception {
+		Path library = jarWith(dir.resolve("game-library.jar"), "com/example/Shared", "library");
+		Path mod = jarWith(dir.resolve("some-mod.jar"), "com/example/Shared", "mod");
+		Path bundled = jarWith(dir.resolve("supplied.jar"), "com/example/Shared", "bundled");
+		var composer = Class.forName("net.forbric.kernel.boot.KernelOwnedClasspath")
+				.getDeclaredMethod("compose", List.class, List.class, List.class, List.class, List.class);
+		composer.setAccessible(true);
+		String previous = System.getProperty("forbric.kernelBundledFirst");
+		try {
+			for (String mode : List.of("on", "off")) {
+				System.setProperty("forbric.kernelBundledFirst", mode);
+				List<?> owned = (List<?>) composer.invoke(null, List.of(), List.of(library),
+						List.of(mod), List.of(), List.of(bundled));
+				URL[] urls = owned.toArray(URL[]::new);
+				try (ForbricClassLoader loader = new ForbricClassLoader(urls, getClass().getClassLoader())) {
+					Class<?> shared = loader.loadClass("com.example.Shared");
+					assertEquals("library", shared.getDeclaredField("FROM").get(null));
+					assertEquals(library.toUri().toURL(), shared.getProtectionDomain().getCodeSource().getLocation(),
+							"Minecraft's own library must win even when a supplied library is also present");
+				}
+			}
+		} finally {
+			if (previous == null) System.clearProperty("forbric.kernelBundledFirst");
+			else System.setProperty("forbric.kernelBundledFirst", previous);
+		}
 	}
 
 	private static String markerFrom(Path first, Path second) throws Exception {
