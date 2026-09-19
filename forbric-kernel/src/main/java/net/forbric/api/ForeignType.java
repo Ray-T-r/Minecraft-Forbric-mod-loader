@@ -21,7 +21,7 @@ package net.forbric.api;
  *
  * <p>The two Forge-family ecosystems ship the same concept under different names, and the kernel has to name both
  * because it drives both. Written inline that is two string constants sitting next to each other at every site --
- * 25 such concepts across transform/, boot/ and interop/ -- and each pair is an invitation to handle one family and forget
+ * these concepts span transform/, boot/ and interop/ -- and each pair is an invitation to handle one family and forget
  * the other. {@code ClientPackHookInjector} and {@code ForeignModPresenceInjector} both carry exactly that shape.
  *
  * <h2>Why a table of pairs and not a prefix rule</h2>
@@ -49,14 +49,24 @@ package net.forbric.api;
  * not average it away.
  */
 public enum ForeignType {
+	CLIENT_HOOKS("net.minecraftforge.client.ForgeHooksClient",
+			"net.neoforged.neoforge.client.ClientHooks"),
 	CLIENT_MOD_LOADER("net.minecraftforge.client.loading.ClientModLoader",
 			"net.neoforged.neoforge.client.loading.ClientModLoader"),
+	CLIENT_TOOLTIP_COMPONENT_MANAGER("net.minecraftforge.client.gui.ClientTooltipComponentManager",
+			"net.neoforged.neoforge.client.gui.ClientTooltipComponentManager"),
+	COLOR_RESOLVER_MANAGER("net.minecraftforge.client.ColorResolverManager",
+			"net.neoforged.neoforge.client.ColorResolverManager"),
 	CONFIG_TRACKER("net.minecraftforge.fml.config.ConfigTracker",
 			"net.neoforged.fml.config.ConfigTracker"),
 	CONFIGURABLE("net.minecraftforge.forgespi.language.IConfigurable",
 			"net.neoforged.neoforgespi.language.IConfigurable"),
 	DIST("net.minecraftforge.api.distmarker.Dist",
 			"net.neoforged.api.distmarker.Dist"),
+	EVENT_HOOKS("net.minecraftforge.common.ForgeHooks",
+			"net.neoforged.neoforge.event.EventHooks"),
+	BLOCK_TINT_EVENT("net.minecraftforge.client.event.RegisterColorHandlersEvent$Block",
+			"net.neoforged.neoforge.client.event.RegisterColorHandlersEvent$BlockTintSources"),
 	// The mod-lifecycle phases. Paired because the kernel posts each one at BOTH families and the two events are
 	// different classes on different bus shapes -- naming either half inline is how one family silently stops
 	// receiving a phase, which is exactly what happened to traditional MinecraftForge until 2026-09-13.
@@ -87,6 +97,8 @@ public enum ForeignType {
 			"net.neoforged.fml.loading.FMLLoader"),
 	FML_MOD_CONTAINER("net.minecraftforge.fml.javafmlmod.FMLModContainer",
 			"net.neoforged.fml.javafmlmod.FMLModContainer"),
+	FML_MOD_LOADER("net.minecraftforge.fml.ModLoader",
+			"net.neoforged.fml.ModLoader"),
 	FML_PATHS("net.minecraftforge.fml.loading.FMLPaths",
 			"net.neoforged.fml.loading.FMLPaths"),
 	GAME_DATA("net.minecraftforge.registries.GameData",
@@ -142,6 +154,8 @@ public enum ForeignType {
 			"net.neoforged.neoforge.common.conditions.ICondition"),
 	NETWORK_REGISTRY("net.minecraftforge.network.NetworkRegistry",
 			"net.neoforged.neoforge.network.registration.NetworkRegistry"),
+	PRESET_EDITOR_MANAGER("net.minecraftforge.client.PresetEditorManager",
+			"net.neoforged.neoforge.client.PresetEditorManager"),
 	REGISTER_EVENT("net.minecraftforge.registries.RegisterEvent",
 			"net.neoforged.neoforge.registries.RegisterEvent"),
 	REGISTRY_MANAGER("net.minecraftforge.registries.RegistryManager",
@@ -149,7 +163,9 @@ public enum ForeignType {
 	SERVER_LIFECYCLE_HOOKS("net.minecraftforge.server.ServerLifecycleHooks",
 			"net.neoforged.neoforge.server.ServerLifecycleHooks"),
 	SERVER_MOD_LOADER("net.minecraftforge.server.loading.ServerModLoader",
-			"net.neoforged.neoforge.server.loading.ServerModLoader");
+			"net.neoforged.neoforge.server.loading.ServerModLoader"),
+	SPAWN_PLACEMENT_EVENT("net.minecraftforge.event.entity.SpawnPlacementRegisterEvent",
+			"net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent");
 
 	private final String forge;
 	private final String neoforge;
