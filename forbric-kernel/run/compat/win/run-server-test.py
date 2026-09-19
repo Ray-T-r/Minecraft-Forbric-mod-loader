@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 import time
-from common import config, driver_command, finish, own_driver, parser, safe_filename, spawn
+from common import config, driver_command, finish, own_driver, parser, prepare_world, safe_filename, spawn
 
 
 def main():
@@ -82,6 +82,7 @@ def main():
             if target.exists():
                 shutil.rmtree(target)
             shutil.copytree(world, target)
+            prepare_world(configuration, target)
             print(f'PASS server saved world={target}')
             return 0
         finally:

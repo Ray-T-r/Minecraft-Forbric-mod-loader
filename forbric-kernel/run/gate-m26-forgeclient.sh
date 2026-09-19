@@ -19,6 +19,11 @@ if [ ! -f "$RUNDIR/saves/$WORLD/level.dat" ]; then
   TARGET="$RUNDIR" WORLD="$WORLD" SRC_MODS="$RUNDIR/empty-mods" \
     "$KERNEL/run/make-test-world.sh" || exit 1
 fi
+# The dedicated server saves this acknowledgement as false. The carriers can give even a zero-mod
+# world an experimental generation lifecycle; make the fixture's consent explicit before quick-play.
+# WORLD_CONFIRM_BEGIN — the contract test records this exact invocation against a temporary save.
+python3 "$KERNEL/run/compat/win/prepare-world.py" "$RUNDIR/saves/$WORLD/level.dat" || exit 3
+# WORLD_CONFIRM_END
 rm -rf "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" "$RUNDIR/logs"
 mkdir -p "$RUNDIR/mods"
 # A zero-mod save must not acquire a new worldgen datapack during quick-play. M25 exercises the full data.

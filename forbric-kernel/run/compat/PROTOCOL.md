@@ -58,7 +58,10 @@ jar before treating the selection as final; metadata resolution alone cannot pro
    Upload the artifacts and refreshed profile, then the driver tools and mod archive.
    Windows-illegal jar characters are replaced with `_`; collisions fail before upload.
 6. `win/run-server-test.py` drives `win/forbric-server.py` through world generation,
-   ticks, save, and clean stop, then copies the save for the client. `win/run-client-test.py`
+   ticks, save, and clean stop, then copies the save for the client. `win/prepare-world.py`
+   sets only the copied test save's `Data/confirmedExperimentalSettings` byte to 1,
+   acknowledging the carrier's experimental-world prompt without changing lifecycle,
+   datapacks or terrain. The source server save is untouched; `--check` is read only. `win/run-client-test.py`
    drives `win/forbric-launch.py` into it, requests Minecraft's own screenshot at tick
    100, and requires a clean disconnect. Both launchers resolve the installed version
    JSON rather than a developer classpath. `win/common.py` owns shared arguments,
@@ -103,7 +106,9 @@ Logs and one-line results go to `build/gates/`, with a `summary.txt`.
 
 The initial `gate-m25-worldgen.sh` and `gate-m26-forgeclient.sh` deliberately expose
 missing Forge mechanisms. The client gate stages a data-free copy of its canary so adding a worldgen datapack cannot block
-quick-play behind a backup confirmation; the source jar remains intact and m25 tests its data.
+quick-play behind a new-pack confirmation; the source jar remains intact and m25 tests its data.
+It also invokes `win/prepare-world.py` on the zero-mod test save to acknowledge the
+carrier experimental-generation prompt before quick-play.
 Header `EXPECTED: RED until ...`, exit code 2, and an
 `EXPECTED-RED` observation together distinguish that known failure from boot failures
 or broken control assertions (exit 1). Remove the expected-red contract when its

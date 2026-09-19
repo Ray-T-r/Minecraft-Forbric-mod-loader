@@ -282,6 +282,18 @@ def run_java(configuration, server=False):
             finish(configuration, process)
 
 
+def prepare_world(configuration, world):
+    """Acknowledge only the copied test save, after the dedicated server has exited."""
+    command = [sys.executable, str(Path(__file__).with_name('prepare-world.py')), str(Path(world) / 'level.dat')]
+    process = spawn(configuration, command)
+    try:
+        code = process.wait(timeout=30)
+        if code:
+            raise RuntimeError('test world acknowledgement failed: exit ' + str(code))
+    finally:
+        finish(configuration, process)
+
+
 def fresh_shots(configuration, started):
     # Minecraft writes screenshots asynchronously. Wait for IEND before a directory entry can end a bisect.
     complete = []
