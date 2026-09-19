@@ -89,6 +89,22 @@ assert_eq() {
   else printf '[kernel] FAIL %s (want %s got %s)\n' "$1" "$2" "$3"; FAIL=1; fi
 }
 
+# strip_ansi <raw-log> <plain-log> — preserve raw evidence and make a separate CSI-free assertion view.
+# Paper's console can insert color escapes between a player name and "failed" even when stdout is a file.
+strip_ansi() {
+  python3 - "$1" "$2" <<'PY'
+from pathlib import Path
+import re, sys
+source, destination = map(Path, sys.argv[1:])
+if source.resolve() == destination.resolve():
+    sys.exit('strip_ansi requires a separate output file; the raw log must be preserved')
+data = source.read_bytes()
+if not data:
+    sys.exit('strip_ansi cannot produce an assertion view from an empty log')
+destination.write_bytes(re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', data))
+PY
+}
+
 # Rebuild the kernel jar, FAILING LOUDLY. A swallowed build error leaves a stale jar in build/libs and every
 # gate downstream then silently reports on code that is not the code in the tree.
 kernel_jar() {

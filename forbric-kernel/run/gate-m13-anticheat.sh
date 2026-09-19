@@ -149,11 +149,17 @@ await_server "$SRVPID" "$SLOG" 90
 rm -f "$FIFO" "$(_pidfile "$SRV")"
 
 # Grim's console alert reads "<prefix> <player> failed <Check> (x<vl>) <verbose>"; verbose lines use the same verb.
+# Paper emits ANSI colors between the player and "failed"; match a separate plain view, never loosen the
+# player/check boundary. Keep SLOG byte-for-byte so the original console evidence remains inspectable.
+# M13_LOG_SPLIT_BEGIN — executed verbatim by AntiCheatGateLogTest.
+PLAIN_SLOG="$BUILD/gate-m13-server-plain.log"
+strip_ansi "$SLOG" "$PLAIN_SLOG" || { echo "[kernel] FAIL could not normalize the server log"; exit 1; }
 FLAG_RE="$PLAYER failed"
-CONTROL_LINE=$(grep -an 'FORBRIC-CONTROL' "$SLOG" | head -1 | cut -d: -f1)
-[ -n "$CONTROL_LINE" ] || CONTROL_LINE=$(wc -l < "$SLOG" | tr -d ' ')
-head -n "$CONTROL_LINE" "$SLOG" > "$BUILD/gate-m13-before-control.log"
-tail -n +"$((CONTROL_LINE + 1))" "$SLOG" > "$BUILD/gate-m13-after-control.log"
+CONTROL_LINE=$(grep -an 'FORBRIC-CONTROL' "$PLAIN_SLOG" | head -1 | cut -d: -f1)
+[ -n "$CONTROL_LINE" ] || CONTROL_LINE=$(wc -l < "$PLAIN_SLOG" | tr -d ' ')
+head -n "$CONTROL_LINE" "$PLAIN_SLOG" > "$BUILD/gate-m13-before-control.log"
+tail -n +"$((CONTROL_LINE + 1))" "$PLAIN_SLOG" > "$BUILD/gate-m13-after-control.log"
+# M13_LOG_SPLIT_END
 echo "[kernel] Grim flags BEFORE the control ($(grep -ac "$FLAG_RE" "$BUILD/gate-m13-before-control.log")):"
 grep -a "$FLAG_RE" "$BUILD/gate-m13-before-control.log" | sed 's/^/[kernel]   /' | cut -c1-200 | head -20
 echo "[kernel] Grim flags AFTER the control ($(grep -ac "$FLAG_RE" "$BUILD/gate-m13-after-control.log")):"
@@ -192,6 +198,7 @@ check "the swim phase was in water"   "drill phase swim at .*inWater=true"      
 check "sprinting actually engaged"    "drill phase sprint-jump at .*sprinting=true"       "$CGAME"
 
 step "Grim's verdict: silent through the drill, loud at the control (must PASS)"
+# M13_LOG_ASSERTIONS_BEGIN — the same positive and negative controls run in AntiCheatGateLogTest.
 # Grim's Timer checks measure how fast packets arrive, so a client the machine starves of CPU trips them by
 # catching up — which says something about the host this gate ran on, not about how Forbric moves. They are the
 # one family excluded here; every check that judges MOVEMENT stays strict, and the control below still has to be
@@ -202,6 +209,7 @@ assert_eq "no movement flag before the control" "0" \
   "$(grep -aE "$FLAG_RE" "$BUILD/gate-m13-before-control.log" | grep -acvE "$TIMING_RE")"
 check "Grim flagged the control move" "$FLAG_RE"                                          "$BUILD/gate-m13-after-control.log"
 check_absent "not kicked before the control" "$PLAYER lost connection"                   "$BUILD/gate-m13-before-control.log"
+# M13_LOG_ASSERTIONS_END
 
 step "neither side broke (must be ABSENT)"
 check "left cleanly"                  "ClientSmoke\] clean disconnect observed"          "$CLOG"
