@@ -283,8 +283,24 @@ def run_java(configuration, server=False):
 
 
 def fresh_shots(configuration, started):
-    return sorted((p for p in Path(configuration['screenshots']).glob('*.png')
-                   if p.stat().st_mtime >= started), key=lambda p: p.stat().st_mtime)
+    # Minecraft writes screenshots asynchronously. Wait for IEND before a directory entry can end a bisect.
+    complete = []
+    for path in Path(configuration['screenshots']).glob('*.png'):
+        try:
+            metadata = path.stat()
+            if metadata.st_mtime <= started or metadata.st_size < 20:
+                continue
+            with path.open('rb') as image:
+                if image.read(8) != b'\x89PNG\r\n\x1a\n':
+                    continue
+                image.seek(-12, 2)
+                if image.read() != b'\x00\x00\x00\x00IEND\xaeB`\x82':
+                    continue
+            complete.append((metadata.st_mtime_ns, path.name, path))
+        except OSError:
+            # A writer, cleanup, or rename can change a screenshot between stat and read.
+            continue
+    return [path for _, _, path in sorted(complete)]
 
 
 def screenshot_fallback(configuration):
@@ -303,6 +319,7 @@ def screenshot_fallback(configuration):
     user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
     user32.SetForegroundWindow.argtypes = [wintypes.HWND]
     user32.SetForegroundWindow.restype = wintypes.BOOL
+    user32.GetForegroundWindow.restype = wintypes.HWND
     user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
     handles = []
     @callback_type
@@ -316,11 +333,15 @@ def screenshot_fallback(configuration):
     if not handles:
         return False
     user32.ShowWindow(handles[-1], 9)
-    user32.SetForegroundWindow(handles[-1])
+    if not user32.SetForegroundWindow(handles[-1]):
+        return False
+    if user32.GetForegroundWindow() != handles[-1]:
+        return False
     # F2 is a fallback only when clientSmoke has not produced a fresh screenshot.
     subprocess.run(['powershell', '-NoProfile', '-Command',
                     'Add-Type -AssemblyName System.Windows.Forms;'
-                    '[System.Windows.Forms.SendKeys]::SendWait("{F2}")'], check=True, timeout=15)
+                    '[System.Windows.Forms.SendKeys]::SendWait("{F2}")'], check=True, timeout=15,
+                   creationflags=subprocess.CREATE_NO_WINDOW)
     time.sleep(3)
     return True
 

@@ -69,6 +69,24 @@ class WindowsDriversTest {
         assertEquals(0, result.exit(), result.output());
     }
 
+    @Test void screenshotSelectionWaitsForPngCompletionAndRejectsOldFrames() throws Exception {
+        var result = DriverTools.run(Map.of(), "-c", """
+                import os,pathlib,sys
+                sys.path.insert(0,sys.argv[1]); import common
+                root=pathlib.Path(sys.argv[2]); c={'screenshots':str(root)}
+                head=bytes.fromhex('89504e470d0a1a0a'); tail=bytes.fromhex('0000000049454e44ae426082')
+                partial=root/'partial.png'; partial.write_bytes(head+b'writing PNG data')
+                os.utime(partial,(101,101))
+                old=root/'old.png'; old.write_bytes(head+tail); os.utime(old,(99,99))
+                equal=root/'equal.png'; equal.write_bytes(head+tail); os.utime(equal,(100,100))
+                assert common.fresh_shots(c,100)==[]
+                partial.write_bytes(head+b'finished'+tail); os.utime(partial,(101,101))
+                assert common.fresh_shots(c,100)==[partial]
+                print('fresh complete PNG selector PASS')
+                """, DriverTools.COMPAT.resolve("win").toString(), temp.toString());
+        assertEquals(0, result.exit(), result.output());
+    }
+
     @Test void launcherBuildsClientAndServerArgumentsFromInstalledProfile() throws Exception {
         var result = DriverTools.run(Map.of(), "-c", """
                 import json,pathlib,sys,zipfile
