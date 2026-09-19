@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -46,6 +47,17 @@ class GatesAllTest {
 		assertEquals(0, green.exitCode(), green.output());
 		var unknown = CompatProbeProcess.run(temporary, env, "bash", "gates-all.sh", "--skip", "gate-m99.sh");
 		assertEquals(2, unknown.exitCode(), unknown.output());
+	}
+
+	@Test void theDefaultRunExecutesEveryGateWithoutAnySkipArguments() throws Exception {
+		Path gates = Files.createDirectory(temporary.resolve("default-gates"));
+		write(gates, "gate-m1.sh", "exit 0\n");
+		write(gates, "gate-m10.sh", "exit 0\n");
+		var result = CompatProbeProcess.run(temporary, Map.of("FORBRIC_GATE_DIR", gates.toString(),
+				"FORBRIC_GATE_RESULTS", temporary.resolve("default-results").toString()), "bash", "gates-all.sh");
+		assertEquals(0, result.exitCode(), result.output());
+		assertEquals(List.of("RESULT gate-m1.sh GREEN (exit=0)", "RESULT gate-m10.sh GREEN (exit=0)"),
+				result.output().lines().toList());
 	}
 
 	private static void write(Path gates, String name, String body) throws Exception {

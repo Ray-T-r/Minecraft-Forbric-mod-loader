@@ -31,7 +31,8 @@ PY
 )
 [ "${#GATES[@]}" -gt 0 ] || { echo "No gates found: $RUN" >&2; exit 2; }
 if [ "$LIST" -eq 1 ]; then printf '%s\n' "${GATES[@]}"; exit 0; fi
-for skip in "${SKIP[@]}"; do
+# Bash 3.2 treats an empty array as unset under nounset; the default (no skips) must still run.
+for skip in ${SKIP[@]+"${SKIP[@]}"}; do
   found=0
   for gate in "${GATES[@]}"; do [ "$skip" != "$gate" ] || found=1; done
   [ "$found" -eq 1 ] || { echo "Unknown --skip gate: $skip" >&2; exit 2; }
@@ -41,7 +42,7 @@ mkdir -p "$OUT"
 failed=0
 for gate in "${GATES[@]}"; do
   skip_gate=0
-  for skip in "${SKIP[@]}"; do [ "$skip" != "$gate" ] || skip_gate=1; done
+  for skip in ${SKIP[@]+"${SKIP[@]}"}; do [ "$skip" != "$gate" ] || skip_gate=1; done
   if [ "$skip_gate" -eq 1 ]; then
     printf 'RESULT %s SKIP (explicit --skip)\n' "$gate" | tee -a "$OUT/summary.txt"
     continue
