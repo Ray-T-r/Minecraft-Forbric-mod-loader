@@ -15,6 +15,24 @@ class PushAndRunTest {
     @TempDir Path temp;
 
     @Test
+    void loadReportsKeepModNamesAndReasonsInBothLanguages() throws Exception {
+        var result = python("""
+                artifacts=output/'artifacts'; artifacts.mkdir()
+                english='Forbric load report\\n  English Example  (english_example)\\n    english.jar\\n    did not finish loading — its constructor threw\\n'
+                chinese='Forbric 加载报告\\n  Player Animation Library  (player_animation_library)\\n    animations.jar\\n    没有完成加载 — its @Mod constructor threw\\n'
+                for stage,text in [('client',english),('server',chinese)]:
+                    directory=artifacts/stage/'.forbric-kernel';directory.mkdir(parents=True)
+                    (directory/'load-report.txt').write_text(text,encoding='utf-8')
+                assert m.report(args,output,artifacts,1,-1,'fixture-time')==1
+                findings=(output/'degraded.txt').read_text()
+                assert english in findings and chinese in findings, findings
+                assert 'No named degraded/failed mods' not in findings
+                assert (artifacts/'server/.forbric-kernel/load-report.txt').read_text()==chinese
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
     void dryRunStagesExactlyFourArtifactsAndKeepsLauncherFiles() throws Exception {
         Path mods = Files.createDirectory(temp.resolve("mods"));
         Files.writeString(mods.resolve("a?b.jar"), "fixture");

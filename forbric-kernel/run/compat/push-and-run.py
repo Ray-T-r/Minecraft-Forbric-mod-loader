@@ -281,9 +281,9 @@ def report(args, output, artifacts, server, client, started, errors=()):
     region = region and bool(re.search(r'unreadable: 0\b', region_text)) and bool(re.search(r'dungeons: [1-9]', region_text))
     findings = []
     for path in artifacts.rglob('load-report.txt'):
-        named = [line for line in path.read_text(errors='replace').splitlines()
-                 if re.search(r'DEGRADED|FAILED|did not finish', line)]
-        findings.append(str(path.relative_to(artifacts)) + '\n' + ('\n'.join(named) or 'No named degraded/failed mods.'))
+        # The kernel localizes this report, and the mod name is on a separate line from its reason.
+        # Keep the complete text: filtering English status words lost every name, and all Chinese failures.
+        findings.append(str(path.relative_to(artifacts)) + '\n' + path.read_text(errors='replace'))
     (output / 'degraded.txt').write_text('\n\n'.join(findings) or 'No load-report.txt was produced.\n')
     passed = client == 0 and frame if args.bisect else server == client == 0 and assertions and frame and region
     passed = passed and not errors
