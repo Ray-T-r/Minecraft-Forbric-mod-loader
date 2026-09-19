@@ -71,7 +71,7 @@ Mojang-derived artifacts are never bundled.
 
 ## Milestones
 
-There are 25 gate scripts under `run/`, each asserting on the real logs of a real instance. The milestone table
+The gate scripts under `run/` assert on real logs and artifacts from a real instance. The milestone table
 that used to be here listed `gate-m5.sh` and `gate-m6.sh`, which have never existed, and recorded M2 and M4
 onwards as unfinished long after their gates were passing — so the scripts themselves are the list now:
 
@@ -85,6 +85,13 @@ onwards as unfinished long after their gates were passing — so the scripts the
 | `gate-m12` … `gate-m16` | multiplayer over a real socket, an anti-cheat's opinion, a pure Fabric server, both Forge families' networking |
 | `gate-m17` | the installer, resolved and launched the way a launcher does it |
 | `gate-m24` | a mod that fails on purpose: the others still load and the failure is attributed |
+| `gate-m25-worldgen` | biome modifier canaries leave distinct blocks in saved regions; the Forge half starts as expected red |
+| `gate-m26-forgeclient` | the Forge client receives key, renderer and creative-tab registration events; starts as expected red |
+| `gate-m27-frame` | the 97-jar client produces a fresh, non-black Minecraft screenshot |
+
+`run/compat/gates-all.sh` discovers and runs every gate in numerical order, including network/GUI gates;
+an intentional `--skip <script.sh>` is printed in the results. Portable Windows baseline collection and
+the negative controls are described in [the compatibility protocol](run/compat/PROTOCOL.md).
 
 The rest (`m8`, `m10`, `m11`, `m18`–`m23`) each pin one previously-shipped defect. Sixteen of the twenty-five
 had not been run for a day when that was last measured, and one of them had been red the whole time — which is

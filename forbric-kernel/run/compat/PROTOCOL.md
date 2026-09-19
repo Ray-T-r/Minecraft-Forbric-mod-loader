@@ -1,0 +1,119 @@
+# Compatibility verification
+
+The current compatibility plan has four implementation phases after this tooling phase.
+Keep the same popular and random sets for each before/after comparison. A successful boot
+alone does not prove that a mod's features ran.
+
+## Inputs and transport
+
+Use Python 3 (standard library only), Bash, and the staged game/carrier jars. Configure
+`WINSH` and `WINFILE` as the executable commands for the existing Windows shell/file
+transports. Shell aliases are not inherited by scripts. `lib-compat.sh` parses these
+commands without `eval`, limits each call to 240 seconds, and checks a PowerShell success
+sentinel. Do not put credentials in reports or committed files.
+
+Set `FORBRIC_MC` to the Windows Minecraft root and `FORBRIC_VERSION` to its installed
+profile id. `FORBRIC_INSTANCE` optionally selects a dedicated test instance; otherwise
+the profile directory is used. `FORBRIC_WORLD` selects the generated save. Preserve the
+launcher-created native directory and `options.txt`. `FORBRIC_PYTHON` can select the
+remote Python executable. All five Windows entry points accept `--print-config` on Mac
+without launching, reading the Windows disk, or importing Windows-only APIs.
+
+## Select the packs
+
+`pick_mods.py <mods-dir> --slugs a=forge,b=fabric --resolve-only` resolves named builds
+before downloading. The requested loader is mandatory: a NeoForge build is not a
+MinecraftForge substitute. Missing versions print `UNAVAILABLE`. Keep that result in
+the report and choose a same-purpose replacement before accepting the popular set.
+Use `MODRINTH_API` to select the API endpoint (also the local HTTP fixture seam).
+
+For the next random set, set `SEED=20260919`, `WANT_FABRIC=26`, `WANT_NEO=26`,
+`WANT_FORGE=18`, and `EXCLUDE_MANIFEST` to the previous set's manifest. Preserve the
+resolved manifest, including dependencies and actual loaders, with the run evidence.
+
+`abi-audit.py` checks class references against explicitly supplied carrier/game jars;
+`field-drift.py` compares vanilla and merged field descriptors and reports affected
+guest jars. `fapi-usage.py` scans class references, including `META-INF/jars`, to prove
+the Fabric loot/model candidates actually call the affected APIs. Run each with
+`--help` for its argument list. API usage must be proved from the downloaded candidate
+jar before treating the selection as final; metadata resolution alone cannot prove it.
+
+## Run and collect
+
+1. Build the four staged artifacts and canaries. Do not run a gate while a Windows
+   sweep is using those artifacts; gates rebuild the kernel jar in place.
+2. Use `push-and-run.sh --label <label> --mods <mods-dir> --manifest <manifest.json>`.
+   Preview with `--dry-run --version-json <installed-profile.json>`. The dry run names
+   all four artifact uploads, sanitized mod names, PID stop, cleanup, and evidence.
+3. Stop only PIDs read from `.forbric-sweep.pid` / `.forbric-gate.pid`, including the
+   server subdirectory's gate file. Never kill all Java/Python/game processes by name.
+4. Clean the explicit test-state children: `config`, `mods`, `saves`, `logs`,
+   `.forbric-kernel`, `.mixin.out`, `.fabric`, `crash-reports`, `screenshots`,
+   `server-gen`, `quickPlay`, `resourcepacks`, `defaultconfigs`, `.cache`,
+   `.physics_mod_cache`, and the three console logs. Preserve natives, `options.txt`,
+   backup ZIPs, launcher metadata and PCL files. `mods-all` is refreshed only from the
+   new pack and serves as the source for a later subset test.
+5. `version-json-sync.py` updates SHA-1/size for exactly four supplied `group:artifact`
+   pairs. It keeps library order and all other metadata. A missing pair is an error.
+   Upload the artifacts and refreshed profile, then the driver tools and mod archive.
+   Windows-illegal jar characters are replaced with `_`; collisions fail before upload.
+6. `win/run-server-test.py` drives `win/forbric-server.py` through world generation,
+   ticks, save, and clean stop, then copies the save for the client. `win/run-client-test.py`
+   drives `win/forbric-launch.py` into it, requests Minecraft's own screenshot at tick
+   100, and requires a clean disconnect. Both launchers resolve the installed version
+   JSON rather than a developer classpath. `win/common.py` owns shared arguments,
+   PID recording, launch resolution, frame inspection, and F2 fallback.
+7. Long jobs run with `Start-Process` and a saved PID/status handle. Poll that same
+   handle; an observation timeout is not a terminal job and never authorizes starting
+   another copy. Re-inspect the handle after a connection interruption. Each remote
+   command remains below 240 seconds even when the game takes tens of minutes.
+8. Collect logs, fresh Minecraft PNGs, saved regions and `load-report.txt` into the
+   run directory. `assert.sh` checks the common client observations; `ASSERT_EXTRA`
+   may name a pack-specific Bash assertion file using `ck`/`abs`. Missing/empty logs fail.
+   `frame-verdict.py` reports `DREW`, `BLACK`, or `UNSUPPORTED`; only `DREW` is success.
+   Desktop/GDI captures cannot replace a Minecraft screenshot. `region-probe.py`
+   reports chunks containing each needle, plus explicit unreadable lz4/custom/corrupt
+   counts. `--dungeons` reports spawner/mossy-cobblestone co-occurrence, not an exact
+   count of dungeon structures. Require readable chunks and at least one matching
+   chunk; record every unreadable chunk.
+9. `push-and-run.py` implements the shell entry point's orchestration and writes
+   `report.md` using `report-template.md`, with commit, manifest, phase results, log
+   assertions, frame verdict, region evidence and named load-report failures. Retain
+   failed baselines as evidence. Compare each field, including new DEGRADED reasons,
+   with the corresponding baseline; a boot reaching Done is insufficient.
+
+## Investigate a failure
+
+Use `push-and-run.sh --label <label> --bisect <subset.txt>` to run one named subset
+against the staged `mods-all` and world. `win/bisect.py` uses the same fresh-frame
+classifier, never a quiet log as proof of a rendered client. Halve the suspect subset
+and repeat to isolate the failure, keeping each subset and verdict. Preserve required
+dependencies. Missing/unsupported screenshots are unproven, not a green subset.
+
+`--quarantine <jar>` moves one explicitly named jar out of `mods`; record its actual
+failure and the subset evidence. Do not hide quarantined jars when comparing totals.
+Replacements must be labelled with their actual project and loader in the manifest.
+
+## Gates and cadence
+
+`gates-all.sh` discovers every `run/gate-m*.sh` and runs in numerical order, including
+network and GUI gates. `--list` is the actual glob. Use repeated `--skip <script.sh>`
+only when intentional; every skip prints a RESULT line. The default port is 25599.
+Logs and one-line results go to `build/gates/`, with a `summary.txt`.
+
+The initial `gate-m25-worldgen.sh` and `gate-m26-forgeclient.sh` deliberately expose
+missing Forge mechanisms. The client gate stages a data-free copy of its canary so adding a worldgen datapack cannot block
+quick-play behind a backup confirmation; the source jar remains intact and m25 tests its data.
+Header `EXPECTED: RED until ...`, exit code 2, and an
+`EXPECTED-RED` observation together distinguish that known failure from boot failures
+or broken control assertions (exit 1). Remove the expected-red contract when its
+implementation lands. `gate-m27-frame.sh` requires the 97-jar pack and a PNG newer
+than the current launch. Gate headers document `M25_NO_DATA`, `M26_EXTRA_JVM`,
+`M27_SHOT_TICKS`, and `M27_FRAME` negative controls.
+
+After each step, run `./gradlew --offline cleanTest test`, read the JUnit XML, and
+deliberately break new behavior once to verify the test fails. After a workstream,
+run its gate and negative controls plus every gate. Phase 0 ends with all gates and
+Windows `popular-baseline` / `random-baseline`. Each later phase reruns the popular
+set; Phase 2 and the final phase rerun the random set too. If an unrelated observation
+regresses, isolate it with the frame-based subset test before the next phase.
