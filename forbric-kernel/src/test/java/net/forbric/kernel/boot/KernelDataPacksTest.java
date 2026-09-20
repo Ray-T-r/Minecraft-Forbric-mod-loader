@@ -33,6 +33,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 
 /**
@@ -73,6 +74,25 @@ class KernelDataPacksTest {
 		Files.writeString(notAJar, "this is not a zip");
 		assertFalse(KernelDataPacks.carriesData(notAJar));
 		assertFalse(KernelDataPacks.carriesData(dir.resolve("absent.jar")));
+	}
+
+	@Test
+	@org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
+	void aFailedModsDataIsNotServedButADegradedOnesIs() throws Exception {
+		List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			Path broken = jar("broken.jar", ForbricModDiscoverer.NEOFORGE_MANIFEST, "data/broken/worldgen/biome/x.json");
+			Path bruised = jar("bruised.jar", ForbricModDiscoverer.NEOFORGE_MANIFEST, "data/bruised/recipe/a.json");
+			net.forbric.api.ModCatalog.publish(List.of(
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.NEOFORGE, "broken", "Broken", "1", "", List.of(), "broken.jar", "", ""),
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.NEOFORGE, "bruised", "Bruised", "1", "", List.of(), "bruised.jar", "", "")));
+			net.forbric.api.ModCatalog.mark("broken", net.forbric.api.ModCatalog.Status.FAILED, "its @Mod constructor threw");
+			net.forbric.api.ModCatalog.mark("bruised", net.forbric.api.ModCatalog.Status.DEGRADED, "one of its deferred setup tasks threw");
+			assertEquals(List.of(bruised), KernelDataPacks.forgeFamilyJarsWithData(List.of(broken, bruised)),
+					"a mod whose constructor threw registered nothing; its data would fail the registry load");
+		} finally {
+			net.forbric.api.ModCatalog.publish(previous);
+		}
 	}
 
 	@Test

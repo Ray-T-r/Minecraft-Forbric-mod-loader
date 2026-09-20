@@ -88,7 +88,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -188,6 +188,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 						"NeoForge's loot-modifier manager parse-fails MinecraftForge's legacy index file on every reload"),
 				new AnchorSet.Anchor(LOOT_MODIFIER_MANAGER_FORGE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
 						"MinecraftForge's loot-modifier manager parse-fails its own index as a modifier on every reload"))));
+		out.add(fixed("letModdedFeatureFlagsRegister", FEATURE_FLAGS,
+				"NeoForge mods' declared feature flags are never registered — a mod asking for its own flag dies in its static "
+						+ "initialiser and its datapack then fails the whole registry load"));
 		return List.copyOf(out);
 	}
 
@@ -264,6 +267,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "inlineTheSwitchMapTheMergeLost", inlineTheSwitchMapTheMergeLost(node));
 			changed |= claim(reporter, "vetoUnjudgeableOverlayConditions", vetoUnjudgeableOverlayConditions(node));
 			changed |= claim(reporter, "hideTheLegacyLootModifierIndexFromTheDirectoryScan", hideTheLegacyLootModifierIndexFromTheDirectoryScan(node));
+			changed |= claim(reporter, "letModdedFeatureFlagsRegister", letModdedFeatureFlagsRegister(node));
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -2631,6 +2635,39 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	static final String PREPARE = "prepare";
 	static final String PREPARE_DESC = "(Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/util/profiling/ProfilerFiller;)Ljava/util/Map;";
 	static final String KERNEL_LOOT_MODIFIERS = "net/forbric/kernel/runtime/KernelLootModifiers";
+	static final String FEATURE_FLAGS = "net/minecraft/world/flag/FeatureFlags";
+	static final String NEO_FEATURE_FLAG_LOADER = "net/neoforged/neoforge/common/util/flag/FeatureFlagLoader";
+	static final String KERNEL_FEATURE_FLAGS = "net/forbric/kernel/runtime/KernelFeatureFlags";
+	static final String LOAD_MODDED_FLAGS = "loadModdedFlags";
+	static final String LOAD_MODDED_FLAGS_DESC = "(Lnet/minecraft/world/flag/FeatureFlagRegistry$Builder;)V";
+
+	/**
+	 * Sends {@code FeatureFlags.<clinit>}'s call to NeoForge's {@code FeatureFlagLoader.loadModdedFlags} to the kernel.
+	 *
+	 * <p>NeoForge reads each mod's declared flag file through {@code IModFile.getContents()}, and the kernel's mod
+	 * files carry no jar contents, so that walk found nothing and a mod asking {@code FeatureFlags.REGISTRY} for
+	 * its own flag died in its static initialiser. Same descriptor, same moment, owner swapped; the kernel helper
+	 * reads the same file from the jar. Idempotent: an already-swapped call is left alone.
+	 */
+	private static boolean letModdedFeatureFlagsRegister(ClassNode node) {
+		if (!FEATURE_FLAGS.equals(node.name)) return false;
+		MethodNode clinit = findMethod(node, "<clinit>", "()V");
+		if (clinit == null) return false;
+		int swapped = 0;
+		for (AbstractInsnNode insn = clinit.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
+					&& NEO_FEATURE_FLAG_LOADER.equals(call.owner) && LOAD_MODDED_FLAGS.equals(call.name)
+					&& LOAD_MODDED_FLAGS_DESC.equals(call.desc)) {
+				call.owner = KERNEL_FEATURE_FLAGS;
+				swapped++;
+			}
+		}
+		if (swapped == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] FeatureFlags now asks the kernel for NeoForge mods' declared feature flags — "
+				+ "NeoForge's own loader walks jar contents the kernel's mod files do not carry, so those flags were never "
+				+ "registered and a mod asking for its own died in its static initialiser");
+		return true;
+	}
 	static final String WITHOUT_INDEX = "withoutTheLegacyIndex";
 	static final String WITHOUT_INDEX_DESC = "(Lnet/minecraft/server/packs/resources/ResourceManager;)Lnet/minecraft/server/packs/resources/ResourceManager;";
 

@@ -270,9 +270,28 @@ public final class KernelDataPacks {
 					&& owner != Ecosystem.FORGE) {
 				continue;
 			}
-			if (carriesData(jar)) serve.add(jar);
+			if (!carriesData(jar)) continue;
+			List<String> failed = failedModsOf(jar);
+			if (failed != null) {
+				ForbricLog.warn("[Forbric/DataPacks] not serving %s's data/ — %s did not finish loading, and its data would name "
+						+ "content it never registered, which fails the whole registry load", jar.getFileName(), failed);
+				continue;
+			}
+			serve.add(jar);
 		}
 		return serve;
+	}
+
+	/** The mod ids of {@code jar} when the catalogue has rows for it and EVERY one is FAILED; else null. */
+	static List<String> failedModsOf(Path jar) {
+		String name = jar.getFileName().toString();
+		List<String> ids = new ArrayList<>();
+		for (net.forbric.api.ModCatalog.Entry e : net.forbric.api.ModCatalog.everything()) {
+			if (!name.equals(e.jar())) continue;
+			if (e.status() != net.forbric.api.ModCatalog.Status.FAILED) return null;
+			ids.add(e.modId());
+		}
+		return ids.isEmpty() ? null : ids;
 	}
 
 	/** True when {@code jar} has a {@code data/} directory — the only thing a datapack source can serve. */

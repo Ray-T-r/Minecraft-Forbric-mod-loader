@@ -65,6 +65,11 @@ public final class KernelLifecycle {
 	}
 
 	/** The Forge-family mod jars to construct in the registration window (set by the boot orchestrator). */
+	/** The Forge-family mod jars this boot loaded (top-level and extracted nested), for game-side helpers. */
+	public static List<Path> modJars() {
+		return modJars;
+	}
+
 	public static void setModJars(List<Path> jars) {
 		modJars = jars == null ? List.of() : jars;
 	}
