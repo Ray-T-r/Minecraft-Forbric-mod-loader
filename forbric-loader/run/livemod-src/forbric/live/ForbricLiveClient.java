@@ -35,6 +35,9 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
 /** Only loaded by name on the client; the dedicated-server entry point never resolves these event types. */
 public final class ForbricLiveClient {
+	/** Frames the canary's own HUD overlay layer has drawn. */
+	private static final AtomicInteger OVERLAY_DRAWS = new AtomicInteger();
+
 	private static final ModelLayerLocation PROBE_LAYER = new ModelLayerLocation(
 			Identifier.fromNamespaceAndPath("forbriclive", "probe"), "main");
 	private static final AtomicInteger RELOAD_POSTS = new AtomicInteger();
@@ -135,6 +138,25 @@ public final class ForbricLiveClient {
 				System.out.println("[ForbricLive/CLIENT] creative contents builder exercised in a live world");
 			}
 			if (++worldTicks == 100) observeRegistrationResults(mc);
+		});
+		// The HUD overlay layers. The merged base carries no reference to ForgeLayeredDraw at all, so nothing
+		// builds its tree and nothing posts this event: a MinecraftForge mod's overlay simply never drew. Counting
+		// DRAWS rather than the registration is the point — the event arriving proves only that the tree exists.
+		net.minecraftforge.client.event.AddGuiOverlayLayersEvent.BUS.addListener(event -> {
+			Identifier overlay = Identifier.fromNamespaceAndPath("forbriclive", "overlay");
+			// add then move, not addAbove: MinecraftForge's addAbove only repositions a layer that is ALREADY in
+			// the stack, so it warns and does nothing when handed a new one. Moving it above the crosshair is what
+			// proves the seeded vanilla positions are there to position against.
+			event.getLayeredDraw().add(overlay, (extractor, delta) -> {
+				if (OVERLAY_DRAWS.incrementAndGet() == 20) {
+					System.out.println("[ForbricLive/CLIENT] overlay layer DREW 20 frames — "
+							+ "MinecraftForge's HUD overlays reach the screen");
+				}
+			});
+			event.getLayeredDraw().move(overlay,
+					net.minecraftforge.client.gui.overlay.ForgeLayeredDraw.CROSSHAIR,
+					net.minecraftforge.client.gui.overlay.ForgeLayeredDraw.LayerOffset.ABOVE);
+			System.out.println("[ForbricLive/CLIENT] AddGuiOverlayLayersEvent RECEIVED");
 		});
 		System.out.println("[ForbricLive/CLIENT] subscribed to ten Forge registration events");
 		registerConfigScreen(ctx);

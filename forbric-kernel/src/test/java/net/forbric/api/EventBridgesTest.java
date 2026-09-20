@@ -100,7 +100,10 @@ class EventBridgesTest {
 	/** Both land by class transformer after the dead-event audit has run; the multiplexer's passes do not. */
 	@Test
 	void onlyTheTransformerLandedPassesAreLate() {
-		assertEquals(EnumSet.of(GameEventBridge.Pass.CLIENT_INIT, GameEventBridge.Pass.REGISTRATION),
+		// CLIENT_HUD is landed by HudElementBridgeInjector's append to initModdedLayers, later than every other
+		// pass — the merged Minecraft.<init> reaches it after client setup — so it is late for the same reason.
+		assertEquals(EnumSet.of(GameEventBridge.Pass.CLIENT_INIT, GameEventBridge.Pass.REGISTRATION,
+						GameEventBridge.Pass.CLIENT_HUD),
 				EnumSet.allOf(GameEventBridge.Pass.class).stream().filter(GameEventBridge.Pass::lateInstalled)
 						.collect(Collectors.toCollection(() -> EnumSet.noneOf(GameEventBridge.Pass.class))));
 	}

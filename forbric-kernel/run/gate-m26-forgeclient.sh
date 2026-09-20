@@ -2,6 +2,7 @@
 # M26 — traditional Forge's client event buses must receive the game's real registration events.
 # RED controls after A3/A6/A7: M26_EXTRA_JVM='-Dforbric.forgeClientInit=off' loses client registrations;
 #   M26_EXTRA_JVM='-Dforbric.clientResourcePreload=off' — the client resource manager is empty at mod setup again;
+#   M26_EXTRA_JVM='-Dforbric.forgeOverlayLayers=off' — a MinecraftForge mod's HUD overlays never draw (3 red);
 # M26_EXTRA_JVM='-Dforbric.forgeCreativeTabs=off' loses command_block in parent/search collections;
 # M21_EXTRA_JVM='-Dforbric.forgeSpawnPlacements=off' loses the zombie WORLD_SURFACE result in M21.
 # Green since Phase 1 A landed (A3–A9 hooks, A8 bridge inventory); any red is a regression, exit 1.
@@ -110,6 +111,21 @@ check "key is in Options" 'ForbricLive/CLIENT\] key in Options\.keyMappings: tru
 check "persisted F6 binding was reloaded" 'ForbricLive/CLIENT\] key saved binding: key\.keyboard\.f6([[:space:]]|$)' "$LOG"
 check "registered layer was baked" 'ForbricLive/CLIENT\] layer forbriclive:probe baked: true' "$LOG"
 check "stone has tint sources" 'ForbricLive/CLIENT\] stone tint sources: [1-9][0-9]*' "$LOG"
+
+step "a MinecraftForge mod's HUD overlay actually draws (must PASS)"
+# The merged base carries ZERO references to ForgeLayeredDraw: NeoForge's GuiLayerManager won that byte merge
+# outright, so nothing built MinecraftForge's overlay tree, nothing posted AddGuiOverlayLayersEvent, and a mod
+# that added a HUD overlay registered it into an object the game never renders.
+#
+# DRAWS, not registrations. The event arriving proves only that a tree exists to register into; the canary's own
+# layer counting twenty real frames is what proves it reaches the screen. RED with
+# M26_EXTRA_JVM='-Dforbric.forgeOverlayLayers=off' (3 red — the stack is not built, so the event is never posted).
+check "the overlay registration event reached the canary" \
+  'ForbricLive/CLIENT\] AddGuiOverlayLayersEvent RECEIVED' "$LOG"
+check "and its layer drew real frames" \
+  'ForbricLive/CLIENT\] overlay layer DREW 20 frames' "$LOG"
+check "the stack is on NeoForge's layer manager" \
+  "Forbric/HudBridge\] MinecraftForge's overlay stack is on NeoForge's layer manager" "$LOG"
 check "stone has the registered canary tint" 'ForbricLive/CLIENT\] stone probe tint present: true' "$LOG"
 check "reload registration happened exactly once" 'ForbricLive/CLIENT\] reload posts=1([[:space:]]|$)' "$LOG"
 check "registered listener really applied" 'ForbricLive/CLIENT\] reload listener applies=[1-9][0-9]*' "$LOG"

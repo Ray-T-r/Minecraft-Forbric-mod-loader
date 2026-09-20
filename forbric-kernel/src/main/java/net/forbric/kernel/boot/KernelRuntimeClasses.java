@@ -220,6 +220,10 @@ public final class KernelRuntimeClasses {
 				new Call("installRightClickBlock", void.class, Object.class),
 				new Call("installLeftClickBlock", void.class, Object.class),
 				new Call("installRightClickItem", void.class, Object.class))));
+		// MinecraftForge's HUD overlay stack, which the merged base has no reference to at all. Client only, and
+		// a renamed entry point here is a mod's overlay silently not drawing.
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeOverlayLayers", new Entry(Origin.COMPILED, List.of(
+				new Call("install", void.class, Object.class))));
 		// The CLIENT tick, in its own class because it names NeoForge's client event package — a dedicated server
 		// must never be made to resolve those types, and keeping them apart means it never loads the class.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientTickEvents", new Entry(Origin.COMPILED, List.of(

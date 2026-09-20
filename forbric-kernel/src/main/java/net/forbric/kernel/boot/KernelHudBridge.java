@@ -160,6 +160,30 @@ public final class KernelHudBridge {
 	}
 
 	/**
+	 * The hook the transformed {@code GuiLayerManager.initModdedLayers} calls at its end.
+	 *
+	 * <p>Boot-side, so it cannot name {@code GuiLayerManager}; the work is game-side in
+	 * {@code KernelForgeOverlayLayers}, which builds MinecraftForge's overlay stack and registers it here — the
+	 * one moment where every mod is loaded and the HUD has not yet drawn a frame.
+	 *
+	 * <p>A failure costs only MinecraftForge's overlays, which is the state this replaces, so it never propagates
+	 * into the game's own HUD initialisation.
+	 */
+	public static void addForgeOverlayLayers(Object layerManager) {
+		if (layerManager == null) return;
+		try {
+			Class.forName("net.forbric.kernel.runtime.KernelForgeOverlayLayers", true,
+					layerManager.getClass().getClassLoader())
+					.getMethod("install", Object.class).invoke(null, layerManager);
+		} catch (ClassNotFoundException single) {
+			ForbricLog.debug("[Forbric/HudBridge] no MinecraftForge overlay adapter on this loader");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/HudBridge] could not install MinecraftForge's overlay layers — a mod's HUD "
+					+ "overlay will render nothing", t);
+		}
+	}
+
+	/**
 	 * The hook the transformed {@code GuiLayerManager.add} calls.
 	 *
 	 * <p>Returns {@code layer} unchanged — by identity, so nothing is allocated and the render path is unchanged —

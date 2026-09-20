@@ -178,7 +178,9 @@ class ForgeRegistrationA2ContractTest {
         }
         for (String pass : List.of("all 3 CLIENT_INIT bridge(s) installed", "all 2 REGISTRATION bridge(s) installed",
                 "setup resource PRESENT: forbriclive:setup_probe.txt = forbric-live-setup-probe",
-                "client resource manager preloaded with 140 selected pack(s)")) {
+                "client resource manager preloaded with 140 selected pack(s)",
+                "AddGuiOverlayLayersEvent RECEIVED", "overlay layer DREW 20 frames",
+                "MinecraftForge's overlay stack is on NeoForge's layer manager")) {
             assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(pass, ""), 0).exit());
         }
         // ABSENT is its own row, not the negation of PRESENT: an empty manager makes the canary print it, and a
@@ -250,6 +252,11 @@ class ForgeRegistrationA2ContractTest {
         lines.add(COMMON + "injection VISIBLE: true search=true phase=client tick 100");
         lines.add("[EventMux] all 3 CLIENT_INIT bridge(s) installed");
         lines.add("[EventMux] all 2 REGISTRATION bridge(s) installed");
+        // MinecraftForge's HUD overlay stack. DRAWS is its own row: the event arriving proves only that a tree
+        // exists to register into, and the merged base built no tree at all before this.
+        lines.add(CLIENT + "AddGuiOverlayLayersEvent RECEIVED");
+        lines.add(CLIENT + "overlay layer DREW 20 frames");
+        lines.add("[Forbric/HudBridge] MinecraftForge's overlay stack is on NeoForge's layer manager");
         return String.join("\n", lines) + "\n";
     }
 

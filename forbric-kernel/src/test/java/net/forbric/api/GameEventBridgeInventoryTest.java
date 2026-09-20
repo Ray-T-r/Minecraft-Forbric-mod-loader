@@ -170,6 +170,11 @@ class GameEventBridgeInventoryTest {
 				"ForgeCreativeTabsInjector", "ForgeSpawnPlacementsInjector")) {
 			recorded.addAll(bridgesRecordedBy(compiled("transform", transformer)));
 		}
+		// A transformer may land only the SEAM and leave the recording to the game-side class it routes to — which
+		// is the honest place for it when the install can still fail after the redirect is in the bytecode.
+		// HudElementBridgeInjector appends the call; KernelForgeOverlayLayers is what knows whether the stack
+		// actually went on.
+		recorded.addAll(bridgesRecordedBy(runtimeCompiled("KernelForgeOverlayLayers")));
 		assumeTrue(!recorded.isEmpty(), "transformers not compiled yet");
 
 		List<String> missing = new ArrayList<>();
@@ -179,6 +184,12 @@ class GameEventBridgeInventoryTest {
 		assertEquals(List.of(), missing,
 				"every late-pass bridge must be passed to EventBridges.installed by the transformer that lands its "
 						+ "redirect, or the verify line reports it missing on every boot");
+	}
+
+	/** A class from the GAME-side output set, which links against the carriers and so compiles separately. */
+	private static Path runtimeCompiled(String simpleName) {
+		return Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime",
+				"net", "forbric", "kernel", "runtime", simpleName + ".class");
 	}
 
 	private static Path compiled(String pkg, String simpleName) {

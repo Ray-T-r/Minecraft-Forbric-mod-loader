@@ -52,7 +52,13 @@ class DeadEventAuditTest {
 	private static final String ALIVE = "net/minecraftforge/event/entity/living/LivingEvent$LivingTickEvent";
 	private static final String KEYS = "net/minecraftforge/client/event/RegisterKeyMappingsEvent";
 	private static final String TABS = "net/minecraftforge/event/BuildCreativeModeTabContentsEvent";
-	private static final String OVERLAYS = "net/minecraftforge/client/event/AddGuiOverlayLayersEvent";
+	/**
+	 * A CLIENT event with no bridge.
+	 *
+	 * <p>It used to be {@code AddGuiOverlayLayersEvent}; that one is bridged now, and a bridged event is reported
+	 * through the pending path instead, so a test written on it would silently be testing the other half.
+	 */
+	private static final String OVERLAYS = "net/minecraftforge/client/event/AddFramePassEvent";
 	private static final String CREATE_FLUID_SOURCE = "net/minecraftforge/event/level/BlockEvent$CreateFluidSourceEvent";
 	private static final String FLUID_PLACE_BLOCK = "net/minecraftforge/event/level/BlockEvent$FluidPlaceBlockEvent";
 	private static final String NEO_TOOLTIP = "net/neoforged/neoforge/event/entity/player/ItemTooltipEvent";
@@ -178,7 +184,7 @@ class DeadEventAuditTest {
 
 		assertEquals(1, findings.size());
 		assertEquals("hudmod", findings.get(0).modId());
-		assertTrue(findings.get(0).cost().contains("never draw"), findings.get(0).cost());
+		assertTrue(findings.get(0).cost().contains("never run"), findings.get(0).cost());
 	}
 
 	/** The two fluid events the fluid-rendering repair deliberately does not bridge: a listener is told, per event. */

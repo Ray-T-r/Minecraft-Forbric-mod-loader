@@ -127,7 +127,10 @@ public enum GameEventBridge {
 			"items a MinecraftForge mod adds to vanilla or other mods' creative tabs are missing — only its own tab "
 					+ "still fills, so the mod looks installed and its content is not there"),
 	SPAWN_PLACEMENTS(Pass.REGISTRATION, "SpawnPlacementRegisterEvent",
-			"a MinecraftForge mod's mobs never spawn naturally, and its changes to vanilla spawn rules are ignored");
+			"a MinecraftForge mod's mobs never spawn naturally, and its changes to vanilla spawn rules are ignored"),
+	GUI_OVERLAY_LAYERS(Pass.CLIENT_HUD, "AddGuiOverlayLayersEvent",
+			"HUD overlay layers a MinecraftForge mod adds never draw — the merged base carries no reference to "
+					+ "ForgeLayeredDraw at all, so nothing builds its tree and nothing renders it");
 
 	/** Which install pass owns a bridge. They run at different times and only one of them is client-only. */
 	public enum Pass {
@@ -155,7 +158,14 @@ public enum GameEventBridge {
 		 * placements). Both sides. Verified right after the kernel's registration window has driven both, and late
 		 * for the audit for the same reason as {@link #CLIENT_INIT}.
 		 */
-		REGISTRATION(true);
+		REGISTRATION(true),
+		/**
+		 * Landed at the end of NeoForge's own {@code GuiLayerManager.initModdedLayers}, the one moment where every
+		 * mod is loaded and the HUD has not yet drawn a frame. Client only, and later than every other pass — the
+		 * merged {@code Minecraft.<init>} reaches it after client setup — so it is {@link #lateInstalled()} and
+		 * verified from its own install point.
+		 */
+		CLIENT_HUD(true);
 
 		private final boolean lateInstalled;
 
