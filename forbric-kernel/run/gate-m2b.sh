@@ -87,6 +87,10 @@ check "the loot seams were routed"             "Forbric/LootBridge\] routed 1 lo
 check "the canary registered on LootTableEvents" "ForbricFabricLive\] LootTableEvents listeners registered" "$LOG"
 check "LootTableEvents.MODIFY reached the canary" "ForbricFabricLive\] LootTableEvents.MODIFY saw minecraft:blocks/dirt" "$LOG"
 check "LootTableEvents.ALL_LOADED fired"         "ForbricFabricLive\] LootTableEvents.ALL_LOADED: [1-9][0-9]* loot table" "$LOG"
+# G6: fabric-item-api's tooltip-order scrape reads ItemStack.addDetailsToTooltip's bytecode; the merge renamed the
+# body away, so the scrape threw for any mod touching the registry. RED with FORBRIC_JVM=-Dforbric.tooltipOrderScrape=off.
+check "fabric-item-api's tooltip order scraped" "ForbricFabricLive\] fabric-item-api tooltip order: ok" "$LOG"
+check_absent "…and its scrape found component types" "Found no component types" "$LOG"
 # F4: with every restoration on, no installed mod loses a fabric-api surface. With -Dforbric.lootBridge=off the
 # audit names the canary ("[Forbric/FabricApi] 1 mod jar(s) use fabric-loot-api-v3's LootTableEvents … forbricfabriclive.jar")
 # and .forbric-kernel/load-report.txt lists forbricfabriclive as DEGRADED.

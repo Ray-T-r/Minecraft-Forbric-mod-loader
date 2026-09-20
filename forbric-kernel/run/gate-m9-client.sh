@@ -180,6 +180,9 @@ check_absent "LevelChunkSectionMixin no longer half-applied" "LevelChunkSectionM
 check "the attribute builder got its vanilla-typed twin" "WidenedFields\] net.minecraft.world.entity.ai.attributes.AttributeSupplier\\\$Builder: vanilla-descriptor twin" "$LOG"
 check_absent "fabric-object-builder's attribute accessor binds" "InvalidAccessorException.*builder:Lcom/google/common/collect/ImmutableMap\\\$Builder;" "$LOG"
 check_absent "…and the kernel reports no unbound accessor for it" "guest accessor mixin .*AttributeSupplierBuilderAccessor cannot bind" "$LOG"
+# G6: ItemStack.addDetailsToTooltip is scrapeable again (vanilla's component order copied to its head from the
+# merge's own renamed body). RED with M9_EXTRA_JVM=-Dforbric.tooltipOrderScrape=off.
+check "vanilla's tooltip component order restored" "TooltipOrder\] restored a scrapeable vanilla component order of [2-9][0-9] type" "$LOG"
 # H5 (the FluidRenderer.tesselate funnel for MinecraftForge fluid models) is asserted in gate-m26, not here: this
 # pack carries sodium, which replaces vanilla's chunk and fluid meshing, so the vanilla funnel is never reached.
 

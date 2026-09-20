@@ -147,6 +147,9 @@ check "ModelManagerMixin trimmed, not pinned" "GuestInjectorPruner\] pruned 2 in
 check "the canary's client entrypoint ran"    "ForbricFabricLive\] onInitializeClient"                    "$CLOG"
 check "ModelLoadingPlugin invoked"            "ForbricFabricLive\] ModelLoadingPlugin invoked"             "$CLOG"
 check "ModelModifier.OnLoad saw a model"      "ForbricFabricLive\] ModelModifier.OnLoad saw its first model" "$CLOG"
+# G6: the same scrape, on the client. RED with M14_EXTRA_JVM=-Dforbric.tooltipOrderScrape=off.
+check "fabric-item-api's tooltip order scraped on the client" "ForbricFabricLive\] fabric-item-api tooltip order: ok" "$CLOG"
+check_absent "…and found component types"     "Found no component types"                            "$CLOG"
 check_absent "block models still parse"       "JSON data was null or empty"                "$CLOG"
 
 step "the difference was real and the remap corrected it (must PASS)"

@@ -375,6 +375,15 @@ public final class KernelBoot {
 					net.forbric.kernel.transform.WidenedFieldTwinInjector.PROPERTY);
 		}
 
+		// Both sides: vanilla's tooltip component order copied to the head of ItemStack.addDetailsToTooltip from the
+		// merge's own renamed body, so fabric-item-api-v1's bytecode scrape of it finds what it scrapes on Fabric.
+		if (net.forbric.kernel.transform.TooltipOrderScrapeInjector.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TooltipOrderScrapeInjector());
+		} else {
+			ForbricLog.warn("[Forbric/TooltipOrder] -D%s=off — fabric-item-api's tooltip-order registry throws on first "
+					+ "touch (\"Found no component types\")", net.forbric.kernel.transform.TooltipOrderScrapeInjector.PROPERTY);
+		}
+
 		// Client only: route RenderPipeline$Builder.buildSnippet through the vanilla-shaped 11-arg Snippet
 		// constructor (NeoForge's stencil test carried by a kernel scope) so fabric-rendering-v1's
 		// @WrapOperation(NEW Snippet) matches instead of being rejected whole. Matches two classes a dedicated

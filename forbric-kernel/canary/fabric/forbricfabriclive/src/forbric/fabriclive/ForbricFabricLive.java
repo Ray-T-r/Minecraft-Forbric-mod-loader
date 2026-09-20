@@ -89,6 +89,21 @@ public final class ForbricFabricLive implements ModInitializer {
 
 		System.out.println("[ForbricFabricLive] custom entrypoint key 'forbric:probe' ran " + probes + " probe(s)");
 
+		// fabric-item-api-v1's tooltip-order registry scrapes ItemStack.addDetailsToTooltip's bytecode in its static
+		// initializer; on the merged base that body was renamed and the scrape found nothing ("Found no component
+		// types" → ExceptionInInitializerError for any mod touching the registry). Touching load() runs the scrape.
+		if (loader.isModLoaded("fabric-item-api-v1")) {
+			try {
+				Class.forName("net.fabricmc.fabric.impl.item.VanillaTooltipProviderOrder").getMethod("load").invoke(null);
+				System.out.println("[ForbricFabricLive] fabric-item-api tooltip order: ok");
+			} catch (ClassNotFoundException absent) {
+				System.out.println("[ForbricFabricLive] fabric-item-api tooltip order: absent");
+			} catch (Throwable failure) {
+				Throwable cause = failure instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null ? ite.getCause() : failure;
+				System.out.println("[ForbricFabricLive] fabric-item-api tooltip order: FAILED " + cause);
+			}
+		}
+
 		// The registration window must be OPEN: a Fabric mod registers content by calling Registry.register
 		// directly from onInitialize. CUSTOM_STAT is a Registry<Identifier>, so this needs no item/block plumbing.
 		Registry.register(BuiltInRegistries.CUSTOM_STAT, CANARY_STAT, CANARY_STAT);
