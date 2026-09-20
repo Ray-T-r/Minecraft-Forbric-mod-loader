@@ -17,6 +17,7 @@
 package net.forbric.kernel.transform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.nio.file.Files;
@@ -69,6 +70,42 @@ class TransformerAnchorCensusTest {
 			}
 		}
 		return missing;
+	}
+
+	/**
+	 * The two transformers that carry many repairs behind one {@code changed} flag declare one claim per repair,
+	 * and the compat transformer's claim list is the same list, in the same order, as the repairs its transform
+	 * actually runs (pinned through the LDC of each repair's name at its call site).
+	 */
+	@Test
+	void theTwoMultiRepairTransformersDeclareOneClaimPerRepair() throws Exception {
+		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer(name -> null);
+		List<ClassTransformer.Claim> claims = compat.claims();
+		assertEquals(ForbricMergedBaseCompatTransformer.REPAIRS.size(), claims.size());
+		List<String> ids = new ArrayList<>();
+		for (ClassTransformer.Claim claim : claims) {
+			ids.add(claim.id().substring(claim.id().indexOf('#') + 1));
+			assertTrue(claim.id().startsWith(compat.name() + "#"), claim.id());
+			assertTrue(!claim.anchors().isUndeclared(), claim.id() + " declares nothing");
+		}
+		assertEquals(ForbricMergedBaseCompatTransformer.REPAIRS, ids, "one claim per repair, in transform order");
+
+		java.nio.file.Path compiled = java.nio.file.Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
+				"net", "forbric", "kernel", "transform", "ForbricMergedBaseCompatTransformer.class");
+		assumeTrue(java.nio.file.Files.isRegularFile(compiled), "transform classes not compiled yet");
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(java.nio.file.Files.readAllBytes(compiled)).accept(node, 0);
+		List<String> called = new ArrayList<>();
+		for (org.objectweb.asm.tree.MethodNode m : node.methods) {
+			if (!m.name.equals("transform") || !m.desc.contains("ClaimReporter")) continue;
+			for (org.objectweb.asm.tree.AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc && ldc.cst instanceof String name
+						&& ForbricMergedBaseCompatTransformer.REPAIRS.contains(name)) called.add(name);
+			}
+		}
+		assertEquals(ForbricMergedBaseCompatTransformer.REPAIRS, called, "the transform runs exactly the claimed repairs, in order");
+
+		assertTrue(new CommonNetworkInteropInjector().claims().size() >= 5, "one claim per network branch");
 	}
 
 	@Test

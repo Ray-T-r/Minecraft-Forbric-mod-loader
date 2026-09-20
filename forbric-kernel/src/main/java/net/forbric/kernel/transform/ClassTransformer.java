@@ -16,6 +16,8 @@
 
 package net.forbric.kernel.transform;
 
+import java.util.List;
+
 /**
  * A single bytecode transform step registered into a {@link TransformPhase} of the {@link TransformChain}.
  *
@@ -54,5 +56,39 @@ public interface ClassTransformer {
 	 */
 	default AnchorSet anchors() {
 		return AnchorSet.undeclared();
+	}
+
+	/**
+	 * One independently-failing repair inside a transformer that carries several behind one {@code changed} flag,
+	 * with the anchors that repair alone must edit. The ledger keys claims by {@link #id()} exactly as it keys
+	 * transformers by {@link #name()}, so a claim that was handed its target and made no edit is a Miss on its
+	 * own line. A repair with no fixed target declares {@link AnchorSet#scanned}.
+	 */
+	record Claim(String id, AnchorSet anchors) {
+		public Claim {
+			if (id == null || id.isBlank()) throw new IllegalArgumentException("a claim needs an id");
+			if (anchors == null || anchors.isUndeclared()) throw new IllegalArgumentException("claim " + id + " declares nothing");
+		}
+	}
+
+	/** Where a transformer reports which of its {@link #claims()} it applied to the class in hand. */
+	@FunctionalInterface
+	interface ClaimReporter {
+		ClaimReporter NONE = id -> { };
+
+		void hit(String claimId);
+	}
+
+	/** The per-repair claims; empty for a transformer whose one anchor set is the whole story. */
+	default List<Claim> claims() {
+		return List.of();
+	}
+
+	/**
+	 * The transform with a reporter for {@link #claims()}. A transformer with claims overrides THIS one and
+	 * reports each repair it applied; the three-argument form is then its call with {@link ClaimReporter#NONE}.
+	 */
+	default byte[] transform(String className, byte[] classBytes, TransformContext context, ClaimReporter reporter) {
+		return transform(className, classBytes, context);
 	}
 }

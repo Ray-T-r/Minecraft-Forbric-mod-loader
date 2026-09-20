@@ -29,6 +29,8 @@ import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LineNumberNode;
 import org.objectweb.asm.tree.MethodInsnNode;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import org.objectweb.asm.tree.MethodNode;
@@ -251,8 +253,67 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				+ "inert since NeoForge 26.2.0.88");
 	}
 
+	/** Claim ids, one per branch of {@link #transform}; each is reported beside its {@code changed = true}. */
+	static final String CLAIM_FABRIC_ADDON = "forbric-common-network-interop#fabricAddonHandle";
+	static final String CLAIM_FINISH_TASK = "forbric-common-network-interop#finishCurrentTask";
+	static final String CLAIM_CLIENT_COMMON_PAYLOAD = "forbric-common-network-interop#clientCommonHandlePayload";
+	static final String CLAIM_SERVER_COMMON_PAYLOAD = "forbric-common-network-interop#serverCommonHandlePayload";
+	static final String CLAIM_SERVER_GAME_FALL_THROUGH = "forbric-common-network-interop#serverGamePlayFallThrough";
+	static final String CLAIM_CHECK_PACKET = "forbric-common-network-interop#neoCheckPacket";
+	static final String CLAIM_CHANNEL_REGISTRATION = "forbric-common-network-interop#neoChannelRegistration";
+	static final String CLAIM_CHANNEL_ACTIVE = "forbric-common-network-interop#connectionChannelActive";
+	static final String CLAIM_GATHER_TASKS = "forbric-common-network-interop#gatherConfigurationTasks";
+	static final String CLAIM_START_NEXT_TASK = "forbric-common-network-interop#startNextTask";
+	static final String CLAIM_CONFIG_FINISHED = "forbric-common-network-interop#clientConfigurationFinished";
+	static final String CLAIM_GUARD_INITIALISATION = "forbric-common-network-interop#guardOtherConnectionInitialisation";
+
+	/**
+	 * One claim per branch. The server-game fall-through is a HEDGE: NeoForge 26.2.0.88 fixed it upstream and the
+	 * splice declines by design on the current carrier (see {@link #letNeoForgePayloadsThrough}).
+	 */
+	@Override
+	public List<Claim> claims() {
+		List<AnchorSet.Anchor> addons = new ArrayList<>();
+		for (String addon : FABRIC_ADDONS) {
+			addons.add(required(addon, "fabric-api's channel-registration addon miscasts a NeoForge payload before the cross-ecosystem negotiator sees it"));
+		}
+		return List.of(
+				new Claim(CLAIM_FABRIC_ADDON, new AnchorSet(addons, null)),
+				new Claim(CLAIM_FINISH_TASK, AnchorSet.of(required(SERVER_CONFIG,
+						"Fabric and NeoForge common-networking configuration tasks are not treated as equivalent — one family's configuration never finishes"))),
+				new Claim(CLAIM_CLIENT_COMMON_PAYLOAD, AnchorSet.of(required(CLIENT_COMMON_LISTENER,
+						"MinecraftForge's payloads never reach ForgeHooks.onCustomPayload on the client — Forge mod networking is dead client-side"))),
+				new Claim(CLAIM_SERVER_COMMON_PAYLOAD, AnchorSet.of(required(SERVER_COMMON_LISTENER,
+						"MinecraftForge's payloads never reach ForgeHooks.onCustomPayload on the server — Forge mod networking is dead server-side"))),
+				new Claim(CLAIM_SERVER_GAME_FALL_THROUGH, AnchorSet.of(new AnchorSet.Anchor(SERVER_GAME_LISTENER, AnchorSet.Severity.HEDGE,
+						"a NeoForge mod's play-phase packet to the server reaches nobody when MinecraftForge does not take it (fixed upstream in NeoForge 26.2.0.88)"))),
+				new Claim(CLAIM_CHECK_PACKET, AnchorSet.of(required(NEO_NETWORK_REGISTRY,
+						"NeoForge's channel check rejects every MinecraftForge payload — Forge mods are disconnected for unknown channels"))),
+				new Claim(CLAIM_CHANNEL_REGISTRATION, AnchorSet.of(required(NEO_NETWORK_REGISTRY,
+						"MinecraftForge's channel bookkeeping falls out of step with NeoForge's registrations"))),
+				new Claim(CLAIM_CHANNEL_ACTIVE, AnchorSet.of(required(CONNECTION,
+						"MinecraftForge's per-connection packet handler is never installed — Forge's handshake cannot be answered"))),
+				new Claim(CLAIM_GATHER_TASKS, AnchorSet.of(required(SERVER_CONFIG,
+						"MinecraftForge's configuration tasks are never gathered — its mod list, channel list and server-config sync never run"))),
+				new Claim(CLAIM_START_NEXT_TASK, AnchorSet.of(required(SERVER_CONFIG,
+						"MinecraftForge's configuration tasks refuse the vanilla start overload and never start"))),
+				new Claim(CLAIM_CONFIG_FINISHED, AnchorSet.of(required(CLIENT_CONFIG_LISTENER,
+						"MinecraftForge's configuration-complete hook never runs — a Forge mod never learns the server is modded"))),
+				new Claim(CLAIM_GUARD_INITIALISATION, AnchorSet.of(required(CLIENT_CONFIG_LISTENER,
+						"a non-NeoForge connection is initialised more than once per configuration"))));
+	}
+
+	private static AnchorSet.Anchor required(String binaryName, String cost) {
+		return new AnchorSet.Anchor(binaryName, AnchorSet.Severity.REQUIRED, cost);
+	}
+
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
+		return transform(className, classBytes, context, ClaimReporter.NONE);
+	}
+
+	@Override
+	public byte[] transform(String className, byte[] classBytes, TransformContext context, ClaimReporter reporter) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		boolean fabricAddon = FABRIC_ADDONS.contains(className);
 		boolean serverConfig = SERVER_CONFIG.equals(className);
@@ -277,12 +338,14 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				m.instructions.insert(handleAddonPrologue(node.name));
 				bumpStack(m, 2);
 				changed = true;
+				reporter.hit(CLAIM_FABRIC_ADDON);
 				ForbricLog.info("[Forbric/Net] arbitrating common-networking channel at %s.%s — Fabric addon defers to "
 						+ "the cross-ecosystem negotiator before it can miscast a NeoForge payload", className, HANDLE);
 			} else if (serverConfig && m.name.equals(FINISH_TASK) && m.desc.equals(FINISH_TASK_DESC)) {
 				m.instructions.insert(finishTaskPrologue(node.name));
 				bumpStack(m, 2);
 				changed = true;
+				reporter.hit(CLAIM_FINISH_TASK);
 				ForbricLog.info("[Forbric/Net] treating Fabric/NeoForge common-networking tasks as equivalent at %s.%s",
 						className, FINISH_TASK);
 			} else if ((clientCommon && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(CLIENT_HANDLE_PAYLOAD_DESC))
@@ -291,11 +354,13 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				m.instructions.insert(forgeDispatchPrologue(node.name, packetType));
 				bumpStack(m, 2);
 				changed = true;
+				reporter.hit(clientCommon ? CLAIM_CLIENT_COMMON_PAYLOAD : CLAIM_SERVER_COMMON_PAYLOAD);
 				ForbricLog.info("[Forbric/Net] handing MinecraftForge's payloads to ForgeHooks.onCustomPayload at %s.%s — "
 						+ "NeoForge won this method in the merge and Forge's dispatch went with it", className, HANDLE_PAYLOAD);
 			} else if (serverGame && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(SERVER_HANDLE_PAYLOAD_DESC)) {
 				if (playFallThroughEnabled() && letNeoForgePayloadsThrough(m)) {
 					changed = true;
+					reporter.hit(CLAIM_SERVER_GAME_FALL_THROUGH);
 					ForbricLog.info("[Forbric/Net] %s.%s now falls through to NeoForge's dispatcher when "
 							+ "MinecraftForge does not take the payload — it is Forge's override and never called "
 							+ "super, so a NeoForge mod's play-phase packet to the server reached nobody",
@@ -306,17 +371,20 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				m.instructions.insert(forgePacketExemptionPrologue(m.desc));
 				bumpStack(m, 1);
 				changed = true;
+				reporter.hit(CLAIM_CHECK_PACKET);
 				ForbricLog.info("[Forbric/Net] exempting MinecraftForge payloads from NeoForge's channel check at %s.%s%s",
 						className, CHECK_PACKET, m.desc);
 			} else if (neoRegistry && (m.name.equals(ON_REGISTER) || m.name.equals(ON_UNREGISTER)) && m.desc.equals(REGISTER_DESC)) {
 				m.instructions.insert(neoRegistrationPrologue(m.name.equals(ON_REGISTER)));
 				bumpStack(m, 3);
 				changed = true;
+				reporter.hit(CLAIM_CHANNEL_REGISTRATION);
 				ForbricLog.info("[Forbric/Net] keeping MinecraftForge's channel bookkeeping in step at %s.%s", className, m.name);
 			} else if (connection && m.name.equals(CHANNEL_ACTIVE) && m.desc.equals(CHANNEL_ACTIVE_DESC)) {
 				if (startForgeNetworkingOnActivation(m)) {
 					bumpStack(m, 1);
 					changed = true;
+					reporter.hit(CLAIM_CHANNEL_ACTIVE);
 					ForbricLog.info("[Forbric/Net] %s.%s now starts MinecraftForge's networking for the connection — the "
 							+ "merge dropped the activation handler that installed its per-connection packet handler, so a "
 							+ "client had none and Forge's handshake could not be answered", className, CHANNEL_ACTIVE);
@@ -325,6 +393,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				if (gatherForgeTasksWithNeoForges(m)) {
 					bumpStack(m, 1);
 					changed = true;
+					reporter.hit(CLAIM_GATHER_TASKS);
 					ForbricLog.info("[Forbric/Net] %s.%s now gathers MinecraftForge's configuration tasks alongside "
 							+ "NeoForge's — the merged body is NeoForge's and never posted Forge's gather event, so its "
 							+ "mod list, channel list and server-config sync never ran", className, RUN_CONFIGURATION);
@@ -332,6 +401,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 			} else if (serverConfig && m.name.equals(START_NEXT_TASK)) {
 				if (startTasksThroughForgesContext(node, m)) {
 					changed = true;
+					reporter.hit(CLAIM_START_NEXT_TASK);
 					ForbricLog.info("[Forbric/Net] %s.%s now starts configuration tasks through MinecraftForge's task "
 							+ "context — its own tasks refuse the vanilla overload, and every other task reaches it "
 							+ "through the interface default that delegates back", className, START_NEXT_TASK);
@@ -340,6 +410,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				if (completeForgeConfiguration(m)) {
 					bumpStack(m, 1);
 					changed = true;
+					reporter.hit(CLAIM_CONFIG_FINISHED);
 					ForbricLog.info("[Forbric/Net] %s.%s now runs MinecraftForge's configuration-complete hook — Forge "
 							+ "reaches it only from a code-of-conduct handler vanilla rarely calls, so a Forge mod never "
 							+ "learned whether the server was modded", className, HANDLE_CONFIG_FINISHED);
@@ -349,6 +420,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				int guarded = guardOtherConnectionInitialisation(node, m);
 				if (guarded > 0) {
 					changed = true;
+					reporter.hit(CLAIM_GUARD_INITIALISATION);
 					ForbricLog.info("[Forbric/Net] %s.%s now initialises a non-NeoForge connection once per configuration "
 							+ "phase — NeoForge re-entered ClientNetworkRegistry.initializeOtherConnection from here and "
 							+ "rebuilt every mod's default server config each time", className, m.name);

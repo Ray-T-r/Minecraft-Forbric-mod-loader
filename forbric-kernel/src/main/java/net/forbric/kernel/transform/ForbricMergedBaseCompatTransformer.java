@@ -84,51 +84,181 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
+		return transform(className, classBytes, context, ClaimReporter.NONE);
+	}
+
+	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan");
+
+	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
+
+	/**
+	 * One claim per repair, in {@link #REPAIRS} order. A repair with one fixed target declares it REQUIRED with
+	 * the cost of its silence; one that scans by shape declares {@link AnchorSet#scanned}. Client-only targets
+	 * are simply never loaded on a dedicated server, which the ledger reports as absent, not missed. The two
+	 * repairs behind {@code -Dforbric.forgeClientInit} stand down with it, so switching them off is not a Miss.
+	 */
+	@Override
+	public List<Claim> claims() {
+		boolean clientInit = !"off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"));
+		List<Claim> out = new ArrayList<>();
+		out.add(scanned("repairLambdaBootstrapHandles", "any class whose invokedynamic still names the old loader's hook owners"));
+		out.add(fixed("addBlockStateModelConflictResolvers", "net/minecraft/client/renderer/block/dispatch/BlockStateModel",
+				"every block model's geometry key and conflict resolver are gone — the merged BlockStateModel lacks the methods both families call"));
+		out.add(scanned("addMissingForgeFluidTypeBridge", "every concrete fluid under net.minecraft.world.level.material implementing NeoForge's IFluidExtension"));
+		out.add(fixed("addMissingForgeKeyMappingLookupInitializer", KEY_MAPPING,
+				"MinecraftForge's KeyMapping.MAP is never initialised — every traditional-Forge key registration NPEs"));
+		out.add(fixed("routeKeyMappingClickToPopulatedLookup", KEY_MAPPING,
+				"key presses are looked up in the lookup registration never populated — MinecraftForge mods' keys never fire"));
+		out.add(fixed("giveKeyMappingItsMinecraftForgeFace", KEY_MAPPING,
+				"KeyMapping lacks the MinecraftForge-typed accessors — a Forge mod setting a conflict context NoSuchMethodErrors"));
+		out.add(fixed("giveTheVanillaParticleMapAViewOfTheLiveOne", PARTICLE_RESOURCES,
+				"the vanilla-typed particle provider map stays empty — particles registered the vanilla way never render"));
+		out.add(fixed("giveFeaturesPerStepItsVanillaDescriptorBack", CHUNK_GENERATOR,
+				"ChunkGenerator.featuresPerStep keeps MinecraftForge's descriptor — the server cannot start (NoSuchFieldError)"));
+		out.add(fixed("letDungeonsGenerateWithoutTheDataMap", MONSTER_ROOM_FEATURE,
+				"monster rooms never generate — the NeoForge data map they ask has no vanilla fallback"));
+		out.add(fixed("guardNeoForgesWorldModifierPass", NEO_SERVER_LIFECYCLE_HOOKS,
+				"NeoForge's biome/structure modifier pass is neutered — every neoforge:biome_modifier does nothing"));
+		out.add(fixed("letForeignResourceConditionsThrough", ICONDITION,
+				"another ecosystem's condition type fails NeoForge's evaluator and the whole registry load with it"));
+		out.add(fixed("letForeignResourceConditionsThroughMinecraftForge", FORGE_ICONDITION,
+				"another ecosystem's condition type fails MinecraftForge's evaluator and the whole registry load with it"));
+		out.add(fixed("letFabricResourceConditionsDecide", CONDITIONAL_OPS,
+				"fabric:load_conditions has no evaluator — a Fabric mod's conditional data files all load"));
+		out.add(fixed("translateAGuestsPrivateSkipMarker", JSON_RELOAD_LISTENER,
+				"fabric-api's skip marker reaches the merged reader's cast — the datapack load dies (\"can't proceed with server load\")"));
+		out.add(fixed("serveDefaultAttributesBothEcosystems", DEFAULT_ATTRIBUTES,
+				"DefaultAttributes reads only the ecosystem that won the merge — the other's entities \"have no attributes\""));
+		out.add(clientInit ? fixed("restoreForgeClientInit", "net/minecraft/client/Minecraft",
+				"ForgeHooksClient.initClientHooks never runs — traditional-Forge key mappings, renderers and layers are never registered")
+				: scanned("restoreForgeClientInit", "switched off by -Dforbric.forgeClientInit=off"));
+		out.add(clientInit ? fixed("restoreForgeGeometryReload", "net/minecraft/client/resources/model/ModelManager",
+				"MinecraftForge's geometry loaders never reload — Forge OBJ/custom models are missing")
+				: scanned("restoreForgeGeometryReload", "switched off by -Dforbric.forgeClientInit=off"));
+		out.add(fixed("nameTheReloadListenersNeoForgeRefusesToName", ADD_CLIENT_RELOAD_LISTENERS,
+				"a Fabric mod's client reload listener kills the client — NeoForge refuses to name it"));
+		out.add(scanned("dropInterfaceDefaultShadowingOverrides", "every net.minecraft.client.gui class implementing ContainerEventHandler"));
+		out.add(fixed("tolerateEmptyCreativeTabStacks", NEO_EVENT_HOOKS_BINARY.replace('.', '/'),
+				"one empty stack from any mod aborts the whole creative menu"));
+		out.add(fixed("routePlaceItemHookToNeoForge", ITEM_STACK,
+				"placing any block ClassCastExceptions on the server thread — ItemStack.useOn drains a NeoForge-typed snapshot list as MinecraftForge's"));
+		out.add(fixed("bridgeOrphanedPipRenderers", GUI_RENDERER,
+				"a picture-in-picture renderer registered the vanilla way never draws"));
+		out.add(fixed("keepForgeOutboundProtocolCurrent", "net/minecraft/network/Connection",
+				"MinecraftForge's channels pick their packet type from a protocol field nothing writes — Forge networking sends the wrong packet type"));
+		out.add(fixed("surviveTheMissingForgeModelDataManager", "net/minecraft/client/renderer/extract/LevelExtractor",
+				"the block-breaking overlay crashes the render frame on MinecraftForge's absent model-data manager"));
+		out.add(fixed("dropTheWindowTitlesLoaderBrand", "net/minecraft/client/Minecraft",
+				"the window title carries another loader's brand"));
+		out.add(fixed("keepTheSaveOffTheTeardownsFailurePath", INTEGRATED_SERVER,
+				"a throw in IntegratedServer.teardownPublishedState costs the world save"));
+		out.add(fixed("askNeoForgeWhatAnItemsAttributesAre", ITEM_STACK,
+				"an item's attributes are read off the raw component — elytra flight and every NeoForge attribute modifier stop working"));
+		out.add(fixed("readTheSpawnReasonThatIsActuallyWritten", "net/minecraft/world/entity/Mob",
+				"Mob.getSpawnReason() reads a field the game never writes — spawn-reason logic sees null"));
+		out.add(scanned("giveTheUnwrittenLoggerAValue", "any class with a static final Logger the merge left unassigned"));
+		out.add(new Claim(claimId("addTheMissingCapabilityLifecycleStubs"), AnchorSet.of(
+				capabilityRoot("net/minecraft/world/entity/Entity"), capabilityRoot("net/minecraft/world/level/block/entity/BlockEntity"),
+				capabilityRoot("net/minecraft/world/level/Level"))));
+		out.add(fixed("addTheMissingNbtBuilderFactory", "net/minecraft/nbt/CompoundTag",
+				"CompoundTag.builder() is gone — IForgeBlockPos.toCompoundTag and ForgeHooks.createEmptyStructure NoSuchMethodError"));
+		out.add(fixed("postMinecraftForgesReloadListenerEvent", RELOADABLE_SERVER_RESOURCES,
+				"MinecraftForge's AddReloadListenerEvent is never posted — traditional-Forge JSON data loaders never register"));
+		out.add(fixed("giveMinecraftForgesReloadEventItsConditionContext", FORGE_RELOAD_EVENT,
+				"AddReloadListenerEvent.getConditionContext() NoSuchMethodErrors the first Forge data loader that asks"));
+		out.add(fixed("letMinecraftForgeIngredientTypesDecode", "net/minecraft/world/item/crafting/Ingredient",
+				"MinecraftForge ingredient types (forge:intersection, …) fail to parse — every recipe using one is dropped"));
+		out.add(fixed("letMinecraftForgeFluidsChooseTheirModel", FLUID_RENDERER,
+				"a MinecraftForge fluid renders with vanilla water's model and tint"));
+		out.add(fixed("giveMinecraftForgesParticleLookupItsFirstVariant", WEIGHTED_VARIANTS,
+				"WeightedVariants.first is never written — MinecraftForge's particle lookup reads null"));
+		out.add(scanned("dropStubsThatBypassARealSuperclassMethod", "any class carrying a measured merge stub that shadows a real superclass method"));
+		out.add(fixed("inlineTheSwitchMapTheMergeLost", LOST_SWITCH_MAPS.get(0).user(),
+				"AbstractFurnaceBlockEntity's Direction switch NoSuchFieldErrors on the $SwitchMap the merge lost — furnaces cannot be interacted with"));
+		out.add(fixed("vetoUnjudgeableOverlayConditions", OVERLAY_ENTRY,
+				"a pack.mcmeta overlay gated by a condition no evaluator here can judge is mounted anyway"));
+		out.add(new Claim(claimId("hideTheLegacyLootModifierIndexFromTheDirectoryScan"), AnchorSet.of(
+				new AnchorSet.Anchor(LOOT_MODIFIER_MANAGER_NEO.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+						"NeoForge's loot-modifier manager parse-fails MinecraftForge's legacy index file on every reload"),
+				new AnchorSet.Anchor(LOOT_MODIFIER_MANAGER_FORGE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+						"MinecraftForge's loot-modifier manager parse-fails its own index as a modifier on every reload"))));
+		return List.copyOf(out);
+	}
+
+	private Claim fixed(String repair, String internalTarget, String cost) {
+		return new Claim(claimId(repair), AnchorSet.of(new AnchorSet.Anchor(internalTarget.replace('/', '.'), AnchorSet.Severity.REQUIRED, cost)));
+	}
+
+	private Claim scanned(String repair, String why) {
+		return new Claim(claimId(repair), AnchorSet.scanned(why));
+	}
+
+	private static AnchorSet.Anchor capabilityRoot(String internal) {
+		return new AnchorSet.Anchor(internal.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+				"the capability lifecycle stubs are missing on " + internal.substring(internal.lastIndexOf('/') + 1)
+						+ " — its own merged code calls invalidateCaps/reviveCaps and NoSuchMethodErrors");
+	}
+
+
+	/** Reports {@code id} as applied when {@code applied}; the repair's own answer is returned unchanged. */
+	private boolean claim(ClaimReporter reporter, String id, boolean applied) {
+		if (applied) reporter.hit(claimId(id));
+		return applied;
+	}
+
+	private String claimId(String repair) {
+		return name() + "#" + repair;
+	}
+
+	@Override
+	public byte[] transform(String className, byte[] classBytes, TransformContext context, ClaimReporter reporter) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		try {
 			boolean namedOldLoader = stillNamesTheOldLoader(classBytes);
 			ClassNode node = new ClassNode();
 			new ClassReader(classBytes).accept(node, 0);
-			boolean changed = repairLambdaBootstrapHandles(node);
-			changed |= addBlockStateModelConflictResolvers(node);
-			changed |= addMissingForgeFluidTypeBridge(node);
-			changed |= addMissingForgeKeyMappingLookupInitializer(node);
-			changed |= routeKeyMappingClickToPopulatedLookup(node);
-			changed |= giveKeyMappingItsMinecraftForgeFace(node);
-			changed |= giveTheVanillaParticleMapAViewOfTheLiveOne(node);
-			changed |= giveFeaturesPerStepItsVanillaDescriptorBack(node);
-			changed |= letDungeonsGenerateWithoutTheDataMap(node);
-			changed |= guardNeoForgesWorldModifierPass(node);
-			changed |= letForeignResourceConditionsThrough(node);
-			changed |= letForeignResourceConditionsThroughMinecraftForge(node);
-			changed |= letFabricResourceConditionsDecide(node);
-			changed |= translateAGuestsPrivateSkipMarker(node);
-			changed |= serveDefaultAttributesBothEcosystems(node);
-			changed |= restoreForgeClientInit(node);
-			changed |= restoreForgeGeometryReload(node);
-			changed |= nameTheReloadListenersNeoForgeRefusesToName(node);
-			changed |= dropInterfaceDefaultShadowingOverrides(node);
-			changed |= tolerateEmptyCreativeTabStacks(node);
-			changed |= routePlaceItemHookToNeoForge(node);
-			changed |= bridgeOrphanedPipRenderers(node);
-			changed |= keepForgeOutboundProtocolCurrent(node);
-			changed |= surviveTheMissingForgeModelDataManager(node);
-			changed |= dropTheWindowTitlesLoaderBrand(node);
-			changed |= keepTheSaveOffTheTeardownsFailurePath(node);
-			changed |= askNeoForgeWhatAnItemsAttributesAre(node);
-			changed |= readTheSpawnReasonThatIsActuallyWritten(node);
-			changed |= giveTheUnwrittenLoggerAValue(node);
-			changed |= addTheMissingCapabilityLifecycleStubs(node);
-			changed |= addTheMissingNbtBuilderFactory(node);
-			changed |= postMinecraftForgesReloadListenerEvent(node);
-			changed |= giveMinecraftForgesReloadEventItsConditionContext(node);
-			changed |= letMinecraftForgeIngredientTypesDecode(node);
-			changed |= letMinecraftForgeFluidsChooseTheirModel(node);
-			changed |= giveMinecraftForgesParticleLookupItsFirstVariant(node);
-			changed |= dropStubsThatBypassARealSuperclassMethod(node);
-			changed |= inlineTheSwitchMapTheMergeLost(node);
-			changed |= vetoUnjudgeableOverlayConditions(node);
-			changed |= hideTheLegacyLootModifierIndexFromTheDirectoryScan(node);
+			boolean changed = false;
+			changed |= claim(reporter, "repairLambdaBootstrapHandles", repairLambdaBootstrapHandles(node));
+			changed |= claim(reporter, "addBlockStateModelConflictResolvers", addBlockStateModelConflictResolvers(node));
+			changed |= claim(reporter, "addMissingForgeFluidTypeBridge", addMissingForgeFluidTypeBridge(node));
+			changed |= claim(reporter, "addMissingForgeKeyMappingLookupInitializer", addMissingForgeKeyMappingLookupInitializer(node));
+			changed |= claim(reporter, "routeKeyMappingClickToPopulatedLookup", routeKeyMappingClickToPopulatedLookup(node));
+			changed |= claim(reporter, "giveKeyMappingItsMinecraftForgeFace", giveKeyMappingItsMinecraftForgeFace(node));
+			changed |= claim(reporter, "giveTheVanillaParticleMapAViewOfTheLiveOne", giveTheVanillaParticleMapAViewOfTheLiveOne(node));
+			changed |= claim(reporter, "giveFeaturesPerStepItsVanillaDescriptorBack", giveFeaturesPerStepItsVanillaDescriptorBack(node));
+			changed |= claim(reporter, "letDungeonsGenerateWithoutTheDataMap", letDungeonsGenerateWithoutTheDataMap(node));
+			changed |= claim(reporter, "guardNeoForgesWorldModifierPass", guardNeoForgesWorldModifierPass(node));
+			changed |= claim(reporter, "letForeignResourceConditionsThrough", letForeignResourceConditionsThrough(node));
+			changed |= claim(reporter, "letForeignResourceConditionsThroughMinecraftForge", letForeignResourceConditionsThroughMinecraftForge(node));
+			changed |= claim(reporter, "letFabricResourceConditionsDecide", letFabricResourceConditionsDecide(node));
+			changed |= claim(reporter, "translateAGuestsPrivateSkipMarker", translateAGuestsPrivateSkipMarker(node));
+			changed |= claim(reporter, "serveDefaultAttributesBothEcosystems", serveDefaultAttributesBothEcosystems(node));
+			changed |= claim(reporter, "restoreForgeClientInit", restoreForgeClientInit(node));
+			changed |= claim(reporter, "restoreForgeGeometryReload", restoreForgeGeometryReload(node));
+			changed |= claim(reporter, "nameTheReloadListenersNeoForgeRefusesToName", nameTheReloadListenersNeoForgeRefusesToName(node));
+			changed |= claim(reporter, "dropInterfaceDefaultShadowingOverrides", dropInterfaceDefaultShadowingOverrides(node));
+			changed |= claim(reporter, "tolerateEmptyCreativeTabStacks", tolerateEmptyCreativeTabStacks(node));
+			changed |= claim(reporter, "routePlaceItemHookToNeoForge", routePlaceItemHookToNeoForge(node));
+			changed |= claim(reporter, "bridgeOrphanedPipRenderers", bridgeOrphanedPipRenderers(node));
+			changed |= claim(reporter, "keepForgeOutboundProtocolCurrent", keepForgeOutboundProtocolCurrent(node));
+			changed |= claim(reporter, "surviveTheMissingForgeModelDataManager", surviveTheMissingForgeModelDataManager(node));
+			changed |= claim(reporter, "dropTheWindowTitlesLoaderBrand", dropTheWindowTitlesLoaderBrand(node));
+			changed |= claim(reporter, "keepTheSaveOffTheTeardownsFailurePath", keepTheSaveOffTheTeardownsFailurePath(node));
+			changed |= claim(reporter, "askNeoForgeWhatAnItemsAttributesAre", askNeoForgeWhatAnItemsAttributesAre(node));
+			changed |= claim(reporter, "readTheSpawnReasonThatIsActuallyWritten", readTheSpawnReasonThatIsActuallyWritten(node));
+			changed |= claim(reporter, "giveTheUnwrittenLoggerAValue", giveTheUnwrittenLoggerAValue(node));
+			changed |= claim(reporter, "addTheMissingCapabilityLifecycleStubs", addTheMissingCapabilityLifecycleStubs(node));
+			changed |= claim(reporter, "addTheMissingNbtBuilderFactory", addTheMissingNbtBuilderFactory(node));
+			changed |= claim(reporter, "postMinecraftForgesReloadListenerEvent", postMinecraftForgesReloadListenerEvent(node));
+			changed |= claim(reporter, "giveMinecraftForgesReloadEventItsConditionContext", giveMinecraftForgesReloadEventItsConditionContext(node));
+			changed |= claim(reporter, "letMinecraftForgeIngredientTypesDecode", letMinecraftForgeIngredientTypesDecode(node));
+			changed |= claim(reporter, "letMinecraftForgeFluidsChooseTheirModel", letMinecraftForgeFluidsChooseTheirModel(node));
+			changed |= claim(reporter, "giveMinecraftForgesParticleLookupItsFirstVariant", giveMinecraftForgesParticleLookupItsFirstVariant(node));
+			changed |= claim(reporter, "dropStubsThatBypassARealSuperclassMethod", dropStubsThatBypassARealSuperclassMethod(node));
+			changed |= claim(reporter, "inlineTheSwitchMapTheMergeLost", inlineTheSwitchMapTheMergeLost(node));
+			changed |= claim(reporter, "vetoUnjudgeableOverlayConditions", vetoUnjudgeableOverlayConditions(node));
+			changed |= claim(reporter, "hideTheLegacyLootModifierIndexFromTheDirectoryScan", hideTheLegacyLootModifierIndexFromTheDirectoryScan(node));
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;

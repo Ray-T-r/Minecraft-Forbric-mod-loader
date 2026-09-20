@@ -114,6 +114,9 @@ public final class TransformChain {
 		for (AnchorSet.Anchor anchor : transformer.anchors().anchors()) {
 			ledger.declare(transformer.name(), anchor);
 		}
+		for (ClassTransformer.Claim claim : transformer.claims()) {
+			for (AnchorSet.Anchor anchor : claim.anchors().anchors()) ledger.declare(claim.id(), anchor);
+		}
 		watched = null; // a late registration must reach the watch set too
 	}
 
@@ -147,9 +150,19 @@ public final class TransformChain {
 		for (int i = fromInclusive.ordinal(); i <= toInclusive.ordinal(); i++) {
 			for (ClassTransformer t : ordered(all[i])) {
 				byte[] before = bytes;
-				byte[] result = t.transform(className, bytes, context);
+				java.util.Set<String> hits = new java.util.HashSet<>();
+				byte[] result = t.transform(className, bytes, context, hits::add);
 				if (result != null) bytes = result;
-				if (account) ledger.record(t.name(), className, bytes != before);
+				if (account) {
+					ledger.record(t.name(), className, bytes != before);
+					// A claim is judged only on the classes its own anchors name: a repair that was not handed
+					// its target has nothing to answer for, exactly like a transformer.
+					for (ClassTransformer.Claim claim : t.claims()) {
+						for (AnchorSet.Anchor anchor : claim.anchors().anchors()) {
+							if (anchor.binaryName().equals(className)) ledger.record(claim.id(), className, hits.contains(claim.id()));
+						}
+					}
+				}
 			}
 		}
 
