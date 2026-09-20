@@ -167,6 +167,12 @@ check_absent "BaseContainerBlockEntityMixin no longer half-applied" "BaseContain
 check "the snippet call site was funnelled"   "SnippetFunnel\] routed 1 RenderPipeline\\\$Builder.buildSnippet" "$LOG"
 check_absent "fabric-rendering-v1's snippet wrap matches the constructor" "RenderPipelineBuilderMixin.*has an invalid signature|Found unexpected argument type com.llamalad7.mixinextras.injector.wrapoperation.Operation" "$LOG"
 check_absent "RenderPipelineBuilderMixin is not half-applied either" "RenderPipelineBuilderMixin applies only partially" "$LOG"
+# G4: NeoForge swapped BlockState.isAir() for its overridable isEmpty() in LevelChunkSection; fabric-block-api's
+# redirect handler IS NeoForge's default isEmpty predicate, so the @At follows the swap (a KNOWN row, census-pinned).
+# RED with M9_EXTRA_JVM=-Dforbric.mixinRetarget=off (shared with G1).
+check "fabric-block-api's isAir redirect rebound to isEmpty" "Forbric/Mixin\] retargeted guest mixin fabric-block-api-v1 .*LevelChunkSectionMixin .*isAir → isEmpty.*PARTIAL→FIT" "$LOG"
+check "…and the block-counter twin"                   "Forbric/Mixin\] retargeted guest mixin fabric-block-api-v1 .*ChunkSectionBlockStateCounterMixin .*isAir → isEmpty.*PARTIAL→FIT" "$LOG"
+check_absent "LevelChunkSectionMixin no longer half-applied" "LevelChunkSectionMixin applies only partially" "$LOG"
 # H5 (the FluidRenderer.tesselate funnel for MinecraftForge fluid models) is asserted in gate-m26, not here: this
 # pack carries sodium, which replaces vanilla's chunk and fluid meshing, so the vanilla funnel is never reached.
 

@@ -70,6 +70,24 @@ class MixinRetargetStagedTest {
 		}
 	}
 
+	/** R2 over the real fabric-block-api-v1 mixins: the isAir→isEmpty swap the census pins. */
+	@Test
+	void fabricBlockApisTwoAirCheckRedirectsGoPartialToFit() throws Exception {
+		Function<String, byte[]> resolver = mergedResolver();
+		for (String entry : new String[] { "net/fabricmc/fabric/mixin/block/LevelChunkSectionMixin.class",
+				"net/fabricmc/fabric/mixin/block/ChunkSectionBlockStateCounterMixin.class" }) {
+			byte[] mixin = nested("fabric-block-api-v1", entry);
+			MixinFit.Result raw = MixinFit.evaluate(mixin, resolver);
+			assertEquals(MixinFit.Verdict.PARTIAL, raw.verdict(), entry + " premise: " + raw.unresolved());
+			MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixin), resolver);
+			assertEquals(1, plan.rewrites().size(), entry + ": " + plan.describe());
+			assertEquals(MixinRetarget.Element.AT_TARGET, plan.rewrites().get(0).element());
+			assertEquals("Lnet/minecraft/world/level/block/state/BlockState;isEmpty()Z", plan.rewrites().get(0).to());
+			MixinFit.Result after = MixinFit.evaluate(MixinRetarget.rewritten(mixin, plan), resolver);
+			assertEquals(MixinFit.Verdict.FIT, after.verdict(), entry + " after: " + after.unresolved());
+		}
+	}
+
 	/** Honest negative: the @Local sugars name the stub's parameters, which the delegate does not have. */
 	@Test
 	void fuelValuesMixinIsLeftAloneBecauseItsLocalsLiveOnlyInTheStub() throws Exception {

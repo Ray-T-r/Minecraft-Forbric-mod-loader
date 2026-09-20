@@ -216,6 +216,77 @@ class MixinRetargetTest {
 		assertTrue(MixinRetarget.plan(MixinFit.parse(mixinBytes), resolver(target(false))).isEmpty());
 	}
 
+	/** R2: the KNOWN isAir→isEmpty row, over a synthetic LevelChunkSection-shaped target. */
+	@Test
+	void aRedirectOnASwappedCalleeIsReboundToTheMergedName() {
+		String target = "net/minecraft/world/level/chunk/LevelChunkSection";
+		String state = "net/minecraft/world/level/block/state/BlockState";
+		String method = "setBlockState";
+		String desc = "(IIIL" + state + ";Z)L" + state + ";";
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, target, null, "java/lang/Object", null);
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, method, desc, null, null);
+		mv.visitCode();
+		mv.visitVarInsn(Opcodes.ALOAD, 4);
+		mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, state, "isEmpty", "()Z", false);    // the merged callee
+		mv.visitInsn(Opcodes.POP);
+		mv.visitVarInsn(Opcodes.ALOAD, 4);
+		mv.visitInsn(Opcodes.ARETURN);
+		mv.visitMaxs(0, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		byte[] targetBytes = cw.toByteArray();
+
+		ClassWriter mw = new ClassWriter(0);
+		mw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "test/SectionMixin", null, "java/lang/Object", null);
+		AnnotationVisitor m = mw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+		AnnotationVisitor targets = m.visitArray("value");
+		targets.visit(null, Type.getObjectType(target));
+		targets.visitEnd();
+		m.visitEnd();
+		MethodVisitor h = mw.visitMethod(Opcodes.ACC_PRIVATE, "modifyAirCheck", "(L" + state + ";)Z", null, null);
+		AnnotationVisitor inj = h.visitAnnotation(REDIRECT, true);
+		AnnotationVisitor sel = inj.visitArray("method");
+		sel.visit(null, method + desc);
+		sel.visitEnd();
+		AnnotationVisitor at = inj.visitAnnotation("at", "Lorg/spongepowered/asm/mixin/injection/At;");
+		at.visit("value", "INVOKE");
+		at.visit("target", "L" + state + ";isAir()Z");
+		at.visitEnd();
+		inj.visitEnd();
+		h.visitCode();
+		h.visitInsn(Opcodes.ICONST_0);
+		h.visitInsn(Opcodes.IRETURN);
+		h.visitMaxs(1, 2);
+		h.visitEnd();
+		mw.visitEnd();
+		byte[] mixinBytes = mw.toByteArray();
+		Function<String, byte[]> resolver = name -> (target + ".class").equals(name) ? targetBytes : null;
+
+		assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(mixinBytes, resolver).verdict(), "premise");
+		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixinBytes), resolver);
+		assertEquals(1, plan.rewrites().size(), plan.describe());
+		assertEquals(MixinRetarget.Element.AT_TARGET, plan.rewrites().get(0).element());
+		assertEquals("L" + state + ";isEmpty()Z", plan.rewrites().get(0).to());
+		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(MixinRetarget.rewritten(mixinBytes, plan), resolver).verdict());
+
+		// A miss with no KNOWN row is left alone: same shape, a callee the table does not name.
+		ClassWriter other = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+		other.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, target, null, "java/lang/Object", null);
+		MethodVisitor ov = other.visitMethod(Opcodes.ACC_PUBLIC, method, desc, null, null);
+		ov.visitCode();
+		ov.visitVarInsn(Opcodes.ALOAD, 4);
+		ov.visitMethodInsn(Opcodes.INVOKEVIRTUAL, state, "isSolid", "()Z", false);
+		ov.visitInsn(Opcodes.POP);
+		ov.visitVarInsn(Opcodes.ALOAD, 4);
+		ov.visitInsn(Opcodes.ARETURN);
+		ov.visitMaxs(0, 0);
+		ov.visitEnd();
+		other.visitEnd();
+		byte[] otherBytes = other.toByteArray();
+		assertTrue(MixinRetarget.plan(MixinFit.parse(mixinBytes), name -> (target + ".class").equals(name) ? otherBytes : null).isEmpty());
+	}
+
 	@Test
 	void argumentConstructionInTheStubIsStillAStub() {
 		// vanillaBurnTimes(Provider, Flags, I) = new Builder(provider, flags); iload 2; invokestatic vanillaBurnTimes(Builder, I)

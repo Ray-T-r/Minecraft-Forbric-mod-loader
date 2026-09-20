@@ -86,8 +86,11 @@ public final class MixinRetarget {
 			"Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;",
 			"Lcom/llamalad7/mixinextras/injector/v2/WrapWithCondition;");
 
-	/** One selector rewrite inside one handler's injector annotation. */
-	public record Rewrite(String handler, String from, String to, String why) {
+	/** What a rewrite edits: the injector's {@code method} selector, or one of its {@code @At.target}s. */
+	public enum Element { SELECTOR, AT_TARGET }
+
+	/** One rewrite inside one handler's injector annotation. */
+	public record Rewrite(String handler, Element element, String from, String to, String why) {
 	}
 
 	public record Plan(String mixin, List<Rewrite> rewrites) {
@@ -127,6 +130,7 @@ public final class MixinRetarget {
 					Rewrite rewrite = rewriteFor(handler, injector, selector, target, resolver);
 					if (rewrite != null) rewrites.add(rewrite);
 				}
+				rewrites.addAll(swappedCallees(handler, injector, selectors, target, resolver));
 			}
 		}
 		return new Plan(mixin.name, List.copyOf(rewrites));
@@ -171,7 +175,62 @@ public final class MixinRetarget {
 		if (!moved) return null;
 		if (!handlerFits(handler, injector, delegate)) return null;
 
-		return new Rewrite(handler.name, selector, name + delegate.desc, "merge-added delegating stub");
+		return new Rewrite(handler.name, Element.SELECTOR, selector, name + delegate.desc, "merge-added delegating stub");
+	}
+
+	/**
+	 * Rule R2: an {@code @At(INVOKE)} whose member misses in every method the injector bound to, where a
+	 * {@link MergedBaseCalleeSwaps} row names the callee the merged body calls instead — present there, the vanilla
+	 * name absent — is rewritten to the merged callee. Only {@code @At}-driven kinds: the handler's shape is the
+	 * callee's, which is identical on both sides by construction (same descriptor).
+	 */
+	private static List<Rewrite> swappedCallees(MethodNode handler, AnnotationNode injector, List<String> selectors,
+			ClassNode target, Function<String, byte[]> resolver) {
+		if (!AT_DRIVEN.contains(injector.desc)) return List.of();
+		List<MethodNode> hits = new ArrayList<>();
+		for (String selector : selectors) hits.addAll(resolveSelector(target, selector, resolver));
+		if (hits.isEmpty()) return List.of();
+		List<Rewrite> out = new ArrayList<>();
+		for (AnnotationNode at : MixinFit.atNodes(injector)) {
+			String atValue = MixinFit.asString(MixinFit.value(at, "value"));
+			String atTarget = MixinFit.asString(MixinFit.value(at, "target"));
+			if (!"INVOKE".equals(atValue) || atTarget == null) continue;
+			MixinFit.Member want = MixinFit.parseMember(atTarget);
+			if (want == null || want.owner() == null || want.desc() == null) continue;
+			boolean anywhere = false;
+			for (MethodNode hit : hits) if (MixinFit.containsMember(hit, atTarget)) anywhere = true;
+			if (anywhere) continue;
+			for (MethodNode hit : hits) {
+				MergedBaseCalleeSwaps.Swap swap = MergedBaseCalleeSwaps.find(target.name, hit.name + hit.desc, want.owner(),
+						want.name(), want.desc());
+				if (swap == null) continue;
+				if (!MixinFit.containsMember(hit, swap.mergedMember())) continue;
+				out.add(new Rewrite(handler.name, Element.AT_TARGET, atTarget, swap.mergedMember(),
+						"callee the merge swapped: " + swap.vanillaName() + " → " + swap.mergedName()));
+				break;
+			}
+		}
+		return out;
+	}
+
+	/** A selector's methods on the target's hierarchy: every overload for a bare name, the one for a descriptor. */
+	private static List<MethodNode> resolveSelector(ClassNode target, String selector, Function<String, byte[]> resolver) {
+		String s = selector.trim();
+		if (s.indexOf('*') >= 0 || s.startsWith("/") || s.indexOf(' ') >= 0 || s.indexOf('=') >= 0) return List.of();
+		int semi = s.indexOf(';');
+		if (s.startsWith("L") && semi > 0) s = s.substring(semi + 1);
+		int paren = s.indexOf('(');
+		String name = paren >= 0 ? s.substring(0, paren) : s;
+		String desc = paren >= 0 ? s.substring(paren) : null;
+		List<MethodNode> out = new ArrayList<>();
+		ClassNode current = target;
+		for (int guard = 0; current != null && guard < 32; guard++) {
+			for (MethodNode m : current.methods) if (m.name.equals(name) && (desc == null || m.desc.equals(desc))) out.add(m);
+			if (current.superName == null || "java/lang/Object".equals(current.superName)) break;
+			byte[] bytes = resolver.apply(current.superName + ".class");
+			current = bytes == null ? null : MixinFit.parse(bytes);
+		}
+		return out;
 	}
 
 	/**
@@ -273,6 +332,18 @@ public final class MixinRetarget {
 				if (!m.name.equals(rewrite.handler())) continue;
 				AnnotationNode injector = MixinFit.injectorOf(m);
 				if (injector == null || injector.values == null) continue;
+				if (rewrite.element() == Element.AT_TARGET) {
+					for (AnnotationNode at : MixinFit.atNodes(injector)) {
+						if (at.values == null) continue;
+						for (int i = 0; i + 1 < at.values.size(); i += 2) {
+							if ("target".equals(at.values.get(i)) && rewrite.from().equals(at.values.get(i + 1))) {
+								at.values.set(i + 1, rewrite.to());
+								applied++;
+							}
+						}
+					}
+					continue;
+				}
 				for (int i = 0; i + 1 < injector.values.size(); i += 2) {
 					if (!"method".equals(injector.values.get(i))) continue;
 					Object v = injector.values.get(i + 1);
