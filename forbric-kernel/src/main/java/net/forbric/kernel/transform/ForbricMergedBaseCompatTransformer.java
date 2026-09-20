@@ -44,7 +44,9 @@ import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.api.EventBridges;
 import net.forbric.api.ForeignType;
+import net.forbric.api.GameEventBridge;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -948,6 +950,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		}
 		if (initializers != 1 || providers != 1) return false;
 		for (MethodInsnNode call : matches) call.owner = target;
+		// Both sites land or neither does (the checks above are whole-or-nothing), so both bridges are recorded
+		// here; EventBridges.verify(CLIENT_INIT) names them at the client setup hook if this repair stood down.
+		EventBridges.installed(GameEventBridge.CLIENT_INIT_HOOKS);
+		EventBridges.installed(GameEventBridge.PARTICLE_PROVIDERS);
 		ForbricLog.info("[Forbric/MergedBaseCompat] Minecraft now initializes both Forge families' client hooks and particles");
 		return true;
 	}

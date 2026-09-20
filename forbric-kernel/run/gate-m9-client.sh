@@ -139,6 +139,11 @@ check "the client-side bridge pass is complete" "all 1 CLIENT_MOD_BUS bridge\(s\
 # NeoForge's client event package, which a dedicated server must never resolve.
 check "the game-bus bridge pass is complete too" "EventMux\] all [0-9][0-9]* GAME_BUS bridge\(s\) installed"      "$LOG"
 check "the client game-bus bridges went on too" "EventMux\] all [0-9][0-9]* CLIENT_GAME_BUS bridge\(s\) installed" "$LOG"
+# The two transformer-landed passes (Phase 1 A): Forge's client registration hooks inside Minecraft.<init> and the
+# block-colour table, and the creative-tab / spawn-placement hooks. Verified by count so a repair that stood down on
+# an unexpected base is named, not silently absent.
+check "the client initialization bridges landed" "EventMux\] all 3 CLIENT_INIT bridge\(s\) installed"  "$LOG"
+check "the registration bridges landed"          "EventMux\] all 2 REGISTRATION bridge\(s\) installed" "$LOG"
 check_absent "no bridge reported missing"       "bridge\(s\) MISSING"                        "$LOG"
 
 step "a Forge-family mod's own content and data actually arrived (must PASS)"

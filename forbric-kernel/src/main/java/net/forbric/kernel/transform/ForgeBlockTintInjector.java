@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.api.GameEventBridge;
+import net.forbric.api.EventBridges;
 import net.forbric.api.ForeignType;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -51,6 +53,7 @@ public final class ForgeBlockTintInjector implements ClassTransformer {
 		MethodInsnNode target = candidates.getFirst();
 		target.owner = HOOK;
 		target.name = "postBlockTintSources";
+		EventBridges.installed(GameEventBridge.BLOCK_TINT_SOURCES);
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
 		return writer.toByteArray();

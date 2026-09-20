@@ -26,6 +26,8 @@ import java.util.Map;
 
 import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
+import net.forbric.api.EventBridges;
+import net.forbric.api.GameEventBridge;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
@@ -132,6 +134,11 @@ public final class KernelLifecycle {
 		// Step 2: construct both ecosystem baselines + fire RegisterEvent so default content (e.g. minecraft:empty
 		// FluidType, default attributes) registers, and run the Fabric main + side entrypoints in the same window.
 		registerNeoForgeContent(cl, side);
+		// Step 2a: the two REGISTRATION bridges (creative-tab contents, spawn placements) are landed by class
+		// transformers when the game defines CreativeModeTab and SpawnPlacements — both of which the window above
+		// has driven by now — not by the multiplexer. Verify them here, where a repair that stood down on an
+		// unexpected base gets named with its cost instead of leaving a Forge mod's items and mobs silently absent.
+		EventBridges.verify(GameEventBridge.Pass.REGISTRATION);
 		// Step 2b (client only): construct ClientNeoForgeMod on the baseline bus, so the game's
 		// ModLoader.postEvent(<client mod-bus event>) — fired from ClientHooks.initClientHooks during
 		// Minecraft.<init> for reload listeners, entity renderers, sprite sources, client extensions — has NeoForge's
@@ -2016,15 +2023,21 @@ public final class KernelLifecycle {
 	}
 
 	/**
-	 * Invoked from {@code Minecraft.<init>} right after {@code this.options} is assigned
-	 * ({@code NeoClientSetupHookInjector}) — the NeoForge half of the client mod-loading window.
+	 * Invoked from {@code Minecraft.<init>} at the merged base's own {@code ClientModLoader.finish()} call
+	 * ({@code NeoClientSetupHookInjector}) — the NeoForge half of the client mod-loading window, and the last
+	 * kernel hook the constructor reaches: the block-colour table, the particle providers and
+	 * {@code initClientHooks} have all run by then.
 	 *
-	 * <p>Separate from {@link #onClientEntrypoints}, which runs a few instructions earlier, because the two
-	 * ecosystems need opposite states: Fabric's keymapping registration requires {@code options} to still be null,
-	 * NeoForge's setup requires it to exist. See {@code NeoClientSetupHookInjector} for the full account.
+	 * <p>Separate from {@link #onClientEntrypoints}, which runs earlier, because the two ecosystems need opposite
+	 * states: Fabric's keymapping registration requires {@code options} to still be null, NeoForge's setup requires
+	 * it to exist. See {@code NeoClientSetupHookInjector} for the full account.
 	 */
 	public static void onNeoClientSetup() {
 		ClassLoader cl = gameLoader;
+		// The three CLIENT_INIT bridges are landed by class transformers in Minecraft and BlockColors, both defined
+		// before this point, so this is the first moment their absence can be named with its cost rather than
+		// noticed later as an empty Controls screen.
+		EventBridges.verify(GameEventBridge.Pass.CLIENT_INIT);
 		fireClientSetupLifecycle(cl);
 		// Common setup now runs in there, and registering a config is one of the things mods do from it. On the
 		// server the pass right after the setup lifecycle catches those; the client had no equivalent once the

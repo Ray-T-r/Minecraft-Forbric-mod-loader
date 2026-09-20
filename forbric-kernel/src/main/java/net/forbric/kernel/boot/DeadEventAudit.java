@@ -94,6 +94,25 @@ public final class DeadEventAudit {
 				"fall damage cannot be modified or cancelled");
 		// ItemStack keeps MinecraftForge's onItemTooltip, so the dead one here is NeoForge's — recorded on the
 		// other side of the ledger because the audit only walks MinecraftForge listeners today.
+		// Client registration events that ForgeHooksClient.initClientHooks does NOT post and that no kernel bridge
+		// carries yet. The merged consumers read only NeoForge's tables at these sites, so the Forge event would
+		// be delivered into nothing; they are named here so a waiting mod is named at boot rather than found in
+		// a screenshot. Each is a candidate adapter for a later round.
+		dead.put("net/minecraftforge/client/event/AddGuiOverlayLayersEvent",
+				"HUD overlay layers a MinecraftForge mod adds never draw — the merged Gui registers only NeoForge's "
+						+ "layer list");
+		dead.put("net/minecraftforge/client/event/AddFramePassEvent",
+				"extra render frame passes a MinecraftForge mod adds never run — the merged frame graph asks only "
+						+ "NeoForge's event");
+		dead.put("net/minecraftforge/client/event/EntityRenderersEvent$CreateSkullModels",
+				"custom skull block models a MinecraftForge mod registers never render — the merged skull renderer "
+						+ "reads only NeoForge's map");
+		dead.put("net/minecraftforge/client/event/EntityRenderersEvent$AddLayers",
+				"render layers a MinecraftForge mod adds to existing entity renderers — armour, capes, overlays — "
+						+ "never draw; the merged EntityRenderDispatcher posts only NeoForge's AddLayers");
+		dead.put("net/minecraftforge/client/event/RegisterPictureInPictureRendererEvent",
+				"picture-in-picture renderers a MinecraftForge mod registers never draw — the merged GuiRenderer "
+						+ "collects only NeoForge's");
 		return Map.copyOf(dead);
 	}
 
@@ -110,6 +129,21 @@ public final class DeadEventAudit {
 		map.put("net/minecraftforge/event/entity/living/LivingDeathEvent", GameEventBridge.LIVING_DEATH);
 		map.put("net/minecraftforge/event/entity/living/LivingDropsEvent", GameEventBridge.LIVING_DROPS);
 		map.put("net/minecraftforge/event/entity/EntityJoinLevelEvent", GameEventBridge.ENTITY_JOIN_LEVEL);
+		// The registration events lifted by the Phase 1 A repairs. ForgeHooksClient.initClientHooks posts the
+		// first eleven (three directly, eight through the Forge managers' init()); the merged Minecraft.<init>
+		// now calls it through KernelForgeClientInit. The next three have one redirect each.
+		String client = "net/minecraftforge/client/event/";
+		for (String event : List.of("RegisterKeyMappingsEvent", "EntityRenderersEvent$RegisterRenderers",
+				"EntityRenderersEvent$RegisterLayerDefinitions", "RegisterClientTooltipComponentFactoriesEvent",
+				"RegisterTextureAtlasSpriteLoadersEvent", "RegisterEntitySpectatorShadersEvent",
+				"RegisterNamedRenderTypesEvent", "RegisterItemDecorationsEvent", "RegisterPresetEditorsEvent",
+				"RegisterColorHandlersEvent$ColorResolvers", "ModelEvent$RegisterGeometryLoaders")) {
+			map.put(client + event, GameEventBridge.CLIENT_INIT_HOOKS);
+		}
+		map.put(client + "RegisterParticleProvidersEvent", GameEventBridge.PARTICLE_PROVIDERS);
+		map.put(client + "RegisterColorHandlersEvent$Block", GameEventBridge.BLOCK_TINT_SOURCES);
+		map.put("net/minecraftforge/event/BuildCreativeModeTabContentsEvent", GameEventBridge.CREATIVE_TAB_CONTENTS);
+		map.put("net/minecraftforge/event/entity/SpawnPlacementRegisterEvent", GameEventBridge.SPAWN_PLACEMENTS);
 		return Map.copyOf(map);
 	}
 
@@ -139,7 +173,13 @@ public final class DeadEventAudit {
 					// A bridgeable event is dead exactly when its bridge is not in — which is the case worth
 					// reporting, because a bridge can fail to install on a runtime the kernel did not expect and
 					// nothing else would notice. Its cost sentence is already written, on the bridge.
-					if (!installed.contains(bridge)) findings.add(new Finding(mod.getKey(), event, bridge.cost()));
+					// A LATE pass has not run yet when this audit does (its sites live in classes defined after
+					// mod construction), so its absence here means nothing; EventBridges.verify names it at the
+					// pass's own moment instead. Counting it now would name every client mod as waiting, on every
+					// boot, and train the reader to ignore the whole audit.
+					if (!bridge.pass().lateInstalled() && !installed.contains(bridge)) {
+						findings.add(new Finding(mod.getKey(), event, bridge.cost()));
+					}
 					continue;
 				}
 				String cost = DEAD.get(event);

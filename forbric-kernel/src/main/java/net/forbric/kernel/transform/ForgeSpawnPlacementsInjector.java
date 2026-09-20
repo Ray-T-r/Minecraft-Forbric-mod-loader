@@ -19,6 +19,8 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.api.GameEventBridge;
+import net.forbric.api.EventBridges;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -66,6 +68,7 @@ public final class ForgeSpawnPlacementsInjector implements ClassTransformer {
 				|| constructor.getOpcode() != Opcodes.INVOKESPECIAL || constructor.itf || !constructor.desc.equals("(Ljava/util/Map;)V")
 				|| previousReal(post) != constructor) return classBytes;
 		post.owner = RUNTIME; post.name = "postBothFamilies";
+		EventBridges.installed(GameEventBridge.SPAWN_PLACEMENTS);
 		ClassWriter writer = new ClassWriter(0); node.accept(writer);
 		ForbricLog.info("[Forbric/SpawnPlacements] spawn placement registration now serves MinecraftForge before NeoForge");
 		return writer.toByteArray();

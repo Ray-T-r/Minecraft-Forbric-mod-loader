@@ -42,6 +42,9 @@ class DeadEventAuditTest {
 	private static final String COMMANDS = "net/minecraftforge/event/RegisterCommandsEvent";
 	private static final String DEATH = "net/minecraftforge/event/entity/living/LivingDeathEvent";
 	private static final String ALIVE = "net/minecraftforge/event/entity/living/LivingEvent$LivingTickEvent";
+	private static final String KEYS = "net/minecraftforge/client/event/RegisterKeyMappingsEvent";
+	private static final String TABS = "net/minecraftforge/event/BuildCreativeModeTabContentsEvent";
+	private static final String OVERLAYS = "net/minecraftforge/client/event/AddGuiOverlayLayersEvent";
 
 	@Test
 	void aDeadEventWithAListenerIsReported() {
@@ -78,6 +81,29 @@ class DeadEventAuditTest {
 		assertEquals(1, findings.size(),
 				"if the bridge did not install, the listener really is waiting for an event that will not come, "
 						+ "and that is exactly when the line is worth printing");
+	}
+
+	/**
+	 * The client-init and registration bridges are landed by class transformers in classes the game defines AFTER
+	 * this audit runs, so "not installed yet" is the normal state here and must not become a finding — the pass's
+	 * own verify line is what names one that stood down.
+	 */
+	@Test
+	void aLatePassBridgeIsNotAFindingBeforeItsPassRuns() {
+		assertTrue(DeadEventAudit.audit(Map.of("keymod", Set.of(KEYS), "tabmod", Set.of(TABS)),
+						EnumSet.noneOf(GameEventBridge.class)).isEmpty(),
+				"a late pass has not run when the audit does; reporting it would name every client mod on every boot");
+	}
+
+	/** The five client events no bridge carries yet: a mod waiting on one is named, with what it loses. */
+	@Test
+	void aStillDeadClientEventNamesTheMod() {
+		List<DeadEventAudit.Finding> findings = DeadEventAudit.audit(
+				Map.of("hudmod", Set.of(OVERLAYS)), EnumSet.noneOf(GameEventBridge.class));
+
+		assertEquals(1, findings.size());
+		assertEquals("hudmod", findings.get(0).modId());
+		assertTrue(findings.get(0).cost().contains("never draw"), findings.get(0).cost());
 	}
 
 	@Test

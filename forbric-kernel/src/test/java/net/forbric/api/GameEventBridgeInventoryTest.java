@@ -32,6 +32,7 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
@@ -156,10 +157,38 @@ class GameEventBridgeInventoryTest {
 		}
 	}
 
+	/**
+	 * The late passes are landed by class transformers, not the multiplexer, and a transformer that lands its
+	 * redirect without recording the bridge makes {@code EventBridges.verify} report it MISSING on every boot —
+	 * the noise that turns the line from a signal into wallpaper. So every late bridge must be recorded right
+	 * where the redirect is written: a GameEventBridge read immediately followed by {@code EventBridges.installed}.
+	 */
+	@Test
+	void everyLatePassBridgeIsRecordedByTheTransformerThatLandsIt() throws Exception {
+		Set<String> recorded = new java.util.LinkedHashSet<>();
+		for (String transformer : List.of("ForbricMergedBaseCompatTransformer", "ForgeBlockTintInjector",
+				"ForgeCreativeTabsInjector", "ForgeSpawnPlacementsInjector")) {
+			recorded.addAll(bridgesRecordedBy(compiled("transform", transformer)));
+		}
+		assumeTrue(!recorded.isEmpty(), "transformers not compiled yet");
+
+		List<String> missing = new ArrayList<>();
+		for (GameEventBridge bridge : GameEventBridge.values()) {
+			if (bridge.pass().lateInstalled() && !recorded.contains(bridge.name())) missing.add(bridge.name());
+		}
+		assertEquals(List.of(), missing,
+				"every late-pass bridge must be passed to EventBridges.installed by the transformer that lands its "
+						+ "redirect, or the verify line reports it missing on every boot");
+	}
+
+	private static Path compiled(String pkg, String simpleName) {
+		return Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
+				"net", "forbric", "kernel", pkg, simpleName + ".class");
+	}
+
 	/** The GameEventBridge constants one method of GameEventMultiplexer reads, in order. */
 	private static List<String> bridgesNamedBy(String method) throws Exception {
-		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
-				"net", "forbric", "kernel", "boot", "GameEventMultiplexer.class");
+		Path compiled = compiled("boot", "GameEventMultiplexer");
 		if (!Files.isRegularFile(compiled)) return List.of();
 
 		ClassNode node = new ClassNode();
@@ -171,6 +200,26 @@ class GameEventBridgeInventoryTest {
 				if (insn instanceof FieldInsnNode field
 						&& "net/forbric/api/GameEventBridge".equals(field.owner)
 						&& !names.contains(field.name)) {
+					names.add(field.name);
+				}
+			}
+		}
+		return names;
+	}
+
+	/** GameEventBridge constants a compiled class hands straight to {@code EventBridges.installed}. */
+	private static List<String> bridgesRecordedBy(Path compiled) throws Exception {
+		if (!Files.isRegularFile(compiled)) return List.of();
+		ClassNode node = new ClassNode();
+		new ClassReader(Files.readAllBytes(compiled)).accept(node, 0);
+		List<String> names = new ArrayList<>();
+		for (MethodNode m : node.methods) {
+			for (AbstractInsnNode insn : m.instructions.toArray()) {
+				if (!(insn instanceof FieldInsnNode field) || !"net/forbric/api/GameEventBridge".equals(field.owner)) continue;
+				AbstractInsnNode next = insn.getNext();
+				while (next != null && next.getOpcode() < 0) next = next.getNext();
+				if (next instanceof MethodInsnNode call && "net/forbric/api/EventBridges".equals(call.owner)
+						&& "installed".equals(call.name)) {
 					names.add(field.name);
 				}
 			}

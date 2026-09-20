@@ -16,8 +16,12 @@
 
 package net.forbric.api;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.EnumSet;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,6 +75,40 @@ class EventBridgesTest {
 		assertTrue(EventBridges.verify(GameEventBridge.Pass.CLIENT_MOD_BUS));
 		assertFalse(EventBridges.verify(GameEventBridge.Pass.GAME_BUS),
 				"a client-side install must not satisfy the game-bus pass");
+	}
+
+	/**
+	 * The two transformer-landed passes. Their gate lines say "all 3 CLIENT_INIT" and "all 2 REGISTRATION", so the
+	 * membership is pinned exactly: moving a bridge between them changes what a client and a dedicated server
+	 * each verify.
+	 */
+	@Test
+	void theLatePassesAreAccountedSeparately() {
+		assertEquals(EnumSet.of(GameEventBridge.CLIENT_INIT_HOOKS, GameEventBridge.PARTICLE_PROVIDERS,
+				GameEventBridge.BLOCK_TINT_SOURCES), bridgesOf(GameEventBridge.Pass.CLIENT_INIT));
+		assertEquals(EnumSet.of(GameEventBridge.CREATIVE_TAB_CONTENTS, GameEventBridge.SPAWN_PLACEMENTS),
+				bridgesOf(GameEventBridge.Pass.REGISTRATION));
+
+		for (GameEventBridge b : bridgesOf(GameEventBridge.Pass.CLIENT_INIT)) EventBridges.installed(b);
+		assertTrue(EventBridges.verify(GameEventBridge.Pass.CLIENT_INIT));
+		assertFalse(EventBridges.verify(GameEventBridge.Pass.REGISTRATION),
+				"the client initialisation bridges must not be credited to the registration pass");
+		assertFalse(EventBridges.verify(GameEventBridge.Pass.GAME_BUS),
+				"nor to the multiplexer's pass");
+	}
+
+	/** Both land by class transformer after the dead-event audit has run; the multiplexer's passes do not. */
+	@Test
+	void onlyTheTransformerLandedPassesAreLate() {
+		assertEquals(EnumSet.of(GameEventBridge.Pass.CLIENT_INIT, GameEventBridge.Pass.REGISTRATION),
+				EnumSet.allOf(GameEventBridge.Pass.class).stream().filter(GameEventBridge.Pass::lateInstalled)
+						.collect(Collectors.toCollection(() -> EnumSet.noneOf(GameEventBridge.Pass.class))));
+	}
+
+	private static EnumSet<GameEventBridge> bridgesOf(GameEventBridge.Pass pass) {
+		EnumSet<GameEventBridge> set = EnumSet.noneOf(GameEventBridge.class);
+		for (GameEventBridge b : GameEventBridge.values()) if (b.pass() == pass) set.add(b);
+		return set;
 	}
 
 	@Test

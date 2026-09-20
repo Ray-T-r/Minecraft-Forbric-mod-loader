@@ -99,7 +99,22 @@ public enum GameEventBridge {
 			"as CLIENT_TICK_PRE, for the post-tick half"),
 	CLIENT_RELOAD_LISTENERS(Pass.CLIENT_MOD_BUS, "RegisterClientReloadListenersEvent",
 			"a MinecraftForge mod's client reload listeners are registered on a bus nobody posts to — GeckoLib's "
-					+ "whole client model and animation cache hangs off exactly this");
+					+ "whole client model and animation cache hangs off exactly this"),
+	CLIENT_INIT_HOOKS(Pass.CLIENT_INIT, "ForgeHooksClient.initClientHooks (11 registration events)",
+			"a MinecraftForge mod's key bindings are absent from Controls, its entity and block-entity renderers and "
+					+ "model layers are never registered so its entities are invisible or crash the renderer, and its "
+					+ "tooltip components, sprite loaders, geometry loaders, named render types, colour resolvers, "
+					+ "spectator shaders, item decorations and preset editors are never registered"),
+	PARTICLE_PROVIDERS(Pass.CLIENT_INIT, "RegisterParticleProvidersEvent",
+			"a MinecraftForge mod's custom particles never render, and nothing is logged about it"),
+	BLOCK_TINT_SOURCES(Pass.CLIENT_INIT, "RegisterColorHandlersEvent.Block",
+			"a MinecraftForge mod's biome- or state-tinted blocks render untinted (grass, leaves, water and every "
+					+ "modded block that borrows their colouring)"),
+	CREATIVE_TAB_CONTENTS(Pass.REGISTRATION, "BuildCreativeModeTabContentsEvent",
+			"items a MinecraftForge mod adds to vanilla or other mods' creative tabs are missing — only its own tab "
+					+ "still fills, so the mod looks installed and its content is not there"),
+	SPAWN_PLACEMENTS(Pass.REGISTRATION, "SpawnPlacementRegisterEvent",
+			"a MinecraftForge mod's mobs never spawn naturally, and its changes to vanilla spawn rules are ignored");
 
 	/** Which install pass owns a bridge. They run at different times and only one of them is client-only. */
 	public enum Pass {
@@ -112,7 +127,41 @@ public enum GameEventBridge {
 		 */
 		CLIENT_GAME_BUS,
 		/** Installed on the baseline mod bus during client mod loading. Client only. */
-		CLIENT_MOD_BUS
+		CLIENT_MOD_BUS,
+		/**
+		 * Landed by a class transformer inside the merged base's own client initialisation — the two
+		 * {@code Minecraft.<init>} hook calls and the block-colour table — rather than on a bus. Client only.
+		 * Verified from the client setup hook, which the merged constructor reaches only after every one of those
+		 * sites. The dead-event audit runs before the client class is even defined, so the pass is
+		 * {@link #lateInstalled()}: the audit must not count it as missing, and {@link EventBridges#verify} is what
+		 * names a repair that stood down.
+		 */
+		CLIENT_INIT(true),
+		/**
+		 * Landed by a class transformer at the game's own registration hooks (creative-tab contents, spawn
+		 * placements). Both sides. Verified right after the kernel's registration window has driven both, and late
+		 * for the audit for the same reason as {@link #CLIENT_INIT}.
+		 */
+		REGISTRATION(true);
+
+		private final boolean lateInstalled;
+
+		Pass() {
+			this(false);
+		}
+
+		Pass(boolean lateInstalled) {
+			this.lateInstalled = lateInstalled;
+		}
+
+		/**
+		 * Whether this pass lands after the dead-event audit has already run. A late bridge's absence is reported
+		 * by {@link EventBridges#verify} at the pass's own moment, with its cost, so the audit leaves it alone
+		 * instead of naming every mod on it as waiting.
+		 */
+		public boolean lateInstalled() {
+			return lateInstalled;
+		}
 	}
 
 	private final Pass pass;
