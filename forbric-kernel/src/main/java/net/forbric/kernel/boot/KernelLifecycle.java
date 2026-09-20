@@ -723,7 +723,13 @@ public final class KernelLifecycle {
 			// registry goes through FabricRegistryBuilder, which is a plain Registry.register into that root.
 			rootRegistry(cl, true);
 			try {
-				KernelFabricEcosystem.runMainEntrypoints();
+				// On a client these now run from onClientEntrypoints, inside Minecraft.<init>, where Fabric runs
+				// them and where Minecraft.getInstance() is live. Here they would see a null instance, and a mod
+				// that caches it caches null for the whole process. The dedicated server keeps this window: it has
+				// no Minecraft to wait for, and Fabric's own startServer runs main just as early there.
+				if (!side.isClient() || !KernelFabricEcosystem.mainsRunInConstructor()) {
+					KernelFabricEcosystem.runMainEntrypoints();
+				}
 			} finally {
 				rootRegistry(cl, false);
 				// No late-config pass here. It used to sit in this finally, and the comment that justified it said
@@ -2165,6 +2171,9 @@ public final class KernelLifecycle {
 		}
 
 		try {
+			// main first, then client — Fabric's own Hooks.startClient order, now at Fabric's own point in the
+			// constructor. A no-op when the pre-Minecraft window already ran them (the switch, or a server).
+			KernelFabricEcosystem.runMainEntrypoints();
 			KernelFabricEcosystem.runClientEntrypoints();
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] client entrypoints failed", unwrap(t));

@@ -345,12 +345,16 @@ public final class KernelFabricEcosystem {
 	 * Runs every Fabric {@code main} entrypoint, plus the {@code server} one on a dedicated server, exactly once per
 	 * process. Must be called with the registries unfrozen — this is where mods register content.
 	 *
-	 * <p>The {@code client} entrypoint is NOT run here: Fabric fires it later, from inside {@code Minecraft.<init>},
-	 * where {@code Minecraft.getInstance()} is already non-null but {@code Options} is not yet built. Mods rely on
-	 * that window — e.g. keymapping registration reads {@code Minecraft.getInstance().options} and NPEs if the
-	 * instance is null (run too early) or throws "GameOptions has already been initialised" (run too late). Running
-	 * client entrypoints in this pre-{@code Minecraft} registration window gave the former (Jade's keybinds). See
-	 * {@link #runClientEntrypoints()}, driven by {@code ClientEntrypointHookInjector}.
+	 * <p>On a CLIENT this is called from {@code KernelLifecycle.onClientEntrypoints}, inside {@code Minecraft.<init>}
+	 * and immediately before {@link #runClientEntrypoints()} — Fabric's own {@code Hooks.startClient} order, at
+	 * Fabric's own point in the constructor. {@code Minecraft.getInstance()} is live there and {@code Options} is
+	 * not yet built, which is the window mods are written against from both ends: keymapping registration reads
+	 * {@code Minecraft.getInstance().options} and NPEs if the instance is null (run too early) or throws
+	 * "GameOptions has already been initialised" (run too late). That hook reopens the registries and rebuilds what
+	 * reopening invalidates, so "unfrozen" still holds — see {@code ClientEntrypointHookInjector}.
+	 *
+	 * <p>A dedicated server calls it from the pre-{@code Minecraft} registration window instead, because there is no
+	 * {@code Minecraft} to wait for and Fabric's {@code startServer} runs {@code main} just as early.
 	 *
 	 * @return true if this call ran them, false if they had already run
 	 */
@@ -362,8 +366,8 @@ public final class KernelFabricEcosystem {
 		int main = invoke("main", ModInitializer.class, ModInitializer::onInitialize);
 
 		if (envType == EnvType.CLIENT) {
-			ForbricLog.info("[Forbric/Fabric] invoked %d Fabric main entrypoint(s); client entrypoints deferred to "
-					+ "Minecraft.<init>", main);
+			ForbricLog.info("[Forbric/Fabric] invoked %d Fabric main entrypoint(s) in the %s window", main,
+					mainsRunInConstructor() ? "Minecraft.<init>" : "pre-Minecraft registration");
 		} else {
 			int server = invoke("server", DedicatedServerModInitializer.class,
 					DedicatedServerModInitializer::onInitializeServer);
@@ -474,6 +478,30 @@ public final class KernelFabricEcosystem {
 	/** Whether the Fabric main entrypoints have already run. */
 	public static boolean mainsAlreadyRan() {
 		return MAINS_RAN.get();
+	}
+
+	/** The switch that puts the client's {@code main} entrypoints back in the pre-{@code Minecraft} window. */
+	public static final String MAIN_WINDOW_SWITCH = "forbric.fabricMainInConstructor";
+
+	/**
+	 * Whether the client's {@code main} entrypoints run inside {@code Minecraft.<init>}, where Fabric runs them.
+	 *
+	 * <p>Fabric's own {@code Hooks.startClient} invokes {@code main} and then {@code client}, and its game patch
+	 * inserts that call before the {@code Thread.currentThread()} in the constructor — after {@code instance = this}.
+	 * So on Fabric a {@code main} entrypoint always sees a live {@code Minecraft.getInstance()}.
+	 *
+	 * <p>The kernel used to run them in its own pre-{@code Minecraft} registration window instead, because that
+	 * window is where the registries are unfrozen. {@code getInstance()} is null there, and a mod that caches it —
+	 * ClickCrystals holds it in a {@code static final} interface field read from the first line of its
+	 * {@code onInitialize} — cached null for the rest of the process and took the game down inside the constructor
+	 * with an NPE naming neither the loader nor the window. The client-entrypoint hook already reopens the
+	 * registries and rebuilds what the reopen invalidates, so the two phases now run there together, in Fabric's
+	 * order and at very nearly Fabric's instruction.
+	 *
+	 * <p>{@code -Dforbric.fabricMainInConstructor=off} puts them back in the pre-{@code Minecraft} window.
+	 */
+	public static boolean mainsRunInConstructor() {
+		return !"off".equalsIgnoreCase(System.getProperty(MAIN_WINDOW_SWITCH, "on"));
 	}
 
 	/**

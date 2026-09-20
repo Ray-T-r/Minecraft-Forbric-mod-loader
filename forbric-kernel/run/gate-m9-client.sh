@@ -68,6 +68,10 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #   -Dforbric.keyModifierSuffix=off -> 2 red ("the key-modifier suffix is dropped before the name is parsed",
 #                                             "options.txt loads with modded modifier bindings in it")
 #   -Dforbric.carrierLanguages=off -> 2 red ("NeoForge's own screens have their text", "and MinecraftForge's do too")
+#   -Dforbric.fabricMainInConstructor=off -> 2 red ("Fabric main entrypoints run where Fabric runs them",
+#                                                   "and not in the pre-Minecraft window"). Off, a Fabric mod that
+#                                                   caches Minecraft.getInstance() from onInitialize caches null:
+#                                                   ClickCrystals then killed the client inside Minecraft.<init>.
 # Verified with
 # -Dforbric.pruneDuplicateLambdas=off, which brings back StubException and the failed world load.
 FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
@@ -666,6 +670,14 @@ step "the world is on disk before the process ends (must PASS)"
 # on the way out ended the process with level.dat at the last autosave. The repair is a two-instruction exception
 # range; what is asserted here is the OUTCOME, because a handler that exists and a save that runs are different
 # claims and only the second is the one that matters.
+# Fabric's own Hooks.startClient runs main and then client from inside Minecraft.<init>, after instance = this.
+# The kernel ran main in its pre-Minecraft registration window, where getInstance() is null -- so the thread name
+# is the assertion: "main" is the pre-Minecraft window, "Render thread" is the constructor.
+check "Fabric main entrypoints run where Fabric runs them" \
+  "\[Render thread/INFO\]: \[Forbric/Fabric\] invoked [1-9][0-9]* Fabric main entrypoint\(s\) in the Minecraft.<init> window" "$LOG"
+check_absent "and not in the pre-Minecraft window" \
+  "\[main/INFO\]: \[Forbric/Fabric\] invoked [0-9]+ Fabric main entrypoint" "$LOG"
+
 check "the save ran on the way out"        "Saving worlds"                                    "$LOG"
 check "and it finished"                    "ThreadedAnvilChunkStorage: All dimensions are saved" "$LOG"
 check_absent "nothing aborted the stop"    "Exception stopping the server"                    "$LOG"

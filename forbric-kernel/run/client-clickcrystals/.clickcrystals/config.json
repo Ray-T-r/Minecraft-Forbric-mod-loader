@@ -1,0 +1,1413 @@
+{
+  "hasPlayedBefore": false,
+  "overviewMode": false,
+  "disableCustomLoading": false,
+  "disableModuleToggleBroadcast": false,
+  "disableScriptChatErrors": false,
+  "modMenuIntegration": false,
+  "devMode": false,
+  "readAnnouncementCount": 0,
+  "keybindEntries": {
+    "module-toggle-keybind": -1,
+    "open-hud-editor-screen": 59,
+    "zoom-key": 66,
+    "command-prefix": 44,
+    "message-resend-keybind": 265,
+    "open-clickcrystals-module-screen": 39
+  },
+  "positionEntries": {
+    "biome-hud": {
+      "x": 10,
+      "y": 135,
+      "width": 120,
+      "height": 16
+    },
+    "target-hud": {
+      "x": 150,
+      "y": 30,
+      "width": 120,
+      "height": 16
+    },
+    "rotation-hud": {
+      "x": 10,
+      "y": 180,
+      "width": 120,
+      "height": 16
+    },
+    "icon-hud": {
+      "x": 10,
+      "y": 25,
+      "width": 120,
+      "height": 30
+    },
+    "entity-indicator-hud": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0
+    },
+    "direction-hud": {
+      "x": 10,
+      "y": 150,
+      "width": 120,
+      "height": 16
+    },
+    "crosshair-hud": {
+      "x": 10,
+      "y": 165,
+      "width": 120,
+      "height": 16
+    },
+    "notifications-hud": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0
+    },
+    "fps-hud": {
+      "x": 10,
+      "y": 90,
+      "width": 50,
+      "height": 16
+    },
+    "module-list-text-hud": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0
+    },
+    "ping-hud": {
+      "x": 10,
+      "y": 75,
+      "width": 50,
+      "height": 16
+    },
+    "clock-hud": {
+      "x": 10,
+      "y": 105,
+      "width": 50,
+      "height": 16
+    },
+    "color-overlay-hud": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0
+    },
+    "cps-hud": {
+      "x": 10,
+      "y": 60,
+      "width": 50,
+      "height": 16
+    },
+    "pos-hud": {
+      "x": 10,
+      "y": 120,
+      "width": 120,
+      "height": 16
+    },
+    "armor-hud": {
+      "x": 387,
+      "y": 222,
+      "width": 80,
+      "height": 20
+    },
+    "crystal-speed-hud": {
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0
+    },
+    "resource-hud": {
+      "x": 200,
+      "y": 30,
+      "width": 20,
+      "height": 20
+    }
+  },
+  "overviewScreenEntries": {},
+  "moduleEntries": {
+    "elytra-switch": {
+      "id": "elytra-switch",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "infinite-elytra-durability": false,
+        "rocket-switch": false,
+        "chestplate-switch": false,
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "axe-swap": {
+      "id": "axe-swap",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "shield-fov": 60.0
+      },
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "directional-shield": true,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "breach-swap": {
+      "id": "breach-swap",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "swap-back-delay": 2
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "require-breach": true,
+        "on-armored-only": false,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "auto-switch-back": true
+      },
+      "stringEntries": {}
+    },
+    "stun-slam": {
+      "id": "stun-slam",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "swap-back-delay": 2
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "auto-switch-back": true,
+        "only-on-shield": true,
+        "require-density": true
+      },
+      "stringEntries": {}
+    },
+    "shield-switch": {
+      "id": "shield-switch",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "sword-swap": {
+      "id": "sword-swap",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "gap-swap": {
+      "id": "gap-swap",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "rail-swap": {
+      "id": "rail-swap",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "tnt-swap": {
+      "id": "tnt-swap",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "instant": false
+      },
+      "stringEntries": {}
+    },
+    "bow-swap": {
+      "id": "bow-swap",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "pull-bow": false
+      },
+      "stringEntries": {}
+    },
+    "auto-disconnect": {
+      "id": "auto-disconnect",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "player-health-percentage": 6.0,
+        "range": 5.0
+      },
+      "booleanEntries": {
+        "check-loaded-anchors": true,
+        "auto-disable": true,
+        "check-crystals": true,
+        "check-anchors": true,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "check-new-players": false,
+        "player-health": false
+      },
+      "stringEntries": {}
+    },
+    "self-glow": {
+      "id": "self-glow",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "glow-color-setting": -16711681
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "gui-borders": {
+      "id": "gui-borders",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "in-game-huds": {
+      "id": "in-game-huds",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "color": 1074253279
+      },
+      "doubleEntries": {
+        "target-hud-stay-time": 10.0
+      },
+      "booleanEntries": {
+        "render-cps-hud": true,
+        "show-nether-coords-in-overworld": false,
+        "module-game-join-disable": false,
+        "render-resource-hud": false,
+        "module-enabled": false,
+        "render-icon-hud": false,
+        "render-armor-hud": true,
+        "render-clock-hud": true,
+        "render-crosshair-hud": false,
+        "render-biome-hud": false,
+        "target-hud-no-combat-disable": false,
+        "render-fps-hud": true,
+        "render-position-hud": false,
+        "render-ping-hud": true,
+        "render-direction-hud": false,
+        "render-target-hud": true,
+        "render-rotation-hud": false
+      },
+      "stringEntries": {
+        "clock-hud-hour-display": "HOUR_12"
+      }
+    },
+    "silk-touch": {
+      "id": "silk-touch",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "entity-statuses": {
+      "id": "entity-statuses",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "inv-packet-sniffer": {
+      "id": "inv-packet-sniffer",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "mcpe-block-placement": {
+      "id": "mcpe-block-placement",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "chest-sorter": {
+      "id": "chest-sorter",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "crystal-anchor": {
+      "id": "crystal-anchor",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "on-sword": false,
+        "on-crystal": true,
+        "on-pickaxe": false
+      },
+      "stringEntries": {}
+    },
+    "anchor-switch": {
+      "id": "anchor-switch",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "click-crystal": {
+      "id": "click-crystal",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "client-crystals": {
+      "id": "client-crystals",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "crystal-switch": {
+      "id": "crystal-switch",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "on-obsidian": true,
+        "on-glowstone": true,
+        "exclude-bedrock": false,
+        "on-totem": true,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "on-sword": true,
+        "on-anchor": true,
+        "on-crystal": false
+      },
+      "stringEntries": {}
+    },
+    "obsidian-switch": {
+      "id": "obsidian-switch",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "on-obsidian": true,
+        "on-glowstone": true,
+        "exclude-bedrock": false,
+        "on-totem": true,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "on-sword": true,
+        "on-anchor": true,
+        "on-crystal": true
+      },
+      "stringEntries": {}
+    },
+    "pearl-switch": {
+      "id": "pearl-switch",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "on-totem": true,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "on-sword": true
+      },
+      "stringEntries": {}
+    },
+    "gui-cursor": {
+      "id": "gui-cursor",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "totem-shift-holder": false,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "closest-totem-slot": true
+      },
+      "stringEntries": {
+        "cursor-action": "CENTER_FIX"
+      }
+    },
+    "auto-replenish": {
+      "id": "auto-replenish",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "replenish-percentage": 0.01
+      },
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "auto-clicker": {
+      "id": "auto-clicker",
+      "objectEntries": {},
+      "integerEntries": {
+        "right-cps": 10,
+        "module-toggle-keybind": -1,
+        "left-cps": 10
+      },
+      "doubleEntries": {
+        "max-attack-cooldown": 0.0,
+        "left-chance": 1.0,
+        "right-chance": 1.0
+      },
+      "booleanEntries": {
+        "stop-when-damage": false,
+        "right-only-hold": true,
+        "no-babies": true,
+        "debug": false,
+        "stop-when-move": false,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "right": false,
+        "left-only-hold": true,
+        "right-spam": true,
+        "left": false,
+        "left-spam": true,
+        "only-when-target": false,
+        "stop-when-target": false
+      },
+      "stringEntries": {}
+    },
+    "no-scrolling": {
+      "id": "no-scrolling",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "disable-scrolling-entirely": false,
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "team-detector": {
+      "id": "team-detector",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "cancel-ccs": true,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "protect-teammates": true
+      },
+      "stringEntries": {
+        "manual-team-players": "",
+        "team-detection-mode": "COLOR_NAME"
+      }
+    },
+    "no-interactions": {
+      "id": "no-interactions",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "allow-decor": false,
+        "allow-sign-editing": false,
+        "allow-chests": false,
+        "module-game-join-disable": false,
+        "allow-doors": false,
+        "module-enabled": false,
+        "allow-redstone": false,
+        "allow-shulker": false
+      },
+      "stringEntries": {}
+    },
+    "auto-gg": {
+      "id": "auto-gg",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "entity-range": 7.5
+      },
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {
+        "random-message-4": "noice",
+        "random-message-5": "ha better luck next time",
+        "random-message-2": "good game",
+        "random-message-3": "ez",
+        "random-message-1": "gg"
+      }
+    },
+    "auto-respawn": {
+      "id": "auto-respawn",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "array-list": {
+      "id": "array-list",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "message-resend": {
+      "id": "message-resend",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "message-resend-keybind": 265
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "resend-only-scripts": false
+      },
+      "stringEntries": {}
+    },
+    "tool-switcher": {
+      "id": "tool-switcher",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "exclude-sword": true,
+        "exclude-glowstone": true,
+        "module-game-join-disable": false,
+        "exclude-totem": true,
+        "module-enabled": false,
+        "exclude-crystal": true,
+        "exclude-obsidian": true,
+        "exclude-anchor": true
+      },
+      "stringEntries": {}
+    },
+    "totem-pops": {
+      "id": "totem-pops",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "show-own": true
+      },
+      "stringEntries": {
+        "own-pop-name": "\u00266\u0026n%player%",
+        "enemy-death-message": "\u00268\u0026oThe player \u00264\u0026n%enemy% \u00268\u0026o died after popping \u00267\u0026o(\u0026e%pops%\u00267\u0026o) \u00268totems!",
+        "enemy-pop-message": "\u00268\u0026oThe player \u00264%enemy%\u00268\u0026o popped \u00267\u0026o(\u0026e%pops%\u00267\u0026o) \u00268totems!"
+      }
+    },
+    "chat-prefix": {
+      "id": "chat-prefix",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "mentions-pitch": 2.0,
+        "mentions-volume": 1.0
+      },
+      "booleanEntries": {
+        "mentions": true,
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {
+        "text-font-style": "Normal",
+        "chat-suffix": "",
+        "chat-prefix": ""
+      }
+    },
+    "next-block": {
+      "id": "next-block",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "should-raytrace": true,
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "auto-walk": {
+      "id": "auto-walk",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "should-sprint": false
+      },
+      "stringEntries": {}
+    },
+    "no-break-delay": {
+      "id": "no-break-delay",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "mouse-taper": {
+      "id": "mouse-taper",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "reopen-on-disable": true,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "exclude-below": false,
+        "exclude-above": false,
+        "should-lock-cursor": false
+      },
+      "stringEntries": {
+        "button": "Left",
+        "tape-mode": "Forever"
+      }
+    },
+    "sound-on-death": {
+      "id": "sound-on-death",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "sound-volume": 10.0,
+        "sound-pitch": 1.0,
+        "entity-range": 7.5
+      },
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "tunnel3x3": {
+      "id": "tunnel3x3",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "miner-mode": true,
+        "reopen-on-disable": true,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "recenter-rotation-when-finished": true,
+        "render-blocks": true
+      },
+      "stringEntries": {}
+    },
+    "camera-clip": {
+      "id": "camera-clip",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "camera-distance": 5.0
+      },
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "camera-clip": true
+      },
+      "stringEntries": {}
+    },
+    "free-look": {
+      "id": "free-look",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "change-perspective-angle": 90
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "change-to-camera-perspective-on-enable": false
+      },
+      "stringEntries": {
+        "camera-perspective": "THIRD_PERSON_FOV"
+      }
+    },
+    "zoom": {
+      "id": "zoom",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "zoom-key": 66
+      },
+      "doubleEntries": {
+        "Multiplier.": 0.3
+      },
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "scroll-to-change": false
+      },
+      "stringEntries": {}
+    },
+    "anti-crash": {
+      "id": "anti-crash",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "max-explosion-velocity": 100000.0,
+        "max-explosion-radius": 100.0,
+        "max-particle-amount": 500.0,
+        "max-explosion-blocks": 100000.0
+      },
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "send-feedback": true
+      },
+      "stringEntries": {}
+    },
+    "explode-particles": {
+      "id": "explode-particles",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "disable-black-fire-smoke": true,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "disable-potion-particles": true,
+        "disable-white-poof-cloud": true
+      },
+      "stringEntries": {}
+    },
+    "no-item-bounce": {
+      "id": "no-item-bounce",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "no-load-screen": {
+      "id": "no-load-screen",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "no-server-packs": {
+      "id": "no-server-packs",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "full-bright": {
+      "id": "full-bright",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "time-changer": {
+      "id": "time-changer",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "time": 0.0
+      },
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "trajectories": {
+      "id": "trajectories",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "render-offset": 0.0
+      },
+      "booleanEntries": {
+        "eggs": true,
+        "bows": true,
+        "ender-pearls": true,
+        "snowballs": true,
+        "potions": true,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "crossbows": true,
+        "tridents": true
+      },
+      "stringEntries": {}
+    },
+    "pearl-customizer": {
+      "id": "pearl-customizer",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "pearl-size": 1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "pearl-sound": false,
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "totem-color": {
+      "id": "totem-color",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "color": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "death-effects": {
+      "id": "death-effects",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "color": -1,
+        "rocket-velocity": 1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {
+        "effect-type": "THUNDERBOLT",
+        "rocket-shape": "BURST",
+        "entity-selection": "BOTH"
+      }
+    },
+    "block-outline": {
+      "id": "block-outline",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "color": -16730113
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "no-gui-background": {
+      "id": "no-gui-background",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "disable-black-overlay-effect": true
+      },
+      "stringEntries": {}
+    },
+    "crystal-speed": {
+      "id": "crystal-speed",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "totem-scale": {
+      "id": "totem-scale",
+      "objectEntries": {},
+      "integerEntries": {
+        "x-translation": 0,
+        "module-toggle-keybind": -1,
+        "y-translation": 0
+      },
+      "doubleEntries": {
+        "scale": 1.0
+      },
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "no-armor-render": {
+      "id": "no-armor-render",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "render-leggings": false,
+        "module-game-join-disable": false,
+        "render-helmet": false,
+        "module-enabled": false,
+        "render-boots": false,
+        "render-chestplate": false
+      },
+      "stringEntries": {}
+    },
+    "spectator-sight": {
+      "id": "spectator-sight",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "entity": true,
+        "player": true
+      },
+      "stringEntries": {}
+    },
+    "slow-hand-swing": {
+      "id": "slow-hand-swing",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "no-hurt-cam": {
+      "id": "no-hurt-cam",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "no-game-overlay": {
+      "id": "no-game-overlay",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "totem-overlay": {
+      "id": "totem-overlay",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "Fill": true,
+        "Meme": false,
+        "module-game-join-disable": false,
+        "Crosshair icon": false,
+        "module-enabled": false,
+        "Border": false
+      },
+      "stringEntries": {}
+    },
+    "render-own-name": {
+      "id": "render-own-name",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "no-view-bob": {
+      "id": "no-view-bob",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "glowing-entities": {
+      "id": "glowing-entities",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "entity-light-level": 15.0
+      },
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "no-scoreboard": {
+      "id": "no-scoreboard",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "cancel-scoreboard-packets": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "health-as-bar": {
+      "id": "health-as-bar",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "show-value-text": true,
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "view-model": {
+      "id": "view-model",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {
+        "main-rotation-y": 0.0,
+        "main-rotation-z": 0.0,
+        "main-rotation-x": 0.0,
+        "main-position-x": 0.0,
+        "off-rotation-z": 0.0,
+        "main-position-y": 0.0,
+        "off-rotation-y": 0.0,
+        "main-position-z": 0.0,
+        "off-position-y": 0.0,
+        "off-position-x": 0.0,
+        "off-rotation-x": 0.0,
+        "off-position-z": 0.0
+      },
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    },
+    "ghost-totem": {
+      "id": "ghost-totem",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {
+        "render-mode": "OffHand"
+      }
+    },
+    "entity-indicator": {
+      "id": "entity-indicator",
+      "objectEntries": {},
+      "integerEntries": {
+        "hud-size": 50,
+        "module-toggle-keybind": -1,
+        "sprite-size": 10,
+        "radar-range": 16
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "only-monsters": true,
+        "update-per-render": true
+      },
+      "stringEntries": {
+        "render-mode": "COMPASS"
+      }
+    },
+    "item-highlight": {
+      "id": "item-highlight",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {
+        "Render Type": "BOTH",
+        "Rarity Filter": "UNCOMMON"
+      }
+    },
+    "totem-chams": {
+      "id": "totem-chams",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "color": -33411
+      },
+      "doubleEntries": {
+        "max-velocity": 0.1,
+        "gravity": 0.01,
+        "max-age": 5.0
+      },
+      "booleanEntries": {
+        "show-self": true,
+        "module-game-join-disable": false,
+        "module-enabled": false,
+        "cham-on-damage": false
+      },
+      "stringEntries": {
+        "rag-doll-type": "EXPLODING"
+      }
+    },
+    "elytra-shadow": {
+      "id": "elytra-shadow",
+      "objectEntries": {},
+      "integerEntries": {
+        "module-toggle-keybind": -1,
+        "shadow-color": -16730113
+      },
+      "doubleEntries": {},
+      "booleanEntries": {
+        "module-game-join-disable": false,
+        "module-enabled": false
+      },
+      "stringEntries": {}
+    }
+  }
+}
