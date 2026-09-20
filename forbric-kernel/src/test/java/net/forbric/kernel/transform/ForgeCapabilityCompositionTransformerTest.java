@@ -183,6 +183,138 @@ class ForgeCapabilityCompositionTransformerTest {
 		assertTrue(new ForgeCapabilityCompositionTransformer().anchors().anchors().isEmpty(), "off is a request, not a missed anchor");
 	}
 
+	/**
+	 * E7. The merge kept MinecraftForge's {@code LivingEntity.handlers}, its readers and its {@code reviveCaps()}
+	 * re-creation, but NeoForge won the constructor whole and the field initializer went with it — so the array
+	 * was null from construction on. Nothing read it until E1 made {@code Entity.remove} call {@code invalidateCaps}
+	 * again; then the first mob death on gate-m9 crashed the integrated server ("this.handlers" is null).
+	 */
+	@Test
+	void theLostConstructorInitializersAreReplayedRightAfterSuper() throws Exception {
+		for (var lost : ForgeCapabilityCompositionTransformer.LOST_INITIALIZERS.entrySet()) {
+			String owner = lost.getKey();
+			String field = lost.getValue();
+			ClassNode before = parse(bytesOf(owner));
+			for (MethodNode ctor : before.methods) {
+				if ("<init>".equals(ctor.name)) assertFalse(assigns(ctor, owner, field), "premise: " + owner + ".<init> lost " + field);
+			}
+			ClassNode after = parse(shim(owner));
+			int repaired = 0;
+			for (MethodNode ctor : after.methods) {
+				if (!"<init>".equals(ctor.name)) continue;
+				MethodInsnNode superCall = null;
+				for (AbstractInsnNode insn = ctor.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+					if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL && "<init>".equals(call.name)
+							&& (after.superName.equals(call.owner) || after.name.equals(call.owner))) {
+						superCall = call;
+						break;
+					}
+				}
+				assertNotNull(superCall, owner + " constructor without a super/this call");
+				if (after.name.equals(superCall.owner)) continue;    // this(...) delegates
+				// The very next real instruction is `aload 0`, and the first PUTFIELD after it is ours: Forge's own
+				// initializer ordering, before every other field the constructor assigns.
+				AbstractInsnNode next = superCall.getNext();
+				while (next != null && next.getOpcode() < 0) next = next.getNext();
+				assertTrue(next instanceof VarInsnNode v && v.getOpcode() == Opcodes.ALOAD && v.var == 0, owner + ": replay must begin with aload 0");
+				FieldInsnNode firstPut = null;
+				for (AbstractInsnNode insn = next; insn != null; insn = insn.getNext()) {
+					if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTFIELD) { firstPut = f; break; }
+				}
+				assertNotNull(firstPut, owner);
+				assertEquals(field, firstPut.name, owner + ": the first field assigned after super() must be " + field);
+				new Analyzer<>(new BasicVerifier()).analyze(after.name, ctor);
+				repaired++;
+			}
+			assertTrue(repaired >= 1, owner + ": at least one constructor repaired");
+		}
+	}
+
+	/**
+	 * The census that pins {@code LOST_INITIALIZERS}: across the WHOLE merged base, every field assigned in a
+	 * {@code reviveCaps()} but in no constructor. If the merge tool ever fixes one, or a carrier bump adds one, this
+	 * is where it shows.
+	 */
+	@Test
+	void theCensusOfLostInitializersMatchesTheTable() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED), "staged merged base absent");
+		java.util.Map<String, String> found = new java.util.TreeMap<>();
+		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
+			var entries = zip.entries();
+			while (entries.hasMoreElements()) {
+				ZipEntry entry = entries.nextElement();
+				if (!entry.getName().endsWith(".class")) continue;
+				byte[] bytes;
+				try (InputStream in = zip.getInputStream(entry)) { bytes = in.readAllBytes(); }
+				if (indexOf(bytes, "reviveCaps".getBytes(StandardCharsets.US_ASCII)) < 0) continue;
+				ClassNode node = parse(bytes);
+				MethodNode revive = find(node, "reviveCaps", "()V");
+				if (revive == null) continue;
+				for (AbstractInsnNode insn = revive.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+					if (!(insn instanceof FieldInsnNode f) || f.getOpcode() != Opcodes.PUTFIELD || !node.name.equals(f.owner)) continue;
+					boolean inCtor = false;
+					for (MethodNode m : node.methods) if ("<init>".equals(m.name) && assigns(m, node.name, f.name)) inCtor = true;
+					if (!inCtor) found.put(node.name, f.name);
+				}
+			}
+		}
+		assertEquals(new java.util.TreeMap<>(ForgeCapabilityCompositionTransformer.LOST_INITIALIZERS), found,
+				"fields assigned in reviveCaps() but in no constructor — the table must name exactly these");
+	}
+
+	/** A reviveCaps whose assignment sits behind a branch is not an initializer; the repair must stand down whole. */
+	@Test
+	void aBranchyReviveCapsIsNotCopied() {
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		String name = "test/Branchy";
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+		cw.visitField(Opcodes.ACC_PRIVATE, "handlers", "Ljava/lang/Object;", null, null).visitEnd();
+		var ctor = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		ctor.visitCode();
+		ctor.visitVarInsn(Opcodes.ALOAD, 0);
+		ctor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+		ctor.visitInsn(Opcodes.RETURN);
+		ctor.visitMaxs(0, 0);
+		ctor.visitEnd();
+		var revive = cw.visitMethod(Opcodes.ACC_PUBLIC, "reviveCaps", "()V", null, null);
+		revive.visitCode();
+		revive.visitVarInsn(Opcodes.ALOAD, 0);
+		revive.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "reviveCaps", "()V", false);
+		var skip = new org.objectweb.asm.Label();
+		revive.visitVarInsn(Opcodes.ALOAD, 0);
+		revive.visitFieldInsn(Opcodes.GETFIELD, name, "handlers", "Ljava/lang/Object;");
+		revive.visitJumpInsn(Opcodes.IFNONNULL, skip);
+		revive.visitVarInsn(Opcodes.ALOAD, 0);
+		revive.visitTypeInsn(Opcodes.NEW, "java/lang/Object");
+		revive.visitInsn(Opcodes.DUP);
+		revive.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+		revive.visitFieldInsn(Opcodes.PUTFIELD, name, "handlers", "Ljava/lang/Object;");
+		revive.visitLabel(skip);
+		revive.visitInsn(Opcodes.RETURN);
+		revive.visitMaxs(0, 0);
+		revive.visitEnd();
+		cw.visitEnd();
+		ClassNode node = parse(cw.toByteArray());
+		assertFalse(ForgeCapabilityCompositionTransformer.replayLostInitializer(node, "handlers"));
+		assertFalse(assigns(find(node, "<init>", "()V"), name, "handlers"), "nothing may be copied through a branch");
+	}
+
+	private static boolean assigns(MethodNode method, String owner, String field) {
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTFIELD && owner.equals(f.owner) && field.equals(f.name)) return true;
+		}
+		return false;
+	}
+
+	private static int indexOf(byte[] haystack, byte[] needle) {
+		outer:
+		for (int i = 0; i <= haystack.length - needle.length; i++) {
+			for (int j = 0; j < needle.length; j++) if (haystack[i + j] != needle[j]) continue outer;
+			return i;
+		}
+		return -1;
+	}
+
 	@Test
 	void aSecondPassChangesNothingFurther() throws Exception {
 		for (String target : ForgeCapabilityCompositionTransformer.TARGETS) {

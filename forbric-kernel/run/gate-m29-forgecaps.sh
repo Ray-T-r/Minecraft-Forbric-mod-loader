@@ -47,7 +47,7 @@ check "the ITEM_HANDLER token got its getType" 'Capabilities\] capability token 
 check "injectCapabilities ran"         'Capabilities\] ran MinecraftForge.s injectCapabilities' "$LOG"
 check "the audit reports the composed feature, not a gap" 'Capabilities\] [1-9][0-9]* mod jar\(s\) use MinecraftForge.s capability system — composed into' "$LOG"
 
-step "boot 1: nine canary probes"
+step "boot 1: twelve canary probes"
 check "AttachCapabilitiesEvent delivered"      'ForbricLive/CAPS\] AttachCapabilitiesEvent\.BlockEntities RECEIVED for BellBlockEntity' "$LOG"
 check "attached handler read back"             'ForbricLive/CAPS\] attached handler present=true slots=1' "$LOG"
 check "vanilla chest handler (Forge override)" 'ForbricLive/CAPS\] vanilla chest handler slots=27' "$LOG"
@@ -57,6 +57,12 @@ check "ItemStack lookup answered"              'ForbricLive/CAPS\] ItemStack loo
 check "LazyOptional invalidated on setRemoved" 'ForbricLive/CAPS\] LazyOptional invalidated on setRemoved: true' "$LOG"
 check "ForgeCaps round-trip"                   'ForbricLive/CAPS\] ForgeCaps round-trip: key=true count=7' "$LOG"
 check "ServerLevel dispatcher present"         'ForbricLive/CAPS\] dispatcher present=true' "$LOG"
+# E7: the merge dropped MinecraftForge's constructor initializers for LivingEntity.handlers, furnace.handlers and
+# the chiseled bookshelf's itemHandler while keeping every reader. Found by gate-m9: the first mob death crashed the
+# integrated server in invalidateCaps ("this.handlers" is null). RED with -Dforbric.forgeCapabilities=off.
+check "the lost initializers were replayed"   'Capabilities\] net\.minecraft\.world\.entity\.LivingEntity\.<init> assigns handlers again' "$LOG"
+check "a living entity answers ITEM_HANDLER and survives remove()" 'ForbricLive/CAPS\] living entity equipment handler present=true remove\(\) invalidated without error=true' "$LOG"
+check "a furnace answers the sided ask"       'ForbricLive/CAPS\] furnace sided handler slots=[1-9]' "$LOG"
 check_absent "no probe failure"     'ForbricLive/CAPS\] probe FAILED' "$LOG"
 # Thrown exceptions print as java.lang.X: the kernel's own stub line mentions "AbstractMethodError" in prose.
 check_absent "no capability error signature" 'java\.lang\.(ExceptionInInitializerError|AbstractMethodError)|NoSuchMethodError.*Caps|NullPointerException.*capProvider|This will be implemented by a transformer|which the merged game does not carry' "$LOG"

@@ -32,6 +32,11 @@ import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.LookupSwitchInsnNode;
+import org.objectweb.asm.tree.TableSwitchInsnNode;
+import org.objectweb.asm.tree.TryCatchBlockNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
@@ -75,8 +80,25 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 	static final String LEVEL = "net/minecraft/world/level/Level";
 	static final String SERVER_LEVEL = "net/minecraft/server/level/ServerLevel";
 	static final String LEVEL_CHUNK = "net/minecraft/world/level/chunk/LevelChunk";
+	static final String LIVING_ENTITY = "net/minecraft/world/entity/LivingEntity";
+	static final String ABSTRACT_FURNACE = "net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity";
+	static final String CHISELED_BOOKSHELF = "net/minecraft/world/level/block/entity/ChiseledBookShelfBlockEntity";
 	static final Set<String> ROOTS = Set.of(ENTITY, BLOCK_ENTITY, LEVEL);
-	static final Set<String> TARGETS = Set.of(ENTITY, BLOCK_ENTITY, LEVEL, SERVER_LEVEL, LEVEL_CHUNK);
+	/**
+	 * MinecraftForge-patched classes whose capability field lost its CONSTRUCTOR initializer to the merge while
+	 * keeping the field, its readers and its {@code reviveCaps()} re-creation. NeoForge won each constructor whole,
+	 * and the loser's field initializers went with it — so {@code LivingEntity.handlers} was null from construction
+	 * until a revive that never comes, {@code invalidateCaps} NPE'd on every death once {@code Entity.remove} called
+	 * it again, and {@code getCapability(ITEM_HANDLER)} NPE'd on every ask. The census in the test scans the whole
+	 * merged base for this shape (a field assigned in {@code reviveCaps} but in no {@code <init>}) and pins this map
+	 * to exactly what it finds.
+	 */
+	static final Map<String, String> LOST_INITIALIZERS = Map.of(
+			LIVING_ENTITY, "handlers",
+			ABSTRACT_FURNACE, "handlers",
+			CHISELED_BOOKSHELF, "itemHandler");
+	static final Set<String> TARGETS = Set.of(ENTITY, BLOCK_ENTITY, LEVEL, SERVER_LEVEL, LEVEL_CHUNK,
+			LIVING_ENTITY, ABSTRACT_FURNACE, CHISELED_BOOKSHELF);
 
 	/** Forge-only names, like the fluid-type bridge's: NeoForge has no provider superclass to pair them with. */
 	static final String AS_FIELD = "net/minecraftforge/common/capabilities/CapabilityProvider$AsField";
@@ -117,7 +139,13 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 				new AnchorSet.Anchor(SERVER_LEVEL.replace('/', '.'), AnchorSet.Severity.REQUIRED,
 						"level capabilities are never gathered and forge:capabilities saved data is never created"),
 				new AnchorSet.Anchor(LEVEL_CHUNK.replace('/', '.'), AnchorSet.Severity.REQUIRED,
-						"every chunk getCapability/invalidateCaps/writeCapsToNBT NPEs on a null capProvider"));
+						"every chunk getCapability/invalidateCaps/writeCapsToNBT NPEs on a null capProvider"),
+				new AnchorSet.Anchor(LIVING_ENTITY.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+						"LivingEntity.handlers stays null: every mob death NPEs in invalidateCaps and every ITEM_HANDLER ask on a living entity NPEs"),
+				new AnchorSet.Anchor(ABSTRACT_FURNACE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+						"furnace.handlers stays null: every Forge pipe or hopper asking a furnace for ITEM_HANDLER NPEs"),
+				new AnchorSet.Anchor(CHISELED_BOOKSHELF.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+						"bookshelf.itemHandler stays null: every Forge ITEM_HANDLER ask on a chiseled bookshelf NPEs"));
 	}
 
 	public static boolean enabled() {
@@ -156,6 +184,8 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 		}
 		if (SERVER_LEVEL.equals(internal)) changed |= initServerLevelCapabilities(node);
 		if (LEVEL_CHUNK.equals(internal)) changed |= initLevelChunkProvider(node);
+		String lost = LOST_INITIALIZERS.get(internal);
+		if (lost != null) changed |= replayLostInitializer(node, lost);
 		if (!changed) return classBytes;
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
@@ -346,6 +376,122 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 	}
 
 	// ---- E6: invalidate/revive call sites; E7: ForgeCaps save/load funnels
+
+	// ---- E7: replay a field initializer the merge dropped from the constructor
+
+	/**
+	 * Copies the assignment {@code reviveCaps()} makes to {@code field} into every constructor that calls
+	 * {@code super(...)}, right after that call — where Forge's own field initializer ran before the merge.
+	 *
+	 * <p>{@code reviveCaps} is the one place the loser's initializer expression survived verbatim ({@code this.f =
+	 * <factory>(this, ...)}); it is what MinecraftForge runs to re-create the field after a revive, so it is exactly
+	 * the constructor's expression. Only a straight-line sequence is copied (no label, jump or frame between the
+	 * super {@code reviveCaps} call and the {@code PUTFIELD}); the constructor's stack budget is raised to
+	 * {@code reviveCaps}' own, which ran the same instructions from the same empty stack. Constructors that delegate
+	 * with {@code this(...)} are left alone: the delegate assigns. A field already assigned in some constructor is
+	 * the second pass, or a base that has stopped losing it — either way nothing to do.
+	 */
+	static boolean replayLostInitializer(ClassNode node, String field) {
+		for (MethodNode ctor : node.methods) {
+			if ("<init>".equals(ctor.name) && assigns(ctor, node.name, field)) return false;
+		}
+		MethodNode revive = findMethod(node, "reviveCaps", "()V");
+		if (revive == null) {
+			ForbricLog.warn("[Forbric/Capabilities] %s has no reviveCaps() to copy %s's initializer from — not repaired",
+					node.name.replace('/', '.'), field);
+			return false;
+		}
+		// The sequence: from the instruction after the super reviveCaps call to the PUTFIELD, straight-line.
+		AbstractInsnNode start = null;
+		FieldInsnNode put = null;
+		for (AbstractInsnNode insn = revive.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (start == null && insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
+					&& "reviveCaps".equals(call.name)) {
+				start = call.getNext();
+				continue;
+			}
+			if (start != null && insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTFIELD
+					&& node.name.equals(f.owner) && field.equals(f.name)) {
+				put = f;
+				break;
+			}
+		}
+		if (start == null || put == null) {
+			ForbricLog.warn("[Forbric/Capabilities] %s.reviveCaps() no longer assigns %s after its super call — not repaired",
+					node.name.replace('/', '.'), field);
+			return false;
+		}
+		// Labels, line numbers and frames are not instructions and are not copied; a label that something JUMPS to
+		// means control can enter the sequence sideways, which is the one thing that makes it not an initializer.
+		Set<LabelNode> jumpedTo = new java.util.HashSet<>();
+		for (AbstractInsnNode insn = revive.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof JumpInsnNode jump) jumpedTo.add(jump.label);
+			if (insn instanceof TableSwitchInsnNode sw) { jumpedTo.add(sw.dflt); jumpedTo.addAll(sw.labels); }
+			if (insn instanceof LookupSwitchInsnNode sw) { jumpedTo.add(sw.dflt); jumpedTo.addAll(sw.labels); }
+		}
+		if (revive.tryCatchBlocks != null) {
+			for (TryCatchBlockNode block : revive.tryCatchBlocks) jumpedTo.add(block.handler);
+		}
+		List<AbstractInsnNode> sequence = new ArrayList<>();
+		for (AbstractInsnNode insn = start; insn != put.getNext(); insn = insn.getNext()) {
+			int op = insn.getOpcode();
+			boolean sideways = insn instanceof LabelNode label && jumpedTo.contains(label);
+			if (sideways || insn instanceof JumpInsnNode || insn instanceof TableSwitchInsnNode
+					|| insn instanceof LookupSwitchInsnNode || op == Opcodes.ATHROW
+					|| (op >= Opcodes.IRETURN && op <= Opcodes.RETURN)) {
+				ForbricLog.warn("[Forbric/Capabilities] %s.reviveCaps() assigns %s through a branch — not a straight-line "
+						+ "initializer, not repaired", node.name.replace('/', '.'), field);
+				return false;
+			}
+			if (op < 0) continue;
+			sequence.add(insn);
+		}
+		if (!(sequence.get(0) instanceof VarInsnNode load) || load.getOpcode() != Opcodes.ALOAD || load.var != 0) {
+			ForbricLog.warn("[Forbric/Capabilities] %s.reviveCaps() does not assign %s from `this` — not repaired",
+					node.name.replace('/', '.'), field);
+			return false;
+		}
+
+		int ctors = 0;
+		for (MethodNode ctor : node.methods) {
+			if (!"<init>".equals(ctor.name)) continue;
+			MethodInsnNode superCall = null;
+			for (AbstractInsnNode insn = ctor.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
+						&& "<init>".equals(call.name) && (node.superName.equals(call.owner) || node.name.equals(call.owner))) {
+					superCall = call;
+					break;
+				}
+			}
+			if (superCall == null || node.name.equals(superCall.owner)) continue;    // this(...) delegates
+			InsnList copy = new InsnList();
+			for (AbstractInsnNode insn : sequence) copy.add(insn.clone(Map.of()));
+			ctor.instructions.insert(superCall, copy);
+			ctor.maxStack = Math.max(ctor.maxStack, revive.maxStack);
+			ctors++;
+		}
+		if (ctors == 0) {
+			ForbricLog.warn("[Forbric/Capabilities] %s has no constructor calling super(...) — %s's initializer not replayed",
+					node.name.replace('/', '.'), field);
+			return false;
+		}
+		REWIRED.add(node.name.replace('/', '.') + ".<init> assigns " + field);
+		ForbricLog.info("[Forbric/Capabilities] %s.<init> assigns %s again (%d constructor(s)) — the merge kept "
+				+ "MinecraftForge's field, its readers and its reviveCaps() re-creation but dropped the constructor "
+				+ "initializer, so it read null from construction on: invalidateCaps NPE'd on every removal and "
+				+ "getCapability(ITEM_HANDLER) on every ask", node.name.replace('/', '.'), field, ctors);
+		return true;
+	}
+
+	private static boolean assigns(MethodNode method, String owner, String field) {
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTFIELD && owner.equals(f.owner)
+					&& field.equals(f.name)) {
+				return true;
+			}
+		}
+		return false;
+	}
 
 	private static InsnList callOnThis(String owner, String name) {
 		InsnList list = new InsnList();

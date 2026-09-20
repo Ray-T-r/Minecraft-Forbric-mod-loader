@@ -706,6 +706,27 @@ public class ForbricLiveMod {
 				System.out.println("[ForbricLive/CAPS] ForgeCaps round-trip: key=" + hasKey + " count=" + count);
 
 				System.out.println("[ForbricLive/CAPS] dispatcher present=" + (level.getCapabilityDispatcher() != null));
+
+				// E7: MinecraftForge's LivingEntity.handlers / AbstractFurnaceBlockEntity.handlers lost their constructor
+				// initializers to the merge. A living entity must answer ITEM_HANDLER (its equipment wrapper) and
+				// survive remove() -> invalidateCaps, which iterates that array; a furnace must answer the sided ask.
+				var zombie = net.minecraft.world.entity.EntityTypes.ZOMBIE.create(level,
+						net.minecraft.world.entity.EntitySpawnReason.LOAD);
+				boolean equipment = zombie != null && zombie.getCapability(
+						net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER, null).isPresent();
+				boolean removed = false;
+				if (zombie != null) {
+					zombie.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+					removed = zombie.isRemoved();
+				}
+				System.out.println("[ForbricLive/CAPS] living entity equipment handler present=" + equipment
+						+ " remove() invalidated without error=" + removed);
+				var furnace = new net.minecraft.world.level.block.entity.FurnaceBlockEntity(pos,
+						net.minecraft.world.level.block.Blocks.FURNACE.defaultBlockState());
+				furnace.setLevel(level);
+				int furnaceSlots = furnace.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER,
+						net.minecraft.core.Direction.UP).map(net.minecraftforge.items.IItemHandler::getSlots).orElse(-1);
+				System.out.println("[ForbricLive/CAPS] furnace sided handler slots=" + furnaceSlots);
 			} catch (Throwable failure) {
 				System.out.println("[ForbricLive/CAPS] probe FAILED: " + failure);
 				failure.printStackTrace(System.out);
