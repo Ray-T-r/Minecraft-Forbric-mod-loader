@@ -262,7 +262,7 @@ check_absent "no datapack element unparseable" "Failed to parse .* from pack"   
 # (both ERROR lines return and the set is the two indexes again).
 UNPARSEABLE=$(grep -aoE "Couldn.t parse data file '[^']*'" "$LOG" | sed -E "s/.*'(.*)'/\1/" | sort -u | paste -sd, -)
 assert_eq "no data file fails to parse" "" "$UNPARSEABLE"
-check "loot-modifier scan ran and hid the two indexes" "loot-modifier directory scan: [1-9][0-9]* file\(s\) kept, 2 legacy index file\(s\) hidden \[forge:.*neoforge:" "$LOG"
+check "loot-modifier scan ran and hid the two indexes" "loot-modifier directory scan: [1-9][0-9]* file\(s\) kept, 2 legacy index file\(s\) hidden \[(forge|neoforge):loot_modifiers/global_loot_modifiers.json, (forge|neoforge):loot_modifiers/global_loot_modifiers.json\]" "$LOG"
 check_absent "join negotiation succeeded"   "Network Protocol Error"                           "$LOG"
 # Same treatment for "was loaded too early": pin the SET, because two are upstream behaviour and a third would be
 # ours. Mixin's select() runs selectConfigs -> Extensions.select -> prepareConfigs, so EVERY guest config plugin

@@ -113,9 +113,10 @@ public final class KernelLootModifiers {
 		}
 
 		private static void report(int kept, List<Identifier> hidden) {
+			// Worded to never contain the game's own "Couldn't parse data file" phrase, which gates grep for.
 			ForbricLog.info("[Forbric/Loot] loot-modifier directory scan: %d file(s) kept, %d legacy index file(s) hidden %s — "
-					+ "NeoForge's manager has no list-file concept and logged 'Couldn't parse data file' for each; "
-					+ "MinecraftForge still reads its own index by name", kept, hidden.size(), hidden);
+					+ "NeoForge's manager has no list-file concept and used to log a parse error for each; MinecraftForge "
+					+ "still reads its own index by name", kept, hidden.size(), hidden);
 		}
 	}
 }

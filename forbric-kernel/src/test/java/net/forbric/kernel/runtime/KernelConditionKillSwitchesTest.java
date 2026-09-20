@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Test;
  * type never reaches the strict codec and decodes to the kernel's marker; with it off the strict codec is asked
  * exactly once, as the carrier's own path would.
  */
+@org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class KernelConditionKillSwitchesTest {
 	@AfterEach
 	void reset() {
