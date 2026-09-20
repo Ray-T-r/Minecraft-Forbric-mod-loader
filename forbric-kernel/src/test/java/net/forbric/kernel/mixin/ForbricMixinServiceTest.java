@@ -43,7 +43,30 @@ class ForbricMixinServiceTest {
 		System.clearProperty("forbric.relaxMixinOverwrites");
 		System.clearProperty("forbric.suppressMixins");
 		System.clearProperty("forbric.keepMixins");
+		System.clearProperty(net.forbric.kernel.transform.GuestInjectorPruner.PROPERTY);
 		ForbricMixinService.setGuestConfigs(List.of());
+	}
+
+	/**
+	 * The {@code ModelManagerMixin} pin is conditional on the pruner: trimmed to the injectors that fit by default,
+	 * pinned whole only when {@code -Dforbric.guestInjectorPruner=off}. The kill switch has to reproduce the OLD
+	 * behaviour (pinned, block models load, plugins dead) and never the half-applied one (4666 missingno models),
+	 * which is what an unconditional removal of the pin would have shipped.
+	 */
+	@Test
+	void theModelManagerMixinIsPinnedOnlyWhenThePrunerIsOff() {
+		String config = "fabric-model-loading-api-v1.mixins.json";
+		assertTrue(MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED.contains(config + ":ModelManagerMixin"),
+				"precondition: the entry moved to SUPPRESSED_UNLESS_PRUNED");
+		assertFalse(MergedBaseMixinCompat.SUPPRESSED_MIXINS.contains(config + ":ModelManagerMixin"),
+				"and left the unconditional list");
+
+		assertFalse(ForbricMixinService.suppressedMixinsFor(config).contains("ModelManagerMixin"),
+				"by default the pruner trims the mixin, so it must NOT be suppressed");
+
+		System.setProperty(net.forbric.kernel.transform.GuestInjectorPruner.PROPERTY, "off");
+		assertTrue(ForbricMixinService.suppressedMixinsFor(config).contains("ModelManagerMixin"),
+				"with the pruner off the whole-mixin pin returns");
 	}
 
 	/**

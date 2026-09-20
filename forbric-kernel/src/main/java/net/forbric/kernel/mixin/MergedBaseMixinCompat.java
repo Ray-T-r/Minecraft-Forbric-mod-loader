@@ -122,18 +122,21 @@ public final class MergedBaseMixinCompat {
 	 * {@link PostMixinFixups#seedOrphanedPipRenderers} repairs it at the source so the mixin can simply be KEPT.
 	 *
 	 * <p><b>{@code fabric-model-loading-api-v1}'s {@code ModelManagerMixin} is the measured case for dropping a
-	 * PARTIAL.</b> {@link MixinFit} rates it {@code 15/17}: everything resolves except
-	 * {@code @At(INVOKE) ModelManager.fromStream in lambda$loadBlockModels$2}, because the merged (NeoForge-patched)
-	 * {@code ModelManager} no longer reads model JSON through {@code fromStream} there. That is textbook
-	 * half-application — the mixin's {@code actuallyDeserializeModel} wrapper DOES install, so every model json is
-	 * handed to Fabric's deserializer registry with the stream half never wired up, and all 4666 block models die on
-	 * {@code JsonParseException: JSON data was null or empty}. The world then builds correctly out of the
-	 * missing-model cube, so the ONLY symptom is that every block is the magenta/black {@code missingno} checkerboard
-	 * while the GUI, fonts and item icons stay perfect — no crash, no error the renderer can attribute. Suppressed,
-	 * block models load (0 failures) and the world renders fully textured. This is precisely why PARTIAL defaults to
-	 * KEEP but is logged with its missing anchors: strict mode drops 107 mixins including Sodium's core render path,
-	 * whereas the log points at the one that actually matters. Pin measured PARTIALs here, one at a time.
-	 */
+ * PARTIAL — and is now TRIMMED rather than pinned.</b> The merged (NeoForge-patched) {@code ModelManager} no longer
+ * reads model JSON through {@code CuboidModel.fromStream} in {@code lambda$loadBlockModels$2}, so the mixin's
+ * {@code @Redirect} there cannot bind while its sibling {@code @ModifyArg} at {@code Pair.of} does — textbook
+ * half-application: every model json is handed to Fabric's deserializer with the stream already consumed, all 4666
+ * block models die on {@code JsonParseException: JSON data was null or empty}, and the world builds correctly out of
+ * the missing-model cube — every block the magenta/black {@code missingno} checkerboard while the GUI, fonts and
+ * item icons stay perfect. No crash, no error the renderer can attribute. Pinned whole, block models load but every
+ * Fabric {@code ModelLoadingPlugin} is registered and never called. {@link
+ * net.forbric.kernel.transform.GuestInjectorPruner} now removes exactly those two injectors from the mixin's bytes
+ * before Mixin reads them, so the other eight apply as written; the pin moves to {@link #SUPPRESSED_UNLESS_PRUNED}
+ * and returns only under {@code -Dforbric.guestInjectorPruner=off}. This is precisely why PARTIAL defaults to KEEP
+ * but is logged with its missing anchors: strict mode drops 107 mixins including Sodium's core render path, whereas
+ * the log points at the one that actually matters. Pin measured PARTIALs here, one at a time — and trim them when
+ * the unfit injectors are separable.
+ */
 	public static final List<String> SUPPRESSED_MIXINS = List.of(
 			"fabric-registry-sync-v0.mixins.json:RegistryDataLoaderMixin",
 			"fabric-registry-sync-v0.mixins.json:BootstrapMixin",
@@ -141,8 +144,6 @@ public final class MergedBaseMixinCompat {
 			"fabric-registry-sync-v0.client.mixins.json:MinecraftMixin",
 			"fabric-loot-api-v3.mixins.json:ReloadableServerRegistriesMixin",
 			"fabric-creative-tab-api-v1.client.mixins.json:CreativeModeInventoryScreenMixin",
-			// Measured PARTIAL: half-applied, kills all 4666 block models → whole world is missingno. See above.
-			"fabric-model-loading-api-v1.mixins.json:ModelManagerMixin",
 			// MOD-vs-MOD, not merged-base: Shoulder Surfing's @Redirect deletes the call site CustomSkinLoader's
 			// raw-ASM cape patch needs. See the javadoc entry below — this one arbitrates between two mods.
 			"shouldersurfing.common.mixins.json:CapeLayerMixin",
@@ -238,6 +239,15 @@ public final class MergedBaseMixinCompat {
 	 * that exists, entries are added here one measured mixin at a time. Extend without a rebuild via
 	 * {@code -Dforbric.keepMixins=<config>:<MixinEntry>,…}.
 	 */
+	/**
+	 * Pinned only while {@link net.forbric.kernel.transform.GuestInjectorPruner} is switched off. Each entry is a
+	 * mixin the pruner trims down to the injectors that fit; with the pruner off it would apply half, which is the
+	 * state that produced 4666 missingno block models — so the kill switch has to bring the whole-mixin pin back
+	 * rather than leave the mixin loose. See the {@code ModelManagerMixin} paragraph above.
+	 */
+	public static final List<String> SUPPRESSED_UNLESS_PRUNED = List.of(
+			"fabric-model-loading-api-v1.mixins.json:ModelManagerMixin");
+
 	public static final List<String> KEPT_MIXINS = List.of(
 			"jade.mixins.json:GuiGraphicsExtractorMixin",
 			"jade.mixins.json:FogRendererMixin",

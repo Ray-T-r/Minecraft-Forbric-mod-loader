@@ -139,6 +139,10 @@ check "client dialled the server"      "Connecting to 127.0.0.1"                
 check "server accepted the join"       "$PLAYER joined the game"                           "$SLOG"
 check "client entered the world"       "ClientSmoke\] joined world via quick-play"         "$CLOG"
 check_absent "not rejected for its registries" "Received unknown remote registry|Registry remapping failed|Failed to sync" "$CLOG"
+# F2: with fabric-api on the client, ModelManagerMixin is trimmed rather than pinned whole. RED with
+# M14_EXTRA_JVM=-Dforbric.guestInjectorPruner=off (the pin returns; no 'pruned' line).
+check "ModelManagerMixin trimmed, not pinned" "GuestInjectorPruner\] pruned 2 injector\(s\) from .*ModelManagerMixin" "$CLOG"
+check_absent "block models still parse"       "JSON data was null or empty"                "$CLOG"
 
 step "the difference was real and the remap corrected it (must PASS)"
 check "the canary shifted the client's block ids" "ForbricFabricLive\] registered block forbricfabriclive:canary_block" "$CLOG"

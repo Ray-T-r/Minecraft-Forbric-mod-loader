@@ -145,6 +145,13 @@ check "the client game-bus bridges went on too" "EventMux\] all [0-9][0-9]* CLIE
 check "the client initialization bridges landed" "EventMux\] all 3 CLIENT_INIT bridge\(s\) installed"  "$LOG"
 check "the registration bridges landed"          "EventMux\] all 2 REGISTRATION bridge\(s\) installed" "$LOG"
 check_absent "no bridge reported missing"       "bridge\(s\) MISSING"                        "$LOG"
+# F2: fabric-model-loading-api-v1's ModelManagerMixin is TRIMMED to the eight injectors that fit the merged
+# ModelManager instead of pinned whole, so Fabric ModelLoadingPlugins dispatch. RED with
+# M9_EXTRA_JVM=-Dforbric.guestInjectorPruner=off (the pin returns and the 'pruned' line is absent). The
+# check_absent is the missingno regression guard: half-applied, all 4666 block models died on this parse error
+# and the world rendered as the checkerboard with no other symptom.
+check "ModelManagerMixin trimmed, not pinned" "GuestInjectorPruner\] pruned 2 injector\(s\) from .*ModelManagerMixin" "$LOG"
+check_absent "block models still parse"       "JSON data was null or empty"                "$LOG"
 # H5 (the FluidRenderer.tesselate funnel for MinecraftForge fluid models) is asserted in gate-m26, not here: this
 # pack carries sodium, which replaces vanilla's chunk and fluid meshing, so the vanilla funnel is never reached.
 

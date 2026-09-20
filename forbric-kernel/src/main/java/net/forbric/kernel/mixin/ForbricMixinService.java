@@ -456,6 +456,11 @@ public final class ForbricMixinService
 
 		if (MergedBaseMixinCompat.enabled()) {
 			collectSuppressed(MergedBaseMixinCompat.SUPPRESSED_MIXINS, configName, out);
+			// The pruner trims these to the injectors that fit; switched off, the whole-mixin pin comes back so the
+			// kill switch reproduces the OLD behaviour and never the half-applied one.
+			if (!net.forbric.kernel.transform.GuestInjectorPruner.enabled()) {
+				collectSuppressed(MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED, configName, out);
+			}
 		}
 
 		String csv = System.getProperty("forbric.suppressMixins");

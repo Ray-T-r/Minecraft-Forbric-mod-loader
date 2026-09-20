@@ -477,6 +477,17 @@ public final class KernelBoot {
 		// GuiLayerManager, which a dedicated server never loads.
 		chain.register(TransformPhase.COREMOD, new HudElementBridgeInjector());
 
+		// Client only: trim fabric-model-loading-api-v1's ModelManagerMixin to the injectors that fit the merged
+		// ModelManager (NeoForge replaced CuboidModel.fromStream at one site), so ModelLoadingPlugins dispatch instead
+		// of the whole mixin being pinned. Guest MIXIN classes pass through this chain via getPreMixinClassBytes.
+		if (net.forbric.kernel.transform.GuestInjectorPruner.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.GuestInjectorPruner());
+		} else {
+			ForbricLog.warn("[Forbric/GuestInjectorPruner] -D%s=off — ModelManagerMixin is pinned whole again; Fabric "
+					+ "ModelLoadingPlugins are registered and never called",
+					net.forbric.kernel.transform.GuestInjectorPruner.PROPERTY);
+		}
+
 		// Client only: fire the Fabric client entrypoints from inside Minecraft.<init> (before Options), the window
 		// Fabric uses — so a client entrypoint touching Minecraft.getInstance() (keymapping registration etc.) sees a
 		// live instance. Matches only Minecraft.<init>, which a dedicated server never loads.
