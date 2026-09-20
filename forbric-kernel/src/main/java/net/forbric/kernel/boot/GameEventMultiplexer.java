@@ -126,6 +126,10 @@ public final class GameEventMultiplexer {
 					() -> blockBridge(cl, "installLeftClickBlock").invoke(null, neoBus));
 			install(GameEventBridge.RIGHT_CLICK_ITEM,
 					() -> blockBridge(cl, "installRightClickItem").invoke(null, neoBus));
+			// Loot tables. Not a bus forward: the merged ReloadableServerRegistries is already routed through
+			// KernelLootBridge, which chains NeoForge then Fabric, and this puts MinecraftForge's event in
+			// between. Installed here so the switch and the dead-event audit treat it like every other bridge.
+			install(GameEventBridge.LOOT_TABLE_LOAD, () -> lootBridge(cl).invoke(null));
 			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
 			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so
@@ -236,6 +240,11 @@ public final class GameEventMultiplexer {
 	private static Method entityBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameEntityEvents", true, cl)
 				.getMethod(entry, Object.class);
+	}
+
+	/** The loot-table chain's MinecraftForge link. Complete literal, for the reason above. */
+	private static Method lootBridge(ClassLoader cl) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelLootBridge", true, cl).getMethod("install");
 	}
 
 	/** One entry point on the game-side cancellable-block bridge. Complete literal, for the reason above. */

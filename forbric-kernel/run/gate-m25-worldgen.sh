@@ -127,6 +127,20 @@ check "the MinecraftForge canary received the item use" \
 check "and cancelling it crossed back" \
   'ForbricNeoLive/INTERACT\] right-click-item refused=true' "$LOG"
 
+step "a MinecraftForge loot mod can change a table again (must PASS)"
+# The merged ReloadableServerRegistries posts only NeoForge's LootTableLoadEvent, so a MinecraftForge loot mod
+# adding to or replacing a table on load was a no-op that looked healthy. MinecraftForge's event now sits in the
+# same chain, between NeoForge's and Fabric's.
+#
+# The read-back is the assertion that matters. Receiving the event proves delivery; only reading the live table
+# afterwards proves the listener's edit survived the chain — the canary empties its own table's pools, so a
+# forward that delivers and discards still leaves an item in it.
+check "the MinecraftForge canary was offered its own table" \
+  'ForbricLive/LOOT\] LootTableLoadEvent RECEIVED for forbriclive:probe' "$LOG"
+check "and the live table is the one it left behind" \
+  'ForbricLive/LOOT\] saw [1-9][0-9]* table\(s\); forbriclive:probe now rolls 0 item' "$LOG"
+check_absent "the read-back did not fail" 'ForbricLive/LOOT\] read-back FAILED' "$LOG"
+
 step "the saved overworld contains both markers, with no unreadable chunks"
 # REGION_PROBE_BEGIN — execute this exact command with an argv recorder in the contract test.
 python3 "$KERNEL/run/compat/region-probe.py" "$RUNDIR/world/dimensions/minecraft/overworld/region" \

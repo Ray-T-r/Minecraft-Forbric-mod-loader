@@ -575,6 +575,26 @@ public class ForbricLiveMod {
 			return player != null && player.getClass().getName().endsWith("util.FakePlayer");
 		}
 
+		/** Every loot table this listener was offered, and whether it was offered its own. */
+		private static final AtomicInteger LOOT_TABLES = new AtomicInteger();
+
+		/**
+		 * A loot table being loaded — the hook a loot mod adds to or replaces tables from.
+		 *
+		 * <p>The merged ReloadableServerRegistries posts only NeoForge's event, so this never ran and every such
+		 * mod was a no-op that looked healthy. Counting is not enough to prove the link: the canary REPLACES its
+		 * own table's pools with nothing, and the gate reads the live table back afterwards, so a forward that
+		 * delivers the event but drops what the listener did still fails.
+		 */
+		@SubscribeEvent
+		public static void onLootTableLoad(net.minecraftforge.event.LootTableLoadEvent event) {
+			LOOT_TABLES.incrementAndGet();
+			if (!"forbriclive:probe".equals(event.getName().toString())) return;
+			event.setTable(net.minecraft.world.level.storage.loot.LootTable.lootTable().build());
+			System.out.println("[ForbricLive/LOOT] LootTableLoadEvent RECEIVED for " + event.getName()
+					+ " — replaced its pools with none");
+		}
+
 		/** Login. {@code PlayerList} on the merged base is 13 NeoForge hook references to 0 MinecraftForge. */
 		@SubscribeEvent
 		public static void onPlayerLoggedIn(
@@ -660,6 +680,21 @@ public class ForbricLiveMod {
 				observeCreativeContents("server started");
 			} catch (Throwable failure) {
 				System.out.println("[ForbricLive/REGISTRATION] creative contents probe failed: " + failure);
+			}
+			// Read the canary's own loot table back out of the live registry: the replacement above has to be
+			// what the game actually holds, not merely something a listener said.
+			try {
+				var key = net.minecraft.resources.ResourceKey.create(
+						net.minecraft.core.registries.Registries.LOOT_TABLE,
+						net.minecraft.resources.Identifier.fromNamespaceAndPath("forbriclive", "probe"));
+				var table = event.getServer().reloadableRegistries().getLootTable(key);
+				int rolled = table.getRandomItems(new net.minecraft.world.level.storage.loot.LootParams.Builder(
+						event.getServer().overworld())
+						.create(net.minecraft.world.level.storage.loot.parameters.LootContextParamSets.EMPTY)).size();
+				System.out.println("[ForbricLive/LOOT] saw " + LOOT_TABLES.get() + " table(s); forbriclive:probe "
+						+ "now rolls " + rolled + " item(s)");
+			} catch (Throwable failure) {
+				System.out.println("[ForbricLive/LOOT] read-back FAILED: " + failure);
 			}
 			System.out.println("[ForbricLive/REGISTRATION] common registration observations completed");
 			// H1: one call away from any Forge mod — IForgeBlockPos.toCompoundTag() links against CompoundTag.builder().
