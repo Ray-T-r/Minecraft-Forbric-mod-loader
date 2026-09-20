@@ -61,6 +61,26 @@ class MixinMergedTwinTest {
 	}
 
 	@Test
+	void anInjectionPointThatPinsTheTwinnedOwnerLosesOnlyTheOwner() {
+		ClassNode mixin = mixinTargeting(TARGET);
+		String pinned = TARGET.replace('.', '/') + ".findCodec(Lnet/minecraft/resources/Identifier;)"
+				+ "Lnet/minecraft/network/codec/StreamCodec;";
+		mixin.methods.add(injecting(pinned));
+		String untouched = "net/minecraft/server/level/ServerPlayer.tick()V";
+		mixin.methods.add(injecting(untouched));
+
+		assertEquals(1, MixinMergedTwin.addTwins(mixin, present(TARGET + MixinMergedTwin.NEO_SUFFIX)));
+
+		// Owner gone, name and descriptor still pinned: Mixin reads an absent owner as "any owner", which is the
+		// only spelling that matches the SAME call in both halves. Without this the handler method is added to the
+		// twin and nothing calls it — Bad Packets' encode hook went missing exactly that way, in silence.
+		assertEquals("findCodec(Lnet/minecraft/resources/Identifier;)Lnet/minecraft/network/codec/StreamCodec;",
+				targetOfAt(mixin.methods.get(0)));
+		assertEquals(untouched, targetOfAt(mixin.methods.get(1)),
+				"a point pinning some other class is not this pass's business");
+	}
+
+	@Test
 	void aTargetWithNoTwinIsLeftExactlyAsCompiled() {
 		ClassNode mixin = mixinTargeting("net.minecraft.world.entity.Entity");
 		assertEquals(0, MixinMergedTwin.addTwins(mixin, present()));
@@ -108,6 +128,32 @@ class MixinMergedTwinTest {
 					.filter(n -> n.contains(MixinMergedTwin.NEO_SUFFIX)).count();
 			assertTrue(twins >= 1, "at least one renamed twin");
 		}
+	}
+
+	/** A method carrying {@code @Inject(at = @At(value = "INVOKE", target = <pinned>))}. */
+	private static org.objectweb.asm.tree.MethodNode injecting(String pinned) {
+		org.objectweb.asm.tree.MethodNode method =
+				new org.objectweb.asm.tree.MethodNode(Opcodes.ACC_PRIVATE, "handler", "()V", null, null);
+		AnnotationNode at = new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");
+		at.values = new java.util.ArrayList<>(List.of("value", "INVOKE", "target", pinned));
+		AnnotationNode inject = new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Inject;");
+		inject.values = new java.util.ArrayList<>(
+				List.of("method", new java.util.ArrayList<>(List.of("writeCap")),
+						"at", new java.util.ArrayList<>(List.of(at))));
+		method.visibleAnnotations = new java.util.ArrayList<>(List.of(inject));
+		return method;
+	}
+
+	private static String targetOfAt(org.objectweb.asm.tree.MethodNode method) {
+		AnnotationNode inject = method.visibleAnnotations.get(0);
+		for (int i = 0; i + 1 < inject.values.size(); i += 2) {
+			if (!"at".equals(inject.values.get(i))) continue;
+			AnnotationNode at = (AnnotationNode) ((List<?>) inject.values.get(i + 1)).get(0);
+			for (int j = 0; j + 1 < at.values.size(); j += 2) {
+				if ("target".equals(at.values.get(j))) return (String) at.values.get(j + 1);
+			}
+		}
+		throw new AssertionError("no at target");
 	}
 
 	private static java.util.function.Predicate<String> present(String... binaries) {

@@ -17,11 +17,14 @@
 package net.forbric.kernel.mixin;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Predicate;
 
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.kernel.util.ForbricLog;
 
@@ -50,6 +53,7 @@ import net.forbric.kernel.util.ForbricLog;
 public final class MixinMergedTwin {
 	public static final String PROPERTY = "forbric.mixinMergedTwins";
 	static final String MIXIN_DESC = "Lorg/spongepowered/asm/mixin/Mixin;";
+	static final String AT_DESC = "Lorg/spongepowered/asm/mixin/injection/At;";
 	/** The suffix {@code MergedBaseBuilder} gives NeoForge's copy of a class whose name collided. */
 	public static final String NEO_SUFFIX = "$forbricneo";
 
@@ -70,15 +74,79 @@ public final class MixinMergedTwin {
 	public static int addTwins(ClassNode mixin, Predicate<String> present) {
 		if (!enabled() || mixin == null || present == null || mixin.invisibleAnnotations == null) return 0;
 		int added = 0;
+		Set<String> twinned = new LinkedHashSet<>();
 		for (AnnotationNode annotation : mixin.invisibleAnnotations) {
 			if (!MIXIN_DESC.equals(annotation.desc) || annotation.values == null) continue;
-			added += addTwins(mixin.name, annotation, present);
+			added += addTwins(mixin.name, annotation, present, twinned);
 		}
+		if (!twinned.isEmpty()) unpinInjectionPointOwners(mixin, twinned);
 		return added;
 	}
 
+	/**
+	 * Drops the OWNER from every injection point that pins one of {@code twinned} — the second half of the fix.
+	 *
+	 * <p>A mixin's {@code @At(target = "…/CustomPacketPayload$1.findCodec(…)…")} names the owner class, because
+	 * that is the class it was compiled against. Inside the twin, the same call has the TWIN as its owner, so the
+	 * injection point matches nothing there: Mixin adds the handler method to the class and wires no call to it.
+	 * That is invisible — the class gains the interface and the field the mod asked for, and only the injection is
+	 * missing, so Bad Packets' encode hook was silently absent from the very class this pass had just given it.
+	 *
+	 * <p>Mixin's member selectors treat an absent owner as "any owner", and the name and descriptor stay pinned,
+	 * so the point still cannot match a different method. Only owners that actually HAVE a twin are unpinned.
+	 */
+	private static void unpinInjectionPointOwners(ClassNode mixin, Set<String> twinned) {
+		List<String> prefixes = new ArrayList<>();
+		for (String owner : twinned) prefixes.add(owner.replace('.', '/') + ".");
+		int unpinned = 0;
+		for (MethodNode method : mixin.methods) {
+			unpinned += unpinAll(method.visibleAnnotations, prefixes);
+			unpinned += unpinAll(method.invisibleAnnotations, prefixes);
+		}
+		if (unpinned > 0) {
+			ForbricLog.info("[Forbric/Mixin] %s: %d injection point(s) no longer pin the class they were compiled "
+					+ "against — the merge's renamed twin owns the same call, and an owner-pinned point matches "
+					+ "nothing there while Mixin still adds the handler, so the injection goes missing in silence",
+					mixin.name.replace('/', '.'), unpinned);
+		}
+	}
+
+	private static int unpinAll(List<AnnotationNode> annotations, List<String> prefixes) {
+		if (annotations == null) return 0;
+		int unpinned = 0;
+		for (AnnotationNode annotation : annotations) unpinned += unpin(annotation, prefixes);
+		return unpinned;
+	}
+
+	/** Walks an annotation's values — {@code @At} sits nested inside {@code @Inject}, {@code @WrapOperation}, … */
 	@SuppressWarnings("unchecked")
-	private static int addTwins(String mixinName, AnnotationNode annotation, Predicate<String> present) {
+	private static int unpin(AnnotationNode annotation, List<String> prefixes) {
+		if (annotation == null || annotation.values == null) return 0;
+		int unpinned = 0;
+		for (int i = 0; i + 1 < annotation.values.size(); i += 2) {
+			Object name = annotation.values.get(i);
+			Object value = annotation.values.get(i + 1);
+			if (AT_DESC.equals(annotation.desc) && "target".equals(name) && value instanceof String target) {
+				for (String prefix : prefixes) {
+					if (!target.startsWith(prefix)) continue;
+					annotation.values.set(i + 1, target.substring(prefix.length()));
+					unpinned++;
+					break;
+				}
+			} else if (value instanceof AnnotationNode nested) {
+				unpinned += unpin(nested, prefixes);
+			} else if (value instanceof List<?> list) {
+				for (Object item : list) {
+					if (item instanceof AnnotationNode nested) unpinned += unpin(nested, prefixes);
+				}
+			}
+		}
+		return unpinned;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static int addTwins(String mixinName, AnnotationNode annotation, Predicate<String> present,
+			Set<String> twinned) {
 		int targetsAt = -1;
 		List<String> targets = List.of();
 		for (int i = 0; i + 1 < annotation.values.size(); i += 2) {
@@ -96,6 +164,7 @@ public final class MixinMergedTwin {
 			String twin = target + NEO_SUFFIX;
 			if (grown.contains(twin) || !present.test(twin.replace('/', '.'))) continue;
 			grown.add(twin);
+			twinned.add(target);
 			added++;
 			ForbricLog.info("[Forbric/Mixin] %s also applies to %s — the byte merge could not keep one name for "
 					+ "both ecosystems' copy of that class, and the merged code that runs instantiates the renamed "
