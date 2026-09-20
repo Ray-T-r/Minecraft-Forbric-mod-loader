@@ -293,6 +293,11 @@ public final class KernelBoot {
 		// Which installed jars read a vanilla field with a descriptor the merge no longer declares (NoSuchFieldError
 		// at that access); reported after the catalog is published, so the rows reach load-report.txt.
 		FieldDriftAudit.scan(shadowCandidates);
+		// Which installed jars name a Forge-family class that exists in no carrier, not the merged base and no
+		// installed jar (compiled against another NeoForge/MinecraftForge); reported after the catalog is published.
+		List<Path> abiUniverse = new ArrayList<>(runtimeJars);
+		if (gameJar != null) abiUniverse.add(gameJar);
+		AbiLinkAudit.scan(shadowCandidates, abiUniverse);
 
 		ForbricLog.info("[Forbric/Boot] sovereign kernel — %s %s, %d owned jar(s), %d Forge-family mod(s), "
 				+ "%d Fabric jar(s), %d MC library jar(s)", side.name().toLowerCase(), gameVersion, owned.size(),
@@ -739,6 +744,7 @@ public final class KernelBoot {
 		PassiveSeeder.seedAll(loader, gameDir, side.api());
 		FabricApiModuleLossAudit.report(side.api());
 		FieldDriftAudit.report();
+		AbiLinkAudit.report();
 
 		// Fabric preLaunch entrypoints, after Mixin is up and before any game class loads (their contract).
 		KernelFabricEcosystem.runPreLaunch();

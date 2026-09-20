@@ -263,6 +263,10 @@ check_absent "no datapack element unparseable" "Failed to parse .* from pack"   
 UNPARSEABLE=$(grep -aoE "Couldn.t parse data file '[^']*'" "$LOG" | sed -E "s/.*'(.*)'/\1/" | sort -u | paste -sd, -)
 assert_eq "no data file fails to parse" "" "$UNPARSEABLE"
 check "loot-modifier scan ran and hid the two indexes" "loot-modifier directory scan: [1-9][0-9]* file\(s\) kept, 2 legacy index file\(s\) hidden \[(forge|neoforge):loot_modifiers/global_loot_modifiers.json, (forge|neoforge):loot_modifiers/global_loot_modifiers.json\]" "$LOG"
+# J8: every installed jar's Forge-family class references resolve against the carriers, the merged base and the
+# pack itself. 0 on this pack is the false-positive pin (CustomSkinLoader's fml/loading refs are out of scope by
+# rule); a mod compiled against another NeoForge/MinecraftForge would be named here and DEGRADED on its row.
+check "abi audit ran and found no dangling Forge-family reference" "AbiAudit\] scanned [1-9][0-9]* jar\(s\) in [0-9]+ ms: 0 with dangling" "$LOG"
 check_absent "join negotiation succeeded"   "Network Protocol Error"                           "$LOG"
 # Same treatment for "was loaded too early": pin the SET, because two are upstream behaviour and a third would be
 # ours. Mixin's select() runs selectConfigs -> Extensions.select -> prepareConfigs, so EVERY guest config plugin
