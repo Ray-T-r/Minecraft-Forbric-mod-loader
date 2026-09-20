@@ -100,6 +100,8 @@ public enum GameEventBridge {
 	LEFT_CLICK_BLOCK(Pass.GAME_BUS, "PlayerInteractEvent.LeftClickBlock",
 			"a MinecraftForge mod cannot see or refuse a left-click on a block — the first half of every "
 					+ "protection rule about breaking one"),
+	RIGHT_CLICK_ITEM(Pass.GAME_BUS, "PlayerInteractEvent.RightClickItem",
+			"a MinecraftForge mod cannot see or refuse an item being used in hand"),
 	CLIENT_TICK_PRE(Pass.CLIENT_GAME_BUS, "ClientTickEvent.Pre",
 			"a MinecraftForge mod polls its key bindings from the client tick (consumeClick drains a counter and "
 					+ "has to be drained every tick), so its keys bind, appear in the Controls screen and do "

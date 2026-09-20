@@ -94,6 +94,11 @@ public class ForbricNeoLiveMod {
 				net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(left);
 				System.out.println("[ForbricNeoLive/INTERACT] left-click useBlock=" + left.getUseBlock().name()
 						+ " useItem=" + left.getUseItem().name());
+
+				var item = new net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickItem(
+						breaker, net.minecraft.world.InteractionHand.MAIN_HAND);
+				net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(item);
+				System.out.println("[ForbricNeoLive/INTERACT] right-click-item refused=" + item.isCanceled());
 			} catch (Throwable failure) {
 				System.out.println("[ForbricNeoLive/BLOCKBREAK] probe FAILED: " + failure);
 			}

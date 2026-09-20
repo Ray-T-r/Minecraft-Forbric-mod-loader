@@ -87,6 +87,29 @@ public final class KernelGameBlockEvents {
 				KernelGameBlockEvents::fireLeftClick);
 	}
 
+	/**
+	 * NeoForge {@code RightClickItem} → MinecraftForge's, cancel carried back.
+	 *
+	 * <p>The third of the interaction family and the simplest: no block, no tri-states, just the cancel. It is
+	 * here rather than in its own class because it is the same event hierarchy posted from the same merged class.
+	 */
+	public static void installRightClickItem(Object neoBus) {
+		KernelGameEntityEvents.subscribe((net.neoforged.bus.api.IEventBus) neoBus,
+				PlayerInteractEvent.RightClickItem.class, "PlayerInteractEvent.RightClickItem",
+				"a MinecraftForge mod cannot see or refuse an item being used in hand",
+				KernelGameBlockEvents::fireRightClickItem);
+	}
+
+	/** Posts MinecraftForge's right-click-item event. Package-private for the test. */
+	static boolean fireRightClickItem(PlayerInteractEvent.RightClickItem neo) {
+		net.minecraftforge.event.entity.player.PlayerInteractEvent.RightClickItem forge =
+				new net.minecraftforge.event.entity.player.PlayerInteractEvent.RightClickItem(
+						neo.getEntity(), neo.getHand());
+		boolean canceled = net.minecraftforge.event.entity.player.PlayerInteractEvent.RightClickItem.BUS.post(forge);
+		if (canceled) neo.setCancellationResult(forge.getCancellationResult());
+		return canceled;
+	}
+
 	/** Posts MinecraftForge's right-click event and carries what it decided back. Package-private for the test. */
 	static boolean fireRightClick(PlayerInteractEvent.RightClickBlock neo) {
 		net.minecraftforge.event.entity.player.PlayerInteractEvent.RightClickBlock forge =

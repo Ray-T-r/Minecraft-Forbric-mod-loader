@@ -551,6 +551,21 @@ public class ForbricLiveMod {
 		}
 
 		/**
+		 * Using an item in hand. Cancelling is the only decision this one carries.
+		 *
+		 * <p>A cancelling listener on this eventbus is a {@code Predicate} that returns true — there is no
+		 * {@code setCanceled} on the event — so the refusal reaches the caller only as {@code post}'s return
+		 * value, which is the half a bridge reading the result alone would drop.
+		 */
+		@SubscribeEvent
+		public static boolean onRightClickItem(
+				net.minecraftforge.event.entity.player.PlayerInteractEvent.RightClickItem event) {
+			boolean probe = isProbe(event.getEntity());
+			System.out.println("[ForbricLive/INTERACT] RightClickItem RECEIVED probe=" + probe);
+			return probe;
+		}
+
+		/**
 		 * Whether this is the canary's own synthetic interaction, made on behalf of NeoForge's fake player.
 		 *
 		 * <p>Named as text because this mod is compiled against MinecraftForge's carrier alone. Refusing a REAL

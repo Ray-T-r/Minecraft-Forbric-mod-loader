@@ -119,6 +119,13 @@ check "the MinecraftForge canary received the left-click" \
   'ForbricLive/INTERACT\] LeftClickBlock RECEIVED at .* action=START probe=true' "$LOG"
 check "and its refusal of the ITEM use crossed back" \
   'ForbricNeoLive/INTERACT\] left-click useBlock=DEFAULT useItem=FALSE' "$LOG"
+# The third of the family, and the one that proves the CANCEL half of the read: a cancelling listener on
+# MinecraftForge's eventbus is a Predicate that returns true — the event has no setCanceled — so this refusal
+# reaches the caller only as post()'s return value.
+check "the MinecraftForge canary received the item use" \
+  'ForbricLive/INTERACT\] RightClickItem RECEIVED probe=true' "$LOG"
+check "and cancelling it crossed back" \
+  'ForbricNeoLive/INTERACT\] right-click-item refused=true' "$LOG"
 
 step "the saved overworld contains both markers, with no unreadable chunks"
 # REGION_PROBE_BEGIN — execute this exact command with an argv recorder in the contract test.

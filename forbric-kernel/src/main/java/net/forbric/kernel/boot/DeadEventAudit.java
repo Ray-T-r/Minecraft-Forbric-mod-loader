@@ -161,6 +161,8 @@ public final class DeadEventAudit {
 				GameEventBridge.RIGHT_CLICK_BLOCK);
 		map.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$LeftClickBlock",
 				GameEventBridge.LEFT_CLICK_BLOCK);
+		map.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$RightClickItem",
+				GameEventBridge.RIGHT_CLICK_ITEM);
 		// The registration events lifted by the Phase 1 A repairs. ForgeHooksClient.initClientHooks posts the
 		// first eleven (three directly, eight through the Forge managers' init()); the merged Minecraft.<init>
 		// now calls it through KernelForgeClientInit. The next three have one redirect each.

@@ -124,6 +124,8 @@ public final class GameEventMultiplexer {
 					() -> blockBridge(cl, "installRightClickBlock").invoke(null, neoBus));
 			install(GameEventBridge.LEFT_CLICK_BLOCK,
 					() -> blockBridge(cl, "installLeftClickBlock").invoke(null, neoBus));
+			install(GameEventBridge.RIGHT_CLICK_ITEM,
+					() -> blockBridge(cl, "installRightClickItem").invoke(null, neoBus));
 			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
 			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so

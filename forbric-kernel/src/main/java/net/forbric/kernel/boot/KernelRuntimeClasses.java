@@ -217,7 +217,8 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameBlockEvents", new Entry(Origin.COMPILED, List.of(
 				new Call("installBlockBreak", void.class, Object.class),
 				new Call("installRightClickBlock", void.class, Object.class),
-				new Call("installLeftClickBlock", void.class, Object.class))));
+				new Call("installLeftClickBlock", void.class, Object.class),
+				new Call("installRightClickItem", void.class, Object.class))));
 		// The CLIENT tick, in its own class because it names NeoForge's client event package — a dedicated server
 		// must never be made to resolve those types, and keeping them apart means it never loads the class.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientTickEvents", new Entry(Origin.COMPILED, List.of(
