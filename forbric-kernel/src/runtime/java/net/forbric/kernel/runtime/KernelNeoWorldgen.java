@@ -111,18 +111,34 @@ public final class KernelNeoWorldgen {
 		return VANILLA_MONSTER_ROOM_MOBS[random.nextInt(VANILLA_MONSTER_ROOM_MOBS.length)];
 	}
 
+	/** {@code -Dforbric.neoDataMapFallback=off}: never run the kernel's about-to-start load, so a gate can prove NeoForge's path alone. */
+	// The watch over NeoForge's own path lives in KernelNeoDataMapWatch, which carries no static game state.
+	public static final String FALLBACK_PROPERTY = "forbric.neoDataMapFallback";
+
+	static boolean fallbackEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(FALLBACK_PROPERTY, "on"));
+	}
+
 	/**
 	 * Loads NeoForge's data maps over the server's own packs and applies them, which posts its
 	 * {@code DataMapsUpdatedEvent} per registry — the event every consumer of a data map listens for.
 	 *
-	 * <p>Driven from the kernel's server-about-to-start listener rather than from a reload listener, because the
-	 * merge removed the class that would have registered one. That is early enough for worldgen, which is what
-	 * reads these, and it means the maps are NOT rebuilt by {@code /reload} — stated here rather than discovered.
+	 * <p>The FALLBACK, not the path. NeoForge's own reload-listener path is carried whole by the merged base
+	 * (see {@link KernelNeoDataMapWatch}); this runs from the kernel's server-about-to-start listener only when
+	 * that path applied nothing, with the server's live condition context — the first version of this ran
+	 * unconditionally with an EMPTY context and overwrote the genuine, correctly-judged apply. Maps loaded this
+	 * way are NOT rebuilt by {@code /reload}.
 	 */
 	private static void loadDataMaps(MinecraftServer server) {
 		try {
 			DataMapLoader loader = new DataMapLoader();
-			loader.injectContext(ICondition.IContext.EMPTY, server.registryAccess());
+			ICondition.IContext context;
+			try {
+				context = server.getServerResources().managers().getConditionContext();
+			} catch (Throwable noLiveContext) {
+				context = ICondition.IContext.EMPTY;
+			}
+			loader.injectContext(context, server.registryAccess());
 			ResourceManager resources = server.getResourceManager();
 			// Both members are private, and both have to be reached: the synchronous `load` overload is the only
 			// one that does not hand back a CompletableFuture wired into a reload barrier this kernel does not
@@ -143,9 +159,9 @@ public final class KernelNeoWorldgen {
 						.getDataMap(net.neoforged.neoforge.registries.datamaps.builtin.NeoForgeDataMaps
 								.MONSTER_ROOM_MOBS)
 						.size();
-				ForbricLog.info("[Forbric/Worldgen] loaded NeoForge's data maps for %d registr(ies) — nothing had "
-						+ "ever loaded them, so every one of them was empty. %d entity type(s) can spawn in a "
-						+ "monster room", loaded, monsterRoom);
+				ForbricLog.info("[Forbric/Worldgen] loaded NeoForge's data maps from the kernel's about-to-start fallback "
+						+ "for %d registr(ies) with the live condition context — NeoForge's own reload path had applied "
+						+ "none. %d entity type(s) can spawn in a monster room", loaded, monsterRoom);
 			}
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Worldgen] NeoForge's data maps did not load — its built-ins (furnace fuels, "
@@ -167,7 +183,16 @@ public final class KernelNeoWorldgen {
 	 * second one distinguishes a working modifier pipeline from a declared-but-empty registry.
 	 */
 	public static void beforeServerStart(MinecraftServer server) {
-		loadDataMaps(server);
+		int applied = KernelNeoDataMapWatch.appliedTotal();
+		if (applied > 0) {
+			ForbricLog.info("[Forbric/Worldgen] NeoForge's own reload path already applied data maps for %d registr%s — "
+					+ "the kernel's about-to-start fallback stood down", applied, applied == 1 ? "y" : "ies");
+		} else if (fallbackEnabled()) {
+			loadDataMaps(server);
+		} else {
+			ForbricLog.warn("[Forbric/Worldgen] -D%s=off and NeoForge's own path applied no data maps — they stay empty",
+					FALLBACK_PROPERTY);
+		}
 		applyBiomeAndStructureModifiers(server);
 	}
 

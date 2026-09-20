@@ -163,6 +163,24 @@ public final class GameEventMultiplexer {
 	 * @param modBus the NeoForge mod bus the game posts client mod-bus events to; {@code AddClientReloadListenersEvent}
 	 *               is an {@code IModBusEvent}, so the game bus would never see it
 	 */
+	/**
+	 * Watches NeoForge's own data-map reload path (registration, apply per reload, dispatch) so the kernel's
+	 * about-to-start fallback can stand down when it ran. Not a {@link GameEventBridge}: it forwards nothing.
+	 */
+	public static void installDataMapWatch(ClassLoader cl) {
+		try {
+			Object neoBus = Class.forName("net.neoforged.neoforge.common.NeoForge", false, cl).getField("EVENT_BUS").get(null);
+			Class.forName("net.forbric.kernel.runtime.KernelNeoDataMapWatch", true, cl)
+					.getMethod("installDataMapWatch", Object.class).invoke(null, neoBus);
+			ForbricLog.debug("[Forbric/EventMux] watching NeoForge's data-map reload path");
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/EventMux] no NeoForge bus — no data-map path to watch");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/EventMux] could not watch NeoForge's data-map reload path — the kernel's fallback "
+					+ "will load the data maps as before", Reflect.unwrap(t));
+		}
+	}
+
 	public static void installClientReloadBridge(ClassLoader cl, Object modBus) {
 		if (!EventBridges.enabled()) {
 			ForbricLog.info("[Forbric/EventMux] -D%s=off — skipping the client reload-listener bridge",

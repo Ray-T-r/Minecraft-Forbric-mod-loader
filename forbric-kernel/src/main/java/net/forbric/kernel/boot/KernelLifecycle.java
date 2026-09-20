@@ -526,6 +526,7 @@ public final class KernelLifecycle {
 		// The side decides whether the CLIENT-only game-bus bridges go on: they name NeoForge's client event
 		// package, which a dedicated server must never be made to resolve.
 		GameEventMultiplexer.install(cl, side.isClient());
+		GameEventMultiplexer.installDataMapWatch(cl);
 		startBus(cl, "net.neoforged.neoforge.common.NeoForge", "EVENT_BUS",
 				"net.neoforged.bus.api.IEventBus", "start", "NeoForge.EVENT_BUS");
 		startBus(cl, "net.minecraftforge.eventbus.api.bus.BusGroup", "DEFAULT",

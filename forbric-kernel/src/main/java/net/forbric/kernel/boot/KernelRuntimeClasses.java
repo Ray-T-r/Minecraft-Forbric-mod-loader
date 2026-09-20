@@ -258,6 +258,8 @@ public final class KernelRuntimeClasses {
 		// their descriptors are the ones the merged base and the carrier already had — game types, not the JDK
 		// types this registry's own seams use. Listed with no calls for that reason, as KernelConfigPortBridge is.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoWorldgen", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelNeoDataMapWatch", new Entry(Origin.COMPILED, List.of(
+				new Call("installDataMapWatch", void.class, Object.class))));
 		// NeoForge's condition evaluator runs over every datapack element from every pack in the merged base, so
 		// a Fabric mod's own condition id failed the whole registry load. This wraps ICondition.CODEC; the call
 		// site is an inserted instruction in that class's <clinit>, in Codec, which no JDK type can stand for.
