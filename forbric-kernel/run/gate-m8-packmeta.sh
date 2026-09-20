@@ -14,15 +14,19 @@
 # exactly what a loader without a parser for it does. This gate is server-side because the crash was: the pack read
 # and the worldgen that depended on it both run on the integrated server.
 #
-# Note on coverage: at level-seed=forbrickernel the "no chunk-gen failure" assertion has REAL teeth — verified by
-# running this gate with -Dforbric.packMetadataFailSoft=off, which reproduces 6 dropped packs and the chunk-gen
-# exception. Change the seed and that stops being true (it needs a ruined portal in the generated region), so keep
-# the seed fixed; the four pack assertions above it are seed-independent and are what primarily gates the fix.
+# Note on coverage: at level-seed=forbrickernel the "no chunk-gen failure" assertion HAD real teeth — verified when
+# this gate was written by running it with -Dforbric.packMetadataFailSoft=off, which reproduced 6 dropped packs
+# and the chunk-gen exception. Since the NeoForge condition leniency landed the neoforge:overlays section PARSES,
+# so fail-soft no longer fires here and that switch no longer reproduces the crash (re-run 2026-09-20: only the
+# two config-dependent checks move). The seed stays fixed for the chunk-gen assertion (it needs a ruined portal in
+# the generated region); the pack assertions are seed-independent and are what gates the fix.
 #
 # M8_EXTRA_JVM is how this gate's other teeth are demonstrated. -Dforbric.neoConditions=off: Terralith's data files
 # carry `neoforge:conditions` of type terralith:config (registered only on Fabric), so NeoForge's strict codec errors
-# on every one, RegistryDataLoader reports 'Failed to load registries due to errors', and 'the unknown condition
-# type was tolerated' plus 'server reached Done' go RED.
+# on every one. Observed: 'the unknown condition type was tolerated' and 'a foreign skip marker was converted' go
+# RED (the strict error propagates instead of the kernel's tolerance lines); the server still reaches Done, because
+# PackMetadataFailSoft and the Fabric-dialect section carry the same packs through — the RED is the two lines.
+# -Dforbric.overlayConditions=off: the veto and the NOT-mounted checks go RED (recorded below the checks).
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -41,6 +45,15 @@ for jar in "$MODS/fabric-api-0.155.2+26.2.jar" \
 done
 # Fixed seed so the terrain — and therefore the tripwire's coverage — is reproducible run to run.
 seed_server_properties "$RUNDIR"
+# Terralith's own config (schema: ConfigState / ConfigState$Modules), pinned so the gate cannot drift with a
+# default flip: vanilla_stone_gen=false is the module under test; intro_message=false is the positive control (its
+# `disable.intro_message` overlay is gated by the SAME condition type, inverted, and must mount through the Fabric
+# section, which Terralith registers the condition for); recipe_changes stays false because its overlay changes
+# the recipe count the 'vanilla datapack fully loaded' check pins.
+mkdir -p "$RUNDIR/config"
+cat > "$RUNDIR/config/terralith.json" <<'JSON'
+{"config_version":1,"modules":{"custom_structures":true,"fog_tweaks":true,"intro_message":false,"skylands":true,"terrain_slabs":true,"vanilla_stone_gen":false,"recipe_changes":false}}
+JSON
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
 step "boot the merged base under the kernel (no compatibility flags)"
@@ -59,10 +72,22 @@ check_absent "no pack metadata read failed"   "Failed to read pack .* metadata" 
 check        "the unknown condition type was tolerated, not fatal" \
   "Forbric/Conditions\] resource condition 'terralith:config' is not in NeoForge" "$LOG"
 # A guest mixin's half-applied pair leaves a bare Object where the merged reader casts to Optional; unrepaired
-# that is a ClassCastException and the server never starts. Both halves: the conversion must HAPPEN (a run that
-# stops exercising this path is a run that proves nothing about it) and the cast must never blow up.
-check        "a foreign skip marker was converted, not thrown" \
-  "Forbric/Conditions\] a data file was skipped by a guest mixin" "$LOG"
+# that is a ClassCastException and the server never starts. The conversion USED to be asserted to happen here,
+# but the only data files with fabric:load_conditions in this set sit under Terralith's condition-gated overlays,
+# which the overlay veto now keeps out unless their module is on — so the trigger is gone from this gate (the
+# unit tests carry the conversion) and only the cast half is kept below.
+# A pack.mcmeta OVERLAY gated by a condition NeoForge cannot judge (terralith:config is registered only on Fabric)
+# is VETOED through NeoForge's own drop path instead of mounted: with vanilla_stone_gen=false, the six placed-feature
+# overrides under enable.vanilla_stone_gen must NOT enter the world, the pack must be named, and an overlay whose
+# Fabric condition says yes must still mount. RED with M8_EXTRA_JVM=-Dforbric.overlayConditions=off (the veto and
+# the NOT-mounted line disappear; enable.vanilla_stone_gen mounts as before).
+check        "an unjudgeable overlay condition VETOES" \
+  "overlay directory 'enable.vanilla_stone_gen' is gated by condition type 'terralith:config'.*NOT mounted" "$LOG"
+check        "and the pack is named" \
+  "pack 'terralith':.*NOT mounted: \[.*enable.vanilla_stone_gen" "$LOG"
+check        "an overlay the Fabric section judges TRUE still mounts" \
+  "pack 'terralith': [1-9][0-9]* overlay\(s\) mounted \[.*disable.intro_message" "$LOG"
+check_absent "the old mount-anyway warning is gone" "ignoring it MOUNTS the overlay" "$LOG"
 check_absent "nothing was cast to Optional and failed" "cannot be cast to class java.util.Optional" "$LOG"
 check        "lithostitched's data loaded"    "lithostitched" "$LOG"
 check        "terralith's data loaded"        "terralith" "$LOG"
