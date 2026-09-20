@@ -34,6 +34,9 @@ build_one() { # <src-dir> <out-jar>
   # missing, with only a warn — so a misplaced file makes the fixture silently do nothing.
   [ -f "$src/forbriclive.mixins.json" ] && cp "$src/forbriclive.mixins.json" "$classes/"
   if [ -d "$src/data" ]; then cp -R "$src/data" "$classes/"; fi
+  # assets/ too: the client canary reads one of its OWN assets from client setup, which is the shape that
+  # found the resource-manager timing gap. Without this the file is not in the jar and the probe is vacuous.
+  if [ -d "$src/assets" ]; then cp -R "$src/assets" "$classes/"; fi
   (cd "$classes" && jar --create --file "$out" .)
   echo "[testmods] wrote $out"
 }
@@ -54,6 +57,9 @@ build_neo() { # <src-dir> <out-jar>
     -cp "$neo_rt:$neo_mc:$ANNOT:$VLIBS" -d "$classes"
   cp "$src/META-INF/neoforge.mods.toml" "$classes/META-INF/neoforge.mods.toml"
   if [ -d "$src/data" ]; then cp -R "$src/data" "$classes/"; fi
+  # assets/ too: the client canary reads one of its OWN assets from client setup, which is the shape that
+  # found the resource-manager timing gap. Without this the file is not in the jar and the probe is vacuous.
+  if [ -d "$src/assets" ]; then cp -R "$src/assets" "$classes/"; fi
   (cd "$classes" && jar --create --file "$out" .)
   echo "[testmods] wrote $out"
 }

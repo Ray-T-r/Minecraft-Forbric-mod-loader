@@ -176,9 +176,15 @@ class ForgeRegistrationA2ContractTest {
             assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
                     "injection VISIBLE: true search=true", replacement), 0).exit());
         }
-        for (String pass : List.of("all 3 CLIENT_INIT bridge(s) installed", "all 2 REGISTRATION bridge(s) installed")) {
+        for (String pass : List.of("all 3 CLIENT_INIT bridge(s) installed", "all 2 REGISTRATION bridge(s) installed",
+                "setup resource PRESENT: forbriclive:setup_probe.txt = forbric-live-setup-probe",
+                "client resource manager preloaded with 140 selected pack(s)")) {
             assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(pass, ""), 0).exit());
         }
+        // ABSENT is its own row, not the negation of PRESENT: an empty manager makes the canary print it, and a
+        // gate that only asserted PRESENT would stay green on a log carrying both.
+        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen()
+                + CLIENT + "setup resource ABSENT: forbriclive:setup_probe.txt\n", 0).exit());
     }
 
     @Test
@@ -236,6 +242,11 @@ class ForgeRegistrationA2ContractTest {
                 "stone probe tint present: true", "reload posts=1", "reload listener applies=1",
                 "tooltip factory consumed: true", "forbriclive:probe geometry loader present: true",
                 "forge:obj geometry loader present: true")) lines.add(CLIENT + result);
+        // The client-setup resource read, and the kernel line that says the manager was given its packs. Both
+        // are load-bearing: the kernel's mod-loading window is BEFORE vanilla's first resource reload, which is
+        // where MinecraftForge runs its own, so without the preload this read comes back empty.
+        lines.add(CLIENT + "setup resource PRESENT: forbriclive:setup_probe.txt = forbric-live-setup-probe");
+        lines.add("[Forbric/ClientResources] client resource manager preloaded with 140 selected pack(s)");
         lines.add(COMMON + "injection VISIBLE: true search=true phase=client tick 100");
         lines.add("[EventMux] all 3 CLIENT_INIT bridge(s) installed");
         lines.add("[EventMux] all 2 REGISTRATION bridge(s) installed");

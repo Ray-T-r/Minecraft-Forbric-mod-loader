@@ -45,7 +45,42 @@ public final class ForbricLiveClient {
 
 	private ForbricLiveClient() {}
 
+	/**
+	 * Reads one of this mod's OWN assets from client setup, the way a real MinecraftForge mod does.
+	 *
+	 * <p>MinecraftForge runs mod loading INSIDE the first resource reload, so by the time a mod's client setup
+	 * runs the resource manager holds its packs. The kernel's window is genuine NeoForge's, which is BEFORE that
+	 * reload — so this read returned an empty Optional and Xaero's World Map, which calls {@code get()} on it with
+	 * no check, died with "Xaero's World Map has crashed!" out of a deferred setup task.
+	 *
+	 * <p>From {@code enqueueWork}, not from the listener body, because that is where Xaero's read is and the two
+	 * are drained at different moments.
+	 */
+	private static void registerSetupResourceProbe(FMLJavaModLoadingContext ctx) {
+		net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent.getBus(
+				(net.minecraftforge.eventbus.api.bus.BusGroup) ctx.getModBusGroup()).addListener(event ->
+				event.enqueueWork(() -> {
+					Identifier id = Identifier.fromNamespaceAndPath("forbriclive", "setup_probe.txt");
+					try {
+						var found = Minecraft.getInstance().getResourceManager().getResource(id);
+						if (found.isEmpty()) {
+							System.out.println("[ForbricLive/CLIENT] setup resource ABSENT: " + id
+									+ " — the resource manager has no packs yet at client setup");
+							return;
+						}
+						String body;
+						try (var in = found.get().open()) {
+							body = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
+						}
+						System.out.println("[ForbricLive/CLIENT] setup resource PRESENT: " + id + " = " + body);
+					} catch (Throwable t) {
+						System.out.println("[ForbricLive/CLIENT] setup resource FAILED: " + t);
+					}
+				}));
+	}
+
 	public static void init(FMLJavaModLoadingContext ctx) {
+		registerSetupResourceProbe(ctx);
 		net.minecraftforge.client.event.RegisterPresetEditorsEvent.getBus(ctx.getModBusGroup()).addListener(event ->
 				System.out.println("[ForbricLive/CLIENT] RegisterPresetEditorsEvent RECEIVED"));
 		RegisterKeyMappingsEvent.BUS.addListener(event -> {

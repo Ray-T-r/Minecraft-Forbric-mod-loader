@@ -186,6 +186,10 @@ public final class KernelRuntimeClasses {
 		// checking each against the one it targets is the only thing that stops a reorder from going quiet.
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeScanData", new Entry(Origin.COMPILED, List.of(
 				new Call("build", Object.class, List.class, List.class))));
+		// Fills the client ResourceManager with its selected packs before mod setup, because MinecraftForge runs
+		// mod loading inside the first resource reload and the kernel's window is before it. See KernelClientResources.
+		CLASSES.put("net.forbric.kernel.runtime.KernelClientResources", new Entry(Origin.COMPILED, List.of(
+				new Call("preload", int.class))));
 		// The Neo->Forge server-tick re-emission. Two entries rather than one taking the kind, because the two
 		// MinecraftForge hooks share a descriptor and a crossed pairing would compile. See KernelGameTickEvents.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameTickEvents", new Entry(Origin.COMPILED, List.of(

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # M26 — traditional Forge's client event buses must receive the game's real registration events.
 # RED controls after A3/A6/A7: M26_EXTRA_JVM='-Dforbric.forgeClientInit=off' loses client registrations;
+#   M26_EXTRA_JVM='-Dforbric.clientResourcePreload=off' — the client resource manager is empty at mod setup again;
 # M26_EXTRA_JVM='-Dforbric.forgeCreativeTabs=off' loses command_block in parent/search collections;
 # M21_EXTRA_JVM='-Dforbric.forgeSpawnPlacements=off' loses the zombie WORLD_SURFACE result in M21.
 # Green since Phase 1 A landed (A3–A9 hooks, A8 bridge inventory); any red is a regression, exit 1.
@@ -92,6 +93,18 @@ for event in 'RegisterKeyMappingsEvent' 'EntityRenderersEvent.RegisterRenderers'
   'RegisterPresetEditorsEvent'; do
   check "$event received" "ForbricLive/CLIENT\] ${event//./\\.} RECEIVED" "$LOG"
 done
+step "a MinecraftForge mod can read its OWN asset from client setup"
+# MinecraftForge runs mod loading INSIDE the first resource reload, so by the time a mod's client setup runs the
+# resource manager holds its packs. The kernel's window is genuine NeoForge's, which is BEFORE that reload, so
+# this read came back empty -- and Xaero's World Map calls get() on it with no isPresent check, which is
+# "Xaero's World Map has crashed!" out of a deferred setup task, naming the mod and not the moment.
+check "the setup-time resource read finds the mod's own file" \
+  'ForbricLive/CLIENT\] setup resource PRESENT: forbriclive:setup_probe\.txt = forbric-live-setup-probe' "$LOG"
+check_absent "and never reports it missing" \
+  'ForbricLive/CLIENT\] setup resource ABSENT' "$LOG"
+check "the kernel says how many packs it preloaded" \
+  'Forbric/ClientResources\] client resource manager preloaded with [1-9][0-9]* selected pack' "$LOG"
+
 step "registered content reached the live consumer tables"
 check "key is in Options" 'ForbricLive/CLIENT\] key in Options\.keyMappings: true' "$LOG"
 check "persisted F6 binding was reloaded" 'ForbricLive/CLIENT\] key saved binding: key\.keyboard\.f6([[:space:]]|$)' "$LOG"
