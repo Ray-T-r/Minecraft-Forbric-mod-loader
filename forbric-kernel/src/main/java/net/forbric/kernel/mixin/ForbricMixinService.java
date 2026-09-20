@@ -280,8 +280,20 @@ public final class ForbricMixinService
 		MixinAtShape.normalise(node);
 		// …and a locals capture that would throw an Error no handler sees is made to skip and warn instead.
 		MixinLocalsCapture.soften(node);
+		// …and a target the byte merge had to rename gets its twin added, because the merged code that runs
+		// instantiates the renamed copy and the mixin names only the vanilla one.
+		MixinMergedTwin.addTwins(node, MixinMergedTwin.enabled() ? this::mergedBaseHas : binary -> false);
 
 		return node;
+	}
+
+	/** Whether the merged base (or any owned jar) carries {@code binary}. Bytes only — the class is not loaded. */
+	private boolean mergedBaseHas(String binary) {
+		try {
+			return loader().getPreMixinClassBytes(binary) != null;
+		} catch (Throwable absent) {
+			return false;
+		}
 	}
 
 	// --- IClassTracker ---
