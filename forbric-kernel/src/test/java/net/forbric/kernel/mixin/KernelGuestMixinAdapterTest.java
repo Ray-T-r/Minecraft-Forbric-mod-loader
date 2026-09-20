@@ -27,6 +27,9 @@ import java.util.Map;
 import java.util.function.Function;
 
 import org.junit.jupiter.api.Test;
+
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ModCatalog;
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.FieldVisitor;
@@ -44,6 +47,7 @@ import org.objectweb.asm.Type;
  * never assigned), and a PUBLIC field written by some other class MUST NOT be
  * ({@code MovingBlockRenderState.biome} — a render-state DTO, the shape renderer mods target most).
  */
+@org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
 class KernelGuestMixinAdapterTest {
 	private static final String PKG = "net/example/mixin";
 	private static final String SHADOW = "Lorg/spongepowered/asm/mixin/Shadow;";
@@ -240,6 +244,49 @@ class KernelGuestMixinAdapterTest {
 		assertTrue(KernelGuestMixinAdapter.unfitMixins("example.mixins.json",
 				config(PKG.replace('/', '.'), "MovingBlockRenderStateMixin"), resolver(classes)).isEmpty(),
 				"a public field may legitimately be assigned by another class — never call it orphaned");
+	}
+
+	@Test
+	void aSuppressedMixinMarksItsOwningModDegraded() {
+		List<ModCatalog.Entry> previous = ModCatalog.everything();
+		try {
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("x.mixins.json", "xmod", Ecosystem.FABRIC)));
+			ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "xmod", "X", "1", "", List.of(), "x.jar", "", "")));
+			String t = "net/minecraft/client/renderer/GameRenderer";
+			Map<String, byte[]> classes = new HashMap<>();
+			classes.put(t + ".class", target(t, "unused", Opcodes.ACC_PRIVATE, true));
+			classes.put(PKG + "/Dangling.class", danglingMixin("Dangling", t));
+
+			assertEquals(List.of("Dangling"), KernelGuestMixinAdapter.unfitMixins("x.mixins.json",
+					config(PKG.replace('/', '.'), "Dangling"), resolver(classes)));
+			assertEquals(1, ModCatalog.failures().size(), "the owning mod's row says what was left out");
+			ModCatalog.Entry xmod = ModCatalog.failures().get(0);
+			assertEquals("xmod", xmod.modId());
+			assertEquals(ModCatalog.Status.DEGRADED, xmod.status());
+			assertTrue(xmod.statusDetail().contains("Dangling"), xmod.statusDetail());
+		} finally {
+			MixinConfigOwners.reset();
+			ModCatalog.publish(previous);
+		}
+	}
+
+	@Test
+	void anUnownedConfigMarksNobody() {
+		List<ModCatalog.Entry> previous = ModCatalog.everything();
+		try {
+			MixinConfigOwners.reset();
+			ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "xmod", "X", "1", "", List.of(), "x.jar", "", "")));
+			String t = "net/minecraft/client/renderer/GameRenderer";
+			Map<String, byte[]> classes = new HashMap<>();
+			classes.put(t + ".class", target(t, "unused", Opcodes.ACC_PRIVATE, true));
+			classes.put(PKG + "/Dangling.class", danglingMixin("Dangling", t));
+
+			assertEquals(List.of("Dangling"), KernelGuestMixinAdapter.unfitMixins("x.mixins.json",
+					config(PKG.replace('/', '.'), "Dangling"), resolver(classes)));
+			assertTrue(ModCatalog.failures().isEmpty(), "a config with no single owner names no mod: a wrong name is worse than none");
+		} finally {
+			ModCatalog.publish(previous);
+		}
 	}
 
 	@Test

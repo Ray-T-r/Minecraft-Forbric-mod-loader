@@ -37,6 +37,7 @@ import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
+import net.forbric.api.ModCatalog;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -156,6 +157,8 @@ public final class KernelGuestMixinAdapter {
 								+ "nothing else will report this; one of them needs a different version.",
 								MixinConfigOwners.describe(configName), mixin, String.join(", ", fit.foreign()));
 						ForeignMixinBreaks.record(configName, mixin, fit.foreign());
+						attribute(configName, "its mixin " + mixin + " targets another mod's class that has changed ("
+								+ String.join(", ", fit.foreign()) + ")");
 					} else if (fit.verdict() == MixinFit.Verdict.PARTIAL) {
 						// Before reporting a PARTIAL, ask whether it is one the merge MADE: an injector bound by
 						// explicit descriptor to a merge-added delegating stub whose body moved. If rebinding it to
@@ -204,6 +207,7 @@ public final class KernelGuestMixinAdapter {
 				suppress.add(mixin);
 				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — %s on the merged base (%s)",
 						MixinConfigOwners.describe(configName), mixin, fit.verdict(), fit.reason());
+				attribute(configName, "guest mixin " + mixin + " did not fit the merged game and was left out");
 			} catch (RuntimeException perMixin) {
 				ForbricLog.debug("[Forbric/Mixin] could not scan guest mixin %s:%s — %s", MixinConfigOwners.describe(configName), mixin,
 						String.valueOf(perMixin));
@@ -211,7 +215,21 @@ public final class KernelGuestMixinAdapter {
 		}
 
 		closeOverCastContracts(configName, loaded, suppress);
+		if (!suppress.isEmpty()) {
+			ForbricLog.info("[Forbric/Mixin] %s: left out %d of %d mixin(s)", MixinConfigOwners.describe(configName),
+					suppress.size(), loaded.size());
+		}
 		return suppress;
+	}
+
+	/**
+	 * Puts what happened on the owning mod's row — the Mods screen and load-report.txt both read
+	 * {@link ModCatalog} — when the config has exactly one owner. A config nobody or more than one mod claims
+	 * marks nobody: a confidently wrong name is worse than none.
+	 */
+	private static void attribute(String configName, String detail) {
+		String modId = MixinConfigOwners.modIdOf(configName);
+		if (modId != null) ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, detail);
 	}
 
 	/**
@@ -245,6 +263,8 @@ public final class KernelGuestMixinAdapter {
 				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — it casts the target to an "
 						+ "interface a suppressed sibling contributes, which would ClassCastException",
 						configName, e.getKey());
+				attribute(configName, "guest mixin " + e.getKey() + " was left out with the sibling whose interface "
+						+ "it casts to");
 			}
 			if (added.isEmpty()) return;
 			suppress.addAll(added);
