@@ -18,13 +18,24 @@ package net.forbric.kernel.boot;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarFile;
+
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.discovery.ModAnnotationScanner;
+import net.forbric.kernel.fabric.FabricModMetadataParser;
+import net.forbric.kernel.fabric.KernelModMetadata;
+import net.forbric.kernel.metadata.forge.ModsTomlParser;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -34,7 +45,9 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code META-INF/neoforge.mods.toml} — plus one glue class per family (a {@code net.minecraftforge} {@code @Mod},
  * a {@code net.neoforged} {@code @Mod}, a Fabric entrypoint). On a normal instance exactly one loader is running,
  * so exactly one of those is claimed. On Forbric ALL THREE are running, so without arbitration the same mod is
- * initialised three times: its content registers three times, its listeners fire three times. Observed on real
+ * initialised three times: its content registers three times, its listeners fire three times. Some jars instead
+ * carry leftover manifests without those implementations; preference must not discard their only initializer.
+ * Observed on real
  * mods — FallingTree and collective were each claimed by Fabric + MinecraftForge + NeoForge simultaneously.
  *
  * <p>Discovery deliberately reports every manifest truthfully ("which family actually loads is a boot-time
@@ -50,6 +63,7 @@ import net.forbric.kernel.util.ForbricLog;
 public final class MultiLoaderArbiter {
 	private static final List<Ecosystem> DEFAULT_PREFERENCE =
 			List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE, Ecosystem.FABRIC);
+	static final String ENTRYPOINT_SWITCH = "forbric.multiLoaderEntrypoints";
 
 	/** jar path -> the ecosystem that owns it. Computed once per jar; discovery order is stable. */
 	private static final Map<String, Ecosystem> OWNERS = new LinkedHashMap<>();
@@ -77,13 +91,25 @@ public final class MultiLoaderArbiter {
 		if (declared.size() == 1) {
 			owner = declared.get(0);
 		} else if (declared.size() > 1) {
+			List<Ecosystem> candidates = declared;
+			if (!"off".equalsIgnoreCase(System.getProperty(ENTRYPOINT_SWITCH, "on"))) {
+				List<Ecosystem> initialized = initializationFamilies(jar, declared);
+				// No initializer anywhere is a legitimate data-only/library jar, not a reason to reject it.
+				if (!initialized.isEmpty()) candidates = initialized;
+			}
 			for (Ecosystem candidate : preference()) {
-				if (declared.contains(candidate)) {
+				if (candidates.contains(candidate)) {
 					owner = candidate;
 					break;
 				}
 			}
-			if (owner == null) owner = declared.get(0); // preference listed none of them — stay deterministic
+			if (owner == null) owner = candidates.get(0); // preference listed none of them — stay deterministic
+			if (!candidates.equals(declared)) {
+				List<Ecosystem> metadataOnly = new ArrayList<>(declared);
+				metadataOnly.removeAll(candidates);
+				ForbricLog.info("[Forbric/MultiLoader] %s has initialization code for %s; ignoring manifest-only "
+						+ "claims %s so its real entrypoint is not suppressed", jar.getFileName(), candidates, metadataOnly);
+			}
 			List<Ecosystem> suppressed = new ArrayList<>(declared);
 			suppressed.remove(owner);
 			ForbricLog.info("[Forbric/MultiLoader] %s declares %d loaders — loading it as %s only, suppressing %s "
@@ -93,6 +119,89 @@ public final class MultiLoaderArbiter {
 
 		OWNERS.put(key, owner);
 		return owner;
+	}
+
+	/** Read the same annotations and Fabric declarations the actual loaders consume; never initialize a class. */
+	private static List<Ecosystem> initializationFamilies(Path jar, List<Ecosystem> declared) {
+		Set<Ecosystem> found = new HashSet<>();
+		try (JarFile zip = new JarFile(jar.toFile())) {
+			List<ModAnnotationScanner.ModClassInfo> annotations = ModAnnotationScanner.scan(jar);
+			for (Ecosystem family : List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE)) {
+				if (!declared.contains(family)) continue;
+				String manifest = family == Ecosystem.NEOFORGE
+						? ForbricModDiscoverer.NEOFORGE_MANIFEST : ForbricModDiscoverer.FORGE_MANIFEST;
+				try (var in = zip.getInputStream(zip.getJarEntry(manifest))) {
+					Set<String> ids = new HashSet<>();
+					for (var mod : ModsTomlParser.parse(in).getMods()) ids.add(mod.getModId());
+					if (annotations.stream().anyMatch(info -> info.family == family && ids.contains(info.modId))) {
+						found.add(family);
+					}
+				}
+			}
+			if (declared.contains(Ecosystem.FABRIC)) {
+				try (var in = zip.getInputStream(zip.getJarEntry(ForbricModDiscoverer.FABRIC_MANIFEST))) {
+					KernelModMetadata metadata = FabricModMetadataParser.read(in);
+					for (var group : metadata.getEntrypoints().entrySet()) {
+						for (var entry : group.getValue()) {
+							if (fabricEntryCanInitialize(zip, group.getKey(), entry)) found.add(Ecosystem.FABRIC);
+						}
+					}
+				}
+			}
+		} catch (Exception error) {
+			// Incomplete evidence must not suppress a possibly valid family. Discovery reports malformed metadata.
+			ForbricLog.debug("[Forbric/MultiLoader] could not inspect entrypoints in %s: %s", jar.getFileName(), error);
+			return List.of();
+		}
+		return declared.stream().filter(found::contains).toList();
+	}
+
+	private static boolean fabricEntryCanInitialize(JarFile zip, String key,
+			KernelModMetadata.EntrypointDecl entry) throws java.io.IOException {
+		// Custom language adapters and method/field references have their own contracts. Do not invent a
+		// stricter one here; their declared entrypoint is positive evidence of a Fabric initialization path.
+		if (!"default".equals(entry.adapter()) || entry.value().contains("::")) return true;
+		String className = entry.value().replace('.', '/');
+		var ownClass = zip.getJarEntry(className + ".class");
+		if (ownClass != null) {
+			ClassReader type;
+			try (var in = zip.getInputStream(ownClass)) { type = new ClassReader(in); }
+			if ((type.getAccess() & Opcodes.ACC_PUBLIC) == 0
+					|| (type.getAccess() & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE)) != 0) return false;
+			boolean[] noArgConstructor = {false};
+			type.accept(new ClassVisitor(Opcodes.ASM9) {
+				@Override public MethodVisitor visitMethod(int access, String name, String descriptor,
+						String signature, String[] exceptions) {
+					if (name.equals("<init>") && descriptor.equals("()V") && (access & Opcodes.ACC_PUBLIC) != 0) {
+						noArgConstructor[0] = true;
+					}
+					return null;
+				}
+			}, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+			if (!noArgConstructor[0]) return false; // The default adapter instantiates through this constructor.
+		}
+		String contract = switch (key) {
+			case "main" -> "net/fabricmc/api/ModInitializer";
+			case "client" -> "net/fabricmc/api/ClientModInitializer";
+			case "server" -> "net/fabricmc/api/DedicatedServerModInitializer";
+			case "preLaunch" -> "net/fabricmc/loader/api/entrypoint/PreLaunchEntrypoint";
+			default -> null; // An integration entrypoint's interface belongs to the mod consuming it.
+		};
+		return contract == null || mayImplement(zip, className, contract, new HashSet<>());
+	}
+
+	private static boolean mayImplement(JarFile zip, String name, String contract, Set<String> visited)
+			throws java.io.IOException {
+		if (name == null || name.startsWith("java/") || !visited.add(name)) return false;
+		if (name.equals(contract)) return true;
+		var entry = zip.getJarEntry(name + ".class");
+		if (entry == null) return true; // A dependency may supply the initializer or its superclass/interface.
+		ClassReader type;
+		try (var in = zip.getInputStream(entry)) { type = new ClassReader(in); }
+		for (String implemented : type.getInterfaces()) {
+			if (mayImplement(zip, implemented, contract, visited)) return true;
+		}
+		return mayImplement(zip, type.getSuperName(), contract, visited);
 	}
 
 	/** True when {@code jar} is claimed by another family, so {@code mine} must skip it. Unowned jars are never skipped. */

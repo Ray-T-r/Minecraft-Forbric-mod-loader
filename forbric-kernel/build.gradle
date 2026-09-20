@@ -179,6 +179,8 @@ test {
 		include 'build-testmods.sh', 'livemod-src/**', 'livemod-src-neoforge/**',
 				'forge-runtime/forbriclive.jar', 'neoforge-runtime/forbricneolive.jar'
 	}).withPropertyName('compatibilityCanaries').optional()
+	inputs.files(fileTree('build/compat-inputs') { include '**/mods/*.jar' })
+			.withPropertyName('compatibilityModFixtures').optional()
 	// The merged game the real-bytecode tests read. Without this, rebuilding it leaves the test task UP-TO-DATE
 	// and every one of those tests silently keeps its previous verdict — which is exactly what happened the
 	// first time the base was rebuilt: a green run that had not looked at the new jar at all.
