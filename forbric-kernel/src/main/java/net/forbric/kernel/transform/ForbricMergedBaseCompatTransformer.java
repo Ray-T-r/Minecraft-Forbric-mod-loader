@@ -75,11 +75,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	@Override
 	public AnchorSet anchors() {
-		// Thirty-eight independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
+		// Thirty-nine independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("38 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("39 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -127,6 +127,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= giveMinecraftForgesParticleLookupItsFirstVariant(node);
 			changed |= dropStubsThatBypassARealSuperclassMethod(node);
 			changed |= inlineTheSwitchMapTheMergeLost(node);
+			changed |= vetoUnjudgeableOverlayConditions(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -247,7 +248,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String BLOCK_STATE_MODEL = "net/minecraft/client/renderer/block/dispatch/BlockStateModel";
 	/** NeoForge-only: MinecraftForge composes its ingredient codec in ForgeHooks, so ForeignType has no pair. */
 	private static final String NEO_INGREDIENT_CODECS = "net/neoforged/neoforge/common/crafting/IngredientCodecs";
-	private static final String CODEC_TO_CODEC = "(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;";
+	static final String CODEC_TO_CODEC = "(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;";
 	private static final String RELOADABLE_SERVER_RESOURCES = "net/minecraft/server/ReloadableServerResources";
 	private static final String RELOAD_HOOK_DESC = "(L" + RELOADABLE_SERVER_RESOURCES
 			+ ";Lnet/minecraft/core/RegistryAccess;Ljava/util/Map;)Ljava/util/List;";
@@ -2484,6 +2485,62 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The next instruction that is not a label, line number or frame. */
+	// ---------------------------------------------------------------------------------------------------------------
+	// A pack.mcmeta overlay gated by a condition no evaluator here can judge
+	// ---------------------------------------------------------------------------------------------------------------
+
+	static final String OVERLAY_ENTRY = "net/minecraft/server/packs/OverlayMetadataSection$OverlayEntry";
+	static final String LIST_CODEC_FOR_PACK_TYPE = "listCodecForPackType";
+	static final String LIST_CODEC_DESC = "(Lnet/minecraft/server/packs/PackType;)Lcom/mojang/serialization/Codec;";
+	static final String CONDITIONAL_OPS_NEO = "net/neoforged/neoforge/common/conditions/ConditionalOps";
+	static final String DECODE_LIST_WITH_CONDITIONS = "decodeListWithElementConditions";
+	static final String KERNEL_NEO_CONDITIONS_CLASS = "net/forbric/kernel/runtime/KernelNeoConditions";
+
+	/**
+	 * A data file gated by a condition the NeoForge evaluator cannot judge is IGNORED (the owning ecosystem's
+	 * evaluator judges it afterwards — see {@code KernelNeoConditions}). A pack.mcmeta overlay entry has no
+	 * afterwards: {@code Pack.readPackMetadata} unions both sections' overlays, so an ignored condition MOUNTS the
+	 * directory. Measured on Terralith with {@code vanilla_stone_gen=false}: six placed-feature overrides under
+	 * {@code enable.vanilla_stone_gen} went into the world anyway.
+	 *
+	 * <p>One stack-neutral insertion after {@code ConditionalOps.decodeListWithElementConditions} in
+	 * {@code OverlayEntry.listCodecForPackType} — the funnel both the vanilla {@code overlays} and the
+	 * {@code neoforge:overlays} section read through — wraps the list codec with
+	 * {@code KernelNeoConditions.forOverlayEntries}, which makes the leniency answer a foreign type with a VETO for
+	 * the duration of that decode. NeoForge's own decoder then drops the entry.
+	 */
+	private static boolean vetoUnjudgeableOverlayConditions(ClassNode node) {
+		if (!OVERLAY_ENTRY.equals(node.name)) return false;
+		MethodNode method = findMethod(node, LIST_CODEC_FOR_PACK_TYPE, LIST_CODEC_DESC);
+		if (method == null) return false;
+		MethodInsnNode site = null;
+		int sites = 0;
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
+					&& CONDITIONAL_OPS_NEO.equals(call.owner) && DECODE_LIST_WITH_CONDITIONS.equals(call.name)
+					&& CODEC_TO_CODEC.equals(call.desc)) {
+				sites++;
+				site = call;
+			}
+		}
+		if (sites != 1) {
+			if (sites > 1) {
+				ForbricLog.warn("[Forbric/MergedBaseCompat] %s.%s reads its overlay list through %d conditional codecs, "
+						+ "not one — not wrapped", OVERLAY_ENTRY, LIST_CODEC_FOR_PACK_TYPE, sites);
+			}
+			return false;
+		}
+		if (nextReal(site) instanceof MethodInsnNode already && KERNEL_NEO_CONDITIONS_CLASS.equals(already.owner)) {
+			return false;    // already wrapped: idempotent
+		}
+		method.instructions.insert(site, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_NEO_CONDITIONS_CLASS,
+				"forOverlayEntries", CODEC_TO_CODEC, false));
+		ForbricLog.info("[Forbric/MergedBaseCompat] pack.mcmeta overlay entries gated by a condition no evaluator here can "
+				+ "judge are now VETOED through NeoForge's own drop path (applied at 1 site) — ignoring the condition used "
+				+ "to mount content a mod's own config had turned off");
+		return true;
+	}
+
 	// ---------------------------------------------------------------------------------------------------------------
 	// A javac switch map whose synthetic holder class the merge replaced
 	// ---------------------------------------------------------------------------------------------------------------

@@ -70,10 +70,62 @@ public final class KernelPackRepair {
 	 * caller freezes the result on the very next instruction either way.
 	 */
 	public static List<Object> concat(List<Object> base, Collection<?> extra) {
+		return concat(base, extra, null);
+	}
+
+	/**
+	 * The overlay merge in {@code Pack.readPackMetadata}, plus the pack's name: {@code location} is the method's
+	 * {@code PackLocationInfo} (slot 0), read reflectively because the boot side cannot type it. Drains the
+	 * directories {@link #overlayVetoed} recorded while this pack's sections were being read and says, per pack,
+	 * what mounted and what did not.
+	 */
+	public static List<Object> concat(List<Object> base, Collection<?> extra, Object location) {
 		List<Object> merged = new ArrayList<>();
 		if (base != null) merged.addAll(base);
 		if (extra != null) merged.addAll(extra);
+		List<String> vetoed = drainVetoed();
+		if (!merged.isEmpty() || !vetoed.isEmpty()) {
+			ForbricLog.info("[Forbric/PackRepair] " + describe(idOf(location), merged, vetoed));
+		}
 		return merged;
+	}
+
+	private static final ThreadLocal<List<String>> VETOED = new ThreadLocal<>();
+
+	/** Called from the game side while a pack's overlay list is being decoded: this directory was NOT mounted. */
+	public static void overlayVetoed(String directory, String conditionType) {
+		List<String> list = VETOED.get();
+		if (list == null) {
+			list = new ArrayList<>();
+			VETOED.set(list);
+		}
+		list.add(directory + " ← " + conditionType);
+	}
+
+	static List<String> drainVetoed() {    // package-private for the test
+		List<String> list = VETOED.get();
+		VETOED.remove();
+		return list == null ? List.of() : list;
+	}
+
+	/** The one line per pack; pure, so the test can drive it. */
+	static String describe(String id, List<?> mounted, List<String> vetoed) {
+		StringBuilder sb = new StringBuilder("pack '").append(id).append("': ").append(mounted.size())
+				.append(" overlay(s) mounted [");
+		for (int i = 0; i < mounted.size(); i++) sb.append(i == 0 ? "" : ", ").append(mounted.get(i));
+		sb.append(']');
+		if (!vetoed.isEmpty()) sb.append("; NOT mounted: [").append(String.join(", ", vetoed)).append(']');
+		return sb.toString();
+	}
+
+	private static String idOf(Object location) {
+		if (location == null) return "?";
+		try {
+			Object id = location.getClass().getMethod("id").invoke(location);
+			return id == null ? "?" : id.toString();
+		} catch (Throwable unreadable) {
+			return "?";
+		}
 	}
 
 	/**
@@ -95,5 +147,6 @@ public final class KernelPackRepair {
 	/** Test seam: forget that the null-pack warning was already emitted. */
 	static void resetForTests() {
 		NULL_PACK_REPORTED.set(false);
+		VETOED.remove();
 	}
 }

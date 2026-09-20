@@ -95,6 +95,23 @@ class PackRepairInjectorsTest {
 		assertEquals(before.invoke(null, List.of("a"), null), after.invoke(null, List.of("a"), null));
 	}
 
+	/** The hook now takes the pack's PackLocationInfo; the synthesized driver has no such slot 0, so it passes null. */
+	@Test
+	void theHookIsHandedThePackLocationOrNullWhenSlotZeroIsNotOne() {
+		ClassNode node = new ClassNode();
+		new ClassReader(new PackOverlayMutabilityInjector().transform(PACK.replace('/', '.'), mergedBaseShape(), null)).accept(node, 0);
+		MethodNode method = node.methods.stream().filter(m -> "readPackMetadata".equals(m.name)).findFirst().orElseThrow();
+		MethodInsnNode hook = null;
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof MethodInsnNode call && "concat".equals(call.name)) hook = call;
+		}
+		assertNotNull(hook);
+		assertEquals("(Ljava/util/List;Ljava/util/Collection;Ljava/lang/Object;)Ljava/util/List;", hook.desc);
+		AbstractInsnNode prev = hook.getPrevious();
+		while (prev != null && prev.getOpcode() < 0) prev = prev.getPrevious();
+		assertEquals(Opcodes.ACONST_NULL, prev.getOpcode(), "the driver's slot 0 is a List, not a PackLocationInfo");
+	}
+
 	@Test
 	void theRepairAddsNoStoreToTheLocalTheMixinWatches() {
 		byte[] original = mergedBaseShape();

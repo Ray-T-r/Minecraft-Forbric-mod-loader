@@ -79,7 +79,8 @@ public final class PackOverlayMutabilityInjector implements ClassTransformer {
 
 	private static final String HOOK_OWNER = "net/forbric/kernel/boot/KernelPackRepair";
 	private static final String HOOK_NAME = "concat";
-	private static final String HOOK_DESC = "(Ljava/util/List;Ljava/util/Collection;)Ljava/util/List;";
+	private static final String HOOK_DESC = "(Ljava/util/List;Ljava/util/Collection;Ljava/lang/Object;)Ljava/util/List;";
+	private static final String PACK_LOCATION_INFO = "net/minecraft/server/packs/PackLocationInfo";
 
 	@Override
 	public String name() {
@@ -164,13 +165,21 @@ public final class PackOverlayMutabilityInjector implements ClassTransformer {
 			matches.add(new AbstractInsnNode[] {call, pop, load});
 		}
 
+		// The pack's name for the per-pack line: readPackMetadata is static and its first parameter is the
+		// PackLocationInfo, so slot 0 holds it; any other shape (the synthesized test driver) passes null.
+		boolean hasLocation = (method.access & Opcodes.ACC_STATIC) != 0
+				&& org.objectweb.asm.Type.getArgumentTypes(method.desc).length > 0
+				&& PACK_LOCATION_INFO.equals(org.objectweb.asm.Type.getArgumentTypes(method.desc)[0].getInternalName());
 		for (AbstractInsnNode[] match : matches) {
 			MethodInsnNode call = (MethodInsnNode) match[0];
+			method.instructions.insertBefore(call, hasLocation ? new VarInsnNode(Opcodes.ALOAD, 0)
+					: new org.objectweb.asm.tree.InsnNode(Opcodes.ACONST_NULL));
 			method.instructions.set(call,
 					new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, HOOK_NAME, HOOK_DESC, false));
 			method.instructions.remove(match[1]);
 			method.instructions.remove(match[2]);
 		}
+		if (!matches.isEmpty()) method.maxStack += 1;    // ClassWriter(0) does not recompute it
 		return matches.size();
 	}
 

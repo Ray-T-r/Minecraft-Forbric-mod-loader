@@ -17,6 +17,9 @@
 package net.forbric.kernel.runtime;
 
 import java.util.Collections;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -89,9 +92,37 @@ public final class KernelNeoConditions {
 		}
 	};
 
+	/**
+	 * The overlay twin of {@link #FOREIGN}: a condition no evaluator on this instance can judge, met on a
+	 * pack.mcmeta OVERLAY entry. A data file has a second evaluator afterwards, an overlay entry has none — so the
+	 * only safe answer is "no", through NeoForge's own drop path ({@code ConditionalDecoder} → {@code Optional.empty}
+	 * → {@code listWithoutEmpty}); the kernel only changes the answer, never the mechanism.
+	 */
+	private static final ICondition VETO = new ICondition() {
+		@Override
+		public boolean test(ICondition.IContext context) {
+			return false;
+		}
+
+		@Override
+		public MapCodec<? extends ICondition> codec() {
+			return MapCodec.unit(this);
+		}
+
+		@Override
+		public String toString() {
+			return "forbric:vetoed-overlay-condition";
+		}
+	};
+
+	/** {@code -Dforbric.overlayConditions=off}: mount an overlay gated by an unjudgeable condition, as before. */
+	public static final String OVERLAY_PROPERTY = "forbric.overlayConditions";
+
+	/** The foreign types met while decoding one pack.mcmeta overlay list; present only during that decode. */
+	private static final ThreadLocal<Set<String>> OVERLAY = new ThreadLocal<>();
+	private static final Set<String> VETOED_REPORTED = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
 	private static final Set<String> REPORTED = Collections.newSetFromMap(new ConcurrentHashMap<>());
-	private static final java.util.concurrent.atomic.AtomicBoolean OVERLAY_RISK =
-			new java.util.concurrent.atomic.AtomicBoolean();
 
 	/** {@code -Dforbric.neoConditions=off}: decode strictly, exactly as the carrier's own codec would. Read per decode. */
 	public static final String PROPERTY = "forbric.neoConditions";
@@ -131,6 +162,11 @@ public final class KernelNeoConditions {
 				String foreign = foreignType(ops, input);
 				if (foreign != null) {
 					report(foreign);
+					Set<String> overlay = OVERLAY.get();
+					if (overlay != null && overlayVetoEnabled()) {
+						overlay.add(foreign);
+						return DataResult.success(Pair.of(VETO, ops.empty()));
+					}
 					return DataResult.success(Pair.of(FOREIGN, ops.empty()));
 				}
 				return strict.decode(ops, input);
@@ -138,7 +174,7 @@ public final class KernelNeoConditions {
 
 			@Override
 			public <T> DataResult<T> encode(ICondition value, DynamicOps<T> ops, T prefix) {
-				if (value == FOREIGN) {
+				if (value == FOREIGN || value == VETO) {
 					return DataResult.error(() -> "a resource condition belonging to another ecosystem was read "
 							+ "and cannot be written back");
 				}
@@ -158,6 +194,94 @@ public final class KernelNeoConditions {
 	 * <p>Anything unreadable returns null, which hands the input back to the strict codec: a malformed condition
 	 * has to keep producing NeoForge's own error, or this leniency would swallow genuinely broken data.
 	 */
+	public static boolean overlayVetoEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(OVERLAY_PROPERTY, "on"));
+	}
+
+	/**
+	 * Wraps the overlay-entry LIST codec ({@code ConditionalOps.decodeListWithElementConditions(IntermediateEntry.CODEC)})
+	 * so that, for the duration of its decode, {@link #lenient} answers a foreign type with {@link #VETO}; then names
+	 * what NeoForge dropped by diffing the input's {@code directory} strings against the surviving entries.
+	 * Inserted by the merged-base compat transformer in {@code OverlayEntry.listCodecForPackType}, which both the
+	 * vanilla {@code overlays} and the {@code neoforge:overlays} section read through.
+	 */
+	public static <E> Codec<List<E>> forOverlayEntries(Codec<List<E>> listCodec) {
+		if (!overlayVetoEnabled()) return listCodec;
+		return new Codec<>() {
+			@Override
+			public <T> DataResult<Pair<List<E>, T>> decode(DynamicOps<T> ops, T input) {
+				Set<String> scope = new LinkedHashSet<>();
+				OVERLAY.set(scope);
+				DataResult<Pair<List<E>, T>> result;
+				try {
+					result = listCodec.decode(ops, input);
+				} finally {
+					OVERLAY.remove();
+				}
+				if (!scope.isEmpty()) {
+					result.result().ifPresent(pair -> nameTheDropped(ops, input, pair.getFirst(), scope));
+				}
+				return result;
+			}
+
+			@Override
+			public <T> DataResult<T> encode(List<E> value, DynamicOps<T> ops, T prefix) {
+				return listCodec.encode(value, ops, prefix);
+			}
+
+			@Override
+			public String toString() {
+				return "ForbricOverlay(" + listCodec + ")";
+			}
+		};
+	}
+
+	private static <T, E> void nameTheDropped(DynamicOps<T> ops, T input, List<E> kept, Set<String> foreignTypes) {
+		List<String> asked = new ArrayList<>();
+		try {
+			ops.getList(input).result().ifPresent(each -> each.accept(element -> {
+				String directory = stringField(ops, element, "directory");
+				if (directory != null) asked.add(directory);
+			}));
+		} catch (Throwable ignored) {
+			return;
+		}
+		Set<String> mounted = new LinkedHashSet<>();
+		for (E entry : kept) {
+			try {
+				Object overlay = entry.getClass().getMethod("overlay").invoke(entry);
+				if (overlay != null) mounted.add(overlay.toString());
+			} catch (Throwable ignored) {
+				// not the entry type we expect: nothing to name
+			}
+		}
+		String types = String.join(", ", foreignTypes);
+		for (String directory : asked) {
+			if (mounted.contains(directory) || !VETOED_REPORTED.add(directory + "|" + types)) continue;
+			ForbricLog.warn("[Forbric/Conditions] overlay directory '%s' is gated by condition type '%s', which no evaluator "
+					+ "on this instance can judge — NOT mounted (a pack.mcmeta overlay has no second evaluator, unlike a "
+					+ "data file; -D%s=off mounts it as before)", directory, types, OVERLAY_PROPERTY);
+			net.forbric.kernel.boot.KernelPackRepair.overlayVetoed(directory, types);
+		}
+	}
+
+	private static <T> String stringField(DynamicOps<T> ops, T map, String key) {
+		try {
+			Optional<Map<T, T>> values = ops.getMapValues(map)
+					.map(stream -> stream.collect(java.util.stream.Collectors.toMap(Pair::getFirst, Pair::getSecond, (a, b) -> b)))
+					.result();
+			if (values.isEmpty()) return null;
+			for (Map.Entry<T, T> entry : values.get().entrySet()) {
+				if (ops.getStringValue(entry.getKey()).result().filter(key::equals).isPresent()) {
+					return ops.getStringValue(entry.getValue()).result().orElse(null);
+				}
+			}
+		} catch (Throwable ignored) {
+			// fall through
+		}
+		return null;
+	}
+
 	private static <T> String foreignType(DynamicOps<T> ops, T input) {
 		try {
 			Optional<Map<T, T>> map = ops.getMapValues(input)
@@ -187,17 +311,5 @@ public final class KernelNeoConditions {
 				+ "could not judge it and used to fail the whole registry load with it. It is being ignored here "
 				+ "instead; the ecosystem that owns that id decides. %d distinct condition(s) so far",
 				type, REPORTED.size());
-		if (OVERLAY_RISK.compareAndSet(false, true)) {
-			// Known and unfixed, and said out loud rather than left to be discovered in a world. For a DATA
-			// element "ignored" is safe: the owning ecosystem's evaluator judges it afterwards, which is the whole
-			// design. For a pack.mcmeta OVERLAY entry there is no afterwards — Pack.readPackMetadata takes the
-			// UNION of both sections' overlays, so a condition this evaluator cannot judge stops vetoing and the
-			// directory mounts. Measured on Terralith: with "vanilla_stone_gen": false in its config, the six
-			// placed_feature files under enable.vanilla_stone_gen carry no conditions of their own and override
-			// vanilla granite, diorite and andesite generation anyway. No crash and no other log line.
-			ForbricLog.warn("[Forbric/Conditions] if a condition of that kind gates a pack.mcmeta OVERLAY rather "
-					+ "than a data file, ignoring it MOUNTS the overlay — content a mod's own config may have "
-					+ "turned off can end up in your world with nothing else saying so. Known and not yet fixed");
-		}
 	}
 }
