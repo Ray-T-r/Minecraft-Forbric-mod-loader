@@ -344,6 +344,17 @@ public final class KernelBoot {
 		// a real implementation from one that bypasses nothing. Reads a RESOURCE rather than loading a class, for
 		// the same reason MergedBaseFrameRecomputer does — loading one here would define it before the chain that
 		// is still being built can see it.
+		// MinecraftForge's capability provider, composed into Entity/BlockEntity/Level the way Forge composes it into
+		// LevelChunk. BEFORE the compat transformer: its bare-return invalidateCaps/reviveCaps stubs then stand down
+		// on their own, and remain the fallback when this is switched off.
+		boolean forgeCapabilities = net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled();
+		if (forgeCapabilities) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer());
+		} else {
+			ForbricLog.warn("[Forbric/Capabilities] -D%s=off — MinecraftForge capabilities are not composed into the merged "
+					+ "root types and ForgeCapabilities cannot initialise; storage, pipe and machine mods stay inert",
+					net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.PROPERTY);
+		}
 		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer(path -> {
 			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
 				return in == null ? null : in.readAllBytes();
@@ -537,6 +548,13 @@ public final class KernelBoot {
 		net.forbric.kernel.transform.ForgeEnumExtensionInjector forgeEnums =
 				net.forbric.kernel.transform.ForgeEnumExtensionInjector.create(loader);
 		if (forgeEnums != null) chain.register(TransformPhase.COREMOD, forgeEnums);
+		// MinecraftForge's CapabilityTokenSubclass plugin, driven the same way: without it every capability token's
+		// getType() throws and ForgeCapabilities.<clinit> dies for every Forge mod that names it.
+		if (forgeCapabilities) {
+			net.forbric.kernel.transform.ForgeCapabilityTokenInjector tokens =
+					net.forbric.kernel.transform.ForgeCapabilityTokenInjector.create(loader);
+			if (tokens != null) chain.register(TransformPhase.COREMOD, tokens);
+		}
 
 		// LAST in the chain, because it has to see every edit the coremod phase made: a transformer that adds a
 		// branch leaves a frame of its own, and the recomputation must be over the final shape. A mod compiled
