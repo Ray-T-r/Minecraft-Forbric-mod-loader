@@ -84,21 +84,11 @@ class MergedBaseNoVanishedVanillaFieldTest {
 				.resolve("versions/26.2/26.2.jar");
 	}
 
-	/**
-	 * The drifts that are real and not yet repaired, each with what it costs. Keyed
-	 * {@code owner#name:vanillaDescriptor}.
-	 */
+	/** The ledger lives in main now, so FieldDriftAudit can name the readers at boot; keyed {@code owner#name:vanillaDescriptor}. */
 	private static final Map<String, String> KNOWN = new LinkedHashMap<>();
 
 	static {
-		KNOWN.put("net/minecraft/client/KeyMapping#MAP:Ljava/util/Map;",
-				"both ecosystems replace vanilla's plain Map with their own KeyMappingLookup. A mod reading "
-						+ "KeyMapping.MAP as a Map cannot; the kernel instead routes the game's own readers at the "
-						+ "lookup that registration fills (see routeKeyMappingClickToPopulatedLookup)");
-		KNOWN.put("net/minecraft/util/random/WeightedList$Builder#result:"
-						+ "Lcom/google/common/collect/ImmutableList$Builder;",
-				"re-typed to a plain List. Same shape as AttributeSupplier$Builder#builder; no consumer has been "
-						+ "observed hitting it yet");
+		for (MergedBaseFieldDrift.Drift drift : MergedBaseFieldDrift.KNOWN) KNOWN.put(drift.key(), drift.cost());
 	}
 
 	@Test

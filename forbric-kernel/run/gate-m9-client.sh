@@ -187,6 +187,12 @@ check "vanilla's tooltip component order restored" "TooltipOrder\] restored a sc
 # capture-only and must NOT be named). No RED demonstration is possible here — no staged mixin targets a
 # relocated name; the unit test carries the mechanism. This pins today's state.
 check_absent "no pack mixin lands on a renumbered anonymous class" "targets .* a renumbered anonymous class" "$LOG"
+# G8: every installed jar is scanned for reads of a vanilla field the merge re-typed (KeyMapping.MAP as a Map,
+# WeightedList$Builder.result as an ImmutableList.Builder). The count line always prints; the pack's readers are
+# NeoForge builds compiled against the lookup descriptor, so the finding is 0. RED (line absent) with
+# M9_EXTRA_JVM=-Dforbric.fieldDriftAudit=off.
+check "field-drift audit ran over the whole pack" "Forbric/FieldDrift\] scanned [0-9][0-9]+ jar\(s\): [0-9]+ reference" "$LOG"
+check_absent "no pack jar reads a re-typed vanilla field" "Forbric/FieldDrift\] .* reads .* \(cost" "$LOG"
 # H5 (the FluidRenderer.tesselate funnel for MinecraftForge fluid models) is asserted in gate-m26, not here: this
 # pack carries sodium, which replaces vanilla's chunk and fluid meshing, so the vanilla funnel is never reached.
 

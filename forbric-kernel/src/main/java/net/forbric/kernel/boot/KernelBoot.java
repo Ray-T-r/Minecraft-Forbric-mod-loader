@@ -290,6 +290,9 @@ public final class KernelBoot {
 		// Which installed mods name a fabric-api surface the merged base still switches off; reported after the
 		// catalog is published, so the rows reach load-report.txt.
 		FabricApiModuleLossAudit.scan(shadowCandidates);
+		// Which installed jars read a vanilla field with a descriptor the merge no longer declares (NoSuchFieldError
+		// at that access); reported after the catalog is published, so the rows reach load-report.txt.
+		FieldDriftAudit.scan(shadowCandidates);
 
 		ForbricLog.info("[Forbric/Boot] sovereign kernel — %s %s, %d owned jar(s), %d Forge-family mod(s), "
 				+ "%d Fabric jar(s), %d MC library jar(s)", side.name().toLowerCase(), gameVersion, owned.size(),
@@ -735,6 +738,7 @@ public final class KernelBoot {
 		// integrated-server connection ("Server is still starting").
 		PassiveSeeder.seedAll(loader, gameDir, side.api());
 		FabricApiModuleLossAudit.report(side.api());
+		FieldDriftAudit.report();
 
 		// Fabric preLaunch entrypoints, after Mixin is up and before any game class loads (their contract).
 		KernelFabricEcosystem.runPreLaunch();
