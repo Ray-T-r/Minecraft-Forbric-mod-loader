@@ -104,15 +104,16 @@ network and GUI gates. `--list` is the actual glob. Use repeated `--skip <script
 only when intentional; every skip prints a RESULT line. The default port is 25599.
 Logs and one-line results go to `build/gates/`, with a `summary.txt`.
 
-The initial `gate-m25-worldgen.sh` and `gate-m26-forgeclient.sh` deliberately expose
-missing Forge mechanisms. The client gate stages a data-free copy of its canary so adding a worldgen datapack cannot block
+`gate-m25-worldgen.sh` still deliberately exposes the missing MinecraftForge biome-modifier
+mechanism (its Forge half is expected red until workstream D). `gate-m26-forgeclient.sh` was
+born expected red and turned green with Phase 1 A; it stages a data-free copy of its canary so adding a worldgen datapack cannot block
 quick-play behind a new-pack confirmation; the source jar remains intact and m25 tests its data.
 It also invokes `win/prepare-world.py` on the zero-mod test save to acknowledge the
 carrier experimental-generation prompt before quick-play.
 Header `EXPECTED: RED until ...`, exit code 2, and an
-`EXPECTED-RED` observation together distinguish that known failure from boot failures
+`EXPECTED-RED` observation together distinguish a known failure from boot failures
 or broken control assertions (exit 1). Remove the expected-red contract when its
-implementation lands. `gate-m27-frame.sh` requires the 97-jar pack and a PNG newer
+implementation lands, as m26's was. `gate-m27-frame.sh` requires the 97-jar pack and a PNG newer
 than the current launch. Gate headers document `M25_NO_DATA`, `M26_EXTRA_JVM`,
 `M27_SHOT_TICKS`, and `M27_FRAME` negative controls.
 

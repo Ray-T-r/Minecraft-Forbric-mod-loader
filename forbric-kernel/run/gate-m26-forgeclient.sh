@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# EXPECTED: RED until Phase 1 A (Forge client registration and creative-tab hooks are restored).
 # M26 — traditional Forge's client event buses must receive the game's real registration events.
 # RED controls after A3/A6/A7: M26_EXTRA_JVM='-Dforbric.forgeClientInit=off' loses client registrations;
 # M26_EXTRA_JVM='-Dforbric.forgeCreativeTabs=off' loses command_block in parent/search collections;
 # M21_EXTRA_JVM='-Dforbric.forgeSpawnPlacements=off' loses the zombie WORLD_SURFACE result in M21.
-# Missing future hooks are EXPECTED-RED (exit 2); broken launch/world/observation controls remain RED (exit 1).
+# Green since Phase 1 A landed (A3–A9 hooks, A8 bridge inventory); any red is a regression, exit 1.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -76,7 +75,6 @@ check "clean disconnect" 'ClientSmoke\] clean disconnect observed' "$LOG"
 check_absent "client canary initialized successfully" 'ForbricLive/CLIENT\] FAILED initialization' "$LOG"
 check_absent "no missing client classes or crashes" 'NoClassDefFoundError|Preparing crash report|Mod Loading has failed' "$LOG"
 check_absent "reload registration was not duplicated" 'ForbricLive/CLIENT\] reload posts=([2-9]|[1-9][0-9]+)([[:space:]]|$)' "$LOG"
-CONTROL_FAIL=$FAIL
 
 step "all ten traditional-Forge registration events arrived"
 for event in 'RegisterKeyMappingsEvent' 'EntityRenderersEvent.RegisterRenderers' 'BuildCreativeModeTabContentsEvent' \
@@ -99,10 +97,6 @@ check "Forge internal geometry loader is published" 'ForbricLive/CLIENT\] forge:
 check "creative injection reached both collections" 'ForbricLive/REGISTRATION\] injection VISIBLE: true search=true phase=client tick 100' "$LOG"
 check "client initialization bridges report installed" 'all 3 CLIENT_INIT bridge\(s\) installed' "$LOG"
 check "registration bridges report installed" 'all 2 REGISTRATION bridge\(s\) installed' "$LOG"
-if [ "$CONTROL_FAIL" -eq 0 ] && [ "$FAIL" -ne 0 ]; then
-  echo "[kernel] EXPECTED-RED Forge registration or consumer hooks are missing (Phase 1 A)"
-  exit 2
-fi
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] M26 FORGE-CLIENT GATE GREEN — real registration events and consumer results agree"
 else

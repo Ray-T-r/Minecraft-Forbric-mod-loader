@@ -86,7 +86,7 @@ onwards as unfinished long after their gates were passing — so the scripts the
 | `gate-m17` | the installer, resolved and launched the way a launcher does it |
 | `gate-m24` | a mod that fails on purpose: the others still load and the failure is attributed |
 | `gate-m25-worldgen` | biome modifier canaries leave distinct blocks in saved regions; the Forge half starts as expected red |
-| `gate-m26-forgeclient` | the Forge client receives key, renderer and creative-tab registration events; starts as expected red |
+| `gate-m26-forgeclient` | the Forge client receives key, renderer, tint, tooltip, geometry-loader and creative-tab registration events, and the CLIENT_INIT/REGISTRATION bridge inventory reports complete |
 | `gate-m27-frame` | the 97-jar client produces a fresh, non-black Minecraft screenshot |
 | `gate-m28-forgeconfig` | Forge COMMON configs load once, then its native watcher reads a live file edit; dedicated servers never open CLIENT configs |
 

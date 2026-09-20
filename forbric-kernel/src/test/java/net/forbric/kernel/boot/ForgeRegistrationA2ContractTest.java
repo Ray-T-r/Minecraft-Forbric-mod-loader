@@ -150,11 +150,11 @@ class ForgeRegistrationA2ContractTest {
     }
 
     @Test
-    void eachMissingClientEventAndEachFalseConsumerIsExpectedRed() throws Exception {
+    void eachMissingClientEventAndEachFalseConsumerIsRed() throws Exception {
         for (String event : CLIENT_EVENTS) {
             String missing = clientGreen().replace(CLIENT + event.replace('$', '.') + " RECEIVED\n", "");
             Result result = gate(M26, "M26_ASSERTIONS", missing, 0);
-            assertEquals(2, result.exit(), event + ": " + result.output());
+            assertEquals(1, result.exit(), event + ": " + result.output());
         }
         for (String row : List.of("BuildCreativeModeTabContentsEvent RECEIVED", "key in Options.keyMappings: true",
                 "key saved binding: key.keyboard.f6", "layer forbriclive:probe baked: true", "stone tint sources: 1",
@@ -162,22 +162,22 @@ class ForgeRegistrationA2ContractTest {
                 "tooltip factory consumed: true", "forbriclive:probe geometry loader present: true",
                 "forge:obj geometry loader present: true")) {
             Result result = gate(M26, "M26_ASSERTIONS", clientGreen().replace(CLIENT + row + "\n", ""), 0);
-            assertEquals(2, result.exit(), row + ": " + result.output());
+            assertEquals(1, result.exit(), row + ": " + result.output());
         }
-        assertEquals(2, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
+        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
                 "EntityRenderersEvent.RegisterLayerDefinitions RECEIVED",
                 "EntityRenderersEventXRegisterLayerDefinitions RECEIVED"), 0).exit(),
                 "the event name separator must be literal, not a regex wildcard");
         for (String replacement : List.of("key saved binding: key.keyboard.f7", "key saved binding: key.keyboard.f60")) {
-            assertEquals(2, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
+            assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
                     "key saved binding: key.keyboard.f6", replacement), 0).exit());
         }
         for (String replacement : List.of("injection VISIBLE: false search=true", "injection VISIBLE: true search=false")) {
-            assertEquals(2, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
+            assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
                     "injection VISIBLE: true search=true", replacement), 0).exit());
         }
         for (String pass : List.of("all 3 CLIENT_INIT bridge(s) installed", "all 2 REGISTRATION bridge(s) installed")) {
-            assertEquals(2, gate(M26, "M26_ASSERTIONS", clientGreen().replace(pass, ""), 0).exit());
+            assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(pass, ""), 0).exit());
         }
     }
 
@@ -202,14 +202,14 @@ class ForgeRegistrationA2ContractTest {
                 "BuildCreativeModeTabContentsEvent RECEIVED: minecraft:building_blocks",
                 "injection VISIBLE: true search=true phase=server started")) {
             Result result = gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen().replace(COMMON + row + "\n", ""), 0);
-            assertEquals(2, result.exit(), row + ": " + result.output());
+            assertEquals(1, result.exit(), row + ": " + result.output());
         }
         for (String replacement : List.of("injection VISIBLE: false search=true", "injection VISIBLE: true search=false")) {
-            assertEquals(2, gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen().replace(
+            assertEquals(1, gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen().replace(
                     "injection VISIBLE: true search=true", replacement), 0).exit());
         }
         assertEquals(1, gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen(), 1).exit(),
-                "a preceding setup regression must not be reclassified EXPECTED-RED");
+                "a preceding setup regression stays red on its own");
         assertEquals(1, gate(M21, "M21_REGISTRATION_ASSERTIONS", "", 0).exit());
         assertEquals(1, gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen().replace(
                 "common registration observations completed", "probe aborted"), 0).exit());

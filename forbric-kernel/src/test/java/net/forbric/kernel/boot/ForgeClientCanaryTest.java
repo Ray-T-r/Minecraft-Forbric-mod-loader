@@ -134,11 +134,13 @@ class ForgeClientCanaryTest {
 	}
 
 	@Test
-	void clientGateParsesAndMarksOnlyTheKnownEventGapExpectedRed() throws Exception {
+	void clientGateParsesAndNoLongerCarriesAnExpectedRedEscape() throws Exception {
 		Path gate = Path.of("run/gate-m26-forgeclient.sh");
 		String script = Files.readString(gate);
-		assertTrue(script.contains("# EXPECTED: RED until Phase 1 A"));
-		assertTrue(script.contains("CONTROL_FAIL=$FAIL"));
+		// Phase 1 A landed: a red here is a regression, and gates-all must classify it as one.
+		assertFalse(script.contains("EXPECTED: RED"), "the expected-red header must go when the gap closes");
+		assertFalse(script.contains("EXPECTED-RED"), "no exit-2 reclassification may survive the fix");
+		assertFalse(script.contains("CONTROL_FAIL"));
 		assertTrue(script.contains("make-test-world.sh"));
 		assertTrue(script.contains("SRC_MODS=\"$RUNDIR/empty-mods\""));
 		assertSuccessful(new ProcessBuilder("bash", "-n", gate.toString()));

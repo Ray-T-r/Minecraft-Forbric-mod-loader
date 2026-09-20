@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# EXPECTED: RED until Phase 1 A (only the new Forge spawn/creative registration assertions).
 # RED controls: M21_EXTRA_JVM='-Dforbric.forgeSpawnPlacements=off' / '-Dforbric.forgeCreativeTabs=off'.
 # Client counterpart: M26_EXTRA_JVM='-Dforbric.forgeClientInit=off'. Existing setup controls remain ordinary RED.
 # M21 gate — the mod-loading SETUP lifecycle reaches BOTH Forge families, and what a listener defers actually runs.
@@ -148,20 +147,15 @@ check_absent "no phase failed to post"   "could not post traditional-Forge"     
 check_absent "no deferred queue failure" "its deferred work did not run"                  "$LOG"
 check "server still reached Done"        "Done \("                                        "$LOG"
 
-# M21_REGISTRATION_ASSERTIONS_BEGIN — previous setup/launch failures cannot become EXPECTED-RED.
+# M21_REGISTRATION_ASSERTIONS_BEGIN — the Phase 1 A registration hooks; green since A8 landed the bridge inventory.
 check "common registration canary subscribed" 'ForbricLive/REGISTRATION\] subscribed to Forge spawn and creative registration events' "$LOG"
 check "common registration observations completed" 'ForbricLive/REGISTRATION\] common registration observations completed' "$LOG"
-CONTROL_FAIL=$FAIL
 step "Forge registration callbacks changed the game-owned tables"
 check "Forge spawn placement listener received" 'ForbricLive/REGISTRATION\] SpawnPlacementRegisterEvent RECEIVED' "$LOG"
 check "zombie heightmap changed in SpawnPlacements" 'ForbricLive/REGISTRATION\] zombie heightmap=WORLD_SURFACE([[:space:]]|$)' "$LOG"
 check "Forge creative listener received for building blocks" 'ForbricLive/REGISTRATION\] BuildCreativeModeTabContentsEvent RECEIVED: minecraft:building_blocks' "$LOG"
 check "creative injection reached parent and search after server start" 'ForbricLive/REGISTRATION\] injection VISIBLE: true search=true phase=server started' "$LOG"
 check "registration bridges report installed" 'all 2 REGISTRATION bridge\(s\) installed' "$LOG"
-if [ "$CONTROL_FAIL" -eq 0 ] && [ "$FAIL" -ne 0 ]; then
-  echo "[kernel] EXPECTED-RED Forge spawn/creative registration hooks are missing (Phase 1 A)"
-  exit 2
-fi
 step "M21 result"
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] ✅ M21 FORGE-SETUP GATE GREEN — both families receive setup and Forge registration changes reach the game"
