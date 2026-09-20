@@ -88,7 +88,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -191,6 +191,18 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("letModdedFeatureFlagsRegister", FEATURE_FLAGS,
 				"NeoForge mods' declared feature flags are never registered — a mod asking for its own flag dies in its static "
 						+ "initialiser and its datapack then fails the whole registry load"));
+		// Both of these are switched off by their own property, and a claim that stays REQUIRED while its repair is
+		// off reports the switch as a broken anchor. The lesson is J11's: a conditional repair declares a
+		// conditional claim, or the census stops meaning what it says.
+		out.add(keyModifierSuffixEnabled()
+				? fixed("dropTheKeyModifierSuffixBeforeParsingAKeyName", INPUT_CONSTANTS,
+						"one modded key bound with a modifier throws out of options.txt parsing — the player loses EVERY setting")
+				: scanned("dropTheKeyModifierSuffixBeforeParsingAKeyName", "-D" + KEY_SUFFIX_PROPERTY + "=off"));
+		out.add(mipmapLoweringEnabled()
+				? fixed("letTheAtlasLowerItsMipLevelLikeVanilla", SPRITE_LOADER,
+						"an atlas holding a sprite smaller than the mip level allows fails to upload — the FIRST resource "
+								+ "reload dies, every pack is dropped, and the client sits on a black screen with no further log")
+				: scanned("letTheAtlasLowerItsMipLevelLikeVanilla", "-D" + MIPMAP_PROPERTY + "=off"));
 		return List.copyOf(out);
 	}
 
@@ -268,6 +280,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "vetoUnjudgeableOverlayConditions", vetoUnjudgeableOverlayConditions(node));
 			changed |= claim(reporter, "hideTheLegacyLootModifierIndexFromTheDirectoryScan", hideTheLegacyLootModifierIndexFromTheDirectoryScan(node));
 			changed |= claim(reporter, "letModdedFeatureFlagsRegister", letModdedFeatureFlagsRegister(node));
+			changed |= claim(reporter, "dropTheKeyModifierSuffixBeforeParsingAKeyName",
+					dropTheKeyModifierSuffixBeforeParsingAKeyName(node));
+			changed |= claim(reporter, "letTheAtlasLowerItsMipLevelLikeVanilla",
+					letTheAtlasLowerItsMipLevelLikeVanilla(node));
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -2668,6 +2684,121 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "registered and a mod asking for its own died in its static initialiser");
 		return true;
 	}
+	static final String SPRITE_LOADER = "net/minecraft/client/renderer/texture/SpriteLoader";
+	static final String FORGE_CLIENT_CONFIG = "net/minecraftforge/common/ForgeConfig$Client";
+	static final String MIPMAP_LOWERING = "allowMipmapLowering";
+	/** {@code -Dforbric.mipmapLowering=off} hands the decision back to MinecraftForge's config (and its false default). */
+	static final String MIPMAP_PROPERTY = "forbric.mipmapLowering";
+
+	static boolean mipmapLoweringEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(MIPMAP_PROPERTY, "on"));
+	}
+
+	/**
+	 * Lowering an atlas's mip level to fit its smallest sprite is VANILLA behaviour, and the merge made it opt-in.
+	 *
+	 * <p>MinecraftForge patches {@code SpriteLoader.stitch} to gate that lowering on
+	 * {@code ForgeConfig.CLIENT.allowMipmapLowering()}, whose default is FALSE — its own comment says so: "When
+	 * enabled, Forge will allow mipmaps to be lowered in real-time. This is the default behavior in vanilla."
+	 * NeoForge's patched {@code SpriteLoader} has no such gate. The byte merge kept MinecraftForge's, so one
+	 * ecosystem's opt-out became the rule for all three, including Fabric and NeoForge mods that were written
+	 * against vanilla and never agreed to it.
+	 *
+	 * <p>What that costs is the worst shape there is. The Logistics mod (NeoForge) registers its own atlas holding
+	 * an 8x8 sprite; vanilla lowers the atlas from mip 4 to 3, MinecraftForge's gate refuses, and the GPU rejects
+	 * the upload — "mipLevels must be at most 4 for a texture of width 8 and height 8". That throws out of the
+	 * FIRST resource reload, so Minecraft logs "Caught error loading resourcepacks, removing all selected
+	 * resourcepacks" and reloads; the same atlas fails the same way; the reload never completes, and the client
+	 * renders a BLACK SCREEN for the rest of the run. No crash report, no further log line, nothing on screen.
+	 *
+	 * <p>The gate is replaced by {@code true} — two instructions for one, no branch, so the frames this transformer
+	 * does not compute are unchanged. MinecraftForge's knob still agrees with the kernel when a player sets it to
+	 * true; {@code -Dforbric.mipmapLowering=off} gives its false default back.
+	 */
+	private static boolean letTheAtlasLowerItsMipLevelLikeVanilla(ClassNode node) {
+		if (!SPRITE_LOADER.equals(node.name) || !mipmapLoweringEnabled()) return false;
+		int forced = 0;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; ) {
+				AbstractInsnNode next = insn.getNext();
+				if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKEVIRTUAL
+						&& FORGE_CLIENT_CONFIG.equals(call.owner) && MIPMAP_LOWERING.equals(call.name)
+						&& "()Z".equals(call.desc)) {
+					AbstractInsnNode receiver = insn.getPrevious();
+					if (receiver instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC) {
+						method.instructions.remove(field);
+					}
+					method.instructions.set(insn, new InsnNode(Opcodes.ICONST_1));
+					forced++;
+				}
+				insn = next;
+			}
+		}
+		if (forced == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] SpriteLoader lowers an atlas's mip level to fit its smallest "
+				+ "sprite again (%d gate(s) forced) — the merge kept MinecraftForge's opt-in, whose default is off, "
+				+ "and one NeoForge mod's 8x8 sprite then killed the first resource reload and left the client black",
+				forced);
+		return true;
+	}
+
+	static final String INPUT_CONSTANTS = "com/mojang/blaze3d/platform/InputConstants";
+	/** {@code -Dforbric.keyModifierSuffix=off} hands the whole value back to vanilla's parse, which throws on it. */
+	static final String KEY_SUFFIX_PROPERTY = "forbric.keyModifierSuffix";
+
+	static boolean keyModifierSuffixEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(KEY_SUFFIX_PROPERTY, "on"));
+	}
+
+	/**
+	 * {@code InputConstants.getKey} must not be handed MinecraftForge's {@code ":MODIFIER"} suffix.
+	 *
+	 * <p>MinecraftForge extends a key binding with a modifier and WRITES it into options.txt as
+	 * {@code key_key.jei.toggleOverlay:key.keyboard.o:CONTROL_OR_COMMAND}. Its own
+	 * {@code Options.processOptionsKeysOnly} then reads that value and calls {@code InputConstants.getKey(value)}
+	 * with the whole string BEFORE splitting the modifier off — and vanilla's {@code getKey} does
+	 * {@code Integer.parseInt("o:CONTROL_OR_COMMAND")}. That is MinecraftForge's own code, unchanged by the merge:
+	 * the same instruction order is in the forge-patched base, so this is not a merge artifact and switching it off
+	 * does not restore anything.
+	 *
+	 * <p>What it costs is out of all proportion to one key: {@code Options.load} wraps the whole file in one
+	 * try/catch, so a single modded binding with a modifier makes the client log "Failed to load options" and the
+	 * player loses EVERY setting — video, controls, language, and the accessibility-onboarding flag, which then
+	 * sits in front of the game on the next launch. JEI binds three of them by default.
+	 *
+	 * <p>The repair is the smallest thing that can be said: {@code name = name.split(":")[0]} at method entry. No
+	 * key name in {@code Key.NAME_MAP} contains a colon, so a name without one is unchanged, and MinecraftForge's
+	 * own modifier parse two instructions later still reads the suffix off the original value. Branch-free on
+	 * purpose — this transformer writes with {@code ClassWriter(0)} and computes no frames.
+	 */
+	private static boolean dropTheKeyModifierSuffixBeforeParsingAKeyName(ClassNode node) {
+		if (!INPUT_CONSTANTS.equals(node.name) || !keyModifierSuffixEnabled()) return false;
+		MethodNode getKey = findMethod(node, "getKey", "(Ljava/lang/String;)Lcom/mojang/blaze3d/platform/InputConstants$Key;");
+		if (getKey == null || getKey.instructions.size() == 0) return false;
+		// Idempotent: the first instruction of a repaired method is the ALOAD 0 of this prologue followed by the
+		// split. Re-running the pass over an already-written class must not stack a second copy.
+		for (AbstractInsnNode insn = getKey.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && "java/lang/String".equals(call.owner)
+					&& "split".equals(call.name)) {
+				return false;
+			}
+		}
+		InsnList prologue = new InsnList();
+		prologue.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		prologue.add(new LdcInsnNode(":"));
+		prologue.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/String", "split",
+				"(Ljava/lang/String;)[Ljava/lang/String;", false));
+		prologue.add(new InsnNode(Opcodes.ICONST_0));
+		prologue.add(new InsnNode(Opcodes.AALOAD));
+		prologue.add(new VarInsnNode(Opcodes.ASTORE, 0));
+		getKey.instructions.insert(prologue);
+		getKey.maxStack = Math.max(getKey.maxStack, 2);
+		ForbricLog.info("[Forbric/MergedBaseCompat] InputConstants.getKey now drops MinecraftForge's \":MODIFIER\" "
+				+ "suffix before parsing a key name — one modded binding with a modifier used to throw out of "
+				+ "options.txt parsing, and Options.load wraps the WHOLE file, so the player lost every setting");
+		return true;
+	}
+
 	static final String WITHOUT_INDEX = "withoutTheLegacyIndex";
 	static final String WITHOUT_INDEX_DESC = "(Lnet/minecraft/server/packs/resources/ResourceManager;)Lnet/minecraft/server/packs/resources/ResourceManager;";
 

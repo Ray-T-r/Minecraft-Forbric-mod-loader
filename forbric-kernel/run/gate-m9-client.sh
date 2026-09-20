@@ -31,13 +31,43 @@ if [ ! -f "$RUNDIR/options.txt" ]; then
   exit 3
 fi
 
+# SEED A MODIFIER BINDING, every run. MinecraftForge writes a modified key as
+# `key_key.jei.toggleOverlay:key.keyboard.o:CONTROL_OR_COMMAND` and reads it back through vanilla's
+# InputConstants.getKey, which throws on the suffix; Options.load wraps the whole file, so the player loses every
+# setting AND the client then SAVES the defaults over the file. That last part is why this has to be re-seeded:
+# this fixture carried three of JEI's and lost them exactly that way, taking the evidence with them.
+# M9_KEY_MODIFIER_SEED_BEGIN — the contract test runs this exact step against a fixture options.txt.
+python3 - "$RUNDIR/options.txt" <<'PY_SEED' || exit 3
+from pathlib import Path
+import sys
+options = Path(sys.argv[1])
+lines = options.read_text(encoding='utf-8').splitlines()
+for i, line in enumerate(lines):
+    if not line.startswith('key_key.') or ':' not in line:
+        continue
+    name, _, value = line.partition(':')
+    if value.endswith(':CONTROL_OR_COMMAND'):
+        break
+    lines[i] = f'{name}:{value}:CONTROL_OR_COMMAND'
+    options.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    print(f'[kernel] seeded a modifier binding: {lines[i]}')
+    break
+else:
+    raise SystemExit('no key_key.* binding in options.txt to give a modifier to')
+PY_SEED
+# M9_KEY_MODIFIER_SEED_END
+
 kernel_jar
 mkdir -p "$RUNDIR/quickPlay"
 rm -f "$RUNDIR/logs/latest.log"
 : > "$LOG"
 
 step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar 2>/dev/null | wc -l | tr -d ' ') mods, no compatibility flags)"
-# M9_EXTRA_JVM is how the gate's teeth are demonstrated: switch a fix off and this must go RED. Verified with
+# M9_EXTRA_JVM is how the gate's teeth are demonstrated: switch a fix off and this must go RED. Also verified:
+#   -Dforbric.mipmapLowering=off   -> 1 red ("an atlas may lower its mip level again")
+#   -Dforbric.keyModifierSuffix=off -> 2 red ("the key-modifier suffix is dropped before the name is parsed",
+#                                             "options.txt loads with modded modifier bindings in it")
+# Verified with
 # -Dforbric.pruneDuplicateLambdas=off, which brings back StubException and the failed world load.
 FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
@@ -97,6 +127,24 @@ check_absent "…and it names no single loader" "ClientSmoke\] window title: .*(
 check "left the world cleanly"        "ClientSmoke\] clean disconnect observed"    "$LOG"
 check "server side really ran"        "joined the game"                            "$LOG"
 check "datapacks fully loaded"        "Loaded [1-9][0-9]* advancements"                 "$LOG"
+
+step "the merge did not leave one ecosystem's opt-out binding the other two (client-fatal both times)"
+# VANILLA lowers an atlas's mip level to fit its smallest sprite. MinecraftForge patches SpriteLoader to gate that
+# on ForgeConfig.CLIENT.allowMipmapLowering(), default FALSE; the byte merge kept that half. The Logistics mod
+# (NeoForge) has an 8x8 sprite in its own atlas, so the GPU refused the upload, the FIRST resource reload died,
+# Minecraft dropped every pack, reloaded into the same failure -- and the client rendered a BLACK SCREEN for the
+# rest of the run with no crash report and no further log line. That is the worst report shape there is.
+check "an atlas may lower its mip level again" \
+  'Forbric/MergedBaseCompat\] SpriteLoader lowers an atlas' "$LOG"
+check_absent "no resource reload was abandoned" 'Caught error loading resourcepacks' "$LOG"
+check_absent "no atlas was refused by the GPU" 'mipLevels must be at most' "$LOG"
+# MinecraftForge writes a modified binding as key.keyboard.o:CONTROL_OR_COMMAND and then hands that whole string
+# to InputConstants.getKey before splitting the modifier off, so vanilla's Integer.parseInt throws. Options.load
+# wraps the WHOLE file in one try/catch: one modded binding costs the player every setting. This gate's own
+# fixture has had three of them (JEI's) and lost its options on every run, silently, for as long as it existed.
+check "the key-modifier suffix is dropped before the name is parsed" \
+  'Forbric/MergedBaseCompat\] InputConstants.getKey now drops' "$LOG"
+check_absent "options.txt loads with modded modifier bindings in it" 'Failed to load options' "$LOG"
 
 step "the full FML mod lifecycle ran, not just the phases the kernel used to know about"
 # Each of these was missing outright until the kernel started mirroring CommonModLoader.load's task order.
