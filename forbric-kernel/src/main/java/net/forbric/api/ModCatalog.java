@@ -203,26 +203,60 @@ public final class ModCatalog {
 	 *
 	 * <p><b>FAILED is sticky and outranks DEGRADED.</b> A mod whose constructor threw and which then also missed
 	 * a setup phase is still, first and last, a mod that did not finish loading.
+	 *
+	 * <p>A second reason at the same status is kept, joined with {@code "; "}: a mod whose mixin was left out and
+	 * whose deferred task then threw has two things wrong with it, and the row says both. The same reason twice
+	 * is recorded once.
 	 */
 	public static synchronized void mark(String modId, Status status, String detail) {
 		if (modId == null || status == null || status == Status.OK) return;
+		remark(e -> e.modId().equals(modId), status, detail);
+	}
 
+	/**
+	 * {@link #mark} for every mod that came out of one jar file — a universal jar has one row, a Jar-in-Jar
+	 * child its own — for a finding that is about the jar rather than a mod id: what it was compiled against,
+	 * which API package its classes name. {@code jarFileName} is compared with {@link Entry#jar()} as published;
+	 * a name no row carries invents nothing, exactly like an unknown mod id.
+	 */
+	public static synchronized void markByJar(String jarFileName, Status status, String detail) {
+		if (jarFileName == null || jarFileName.isBlank() || status == null || status == Status.OK) return;
+		remark(e -> e.jar().equals(jarFileName), status, detail);
+	}
+
+	private static void remark(java.util.function.Predicate<Entry> which, Status status, String detail) {
 		List<Entry> updated = new ArrayList<>(entries.size());
 		boolean found = false;
 		for (Entry e : entries) {
-			if (!e.modId().equals(modId)) {
+			if (!which.test(e)) {
 				updated.add(e);
 				continue;
 			}
 			found = true;
 			Status kept = e.status() == Status.FAILED ? Status.FAILED : status;
-			String keptDetail = kept == e.status() && !e.statusDetail().isEmpty() ? e.statusDetail() : detail;
-			updated.add(e.withStatus(kept, keptDetail));
+			updated.add(e.withStatus(kept, joinedDetail(e, status, kept, detail)));
 		}
 		if (!found) return;
 
 		entries = List.copyOf(updated);
 		installed = updated.stream().filter(Entry::installed).toList();
+	}
+
+	/**
+	 * The detail a re-marked row carries: the new reason when the status rises; the existing reason when the new
+	 * one is outranked (a DEGRADED reason adds nothing to "did not finish loading"); both reasons, joined, when a
+	 * second distinct reason arrives at the same status; the existing text when the new one repeats it or is
+	 * empty.
+	 */
+	private static String joinedDetail(Entry e, Status incomingStatus, Status kept, String detail) {
+		String incoming = detail == null ? "" : detail.trim();
+		String existing = e.statusDetail();
+		if (kept != e.status() || existing.isEmpty()) return incoming;
+		if (incomingStatus != e.status() || incoming.isEmpty()) return existing;
+		for (String reason : existing.split("; ")) {
+			if (reason.equals(incoming)) return existing;
+		}
+		return existing + "; " + incoming;
 	}
 
 	/** The mods something went wrong with, name-sorted. Empty is the ordinary case. */

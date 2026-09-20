@@ -105,12 +105,11 @@ public final class KernelModFile implements IModFile {
 	 * it. Sodium does, right after its config walk, and NPE'd on a null inside {@code Minecraft.<init>} before
 	 * the window ever opened.
 	 *
-	 * <p>An empty result for a mod with no jar is the honest answer — the kernel constructs {@code @Mod} classes
-	 * from its own ASM scan and never builds FML's ModFileScanData — and it reads exactly like a mod file that
-	 * declares no annotations. That IS a known gap, deliberately: annotation-driven discovery walks these, so JEI,
-	 * Jade, Sophisticated Core and Sodium's third-party config hooks find nothing, load, and quietly do nothing.
-	 * Producing real scan data means running an FML-shaped annotation scan over every mod jar and is its own piece
-	 * of work; this only guarantees the walk does not NPE.
+	 * <p>The scan is real: {@code ModFileScanner.scan} walks the jar's classes and builds FML's own
+	 * {@code ModFileScanData}, so annotation-driven discovery (JEI plugins, Jade providers, Sophisticated Core,
+	 * Sodium's third-party config hooks) finds what it would on the carrier. Only a jar-less presence alias — a
+	 * mod id the kernel publishes without a file behind it — gets the empty result, which reads exactly like a
+	 * mod file that declares no annotations.
 	 */
 	@Override
 	public synchronized ModFileScanData getScanResult() {

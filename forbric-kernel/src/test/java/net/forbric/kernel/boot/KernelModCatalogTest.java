@@ -344,6 +344,42 @@ class KernelModCatalogTest {
 	}
 
 	@Test
+	void aSecondDegradationKeepsBothReasons() {
+		ModCatalog.publish(List.of(newEntry("alpha")));
+		ModCatalog.mark("alpha", ModCatalog.Status.DEGRADED, "guest mixin A did not fit");
+		ModCatalog.mark("alpha", ModCatalog.Status.DEGRADED, "one of its deferred setup tasks threw");
+		assertEquals("guest mixin A did not fit; one of its deferred setup tasks threw",
+				ModCatalog.failures().get(0).statusDetail(), "two things went wrong, and the row says both");
+
+		ModCatalog.mark("alpha", ModCatalog.Status.DEGRADED, "guest mixin A did not fit");
+		assertEquals("guest mixin A did not fit; one of its deferred setup tasks threw",
+				ModCatalog.failures().get(0).statusDetail(), "the same reason twice is recorded once");
+
+		// A change of status starts over with the new reason: FAILED is the whole story then.
+		ModCatalog.mark("alpha", ModCatalog.Status.FAILED, "its entrypoint threw");
+		assertEquals("its entrypoint threw", ModCatalog.failures().get(0).statusDetail());
+	}
+
+	@Test
+	void markingByJarNamesEveryModInThatJar() {
+		ModCatalog.publish(List.of(
+				new ModCatalog.Entry(Ecosystem.NEOFORGE, "one", "One", "1", "", List.of(), "x.jar", "", ""),
+				new ModCatalog.Entry(Ecosystem.NEOFORGE, "two", "Two", "1", "", List.of(), "x.jar", "", ""),
+				new ModCatalog.Entry(Ecosystem.FABRIC, "three", "Three", "1", "", List.of(), "y.jar", "", "")));
+		ModCatalog.markByJar("x.jar", ModCatalog.Status.DEGRADED, "compiled against a different NeoForge");
+
+		List<String> marked = new java.util.ArrayList<>();
+		for (ModCatalog.Entry e : ModCatalog.failures()) marked.add(e.modId());
+		assertEquals(List.of("one", "two"), marked, "a jar's finding lands on every row that came out of it");
+		assertEquals("compiled against a different NeoForge", ModCatalog.failures().get(0).statusDetail());
+
+		ModCatalog.markByJar("nowhere.jar", ModCatalog.Status.DEGRADED, "nothing");
+		assertEquals(2, ModCatalog.failures().size(), "a jar no row carries invents nothing");
+		ModCatalog.markByJar("", ModCatalog.Status.DEGRADED, "nothing");
+		assertEquals(2, ModCatalog.failures().size(), "the empty jar name of a presence alias matches no row");
+	}
+
+	@Test
 	void markingDoesNotDisturbTheNameSort() {
 		ModCatalog.publish(List.of(newEntry("zulu"), newEntry("alpha"), newEntry("mike")));
 		ModCatalog.mark("mike", ModCatalog.Status.DEGRADED, "it threw during common setup");
