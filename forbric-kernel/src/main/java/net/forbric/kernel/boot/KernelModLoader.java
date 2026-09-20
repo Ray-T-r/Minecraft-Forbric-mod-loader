@@ -235,6 +235,17 @@ public final class KernelModLoader {
 						info.dists, side.distName());
 				continue;
 			}
+			if (constructedInTheGameConstructor(info, side)) {
+				// Kept IN ModList on purpose: the mod is here and will be constructed, just where MinecraftForge
+				// constructs it. Withdrawing it now and putting it back would make every neighbour that resolves
+				// it by id see a hole for the length of the window.
+				DEFERRED_FORGE.add(info);
+				constructed.add(safeId(info));
+				ForbricLog.info("[Forbric/ModLoader] @Mod %s (traditional-Forge) will be constructed in the "
+						+ "Minecraft.<init> window, where MinecraftForge's own ClientModLoader.begin(Minecraft, …) "
+						+ "constructs it — here there is no Minecraft for its constructor to read", safeId(info));
+				continue;
+			}
 			try {
 				ConstructedMod mod = info.family == Ecosystem.FORGE
 						? constructForgeFamilyMod(cl, info, forge.get(safeId(info)))
@@ -715,6 +726,93 @@ public final class KernelModLoader {
 		}
 		best.setAccessible(true);
 		return best.newInstance(args);
+	}
+
+	/** The switch that constructs every traditional-MinecraftForge mod in the early window, as before. */
+	static final String DEFERRAL_SWITCH = "forbric.forgeCtorGameInstance";
+
+	/**
+	 * Traditional-MinecraftForge {@code @Mod} classes whose constructor wanted a {@code Minecraft} that does not
+	 * exist yet, waiting for the constructor window.
+	 */
+	private static final List<ModAnnotationScanner.ModClassInfo> DEFERRED_FORGE =
+			new java.util.concurrent.CopyOnWriteArrayList<>();
+
+	/**
+	 * Whether {@code info} belongs to the {@code Minecraft.<init>} window rather than to this one.
+	 *
+	 * <p>The two carriers do not agree on when a client's mods are constructed, and the merged base can only carry
+	 * one call site. NeoForge's {@code ClientModLoader.begin()} takes no arguments and runs in {@code Main.main},
+	 * before {@code new Minecraft} — so a NeoForge {@code @Mod} constructor sees a null {@code getInstance()} on
+	 * genuine NeoForge too, and belongs exactly where it is. Traditional MinecraftForge's is
+	 * {@code begin(Minecraft, PackRepository, ReloadableResourceManager)}: those three exist together only inside
+	 * {@code Minecraft.<init>}, so on genuine MinecraftForge a traditional-Forge constructor ALWAYS has a live
+	 * instance and a built pack repository. The kernel ran both families in NeoForge's window, and Simple Voice
+	 * Chat — which caches {@code Minecraft.getInstance()} and then asks it for the pack repository — died there.
+	 *
+	 * <p>Decided BEFORE the constructor runs, never after it throws. A constructor is not a pure function: Simple
+	 * Voice Chat registers its key binds first and its own guard answers "Registered key binds twice" on a second
+	 * attempt, so a failed try cannot be taken back and "retry it later" is not available as a repair.
+	 *
+	 * <p>A dedicated server is untouched — it has no {@code Minecraft}, and traditional MinecraftForge's server
+	 * path constructs its mods in exactly the window the kernel already uses.
+	 *
+	 * <p>{@code -Dforbric.forgeCtorGameInstance=off} constructs them here, as before.
+	 */
+	static boolean constructedInTheGameConstructor(ModAnnotationScanner.ModClassInfo info, Side side) {
+		if ("off".equalsIgnoreCase(System.getProperty(DEFERRAL_SWITCH, "on"))) return false;
+		return side != null && side.isClient() && info.family == Ecosystem.FORGE;
+	}
+
+	/** The mod ids waiting for the {@code Minecraft.<init>} window; their events must not fire before they do. */
+	public static Set<String> deferredForgeModIds() {
+		Set<String> ids = new LinkedHashSet<>();
+		for (ModAnnotationScanner.ModClassInfo info : DEFERRED_FORGE) ids.add(safeId(info));
+		return ids;
+	}
+
+
+	/**
+	 * Constructs the deferred traditional-Forge mods, now that {@code Minecraft.getInstance()} answers.
+	 *
+	 * <p>This is their FIRST construction, not a retry: they were held back before anything ran, so each still has
+	 * the untouched loading context that was published into {@code ModList} for it.
+	 *
+	 * @return the handles that constructed, for the caller to post the construct phase and RegisterEvent on
+	 */
+	public static List<KernelForgeModContext.Handle> constructDeferredForgeMods(ClassLoader cl) {
+		if (DEFERRED_FORGE.isEmpty()) return List.of();
+
+		List<ModAnnotationScanner.ModClassInfo> pending = new ArrayList<>(DEFERRED_FORGE);
+		DEFERRED_FORGE.clear();
+		Map<String, KernelForgeModContext.Handle> published = new LinkedHashMap<>(publishedForge);
+		List<KernelForgeModContext.Handle> built = new ArrayList<>();
+		List<String> failed = new ArrayList<>();
+
+		for (ModAnnotationScanner.ModClassInfo info : pending) {
+			String modId = safeId(info);
+			// Its own handle, the one published into ModList before the window opened. Nothing was ever
+			// constructed on it, so it is exactly as pristine as it was — no second BusGroup is needed and no
+			// container identity changes underneath a neighbour that already resolved this mod.
+			KernelForgeModContext.Handle handle = published.get(modId);
+			try {
+				if (handle == null) throw new IllegalStateException("no MinecraftForge loading context for " + modId);
+				constructForgeFamilyMod(cl, info, handle);
+				built.add(handle);
+			} catch (Throwable t) {
+				failed.add(modId);
+				ForbricLog.warn("[Forbric/ModLoader] failed to construct @Mod " + info.className
+						+ " in the Minecraft.<init> window", Reflect.unwrap(t));
+			}
+		}
+
+		if (!failed.isEmpty()) {
+			for (String modId : failed) published.remove(modId);
+			markWithdrawn(failed, "its @Mod constructor threw");
+		}
+		publishedForge = Map.copyOf(published);
+		publishForgeModList(cl, publishedForge, true);
+		return built;
 	}
 
 	private static String safeId(ModAnnotationScanner.ModClassInfo info) {

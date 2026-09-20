@@ -182,7 +182,8 @@ class ForgeRegistrationA2ContractTest {
                 "AddGuiOverlayLayersEvent RECEIVED", "overlay layer DREW 20 frames",
                 "MinecraftForge's overlay stack is on NeoForge's layer manager",
                 "RegisterPictureInPictureRendererEvent RECEIVED",
-                "1 MinecraftForge picture-in-picture renderer(s) registered", "only writer")) {
+                "1 MinecraftForge picture-in-picture renderer(s) registered", "only writer",
+                "traditional-Forge mod(s) in the Minecraft.<init> window")) {
             assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(pass, ""), 0).exit());
         }
         // ABSENT is its own row, not the negation of PRESENT: an empty manager makes the canary print it, and a
@@ -264,6 +265,11 @@ class ForgeRegistrationA2ContractTest {
         lines.add("[Forbric/PipRenderers] 1 MinecraftForge picture-in-picture renderer(s) registered");
         lines.add("[Forbric/MergedBaseCompat] gave GuiRenderer's pooled picture-in-picture lookup a fallback to the "
                 + "orphaned vanilla map, and gave that map its only writer");
+        // Where the canary's own @Mod constructor ran. MinecraftForge's ClientModLoader.begin takes the Minecraft,
+        // so its mods construct inside Minecraft.<init>; the thread name is what tells the two windows apart.
+        lines.add("[Render thread/INFO]: [Forbric/Lifecycle] constructed 2 traditional-Forge mod(s) in the "
+                + "Minecraft.<init> window, where MinecraftForge constructs its own, and fired RegisterEvent x40 "
+                + "for them");
         return String.join("\n", lines) + "\n";
     }
 

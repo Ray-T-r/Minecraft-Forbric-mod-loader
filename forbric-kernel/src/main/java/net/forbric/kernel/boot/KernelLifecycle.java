@@ -665,8 +665,15 @@ public final class KernelLifecycle {
 			// fireForgeSetupPhase reads, and two @Mod classes sharing an ID now share ONE handle — a per-entry
 			// list would hold it twice and fire the whole RegisterEvent stream twice on that BusGroup, so the
 			// mod's DeferredRegisters would register their content twice.
-			List<KernelForgeModContext.Handle> forgeHandles =
-					new ArrayList<>(KernelModLoader.publishedForgeMods().values());
+			// Minus the ones held back for the constructor window: their DeferredRegisters are registered by a
+			// constructor that has not run, so firing RegisterEvent at them here would post to an empty bus and
+			// spend the one pass they get. constructDeferredForgeMods fires their stream once they exist.
+			List<KernelForgeModContext.Handle> forgeHandles = new ArrayList<>();
+			java.util.Set<String> deferredForge = KernelModLoader.deferredForgeModIds();
+			for (Map.Entry<String, KernelForgeModContext.Handle> entry
+					: KernelModLoader.publishedForgeMods().entrySet()) {
+				if (!deferredForge.contains(entry.getKey())) forgeHandles.add(entry.getValue());
+			}
 			// Dedupe by IDENTITY: a NeoForge mod has ONE bus shared by all its @Mod classes (balm ships
 			// NeoForgeBalm + NeoForgeBalmClient, FallingTree the same), so a per-entry list would fire
 			// RegisterEvent twice on that bus and register the mod's content twice.
@@ -1515,8 +1522,27 @@ public final class KernelLifecycle {
 	 * <p>Best-effort: a family that is not present resolves no event class and says so once at debug.
 	 */
 	private static void fireForgeSetupPhase(ClassLoader cl, ForeignType event, String label) {
-		java.util.List<KernelForgeModContext.Handle> handles =
-				new java.util.ArrayList<>(KernelModLoader.publishedForgeMods().values());
+		// Same exclusion as the RegisterEvent split: a mod whose constructor has not run yet has registered no
+		// listeners, and its bus group is not started, so a phase posted at it now reaches nobody and is gone.
+		java.util.Set<String> deferred = KernelModLoader.deferredForgeModIds();
+		java.util.List<KernelForgeModContext.Handle> handles = new java.util.ArrayList<>();
+		for (java.util.Map.Entry<String, KernelForgeModContext.Handle> entry
+				: KernelModLoader.publishedForgeMods().entrySet()) {
+			if (!deferred.contains(entry.getKey())) handles.add(entry.getValue());
+		}
+		fireForgeSetupPhase(cl, handles, event, label);
+	}
+
+	/**
+	 * The same phase at an explicit set of handles.
+	 *
+	 * <p>Shared with the deferred-construction pass so that a client whose MinecraftForge mods ALL wait for the
+	 * constructor window still reports the phase in the same words. Routing that pass around this method left the
+	 * sentence out of the log entirely, and the only thing distinguishing "every Forge mod waited" from "there are
+	 * no Forge mods" would have been a silence.
+	 */
+	private static void fireForgeSetupPhase(ClassLoader cl, java.util.List<KernelForgeModContext.Handle> handles,
+			ForeignType event, String label) {
 		if (handles.isEmpty()) return;
 		try {
 			int fired = KernelForgeModContext.fireSetupPhase(cl, handles, event, label);
@@ -2170,6 +2196,11 @@ public final class KernelLifecycle {
 					+ "entrypoints — a mod registering content from onInitializeClient will fail", unwrap(t));
 		}
 
+		// Traditional-MinecraftForge constructs its own mods from ClientModLoader.begin(Minecraft, ...), i.e. in
+		// here. Any that reached for Minecraft in the early window were held back rather than withdrawn; this is
+		// the moment they were waiting for, and it is inside the reopened span so their DeferredRegisters land.
+		constructDeferredForgeMods(cl);
+
 		try {
 			// main first, then client — Fabric's own Hooks.startClient order, now at Fabric's own point in the
 			// constructor. A no-op when the pre-Minecraft window already ran them (the switch, or a server).
@@ -2184,6 +2215,30 @@ public final class KernelLifecycle {
 			openLateConfigs(cl, Side.CLIENT, "the Fabric client entrypoints");
 		}
 
+	}
+
+	/**
+	 * Constructs the traditional-MinecraftForge mods held back from the pre-{@code Minecraft} window, then gives
+	 * them the two things that window would have: the construct phase and their own RegisterEvent stream.
+	 *
+	 * <p>Not {@code KernelForgeBaseline.register}: that reconstructs ForgeMod and re-fires NewRegistryEvent, and
+	 * both already happened. Only these handles' events are posted, so no mod that constructed on time receives
+	 * anything twice.
+	 */
+	private static void constructDeferredForgeMods(ClassLoader cl) {
+		try {
+			java.util.List<KernelForgeModContext.Handle> late = KernelModLoader.constructDeferredForgeMods(cl);
+			if (late.isEmpty()) return;
+
+			fireForgeSetupPhase(cl, late, ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
+			int fired = KernelForgeModContext.fireRegisterEvents(cl, late);
+			ForbricLog.info("[Forbric/Lifecycle] constructed %d traditional-Forge mod(s) in the Minecraft.<init> "
+					+ "window, where MinecraftForge constructs its own, and fired RegisterEvent x%d for them",
+					late.size(), fired);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not construct the deferred traditional-Forge mods — they "
+					+ "stay unconstructed, which is where they were before", unwrap(t));
+		}
 	}
 
 	/**

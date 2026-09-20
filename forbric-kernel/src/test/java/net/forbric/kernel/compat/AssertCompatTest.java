@@ -30,6 +30,7 @@ class AssertCompatTest {
 			posted FML load complete to 2 NeoForge mods
 			[Forbric/Order] construction order is dependency order
 			[Forbric/Order] 2 Fabric mod(s) initialise in dependency order
+			[Render thread/INFO]: [Forbric/Fabric] invoked 2 Fabric main entrypoint(s) in the Minecraft.<init> window
 			[Forbric/DataPacks] served 2 datapacks
 			[Forbric/Aliases] gave registries alias-resolving lookup
 			fired RegisterEvent in NeoForge's registration order
@@ -42,7 +43,7 @@ class AssertCompatTest {
 		var result = execute(GREEN);
 		assertEquals(0, result.exitCode(), result.output());
 		assertTrue(result.output().contains("result: ALL-GREEN"), result.output());
-		assertEquals(40, result.output().lines().filter(line -> line.startsWith("PASS  ")).count());
+		assertEquals(42, result.output().lines().filter(line -> line.startsWith("PASS  ")).count());
 	}
 
 	@Test void aForbiddenObservationFailsTheProcess() throws Exception {

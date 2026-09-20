@@ -4,6 +4,10 @@
 #   M26_EXTRA_JVM='-Dforbric.clientResourcePreload=off' — the client resource manager is empty at mod setup again;
 #   M26_EXTRA_JVM='-Dforbric.forgeOverlayLayers=off' — a MinecraftForge mod's HUD overlays never draw (3 red);
 #   M26_EXTRA_JVM='-Dforbric.forgePipRenderers=off' — a MinecraftForge picture-in-picture renderer is nowhere (2 red);
+#   M26_EXTRA_JVM='-Dforbric.forgeCtorGameInstance=off' — a MinecraftForge @Mod is constructed in NeoForge's
+#     pre-Minecraft window again, where Minecraft.getInstance() is null (2 red). MinecraftForge's own
+#     ClientModLoader.begin takes (Minecraft, PackRepository, ReloadableResourceManager), which exist
+#     together only inside Minecraft.<init>; NeoForge's begin() takes nothing and runs in Main.main.
 # M26_EXTRA_JVM='-Dforbric.forgeCreativeTabs=off' loses command_block in parent/search collections;
 # M21_EXTRA_JVM='-Dforbric.forgeSpawnPlacements=off' loses the zombie WORLD_SURFACE result in M21.
 # Green since Phase 1 A landed (A3–A9 hooks, A8 bridge inventory); any red is a regression, exit 1.
@@ -78,6 +82,11 @@ check "MinecraftForge fluid extensions were consulted while rendering" 'Forbric/
 
 # M26_ASSERTIONS_BEGIN — exercised against synthetic logs without launching the game.
 step "the canary subscribed, entered its save and completed real consumer observations"
+# The thread name is the assertion: "main" is the pre-Minecraft window, "Render thread" is Minecraft.<init>.
+check "the MinecraftForge canary is constructed where MinecraftForge constructs it" \
+  '\[Render thread/INFO\]: \[Forbric/Lifecycle\] constructed [1-9][0-9]* traditional-Forge mod\(s\) in the Minecraft.<init> window' "$LOG"
+check_absent "and not in the pre-Minecraft window" \
+  '\[main/INFO\]: \[Forbric/ModLoader\] constructed @Mod .* \(traditional-Forge' "$LOG"
 check "client canary subscribed" 'ForbricLive/CLIENT\] subscribed to ten Forge registration events' "$LOG"
 check "joined world" 'ClientSmoke\] joined world via quick-play' "$LOG"
 check "simulation survived" 'ClientSmoke\] client-ready after' "$LOG"
