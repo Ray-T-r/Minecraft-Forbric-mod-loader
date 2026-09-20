@@ -16,11 +16,13 @@
 
 package net.forbric.kernel.runtime;
 
+import java.util.List;
 import java.util.Map;
 
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.boot.KernelModLoader;
 import net.forbric.kernel.boot.NeoDeferredWork;
+import net.forbric.kernel.boot.DeferredWorkFailures;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 import net.forbric.api.ModCatalog;
@@ -98,10 +100,14 @@ public final class KernelNeoSetup {
 					NeoDeferredWork.syncExecutor(KernelNeoSetup.class.getClassLoader()), queue::runTasks);
 		} catch (Throwable drained) {
 			Throwable[] failures = Reflect.unwrap(drained).getSuppressed();
+			List<String> owners = DeferredWorkFailures.owners(queue);
+			for (String id : owners) {
+				ModCatalog.mark(id, ModCatalog.Status.DEGRADED, "one of its deferred setup tasks threw during " + label);
+			}
 			ForbricLog.warn("[Forbric/Lifecycle] " + (failures.length == 0 ? 1 : failures.length)
-					+ " deferred task(s) failed during " + label + " — each owning mod is named above by NeoForge's "
-					+ "own report, and is left half-loaded. The other mods' " + label + " completed",
-					Reflect.unwrap(drained));
+					+ " deferred task(s) failed during " + label + " — "
+					+ (owners.isEmpty() ? "owner unknown" : String.join(", ", owners))
+					+ "; the other mods' " + label + " completed", Reflect.unwrap(drained));
 		}
 		return fired;
 	}

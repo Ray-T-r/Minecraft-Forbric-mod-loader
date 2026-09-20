@@ -20,6 +20,7 @@ import java.util.List;
 
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.boot.KernelForgeModContext.Handle;
+import net.forbric.kernel.boot.DeferredWorkFailures;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 import net.forbric.api.ModCatalog;
@@ -113,12 +114,18 @@ public final class KernelForgeSetup {
 		}
 
 		// Now the work they filed. Before this line the event has been delivered and nothing it asked for has run.
+		DeferredWorkQueue queue = null;
 		try {
-			DeferredWorkQueue queue = stage.getDeferredWorkQueue();
+			queue = stage.getDeferredWorkQueue();
 			if (queue != null) queue.runTasks();
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] traditional-Forge " + label + " was delivered but its deferred "
-					+ "work did not run — a mod that registers from enqueueWork has done nothing",
+			List<String> owners = DeferredWorkFailures.owners(queue);
+			for (String id : owners) {
+				ModCatalog.mark(id, ModCatalog.Status.DEGRADED, "one of its deferred setup tasks threw during " + label);
+			}
+			ForbricLog.warn("[Forbric/Lifecycle] traditional-Forge " + label + " was delivered but "
+					+ (owners.isEmpty() ? "its deferred work did not run — a mod that registers from enqueueWork has done nothing"
+							: "a deferred task threw — " + String.join(", ", owners) + "; the other tasks ran"),
 					Reflect.unwrap(t));
 		}
 		return fired;

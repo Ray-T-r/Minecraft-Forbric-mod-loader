@@ -178,6 +178,71 @@ class NeoDeferredWorkTest {
 						+ "Minecraft.<init>");
 	}
 
+	/**
+	 * The private shape {@link DeferredWorkFailures} reads on BOTH carriers: a {@code tasks} deque on the queue,
+	 * {@code owner} and {@code future} on its TaskInfo. A carrier bump that renames one goes red here rather than
+	 * silently losing the attribution of a throwing deferred task.
+	 */
+	@Test
+	void bothCarriersDeferredWorkQueuesStillHaveTheFieldsTheFailureReadNeeds() throws Exception {
+		Path run = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+		for (String[] carrier : new String[][] {
+				{ "neoforge-runtime/neoforge-runtime.jar", "net/neoforged/fml/DeferredWorkQueue" },
+				{ "forge-runtime/forge-runtime.jar", "net/minecraftforge/fml/DeferredWorkQueue" } }) {
+			Path jar = run.resolve(carrier[0]);
+			assumeTrue(Files.isRegularFile(jar), "staged carrier absent: " + jar);
+			try (ZipFile zip = new ZipFile(jar.toFile())) {
+				assertTrue(declaresField(zip, carrier[1], "tasks"), carrier[1] + ".tasks");
+				assertTrue(declaresField(zip, carrier[1] + "$TaskInfo", "owner"), carrier[1] + "$TaskInfo.owner");
+				assertTrue(declaresField(zip, carrier[1] + "$TaskInfo", "future"), carrier[1] + "$TaskInfo.future");
+			}
+		}
+	}
+
+	/** Both setup phases hand their queue to {@link DeferredWorkFailures#owners} after a drain that threw. */
+	@Test
+	void bothSetupPhasesAttributeAThrowingDeferredTask() throws Exception {
+		for (String helper : new String[] { "KernelNeoSetup", "KernelForgeSetup" }) {
+			Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime",
+					"net", "forbric", "kernel", "runtime", helper + ".class");
+			assumeTrue(Files.isRegularFile(compiled), helper + " not compiled yet (no staged game jars)");
+			ClassNode node = new ClassNode();
+			new ClassReader(Files.readAllBytes(compiled)).accept(node, 0);
+			MethodNode phase = node.methods.stream().filter(m -> "firePhase".equals(m.name)).findFirst()
+					.orElseThrow(() -> new AssertionError("firePhase is gone from " + helper));
+			// Both phases already mark a mod whose LISTENER threw, so "a mark exists" proves nothing: the pin wants
+			// a mark AFTER the owners() read, and the deferred-task wording in the method's constants.
+			int owners = -1, markAfterOwners = -1, i = 0;
+			boolean wording = false;
+			for (AbstractInsnNode insn : phase.instructions.toArray()) {
+				if (insn instanceof MethodInsnNode call && "net/forbric/kernel/boot/DeferredWorkFailures".equals(call.owner)
+						&& "owners".equals(call.name) && owners < 0) owners = i;
+				if (insn instanceof MethodInsnNode call && "net/forbric/api/ModCatalog".equals(call.owner)
+						&& "mark".equals(call.name) && owners >= 0 && markAfterOwners < 0) markAfterOwners = i;
+				if (insn instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy) {
+					for (Object arg : indy.bsmArgs) wording |= arg instanceof String s && s.contains("deferred setup tasks threw");
+				}
+				if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc) {
+					wording |= ldc.cst instanceof String s && s.contains("deferred setup tasks threw");
+				}
+				i++;
+			}
+			assertTrue(owners >= 0, helper + ".firePhase reads the failed tasks' owners");
+			assertTrue(markAfterOwners > owners, helper + ".firePhase marks the catalogue with what owners() answered");
+			assertTrue(wording, helper + ".firePhase's mark says a deferred setup task threw");
+		}
+	}
+
+	private static boolean declaresField(ZipFile zip, String internal, String field) throws Exception {
+		ZipEntry entry = zip.getEntry(internal + ".class");
+		assertTrue(entry != null, internal + " is gone from the carrier");
+		ClassNode node = new ClassNode();
+		try (InputStream in = zip.getInputStream(entry)) {
+			new ClassReader(in).accept(node, 0);
+		}
+		return node.fields.stream().anyMatch(f -> field.equals(f.name));
+	}
+
 	/** If the carrier ever drops this, {@link NeoDeferredWork#syncExecutor} goes quiet and the bug comes back. */
 	@Test
 	void theCarrierStillOffersTheExecutorNeoForgeRunsDeferredWorkOn() throws Exception {
