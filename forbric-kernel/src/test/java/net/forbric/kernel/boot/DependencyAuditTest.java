@@ -216,6 +216,41 @@ class DependencyAuditTest {
 		return jar;
 	}
 
+	/**
+	 * The dialog's one job is to be believed, and this is what it said instead: Custom Player Animations (NeoForge)
+	 * "needs cloth_config — NOT INSTALLED", on an instance whose mods folder held Cloth Config. The two ecosystems
+	 * spell that library differently — Fabric {@code cloth-config}, NeoForge {@code cloth_config} — and under
+	 * Forbric they sit side by side, so an id-keyed lookup accuses the player of a missing mod they installed.
+	 */
+	@Test
+	void aLibrarySpelledTheOtherEcosystemsWayIsNotReportedMissing() {
+		String log = capture(() -> DependencyAudit.report(List.of(
+				mod(Ecosystem.NEOFORGE, "cpa", "5.9.8", dep("cloth_config", "[1,)", true)),
+				mod(Ecosystem.FABRIC, "cloth-config", "26.2.155")), List.of(), Side.CLIENT));
+
+		assertFalse(log.contains("not installed"), log);
+		assertTrue(log.contains("cloth_config"), log);
+		assertTrue(log.contains("cloth-config"), log);
+		assertTrue(log.contains("the same library"), log);
+	}
+
+	/** Off, the audit is exactly what it was — including the false accusation. */
+	@Test
+	void theCrossEcosystemSwitchRestoresTheExactIdAudit() {
+		String previous = System.getProperty("forbric.crossEcosystemIds");
+		System.setProperty("forbric.crossEcosystemIds", "off");
+		try {
+			String log = capture(() -> DependencyAudit.report(List.of(
+					mod(Ecosystem.NEOFORGE, "cpa", "5.9.8", dep("cloth_config", "[1,)", true)),
+					mod(Ecosystem.FABRIC, "cloth-config", "26.2.155")), List.of(), Side.CLIENT));
+
+			assertTrue(log.contains("not installed"), log);
+		} finally {
+			if (previous == null) System.clearProperty("forbric.crossEcosystemIds");
+			else System.setProperty("forbric.crossEcosystemIds", previous);
+		}
+	}
+
 	private static UnifiedDependency dep(String id, String constraint, boolean mandatory) {
 		return new UnifiedDependency(id, constraint, mandatory);
 	}

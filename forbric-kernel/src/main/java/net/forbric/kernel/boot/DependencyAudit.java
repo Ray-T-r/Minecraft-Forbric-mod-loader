@@ -133,6 +133,10 @@ public final class DependencyAudit {
 
 		List<String> missing = new ArrayList<>();
 		List<String> unsatisfied = new ArrayList<>();
+		// Requirements met by the same library under the other ecosystem's id spelling. Reported rather than
+		// silently absorbed: a player who reads "cloth_config" in a mod's description and sees
+		// "cloth-config" in their mods folder deserves to be told those are one mod, not left to wonder.
+		List<String> respelled = new ArrayList<>();
 		// The same two findings as structured values. The prose above is what the log has always said and what a
 		// gate would grep; this is what a dialog can lay out in a table. Built alongside rather than parsed back
 		// out of the strings, because a formatter is not a data source.
@@ -157,6 +161,16 @@ public final class DependencyAudit {
 				}
 
 				DiscoveredMod provider = byId.get(wanted);
+				if (provider == null) {
+					// The same library, spelled the other ecosystem's way. Tried only here, after the exact id
+					// and every provides alias have missed, so nothing that already resolved changes meaning.
+					provider = net.forbric.api.ModIds.underAnotherSpelling(wanted, byId);
+					if (provider != null) {
+						respelled.add(describe(mod) + " requires " + dep.getModId() + ", which is installed as "
+								+ describe(provider) + " — the same library, spelled the way its own ecosystem "
+								+ "spells it");
+					}
+				}
 				if (provider == null) {
 					// Only when we know the index covers everything that is loaded. Otherwise this is the one
 					// thing a diagnostic must never do: accuse a mod of a problem it does not have.
@@ -185,6 +199,9 @@ public final class DependencyAudit {
 		for (String line : unsatisfied) {
 			ForbricLog.warn("[Forbric/Deps] %s. It is being loaded anyway — expect it to fail on whatever the "
 					+ "required version added.", line);
+		}
+		for (String line : respelled) {
+			ForbricLog.info("[Forbric/Deps] %s.", line);
 		}
 		if (crossEcosystem > 0) {
 			ForbricLog.info("[Forbric/Deps] %d hard dependenc%s satisfied ACROSS ecosystems — neither loader on its "

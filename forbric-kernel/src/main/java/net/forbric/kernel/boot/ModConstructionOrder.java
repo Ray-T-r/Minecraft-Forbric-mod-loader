@@ -103,6 +103,12 @@ public final class ModConstructionOrder {
 		for (String id : ids) {
 			for (UnifiedDependency dep : byName.get(id).getDependencies()) {
 				DiscoveredMod target = dep == null ? null : byName.get(dep.getModId());
+				// The same library under the other ecosystem's id spelling — cloth_config next to cloth-config.
+				// Without this the edge is simply absent and the dependent may construct first, which is the
+				// ordering bug the dependency dialog's NOT INSTALLED line was the visible half of.
+				if (target == null && dep != null) {
+					target = net.forbric.api.ModIds.underAnotherSpelling(dep.getModId(), byName);
+				}
 				// Not installed: nothing to order against. The dependency audit is what reports a missing one.
 				if (target == null || target.getId().equals(id)) continue;
 

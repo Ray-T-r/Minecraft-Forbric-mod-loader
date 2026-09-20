@@ -43,6 +43,19 @@ class ModConstructionOrderTest {
 		System.clearProperty(ModConstructionOrder.SWITCH);
 	}
 
+	/**
+	 * The other half of the Cloth Config case. The dialog said NOT INSTALLED; here the edge was simply missing, so
+	 * the dependent could be constructed before the library it requires — the failure that then names neither mod.
+	 */
+	@Test
+	void aRequirementSpelledTheOtherEcosystemsWayStillOrdersTheLibraryFirst() {
+		List<String> order = ModConstructionOrder.of(List.of(
+				mod("cpa", requires("cloth_config")),
+				mod("cloth-config")));
+
+		assertTrue(order.indexOf("cloth-config") < order.indexOf("cpa"), order.toString());
+	}
+
 	private static DiscoveredMod mod(String id, UnifiedDependency... deps) {
 		return new DiscoveredMod(Ecosystem.NEOFORGE, id, "1.0.0", id, List.of(deps), List.of(), null, id + ".jar");
 	}
