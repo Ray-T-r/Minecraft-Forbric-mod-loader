@@ -75,11 +75,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	@Override
 	public AnchorSet anchors() {
-		// Thirty-five independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
+		// Thirty-seven independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("35 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("37 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -123,6 +123,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= postMinecraftForgesReloadListenerEvent(node);
 			changed |= giveMinecraftForgesReloadEventItsConditionContext(node);
 			changed |= letMinecraftForgeIngredientTypesDecode(node);
+			changed |= letMinecraftForgeFluidsChooseTheirModel(node);
+			changed |= giveMinecraftForgesParticleLookupItsFirstVariant(node);
 			changed |= dropStubsThatBypassARealSuperclassMethod(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
@@ -231,6 +233,17 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String KERNEL_FORGE_CONDITIONS = "net/forbric/kernel/runtime/KernelForgeConditions";
 	private static final String KERNEL_FORGE_RELOAD = "net/forbric/kernel/runtime/KernelForgeReload";
 	private static final String KERNEL_FORGE_INGREDIENTS = "net/forbric/kernel/runtime/KernelForgeIngredients";
+	private static final String KERNEL_FORGE_FLUIDS = "net/forbric/kernel/runtime/KernelForgeFluids";
+	private static final String FLUID_RENDERER = "net/minecraft/client/renderer/block/FluidRenderer";
+	private static final String FLUID_MODEL = "Lnet/minecraft/client/renderer/block/FluidModel;";
+	private static final String FLUID_STATE = "Lnet/minecraft/world/level/material/FluidState;";
+	private static final String TESSELATE_DESC = "(Lnet/minecraft/client/renderer/block/BlockAndTintGetter;Lnet/minecraft/core/BlockPos;"
+			+ "Lnet/minecraft/client/renderer/block/FluidRenderer$Output;Lnet/minecraft/world/level/block/state/BlockState;"
+			+ FLUID_STATE + ")V";
+	private static final String FLUID_MODEL_FUNNEL_DESC = "(" + FLUID_MODEL + FLUID_STATE
+			+ "Lnet/minecraft/client/renderer/block/BlockAndTintGetter;Lnet/minecraft/core/BlockPos;)" + FLUID_MODEL;
+	private static final String WEIGHTED_VARIANTS = "net/minecraft/client/renderer/block/dispatch/WeightedVariants";
+	private static final String BLOCK_STATE_MODEL = "net/minecraft/client/renderer/block/dispatch/BlockStateModel";
 	/** NeoForge-only: MinecraftForge composes its ingredient codec in ForgeHooks, so ForeignType has no pair. */
 	private static final String NEO_INGREDIENT_CODECS = "net/neoforged/neoforge/common/crafting/IngredientCodecs";
 	private static final String CODEC_TO_CODEC = "(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;";
@@ -551,6 +564,138 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		ForbricLog.info("[Forbric/MergedBaseCompat] Ingredient.CODEC now asks MinecraftForge's ingredient serializers "
 				+ "before NeoForge's — forge:intersection/difference/compound/nbt and mod-registered Forge ingredient "
 				+ "types were a recipe parsing error on the merged base");
+		return true;
+	}
+
+	/**
+	 * Lets a MinecraftForge fluid supply its own render model and tint from {@code FluidRenderer.tesselate}.
+	 *
+	 * <p>Vanilla 26.2's {@code FluidStateModelSet} knows water and lava and answers the missing model for anything
+	 * else; genuine Forge's only seam is inside {@code tesselate} — after the model lookup it asks
+	 * {@code IClientFluidTypeExtensions.of(fluidState).getModel(...)}, and where the model carries no tint source it
+	 * asks {@code getTintColor()} instead of {@code -1}. The merge kept NeoForge's tesselate, with neither ask, so
+	 * every Forge modded fluid drew as the missing texture. Two sites, one repair, one flag:
+	 * <ul>
+	 * <li>A: after the single {@code FluidStateModelSet.get(FluidState)} and its {@code ASTORE n}, insert
+	 * {@code ALOAD n; ALOAD 5; ALOAD 1; ALOAD 2; INVOKESTATIC KernelForgeFluids.model; ASTORE n} — stack empty in,
+	 * empty out, no label crossed (locals: this=0, level=1, pos=2, output=3, blockState=4, fluidState=5).</li>
+	 * <li>B: the {@code IFNULL} after {@code FluidModel.fluidTintSource()} targets {@code ICONST_M1; ISTORE k}; the
+	 * constant becomes {@code ALOAD 5; INVOKESTATIC KernelForgeFluids.tintColor} — an int is pushed on both arms,
+	 * the label keeps its empty-stack frame.</li>
+	 * </ul>
+	 * Whole-or-nothing: unless both shapes match exactly once, nothing is edited and the reason is logged.
+	 * Idempotent once the kernel owner is named. The flag ({@code -Dforbric.forgeFluidModels=off}) lives in the
+	 * helper, which then returns the model by identity and {@code -1}.
+	 */
+	private static boolean letMinecraftForgeFluidsChooseTheirModel(ClassNode node) {
+		if (!FLUID_RENDERER.equals(node.name)) return false;
+		MethodNode tesselate = findMethod(node, "tesselate", TESSELATE_DESC);
+		if (tesselate == null) return false;
+
+		VarInsnNode modelStore = null;
+		InsnNode minusOne = null;
+		int lookups = 0, tintArms = 0;
+		for (AbstractInsnNode insn = tesselate.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && KERNEL_FORGE_FLUIDS.equals(call.owner)) return false;
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKEVIRTUAL
+					&& "net/minecraft/client/renderer/block/FluidStateModelSet".equals(call.owner)
+					&& "get".equals(call.name) && ("(" + FLUID_STATE + ")" + FLUID_MODEL).equals(call.desc)) {
+				lookups++;
+				if (nextReal(call) instanceof VarInsnNode store && store.getOpcode() == Opcodes.ASTORE) modelStore = store;
+			}
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKEVIRTUAL
+					&& "net/minecraft/client/renderer/block/FluidModel".equals(call.owner)
+					&& "fluidTintSource".equals(call.name)
+					&& nextReal(call) instanceof JumpInsnNode jump && jump.getOpcode() == Opcodes.IFNULL) {
+				AbstractInsnNode target = jump.label;
+				while (target != null && target.getOpcode() < 0) target = target.getNext();
+				if (target instanceof InsnNode constant && constant.getOpcode() == Opcodes.ICONST_M1
+						&& nextReal(constant) instanceof VarInsnNode store && store.getOpcode() == Opcodes.ISTORE) {
+					tintArms++;
+					minusOne = constant;
+				}
+			}
+		}
+		if (lookups != 1 || modelStore == null || tintArms != 1) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] FluidRenderer.tesselate does not have the expected shape "
+					+ "(%d model lookup(s), store %s, %d tint fallback arm(s)) — leaving MinecraftForge fluid models "
+					+ "unbridged rather than editing half of it", lookups, modelStore != null, tintArms);
+			return false;
+		}
+
+		int slot = modelStore.var;
+		InsnList funnel = new InsnList();
+		funnel.add(new VarInsnNode(Opcodes.ALOAD, slot));
+		funnel.add(new VarInsnNode(Opcodes.ALOAD, 5));
+		funnel.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		funnel.add(new VarInsnNode(Opcodes.ALOAD, 2));
+		funnel.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FORGE_FLUIDS, "model", FLUID_MODEL_FUNNEL_DESC, false));
+		funnel.add(new VarInsnNode(Opcodes.ASTORE, slot));
+		tesselate.instructions.insert(modelStore, funnel);
+
+		InsnList tint = new InsnList();
+		tint.add(new VarInsnNode(Opcodes.ALOAD, 5));
+		tint.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FORGE_FLUIDS, "tintColor", "(" + FLUID_STATE + ")I", false));
+		tesselate.instructions.insert(minusOne, tint);
+		tesselate.instructions.remove(minusOne);
+		tesselate.maxStack = Math.max(tesselate.maxStack, 4);
+		ForbricLog.info("[Forbric/MergedBaseCompat] FluidRenderer.tesselate now asks a MinecraftForge fluid's client "
+				+ "extensions for its model and tint — the merge kept NeoForge's tesselate, which never asks, so every "
+				+ "Forge modded fluid drew as the missing texture");
+		return true;
+	}
+
+	/**
+	 * Writes {@code WeightedVariants.first} in {@code <init>}, from the local the merged constructor already computes.
+	 *
+	 * <p>Forge's {@code particleMaterial(ModelData)} reads {@code first} (its only reader in the base) and the merge
+	 * dropped the write, so a Forge mod asking a weighted block model for its particle sprite the Forge way NPEs.
+	 * Genuine Forge's constructor writes it from the same {@code getFirst()/value()} chain the merged constructor
+	 * still computes into local 2; three instructions after that {@code ASTORE 2} restore it. Stands down if
+	 * anything already writes the field (rebuilt base) or the chain has a different shape.
+	 */
+	private static boolean giveMinecraftForgesParticleLookupItsFirstVariant(ClassNode node) {
+		if (!WEIGHTED_VARIANTS.equals(node.name)) return false;
+		String desc = "L" + BLOCK_STATE_MODEL + ";";
+		if (!hasField(node, "first", desc)) return false;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTFIELD
+						&& WEIGHTED_VARIANTS.equals(field.owner) && "first".equals(field.name)) return false;
+			}
+		}
+		MethodNode init = findMethod(node, "<init>", "(Lnet/minecraft/util/random/WeightedList;)V");
+		if (init == null) return false;
+		VarInsnNode store = null;
+		for (AbstractInsnNode insn = init.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (!(insn instanceof VarInsnNode var) || var.getOpcode() != Opcodes.ASTORE || var.var != 2) continue;
+			// previousReal answers the nearest real instruction AT or before its cursor, so step off each one first.
+			AbstractInsnNode a = previousReal(var.getPrevious()), b = a == null ? null : previousReal(a.getPrevious()),
+					c = b == null ? null : previousReal(b.getPrevious()), d = c == null ? null : previousReal(c.getPrevious());
+			if (a instanceof TypeInsnNode castModel && castModel.getOpcode() == Opcodes.CHECKCAST
+					&& BLOCK_STATE_MODEL.equals(castModel.desc)
+					&& b instanceof MethodInsnNode value && "net/minecraft/util/random/Weighted".equals(value.owner)
+					&& "value".equals(value.name)
+					&& c instanceof TypeInsnNode castWeighted && castWeighted.getOpcode() == Opcodes.CHECKCAST
+					&& "net/minecraft/util/random/Weighted".equals(castWeighted.desc)
+					&& d instanceof MethodInsnNode first && "getFirst".equals(first.name)) {
+				store = var;
+				break;
+			}
+		}
+		if (store == null) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] WeightedVariants.<init> no longer computes the first model into "
+					+ "local 2 the way the merge left it — not writing 'first'");
+			return false;
+		}
+		InsnList write = new InsnList();
+		write.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		write.add(new VarInsnNode(Opcodes.ALOAD, 2));
+		write.add(new FieldInsnNode(Opcodes.PUTFIELD, WEIGHTED_VARIANTS, "first", desc));
+		init.instructions.insert(store, write);
+		init.maxStack = Math.max(init.maxStack, 2);
+		ForbricLog.warn("[Forbric/MergedBaseCompat] WeightedVariants.first is written again (1 field, in <init>) — "
+				+ "Forge's particleMaterial(ModelData) is its only reader and the merge dropped genuine Forge's write");
 		return true;
 	}
 

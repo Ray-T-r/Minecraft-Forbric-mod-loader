@@ -145,6 +145,8 @@ check "the client game-bus bridges went on too" "EventMux\] all [0-9][0-9]* CLIE
 check "the client initialization bridges landed" "EventMux\] all 3 CLIENT_INIT bridge\(s\) installed"  "$LOG"
 check "the registration bridges landed"          "EventMux\] all 2 REGISTRATION bridge\(s\) installed" "$LOG"
 check_absent "no bridge reported missing"       "bridge\(s\) MISSING"                        "$LOG"
+# H5 (the FluidRenderer.tesselate funnel for MinecraftForge fluid models) is asserted in gate-m26, not here: this
+# pack carries sodium, which replaces vanilla's chunk and fluid meshing, so the vanilla funnel is never reached.
 
 step "a Forge-family mod's own content and data actually arrived (must PASS)"
 # Three fixes that only this pack exercises, each demonstrable: -Dforbric.modDataPacks=off,
