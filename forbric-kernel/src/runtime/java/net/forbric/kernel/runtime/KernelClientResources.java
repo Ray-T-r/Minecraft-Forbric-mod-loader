@@ -91,6 +91,17 @@ public final class KernelClientResources {
 			resources.set(manager, new MultiPackResourceManager(PackType.CLIENT_RESOURCES, packs));
 			// The empty one the constructor made. Closed AFTER the swap so a failure above leaves a live manager.
 			if (previous instanceof CloseableResourceManager closeable) closeable.close();
+			// The NAMESPACES, not just the pack count: much of what a pack carries is found by LISTING rather
+			// than by path — ClientLanguage walks every namespace asking for lang/<code>.json, and sprite sources
+			// and shaders are enumerated the same way. A pack that is served but contributes no namespace
+			// therefore keeps its textures, which are fetched by path, and silently loses all of that. Counting
+			// packs cannot tell the two apart; counting namespaces can, and naming the carriers' own says the
+			// pack that is easiest to lose (each ships exactly one) is there.
+			ForbricLog.info("[Forbric/ClientResources] %d namespace(s) visible; the carriers' own: %s",
+					manager.getNamespaces().size(),
+					// Sorted: getNamespaces returns a Set, and an assertion on an unordered line is a flake.
+					manager.getNamespaces().stream().filter(n -> n.equals("neoforge") || n.equals("forge"))
+							.sorted().toList());
 			return packs.size();
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/ClientResources] could not preload the client resource manager: %s",

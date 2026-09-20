@@ -67,6 +67,7 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #   -Dforbric.mipmapLowering=off   -> 1 red ("an atlas may lower its mip level again")
 #   -Dforbric.keyModifierSuffix=off -> 2 red ("the key-modifier suffix is dropped before the name is parsed",
 #                                             "options.txt loads with modded modifier bindings in it")
+#   -Dforbric.carrierLanguages=off -> 2 red ("NeoForge's own screens have their text", "and MinecraftForge's do too")
 # Verified with
 # -Dforbric.pruneDuplicateLambdas=off, which brings back StubException and the failed world load.
 FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
@@ -561,6 +562,28 @@ check "the audit names the port and the class" \
 check "and it says which member differs" \
   "Forbric/PortAudit\].*registerConfig.*Lnet/neoforged/fml/ModContainer;" "$LOG"
 check_absent "nothing actually failed on that API" "NoSuchMethodError.*ConfigTracker" "$LOG"
+
+step "each carrier's own screens have their own text (must PASS)"
+# The carriers keep a second translation table beside Minecraft's, because the text on it -- the loading screen,
+# the mod list, the branding line under the logo -- has to render before a resource pack exists. FMLTranslations
+# and ForgeI18n read only that table and NEVER the resource manager, and a missing key there renders as the key
+# itself. Each carrier fills it in exactly one place, and both are inside the client mod loader the kernel
+# replaces, so both tables stayed empty: a Forbric client showed "fml.menu.branding" under the logo and
+# "fml.button.continue.launch" on the button that leaves the loading screen.
+#
+# The probe key is asserted, not just the count: a table that loaded the WRONG file is still a broken screen, and
+# that failure used to look identical to a healthy one in the log.
+check "NeoForge's own screens have their text" \
+  "Forbric/Lang\] neoforge carrier: [0-9]+ built-in translation\(s\) loaded; 'fml.menu.branding' resolves" "$LOG"
+check "and MinecraftForge's do too" \
+  "Forbric/Lang\] forge carrier: [0-9]+ built-in translation\(s\) loaded; 'fml.menu.mods' resolves" "$LOG"
+check_absent "and no carrier loaded a table without its own keys in it" \
+  "Forbric/Lang\].*still does not resolve" "$LOG"
+# The other half of the same story, and the half that is NOT the carriers' private table: what the resource
+# manager can see. A pack served with no namespace of its own keeps its textures (fetched by path) and loses
+# everything found by listing — its language file among it. RED with M9_EXTRA_JVM=-Dforbric.clientResourcePreload=off.
+check "and both carriers' assets are visible to the resource manager" \
+  "Forbric/ClientResources\] [0-9]+ namespace\(s\) visible; the carriers' own: \[forge, neoforge\]" "$LOG"
 
 step "the world is on disk before the process ends (must PASS)"
 # A real player Alt+F4'd and lost a minute of play: IntegratedServer.stopServer runs teardownPublishedState

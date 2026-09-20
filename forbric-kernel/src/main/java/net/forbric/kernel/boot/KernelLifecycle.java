@@ -123,6 +123,12 @@ public final class KernelLifecycle {
 		// (gate-m15). Both suppliers are lazy — the client one asks Minecraft for its instance each time, the
 		// server one asks NeoForge's ServerLifecycleHooks for the current server, which the merged base keeps.
 		bridgeForgeSidedProviders(cl);
+		// Step 0c (client only): load each carrier's own built-in translations. Their loader is called from
+		// ClientModLoader.begin(), whose call site the kernel redirects here, so the table FMLTranslations and
+		// ForgeI18n read was never filled and every FML-side string — the branding line under the logo, the loading
+		// screen's continue button — rendered as its raw key. The dedicated server has its own entry point
+		// (LanguageHook.loadLanguagesOnServer, per world) and is not this window's business.
+		if (side.isClient()) CarrierLanguages.loadBuiltins(cl);
 		// Step 1: register NeoForge's baseline registries (neoforge:fluid_type, …) into the root. Correctly timed
 		// now (post-Bootstrap), unlike the pre-Main attempt which tripped "Not bootstrapped".
 		PassiveSeeder.seedNeoForgeRegistries(cl);

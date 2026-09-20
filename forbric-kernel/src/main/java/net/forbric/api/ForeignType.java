@@ -105,6 +105,14 @@ public enum ForeignType {
 			"net.neoforged.neoforge.registries.GameData"),
 	KEY_MAPPING_LOOKUP("net.minecraftforge.client.settings.KeyMappingLookup",
 			"net.neoforged.neoforge.client.settings.KeyMappingLookup"),
+	/**
+	 * Each family's own built-in translations — the table its screens read before any resource pack exists.
+	 *
+	 * <p>Paired because the loader on it is called from the client mod loader the kernel replaces, so BOTH halves
+	 * need calling and a half named inline is a family whose screens quietly render raw keys.
+	 */
+	LANGUAGE_HOOK("net.minecraftforge.server.LanguageHook",
+			"net.neoforged.neoforge.server.LanguageHook"),
 	LOADING_MOD_LIST("net.minecraftforge.fml.loading.LoadingModList",
 			"net.neoforged.fml.loading.LoadingModList"),
 	INTER_MOD_ENQUEUE_EVENT("net.minecraftforge.fml.event.lifecycle.InterModEnqueueEvent",
