@@ -120,6 +120,50 @@ class KernelMixinErrorHandlerTest {
 		}
 	}
 
+	/**
+	 * A reason the kernel worked out while READING the mixin reaches the row the player sees.
+	 *
+	 * <p>Two different moments and two different classes: the diagnosis is made when the mixin is read, the mark
+	 * when it fails to apply. Losing it in between leaves the load report saying "InvalidInjectionException",
+	 * which is true and tells nobody anything.
+	 */
+	@Test
+	void aReasonTheKernelWorkedOutReachesTheRow() {
+		net.forbric.kernel.transform.DuplicateLambdaPruneInjector.recordDroppedForTest(
+				"net/example/Target", "lambda$doThing$0", "(I)V");
+		org.objectweb.asm.tree.ClassNode mixin = new org.objectweb.asm.tree.ClassNode();
+		mixin.name = "a/b/ThingMixin";
+		org.objectweb.asm.tree.AnnotationNode at =
+				new org.objectweb.asm.tree.AnnotationNode("Lorg/spongepowered/asm/mixin/Mixin;");
+		at.values = new java.util.ArrayList<>(List.of("value", new java.util.ArrayList<>(
+				List.of(org.objectweb.asm.Type.getObjectType("net/example/Target")))));
+		mixin.visibleAnnotations = new java.util.ArrayList<>(List.of(at));
+		org.objectweb.asm.tree.MethodNode handler = new org.objectweb.asm.tree.MethodNode(
+				org.objectweb.asm.Opcodes.ASM9, org.objectweb.asm.Opcodes.ACC_PRIVATE, "onThing",
+				"(ILorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V", null, null);
+		org.objectweb.asm.tree.AnnotationNode inject =
+				new org.objectweb.asm.tree.AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Inject;");
+		inject.values = new java.util.ArrayList<>(List.of("method",
+				new java.util.ArrayList<>(List.of("lambda$doThing$0"))));
+		handler.visibleAnnotations = new java.util.ArrayList<>(List.of(inject));
+		mixin.methods = new java.util.ArrayList<>(List.of(handler));
+
+		org.objectweb.asm.tree.ClassNode target = new org.objectweb.asm.tree.ClassNode();
+		target.name = "net/example/Target";
+		target.methods = new java.util.ArrayList<>(List.of(new org.objectweb.asm.tree.MethodNode(
+				org.objectweb.asm.Opcodes.ASM9, org.objectweb.asm.Opcodes.ACC_PRIVATE, "lambda$doThing$0",
+				"(Ljava/lang/String;)V", null, null)));
+		assertEquals(1, MixinOverloadPin.pin(mixin, name -> target.name.equals(name) ? target : null));
+
+		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("t.mixins.json", "xmod", Ecosystem.FABRIC)));
+		new KernelMixinErrorHandler().onApplyError("net.example.Target", new RuntimeException(),
+				info("t.mixins.json", "a.b.ThingMixin"), IMixinErrorHandler.ErrorAction.WARN);
+
+		assertEquals(1, ModCatalog.failures().size());
+		assertTrue(ModCatalog.failures().get(0).statusDetail().contains("the byte merge did not keep"),
+				ModCatalog.failures().get(0).statusDetail());
+	}
+
 	@Test
 	void theActionIsNeverChanged() {
 		IMixinErrorHandler handler = new KernelMixinErrorHandler();

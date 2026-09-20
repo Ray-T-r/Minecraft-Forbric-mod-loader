@@ -283,8 +283,29 @@ public final class ForbricMixinService
 		// …and a target the byte merge had to rename gets its twin added, because the merged code that runs
 		// instantiates the renamed copy and the mixin names only the vanilla one.
 		MixinMergedTwin.addTwins(node, MixinMergedTwin.enabled() ? this::mergedBaseHas : binary -> false);
+		// …and a name-only @Inject selector that the merge left pointing at two methods is pinned to the overload
+		// the handler was written for, instead of failing the whole mixin class on the first one.
+		MixinOverloadPin.pin(node, this::mergedBaseNode);
 
 		return node;
+	}
+
+	/**
+	 * The merged base's node for {@code internalName}, or null when it cannot be read.
+	 *
+	 * <p>Read through the same pre-mixin bytes the twin check uses, and parsed with {@code SKIP_CODE}: only the
+	 * member list is wanted, and a target class is often one of the biggest in the game.
+	 */
+	private ClassNode mergedBaseNode(String internalName) {
+		try {
+			byte[] bytes = loader().getPreMixinClassBytes(internalName.replace('/', '.'));
+			if (bytes == null) return null;
+			ClassNode target = new ClassNode();
+			new ClassReader(bytes).accept(target, ClassReader.SKIP_CODE);
+			return target;
+		} catch (Throwable absent) {
+			return null;
+		}
 	}
 
 	/** Whether the merged base (or any owned jar) carries {@code binary}. Bytes only — the class is not loaded. */

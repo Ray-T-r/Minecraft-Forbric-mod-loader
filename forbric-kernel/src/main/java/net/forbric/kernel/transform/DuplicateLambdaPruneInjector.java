@@ -73,6 +73,28 @@ public final class DuplicateLambdaPruneInjector implements ClassTransformer {
 
 	private int prunedClasses;
 
+	/**
+	 * {@code <class internal name>#<lambda name>} → the descriptors that were dropped there.
+	 *
+	 * <p>Kept because the drop is the answer to a question someone asks LATER: a mixin whose {@code @Inject}
+	 * names one of these fails with nothing but "Invalid descriptor", and the reason is here — the body the merge
+	 * kept is the other ecosystem's, so the shape the mod targets belongs to a chain that no longer runs. Without
+	 * this the failure is diagnosable only by disassembling the merged base by hand, which is how the first one
+	 * was found.
+	 */
+	private static final java.util.Map<String, java.util.List<String>> DROPPED = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/** Test seam: records a drop without running a transform, so the diagnosis can be driven for real. */
+	public static void recordDroppedForTest(String ownerInternalName, String lambdaName, String descriptor) {
+		DROPPED.computeIfAbsent(ownerInternalName + "#" + lambdaName,
+				k -> java.util.Collections.synchronizedList(new ArrayList<>())).add(descriptor);
+	}
+
+	/** The descriptors dropped for {@code owner.lambdaName}, newest boot only. Empty when none were. */
+	public static java.util.List<String> droppedDescriptors(String ownerInternalName, String lambdaName) {
+		return DROPPED.getOrDefault(ownerInternalName + "#" + lambdaName, java.util.List.of());
+	}
+
 	@Override
 	public String name() {
 		return "forbric-duplicate-lambda-prune";
@@ -110,6 +132,10 @@ public final class DuplicateLambdaPruneInjector implements ClassTransformer {
 		if (orphaned.isEmpty()) return classBytes;
 
 		node.methods.removeAll(orphaned);
+		for (MethodNode m : orphaned) {
+			DROPPED.computeIfAbsent(className.replace('.', '/') + "#" + m.name,
+					k -> java.util.Collections.synchronizedList(new ArrayList<>())).add(m.desc);
+		}
 		prunedClasses++;
 		ForbricLog.info("[Forbric/Merge] %s carried %d duplicated lambda name(s) from the byte merge — dropped %d "
 				+ "orphaned bod(ies) so a mixin selecting by name cannot bind to the half that lost: %s",

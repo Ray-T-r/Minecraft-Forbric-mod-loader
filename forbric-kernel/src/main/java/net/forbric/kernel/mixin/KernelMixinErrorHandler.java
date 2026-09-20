@@ -82,7 +82,12 @@ public final class KernelMixinErrorHandler implements IMixinErrorHandler {
 				configName == null ? "?" : MixinConfigOwners.describe(configName), mixinName, what, cause,
 				modId == null ? " is not known, so no row is marked" : " " + modId + " is marked");
 		if (modId != null) {
-			ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, "its mixin " + mixinName + " " + what + cause);
+			// The reason, when the kernel worked one out while READING the mixin. "InvalidInjectionException" is
+			// true and tells a player nothing; what the merge did to the target is the sentence worth carrying.
+			String why = MixinOverloadPin.reasonFor(mixinName);
+			ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, why != null
+					? "its mixin " + mixinName + " " + what + cause + " — " + why
+					: "its mixin " + mixinName + " " + what + cause);
 		}
 	}
 }
