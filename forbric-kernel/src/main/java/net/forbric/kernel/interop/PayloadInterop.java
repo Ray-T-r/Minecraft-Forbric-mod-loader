@@ -53,6 +53,7 @@ public final class PayloadInterop {
 	private static final String FABRIC_REGISTRATION_PAYLOAD = "net.fabricmc.fabric.impl.networking.RegistrationPayload";
 	private static final String FABRIC_COMMON_VERSION_PAYLOAD = "net.fabricmc.fabric.impl.networking.CommonVersionPayload";
 	private static final String FABRIC_COMMON_REGISTER_PAYLOAD = "net.fabricmc.fabric.impl.networking.CommonRegisterPayload";
+	private static final String FABRIC_SERVER_ADDON_PACKAGE = "net.fabricmc.fabric.impl.networking.server.";
 	private static final String NEO_NETWORK_REGISTRY = ForeignType.NETWORK_REGISTRY.binary(Ecosystem.NEOFORGE);
 	private static final String NEO_REGISTER_PAYLOAD = "net.neoforged.neoforge.network.payload.MinecraftRegisterPayload";
 	private static final String NEO_UNREGISTER_PAYLOAD = "net.neoforged.neoforge.network.payload.MinecraftUnregisterPayload";
@@ -211,7 +212,8 @@ public final class PayloadInterop {
 			boolean mirrored = invokeReceiveRegistration(addon, registration.register, fabricPayload);
 			probe(() -> "  mirrored into Fabric receiveRegistration: " + mirrored
 					+ "; sendable=" + channelSet(addon, "getSendableChannels")
-					+ " receivable=" + channelSet(addon, "getReceivableChannels"));
+					+ " receivable=" + channelSet(addon, "getReceivableChannels")
+					+ " pending=" + pendingChannels(connection));
 		}
 
 		if (connection != null && registration.register) declareForgeChannels(connection);
@@ -271,6 +273,30 @@ public final class PayloadInterop {
 
 	private static String simpleName(Object o) {
 		return o == null ? "null" : o.getClass().getSimpleName();
+	}
+
+	/**
+	 * The connection's per-protocol PENDING channel sets, which is where Fabric's next-phase addon gets its
+	 * sendable channels from: {@code ServerPlayNetworkAddon}'s constructor drains
+	 * {@code ChannelInfoHolder.fabric_getPendingChannelsNames(PLAY)} and nothing else seeds it. A mod that syncs
+	 * during {@code placeNewPlayer} — Cardinal Components does, and DISCONNECTS the player when the channel is not
+	 * sendable — reads the result of exactly this list, so an empty one is invisible until the kick.
+	 */
+	private static String pendingChannels(Object connection) {
+		if (connection == null) return "?";
+		StringBuilder out = new StringBuilder();
+		try {
+			Class<?> protocol = Class.forName("net.minecraft.network.ConnectionProtocol", false,
+					connection.getClass().getClassLoader());
+			for (Object phase : protocol.getEnumConstants()) {
+				Object names = invoke(connection, "fabric_getPendingChannelsNames", phase);
+				int size = names instanceof Collection<?> c ? c.size() : -1;
+				if (size > 0) out.append(out.isEmpty() ? "" : ", ").append(phase).append('=').append(names);
+			}
+		} catch (Throwable t) {
+			return "unreadable(" + t.getClass().getSimpleName() + ")";
+		}
+		return out.isEmpty() ? "none" : out.toString();
 	}
 
 	private static String channelSet(Object addon, String getter) {
@@ -928,6 +954,80 @@ public final class PayloadInterop {
 		}
 	}
 
+	/** The first declaration of {@code name} walking up from {@code type}, made accessible; null if there is none. */
+	private static Method declaredMethod(Class<?> type, String name, Class<?>... parameters) {
+		for (Class<?> c = type; c != null; c = c.getSuperclass()) {
+			try {
+				Method found = c.getDeclaredMethod(name, parameters);
+				found.setAccessible(true);
+				return found;
+			} catch (NoSuchMethodException keepLooking) {
+				// up one
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Records the PLAY channels a {@code c:register} carries into the connection, which is the half of Fabric's own
+	 * {@code c:register} handler this class replaces.
+	 *
+	 * <p>Fabric declares a client's PLAY receivers during CONFIGURATION, through {@code c:register} — not through
+	 * {@code minecraft:register}, which carries only the current phase's. {@code CommonPacketsImpl} takes the
+	 * channels of a {@code c:register} whose phase is {@code play} and adds them to the connection's
+	 * {@code ChannelInfoHolder}; {@code ServerPlayNetworkAddon}'s constructor then drains exactly that list into
+	 * its sendable set, and nothing else ever seeds it.
+	 *
+	 * <p>This class intercepts {@code c:register} to serve NeoForge's negotiation as well, and returns TRUE — which
+	 * cancels Fabric's own body. It replayed the addon call and not the recording, so the list stayed empty and
+	 * every Fabric PLAY channel was unsendable for the whole session. That is invisible for a mod that checks
+	 * {@code canSend} and skips; Cardinal Components does not check-and-skip, it DISCONNECTS — joining a world
+	 * ended with "This server requires Apoli: Legacy and Cardinal Components API (unhandled packet:
+	 * cardinal-components:entity_sync)", which names two mods and nothing else.
+	 *
+	 * <p>Server side only, and only for the {@code play} phase, because that is the whole of what Fabric's handler
+	 * does with it. {@code -Dforbric.fabricPlayChannels=off} leaves the list empty again.
+	 */
+	static final String PLAY_CHANNELS_PROPERTY = "forbric.fabricPlayChannels";
+
+	static boolean playChannelRecordingEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(PLAY_CHANNELS_PROPERTY, "on"));
+	}
+
+	private static void recordPlayPhaseChannels(Object addon, Object payload) {
+		if (addon == null || payload == null || !playChannelRecordingEnabled()) return;
+		if (!addon.getClass().getName().startsWith(FABRIC_SERVER_ADDON_PACKAGE)) return;
+		try {
+			// The record component is `protocol`, not `phase` — the first version asked for "phase", got null from
+			// the reflective miss, and compared it against "play" forever.
+			Object declaredFor = invokeNoArg(payload, "protocol");
+			Object channels = invokeNoArg(payload, "channels");
+			if (!(channels instanceof Collection<?> ids) || ids.isEmpty()) return;
+
+			ClassLoader loader = loaderFor(addon, payload);
+			Class<?> protocol = load(loader, "net.minecraft.network.ConnectionProtocol");
+			Object play = protocol == null ? null : Enum.valueOf(protocol.asSubclass(Enum.class), "PLAY");
+			Object playId = play == null ? null : invokeNoArg(play, "id");
+			if (playId == null || !String.valueOf(playId).equals(String.valueOf(declaredFor))) return;
+
+			Object connection = fieldValue(addon, "connection");
+			Object pending = connection == null ? null : invoke(connection, "fabric_getPendingChannelsNames", play);
+			if (!(pending instanceof Collection<?> sink)) return;
+			@SuppressWarnings("unchecked")
+			Collection<Object> target = (Collection<Object>) sink;
+			target.addAll(ids);
+			probe(() -> "  recorded " + ids.size() + " PLAY channel(s) for the connection: " + ids);
+			ForbricLog.info("[Forbric/Net] recorded %d Fabric PLAY channel(s) the client declared during "
+					+ "configuration — the kernel serves c:register itself to reach NeoForge's negotiation too, and "
+					+ "Fabric's own handler is the only thing that puts them on the connection for the play addon "
+					+ "to inherit", ids.size());
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Net] could not record the client's Fabric PLAY channels — a Fabric mod's "
+					+ "play packets will be unsendable, and Cardinal Components disconnects rather than skipping",
+					unwrap(t));
+		}
+	}
+
 	private static Boolean handleFabricCommonNegotiationAddon(Object addon, Object payload) {
 		if (payload == null) return null;
 		String id = payloadId(payload);
@@ -953,6 +1053,8 @@ public final class PayloadInterop {
 					? payload
 					: createFabricCommonRegisterPayload(payload);
 			if (fabricPayload != null) invoke(addon, "onCommonRegisterPacket", fabricPayload);
+			// …and the OTHER half of Fabric's own c:register handler, which this method replaces.
+			recordPlayPhaseChannels(addon, fabricPayload != null ? fabricPayload : payload);
 			Object listener = commonPacketListener(addon);
 			Object neoPayload = NEO_COMMON_REGISTER_PAYLOAD.equals(payloadClass)
 					? payload
