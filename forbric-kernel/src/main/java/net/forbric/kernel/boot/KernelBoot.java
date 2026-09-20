@@ -365,6 +365,22 @@ public final class KernelBoot {
 				return null;
 			}
 		}));
+		// Client only: route RenderPipeline$Builder.buildSnippet through the vanilla-shaped 11-arg Snippet
+		// constructor (NeoForge's stencil test carried by a kernel scope) so fabric-rendering-v1's
+		// @WrapOperation(NEW Snippet) matches instead of being rejected whole. Matches two classes a dedicated
+		// server never loads.
+		if (net.forbric.kernel.transform.SnippetConstructorFunnel.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.SnippetConstructorFunnel(path -> {
+				try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
+					return in == null ? null : in.readAllBytes();
+				} catch (java.io.IOException unreadable) {
+					return null;
+				}
+			}));
+		} else {
+			ForbricLog.warn("[Forbric/SnippetFunnel] -D%s=off — fabric-rendering-v1's snippet wrap is rejected by Mixin "
+					+ "again (constructor arity)", net.forbric.kernel.transform.SnippetConstructorFunnel.PROPERTY);
+		}
 
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeBlockTintInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeOptionsInjector());

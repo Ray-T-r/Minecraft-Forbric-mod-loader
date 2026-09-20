@@ -160,6 +160,13 @@ check "fabric-transfer's SimpleContainer suppression rebound" "Forbric/Mixin\] r
 check "…and its BaseContainerBlockEntity twin"      "Forbric/Mixin\] retargeted guest mixin fabric-transfer-api-v1 .*BaseContainerBlockEntityMixin .*PARTIAL→FIT" "$LOG"
 check_absent "SimpleContainerMixin no longer half-applied" "SimpleContainerMixin applies only partially" "$LOG"
 check_absent "BaseContainerBlockEntityMixin no longer half-applied" "BaseContainerBlockEntityMixin applies only partially" "$LOG"
+# G3: NeoForge's 12-arg Snippet constructor made MixinExtras reject fabric-rendering-v1's 11-arg wrap whole
+# ('has an invalid signature'); buildSnippet now constructs through the vanilla-shaped constructor with the
+# stencil test carried by a kernel scope. RED with M9_EXTRA_JVM=-Dforbric.snippetFunnel=off (the 'routed' line
+# is absent and the invalid-signature apply failure returns).
+check "the snippet call site was funnelled"   "SnippetFunnel\] routed 1 RenderPipeline\\\$Builder.buildSnippet" "$LOG"
+check_absent "fabric-rendering-v1's snippet wrap matches the constructor" "RenderPipelineBuilderMixin.*has an invalid signature|Found unexpected argument type com.llamalad7.mixinextras.injector.wrapoperation.Operation" "$LOG"
+check_absent "RenderPipelineBuilderMixin is not half-applied either" "RenderPipelineBuilderMixin applies only partially" "$LOG"
 # H5 (the FluidRenderer.tesselate funnel for MinecraftForge fluid models) is asserted in gate-m26, not here: this
 # pack carries sodium, which replaces vanilla's chunk and fluid meshing, so the vanilla funnel is never reached.
 
