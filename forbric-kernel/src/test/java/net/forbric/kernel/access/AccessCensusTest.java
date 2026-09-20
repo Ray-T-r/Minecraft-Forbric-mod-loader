@@ -79,7 +79,9 @@ class AccessCensusTest {
 	void anAccessWidenerEntryNamingAMissingMemberIsCountedWithItsJar() throws Exception {
 		String widener = "accessWidener\tv2\tintermediary\n"
 				+ "accessible\tfield\tcom/example/Target\tsecret\tI\n"
-				+ "accessible\tfield\tcom/example/Target\tsecret\tJ\n"	  // re-typed: secret is an int here
+				+ "accessible\tfield\tcom/example/Target\tsecret\tJ\n"	  // an int here: vanilla's own drift, not ours
+				+ "accessible\tfield\tcom/example/Target\tlazy\tLjava/util/function/Supplier;\n"  // an ecosystem re-typed it
+				+ "accessible\tfield\tcom/example/Target\titem\tLnet/minecraft/world/item/Item;\n"  // vanilla did
 				+ "accessible\tfield\tcom/example/Target\tmissing\tI\n"
 				+ "accessible\tmethod\tcom/example/Target\thidden\t(I)V\n"  // name present: not judged
 				+ "accessible\tmethod\tcom/example/Target\tgone\t()V\n";
@@ -87,14 +89,24 @@ class AccessCensusTest {
 				List.of(new ClassTweakerTransformer.File("y.jar", widener.getBytes(StandardCharsets.UTF_8))), (n, b) -> { });
 		tweaker.transform("com.example.Target", sampleClass(), CTX);
 		List<AccessCensus.Unmatched> entries = AccessCensus.entries();
-		assertEquals(4, entries.size(), entries.toString());
+		assertEquals(6, entries.size(), entries.toString());
 		for (AccessCensus.Unmatched u : entries) {
 			assertEquals("AW", u.kind());
 			assertEquals("y.jar", u.source());
 		}
 		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("missing") && !u.retyped()), entries.toString());
 		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("gone") && !u.retyped()), entries.toString());
-		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("secret J") && u.retyped()), "the re-typed field: " + entries);
+		// The distinction that matters: a field vanilla itself re-typed between versions is a stale line a native
+		// loader ignores the same way, while one an ecosystem re-typed is a cost this instance introduced.
+		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("secret J") && !u.retyped()
+						&& "I".equals(u.presentAs())),
+				"a field this Minecraft simply declares differently is not an ecosystem re-typing: " + entries);
+		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("lazy Ljava/util/function/Supplier;")
+						&& u.retyped()),
+				"a field whose descriptor names a carrier type is: " + entries);
+		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("item Lnet/minecraft/world/item/Item;")
+						&& !u.retyped() && "Lnet/minecraft/core/Holder;".equals(u.presentAs())),
+				"one object type for another, both vanilla, is the game's own drift and marks nobody: " + entries);
 		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("hidden (I)V") && !u.retyped() && u.namePresent()),
 				"a widener METHOD present under another descriptor is not judged: " + entries);
 	}
@@ -106,10 +118,16 @@ class AccessCensusTest {
 				new ModCatalog.Entry(Ecosystem.NEOFORGE, "other", "Other", "1", "", List.of(), "other.jar", "", "")));
 		AccessCensus.unmatched("AW", "x.jar", "field com/example/Target nope J", true, true);
 		AccessCensus.unmatched("AW", "carrier:forge-runtime.jar", "field com/example/Target alsoNope J", true, true);
+		// A re-typing a named kernel repair already satisfies marks nobody: the ACCESS phase runs before the
+		// COREMOD one, so the widener looks before the repair has happened.
+		for (String satisfied : AccessCensus.allSatisfiedElsewhere().keySet()) {
+			AccessCensus.unmatched("AW", "satisfied.jar", satisfied, true, true);
+		}
 		AccessCensus.unmatched("AT", "other.jar", "public com/example/Target stale", false, false);
 		AccessCensus.unmatched("AT", "other.jar", "public com/example/Target overload(I)V", false, true);
 		AccessCensus.report();
-		assertEquals(1, ModCatalog.failures().size(), "the carrier's own directive marks nobody, and a stale one marks nobody");
+		assertEquals(1, ModCatalog.failures().size(), "the carrier's own directive marks nobody, a stale one marks "
+				+ "nobody, and neither does one the kernel already satisfies");
 		ModCatalog.Entry xmod = ModCatalog.failures().get(0);
 		assertEquals("xmod", xmod.modId());
 		assertEquals(ModCatalog.Status.DEGRADED, xmod.status());
@@ -123,10 +141,40 @@ class AccessCensusTest {
 		assertTrue(AccessCensus.entries().isEmpty());
 	}
 
+	/**
+	 * Every "already satisfied" row claims a repair does the directive's whole job. That claim is what makes the
+	 * row safe to suppress a report on, and it is the thing that rots: the repair gets renamed, or narrowed, or
+	 * deleted, and the row keeps quietly hiding a real loss. So the member it names has to still be named by a
+	 * repair in the transformer that is supposed to do it.
+	 */
+	@Test
+	void everySatisfiedRowNamesAMemberSomeRepairStillHandles() throws Exception {
+		String transformer = java.nio.file.Files.readString(java.nio.file.Path.of(
+				"src/main/java/net/forbric/kernel/transform/ForbricMergedBaseCompatTransformer.java"));
+		List<String> orphaned = new java.util.ArrayList<>();
+		for (String directive : AccessCensus.allSatisfiedElsewhere().keySet()) {
+			String[] parts = directive.split(" ");
+			// "field <owner> <name> <desc>" — the member name is what a repair has to still be about.
+			if (parts.length < 4 || !transformer.contains(parts[2])) orphaned.add(directive);
+		}
+		assertTrue(orphaned.isEmpty(), "these rows suppress an access-widener report on the strength of a repair "
+				+ "that no longer mentions the member: " + orphaned);
+	}
+
 	private static byte[] sampleClass() {
 		ClassWriter cw = new ClassWriter(0);
 		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL, OWNER, null, "java/lang/Object", null);
 		cw.visitField(Opcodes.ACC_PRIVATE | Opcodes.ACC_FINAL, "secret", "I", null, null).visitEnd();
+		// A field an ECOSYSTEM re-typed: its descriptor names a class stock Minecraft does not ship, so no
+		// version of the game ever declared it that way and the miss is a cost this instance introduced.
+		cw.visitField(Opcodes.ACC_PRIVATE | Opcodes.ACC_FINAL, "lazy",
+				"Lnet/minecraftforge/common/util/ClearableLazy;", null, null).visitEnd();
+		// VANILLA's own drift, and the shape that made the old rule wrong: ItemStack.item became a Holder<Item>
+		// in the game itself, on every base, so a mod carried forward names the old type and a native loader
+		// ignores the line in exactly the same way. Both descriptors are object types, so only the carrier-package
+		// test tells this apart from the row above.
+		cw.visitField(Opcodes.ACC_PRIVATE | Opcodes.ACC_FINAL, "item", "Lnet/minecraft/core/Holder;", null, null)
+				.visitEnd();
 		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_FINAL, "hidden", "()V", null, null);
 		mv.visitCode();
 		mv.visitInsn(Opcodes.RETURN);

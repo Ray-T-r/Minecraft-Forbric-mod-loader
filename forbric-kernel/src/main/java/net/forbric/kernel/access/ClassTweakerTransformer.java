@@ -176,6 +176,8 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 		private final java.util.Set<String> fields = new java.util.HashSet<>();
 		private final java.util.Set<String> methods = new java.util.HashSet<>();
 		private final java.util.Set<String> names = new java.util.HashSet<>();
+		/** field name → the descriptor(s) this class actually declares it with, for judging a miss. */
+		private final java.util.Map<String, java.util.List<String>> fieldDescriptors = new java.util.HashMap<>();
 
 		Census(ClassVisitor delegate, String internalName) {
 			super(Opcodes.ASM9, delegate);
@@ -186,6 +188,7 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 		public org.objectweb.asm.FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
 			fields.add(name + " " + descriptor);
 			names.add("field " + name);
+			fieldDescriptors.computeIfAbsent(name, k -> new java.util.ArrayList<>()).add(descriptor);
 			return super.visitField(access, name, descriptor, signature, value);
 		}
 
@@ -211,11 +214,14 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 		}
 
 		private void unmatched(String what, net.fabricmc.classtweaker.utils.EntryTriple t) {
-			// An access widener names a field by name AND descriptor, so a field present under another descriptor
-			// is exactly the merge-re-typed case the census exists for.
 			boolean namePresent = names.contains(what + " " + t.getName());
+			java.util.List<String> present = "field".equals(what)
+					? fieldDescriptors.getOrDefault(t.getName(), java.util.List.of())
+					: java.util.List.of();
 			AccessCensus.unmatched("AW", sources.get(key(t.getOwner(), t.getName(), t.getDesc())),
-					what + " " + t.getOwner() + " " + t.getName() + " " + t.getDesc(), "field".equals(what) && namePresent, namePresent);
+					what + " " + t.getOwner() + " " + t.getName() + " " + t.getDesc(),
+					AccessCensus.retypedByAnEcosystem(present), namePresent,
+					present.isEmpty() ? null : String.join(" / ", present));
 		}
 
 	}

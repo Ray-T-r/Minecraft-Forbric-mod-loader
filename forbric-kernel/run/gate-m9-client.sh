@@ -121,7 +121,7 @@ check_absent "no repair was handed its target and declined" "Forbric/Anchor\] .*
 # Supplier descriptor, the ACCESS phase runs before the COREMOD repair that restores it, so the tweaker saw the
 # merged descriptor and the field was not widened. That one is pinned; a change in either direction is worth knowing.
 check        "the access census ran"               "Forbric/Access\] [0-9]+ directive\(s\) matched nothing across [1-9][0-9]* transformed class" "$LOG"
-check        "exactly one directive is re-typed by the merge" "Forbric/Access\] [0-9]+ directive\(s\) matched nothing.*: 1 re-typed by the merge" "$LOG"
+check        "exactly one directive is re-typed by an ecosystem" "Forbric/Access\] [0-9]+ directive\(s\) matched nothing.*: 1 re-typed by an ecosystem" "$LOG"
 check        "and it is fabric-biome-api's featuresPerStep" "Forbric/Access\] AW directive from fabric-biome-api.*re-typed.*featuresPerStep" "$LOG"
 check "the window title was read"      "ClientSmoke\] window title: Minecraft"     "$LOG"
 check_absent "…and it names no single loader" "ClientSmoke\] window title: .*(NeoForge|Forge|Fabric)" "$LOG"
@@ -562,6 +562,19 @@ check "the audit names the port and the class" \
 check "and it says which member differs" \
   "Forbric/PortAudit\].*registerConfig.*Lnet/neoforged/fml/ModContainer;" "$LOG"
 check_absent "nothing actually failed on that API" "NoSuchMethodError.*ConfigTracker" "$LOG"
+
+step "an access directive the kernel already satisfies does not mark its mod (must PASS)"
+# fabric-biome-api's widener asks for ChunkGenerator.featuresPerStep as vanilla's Supplier. MinecraftForge
+# re-typed that field to its own ClearableLazy so refreshFeaturesPerStep() has something to invalidate, and the
+# merge kept only that declaration — so the widener matches nothing and the mod was marked.
+#
+# It loses nothing: the COREMOD repair gives the field vanilla's descriptor back AND makes it public non-final,
+# which is the widener's whole job. The ACCESS phase simply runs first. Both halves are asserted because either
+# alone passes with the judgement broken — the line must SAY what the field is now, and no row may be marked.
+check "the directive is reported as already satisfied" \
+  "Forbric/Access\] AW directive from fabric-biome-api.*ClearableLazy; here.*but the kernel gives that field" "$LOG"
+check_absent "and its mod is not marked for it" \
+  "Forbric/Access\] AW directive from fabric-biome-api.*the mod is marked" "$LOG"
 
 step "no row says the same thing twice (must PASS)"
 # A reason is often SEVERAL clauses already joined with "; " — one repair naming two things it could not do —
