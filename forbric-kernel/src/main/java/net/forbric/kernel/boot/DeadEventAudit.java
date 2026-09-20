@@ -110,6 +110,15 @@ public final class DeadEventAudit {
 		dead.put("net/minecraftforge/client/event/EntityRenderersEvent$AddLayers",
 				"render layers a MinecraftForge mod adds to existing entity renderers — armour, capes, overlays — "
 						+ "never draw; the merged EntityRenderDispatcher posts only NeoForge's AddLayers");
+		// The two fluid events the merged FlowingFluid/LavaFluid post only for NeoForge (EventHooks
+		// .canCreateFluidSource at bc 110, fireFluidPlaceBlockEvent at three sites). Deliberately not bridged by the
+		// fluid-rendering repair: that is event multiplexing, and it is named here instead so a listener is told.
+		dead.put("net/minecraftforge/event/level/BlockEvent$CreateFluidSourceEvent",
+				"infinite-source formation cannot be observed or vetoed — the merged FlowingFluid.canConvertToSource "
+						+ "asks only NeoForge's EventHooks.canCreateFluidSource");
+		dead.put("net/minecraftforge/event/level/BlockEvent$FluidPlaceBlockEvent",
+				"lava or water turning into stone, cobblestone or obsidian cannot be observed or changed — "
+						+ "LavaFluid and FlowingFluid post only NeoForge's fireFluidPlaceBlockEvent");
 		dead.put("net/minecraftforge/client/event/RegisterPictureInPictureRendererEvent",
 				"picture-in-picture renderers a MinecraftForge mod registers never draw — the merged GuiRenderer "
 						+ "collects only NeoForge's");

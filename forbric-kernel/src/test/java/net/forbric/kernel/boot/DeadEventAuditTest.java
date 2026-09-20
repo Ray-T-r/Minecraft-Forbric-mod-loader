@@ -45,6 +45,8 @@ class DeadEventAuditTest {
 	private static final String KEYS = "net/minecraftforge/client/event/RegisterKeyMappingsEvent";
 	private static final String TABS = "net/minecraftforge/event/BuildCreativeModeTabContentsEvent";
 	private static final String OVERLAYS = "net/minecraftforge/client/event/AddGuiOverlayLayersEvent";
+	private static final String CREATE_FLUID_SOURCE = "net/minecraftforge/event/level/BlockEvent$CreateFluidSourceEvent";
+	private static final String FLUID_PLACE_BLOCK = "net/minecraftforge/event/level/BlockEvent$FluidPlaceBlockEvent";
 
 	@Test
 	void aDeadEventWithAListenerIsReported() {
@@ -104,6 +106,19 @@ class DeadEventAuditTest {
 		assertEquals(1, findings.size());
 		assertEquals("hudmod", findings.get(0).modId());
 		assertTrue(findings.get(0).cost().contains("never draw"), findings.get(0).cost());
+	}
+
+	/** The two fluid events the fluid-rendering repair deliberately does not bridge: a listener is told, per event. */
+	@Test
+	void theTwoDeadFluidEventsNameTheModWithTheirCost() {
+		List<DeadEventAudit.Finding> findings = DeadEventAudit.audit(
+				Map.of("fluidmod", Set.of(CREATE_FLUID_SOURCE, FLUID_PLACE_BLOCK)), EnumSet.noneOf(GameEventBridge.class));
+
+		assertEquals(2, findings.size(), "both fluid events must be findings");
+		for (DeadEventAudit.Finding finding : findings) {
+			assertEquals("fluidmod", finding.modId());
+			assertTrue(finding.cost() != null && !finding.cost().isBlank(), finding.event() + " must state its cost");
+		}
 	}
 
 	@Test
