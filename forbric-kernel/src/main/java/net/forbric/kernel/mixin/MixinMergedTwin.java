@@ -95,7 +95,7 @@ public final class MixinMergedTwin {
 	 * <p>Mixin's member selectors treat an absent owner as "any owner", and the name and descriptor stay pinned,
 	 * so the point still cannot match a different method. Only owners that actually HAVE a twin are unpinned.
 	 */
-	private static void unpinInjectionPointOwners(ClassNode mixin, Set<String> twinned) {
+	static void unpinInjectionPointOwners(ClassNode mixin, Set<String> twinned) {
 		List<String> prefixes = new ArrayList<>();
 		for (String owner : twinned) prefixes.add(owner.replace('.', '/') + ".");
 		int unpinned = 0;

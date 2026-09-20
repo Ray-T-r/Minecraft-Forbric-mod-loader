@@ -192,7 +192,12 @@ public final class MixinFit {
 		int softMisses = 0;
 
 		List<String> foreign = new ArrayList<>();
-		for (String targetName : targets) {
+		for (String declared : targets) {
+			// The same move MixinAnonymousRetarget will make to the @Mixin annotation. Judged here too, because a
+			// verdict about the class the mixin will NOT be applied to is worse than no verdict: Polymer's two
+			// ByteBufCodecs mixins were suppressed as UNFIT for anchors that resolve perfectly in their real home.
+			String moved = MixinAnonymousRetarget.home(declared, name -> targetResolver.apply(name + ".class") != null);
+			String targetName = moved != null ? moved : declared;
 			byte[] targetBytes = targetResolver.apply(targetName + ".class");
 			// Not a class we can see (JDK, a mixin-generated type): nothing to prove, assume it fits.
 			if (targetBytes == null) continue;
@@ -207,7 +212,7 @@ public final class MixinFit {
 			List<Anchor> anchors = new ArrayList<>(anchorsOf(mixin, target, targetResolver));
 			// A renumbered anonymous class: every member anchor may resolve and still belong to a different class
 			// than the one vanilla compiled at that name. Soft — it forces PARTIAL, never UNFIT.
-			if (gameOwned && MergedBaseAnonymousDrift.drifted(targetName)) {
+			if (moved == null && gameOwned && MergedBaseAnonymousDrift.drifted(targetName)) {
 				anchors.add(new Anchor("@Mixin target", targetName.substring(targetName.lastIndexOf('/') + 1)
 						+ " is not the class vanilla compiled at that name (" + MergedBaseAnonymousDrift.describe(targetName)
 						+ ")", false, true));

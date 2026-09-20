@@ -5,15 +5,35 @@ compat_transport() {
   python3 - "$@" <<'PY'
 import hashlib, os, pathlib, re, shlex, subprocess, sys, tempfile, uuid
 
-def invoke(key, arguments):
+def invoke(key, arguments, attempts=1, per_attempt=240):
+    """Runs the configured transport command.
+
+    `attempts` > 1 retries ONLY a timeout, and only for the file transport. A file transfer is safe to repeat:
+    it is verified by an independent SHA-256/size check on both endpoints afterwards, so a repeat that half-wrote
+    something is caught rather than believed. A remote SHELL command is NOT safe to repeat -- one of them starts
+    the long-running job -- so `remote_ps` never passes a retry count and a second copy of a job can never be
+    started by this layer. A non-zero exit is a real answer and is never retried.
+    """
     command = shlex.split(os.environ.get(key, ''))
     if not command:
         raise RuntimeError(f'{key} must name the configured remote transport command')
-    result = subprocess.run(command + arguments, timeout=240, text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    if result.returncode:
-        raise RuntimeError(f'{key} exited {result.returncode}: {result.stdout}')
-    return result.stdout
+    last = None
+    for attempt in range(attempts):
+        # Escalating, because the two reasons a transfer does not finish need opposite deadlines: a wedged
+        # service never answers at all and should be abandoned quickly, while a 35 MB upload legitimately needs
+        # minutes and must not be cut off and retried forever. Short first, then long enough for the real thing.
+        deadline = min(per_attempt * (attempt + 1), 240)
+        try:
+            result = subprocess.run(command + arguments, timeout=deadline, text=True,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        except subprocess.TimeoutExpired as timeout:
+            last = timeout
+            print(f'{key}: attempt {attempt + 1}/{attempts} timed out after {deadline}s', file=sys.stderr)
+            continue
+        if result.returncode:
+            raise RuntimeError(f'{key} exited {result.returncode}: {result.stdout}')
+        return result.stdout
+    raise RuntimeError(f'{key} timed out on all {attempts} attempt(s)') from last
 
 def ps(value):
     return "'" + value.replace("'", "''") + "'"
@@ -52,7 +72,7 @@ try:
     elif operation == 'put':
         source, target = arguments
         expected = fingerprint(source)
-        output = invoke('WINFILE', ['put', source, target])
+        output = invoke('WINFILE', ['put', source, target], attempts=3, per_attempt=60)
         if remote_fingerprint(target) != expected:
             raise RuntimeError('upload fingerprint mismatch: ' + target)
         print(output, end='')
@@ -64,7 +84,7 @@ try:
         # A failed transfer must never be mistaken for a stale file from an earlier download.
         with tempfile.TemporaryDirectory(prefix='.forbric-download-', dir=target.parent) as temp:
             temporary = pathlib.Path(temp) / target.name
-            output = invoke('WINFILE', ['get', source, str(temporary)])
+            output = invoke('WINFILE', ['get', source, str(temporary)], attempts=3, per_attempt=60)
             if not temporary.is_file() or fingerprint(temporary) != expected:
                 raise RuntimeError('download missing or fingerprint mismatch: ' + source)
             temporary.replace(target)

@@ -280,6 +280,9 @@ public final class ForbricMixinService
 		MixinAtShape.normalise(node);
 		// …and a locals capture that would throw an Error no handler sees is made to skip and warn instead.
 		MixinLocalsCapture.soften(node);
+		// …and a target whose NUMBER the merge gave to a carrier's anonymous class is moved to where vanilla's
+		// body went. Before the twin pass: the class this lands on may itself have a renamed twin.
+		MixinAnonymousRetarget.retarget(node, this::mergedBaseHas);
 		// …and a target the byte merge had to rename gets its twin added, because the merged code that runs
 		// instantiates the renamed copy and the mixin names only the vanilla one.
 		MixinMergedTwin.addTwins(node, MixinMergedTwin.enabled() ? this::mergedBaseHas : binary -> false);
