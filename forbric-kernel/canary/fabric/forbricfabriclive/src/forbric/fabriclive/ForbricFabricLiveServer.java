@@ -17,6 +17,7 @@
 package forbric.fabriclive;
 
 import net.fabricmc.api.DedicatedServerModInitializer;
+import net.fabricmc.loader.api.FabricLoader;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 
@@ -30,5 +31,8 @@ public final class ForbricFabricLiveServer implements DedicatedServerModInitiali
 		boolean stillThere = BuiltInRegistries.CUSTOM_STAT.containsKey(ForbricFabricLive.CANARY_STAT);
 		System.out.println("[ForbricFabricLive] onInitializeServer (Fabric server entrypoint), "
 				+ "registered content survives=" + stillThere);
+		// The loot events, only when the module is staged: LootProbe is linked when this call executes, never
+		// before, so the canary without fabric-api (gate-m2, m4, m18, m24) is untouched.
+		if (FabricLoader.getInstance().isModLoaded("fabric-loot-api-v3")) LootProbe.install();
 	}
 }

@@ -17,6 +17,9 @@
     "server": [
       "forbric.fabriclive.ForbricFabricLiveServer"
     ],
+    "client": [
+      "forbric.fabriclive.ForbricFabricLiveClient"
+    ],
     "forbric:probe": [
       "forbric.fabriclive.ProbeImpl",
       "forbric.fabriclive.ProbeImpl::STATIC_PROBE",

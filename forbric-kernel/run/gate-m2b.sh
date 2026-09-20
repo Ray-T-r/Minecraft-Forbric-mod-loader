@@ -82,6 +82,11 @@ step "the server actually works (must PASS)"
 # RED with FORBRIC_JVM=-Dforbric.lootBridge=off (no 'offered' line; the audit then names the canary DEGRADED).
 check "kernel offered the loot tables to fabric" "Forbric/LootBridge\] offered [1-9][0-9]* loot table" "$LOG"
 check "the loot seams were routed"             "Forbric/LootBridge\] routed 1 loot-table load site\(s\) and 1 tag-load site" "$LOG"
+# F5: the canary's own listeners, registered like balm-fabric's. Both KINDS of line are asserted: the kernel's
+# 'offered' count proves the bridge ran, the canary's lines prove a mod's listener was actually called.
+check "the canary registered on LootTableEvents" "ForbricFabricLive\] LootTableEvents listeners registered" "$LOG"
+check "LootTableEvents.MODIFY reached the canary" "ForbricFabricLive\] LootTableEvents.MODIFY saw minecraft:blocks/dirt" "$LOG"
+check "LootTableEvents.ALL_LOADED fired"         "ForbricFabricLive\] LootTableEvents.ALL_LOADED: [1-9][0-9]* loot table" "$LOG"
 # F4: with every restoration on, no installed mod loses a fabric-api surface. With -Dforbric.lootBridge=off the
 # audit names the canary ("[Forbric/FabricApi] 1 mod jar(s) use fabric-loot-api-v3's LootTableEvents … forbricfabriclive.jar")
 # and .forbric-kernel/load-report.txt lists forbricfabriclive as DEGRADED.

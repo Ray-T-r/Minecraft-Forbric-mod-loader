@@ -142,6 +142,11 @@ check_absent "not rejected for its registries" "Received unknown remote registry
 # F2: with fabric-api on the client, ModelManagerMixin is trimmed rather than pinned whole. RED with
 # M14_EXTRA_JVM=-Dforbric.guestInjectorPruner=off (the pin returns; no 'pruned' line).
 check "ModelManagerMixin trimmed, not pinned" "GuestInjectorPruner\] pruned 2 injector\(s\) from .*ModelManagerMixin" "$CLOG"
+# F5: the canary's ModelLoadingPlugin (registered like balm-fabric's) is only ever CALLED if the trimmed mixin
+# applied. RED with M14_EXTRA_JVM=-Dforbric.guestInjectorPruner=off.
+check "the canary's client entrypoint ran"    "ForbricFabricLive\] onInitializeClient"                    "$CLOG"
+check "ModelLoadingPlugin invoked"            "ForbricFabricLive\] ModelLoadingPlugin invoked"             "$CLOG"
+check "ModelModifier.OnLoad saw a model"      "ForbricFabricLive\] ModelModifier.OnLoad saw its first model" "$CLOG"
 check_absent "block models still parse"       "JSON data was null or empty"                "$CLOG"
 
 step "the difference was real and the remap corrected it (must PASS)"

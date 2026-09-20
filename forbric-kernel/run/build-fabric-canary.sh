@@ -57,8 +57,22 @@ DFU="$(find "$MC_DIR/libraries/com/mojang/datafixerupper" -name '*.jar' 2>/dev/n
 [ -f "$NEO_RT" ] || { echo "[kernel] FAIL neoforge runtime absent: $NEO_RT"; exit 1; }
 [ -n "$DFU" ] || { echo "[kernel] FAIL DataFixerUpper not found under $MC_DIR/libraries"; exit 1; }
 
+# The kernel jar vendors only net/fabricmc/api and net/fabricmc/loader. The loot and model-loading probes name
+# fabric-api MODULES (fabric-loot-api-v3, fabric-model-loading-api-v1, fabric-api-base), which fabric-api ships as
+# jar-in-jar — pull them out of a staged fabric-api for the compile. They are never packaged: at runtime the
+# probes link only when their module is loaded (isModLoaded gates the install calls).
+FAPI="$(ls "$KERNEL"/run/client-merged-pack/mods/fabric-api-*.jar 2>/dev/null | sort | tail -1)"
+[ -n "$FAPI" ] || FAPI="$(ls "$OLD"/run/server-merged/mods/fabric-api-*.jar 2>/dev/null | sort | tail -1)"
+[ -n "$FAPI" ] || { echo "[kernel] FAIL no staged fabric-api jar to compile the loot/model probes against"; exit 1; }
+mkdir -p "$WORK/fapi"
+unzip -oq -j "$FAPI" 'META-INF/jars/fabric-api-base-*.jar' 'META-INF/jars/fabric-loot-api-v3-*.jar' \
+      'META-INF/jars/fabric-model-loading-api-v1-*.jar' -d "$WORK/fapi"
+FAPI_CP="$(ls "$WORK"/fapi/*.jar | paste -sd: -)"
+[ -n "$FAPI_CP" ] || { echo "[kernel] FAIL fabric-api modules not found inside $FAPI"; exit 1; }
+echo "[kernel] fabric-api modules for the probes: $(ls "$WORK"/fapi | tr '\n' ' ')"
+
 javac -nowarn -proc:none --release 21 \
-      -cp "$MERGED:$KERNEL_JAR:$FORGE_RT:$NEO_RT:$DFU" \
+      -cp "$MERGED:$KERNEL_JAR:$FORGE_RT:$NEO_RT:$DFU:$FAPI_CP" \
       -d "$WORK/live/classes" \
       $(find "$SRC/forbricfabriclive/src" -name '*.java') 2>&1 | grep -v '^Note:' || true
 [ -n "$(find "$WORK/live/classes" -name '*.class')" ] || { echo "[kernel] FAIL canary did not compile"; exit 1; }
