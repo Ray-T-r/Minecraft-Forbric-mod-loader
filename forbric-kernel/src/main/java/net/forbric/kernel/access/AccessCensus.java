@@ -46,11 +46,12 @@ public final class AccessCensus {
 	 * there under another descriptor is a member the merge re-typed, and only that one costs the mod something
 	 * it would have had on its own loader.
 	 */
-	public record Unmatched(String kind, String source, String directive, boolean retyped) {
+	public record Unmatched(String kind, String source, String directive, boolean retyped, boolean namePresent) {
 		public Unmatched(String kind, String source, String directive) {
-			this(kind, source, directive, false);
+			this(kind, source, directive, false, false);
 		}
 	}
+
 
 	private static final Set<Unmatched> UNMATCHED = new LinkedHashSet<>();
 	private static int transformedClasses;
@@ -66,14 +67,23 @@ public final class AccessCensus {
 	}
 
 	public static void unmatched(String kind, String source, String directive) {
-		unmatched(kind, source, directive, false);
+		unmatched(kind, source, directive, false, false);
 	}
 
-	public static void unmatched(String kind, String source, String directive, boolean retyped) {
+	/**
+	 * @param retyped	 judged re-typed by the merge: an access-widener FIELD whose name is there under another
+	 *					descriptor — a Fabric widener is written against the exact vanilla version and field names
+	 *					are never overloaded, so that is a merge re-typing and nothing else
+	 * @param namePresent the name is there under another descriptor but the case is NOT judged: a method (an
+	 *					overload this Minecraft lacks is at least as likely — bagus_lib's Model.animate, YACL's
+	 *					Tooltip constructor — and a Forge AT is carried across versions unchanged)
+	 */
+	public static void unmatched(String kind, String source, String directive, boolean retyped, boolean namePresent) {
 		synchronized (UNMATCHED) {
-			UNMATCHED.add(new Unmatched(kind, source == null ? "?" : source, directive, retyped));
+			UNMATCHED.add(new Unmatched(kind, source == null ? "?" : source, directive, retyped, namePresent));
 		}
 	}
+
 
 	/** One count line always; one WARN per directive; DEGRADED on every row from a mod jar that owns one. */
 	public static void report() {
@@ -83,19 +93,22 @@ public final class AccessCensus {
 			all = new ArrayList<>(UNMATCHED);
 			transformed = transformedClasses;
 		}
-		int at = 0, retyped = 0;
+		int at = 0, retyped = 0, unjudged = 0;
 		for (Unmatched u : all) {
 			if ("AT".equals(u.kind())) at++;
 			if (u.retyped()) retyped++;
+			else if (u.namePresent()) unjudged++;
 		}
 		ForbricLog.info("[Forbric/Access] %d directive(s) matched nothing across %d transformed class(es) (%d AT, %d AW): "
-				+ "%d re-typed by the merge, %d stale on this Minecraft as on a native loader", all.size(), transformed, at,
-				all.size() - at, retyped, all.size() - retyped);
+				+ "%d re-typed by the merge, %d with the name present under another descriptor (an overload this Minecraft "
+				+ "lacks, or a re-typing — not judged), %d stale on this Minecraft as on a native loader", all.size(), transformed,
+				at, all.size() - at, retyped, unjudged, all.size() - retyped - unjudged);
 		for (Unmatched u : all) {
 			boolean carrier = u.source().startsWith("carrier:");
 			if (!u.retyped()) {
-				ForbricLog.info("[Forbric/Access] %s directive from %s names a member this Minecraft does not have (stale, ignored "
-						+ "here as on a native loader): %s", u.kind(), u.source(), u.directive());
+				ForbricLog.info("[Forbric/Access] %s directive from %s names a member this Minecraft does not have (%s): %s", u.kind(),
+						u.source(), u.namePresent() ? "the name is there under another descriptor; not judged"
+								: "stale, ignored here as on a native loader", u.directive());
 				continue;
 			}
 			ForbricLog.warn("[Forbric/Access] %s directive from %s names a member the merge re-typed, so it was not widened: %s%s",

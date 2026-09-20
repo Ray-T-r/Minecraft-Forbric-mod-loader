@@ -174,8 +174,8 @@ public final class AccessTransformer implements ClassTransformer {
 			for (AtDirective d : entry.specific) {
 				boolean seen = d.method ? seenMethods.contains(d.memberName + d.memberDesc) : seenFields.contains(d.memberName);
 				// An AT names a field by name alone, so a field that is there IS matched whatever its descriptor;
-				// only a method can be present under another descriptor.
-				if (!seen) AccessCensus.unmatched("AT", d.source, d.toString(), d.method && seenMethodNames.contains(d.memberName));
+				// a method present under another descriptor is reported but not judged (see AccessCensus).
+				if (!seen) AccessCensus.unmatched("AT", d.source, d.toString(), false, d.method && seenMethodNames.contains(d.memberName));
 			}
 			super.visitEnd();
 		}

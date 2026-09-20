@@ -71,7 +71,8 @@ class AccessCensusTest {
 		}
 		assertTrue(entries.get(0).directive().contains("nope") && !entries.get(0).retyped(), entries.toString());
 		assertTrue(entries.get(1).directive().contains("gone()V") && !entries.get(1).retyped(), entries.toString());
-		assertTrue(entries.get(2).directive().contains("hidden(I)V") && entries.get(2).retyped(), "a name present under another descriptor is re-typed: " + entries);
+		assertTrue(entries.get(2).directive().contains("hidden(I)V") && !entries.get(2).retyped() && entries.get(2).namePresent(),
+				"an AT method present under another descriptor is reported but not judged: " + entries);
 	}
 
 	@Test
@@ -80,12 +81,13 @@ class AccessCensusTest {
 				+ "accessible\tfield\tcom/example/Target\tsecret\tI\n"
 				+ "accessible\tfield\tcom/example/Target\tsecret\tJ\n"	  // re-typed: secret is an int here
 				+ "accessible\tfield\tcom/example/Target\tmissing\tI\n"
+				+ "accessible\tmethod\tcom/example/Target\thidden\t(I)V\n"  // name present: not judged
 				+ "accessible\tmethod\tcom/example/Target\tgone\t()V\n";
 		ClassTweakerTransformer tweaker = ClassTweakerTransformer.createFrom(
 				List.of(new ClassTweakerTransformer.File("y.jar", widener.getBytes(StandardCharsets.UTF_8))), (n, b) -> { });
 		tweaker.transform("com.example.Target", sampleClass(), CTX);
 		List<AccessCensus.Unmatched> entries = AccessCensus.entries();
-		assertEquals(3, entries.size(), entries.toString());
+		assertEquals(4, entries.size(), entries.toString());
 		for (AccessCensus.Unmatched u : entries) {
 			assertEquals("AW", u.kind());
 			assertEquals("y.jar", u.source());
@@ -93,6 +95,8 @@ class AccessCensusTest {
 		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("missing") && !u.retyped()), entries.toString());
 		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("gone") && !u.retyped()), entries.toString());
 		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("secret J") && u.retyped()), "the re-typed field: " + entries);
+		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("hidden (I)V") && !u.retyped() && u.namePresent()),
+				"a widener METHOD present under another descriptor is not judged: " + entries);
 	}
 
 	@Test
@@ -100,9 +104,10 @@ class AccessCensusTest {
 		ModCatalog.publish(List.of(
 				new ModCatalog.Entry(Ecosystem.NEOFORGE, "xmod", "X", "1", "", List.of(), "x.jar", "", ""),
 				new ModCatalog.Entry(Ecosystem.NEOFORGE, "other", "Other", "1", "", List.of(), "other.jar", "", "")));
-		AccessCensus.unmatched("AT", "x.jar", "public com/example/Target nope(I)V", true);
-		AccessCensus.unmatched("AT", "carrier:forge-runtime.jar", "public com/example/Target alsoNope(I)V", true);
-		AccessCensus.unmatched("AT", "other.jar", "public com/example/Target stale", false);
+		AccessCensus.unmatched("AW", "x.jar", "field com/example/Target nope J", true, true);
+		AccessCensus.unmatched("AW", "carrier:forge-runtime.jar", "field com/example/Target alsoNope J", true, true);
+		AccessCensus.unmatched("AT", "other.jar", "public com/example/Target stale", false, false);
+		AccessCensus.unmatched("AT", "other.jar", "public com/example/Target overload(I)V", false, true);
 		AccessCensus.report();
 		assertEquals(1, ModCatalog.failures().size(), "the carrier's own directive marks nobody, and a stale one marks nobody");
 		ModCatalog.Entry xmod = ModCatalog.failures().get(0);

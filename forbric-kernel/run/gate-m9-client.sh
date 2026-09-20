@@ -82,11 +82,13 @@ check        "the anchor census ran"        "Forbric/Anchor\] [0-9]+ of [1-9][0-
 check_absent "every declared repair landed" "Forbric/Anchor\] [0-9]+ of [0-9]+ declared repair\(s\) landed, and" "$LOG"
 check_absent "no repair was handed its target and declined" "Forbric/Anchor\] .* made no edit" "$LOG"
 # J12: every AT line and access-widener entry is judged against the class it was applied to. Measured on this
-# pack: 23 matched nothing — 22 AT lines that name members this Minecraft does not have at all (journeymap's
-# SRG-named fields and 1.x members, old overloads in bagus_lib/collective/sophisticatedcore/YACL/Jade), which a
-# native loader ignores exactly the same and which mark nobody — and ONE re-typed by the merge: fabric-biome-api's
-# widener for ChunkGenerator.featuresPerStep names vanilla's Supplier descriptor and the tweaker saw the merged
-# one, so the field was not widened. That one is pinned; a change in either direction is worth knowing.
+# pack: 23 matched nothing — 16 AT lines naming members this Minecraft does not have at all (journeymap's
+# SRG-named fields and 1.x members), 6 AT methods whose name is there under another descriptor (an overload this
+# Minecraft lacks or a merge re-typing — not judged: bagus_lib's Model.animate, YACL's and Jade's constructors,
+# sophisticatedcore's recipe builders), all of which a native loader ignores the same and which mark nobody — and
+# ONE judged re-typed by the merge: fabric-biome-api's widener for ChunkGenerator.featuresPerStep names vanilla's
+# Supplier descriptor, the ACCESS phase runs before the COREMOD repair that restores it, so the tweaker saw the
+# merged descriptor and the field was not widened. That one is pinned; a change in either direction is worth knowing.
 check        "the access census ran"               "Forbric/Access\] [0-9]+ directive\(s\) matched nothing across [1-9][0-9]* transformed class" "$LOG"
 check        "exactly one directive is re-typed by the merge" "Forbric/Access\] [0-9]+ directive\(s\) matched nothing.*: 1 re-typed by the merge" "$LOG"
 check        "and it is fabric-biome-api's featuresPerStep" "Forbric/Access\] AW directive from fabric-biome-api.*featuresPerStep.*re-typed" "$LOG"

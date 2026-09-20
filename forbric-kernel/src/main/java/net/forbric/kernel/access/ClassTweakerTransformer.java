@@ -213,8 +213,9 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 		private void unmatched(String what, net.fabricmc.classtweaker.utils.EntryTriple t) {
 			// An access widener names a field by name AND descriptor, so a field present under another descriptor
 			// is exactly the merge-re-typed case the census exists for.
+			boolean namePresent = names.contains(what + " " + t.getName());
 			AccessCensus.unmatched("AW", sources.get(key(t.getOwner(), t.getName(), t.getDesc())),
-					what + " " + t.getOwner() + " " + t.getName() + " " + t.getDesc(), names.contains(what + " " + t.getName()));
+					what + " " + t.getOwner() + " " + t.getName() + " " + t.getDesc(), "field".equals(what) && namePresent, namePresent);
 		}
 
 	}
