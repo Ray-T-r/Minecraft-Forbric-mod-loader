@@ -1088,6 +1088,7 @@ public final class KernelLifecycle {
 
 			mirrorIntoFabricDynamicRegistries(cl, now.subList(before, now.size()));
 			mirrorFabricDynamicRegistriesIntoNeoForge(cl, eventCls, hooksCls);
+			declareMinecraftForgeModifierRegistries(cl, eventCls, hooksCls);
 		} catch (ClassNotFoundException absent) {
 			ForbricLog.debug("[Forbric/Lifecycle] no NeoForge DataPackRegistryEvent — skipping");
 		} catch (Throwable t) {
@@ -1162,6 +1163,47 @@ public final class KernelLifecycle {
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not mirror Fabric's datapack registries into NeoForge's "
 					+ "list — a Fabric mod's worldgen registry may be missing at world load", unwrap(t));
+		}
+	}
+
+	/**
+	 * Declares {@code forge:biome_modifier} and {@code forge:structure_modifier} on NeoForge's datapack-registry
+	 * list through a second {@code NewRegistry} event — the shape of {@link #mirrorFabricDynamicRegistriesIntoNeoForge}
+	 * — so the merged {@code RegistryDataLoader} (which asks only NeoForge's hooks) loads a MinecraftForge mod's
+	 * {@code data/<ns>/forge/biome_modifier} files at all. The codecs are Forge's own, wrapped leniently in the
+	 * game-side helper. Guarded by the carrier's presence, not by "a Forge mod is installed": the declaration is
+	 * cheap and a later-installed mod's files must load. {@code -Dforbric.forgeWorldgen=off} skips it and names
+	 * the mods that ship such files instead.
+	 */
+	private static void declareMinecraftForgeModifierRegistries(ClassLoader cl, Class<?> eventCls, Class<?> hooksCls) {
+		try {
+			Class.forName(ForeignType.MODIFIER_REGISTRY_KEYS.binary(Ecosystem.FORGE), false, cl);
+		} catch (ClassNotFoundException absent) {
+			return;
+		}
+		boolean enabled = !"off".equalsIgnoreCase(System.getProperty("forbric.forgeWorldgen", "on"));
+		try {
+			ForgeWorldgenShippers.report(modJars, enabled);
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/Worldgen] could not scan mod jars for forge modifier files: %s", String.valueOf(t));
+		}
+		if (!enabled) return;
+		try {
+			int before = ((java.util.List<?>) hooksCls.getMethod("getDataPackRegistries").invoke(null)).size();
+			Object event = eventCls.getConstructor().newInstance();
+			Class.forName("net.forbric.kernel.runtime.KernelForgeWorldgen", true, cl)
+					.getMethod("declareForgeModifierRegistries", Object.class).invoke(null, event);
+			Method process = eventCls.getDeclaredMethod("process");
+			process.setAccessible(true);
+			process.invoke(event);
+			java.util.List<?> now = (java.util.List<?>) hooksCls.getMethod("getDataPackRegistries").invoke(null);
+			java.util.List<String> added = new java.util.ArrayList<>();
+			for (int i = before; i < now.size(); i++) added.add(String.valueOf(now.get(i)));
+			ForbricLog.info("[Forbric/Lifecycle] posted datapack-registry declaration for MinecraftForge's modifier "
+					+ "registries — %d declared (%s), %d total", now.size() - before, added, now.size());
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Worldgen] could not declare MinecraftForge's biome/structure modifier registries — "
+					+ "a Forge mod's forge/biome_modifier files will not load", unwrap(t));
 		}
 	}
 

@@ -55,10 +55,11 @@ import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
  *
  * <p>Types, including {@code ConfigTracker.loadConfigs(ModConfig.Type, Path)} and the typed
  * {@code ServerAboutToStartEvent.BUS.post(...)} — the shape-based {@code post} lookup the boot side needed is
- * gone, because the bus field carries its own generic argument. Two members stay reflective and cannot be
- * anything else: {@code javap -p} shows {@code getServerConfigPath} and {@code runModifiers} are BOTH
- * {@code private static} on {@code ServerLifecycleHooks}. Reimplementing either would mean reproducing
- * MinecraftForge's own logic, which is the one thing this project does not do.
+ * gone, because the bus field carries its own generic argument. One member stays reflective and cannot be
+ * anything else: {@code javap -p} shows {@code getServerConfigPath} is {@code private static} on
+ * {@code ServerLifecycleHooks}. Reimplementing it would mean reproducing MinecraftForge's own logic, which is
+ * the one thing this project does not do. Forge's {@code runModifiers} is not called at all — see
+ * {@link KernelForgeWorldgen} for where its modifiers run instead.
  */
 public final class KernelGameServerAboutToStart {
 	private KernelGameServerAboutToStart() {
@@ -70,11 +71,11 @@ public final class KernelGameServerAboutToStart {
 	public static void install(Object neoBus) throws Exception {
 		Method configPath = ServerLifecycleHooks.class.getDeclaredMethod("getServerConfigPath", MinecraftServer.class);
 		configPath.setAccessible(true);
-		Method runModifiers = ServerLifecycleHooks.class.getDeclaredMethod("runModifiers", MinecraftServer.class);
-		runModifiers.setAccessible(true);
+		// MinecraftForge's own runModifiers is deliberately NOT invoked: its lambdas link against Forge-typed
+		// accessors the merged Biome/Structure do not declare, and its modifiers now ride inside NeoForge's single
+		// pass (KernelForgeWorldgen), phase-interleaved with NeoForge's — two passes would be two sources of truth.
 
 		AtomicBoolean warnedConfigs = new AtomicBoolean();
-		AtomicBoolean warnedModifiers = new AtomicBoolean();
 		AtomicBoolean warnedEvent = new AtomicBoolean();
 
 		Consumer<ServerAboutToStartEvent> listener = neoEvent -> {
@@ -104,16 +105,6 @@ public final class KernelGameServerAboutToStart {
 					ForbricLog.warn("[Forbric/EventMux] could not load MinecraftForge's per-world SERVER configs — "
 							+ "its mods keep their defaults here and on every client that joins",
 							Reflect.unwrap(t));
-				}
-			}
-
-			try {
-				runModifiers.invoke(null, server);
-			} catch (Throwable t) {
-				if (warnedModifiers.compareAndSet(false, true)) {
-					ForbricLog.debug("[Forbric/EventMux] MinecraftForge's biome modifiers did not apply (%s) — "
-							+ "nothing declares its biome-modifier datapack registry under the kernel; the rest "
-							+ "of its server start is unaffected", String.valueOf(Reflect.unwrap(t)));
 				}
 			}
 

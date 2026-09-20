@@ -165,7 +165,17 @@ public enum ForeignType {
 	SERVER_MOD_LOADER("net.minecraftforge.server.loading.ServerModLoader",
 			"net.neoforged.neoforge.server.loading.ServerModLoader"),
 	SPAWN_PLACEMENT_EVENT("net.minecraftforge.event.entity.SpawnPlacementRegisterEvent",
-			"net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent");
+			"net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent"),
+	BIOME_MODIFIER("net.minecraftforge.common.world.BiomeModifier",
+			"net.neoforged.neoforge.common.world.BiomeModifier"),
+	STRUCTURE_MODIFIER("net.minecraftforge.common.world.StructureModifier",
+			"net.neoforged.neoforge.common.world.StructureModifier"),
+	MODIFIER_REGISTRY_KEYS("net.minecraftforge.registries.ForgeRegistries$Keys",
+			"net.neoforged.neoforge.registries.NeoForgeRegistries$Keys"),
+	MOB_SPAWN_SETTINGS_BUILDER("net.minecraftforge.common.world.MobSpawnSettingsBuilder",
+			"net.neoforged.neoforge.common.world.MobSpawnSettingsBuilder"),
+	REMOVE_SPAWNS_BIOME_MODIFIER("net.minecraftforge.common.world.ForgeBiomeModifiers$RemoveSpawnsBiomeModifier",
+			"net.neoforged.neoforge.common.world.BiomeModifiers$RemoveSpawnsBiomeModifier");
 
 	private final String forge;
 	private final String neoforge;
