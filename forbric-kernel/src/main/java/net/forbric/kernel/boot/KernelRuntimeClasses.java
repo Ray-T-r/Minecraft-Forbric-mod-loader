@@ -146,6 +146,7 @@ public final class KernelRuntimeClasses {
 		// Called by game bytecode; its signatures name Minecraft client types, not boot-side seam types.
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeClientInit", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeBlockColors", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeOptions", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeClientConsumers", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeCreativeTabs", new Entry(Origin.COMPILED, List.of()));
 		// The NeoForge setup phases. A twin of KernelForgeSetup rather than a merge of it: NeoForge dispatches on

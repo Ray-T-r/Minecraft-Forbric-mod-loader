@@ -44,7 +44,16 @@ PY_STAGE
 # CLIENT_CANARY_STAGE_END
 # Skip the first-run accessibility screen so quick-play can reach the saved world.
 # M26_OPTIONS_BEGIN — the default canary key is F7; this persisted F6 must survive late registration.
-printf 'onboardAccessibility:false\nkey_key.forbriclive.probe:key.keyboard.f6\n' > "$RUNDIR/options.txt"
+python3 - "${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}" "$RUNDIR/options.txt" <<'PY_OPTIONS' || exit 3
+import json, sys, zipfile
+from pathlib import Path
+with zipfile.ZipFile(sys.argv[1]) as game:
+    version = json.loads(game.read('version.json'))['world_version']
+if not isinstance(version, int) or version <= 0:
+    raise SystemExit('game metadata has no valid options data version')
+# Without version, OptionsKeyLwjgl3Fix treats the modern key name as a legacy integer key code.
+Path(sys.argv[2]).write_text(f'version:{version}\nonboardAccessibility:false\nkey_key.forbriclive.probe:key.keyboard.f6\n')
+PY_OPTIONS
 # M26_OPTIONS_END
 : > "$LOG"
 FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=160 ${M26_EXTRA_JVM:-}" \

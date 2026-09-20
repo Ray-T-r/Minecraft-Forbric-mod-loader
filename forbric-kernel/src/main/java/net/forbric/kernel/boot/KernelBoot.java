@@ -353,6 +353,7 @@ public final class KernelBoot {
 		}));
 
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeBlockTintInjector());
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeOptionsInjector());
 
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeClientConsumersInjector());
 

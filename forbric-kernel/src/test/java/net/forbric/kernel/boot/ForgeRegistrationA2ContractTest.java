@@ -124,9 +124,10 @@ class ForgeRegistrationA2ContractTest {
         Path result = temporary.resolve("options-command.log");
         ProcessBuilder builder = new ProcessBuilder("bash", "-c", options);
         builder.environment().put("RUNDIR", temporary.toString());
+        builder.environment().put("RUN_OLD", CANARY.toAbsolutePath().getParent().getParent().toString());
         assertEquals(0, execute(builder, result).exit());
-        assertEquals("onboardAccessibility:false\nkey_key.forbriclive.probe:key.keyboard.f6\n",
-                Files.readString(temporary.resolve("options.txt")));
+        String seeded = Files.readString(temporary.resolve("options.txt"));
+        assertTrue(seeded.matches("version:[1-9][0-9]*\\nonboardAccessibility:false\\nkey_key\\.forbriclive\\.probe:key\\.keyboard\\.f6\\n"), seeded);
         for (Path gate : List.of(M21, M26)) {
             Result parsed = execute(new ProcessBuilder("bash", "-n", gate.toString()), result);
             assertEquals(0, parsed.exit(), parsed.output());
