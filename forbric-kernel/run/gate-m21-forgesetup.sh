@@ -153,6 +153,15 @@ step "a MinecraftForge mod can reach the carrier's NBT builder (H1: CompoundTag.
 check "BlockPos.toCompoundTag() links and builds" '\[ForbricLive/NBT\] BlockPos\.toCompoundTag\(\) = \{.*x:1.*y:2.*z:3.*\}' "$LOG"
 check_absent "no NoSuchMethodError on CompoundTag.builder" 'NoSuchMethodError.*CompoundTag\.builder' "$LOG"
 
+step "MinecraftForge's AddReloadListenerEvent is posted from the merged server reload (H2/H3)"
+# RED controls: M21_EXTRA_JVM='-Dforbric.forgeReloadListeners=off' (no DELIVERED / count line, listener never ran);
+#               M21_EXTRA_JVM='-Dforbric.forgeConditionContext=off' (context=EMPTY instead of live).
+check "the Forge event was delivered"              '\[ForbricLive/RELOAD\] AddReloadListenerEvent DELIVERED' "$LOG"
+check "the Forge-registered data loader ran"       '\[ForbricLive/RELOAD\] reload listener ran over [1-9][0-9]* file' "$LOG"
+check "the kernel counted the bridged listeners"   'bridged [1-9][0-9]* MinecraftForge server reload listener' "$LOG"
+check "the event hands out a live condition context" '\[ForbricLive/RELOAD\] context=live' "$LOG"
+check_absent "no NoSuchMethodError on getConditionContext" 'NoSuchMethodError.*getConditionContext' "$LOG"
+
 # M21_REGISTRATION_ASSERTIONS_BEGIN — the Phase 1 A registration hooks; green since A8 landed the bridge inventory.
 check "common registration canary subscribed" 'ForbricLive/REGISTRATION\] subscribed to Forge spawn and creative registration events' "$LOG"
 check "common registration observations completed" 'ForbricLive/REGISTRATION\] common registration observations completed' "$LOG"

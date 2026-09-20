@@ -153,9 +153,46 @@ public class ForbricLiveMod {
 		System.out.println("[ForbricLive/CFG] registered COMMON config forbriclive-common.toml (probe default 11)");
 		System.out.println("[ForbricLive/CFG] registered CLIENT config forbriclive-client.toml (probe default 17)");
 		registerRegistrationProbes(ctx);
+		registerReloadProbe();
 		registerSetupLifecycle(ctx);
 		registerClient(ctx);
 		reportForeignMods();
+	}
+
+	/**
+	 * H2/H3: the documented way a Forge mod registers a JSON data loader. On the merged base the event was never
+	 * constructed, and the documented getConditionContext() call was a NoSuchMethodError the moment it ran.
+	 */
+	private static void registerReloadProbe() {
+		net.minecraftforge.event.AddReloadListenerEvent.BUS.addListener(event -> {
+			System.out.println("[ForbricLive/RELOAD] AddReloadListenerEvent DELIVERED to a traditional-Forge mod");
+			String context;
+			try {
+				var ctx = event.getConditionContext();
+				context = ctx == net.minecraftforge.common.crafting.conditions.ICondition.IContext.EMPTY ? "EMPTY"
+						: "live " + ctx.getClass().getName();
+			} catch (Throwable failure) {
+				context = "FAILED " + failure;
+			}
+			System.out.println("[ForbricLive/RELOAD] context=" + context);
+			event.addListener(new ProbeReloadListener());
+		});
+	}
+
+	/** A data loader over data/<ns>/forbriclive_probe/*.json — the shape every Forge mod's custom data folder uses. */
+	static final class ProbeReloadListener
+			extends net.minecraft.server.packs.resources.SimplePreparableReloadListener<Integer> {
+		@Override
+		protected Integer prepare(net.minecraft.server.packs.resources.ResourceManager manager,
+				net.minecraft.util.profiling.ProfilerFiller profiler) {
+			return manager.listResources("forbriclive_probe", id -> id.getPath().endsWith(".json")).size();
+		}
+
+		@Override
+		protected void apply(Integer files, net.minecraft.server.packs.resources.ResourceManager manager,
+				net.minecraft.util.profiling.ProfilerFiller profiler) {
+			System.out.println("[ForbricLive/RELOAD] reload listener ran over " + files + " file(s)");
+		}
 	}
 
 	/** Register through Forge's genuine buses; only the patched game may deliver these events. */

@@ -160,6 +160,43 @@ public final class KernelForgeConditions {
 		}
 	}
 
+	/** {@code -Dforbric.forgeConditionContext=off}: the Forge event answers {@code EMPTY} instead of adapting NeoForge's. */
+	public static final String CONTEXT_PROPERTY = "forbric.forgeConditionContext";
+	private static volatile boolean contextFailureReported;
+
+	/**
+	 * The condition context MinecraftForge's {@code AddReloadListenerEvent.getConditionContext()} hands a listener.
+	 *
+	 * <p>The carrier compiles that accessor as {@code ReloadableServerResources.getConditionContext()} returning
+	 * FORGE's {@code ICondition.IContext}; the merged class declares only the NeoForge-typed one, so the call is a
+	 * {@code NoSuchMethodError} the moment a Forge data loader asks for its context. The transformer redirects that
+	 * one invocation here (receiver in, context out, same stack) and this adapts NeoForge's live context over
+	 * Forge's interface. {@code getTag} is a generic method, so the adapter is an anonymous class, not a lambda.
+	 * Forge's {@code wrap(ops)} default and {@code TAGS_INVALID} semantics are untouched. Any failure — including a
+	 * null NeoForge context — answers {@code EMPTY}, which is what a Forge listener gets on genuine Forge before
+	 * the context exists.
+	 */
+	public static ICondition.IContext contextOf(net.minecraft.server.ReloadableServerResources resources) {
+		if ("off".equalsIgnoreCase(System.getProperty(CONTEXT_PROPERTY, "on"))) return ICondition.IContext.EMPTY;
+		try {
+			net.neoforged.neoforge.common.conditions.ICondition.IContext neo = resources.getConditionContext();
+			if (neo == null) return ICondition.IContext.EMPTY;
+			return new ICondition.IContext() {
+				@Override
+				public <T> java.util.Collection<net.minecraft.core.Holder<T>> getTag(net.minecraft.tags.TagKey<T> key) {
+					return neo.getTag(key);
+				}
+			};
+		} catch (Throwable t) {
+			if (!contextFailureReported) {
+				contextFailureReported = true;
+				ForbricLog.warn("[Forbric/Conditions] could not adapt NeoForge's condition context for MinecraftForge's "
+						+ "AddReloadListenerEvent — Forge listeners get an EMPTY context", t);
+			}
+			return ICondition.IContext.EMPTY;
+		}
+	}
+
 	private static void report(String type) {
 		if (!REPORTED.add(type)) return;
 		ForbricLog.warn("[Forbric/Conditions] resource condition '%s' is not in MinecraftForge's condition "

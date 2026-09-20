@@ -75,11 +75,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	@Override
 	public AnchorSet anchors() {
-		// Thirty-two independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
+		// Thirty-four independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("32 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("34 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -120,6 +120,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= giveTheUnwrittenLoggerAValue(node);
 			changed |= addTheMissingCapabilityLifecycleStubs(node);
 			changed |= addTheMissingNbtBuilderFactory(node);
+			changed |= postMinecraftForgesReloadListenerEvent(node);
+			changed |= giveMinecraftForgesReloadEventItsConditionContext(node);
 			changed |= dropStubsThatBypassARealSuperclassMethod(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
@@ -226,6 +228,13 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String KERNEL_NEO_CONDITIONS = "net/forbric/kernel/runtime/KernelNeoConditions";
 	private static final String FORGE_ICONDITION = ForeignType.ICONDITION.internal(Ecosystem.FORGE);
 	private static final String KERNEL_FORGE_CONDITIONS = "net/forbric/kernel/runtime/KernelForgeConditions";
+	private static final String KERNEL_FORGE_RELOAD = "net/forbric/kernel/runtime/KernelForgeReload";
+	private static final String RELOADABLE_SERVER_RESOURCES = "net/minecraft/server/ReloadableServerResources";
+	private static final String RELOAD_HOOK_DESC = "(L" + RELOADABLE_SERVER_RESOURCES
+			+ ";Lnet/minecraft/core/RegistryAccess;Ljava/util/Map;)Ljava/util/List;";
+	/** The carrier's own reload event; NeoForge's twin has a different name, so ForeignType has no pair. */
+	private static final String FORGE_RELOAD_EVENT = "net/minecraftforge/event/AddReloadListenerEvent";
+	private static final String FORGE_CONDITION_CONTEXT_DESC = "()L" + FORGE_ICONDITION + "$IContext;";
 	private static final String JSON_RELOAD_LISTENER = "net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener";
 	private static final String DATA_RESULT = "Lcom/mojang/serialization/DataResult;";
 
@@ -405,6 +414,87 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "CompoundTag$1, an anonymous class the merge could not carry (the merged CompoundTag$1 is a different "
 				+ "class), so the body emitted is INBTBuilder.nbt()'s own; IForgeBlockPos.toCompoundTag() and "
 				+ "ForgeHooks.createEmptyStructure link again");
+		return true;
+	}
+
+	/**
+	 * Posts MinecraftForge's {@code AddReloadListenerEvent} from the merged server reload.
+	 *
+	 * <p>Merged {@code ReloadableServerResources.lambda$loadResources$2} calls only NeoForge's
+	 * {@code EventHooks.onResourceReload}; the merged base names Forge's event nowhere. One owner redirect, same
+	 * name and descriptor, to {@code KernelForgeReload.onResourceReload}, whose body calls NeoForge's hook and then
+	 * the carrier's own {@code ForgeEventFactory.onResourceReload}. Exactly one call site is expected; more means
+	 * an unrecognised base and the repair stands down whole. Idempotent: a second pass finds no NeoForge-owned call.
+	 * The kill switch lives in the helper ({@code -Dforbric.forgeReloadListeners=off}), so the redirect is inert
+	 * rather than absent when it is off.
+	 */
+	private static boolean postMinecraftForgesReloadListenerEvent(ClassNode node) {
+		if (!RELOADABLE_SERVER_RESOURCES.equals(node.name)) return false;
+		String neo = ForeignType.EVENT_HOOKS.internal(Ecosystem.NEOFORGE);
+		List<MethodInsnNode> calls = new java.util.ArrayList<>();
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
+						&& neo.equals(call.owner) && "onResourceReload".equals(call.name)
+						&& RELOAD_HOOK_DESC.equals(call.desc)) {
+					calls.add(call);
+				}
+			}
+		}
+		if (calls.isEmpty()) return false;
+		if (calls.size() != 1) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] ReloadableServerResources calls EventHooks.onResourceReload "
+					+ "%d times, not once — not redirecting any of them, because MinecraftForge's reload event would "
+					+ "then be posted for some reloads and not others", calls.size());
+			return false;
+		}
+		calls.getFirst().owner = KERNEL_FORGE_RELOAD;
+		ForbricLog.info("[Forbric/MergedBaseCompat] ReloadableServerResources now posts both families' reload-listener "
+				+ "events (1 call site) — the merged base posted only NeoForge's, so a traditional-Forge mod's "
+				+ "AddReloadListenerEvent listeners never ran and its JSON data loaders were never registered");
+		return true;
+	}
+
+	/**
+	 * Gives MinecraftForge's {@code AddReloadListenerEvent.getConditionContext()} an answer instead of a
+	 * {@code NoSuchMethodError}.
+	 *
+	 * <p>The carrier compiles it as {@code invokevirtual ReloadableServerResources.getConditionContext()} returning
+	 * Forge's {@code ICondition$IContext}; the merged class declares only the NeoForge-typed overload. The one
+	 * invocation is rewritten to {@code invokestatic KernelForgeConditions.contextOf(ReloadableServerResources)} —
+	 * the receiver already on the stack becomes the argument, the Forge-typed context comes back, nothing else
+	 * moves. This edits a CARRIER class, as {@link #nameTheReloadListenersNeoForgeRefusesToName} does. Exactly one
+	 * site expected; idempotent once the kernel owner is present.
+	 */
+	private static boolean giveMinecraftForgesReloadEventItsConditionContext(ClassNode node) {
+		if (!FORGE_RELOAD_EVENT.equals(node.name)) return false;
+		List<MethodInsnNode> calls = new java.util.ArrayList<>();
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof MethodInsnNode call)) continue;
+				if (KERNEL_FORGE_CONDITIONS.equals(call.owner) && "contextOf".equals(call.name)) return false;
+				if (call.getOpcode() == Opcodes.INVOKEVIRTUAL && RELOADABLE_SERVER_RESOURCES.equals(call.owner)
+						&& "getConditionContext".equals(call.name) && FORGE_CONDITION_CONTEXT_DESC.equals(call.desc)) {
+					calls.add(call);
+				}
+			}
+		}
+		if (calls.size() != 1) {
+			if (!calls.isEmpty()) {
+				ForbricLog.warn("[Forbric/MergedBaseCompat] AddReloadListenerEvent asks for its condition context at "
+						+ "%d sites, not one — leaving it alone", calls.size());
+			}
+			return false;
+		}
+		MethodInsnNode call = calls.getFirst();
+		call.setOpcode(Opcodes.INVOKESTATIC);
+		call.owner = KERNEL_FORGE_CONDITIONS;
+		call.name = "contextOf";
+		call.desc = "(L" + RELOADABLE_SERVER_RESOURCES + ";)L" + FORGE_ICONDITION + "$IContext;";
+		call.itf = false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] MinecraftForge's AddReloadListenerEvent now gets a condition context "
+				+ "adapted from NeoForge's (1 call site) — the Forge-typed accessor it compiled against does not "
+				+ "exist on the merged ReloadableServerResources, so asking for it was a NoSuchMethodError");
 		return true;
 	}
 
