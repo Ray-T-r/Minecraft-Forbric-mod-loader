@@ -220,6 +220,10 @@ public final class KernelRuntimeClasses {
 				new Call("installRightClickBlock", void.class, Object.class),
 				new Call("installLeftClickBlock", void.class, Object.class),
 				new Call("installRightClickItem", void.class, Object.class))));
+		// MinecraftForge's picture-in-picture renderers. The merged GuiRenderer's constructor calls build()
+		// directly, so a renamed entry point here is a NoSuchMethodError inside the game's own constructor.
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgePipRenderers", new Entry(Origin.COMPILED, List.of(
+				new Call("build", java.util.Map.class))));
 		// MinecraftForge's HUD overlay stack, which the merged base has no reference to at all. Client only, and
 		// a renamed entry point here is a mod's overlay silently not drawing.
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeOverlayLayers", new Entry(Origin.COMPILED, List.of(

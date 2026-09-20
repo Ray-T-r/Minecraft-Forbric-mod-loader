@@ -124,9 +124,7 @@ public final class DeadEventAudit {
 				"loot tables a MinecraftForge mod adds to or replaces on load are left as loaded — the merged "
 						+ "ReloadableServerRegistries posts only NeoForge's LootTableLoadEvent (KernelLootBridge is the "
 						+ "seam where Forge's would belong)");
-		dead.put("net/minecraftforge/client/event/RegisterPictureInPictureRendererEvent",
-				"picture-in-picture renderers a MinecraftForge mod registers never draw — the merged GuiRenderer "
-						+ "collects only NeoForge's");
+
 		// The other side of the ledger: the merged ItemStack.getTooltipLines calls only MinecraftForge's
 		// ForgeEventFactory.onItemTooltip (javap: one invokestatic, none into net/neoforged), so NeoForge's event is
 		// the dead one here. ItemStack#onDestroyed is NOT a row: it is an extension hook on both sides

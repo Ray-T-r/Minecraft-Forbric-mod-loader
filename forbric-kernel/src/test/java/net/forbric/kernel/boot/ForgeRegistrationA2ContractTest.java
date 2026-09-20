@@ -180,7 +180,9 @@ class ForgeRegistrationA2ContractTest {
                 "setup resource PRESENT: forbriclive:setup_probe.txt = forbric-live-setup-probe",
                 "client resource manager preloaded with 140 selected pack(s)",
                 "AddGuiOverlayLayersEvent RECEIVED", "overlay layer DREW 20 frames",
-                "MinecraftForge's overlay stack is on NeoForge's layer manager")) {
+                "MinecraftForge's overlay stack is on NeoForge's layer manager",
+                "RegisterPictureInPictureRendererEvent RECEIVED",
+                "1 MinecraftForge picture-in-picture renderer(s) registered", "only writer")) {
             assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(pass, ""), 0).exit());
         }
         // ABSENT is its own row, not the negation of PRESENT: an empty manager makes the canary print it, and a
@@ -257,6 +259,11 @@ class ForgeRegistrationA2ContractTest {
         lines.add(CLIENT + "AddGuiOverlayLayersEvent RECEIVED");
         lines.add(CLIENT + "overlay layer DREW 20 frames");
         lines.add("[Forbric/HudBridge] MinecraftForge's overlay stack is on NeoForge's layer manager");
+        // The picture-in-picture map, whose only writer is the kernel's.
+        lines.add(CLIENT + "RegisterPictureInPictureRendererEvent RECEIVED");
+        lines.add("[Forbric/PipRenderers] 1 MinecraftForge picture-in-picture renderer(s) registered");
+        lines.add("[Forbric/MergedBaseCompat] gave GuiRenderer's pooled picture-in-picture lookup a fallback to the "
+                + "orphaned vanilla map, and gave that map its only writer");
         return String.join("\n", lines) + "\n";
     }
 

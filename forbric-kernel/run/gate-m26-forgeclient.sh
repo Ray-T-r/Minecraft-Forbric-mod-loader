@@ -3,6 +3,7 @@
 # RED controls after A3/A6/A7: M26_EXTRA_JVM='-Dforbric.forgeClientInit=off' loses client registrations;
 #   M26_EXTRA_JVM='-Dforbric.clientResourcePreload=off' — the client resource manager is empty at mod setup again;
 #   M26_EXTRA_JVM='-Dforbric.forgeOverlayLayers=off' — a MinecraftForge mod's HUD overlays never draw (3 red);
+#   M26_EXTRA_JVM='-Dforbric.forgePipRenderers=off' — a MinecraftForge picture-in-picture renderer is nowhere (2 red);
 # M26_EXTRA_JVM='-Dforbric.forgeCreativeTabs=off' loses command_block in parent/search collections;
 # M21_EXTRA_JVM='-Dforbric.forgeSpawnPlacements=off' loses the zombie WORLD_SURFACE result in M21.
 # Green since Phase 1 A landed (A3–A9 hooks, A8 bridge inventory); any red is a regression, exit 1.
@@ -126,6 +127,20 @@ check "and its layer drew real frames" \
   'ForbricLive/CLIENT\] overlay layer DREW 20 frames' "$LOG"
 check "the stack is on NeoForge's layer manager" \
   "Forbric/HudBridge\] MinecraftForge's overlay stack is on NeoForge's layer manager" "$LOG"
+
+step "a MinecraftForge picture-in-picture renderer has somewhere to be found (must PASS)"
+# GuiRenderer declares vanilla's Class -> renderer map, reads it in ONE place and writes it NOWHERE: NeoForge's
+# constructor won the byte merge and fills its pooled map instead. Two failures in one — the event that would
+# have filled vanilla's map is posted by nobody, and the kernel's own pooled-miss fallback reads that map with no
+# null check, so the first frame reaching a state class with no pool would have thrown in the render loop.
+#
+# RED with M26_EXTRA_JVM='-Dforbric.forgePipRenderers=off' (2 red: the event is not posted, so nothing registers).
+check "the registration event reached the canary" \
+  'ForbricLive/CLIENT\] RegisterPictureInPictureRendererEvent RECEIVED' "$LOG"
+check "and its renderer is in the map the game reads" \
+  'Forbric/PipRenderers\] [1-9][0-9]* MinecraftForge picture-in-picture renderer\(s\) registered' "$LOG"
+check "the map now has a writer at all" \
+  "MergedBaseCompat\] gave GuiRenderer's pooled picture-in-picture lookup a fallback.*only writer" "$LOG"
 check "stone has the registered canary tint" 'ForbricLive/CLIENT\] stone probe tint present: true' "$LOG"
 check "reload registration happened exactly once" 'ForbricLive/CLIENT\] reload posts=1([[:space:]]|$)' "$LOG"
 check "registered listener really applied" 'ForbricLive/CLIENT\] reload listener applies=[1-9][0-9]*' "$LOG"

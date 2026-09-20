@@ -35,6 +35,42 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
 /** Only loaded by name on the client; the dedicated-server entry point never resolves these event types. */
 public final class ForbricLiveClient {
+	/**
+	 * A picture-in-picture state and its renderer, of the shape a minimap or an in-world preview registers.
+	 *
+	 * <p>Nothing ever builds this state, so nothing ever renders it. The assertion is the registration reaching
+	 * the map at all: on the merged base that map had no writer, because the event that fills it is posted by
+	 * nobody.
+	 */
+	public record ProbePipState(int x0, int y0, int x1, int y1, float scale,
+			net.minecraft.client.gui.navigation.ScreenRectangle scissorArea)
+			implements net.minecraft.client.renderer.state.gui.pip.PictureInPictureRenderState {
+		@Override
+		public net.minecraft.client.gui.navigation.ScreenRectangle bounds() {
+			return net.minecraft.client.renderer.state.gui.pip.PictureInPictureRenderState
+					.getBounds(x0, x1, y0, y1, scissorArea);
+		}
+	}
+
+	/** The renderer the canary registers for {@link ProbePipState}. */
+	public static final class ProbePipRenderer
+			extends net.minecraft.client.gui.render.pip.PictureInPictureRenderer<ProbePipState> {
+		@Override
+		public Class<ProbePipState> getRenderStateClass() {
+			return ProbePipState.class;
+		}
+
+		@Override
+		protected void renderToTexture(ProbePipState state, com.mojang.blaze3d.vertex.PoseStack pose,
+				net.minecraft.client.renderer.SubmitNodeCollector collector) {
+		}
+
+		@Override
+		protected String getTextureLabel() {
+			return "forbriclive probe";
+		}
+	}
+
 	/** Frames the canary's own HUD overlay layer has drawn. */
 	private static final AtomicInteger OVERLAY_DRAWS = new AtomicInteger();
 
@@ -157,6 +193,13 @@ public final class ForbricLiveClient {
 					net.minecraftforge.client.gui.overlay.ForgeLayeredDraw.CROSSHAIR,
 					net.minecraftforge.client.gui.overlay.ForgeLayeredDraw.LayerOffset.ABOVE);
 			System.out.println("[ForbricLive/CLIENT] AddGuiOverlayLayersEvent RECEIVED");
+		});
+		// The picture-in-picture renderers. The merged GuiRenderer declares vanilla's Class -> renderer map, reads
+		// it in one place and writes it NOWHERE, and nothing posts the event that would have filled it — so this
+		// listener never ran and the renderer it registers had nowhere to be found.
+		net.minecraftforge.client.event.RegisterPictureInPictureRendererEvent.BUS.addListener(event -> {
+			event.register(new ProbePipRenderer());
+			System.out.println("[ForbricLive/CLIENT] RegisterPictureInPictureRendererEvent RECEIVED");
 		});
 		System.out.println("[ForbricLive/CLIENT] subscribed to ten Forge registration events");
 		registerConfigScreen(ctx);

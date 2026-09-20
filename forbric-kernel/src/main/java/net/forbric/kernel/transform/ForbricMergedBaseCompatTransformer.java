@@ -3314,6 +3314,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String PIP_RENDERERS = "pictureInPictureRenderers";
 	private static final String PIP_POOLS = "pictureInPictureRendererPools";
 	private static final String PIP_PREPARE = "preparePictureInPictureState";
+	private static final String PIP_BUILDER_OWNER = "net/forbric/kernel/runtime/KernelForgePipRenderers";
 	private static final String PIP_BRIDGE = "forbric$prepareOrphanedPip";
 
 	/**
@@ -3365,9 +3366,49 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		if (bridge == null || !redirectMissingPoolToBridge(node, live, stateDesc)) return false;
 
 		node.methods.add(bridge);
+		boolean filled = fillOrphanedPipMap(node, findField(node, PIP_RENDERERS));
 		ForbricLog.warn("[Forbric/MergedBaseCompat] gave GuiRenderer's pooled picture-in-picture lookup a fallback to "
 				+ "the orphaned vanilla map — NeoForge won preparePictureInPictureState, so every guest-registered "
-				+ "GUI element (Xaero's minimap, malilib's overlays) was registered where nothing reads");
+				+ "GUI element (Xaero's minimap, malilib's overlays) was registered where nothing reads%s",
+				filled ? ", and gave that map its only writer" : "");
+		return true;
+	}
+
+	/**
+	 * Assigns the orphaned map in {@code GuiRenderer.<init>}, from MinecraftForge's registration event.
+	 *
+	 * <p>The field is declared, read in one place, and <b>written nowhere</b>: NeoForge's constructor won the byte
+	 * merge and fills its pooled map instead, so vanilla's plain one stays null. That is two failures in one. A
+	 * MinecraftForge mod's picture-in-picture renderer has nothing to register into, because the event that would
+	 * have filled this map is posted by nobody; and the fallback above reads the map WITHOUT a null check, so the
+	 * first frame reaching a state class with no pool would throw inside the game's own render loop.
+	 *
+	 * <p>Appended before each RETURN of the constructor, which is where a final field may still be assigned.
+	 */
+	private static boolean fillOrphanedPipMap(ClassNode node, FieldNode renderers) {
+		if (renderers == null) return false;
+		MethodNode init = null;
+		for (MethodNode method : node.methods) {
+			if ("<init>".equals(method.name)) init = method;
+		}
+		if (init == null) return false;
+		for (AbstractInsnNode insn : init.instructions.toArray()) {
+			if (insn instanceof MethodInsnNode call && PIP_BUILDER_OWNER.equals(call.owner)) return false;
+		}
+
+		int appended = 0;
+		for (AbstractInsnNode insn : init.instructions.toArray()) {
+			if (insn.getOpcode() != Opcodes.RETURN) continue;
+			InsnList assign = new InsnList();
+			assign.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			assign.add(new MethodInsnNode(Opcodes.INVOKESTATIC, PIP_BUILDER_OWNER, "build", "()Ljava/util/Map;",
+					false));
+			assign.add(new FieldInsnNode(Opcodes.PUTFIELD, node.name, renderers.name, renderers.desc));
+			init.instructions.insertBefore(insn, assign);
+			appended++;
+		}
+		if (appended == 0) return false;
+		init.maxStack = Math.max(init.maxStack, 2);
 		return true;
 	}
 
