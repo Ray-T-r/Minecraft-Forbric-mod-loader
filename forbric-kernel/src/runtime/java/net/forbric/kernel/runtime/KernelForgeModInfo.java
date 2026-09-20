@@ -70,10 +70,20 @@ public final class KernelForgeModInfo implements IModInfo {
 	private final String displayName;
 	private final ArtifactVersion version;
 
+	private final KernelForgeModsToml toml;
+	private final IModFileInfo owningFile;
+
 	public KernelForgeModInfo(String modId) {
+		this(modId, KernelModMetadata.jarOf(modId));
+	}
+
+	/** The jar is what the owning file's config is read from; null reads as a jar that declares nothing. */
+	public KernelForgeModInfo(String modId, java.nio.file.Path jar) {
 		this.modId = modId;
 		this.displayName = KernelModMetadata.displayNameOf(modId);
 		this.version = new DefaultArtifactVersion(KernelModMetadata.versionOf(modId));
+		this.toml = KernelForgeModsToml.read(jar);
+		this.owningFile = new KernelForgeModFileInfo(modId, this, toml);
 	}
 
 	@Override
@@ -146,13 +156,13 @@ public final class KernelForgeModInfo implements IModInfo {
 	/** Null, as before. See the class javadoc. */
 	@Override
 	public IConfigurable getConfig() {
-		return null;
+		return new KernelForgeConfigurable(toml.mod(modId), java.util.List.of());
 	}
 
 	/** Null, as before. See the class javadoc — a non-null value here would fail a checkcast, not fix anything. */
 	@Override
 	public IModFileInfo getOwningFile() {
-		return null;
+		return owningFile;
 	}
 
 	@Override

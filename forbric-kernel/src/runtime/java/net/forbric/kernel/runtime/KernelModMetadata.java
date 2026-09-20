@@ -62,6 +62,18 @@ final class KernelModMetadata {
 		return version;
 	}
 
+	/** The jar a discovered mod came from, or null when unknown or not a file on disk. */
+	static java.nio.file.Path jarOf(String modId) {
+		DiscoveredMod mod = lookup(modId);
+		if (mod == null || mod.getSource() == null) return null;
+		try {
+			java.nio.file.Path path = java.nio.file.Path.of(String.valueOf(mod.getSource()));
+			return java.nio.file.Files.isRegularFile(path) ? path : null;
+		} catch (RuntimeException notAPath) {
+			return null;
+		}
+	}
+
 	private static DiscoveredMod lookup(String modId) {
 		try {
 			return ModPresence.metadata(modId);
