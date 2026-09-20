@@ -287,6 +287,9 @@ public final class KernelBoot {
 		List<Path> shadowCandidates = new ArrayList<>(fabricJars);
 		for (Path jar : modJars) if (!shadowCandidates.contains(jar)) shadowCandidates.add(jar);
 		PortingLayerAudit.report(shadowCandidates, runtimeJars);
+		// Which installed mods name a fabric-api surface the merged base still switches off; reported after the
+		// catalog is published, so the rows reach load-report.txt.
+		FabricApiModuleLossAudit.scan(shadowCandidates);
 
 		ForbricLog.info("[Forbric/Boot] sovereign kernel — %s %s, %d owned jar(s), %d Forge-family mod(s), "
 				+ "%d Fabric jar(s), %d MC library jar(s)", side.name().toLowerCase(), gameVersion, owned.size(),
@@ -696,6 +699,7 @@ public final class KernelBoot {
 		// Dist must match the side — a client seeded as DEDICATED_SERVER makes NeoForge reject the local player's
 		// integrated-server connection ("Server is still starting").
 		PassiveSeeder.seedAll(loader, gameDir, side.api());
+		FabricApiModuleLossAudit.report(side.api());
 
 		// Fabric preLaunch entrypoints, after Mixin is up and before any game class loads (their contract).
 		KernelFabricEcosystem.runPreLaunch();

@@ -82,6 +82,10 @@ step "the server actually works (must PASS)"
 # RED with FORBRIC_JVM=-Dforbric.lootBridge=off (no 'offered' line; the audit then names the canary DEGRADED).
 check "kernel offered the loot tables to fabric" "Forbric/LootBridge\] offered [1-9][0-9]* loot table" "$LOG"
 check "the loot seams were routed"             "Forbric/LootBridge\] routed 1 loot-table load site\(s\) and 1 tag-load site" "$LOG"
+# F4: with every restoration on, no installed mod loses a fabric-api surface. With -Dforbric.lootBridge=off the
+# audit names the canary ("[Forbric/FabricApi] 1 mod jar(s) use fabric-loot-api-v3's LootTableEvents … forbricfabriclive.jar")
+# and .forbric-kernel/load-report.txt lists forbricfabriclive as DEGRADED.
+check_absent "no mod is degraded by a fabric-api module loss" "Forbric/FabricApi\]" "$LOG"
 check "vanilla datapack fully loaded"          "Loaded 1585 recipes" "$LOG"
 check "server reached Done"                    "Done \(" "$LOG"
 # "Stopping the server" is the /stop command's OWN feedback (commands.stop.stopping in en_us), and the console
