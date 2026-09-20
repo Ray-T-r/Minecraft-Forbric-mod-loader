@@ -58,7 +58,7 @@ cat "$RUNDIR/logs/latest.log" >> "$LOG" 2>/dev/null || true
 
 # M26_ASSERTIONS_BEGIN — exercised against synthetic logs without launching the game.
 step "the canary subscribed, entered its save and completed real consumer observations"
-check "client canary subscribed" 'ForbricLive/CLIENT\] subscribed to nine Forge registration events' "$LOG"
+check "client canary subscribed" 'ForbricLive/CLIENT\] subscribed to ten Forge registration events' "$LOG"
 check "joined world" 'ClientSmoke\] joined world via quick-play' "$LOG"
 check "simulation survived" 'ClientSmoke\] client-ready after' "$LOG"
 check "creative contents were requested" 'ForbricLive/CLIENT\] creative contents builder exercised in a live world' "$LOG"
@@ -69,10 +69,11 @@ check_absent "no missing client classes or crashes" 'NoClassDefFoundError|Prepar
 check_absent "reload registration was not duplicated" 'ForbricLive/CLIENT\] reload posts=([2-9]|[1-9][0-9]+)([[:space:]]|$)' "$LOG"
 CONTROL_FAIL=$FAIL
 
-step "all nine traditional-Forge registration events arrived"
+step "all ten traditional-Forge registration events arrived"
 for event in 'RegisterKeyMappingsEvent' 'EntityRenderersEvent.RegisterRenderers' 'BuildCreativeModeTabContentsEvent' \
   'EntityRenderersEvent.RegisterLayerDefinitions' 'RegisterParticleProvidersEvent' 'RegisterColorHandlersEvent.Block' \
-  'RegisterClientReloadListenersEvent' 'RegisterClientTooltipComponentFactoriesEvent' 'ModelEvent.RegisterGeometryLoaders'; do
+  'RegisterClientReloadListenersEvent' 'RegisterClientTooltipComponentFactoriesEvent' 'ModelEvent.RegisterGeometryLoaders' \
+  'RegisterPresetEditorsEvent'; do
   check "$event received" "ForbricLive/CLIENT\] ${event//./\\.} RECEIVED" "$LOG"
 done
 step "registered content reached the live consumer tables"

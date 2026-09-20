@@ -74,6 +74,31 @@ class ForgeClientCanaryTest {
 	}
 
 	@Test
+	void presetListenerUsesTheModsBusGroupAndTheGateRequiresItsDelivery() throws Exception {
+		Path jar = WorldgenCanaryDataTest.LOADER.resolve("run/forge-runtime/forbriclive.jar");
+		assumeTrue(Files.isRegularFile(jar), "build canaries with forbric-loader/run/build-testmods.sh");
+		try (ZipFile zip = new ZipFile(jar.toFile())) {
+			ClassNode client = new ClassNode();
+			new ClassReader(bytes(zip, "forbric/live/ForbricLiveClient.class")).accept(client, 0);
+			var init = client.methods.stream().filter(method -> method.name.equals("init")).findFirst().orElseThrow();
+			int subscriptions = 0;
+			String event = "net/minecraftforge/client/event/RegisterPresetEditorsEvent";
+			for (AbstractInsnNode instruction : init.instructions) {
+				if (!(instruction instanceof MethodInsnNode bus) || !bus.owner.equals(event) || !bus.name.equals("getBus")) continue;
+				assertEquals("(Lnet/minecraftforge/eventbus/api/bus/BusGroup;)Lnet/minecraftforge/eventbus/api/bus/EventBus;", bus.desc);
+				InvokeDynamicInsnNode listener = assertInstanceOf(InvokeDynamicInsnNode.class, nextCode(bus));
+				assertTrue(List.of(listener.bsmArgs).contains(Type.getMethodType("(L" + event + ";)V")));
+				MethodInsnNode subscribe = assertInstanceOf(MethodInsnNode.class, nextCode(listener));
+				assertEquals("addListener", subscribe.name);
+				assertEquals("(Ljava/util/function/Consumer;)Lnet/minecraftforge/eventbus/api/listener/EventListener;", subscribe.desc);
+				subscriptions++;
+			}
+			assertEquals(1, subscriptions);
+		}
+		assertTrue(Files.readString(Path.of("run/gate-m26-forgeclient.sh")).contains("'RegisterPresetEditorsEvent'"));
+	}
+
+	@Test
 	void clientFixtureDropsOnlyDatapackEntriesAndLeavesItsSourceJarUnchanged() throws Exception {
 		Path source = temporary.resolve("source with spaces.jar");
 		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(source))) {

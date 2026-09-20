@@ -46,6 +46,8 @@ public final class ForbricLiveClient {
 	private ForbricLiveClient() {}
 
 	public static void init(FMLJavaModLoadingContext ctx) {
+		net.minecraftforge.client.event.RegisterPresetEditorsEvent.getBus(ctx.getModBusGroup()).addListener(event ->
+				System.out.println("[ForbricLive/CLIENT] RegisterPresetEditorsEvent RECEIVED"));
 		RegisterKeyMappingsEvent.BUS.addListener(event -> {
 			// F7 is deliberately different from the F6 supplied by the gate's options.txt.
 			probeKey = new KeyMapping("key.forbriclive.probe", org.lwjgl.glfw.GLFW.GLFW_KEY_F7,
@@ -99,7 +101,7 @@ public final class ForbricLiveClient {
 			}
 			if (++worldTicks == 100) observeRegistrationResults(mc);
 		});
-		System.out.println("[ForbricLive/CLIENT] subscribed to nine Forge registration events");
+		System.out.println("[ForbricLive/CLIENT] subscribed to ten Forge registration events");
 		registerConfigScreen(ctx);
 	}
 

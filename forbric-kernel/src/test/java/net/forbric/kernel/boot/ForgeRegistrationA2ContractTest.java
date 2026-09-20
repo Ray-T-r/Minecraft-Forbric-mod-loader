@@ -34,7 +34,8 @@ class ForgeRegistrationA2ContractTest {
             "RegisterKeyMappingsEvent", "EntityRenderersEvent$RegisterRenderers",
             "EntityRenderersEvent$RegisterLayerDefinitions", "RegisterParticleProvidersEvent",
             "RegisterColorHandlersEvent$Block", "RegisterClientReloadListenersEvent",
-            "RegisterClientTooltipComponentFactoriesEvent", "ModelEvent$RegisterGeometryLoaders");
+            "RegisterClientTooltipComponentFactoriesEvent", "ModelEvent$RegisterGeometryLoaders",
+            "RegisterPresetEditorsEvent");
     private static final String CLIENT = "[ForbricLive/CLIENT] ";
     private static final String COMMON = "[ForbricLive/REGISTRATION] ";
     @TempDir Path temporary;
@@ -219,7 +220,7 @@ class ForgeRegistrationA2ContractTest {
 
     private static String clientGreen() {
         List<String> lines = new ArrayList<>(List.of(
-                CLIENT + "subscribed to nine Forge registration events",
+                CLIENT + "subscribed to ten Forge registration events",
                 "[ClientSmoke] joined world via quick-play", "[ClientSmoke] client-ready after 60 ticks",
                 CLIENT + "creative contents builder exercised in a live world",
                 CLIENT + "registration observations completed at world tick 100", "[ClientSmoke] clean disconnect observed"));
@@ -248,9 +249,12 @@ class ForgeRegistrationA2ContractTest {
     private static int subscriptions(MethodNode method, String owner) {
         int result = 0;
         for (var instruction : method.instructions) {
-            if (!(instruction instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETSTATIC
-                    || !field.owner.equals(owner) || !field.name.equals("BUS")) continue;
-            var listener = field.getNext();
+            boolean globalBus = instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
+                    && field.owner.equals(owner) && field.name.equals("BUS");
+            boolean modBus = instruction instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
+                    && call.owner.equals(owner) && call.name.equals("getBus");
+            if (!globalBus && !modBus) continue;
+            var listener = instruction.getNext();
             while (listener != null && listener.getOpcode() < 0) listener = listener.getNext();
             assertTrue(listener instanceof InvokeDynamicInsnNode, "BUS must create a real consumer: " + owner);
             var call = listener.getNext();

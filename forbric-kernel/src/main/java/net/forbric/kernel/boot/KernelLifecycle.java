@@ -507,6 +507,7 @@ public final class KernelLifecycle {
 		// Whether the registration window was opened, and so whether the finally below owes it a close.
 		boolean closeWindow = false;
 		try {
+			setForgeLoadingState(cl, false);
 			Class<?> distClass = Class.forName(ForeignType.DIST.binary(Ecosystem.NEOFORGE), false, cl);
 			Object dist = Enum.valueOf(distClass.asSubclass(Enum.class), side.distName());
 
@@ -528,6 +529,9 @@ public final class KernelLifecycle {
 			// Real Forge-family @Mods, each on its own bus.
 			List<KernelModLoader.ConstructedMod> mods =
 					KernelModLoader.constructMods(cl, modJars, side);
+			// constructMods has published the surviving Forge containers and their real bus groups. Native
+			// gatherAndInitializeMods normally opens this gate; it is replaced by this kernel-owned stage.
+			setForgeLoadingState(cl, true);
 
 			// Load the config specs those constructors just registered, BEFORE any RegisterEvent fires. Genuine
 			// NeoForge loads STARTUP/COMMON right after construction and only then posts the registry events, and
@@ -686,11 +690,28 @@ public final class KernelLifecycle {
 					buses.size() - 1, forgeHandles.size());
 			logRegisteredContent(cl);
 		} catch (Throwable t) {
+			setForgeLoadingState(cl, false);
 			ForbricLog.warn("[Forbric/Lifecycle] could not register ecosystem content", unwrap(t));
 		} finally {
 			// Only when the window was actually opened: before unfreeze there is nothing to put back, and freezing
 			// a registry the kernel never opened would close one the caller still owns.
 			if (closeWindow) closeRegistrationWindow(cl);
+		}
+	}
+
+	/** Keep the carrier's actual flag writable by its own failure paths; never replace its getter with true. */
+	static void setForgeLoadingState(ClassLoader cl, boolean ready) {
+		if ("off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"))) return;
+		try {
+			Class<?> loader = Class.forName(ForeignType.FML_MOD_LOADER.binary(Ecosystem.FORGE), false, cl);
+			Field state = loader.getDeclaredField("loadingStateValid");
+			state.setAccessible(true);
+			state.setBoolean(null, ready);
+			if (ready) ForbricLog.info("[Forbric/Lifecycle] MinecraftForge event delivery enabled after container construction");
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge loading state to publish");
+		} catch (ReflectiveOperationException failed) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not publish MinecraftForge loading state", failed);
 		}
 	}
 

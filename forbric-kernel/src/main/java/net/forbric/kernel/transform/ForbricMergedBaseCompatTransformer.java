@@ -73,11 +73,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	@Override
 	public AnchorSet anchors() {
-		// Twenty-nine independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
+		// Thirty-one independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("29 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("31 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -102,6 +102,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= letFabricResourceConditionsDecide(node);
 			changed |= translateAGuestsPrivateSkipMarker(node);
 			changed |= serveDefaultAttributesBothEcosystems(node);
+			changed |= restoreForgeClientInit(node);
+			changed |= restoreForgeGeometryReload(node);
 			changed |= nameTheReloadListenersNeoForgeRefusesToName(node);
 			changed |= dropInterfaceDefaultShadowingOverrides(node);
 			changed |= tolerateEmptyCreativeTabStacks(node);
@@ -915,6 +917,67 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		ForbricLog.info("[Forbric/MergedBaseCompat] DefaultAttributes now reads both ecosystems' mod-attribute maps "
 				+ "(%d call site(s)) — the merge kept only NeoForge's reader, so a traditional MinecraftForge mod's "
 				+ "entities had no attributes and could not exist", redirected);
+		return true;
+	}
+
+	static boolean restoreForgeClientInit(ClassNode node) {
+		if (!"net/minecraft/client/Minecraft".equals(node.name)
+				|| "off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"))) return false;
+		String owner = ForeignType.CLIENT_HOOKS.internal(Ecosystem.NEOFORGE);
+		String target = "net/forbric/kernel/runtime/KernelForgeClientInit";
+		String init = "(Lnet/minecraft/client/Minecraft;Lnet/minecraft/server/packs/resources/ReloadableResourceManager;)V";
+		String particles = "(Lnet/minecraft/client/particle/ParticleResources;)V";
+		List<MethodInsnNode> matches = new java.util.ArrayList<>();
+		MethodNode constructor = null;
+		int initializers = 0, providers = 0;
+		for (MethodNode method : node.methods) {
+			if (!"<init>".equals(method.name)) continue;
+			for (AbstractInsnNode instruction : method.instructions) {
+				if (!(instruction instanceof MethodInsnNode call)) continue;
+				if (!"initClientHooks".equals(call.name) && !"onRegisterParticleProviders".equals(call.name)) continue;
+				if (target.equals(call.owner)) return false;
+				if (!owner.equals(call.owner)) continue;
+				if (call.getOpcode() != Opcodes.INVOKESTATIC || call.itf) return false;
+				if ("initClientHooks".equals(call.name) && init.equals(call.desc)) initializers++;
+				else if ("onRegisterParticleProviders".equals(call.name) && particles.equals(call.desc)) providers++;
+				else return false;
+				if (constructor != null && constructor != method) return false;
+				constructor = method;
+				matches.add(call);
+			}
+		}
+		if (initializers != 1 || providers != 1) return false;
+		for (MethodInsnNode call : matches) call.owner = target;
+		ForbricLog.info("[Forbric/MergedBaseCompat] Minecraft now initializes both Forge families' client hooks and particles");
+		return true;
+	}
+
+	static boolean restoreForgeGeometryReload(ClassNode node) {
+		if (!"net/minecraft/client/resources/model/ModelManager".equals(node.name)
+				|| "off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"))) return false;
+		String desc = "(Lnet/minecraft/server/packs/resources/PreparableReloadListener$SharedState;Ljava/util/concurrent/Executor;"
+				+ "Lnet/minecraft/server/packs/resources/PreparableReloadListener$PreparationBarrier;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;";
+		MethodNode method = findMethod(node, "reload", desc);
+		if (method == null || (method.access & Opcodes.ACC_STATIC) != 0) return false;
+		for (AbstractInsnNode instruction : method.instructions) {
+			if (instruction instanceof MethodInsnNode call
+					&& (("net/forbric/kernel/runtime/KernelForgeClientInit".equals(call.owner)
+							&& "initGeometryLoaders".equals(call.name))
+						|| ("net/minecraftforge/client/model/geometry/GeometryLoaderManager".equals(call.owner)
+							&& "init".equals(call.name)))) return false;
+		}
+		AbstractInsnNode first = method.instructions.getFirst();
+		while (first != null && first.getOpcode() < 0) first = first.getNext();
+		if (!(first instanceof VarInsnNode load) || load.getOpcode() != Opcodes.ALOAD || load.var != 1) return false;
+		AbstractInsnNode next = first.getNext();
+		while (next != null && next.getOpcode() < 0) next = next.getNext();
+		if (!(next instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKEVIRTUAL
+				|| !"net/minecraft/server/packs/resources/PreparableReloadListener$SharedState".equals(call.owner)
+				|| !"resourceManager".equals(call.name)
+				|| !"()Lnet/minecraft/server/packs/resources/ResourceManager;".equals(call.desc)) return false;
+		method.instructions.insertBefore(first, new MethodInsnNode(Opcodes.INVOKESTATIC,
+				"net/forbric/kernel/runtime/KernelForgeClientInit", "initGeometryLoaders", "()V", false));
+		ForbricLog.info("[Forbric/MergedBaseCompat] ModelManager initializes Forge geometry loaders on every resource reload");
 		return true;
 	}
 
