@@ -76,6 +76,24 @@ public class ForbricNeoLiveMod {
 				net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(probe);
 				System.out.println("[ForbricNeoLive/BLOCKBREAK] posted BreakBlockEvent at " + pos
 						+ " refused=" + probe.isCanceled());
+
+				// The two click events, which carry a useBlock/useItem decision as well as a cancel. The Forge
+				// canary refuses a different one on each, so a bridge that translated only one of the pair — or
+				// translated it in the wrong direction — cannot pass both halves.
+				var hit = new net.minecraft.world.phys.BlockHitResult(
+						net.minecraft.world.phys.Vec3.atCenterOf(pos), net.minecraft.core.Direction.UP, pos, false);
+				var right = new net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock(
+						breaker, net.minecraft.world.InteractionHand.MAIN_HAND, pos, hit);
+				net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(right);
+				System.out.println("[ForbricNeoLive/INTERACT] right-click useBlock=" + right.getUseBlock().name()
+						+ " useItem=" + right.getUseItem().name());
+
+				var left = new net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.LeftClickBlock(
+						breaker, pos, net.minecraft.core.Direction.UP,
+						net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.LeftClickBlock.Action.START);
+				net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(left);
+				System.out.println("[ForbricNeoLive/INTERACT] left-click useBlock=" + left.getUseBlock().name()
+						+ " useItem=" + left.getUseItem().name());
 			} catch (Throwable failure) {
 				System.out.println("[ForbricNeoLive/BLOCKBREAK] probe FAILED: " + failure);
 			}

@@ -519,11 +519,45 @@ public class ForbricLiveMod {
 		 */
 		@SubscribeEvent
 		public static void onBlockBreak(net.minecraftforge.event.level.BlockEvent.BreakEvent event) {
-			boolean probe = event.getPlayer() != null
-					&& event.getPlayer().getClass().getName().endsWith("util.FakePlayer");
+			boolean probe = isProbe(event.getPlayer());
 			if (probe) event.setResult(net.minecraftforge.common.util.Result.DENY);
 			System.out.println("[ForbricLive/BLOCKBREAK] BreakEvent RECEIVED at " + event.getPos()
 					+ " probe=" + probe + " refused=" + probe);
+		}
+
+		/**
+		 * Right-clicking a block — what a protection mod, a lock and every custom block interaction listens for.
+		 *
+		 * <p>Refuses the BLOCK use only, so the pair below can refuse the other decision and a bridge that
+		 * translated one of the two, or translated it in the wrong direction, still fails a check.
+		 */
+		@SubscribeEvent
+		public static void onRightClickBlock(
+				net.minecraftforge.event.entity.player.PlayerInteractEvent.RightClickBlock event) {
+			boolean probe = isProbe(event.getEntity());
+			if (probe) event.setUseBlock(net.minecraftforge.common.util.Result.DENY);
+			System.out.println("[ForbricLive/INTERACT] RightClickBlock RECEIVED at " + event.getPos()
+					+ " probe=" + probe);
+		}
+
+		/** Left-clicking a block, the first half of every protection rule about breaking one. */
+		@SubscribeEvent
+		public static void onLeftClickBlock(
+				net.minecraftforge.event.entity.player.PlayerInteractEvent.LeftClickBlock event) {
+			boolean probe = isProbe(event.getEntity());
+			if (probe) event.setUseItem(net.minecraftforge.common.util.Result.DENY);
+			System.out.println("[ForbricLive/INTERACT] LeftClickBlock RECEIVED at " + event.getPos()
+					+ " action=" + event.getAction() + " probe=" + probe);
+		}
+
+		/**
+		 * Whether this is the canary's own synthetic interaction, made on behalf of NeoForge's fake player.
+		 *
+		 * <p>Named as text because this mod is compiled against MinecraftForge's carrier alone. Refusing a REAL
+		 * player's interactions would turn this fixture into a protection mod for every other gate.
+		 */
+		private static boolean isProbe(net.minecraft.world.entity.player.Player player) {
+			return player != null && player.getClass().getName().endsWith("util.FakePlayer");
 		}
 
 		/** Login. {@code PlayerList} on the merged base is 13 NeoForge hook references to 0 MinecraftForge. */

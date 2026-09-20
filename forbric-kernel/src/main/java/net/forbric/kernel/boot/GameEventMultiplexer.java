@@ -117,6 +117,13 @@ public final class GameEventMultiplexer {
 			// three above, in its own class because it names NeoForge's block-event package.
 			install(GameEventBridge.BLOCK_BREAK,
 					() -> blockBridge(cl, "installBlockBreak").invoke(null, neoBus));
+			// Clicking a block. Same class in the merged base, same absence of any MinecraftForge hook — and these
+			// two carry a useBlock/useItem decision as well as a cancel, so the forward translates NeoForge's
+			// TriState to MinecraftForge's Result and back.
+			install(GameEventBridge.RIGHT_CLICK_BLOCK,
+					() -> blockBridge(cl, "installRightClickBlock").invoke(null, neoBus));
+			install(GameEventBridge.LEFT_CLICK_BLOCK,
+					() -> blockBridge(cl, "installLeftClickBlock").invoke(null, neoBus));
 			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
 			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so

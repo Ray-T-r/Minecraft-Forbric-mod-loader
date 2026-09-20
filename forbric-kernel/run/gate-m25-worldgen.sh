@@ -104,6 +104,22 @@ check "and its refusal reached the event the game reads" \
   'ForbricNeoLive/BLOCKBREAK\] posted BreakBlockEvent at .* refused=true' "$LOG"
 check_absent "the probe did not fail" 'BLOCKBREAK\] probe FAILED' "$LOG"
 
+step "and can still see and refuse a click on one (must PASS)"
+# The same class in the merged base posts NeoForge's RightClickBlock and LeftClickBlock and nothing of
+# MinecraftForge's. These two carry a useBlock/useItem decision as well as a cancel — TriState on one side,
+# Result on the other — so the forward has to translate rather than observe, and a translation that goes one way
+# only, or the wrong way, is invisible in every log.
+#
+# The canary refuses a DIFFERENT decision on each event, so a bridge that carried one of the pair still fails.
+check "the MinecraftForge canary received the right-click" \
+  'ForbricLive/INTERACT\] RightClickBlock RECEIVED at .* probe=true' "$LOG"
+check "and its refusal of the BLOCK use crossed back" \
+  'ForbricNeoLive/INTERACT\] right-click useBlock=FALSE useItem=DEFAULT' "$LOG"
+check "the MinecraftForge canary received the left-click" \
+  'ForbricLive/INTERACT\] LeftClickBlock RECEIVED at .* action=START probe=true' "$LOG"
+check "and its refusal of the ITEM use crossed back" \
+  'ForbricNeoLive/INTERACT\] left-click useBlock=DEFAULT useItem=FALSE' "$LOG"
+
 step "the saved overworld contains both markers, with no unreadable chunks"
 # REGION_PROBE_BEGIN — execute this exact command with an argv recorder in the contract test.
 python3 "$KERNEL/run/compat/region-probe.py" "$RUNDIR/world/dimensions/minecraft/overworld/region" \

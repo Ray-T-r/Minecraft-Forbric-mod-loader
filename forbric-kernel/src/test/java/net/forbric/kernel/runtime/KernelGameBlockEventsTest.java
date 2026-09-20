@@ -84,6 +84,96 @@ class KernelGameBlockEventsTest {
 		}
 	}
 
+	// ---- clicking a block: the tri-state translation, which is where a forward stops being a forward ----
+
+	@Test
+	void aNeoForgeDecisionIsHandedToMinecraftForgeUnderItsOwnName() throws Exception {
+		try (URLClassLoader cl = gameSideLoader()) {
+			assertEquals("DENY", name(seed(cl, "FALSE")),
+					"a MinecraftForge mod must read the decision already made, not a blank one");
+			assertEquals("ALLOW", name(seed(cl, "TRUE")));
+			assertEquals("DEFAULT", name(seed(cl, "DEFAULT")));
+		}
+	}
+
+	@Test
+	void aMinecraftForgeDecisionCrossesWhenNobodyHasDecidedYet() throws Exception {
+		try (URLClassLoader cl = gameSideLoader()) {
+			assertEquals("FALSE", carried(cl, "DEFAULT", "DENY"),
+					"refusing the interaction is the whole reason a protection mod listens");
+			assertEquals("TRUE", carried(cl, "DEFAULT", "ALLOW"),
+					"forcing it is the other half, and dropping it would be the same silent ignore the other way");
+		}
+	}
+
+	@Test
+	void aMinecraftForgeDecisionNeverOverrulesANeoForgeOne() throws Exception {
+		try (URLClassLoader cl = gameSideLoader()) {
+			assertEquals(null, carried(cl, "FALSE", "ALLOW"),
+					"a MinecraftForge mod must not silently undo a NeoForge mod that ran first — the same "
+							+ "asymmetry cancellation has, for the same reason");
+			assertEquals(null, carried(cl, "TRUE", "DENY"));
+		}
+	}
+
+	@Test
+	void aMinecraftForgeModThatDecidesNothingWritesNothing() throws Exception {
+		try (URLClassLoader cl = gameSideLoader()) {
+			assertEquals(null, carried(cl, "DEFAULT", "DEFAULT"),
+					"an untouched decision must stay untouched — writing DEFAULT over DEFAULT is how a later "
+							+ "listener's value would be clobbered");
+		}
+	}
+
+	/**
+	 * The two left-click action enums, matched by NAME.
+	 *
+	 * <p>They carry the same four constants today and an ordinal match would keep compiling and start meaning
+	 * something else the day either family inserts one.
+	 */
+	@Test
+	void everyLeftClickActionHasTheSameNameOnBothSides() throws Exception {
+		try (URLClassLoader cl = gameSideLoader()) {
+			Class<?> neo = Class.forName(
+					"net.neoforged.neoforge.event.entity.player.PlayerInteractEvent$LeftClickBlock$Action", true, cl);
+			Method action = bridge(cl).getDeclaredMethod("action", neo);
+			action.setAccessible(true);
+			List<String> unmapped = new ArrayList<>();
+			for (Object constant : neo.getEnumConstants()) {
+				Object mapped = action.invoke(null, constant);
+				if (mapped == null) unmapped.add(((Enum<?>) constant).name());
+				else assertEquals(((Enum<?>) constant).name(), ((Enum<?>) mapped).name());
+			}
+			assertTrue(unmapped.isEmpty(), "a left-click action MinecraftForge cannot spell is skipped rather than "
+					+ "guessed, so these would silently never reach a MinecraftForge mod: " + unmapped);
+			assertEquals(null, action.invoke(null, new Object[] {null}), "a missing action is not invented");
+		}
+	}
+
+	private static Object seed(ClassLoader cl, String triState) throws Exception {
+		Class<?> tri = Class.forName("net.minecraft.util.TriState", true, cl);
+		Method seed = bridge(cl).getDeclaredMethod("seed", tri);
+		seed.setAccessible(true);
+		return seed.invoke(null, Enum.valueOf(tri.asSubclass(Enum.class), triState));
+	}
+
+	/** Runs the write-back rule once and returns the TriState name it wrote, or null when it wrote nothing. */
+	private static String carried(ClassLoader cl, String neoValue, String forgeValue) throws Exception {
+		Class<?> tri = Class.forName("net.minecraft.util.TriState", true, cl);
+		Class<?> result = Class.forName("net.minecraftforge.common.util.Result", true, cl);
+		Method carry = bridge(cl).getDeclaredMethod("carryDecision", tri, result, Consumer.class);
+		carry.setAccessible(true);
+		List<Object> written = new ArrayList<>();
+		carry.invoke(null, Enum.valueOf(tri.asSubclass(Enum.class), neoValue),
+				Enum.valueOf(result.asSubclass(Enum.class), forgeValue), (Consumer<Object>) written::add);
+		assertTrue(written.size() <= 1, "the rule writes once or not at all");
+		return written.isEmpty() ? null : name(written.get(0));
+	}
+
+	private static String name(Object enumConstant) {
+		return ((Enum<?>) enumConstant).name();
+	}
+
 	/** Runs {@code vetoed} once with an observing {@code listener} subscribed, and returns its verdict. */
 	private static boolean vetoWith(Consumer<Object> listener) throws Exception {
 		return run(bus -> addListener(bus, Consumer.class, listener));
@@ -166,6 +256,16 @@ class KernelGameBlockEventsTest {
 				&& Files.isRegularFile(merged), "the game-side set is not compiled, or the staged bases are absent");
 		List<URL> urls = new ArrayList<>(List.of(compiled.toUri().toURL(), merged.toUri().toURL(),
 				forgeRt.toUri().toURL(), neoRt.toUri().toURL()));
+		// The game's own libraries too: TriState holds a Codec, so translating one decision links DataFixerUpper.
+		Path libraries = Path.of(System.getProperty("user.home"), "Library", "Application Support", "minecraft",
+				"libraries");
+		if (Files.isDirectory(libraries)) {
+			try (java.util.stream.Stream<Path> jars = Files.walk(libraries)) {
+				for (Path jar : jars.filter(f -> f.toString().endsWith(".jar")).toList()) {
+					urls.add(jar.toUri().toURL());
+				}
+			}
+		}
 		return new URLClassLoader(urls.toArray(new URL[0]), ClassLoader.getPlatformClassLoader());
 	}
 }
