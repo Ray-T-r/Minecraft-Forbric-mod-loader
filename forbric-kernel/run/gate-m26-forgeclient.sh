@@ -64,6 +64,15 @@ await_server "$CLIENT_PID" "$LOG" 360 30
 rm -f "$RUNDIR/.forbric-gate.pid"
 cat "$RUNDIR/logs/latest.log" >> "$LOG" 2>/dev/null || true
 
+step "a MinecraftForge fluid's client extensions are asked on the render path (H5)"
+# The Forge canary places one water source beside the respawn point from ServerStartedEvent; the client's
+# FluidRenderer.tesselate then asks IClientFluidTypeExtensions.of(state) for its model and tint (vanilla water
+# answers DEFAULT and is counted as consulted). Not asserted in gate-m9: its pack carries sodium, which replaces
+# vanilla's fluid meshing entirely. RED control: M26_EXTRA_JVM='-Dforbric.forgeFluidModels=off' (water still
+# placed, no Forbric/Fluids line).
+check "the canary placed its water source" 'ForbricLive/FLUID\] water at -?[0-9]+ -?[0-9]+ -?[0-9]+: Block\{minecraft:water\}' "$LOG"
+check "MinecraftForge fluid extensions were consulted while rendering" 'Forbric/Fluids\] MinecraftForge client extensions consulted for [1-9][0-9]* fluid' "$LOG"
+
 # M26_ASSERTIONS_BEGIN — exercised against synthetic logs without launching the game.
 step "the canary subscribed, entered its save and completed real consumer observations"
 check "client canary subscribed" 'ForbricLive/CLIENT\] subscribed to ten Forge registration events' "$LOG"

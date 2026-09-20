@@ -444,6 +444,31 @@ public class ForbricLiveMod {
 			} catch (Throwable failure) {
 				System.out.println("[ForbricLive/NBT] BlockPos.toCompoundTag() FAILED: " + failure);
 			}
+			// H5: put a vanilla fluid where the joining player will see it, so the client's FluidRenderer funnel
+			// (which asks MinecraftForge's client extensions) is provably on the render path in a save with no water.
+			try {
+				var level = event.getServer().overworld();
+				var spawn = level.getRespawnData().pos();
+				// At ServerStarted the chunk beside spawn may not be generated yet (its heightmap answers the world
+				// floor), so load it first and then walk up to the first air block that has ground under it.
+				var column = spawn.offset(3, 0, 3);
+				level.getChunk(column.getX() >> 4, column.getZ() >> 4);
+				var pos = column;
+				for (int y = spawn.getY() - 4; y <= spawn.getY() + 24; y++) {
+					var at = new net.minecraft.core.BlockPos(column.getX(), y, column.getZ());
+					if (level.getBlockState(at).isAir() && !level.getBlockState(at.below()).isAir()) {
+						pos = at;
+						break;
+					}
+				}
+				if (level.getBlockState(pos).isAir()) {
+					level.setBlock(pos, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
+				}
+				System.out.println("[ForbricLive/FLUID] water at " + pos.getX() + " " + pos.getY() + " " + pos.getZ()
+						+ ": " + level.getBlockState(pos).getBlock());
+			} catch (Throwable failure) {
+				System.out.println("[ForbricLive/FLUID] water placement FAILED: " + failure);
+			}
 			// H4: a recipe whose ingredient is a MinecraftForge type (forge:intersection) must have parsed.
 			try {
 				boolean present = event.getServer().getRecipeManager().byKey(net.minecraft.resources.ResourceKey.create(
