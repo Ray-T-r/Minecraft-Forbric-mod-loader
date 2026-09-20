@@ -419,6 +419,25 @@ public final class KernelLifecycle {
 		return Class.forName("net.forbric.kernel.runtime.KernelConfigLoad", true, cl);
 	}
 
+	/**
+	 * Forge's own capability registration stage. Advisory on this base (isRegistered is read only by Forge's own
+	 * manager), and the kernel's mod scan data carries no annotations yet, so the count is logged as it is.
+	 */
+	private static void injectForgeCapabilities(ClassLoader cl) {
+		if (KernelModLoader.publishedForgeMods().isEmpty()
+				|| !net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled()) return;
+		try {
+			Object count = Class.forName("net.forbric.kernel.runtime.KernelForgeCapabilities", true, cl)
+					.getMethod("injectCapabilities").invoke(null);
+			ForbricLog.info("[Forbric/Capabilities] ran MinecraftForge's injectCapabilities — %s @AutoRegisterCapability "
+					+ "annotation(s) in the mod scan data (0 = the kernel's scan data carries no annotations yet; lookups "
+					+ "work without it)", count);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Capabilities] MinecraftForge's injectCapabilities threw — capability lookups still "
+					+ "work, isRegistered() answers false", unwrap(t));
+		}
+	}
+
 	/** The carrier itself owns configs even if no third-party Forge mod was installed. */
 	private static Class<?> forgeConfigClass(ClassLoader cl) throws ClassNotFoundException {
 		try {
@@ -620,6 +639,9 @@ public final class KernelLifecycle {
 			// whatever it does in the earliest mod-bus phase never happened. Pairing the two names in ForeignType
 			// is what made the absence visible.
 			fireForgeSetupPhase(cl, ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
+			// Forge's INJECT_CAPABILITIES state comes right after CREATE_REGISTRIES, i.e. here, before the registry
+			// window: CapabilityManager.injectCapabilities scans mod scan data for @AutoRegisterCapability.
+			injectForgeCapabilities(cl);
 
 			// Each ecosystem's mods take their own RegisterEvent flavour: NeoForge's 2-arg event on an IEventBus, and
 			// traditional Forge's 3-arg (key, ForgeRegistry, Registry) on a BusGroup. Split them here; both streams

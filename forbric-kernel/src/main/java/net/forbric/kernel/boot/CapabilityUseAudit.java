@@ -66,18 +66,46 @@ public final class CapabilityUseAudit {
 	}
 
 	/** One line naming every affected mod, or nothing at all when none is. */
-	public static void report() {
+	/** The three roots the composition shim must have reached before mod loading for the feature to exist. */
+	static final Set<String> ROOTS = Set.of("net/minecraft/world/entity/Entity",
+			"net/minecraft/world/level/block/entity/BlockEntity", "net/minecraft/world/level/Level");
+
+	/**
+	 * With the shim on and every root composed, one INFO line; otherwise every mod in the jars that use the
+	 * capability package is marked DEGRADED by id and the WARN names the mods, not a count. Attribution goes
+	 * through the catalog by jar name; {@link net.forbric.api.ModCatalog#mark} drops what it does not know.
+	 */
+	public static void report(boolean shimActive, Set<String> composedRoots) {
 		Set<String> users;
 		synchronized (USERS) {
 			if (USERS.isEmpty()) return;
 			users = Set.copyOf(USERS);
 		}
+		Set<String> missing = new LinkedHashSet<>(ROOTS);
+		missing.removeAll(composedRoots);
+		if (shimActive && missing.isEmpty()) {
+			ForbricLog.info("[Forbric/Capabilities] %d mod jar(s) use MinecraftForge's capability system — composed into "
+					+ "Entity/BlockEntity/Level (ServerLevel and LevelChunk when the world loads): %s", users.size(), users);
+			return;
+		}
+		String why = shimActive
+				? "this instance did not compose MinecraftForge capabilities into " + simple(missing)
+				: "-Dforbric.forgeCapabilities=off: this instance does not carry MinecraftForge capabilities";
+		java.util.List<String> named = new java.util.ArrayList<>();
+		for (net.forbric.api.ModCatalog.Entry entry : net.forbric.api.ModCatalog.everything()) {
+			if (entry.jar() == null || !users.contains(entry.jar())) continue;
+			net.forbric.api.ModCatalog.mark(entry.modId(), net.forbric.api.ModCatalog.Status.DEGRADED,
+					"uses MinecraftForge capabilities; " + why);
+			named.add(entry.modId());
+		}
+		ForbricLog.warn("[Forbric/Capabilities] %d mod jar(s) use MinecraftForge's capability system and will find it "
+				+ "inert — %s. Marked DEGRADED: %s (jars: %s)", users.size(), why, named, users);
+	}
 
-		ForbricLog.warn("[Forbric/Capabilities] %d mod jar(s) use traditional MinecraftForge's capability system, "
-				+ "which the merged game does not carry — the root types were built on the other loader's "
-				+ "attachment system instead, so an item handler, fluid tank or energy store these mods attach "
-				+ "will not be found by anything asking for it. This is a gap in how the game is merged, not a "
-				+ "fault in the mods: %s", users.size(), users);
+	private static java.util.List<String> simple(Set<String> internal) {
+		java.util.List<String> out = new java.util.ArrayList<>();
+		for (String name : internal) out.add(name.substring(name.lastIndexOf('/') + 1));
+		return out;
 	}
 
 	/** The jars recorded so far. Package-private: the report is the product; this is for the test. */

@@ -33,6 +33,7 @@ import org.objectweb.asm.Opcodes;
  * and the failure arrives as a missing-method error from inside the mod, on a line a player cannot connect to
  * anything. Naming the mods is all that can honestly be done until the merge itself carries the provider.
  */
+@org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
 class CapabilityUseAuditTest {
 
 	@AfterEach
@@ -55,6 +56,54 @@ class CapabilityUseAuditTest {
 		m.visitEnd();
 		cw.visitEnd();
 		return cw.toByteArray();
+	}
+
+	@Test
+	void withTheShimOffEveryUsingModIsDegradedByIdAndTheWarnNamesIt() {
+		java.util.List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			net.forbric.api.ModCatalog.publish(java.util.List.of(
+					new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.FORGE, "pipez", "Pipez", "1", "", java.util.List.of(), "pipez.jar", "", ""),
+					new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.FORGE, "plain", "Plain", "1", "", java.util.List.of(), "plain.jar", "", "")));
+			CapabilityUseAudit.note("pipez.jar", classNaming("net/minecraftforge/common/capabilities/Capability"));
+			CapabilityUseAudit.report(false, java.util.Set.of());
+			var failures = net.forbric.api.ModCatalog.failures();
+			assertTrue(failures.size() == 1 && failures.getFirst().modId().equals("pipez"), failures.toString());
+			assertTrue(failures.getFirst().status() == net.forbric.api.ModCatalog.Status.DEGRADED);
+			assertTrue(failures.getFirst().statusDetail().contains("forgeCapabilities=off"), failures.getFirst().statusDetail());
+		} finally {
+			net.forbric.api.ModCatalog.publish(previous);
+		}
+	}
+
+	@Test
+	void withTheShimOnAndEveryRootComposedNothingIsMarked() {
+		java.util.List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			net.forbric.api.ModCatalog.publish(java.util.List.of(
+					new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.FORGE, "pipez", "Pipez", "1", "", java.util.List.of(), "pipez.jar", "", "")));
+			CapabilityUseAudit.note("pipez.jar", classNaming("net/minecraftforge/common/capabilities/Capability"));
+			CapabilityUseAudit.report(true, CapabilityUseAudit.ROOTS);
+			assertTrue(net.forbric.api.ModCatalog.failures().isEmpty(), "composed everywhere: the feature exists, nothing to name");
+		} finally {
+			net.forbric.api.ModCatalog.publish(previous);
+		}
+	}
+
+	@Test
+	void withTheShimOnButARootMissedTheModIsDegradedNamingTheRoot() {
+		java.util.List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			net.forbric.api.ModCatalog.publish(java.util.List.of(
+					new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.FORGE, "pipez", "Pipez", "1", "", java.util.List.of(), "pipez.jar", "", "")));
+			CapabilityUseAudit.note("pipez.jar", classNaming("net/minecraftforge/common/capabilities/Capability"));
+			CapabilityUseAudit.report(true, java.util.Set.of("net/minecraft/world/level/block/entity/BlockEntity", "net/minecraft/world/level/Level"));
+			var failures = net.forbric.api.ModCatalog.failures();
+			assertTrue(failures.size() == 1 && failures.getFirst().statusDetail().contains("Entity"), failures.toString());
+			assertFalse(failures.getFirst().statusDetail().contains("BlockEntity]"), "only the missed root is named");
+		} finally {
+			net.forbric.api.ModCatalog.publish(previous);
+		}
 	}
 
 	@Test

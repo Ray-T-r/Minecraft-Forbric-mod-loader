@@ -230,7 +230,8 @@ public final class KernelEventSubscribers {
 		// merged base no longer calls — registered successfully, and never to be reached.
 		DeadEventAudit.report(subscribedByMod);
 		// Everything above is about listeners. This is about a whole subsystem the merged game does not carry.
-		CapabilityUseAudit.report();
+		CapabilityUseAudit.report(net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled(),
+				net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.composedRoots());
 	}
 
 	/**

@@ -594,6 +594,17 @@ public final class PassiveSeeder {
 		// An empty list, not null: whoever walks a file's access transformers must find none rather than throw. The
 		// kernel applies them itself, from its own pass over the same jars.
 		setInstanceField(modFileCls, "accessTransformers", modFile, List.of());
+		// Empty scan data, not null: ModList.getAllScanData() maps every file through getScanResult(), and
+		// MinecraftForge's own CapabilityManager.injectCapabilities streams that list unguarded — a null entry
+		// NPE'd inside Forge's code on every boot. The kernel does its own annotation scanning, so the object is
+		// empty; what matters is that it exists.
+		try {
+			Class<?> scanData = Class.forName("net.minecraftforge.forgespi.language.ModFileScanData", true,
+					modFileCls.getClassLoader());
+			setOptionalInstanceField(modFileCls, "fileModFileScanData", modFile, scanData.getConstructor().newInstance());
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/Seed] could not give the seeded ModFile empty scan data: %s", String.valueOf(unwrap(t)));
+		}
 		fillForgeModFileJar(modFileCls, modFile, jar);
 	}
 
