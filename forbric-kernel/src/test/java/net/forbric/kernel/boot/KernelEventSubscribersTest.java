@@ -50,6 +50,14 @@ class KernelEventSubscribersTest {
 			net.forbric.api.ModCatalog.mark("bruised", net.forbric.api.ModCatalog.Status.DEGRADED, "it threw during common setup");
 			assertTrue(KernelEventSubscribers.didNotFinishLoading("broken"));
 			assertFalse(KernelEventSubscribers.didNotFinishLoading("bruised"), "DEGRADED still gets its listeners");
+			// wthit's shape: a second id in the SAME jar as the failed one is skipped too.
+			net.forbric.api.ModCatalog.publish(java.util.List.of(
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.FORGE, "waila", "waila", "1", "", java.util.List.of(), "wthit.jar", "", ""),
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.FORGE, "wthit", "wthit", "1", "", java.util.List.of(), "wthit.jar", "", ""),
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.FORGE, "other", "other", "1", "", java.util.List.of(), "other.jar", "", "")));
+			net.forbric.api.ModCatalog.mark("waila", net.forbric.api.ModCatalog.Status.FAILED, "its @Mod constructor threw");
+			assertTrue(KernelEventSubscribers.didNotFinishLoading("wthit"), "shares the jar with a failed mod");
+			assertFalse(KernelEventSubscribers.didNotFinishLoading("other"));
 			assertFalse(KernelEventSubscribers.didNotFinishLoading("nobody"));
 			assertFalse(KernelEventSubscribers.didNotFinishLoading(null));
 		} finally {

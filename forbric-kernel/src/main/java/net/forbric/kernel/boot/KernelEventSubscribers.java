@@ -195,8 +195,8 @@ public final class KernelEventSubscribers {
 				// here — it stops at the constructor — so skipping them is the only honest continuation.
 				if (didNotFinishLoading(modId)) {
 					skippedFailed++;
-					ModCatalog.mark(modId, ModCatalog.Status.FAILED, "its @EventBusSubscriber " + simpleName(sub.className())
-							+ " was not registered — the mod did not finish loading");
+					ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, "its @EventBusSubscriber " + simpleName(sub.className())
+							+ " was not registered — a mod in its jar did not finish loading, so its classes may be half-initialised");
 					continue;
 				}
 
@@ -261,8 +261,19 @@ public final class KernelEventSubscribers {
 	/** Whether the catalogue says {@code modId} is FAILED — its constructor or entrypoint threw. Unknown ids are not. */
 	static boolean didNotFinishLoading(String modId) {
 		if (modId == null) return false;
+		// By JAR, not by id: wthit's one jar declares "waila" (whose class threw and left Waila half-initialised)
+		// and "wthit" (whose client-only class constructed), and the subscriber that touched Waila belongs to
+		// "wthit". A jar with a failed mod is a jar whose classes cannot be trusted to have initialised.
+		String jar = null;
 		for (ModCatalog.Entry e : ModCatalog.everything()) {
-			if (e.modId().equals(modId)) return e.status() == ModCatalog.Status.FAILED;
+			if (e.modId().equals(modId)) {
+				if (e.status() == ModCatalog.Status.FAILED) return true;
+				jar = e.jar();
+			}
+		}
+		if (jar == null || jar.isEmpty()) return false;
+		for (ModCatalog.Entry e : ModCatalog.everything()) {
+			if (jar.equals(e.jar()) && e.status() == ModCatalog.Status.FAILED) return true;
 		}
 		return false;
 	}
