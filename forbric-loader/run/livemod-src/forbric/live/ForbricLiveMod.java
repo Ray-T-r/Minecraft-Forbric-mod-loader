@@ -156,16 +156,7 @@ public class ForbricLiveMod {
 				.addListener(event -> event.enqueueWork(() -> {
 					System.out.println("[ForbricLive/REGISTRATION] zombie heightmap="
 							+ net.minecraft.world.entity.SpawnPlacements.getHeightmapType(net.minecraft.world.entity.EntityTypes.ZOMBIE));
-					try {
-						var tab = BuiltInRegistries.CREATIVE_MODE_TAB.getValue(net.minecraft.world.item.CreativeModeTabs.BUILDING_BLOCKS);
-						tab.buildContents(new net.minecraft.world.item.CreativeModeTab.ItemDisplayParameters(
-								net.minecraft.world.flag.FeatureFlags.DEFAULT_FLAGS, true,
-								net.minecraft.core.RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY)));
-						observeCreativeContents("load complete");
-					} catch (Throwable failure) {
-						System.out.println("[ForbricLive/REGISTRATION] creative contents probe failed: " + failure);
-					}
-					System.out.println("[ForbricLive/REGISTRATION] common registration observations completed");
+
 				}));
 		System.out.println("[ForbricLive/REGISTRATION] subscribed to Forge spawn and creative registration events");
 	}
@@ -377,6 +368,17 @@ public class ForbricLiveMod {
 		@SubscribeEvent
 		public static void onServerStarted(ServerStartedEvent event) {
 			System.out.println("[ForbricLive] ServerStartedEvent RECEIVED - the patched game's event posts reach mod listeners");
+			// Creative stacks need the game's bound components, which load-complete does not yet guarantee.
+			try {
+				var tab = BuiltInRegistries.CREATIVE_MODE_TAB.getValue(net.minecraft.world.item.CreativeModeTabs.BUILDING_BLOCKS);
+				tab.buildContents(new net.minecraft.world.item.CreativeModeTab.ItemDisplayParameters(
+						net.minecraft.world.flag.FeatureFlags.DEFAULT_FLAGS, true,
+						net.minecraft.core.RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY)));
+				observeCreativeContents("server started");
+			} catch (Throwable failure) {
+				System.out.println("[ForbricLive/REGISTRATION] creative contents probe failed: " + failure);
+			}
+			System.out.println("[ForbricLive/REGISTRATION] common registration observations completed");
 			checkItem("forbrictest", "test_item");
 			checkItem("forbricfab", "fab_item");
 			checkItem("mcwbridges", "pliers");

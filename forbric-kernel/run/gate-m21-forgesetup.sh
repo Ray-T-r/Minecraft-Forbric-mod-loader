@@ -156,7 +156,7 @@ step "Forge registration callbacks changed the game-owned tables"
 check "Forge spawn placement listener received" 'ForbricLive/REGISTRATION\] SpawnPlacementRegisterEvent RECEIVED' "$LOG"
 check "zombie heightmap changed in SpawnPlacements" 'ForbricLive/REGISTRATION\] zombie heightmap=WORLD_SURFACE([[:space:]]|$)' "$LOG"
 check "Forge creative listener received for building blocks" 'ForbricLive/REGISTRATION\] BuildCreativeModeTabContentsEvent RECEIVED: minecraft:building_blocks' "$LOG"
-check "creative injection reached parent and search at load complete" 'ForbricLive/REGISTRATION\] injection VISIBLE: true search=true phase=load complete' "$LOG"
+check "creative injection reached parent and search after server start" 'ForbricLive/REGISTRATION\] injection VISIBLE: true search=true phase=server started' "$LOG"
 check "registration bridges report installed" 'all 2 REGISTRATION bridge\(s\) installed' "$LOG"
 if [ "$CONTROL_FAIL" -eq 0 ] && [ "$FAIL" -ne 0 ]; then
   echo "[kernel] EXPECTED-RED Forge spawn/creative registration hooks are missing (Phase 1 A)"

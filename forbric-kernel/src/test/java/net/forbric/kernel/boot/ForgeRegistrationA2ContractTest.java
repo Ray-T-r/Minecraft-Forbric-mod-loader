@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipFile;
@@ -91,7 +92,11 @@ class ForgeRegistrationA2ContractTest {
             assertCall(common, "net/minecraftforge/event/entity/SpawnPlacementRegisterEvent", "register");
             assertCall(common, "net/minecraftforge/event/BuildCreativeModeTabContentsEvent", "accept");
             assertCall(common, "net/minecraft/world/entity/SpawnPlacements", "getHeightmapType");
-            assertCall(common, "net/minecraft/world/item/CreativeModeTab", "buildContents");
+            ClassNode gameEvents = read(zip, "forbric/live/ForbricLiveMod$GameEvents.class");
+            MethodNode started = method(gameEvents, "onServerStarted");
+            assertTrue(Arrays.stream(started.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode call
+                    && call.owner.equals("net/minecraft/world/item/CreativeModeTab") && call.name.equals("buildContents")),
+                    "creative stacks can only be observed after the game has bound their components");
             assertCall(common, "net/minecraft/world/item/CreativeModeTab", "getDisplayItems");
             assertCall(common, "net/minecraft/world/item/CreativeModeTab", "getSearchTabDisplayItems");
             for (var entry : zip.stream().filter(e -> e.getName().startsWith("forbric/live/ForbricLive")
@@ -195,7 +200,7 @@ class ForgeRegistrationA2ContractTest {
         assertEquals(0, green.exit(), green.output());
         for (String row : List.of("SpawnPlacementRegisterEvent RECEIVED", "zombie heightmap=WORLD_SURFACE",
                 "BuildCreativeModeTabContentsEvent RECEIVED: minecraft:building_blocks",
-                "injection VISIBLE: true search=true phase=load complete")) {
+                "injection VISIBLE: true search=true phase=server started")) {
             Result result = gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen().replace(COMMON + row + "\n", ""), 0);
             assertEquals(2, result.exit(), row + ": " + result.output());
         }
@@ -243,7 +248,7 @@ class ForgeRegistrationA2ContractTest {
                 + COMMON + "SpawnPlacementRegisterEvent RECEIVED\n"
                 + COMMON + "zombie heightmap=WORLD_SURFACE\n"
                 + COMMON + "BuildCreativeModeTabContentsEvent RECEIVED: minecraft:building_blocks\n"
-                + COMMON + "injection VISIBLE: true search=true phase=load complete\n"
+                + COMMON + "injection VISIBLE: true search=true phase=server started\n"
                 + "[EventMux] all 2 REGISTRATION bridge(s) installed\n";
     }
 
