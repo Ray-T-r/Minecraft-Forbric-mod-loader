@@ -444,6 +444,23 @@ public class ForbricLiveMod {
 			} catch (Throwable failure) {
 				System.out.println("[ForbricLive/NBT] BlockPos.toCompoundTag() FAILED: " + failure);
 			}
+			// D1: did this canary's forge:add_features biome modifier reach the live biome? Read the same table the
+			// chunk generator reads, so "the pass ran" and "the world has it" are two different lines.
+			try {
+				var biomes = event.getServer().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.BIOME);
+				var plains = biomes.getOrThrow(net.minecraft.world.level.biome.Biomes.PLAINS).value();
+				var steps = plains.getGenerationSettings().features();
+				int ores = net.minecraft.world.level.levelgen.GenerationStep.Decoration.UNDERGROUND_ORES.ordinal();
+				var features = steps.size() > ores ? steps.get(ores) : net.minecraft.core.HolderSet.<net.minecraft.world.level.levelgen.placement.PlacedFeature>empty();
+				boolean present = false;
+				for (var holder : features) {
+					if (holder.unwrapKey().map(k -> k.identifier().toString()).orElse("").equals("forbriclive:probe")) present = true;
+				}
+				System.out.println("[ForbricLive/WORLDGEN] probe ran: plains has " + features.size() + " feature(s) in underground_ores");
+				System.out.println("[ForbricLive/WORLDGEN] plains underground_ores has forbriclive:probe = " + present);
+			} catch (Throwable failure) {
+				System.out.println("[ForbricLive/WORLDGEN] probe FAILED: " + failure);
+			}
 			// H5: put a vanilla fluid where the joining player will see it, so the client's FluidRenderer funnel
 			// (which asks MinecraftForge's client extensions) is provably on the render path in a save with no water.
 			try {

@@ -1,6 +1,7 @@
 package net.forbric.kernel.boot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -49,8 +50,13 @@ class GateWorldgenContractTest {
 
 		assertTrue(script.contains("'^unreadable: 0"));
 		assertTrue(script.contains("\"$CHUNKS\" -ge 20"));
-		assertTrue(script.contains("# EXPECTED: RED until Phase 1 D"));
+		// Phase 1 D landed: the Forge half is green, the expected-red escape is gone, and a switch-off boot is the
+		// negative control that proves each MinecraftForge claim can still go red on its own.
+		assertFalse(script.contains("EXPECTED: RED"), "the expected-red header must go when the gap closes");
+		assertFalse(script.contains("EXPECTED-RED"));
 		assertTrue(script.contains("M25_NO_DATA"));
+		assertTrue(script.contains("-Dforbric.forgeWorldgen=off"), "the negative-control boot must stay");
+		assertTrue(script.indexOf("boot \"$CONTROL_LOG\" \"-Dforbric.forgeWorldgen=off\"") > script.indexOf("boot \"$LOG\""));
 		assertSuccessful(new ProcessBuilder("bash", "-n", gate.toString()));
 	}
 

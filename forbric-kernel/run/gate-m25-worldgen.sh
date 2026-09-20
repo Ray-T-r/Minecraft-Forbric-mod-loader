@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# EXPECTED: RED until Phase 1 D (Forge biome modifiers reach the merged world's biomes).
 # M25 — two independent biome-modifier pipelines must leave their own blocks in saved overworld chunks.
+# Green since Phase 1 D: MinecraftForge's biome modifiers ride inside NeoForge's single pass (KernelForgeWorldgen).
 # RED demonstration: M25_NO_DATA=1 ./gate-m25-worldgen.sh removes data/ from BOTH staged canaries;
 # the NeoForge control, served-pack checks and both block probes must fail. No source jar is changed.
+# Negative control (second boot, fresh world): -Dforbric.forgeWorldgen=off — every MinecraftForge claim goes red
+# (no bridging line, probe = false, no end_stone, forbriclive named in load-report.txt) while NeoForge's stay green.
+# TEETH (recorded 2026-09-20): with the switch off the Forge half read 0 end_stone / probe = false; NeoForge purpur
+# and its probe = true were unchanged.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -34,22 +38,28 @@ PY
 fi
 seed_server_properties "$RUNDIR"
 printf 'online-mode=false\nview-distance=6\nmax-tick-time=-1\n' >> "$RUNDIR/server.properties"
-: > "$LOG"
-# Start the generation interval when the server is ready, so a slow build cannot consume it.
-(
-  for i in $(seq 1 180); do
-    grep -aqE 'Done \(' "$LOG" && break
-    sleep 1
-  done
-  sleep 45
-  echo save-all
-  echo stop
-) | FORBRIC_JVM="${M25_EXTRA_JVM:-}" RUNDIR="$RUNDIR" \
-  "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
-BOOTPID=$!
-record_server_pid "$RUNDIR" "$BOOTPID"
-await_server "$BOOTPID" "$LOG" 250 30
-rm -f "$RUNDIR/.forbric-gate.pid"
+# One fixed-seed boot: generate for 45 s after Done, save, stop. <log> <extra JVM flags>
+boot() {
+  local log="$1" extra="${2:-}"
+  : > "$log"
+  rm -rf "$RUNDIR/world" "$RUNDIR/.forbric-kernel" "$RUNDIR/logs"
+  # Start the generation interval when the server is ready, so a slow build cannot consume it.
+  (
+    for i in $(seq 1 180); do
+      grep -aqE 'Done \(' "$log" && break
+      sleep 1
+    done
+    sleep 45
+    echo save-all
+    echo stop
+  ) | FORBRIC_JVM="${M25_EXTRA_JVM:-} $extra" RUNDIR="$RUNDIR" \
+    "$KERNEL/run/launch-kernel-server.sh" > "$log" 2>&1 &
+  BOOTPID=$!
+  record_server_pid "$RUNDIR" "$BOOTPID"
+  await_server "$BOOTPID" "$log" 250 30
+  rm -f "$RUNDIR/.forbric-gate.pid"
+}
+boot "$LOG"
 
 step "both canaries reached the datapack repository and NeoForge applied its modifier"
 check "server reached Done" 'Done \(' "$LOG"
@@ -57,6 +67,17 @@ check "world finished saving" 'All dimensions are saved' "$LOG"
 check "NeoForge loaded a nonempty modifier registry" "applied NeoForge's [1-9][0-9]* biome modifier" "$LOG"
 check "Forge canary data was served" 'DataPacks\] served .*forbric/data/forbriclive' "$LOG"
 check "NeoForge canary data was served" 'DataPacks\] served .*forbric/data/forbricneolive' "$LOG"
+check "NeoForge probe ran"          'ForbricNeoLive/WORLDGEN\] probe ran: plains has [0-9]+ feature' "$LOG"
+check "NeoForge probe saw its feature" 'ForbricNeoLive/WORLDGEN\] plains underground_ores has forbricneolive:probe = true' "$LOG"
+
+step "MinecraftForge's biome modifier rode inside NeoForge's pass (Phase 1 D)"
+check "forge:biome_modifier is declared"      'posted datapack-registry declaration for MinecraftForge.s modifier registries — 2 declared' "$LOG"
+check "Forge modifiers were bridged"          'Forbric/Worldgen\] bridging [1-9][0-9]* MinecraftForge biome modifier' "$LOG"
+check "the round-trip audit passed"           'Forbric/Worldgen\] MinecraftForge builder round-trip: [1-9][0-9]* biome\(s\) and [0-9]+ structure\(s\) checked, 0 differ' "$LOG"
+check "Forge modifiers changed biomes"        'Forbric/Worldgen\] MinecraftForge modifiers changed [1-9][0-9]* biome' "$LOG"
+check "Forge probe ran"                       'ForbricLive/WORLDGEN\] probe ran: plains has [0-9]+ feature' "$LOG"
+check "Forge probe saw its feature"           'ForbricLive/WORLDGEN\] plains underground_ores has forbriclive:probe = true' "$LOG"
+check_absent "the bridge did not stand down"  'Forbric/Worldgen\] MinecraftForge modifier bridge standing down' "$LOG"
 
 step "the saved overworld contains both markers, with no unreadable chunks"
 # REGION_PROBE_BEGIN — execute this exact command with an argv recorder in the contract test.
@@ -73,14 +94,24 @@ else
   echo "[kernel] FAIL too little generated terrain: ${CHUNKS:-no count} chunks (need at least 20)"; FAIL=1
 fi
 
-# Only the missing Forge marker is an accepted baseline failure. A broken NeoForge control, failed boot,
-# unreadable region or disabled datapack is a regression, even while the Forge pipeline is still absent.
-CONTROL_FAIL=$FAIL
 check "Forge marker really generated" '^minecraft:end_stone: [1-9][0-9]*' "$PROBE_LOG"
-if [ "$CONTROL_FAIL" -eq 0 ] && [ "$FAIL" -ne 0 ]; then
-  echo "[kernel] EXPECTED-RED Forge biome modifiers have not generated end_stone (Phase 1 D)"
-  exit 2
-fi
+
+step "negative control: -Dforbric.forgeWorldgen=off loses exactly the MinecraftForge half"
+CONTROL_LOG="$BUILD/gate-m25-worldgen-off.log"
+CONTROL_PROBE="$BUILD/gate-m25-region-off.log"
+boot "$CONTROL_LOG" "-Dforbric.forgeWorldgen=off"
+check "control server reached Done" 'Done \(' "$CONTROL_LOG"
+check "control: NeoForge still applied its modifier" "applied NeoForge's [1-9][0-9]* biome modifier" "$CONTROL_LOG"
+check "control: NeoForge probe still true" 'ForbricNeoLive/WORLDGEN\] plains underground_ores has forbricneolive:probe = true' "$CONTROL_LOG"
+check_absent "control: no Forge bridging" 'Forbric/Worldgen\] bridging [1-9][0-9]* MinecraftForge biome modifier' "$CONTROL_LOG"
+check "control: Forge probe false" 'ForbricLive/WORLDGEN\] plains underground_ores has forbriclive:probe = false' "$CONTROL_LOG"
+check "control: the shipper is named" 'forgeWorldgen=off — [1-9][0-9]* MinecraftForge mod jar\(s\) ship biome/structure modifiers that will NOT apply: .*forbriclive' "$CONTROL_LOG"
+check "control: forbriclive is DEGRADED in the load report" 'forbriclive' "$RUNDIR/.forbric-kernel/load-report.txt"
+python3 "$KERNEL/run/compat/region-probe.py" "$RUNDIR/world/dimensions/minecraft/overworld/region" \
+  minecraft:purpur_block minecraft:end_stone > "$CONTROL_PROBE" 2>&1 || FAIL=1
+cat "$CONTROL_PROBE"
+check "control: NeoForge marker still generated" '^minecraft:purpur_block: [1-9][0-9]*' "$CONTROL_PROBE"
+check "control: no Forge marker" '^minecraft:end_stone: 0([[:space:]]|$)' "$CONTROL_PROBE"
 
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] M25 WORLDGEN GATE GREEN — both families changed saved overworld terrain"

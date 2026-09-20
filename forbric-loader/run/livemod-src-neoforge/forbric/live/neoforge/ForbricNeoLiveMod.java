@@ -40,6 +40,24 @@ public class ForbricNeoLiveMod {
 		reportForeignMods();
 		registerStartupConfig();
 		registerSetupLifecycle(modBus);
+		NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.event.server.ServerStartedEvent.class, event -> {
+			// D1 twin: did this canary's neoforge:add_features biome modifier reach the live biome?
+			try {
+				var biomes = event.getServer().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.BIOME);
+				var plains = biomes.getOrThrow(net.minecraft.world.level.biome.Biomes.PLAINS).value();
+				var steps = plains.getGenerationSettings().features();
+				int ores = net.minecraft.world.level.levelgen.GenerationStep.Decoration.UNDERGROUND_ORES.ordinal();
+				var features = steps.size() > ores ? steps.get(ores) : net.minecraft.core.HolderSet.<net.minecraft.world.level.levelgen.placement.PlacedFeature>empty();
+				boolean present = false;
+				for (var holder : features) {
+					if (holder.unwrapKey().map(k -> k.identifier().toString()).orElse("").equals("forbricneolive:probe")) present = true;
+				}
+				System.out.println("[ForbricNeoLive/WORLDGEN] probe ran: plains has " + features.size() + " feature(s) in underground_ores");
+				System.out.println("[ForbricNeoLive/WORLDGEN] plains underground_ores has forbricneolive:probe = " + present);
+			} catch (Throwable failure) {
+				System.out.println("[ForbricNeoLive/WORLDGEN] probe FAILED: " + failure);
+			}
+		});
 		NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, event -> {
 			int n = TICKS.incrementAndGet();
 			if (n == 20) {
