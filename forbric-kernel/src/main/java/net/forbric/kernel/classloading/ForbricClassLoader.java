@@ -181,7 +181,12 @@ public final class ForbricClassLoader extends URLClassLoader {
 	 * pre-mixin chain, but NOT woven. Falls back to the parent's resources for library classes Mixin inspects
 	 * (superclasses, interfaces), which are never transformed. {@code null} if the class has no bytes anywhere.
 	 */
-	public byte[] getPreMixinClassBytes(String name) {
+	public byte[] getPreMixinClassBytes(String requested) {
+		// Mixin asks by binary (dotted) name; a mod using the bytecode provider directly may ask by INTERNAL name
+		// (fabric-item-api's tooltip-order scrape passes Type.getInternalName(ItemStack.class)). The chain's
+		// transformers compare binary names, so a slashed name would silently skip every repair and the caller
+		// would be handed bytes the game never runs — and the cache would hold two entries for one class.
+		String name = requested.replace('/', '.');
 		byte[] remembered = rememberedPreMixin(name);
 		if (remembered != null) return remembered;
 

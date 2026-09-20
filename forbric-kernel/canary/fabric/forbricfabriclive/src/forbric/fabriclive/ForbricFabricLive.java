@@ -99,8 +99,13 @@ public final class ForbricFabricLive implements ModInitializer {
 			} catch (ClassNotFoundException absent) {
 				System.out.println("[ForbricFabricLive] fabric-item-api tooltip order: absent");
 			} catch (Throwable failure) {
-				Throwable cause = failure instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null ? ite.getCause() : failure;
+				Throwable cause = failure;
+				while (cause.getCause() != null && (cause instanceof java.lang.reflect.InvocationTargetException
+						|| cause instanceof ExceptionInInitializerError)) {
+					cause = cause.getCause();
+				}
 				System.out.println("[ForbricFabricLive] fabric-item-api tooltip order: FAILED " + cause);
+				cause.printStackTrace(System.out);
 			}
 		}
 

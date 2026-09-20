@@ -90,9 +90,15 @@ class ForbricClassLoaderPreMixinCacheTest {
 
 		try (ForbricClassLoader loader = new ForbricClassLoader(
 				new URL[] {jar.toUri().toURL()}, getClass().getClassLoader())) {
-			loader.setTransformer((name, bytes) -> rewritten);
+			// Name-sensitive, as every real transformer is: it compares BINARY names and declines anything else.
+			loader.setTransformer((name, bytes) -> "com.example.Target".equals(name) ? rewritten : bytes);
 
 			assertArrayEquals(rewritten, loader.getPreMixinClassBytes("com.example.Target"));
+			// The INTERNAL name too: fabric-item-api's tooltip-order scrape asks the bytecode provider with
+			// Type.getInternalName(ItemStack.class), and got untransformed bytes (every dotted-name transformer
+			// declined the slashed name) — "Found no component types" on a base that had 34 restored.
+			assertArrayEquals(rewritten, loader.getPreMixinClassBytes("com/example/Target"),
+					"a slashed name must reach the same transformed bytes as the dotted one");
 			assertArrayEquals(rewritten, loader.getPreMixinClassBytes("com.example.Target"),
 					"the remembered answer has to be the transformed one, not the raw class");
 		}
