@@ -563,6 +563,34 @@ check "and it says which member differs" \
   "Forbric/PortAudit\].*registerConfig.*Lnet/neoforged/fml/ModContainer;" "$LOG"
 check_absent "nothing actually failed on that API" "NoSuchMethodError.*ConfigTracker" "$LOG"
 
+step "no row says the same thing twice (must PASS)"
+# A reason is often SEVERAL clauses already joined with "; " — one repair naming two things it could not do —
+# and the dedup compared the whole incoming text to each existing clause, so the same multi-clause reason
+# arriving twice was printed twice. fabric-item-api's tooltip row read that way on the Mods screen and in the
+# load report. Checked over the whole report rather than that one row: a repeated reason is a reporting defect
+# wherever it appears, and pinning the row would go stale the moment the pack changes.
+# M9_LOAD_REPORT_DEDUP_BEGIN — the contract test runs this exact step against a fixture report.
+python3 - "$RUNDIR/.forbric-kernel/load-report.txt" <<'PY_DEDUP'
+from pathlib import Path
+import sys
+report = Path(sys.argv[1])
+if not report.is_file():
+    print(f'[kernel] FAIL no load report at {report}')
+    raise SystemExit(1)
+bad = []
+for line in report.read_text(encoding='utf-8').splitlines():
+    clauses = [c.strip() for c in line.split('; ') if c.strip()]
+    if len(clauses) != len(set(clauses)):
+        bad.append(line.strip()[:120])
+if bad:
+    for line in bad:
+        print(f'[kernel] FAIL a load-report row repeats a reason: {line}')
+    raise SystemExit(1)
+print('[kernel] PASS no load-report row repeats a reason')
+PY_DEDUP
+[ $? -eq 0 ] || FAIL=1
+# M9_LOAD_REPORT_DEDUP_END
+
 step "a mixin the kernel took over does not report a loss that did not happen (must PASS)"
 # fabric-resource-conditions' SimpleJsonResourceReloadListenerMixin cannot apply here: NeoForge's patch of
 # scanDirectory made the value Optional and reordered the lambda's captures, so the descriptor Mixin expects is

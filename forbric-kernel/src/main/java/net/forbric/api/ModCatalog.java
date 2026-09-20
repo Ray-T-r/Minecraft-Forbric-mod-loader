@@ -253,10 +253,16 @@ public final class ModCatalog {
 		String existing = e.statusDetail();
 		if (kept != e.status() || existing.isEmpty()) return incoming;
 		if (incomingStatus != e.status() || incoming.isEmpty()) return existing;
-		for (String reason : existing.split("; ")) {
-			if (reason.equals(incoming)) return existing;
+
+		// Clause by clause, not whole string by whole string. A reason is often several clauses already joined
+		// with "; " — one repair naming two things it could not do — and comparing the whole incoming text to
+		// each existing clause never matches, so the SAME two-clause reason arriving twice was printed twice on
+		// the Mods screen and in the load report. fabric-item-api's tooltip row read that way for months.
+		List<String> reasons = new ArrayList<>(List.of(existing.split("; ")));
+		for (String clause : incoming.split("; ")) {
+			if (!clause.isEmpty() && !reasons.contains(clause)) reasons.add(clause);
 		}
-		return existing + "; " + incoming;
+		return String.join("; ", reasons);
 	}
 
 	/** The mods something went wrong with, name-sorted. Empty is the ordinary case. */
