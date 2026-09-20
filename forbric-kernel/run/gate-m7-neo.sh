@@ -68,10 +68,18 @@ step "boot the kernel with them, reach Done, stop cleanly"
   done
   sleep 6
   echo stop
-) | RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
+) | FORBRIC_JVM="${M7_EXTRA_JVM:-}" RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 240
+
+step "the registries froze in the one order both carriers' freezeData() finish in (must PASS)"
+# MinecraftForge-first aborted NeoForge's GameData.freezeData at the first already-frozen registry
+# (bindAllTagsToEmpty → validateWrite throws): the THREW warning on every boot, no tag keys bound to empty, no
+# snapshot. NeoForge-first completes; MinecraftForge's pass afterwards early-returns on every plain registry. RED
+# with M7_EXTRA_JVM=-Dforbric.freezeNeoForgeFirst=off (the THREW line returns, the count line says MinecraftForge-first).
+check_absent "NeoForge's freezeData finished"  "GameData.freezeData\(\) THREW" "$LOG"
+check "registries frozen NeoForge-first"       "froze the registries NeoForge-first: [1-9][0-9]* registr(ies|y), [0-9]+ tag key" "$LOG"
 
 step "every pure-NeoForge @Mod constructed (must PASS)"
 check "ModList published to the mods"     "published [1-9][0-9]* NeoForge mod\(s\) into ModList" "$LOG"

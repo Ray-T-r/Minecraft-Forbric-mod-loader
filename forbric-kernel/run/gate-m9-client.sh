@@ -213,6 +213,11 @@ check "NeoForge registration order"    "fired RegisterEvent in NeoForge.s regist
 # A mod whose items name their own data components: with RegisterEvent in field order the item registry is filled
 # 57 registries too early, DeferredHolder.value() throws, and the mod loses every item it had not reached yet.
 check_absent "no unbound data component" "Trying to access unbound value"                      "$LOG"
+# I5: the registries freeze NeoForge-first on both windows (server + client entrypoint), so NeoForge's freezeData
+# finishes instead of aborting at the first registry MinecraftForge had already frozen. RED with
+# M9_EXTRA_JVM=-Dforbric.freezeNeoForgeFirst=off (the THREW line returns twice).
+check_absent "NeoForge's freezeData finished on both windows" "GameData.freezeData\(\) THREW" "$LOG"
+check "registries frozen NeoForge-first, twice"  "froze the registries NeoForge-first: [1-9][0-9]* registr(ies|y), [0-9]+ tag key" "$LOG" 2
 check_absent "no RegisterEvent listener failed" "RegisterEvent listener failed"                "$LOG"
 check_absent "no tag lost to a dangling id"     "Couldn.t load tag"                            "$LOG"
 

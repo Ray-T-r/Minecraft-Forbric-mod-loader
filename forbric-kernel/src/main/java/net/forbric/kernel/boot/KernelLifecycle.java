@@ -1662,9 +1662,85 @@ public final class KernelLifecycle {
 		invokeGameData(cl, "unfreezeData");
 	}
 
+	/** {@code -Dforbric.freezeNeoForgeFirst=off}: freeze in {@link #GAME_DATA_CLASSES} order (MinecraftForge first), as before. */
+	static final String FREEZE_ORDER_PROPERTY = "forbric.freezeNeoForgeFirst";
+
+	/**
+	 * NeoForge first, then MinecraftForge — the one order in which both {@code freezeData()} calls finish.
+	 *
+	 * <p>Bytecode, both carriers: NeoForge's {@code GameData.freezeData} walks {@code BuiltInRegistries.REGISTRY},
+	 * and for every {@code MappedRegistry} calls {@code bindAllTagsToEmpty()} then {@code freeze()}, then
+	 * {@code RegistryManager.takeFrozenSnapshot()}. {@code bindAllTagsToEmpty} starts with {@code validateWrite},
+	 * which THROWS on a registry that is already frozen — and MinecraftForge's {@code freezeData} freezes every
+	 * plain {@code MappedRegistry} ({@code freeze()}, bc 73-89). Forge first therefore aborted NeoForge's pass at
+	 * the FIRST registry: the "GameData.freezeData() THREW" warning on every boot, no tag keys bound to empty
+	 * until the tag reload ({@code Trying to access unbound value} downstream), and the snapshot never taken.
+	 *
+	 * <p>NeoForge first: registries are still writable, so its bind + freeze + snapshot complete. MinecraftForge's
+	 * pass afterwards is provably non-destructive: on a plain {@code MappedRegistry} its {@code freeze()} early-returns
+	 * (bc 0-8, already frozen); the ≤3 {@code NamespacedWrapper}s it created itself are unfrozen and re-frozen
+	 * ({@code isFrozen→unfreeze→freeze}, bc 42-70) — {@code unfreeze()} touches only {@code frozen}/{@code frozenTags},
+	 * and {@code NamespacedWrapper.freeze()} never calls {@code super.freeze()}, so NeoForge's bake callbacks do not
+	 * run twice. The one declared delta: those wrappers are frozen twice ({@code onBindTags},
+	 * {@code refreshTagsInHoldersForge} and the {@code DataComponentLookup} rebuilt twice on the same tag map —
+	 * idempotent), and {@code RegistryManager.takeFrozenSnapshot()} now genuinely runs.
+	 */
+	private static final String[] FREEZE_ORDER = {
+		ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE),
+		ForeignType.GAME_DATA.binary(Ecosystem.FORGE),
+	};
+
+	private static String[] freezeOrder() {
+		return "off".equalsIgnoreCase(System.getProperty(FREEZE_ORDER_PROPERTY, "on")) ? GAME_DATA_CLASSES : FREEZE_ORDER;
+	}
+
 	private static void freeze(ClassLoader cl) {
-		invokeGameData(cl, "freezeData");
+		for (String className : freezeOrder()) invokeGameDataOn(cl, className, "freezeData");
 		latchRegistriesLoaded(cl);
+		describeFreeze(cl);
+	}
+
+	/**
+	 * One count line: how many registries were frozen and how many tag keys NeoForge bound to empty. Read from
+	 * {@code MappedRegistry.frozenTags}, NOT {@code getTags()}/{@code listTags()} — those read {@code allTags},
+	 * which stays unbound until the tag reload and would count zero on a correct boot.
+	 */
+	private static void describeFreeze(ClassLoader cl) {
+		int registries = 0;
+		int bound = 0;
+		String boundText;
+		try {
+			Class<?> builtIn = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
+			Field field = builtIn.getDeclaredField("REGISTRY");
+			field.setAccessible(true);
+			Object root = field.get(null);
+			Class<?> mapped = Class.forName("net.minecraft.core.MappedRegistry", false, cl);
+			Field frozenTags = mapped.getDeclaredField("frozenTags");
+			frozenTags.setAccessible(true);
+			for (Object registry : (Iterable<?>) root) {
+				if (!mapped.isInstance(registry)) continue;
+				registries++;
+				Object tags = frozenTags.get(registry);
+				if (!(tags instanceof java.util.Map<?, ?> map)) continue;
+				for (Object named : map.values()) {
+					try {
+						if (Boolean.TRUE.equals(named.getClass().getMethod("isBound").invoke(named))) bound++;
+					} catch (ReflectiveOperationException ignored) {
+						// an unexpected HolderSet shape: not counted, never fatal
+					}
+				}
+			}
+			boundText = Integer.toString(bound);
+		} catch (Throwable unreadable) {
+			ForbricLog.debug("[Forbric/Lifecycle] could not count the frozen registries: %s", String.valueOf(unreadable));
+			if (registries == 0) return;
+			boundText = "?";
+		}
+		boolean neoFirst = freezeOrder() == FREEZE_ORDER;
+		ForbricLog.info("[Forbric/Lifecycle] froze the registries %s: %d registr%s, %s tag key(s) bound to empty until the "
+				+ "tag reload%s", neoFirst ? "NeoForge-first" : "MinecraftForge-first", registries,
+				registries == 1 ? "y" : "ies", boundText,
+				neoFirst ? " (MinecraftForge's pass then re-froze the Forge-wrapped ones)" : "");
 	}
 
 	/**
