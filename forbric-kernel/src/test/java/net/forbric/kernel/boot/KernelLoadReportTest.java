@@ -33,7 +33,84 @@ import net.forbric.api.ModCatalog;
  * <p>Rendering is tested rather than writing, so both languages can be asserted without a locale dance and so
  * the wording — which is the part that can be wrong in a way that costs someone an afternoon — is pinned.
  */
+@org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
+@org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class KernelLoadReportTest {
+	private List<ModCatalog.Entry> previous;
+
+	@org.junit.jupiter.api.BeforeEach
+	void fresh() {
+		previous = ModCatalog.everything();
+		KernelLoadReport.reset();
+	}
+
+	@org.junit.jupiter.api.AfterEach
+	void restore() {
+		System.clearProperty(KernelLoadReport.REWRITE_PROPERTY);
+		KernelLoadReport.reset();
+		ModCatalog.publish(previous);
+	}
+
+	@Test
+	void aFailureAfterTheFirstWriteReachesTheFile(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+		java.nio.file.Path file = dir.resolve(".forbric-kernel").resolve("load-report.txt");
+		ModCatalog.publish(List.of(entry("alpha"), entry("beta")));
+		KernelLoadReport.writeTo(file);
+		assertFalse(java.nio.file.Files.exists(file), "a clean run writes no file");
+
+		ModCatalog.mark("alpha", ModCatalog.Status.DEGRADED, "its mixin AlphaMixin failed to apply at world creation");
+		KernelLoadReport.writeTo(file);
+		String first = java.nio.file.Files.readString(file);
+		assertTrue(first.contains("alpha") && first.contains("AlphaMixin"), first);
+		assertFalse(first.contains("beta"));
+
+		ModCatalog.mark("beta", ModCatalog.Status.DEGRADED, "one of its deferred setup tasks threw");
+		KernelLoadReport.writeTo(file);
+		String second = java.nio.file.Files.readString(file);
+		assertTrue(second.contains("alpha") && second.contains("beta"), "a failure after the first write reaches the file: " + second);
+		assertEquals(2, KernelLoadReport.writes());
+
+		KernelLoadReport.writeTo(file);
+		assertEquals(2, KernelLoadReport.writes(), "nothing changed, nothing written");
+	}
+
+	@Test
+	void theOneShotIsRestoredByTheFlag(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+		System.setProperty(KernelLoadReport.REWRITE_PROPERTY, "off");
+		java.nio.file.Path file = dir.resolve("load-report.txt");
+		ModCatalog.publish(List.of(entry("alpha"), entry("beta")));
+		ModCatalog.mark("alpha", ModCatalog.Status.DEGRADED, "first");
+		KernelLoadReport.writeTo(file);
+		ModCatalog.mark("beta", ModCatalog.Status.DEGRADED, "second");
+		KernelLoadReport.writeTo(file);
+		assertEquals(1, KernelLoadReport.writes());
+		assertFalse(java.nio.file.Files.readString(file).contains("beta"), "the first write won");
+	}
+
+	@Test
+	void theServerStartedHookWritesTheReportAgain() throws Exception {
+		java.nio.file.Path compiled = java.nio.file.Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime",
+				"net", "forbric", "kernel", "runtime", "KernelGameServerLifecycle.class").normalize();
+		org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isRegularFile(compiled), "runtime helper not compiled");
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(java.nio.file.Files.readAllBytes(compiled)).accept(node, 0);
+		boolean writes = false;
+		for (org.objectweb.asm.tree.MethodNode m : node.methods) {
+			if (!m.name.startsWith("lambda$installStarted$")) continue;
+			boolean hook = false;
+			for (org.objectweb.asm.tree.AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call && "handleServerStarted".equals(call.name)) hook = true;
+				if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call && "net/forbric/kernel/boot/KernelLoadReport".equals(call.owner)
+						&& "write".equals(call.name)) writes |= hook;
+			}
+		}
+		assertTrue(writes, "installStarted's listener writes the report AFTER MinecraftForge's handleServerStarted");
+	}
+
+	private static ModCatalog.Entry entry(String id) {
+		return new ModCatalog.Entry(Ecosystem.FABRIC, id, id, "1.0", "", List.of(), id + ".jar", "", "");
+	}
+
 
 	@Test
 	void everyFailedModAppearsWithItsReasonAndItsJar() {

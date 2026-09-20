@@ -46,7 +46,14 @@ public final class KernelLoadReport {
 	private static final String FILE = "load-report.txt";
 
 	private static volatile Path rundir;
-	private static final AtomicBoolean written = new AtomicBoolean();
+	/** {@code -Dforbric.loadReportRewrite=off}: the first write wins and later failures never reach the file. */
+	public static final String REWRITE_PROPERTY = "forbric.loadReportRewrite";
+
+	/** What the file last said (null: nothing written yet); a render equal to it is not written again. */
+	private static volatile String lastRendered;
+	/** Whether anything was ever reported — the "every mod finished loading" line is said once, and only then. */
+	private static final AtomicBoolean reported = new AtomicBoolean();
+	private static final java.util.concurrent.atomic.AtomicInteger writes = new java.util.concurrent.atomic.AtomicInteger();
 
 	private KernelLoadReport() {
 	}
@@ -63,33 +70,62 @@ public final class KernelLoadReport {
 	}
 
 	/**
-	 * Writes the report, once.
+	 * Writes the report whenever what it would say has changed.
 	 *
-	 * <p>Called at the end of loading on both sides, and again from the shutdown hook if that never happened.
-	 * A clean boot writes no file and says one INFO line — a file that appears only when something is wrong is a
-	 * file whose presence already means something.
+	 * <p>Called at the end of loading on both sides, again once the server (integrated or dedicated) is up —
+	 * a mixin that fails to apply to a class first loaded at world creation is only known then — and from the
+	 * shutdown hook. A render equal to the last one written is not written again and says nothing, so a clean
+	 * boot writes no file and says one INFO line — a file that appears only when something is wrong is a file
+	 * whose presence already means something. With {@link #REWRITE_PROPERTY} off, the first write wins.
 	 */
 	public static void write() {
-		if (!written.compareAndSet(false, true)) return;
+		Path dir = rundir;
+		writeTo(dir == null ? null : dir.resolve(".forbric-kernel").resolve(FILE));
+	}
+
+	/** The write with its destination explicit (null: log only), so a test can watch a file it owns. */
+	static void writeTo(Path file) {
 		try {
 			List<ModCatalog.Entry> failures = ModCatalog.failures();
 			if (failures.isEmpty()) {
-				ForbricLog.info("[Forbric/Load] every mod finished loading");
+				if (reported.compareAndSet(false, true)) ForbricLog.info("[Forbric/Load] every mod finished loading");
 				return;
 			}
-
-			List<String> ids = new ArrayList<>();
-			for (ModCatalog.Entry e : failures) ids.add(e.modId());
-			ForbricLog.warn("[Forbric/Load] %d mod(s) did not finish loading: %s — details in .forbric-kernel/%s",
-					failures.size(), String.join(", ", ids), FILE);
-
-			Path dir = rundir;
-			if (dir == null) return;
-			Path out = dir.resolve(".forbric-kernel");
-			Files.createDirectories(out);
-			Files.writeString(out.resolve(FILE), render(chinese(), failures), StandardCharsets.UTF_8);
+			String rendered = render(chinese(), failures);
+			synchronized (KernelLoadReport.class) {
+				if (rendered.equals(lastRendered)) return;
+				if (lastRendered != null && !rewriteEnabled()) return;
+				List<String> ids = new ArrayList<>();
+				for (ModCatalog.Entry e : failures) ids.add(e.modId());
+				ForbricLog.warn("[Forbric/Load] %d mod(s) did not finish loading: %s — details in .forbric-kernel/%s",
+						failures.size(), String.join(", ", ids), FILE);
+				reported.set(true);
+				lastRendered = rendered;
+				if (file == null) return;
+				Files.createDirectories(file.getParent());
+				Files.writeString(file, rendered, StandardCharsets.UTF_8);
+				writes.incrementAndGet();
+			}
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/Load] could not write the load report: %s", String.valueOf(t));
+		}
+	}
+
+	static boolean rewriteEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(REWRITE_PROPERTY, "on"));
+	}
+
+	/** How many times the file was written; a test seam. */
+	static int writes() {
+		return writes.get();
+	}
+
+	/** Forgets what was written, so a test starts from a fresh boot's state. */
+	static void reset() {
+		synchronized (KernelLoadReport.class) {
+			lastRendered = null;
+			reported.set(false);
+			writes.set(0);
 		}
 	}
 

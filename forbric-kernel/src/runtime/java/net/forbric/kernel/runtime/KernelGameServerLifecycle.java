@@ -72,7 +72,13 @@ public final class KernelGameServerLifecycle {
 	 */
 	public static void installStarted(Object neoBus) {
 		subscribe((IEventBus) neoBus, ServerStartedEvent.class, "handleServerStarted", true,
-				server -> ServerLifecycleHooks.handleServerStarted(server));
+				server -> {
+					ServerLifecycleHooks.handleServerStarted(server);
+					// The world is up, so whatever failed on the way there — a mixin applying to a class first
+					// loaded at world creation, a deferred task on the server thread — is known now. Integrated
+					// servers post this too, so the client's world load is covered.
+					net.forbric.kernel.boot.KernelLoadReport.write();
+				});
 	}
 
 	/** NeoForge {@code ServerStoppingEvent} → MinecraftForge {@code handleServerStopping}. */
