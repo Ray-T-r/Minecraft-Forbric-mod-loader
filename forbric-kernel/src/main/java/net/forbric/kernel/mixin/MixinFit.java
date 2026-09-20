@@ -281,8 +281,8 @@ public final class MixinFit {
 			List<MethodNode> hits = new ArrayList<>();
 			List<String> misses = new ArrayList<>();
 			for (String selector : selectors) {
-				MethodNode targetMethod = resolveSelector(target, selector, resolver);
-				if (targetMethod != null) hits.add(targetMethod); else misses.add(selector);
+				List<MethodNode> targetMethods = resolveSelector(target, selector, resolver);
+				if (!targetMethods.isEmpty()) hits.addAll(targetMethods); else misses.add(selector);
 			}
 			if (selectors.isEmpty()) continue;
 			String where = misses.isEmpty() ? String.join("|", selectors)
@@ -410,13 +410,30 @@ public final class MixinFit {
 	}
 
 	private static MethodNode findMethod(ClassNode node, String name, String desc, Function<String, byte[]> resolver) {
+		List<MethodNode> all = findMethods(node, name, desc, resolver);
+		return all.isEmpty() ? null : all.get(0);
+	}
+
+	/**
+	 * Every method in the hierarchy named {@code name} (and, when {@code desc} is given, with that descriptor).
+	 *
+	 * <p>Mixin binds a bare-name selector to EVERY same-name overload and injects into each, so an {@code @At}
+	 * inside such an injector is satisfied if ANY overload contains the instruction. Returning only the first
+	 * overload here made fabric-model-loading-api-v1's {@code method="discoverModelDependencies"} bind to the
+	 * three-arg delegating overload of the merged {@code ModelManager} and report {@code ModelDiscovery.resolve()}
+	 * unresolved, when the four-arg overload Mixin also injects into contains it — a false PARTIAL on a mixin
+	 * whose injector was applied.
+	 */
+	private static List<MethodNode> findMethods(ClassNode node, String name, String desc,
+			Function<String, byte[]> resolver) {
+		List<MethodNode> out = new ArrayList<>();
 		for (ClassNode c : hierarchy(node, resolver)) {
 			if (c.methods == null) continue;
 			for (MethodNode m : c.methods) {
-				if (m.name.equals(name) && (desc == null || m.desc.equals(desc))) return m;
+				if (m.name.equals(name) && (desc == null || m.desc.equals(desc))) out.add(m);
 			}
 		}
-		return null;
+		return out;
 	}
 
 	/** The target and its superclass chain, as far as the resolver can see. */
@@ -433,12 +450,14 @@ public final class MixinFit {
 	}
 
 	/**
-	 * A Mixin method selector: {@code name}, {@code name(desc)ret}, or {@code Lowner;name(desc)ret}. Anything with a
-	 * wildcard or a shape this does not understand resolves to the first same-named method, and to "resolved" if
-	 * there is none to compare against — see the conservatism note on the class.
+	 * A Mixin method selector: {@code name}, {@code name(desc)ret}, or {@code Lowner;name(desc)ret}. A bare name
+	 * resolves to EVERY same-named overload, as Mixin binds it. Anything with a wildcard or a shape this does not
+	 * understand resolves to the first method, and to "resolved" if there is none to compare against — see the
+	 * conservatism note on the class.
 	 */
-	private static MethodNode resolveSelector(ClassNode target, String selector, Function<String, byte[]> resolver) {
-		if (selector == null || selector.isBlank()) return null;
+	private static List<MethodNode> resolveSelector(ClassNode target, String selector,
+			Function<String, byte[]> resolver) {
+		if (selector == null || selector.isBlank()) return List.of();
 		String s = selector.trim();
 		if (s.indexOf('*') >= 0) return firstMethod(target, resolver);  // wildcard: not our business to judge
 
@@ -459,11 +478,11 @@ public final class MixinFit {
 		if (name.charAt(0) == '/' || name.indexOf(' ') >= 0 || name.indexOf('=') >= 0) {
 			return firstMethod(target, resolver);
 		}
-		return findMethod(target, name, desc, resolver);
+		return findMethods(target, name, desc, resolver);
 	}
 
-	private static MethodNode firstMethod(ClassNode target, Function<String, byte[]> resolver) {
-		return target.methods == null || target.methods.isEmpty() ? null : target.methods.get(0);
+	private static List<MethodNode> firstMethod(ClassNode target, Function<String, byte[]> resolver) {
+		return target.methods == null || target.methods.isEmpty() ? List.of() : List.of(target.methods.get(0));
 	}
 
 	/** Whether {@code method}'s body contains the invocation or field access {@code at} names. */

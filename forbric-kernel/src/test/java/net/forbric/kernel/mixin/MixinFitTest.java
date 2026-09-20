@@ -163,6 +163,101 @@ class MixinFitTest {
 		assertEquals("()Lnet/minecraft/client/renderer/entity/state/EntityRenderState;", m.desc());
 	}
 
+	/**
+	 * A mixin with one {@code @Inject(method = "discover", at = @At(value = "INVOKE", target = <resolve>))} —
+	 * the bare-name selector fabric-model-loading-api-v1 writes for {@code discoverModelDependencies}.
+	 */
+	private static byte[] injectMixin(String target, String atTarget) {
+		org.objectweb.asm.ClassWriter cw =
+				new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, "test/TheMixin",
+				null, "java/lang/Object", null);
+		org.objectweb.asm.AnnotationVisitor mixin =
+				cw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+		org.objectweb.asm.AnnotationVisitor targets = mixin.visitArray("targets");
+		targets.visit(null, target);
+		targets.visitEnd();
+		mixin.visitEnd();
+		org.objectweb.asm.MethodVisitor mv = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PRIVATE, "handler",
+				"(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V", null, null);
+		org.objectweb.asm.AnnotationVisitor inject =
+				mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", true);
+		org.objectweb.asm.AnnotationVisitor method = inject.visitArray("method");
+		method.visit(null, "discover");
+		method.visitEnd();
+		org.objectweb.asm.AnnotationVisitor ats = inject.visitArray("at");
+		org.objectweb.asm.AnnotationVisitor at = ats.visitAnnotation(null, "Lorg/spongepowered/asm/mixin/injection/At;");
+		at.visit("value", "INVOKE");
+		at.visit("target", atTarget);
+		at.visitEnd();
+		ats.visitEnd();
+		inject.visitEnd();
+		mv.visitCode();
+		mv.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+		mv.visitMaxs(0, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/**
+	 * A target with two {@code discover} overloads: {@code discover()V} delegates to {@code discover(I)V}, and only
+	 * the second one calls {@code callee} — the merged {@code ModelManager.discoverModelDependencies} shape.
+	 */
+	private static byte[] twoOverloads(String name, String calleeOwner, String calleeName, String calleeDesc) {
+		org.objectweb.asm.ClassWriter cw =
+				new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, name, null,
+				"java/lang/Object", null);
+		org.objectweb.asm.MethodVisitor delegating = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC,
+				"discover", "()V", null, null);
+		delegating.visitCode();
+		delegating.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+		delegating.visitInsn(org.objectweb.asm.Opcodes.ICONST_0);
+		delegating.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKEVIRTUAL, name, "discover", "(I)V", false);
+		delegating.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+		delegating.visitMaxs(0, 0);
+		delegating.visitEnd();
+		org.objectweb.asm.MethodVisitor real = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC,
+				"discover", "(I)V", null, null);
+		real.visitCode();
+		real.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESTATIC, calleeOwner, calleeName, calleeDesc, false);
+		real.visitInsn(org.objectweb.asm.Opcodes.POP);
+		real.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+		real.visitMaxs(0, 0);
+		real.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/**
+	 * Mixin binds a bare-name selector to EVERY same-name overload and injects into each; the {@code @At} inside is
+	 * satisfied when ANY of them contains the instruction. Judging only the first overload reported
+	 * fabric-model-loading-api-v1's {@code discoverModelDependencies} injector as missing {@code
+	 * ModelDiscovery.resolve()} — the call sits in the four-arg overload, the three-arg one merely delegates — and
+	 * made the real ModelManagerMixin read PARTIAL on an anchor that was applied.
+	 */
+	@Test
+	void aBareNameSelectorIsJudgedAgainstEveryOverload() {
+		String target = "net/example/ModelManager";
+		byte[] targetBytes = twoOverloads(target, "net/example/Discovery", "resolve", "()Ljava/util/Map;");
+		java.util.function.Function<String, byte[]> resolver =
+				name -> (target + ".class").equals(name) ? targetBytes : null;
+
+		MixinFit.Result fit = MixinFit.evaluate(
+				injectMixin(target, "Lnet/example/Discovery;resolve()Ljava/util/Map;"), resolver);
+		assertEquals(MixinFit.Verdict.FIT, fit.verdict(),
+				"the call lives in the second overload, which Mixin injects into as well: " + fit.unresolved());
+		assertTrue(fit.unresolved().isEmpty(), fit.unresolved().toString());
+
+		// And the sibling case: the instruction exists in NEITHER overload, so the @At really is unresolved.
+		MixinFit.Result partial = MixinFit.evaluate(
+				injectMixin(target, "Lnet/example/Discovery;somethingElse()Ljava/util/Map;"), resolver);
+		assertEquals(MixinFit.Verdict.PARTIAL, partial.verdict(), partial.unresolved().toString());
+		assertEquals(1, partial.unresolved().size(), partial.unresolved().toString());
+		assertTrue(partial.unresolved().get(0).contains("somethingElse"), partial.unresolved().toString());
+	}
+
 	@Test
 	void aWildcardIsNotOursToJudge() {
 		assertNull(MixinFit.parseMember("render*"), "a wildcard target must stay unjudged, not resolve to nothing");
