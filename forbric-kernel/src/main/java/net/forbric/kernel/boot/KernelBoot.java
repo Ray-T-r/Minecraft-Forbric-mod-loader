@@ -352,6 +352,8 @@ public final class KernelBoot {
 			}
 		}));
 
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeBlockTintInjector());
+
 		// Client only: hand the kernel the live PackRepository at the vanilla-woven
 		// ClientModLoader.setupModResourcePacks call inside Minecraft.<init>, so it can serve the ecosystem jars'
 		// assets. (Registered unconditionally — the transformer only matches the two ClientModLoader classes, which a
