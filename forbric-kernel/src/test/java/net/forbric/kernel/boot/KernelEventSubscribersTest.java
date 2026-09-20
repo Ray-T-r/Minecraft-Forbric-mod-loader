@@ -37,7 +37,28 @@ import net.forbric.api.Side;
  * listeners belong. Both were computed and then thrown away — the scan discarded which annotation matched, and
  * nothing ever read {@code bus()} or {@code value()}.
  */
+@org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
 class KernelEventSubscribersTest {
+	@Test
+	void aRegistrationFailureMarksTheOwningMod() {
+		java.util.List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			net.forbric.api.ModCatalog.publish(java.util.List.of(new net.forbric.api.ModCatalog.Entry(
+					Ecosystem.NEOFORGE, "xmod", "X", "1", "", java.util.List.of(), "x.jar", "", "")));
+			KernelEventSubscribers.registrationFailed("xmod", "a.b.C", new RuntimeException("boom"));
+			assertEquals(1, net.forbric.api.ModCatalog.failures().size());
+			net.forbric.api.ModCatalog.Entry xmod = net.forbric.api.ModCatalog.failures().get(0);
+			assertEquals(net.forbric.api.ModCatalog.Status.DEGRADED, xmod.status());
+			assertTrue(xmod.statusDetail().contains("@EventBusSubscriber C "), xmod.statusDetail());
+
+			KernelEventSubscribers.registrationFailed(null, "a.b.D", new RuntimeException("boom"));
+			assertFalse(xmod.statusDetail().contains("D"), "a subscriber no mod owns marks nobody");
+			assertEquals(1, net.forbric.api.ModCatalog.failures().size());
+		} finally {
+			net.forbric.api.ModCatalog.publish(previous);
+		}
+	}
+
 	private static final String EBS_FORGE = "Lnet/minecraftforge/fml/common/Mod$EventBusSubscriber;";
 	private static final String EBS_NEO = "Lnet/neoforged/fml/common/EventBusSubscriber;";
 	private static final String DIST_FORGE = "Lnet/minecraftforge/api/distmarker/Dist;";

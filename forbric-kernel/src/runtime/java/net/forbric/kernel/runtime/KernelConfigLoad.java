@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import net.forbric.api.ModCatalog;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 import net.neoforged.fml.config.ConfigTracker;
@@ -62,18 +63,42 @@ public final class KernelConfigLoad {
 	public static void loadEarly(List<String> types) {
 		try {
 			Path configDir = FMLPaths.CONFIGDIR.get();
+			Method openConfig = openConfig();
+			int opened = 0, all = 0;
 			for (String t : types) {
-				try {
-					ConfigTracker.INSTANCE.loadConfigs(ModConfig.Type.valueOf(t), configDir);
-				} catch (Throwable perType) {
-					ForbricLog.debug("[Forbric/Lifecycle] config load %s: %s", t,
-							String.valueOf(Reflect.unwrap(perType)));
+				// The carrier's loadConfigs(type, dir) is exactly this forEach over configSets.get(type) — spelled
+				// out so ONE config that will not open costs only its own mod a row, not every config after it.
+				Set<ModConfig> configs = ModConfigs.getConfigSet(ModConfig.Type.valueOf(t));
+				if (configs == null) continue;
+				for (ModConfig config : List.copyOf(configs)) {
+					all++;
+					if (open(openConfig, config, configDir, t, "early")) opened++;
 				}
 			}
-			ForbricLog.info("[Forbric/Lifecycle] loaded NeoForge configs (%s) from %s",
-					String.join("+", types), configDir);
+			ForbricLog.info("[Forbric/Lifecycle] loaded NeoForge configs (%s) from %s — opened %d of %d config(s)",
+					String.join("+", types), configDir, opened, all);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not load NeoForge configs", Reflect.unwrap(t));
+		}
+	}
+
+	/** The one package-private static entry point that opens ONE config, on both passes. */
+	private static Method openConfig() throws ReflectiveOperationException {
+		Method openConfig = ConfigTracker.class.getDeclaredMethod("openConfig", ModConfig.class, Path.class, Path.class);
+		openConfig.setAccessible(true);
+		return openConfig;
+	}
+
+	/** Opens one config; a failure marks its mod DEGRADED and answers false. */
+	private static boolean open(Method openConfig, ModConfig config, Path configDir, String type, String pass) {
+		try {
+			openConfig.invoke(null, config, configDir, null);
+			return true;
+		} catch (Throwable failed) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not open " + config.getModId() + "'s " + type + " config ("
+					+ pass + " pass)", Reflect.unwrap(failed));
+			ModCatalog.mark(config.getModId(), ModCatalog.Status.DEGRADED, "its " + type + " config could not be opened");
+			return false;
 		}
 	}
 
@@ -95,22 +120,14 @@ public final class KernelConfigLoad {
 		List<String> opened = new ArrayList<>();
 		try {
 			Path configDir = FMLPaths.CONFIGDIR.get();
-			Method openConfig = ConfigTracker.class.getDeclaredMethod(
-					"openConfig", ModConfig.class, Path.class, Path.class);
-			openConfig.setAccessible(true);
+			Method openConfig = openConfig();
 
 			for (String t : types) {
 				Set<ModConfig> configs = ModConfigs.getConfigSet(ModConfig.Type.valueOf(t));
 				if (configs == null) continue;
 				for (ModConfig config : List.copyOf(configs)) {
 					if (config.getLoadedConfig() != null) continue;
-					try {
-						openConfig.invoke(null, config, configDir, null);
-						opened.add(config.getModId() + ":" + t);
-					} catch (Throwable failed) {
-						ForbricLog.warn("[Forbric/Lifecycle] could not open a late-registered config for "
-								+ config.getModId(), Reflect.unwrap(failed));
-					}
+					if (open(openConfig, config, configDir, t, "late")) opened.add(config.getModId() + ":" + t);
 				}
 			}
 		} catch (Throwable t) {

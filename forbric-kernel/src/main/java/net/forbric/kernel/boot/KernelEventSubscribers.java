@@ -32,6 +32,7 @@ import org.objectweb.asm.Opcodes;
 
 import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
+import net.forbric.api.ModCatalog;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
@@ -207,10 +208,7 @@ public final class KernelEventSubscribers {
 						neoMethods += wireNeoSubscriber(cl, sub.className(), modBus, neo);
 					}
 				} catch (Throwable t) {
-					Throwable real = Reflect.unwrap(t);
-					StringBuilder chain = new StringBuilder();
-					for (Throwable x = real; x != null; x = x.getCause()) chain.append("\n      caused by: ").append(x);
-					ForbricLog.warn("[Forbric/EBS] could not register " + sub.className() + chain, real);
+					registrationFailed(modId, sub.className(), Reflect.unwrap(t));
 				}
 			}
 		}
@@ -235,6 +233,26 @@ public final class KernelEventSubscribers {
 	}
 
 	/**
+	 * A subscriber class that could not be registered: the cause chain is logged exactly as before, and when the
+	 * owning mod is known its row says which class and that its listeners will not run. A subscriber no mod owns
+	 * (a jar with no mod class beside it) marks nobody — the log line is the whole report then.
+	 */
+	static void registrationFailed(String modId, String className, Throwable real) {
+		StringBuilder chain = new StringBuilder();
+		for (Throwable x = real; x != null; x = x.getCause()) chain.append("\n      caused by: ").append(x);
+		ForbricLog.warn("[Forbric/EBS] could not register " + className + chain, real);
+		if (modId != null && !modId.isBlank()) {
+			ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, "its @EventBusSubscriber " + simpleName(className)
+					+ " could not be registered — its listeners will not run");
+		}
+	}
+
+	private static String simpleName(String className) {
+		int dot = Math.max(className.lastIndexOf('.'), className.lastIndexOf('$'));
+		return dot < 0 ? className : className.substring(dot + 1);
+	}
+
+	/**
 	 * Registers one MinecraftForge subscriber through FML's own logic. Returns false when it was deliberately
 	 * skipped (a {@code bus = MOD} subscriber whose mod was never constructed).
 	 *
@@ -251,6 +269,10 @@ public final class KernelEventSubscribers {
 			ForbricLog.warn("[Forbric/EBS] %s declares bus = MOD but mod '%s' has no bus group — skipping rather "
 					+ "than parking its listeners on the game bus, where they would never fire",
 					sub.className(), String.valueOf(modId));
+			if (modId != null) {
+				ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, "its @EventBusSubscriber " + simpleName(sub.className())
+						+ " declares bus = MOD but the mod never got a bus — its listeners will not run");
+			}
 			return false;
 		}
 
