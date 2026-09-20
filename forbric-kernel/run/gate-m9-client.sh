@@ -257,9 +257,12 @@ check_absent "no datapack element unparseable" "Failed to parse .* from pack"   
 #     NeoForge 26.2.0.88: its EntityFluidInteraction mixin calls isInFluid(TagKey) with its own earthmobsmod:mud
 #     tag, and from .88 that path goes through getFluidTypeByTag, which knows water and lava and throws on
 #     anything else — verified against the stock NeoForge-patched jar, so it is not a Forbric failure.)
+# I7: both managers' directory scans now run over a view that hides the legacy index, so NOTHING fails to parse
+# — a genuinely broken loot modifier is distinguishable again. RED with M9_EXTRA_JVM=-Dforbric.lootModifierIndex=off
+# (both ERROR lines return and the set is the two indexes again).
 UNPARSEABLE=$(grep -aoE "Couldn.t parse data file '[^']*'" "$LOG" | sed -E "s/.*'(.*)'/\1/" | sort -u | paste -sd, -)
-assert_eq "only the known-vestigial data files fail to parse" \
-  "forge:global_loot_modifiers,neoforge:global_loot_modifiers" "$UNPARSEABLE"
+assert_eq "no data file fails to parse" "" "$UNPARSEABLE"
+check "loot-modifier scan ran and hid the two indexes" "loot-modifier directory scan: [1-9][0-9]* file\(s\) kept, 2 legacy index file\(s\) hidden \[forge:.*neoforge:" "$LOG"
 check_absent "join negotiation succeeded"   "Network Protocol Error"                           "$LOG"
 # Same treatment for "was loaded too early": pin the SET, because two are upstream behaviour and a third would be
 # ours. Mixin's select() runs selectConfigs -> Extensions.select -> prepareConfigs, so EVERY guest config plugin

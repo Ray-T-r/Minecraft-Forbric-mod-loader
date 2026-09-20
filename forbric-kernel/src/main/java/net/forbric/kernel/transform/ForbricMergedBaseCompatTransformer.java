@@ -75,11 +75,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	@Override
 	public AnchorSet anchors() {
-		// Thirty-nine independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
+		// Forty independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("39 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("40 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -128,6 +128,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= dropStubsThatBypassARealSuperclassMethod(node);
 			changed |= inlineTheSwitchMapTheMergeLost(node);
 			changed |= vetoUnjudgeableOverlayConditions(node);
+			changed |= hideTheLegacyLootModifierIndexFromTheDirectoryScan(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -2485,6 +2486,96 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The next instruction that is not a label, line number or frame. */
+	// ---------------------------------------------------------------------------------------------------------------
+	// The legacy global_loot_modifiers.json index, seen by two managers with two ideas of what it is
+	// ---------------------------------------------------------------------------------------------------------------
+
+	static final String LOOT_MODIFIER_MANAGER_FORGE = ForeignType.LOOT_MODIFIER_MANAGER.internal(Ecosystem.FORGE);
+	static final String LOOT_MODIFIER_MANAGER_NEO = ForeignType.LOOT_MODIFIER_MANAGER.internal(Ecosystem.NEOFORGE);
+	static final String SIMPLE_JSON_LISTENER = "net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener";
+	static final String PREPARE = "prepare";
+	static final String PREPARE_DESC = "(Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/util/profiling/ProfilerFiller;)Ljava/util/Map;";
+	static final String KERNEL_LOOT_MODIFIERS = "net/forbric/kernel/runtime/KernelLootModifiers";
+	static final String WITHOUT_INDEX = "withoutTheLegacyIndex";
+	static final String WITHOUT_INDEX_DESC = "(Lnet/minecraft/server/packs/resources/ResourceManager;)Lnet/minecraft/server/packs/resources/ResourceManager;";
+
+	/**
+	 * MinecraftForge's loot-modifier manager reads {@code loot_modifiers/global_loot_modifiers.json} BY NAME as
+	 * its list of enabled modifiers, then scans the directory and drops what the list does not name; NeoForge's
+	 * has no list-file concept, scans the same directory with {@code IGlobalLootModifier.DIRECT_CODEC}, and logs
+	 * {@code Couldn't parse data file '…global_loot_modifiers'} for every index it meets — two permanent ERROR
+	 * lines on every tri-ecosystem boot (the MinecraftForge carrier ships one, mods ship another), which is what
+	 * makes a genuinely broken loot modifier indistinguishable from the furniture.
+	 *
+	 * <p>Both managers' DIRECTORY scans now run over a view of the resource manager that hides
+	 * {@code *&#47;loot_modifiers/global_loot_modifiers.json}; MinecraftForge's own by-name read of its index is on
+	 * the original manager and untouched, so the one path that owns the file keeps it. NeoForge's manager has no
+	 * {@code prepare} of its own, so one is synthesized ({@code super.prepare(withoutTheLegacyIndex(rm), p)});
+	 * MinecraftForge's existing {@code prepare} gets the same wrap on the {@code aload_1} feeding its
+	 * {@code super.prepare} call. Keyed on the {@code LOOT_MODIFIER_MANAGER} pair; each half stands down on its own.
+	 */
+	private static boolean hideTheLegacyLootModifierIndexFromTheDirectoryScan(ClassNode node) {
+		if (LOOT_MODIFIER_MANAGER_NEO.equals(node.name)) return synthesizeNeoForgePrepare(node);
+		if (LOOT_MODIFIER_MANAGER_FORGE.equals(node.name)) return wrapMinecraftForgePrepare(node);
+		return false;
+	}
+
+	private static boolean synthesizeNeoForgePrepare(ClassNode node) {
+		if (!SIMPLE_JSON_LISTENER.equals(node.superName)) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] %s no longer extends SimpleJsonResourceReloadListener — the legacy "
+					+ "loot-modifier index is not hidden from its scan", node.name.replace('/', '.'));
+			return false;
+		}
+		if (findMethod(node, PREPARE, PREPARE_DESC) != null) return false;    // its own prepare now, or a second pass
+		MethodNode prepare = new MethodNode(Opcodes.ACC_PROTECTED, PREPARE, PREPARE_DESC, null, null);
+		prepare.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		prepare.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		prepare.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_LOOT_MODIFIERS, WITHOUT_INDEX, WITHOUT_INDEX_DESC, false));
+		prepare.instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+		prepare.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, SIMPLE_JSON_LISTENER, PREPARE, PREPARE_DESC, false));
+		prepare.instructions.add(new InsnNode(Opcodes.ARETURN));
+		prepare.maxStack = 3;
+		prepare.maxLocals = 3;
+		node.methods.add(prepare);
+		ForbricLog.info("[Forbric/MergedBaseCompat] NeoForge's LootModifierManager scans loot_modifiers/ without the legacy "
+				+ "global_loot_modifiers.json index (applied at 1 site) — it has no list-file concept and logged a parse "
+				+ "error for each one");
+		return true;
+	}
+
+	private static boolean wrapMinecraftForgePrepare(ClassNode node) {
+		MethodNode prepare = findMethod(node, PREPARE, PREPARE_DESC);
+		if (prepare == null) return false;
+		MethodInsnNode site = null;
+		int sites = 0;
+		for (AbstractInsnNode insn = prepare.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL && SIMPLE_JSON_LISTENER.equals(call.owner)
+					&& PREPARE.equals(call.name) && PREPARE_DESC.equals(call.desc)) {
+				sites++;
+				site = call;
+			}
+			if (insn instanceof MethodInsnNode call && KERNEL_LOOT_MODIFIERS.equals(call.owner)) return false;    // second pass
+		}
+		if (sites != 1) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] MinecraftForge's LootModifierManager.prepare calls super.prepare %d "
+					+ "time(s), not once — its directory scan is not wrapped", sites);
+			return false;
+		}
+		// aload_0; aload_1; aload_2; invokespecial — wrap the manager argument, the aload_1 two instructions back.
+		AbstractInsnNode profiler = previousReal(site.getPrevious());
+		AbstractInsnNode manager = previousReal(profiler.getPrevious());
+		if (!(profiler instanceof VarInsnNode p) || p.var != 2 || !(manager instanceof VarInsnNode m) || m.var != 1) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] MinecraftForge's LootModifierManager.prepare feeds super.prepare in a "
+					+ "shape that is not aload_1/aload_2 — its directory scan is not wrapped");
+			return false;
+		}
+		prepare.instructions.insert(manager, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_LOOT_MODIFIERS, WITHOUT_INDEX,
+				WITHOUT_INDEX_DESC, false));
+		ForbricLog.info("[Forbric/MergedBaseCompat] MinecraftForge's LootModifierManager scans loot_modifiers/ without the legacy "
+				+ "index too (applied at 1 site) — it still reads its own index by name, on the original manager");
+		return true;
+	}
+
 	// ---------------------------------------------------------------------------------------------------------------
 	// A pack.mcmeta overlay gated by a condition no evaluator here can judge
 	// ---------------------------------------------------------------------------------------------------------------

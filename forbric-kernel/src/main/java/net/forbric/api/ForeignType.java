@@ -177,7 +177,10 @@ public enum ForeignType {
 	REMOVE_SPAWNS_BIOME_MODIFIER("net.minecraftforge.common.world.ForgeBiomeModifiers$RemoveSpawnsBiomeModifier",
 			"net.neoforged.neoforge.common.world.BiomeModifiers$RemoveSpawnsBiomeModifier"),
 	/** The static hook class each family's patched game calls to post its events. */
-	EVENT_FACTORY("net.minecraftforge.event.ForgeEventFactory", "net.neoforged.neoforge.event.EventHooks");
+	EVENT_FACTORY("net.minecraftforge.event.ForgeEventFactory", "net.neoforged.neoforge.event.EventHooks"),
+	/** Each family's global-loot-modifier reload listener: same directory, two ideas of what a list file is. */
+	LOOT_MODIFIER_MANAGER("net.minecraftforge.common.loot.LootModifierManager",
+			"net.neoforged.neoforge.common.loot.LootModifierManager");
 
 	private final String forge;
 	private final String neoforge;
