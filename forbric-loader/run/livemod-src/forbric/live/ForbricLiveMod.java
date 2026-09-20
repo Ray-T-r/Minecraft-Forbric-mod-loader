@@ -88,11 +88,22 @@ public class ForbricLiveMod {
 	 */
 	public static final net.minecraftforge.common.ForgeConfigSpec.ConfigValue<String> GREETING;
 	public static final net.minecraftforge.common.ForgeConfigSpec SERVER_SPEC;
+	public static final net.minecraftforge.common.ForgeConfigSpec.IntValue COMMON_PROBE;
+	public static final net.minecraftforge.common.ForgeConfigSpec COMMON_SPEC;
+	public static final net.minecraftforge.common.ForgeConfigSpec.IntValue CLIENT_PROBE;
+	public static final net.minecraftforge.common.ForgeConfigSpec CLIENT_SPEC;
 
 	static {
 		net.minecraftforge.common.ForgeConfigSpec.Builder b = new net.minecraftforge.common.ForgeConfigSpec.Builder();
 		GREETING = b.comment("set this in <world>/serverconfig before the server boots to test config sync").define("greeting", "default");
 		SERVER_SPEC = b.build();
+		b = new net.minecraftforge.common.ForgeConfigSpec.Builder();
+		COMMON_PROBE = b.comment("change this while the server runs to test the native config watcher")
+				.defineInRange("probe", 11, 0, 1000);
+		COMMON_SPEC = b.build();
+		b = new net.minecraftforge.common.ForgeConfigSpec.Builder();
+		CLIENT_PROBE = b.comment("client-only config load probe").defineInRange("probe", 17, 0, 1000);
+		CLIENT_SPEC = b.build();
 	}
 
 	/** The spec is unloaded until someone loads or syncs it; reading it then throws outside production. */
@@ -101,12 +112,19 @@ public class ForbricLiveMod {
 	}
 
 	private static void logConfig(String phase, net.minecraftforge.fml.config.ModConfig cfg) {
-		if (cfg.getType() != net.minecraftforge.fml.config.ModConfig.Type.SERVER) return;
 		String path;
 		try {
 			path = String.valueOf(cfg.getFullPath());
 		} catch (RuntimeException syncedHasNoFile) {
 			path = "<synced, no file>";
+		}
+		if (cfg.getType() != net.minecraftforge.fml.config.ModConfig.Type.SERVER) {
+			boolean client = cfg.getType() == net.minecraftforge.fml.config.ModConfig.Type.CLIENT;
+			var spec = client ? CLIENT_SPEC : COMMON_SPEC;
+			var probe = client ? CLIENT_PROBE : COMMON_PROBE;
+			System.out.println("[ForbricLive/CFG] " + phase + " " + cfg.getFileName() + ": probe="
+					+ (spec.isLoaded() ? probe.get() : "<unloaded>") + " loaded=" + spec.isLoaded() + " path=" + path);
+			return;
 		}
 		System.out.println("[ForbricLive/CFG] " + phase + " " + cfg.getFileName() + ": greeting=" + greeting()
 				+ " loaded=" + SERVER_SPEC.isLoaded() + " path=" + path);
@@ -125,11 +143,15 @@ public class ForbricLiveMod {
 		reportOwnContainer();
 		System.out.println("[ForbricLive/NET] channel " + NET.getName() + " built (protocol v" + NET.getProtocolVersion() + ")");
 		ctx.registerConfig(net.minecraftforge.fml.config.ModConfig.Type.SERVER, SERVER_SPEC);
+		ctx.registerConfig(net.minecraftforge.fml.config.ModConfig.Type.COMMON, COMMON_SPEC);
+		ctx.registerConfig(net.minecraftforge.fml.config.ModConfig.Type.CLIENT, CLIENT_SPEC);
 		net.minecraftforge.fml.event.config.ModConfigEvent.Loading.getBus(ctx.getModBusGroup())
 				.addListener(e -> logConfig("LOADING", e.getConfig()));
 		net.minecraftforge.fml.event.config.ModConfigEvent.Reloading.getBus(ctx.getModBusGroup())
 				.addListener(e -> logConfig("RELOADING", e.getConfig()));
 		System.out.println("[ForbricLive/CFG] registered SERVER config forbriclive-server.toml (greeting default 'default')");
+		System.out.println("[ForbricLive/CFG] registered COMMON config forbriclive-common.toml (probe default 11)");
+		System.out.println("[ForbricLive/CFG] registered CLIENT config forbriclive-client.toml (probe default 17)");
 		registerRegistrationProbes(ctx);
 		registerSetupLifecycle(ctx);
 		registerClient(ctx);
@@ -156,7 +178,6 @@ public class ForbricLiveMod {
 				.addListener(event -> event.enqueueWork(() -> {
 					System.out.println("[ForbricLive/REGISTRATION] zombie heightmap="
 							+ net.minecraft.world.entity.SpawnPlacements.getHeightmapType(net.minecraft.world.entity.EntityTypes.ZOMBIE));
-
 				}));
 		System.out.println("[ForbricLive/REGISTRATION] subscribed to Forge spawn and creative registration events");
 	}
