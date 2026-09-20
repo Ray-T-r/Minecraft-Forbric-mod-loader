@@ -258,6 +258,108 @@ class MixinFitTest {
 		assertTrue(partial.unresolved().get(0).contains("somethingElse"), partial.unresolved().toString());
 	}
 
+	/** A target whose method constructs {@code T} with {@code arity} arguments (all int). */
+	private static byte[] constructing(String type, int arity) {
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, "net/example/Builder", null, "java/lang/Object", null);
+		org.objectweb.asm.MethodVisitor mv = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC, "build", "()L" + type + ";", null, null);
+		mv.visitCode();
+		mv.visitTypeInsn(org.objectweb.asm.Opcodes.NEW, type);
+		mv.visitInsn(org.objectweb.asm.Opcodes.DUP);
+		StringBuilder desc = new StringBuilder("(");
+		for (int i = 0; i < arity; i++) { mv.visitInsn(org.objectweb.asm.Opcodes.ICONST_0); desc.append('I'); }
+		mv.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESPECIAL, type, "<init>", desc + ")V", false);
+		mv.visitInsn(org.objectweb.asm.Opcodes.ARETURN);
+		mv.visitMaxs(0, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** A mixin {@code @WrapOperation(method="build", at=@At(NEW, target=type))} whose handler takes {@code arity} ints + Operation. */
+	private static byte[] wrappingNew(String type, int arity) {
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, "test/TheMixin", null, "java/lang/Object", null);
+		org.objectweb.asm.AnnotationVisitor mixin = cw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+		org.objectweb.asm.AnnotationVisitor targets = mixin.visitArray("targets");
+		targets.visit(null, "net/example/Builder");
+		targets.visitEnd();
+		mixin.visitEnd();
+		StringBuilder desc = new StringBuilder("(");
+		for (int i = 0; i < arity; i++) desc.append('I');
+		desc.append("Lcom/llamalad7/mixinextras/injector/wrapoperation/Operation;)L").append(type).append(';');
+		org.objectweb.asm.MethodVisitor mv = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PRIVATE, "wrap", desc.toString(), null, null);
+		org.objectweb.asm.AnnotationVisitor wrap = mv.visitAnnotation("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;", true);
+		org.objectweb.asm.AnnotationVisitor method = wrap.visitArray("method");
+		method.visit(null, "build");
+		method.visitEnd();
+		org.objectweb.asm.AnnotationVisitor at = wrap.visitAnnotation("at", "Lorg/spongepowered/asm/mixin/injection/At;");
+		at.visit("value", "NEW");
+		at.visit("target", "L" + type + ";");
+		at.visitEnd();
+		wrap.visitEnd();
+		mv.visitCode();
+		mv.visitInsn(org.objectweb.asm.Opcodes.ACONST_NULL);
+		mv.visitInsn(org.objectweb.asm.Opcodes.ARETURN);
+		mv.visitMaxs(0, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/**
+	 * {@code @At(NEW)} was never judged, so fabric-rendering-v1's snippet wrap read FIT while Mixin rejected it at
+	 * apply time ("has an invalid signature": the merged constructor takes 12 arguments, the handler wraps 11).
+	 */
+	@Test
+	void aWrapOperationOnNewIsJudgedByTheConstructorsArity() {
+		String type = "net/example/Snippet";
+		java.util.function.Function<String, byte[]> twelve = name -> "net/example/Builder.class".equals(name) ? constructing(type, 12) : null;
+		MixinFit.Result mismatch = MixinFit.evaluate(wrappingNew(type, 11), twelve);
+		// The selector itself resolves (build exists); only the NEW anchor misses → PARTIAL, kept by default.
+		assertEquals(MixinFit.Verdict.PARTIAL, mismatch.verdict(), mismatch.unresolved().toString());
+		assertTrue(mismatch.unresolved().get(0).contains("handler wraps a 11-arg constructor, the call site constructs with 12"),
+				mismatch.unresolved().toString());
+
+		MixinFit.Result match = MixinFit.evaluate(wrappingNew(type, 12), twelve);
+		assertEquals(MixinFit.Verdict.FIT, match.verdict(), match.unresolved().toString());
+
+		java.util.function.Function<String, byte[]> none = name -> "net/example/Builder.class".equals(name) ? emptyClass("net/example/Builder") : null;
+		MixinFit.Result noMethod = MixinFit.evaluate(wrappingNew(type, 11), none);
+		assertEquals(MixinFit.Verdict.UNFIT, noMethod.verdict(), "no `build` method at all: the selector misses, as before");
+		assertEquals(1, noMethod.unresolved().size(), "and no NEW anchor is added for a selector that bound nowhere: " + noMethod.unresolved());
+	}
+
+	/** An {@code @Accessor} names a field by name AND descriptor; the merge re-typed AttributeSupplier$Builder.builder. */
+	@Test
+	void anAccessorOnAReTypedFieldIsAnUnresolvedAnchor() {
+		String target = "net/example/AttributeBuilder";
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, target, null, "java/lang/Object", null);
+		cw.visitField(org.objectweb.asm.Opcodes.ACC_PRIVATE, "builder", "Ljava/util/Map;", null, null).visitEnd();
+		cw.visitEnd();
+		byte[] targetBytes = cw.toByteArray();
+
+		org.objectweb.asm.ClassWriter mw = new org.objectweb.asm.ClassWriter(0);
+		mw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_INTERFACE | org.objectweb.asm.Opcodes.ACC_ABSTRACT,
+				"test/BuilderAccessor", null, "java/lang/Object", null);
+		org.objectweb.asm.AnnotationVisitor mixin = mw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+		org.objectweb.asm.AnnotationVisitor targets = mixin.visitArray("targets");
+		targets.visit(null, target);
+		targets.visitEnd();
+		mixin.visitEnd();
+		org.objectweb.asm.MethodVisitor mv = mw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_ABSTRACT,
+				"getBuilder", "()Lcom/google/common/collect/ImmutableMap$Builder;", null, null);
+		mv.visitAnnotation("Lorg/spongepowered/asm/mixin/gen/Accessor;", false).visitEnd();
+		mv.visitEnd();
+		mw.visitEnd();
+
+		MixinFit.Result r = MixinFit.evaluate(mw.toByteArray(), name -> (target + ".class").equals(name) ? targetBytes : null);
+		assertEquals(1, r.unresolved().size(), r.unresolved().toString());
+		assertTrue(r.unresolved().get(0).contains("@Accessor field") && r.unresolved().get(0).contains("builder:Lcom/google/common/collect/ImmutableMap$Builder;"),
+				r.unresolved().toString());
+	}
+
 	@Test
 	void aWildcardIsNotOursToJudge() {
 		assertNull(MixinFit.parseMember("render*"), "a wildcard target must stay unjudged, not resolve to nothing");

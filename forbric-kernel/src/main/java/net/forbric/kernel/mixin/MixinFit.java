@@ -72,6 +72,11 @@ public final class MixinFit {
 	private static final String SHADOW_DESC = "Lorg/spongepowered/asm/mixin/Shadow;";
 	private static final String OVERWRITE_DESC = "Lorg/spongepowered/asm/mixin/Overwrite;";
 	private static final String AT_DESC = "Lorg/spongepowered/asm/mixin/injection/At;";
+	private static final String ACCESSOR_DESC = "Lorg/spongepowered/asm/mixin/gen/Accessor;";
+	private static final String INVOKER_DESC = "Lorg/spongepowered/asm/mixin/gen/Invoker;";
+	private static final String OPERATION_DESC = "Lcom/llamalad7/mixinextras/injector/wrapoperation/Operation;";
+	private static final String WRAP_OPERATION_DESC = "Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;";
+	private static final String REDIRECT_DESC = "Lorg/spongepowered/asm/mixin/injection/Redirect;";
 
 	/** Injector annotations whose {@code method} value names one or more target methods on the mixin's target. */
 	static final Set<String> INJECTOR_DESCS = Set.of(
@@ -268,6 +273,20 @@ public final class MixinFit {
 				continue;
 			}
 
+			// @Accessor / @Invoker: a generated getter, setter or invoker binds to a member by name and descriptor.
+			// Reported, never used to suppress (KernelGuestMixinAdapter keeps every pure accessor mixin) — the
+			// alternative is Mixin's InvalidAccessorException on every boot, naming a descriptor and nothing else.
+			if (has(m.visibleAnnotations, ACCESSOR_DESC) || has(m.invisibleAnnotations, ACCESSOR_DESC)) {
+				Anchor accessor = accessorAnchor(m, target, resolver);
+				if (accessor != null) out.add(accessor);
+				continue;
+			}
+			if (has(m.visibleAnnotations, INVOKER_DESC) || has(m.invisibleAnnotations, INVOKER_DESC)) {
+				Anchor invoker = invokerAnchor(m, target, resolver);
+				if (invoker != null) out.add(invoker);
+				continue;
+			}
+
 			AnnotationNode injector = injectorOf(m);
 			if (injector == null) continue;
 
@@ -296,7 +315,12 @@ public final class MixinFit {
 			for (AnnotationNode at : atNodes(injector)) {
 				String atValue = asString(value(at, "value"));
 				String atTarget = asString(value(at, "target"));
-				if (atTarget == null || atValue == null || !RESOLVABLE_AT.contains(atValue)) continue;
+				if (atTarget == null || atValue == null) continue;
+				if ("NEW".equals(atValue)) {
+					out.add(newAnchor(injector, m, atTarget, hits));
+					continue;
+				}
+				if (!RESOLVABLE_AT.contains(atValue)) continue;
 				boolean anywhere = false;
 				for (MethodNode hit : hits) {
 					if (containsMember(hit, atTarget)) { anywhere = true; break; }
@@ -724,6 +748,105 @@ public final class MixinFit {
 			if (desc.equals(a.desc)) return true;
 		}
 		return false;
+	}
+
+	/**
+	 * {@code @At(NEW)}: the handler of a {@code @WrapOperation} or {@code @Redirect} wraps a CONSTRUCTOR, and its
+	 * leading parameters are that constructor's arguments. When the merge gave the call site a different
+	 * constructor (NeoForge's {@code RenderPipeline$Snippet} takes 12 arguments where vanilla's takes 11), the
+	 * anchor is not "absent" — the type is still constructed there — but Mixin rejects the handler at apply time
+	 * ("has an invalid signature"), which drops the whole mixin. Judged by arity and types against every
+	 * construction of the type inside the hit methods; other injector kinds only need the construction to exist.
+	 */
+	private static Anchor newAnchor(AnnotationNode injector, MethodNode handler, String atTarget, List<MethodNode> hits) {
+		String type;
+		Type[] wanted = null;
+		if (atTarget.startsWith("(")) {
+			Type method = Type.getMethodType(atTarget);
+			type = method.getReturnType().getInternalName();
+			wanted = method.getArgumentTypes();
+		} else {
+			type = atTarget.startsWith("L") && atTarget.endsWith(";") ? atTarget.substring(1, atTarget.length() - 1) : atTarget;
+		}
+		Type[] expect = null;
+		Type[] params = Type.getArgumentTypes(handler.desc);
+		if (WRAP_OPERATION_DESC.equals(injector.desc)) {
+			int n = params.length > 0 && OPERATION_DESC.equals(params[params.length - 1].getDescriptor()) ? params.length - 1 : params.length;
+			expect = java.util.Arrays.copyOf(params, n);
+		} else if (REDIRECT_DESC.equals(injector.desc)) {
+			expect = params;
+		}
+		boolean constructed = false;
+		boolean resolved = false;
+		int seen = -1;
+		for (MethodNode hit : hits) {
+			for (AbstractInsnNode insn = hit.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof org.objectweb.asm.tree.TypeInsnNode t) || t.getOpcode() != Opcodes.NEW || !type.equals(t.desc)) continue;
+				for (AbstractInsnNode c = insn.getNext(); c != null; c = c.getNext()) {
+					if (c instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL && "<init>".equals(call.name) && type.equals(call.owner)) {
+						Type[] args = Type.getArgumentTypes(call.desc);
+						constructed = true;
+						seen = args.length;
+						if (wanted != null && !java.util.Arrays.equals(args, wanted)) break;
+						if (expect == null || java.util.Arrays.equals(args, expect)) resolved = true;
+						break;
+					}
+				}
+			}
+		}
+		String simple = type.substring(type.lastIndexOf('/') + 1);
+		String where = " in " + hits.get(0).name;
+		if (resolved) return new Anchor("@At(NEW)", simple + where, true);
+		if (!constructed) return new Anchor("@At(NEW)", simple + " is not constructed" + where, false);
+		return new Anchor("@At(NEW)", simple + ": handler wraps a " + (expect == null ? -1 : expect.length)
+				+ "-arg constructor, the call site constructs with " + seen + where, false);
+	}
+
+	private static Anchor accessorAnchor(MethodNode m, ClassNode target, Function<String, byte[]> resolver) {
+		AnnotationNode a = annotation(m, ACCESSOR_DESC);
+		String name = asString(value(a, "value"));
+		Type[] params = Type.getArgumentTypes(m.desc);
+		Type ret = Type.getReturnType(m.desc);
+		String desc;
+		if (params.length == 0 && ret.getSort() != Type.VOID) {
+			desc = ret.getDescriptor();
+			if (name == null || name.isEmpty()) name = derived(m.name, "get", "is");
+		} else if (params.length == 1 && ret.getSort() == Type.VOID) {
+			desc = params[0].getDescriptor();
+			if (name == null || name.isEmpty()) name = derived(m.name, "set");
+		} else {
+			return null;    // not a shape this can judge
+		}
+		if (name == null) return null;
+		return new Anchor("@Accessor field", name + ":" + desc, findField(target, name, desc, resolver) != null);
+	}
+
+	private static Anchor invokerAnchor(MethodNode m, ClassNode target, Function<String, byte[]> resolver) {
+		AnnotationNode a = annotation(m, INVOKER_DESC);
+		String name = asString(value(a, "value"));
+		if (name == null || name.isEmpty()) name = derived(m.name, "invoke", "call");
+		if (name == null || name.startsWith("<")) return null;    // constructor invokers: not judged
+		return new Anchor("@Invoker method", name + m.desc, findMethod(target, name, m.desc, resolver) != null);
+	}
+
+	/** Mixin's implicit accessor naming: strip one of the prefixes and decapitalise. */
+	private static String derived(String method, String... prefixes) {
+		for (String prefix : prefixes) {
+			if (method.length() > prefix.length() && method.startsWith(prefix)
+					&& Character.isUpperCase(method.charAt(prefix.length()))) {
+				String rest = method.substring(prefix.length());
+				return Character.toLowerCase(rest.charAt(0)) + rest.substring(1);
+			}
+		}
+		return null;
+	}
+
+	private static AnnotationNode annotation(MethodNode m, String desc) {
+		for (List<AnnotationNode> table : new List[] { m.visibleAnnotations, m.invisibleAnnotations }) {
+			if (table == null) continue;
+			for (AnnotationNode a : table) if (desc.equals(a.desc)) return a;
+		}
+		return null;
 	}
 
 	private static String shortMember(String target) {

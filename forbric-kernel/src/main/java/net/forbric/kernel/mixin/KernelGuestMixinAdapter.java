@@ -120,7 +120,19 @@ public final class KernelGuestMixinAdapter {
 			if (classBytes == null) continue;
 			loaded.put(mixin, classBytes);
 			try {
-				if (isPureAccessorMixin(classBytes)) continue;
+				if (isPureAccessorMixin(classBytes)) {
+					// Never suppressed (the cast to its generated interface must keep working), but a member it
+					// cannot bind is worth a line here: Mixin's own report is an InvalidAccessorException naming a
+					// descriptor and nothing about which mod or why.
+					MixinFit.Result accessors = MixinFit.evaluate(classBytes, resource,
+							net.forbric.kernel.classloading.DelegationPolicy::alwaysGame);
+					if (!accessors.unresolved().isEmpty()) {
+						ForbricLog.info("[Forbric/Mixin] guest accessor mixin %s:%s cannot bind — %s (kept; the merge "
+								+ "re-typed or removed the member, so the generated accessor will throw when called)",
+								MixinConfigOwners.describe(configName), mixin, String.join(", ", accessors.unresolved()));
+					}
+					continue;
+				}
 				if (isExplicitlyKept(configName, mixin)) continue;
 
 				MixinFit.Result fit = MixinFit.evaluate(classBytes, resource,
