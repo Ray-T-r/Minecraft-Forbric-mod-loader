@@ -324,7 +324,7 @@ public final class KernelBoot {
 
 		// Fabric access wideners before Mixin (ACCESS phase): the weaver must see the widened members.
 		ClassTweakerTransformer accessWideners =
-				ClassTweakerTransformer.create(KernelFabricEcosystem.accessWideners(), loader::putGeneratedClass);
+				ClassTweakerTransformer.createFrom(KernelFabricEcosystem.accessWidenerFiles(), loader::putGeneratedClass);
 		if (accessWideners != null) chain.register(TransformPhase.ACCESS, accessWideners);
 
 		// The Forge-family twin: every mod jar's META-INF/accesstransformer.cfg, in the same ACCESS phase — and
@@ -932,7 +932,8 @@ public final class KernelBoot {
 					try (java.io.Reader r = new java.io.InputStreamReader(zip.getInputStream(entry),
 							java.nio.charset.StandardCharsets.UTF_8)) {
 						List<net.forbric.kernel.access.AtDirective> parsed =
-								net.forbric.kernel.access.AccessTransformerParser.parse(r);
+								net.forbric.kernel.access.AccessTransformerParser.parse(r,
+										(carrierJars.contains(jar) ? "carrier:" : "") + jar.getFileName());
 						directives.addAll(parsed);
 						any = true;
 						ForbricLog.debug("[Forbric/AT] %s: %d directive(s) from %s", jar.getFileName(), parsed.size(),

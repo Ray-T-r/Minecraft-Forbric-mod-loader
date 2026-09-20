@@ -41,8 +41,17 @@ public final class AtDirective {
 	public final AtAccess access;
 	public final FinalOp finalOp;
 
+	/** The jar the line came from ("carrier:<file>" for a runtime carrier), or null when unknown. */
+	public final String source;
+
 	public AtDirective(String className, String memberName, String memberDesc, boolean method,
 			AtAccess access, FinalOp finalOp) {
+		this(className, memberName, memberDesc, method, access, finalOp, null);
+	}
+
+	public AtDirective(String className, String memberName, String memberDesc, boolean method,
+			AtAccess access, FinalOp finalOp, String source) {
+		this.source = source;
 		this.className = className;
 		this.memberName = memberName;
 		this.memberDesc = memberDesc;

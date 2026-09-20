@@ -16,6 +16,7 @@
 
 package net.forbric.kernel.access;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +54,8 @@ public final class AccessTransformer implements ClassTransformer {
 		final Member allMethods = new Member();
 		final Map<String, Member> fields = new HashMap<>();
 		final Map<String, Member> methods = new HashMap<>();
+		/** The specific-member directives, so a member the class turns out not to have can be named. */
+		final List<AtDirective> specific = new ArrayList<>();
 	}
 
 	private final Map<String, ClassEntry> byClass = new HashMap<>();
@@ -69,8 +72,10 @@ public final class AccessTransformer implements ClassTransformer {
 				entry.allMethods.merge(d);
 			} else if (d.method) {
 				entry.methods.computeIfAbsent(d.memberName + d.memberDesc, k -> new Member()).merge(d);
+				entry.specific.add(d);
 			} else {
 				entry.fields.computeIfAbsent(d.memberName, k -> new Member()).merge(d);
+				entry.specific.add(d);
 			}
 		}
 	}
@@ -90,6 +95,12 @@ public final class AccessTransformer implements ClassTransformer {
 	}
 
 	@Override
+	public net.forbric.kernel.transform.AnchorSet anchors() {
+		return net.forbric.kernel.transform.AnchorSet.scanned("every class an accesstransformer.cfg names; a directive that meets "
+				+ "no member is counted by AccessCensus, not by the anchor ledger");
+	}
+
+	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		ClassEntry entry = byClass.get(className.replace('.', '/'));
 		if (entry == null) return classBytes;
@@ -97,6 +108,7 @@ public final class AccessTransformer implements ClassTransformer {
 		ClassReader reader = new ClassReader(classBytes);
 		ClassWriter writer = new ClassWriter(reader, 0);
 		reader.accept(new AtClassVisitor(writer, entry), 0);
+		AccessCensus.transformed();
 		return writer.toByteArray();
 	}
 
@@ -128,6 +140,8 @@ public final class AccessTransformer implements ClassTransformer {
 
 	private static final class AtClassVisitor extends ClassVisitor {
 		private final ClassEntry entry;
+		private final java.util.Set<String> seenFields = new java.util.HashSet<>();
+		private final java.util.Set<String> seenMethods = new java.util.HashSet<>();
 
 		AtClassVisitor(ClassVisitor delegate, ClassEntry entry) {
 			super(Opcodes.ASM9, delegate);
@@ -141,14 +155,25 @@ public final class AccessTransformer implements ClassTransformer {
 
 		@Override
 		public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+			seenFields.add(name);
 			Member member = combined(entry.fields.get(name), entry.allFields);
 			return super.visitField(apply(access, member), name, descriptor, signature, value);
 		}
 
 		@Override
 		public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+			seenMethods.add(name + descriptor);
 			Member member = combined(entry.methods.get(name + descriptor), entry.allMethods);
 			return super.visitMethod(apply(access, member), name, descriptor, signature, exceptions);
+		}
+
+		@Override
+		public void visitEnd() {
+			for (AtDirective d : entry.specific) {
+				boolean seen = d.method ? seenMethods.contains(d.memberName + d.memberDesc) : seenFields.contains(d.memberName);
+				if (!seen) AccessCensus.unmatched("AT", d.source, d.toString());
+			}
+			super.visitEnd();
 		}
 	}
 }

@@ -243,9 +243,16 @@ public final class KernelFabricEcosystem {
 	 * than fail the launch, since the mixins that need it will fail loudly on their own.
 	 */
 	public static List<byte[]> accessWideners() {
+		List<byte[]> files = new ArrayList<>();
+		for (net.forbric.kernel.access.ClassTweakerTransformer.File file : accessWidenerFiles()) files.add(file.bytes());
+		return files;
+	}
+
+	/** {@link #accessWideners()} with each file's jar name beside it, for the access census. */
+	public static List<net.forbric.kernel.access.ClassTweakerTransformer.File> accessWidenerFiles() {
 		if (loader == null) return List.of();
 
-		List<byte[]> files = new ArrayList<>();
+		List<net.forbric.kernel.access.ClassTweakerTransformer.File> files = new ArrayList<>();
 
 		for (ModContainer mod : loader.getAllMods()) {
 			if (!(mod instanceof KernelModContainer)) continue;
@@ -264,7 +271,8 @@ public final class KernelFabricEcosystem {
 				}
 
 				try (java.io.InputStream in = jar.getInputStream(entry)) {
-					files.add(in.readAllBytes());
+					files.add(new net.forbric.kernel.access.ClassTweakerTransformer.File(
+							container.getJar().getFileName().toString(), in.readAllBytes()));
 				}
 			} catch (Exception e) {
 				ForbricLog.warn("[Forbric/Access] could not read accessWidener of %s: %s",

@@ -81,6 +81,8 @@ check "survived real simulation"      "ClientSmoke\] client-ready after"        
 check        "the anchor census ran"        "Forbric/Anchor\] [0-9]+ of [1-9][0-9]* declared repair" "$LOG"
 check_absent "every declared repair landed" "Forbric/Anchor\] [0-9]+ of [0-9]+ declared repair\(s\) landed, and" "$LOG"
 check_absent "no repair was handed its target and declined" "Forbric/Anchor\] .* made no edit" "$LOG"
+# J12: every AT line and access-widener entry met the member it names on every class it was applied to.
+check        "no access directive matched nothing" "Forbric/Access\] 0 directive\(s\) matched nothing across [1-9][0-9]* transformed class" "$LOG"
 check "the window title was read"      "ClientSmoke\] window title: Minecraft"     "$LOG"
 check_absent "…and it names no single loader" "ClientSmoke\] window title: .*(NeoForge|Forge|Fabric)" "$LOG"
 check "left the world cleanly"        "ClientSmoke\] clean disconnect observed"    "$LOG"

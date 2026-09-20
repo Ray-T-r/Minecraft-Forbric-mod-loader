@@ -112,6 +112,8 @@ class TransformerAnchorCensusTest {
 	void everyTransformerInThisPackageOverridesAnchors() throws Exception {
 		List<Class<?>> types = allTransformerClasses();
 		assumeTrue(!types.isEmpty(), "transform classes not compiled yet");
+		assertTrue(types.stream().anyMatch(t -> t.getName().equals("net.forbric.kernel.access.AccessTransformer")),
+				"the access package is in the census");
 
 		// Reflective on the CLASS, not on an instance, so the four transformers whose only constructor takes
 		// collaborators are covered too. They were skipped by the instance census below, and a transformer that
@@ -151,19 +153,22 @@ class TransformerAnchorCensusTest {
 
 	/** Every concrete {@link ClassTransformer} class compiled into this package. */
 	private static List<Class<?>> allTransformerClasses() throws Exception {
-		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
-				"net", "forbric", "kernel", "transform");
-		if (!Files.isDirectory(compiled)) return List.of();
-
+		// The access package too: its two transformers apply by visiting, and were the only ClassTransformers
+		// outside this package — and so outside this census — until the access census gave them a declaration.
 		List<Class<?>> types = new ArrayList<>();
-		try (Stream<Path> files = Files.list(compiled)) {
-			for (Path file : files.sorted().toList()) {
-				String name = file.getFileName().toString();
-				if (!name.endsWith(".class") || name.contains("$")) continue;
+		for (String pkg : List.of("transform", "access")) {
+			Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
+					"net", "forbric", "kernel", pkg);
+			if (!Files.isDirectory(compiled)) continue;
+			try (Stream<Path> files = Files.list(compiled)) {
+				for (Path file : files.sorted().toList()) {
+					String name = file.getFileName().toString();
+					if (!name.endsWith(".class") || name.contains("$")) continue;
 
-				Class<?> type = Class.forName("net.forbric.kernel.transform." + name.substring(0, name.length() - 6));
-				if (!ClassTransformer.class.isAssignableFrom(type) || type.isInterface()) continue;
-				types.add(type);
+					Class<?> type = Class.forName("net.forbric.kernel." + pkg + "." + name.substring(0, name.length() - 6));
+					if (!ClassTransformer.class.isAssignableFrom(type) || type.isInterface()) continue;
+					types.add(type);
+				}
 			}
 		}
 		return types;

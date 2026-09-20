@@ -40,13 +40,20 @@ public final class AccessTransformerParser {
 
 	/** Parses cfg lines into directives in the <em>named</em> (Mojmap) namespace (internal class names). */
 	public static List<AtDirective> parse(Reader cfg) throws IOException {
+		return parse(cfg, null);
+	}
+
+	/** The same parse, with every directive remembering {@code source} — the jar it came from. */
+	public static List<AtDirective> parse(Reader cfg, String source) throws IOException {
 		List<AtDirective> directives = new ArrayList<>();
 
 		try (BufferedReader reader = new BufferedReader(cfg)) {
 			String line;
 			while ((line = reader.readLine()) != null) {
 				AtDirective directive = parseLine(line);
-				if (directive != null) directives.add(directive);
+				if (directive == null) continue;
+				directives.add(source == null ? directive : new AtDirective(directive.className, directive.memberName,
+						directive.memberDesc, directive.method, directive.access, directive.finalOp, source));
 			}
 		}
 
