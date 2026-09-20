@@ -107,6 +107,21 @@ class MixinAtWidenedCallTest {
 		}
 	}
 
+	/**
+	 * A callback group is the mod's own statement that some of its alternatives are MEANT to miss — they are the
+	 * shapes other game versions have. Iris paid for this one: moving one member of a {@code max=1} group made two
+	 * match, the group's check failed, and its whole LevelRenderer mixin — every shader hook in it — went with it.
+	 */
+	@Test
+	void aHandlerInACallbackGroupIsLeftAlone() {
+		ClassNode mixin = mixin("Lcom/llamalad7/mixinextras/injector/ModifyExpressionValue;");
+		mixin.methods.get(0).visibleAnnotations.add(
+				new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Group;"));
+
+		assertEquals(0, MixinAtWidenedCall.widen(mixin, name -> targetClass(LONG_DESC)));
+		assertEquals(SHORT, atTarget(mixin));
+	}
+
 	/** A mixin with one injector of {@code injectorDesc}, selecting {@code <clinit>}, pointed at the short call. */
 	private static ClassNode mixin(String injectorDesc) {
 		ClassNode mixin = new ClassNode();

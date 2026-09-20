@@ -78,6 +78,18 @@ public final class MixinAtWidenedCall {
 			"Lorg/spongepowered/asm/mixin/injection/Inject;",
 			"Lcom/llamalad7/mixinextras/injector/ModifyExpressionValue;");
 
+	/**
+	 * A handler in a callback group is left alone, whatever its injector.
+	 *
+	 * <p>{@code @Group(min=1, max=1)} is how a mod writes "exactly one of these alternatives should match here" —
+	 * the alternatives are the shapes different game versions have, and the ones that do not match are SUPPOSED
+	 * not to match. Widening one of them makes two match and the group's own check fails the whole mixin class.
+	 * Iris is the case that paid for it: its {@code MixinLevelRenderer} has a {@code max=1} group on
+	 * {@code addMainPass}, and moving one member's point took shaders down with an
+	 * {@code InvalidInjectionException} that named the group and not the move.
+	 */
+	private static final String GROUP_DESC = "Lorg/spongepowered/asm/mixin/injection/Group;";
+
 	private MixinAtWidenedCall() {
 	}
 
@@ -176,14 +188,23 @@ public final class MixinAtWidenedCall {
 
 		int widened = 0;
 		for (MethodNode method : mixin.methods) {
-			widened += widenAll(mixin.name, method.visibleAnnotations, declared);
-			widened += widenAll(mixin.name, method.invisibleAnnotations, declared);
+			// Both lists together: @Group and @Inject are on the same handler but a compiler may put them in
+			// different retention buckets, and checking one list at a time would miss the group half the time.
+			List<AnnotationNode> annotations = new ArrayList<>();
+			if (method.visibleAnnotations != null) annotations.addAll(method.visibleAnnotations);
+			if (method.invisibleAnnotations != null) annotations.addAll(method.invisibleAnnotations);
+			widened += widenAll(mixin.name, annotations, declared);
 		}
 		return widened;
 	}
 
 	private static int widenAll(String mixinName, List<AnnotationNode> annotations, List<MethodNode> declared) {
 		if (annotations == null) return 0;
+		// One @Group anywhere on this handler and nothing on it moves: the group is the mod's own statement that
+		// some of these points are meant to miss.
+		for (AnnotationNode annotation : annotations) {
+			if (GROUP_DESC.equals(annotation.desc)) return 0;
+		}
 		int widened = 0;
 		for (AnnotationNode injector : annotations) {
 			if (!ARGUMENT_BLIND.contains(injector.desc)) continue;

@@ -673,6 +673,12 @@ step "the world is on disk before the process ends (must PASS)"
 # Fabric's own Hooks.startClient runs main and then client from inside Minecraft.<init>, after instance = this.
 # The kernel ran main in its pre-Minecraft registration window, where getInstance() is null -- so the thread name
 # is the assertion: "main" is the pre-Minecraft window, "Render thread" is the constructor.
+# A @Group is a mod's own statement that some of its alternatives are MEANT to miss — they are the shapes other
+# game versions have. Anything the kernel does to injection points has to leave those alone, and the cost of not
+# doing so is the whole mixin class: Iris' LevelRenderer group took every shader hook in it down with one.
+check_absent "no callback group is broken by a point the kernel moved" \
+  "Callback group @Group.*failed injection check" "$LOG"
+
 check "Fabric main entrypoints run where Fabric runs them" \
   "\[Render thread/INFO\]: \[Forbric/Fabric\] invoked [1-9][0-9]* Fabric main entrypoint\(s\) in the Minecraft.<init> window" "$LOG"
 check_absent "and not in the pre-Minecraft window" \
