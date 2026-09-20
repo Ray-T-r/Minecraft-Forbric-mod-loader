@@ -280,6 +280,9 @@ public final class ForbricMixinService
 		MixinAtShape.normalise(node);
 		// …and a locals capture that would throw an Error no handler sees is made to skip and warn instead.
 		MixinLocalsCapture.soften(node);
+		// …and an injection point naming a call the surviving carrier gave extra parameters is pointed at the
+		// longer call, for the injectors whose handler does not describe that call's arguments.
+		MixinAtWidenedCall.widen(node, this::mergedBaseNodeWithCode);
 		// …and a target whose NUMBER the merge gave to a carrier's anonymous class is moved to where vanilla's
 		// body went. Before the twin pass: the class this lands on may itself have a renamed twin.
 		MixinAnonymousRetarget.retarget(node, this::mergedBaseHas);
@@ -305,11 +308,26 @@ public final class ForbricMixinService
 	 * member list is wanted, and a target class is often one of the biggest in the game.
 	 */
 	private ClassNode mergedBaseNode(String internalName) {
+		return mergedBaseNode(internalName, ClassReader.SKIP_CODE);
+	}
+
+	/**
+	 * The same node WITH instructions, for the one rule that has to look at call sites.
+	 *
+	 * <p>{@link MixinAtWidenedCall} cannot be answered from declarations: the merge kept vanilla's short
+	 * {@code CustomPacketPayload.codec} beside the carrier's long one, and the question is which of them the
+	 * code actually calls.
+	 */
+	private ClassNode mergedBaseNodeWithCode(String internalName) {
+		return mergedBaseNode(internalName, 0);
+	}
+
+	private ClassNode mergedBaseNode(String internalName, int flags) {
 		try {
 			byte[] bytes = loader().getPreMixinClassBytes(internalName.replace('/', '.'));
 			if (bytes == null) return null;
 			ClassNode target = new ClassNode();
-			new ClassReader(bytes).accept(target, ClassReader.SKIP_CODE);
+			new ClassReader(bytes).accept(target, flags);
 			return target;
 		} catch (Throwable absent) {
 			return null;

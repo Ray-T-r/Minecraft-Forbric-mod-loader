@@ -349,6 +349,13 @@ public final class MixinFit {
 				for (MethodNode hit : hits) {
 					if (containsMember(hit, atTarget)) { anywhere = true; break; }
 				}
+				// The same move MixinAtWidenedCall will make, judged here too so the verdict and the rewrite
+				// cannot disagree about whether this point resolves.
+				if (!anywhere) {
+					for (MethodNode hit : hits) {
+						if (MixinAtWidenedCall.widenedIn(hit, atTarget) != null) { anywhere = true; break; }
+					}
+				}
 				out.add(new Anchor("@At(" + atValue + ")",
 						shortMember(atTarget) + " in " + hits.get(0).name, anywhere));
 			}
