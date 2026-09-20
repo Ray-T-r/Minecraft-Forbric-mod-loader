@@ -164,6 +164,8 @@ public final class KernelLifecycle {
 		// attachments, configuration tasks, model data, …) never fired. Must precede step 2d — the network setup posts
 		// its Register*PayloadHandlersEvent to exactly these subscribers.
 		KernelEventSubscribers.registerNeoForgeInternal(cl, runtimeJars, baselineBus, side);
+		// Forge also declares internal subscribers in its carrier, including its geometry-loader registrations.
+		KernelForgeInternalSubscribers.register(cl, runtimeJars, side);
 		// Step 2c3 (client only): NeoForge won the client reload-listener path in the byte merge, so MinecraftForge's
 		// RegisterClientReloadListenersEvent is never posted and a Forge mod's handler for it sits on a dead bus.
 		// Bridge it off NeoForge's AddClientReloadListenersEvent, which ClientHooks.initClientHooks posts to the
