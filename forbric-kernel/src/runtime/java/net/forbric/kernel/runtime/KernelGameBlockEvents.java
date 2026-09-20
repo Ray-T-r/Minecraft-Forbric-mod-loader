@@ -16,9 +16,18 @@
 
 package net.forbric.kernel.runtime;
 
+import java.lang.reflect.Constructor;
 import java.util.function.Consumer;
 
+import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Reflect;
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.TriState;
+import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.common.util.Result;
 import net.minecraftforge.event.level.BlockEvent;
@@ -67,6 +76,70 @@ import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
  */
 public final class KernelGameBlockEvents {
 	private KernelGameBlockEvents() {
+	}
+
+	/**
+	 * NeoForge {@code BlockEvent.EntityPlaceEvent} → MinecraftForge's, cancel carried back.
+	 *
+	 * <p>The merged {@code ItemStack.useOn} calls only NeoForge's {@code onPlaceItemIntoWorld}, because the
+	 * snapshot list it drains is NeoForge-typed — so placing a block was neither observed nor preventable for a
+	 * MinecraftForge mod, which is the other half of every protection rule.
+	 */
+	public static void installEntityPlace(Object neoBus) {
+		KernelGameEntityEvents.subscribe((net.neoforged.bus.api.IEventBus) neoBus,
+				net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent.class,
+				"BlockEvent.EntityPlaceEvent",
+				"a MinecraftForge mod cannot see or refuse a block being placed — the other half of every "
+						+ "protection rule, and of every block-logging mod's record",
+				KernelGameBlockEvents::firePlace);
+	}
+
+	/** Posts MinecraftForge's place event for one NeoForge placement. Package-private for the test. */
+	static boolean firePlace(net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent neo) {
+		net.minecraftforge.common.util.BlockSnapshot snapshot = translate(neo.getBlockSnapshot());
+		if (snapshot == null) return false;
+		return net.minecraftforge.event.level.BlockEvent.EntityPlaceEvent.BUS.post(
+				new net.minecraftforge.event.level.BlockEvent.EntityPlaceEvent(
+						snapshot, neo.getPlacedAgainst(), neo.getEntity()));
+	}
+
+	/**
+	 * The same snapshot under MinecraftForge's type, or null when it cannot be built.
+	 *
+	 * <p>Through the private constructor rather than {@code BlockSnapshot.create}, and that is the whole point: a
+	 * snapshot is taken BEFORE the block is placed and the event is posted AFTER, so {@code create} here would
+	 * capture the block that was just placed and call it the one that was replaced. A mod restoring the snapshot
+	 * on cancel would then put the new block back — the exact opposite of refusing the placement.
+	 *
+	 * <p>The update flags are the only thing that cannot be carried across: NeoForge's snapshot keeps them
+	 * privately and exposes no accessor. {@code UPDATE_ALL} is what both families' own {@code create(dim, level,
+	 * pos)} uses, so it is what a mod would have seen on a MinecraftForge instance in all but the rarest case.
+	 */
+	static net.minecraftforge.common.util.BlockSnapshot translate(
+			net.neoforged.neoforge.common.util.BlockSnapshot neo) {
+		if (neo == null) return null;
+		try {
+			return snapshotConstructor().newInstance(neo.getDimension(), neo.getLevel(), neo.getPos(),
+					neo.getState(), neo.getTag(), Block.UPDATE_ALL);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/EventMux] could not translate a block snapshot — a MinecraftForge mod cannot "
+					+ "see or refuse this placement", Reflect.unwrap(t));
+			return null;
+		}
+	}
+
+	private static volatile Constructor<net.minecraftforge.common.util.BlockSnapshot> snapshotConstructor;
+
+	private static Constructor<net.minecraftforge.common.util.BlockSnapshot> snapshotConstructor() throws Exception {
+		Constructor<net.minecraftforge.common.util.BlockSnapshot> cached = snapshotConstructor;
+		if (cached != null) return cached;
+		Constructor<net.minecraftforge.common.util.BlockSnapshot> found =
+				net.minecraftforge.common.util.BlockSnapshot.class.getDeclaredConstructor(
+						ResourceKey.class, LevelAccessor.class, BlockPos.class, BlockState.class, CompoundTag.class,
+						int.class);
+		found.setAccessible(true);
+		snapshotConstructor = found;
+		return found;
 	}
 
 	/** NeoForge {@code RightClickBlock} → MinecraftForge's, with both tri-state decisions carried back. */

@@ -219,7 +219,8 @@ public final class KernelRuntimeClasses {
 				new Call("installBlockBreak", void.class, Object.class),
 				new Call("installRightClickBlock", void.class, Object.class),
 				new Call("installLeftClickBlock", void.class, Object.class),
-				new Call("installRightClickItem", void.class, Object.class))));
+				new Call("installRightClickItem", void.class, Object.class),
+				new Call("installEntityPlace", void.class, Object.class))));
 		// MinecraftForge's picture-in-picture renderers. The merged GuiRenderer's constructor calls build()
 		// directly, so a renamed entry point here is a NoSuchMethodError inside the game's own constructor.
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgePipRenderers", new Entry(Origin.COMPILED, List.of(

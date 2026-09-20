@@ -73,12 +73,25 @@ class DeadEventAuditTest {
 		assertTrue(findings.get(0).cost().contains("tooltip"), findings.get(0).cost());
 	}
 
+	/**
+	 * Placing a block is bridged now, so it is a finding only when the bridge is NOT installed.
+	 *
+	 * <p>Both halves, because each alone passes on a broken audit: the row must still exist and still say what a
+	 * player loses — that is what names the mod when someone turns the bridges off — and it must stop being
+	 * reported the moment the bridge is there, or the Mods screen marks a mod degraded for a gap that is closed.
+	 */
 	@Test
-	void aForgeEntityPlaceListenerIsAFinding() {
-		List<DeadEventAudit.Finding> findings = DeadEventAudit.audit(
-				Map.of("logmod", Set.of(ENTITY_PLACE)), EnumSet.allOf(GameEventBridge.class));
-		assertEquals(1, findings.size(), "routePlaceItemHookToNeoForge's stated cost");
-		assertTrue(findings.get(0).cost().contains("placement"), findings.get(0).cost());
+	void aForgeEntityPlaceListenerIsAFindingOnlyWithoutItsBridge() {
+		List<DeadEventAudit.Finding> unbridged = DeadEventAudit.audit(
+				Map.of("logmod", Set.of(ENTITY_PLACE)), EnumSet.noneOf(GameEventBridge.class));
+		assertEquals(1, unbridged.size(), "routePlaceItemHookToNeoForge's stated cost");
+		// The cost now comes from the BRIDGE, not the dead row: an event with a bridge that did not install is
+		// reported with the bridge's own sentence, which is the one that says what this particular mod loses.
+		assertTrue(unbridged.get(0).cost().contains("refuse a block being placed"), unbridged.get(0).cost());
+
+		assertTrue(DeadEventAudit.audit(Map.of("logmod", Set.of(ENTITY_PLACE)),
+				EnumSet.allOf(GameEventBridge.class)).isEmpty(),
+				"with the bridge installed the listener runs, so naming its mod would be a false alarm");
 	}
 
 	@Test

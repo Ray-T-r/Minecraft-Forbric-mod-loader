@@ -566,6 +566,24 @@ public class ForbricLiveMod {
 		}
 
 		/**
+		 * Placing a block — the other half of every protection rule, and of every block-logging mod's record.
+		 *
+		 * <p>Reports the snapshot's REPLACED state as well as refusing: the snapshot is taken before the block is
+		 * placed, so a bridge that rebuilt it after the fact would hand a mod the block that was just placed and
+		 * call it the one that was there. A mod restoring that on cancel would put the new block back.
+		 */
+		@SubscribeEvent
+		public static boolean onEntityPlace(net.minecraftforge.event.level.BlockEvent.EntityPlaceEvent event) {
+			boolean probe = isProbe(event.getEntity() instanceof net.minecraft.world.entity.player.Player player
+					? player : null);
+			System.out.println("[ForbricLive/PLACE] EntityPlaceEvent RECEIVED at " + event.getPos()
+					+ " replaced=" + net.minecraft.core.registries.BuiltInRegistries.BLOCK
+							.getKey(event.getBlockSnapshot().getReplacedBlock().getBlock())
+					+ " probe=" + probe);
+			return probe;
+		}
+
+		/**
 		 * Whether this is the canary's own synthetic interaction, made on behalf of NeoForge's fake player.
 		 *
 		 * <p>Named as text because this mod is compiled against MinecraftForge's carrier alone. Refusing a REAL

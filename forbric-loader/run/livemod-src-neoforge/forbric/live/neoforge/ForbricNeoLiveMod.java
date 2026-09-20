@@ -99,6 +99,17 @@ public class ForbricNeoLiveMod {
 						breaker, net.minecraft.world.InteractionHand.MAIN_HAND);
 				net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(item);
 				System.out.println("[ForbricNeoLive/INTERACT] right-click-item refused=" + item.isCanceled());
+
+				// Placing a block. The snapshot is taken BEFORE the block is placed and the event posted after, so
+				// the one the bridge hands MinecraftForge has to carry the REPLACED state — a mod restoring it on
+				// cancel must put back what was there, not what was just placed.
+				var snapshot = net.neoforged.neoforge.common.util.BlockSnapshot.create(
+						level.dimension(), level, pos);
+				var placed = new net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent(
+						snapshot, level.getBlockState(pos.below()), breaker);
+				net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(placed);
+				System.out.println("[ForbricNeoLive/PLACE] posted EntityPlaceEvent at " + pos
+						+ " refused=" + placed.isCanceled());
 			} catch (Throwable failure) {
 				System.out.println("[ForbricNeoLive/BLOCKBREAK] probe FAILED: " + failure);
 			}

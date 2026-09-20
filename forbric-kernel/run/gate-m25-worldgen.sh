@@ -141,6 +141,19 @@ check "and the live table is the one it left behind" \
   'ForbricLive/LOOT\] saw [1-9][0-9]* table\(s\); forbriclive:probe now rolls 0 item' "$LOG"
 check_absent "the read-back did not fail" 'ForbricLive/LOOT\] read-back FAILED' "$LOG"
 
+step "a MinecraftForge mod can still refuse a block being PLACED (must PASS)"
+# The merged ItemStack.useOn calls only NeoForge's onPlaceItemIntoWorld, because the snapshot list it drains is
+# NeoForge-typed, so the MinecraftForge event went with it — the other half of every protection rule.
+#
+# The REPLACED block is asserted, not just the refusal. A snapshot is taken before the block is placed and the
+# event posted after, so a bridge that rebuilt the snapshot at forward time would hand a mod the block that was
+# just placed and call it the one that was there — and a mod restoring that on cancel would put the new block
+# back, which is the exact opposite of refusing the placement.
+check "the MinecraftForge canary received the placement" \
+  'ForbricLive/PLACE\] EntityPlaceEvent RECEIVED at .* replaced=minecraft:[a-z_]* probe=true' "$LOG"
+check "and its refusal reached the event the game reads" \
+  'ForbricNeoLive/PLACE\] posted EntityPlaceEvent at .* refused=true' "$LOG"
+
 step "the saved overworld contains both markers, with no unreadable chunks"
 # REGION_PROBE_BEGIN — execute this exact command with an argv recorder in the contract test.
 python3 "$KERNEL/run/compat/region-probe.py" "$RUNDIR/world/dimensions/minecraft/overworld/region" \

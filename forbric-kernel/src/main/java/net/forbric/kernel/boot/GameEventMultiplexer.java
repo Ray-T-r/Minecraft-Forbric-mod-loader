@@ -130,6 +130,10 @@ public final class GameEventMultiplexer {
 			// KernelLootBridge, which chains NeoForge then Fabric, and this puts MinecraftForge's event in
 			// between. Installed here so the switch and the dead-event audit treat it like every other bridge.
 			install(GameEventBridge.LOOT_TABLE_LOAD, () -> lootBridge(cl).invoke(null));
+			// Placing a block. The merged ItemStack.useOn calls only NeoForge's onPlaceItemIntoWorld, because the
+			// snapshot list it drains is NeoForge-typed, so the MinecraftForge event went with it.
+			install(GameEventBridge.ENTITY_PLACE_BLOCK,
+					() -> blockBridge(cl, "installEntityPlace").invoke(null, neoBus));
 			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
 			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so

@@ -104,6 +104,9 @@ public enum GameEventBridge {
 			"a MinecraftForge mod cannot see or refuse an item being used in hand"),
 	LOOT_TABLE_LOAD(Pass.GAME_BUS, "LootTableLoadEvent",
 			"loot tables a MinecraftForge mod adds to or replaces on load are left exactly as loaded"),
+	ENTITY_PLACE_BLOCK(Pass.GAME_BUS, "BlockEvent.EntityPlaceEvent",
+			"a MinecraftForge mod cannot see or refuse a block being placed — the other half of every protection "
+					+ "rule, and of every block-logging mod's record"),
 	CLIENT_TICK_PRE(Pass.CLIENT_GAME_BUS, "ClientTickEvent.Pre",
 			"a MinecraftForge mod polls its key bindings from the client tick (consumeClick drains a counter and "
 					+ "has to be drained every tick), so its keys bind, appear in the Controls screen and do "
