@@ -505,6 +505,27 @@ public class ForbricLiveMod {
 					+ "dispatcher (" + event.getDispatcher().getRoot().getChildren().size() + " root nodes)");
 		}
 
+		/**
+		 * Breaking a block — the event a claim or protection mod lives on.
+		 *
+		 * <p>{@code ServerPlayerGameMode} on the merged base posts only NeoForge's {@code BreakBlockEvent} and
+		 * branches on its {@code isCanceled()}; it carries no MinecraftForge hook at all, so without the bridge
+		 * this listener never runs and the block simply breaks while the mod looks healthy.
+		 *
+		 * <p>It REFUSES the break, and only the probe one: the canary's synthetic post is made on behalf of
+		 * NeoForge's fake player, and a real break is not. Refusing every break would turn this fixture into a
+		 * protection mod for every other gate. The class is named as text because this mod is compiled against
+		 * MinecraftForge's carrier alone and cannot see NeoForge's.
+		 */
+		@SubscribeEvent
+		public static void onBlockBreak(net.minecraftforge.event.level.BlockEvent.BreakEvent event) {
+			boolean probe = event.getPlayer() != null
+					&& event.getPlayer().getClass().getName().endsWith("util.FakePlayer");
+			if (probe) event.setResult(net.minecraftforge.common.util.Result.DENY);
+			System.out.println("[ForbricLive/BLOCKBREAK] BreakEvent RECEIVED at " + event.getPos()
+					+ " probe=" + probe + " refused=" + probe);
+		}
+
 		/** Login. {@code PlayerList} on the merged base is 13 NeoForge hook references to 0 MinecraftForge. */
 		@SubscribeEvent
 		public static void onPlayerLoggedIn(

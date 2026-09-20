@@ -212,6 +212,10 @@ public final class KernelRuntimeClasses {
 				new Call("installLivingDeath", void.class, Object.class),
 				new Call("installLivingDrops", void.class, Object.class),
 				new Call("installEntityJoinLevel", void.class, Object.class))));
+		// The cancellable BLOCK events, apart from the entity ones because they name NeoForge's block-event
+		// package; a renamed entry point here is a protection mod that stops protecting, silently.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameBlockEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installBlockBreak", void.class, Object.class))));
 		// The CLIENT tick, in its own class because it names NeoForge's client event package — a dedicated server
 		// must never be made to resolve those types, and keeping them apart means it never loads the class.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientTickEvents", new Entry(Origin.COMPILED, List.of(

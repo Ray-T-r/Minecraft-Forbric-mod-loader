@@ -57,6 +57,28 @@ public class ForbricNeoLiveMod {
 			} catch (Throwable failure) {
 				System.out.println("[ForbricNeoLive/WORLDGEN] probe FAILED: " + failure);
 			}
+			// The Neo->Forge block-break bridge, driven from the one side that can name the NeoForge event.
+			//
+			// ServerPlayerGameMode posts exactly this event and branches on isCanceled() afterwards, so posting it
+			// here reproduces the seam a MinecraftForge protection mod depends on. The Forge canary refuses it
+			// (its listener writes DENY for a player-less probe), and the refusal must come back as isCanceled()
+			// on THIS event — a forward that observes but does not carry the veto gives that mod a listener which
+			// runs, decides and is ignored, which looks like it works.
+			try {
+				var level = event.getServer().overworld();
+				var pos = new net.minecraft.core.BlockPos(0, 64, 0);
+				// A real player, because MinecraftForge's BreakEvent constructor asks the player which tool it is
+				// holding and NPEs on null before any listener runs. NeoForge's own fake player is what a mod
+				// breaking a block on nobody's behalf uses, so it is also the honest stand-in here.
+				var breaker = net.neoforged.neoforge.common.util.FakePlayerFactory.getMinecraft(level);
+				var probe = new net.neoforged.neoforge.event.level.block.BreakBlockEvent(
+						level, pos, level.getBlockState(pos), breaker);
+				net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(probe);
+				System.out.println("[ForbricNeoLive/BLOCKBREAK] posted BreakBlockEvent at " + pos
+						+ " refused=" + probe.isCanceled());
+			} catch (Throwable failure) {
+				System.out.println("[ForbricNeoLive/BLOCKBREAK] probe FAILED: " + failure);
+			}
 			try {
 				var structures = event.getServer().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.STRUCTURE);
 				var mineshaft = structures.getOrThrow(net.minecraft.world.level.levelgen.structure.BuiltinStructures.MINESHAFT).value();

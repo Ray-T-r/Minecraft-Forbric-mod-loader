@@ -100,7 +100,7 @@ public final class KernelGameEntityEvents {
 
 	/** The MinecraftForge side of one cancellable event. Returns true when MinecraftForge cancelled it. */
 	@FunctionalInterface
-	private interface ForgeVeto<E> {
+	interface ForgeVeto<E> {
 		boolean fire(E neoEvent) throws Throwable;
 	}
 
@@ -111,7 +111,7 @@ public final class KernelGameEntityEvents {
 	 * caller that reads {@code isCanceled()} afterwards, and it means every NeoForge listener has already had its
 	 * say before a MinecraftForge mod is asked.
 	 */
-	private static <E extends Event & ICancellableEvent> void subscribe(IEventBus bus, Class<E> event, String name,
+	static <E extends Event & ICancellableEvent> void subscribe(IEventBus bus, Class<E> event, String name,
 			String cost, ForgeVeto<E> forge) {
 		AtomicBoolean warned = new AtomicBoolean();
 		bus.addListener(EventPriority.LOWEST, false, event, neoEvent -> {

@@ -156,6 +156,7 @@ public final class DeadEventAudit {
 		map.put("net/minecraftforge/event/entity/living/LivingDeathEvent", GameEventBridge.LIVING_DEATH);
 		map.put("net/minecraftforge/event/entity/living/LivingDropsEvent", GameEventBridge.LIVING_DROPS);
 		map.put("net/minecraftforge/event/entity/EntityJoinLevelEvent", GameEventBridge.ENTITY_JOIN_LEVEL);
+		map.put("net/minecraftforge/event/level/BlockEvent$BreakEvent", GameEventBridge.BLOCK_BREAK);
 		// The registration events lifted by the Phase 1 A repairs. ForgeHooksClient.initClientHooks posts the
 		// first eleven (three directly, eight through the Forge managers' init()); the merged Minecraft.<init>
 		// now calls it through KernelForgeClientInit. The next three have one redirect each.

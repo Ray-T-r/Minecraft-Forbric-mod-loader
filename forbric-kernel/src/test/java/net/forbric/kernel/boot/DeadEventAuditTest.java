@@ -39,6 +39,13 @@ import net.forbric.api.GameEventBridge;
 @org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
 class DeadEventAuditTest {
 	private static final String BREAK = "net/minecraftforge/event/level/BlockEvent$BreakEvent";
+	/**
+	 * An event with NO bridge, for the two cases that need one.
+	 *
+	 * <p>{@code BREAK} stopped being that the day {@link GameEventBridge#BLOCK_BREAK} landed: an event the kernel
+	 * bridges is reported through the PENDING path instead, judged once the server is up, so a test written on it
+	 * was silently testing the other half. Chat has no bridge and the merged base posts only NeoForge's decorator.
+	 */
 	private static final String CHAT = "net/minecraftforge/event/ServerChatEvent";
 	private static final String COMMANDS = "net/minecraftforge/event/RegisterCommandsEvent";
 	private static final String DEATH = "net/minecraftforge/event/entity/living/LivingDeathEvent";
@@ -100,14 +107,15 @@ class DeadEventAuditTest {
 			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
 					net.forbric.api.Ecosystem.FORGE, "claimmod", "Claim", "1", "", List.of(), "claim.jar", "", "")));
 			Map<String, Set<String>> subscribed = new java.util.LinkedHashMap<>();
-			subscribed.put("claimmod", Set.of(BREAK));
-			subscribed.put("a.b.OrphanSubscriber", Set.of(BREAK));
+			subscribed.put("claimmod", Set.of(CHAT));
+			subscribed.put("a.b.OrphanSubscriber", Set.of(CHAT));
 			DeadEventAudit.report(subscribed);
 			assertEquals(1, net.forbric.api.ModCatalog.failures().size(), "the class-keyed listener invents no row");
 			net.forbric.api.ModCatalog.Entry claim = net.forbric.api.ModCatalog.failures().get(0);
 			assertEquals("claimmod", claim.modId());
 			assertEquals(net.forbric.api.ModCatalog.Status.DEGRADED, claim.status());
-			assertTrue(claim.statusDetail().contains("BlockEvent.BreakEvent") && claim.statusDetail().contains("protect"), claim.statusDetail());
+			assertTrue(claim.statusDetail().contains("ServerChatEvent") && claim.statusDetail().contains("chat"),
+					claim.statusDetail());
 		} finally {
 			net.forbric.api.ModCatalog.publish(previous);
 		}

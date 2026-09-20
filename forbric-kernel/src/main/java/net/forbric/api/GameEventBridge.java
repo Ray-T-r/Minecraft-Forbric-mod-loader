@@ -91,6 +91,9 @@ public enum GameEventBridge {
 	ENTITY_JOIN_LEVEL(Pass.GAME_BUS, "EntityJoinLevelEvent",
 			"a MinecraftForge mod that refuses an entity entry to the world — mob filters, anti-farm rules, spawn "
 					+ "control — is overruled silently"),
+	BLOCK_BREAK(Pass.GAME_BUS, "BlockEvent.BreakEvent",
+			"a MinecraftForge claim or protection mod does not protect and a block-logging mod records nothing — "
+					+ "the block simply breaks, with the mod loaded and its listener registered"),
 	CLIENT_TICK_PRE(Pass.CLIENT_GAME_BUS, "ClientTickEvent.Pre",
 			"a MinecraftForge mod polls its key bindings from the client tick (consumeClick drains a counter and "
 					+ "has to be drained every tick), so its keys bind, appear in the Controls screen and do "

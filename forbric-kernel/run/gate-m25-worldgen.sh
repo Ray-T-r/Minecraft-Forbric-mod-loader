@@ -86,6 +86,24 @@ check "Forge modifiers changed structures"     'Forbric/Worldgen\] MinecraftForg
 check "Forge structure probe saw its spawn"    'ForbricLive/WORLDGEN\] mineshaft creature override has minecraft:mooshroom = true' "$LOG"
 check "NeoForge structure probe saw its spawn" 'ForbricNeoLive/WORLDGEN\] mineshaft creature override has minecraft:llama = true' "$LOG"
 
+step "a MinecraftForge mod can still refuse a block break (must PASS)"
+# ServerPlayerGameMode on the merged base posts only NeoForge's BreakBlockEvent and branches on its isCanceled();
+# it carries no MinecraftForge hook at all. So a MinecraftForge claim or protection mod's BreakEvent listener
+# never ran, and the cost was silent both ways round: the mod loaded, its listener was registered, and the block
+# simply broke.
+#
+# Both halves are asserted, because either alone passes with the bridge half-built. The Forge canary must RECEIVE
+# the event, and its refusal must come back as isCanceled() on the NeoForge event the game reads — a forward that
+# observes but drops the veto gives that mod a listener which runs, decides and is ignored, which looks like it
+# works. RED with M25_EXTRA_JVM=-Dforbric.unifiedEvents=off: both lines go red, and so do this gate's other
+# MinecraftForge-side checks — that switch turns off EVERY Neo->Forge bridge, including the server-lifecycle one
+# the worldgen probes ride on. There is no narrower switch, so the demonstration is read together with the rest.
+check "the MinecraftForge canary received the break" \
+  'ForbricLive/BLOCKBREAK\] BreakEvent RECEIVED at .* probe=true refused=true' "$LOG"
+check "and its refusal reached the event the game reads" \
+  'ForbricNeoLive/BLOCKBREAK\] posted BreakBlockEvent at .* refused=true' "$LOG"
+check_absent "the probe did not fail" 'BLOCKBREAK\] probe FAILED' "$LOG"
+
 step "the saved overworld contains both markers, with no unreadable chunks"
 # REGION_PROBE_BEGIN — execute this exact command with an argv recorder in the contract test.
 python3 "$KERNEL/run/compat/region-probe.py" "$RUNDIR/world/dimensions/minecraft/overworld/region" \

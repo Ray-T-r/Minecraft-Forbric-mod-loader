@@ -112,6 +112,11 @@ public final class GameEventMultiplexer {
 					() -> entityBridge(cl, "installLivingDrops").invoke(null, neoBus));
 			install(GameEventBridge.ENTITY_JOIN_LEVEL,
 					() -> entityBridge(cl, "installEntityJoinLevel").invoke(null, neoBus));
+			// Breaking a block. ServerPlayerGameMode posts only NeoForge's BreakBlockEvent and branches on its
+			// isCanceled(); there is no MinecraftForge hook in that class at all. Same cancellable shape as the
+			// three above, in its own class because it names NeoForge's block-event package.
+			install(GameEventBridge.BLOCK_BREAK,
+					() -> blockBridge(cl, "installBlockBreak").invoke(null, neoBus));
 			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
 			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so
@@ -221,6 +226,12 @@ public final class GameEventMultiplexer {
 	/** One entry point on the game-side cancellable-entity bridge. Complete literal, for the reason above. */
 	private static Method entityBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameEntityEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side cancellable-block bridge. Complete literal, for the reason above. */
+	private static Method blockBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameBlockEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 
