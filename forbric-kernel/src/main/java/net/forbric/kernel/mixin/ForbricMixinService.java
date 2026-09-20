@@ -275,6 +275,9 @@ public final class ForbricMixinService
 		// The one seam MixinInfo.loadMixinClass reads a mixin through: a retarget plan the adapter remembered for
 		// this mixin is applied to the node Mixin receives, never to jar bytes.
 		MixinRetarget.applyRemembered(name, node);
+		// …and a single-point injector compiled with an array-valued `at` (another Mixin fork's shape) is given the
+		// shape this Mixin declares, before MixinExtras' pre-apply transformer casts it.
+		MixinAtShape.normalise(node);
 
 		return node;
 	}
