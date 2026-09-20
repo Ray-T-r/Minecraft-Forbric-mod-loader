@@ -57,6 +57,11 @@ class MergedBaseAnonymousDriftTest {
 		String identity() {
 			return superName + "|" + methods;
 		}
+
+		/** The same class, possibly with methods a patch ADDED: every vanilla method is still there, same superclass. */
+		boolean stillHolds(Shape vanilla) {
+			return superName.equals(vanilla.superName) && methods.containsAll(vanilla.methods);
+		}
 	}
 
 	@Test
@@ -74,7 +79,10 @@ class MergedBaseAnonymousDriftTest {
 			Shape v = e.getValue();
 			Shape m = mergedShapes.get(name);
 			if (m == null) { missing++; continue; }
-			if (v.identity().equals(m.identity())) {
+			// NeoForge ADDS methods to anonymous classes it patches (MappedRegistry$2 gains getData/getDataMap,
+			// CompoundTag$1 gains readNamedTagType): still the class vanilla compiled there. Only a vanilla method
+			// that is GONE from $N says the name now holds a different class.
+			if (m.stillHolds(v)) {
 				if (!v.ctorDesc().equals(m.ctorDesc()) || !v.captures().equals(m.captures())) captureOnly.add(name);
 				continue;
 			}

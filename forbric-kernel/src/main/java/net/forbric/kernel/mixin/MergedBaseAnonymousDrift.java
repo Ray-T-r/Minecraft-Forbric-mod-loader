@@ -29,8 +29,10 @@ import java.util.Set;
  * {@code $12}. A mixin targeting {@code ByteBufCodecs$13} applies cleanly, every anchor resolves, and its
  * injections bind to unrelated code. Nothing else can see that.
  *
- * <p>Three buckets, derived from vanilla and the merged base by {@code MergedBaseAnonymousDriftTest} (the
- * non-{@code <init>} method set is the identity of an anonymous class):
+ * <p>Three buckets, derived from vanilla and the merged base by {@code MergedBaseAnonymousDriftTest}. The
+ * identity of an anonymous class is its superclass plus its non-{@code <init>} method set, and a patch may ADD
+ * methods to it (NeoForge gives {@code MappedRegistry$2} data-map accessors): {@code $N} still holds vanilla's
+ * class while every vanilla method is there. Only a vanilla method that is GONE from {@code $N} says otherwise:
  * <ul>
  *   <li>{@link #RELOCATED}: vanilla's method set exists at another {@code $M} of the same outer class — the
  *       candidates are listed, several when the body is duplicated.</li>
@@ -69,48 +71,25 @@ public final class MergedBaseAnonymousDrift {
 			Map.entry("net/minecraft/network/codec/ByteBufCodecs$33", List.of("net/minecraft/network/codec/ByteBufCodecs$16", "net/minecraft/network/codec/ByteBufCodecs$18", "net/minecraft/network/codec/ByteBufCodecs$4", "net/minecraft/network/codec/ByteBufCodecs$5", "net/minecraft/network/codec/ByteBufCodecs$6")),
 			Map.entry("net/minecraft/server/commands/FunctionCommand$1", List.of("net/minecraft/server/commands/FunctionCommand$2", "net/minecraft/server/commands/FunctionCommand$3", "net/minecraft/server/commands/FunctionCommand$4", "net/minecraft/server/commands/FunctionCommand$5")),
 			Map.entry("net/minecraft/server/commands/FunctionCommand$5", List.of("net/minecraft/server/commands/FunctionCommand$1")),
-			Map.entry("net/minecraft/util/BoundedFloatFunction$1", List.of("net/minecraft/util/BoundedFloatFunction$2", "net/minecraft/util/BoundedFloatFunction$3")),
-			Map.entry("net/minecraft/util/BoundedFloatFunction$2", List.of("net/minecraft/util/BoundedFloatFunction$1")),
-			Map.entry("net/minecraft/world/item/Item$TooltipContext$2", List.of("net/minecraft/world/item/Item$TooltipContext$1", "net/minecraft/world/item/Item$TooltipContext$3")));
+			Map.entry("net/minecraft/util/BoundedFloatFunction$2", List.of("net/minecraft/util/BoundedFloatFunction$1")));
 
 	public static final Set<String> RESHAPED = Set.of(
-			"net/minecraft/client/gui/screens/worldselection/AbstractGameRulesScreen$RuleList$1",
-			"net/minecraft/commands/CommandBuildContext$1",
-			"net/minecraft/commands/Commands$2",
-			"net/minecraft/commands/Commands$2$1",
-			"net/minecraft/core/HolderLookup$Provider$1",
-			"net/minecraft/core/HolderLookup$RegistryLookup$1",
-			"net/minecraft/core/MappedRegistry$2",
-			"net/minecraft/core/MappedRegistry$3",
-			"net/minecraft/core/RegistryAccess$1",
-			"net/minecraft/core/RegistrySetBuilder$3",
-			"net/minecraft/core/RegistrySetBuilder$BuildState$1",
-			"net/minecraft/core/component/DataComponentMap$1",
-			"net/minecraft/core/component/DataComponentMap$2",
-			"net/minecraft/core/component/DataComponentMap$3",
 			"net/minecraft/data/recipes/RecipeProvider$Runner$1",
-			"net/minecraft/data/tags/TagAppender$1",
-			"net/minecraft/gametest/framework/GameTestHelper$1",
-			"net/minecraft/gametest/framework/GameTestHelper$2",
-			"net/minecraft/gametest/framework/GameTestHelper$3",
-			"net/minecraft/locale/Language$1",
-			"net/minecraft/nbt/CompoundTag$1",
-			"net/minecraft/network/codec/ByteBufCodecs$31",
-			"net/minecraft/network/protocol/BundlerInfo$1",
-			"net/minecraft/server/level/ServerPlayer$3",
-			"net/minecraft/server/permissions/LevelBasedPermissionSet$1",
-			"net/minecraft/world/entity/vehicle/minecart/MinecartSpawner$1",
-			"net/minecraft/world/level/block/entity/SpawnerBlockEntity$1",
-			"net/minecraft/world/level/storage/ValueInputContextHelper$3");
+			"net/minecraft/network/codec/ByteBufCodecs$31");
 
 	public static final Set<String> CAPTURE_ONLY = Set.of(
 			"net/minecraft/client/gui/components/ChatComponent$1",
+			"net/minecraft/data/tags/TagAppender$1",
+			"net/minecraft/locale/Language$1",
 			"net/minecraft/network/codec/ByteBufCodecs$11",
 			"net/minecraft/resources/RegistryDataLoader$1",
 			"net/minecraft/server/commands/FunctionCommand$3",
 			"net/minecraft/server/network/ServerLoginPacketListenerImpl$1",
+			"net/minecraft/util/BoundedFloatFunction$1",
+			"net/minecraft/world/item/Item$TooltipContext$2",
 			"net/minecraft/world/item/ItemStack$1",
-			"net/minecraft/world/item/ItemStack$2");
+			"net/minecraft/world/item/ItemStack$2",
+			"net/minecraft/world/level/block/entity/SpawnerBlockEntity$1");
 
 	private MergedBaseAnonymousDrift() {
 	}
