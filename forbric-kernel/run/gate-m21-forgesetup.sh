@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# RED controls: M21_EXTRA_JVM='-Dforbric.forgeSpawnPlacements=off' / '-Dforbric.forgeCreativeTabs=off'.
+# RED controls: M21_EXTRA_JVM='-Dforbric.forgeSpawnPlacements=off' / '-Dforbric.forgeCreativeTabs=off' /
+#               '-Dforbric.forgeConditions=off' (I8: the dual-dialect element fails MinecraftForge's strict codec).
 # Client counterpart: M26_EXTRA_JVM='-Dforbric.forgeClientInit=off'. Existing setup controls remain ordinary RED.
 # M21 gate — the mod-loading SETUP lifecycle reaches BOTH Forge families, and what a listener defers actually runs.
 #
@@ -168,6 +169,15 @@ step "a recipe with a MinecraftForge ingredient type parses (H4: forge:intersect
 check "the forge:intersection recipe is present"    '\[ForbricLive/RECIPE\] forbriclive:forge_intersection present = true' "$LOG"
 check "the kernel counted the Forge ingredient type" 'MinecraftForge ingredient type forge:intersection decoded' "$LOG"
 check_absent "no parse failure for the canary recipe" "Couldn't parse data file 'forbriclive:forge_intersection'" "$LOG"
+
+step "a dual-dialect datapack element is kept by the MinecraftForge condition leniency (I8)"
+# The NeoForge canary ships forbricneolive:dual_dialect — an Architectury-style biome_modifier carrying a
+# `forge:condition` of type neoforge:true. NeoForge ignores the key; MinecraftForge's ConditionCodec reads it on the
+# merged datapack-registry path and does not know that type, so KernelForgeConditions keeps the element instead of
+# failing the whole registry load. RED with M21_EXTRA_JVM=-Dforbric.forgeConditions=off (strict CODEC.parse error
+# → 'Failed to load registries due to errors' → no Done).
+check "the MinecraftForge leniency fired on a real datapack element" "resource condition 'neoforge:true' is not in MinecraftForge's condition registry" "$LOG"
+check_absent "registries loaded"                             "Failed to load registries due to errors" "$LOG"
 
 # M21_REGISTRATION_ASSERTIONS_BEGIN — the Phase 1 A registration hooks; green since A8 landed the bridge inventory.
 check "common registration canary subscribed" 'ForbricLive/REGISTRATION\] subscribed to Forge spawn and creative registration events' "$LOG"

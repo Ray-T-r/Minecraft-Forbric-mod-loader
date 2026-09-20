@@ -1,0 +1,6 @@
+{
+  "type": "neoforge:remove_spawns",
+  "biomes": "#minecraft:is_overworld",
+  "entity_types": [],
+  "forge:condition": {"type": "neoforge:true"}
+}

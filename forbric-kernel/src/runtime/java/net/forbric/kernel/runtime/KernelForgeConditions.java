@@ -174,9 +174,18 @@ public final class KernelForgeConditions {
 			if (name.isEmpty()) return null;
 			return known.test(name.get()) ? null : name.get();
 		} catch (Throwable t) {
+			// A judgement that cannot be made hands the input to the strict codec — but silently is how a leniency
+			// stops applying without anyone noticing, so the first failure is named.
+			if (!judgementFailureReported) {
+				judgementFailureReported = true;
+				ForbricLog.warn("[Forbric/Conditions] could not judge a resource condition's type against "
+						+ "MinecraftForge's registry — the strict codec decides this one and every later one", t);
+			}
 			return null;
 		}
 	}
+
+	private static volatile boolean judgementFailureReported;
 
 	/** {@code -Dforbric.forgeConditionContext=off}: the Forge event answers {@code EMPTY} instead of adapting NeoForge's. */
 	public static final String CONTEXT_PROPERTY = "forbric.forgeConditionContext";
