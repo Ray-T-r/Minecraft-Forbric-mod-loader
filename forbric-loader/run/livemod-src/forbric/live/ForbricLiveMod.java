@@ -130,9 +130,52 @@ public class ForbricLiveMod {
 		net.minecraftforge.fml.event.config.ModConfigEvent.Reloading.getBus(ctx.getModBusGroup())
 				.addListener(e -> logConfig("RELOADING", e.getConfig()));
 		System.out.println("[ForbricLive/CFG] registered SERVER config forbriclive-server.toml (greeting default 'default')");
+		registerRegistrationProbes(ctx);
 		registerSetupLifecycle(ctx);
 		registerClient(ctx);
 		reportForeignMods();
+	}
+
+	/** Register through Forge's genuine buses; only the patched game may deliver these events. */
+	private static void registerRegistrationProbes(FMLJavaModLoadingContext ctx) {
+		net.minecraftforge.event.entity.SpawnPlacementRegisterEvent.BUS.addListener(event -> {
+			event.register(net.minecraft.world.entity.EntityTypes.ZOMBIE,
+					net.minecraft.world.entity.SpawnPlacementTypes.ON_GROUND,
+					net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE,
+					net.minecraft.world.entity.monster.Monster::checkMonsterSpawnRules,
+					net.minecraftforge.event.entity.SpawnPlacementRegisterEvent.Operation.REPLACE);
+			System.out.println("[ForbricLive/REGISTRATION] SpawnPlacementRegisterEvent RECEIVED");
+		});
+		net.minecraftforge.event.BuildCreativeModeTabContentsEvent.BUS.addListener(event -> {
+			if (!event.getTabKey().equals(net.minecraft.world.item.CreativeModeTabs.BUILDING_BLOCKS)) return;
+			event.accept(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.COMMAND_BLOCK),
+					net.minecraft.world.item.CreativeModeTab.TabVisibility.PARENT_AND_SEARCH_TABS);
+			System.out.println("[ForbricLive/REGISTRATION] BuildCreativeModeTabContentsEvent RECEIVED: minecraft:building_blocks");
+		});
+		net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent.getBus(ctx.getModBusGroup())
+				.addListener(event -> event.enqueueWork(() -> {
+					System.out.println("[ForbricLive/REGISTRATION] zombie heightmap="
+							+ net.minecraft.world.entity.SpawnPlacements.getHeightmapType(net.minecraft.world.entity.EntityTypes.ZOMBIE));
+					try {
+						var tab = BuiltInRegistries.CREATIVE_MODE_TAB.getValue(net.minecraft.world.item.CreativeModeTabs.BUILDING_BLOCKS);
+						tab.buildContents(new net.minecraft.world.item.CreativeModeTab.ItemDisplayParameters(
+								net.minecraft.world.flag.FeatureFlags.DEFAULT_FLAGS, true,
+								net.minecraft.core.RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY)));
+						observeCreativeContents("load complete");
+					} catch (Throwable failure) {
+						System.out.println("[ForbricLive/REGISTRATION] creative contents probe failed: " + failure);
+					}
+					System.out.println("[ForbricLive/REGISTRATION] common registration observations completed");
+				}));
+		System.out.println("[ForbricLive/REGISTRATION] subscribed to Forge spawn and creative registration events");
+	}
+
+	/** Read the tab's materialized parent and search collections, never the event's mutable request map. */
+	static void observeCreativeContents(String phase) {
+		var tab = BuiltInRegistries.CREATIVE_MODE_TAB.getValue(net.minecraft.world.item.CreativeModeTabs.BUILDING_BLOCKS);
+		boolean parent = tab.getDisplayItems().stream().anyMatch(stack -> stack.is(net.minecraft.world.item.Items.COMMAND_BLOCK));
+		boolean search = tab.getSearchTabDisplayItems().stream().anyMatch(stack -> stack.is(net.minecraft.world.item.Items.COMMAND_BLOCK));
+		System.out.println("[ForbricLive/REGISTRATION] injection VISIBLE: " + parent + " search=" + search + " phase=" + phase);
 	}
 
 	/**
