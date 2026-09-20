@@ -168,6 +168,7 @@ public final class DuplicateModArbiter {
 		topLevelClaims = List.copyOf(claims);
 		topLevelAliases = List.copyOf(universalAliases);
 		Decision decision = arbitrate(claims, universalAliases);
+		for (String line : divergenceReport(claims, decision)) ForbricLog.info("%s", line);
 		writeOverrideTemplate(rundir, decision);
 		MergeReport.write(rundir, modsDir, decision);
 		cached = decision;
@@ -197,6 +198,60 @@ public final class DuplicateModArbiter {
 	 * @param nestedJars every nested jar both families extracted, in extraction order
 	 * @return a decision that suppresses everything phase one did, plus the nested losers
 	 */
+	/**
+	 * One line per suppressed jar whose build carries classes the winning build does not — report only. The
+	 * residual the Alias javadoc measures (Jade: 20 Fabric-only + 8 NeoForge-only) is what a mod on the losing side
+	 * cannot link against; a loser-only glue class is not a KNOWN loss, so nothing is marked — a confidently wrong
+	 * mark is worse than none. Zip listings only, no bytecode. Silent for a pair whose class sets agree.
+	 */
+	static List<String> divergenceReport(List<Claim> claims, Decision decision) {
+		List<String> lines = new ArrayList<>();
+		for (Claim loser : claims) {
+			if (!decision.suppressed(loser.jar())) continue;
+			Path winner = null;
+			for (String id : loser.modIds()) {
+				Path owner = decision.ownerByModId().get(id);
+				if (owner != null && !owner.equals(loser.jar().toAbsolutePath())) { winner = owner; break; }
+			}
+			if (winner == null) continue;
+			List<String> only = loserOnlyClasses(loser.jar(), winner);
+			if (only.isEmpty()) continue;
+			Ecosystem winnerFamily = null;
+			for (Claim claim : claims) if (claim.jar().toAbsolutePath().equals(winner)) winnerFamily = claim.ecosystem();
+			List<String> shown = only.subList(0, Math.min(8, only.size()));
+			lines.add("[Forbric/DupeId] " + loser.modIds().get(0) + ": the losing " + loser.ecosystem() + " build ("
+					+ loser.jar().getFileName() + ") carries " + only.size() + " class(es) the winning "
+					+ (winnerFamily == null ? "other" : winnerFamily.toString()) + " build does not: "
+					+ String.join(", ", shown) + (only.size() > shown.size() ? ", …" : ""));
+		}
+		return lines;
+	}
+
+	/** The .class entries (dotted, no extension) in {@code loser} that {@code winner} lacks; empty if either is unreadable. */
+	static List<String> loserOnlyClasses(Path loser, Path winner) {
+		Set<String> winning = classEntries(winner);
+		if (winning == null) return List.of();
+		Set<String> losing = classEntries(loser);
+		if (losing == null) return List.of();
+		List<String> only = new ArrayList<>();
+		for (String name : losing) if (!winning.contains(name)) only.add(name);
+		java.util.Collections.sort(only);
+		return only;
+	}
+
+	private static Set<String> classEntries(Path jar) {
+		Set<String> names = new LinkedHashSet<>();
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
+			for (java.util.zip.ZipEntry entry : zip.stream().toList()) {
+				String name = entry.getName();
+				if (name.endsWith(".class")) names.add(name.substring(0, name.length() - 6).replace('/', '.'));
+			}
+		} catch (java.io.IOException unreadable) {
+			return null;
+		}
+		return names;
+	}
+
 	public static synchronized Decision arbitrateNested(EnvType envType, List<Path> nestedJars) {
 		Decision phase1 = current();
 		if ("off".equalsIgnoreCase(System.getProperty(SWITCH, "on"))) return phase1;

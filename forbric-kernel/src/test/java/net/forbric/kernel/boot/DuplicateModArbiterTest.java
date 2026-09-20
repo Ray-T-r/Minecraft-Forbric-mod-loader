@@ -50,6 +50,36 @@ class DuplicateModArbiterTest {
 		System.clearProperty("forbric.dupeIdPreference");
 	}
 
+	@Test
+	void theDivergenceReportNamesLoserOnlyClasses(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+		Path fabric = jar(dir.resolve("x-fabric.jar"), "a/Shared", "a/FabricGlue", "a/Extra");
+		Path neo = jar(dir.resolve("x-neoforge.jar"), "a/Shared", "a/NeoGlue");
+		Decision d = new Decision(java.util.Set.of(fabric.toAbsolutePath()), Map.of("x", neo.toAbsolutePath()), List.of());
+		List<Claim> claims = List.of(new Claim(fabric, Ecosystem.FABRIC, List.of("x")), new Claim(neo, Ecosystem.NEOFORGE, List.of("x")));
+
+		List<String> lines = DuplicateModArbiter.divergenceReport(claims, d);
+		assertEquals(1, lines.size(), lines.toString());
+		assertTrue(lines.get(0).contains("x: the losing FABRIC build (x-fabric.jar) carries 2 class(es) the winning NEOFORGE build does not: a.Extra, a.FabricGlue"), lines.get(0));
+
+		Path same = jar(dir.resolve("y-fabric.jar"), "a/Shared");
+		Path sameNeo = jar(dir.resolve("y-neoforge.jar"), "a/Shared");
+		Decision agree = new Decision(java.util.Set.of(same.toAbsolutePath()), Map.of("y", sameNeo.toAbsolutePath()), List.of());
+		assertTrue(DuplicateModArbiter.divergenceReport(List.of(new Claim(same, Ecosystem.FABRIC, List.of("y")),
+				new Claim(sameNeo, Ecosystem.NEOFORGE, List.of("y"))), agree).isEmpty(), "identical class sets: silent");
+	}
+
+	private static Path jar(Path file, String... classes) throws Exception {
+		try (java.io.OutputStream out = java.nio.file.Files.newOutputStream(file);
+				java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(out)) {
+			for (String c : classes) {
+				zip.putNextEntry(new java.util.zip.ZipEntry(c + ".class"));
+				zip.write(new byte[] { (byte) 0xCA, (byte) 0xFE });
+				zip.closeEntry();
+			}
+		}
+		return file;
+	}
+
 	private static Claim claim(String jar, Ecosystem eco, String... ids) {
 		return new Claim(Path.of(jar), eco, List.of(ids));
 	}
