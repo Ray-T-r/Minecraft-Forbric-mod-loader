@@ -360,6 +360,84 @@ class MixinFitTest {
 				r.unresolved().toString());
 	}
 
+	/** A mixin with one @Inject(method="run") HEAD on the given target — every member anchor resolves. */
+	private static byte[] injectRun(String target) {
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, "test/TheMixin", null, "java/lang/Object", null);
+		org.objectweb.asm.AnnotationVisitor mixin = cw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+		org.objectweb.asm.AnnotationVisitor targets = mixin.visitArray("targets");
+		targets.visit(null, target);
+		targets.visitEnd();
+		mixin.visitEnd();
+		org.objectweb.asm.MethodVisitor mv = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PRIVATE, "handler",
+				"(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V", null, null);
+		org.objectweb.asm.AnnotationVisitor inject = mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", true);
+		org.objectweb.asm.AnnotationVisitor method = inject.visitArray("method");
+		method.visit(null, "run");
+		method.visitEnd();
+		org.objectweb.asm.AnnotationVisitor ats = inject.visitArray("at");
+		org.objectweb.asm.AnnotationVisitor at = ats.visitAnnotation(null, "Lorg/spongepowered/asm/mixin/injection/At;");
+		at.visit("value", "HEAD");
+		at.visitEnd();
+		ats.visitEnd();
+		inject.visitEnd();
+		mv.visitCode();
+		mv.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+		mv.visitMaxs(0, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	private static byte[] withRun(String name) {
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+		org.objectweb.asm.MethodVisitor mv = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC, "run", "()V", null, null);
+		mv.visitCode();
+		mv.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+		mv.visitMaxs(0, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/**
+	 * A renumbered anonymous class: every member anchor resolves, and the mixin still binds to the wrong class.
+	 * The soft anchor makes that PARTIAL (listed, kept) — never UNFIT, so nothing that works today is dropped.
+	 */
+	@Test
+	void aMixinOnARenumberedAnonymousClassIsPartialNeverUnfit() {
+		String relocated = "net/minecraft/network/codec/ByteBufCodecs$13";
+		MixinFit.Result r = MixinFit.evaluate(injectRun(relocated), name -> (relocated + ".class").equals(name) ? withRun(relocated) : null);
+		assertEquals(MixinFit.Verdict.PARTIAL, r.verdict(), r.unresolved().toString());
+		assertTrue(r.unresolved().get(0).startsWith("@Mixin target") && r.unresolved().get(0).contains("ByteBufCodecs$12"), r.unresolved().toString());
+		assertTrue(!r.shouldSuppress(), "PARTIAL is kept by default");
+
+		// With NO other anchor at all it is still PARTIAL: a soft miss can never make a mixin UNFIT.
+		MixinFit.Result alone = MixinFit.evaluate(shadowlessMixin(relocated), name -> (relocated + ".class").equals(name) ? withRun(relocated) : null);
+		assertEquals(MixinFit.Verdict.PARTIAL, alone.verdict(), alone.unresolved().toString());
+
+		// A capture-only drift (chat_heads' ChatComponent$1) is not flagged.
+		String captureOnly = "net/minecraft/client/gui/components/ChatComponent$1";
+		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(injectRun(captureOnly), name -> (captureOnly + ".class").equals(name) ? withRun(captureOnly) : null).verdict());
+		// And another mod's class of a drifted-looking name is not the game's: no soft anchor.
+		String foreign = "com/example/Thing$13";
+		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(injectRun(foreign), name -> (foreign + ".class").equals(name) ? withRun(foreign) : null, name -> false).verdict());
+	}
+
+	/** A mixin with no members at all — only the @Mixin annotation. */
+	private static byte[] shadowlessMixin(String target) {
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, "test/TheMixin", null, "java/lang/Object", null);
+		org.objectweb.asm.AnnotationVisitor mixin = cw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+		org.objectweb.asm.AnnotationVisitor targets = mixin.visitArray("targets");
+		targets.visit(null, target);
+		targets.visitEnd();
+		mixin.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
 	@Test
 	void aWildcardIsNotOursToJudge() {
 		assertNull(MixinFit.parseMember("render*"), "a wildcard target must stay unjudged, not resolve to nothing");

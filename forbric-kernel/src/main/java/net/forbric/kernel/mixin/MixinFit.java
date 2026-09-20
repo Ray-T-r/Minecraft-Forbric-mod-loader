@@ -189,6 +189,7 @@ public final class MixinFit {
 		List<String> orphaned = new ArrayList<>();
 		int resolved = 0;
 		int total = 0;
+		int softMisses = 0;
 
 		List<String> foreign = new ArrayList<>();
 		for (String targetName : targets) {
@@ -203,12 +204,21 @@ public final class MixinFit {
 			// same 1226 there is not one of the latter.
 			boolean gameOwned = gameClass.test(targetName.replace('/', '.'));
 
-			for (Anchor anchor : anchorsOf(mixin, target, targetResolver)) {
+			List<Anchor> anchors = new ArrayList<>(anchorsOf(mixin, target, targetResolver));
+			// A renumbered anonymous class: every member anchor may resolve and still belong to a different class
+			// than the one vanilla compiled at that name. Soft — it forces PARTIAL, never UNFIT.
+			if (gameOwned && MergedBaseAnonymousDrift.drifted(targetName)) {
+				anchors.add(new Anchor("@Mixin target", targetName.substring(targetName.lastIndexOf('/') + 1)
+						+ " is not the class vanilla compiled at that name (" + MergedBaseAnonymousDrift.describe(targetName)
+						+ ")", false, true));
+			}
+			for (Anchor anchor : anchors) {
 				total++;
 				if (anchor.resolved) {
 					resolved++;
 				} else {
 					unresolved.add(anchor.describe(targetName));
+					if (anchor.soft) softMisses++;
 					if (!gameOwned) foreign.add(anchor.describe(targetName));
 				}
 			}
@@ -219,7 +229,9 @@ public final class MixinFit {
 		// null at runtime. It outranks the count-based verdicts precisely because nothing else detects it.
 		if (!orphaned.isEmpty()) return new Result(Verdict.HAZARD, orphaned, resolved, total, List.of());
 		if (total == 0 || unresolved.isEmpty()) return new Result(Verdict.FIT, List.of(), resolved, total, List.of());
-		return new Result(resolved == 0 ? Verdict.UNFIT : Verdict.PARTIAL, unresolved, resolved, total,
+		// UNFIT is "no HARD anchor resolves"; a soft miss alone is PARTIAL, whatever else is there.
+		boolean anyHardResolved = resolved > 0 || unresolved.size() == softMisses;
+		return new Result(anyHardResolved ? Verdict.PARTIAL : Verdict.UNFIT, unresolved, resolved, total,
 				List.copyOf(foreign));
 	}
 
@@ -231,11 +243,18 @@ public final class MixinFit {
 		final String kind;
 		final String detail;
 		final boolean resolved;
+		/** Listed in the reason and worth PARTIAL, but never UNFIT: a soft anchor cannot get a mixin dropped. */
+		final boolean soft;
 
 		Anchor(String kind, String detail, boolean resolved) {
+			this(kind, detail, resolved, false);
+		}
+
+		Anchor(String kind, String detail, boolean resolved, boolean soft) {
 			this.kind = kind;
 			this.detail = detail;
 			this.resolved = resolved;
+			this.soft = soft;
 		}
 
 		String describe(String target) {

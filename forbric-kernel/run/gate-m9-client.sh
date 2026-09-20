@@ -183,6 +183,10 @@ check_absent "…and the kernel reports no unbound accessor for it" "guest acces
 # G6: ItemStack.addDetailsToTooltip is scrapeable again (vanilla's component order copied to its head from the
 # merge's own renamed body). RED with M9_EXTRA_JVM=-Dforbric.tooltipOrderScrape=off.
 check "vanilla's tooltip component order restored" "TooltipOrder\] restored a scrapeable vanilla component order of [2-9][0-9] type" "$LOG"
+# G7: no mixin in this pack lands on a renumbered vanilla anonymous class (chat_heads' ChatComponent$1 is
+# capture-only and must NOT be named). No RED demonstration is possible here — no staged mixin targets a
+# relocated name; the unit test carries the mechanism. This pins today's state.
+check_absent "no pack mixin lands on a renumbered anonymous class" "targets .* a renumbered anonymous class" "$LOG"
 # H5 (the FluidRenderer.tesselate funnel for MinecraftForge fluid models) is asserted in gate-m26, not here: this
 # pack carries sodium, which replaces vanilla's chunk and fluid meshing, so the vanilla funnel is never reached.
 

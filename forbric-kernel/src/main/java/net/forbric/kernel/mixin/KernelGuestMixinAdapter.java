@@ -176,6 +176,12 @@ public final class KernelGuestMixinAdapter {
 							}
 							continue;
 						}
+						String drifted = driftedTarget(fit);
+						if (drifted != null) {
+							ForbricLog.warn("[Forbric/Mixin] guest mixin %s:%s targets %s, a renumbered anonymous class — on this "
+									+ "base that name is a different class (%s); its injections bind to unrelated code",
+									MixinConfigOwners.describe(configName), mixin, drifted, MergedBaseAnonymousDrift.describe(drifted));
+						}
 						ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s applies only partially on the merged base "
 								+ "— %s (kept; -Dforbric.mixinFit=strict drops these)", MixinConfigOwners.describe(configName), mixin,
 								fit.reason());
@@ -243,6 +249,16 @@ public final class KernelGuestMixinAdapter {
 			if (added.isEmpty()) return;
 			suppress.addAll(added);
 		}
+	}
+
+	/** The drifted anonymous target a PARTIAL verdict names, or null. */
+	private static String driftedTarget(MixinFit.Result fit) {
+		for (String reason : fit.unresolved()) {
+			if (!reason.startsWith("@Mixin target ")) continue;
+			for (String name : MergedBaseAnonymousDrift.RELOCATED.keySet()) if (reason.contains(name.substring(name.lastIndexOf('/') + 1) + " is not")) return name;
+			for (String name : MergedBaseAnonymousDrift.RESHAPED) if (reason.contains(name.substring(name.lastIndexOf('/') + 1) + " is not")) return name;
+		}
+		return null;
 	}
 
 	/**
