@@ -100,6 +100,11 @@ public final class KernelMixinBootstrap {
 			Mixins.addConfiguration(config);
 		}
 		nameTheModsBehindTheConfigs();
+		// A mixin that fails to prepare or apply names its mod on the Mods screen and in load-report.txt. Mixin
+		// instantiates the handler by name through the service's class provider when the first error happens.
+		if (KernelMixinErrorHandler.enabled()) {
+			Mixins.registerErrorHandlerClass(KernelMixinErrorHandler.NAME);
+		}
 
 		IMixinTransformer transformer = resolveTransformer();
 		// Mixin is handed pre-mixin bytes, and null for a class in no owned jar — which is its class-GENERATION
