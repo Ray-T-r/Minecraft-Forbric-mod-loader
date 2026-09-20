@@ -77,6 +77,7 @@ public final class KernelGameServerLifecycle {
 					// The world is up, so whatever failed on the way there — a mixin applying to a class first
 					// loaded at world creation, a deferred task on the server thread — is known now. Integrated
 					// servers post this too, so the client's world load is covered.
+					net.forbric.kernel.boot.DeadEventAudit.judgePending();
 					net.forbric.kernel.boot.KernelLoadReport.write();
 				});
 	}

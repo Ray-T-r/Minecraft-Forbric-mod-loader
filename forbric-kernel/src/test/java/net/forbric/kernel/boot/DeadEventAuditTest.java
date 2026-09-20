@@ -69,6 +69,31 @@ class DeadEventAuditTest {
 	}
 
 	@Test
+	void aBridgeableEventIsJudgedOnceTheServerIsUpNotAtConstruction() {
+		List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			DeadEventAudit.resetPending();
+			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
+					net.forbric.api.Ecosystem.FORGE, "cmdmod", "Cmd", "1", "", List.of(), "cmd.jar", "", "")));
+			DeadEventAudit.report(Map.of("cmdmod", Set.of(COMMANDS)));
+			assertTrue(net.forbric.api.ModCatalog.failures().isEmpty(),
+					"Commands loads after mod construction on a dedicated server; judging now marked every mod with a command");
+			assertEquals(List.of(), DeadEventAudit.judgePending(EnumSet.of(GameEventBridge.REGISTER_COMMANDS)),
+					"the bridge installed by the time the server was up: nothing to say");
+			assertTrue(net.forbric.api.ModCatalog.failures().isEmpty());
+
+			DeadEventAudit.report(Map.of("cmdmod", Set.of(COMMANDS)));
+			List<DeadEventAudit.Finding> still = DeadEventAudit.judgePending(EnumSet.noneOf(GameEventBridge.class));
+			assertEquals(1, still.size(), "a bridge STILL absent once the server is up is the real finding");
+			assertEquals("cmdmod", net.forbric.api.ModCatalog.failures().get(0).modId());
+			assertTrue(DeadEventAudit.judgePending(EnumSet.noneOf(GameEventBridge.class)).isEmpty(), "judged once");
+		} finally {
+			DeadEventAudit.resetPending();
+			net.forbric.api.ModCatalog.publish(previous);
+		}
+	}
+
+	@Test
 	void aFindingMarksTheModDegradedAndAClassKeyedOneMarksNobody() {
 		List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
 		try {

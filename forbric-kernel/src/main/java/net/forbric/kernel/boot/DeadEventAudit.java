@@ -226,7 +226,57 @@ public final class DeadEventAudit {
 			ForbricLog.debug("[Forbric/DeadEvents] -D%s=off — not reporting merge-lost game events", PROPERTY);
 			return;
 		}
-		List<Finding> findings = audit(subscribedByMod, EventBridges.installed());
+		// A bridgeable event is judged once the server is up, not here: most bridges install when their target class
+		// is transformed, and RegisterCommandsEvent's target (Commands) loads AFTER mod construction on a dedicated
+		// server — reporting it now named every Forge mod with a command as broken, on every boot, and since the
+		// finding marks the row that was a false DEGRADED on the Mods screen. The listeners are kept and judged by
+		// judgePending() from the ServerStarted hook, when every bridge has had its target.
+		Map<String, Set<String>> deadNow = new LinkedHashMap<>(), bridgeable = new LinkedHashMap<>();
+		for (Map.Entry<String, Set<String>> mod : subscribedByMod.entrySet()) {
+			for (String event : mod.getValue()) {
+				(BRIDGED.containsKey(event) ? bridgeable : deadNow).computeIfAbsent(mod.getKey(), k -> new LinkedHashSet<>()).add(event);
+			}
+		}
+		synchronized (PENDING) {
+			for (Map.Entry<String, Set<String>> e : bridgeable.entrySet()) {
+				PENDING.computeIfAbsent(e.getKey(), k -> new LinkedHashSet<>()).addAll(e.getValue());
+			}
+		}
+		if (!bridgeable.isEmpty()) {
+			ForbricLog.info("[Forbric/DeadEvents] %d mod(s) listen for bridged Forge-family events; judged once the server is up",
+					bridgeable.size());
+		}
+		report(audit(deadNow, EventBridges.installed()));
+	}
+
+	/** mod id → the bridgeable events it listens for, judged by {@link #judgePending()}. */
+	private static final Map<String, Set<String>> PENDING = new LinkedHashMap<>();
+
+	/** The deferred judgement: a bridgeable event whose bridge is STILL not installed once the server is up. */
+	public static void judgePending() {
+		judgePending(EventBridges.installed());
+	}
+
+	static List<Finding> judgePending(Set<GameEventBridge> installed) {
+		if (!enabled()) return List.of();
+		Map<String, Set<String>> pending;
+		synchronized (PENDING) {
+			pending = new LinkedHashMap<>();
+			for (var e : PENDING.entrySet()) pending.put(e.getKey(), new LinkedHashSet<>(e.getValue()));
+			PENDING.clear();
+		}
+		List<Finding> findings = audit(pending, installed);
+		report(findings);
+		return findings;
+	}
+
+	static void resetPending() {
+		synchronized (PENDING) {
+			PENDING.clear();
+		}
+	}
+
+	private static void report(List<Finding> findings) {
 		if (findings.isEmpty()) return;
 
 		Map<String, Set<String>> modsByEvent = new LinkedHashMap<>();

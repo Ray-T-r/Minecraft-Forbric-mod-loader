@@ -278,6 +278,8 @@ public final class ForbricMixinService
 		// …and a single-point injector compiled with an array-valued `at` (another Mixin fork's shape) is given the
 		// shape this Mixin declares, before MixinExtras' pre-apply transformer casts it.
 		MixinAtShape.normalise(node);
+		// …and a locals capture that would throw an Error no handler sees is made to skip and warn instead.
+		MixinLocalsCapture.soften(node);
 
 		return node;
 	}
