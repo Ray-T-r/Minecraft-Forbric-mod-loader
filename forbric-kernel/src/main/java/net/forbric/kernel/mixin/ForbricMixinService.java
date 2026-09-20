@@ -272,6 +272,9 @@ public final class ForbricMixinService
 			throws ClassNotFoundException, IOException {
 		ClassNode node = new ClassNode();
 		new ClassReader(getClassBytes(name, runTransformers)).accept(node, readerFlags);
+		// The one seam MixinInfo.loadMixinClass reads a mixin through: a retarget plan the adapter remembered for
+		// this mixin is applied to the node Mixin receives, never to jar bytes.
+		MixinRetarget.applyRemembered(name, node);
 
 		return node;
 	}

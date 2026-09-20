@@ -145,6 +145,25 @@ public final class KernelGuestMixinAdapter {
 								MixinConfigOwners.describe(configName), mixin, String.join(", ", fit.foreign()));
 						ForeignMixinBreaks.record(configName, mixin, fit.foreign());
 					} else if (fit.verdict() == MixinFit.Verdict.PARTIAL) {
+						// Before reporting a PARTIAL, ask whether it is one the merge MADE: an injector bound by
+						// explicit descriptor to a merge-added delegating stub whose body moved. If rebinding it to
+						// the delegate makes the mixin fit, remember the plan; Mixin receives the rewritten
+						// annotation from the bytecode provider.
+						MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(classBytes), resource);
+						MixinFit.Result after = plan.isEmpty() ? null : MixinFit.evaluate(
+								MixinRetarget.rewritten(classBytes, plan), resource,
+								net.forbric.kernel.classloading.DelegationPolicy::alwaysGame);
+						if (after != null && after.unresolved().size() < fit.unresolved().size()) {
+							MixinRetarget.remember(plan);
+							ForbricLog.info("[Forbric/Mixin] retargeted guest mixin %s:%s — %s; verdict %s→%s",
+									MixinConfigOwners.describe(configName), mixin, plan.describe(), fit.verdict(),
+									after.verdict());
+							if (after.verdict() == MixinFit.Verdict.PARTIAL) {
+								ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s still applies only partially — %s",
+										MixinConfigOwners.describe(configName), mixin, after.reason());
+							}
+							continue;
+						}
 						ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s applies only partially on the merged base "
 								+ "— %s (kept; -Dforbric.mixinFit=strict drops these)", MixinConfigOwners.describe(configName), mixin,
 								fit.reason());

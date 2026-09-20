@@ -74,7 +74,7 @@ public final class MixinFit {
 	private static final String AT_DESC = "Lorg/spongepowered/asm/mixin/injection/At;";
 
 	/** Injector annotations whose {@code method} value names one or more target methods on the mixin's target. */
-	private static final Set<String> INJECTOR_DESCS = Set.of(
+	static final Set<String> INJECTOR_DESCS = Set.of(
 			"Lorg/spongepowered/asm/mixin/injection/Inject;",
 			"Lorg/spongepowered/asm/mixin/injection/Redirect;",
 			"Lorg/spongepowered/asm/mixin/injection/ModifyVariable;",
@@ -89,7 +89,7 @@ public final class MixinFit {
 			"Lcom/llamalad7/mixinextras/injector/wrapmethod/WrapMethod;");
 
 	/** {@code @At} values whose {@code target} names a member that must appear INSIDE the injected method. */
-	private static final Set<String> RESOLVABLE_AT = Set.of("INVOKE", "INVOKE_ASSIGN", "FIELD");
+	static final Set<String> RESOLVABLE_AT = Set.of("INVOKE", "INVOKE_ASSIGN", "FIELD");
 
 	public enum Verdict {
 		/** Every anchor resolved; apply the mixin unmodified. */
@@ -486,7 +486,7 @@ public final class MixinFit {
 	}
 
 	/** Whether {@code method}'s body contains the invocation or field access {@code at} names. */
-	private static boolean containsMember(MethodNode method, String at) {
+	static boolean containsMember(MethodNode method, String at) {
 		Member want = parseMember(at);
 		if (want == null || method.instructions == null) return true;  // unparseable: assume present
 
@@ -666,7 +666,7 @@ public final class MixinFit {
 		return read(bytes, true);
 	}
 
-	private static AnnotationNode injectorOf(MethodNode m) {
+	static AnnotationNode injectorOf(MethodNode m) {
 		AnnotationNode a = firstOf(m.visibleAnnotations);
 		return a != null ? a : firstOf(m.invisibleAnnotations);
 	}
@@ -680,7 +680,7 @@ public final class MixinFit {
 	}
 
 	/** The {@code @At} annotations nested in an injector's {@code at}/{@code slice} values. */
-	private static List<AnnotationNode> atNodes(AnnotationNode injector) {
+	static List<AnnotationNode> atNodes(AnnotationNode injector) {
 		List<AnnotationNode> out = new ArrayList<>();
 		Object at = value(injector, "at");
 		if (at instanceof AnnotationNode single && AT_DESC.equals(single.desc)) {
@@ -693,7 +693,7 @@ public final class MixinFit {
 		return out;
 	}
 
-	private static Object value(AnnotationNode a, String key) {
+	static Object value(AnnotationNode a, String key) {
 		if (a == null || a.values == null) return null;
 		for (int i = 0; i + 1 < a.values.size(); i += 2) {
 			if (key.equals(a.values.get(i))) return a.values.get(i + 1);
@@ -701,7 +701,7 @@ public final class MixinFit {
 		return null;
 	}
 
-	private static List<String> stringList(Object value) {
+	static List<String> stringList(Object value) {
 		if (value instanceof String s) return List.of(s);
 		if (!(value instanceof List<?> list)) return Collections.emptyList();
 		List<String> out = new ArrayList<>();
@@ -711,7 +711,7 @@ public final class MixinFit {
 		return out;
 	}
 
-	private static String asString(Object value) {
+	static String asString(Object value) {
 		if (value instanceof String s) return s;
 		// @At(value=…) is a plain String; an enum would arrive as String[]{desc, name}.
 		if (value instanceof String[] enumValue && enumValue.length == 2) return enumValue[1];
