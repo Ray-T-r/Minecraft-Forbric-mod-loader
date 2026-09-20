@@ -388,8 +388,8 @@ public final class KernelLifecycle {
 	private static void loadEarlyConfigs(ClassLoader cl, Side side) {
 		if ("off".equalsIgnoreCase(System.getProperty("forbric.earlyConfigs", "on"))) {
 			ForbricLog.warn("[Forbric/Lifecycle] early config loading DISABLED (-Dforbric.earlyConfigs=off) — "
-					+ "no STARTUP or COMMON spec is loaded and ModConfigEvent.Loading never fires, so a mod that "
-					+ "reads its own config during world setup gets null");
+					+ "Forge and NeoForge COMMON/CLIENT configs are not opened by the kernel; mods may keep "
+					+ "defaults or read unloaded values");
 			return;
 		}
 		// STARTUP is deliberately absent — see the game side, which explains what naming it would cost.
@@ -399,11 +399,32 @@ public final class KernelLifecycle {
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not load NeoForge configs", unwrap(t));
 		}
+		try {
+			Class<?> forge = forgeConfigClass(cl);
+			if (forge != null) forge.getMethod("loadEarly", List.class).invoke(null, forgeEarlyConfigTypes(side));
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not load MinecraftForge configs", unwrap(t));
+		}
 	}
 
 	/** The game-side half of config loading. */
 	private static Class<?> configClass(ClassLoader cl) throws ClassNotFoundException {
 		return Class.forName("net.forbric.kernel.runtime.KernelConfigLoad", true, cl);
+	}
+
+	/** The carrier itself owns configs even if no third-party Forge mod was installed. */
+	private static Class<?> forgeConfigClass(ClassLoader cl) throws ClassNotFoundException {
+		try {
+			Class.forName(ForeignType.CONFIG_TRACKER.binary(Ecosystem.FORGE), false, cl);
+		} catch (ClassNotFoundException absent) {
+			return null;
+		}
+		return Class.forName("net.forbric.kernel.runtime.KernelForgeConfigLoad", true, cl);
+	}
+
+	/** Forge has no STARTUP type; its native config phase opens CLIENT before COMMON. */
+	static List<String> forgeEarlyConfigTypes(Side side) {
+		return side.isClient() ? List.of("CLIENT", "COMMON") : List.of("COMMON");
 	}
 
 	/**
@@ -437,6 +458,21 @@ public final class KernelLifecycle {
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not open late-registered NeoForge configs", unwrap(t));
 		}
+		try {
+			Class<?> forge = forgeConfigClass(cl);
+			Object result = forge == null ? null : forge.getMethod("openLate", List.class)
+					.invoke(null, forgeLateConfigTypes(side));
+			if (result instanceof List<?> opened && !opened.isEmpty()) {
+				ForbricLog.info("[Forbric/Lifecycle] opened %d late-registered MinecraftForge config(s) after %s %s",
+						opened.size(), when, opened);
+			}
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not open late-registered MinecraftForge configs", unwrap(t));
+		}
+	}
+
+	static List<String> forgeLateConfigTypes(Side side) {
+		return forgeEarlyConfigTypes(side);
 	}
 
 	/**

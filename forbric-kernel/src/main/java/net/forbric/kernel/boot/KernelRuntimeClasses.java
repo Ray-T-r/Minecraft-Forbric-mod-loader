@@ -143,6 +143,9 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelConfigLoad", new Entry(Origin.COMPILED, List.of(
 				new Call("loadEarly", void.class, List.class),
 				new Call("openLate", List.class, List.class))));
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeConfigLoad", new Entry(Origin.COMPILED, List.of(
+				new Call("loadEarly", void.class, List.class),
+				new Call("openLate", List.class, List.class))));
 		// Called by game bytecode; its signatures name Minecraft client types, not boot-side seam types.
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeClientInit", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeBlockColors", new Entry(Origin.COMPILED, List.of()));
