@@ -162,6 +162,13 @@ check "the kernel counted the bridged listeners"   'bridged [1-9][0-9]* Minecraf
 check "the event hands out a live condition context" '\[ForbricLive/RELOAD\] context=live' "$LOG"
 check_absent "no NoSuchMethodError on getConditionContext" 'NoSuchMethodError.*getConditionContext' "$LOG"
 
+step "a recipe with a MinecraftForge ingredient type parses (H4: forge:intersection)"
+# RED control: M21_EXTRA_JVM='-Dforbric.forgeIngredients=off' (present = false, no count line; the merged base then logs
+#   "Couldn't parse data file 'forbriclive:forge_intersection': DataResult.Error['List is too short: 0, ...']").
+check "the forge:intersection recipe is present"    '\[ForbricLive/RECIPE\] forbriclive:forge_intersection present = true' "$LOG"
+check "the kernel counted the Forge ingredient type" 'MinecraftForge ingredient type forge:intersection decoded' "$LOG"
+check_absent "no parse failure for the canary recipe" "Couldn't parse data file 'forbriclive:forge_intersection'" "$LOG"
+
 # M21_REGISTRATION_ASSERTIONS_BEGIN — the Phase 1 A registration hooks; green since A8 landed the bridge inventory.
 check "common registration canary subscribed" 'ForbricLive/REGISTRATION\] subscribed to Forge spawn and creative registration events' "$LOG"
 check "common registration observations completed" 'ForbricLive/REGISTRATION\] common registration observations completed' "$LOG"

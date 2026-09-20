@@ -75,11 +75,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	@Override
 	public AnchorSet anchors() {
-		// Thirty-four independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
+		// Thirty-five independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("34 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("35 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -122,6 +122,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= addTheMissingNbtBuilderFactory(node);
 			changed |= postMinecraftForgesReloadListenerEvent(node);
 			changed |= giveMinecraftForgesReloadEventItsConditionContext(node);
+			changed |= letMinecraftForgeIngredientTypesDecode(node);
 			changed |= dropStubsThatBypassARealSuperclassMethod(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
@@ -229,6 +230,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String FORGE_ICONDITION = ForeignType.ICONDITION.internal(Ecosystem.FORGE);
 	private static final String KERNEL_FORGE_CONDITIONS = "net/forbric/kernel/runtime/KernelForgeConditions";
 	private static final String KERNEL_FORGE_RELOAD = "net/forbric/kernel/runtime/KernelForgeReload";
+	private static final String KERNEL_FORGE_INGREDIENTS = "net/forbric/kernel/runtime/KernelForgeIngredients";
+	/** NeoForge-only: MinecraftForge composes its ingredient codec in ForgeHooks, so ForeignType has no pair. */
+	private static final String NEO_INGREDIENT_CODECS = "net/neoforged/neoforge/common/crafting/IngredientCodecs";
+	private static final String CODEC_TO_CODEC = "(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;";
 	private static final String RELOADABLE_SERVER_RESOURCES = "net/minecraft/server/ReloadableServerResources";
 	private static final String RELOAD_HOOK_DESC = "(L" + RELOADABLE_SERVER_RESOURCES
 			+ ";Lnet/minecraft/core/RegistryAccess;Ljava/util/Map;)Ljava/util/List;";
@@ -495,6 +500,57 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		ForbricLog.info("[Forbric/MergedBaseCompat] MinecraftForge's AddReloadListenerEvent now gets a condition context "
 				+ "adapted from NeoForge's (1 call site) — the Forge-typed accessor it compiled against does not "
 				+ "exist on the merged ReloadableServerResources, so asking for it was a NoSuchMethodError");
+		return true;
+	}
+
+	/**
+	 * Lets MinecraftForge ingredient types decode through the carrier's own dispatch.
+	 *
+	 * <p>Merged {@code Ingredient.<clinit>} stores {@code IngredientCodecs.codec(base)} into the single
+	 * {@code CODEC} with no Forge dispatch in front of it, so {@code forge:intersection} & co. were a recipe
+	 * parsing error. One instruction inserted immediately before that {@code PUTSTATIC}:
+	 * {@code KernelForgeIngredients.alsoAskMinecraftForge(Codec)Codec}, which returns
+	 * {@code ForgeHooks.ingredientBaseCodec(neo)} — Forge's real {@code either(registry dispatch, base)} with the
+	 * NeoForge codec as its base. Raw {@code Codec} in and out, stack unchanged; the shape of
+	 * {@link #letFabricResourceConditionsDecide}. Recognised only when the previous real instruction is NeoForge's
+	 * factory; already-wrapped stands down (idempotent), anything else stands down and says so. The kill switch
+	 * lives in the helper ({@code -Dforbric.forgeIngredients=off}).
+	 */
+	private static boolean letMinecraftForgeIngredientTypesDecode(ClassNode node) {
+		if (!"net/minecraft/world/item/crafting/Ingredient".equals(node.name)) return false;
+		MethodNode clinit = findMethod(node, "<clinit>", "()V");
+		if (clinit == null) return false;
+		FieldInsnNode store = null;
+		for (AbstractInsnNode insn = clinit.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTSTATIC
+					&& node.name.equals(field.owner) && "CODEC".equals(field.name)
+					&& "Lcom/mojang/serialization/Codec;".equals(field.desc)) {
+				if (store != null) {
+					ForbricLog.warn("[Forbric/MergedBaseCompat] Ingredient.<clinit> stores CODEC more than once — not "
+							+ "wrapping it, because the Forge dispatch would then cover one store and not the other");
+					return false;
+				}
+				store = field;
+			}
+		}
+		if (store == null) return false;
+		AbstractInsnNode previous = store.getPrevious();
+		while (previous != null && previous.getOpcode() < 0) previous = previous.getPrevious();
+		if (previous instanceof MethodInsnNode already && KERNEL_FORGE_INGREDIENTS.equals(already.owner)) {
+			return false;                       // already wrapped: idempotent
+		}
+		if (!(previous instanceof MethodInsnNode factory) || factory.getOpcode() != Opcodes.INVOKESTATIC
+				|| !NEO_INGREDIENT_CODECS.equals(factory.owner) || !"codec".equals(factory.name)
+				|| !CODEC_TO_CODEC.equals(factory.desc)) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] Ingredient.CODEC is not stored straight from NeoForge's "
+					+ "IngredientCodecs.codec — leaving it alone rather than wrapping an unrecognised shape");
+			return false;
+		}
+		clinit.instructions.insertBefore(store, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FORGE_INGREDIENTS,
+				"alsoAskMinecraftForge", CODEC_TO_CODEC, false));
+		ForbricLog.info("[Forbric/MergedBaseCompat] Ingredient.CODEC now asks MinecraftForge's ingredient serializers "
+				+ "before NeoForge's — forge:intersection/difference/compound/nbt and mod-registered Forge ingredient "
+				+ "types were a recipe parsing error on the merged base");
 		return true;
 	}
 

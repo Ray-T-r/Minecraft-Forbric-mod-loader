@@ -444,6 +444,15 @@ public class ForbricLiveMod {
 			} catch (Throwable failure) {
 				System.out.println("[ForbricLive/NBT] BlockPos.toCompoundTag() FAILED: " + failure);
 			}
+			// H4: a recipe whose ingredient is a MinecraftForge type (forge:intersection) must have parsed.
+			try {
+				boolean present = event.getServer().getRecipeManager().byKey(net.minecraft.resources.ResourceKey.create(
+						net.minecraft.core.registries.Registries.RECIPE,
+						Identifier.fromNamespaceAndPath("forbriclive", "forge_intersection"))).isPresent();
+				System.out.println("[ForbricLive/RECIPE] forbriclive:forge_intersection present = " + present);
+			} catch (Throwable failure) {
+				System.out.println("[ForbricLive/RECIPE] forbriclive:forge_intersection probe FAILED: " + failure);
+			}
 			checkItem("forbrictest", "test_item");
 			checkItem("forbricfab", "fab_item");
 			checkItem("mcwbridges", "pliers");

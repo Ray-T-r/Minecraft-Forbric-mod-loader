@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    {
+      "type": "forge:intersection",
+      "children": [
+        "#minecraft:logs",
+        "#minecraft:oak_logs"
+      ]
+    }
+  ],
+  "result": {
+    "id": "minecraft:stick",
+    "count": 1
+  }
+}
