@@ -33,6 +33,8 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -44,6 +46,15 @@ import org.junit.jupiter.api.io.TempDir;
  * no report — it sends them to change the one thing that was already right.
  */
 class MergeReportTest {
+	private Locale originalLocale;
+
+	@BeforeEach void useEnglishForReportAssertions() {
+		originalLocale = Locale.getDefault();
+		Locale.setDefault(Locale.ENGLISH);
+	}
+
+	@AfterEach void restoreSystemLanguage() { Locale.setDefault(originalLocale); }
+
 	@Test
 	void theRunningCopyAndTheSupersededOneAreNotSwapped(@TempDir Path dir) throws Exception {
 		Path mods = Files.createDirectories(dir.resolve("mods"));
