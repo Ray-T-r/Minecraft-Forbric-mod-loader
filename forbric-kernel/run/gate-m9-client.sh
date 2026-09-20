@@ -563,6 +563,23 @@ check "and it says which member differs" \
   "Forbric/PortAudit\].*registerConfig.*Lnet/neoforged/fml/ModContainer;" "$LOG"
 check_absent "nothing actually failed on that API" "NoSuchMethodError.*ConfigTracker" "$LOG"
 
+step "a mixin the kernel took over does not report a loss that did not happen (must PASS)"
+# fabric-resource-conditions' SimpleJsonResourceReloadListenerMixin cannot apply here: NeoForge's patch of
+# scanDirectory made the value Optional and reordered the lambda's captures, so the descriptor Mixin expects is
+# not the one the mod was built against. BOTH of that mixin's members are the fabric:load_conditions evaluator,
+# and the kernel does that job one level down on ConditionalOps' own funnel — covering every consumer instead of
+# this one call site.
+#
+# So the mod lost nothing, and marking it reports a loss that did not happen. A report that cries wolf is worse
+# than no report: the next real one is read the same way. RED with M9_EXTRA_JVM=-Dforbric.supersededMixins=off,
+# which turns it back into an ordinary marked failure — that is how the claim gets checked against the game.
+check "the failure is reported as superseded, not as a loss" \
+  "Forbric/Mixin\].*SimpleJsonResourceReloadListenerMixin failed to apply.*so its mod is not marked" "$LOG"
+check_absent "and its mod is not marked" \
+  "Forbric/Mixin\].*SimpleJsonResourceReloadListenerMixin.*is marked" "$LOG"
+check "and the conditions are still judged by someone" \
+  "Forbric/Conditions\] Fabric's own resource-condition evaluator is live" "$LOG"
+
 step "each carrier's own screens have their own text (must PASS)"
 # The carriers keep a second translation table beside Minecraft's, because the text on it -- the loading screen,
 # the mod list, the branding line under the logo -- has to render before a resource pack exists. FMLTranslations

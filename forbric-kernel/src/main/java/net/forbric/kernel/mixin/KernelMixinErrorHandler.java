@@ -69,6 +69,15 @@ public final class KernelMixinErrorHandler implements IMixinErrorHandler {
 		String mixinName = mixin == null ? "?" : mixin.getClassName();
 		String cause = th == null ? "" : " (" + th.getClass().getSimpleName() + ")";
 		String modId = configName == null ? null : MixinConfigOwners.modIdOf(configName);
+		String replacement = SupersededMixins.replacementFor(mixinName);
+		if (replacement != null) {
+			// Not a loss, so not a mark: a report that cries wolf is worse than no report, because the next real
+			// one is read the same way.
+			ForbricLog.info("[Forbric/Mixin] %s:%s %s%s — %s, so its mod is not marked",
+					configName == null ? "?" : MixinConfigOwners.describe(configName), mixinName, what, cause,
+					replacement);
+			return;
+		}
 		ForbricLog.warn("[Forbric/Mixin] %s:%s %s%s — Mixin's own report follows; the owning mod%s",
 				configName == null ? "?" : MixinConfigOwners.describe(configName), mixinName, what, cause,
 				modId == null ? " is not known, so no row is marked" : " " + modId + " is marked");

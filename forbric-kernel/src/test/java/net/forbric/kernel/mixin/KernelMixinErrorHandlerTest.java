@@ -80,6 +80,46 @@ class KernelMixinErrorHandlerTest {
 		assertTrue(ModCatalog.failures().get(0).statusDetail().contains("BarMixin"));
 	}
 
+	/**
+	 * A mixin the kernel has taken over is not a loss, so its mod is not marked.
+	 *
+	 * <p>Both halves: no row, and the action still unchanged — suppressing the MARK must never suppress Mixin's
+	 * own decision about the failure, which is what keeps a required config erroring.
+	 */
+	@Test
+	void aMixinTheKernelSupersedesDoesNotMarkItsMod() {
+		String superseded = SupersededMixins.all().keySet().iterator().next();
+		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
+
+		IMixinErrorHandler.ErrorAction out = new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo",
+				new RuntimeException("boom"), info("s.mixins.json", superseded),
+				IMixinErrorHandler.ErrorAction.WARN);
+
+		assertSame(IMixinErrorHandler.ErrorAction.WARN, out, "attribution never changes Mixin's own decision");
+		assertTrue(ModCatalog.failures().isEmpty(),
+				"the kernel does this mixin's job itself, so marking its mod reports a loss that did not happen");
+	}
+
+	/** With the switch off it is an ordinary failure again — which is how the claim in each entry gets checked. */
+	@Test
+	void theSupersededSwitchTurnsThemBackIntoOrdinaryFailures() {
+		String previousValue = System.getProperty(SupersededMixins.PROPERTY);
+		try {
+			System.setProperty(SupersededMixins.PROPERTY, "off");
+			String superseded = SupersededMixins.all().keySet().iterator().next();
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
+
+			new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo", new RuntimeException("boom"),
+					info("s.mixins.json", superseded), IMixinErrorHandler.ErrorAction.WARN);
+
+			assertEquals(1, ModCatalog.failures().size());
+			assertTrue(ModCatalog.failures().get(0).statusDetail().contains(superseded));
+		} finally {
+			if (previousValue == null) System.clearProperty(SupersededMixins.PROPERTY);
+			else System.setProperty(SupersededMixins.PROPERTY, previousValue);
+		}
+	}
+
 	@Test
 	void theActionIsNeverChanged() {
 		IMixinErrorHandler handler = new KernelMixinErrorHandler();
