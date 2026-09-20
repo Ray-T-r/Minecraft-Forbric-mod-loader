@@ -116,6 +116,13 @@ implementation lands. `gate-m27-frame.sh` requires the 97-jar pack and a PNG new
 than the current launch. Gate headers document `M25_NO_DATA`, `M26_EXTRA_JVM`,
 `M27_SHOT_TICKS`, and `M27_FRAME` negative controls.
 
+`gate-m28-forgeconfig.sh` opens a fresh dedicated-server fixture, checks both the
+canary and Forge's own COMMON files, then changes the canary value from 11 to 73
+while the server is running. Only a new Reloading event within 40 seconds and a
+matching file readback pass. `M28_EXTRA_JVM=-Dforbric.earlyConfigs=off` is its negative
+control. `gate-m16-forge-handshake.sh` also checks that the client loads its CLIENT
+config exactly once while the dedicated server creates no CLIENT file.
+
 After each step, run `./gradlew --offline cleanTest test`, read the JUnit XML, and
 deliberately break new behavior once to verify the test fails. After a workstream,
 run its gate and negative controls plus every gate. Phase 0 ends with all gates and

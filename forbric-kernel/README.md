@@ -88,6 +88,7 @@ onwards as unfinished long after their gates were passing — so the scripts the
 | `gate-m25-worldgen` | biome modifier canaries leave distinct blocks in saved regions; the Forge half starts as expected red |
 | `gate-m26-forgeclient` | the Forge client receives key, renderer and creative-tab registration events; starts as expected red |
 | `gate-m27-frame` | the 97-jar client produces a fresh, non-black Minecraft screenshot |
+| `gate-m28-forgeconfig` | Forge COMMON configs load once, then its native watcher reads a live file edit; dedicated servers never open CLIENT configs |
 
 `run/compat/gates-all.sh` discovers and runs every gate in numerical order, including network/GUI gates;
 an intentional `--skip <script.sh>` is printed in the results. Portable Windows baseline collection and

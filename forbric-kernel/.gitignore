@@ -9,6 +9,7 @@ run/client-merged-pack/
 # and the server regenerates a fresh management-server-secret on every boot — which is why the rundirs that
 # ARE tracked show up as noise in every diff.
 run/server-config/
+run/server-forge-config/
 run/server-overlay/
 # Scratch rundir make-test-world.sh generates the m9 world fixture in. Deleted and rebuilt on every run.
 run/server-worldgen/

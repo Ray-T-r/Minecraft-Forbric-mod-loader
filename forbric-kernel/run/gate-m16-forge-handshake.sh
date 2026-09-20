@@ -123,6 +123,18 @@ check "the SERVER config came from the world" "ForbricLive/CFG\] LOADING forbric
 check "and it holds the pre-written value"    "ForbricLive/CFG\] LOADING forbriclive-server.toml: greeting=from-the-gate" "$SLOG"
 check "the server still holds it in play"     "ForbricLive/CFG\] greeting on the server at PING: from-the-gate"          "$SLOG"
 
+# M16_CLIENT_CONFIG_BEGIN — the kernel's summary is logged (CGAME); the canary's CFG lines are System.out prints and only exist in the launch stdout (CLOG), where latest.log's appended copy cannot duplicate them.
+step "Forge CLIENT config loads once on the client and never on the dedicated server"
+check "Forge CLIENT configs were applied" 'loaded MinecraftForge configs \(CLIENT\): applied [1-9][0-9]*, already loaded [0-9]+, failed 0 from ' "$CGAME"
+check "CLIENT default was read from the loaded spec" 'ForbricLive/CFG\] LOADING forbriclive-client\.toml: probe=17 loaded=true([[:space:]]|$)' "$CLOG"
+assert_eq "CLIENT Loading fired exactly once" 1 "$(grep -acE 'ForbricLive/CFG\] LOADING forbriclive-client\.toml:' "$CLOG" || true)"
+if [ -s "$CLI/config/forbriclive-client.toml" ]; then echo "[kernel] PASS CLIENT file was created on the client"
+else echo "[kernel] FAIL CLIENT file was not created on the client"; FAIL=1; fi
+if [ ! -e "$SRV/config/forbriclive-client.toml" ]; then echo "[kernel] PASS no CLIENT file on the dedicated server"
+else echo "[kernel] FAIL dedicated server opened a CLIENT config"; FAIL=1; fi
+check_absent "no CLIENT Loading on the dedicated server" 'ForbricLive/CFG\] LOADING forbriclive-client\.toml:' "$SLOG"
+# M16_CLIENT_CONFIG_END
+
 step "MinecraftForge's handshake ran, so the client has the server's config and mod list (must PASS)"
 check "the client was told the server's config" "ForbricLive/CFG\] RELOADING forbriclive-server.toml: greeting=from-the-gate" "$CLOG"
 check "the client reads the server's value"     "ForbricLive/CFG\] greeting seen on the client at PING: from-the-gate"      "$CLOG"
