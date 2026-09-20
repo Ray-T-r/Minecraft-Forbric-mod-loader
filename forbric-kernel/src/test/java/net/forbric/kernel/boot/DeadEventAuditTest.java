@@ -36,6 +36,7 @@ import net.forbric.api.GameEventBridge;
  * so what is tested here is the judgement — which subscriptions are a finding, and which are not because a bridge
  * now carries them.
  */
+@org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
 class DeadEventAuditTest {
 	private static final String BREAK = "net/minecraftforge/event/level/BlockEvent$BreakEvent";
 	private static final String CHAT = "net/minecraftforge/event/ServerChatEvent";
@@ -47,6 +48,45 @@ class DeadEventAuditTest {
 	private static final String OVERLAYS = "net/minecraftforge/client/event/AddGuiOverlayLayersEvent";
 	private static final String CREATE_FLUID_SOURCE = "net/minecraftforge/event/level/BlockEvent$CreateFluidSourceEvent";
 	private static final String FLUID_PLACE_BLOCK = "net/minecraftforge/event/level/BlockEvent$FluidPlaceBlockEvent";
+	private static final String NEO_TOOLTIP = "net/neoforged/neoforge/event/entity/player/ItemTooltipEvent";
+	private static final String ENTITY_PLACE = "net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent";
+
+	@Test
+	void aNeoForgeTooltipListenerIsAFinding() {
+		List<DeadEventAudit.Finding> findings = DeadEventAudit.audit(
+				Map.of("tipmod", Set.of(NEO_TOOLTIP)), EnumSet.allOf(GameEventBridge.class));
+		assertEquals(1, findings.size(), "the merged getTooltipLines calls only MinecraftForge's onItemTooltip");
+		assertEquals("tipmod", findings.get(0).modId());
+		assertTrue(findings.get(0).cost().contains("tooltip"), findings.get(0).cost());
+	}
+
+	@Test
+	void aForgeEntityPlaceListenerIsAFinding() {
+		List<DeadEventAudit.Finding> findings = DeadEventAudit.audit(
+				Map.of("logmod", Set.of(ENTITY_PLACE)), EnumSet.allOf(GameEventBridge.class));
+		assertEquals(1, findings.size(), "routePlaceItemHookToNeoForge's stated cost");
+		assertTrue(findings.get(0).cost().contains("placement"), findings.get(0).cost());
+	}
+
+	@Test
+	void aFindingMarksTheModDegradedAndAClassKeyedOneMarksNobody() {
+		List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			net.forbric.api.ModCatalog.publish(List.of(new net.forbric.api.ModCatalog.Entry(
+					net.forbric.api.Ecosystem.FORGE, "claimmod", "Claim", "1", "", List.of(), "claim.jar", "", "")));
+			Map<String, Set<String>> subscribed = new java.util.LinkedHashMap<>();
+			subscribed.put("claimmod", Set.of(BREAK));
+			subscribed.put("a.b.OrphanSubscriber", Set.of(BREAK));
+			DeadEventAudit.report(subscribed);
+			assertEquals(1, net.forbric.api.ModCatalog.failures().size(), "the class-keyed listener invents no row");
+			net.forbric.api.ModCatalog.Entry claim = net.forbric.api.ModCatalog.failures().get(0);
+			assertEquals("claimmod", claim.modId());
+			assertEquals(net.forbric.api.ModCatalog.Status.DEGRADED, claim.status());
+			assertTrue(claim.statusDetail().contains("BlockEvent.BreakEvent") && claim.statusDetail().contains("protect"), claim.statusDetail());
+		} finally {
+			net.forbric.api.ModCatalog.publish(previous);
+		}
+	}
 
 	@Test
 	void aDeadEventWithAListenerIsReported() {

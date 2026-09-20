@@ -25,6 +25,7 @@ import java.util.Set;
 
 import net.forbric.api.EventBridges;
 import net.forbric.api.GameEventBridge;
+import net.forbric.api.ModCatalog;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -126,6 +127,19 @@ public final class DeadEventAudit {
 		dead.put("net/minecraftforge/client/event/RegisterPictureInPictureRendererEvent",
 				"picture-in-picture renderers a MinecraftForge mod registers never draw — the merged GuiRenderer "
 						+ "collects only NeoForge's");
+		// The other side of the ledger: the merged ItemStack.getTooltipLines calls only MinecraftForge's
+		// ForgeEventFactory.onItemTooltip (javap: one invokestatic, none into net/neoforged), so NeoForge's event is
+		// the dead one here. ItemStack#onDestroyed is NOT a row: it is an extension hook on both sides
+		// (IForgeItemStack.onDestroyed survived) and cannot be a subscriber finding.
+		dead.put("net/neoforged/neoforge/event/entity/player/ItemTooltipEvent",
+				"item tooltips cannot be extended by NeoForge mods — the merged getTooltipLines calls only "
+						+ "MinecraftForge's onItemTooltip");
+		// The cost routePlaceItemHookToNeoForge states: ItemStack.useOn was sent to NeoForge's
+		// onPlaceItemIntoWorld so that placing anything works at all, and MinecraftForge's event went with it.
+		dead.put("net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent",
+				"block placement by an entity is neither observed nor preventable for MinecraftForge mods — the "
+						+ "merged ItemStack.useOn asks only NeoForge's onPlaceItemIntoWorld, because the snapshot list "
+						+ "it drains is NeoForge-typed");
 		return Map.copyOf(dead);
 	}
 
@@ -222,8 +236,15 @@ public final class DeadEventAudit {
 			costByEvent.putIfAbsent(finding.event(), finding.cost());
 		}
 
-		ForbricLog.warn("[Forbric/DeadEvents] %d MinecraftForge game event(s) the merged base no longer posts have "
-				+ "listeners waiting on them. Those listeners will not run, and nothing else will say so.",
+		// The Mods screen and load-report.txt read the catalogue; a listener keyed by class name (no owning mod
+		// was found beside it) reaches mark() with a name no row carries, which invents nothing.
+		for (Finding finding : findings) {
+			ModCatalog.mark(finding.modId(), ModCatalog.Status.DEGRADED, "it listens for "
+					+ finding.event().substring(finding.event().lastIndexOf('/') + 1).replace('$', '.')
+					+ ", which this merged game never posts — " + finding.cost());
+		}
+		ForbricLog.warn("[Forbric/DeadEvents] %d Forge-family game event(s) the merged base no longer posts have "
+				+ "listeners waiting on them. Those listeners will not run, and their mods are marked on the Mods screen.",
 				modsByEvent.size());
 		for (Map.Entry<String, Set<String>> entry : modsByEvent.entrySet()) {
 			ForbricLog.warn("[Forbric/DeadEvents]   %s — %s (waiting: %s)",
