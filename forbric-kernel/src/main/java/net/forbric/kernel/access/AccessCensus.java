@@ -38,8 +38,18 @@ import net.forbric.kernel.util.ForbricLog;
  * loaded on this side is not counted, so a client-only entry costs a dedicated server nothing.
  */
 public final class AccessCensus {
-	/** One directive that matched nothing: which kind, from which jar, what it named. */
-	public record Unmatched(String kind, String source, String directive) {
+	/**
+	 * One directive that matched nothing: which kind, from which jar, what it named, and whether the member NAME
+	 * is there with another descriptor. That distinction is the whole judgement: a name the class does not have
+	 * at all is a line the mod's file carries for another Minecraft version — a native loader ignores it just the
+	 * same, and a real pack has two dozen (journeymap's SRG-named fields, old overloads) — while a name that IS
+	 * there under another descriptor is a member the merge re-typed, and only that one costs the mod something
+	 * it would have had on its own loader.
+	 */
+	public record Unmatched(String kind, String source, String directive, boolean retyped) {
+		public Unmatched(String kind, String source, String directive) {
+			this(kind, source, directive, false);
+		}
 	}
 
 	private static final Set<Unmatched> UNMATCHED = new LinkedHashSet<>();
@@ -56,8 +66,12 @@ public final class AccessCensus {
 	}
 
 	public static void unmatched(String kind, String source, String directive) {
+		unmatched(kind, source, directive, false);
+	}
+
+	public static void unmatched(String kind, String source, String directive, boolean retyped) {
 		synchronized (UNMATCHED) {
-			UNMATCHED.add(new Unmatched(kind, source == null ? "?" : source, directive));
+			UNMATCHED.add(new Unmatched(kind, source == null ? "?" : source, directive, retyped));
 		}
 	}
 
@@ -69,17 +83,26 @@ public final class AccessCensus {
 			all = new ArrayList<>(UNMATCHED);
 			transformed = transformedClasses;
 		}
-		int at = 0;
-		for (Unmatched u : all) if ("AT".equals(u.kind())) at++;
-		ForbricLog.info("[Forbric/Access] %d directive(s) matched nothing across %d transformed class(es) (%d AT, %d AW)",
-				all.size(), transformed, at, all.size() - at);
+		int at = 0, retyped = 0;
+		for (Unmatched u : all) {
+			if ("AT".equals(u.kind())) at++;
+			if (u.retyped()) retyped++;
+		}
+		ForbricLog.info("[Forbric/Access] %d directive(s) matched nothing across %d transformed class(es) (%d AT, %d AW): "
+				+ "%d re-typed by the merge, %d stale on this Minecraft as on a native loader", all.size(), transformed, at,
+				all.size() - at, retyped, all.size() - retyped);
 		for (Unmatched u : all) {
 			boolean carrier = u.source().startsWith("carrier:");
-			ForbricLog.warn("[Forbric/Access] %s directive from %s names a member this game does not have: %s%s", u.kind(),
-					u.source(), u.directive(), carrier ? "" : " — the mod is marked on the Mods screen");
+			if (!u.retyped()) {
+				ForbricLog.info("[Forbric/Access] %s directive from %s names a member this Minecraft does not have (stale, ignored "
+						+ "here as on a native loader): %s", u.kind(), u.source(), u.directive());
+				continue;
+			}
+			ForbricLog.warn("[Forbric/Access] %s directive from %s names a member the merge re-typed, so it was not widened: %s%s",
+					u.kind(), u.source(), u.directive(), carrier ? "" : " — the mod is marked on the Mods screen");
 			if (!carrier && !"?".equals(u.source())) {
 				ModCatalog.markByJar(u.source(), ModCatalog.Status.DEGRADED, "its access " + ("AT".equals(u.kind())
-						? "transformer" : "widener") + " names " + u.directive() + ", which this game does not have");
+						? "transformer" : "widener") + " names " + u.directive() + ", which the merge re-typed");
 			}
 		}
 	}

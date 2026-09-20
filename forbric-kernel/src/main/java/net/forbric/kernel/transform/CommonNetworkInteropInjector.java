@@ -299,7 +299,9 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 						"MinecraftForge's configuration tasks refuse the vanilla start overload and never start"))),
 				new Claim(CLAIM_CONFIG_FINISHED, AnchorSet.of(required(CLIENT_CONFIG_LISTENER,
 						"MinecraftForge's configuration-complete hook never runs — a Forge mod never learns the server is modded"))),
-				new Claim(CLAIM_GUARD_INITIALISATION, AnchorSet.of(required(CLIENT_CONFIG_LISTENER,
+				// HEDGE: the merged listener on the current carrier already initialises once, so the guard finds
+				// nothing to do (never applied in any gate log); it is kept for a carrier where it does not.
+				new Claim(CLAIM_GUARD_INITIALISATION, AnchorSet.of(new AnchorSet.Anchor(CLIENT_CONFIG_LISTENER, AnchorSet.Severity.HEDGE,
 						"a non-NeoForge connection is initialised more than once per configuration"))));
 	}
 

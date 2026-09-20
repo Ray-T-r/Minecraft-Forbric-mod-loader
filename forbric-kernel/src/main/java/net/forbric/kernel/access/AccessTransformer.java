@@ -142,6 +142,7 @@ public final class AccessTransformer implements ClassTransformer {
 		private final ClassEntry entry;
 		private final java.util.Set<String> seenFields = new java.util.HashSet<>();
 		private final java.util.Set<String> seenMethods = new java.util.HashSet<>();
+		private final java.util.Set<String> seenMethodNames = new java.util.HashSet<>();
 
 		AtClassVisitor(ClassVisitor delegate, ClassEntry entry) {
 			super(Opcodes.ASM9, delegate);
@@ -163,6 +164,7 @@ public final class AccessTransformer implements ClassTransformer {
 		@Override
 		public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
 			seenMethods.add(name + descriptor);
+			seenMethodNames.add(name);
 			Member member = combined(entry.methods.get(name + descriptor), entry.allMethods);
 			return super.visitMethod(apply(access, member), name, descriptor, signature, exceptions);
 		}
@@ -171,7 +173,9 @@ public final class AccessTransformer implements ClassTransformer {
 		public void visitEnd() {
 			for (AtDirective d : entry.specific) {
 				boolean seen = d.method ? seenMethods.contains(d.memberName + d.memberDesc) : seenFields.contains(d.memberName);
-				if (!seen) AccessCensus.unmatched("AT", d.source, d.toString());
+				// An AT names a field by name alone, so a field that is there IS matched whatever its descriptor;
+				// only a method can be present under another descriptor.
+				if (!seen) AccessCensus.unmatched("AT", d.source, d.toString(), d.method && seenMethodNames.contains(d.memberName));
 			}
 			super.visitEnd();
 		}

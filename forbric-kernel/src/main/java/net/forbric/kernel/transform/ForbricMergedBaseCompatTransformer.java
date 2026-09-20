@@ -158,9 +158,14 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("readTheSpawnReasonThatIsActuallyWritten", "net/minecraft/world/entity/Mob",
 				"Mob.getSpawnReason() reads a field the game never writes — spawn-reason logic sees null"));
 		out.add(scanned("giveTheUnwrittenLoggerAValue", "any class with a static final Logger the merge left unassigned"));
-		out.add(new Claim(claimId("addTheMissingCapabilityLifecycleStubs"), AnchorSet.of(
-				capabilityRoot("net/minecraft/world/entity/Entity"), capabilityRoot("net/minecraft/world/level/block/entity/BlockEntity"),
-				capabilityRoot("net/minecraft/world/level/Level"))));
+		// The capability composition (E) runs first in the same phase and composes the three roots itself; the
+		// stubs are its fallback and are expected to find nothing while it is on. Measured on gate-m9: all three
+		// declined, exactly because the composed methods were already there.
+		out.add(ForgeCapabilityCompositionTransformer.enabled()
+				? scanned("addTheMissingCapabilityLifecycleStubs", "the capability composition composes the roots first; these stubs are its fallback")
+				: new Claim(claimId("addTheMissingCapabilityLifecycleStubs"), AnchorSet.of(
+						capabilityRoot("net/minecraft/world/entity/Entity"), capabilityRoot("net/minecraft/world/level/block/entity/BlockEntity"),
+						capabilityRoot("net/minecraft/world/level/Level"))));
 		out.add(fixed("addTheMissingNbtBuilderFactory", "net/minecraft/nbt/CompoundTag",
 				"CompoundTag.builder() is gone — IForgeBlockPos.toCompoundTag and ForgeHooks.createEmptyStructure NoSuchMethodError"));
 		out.add(fixed("postMinecraftForgesReloadListenerEvent", RELOADABLE_SERVER_RESOURCES,

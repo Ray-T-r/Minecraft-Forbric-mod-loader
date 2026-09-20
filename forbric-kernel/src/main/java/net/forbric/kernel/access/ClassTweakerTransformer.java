@@ -175,6 +175,7 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 		private final String internalName;
 		private final java.util.Set<String> fields = new java.util.HashSet<>();
 		private final java.util.Set<String> methods = new java.util.HashSet<>();
+		private final java.util.Set<String> names = new java.util.HashSet<>();
 
 		Census(ClassVisitor delegate, String internalName) {
 			super(Opcodes.ASM9, delegate);
@@ -184,12 +185,14 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 		@Override
 		public org.objectweb.asm.FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
 			fields.add(name + " " + descriptor);
+			names.add("field " + name);
 			return super.visitField(access, name, descriptor, signature, value);
 		}
 
 		@Override
 		public org.objectweb.asm.MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
 			methods.add(name + " " + descriptor);
+			names.add("method " + name);
 			return super.visitMethod(access, name, descriptor, signature, exceptions);
 		}
 
@@ -208,8 +211,11 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 		}
 
 		private void unmatched(String what, net.fabricmc.classtweaker.utils.EntryTriple t) {
+			// An access widener names a field by name AND descriptor, so a field present under another descriptor
+			// is exactly the merge-re-typed case the census exists for.
 			AccessCensus.unmatched("AW", sources.get(key(t.getOwner(), t.getName(), t.getDesc())),
-					what + " " + t.getOwner() + " " + t.getName() + " " + t.getDesc());
+					what + " " + t.getOwner() + " " + t.getName() + " " + t.getDesc(), names.contains(what + " " + t.getName()));
 		}
+
 	}
 }

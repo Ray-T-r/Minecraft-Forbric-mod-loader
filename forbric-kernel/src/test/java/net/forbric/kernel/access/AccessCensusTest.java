@@ -57,37 +57,42 @@ class AccessCensusTest {
 	@Test
 	void anAtLineNamingAMissingMemberIsCountedWithItsJar() throws Exception {
 		List<AtDirective> directives = AccessTransformerParser.parse(new StringReader(
-				"public com.example.Target secret\n"          // exists
-				+ "public com.example.Target nope\n"          // missing field
-				+ "public com.example.Target gone()V\n"       // missing method
+				"public com.example.Target secret\n"		  // exists
+				+ "public com.example.Target nope\n"		  // missing field: stale
+				+ "public com.example.Target gone()V\n"	   // missing method: stale
+				+ "public com.example.Target hidden(I)V\n"	// hidden exists as ()V: re-typed
 				+ "public com.example.Target *\n"), "x.jar"); // wildcard: always matches
 		new AccessTransformer(directives).transform("com.example.Target", sampleClass(), CTX);
 		List<AccessCensus.Unmatched> entries = AccessCensus.entries();
-		assertEquals(2, entries.size(), entries.toString());
+		assertEquals(3, entries.size(), entries.toString());
 		for (AccessCensus.Unmatched u : entries) {
 			assertEquals("AT", u.kind());
 			assertEquals("x.jar", u.source());
 		}
-		assertTrue(entries.get(0).directive().contains("nope") && entries.get(1).directive().contains("gone()V"), entries.toString());
+		assertTrue(entries.get(0).directive().contains("nope") && !entries.get(0).retyped(), entries.toString());
+		assertTrue(entries.get(1).directive().contains("gone()V") && !entries.get(1).retyped(), entries.toString());
+		assertTrue(entries.get(2).directive().contains("hidden(I)V") && entries.get(2).retyped(), "a name present under another descriptor is re-typed: " + entries);
 	}
 
 	@Test
 	void anAccessWidenerEntryNamingAMissingMemberIsCountedWithItsJar() throws Exception {
 		String widener = "accessWidener\tv2\tintermediary\n"
 				+ "accessible\tfield\tcom/example/Target\tsecret\tI\n"
+				+ "accessible\tfield\tcom/example/Target\tsecret\tJ\n"	  // re-typed: secret is an int here
 				+ "accessible\tfield\tcom/example/Target\tmissing\tI\n"
 				+ "accessible\tmethod\tcom/example/Target\tgone\t()V\n";
 		ClassTweakerTransformer tweaker = ClassTweakerTransformer.createFrom(
 				List.of(new ClassTweakerTransformer.File("y.jar", widener.getBytes(StandardCharsets.UTF_8))), (n, b) -> { });
 		tweaker.transform("com.example.Target", sampleClass(), CTX);
 		List<AccessCensus.Unmatched> entries = AccessCensus.entries();
-		assertEquals(2, entries.size(), entries.toString());
+		assertEquals(3, entries.size(), entries.toString());
 		for (AccessCensus.Unmatched u : entries) {
 			assertEquals("AW", u.kind());
 			assertEquals("y.jar", u.source());
 		}
-		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("missing")) && entries.stream().anyMatch(u -> u.directive().contains("gone")),
-				entries.toString());
+		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("missing") && !u.retyped()), entries.toString());
+		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("gone") && !u.retyped()), entries.toString());
+		assertTrue(entries.stream().anyMatch(u -> u.directive().contains("secret J") && u.retyped()), "the re-typed field: " + entries);
 	}
 
 	@Test
@@ -95,10 +100,11 @@ class AccessCensusTest {
 		ModCatalog.publish(List.of(
 				new ModCatalog.Entry(Ecosystem.NEOFORGE, "xmod", "X", "1", "", List.of(), "x.jar", "", ""),
 				new ModCatalog.Entry(Ecosystem.NEOFORGE, "other", "Other", "1", "", List.of(), "other.jar", "", "")));
-		AccessCensus.unmatched("AT", "x.jar", "public com/example/Target nope");
-		AccessCensus.unmatched("AT", "carrier:forge-runtime.jar", "public com/example/Target alsoNope");
+		AccessCensus.unmatched("AT", "x.jar", "public com/example/Target nope(I)V", true);
+		AccessCensus.unmatched("AT", "carrier:forge-runtime.jar", "public com/example/Target alsoNope(I)V", true);
+		AccessCensus.unmatched("AT", "other.jar", "public com/example/Target stale", false);
 		AccessCensus.report();
-		assertEquals(1, ModCatalog.failures().size(), "the carrier's own directive marks nobody");
+		assertEquals(1, ModCatalog.failures().size(), "the carrier's own directive marks nobody, and a stale one marks nobody");
 		ModCatalog.Entry xmod = ModCatalog.failures().get(0);
 		assertEquals("xmod", xmod.modId());
 		assertEquals(ModCatalog.Status.DEGRADED, xmod.status());
