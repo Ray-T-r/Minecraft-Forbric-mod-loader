@@ -158,6 +158,7 @@ public final class KernelEventSubscribers {
 		int skippedSide = 0;
 		int skippedOwner = 0;
 		int skippedFamily = 0;
+		int skippedFailed = 0;
 		// modId -> the event types its subscribers wait on. Collected here because this is the one pass that reads
 		// every subscriber class of every mod; DeadEventAudit turns it into the one line that says a listener will
 		// never run.
@@ -188,6 +189,16 @@ public final class KernelEventSubscribers {
 					if (modsInJar == null) modsInJar = scanModClasses(jar);
 				}
 				String modId = ownerModId(sub, modsInJar);
+				// A mod whose constructor threw registered nothing and initialised nothing; its listeners would
+				// touch its own half-initialised classes the first time an event fires (wthit: NoClassDefFoundError
+				// inside RegisterClientReloadListenersEvent, which killed the client). A native loader never gets
+				// here — it stops at the constructor — so skipping them is the only honest continuation.
+				if (didNotFinishLoading(modId)) {
+					skippedFailed++;
+					ModCatalog.mark(modId, ModCatalog.Status.FAILED, "its @EventBusSubscriber " + simpleName(sub.className())
+							+ " was not registered — the mod did not finish loading");
+					continue;
+				}
 
 				if (!sub.subscribedEvents().isEmpty()) {
 					subscribedByMod
@@ -221,8 +232,8 @@ public final class KernelEventSubscribers {
 		if (total > 0 || skippedSide > 0 || skippedOwner > 0 || skippedFamily > 0) {
 			ForbricLog.info("[Forbric/EBS] %d MinecraftForge class(es) + %d NeoForge listener method(s); "
 					+ "%d skipped as wrong-side, %d skipped (owning mod has no bus), %d skipped as the other "
-					+ "family's half of a universal jar",
-					forgeClasses, neoMethods, skippedSide, skippedOwner, skippedFamily);
+					+ "family's half of a universal jar, %d skipped because the owning mod did not finish loading",
+					forgeClasses, neoMethods, skippedSide, skippedOwner, skippedFamily, skippedFailed);
 		}
 		// Everything above is about listeners the kernel DID wire. This is about the ones it wired onto a hook the
 		// merged base no longer calls — registered successfully, and never to be reached.
@@ -245,6 +256,15 @@ public final class KernelEventSubscribers {
 			ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, "its @EventBusSubscriber " + simpleName(className)
 					+ " could not be registered — its listeners will not run");
 		}
+	}
+
+	/** Whether the catalogue says {@code modId} is FAILED — its constructor or entrypoint threw. Unknown ids are not. */
+	static boolean didNotFinishLoading(String modId) {
+		if (modId == null) return false;
+		for (ModCatalog.Entry e : ModCatalog.everything()) {
+			if (e.modId().equals(modId)) return e.status() == ModCatalog.Status.FAILED;
+		}
+		return false;
 	}
 
 	private static String simpleName(String className) {

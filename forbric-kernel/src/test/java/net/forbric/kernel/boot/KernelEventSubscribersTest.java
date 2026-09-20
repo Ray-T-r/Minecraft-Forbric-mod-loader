@@ -40,6 +40,38 @@ import net.forbric.api.Side;
 @org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
 class KernelEventSubscribersTest {
 	@Test
+	void aFailedModsSubscribersAreSkippedAndTheLoopAsksThePredicate() throws Exception {
+		java.util.List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
+		try {
+			net.forbric.api.ModCatalog.publish(java.util.List.of(
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.FORGE, "broken", "B", "1", "", java.util.List.of(), "b.jar", "", ""),
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.FORGE, "bruised", "C", "1", "", java.util.List.of(), "c.jar", "", "")));
+			net.forbric.api.ModCatalog.mark("broken", net.forbric.api.ModCatalog.Status.FAILED, "its @Mod constructor threw");
+			net.forbric.api.ModCatalog.mark("bruised", net.forbric.api.ModCatalog.Status.DEGRADED, "it threw during common setup");
+			assertTrue(KernelEventSubscribers.didNotFinishLoading("broken"));
+			assertFalse(KernelEventSubscribers.didNotFinishLoading("bruised"), "DEGRADED still gets its listeners");
+			assertFalse(KernelEventSubscribers.didNotFinishLoading("nobody"));
+			assertFalse(KernelEventSubscribers.didNotFinishLoading(null));
+		} finally {
+			net.forbric.api.ModCatalog.publish(previous);
+		}
+		// The loop consults it: a bytecode pin, since registerAll needs a live game loader to drive.
+		java.nio.file.Path compiled = java.nio.file.Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
+				"net", "forbric", "kernel", "boot", "KernelEventSubscribers.class");
+		org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isRegularFile(compiled));
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(java.nio.file.Files.readAllBytes(compiled)).accept(node, 0);
+		boolean asked = false;
+		for (org.objectweb.asm.tree.MethodNode m : node.methods) {
+			if (!m.name.equals("registerAll")) continue;
+			for (org.objectweb.asm.tree.AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call && "didNotFinishLoading".equals(call.name)) asked = true;
+			}
+		}
+		assertTrue(asked, "registerAll skips a FAILED mod's subscribers");
+	}
+
+	@Test
 	void aRegistrationFailureMarksTheOwningMod() {
 		java.util.List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
 		try {
