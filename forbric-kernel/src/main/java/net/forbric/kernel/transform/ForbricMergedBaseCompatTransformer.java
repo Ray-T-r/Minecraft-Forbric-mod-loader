@@ -75,11 +75,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	@Override
 	public AnchorSet anchors() {
-		// Thirty-one independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
+		// Thirty-two independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("31 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("32 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -119,6 +119,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= readTheSpawnReasonThatIsActuallyWritten(node);
 			changed |= giveTheUnwrittenLoggerAValue(node);
 			changed |= addTheMissingCapabilityLifecycleStubs(node);
+			changed |= addTheMissingNbtBuilderFactory(node);
 			changed |= dropStubsThatBypassARealSuperclassMethod(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
@@ -368,6 +369,43 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			ForbricLog.warn("[Forbric/MergedBaseCompat] added BlockStateModel default-method conflict resolvers");
 		}
 		return changed;
+	}
+
+	/**
+	 * Gives {@code CompoundTag} back the {@code builder()} static every {@code IForgeBlockPos.toCompoundTag()} and
+	 * {@code ForgeHooks.createEmptyStructure} links against.
+	 *
+	 * <p>Genuine Forge patches {@code public static INBTBuilder$Builder builder()} into {@code CompoundTag} with a
+	 * body that {@code new}s {@code CompoundTag$1} — an anonymous class the byte merge could not carry, because the
+	 * merged {@code CompoundTag$1} is a DIFFERENT anonymous class (the "pipeline-divergent anonymous sibling" in
+	 * merge-conflicts.txt). So the method was dropped whole, and a Forge mod is one ordinary call away from
+	 * {@code NoSuchMethodError} with a stack that names the mod, not the merge.
+	 *
+	 * <p>The body emitted here is not Forge's: it is {@code INBTBuilder.nbt()}'s own four instructions
+	 * ({@code NEW INBTBuilder$Builder; DUP; INVOKESPECIAL <init>; ARETURN}), which is what Forge's
+	 * {@code CompoundTag$1.nbt()} reduces to — the anonymous class only existed to implement the interface. Nothing
+	 * is invented: the carrier type is real, its no-arg constructor is public, and the descriptor is the one the
+	 * carrier's call sites carry. {@link ForeignType} does not apply: NeoForge has no {@code CompoundTag.builder}.
+	 * A rebuilt base that carries the method makes this stand down.
+	 */
+	private static boolean addTheMissingNbtBuilderFactory(ClassNode node) {
+		if (!"net/minecraft/nbt/CompoundTag".equals(node.name)) return false;
+		if (hasMethod(node, "builder", NBT_BUILDER_FACTORY_DESC)) return false;
+
+		MethodNode factory = new MethodNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "builder",
+				NBT_BUILDER_FACTORY_DESC, null, null);
+		factory.instructions.add(new TypeInsnNode(Opcodes.NEW, FORGE_NBT_BUILDER));
+		factory.instructions.add(new InsnNode(Opcodes.DUP));
+		factory.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, FORGE_NBT_BUILDER, "<init>", "()V", false));
+		factory.instructions.add(new InsnNode(Opcodes.ARETURN));
+		factory.maxStack = 2;
+		factory.maxLocals = 0;
+		node.methods.add(factory);
+		ForbricLog.warn("[Forbric/MergedBaseCompat] CompoundTag.builder() — 1 method added: genuine Forge's body news "
+				+ "CompoundTag$1, an anonymous class the merge could not carry (the merged CompoundTag$1 is a different "
+				+ "class), so the body emitted is INBTBuilder.nbt()'s own; IForgeBlockPos.toCompoundTag() and "
+				+ "ForgeHooks.createEmptyStructure link again");
+		return true;
 	}
 
 	private static boolean addMissingForgeFluidTypeBridge(ClassNode node) {
@@ -2066,6 +2104,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	private static final String FORGE_MODEL_DATA_MANAGER = "net/minecraftforge/client/model/data/ModelDataManager";
 	private static final String FORGE_MODEL_DATA = "net/minecraftforge/client/model/data/ModelData";
+	/** Forge-only, like {@link #FORGE_MODEL_DATA}: NeoForge has no INBTBuilder, so ForeignType has no pair for it. */
+	private static final String FORGE_NBT_BUILDER = "net/minecraftforge/common/util/INBTBuilder$Builder";
+	private static final String NBT_BUILDER_FACTORY_DESC = "()L" + FORGE_NBT_BUILDER + ";";
 
 	/**
 	 * Takes the loader brand out of the window title.

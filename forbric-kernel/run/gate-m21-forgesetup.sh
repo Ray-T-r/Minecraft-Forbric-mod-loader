@@ -147,6 +147,12 @@ check_absent "no phase failed to post"   "could not post traditional-Forge"     
 check_absent "no deferred queue failure" "its deferred work did not run"                  "$LOG"
 check "server still reached Done"        "Done \("                                        "$LOG"
 
+step "a MinecraftForge mod can reach the carrier's NBT builder (H1: CompoundTag.builder())"
+# RED before the H1 repair (recorded 2026-09-20): the canary printed
+#   [ForbricLive/NBT] BlockPos.toCompoundTag() FAILED: java.lang.NoSuchMethodError: 'net.minecraftforge.common.util.INBTBuilder$Builder net.minecraft.nbt.CompoundTag.builder()'
+check "BlockPos.toCompoundTag() links and builds" '\[ForbricLive/NBT\] BlockPos\.toCompoundTag\(\) = \{.*x:1.*y:2.*z:3.*\}' "$LOG"
+check_absent "no NoSuchMethodError on CompoundTag.builder" 'NoSuchMethodError.*CompoundTag\.builder' "$LOG"
+
 # M21_REGISTRATION_ASSERTIONS_BEGIN — the Phase 1 A registration hooks; green since A8 landed the bridge inventory.
 check "common registration canary subscribed" 'ForbricLive/REGISTRATION\] subscribed to Forge spawn and creative registration events' "$LOG"
 check "common registration observations completed" 'ForbricLive/REGISTRATION\] common registration observations completed' "$LOG"

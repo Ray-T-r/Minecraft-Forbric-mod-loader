@@ -400,6 +400,13 @@ public class ForbricLiveMod {
 				System.out.println("[ForbricLive/REGISTRATION] creative contents probe failed: " + failure);
 			}
 			System.out.println("[ForbricLive/REGISTRATION] common registration observations completed");
+			// H1: one call away from any Forge mod — IForgeBlockPos.toCompoundTag() links against CompoundTag.builder().
+			try {
+				System.out.println("[ForbricLive/NBT] BlockPos.toCompoundTag() = "
+						+ new net.minecraft.core.BlockPos(1, 2, 3).toCompoundTag());
+			} catch (Throwable failure) {
+				System.out.println("[ForbricLive/NBT] BlockPos.toCompoundTag() FAILED: " + failure);
+			}
 			checkItem("forbrictest", "test_item");
 			checkItem("forbricfab", "fab_item");
 			checkItem("mcwbridges", "pliers");
