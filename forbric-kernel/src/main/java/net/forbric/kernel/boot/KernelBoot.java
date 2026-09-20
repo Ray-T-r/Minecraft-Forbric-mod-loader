@@ -477,6 +477,16 @@ public final class KernelBoot {
 		// GuiLayerManager, which a dedicated server never loads.
 		chain.register(TransformPhase.COREMOD, new HudElementBridgeInjector());
 
+		// Both sides: route ReloadableServerRegistries' two loot seams through the kernel so fabric-loot-api-v3's
+		// LootTableEvents fire from NeoForge's own LootTableLoadEvent point — its mixin cannot fit the merged base.
+		if (net.forbric.kernel.transform.LootTableEventBridgeInjector.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LootTableEventBridgeInjector());
+		} else {
+			ForbricLog.warn("[Forbric/LootBridge] -D%s=off — Fabric LootTableEvents.REPLACE/MODIFY/ALL_LOADED never fire; "
+					+ "loot tables load exactly as NeoForge returns them",
+					net.forbric.kernel.transform.LootTableEventBridgeInjector.PROPERTY);
+		}
+
 		// Client only: trim fabric-model-loading-api-v1's ModelManagerMixin to the injectors that fit the merged
 		// ModelManager (NeoForge replaced CuboidModel.fromStream at one site), so ModelLoadingPlugins dispatch instead
 		// of the whole mixin being pinned. Guest MIXIN classes pass through this chain via getPreMixinClassBytes.
@@ -590,6 +600,7 @@ public final class KernelBoot {
 
 		KernelLifecycle.bind(loader);
 		KernelHudBridge.bind(loader);
+		LootTableEventDispatch.bind(loader);
 		KernelLifecycle.setModJars(modJars);
 		// Where the load report goes, and the shutdown hook that writes it if loading never finishes -- which is
 		// exactly the boot whose reader needs the file most.

@@ -78,6 +78,10 @@ check "JiJ nested mod initialized"             "\[ForbricFabricLib\] JiJ nested 
 check "Jade (real third-party mod) loaded"     "invoked main entrypoint of jade" "$LOG"
 
 step "the server actually works (must PASS)"
+# F3: fabric-loot-api-v3's LootTableEvents fire from NeoForge's LootTableLoadEvent seam (the mixin is pinned).
+# RED with FORBRIC_JVM=-Dforbric.lootBridge=off (no 'offered' line; the audit then names the canary DEGRADED).
+check "kernel offered the loot tables to fabric" "Forbric/LootBridge\] offered [1-9][0-9]* loot table" "$LOG"
+check "the loot seams were routed"             "Forbric/LootBridge\] routed 1 loot-table load site\(s\) and 1 tag-load site" "$LOG"
 check "vanilla datapack fully loaded"          "Loaded 1585 recipes" "$LOG"
 check "server reached Done"                    "Done \(" "$LOG"
 # "Stopping the server" is the /stop command's OWN feedback (commands.stop.stopping in en_us), and the console

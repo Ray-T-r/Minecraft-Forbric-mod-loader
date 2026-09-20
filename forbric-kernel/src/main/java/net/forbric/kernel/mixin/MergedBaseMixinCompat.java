@@ -73,7 +73,11 @@ public final class MergedBaseMixinCompat {
 	 *       server/client leniency during datapack registry load — a remote-sync concern, outside v1 scope.</li>
 	 *   <li><b>loot-api-v3 {@code ReloadableServerRegistriesMixin}</b> — its generated callback loads a local slot
 	 *       the merged base's method does not have: {@code VerifyError: Bad local variable type} at
-	 *       {@code ReloadableServerRegistries.handler$…$modifyLootTable}. Cost: the loot-table modification API.</li>
+	 *       {@code ReloadableServerRegistries.handler$…$modifyLootTable} — NeoForge swapped the last two parameters
+	 *       of {@code lambda$scheduleRegistryLoad$0} and split vanilla's one element map into two, so the handler
+	 *       can never bind. The pin stays, but it no longer costs the API: {@link
+	 *       net.forbric.kernel.boot.LootTableEventDispatch} fires REPLACE / MODIFY / ALL_LOADED from NeoForge's own
+	 *       {@code LootTableLoadEvent} seam ({@code -Dforbric.lootBridge=off} to see the old behaviour).</li>
 	 *   <li><b>creative-tab CLIENT {@code CreativeModeInventoryScreenMixin}</b> — Fabric's creative-screen PAGER.
 	 *       The merged screen already carries NeoForge's pager as a base patch ({@code CreativeTabsScreenPage},
 	 *       the "&lt; N/M &gt;" buttons), so with this mixin woven BOTH pagers run at once — and they fight:

@@ -175,7 +175,9 @@ public enum ForeignType {
 	MOB_SPAWN_SETTINGS_BUILDER("net.minecraftforge.common.world.MobSpawnSettingsBuilder",
 			"net.neoforged.neoforge.common.world.MobSpawnSettingsBuilder"),
 	REMOVE_SPAWNS_BIOME_MODIFIER("net.minecraftforge.common.world.ForgeBiomeModifiers$RemoveSpawnsBiomeModifier",
-			"net.neoforged.neoforge.common.world.BiomeModifiers$RemoveSpawnsBiomeModifier");
+			"net.neoforged.neoforge.common.world.BiomeModifiers$RemoveSpawnsBiomeModifier"),
+	/** The static hook class each family's patched game calls to post its events. */
+	EVENT_FACTORY("net.minecraftforge.event.ForgeEventFactory", "net.neoforged.neoforge.event.EventHooks");
 
 	private final String forge;
 	private final String neoforge;

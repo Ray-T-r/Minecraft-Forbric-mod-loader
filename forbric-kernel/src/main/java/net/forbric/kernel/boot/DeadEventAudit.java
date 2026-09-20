@@ -119,6 +119,10 @@ public final class DeadEventAudit {
 		dead.put("net/minecraftforge/event/level/BlockEvent$FluidPlaceBlockEvent",
 				"lava or water turning into stone, cobblestone or obsidian cannot be observed or changed — "
 						+ "LavaFluid and FlowingFluid post only NeoForge's fireFluidPlaceBlockEvent");
+		dead.put("net/minecraftforge/event/LootTableLoadEvent",
+				"loot tables a MinecraftForge mod adds to or replaces on load are left as loaded — the merged "
+						+ "ReloadableServerRegistries posts only NeoForge's LootTableLoadEvent (KernelLootBridge is the "
+						+ "seam where Forge's would belong)");
 		dead.put("net/minecraftforge/client/event/RegisterPictureInPictureRendererEvent",
 				"picture-in-picture renderers a MinecraftForge mod registers never draw — the merged GuiRenderer "
 						+ "collects only NeoForge's");
