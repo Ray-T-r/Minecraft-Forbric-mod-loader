@@ -358,6 +358,7 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeClientConsumersInjector());
 
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeCreativeTabsInjector());
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeSpawnPlacementsInjector());
 
 		// Client only: hand the kernel the live PackRepository at the vanilla-woven
 		// ClientModLoader.setupModResourcePacks call inside Minecraft.<init>, so it can serve the ecosystem jars'
