@@ -91,7 +91,7 @@ check_absent "no repair was handed its target and declined" "Forbric/Anchor\] .*
 # merged descriptor and the field was not widened. That one is pinned; a change in either direction is worth knowing.
 check        "the access census ran"               "Forbric/Access\] [0-9]+ directive\(s\) matched nothing across [1-9][0-9]* transformed class" "$LOG"
 check        "exactly one directive is re-typed by the merge" "Forbric/Access\] [0-9]+ directive\(s\) matched nothing.*: 1 re-typed by the merge" "$LOG"
-check        "and it is fabric-biome-api's featuresPerStep" "Forbric/Access\] AW directive from fabric-biome-api.*featuresPerStep.*re-typed" "$LOG"
+check        "and it is fabric-biome-api's featuresPerStep" "Forbric/Access\] AW directive from fabric-biome-api.*re-typed.*featuresPerStep" "$LOG"
 check "the window title was read"      "ClientSmoke\] window title: Minecraft"     "$LOG"
 check_absent "…and it names no single loader" "ClientSmoke\] window title: .*(NeoForge|Forge|Fabric)" "$LOG"
 check "left the world cleanly"        "ClientSmoke\] clean disconnect observed"    "$LOG"
