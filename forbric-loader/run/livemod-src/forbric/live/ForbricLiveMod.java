@@ -193,6 +193,7 @@ public class ForbricLiveMod {
 		STRUCTURE_MODIFIER_SERIALIZERS.register(ctx.getModBusGroup());
 		System.out.println("[ForbricLive/WORLDGEN] registered structure modifier serializer forbriclive:probe_spawn");
 		registerRegistrationProbes(ctx);
+		registerCapabilityProbe();
 		registerReloadProbe();
 		registerSetupLifecycle(ctx);
 		registerClient(ctx);
@@ -232,6 +233,70 @@ public class ForbricLiveMod {
 		protected void apply(Integer files, net.minecraft.server.packs.resources.ResourceManager manager,
 				net.minecraft.util.profiling.ProfilerFiller profiler) {
 			System.out.println("[ForbricLive/RELOAD] reload listener ran over " + files + " file(s)");
+		}
+	}
+
+	/** E10: the way every Forge storage mod attaches a handler — through Forge's own AttachCapabilitiesEvent. */
+	private static final java.util.concurrent.atomic.AtomicInteger ATTACHED = new java.util.concurrent.atomic.AtomicInteger();
+
+	private static void registerCapabilityProbe() {
+		net.minecraftforge.event.AttachCapabilitiesEvent.BlockEntities.BUS.addListener(event -> {
+			if (!(event.getObject() instanceof net.minecraft.world.level.block.entity.BellBlockEntity)) return;
+			net.minecraftforge.items.ItemStackHandler handler = new net.minecraftforge.items.ItemStackHandler(1);
+			net.minecraftforge.common.util.LazyOptional<net.minecraftforge.items.IItemHandler> optional =
+					net.minecraftforge.common.util.LazyOptional.of(() -> handler);
+			event.addCapability(Identifier.fromNamespaceAndPath("forbriclive", "probe"), new ProbeProvider(handler, optional));
+			// Forge's own contract: the dispatcher invalidates exactly the runnables registered here.
+			event.addListener(optional::invalidate);
+			if (ATTACHED.incrementAndGet() == 1) {
+				System.out.println("[ForbricLive/CAPS] AttachCapabilitiesEvent.BlockEntities RECEIVED for BellBlockEntity");
+			}
+		});
+		net.minecraftforge.event.AttachCapabilitiesEvent.Levels.BUS.addListener(event -> {
+			net.minecraftforge.energy.EnergyStorage storage = new net.minecraftforge.energy.EnergyStorage(1000);
+			net.minecraftforge.common.util.LazyOptional<net.minecraftforge.energy.IEnergyStorage> optional =
+					net.minecraftforge.common.util.LazyOptional.of(() -> storage);
+			event.addCapability(Identifier.fromNamespaceAndPath("forbriclive", "level_probe"),
+					new net.minecraftforge.common.capabilities.ICapabilityProvider() {
+						@Override
+						public <T> net.minecraftforge.common.util.LazyOptional<T> getCapability(
+								net.minecraftforge.common.capabilities.Capability<T> cap, net.minecraft.core.Direction side) {
+							return cap == net.minecraftforge.common.capabilities.ForgeCapabilities.ENERGY ? optional.cast()
+									: net.minecraftforge.common.util.LazyOptional.empty();
+						}
+					});
+			System.out.println("[ForbricLive/CAPS] AttachCapabilitiesEvent.Levels RECEIVED");
+		});
+		System.out.println("[ForbricLive/CAPS] subscribed to AttachCapabilitiesEvent.BlockEntities");
+	}
+
+	/** The shape a Forge storage mod's provider takes: a serialisable capability provider. */
+	static final class ProbeProvider
+			implements net.minecraftforge.common.capabilities.ICapabilitySerializable<net.minecraft.nbt.CompoundTag> {
+		private final net.minecraftforge.items.ItemStackHandler handler;
+		private final net.minecraftforge.common.util.LazyOptional<net.minecraftforge.items.IItemHandler> optional;
+
+		ProbeProvider(net.minecraftforge.items.ItemStackHandler handler,
+				net.minecraftforge.common.util.LazyOptional<net.minecraftforge.items.IItemHandler> optional) {
+			this.handler = handler;
+			this.optional = optional;
+		}
+
+		@Override
+		public <T> net.minecraftforge.common.util.LazyOptional<T> getCapability(
+				net.minecraftforge.common.capabilities.Capability<T> cap, net.minecraft.core.Direction side) {
+			return cap == net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER ? optional.cast()
+					: net.minecraftforge.common.util.LazyOptional.empty();
+		}
+
+		@Override
+		public net.minecraft.nbt.CompoundTag serializeNBT(net.minecraft.core.HolderLookup.Provider provider) {
+			return handler.serializeNBT(provider);
+		}
+
+		@Override
+		public void deserializeNBT(net.minecraft.core.HolderLookup.Provider provider, net.minecraft.nbt.CompoundTag tag) {
+			handler.deserializeNBT(provider, tag);
 		}
 	}
 
@@ -501,6 +566,8 @@ public class ForbricLiveMod {
 			} catch (Throwable failure) {
 				System.out.println("[ForbricLive/WORLDGEN] probe FAILED: " + failure);
 			}
+			// E10: nine capability probes over the composed roots and Forge's own surviving overrides.
+			probeCapabilities(event.getServer());
 			// D6: did the mod-registered structure modifier reach the mineshaft's live settings?
 			try {
 				var structures = event.getServer().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.STRUCTURE);
@@ -584,6 +651,64 @@ public class ForbricLiveMod {
 			if (limit > 0 && n == limit) {
 				System.out.println("[ForbricLive] tick limit " + limit + " reached - halting server (clean shutdown)");
 				event.server().halt(false);
+			}
+		}
+
+		private static void probeCapabilities(net.minecraft.server.MinecraftServer server) {
+			try {
+				var level = server.overworld();
+				var pos = level.getRespawnData().pos().offset(0, 40, 0);
+				var bell = new net.minecraft.world.level.block.entity.BellBlockEntity(pos,
+						net.minecraft.world.level.block.Blocks.BELL.defaultBlockState());
+				bell.setLevel(level);
+				var handler = bell.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER,
+						net.minecraft.core.Direction.UP);
+				int slots = handler.map(net.minecraftforge.items.IItemHandler::getSlots).orElse(-1);
+				System.out.println("[ForbricLive/CAPS] attached handler present=" + handler.isPresent() + " slots=" + slots);
+
+				var chest = new net.minecraft.world.level.block.entity.ChestBlockEntity(pos,
+						net.minecraft.world.level.block.Blocks.CHEST.defaultBlockState());
+				chest.setLevel(level);
+				int chestSlots = chest.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER, null)
+						.map(net.minecraftforge.items.IItemHandler::getSlots).orElse(-1);
+				System.out.println("[ForbricLive/CAPS] vanilla chest handler slots=" + chestSlots);
+
+				var levelCap = level.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ENERGY, null);
+				System.out.println("[ForbricLive/CAPS] Level getCapability answered: present=" + levelCap.isPresent());
+				var chunkCap = level.getChunk(0, 0).getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER, null);
+				System.out.println("[ForbricLive/CAPS] LevelChunk getCapability answered: present=" + chunkCap.isPresent());
+				var stackCap = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STONE)
+						.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER, null);
+				System.out.println("[ForbricLive/CAPS] ItemStack lookup answered: present=" + stackCap.isPresent());
+
+				var invalidated = new java.util.concurrent.atomic.AtomicBoolean();
+				handler.addListener(lazy -> invalidated.set(true));
+				bell.setRemoved();
+				System.out.println("[ForbricLive/CAPS] LazyOptional invalidated on setRemoved: " + invalidated.get());
+
+				var fresh = new net.minecraft.world.level.block.entity.BellBlockEntity(pos,
+						net.minecraft.world.level.block.Blocks.BELL.defaultBlockState());
+				fresh.setLevel(level);
+				fresh.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER, null)
+						.ifPresent(h -> ((net.minecraftforge.items.ItemStackHandler) h)
+								.setStackInSlot(0, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.DIAMOND, 7)));
+				net.minecraft.nbt.CompoundTag saved = fresh.saveWithoutMetadata(level.registryAccess());
+				boolean hasKey = saved.contains("ForgeCaps");
+				var reloaded = new net.minecraft.world.level.block.entity.BellBlockEntity(pos,
+						net.minecraft.world.level.block.Blocks.BELL.defaultBlockState());
+				reloaded.setLevel(level);
+				try (var problems = new net.minecraft.util.ProblemReporter.ScopedCollector(
+						org.slf4j.LoggerFactory.getLogger("forbriclive"))) {
+					reloaded.loadWithComponents(net.minecraft.world.level.storage.TagValueInput.create(problems, level.registryAccess(), saved));
+				}
+				int count = reloaded.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER, null)
+						.map(h -> h.getStackInSlot(0).getCount()).orElse(-1);
+				System.out.println("[ForbricLive/CAPS] ForgeCaps round-trip: key=" + hasKey + " count=" + count);
+
+				System.out.println("[ForbricLive/CAPS] dispatcher present=" + (level.getCapabilityDispatcher() != null));
+			} catch (Throwable failure) {
+				System.out.println("[ForbricLive/CAPS] probe FAILED: " + failure);
+				failure.printStackTrace(System.out);
 			}
 		}
 
