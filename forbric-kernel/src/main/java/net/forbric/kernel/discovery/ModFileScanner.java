@@ -40,7 +40,8 @@ import org.objectweb.asm.Type;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Builds a NeoForge {@code ModFileScanData} for a mod jar — the annotation index FML hands to mods, and the only
+ * Builds a {@code ModFileScanData} for a mod jar — NeoForge's ({@link #scan}) or MinecraftForge's
+ * ({@link #scanForge}) — the annotation index FML hands to mods, and the only
  * way several of them find their own extensions.
  *
  * <p>The kernel constructs {@code @Mod} classes from its own targeted scan ({@link ModAnnotationScanner}) and never
@@ -49,6 +50,13 @@ import net.forbric.kernel.util.ForbricLog;
  * finding none, threw {@code IllegalArgumentException: plugins must not be empty} out of its own {@code @Mod}
  * constructor. Jade and Sophisticated Core discover their plugins the same way, and Sodium finds third-party config
  * entry points through it too — those fail silently, which is worse.
+ *
+ * <p><b>Both ecosystems, because a mod reads the index of the one it was built for.</b> The NeoForge half was
+ * filled first and the MinecraftForge half stayed empty for a further stretch, with nothing saying so. What that
+ * cost: SuperMartijn642's Core Lib injects every {@code @RegistryEntryAcceptor} static field a mod declares from
+ * {@code ModList.getAllScanData()}, so Packed Up's {@code MenuType} field was never assigned and the CLIENT died
+ * in {@code Minecraft.<init>} — "Container screen registered with null menu type!", which names neither the index
+ * nor the kernel. MinecraftForge's own {@code @AutoRegisterCapability} sweep read the same nothing.
  *
  * <p>Scanning is per jar and LAZY: nothing walks a jar until something actually calls {@code getScanResult()}, so
  * an instance whose mods never ask pays nothing. Class bodies are skipped ({@code SKIP_CODE | SKIP_DEBUG |
@@ -61,6 +69,8 @@ import net.forbric.kernel.util.ForbricLog;
  */
 public final class ModFileScanner {
 	private static final String GAME_SIDE = "net.forbric.kernel.runtime.KernelScanData";
+	private static final String GAME_SIDE_FORGE = "net.forbric.kernel.runtime.KernelForgeScanData";
+	public static final String FORGE_INDEX_PROPERTY = "forbric.forgeScanData";
 
 	private ModFileScanner() {
 	}
@@ -88,6 +98,48 @@ public final class ModFileScanner {
 	}
 
 	/**
+	 * An enum-valued annotation member, still unwrapped.
+	 *
+	 * <p>It cannot be materialised here, because the two ecosystems disagree on the shape and BOTH shapes are
+	 * game-side types: MinecraftForge stores {@code ModFileScanData.EnumData(Type, String)} and NeoForge stores
+	 * {@code ModAnnotation.EnumHolder(String desc, String value)}. So the ASM pass records the two strings and the
+	 * per-ecosystem builder wraps them.
+	 *
+	 * <p>This was a bare {@code String} — "the constant's simple name, which is what consumers compare against",
+	 * said a comment that was simply wrong about FML. What it cost, the first time an index was non-empty on the
+	 * MinecraftForge side: SuperMartijn642's Core Lib casts {@code annotationData().get("registry")} to
+	 * {@code EnumData} without checking, so every {@code @RegistryEntryAcceptor} in the pack threw
+	 * {@code ClassCastException: String cannot be cast to ModFileScanData$EnumData} and Core Lib turned that into
+	 * "Failed to register @RegistryEntryAcceptor annotation target" out of its construct listener.
+	 */
+	public record EnumValue(String descriptor, String value) {
+	}
+
+	/**
+	 * Replaces every {@link EnumValue} in an annotation's value map with what {@code wrap} makes of it, walking
+	 * arrays and nested annotations. Called by the two game-side builders, each passing its own ecosystem's
+	 * constructor — the walk is shared so the two cannot drift, the wrapper stays where javac can check it.
+	 */
+	public static Map<String, Object> wrapEnums(Map<String, Object> values,
+			java.util.function.BiFunction<String, String, Object> wrap) {
+		Map<String, Object> out = new LinkedHashMap<>();
+		for (Map.Entry<String, Object> e : values.entrySet()) out.put(e.getKey(), wrapValue(e.getValue(), wrap));
+		return out;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Object wrapValue(Object value, java.util.function.BiFunction<String, String, Object> wrap) {
+		if (value instanceof EnumValue enumValue) return wrap.apply(enumValue.descriptor(), enumValue.value());
+		if (value instanceof List<?> list) {
+			List<Object> items = new ArrayList<>(list.size());
+			for (Object item : list) items.add(wrapValue(item, wrap));
+			return items;
+		}
+		if (value instanceof Map<?, ?> nested) return wrapEnums((Map<String, Object>) nested, wrap);
+		return value;
+	}
+
+	/**
 	 * Scans {@code jar} and returns a populated {@code ModFileScanData}, or null if one cannot be built.
 	 *
 	 * <p>Two halves with a clean line between them. The ASM pass ({@link #collect}) names no game type and stays
@@ -102,20 +154,52 @@ public final class ModFileScanner {
 	 * @param gameLoader the loader holding the NeoForge SPI
 	 */
 	public static Object scan(Path jar, ClassLoader gameLoader) {
+		return materialise(jar, gameLoader, GAME_SIDE, "NeoForge");
+	}
+
+	/**
+	 * The same scan, materialised into traditional Forge's {@code ModFileScanData} instead.
+	 *
+	 * <p>The two SPIs are different classes, so a {@code ModFile} of one ecosystem cannot be handed the other's
+	 * object: this is a second build, not a cast. What it costs is one extra ASM pass over the jar for an instance
+	 * whose NeoForge side already scanned it — annotation tables only, {@code SKIP_CODE}, and only for the
+	 * Forge-family jars.
+	 *
+	 * <p>It is what makes {@code ModList.getAllScanData()} answer with something. Traditional-Forge mods that find
+	 * their own members through it — SuperMartijn642's Core Lib injecting {@code @RegistryEntryAcceptor} fields,
+	 * Forge's own {@code @AutoRegisterCapability} sweep — found NOTHING before, with no error anywhere.
+	 *
+	 * @param gameLoader the loader holding the MinecraftForge SPI
+	 */
+	public static Object scanForge(Path jar, ClassLoader gameLoader) {
+		if (!forgeIndexEnabled()) return null;
+		return materialise(jar, gameLoader, GAME_SIDE_FORGE, "MinecraftForge");
+	}
+
+	/**
+	 * {@code -Dforbric.forgeScanData=off} puts the MinecraftForge index back to the empty one it was, which is the
+	 * RED demonstration for every check that asserts a mod found itself through it.
+	 */
+	public static boolean forgeIndexEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(FORGE_INDEX_PROPERTY, "on"));
+	}
+
+	private static Object materialise(Path jar, ClassLoader gameLoader, String gameSide, String ecosystem) {
 		try {
 			List<Found> found = new ArrayList<>();
 			List<ClassEntry> classes = new ArrayList<>();
 			collect(jar, found, classes);
 
-			Object scanData = Class.forName(GAME_SIDE, true, gameLoader)
+			Object scanData = Class.forName(gameSide, true, gameLoader)
 					.getMethod("build", List.class, List.class)
 					.invoke(null, found, classes);
 
-			ForbricLog.debug("[Forbric/Scan] %s: %d annotation(s) over %d class(es)", jar.getFileName(),
-					found.size(), classes.size());
+			ForbricLog.debug("[Forbric/Scan] %s (%s): %d annotation(s) over %d class(es)", jar.getFileName(),
+					ecosystem, found.size(), classes.size());
 			return scanData;
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Scan] could not scan %s: %s", jar.getFileName(), String.valueOf(t));
+			ForbricLog.debug("[Forbric/Scan] could not scan %s for %s: %s", jar.getFileName(), ecosystem,
+					String.valueOf(t));
 			return null;
 		}
 	}
@@ -231,8 +315,8 @@ public final class ModFileScanner {
 
 		@Override
 		public void visitEnum(String name, String descriptor, String value) {
-			// FML stores an enum member as the constant's simple name, which is what consumers compare against.
-			values.put(name == null ? "value" : name, value);
+			// NOT the bare constant name: FML wraps it, differently per ecosystem, in a game-side type. See EnumValue.
+			values.put(name == null ? "value" : name, new EnumValue(descriptor, value));
 		}
 
 		@Override
@@ -247,7 +331,7 @@ public final class ModFileScanner {
 
 				@Override
 				public void visitEnum(String ignored, String descriptor, String value) {
-					items.add(value);
+					items.add(new EnumValue(descriptor, value));
 				}
 
 				@Override

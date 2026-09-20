@@ -198,6 +198,56 @@ public class ForbricLiveMod {
 		registerSetupLifecycle(ctx);
 		registerClient(ctx);
 		reportForeignMods();
+		reportScanIndex();
+	}
+
+	/** The field the index is asked about. Its value is irrelevant; the ANNOTATION is the fixture. */
+	@LiveScanned(kind = LiveScanned.Kind.SECOND, note = "probe")
+	public static String PROBE = "probe";
+
+	/**
+	 * Whether {@code ModList.getAllScanData()} — the index a traditional-Forge mod finds its OWN members through —
+	 * actually holds this mod's annotation, and whether an enum member in it has FML's own shape.
+	 *
+	 * <p>It held nothing at all for the kernel's whole life: the seeded {@code ModFile} carried an empty
+	 * {@code ModFileScanData}, so SuperMartijn642's Core Lib injected no {@code @RegistryEntryAcceptor} field and
+	 * Packed Up's menu type stayed null — the client died in {@code Minecraft.<init>} with "Container screen
+	 * registered with null menu type!". Then the first non-empty index handed Core Lib a String where it casts to
+	 * {@code EnumData}. Both halves are asserted here, because either one alone reads as working.
+	 */
+	private static void reportScanIndex() {
+		try {
+			int files = 0;
+			int annotations = 0;
+			for (net.minecraftforge.forgespi.language.ModFileScanData scan
+					: net.minecraftforge.fml.ModList.getAllScanData()) {
+				files++;
+				annotations += scan.getAnnotations().size();
+				for (net.minecraftforge.forgespi.language.ModFileScanData.AnnotationData data : scan.getAnnotations()) {
+					if (!data.annotationType().getDescriptor().equals("Lforbric/live/LiveScanned;")) continue;
+					System.out.println("[ForbricLive/SCAN] found its own @LiveScanned on " + data.targetType()
+							+ " " + data.memberName() + " of " + data.clazz().getClassName());
+					Object kind = data.annotationData().get("kind");
+					// The constant name is read through the wrapper's own accessor, not from its toString: a
+					// bare String would ALSO print "SECOND" and the check would pass on the broken shape.
+					String constant = "?";
+					if (kind != null) {
+						try {
+							constant = String.valueOf(kind.getClass().getMethod("value").invoke(kind));
+						} catch (Throwable notAWrapper) {
+							constant = "<no value() accessor: " + notAWrapper + ">";
+						}
+					}
+					System.out.println("[ForbricLive/SCAN] enum member kind is " + (kind == null ? "ABSENT"
+							: kind.getClass().getName() + " with value " + constant));
+					System.out.println("[ForbricLive/SCAN] string member note is " + data.annotationData().get("note"));
+				}
+			}
+			System.out.println("[ForbricLive/SCAN] ModList.getAllScanData(): " + files + " file(s), "
+					+ annotations + " annotation(s)");
+		} catch (Throwable t) {
+			System.out.println("[ForbricLive/SCAN] could not read the mod scan index: " + t);
+		}
 	}
 
 	/**

@@ -22,6 +22,7 @@ import java.util.Set;
 import org.objectweb.asm.Type;
 
 import net.forbric.kernel.discovery.ModFileScanner;
+import net.neoforged.fml.loading.modscan.ModAnnotation;
 import net.neoforged.neoforgespi.language.ModFileScanData;
 
 /**
@@ -64,7 +65,10 @@ public final class KernelScanData {
 					f.target(),
 					Type.getObjectType(f.ownerInternalName()),
 					f.memberName(),
-					f.values()));
+					// NeoForge's own scanner stores an enum member as ModAnnotation.EnumHolder, not as a String.
+					// A mod reading one gets a ClassCastException out of its own code, which is a stack naming the
+					// mod; the two ecosystems disagree on the wrapper, so each builder makes its own.
+					ModFileScanner.wrapEnums(f.values(), (desc, value) -> new ModAnnotation.EnumHolder(desc, value))));
 		}
 
 		Set<ModFileScanData.ClassData> classSet = scanData.getClasses();

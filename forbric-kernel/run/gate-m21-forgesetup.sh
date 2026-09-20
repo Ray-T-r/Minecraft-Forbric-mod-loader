@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # RED controls: M21_EXTRA_JVM='-Dforbric.forgeSpawnPlacements=off' / '-Dforbric.forgeCreativeTabs=off' /
-#               '-Dforbric.forgeConditions=off' (I8: the dual-dialect element fails MinecraftForge's strict codec).
+#               '-Dforbric.forgeConditions=off' (I8: the dual-dialect element fails MinecraftForge's strict codec) /
+#               '-Dforbric.forgeScanData=off' — verified RED: exactly 5 checks fail and nothing else ("the index
+#               carries the mod's own annotation", "an enum member has FML's own EnumData shape, not a String",
+#               "a plain member is still a plain value", "and the index is not one file's worth by accident",
+#               "the kernel says how much it indexed").
 # Client counterpart: M26_EXTRA_JVM='-Dforbric.forgeClientInit=off'. Existing setup controls remain ordinary RED.
 # M21 gate — the mod-loading SETUP lifecycle reaches BOTH Forge families, and what a listener defers actually runs.
 #
@@ -134,6 +138,26 @@ check "every seeded ModFile answers getFilePath and findResource" \
   "ForbricLive\] walked [1-9][0-9]* mod file\(s\), [1-9][0-9]* answered getFilePath and findResource" "$LOG"
 check_absent "no failure walking ModList.getModFiles()" \
   "ForbricLive\] walking ModList.getModFiles\(\) FAILED" "$LOG"
+
+step "a MinecraftForge mod finds its OWN members through ModList.getAllScanData() (must PASS)"
+# The index a traditional-Forge mod's own extension system reads. It was an EMPTY ModFileScanData for the kernel's
+# whole life — present so Forge's own injectCapabilities would not NPE on a null, holding nothing. Nothing said so:
+# SuperMartijn642's Core Lib injects every @RegistryEntryAcceptor static field from it, found none, and Packed Up's
+# menu type stayed null until the CLIENT died in Minecraft.<init> with "Container screen registered with null menu
+# type!" — text naming neither the index nor the kernel.
+check "the index carries the mod's own annotation" \
+  "ForbricLive/SCAN\] found its own @LiveScanned on FIELD PROBE of forbric.live.ForbricLiveMod" "$LOG"
+# And the SHAPE, separately: the first non-empty index handed Core Lib a bare String where it casts straight to
+# EnumData, so the fix that filled the index turned one silent failure into a ClassCastException inside the mod.
+# FML wraps an enum member in a game-side type, and the two ecosystems do not agree on which.
+check "an enum member has FML's own EnumData shape, not a String" \
+  'ForbricLive/SCAN\] enum member kind is net\.minecraftforge\.forgespi\.language\.ModFileScanData[$]EnumData with value SECOND' "$LOG"
+check "a plain member is still a plain value" \
+  "ForbricLive/SCAN\] string member note is probe" "$LOG"
+check "and the index is not one file's worth by accident" \
+  "ForbricLive/SCAN\] ModList.getAllScanData\(\): [1-9][0-9]* file\(s\), [1-9][0-9]* annotation\(s\)" "$LOG"
+check "the kernel says how much it indexed" \
+  "Forbric/Seed\] indexed [1-9][0-9]* annotation\(s\) across [1-9][0-9]* MinecraftForge jar\(s\)" "$LOG"
 
 # B5: each Forge family ships an access transformer that widens the GAME for every mod of that family, and only
 # mod jars' files were ever fed in. Where the merge kept one family's method body it kept that body's access too,

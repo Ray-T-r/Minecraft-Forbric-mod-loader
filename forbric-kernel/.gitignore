@@ -1,4 +1,6 @@
 run/client-merged-pack/
+# The local reproduction of the compatibility POPULAR set: 37 third-party jars plus whatever the client writes.
+run/client-popular/
 
 # Gate bookkeeping: the pid of the server a gate started, so an interrupted run can be reaped by the next
 # one. Per-rundir and worthless the moment the machine reboots — never commit it.

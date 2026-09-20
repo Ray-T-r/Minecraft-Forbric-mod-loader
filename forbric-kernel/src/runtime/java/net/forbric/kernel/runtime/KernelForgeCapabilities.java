@@ -226,8 +226,11 @@ public final class KernelForgeCapabilities {
 	/**
 	 * Forge's own {@code INJECT_CAPABILITIES} stage: {@code CapabilityManager.injectCapabilities()} scans mod
 	 * scan data for {@code @AutoRegisterCapability} and marks each as registered. Advisory on this base
-	 * ({@code isRegistered()} is read only by Forge's own manager), and the mod scan data is still empty under
-	 * the kernel, so the count says so rather than pretending.
+	 * ({@code isRegistered()} is read only by Forge's own manager), so the count is returned rather than acted on.
+	 *
+	 * <p>The count was structurally zero while the seeded {@code ModFile}s carried an EMPTY scan data — this read
+	 * the same nothing SuperMartijn642's Core Lib did. It is a real number now; see {@code ModFileScanner.scanForge}
+	 * and {@code -Dforbric.forgeScanData=off}.
 	 */
 	public static int injectCapabilities() {
 		CapabilityManager.injectCapabilities();

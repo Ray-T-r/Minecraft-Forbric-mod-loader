@@ -19,6 +19,7 @@ package net.forbric.kernel.discovery;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.OutputStream;
@@ -27,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -148,6 +150,56 @@ class ModFileScannerTest {
 		assertEquals(1, found.size());
 		assertEquals("example", found.get(0).values().get("modid"));
 		assertEquals(List.of("a", "b"), found.get(0).values().get("targets"));
+	}
+
+	@Test
+	void anEnumMemberIsRecordedAsEnumValueNotABareString(@TempDir Path dir) throws Exception {
+		List<ModFileScanner.Found> found = collect(dir, zip -> {
+			ClassWriter cw = new ClassWriter(0);
+			cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/Enumed", null, "java/lang/Object", null);
+			AnnotationVisitor av = cw.visitAnnotation(VISIBLE, true);
+			av.visitEnum("registry", "Lcom/example/Registry;", "MENU_TYPES");
+			AnnotationVisitor arr = av.visitArray("sides");
+			arr.visitEnum(null, "Lcom/example/Side;", "CLIENT");
+			arr.visitEnum(null, "Lcom/example/Side;", "SERVER");
+			arr.visitEnd();
+			AnnotationVisitor nested = av.visitAnnotation("inner", "Lcom/example/Inner;");
+			nested.visitEnum("mode", "Lcom/example/Mode;", "LAZY");
+			nested.visitEnd();
+			av.visitEnd();
+			cw.visitEnd();
+			write(zip, "com/example/Enumed.class", cw.toByteArray());
+		});
+
+		// The bare String this used to record is what SuperMartijn642's Core Lib ClassCastExceptions on: it casts
+		// annotationData().get("registry") straight to the ecosystem's own enum wrapper.
+		Map<String, Object> values = found.get(0).values();
+		assertEquals(new ModFileScanner.EnumValue("Lcom/example/Registry;", "MENU_TYPES"), values.get("registry"));
+		assertEquals(List.of(new ModFileScanner.EnumValue("Lcom/example/Side;", "CLIENT"),
+				new ModFileScanner.EnumValue("Lcom/example/Side;", "SERVER")), values.get("sides"));
+		@SuppressWarnings("unchecked")
+		Map<String, Object> inner = (Map<String, Object>) values.get("inner");
+		assertEquals(new ModFileScanner.EnumValue("Lcom/example/Mode;", "LAZY"), inner.get("mode"));
+	}
+
+	@Test
+	void wrapEnumsReachesEveryEnumValueIncludingInsideArraysAndNestedAnnotations() {
+		Map<String, Object> values = new java.util.LinkedHashMap<>();
+		values.put("plain", "kept");
+		values.put("registry", new ModFileScanner.EnumValue("Lcom/example/Registry;", "MENU_TYPES"));
+		values.put("sides", List.of(new ModFileScanner.EnumValue("Lcom/example/Side;", "CLIENT"), "literal"));
+		values.put("inner", Map.of("mode", new ModFileScanner.EnumValue("Lcom/example/Mode;", "LAZY")));
+
+		Map<String, Object> wrapped = ModFileScanner.wrapEnums(values, (desc, value) -> desc + "#" + value);
+
+		assertEquals("kept", wrapped.get("plain"));
+		assertEquals("Lcom/example/Registry;#MENU_TYPES", wrapped.get("registry"));
+		assertEquals(List.of("Lcom/example/Side;#CLIENT", "literal"), wrapped.get("sides"));
+		@SuppressWarnings("unchecked")
+		Map<String, Object> inner = (Map<String, Object>) wrapped.get("inner");
+		assertEquals("Lcom/example/Mode;#LAZY", inner.get("mode"));
+		assertSame(ModFileScanner.EnumValue.class, values.get("registry").getClass(),
+				"the source map is not mutated — the same Found is materialised once per ecosystem");
 	}
 
 	@Test

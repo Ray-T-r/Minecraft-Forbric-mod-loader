@@ -181,6 +181,11 @@ public final class KernelRuntimeClasses {
 		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
 		CLASSES.put("net.forbric.kernel.runtime.KernelScanData", new Entry(Origin.COMPILED, List.of(
 				new Call("build", Object.class, List.class, List.class))));
+		// The same scan, materialised into MinecraftForge's own ModFileScanData. A second compiled file rather
+		// than a shared reflective builder: the two SPIs are separate classes with identical shapes, and javac
+		// checking each against the one it targets is the only thing that stops a reorder from going quiet.
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeScanData", new Entry(Origin.COMPILED, List.of(
+				new Call("build", Object.class, List.class, List.class))));
 		// The Neo->Forge server-tick re-emission. Two entries rather than one taking the kind, because the two
 		// MinecraftForge hooks share a descriptor and a crossed pairing would compile. See KernelGameTickEvents.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameTickEvents", new Entry(Origin.COMPILED, List.of(

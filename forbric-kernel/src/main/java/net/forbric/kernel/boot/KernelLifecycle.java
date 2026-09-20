@@ -426,7 +426,8 @@ public final class KernelLifecycle {
 
 	/**
 	 * Forge's own capability registration stage. Advisory on this base (isRegistered is read only by Forge's own
-	 * manager), and the kernel's mod scan data carries no annotations yet, so the count is logged as it is.
+	 * manager), so the count is logged rather than acted on. It was structurally zero while the seeded
+	 * MinecraftForge {@code ModFile}s carried an EMPTY scan data; see {@code ModFileScanner.scanForge}.
 	 */
 	private static void injectForgeCapabilities(ClassLoader cl) {
 		if (KernelModLoader.publishedForgeMods().isEmpty()
@@ -435,8 +436,8 @@ public final class KernelLifecycle {
 			Object count = Class.forName("net.forbric.kernel.runtime.KernelForgeCapabilities", true, cl)
 					.getMethod("injectCapabilities").invoke(null);
 			ForbricLog.info("[Forbric/Capabilities] ran MinecraftForge's injectCapabilities — %s @AutoRegisterCapability "
-					+ "annotation(s) in the mod scan data (0 = the kernel's scan data carries no annotations yet; lookups "
-					+ "work without it)", count);
+					+ "annotation(s) in the mod scan data (lookups work without it; -1 = the index could not be read)",
+					count);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Capabilities] MinecraftForge's injectCapabilities threw — capability lookups still "
 					+ "work, isRegistered() answers false", unwrap(t));

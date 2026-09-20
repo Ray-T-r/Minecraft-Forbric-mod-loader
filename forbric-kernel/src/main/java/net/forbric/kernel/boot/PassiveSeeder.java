@@ -38,6 +38,7 @@ import net.forbric.api.ForgeLoadingList;
 import net.forbric.api.ModPresence;
 import net.forbric.api.Side;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.discovery.ModFileScanner;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -554,6 +555,8 @@ public final class PassiveSeeder {
 
 		List<Object> files = new ArrayList<>();
 		List<Object> modInfos = new ArrayList<>();
+		int annotations = 0;
+		long startedAt = System.nanoTime();
 		for (Map.Entry<String, List<DiscoveredMod>> jar : byJar.entrySet()) {
 			Object modFile = allocate(gameLoader, modFileCls);
 			Object fileInfo = allocate(gameLoader, fileInfoCls);
@@ -564,8 +567,17 @@ public final class PassiveSeeder {
 				modInfos.add(modInfo);
 			}
 			fillForgeModFileInfo(gameLoader, fileInfoCls, fileInfo, modFile, List.copyOf(ownMods));
-			fillForgeModFile(modFileCls, modFile, fileInfo, Path.of(jar.getKey()), version(jar.getValue().get(0)));
+			annotations += fillForgeModFile(modFileCls, modFile, fileInfo, Path.of(jar.getKey()),
+					version(jar.getValue().get(0)));
 			files.add(modFile);
+		}
+		if (ModFileScanner.forgeIndexEnabled()) {
+			ForbricLog.info("[Forbric/Seed] indexed %d annotation(s) across %d MinecraftForge jar(s) in %d ms — "
+					+ "ModList.getAllScanData() is how a traditional-Forge mod finds its OWN members "
+					+ "(SuperMartijn642 Core Lib's @RegistryEntryAcceptor field injection, Forge's own "
+					+ "@AutoRegisterCapability sweep), and it held nothing at all until now "
+					+ "(-Dforbric.forgeScanData=off to go back)",
+					annotations, byJar.size(), (System.nanoTime() - startedAt) / 1_000_000L);
 		}
 		return new ForgeLoadingLists(files, modInfos);
 	}
@@ -585,7 +597,9 @@ public final class PassiveSeeder {
 	 * {@code findResource} on each from its config-loading listener, so its init never completed; and because
 	 * {@code toString} goes the same way, any attempt to LOG the failure NPE'd too and hid the real one.
 	 */
-	private static void fillForgeModFile(Class<?> modFileCls, Object modFile, Object fileInfo, Path jar, String version)
+	private static final Map<Path, Object> FORGE_SCAN_CACHE = new LinkedHashMap<>();
+
+	private static int fillForgeModFile(Class<?> modFileCls, Object modFile, Object fileInfo, Path jar, String version)
 			throws Exception {
 		setInstanceField(modFileCls, "modFileInfo", modFile, fileInfo);
 		setInstanceField(modFileCls, "jarVersion", modFile, version);
@@ -594,18 +608,36 @@ public final class PassiveSeeder {
 		// An empty list, not null: whoever walks a file's access transformers must find none rather than throw. The
 		// kernel applies them itself, from its own pass over the same jars.
 		setInstanceField(modFileCls, "accessTransformers", modFile, List.of());
-		// Empty scan data, not null: ModList.getAllScanData() maps every file through getScanResult(), and
-		// MinecraftForge's own CapabilityManager.injectCapabilities streams that list unguarded — a null entry
-		// NPE'd inside Forge's code on every boot. The kernel does its own annotation scanning, so the object is
-		// empty; what matters is that it exists.
+		// Real scan data, and an empty one rather than null if the scan could not be built: ModList.getAllScanData()
+		// maps every file through getScanResult(), and MinecraftForge's own CapabilityManager.injectCapabilities
+		// streams that list unguarded — a null entry NPE'd inside Forge's code on every boot.
+		//
+		// It was empty for years, which is a different bug with no error attached to it. The index is how a
+		// traditional-Forge mod finds its OWN members: SuperMartijn642's Core Lib injects every
+		// @RegistryEntryAcceptor static field from it, so Packed Up's MenuType field stayed null and the client
+		// died in Minecraft.<init> with "Container screen registered with null menu type!" — text that names
+		// neither the index nor the kernel. Forge's own @AutoRegisterCapability sweep read the same nothing.
+		int annotations = 0;
 		try {
-			Class<?> scanData = Class.forName("net.minecraftforge.forgespi.language.ModFileScanData", true,
-					modFileCls.getClassLoader());
-			setOptionalInstanceField(modFileCls, "fileModFileScanData", modFile, scanData.getConstructor().newInstance());
+			// Cached per jar because this whole list is built TWICE — once before Mixin starts and once from the
+			// mod-loading window — and the index is a read-only answer about a file that did not change between
+			// them. Without it the ASM pass over every Forge-family jar runs twice for one boot.
+			Object scanData = FORGE_SCAN_CACHE.get(jar);
+			if (scanData == null) scanData = ModFileScanner.scanForge(jar, modFileCls.getClassLoader());
+			if (scanData == null) {
+				scanData = Class.forName("net.minecraftforge.forgespi.language.ModFileScanData", true,
+						modFileCls.getClassLoader()).getConstructor().newInstance();
+			}
+			setOptionalInstanceField(modFileCls, "fileModFileScanData", modFile, scanData);
+			FORGE_SCAN_CACHE.put(jar, scanData);
+			// Counted off the object itself, not off what was handed to it: the number in the boot log is then
+			// evidence about the index a mod will actually read, and goes to zero the moment one stops being built.
+			annotations = ((Set<?>) scanData.getClass().getMethod("getAnnotations").invoke(scanData)).size();
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Seed] could not give the seeded ModFile empty scan data: %s", String.valueOf(unwrap(t)));
+			ForbricLog.debug("[Forbric/Seed] could not give the seeded ModFile its scan data: %s", String.valueOf(unwrap(t)));
 		}
 		fillForgeModFileJar(modFileCls, modFile, jar);
+		return annotations;
 	}
 
 	/**
