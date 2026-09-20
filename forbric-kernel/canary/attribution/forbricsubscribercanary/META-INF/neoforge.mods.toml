@@ -1,0 +1,19 @@
+modLoader="javafml"
+loaderVersion="[3,)"
+license="Apache-2.0"
+
+[[mods]]
+modId="forbricsubscribercanary"
+version="1.0.0"
+displayName="Forbric Subscriber Canary"
+description='''
+Two @EventBusSubscriber classes that go wrong on purpose: one whose static initializer throws, one waiting on an
+event the merged game never posts.
+'''
+
+[[dependencies.forbricsubscribercanary]]
+modId="neoforge"
+type="required"
+versionRange="[3,)"
+ordering="NONE"
+side="BOTH"

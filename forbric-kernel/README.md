@@ -85,10 +85,12 @@ onwards as unfinished long after their gates were passing — so the scripts the
 | `gate-m12` … `gate-m16` | multiplayer over a real socket, an anti-cheat's opinion, a pure Fabric server, both Forge families' networking |
 | `gate-m17` | the installer, resolved and launched the way a launcher does it |
 | `gate-m24` | a mod that fails on purpose: the others still load and the failure is attributed |
-| `gate-m25-worldgen` | biome modifier canaries leave distinct blocks in saved regions; the Forge half starts as expected red |
+| `gate-m25-worldgen` | biome modifier canaries of both Forge families leave distinct blocks in saved regions |
 | `gate-m26-forgeclient` | the Forge client receives key, renderer, tint, tooltip, geometry-loader and creative-tab registration events, and the CLIENT_INIT/REGISTRATION bridge inventory reports complete |
 | `gate-m27-frame` | the 97-jar client produces a fresh, non-black Minecraft screenshot |
 | `gate-m28-forgeconfig` | Forge COMMON configs load once, then its native watcher reads a live file edit; dedicated servers never open CLIENT configs |
+| `gate-m29-forgecaps` | MinecraftForge capabilities on the merged base: the item-handler capability of a zombie and a furnace, with the lost field initializers replayed |
+| `gate-m30-attribution` | a mod that loses PART of itself — a mixin left out or failing at world creation, a subscriber that cannot register, a listener on a dead event, a throwing deferred task, a jar compiled against another NeoForge — is named with the reason in the log, on the Mods screen and in `load-report.txt`, which is rewritten once the world is up |
 
 `run/compat/gates-all.sh` discovers and runs every gate in numerical order, including network/GUI gates;
 an intentional `--skip <script.sh>` is printed in the results. Portable Windows baseline collection and

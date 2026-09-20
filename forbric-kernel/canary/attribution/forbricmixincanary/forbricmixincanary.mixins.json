@@ -1,0 +1,10 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "forbric.mixincanary.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": ["UnfitMixin", "ApplyFailingMixin"],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

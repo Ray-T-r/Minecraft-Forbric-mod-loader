@@ -1,0 +1,18 @@
+modLoader="javafml"
+loaderVersion="[3,)"
+license="Apache-2.0"
+
+[[mods]]
+modId="forbricabicanary"
+version="1.0.0"
+displayName="Forbric ABI Canary"
+description='''
+Compiled against a NeoForge class this instance does not carry; its common-setup deferred task touches it.
+'''
+
+[[dependencies.forbricabicanary]]
+modId="neoforge"
+type="required"
+versionRange="[3,)"
+ordering="NONE"
+side="BOTH"
