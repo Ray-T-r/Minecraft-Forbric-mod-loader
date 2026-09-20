@@ -48,7 +48,8 @@ import net.forbric.kernel.boot.KernelClientSmoke;
  * <p>This transformer exists only so an unattended gate run can end by itself, and it is registered
  * unconditionally in the chain. Its own javadoc states the rule — "a gate harness must not be able to change what
  * a normal launch executes, and the cheapest guarantee of that is emitting no bytecode at all". That is the same
- * shape as {@link ForbricMixinDowngrade}'s scope: a deliberate hole that is only safe while it cannot leak. If it
+ * shape as {@link net.forbric.kernel.mixin.KernelMixinErrorHandler}'s contract — it observes a mixin failure and
+ * never changes Mixin's decision: a deliberate hole that is only safe while it cannot leak. If it
  * ever armed itself by default, every ordinary player's {@code Minecraft.tick} would gain a call into the gate
  * harness's controller, and the tests that were supposed to observe the game would be changing it.
  *
