@@ -1,0 +1,7 @@
+{
+  "type": "neoforge:add_spawns",
+  "structures": "minecraft:mineshaft",
+  "spawners": [
+    { "type": "minecraft:llama", "weight": 100, "minCount": 1, "maxCount": 1 }
+  ]
+}

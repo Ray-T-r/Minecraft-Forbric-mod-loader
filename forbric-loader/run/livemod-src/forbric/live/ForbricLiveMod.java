@@ -106,6 +106,44 @@ public class ForbricLiveMod {
 		CLIENT_SPEC = b.build();
 	}
 
+	/**
+	 * D6: a structure-modifier serializer of this mod's own (the shape Forge worldgen mods use for structure
+	 * spawns), so the kernel's forge:structure_modifier declaration is exercised by a mod-registered type, not only
+	 * by Forge's built-ins. At ADD it gives mineshafts a CREATURE spawn override with a mooshroom.
+	 */
+	public record ProbeSpawnStructureModifier(
+			net.minecraft.core.HolderSet<net.minecraft.world.level.levelgen.structure.Structure> structures)
+			implements net.minecraftforge.common.world.StructureModifier {
+		public static final com.mojang.serialization.MapCodec<ProbeSpawnStructureModifier> CODEC =
+				com.mojang.serialization.codecs.RecordCodecBuilder.mapCodec(instance -> instance.group(
+						net.minecraft.core.RegistryCodecs.homogeneousList(net.minecraft.core.registries.Registries.STRUCTURE)
+								.fieldOf("structures").forGetter(ProbeSpawnStructureModifier::structures))
+						.apply(instance, ProbeSpawnStructureModifier::new));
+
+		@Override
+		public void modify(net.minecraft.core.Holder<net.minecraft.world.level.levelgen.structure.Structure> structure,
+				Phase phase, net.minecraftforge.common.world.ModifiableStructureInfo.StructureInfo.Builder builder) {
+			if (phase == Phase.ADD && structures.contains(structure)) {
+				builder.getStructureSettings().getOrAddSpawnOverrides(net.minecraft.world.entity.MobCategory.CREATURE)
+						.addSpawn(new net.minecraft.world.level.biome.MobSpawnSettings.SpawnerData(
+								net.minecraft.world.entity.EntityTypes.MOOSHROOM, 1, 1), 100);
+			}
+		}
+
+		@Override
+		public com.mojang.serialization.MapCodec<? extends net.minecraftforge.common.world.StructureModifier> codec() {
+			return CODEC;
+		}
+	}
+
+	private static final net.minecraftforge.registries.DeferredRegister<com.mojang.serialization.MapCodec<? extends net.minecraftforge.common.world.StructureModifier>> STRUCTURE_MODIFIER_SERIALIZERS =
+			net.minecraftforge.registries.DeferredRegister.create(
+					net.minecraftforge.registries.ForgeRegistries.Keys.STRUCTURE_MODIFIER_SERIALIZERS, "forbriclive");
+
+	static {
+		STRUCTURE_MODIFIER_SERIALIZERS.register("probe_spawn", () -> ProbeSpawnStructureModifier.CODEC);
+	}
+
 	/** The spec is unloaded until someone loads or syncs it; reading it then throws outside production. */
 	private static String greeting() {
 		return SERVER_SPEC.isLoaded() ? GREETING.get() : "<unloaded>";
@@ -152,6 +190,8 @@ public class ForbricLiveMod {
 		System.out.println("[ForbricLive/CFG] registered SERVER config forbriclive-server.toml (greeting default 'default')");
 		System.out.println("[ForbricLive/CFG] registered COMMON config forbriclive-common.toml (probe default 11)");
 		System.out.println("[ForbricLive/CFG] registered CLIENT config forbriclive-client.toml (probe default 17)");
+		STRUCTURE_MODIFIER_SERIALIZERS.register(ctx.getModBusGroup());
+		System.out.println("[ForbricLive/WORLDGEN] registered structure modifier serializer forbriclive:probe_spawn");
 		registerRegistrationProbes(ctx);
 		registerReloadProbe();
 		registerSetupLifecycle(ctx);
@@ -460,6 +500,22 @@ public class ForbricLiveMod {
 				System.out.println("[ForbricLive/WORLDGEN] plains underground_ores has forbriclive:probe = " + present);
 			} catch (Throwable failure) {
 				System.out.println("[ForbricLive/WORLDGEN] probe FAILED: " + failure);
+			}
+			// D6: did the mod-registered structure modifier reach the mineshaft's live settings?
+			try {
+				var structures = event.getServer().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.STRUCTURE);
+				var mineshaft = structures.getOrThrow(net.minecraft.world.level.levelgen.structure.BuiltinStructures.MINESHAFT).value();
+				var override = mineshaft.getModifiedStructureSettings().spawnOverrides().get(net.minecraft.world.entity.MobCategory.CREATURE);
+				boolean present = false;
+				if (override != null) {
+					for (var weighted : override.spawns().unwrap()) {
+						if (weighted.value().type() == net.minecraft.world.entity.EntityTypes.MOOSHROOM) present = true;
+					}
+				}
+				System.out.println("[ForbricLive/WORLDGEN] structure probe ran: mineshaft creature override present = " + (override != null));
+				System.out.println("[ForbricLive/WORLDGEN] mineshaft creature override has minecraft:mooshroom = " + present);
+			} catch (Throwable failure) {
+				System.out.println("[ForbricLive/WORLDGEN] structure probe FAILED: " + failure);
 			}
 			// H5: put a vanilla fluid where the joining player will see it, so the client's FluidRenderer funnel
 			// (which asks MinecraftForge's client extensions) is provably on the render path in a save with no water.

@@ -57,6 +57,21 @@ public class ForbricNeoLiveMod {
 			} catch (Throwable failure) {
 				System.out.println("[ForbricNeoLive/WORLDGEN] probe FAILED: " + failure);
 			}
+			try {
+				var structures = event.getServer().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.STRUCTURE);
+				var mineshaft = structures.getOrThrow(net.minecraft.world.level.levelgen.structure.BuiltinStructures.MINESHAFT).value();
+				var override = mineshaft.getModifiedStructureSettings().spawnOverrides().get(net.minecraft.world.entity.MobCategory.CREATURE);
+				boolean present = false;
+				if (override != null) {
+					for (var weighted : override.spawns().unwrap()) {
+						if (weighted.value().type() == net.minecraft.world.entity.EntityTypes.LLAMA) present = true;
+					}
+				}
+				System.out.println("[ForbricNeoLive/WORLDGEN] structure probe ran: mineshaft creature override present = " + (override != null));
+				System.out.println("[ForbricNeoLive/WORLDGEN] mineshaft creature override has minecraft:llama = " + present);
+			} catch (Throwable failure) {
+				System.out.println("[ForbricNeoLive/WORLDGEN] structure probe FAILED: " + failure);
+			}
 		});
 		NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, event -> {
 			int n = TICKS.incrementAndGet();

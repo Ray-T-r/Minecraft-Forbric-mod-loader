@@ -79,6 +79,13 @@ check "Forge probe ran"                       'ForbricLive/WORLDGEN\] probe ran:
 check "Forge probe saw its feature"           'ForbricLive/WORLDGEN\] plains underground_ores has forbriclive:probe = true' "$LOG"
 check_absent "the bridge did not stand down"  'Forbric/Worldgen\] MinecraftForge modifier bridge standing down' "$LOG"
 
+step "MinecraftForge's structure modifier (a mod-registered serializer) rode inside the same pass (D6)"
+check "the canary's serializer registered"     'ForbricLive/WORLDGEN\] registered structure modifier serializer forbriclive:probe_spawn' "$LOG"
+check "Forge structure modifiers were bridged" 'Forbric/Worldgen\] bridging [1-9][0-9]* MinecraftForge structure modifier' "$LOG"
+check "Forge modifiers changed structures"     'Forbric/Worldgen\] MinecraftForge modifiers changed [1-9][0-9]* biome\(s\) and [1-9][0-9]* structure' "$LOG"
+check "Forge structure probe saw its spawn"    'ForbricLive/WORLDGEN\] mineshaft creature override has minecraft:mooshroom = true' "$LOG"
+check "NeoForge structure probe saw its spawn" 'ForbricNeoLive/WORLDGEN\] mineshaft creature override has minecraft:llama = true' "$LOG"
+
 step "the saved overworld contains both markers, with no unreadable chunks"
 # REGION_PROBE_BEGIN — execute this exact command with an argv recorder in the contract test.
 python3 "$KERNEL/run/compat/region-probe.py" "$RUNDIR/world/dimensions/minecraft/overworld/region" \
@@ -105,6 +112,8 @@ check "control: NeoForge still applied its modifier" "applied NeoForge's [1-9][0
 check "control: NeoForge probe still true" 'ForbricNeoLive/WORLDGEN\] plains underground_ores has forbricneolive:probe = true' "$CONTROL_LOG"
 check_absent "control: no Forge bridging" 'Forbric/Worldgen\] bridging [1-9][0-9]* MinecraftForge biome modifier' "$CONTROL_LOG"
 check "control: Forge probe false" 'ForbricLive/WORLDGEN\] plains underground_ores has forbriclive:probe = false' "$CONTROL_LOG"
+check "control: Forge structure probe false" 'ForbricLive/WORLDGEN\] mineshaft creature override has minecraft:mooshroom = false' "$CONTROL_LOG"
+check "control: NeoForge structure probe still true" 'ForbricNeoLive/WORLDGEN\] mineshaft creature override has minecraft:llama = true' "$CONTROL_LOG"
 check "control: the shipper is named" 'forgeWorldgen=off — [1-9][0-9]* MinecraftForge mod jar\(s\) ship biome/structure modifiers that will NOT apply: .*forbriclive' "$CONTROL_LOG"
 check "control: forbriclive is DEGRADED in the load report" 'forbriclive' "$RUNDIR/.forbric-kernel/load-report.txt"
 python3 "$KERNEL/run/compat/region-probe.py" "$RUNDIR/world/dimensions/minecraft/overworld/region" \
