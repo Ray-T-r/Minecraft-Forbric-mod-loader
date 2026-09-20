@@ -30,7 +30,6 @@ import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
-import net.forbric.api.ModCatalog;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -138,9 +137,11 @@ public final class TooltipOrderScrapeInjector implements ClassTransformer {
 		ForbricLog.info("[Forbric/TooltipOrder] restored a scrapeable vanilla component order of %d type(s) in ItemStack.%s — "
 				+ "NeoForge moved the body to %s and fabric-item-api's tooltip-order registry scrapes the original name",
 				order.size(), METHOD, RENAMED);
-		// The registry loads again; the ORDERING it records is still not applied on this base.
-		ModCatalog.mark("fabric-item-api-v1", ModCatalog.Status.DEGRADED, "tooltip provider ordering is decided by NeoForge's "
-				+ "ItemTooltipHandler on this base; ItemComponentTooltipProviderRegistry entries are recorded but not applied");
+		// No claim about the ORDERING is made here, and that is the point of the comment. This repair only makes
+		// the registry loadable; whether the entries it records are APPLIED depends on whether fabric-item-api's
+		// own ItemStackMixin binds, which is decided later and elsewhere (MixinRetarget's R3 puts it on the
+		// renamed body). Asserting "recorded but not applied" from here outlived the truth by exactly as long as
+		// it took to fix the binding — the row went on saying it after the entries had started applying.
 
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);

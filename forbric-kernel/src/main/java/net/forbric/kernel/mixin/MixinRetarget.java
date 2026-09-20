@@ -131,6 +131,7 @@ public final class MixinRetarget {
 					if (rewrite != null) rewrites.add(rewrite);
 				}
 				rewrites.addAll(swappedCallees(handler, injector, selectors, target, resolver));
+				rewrites.addAll(renamedBodies(handler, injector, selectors, target, resolver));
 			}
 		}
 		return new Plan(mixin.name, List.copyOf(rewrites));
@@ -211,6 +212,79 @@ public final class MixinRetarget {
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * Rule R3: a selector whose method has lost its body to a carrier's RENAME, where the class still declares the
+	 * renamed body under the SAME descriptor.
+	 *
+	 * <p>NeoForge's patch of {@code ItemStack.addDetailsToTooltip} moved vanilla's body into a private
+	 * {@code addDetailsToTooltipComponents} with the identical descriptor and made the original a dispatcher over
+	 * its own {@code ItemTooltipHandler}. fabric-item-api-v1's {@code ItemStackMixin} has five injections into
+	 * {@code addDetailsToTooltip} — two {@code @ModifyArg}s, two {@code @Inject}s and a {@code @ModifyExpression
+	 * Value}, all sharing one {@code LocalIntRef} index — and on the merged base every one of their anchors is in
+	 * the renamed method. Five of fourteen anchors miss, the mixin reads PARTIAL, and a Fabric mod registering a
+	 * tooltip provider has its entry recorded and never applied.
+	 *
+	 * <p>R1 cannot take this: it needs an explicit descriptor in the selector and a body that is nothing but a
+	 * delegation, and this dispatcher is neither. What makes the rewrite safe instead is the IDENTICAL descriptor
+	 * — the handler's parameters, its {@code CallbackInfo} and every {@code @Local} it captures stay exactly as
+	 * valid as they were, because the two methods take the same arguments.
+	 *
+	 * <p>Demanded, all of it: every resolvable {@code @At} member of the injector absent from the method the
+	 * selector names, present in the renamed one, and exactly ONE method in the class fitting that description.
+	 * A second candidate and the rule declines — a rewrite to the wrong body is an injection running somewhere
+	 * the mod did not ask for, silently, which is worse than the anchors simply missing.
+	 */
+	private static List<Rewrite> renamedBodies(MethodNode handler, AnnotationNode injector, List<String> selectors,
+			ClassNode target, Function<String, byte[]> resolver) {
+		List<AnnotationNode> ats = MixinFit.atNodes(injector);
+		if (ats.isEmpty()) return List.of();
+
+		List<Rewrite> out = new ArrayList<>();
+		for (String selector : selectors) {
+			List<MethodNode> named = resolveSelector(target, selector, resolver);
+			if (named.size() != 1) continue;    // an overload set is R1's ambiguity, not this rule's business
+			MethodNode selected = named.get(0);
+
+			List<String> wanted = resolvableMembers(ats);
+			if (wanted.isEmpty()) continue;
+			for (String member : wanted) {
+				// One anchor still here means the body did not move; there is nothing to retarget.
+				if (MixinFit.containsMember(selected, member)) { wanted = List.of(); break; }
+			}
+			if (wanted.isEmpty()) continue;
+
+			MethodNode renamed = null;
+			for (MethodNode candidate : target.methods) {
+				if (candidate == selected || !candidate.desc.equals(selected.desc)) continue;
+				boolean all = true;
+				for (String member : wanted) {
+					if (!MixinFit.containsMember(candidate, member)) { all = false; break; }
+				}
+				if (!all) continue;
+				if (renamed != null) { renamed = null; break; }    // two fits: refuse
+				renamed = candidate;
+			}
+			if (renamed == null) continue;
+
+			out.add(new Rewrite(handler.name, Element.SELECTOR, selector, renamed.name + renamed.desc,
+					"a carrier renamed the vanilla body to " + renamed.name + " and left a dispatcher of the same "
+							+ "shape behind"));
+		}
+		return out;
+	}
+
+	/** The {@code @At} members this kernel can look for in a method body — the rest say nothing either way. */
+	private static List<String> resolvableMembers(List<AnnotationNode> ats) {
+		List<String> members = new ArrayList<>();
+		for (AnnotationNode at : ats) {
+			String atValue = MixinFit.asString(MixinFit.value(at, "value"));
+			String atTarget = MixinFit.asString(MixinFit.value(at, "target"));
+			if (atValue == null || atTarget == null || !MixinFit.RESOLVABLE_AT.contains(atValue)) continue;
+			members.add(atTarget);
+		}
+		return members;
 	}
 
 	/** A selector's methods on the target's hierarchy: every overload for a bare name, the one for a descriptor. */

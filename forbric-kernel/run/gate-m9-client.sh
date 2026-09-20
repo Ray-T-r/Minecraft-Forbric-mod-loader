@@ -563,6 +563,23 @@ check "and it says which member differs" \
   "Forbric/PortAudit\].*registerConfig.*Lnet/neoforged/fml/ModContainer;" "$LOG"
 check_absent "nothing actually failed on that API" "NoSuchMethodError.*ConfigTracker" "$LOG"
 
+step "a Fabric mod's tooltip providers reach the body that runs (must PASS)"
+# NeoForge's patch moved vanilla's ItemStack.addDetailsToTooltip body into a private
+# addDetailsToTooltipComponents with the IDENTICAL descriptor and made the original a dispatcher over its own
+# ItemTooltipHandler. fabric-item-api's ItemStackMixin has five injections into that method — two @ModifyArgs,
+# two @Injects and a @ModifyExpressionValue sharing one LocalIntRef — and every one of their anchors ended up in
+# the renamed method, so a Fabric mod registering a tooltip provider had its entry recorded and never applied.
+#
+# The identical descriptor is what makes the rewrite safe: the handlers' parameters, their CallbackInfo and every
+# @Local they capture stay exactly as valid. RED with M9_EXTRA_JVM=-Dforbric.mixinRetarget=off: these two go red,
+# and so do this gate's other retarget checks — that switch turns off every rule, not just this one.
+check "the mixin is retargeted onto the renamed body" \
+  "Forbric/Mixin\] retargeted guest mixin fabric-item-api-v1.*addDetailsToTooltip.*addDetailsToTooltipComponents" "$LOG"
+check "and almost every anchor resolves afterwards" \
+  "Forbric/Mixin\] guest mixin fabric-item-api-v1.*still applies only partially.*1[0-9]/1[0-9] anchors resolve" "$LOG"
+check_absent "the stale 'recorded but not applied' claim is gone" \
+  "recorded but not applied" "$LOG"
+
 step "an access directive the kernel already satisfies does not mark its mod (must PASS)"
 # fabric-biome-api's widener asks for ChunkGenerator.featuresPerStep as vanilla's Supplier. MinecraftForge
 # re-typed that field to its own ClearableLazy so refreshFeaturesPerStep() has something to invalidate, and the
