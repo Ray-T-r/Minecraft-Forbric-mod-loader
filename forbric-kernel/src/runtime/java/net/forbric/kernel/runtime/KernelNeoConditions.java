@@ -93,7 +93,26 @@ public final class KernelNeoConditions {
 	private static final java.util.concurrent.atomic.AtomicBoolean OVERLAY_RISK =
 			new java.util.concurrent.atomic.AtomicBoolean();
 
+	/** {@code -Dforbric.neoConditions=off}: decode strictly, exactly as the carrier's own codec would. Read per decode. */
+	public static final String PROPERTY = "forbric.neoConditions";
+
+	/** Whether a condition type id is registered; substitutable so a unit test never initialises the registry. */
+	private static volatile java.util.function.Predicate<String> known = id -> {
+		// An id that does not even parse is "known": the strict codec then fails it exactly as before.
+		Identifier parsed = Identifier.tryParse(id);
+		return parsed == null || NeoForgeRegistries.CONDITION_SERIALIZERS.containsKey(parsed);
+	};
+
 	private KernelNeoConditions() {
+	}
+
+	public static boolean enabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
+	}
+
+	/** Test seam: the registry lookup, replaced. */
+	static void bindKnownTypesForTest(java.util.function.Predicate<String> knownTypes) {
+		known = knownTypes;
 	}
 
 	/**
@@ -108,6 +127,7 @@ public final class KernelNeoConditions {
 		return new Codec<>() {
 			@Override
 			public <T> DataResult<Pair<ICondition, T>> decode(DynamicOps<T> ops, T input) {
+				if (!enabled()) return strict.decode(ops, input);
 				String foreign = foreignType(ops, input);
 				if (foreign != null) {
 					report(foreign);
@@ -154,9 +174,7 @@ public final class KernelNeoConditions {
 			if (type == null) return null;
 			Optional<String> name = ops.getStringValue(type).result();
 			if (name.isEmpty()) return null;
-			Identifier id = Identifier.tryParse(name.get());
-			if (id == null) return null;
-			return NeoForgeRegistries.CONDITION_SERIALIZERS.containsKey(id) ? null : name.get();
+			return known.test(name.get()) ? null : name.get();
 		} catch (Throwable t) {
 			return null;
 		}

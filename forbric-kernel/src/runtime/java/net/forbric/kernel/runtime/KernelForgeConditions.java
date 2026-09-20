@@ -88,7 +88,26 @@ public final class KernelForgeConditions {
 
 	private static final Set<String> REPORTED = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
+	/** {@code -Dforbric.forgeConditions=off}: decode strictly, exactly as the carrier's own codec would. Read per decode. */
+	public static final String PROPERTY = "forbric.forgeConditions";
+
+	/** Whether a condition type id is registered; substitutable so a unit test never initialises the registry. */
+	private static volatile java.util.function.Predicate<String> known = id -> {
+		// An id that does not even parse is "known": the strict codec then fails it exactly as before.
+		Identifier parsed = Identifier.tryParse(id);
+		return parsed == null || ForgeRegistries.CONDITION_SERIALIZERS.get().containsKey(parsed);
+	};
+
 	private KernelForgeConditions() {
+	}
+
+	public static boolean enabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
+	}
+
+	/** Test seam: the registry lookup, replaced. */
+	static void bindKnownTypesForTest(java.util.function.Predicate<String> knownTypes) {
+		known = knownTypes;
 	}
 
 	/**
@@ -103,6 +122,7 @@ public final class KernelForgeConditions {
 		return new Codec<>() {
 			@Override
 			public <T> DataResult<Pair<ICondition, T>> decode(DynamicOps<T> ops, T input) {
+				if (!enabled()) return strict.decode(ops, input);
 				String foreign = foreignType(ops, input);
 				if (foreign != null) {
 					report(foreign);
@@ -152,9 +172,7 @@ public final class KernelForgeConditions {
 			if (type == null) return null;
 			Optional<String> name = ops.getStringValue(type).result();
 			if (name.isEmpty()) return null;
-			Identifier id = Identifier.tryParse(name.get());
-			if (id == null) return null;
-			return ForgeRegistries.CONDITION_SERIALIZERS.get().containsKey(id) ? null : name.get();
+			return known.test(name.get()) ? null : name.get();
 		} catch (Throwable t) {
 			return null;
 		}

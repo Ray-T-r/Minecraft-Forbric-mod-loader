@@ -18,6 +18,11 @@
 # running this gate with -Dforbric.packMetadataFailSoft=off, which reproduces 6 dropped packs and the chunk-gen
 # exception. Change the seed and that stops being true (it needs a ruined portal in the generated region), so keep
 # the seed fixed; the four pack assertions above it are seed-independent and are what primarily gates the fix.
+#
+# M8_EXTRA_JVM is how this gate's other teeth are demonstrated. -Dforbric.neoConditions=off: Terralith's data files
+# carry `neoforge:conditions` of type terralith:config (registered only on Fabric), so NeoForge's strict codec errors
+# on every one, RegistryDataLoader reports 'Failed to load registries due to errors', and 'the unknown condition
+# type was tolerated' plus 'server reached Done' go RED.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -40,7 +45,7 @@ echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
 step "boot the merged base under the kernel (no compatibility flags)"
 : > "$LOG"
-( sleep 60; echo stop ) | RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
+( sleep 60; echo stop ) | FORBRIC_JVM="${M8_EXTRA_JVM:-}" RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 180
