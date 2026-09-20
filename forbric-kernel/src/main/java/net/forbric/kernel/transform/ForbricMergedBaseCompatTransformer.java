@@ -75,11 +75,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 
 	@Override
 	public AnchorSet anchors() {
-		// Thirty-seven independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
+		// Thirty-eight independent repairs behind one `changed` flag -- dungeon generation, key mappings, the
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("37 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("38 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -126,6 +126,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= letMinecraftForgeFluidsChooseTheirModel(node);
 			changed |= giveMinecraftForgesParticleLookupItsFirstVariant(node);
 			changed |= dropStubsThatBypassARealSuperclassMethod(node);
+			changed |= inlineTheSwitchMapTheMergeLost(node);
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -2483,6 +2484,115 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The next instruction that is not a label, line number or frame. */
+	// ---------------------------------------------------------------------------------------------------------------
+	// A javac switch map whose synthetic holder class the merge replaced
+	// ---------------------------------------------------------------------------------------------------------------
+
+	/**
+	 * One {@code switch} over an enum whose javac-generated {@code $SwitchMap$} holder class lost the merge.
+	 *
+	 * @param user     the class whose method switches
+	 * @param holder   the synthetic inner class javac put the map in ({@code Owner$N})
+	 * @param field    the map field ({@code $SwitchMap$<enum with $ for .>})
+	 * @param enumType the enum switched over
+	 * @param cases    case index (the value the map stored, 1-based) → enum constant name
+	 */
+	record LostSwitchMap(String user, String holder, String field, String enumType, Map<Integer, String> cases) {
+	}
+
+	/**
+	 * javac compiles {@code switch (direction)} through a synthetic {@code Owner$N} class holding
+	 * {@code static final int[] $SwitchMap$…}, numbered with the other anonymous classes of {@code Owner}. Both
+	 * families patch {@code AbstractFurnaceBlockEntity}: MinecraftForge's {@code $2} is the switch map its
+	 * {@code getCapability} needs, NeoForge's {@code $2} is a {@code SnapshotJournal} — and the merge kept ONE
+	 * class per name. MinecraftForge's body then reads a field NeoForge's class never had, and every Forge pipe
+	 * or hopper asking a furnace for {@code ITEM_HANDLER} dies with {@code NoSuchFieldError: $SwitchMap$…}.
+	 * Found by the E7 furnace probe on gate-m29; a census of the whole base (in the test) finds exactly this one.
+	 */
+	static final List<LostSwitchMap> LOST_SWITCH_MAPS = List.of(new LostSwitchMap(
+			"net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity",
+			"net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity$2",
+			"$SwitchMap$net$minecraft$core$Direction",
+			"net/minecraft/core/Direction",
+			Map.of(1, "UP", 2, "DOWN")));
+
+	/**
+	 * Replaces {@code getstatic $SwitchMap; <load>; invokevirtual ordinal; iaload; lookupswitch/tableswitch} with a
+	 * chain of {@code <load>; getstatic Enum.CONST; if_acmpeq <case label>} ending in {@code goto <default>} —
+	 * the same three-way decision without the holder class. The branch targets are the switch's own labels, so
+	 * the frames already there stay right; the sequence replaced was straight-line with an empty stack before it
+	 * and after it, and the replacement is too. Both-or-nothing: a switch key the table does not name, or a
+	 * shape other than the one javac emits, leaves the method untouched.
+	 */
+	private static boolean inlineTheSwitchMapTheMergeLost(ClassNode node) {
+		int inlined = 0;
+		for (LostSwitchMap lost : LOST_SWITCH_MAPS) {
+			if (!lost.user().equals(node.name)) continue;
+			for (MethodNode method : node.methods) {
+				for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+					if (!(insn instanceof FieldInsnNode get) || get.getOpcode() != Opcodes.GETSTATIC
+							|| !lost.holder().equals(get.owner) || !lost.field().equals(get.name)) {
+						continue;
+					}
+					AbstractInsnNode load = nextReal(get);
+					AbstractInsnNode ordinal = nextReal(load);
+					AbstractInsnNode iaload = nextReal(ordinal);
+					AbstractInsnNode sw = nextReal(iaload);
+					if (!(load instanceof VarInsnNode var) || var.getOpcode() != Opcodes.ALOAD
+							|| !(ordinal instanceof MethodInsnNode call) || !"ordinal".equals(call.name)
+							|| !lost.enumType().equals(call.owner) || iaload == null || iaload.getOpcode() != Opcodes.IALOAD
+							|| !(sw instanceof org.objectweb.asm.tree.LookupSwitchInsnNode
+									|| sw instanceof org.objectweb.asm.tree.TableSwitchInsnNode)) {
+						ForbricLog.warn("[Forbric/MergedBaseCompat] %s.%s reads %s.%s in a shape that is not javac's switch "
+								+ "map — not inlined", node.name.replace('/', '.'), method.name, lost.holder(), lost.field());
+						continue;
+					}
+					List<Integer> keys = new ArrayList<>();
+					List<LabelNode> labels = new ArrayList<>();
+					LabelNode dflt;
+					if (sw instanceof org.objectweb.asm.tree.LookupSwitchInsnNode lookup) {
+						keys.addAll(lookup.keys);
+						labels.addAll(lookup.labels);
+						dflt = lookup.dflt;
+					} else {
+						org.objectweb.asm.tree.TableSwitchInsnNode table = (org.objectweb.asm.tree.TableSwitchInsnNode) sw;
+						for (int k = table.min; k <= table.max; k++) keys.add(k);
+						labels.addAll(table.labels);
+						dflt = table.dflt;
+					}
+					boolean allNamed = true;
+					for (int key : keys) if (!lost.cases().containsKey(key)) allNamed = false;
+					if (!allNamed) {
+						ForbricLog.warn("[Forbric/MergedBaseCompat] %s.%s switches on a case the table does not name (%s) "
+								+ "— not inlined", node.name.replace('/', '.'), method.name, keys);
+						continue;
+					}
+					InsnList chain = new InsnList();
+					String enumDesc = "L" + lost.enumType() + ";";
+					for (int i = 0; i < keys.size(); i++) {
+						chain.add(new VarInsnNode(Opcodes.ALOAD, var.var));
+						chain.add(new FieldInsnNode(Opcodes.GETSTATIC, lost.enumType(), lost.cases().get(keys.get(i)), enumDesc));
+						chain.add(new JumpInsnNode(Opcodes.IF_ACMPEQ, labels.get(i)));
+					}
+					chain.add(new JumpInsnNode(Opcodes.GOTO, dflt));
+					AbstractInsnNode last = chain.getLast();    // insertBefore empties `chain`
+					method.instructions.insertBefore(get, chain);
+					// Drop the five instructions, leaving any label/line/frame nodes between them where they are.
+					for (AbstractInsnNode victim : List.of(get, load, ordinal, iaload, sw)) method.instructions.remove(victim);
+					method.maxStack = Math.max(method.maxStack, 2);
+					inlined++;
+					insn = last;
+				}
+			}
+		}
+		if (inlined == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] %s decides %d enum switch(es) by direct comparison — javac's "
+				+ "$SwitchMap$ holder class for them was MinecraftForge's, and the merge kept NeoForge's class of the "
+				+ "same name instead, so the read was a NoSuchFieldError on every Forge ITEM_HANDLER ask of a furnace",
+				node.name.replace('/', '.'), inlined);
+		return true;
+	}
+
 	private static AbstractInsnNode nextReal(AbstractInsnNode cursor) {
 		AbstractInsnNode next = cursor == null ? null : cursor.getNext();
 		while (next != null && next.getOpcode() < 0) next = next.getNext();
