@@ -64,6 +64,17 @@ class MixinFitStagedTest {
 				&& r.unresolved().get(0).contains("builder:Lcom/google/common/collect/ImmutableMap$Builder;"), r.unresolved().toString());
 	}
 
+	/** …and binds once the twin injector has restored vanilla's descriptor beside the merged one. */
+	@Test
+	void theAttributeBuilderAccessorBindsAgainstTheTwinnedBase() throws Exception {
+		Function<String, byte[]> raw = rawResolver();
+		String owner = "net/minecraft/world/entity/ai/attributes/AttributeSupplier$Builder";
+		byte[] twinned = new net.forbric.kernel.transform.WidenedFieldTwinInjector().transform(owner.replace('/', '.'), raw.apply(owner + ".class"), null);
+		Function<String, byte[]> after = name -> (owner + ".class").equals(name) ? twinned : raw.apply(name);
+		MixinFit.Result r = MixinFit.evaluate(nested("fabric-object-builder-api-v1", ATTRIBUTE_BUILDER_ACCESSOR), after);
+		assertTrue(r.unresolved().isEmpty(), r.unresolved().toString());
+	}
+
 	/** An explicit-descriptor selector is not touched by overload resolution — the R1 case stays R1's. */
 	@Test
 	void anExplicitDescriptorSelectorIsStillPartialWithoutRetargeting() throws Exception {

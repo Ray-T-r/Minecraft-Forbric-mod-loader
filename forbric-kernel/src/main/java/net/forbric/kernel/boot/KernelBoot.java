@@ -365,6 +365,16 @@ public final class KernelBoot {
 				return null;
 			}
 		}));
+		// Both sides: vanilla-descriptor twins beside the fields the merge re-typed (RangedBow/CrossbowAttackGoal.mob,
+		// AttributeSupplier$Builder.builder), so a vanilla-compiled reader and fabric-object-builder's accessor bind.
+		if (net.forbric.kernel.transform.WidenedFieldTwinInjector.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.WidenedFieldTwinInjector());
+		} else {
+			ForbricLog.warn("[Forbric/WidenedFields] -D%s=off — vanilla-compiled readers of the re-typed fields get "
+					+ "NoSuchFieldError and fabric-object-builder's attribute accessor cannot bind",
+					net.forbric.kernel.transform.WidenedFieldTwinInjector.PROPERTY);
+		}
+
 		// Client only: route RenderPipeline$Builder.buildSnippet through the vanilla-shaped 11-arg Snippet
 		// constructor (NeoForge's stencil test carried by a kernel scope) so fabric-rendering-v1's
 		// @WrapOperation(NEW Snippet) matches instead of being rejected whole. Matches two classes a dedicated

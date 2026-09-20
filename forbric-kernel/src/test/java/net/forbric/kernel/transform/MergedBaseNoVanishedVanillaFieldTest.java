@@ -95,23 +95,10 @@ class MergedBaseNoVanishedVanillaFieldTest {
 				"both ecosystems replace vanilla's plain Map with their own KeyMappingLookup. A mod reading "
 						+ "KeyMapping.MAP as a Map cannot; the kernel instead routes the game's own readers at the "
 						+ "lookup that registration fills (see routeKeyMappingClickToPopulatedLookup)");
-		KNOWN.put("net/minecraft/world/entity/ai/attributes/AttributeSupplier$Builder#builder:"
-						+ "Lcom/google/common/collect/ImmutableMap$Builder;",
-				"NeoForge re-types it to a plain Map. fabric-api's object-builder reaches it through an @Accessor "
-						+ "typed ImmutableMap$Builder, which therefore cannot bind, so Fabric mods lose the "
-						+ "default-attribute registry path. Not repairable the way featuresPerStep was: a Map does "
-						+ "not satisfy ImmutableMap$Builder, so one field cannot serve both readers");
 		KNOWN.put("net/minecraft/util/random/WeightedList$Builder#result:"
 						+ "Lcom/google/common/collect/ImmutableList$Builder;",
 				"re-typed to a plain List. Same shape as AttributeSupplier$Builder#builder; no consumer has been "
 						+ "observed hitting it yet");
-		KNOWN.put("net/minecraft/world/entity/ai/goal/RangedBowAttackGoal#mob:"
-						+ "Lnet/minecraft/world/entity/monster/Monster;",
-				"widened to Mob. Widening is source-compatible and descriptor-INcompatible: a mod reading the field "
-						+ "with vanilla's descriptor gets NoSuchFieldError even though the value would have fitted");
-		KNOWN.put("net/minecraft/world/entity/ai/goal/RangedCrossbowAttackGoal#mob:"
-						+ "Lnet/minecraft/world/entity/monster/Monster;",
-				"widened to Mob, exactly as RangedBowAttackGoal#mob");
 	}
 
 	@Test
@@ -185,6 +172,8 @@ class MergedBaseNoVanishedVanillaFieldTest {
 		merged.accept(writer);
 		String binary = entryName.substring(0, entryName.length() - ".class".length()).replace('/', '.');
 		byte[] out = new ForbricMergedBaseCompatTransformer().transform(binary, writer.toByteArray(), null);
+		// …and the twin injector, which answers three of the drifts this census used to list as KNOWN.
+		out = new WidenedFieldTwinInjector().transform(binary, out, null);
 		ClassNode node = new ClassNode();
 		new ClassReader(out).accept(node, 0);
 		return node;

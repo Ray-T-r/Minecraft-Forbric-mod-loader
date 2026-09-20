@@ -78,6 +78,7 @@ class MergedBaseNoUnwrittenDuplicateFieldTest {
 				scanned++;
 				String binary = entry.getName().substring(0, entry.getName().length() - 6).replace('/', '.');
 				byte[] repaired = new ForbricMergedBaseCompatTransformer().transform(binary, bytes, null);
+				repaired = new WidenedFieldTwinInjector().transform(binary, repaired, null);
 
 				ClassNode node = new ClassNode();
 				new ClassReader(repaired).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);

@@ -173,6 +173,13 @@ check_absent "RenderPipelineBuilderMixin is not half-applied either" "RenderPipe
 check "fabric-block-api's isAir redirect rebound to isEmpty" "Forbric/Mixin\] retargeted guest mixin fabric-block-api-v1 .*LevelChunkSectionMixin .*isAir → isEmpty.*PARTIAL→FIT" "$LOG"
 check "…and the block-counter twin"                   "Forbric/Mixin\] retargeted guest mixin fabric-block-api-v1 .*ChunkSectionBlockStateCounterMixin .*isAir → isEmpty.*PARTIAL→FIT" "$LOG"
 check_absent "LevelChunkSectionMixin no longer half-applied" "LevelChunkSectionMixin applies only partially" "$LOG"
+# G5: the merge re-typed AttributeSupplier$Builder.builder (ImmutableMap.Builder → Map) and widened the two ranged
+# goals' `mob` (Monster → Mob); a vanilla-descriptor twin now sits beside each, so fabric-object-builder's
+# @Accessor binds instead of InvalidAccessorException on every boot. The goals are only loaded when a ranged mob
+# spawns, so only the builder is asserted. RED with M9_EXTRA_JVM=-Dforbric.widenedFieldTwins=off.
+check "the attribute builder got its vanilla-typed twin" "WidenedFields\] net.minecraft.world.entity.ai.attributes.AttributeSupplier\\\$Builder: vanilla-descriptor twin" "$LOG"
+check_absent "fabric-object-builder's attribute accessor binds" "InvalidAccessorException.*builder:Lcom/google/common/collect/ImmutableMap\\\$Builder;" "$LOG"
+check_absent "…and the kernel reports no unbound accessor for it" "guest accessor mixin .*AttributeSupplierBuilderAccessor cannot bind" "$LOG"
 # H5 (the FluidRenderer.tesselate funnel for MinecraftForge fluid models) is asserted in gate-m26, not here: this
 # pack carries sodium, which replaces vanilla's chunk and fluid meshing, so the vanilla funnel is never reached.
 
