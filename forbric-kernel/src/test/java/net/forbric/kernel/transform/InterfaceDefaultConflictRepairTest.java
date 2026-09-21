@@ -152,6 +152,23 @@ class InterfaceDefaultConflictRepairTest {
 	}
 
 	@Test
+	void twoInterfacesHandingDownOneAncestorsDefaultIsNoConflict() {
+		// One declaration reached two ways. AbstractMinecartContainer implements vanilla's ContainerEntity and,
+		// once Lithium's mixin has run, LithiumInventory; both extend Container, and eleven of Container's own
+		// defaults looked contested. A version keyed on the superinterface that CARRIES the method rather than
+		// the one that DECLARES it rewrote all eleven and took eight gates red — the client never joined a world.
+		byte[] ancestor = iface("base/Container", "ancestor");
+		assertNotNull(ancestor);
+		iface("base/ContainerEntity", null, "base/Container");
+		iface("mod/LithiumInventory", null, "base/Container");
+		byte[] before = implementor("game/Minecart", "base/ContainerEntity");
+		byte[] after = implementor("game/Minecart", "base/ContainerEntity", "mod/LithiumInventory");
+
+		assertNull(find(repair.transform("game.Minecart", before, after), "who"),
+				"one ancestor's default, inherited twice, is what the JVM resolves on its own");
+	}
+
+	@Test
 	void anInterfaceThatRefinesTheOtherNeedsNoHelp() {
 		// Specificity already orders these, and adding an override would pin the less specific one forever.
 		iface("base/Parent", "parent");

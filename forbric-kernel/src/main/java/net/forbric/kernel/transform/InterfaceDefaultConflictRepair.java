@@ -82,8 +82,8 @@ public final class InterfaceDefaultConflictRepair {
 			List.of("net/minecraft/", "net/neoforged/", "net/minecraftforge/", "com/mojang/");
 
 	private final Function<String, byte[]> classBytes;
-	/** internal name → (name+desc → true when that interface DECLARES a usable default). */
-	private final Map<String, Map<String, Boolean>> defaults = new ConcurrentHashMap<>();
+	/** internal name → (name+desc → the interface that DECLARES that default, which may be an ancestor). */
+	private final Map<String, Map<String, String>> defaults = new ConcurrentHashMap<>();
 	private final Set<String> repaired = ConcurrentHashMap.newKeySet();
 
 	public InterfaceDefaultConflictRepair(Function<String, byte[]> classBytes) {
@@ -134,12 +134,16 @@ public final class InterfaceDefaultConflictRepair {
 		new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES | ClassReader.SKIP_CODE);
 		if (node.interfaces == null || node.interfaces.size() < 2) return bytes;
 
-		// name+desc → the interfaces that supply a default for it, in declaration order.
+		// name+desc → the interfaces that DECLARE a default for it, deduplicated. Two superinterfaces that both
+		// pass down one ancestor's default are not a conflict: there is a single declaration and the JVM resolves
+		// it without help. Keying this on the declarer rather than on the superinterface that carries it is what
+		// tells those apart — and nearly everything reachable from a class this deep in Minecraft's hierarchy is
+		// that shape, not a real contest.
 		Map<String, List<String>> suppliers = new LinkedHashMap<>();
 		for (String iface : node.interfaces) {
-			for (Map.Entry<String, Boolean> e : defaultsOf(iface).entrySet()) {
-				if (!Boolean.TRUE.equals(e.getValue())) continue;
-				suppliers.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).add(iface);
+			for (Map.Entry<String, String> e : defaultsOf(iface).entrySet()) {
+				List<String> declarers = suppliers.computeIfAbsent(e.getKey(), k -> new ArrayList<>());
+				if (!declarers.contains(e.getValue())) declarers.add(e.getValue());
 			}
 		}
 
@@ -254,21 +258,24 @@ public final class InterfaceDefaultConflictRepair {
 	}
 
 	/**
-	 * name+desc → whether {@code iface} supplies a usable default for it, including the ones it inherits.
+	 * name+desc → the interface that DECLARES the default {@code iface} supplies for it, which may be an ancestor.
 	 *
-	 * <p>Inherited ones count: the conflict is about what an implementor INHERITS, and an interface that extends
-	 * another passes the parent's default down.
+	 * <p>Inherited ones are included because the conflict is about what an implementor INHERITS — but they are
+	 * recorded under the DECLARER, because two superinterfaces handing down the same ancestor's method is one
+	 * declaration and no conflict at all. {@code AbstractMinecartContainer} implements vanilla's
+	 * {@code ContainerEntity} and, once Lithium's mixin has run, {@code LithiumInventory}; eleven of their methods
+	 * look contested and every one of them is {@code Container}'s single default reached two ways.
 	 */
-	private Map<String, Boolean> defaultsOf(String iface) {
-		Map<String, Boolean> cached = defaults.get(iface);
+	private Map<String, String> defaultsOf(String iface) {
+		Map<String, String> cached = defaults.get(iface);
 		if (cached != null) return cached;
-		Map<String, Boolean> found = new LinkedHashMap<>();
+		Map<String, String> found = new LinkedHashMap<>();
 		collectDefaults(iface, found, 0);
 		defaults.put(iface, found);
 		return found;
 	}
 
-	private void collectDefaults(String iface, Map<String, Boolean> into, int depth) {
+	private void collectDefaults(String iface, Map<String, String> into, int depth) {
 		if (depth > 16) return;
 		byte[] bytes = classBytes.apply(iface);
 		if (bytes == null) return;
@@ -282,7 +289,7 @@ public final class InterfaceDefaultConflictRepair {
 		if (node.methods != null) {
 			for (MethodNode m : node.methods) {
 				if ((m.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_PRIVATE)) != 0) continue;
-				into.putIfAbsent(m.name + m.desc, Boolean.TRUE);
+				into.putIfAbsent(m.name + m.desc, node.name);
 			}
 		}
 		if (node.interfaces == null) return;
