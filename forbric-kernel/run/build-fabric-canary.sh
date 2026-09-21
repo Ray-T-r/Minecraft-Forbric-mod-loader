@@ -12,7 +12,7 @@ set -uo pipefail
 
 SRC="$KERNEL/canary/fabric"
 OUT="$KERNEL/run/canary"
-WORK="$BUILD/canary-fabric"
+canary_scratch fabric
 MERGED="$OLD/run/merged-base/patched-mc-merged-26.2.jar"
 # The merged Block implements Forge's IForgeBlock and NeoForge's IBlockExtension, so a canary that touches
 # Block needs both carriers on the compile classpath — the same jars the launchers put on the runtime one.
@@ -32,7 +32,6 @@ KERNEL_JAR="$BUILD/libs/forbric-kernel-0.1.0-SNAPSHOT.jar"
 if [ ! -f "$KERNEL_JAR" ]; then echo "[kernel] FAIL kernel jar not built"; exit 1; fi
 echo "[kernel] merged base + kernel jar present"
 
-rm -rf "$WORK" "$OUT/forbricfabriclive.jar"
 mkdir -p "$WORK/lib/classes" "$WORK/live/classes" "$OUT"
 
 step "compile the JiJ-nested library mod (forbricfabriclib)"
@@ -80,7 +79,8 @@ javac -nowarn -proc:none --release 21 \
 cp "$SRC/forbricfabriclive/fabric.mod.json" "$WORK/live/classes/"
 mkdir -p "$WORK/live/classes/META-INF/jars"
 cp "$WORK/forbricfabriclib.jar" "$WORK/live/classes/META-INF/jars/"
-(cd "$WORK/live/classes" && jar --create --file "$OUT/forbricfabriclive.jar" .) || exit 1
+(cd "$WORK/live/classes" && jar --create --file "$WORK/forbricfabriclive.jar" .) || exit 1
+publish_canary "$WORK/forbricfabriclive.jar" "$OUT/forbricfabriclive.jar" || exit 1
 
 step "result"
 echo "[kernel] ✅ built $OUT/forbricfabriclive.jar"

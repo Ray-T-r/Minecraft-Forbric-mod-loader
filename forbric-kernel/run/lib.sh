@@ -200,6 +200,36 @@ await_server() {
   wait "$pid" 2>/dev/null
 }
 
+# --- canary builds ------------------------------------------------------------------------------------------
+# WHY THESE NEED ANY CARE AT ALL. run/canary/ is written by four builder scripts and read by eight gates, and
+# SIX of those gates rebuild the same Fabric canary themselves. While the gates ran one at a time that was only
+# wasteful. Once they overlap it is two concrete faults:
+#
+#   * two runs of one builder `rm -rf` each other's scratch directory mid-compile;
+#   * `jar --create --file run/canary/x.jar` leaves a partial file on disk for as long as it takes to write it,
+#     and build-fabric-canary.sh additionally UNLINKED its output first — so a reader in another gate could
+#     find no canary at all, or copy half of one into its mods/ and then fail to load it. Neither failure
+#     mentions the canary; both read as a kernel regression.
+#
+# The two helpers below remove the need for a lock: give each invocation its own scratch, and put the finished
+# jar in place with a single rename. Concurrent builders then all produce the same bytes and the last rename
+# wins, while every reader sees one complete jar or the other.
+
+# canary_scratch <name> — set $WORK to a scratch directory this invocation owns, and remove it on exit.
+# NOT via command substitution: a subshell would take the trap with it and delete the directory immediately.
+canary_scratch() {
+  WORK="$BUILD/canary-$1.$$"
+  rm -rf "$WORK"; mkdir -p "$WORK"
+  trap 'rm -rf "$WORK"' EXIT
+}
+
+# publish_canary <staged-jar> <destination> — install a FINISHED jar with one rename, so no reader ever sees a
+# partially written one. Both paths are under build/, one filesystem, so the rename is atomic.
+publish_canary() {
+  mkdir -p "$(dirname "$2")"
+  mv -f "$1" "$2" || { echo "[kernel] FAIL could not publish $(basename "$2")" >&2; return 1; }
+}
+
 # --- download caches ----------------------------------------------------------------------------------------
 # WHY THIS EXISTS. gate-m13 and gate-m14 both `rm -rf` their rundir to get a clean world, and that also deletes
 # the ~50 MB vanilla server jar their launcher downloaded on the previous run. So these two are the only gates

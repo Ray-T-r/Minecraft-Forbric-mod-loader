@@ -12,7 +12,7 @@
 # So this gate asserts the ANSWER, from inside real mods, in both directions, in one instance — and runs the same
 # instance again with -Dforbric.crossEcosystemPresence=off as the negative control, because an assertion that
 # something is true is worth little unless the run that should make it false does.
-# GATE-PARALLEL: rundirs=server-presence,canary mem=1500
+# GATE-PARALLEL: rundirs=server-presence mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

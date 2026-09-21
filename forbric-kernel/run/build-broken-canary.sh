@@ -16,7 +16,7 @@ set -uo pipefail
 
 SRC="$KERNEL/canary/broken"
 OUT="$KERNEL/run/canary"
-WORK="$BUILD/canary-broken"
+canary_scratch broken
 
 step "prerequisites"
 mkdir -p "$BUILD"
@@ -24,8 +24,7 @@ kernel_jar
 KERNEL_JAR="$BUILD/libs/forbric-kernel-0.1.0-SNAPSHOT.jar"
 [ -f "$KERNEL_JAR" ] || { echo "[kernel] FAIL kernel jar not built"; exit 1; }
 
-rm -rf "$WORK"
-mkdir -p "$WORK" "$OUT"
+mkdir -p "$OUT"
 
 step "compile the mod that fails on purpose"
 # Compiled against the kernel jar only: it touches nothing but net.fabricmc.api, which is what makes it a
@@ -36,7 +35,8 @@ javac -nowarn -proc:none --release 21 -cp "$KERNEL_JAR" -d "$WORK" \
   echo "[kernel] FAIL broken canary did not compile"; exit 1; }
 
 cp "$SRC/fabric.mod.json" "$WORK/"
-(cd "$WORK" && jar --create --file "$OUT/forbricbrokencanary.jar" .) || exit 1
+(cd "$WORK" && jar --create --file "$BUILD/forbricbrokencanary.$$.jar" .) || exit 1
+publish_canary "$BUILD/forbricbrokencanary.$$.jar" "$OUT/forbricbrokencanary.jar" || exit 1
 
 step "result"
 echo "[kernel] ✅ built $OUT/forbricbrokencanary.jar"

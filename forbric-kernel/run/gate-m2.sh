@@ -7,7 +7,7 @@
 # works), then the side-specific `server` entrypoint. No net.fabricmc.loader.impl class exists in the process.
 #
 # The canary (run/build-fabric-canary.sh) is an ordinary Fabric mod: every call it makes is published Fabric API.
-# GATE-PARALLEL: rundirs=server-kernel,canary mem=1500
+# GATE-PARALLEL: rundirs=server-kernel mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

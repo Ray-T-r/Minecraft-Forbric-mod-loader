@@ -18,7 +18,7 @@
 #
 # It asserts BEHAVIOUR, not only the log line: the canary library carries a one-shot registry that throws on a
 # second registration, the way xaerolib's config channel does.
-# GATE-PARALLEL: rundirs=server-nesteddupe,canary mem=1500
+# GATE-PARALLEL: rundirs=server-nesteddupe mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

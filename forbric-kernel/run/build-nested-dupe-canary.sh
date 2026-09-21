@@ -17,7 +17,7 @@ set -uo pipefail
 
 SRC="$KERNEL/canary/nesteddupe"
 OUT="$KERNEL/run/canary"
-WORK="$BUILD/canary-nesteddupe"
+canary_scratch nesteddupe
 FORGE_RT="$OLD/run/merged-base/forge-runtime-interop.jar"
 [ -f "$FORGE_RT" ] || FORGE_RT="$OLD/run/forge-runtime/forge-runtime.jar"
 
@@ -29,7 +29,6 @@ KERNEL_JAR="$BUILD/libs/forbric-kernel-0.1.0-SNAPSHOT.jar"
 [ -f "$KERNEL_JAR" ] || { echo "[kernel] FAIL kernel jar not built"; exit 1; }
 echo "[kernel] forge runtime + kernel jar present"
 
-rm -rf "$WORK"
 mkdir -p "$WORK"/{libfab,libforge,parfab,parforge} "$OUT"
 
 # The registry class is compiled into BOTH library jars, byte-identical, exactly as a real multiloader library
@@ -70,8 +69,10 @@ cp "$SRC/parentforge/mods.toml" "$WORK/parforge/META-INF/"
 cp "$SRC/parentforge/metadata.json" "$WORK/parforge/META-INF/jarjar/"
 cp "$WORK/forbricnestlib-forge.jar" "$WORK/parforge/META-INF/jarjar/"
 
-(cd "$WORK/parfab"   && jar --create --file "$OUT/forbricnestfab.jar" .)   || exit 1
-(cd "$WORK/parforge" && jar --create --file "$OUT/forbricnestforge.jar" .) || exit 1
+(cd "$WORK/parfab"   && jar --create --file "$WORK/forbricnestfab.jar" .)   || exit 1
+(cd "$WORK/parforge" && jar --create --file "$WORK/forbricnestforge.jar" .) || exit 1
+publish_canary "$WORK/forbricnestfab.jar"   "$OUT/forbricnestfab.jar"   || exit 1
+publish_canary "$WORK/forbricnestforge.jar" "$OUT/forbricnestforge.jar" || exit 1
 
 step "result"
 echo "[kernel] ✅ built $OUT/forbricnestfab.jar + $OUT/forbricnestforge.jar"

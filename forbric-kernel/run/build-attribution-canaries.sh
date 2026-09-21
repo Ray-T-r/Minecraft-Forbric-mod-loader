@@ -8,7 +8,7 @@ set -uo pipefail
 
 SRC="$KERNEL/canary/attribution"
 OUT="$KERNEL/run/canary"
-WORK="$BUILD/canary-attribution"
+canary_scratch attribution
 MERGED="$OLD/run/merged-base/patched-mc-merged-26.2.jar"
 NEO_RT="$OLD/run/neoforge-runtime/neoforge-runtime.jar"
 NEO_MC="$OLD/run/neoforge-patched/patched-mc-neoforge-26.2.jar"
@@ -23,7 +23,6 @@ done
 MIXIN="$(find "$MC_DIR/libraries/net/fabricmc/sponge-mixin" -name '*.jar' 2>/dev/null | sort | tail -1)"
 [ -n "$MIXIN" ] || MIXIN="$(find "$HOME/.gradle/caches/modules-2/files-2.1/net.fabricmc/sponge-mixin" -name '*.jar' ! -name '*sources*' 2>/dev/null | sort | tail -1)"
 [ -n "$MIXIN" ] || { echo "[kernel] FAIL sponge-mixin jar not found"; exit 1; }
-rm -rf "$WORK"
 mkdir -p "$WORK" "$OUT"
 
 build_fabric() { # <mod id>
@@ -33,7 +32,8 @@ build_fabric() { # <mod id>
         $(find "$SRC/$id/src" -name '*.java') 2>&1 | grep -v '^Note:' || true
   [ -n "$(find "$classes" -name '*.class')" ] || { echo "[kernel] FAIL $id did not compile"; exit 1; }
   cp "$SRC/$id/fabric.mod.json" "$SRC/$id/$id.mixins.json" "$classes/"
-  (cd "$classes" && jar --create --file "$OUT/$id.jar" .) || exit 1
+  (cd "$classes" && jar --create --file "$WORK/$id.jar" .) || exit 1
+  publish_canary "$WORK/$id.jar" "$OUT/$id.jar" || exit 1
   echo "[kernel] built $OUT/$id.jar"
 }
 
@@ -50,9 +50,11 @@ build_neo() { # <mod id> [stub dir]
         $(find "$SRC/$id/src" -name '*.java') 2>&1 | grep -v '^Note:' || true
   [ -n "$(find "$classes" -name '*.class')" ] || { echo "[kernel] FAIL $id did not compile"; exit 1; }
   cp "$SRC/$id/META-INF/neoforge.mods.toml" "$classes/META-INF/"
-  (cd "$classes" && jar --create --file "$OUT/$id.jar" .) || exit 1
-  # The stub must NOT be in the jar: the defect is that the class is not here.
-  if unzip -l "$OUT/$id.jar" | grep -q ForbricVanishedEvent; then echo "[kernel] FAIL the stub leaked into $id.jar"; exit 1; fi
+  (cd "$classes" && jar --create --file "$WORK/$id.jar" .) || exit 1
+  # The stub must NOT be in the jar: the defect is that the class is not here. Checked on the STAGED jar, so a
+  # jar that fails its own check is never published for a gate to pick up.
+  if unzip -l "$WORK/$id.jar" | grep -q ForbricVanishedEvent; then echo "[kernel] FAIL the stub leaked into $id.jar"; exit 1; fi
+  publish_canary "$WORK/$id.jar" "$OUT/$id.jar" || exit 1
   echo "[kernel] built $OUT/$id.jar"
 }
 
@@ -63,7 +65,8 @@ build_forge() { # <mod id>
         $(find "$SRC/$id/src" -name '*.java') 2>&1 | grep -v '^Note:' || true
   [ -n "$(find "$classes" -name '*.class')" ] || { echo "[kernel] FAIL $id did not compile"; exit 1; }
   cp "$SRC/$id/META-INF/mods.toml" "$classes/META-INF/"
-  (cd "$classes" && jar --create --file "$OUT/$id.jar" .) || exit 1
+  (cd "$classes" && jar --create --file "$WORK/$id.jar" .) || exit 1
+  publish_canary "$WORK/$id.jar" "$OUT/$id.jar" || exit 1
   echo "[kernel] built $OUT/$id.jar"
 }
 
