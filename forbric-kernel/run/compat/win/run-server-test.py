@@ -7,12 +7,24 @@ import subprocess
 import sys
 import threading
 import time
-from common import config, driver_command, finish, own_driver, parser, prepare_world, safe_filename, spawn
+from common import (await_outcome, config, driver_command, finish, own_driver, parser, prepare_world,
+                    safe_filename, spawn)
 
 
 def main():
     argument_parser = parser(__doc__)
     argument_parser.add_argument('--boot-timeout', type=int, default=int(os.environ.get('BOOT_TIMEOUT', '900')))
+    # A BOOT THAT HAS STOPPED TALKING IS NOT A SLOW BOOT. --boot-timeout is the ceiling for a server that is
+    # still working; this is the one for a server that has stopped. Measured over the sixteen sweeps kept in
+    # build/compat/: every boot that reached Done did so in 31-38 seconds and never went quiet for more than
+    # EIGHT of them, while all three that never reached Done fell silent 13-17 seconds in and stayed silent,
+    # alive, until the full 900s ceiling expired. Two of those cost 820s and 1615s of wall clock to learn
+    # nothing that the first two minutes had not already settled.
+    #
+    # 120s is fifteen times the largest silence a healthy boot has ever produced here, so a slow machine still
+    # gets to finish. It applies ONLY before Done: after that the server is idle by design and the tick soak
+    # below is legitimately quiet for a minute at a stretch ("Server empty for 60 seconds, pausing").
+    argument_parser.add_argument('--boot-stall', type=int, default=int(os.environ.get('BOOT_STALL', '120')))
     argument_parser.add_argument('--tick-seconds', type=int, default=int(os.environ.get('TICK_SECONDS', '90')))
     argument_parser.add_argument('--stop-timeout', type=int, default=int(os.environ.get('STOP_TIMEOUT', '240')))
     argument_parser.add_argument('--seed', default=os.environ.get('WORLD_SEED', '20260919'))
@@ -38,6 +50,7 @@ def main():
         f'level-name={configuration["world"]}\nlevel-seed={args.seed}\nserver-port={args.port}\n'
         'online-mode=false\nview-distance=10\nsimulation-distance=10\nspawn-protection=0\n', encoding='utf-8')
     ready, failed = threading.Event(), threading.Event()
+    last_output = [time.monotonic()]
     log = directory / 'server-console.log'
     with own_driver(configuration), log.open('w', encoding='utf-8') as output:
         process = spawn(configuration, driver_command(configuration, 'forbric-server.py'), cwd=directory,
@@ -45,6 +58,7 @@ def main():
                         text=True, encoding='utf-8', errors='replace', bufsize=1)
         def pump():
             for line in process.stdout:
+                last_output[0] = time.monotonic()
                 output.write(line)
                 output.flush()
                 if 'Done (' in line and 'For help' in line:
@@ -54,11 +68,17 @@ def main():
         thread = threading.Thread(target=pump, daemon=True)
         thread.start()
         try:
-            deadline = time.monotonic() + args.boot_timeout
-            while not ready.is_set() and not failed.is_set() and process.poll() is None and time.monotonic() < deadline:
-                time.sleep(1)
-            if not ready.is_set() or failed.is_set() or process.poll() is not None:
-                print('FAIL server did not become ready')
+            verdict = await_outcome(ready=ready, failed=failed, process=process, timeout=args.boot_timeout,
+                                    stall=args.boot_stall, last_output=last_output)
+            if verdict == 'stalled':
+                # Name it. "did not become ready" covers a crash, a slow machine and a deadlock alike, and the
+                # three want different next steps.
+                quiet = int(time.monotonic() - last_output[0])
+                print(f'FAIL server stopped producing output {quiet}s ago and had not reached Done; '
+                      'see server-console.log for its last line')
+                return 1
+            if verdict != 'ready':
+                print(f'FAIL server did not become ready ({verdict})')
                 return 1
             deadline = time.monotonic() + args.tick_seconds
             while process.poll() is None and time.monotonic() < deadline:

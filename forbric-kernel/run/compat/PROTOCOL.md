@@ -61,7 +61,15 @@ jar before treating the selection as final; metadata resolution alone cannot pro
    Upload the artifacts and refreshed profile, then the driver tools and mod archive.
    Windows-illegal jar characters are replaced with `_`; collisions fail before upload.
 6. `win/run-server-test.py` drives `win/forbric-server.py` through world generation,
-   ticks, save, and clean stop, then copies the save for the client. `win/prepare-world.py`
+   ticks, save, and clean stop, then copies the save for the client. Both job drivers
+   distinguish a process that is still working from one that has stopped: `--boot-timeout`
+   (900s) and `--run-timeout` (1200s) are ceilings for the former, `--boot-stall` (120s,
+   `BOOT_STALL`) and `--stall` (300s, `CLIENT_STALL`) bound the silence of the latter,
+   measured from the last line it printed. The server's stall applies only before `Done` —
+   after that the tick soak is quiet by design. Sixteen recorded sweeps put the largest
+   silence of a boot that reached `Done` at 8 seconds, against 900 spent waiting on ones
+   that never would; two such runs cost 820s and 1615s. The soak itself is unchanged: a boot
+   reaching `Done` is still not the claim this sweep makes. `win/prepare-world.py`
    sets only the copied test save's `Data/confirmedExperimentalSettings` byte to 1,
    acknowledging the carrier's experimental-world prompt without changing lifecycle,
    datapacks or terrain. The source server save is untouched; `--check` is read only. `win/run-client-test.py`

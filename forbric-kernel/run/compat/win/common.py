@@ -108,6 +108,40 @@ def spawn(configuration, command, **kwargs):
     return process
 
 
+def await_outcome(*, ready, failed, process, timeout, stall, last_output,
+                  now=time.monotonic, sleep=time.sleep, tick=1.0):
+    """Wait for a spawned game to announce itself, and say WHY the wait ended.
+
+    The verdict matters as much as the waiting. `timeout` is the ceiling for a process that is still working;
+    `stall` is the one for a process that has stopped, measured from the last line it printed, which the caller
+    keeps in the one-element list `last_output` from inside its output pump.
+
+    Without the second one there is only the first, and the difference is fifteen minutes. Across the sixteen
+    sweeps in build/compat/, every server boot that reached Done did so in 31-38 seconds and never went quiet
+    for more than 8; all three that never reached Done fell silent 13-17 seconds in and then sat there, alive
+    and mute, until the 900s ceiling expired. Two of those cost 820s and 1615s to report a failure that was
+    already decided before the second minute.
+
+    Returns 'failed', 'exited', 'ready', 'stalled' or 'timeout'. The first three are checked in that order
+    after the loop, which is the order the drivers' own conditions used to resolve them in: a process that has
+    announced failure, or died, has not become ready however many events are set.
+    """
+    deadline = now() + timeout
+    while now() < deadline:
+        if failed.is_set() or ready.is_set() or process.poll() is not None:
+            break
+        if now() - last_output[0] > stall:
+            return 'stalled'
+        sleep(tick)
+    if failed.is_set():
+        return 'failed'
+    if process.poll() is not None:
+        return 'exited'
+    if ready.is_set():
+        return 'ready'
+    return 'timeout'
+
+
 def finish(configuration, process):
     if process.poll() is None:
         if os.name == 'nt':

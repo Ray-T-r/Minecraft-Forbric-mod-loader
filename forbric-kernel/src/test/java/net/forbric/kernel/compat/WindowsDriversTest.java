@@ -46,6 +46,81 @@ class WindowsDriversTest {
         }
     }
 
+    /**
+     * A boot that has stopped talking must be told apart from one that is merely slow.
+     *
+     * Before await_outcome existed there was only --boot-timeout, and a wedged server held it for the whole
+     * 900 seconds: two runs in build/compat/ cost 820s and 1615s to report a failure their console logs had
+     * already settled inside the first 20 seconds. The numbers below are the ones that evidence supports —
+     * across sixteen recorded sweeps a boot that reached Done never went quiet for more than 8 seconds, and
+     * every boot that did not went silent 13-17 seconds in and stayed that way.
+     *
+     * The negative control is the half that matters. A stall detector that fires on a slow machine does not
+     * save fifteen minutes, it invents a red sweep, so this asserts that output arriving steadily keeps the
+     * wait alive well past the stall window.
+     */
+    @Test void aBootThatStopsTalkingIsCutShortAndOneThatKeepsTalkingIsNot() throws Exception {
+        var result = DriverTools.run(Map.of(), "-c", """
+                import sys, types
+                sys.path.insert(0, sys.argv[1]); import common
+
+                class Event:
+                    def __init__(self): self.value = False
+                    def is_set(self): return self.value
+                class Process:
+                    def __init__(self, exit_at=None): self.exit_at = exit_at
+                    def poll(self): return 0 if self.exit_at is not None and clock[0] >= self.exit_at else None
+
+                clock = [0.0]
+                def now(): return clock[0]
+                def tick(seconds): clock[0] += seconds
+
+                # 1. silent from the start: stalls at the threshold, NOT at the ceiling.
+                last = [0.0]
+                verdict = common.await_outcome(ready=Event(), failed=Event(), process=Process(),
+                                               timeout=900, stall=120, last_output=last, now=now, sleep=tick)
+                assert verdict == 'stalled', verdict
+                assert 120 <= clock[0] <= 122, clock[0]
+
+                # 2. NEGATIVE CONTROL: still printing, just slowly. Must never stall, however long it takes.
+                clock[0] = 0.0; last = [0.0]; ready = Event()
+                def talk(seconds):
+                    tick(seconds)
+                    last[0] = clock[0]          # a line arrived on every poll
+                    if clock[0] >= 600: ready.value = True
+                verdict = common.await_outcome(ready=ready, failed=Event(), process=Process(),
+                                               timeout=900, stall=120, last_output=last, now=now, sleep=talk)
+                assert verdict == 'ready', verdict
+                assert clock[0] >= 600, clock[0]
+
+                # 3. a boot quiet for 119s and then noisy again is not a stall either.
+                clock[0] = 0.0; last = [0.0]; ready = Event()
+                def late(seconds):
+                    tick(seconds)
+                    if clock[0] >= 119: last[0] = clock[0]
+                    if clock[0] >= 200: ready.value = True
+                assert common.await_outcome(ready=ready, failed=Event(), process=Process(), timeout=900,
+                                            stall=120, last_output=last, now=now, sleep=late) == 'ready'
+
+                # 4. the other verdicts keep the precedence the drivers' own conditions had.
+                clock[0] = 0.0; last = [0.0]
+                both = Event(); both.value = True; failed = Event(); failed.value = True
+                assert common.await_outcome(ready=both, failed=failed, process=Process(), timeout=900,
+                                            stall=120, last_output=last, now=now, sleep=tick) == 'failed'
+                clock[0] = 0.0; last = [0.0]; ready = Event(); ready.value = True
+                assert common.await_outcome(ready=ready, failed=Event(), process=Process(exit_at=0), timeout=900,
+                                            stall=120, last_output=last, now=now, sleep=tick) == 'exited'
+                clock[0] = 0.0; last = [0.0]
+                def quiet_but_fed(seconds):
+                    tick(seconds); last[0] = clock[0]
+                assert common.await_outcome(ready=Event(), failed=Event(), process=Process(), timeout=300,
+                                            stall=120, last_output=last, now=now, sleep=quiet_but_fed) == 'timeout'
+                print('stall detection PASS')
+                """, DriverTools.COMPAT.resolve("win").toString());
+        assertEquals(0, result.exit(), result.output());
+        assertTrue(result.output().contains("stall detection PASS"), result.output());
+    }
+
     @Test void pidBookkeepingPreservesOtherProcessesAndSanitizesNames() throws Exception {
         var result = DriverTools.run(Map.of(), "-c", """
                 import pathlib,sys,subprocess
