@@ -125,9 +125,6 @@ public final class DependencyDialogMain {
 	/** The continuation of a capped list: indented like a bullet, but not one. */
 	private static final String MORE = "    ";
 
-	/** The width of a list item's marker column, so its wrapped lines start under its first line. */
-	private static final int MARKER_WIDTH = 26;
-
 	private DependencyDialogMain() {
 	}
 
@@ -201,40 +198,49 @@ public final class DependencyDialogMain {
 
 	private static int show(DialogLang lang, List<DependencyReport.Row> rows,
 			List<DependencyReport.MixinRow> mixins) {
-		String summary = summary(lang, rows, mixins);
-		String fixes = fixes(lang, rows, mixins);
-		String notes = notes(lang, rows, mixins);
+		List<String> spoken = blocks(lang, rows, mixins);
 		String detail = details(lang, rows, mixins);
 
-		Font prose = legible(summary + fixes + notes, 13, false);
+		Font prose = legible(String.join("\n", spoken), 13, false);
 		JPanel content = new JPanel(new BorderLayout(0, 12));
 		content.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
 
-		// What is wrong, then what to do about it, then the caveat. A player who reads the first two blocks has
-		// read the useful part; the previous version opened with the paragraph about what happens if they ignore
-		// it, which is the part that matters least and took the most room.
 		Box head = Box.createVerticalBox();
-		head.add(leftAligned(block(summary, prose)));
-		head.add(Box.createVerticalStrut(14));
-		head.add(leftAligned(block(fixes, prose)));
-		head.add(Box.createVerticalStrut(14));
-		head.add(leftAligned(block(notes, prose)));
-		head.add(Box.createVerticalStrut(14));
+		for (String spoke : spoken) {
+			if (spoke.isBlank()) continue;
+			head.add(leftAligned(block(spoke, prose)));
+			head.add(Box.createVerticalStrut(14));
+		}
 
-		JButton toggle = new JButton(lang.get("button.details.show"));
-		head.add(leftAligned(hugging(toggle)));
-		content.add(head, BorderLayout.NORTH);
+		// Scrollable, and given a height BUDGET rather than its own preferred height.
+		//
+		// This is the fix for a dialog nobody could answer. The head is the whole message; a JOptionPane lays its
+		// message and its button row out with a vertical BoxLayout, and a stack of wrapping JTextAreas reports a
+		// MINIMUM height equal to its preferred one. So when reseat() clamped an over-tall window down to the
+		// screen, BoxLayout had nothing it was allowed to compress and laid the answer buttons out past the
+		// bottom edge — off-screen, unreachable, on a window already at full height, with no way back.
+		// Measured: seven unmet requirements and two mixin breaks in German, or any language once the system
+		// font is 16pt, is enough to reach it. A viewport CAN shrink, which is what keeps the buttons on screen.
+		JScrollPane headScroll = plainScroll(head);
+		content.add(headScroll, BorderLayout.NORTH);
 
 		// Added now and hidden. BorderLayout skips an invisible child entirely when it measures, so the collapsed
-		// dialog is exactly the size it would be if the details did not exist — which is the whole point of
-		// building it up front rather than swapping a component in later.
+		// dialog is exactly the size it would be if the details did not exist.
 		JScrollPane details = detailsPane(detail);
 		details.setVisible(false);
-		content.add(details, BorderLayout.CENTER);
 
-		Object[] options = options(lang);
-		JOptionPane pane = new JOptionPane(content, JOptionPane.WARNING_MESSAGE, JOptionPane.DEFAULT_OPTION,
-				null, options, initialOption(lang));
+		// The toggle sits OUTSIDE the scrolling message, between it and the details. Inside it, a message long
+		// enough to need scrolling is a message long enough to scroll the only control that reveals the rest of
+		// the dialog off the bottom of it -- which is the case the toggle exists for.
+		JButton toggle = new JButton(lang.get("button.details.show"));
+		JPanel below = new JPanel(new BorderLayout(0, 8));
+		below.setOpaque(false);
+		below.add(hugging(toggle), BorderLayout.NORTH);
+		below.add(details, BorderLayout.CENTER);
+		content.add(below, BorderLayout.CENTER);
+		budget(headScroll, details, toggle);
+
+		JOptionPane pane = optionPane(lang, content);
 		JDialog dialog = pane.createDialog(null, title(lang, rows, mixins));
 		// createDialog fixes the size; forty findings want a window the player can drag bigger.
 		dialog.setResizable(true);
@@ -244,6 +250,8 @@ public final class DependencyDialogMain {
 			details.setVisible(showing);
 			toggle.setText(lang.get(showing ? "button.details.hide" : "button.details.show"));
 			Rectangle was = dialog.getBounds();
+			// The two panes share one screen, so opening the details takes room the message may have been using.
+			budget(headScroll, details, toggle);
 			content.revalidate();
 			// pack(), not validate(): validate re-lays-out the children inside the size the window already has,
 			// which is the size of a dialog that had no details in it.
@@ -259,11 +267,44 @@ public final class DependencyDialogMain {
 		dialog.setVisible(true);
 		dialog.dispose();
 
-		// Compared against the OPTION OBJECT, never an index. The options are translated, so the only comparison
-		// that cannot drift with the language is the one against the value that was put in the array. Everything
-		// that is not exactly the quit option — a closed window, Escape, an uninitialised value — means continue,
-		// which is the same fail-open the exit code has always had.
-		return options[1].equals(pane.getValue()) ? QUIT : CONTINUE;
+		return answerFrom(lang, pane.getValue());
+	}
+
+	/**
+	 * The pane the dialog is built from, and the one place the continue option is handed to Swing.
+	 *
+	 * <p>Package-visible so a test can read {@code getInitialValue()} and {@code getOptions()} back off the real
+	 * pane. What has to hold is not that {@link #initialOption} returns {@code options[0]} — that is true by
+	 * construction and proves nothing — but that THIS call site passes it.
+	 */
+	static JOptionPane optionPane(DialogLang lang, Component content) {
+		return new JOptionPane(content, JOptionPane.WARNING_MESSAGE, JOptionPane.DEFAULT_OPTION,
+				null, options(lang), initialOption(lang));
+	}
+
+	/**
+	 * What a value that came back out of the pane means.
+	 *
+	 * <p>Compared against the OPTION OBJECT, never an index. The options are translated, so the only comparison
+	 * that cannot drift with the language is the one against the value that was put in the array. Everything that
+	 * is not exactly the quit option — a closed window, Escape, an uninitialised value, null — means
+	 * continue, which is the same fail-open the exit code has always had.
+	 */
+	static int answerFrom(DialogLang lang, Object value) {
+		return lang.get("button.quit").equals(value) ? QUIT : CONTINUE;
+	}
+
+	/**
+	 * The player-facing text, in the order the window stacks it.
+	 *
+	 * <p>What is wrong, then what to do about it, then the caveat. A player who reads the first two has read the
+	 * useful part; the previous version opened with the paragraph about what happens if they ignore it, which is
+	 * the part that matters least and took the most room. Returned as a list because {@code show()} needs a
+	 * display and cannot be called in a test — an ordering nothing can read is an ordering nothing can hold.
+	 */
+	static List<String> blocks(DialogLang lang, List<DependencyReport.Row> rows,
+			List<DependencyReport.MixinRow> mixins) {
+		return List.of(summary(lang, rows, mixins), fixes(lang, rows, mixins), notes(lang, rows, mixins));
 	}
 
 	/**
@@ -293,9 +334,57 @@ public final class DependencyDialogMain {
 	 */
 	static String title(DialogLang lang, List<DependencyReport.Row> rows,
 			List<DependencyReport.MixinRow> mixins) {
-		if (rows.isEmpty()) return lang.get("title.mixins");
-		if (mixins.isEmpty()) return lang.get("title.deps");
+		if (rows.isEmpty()) {
+			return lang.get(owners(mixins).size() > 1 ? "title.mixins.many" : "title.mixins");
+		}
+		if (mixins.isEmpty()) {
+			// Counted in MODS, like the line under it. A mod with three unmet requirements is three rows and one
+			// mod, and a title bar that says "a mod" over a list headed "3 mods" is a dialog arguing with itself.
+			return lang.get(requiringMods(rows).size() > 1 ? "title.deps.many" : "title.deps");
+		}
 		return lang.get("title.both");
+	}
+
+	/**
+	 * The distinct mods {@code rows} is about, first appearance first.
+	 *
+	 * <p>A {@link DependencyReport.Row} is one unmet REQUIREMENT, not one mod: {@code DependencyAudit} emits one
+	 * per (mod, dependency) pair, so Biomes O' Plenty missing three things is three rows. Counting rows told the
+	 * player to go and fix three mods, two of which do not exist.
+	 */
+	private static List<String> requiringMods(List<DependencyReport.Row> rows) {
+		LinkedHashSet<String> ids = new LinkedHashSet<>();
+		for (DependencyReport.Row row : rows) ids.add(row.requiredBy());
+		return new ArrayList<>(ids);
+	}
+
+	/**
+	 * The distinct mods {@code mixins} is about, first appearance first.
+	 *
+	 * <p>Same shape, one layer over: a {@link DependencyReport.MixinRow} is one mixin CLASS, and one mod's config
+	 * routinely breaks in several places at once — the Iris/Sodium case in {@code ForeignMixinBreaks}' own
+	 * javadoc is exactly that. Counting rows reported one mod as three, printed its name three times, and spent
+	 * three of the six summary slots saying the same sentence.
+	 */
+	private static List<String> owners(List<DependencyReport.MixinRow> mixins) {
+		LinkedHashSet<String> ids = new LinkedHashSet<>();
+		for (DependencyReport.MixinRow row : mixins) ids.add(row.owner());
+		return new ArrayList<>(ids);
+	}
+
+	/**
+	 * What to call a mod the player has to go and find.
+	 *
+	 * <p>A mixin break carries the owning mod's ID; an unmet requirement carries its DISPLAY NAME. The same mod
+	 * appearing in both sections was therefore named twice, in two spellings, and "take Iris Shaders, iris out of
+	 * your mods folder" sent the player looking for a second jar that does not exist. The rows are the only place
+	 * the two namings meet, so the id is resolved against them and falls back to itself.
+	 */
+	private static String displayName(String modId, List<DependencyReport.Row> rows) {
+		for (DependencyReport.Row row : rows) {
+			if (row.requiredBy().equalsIgnoreCase(modId)) return row.requiredByName();
+		}
+		return modId;
 	}
 
 	/**
@@ -309,8 +398,9 @@ public final class DependencyDialogMain {
 			List<DependencyReport.MixinRow> mixins) {
 		StringBuilder text = new StringBuilder();
 		if (!rows.isEmpty()) {
-			text.append(rows.size() == 1 ? lang.get("summary.deps.one")
-					: lang.get("summary.deps.many", rows.size())).append("\n\n");
+			int mods = requiringMods(rows).size();
+			text.append(mods == 1 ? lang.get("summary.deps.one")
+					: lang.get("summary.deps.many", mods)).append("\n\n");
 			int shown = Math.min(rows.size(), SUMMARY_BULLETS);
 			for (int i = 0; i < shown; i++) {
 				DependencyReport.Row row = rows.get(i);
@@ -325,14 +415,16 @@ public final class DependencyDialogMain {
 		}
 		if (!mixins.isEmpty()) {
 			if (text.length() > 0) text.append('\n');
-			text.append(mixins.size() == 1 ? lang.get("summary.mixins.one")
-					: lang.get("summary.mixins.many", mixins.size())).append("\n\n");
-			int shown = Math.min(mixins.size(), SUMMARY_BULLETS);
+			List<String> broken = owners(mixins);
+			text.append(broken.size() == 1 ? lang.get("summary.mixins.one")
+					: lang.get("summary.mixins.many", broken.size())).append("\n\n");
+			int shown = Math.min(broken.size(), SUMMARY_BULLETS);
 			for (int i = 0; i < shown; i++) {
-				text.append(BULLET).append(lang.get("bullet.mixin", mixins.get(i).owner())).append('\n');
+				text.append(BULLET).append(lang.get("bullet.mixin", displayName(broken.get(i), rows)))
+						.append('\n');
 			}
-			if (mixins.size() > shown) {
-				text.append(MORE).append(lang.get("summary.more", mixins.size() - shown)).append('\n');
+			if (broken.size() > shown) {
+				text.append(MORE).append(lang.get("summary.more", broken.size() - shown)).append('\n');
 			}
 		}
 		return text.toString();
@@ -379,9 +471,9 @@ public final class DependencyDialogMain {
 					? lang.get("fix.install", row.requiredId(), row.requiredByName(), row.ecosystem())
 					: lang.get("fix.version", row.requiredId(), row.requiredRange(), row.installedVersion()));
 		}
-		for (DependencyReport.MixinRow row : mixins) {
+		for (String owner : owners(mixins)) {
 			if (lines.size() >= SUMMARY_BULLETS) break;
-			lines.add(lang.get("fix.mixin", row.owner()));
+			lines.add(lang.get("fix.mixin", displayName(owner, rows)));
 		}
 		lines.add(lang.get("fix.remove", affected(rows, mixins)));
 
@@ -400,7 +492,7 @@ public final class DependencyDialogMain {
 	private static String affected(List<DependencyReport.Row> rows, List<DependencyReport.MixinRow> mixins) {
 		LinkedHashSet<String> names = new LinkedHashSet<>();
 		for (DependencyReport.Row row : rows) names.add(row.requiredByName());
-		for (DependencyReport.MixinRow row : mixins) names.add(row.owner());
+		for (String owner : owners(mixins)) names.add(displayName(owner, rows));
 		List<String> named = new ArrayList<>(names);
 		if (named.size() <= 3) return String.join(", ", named);
 		return String.join(", ", named.subList(0, 3)) + " …";
@@ -501,7 +593,7 @@ public final class DependencyDialogMain {
 	}
 
 	/** A marker in its own column, and the text wrapped beside it. */
-	private static JPanel item(String marker, String text, Font font) {
+	static JPanel item(String marker, String text, Font font) {
 		JPanel row = new JPanel(new BorderLayout(0, 0));
 		row.setOpaque(false);
 		javax.swing.JLabel mark = new javax.swing.JLabel(marker);
@@ -509,9 +601,15 @@ public final class DependencyDialogMain {
 		mark.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 6));
 		mark.setVerticalAlignment(javax.swing.SwingConstants.TOP);
 		row.add(mark, BorderLayout.WEST);
-		JTextArea body = wrapped(text, TEXT_WIDTH - MARKER_WIDTH, font);
+		// ASKED, not assumed. BorderLayout gives WEST the label's own preferred width — its insets plus the
+		// glyph's advance at this font — so a constant here is right at one font size and wrong at every other.
+		// Wrapping the body at a width wider than it is then given makes it wrap onto a line the row's already
+		// pinned height has no room for, and the last line of the sentence is simply cut off.
+		int column = Math.max(mark.getPreferredSize().width, 1);
+		JTextArea body = wrapped(text, Math.max(TEXT_WIDTH - column, 120), font);
 		row.add(body, BorderLayout.CENTER);
-		row.setPreferredSize(new Dimension(TEXT_WIDTH, body.getPreferredSize().height));
+		row.setPreferredSize(new Dimension(column + body.getPreferredSize().width,
+				body.getPreferredSize().height));
 		row.setMaximumSize(row.getPreferredSize());
 		return row;
 	}
@@ -545,7 +643,61 @@ public final class DependencyDialogMain {
 		return area;
 	}
 
-	/** The details, scrollable and never taller than a bit over half the usable screen. */
+	/** A scroll pane that looks like no scroll pane at all until its content stops fitting. */
+	private static JScrollPane plainScroll(Component view) {
+		JScrollPane scroll = new JScrollPane(view);
+		scroll.setBorder(BorderFactory.createEmptyBorder());
+		scroll.setViewportBorder(null);
+		scroll.setOpaque(false);
+		scroll.getViewport().setOpaque(false);
+		// Everything inside is already laid out to TEXT_WIDTH, so a horizontal bar would only ever appear to
+		// carry the few pixels a vertical bar took, and a dialog with two scrollbars reads as broken.
+		scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+		scroll.getVerticalScrollBar().setUnitIncrement(16);
+		return scroll;
+	}
+
+	/**
+	 * Divides the usable screen height between the message and the details, and never asks for more than it.
+	 *
+	 * <p>The answer buttons and the window chrome are reserved FIRST, out of the total, which is what makes them
+	 * unlosable: whatever is left is what the two panes may ask for, so the packed window already fits the screen
+	 * and {@link #reseat}'s clamp never has to take height from a component that cannot give any.
+	 */
+	private static void budget(JScrollPane head, JScrollPane details, Component toggle) {
+		budget(head, details, GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds(),
+				toggle.getPreferredSize().height + 8);
+	}
+
+	/**
+	 * @param usable   the screen the window has to fit inside. Passed in so a test can name one: the real call
+	 *                 reads it from the graphics environment, which is not there on the machines the tests run
+	 *                 on, and a budget nothing can check is a budget that quietly stops adding up
+	 * @param reserved height the window spends between the two panes -- the details toggle and its gap
+	 */
+	static void budget(JScrollPane head, JScrollPane details, Rectangle usable, int reserved) {
+		int forPanes = Math.max(240, usable.height - CHROME - reserved);
+		int wantDetails = details.isVisible()
+				? Math.min(details.getViewport().getView().getPreferredSize().height + 8, forPanes / 2)
+				: 0;
+		int wantHead = head.getViewport().getView().getPreferredSize().height;
+		int forHead = Math.max(160, forPanes - wantDetails);
+
+		head.setPreferredSize(new Dimension(TEXT_WIDTH + SCROLLBAR, Math.min(wantHead, forHead)));
+		if (details.isVisible()) details.setPreferredSize(new Dimension(TEXT_WIDTH + 40, wantDetails));
+	}
+
+	/**
+	 * What the window spends on things that are not the message: the title bar, the answer-button row, the option
+	 * pane's own insets and the warning icon's margins. Deliberately generous — over-reserving costs a little
+	 * unused height at the bottom of a tall dialog, under-reserving costs the buttons.
+	 */
+	static final int CHROME = 190;
+
+	/** Room for a vertical scrollbar, so text laid out to TEXT_WIDTH is not clipped when one appears. */
+	private static final int SCROLLBAR = 18;
+
+	/** The details, scrollable; its height is budget()'s to decide. */
 	private static JScrollPane detailsPane(String text) {
 		JTextArea area = new JTextArea(text);
 		area.setEditable(false);
@@ -556,11 +708,9 @@ public final class DependencyDialogMain {
 		area.setCaretPosition(0);
 
 		JScrollPane scroll = new JScrollPane(area);
-		Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-		int cap = Math.max(200, (int) (usable.height * 0.5));
-		Dimension want = area.getPreferredSize();
-		scroll.setPreferredSize(new Dimension(TEXT_WIDTH + 40, Math.min(want.height + 8, cap)));
-		// The default is one pixel per wheel notch, which on a forty-finding report is unusable.
+		// The height belongs to budget(), because it is the half that has to give way when the message is long.
+		// Set here too it would be decided twice, and the second decision would not know about the first.
+		// The default wheel increment is one pixel per notch, which on a forty-finding report is unusable.
 		scroll.getVerticalScrollBar().setUnitIncrement(16);
 		return scroll;
 	}

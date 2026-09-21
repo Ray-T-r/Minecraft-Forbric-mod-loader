@@ -78,13 +78,43 @@ public final class DialogLang {
 		return substitute(raw, args);
 	}
 
+	/**
+	 * One pass over the pattern, never over what an argument put there.
+	 *
+	 * <p>The obvious loop — {@code replace("{0}", a).replace("{1}", b)} — rescans the string it has already
+	 * rewritten, so an argument whose own text contains a later placeholder has that placeholder filled in.
+	 * Mod display names come out of a third party's manifest and are not ours to trust: a mod calling itself
+	 * "Cool {3} Mod" would be shown to the player under a name no jar in their folder carries, which is the one
+	 * identifier this dialog exists to hand them. Scanning the pattern once and emitting arguments as literals
+	 * makes that unreachable rather than unlikely.
+	 */
+	/**
+	 * One pass over the pattern, never over what an argument put there.
+	 *
+	 * <p>The obvious loop — {@code replace("{0}", a).replace("{1}", b)} — rescans the string it has already
+	 * rewritten, so an argument whose own text contains a later placeholder has that placeholder filled in. Mod
+	 * display names come out of a third party's manifest and are not ours to trust: a mod calling itself
+	 * "Cool {3} Mod" would be shown to the player under a name no jar in their folder carries, which is the one
+	 * identifier this dialog exists to hand them. Scanning the pattern once and emitting arguments as literals
+	 * makes that unreachable rather than unlikely.
+	 */
 	static String substitute(String raw, Object... args) {
-		if (args == null || args.length == 0) return raw;
-		String out = raw;
-		for (int i = 0; i < args.length && i < 10; i++) {
-			out = out.replace("{" + i + "}", args[i] == null ? "?" : args[i].toString());
+		if (args == null || args.length == 0 || raw.indexOf('{') < 0) return raw;
+		StringBuilder out = new StringBuilder(raw.length() + 32);
+		for (int i = 0; i < raw.length(); i++) {
+			char c = raw.charAt(i);
+			if (c == '{' && i + 2 < raw.length() && raw.charAt(i + 2) == '}'
+					&& Character.isDigit(raw.charAt(i + 1))) {
+				int index = raw.charAt(i + 1) - '0';
+				if (index < args.length) {
+					out.append(args[index] == null ? "?" : args[index].toString());
+					i += 2;
+					continue;
+				}
+			}
+			out.append(c);
 		}
-		return out;
+		return out.toString();
 	}
 
 	/** Every table, English first. A test walks this. */
@@ -193,6 +223,8 @@ public final class DialogLang {
 			"title.deps", "Forbric — a mod is missing something it requires",
 			"title.mixins", "Forbric — two mods do not fit each other",
 			"title.both", "Forbric — some mods are missing requirements, and some do not fit each other",
+			"title.deps.many", "Forbric — some mods are missing things they require",
+			"title.mixins.many", "Forbric — some mods do not fit each other",
 			"button.continue", "Launch anyway",
 			"button.quit", "Quit",
 			"button.details.show", "Show details",
@@ -236,6 +268,8 @@ public final class DialogLang {
 			"title.deps", "Forbric —— 有 mod 缺少它需要的前置",
 			"title.mixins", "Forbric —— 有两个 mod 互相不配套",
 			"title.both", "Forbric —— 有 mod 缺前置，还有 mod 互相不配套",
+			"title.deps.many", "Forbric —— 有些 mod 缺少它们需要的前置",
+			"title.mixins.many", "Forbric —— 有些 mod 互相不配套",
 			"button.continue", "继续启动",
 			"button.quit", "退出",
 			"button.details.show", "显示详细信息",
@@ -276,6 +310,8 @@ public final class DialogLang {
 			"title.deps", "Forbric —— 有模組缺少必要的前置模組",
 			"title.mixins", "Forbric —— 有兩個模組彼此搭不起來",
 			"title.both", "Forbric —— 有模組缺少前置模組，也有模組彼此搭不起來",
+			"title.deps.many", "Forbric —— 有些模組缺少必要的前置模組",
+			"title.mixins.many", "Forbric —— 有些模組彼此搭不起來",
 			"button.continue", "仍要啟動",
 			"button.quit", "結束",
 			"button.details.show", "顯示詳細資訊",
@@ -317,6 +353,8 @@ public final class DialogLang {
 			"title.deps", "Forbric ——必要な前提MODが見つからないMODがあります",
 			"title.mixins", "Forbric ——2つのMODがかみ合っていません",
 			"title.both", "Forbric ——前提MODが足りないMODと、かみ合っていないMODがあります",
+			"title.deps.many", "Forbric ——必要な前提MODが見つからないMODが複数あります",
+			"title.mixins.many", "Forbric ——かみ合っていないMODが複数あります",
 			"button.continue", "このまま起動",
 			"button.quit", "終了",
 			"button.details.show", "詳細を表示",
@@ -363,6 +401,8 @@ public final class DialogLang {
 			"title.deps", "Forbric - 어떤 모드에 필요한 것이 빠져 있습니다",
 			"title.mixins", "Forbric - 두 모드가 서로 맞지 않습니다",
 			"title.both", "Forbric - 일부 모드는 필요한 것이 빠져 있고, 일부 모드는 서로 맞지 않습니다",
+			"title.deps.many", "Forbric - 일부 모드에 필요한 것이 빠져 있습니다",
+			"title.mixins.many", "Forbric - 일부 모드가 서로 맞지 않습니다",
 			"button.continue", "그래도 실행",
 			"button.quit", "종료",
 			"button.details.show", "자세한 정보 보기",
@@ -407,6 +447,8 @@ public final class DialogLang {
 			"title.deps", "Forbric — моду не хватает того, что ему нужно",
 			"title.mixins", "Forbric — два мода не подходят друг другу",
 			"title.both", "Forbric — одним модам не хватает нужного, другие не подходят друг другу",
+			"title.deps.many", "Forbric — некоторым модам не хватает нужного",
+			"title.mixins.many", "Forbric — некоторые моды не подходят друг другу",
 			"button.continue", "Всё равно запустить",
 			"button.quit", "Выход",
 			"button.details.show", "Показать подробности",
@@ -449,9 +491,11 @@ public final class DialogLang {
 	// German.
 	// -------------------------------------------------------------------------------------------------------
 	public static final DialogLang DE = new DialogLang("de", table(
-			"title.deps", "Forbric - einem Mod fehlt etwas, das er benötigt",
+			"title.deps", "Forbric - einem Mod fehlt etwas, das er braucht",
 			"title.mixins", "Forbric - zwei Mods passen nicht zueinander",
-			"title.both", "Forbric - einigen Mods fehlen Voraussetzungen, und einige passen nicht zueinander",
+			"title.both", "Forbric - einigen Mods fehlt etwas, und andere passen nicht zueinander",
+			"title.deps.many", "Forbric - einigen Mods fehlt etwas, das sie brauchen",
+			"title.mixins.many", "Forbric - einige Mods passen nicht zueinander",
 			"button.continue", "Trotzdem starten",
 			"button.quit", "Beenden",
 			"button.details.show", "Details anzeigen",
@@ -465,15 +509,15 @@ public final class DialogLang {
 			"bullet.version", "{0} benötigt {1} {2}, installiert ist aber {3}",
 			"bullet.mixin", "{0} konnte sich nicht mit dem Mod verbinden, für den er gebaut wurde",
 			"fix.header", "Was helfen könnte:",
-			"fix.install", "Installieren Sie {0}. {1} ist ein {2}-Mod, daher ist die {2}-Fassung am sichersten - "
-					+ "unter Forbric kann auch eine Fassung für einen anderen Mod-Loader genügen.",
-			"fix.version", "Wechseln Sie bei {0} auf eine Version aus dem Bereich {1}. Installiert ist {2}.",
+			"fix.install", "Installiere {0}. {1} ist ein {2}-Mod, daher ist die {2}-Fassung am sichersten - unter "
+					+ "Forbric kann auch eine Fassung für einen anderen Mod-Loader genügen.",
+			"fix.version", "Wechsle bei {0} auf eine Version aus dem Bereich {1}. Installiert ist {2}.",
 			"fix.mixin", "Beide Mods sind installiert, und keinem fehlt etwas - nur ihre Fassungen passen nicht "
 					+ "zueinander. Eine Version von {0}, die etwa zur gleichen Zeit erschienen ist wie der Mod, "
 					+ "mit dem sie sich verbinden soll, kann das beheben.",
-			"fix.remove", "Oder nehmen Sie {0} aus Ihrem mods-Ordner heraus. Forbric lädt alles andere weiter, Ihre "
+			"fix.remove", "Oder nimm {0} aus deinem mods-Ordner heraus. Forbric lädt alles andere weiter, deine "
 					+ "übrigen Mods funktionieren also nach wie vor.",
-			"note.deps", "Forbric startet trotzdem, wenn Sie es möchten. Ein Mod, dessen Voraussetzung fehlt, fällt "
+			"note.deps", "Forbric startet trotzdem, wenn du es möchtest. Ein Mod, dessen Voraussetzung fehlt, fällt "
 					+ "meist erst viel später aus - mit einem Fehler, der keinen der beiden Mods nennt: eine leere "
 					+ "Welt, ein fehlender Block oder ein Absturz beim Erstellen einer Welt. Es lohnt sich also, "
 					+ "das vor dem Spielen zu beheben.",
@@ -498,6 +542,8 @@ public final class DialogLang {
 			"title.mixins", "Forbric - deux mods ne s'accordent pas",
 			"title.both", "Forbric - certains mods ne trouvent pas ce dont ils ont besoin, et d'autres ne "
 					+ "s'accordent pas entre eux",
+			"title.deps.many", "Forbric - il manque quelque chose à certains mods",
+			"title.mixins.many", "Forbric - certains mods ne sont pas compatibles entre eux",
 			"button.continue", "Lancer quand même",
 			"button.quit", "Quitter",
 			"button.details.show", "Afficher les détails",
@@ -544,6 +590,8 @@ public final class DialogLang {
 			"title.deps", "Forbric - a un mod le falta algo que necesita",
 			"title.mixins", "Forbric - dos mods no encajan entre sí",
 			"title.both", "Forbric - a algunos mods les faltan requisitos y otros no encajan entre sí",
+			"title.deps.many", "Forbric - a algunos mods les falta algo que necesitan",
+			"title.mixins.many", "Forbric - algunos mods no encajan entre sí",
 			"button.continue", "Iniciar de todos modos",
 			"button.quit", "Salir",
 			"button.details.show", "Mostrar detalles",
@@ -589,6 +637,8 @@ public final class DialogLang {
 			"title.deps", "Forbric - um mod está sem algo de que precisa",
 			"title.mixins", "Forbric - dois mods não se encaixam",
 			"title.both", "Forbric - alguns mods estão sem o que precisam, e outros não se encaixam",
+			"title.deps.many", "Forbric - alguns mods estão sem algo de que precisam",
+			"title.mixins.many", "Forbric - alguns mods não se encaixam",
 			"button.continue", "Iniciar mesmo assim",
 			"button.quit", "Sair",
 			"button.details.show", "Mostrar detalhes",

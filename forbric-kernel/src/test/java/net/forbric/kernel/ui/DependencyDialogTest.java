@@ -251,20 +251,6 @@ class DependencyDialogTest {
 	}
 
 	@Test
-	void theCaveatComesAfterTheSuggestionsRatherThanBeforeThem() {
-		// Ordering, asserted because it is the whole readability change: a player who reads two blocks and acts
-		// has read what is wrong and what to do. "What happens if you ignore this" is the block that matters
-		// least, and it is what the previous dialog opened with.
-		assertFalse(DependencyDialogMain.summary(EN, List.of(absent()), List.of()).contains("launch anyway"),
-				"the caveat does not belong in the list of what is wrong");
-		String notes = DependencyDialogMain.notes(EN, List.of(absent()), List.of());
-		assertTrue(notes.contains("Forbric will launch anyway"), notes);
-		assertTrue(notes.contains("worth fixing before you play"), notes);
-		// Nothing to caveat when there is nothing of that kind to report.
-		assertEquals("", DependencyDialogMain.notes(EN, List.of(), List.of()));
-	}
-
-	@Test
 	void aMixinBreakIsNamedByTheModRatherThanByItsMixinClass() {
 		// "iris" is the name on the jar the player downloaded. "MixinRenderRegionManager" is not a thing they
 		// have ever seen, and it is the detail, not the finding.
@@ -287,21 +273,219 @@ class DependencyDialogTest {
 	}
 
 	@Test
-	void continuingIsTheKeyboardDefaultInEveryLanguage() {
-		// The invariant, asserted on the values the dialog is actually built from rather than on the source text
-		// that used to carry them. The first screenshot of this dialog had "Quit" highlighted: a player holding
-		// Enter would have lost the launch, which is the opposite of the policy it is built on. Ten languages is
-		// ten more chances to get that wrong, so it is checked for all of them.
+	void theCallSiteHandsSwingTheContinueOptionAsTheDefault() {
+		// The invariant that matters, read back off the REAL JOptionPane rather than off a helper that returns
+		// options[0] by construction. The previous version of this test asserted initialOption == options[0],
+		// which cannot fail, and left the call site — the only place the value actually reaches Swing —
+		// unguarded: passing options[1] there would make Enter quit the game in all ten languages and every
+		// test would still pass. Swing components are safe to build headless, so this runs on CI.
 		for (DialogLang lang : DialogLang.all()) {
-			Object[] options = DependencyDialogMain.options(lang);
-			assertEquals(2, options.length, lang.tag());
-			assertEquals(options[0], DependencyDialogMain.initialOption(lang),
-					lang.tag() + ": the keyboard default must be the option that CONTINUES");
-			assertEquals(lang.get("button.continue"), options[0], lang.tag());
-			assertEquals(lang.get("button.quit"), options[1], lang.tag());
-			// The answer is read by comparing the returned value against options[1]. Two identical labels would
-			// make "quit" and "continue" indistinguishable, and the dialog would quit on either button.
-			assertNotEquals(options[0], options[1], lang.tag() + ": the two answers must not read the same");
+			javax.swing.JOptionPane pane = DependencyDialogMain.optionPane(lang, new javax.swing.JLabel("x"));
+			assertEquals(lang.get("button.continue"), pane.getInitialValue(),
+					lang.tag() + ": Enter must not be able to quit the game");
+			assertEquals(lang.get("button.continue"), pane.getOptions()[0], lang.tag());
+			assertEquals(lang.get("button.quit"), pane.getOptions()[1], lang.tag());
+		}
+	}
+
+	@Test
+	void onlyTheQuitOptionMeansQuit() {
+		// The other half of the same contract. Every value a JOptionPane can hand back that is not exactly the
+		// quit option — a closed window, Escape, a value nothing set — has to mean launch.
+		for (DialogLang lang : DialogLang.all()) {
+			assertEquals(DependencyDialogMain.QUIT,
+					DependencyDialogMain.answerFrom(lang, lang.get("button.quit")), lang.tag());
+			assertEquals(DependencyDialogMain.CONTINUE,
+					DependencyDialogMain.answerFrom(lang, lang.get("button.continue")), lang.tag());
+			assertEquals(DependencyDialogMain.CONTINUE, DependencyDialogMain.answerFrom(lang, null), lang.tag());
+			assertEquals(DependencyDialogMain.CONTINUE,
+					DependencyDialogMain.answerFrom(lang, javax.swing.JOptionPane.UNINITIALIZED_VALUE), lang.tag());
+			// The quit label of ANOTHER language must not quit this one: the comparison is against the object
+			// that went into this pane's array, not against "some label that means quit somewhere".
+			assertEquals(DependencyDialogMain.CONTINUE,
+					DependencyDialogMain.answerFrom(lang, "\u0412\u044b\u0445\u043e\u0434 \u2014 not this table"), lang.tag());
+		}
+	}
+
+	@Test
+	void theWindowStacksWhatIsWrongThenWhatToDoThenTheCaveat() {
+		// The ordering the redesign is about, asserted on the list show() actually iterates. The previous test
+		// only checked that the caveat was in notes() and not in summary(), which stayed green if show() put the
+		// caveat back on top or dropped the suggestions from the window entirely.
+		List<String> blocks = DependencyDialogMain.blocks(EN, List.of(absent()), List.of(mixinBreak()));
+		assertEquals(3, blocks.size());
+		assertEquals(DependencyDialogMain.summary(EN, List.of(absent()), List.of(mixinBreak())), blocks.get(0));
+		assertEquals(DependencyDialogMain.fixes(EN, List.of(absent()), List.of(mixinBreak())), blocks.get(1));
+		assertEquals(DependencyDialogMain.notes(EN, List.of(absent()), List.of(mixinBreak())), blocks.get(2));
+		assertTrue(blocks.get(1).contains("What might fix it"), blocks.get(1));
+		assertTrue(blocks.get(2).contains("Forbric will launch anyway"), blocks.get(2));
+		assertTrue(blocks.get(2).contains("worth fixing before you play"), blocks.get(2));
+		// And the caveat is only in the block it belongs to.
+		assertFalse(blocks.get(0).contains("launch anyway"),
+				"the caveat does not belong in the list of what is wrong: " + blocks.get(0));
+		// Nothing to caveat when there is nothing of that kind to report.
+		assertEquals("", DependencyDialogMain.notes(EN, List.of(), List.of()));
+	}
+
+	@Test
+	void aModWithSeveralUnmetRequirementsIsStillOneMod() {
+		// A Row is one REQUIREMENT. Counting rows told the player to go and fix three mods when there was one,
+		// and put a singular window title over a plural list.
+		List<Row> three = List.of(
+				new Row("biomesoplenty", "Biomes O' Plenty", "FORGE", "terrablender", "*", null),
+				new Row("biomesoplenty", "Biomes O' Plenty", "FORGE", "glitchcore", "*", null),
+				new Row("biomesoplenty", "Biomes O' Plenty", "FORGE", "curios", "*", null));
+
+		String summary = DependencyDialogMain.summary(EN, three, List.of());
+		assertTrue(summary.startsWith("One mod is missing something it requires:"), summary);
+		assertFalse(summary.contains("3 mods"), summary);
+		// Every requirement is still listed — the count is what was wrong, not the detail.
+		assertTrue(summary.contains("terrablender") && summary.contains("glitchcore")
+				&& summary.contains("curios"), summary);
+		assertTrue(DependencyDialogMain.title(EN, three, List.of()).contains("a mod is missing"),
+				"the title must not argue with the line under it");
+	}
+
+	@Test
+	void twoModsEachMissingSomethingAreTwoModsAndSayItInTheTitle() {
+		List<Row> two = List.of(absent(), wrongVersion());
+		assertTrue(DependencyDialogMain.summary(EN, two, List.of()).startsWith("2 mods are missing"),
+				DependencyDialogMain.summary(EN, two, List.of()));
+		assertTrue(DependencyDialogMain.title(EN, two, List.of()).contains("some mods are missing"),
+				DependencyDialogMain.title(EN, two, List.of()));
+	}
+
+	@Test
+	void oneModsThreeBrokenMixinsAreOneMod() {
+		// A MixinRow is one mixin CLASS, and one mod's config routinely breaks in several places at once — the
+		// Iris/Sodium case in ForeignMixinBreaks' own javadoc is exactly that. Counting rows reported one mod as
+		// three, printed its name three times, and spent three of the six summary slots on one sentence.
+		List<DependencyReport.MixinRow> three = List.of(
+				new DependencyReport.MixinRow("iris", "MixinRenderRegionManager", "a"),
+				new DependencyReport.MixinRow("iris", "MixinChunkRenderer", "b"),
+				new DependencyReport.MixinRow("iris", "MixinSodiumWorldRenderer", "c"));
+
+		String summary = DependencyDialogMain.summary(EN, List.of(), three);
+		assertTrue(summary.startsWith("One mod could not attach"), summary);
+		assertEquals(1, summary.split("could not attach to the mod it was built for", -1).length - 1, summary);
+
+		String fixes = DependencyDialogMain.fixes(EN, List.of(), three);
+		assertEquals(1, fixes.split("only their builds do not match", -1).length - 1,
+				"the same suggestion three times is three wasted slots: " + fixes);
+		// All three mixin classes are still in the details, where a bug report needs them.
+		String details = DependencyDialogMain.details(EN, List.of(), three);
+		assertTrue(details.contains("MixinRenderRegionManager") && details.contains("MixinChunkRenderer")
+				&& details.contains("MixinSodiumWorldRenderer"), details);
+	}
+
+	@Test
+	void aModInBothSectionsIsNamedOnceAndByItsName() {
+		// Dependency rows carry a display name, mixin rows carry a mod id. A mod with both kinds of finding was
+		// listed twice, in two spellings — "take Iris Shaders, iris out of your mods folder" — sending the
+		// player to look for a second jar that does not exist.
+		Row row = new Row("iris", "Iris Shaders", "NEOFORGE", "sodium", "0.9.x", "0.8.1");
+		DependencyReport.MixinRow mixin = new DependencyReport.MixinRow("iris", "MixinRenderRegionManager", "a");
+
+		String fixes = DependencyDialogMain.fixes(EN, List.of(row), List.of(mixin));
+		String[] lines = fixes.strip().split("\n");
+		String remove = lines[lines.length - 1];
+		assertTrue(remove.contains("Iris Shaders"), remove);
+		assertFalse(remove.contains(", iris"), "one jar, one name: " + remove);
+
+		// And the bullet calls it by the name on the jar, not by the id.
+		assertTrue(DependencyDialogMain.summary(EN, List.of(row), List.of(mixin))
+				.contains("Iris Shaders could not attach"),
+				DependencyDialogMain.summary(EN, List.of(row), List.of(mixin)));
+	}
+
+	@Test
+	void aModNameThatLooksLikeAPlaceholderIsShownAsItIs() {
+		// Display names come out of a third party's manifest. A mod calling itself "Cool {3} Mod" must reach the
+		// player under the name on its jar — it is the one identifier this dialog exists to hand them.
+		String text = DependencyDialogMain.summary(EN,
+				List.of(new Row("cool", "Cool {3} Mod", "FABRIC", "coolid", "[1.0,2.0)", "0.9")), List.of());
+		assertTrue(text.contains("Cool {3} Mod"), text);
+	}
+
+	@Test
+	void theTwoAnswersNeverReadTheSame() {
+		// answerFrom() tells them apart by their labels, so two tables' worth of identical strings would make
+		// both buttons quit — or both launch — with nothing else in the code able to notice.
+		for (DialogLang lang : DialogLang.all()) {
+			assertNotEquals(lang.get("button.continue"), lang.get("button.quit"), lang.tag());
+		}
+	}
+
+	@Test
+	void theMessageAndTheDetailsTogetherLeaveRoomForTheAnswerButtons() {
+		// The defect this guards: the message used to be laid out at its own preferred height, and a stack of
+		// wrapping text areas reports a MINIMUM height equal to its preferred one. On a screen too short for it,
+		// JOptionPane's BoxLayout had nothing it could compress and put "Launch anyway" and "Quit" past the
+		// bottom edge of a window that was already as tall as the screen — a warning with no reachable answer.
+		javax.swing.JScrollPane head = new javax.swing.JScrollPane(tall(4000));
+		javax.swing.JScrollPane details = new javax.swing.JScrollPane(tall(4000));
+		details.setVisible(false);
+
+		// A 1366x768 laptop with a taskbar.
+		java.awt.Rectangle usable = new java.awt.Rectangle(0, 0, 1366, 728);
+		int toggle = 37;
+		DependencyDialogMain.budget(head, details, usable, toggle);
+		assertTrue(head.getPreferredSize().height + toggle + DependencyDialogMain.CHROME <= usable.height,
+				"collapsed: " + head.getPreferredSize().height);
+
+		details.setVisible(true);
+		DependencyDialogMain.budget(head, details, usable, toggle);
+		int total = head.getPreferredSize().height + details.getPreferredSize().height + toggle
+				+ DependencyDialogMain.CHROME;
+		assertTrue(total <= usable.height, "expanded: " + total + " > " + usable.height);
+		assertTrue(details.getPreferredSize().height > 0, "the details must still get room to be read in");
+	}
+
+	@Test
+	void aShortMessageIsNotPaddedOutToTheScreen() {
+		// The other direction: the budget is a ceiling, not a target. A one-finding dialog must stay small.
+		javax.swing.JScrollPane head = new javax.swing.JScrollPane(tall(120));
+		javax.swing.JScrollPane details = new javax.swing.JScrollPane(tall(120));
+		details.setVisible(false);
+		DependencyDialogMain.budget(head, details, new java.awt.Rectangle(0, 0, 1920, 1080), 37);
+		assertEquals(120, head.getPreferredSize().height);
+	}
+
+	private static javax.swing.JComponent tall(int height) {
+		javax.swing.JPanel panel = new javax.swing.JPanel();
+		panel.setPreferredSize(new java.awt.Dimension(640, height));
+		return panel;
+	}
+
+	@Test
+	void aBulletIsWrappedAtTheWidthItIsActuallyGiven() {
+		// item() used to wrap the body at TEXT_WIDTH minus a CONSTANT marker column, while BorderLayout gave the
+		// marker its real preferred width — insets plus the bullet glyph's advance at that font. Above about
+		// 18pt the two disagree, the body wraps onto a line the already-pinned row height has no room for, and
+		// the last line of the sentence is silently cut off. Font metrics work headless, so this runs on CI.
+		String text = "Just Enough Items necesita jei, que no está instalado, y sin él la pantalla de recetas "
+				+ "no aparece en el juego.";
+		for (int size : new int[] { 11, 13, 16, 20, 24, 28 }) {
+			java.awt.Font font = new java.awt.Font(java.awt.Font.DIALOG, java.awt.Font.PLAIN, size);
+			javax.swing.JPanel row = DependencyDialogMain.item("•", text, font);
+			row.setSize(row.getPreferredSize());
+			row.doLayout();
+
+			javax.swing.JTextArea area = (javax.swing.JTextArea) ((java.awt.BorderLayout) row.getLayout())
+					.getLayoutComponent(java.awt.BorderLayout.CENTER);
+			// The invariant, stated structurally: the width the text was WRAPPED at and the width BorderLayout
+			// GIVES it are the same number. Any gap between them is a height computed for a layout that will not
+			// happen, and the row's height is already pinned when the real layout disagrees.
+			int wrappedAt = area.getPreferredSize().width;
+			assertEquals(wrappedAt, area.getWidth(),
+					size + "pt: wrapped at " + wrappedAt + "px, laid out at " + area.getWidth() + "px");
+
+			// And the consequence, measured: what it needs at that width still fits the row.
+			area.setSize(new java.awt.Dimension(area.getWidth(), Short.MAX_VALUE));
+			int needed = area.getPreferredSize().height;
+			assertTrue(row.getPreferredSize().height >= needed,
+					size + "pt: the row is " + row.getPreferredSize().height + "px for text that needs "
+							+ needed + "px at " + area.getWidth() + "px wide — the last line is cut off");
 		}
 	}
 

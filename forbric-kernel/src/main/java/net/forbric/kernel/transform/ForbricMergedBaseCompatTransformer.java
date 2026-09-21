@@ -80,7 +80,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("40 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("45 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -89,7 +89,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -119,6 +119,13 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"ChunkGenerator.featuresPerStep keeps MinecraftForge's descriptor — the server cannot start (NoSuchFieldError)"));
 		out.add(fixed("letDungeonsGenerateWithoutTheDataMap", MONSTER_ROOM_FEATURE,
 				"monster rooms never generate — the NeoForge data map they ask has no vanilla fallback"));
+		out.add(new Claim(claimId("restoreDoublePrecisionToTheRandomSources"), AnchorSet.of(
+				new AnchorSet.Anchor(XOROSHIRO_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+						"every noise octave's origin is off — the merged nextDouble() rounds through float, so no world "
+								+ "generates the way the same seed does in vanilla"),
+				new AnchorSet.Anchor(BIT_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+						"WorldgenRandom's nextDouble() rounds through float and can return exactly 1.0 — out of the "
+								+ "[0,1) range every caller assumes"))));
 		out.add(fixed("guardNeoForgesWorldModifierPass", NEO_SERVER_LIFECYCLE_HOOKS,
 				"NeoForge's biome/structure modifier pass is neutered — every neoforge:biome_modifier does nothing"));
 		out.add(fixed("letForeignResourceConditionsThrough", ICONDITION,
@@ -251,6 +258,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "giveTheVanillaParticleMapAViewOfTheLiveOne", giveTheVanillaParticleMapAViewOfTheLiveOne(node));
 			changed |= claim(reporter, "giveFeaturesPerStepItsVanillaDescriptorBack", giveFeaturesPerStepItsVanillaDescriptorBack(node));
 			changed |= claim(reporter, "letDungeonsGenerateWithoutTheDataMap", letDungeonsGenerateWithoutTheDataMap(node));
+			changed |= claim(reporter, "restoreDoublePrecisionToTheRandomSources", restoreDoublePrecisionToTheRandomSources(node));
 			changed |= claim(reporter, "guardNeoForgesWorldModifierPass", guardNeoForgesWorldModifierPass(node));
 			changed |= claim(reporter, "letForeignResourceConditionsThrough", letForeignResourceConditionsThrough(node));
 			changed |= claim(reporter, "letForeignResourceConditionsThroughMinecraftForge", letForeignResourceConditionsThroughMinecraftForge(node));
@@ -1627,6 +1635,90 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "(%d call site(s)) — NeoForge's data map when it has one, vanilla's own set when it does not. "
 				+ "The alternative was the neutered place() this replaces, which meant no dungeon in any world",
 				redirected);
+		return true;
+	}
+
+	private static final String XOROSHIRO_RANDOM_SOURCE = "net/minecraft/world/level/levelgen/XoroshiroRandomSource";
+	private static final String BIT_RANDOM_SOURCE = "net/minecraft/world/level/levelgen/BitRandomSource";
+	/** 2^-53: the multiplier that turns 53 random bits into a double in [0,1). Exactly representable in both widths. */
+	private static final float DOUBLE_UNIT_AS_FLOAT = (float) 0x1.0p-53;
+	private static final double DOUBLE_UNIT = 0x1.0p-53;
+
+	/**
+	 * Puts the game's random sources back in double precision.
+	 *
+	 * <p>Vanilla's two {@code nextDouble()} bodies scale 53 random bits by 2^-53 in double:
+	 * {@code nextBits(53); l2d; ldc2_w 1.1102230246251565E-16; dmul}. The merged base does it in FLOAT —
+	 * {@code l2f; ldc 1.110223E-16f; fmul; f2d} — in both {@code XoroshiroRandomSource.nextDouble()} and the
+	 * {@code BitRandomSource.nextDouble()} default that {@code LegacyRandomSource} and {@code WorldgenRandom}
+	 * inherit. The constant is right (2^-53 is exact as a float); the {@code l2f} is not, because it crushes a
+	 * 53-bit mantissa into 24.
+	 *
+	 * <p>Two costs, and the second one is a contract violation rather than a rounding difference:
+	 * <ul>
+	 * <li>EVERY sample differs from vanilla's — measured over a million draws, one million differed, worst
+	 * relative error 5.95e-8. {@code ImprovedNoise}'s constructor spends three {@code nextDouble() * 256.0} calls
+	 * on {@code xo/yo/zo}, so every Perlin octave's origin is displaced and the whole density field moves with it.
+	 * A same-seed A/B against pure vanilla 26.2 (both sides run twice, because vanilla's own block output is only
+	 * reproducible where features do not read their neighbours) measured it: biomes differ in 11 of 1764 chunks
+	 * and heightmaps in 90 of 400 fully generated ones, where vanilla against itself differs in 0 and 10.</li>
+	 * <li>{@code nextDouble()} can return exactly {@code 1.0}, for every {@code bits >= 9007198986305536} — about
+	 * one draw in 2^25. Every caller in the game assumes the half-open range; an index computed as
+	 * {@code (int)(nextDouble() * size)} is then off the end of its array.</li>
+	 * </ul>
+	 *
+	 * <p>This is not a patch either ecosystem wrote. {@code patched-mc-forge-26.2.jar} carries vanilla's
+	 * {@code l2d/dmul}; {@code patched-mc-neoforge-26.2.jar} carries the float form, which is what NeoForge's
+	 * decompile-recompile pipeline emitted, and the byte merge kept the NeoForge body. It names no class from
+	 * either ecosystem, so {@code merge-conflicts.txt} — which reports conflicts by REFERENCE, on purpose — cannot
+	 * see it and never did. That is the general shape to watch for: a purely numeric method can be re-typed by the
+	 * pipeline and leave no trace in the conflict ledger.
+	 *
+	 * <p>Matched by SHAPE across the whole base rather than by a list of two class names, because the pipeline
+	 * decides where this lands, not us; the two known sources are declared as REQUIRED anchors so a rebuild that
+	 * moves or fixes them is reported rather than passed over in silence.
+	 *
+	 * <p>Stack depth is the one thing that moves: {@code l2f/fmul} peaks at two slots where {@code l2d/dmul} needs
+	 * four. No branch is added and no frame changes, so widening {@code maxStack} is the whole adjustment.
+	 */
+	private static boolean restoreDoublePrecisionToTheRandomSources(ClassNode node) {
+		if (!node.name.startsWith("net/minecraft/")) return false;
+		int repaired = 0;
+		List<String> methods = new ArrayList<>();
+		for (MethodNode method : node.methods) {
+			boolean touched = false;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn.getOpcode() != Opcodes.L2F) continue;
+				AbstractInsnNode constant = nextReal(insn);
+				if (!(constant instanceof LdcInsnNode ldc) || !(ldc.cst instanceof Float scale)
+						|| scale.floatValue() != DOUBLE_UNIT_AS_FLOAT) {
+					continue;
+				}
+				AbstractInsnNode multiply = nextReal(constant);
+				if (multiply == null || multiply.getOpcode() != Opcodes.FMUL) continue;
+				AbstractInsnNode widen = nextReal(multiply);
+				if (widen == null || widen.getOpcode() != Opcodes.F2D) continue;
+
+				InsnList code = method.instructions;
+				InsnNode inDouble = new InsnNode(Opcodes.DMUL);
+				code.set(insn, new InsnNode(Opcodes.L2D));
+				code.set(constant, new LdcInsnNode(DOUBLE_UNIT));
+				code.set(multiply, inDouble);
+				code.remove(widen);
+				insn = inDouble;
+				touched = true;
+				repaired++;
+			}
+			if (touched) {
+				method.maxStack += 2;
+				methods.add(method.name + method.desc);
+			}
+		}
+		if (repaired == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] %s scales its random bits in double again (%d site(s): %s) — the "
+				+ "merged body rounded through float, which displaces every noise octave's origin and lets "
+				+ "nextDouble() return exactly 1.0",
+				node.name.replace('/', '.'), repaired, String.join(", ", methods));
 		return true;
 	}
 

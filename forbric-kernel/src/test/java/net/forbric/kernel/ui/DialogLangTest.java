@@ -18,6 +18,7 @@ package net.forbric.kernel.ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -107,6 +108,50 @@ class DialogLangTest {
 		String install = DialogLang.EN.get("fix.install", "terrablender", "Biomes O' Plenty", "FORGE");
 		assertFalse(install.contains("{"), install);
 		assertEquals(2, install.split("FORGE", -1).length - 1, install);
+	}
+
+	@Test
+	void anArgumentIsEmittedAsALiteralAndIsNeverScannedAgain() {
+		// A mod's display name is a third party's string. If substitution rescanned what it had already written,
+		// a mod calling itself "Cool {3} Mod" would reach the player under a name no jar in their folder carries
+		// — and the mod name is the one identifier this dialog exists to hand them.
+		assertEquals("Cool {3} Mod needs coolid [1.0,2.0), and you have 0.9",
+				DialogLang.EN.get("bullet.version", "Cool {3} Mod", "coolid", "[1.0,2.0)", "0.9"));
+		assertEquals("Weird {1} Name needs terrablender, which is not installed",
+				DialogLang.EN.get("bullet.absent", "Weird {1} Name", "terrablender"));
+		// A placeholder nothing was passed for is left alone rather than eaten.
+		assertEquals("{1} and {0}", DialogLang.substitute("{1} and {0}"));
+		assertEquals("{1} and a", DialogLang.substitute("{1} and {0}", "a"));
+		assertEquals("? and a", DialogLang.substitute("{1} and {0}", "a", null));
+	}
+
+	@Test
+	void everyTableHasBothTheSingularAndThePluralWindowTitle() {
+		// The plural titles exist because the singular ones argued with the line under them: a window headed
+		// "a mod is missing something" over a list that begins "3 mods". A table that had only one of the pair
+		// would put that contradiction back for one language.
+		for (DialogLang lang : DialogLang.all()) {
+			for (String key : List.of("title.deps", "title.deps.many", "title.mixins", "title.mixins.many",
+					"title.both")) {
+				assertNotNull(lang.raw(key), lang.tag() + " is missing " + key);
+			}
+			assertNotEquals(lang.raw("title.deps"), lang.raw("title.deps.many"), lang.tag());
+			assertNotEquals(lang.raw("title.mixins"), lang.raw("title.mixins.many"), lang.tag());
+		}
+	}
+
+	@Test
+	void germanAddressesThePlayerOneWay() {
+		// It used to do both at once: "Die vollständige Liste findest du in den Details" three paragraphs from
+		// "Installieren Sie {0}". Minecraft's own German locale is du throughout, so du is the one to keep.
+		for (String key : DialogLang.EN.keys()) {
+			String value = DialogLang.DE.raw(key);
+			if (value == null) continue;
+			for (String formal : List.of("Sie ", "Ihre", "Ihrem", "Ihren", "Ihnen")) {
+				assertFalse(value.contains(formal),
+						"de/" + key + " uses the formal " + formal.strip() + ": " + value);
+			}
+		}
 	}
 
 	@Test
