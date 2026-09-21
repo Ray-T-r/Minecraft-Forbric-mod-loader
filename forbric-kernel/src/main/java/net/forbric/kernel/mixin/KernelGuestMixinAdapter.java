@@ -38,6 +38,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.ModCatalog;
+import net.forbric.kernel.boot.ArbitratedAwayClasses;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -124,6 +125,7 @@ public final class KernelGuestMixinAdapter {
 			if (classBytes == null) continue;
 			loaded.put(mixin, classBytes);
 			try {
+				if (reportTargetsArbitratedAway(configName, mixin, classBytes)) continue;
 				if (isPureAccessorMixin(classBytes)) {
 					// Never suppressed (the cast to its generated interface must keep working), but a member it
 					// cannot bind is worth a line here: Mixin's own report is an InvalidAccessorException naming a
@@ -235,6 +237,52 @@ public final class KernelGuestMixinAdapter {
 	 * {@link ModCatalog} — when the config has exactly one owner. A config nobody or more than one mod claims
 	 * marks nobody: a confidently wrong name is worse than none.
 	 */
+	/**
+	 * Names a guest mixin whose target class exists only in the build of a duplicated mod the kernel did not load.
+	 *
+	 * <p>Such a mixin is INERT and silent: Mixin never applies a mixin whose target does not load, and that is not
+	 * an error anywhere, so nothing reports it. It is not harmless when the mixin's job is to implant a duck-type
+	 * interface — the code that casts to that interface is in another class, it still runs, and it throws
+	 * {@code ClassCastException} whenever it is first reached. Iris' {@code MixinFluidRendererImpl} against
+	 * sodium's FABRIC {@code FluidRendererImpl} is the worked example: a clean boot, every mod loaded, and a crash
+	 * on the first chunk of water the moment shaders went on.
+	 *
+	 * <p>Only the arbitrated case is reported. A mixin targeting a class from a mod that is simply not installed
+	 * is ordinary — that is what a compat mixin is — and {@link ForeignMixinTargets} already covers the case where
+	 * another loaded mod contributes the member. What makes this one the kernel's to name is that the class is
+	 * missing because the kernel chose between two builds, and the remedy is the kernel's own lever.
+	 *
+	 * <p>Membership of {@link ArbitratedAwayClasses} is the whole test, and deliberately not "the class does not
+	 * resolve as a resource". The losing jar stays readable on the owned classpath — measured: the live boot
+	 * still served {@code sodium.fabric.render.FluidRendererImpl}'s bytes while the loaded sodium was the
+	 * NeoForge build, so a resource check was silent on the one case this was written for. The registry already
+	 * means "only the build that was NOT loaded has this", which is exactly the condition.
+	 *
+	 * @return true when this mixin was reported, so the caller skips the anchor scan that cannot say anything
+	 */
+	private static boolean reportTargetsArbitratedAway(String configName, String mixin, byte[] classBytes) {
+		if (!ArbitratedAwayClasses.warningEnabled()) return false;
+		for (String target : MixinFit.mixinTargets(MixinFit.parse(classBytes))) {
+			ArbitratedAwayClasses.Loss loss = ArbitratedAwayClasses.lost(target.replace('/', '.'));
+			if (loss == null) continue;
+
+			String modId = MixinConfigOwners.modIdOf(configName);
+			ForbricLog.warn("[Forbric/Mixin] %s:%s cannot apply: %s. Nothing reports a mixin whose target never "
+					+ "loads, so this one is silently inert — and if it implants an interface, whatever casts to "
+					+ "that interface throws ClassCastException the first time it runs. Pick the other build with "
+					+ "`%s = %s` in forbric-mods.txt, or install %s's %s build.",
+					MixinConfigOwners.describe(configName), mixin, loss.describe(target.replace('/', '.')),
+					loss.modId(), loss.loser().toString().toLowerCase(java.util.Locale.ROOT),
+					modId == null ? "that mod" : modId,
+					loss.winner() == null ? "matching" : loss.winner().toString());
+			attribute(configName, "its mixin " + mixin + " targets " + target.replace('/', '.')
+					+ ", which only " + loss.modId() + "'s " + loss.loser() + " build has, and this instance "
+					+ "loaded the other one");
+			return true;
+		}
+		return false;
+	}
+
 	private static void attribute(String configName, String detail) {
 		String modId = MixinConfigOwners.modIdOf(configName);
 		if (modId != null) ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, detail);

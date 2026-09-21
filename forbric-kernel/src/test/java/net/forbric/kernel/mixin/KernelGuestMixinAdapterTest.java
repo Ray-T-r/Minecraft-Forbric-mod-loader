@@ -276,6 +276,67 @@ class KernelGuestMixinAdapterTest {
 		}
 	}
 
+	/**
+	 * Iris' case: a mixin whose target exists only in the build of a duplicated mod the kernel did not load.
+	 * Mixin says nothing about a target that never loads, so without this the mod boots clean and the interface
+	 * the mixin was there to implant is missing — a ClassCastException at the first use, minutes later.
+	 */
+	@Test
+	void aMixinTargetingAnArbitratedAwayClassIsNamedInsteadOfBeingSilentlyInert() {
+		List<ModCatalog.Entry> previous = ModCatalog.everything();
+		try {
+			net.forbric.kernel.boot.ArbitratedAwayClasses.reset();
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("iris.mixins.json", "iris", Ecosystem.FABRIC)));
+			ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "iris", "Iris", "1", "", List.of(), "i.jar", "", "")));
+			String gone = "net/caffeinemc/mods/sodium/fabric/render/FluidRendererImpl";
+			net.forbric.kernel.boot.ArbitratedAwayClasses.record(List.of(gone.replace('/', '.')),
+					new net.forbric.kernel.boot.ArbitratedAwayClasses.Loss("sodium", Ecosystem.FABRIC,
+							Ecosystem.NEOFORGE, "sodium-fabric-0.9.2.jar"));
+
+			// The target's bytes are deliberately STILL SERVABLE, because in the live boot they were: the losing
+			// jar stays readable on the owned classpath even though its classes are not the ones in play. A
+			// resource check was silent on exactly this case; membership of the registry is the whole test.
+			Map<String, byte[]> classes = new HashMap<>();
+			classes.put(gone + ".class", target(gone, "unused", Opcodes.ACC_PRIVATE, true));
+			classes.put(PKG + "/MixinFluidRendererImpl.class", danglingMixin("MixinFluidRendererImpl", gone));
+
+			assertTrue(KernelGuestMixinAdapter.unfitMixins("iris.mixins.json",
+					config(PKG.replace('/', '.'), "MixinFluidRendererImpl"), resolver(classes)).isEmpty(),
+					"nothing is suppressed — the mixin was never going to apply; what was missing is the report");
+			assertEquals(1, ModCatalog.failures().size());
+			String detail = ModCatalog.failures().get(0).statusDetail();
+			assertTrue(detail.contains("FluidRendererImpl"), detail);
+			assertTrue(detail.contains("sodium"), "the row must name the mod whose build was arbitrated away: " + detail);
+		} finally {
+			net.forbric.kernel.boot.ArbitratedAwayClasses.reset();
+			MixinConfigOwners.reset();
+			ModCatalog.publish(previous);
+		}
+	}
+
+	/** A target that is merely absent — no arbitration removed it — is an ordinary compat mixin and stays quiet. */
+	@Test
+	void aMixinForAModThatIsSimplyNotInstalledIsNotReported() {
+		List<ModCatalog.Entry> previous = ModCatalog.everything();
+		try {
+			net.forbric.kernel.boot.ArbitratedAwayClasses.reset();
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("q.mixins.json", "qmod", Ecosystem.FABRIC)));
+			ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "qmod", "Q", "1", "", List.of(), "q.jar", "", "")));
+			Map<String, byte[]> classes = new HashMap<>();
+			classes.put(PKG + "/MixinAbsent.class", danglingMixin("MixinAbsent", "de/example/NotInstalled"));
+
+			KernelGuestMixinAdapter.unfitMixins("q.mixins.json",
+					config(PKG.replace('/', '.'), "MixinAbsent"), resolver(classes));
+
+			assertTrue(ModCatalog.failures().isEmpty(),
+					"a compat mixin for an uninstalled mod is normal, and marking it would be the false positive "
+							+ "this report exists to avoid");
+		} finally {
+			MixinConfigOwners.reset();
+			ModCatalog.publish(previous);
+		}
+	}
+
 	@Test
 	void aConfigWithAPluginHoldsTheMarkBackUntilThePluginIsAsked() {
 		List<ModCatalog.Entry> previous = ModCatalog.everything();

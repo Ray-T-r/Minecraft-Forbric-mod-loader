@@ -18,7 +18,10 @@ package net.forbric.kernel.boot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -66,6 +69,78 @@ class DuplicateModArbiterTest {
 		Decision agree = new Decision(java.util.Set.of(same.toAbsolutePath()), Map.of("y", sameNeo.toAbsolutePath()), List.of());
 		assertTrue(DuplicateModArbiter.divergenceReport(List.of(new Claim(same, Ecosystem.FABRIC, List.of("y")),
 				new Claim(sameNeo, Ecosystem.NEOFORGE, List.of("y"))), agree).isEmpty(), "identical class sets: silent");
+	}
+
+	/**
+	 * The two ways this measurement over-reported, both of which put a wrong line on the Mods screen before they
+	 * were found, and both asserted here on the shapes that produced them.
+	 *
+	 * <p>NESTING: the winning build carries the shared half inside {@code META-INF/jars/} (sodium's NeoForge
+	 * build does exactly this). A top-level-only comparison calls every one of those classes Fabric-only.
+	 *
+	 * <p>THIRD-PARTY BUNDLING: the LOSING build ships a class that belongs to another mod entirely, and that
+	 * other mod loaded (sodium's Fabric build ships fabric-api's {@code ExtendedBlockModelSubmit}). The class is
+	 * genuinely absent from the winning build and genuinely present in the game, so it must be reported by
+	 * neither — a mixin against it applies perfectly well.
+	 */
+	@Test
+	void onlyClassesNoLoadedJarSuppliesAreRecordedAsArbitratedAway(@org.junit.jupiter.api.io.TempDir Path dir)
+			throws Exception {
+		ArbitratedAwayClasses.reset();
+		// A class the game's own libraries/ supplies whatever this mod does. glitchcore's Fabric build shades all
+		// 189 of com.electronwill.nightconfig.core into itself, and without this they WERE the whole recorded set
+		// for that mod on the live 28-mod instance.
+		String shadedLibrary = "org/objectweb/asm/ClassReader";
+		assumeTrue(ClassLoader.getSystemResource(shadedLibrary + ".class") != null,
+				"this check needs a class the system loader serves");
+		Path fabric = nestingJar(dir.resolve("s-fabric.jar"),
+				new String[] { "s/Shared", "s/OnlyFabric", "other/FromAnotherMod", shadedLibrary }, null);
+		// The winner has the shared class only INSIDE a bundled jar.
+		Path neo = nestingJar(dir.resolve("s-neoforge.jar"), new String[] { "s/NeoGlue" }, new String[] { "s/Shared" });
+		Path otherMod = jar(dir.resolve("other-mod.jar"), "other/FromAnotherMod");
+		Decision d = new Decision(java.util.Set.of(fabric.toAbsolutePath()),
+				Map.of("s", neo.toAbsolutePath(), "other", otherMod.toAbsolutePath()), List.of());
+		List<Claim> claims = List.of(new Claim(fabric, Ecosystem.FABRIC, List.of("s")),
+				new Claim(neo, Ecosystem.NEOFORGE, List.of("s")),
+				new Claim(otherMod, Ecosystem.FABRIC, List.of("other")));
+
+		DuplicateModArbiter.divergenceReport(claims, d);
+
+		assertNull(ArbitratedAwayClasses.lost("s.Shared"),
+				"the winner has it inside a bundled jar — it never left this instance");
+		assertNull(ArbitratedAwayClasses.lost("other.FromAnotherMod"),
+				"the loser bundled another mod's class and that mod loaded; a mixin on it applies fine");
+		assertNull(ArbitratedAwayClasses.lost(shadedLibrary.replace('/', '.')),
+				"the loser shaded a library the launch classpath already serves");
+		assertNotNull(ArbitratedAwayClasses.lost("s.OnlyFabric"), "nothing that loaded supplies this one");
+		assertEquals(1, ArbitratedAwayClasses.size(), "exactly the one class this instance really lost");
+		ArbitratedAwayClasses.reset();
+	}
+
+	/** A jar with {@code classes} at top level and, when {@code nested} is non-null, a bundled jar holding those. */
+	private static Path nestingJar(Path file, String[] classes, String[] nested) throws Exception {
+		try (java.io.OutputStream out = java.nio.file.Files.newOutputStream(file);
+				java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(out)) {
+			for (String c : classes) {
+				zip.putNextEntry(new java.util.zip.ZipEntry(c + ".class"));
+				zip.write(new byte[] { (byte) 0xCA, (byte) 0xFE });
+				zip.closeEntry();
+			}
+			if (nested != null) {
+				java.io.ByteArrayOutputStream inner = new java.io.ByteArrayOutputStream();
+				try (java.util.zip.ZipOutputStream innerZip = new java.util.zip.ZipOutputStream(inner)) {
+					for (String c : nested) {
+						innerZip.putNextEntry(new java.util.zip.ZipEntry(c + ".class"));
+						innerZip.write(new byte[] { (byte) 0xCA, (byte) 0xFE });
+						innerZip.closeEntry();
+					}
+				}
+				zip.putNextEntry(new java.util.zip.ZipEntry("META-INF/jars/bundled.jar"));
+				zip.write(inner.toByteArray());
+				zip.closeEntry();
+			}
+		}
+		return file;
 	}
 
 	private static Path jar(Path file, String... classes) throws Exception {

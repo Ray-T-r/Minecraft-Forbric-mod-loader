@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -206,6 +208,8 @@ public final class DuplicateModArbiter {
 	 */
 	static List<String> divergenceReport(List<Claim> claims, Decision decision) {
 		List<String> lines = new ArrayList<>();
+		Map<Path, Set<String>> read = new HashMap<>();
+		Set<String> elsewhere = null;
 		for (Claim loser : claims) {
 			if (!decision.suppressed(loser.jar())) continue;
 			Path winner = null;
@@ -214,10 +218,27 @@ public final class DuplicateModArbiter {
 				if (owner != null && !owner.equals(loser.jar().toAbsolutePath())) { winner = owner; break; }
 			}
 			if (winner == null) continue;
-			List<String> only = loserOnlyClasses(loser.jar(), winner);
+			List<String> only = loserOnlyClasses(loser.jar(), winner, read);
 			if (only.isEmpty()) continue;
 			Ecosystem winnerFamily = null;
 			for (Claim claim : claims) if (claim.jar().toAbsolutePath().equals(winner)) winnerFamily = claim.ecosystem();
+			// The same measurement, kept rather than only printed: a guest mixin that targets one of these has no
+			// target on this instance, and nothing else in the chain can tell that from an ordinary absence.
+			//
+			// But "only the losing build has it" is not "nothing in this instance has it", and the registry is
+			// read as the second. A losing build routinely bundles a third mod's classes: sodium's FABRIC build
+			// ships fabric-api's ExtendedBlockModelSubmit, and the player's own fabric-api supplies it whatever
+			// sodium does. Recording it unsubtracted marked four mods on a 28-mod instance for mixins that were
+			// fine. So what every jar that DID load provides — including inside its bundled jars — is taken back
+			// out first, and only classes no loaded jar has reach the registry.
+			if (elsewhere == null) elsewhere = classesStillLoaded(claims, decision, read);
+			List<String> gone = new ArrayList<>();
+			for (String name : only) if (!elsewhere.contains(name) && !onTheLaunchClasspath(name)) gone.add(name);
+			if (!gone.isEmpty()) {
+				ArbitratedAwayClasses.record(gone,
+						new ArbitratedAwayClasses.Loss(loser.modIds().get(0), loser.ecosystem(), winnerFamily,
+								String.valueOf(loser.jar().getFileName())));
+			}
 			List<String> shown = only.subList(0, Math.min(8, only.size()));
 			lines.add("[Forbric/DupeId] " + loser.modIds().get(0) + ": the losing " + loser.ecosystem() + " build ("
 					+ loser.jar().getFileName() + ") carries " + only.size() + " class(es) the winning "
@@ -229,9 +250,13 @@ public final class DuplicateModArbiter {
 
 	/** The .class entries (dotted, no extension) in {@code loser} that {@code winner} lacks; empty if either is unreadable. */
 	static List<String> loserOnlyClasses(Path loser, Path winner) {
-		Set<String> winning = classEntries(winner);
+		return loserOnlyClasses(loser, winner, new HashMap<>());
+	}
+
+	private static List<String> loserOnlyClasses(Path loser, Path winner, Map<Path, Set<String>> read) {
+		Set<String> winning = classEntries(winner, read);
 		if (winning == null) return List.of();
-		Set<String> losing = classEntries(loser);
+		Set<String> losing = classEntries(loser, read);
 		if (losing == null) return List.of();
 		List<String> only = new ArrayList<>();
 		for (String name : losing) if (!winning.contains(name)) only.add(name);
@@ -239,17 +264,90 @@ public final class DuplicateModArbiter {
 		return only;
 	}
 
+	/**
+	 * Every class the jars that DID load bring, so the ones that did not can be named exactly.
+	 *
+	 * <p>Read once per arbitration, and only when there is something to subtract from — on an instance with no
+	 * duplicated mod id nothing here is opened at all. A jar that cannot be read contributes nothing, which
+	 * widens the "lost" set rather than narrowing it; that direction is the one a reader can check, because a
+	 * name that turns out to be present is visible the moment the mixin applies anyway.
+	 */
+	private static Set<String> classesStillLoaded(List<Claim> claims, Decision decision, Map<Path, Set<String>> read) {
+		Set<String> loaded = new HashSet<>();
+		for (Claim claim : claims) {
+			if (decision.suppressed(claim.jar())) continue;
+			Set<String> names = classEntries(claim.jar(), read);
+			if (names != null) loaded.addAll(names);
+		}
+		return loaded;
+	}
+
+	/**
+	 * Whether the launch classpath already serves {@code name}, so losing a mod's copy of it costs nothing.
+	 *
+	 * <p>The third source, after the winning build and the other mods. A losing build often bundles a shaded
+	 * LIBRARY: glitchcore's Fabric build carries all 189 {@code com.electronwill.nightconfig.core.*} classes,
+	 * which the game's own {@code libraries/} supplies to every mod regardless of which glitchcore loaded. Without
+	 * this those 189 were the whole "arbitrated away" set for that mod, measured on the 28-mod instance.
+	 *
+	 * <p>The system loader is the right question and the sovereign loader is not: this one has {@code libraries/}
+	 * and NOT {@code mods/}, which is exactly the line being drawn. Asking the sovereign loader would answer yes
+	 * for the losing jar's own classes too — it keeps them readable — and that is measured: the live boot still
+	 * served {@code sodium.fabric.render.FluidRendererImpl}'s bytes while the loaded sodium was the NeoForge
+	 * build, so a resource check against it was silent on the one case this registry was written for.
+	 */
+	private static boolean onTheLaunchClasspath(String dottedName) {
+		return ClassLoader.getSystemResource(dottedName.replace('.', '/') + ".class") != null;
+	}
+
+	private static Set<String> classEntries(Path jar, Map<Path, Set<String>> read) {
+		if (read.containsKey(jar)) return read.get(jar);
+		Set<String> names = classEntries(jar);
+		read.put(jar, names);
+		return names;
+	}
+
+	/**
+	 * Every class a jar brings, INCLUDING the ones inside its bundled jars.
+	 *
+	 * <p>Counting only top-level entries makes two builds of the same mod look wildly different when one of them
+	 * nests its shared half and the other inlines it: sodium's NeoForge build bundles the common
+	 * {@code sodium.client.*} classes in {@code META-INF/jars/}, so a flat comparison called 727 classes
+	 * "Fabric-only" that both builds plainly have. That was harmless while this fed one log line and stopped
+	 * being harmless the moment {@link ArbitratedAwayClasses} made a mixin's target depend on it — four mods were
+	 * marked for mixins against classes that were present all along.
+	 */
 	private static Set<String> classEntries(Path jar) {
 		Set<String> names = new LinkedHashSet<>();
+		if (!collectClasses(jar, names)) return null;
+		return names;
+	}
+
+	/** Adds {@code jar}'s classes and those of its bundled jars; false when the jar itself cannot be read. */
+	private static boolean collectClasses(Path jar, Set<String> names) {
 		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
 			for (java.util.zip.ZipEntry entry : zip.stream().toList()) {
 				String name = entry.getName();
-				if (name.endsWith(".class")) names.add(name.substring(0, name.length() - 6).replace('/', '.'));
+				if (name.endsWith(".class")) {
+					names.add(name.substring(0, name.length() - 6).replace('/', '.'));
+				} else if (name.endsWith(".jar")) {
+					// Read in memory: the nested jar is a comparison input, not something to extract.
+					try (java.util.zip.ZipInputStream nested =
+							new java.util.zip.ZipInputStream(zip.getInputStream(entry))) {
+						for (java.util.zip.ZipEntry inner; (inner = nested.getNextEntry()) != null; ) {
+							String innerName = inner.getName();
+							if (!innerName.endsWith(".class")) continue;
+							names.add(innerName.substring(0, innerName.length() - 6).replace('/', '.'));
+						}
+					} catch (java.io.IOException unreadableNested) {
+						// One unreadable bundle must not make the whole jar unreadable — it only widens the diff.
+					}
+				}
 			}
 		} catch (java.io.IOException unreadable) {
-			return null;
+			return false;
 		}
-		return names;
+		return true;
 	}
 
 	public static synchronized Decision arbitrateNested(EnvType envType, List<Path> nestedJars) {
