@@ -847,6 +847,7 @@ public final class PayloadInterop {
 
 	private static final String FORGE_EVENT_FACTORY = "net.minecraftforge.event.ForgeEventFactory";
 	private static final String FORGE_HOOKS_COMMON = "net.minecraftforge.common.ForgeHooks";
+	private static final String FORGE_CONFIG_TRACKER = ForeignType.CONFIG_TRACKER.binary(Ecosystem.FORGE);
 	private static final String FORGE_SYNC_REGISTRIES_TASK = "net.minecraftforge.network.tasks.SyncRegistriesTask";
 	private static final boolean FORGE_HANDSHAKE = !"off".equals(System.getProperty("forbric.forgeHandshake"));
 	private static final Map<Object, Boolean> FORGE_ACTIVATED = Collections.synchronizedMap(new WeakHashMap<>());
@@ -922,6 +923,84 @@ public final class PayloadInterop {
 		if (added.isEmpty() && skipped.isEmpty()) return;
 		ForbricLog.info("[Forbric/Net] queued %d MinecraftForge configuration task(s) %s%s", added.size(), added,
 				skipped.isEmpty() ? "" : " (the kernel already synced the registries, so it skipped " + skipped + ")");
+	}
+
+	/**
+	 * Every {@code Files.readAllBytes} in MinecraftForge's {@code SyncConfigTask.run} comes here instead.
+	 *
+	 * <p>That task reads each per-world SERVER config off disk and, on any {@code IOException}, calls
+	 * {@code connection.disconnect("Connection closed - Failed to read config on server")} — no retry, and the
+	 * one log line it writes names the file but not what the player should do. The file it is reading is a
+	 * serialisation of a {@code ModConfig} the server is holding in memory, so a missing one is not a reason to
+	 * drop a player: it is a reason to write it again.
+	 *
+	 * <p>Measured on a Flashback replay, whose server is a second {@code MinecraftServer} started inside a running
+	 * client over a fresh {@code flashback/temp/server/<uuid>/saves/replay}: the config was loaded for that exact
+	 * path at 19:00:18.449, its file watcher reported the file present at .954, the read failed on the same path
+	 * at 20.513, and the file was there again afterwards — twice in a row. Who unlinks it inside that window is
+	 * NOT established, and two candidates were ruled out: an unflushed write (an earlier repair at the
+	 * server-start hook never once logged, because the file already existed at that moment) and the config
+	 * watcher's own autosave (NightConfig's {@code WritingMode.REPLACE} opens the existing path with
+	 * {@code WRITE, CREATE, TRUNCATE_EXISTING} and never unlinks it). Repairing at the read is what makes that
+	 * question stop mattering: whatever removed the file, the bytes are still in memory. A repair placed before
+	 * the read cannot say the same — one was written, and a deletion between the write and the read walked
+	 * straight through it.
+	 *
+	 * <p>Only {@code NoSuchFileException} is caught. Any other {@code IOException} — a permission error, a bad
+	 * disk — is Forge's to report, unchanged; and if the rewrite does not produce the file either, the original
+	 * exception is rethrown and the connection drops exactly as it does today.
+	 */
+	public static byte[] readForgeServerConfig(java.nio.file.Path file) throws java.io.IOException {
+		try {
+			return java.nio.file.Files.readAllBytes(file);
+		} catch (java.nio.file.NoSuchFileException gone) {
+			// The loader has to come from the caller — SyncConfigTask, which the sovereign loader defined. The
+			// kernel's own classes come from its PARENT, which cannot see net.minecraftforge at all, so
+			// PayloadInterop.class.getClassLoader() would find no ConfigTracker and quietly turn every miss back
+			// into the disconnect. Taken here, one frame from the call site, so getCallerClass() names the task.
+			byte[] rewritten = rewriteForgeServerConfig(file,
+					StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE)
+							.getCallerClass().getClassLoader());
+			if (rewritten == null) throw gone;
+			ForbricLog.warn("[Forbric/Net] %s was gone when MinecraftForge's SyncConfigTask read it; wrote it back "
+					+ "from the ModConfig the server holds and sent those %d byte(s). Unpatched, that read "
+					+ "disconnects the client with \"Failed to read config on server\" — which is how a Flashback "
+					+ "replay ended before it started", file, rewritten.length);
+			return rewritten;
+		}
+	}
+
+	/**
+	 * Asks the {@code ModConfig} that owns {@code file} to write itself, and returns the bytes if that worked.
+	 *
+	 * <p>Reflective because this is boot-side code and {@code ConfigTracker} is a game class, and it is looked up
+	 * through {@code caller}'s loader for the reason given at the call site. Returns null for every failure,
+	 * including "no tracked config claims this path" — the caller then rethrows, so a path the kernel cannot
+	 * account for is reported by Forge rather than papered over.
+	 */
+	private static byte[] rewriteForgeServerConfig(java.nio.file.Path file, ClassLoader caller) {
+		try {
+			Class<?> tracker = load(caller, FORGE_CONFIG_TRACKER);
+			if (tracker == null) tracker = load(loaderFor(), FORGE_CONFIG_TRACKER);
+			if (tracker == null) return null;
+			Object byType = tracker.getMethod("configSets").invoke(null);
+			if (!(byType instanceof Map<?, ?> map)) return null;
+			for (Object set : map.values()) {
+				if (!(set instanceof Iterable<?> configs)) continue;
+				for (Object config : configs) {
+					Object path = config.getClass().getMethod("getFullPath").invoke(config);
+					if (!file.equals(path)) continue;
+					config.getClass().getMethod("save").invoke(config);
+					if (!java.nio.file.Files.exists(file)) return null;
+					return java.nio.file.Files.readAllBytes(file);
+				}
+			}
+			return null;
+		} catch (ReflectiveOperationException | java.io.IOException | RuntimeException cannot) {
+			ForbricLog.debug("[Forbric/Net] could not rewrite %s from MinecraftForge's ConfigTracker — %s", file,
+					String.valueOf(cannot));
+			return null;
+		}
 	}
 
 	/**

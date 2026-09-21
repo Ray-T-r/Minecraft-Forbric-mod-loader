@@ -232,6 +232,24 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	private static final String ON_CLIENT_CONFIG_FINISHED = "onClientConfigurationFinished";
 	private static final String OBJECT_HOOK_DESC = "(Ljava/lang/Object;)V";
 
+	/**
+	 * MinecraftForge's {@code SyncConfigTask}, the handshake task that pushes each per-world SERVER config to the
+	 * joining client. Its whole body is {@code Files.readAllBytes(config.getFullPath())} inside a
+	 * {@code catch (IOException)} that calls {@code connection.disconnect("Connection closed - Failed to read
+	 * config on server")} — so one absent file on the server's disk ends the join, with no retry, although the
+	 * config it failed to read is a serialisation of a {@code ModConfig} the server is holding in memory.
+	 *
+	 * <p>The read is redirected to {@link net.forbric.kernel.interop.PayloadInterop#readForgeServerConfig}, which
+	 * has the same descriptor and the same behaviour except that a {@code NoSuchFileException} first asks the
+	 * owning {@code ModConfig} to write itself again. Swapping only the INVOKESTATIC's owner leaves the stack
+	 * shape, the frames and the exception table untouched — it is one instruction's constant, not a splice.
+	 */
+	private static final String SYNC_CONFIG_TASK = "net.minecraftforge.network.tasks.SyncConfigTask";
+	private static final String FILES = "java/nio/file/Files";
+	private static final String READ_ALL_BYTES = "readAllBytes";
+	private static final String READ_ALL_BYTES_DESC = "(Ljava/nio/file/Path;)[B";
+	private static final String READ_CONFIG_HOOK = "readForgeServerConfig";
+
 	private static final String SERVER_CONFIG = "net.minecraft.server.network.ServerConfigurationPacketListenerImpl";
 	private static final String FINISH_TASK = "finishCurrentTask";
 	private static final String FINISH_TASK_DESC = "(Lnet/minecraft/server/network/ConfigurationTask$Type;)V";
@@ -266,6 +284,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	static final String CLAIM_START_NEXT_TASK = "forbric-common-network-interop#startNextTask";
 	static final String CLAIM_CONFIG_FINISHED = "forbric-common-network-interop#clientConfigurationFinished";
 	static final String CLAIM_GUARD_INITIALISATION = "forbric-common-network-interop#guardOtherConnectionInitialisation";
+	static final String CLAIM_SYNC_CONFIG_READ = "forbric-common-network-interop#forgeSyncConfigRead";
 
 	/**
 	 * One claim per branch. The server-game fall-through is a HEDGE: NeoForge 26.2.0.88 fixed it upstream and the
@@ -302,7 +321,9 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				// HEDGE: the merged listener on the current carrier already initialises once, so the guard finds
 				// nothing to do (never applied in any gate log); it is kept for a carrier where it does not.
 				new Claim(CLAIM_GUARD_INITIALISATION, AnchorSet.of(new AnchorSet.Anchor(CLIENT_CONFIG_LISTENER, AnchorSet.Severity.HEDGE,
-						"a non-NeoForge connection is initialised more than once per configuration"))));
+						"a non-NeoForge connection is initialised more than once per configuration"))),
+				new Claim(CLAIM_SYNC_CONFIG_READ, AnchorSet.of(required(SYNC_CONFIG_TASK,
+						"a per-world SERVER config file that is not on disk when MinecraftForge's handshake reads it disconnects the joining client instead of being written again"))));
 	}
 
 	private static AnchorSet.Anchor required(String binaryName, String cost) {
@@ -325,8 +346,9 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 		boolean serverGame = SERVER_GAME_LISTENER.equals(className);
 		boolean neoRegistry = NEO_NETWORK_REGISTRY.equals(className);
 		boolean connection = CONNECTION.equals(className);
+		boolean syncConfigTask = SYNC_CONFIG_TASK.equals(className);
 		if (!fabricAddon && !serverConfig && !clientConfig && !clientCommon && !serverCommon && !serverGame
-				&& !neoRegistry && !connection) return classBytes;
+				&& !neoRegistry && !connection && !syncConfigTask) return classBytes;
 
 		ClassNode node = new ClassNode();
 		// EXPAND_FRAMES so every original frame is an absolute F_NEW node; the explicit frames we author at our own
@@ -439,12 +461,50 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 							+ "expects; leaving it alone", className, HANDLE_PAYLOAD);
 				}
 			}
+			if (syncConfigTask) {
+				int redirected = readServerConfigsThroughTheKernel(m);
+				if (redirected > 0) {
+					changed = true;
+					reporter.hit(CLAIM_SYNC_CONFIG_READ);
+					ForbricLog.info("[Forbric/Net] %s.%s now reads its %d per-world SERVER config file(s) through the "
+							+ "kernel — a file that is not on disk when it reads disconnects the joining client with "
+							+ "\"Failed to read config on server\", and the kernel writes it back from the ModConfig "
+							+ "the server is holding instead", className, m.name, redirected);
+				}
+			}
 		}
 		if (!changed) return classBytes;
 
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();
+	}
+
+	/**
+	 * Points every {@code Files.readAllBytes(Path)} in this method at
+	 * {@link net.forbric.kernel.interop.PayloadInterop#readForgeServerConfig}, and returns how many it moved.
+	 *
+	 * <p>The hook's descriptor is byte-for-byte the one it replaces and it is static, so this changes an
+	 * INVOKESTATIC's owner and nothing else: same operand consumed, same value produced, same checked
+	 * {@code IOException} for the surrounding handler to catch. No frame, no max-stack and no exception-table
+	 * entry moves, which is why this repair needs no explicit {@code FrameNode} while every splice above does.
+	 *
+	 * <p>Returns 0, leaving the class untouched, when Forge stops reading the file this way — a carrier where the
+	 * call is gone is a carrier where the disconnect this repairs cannot happen, and the claim then reports a
+	 * repair that found nothing rather than one that silently did nothing.
+	 */
+	private static int readServerConfigsThroughTheKernel(MethodNode m) {
+		int moved = 0;
+		for (AbstractInsnNode insn : m.instructions.toArray()) {
+			if (!(insn instanceof MethodInsnNode call)) continue;
+			if (call.getOpcode() != Opcodes.INVOKESTATIC) continue;
+			if (!FILES.equals(call.owner) || !READ_ALL_BYTES.equals(call.name)
+					|| !READ_ALL_BYTES_DESC.equals(call.desc)) continue;
+			call.owner = INTEROP;
+			call.name = READ_CONFIG_HOOK;
+			moved++;
+		}
+		return moved;
 	}
 
 	/**
