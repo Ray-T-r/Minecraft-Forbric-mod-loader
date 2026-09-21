@@ -774,9 +774,10 @@ public class ForbricLiveMod {
 						break;
 					}
 				}
-				if (level.getBlockState(pos).isAir()) {
-					level.setBlock(pos, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
-				}
+				// Unconditionally, because this save is generated once and reused and the client saves on exit:
+				// a block left at this column by an earlier run made the probe read that block forever, and the
+				// gate went red on a fixture that had drifted rather than on anything the kernel does.
+				level.setBlock(pos, net.minecraft.world.level.block.Blocks.WATER.defaultBlockState(), 3);
 				System.out.println("[ForbricLive/FLUID] water at " + pos.getX() + " " + pos.getY() + " " + pos.getZ()
 						+ ": " + level.getBlockState(pos).getBlock());
 			} catch (Throwable failure) {
