@@ -92,7 +92,10 @@ class GameEventBridgeInventoryTest {
 		assumeTrue(!installed.isEmpty(), "GameEventMultiplexer not compiled yet");
 
 		for (String tick : List.of("SERVER_TICK_PRE", "SERVER_TICK_POST", "LEVEL_TICK_PRE", "LEVEL_TICK_POST",
-				"PLAYER_TICK_PRE", "PLAYER_TICK_POST", "CLIENT_TICK_PRE", "CLIENT_TICK_POST")) {
+				"PLAYER_TICK_PRE", "PLAYER_TICK_POST", "CLIENT_TICK_PRE", "CLIENT_TICK_POST",
+				// The render tick is a fifth pair and a separate hole: a mod can poll keys from the client tick
+				// and still build nothing, because only this one drives a map mod's region upload.
+				"RENDER_FRAME_PRE", "RENDER_FRAME_POST")) {
 			assertTrue(installed.contains(tick),
 					tick + " is not installed — the merged base carries only NeoForge's hook for it, so a "
 							+ "MinecraftForge mod's listener sits on a bus nobody posts to");
@@ -143,6 +146,8 @@ class GameEventBridgeInventoryTest {
 	void theClientTicksAreVerifiedSeparatelyFromTheServerOnes() {
 		assertEquals(GameEventBridge.Pass.CLIENT_GAME_BUS, GameEventBridge.CLIENT_TICK_PRE.pass());
 		assertEquals(GameEventBridge.Pass.CLIENT_GAME_BUS, GameEventBridge.CLIENT_TICK_POST.pass());
+		assertEquals(GameEventBridge.Pass.CLIENT_GAME_BUS, GameEventBridge.RENDER_FRAME_PRE.pass());
+		assertEquals(GameEventBridge.Pass.CLIENT_GAME_BUS, GameEventBridge.RENDER_FRAME_POST.pass());
 		assertEquals(GameEventBridge.Pass.GAME_BUS, GameEventBridge.PLAYER_TICK_PRE.pass(),
 				"the player tick is common to both sides and belongs to the pass a server verifies");
 	}

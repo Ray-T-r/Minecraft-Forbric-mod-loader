@@ -156,6 +156,12 @@ public final class GameEventMultiplexer {
 						() -> clientTickBridge(cl, "installPre").invoke(null, neoBus));
 				install(GameEventBridge.CLIENT_TICK_POST,
 						() -> clientTickBridge(cl, "installPost").invoke(null, neoBus));
+				// Its own class and its own two installs: the render frame is a different NeoForge event from the
+				// client tick, and a mod can be dead on one and live on the other.
+				install(GameEventBridge.RENDER_FRAME_PRE,
+						() -> renderFrameBridge(cl, "installPre").invoke(null, neoBus));
+				install(GameEventBridge.RENDER_FRAME_POST,
+						() -> renderFrameBridge(cl, "installPost").invoke(null, neoBus));
 				EventBridges.verify(GameEventBridge.Pass.CLIENT_GAME_BUS);
 			}
 		} catch (ClassNotFoundException single) {
@@ -266,6 +272,12 @@ public final class GameEventMultiplexer {
 	/** One entry point on the game-side CLIENT tick bridge. Complete literal, for the reason above. */
 	private static Method clientTickBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameClientTickEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side render-frame bridge. Complete literal, for the reason above. */
+	private static Method renderFrameBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameRenderFrameEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 

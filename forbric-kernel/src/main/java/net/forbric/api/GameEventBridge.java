@@ -117,6 +117,12 @@ public enum GameEventBridge {
 					+ "nothing at all when pressed"),
 	CLIENT_TICK_POST(Pass.CLIENT_GAME_BUS, "ClientTickEvent.Post",
 			"as CLIENT_TICK_PRE, for the post-tick half"),
+	RENDER_FRAME_PRE(Pass.CLIENT_GAME_BUS, "TickEvent.RenderTickEvent.Pre",
+			"the render tick is the only pump a MinecraftForge map mod's region builder runs on, so its map is "
+					+ "never built and its screen opens onto nothing, while the vertex buffer the same listener "
+					+ "drains grows without bound instead"),
+	RENDER_FRAME_POST(Pass.CLIENT_GAME_BUS, "TickEvent.RenderTickEvent.Post",
+			"as RENDER_FRAME_PRE, for the post-frame half — and the half Xaero's world map alone listens on"),
 	CLIENT_RELOAD_LISTENERS(Pass.CLIENT_MOD_BUS, "RegisterClientReloadListenersEvent",
 			"a MinecraftForge mod's client reload listeners are registered on a bus nobody posts to — GeckoLib's "
 					+ "whole client model and animation cache hangs off exactly this"),
