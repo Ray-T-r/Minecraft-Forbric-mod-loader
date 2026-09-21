@@ -256,9 +256,11 @@ public final class KernelLifecycle {
 	private static void rebuildNeoForgeBlockStateIds(ClassLoader cl) {
 		contentCall(cl, "rebuildBlockStateIds", "rebuild the NeoForge blockstate→id map");
 		// Same moment, same reason: vanilla fills every block state's cache in Bootstrap, before any mod has
-		// registered a block, and the kernel drives registration itself. Lithium is what notices — an
-		// uninitialised state put into a chunk section throws from inside its optimisation.
+		// registered a block, and the kernel drives registration itself.
 		contentCall(cl, "initialiseBlockStateCaches", "initialise the block state caches");
+		// Third, and AFTER the id map is whole, because the mod pass it re-runs walks that map: a mod whose own
+		// "every block exists now" pass ran before the kernel's last wave of registrations never saw those blocks.
+		contentCall(cl, "initialiseBlockInfoCaches", "re-run the mods' whole-registry block passes");
 	}
 
 	/**

@@ -172,6 +172,10 @@ class ForgeRegistrationA2ContractTest {
             assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
                     "key saved binding: key.keyboard.f6", replacement), 0).exit());
         }
+        // 0 is AIR, and is exactly what Block.getId answers for a state that carries no id at all. A gate that
+        // only asserted the line was printed would stay green on the defect it exists to catch.
+        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
+                "probe_block id=32366", "probe_block id=0"), 0).exit());
         for (String replacement : List.of("injection VISIBLE: false search=true", "injection VISIBLE: true search=false")) {
             assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
                     "injection VISIBLE: true search=true", replacement), 0).exit());
@@ -183,7 +187,8 @@ class ForgeRegistrationA2ContractTest {
                 "MinecraftForge's overlay stack is on NeoForge's layer manager",
                 "RegisterPictureInPictureRendererEvent RECEIVED",
                 "1 MinecraftForge picture-in-picture renderer(s) registered", "only writer",
-                "traditional-Forge mod(s) in the Minecraft.<init> window")) {
+                "traditional-Forge mod(s) in the Minecraft.<init> window",
+                "states, was 32366", "id=32366 roundTrip=Block{forbriclive:probe_block}")) {
             assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(pass, ""), 0).exit());
         }
         // ABSENT is its own row, not the negation of PRESENT: an empty manager makes the canary print it, and a
@@ -215,6 +220,10 @@ class ForgeRegistrationA2ContractTest {
             Result result = gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen().replace(COMMON + row + "\n", ""), 0);
             assertEquals(1, result.exit(), row + ": " + result.output());
         }
+        // 0 is AIR, and is exactly what Block.getId answers for a state that carries no id at all. A gate that
+        // only asserted the line was printed would stay green on the defect it exists to catch.
+        assertEquals(1, gate(M26, "M26_ASSERTIONS", clientGreen().replace(
+                "probe_block id=32366", "probe_block id=0"), 0).exit());
         for (String replacement : List.of("injection VISIBLE: false search=true", "injection VISIBLE: true search=false")) {
             assertEquals(1, gate(M21, "M21_REGISTRATION_ASSERTIONS", commonGreen().replace(
                     "injection VISIBLE: true search=true", replacement), 0).exit());
@@ -270,6 +279,13 @@ class ForgeRegistrationA2ContractTest {
         lines.add("[Render thread/INFO]: [Forbric/Lifecycle] constructed 2 traditional-Forge mod(s) in the "
                 + "Minecraft.<init> window, where MinecraftForge constructs its own, and fired RegisterEvent x40 "
                 + "for them");
+        // That window registers blocks, so the blockstate->id map has to be refilled AFTER it; the id read back
+        // from the canary's own block is the row that makes the claim, because 0 is AIR and is what a missing
+        // entry answers.
+        lines.add("[Forbric/Lifecycle] rebuilt NeoForge blockstate\u2192id map (32367 states, was 32366) \u2014 1 more "
+                + "state(s) were registered after the first pass, and Block.getId answered 0 (AIR) for every one "
+                + "of them");
+        lines.add("[ForbricLive/BLOCKID] forbriclive:probe_block id=32366 roundTrip=Block{forbriclive:probe_block}");
         return String.join("\n", lines) + "\n";
     }
 

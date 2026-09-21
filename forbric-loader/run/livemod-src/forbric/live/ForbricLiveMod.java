@@ -136,6 +136,30 @@ public class ForbricLiveMod {
 		}
 	}
 
+	/**
+	 * A block of this mod's own, so the canary occupies the SECOND wave of block registration.
+	 *
+	 * <p>On the client a traditional-Forge {@code @Mod} is constructed inside {@code Minecraft.<init>}, which is
+	 * after the kernel's registration window has already closed and been repaired once. Everything that walks
+	 * "every block in the game" therefore has to run again, over a registry that just grew. Two things did not:
+	 * the blockstate→id map stopped at "already non-empty", so {@code Block.getId} answered 0 (AIR) for every
+	 * block of this wave; and Lithium's one block pass had already run, so putting one of these states into a
+	 * chunk died with "Could not initialize block state flags".
+	 *
+	 * <p>Without a block here the gate cannot see either: the canary registered no blocks at all, so the second
+	 * wave was empty and both passes had nothing to miss.
+	 */
+	private static final net.minecraftforge.registries.DeferredRegister<net.minecraft.world.level.block.Block> BLOCKS =
+			net.minecraftforge.registries.DeferredRegister.create(
+					net.minecraftforge.registries.ForgeRegistries.Keys.BLOCKS, "forbriclive");
+
+	private static final net.minecraftforge.registries.RegistryObject<net.minecraft.world.level.block.Block> PROBE_BLOCK =
+			BLOCKS.register("probe_block", () -> new net.minecraft.world.level.block.Block(
+					net.minecraft.world.level.block.state.BlockBehaviour.Properties.of()
+							.setId(net.minecraft.resources.ResourceKey.create(
+									net.minecraft.core.registries.Registries.BLOCK,
+									Identifier.fromNamespaceAndPath("forbriclive", "probe_block")))));
+
 	private static final net.minecraftforge.registries.DeferredRegister<com.mojang.serialization.MapCodec<? extends net.minecraftforge.common.world.StructureModifier>> STRUCTURE_MODIFIER_SERIALIZERS =
 			net.minecraftforge.registries.DeferredRegister.create(
 					net.minecraftforge.registries.ForgeRegistries.Keys.STRUCTURE_MODIFIER_SERIALIZERS, "forbriclive");
@@ -190,6 +214,8 @@ public class ForbricLiveMod {
 		System.out.println("[ForbricLive/CFG] registered SERVER config forbriclive-server.toml (greeting default 'default')");
 		System.out.println("[ForbricLive/CFG] registered COMMON config forbriclive-common.toml (probe default 11)");
 		System.out.println("[ForbricLive/CFG] registered CLIENT config forbriclive-client.toml (probe default 17)");
+		BLOCKS.register(ctx.getModBusGroup());
+		System.out.println("[ForbricLive/BLOCK] registered block forbriclive:probe_block");
 		STRUCTURE_MODIFIER_SERIALIZERS.register(ctx.getModBusGroup());
 		System.out.println("[ForbricLive/WORLDGEN] registered structure modifier serializer forbriclive:probe_spawn");
 		registerRegistrationProbes(ctx);
@@ -713,6 +739,18 @@ public class ForbricLiveMod {
 						+ "now rolls " + rolled + " item(s)");
 			} catch (Throwable failure) {
 				System.out.println("[ForbricLive/LOOT] read-back FAILED: " + failure);
+			}
+			// The value, not the log line: Block.getId reads the blockstate→id map, and a block this mod
+			// registered in the Minecraft.<init> window used to have no entry in it at all — getId then answers 0,
+			// which is AIR, and every block_update packet about it describes air.
+			try {
+				var state = PROBE_BLOCK.get().defaultBlockState();
+				System.out.println("[ForbricLive/BLOCKID] forbriclive:probe_block id="
+						+ net.minecraft.world.level.block.Block.getId(state)
+						+ " roundTrip=" + net.minecraft.world.level.block.Block.stateById(
+								net.minecraft.world.level.block.Block.getId(state)));
+			} catch (Throwable failure) {
+				System.out.println("[ForbricLive/BLOCKID] read-back FAILED: " + failure);
 			}
 			System.out.println("[ForbricLive/REGISTRATION] common registration observations completed");
 			// H1: one call away from any Forge mod — IForgeBlockPos.toCompoundTag() links against CompoundTag.builder().

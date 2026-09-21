@@ -56,15 +56,38 @@ public final class KernelRegistryContent {
 	/**
 	 * Refills NeoForge's blockstate→id map, which the registration window's clear callback empties.
 	 *
-	 * <p>Returns early when NeoForge kept it: a non-empty map is the normal case and rebuilding it would append a
-	 * second id for every state.
+	 * <p>This is also {@code Block.BLOCK_STATE_REGISTRY} — the merged {@code Block.<clinit>} reads
+	 * {@code GameData.getBlockStateIDMap()} into it — so it is what {@code Block.getId} answers from, what
+	 * {@code block_update} encodes with, and what any mod that walks every state in the game iterates.
 	 *
-	 * @return how many states were added, or -1 when the map did not need rebuilding
+	 * <p>It used to return early whenever the map was non-empty, to avoid appending a second id for every state.
+	 * On the client that skipped the wave that matters. Blocks arrive TWICE there: once in the registration
+	 * window, and again in the {@code Minecraft.<init>} window, where the Forge-family mods are constructed. On a
+	 * 97-jar pack the first pass mapped 32,367 states and the second was skipped — so the 28,713 states every
+	 * Forge-family mod had just registered carried no id at all, and {@code Block.getId} answered 0 (AIR) for all
+	 * of them.
+	 *
+	 * <p>So the pass now compares the map against the registry and, when blocks have appeared since, rebuilds it
+	 * WHOLE rather than topping it up. Appending would give the same state a different id on a client than on a
+	 * dedicated server, where one wave assigns them all in registry order; clearing first keeps both sides
+	 * deriving the same ids from the same order. Nothing has read an id yet at either call site.
+	 *
+	 * @return how many states the map holds, or -1 when it already agreed with the registry
 	 */
+	/** The switch that puts back the old rule: a non-empty map is left exactly as the first pass built it. */
+	static final String STATE_ID_SWITCH = "forbric.blockStateIdRefill";
+
 	public static int rebuildBlockStateIds() {
 		try {
 			IdMapper<BlockState> idMap = GameData.getBlockStateIDMap();
-			if (idMap.size() > 0) return -1;
+			int possible = 0;
+			for (Block block : BuiltInRegistries.BLOCK) {
+				possible += block.getStateDefinition().getPossibleStates().size();
+			}
+			int had = idMap.size();
+			if (had == possible) return -1;
+			if (had > 0 && "off".equalsIgnoreCase(System.getProperty(STATE_ID_SWITCH, "on"))) return -1;
+			if (had > 0 && !clearStateIds(idMap)) return -1;
 
 			int states = 0;
 			for (Block block : BuiltInRegistries.BLOCK) {
@@ -73,13 +96,38 @@ public final class KernelRegistryContent {
 					states++;
 				}
 			}
-			ForbricLog.info("[Forbric/Lifecycle] rebuilt NeoForge blockstate→id map (%d states) — the registration "
-					+ "window's clear callback had emptied it", states);
+			if (had == 0) {
+				ForbricLog.info("[Forbric/Lifecycle] rebuilt NeoForge blockstate→id map (%d states) — the "
+						+ "registration window's clear callback had emptied it", states);
+			} else {
+				ForbricLog.info("[Forbric/Lifecycle] rebuilt NeoForge blockstate→id map (%d states, was %d) — "
+						+ "%d more state(s) were registered after the first pass, and Block.getId answered 0 (AIR) "
+						+ "for every one of them", states, had, states - had);
+			}
 			return states;
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not rebuild NeoForge blockstate→id map "
 					+ "(block_update packets will fail to encode)", Reflect.unwrap(t));
 			return -1;
+		}
+	}
+
+	/**
+	 * Empties the map through NeoForge's own {@code clear()}, the one its registration callback calls.
+	 *
+	 * <p>Package-private on {@code ClearableObjectIntIdentityMap}, so it is reached reflectively. If it is not
+	 * there, the caller leaves the map alone rather than appending duplicate ids.
+	 */
+	private static boolean clearStateIds(IdMapper<BlockState> idMap) {
+		try {
+			java.lang.reflect.Method clear = idMap.getClass().getDeclaredMethod("clear");
+			clear.setAccessible(true);
+			clear.invoke(idMap);
+			return true;
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] NeoForge's blockstate→id map has no clear() to call — leaving "
+					+ "the ids it already holds rather than appending a second id for every state", Reflect.unwrap(t));
+			return false;
 		}
 	}
 
@@ -95,11 +143,10 @@ public final class KernelRegistryContent {
 	 * The kernel drives registration itself, so nothing did: every block a mod registered carried an uninitialised
 	 * cache for the whole run.
 	 *
-	 * <p>Vanilla tolerates that by computing lazily. Lithium does not — it replaces the lazy path with a flags
-	 * field and throws {@code Could not initialize block state flags} the first time an uninitialised state is put
-	 * in a chunk section. Biomes O' Plenty's fir leaves were the first: the crash is "Feature placement", during
-	 * worldgen, in Lithium's code, naming a Biomes O' Plenty block — and nothing in it points at a cache the
-	 * kernel never filled.
+	 * <p>Vanilla tolerates an unfilled cache by computing it lazily, so this is a hot-path repair, not a crash
+	 * repair. Lithium's "Could not initialize block state flags" is a SEPARATE thing that this does not touch:
+	 * those flags are not in the vanilla cache and {@code initCache()} never fills them. See
+	 * {@link #initialiseBlockInfoCaches()}.
 	 *
 	 * <p>Called after the registration window and again after the client entrypoints, because both register
 	 * blocks. Recomputing an already-computed cache is what vanilla itself does on every bootstrap.
@@ -124,6 +171,57 @@ public final class KernelRegistryContent {
 			ForbricLog.warn("[Forbric/Lifecycle] could not initialise the block state caches — a mod's block put "
 					+ "into a chunk can throw from inside another mod's optimisation", Reflect.unwrap(t));
 			return -1;
+		}
+	}
+
+	/** The switch that leaves a mod's own whole-registry block pass exactly where the mod itself put it. */
+	static final String BLOCK_INFO_SWITCH = "forbric.blockInfoCaches";
+	private static final String LITHIUM_INITIALIZER =
+			"net.caffeinemc.mods.lithium.common.initialization.BlockInfoInitializer";
+
+	/**
+	 * Re-runs Lithium's own whole-registry block pass, now that every block really is registered.
+	 *
+	 * <p>Lithium does not compute its per-state flags lazily and does not compute them in {@code initCache()}. It
+	 * has one pass, {@code BlockInfoInitializer.initializeBlockInfo()}, which walks
+	 * {@code Block.BLOCK_STATE_REGISTRY} and calls {@code lithium$initializeFlags()} and
+	 * {@code lithium$initializePathNodeTypeCache()} on every state in it. Lithium fires that pass from a mixin on
+	 * {@code FuelValues.vanillaBurnTimes} — a point that, on a Fabric instance, is after everything is registered.
+	 *
+	 * <p>Here it is not. The kernel drives registration itself, and on the client the Forge-family mods register a
+	 * second wave inside the {@code Minecraft.<init>} window. Every state in that wave missed Lithium's one pass,
+	 * and Lithium throws rather than computing late: putting one into a chunk section dies with
+	 * {@code Could not initialize block state flags for Block{biomesoplenty:fir_leaves}}, as "Feature placement"
+	 * during worldgen, inside Lithium, naming a Biomes O' Plenty block. Nothing in that crash points at a pass
+	 * that ran too early.
+	 *
+	 * <p>This calls Lithium's own initialiser rather than reproducing what it computes — the flags are Lithium's
+	 * to define, and its pass is written to be run over the whole registry, so running it again is what it already
+	 * does to a state it has seen. Absent Lithium, there is nothing to run and that is not a failure.
+	 *
+	 * @return true when a mod's pass was re-run
+	 */
+	public static boolean initialiseBlockInfoCaches() {
+		if ("off".equalsIgnoreCase(System.getProperty(BLOCK_INFO_SWITCH, "on"))) return false;
+		Class<?> initializer;
+		try {
+			initializer = Class.forName(LITHIUM_INITIALIZER, true,
+					KernelRegistryContent.class.getClassLoader());
+		} catch (ClassNotFoundException | LinkageError absent) {
+			return false;
+		}
+		try {
+			initializer.getMethod("initializeBlockInfo").invoke(null);
+			ForbricLog.info("[Forbric/Lifecycle] re-ran Lithium's block-info pass over all %d mapped block state(s) "
+					+ "— it runs its only pass from FuelValues.vanillaBurnTimes, which is before the blocks the "
+					+ "kernel registers in the Minecraft.<init> window exist, and it throws rather than computing a "
+					+ "missed state's flags later", GameData.getBlockStateIDMap().size());
+			return true;
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not re-run Lithium's block-info pass — a block registered "
+					+ "after its own pass will throw \"Could not initialize block state flags\" the first time it is "
+					+ "put in a chunk", Reflect.unwrap(t));
+			return false;
 		}
 	}
 

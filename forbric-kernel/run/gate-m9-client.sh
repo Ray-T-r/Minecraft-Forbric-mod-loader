@@ -69,10 +69,15 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #                                             "options.txt loads with modded modifier bindings in it")
 #   -Dforbric.carrierLanguages=off -> 2 red ("NeoForge's own screens have their text", "and MinecraftForge's do too")
 #   -Dforbric.blockStateCaches=off -> 1 red ("every block state's cache is computed"). Off, a block a mod
-#                                      registered carries an uninitialised cache all run; vanilla computes
-#                                      lazily and tolerates it, Lithium throws "Could not initialize block state
-#                                      flags" the first time one is put in a chunk (verified on Windows: Biomes
-#                                      O' Plenty's fir leaves, during feature placement).
+#                                      registered carries an uninitialised cache all run. Vanilla computes it
+#                                      lazily, so this is a hot-path repair, not a crash repair — the Lithium
+#                                      crash it was once credited with is forbric.blockInfoCaches, below.
+#   -Dforbric.blockInfoCaches=off  -> 1 red ("a mod's whole-registry block pass covers the late wave too"). Off,
+#                                      every block the kernel registers after Lithium's one pass (fired from
+#                                      FuelValues.vanillaBurnTimes) misses it, and Lithium throws rather than
+#                                      computing a missed state's flags later: verified on Windows as "Could not
+#                                      initialize block state flags for Block{biomesoplenty:fir_leaves}" during
+#                                      feature placement. The blockstate→id map half is M26's.
 #   -Dforbric.splitterPacketContext=off -> 2 red ("NeoForge's splitter encodes in Fabric's packet context",
 #                                      and the anchor census noticing a repair that was handed its target and
 #                                      declined — which is the switch working, said twice).
@@ -699,6 +704,13 @@ check_absent "no callback group is broken by a point the kernel moved" \
 # context exists to bind, and this pack has no mod that needs one — what must hold here is that the seam is in.
 check "every block state's cache is computed" \
   "\[Forbric/Lifecycle\] initialised [1-9][0-9]* block state cache\(s\)" "$LOG"
+
+# Lithium computes its per-state flags in ONE pass, fired from FuelValues.vanillaBurnTimes, and throws rather
+# than computing a state it missed later. The kernel registers blocks after that point, so the pass has to run
+# again over the whole map. (This pack has no traditional-Forge mod, so it has no SECOND wave of registrations:
+# that half, and the blockstate→id map it also broke, are asserted in M26, which does.)
+check "a mod's whole-registry block pass covers the late wave too" \
+  "\[Forbric/Lifecycle\] re-ran Lithium's block-info pass over all [1-9][0-9]* mapped block state\(s\)" "$LOG"
 
 check "NeoForge's splitter encodes in Fabric's packet context" \
   "\[Forbric/Net\] .*GenericPacketSplitter.encode now runs inside the connection's Fabric packet context" "$LOG"

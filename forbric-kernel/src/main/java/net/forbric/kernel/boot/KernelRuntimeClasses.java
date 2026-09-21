@@ -138,12 +138,13 @@ public final class KernelRuntimeClasses {
 				new Call("buildParentPack", Object.class, String.class, List.class),
 				new Call("withOverlays", int.class, List.class),
 				new Call("addSource", void.class, Object.class, List.class, String.class))));
-		// The five registry repairs the kernel makes once its registration window closes. WHEN each runs is
+		// The registry repairs the kernel makes once its registration window closes. WHEN each runs is
 		// hand-ordered in KernelLifecycle.closeRegistrationWindow and stays there; only what each DOES is here.
 		// See KernelRegistryContent.
 		CLASSES.put("net.forbric.kernel.runtime.KernelRegistryContent", new Entry(Origin.COMPILED, List.of(
 				new Call("rebuildBlockStateIds", int.class),
 				new Call("initialiseBlockStateCaches", int.class),
+				new Call("initialiseBlockInfoCaches", boolean.class),
 				new Call("sortCreativeTabs", void.class),
 				new Call("startCreativeTabProbe", void.class),
 				new Call("linkBlockItems", int.class),

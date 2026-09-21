@@ -4,6 +4,9 @@
 #   M26_EXTRA_JVM='-Dforbric.clientResourcePreload=off' — the client resource manager is empty at mod setup again;
 #   M26_EXTRA_JVM='-Dforbric.forgeOverlayLayers=off' — a MinecraftForge mod's HUD overlays never draw (3 red);
 #   M26_EXTRA_JVM='-Dforbric.forgePipRenderers=off' — a MinecraftForge picture-in-picture renderer is nowhere (2 red);
+#   M26_EXTRA_JVM='-Dforbric.blockStateIdRefill=off' — the blockstate→id map keeps whatever the first pass built,
+#     so the blocks a MinecraftForge mod registers in the Minecraft.<init> window get no id and Block.getId
+#     answers 0, which is AIR (2 red);
 #   M26_EXTRA_JVM='-Dforbric.forgeCtorGameInstance=off' — a MinecraftForge @Mod is constructed in NeoForge's
 #     pre-Minecraft window again, where Minecraft.getInstance() is null (2 red). MinecraftForge's own
 #     ClientModLoader.begin takes (Minecraft, PackRepository, ReloadableResourceManager), which exist
@@ -87,6 +90,16 @@ check "the MinecraftForge canary is constructed where MinecraftForge constructs 
   '\[Render thread/INFO\]: \[Forbric/Lifecycle\] constructed [1-9][0-9]* traditional-Forge mod\(s\) in the Minecraft.<init> window' "$LOG"
 check_absent "and not in the pre-Minecraft window" \
   '\[main/INFO\]: \[Forbric/ModLoader\] constructed @Mod .* \(traditional-Forge' "$LOG"
+
+# Being constructed there means the canary's BLOCK arrives in a SECOND wave, after the kernel has already
+# repaired the registries once. Everything that walks every block in the game therefore has to run again. The
+# blockstate→id map did not: it stopped at "already non-empty", so Block.getId answered 0 — AIR — for every
+# block of that wave, and every block_update packet about one of them described air.
+check "the blockstate→id map is refilled after the late wave of registrations" \
+  '\[Forbric/Lifecycle\] rebuilt NeoForge blockstate→id map \([1-9][0-9]* states, was [1-9][0-9]*\)' "$LOG"
+# The id itself, not the log line that claims it: 0 is AIR and is what a missing entry answers.
+check "and the canary's own block has a real id in it" \
+  'ForbricLive/BLOCKID\] forbriclive:probe_block id=[1-9][0-9]* roundTrip=Block\{forbriclive:probe_block\}' "$LOG"
 check "client canary subscribed" 'ForbricLive/CLIENT\] subscribed to ten Forge registration events' "$LOG"
 check "joined world" 'ClientSmoke\] joined world via quick-play' "$LOG"
 check "simulation survived" 'ClientSmoke\] client-ready after' "$LOG"
