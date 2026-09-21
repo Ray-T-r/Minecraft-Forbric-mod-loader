@@ -719,7 +719,9 @@ public final class PassiveSeeder {
 		// get a list saying "nothing declared" instead of an NPE.
 		byComponent.put("dependencies", holderCtor.newInstance(List.of()));
 		byComponent.put("forgeFeatures", holderCtor.newInstance(List.of()));
-		byComponent.put("getModProperties", Map.of());
+		// The mod's own [modproperties.<id>] table, not an empty one: it is how a mod addresses ANOTHER mod, and
+		// Sodium reads its config entry point out of exactly this to build that mod's Video Settings page.
+		byComponent.put("getModProperties", mod.getModProperties());
 
 		java.lang.reflect.RecordComponent[] components = modInfoCls.getRecordComponents();
 		if (components == null) {
@@ -894,7 +896,9 @@ public final class PassiveSeeder {
 		// list here would only invite NeoForge-side re-checking of a decision that is not its to make.
 		setInstanceField(modInfoCls, "dependencies", modInfo, List.of());
 		setInstanceField(modInfoCls, "features", modInfo, List.of());
-		setInstanceField(modInfoCls, "properties", modInfo, Map.of());
+		// As in buildForgeModInfo: the declared table, so a NeoForge mod asking a kernel-built IModInfo about
+		// its properties gets the truth rather than silence.
+		setInstanceField(modInfoCls, "properties", modInfo, mod.getModProperties());
 		setInstanceField(modInfoCls, "config", modInfo, emptyConfigurable(gameLoader, Ecosystem.NEOFORGE));
 		// logoBlur stays at its allocation default (false).
 		return modInfo;

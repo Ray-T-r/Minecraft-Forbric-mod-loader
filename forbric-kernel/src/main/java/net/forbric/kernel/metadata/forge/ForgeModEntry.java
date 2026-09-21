@@ -18,6 +18,7 @@ package net.forbric.kernel.metadata.forge;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * One {@code [[mods]]} entry from a Forge {@code mods.toml}, plus its declared dependencies.
@@ -28,13 +29,30 @@ public final class ForgeModEntry {
 	private final String displayName;
 	private final String description;
 	private final List<ForgeDependency> dependencies;
+	private final Map<String, Object> properties;
 
 	public ForgeModEntry(String modId, String version, String displayName, String description, List<ForgeDependency> dependencies) {
+		this(modId, version, displayName, description, dependencies, Map.of());
+	}
+
+	public ForgeModEntry(String modId, String version, String displayName, String description,
+			List<ForgeDependency> dependencies, Map<String, Object> properties) {
 		this.modId = modId;
 		this.version = version;
 		this.displayName = displayName;
 		this.description = description;
 		this.dependencies = dependencies == null ? Collections.emptyList() : Collections.unmodifiableList(dependencies);
+		this.properties = properties == null ? Map.of() : Map.copyOf(properties);
+	}
+
+	/**
+	 * This mod's {@code [modproperties.<modId>]} table, never null.
+	 *
+	 * <p>Not loader data. It is how a mod tells another mod something, and the reader is whoever looks: Sodium
+	 * reads {@code sodium:config_api_user} out of it to find the class that builds the mod's Video Settings page.
+	 */
+	public Map<String, Object> getProperties() {
+		return properties;
 	}
 
 	public String getModId() {

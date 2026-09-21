@@ -19,9 +19,12 @@ package net.forbric.kernel.metadata.forge;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.InputStream;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import net.forbric.api.UnifiedDependency;
@@ -34,6 +37,63 @@ class ModsTomlParserTest {
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	/**
+	 * The [modproperties.<id>] table, which is how a mod addresses ANOTHER mod rather than the loader.
+	 *
+	 * <p>Pinned on the exact shape that made it worth parsing: iris declares
+	 * {@code [modproperties.iris] "sodium:config_api_user" = "..."}, Sodium reads that key out of
+	 * {@code IModInfo.getModProperties()} to find the class that builds iris' page in Video Settings, and the
+	 * kernel answered every such question with an empty map — so the page did not exist.
+	 *
+	 * <p>The key is the trap: it is QUOTED and contains a COLON, under a quoted section name. A lookup that goes
+	 * through night-config's dotted-path {@code get(String)} splits on dots and would miss keys like it; every
+	 * read in the parser uses {@code Collections.singletonList(key)} for that reason, and this table is walked by
+	 * entry rather than by key at all.
+	 */
+	@Test
+	void parsesModPropertiesIncludingAQuotedColonBearingKey() {
+		String toml = """
+				modLoader="javafml"
+				loaderVersion="[1,)"
+				[[mods]]
+				modId="iris"
+				version="1.11.4"
+				[modproperties.iris]
+				"sodium:config_api_user" = "net.irisshaders.iris.compat.sodium.config.IrisConfig"
+				"fabric:provides" = ["indium"]
+				"fabric-renderer-api-v1:contains_renderer" = true
+				[modproperties.iris.nested]
+				inner = "yes"
+				[[mods]]
+				modId="plain"
+				version="1.0"
+				""";
+
+		ForgeModsToml parsed = ModsTomlParser.parse(toml);
+		ForgeModEntry iris = parsed.getMods().get(0);
+		assertEquals("iris", iris.getModId());
+
+		Map<String, Object> properties = iris.getProperties();
+		assertEquals("net.irisshaders.iris.compat.sodium.config.IrisConfig",
+				properties.get("sodium:config_api_user"),
+				"the colon-bearing key must survive verbatim — this exact string is what Sodium looks up");
+		assertEquals(List.of("indium"), properties.get("fabric:provides"),
+				"a list value stays a list; a reader that wants a String warns about it itself");
+		assertEquals(Boolean.TRUE, properties.get("fabric-renderer-api-v1:contains_renderer"),
+				"a boolean stays a boolean rather than being stringified");
+
+		// Plain JDK types all the way down: the reader branches on `instanceof Map` and the kernel ships its own
+		// night-config, so handing back night-config's Config would be a class-identity mismatch inside the
+		// reader's catch-all — it would look exactly like the mod declaring nothing.
+		assertInstanceOf(Map.class, properties.get("nested"));
+		assertFalse(properties.get("nested") instanceof com.electronwill.nightconfig.core.UnmodifiableConfig,
+				"night-config types must not escape the parser");
+		assertEquals("yes", ((Map<?, ?>) properties.get("nested")).get("inner"));
+
+		assertTrue(parsed.getMods().get(1).getProperties().isEmpty(),
+				"a mod with no table gets an empty map, never null");
 	}
 
 	@Test

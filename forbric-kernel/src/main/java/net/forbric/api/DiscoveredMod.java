@@ -19,6 +19,7 @@ package net.forbric.api;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 
 /**
@@ -40,6 +41,7 @@ public final class DiscoveredMod {
 	private final List<String> accessTransformers;
 	private final String source;
 	private final List<String> aliases;
+	private final Map<String, Object> modProperties;
 
 	public DiscoveredMod(Ecosystem ecosystem, String id, String version, String displayName,
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig, String source) {
@@ -50,12 +52,13 @@ public final class DiscoveredMod {
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig,
 			List<String> accessTransformers, String source) {
 		this(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig, accessTransformers,
-				source, Collections.emptyList());
+				source, Collections.emptyList(), Map.of());
 	}
 
 	private DiscoveredMod(Ecosystem ecosystem, String id, String version, String displayName,
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig,
-			List<String> accessTransformers, String source, List<String> aliases) {
+			List<String> accessTransformers, String source, List<String> aliases,
+			Map<String, Object> modProperties) {
 		this.ecosystem = ecosystem;
 		this.id = id;
 		this.version = version;
@@ -66,6 +69,7 @@ public final class DiscoveredMod {
 		this.accessTransformers = frozen(accessTransformers);
 		this.source = source;
 		this.aliases = frozen(aliases);
+		this.modProperties = modProperties == null ? Map.of() : Map.copyOf(modProperties);
 	}
 
 	/**
@@ -76,7 +80,33 @@ public final class DiscoveredMod {
 	 */
 	public DiscoveredMod withAliases(List<String> aliases) {
 		return new DiscoveredMod(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig,
-				accessTransformers, source, aliases);
+				accessTransformers, source, aliases, modProperties);
+	}
+
+	/**
+	 * A copy of this mod carrying the {@code [modproperties.<id>]} table its own metadata declared.
+	 *
+	 * <p>A copy for the same reason {@link #withAliases} is one. The table is a mod's way of telling ANOTHER
+	 * mod something the loader itself has no opinion about, and it is read through
+	 * {@code IModInfo.getModProperties()} by whoever cares: Sodium looks up {@code sodium:config_api_user} there
+	 * to find the class that builds a mod's page in Video Settings, Jade looks up {@code jade}. The kernel used
+	 * to answer every such question with an empty map, so iris declared its Sodium config entry point correctly,
+	 * in its own {@code neoforge.mods.toml}, and its options page did not exist.
+	 */
+	public DiscoveredMod withModProperties(Map<String, Object> properties) {
+		return new DiscoveredMod(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig,
+				accessTransformers, source, aliases, properties);
+	}
+
+	/**
+	 * The {@code [modproperties.<id>]} table, never null.
+	 *
+	 * <p>Values are plain {@code Boolean}/{@code String}/{@code List}/{@code Map} — never night-config's own
+	 * {@code Config}. A reader branches on {@code instanceof Map} and the kernel ships its own night-config, so
+	 * handing back a {@code Config} would be a class-identity mismatch inside the reader's catch-all.
+	 */
+	public Map<String, Object> getModProperties() {
+		return modProperties;
 	}
 
 	/**

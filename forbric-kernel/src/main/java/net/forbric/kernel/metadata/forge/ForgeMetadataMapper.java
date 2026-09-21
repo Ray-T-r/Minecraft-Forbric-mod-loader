@@ -113,7 +113,10 @@ public final class ForgeMetadataMapper {
 					mixinConfigs,
 					null, // Fabric .accesswidener — N/A for Forge; ATs are carried separately
 					accessTransformers,
-					source));
+					source)
+					// Its [modproperties.<id>] table, which is how this mod addresses OTHER mods — Sodium reads
+					// its config entry point out of it. Empty for the overwhelming majority.
+					.withModProperties(mod.getProperties()));
 		}
 
 		return result;

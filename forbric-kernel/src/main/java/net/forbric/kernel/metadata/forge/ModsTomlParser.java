@@ -57,6 +57,7 @@ public final class ModsTomlParser {
 		String loaderVersion = getString(config, "loaderVersion");
 
 		UnmodifiableConfig dependenciesTable = getSubConfig(config, "dependencies");
+		UnmodifiableConfig propertiesTable = getSubConfig(config, "modproperties");
 
 		List<ForgeModEntry> mods = new ArrayList<>();
 
@@ -68,7 +69,8 @@ public final class ModsTomlParser {
 					getString(modConfig, "version"),
 					getString(modConfig, "displayName"),
 					getString(modConfig, "description"),
-					parseDependencies(dependenciesTable, modId));
+					parseDependencies(dependenciesTable, modId),
+					parseProperties(propertiesTable, modId));
 
 			mods.add(entry);
 		}
@@ -89,6 +91,48 @@ public final class ModsTomlParser {
 		}
 
 		return new ForgeModsToml(modLoader, loaderVersion, mods, mixinConfigs, accessTransformers);
+	}
+
+	/**
+	 * One mod's {@code [modproperties.<modId>]} table, converted to plain JDK types.
+	 *
+	 * <p>The keys here are the reason this cannot use {@link #getString}: they are quoted and contain a colon
+	 * ({@code "sodium:config_api_user"}), and night-config's dotted-path {@code get(String)} would split a key
+	 * on a dot. Every lookup in this file goes through {@code Collections.singletonList(key)} for that reason,
+	 * and the whole sub-table is walked by ENTRY rather than looked up key by key.
+	 *
+	 * <p>Values are unwrapped recursively because the consumer is another ecosystem's code: it branches on
+	 * {@code instanceof Map} and the kernel ships its own night-config, so handing back a night-config
+	 * {@code Config} is a class-identity mismatch that lands in the reader's swallow-all catch. Scalars are left
+	 * alone — sodium declares both {@code = true} and {@code = ["indium"]}, and a reader that wants a String
+	 * warns about a non-String itself rather than being lied to.
+	 */
+	private static Map<String, Object> parseProperties(UnmodifiableConfig propertiesTable, String modId) {
+		if (propertiesTable == null || modId == null) return Map.of();
+		UnmodifiableConfig mine = getSubConfig(propertiesTable, modId);
+		if (mine == null) return Map.of();
+		Object plain = toPlain(mine);
+		return plain instanceof Map<?, ?> map ? castProperties(map) : Map.of();
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> castProperties(Map<?, ?> map) {
+		return (Map<String, Object>) map;
+	}
+
+	/** night-config {@code Config}/{@code List} to {@code LinkedHashMap}/{@code ArrayList}; scalars unchanged. */
+	private static Object toPlain(Object value) {
+		if (value instanceof UnmodifiableConfig cfg) {
+			Map<String, Object> out = new java.util.LinkedHashMap<>();
+			for (UnmodifiableConfig.Entry entry : cfg.entrySet()) out.put(entry.getKey(), toPlain(entry.getValue()));
+			return out;
+		}
+		if (value instanceof List<?> list) {
+			List<Object> out = new ArrayList<>(list.size());
+			for (Object element : list) out.add(toPlain(element));
+			return out;
+		}
+		return value;
 	}
 
 	private static List<ForgeDependency> parseDependencies(UnmodifiableConfig dependenciesTable, String modId) {

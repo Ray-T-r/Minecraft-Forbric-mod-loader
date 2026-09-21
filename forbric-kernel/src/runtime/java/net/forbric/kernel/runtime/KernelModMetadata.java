@@ -16,6 +16,7 @@
 
 package net.forbric.kernel.runtime;
 
+import java.util.Map;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.ModPresence;
 
@@ -46,6 +47,20 @@ final class KernelModMetadata {
 		DiscoveredMod mod = lookup(modId);
 		String name = mod == null ? null : mod.getDisplayName();
 		return usable(name) ? name : modId;
+	}
+
+	/**
+	 * The mod's {@code [modproperties.<id>]} table, or an empty map.
+	 *
+	 * <p>Not loader data: it is how a mod addresses ANOTHER mod, and the reader is whoever looks. Sodium reads
+	 * {@code sodium:config_api_user} out of it to find the class that builds that mod's page in Video Settings;
+	 * Jade reads {@code jade}. Every kernel-built {@code IModInfo} used to answer this with an empty map, so iris
+	 * declared its Sodium config entry point correctly in its own {@code neoforge.mods.toml} and its options page
+	 * did not exist — the declaration was parsed by nobody and the table reached no one.
+	 */
+	static Map<String, Object> propertiesOf(String modId) {
+		DiscoveredMod mod = lookup(modId);
+		return mod == null ? Map.of() : mod.getModProperties();
 	}
 
 	/**

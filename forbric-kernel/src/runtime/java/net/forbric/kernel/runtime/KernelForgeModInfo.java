@@ -118,7 +118,7 @@ public final class KernelForgeModInfo implements IModInfo {
 
 	@Override
 	public Map<String, Object> getModProperties() {
-		return Map.of();
+		return KernelModMetadata.propertiesOf(modId);
 	}
 
 	@Override
