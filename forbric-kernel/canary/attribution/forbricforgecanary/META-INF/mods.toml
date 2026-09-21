@@ -1,0 +1,19 @@
+modLoader="javafml"
+loaderVersion="[2,)"
+license="Apache-2.0"
+
+[[mods]]
+modId="forbricforgecanary"
+version="1.0.0"
+displayName="Forbric MinecraftForge Subscriber Canary"
+description='''
+One @EventBusSubscriber waiting on a MinecraftForge event the merged game never posts, so the dead-event audit has
+exactly one listener to name.
+'''
+
+[[dependencies.forbricforgecanary]]
+modId="forge"
+type="required"
+versionRange="[2,)"
+ordering="NONE"
+side="BOTH"

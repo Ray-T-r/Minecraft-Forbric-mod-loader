@@ -32,7 +32,7 @@ RUNDIR="$KERNEL/run/server-attribution"
 REPORT="$RUNDIR/.forbric-kernel/load-report.txt"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
 NEO="$RUN_OLD/neoforge-runtime/forbricneolive.jar"
-CANARIES="$KERNEL/run/canary/forbricmixincanary.jar $KERNEL/run/canary/forbricsubscribercanary.jar $KERNEL/run/canary/forbricabicanary.jar"
+CANARIES="$KERNEL/run/canary/forbricmixincanary.jar $KERNEL/run/canary/forbricsubscribercanary.jar $KERNEL/run/canary/forbricabicanary.jar $KERNEL/run/canary/forbricforgecanary.jar"
 mkdir -p "$BUILD"
 
 step "stage three single-defect canaries and two healthy ones"
@@ -78,16 +78,19 @@ step "each defect happened, and the kernel said so where it happened"
 check "the unfit mixin was left out"          "auto-suppressing guest mixin forbricmixincanary \(forbricmixincanary.mixins.json\):UnfitMixin" "$LOG"
 check "the apply failure was attributed"      "Forbric/Mixin\] forbricmixincanary \(forbricmixincanary.mixins.json\):forbric.mixincanary.mixin.ApplyFailingMixin failed to apply to net.minecraft.world.level.chunk.storage.RegionFileStorage" "$LOG"
 check "the subscriber could not register"     "Forbric/EBS\] could not register forbric.subscribercanary.BrokenSubscriber" "$LOG"
-check "the dead event named its listener"     "Forbric/DeadEvents\].*ItemTooltipEvent.*forbricsubscribercanary" "$LOG"
+# A MinecraftForge canary, because NeoForge's side of the ledger no longer has a dead row: ItemTooltipEvent was
+# the last one and it is bridged now. FluidPlaceBlockEvent still is — the merged LiquidBlock asks only NeoForge's
+# hook — so it is what proves the kernel still NAMES a mod waiting on something nothing posts.
+check "the dead event named its listener"     "Forbric/DeadEvents\].*FluidPlaceBlockEvent.*forbricforgecanary" "$LOG"
 check "the deferred task named its owner"     "deferred task\(s\) failed during common setup — forbricabicanary" "$LOG"
 check "the abi audit named the jar"           "Forbric/AbiAudit\] forbricabicanary.jar was compiled against a different NeoForge.*ForbricVanishedEvent" "$LOG"
 
-step "the load summary names exactly the three, and follows the world coming up"
-check "three mods, by name" \
-  "Forbric/Load\] 3 mod\(s\) did not finish loading: forbricabicanary, forbricmixincanary, forbricsubscribercanary" "$LOG"
+step "the load summary names exactly the four, and follows the world coming up"
+check "four mods, by name" \
+  "Forbric/Load\] 4 mod\(s\) did not finish loading: forbricabicanary, forbricforgecanary, forbricmixincanary, forbricsubscribercanary" "$LOG"
 check_absent "and never the healthy ones" "did not finish loading:.*(forbricfabriclive|forbricneolive)" "$LOG"
 DONE_LINE=$(grep -a -n "Done (" "$LOG" | head -1 | cut -d: -f1)
-LAST_LOAD_LINE=$(grep -a -n "Forbric/Load\] 3 mod(s) did not finish loading" "$LOG" | tail -1 | cut -d: -f1)
+LAST_LOAD_LINE=$(grep -a -n "Forbric/Load\] 4 mod(s) did not finish loading" "$LOG" | tail -1 | cut -d: -f1)
 if [ -n "$DONE_LINE" ] && [ -n "$LAST_LOAD_LINE" ] && [ "$LAST_LOAD_LINE" -gt "$DONE_LINE" ]; then
   echo "[kernel] PASS the report was written again after the world came up (line $LAST_LOAD_LINE > Done at $DONE_LINE)"
 else
@@ -102,7 +105,7 @@ if [ -f "$REPORT" ]; then
   check "the apply failure"        "its mixin forbric.mixincanary.mixin.ApplyFailingMixin failed to apply" "$REPORT"
   check "two reasons on one row"   "left out; its mixin"                                                  "$REPORT"
   check "the broken subscriber"    "its @EventBusSubscriber BrokenSubscriber could not be registered"    "$REPORT"
-  check "the dead event"           "it listens for ItemTooltipEvent, which this merged game never posts" "$REPORT"
+  check "the dead event"           "it listens for BlockEvent.FluidPlaceBlockEvent, which this merged game never posts" "$REPORT"
   check "the deferred task"        "one of its deferred setup tasks threw during common setup"          "$REPORT"
   check "the abi finding"          "compiled against a different NeoForge — net.neoforged.neoforge.event.ForbricVanishedEvent is not in this instance" "$REPORT"
   # The report is written in the system language; both wordings are accepted.
