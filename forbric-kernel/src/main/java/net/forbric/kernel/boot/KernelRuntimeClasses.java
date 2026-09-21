@@ -151,6 +151,10 @@ public final class KernelRuntimeClasses {
 				new Call("logRegisteredContent", void.class))));
 		// Loading NeoForge's configs: the early pass and the late pass that catches what it could not have seen.
 		// WHICH types each covers stays boot-side, where lateConfigTypes has a test. See KernelConfigLoad.
+		// Key mappings a mod registered on a bus that is not in ModList, so the one fan-out from Options.<init>
+		// never reached it. See KernelForeignShimKeys and KernelForeignShimContext.
+		CLASSES.put("net.forbric.kernel.runtime.KernelForeignShimKeys", new Entry(Origin.COMPILED, List.of(
+				new Call("deliver", int.class, java.util.Collection.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelConfigLoad", new Entry(Origin.COMPILED, List.of(
 				new Call("loadEarly", void.class, List.class),
 				new Call("openLate", List.class, List.class))));

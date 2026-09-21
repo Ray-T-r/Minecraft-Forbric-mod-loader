@@ -1500,6 +1500,11 @@ public final class KernelLifecycle {
 		fireForgeSetupPhase(cl, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
 		fireSetupPhase(cl, mods, ForeignType.FML_CLIENT_SETUP_EVENT, "client setup");
 		fireForgeSetupPhase(cl, ForeignType.FML_CLIENT_SETUP_EVENT, "client setup");
+		// A mod that is not a NeoForge mod but was handed the NeoForge build of a multi-loader library registered
+		// on a bus of its own, which is in no ModList and which NeoForge's own fan-out therefore never reaches.
+		// Here, not from the window that handed out the container: that one is inside Minecraft.<init> and runs
+		// before Minecraft.options exists, so the key mappings would have nowhere to land.
+		KernelForeignShimContext.deliver(cl);
 		// Same tail as the server's, and the same order CommonModLoader.load uses: sided setup, then the
 		// registration events, then IMC, then load complete.
 		fireRegistrationEvents(cl);

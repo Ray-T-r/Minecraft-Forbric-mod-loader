@@ -105,6 +105,31 @@ final class KernelForeignShimContext {
 				+ "(-D%s=off to hand it NeoForge's null-bus \"minecraft\" fallback instead)", live, SWITCH);
 	}
 
+	/**
+	 * Delivers what those mods registered on their own bus. Called once the CLIENT is far enough along to have
+	 * the things those events carry — not from the window that hands the containers out, which is inside
+	 * {@code Minecraft.<init>} and reached before {@code Minecraft.options} exists at all.
+	 *
+	 * <p>This is the half that makes the container worth having. A bus the kernel mints is in nobody's
+	 * {@code ModList}, so NeoForge's own fan-out never reaches it: without this a keybind is registered and then
+	 * sits on a bus no event will ever arrive at, which looks exactly like working right up to the moment the
+	 * player presses the key.
+	 */
+	static void deliver(ClassLoader cl) {
+		java.util.List<Object> buses = new java.util.ArrayList<>();
+		for (KernelModLoader.NeoIdentity identity : handedOut().values()) buses.add(identity.bus());
+		if (buses.isEmpty()) return;
+		try {
+			Class.forName("net.forbric.kernel.runtime.KernelForeignShimKeys", true, cl)
+					.getMethod("deliver", java.util.Collection.class).invoke(null, buses);
+		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
+			ForbricLog.debug("[Forbric/ShimContext] no runtime half — nothing to deliver");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ShimContext] could not deliver what the foreign mods registered",
+					Reflect.unwrap(t));
+		}
+	}
+
 	/** Every container handed out so far, by mod id. */
 	static synchronized Map<String, KernelModLoader.NeoIdentity> handedOut() {
 		Map<String, KernelModLoader.NeoIdentity> live = new LinkedHashMap<>();
