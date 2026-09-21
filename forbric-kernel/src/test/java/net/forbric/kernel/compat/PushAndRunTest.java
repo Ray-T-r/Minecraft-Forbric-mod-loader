@@ -213,17 +213,53 @@ class PushAndRunTest {
                 commands = []
                 def check(command, destination):
                     commands.append(command)
-                    destination.write_text('unreadable: 0\\ndungeons: 1\\n')
+                    destination.write_text('unreadable: 0\\nminecraft:coal_ore: 11\\ndungeons: 0\\n')
                     return True
                 m.check = check
                 assert m.report(args, output, artifacts, 0, 0, 'fixture-time') == 0
                 frame = next(command for command in commands if any('frame-verdict.py' in x for x in command))
                 region = next(command for command in commands if any('region-probe.py' in x for x in command))
                 assert frame[-1].endswith('a-fresh.png'), frame
-                assert '/chosen-world/dimensions/minecraft/overworld/region' in region[-2].replace('\\\\', '/'), region
+                assert '/chosen-world/dimensions/minecraft/overworld/region' in region[2].replace('\\\\', '/'), region
                 (output / 'client-result.json').write_text(json.dumps(dict(started_ns=1000)))
                 assert m.report(args, output, artifacts, 0, 0, 'fixture-time') == 1
                 assert 'no-fresh-screenshot' in (output / 'frame.txt').read_text()
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
+    void theWorldIsJudgedByOreRatherThanByADungeonItCannotContain() throws Exception {
+        // A sweep's server has no player on it, so it generates only the spawn area: 25 chunks of terrain, the
+        // same 25 every run because the seed is fixed. Dungeons are about one per 177 chunks (106 across the
+        // 18,749 of run/client-merged-pack's real world), so 25 chunks expect 0.14 of one and `dungeons: [1-9]`
+        // was red in EVERY run ever kept in build/compat/ — a verdict that says FAIL whatever the client did
+        // cannot tell a broken client from a working one. Ore is placed in the same feature stage and is a floor
+        // rather than a coincidence.
+        var result = python("""
+                import json
+                artifacts = output / 'artifacts'; artifacts.mkdir()
+                (artifacts / 'files.json').write_text(json.dumps([
+                    dict(name='instance/screenshots/a.png', mtime_ns=150, size=1)]))
+                (output / 'client-result.json').write_text(json.dumps(dict(started_ns=100)))
+                text = {}
+                def check(command, destination):
+                    destination.write_text(text['region'] if 'region-probe.py' in command[1] else 'verdict=DREW')
+                    return True
+                m.check = check
+
+                # No dungeon anywhere, ore present: that is what a real sweep writes, and it must PASS.
+                text['region'] = 'chunks read: 529\\nminecraft:coal_ore: 11\\ndungeons: 0\\nunreadable: 0 (lz4=0)\\n'
+                assert m.report(args, output, artifacts, 0, 0, 'fixture-time') == 0
+
+                # Dungeons present but no ore at all: the world never reached the feature stage, so it FAILS
+                # even though the old condition would have passed it.
+                text['region'] = 'chunks read: 529\\nminecraft:coal_ore: 0\\ndungeons: 4\\nunreadable: 0 (lz4=0)\\n'
+                assert m.report(args, output, artifacts, 0, 0, 'fixture-time') == 1
+
+                # An unreadable chunk still fails, ore or not.
+                text['region'] = 'chunks read: 529\\nminecraft:coal_ore: 11\\ndungeons: 0\\nunreadable: 2 (lz4=2)\\n'
+                assert m.report(args, output, artifacts, 0, 0, 'fixture-time') == 1
                 """);
         assertEquals(0, result.exit(), result.output());
     }

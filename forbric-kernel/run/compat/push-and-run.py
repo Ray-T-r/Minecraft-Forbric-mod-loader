@@ -295,9 +295,23 @@ def report(args, output, artifacts, server, client, started, errors=()):
     if not shots:
         (output / 'frame.txt').write_text('verdict=UNSUPPORTED reason=no-fresh-screenshot\n')
     regions = artifacts / 'instance/server-gen' / args.world / 'dimensions/minecraft/overworld/region'
-    region = check([sys.executable, str(HERE / 'region-probe.py'), str(regions), '--dungeons'], output / 'region.txt')
+    # Ores, not dungeons, are what this world can prove. A sweep's server never has a player on it, so it
+    # generates only the spawn area: every run kept in build/compat/ writes 529 chunk entries of which exactly
+    # 25 carry terrain, and that is a property of the fixed seed, not of the build. Dungeons are about one per
+    # 177 chunks — measured on run/client-merged-pack's real world, 106 of them across 18,749 chunks — so 25
+    # chunks expect 0.14 of one, and `dungeons: [1-9]` was a coincidence the sweep could not produce. It had
+    # therefore been red in EVERY run ever kept here, which is worse than useless: the overall verdict was FAIL
+    # no matter what the client did, so a genuine client failure and a clean run reported the same word.
+    #
+    # Ore is the same claim without the coincidence. It is placed in the feature stage, exactly like a dungeon,
+    # so a world that reached it reached the stage the check exists to prove — and 11 coal, 10 iron and 18
+    # copper chunks out of those 25 is a floor, not a sample. The dungeon counts stay in region.txt as evidence.
+    ORES = ('minecraft:coal_ore', 'minecraft:iron_ore', 'minecraft:copper_ore')
+    region = check([sys.executable, str(HERE / 'region-probe.py'), str(regions), *ORES, '--dungeons'],
+                   output / 'region.txt')
     region_text = (output / 'region.txt').read_text()
-    region = region and bool(re.search(r'unreadable: 0\b', region_text)) and bool(re.search(r'dungeons: [1-9]', region_text))
+    featured = any(re.search(re.escape(ore) + r': [1-9]', region_text) for ore in ORES)
+    region = region and bool(re.search(r'unreadable: 0\b', region_text)) and featured
     findings = []
     for path in artifacts.rglob('load-report.txt'):
         # The kernel localizes this report, and the mod name is on a separate line from its reason.
