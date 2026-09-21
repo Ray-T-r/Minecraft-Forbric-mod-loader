@@ -117,6 +117,16 @@ public final class ForgeMetadataMapper {
 					// Its [modproperties.<id>] table, which is how this mod addresses OTHER mods — Sodium reads
 					// its config entry point out of it. Empty for the overwhelming majority.
 					.withModProperties(mod.getProperties()));
+
+			// Said out loud because the reader is another ecosystem's code and the failure is silent: Sodium looks
+			// up sodium:config_api_user in here to build this mod's page in Video Settings, and when the kernel
+			// answered with an empty map the page simply did not exist. A parser that matches nothing must be
+			// visible as "matched nothing" rather than as an absent line.
+			if (!mod.getProperties().isEmpty()) {
+				ForbricLog.info("[Forbric/Meta] %s declares %d [modproperties] key(s) %s — a mod reads these to find "
+						+ "what this mod offers it (Sodium's config entry point, Jade's flags)", mod.getModId(),
+						mod.getProperties().size(), mod.getProperties().keySet());
+			}
 		}
 
 		return result;
