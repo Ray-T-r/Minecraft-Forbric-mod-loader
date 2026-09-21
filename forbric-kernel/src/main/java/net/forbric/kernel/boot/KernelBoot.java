@@ -453,6 +453,13 @@ public final class KernelBoot {
 		// does the work.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistrySyncParityInjector());
 
+		// The kernel owns the single registry freeze, and NeoForge's lifecycle puts it at ClientModLoader.begin() —
+		// before `new Minecraft(...)`, where Fabric's is after it. A guest mixin that waits for "the real freeze"
+		// therefore wakes its mod's <clinit> while Minecraft.getInstance() is still null, and fabric-api's
+		// key-mapping registry read that instance to reject registration that is too LATE. Flashback died there.
+		chain.register(TransformPhase.COREMOD,
+				new net.forbric.kernel.transform.EarlyKeyMappingRegistrationInjector());
+
 		// A multiloader mod ships one pack.mcmeta carrying a section per loader, and on Forbric all three parsers are
 		// live — so a Fabric-only build gets its neoforge:overlays section read by NeoForge's parser and throws on a
 		// condition only a NeoForge build would have registered. Vanilla drops the ENTIRE pack for that. Registered
