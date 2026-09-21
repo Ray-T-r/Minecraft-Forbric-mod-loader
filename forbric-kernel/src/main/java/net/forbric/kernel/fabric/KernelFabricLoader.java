@@ -200,6 +200,32 @@ public final class KernelFabricLoader implements FabricLoader {
 		return entries != null && !entries.isEmpty();
 	}
 
+	/**
+	 * What each mod DECLARED under {@code key}, as {@code modId -> declared value}, without constructing anything.
+	 *
+	 * <p>{@link #getEntrypointContainers} cannot answer this. Its containers expose only the constructed instance
+	 * and the providing mod, and the thing a cross-ecosystem consumer needs is the class NAME as written: Sodium's
+	 * NeoForge config loader takes a {@code String} and does its own {@code Class.forName}, type check and
+	 * construction, with its own three warning paths for each failure. Handing it an instance the kernel built
+	 * would take those over and answer for a class Sodium never accepted.
+	 *
+	 * <p>Ordered by declaration, one entry per declaring mod; a mod declaring several under one key keeps only its
+	 * first, which is what every consumer of a "which class handles this" key expects.
+	 */
+	public Map<String, String> declaredEntrypoints(String key) {
+		List<Entrypoint> entries = entrypointsByKey.get(key);
+		if (entries == null || entries.isEmpty()) return Map.of();
+
+		Map<String, String> declared = new LinkedHashMap<>();
+		for (Entrypoint entry : entries) {
+			String modId = entry.provider() == null ? null : entry.provider().getMetadata().getId();
+			String value = entry.definition();
+			if (modId == null || value == null || value.isBlank()) continue;
+			declared.putIfAbsent(modId, value);
+		}
+		return declared;
+	}
+
 	@Override
 	public <T> List<T> getEntrypoints(String key, Class<T> type) {
 		List<T> out = new ArrayList<>();
