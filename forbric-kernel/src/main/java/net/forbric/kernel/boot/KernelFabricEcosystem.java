@@ -516,7 +516,16 @@ public final class KernelFabricEcosystem {
 
 			try {
 				T entrypoint = c.getEntrypoint();
-				action.accept(entrypoint);
+				// With a NeoForge ModContainer active for THIS mod, because a Fabric mod can be holding the
+				// NeoForge build of a multi-loader library: only one copy of a class exists, so the build the
+				// nested-jar arbitration kept is the build every host gets. Without this, EntityCulling's
+				// onInitializeClient asked tr7zw's TRansition to register a keybind, that build asked
+				// ModLoadingContext for the active container, got NeoForge's "minecraft" fallback whose
+				// getEventBus() is null by design, and threw out of its first line — losing the whole entrypoint.
+				// The MOD's loader, not the kernel's: the runtime half and NeoForge itself are transform-loaded,
+				// and the kernel's own boot classloader cannot see either of them.
+				KernelForeignShimContext.with(entrypoint.getClass().getClassLoader(), id,
+						() -> action.accept(entrypoint));
 				count++;
 				ForbricLog.info("[Forbric/Fabric] invoked %s entrypoint of %s", key, id);
 				reportSwallowedFailure(key, id, entrypoint);
@@ -526,6 +535,7 @@ public final class KernelFabricEcosystem {
 			}
 		}
 
+		KernelForeignShimContext.report();
 		return count;
 	}
 

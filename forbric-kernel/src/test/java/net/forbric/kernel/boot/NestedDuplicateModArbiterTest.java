@@ -51,6 +51,7 @@ import net.forbric.kernel.boot.DuplicateModArbiter.Decision;
 class NestedDuplicateModArbiterTest {
 	private static final String FORGE_NESTED = "/g/.forbric-kernel/jarjar/xaerolib-forge.jar";
 	private static final String FABRIC_NESTED = "/g/.forbric-kernel/jij/xaerominimap/xaerolib-fabric.jar";
+	private static final String NEO_NESTED = "/g/.forbric-kernel/jij/notenoughanimations/transition-neoforge.jar";
 
 	@BeforeEach
 	@AfterEach
@@ -84,6 +85,37 @@ class NestedDuplicateModArbiterTest {
 		// DuplicateModArbiter.nestedPreference().
 		assertTrue(d.suppressed(Path.of(FORGE_NESTED)), "the Fabric copy is the one that is ready in time");
 		assertEquals(Path.of(FABRIC_NESTED).toAbsolutePath(), d.ownerByModId().get("xaerolib"));
+	}
+
+	@Test
+	void aNeoForgeNestedLibraryBeatsItsFabricTwin() {
+		// The other direction of the same rule, and the other measurement behind nestedPreference(). tr7zw's
+		// 'transition' is nested by EntityCulling (Fabric build) and NotEnoughAnimations (NeoForge build): same
+		// id, same version, one host each. The Fabric build's registerClientSetupListener body is `return` —
+		// Fabric has no client-setup phase — and NotEnoughAnimations does ALL of its initialisation from that
+		// listener, so letting Fabric win registered nothing, logged nothing, and crashed the client on the first
+		// player tick twenty seconds later. This is the assertion that keeps the order that way round.
+		Decision d = nested(List.of(), List.of(
+				claim(NEO_NESTED, Ecosystem.NEOFORGE, "transition", "1.0.25"),
+				claim("/g/.forbric-kernel/jij/entityculling/transition-fabric.jar",
+						Ecosystem.FABRIC, "transition", "1.0.25")));
+
+		assertEquals(1, d.suppressedJars().size(), "exactly one copy may load");
+		assertTrue(d.suppressed(Path.of("/g/.forbric-kernel/jij/entityculling/transition-fabric.jar")),
+				"the NeoForge build is the one whose caller loses everything without it");
+		assertEquals(Path.of(NEO_NESTED).toAbsolutePath(), d.ownerByModId().get("transition"));
+		assertEquals(1, d.aliasesFor(Ecosystem.FABRIC).size(), "the Fabric side still answers isModLoaded");
+	}
+
+	@Test
+	void aFabricNestedLibraryStillBeatsItsTraditionalForgeTwin() {
+		// The order is NEOFORGE, FABRIC, FORGE and all three positions are load-bearing: raising NeoForge must
+		// not also raise traditional MinecraftForge, or the xaerolib measurement above flips back.
+		Decision d = nested(List.of(), List.of(
+				claim(FORGE_NESTED, Ecosystem.FORGE, "xaerolib", "1.7.3"),
+				claim(FABRIC_NESTED, Ecosystem.FABRIC, "xaerolib", "1.7.3")));
+
+		assertTrue(d.suppressed(Path.of(FORGE_NESTED)));
 	}
 
 	@Test

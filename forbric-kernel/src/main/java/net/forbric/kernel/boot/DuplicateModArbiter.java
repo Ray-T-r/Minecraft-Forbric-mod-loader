@@ -548,30 +548,47 @@ public final class DuplicateModArbiter {
 	}
 
 	/**
-	 * {@code -Dforbric.nestedDupePreference}, defaulting to FABRIC-first — deliberately the OPPOSITE of the
-	 * top-level order, because the two are not the same question.
+	 * {@code -Dforbric.nestedDupePreference}, defaulting to NEOFORGE, then FABRIC, then traditional FORGE.
 	 *
-	 * <p>The top-level order is NeoForge-first because a duplicate there is two builds of a mod the user chose,
-	 * and the pack they built it around is the one whose glue is most likely intact. A nested jar is not chosen by
-	 * anyone: it is a library its parents happened to bundle, and both families' parents call it. So the question
-	 * is not "which build was this pack tested with" but "which platform's bootstrap is ready by the time the
-	 * consumers run" — and on this kernel that is Fabric's, measured rather than reasoned:
+	 * <p>Deliberately not the top-level order. A duplicate there is two builds of a mod the USER chose, and the
+	 * pack they built around it is the one whose glue is most likely intact. A nested jar is chosen by nobody: it
+	 * is a library its parents happened to bundle, both families' parents call it, and only one copy of a class
+	 * can exist. So the question is not "which build was this pack tested with" but "which build, when it is the
+	 * only one, leaves the fewest callers talking to a method that does nothing".
 	 *
-	 * <p>Xaero's {@code xaerolib} is nested by a Fabric minimap and a MinecraftForge world map. Its Fabric
-	 * bootstrap sets {@code XaeroLib.client} from {@code onInitializeClient}, which the kernel runs inside
-	 * {@code Minecraft.<init>} — before any tick. Its MinecraftForge bootstrap sets the same field from
-	 * {@code FMLClientSetupEvent}. Letting MinecraftForge win left the Fabric minimap's first-tick hook calling
-	 * {@code XaeroLib.getClient()} on a null: "Cannot invoke XaeroLibClient.getBufferProvider() because the return
-	 * value of XaeroLib.getClient() is null", at {@code CustomRenderTypes.applyFixedOrder}. Letting Fabric win
-	 * produced a clean boot with BOTH mods up — the world map is a traditional-Forge {@code @Mod} and did not
-	 * mind at all.
+	 * <p>That last clause is the whole difficulty, because a multi-loader library ships one build per loader and
+	 * each build STUBS OUT the phases its own loader does not have. The stub is an empty method, not an error:
+	 * the caller registers nothing, hears nothing, and dies much later somewhere else. Both defects below are
+	 * that same shape, and between them they fix the order:
 	 *
-	 * <p>That is one library, so this is a default and not a law: {@code -Dforbric.modOwner=<id>=<ecosystem>}
-	 * overrides it per mod, and this knob replaces the order wholesale.
+	 * <p><b>FORGE loses to FABRIC.</b> Xaero's {@code xaerolib} is nested by a Fabric minimap and a
+	 * MinecraftForge world map. Its Fabric bootstrap sets {@code XaeroLib.client} from {@code onInitializeClient},
+	 * which the kernel runs inside {@code Minecraft.<init>} — before any tick. Its MinecraftForge bootstrap sets
+	 * the same field from {@code FMLClientSetupEvent}. Letting MinecraftForge win left the Fabric minimap's
+	 * first-tick hook calling {@code XaeroLib.getClient()} on a null: "Cannot invoke
+	 * XaeroLibClient.getBufferProvider() because the return value of XaeroLib.getClient() is null", at
+	 * {@code CustomRenderTypes.applyFixedOrder}. Letting Fabric win produced a clean boot with BOTH mods up — the
+	 * world map is a traditional-Forge {@code @Mod} and did not mind at all.
+	 *
+	 * <p><b>FABRIC loses to NEOFORGE.</b> tr7zw's {@code transition} is nested by EntityCulling (Fabric, the
+	 * {@code -fabric-} build) and NotEnoughAnimations (NeoForge, the {@code -neoforge-} build) — same id, same
+	 * version 1.0.25, one host each, so nothing about the contest itself separates them. The two builds differ in
+	 * exactly two of their 5,800 methods, and the Fabric one is
+	 * {@code ModLoaderEventUtil.registerClientSetupListener(Runnable)}, whose entire Fabric body is {@code return}
+	 * — Fabric has no client-setup phase. NotEnoughAnimations does ALL of its initialisation from that listener.
+	 * With the Fabric copy loaded its {@code @Mod} constructor handed the runnable to an empty method, nothing
+	 * was registered, nothing was logged, {@code NEABaseMod.config} stayed null, and twenty seconds later the
+	 * first player tick threw "Cannot read field maxBlockingAngle" out of its own mixin and took the client with
+	 * it. The other direction costs {@code ModLoaderUtil.disableDisplayTest}, stubbed in the NeoForge build and
+	 * called by both hosts — a server-list version marker, cosmetic, and nothing waits on it.
+	 *
+	 * <p>So the loss is real either way and this is a default, not a law: {@code -Dforbric.modOwner=<id>=<ecosystem>}
+	 * overrides it per mod and this knob replaces the order wholesale. What the order buys is that when a nested
+	 * library is contested, the family that loses is the one whose callers lose the least.
 	 */
 	static List<Ecosystem> nestedPreference() {
 		String csv = System.getProperty("forbric.nestedDupePreference");
-		if (csv == null || csv.isBlank()) return List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE, Ecosystem.FORGE);
+		if (csv == null || csv.isBlank()) return NESTED_DEFAULT;
 
 		List<Ecosystem> order = new ArrayList<>();
 		for (String raw : csv.split(",")) {
@@ -583,8 +600,12 @@ public final class DuplicateModArbiter {
 						raw.trim());
 			}
 		}
-		return order.isEmpty() ? List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE, Ecosystem.FORGE) : order;
+		return order.isEmpty() ? NESTED_DEFAULT : order;
 	}
+
+	/** See {@link #nestedPreference()} — both halves of this order are a measured defect, one each way. */
+	private static final List<Ecosystem> NESTED_DEFAULT =
+			List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC, Ecosystem.FORGE);
 
 	/** {@code -Dforbric.modOwner=sodium=fabric,lithostitched=neoforge} */
 	private static Ecosystem overrideFor(String modId) {
