@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 from common import (await_outcome, config, driver_command, finish, own_driver, parser, prepare_world,
-                    safe_filename, spawn)
+                    safe_filename, server_properties, spawn)
 
 
 def main():
@@ -25,7 +25,10 @@ def main():
     # gets to finish. It applies ONLY before Done: after that the server is idle by design and the tick soak
     # below is legitimately quiet for a minute at a stretch ("Server empty for 60 seconds, pausing").
     argument_parser.add_argument('--boot-stall', type=int, default=int(os.environ.get('BOOT_STALL', '120')))
-    argument_parser.add_argument('--tick-seconds', type=int, default=int(os.environ.get('TICK_SECONDS', '90')))
+    # 60, not the 90 it was. The last thirty of those ninety were never simulation: the server paused itself
+    # sixty seconds after Done and sat there. See common.server_properties, which now disables that pause — so
+    # this is the same amount of REAL ticking as before, and raising this flag now actually buys more of it.
+    argument_parser.add_argument('--tick-seconds', type=int, default=int(os.environ.get('TICK_SECONDS', '60')))
     argument_parser.add_argument('--stop-timeout', type=int, default=int(os.environ.get('STOP_TIMEOUT', '240')))
     argument_parser.add_argument('--seed', default=os.environ.get('WORLD_SEED', '20260919'))
     argument_parser.add_argument('--port', type=int, default=int(os.environ.get('GATE_PORT', '25599')))
@@ -47,8 +50,7 @@ def main():
         shutil.copy2(jar, mods / name)
     (directory / 'eula.txt').write_text('eula=true\n', encoding='utf-8')
     (directory / 'server.properties').write_text(
-        f'level-name={configuration["world"]}\nlevel-seed={args.seed}\nserver-port={args.port}\n'
-        'online-mode=false\nview-distance=10\nsimulation-distance=10\nspawn-protection=0\n', encoding='utf-8')
+        server_properties(configuration['world'], args.seed, args.port), encoding='utf-8')
     ready, failed = threading.Event(), threading.Event()
     last_output = [time.monotonic()]
     log = directory / 'server-console.log'

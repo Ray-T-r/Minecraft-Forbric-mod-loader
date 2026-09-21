@@ -121,6 +121,39 @@ class WindowsDriversTest {
         assertTrue(result.output().contains("stall detection PASS"), result.output());
     }
 
+    /**
+     * The soak has to be able to tick for the whole of --tick-seconds, which means the empty-server pause has
+     * to be off.
+     *
+     * Vanilla defaults pause-when-empty-seconds to 60 and a sweep's server never has a player on it, so
+     * MinecraftServer.tickServer stops ticking at Done+60 and returns before tickCount++ and before
+     * fireServerTickPre. The sweeps in build/compat/ ran a 90-second soak against that: `Server empty for 60
+     * seconds, pausing` lands at Done+60 and nothing follows it until the stop at Done+90. A third of every
+     * soak proved nothing, and nobody could see it, because the symptom is silence.
+     *
+     * So this pins the property rather than the duration. --tick-seconds is a knob someone may reasonably
+     * raise; if this line ever goes missing again, every second above sixty is dead and the run still says
+     * PASS. Zero disables the pause — it does not mean pause immediately, which is the reading that would
+     * gut the soak entirely.
+     */
+    @Test void theSweepServerNeverPausesItselfForBeingEmpty() throws Exception {
+        var result = DriverTools.run(Map.of(), "-c", """
+                import sys
+                sys.path.insert(0, sys.argv[1]); import common
+                written = common.server_properties('compat-world', '20260919', 25599)
+                settings = dict(line.split('=', 1) for line in written.splitlines() if line)
+                assert settings['pause-when-empty-seconds'] == '0', written
+                assert settings['level-name'] == 'compat-world', written
+                assert settings['level-seed'] == '20260919', written
+                assert settings['server-port'] == '25599', written
+                assert settings['online-mode'] == 'false', written
+                assert settings['simulation-distance'] == '10', written
+                print('server properties PASS')
+                """, DriverTools.COMPAT.resolve("win").toString());
+        assertEquals(0, result.exit(), result.output());
+        assertTrue(result.output().contains("server properties PASS"), result.output());
+    }
+
     @Test void pidBookkeepingPreservesOtherProcessesAndSanitizesNames() throws Exception {
         var result = DriverTools.run(Map.of(), "-c", """
                 import pathlib,sys,subprocess

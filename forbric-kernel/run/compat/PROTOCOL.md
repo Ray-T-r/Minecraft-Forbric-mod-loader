@@ -68,8 +68,14 @@ jar before treating the selection as final; metadata resolution alone cannot pro
    measured from the last line it printed. The server's stall applies only before `Done` —
    after that the tick soak is quiet by design. Sixteen recorded sweeps put the largest
    silence of a boot that reached `Done` at 8 seconds, against 900 spent waiting on ones
-   that never would; two such runs cost 820s and 1615s. The soak itself is unchanged: a boot
-   reaching `Done` is still not the claim this sweep makes. `win/prepare-world.py`
+   that never would; two such runs cost 820s and 1615s.
+   The soak is `--tick-seconds` (60s, `TICK_SECONDS`), and every second of it now ticks: the
+   properties written for the run set `pause-when-empty-seconds=0`, without which vanilla
+   pauses a player-less server 60 seconds after `Done` and returns from `tickServer` before
+   `tickCount++` and before `fireServerTickPre`. The old 90s soak was 60s of simulation and
+   30s of a paused JVM. Keep that property whatever `--tick-seconds` becomes — a boot reaching
+   `Done` is still not the claim this sweep makes, and a soak that is not ticking makes no
+   claim at all. `win/prepare-world.py`
    sets only the copied test save's `Data/confirmedExperimentalSettings` byte to 1,
    acknowledging the carrier's experimental-world prompt without changing lifecycle,
    datapacks or terrain. The source server save is untouched; `--check` is read only. `win/run-client-test.py`

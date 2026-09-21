@@ -108,6 +108,32 @@ def spawn(configuration, command, **kwargs):
     return process
 
 
+def server_properties(world, seed, port):
+    """The dedicated server's properties for a sweep, with the empty-server pause DISABLED.
+
+    pause-when-empty-seconds is the load-bearing line and it is easy to lose. Vanilla defaults it to 60
+    (DedicatedServerProperties.<init>, `ldc "pause-when-empty-seconds"; bipush 60`), a sweep's server never has
+    a player on it, and MinecraftServer.tickServer reads
+
+        i = pauseWhenEmptySeconds() * 20
+        if (i <= 0) goto normal_tick
+        ...
+        if (emptyTicks >= i) { ...log once, autoSave once...; tickConnection(); return; }
+
+    with that `return` landing BEFORE tickCount++ and before EventHooks.fireServerTickPre. So without this line
+    the server stops ticking sixty seconds after Done and every further second of the soak is a paused JVM: no
+    tick, no mod tick event, no log line. In build/compat/mix80-verify4 that is visible as `Server empty for 60
+    seconds, pausing` at Done+60 with nothing after it until the stop at Done+90 — thirty seconds of every
+    sweep spent proving nothing.
+
+    Zero DISABLES the pause (the `i <= 0` branch above); it does not mean pause immediately. With it, the whole
+    of --tick-seconds is real simulation, and raising that flag buys what it looks like it buys.
+    """
+    return (f'level-name={world}\nlevel-seed={seed}\nserver-port={port}\n'
+            'online-mode=false\nview-distance=10\nsimulation-distance=10\nspawn-protection=0\n'
+            'pause-when-empty-seconds=0\n')
+
+
 def await_outcome(*, ready, failed, process, timeout, stall, last_output,
                   now=time.monotonic, sleep=time.sleep, tick=1.0):
     """Wait for a spawned game to announce itself, and say WHY the wait ended.
