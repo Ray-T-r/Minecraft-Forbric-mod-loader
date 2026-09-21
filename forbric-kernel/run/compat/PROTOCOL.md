@@ -118,6 +118,19 @@ declares itself in one line near its top:
 co-scheduled — and `mem` is what it costs. A gate WITHOUT that line runs alone, and the run
 says so in the progress log; a new gate is slow rather than silently unsound.
 
+A gate that wants a shared fixture to itself declares `clone=<dir>:<ENV_VAR>` instead, and the
+scheduler points that variable at a private copy under `run/.gate-clones/`. Four gates want
+`run/client-merged-pack`, and serialising them left the last two minutes of a sweep with one
+gate in it; `cp -Rc` clones that 434 MB install in 0.17s and shares its blocks until written,
+so the four copies cost no disk and no wait. On a filesystem without clones this falls back to
+a reflink copy and then to a real one.
+
+`-j auto` sizes the pool at one slot per two cores. **Cores, not memory, is the bound**: the
+sweep peaks at 5.5 GB of game JVMs however wide it runs, but at `-j 7` on ten cores the gates
+are starved enough that time-based assertions fail — `gate-m19` went red on `await_server`'s
+"still alive 20s after announcing its stop", which is a real check for a leaked non-daemon
+thread and is not to be relaxed to suit a scheduler. `-j 4` and `-j 5` are green.
+
 Ports are per concurrent SLOT, not per gate: slot *i* gets `25700 + 10i`, and `GATE_PORT`,
 `M12_PORT`…`M16_PORT` and `M28_PORT` are exported to the gate from that block. A `GATE_PORT`
 already in the environment becomes the base instead. This is not tidiness: eighteen gates

@@ -13,7 +13,7 @@
 # The window between disconnect and exit is deliberate. Vanilla's own watchdog logs "Client shutdown from
 # post-main" ~15s after main returns if a non-daemon thread is still alive, which is how a leaked mod thread
 # announces itself — so the gate waits for the process to end on its own rather than killing it at the disconnect.
-# GATE-PARALLEL: rundirs=client-merged-pack mem=3000
+# GATE-PARALLEL: clone=client-merged-pack:M9_RUNDIR mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

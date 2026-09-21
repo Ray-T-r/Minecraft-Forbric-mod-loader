@@ -9,9 +9,14 @@ nothing:
     them at once and the loser prints "FAILED TO BIND TO PORT" and then still prints "Stopping server" -- so the
     clean-shutdown assertion passes and the gate reads green while its server never existed. lib.sh documents
     this exact failure. Every concurrent gate therefore gets its own port block, not a shared default.
-  * THE RUNDIR. gate-m1, gate-m2 and gate-m3 all use run/server-kernel; gate-m9, gate-m22, gate-m23 and
-    gate-m27 all use run/client-merged-pack. Two gates in one rundir stage each other's mods, truncate each
-    other's server.properties and read each other's logs. Gates that share a rundir are never run together.
+  * THE RUNDIR. gate-m1, gate-m2 and gate-m3 all use run/server-kernel. Two gates in one rundir stage each
+    other's mods, truncate each other's server.properties and read each other's logs. Gates that share a
+    rundir are never run together.
+  * THE ONE RUNDIR WORTH COPYING. Four gates want run/client-merged-pack, a 97-jar install with a world in it,
+    and serialising them left the last two minutes of a run with a single gate in it. They get a COPY each
+    instead: on APFS `cp -Rc` clones that 434 MB directory in 0.17s and shares its blocks until something is
+    written, so four private copies cost no disk and no wait. A gate asks for one by declaring
+    `clone=<dir>:<VAR>`, and the scheduler points <VAR> at the copy.
   * THE MEMORY. Every kernel JVM is launched without -Xmx, so each one inherits an ergonomic 4 GB ceiling. Four
     clients on a 16 GB machine is not a test result, it is a swap storm. Each gate declares what it costs and
     the scheduler keeps the running set inside a budget.
@@ -59,11 +64,13 @@ class Gate:
         self.path = path
         self.source = path.read_text(encoding="utf-8", errors="replace")
         self.rundirs: set[str] = set()
+        self.clone: tuple[str, str] | None = None
         self.mem = 0
         self.declared = False
         self._parse()
 
     def _parse(self) -> None:
+        name = self.name
         m = DECL.search(self.source)
         if not m:
             return
@@ -71,6 +78,11 @@ class Gate:
             key, _, value = field.partition("=")
             if key == "rundirs":
                 self.rundirs = {r for r in value.replace(",", " ").split() if r}
+            elif key == "clone":
+                source, _, variable = value.partition(":")
+                if not source or not variable:
+                    raise SystemExit(f"{name}: clone= wants <dir>:<ENV_VAR>, got {value!r}")
+                self.clone = (source, variable)
             elif key == "mem":
                 self.mem = int(value)
         self.declared = True
@@ -107,6 +119,26 @@ def default_budget_mb() -> int:
     except Exception:
         return 4096
     return max(2048, int(total / 1024 / 1024 * 0.55))
+
+
+def clone_rundir(source: Path, destination: Path) -> None:
+    """Give a gate its own copy of a shared fixture directory.
+
+    `cp -Rc` asks APFS for a clone: the copy shares the original's blocks until one of them is written, so a
+    434 MB game install copies in under a fifth of a second and costs no disk. The flag is macOS-only and fails
+    on any filesystem that cannot do it, so fall back to `cp --reflink=auto` (btrfs, xfs, modern ext4) and then
+    to a real recursive copy, which is slow but correct.
+    """
+    if destination.exists():
+        subprocess.run(["rm", "-rf", str(destination)], check=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    for command in (["cp", "-Rc", str(source), str(destination)],
+                    ["cp", "-R", "--reflink=auto", str(source), str(destination)],
+                    ["cp", "-R", str(source), str(destination)]):
+        if subprocess.run(command, capture_output=True).returncode == 0:
+            return
+        subprocess.run(["rm", "-rf", str(destination)], capture_output=True)
+    raise OSError(f"could not copy {source} to {destination}")
 
 
 class Running:
@@ -164,8 +196,14 @@ def main() -> int:
     port_base = int(os.environ.get("GATE_PORT") or PORT_BASE)
     budget = args.mem_budget if args.mem_budget is not None else default_budget_mb()
     if args.jobs == "auto":
-        # One slot per ~2 GB of budget, capped by cores and by the number of gates that could ever overlap.
-        jobs = max(1, min(len(gates), (os.cpu_count() or 4) - 2, budget // 2048))
+        # CORES, not memory, is what actually bounds this. Measured on a 10-core, 16 GB machine: the whole
+        # sweep peaks at 5.5 GB of game JVMs however wide it runs, so memory never binds — but at -j 7 the
+        # gates get starved and the TIME-BASED assertions start failing. gate-m19 went red there on
+        # await_server's "still alive 20s after announcing its stop", which is a real check for a leaked
+        # non-daemon thread and must not be relaxed to suit a scheduler. -j 5 and -j 4 were green.
+        #
+        # So: one slot per two cores, with the memory budget only as a ceiling.
+        jobs = max(1, min(len(gates), (os.cpu_count() or 4) // 2, budget // 1500))
     else:
         jobs = max(1, int(args.jobs))
 
@@ -201,6 +239,17 @@ def main() -> int:
         base = port_base + slot * PORT_STRIDE
         for i, var in enumerate(PORT_VARS):
             env[var] = str(base + i)
+        cloned = ""
+        if gate.clone:
+            source_name, variable = gate.clone
+            source = run_dir / source_name
+            # A fixture that is not staged on this machine is not this scheduler's problem: leave the variable
+            # unset so the gate reaches its own "no world at ..." SKIP-FATAL and says so in its own words.
+            if source.is_dir():
+                destination = run_dir / ".gate-clones" / gate.name.removesuffix(".sh") / source_name
+                clone_rundir(source, destination)
+                env[variable] = str(destination)
+                cloned = f", own copy of {source_name}"
         log_path = out_dir / f"{gate.name}.log"
         log = log_path.open("wb")
         proc = subprocess.Popen(
@@ -213,7 +262,7 @@ def main() -> int:
         if gate.exclusive:
             exclusive_running = True
         say(f"[gates] +{int(time.time() - t0):4d}s START {gate.name}"
-            f" (slot {slot}, port {base}, {gate.mem or '?'} MB)")
+            f" (slot {slot}, port {base}, {gate.mem or '?'} MB{cloned})")
 
     def can_start(gate: Gate) -> bool:
         if not free_slots:

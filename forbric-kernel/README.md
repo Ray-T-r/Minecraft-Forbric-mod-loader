@@ -94,7 +94,10 @@ onwards as unfinished long after their gates were passing — so the scripts the
 
 `run/compat/gates-all.sh` discovers every gate by glob, in numerical order, including network/GUI gates;
 an intentional `--skip <script.sh>` is printed in the results. It runs several at once by default (`-j auto`,
-`-j 1` for the old strictly-sequential run), which took a full sweep on this machine from 26 minutes to 8.
+`-j 1` for the old strictly-sequential run), which took a full sweep on this machine from 26 minutes to 7.
+`auto` is one slot per two cores: memory never binds (5.5 GB of game JVMs at the peak, on 16 GB), but starving
+the gates does — at `-j 7` a shutdown that normally finishes well inside `await_server`'s grace window stopped
+doing so, and that window is a real check for a leaked non-daemon thread.
 
 Overlapping them is not free, and each gate says what it needs in one line near the top:
 
@@ -103,7 +106,8 @@ Overlapping them is not free, and each gate says what it needs in one line near 
 ```
 
 `rundirs` names what it owns while it runs — two gates naming the same thing never run together — and `mem` is
-what it costs. Three collisions are why the line exists rather than an `xargs -P`: eighteen gates write
+what it costs. `clone=<dir>:<VAR>` asks for a private copy of a shared fixture instead: the four gates that want
+`run/client-merged-pack` each get one, which on APFS clones that 434 MB install in 0.17s and costs no disk. Three collisions are why the line exists rather than an `xargs -P`: eighteen gates write
 `GATE_PORT` into `server.properties`, and the loser of a port race prints `FAILED TO BIND TO PORT` and then
 still prints `Stopping server`, so the clean-shutdown assertion passes and the gate reads green over a server
 that never existed; `gate-m1`/`m2`/`m3` share `run/server-kernel` and `gate-m9`/`m17`/`m22`/`m23`/`m27` share

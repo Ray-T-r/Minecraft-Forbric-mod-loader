@@ -59,3 +59,7 @@ run/installed/
 run/*/journeymap/
 run/client-kernel/data/
 run/client-kernel/debug-profile.json
+
+# Per-gate copies of run/client-merged-pack, remade at the start of every parallel sweep. On APFS these are
+# clones: they share the original's blocks and cost nothing until a gate writes to one.
+run/.gate-clones/

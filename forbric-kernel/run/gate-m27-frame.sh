@@ -4,7 +4,7 @@
 #   M27_SHOT_TICKS= ./gate-m27-frame.sh          # no screenshot requested; old PNGs must not satisfy this
 #   M27_FRAME=<black.png> ./gate-m27-frame.sh    # the shared pixel verdict must report BLACK
 # M27_FRAME is an explicit diagnostic override only; normal runs always select a PNG newer than launch.
-# GATE-PARALLEL: rundirs=client-merged-pack mem=3000
+# GATE-PARALLEL: clone=client-merged-pack:M27_RUNDIR mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
