@@ -143,6 +143,7 @@ public final class KernelRuntimeClasses {
 		// See KernelRegistryContent.
 		CLASSES.put("net.forbric.kernel.runtime.KernelRegistryContent", new Entry(Origin.COMPILED, List.of(
 				new Call("rebuildBlockStateIds", int.class),
+				new Call("initialiseBlockStateCaches", int.class),
 				new Call("sortCreativeTabs", void.class),
 				new Call("startCreativeTabProbe", void.class),
 				new Call("linkBlockItems", int.class),

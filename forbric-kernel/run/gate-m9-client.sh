@@ -68,6 +68,11 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #   -Dforbric.keyModifierSuffix=off -> 2 red ("the key-modifier suffix is dropped before the name is parsed",
 #                                             "options.txt loads with modded modifier bindings in it")
 #   -Dforbric.carrierLanguages=off -> 2 red ("NeoForge's own screens have their text", "and MinecraftForge's do too")
+#   -Dforbric.blockStateCaches=off -> 1 red ("every block state's cache is computed"). Off, a block a mod
+#                                      registered carries an uninitialised cache all run; vanilla computes
+#                                      lazily and tolerates it, Lithium throws "Could not initialize block state
+#                                      flags" the first time one is put in a chunk (verified on Windows: Biomes
+#                                      O' Plenty's fir leaves, during feature placement).
 #   -Dforbric.splitterPacketContext=off -> 2 red ("NeoForge's splitter encodes in Fabric's packet context",
 #                                      and the anchor census noticing a repair that was handed its target and
 #                                      declined — which is the switch working, said twice).
@@ -692,6 +697,9 @@ check_absent "no callback group is broken by a point the kernel moved" \
 # and what a player gets is the event actually firing while a tooltip is built.
 # Asserted on the transformer, not the runtime line: the splitter only announces itself once a Fabric packet
 # context exists to bind, and this pack has no mod that needs one — what must hold here is that the seam is in.
+check "every block state's cache is computed" \
+  "\[Forbric/Lifecycle\] initialised [1-9][0-9]* block state cache\(s\)" "$LOG"
+
 check "NeoForge's splitter encodes in Fabric's packet context" \
   "\[Forbric/Net\] .*GenericPacketSplitter.encode now runs inside the connection's Fabric packet context" "$LOG"
 

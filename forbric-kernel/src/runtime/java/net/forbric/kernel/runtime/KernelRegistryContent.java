@@ -83,6 +83,50 @@ public final class KernelRegistryContent {
 		}
 	}
 
+	/** The switch that leaves every late-registered block state's cache exactly as the registration left it. */
+	static final String STATE_CACHE_SWITCH = "forbric.blockStateCaches";
+
+	/**
+	 * Computes the per-state cache for every block state, the way vanilla's own bootstrap does.
+	 *
+	 * <p>{@code BlockStateBase.initCache()} fills the fields the game reads on the hot path — the collision shape,
+	 * the light and opacity flags, the fluid state. Vanilla calls it for every state during {@code Bootstrap},
+	 * which is BEFORE any mod has registered a block, and each loader calls it again for what its own mods add.
+	 * The kernel drives registration itself, so nothing did: every block a mod registered carried an uninitialised
+	 * cache for the whole run.
+	 *
+	 * <p>Vanilla tolerates that by computing lazily. Lithium does not — it replaces the lazy path with a flags
+	 * field and throws {@code Could not initialize block state flags} the first time an uninitialised state is put
+	 * in a chunk section. Biomes O' Plenty's fir leaves were the first: the crash is "Feature placement", during
+	 * worldgen, in Lithium's code, naming a Biomes O' Plenty block — and nothing in it points at a cache the
+	 * kernel never filled.
+	 *
+	 * <p>Called after the registration window and again after the client entrypoints, because both register
+	 * blocks. Recomputing an already-computed cache is what vanilla itself does on every bootstrap.
+	 *
+	 * @return how many states were initialised, or -1 when the pass could not run
+	 */
+	public static int initialiseBlockStateCaches() {
+		if ("off".equalsIgnoreCase(System.getProperty(STATE_CACHE_SWITCH, "on"))) return -1;
+		try {
+			int states = 0;
+			for (Block block : BuiltInRegistries.BLOCK) {
+				for (BlockState state : block.getStateDefinition().getPossibleStates()) {
+					state.initCache();
+					states++;
+				}
+			}
+			ForbricLog.info("[Forbric/Lifecycle] initialised %d block state cache(s) — vanilla does this in "
+					+ "Bootstrap, before any mod has registered a block, and the kernel drives registration itself",
+					states);
+			return states;
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not initialise the block state caches — a mod's block put "
+					+ "into a chunk can throw from inside another mod's optimisation", Reflect.unwrap(t));
+			return -1;
+		}
+	}
+
 	/**
 	 * Re-sorts NeoForge's creative tabs so the ones registered inside the kernel's window reach the tab strip.
 	 *
