@@ -117,6 +117,23 @@ class MergedBaseRandomSourcePrecisionTest {
 	}
 
 	@Test
+	void theSwitchStandsTheRepairDownSoTheGateCanShowItsTeeth() {
+		String property = ForbricMergedBaseCompatTransformer.RANDOM_PRECISION_PROPERTY;
+		String previous = System.getProperty(property);
+		System.setProperty(property, "off");
+		try {
+			byte[] fixture = floatScalingFixture();
+			assertSame(fixture, new ForbricMergedBaseCompatTransformer()
+					.transform(FIXTURE.replace('/', '.'), fixture, null),
+					"-D" + property + "=off must leave the float-rounded body exactly as it was; gate-m31's RED "
+							+ "demonstration is that world, and a switch that half-works demonstrates nothing");
+		} finally {
+			if (previous == null) System.clearProperty(property);
+			else System.setProperty(property, previous);
+		}
+	}
+
+	@Test
 	void itLeavesClassesOutsideTheGameAlone() {
 		byte[] outside = fixture(UNIT_AS_FLOAT, "net/forbric/other/RandomUnitFixture");
 		assertSame(outside, new ForbricMergedBaseCompatTransformer()

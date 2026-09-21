@@ -119,13 +119,15 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"ChunkGenerator.featuresPerStep keeps MinecraftForge's descriptor — the server cannot start (NoSuchFieldError)"));
 		out.add(fixed("letDungeonsGenerateWithoutTheDataMap", MONSTER_ROOM_FEATURE,
 				"monster rooms never generate — the NeoForge data map they ask has no vanilla fallback"));
-		out.add(new Claim(claimId("restoreDoublePrecisionToTheRandomSources"), AnchorSet.of(
-				new AnchorSet.Anchor(XOROSHIRO_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
-						"every noise octave's origin is off — the merged nextDouble() rounds through float, so no world "
-								+ "generates the way the same seed does in vanilla"),
-				new AnchorSet.Anchor(BIT_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
-						"WorldgenRandom's nextDouble() rounds through float and can return exactly 1.0 — out of the "
-								+ "[0,1) range every caller assumes"))));
+		out.add(randomSourcePrecisionEnabled()
+				? new Claim(claimId("restoreDoublePrecisionToTheRandomSources"), AnchorSet.of(
+						new AnchorSet.Anchor(XOROSHIRO_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+								"every noise octave's origin is off — the merged nextDouble() rounds through float, so no "
+										+ "world generates the way the same seed does in vanilla"),
+						new AnchorSet.Anchor(BIT_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+								"WorldgenRandom's nextDouble() rounds through float and can return exactly 1.0 — out of "
+										+ "the [0,1) range every caller assumes")))
+				: scanned("restoreDoublePrecisionToTheRandomSources", "-D" + RANDOM_PRECISION_PROPERTY + "=off"));
 		out.add(fixed("guardNeoForgesWorldModifierPass", NEO_SERVER_LIFECYCLE_HOOKS,
 				"NeoForge's biome/structure modifier pass is neutered — every neoforge:biome_modifier does nothing"));
 		out.add(fixed("letForeignResourceConditionsThrough", ICONDITION,
@@ -1643,6 +1645,18 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	/** 2^-53: the multiplier that turns 53 random bits into a double in [0,1). Exactly representable in both widths. */
 	private static final float DOUBLE_UNIT_AS_FLOAT = (float) 0x1.0p-53;
 	private static final double DOUBLE_UNIT = 0x1.0p-53;
+	/**
+	 * Switches the repair off, which puts the game back on the float-rounded draw.
+	 *
+	 * <p>It exists so gate-m31 can demonstrate its own teeth: a parity gate that has never been seen to go red is
+	 * not evidence that the worlds match, only that the comparison ran. With this off, the gate's biome check
+	 * must fail.
+	 */
+	static final String RANDOM_PRECISION_PROPERTY = "forbric.randomSourcePrecision";
+
+	static boolean randomSourcePrecisionEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(RANDOM_PRECISION_PROPERTY, "on"));
+	}
 
 	/**
 	 * Puts the game's random sources back in double precision.
@@ -1682,7 +1696,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * four. No branch is added and no frame changes, so widening {@code maxStack} is the whole adjustment.
 	 */
 	private static boolean restoreDoublePrecisionToTheRandomSources(ClassNode node) {
-		if (!node.name.startsWith("net/minecraft/")) return false;
+		if (!node.name.startsWith("net/minecraft/") || !randomSourcePrecisionEnabled()) return false;
 		int repaired = 0;
 		List<String> methods = new ArrayList<>();
 		for (MethodNode method : node.methods) {
