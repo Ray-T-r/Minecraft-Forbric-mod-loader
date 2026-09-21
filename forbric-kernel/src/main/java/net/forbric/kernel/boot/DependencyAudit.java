@@ -248,8 +248,14 @@ public final class DependencyAudit {
 			}
 			List<net.forbric.kernel.ui.DependencyReport.MixinRow> mixinRows = new ArrayList<>();
 			for (var one : breaks) {
+				// The mod id rather than the mixin config file it was declared in. The config name is what the
+				// break was recorded under and is still in the details, but "mixins.iris.compat.sodium.json" is
+				// not a thing a player has ever seen; "iris" is the name on the jar they downloaded. Null when
+				// no mod, or more than one, claims the config -- then the file name is the honest answer.
+				String owner = net.forbric.kernel.mixin.MixinConfigOwners.modIdOf(one.config());
 				mixinRows.add(new net.forbric.kernel.ui.DependencyReport.MixinRow(
-						one.config(), one.mixin(), String.join(", ", one.anchors())));
+						owner == null ? one.config() : owner, one.mixin(),
+						String.join(", ", one.anchors())));
 			}
 			net.forbric.kernel.ui.DependencyDialog.offer(rows, mixinRows,
 					physicalSide != null && physicalSide.isClient());
