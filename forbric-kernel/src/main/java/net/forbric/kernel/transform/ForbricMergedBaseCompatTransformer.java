@@ -89,7 +89,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -106,6 +106,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(scanned("repairLambdaBootstrapHandles", "any class whose invokedynamic still names the old loader's hook owners"));
 		out.add(fixed("addBlockStateModelConflictResolvers", "net/minecraft/client/renderer/block/dispatch/BlockStateModel",
 				"every block model's geometry key and conflict resolver are gone — the merged BlockStateModel lacks the methods both families call"));
+		out.add(fixed("addBlockStateAppearanceResolver", "net/minecraft/world/level/block/state/BlockState",
+				"BlockState inherits getAppearance as a default from BOTH NeoForge and fabric-api and declares "
+						+ "neither, so the first mod to ask a neighbour what it looks like — any connected-texture "
+						+ "mod — dies on IncompatibleClassChangeError mid-frame"));
 		out.add(scanned("addMissingForgeFluidTypeBridge", "every concrete fluid under net.minecraft.world.level.material implementing NeoForge's IFluidExtension"));
 		out.add(fixed("addMissingForgeKeyMappingLookupInitializer", KEY_MAPPING,
 				"MinecraftForge's KeyMapping.MAP is never initialised — every traditional-Forge key registration NPEs"));
@@ -244,6 +248,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			boolean changed = false;
 			changed |= claim(reporter, "repairLambdaBootstrapHandles", repairLambdaBootstrapHandles(node));
 			changed |= claim(reporter, "addBlockStateModelConflictResolvers", addBlockStateModelConflictResolvers(node));
+			changed |= claim(reporter, "addBlockStateAppearanceResolver", addBlockStateAppearanceResolver(node));
 			changed |= claim(reporter, "addMissingForgeFluidTypeBridge", addMissingForgeFluidTypeBridge(node));
 			changed |= claim(reporter, "addMissingForgeKeyMappingLookupInitializer", addMissingForgeKeyMappingLookupInitializer(node));
 			changed |= claim(reporter, "routeKeyMappingClickToPopulatedLookup", routeKeyMappingClickToPopulatedLookup(node));
@@ -491,6 +496,64 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			}
 		}
 		return changed;
+	}
+
+	/**
+	 * Gives merged {@code BlockState} its own {@code getAppearance}, because it inherits TWO.
+	 *
+	 * <p>The merged class declares {@code IBlockStateExtension} (NeoForge) and {@code IForgeBlockState}
+	 * (MinecraftForge); fabric-api's mixin then adds {@code FabricBlockState}. NeoForge's and Fabric's both
+	 * carry a {@code default getAppearance} with a byte-identical descriptor, neither overrides the other, and
+	 * the class declares nothing — so the JVM refuses to choose and the FIRST caller dies:
+	 * <pre>
+	 * java.lang.IncompatibleClassChangeError: Conflicting default methods:
+	 *   net/neoforged/neoforge/common/extensions/IBlockStateExtension.getAppearance
+	 *   net/fabricmc/fabric/api/block/v1/FabricBlockState.getAppearance
+	 *   at BlockState.getAppearance
+	 *   at me.pepperbell.continuity.client.model.CtmBlockStateModel.emitQuads
+	 * </pre>
+	 * Measured on the reporting instance the moment connected textures were switched on — Continuity is a
+	 * connected-texture mod, so asking a neighbour what it LOOKS like is the one thing it does, and nothing else
+	 * in a 28-mod pack had ever called this method. On either loader alone only one default exists and the
+	 * conflict cannot arise.
+	 *
+	 * <p>The body is written out rather than delegated to one side, because neither side is a choice: both
+	 * defaults are {@code this.getBlock().getAppearance(this, level, pos, direction, queryState, queryPos)},
+	 * differing only in how they obtain {@code this} (NeoForge through {@code self()}, Fabric through a
+	 * {@code checkcast}). Writing it directly also means the resolver does not depend on which of the two
+	 * interfaces is present at transform time — and fabric-api's is NOT, since a mixin adds it later.
+	 */
+	private static boolean addBlockStateAppearanceResolver(ClassNode node) {
+		if (!"net/minecraft/world/level/block/state/BlockState".equals(node.name)) return false;
+
+		String desc = "(Lnet/minecraft/world/level/BlockAndLightGetter;Lnet/minecraft/core/BlockPos;"
+				+ "Lnet/minecraft/core/Direction;Lnet/minecraft/world/level/block/state/BlockState;"
+				+ "Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;";
+		if (hasMethod(node, "getAppearance", desc)) return false;
+
+		MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "getAppearance", desc, null, null);
+		method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
+				"net/minecraft/world/level/block/state/BlockState", "getBlock",
+				"()Lnet/minecraft/world/level/block/Block;", false));
+		for (int slot = 0; slot <= 5; slot++) method.instructions.add(new VarInsnNode(Opcodes.ALOAD, slot));
+		method.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
+				"net/minecraft/world/level/block/Block", "getAppearance",
+				"(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/BlockAndLightGetter;"
+						+ "Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/Direction;"
+						+ "Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;)"
+						+ "Lnet/minecraft/world/level/block/state/BlockState;", false));
+		method.instructions.add(new InsnNode(Opcodes.ARETURN));
+		// receiver + the six arguments of Block.getAppearance
+		method.maxStack = 7;
+		method.maxLocals = 6;
+		node.methods.add(method);
+
+		ForbricLog.warn("[Forbric/MergedBaseCompat] gave BlockState its own getAppearance — NeoForge's and "
+				+ "fabric-api's interfaces both default it with the same descriptor and neither wins, so the "
+				+ "first mod to ask a neighbour what it looks like (a connected-texture mod) died on "
+				+ "IncompatibleClassChangeError. Both defaults are the same call, so this is that call");
+		return true;
 	}
 
 	private static boolean addBlockStateModelConflictResolvers(ClassNode node) {
