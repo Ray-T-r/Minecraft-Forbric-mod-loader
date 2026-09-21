@@ -554,7 +554,7 @@ public final class KernelForgeWorldgen {
 				net.neoforged.neoforge.common.world.ModifiableBiomeInfo.BiomeInfo back = neoBiomeInfo(
 						net.minecraftforge.common.world.ModifiableBiomeInfo.BiomeInfo.Builder.copyOf(forgeBiomeInfo(original)).build());
 				List<Optional<JsonElement>> a = encodeBiome(original, registries), b = encodeBiome(back, registries);
-				if (!a.equals(b)) {
+				if (!sameContent(a, b)) {
 					differ++;
 					if (first == null) first = entry.getKey().identifier() + " (part " + firstDifferingPart(a, b) + ")";
 				}
@@ -564,7 +564,8 @@ public final class KernelForgeWorldgen {
 				Structure.StructureSettings original = entry.getValue().modifiableStructureInfo().getOriginalStructureInfo().structureSettings();
 				Structure.StructureSettings back = net.minecraftforge.common.world.ModifiableStructureInfo.StructureInfo.Builder.copyOf(
 						new net.minecraftforge.common.world.ModifiableStructureInfo.StructureInfo(original)).build().structureSettings();
-				if (!encodeStructure(original, registries).equals(encodeStructure(back, registries))) {
+				if (!sameContent(List.of(encodeStructure(original, registries)),
+						List.of(encodeStructure(back, registries)))) {
 					differ++;
 					if (first == null) first = entry.getKey().identifier() + " (structure settings)";
 				}
@@ -587,9 +588,39 @@ public final class KernelForgeWorldgen {
 
 	private static String firstDifferingPart(List<Optional<JsonElement>> a, List<Optional<JsonElement>> b) {
 		String[] parts = { "climate", "effects", "generation", "mob spawns" };
-		for (int i = 0; i < parts.length; i++) if (!a.get(i).equals(b.get(i))) return parts[i];
+		for (int i = 0; i < parts.length; i++) {
+			if (!normalised(a.get(i)).equals(normalised(b.get(i)))) return parts[i];
+		}
 		return "?";
 	}
+
+	/**
+	 * Whether two encoded parts describe the same WORLD, ignoring containers that hold nothing.
+	 *
+	 * <p>A straight JSON compare is too strict here, and its strictness had a price: MinecraftForge's builders
+	 * rebuild a biome faithfully but do not keep an empty container the datapack happened to write down.
+	 * Stellarity's biomes list all ten decoration steps with the last one empty and all seven spawner categories
+	 * with six of them empty; the rebuilt copy stops at the last step that has anything in it. Nothing generates
+	 * differently — an empty step and an absent step are the same instruction — but 36 of 98 biomes "differed",
+	 * the audit concluded the builders would corrupt the world, and EVERY MinecraftForge biome and structure
+	 * modifier in the pack stood down. Animal Garden's was the one that showed it.
+	 *
+	 * <p>Only empties are forgiven, and only where an empty means nothing: trailing empty arrays, and object
+	 * members whose value is an empty array or object. A container that LOST content still differs, which is the
+	 * case the audit exists for.
+	 */
+	private static boolean sameContent(List<Optional<JsonElement>> a, List<Optional<JsonElement>> b) {
+		if (a.size() != b.size()) return false;
+		for (int i = 0; i < a.size(); i++) {
+			if (!normalised(a.get(i)).equals(normalised(b.get(i)))) return false;
+		}
+		return true;
+	}
+
+	static Optional<String> normalised(Optional<JsonElement> encoded) {
+		return encoded.map(WorldDataShape::comparable);
+	}
+
 
 	private static void markAllDegraded(Optional<Registry<net.minecraftforge.common.world.BiomeModifier>> biomes,
 			Optional<Registry<net.minecraftforge.common.world.StructureModifier>> structures, String detail) {

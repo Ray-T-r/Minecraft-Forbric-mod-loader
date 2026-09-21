@@ -72,6 +72,13 @@ check "NeoForge probe saw its feature" 'ForbricNeoLive/WORLDGEN\] plains undergr
 
 step "MinecraftForge's biome modifier rode inside NeoForge's pass (Phase 1 D)"
 check "forge:biome_modifier is declared"      'posted datapack-registry declaration for MinecraftForge.s modifier registries — 2 declared' "$LOG"
+# The bridge only runs when the round-trip audit is satisfied, so its verdict is an assertion of its own: a
+# comparison that reports a difference where there is none stands EVERY MinecraftForge modifier down, and the
+# only thing a player sees is a load-report row. RED with M25_EXTRA_JVM=-Dforbric.worldgenAuditNormalise=off on
+# a pack whose biomes write out empty spawner categories or a trailing empty decoration step (Stellarity's do:
+# 36 of 98 biomes, verified locally) — on this canary pack there are none, so it stays green either way.
+check "the MinecraftForge builder round-trip loses nothing" \
+  'Forbric/Worldgen\] MinecraftForge builder round-trip: [0-9]+ biome\(s\) and [0-9]+ structure\(s\) checked, 0 differ' "$LOG"
 check "Forge modifiers were bridged"          'Forbric/Worldgen\] bridging [1-9][0-9]* MinecraftForge biome modifier' "$LOG"
 check "the round-trip audit passed"           'Forbric/Worldgen\] MinecraftForge builder round-trip: [1-9][0-9]* biome\(s\) and [0-9]+ structure\(s\) checked, 0 differ' "$LOG"
 check "Forge modifiers changed biomes"        'Forbric/Worldgen\] MinecraftForge modifiers changed [1-9][0-9]* biome' "$LOG"
