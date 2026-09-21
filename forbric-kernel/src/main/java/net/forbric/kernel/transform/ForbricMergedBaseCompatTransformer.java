@@ -80,7 +80,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("46 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("47 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -89,7 +89,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -131,6 +131,12 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("convertRadiansWithVanillasFoldedConstant", "net/minecraft/world/entity/Entity",
 				"every angle the game computes from a vector is off in the eighth digit — the merged base divides by "
 						+ "pi at run time where vanilla multiplies by a constant it folded in float"));
+		out.add(savedHeightmapsEnabled()
+				? fixed("saveTheHeightmapsVanillaSaves", CHUNK_STATUS,
+						"an unfinished chunk is saved with the two worldgen heightmaps vanilla never persists, and "
+								+ "reloads with them stale — a feature placed on WORLD_SURFACE_WG then lands somewhere "
+								+ "vanilla would not put it")
+				: scanned("saveTheHeightmapsVanillaSaves", "-D" + SAVED_HEIGHTMAPS_PROPERTY + "=off"));
 		out.add(fixed("guardNeoForgesWorldModifierPass", NEO_SERVER_LIFECYCLE_HOOKS,
 				"NeoForge's biome/structure modifier pass is neutered — every neoforge:biome_modifier does nothing"));
 		out.add(fixed("letForeignResourceConditionsThrough", ICONDITION,
@@ -265,6 +271,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "letDungeonsGenerateWithoutTheDataMap", letDungeonsGenerateWithoutTheDataMap(node));
 			changed |= claim(reporter, "restoreDoublePrecisionToTheRandomSources", restoreDoublePrecisionToTheRandomSources(node));
 			changed |= claim(reporter, "convertRadiansWithVanillasFoldedConstant", convertRadiansWithVanillasFoldedConstant(node));
+			changed |= claim(reporter, "saveTheHeightmapsVanillaSaves", saveTheHeightmapsVanillaSaves(node));
 			changed |= claim(reporter, "guardNeoForgesWorldModifierPass", guardNeoForgesWorldModifierPass(node));
 			changed |= claim(reporter, "letForeignResourceConditionsThrough", letForeignResourceConditionsThrough(node));
 			changed |= claim(reporter, "letForeignResourceConditionsThroughMinecraftForge", letForeignResourceConditionsThroughMinecraftForge(node));
@@ -1800,6 +1807,64 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "(%d site(s)) — the merged body divided by pi at run time, which is a different number in the "
 				+ "eighth digit and moves every angle computed from a vector",
 				node.name.replace('/', '.'), folded);
+		return true;
+	}
+
+	private static final String CHUNK_STATUS = "net/minecraft/world/level/chunk/status/ChunkStatus";
+	private static final String CHUNK_SAVE_HEIGHTMAPS = "chunkSaveHeightmaps";
+	private static final String HEIGHTMAPS_AFTER = "heightmapsAfter";
+	private static final String ENUM_SET_DESC = "Ljava/util/EnumSet;";
+	static final String SAVED_HEIGHTMAPS_PROPERTY = "forbric.vanillaSavedHeightmaps";
+
+	static boolean savedHeightmapsEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(SAVED_HEIGHTMAPS_PROPERTY, "on"));
+	}
+
+	/**
+	 * Saves the heightmaps vanilla saves, and no others.
+	 *
+	 * <p>NeoForge gives {@code ChunkStatus} a second heightmap set — {@code chunkSaveHeightmaps}, which is
+	 * {@code heightmapsAfter} plus {@code WORLD_SURFACE_WG} and {@code OCEAN_FLOOR_WG} for every status that is
+	 * not a full chunk — and points all three of {@code SerializableChunkData}'s uses at it. MinecraftForge's
+	 * patched jar does not; vanilla does not. So this is NeoForge's decision, not the pipeline's, and unlike its
+	 * other decisions it changes what the world looks like.
+	 *
+	 * <p>The cost is not the extra bytes. Those two are WORLDGEN heightmaps: {@code ProtoChunk.setBlockState}
+	 * stops maintaining them once a chunk passes CARVERS, so from that point they are a snapshot, and vanilla's
+	 * answer is to never write them — a reloaded chunk rebuilds them from the blocks it actually has. Written and
+	 * read back, they come back stale, and {@code PlacementUtils.HEIGHTMAP_WORLD_SURFACE} and
+	 * {@code HEIGHTMAP_TOP_SOLID} are exactly what decide the Y a decoration is placed at. A chunk that was saved
+	 * half-generated, unloaded and reloaded then decorates against a height that is no longer true.
+	 *
+	 * <p>Measured, on one seed, zero mods, five vanilla worlds against five Forbric ones: after the other two
+	 * repairs the ONLY difference left that survives the noise filter is five chunks whose {@code WORLD_SURFACE}
+	 * heightmap differs, and every one of them is a dead bush — 7 of 5,079 — placed on identical terracotta in
+	 * identical badlands, in a chunk near spawn that the server had saved and reloaded. Blocks, block entities,
+	 * biomes and structure starts are all identical.
+	 *
+	 * <p>One instruction's operand: the getter reads the vanilla-shaped field instead of NeoForge's widened one,
+	 * which leaves both the write path and the read path agreeing with vanilla. The field and its constructor
+	 * stay where they are, so anything that asks NeoForge's own accessor for them still gets an answer.
+	 */
+	private static boolean saveTheHeightmapsVanillaSaves(ClassNode node) {
+		if (!CHUNK_STATUS.equals(node.name) || !savedHeightmapsEnabled()) return false;
+		if (!hasField(node, HEIGHTMAPS_AFTER, ENUM_SET_DESC)) return false;
+		int rebased = 0;
+		for (MethodNode method : node.methods) {
+			if (!"getChunkSaveHeightmaps".equals(method.name)) continue;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof FieldInsnNode read) || read.getOpcode() != Opcodes.GETFIELD
+						|| !CHUNK_STATUS.equals(read.owner) || !CHUNK_SAVE_HEIGHTMAPS.equals(read.name)) {
+					continue;
+				}
+				read.name = HEIGHTMAPS_AFTER;
+				rebased++;
+			}
+		}
+		if (rebased == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] ChunkStatus now reports vanilla's saved-heightmap set (%d read(s)) "
+				+ "— NeoForge widened it with the two worldgen heightmaps, which an unfinished chunk then reloads "
+				+ "stale, and those are what decide the Y a decoration is placed at", rebased);
 		return true;
 	}
 

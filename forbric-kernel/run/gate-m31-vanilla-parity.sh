@@ -12,7 +12,9 @@
 # heightmaps and block entities are printed as evidence and asserted on by nobody. Biomes and structure starts
 # carry no such noise — biomes are written at the `biomes` status from the climate sampler alone, before any
 # feature runs — and there BOTH vanilla against itself and Forbric against itself agree on all 1764 chunks.
-# Those two are the gate.
+# The mob a dungeon spawner was built with is the same kind of fact and is asserted too: it caught the kernel
+# drawing it through NeoForge's weighted data map (nextInt(400)) where vanilla draws nextInt(4) — the same
+# distribution, a different mob on the same seed, and all six dungeons in this area disagreed.
 #
 # TEETH (recorded 2026-09-21): M31_UNFIXED=1 runs the Forbric arm with -Dforbric.randomSourcePrecision=off,
 # which puts the float-rounded draw back. The biome check then reports 11 differing chunks and this gate is RED.
@@ -133,6 +135,7 @@ if [ -s "$REPORT" ]; then
   # The two assertions. Everything else in the report is evidence.
   assert_eq "every chunk carries vanilla's biomes"  "0" "$(field 'differ biomes')"
   assert_eq "every chunk carries vanilla's structure starts" "0" "$(field 'differ structures')"
+  assert_eq "every dungeon spawns vanilla's mob"     "0" "$(field 'differ spawner_mobs')"
   echo "[kernel] evidence (not asserted — vanilla does not reproduce itself here):" \
        "heightmaps=$(field 'differ heightmaps') blocks=$(field 'differ blocks') block_entities=$(field 'differ block_entities')"
 else

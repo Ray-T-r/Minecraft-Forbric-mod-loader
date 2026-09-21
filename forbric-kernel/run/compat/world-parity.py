@@ -13,6 +13,10 @@ Prints one machine-readable line per fact, for a gate to assert on:
     differ blocks: 242
     differ block_entities: 17
 
+`spawner_mobs` is the mob each dungeon spawner was built with, keyed by position. It is an assertion
+for the same reason biomes are: the feature decides it once, from its own random stream, and both
+vanilla and Forbric reproduce it exactly against themselves.
+
 Which facets are EVIDENCE and which are ASSERTIONS is not a detail — vanilla does not reproduce
 itself at the block level. Features that read a neighbouring chunk (dripstone, sculk) resolve by
 whichever chunk the worker pool finished first, so two runs of unmodified vanilla on the same seed
@@ -34,7 +38,7 @@ import sys
 import zlib
 from pathlib import Path
 
-FACETS = ("biomes", "structures", "heightmaps", "blocks", "block_entities")
+FACETS = ("biomes", "structures", "spawner_mobs", "heightmaps", "blocks", "block_entities")
 
 
 def _read(buf, off, kind):
@@ -147,7 +151,14 @@ def facets(root):
             blocks[y] = digest(section["block_states"])
         if "biomes" in section:
             biomes[y] = digest(section["biomes"])
+    spawners = {}
+    for entity in root.get("block_entities", []) or []:
+        if isinstance(entity, dict) and entity.get("id") == "minecraft:mob_spawner":
+            spawn = entity.get("SpawnData") or {}
+            mob = (spawn.get("entity") or {}).get("id") if isinstance(spawn, dict) else None
+            spawners[(entity.get("x"), entity.get("y"), entity.get("z"))] = mob
     return {
+        "spawner_mobs": digest(sorted((list(k), v) for k, v in spawners.items())),
         "blocks": digest(blocks),
         "biomes": digest(biomes),
         "heightmaps": digest(root.get("Heightmaps", {})),
