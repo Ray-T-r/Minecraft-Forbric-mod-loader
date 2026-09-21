@@ -64,13 +64,25 @@ class DeadEventAuditTest {
 	private static final String NEO_TOOLTIP = "net/neoforged/neoforge/event/entity/player/ItemTooltipEvent";
 	private static final String ENTITY_PLACE = "net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent";
 
+	/**
+	 * Tooltips are bridged now, and by a pass that lands only when a player hovers an item.
+	 *
+	 * <p>So a NeoForge tooltip listener is never a FINDING: "the bridge has not fired yet" and "the bridge is
+	 * missing" are the same observation until someone hovers something, and accusing the mod on either is a false
+	 * alarm. What must survive is the sentence — the cost a player would pay if the bridge really were gone is
+	 * what names the mod when the bridges are switched off, and a bridge that carries no cost explains nothing.
+	 */
 	@Test
-	void aNeoForgeTooltipListenerIsAFinding() {
-		List<DeadEventAudit.Finding> findings = DeadEventAudit.audit(
-				Map.of("tipmod", Set.of(NEO_TOOLTIP)), EnumSet.allOf(GameEventBridge.class));
-		assertEquals(1, findings.size(), "the merged getTooltipLines calls only MinecraftForge's onItemTooltip");
-		assertEquals("tipmod", findings.get(0).modId());
-		assertTrue(findings.get(0).cost().contains("tooltip"), findings.get(0).cost());
+	void aNeoForgeTooltipListenerIsNeverAccusedOnceItsBridgeExists() {
+		assertTrue(DeadEventAudit.audit(Map.of("tipmod", Set.of(NEO_TOOLTIP)),
+				EnumSet.noneOf(GameEventBridge.class)).isEmpty(),
+				"an on-demand bridge has no moment at which its absence is provable, so this must not be a finding");
+		assertTrue(DeadEventAudit.audit(Map.of("tipmod", Set.of(NEO_TOOLTIP)),
+				EnumSet.allOf(GameEventBridge.class)).isEmpty(),
+				"and with the bridge installed the listener runs");
+
+		assertTrue(GameEventBridge.ITEM_TOOLTIP.cost().contains("tooltip"),
+				GameEventBridge.ITEM_TOOLTIP.cost());
 	}
 
 	/**

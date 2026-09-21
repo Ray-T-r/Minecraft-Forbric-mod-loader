@@ -104,6 +104,10 @@ public enum GameEventBridge {
 			"a MinecraftForge mod cannot see or refuse an item being used in hand"),
 	LOOT_TABLE_LOAD(Pass.GAME_BUS, "LootTableLoadEvent",
 			"loot tables a MinecraftForge mod adds to or replaces on load are left exactly as loaded"),
+	ITEM_TOOLTIP(Pass.ON_DEMAND, "ItemTooltipEvent",
+			"item tooltips cannot be extended by NeoForge mods — the merged getTooltipLines asks only "
+					+ "MinecraftForge's onItemTooltip, so every NeoForge mod that adds a line to an item's "
+					+ "tooltip adds it to nothing"),
 	ENTITY_PLACE_BLOCK(Pass.GAME_BUS, "BlockEvent.EntityPlaceEvent",
 			"a MinecraftForge mod cannot see or refuse a block being placed — the other half of every protection "
 					+ "rule, and of every block-logging mod's record"),
@@ -168,7 +172,15 @@ public enum GameEventBridge {
 		 * merged {@code Minecraft.<init>} reaches it after client setup — so it is {@link #lateInstalled()} and
 		 * verified from its own install point.
 		 */
-		CLIENT_HUD(true);
+		CLIENT_HUD(true),
+		/**
+		 * Landed by a class transformer at a call site the game reaches only when the feature is USED — an item's
+		 * tooltip is built when one is hovered, and on a dedicated server never. There is no moment at which such a
+		 * bridge can be verified present, because "it has not fired yet" and "it is missing" look identical until a
+		 * player hovers an item. {@link #lateInstalled()} for that reason, and what proves the seam is really in the
+		 * bytecode is the transformer census rather than a verify pass.
+		 */
+		ON_DEMAND(true);
 
 		private final boolean lateInstalled;
 

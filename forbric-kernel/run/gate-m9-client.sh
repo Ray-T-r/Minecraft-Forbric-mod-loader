@@ -68,6 +68,9 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #   -Dforbric.keyModifierSuffix=off -> 2 red ("the key-modifier suffix is dropped before the name is parsed",
 #                                             "options.txt loads with modded modifier bindings in it")
 #   -Dforbric.carrierLanguages=off -> 2 red ("NeoForge's own screens have their text", "and MinecraftForge's do too")
+#   -Dforbric.itemTooltipBridge=off -> 1 red ("a NeoForge mod can add a line to an item's tooltip"). Off, the
+#                                      merged getTooltipLines posts only MinecraftForge's event and every
+#                                      NeoForge mod's tooltip line goes into a list nobody built.
 #   -Dforbric.fabricMainInConstructor=off -> 2 red ("Fabric main entrypoints run where Fabric runs them",
 #                                                   "and not in the pre-Minecraft window"). Off, a Fabric mod that
 #                                                   caches Minecraft.getInstance() from onInitialize caches null:
@@ -678,6 +681,11 @@ step "the world is on disk before the process ends (must PASS)"
 # doing so is the whole mixin class: Iris' LevelRenderer group took every shader hook in it down with one.
 check_absent "no callback group is broken by a point the kernel moved" \
   "Callback group @Group.*failed injection check" "$LOG"
+
+# Asserted on the POST, not on the transformer's line: the seam being in the bytecode is what the census proves,
+# and what a player gets is the event actually firing while a tooltip is built.
+check "a NeoForge mod can add a line to an item's tooltip" \
+  "\[Forbric/Tooltips\] NeoForge's ItemTooltipEvent is posted beside MinecraftForge's" "$LOG"
 
 check "Fabric main entrypoints run where Fabric runs them" \
   "\[Render thread/INFO\]: \[Forbric/Fabric\] invoked [1-9][0-9]* Fabric main entrypoint\(s\) in the Minecraft.<init> window" "$LOG"

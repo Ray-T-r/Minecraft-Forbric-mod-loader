@@ -98,6 +98,9 @@ public final class KernelRuntimeClasses {
 		// The traditional-Forge loading context: BusGroup + FMLModContainer + FMLJavaModLoadingContext, and the
 		// IModInfo they carry. A separate factory from KernelContainers because traditional Forge differs from
 		// NeoForge at every joint the kernel touches. See KernelForgeModContext.
+		// Its one entry point takes six GAME types, which cannot be named from here — the descriptor the
+		// transformer writes is the contract, and TransformerAnchorCensusTest is what holds the two in step.
+		CLASSES.put("net.forbric.kernel.runtime.KernelItemTooltips", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeContainers", new Entry(Origin.COMPILED, List.of(
 				new Call("create", KernelForgeModContext.Handle.class, String.class),
 				new Call("setActiveContainer", void.class, Object.class),

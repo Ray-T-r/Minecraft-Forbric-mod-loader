@@ -37,6 +37,7 @@ import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.LocalVariableNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TryCatchBlockNode;
@@ -88,7 +89,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -153,6 +154,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"the window title carries another loader's brand"));
 		out.add(fixed("keepTheSaveOffTheTeardownsFailurePath", INTEGRATED_SERVER,
 				"a throw in IntegratedServer.teardownPublishedState costs the world save"));
+		out.add(fixed("postNeoForgesItemTooltipEvent", ITEM_STACK,
+				"NeoForge mods cannot add a line to any item's tooltip — the merged getTooltipLines posts only MinecraftForge's event"));
 		out.add(fixed("askNeoForgeWhatAnItemsAttributesAre", ITEM_STACK,
 				"an item's attributes are read off the raw component — elytra flight and every NeoForge attribute modifier stop working"));
 		out.add(fixed("readTheSpawnReasonThatIsActuallyWritten", "net/minecraft/world/entity/Mob",
@@ -265,6 +268,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "surviveTheMissingForgeModelDataManager", surviveTheMissingForgeModelDataManager(node));
 			changed |= claim(reporter, "dropTheWindowTitlesLoaderBrand", dropTheWindowTitlesLoaderBrand(node));
 			changed |= claim(reporter, "keepTheSaveOffTheTeardownsFailurePath", keepTheSaveOffTheTeardownsFailurePath(node));
+			changed |= claim(reporter, "postNeoForgesItemTooltipEvent", postNeoForgesItemTooltipEvent(node));
 			changed |= claim(reporter, "askNeoForgeWhatAnItemsAttributesAre", askNeoForgeWhatAnItemsAttributesAre(node));
 			changed |= claim(reporter, "readTheSpawnReasonThatIsActuallyWritten", readTheSpawnReasonThatIsActuallyWritten(node));
 			changed |= claim(reporter, "giveTheUnwrittenLoggerAValue", giveTheUnwrittenLoggerAValue(node));
@@ -2570,6 +2574,94 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * changes shape is left alone rather than half-rewritten.
 	 */
 	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
+	private static final String FORGE_EVENT_FACTORY = "net/minecraftforge/event/ForgeEventFactory";
+	private static final String ON_ITEM_TOOLTIP = "onItemTooltip";
+	private static final String TOOLTIP_BRIDGE = "net/forbric/kernel/runtime/KernelItemTooltips";
+	private static final String TOOLTIP_BRIDGE_DESC =
+			"(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/entity/player/Player;Ljava/util/List;"
+					+ "Lnet/minecraft/world/item/TooltipFlag;Lnet/minecraft/world/item/Item$TooltipContext;"
+					+ "Lnet/minecraft/world/item/component/TooltipDisplay;)V";
+
+	/**
+	 * Posts NeoForge's {@code ItemTooltipEvent} beside MinecraftForge's, on the same list.
+	 *
+	 * <p>{@code getTooltipLines} carries exactly one event call and it is MinecraftForge's. NeoForge's event is
+	 * never constructed, so a NeoForge mod that appends a tooltip line appends it to nothing — Architectury and
+	 * RarityCore both do, and the only symptom either produced was a load-report row.
+	 *
+	 * <p>Inserted AFTER MinecraftForge's call rather than before, so each family sees the tooltip in the order its
+	 * own loader gives it. The six arguments are read from the frame the call site already has: the stack is
+	 * {@code this}, the player and flag are the ones MinecraftForge's call is loading, and the context and display
+	 * are the method's first parameter and its display local — so a listener asking for either gets the real one.
+	 */
+	private static boolean postNeoForgesItemTooltipEvent(ClassNode node) {
+		if (!ITEM_STACK.equals(node.name)) return false;
+
+		boolean changed = false;
+		for (MethodNode method : node.methods) {
+			if (!"getTooltipLines".equals(method.name)) continue;
+			// Already posted: a second pass over a repaired class must leave it exactly as it is, or the event
+			// fires twice and every NeoForge tooltip line appears twice.
+			for (AbstractInsnNode insn : method.instructions.toArray()) {
+				if (insn instanceof MethodInsnNode done && TOOLTIP_BRIDGE.equals(done.owner)) return false;
+			}
+			for (AbstractInsnNode insn : method.instructions.toArray()) {
+				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC) continue;
+				if (!FORGE_EVENT_FACTORY.equals(call.owner) || !ON_ITEM_TOOLTIP.equals(call.name)) continue;
+
+				// The four operands MinecraftForge's call is about to consume, in its own order, reconstructed from
+				// the frame: this, player, list, flag. Their local slots are the ones the call site loads, so they
+				// are read off the preceding loads rather than assumed.
+				List<VarInsnNode> loads = precedingLoads(insn, 4);
+				if (loads.size() != 4) continue;
+				VarInsnNode display = displayLocal(method);
+				if (display == null) continue;
+
+				InsnList post = new InsnList();
+				for (VarInsnNode load : loads) post.add(new VarInsnNode(Opcodes.ALOAD, load.var));
+				post.add(new VarInsnNode(Opcodes.ALOAD, 1));
+				post.add(new VarInsnNode(Opcodes.ALOAD, display.var));
+				post.add(new MethodInsnNode(Opcodes.INVOKESTATIC, TOOLTIP_BRIDGE, "postNeoForge",
+						TOOLTIP_BRIDGE_DESC, false));
+				// After the POP that discards MinecraftForge's returned event, so the stack is empty here.
+				AbstractInsnNode after = insn.getNext();
+				while (after != null && after.getOpcode() == Opcodes.POP) after = after.getNext();
+				method.instructions.insertBefore(after != null ? after : insn.getNext(), post);
+				changed = true;
+				break;
+			}
+		}
+		if (changed) {
+			ForbricLog.info("[Forbric/MergedBaseCompat] %s.getTooltipLines now posts NeoForge's ItemTooltipEvent "
+					+ "beside MinecraftForge's, on the same list — the merged body carries only MinecraftForge's "
+					+ "call, so a NeoForge mod's tooltip lines went into a list nobody built", node.name);
+		}
+		return changed;
+	}
+
+	/** The {@code n} consecutive ALOADs immediately before {@code call}, in source order, or fewer. */
+	private static List<VarInsnNode> precedingLoads(AbstractInsnNode call, int n) {
+		java.util.Deque<VarInsnNode> loads = new java.util.ArrayDeque<>();
+		AbstractInsnNode cursor = call.getPrevious();
+		while (cursor != null && loads.size() < n) {
+			if (cursor.getOpcode() == Opcodes.ALOAD && cursor instanceof VarInsnNode load) loads.addFirst(load);
+			else if (cursor.getOpcode() >= 0) break;
+			cursor = cursor.getPrevious();
+		}
+		return new ArrayList<>(loads);
+	}
+
+	/** The {@code TooltipDisplay} local, by its declared type in the method's own variable table. */
+	private static VarInsnNode displayLocal(MethodNode method) {
+		if (method.localVariables == null) return null;
+		for (LocalVariableNode local : method.localVariables) {
+			if ("Lnet/minecraft/world/item/component/TooltipDisplay;".equals(local.desc)) {
+				return new VarInsnNode(Opcodes.ALOAD, local.index);
+			}
+		}
+		return null;
+	}
+
 	private static final String ATTRIBUTE_MODIFIERS_TYPE = "net/minecraft/world/item/component/ItemAttributeModifiers";
 	private static final String DATA_COMPONENTS = "net/minecraft/core/component/DataComponents";
 	private static final String NEO_ATTRIBUTES = "getAttributeModifiers";

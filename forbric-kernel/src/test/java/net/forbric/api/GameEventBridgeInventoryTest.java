@@ -175,6 +175,9 @@ class GameEventBridgeInventoryTest {
 		// HudElementBridgeInjector appends the call; KernelForgeOverlayLayers is what knows whether the stack
 		// actually went on.
 		recorded.addAll(bridgesRecordedBy(runtimeCompiled("KernelForgeOverlayLayers")));
+		// The tooltip seam is the same shape: the transformer writes the call, and the game-side class is the only
+		// place that knows a tooltip was really built and the event really posted.
+		recorded.addAll(bridgesRecordedBy(runtimeCompiled("KernelItemTooltips")));
 		assumeTrue(!recorded.isEmpty(), "transformers not compiled yet");
 
 		List<String> missing = new ArrayList<>();

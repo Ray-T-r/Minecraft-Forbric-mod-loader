@@ -102,8 +102,9 @@ class EventBridgesTest {
 	void onlyTheTransformerLandedPassesAreLate() {
 		// CLIENT_HUD is landed by HudElementBridgeInjector's append to initModdedLayers, later than every other
 		// pass — the merged Minecraft.<init> reaches it after client setup — so it is late for the same reason.
+		// ON_DEMAND is later still and has no fixed moment at all: its call site runs when a player hovers an item.
 		assertEquals(EnumSet.of(GameEventBridge.Pass.CLIENT_INIT, GameEventBridge.Pass.REGISTRATION,
-						GameEventBridge.Pass.CLIENT_HUD),
+						GameEventBridge.Pass.CLIENT_HUD, GameEventBridge.Pass.ON_DEMAND),
 				EnumSet.allOf(GameEventBridge.Pass.class).stream().filter(GameEventBridge.Pass::lateInstalled)
 						.collect(Collectors.toCollection(() -> EnumSet.noneOf(GameEventBridge.Pass.class))));
 	}

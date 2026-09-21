@@ -162,6 +162,7 @@ public final class DeadEventAudit {
 		map.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$RightClickItem",
 				GameEventBridge.RIGHT_CLICK_ITEM);
 		map.put("net/minecraftforge/event/LootTableLoadEvent", GameEventBridge.LOOT_TABLE_LOAD);
+		map.put("net/neoforged/neoforge/event/entity/player/ItemTooltipEvent", GameEventBridge.ITEM_TOOLTIP);
 		map.put("net/minecraftforge/client/event/AddGuiOverlayLayersEvent", GameEventBridge.GUI_OVERLAY_LAYERS);
 		map.put("net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent",
 				GameEventBridge.ENTITY_PLACE_BLOCK);
