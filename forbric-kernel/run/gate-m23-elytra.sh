@@ -15,6 +15,7 @@
 # WHY THE SERVER'S PLAYER. Equipment attributes are applied server-side (detectEquipmentUpdates casts the level to
 # ServerLevel) and flight is server-authoritative. The client only predicts — its own isFallFlying reads true even
 # on a build where the server refuses, which is exactly how a broken build can look fixed.
+# GATE-PARALLEL: rundirs=client-merged-pack mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

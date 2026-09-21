@@ -14,6 +14,7 @@
 # M26_EXTRA_JVM='-Dforbric.forgeCreativeTabs=off' loses command_block in parent/search collections;
 # M21_EXTRA_JVM='-Dforbric.forgeSpawnPlacements=off' loses the zombie WORLD_SURFACE result in M21.
 # Green since Phase 1 A landed (A3–A9 hooks, A8 bridge inventory); any red is a regression, exit 1.
+# GATE-PARALLEL: rundirs=client-forge-registration mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

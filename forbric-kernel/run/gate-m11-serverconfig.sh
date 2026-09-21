@@ -17,6 +17,7 @@
 # on a mixed pack and this keeps the gate honest about that.
 #
 # TEETH: -Dforbric.earlyConfigs=off turns this gate RED (measured: getActive NPE x4, Done never reached).
+# GATE-PARALLEL: rundirs=server-config mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

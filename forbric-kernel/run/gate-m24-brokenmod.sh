@@ -15,6 +15,7 @@
 # still load, the server still reaches Done, and the broken one is named in the log, in the catalogue and in the
 # load report. A negative control boots the same instance WITHOUT the broken mod, because "the report named one
 # mod" is worth little unless the run that should produce no report produces none.
+# GATE-PARALLEL: rundirs=server-brokenmod,canary mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

@@ -5,6 +5,7 @@
 #   3. kernel --scan produces well-formed JSON discovering mods across all 3 ecosystems (both merged sets)
 #   4. differential oracle: kernel parser ≡ independent ground-truth parser on the real mod sets
 # This is the differential-oracle foundation every later milestone builds on.
+# GATE-PARALLEL: mem=2000  (builds and runs the unit suite; owns no rundir)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

@@ -37,6 +37,7 @@
 # The teeth are demonstrable, which is the only reason to trust them:
 #   M10_EXTRA_JVM="-Dforbric.packRepair=off"    ./run/gate-m10-overlay.sh   # must go RED (the overlay collision)
 #   M10_EXTRA_JVM="-Dforbric.modDataPacks=off"  ./run/gate-m10-overlay.sh   # must go RED (the unserved data/)
+# GATE-PARALLEL: rundirs=server-overlay mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

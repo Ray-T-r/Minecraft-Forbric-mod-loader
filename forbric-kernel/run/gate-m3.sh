@@ -6,6 +6,7 @@
 # default content registers (e.g. the empty fluid types EntityFluidInteraction reads for every entity), and
 # constructs a discovered real @Mod (its own ctor runs) — all with no genuine FancyModLoader/FML lifecycle. Then
 # the server reaches Done, ticks, and shuts down cleanly.
+# GATE-PARALLEL: rundirs=server-kernel mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

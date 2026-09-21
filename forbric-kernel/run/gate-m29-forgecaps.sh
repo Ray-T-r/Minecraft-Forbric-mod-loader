@@ -6,6 +6,7 @@
 # signature; boot 2 (-Dforbric.forgeCapabilities=off) is the RED demonstration and the attribution proof: the
 # attached-handler line is absent and load-report.txt names forbriclive DEGRADED.
 # RED control for boot 1: M29_EXTRA_JVM='-Dforbric.forgeCapabilities=off' (every CAPS line goes red).
+# GATE-PARALLEL: rundirs=server-forgecaps mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

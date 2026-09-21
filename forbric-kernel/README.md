@@ -92,9 +92,28 @@ onwards as unfinished long after their gates were passing — so the scripts the
 | `gate-m29-forgecaps` | MinecraftForge capabilities on the merged base: the item-handler capability of a zombie and a furnace, with the lost field initializers replayed |
 | `gate-m30-attribution` | a mod that loses PART of itself — a mixin left out or failing at world creation, a subscriber that cannot register, a listener on a dead event, a throwing deferred task, a jar compiled against another NeoForge — is named with the reason in the log, on the Mods screen and in `load-report.txt`, which is rewritten once the world is up |
 
-`run/compat/gates-all.sh` discovers and runs every gate in numerical order, including network/GUI gates;
-an intentional `--skip <script.sh>` is printed in the results. Portable Windows baseline collection and
-the negative controls are described in [the compatibility protocol](run/compat/PROTOCOL.md).
+`run/compat/gates-all.sh` discovers every gate by glob, in numerical order, including network/GUI gates;
+an intentional `--skip <script.sh>` is printed in the results. It runs several at once by default (`-j auto`,
+`-j 1` for the old strictly-sequential run), which took a full sweep on this machine from 26 minutes to 8.
+
+Overlapping them is not free, and each gate says what it needs in one line near the top:
+
+```sh
+# GATE-PARALLEL: rundirs=server-kernel,canary mem=1500
+```
+
+`rundirs` names what it owns while it runs — two gates naming the same thing never run together — and `mem` is
+what it costs. Three collisions are why the line exists rather than an `xargs -P`: eighteen gates write
+`GATE_PORT` into `server.properties`, and the loser of a port race prints `FAILED TO BIND TO PORT` and then
+still prints `Stopping server`, so the clean-shutdown assertion passes and the gate reads green over a server
+that never existed; `gate-m1`/`m2`/`m3` share `run/server-kernel` and `gate-m9`/`m17`/`m22`/`m23`/`m27` share
+`run/client-merged-pack`; and every kernel JVM is launched without `-Xmx`, so each one inherits an ergonomic
+quarter-of-RAM ceiling. The scheduler hands every concurrent slot its own port block, never co-schedules gates
+that name the same rundir, and keeps the running set inside a memory budget. **A gate with no
+`# GATE-PARALLEL:` line runs alone** and the run says so on stderr — a new gate is slow, not silently broken.
+
+Portable Windows baseline collection and the negative controls are described in
+[the compatibility protocol](run/compat/PROTOCOL.md).
 
 The rest (`m8`, `m10`, `m11`, `m18`–`m23`) each pin one previously-shipped defect. Sixteen of the twenty-five
 had not been run for a day when that was last measured, and one of them had been red the whole time — which is

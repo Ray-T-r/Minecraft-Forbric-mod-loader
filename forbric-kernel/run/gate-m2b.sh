@@ -15,6 +15,7 @@
 # M2B_BADPACKETS=/path/to/badpackets-forge-0.12.2.jar run/gate-m2b.sh
 # RED: add M2B_EXTRA_JVM=-Dforbric.kernelBundledFirst=off. The nested MixinExtras 0.3.5 then wins over
 # the supplied version, so the version/source assertions fail; the newer FAPI also requires EXPRESSION.
+# GATE-PARALLEL: rundirs=server-fabric-api,canary mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

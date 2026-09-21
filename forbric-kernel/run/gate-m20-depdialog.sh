@@ -28,6 +28,7 @@
 # HOW A DIALOG IS TESTED WITH NOBODY TO CLICK IT: -Dforbric.dependencyDialog=dryRun runs the real path — writes
 # the real report, forks the real child JVM, reads the real exit code — with AWT disabled inside the child, so it
 # finds it cannot draw and answers "launch anyway". Everything but the pixels.
+# GATE-PARALLEL: rundirs=server-depdialog,client-depdialog mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

@@ -5,6 +5,7 @@
 # server-loading trigger to the kernel's native lifecycle, seeds only passive genuine-loader identity, natively
 # registers both ecosystems' baseline registries + content (container factory + RegisterEvent dispatch + Forge
 # bake), and drives the vanilla server boot to Done — then ticks and shuts down cleanly.
+# GATE-PARALLEL: rundirs=server-kernel mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

@@ -102,10 +102,34 @@ Replacements must be labelled with their actual project and loader in the manife
 
 ## Gates and cadence
 
-`gates-all.sh` discovers every `run/gate-m*.sh` and runs in numerical order, including
+`gates-all.sh` discovers every `run/gate-m*.sh` and reports in numerical order, including
 network and GUI gates. `--list` is the actual glob. Use repeated `--skip <script.sh>`
-only when intentional; every skip prints a RESULT line. The default port is 25599.
+only when intentional; every skip prints a RESULT line.
 Logs and one-line results go to `build/gates/`, with a `summary.txt`.
+
+It runs several gates at once: `-j auto` (the default) sizes the pool from RAM and cores,
+`-j 1` is the old strictly-sequential run, `--mem-budget MB` caps what the running set may
+claim. `gates-parallel.py` does the scheduling and is where the reasoning lives. Each gate
+declares itself in one line near its top:
+
+    # GATE-PARALLEL: rundirs=server-kernel,canary mem=1500
+
+`rundirs` names what the gate owns while it runs — two gates naming the same one are never
+co-scheduled — and `mem` is what it costs. A gate WITHOUT that line runs alone, and the run
+says so in the progress log; a new gate is slow rather than silently unsound.
+
+Ports are per concurrent SLOT, not per gate: slot *i* gets `25700 + 10i`, and `GATE_PORT`,
+`M12_PORT`…`M16_PORT` and `M28_PORT` are exported to the gate from that block. A `GATE_PORT`
+already in the environment becomes the base instead. This is not tidiness: eighteen gates
+write `GATE_PORT` into `server.properties`, and the loser of a port race prints `FAILED TO
+BIND TO PORT` and then still prints `Stopping server` — so the clean-shutdown assertion
+passes and the gate reads green over a server that never started. The old default, 25599,
+is also `gate-m12`'s own `M12_PORT` default, which is exactly that collision.
+
+The script's output is exactly the RESULT lines, byte for byte the same as `summary.txt`.
+The running commentary — what started when, on which slot and port, what each gate cost, and
+what the run would have taken sequentially — goes to `build/gates/progress.log`; `--progress`
+also mirrors it to stderr.
 
 `gate-m25-worldgen.sh` still deliberately exposes the missing MinecraftForge biome-modifier
 mechanism (its Forge half is expected red until workstream D). `gate-m26-forgeclient.sh` was

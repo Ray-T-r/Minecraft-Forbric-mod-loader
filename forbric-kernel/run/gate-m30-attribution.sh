@@ -23,6 +23,7 @@
 #                                                     in the report — forbricabicanary is still named, by its
 #                                                     deferred task (J5), which is why the check is on the reason
 #   M30_EXTRA_JVM=-Dforbric.deadEventAudit=off        no DeadEvents line and no 'it listens for ItemTooltipEvent'
+# GATE-PARALLEL: rundirs=server-attribution,canary mem=1800
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

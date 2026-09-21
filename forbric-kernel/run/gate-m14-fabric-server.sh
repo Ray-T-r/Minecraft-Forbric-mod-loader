@@ -28,6 +28,7 @@
 # 0 lost, 34393 block states re-numbered, and both read back as themselves.
 #
 # Port 25602, not the default — a developer or another agent session may have a server on 25565.
+# GATE-PARALLEL: rundirs=fab-server,fab-client,canary mem=3500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

@@ -25,6 +25,7 @@
 # kernel's GameEventMultiplexer: it subscribes to NeoForge's ServerTickEvent (the surviving merged hook) and
 # re-emits MinecraftForge's, logging once at 20 forwards — so 20 forwards means both families ticked 20 times, once
 # each. Real mods don't count ticks, so this proof is kernel-instrumented rather than canary-emitted.
+# GATE-PARALLEL: rundirs=server-tri-real mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

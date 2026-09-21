@@ -23,6 +23,7 @@
 # ("Adding duplicate key 'neoforge:condition_codecs / balm:config'"), and NeoForge's error path answers that with
 # RegistryManager.revertToVanilla() — which silently rolled the registries back and destroyed 21 baseline entries.
 # The baseline counts below are therefore load-bearing, not decoration: they are how that rollback is detected.
+# GATE-PARALLEL: rundirs=server-neo-only mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

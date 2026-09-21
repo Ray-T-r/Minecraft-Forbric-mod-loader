@@ -24,6 +24,7 @@
 # NeoForge and Fabric halves of the client must both behave as they do against vanilla, i.e. stay quiet.
 #
 # Port 25601, not the default — a developer or another agent session may have a server on 25565.
+# GATE-PARALLEL: rundirs=ac-server,ac-client mem=4000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

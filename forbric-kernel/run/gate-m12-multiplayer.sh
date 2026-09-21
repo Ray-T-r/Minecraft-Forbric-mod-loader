@@ -40,6 +40,7 @@
 # Each is pinned below by an assertion that fails on the log line it used to produce. Both ends Forbric is what this
 # gate exercises; a Forbric client against a PURE Fabric server is gate-m14's job, and the wrappers follow that
 # server's ids there too.
+# GATE-PARALLEL: rundirs=mp-server,mp-client mem=3500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

@@ -27,6 +27,7 @@
 # RED (the strict error propagates instead of the kernel's tolerance lines); the server still reaches Done, because
 # PackMetadataFailSoft and the Fabric-dialect section carry the same packs through — the RED is the two lines.
 # -Dforbric.overlayConditions=off: the veto and the NOT-mounted checks go RED (recorded below the checks).
+# GATE-PARALLEL: rundirs=server-packmeta mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

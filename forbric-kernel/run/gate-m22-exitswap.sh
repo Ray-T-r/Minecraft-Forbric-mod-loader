@@ -14,6 +14,7 @@
 # So this launches with a COPY of the boot jar, destroys that copy while the client is in a world, and asserts
 # the quit is still a quit. The destruction is total (the file is truncated), which is far beyond a swap — if the
 # shutdown path survives that, it survives a replacement.
+# GATE-PARALLEL: rundirs=client-merged-pack mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

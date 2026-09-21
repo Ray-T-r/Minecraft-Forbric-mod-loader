@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # M28 — Forge COMMON configs load once and the carrier's native file watcher reads a live edit.
 # RED control: M28_EXTRA_JVM='-Dforbric.earlyConfigs=off' (no assertion is relaxed).
+# GATE-PARALLEL: rundirs=server-forge-config mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

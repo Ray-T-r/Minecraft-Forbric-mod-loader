@@ -15,6 +15,7 @@
 # what the negative control (-Dforbric.forgeHandshake=off) asserts.
 #
 # Port 25604, not the default — a developer or another agent session may have a server on 25565.
+# GATE-PARALLEL: rundirs=fhs-server,fhs-client mem=3500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

@@ -16,6 +16,7 @@
 # that traffic failed to encode or decode.
 #
 # Port 25603, not the default — a developer or another agent session may have a server on 25565.
+# GATE-PARALLEL: rundirs=fnet-server,fnet-client mem=3500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

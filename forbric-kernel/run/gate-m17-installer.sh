@@ -13,6 +13,7 @@
 #
 # The world, the assets and the LWJGL natives come from the real Minecraft install, exactly as a launcher would
 # supply them. The install directory itself is fresh every run.
+# GATE-PARALLEL: rundirs=installed,client-merged-pack mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

@@ -7,6 +7,7 @@
 # (no bridging line, probe = false, no end_stone, forbriclive named in load-report.txt) while NeoForge's stay green.
 # TEETH (recorded 2026-09-20): with the switch off the Forge half read 0 end_stone / probe = false; NeoForge purpur
 # and its probe = true were unchanged.
+# GATE-PARALLEL: rundirs=server-worldgen-canaries mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

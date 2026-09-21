@@ -29,6 +29,7 @@
 # AND BOTH FAMILIES, FROM ONE BOOT. Asserting only the traditional-Forge lines cannot tell "both families now get
 # the phase" apart from "delivery moved from one family to the other" — so the NeoForge canary subscribes to the
 # same six phases through its own bus shape and the gate asserts both sets.
+# GATE-PARALLEL: rundirs=server-forgesetup mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
