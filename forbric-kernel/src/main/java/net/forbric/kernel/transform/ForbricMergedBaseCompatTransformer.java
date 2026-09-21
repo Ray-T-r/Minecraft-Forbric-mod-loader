@@ -80,7 +80,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("45 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("46 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -89,7 +89,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -128,6 +128,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 								"WorldgenRandom's nextDouble() rounds through float and can return exactly 1.0 — out of "
 										+ "the [0,1) range every caller assumes")))
 				: scanned("restoreDoublePrecisionToTheRandomSources", "-D" + RANDOM_PRECISION_PROPERTY + "=off"));
+		out.add(fixed("convertRadiansWithVanillasFoldedConstant", "net/minecraft/world/entity/Entity",
+				"every angle the game computes from a vector is off in the eighth digit — the merged base divides by "
+						+ "pi at run time where vanilla multiplies by a constant it folded in float"));
 		out.add(fixed("guardNeoForgesWorldModifierPass", NEO_SERVER_LIFECYCLE_HOOKS,
 				"NeoForge's biome/structure modifier pass is neutered — every neoforge:biome_modifier does nothing"));
 		out.add(fixed("letForeignResourceConditionsThrough", ICONDITION,
@@ -261,6 +264,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "giveFeaturesPerStepItsVanillaDescriptorBack", giveFeaturesPerStepItsVanillaDescriptorBack(node));
 			changed |= claim(reporter, "letDungeonsGenerateWithoutTheDataMap", letDungeonsGenerateWithoutTheDataMap(node));
 			changed |= claim(reporter, "restoreDoublePrecisionToTheRandomSources", restoreDoublePrecisionToTheRandomSources(node));
+			changed |= claim(reporter, "convertRadiansWithVanillasFoldedConstant", convertRadiansWithVanillasFoldedConstant(node));
 			changed |= claim(reporter, "guardNeoForgesWorldModifierPass", guardNeoForgesWorldModifierPass(node));
 			changed |= claim(reporter, "letForeignResourceConditionsThrough", letForeignResourceConditionsThrough(node));
 			changed |= claim(reporter, "letForeignResourceConditionsThroughMinecraftForge", letForeignResourceConditionsThroughMinecraftForge(node));
@@ -1733,6 +1737,69 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "merged body rounded through float, which displaces every noise octave's origin and lets "
 				+ "nextDouble() return exactly 1.0",
 				node.name.replace('/', '.'), repaired, String.join(", ", methods));
+		return true;
+	}
+
+	private static final double HALF_TURN_IN_DEGREES = 180.0;
+	/** {@code (double)(float)Math.PI} — what the decompiler wrote where vanilla's source said {@code (float)Math.PI}. */
+	private static final double PI_AS_FLOAT = (double) (float) Math.PI;
+	/** Vanilla's own constant: the same expression folded in FLOAT at compile time, then widened. */
+	private static final double RADIANS_TO_DEGREES = (double) (float) (180.0F / (float) Math.PI);
+
+	/**
+	 * Restores the radians-to-degrees constant vanilla folded, which the merged base recomputes at run time.
+	 *
+	 * <p>Vanilla's source multiplies by a compile-time constant: {@code (double)(180.0F / (float)Math.PI)}, which
+	 * javac folds in FLOAT and widens, giving {@code ldc2_w 57.2957763671875; dmul}. The merged base instead
+	 * carries the expression — {@code ldc2_w 180.0; dmul; ldc2_w 3.1415927410125732; ddiv} — and evaluates it in
+	 * DOUBLE every time, which is a different number: 57.29577791868205. They differ by 1.55e-6, a relative
+	 * 2.7e-8, and the merged one is the more accurate of the two. Accuracy is not the question; being the game
+	 * the same seed and the same inputs produce elsewhere is.
+	 *
+	 * <p>45 sites across 31 methods, and they are the ones that turn a direction into a rotation:
+	 * {@code Entity.lookAt}, {@code Mob.lookAt}, {@code MoveControl.tick} and its flying, swimming and
+	 * mob-specific siblings, {@code LookControl.getYRotD}, {@code Projectile.shoot} and {@code updateRotation},
+	 * {@code ProjectileUtil.rotateTowardsMovement}, {@code CommandSourceStack.facing}, the dragon phases,
+	 * {@code WitherBoss.aiStep}, {@code SignBlockEntity.isFacingFrontText}. Vanilla 26.2 has ZERO sites of this
+	 * shape; the merged base has 45.
+	 *
+	 * <p>Same origin as {@link #restoreDoublePrecisionToTheRandomSources(ClassNode)} and the same blind spot:
+	 * NeoForge's decompile-recompile pipeline wrote the folded constant back out as its expression, the byte
+	 * merge kept that body, and because the method names no class from any ecosystem,
+	 * {@code merge-conflicts.txt} — which reports conflicts by reference — never mentioned it. A differential
+	 * census of all 94,202 shared methods, normalised for everything a recompile may legally change, found
+	 * exactly two families of this kind: that one and this one.
+	 *
+	 * <p>Four instructions become two, the multiply is reused where it stands, and the peak stack only falls, so
+	 * nothing about the frame needs adjusting.
+	 */
+	private static boolean convertRadiansWithVanillasFoldedConstant(ClassNode node) {
+		if (!node.name.startsWith("net/minecraft/")) return false;
+		int folded = 0;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof LdcInsnNode degrees) || !Double.valueOf(HALF_TURN_IN_DEGREES).equals(degrees.cst)) {
+					continue;
+				}
+				AbstractInsnNode multiply = nextReal(insn);
+				if (multiply == null || multiply.getOpcode() != Opcodes.DMUL) continue;
+				AbstractInsnNode circle = nextReal(multiply);
+				if (!(circle instanceof LdcInsnNode pi) || !Double.valueOf(PI_AS_FLOAT).equals(pi.cst)) continue;
+				AbstractInsnNode divide = nextReal(circle);
+				if (divide == null || divide.getOpcode() != Opcodes.DDIV) continue;
+
+				degrees.cst = RADIANS_TO_DEGREES;
+				method.instructions.remove(circle);
+				method.instructions.remove(divide);
+				insn = multiply;
+				folded++;
+			}
+		}
+		if (folded == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] %s turns radians into degrees by vanilla's folded constant again "
+				+ "(%d site(s)) — the merged body divided by pi at run time, which is a different number in the "
+				+ "eighth digit and moves every angle computed from a vector",
+				node.name.replace('/', '.'), folded);
 		return true;
 	}
 
