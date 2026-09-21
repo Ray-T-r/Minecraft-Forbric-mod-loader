@@ -159,8 +159,16 @@ class DependencyDialogTest {
 
 		String change = DependencyDialogMain.fixes(EN, List.of(wrongVersion()), List.of());
 		assertFalse(change.contains("Install sodium"), "sodium is installed: " + change);
-		assertTrue(change.contains("Change sodium to a version inside 0.9.x"), change);
+		assertTrue(change.contains("Change sodium to a version that matches 0.9.x"), change);
 		assertTrue(change.contains("0.8.1"), change);
+
+		// The constraint is not always a range: ">=2.0.0" and "*" are as common as "[1.0,2.0)". "a version
+		// inside >=2.0.0" is not a sentence, and a suggestion that reads as broken English is a suggestion a
+		// player discounts.
+		String operator = DependencyDialogMain.fixes(EN,
+				List.of(new Row("x", "X", "FABRIC", "dep", ">=2.0.0", "1.0.0")), List.of());
+		assertTrue(operator.contains("a version that matches >=2.0.0"), operator);
+		assertFalse(operator.contains("inside >=2.0.0"), operator);
 	}
 
 	@Test

@@ -240,7 +240,7 @@ public final class DialogLang {
 			"fix.header", "What might fix it:",
 			"fix.install", "Install {0}. {1} is a {2} mod, so the {2} build is the safest one to get — on Forbric "
 					+ "a build for another loader can satisfy it too.",
-			"fix.version", "Change {0} to a version inside {1}. You have {2}.",
+			"fix.version", "Change {0} to a version that matches {1}. You have {2}.",
 			"fix.mixin", "Both mods are installed and neither is missing anything — only their builds do not "
 					+ "match. A version of {0} released around the same time as the mod it attaches to may fix it.",
 			"fix.remove", "Or take {0} out of your mods folder. Forbric keeps loading everything else, so the "
@@ -284,7 +284,7 @@ public final class DialogLang {
 			"bullet.mixin", "{0} 没能接上它本来要配合的那个 mod",
 			"fix.header", "可以试试这些：",
 			"fix.install", "装上 {0}。{1} 是 {2} 的 mod，所以下 {2} 版最稳妥 —— 在 Forbric 上，别的加载器的版本也可能顶用。",
-			"fix.version", "把 {0} 换成 {1} 范围内的版本。你现在装的是 {2}。",
+			"fix.version", "把 {0} 换成符合 {1} 的版本。你现在装的是 {2}。",
 			"fix.mixin", "两个 mod 都装了，也都不缺东西，只是这两个版本不配套。把 {0} 换成和它要配合的那个 mod "
 					+ "同期发布的版本，可能就好了。",
 			"fix.remove", "或者把 {0} 从 mods 文件夹里拿出来。Forbric 会照常加载其余的 mod，别的照样能玩。",
@@ -327,7 +327,7 @@ public final class DialogLang {
 			"fix.header", "可能的解決方法：",
 			"fix.install", "安裝 {0}。{1} 是 {2} 模組，所以裝 {2} 版本最保險——在 Forbric "
 					+ "上，做給其他載入器的版本通常也能滿足它。",
-			"fix.version", "把 {0} 換成 {1} 範圍內的版本。你現在裝的是 {2}。",
+			"fix.version", "把 {0} 換成符合 {1} 的版本。你現在裝的是 {2}。",
 			"fix.mixin", "兩個模組都有安裝，也都不缺前置模組——只是這兩個版本搭不起來。換一個和它要搭配的模組差不多時"
 					+ "期發布的 {0}，也許就能解決。",
 			"fix.remove", "或者把 {0} 從 mods 資料夾移走。Forbric 會照常載入其餘模組，你其他的模組還是能用。",
@@ -371,7 +371,7 @@ public final class DialogLang {
 			"fix.install", "{0} をインストールしてください。{1} は {2} 向けのMODなので、{2} "
 					+ "版を入れるのがいちばん確実です——Forbric では別のローダー向けの版でも条件を満たせることがあり"
 					+ "ます。",
-			"fix.version", "{0} を {1} の範囲内のバージョンに変えてください。現在は {2} です。",
+			"fix.version", "{0} を {1} に一致するバージョンに変えてください。現在は {2} です。",
 			"fix.mixin", "どちらのMODもインストールされていて、足りないものもありません——ただ、ビルドどうしがかみ合"
 					+ "っていないだけです。組み込み先のMODと近い時期に公開された {0} のバージョンにすると、直ること"
 					+ "があります。",
@@ -418,7 +418,7 @@ public final class DialogLang {
 			"fix.header", "이렇게 하면 해결될 수 있습니다:",
 			"fix.install", "{0}을(를) 설치해 보세요. {1}은(는) {2} 모드이므로 {2} 버전을 받는 것이 가장 안전합니다 "
 					+ "- Forbric에서는 다른 로더용 버전으로도 해결될 수 있습니다.",
-			"fix.version", "{0}을(를) {1} 범위 안의 버전으로 바꿔 보세요. 지금 설치된 버전은 {2}입니다.",
+			"fix.version", "{0}을(를) {1}에 맞는 버전으로 바꿔 보세요. 지금 설치된 버전은 {2}입니다.",
 			"fix.mixin", "두 모드 모두 설치되어 있고 빠진 것도 없습니다. 단지 두 빌드가 서로 맞지 않을 뿐입니다. "
 					+ "연결 대상 모드와 비슷한 시기에 나온 {0} 버전을 쓰면 해결될 수 있습니다.",
 			"fix.remove", "또는 {0}을(를) mods 폴더에서 빼도 됩니다. Forbric은 나머지를 계속 불러오므로 다른 모드는 "
@@ -465,7 +465,7 @@ public final class DialogLang {
 			"fix.header", "Что может помочь:",
 			"fix.install", "Установите {0}. {1} — это мод для {2}, поэтому надёжнее всего взять сборку для {2}, но "
 					+ "в Forbric подойдёт и сборка для другого загрузчика.",
-			"fix.version", "Смените {0} на версию из диапазона {1}. Сейчас установлена {2}.",
+			"fix.version", "Смените {0} на версию, подходящую под {1}. Сейчас установлена {2}.",
 			"fix.mixin", "Оба мода установлены, и ни одному из них ничего не хватает — просто их сборки не "
 					+ "совпадают. Может помочь версия {0}, вышедшая примерно тогда же, что и мод, к которому она "
 					+ "подключается.",
@@ -511,7 +511,7 @@ public final class DialogLang {
 			"fix.header", "Was helfen könnte:",
 			"fix.install", "Installiere {0}. {1} ist ein {2}-Mod, daher ist die {2}-Fassung am sichersten - unter "
 					+ "Forbric kann auch eine Fassung für einen anderen Mod-Loader genügen.",
-			"fix.version", "Wechsle bei {0} auf eine Version aus dem Bereich {1}. Installiert ist {2}.",
+			"fix.version", "Wechsle bei {0} auf eine Version, die zu {1} passt. Installiert ist {2}.",
 			"fix.mixin", "Beide Mods sind installiert, und keinem fehlt etwas - nur ihre Fassungen passen nicht "
 					+ "zueinander. Eine Version von {0}, die etwa zur gleichen Zeit erschienen ist wie der Mod, "
 					+ "mit dem sie sich verbinden soll, kann das beheben.",
@@ -560,7 +560,7 @@ public final class DialogLang {
 			"fix.header", "Ce qui peut régler le problème :",
 			"fix.install", "Installez {0}. {1} est un mod {2}, donc la version {2} est la plus sûre à récupérer - "
 					+ "sur Forbric, une version prévue pour un autre chargeur de mods peut aussi faire l'affaire.",
-			"fix.version", "Remplacez {0} par une version comprise dans {1}. Vous avez la {2}.",
+			"fix.version", "Remplacez {0} par une version qui correspond à {1}. Vous avez la {2}.",
 			"fix.mixin", "Les deux mods sont installés et il ne manque rien à aucun des deux - ce sont seulement "
 					+ "leurs versions qui ne correspondent pas. Une version de {0} sortie à peu près en même temps "
 					+ "que le mod auquel il se greffe peut régler le problème.",
@@ -607,7 +607,7 @@ public final class DialogLang {
 			"fix.header", "Lo que podría solucionarlo:",
 			"fix.install", "Instala {0}. {1} es un mod de {2}, así que la versión para {2} es la más segura de "
 					+ "conseguir; en Forbric una versión hecha para otro cargador también puede servir.",
-			"fix.version", "Cambia {0} a una versión dentro de {1}. Tienes {2}.",
+			"fix.version", "Cambia {0} a una versión que coincida con {1}. Tienes {2}.",
 			"fix.mixin", "Ambos mods están instalados y a ninguno le falta nada; lo único que no coincide son sus "
 					+ "versiones. Una versión de {0} publicada más o menos en la misma época que el mod al que se "
 					+ "acopla podría solucionarlo.",
@@ -654,7 +654,7 @@ public final class DialogLang {
 			"fix.header", "O que pode resolver:",
 			"fix.install", "Instale {0}. {1} é um mod {2}, então a versão para {2} é a mais segura de pegar - no "
 					+ "Forbric, uma versão feita para outro loader também pode servir.",
-			"fix.version", "Troque {0} por uma versão dentro de {1}. Você tem a {2}.",
+			"fix.version", "Troque {0} por uma versão que corresponda a {1}. Você tem a {2}.",
 			"fix.mixin", "Os dois mods estão instalados e não falta nada para nenhum deles - só as versões é que "
 					+ "não combinam. Uma versão de {0} lançada mais ou menos na mesma época do mod ao qual ele se "
 					+ "encaixa pode resolver.",
