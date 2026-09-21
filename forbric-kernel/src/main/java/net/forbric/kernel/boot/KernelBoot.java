@@ -43,6 +43,7 @@ import net.forbric.kernel.mixin.MixinConfigOwners;
 import net.forbric.kernel.transform.ClientPackHookInjector;
 import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.CommonNetworkInteropInjector;
+import net.forbric.kernel.transform.ForgeOverlayNeuterInjector;
 import net.forbric.kernel.transform.SodiumConfigUserBridgeInjector;
 import net.forbric.kernel.transform.DataPackHookInjector;
 import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
@@ -577,6 +578,7 @@ public final class KernelBoot {
 		if (!"off".equalsIgnoreCase(System.getProperty("forbric.commonNetworkInterop", "on"))) {
 			chain.register(TransformPhase.COREMOD, new CommonNetworkInteropInjector());
 			chain.register(TransformPhase.COREMOD, new SodiumConfigUserBridgeInjector());
+			chain.register(TransformPhase.COREMOD, new ForgeOverlayNeuterInjector());
 		} else {
 			ForbricLog.warn("[Forbric/Net] common-networking arbitration DISABLED — a tri-in-one client will be "
 					+ "kicked \"invalid packet\" when Fabric's addon is handed a NeoForge payload");
