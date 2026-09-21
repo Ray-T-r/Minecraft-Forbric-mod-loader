@@ -113,6 +113,9 @@ public final class KernelGuestMixinAdapter {
 		if (mixins.isEmpty()) return List.of();
 
 		String pkgPath = pkg.replace('.', '/');
+		// A config that declares a plugin can have switched a mixin off itself, and the plugin is never asked
+		// about an entry this method removes. PluginDeclinedMixins holds the attribution back to ask it later.
+		String pluginClass = asString(config.get(List.of("plugin")));
 		Map<String, byte[]> loaded = new LinkedHashMap<>();
 		List<String> suppress = new ArrayList<>();
 
@@ -207,7 +210,12 @@ public final class KernelGuestMixinAdapter {
 				suppress.add(mixin);
 				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — %s on the merged base (%s)",
 						MixinConfigOwners.describe(configName), mixin, fit.verdict(), fit.reason());
-				attribute(configName, "guest mixin " + mixin + " did not fit the merged game and was left out");
+				String detail = "guest mixin " + mixin + " did not fit the merged game and was left out";
+				List<String> targets = MixinFit.mixinTargets(MixinFit.parse(classBytes));
+				if (!PluginDeclinedMixins.defer(configName, pluginClass, mixin, pkg + "." + mixin,
+						targets.isEmpty() ? null : targets.get(0).replace('/', '.'), detail)) {
+					attribute(configName, detail);
+				}
 			} catch (RuntimeException perMixin) {
 				ForbricLog.debug("[Forbric/Mixin] could not scan guest mixin %s:%s — %s", MixinConfigOwners.describe(configName), mixin,
 						String.valueOf(perMixin));

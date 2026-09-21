@@ -157,6 +157,16 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 
 		wrapper.tryCatchBlocks.add(new TryCatchBlockNode(start, end, handler, "java/lang/Throwable"));
 
+		if ("onLoad".equals(original)) {
+			// Mixin calls onLoad exactly once, right after it constructs the plugin and before it asks it
+			// anything, so this is where the instance can be captured for PluginDeclinedMixins to ask later.
+			// Outside the try/catch on purpose: the callee has its own, and keeping the protected region to the
+			// delegation alone keeps the handler's hand-written frame exactly "the starting locals, one
+			// Throwable" — see the note on this method.
+			code.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, GUARD, "rememberPlugin", "(Ljava/lang/Object;)V", false));
+		}
+
 		code.add(start);
 		code.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		int slot = 1;
@@ -195,6 +205,20 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 			case Type.DOUBLE -> new InsnNode(Opcodes.DCONST_0);
 			default -> new InsnNode(Opcodes.ICONST_0);
 		};
+	}
+
+	/**
+	 * Called from the generated {@code onLoad} wrapper, with the plugin Mixin just built.
+	 *
+	 * <p>Never throws into the guest: a plugin that cannot be remembered only costs the later question, and
+	 * {@link net.forbric.kernel.mixin.PluginDeclinedMixins} attributes when it has no answer.
+	 */
+	public static void rememberPlugin(Object plugin) {
+		try {
+			net.forbric.kernel.mixin.PluginDeclinedMixins.rememberPlugin(plugin);
+		} catch (Throwable ignored) {
+			// deliberately silent: this is bookkeeping for a report, on the boot path of every plugin
+		}
 	}
 
 	/** Called from the generated handler. Reports each plugin/method pair once, however often it throws. */

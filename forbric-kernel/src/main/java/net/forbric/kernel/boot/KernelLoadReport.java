@@ -86,6 +86,10 @@ public final class KernelLoadReport {
 	/** The write with its destination explicit (null: log only), so a test can watch a file it owns. */
 	static void writeTo(Path file) {
 		try {
+			// Attributions held back until the mod's own mixin config plugin could be asked. Settled here rather
+			// than where the suppression was decided, because the plugin does not exist yet at that point — and
+			// settled before failures() is read, so the first report is already the corrected one.
+			net.forbric.kernel.mixin.PluginDeclinedMixins.resolve();
 			List<ModCatalog.Entry> failures = ModCatalog.failures();
 			if (failures.isEmpty()) {
 				if (reported.compareAndSet(false, true)) ForbricLog.info("[Forbric/Load] every mod finished loading");

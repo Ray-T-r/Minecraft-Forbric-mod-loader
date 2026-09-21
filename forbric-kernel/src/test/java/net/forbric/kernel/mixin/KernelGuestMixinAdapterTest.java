@@ -203,6 +203,12 @@ class KernelGuestMixinAdapterTest {
 		return sb.toString().getBytes(StandardCharsets.UTF_8);
 	}
 
+	/** The same config with a {@code plugin}, which is what makes the attribution deferrable. */
+	private static byte[] configWithPlugin(String pkg, String plugin, String... clientMixins) {
+		String json = new String(config(pkg, clientMixins), StandardCharsets.UTF_8);
+		return json.replaceFirst("^\\{", "{\"plugin\":\"" + plugin + "\",").getBytes(StandardCharsets.UTF_8);
+	}
+
 	private static Function<String, byte[]> resolver(Map<String, byte[]> classes) {
 		return path -> classes.get(path);
 	}
@@ -265,6 +271,37 @@ class KernelGuestMixinAdapterTest {
 			assertEquals(ModCatalog.Status.DEGRADED, xmod.status());
 			assertTrue(xmod.statusDetail().contains("Dangling"), xmod.statusDetail());
 		} finally {
+			MixinConfigOwners.reset();
+			ModCatalog.publish(previous);
+		}
+	}
+
+	@Test
+	void aConfigWithAPluginHoldsTheMarkBackUntilThePluginIsAsked() {
+		List<ModCatalog.Entry> previous = ModCatalog.everything();
+		try {
+			PluginDeclinedMixins.reset();
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("p.mixins.json", "pmod", Ecosystem.FABRIC)));
+			ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "pmod", "P", "1", "", List.of(), "p.jar", "", "")));
+			String t = "net/minecraft/client/renderer/GameRenderer";
+			Map<String, byte[]> classes = new HashMap<>();
+			classes.put(t + ".class", target(t, "unused", Opcodes.ACC_PRIVATE, true));
+			classes.put(PKG + "/Dangling.class", danglingMixin("Dangling", t));
+
+			// Same suppression as the test above; the only difference is that this config declares a plugin, and
+			// the plugin is the one party that knows whether the mod wanted this mixin here at all.
+			assertEquals(List.of("Dangling"), KernelGuestMixinAdapter.unfitMixins("p.mixins.json",
+					configWithPlugin(PKG.replace('/', '.'), "com.example.ExamplePlugin", "Dangling"),
+					resolver(classes)));
+			assertTrue(ModCatalog.failures().isEmpty(), "the mark waits for the plugin's answer");
+			assertEquals(1, PluginDeclinedMixins.pending());
+
+			// No plugin instance was ever built, so there is no answer — and no answer marks the mod.
+			PluginDeclinedMixins.resolve();
+			assertEquals(1, ModCatalog.failures().size());
+			assertTrue(ModCatalog.failures().get(0).statusDetail().contains("Dangling"));
+		} finally {
+			PluginDeclinedMixins.reset();
 			MixinConfigOwners.reset();
 			ModCatalog.publish(previous);
 		}
