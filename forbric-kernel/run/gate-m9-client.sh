@@ -68,6 +68,12 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #   -Dforbric.keyModifierSuffix=off -> 2 red ("the key-modifier suffix is dropped before the name is parsed",
 #                                             "options.txt loads with modded modifier bindings in it")
 #   -Dforbric.carrierLanguages=off -> 2 red ("NeoForge's own screens have their text", "and MinecraftForge's do too")
+#   -Dforbric.splitterPacketContext=off -> 2 red ("NeoForge's splitter encodes in Fabric's packet context",
+#                                      and the anchor census noticing a repair that was handed its target and
+#                                      declined — which is the switch working, said twice).
+#                                      Off, a Fabric codec reading PacketContext.get() from inside NeoForge's
+#                                      splitter sees null; with Polymer in the pack that is update_recipes
+#                                      failing to encode and the client disconnected at world join.
 #   -Dforbric.itemTooltipBridge=off -> 1 red ("a NeoForge mod can add a line to an item's tooltip"). Off, the
 #                                      merged getTooltipLines posts only MinecraftForge's event and every
 #                                      NeoForge mod's tooltip line goes into a list nobody built.
@@ -684,6 +690,11 @@ check_absent "no callback group is broken by a point the kernel moved" \
 
 # Asserted on the POST, not on the transformer's line: the seam being in the bytecode is what the census proves,
 # and what a player gets is the event actually firing while a tooltip is built.
+# Asserted on the transformer, not the runtime line: the splitter only announces itself once a Fabric packet
+# context exists to bind, and this pack has no mod that needs one — what must hold here is that the seam is in.
+check "NeoForge's splitter encodes in Fabric's packet context" \
+  "\[Forbric/Net\] .*GenericPacketSplitter.encode now runs inside the connection's Fabric packet context" "$LOG"
+
 check "a NeoForge mod can add a line to an item's tooltip" \
   "\[Forbric/Tooltips\] NeoForge's ItemTooltipEvent is posted beside MinecraftForge's" "$LOG"
 

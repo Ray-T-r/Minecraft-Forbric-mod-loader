@@ -101,6 +101,12 @@ public final class KernelRuntimeClasses {
 		// Its one entry point takes six GAME types, which cannot be named from here — the descriptor the
 		// transformer writes is the contract, and TransformerAnchorCensusTest is what holds the two in step.
 		CLASSES.put("net.forbric.kernel.runtime.KernelItemTooltips", new Entry(Origin.COMPILED, List.of()));
+		// Every parameter is Object (netty is not on the runtime source set's compile path), so the call CAN be
+		// checked: a rename on either side becomes one line at the top of the log instead of an AbstractMethodError
+		// inside the netty pipeline.
+		CLASSES.put("net.forbric.kernel.runtime.KernelPacketContext", new Entry(Origin.COMPILED, List.of(
+				new Call("encodeInFabricContext", void.class, Object.class, Object.class, Object.class,
+						Object.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeContainers", new Entry(Origin.COMPILED, List.of(
 				new Call("create", KernelForgeModContext.Handle.class, String.class),
 				new Call("setActiveContainer", void.class, Object.class),

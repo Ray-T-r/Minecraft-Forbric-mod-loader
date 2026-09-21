@@ -424,6 +424,12 @@ public final class KernelBoot {
 		// dedicated server never loads.)
 		chain.register(TransformPhase.COREMOD, new ClientPackHookInjector());
 
+		// NeoForge's packet splitter is a second encoder in the same pipeline as PacketEncoder, and Fabric binds
+		// its packet context only around the latter. A Fabric codec that reads it from inside the splitter — as
+		// Polymer's ingredient codec does for every recipe — got null and the recipe packet failed to encode.
+		chain.register(TransformPhase.COREMOD,
+				new net.forbric.kernel.transform.SplitterPacketContextInjector());
+
 		// …and keep the packs it serves OUT of the player's resource-pack screen. Pack.isHidden survived the
 		// merge; the screen-side filter that reads it did not.
 		chain.register(TransformPhase.COREMOD,

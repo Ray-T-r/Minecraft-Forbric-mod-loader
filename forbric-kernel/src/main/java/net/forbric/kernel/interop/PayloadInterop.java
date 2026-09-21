@@ -749,7 +749,63 @@ public final class PayloadInterop {
 		if (accessor == null) return false;
 		try {
 			Object payload = accessor.invoke(packet);
-			return payload != null && FORGE_PAYLOAD.equals(payload.getClass().getName());
+			if (payload == null) return false;
+			if (FORGE_PAYLOAD.equals(payload.getClass().getName())) return true;
+			return notNeoForgesToPolice(payload);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			return false;
+		}
+	}
+
+	/** Channels already let past, so the log says it once per channel rather than once per packet. */
+	private static final Set<String> UNPOLICED = Collections.synchronizedSet(new LinkedHashSet<>());
+
+	/**
+	 * Whether {@code payload}'s channel belongs to a negotiation NeoForge is not part of.
+	 *
+	 * <p>NeoForge's check asks the CONNECTION whether it negotiated this channel. Under Forbric the other two
+	 * ecosystems negotiate their own — Fabric's {@code c:register}, MinecraftForge's handshake — and a channel
+	 * from either is absent from NeoForge's view by construction. Its answer for a channel it does not know is to
+	 * close the connection, which is a verdict about a conversation it is not in.
+	 *
+	 * <p>Polymer is the case that paid for it. It registers its payloads through its own codec patch rather than
+	 * Fabric's registry, so nothing mirrors them into NeoForge, and joining a world died on "Payload
+	 * polymer:handshake may not be sent to the server!" after the packet had already encoded perfectly well.
+	 *
+	 * <p>Two guards keep this narrow. A payload class from {@code net.minecraft} or {@code net.neoforged} is never
+	 * exempt whatever the registry holds: {@code minecraft:brand} and {@code neoforge:register} are not in
+	 * PAYLOAD_REGISTRATIONS either, and letting those past would turn "not NeoForge's channel" into "no channel is
+	 * policed". And a payload NeoForge DID register is still policed, so every NeoForge mod keeps the check its
+	 * own loader gives it — including the ones the kernel mirrors in from Fabric's registry.
+	 */
+	private static boolean notNeoForgesToPolice(Object payload) {
+		String payloadClass = payload.getClass().getName();
+		if (payloadClass.startsWith("net.minecraft.") || payloadClass.startsWith("net.neoforged.")) return false;
+
+		Class<?> registryClass = load(payload.getClass().getClassLoader(), NEO_NETWORK_REGISTRY);
+		if (registryClass == null) return false;
+		try {
+			Object type = invokeNoArg(payload, "type");
+			Object id = type == null ? null : invokeNoArg(type, "id");
+			if (id == null) return false;
+
+			Field registrationsField = findField(registryClass, "PAYLOAD_REGISTRATIONS");
+			if (registrationsField == null) return false;
+			registrationsField.setAccessible(true);
+			@SuppressWarnings("unchecked")
+			Map<Object, Map<Object, Object>> registrations =
+					(Map<Object, Map<Object, Object>>) registrationsField.get(null);
+			if (registrations == null || registrations.isEmpty()) return false;
+			for (Map<Object, Object> protocolMap : registrations.values()) {
+				if (protocolMap != null && protocolMap.containsKey(id)) return false;
+			}
+
+			if (UNPOLICED.add(String.valueOf(id))) {
+				ForbricLog.info("[Forbric/Net] %s is not a channel NeoForge registered, so its channel check is not "
+						+ "the authority on it — another ecosystem negotiated this one, and NeoForge's answer for a "
+						+ "channel it does not know is to close the connection", id);
+			}
+			return true;
 		} catch (ReflectiveOperationException | RuntimeException e) {
 			return false;
 		}
