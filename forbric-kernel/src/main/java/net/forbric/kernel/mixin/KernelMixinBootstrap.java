@@ -111,8 +111,18 @@ public final class KernelMixinBootstrap {
 		// request (org.spongepowered.asm.synthetic.*). transformClassBytes handles both. PostMixinFixups then repairs
 		// the handful of classes a guest mixin wove wrong because the byte-merge restructured the target (e.g.
 		// PackMixin's field initializer mis-woven into NeoForge's recursive Pack ctor).
-		loader.setMixinTransformer((name, bytes) ->
-				PostMixinFixups.apply(name, transformer.transformClassBytes(name, name, bytes)));
+		// Two unrelated interfaces each supplying the same default is an error the IMPLEMENTOR must settle, and
+		// only after weaving is the second interface on the class at all — so this is the one point where it can
+		// be seen. See InterfaceDefaultConflictRepair.
+		var conflicts = new net.forbric.kernel.transform.InterfaceDefaultConflictRepair(internalName -> {
+			try (var in = loader.getResourceAsStream(internalName + ".class")) {
+				return in == null ? null : in.readAllBytes();
+			} catch (Throwable unreadable) {
+				return null;
+			}
+		});
+		loader.setMixinTransformer((name, bytes) -> conflicts.transform(name, bytes,
+				PostMixinFixups.apply(name, transformer.transformClassBytes(name, name, bytes))));
 
 		// Leave PREINIT so the registered configs are prepared and their targets become weavable.
 		gotoPhase(MixinEnvironment.Phase.INIT);
