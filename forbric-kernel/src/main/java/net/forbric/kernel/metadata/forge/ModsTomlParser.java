@@ -70,7 +70,11 @@ public final class ModsTomlParser {
 					getString(modConfig, "displayName"),
 					getString(modConfig, "description"),
 					parseDependencies(dependenciesTable, modId),
-					parseProperties(propertiesTable, modId));
+					parseProperties(propertiesTable, modId),
+					// The whole [[mods]] entry as plain data. Walked by ENTRY like the properties table, for the
+					// same reason: iris' key is the single literal "mixin.features.render.world.sky", and
+					// night-config's get(String) is a DOTTED PATH lookup that would split it into five.
+					toPlain(modConfig) instanceof Map<?, ?> entryTable ? castProperties(entryTable) : Map.of());
 
 			mods.add(entry);
 		}

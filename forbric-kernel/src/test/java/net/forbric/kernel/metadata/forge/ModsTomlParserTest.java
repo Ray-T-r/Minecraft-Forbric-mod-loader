@@ -96,6 +96,50 @@ class ModsTomlParserTest {
 				"a mod with no table gets an empty map, never null");
 	}
 
+	/**
+	 * The {@code [[mods]]} entry itself, which {@code IConfigurable.getConfigElement} answers from.
+	 *
+	 * <p>Pinned on iris' real declaration: it switches OFF the sodium mixin that draws the sky, because iris
+	 * draws the sky itself. The kernel answered every such query with an empty Optional, so the override reached
+	 * nobody — {@code Loaded configuration file for Sodium: 37 options available, 0 override(s) found}.
+	 *
+	 * <p>The trap is the KEY. {@code mixin.features.render.world.sky} is ONE literal key containing dots, and
+	 * night-config's {@code get(String)} is a dotted-PATH lookup that would split it into five levels and find
+	 * nothing. The table is walked by entry, and the value must stay a {@code Boolean} — a stringified
+	 * {@code "false"} makes sodium warn about an invalid value instead of applying it.
+	 */
+	@Test
+	void parsesTheModsEntryIncludingADottedKeyThatIsOneKey() {
+		String toml = """
+				modLoader="javafml"
+				loaderVersion="[1,)"
+				[[mods]]
+				modId="iris"
+				version="1.11.4"
+				displayName="Iris"
+				[mods."sodium:options"]
+				"mixin.features.render.world.sky" = false
+				[[mods]]
+				modId="plain"
+				version="1.0"
+				""";
+
+		ForgeModsToml parsed = ModsTomlParser.parse(toml);
+		ForgeModEntry iris = parsed.getMods().get(0);
+		assertEquals("iris", iris.getModId());
+
+		Map<String, Object> entry = iris.getConfigElements();
+		assertEquals("iris", entry.get("modId"), "the entry carries its own scalars");
+		assertEquals("Iris", entry.get("displayName"));
+
+		Object sodium = entry.get("sodium:options");
+		assertInstanceOf(Map.class, sodium, "the colon-bearing sub-table name survives as one key");
+		assertEquals(Boolean.FALSE, ((Map<?, ?>) sodium).get("mixin.features.render.world.sky"),
+				"one literal dotted key, not five nested levels, and still a Boolean");
+		assertFalse(sodium instanceof com.electronwill.nightconfig.core.UnmodifiableConfig,
+				"night-config types must not escape the parser");
+	}
+
 	@Test
 	void parsesLoaderHeader() {
 		ForgeModsToml toml = parseSample();

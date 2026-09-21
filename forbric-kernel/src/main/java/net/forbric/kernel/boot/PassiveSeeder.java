@@ -780,6 +780,64 @@ public final class PassiveSeeder {
 		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, EMPTY_CONFIGURABLE);
 	}
 
+	/** {@code -Dforbric.configElements=off} restores the empty answer this used to give. */
+	private static final String CONFIG_ELEMENTS = "forbric.configElements";
+
+	static boolean configElementsEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(CONFIG_ELEMENTS, "on"));
+	}
+
+	/**
+	 * An {@code IConfigurable} that answers from the mod's own {@code [[mods]]} entry.
+	 *
+	 * <p>{@code getConfigElement} is how a mod tells ANOTHER mod something through the loader. Sodium's
+	 * {@code ForgeMixinOverrides} walks {@code LoadingModList} asking each {@code IModInfo} for
+	 * {@code sodium:options}, so a mod that has taken over a renderer can switch off the sodium mixin that
+	 * would otherwise do the same work twice — iris declares
+	 * {@code [mods."sodium:options"] "mixin.features.render.world.sky" = false} for the sky it draws itself.
+	 * Every seeded mod answered {@link #EMPTY_CONFIGURABLE}, so the table reached nobody:
+	 * {@code Loaded configuration file for Sodium: 37 options available, 0 override(s) found}.
+	 *
+	 * <p>A PARALLEL path, not a re-route: {@link #EMPTY_CONFIGURABLE} stays the one shared instance for mods
+	 * with nothing to declare, which is what {@code EmptyConfigurableTest} asserts by identity.
+	 *
+	 * <p>Dispatches on the method NAME for the reason given on {@link #EMPTY_CONFIGURABLE}: a {@link Proxy}
+	 * routes DEFAULT methods to the handler too, and traditional Forge's interface declares two single-String
+	 * overloads NeoForge's does not. Each path element is a LITERAL key — never split on dots, because iris'
+	 * key is the single literal {@code mixin.features.render.world.sky}.
+	 */
+	private static Object configurableOver(ClassLoader gameLoader, Ecosystem family, Map<String, Object> elements)
+			throws Exception {
+		if (elements == null || elements.isEmpty() || !configElementsEnabled()) {
+			return emptyConfigurable(gameLoader, family);
+		}
+		Class<?> iConfigurable = Class.forName(ForeignType.CONFIGURABLE.binary(family), false, gameLoader);
+		InvocationHandler handler = (proxy, method, args) -> switch (method.getName()) {
+			// Unconditionally empty: building a nested IConfigurable here would mean Class.forName and a second
+			// Proxy inside the handler, on whatever thread happens to ask.
+			case "getConfigList" -> List.of();
+			case "toString" -> "KernelSeededConfig";
+			case "hashCode" -> System.identityHashCode(proxy);
+			case "equals" -> proxy == (args == null ? null : args[0]);
+			case "getConfigElement" -> lookup(elements, args);
+			default -> method.getReturnType() == List.class ? List.of() : Optional.empty();
+		};
+		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, handler);
+	}
+
+	/** Walks {@code elements} by literal key. {@code args} is {@code String[]}, a bare {@code String}, or null. */
+	private static Optional<Object> lookup(Map<String, Object> elements, Object[] args) {
+		if (args == null || args.length == 0 || args[0] == null) return Optional.empty();
+		String[] path = args[0] instanceof String[] keys ? keys : new String[] {String.valueOf(args[0])};
+		Object current = elements;
+		for (String key : path) {
+			if (!(current instanceof Map<?, ?> map)) return Optional.empty();
+			current = map.get(key);
+			if (current == null) return Optional.empty();
+		}
+		return Optional.of(current);
+	}
+
 	private static String displayName(DiscoveredMod mod) {
 		String name = mod.getDisplayName();
 		return name == null || name.isBlank() ? mod.getId() : name;
@@ -899,7 +957,8 @@ public final class PassiveSeeder {
 		// As in buildForgeModInfo: the declared table, so a NeoForge mod asking a kernel-built IModInfo about
 		// its properties gets the truth rather than silence.
 		setInstanceField(modInfoCls, "properties", modInfo, mod.getModProperties());
-		setInstanceField(modInfoCls, "config", modInfo, emptyConfigurable(gameLoader, Ecosystem.NEOFORGE));
+		setInstanceField(modInfoCls, "config", modInfo,
+				configurableOver(gameLoader, Ecosystem.NEOFORGE, mod.getConfigElements()));
 		// logoBlur stays at its allocation default (false).
 		return modInfo;
 	}

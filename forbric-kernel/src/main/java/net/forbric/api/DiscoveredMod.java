@@ -42,6 +42,7 @@ public final class DiscoveredMod {
 	private final String source;
 	private final List<String> aliases;
 	private final Map<String, Object> modProperties;
+	private final Map<String, Object> configElements;
 
 	public DiscoveredMod(Ecosystem ecosystem, String id, String version, String displayName,
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig, String source) {
@@ -52,13 +53,13 @@ public final class DiscoveredMod {
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig,
 			List<String> accessTransformers, String source) {
 		this(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig, accessTransformers,
-				source, Collections.emptyList(), Map.of());
+				source, Collections.emptyList(), Map.of(), Map.of());
 	}
 
 	private DiscoveredMod(Ecosystem ecosystem, String id, String version, String displayName,
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig,
 			List<String> accessTransformers, String source, List<String> aliases,
-			Map<String, Object> modProperties) {
+			Map<String, Object> modProperties, Map<String, Object> configElements) {
 		this.ecosystem = ecosystem;
 		this.id = id;
 		this.version = version;
@@ -70,6 +71,7 @@ public final class DiscoveredMod {
 		this.source = source;
 		this.aliases = frozen(aliases);
 		this.modProperties = modProperties == null ? Map.of() : Map.copyOf(modProperties);
+		this.configElements = configElements == null ? Map.of() : Map.copyOf(configElements);
 	}
 
 	/**
@@ -80,7 +82,7 @@ public final class DiscoveredMod {
 	 */
 	public DiscoveredMod withAliases(List<String> aliases) {
 		return new DiscoveredMod(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig,
-				accessTransformers, source, aliases, modProperties);
+				accessTransformers, source, aliases, modProperties, configElements);
 	}
 
 	/**
@@ -95,7 +97,25 @@ public final class DiscoveredMod {
 	 */
 	public DiscoveredMod withModProperties(Map<String, Object> properties) {
 		return new DiscoveredMod(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig,
-				accessTransformers, source, aliases, properties);
+				accessTransformers, source, aliases, properties, configElements);
+	}
+
+	/**
+	 * A copy carrying this mod's whole {@code [[mods]]} entry, which is what
+	 * {@code IConfigurable.getConfigElement} answers from.
+	 *
+	 * <p>A different accessor from {@link #withModProperties}, with a different reader. Sodium reads
+	 * {@code sodium:options} out of THIS one, to let a mod switch off the sodium mixin features it has taken
+	 * over — iris does exactly that for the sky it renders itself.
+	 */
+	public DiscoveredMod withConfigElements(Map<String, Object> elements) {
+		return new DiscoveredMod(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig,
+				accessTransformers, source, aliases, modProperties, elements);
+	}
+
+	/** This mod's {@code [[mods]]} entry as plain data, never null. */
+	public Map<String, Object> getConfigElements() {
+		return configElements;
 	}
 
 	/**

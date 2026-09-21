@@ -30,19 +30,40 @@ public final class ForgeModEntry {
 	private final String description;
 	private final List<ForgeDependency> dependencies;
 	private final Map<String, Object> properties;
+	private final Map<String, Object> configElements;
 
 	public ForgeModEntry(String modId, String version, String displayName, String description, List<ForgeDependency> dependencies) {
-		this(modId, version, displayName, description, dependencies, Map.of());
+		this(modId, version, displayName, description, dependencies, Map.of(), Map.of());
 	}
 
 	public ForgeModEntry(String modId, String version, String displayName, String description,
 			List<ForgeDependency> dependencies, Map<String, Object> properties) {
+		this(modId, version, displayName, description, dependencies, properties, Map.of());
+	}
+
+	public ForgeModEntry(String modId, String version, String displayName, String description,
+			List<ForgeDependency> dependencies, Map<String, Object> properties,
+			Map<String, Object> configElements) {
 		this.modId = modId;
 		this.version = version;
 		this.displayName = displayName;
 		this.description = description;
 		this.dependencies = dependencies == null ? Collections.emptyList() : Collections.unmodifiableList(dependencies);
 		this.properties = properties == null ? Map.of() : Map.copyOf(properties);
+		this.configElements = configElements == null ? Map.of() : Map.copyOf(configElements);
+	}
+
+	/**
+	 * This mod's whole {@code [[mods]]} entry as plain data, the thing {@code IConfigurable.getConfigElement}
+	 * answers from.
+	 *
+	 * <p>Separate from {@link #getProperties()} because they are different accessors with different readers:
+	 * {@code getModProperties} answers the {@code [modproperties.<id>]} table, this answers the mod entry
+	 * itself. Sodium reads {@code sodium:options} out of THIS one to let a mod switch off the sodium mixin
+	 * features it has taken over.
+	 */
+	public Map<String, Object> getConfigElements() {
+		return configElements;
 	}
 
 	/**

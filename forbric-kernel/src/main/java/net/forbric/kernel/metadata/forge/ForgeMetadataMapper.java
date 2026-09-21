@@ -116,7 +116,11 @@ public final class ForgeMetadataMapper {
 					source)
 					// Its [modproperties.<id>] table, which is how this mod addresses OTHER mods — Sodium reads
 					// its config entry point out of it. Empty for the overwhelming majority.
-					.withModProperties(mod.getProperties()));
+					.withModProperties(mod.getProperties())
+					// The whole [[mods]] entry, which IConfigurable.getConfigElement answers from. The version is
+					// overwritten with the RESOLVED one: the raw entry still says ${file.jarVersion}, and a reader
+					// asking this seam for a version next to IModInfo.getVersion() must not get two answers.
+					.withConfigElements(resolvedEntry(mod, jarVersion)));
 
 			// Said out loud because the reader is another ecosystem's code and the failure is silent: Sodium looks
 			// up sodium:config_api_user in here to build this mod's page in Video Settings, and when the kernel
@@ -130,5 +134,14 @@ public final class ForgeMetadataMapper {
 		}
 
 		return result;
+	}
+	/** One mod's {@code [[mods]]} entry with {@code version} resolved against the jar manifest. */
+	private static java.util.Map<String, Object> resolvedEntry(ForgeModEntry mod, String jarVersion) {
+		java.util.Map<String, Object> entry = mod.getConfigElements();
+		if (entry.isEmpty()) return entry;
+		java.util.Map<String, Object> resolved = new java.util.LinkedHashMap<>(entry);
+		String version = ModsTomlParser.resolveVersion(mod.getVersion(), jarVersion);
+		if (version != null) resolved.put("version", version);
+		return resolved;
 	}
 }
