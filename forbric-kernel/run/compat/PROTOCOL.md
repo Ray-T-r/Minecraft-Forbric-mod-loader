@@ -15,8 +15,11 @@ sentinel. Do not put credentials in reports or committed files.
 Set `FORBRIC_MC` to the Windows Minecraft root and `FORBRIC_VERSION` to its installed
 profile id. `FORBRIC_INSTANCE` optionally selects a dedicated test instance; otherwise
 the profile directory is used. `FORBRIC_WORLD` selects the generated save. Preserve the
-launcher-created native directory and `options.txt`. `FORBRIC_PYTHON` can select the
-remote Python executable. All five Windows entry points accept `--print-config` on Mac
+launcher-created native directory and `options.txt`. `FORBRIC_PYTHON` selects the remote
+Python executable and must name the real interpreter, never a launcher shim: a shim
+re-executes a different process, so the job publishes a pid this run never started and
+cannot vouch for, which is reported by name instead of retried. A Python Manager shim
+names its interpreter in `<command>.__target__`. All five Windows entry points accept `--print-config` on Mac
 without launching, reading the Windows disk, or importing Windows-only APIs.
 
 ## Select the packs

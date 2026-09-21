@@ -115,6 +115,32 @@ class PushAndRunTest {
     }
 
     @Test
+    void aJobPublishedByAProcessWeDidNotStartIsNamedAtOnceAndNeverRetried() throws Exception {
+        // A launcher shim re-executes a different interpreter, so the driver publishes ITS pid. Retrying that as
+        // if it were transport flakiness reported a server test that had returned 0 as a FAIL, 15 minutes late.
+        var result = python("""
+                import json
+                commands = []
+                def remote(command):
+                    commands.append(command)
+                    if len(commands) == 1: return 'FORBRIC_PID=42\\nFORBRIC_STARTED=123'
+                    return json.dumps(dict(alive=False, result=dict(state='done', pid=99, returncode=0)))
+                m.remote = remote
+                m.time.sleep = lambda _: (_ for _ in ()).throw(AssertionError('a shim is not transient'))
+                try:
+                    m.run_job(args, 'server', 'D:\\\\fixture-tools', output, 'run-server-test.py')
+                    raise AssertionError('a foreign status was accepted')
+                except m.NotOurJob as error:
+                    message = str(error)
+                assert 'started process 42' in message and 'published pid 99' in message, message
+                assert 'FORBRIC_PYTHON' in message and '__target__' in message, message
+                assert len(commands) == 2, commands
+                assert json.loads((output / 'server-result.json').read_text())['state'] == 'unproven'
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
     void aFailedJobStartStillCollectsAndWritesAFailureReport() throws Exception {
         var result = python("""
                 import json

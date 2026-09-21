@@ -139,6 +139,16 @@ with own_driver(dict(pid_file=str(pathlib.Path(instance) / '.forbric-sweep.pid')
 '''
 
 
+class NotOurJob(RuntimeError):
+    """The status file was published by a process this run did not start.
+
+    Never transport flakiness, so it is never retried. The one way it happens is a launcher shim: the command
+    named by --python re-executes a different interpreter, the driver publishes THAT process's pid, and the pid
+    this run is allowed to stop belongs to a wrapper that has already exited. Retrying it burned a whole 97-jar
+    sweep and reported a server test that had returned 0 as a FAIL.
+    """
+
+
 def observe_command(pid, start_ticks, status):
     # A status file alone is never evidence that a job is still alive. StartTime also rejects PID reuse.
     return (f'$process = Get-Process -Id {pid} -ErrorAction SilentlyContinue; '
@@ -188,9 +198,18 @@ def run_job(args, stage, remote_tools, output, driver, extra=()):
                 if not isinstance(observation.get('alive'), bool):
                     raise ValueError('process liveness missing from observation')
                 state = observation.get('result')
-                if state is not None and (not isinstance(state, dict) or state.get('pid') != pid):
-                    raise ValueError('status belongs to a different process')
+                if state is not None and not isinstance(state, dict):
+                    raise ValueError('status is not an object: ' + str(state))
+                if state is not None and state.get('pid') != pid:
+                    raise NotOurJob(
+                        f'{args.python} started process {pid}, but the job published pid {state.get("pid")} — '
+                        'that command is a launcher shim, not an interpreter, so this run owns a wrapper it '
+                        'cannot stop and cannot vouch for the job that did the work. Point FORBRIC_PYTHON at '
+                        'the real interpreter (a Python Manager shim names it in <command>.__target__) and run '
+                        f'again; the job itself published {state}')
                 misses = 0
+            except NotOurJob:
+                raise
             except (RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
                 misses += 1
                 print(f'{stage}: observation failed; retaining job {pid}: {error}', flush=True)
