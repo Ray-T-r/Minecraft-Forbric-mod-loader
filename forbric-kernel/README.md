@@ -91,6 +91,7 @@ onwards as unfinished long after their gates were passing — so the scripts the
 | `gate-m28-forgeconfig` | Forge COMMON configs load once, then its native watcher reads a live file edit; dedicated servers never open CLIENT configs |
 | `gate-m29-forgecaps` | MinecraftForge capabilities on the merged base: the item-handler capability of a zombie and a furnace, with the lost field initializers replayed |
 | `gate-m30-attribution` | a mod that loses PART of itself — a mixin left out or failing at world creation, a subscriber that cannot register, a listener on a dead event, a throwing deferred task, a jar compiled against another NeoForge — is named with the reason in the log, on the Mods screen and in `load-report.txt`, which is rewritten once the world is up |
+| `gate-m31-vanilla-parity` | with zero mods and the same seed, a Forbric overworld carries the same biomes and the same structure starts as a pure-vanilla 26.2 server generating beside it |
 
 `run/compat/gates-all.sh` discovers every gate by glob, in numerical order, including network/GUI gates;
 an intentional `--skip <script.sh>` is printed in the results. It runs several at once by default (`-j auto`,

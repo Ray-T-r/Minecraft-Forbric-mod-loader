@@ -17,6 +17,7 @@
 package net.forbric.kernel.transform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,6 +25,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.zip.ZipFile;
@@ -112,8 +115,15 @@ class MergedBaseSpawnReasonTest {
 		byte[] other = readClass("net/minecraft/world/entity/LivingEntity.class");
 		assumeTrue(other != null, "LivingEntity absent from this base");
 
-		assertSame(other, new ForbricMergedBaseCompatTransformer()
-				.transform("net.minecraft.world.entity.LivingEntity", other, null));
+		// Byte identity used to be the assertion here, and it stopped being available the moment a LATER repair
+		// found something of its own in LivingEntity (the radians-to-degrees constant, in
+		// lambda$stopSleeping$0). "No repair touches this class" was never what this test meant; "this repair
+		// does not" is, and the claim reporter says exactly that without depending on what else the pass does.
+		List<String> hits = new ArrayList<>();
+		new ForbricMergedBaseCompatTransformer()
+				.transform("net.minecraft.world.entity.LivingEntity", other, null, hits::add);
+		assertFalse(hits.contains("forbric-merged-base-compat#readTheSpawnReasonThatIsActuallyWritten"),
+				"the rule is pinned to Mob by name; it claimed LivingEntity instead. Claims seen: " + hits);
 	}
 
 	private static String fieldRead(MethodNode method) {

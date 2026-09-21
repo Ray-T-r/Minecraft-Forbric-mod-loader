@@ -80,7 +80,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		// particle map, default attributes, the save on teardown. Each one can stop applying on its own, and a
 		// single class-level answer cannot see that. This is the largest reservoir of the failure this mechanism
 		// exists for, and it needs one claim per repair rather than one anchor per class.
-		return AnchorSet.scanned("40 independent repairs across the whole base, each needing its own claim");
+		return AnchorSet.scanned("47 independent repairs across the whole base, each needing its own claim");
 	}
 
 	@Override
@@ -89,7 +89,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -123,6 +123,24 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"ChunkGenerator.featuresPerStep keeps MinecraftForge's descriptor — the server cannot start (NoSuchFieldError)"));
 		out.add(fixed("letDungeonsGenerateWithoutTheDataMap", MONSTER_ROOM_FEATURE,
 				"monster rooms never generate — the NeoForge data map they ask has no vanilla fallback"));
+		out.add(randomSourcePrecisionEnabled()
+				? new Claim(claimId("restoreDoublePrecisionToTheRandomSources"), AnchorSet.of(
+						new AnchorSet.Anchor(XOROSHIRO_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+								"every noise octave's origin is off — the merged nextDouble() rounds through float, so no "
+										+ "world generates the way the same seed does in vanilla"),
+						new AnchorSet.Anchor(BIT_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+								"WorldgenRandom's nextDouble() rounds through float and can return exactly 1.0 — out of "
+										+ "the [0,1) range every caller assumes")))
+				: scanned("restoreDoublePrecisionToTheRandomSources", "-D" + RANDOM_PRECISION_PROPERTY + "=off"));
+		out.add(fixed("convertRadiansWithVanillasFoldedConstant", "net/minecraft/world/entity/Entity",
+				"every angle the game computes from a vector is off in the eighth digit — the merged base divides by "
+						+ "pi at run time where vanilla multiplies by a constant it folded in float"));
+		out.add(savedHeightmapsEnabled()
+				? fixed("saveTheHeightmapsVanillaSaves", CHUNK_STATUS,
+						"an unfinished chunk is saved with the two worldgen heightmaps vanilla never persists, and "
+								+ "reloads with them stale — a feature placed on WORLD_SURFACE_WG then lands somewhere "
+								+ "vanilla would not put it")
+				: scanned("saveTheHeightmapsVanillaSaves", "-D" + SAVED_HEIGHTMAPS_PROPERTY + "=off"));
 		out.add(fixed("guardNeoForgesWorldModifierPass", NEO_SERVER_LIFECYCLE_HOOKS,
 				"NeoForge's biome/structure modifier pass is neutered — every neoforge:biome_modifier does nothing"));
 		out.add(fixed("letForeignResourceConditionsThrough", ICONDITION,
@@ -256,6 +274,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "giveTheVanillaParticleMapAViewOfTheLiveOne", giveTheVanillaParticleMapAViewOfTheLiveOne(node));
 			changed |= claim(reporter, "giveFeaturesPerStepItsVanillaDescriptorBack", giveFeaturesPerStepItsVanillaDescriptorBack(node));
 			changed |= claim(reporter, "letDungeonsGenerateWithoutTheDataMap", letDungeonsGenerateWithoutTheDataMap(node));
+			changed |= claim(reporter, "restoreDoublePrecisionToTheRandomSources", restoreDoublePrecisionToTheRandomSources(node));
+			changed |= claim(reporter, "convertRadiansWithVanillasFoldedConstant", convertRadiansWithVanillasFoldedConstant(node));
+			changed |= claim(reporter, "saveTheHeightmapsVanillaSaves", saveTheHeightmapsVanillaSaves(node));
 			changed |= claim(reporter, "guardNeoForgesWorldModifierPass", guardNeoForgesWorldModifierPass(node));
 			changed |= claim(reporter, "letForeignResourceConditionsThrough", letForeignResourceConditionsThrough(node));
 			changed |= claim(reporter, "letForeignResourceConditionsThroughMinecraftForge", letForeignResourceConditionsThroughMinecraftForge(node));
@@ -1690,6 +1711,223 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "(%d call site(s)) — NeoForge's data map when it has one, vanilla's own set when it does not. "
 				+ "The alternative was the neutered place() this replaces, which meant no dungeon in any world",
 				redirected);
+		return true;
+	}
+
+	private static final String XOROSHIRO_RANDOM_SOURCE = "net/minecraft/world/level/levelgen/XoroshiroRandomSource";
+	private static final String BIT_RANDOM_SOURCE = "net/minecraft/world/level/levelgen/BitRandomSource";
+	/** 2^-53: the multiplier that turns 53 random bits into a double in [0,1). Exactly representable in both widths. */
+	private static final float DOUBLE_UNIT_AS_FLOAT = (float) 0x1.0p-53;
+	private static final double DOUBLE_UNIT = 0x1.0p-53;
+	/**
+	 * Switches the repair off, which puts the game back on the float-rounded draw.
+	 *
+	 * <p>It exists so gate-m31 can demonstrate its own teeth: a parity gate that has never been seen to go red is
+	 * not evidence that the worlds match, only that the comparison ran. With this off, the gate's biome check
+	 * must fail.
+	 */
+	static final String RANDOM_PRECISION_PROPERTY = "forbric.randomSourcePrecision";
+
+	static boolean randomSourcePrecisionEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(RANDOM_PRECISION_PROPERTY, "on"));
+	}
+
+	/**
+	 * Puts the game's random sources back in double precision.
+	 *
+	 * <p>Vanilla's two {@code nextDouble()} bodies scale 53 random bits by 2^-53 in double:
+	 * {@code nextBits(53); l2d; ldc2_w 1.1102230246251565E-16; dmul}. The merged base does it in FLOAT —
+	 * {@code l2f; ldc 1.110223E-16f; fmul; f2d} — in both {@code XoroshiroRandomSource.nextDouble()} and the
+	 * {@code BitRandomSource.nextDouble()} default that {@code LegacyRandomSource} and {@code WorldgenRandom}
+	 * inherit. The constant is right (2^-53 is exact as a float); the {@code l2f} is not, because it crushes a
+	 * 53-bit mantissa into 24.
+	 *
+	 * <p>Two costs, and the second one is a contract violation rather than a rounding difference:
+	 * <ul>
+	 * <li>EVERY sample differs from vanilla's — measured over a million draws, one million differed, worst
+	 * relative error 5.95e-8. {@code ImprovedNoise}'s constructor spends three {@code nextDouble() * 256.0} calls
+	 * on {@code xo/yo/zo}, so every Perlin octave's origin is displaced and the whole density field moves with it.
+	 * A same-seed A/B against pure vanilla 26.2 (both sides run twice, because vanilla's own block output is only
+	 * reproducible where features do not read their neighbours) measured it: biomes differ in 11 of 1764 chunks
+	 * and heightmaps in 90 of 400 fully generated ones, where vanilla against itself differs in 0 and 10.</li>
+	 * <li>{@code nextDouble()} can return exactly {@code 1.0}, for every {@code bits >= 9007198986305536} — about
+	 * one draw in 2^25. Every caller in the game assumes the half-open range; an index computed as
+	 * {@code (int)(nextDouble() * size)} is then off the end of its array.</li>
+	 * </ul>
+	 *
+	 * <p>This is not a patch either ecosystem wrote. {@code patched-mc-forge-26.2.jar} carries vanilla's
+	 * {@code l2d/dmul}; {@code patched-mc-neoforge-26.2.jar} carries the float form, which is what NeoForge's
+	 * decompile-recompile pipeline emitted, and the byte merge kept the NeoForge body. It names no class from
+	 * either ecosystem, so {@code merge-conflicts.txt} — which reports conflicts by REFERENCE, on purpose — cannot
+	 * see it and never did. That is the general shape to watch for: a purely numeric method can be re-typed by the
+	 * pipeline and leave no trace in the conflict ledger.
+	 *
+	 * <p>Matched by SHAPE across the whole base rather than by a list of two class names, because the pipeline
+	 * decides where this lands, not us; the two known sources are declared as REQUIRED anchors so a rebuild that
+	 * moves or fixes them is reported rather than passed over in silence.
+	 *
+	 * <p>Stack depth is the one thing that moves: {@code l2f/fmul} peaks at two slots where {@code l2d/dmul} needs
+	 * four. No branch is added and no frame changes, so widening {@code maxStack} is the whole adjustment.
+	 */
+	private static boolean restoreDoublePrecisionToTheRandomSources(ClassNode node) {
+		if (!node.name.startsWith("net/minecraft/") || !randomSourcePrecisionEnabled()) return false;
+		int repaired = 0;
+		List<String> methods = new ArrayList<>();
+		for (MethodNode method : node.methods) {
+			boolean touched = false;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn.getOpcode() != Opcodes.L2F) continue;
+				AbstractInsnNode constant = nextReal(insn);
+				if (!(constant instanceof LdcInsnNode ldc) || !(ldc.cst instanceof Float scale)
+						|| scale.floatValue() != DOUBLE_UNIT_AS_FLOAT) {
+					continue;
+				}
+				AbstractInsnNode multiply = nextReal(constant);
+				if (multiply == null || multiply.getOpcode() != Opcodes.FMUL) continue;
+				AbstractInsnNode widen = nextReal(multiply);
+				if (widen == null || widen.getOpcode() != Opcodes.F2D) continue;
+
+				InsnList code = method.instructions;
+				InsnNode inDouble = new InsnNode(Opcodes.DMUL);
+				code.set(insn, new InsnNode(Opcodes.L2D));
+				code.set(constant, new LdcInsnNode(DOUBLE_UNIT));
+				code.set(multiply, inDouble);
+				code.remove(widen);
+				insn = inDouble;
+				touched = true;
+				repaired++;
+			}
+			if (touched) {
+				method.maxStack += 2;
+				methods.add(method.name + method.desc);
+			}
+		}
+		if (repaired == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] %s scales its random bits in double again (%d site(s): %s) — the "
+				+ "merged body rounded through float, which displaces every noise octave's origin and lets "
+				+ "nextDouble() return exactly 1.0",
+				node.name.replace('/', '.'), repaired, String.join(", ", methods));
+		return true;
+	}
+
+	private static final double HALF_TURN_IN_DEGREES = 180.0;
+	/** {@code (double)(float)Math.PI} — what the decompiler wrote where vanilla's source said {@code (float)Math.PI}. */
+	private static final double PI_AS_FLOAT = (double) (float) Math.PI;
+	/** Vanilla's own constant: the same expression folded in FLOAT at compile time, then widened. */
+	private static final double RADIANS_TO_DEGREES = (double) (float) (180.0F / (float) Math.PI);
+
+	/**
+	 * Restores the radians-to-degrees constant vanilla folded, which the merged base recomputes at run time.
+	 *
+	 * <p>Vanilla's source multiplies by a compile-time constant: {@code (double)(180.0F / (float)Math.PI)}, which
+	 * javac folds in FLOAT and widens, giving {@code ldc2_w 57.2957763671875; dmul}. The merged base instead
+	 * carries the expression — {@code ldc2_w 180.0; dmul; ldc2_w 3.1415927410125732; ddiv} — and evaluates it in
+	 * DOUBLE every time, which is a different number: 57.29577791868205. They differ by 1.55e-6, a relative
+	 * 2.7e-8, and the merged one is the more accurate of the two. Accuracy is not the question; being the game
+	 * the same seed and the same inputs produce elsewhere is.
+	 *
+	 * <p>45 sites across 31 methods, and they are the ones that turn a direction into a rotation:
+	 * {@code Entity.lookAt}, {@code Mob.lookAt}, {@code MoveControl.tick} and its flying, swimming and
+	 * mob-specific siblings, {@code LookControl.getYRotD}, {@code Projectile.shoot} and {@code updateRotation},
+	 * {@code ProjectileUtil.rotateTowardsMovement}, {@code CommandSourceStack.facing}, the dragon phases,
+	 * {@code WitherBoss.aiStep}, {@code SignBlockEntity.isFacingFrontText}. Vanilla 26.2 has ZERO sites of this
+	 * shape; the merged base has 45.
+	 *
+	 * <p>Same origin as {@link #restoreDoublePrecisionToTheRandomSources(ClassNode)} and the same blind spot:
+	 * NeoForge's decompile-recompile pipeline wrote the folded constant back out as its expression, the byte
+	 * merge kept that body, and because the method names no class from any ecosystem,
+	 * {@code merge-conflicts.txt} — which reports conflicts by reference — never mentioned it. A differential
+	 * census of all 94,202 shared methods, normalised for everything a recompile may legally change, found
+	 * exactly two families of this kind: that one and this one.
+	 *
+	 * <p>Four instructions become two, the multiply is reused where it stands, and the peak stack only falls, so
+	 * nothing about the frame needs adjusting.
+	 */
+	private static boolean convertRadiansWithVanillasFoldedConstant(ClassNode node) {
+		if (!node.name.startsWith("net/minecraft/")) return false;
+		int folded = 0;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof LdcInsnNode degrees) || !Double.valueOf(HALF_TURN_IN_DEGREES).equals(degrees.cst)) {
+					continue;
+				}
+				AbstractInsnNode multiply = nextReal(insn);
+				if (multiply == null || multiply.getOpcode() != Opcodes.DMUL) continue;
+				AbstractInsnNode circle = nextReal(multiply);
+				if (!(circle instanceof LdcInsnNode pi) || !Double.valueOf(PI_AS_FLOAT).equals(pi.cst)) continue;
+				AbstractInsnNode divide = nextReal(circle);
+				if (divide == null || divide.getOpcode() != Opcodes.DDIV) continue;
+
+				degrees.cst = RADIANS_TO_DEGREES;
+				method.instructions.remove(circle);
+				method.instructions.remove(divide);
+				insn = multiply;
+				folded++;
+			}
+		}
+		if (folded == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] %s turns radians into degrees by vanilla's folded constant again "
+				+ "(%d site(s)) — the merged body divided by pi at run time, which is a different number in the "
+				+ "eighth digit and moves every angle computed from a vector",
+				node.name.replace('/', '.'), folded);
+		return true;
+	}
+
+	private static final String CHUNK_STATUS = "net/minecraft/world/level/chunk/status/ChunkStatus";
+	private static final String CHUNK_SAVE_HEIGHTMAPS = "chunkSaveHeightmaps";
+	private static final String HEIGHTMAPS_AFTER = "heightmapsAfter";
+	private static final String ENUM_SET_DESC = "Ljava/util/EnumSet;";
+	static final String SAVED_HEIGHTMAPS_PROPERTY = "forbric.vanillaSavedHeightmaps";
+
+	static boolean savedHeightmapsEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(SAVED_HEIGHTMAPS_PROPERTY, "on"));
+	}
+
+	/**
+	 * Saves the heightmaps vanilla saves, and no others.
+	 *
+	 * <p>NeoForge gives {@code ChunkStatus} a second heightmap set — {@code chunkSaveHeightmaps}, which is
+	 * {@code heightmapsAfter} plus {@code WORLD_SURFACE_WG} and {@code OCEAN_FLOOR_WG} for every status that is
+	 * not a full chunk — and points all three of {@code SerializableChunkData}'s uses at it. MinecraftForge's
+	 * patched jar does not; vanilla does not. So this is NeoForge's decision, not the pipeline's, and unlike its
+	 * other decisions it changes what the world looks like.
+	 *
+	 * <p>The cost is not the extra bytes. Those two are WORLDGEN heightmaps: {@code ProtoChunk.setBlockState}
+	 * stops maintaining them once a chunk passes CARVERS, so from that point they are a snapshot, and vanilla's
+	 * answer is to never write them — a reloaded chunk rebuilds them from the blocks it actually has. Written and
+	 * read back, they come back stale, and {@code PlacementUtils.HEIGHTMAP_WORLD_SURFACE} and
+	 * {@code HEIGHTMAP_TOP_SOLID} are exactly what decide the Y a decoration is placed at. A chunk that was saved
+	 * half-generated, unloaded and reloaded then decorates against a height that is no longer true.
+	 *
+	 * <p>Measured, on one seed, zero mods, five vanilla worlds against five Forbric ones: after the other two
+	 * repairs the ONLY difference left that survives the noise filter is five chunks whose {@code WORLD_SURFACE}
+	 * heightmap differs, and every one of them is a dead bush — 7 of 5,079 — placed on identical terracotta in
+	 * identical badlands, in a chunk near spawn that the server had saved and reloaded. Blocks, block entities,
+	 * biomes and structure starts are all identical.
+	 *
+	 * <p>One instruction's operand: the getter reads the vanilla-shaped field instead of NeoForge's widened one,
+	 * which leaves both the write path and the read path agreeing with vanilla. The field and its constructor
+	 * stay where they are, so anything that asks NeoForge's own accessor for them still gets an answer.
+	 */
+	private static boolean saveTheHeightmapsVanillaSaves(ClassNode node) {
+		if (!CHUNK_STATUS.equals(node.name) || !savedHeightmapsEnabled()) return false;
+		if (!hasField(node, HEIGHTMAPS_AFTER, ENUM_SET_DESC)) return false;
+		int rebased = 0;
+		for (MethodNode method : node.methods) {
+			if (!"getChunkSaveHeightmaps".equals(method.name)) continue;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof FieldInsnNode read) || read.getOpcode() != Opcodes.GETFIELD
+						|| !CHUNK_STATUS.equals(read.owner) || !CHUNK_SAVE_HEIGHTMAPS.equals(read.name)) {
+					continue;
+				}
+				read.name = HEIGHTMAPS_AFTER;
+				rebased++;
+			}
+		}
+		if (rebased == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] ChunkStatus now reports vanilla's saved-heightmap set (%d read(s)) "
+				+ "— NeoForge widened it with the two worldgen heightmaps, which an unfinished chunk then reloads "
+				+ "stale, and those are what decide the Y a decoration is placed at", rebased);
 		return true;
 	}
 

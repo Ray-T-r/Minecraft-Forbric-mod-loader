@@ -165,6 +165,13 @@ public final class DependencyDialog {
 			List<String> command = new ArrayList<>();
 			command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
 			command.addAll(extraJvmArgs);
+			// A child JVM inherits its parent's environment, and so its OS locale, but NOT its -D flags. The
+			// common case therefore needs nothing forwarded at all; a deliberate -Dforbric.dialogLanguage does,
+			// or the switch would be unreachable from the one process the player actually reads.
+			String language = System.getProperty(DialogLang.SWITCH);
+			if (language != null && !language.isBlank()) {
+				command.add("-D" + DialogLang.SWITCH + "=" + language);
+			}
 			command.add("-cp");
 			command.add(ownJar());
 			command.add(DependencyDialogMain.class.getName());

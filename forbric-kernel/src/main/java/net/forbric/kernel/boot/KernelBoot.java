@@ -668,6 +668,9 @@ public final class KernelBoot {
 		// Where the load report goes, and the shutdown hook that writes it if loading never finishes -- which is
 		// exactly the boot whose reader needs the file most.
 		KernelLoadReport.setRunDir(gameDir);
+		// And the other post-mortem: if this boot ends in a crash report, say which mods it points at. Same
+		// shutdown-hook idiom, a separate file, and it costs nothing on a boot that does not crash.
+		CrashAttribution.setRunDir(gameDir);
 		KernelLifecycle.setRuntimeJars(runtimeJars);
 		KernelFabricEcosystem.bindGameLoader(loader);
 
