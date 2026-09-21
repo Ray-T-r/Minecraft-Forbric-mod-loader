@@ -123,6 +123,20 @@ public enum GameEventBridge {
 					+ "drains grows without bound instead"),
 	RENDER_FRAME_POST(Pass.CLIENT_GAME_BUS, "TickEvent.RenderTickEvent.Post",
 			"as RENDER_FRAME_PRE, for the post-frame half — and the half Xaero's world map alone listens on"),
+	SCREEN_MOUSE_PRESSED_PRE(Pass.CLIENT_GAME_BUS, "ScreenEvent.MouseButtonPressed.Pre",
+			"a MinecraftForge mod cannot see or refuse a click inside a screen — an inventory-tweak mod's "
+					+ "click handling is absent, and because the event is cancellable the mod decides and is "
+					+ "ignored, so the screen handles the click as if the mod were not installed"),
+	SCREEN_MOUSE_RELEASED_PRE(Pass.CLIENT_GAME_BUS, "ScreenEvent.MouseButtonReleased.Pre",
+			"a MinecraftForge mod never sees a mouse button released over a screen, so a drag it began is never "
+					+ "ended and the stack it was moving is left mid-move"),
+	SCREEN_MOUSE_DRAG_PRE(Pass.CLIENT_GAME_BUS, "ScreenEvent.MouseDragged.Pre",
+			"a MinecraftForge mod cannot see a drag across a screen's slots, so dragging a held stack over a row "
+					+ "of slots to distribute it does nothing"),
+	SCREEN_MOUSE_SCROLL_POST(Pass.CLIENT_GAME_BUS, "ScreenEvent.MouseScrolled.Post",
+			"a MinecraftForge mod never sees the scroll wheel inside a screen, so moving items between a chest "
+					+ "and the inventory with the wheel does nothing at all — the mod is loaded, its listener is "
+					+ "registered, and the wheel only scrolls the screen"),
 	CLIENT_RELOAD_LISTENERS(Pass.CLIENT_MOD_BUS, "RegisterClientReloadListenersEvent",
 			"a MinecraftForge mod's client reload listeners are registered on a bus nobody posts to — GeckoLib's "
 					+ "whole client model and animation cache hangs off exactly this"),

@@ -148,8 +148,61 @@ class GameEventBridgeInventoryTest {
 		assertEquals(GameEventBridge.Pass.CLIENT_GAME_BUS, GameEventBridge.CLIENT_TICK_POST.pass());
 		assertEquals(GameEventBridge.Pass.CLIENT_GAME_BUS, GameEventBridge.RENDER_FRAME_PRE.pass());
 		assertEquals(GameEventBridge.Pass.CLIENT_GAME_BUS, GameEventBridge.RENDER_FRAME_POST.pass());
+		assertEquals(GameEventBridge.Pass.CLIENT_GAME_BUS, GameEventBridge.SCREEN_MOUSE_PRESSED_PRE.pass());
+		assertEquals(GameEventBridge.Pass.CLIENT_GAME_BUS, GameEventBridge.SCREEN_MOUSE_RELEASED_PRE.pass());
+		assertEquals(GameEventBridge.Pass.CLIENT_GAME_BUS, GameEventBridge.SCREEN_MOUSE_DRAG_PRE.pass());
+		assertEquals(GameEventBridge.Pass.CLIENT_GAME_BUS, GameEventBridge.SCREEN_MOUSE_SCROLL_POST.pass());
 		assertEquals(GameEventBridge.Pass.GAME_BUS, GameEventBridge.PLAYER_TICK_PRE.pass(),
 				"the player tick is common to both sides and belongs to the pass a server verifies");
+	}
+
+	/**
+	 * The screen MOUSE family, which the render-frame bridge does not reach.
+	 *
+	 * <p>A different producer in a different class: the merged {@code MouseHandler} routes every one of these to
+	 * NeoForge's {@code ClientHooks} ({@code onButton} 316/345 and 448/473, {@code handleAccumulatedMovement}
+	 * 247/288, {@code onScroll} 172/217), so a mod can be live on the frame and still dead on the mouse.
+	 * MouseTweaks is exactly four listeners on exactly these four events and nothing else — with them missing it
+	 * loads cleanly, registers cleanly, reports nothing and does nothing.
+	 */
+	@Test
+	void theScreenMouseFamilyIsBridgedNotJustTheFrameAndTheTick() throws Exception {
+		List<String> installed = bridgesNamedBy("install");
+		assumeTrue(!installed.isEmpty(), "GameEventMultiplexer not compiled yet");
+
+		for (String bridge : List.of("SCREEN_MOUSE_PRESSED_PRE", "SCREEN_MOUSE_RELEASED_PRE",
+				"SCREEN_MOUSE_DRAG_PRE", "SCREEN_MOUSE_SCROLL_POST")) {
+			assertTrue(installed.contains(bridge),
+					bridge + " is not installed — the merged MouseHandler posts only NeoForge's event there, so a "
+							+ "MinecraftForge mod's screen-mouse listener sits on a bus nobody posts to");
+		}
+	}
+
+	/**
+	 * None of the CLIENT_GAME_BUS bridges may appear in {@code DeadEventAudit}'s bridged map while the pass is
+	 * not {@link GameEventBridge.Pass#lateInstalled()}.
+	 *
+	 * <p>{@code KernelLifecycle} passes {@code client=false} on a dedicated server, so those bridges are never
+	 * installed there — and a bridged row whose pass is not late is a finding exactly when the bridge is absent.
+	 * A row for one of these would therefore mark every mod that listens for it DEGRADED on every server boot,
+	 * which is the noise that trains a reader to ignore the audit.
+	 */
+	@Test
+	void noClientGameBusBridgeIsAuditedAsBridgedWhileThatPassIsNotLate() throws Exception {
+		assumeTrue(!GameEventBridge.Pass.CLIENT_GAME_BUS.lateInstalled(),
+				"CLIENT_GAME_BUS is late now, so a bridged row would be safe");
+		Path audit = Path.of("src/main/java/net/forbric/kernel/boot/DeadEventAudit.java");
+		assumeTrue(Files.exists(audit), "DeadEventAudit source not present");
+		String bridged = Files.readString(audit);
+		bridged = bridged.substring(bridged.indexOf("private static Map<String, GameEventBridge> bridged()"));
+		bridged = bridged.substring(0, bridged.indexOf("\n\tprivate DeadEventAudit()"));
+		for (GameEventBridge bridge : GameEventBridge.values()) {
+			if (bridge.pass() != GameEventBridge.Pass.CLIENT_GAME_BUS) continue;
+			assertTrue(!bridged.contains("GameEventBridge." + bridge.name()),
+					bridge + " is a CLIENT_GAME_BUS bridge and must not be a DeadEventAudit BRIDGED row: a "
+							+ "dedicated server never installs it, so every mod listening for its event would be "
+							+ "named DEGRADED on every server boot");
+		}
 	}
 
 	/** Every bridge has to say what it costs; a count that is short is not a diagnosis. */

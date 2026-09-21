@@ -255,6 +255,14 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameRenderFrameEvents", new Entry(Origin.COMPILED, List.of(
 				new Call("installPre", void.class, Object.class),
 				new Call("installPost", void.class, Object.class))));
+		// The Neo->Forge SCREEN MOUSE re-emission. Its own entry again: the merged MouseHandler is a third
+		// producer, separate from the client tick and the render frame, and a carrier missing NeoForge's screen
+		// event types must cost only this family rather than the two beside it.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameScreenMouseEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installPressedPre", void.class, Object.class),
+				new Call("installReleasedPre", void.class, Object.class),
+				new Call("installDragPre", void.class, Object.class),
+				new Call("installScrollPost", void.class, Object.class))));
 		// The Neo->Forge server start/stop re-emission, which also opens MinecraftForge's login gate. Separate
 		// from the tick bridge so a carrier missing one pair's types cannot take the other down with it.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerLifecycle", new Entry(Origin.COMPILED, List.of(

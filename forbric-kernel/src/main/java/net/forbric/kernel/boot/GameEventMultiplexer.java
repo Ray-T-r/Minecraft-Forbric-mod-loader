@@ -162,6 +162,18 @@ public final class GameEventMultiplexer {
 						() -> renderFrameBridge(cl, "installPre").invoke(null, neoBus));
 				install(GameEventBridge.RENDER_FRAME_POST,
 						() -> renderFrameBridge(cl, "installPost").invoke(null, neoBus));
+				// The screen MOUSE family, which the render-frame bridge does not reach: a different producer in
+				// a different class (the merged MouseHandler routes every one of these to NeoForge's ClientHooks),
+				// so a mod can be live on the frame and still dead on the mouse. MouseTweaks is exactly these four
+				// listeners and nothing else, so with them missing it loads cleanly and does nothing at all.
+				install(GameEventBridge.SCREEN_MOUSE_PRESSED_PRE,
+						() -> screenMouseBridge(cl, "installPressedPre").invoke(null, neoBus));
+				install(GameEventBridge.SCREEN_MOUSE_RELEASED_PRE,
+						() -> screenMouseBridge(cl, "installReleasedPre").invoke(null, neoBus));
+				install(GameEventBridge.SCREEN_MOUSE_DRAG_PRE,
+						() -> screenMouseBridge(cl, "installDragPre").invoke(null, neoBus));
+				install(GameEventBridge.SCREEN_MOUSE_SCROLL_POST,
+						() -> screenMouseBridge(cl, "installScrollPost").invoke(null, neoBus));
 				EventBridges.verify(GameEventBridge.Pass.CLIENT_GAME_BUS);
 			}
 		} catch (ClassNotFoundException single) {
@@ -278,6 +290,12 @@ public final class GameEventMultiplexer {
 	/** One entry point on the game-side render-frame bridge. Complete literal, for the reason above. */
 	private static Method renderFrameBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameRenderFrameEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side screen-MOUSE bridge. Complete literal, for the reason above. */
+	private static Method screenMouseBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameScreenMouseEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 

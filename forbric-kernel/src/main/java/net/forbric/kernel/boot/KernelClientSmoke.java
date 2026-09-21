@@ -80,6 +80,19 @@ public final class KernelClientSmoke {
 	public static final String MODS_SCREEN = "forbric.clientSmokeModsScreen";
 	/** Take a screenshot of the pause menu with the mods button on it, instead of pressing it. */
 	public static final String MODS_BUTTON_SHOT = "forbric.clientSmokeModsButtonShot";
+	/**
+	 * World tick at which to open a container screen and drive one press, one drag, one release and one wheel
+	 * notch through the game's OWN {@code MouseHandler}. 0 (the default) leaves it alone.
+	 *
+	 * <p>It exists because the screen-mouse bridges cannot be judged from anything the kernel says. A forward
+	 * counter proves the kernel forwarded; what was in doubt is whether a traditional-Forge mod's listener runs,
+	 * and the only witness to that is the mod itself. Driving {@code MouseHandler.onButton},
+	 * {@code handleAccumulatedMovement} and {@code onScroll} — the three private methods the merged base's own
+	 * GLFW callbacks call, and the three that hold NeoForge's hooks — makes a mod that listens on the
+	 * MinecraftForge side speak, or stay silent, with nothing in between.
+	 */
+	public static final String SCREEN_MOUSE = "forbric.clientSmokeScreenMouse";
+
 	/** World tick at which to equip an elytra and try to glide. */
 	public static final String ELYTRA = "forbric.clientSmokeElytra";
 	/** Altitude to drop from. Absolute, because the world keeps whatever the last run left behind. */
@@ -164,6 +177,7 @@ public final class KernelClientSmoke {
 		}
 		if (ready && !drillDone && Boolean.getBoolean(DRILL)) drill(minecraft, player);
 		if (ready) elytraCheck(minecraft, player);
+		if (ready) screenMouseIfDue(minecraft, player);
 		if (ready) screenshotIfDue(minecraft);
 		if (ready) modsScreenIfDue(minecraft);
 		if (ready && !probed && worldTicks >= Integer.getInteger(PROBE_TICKS, 160)) {
@@ -240,6 +254,291 @@ public final class KernelClientSmoke {
 		} catch (Throwable t) {
 			modsScreenClosed = true;
 			ForbricLog.warn("[Forbric/ClientSmoke] the unified Mods screen could not be opened", t);
+		}
+	}
+
+	private static int screenMouseStage;
+	private static int screenMouseAt;
+
+	/**
+	 * Opens the player's inventory and produces real mouse input inside it.
+	 *
+	 * <p>Everything goes through {@code MouseHandler}'s own methods — the ones GLFW calls — rather than through
+	 * either family's hook. That is the whole point: calling a hook would prove only that the hook posts, which
+	 * was never in doubt. What is being asked is whether the merged base, on its real input path, reaches a
+	 * traditional-Forge mod's listener; so the drill starts where a mouse starts and lets the game do the rest.
+	 *
+	 * <p>One step per {@link #STEP_TICKS} ticks, never several in a tick. A screen opened and clicked in the same
+	 * tick is clicked before {@code init()} has laid out a single slot, so the click lands on nothing and a
+	 * working build reads as broken — the same trap the elytra drill documents for equipment.
+	 *
+	 * <p>The judgement is NOT anything logged here. This only reports what it drove; whether a mod heard it is
+	 * the mod's own output, which is the only witness that cannot be satisfied by the kernel talking to itself.
+	 */
+	private static void screenMouseIfDue(Object minecraft, Object player) {
+		int due = Integer.getInteger(SCREEN_MOUSE, 0);
+		if (due <= 0 || screenMouseStage > 8 || worldTicks < due) return;
+		if (screenMouseStage > 0 && worldTicks < screenMouseAt + STEP_TICKS) return;
+		screenMouseAt = worldTicks;
+		int step = screenMouseStage++;
+		try {
+			ClassLoader cl = minecraft.getClass().getClassLoader();
+			switch (step) {
+				case 0 -> stockASlot(minecraft, cl);
+				case 1 -> {
+					Class<?> inventory = Class.forName(
+							"net.minecraft.client.gui.screens.inventory.InventoryScreen", true, cl);
+					Class<?> playerCls = Class.forName("net.minecraft.world.entity.player.Player", false, cl);
+					setScreen(minecraft, inventory.getConstructor(playerCls).newInstance(player));
+					ForbricLog.info("[Forbric/ClientSmoke] opened a container screen at world tick %d to drive "
+							+ "the mouse through it", worldTicks);
+				}
+				case 2 -> hoverAStockedSlot(minecraft);
+				case 3 -> driveTheWheel(minecraft, 1.0);
+				case 4 -> census(minecraft, "after one notch up");
+				case 5 -> driveTheWheel(minecraft, -1.0);
+				case 6 -> census(minecraft, "after one notch down");
+				case 7 -> driveTheButtons(minecraft, cl);
+				default -> setScreen(minecraft, null);
+			}
+		} catch (Throwable t) {
+			screenMouseStage = 9;
+			ForbricLog.warn("[Forbric/ClientSmoke] could not drive the mouse through a container screen", t);
+		}
+	}
+
+	/**
+	 * Ticks between the drill's steps.
+	 *
+	 * <p>Not one step per tick. The hovered slot a mod asks the screen for is the one the screen last DREW under
+	 * the cursor, so a wheel notch in the same tick as the cursor move is a notch over nothing; and a container
+	 * move is server-authoritative, so a census on the tick of the input reads the client's prediction rather
+	 * than the outcome. Both of those turn a working build into a silent one.
+	 */
+	private static final int STEP_TICKS = 6;
+
+	/** Puts the cursor on the first stocked slot and records what the container held before anything was done. */
+	private static void hoverAStockedSlot(Object minecraft) throws Exception {
+		Object mouse = fieldValue(minecraft, "mouseHandler");
+		Object window = minecraft.getClass().getMethod("getWindow").invoke(minecraft);
+		Object screen = currentScreen(minecraft);
+		if (mouse == null || window == null || screen == null) {
+			ForbricLog.warn("[Forbric/ClientSmoke] no mouse handler, window or screen — nothing to hover");
+			return;
+		}
+		double[] stocked = firstStockedSlot(screen, window);
+		double x = stocked != null ? stocked[0]
+				: ((Number) window.getClass().getMethod("getScreenWidth").invoke(window)).doubleValue() / 2;
+		double y = stocked != null ? stocked[1]
+				: ((Number) window.getClass().getMethod("getScreenHeight").invoke(window)).doubleValue() / 2;
+		setField(mouse, "xpos", x);
+		setField(mouse, "ypos", y);
+		ForbricLog.info("[Forbric/ClientSmoke] container slots before the wheel: %s", slotCensus(screen));
+	}
+
+	/** What the open container holds now, under a label saying what has been done to it. */
+	private static void census(Object minecraft, String moment) throws Exception {
+		Object screen = currentScreen(minecraft);
+		ForbricLog.info("[Forbric/ClientSmoke] container slots %s: %s", moment,
+				screen == null ? "<screen already closed>" : slotCensus(screen));
+	}
+
+	/** The inventory slot the drill stocks and then hovers. First slot of the main grid, away from the hotbar. */
+	private static final int STOCKED_SLOT = 9;
+
+	/**
+	 * Puts a known stack into the player's inventory, on the SERVER, before the screen is opened.
+	 *
+	 * <p>Without it the whole drill is a log-line check: a scroll-wheel mod hovering an EMPTY slot has nothing to
+	 * move, so it would print that it was called and then correctly do nothing, and "the bridge works" and "the
+	 * mod declined" would be the same output. Stocking a slot gives the run a second, behavioural observable —
+	 * the stack is somewhere else afterwards — that no amount of kernel logging can fake.
+	 *
+	 * <p>Server-side, because a menu click is server-authoritative: the client only predicts, and an item written
+	 * into the client's own copy is reverted on the next container sync.
+	 */
+	private static void stockASlot(Object minecraft, ClassLoader cl) throws Exception {
+		Object server = accessible(minecraft.getClass(), "getSingleplayerServer").invoke(minecraft);
+		if (server == null) {
+			ForbricLog.info("[Forbric/ClientSmoke] no integrated server — hovering whatever the player carries");
+			return;
+		}
+		Object list = accessible(server.getClass(), "getPlayerList").invoke(server);
+		java.util.List<?> players = (java.util.List<?>) accessible(list.getClass(), "getPlayers").invoke(list);
+		if (players.isEmpty()) return;
+		Object p = players.get(0);
+		onServer(server, () -> {
+			Class<?> stackCls = Class.forName("net.minecraft.world.item.ItemStack", true, cl);
+			Object cobble = stackCls.getConstructor(
+							Class.forName("net.minecraft.world.level.ItemLike", true, cl), int.class)
+					.newInstance(Class.forName("net.minecraft.world.item.Items", true, cl)
+							.getField("COBBLESTONE").get(null), 16);
+			Object inv = accessible(p.getClass(), "getInventory").invoke(p);
+			accessible(inv.getClass(), "setItem", int.class, stackCls).invoke(inv, STOCKED_SLOT, cobble);
+			accessible(p.getClass(), "initInventoryMenu").invoke(p);
+			ForbricLog.info("[Forbric/ClientSmoke] stocked inventory slot %d with 16 cobblestone for the mouse "
+					+ "drill", STOCKED_SLOT);
+		});
+	}
+
+	/**
+	 * Every non-empty slot of the open container menu, as {@code index=item*count}.
+	 *
+	 * <p>Read twice, side by side, because the question the drill is really asking is whether a MinecraftForge
+	 * mod MOVED something — and a mod that is never called and a mod that was called and declined produce the
+	 * same silence. Two censuses that differ do not.
+	 */
+	private static String slotCensus(Object screen) {
+		try {
+			Object menu = screen.getClass().getMethod("getMenu").invoke(screen);
+			java.util.List<?> slots = (java.util.List<?>) fieldValue(menu, "slots");
+			if (slots == null) return "<no slots>";
+			StringBuilder out = new StringBuilder();
+			for (int i = 0; i < slots.size(); i++) {
+				Object stack = slots.get(i).getClass().getMethod("getItem").invoke(slots.get(i));
+				if ((boolean) stack.getClass().getMethod("isEmpty").invoke(stack)) continue;
+				Object item = stack.getClass().getMethod("getItem").invoke(stack);
+				int count = (int) stack.getClass().getMethod("getCount").invoke(stack);
+				if (out.length() > 0) out.append(' ');
+				out.append(i).append('=').append(item).append('*').append(count);
+			}
+			return out.length() == 0 ? "<all empty>" : out.toString();
+		} catch (Throwable t) {
+			return "<unreadable: " + t + ">";
+		}
+	}
+
+	/**
+	 * The window-pixel centre of the first non-empty slot, or null when the screen shows nothing to hover.
+	 *
+	 * <p>Converted with the SAME ratio {@code MouseHandler.getScaledXPos} divides back out
+	 * ({@code gui * screenWidth / guiScaledWidth}) rather than with {@code getGuiScale()}. They disagree whenever
+	 * the window is not an exact multiple of the scale, and the first version of this used the scale and put the
+	 * cursor 36 pixels below the bottom of an 480-pixel window — where it hovered nothing, and a working bridge
+	 * read as a mod that had declined.
+	 */
+	private static double[] firstStockedSlot(Object screen, Object window) {
+		try {
+			Object menu = screen.getClass().getMethod("getMenu").invoke(screen);
+			java.util.List<?> slots = (java.util.List<?>) fieldValue(menu, "slots");
+			Object left = fieldValue(screen, "leftPos");
+			Object top = fieldValue(screen, "topPos");
+			if (slots == null || left == null || top == null) return null;
+			double wide = ((Number) window.getClass().getMethod("getScreenWidth").invoke(window)).doubleValue()
+					/ ((Number) window.getClass().getMethod("getGuiScaledWidth").invoke(window)).doubleValue();
+			double high = ((Number) window.getClass().getMethod("getScreenHeight").invoke(window)).doubleValue()
+					/ ((Number) window.getClass().getMethod("getGuiScaledHeight").invoke(window)).doubleValue();
+			for (Object slot : slots) {
+				Object stack = slot.getClass().getMethod("getItem").invoke(slot);
+				if ((boolean) stack.getClass().getMethod("isEmpty").invoke(stack)) continue;
+				// +8 is the middle of a 16x16 slot, in the screen's own gui pixels.
+				double guiX = (Integer) left + (int) fieldValue(slot, "x") + 8;
+				double guiY = (Integer) top + (int) fieldValue(slot, "y") + 8;
+				ForbricLog.info("[Forbric/ClientSmoke] hovering gui (%.0f, %.0f) — the screen calls that slot %s",
+						guiX, guiY, hoveredSlotAt(screen, guiX, guiY));
+				return new double[] {guiX * wide, guiY * high};
+			}
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/ClientSmoke] cannot locate a stocked slot: %s", String.valueOf(t));
+		}
+		return null;
+	}
+
+	/**
+	 * What the SCREEN thinks is under a pair of gui coordinates.
+	 *
+	 * <p>Asked of the screen rather than recomputed, because the point of the drill is that a mod hovering a real
+	 * slot declines for a real reason. A cursor the harness believes is on a slot and the screen believes is on
+	 * nothing is the difference between a measurement and a story.
+	 */
+	private static String hoveredSlotAt(Object screen, double guiX, double guiY) {
+		try {
+			Method find = accessible(screen.getClass(), "getHoveredSlot", double.class, double.class);
+			Object slot = find.invoke(screen, guiX, guiY);
+			if (slot == null) return "<nothing>";
+			Object stack = slot.getClass().getMethod("getItem").invoke(slot);
+			return fieldValue(slot, "index") + " holding " + stack;
+		} catch (Throwable t) {
+			return "<unaskable: " + t + ">";
+		}
+	}
+
+	/**
+	 * ONE wheel notch over the slot the cursor is already on, and nothing else.
+	 *
+	 * <p>Alone on purpose. Pressing a mouse button over a slot picks the stack up in VANILLA, with or without any
+	 * bridge, so a census that spanned a click would change on both arms of the differential and prove nothing.
+	 * The wheel over a slot moves nothing in vanilla, so a stack that is somewhere else afterwards was moved by a
+	 * mod — which is the only claim here worth making.
+	 *
+	 * <p>Driven BOTH ways across the drill, because the two directions are not symmetric: one pushes the hovered
+	 * stack into the other inventory and the other pulls from it, and which is which depends on the mod's own
+	 * direction settings and on where the other inventory sits on screen. Scrolling only the pulling way over a
+	 * full slot with an empty partner moves nothing, correctly — and reads exactly like a bridge that is not
+	 * there.
+	 */
+	private static void driveTheWheel(Object minecraft, double notch) throws Exception {
+		Object mouse = fieldValue(minecraft, "mouseHandler");
+		Object window = minecraft.getClass().getMethod("getWindow").invoke(minecraft);
+		if (mouse == null || window == null) return;
+		long handle = (long) window.getClass().getMethod("handle").invoke(window);
+		Method onScroll = mouse.getClass().getDeclaredMethod("onScroll", long.class, double.class, double.class);
+		onScroll.setAccessible(true);
+		onScroll.invoke(mouse, handle, 0.0, notch);
+		ForbricLog.info("[Forbric/ClientSmoke] drove one wheel notch (%+.0f) through MouseHandler.onScroll", notch);
+	}
+
+	/**
+	 * One press, one drag and one release, at the same place.
+	 *
+	 * <p>These three are here for the log, not for the census: their MinecraftForge listeners are what the run is
+	 * asking about, and a mod that is called prints that it was called. What they do to the container is not a
+	 * differential, for the reason {@link #driveTheWheel} gives.
+	 *
+	 * <p>{@code handleAccumulatedMovement} refuses to do anything unless the window is focused, and an unattended
+	 * run is usually not, so the flag is set for the length of the drag and put back afterwards. Leaving it set
+	 * would change how the rest of the run behaves, which is exactly the kind of measurement that quietly alters
+	 * what it measures.
+	 */
+	private static void driveTheButtons(Object minecraft, ClassLoader cl) throws Exception {
+		Object mouse = fieldValue(minecraft, "mouseHandler");
+		Object window = minecraft.getClass().getMethod("getWindow").invoke(minecraft);
+		if (mouse == null || window == null) return;
+		long handle = (long) window.getClass().getMethod("handle").invoke(window);
+
+		Class<?> infoCls = Class.forName("net.minecraft.client.input.MouseButtonInfo", true, cl);
+		Object left = infoCls.getConstructor(int.class, int.class).newInstance(0, 0);
+		Method onButton = mouse.getClass().getDeclaredMethod("onButton", long.class, infoCls, int.class);
+		onButton.setAccessible(true);
+
+		onButton.invoke(mouse, handle, left, 1);
+
+		boolean focused = (boolean) window.getClass().getMethod("isFocused").invoke(window);
+		if (!focused) setField(window, "focused", true);
+		setField(mouse, "accumulatedDX", 6.0);
+		setField(mouse, "accumulatedDY", 3.0);
+		mouse.getClass().getMethod("handleAccumulatedMovement").invoke(mouse);
+		if (!focused) setField(window, "focused", false);
+
+		onButton.invoke(mouse, handle, left, 0);
+		ForbricLog.info("[Forbric/ClientSmoke] drove press, drag and release through MouseHandler; whether a "
+				+ "MinecraftForge mod heard them is that mod's own log");
+	}
+
+	/** Writes one field anywhere up the hierarchy. Same search as {@link #fieldValue}, the other way round. */
+	private static void setField(Object owner, String name, Object value) {
+		for (Class<?> c = owner.getClass(); c != null; c = c.getSuperclass()) {
+			try {
+				Field field = c.getDeclaredField(name);
+				field.setAccessible(true);
+				field.set(owner, value);
+				return;
+			} catch (NoSuchFieldException keepLooking) {
+				continue;
+			} catch (ReflectiveOperationException | RuntimeException unwritable) {
+				ForbricLog.debug("[Forbric/ClientSmoke] cannot write %s: %s", name, String.valueOf(unwritable));
+				return;
+			}
 		}
 	}
 
@@ -1136,6 +1435,8 @@ public final class KernelClientSmoke {
 		lastPlayer = null;
 		probed = false;
 		idsLoggedBeforeConnect = false;
+		screenMouseStage = 0;
+		screenMouseAt = 0;
 	}
 
 	private static Object fieldValue(Object owner, String name) {
