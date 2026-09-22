@@ -82,7 +82,13 @@
 - [ ] **B1 余下** 那 8 条真交易需要"两边都留"才有意义,而合并工具目前没有"把两侧插入都拼进去"的能力;
       `MergeabilityCensus` 说 66.6% 的冲突结构上允许这么做。
       **注意**:8 条里有 5 条是 tick/level-tick/player-tick —— 这些桥本来就在送,所以那几条是**假交易**。
-- [ ] **真正的工单(7 条,每条都有点名的等待者)** —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
+- [x] **工单第一条做掉了:`PlayerEvent$StartTracking` + `StopTracking` 两条新桥** —— 本机 m12 实测
+      **真的在送**(服务端日志里两条 "bridged the first ..." 都出现了),GAME_BUS 桥 28→30,gate GREEN。
+      成对做是因为只送 Start 不送 Stop 会让 mod 按观察者累积状态而永远不拆 —— 那是漏,比原来的沉默更糟。
+      顺带量了另一件事:7 条里只有 4 条**可桥**(对面那条还活着);`AddPackFindersEvent` 和
+      `MobSpawnEvent$FinalizeSpawn` 在 NeoForge 侧压根没有对应事件,`EntityMultiPlaceEvent` 的 Forge 侧也死了 ——
+      这三条桥无从听起,只能靠 repair 或改仲裁。工单 7→6。
+- [ ] **工单余下 6 条(每条都有点名的等待者)** —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
       `AddPackFindersEvent`←collective、`LivingEntityUseItemEvent$Finish`←nutritiousmilk、
       `MobSpawnEvent$FinalizeSpawn`←collective、`PlayerEvent$StartTracking`←collective、
       `BlockEvent$PortalSpawnEvent`←collective、`FurnaceFuelBurnTimeEvent`←balm(**NeoForge 的事件**)、

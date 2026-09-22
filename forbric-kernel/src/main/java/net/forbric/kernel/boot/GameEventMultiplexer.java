@@ -122,6 +122,14 @@ public final class GameEventMultiplexer {
 					() -> levelBridge(cl, "installLevelUnload").invoke(null, neoBus));
 			install(GameEventBridge.LEVEL_SAVE,
 					() -> levelBridge(cl, "installLevelSave").invoke(null, neoBus));
+			// Entity tracking, as a PAIR. Chosen by hook-worklist.sh rather than from a log: collective
+			// subscribes to StartTracking and onStartEntityTracking has no call site on the merged base.
+			// Stop is bridged with it because a mod told only that tracking began accumulates per-viewer state
+			// for entities that are gone, which is a leak instead of a silence.
+			install(GameEventBridge.START_TRACKING,
+					() -> trackingBridge(cl, "installStartTracking").invoke(null, neoBus));
+			install(GameEventBridge.STOP_TRACKING,
+					() -> trackingBridge(cl, "installStopTracking").invoke(null, neoBus));
 			// Breaking a block. ServerPlayerGameMode posts only NeoForge's BreakBlockEvent and branches on its
 			// isCanceled(); there is no MinecraftForge hook in that class at all. Same cancellable shape as the
 			// three above, in its own class because it names NeoForge's block-event package.
@@ -263,6 +271,17 @@ public final class GameEventMultiplexer {
 	 * would slip past it — leaving the class unregistered, the boot-time seam check blind to it, and a renamed
 	 * method a mid-game {@code NoSuchMethodException} instead of one line at startup.
 	 */
+	/**
+	 * One entry point on the game-side entity-tracking bridge, resolved by name because this file cannot name it.
+	 *
+	 * <p>Written as a complete string literal on purpose, for the reason {@link #tickBridge} gives: the name is
+	 * found by scanning boot-side sources for exactly this shape.
+	 */
+	private static Method trackingBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGamePlayerTrackingEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
 	private static Method tickBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameTickEvents", true, cl)
 				.getMethod(entry, Object.class);

@@ -270,6 +270,10 @@ public final class KernelRuntimeClasses {
 				new Call("installLevelLoad", void.class, Object.class),
 				new Call("installLevelUnload", void.class, Object.class),
 				new Call("installLevelSave", void.class, Object.class))));
+		// Entity tracking, bridged as a pair: start without stop is a leak rather than a silence.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGamePlayerTrackingEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installStartTracking", void.class, Object.class),
+				new Call("installStopTracking", void.class, Object.class))));
 		// The Neo->Forge server start/stop re-emission, which also opens MinecraftForge's login gate. Separate
 		// from the tick bridge so a carrier missing one pair's types cannot take the other down with it.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerLifecycle", new Entry(Origin.COMPILED, List.of(

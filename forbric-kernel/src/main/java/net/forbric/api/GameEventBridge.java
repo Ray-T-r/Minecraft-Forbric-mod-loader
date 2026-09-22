@@ -112,6 +112,12 @@ public enum GameEventBridge {
 	LEVEL_SAVE(Pass.GAME_BUS, "LevelEvent.Save",
 			"a MinecraftForge mod that persists its own per-world data alongside the level's save never gets the "
 					+ "chance, so its state is silently a save behind or lost"),
+	START_TRACKING(Pass.GAME_BUS, "PlayerEvent.StartTracking",
+			"a MinecraftForge mod is never told a player began tracking an entity, so anything it builds per "
+					+ "viewer — nameplate state, per-player entity data, sync on first sight — is never built"),
+	STOP_TRACKING(Pass.GAME_BUS, "PlayerEvent.StopTracking",
+			"a MinecraftForge mod is never told a player stopped tracking an entity, so whatever it built per "
+					+ "viewer is never torn down — a leak that grows for as long as the session lasts"),
 	LOOT_TABLE_LOAD(Pass.GAME_BUS, "LootTableLoadEvent",
 			"loot tables a MinecraftForge mod adds to or replaces on load are left exactly as loaded"),
 	ITEM_TOOLTIP(Pass.ON_DEMAND, "ItemTooltipEvent",
