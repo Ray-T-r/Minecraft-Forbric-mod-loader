@@ -104,11 +104,26 @@ public final class DeadHookWorklist {
 		if (DeadEventAudit.BRIDGED.containsKey(event)) return "  [BRIDGED — already delivered]";
 		String chain = simpleChain(event);
 		for (GameEventBridge bridge : GameEventBridge.values()) {
-			if (bridge.event().equals(chain) || bridge.event().endsWith("." + chain)) {
+			if (namesTheSameEvent(bridge.event(), chain)) {
 				return "  [bridge " + bridge.name() + " looks like it carries this — by name, not by symbol]";
 			}
 		}
 		return "";
+	}
+
+	/**
+	 * Whether a bridge's display name and a class's simple-name chain are the same event.
+	 *
+	 * <p>Either may be the shorter one, and the first version of this only allowed one direction. The bridges
+	 * name the tick events {@code ServerTickEvent.Post}, while the class chain is
+	 * {@code TickEvent.ServerTickEvent.Post} — so three events that ARE bridged came out of the worklist as
+	 * "no bridge at all", which is how a work list grows items that are already done.
+	 */
+	static boolean namesTheSameEvent(String bridgeEvent, String chain) {
+		if (bridgeEvent == null || chain == null) return false;
+		return bridgeEvent.equals(chain)
+				|| bridgeEvent.endsWith("." + chain)
+				|| chain.endsWith("." + bridgeEvent);
 	}
 
 	/** {@code net/minecraftforge/event/level/LevelEvent$Load} -> {@code LevelEvent.Load}. */

@@ -81,6 +81,13 @@
       (产物不入库 —— 改的是源,下一次重建就会产出它。)
 - [ ] **B1 余下** 那 8 条真交易需要"两边都留"才有意义,而合并工具目前没有"把两侧插入都拼进去"的能力;
       `MergeabilityCensus` 说 66.6% 的冲突结构上允许这么做。
+      **注意**:8 条里有 5 条是 tick/level-tick/player-tick —— 这些桥本来就在送,所以那几条是**假交易**。
+- [ ] **真正的工单(7 条,每条都有点名的等待者)** —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
+      `AddPackFindersEvent`←collective、`LivingEntityUseItemEvent$Finish`←nutritiousmilk、
+      `MobSpawnEvent$FinalizeSpawn`←collective、`PlayerEvent$StartTracking`←collective、
+      `BlockEvent$PortalSpawnEvent`←collective、`FurnaceFuelBurnTimeEvent`←balm(**NeoForge 的事件**)、
+      `BlockEvent$EntityMultiPlaceEvent`←journeymap(**NeoForge 的事件**)。
+      后两条值得注意:NeoForge 通常赢合并,它的事件死掉说明那两处是 Forge 侧赢了。
 - [x] **B2** 可合并性 —— `MergeabilityCensus` + `run/mergeability-census.sh`,**实测有答案了**:
       995 条被丢弃的 Forge 钩子里判了 961 条,**640 条(66.6%)是 ADDITIVE** —— 两边都只往原版体里
       **插入**,没有谁重写原版做的事,所以两边的钩子原则上都能留。321 条是 OVERLAPPING,真的没有

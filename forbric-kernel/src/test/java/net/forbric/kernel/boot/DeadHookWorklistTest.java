@@ -1,6 +1,7 @@
 package net.forbric.kernel.boot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -66,6 +67,20 @@ class DeadHookWorklistTest {
 		assertEquals(EVENT, list.get(0).event());
 		assertEquals(3, list.get(0).jars().size());
 		assertEquals(OTHER, list.get(1).event());
+	}
+
+	@Test void aBridgeNameMatchesWhicheverSideIsShorter() {
+		// The bridges name the tick events ServerTickEvent.Post while the class chain is
+		// TickEvent.ServerTickEvent.Post. Allowing only one direction put three already-bridged events on the
+		// work list, which is how a work list grows items that are already done.
+		assertTrue(DeadHookWorklist.namesTheSameEvent("ServerTickEvent.Post", "TickEvent.ServerTickEvent.Post"));
+		assertTrue(DeadHookWorklist.namesTheSameEvent("TickEvent.RenderTickEvent.Pre", "RenderTickEvent.Pre"));
+		assertTrue(DeadHookWorklist.namesTheSameEvent("LevelEvent.Load", "LevelEvent.Load"));
+		// Not a substring match: a suffix has to start at a dot, or ClientTickEvent.Post would answer for
+		// ServerTickEvent.Post's neighbours.
+		assertFalse(DeadHookWorklist.namesTheSameEvent("TickEvent.Post", "ClientTickEvent.Post"));
+		assertFalse(DeadHookWorklist.namesTheSameEvent("LevelEvent.Load", "LevelEvent.Unload"));
+		assertFalse(DeadHookWorklist.namesTheSameEvent(null, "LevelEvent.Load"));
 	}
 
 	@Test void theSimpleChainIsWhatABridgeRecordsAboutItsEvent() {
