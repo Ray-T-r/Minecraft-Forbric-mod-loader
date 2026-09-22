@@ -9,11 +9,13 @@ import java.util.Map;
 /** Per-launch evidence ledger shared by boot code, the game UI and release checks. */
 public final class CompatibilityFindings {
 	private static final Map<String, CompatibilityFinding> FINDINGS = new LinkedHashMap<>();
+	private static volatile long revision;
 
 	private CompatibilityFindings() { }
 
 	/** A later suspicion cannot erase a confirmed loss; repeated observations retain all evidence. */
 	public static synchronized void record(CompatibilityFinding finding) {
+		revision++;
 		CompatibilityFinding previous = FINDINGS.get(finding.key());
 		if (previous == null) {
 			FINDINGS.put(finding.key(), finding);
@@ -65,7 +67,11 @@ public final class CompatibilityFindings {
 	/** Called once at the beginning of a new loader session; tests use the same boundary. */
 	public static synchronized void reset() {
 		FINDINGS.clear();
+		revision++;
 	}
+
+	/** Cheap notification for the client tick; unchanged evidence does not require another snapshot. */
+	public static long revision() { return revision; }
 
 	/** Stable machine report. Player acknowledgement deliberately does not change the release verdict. */
 	public static String toJson() {

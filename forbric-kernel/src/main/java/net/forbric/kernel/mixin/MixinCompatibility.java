@@ -7,9 +7,12 @@ import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 
 /** One identity from preflight through application; prose is evidence, never the identity. */
-final class MixinCompatibility {
+public final class MixinCompatibility {
 	private static final java.util.Map<String, Boolean> ORIGINAL_REQUIRED = new java.util.concurrent.ConcurrentHashMap<>();
 	private MixinCompatibility() { }
+
+	/** Every new loader session re-reads its own original declarations. */
+	public static void reset() { ORIGINAL_REQUIRED.clear(); }
 
 	/** Keep the mod's declaration before Forbric relaxes required=true in the bytes handed to Mixin. */
 	static void rememberOriginalConfig(String config, byte[] bytes) {

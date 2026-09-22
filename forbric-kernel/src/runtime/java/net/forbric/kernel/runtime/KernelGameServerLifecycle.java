@@ -79,6 +79,11 @@ public final class KernelGameServerLifecycle {
 					// servers post this too, so the client's world load is covered.
 					net.forbric.kernel.boot.DeadEventAudit.judgePending();
 					net.forbric.kernel.boot.KernelLoadReport.write();
+					if (!net.forbric.kernel.boot.KernelFabricEcosystem.physicalSide().isClient()
+							&& !net.forbric.kernel.ui.CompatibilityDecision.check(false)) {
+						net.forbric.kernel.util.ForbricLog.error("[Forbric/Compatibility] FATAL: a required feature failed during world loading; stopping the server normally");
+						server.halt(false);
+					}
 				});
 	}
 

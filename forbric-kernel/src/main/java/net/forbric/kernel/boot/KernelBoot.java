@@ -142,6 +142,9 @@ public final class KernelBoot {
 	 * (and any unrecognized token) is forwarded to the game's {@code Main.main}.
 	 */
 	public static void launch(Side side, String[] args) throws Throwable {
+		net.forbric.api.CompatibilityFindings.reset();
+		net.forbric.kernel.ui.CompatibilityDecision.reset();
+		net.forbric.kernel.mixin.MixinCompatibility.reset();
 		List<URL> owned = new ArrayList<>();
 		List<String> gameArgs = new ArrayList<>();
 		List<Path> runtimeJars = new ArrayList<>();
@@ -485,6 +488,8 @@ public final class KernelBoot {
 		// Inert unless -Dforbric.clientSmoke=true. It is what lets gate-m9 run a client unattended: enter a
 		// world, live in it, disconnect and stop, so the gate waits for an outcome instead of a timeout.
 		chain.register(TransformPhase.COREMOD, new ClientSmokeTickInjector());
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CompatibilityPromptTickInjector());
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PortalSpawnInjector());
 		// The only performance measurement in the tree. Beside the smoke tick because it is the same shape:
 		// one static call at the head of a tick, no mixin config, nothing new in the list a gate asserts on.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ServerTickSamplerInjector());
@@ -779,6 +784,11 @@ public final class KernelBoot {
 		FabricApiModuleLossAudit.report(side.api());
 		FieldDriftAudit.report();
 		AbiLinkAudit.report();
+		KernelLoadReport.write();
+		if (!net.forbric.kernel.ui.CompatibilityDecision.check(side.api().isClient())) {
+			ForbricLog.error("[Forbric/Compatibility] FATAL: confirmed required features are unavailable; continuation was not approved");
+			throw new IllegalStateException("Forbric compatibility policy stopped this launch; see .forbric-kernel/compatibility-report.json");
+		}
 
 		// Fabric preLaunch entrypoints, after Mixin is up and before any game class loads (their contract).
 		KernelFabricEcosystem.runPreLaunch();

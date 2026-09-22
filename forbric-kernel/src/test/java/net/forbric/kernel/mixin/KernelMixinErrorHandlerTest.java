@@ -66,6 +66,8 @@ class KernelMixinErrorHandlerTest {
 				"the runtime config was relaxed, but the player's required-feature policy still needs the original declaration");
 		MixinCompatibility.rememberOriginalConfig("optional.mixins.json", "{\"required\":false}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		assertTrue(!MixinCompatibility.required("optional.mixins.json", false));
+		MixinCompatibility.reset();
+		assertTrue(!MixinCompatibility.required("required.mixins.json", false), "a new launch must not inherit the old declaration");
 	}
 
 	@BeforeEach

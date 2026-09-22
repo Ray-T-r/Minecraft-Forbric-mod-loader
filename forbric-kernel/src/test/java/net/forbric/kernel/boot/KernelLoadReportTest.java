@@ -43,6 +43,30 @@ class KernelLoadReportTest {
 	private List<ModCatalog.Entry> previous;
 
 	@Test
+	void concurrentReportWritersNeverExposeATruncatedJsonToAReader(
+			@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+		ModCatalog.publish(List.of());
+		var report = dir.resolve("load-report.txt");
+		var machine = dir.resolve("compatibility-report.json");
+		KernelLoadReport.writeTo(report);
+		try (var workers = java.util.concurrent.Executors.newFixedThreadPool(3)) {
+			var first = workers.submit(() -> { for (int i = 0; i < 40; i++) KernelLoadReport.writeTo(report); });
+			var second = workers.submit(() -> { for (int i = 0; i < 40; i++) KernelLoadReport.writeTo(report); });
+			var reader = workers.submit(() -> {
+				for (int i = 0; i < 160; i++) {
+					try {
+						var parsed = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser().parse(
+								new java.io.StringReader(java.nio.file.Files.readString(machine)));
+						assertEquals(1, ((Number) parsed.get("schemaVersion")).intValue());
+						assertTrue(parsed.contains("findings"));
+					} catch (java.io.IOException unreadable) { throw new AssertionError(unreadable); }
+				}
+			});
+			first.get(); second.get(); reader.get();
+		}
+	}
+
+	@Test
 	void machineEvidenceIncludesSuspicionsAndResolvedLossesWithoutMarkingThemAsFailures(
 			@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
 		java.nio.file.Path text = dir.resolve("load-report.txt");

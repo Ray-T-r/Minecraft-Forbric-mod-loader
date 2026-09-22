@@ -85,10 +85,9 @@ public final class KernelGameResultBridges {
 	/**
 	 * NeoForge {@code BlockEvent.PortalSpawnEvent} → MinecraftForge {@code onTrySpawnPortal}.
 	 *
-	 * <p><b>Partial fidelity, and it says so.</b> NeoForge's event is cancellable and exposes the shape through
-	 * a getter with no setter, so a refusal carries and a REPLACEMENT cannot. A Forge mod that returns a
-	 * different portal than it was given gets a line naming that, once, rather than silently having its
-	 * substitution dropped — which is the failure this whole bridge exists to stop, arriving one level in.
+	 * <p>Fallback for event producers outside the repaired BaseFireBlock call. The current native hooks return
+	 * the input shape or empty. If a mod changes a hook to return another shape, this event-only path cannot
+	 * carry it through NeoForge's getter-only event; the BaseFireBlock wrapper can and handles its own forward.
 	 */
 	public static void installPortalSpawn(Object neoBus) {
 		AtomicBoolean warned = new AtomicBoolean();
@@ -96,6 +95,7 @@ public final class KernelGameResultBridges {
 		AtomicBoolean saidReplacement = new AtomicBoolean();
 		((IEventBus) neoBus).addListener(EventPriority.LOWEST, false, BlockEvent.PortalSpawnEvent.class,
 				event -> {
+					if (KernelPortalSpawn.dispatchingNeo()) return;
 					try {
 						PortalShape before = event.getPortalSize();
 						Optional<PortalShape> after = ForgeEventFactory.onTrySpawnPortal(

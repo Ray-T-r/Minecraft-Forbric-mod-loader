@@ -120,14 +120,21 @@ public final class KernelLoadReport {
 	}
 
 	/** Machine evidence is always emitted, including a zero-finding census, and never follows a UI waiver. */
-	private static void writeCompatibility(Path report) {
+	private static synchronized void writeCompatibility(Path report) {
 		if (report == null) return;
+		Path temporary = null;
 		try {
 			Files.createDirectories(report.getParent());
-			Files.writeString(report.resolveSibling("compatibility-report.json"),
-					net.forbric.api.CompatibilityFindings.toJson(), StandardCharsets.UTF_8);
+			temporary = Files.createTempFile(report.getParent(), ".compatibility-report-", ".json");
+			Files.writeString(temporary, net.forbric.api.CompatibilityFindings.toJson(), StandardCharsets.UTF_8);
+			Files.move(temporary, report.resolveSibling("compatibility-report.json"),
+					java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 		} catch (Exception failed) {
+			// Keep the preceding complete snapshot if this filesystem cannot atomically replace it. Evidence
+			// collection checks freshness; publishing half a report could instead fabricate a clean verdict.
 			ForbricLog.warn("[Forbric/Compatibility] could not write compatibility-report.json", failed);
+		} finally {
+			if (temporary != null) try { Files.deleteIfExists(temporary); } catch (Exception ignored) { }
 		}
 	}
 

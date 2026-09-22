@@ -86,3 +86,16 @@ Pending implementation and acceptance items remain open even when a smaller batc
   trades with only a lost event type observed and 14 with both event types observed. These are raw-input
   observations across six facades, not remaining defects after runtime repair or proof of live subscriptions.
 - Log: `forbric-loader/build/verification/hook-attribution/reference.log`.
+
+### P2 prompt integration and P1 portal pilot
+
+- Startup checks now consume confirmed necessary findings. Late client findings use the native confirmation
+  screen from a client tick; refusal saves/disconnects to the title, strict mode stops normally. Dedicated
+  server world-start failures request a normal halt. Per-launch state resets and atomic JSON reports are wired.
+- The portal caller now forwards the complete Neo→Forge Optional result, and the old event bridge skips only
+  the wrapper's thread-local dispatch scope. Cancellation, nesting, exception cleanup and cross-thread
+  independence are covered. Both current native carrier hooks return the original shape or empty; shape
+  replacement is a contract probe for a mod-rewritten hook, not an invented native event setter.
+- The integrated batch passed 114 tests in 12 suites, no failures/errors/skips. Evidence is archived under
+  `forbric-kernel/build/verification/p2-integration/`. The portal probe executes actual carrier hook bytecode
+  with isolated world/bus boundaries; a full-game portal action and actual GUI acceptance are still pending.

@@ -82,6 +82,11 @@ public final class CompatibilityDecision {
 		for (CompatibilityFinding f : findings) ACCEPTED.add(f.key());
 	}
 
+	/** Called only by a real in-game Continue action; never clears evidence or a strict gate's verdict. */
+	public static void acknowledge(List<CompatibilityFinding> findings) {
+		accept(findings.stream().filter(CompatibilityFinding::confirmedRequired).toList());
+	}
+
 	/** Producers can queue late findings without drawing or blocking. The client drains at a safe boundary. */
 	public static synchronized void queue() {
 		for (CompatibilityFinding f : CompatibilityFindings.confirmedRequired()) {
