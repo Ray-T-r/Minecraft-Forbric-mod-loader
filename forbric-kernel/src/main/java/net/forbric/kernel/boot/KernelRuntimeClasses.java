@@ -263,6 +263,13 @@ public final class KernelRuntimeClasses {
 				new Call("installReleasedPre", void.class, Object.class),
 				new Call("installDragPre", void.class, Object.class),
 				new Call("installScrollPost", void.class, Object.class))));
+		// The Neo->Forge LEVEL LIFECYCLE re-emission. Its own entry for the same reason: load/unload/save are
+		// posted from Minecraft, ClientLevel, MinecraftServer and ServerLevel, a producer set shared with none
+		// of the bridges above, so a carrier missing NeoForge's level event types must cost only this family.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameLevelEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installLevelLoad", void.class, Object.class),
+				new Call("installLevelUnload", void.class, Object.class),
+				new Call("installLevelSave", void.class, Object.class))));
 		// The Neo->Forge server start/stop re-emission, which also opens MinecraftForge's login gate. Separate
 		// from the tick bridge so a carrier missing one pair's types cannot take the other down with it.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameServerLifecycle", new Entry(Origin.COMPILED, List.of(

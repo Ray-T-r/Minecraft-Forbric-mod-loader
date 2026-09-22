@@ -112,6 +112,16 @@ public final class GameEventMultiplexer {
 					() -> entityBridge(cl, "installLivingDrops").invoke(null, neoBus));
 			install(GameEventBridge.ENTITY_JOIN_LEVEL,
 					() -> entityBridge(cl, "installEntityJoinLevel").invoke(null, neoBus));
+			// The level lifecycle. Every producer in the merged base is NeoForge's (Minecraft x3 and
+			// MinecraftServer post Unload, ClientLevel and MinecraftServer post Load, ServerLevel posts Save),
+			// and MinecraftForge's three hooks have no call site at all — measured by disassembly. Observers,
+			// not vetoes: none of the three is cancellable.
+			install(GameEventBridge.LEVEL_LOAD,
+					() -> levelBridge(cl, "installLevelLoad").invoke(null, neoBus));
+			install(GameEventBridge.LEVEL_UNLOAD,
+					() -> levelBridge(cl, "installLevelUnload").invoke(null, neoBus));
+			install(GameEventBridge.LEVEL_SAVE,
+					() -> levelBridge(cl, "installLevelSave").invoke(null, neoBus));
 			// Breaking a block. ServerPlayerGameMode posts only NeoForge's BreakBlockEvent and branches on its
 			// isCanceled(); there is no MinecraftForge hook in that class at all. Same cancellable shape as the
 			// three above, in its own class because it names NeoForge's block-event package.
@@ -261,6 +271,12 @@ public final class GameEventMultiplexer {
 	/** One entry point on the game-side cancellable-entity bridge. Complete literal, for the reason above. */
 	private static Method entityBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameEntityEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side level-lifecycle bridge. Complete literal, for the reason above. */
+	private static Method levelBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameLevelEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 

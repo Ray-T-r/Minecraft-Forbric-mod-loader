@@ -102,6 +102,16 @@ public enum GameEventBridge {
 					+ "protection rule about breaking one"),
 	RIGHT_CLICK_ITEM(Pass.GAME_BUS, "PlayerInteractEvent.RightClickItem",
 			"a MinecraftForge mod cannot see or refuse an item being used in hand"),
+	LEVEL_LOAD(Pass.GAME_BUS, "LevelEvent.Load",
+			"a MinecraftForge mod never learns a level came up, so per-world state it builds on load — caches "
+					+ "keyed by dimension, per-level managers — is never built"),
+	LEVEL_UNLOAD(Pass.GAME_BUS, "LevelEvent.Unload",
+			"a MinecraftForge mod never learns a level went away, so whatever it holds for that world — Xaero's "
+					+ "map processor, per-dimension caches, background workers — is never told to stop and keeps "
+					+ "running against a world that is gone"),
+	LEVEL_SAVE(Pass.GAME_BUS, "LevelEvent.Save",
+			"a MinecraftForge mod that persists its own per-world data alongside the level's save never gets the "
+					+ "chance, so its state is silently a save behind or lost"),
 	LOOT_TABLE_LOAD(Pass.GAME_BUS, "LootTableLoadEvent",
 			"loot tables a MinecraftForge mod adds to or replaces on load are left exactly as loaded"),
 	ITEM_TOOLTIP(Pass.ON_DEMAND, "ItemTooltipEvent",
