@@ -153,3 +153,15 @@ Pending implementation and acceptance items remain open even when a smaller batc
   control reached Done and exited 0. Evidence: `build/verification/initialization-policy/gate.log` and the
   three `build/gate-m24-*.log`/compatibility reports. This is an expected-failure policy test, not a claim that
   the broken canary is compatible.
+
+### P2 joint candidate selection, first batch
+
+- Whole-jar exact-cover selection now checks required versions, unconditional required Mixin targets and
+  direct entrypoint member contracts; explicit overrides remain visible when unsatisfiable. Ecosystem order
+  ranks feasible combinations, and bounded-search/unknown results are not labelled solved.
+- Static/instance fields and calls, class/interface owners, inherited members, and potential Mixin/AT/AW
+  changes are distinguished. Pre-transform uncertainty is not a confirmed incompatibility.
+- 56 tests passed without skips, including 20 new solver/scanner cases and the actual staged Jade pair.
+  Evidence: `forbric-kernel/build/verification/compat-arbitration/abi-junit/` and `abi-tests.log`.
+- This batch covers the top-level decision. Parent-reachable nested candidates and JarJar coordinate/range
+  selection still need the next discovery batch; the whole-instance arbitration requirement remains open.

@@ -169,7 +169,7 @@ public final class DuplicateModArbiter {
 		List<Claim> claims = scan(modsDir, envType, universalAliases);
 		topLevelClaims = List.copyOf(claims);
 		topLevelAliases = List.copyOf(universalAliases);
-		Decision decision = arbitrate(claims, universalAliases);
+		Decision decision = arbitrateJoint(claims, universalAliases, envType);
 		for (String line : divergenceReport(claims, decision)) ForbricLog.info("%s", line);
 		writeOverrideTemplate(rundir, decision);
 		MergeReport.write(rundir, modsDir, decision);
@@ -499,76 +499,92 @@ public final class DuplicateModArbiter {
 	 *             found none — the top-level one finding none says nothing about the nested one.
 	 */
 	static Decision arbitrate(List<Claim> claims, List<Alias> universalAliases, String pass) {
-		Map<String, List<Claim>> byId = new LinkedHashMap<>();
-		for (Claim claim : claims) {
-			for (String id : claim.modIds()) {
-				byId.computeIfAbsent(id, k -> new ArrayList<>()).add(claim);
-			}
-		}
+		return chooseJoint(claims, universalAliases, pass, List.of());
+	}
 
-		Map<String, Claim> winners = new LinkedHashMap<>();
-		Map<String, Path> ownerByModId = new LinkedHashMap<>();
-		List<String> contested = new ArrayList<>();
-		for (Map.Entry<String, List<Claim>> e : byId.entrySet()) {
-			// A single claimant is NEVER suppressed. This invariant is what keeps every existing gate green: no
-			// gate stages the same mod id twice, so the whole pass is a provable no-op on all of them.
-			if (e.getValue().size() < 2) continue;
-			contested.add(e.getKey());
-			Claim winner = pick(e.getKey(), e.getValue());
-			winners.put(e.getKey(), winner);
-			ownerByModId.put(e.getKey(), winner.jar().toAbsolutePath());
+	/** Metadata and bytecode clauses are read only for a real contest; ordinary single-jar boots keep their path. */
+	static Decision arbitrateJoint(List<Claim> claims, List<Alias> aliases, EnvType side) {
+		Map<String, Integer> counts = new HashMap<>();
+		for (Claim claim : claims) for (String id : claim.modIds()) counts.merge(JointCandidateSelector.key(id), 1, Integer::sum);
+		List<JointCandidateSelector.Rule> rules = counts.values().stream().anyMatch(n -> n > 1)
+				? CandidateContractScanner.scan(claims, side) : List.of();
+		return chooseJoint(claims, aliases, "top-level", rules);
+	}
+
+	private static Decision chooseJoint(List<Claim> claims, List<Alias> universalAliases, String pass,
+			List<JointCandidateSelector.Rule> rules) {
+		Map<String, List<Claim>> byId = new java.util.TreeMap<>();
+		Map<String, Ecosystem> overrides = new LinkedHashMap<>();
+		for (Claim claim : claims) for (String id : claim.modIds()) {
+			byId.computeIfAbsent(JointCandidateSelector.key(id), ignored -> new ArrayList<>()).add(claim);
+			Ecosystem forced = overrideFor(id); if (forced != null) overrides.put(id, forced);
 		}
-		if (contested.isEmpty()) {
-			if (universalAliases.isEmpty()) return Decision.none();
+		long contested = byId.values().stream().filter(list -> list.size() > 1).count();
+		if (contested == 0) {
 			logUniversalAliases(universalAliases);
 			return new Decision(Set.of(), Map.of(), List.copyOf(universalAliases));
 		}
-
-		Set<Path> suppressed = new LinkedHashSet<>();
-		for (Claim claim : claims) {
-			// SUBSET RULE: a jar may only lose if EVERY id it declares is also claimed by a winner. On partial
-			// overlap suppress nothing and say which ids are orphaned — otherwise a jar bundling foo + foo_compat
-			// is deleted wholesale because foo alone collided, and foo_compat is loaded by nobody.
-			if (claim.modIds().isEmpty()) continue;
-			List<String> orphaned = new ArrayList<>();
-			boolean anyLost = false;
-			for (String id : claim.modIds()) {
-				Claim winner = winners.get(id);
-				if (winner == null) {
-					orphaned.add(id);
-				} else if (winner != claim) {
-					anyLost = true;
+		int limit = Math.max(1, Math.min(1_000_000, Integer.getInteger("forbric.arbitrationMaxNodes", 100_000)));
+		JointCandidateSelector.Result result = JointCandidateSelector.solve(claims, rules, preference(), overrides, limit);
+		reportSelection(claims, result, overrides);
+		Set<Path> suppressed = new LinkedHashSet<>(); Map<String, Path> owners = new LinkedHashMap<>();
+		for (Claim claim : claims) if (!result.selected().contains(JointCandidateSelector.path(claim))) suppressed.add(claim.jar().toAbsolutePath());
+		List<Alias> aliases = new ArrayList<>(universalAliases);
+		for (var entry : byId.entrySet()) {
+			if (entry.getValue().size() < 2) continue;
+			Claim winner = entry.getValue().stream().filter(c -> result.selected().contains(JointCandidateSelector.path(c))).findFirst().orElse(null);
+			if (winner == null) continue;
+			Set<Ecosystem> lost = new LinkedHashSet<>();
+			for (Claim claim : entry.getValue()) {
+				for (String id : claim.modIds()) if (JointCandidateSelector.key(id).equals(entry.getKey())) owners.put(id, winner.jar().toAbsolutePath());
+				if (suppressed.contains(claim.jar().toAbsolutePath()) && claim.ecosystem() != winner.ecosystem()) lost.add(claim.ecosystem());
+			}
+			String winningId = winner.modIds().stream().filter(id -> JointCandidateSelector.key(id).equals(entry.getKey())).findFirst().orElse(entry.getKey());
+			for (Claim claim : entry.getValue()) {
+				if (!suppressed.contains(claim.jar().toAbsolutePath()) || claim.ecosystem() == winner.ecosystem()) continue;
+				for (String id : claim.modIds()) {
+					if (!JointCandidateSelector.key(id).equals(entry.getKey())) continue;
+					Alias alias = new Alias(id, claim.ecosystem(), winner.versionOf(winningId));
+					if (!aliases.contains(alias)) aliases.add(alias);
 				}
 			}
-			if (!anyLost) continue;
-			if (!orphaned.isEmpty()) {
-				ForbricLog.warn("[Forbric/DupeId] keeping %s despite losing %s — it also declares %s, which nothing "
-						+ "else provides; suppressing it would leave those loaded by nobody",
-						claim.jar().getFileName(), contestedOf(claim, winners), orphaned);
-				continue;
-			}
-			suppressed.add(claim.jar().toAbsolutePath());
+			ForbricLog.info("[Forbric/DupeId] mod id '%s' claimed by %d jars — loading %s (%s)%s", winningId,
+					entry.getValue().size(), winner.jar().getFileName(), winner.ecosystem(), lost.isEmpty() ? "" : ", aliased into " + lost);
 		}
-
-		// Every ecosystem that lost its copy of a contested id needs the mod's IDENTITY back — see Alias.
-		List<Alias> aliases = new ArrayList<>(universalAliases);
 		logUniversalAliases(universalAliases);
-		for (String id : contested) {
-			Claim winner = winners.get(id);
-			Set<Ecosystem> lost = new LinkedHashSet<>();
-			for (Claim claimant : byId.get(id)) {
-				if (claimant.ecosystem() != winner.ecosystem()) lost.add(claimant.ecosystem());
-			}
-			for (Ecosystem ecosystem : lost) {
-				aliases.add(new Alias(id, ecosystem, winner.versionOf(id)));
-			}
-			ForbricLog.info("[Forbric/DupeId] mod id '%s' claimed by %d jars — loading %s (%s)%s", id,
-					byId.get(id).size(), winner.jar().getFileName(), winner.ecosystem(),
-					lost.isEmpty() ? "" : ", aliased into " + lost);
+		ForbricLog.info("[Forbric/DupeId] cross-jar arbitration (%s): %d duplicate mod id(s), %d jar(s) suppressed, %d presence alias(es)",
+				pass, contested, suppressed.size(), aliases.size());
+		return new Decision(Set.copyOf(suppressed), Map.copyOf(owners), List.copyOf(aliases));
+	}
+
+	private static void reportSelection(List<Claim> claims, JointCandidateSelector.Result result, Map<String, Ecosystem> overrides) {
+		Map<Path, Claim> byPath = new HashMap<>();
+		for (Claim claim : claims) byPath.put(JointCandidateSelector.path(claim), claim);
+		for (var rule : result.unsatisfied()) recordRule(byPath.get(rule.consumer()), rule, true);
+		for (var rule : result.uncertain()) recordRule(byPath.get(rule.consumer()), rule, false);
+		if (result.status() != JointCandidateSelector.Status.SOLVED) {
+			boolean confirmed = result.status() == JointCandidateSelector.Status.UNSATISFIABLE;
+			String mod = claims.stream().filter(c -> result.selected().contains(JointCandidateSelector.path(c)))
+					.flatMap(c -> c.modIds().stream()).findFirst().orElse("forbric");
+			net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
+					"arbitration:selection", mod, "Mod dependency combination", "arbitration",
+					confirmed ? net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED : net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED,
+					confirmed, confirmed ? "No installed candidate combination satisfies all modeled required contracts and explicit overrides"
+							: result.status() == JointCandidateSelector.Status.SEARCH_LIMIT
+									? "Candidate search reached its bound; this selection has not been proved compatible"
+									: "Some required candidate contracts could not be verified; this selection remains unproved",
+					List.of("status=" + result.status(), "visited=" + result.visited(), "overrides=" + overrides)));
 		}
-		ForbricLog.info("[Forbric/DupeId] cross-jar arbitration (%s): %d duplicate mod id(s), %d jar(s) suppressed, "
-				+ "%d presence alias(es)", pass, contested.size(), suppressed.size(), aliases.size());
-		return new Decision(Set.copyOf(suppressed), Map.copyOf(ownerByModId), List.copyOf(aliases));
+		ForbricLog.info("[Forbric/Arbitration] status=%s; nodes=%d; confirmed violations=%d; unproved contracts=%d",
+				result.status(), result.visited(), result.unsatisfied().size(), result.uncertain().size());
+	}
+
+	private static void recordRule(Claim owner, JointCandidateSelector.Rule rule, boolean confirmed) {
+		String mod = owner == null || owner.modIds().isEmpty() ? "forbric" : owner.modIds().getFirst();
+		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
+				"arbitration:" + rule.id(), mod, "Mod dependency integration", "arbitration:" + rule.consumer().getFileName(),
+				confirmed ? net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED : net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED,
+				confirmed && rule.hard(), rule.detail(), List.of("candidate=" + rule.consumer(), "providers=" + rule.providers(), "unresolved=" + rule.uncertainProviders())));
 	}
 
 	private static void logUniversalAliases(List<Alias> universalAliases) {

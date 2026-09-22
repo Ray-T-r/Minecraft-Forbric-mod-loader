@@ -46,6 +46,7 @@ class DuplicateModArbiterTest {
 	@AfterEach
 	void clearState() {
 		DuplicateModArbiter.reset();
+		net.forbric.api.CompatibilityFindings.reset();
 		MultiLoaderArbiter.reset();
 		System.clearProperty(DuplicateModArbiter.SWITCH);
 		System.clearProperty(DuplicateModArbiter.OWNER_OVERRIDE);
@@ -238,7 +239,7 @@ class DuplicateModArbiterTest {
 	}
 
 	@Test
-	void partialOverlapSuppressesNothing() {
+	void partialOverlapKeepsTheWholeBundleAndRemovesTheOtherCopy() {
 		// The bundling jar declares foo AND foo_compat; only foo collides. Suppressing it would delete foo_compat,
 		// which nothing else provides.
 		System.setProperty("forbric.multiLoaderPreference", "fabric,neoforge,minecraftforge");
@@ -247,8 +248,9 @@ class DuplicateModArbiterTest {
 				claim("/mods/foo-fabric.jar", Ecosystem.FABRIC, "foo"),
 				claim("/mods/foo-bundle-neoforge.jar", Ecosystem.NEOFORGE, "foo", "foo_compat")));
 
-		assertTrue(d.suppressedJars().isEmpty(), "a partially-overlapping jar must survive");
-		assertEquals(Path.of("/mods/foo-fabric.jar").toAbsolutePath(), d.ownerByModId().get("foo"));
+		assertTrue(d.suppressed(Path.of("/mods/foo-fabric.jar")), "foo must not initialise twice");
+		assertFalse(d.suppressed(Path.of("/mods/foo-bundle-neoforge.jar")), "foo_compat must survive");
+		assertEquals(Path.of("/mods/foo-bundle-neoforge.jar").toAbsolutePath(), d.ownerByModId().get("foo"));
 	}
 
 	@Test
