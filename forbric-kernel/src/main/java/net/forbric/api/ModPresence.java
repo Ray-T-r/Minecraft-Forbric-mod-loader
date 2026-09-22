@@ -153,7 +153,7 @@ public final class ModPresence {
 	 * <p>Only those two, and nothing else. This is not a fuzzy match — it encodes exactly one fact, that the
 	 * three ecosystems disagree about which separator a mod id may contain, and nothing about what a mod is.
 	 */
-	static String spellingKey(String id) {
+	public static String spellingKey(String id) {
 		return id.replace('-', '_').toLowerCase(java.util.Locale.ROOT);
 	}
 

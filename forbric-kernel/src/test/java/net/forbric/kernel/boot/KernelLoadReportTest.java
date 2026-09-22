@@ -107,6 +107,30 @@ class KernelLoadReportTest {
 		assertTrue(writes, "installStarted's listener writes the report AFTER MinecraftForge's handleServerStarted");
 	}
 
+	@Test
+	void aFailedLibraryNamesTheModsThatSaidTheyNeedIt(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+			throws Exception {
+		// What a player sees when a library fails is not the library: it is the dozen mods that quietly stopped
+		// doing anything, and until now nothing named those anywhere.
+		java.nio.file.Path file = dir.resolve("load-report.txt");
+		net.forbric.api.ModPresence.publishForgeFamily(List.of(
+				new net.forbric.api.DiscoveredMod(Ecosystem.NEOFORGE, "balm", "1.0", "Balm",
+						List.of(), List.of(), null, "balm.jar"),
+				new net.forbric.api.DiscoveredMod(Ecosystem.NEOFORGE, "waystones", "1.0", "Waystones",
+						List.of(new net.forbric.api.UnifiedDependency("balm", "*", true)),
+						List.of(), null, "waystones.jar")));
+		try {
+			ModCatalog.publish(List.of(entry("balm")));
+			ModCatalog.mark("balm", ModCatalog.Status.FAILED, "its constructor threw");
+			KernelLoadReport.writeTo(file);
+			String report = java.nio.file.Files.readString(file);
+			assertTrue(report.contains("Waystones"), "the dependant has to be named: " + report);
+			assertTrue(report.contains("require this one") || report.contains("需要这个"), report);
+		} finally {
+			net.forbric.api.ModPresence.publishForgeFamily(List.of());
+		}
+	}
+
 	private static ModCatalog.Entry entry(String id) {
 		return new ModCatalog.Entry(Ecosystem.FABRIC, id, id, "1.0", "", List.of(), id + ".jar", "", "");
 	}

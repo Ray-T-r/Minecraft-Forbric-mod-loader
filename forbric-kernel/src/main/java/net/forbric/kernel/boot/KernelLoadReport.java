@@ -156,7 +156,19 @@ public final class KernelLoadReport {
 					: (zh ? "有一部分没有跑起来" : "partly did not run");
 			sb.append("    ").append(what);
 			if (!e.statusDetail().isEmpty()) sb.append(" — ").append(e.statusDetail());
-			sb.append("\n\n");
+			sb.append('\n');
+			// Who else declared they need this one. When the entry above is a library -- and in this project's
+			// history most of them are -- the player is not looking at the library, they are looking at the mods
+			// that quietly stopped doing anything, and nothing named those anywhere.
+			List<String> dependents = Dependents.of(e.modId());
+			if (!dependents.isEmpty()) {
+				sb.append("    ").append(zh ? "还有 " : "");
+				sb.append(zh
+						? dependents.size() + " 个 mod 说它们需要这个：" + String.join("、", dependents)
+						: dependents.size() + " other mod(s) require this one: " + String.join(", ", dependents));
+				sb.append('\n');
+			}
+			sb.append('\n');
 		}
 
 		if (zh) {
