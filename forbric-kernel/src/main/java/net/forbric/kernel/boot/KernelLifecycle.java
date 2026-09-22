@@ -360,6 +360,10 @@ public final class KernelLifecycle {
 				for (Object id : ids.keySet()) {
 					if (String.valueOf(id).startsWith("neoforge:")) natives = true;
 				}
+				// The registered half of the channel census. Recorded here because this is the one walk over
+				// PAYLOAD_REGISTRATIONS anywhere, and a second one would be a second thing to keep in step.
+				net.forbric.kernel.interop.NetworkChannelCensus.registered(
+						net.forbric.api.Ecosystem.NEOFORGE, ids.keySet());
 			}
 			return "; " + total + " payload type(s) registered " + counts + ", NeoForge's own included: "
 					+ (natives ? "yes" : "NO");

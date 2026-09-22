@@ -66,7 +66,11 @@
 
 ## M-D 四个盲区
 
-- [ ] **D1** network-protocol:`NetworkChannelCensus` 单点产出,五个网络 gate 各一条 check
+- [x] **D1(前半)** `NetworkChannelCensus` —— 记"注册了 payload 类型"和"向对端申报了频道"两个集合,
+      在配置阶段结束时报差集。差集就是把玩家踢出世界的那一类(cardinal 的 `entity_sync`:mod 发得出包,
+      对端没同意收,未处理的 payload 是断线不是跳过)。接在**已有的**两处遍历里,没有新增网络路径上的代码;
+      整个类任何输入都不抛(一个能弄断连接的普查比没有普查更糟)。5 个测试。
+- [ ] **D1(后半)** 五个网络 gate 各加一条 check —— 需要真的跑一次 m12/m15/m16 才能确认措辞,本机没跑过
 - [ ] **D2** performance:`ServerTickSampler` + JFR 透传 + m31 式并排对照
 - [x] **D3** 语言提供者 —— `modLoader` 第一次有了消费者(`LanguageProviders`,接在发现阶段),
       并且 Kotlin `object` 那个形状真的能构造了(没有公开构造器时取 `INSTANCE`,正是 kotlinforforge 自己的做法)。

@@ -1156,6 +1156,11 @@ public final class PayloadInterop {
 					+ "configuration — the kernel serves c:register itself to reach NeoForge's negotiation too, and "
 					+ "Fabric's own handler is the only thing that puts them on the connection for the play addon "
 					+ "to inherit", ids.size());
+			// The declared half, and the moment to say what the two halves add up to: configuration is over,
+			// so a payload type with no channel behind it will not acquire one later — it will disconnect
+			// whoever sends on it.
+			NetworkChannelCensus.declared(net.forbric.api.Ecosystem.FABRIC, ids);
+			NetworkChannelCensus.report();
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Net] could not record the client's Fabric PLAY channels — a Fabric mod's "
 					+ "play packets will be unsendable, and Cardinal Components disconnects rather than skipping",
