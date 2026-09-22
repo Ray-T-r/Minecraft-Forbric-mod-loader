@@ -165,3 +165,21 @@ Pending implementation and acceptance items remain open even when a smaller batc
   Evidence: `forbric-kernel/build/verification/compat-arbitration/abi-junit/` and `abi-tests.log`.
 - This batch covers the top-level decision. Parent-reachable nested candidates and JarJar coordinate/range
   selection still need the next discovery batch; the whole-instance arbitration requirement remains open.
+
+### P3 transaction and block-query implementation
+
+- Added game-side Fabric/NeoForge native transaction pairing, including nested rollback, cross-API reentry,
+  scope-order checks, and final notifications only after both native scopes close. Forge simulation rolls back;
+  execution commits. Exact audited standard Forge handlers use a shared object-graph journal that restores
+  backing containers, stack identity, aliases and data. Unknown subclasses/proxies/validators are refused.
+- Final post-Mixin class audits cover transfer-critical methods and helpers. Known unrelated extensions are
+  accepted only with structural evidence; altered copy/count/validation code and unproved helpers remain
+  unavailable for transactional writes. Fluid conversion preserves 81:1 precision and rejects lossy metadata.
+- Installed fallback queries preserve native-provider priority, face/null access, loaded-server-block scope,
+  invalidation and fresh provider lookup. The boot seam checks optional API/runtime availability without
+  loading game types early. Committed Forge writes dirty the current block entity once per root commit.
+- 25 boot/transform tests and 23 real-engine transaction tests pass without skips. The exact final game
+  definitions then passed all 11 Forge storage scenarios in a real server, which saved and exited 0. This
+  resolves the earlier 2/11 shape-audit failure without bypassing the audit. Evidence:
+  `forbric-kernel/build/verification/transfer-core/`. Real public world-query routing, persistence and the
+  bridge-off negative control are still the next M33 batch; these core results do not substitute for it.

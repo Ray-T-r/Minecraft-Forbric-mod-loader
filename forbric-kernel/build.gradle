@@ -35,6 +35,25 @@ def stagedForgeRuntime = new File(stagedRoot, 'forge-runtime/forge-runtime.jar')
 def stagedNeoRuntime   = new File(stagedRoot, 'neoforge-runtime/neoforge-runtime.jar')
 def stagedGameJars = [stagedMergedBase, stagedForgeRuntime, stagedNeoRuntime].findAll { it.isFile() }
 
+// Compile the optional transfer bridge against the exact API staged for the compatibility pack. These
+// modules remain supplied by the installed Fabric API mod; none is bundled in either kernel jar.
+def stagedFabricApi = file(project.findProperty('forbric.fabricApi') ?: new File(stagedRoot.parentFile.parentFile,
+		'forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar'))
+def transferAvailable = stagedGameJars.size() == 3 && stagedFabricApi.isFile()
+def transferModulesDir = layout.buildDirectory.dir('transfer-api-compile')
+def extractTransferApis = tasks.register('extractTransferApis', Sync) {
+	onlyIf { transferAvailable }
+	if (stagedFabricApi.isFile()) {
+		from zipTree(stagedFabricApi)
+		include 'META-INF/jars/fabric-transfer-api-v1-*.jar', 'META-INF/jars/fabric-api-lookup-api-v1-*.jar',
+				'META-INF/jars/fabric-api-base-*.jar'
+		eachFile { path = name }
+		includeEmptyDirs = false
+	}
+	into transferModulesDir
+}
+def transferModuleFiles = files(fileTree(transferModulesDir) { include '*.jar' }).builtBy(extractTransferApis)
+
 // Minecraft's OWN libraries, for the game-side set only. A game-side class cannot build a piece of text without
 // brigadier: net.minecraft.network.chat.Component extends com.mojang.brigadier.Message, so javac needs it to read
 // the Component class file at all. It is not on Maven Central (Mojang's own maven serves it), the game supplies it
@@ -64,6 +83,22 @@ def stagedMcLibraries = lastByNameUnder('com/mojang/brigadier/**/*.jar') +
 		// local Minecraft install as the other two, never bundled — the game supplies it at runtime.
 		lastByNameUnder('com/google/code/gson/**/*.jar')
 
+// LazyOptional's real carrier implementation uses Commons Lang's Mutable types. Resolve the exact library
+// chosen by Minecraft 26.2 (the same version JSON launch-kernel-server.sh reads), rather than a stub or whichever
+// cached commons-lang3 jar happens to sort last. This is test runtime linkage only and is never bundled.
+def stagedTransferTestLibraries = []
+def stagedMcVersionJson = new File(mcLibraries.parentFile, 'versions/26.2/26.2.json')
+if (stagedMcVersionJson.isFile()) {
+	def versionMetadata = new groovy.json.JsonSlurper().parse(stagedMcVersionJson)
+	versionMetadata.libraries.findAll { it.name?.startsWith('org.apache.commons:commons-lang3:') }.each { library ->
+		def relativePath = library.downloads?.artifact?.path
+		if (relativePath) {
+			def artifact = new File(mcLibraries, relativePath)
+			if (artifact.isFile()) stagedTransferTestLibraries.add(artifact)
+		}
+	}
+}
+
 sourceSets {
 	// `main` keeps the Gradle defaults (src/main/java, src/main/resources). Re-declaring them with srcDir would
 	// ADD the same directory a second time, and every resource would then be a duplicate entry — which fails
@@ -76,8 +111,14 @@ sourceSets {
 	// the build script to run, and `compileRuntimeJava` / `test` skip it so M0 (boot-side only) still builds.
 	runtime {
 		java { srcDir 'src/runtime/java' }
-		compileClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries)
-		runtimeClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries)
+		if (!transferAvailable) java.exclude 'net/forbric/kernel/runtime/transfer/**'
+		compileClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries) + transferModuleFiles
+		runtimeClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries) + transferModuleFiles
+	}
+	transferTest {
+		java { srcDir 'src/transferTest/java' }
+		compileClasspath += sourceSets.runtime.output + sourceSets.runtime.compileClasspath
+		runtimeClasspath += sourceSets.runtime.output + sourceSets.runtime.compileClasspath + files(stagedTransferTestLibraries)
 	}
 }
 
@@ -95,6 +136,8 @@ configurations {
 	runtimeCompileOnly.extendsFrom compileOnly
 	// MixinExtras — JiJ-nested into the runtime jar (game-side), never parent-loaded (LocalRef generated-class law).
 	nestedMods
+	transferTestImplementation.extendsFrom testImplementation
+	transferTestRuntimeOnly.extendsFrom testRuntimeOnly
 }
 
 dependencies {
@@ -207,6 +250,17 @@ test {
 	// its own explicit flags, so it does not need this to be on.
 	systemProperty 'forbric.dependencyDialog', 'off'
 }
+
+tasks.named('compileTransferTestJava') { onlyIf { transferAvailable } }
+tasks.register('transferTest', Test) {
+	description = 'Exercises transfer conservation and nested rollback using the real Fabric/NeoForge transaction engines.'
+	onlyIf { transferAvailable }
+	testClassesDirs = sourceSets.transferTest.output.classesDirs
+	classpath = sourceSets.transferTest.runtimeClasspath
+	useJUnitPlatform()
+	systemProperty 'forbric.transferTestClasspath', sourceSets.transferTest.runtimeClasspath.asPath
+}
+tasks.named('check') { dependsOn tasks.named('transferTest') }
 
 // BOOT jar: parent-loaded kernel core (classloading, discovery, resolve, transform, mixin service, mapping, access,
 // metadata, vendored fabric api surface). No game types.

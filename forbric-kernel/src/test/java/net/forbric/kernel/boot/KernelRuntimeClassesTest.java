@@ -61,7 +61,7 @@ class KernelRuntimeClassesTest {
 
 	/** {@code net.forbric.kernel.runtime.Foo} or {@code net/forbric/kernel/runtime/Foo}, however it is spelled. */
 	private static final Pattern NAMED = Pattern.compile(
-			"net[./]forbric[./]kernel[./]runtime[./]([A-Z][A-Za-z0-9_$]*)");
+			"net[./]forbric[./]kernel[./]runtime[./]((?:[a-z][A-Za-z0-9_]*[./])*[A-Z][A-Za-z0-9_$]*)");
 
 	private static List<Path> javaFiles(Path root) throws Exception {
 		try (Stream<Path> walk = Files.walk(root)) {
@@ -80,7 +80,7 @@ class KernelRuntimeClassesTest {
 			String text = Files.readString(file, StandardCharsets.UTF_8);
 			Matcher m = NAMED.matcher(text);
 			while (m.find()) {
-				String binary = "net.forbric.kernel.runtime." + m.group(1);
+				String binary = "net.forbric.kernel.runtime." + m.group(1).replace('/', '.');
 				if (spelled.add(binary)) where.add(binary + " (" + MAIN.relativize(file) + ")");
 			}
 		}
@@ -101,7 +101,7 @@ class KernelRuntimeClassesTest {
 		for (Path file : javaFiles(MAIN)) {
 			if (file.endsWith("KernelRuntimeClasses.java")) continue;
 			Matcher m = NAMED.matcher(Files.readString(file, StandardCharsets.UTF_8));
-			while (m.find()) spelled.add("net.forbric.kernel.runtime." + m.group(1));
+			while (m.find()) spelled.add("net.forbric.kernel.runtime." + m.group(1).replace('/', '.'));
 		}
 
 		List<String> stale = KernelRuntimeClasses.all().keySet().stream().filter(n -> !spelled.contains(n)).toList();
@@ -116,8 +116,8 @@ class KernelRuntimeClassesTest {
 		List<String> wrong = new ArrayList<>();
 
 		KernelRuntimeClasses.all().forEach((binary, origin) -> {
-			String simple = binary.substring(binary.lastIndexOf('.') + 1);
-			boolean hasSource = Files.isRegularFile(RUNTIME_SRC.resolve(simple + ".java"));
+			String relative = binary.substring("net.forbric.kernel.runtime.".length()).split("\\$", 2)[0].replace('.', '/');
+			boolean hasSource = Files.isRegularFile(RUNTIME_SRC.resolve(relative + ".java"));
 
 			if (origin == KernelRuntimeClasses.Origin.COMPILED && !hasSource) {
 				wrong.add(binary + " is COMPILED but has no file in " + RUNTIME_SRC);

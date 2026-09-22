@@ -121,8 +121,8 @@ public final class KernelMixinBootstrap {
 				return null;
 			}
 		});
-		loader.setMixinTransformer((name, bytes) -> conflicts.transform(name, bytes,
-				PostMixinFixups.apply(name, transformer.transformClassBytes(name, name, bytes))));
+		loader.setMixinTransformer((name, bytes) -> net.forbric.kernel.transform.ForgeTransferShapeAudit.certify(name,
+				conflicts.transform(name, bytes, PostMixinFixups.apply(name, transformer.transformClassBytes(name, name, bytes)))));
 
 		// Leave PREINIT so the registered configs are prepared and their targets become weavable.
 		gotoPhase(MixinEnvironment.Phase.INIT);

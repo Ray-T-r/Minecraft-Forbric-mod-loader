@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "forbric_transfer_canary",
+  "version": "1.0.0",
+  "name": "Forbric transfer verification fixture",
+  "environment": "server",
+  "entrypoints": { "main": ["net.forbric.kernel.transfer.ForgeTransferCanary"] },
+  "depends": { "minecraft": "26.2", "fabric-transfer-api-v1": "*" }
+}

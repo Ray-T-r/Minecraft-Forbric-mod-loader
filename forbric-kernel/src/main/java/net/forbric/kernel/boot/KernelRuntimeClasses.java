@@ -165,6 +165,13 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeClientInit", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelCompatibilityPrompts", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelPortalSpawn", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put(KernelTransferInterop.BRIDGE, new Entry(Origin.COMPILED, List.of(new Call("install", void.class))));
+		CLASSES.put(KernelTransferInterop.ISSUES, new Entry(Origin.COMPILED,
+				List.of(new Call("setReporter", void.class, java.util.function.Consumer.class))));
+		CLASSES.put(KernelTransferInterop.TRANSACTIONS, new Entry(Origin.COMPILED, List.of(
+				new Call("beforeOpen", void.class), new Call("beforeClose", void.class, Object.class, boolean.class),
+				new Call("afterClose", void.class, Object.class, Throwable.class),
+				new Call("fabricFinal", void.class, Object.class, Object.class), new Call("neoFinal", void.class, Object.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeReload", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelLootBridge", new Entry(Origin.COMPILED, List.of(
 				new Call("install", void.class))));
@@ -380,6 +387,7 @@ public final class KernelRuntimeClasses {
 	public static List<String> compiled() {
 		return CLASSES.entrySet().stream()
 				.filter(e -> e.getValue().origin() == Origin.COMPILED)
+				.filter(e -> !KernelTransferInterop.ownsOptionalRuntime(e.getKey()) || KernelTransferInterop.active())
 				.map(Map.Entry::getKey)
 				.toList();
 	}

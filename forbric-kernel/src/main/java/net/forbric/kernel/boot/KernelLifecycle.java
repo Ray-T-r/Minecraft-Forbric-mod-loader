@@ -1405,6 +1405,7 @@ public final class KernelLifecycle {
 			Method init = events.getDeclaredMethod("init");
 			init.setAccessible(true);
 			init.invoke(null);
+			KernelTransferInterop.install(cl);
 			ForbricLog.info("[Forbric/Lifecycle] ran NeoForge's registration events — capabilities and data maps "
 					+ "are registered, and its cauldron/forced-chunk/data-component/POI built-ins initialised");
 		} catch (ClassNotFoundException | NoSuchMethodException absent) {
