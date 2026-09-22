@@ -63,6 +63,37 @@ class GameEventBridgeInventoryTest {
 	}
 
 	/**
+	 * No bridge falls between the checks.
+	 *
+	 * <p>The check above covers GAME_BUS, and several below name particular bridges. Counted across the whole
+	 * enum that left exactly one — GUI_OVERLAY_LAYERS, on CLIENT_HUD — covered by neither: declared, and nothing
+	 * anywhere asserting it is reached. One is how many it takes, and the next pass someone adds would be the
+	 * second, so this closes the set instead of adding another name to a list.
+	 *
+	 * <p>A bridge qualifies by being installed by the multiplexer, or by being late-installed — which the
+	 * transformer that lands it records, and which {@code everyLatePassBridgeIsRecordedByTheTransformerThatLandsIt}
+	 * is the check for.
+	 */
+	@Test
+	void noBridgeIsCoveredByNeitherCheck() throws Exception {
+		// Anywhere in the multiplexer, not just in install(): CLIENT_RELOAD_LISTENERS is recorded from a
+		// different method of the same class, and which method does it is an implementation detail. Asking only
+		// about install() reported it as uncovered when it is not — the first version of this test did exactly
+		// that, which is the same shape as asserting on where a line is printed rather than on what is true.
+		List<String> installed = bridgesNamedAnywhereInTheMultiplexer();
+		assumeTrue(!installed.isEmpty(), "GameEventMultiplexer not compiled yet");
+
+		List<String> uncovered = new ArrayList<>();
+		for (GameEventBridge bridge : GameEventBridge.values()) {
+			if (installed.contains(bridge.name())) continue;
+			if (bridge.pass().lateInstalled()) continue;
+			uncovered.add(bridge.name() + " (" + bridge.pass() + ")");
+		}
+		assertEquals(List.of(), uncovered,
+				"these bridges are declared and nothing asserts they are ever reached: " + uncovered);
+	}
+
+	/**
 	 * The two hooks that were absent from the inventory until the audit found them. Naming them explicitly means a
 	 * future edit that drops one has to argue with a test rather than quietly shrink the set.
 	 */
@@ -259,6 +290,25 @@ class GameEventBridgeInventoryTest {
 	}
 
 	/** The GameEventBridge constants one method of GameEventMultiplexer reads, in order. */
+	/** Every bridge the multiplexer names, in any of its methods. */
+	private static List<String> bridgesNamedAnywhereInTheMultiplexer() throws Exception {
+		Path compiled = compiled("boot", "GameEventMultiplexer");
+		if (!Files.isRegularFile(compiled)) return List.of();
+		ClassNode node = new ClassNode();
+		new ClassReader(Files.readAllBytes(compiled)).accept(node, 0);
+		List<String> names = new ArrayList<>();
+		for (MethodNode m : node.methods) {
+			for (AbstractInsnNode insn : m.instructions.toArray()) {
+				if (insn instanceof FieldInsnNode field
+						&& "net/forbric/api/GameEventBridge".equals(field.owner)
+						&& !names.contains(field.name)) {
+					names.add(field.name);
+				}
+			}
+		}
+		return names;
+	}
+
 	private static List<String> bridgesNamedBy(String method) throws Exception {
 		Path compiled = compiled("boot", "GameEventMultiplexer");
 		if (!Files.isRegularFile(compiled)) return List.of();

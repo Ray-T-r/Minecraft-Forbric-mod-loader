@@ -91,7 +91,15 @@
       实测它在这个 3-mod 集上直接把服务端弄死了(`InjectionError: Critical injection failure:
       checkIfUnderSwimmableFluid(Z, LocalRef)` —— MixinExtras 的 `@Local` 糖)。它的 javadoc 本来就写了
       raw `InjectionError` 绕过所有 error handler。所以"一轮一个发现",而这个项目一轮都没跑过。
-- [ ] **C-merged-base** / **C-api-surface**
+- [x] **C-api-surface(判定 + 补洞)** 计划里说的"抽成一张表"**不做** —— 两张表之间的接缝早就被
+      `KernelRuntimeClassesTest`(11 个测试)钉死了:类、方法重命名、compiled/generated、
+      永远走 game 侧,全都有断言。那是便利问题,不是正确性缺口。
+      真正的洞是**覆盖不闭合**:原来的检查只覆盖 `GAME_BUS` 那一趟,其余靠逐个点名。
+      新增 `noBridgeIsCoveredByNeitherCheck` 把 44 条封成一个集合(装了 / 或者是 late 落地的)。
+      顺带一课:我先用 grep 数"哪个 bridge 没被任何测试提到",答案是 `GUI_OVERLAY_LAYERS`;
+      按字节码真算一遍,答案是 `CLIENT_RELOAD_LISTENERS` —— **散文的量具又错了一次**。
+      而它其实也是装了的,只是从多路复用器的另一个方法里装的,所以判据得是"这个类里任何地方"。
+- [ ] **C-merged-base**(= B1 的另一面,要重建合并基底)
 - [x] **C-arbitration(其一)** `ModPresence.isLoaded` 的 `-`/`_` 归一化 —— NeoForge 的 mod id 不许带 `-`,
       另外两家许,所以同一个 mod 跨生态就是两个拼写;而这个"专门用来跨生态回答"的注册表在用字符串比较,
       恰好跨不过两家唯一真正不同的那条边界。代价不对称:假 no 会让 mod 走"没装"分支而它其实装了。
