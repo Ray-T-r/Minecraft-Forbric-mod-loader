@@ -11,7 +11,8 @@
 - [x] **A1** `MergedLinkChecker` 加牙 —— `--baseline` 模式,新增即红,`[FIXED]` 提示剪枝;
       `build-merged-base.sh` 去掉 `|| echo`;安装器补上 link check(报告不拦)。
       自测 `forbric-loader/run/test-link-check.sh`:16/16 绿,含负控制。
-- [ ] **A4b** `fapi-usage.py` 的符号集提成参数(`--symbols`),让"Fabric API 消费者"和"某事件的等待者"共用一个工具
+- [x] **A4b** `fapi-usage.py` 的符号集提成参数(`--preset` / `--symbols` / `--list-presets`),
+      definer 排除也变成数据(`!` 行)而不是从 surface 前缀猜。6 个测试全绿,变异检查确认断言有牙。
 - [ ] **A2** `LostHookCensus` —— 把 682 条运行期 `forge hook lost` 分成 DATAGEN / RUNTIME_DEAD / RUNTIME_LIVE
 - [ ] **A3** 钩子调用点普查(把一次性的 `javap` 升成常驻测试)+ 每条桥的生产者必须有调用点
 - [ ] **A4** 给 `DeadEventAudit` 的手写表配生成器;让审计看见 `addListener`

@@ -37,7 +37,10 @@ resolved manifest, including dependencies and actual loaders, with the run evide
 `abi-audit.py` checks class references against explicitly supplied carrier/game jars;
 `field-drift.py` compares vanilla and merged field descriptors and reports affected
 guest jars. `fapi-usage.py` scans class references, including `META-INF/jars`, to prove
-the Fabric loot/model candidates actually call the affected APIs. Run each with
+that candidates actually call a named set of symbols — by default the Fabric loot/model
+surfaces, and with `--preset` / `--symbols` any other set, which is how "who is actually
+waiting on this Forge event" gets answered from bytecode instead of from `javap` notes in
+a javadoc. `--list-presets` prints the named sets. Run each with
 `--help` for its argument list. API usage must be proved from the downloaded candidate
 jar before treating the selection as final; metadata resolution alone cannot prove it.
 
