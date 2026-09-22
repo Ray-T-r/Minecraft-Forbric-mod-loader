@@ -119,7 +119,13 @@
       并且 Kotlin `object` 那个形状真的能构造了(没有公开构造器时取 `INSTANCE`,正是 kotlinforforge 自己的做法)。
       原来的失败信息是"no public constructor",一句关于一个没坏的 mod 的真话,而真正的原因就写在它自己的 manifest 里。
       判据窄:public + static + final + 类型是自己,否则一个叫 INSTANCE 的无关静态字段会被当成 mod 实例。
-- [ ] **D4** 时间轴与存档可携带性:长测 gate + 摘 mod 后开旧世界 / 跨构建搬世界 / 拿回原生 loader
+- [x] **D4(存档可携带性)** 新 gate `run/gate-m32-savedrop.sh`,**本机 GREEN**:三个 mod 写出一个世界、
+      里面真的放了一块被摘掉那个 mod 的方块,然后**把那个 mod 拿走再开同一个世界**。
+      `make-test-world.sh` 自己写着"反方向才是会烂的那个",而没有任何 gate 测过反方向。
+      它先红了两次,而且是对的两次:方块没放进去、region 文件没找到 —— 分母不成立就不许绿。
+      三个坑:26.2 的 overworld region 在 `world/dimensions/minecraft/overworld/`;没人在线时
+      spawn 区块不常驻,要先 `forceload`;猜的方块 id 会让"世界里其实什么都没有"照样通过。
+- [ ] **D4(长时程)** 长测 gate(内存泄漏 / 区块卸载 / 维度切换 / 几小时后的状态漂移)
 
 ## M-E 批评者补的
 
