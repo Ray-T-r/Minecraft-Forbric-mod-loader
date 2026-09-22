@@ -61,6 +61,21 @@ PRESETS = {
         "net/neoforged/neoforge/event/",
         "!net/neoforged/",
     ),
+    # The two halves of the one thing a tri-ecosystem loader can promise and no single loader can: a Fabric
+    # mod's pipe reading a Forge mod's machine. There is no bridge between them in the kernel -- the Forge and
+    # NeoForge adapters are twins of one API, not a crossing -- and no gate has ever put a mod from each side in
+    # contact. These two presets are how that seam gets a number instead of an assumption.
+    "fabric-transfer-lookup": (
+        "net/fabricmc/fabric/api/transfer/",
+        "net/fabricmc/fabric/api/lookup/",
+        "!net/fabricmc/fabric/",
+    ),
+    "forge-capabilities": (
+        "net/minecraftforge/common/capabilities/",
+        "net/neoforged/neoforge/capabilities/",
+        "!net/minecraftforge/",
+        "!net/neoforged/",
+    ),
 }
 DEFAULT_PRESET = "fabric-api-suppressed"
 

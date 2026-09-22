@@ -129,7 +129,12 @@
 
 ## M-E 批评者补的
 
-- [ ] **E1** 跨生态内容级互操作(Fabric transfer/lookup ↔ Forge capability:**零桥、零测试**)
+- [~] **E1** 跨生态内容级互操作 —— **先量了,没有造桥**。两个新 preset(`fabric-transfer-lookup` /
+      `forge-capabilities`)在真实 97 jar 整合包上给出:**1 个 jar 用 Fabric 的 transfer/lookup**
+      (Jade 的 Fabric 版 `JadeFabricUtils`),**10 个 jar 用 Forge/Neo capability**(sophisticatedcore 一族)。
+      也就是说这条缝今天的暴露面很窄,而且它点名了能演示它的那一对:
+      **Jade-Fabric 读 sophisticatedcore 的箱子**。造桥本身没做 —— 那是功能开发,而且我没法在本机验证
+      "Fabric 的管道真的抽到了 Forge 机器里的东西"。
 - [ ] **E2** 常驻对照实例(归因准确率本身是一等产品问题)
 - [x] **E3** 库 mod 爆炸半径 —— load-report 现在会写"还有 N 个 mod 说它们需要这个:…"。
       只陈述事实(它们声明了**必需**依赖),不判定它们也坏了 —— 判定就是这条分支已经删过一次的假指控。
