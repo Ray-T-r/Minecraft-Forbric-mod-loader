@@ -36,9 +36,13 @@
 
 ## 已定位未修(有断言钉住,新增即红)
 
-- [ ] **双发** `BlockEvent$EntityPlaceEvent` 同时有桥和幸存调用点(`ReplaceDisk#apply`),这条路径上
-      MinecraftForge 的订阅者会被叫两次。已 pin 在 `HookCallSiteCensusStagedTest.KNOWN_DOUBLE_POSTED`;
-      该删哪一边要开着游戏才能定,静态扫描定不了。
+- [x] **双发 —— 查下来是我自己的假阳性,已撤销**。`ReplaceDisk#apply` 只调 MinecraftForge 的
+      `onBlockPlace`,**一个 NeoForge 钩子都不调**;而桥是在**另一个生态的事件**上触发的,
+      所以这条路径上桥根本不响,订阅者只被叫一次。
+      我原来的判据("这个被桥接的事件基底还在直接发")问错了问题。可判定的问法是:
+      **有没有哪个方法同时调进两家的事件钩子入口**——整个合并基底 **0 个**。
+      规则挪进 `HookCallSiteCensus.methodsCallingBothFamilies`,合成测试钉住它会红
+      (真基底上无论怎么变异都是 0,所以只在真 jar 上断言等于没断言)。
 - [ ] **部分死亡** 一个事件在一条路径上活、其它路径上死,现在的表没有这种行数;三条被删的行都是这个形状。
 
 ## 可插队(零/低成本)

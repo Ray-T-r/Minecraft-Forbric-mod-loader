@@ -122,6 +122,44 @@ class HookCallSiteCensusTest {
 		assertEquals("forge/", HookCallSiteCensus.namespaceOf("forge/Hooks"));
 	}
 
+	@Test void amethodCallingBothEcosystemsHookClassesIsTheDoublePostShape() throws Exception {
+		// The only way one path delivers a bridged event twice: a bridge fires on the OTHER ecosystem's event,
+		// so unless something fires both, the two never meet. "The base also posts it directly" is not this,
+		// and reading it as this produced a finding on the real base that did not survive being checked.
+		Map<String, byte[]> entries = new LinkedHashMap<>();
+		entries.putAll(callsHooks("game/Single", List.of("net/minecraftforge/event/ForgeEventFactory")));
+		entries.putAll(callsHooks("game/Double", List.of("net/minecraftforge/event/ForgeEventFactory",
+				"net/neoforged/neoforge/event/EventHooks")));
+		// An ordinary utility in the same namespace is not a hook entry point; counting it would flag methods
+		// that post nothing.
+		entries.putAll(callsHooks("game/Utility", List.of("net/minecraftforge/event/ForgeEventFactory",
+				"net/neoforged/neoforge/common/util/Whatever")));
+		Path jar = base(entries);
+		assertEquals(List.of("game/Double#hook()V"), HookCallSiteCensus.methodsCallingBothFamilies(List.of(jar)));
+	}
+
+	@Test void theHookClassRuleNamesEntryPointsNotNamespaces() {
+		assertTrue(HookCallSiteCensus.isHookClass("net/minecraftforge/event/ForgeEventFactory", "net/minecraftforge/"));
+		assertTrue(HookCallSiteCensus.isHookClass("net/neoforged/neoforge/event/EventHooks", "net/neoforged/"));
+		assertFalse(HookCallSiteCensus.isHookClass("net/minecraftforge/common/util/BlockSnapshot", "net/minecraftforge/"));
+		assertFalse(HookCallSiteCensus.isHookClass("net/neoforged/neoforge/event/EventHooks", "net/minecraftforge/"));
+	}
+
+	private static Map<String, byte[]> callsHooks(String owner, List<String> hookOwners) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "hook", "()V", null, null);
+		mv.visitCode();
+		for (String h : hookOwners) mv.visitMethodInsn(Opcodes.INVOKESTATIC, h, "on", "()V", false);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(4, 4);
+		mv.visitEnd();
+		cw.visitEnd();
+		Map<String, byte[]> out = new LinkedHashMap<>();
+		out.put(owner + ".class", cw.toByteArray());
+		return out;
+	}
+
 	@Test void theSummaryLeadsWithTheDenominator() throws Exception {
 		Path carrier = carrier(hooks(hook("onCalled", "()V"), hook("onNeverCalled", "()V")));
 		Path base = base(callerCalling("game/Level", List.of(new Call("onCalled", "()V"))));

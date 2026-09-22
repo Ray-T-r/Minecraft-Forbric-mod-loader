@@ -207,6 +207,60 @@ public final class HookCallSiteCensus {
 		return (second < 0 ? pkg : pkg.substring(0, second)) + "/";
 	}
 
+	/**
+	 * Methods that call into BOTH ecosystems' event-hook classes, which is the only way one path can deliver a
+	 * bridged event twice.
+	 *
+	 * <p>"The base also posts this event directly" is NOT that, and reading it as that produced a finding here
+	 * that did not survive being checked: {@code BlockEvent$EntityPlaceEvent} has a bridge and one surviving
+	 * call site, in {@code ReplaceDisk#apply}, which calls MinecraftForge's {@code onBlockPlace} and no NeoForge
+	 * hook at all — so the bridge is silent on that path and a subscriber gets exactly one event. A bridge fires
+	 * on the OTHER ecosystem's event; unless something fires both, the two never meet.
+	 */
+	public static List<String> methodsCallingBothFamilies(List<Path> jars) throws IOException {
+		List<String> both = new java.util.ArrayList<>();
+		for (Path jar : jars) {
+			if (!Files.isRegularFile(jar)) continue;
+			try (ZipFile zf = new ZipFile(jar.toFile())) {
+				var entries = zf.entries();
+				while (entries.hasMoreElements()) {
+					ZipEntry e = entries.nextElement();
+					if (!e.getName().endsWith(".class")) continue;
+					ClassNode cn = new ClassNode();
+					try (InputStream in = zf.getInputStream(e)) {
+						new ClassReader(in.readAllBytes()).accept(cn, ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
+					}
+					for (MethodNode m : cn.methods) {
+						if (m.instructions == null) continue;
+						boolean forge = false;
+						boolean neo = false;
+						for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+							if (!(insn instanceof MethodInsnNode mi)) continue;
+							if (isHookClass(mi.owner, "net/minecraftforge/")) forge = true;
+							if (isHookClass(mi.owner, "net/neoforged/")) neo = true;
+						}
+						if (forge && neo) both.add(cn.name + "#" + m.name + m.desc);
+					}
+				}
+			}
+		}
+		return List.copyOf(both);
+	}
+
+	/**
+	 * An event-hook ENTRY POINT of {@code family}, as opposed to any other class in its namespace.
+	 *
+	 * <p>Narrow on purpose. Both namespaces carry ordinary utilities a game method may legitimately touch —
+	 * {@code BlockSnapshot.create} is one — and counting those would make this find methods that post nothing.
+	 */
+	static boolean isHookClass(String owner, String family) {
+		if (!owner.startsWith(family)) return false;
+		String simple = owner.substring(owner.lastIndexOf('/') + 1);
+		return simple.equals("ForgeEventFactory") || simple.equals("ForgeEventFactoryClient")
+				|| simple.equals("ForgeHooks") || simple.equals("ForgeHooksClient")
+				|| simple.equals("EventHooks") || simple.equals("ClientHooks");
+	}
+
 	private static ClassNode read(Path jar, String entry) throws IOException {
 		try (ZipFile zf = new ZipFile(jar.toFile())) {
 			ZipEntry e = zf.getEntry(entry);

@@ -37,27 +37,6 @@ class HookCallSiteCensusStagedTest {
 			"net/minecraftforge/client/event/ForgeEventFactoryClient", "forge-runtime/forge-runtime.jar",
 			"net/neoforged/neoforge/event/EventHooks", "neoforge-runtime/neoforge-runtime.jar");
 
-	/**
-	 * Bridged events the merged base ALSO still posts by itself.
-	 *
-	 * <p>{@code ReplaceDisk#apply} still calls {@code ForgeEventFactory.onBlockPlace} while the bridge re-posts
-	 * the same event from NeoForge's side, so on that one path a MinecraftForge subscriber is called twice. It is
-	 * pinned rather than fixed because deciding WHICH of the two to remove needs the game running — the
-	 * screen-mouse family taught this exact lesson from the other direction, where the MinecraftForge hook turned
-	 * out not to be a pure emitter and bridging it dispatched every click twice.
-	 */
-	private static final Set<String> KNOWN_DOUBLE_POSTED =
-			new TreeSet<>(List.of("net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent"));
-
-	/**
-	 * Resolved here rather than through a helper, and with these two literals in this file on purpose:
-	 * {@code StagedArtifactCoverageTest} finds the tests that read the staged artifacts by SCANNING the test
-	 * sources for {@code forbric-loader} and {@code FORBRIC_OLD}, precisely so nobody has to maintain a list.
-	 * A shared helper would have hidden this test from that sentinel — a bytecode test the coverage check cannot
-	 * see is one that can stop running without anyone noticing, which is the failure this whole file is about.
-	 *
-	 * <p>{@code FORBRIC_OLD} first, because that is what lets a second worktree run against the real tree.
-	 */
 	private static Path root() {
 		String override = System.getenv("FORBRIC_OLD");
 		if (override != null && !override.isBlank()) return Path.of(override, "run").normalize();
@@ -139,33 +118,12 @@ class HookCallSiteCensusStagedTest {
 	}
 
 	@Test
-	void aBridgedEventIsNotOneTheBaseStillPostsByItself() throws Exception {
+	void noSinglePathPostsABridgedEventTwice() throws Exception {
 		assumeTrue(Files.isRegularFile(base()), "staged merged base absent");
-		Map<String, HookCallSiteCensus.Census> all = censusAll();
-		assumeTrue(!all.isEmpty(), "staged carriers absent");
-
-		// A bridge exists because the merge took the call site away: it listens on the surviving ecosystem's
-		// event and posts the other one. So if the base ALSO still calls a hook that constructs the bridged
-		// event, every subscriber gets it twice — the exact shape of the screen-mouse trap, where the
-		// MinecraftForge hook was not a pure emitter and bridging it dispatched each click two times.
-		Set<String> live = new TreeSet<>();
-		for (HookCallSiteCensus.Census c : all.values()) live.addAll(c.liveEvents());
-
-		List<String> doubled = new ArrayList<>();
-		int unjudged = 0;
-		for (String event : DeadEventAudit.BRIDGED.keySet()) {
-			boolean known = all.values().stream().anyMatch(c -> c.postersOf().containsKey(event));
-			if (!known) {
-				unjudged++;
-				continue;
-			}
-			if (live.contains(event)) doubled.add(event);
-		}
-		System.out.println("[Forbric/Hooks] BRIDGED table: " + DeadEventAudit.BRIDGED.size() + " rows, "
-				+ unjudged + " not judged by this census, " + doubled.size() + " also posted by the base");
-		// Pinned as a SET, not asserted away: this one is real and unfixed, and the fix is a behaviour change
-		// that has to be made with the game running, not from a static scan. Anything NEW joining it is red.
-		assertEquals(KNOWN_DOUBLE_POSTED, new TreeSet<>(doubled),
-				"a bridged event with a surviving call site is delivered twice to every subscriber");
+		List<String> both = HookCallSiteCensus.methodsCallingBothFamilies(List.of(base()));
+		System.out.println("[Forbric/Hooks] methods calling both ecosystems' event hooks: " + both.size());
+		assertEquals(List.of(), both,
+				"a method that posts through both families can deliver a bridged event twice to one subscriber: "
+						+ both);
 	}
 }
