@@ -78,7 +78,12 @@ for m in "${MODS[@]}"; do cp "$m" "$SRV/mods/"; cp "$m" "$CLI/mods/"; done
 printf 'eula=true\n' > "$SRV/eula.txt"
 printf 'server-port=%s\nonline-mode=false\nlevel-name=MpWorld\nmax-tick-time=-1\nview-distance=6\nspawn-protection=0\nsync-chunk-writes=false\n' "$PORT" > "$SRV/server.properties"
 # Without options.txt the accessibility onboarding screen sits in front of quick-play and nothing ever connects.
-cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null || printf 'version:4903\n' > "$CLI/options.txt"
+# The fallback needs onboardAccessibility, not just version. Without it the accessibility onboarding screen
+# sits in front of quick-play and waits for a human to click Continue — which is the very thing copying
+# options.txt is here to prevent, so a fallback that omits it hands the gate exactly the failure it was written
+# to avoid. It only shows up where the merged pack is absent, e.g. a second worktree, which is why it survived.
+cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null \
+  || printf 'version:4903\nonboardAccessibility:false\n' > "$CLI/options.txt"
 echo "[kernel] staged: $(ls -1 "$SRV/mods" | paste -sd' ' -)"
 
 step "boot the dedicated server and hold it open"

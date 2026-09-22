@@ -50,7 +50,8 @@ mkdir -p "$SRV/FhsWorld/serverconfig"
 printf '# pre-written by gate-m16 BEFORE the server booted: the client must see THIS value, not its own default\ngreeting = "from-the-gate"\n' > "$SRV/FhsWorld/serverconfig/forbriclive-server.toml"
 printf 'eula=true\n' > "$SRV/eula.txt"
 printf 'server-port=%s\nonline-mode=false\nlevel-type=minecraft\\:flat\nlevel-name=FhsWorld\nmax-tick-time=-1\nview-distance=6\nspawn-protection=0\nsync-chunk-writes=false\n' "$PORT" > "$SRV/server.properties"
-cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null || printf 'version:4903\n' > "$CLI/options.txt"
+cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null \
+  || printf 'version:4903\nonboardAccessibility:false\n' > "$CLI/options.txt"
 echo "[kernel] staged: $(ls -1 "$SRV/mods" | paste -sd' ' -)"
 
 step "boot the dedicated server and hold it open"

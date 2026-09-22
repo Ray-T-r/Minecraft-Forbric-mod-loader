@@ -89,7 +89,8 @@ cp "$BUILD/forbricdepcanary.jar" "$SRV/mods/"
 cp "$BUILD/forbricdepcanary.jar" "$CLI/mods/"
 cp "$BUILD/forbriccrosseco.jar" "$CLI/mods/"
 seed_server_properties "$SRV"
-cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null || printf 'version:4903\n' > "$CLI/options.txt"
+cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null \
+  || printf 'version:4903\nonboardAccessibility:false\n' > "$CLI/options.txt"
 
 step "the dedicated server must report it and must NOT open anything"
 : > "$SLOG"

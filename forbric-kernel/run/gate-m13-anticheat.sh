@@ -72,7 +72,8 @@ grep -q 'print-to-console: true' "$SRV/plugins/GrimAC/config.yml" && grep -q '"1
 printf 'eula=true\n' > "$SRV/eula.txt"
 printf 'server-port=%s\nonline-mode=false\nlevel-type=minecraft\\:flat\nlevel-name=AcWorld\ngamemode=survival\ndifficulty=peaceful\nspawn-monsters=false\nspawn-protection=0\nview-distance=6\nsimulation-distance=6\nenforce-secure-profile=false\nmax-players=5\nmotd=forbric-ac-gate\n' "$PORT" > "$SRV/server.properties"
 for m in "${MODS[@]}"; do cp "$m" "$CLI/mods/"; done
-cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null || printf 'version:4903\n' > "$CLI/options.txt"
+cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null \
+  || printf 'version:4903\nonboardAccessibility:false\n' > "$CLI/options.txt"
 echo "[kernel] client mods: $(ls -1 "$CLI/mods" | paste -sd' ' -)"
 
 step "boot Paper and hold it open"
