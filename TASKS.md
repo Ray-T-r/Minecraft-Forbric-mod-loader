@@ -108,7 +108,13 @@
       改成数 `CGAME`(每次发生只出现一次),而不是数去重后的 `CLOG`——后者会把真的第二次加载吞掉。
       三个 gate 现在都 GREEN。
 - [ ] **D1(余下)** m13/m14 也加频道普查两条 —— 没在本机跑过这两个
-- [ ] **D2** performance:`ServerTickSampler` + JFR 透传 + m31 式并排对照
+- [x] **D2** 性能 —— `KernelServerTicks` + `ServerTickSamplerInjector`,默认开(`-Dforbric.tickSampler=off` 关),
+      每 600 tick 一行。**这是这个项目第一个 tick 时间数字**:实测 `1800 tick(s): mean 50.00ms, max 109.95ms,
+      at twice the budget or worse 1 (0.1%)`,m12 已断言。
+      两个坑自己踩了并修掉:① 用 `0` 当"还没有上一次"的哨兵 —— `nanoTime` 真的可能是 0,单测抓到;
+      ② 第一版把阈值设成 budget 本身,于是报"48% 的 tick 超时" —— 保持 20 TPS 的服务器**本来就**稳在 50ms
+      (多余时间用来 sleep),那测的是抖动不是延迟。阈值改成两倍 budget(没有 sleep 可还了)。
+      JFR 不用改代码:`launch-kernel-{server,client}.sh` 本来就透传 `FORBRIC_JVM`。
 - [x] **D3** 语言提供者 —— `modLoader` 第一次有了消费者(`LanguageProviders`,接在发现阶段),
       并且 Kotlin `object` 那个形状真的能构造了(没有公开构造器时取 `INSTANCE`,正是 kotlinforforge 自己的做法)。
       原来的失败信息是"no public constructor",一句关于一个没坏的 mod 的真话,而真正的原因就写在它自己的 manifest 里。

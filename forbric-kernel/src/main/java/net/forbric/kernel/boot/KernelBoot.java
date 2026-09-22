@@ -485,6 +485,9 @@ public final class KernelBoot {
 		// Inert unless -Dforbric.clientSmoke=true. It is what lets gate-m9 run a client unattended: enter a
 		// world, live in it, disconnect and stop, so the gate waits for an outcome instead of a timeout.
 		chain.register(TransformPhase.COREMOD, new ClientSmokeTickInjector());
+		// The only performance measurement in the tree. Beside the smoke tick because it is the same shape:
+		// one static call at the head of a tick, no mixin config, nothing new in the list a gate asserts on.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ServerTickSamplerInjector());
 
 		// The loader's own Minecraft.close mixin never applies under the kernel, so its stop of the two loaders'
 		// config file-watchers (non-daemon executors once a config file changes) is injected here: on the client at

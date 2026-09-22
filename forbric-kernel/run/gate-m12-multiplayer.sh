@@ -199,6 +199,22 @@ else
   echo "[kernel] FAIL partially applied guest mixins: ${PARTIAL_MIXINS:-none found} (ceiling ${M12_PARTIAL_CEILING:-30})"
   FAIL=1
 fi
+
+# Tick times. The only performance number this loader has: nothing in the tree measured tick time, frame time,
+# TPS or memory, so a mod whose whole value is a number proved nothing here by loading, and a report that the
+# loader is slow had nothing to agree or disagree with.
+#
+# The MEAN is not the assertion — a server keeping up holds 50ms exactly, by sleeping off what the tick did not
+# use. The tail is: an interval at twice the budget means there was no sleep left to give back. Live baseline on
+# this machine is 1 in 1800.
+check "the tick sampler reported" "Forbric/Tick\] [0-9]+ tick\(s\): mean " "$SLOG"
+LATE_TICKS="$(grep -aoE 'at twice the budget or worse [0-9]+' "$SLOG" | grep -oE '[0-9]+' | tail -1)"
+if [ -n "${LATE_TICKS:-}" ] && [ "$LATE_TICKS" -le "${M12_LATE_CEILING:-20}" ]; then
+  echo "[kernel] PASS server ticks within the lateness ceiling ($LATE_TICKS <= ${M12_LATE_CEILING:-20})"
+else
+  echo "[kernel] FAIL server ticks late: ${LATE_TICKS:-none found} at twice the budget (ceiling ${M12_LATE_CEILING:-20})"
+  FAIL=1
+fi
 check_absent "nobody was told the server requires a mod they have" \
   "This server requires" "$SLOG"
 
