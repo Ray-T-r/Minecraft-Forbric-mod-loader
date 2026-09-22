@@ -14,9 +14,23 @@
 - [x] **A4b** `fapi-usage.py` 的符号集提成参数(`--preset` / `--symbols` / `--list-presets`),
       definer 排除也变成数据(`!` 行)而不是从 surface 前缀猜。6 个测试全绿,变异检查确认断言有牙。
 - [ ] **A2** `LostHookCensus` —— 把 682 条运行期 `forge hook lost` 分成 DATAGEN / RUNTIME_DEAD / RUNTIME_LIVE
-- [ ] **A3** 钩子调用点普查(把一次性的 `javap` 升成常驻测试)+ 每条桥的生产者必须有调用点
-- [ ] **A4** 给 `DeadEventAudit` 的手写表配生成器;让审计看见 `addListener`
+- [x] **A3** `HookCallSiteCensus` —— 从字节码重新推导"哪些钩子还有调用点"。**复现了手工 javap 的数字**:
+      `ForgeEventFactoryClient` 46 declared / 8 live(javadoc 写的就是这两个数),`ForgeEventFactory` 160/20,
+      NeoForge `EventHooks` 114/106。6 个合成测试钉规则(三次变异全部被抓),3 个 staged 测试钉现实。
+- [x] **A4(前半)** 手写表有生成器了,并且**第一次跑就抓到 3 条假指控** —— `NeighborNotifyEvent`
+      (`ServerLevel#updateNeighborsAt` 还在调)、`LivingFallEvent`(`AbstractHorse`/`Llama#causeFallDamage`)、
+      `EntityPlaceEvent`(`ReplaceDisk#apply`)。手工读的不是马虎,是**只读了一个类**;但这张表的断言是
+      "合并后的游戏从不发它",而这三个确实会发,把玩家的 mod 标成 DEGRADED 是假指控。三行已删。
+- [ ] **A4(后半)** 让审计看见 `addListener` —— 走 `KernelModLoader.publishedForgeMods()` 的 per-mod BusGroup,
+      不用解析方法体
 - [ ] **A5** 元普查:gate-m0 skip 上限、`build.gradle` 的 `inputs.files`、`StagedArtifactCoverageTest` 覆盖新普查
+
+## 已定位未修(有断言钉住,新增即红)
+
+- [ ] **双发** `BlockEvent$EntityPlaceEvent` 同时有桥和幸存调用点(`ReplaceDisk#apply`),这条路径上
+      MinecraftForge 的订阅者会被叫两次。已 pin 在 `HookCallSiteCensusStagedTest.KNOWN_DOUBLE_POSTED`;
+      该删哪一边要开着游戏才能定,静态扫描定不了。
+- [ ] **部分死亡** 一个事件在一条路径上活、其它路径上死,现在的表没有这种行数;三条被删的行都是这个形状。
 
 ## 可插队(零/低成本)
 

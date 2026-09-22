@@ -70,7 +70,11 @@ public final class DeadEventAudit {
 	 * MinecraftForge event class (internal name) → what a player loses, for events the merged base no longer
 	 * posts and the kernel does not bridge. See the class javadoc for how each was established.
 	 */
-	private static final Map<String, String> DEAD = deadEvents();
+	/**
+	 * Package-private so {@link HookCallSiteCensus} can be pointed at it: the rows are hand-read {@code javap}
+	 * findings, and until something re-derived them from the bytecode they were claims nobody could check.
+	 */
+	static final Map<String, String> DEAD = deadEvents();
 
 	private static Map<String, String> deadEvents() {
 		Map<String, String> dead = new LinkedHashMap<>();
@@ -87,12 +91,21 @@ public final class DeadEventAudit {
 		// ServerGamePacketListenerImpl carries NeoForge's chat decorator and no MinecraftForge chat hook.
 		dead.put("net/minecraftforge/event/ServerChatEvent",
 				"chat messages cannot be seen, edited or blocked — chat-formatting and moderation mods do nothing");
-		// Level: NeoForge's onNeighborNotify only.
-		dead.put("net/minecraftforge/event/level/BlockEvent$NeighborNotifyEvent",
-				"block updates propagating to neighbours are invisible to MinecraftForge mods");
-		// LivingEntity: NeoForge's onLivingFall only.
-		dead.put("net/minecraftforge/event/entity/living/LivingFallEvent",
-				"fall damage cannot be modified or cancelled");
+		// NeighborNotifyEvent and LivingFallEvent USED to be rows here, read off Level and LivingEntity by
+		// hand. HookCallSiteCensus, run against the staged base, contradicts both:
+		//
+		//   ServerLevel#updateNeighborsAt            -> ForgeEventFactory.onNeighborNotify
+		//   AbstractHorse#causeFallDamage            -> ForgeEventFactory.onLivingFall
+		//   Llama#causeFallDamage                    -> ForgeEventFactory.onLivingFall
+		//
+		// The hand reading was not careless, it was PARTIAL: the call site is gone from the class that was
+		// looked at and survives on another. But this table's claim is "the merged game never posts it", and
+		// a mod subscribing to either one does receive events. Marking it DEGRADED on the Mods screen and in
+		// load-report.txt is then a false accusation, which is worse than saying nothing — the reader who
+		// checks one and finds it working stops believing the rest of the list.
+		//
+		// Partial deadness (live on one path, dead on the others) has no row shape here and is a real gap;
+		// what it is not is this row.
 		// ItemStack keeps MinecraftForge's onItemTooltip, so the dead one here is NeoForge's — recorded on the
 		// other side of the ledger because the audit only walks MinecraftForge listeners today.
 		// Client registration events that ForgeHooksClient.initClientHooks does NOT post and that no kernel bridge
@@ -132,17 +145,16 @@ public final class DeadEventAudit {
 		dead.put("net/neoforged/neoforge/event/entity/player/ItemTooltipEvent",
 				"item tooltips cannot be extended by NeoForge mods — the merged getTooltipLines calls only "
 						+ "MinecraftForge's onItemTooltip");
-		// The cost routePlaceItemHookToNeoForge states: ItemStack.useOn was sent to NeoForge's
-		// onPlaceItemIntoWorld so that placing anything works at all, and MinecraftForge's event went with it.
-		dead.put("net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent",
-				"block placement by an entity is neither observed nor preventable for MinecraftForge mods — the "
-						+ "merged ItemStack.useOn asks only NeoForge's onPlaceItemIntoWorld, because the snapshot list "
-						+ "it drains is NeoForge-typed");
+		// EntityPlaceEvent was a row here too, for the reason routePlaceItemHookToNeoForge states: ItemStack.useOn
+		// was sent to NeoForge's onPlaceItemIntoWorld so that placing anything works at all. True of useOn, and
+		// the census finds ReplaceDisk#apply still calling ForgeEventFactory.onBlockPlace — so the event is
+		// posted, and the row was unreachable anyway (BRIDGED is consulted first and carries this event).
 		return Map.copyOf(dead);
 	}
 
 	/** The bridge that covers an event, when one does. Keeps an entry from being reported once it is bridged. */
-	private static final Map<String, GameEventBridge> BRIDGED = bridged();
+	/** Package-private for the same reason as {@link #DEAD}. */
+	static final Map<String, GameEventBridge> BRIDGED = bridged();
 
 	private static Map<String, GameEventBridge> bridged() {
 		Map<String, GameEventBridge> map = new LinkedHashMap<>();
