@@ -99,7 +99,15 @@
       所以"装上了"验到了、"真的送到"没验到 —— 于是加了字节码断言钉住最容易错的那半:
       hook 被调用,且它的返回值被一个写回的调用带走。把 `setResultStack` 去掉,测试立刻红。
       工单 6 → 4。
-- [ ] **工单余下 4 条** —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
+- [x] **工单第四条:`FurnaceFuelBurnTimeEvent`(←balm)** —— 方向相反的那条,用 repair 不是桥:
+      合并后的 `FuelValues.burnDuration` 只调 MinecraftForge 的 `getItemBurnTime`,NeoForge 的事件没人发。
+      NeoForge 那边是**静态调用不是总线事件**,监听器无从下手,所以把调用点重定向到内核,**两边依次问**
+      (Forge 先拿游戏算出的值,Neo 拿 Forge 返回的值)—— 两个生态的 mod 都能改同一个燃烧时间,
+      这本来就是把它们放一起跑的意义。Neo 的 hook 还要 `FuelValues` 本身,所以重定向前先压 `this`,
+      并且**只在实例方法里做**(静态方法的 slot 0 是第一个参数,压下去等于把 ItemStack 当 FuelValues 传)。
+      实测:repair 在真服务端落地、m12 GREEN、`RepairDriftCensus` **45/45**。
+      顺带被 `KernelRuntimeClassesTest` 抓了一次:boot 侧新点名了一个 runtime 类却没登记。
+- [ ] **工单余下 3 条** —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
       `AddPackFindersEvent`←collective、`LivingEntityUseItemEvent$Finish`←nutritiousmilk、
       `MobSpawnEvent$FinalizeSpawn`←collective、`PlayerEvent$StartTracking`←collective、
       `BlockEvent$PortalSpawnEvent`←collective、`FurnaceFuelBurnTimeEvent`←balm(**NeoForge 的事件**)、
