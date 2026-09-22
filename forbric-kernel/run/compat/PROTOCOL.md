@@ -46,8 +46,11 @@ ones to the jars in a mods directory that name them, so the list is ordered by h
 mods notice rather than by whatever order the byte-merge produced. `repair-drift.sh`
 replays the compat transformer's claim ledger against a CANDIDATE game build and names
 the repairs that would stop applying, which is the question a carrier bump asks and that
-nothing answered before a player did. Run each with
-`--help` for its argument list. API usage must be proved from the downloaded candidate
+nothing answered before a player did. `control-diff.sh` answers the question that has
+been settled by argument until now — is this symptom Forbric's — by booting the same
+Fabric mods on a native Fabric server and on Forbric and saying which log it appears in:
+FORBRIC-ONLY, BOTH, NATIVE-ONLY or NEITHER, and INCONCLUSIVE when an arm did not start.
+Run each with `--help` for its argument list. API usage must be proved from the downloaded candidate
 jar before treating the selection as final; metadata resolution alone cannot prove it.
 
 ## Run and collect

@@ -150,7 +150,14 @@
       也就是说这条缝今天的暴露面很窄,而且它点名了能演示它的那一对:
       **Jade-Fabric 读 sophisticatedcore 的箱子**。造桥本身没做 —— 那是功能开发,而且我没法在本机验证
       "Fabric 的管道真的抽到了 Forge 机器里的东西"。
-- [ ] **E2** 常驻对照实例(归因准确率本身是一等产品问题)
+- [x] **E2** 归因对照 —— `run/compat/control-diff.sh`,**本机跑通**:同一组 Fabric mod 在
+      **原生 Fabric 服务端**和 **Forbric** 上各起一次,然后说这个症状出现在哪一边。
+      四个判决:`FORBRIC-ONLY`(实测:`Forbric/Mixin]` 原生 0 / Forbric 53)、
+      `BOTH`(实测:`Preparing level` 两边各 1)、`NATIVE-ONLY`、`NEITHER`(实测),
+      外加 `INCONCLUSIVE` —— 有一臂没起来的时候,"症状不在"是关于一台不存在的服务器的陈述。
+      自己踩的坑:`grep -c || echo 0` 在没有匹配时会输出**两行**(grep 自己印 0 再退出 1),
+      于是计数变成 `"0\n0"`,第一次跑把 Forbric 每次启动都会打的那个模式判成了 `NEITHER`。
+      改成 `lib.sh` 的 `|| true` + `${VAR:-0}`。
 - [x] **E3** 库 mod 爆炸半径 —— load-report 现在会写"还有 N 个 mod 说它们需要这个:…"。
       只陈述事实(它们声明了**必需**依赖),不判定它们也坏了 —— 判定就是这条分支已经删过一次的假指控。
       id 比较跨生态拼写,否则最可能两个生态都发布的那批库恰好报不出依赖者。
