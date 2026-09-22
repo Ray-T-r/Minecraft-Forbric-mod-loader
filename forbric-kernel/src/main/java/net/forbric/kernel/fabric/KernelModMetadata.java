@@ -94,6 +94,20 @@ public final class KernelModMetadata implements ModMetadata {
 	 * mod set even though no jar provides them.
 	 */
 	public static KernelModMetadata builtin(String id, String version, String name) {
+		return builtin(id, version, name, Map.of());
+	}
+
+	/**
+	 * The same synthetic mod, carrying custom values.
+	 *
+	 * <p>Used for the presence registration of a mod the OTHER family loaded. A Forge-family mod declares in
+	 * {@code [modproperties.<id>]} exactly what a Fabric mod declares in its {@code custom} block — the keys are
+	 * even written in Fabric's namespaced spelling ({@code fabric-renderer-api-v1:contains_renderer}) — and the
+	 * readers are Fabric mods calling {@code containsCustomValue}. Registering the identity without them answers
+	 * "that mod is here" and "it offers nothing", which is a different, wrong answer.
+	 */
+	public static KernelModMetadata builtin(String id, String version, String name,
+			Map<String, CustomValue> customValues) {
 		Version parsed;
 
 		try {
@@ -103,7 +117,8 @@ public final class KernelModMetadata implements ModMetadata {
 		}
 
 		return new KernelModMetadata("builtin", id, List.of(), parsed, ModEnvironment.UNIVERSAL, List.of(), name, "",
-				List.of(), List.of(), ContactInformation.EMPTY, List.of(), Map.of(), Map.of(), Map.of(), List.of(),
+				List.of(), List.of(), ContactInformation.EMPTY, List.of(), Map.of(),
+				customValues == null ? Map.of() : Map.copyOf(customValues), Map.of(), List.of(),
 				null, List.of(), Map.of());
 	}
 

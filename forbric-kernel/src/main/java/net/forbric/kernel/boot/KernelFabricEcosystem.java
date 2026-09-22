@@ -18,7 +18,9 @@ package net.forbric.kernel.boot;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -28,6 +30,7 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.entrypoint.EntrypointContainer;
 import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
+import net.fabricmc.loader.api.metadata.CustomValue;
 import net.fabricmc.loader.api.metadata.ModDependency;
 import net.fabricmc.loader.api.metadata.ModMetadata;
 
@@ -39,6 +42,7 @@ import net.forbric.kernel.fabric.FabricModDiscovery;
 import net.forbric.kernel.mixin.MixinConfigOwners;
 import net.forbric.kernel.fabric.KernelFabricLoader;
 import net.forbric.kernel.fabric.KernelModContainer;
+import net.forbric.kernel.fabric.KernelCustomValue;
 import net.forbric.kernel.fabric.KernelModMetadata;
 import net.forbric.kernel.mixin.MergedBaseMixinCompat;
 import net.forbric.kernel.mixin.MixinConfigPolicy;
@@ -176,8 +180,8 @@ public final class KernelFabricEcosystem {
 		// that gates an integration on that check silently disables it. Register the identity, nothing else: no
 		// entrypoints, no mixins, no assets, all of which the winner already provides.
 		for (DuplicateModArbiter.Alias alias : dupes.aliasesFor(Ecosystem.FABRIC)) {
-			fabric.register(new KernelModContainer(
-					KernelModMetadata.builtin(alias.modId(), alias.version(), alias.modId()), null, null));
+			fabric.register(new KernelModContainer(KernelModMetadata.builtin(alias.modId(), alias.version(),
+					alias.modId(), foreignCustomValues(alias.modId())), null, null));
 			ForbricLog.info("[Forbric/Fabric] presence alias '%s' %s — its Fabric jar lost arbitration, but the "
 					+ "winning jar supplies the classes; isModLoaded now answers", alias.modId(), alias.version());
 		}
@@ -193,7 +197,8 @@ public final class KernelFabricEcosystem {
 			if (fabric.getModContainer(mod.getId()).isPresent()) continue;
 			fabric.register(new KernelModContainer(KernelModMetadata.builtin(mod.getId(),
 					mod.getVersion() == null ? "0" : mod.getVersion(),
-					mod.getDisplayName() == null ? mod.getId() : mod.getDisplayName()), null, null));
+					mod.getDisplayName() == null ? mod.getId() : mod.getDisplayName(),
+					customValuesOf(mod)), null, null));
 			foreign++;
 		}
 		if (foreign > 0) {
@@ -472,7 +477,44 @@ public final class KernelFabricEcosystem {
 
 		int client = invoke("client", ClientModInitializer.class, ClientModInitializer::onInitializeClient);
 		ForbricLog.info("[Forbric/Fabric] invoked %d Fabric client entrypoint(s) (Minecraft.<init> window)", client);
+		reportActiveRenderer();
 		return true;
+	}
+
+	/**
+	 * Names whichever mod ended up owning the Fabric Rendering API's single renderer slot.
+	 *
+	 * <p>That slot takes exactly one occupant — {@code RendererManager.registerRenderer} throws on a second — and
+	 * on a normal Fabric instance Sodium takes it and Indigo stands down. Every party to that handover is
+	 * cross-ecosystem here (a NeoForge Sodium declaring itself to a Fabric Indigo through the kernel's metadata),
+	 * and when it goes wrong NOTHING says so at the time: the wrong renderer registers quietly and the first
+	 * frame that draws a mesh-emitting model dies with {@code MutableQuadViewWrapper cannot be cast to
+	 * MutableQuadViewImpl}, inside a mod, with no mention of a renderer. So the handover is stated out loud at the
+	 * one moment both candidates have had their say.
+	 *
+	 * <p>Reflective, and silent when FRAPI is not installed — most instances have no renderer slot at all.
+	 */
+	private static void reportActiveRenderer() {
+		try {
+			if (loader == null || loader.getModContainer("fabric-renderer-api-v1").isEmpty()) return;
+			ClassLoader mods = Thread.currentThread().getContextClassLoader();
+			Class<?> manager = Class.forName("net.fabricmc.fabric.impl.client.renderer.RendererManager", false, mods);
+			java.lang.reflect.Field active = manager.getDeclaredField("activeRenderer");
+			active.setAccessible(true);
+			Object renderer = active.get(null);
+			if (renderer == null) {
+				ForbricLog.warn("[Forbric/Fabric] the Fabric Rendering API has NO renderer registered — the next "
+						+ "model that emits a mesh will die on \"Attempted to retrieve active rendering plug-in "
+						+ "before one was registered\"");
+				return;
+			}
+			ForbricLog.info("[Forbric/Fabric] the Fabric Rendering API renderer is %s — the one slot is taken, and "
+					+ "whoever lost it must have stood down rather than registered", renderer.getClass().getName());
+		} catch (ClassNotFoundException | NoSuchFieldException absent) {
+			// A different FRAPI version keeps its renderer somewhere else; a diagnostic must not invent a finding.
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Fabric] could not read the active Fabric renderer", t);
+		}
 	}
 
 	/** Whether the Fabric main entrypoints have already run. */
@@ -574,5 +616,51 @@ public final class KernelFabricEcosystem {
 				// A mod that hides the field from reflection simply keeps its secret; this is diagnostics only.
 			}
 		}
+	}
+
+	/**
+	 * A Forge-family mod's {@code [modproperties.<id>]} table, as Fabric custom values.
+	 *
+	 * <p>The two ecosystems spell the same declaration differently and each family's loader only ever exposed its
+	 * own spelling, so a Fabric mod asking a NeoForge mod what it offers was told "nothing" — the answer a mod
+	 * reads as "not installed", by a different route.
+	 *
+	 * <p>The measured case: Sodium's NeoForge build declares {@code "fabric-renderer-api-v1:contains_renderer" =
+	 * true}, which is the ONLY way Indigo (fabric-renderer-indigo) learns that another rendering plug-in is
+	 * present — {@code IndigoMixinConfigPlugin} walks {@code FabricLoader.getAllMods()} and calls
+	 * {@code ModMetadata.containsCustomValue} on that exact key. Told nothing, Indigo registered ITSELF as the
+	 * FRAPI renderer, so a connected-texture mod built its mesh with Indigo's encoding and Sodium's feature
+	 * renderer then handed that mesh Sodium's own emitter: {@code MutableQuadViewWrapper cannot be cast to
+	 * MutableQuadViewImpl}, every frame, the instant a CTM block was on screen.
+	 *
+	 * <p>The key names are not a coincidence to be exploited — the {@code modproperties} table is where the Forge
+	 * family agreed cross-loader declarations live, and mods write Fabric's namespaced keys into it verbatim.
+	 */
+	private static Map<String, CustomValue> customValuesOf(DiscoveredMod mod) {
+		Map<String, Object> properties = mod == null ? null : mod.getModProperties();
+		if (properties == null || properties.isEmpty()) return Map.of();
+
+		Map<String, CustomValue> values = new LinkedHashMap<>();
+		for (Map.Entry<String, Object> entry : properties.entrySet()) {
+			values.put(entry.getKey(), KernelCustomValue.of(entry.getValue()));
+		}
+		ForbricLog.info("[Forbric/Fabric] %s's %d [modproperties] key(s) are now Fabric custom values %s — a Fabric "
+				+ "mod asking this mod what it offers (Indigo asking Sodium whether a renderer is already here) "
+				+ "reads the same declaration its own family would have written", mod.getId(), values.size(),
+				values.keySet());
+		return values;
+	}
+
+	/**
+	 * The same table, found by mod id — for the arbitration aliases, where the losing FABRIC jar supplies the
+	 * identity but the WINNING Forge-family jar supplies the declaration. Sodium arrives this way whenever both
+	 * builds are installed, which is the configuration that crashed.
+	 */
+	private static Map<String, CustomValue> foreignCustomValues(String id) {
+		if (id == null) return Map.of();
+		for (DiscoveredMod mod : ModPresence.forgeFamilyMods()) {
+			if (id.equals(mod.getId())) return customValuesOf(mod);
+		}
+		return Map.of();
 	}
 }

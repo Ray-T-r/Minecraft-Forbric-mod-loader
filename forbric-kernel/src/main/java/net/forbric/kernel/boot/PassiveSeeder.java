@@ -507,10 +507,52 @@ public final class PassiveSeeder {
 			fileInfos.add(fileInfo);
 		}
 
+		indexUnderscoredIds(fileById);
+
 		setInstanceField(lmlCls, "fileById", list, fileById);
 		setInstanceField(lmlCls, "sortedList", list, new ArrayList<>(modInfos));
 		setInstanceField(lmlCls, "modFiles", list, new ArrayList<>(fileInfos));
 		return list;
+	}
+
+	/**
+	 * Also indexes every dashed mod id under its underscored spelling, because that is the only spelling a
+	 * NeoForge-side reader can ask with.
+	 *
+	 * <p>NeoForge mod ids may not contain {@code -} at all, so a mod written for NeoForge that wants to detect a
+	 * Fabric module has to underscore the name — and it does so blind, at the call: Sodium's
+	 * {@code NeoForgeRuntimeInformation.isModInLoadingList} is literally
+	 * {@code getModFileById(id.replace('-', '_')) != null}, called with the string {@code "fabric-renderer-api-v1"}.
+	 * The kernel seeds this list with the Fabric mods under their GENUINE ids, so that lookup asked for
+	 * {@code fabric_renderer_api_v1}, got null, and Sodium concluded FRAPI was absent — it then installed a
+	 * do-nothing renderer registrar, never registered {@code SodiumRenderer}, and left the FRAPI renderer slot
+	 * open for Indigo to take. Producer on one side, consumer on the other, link silently dead.
+	 *
+	 * <p><b>Contained by measurement, not by hope:</b> {@code fileById} has exactly one writer (the constructor)
+	 * and exactly one reader ({@code getModFileById}) in the merged base — verified on the bytecode — so an extra
+	 * key can only make that one lookup answer for a spelling it previously refused. {@code getMods()} and
+	 * {@code sortedList} are untouched, so nothing counts these twice and nothing lands in a handshake.
+	 *
+	 * <p>Aliases go in a SECOND pass, after every real id is indexed, and with {@code putIfAbsent}: a real mod
+	 * that genuinely owns the underscored id keeps it, whatever order discovery happened to produce.
+	 */
+	private static void indexUnderscoredIds(Map<String, Object> fileById) {
+		Map<String, Object> aliases = new LinkedHashMap<>();
+		for (Map.Entry<String, Object> entry : fileById.entrySet()) {
+			String id = entry.getKey();
+			if (id == null || id.indexOf('-') < 0) continue;
+			aliases.put(id.replace('-', '_'), entry.getValue());
+		}
+		int added = 0;
+		for (Map.Entry<String, Object> alias : aliases.entrySet()) {
+			if (fileById.putIfAbsent(alias.getKey(), alias.getValue()) == null) added++;
+		}
+		if (added > 0) {
+			ForbricLog.info("[Forbric/Seed] LoadingModList.getModFileById also answers for %d underscored mod id(s) "
+					+ "— NeoForge ids cannot contain '-', so a NeoForge-side mod probing for a Fabric module asks "
+					+ "with underscores (Sodium asks for fabric_renderer_api_v1 before it will register its FRAPI "
+					+ "renderer); the dashed spelling alone told it no", added);
+		}
 	}
 
 	/**
