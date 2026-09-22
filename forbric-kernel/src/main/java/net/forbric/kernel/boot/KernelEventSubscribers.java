@@ -246,6 +246,9 @@ public final class KernelEventSubscribers {
 		// second and much more expensive pass over every method body.
 		DeadEventAudit.report(ForgeBusSubscriptions.merge(subscribedByMod,
 				ForgeBusSubscriptions.byMod(KernelModLoader.publishedForgeMods())));
+		// And this is about mixins that DID apply, to a point. Ninety individual lines on a client boot, none of
+		// them totalled anywhere, for the state MixinFit's javadoc calls worse than either extreme.
+		ForbricLog.info("%s", net.forbric.kernel.mixin.KernelGuestMixinAdapter.partialSummary());
 		// Everything above is about listeners. This is about a whole subsystem the merged game does not carry.
 		CapabilityUseAudit.report(net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled(),
 				net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.composedRoots());

@@ -184,6 +184,21 @@ check "the client's Fabric PLAY channels are recorded on the connection" \
 # connection that negotiated perfectly.
 check "the channel census ran" "channel census: registered \{" "$SLOG"
 check "no channel has a payload type and nothing declaring it" "registered-but-never-declared: 0" "$SLOG"
+
+# Partially applied guest mixins: the state MixinFit's own javadoc calls worse than either extreme, because the
+# mod keeps the handlers that bound and loses the rest with no error at either end. Each one has always been
+# logged on its own line — ninety of them on a client boot of a THREE-mod set — and nothing totalled them, so
+# nothing could notice the number moving.
+#
+# A ceiling, not an equality: what is healthy depends on the mod set, and this number is supposed to go DOWN.
+check "the partial-application census ran" "guest mixin\(s\) apply only partially on the merged base" "$SLOG"
+PARTIAL_MIXINS="$(grep -aoE 'Forbric/Mixin\] [0-9]+ guest mixin\(s\) apply only partially' "$SLOG" | grep -oE '[0-9]+' | tail -1)"
+if [ -n "${PARTIAL_MIXINS:-}" ] && [ "$PARTIAL_MIXINS" -le "${M12_PARTIAL_CEILING:-30}" ]; then
+  echo "[kernel] PASS partially applied guest mixins within the ceiling ($PARTIAL_MIXINS <= ${M12_PARTIAL_CEILING:-30})"
+else
+  echo "[kernel] FAIL partially applied guest mixins: ${PARTIAL_MIXINS:-none found} (ceiling ${M12_PARTIAL_CEILING:-30})"
+  FAIL=1
+fi
 check_absent "nobody was told the server requires a mod they have" \
   "This server requires" "$SLOG"
 

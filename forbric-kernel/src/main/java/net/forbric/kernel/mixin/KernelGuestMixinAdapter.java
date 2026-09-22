@@ -77,6 +77,40 @@ import net.forbric.kernel.util.ForbricLog;
  * break with no owned target); this removes the need to hand-list the owned-target ones.
  */
 public final class KernelGuestMixinAdapter {
+
+	/**
+	 * Guest mixins kept although only some of their handlers bound, this boot.
+	 *
+	 * <p>Each one is already logged on its own line, and a 3-mod gate produces ninety of them on the client and
+	 * thirty on the server — every boot, under a gate that reports green. Individually they are informational;
+	 * as a number they are the thing {@code MixinFit}'s own javadoc calls worse than either extreme, because the
+	 * mod keeps the handlers that bound and silently loses the rest. Ninety lines nobody totals is not a
+	 * measurement, so this is the total.
+	 *
+	 * <p>Counted, not asserted on here: what a healthy number is depends on the mod set. The gate asserts.
+	 */
+	private static final java.util.Set<String> PARTIAL =
+			java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
+
+	/** Records one, keyed so the same mixin evaluated twice counts once. */
+	static void notePartial(String configName, String mixin) {
+		if (configName == null || mixin == null) return;
+		PARTIAL.add(configName + ":" + mixin);
+	}
+
+	/** Every guest mixin that applied only partially so far, sorted. */
+	public static java.util.List<String> partiallyApplied() {
+		synchronized (PARTIAL) {
+			return PARTIAL.stream().sorted().toList();
+		}
+	}
+
+	/** The one line a gate greps: the count, and what it costs. */
+	public static String partialSummary() {
+		return "[Forbric/Mixin] " + PARTIAL.size() + " guest mixin(s) apply only partially on the merged base — "
+				+ "each keeps the handlers that bound and loses the rest, with no error at either end";
+	}
+
 	private static final String ACCESSOR_DESC = "Lorg/spongepowered/asm/mixin/gen/Accessor;";
 	private static final String INVOKER_DESC = "Lorg/spongepowered/asm/mixin/gen/Invoker;";
 
@@ -179,6 +213,7 @@ public final class KernelGuestMixinAdapter {
 									MixinConfigOwners.describe(configName), mixin, plan.describe(), fit.verdict(),
 									after.verdict());
 							if (after.verdict() == MixinFit.Verdict.PARTIAL) {
+								notePartial(configName, mixin);
 								ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s still applies only partially — %s",
 										MixinConfigOwners.describe(configName), mixin, after.reason());
 							}
@@ -190,6 +225,7 @@ public final class KernelGuestMixinAdapter {
 									+ "base that name is a different class (%s); its injections bind to unrelated code",
 									MixinConfigOwners.describe(configName), mixin, drifted, MergedBaseAnonymousDrift.describe(drifted));
 						}
+						notePartial(configName, mixin);
 						ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s applies only partially on the merged base "
 								+ "— %s (kept; -Dforbric.mixinFit=strict drops these)", MixinConfigOwners.describe(configName), mixin,
 								fit.reason());

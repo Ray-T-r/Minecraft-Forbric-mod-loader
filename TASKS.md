@@ -73,7 +73,15 @@
 
 ## M-C 五族收口
 
-- [ ] **C-merged-base** / **C-api-surface** / **C-mixin**(`-Dforbric.mixinDiagnostics` 已在代码里,没有 gate 跑过)
+- [x] **C-mixin(其一)** 部分应用的 mixin 第一次被**数**出来了 —— 一个 **3 个 mod** 的 gate 里,
+      客户端 92 条、服务端 31 条 "applies only partially",每次启动都有,gate 报绿。
+      `MixinFit` 自己的 javadoc 说"部分应用比两个极端都糟",而九十行没人加总就不是测量。
+      m12 现在断言普查跑过 + 数量在天花板内(实测 27 ≤ 30,天花板是"应该往下走"的意思)。
+- [x] **C-mixin(其二,判定)** `-Dforbric.mixinDiagnostics` **不能**当成"收集齐所有失配"的模式:
+      实测它在这个 3-mod 集上直接把服务端弄死了(`InjectionError: Critical injection failure:
+      checkIfUnderSwimmableFluid(Z, LocalRef)` —— MixinExtras 的 `@Local` 糖)。它的 javadoc 本来就写了
+      raw `InjectionError` 绕过所有 error handler。所以"一轮一个发现",而这个项目一轮都没跑过。
+- [ ] **C-merged-base** / **C-api-surface**
 - [x] **C-arbitration(其一)** `ModPresence.isLoaded` 的 `-`/`_` 归一化 —— NeoForge 的 mod id 不许带 `-`,
       另外两家许,所以同一个 mod 跨生态就是两个拼写;而这个"专门用来跨生态回答"的注册表在用字符串比较,
       恰好跨不过两家唯一真正不同的那条边界。代价不对称:假 no 会让 mod 走"没装"分支而它其实装了。
