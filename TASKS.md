@@ -43,7 +43,14 @@
       **有没有哪个方法同时调进两家的事件钩子入口**——整个合并基底 **0 个**。
       规则挪进 `HookCallSiteCensus.methodsCallingBothFamilies`,合成测试钉住它会红
       (真基底上无论怎么变异都是 0,所以只在真 jar 上断言等于没断言)。
-- [ ] **部分死亡** 一个事件在一条路径上活、其它路径上死,现在的表没有这种行数;三条被删的行都是这个形状。
+- [x] **部分死亡 —— 修了**。量出来是 **8 个钩子**,全在服务端,不是一个类别:
+      `canLivingConvert 10→2`、`onLivingConvert 7→2`、`onPlayerDestroyItem 4→1`、`onNeighborNotify 4→1`、
+      `onLivingFall 3→2`、`blockGrowFeature 3→1`、`onBlockPlace 2→1`、`onLivingEffectCanApply 2→1`
+      (判据:同一个钩子在 **MinecraftForge 自己的补丁游戏**里和在合并基底里各有几个调用点)。
+      `DeadEventAudit` 多了第三张表 `PARTIAL`,8 行,每行写清"几条路径里还剩几条";
+      `audit()` 的优先级是 桥 → 从不发 → 部分发。表由 staged 测试**重新算一遍并要求相等**,删一行就红。
+      为什么值得单列:一个从不触发的监听器会被报上来查,一个"给马和羊驼生效、别的都不生效"的监听器
+      看起来是间歇性的 —— 最难报、也最容易被赖到 mod 头上。
 
 ## 可插队(零/低成本)
 

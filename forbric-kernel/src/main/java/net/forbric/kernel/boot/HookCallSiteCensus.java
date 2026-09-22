@@ -208,6 +208,82 @@ public final class HookCallSiteCensus {
 	}
 
 	/**
+	 * One hook's call sites before and after the merge.
+	 *
+	 * @param hook   {@code name+desc}
+	 * @param before how many call sites the ecosystem's own patched game had
+	 * @param after  how many the merged base has
+	 */
+	public record Erosion(String hook, int before, int after) {
+
+		/** Called from somewhere, and from fewer places than it used to be. */
+		public boolean partial() {
+			return after > 0 && after < before;
+		}
+
+		/** Called from nowhere at all. */
+		public boolean lost() {
+			return before > 0 && after == 0;
+		}
+	}
+
+	/**
+	 * How many call sites each of {@code hookClass}'s hooks kept across the merge.
+	 *
+	 * <h2>Why "dead" was not the whole answer</h2>
+	 *
+	 * <p>{@link #of} asks whether a hook has ANY call site, which answers "is this event ever posted". It cannot
+	 * answer the state in between, and that state is real: three rows were deleted from {@link DeadEventAudit}
+	 * for claiming an event is never posted when it is — posted from one class and not from another, because the
+	 * merge took some of its call sites and left others.
+	 *
+	 * <p>That is worse for a mod than either extreme. A mod whose fall-damage listener never fires gets reported
+	 * and investigated; one that fires for horses and llamas and not for anything else looks intermittent, which
+	 * is the hardest kind of bug to report and the easiest to blame on the mod.
+	 *
+	 * @param before the ecosystem's OWN patched game jar, as it was before the merge
+	 * @param after  the merged base
+	 */
+	public static List<Erosion> erosion(String hookClass, Path before, Path after) throws IOException {
+		Map<String, Integer> was = callSites(before, hookClass);
+		Map<String, Integer> is = callSites(after, hookClass);
+		List<Erosion> out = new java.util.ArrayList<>();
+		for (Map.Entry<String, Integer> e : was.entrySet()) {
+			out.add(new Erosion(e.getKey(), e.getValue(), is.getOrDefault(e.getKey(), 0)));
+		}
+		out.sort(java.util.Comparator.comparing(Erosion::hook));
+		return List.copyOf(out);
+	}
+
+	/** {@code name+desc} → how many instructions in {@code jar} call it on {@code hookClass}. */
+	static Map<String, Integer> callSites(Path jar, String hookClass) throws IOException {
+		Map<String, Integer> out = new TreeMap<>();
+		if (!Files.isRegularFile(jar)) return out;
+		try (ZipFile zf = new ZipFile(jar.toFile())) {
+			var entries = zf.entries();
+			while (entries.hasMoreElements()) {
+				ZipEntry e = entries.nextElement();
+				if (!e.getName().endsWith(".class")) continue;
+				ClassNode cn = new ClassNode();
+				try (InputStream in = zf.getInputStream(e)) {
+					new ClassReader(in.readAllBytes()).accept(cn, ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
+				}
+				// The hook class calling its own hooks is not the game reaching them, the same rule as of().
+				if (cn.name.equals(hookClass)) continue;
+				for (MethodNode m : cn.methods) {
+					if (m.instructions == null) continue;
+					for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+						if (insn instanceof MethodInsnNode mi && mi.owner.equals(hookClass)) {
+							out.merge(mi.name + mi.desc, 1, Integer::sum);
+						}
+					}
+				}
+			}
+		}
+		return out;
+	}
+
+	/**
 	 * Methods that call into BOTH ecosystems' event-hook classes, which is the only way one path can deliver a
 	 * bridged event twice.
 	 *

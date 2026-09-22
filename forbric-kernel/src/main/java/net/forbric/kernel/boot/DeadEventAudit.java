@@ -153,6 +153,55 @@ public final class DeadEventAudit {
 	}
 
 	/** The bridge that covers an event, when one does. Keeps an entry from being reported once it is bridged. */
+	/**
+	 * Events the merged game posts from SOME of the places it used to, and not the others.
+	 *
+	 * <h2>The state between the two the audit could describe</h2>
+	 *
+	 * <p>{@link #DEAD} says "never posted", and three rows were deleted from it for saying that about events
+	 * that are posted. They were not careless: the hook is called from one class and not from another, because
+	 * the merge took some of its call sites and left others. There was no row shape for that, so the choice was
+	 * between a false claim and silence.
+	 *
+	 * <p>This is worse for a mod than either extreme, which is why it is worth its own row. A listener that
+	 * never fires gets reported and investigated. One that fires for horses and llamas and not for anything
+	 * else looks intermittent — the hardest kind of bug to report, and the easiest to blame on the mod.
+	 *
+	 * <p>Measured, not read: {@code HookCallSiteCensusStagedTest} recomputes this set by counting each hook's
+	 * call sites in MinecraftForge's own patched game and in the merged base, and fails if the two disagree. The
+	 * ratios in the sentences are that measurement.
+	 *
+	 * <p>An event that is also {@link #BRIDGED} is still listed here, so the generator can check the whole set,
+	 * but the bridge is consulted first when judging a mod — a bridge may well be delivering the paths the merge
+	 * took, and this layer cannot tell which.
+	 */
+	static final Map<String, String> PARTIAL = partiallyPosted();
+
+	private static Map<String, String> partiallyPosted() {
+		Map<String, String> partial = new LinkedHashMap<>();
+		partial.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Pre",
+				"a conversion can be seen or prevented on 2 of the 10 paths that used to offer it — zombie to "
+						+ "drowned, villager to witch and the rest mostly convert without asking");
+		partial.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Post",
+				"a completed conversion is announced on 2 of its 7 paths, so a mod reacting to one will react "
+						+ "to some conversions and not others");
+		partial.put("net/minecraftforge/event/entity/player/PlayerDestroyItemEvent",
+				"an item breaking is announced on 1 of its 4 paths — a mod that replaces or refunds broken "
+						+ "tools will do it for some breakages only");
+		partial.put("net/minecraftforge/event/level/BlockEvent$NeighborNotifyEvent",
+				"block updates reaching neighbours are visible on 1 of the 4 paths that used to report them");
+		partial.put("net/minecraftforge/event/level/BlockFeatureGrowEvent",
+				"a feature growing is observable on 1 of its 3 paths — saplings and the rest differ");
+		partial.put("net/minecraftforge/event/entity/living/LivingFallEvent",
+				"fall damage can be modified on 2 of its 3 paths; the one that is gone is the one most entities "
+						+ "take, so this reads as a mod that works for horses and llamas only");
+		partial.put("net/minecraftforge/event/entity/living/MobEffectEvent$Applicable",
+				"whether an effect may apply is asked on 1 of its 2 paths");
+		partial.put("net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent",
+				"placement by an entity is announced on 1 of its 2 paths");
+		return Map.copyOf(partial);
+	}
+
 	/** Package-private for the same reason as {@link #DEAD}. */
 	static final Map<String, GameEventBridge> BRIDGED = bridged();
 
@@ -232,8 +281,15 @@ public final class DeadEventAudit {
 					continue;
 				}
 				String cost = DEAD.get(event);
-				if (cost == null) continue;
-				findings.add(new Finding(mod.getKey(), event, cost));
+				if (cost != null) {
+					findings.add(new Finding(mod.getKey(), event, cost));
+					continue;
+				}
+				// Neither bridged nor never posted: posted from some of the places it used to be. Reported with
+				// the same weight, because a listener that fires on a third of its paths is not working.
+				String partial = PARTIAL.get(event);
+				if (partial == null) continue;
+				findings.add(new Finding(mod.getKey(), event, partial));
 			}
 		}
 		return findings;

@@ -117,6 +117,53 @@ class HookCallSiteCensusStagedTest {
 				"not one DEAD row was judged — HOOK_CLASSES does not cover the classes that post them");
 	}
 
+	/** MinecraftForge's own patched game, as it was before the merge took some of its call sites. */
+	private static Path forgePatchedGame() {
+		return Path.of(System.getProperty("user.home"), "Library", "Application Support", "minecraft",
+				"libraries", "net", "forbric", "patched-mc-forge", "26.2-65.0.1",
+				"patched-mc-forge-26.2-65.0.1.jar");
+	}
+
+	@Test
+	void thePartialTableIsExactlyWhatTheCallSitesSay() throws Exception {
+		assumeTrue(Files.isRegularFile(base()), "staged merged base absent");
+		Path before = forgePatchedGame();
+		assumeTrue(Files.isRegularFile(before), "MinecraftForge's patched game absent");
+		Path carrier = root().resolve("forge-runtime/forge-runtime.jar");
+		assumeTrue(Files.isRegularFile(carrier), "staged Forge carrier absent");
+
+		// hook -> the events it posts, so an eroded hook can be named by what a mod actually subscribes to.
+		Map<String, Set<String>> eventsOfHook = new TreeMap<>();
+		Set<String> measured = new TreeSet<>();
+		int eroded = 0;
+		for (String hookClass : List.of("net/minecraftforge/event/ForgeEventFactory",
+				"net/minecraftforge/client/event/ForgeEventFactoryClient")) {
+			HookCallSiteCensus.Census census = HookCallSiteCensus.of(carrier, hookClass, List.of(base()));
+			census.postersOf().forEach((event, posters) -> posters.forEach(
+					poster -> eventsOfHook.computeIfAbsent(poster, k -> new TreeSet<>()).add(event)));
+			for (HookCallSiteCensus.Erosion e : HookCallSiteCensus.erosion(hookClass, before, base())) {
+				if (!e.partial()) continue;
+				eroded++;
+				measured.addAll(eventsOfHook.getOrDefault(e.hook(), Set.of()));
+			}
+		}
+		System.out.println("[Forbric/Hooks] partially kept hooks: " + eroded + ", events they post: " + measured.size());
+		// The denominator: a run that found no erosion would make the equality below vacuously true against an
+		// empty table, which is how a generator stops generating without anyone noticing.
+		assertTrue(eroded > 0, "no hook lost part of its call sites — verify the scan before believing it");
+		assertEquals(measured, new TreeSet<>(DeadEventAudit.PARTIAL.keySet()),
+				"the partially-posted table and the call-site counts disagree; the table is the one that is wrong");
+	}
+
+	@Test
+	void anEventIsNotBothNeverPostedAndPartlyPosted() throws Exception {
+		// The two tables answer different questions and a row in both would make the audit's precedence decide
+		// which sentence a player sees, which is not a decision precedence should be making.
+		Set<String> both = new TreeSet<>(DeadEventAudit.DEAD.keySet());
+		both.retainAll(DeadEventAudit.PARTIAL.keySet());
+		assertEquals(Set.of(), both, "listed as never posted AND as partly posted: " + both);
+	}
+
 	@Test
 	void noSinglePathPostsABridgedEventTwice() throws Exception {
 		assumeTrue(Files.isRegularFile(base()), "staged merged base absent");
