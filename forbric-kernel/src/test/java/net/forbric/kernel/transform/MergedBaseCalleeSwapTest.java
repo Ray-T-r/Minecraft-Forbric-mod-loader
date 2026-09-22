@@ -58,7 +58,7 @@ import net.forbric.kernel.mixin.MergedBaseCalleeSwaps;
  * calls. Synthetic names ({@code access$N}, {@code lambda$…}) are renumbering, not swaps.
  */
 class MergedBaseCalleeSwapTest {
-	private static final Path RUN = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+	private static final Path RUN = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 	private static final Path MERGED = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path FORGE_RT = RUN.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path NEO_RT = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");

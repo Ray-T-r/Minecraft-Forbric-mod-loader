@@ -39,7 +39,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 /** The merged FeatureFlags.<clinit> calls NeoForge's modded-flag loader once; after the repair it calls the kernel's. */
 class MergedBaseFeatureFlagsTest {
-	private static final Path MERGED = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
+	private static final Path MERGED = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "merged-base",
 			"patched-mc-merged-26.2.jar").normalize();
 
 	@Test

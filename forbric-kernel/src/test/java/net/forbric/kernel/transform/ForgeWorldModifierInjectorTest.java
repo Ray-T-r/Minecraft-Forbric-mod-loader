@@ -30,7 +30,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 /** Real carrier bytecode: the two Forge builder repairs, the two splices into NeoForge's pass, and the switch. */
 class ForgeWorldModifierInjectorTest {
-	private static final Path RUN = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+	private static final Path RUN = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 	private static final Path FORGE = RUN.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path NEO = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path MERGED = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");

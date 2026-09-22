@@ -37,7 +37,7 @@ class AbiLinkAuditStagedTest {
 	@Test
 	void theStagedClientPackHasNoDanglingForgeFamilyReference() throws Exception {
 		Path mods = Path.of(System.getProperty("user.dir"), "run", "client-merged-pack", "mods").normalize();
-		Path run = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+		Path run = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 		List<Path> against = List.of(run.resolve("forge-runtime/forge-runtime.jar"), run.resolve("neoforge-runtime/neoforge-runtime.jar"),
 				run.resolve("merged-base/patched-mc-merged-26.2.jar"));
 		assumeTrue(Files.isDirectory(mods) && against.stream().allMatch(Files::isRegularFile), "staged pack or carriers absent");

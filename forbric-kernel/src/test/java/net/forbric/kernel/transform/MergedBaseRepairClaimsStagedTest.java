@@ -48,7 +48,7 @@ import net.fabricmc.api.EnvType;
  * ledger names that claim and no other — which is the whole reason claims exist.
  */
 class MergedBaseRepairClaimsStagedTest {
-	private static final Path RUN = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+	private static final Path RUN = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 	private static final List<Path> JARS = List.of(RUN.resolve("merged-base/patched-mc-merged-26.2.jar"),
 			RUN.resolve("neoforge-runtime/neoforge-runtime.jar"), RUN.resolve("forge-runtime/forge-runtime.jar"));
 	private static final TransformContext CTX = new TransformContext(EnvType.CLIENT, false, "intermediary");

@@ -32,11 +32,11 @@ import org.objectweb.asm.tree.MethodNode;
  * changes the answer fails here, not in a player's log; after the shim and the compat transformer it is empty.
  */
 class MergedBaseCapabilityLinkTest {
-	private static final Path MERGED = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
-	private static final Path FORGE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path FORGE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"forge-runtime", "forge-runtime.jar").normalize();
-	private static final Path NEO = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path NEO = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"neoforge-runtime", "neoforge-runtime.jar").normalize();
 	private static final Set<String> NAMES = Set.of("getCapability", "invalidateCaps", "reviveCaps", "gatherCapabilities",
 			"getCapabilities", "serializeCaps", "deserializeCaps", "initCapabilities", "initInternal", "serializeInternal",

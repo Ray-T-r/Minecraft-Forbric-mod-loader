@@ -49,7 +49,7 @@ import net.forbric.api.ModPresence;
 
 /** Both families' {@code ModList.isLoaded} gains the cross-ecosystem answer, and nothing else moves. */
 class ForeignModPresenceInjectorTest {
-	private static final Path STAGE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run")
+	private static final Path STAGE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run")
 			.normalize();
 	private static final Path NEOFORGE = STAGE.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path FORGE = STAGE.resolve("forge-runtime/forge-runtime.jar");

@@ -36,7 +36,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class RepairDriftCensusStagedTest {
 	private static final Path RUN =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 	private static final String KEY_MAPPING = "net.minecraft.client.KeyMapping";
 	private static final String LOOKUP_CLAIM = "forbric-merged-base-compat#addMissingForgeKeyMappingLookupInitializer";
 

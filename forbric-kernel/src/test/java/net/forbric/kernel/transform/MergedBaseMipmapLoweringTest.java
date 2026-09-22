@@ -58,7 +58,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 @ResourceLock("system-properties")
 class MergedBaseMipmapLoweringTest {
 	private static final Path MERGED_BASE =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "merged-base",
 					"patched-mc-merged-26.2.jar").normalize();
 	private static final String SPRITE_LOADER = "net/minecraft/client/renderer/texture/SpriteLoader";
 	private static final String FORGE_CLIENT = "net/minecraftforge/common/ForgeConfig$Client";

@@ -28,7 +28,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
  */
 class KernelForgeCapabilitiesShapeTest {
 	private static final Path RUNTIME = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
-	private static final Path FORGE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path FORGE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"forge-runtime", "forge-runtime.jar").normalize();
 	private static final Map<String, String> TWINS = Map.of(
 			"KernelForgeCapabilities$Entities", "net/minecraftforge/common/capabilities/CapabilityProvider$Entities",

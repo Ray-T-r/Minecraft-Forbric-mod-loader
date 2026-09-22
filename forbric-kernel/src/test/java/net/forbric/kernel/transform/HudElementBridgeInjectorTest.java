@@ -46,7 +46,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
  */
 class HudElementBridgeInjectorTest {
 	private static final Path NEOFORGE_RUNTIME =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "neoforge-runtime",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "neoforge-runtime",
 					"neoforge-runtime.jar").normalize();
 
 	private static final String TARGET = "net.neoforged.neoforge.client.gui.GuiLayerManager";

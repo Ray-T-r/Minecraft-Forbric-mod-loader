@@ -48,9 +48,9 @@ import org.objectweb.asm.tree.MethodNode;
  * jar directly, so they go red at build time instead of during someone's world load.
  */
 class KernelModContainerFactoryTest {
-	private static final Path NEOFORGE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path NEOFORGE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"neoforge-runtime", "neoforge-runtime.jar").normalize();
-	private static final Path FORGE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path FORGE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"forge-runtime", "forge-runtime.jar").normalize();
 
 	/** The four types the factory resolves by name, and the visibility its typed use of them needs. */

@@ -45,7 +45,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class MergedBaseClientReloadNamesTest {
 	private static final Path NEO_CARRIER =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "neoforge-runtime",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "neoforge-runtime",
 					"neoforge-runtime.jar").normalize();
 	private static final String ENTRY = "net/neoforged/neoforge/client/event/AddClientReloadListenersEvent.class";
 	private static final String BINARY = "net.neoforged.neoforge.client.event.AddClientReloadListenersEvent";

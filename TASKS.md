@@ -48,6 +48,15 @@
       已接进 m12/m15/m16(三者本来就断言了 `logged in with entity id`,分母现成)。4 个契约测试全绿。
 - [x] **E0** `anchors()` 的自述改成数 `REPAIRS.size()`,并加断言钉住(原来 javadoc 说 "Forty"、文案说 "47"、列表是 49)
 
+## 量具层补漏(第二轮)
+
+- [x] **97 个测试类无视 `FORBRIC_OLD`** —— `StagedArtifactCoverageTest` 的 javadoc 早就写了这件事,
+      但没人量过:121 个读 staged 产物的测试类里只有 24 个认那个变量。于是在第二个工作树里
+      **337 个字节码断言静默跳过,而套件照样说 "0 failures"**。
+      一处纯机械替换(99 文件 / 112 处,零非机械改动),**337 → 46 跳过,全部通过**。
+      剩下的 46 个要的是内核自己的 `run/` 夹具(fabric-api jar、崩溃报告、ShoulderSurfing),
+      那些在主 checkout 里本来就有 —— 所以 gate-m0 的 skip 上限不动。
+
 ## M-B 仲裁
 
 - [ ] **B1** 不翻 `MergedBaseBuilder.java:957` 的默认方向;用 A2 的 `RUNTIME_LIVE` 驱动 `FORCE_FORGE_METHODS` 白名单

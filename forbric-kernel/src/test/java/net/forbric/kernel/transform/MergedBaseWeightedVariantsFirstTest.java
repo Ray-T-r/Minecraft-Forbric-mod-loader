@@ -25,7 +25,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 /** {@code WeightedVariants.first}: one Forge reader in the base, zero writers — the merge dropped Forge's write. */
 class MergedBaseWeightedVariantsFirstTest {
-	private static final Path MERGED_BASE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	private static final String OWNER = "net/minecraft/client/renderer/block/dispatch/WeightedVariants";
 

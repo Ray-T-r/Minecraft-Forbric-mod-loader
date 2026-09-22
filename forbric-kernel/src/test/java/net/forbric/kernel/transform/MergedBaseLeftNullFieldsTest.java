@@ -33,7 +33,7 @@ import org.objectweb.asm.tree.MethodNode;
  * player's world — re-read the field, do not re-bless the count.
  */
 class MergedBaseLeftNullFieldsTest {
-	private static final Path MERGED_BASE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	private static final Path FORGE_RUNTIME = forgeRuntime();
 
@@ -143,7 +143,7 @@ class MergedBaseLeftNullFieldsTest {
 
 	private static Path forgeRuntime() {
 		String old = System.getenv("FORBRIC_OLD");
-		Path root = old == null || old.isBlank() ? Path.of(System.getProperty("user.dir"), "..", "forbric-loader") : Path.of(old);
+		Path root = old == null || old.isBlank() ? Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader")) : Path.of(old);
 		return root.resolve("run/forge-runtime/forge-runtime.jar").normalize();
 	}
 }

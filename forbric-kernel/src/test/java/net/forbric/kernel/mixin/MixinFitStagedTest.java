@@ -32,7 +32,7 @@ import org.junit.jupiter.api.Test;
 
 /** The three anchor kinds over REAL fabric-api mixins and the RAW merged base — the verdicts before any repair. */
 class MixinFitStagedTest {
-	static final Path MERGED_BASE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	static final Path CLIENT_MODS = Path.of(System.getProperty("user.dir"), "run", "client-kernel", "mods").normalize();
 

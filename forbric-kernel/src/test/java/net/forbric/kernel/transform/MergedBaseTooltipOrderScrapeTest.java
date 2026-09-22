@@ -54,7 +54,7 @@ import org.objectweb.asm.util.TraceMethodVisitor;
  * does it, run over the transformed merged {@code ItemStack} and over stock 26.2's: the two lists must be equal.
  */
 class MergedBaseTooltipOrderScrapeTest {
-	private static final Path MERGED_BASE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
 

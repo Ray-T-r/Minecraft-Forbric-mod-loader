@@ -185,7 +185,7 @@ class NeoDeferredWorkTest {
 	 */
 	@Test
 	void bothCarriersDeferredWorkQueuesStillHaveTheFieldsTheFailureReadNeeds() throws Exception {
-		Path run = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+		Path run = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 		for (String[] carrier : new String[][] {
 				{ "neoforge-runtime/neoforge-runtime.jar", "net/neoforged/fml/DeferredWorkQueue" },
 				{ "forge-runtime/forge-runtime.jar", "net/minecraftforge/fml/DeferredWorkQueue" } }) {
@@ -246,7 +246,7 @@ class NeoDeferredWorkTest {
 	/** If the carrier ever drops this, {@link NeoDeferredWork#syncExecutor} goes quiet and the bug comes back. */
 	@Test
 	void theCarrierStillOffersTheExecutorNeoForgeRunsDeferredWorkOn() throws Exception {
-		Path carrier = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "neoforge-runtime",
+		Path carrier = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "neoforge-runtime",
 				"neoforge-runtime.jar").normalize();
 		assumeTrue(Files.isRegularFile(carrier), "staged NeoForge carrier absent");
 

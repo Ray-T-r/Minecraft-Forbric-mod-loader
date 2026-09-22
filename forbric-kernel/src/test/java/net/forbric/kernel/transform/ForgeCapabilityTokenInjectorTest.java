@@ -26,7 +26,7 @@ import org.objectweb.asm.tree.MethodNode;
 
 /** The carrier's own CapabilityTokenSubclass plugin, driven by the kernel over the carrier's own token classes. */
 class ForgeCapabilityTokenInjectorTest {
-	private static final Path FORGE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path FORGE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"forge-runtime", "forge-runtime.jar").normalize();
 
 	@Test

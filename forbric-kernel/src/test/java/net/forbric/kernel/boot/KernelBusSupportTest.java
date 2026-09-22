@@ -49,7 +49,7 @@ import org.objectweb.asm.tree.MethodNode;
  * time instead.
  */
 class KernelBusSupportTest {
-	private static final Path NEOFORGE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path NEOFORGE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"neoforge-runtime", "neoforge-runtime.jar").normalize();
 
 	/** The four calls makeModBus makes, two of which fail silently if they are gone. */

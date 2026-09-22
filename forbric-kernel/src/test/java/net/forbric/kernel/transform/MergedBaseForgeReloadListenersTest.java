@@ -30,7 +30,7 @@ import org.objectweb.asm.tree.MethodNode;
  * through {@code KernelForgeReload}, which calls NeoForge's hook and then the carrier's own Forge post.
  */
 class MergedBaseForgeReloadListenersTest {
-	private static final Path MERGED_BASE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	private static final String RSR = "net/minecraft/server/ReloadableServerResources";
 	private static final String NEO_HOOKS = "net/neoforged/neoforge/event/EventHooks";

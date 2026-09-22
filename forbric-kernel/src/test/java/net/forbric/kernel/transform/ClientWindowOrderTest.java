@@ -58,7 +58,7 @@ import net.fabricmc.api.EnvType;
  * so a merged base that moves either one silently reopens one of those two failures. Neither injector had a test.
  */
 class ClientWindowOrderTest {
-	private static final Path MERGED_BASE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 
 	private static final String MINECRAFT = "net.minecraft.client.Minecraft";

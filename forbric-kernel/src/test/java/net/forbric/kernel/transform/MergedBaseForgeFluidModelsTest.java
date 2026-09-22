@@ -35,7 +35,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
  * ASM's verifier over the rewritten method.
  */
 class MergedBaseForgeFluidModelsTest {
-	private static final Path MERGED_BASE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	private static final String RENDERER = "net/minecraft/client/renderer/block/FluidRenderer";
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelForgeFluids";

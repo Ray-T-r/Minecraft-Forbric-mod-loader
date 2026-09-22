@@ -98,7 +98,7 @@ class KernelGameEntityEventsTest {
 	/** The runtime output plus the staged carriers, which is what these classes link against. */
 	private static URLClassLoader gameSideLoader() throws Exception {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
-		Path run = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+		Path run = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 		Path forgeRt = run.resolve("forge-runtime/forge-runtime.jar");
 		Path neoRt = run.resolve("neoforge-runtime/neoforge-runtime.jar");
 		assumeTrue(Files.isDirectory(compiled) && Files.isRegularFile(forgeRt) && Files.isRegularFile(neoRt),

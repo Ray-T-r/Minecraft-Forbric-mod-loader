@@ -59,7 +59,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class MergedBaseKeyModifierSuffixTest {
 	private static final Path MERGED_BASE =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "merged-base",
 					"patched-mc-merged-26.2.jar").normalize();
 	private static final String INPUT_CONSTANTS = "com/mojang/blaze3d/platform/InputConstants";
 	private static final String KEY = INPUT_CONSTANTS + "$Key";

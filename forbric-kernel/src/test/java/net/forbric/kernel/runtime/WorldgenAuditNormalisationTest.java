@@ -103,7 +103,7 @@ class WorldgenAuditNormalisationTest {
 		Path libraries = Path.of(System.getProperty("user.home"), "Library", "Application Support", "minecraft",
 				"libraries", pattern.replace('/', java.io.File.separatorChar));
 		if (!Files.isDirectory(libraries)) {
-			libraries = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "downloads").normalize();
+			libraries = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "downloads").normalize();
 			if (!Files.isDirectory(libraries)) return null;
 		}
 		try (var walk = Files.walk(libraries)) {

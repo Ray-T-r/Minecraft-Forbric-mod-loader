@@ -52,7 +52,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class MergedBaseSpawnReasonTest {
 	private static final Path MERGED_BASE =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "merged-base",
 					"patched-mc-merged-26.2.jar").normalize();
 	private static final String ENTRY = "net/minecraft/world/entity/Mob.class";
 	private static final String OWNER = "net/minecraft/world/entity/Mob";

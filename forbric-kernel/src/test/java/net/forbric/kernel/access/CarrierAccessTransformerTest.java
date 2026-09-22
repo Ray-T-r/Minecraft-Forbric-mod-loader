@@ -52,7 +52,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class CarrierAccessTransformerTest {
 	private static final Path RUN =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 	private static final Path MERGED_BASE = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path FORGE_CARRIER = RUN.resolve("forge-runtime/forge-runtime.jar");
 

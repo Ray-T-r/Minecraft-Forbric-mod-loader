@@ -55,7 +55,7 @@ import net.forbric.kernel.mixin.MixinFit;
  */
 class GuestInjectorPrunerTest {
 	private static final Path MERGED_BASE =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "merged-base",
 					"patched-mc-merged-26.2.jar").normalize();
 	private static final Path CLIENT_MODS =
 			Path.of(System.getProperty("user.dir"), "run", "client-kernel", "mods").normalize();

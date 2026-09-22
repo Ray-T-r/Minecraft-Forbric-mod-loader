@@ -54,10 +54,10 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
  */
 class MergedBaseItemAttributesTest {
 	private static final Path MERGED_BASE =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "merged-base",
 					"patched-mc-merged-26.2.jar").normalize();
 	private static final Path NEO_BASE =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "neoforge-patched",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "neoforge-patched",
 					"patched-mc-neoforge-26.2.jar").normalize();
 
 	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";

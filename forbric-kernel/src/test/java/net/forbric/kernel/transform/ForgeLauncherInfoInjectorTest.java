@@ -50,7 +50,7 @@ import net.fabricmc.api.EnvType;
  * is erroneous for the rest of the run. Physics Mod's Forge build hit exactly this.
  */
 class ForgeLauncherInfoInjectorTest {
-	private static final Path CARRIER = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path CARRIER = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"forge-runtime", "forge-runtime.jar").normalize();
 	private static final String FML_LOADER = "net.minecraftforge.fml.loading.FMLLoader";
 

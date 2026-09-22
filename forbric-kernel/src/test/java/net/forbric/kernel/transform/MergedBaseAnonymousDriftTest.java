@@ -49,7 +49,7 @@ import net.forbric.kernel.mixin.MergedBaseAnonymousDrift;
  * plus its superclass; the constructor descriptor and the {@code val$} captures are javac's plumbing.
  */
 class MergedBaseAnonymousDriftTest {
-	private static final Path MERGED = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	private static final Pattern ANONYMOUS = Pattern.compile("^(net/minecraft/|com/mojang/).*\\$\\d+\\.class$");
 

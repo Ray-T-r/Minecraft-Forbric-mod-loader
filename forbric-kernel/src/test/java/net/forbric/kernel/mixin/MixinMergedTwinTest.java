@@ -48,7 +48,7 @@ import org.objectweb.asm.tree.ClassNode;
 @ResourceLock("system-properties")
 class MixinMergedTwinTest {
 	private static final Path MERGED_BASE =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "merged-base",
 					"patched-mc-merged-26.2.jar").normalize();
 	private static final String TARGET = "net.minecraft.network.protocol.common.custom.CustomPacketPayload$1";
 

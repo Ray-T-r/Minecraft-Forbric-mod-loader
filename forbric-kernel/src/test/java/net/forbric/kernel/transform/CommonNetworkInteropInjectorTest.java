@@ -53,7 +53,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
  */
 class CommonNetworkInteropInjectorTest {
 	private static final Path MERGED_BASE =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "merged-base",
 					"patched-mc-merged-26.2.jar").normalize();
 	private static final String LISTENER = "net/minecraft/client/multiplayer/ClientConfigurationPacketListenerImpl";
 	private static final String LISTENER_NAME = LISTENER.replace('/', '.');
@@ -125,7 +125,7 @@ class CommonNetworkInteropInjectorTest {
 
 	/** NeoForge's own guard: {@code runConnectionInitialization} consults {@code isConnectionInitialized}. */
 	private static boolean neoForgeGuardsInitialisationItself() throws Exception {
-		java.nio.file.Path carrier = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+		java.nio.file.Path carrier = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 				"neoforge-runtime", "neoforge-runtime.jar").normalize();
 		if (!Files.isRegularFile(carrier)) return true; // nothing staged to contradict it
 		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(carrier.toFile())) {

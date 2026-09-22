@@ -49,7 +49,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class MergedBaseFabricConditionsTest {
 	private static final Path STAGED =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 	private static final Path NEO_CARRIER = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path MERGED_BASE = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final String ENTRY = "net/neoforged/neoforge/common/conditions/ConditionalOps.class";

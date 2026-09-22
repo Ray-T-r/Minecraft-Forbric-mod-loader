@@ -41,7 +41,7 @@ import org.objectweb.asm.tree.MethodNode;
 class DeadEventAuditStagedTest {
 	@Test
 	void theMergedItemStackPostsOnlyMinecraftForgesTooltipEvent() throws Exception {
-		Path merged = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
+		Path merged = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "merged-base",
 				"patched-mc-merged-26.2.jar").normalize();
 		assumeTrue(Files.isRegularFile(merged), "staged merged base absent");
 		ClassNode node = new ClassNode();

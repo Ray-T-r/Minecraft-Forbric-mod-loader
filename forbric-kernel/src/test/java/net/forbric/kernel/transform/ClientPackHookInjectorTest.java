@@ -58,7 +58,7 @@ import net.forbric.api.ForeignType;
  * repository — so that modifier is asserted against the real carriers here, not assumed.
  */
 class ClientPackHookInjectorTest {
-	private static final Path RUN = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+	private static final Path RUN = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 	private static final String METHOD = "setupModResourcePacks";
 	private static final String DESC = "(Lnet/minecraft/server/packs/repository/PackRepository;)V";
 	private static final String HOOK_OWNER = "net/forbric/kernel/boot/KernelLifecycle";

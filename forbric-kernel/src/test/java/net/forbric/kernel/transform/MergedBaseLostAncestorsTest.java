@@ -51,7 +51,7 @@ import org.objectweb.asm.ClassReader;
  * loads, and a coverage assertion passes that happily.
  */
 class MergedBaseLostAncestorsTest {
-	private static final Path RUN = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run")
+	private static final Path RUN = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run")
 			.normalize();
 	private static final Path MERGED = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path FORGE_BASE = RUN.resolve("forge-patched/patched-mc-forge-26.2.jar");

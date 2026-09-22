@@ -173,7 +173,7 @@ class PortingLayerAbiInjectorTest {
 	 */
 	@Test
 	void aMethodReferenceToThePortsScreenConstructorIsReAimedAtTheCarriers() throws Exception {
-		Path ss = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "mods",
+		Path ss = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "mods",
 				"ShoulderSurfing-Fabric-26.2-5.0.11.jar").normalize();
 		assumeTrue(Files.isRegularFile(ss), "ShoulderSurfing not staged — skipping");
 		byte[] in;

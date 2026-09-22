@@ -46,7 +46,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 /** Every return of {@code Minecraft.close()} and {@code DedicatedServer.onServerExit()} calls the loader's watcher sweep; nothing else is touched. */
 class ExitHookInjectorTest {
 	private static final Path MERGED_BASE =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "merged-base",
 					"patched-mc-merged-26.2.jar").normalize();
 	private static final String MINECRAFT = "net/minecraft/client/Minecraft";
 	private static final String MINECRAFT_NAME = "net.minecraft.client.Minecraft";

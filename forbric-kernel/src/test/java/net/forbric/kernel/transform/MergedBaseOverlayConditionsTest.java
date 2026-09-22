@@ -41,7 +41,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 /** The one insertion in the merged {@code OverlayEntry.listCodecForPackType}, and the funnel premise around it. */
 class MergedBaseOverlayConditionsTest {
-	private static final Path MERGED_BASE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	private static final String SECTION = "net/minecraft/server/packs/OverlayMetadataSection";
 

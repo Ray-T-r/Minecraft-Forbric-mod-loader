@@ -48,7 +48,7 @@ import org.objectweb.asm.tree.MethodNode;
  */
 class MergedBaseForgeConditionsTest {
 	private static final Path STAGED =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 	private static final Path FORGE_CARRIER = STAGED.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path MERGED_BASE = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final String ENTRY = "net/minecraftforge/common/crafting/conditions/ICondition.class";

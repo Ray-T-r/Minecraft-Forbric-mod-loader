@@ -31,7 +31,7 @@ import org.objectweb.asm.tree.MethodNode;
  * codec through the carrier's own Forge dispatch; every other store in {@code <clinit>} is left exactly alone.
  */
 class MergedBaseForgeIngredientsTest {
-	private static final Path MERGED_BASE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	private static final String INGREDIENT = "net/minecraft/world/item/crafting/Ingredient";
 	private static final String NEO_FACTORY = "net/neoforged/neoforge/common/crafting/IngredientCodecs";

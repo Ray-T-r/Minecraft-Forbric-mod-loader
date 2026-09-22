@@ -29,7 +29,7 @@ import org.objectweb.asm.tree.MethodNode;
  * turning that one invokevirtual into {@code invokestatic KernelForgeConditions.contextOf(RSR)}.
  */
 class MergedBaseForgeReloadContextTest {
-	private static final Path MERGED_BASE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	private static final Path FORGE_RUNTIME = forgeRuntime();
 	private static final String EVENT = "net/minecraftforge/event/AddReloadListenerEvent";
@@ -127,7 +127,7 @@ class MergedBaseForgeReloadContextTest {
 
 	private static Path forgeRuntime() {
 		String old = System.getenv("FORBRIC_OLD");
-		Path root = old == null || old.isBlank() ? Path.of(System.getProperty("user.dir"), "..", "forbric-loader") : Path.of(old);
+		Path root = old == null || old.isBlank() ? Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader")) : Path.of(old);
 		return root.resolve("run/forge-runtime/forge-runtime.jar").normalize();
 	}
 }

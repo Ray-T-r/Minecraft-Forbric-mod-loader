@@ -60,7 +60,7 @@ import net.fabricmc.api.EnvType;
  */
 class RegistrySyncParityInjectorTest {
 	private static final Path FORGE_RUNTIME =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "forge-runtime", "forge-runtime.jar")
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "forge-runtime", "forge-runtime.jar")
 					.normalize();
 
 	private static final String WRAPPER = "net.minecraftforge.registries.NamespacedWrapper";

@@ -50,7 +50,7 @@ class ForeignTypeCarrierTest {
 	private static final Path FORGE = staged("forge-runtime", "forge-runtime.jar");
 
 	private static Path staged(String dir, String jar) {
-		return Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", dir, jar).normalize();
+		return Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", dir, jar).normalize();
 	}
 
 	@Test

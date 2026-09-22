@@ -56,9 +56,9 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
  * off MinecraftForge's own holder class.
  */
 class MergedBaseLostSwitchMapTest {
-	private static final Path MERGED_BASE = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
-	private static final Path FORGE_PATCHED = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path FORGE_PATCHED = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"forge-patched", "patched-mc-forge-26.2.jar").normalize();
 	private static final ForbricMergedBaseCompatTransformer.LostSwitchMap FURNACE =
 			ForbricMergedBaseCompatTransformer.LOST_SWITCH_MAPS.get(0);

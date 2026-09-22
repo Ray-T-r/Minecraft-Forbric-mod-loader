@@ -53,7 +53,7 @@ import net.forbric.api.ForeignType;
  */
 class ModsButtonRedirectorTest {
 	private static final Path MERGED_BASE =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "merged-base",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "merged-base",
 					"patched-mc-merged-26.2.jar").normalize();
 
 	/**
@@ -64,7 +64,7 @@ class ModsButtonRedirectorTest {
 	 * marker, across both staged jars, and then assert against whatever they turn out to be.
 	 */
 	private static final Path NEO_RUNTIME =
-			Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run", "neoforge-runtime",
+			Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run", "neoforge-runtime",
 					"neoforge-runtime.jar").normalize();
 
 	private static final String PAUSE = "net/minecraft/client/gui/screens/PauseScreen";

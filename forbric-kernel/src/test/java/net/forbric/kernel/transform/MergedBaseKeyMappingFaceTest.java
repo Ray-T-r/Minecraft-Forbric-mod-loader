@@ -51,7 +51,7 @@ import org.objectweb.asm.tree.MethodNode;
  * conflict context ignored, which is worse.
  */
 class MergedBaseKeyMappingFaceTest {
-	private static final Path MERGED = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run",
+	private static final Path MERGED = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	private static final String KEY_MAPPING = "net/minecraft/client/KeyMapping";
 	private static final String MF_CONTEXT = "Lnet/minecraftforge/client/settings/IKeyConflictContext;";
@@ -282,7 +282,7 @@ class MergedBaseKeyMappingFaceTest {
 	 */
 	private static java.net.URLClassLoader gameSideLoader() throws IOException {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
-		Path run = Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+		Path run = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 		Path forgeRt = run.resolve("forge-runtime/forge-runtime.jar");
 		Path neoRt = run.resolve("neoforge-runtime/neoforge-runtime.jar");
 		assumeTrue(Files.isDirectory(compiled) && Files.isRegularFile(forgeRt) && Files.isRegularFile(neoRt)

@@ -57,7 +57,7 @@ class StagedArtifactCoverageTest {
 	static Path stagedRoot() {
 		String override = System.getenv("FORBRIC_OLD");
 		if (override != null && !override.isBlank()) return Path.of(override, "run").normalize();
-		return Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
+		return Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 	}
 
 	private static List<Path> artifacts() {
