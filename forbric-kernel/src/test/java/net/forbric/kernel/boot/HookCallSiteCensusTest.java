@@ -165,7 +165,8 @@ class HookCallSiteCensusTest {
 		Path base = base(callerCalling("game/Level", List.of(new Call("onCalled", "()V"))));
 		String summary = HookCallSiteCensus.of(carrier, HOOKS, List.of(base)).summary();
 		// A run that scanned nothing must not read like a run that found nothing, so the declared count is first.
-		assertTrue(summary.contains("2 declared, 1 with a call site, 1 dead"), summary);
+		assertTrue(summary.contains("2 declared, 1 called by the game"), summary);
+		assertTrue(summary.contains("1 called by nothing"), summary);
 		assertTrue(summary.startsWith("[Forbric/Hooks] " + HOOKS + ":"), summary);
 	}
 

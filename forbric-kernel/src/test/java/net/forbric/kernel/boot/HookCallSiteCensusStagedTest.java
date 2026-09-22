@@ -43,6 +43,16 @@ class HookCallSiteCensusStagedTest {
 		return Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run").normalize();
 	}
 
+	/** The two ecosystem runtimes, for the third state. */
+	private static List<Path> carriers() {
+		List<Path> out = new ArrayList<>();
+		for (String rel : List.of("forge-runtime/forge-runtime.jar", "neoforge-runtime/neoforge-runtime.jar")) {
+			Path jar = root().resolve(rel);
+			if (Files.isRegularFile(jar)) out.add(jar);
+		}
+		return out;
+	}
+
 	private static Path base() {
 		return root().resolve("merged-base/patched-mc-merged-26.2.jar");
 	}
@@ -52,7 +62,9 @@ class HookCallSiteCensusStagedTest {
 		for (Map.Entry<String, String> e : HOOK_CLASSES.entrySet()) {
 			Path carrier = root().resolve(e.getValue());
 			if (!Files.isRegularFile(carrier)) continue;
-			out.put(e.getKey(), HookCallSiteCensus.of(carrier, e.getKey(), List.of(base())));
+			// The carriers as carriers, not as game: a hook the game never calls may still be reached through
+			// its own ecosystem's runtime, and calling that dead put a delivered event on the work list once.
+			out.put(e.getKey(), HookCallSiteCensus.of(carrier, e.getKey(), List.of(base()), carriers()));
 		}
 		return out;
 	}

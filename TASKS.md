@@ -125,10 +125,16 @@
       (`StackOverflowError`)。有固定锚点的 repair 不会犯这个错,scanned 的必须自己说明不许碰谁。
       已排除并加测试钉住(去掉排除立刻红)。修完 m12 GREEN,而且
       `MinecraftForge mods can add data-pack finders again` 在真服务端里真的打出来了。
-- [x] **工单第七条:`BlockEvent$EntityMultiPlaceEvent`(←journeymap)—— 不是 Forbric 的问题**。
-      `EventHooks.onMultiBlockPlace` 这个钩子存在,但**在 NeoForge 自己的补丁游戏里也是零调用点**
-      (合并基底里同样是零)。也就是说 journeymap 的这个监听器在**原生 NeoForge 26.2 上一样不会触发**。
-      判据是字节码,不是论证。 —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
+- [x] **工单第七条:`BlockEvent$EntityMultiPlaceEvent`(←journeymap)—— 它其实一直是通的,是我的普查错了**。
+      我先判成"上游的问题"(NeoForge 自己的补丁游戏里零调用点),**这个判断是错的**:
+      `CommonHooks.onPlaceItemIntoWorld` 在 **NeoForge 的 runtime jar 里**调它,而内核自己的
+      `routePlaceItemHookToNeoForge` 正是把 `ItemStack.useOn` 路到那儿的。
+      根因是普查**只扫合并基底、不扫载体**,于是"只被自己生态的 runtime 调到"的钩子被算成了死的。
+      加了第三种状态之后的真实分布:`ForgeEventFactory` 160 声明 / **20 被游戏调 / 15 只被自己的 runtime 调
+      / 125 没人调**;`ForgeEventFactoryClient` 46 / 8 / 9 / 29;`EventHooks` 114 / 106 / 6 / 2。
+      同一个错误还让 `DEAD` 表里另外 **3 行**是假指控(`AddGuiOverlayLayersEvent`、`LootTableLoadEvent`
+      本来就有桥在送;`FluidPlaceBlockEvent` 由 Forge 自己的 `FluidInteractionRegistry` 发出),已删。
+      **工单归零。** —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
       `AddPackFindersEvent`←collective、`LivingEntityUseItemEvent$Finish`←nutritiousmilk、
       `MobSpawnEvent$FinalizeSpawn`←collective、`PlayerEvent$StartTracking`←collective、
       `BlockEvent$PortalSpawnEvent`←collective、`FurnaceFuelBurnTimeEvent`←balm(**NeoForge 的事件**)、

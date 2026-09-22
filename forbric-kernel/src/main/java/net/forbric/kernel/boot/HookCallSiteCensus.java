@@ -87,7 +87,7 @@ public final class HookCallSiteCensus {
 	 * @param deadEvents  events every one of whose posters is dead
 	 */
 	public record Census(String hookClass, List<String> declared, Set<String> live, Set<String> dead,
-			Map<String, Set<String>> postersOf, Set<String> deadEvents) {
+			Map<String, Set<String>> postersOf, Set<String> deadEvents, Set<String> viaCarrier) {
 
 		public Census {
 			declared = List.copyOf(declared);
@@ -95,13 +95,19 @@ public final class HookCallSiteCensus {
 			dead = Set.copyOf(dead);
 			postersOf = Map.copyOf(postersOf);
 			deadEvents = Set.copyOf(deadEvents);
+			viaCarrier = Set.copyOf(viaCarrier);
 		}
 
-		/** Live events: posted by at least one hook the base still calls. */
+		/** Live events: posted by at least one hook something still calls, the carriers included. */
 		public Set<String> liveEvents() {
 			Set<String> out = new TreeSet<>(postersOf.keySet());
 			out.removeAll(deadEvents);
 			return out;
+		}
+
+		/** Hooks with no call site in the game, but one in their own ecosystem's runtime. */
+		public Set<String> reachedOnlyViaCarrier() {
+			return viaCarrier;
 		}
 
 		/**
@@ -110,7 +116,8 @@ public final class HookCallSiteCensus {
 		 */
 		public String summary() {
 			return "[Forbric/Hooks] " + hookClass + ": " + declared.size() + " declared, " + live.size()
-					+ " with a call site, " + dead.size() + " dead; events: " + postersOf.size()
+					+ " called by the game, " + viaCarrier.size() + " only by their own runtime, "
+					+ (dead.size() - viaCarrier.size()) + " called by nothing; events: " + postersOf.size()
 					+ " posted, " + deadEvents.size() + " never posted";
 		}
 	}
@@ -126,6 +133,25 @@ public final class HookCallSiteCensus {
 	 * @param baseJars   the jars whose call sites count — the merged game base
 	 */
 	public static Census of(Path carrierJar, String hookClass, List<Path> baseJars) throws IOException {
+		return of(carrierJar, hookClass, baseJars, List.of());
+	}
+
+	/**
+	 * The same, told which jars are the ecosystem's OWN runtime rather than the game.
+	 *
+	 * <h2>The third state</h2>
+	 *
+	 * <p>A hook with no call site in the merged base may still be reached, through its own ecosystem's runtime:
+	 * {@code EventHooks.onMultiBlockPlace} has no caller in any patched game and one in
+	 * {@code CommonHooks.onPlaceItemIntoWorld}, which this kernel's own repair routes {@code ItemStack.useOn}
+	 * into. Counting that as dead put a delivered event on the work list.
+	 *
+	 * <p>It is a weaker statement than "the game calls it" — the carrier method may itself be unreached — so it
+	 * is a third answer rather than being folded into {@code live}. The numbers this project has quoted about
+	 * its own surface are the game-only ones, and {@link #live} still means that.
+	 */
+	public static Census of(Path carrierJar, String hookClass, List<Path> baseJars, List<Path> carrierJars)
+			throws IOException {
 		ClassNode hooks = read(carrierJar, hookClass + ".class");
 		if (hooks == null) throw new IOException(hookClass + " is not in " + carrierJar);
 		// Only the hook's OWN ecosystem namespace counts as an event it posts. Without this, every ArrayList,
@@ -182,13 +208,26 @@ public final class HookCallSiteCensus {
 		Set<String> dead = new TreeSet<>();
 		for (String key : declared) (referenced.contains(key) ? live : dead).add(key);
 
+		// Callers inside the ecosystem's own runtime: weaker than the game calling it, and not nothing.
+		Set<String> inCarrier = new LinkedHashSet<>();
+		for (Path jar : carrierJars) inCarrier.addAll(callers(jar, hookClass));
+		Set<String> viaCarrier = new TreeSet<>();
+		for (String key : dead) if (inCarrier.contains(key)) viaCarrier.add(key);
+
 		Set<String> deadEvents = new TreeSet<>();
 		for (Map.Entry<String, Set<String>> e : posters.entrySet()) {
-			if (dead.containsAll(e.getValue())) deadEvents.add(e.getKey());
+			boolean allUnreached = true;
+			for (String poster : e.getValue()) {
+				if (!dead.contains(poster) || viaCarrier.contains(poster)) {
+					allUnreached = false;
+					break;
+				}
+			}
+			if (allUnreached) deadEvents.add(e.getKey());
 		}
 		Map<String, Set<String>> frozen = new LinkedHashMap<>();
 		posters.forEach((k, v) -> frozen.put(k, Set.copyOf(v)));
-		return new Census(hookClass, declared, live, dead, frozen, deadEvents);
+		return new Census(hookClass, declared, live, dead, frozen, deadEvents, viaCarrier);
 	}
 
 	/**
@@ -253,6 +292,11 @@ public final class HookCallSiteCensus {
 		}
 		out.sort(java.util.Comparator.comparing(Erosion::hook));
 		return List.copyOf(out);
+	}
+
+	/** {@code name+desc} of every hook on {@code hookClass} that anything in {@code jar} calls. */
+	private static Set<String> callers(Path jar, String hookClass) throws IOException {
+		return callSites(jar, hookClass).keySet();
 	}
 
 	/** {@code name+desc} → how many instructions in {@code jar} call it on {@code hookClass}. */

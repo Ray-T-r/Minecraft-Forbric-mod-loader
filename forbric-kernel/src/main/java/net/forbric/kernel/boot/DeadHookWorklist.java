@@ -102,6 +102,9 @@ public final class DeadHookWorklist {
 	 */
 	private static String coverage(String event) {
 		if (DeadEventAudit.BRIDGED.containsKey(event)) return "  [BRIDGED — already delivered]";
+		// A redirect into the kernel delivers it just as a bridge would, and a work list that keeps naming
+		// finished work is worse than none.
+		if (DeadEventAudit.REPAIRED.contains(event)) return "  [REPAIRED — the call site is redirected]";
 		String chain = simpleChain(event);
 		for (GameEventBridge bridge : GameEventBridge.values()) {
 			if (namesTheSameEvent(bridge.event(), chain)) {
@@ -184,6 +187,13 @@ public final class DeadHookWorklist {
 		}
 		Path base = Path.of(args[0]);
 		Path modsDir = Path.of(args[1]);
+		// Every carrier named on the command line is also a place a hook can be called from — see the third
+		// state in HookCallSiteCensus. Without this the worklist lists events that are delivered.
+		List<Path> carriers = new ArrayList<>();
+		for (int i = 2; i < args.length; i++) {
+			int eq = args[i].lastIndexOf('=');
+			if (eq > 0) carriers.add(Path.of(args[i].substring(0, eq)));
+		}
 		Map<String, Set<String>> posters = new LinkedHashMap<>();
 		Set<String> dead = new TreeSet<>();
 		Set<String> live = new TreeSet<>();
@@ -193,7 +203,8 @@ public final class DeadHookWorklist {
 				System.err.println("expected <carrier.jar>=<hookClass>, got " + args[i]);
 				System.exit(2);
 			}
-			var census = HookCallSiteCensus.of(Path.of(args[i].substring(0, eq)), args[i].substring(eq + 1), List.of(base));
+			var census = HookCallSiteCensus.of(Path.of(args[i].substring(0, eq)), args[i].substring(eq + 1),
+					List.of(base), carriers);
 			System.out.println(census.summary());
 			census.postersOf().forEach((e, p) -> posters.merge(e, p, (a, b) -> {
 				Set<String> both = new TreeSet<>(a);

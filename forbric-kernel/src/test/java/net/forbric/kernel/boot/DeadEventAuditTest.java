@@ -214,15 +214,20 @@ class DeadEventAuditTest {
 
 	/** The two fluid events the fluid-rendering repair deliberately does not bridge: a listener is told, per event. */
 	@Test
-	void theTwoDeadFluidEventsNameTheModWithTheirCost() {
+	void theDeadFluidEventNamesTheModWithItsCostAndTheOtherNoLongerDoes() {
 		List<DeadEventAudit.Finding> findings = DeadEventAudit.audit(
 				Map.of("fluidmod", Set.of(CREATE_FLUID_SOURCE, FLUID_PLACE_BLOCK)), EnumSet.noneOf(GameEventBridge.class));
 
-		assertEquals(2, findings.size(), "both fluid events must be findings");
-		for (DeadEventAudit.Finding finding : findings) {
-			assertEquals("fluidmod", finding.modId());
-			assertTrue(finding.cost() != null && !finding.cost().isBlank(), finding.event() + " must state its cost");
-		}
+		// FLUID_PLACE_BLOCK was a row here until the census learned to look in the carriers as well as the
+		// game: it is posted from MinecraftForge's own FluidInteractionRegistry, which this layer cannot prove
+		// is reached but can no longer claim is not. A row here says "the merged game never posts this", and
+		// that row could not say it any more. Naming a mod for an event it may well receive is the failure this
+		// table has already had to be corrected for three times.
+		assertEquals(1, findings.size(), "only the event still claimed dead is a finding: " + findings);
+		DeadEventAudit.Finding finding = findings.get(0);
+		assertEquals("fluidmod", finding.modId());
+		assertEquals(CREATE_FLUID_SOURCE, finding.event());
+		assertTrue(finding.cost() != null && !finding.cost().isBlank(), finding.event() + " must state its cost");
 	}
 
 	@Test

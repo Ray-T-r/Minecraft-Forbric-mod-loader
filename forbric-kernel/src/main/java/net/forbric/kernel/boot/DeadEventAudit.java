@@ -112,10 +112,7 @@ public final class DeadEventAudit {
 		// carries yet. The merged consumers read only NeoForge's tables at these sites, so the Forge event would
 		// be delivered into nothing; they are named here so a waiting mod is named at boot rather than found in
 		// a screenshot. Each is a candidate adapter for a later round.
-		dead.put("net/minecraftforge/client/event/AddGuiOverlayLayersEvent",
-				"HUD overlay layers a MinecraftForge mod adds never draw — the merged Gui registers only NeoForge's "
-						+ "layer list");
-		dead.put("net/minecraftforge/client/event/AddFramePassEvent",
+				dead.put("net/minecraftforge/client/event/AddFramePassEvent",
 				"extra render frame passes a MinecraftForge mod adds never run — the merged frame graph asks only "
 						+ "NeoForge's event");
 		dead.put("net/minecraftforge/client/event/EntityRenderersEvent$CreateSkullModels",
@@ -130,15 +127,7 @@ public final class DeadEventAudit {
 		dead.put("net/minecraftforge/event/level/BlockEvent$CreateFluidSourceEvent",
 				"infinite-source formation cannot be observed or vetoed — the merged FlowingFluid.canConvertToSource "
 						+ "asks only NeoForge's EventHooks.canCreateFluidSource");
-		dead.put("net/minecraftforge/event/level/BlockEvent$FluidPlaceBlockEvent",
-				"lava or water turning into stone, cobblestone or obsidian cannot be observed or changed — "
-						+ "LavaFluid and FlowingFluid post only NeoForge's fireFluidPlaceBlockEvent");
-		dead.put("net/minecraftforge/event/LootTableLoadEvent",
-				"loot tables a MinecraftForge mod adds to or replaces on load are left as loaded — the merged "
-						+ "ReloadableServerRegistries posts only NeoForge's LootTableLoadEvent (KernelLootBridge is the "
-						+ "seam where Forge's would belong)");
-
-		// The other side of the ledger: the merged ItemStack.getTooltipLines calls only MinecraftForge's
+						// The other side of the ledger: the merged ItemStack.getTooltipLines calls only MinecraftForge's
 		// ForgeEventFactory.onItemTooltip (javap: one invokestatic, none into net/neoforged), so NeoForge's event is
 		// the dead one here. ItemStack#onDestroyed is NOT a row: it is an extension hook on both sides
 		// (IForgeItemStack.onDestroyed survived) and cannot be a subscriber finding.
@@ -149,6 +138,11 @@ public final class DeadEventAudit {
 		// was sent to NeoForge's onPlaceItemIntoWorld so that placing anything works at all. True of useOn, and
 		// the census finds ReplaceDisk#apply still calling ForgeEventFactory.onBlockPlace — so the event is
 		// posted, and the row was unreachable anyway (BRIDGED is consulted first and carries this event).
+		// Three rows were removed here once the census learned to look in the carriers as well as the game.
+		// AddGuiOverlayLayersEvent and LootTableLoadEvent are BRIDGED, so they were delivered all along and the
+		// rows were unreachable anyway; FluidPlaceBlockEvent is posted from MinecraftForge's own
+		// FluidInteractionRegistry, which this layer cannot prove is reached but can no longer claim is not.
+		// A row here says "the merged game never posts this", and none of the three could still say it.
 		return Map.copyOf(dead);
 	}
 
@@ -201,6 +195,27 @@ public final class DeadEventAudit {
 				"placement by an entity is announced on 1 of its 2 paths");
 		return Map.copyOf(partial);
 	}
+
+	/**
+	 * Events a merged-base REPAIR delivers, rather than a bridge.
+	 *
+	 * <h2>Why this is a third list and not a row in the other two</h2>
+	 *
+	 * <p>Some seams cannot be bridged. A bridge listens to the other ecosystem's event and re-posts this one, so
+	 * it needs that other event to exist and be posted; where it does not, the only lever is redirecting the
+	 * surviving call into the kernel and asking both sides there. Three of these now exist — fuel burn time,
+	 * a spawner finishing a mob, and pack finders.
+	 *
+	 * <p>They belong here because everything that decides "is this event delivered" reads these tables, and the
+	 * one that does not would go on listing them as work. That already happened once, from the other direction:
+	 * the tick events were bridged and the worklist kept naming them because its matcher looked at one side
+	 * only, and a work list that grows finished items is worse than none, because the first thing anyone does
+	 * with it is spend a day on one.
+	 */
+	static final java.util.Set<String> REPAIRED = java.util.Set.of(
+			"net/neoforged/neoforge/event/furnace/FurnaceFuelBurnTimeEvent",
+			"net/minecraftforge/event/entity/living/MobSpawnEvent$FinalizeSpawn",
+			"net/minecraftforge/event/AddPackFindersEvent");
 
 	/** Package-private for the same reason as {@link #DEAD}. */
 	static final Map<String, GameEventBridge> BRIDGED = bridged();
@@ -280,6 +295,9 @@ public final class DeadEventAudit {
 					}
 					continue;
 				}
+				// A repair delivers it, the same as a bridge would; reporting it would name a mod for an event
+				// it does receive.
+				if (REPAIRED.contains(event)) continue;
 				String cost = DEAD.get(event);
 				if (cost != null) {
 					findings.add(new Finding(mod.getKey(), event, cost));
