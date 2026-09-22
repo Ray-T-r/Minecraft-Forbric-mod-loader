@@ -95,7 +95,12 @@
 - [x] **C-arbitration(其一)** `ModPresence.isLoaded` 的 `-`/`_` 归一化 —— NeoForge 的 mod id 不许带 `-`,
       另外两家许,所以同一个 mod 跨生态就是两个拼写;而这个"专门用来跨生态回答"的注册表在用字符串比较,
       恰好跨不过两家唯一真正不同的那条边界。代价不对称:假 no 会让 mod 走"没装"分支而它其实装了。
-- [ ] **C-lifecycle** / **C-arbitration(其二)** `getModContainerById`、落败版独有类
+- [x] **C-arbitration(其二·可见性)** 合成 mod info 上**没建模的 accessor 现在会被记下来**。
+      返回值改不了 —— 类型是接口定的,"不知道"和"没有"只能是同一个空值。能改的是:内核不再是
+      唯一一个不知道自己被问过的人。原案就是 Indigo 问跨生态的 Sodium 有没有渲染器,得到空,
+      于是走了"这里没有渲染器"的分支,而 Sodium 已经把管线换掉了。每个不同的 accessor 记一次,
+      在审计那一行里报出来。
+- [ ] **C-lifecycle** / **C-arbitration(其三)** `getModContainerById`、落败版独有类保留
 
 ## M-D 四个盲区
 

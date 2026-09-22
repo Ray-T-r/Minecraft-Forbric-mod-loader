@@ -249,6 +249,9 @@ public final class KernelEventSubscribers {
 		// And this is about mixins that DID apply, to a point. Ninety individual lines on a client boot, none of
 		// them totalled anywhere, for the state MixinFit's javadoc calls worse than either extreme.
 		ForbricLog.info("%s", net.forbric.kernel.mixin.KernelGuestMixinAdapter.partialSummary());
+		// And this is about questions the kernel was asked and could only answer empty — where "I do not know"
+		// and "there is none" are the same value to the caller.
+		ForbricLog.info("%s", PassiveSeeder.unmodelledSummary());
 		// Everything above is about listeners. This is about a whole subsystem the merged game does not carry.
 		CapabilityUseAudit.report(net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled(),
 				net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.composedRoots());

@@ -55,6 +55,9 @@ class EmptyConfigurableTest {
 
 		List<?> getConfigList(String... key);
 
+		/** Something no version of this kernel models — the shape of every future accessor. */
+		Optional<String> somethingNobodyModelled();
+
 		default <T> Optional<T> getConfigElement(String key) {
 			throw new AssertionError("a Proxy must route default methods to the handler, not run this body");
 		}
@@ -69,6 +72,38 @@ class EmptyConfigurableTest {
 				EmptyConfigurableTest.class.getClassLoader(),
 				new Class<?>[] {StandInConfigurable.class},
 				PassiveSeeder.emptyConfigurableHandler());
+	}
+
+	@Test
+	void anAccessorNobodyModelledIsRecordedRatherThanJustAnsweredEmpty() {
+		// A synthetic mod info can only answer in the interface's own types, so "I do not know" and "there is
+		// none" are the same empty value and the caller cannot tell them apart. Indigo asked a Sodium built for
+		// the other ecosystem whether it declared a renderer, got empty because the property was never modelled,
+		// and took the branch for "no renderer here" on an instance where Sodium had replaced the pipeline.
+		//
+		// The answer cannot change — its type is the interface's. What changes is that the kernel is no longer
+		// the only party that does not know it was asked.
+		PassiveSeeder.resetUnmodelled();
+		try {
+			assertTrue(PassiveSeeder.unmodelledAsked().isEmpty());
+			assertEquals(Optional.empty(), seeded().somethingNobodyModelled());
+			assertEquals(List.of("configurable.somethingNobodyModelled -> Optional"),
+					PassiveSeeder.unmodelledAsked());
+			assertTrue(PassiveSeeder.unmodelledSummary().contains("1 unmodelled mod-info accessor(s)"),
+					PassiveSeeder.unmodelledSummary());
+			// Asked twice is still one gap, not two.
+			seeded().somethingNobodyModelled();
+			assertEquals(1, PassiveSeeder.unmodelledAsked().size());
+		} finally {
+			PassiveSeeder.resetUnmodelled();
+		}
+	}
+
+	@Test
+	void aBootWhereNobodyAsksSaysSo() {
+		PassiveSeeder.resetUnmodelled();
+		assertTrue(PassiveSeeder.unmodelledSummary().contains("nothing asked this boot"),
+				PassiveSeeder.unmodelledSummary());
 	}
 
 	@Test

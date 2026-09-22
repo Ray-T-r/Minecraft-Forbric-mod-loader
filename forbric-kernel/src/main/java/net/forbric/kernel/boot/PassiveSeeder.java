@@ -808,8 +808,51 @@ public final class PassiveSeeder {
 				case "toString" -> "KernelSeededConfig";
 				case "hashCode" -> System.identityHashCode(proxy);
 				case "equals" -> proxy == (args == null ? null : args[0]);
-				default -> method.getReturnType() == List.class ? List.of() : Optional.empty();
+				default -> unmodelled("configurable", method);
 			};
+
+	/**
+	 * Accessors a caller asked about that this kernel does not model, and the empty answer they got.
+	 *
+	 * <h2>Why the question is worth recording</h2>
+	 *
+	 * <p>A synthetic mod info can only answer in the interface's own types, so "I do not know" and "there is
+	 * none" come out as the same empty value, and the caller cannot tell them apart. That is not hypothetical:
+	 * Indigo asked a Sodium built for the other ecosystem whether it declared a renderer, got an empty answer
+	 * because the property was never modelled, and took the branch for "no renderer here" — on an instance where
+	 * Sodium had replaced the pipeline.
+	 *
+	 * <p>Nothing can be returned instead: the answer's type is the interface's. What can change is that the
+	 * kernel stops being the only party that does not know it was asked. Every distinct accessor lands here once,
+	 * and the summary names them, so the next such branch is found by reading a log rather than by a player.
+	 */
+	private static final java.util.Set<String> UNMODELLED =
+			java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
+
+	/** Records the question and gives the interface's empty answer. */
+	private static Object unmodelled(String what, java.lang.reflect.Method method) {
+		UNMODELLED.add(what + "." + method.getName() + " -> " + method.getReturnType().getSimpleName());
+		return method.getReturnType() == List.class ? List.of() : Optional.empty();
+	}
+
+	/** Every unmodelled accessor asked for so far, sorted. */
+	public static List<String> unmodelledAsked() {
+		synchronized (UNMODELLED) {
+			return UNMODELLED.stream().sorted().toList();
+		}
+	}
+
+	/** The one line a gate greps; empty when nothing asked, which is the normal case and worth saying. */
+	public static String unmodelledSummary() {
+		List<String> asked = unmodelledAsked();
+		return "[Forbric/Seed] " + asked.size() + " unmodelled mod-info accessor(s) were asked and answered empty"
+				+ (asked.isEmpty() ? " — nothing asked this boot" : ": " + String.join(", ", asked));
+	}
+
+	/** Forgets them. For tests. */
+	static void resetUnmodelled() {
+		UNMODELLED.clear();
+	}
 
 	/** The handler itself, so a test can drive it without the game types. See EmptyConfigurableTest. */
 	static InvocationHandler emptyConfigurableHandler() {
@@ -862,7 +905,7 @@ public final class PassiveSeeder {
 			case "hashCode" -> System.identityHashCode(proxy);
 			case "equals" -> proxy == (args == null ? null : args[0]);
 			case "getConfigElement" -> lookup(elements, args);
-			default -> method.getReturnType() == List.class ? List.of() : Optional.empty();
+			default -> unmodelled("configurable", method);
 		};
 		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, handler);
 	}
