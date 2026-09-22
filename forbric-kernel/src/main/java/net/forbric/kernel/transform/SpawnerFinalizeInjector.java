@@ -27,6 +27,8 @@ import net.forbric.kernel.util.ForbricLog;
 
 /** Adds the caller's proven ValueInput to the spawner hook; register after the legacy merged-base repair. */
 public final class SpawnerFinalizeInjector implements ClassTransformer {
+	static final String PROPERTY = "forbric.spawnerFinalize";
+	private static boolean enabled() { return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on")); }
 	static final String TARGET = "net.minecraft.world.level.BaseSpawner";
 	static final String HOST_DESC = "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/core/BlockPos;)V";
 	static final String NEO = "net/neoforged/neoforge/event/EventHooks";
@@ -44,11 +46,13 @@ public final class SpawnerFinalizeInjector implements ClassTransformer {
 
 	@Override public String name() { return "forbric-spawner-finalize-input"; }
 	@Override public AnchorSet anchors() {
+		if (!enabled()) return AnchorSet.scanned("spawner input repair explicitly disabled with -D" + PROPERTY + "=off");
 		return AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
 				"Forge spawner listeners need the actual ValueInput before the only mob initialization"));
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
+		if (!enabled()) return bytes;
 		if (!TARGET.equals(className) || bytes == null || bytes.length == 0) return bytes;
 		ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, 0);
 		if (!TARGET.replace('.', '/').equals(node.name)) return bytes;

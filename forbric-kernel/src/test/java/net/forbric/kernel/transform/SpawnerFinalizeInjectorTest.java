@@ -31,6 +31,25 @@ class SpawnerFinalizeInjectorTest {
 	private final TransformContext context = new TransformContext(EnvType.SERVER, false, "mojmap");
 	@BeforeEach @AfterEach void clearFindings() { CompatibilityFindings.reset(); }
 
+	@Test void explicitOffSwitchLeavesTheLegacyCallerIntactAndMakesNoRequiredAnchorPromise() throws Exception {
+		String property = "forbric.spawnerFinalize";
+		String previous = System.getProperty(property);
+		try {
+			byte[] raw = staged("merged-base/patched-mc-merged-26.2.jar", "net/minecraft/world/level/BaseSpawner");
+			byte[] legacy = new ForbricMergedBaseCompatTransformer().transform(SpawnerFinalizeInjector.TARGET, raw, context);
+			System.setProperty(property, "off");
+			assertSame(legacy, injector.transform(SpawnerFinalizeInjector.TARGET, legacy, context));
+			assertEquals(SpawnerFinalizeInjector.OLD_DESC, hook(host(parse(legacy))).desc);
+			assertTrue(injector.anchors().anchors().isEmpty());
+			assertFalse(injector.anchors().isUndeclared());
+			assertTrue(CompatibilityFindings.all().isEmpty(), "explicit negative-control disable is not an unknown caller");
+			System.setProperty(property, "on");
+			assertNotSame(legacy, injector.transform(SpawnerFinalizeInjector.TARGET, legacy, context));
+		} finally {
+			if (previous == null) System.clearProperty(property); else System.setProperty(property, previous);
+		}
+	}
+
 	@Test void realMergedCallerSuppliesTheSameInputThatLoadedItsMobAfterTheLegacyRepair() throws Exception {
 		byte[] raw = staged("merged-base/patched-mc-merged-26.2.jar", "net/minecraft/world/level/BaseSpawner");
 		byte[] legacy = new ForbricMergedBaseCompatTransformer().transform(SpawnerFinalizeInjector.TARGET, raw, context);
