@@ -203,3 +203,23 @@ run its gate and negative controls plus every gate. Phase 0 ends with all gates 
 Windows `popular-baseline` / `random-baseline`. Each later phase reruns the popular
 set; Phase 2 and the final phase rerun the random set too. If an unrelated observation
 regresses, isolate it with the frame-based subset test before the next phase.
+# Bind validation to its inputs
+
+Use `evidence.py run` for candidate acceptance commands. It hashes source contents (including uncommitted
+and newly added source files), the supplied artifacts, and every top-level/nested mod archive before the
+command; afterwards it verifies that none changed. The command log and JSON verdict are saved beside the
+manifest. An exit-zero command whose inputs changed is a failure. This is provenance, not a substitute for
+the command's own behavior assertions.
+
+```bash
+python3 run/compat/evidence.py run --source .. \
+  --artifact kernel=build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar \
+  --mods run/client-merged-pack/mods --output build/evidence/client.json \
+  -- bash forbric-kernel/run/gate-m9-client.sh
+```
+
+Run from `forbric-kernel/`; command paths are resolved from the recorded repository source root. Supply every
+actual game/runtime/tool jar as a named `--artifact` in real acceptance runs. `--release` requires clean
+committed sources, a mods directory (empty is valid for zero-mod tests), and all of: `vanilla`,
+`forge-patched`, `neo-patched`, `merged`, `forge-runtime`, `neo-runtime`, `forge-interop`, `kernel`,
+`kernel-runtime`, `merge-tools`. Missing inputs fail. Keep output under ignored `build/` or outside the repo.

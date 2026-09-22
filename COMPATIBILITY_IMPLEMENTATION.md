@@ -47,3 +47,11 @@ Pending implementation and acceptance items remain open even when a smaller batc
 - Reference staged jars: 15,372 classes scanned, 24 known raw dangling references, zero new references.
 - `mergeToolsJar` builds offline. The installation gate now throws on a failed or absent verdict, before the
   new version profile can be published. The ordinary boot-only Gradle tasks do not require staged jars.
+
+### P0 evidence runner batch
+
+- Added `run/compat/evidence.py` capture/verify/run with source, artifact and recursive mod fingerprints.
+- Eleven tests pass, including same-size binary replacement, new/deleted source, newly added mods, nested
+  versions, missing release inputs, and an exit-zero acceptance command that changes its inputs.
+- The release input set and clean-source rule are enforced. A recorded successful command is not a claim
+  that its own test assertions cover the entire compatibility plan; the full candidate sweep remains pending.
