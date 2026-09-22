@@ -68,8 +68,8 @@ import org.objectweb.asm.tree.TypeInsnNode;
  *   <li><b>both hook it</b> &rarr; base = the NeoForge-patched class; splice in every Forge-ADDED member
  *       (method/field absent on the Neo side) and every method where ONLY Forge injected a hook; MERGE the
  *       {@code implements} list (both ecosystems' extension interfaces); a method where BOTH sides inject a hook
- *       keeps the Neo body (the Forge hook there is LOST — recorded in the conflict report for hand
- *       reconciliation — this is the real tri-in-one conflict set).</li>
+	 *       attempts the restricted entry-hook merge in {@link AdditiveMethodMerger}; if it declines, keeps the
+	 *       Neo body and reports both the lost hook and why the additive merge declined.</li>
  *   <li><b>neither hooks it</b> &rarr; take vanilla (or whichever patched side happens to carry the class).</li>
  * </ul>
  * Forge's baked-in {@code net.minecraftforge} classes are copied wholesale (Neo does not touch that namespace);
@@ -99,6 +99,8 @@ public final class MergedBaseBuilder {
 
 	private final List<String> conflicts = new ArrayList<>();
 	private final List<String> structuralConflicts = new ArrayList<>();
+	private final List<String> additiveDecisions = new ArrayList<>();
+	private int additiveMethodsMerged;
 	private int classesTakenVanilla, classesTakenForge, classesTakenNeo, classesMerged, classesForgeOnly;
 	private int splicedMethods, splicedFields, mergedInterfaces, conflictMethods, conflictFields;
 	private int lambdasRealigned;
@@ -396,6 +398,9 @@ public final class MergedBaseBuilder {
 				ps.println();
 				ps.println("=== both-modified methods where one side's hook is LOST (see suffix for which) ===");
 				for (String c : conflicts) ps.println(c);
+				ps.println();
+				ps.println("=== restricted entry-hook merges (declined methods retain the existing arbitration) ===");
+				for (String decision : additiveDecisions) ps.println(decision);
 			}
 			System.out.println("[merge] conflict report -> " + report);
 		}
@@ -969,10 +974,17 @@ public final class MergedBaseBuilder {
 				splicedMethods++;
 				recordAnonymousOverrides(name, om, otherPkg);
 			} else if (otherHook && baseHook) {
-				// Both injected hooks into the same method — keep the base's body; the other side's hook here
-				// is LOST (recorded for hand-reconciliation). This is the real tri-in-one conflict set.
-				conflictMethods++;
-				conflicts.add(name + "#" + om.name + om.desc + (baseIsForge ? " (neo hook lost)" : " (forge hook lost)"));
+				AdditiveMethodMerger.Result addition = AdditiveMethodMerger.merge(vm, bm, om, basePkg, otherPkg);
+				additiveDecisions.add(name + "#" + key + (addition.accepted() ? " ACCEPTED " : " DECLINED ")
+						+ addition.reason());
+				if (addition.accepted()) {
+					replaceMethod(baseN, key, addition.method(), baseMethods);
+					additiveMethodsMerged++;
+				} else {
+					// A refusal deliberately preserves the previous choice, including its known limitations.
+					conflictMethods++;
+					conflicts.add(name + "#" + om.name + om.desc + (baseIsForge ? " (neo hook lost)" : " (forge hook lost)"));
+				}
 			}
 			// else (neither hooked): keep the base's body — semantically vanilla on both sides, nothing lost.
 
@@ -1818,5 +1830,7 @@ public final class MergedBaseBuilder {
 				+ " STRUCTURAL(superclass/field)=" + structuralConflicts.size()
 				+ " collision-methods-dropped=" + collisionMethodsDropped
 				+ " class-access-widened=" + classAccessWidened);
+		ps.println("[merge] restricted entry-hook merges: accepted=" + additiveMethodsMerged
+				+ " declined=" + (additiveDecisions.size() - additiveMethodsMerged));
 	}
 }

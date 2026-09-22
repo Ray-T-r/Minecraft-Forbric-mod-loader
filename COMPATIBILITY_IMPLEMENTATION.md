@@ -55,3 +55,13 @@ Pending implementation and acceptance items remain open even when a smaller batc
   versions, missing release inputs, and an exit-zero acceptance command that changes its inputs.
 - The release input set and clean-source rule are enforced. A recorded successful command is not a claim
   that its own test assertions cover the entire compatibility plan; the full candidate sweep remains pending.
+
+### P1 constrained-merger foundation
+
+- Twelve tests pass, including complete operand/branch/bootstrap comparisons and loading/executing the merged
+  fixture jar in a real JVM with its original stack maps and exception handlers.
+- The first supported grammar is two stack-neutral static hook prefixes before an exactly identical vanilla
+  body; uncertain shapes retain the previous winner and receive an explicit refusal reason.
+- Trial on the actual three game jars: zero accepted, 999 declined. Output is under
+  `/private/tmp/forbric-p1-merge-check/`; no original staged file was replaced. This is infrastructure, not
+  evidence that any current mod's lost game behavior has been restored. The P1 behavior pilots remain open.

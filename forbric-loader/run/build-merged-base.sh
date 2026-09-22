@@ -34,6 +34,7 @@ rm -rf "$BUILD"; mkdir -p "$BUILD" "$(dirname "$OUT")"
 echo "[build-merged-base] compiling merge tools (ASM: $(basename "$ASM"), $(basename "$ASM_TREE"), $(basename "$ASM_COMMONS")) …"
 javac --release 17 -cp "$CP" -d "$BUILD" \
   "$PROJECT/src/tools/java/net/forbric/tools/MergedBaseBuilder.java" \
+  "$PROJECT/src/tools/java/net/forbric/tools/AdditiveMethodMerger.java" \
   "$PROJECT/src/tools/java/net/forbric/tools/RuntimeInteropPatcher.java" \
   "$PROJECT/src/tools/java/net/forbric/tools/MergedLinkChecker.java"
 
