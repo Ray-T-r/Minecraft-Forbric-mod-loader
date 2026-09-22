@@ -51,7 +51,10 @@
 - [ ] **B1** 不翻 `MergedBaseBuilder.java:957` 的默认方向;用 A2 的 `RUNTIME_LIVE` 驱动 `FORCE_FORGE_METHODS` 白名单
 - [ ] **B2** 可合并性探索(只出报告,不承诺落地)
 - [ ] **B3** 把合并基底构建接进内核构建/CI 回路
-- [ ] **B4** 相位内顺序的两条结构性约束加断言(不动相位间顺序)
+- [x] **B4** 相位内的两条结构性约束加了断言(相位间顺序不动):`LoaderProbeRewriter` 必须是第一个、
+      `ForgeCapabilityCompositionTransformer` 必须在 `ForbricMergedBaseCompatTransformer` 之前。
+      读的是**编译后的字节码**不是源码(`KernelBoot.java` 有 NUL 字节,grep 会静默漏行,这个项目栽过两次)。
+      把 probe 挪到 guard 之后,断言立刻变红。
 
 ## M-C 五族收口
 
