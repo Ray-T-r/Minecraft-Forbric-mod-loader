@@ -40,6 +40,7 @@ import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.metadata.forge.EcosystemVersions;
 import net.forbric.kernel.mixin.KernelMixinBootstrap;
 import net.forbric.kernel.mixin.MixinConfigOwners;
+import net.forbric.kernel.transform.ChunkExecutorGuardInjector;
 import net.forbric.kernel.transform.ClientPackHookInjector;
 import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.CommonNetworkInteropInjector;
@@ -582,6 +583,16 @@ public final class KernelBoot {
 		} else {
 			ForbricLog.warn("[Forbric/Net] common-networking arbitration DISABLED — a tri-in-one client will be "
 					+ "kicked \"invalid packet\" when Fabric's addon is handed a NeoForge payload");
+		}
+
+		// Hardening, on its own switch because it is not a repair: without it the game is exactly vanilla, and
+		// only a mod holding a ServerLevel from a stopped integrated server can tell the difference. -off is the
+		// honest way to ask "is the guard the cause?" of any chunk-scheduling symptom.
+		if (!"off".equalsIgnoreCase(System.getProperty("forbric.chunkExecutorGuard", "on"))) {
+			chain.register(TransformPhase.COREMOD, new ChunkExecutorGuardInjector());
+		} else {
+			ForbricLog.warn("[Forbric/ChunkGuard] -Dforbric.chunkExecutorGuard=off — chunk work offered to a "
+					+ "stopped server's executor will park its caller forever instead of being refused");
 		}
 
 		if (Boolean.getBoolean("forbric.kernel.registryRedirect")) {
