@@ -118,3 +118,23 @@ Pending implementation and acceptance items remain open even when a smaller batc
 - 42 tests passed with zero failures/errors/skips, including actual merged ChunkGenerator bytes, external JVM
   field writes, repeated transformation, and native spawner differential probes. Evidence:
   `forbric-kernel/build/verification/spawn-access/`. Full-game action gates remain pending.
+
+### P0 actual bundled-artifact identity
+
+- Bundled game-side jars now extract into SHA-256 addressed directories and are reused only when the bytes
+  match. A previous instance can keep its old archive open while an updated instance loads its own build;
+  an arbitrary readable old archive is no longer accepted after a failed overwrite. Required missing bundles
+  fail at extraction. Writes are staged and atomically installed where the filesystem supports it.
+- Six tests pass without skips, including an open old archive, exact-byte reuse, a valid-but-wrong cached jar,
+  invalid bytes, and the actual badpackets two-level old MixinExtras fixture. Evidence:
+  `forbric-kernel/build/verification/bundled-provenance/`.
+
+### Early game observations (not final release acceptance)
+
+- The isolated zero-mod M1 server reached Done, ticked, saved all dimensions and exited normally.
+- A fresh merged candidate built from the installed fixed-version inputs has 24 known/zero new raw link
+  defects. The installed Neo patched input's SHA-1 matches the reference staged input and its .pins file
+  records NeoForge 26.2.0.88, NFRT 2.0.18, gameJarNoRecomp. Output stays in `forbric-kernel/build/candidate/`.
+- Transfer core: 23 JVM transaction tests pass; the first real game run passed only 2/11 because final
+  ItemStack/CompoundTag shapes were refused. This is unresolved and must not be counted as working Forge
+  transaction writes. Final-definition dumps are being compared; no audit bypass was enabled.

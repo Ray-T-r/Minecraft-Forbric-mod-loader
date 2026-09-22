@@ -77,37 +77,18 @@ public final class KernelBundledJars {
 
 		for (Bundled bundled : BUNDLED) {
 			String name = bundled.fileName();
-			Path target = libDir.resolve(name);
-
 			try (InputStream in = KernelBundledJars.class.getResourceAsStream("/META-INF/jars/" + name)) {
 				if (in == null) {
-					ForbricLog.warn("[Forbric/Boot] bundled jar %s is missing from the kernel jar — %s",
-							name, bundled.onMissing());
+					if (bundled.required()) throw new java.io.IOException("required bundled jar is absent: " + name);
+					ForbricLog.warn("[Forbric/Boot] bundled jar %s is missing — %s", name, bundled.onMissing());
 					continue;
 				}
-
-				Files.createDirectories(libDir);
-				Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+				Path target = materialize(libDir, name, in.readAllBytes());
 				extracted.add(target);
-				ForbricLog.debug("[Forbric/Boot] extracted bundled game-side jar %s", name);
+				ForbricLog.debug("[Forbric/Boot] verified bundled game-side jar %s at %s", name, target);
 			} catch (Exception e) {
-				// The write failed — but the COPY is not the point, the classpath entry is, and the file the
-				// previous run wrote is very often still lying there intact.
-				if (usable(target)) {
-					extracted.add(target);
-					ForbricLog.warn("[Forbric/Boot] could not rewrite bundled jar %s (%s) — the copy already on disk "
-							+ "opens and has entries, so it goes on the classpath unchanged. This is what a previous "
-							+ "instance still holding the file looks like on Windows; relaunching while the last one "
-							+ "is still shutting down is enough to cause it", name, String.valueOf(e));
-					continue;
-				}
-				// Nothing usable. Saying so and continuing is what turned this into a crash 14 seconds later and
-				// four frames away, naming a class instead of a jar (NoClassDefFoundError KernelFeatureFlags out of
-				// Bootstrap), so a required jar now fails HERE, where the cause is still in the message.
-				if (bundled.required()) {
-					throw new IllegalStateException("bundled jar " + name + " could not be extracted to " + target
-							+ " and no usable copy is there — " + bundled.onMissing(), e);
-				}
+				if (bundled.required()) throw new IllegalStateException("bundled jar " + name
+						+ " could not be materialized exactly — " + bundled.onMissing(), e);
 				ForbricLog.warn("[Forbric/Boot] could not extract bundled jar %s: %s — %s",
 						name, String.valueOf(e), bundled.onMissing());
 			}
@@ -117,19 +98,41 @@ public final class KernelBundledJars {
 	}
 
 	/**
-	 * Whether the file already at {@code target} can serve as the classpath entry.
-	 *
-	 * <p>Deliberately a real {@link ZipFile} open with an entry count, not an existence or size check: the case
-	 * this guards is a jar that was being rewritten when something else grabbed it, which leaves a file that
-	 * exists and is non-empty and still cannot be read as an archive. An existence check would wave that through
-	 * and the boot would die later, which is the failure mode this whole method now exists to stop.
+	 * Content-addressed copies let an old Windows process retain its old jar without blocking a new version.
+	 * Reusing any merely-readable archive would run untested old code; only exact bytes are reusable.
 	 */
-	private static boolean usable(Path target) {
+	static Path materialize(Path libDir, String name, byte[] expected) throws java.io.IOException {
+		String hash = sha256(expected);
+		Path directory = libDir.resolve(hash);
+		Path target = directory.resolve(name);
+		if (matches(target, hash)) return target;
+		Files.createDirectories(directory);
+		Path temporary = Files.createTempFile(directory, ".extract-", ".jar");
+		try {
+			Files.write(temporary, expected);
+			try (ZipFile zip = new ZipFile(temporary.toFile())) {
+				if (!zip.entries().hasMoreElements()) throw new java.io.IOException("empty bundled archive: " + name);
+			}
+			try {
+				try { Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
+				catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+					Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+				}
+			} catch (java.io.IOException concurrentOrLocked) {
+				if (!matches(target, hash)) throw concurrentOrLocked;
+			}
+			if (!matches(target, hash)) throw new java.io.IOException("bundled jar changed while extracting: " + target);
+			return target;
+		} finally { Files.deleteIfExists(temporary); }
+	}
+
+	private static boolean matches(Path target, String hash) throws java.io.IOException {
 		if (!Files.isRegularFile(target)) return false;
-		try (ZipFile zip = new ZipFile(target.toFile())) {
-			return zip.entries().hasMoreElements();
-		} catch (Exception unreadable) {
-			return false;
-		}
+		return hash.equals(sha256(Files.readAllBytes(target)));
+	}
+
+	private static String sha256(byte[] bytes) {
+		try { return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)); }
+		catch (java.security.NoSuchAlgorithmException impossible) { throw new AssertionError(impossible); }
 	}
 }
