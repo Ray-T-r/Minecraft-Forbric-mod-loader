@@ -88,7 +88,18 @@
       顺带量了另一件事:7 条里只有 4 条**可桥**(对面那条还活着);`AddPackFindersEvent` 和
       `MobSpawnEvent$FinalizeSpawn` 在 NeoForge 侧压根没有对应事件,`EntityMultiPlaceEvent` 的 Forge 侧也死了 ——
       这三条桥无从听起,只能靠 repair 或改仲裁。工单 7→6。
-- [ ] **工单余下 6 条(每条都有点名的等待者)** —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
+- [x] **工单再做掉两条:`LivingEntityUseItemEvent$Finish` + `BlockEvent$PortalSpawnEvent`** ——
+      这两条是**带返回值**的,不是观察者:hook 分别返回"物品变成什么"和"портal 建不建"。
+      转发了却把返回值丢掉,比不桥更糟 —— mod 的监听器跑了、改了值、游戏用的还是原来的值,
+      既不是沉默也不是在工作。所以 Finish 把返回的 stack 写回 `setResultStack`;
+      PortalSpawn 把"拒绝"变成 `setCanceled`。
+      **PortalSpawn 只有部分保真度并且明说**:Neo 的事件能取消但没有 shape 的 setter,
+      所以 Forge mod 返回一个**不同的** shape 时会打一行(一次),而不是被悄悄丢掉。
+      m12 实测:32 条 GAME_BUS 桥全部装上,gate GREEN。但**没有任何 gate 会吃东西或点传送门**,
+      所以"装上了"验到了、"真的送到"没验到 —— 于是加了字节码断言钉住最容易错的那半:
+      hook 被调用,且它的返回值被一个写回的调用带走。把 `setResultStack` 去掉,测试立刻红。
+      工单 6 → 4。
+- [ ] **工单余下 4 条** —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
       `AddPackFindersEvent`←collective、`LivingEntityUseItemEvent$Finish`←nutritiousmilk、
       `MobSpawnEvent$FinalizeSpawn`←collective、`PlayerEvent$StartTracking`←collective、
       `BlockEvent$PortalSpawnEvent`←collective、`FurnaceFuelBurnTimeEvent`←balm(**NeoForge 的事件**)、

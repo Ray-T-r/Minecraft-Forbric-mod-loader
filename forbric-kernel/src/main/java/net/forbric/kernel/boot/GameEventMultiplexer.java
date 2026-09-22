@@ -126,6 +126,12 @@ public final class GameEventMultiplexer {
 			// subscribes to StartTracking and onStartEntityTracking has no call site on the merged base.
 			// Stop is bridged with it because a mod told only that tracking began accumulates per-viewer state
 			// for entities that are gone, which is a leak instead of a silence.
+			// The two whose MinecraftForge side RETURNS something. Forwarding these and dropping the answer
+			// would leave a mod's listener running and its change ignored, which is worse than not bridging.
+			install(GameEventBridge.ITEM_USE_FINISH,
+					() -> resultBridge(cl, "installItemUseFinish").invoke(null, neoBus));
+			install(GameEventBridge.PORTAL_SPAWN,
+					() -> resultBridge(cl, "installPortalSpawn").invoke(null, neoBus));
 			install(GameEventBridge.START_TRACKING,
 					() -> trackingBridge(cl, "installStartTracking").invoke(null, neoBus));
 			install(GameEventBridge.STOP_TRACKING,
@@ -277,6 +283,15 @@ public final class GameEventMultiplexer {
 	 * <p>Written as a complete string literal on purpose, for the reason {@link #tickBridge} gives: the name is
 	 * found by scanning boot-side sources for exactly this shape.
 	 */
+	/**
+	 * One entry point on the game-side result-carrying bridges, resolved by name because this file cannot name
+	 * it. Complete string literal, for the reason {@link #tickBridge} gives.
+	 */
+	private static Method resultBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameResultBridges", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
 	private static Method trackingBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGamePlayerTrackingEvents", true, cl)
 				.getMethod(entry, Object.class);

@@ -270,6 +270,11 @@ public final class KernelRuntimeClasses {
 				new Call("installLevelLoad", void.class, Object.class),
 				new Call("installLevelUnload", void.class, Object.class),
 				new Call("installLevelSave", void.class, Object.class))));
+		// The bridges whose MinecraftForge hook returns a value, kept apart from the observing ones because
+		// dropping that value is a different and worse failure than not bridging at all.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameResultBridges", new Entry(Origin.COMPILED, List.of(
+				new Call("installItemUseFinish", void.class, Object.class),
+				new Call("installPortalSpawn", void.class, Object.class))));
 		// Entity tracking, bridged as a pair: start without stop is a leak rather than a silence.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGamePlayerTrackingEvents", new Entry(Origin.COMPILED, List.of(
 				new Call("installStartTracking", void.class, Object.class),

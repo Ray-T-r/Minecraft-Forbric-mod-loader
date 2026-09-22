@@ -112,6 +112,12 @@ public enum GameEventBridge {
 	LEVEL_SAVE(Pass.GAME_BUS, "LevelEvent.Save",
 			"a MinecraftForge mod that persists its own per-world data alongside the level's save never gets the "
 					+ "chance, so its state is silently a save behind or lost"),
+	ITEM_USE_FINISH(Pass.GAME_BUS, "LivingEntityUseItemEvent.Finish",
+			"a MinecraftForge mod cannot change what an item becomes when it is finished, so food that should "
+					+ "leave a bowl or a bottle behind leaves nothing"),
+	PORTAL_SPAWN(Pass.GAME_BUS, "BlockEvent.PortalSpawnEvent",
+			"a MinecraftForge mod cannot prevent a nether portal lighting, so dimension- and claim-restricting "
+					+ "mods do not restrict it"),
 	START_TRACKING(Pass.GAME_BUS, "PlayerEvent.StartTracking",
 			"a MinecraftForge mod is never told a player began tracking an entity, so anything it builds per "
 					+ "viewer — nameplate state, per-player entity data, sync on first sight — is never built"),
