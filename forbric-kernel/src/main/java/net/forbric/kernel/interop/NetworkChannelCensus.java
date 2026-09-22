@@ -47,6 +47,13 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>Registration and declaration are recorded separately and joined at report time, because the whole point is
  * the difference. Everything here is best-effort and never throws: a census that can break a connection is worse
  * than no census.
+ *
+ * <p><b>Where it can answer.</b> The registered half is recorded on both sides — a client registers payload
+ * types too — but the declaration half and the report hang off the connection's own declaration path, which is
+ * Forbric's only when the SERVER is Forbric. Measured: gate-m12, whose server is Forbric, produces the line;
+ * gate-m14, whose server is native Fabric, produces none on either side. So the gates whose server is Paper or
+ * native Fabric have nothing here to assert, and saying that is better than adding an assertion that would pass
+ * on an absence.
  */
 public final class NetworkChannelCensus {
 

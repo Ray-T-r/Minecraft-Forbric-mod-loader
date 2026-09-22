@@ -122,7 +122,11 @@
       gate 自己的注释("latest.log 的追加副本不可能重复它们")被一个已经落地的改进证伪了。
       改成数 `CGAME`(每次发生只出现一次),而不是数去重后的 `CLOG`——后者会把真的第二次加载吞掉。
       三个 gate 现在都 GREEN。
-- [ ] **D1(余下)** m13/m14 也加频道普查两条 —— 没在本机跑过这两个
+- [x] **D1(余下,已定性)** m14 本机跑了,**GREEN**,但客户端日志里**没有**频道普查行 —— 量出来的事实:
+      注册那半边两端都记(客户端也注册 payload 类型,m14 客户端日志里有 2 行),
+      但**申报那半边和报告点挂在连接自己的申报路径上,而那条路径只有在服务端是 Forbric 时才是 Forbric 的**。
+      所以 m13(Paper)和 m14(原生 Fabric)这两个 gate 这里没有可断言的东西 ——
+      说清楚这件事,比加一条"在缺席上也会通过"的断言好。
 - [x] **D2** 性能 —— `KernelServerTicks` + `ServerTickSamplerInjector`,默认开(`-Dforbric.tickSampler=off` 关),
       每 600 tick 一行。**这是这个项目第一个 tick 时间数字**:实测 `1800 tick(s): mean 50.00ms, max 109.95ms,
       at twice the budget or worse 1 (0.1%)`,m12 已断言。
