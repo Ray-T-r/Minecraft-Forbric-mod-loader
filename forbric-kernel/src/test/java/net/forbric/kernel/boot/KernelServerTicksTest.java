@@ -75,6 +75,21 @@ class KernelServerTicksTest {
 		assertTrue(s.contains("resumes after a pause 1"), s);
 	}
 
+	@Test void aShortRunStillSaysWhatItMeasured() {
+		// A gate's server lives about twenty-four seconds, which is under the periodic interval — so with only
+		// that line, a run that sampled its whole session printed nothing, and the gate asserting on the line
+		// went red for a server that was fine. Measured on gate-m12: Done at :05, Stopping at :29.
+		long t = 0;
+        for (int i = 0; i <= KernelServerTicks.FIRST_REPORT; i++) {
+			KernelServerTicks.sample(t);
+			t += 50 * MS;
+		}
+		assertTrue(KernelServerTicks.sampled() >= KernelServerTicks.FIRST_REPORT,
+				"the first line has to come from fewer ticks than a gate's server gets: "
+						+ KernelServerTicks.sampled());
+		assertTrue(KernelServerTicks.FIRST_REPORT < 600, "and sooner than the periodic one");
+	}
+
 	@Test void theSwitchTurnsItOff() {
 		System.setProperty(KernelServerTicks.SWITCH, "off");
 		KernelServerTicks.reset();

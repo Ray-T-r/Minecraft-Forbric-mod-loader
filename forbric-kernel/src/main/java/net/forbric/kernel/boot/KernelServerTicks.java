@@ -61,6 +61,15 @@ public final class KernelServerTicks {
 	static final long PAUSE_NANOS = 2_000_000_000L;
 	/** How many ticks between summary lines — 600 is thirty seconds at the intended rate. */
 	public static final int REPORT_EVERY = Integer.getInteger("forbric.tickSamplerEvery", 600);
+	/**
+	 * Ticks before the FIRST line, which is much sooner.
+	 *
+	 * <p>A gate's server lives about twenty-four seconds — under 600 ticks — so with only the periodic line, a
+	 * run that sampled the whole session printed nothing, and an assertion on that line was asserting on
+	 * something a short run legitimately never prints. A first line early means any run that ticks at all says
+	 * what it measured; the periodic one then carries the long ones.
+	 */
+	static final int FIRST_REPORT = Math.min(REPORT_EVERY, Integer.getInteger("forbric.tickSamplerFirst", 100));
 
 	private static volatile boolean enabled = !"off".equalsIgnoreCase(System.getProperty(SWITCH, "on"));
 	/** Whether {@link #previous} holds a reading. A zero sentinel would not: nanoTime may legitimately be 0. */
@@ -72,6 +81,7 @@ public final class KernelServerTicks {
 	private static long overBudget;
 	private static long resumed;
 	private static long sinceReport;
+	private static boolean reportedOnce;
 
 	private KernelServerTicks() {
 	}
@@ -105,8 +115,10 @@ public final class KernelServerTicks {
 		sum += delta;
 		if (delta > max) max = delta;
 		if (delta > LATE_NANOS) overBudget++;
-		if (++sinceReport >= REPORT_EVERY) {
+		sinceReport++;
+		if (sinceReport >= REPORT_EVERY || (!reportedOnce && count >= FIRST_REPORT)) {
 			sinceReport = 0;
+			reportedOnce = true;
 			ForbricLog.info("%s", summary());
 		}
 	}
@@ -134,6 +146,7 @@ public final class KernelServerTicks {
 		overBudget = 0;
 		resumed = 0;
 		sinceReport = 0;
+		reportedOnce = false;
 		enabled = !"off".equalsIgnoreCase(System.getProperty(SWITCH, "on"));
 	}
 
