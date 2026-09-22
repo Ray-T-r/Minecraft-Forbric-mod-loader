@@ -52,6 +52,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 	}
 
 	private final ClassLoader parent;
+	private final DefinedClassEvidence definitionEvidence = new DefinedClassEvidence();
 
 	/** One {@link ProtectionDomain} per owned jar, keyed by the jar URL's spelling. See {@link #domainFor}. */
 	private final Map<String, ProtectionDomain> domains = new ConcurrentHashMap<>();
@@ -252,7 +253,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 			Class<?> existing = findLoadedClass(binaryName);
 			if (existing != null) return existing;
 			definePackageIfNeeded(binaryName, null); // generated class, no owning jar
-			return defineClass(binaryName, bytes, 0, bytes.length);
+			return define(binaryName, bytes, null);
 		}
 	}
 
@@ -366,7 +367,9 @@ public final class ForbricClassLoader extends URLClassLoader {
 	private Class<?> define(String name, byte[] bytes, ProtectionDomain domain) {
 		traceDefine(name);
 		try {
-			return defineClass(name, bytes, 0, bytes.length, domain);
+			Class<?> defined = defineClass(name, bytes, 0, bytes.length, domain);
+			definitionEvidence.defined(name, bytes);
+			return defined;
 		} catch (LinkageError duplicate) {
 			Class<?> already = findLoadedClass(name);
 			if (already == null) throw duplicate; // a genuine linkage problem, not re-entrancy

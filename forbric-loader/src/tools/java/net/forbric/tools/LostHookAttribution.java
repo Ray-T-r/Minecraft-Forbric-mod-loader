@@ -75,14 +75,16 @@ public final class LostHookAttribution {
 	}
 
 	public static void main(String[] args) throws IOException {
-		if (args.length < 7) {
+		if (args.length < 7 || args.length > 8) {
 			System.err.println("usage: LostHookAttribution <forge-patched.jar> <neo-patched.jar> <merged.jar> "
-					+ "<forge-runtime.jar> <neoforge-runtime.jar> <merge-conflicts.txt> <mods-dir>");
+					+ "<forge-runtime.jar> <neoforge-runtime.jar> <merge-conflicts.txt> <mods-dir> [defined-class-evidence-dir]");
 			System.exit(2);
 		}
 		Map<String, ClassNode> forge = load(args[0], "forge-patched");
 		Map<String, ClassNode> neo = load(args[1], "neo-patched");
 		Map<String, ClassNode> merged = load(args[2], "merged");
+		EffectiveHookEvidence effective = args.length == 8 ? new EffectiveHookEvidence(Path.of(args[7])) : null;
+		Map<EffectiveHookEvidence.State, Integer> effectiveCounts = new java.util.EnumMap<>(EffectiveHookEvidence.State.class);
 
 		// hook owner#name+desc -> the events it constructs, from both carriers.
 		Map<String, Set<String>> eventsOfHook = new HashMap<>();
@@ -113,6 +115,11 @@ public final class LostHookAttribution {
 			String row = c.owner() + "#" + c.method() + " lost-family=" + c.lostFamily()
 					+ " RAW-LOST " + lost + " RETAINED " + kept;
 			System.out.println("[attribution] " + row);
+			if (effective != null) for (String hook : lost) {
+				var state = effective.state(c.owner() + "#" + c.method(), hook);
+				effectiveCounts.merge(state, 1, Integer::sum);
+				System.out.println("[effective] " + c.owner() + "#" + c.method() + " hook=" + hook + " state=" + state);
+			}
 			if (gainWanted && !giveUpWanted) candidates.add(row);
 			else if (gainWanted) trades.add(row);
 		}
@@ -120,8 +127,15 @@ public final class LostHookAttribution {
 				+ " no-modelled-direct-hook=" + noHookFound + " unobserved=" + unobserved);
 		System.out.println("[attribution] scope: " + HOOK_CLASSES.length + " hook facades; direct calls and event"
 				+ " construction only; event type references are potential consumers, not proof of subscription");
-		System.out.println("[attribution] runtime restoration=NOT_ASSESSED; use the effective pipeline/bridge census"
+		if (effective == null) System.out.println("[attribution] runtime restoration=NOT_ASSESSED; supply actual defined-class evidence"
 				+ " before treating RAW-LOST as a remaining defect");
+		else {
+			for (var state : EffectiveHookEvidence.State.values())
+				System.out.println("[effective] " + state + "=" + effectiveCounts.getOrDefault(state, 0));
+			System.out.println("[effective] direct/helper restoration is structural evidence only, not proof of execution,"
+					+ " cancellation or return-value fidelity. OBSERVED_WITHOUT_HOOK is residual direct-call loss;"
+					+ " event-bus bridges, reflection and other unmodelled routes remain unassessed. UNOBSERVED is not a pass.");
+		}
 		System.out.println("[attribution] CANDIDATES (lost event referenced, no retained event reference observed): " + candidates.size());
 		for (String row : candidates) System.out.println("    + " + row);
 		System.out.println("[attribution] TRADES (both event types referenced): " + trades.size());

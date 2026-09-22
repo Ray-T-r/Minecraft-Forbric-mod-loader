@@ -183,3 +183,17 @@ Pending implementation and acceptance items remain open even when a smaller batc
   resolves the earlier 2/11 shape-audit failure without bypassing the audit. Evidence:
   `forbric-kernel/build/verification/transfer-core/`. Real public world-query routing, persistence and the
   bridge-off negative control are still the next M33 batch; these core results do not substitute for it.
+
+### P0 final-definition hook evidence
+
+- Opt-in `-Dforbric.definedClassEvidence=<directory>` records only successfully defined final class bytes,
+  each with SHA-256 in a unique loader-session manifest. Pre-Mixin previews, failed definitions and duplicate
+  reentrant attempts do not overwrite this evidence. The setting is off during normal play.
+- LostHookAttribution accepts the manifest directory as its eighth argument. It separately counts original
+  losses, direct restoration, exact static paths through defined kernel helpers, residual direct-call loss,
+  and unobserved callers. Hash mismatch, missing/empty evidence and identity mismatch fail closed. These
+  structural categories do not assert execution, cancellation or return-value fidelity; event-bus bridges,
+  reflection and unmodelled paths remain explicitly unassessed.
+- Twelve class-loading/evidence tests and six report tests pass with no skips. Evidence is archived under
+  `forbric-kernel/build/verification/defined-class-evidence/` and
+  `forbric-loader/build/verification/effective-hook-evidence/`. Full-game coverage export remains pending.
