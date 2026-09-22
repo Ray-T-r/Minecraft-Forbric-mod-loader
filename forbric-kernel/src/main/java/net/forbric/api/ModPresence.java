@@ -72,6 +72,8 @@ public final class ModPresence {
 	private static volatile List<DiscoveredMod> forgeFamily = List.of();
 	private static volatile List<DiscoveredMod> fabric = List.of();
 	private static volatile Set<String> ids = Set.of();
+	/** {@link #spellingKey} of every id above, for the second question in {@link #isLoaded}. */
+	private static volatile Set<String> spellings = Set.of();
 	private static volatile Map<String, DiscoveredMod> byId = Map.of();
 
 	private ModPresence() {
@@ -126,10 +128,33 @@ public final class ModPresence {
 	 */
 	public static boolean isLoaded(String id) {
 		try {
-			return id != null && enabled() && ids.contains(id);
+			if (id == null || !enabled()) return false;
+			if (ids.contains(id)) return true;
+			// Asked with the OTHER ecosystem's spelling of the same mod. NeoForge forbids '-' in a mod id and
+			// MinecraftForge and Fabric do not, so one mod ported across the two is published under two
+			// spellings -- cloth-config on the Fabric side, cloth_config on the NeoForge side -- and this
+			// registry, whose whole job is to answer across ecosystems, was answering with a string comparison
+			// that cannot cross the one boundary the two ecosystems actually differ on.
+			//
+			// The cost of getting it wrong is asymmetric, which is why the looser answer is the right one here.
+			// A false no sends a mod down its "not installed" branch while the mod IS installed and has really
+			// replaced the thing being branched on, and nothing throws or logs; a false yes would need two
+			// genuinely unrelated mods whose ids differ only in '-' versus '_', which the id rules make close
+			// to impossible and which would at worst take a compatibility branch that then finds no classes.
+			return spellings.contains(spellingKey(id));
 		} catch (Throwable t) {
 			return false;
 		}
+	}
+
+	/**
+	 * The spelling-insensitive form of a mod id: lower case, with {@code -} and {@code _} unified.
+	 *
+	 * <p>Only those two, and nothing else. This is not a fuzzy match — it encodes exactly one fact, that the
+	 * three ecosystems disagree about which separator a mod id may contain, and nothing about what a mod is.
+	 */
+	static String spellingKey(String id) {
+		return id.replace('-', '_').toLowerCase(java.util.Locale.ROOT);
 	}
 
 	/** One line naming what each ecosystem contributed, for the boot log. */
@@ -170,6 +195,10 @@ public final class ModPresence {
 		for (DiscoveredMod mod : forgeFamily) add(merged, mod);
 		for (DiscoveredMod mod : fabric) add(merged, mod);
 		ids = Set.copyOf(merged);
+
+		Set<String> keys = new LinkedHashSet<>();
+		for (String id : merged) keys.add(spellingKey(id));
+		spellings = Set.copyOf(keys);
 
 		// First publish wins, so a presence alias cannot overwrite the real mod's own metadata.
 		Map<String, DiscoveredMod> index = new LinkedHashMap<>();

@@ -59,7 +59,10 @@
 ## M-C 五族收口
 
 - [ ] **C-merged-base** / **C-api-surface** / **C-mixin**(`-Dforbric.mixinDiagnostics` 已在代码里,没有 gate 跑过)
-- [ ] **C-lifecycle** / **C-arbitration**(`isLoaded` 的 `-`/`_` 归一化、"不知道"≠"没有")
+- [x] **C-arbitration(其一)** `ModPresence.isLoaded` 的 `-`/`_` 归一化 —— NeoForge 的 mod id 不许带 `-`,
+      另外两家许,所以同一个 mod 跨生态就是两个拼写;而这个"专门用来跨生态回答"的注册表在用字符串比较,
+      恰好跨不过两家唯一真正不同的那条边界。代价不对称:假 no 会让 mod 走"没装"分支而它其实装了。
+- [ ] **C-lifecycle** / **C-arbitration(其二)** `getModContainerById`、落败版独有类
 
 ## M-D 四个盲区
 

@@ -205,6 +205,42 @@ class ModPresenceTest {
 		}
 	}
 
+	@org.junit.jupiter.api.Test
+	void theOtherEcosystemsSpellingOfTheSameIdStillAnswersYes() {
+		// NeoForge forbids '-' in a mod id; MinecraftForge and Fabric do not. So one mod ported across the two
+		// is published under two spellings, and a registry whose whole job is to answer ACROSS ecosystems was
+		// comparing strings, which cannot cross the one boundary those ecosystems actually differ on.
+		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "cloth-config")));
+		assertTrue(ModPresence.isLoaded("cloth-config"), "the exact spelling must still answer");
+		assertTrue(ModPresence.isLoaded("cloth_config"), "a NeoForge mod asking with an underscore is asking "
+				+ "about this same mod, and answering no sends it down its not-installed branch");
+
+		ModPresence.publishForgeFamily(List.of(mod(Ecosystem.NEOFORGE, "sodium_extra")));
+		assertTrue(ModPresence.isLoaded("sodium-extra"), "and the same the other way round");
+	}
+
+	@org.junit.jupiter.api.Test
+	void spellingIsNotAFuzzyMatch() {
+		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "cloth-config")));
+		// Only '-' versus '_' and case. Anything looser would start answering yes for mods that are not there,
+		// and this registry is read by compatibility branches that then go looking for classes.
+		assertFalse(ModPresence.isLoaded("clothconfig"));
+		assertFalse(ModPresence.isLoaded("cloth"));
+		assertFalse(ModPresence.isLoaded("cloth-config-2"));
+	}
+
+	@org.junit.jupiter.api.Test
+	void theSwitchStillTurnsTheLooserAnswerOffToo() {
+		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "cloth-config")));
+		System.setProperty("forbric.crossEcosystemPresence", "off");
+		try {
+			assertFalse(ModPresence.isLoaded("cloth_config"), "the escape hatch must cover the new answer as "
+					+ "well, or a gate cannot run the instance both ways");
+		} finally {
+			System.clearProperty("forbric.crossEcosystemPresence");
+		}
+	}
+
 	private static DiscoveredMod mod(Ecosystem ecosystem, String id) {
 		return new DiscoveredMod(ecosystem, id, "1.0.0", id, List.of(), List.of(), null, id + ".jar");
 	}
