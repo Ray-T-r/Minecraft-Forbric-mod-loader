@@ -490,6 +490,8 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new ClientSmokeTickInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CompatibilityPromptTickInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PortalSpawnInjector());
+		// After merged-base compatibility: upgrade its owner-only redirect with the proven spawn input.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.SpawnerFinalizeInjector());
 		// The only performance measurement in the tree. Beside the smoke tick because it is the same shape:
 		// one static call at the head of a tick, no mixin config, nothing new in the list a gate asserts on.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ServerTickSamplerInjector());
@@ -664,6 +666,8 @@ public final class KernelBoot {
 		// against one ecosystem can name a superclass the merge took off that hierarchy — MinecraftForge's
 		// CapabilityProvider above Entity is the live case — and such a class fails VERIFICATION, before any of
 		// its code runs, naming a type its author never wrote. See MergedBaseFrameRecomputer.
+		chain.register(TransformPhase.FABRIC_BUILTIN,
+				new net.forbric.kernel.access.RestoredAccessTransformer(accessWideners, forgeAts));
 		chain.register(TransformPhase.FABRIC_BUILTIN, new MergedBaseFrameRecomputer(path -> {
 			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
 				return in == null ? null : in.readAllBytes();

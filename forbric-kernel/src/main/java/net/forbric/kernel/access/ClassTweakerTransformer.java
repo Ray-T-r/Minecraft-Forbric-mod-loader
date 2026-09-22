@@ -58,6 +58,9 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 
 	/** "owner name desc" → the jar whose file named it, for the census. */
 	private final java.util.Map<String, String> sources;
+	// Transformation can be requested repeatedly (Mixin preview and actual definition). A diagnostic row may
+	// already have been resolved by another pass; it must never determine whether bytes get their access flags.
+	private final java.util.Set<String> missedMembers = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	private ClassTweakerTransformer(ClassTweaker tweaker, BiConsumer<String, byte[]> generatedSink, java.util.Map<String, String> sources) {
 		this.tweaker = tweaker;
@@ -170,6 +173,47 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 		return "class-tweaker";
 	}
 
+	/** Replay only previously missed members which now exist; never repeat enum/interface injection. */
+	public byte[] replayRestored(String className, byte[] bytes) {
+		String owner = className.replace('.', '/');
+		if (!targets.contains(owner)) return bytes;
+		var widener = tweaker.getAccessWidener(owner);
+		if (widener == null) return bytes;
+		var node = new org.objectweb.asm.tree.ClassNode();
+		new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+		java.util.Set<String> fields = new java.util.HashSet<>(), methods = new java.util.HashSet<>();
+		for (var field : node.fields) fields.add(field.name + " " + field.desc);
+		for (var method : node.methods) methods.add(method.name + " " + method.desc);
+		StringBuilder text = new StringBuilder("accessWidener v2 ").append(tweaker.getNamespace()).append('\n');
+		java.util.List<String[]> resolved = new java.util.ArrayList<>();
+		for (boolean field : new boolean[] {true, false}) {
+			var accesses = field ? widener.getAllFieldAccesses() : widener.getAllMethodAccesses();
+			for (var entry : accesses.entrySet()) {
+				var member = entry.getKey();
+				String kind = field ? "field" : "method";
+				String directive = kind + " " + owner + " " + member.getName() + " " + member.getDesc();
+				String source = sources.get(key(owner, member.getName(), member.getDesc()));
+				if (!(field ? fields : methods).contains(member.getName() + " " + member.getDesc())
+						|| !missedMembers.contains(directive)) continue;
+				var access = entry.getValue();
+				if (access.isAccessible()) text.append("accessible ").append(directive).append('\n');
+				if (access.isMutable()) text.append("mutable ").append(directive).append('\n');
+				if (access.isExtendable()) text.append("extendable ").append(directive).append('\n');
+				resolved.add(new String[] {source, directive});
+			}
+		}
+		if (resolved.isEmpty()) return bytes;
+		ClassTweaker subset = ClassTweaker.newInstance();
+		ClassTweakerReader.create(subset).read(text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), tweaker.getNamespace());
+		ClassWriter writer = new ClassWriter(0);
+		new ClassReader(bytes).accept(subset.createClassVisitor(Opcodes.ASM9, writer, (n, b) -> {
+			throw new IllegalStateException("access-only replay attempted to generate a class: " + n);
+		}), 0);
+		for (String[] row : resolved) AccessCensus.restored("AW", row[0], row[1]);
+		byte[] result = writer.toByteArray();
+		return java.util.Arrays.equals(result, bytes) ? bytes : result;
+	}
+
 	/** Records the members the class has, and on visitEnd names the widener entries that met none of them. */
 	private final class Census extends ClassVisitor {
 		private final String internalName;
@@ -214,6 +258,7 @@ public final class ClassTweakerTransformer implements ClassTransformer {
 		}
 
 		private void unmatched(String what, net.fabricmc.classtweaker.utils.EntryTriple t) {
+			missedMembers.add(what + " " + t.getOwner() + " " + t.getName() + " " + t.getDesc());
 			boolean namePresent = names.contains(what + " " + t.getName());
 			java.util.List<String> present = "field".equals(what)
 					? fieldDescriptors.getOrDefault(t.getName(), java.util.List.of())

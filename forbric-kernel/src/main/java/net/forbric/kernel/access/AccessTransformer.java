@@ -59,6 +59,7 @@ public final class AccessTransformer implements ClassTransformer {
 	}
 
 	private final Map<String, ClassEntry> byClass = new HashMap<>();
+	private final java.util.Set<AtDirective> missedMembers = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	public AccessTransformer(List<AtDirective> remappedDirectives) {
 		for (AtDirective d : remappedDirectives) {
@@ -89,6 +90,24 @@ public final class AccessTransformer implements ClassTransformer {
 		return byClass.size();
 	}
 
+	/** Restore missed explicit rules only; wildcards must not widen unrelated new kernel members. */
+	public byte[] replayRestored(String className, byte[] bytes, TransformContext context) {
+		ClassEntry entry = byClass.get(className.replace('.', '/'));
+		if (entry == null) return bytes;
+		var node = new org.objectweb.asm.tree.ClassNode();
+		new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+		java.util.Set<String> fields = new java.util.HashSet<>(), methods = new java.util.HashSet<>();
+		for (var field : node.fields) fields.add(field.name);
+		for (var method : node.methods) methods.add(method.name + method.desc);
+		List<AtDirective> restored = entry.specific.stream().filter(d ->
+				(d.method ? methods.contains(d.memberName + d.memberDesc) : fields.contains(d.memberName))
+				&& missedMembers.contains(d)).toList();
+		if (restored.isEmpty()) return bytes;
+		byte[] result = new AccessTransformer(restored).transform(className, bytes, context);
+		for (AtDirective d : restored) AccessCensus.restored("AT", d.source, d.toString());
+		return java.util.Arrays.equals(result, bytes) ? bytes : result;
+	}
+
 	@Override
 	public String name() {
 		return "forbric:access-transformer";
@@ -107,7 +126,7 @@ public final class AccessTransformer implements ClassTransformer {
 
 		ClassReader reader = new ClassReader(classBytes);
 		ClassWriter writer = new ClassWriter(reader, 0);
-		reader.accept(new AtClassVisitor(writer, entry), 0);
+		reader.accept(new AtClassVisitor(writer, entry, missedMembers::add), 0);
 		AccessCensus.transformed();
 		return writer.toByteArray();
 	}
@@ -140,13 +159,15 @@ public final class AccessTransformer implements ClassTransformer {
 
 	private static final class AtClassVisitor extends ClassVisitor {
 		private final ClassEntry entry;
+		private final java.util.function.Consumer<AtDirective> missed;
 		private final java.util.Set<String> seenFields = new java.util.HashSet<>();
 		private final java.util.Set<String> seenMethods = new java.util.HashSet<>();
 		private final java.util.Set<String> seenMethodNames = new java.util.HashSet<>();
 
-		AtClassVisitor(ClassVisitor delegate, ClassEntry entry) {
+		AtClassVisitor(ClassVisitor delegate, ClassEntry entry, java.util.function.Consumer<AtDirective> missed) {
 			super(Opcodes.ASM9, delegate);
 			this.entry = entry;
+			this.missed = missed;
 		}
 
 		@Override
@@ -175,7 +196,10 @@ public final class AccessTransformer implements ClassTransformer {
 				boolean seen = d.method ? seenMethods.contains(d.memberName + d.memberDesc) : seenFields.contains(d.memberName);
 				// An AT names a field by name alone, so a field that is there IS matched whatever its descriptor;
 				// a method present under another descriptor is reported but not judged (see AccessCensus).
-				if (!seen) AccessCensus.unmatched("AT", d.source, d.toString(), false, d.method && seenMethodNames.contains(d.memberName));
+				if (!seen) {
+					missed.accept(d);
+					AccessCensus.unmatched("AT", d.source, d.toString(), false, d.method && seenMethodNames.contains(d.memberName));
+				}
 			}
 			super.visitEnd();
 		}

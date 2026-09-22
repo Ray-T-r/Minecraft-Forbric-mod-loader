@@ -99,3 +99,22 @@ Pending implementation and acceptance items remain open even when a smaller batc
 - The integrated batch passed 114 tests in 12 suites, no failures/errors/skips. Evidence is archived under
   `forbric-kernel/build/verification/p2-integration/`. The portal probe executes actual carrier hook bytecode
   with isolated world/bus boundaries; a full-game portal action and actual GUI acceptance are still pending.
+
+### P1 spawner and P2 restored-access batch
+
+- The spawner transformer proves the ValueInput's source through the actual Mob/entity-load data flow, then
+  passes it to an eight-argument runtime entry. Both event families see the data before exactly one possible
+  finalization. Listener exceptions propagate. An unproved input retains the Neo path with a necessary-loss
+  finding instead of pretending a null input is sufficient.
+- Native parity was rechecked after review found an incorrect first implementation: spawn veto forbids world
+  insertion but does NOT skip finalization; only event cancellation does. The real native caller and bridge
+  now agree, including discarding finalizeSpawn's return. A replaced spawn tag is recorded as native parity,
+  not a new compatibility failure.
+- Access replay targets only previously missed explicit AW/AT members after COREMOD, before Mixin. It does
+  not repeat interface/enum injection or apply AT wildcards to unrelated new members. Repeat/parallel byte
+  requests do not depend on a diagnostic row still existing. The m9 assertion now requires restoration rather
+  than pinning the old unresolved diagnostic. Existing featuresPerStep repair already set public/non-final;
+  this batch verifies/reconciles that actual result and covers repairs that restore only the descriptor.
+- 42 tests passed with zero failures/errors/skips, including actual merged ChunkGenerator bytes, external JVM
+  field writes, repeated transformation, and native spawner differential probes. Evidence:
+  `forbric-kernel/build/verification/spawn-access/`. Full-game action gates remain pending.

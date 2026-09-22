@@ -141,12 +141,12 @@ check_absent "no repair was handed its target and declined" "Forbric/Anchor\] .*
 # SRG-named fields and 1.x members), 6 AT methods whose name is there under another descriptor (an overload this
 # Minecraft lacks or a merge re-typing — not judged: bagus_lib's Model.animate, YACL's and Jade's constructors,
 # sophisticatedcore's recipe builders), all of which a native loader ignores the same and which mark nobody — and
-# ONE judged re-typed by the merge: fabric-biome-api's widener for ChunkGenerator.featuresPerStep names vanilla's
-# Supplier descriptor, the ACCESS phase runs before the COREMOD repair that restores it, so the tweaker saw the
-# merged descriptor and the field was not widened. That one is pinned; a change in either direction is worth knowing.
+# The featuresPerStep request initially misses before COREMOD restores its descriptor. The access-only replay
+# now applies the missed directive to the actual restored member before Mixin; require that evidence and no
+# remaining ecosystem re-typing, rather than pinning the former unresolved diagnostic as a success.
 check        "the access census ran"               "Forbric/Access\] [0-9]+ directive\(s\) matched nothing across [1-9][0-9]* transformed class" "$LOG"
-check        "exactly one directive is re-typed by an ecosystem" "Forbric/Access\] [0-9]+ directive\(s\) matched nothing.*: 1 re-typed by an ecosystem" "$LOG"
-check        "and it is fabric-biome-api's featuresPerStep" "Forbric/Access\] AW directive from fabric-biome-api.*re-typed.*featuresPerStep" "$LOG"
+check        "no directive remains re-typed by an ecosystem" "Forbric/Access\] [0-9]+ directive\(s\) matched nothing.*: 0 re-typed by an ecosystem" "$LOG"
+check        "access rules reached restored members" "Forbric/Access\] replayed [1-9][0-9]* previously unmatched directive" "$LOG"
 check "the window title was read"      "ClientSmoke\] window title: Minecraft"     "$LOG"
 check_absent "…and it names no single loader" "ClientSmoke\] window title: .*(NeoForge|Forge|Fabric)" "$LOG"
 check "left the world cleanly"        "ClientSmoke\] clean disconnect observed"    "$LOG"

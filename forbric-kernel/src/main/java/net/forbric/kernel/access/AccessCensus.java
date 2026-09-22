@@ -123,6 +123,7 @@ public final class AccessCensus {
 
 	private static final Set<Unmatched> UNMATCHED = new LinkedHashSet<>();
 	private static int transformedClasses;
+	private static final Set<String> RESTORED = new LinkedHashSet<>();
 
 	private AccessCensus() {
 	}
@@ -131,6 +132,16 @@ public final class AccessCensus {
 	public static void transformed() {
 		synchronized (UNMATCHED) {
 			transformedClasses++;
+		}
+	}
+
+	/** Only called after the restored member has been visited by its actual access rule. */
+	static void restored(String kind, String source, String directive) {
+		String from = source == null ? "?" : source;
+		synchronized (UNMATCHED) {
+			if (UNMATCHED.removeIf(u -> u.kind().equals(kind) && u.source().equals(from) && u.directive().equals(directive))) {
+				RESTORED.add(kind + " " + from + " " + directive);
+			}
 		}
 	}
 
@@ -167,10 +178,13 @@ public final class AccessCensus {
 	public static void report() {
 		List<Unmatched> all;
 		int transformed;
+		int restored;
 		synchronized (UNMATCHED) {
 			all = new ArrayList<>(UNMATCHED);
 			transformed = transformedClasses;
+			restored = RESTORED.size();
 		}
+		ForbricLog.info("[Forbric/Access] replayed %d previously unmatched directive(s) on restored members", restored);
 		int at = 0, retyped = 0, unjudged = 0;
 		for (Unmatched u : all) {
 			if ("AT".equals(u.kind())) at++;
@@ -221,6 +235,7 @@ public final class AccessCensus {
 		synchronized (UNMATCHED) {
 			UNMATCHED.clear();
 			transformedClasses = 0;
+			RESTORED.clear();
 		}
 	}
 }

@@ -4121,14 +4121,15 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/**
-	 * Sends the spawner's finalize call through the kernel so MinecraftForge is asked too.
+	 * Routes the spawner call to the kernel before SpawnerFinalizeInjector adds its proven ValueInput.
 	 *
 	 * <p>Both ecosystems patched {@code BaseSpawner.serverTick}, NeoForge's body won, and
 	 * {@code onFinalizeSpawnSpawner} is therefore called from nowhere — while {@code collective}, in the test
 	 * pack, subscribes to the event it posts. Putting MinecraftForge's own instruction run back would mean
 	 * splicing it into a body with NeoForge's local numbering, which is the three-way merge this tree does not
-	 * have. Redirecting the surviving call needs none of that: the kernel method takes NeoForge's exact
-	 * signature, so this is an owner and a name and the stack is untouched.
+	 * have. This first exchange preserves the descriptor. The following injector adds the actual ValueInput
+	 * from the entity-loading data flow; without it, the legacy entry reports the missing input rather than
+	 * inventing a null Forge argument or pretending an already-finalized mob can be changed retroactively.
 	 */
 	private static boolean letMinecraftForgeSeeSpawnerMobs(ClassNode node) {
 		if (!BASE_SPAWNER.equals(node.name)) return false;
@@ -4138,7 +4139,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
 						|| !NEO_EVENT_HOOKS.equals(call.owner)
-						|| !"finalizeMobSpawnSpawner".equals(call.name)) {
+						|| !"finalizeMobSpawnSpawner".equals(call.name)
+						|| !SpawnerFinalizeInjector.OLD_DESC.equals(call.desc)) {
 					continue;
 				}
 				call.owner = KERNEL_SPAWNER_FINALIZE;
@@ -4146,9 +4148,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			}
 		}
 		if (redirected == 0) return false;
-		ForbricLog.info("[Forbric/MergedBaseCompat] BaseSpawner now asks both ecosystems about a mob it is "
-				+ "finishing (%d call site(s)) — the merge kept only NeoForge's hook, so "
-				+ "MobSpawnEvent$FinalizeSpawn was posted nowhere", redirected);
+		ForbricLog.info("[Forbric/MergedBaseCompat] BaseSpawner finalization routed through the kernel "
+				+ "(%d call site(s)); the input injector supplies the Forge event's actual ValueInput", redirected);
 		return true;
 	}
 

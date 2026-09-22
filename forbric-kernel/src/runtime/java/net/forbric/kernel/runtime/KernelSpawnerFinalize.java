@@ -16,16 +16,17 @@
 
 package net.forbric.kernel.runtime;
 
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.List;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
+import net.forbric.api.CompatibilityFinding;
+import net.forbric.api.CompatibilityFindings;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.SpawnGroupData;
 import net.minecraft.world.level.BaseSpawner;
 import net.minecraft.world.level.ServerLevelAccessor;
+import net.minecraft.world.level.storage.ValueInput;
 import net.minecraftforge.event.ForgeEventFactory;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.neoforged.neoforge.common.extensions.IOwnedSpawner;
@@ -33,66 +34,78 @@ import net.neoforged.neoforge.event.EventHooks;
 import net.neoforged.neoforge.event.entity.living.FinalizeSpawnEvent;
 
 /**
- * Lets a MinecraftForge mod see, and refuse, a mob a spawner is about to finish.
+ * Both event families run BEFORE the one possible Mob.finalizeSpawn call. The caller supplies the same
+ * ValueInput that created this entity. Forge's updated SpawnGroupData enters the one finalization call;
+ * its returned data is discarded, as in both native BaseSpawner callers.
  *
- * <h2>What the merge did here</h2>
- *
- * <p>Both ecosystems patched {@code BaseSpawner.serverTick} and NeoForge's body won, so the merged base calls
- * {@code EventHooks.finalizeMobSpawnSpawner} and MinecraftForge's {@code onFinalizeSpawnSpawner} is called from
- * nowhere. {@code collective}, in the test pack, subscribes to {@code MobSpawnEvent$FinalizeSpawn}.
- *
- * <p>Restoring MinecraftForge's own call would mean putting its instruction run back into a body that is
- * NeoForge's, with NeoForge's local variable numbering — the three-way merge this tree does not have. Redirecting
- * the surviving call costs nothing of the sort: the kernel method takes NeoForge's exact signature, so the
- * rewrite is an owner and a name and the stack is untouched.
- *
- * <h2>What carries, and what does not</h2>
- *
- * <p>A refusal carries: MinecraftForge's hook returns null when a mod cancelled the spawn, and that becomes
- * {@code setSpawnCancelled(true)} on NeoForge's event, which the call site already honours.
- *
- * <p>A CHANGED spawn group data does not. MinecraftForge's event offers {@code setSpawnData} and the value the
- * call site uses is NeoForge's, so a mod that rewrites the data rather than refusing the spawn gets one line
- * saying so rather than having its change silently dropped — the failure this whole seam exists to end, which
- * would otherwise arrive one level in.
- *
- * <p>MinecraftForge's hook also wants a {@code ValueInput} that NeoForge's signature does not carry, so it is
- * passed null. If that turns out to matter, the call throws, the throw is caught, and the result is exactly
- * today's behaviour plus one warning — the downside is bounded at "no worse than not asking".
+ * <p>Native cancellation has two distinct meanings: cancelling the event skips initialization, while
+ * setSpawnCancelled prevents the later world insertion. The previous adapter conflated these and posted Forge
+ * only after NeoForge had already initialized the mob. Calling Neo's native hook with initialize=false posts
+ * its event without initializing, leaving a single finalization point after both families have decided.
  */
 public final class KernelSpawnerFinalize {
-	private static final AtomicBoolean WARNED = new AtomicBoolean();
-	private static final AtomicBoolean SAID_DATA = new AtomicBoolean();
-	private static final AtomicBoolean PROVED = new AtomicBoolean();
 
 	private KernelSpawnerFinalize() {
 	}
 
-	/** NeoForge's signature exactly, so the redirect is an owner and a name. */
+	/** Old or unrecognized call sites retain Neo's native path and explicitly report the missing Forge input. */
 	public static FinalizeSpawnEvent finalizeMobSpawnSpawner(Mob mob, ServerLevelAccessor level,
 			DifficultyInstance difficulty, EntitySpawnReason reason, SpawnGroupData data, IOwnedSpawner spawner,
 			boolean flag) {
-		FinalizeSpawnEvent neo = EventHooks.finalizeMobSpawnSpawner(mob, level, difficulty, reason, data, spawner, flag);
+		finding("spawner-finalize-input", true, "The spawner call site did not supply its ValueInput; Forge finalization was not dispatched.");
+		return EventHooks.finalizeMobSpawnSpawner(mob, level, difficulty, reason, data, spawner, flag);
+	}
+
+	/** The added argument is loaded from the caller's verified TagValueInput.create result. */
+	public static FinalizeSpawnEvent finalizeMobSpawnSpawner(Mob mob, ServerLevelAccessor level,
+			DifficultyInstance difficulty, EntitySpawnReason reason, SpawnGroupData data, IOwnedSpawner spawner,
+			boolean initialize, ValueInput input) {
+		if (input == null || !(spawner instanceof BaseSpawner base) || reason != EntitySpawnReason.SPAWNER) {
+			finding("spawner-finalize-input", true,
+					"The spawner supplied a null ValueInput, a non-BaseSpawner owner, or a non-SPAWNER reason; Forge finalization was not dispatched.");
+			return EventHooks.finalizeMobSpawnSpawner(mob, level, difficulty, reason, data, spawner, initialize);
+		}
+		FinalizeSpawnEvent neo = EventHooks.finalizeMobSpawnSpawner(mob, level, difficulty, reason, data, spawner, false);
+		if (neo == null) {
+			finding("spawner-finalize-event", true, "NeoForge's event hook returned null instead of a finalization event; no second initialization was attempted.");
+			return null;
+		}
+		if (neo.isCanceled()) return neo;
+
+		// Do not catch a listener failure and pretend its decisions were successfully applied.
+		// Native spawnCancelled vetoes world insertion, NOT initialization. Preserve a Neo veto even if a
+		// later Forge listener clears the shared mob flag; do not suppress either family's finalization event.
+		boolean neoSpawnVeto = neo.isSpawnCancelled();
+		MobSpawnEvent.FinalizeSpawn forge;
 		try {
-			MobSpawnEvent.FinalizeSpawn forge = ForgeEventFactory.onFinalizeSpawnSpawner(
-					mob, level, difficulty, data, null, spawner instanceof BaseSpawner base ? base : null);
-			if (forge == null) {
-				if (neo != null) neo.setSpawnCancelled(true);
-			} else if (forge.getSpawnData() != data && SAID_DATA.compareAndSet(false, true)) {
-				ForbricLog.warn("[Forbric/Spawner] a MinecraftForge mod rewrote the spawn data for a spawner mob; "
-						+ "the merged call site uses NeoForge's value, so the refusal would carry and this "
-						+ "rewrite does not");
-			}
-			if (PROVED.compareAndSet(false, true)) {
-				ForbricLog.info("[Forbric/Spawner] MinecraftForge now sees spawner mobs being finalised — the "
-						+ "merge kept only NeoForge's hook, so MobSpawnEvent$FinalizeSpawn was posted nowhere");
-			}
-		} catch (Throwable t) {
-			if (WARNED.compareAndSet(false, true)) {
-				ForbricLog.warn("[Forbric/Spawner] MinecraftForge's finalize-spawn hook failed — mods on that "
-						+ "side cannot see or refuse mobs a spawner produces", Reflect.unwrap(t));
-			}
+			forge = ForgeEventFactory.onFinalizeSpawnSpawner(mob, level, neo.getDifficulty(), neo.getSpawnData(), input, base);
+		} finally {
+			if (neoSpawnVeto) mob.setSpawnCancelled(true);
+		}
+		if (forge == null) {
+			neo.setCanceled(true); // skip finalization; do not upgrade this to a veto of world insertion
+			return neo;
+		}
+		if (forge.getSpawnTag() != input) {
+			// Neither native BaseSpawner caller consumes a replacement tag after the entity has been loaded.
+			finding("spawner-finalize-tag-replacement", CompatibilityFinding.Confidence.RESOLVED, false,
+					"A Forge listener replaced the spawner ValueInput after entity loading; both native callers leave that replacement unused, and the bridge preserves the same behavior.");
+		}
+		neo.setDifficulty(forge.getDifficulty());
+		neo.setSpawnData(forge.getSpawnData());
+		if (initialize) {
+			mob.finalizeSpawn(level, neo.getDifficulty(), neo.getSpawnType(), neo.getSpawnData());
 		}
 		return neo;
+	}
+
+	private static void finding(String id, boolean required, String detail) {
+		finding(id, CompatibilityFinding.Confidence.CONFIRMED, required, detail);
+	}
+
+	private static void finding(String id, CompatibilityFinding.Confidence confidence, boolean required, String detail) {
+		CompatibilityFindings.record(new CompatibilityFinding(id, "forbric", "Spawner finalization",
+				"KernelSpawnerFinalize", confidence, required, detail,
+				List.of("BaseSpawner.serverTick", detail)));
 	}
 }
