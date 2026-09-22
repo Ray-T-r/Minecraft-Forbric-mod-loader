@@ -19,6 +19,9 @@ package net.forbric.tools;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -52,7 +55,22 @@ import org.objectweb.asm.tree.MethodNode;
  * are reported as {@code referencingClass#method -> owner.member desc}. References whose owner isn't a merged-jar
  * class (pure library/JDK targets) are ignored — those the merge never touched.
  *
- * <p>Usage: {@code MergedLinkChecker <merged.jar> [<classpath.jar> ...]}. Exit 0 = no dangling refs, 1 = found.
+ * <p>Usage: {@code MergedLinkChecker [--baseline <file>] [--write-baseline] <merged.jar> [<classpath.jar> ...]}.
+ *
+ * <p><b>Why a baseline rather than a bare count.</b> There are dangling references today that nobody can fix in
+ * one sitting — Forge's biome and structure modifiers, its datapack condition context, the capability methods the
+ * merge dropped. Failing on the total means nobody can rebuild the base, so for a long time this tool's exit code
+ * was thrown away by the caller and the number only ever appeared in scrollback. That makes it a measurement of
+ * nothing: a merge change that adds a dangling reference reads exactly like one that does not.
+ *
+ * <p>With {@code --baseline}, the known set is DATA in a committed file and the exit code means one thing:
+ * <b>a reference that is dangling now and was not dangling before</b>. Entries in the baseline that no longer
+ * dangle are reported as {@code [FIXED]} so the file can shrink — the number is supposed to go down, and a
+ * baseline nobody prunes is how it silently stops going down. A missing baseline file is itself a failure (with
+ * the one command that seeds it) rather than a silent fallback to "report only", because the whole point is that
+ * an unenforced check reads green.
+ *
+ * <p>Exit codes: 0 = no NEW dangling references, 1 = at least one, 2 = usage/seed error.
  */
 public final class MergedLinkChecker {
 	private MergedLinkChecker() {
@@ -64,17 +82,113 @@ public final class MergedLinkChecker {
 	private final Set<String> mergedOwned = new LinkedHashSet<>();
 
 	public static void main(String[] args) throws IOException {
-		if (args.length < 1) {
-			System.err.println("usage: MergedLinkChecker <merged.jar> [<classpath.jar> ...]");
-			System.exit(2);
+		Path baseline = null;
+		boolean writeBaseline = false;
+		List<String> jars = new ArrayList<>();
+		for (int i = 0; i < args.length; i++) {
+			switch (args[i]) {
+				case "--baseline" -> {
+					if (++i >= args.length) usage("--baseline needs a file");
+					baseline = Path.of(args[i]);
+				}
+				case "--write-baseline" -> writeBaseline = true;
+				default -> jars.add(args[i]);
+			}
 		}
+		if (jars.isEmpty()) usage("no merged jar given");
+		if (writeBaseline && baseline == null) usage("--write-baseline needs --baseline <file>");
+
 		MergedLinkChecker c = new MergedLinkChecker();
-		c.loadPath(args[0], true);
-		for (int i = 1; i < args.length; i++) c.loadPath(args[i], false);
-		int dangling = c.check();
-		System.out.println("[link-check] loaded " + c.classes.size() + " classes ("
-				+ c.mergedOwned.size() + " from the merged jar); dangling references: " + dangling);
-		System.exit(dangling == 0 ? 0 : 1);
+		c.loadPath(jars.get(0), true);
+		for (int i = 1; i < jars.size(); i++) c.loadPath(jars.get(i), false);
+		List<String> dangling = c.check();
+
+		String scanned = "[link-check] loaded " + c.classes.size() + " classes ("
+				+ c.mergedOwned.size() + " from the merged jar); ";
+
+		if (baseline == null) {
+			dangling.forEach(r -> System.out.println("[DANGLING] " + r));
+			System.out.println(scanned + "dangling references: " + dangling.size());
+			System.exit(dangling.isEmpty() ? 0 : 1);
+			return;
+		}
+
+		if (writeBaseline) {
+			writeBaseline(baseline, dangling);
+			System.out.println(scanned + "wrote " + dangling.size() + " entries to " + baseline);
+			System.out.println("[link-check] READ THE DIFF. Seeding this file accepts every line in it as known.");
+			System.exit(0);
+			return;
+		}
+
+		if (!Files.isRegularFile(baseline)) {
+			dangling.forEach(r -> System.out.println("[DANGLING] " + r));
+			System.err.println(scanned + "dangling references: " + dangling.size()
+					+ ", but there is no baseline at " + baseline);
+			System.err.println("[link-check] seed it once, then read the diff before committing:");
+			System.err.println("[link-check]   ... MergedLinkChecker --baseline " + baseline
+					+ " --write-baseline <merged.jar> <cp.jar>...");
+			System.exit(2);
+			return;
+		}
+
+		Set<String> known = readBaseline(baseline);
+		List<String> fresh = new ArrayList<>();
+		Set<String> stillDangling = new LinkedHashSet<>(dangling);
+		for (String r : dangling) {
+			if (known.contains(r)) System.out.println("[KNOWN]    " + r);
+			else {
+				System.out.println("[NEW]      " + r);
+				fresh.add(r);
+			}
+		}
+		List<String> fixed = new ArrayList<>();
+		for (String k : known) {
+			if (!stillDangling.contains(k)) {
+				System.out.println("[FIXED]    " + k);
+				fixed.add(k);
+			}
+		}
+		// One machine-readable line: a gate greps THIS, never the prose above it.
+		System.out.println(scanned + "dangling references: " + dangling.size()
+				+ " (known " + (dangling.size() - fresh.size()) + ", new " + fresh.size()
+				+ "); baseline entries now fixed: " + fixed.size());
+		if (!fixed.isEmpty()) {
+			System.out.println("[link-check] " + fixed.size() + " baseline entr" + (fixed.size() == 1 ? "y" : "ies")
+					+ " no longer dangle — prune " + baseline + " so the number keeps meaning something.");
+		}
+		if (!fresh.isEmpty()) {
+			System.err.println("[link-check] " + fresh.size() + " NEW dangling reference"
+					+ (fresh.size() == 1 ? "" : "s") + " — the merge broke something it did not break before.");
+		}
+		System.exit(fresh.isEmpty() ? 0 : 1);
+	}
+
+	private static void usage(String why) {
+		System.err.println("usage: MergedLinkChecker [--baseline <file>] [--write-baseline] <merged.jar> [<cp.jar> ...]");
+		System.err.println("       (" + why + ")");
+		System.exit(2);
+	}
+
+	/** Baseline format: one report line per entry; {@code #} comments and blank lines ignored. */
+	private static Set<String> readBaseline(Path file) throws IOException {
+		Set<String> out = new LinkedHashSet<>();
+		for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+			String t = line.strip();
+			if (t.isEmpty() || t.startsWith("#")) continue;
+			out.add(t);
+		}
+		return out;
+	}
+
+	private static void writeBaseline(Path file, List<String> entries) throws IOException {
+		StringBuilder sb = new StringBuilder();
+		sb.append("# Dangling references the merged base is KNOWN to carry, one per line.\n");
+		sb.append("# Generated by MergedLinkChecker --write-baseline; a line here is an accepted defect, not a fact.\n");
+		sb.append("# The count is supposed to go DOWN: when the tool reports [FIXED], delete that line.\n");
+		for (String e : entries) sb.append(e).append('\n');
+		if (file.getParent() != null) Files.createDirectories(file.getParent());
+		Files.writeString(file, sb.toString(), StandardCharsets.UTF_8);
 	}
 
 	/** Load a jar, or (if a directory) every {@code .jar} under it recursively — lets one arg pull in a libs tree. */
@@ -118,7 +232,7 @@ public final class MergedLinkChecker {
 		}
 	}
 
-	private int check() {
+	private List<String> check() {
 		List<String> reports = new ArrayList<>();
 		// Scan bodies in the merged jar AND every classpath jar (a runtime jar can reference a broken game member too).
 		for (ClassNode cn : classes.values()) {
@@ -140,10 +254,8 @@ public final class MergedLinkChecker {
 				}
 			}
 		}
-		// De-dup and print grouped by target owner for readability.
-		Set<String> unique = new LinkedHashSet<>(reports);
-		unique.stream().sorted().forEach(r -> System.out.println("[DANGLING] " + r));
-		return unique.size();
+		// De-dup and sort; the caller decides how each line is labelled and whether it is fatal.
+		return new LinkedHashSet<>(reports).stream().sorted().toList();
 	}
 
 	private boolean resolveField(String owner, String name, String desc) {

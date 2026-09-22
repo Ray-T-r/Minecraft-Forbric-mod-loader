@@ -132,6 +132,8 @@ final class ArtifactBuilder {
 				MERGED + ":" + mcVersion);
 		ArtifactResult interop = merge.interop(jvm, forgeRuntime.file,
 				out.resolve("forge-runtime-interop.jar"), FORGE_RUNTIME + ":" + mcVersion);
+		// After the interop patch, not before: the check resolves against what actually gets staged.
+		merge.linkCheck(jvm, merged.file, neoRuntime.file, interop.file);
 
 		Map<String, Path> result = new LinkedHashMap<>();
 		result.put(MERGED, merged.file);

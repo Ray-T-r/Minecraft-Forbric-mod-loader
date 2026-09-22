@@ -57,9 +57,22 @@ java -cp "$BUILD:$CP" net.forbric.tools.RuntimeInteropPatcher "$FORGE_RT" "$FORG
 # obfuscated and SRG-named classes whose references resolve nowhere by design, and the count goes from 24 to
 # over sixteen thousand.
 #
-# Reported, not enforced. There are known dangling references today — Forge's biome and structure modifiers, its
-# datapack condition context, and the capability methods the merge dropped — and failing the build on them would
-# only mean nobody can rebuild the base. The number is the thing to watch: it should go DOWN.
-echo "[build-merged-base] checking what the merge left dangling …"
-java -cp "$BUILD:$CP" net.forbric.tools.MergedLinkChecker "$OUT" "$NEO_RT" "$FORGE_RT_PATCHED" \
-  || echo "[build-merged-base] (dangling references reported above — see the comment in this script)"
+# ENFORCED AGAINST A BASELINE, not against zero. There are known dangling references today — Forge's biome and
+# structure modifiers, its datapack condition context, and the capability methods the merge dropped — and failing
+# on the total would only mean nobody can rebuild the base. So the known set lives in a committed file and the
+# exit code means exactly one thing: this merge broke a reference it did not break before.
+#
+# It used to end in `|| echo`, which is the same as not running it: the number appeared in scrollback and nothing
+# ever compared it to anything. A check whose result nobody compares reads green forever.
+#
+# The baseline is supposed to SHRINK. When the tool prints [FIXED], delete that line from the file.
+#   seed/refresh:  ... MergedLinkChecker --baseline "$LINK_BASELINE" --write-baseline "$OUT" "$NEO_RT" "$FORGE_RT_PATCHED"
+#   escape hatch:  LINK_CHECK=warn ./build-merged-base.sh   (reports, never fails — for bisecting, not for CI)
+LINK_BASELINE="${LINK_BASELINE:-$HERE/merged-base/link-check-baseline.txt}"
+echo "[build-merged-base] checking what the merge left dangling (baseline: $LINK_BASELINE) …"
+if [ "${LINK_CHECK:-enforce}" = "warn" ]; then
+  java -cp "$BUILD:$CP" net.forbric.tools.MergedLinkChecker --baseline "$LINK_BASELINE" "$OUT" "$NEO_RT" "$FORGE_RT_PATCHED" \
+    || echo "[build-merged-base] (LINK_CHECK=warn: new dangling references reported above, not failing)"
+else
+  java -cp "$BUILD:$CP" net.forbric.tools.MergedLinkChecker --baseline "$LINK_BASELINE" "$OUT" "$NEO_RT" "$FORGE_RT_PATCHED"
+fi

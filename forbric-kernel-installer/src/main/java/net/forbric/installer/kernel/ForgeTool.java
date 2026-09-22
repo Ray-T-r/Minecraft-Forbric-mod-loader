@@ -72,10 +72,25 @@ final class ForgeTool {
 	 * same tail-on-failure — and a second copy of that loop is a second place for it to drift.
 	 */
 	void runProcess(List<String> cmd, String label) throws IOException {
+		List<String> tail = new ArrayList<>();
+		int code = exec(cmd, label, tail);
+		if (code != 0) {
+			throw new IOException(label + " failed (exit " + code + "):\n  " + String.join("\n  ", tail));
+		}
+	}
+
+	/**
+	 * Runs {@code cmd}, collecting the last 40 output lines into {@code tail}, and RETURNS the exit code instead
+	 * of throwing on it.
+	 *
+	 * <p>Exists so a caller whose tool reports a finding through its exit code — the link check exits 1 when the
+	 * merged base carries a dangling reference, which it does today — can read that without a second copy of this
+	 * loop. {@link #runProcess} is this plus "non-zero is fatal"; nothing else should re-implement the streaming.
+	 */
+	int exec(List<String> cmd, String label, List<String> tail) throws IOException {
 		log.accept("[patched] " + label + " …");
 		ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
 		Process p = pb.start();
-		List<String> tail = new ArrayList<>();
 		try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
 			String line;
 			while ((line = r.readLine()) != null) {
@@ -83,16 +98,12 @@ final class ForgeTool {
 				if (tail.size() > 40) tail.remove(0);
 			}
 		}
-		int code;
 		try {
-			code = p.waitFor();
+			return p.waitFor();
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			p.destroyForcibly();
 			throw new IOException("interrupted while running " + label, e);
-		}
-		if (code != 0) {
-			throw new IOException(label + " failed (exit " + code + "):\n  " + String.join("\n  ", tail));
 		}
 	}
 

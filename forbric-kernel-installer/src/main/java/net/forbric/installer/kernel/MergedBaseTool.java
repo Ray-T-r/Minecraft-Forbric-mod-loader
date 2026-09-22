@@ -21,6 +21,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -56,6 +57,7 @@ final class MergedBaseTool {
 
 	private static final String MERGE_MAIN = "net.forbric.tools.MergedBaseBuilder";
 	private static final String INTEROP_MAIN = "net.forbric.tools.RuntimeInteropPatcher";
+	private static final String LINK_CHECK_MAIN = "net.forbric.tools.MergedLinkChecker";
 
 	/** What build-merged-base.sh gives the merge. Anything less and the tool runs out of heap mid-write. */
 	private static final String MERGE_HEAP = "-Xmx4g";
@@ -126,6 +128,37 @@ final class MergedBaseTool {
 		}
 		BuildStamp.write(outJar);
 		return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
+	}
+
+	/**
+	 * Counts what the merge left pointing at nothing, and puts that number in the install log.
+	 *
+	 * <p>{@code build-merged-base.sh} has always ended with this check; the installer, which since 0.2.0 builds
+	 * the merged base itself, never ran it at all. So the one artifact players actually get was the one nobody
+	 * link-checked, and a bug report from an installed instance carried no way to tell a merge that came out
+	 * normal from one that came out broken.
+	 *
+	 * <p><b>Reported, never fatal, and deliberately without a baseline.</b> The dev build enforces against a
+	 * committed baseline because a new dangling reference there means someone's merge change broke something. On
+	 * a player's machine the same finding means something else — their carrier jars are not the pair the baseline
+	 * was taken on — and failing the install would turn an upstream version bump into "the installer is broken".
+	 * The number is the diagnostic: when it does not match what the dev build reports, that difference IS the
+	 * story, and it is now in the log instead of nowhere.
+	 */
+	void linkCheck(JdkLocator.Jvm jvm, Path mergedJar, Path neoRuntime, Path forgeRuntimeInterop)
+			throws IOException {
+		Path tools = unpackTools();
+		List<String> tail = new ArrayList<>();
+		int code = exec.exec(List.of(
+				jvm.javaBin().toString(),
+				"-cp", tools.toString(), LINK_CHECK_MAIN,
+				mergedJar.toString(), neoRuntime.toString(), forgeRuntimeInterop.toString()),
+				"link-checking the merged base", tail);
+		String summary = tail.stream()
+				.filter(l -> l.contains("dangling references:"))
+				.reduce((a, b) -> b)
+				.orElse("[link-check] produced no summary line (exit " + code + ")");
+		log.accept("[merge] " + summary.strip());
 	}
 
 	/**
