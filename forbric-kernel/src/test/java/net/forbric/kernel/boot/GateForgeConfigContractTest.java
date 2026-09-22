@@ -98,16 +98,21 @@ class GateForgeConfigContractTest {
 	@Test
 	void m16CountsOnlyTheAuthoritativeClientLogAndDetectsMissingOrDuplicateLoading() throws Exception {
 		fixture();
-		// The launch stdout holds the canary print once plus latest.log's appended copy, which repeats only logged lines.
-		Files.writeString(combinedLog(), CLIENT_SUMMARY + CLIENT + CLIENT_SUMMARY);
-		assertGreen(assertM16());
+		// CLOG holds the canary print twice — the stdout redirect and latest.log's appended copy — because
+		// System.out is routed into log4j now. That duplication is not a second load, so the COUNT reads CGAME,
+		// where each print appears once per occurrence; CLOG is still where the value itself is read from.
 		Files.writeString(combinedLog(), CLIENT_SUMMARY + CLIENT + CLIENT_SUMMARY + CLIENT);
+		assertGreen(assertM16());
+		// A real second load: two of them in the authoritative log.
+		Files.writeString(clientLog(), CLIENT_SUMMARY + CLIENT + CLIENT);
 		assertRed(assertM16(), "CLIENT Loading fired exactly once");
+		Files.writeString(clientLog(), CLIENT_SUMMARY + CLIENT);
 		Files.writeString(combinedLog(), CLIENT_SUMMARY + CLIENT_SUMMARY);
 		assertRed(assertM16(), "CLIENT default was read");
 		Files.writeString(combinedLog(), CLIENT_SUMMARY + CLIENT + CLIENT_SUMMARY);
 		Files.writeString(clientLog(), CLIENT);
 		assertRed(assertM16(), "Forge CLIENT configs were applied");
+		Files.writeString(clientLog(), CLIENT_SUMMARY + CLIENT);
 		Files.delete(combinedLog());
 		assertRed(assertM16(), "no log to read");
 	}
@@ -151,7 +156,7 @@ class GateForgeConfigContractTest {
 		Files.writeString(client().resolve("config/forbriclive-client.toml"), "probe = 17\n");
 		Files.writeString(log(), SERVER_LOG);
 		Files.writeString(watchLog(), RELOAD);
-		Files.writeString(clientLog(), CLIENT_SUMMARY);
+		Files.writeString(clientLog(), CLIENT_SUMMARY + CLIENT);
 		Files.writeString(combinedLog(), CLIENT_SUMMARY + CLIENT + CLIENT_SUMMARY);
 	}
 

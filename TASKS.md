@@ -79,7 +79,14 @@
       内核写给自己的一行不是游戏在做那件事。修完第二次 **GREEN**,`check_kept_up` 现场通过。
 - [x] **D1(后半,m12)** m12 加了两条频道普查断言(普查跑过 + 差集为 0),**本机实测 GREEN**。
       第一次接线把一条跨行的 `check` 从中间劈开了(`$2: unbound variable`),已修并重跑确认。
-- [ ] **D1(余下)** m13/m14/m15/m16 也加同样两条 —— 没在本机跑过这四个
+- [x] **m15 / m16 本机真跑了** —— 两个都在 main 上就是红的:m15 是同一条 `Incompatible` 自指,
+      m16 除此之外还有一条 **"CLIENT Loading fired exactly once (want 1 got 2)"**。
+      量了才知道配置其实**只加载了一次**:`latest.log` 里一行,`CLOG` 里同一行两份 —— 因为
+      `System.out` 现在接进了 log4j,同一句 print 既进 stdout 重定向又进被追加的 `latest.log`。
+      gate 自己的注释("latest.log 的追加副本不可能重复它们")被一个已经落地的改进证伪了。
+      改成数 `CGAME`(每次发生只出现一次),而不是数去重后的 `CLOG`——后者会把真的第二次加载吞掉。
+      三个 gate 现在都 GREEN。
+- [ ] **D1(余下)** m13/m14 也加频道普查两条 —— 没在本机跑过这两个
 - [ ] **D2** performance:`ServerTickSampler` + JFR 透传 + m31 式并排对照
 - [x] **D3** 语言提供者 —— `modLoader` 第一次有了消费者(`LanguageProviders`,接在发现阶段),
       并且 Kotlin `object` 那个形状真的能构造了(没有公开构造器时取 `INSTANCE`,正是 kotlinforforge 自己的做法)。

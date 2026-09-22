@@ -154,7 +154,10 @@ check "survived real simulation"     "ClientSmoke\] client-ready after"         
 check "left cleanly"                 "ClientSmoke\] clean disconnect observed"          "$CLOG"
 check "the client stopped its config file-watchers at close" "Forbric/Shutdown\\] stopped [1-9][0-9]* config file-watcher" "$CLOG"
 check "the server stopped its config file-watchers at exit" "Forbric/Shutdown\\] stopped [1-9][0-9]* config file-watcher" "$SLOG"
-check_absent "server did not reject the client" "This server requires|Incompatible|mismatch" "$SLOG"
+# The last argument: the kernel narrates the bugs it repairs, and one of those explanations contains
+# "IncompatibleClassChangeError". Without the exclusion this gate's own success message matches its
+# own failure pattern.
+check_absent "server did not reject the client" "This server requires|Incompatible|mismatch" "$SLOG" '\[Forbric/'
 check_absent "no client crash"       "Preparing crash report"                           "$CLOG"
 check_absent "no server crash"       "Preparing crash report"                           "$SLOG"
 awk '/Done \(/{d=1} d' "$SLOG" > "$BUILD/gate-m15-postdone.log"

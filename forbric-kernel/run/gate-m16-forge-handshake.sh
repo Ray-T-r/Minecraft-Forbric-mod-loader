@@ -125,11 +125,21 @@ check "the SERVER config came from the world" "ForbricLive/CFG\] LOADING forbric
 check "and it holds the pre-written value"    "ForbricLive/CFG\] LOADING forbriclive-server.toml: greeting=from-the-gate" "$SLOG"
 check "the server still holds it in play"     "ForbricLive/CFG\] greeting on the server at PING: from-the-gate"          "$SLOG"
 
-# M16_CLIENT_CONFIG_BEGIN — the kernel's summary is logged (CGAME); the canary's CFG lines are System.out prints and only exist in the launch stdout (CLOG), where latest.log's appended copy cannot duplicate them.
+# M16_CLIENT_CONFIG_BEGIN — the kernel's summary is logged (CGAME); the canary's CFG lines are System.out prints.
+#
+# That sentence used to end "and only exist in the launch stdout (CLOG), where latest.log's appended copy cannot
+# duplicate them", and the count below relied on it. It stopped being true when System.out was routed into
+# log4j: the same print now reaches CLOG twice, once through the stdout redirect and once through the appended
+# copy of latest.log, and this gate has been red ever since for a config that loads exactly ONCE — measured,
+# not assumed: latest.log holds one such line, CLOG holds the identical line twice at different offsets.
+#
+# So the COUNT reads CGAME (latest.log), where each print appears once per occurrence, while the check that the
+# value was read still reads CLOG. Counting distinct lines in CLOG instead would have collapsed a genuine
+# second load into one, which is the thing this assertion exists to catch.
 step "Forge CLIENT config loads once on the client and never on the dedicated server"
 check "Forge CLIENT configs were applied" 'loaded MinecraftForge configs \(CLIENT\): applied [1-9][0-9]*, already loaded [0-9]+, failed 0 from ' "$CGAME"
 check "CLIENT default was read from the loaded spec" 'ForbricLive/CFG\] LOADING forbriclive-client\.toml: probe=17 loaded=true([[:space:]]|$)' "$CLOG"
-assert_eq "CLIENT Loading fired exactly once" 1 "$(grep -acE 'ForbricLive/CFG\] LOADING forbriclive-client\.toml:' "$CLOG" || true)"
+assert_eq "CLIENT Loading fired exactly once" 1 "$(grep -acE 'ForbricLive/CFG\] LOADING forbriclive-client\.toml:' "$CGAME" || true)"
 if [ -s "$CLI/config/forbriclive-client.toml" ]; then echo "[kernel] PASS CLIENT file was created on the client"
 else echo "[kernel] FAIL CLIENT file was not created on the client"; FAIL=1; fi
 if [ ! -e "$SRV/config/forbriclive-client.toml" ]; then echo "[kernel] PASS no CLIENT file on the dedicated server"
@@ -213,7 +223,10 @@ check "survived real simulation"     "ClientSmoke\] client-ready after"         
 check "left cleanly"                 "ClientSmoke\] clean disconnect observed"          "$CLOG"
 check "the client stopped its config file-watchers at close" "Forbric/Shutdown\\] stopped [1-9][0-9]* config file-watcher" "$CLOG"
 check "the server stopped its config file-watchers at exit" "Forbric/Shutdown\\] stopped [1-9][0-9]* config file-watcher" "$SLOG"
-check_absent "server did not reject the client" "This server requires|Incompatible|mismatch" "$SLOG"
+# The last argument: the kernel narrates the bugs it repairs, and one of those explanations contains
+# "IncompatibleClassChangeError". Without the exclusion this gate's own success message matches its
+# own failure pattern.
+check_absent "server did not reject the client" "This server requires|Incompatible|mismatch" "$SLOG" '\[Forbric/'
 check_absent "no client crash"       "Preparing crash report"                           "$CLOG"
 check_absent "no server crash"       "Preparing crash report"                           "$SLOG"
 awk '/Done \(/{d=1} d' "$SLOG" > "$BUILD/gate-m16-postdone.log"
