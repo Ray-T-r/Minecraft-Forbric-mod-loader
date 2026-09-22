@@ -109,6 +109,7 @@ grep -aE 'ForbricLive/(NET|CFG|HS)' "$SLOG" "$CLOG" | sed 's#^.*gate-m16-\(serve
 step "a real client joined a real server, with Forge mods on both ends (must PASS)"
 check "client dialled the address"    "Connecting to 127.0.0.1"                           "$CLOG"
 check "server accepted the login"     "logged in with entity id"                          "$SLOG"
+check_kept_up "server kept up while the player was on" "$SLOG"
 check "client finished configuring"   "ClientSmoke\] joined world via quick-play"         "$CLOG"
 check "the canary built its channel on the server" "ForbricLive/NET\] channel forbriclive:net built" "$SLOG"
 check "the canary built its channel on the client" "ForbricLive/NET\] channel forbriclive:net built" "$CLOG"

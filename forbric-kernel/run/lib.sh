@@ -83,6 +83,37 @@ check_absent() {
   else printf '[kernel] FAIL %s (present x%s)\n' "$what" "$got"; FAIL=1; fi
 }
 
+# check_kept_up <what> <server-log> — the one performance assertion this project has.
+#
+# WHY IT IS TWO ASSERTIONS. "Can't keep up! Is the server overloaded?" is vanilla's own line, and it is the only
+# performance signal anywhere in this tree: there is no tick-time, frame-time, TPS or memory assertion in any
+# gate, so a mod whose entire value is a number (Sodium, Lithium, FerriteCore) proves nothing here by loading.
+# Absence of that line is worth asserting -- but only after proving the server had anything to keep up WITH.
+#
+# The denominator is a player session. Vanilla pauses an empty dedicated server (pause-when-empty-seconds
+# defaults to 60), so on a gate where nobody joins, "no overload warnings" is a statement about a JVM that
+# stopped ticking -- the exact shape of a green that means nothing. `logged in with entity id` is the server's
+# own line and a client never prints it, so it cannot be satisfied by the wrong log.
+check_kept_up() {
+  local what="$1" file="$2" joined behind worst
+  if ! readable "$file"; then
+    printf '[kernel] FAIL %s (no log to read: %s)\n' "$what" "$file"; FAIL=1; return
+  fi
+  joined=$(grep -acE "logged in with entity id" "$file" 2>/dev/null || true)
+  if [ "${joined:-0}" -eq 0 ]; then
+    printf '[kernel] FAIL %s (no player session in this log, so the server never had to keep up)\n' "$what"
+    FAIL=1; return
+  fi
+  behind=$(grep -acE "Can.t keep up" "$file" 2>/dev/null || true)
+  if [ "${behind:-0}" -eq 0 ]; then
+    printf '[kernel] PASS %s (%s player session(s), 0 overload warnings)\n' "$what" "$joined"
+  else
+    worst=$(grep -aoE "Running [0-9]+ms or [0-9]+ ticks behind" "$file" 2>/dev/null | sort -t' ' -k2 -n | tail -1)
+    printf '[kernel] FAIL %s (%s overload warning(s); worst: %s)\n' "$what" "$behind" "${worst:-unparsed}"
+    FAIL=1
+  fi
+}
+
 # assert_eq <what> <expected> <actual>
 assert_eq() {
   if [ "$2" = "$3" ]; then printf '[kernel] PASS %s (%s)\n' "$1" "$3"

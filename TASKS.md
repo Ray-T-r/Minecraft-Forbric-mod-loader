@@ -20,8 +20,10 @@
 
 ## 可插队(零/低成本)
 
-- [ ] **D2a** `check_absent "Can't keep up"` —— 全仓对这个字符串零命中,而它是 vanilla 自己会打的
-- [ ] **E0** `REPAIRS` 实际 49 条,javadoc 写"Forty"、`AnchorSet` 文案写"47" —— 改成从 `REPAIRS.size()` 生成
+- [x] **D2a** `check_kept_up` 进 `lib.sh` —— **两条断言**:先证明有玩家在线(空服会暂停,否则"没有超载警告"
+      是对一个停了 tick 的 JVM 的陈述),再断言没有 `Can't keep up`,红时打印最差的那条。
+      已接进 m12/m15/m16(三者本来就断言了 `logged in with entity id`,分母现成)。4 个契约测试全绿。
+- [x] **E0** `anchors()` 的自述改成数 `REPAIRS.size()`,并加断言钉住(原来 javadoc 说 "Forty"、文案说 "47"、列表是 49)
 
 ## M-B 仲裁
 

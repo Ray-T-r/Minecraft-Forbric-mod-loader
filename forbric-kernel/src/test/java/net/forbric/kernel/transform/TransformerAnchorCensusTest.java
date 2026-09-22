@@ -73,6 +73,23 @@ class TransformerAnchorCensusTest {
 	}
 
 	/**
+	 * The compat transformer's own description of itself counts the list rather than restating it.
+	 *
+	 * <p>It used to say "47 independent repairs" one line under a comment saying "Forty", with 49 in the list —
+	 * two self-descriptions drifting in the one class whose entire job is that a silent change gets noticed.
+	 * Nothing compared them to anything, so nothing could. This is that comparison.
+	 */
+	@Test
+	void theCompatTransformerCountsItsRepairsInsteadOfRestatingThem() {
+		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer(name -> null);
+		String why = compat.anchors().scanNote();
+		assertTrue(why != null && !why.isBlank(), "a scanned anchor set must say why");
+		assertTrue(why.startsWith(ForbricMergedBaseCompatTransformer.REPAIRS.size() + " "),
+				"anchors() says \"" + why + "\" but REPAIRS holds "
+						+ ForbricMergedBaseCompatTransformer.REPAIRS.size());
+	}
+
+	/**
 	 * The two transformers that carry many repairs behind one {@code changed} flag declare one claim per repair,
 	 * and the compat transformer's claim list is the same list, in the same order, as the repairs its transform
 	 * actually runs (pinned through the LDC of each repair's name at its call site).
