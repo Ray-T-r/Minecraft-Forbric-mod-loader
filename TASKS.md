@@ -52,7 +52,11 @@
 
 - [ ] **B1** 不翻 `MergedBaseBuilder.java:957` 的默认方向;用 A2 的 `RUNTIME_LIVE` 驱动 `FORCE_FORGE_METHODS` 白名单
 - [ ] **B2** 可合并性探索(只出报告,不承诺落地)
-- [ ] **B3** 把合并基底构建接进内核构建/CI 回路
+- [x] **B3** link check 进了 `gate-m0`(第 4 步),并且 **baseline 已用真 staged 产物播种:24 条**,
+      和 `build-merged-base.sh` 里那句注释的数字对上。原来它只活在"重建合并基底"那条路径上,
+      两次重建之间没有任何东西问过"每个测试和每个 gate 读的这个产物还连得上吗"。
+      接线时自己踩了两次同一个坑:**源码(工具、baseline)属于本仓库,产物(jar)在 `FORBRIC_OLD`**——
+      按 `RUN_OLD` 解析源码会让第二个工作树去别人的 checkout 里编译一份没有 `--baseline` 的旧工具。
 - [x] **B4** 相位内的两条结构性约束加了断言(相位间顺序不动):`LoaderProbeRewriter` 必须是第一个、
       `ForgeCapabilityCompositionTransformer` 必须在 `ForbricMergedBaseCompatTransformer` 之前。
       读的是**编译后的字节码**不是源码(`KernelBoot.java` 有 NUL 字节,grep 会静默漏行,这个项目栽过两次)。
