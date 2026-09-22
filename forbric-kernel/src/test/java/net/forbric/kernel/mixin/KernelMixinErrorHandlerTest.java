@@ -44,7 +44,29 @@ import net.forbric.api.ModCatalog;
 /** The handler over a proxied IMixinInfo: the owner is marked, the action is never changed, and the bootstrap registers it. */
 @org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
 class KernelMixinErrorHandlerTest {
+	@org.junit.jupiter.api.BeforeEach
+	@org.junit.jupiter.api.AfterEach
+	void clearCompatibilityEvidence() { net.forbric.api.CompatibilityFindings.reset(); }
+
 	private List<ModCatalog.Entry> previous;
+
+	@Test
+	void missingMixinMetadataKeepsEvidenceWithoutInventingAModOrBreakingTheErrorHandler() {
+		var action = new KernelMixinErrorHandler().onApplyError("example.Target", new IllegalStateException(), null,
+				IMixinErrorHandler.ErrorAction.WARN);
+		assertSame(IMixinErrorHandler.ErrorAction.WARN, action);
+		assertTrue(ModCatalog.failures().isEmpty());
+		assertEquals(1, net.forbric.api.CompatibilityFindings.all().size());
+	}
+
+	@Test
+	void theOriginalRequiredDeclarationSurvivesTheConfigsRelaxation() {
+		MixinCompatibility.rememberOriginalConfig("required.mixins.json", "{\"required\":true}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		assertTrue(MixinCompatibility.required("required.mixins.json", false),
+				"the runtime config was relaxed, but the player's required-feature policy still needs the original declaration");
+		MixinCompatibility.rememberOriginalConfig("optional.mixins.json", "{\"required\":false}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		assertTrue(!MixinCompatibility.required("optional.mixins.json", false));
+	}
 
 	@BeforeEach
 	void publish() {
@@ -70,6 +92,9 @@ class KernelMixinErrorHandlerTest {
 		assertEquals("xmod", xmod.modId());
 		assertEquals(ModCatalog.Status.DEGRADED, xmod.status());
 		assertTrue(xmod.statusDetail().contains("FooMixin") && xmod.statusDetail().contains("net.minecraft.Foo"), xmod.statusDetail());
+		var finding = net.forbric.api.CompatibilityFindings.confirmedRequired().getFirst();
+		assertEquals("mixin:x.mixins.json", finding.source());
+		assertTrue(finding.evidence().stream().anyMatch(e -> e.contains("net.minecraft.Foo")));
 	}
 
 	@Test
@@ -206,6 +231,7 @@ class KernelMixinErrorHandlerTest {
 		IMixinConfig config = (IMixinConfig) Proxy.newProxyInstance(KernelMixinErrorHandlerTest.class.getClassLoader(),
 				new Class<?>[] { IMixinConfig.class }, (proxy, method, args) -> switch (method.getName()) {
 					case "getName" -> configName;
+					case "isRequired" -> true;
 					case "toString" -> configName;
 					default -> throw new UnsupportedOperationException(method.getName());
 				});

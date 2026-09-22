@@ -40,6 +40,10 @@ import net.forbric.api.ModCatalog;
  */
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class PluginDeclinedMixinsTest {
+	@org.junit.jupiter.api.BeforeEach
+	@org.junit.jupiter.api.AfterEach
+	void clearCompatibilityEvidence() { net.forbric.api.CompatibilityFindings.reset(); }
+
 	private static final String CONFIG = "flashback.mixins.json";
 	private static final String MOD = "flashback";
 	private static final String MIXIN_ENTRY = "compat.bobby.MixinIntegratedServer";

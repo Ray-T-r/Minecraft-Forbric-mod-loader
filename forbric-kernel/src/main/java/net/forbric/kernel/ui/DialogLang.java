@@ -220,6 +220,9 @@ public final class DialogLang {
 	// back to it rather than to nothing.
 	// ---------------------------------------------------------------------------------------------------------
 	public static final DialogLang EN = new DialogLang("en", table(
+		"compat.title", "Required mod features are unavailable",
+		"compat.intro", "Forbric confirmed that these required features cannot work in this instance:",
+		"compat.note", "You can continue for this launch, or quit to change the mod set. Closing this window does not approve continuing.",
 			"title.deps", "Forbric — a mod is missing something it requires",
 			"title.mixins", "Forbric — two mods do not fit each other",
 			"title.both", "Forbric — some mods are missing requirements, and some do not fit each other",
@@ -265,6 +268,9 @@ public final class DialogLang {
 	// Simplified Chinese.
 	// ---------------------------------------------------------------------------------------------------------
 	public static final DialogLang ZH_CN = new DialogLang("zh_cn", table(
+		"compat.title", "部分 mod 的必要功能无法运行",
+		"compat.intro", "Forbric 已确认以下必要功能在当前实例中无法运行：",
+		"compat.note", "你可以选择本次继续启动，或退出后调整 mod。关闭此窗口不会视为同意继续。",
 			"title.deps", "Forbric —— 有 mod 缺少它需要的前置",
 			"title.mixins", "Forbric —— 有两个 mod 互相不配套",
 			"title.both", "Forbric —— 有 mod 缺前置，还有 mod 互相不配套",
@@ -307,6 +313,9 @@ public final class DialogLang {
 	// Traditional Chinese.
 	// -------------------------------------------------------------------------------------------------------
 	public static final DialogLang ZH_TW = new DialogLang("zh_tw", table(
+		"compat.title", "部分 mod 的必要功能無法執行",
+		"compat.intro", "Forbric 已確認以下必要功能在目前實例中無法執行：",
+		"compat.note", "你可以選擇本次繼續啟動，或結束後調整 mod。關閉此視窗不代表同意繼續。",
 			"title.deps", "Forbric —— 有模組缺少必要的前置模組",
 			"title.mixins", "Forbric —— 有兩個模組彼此搭不起來",
 			"title.both", "Forbric —— 有模組缺少前置模組，也有模組彼此搭不起來",
@@ -350,6 +359,9 @@ public final class DialogLang {
 	// Japanese.
 	// -------------------------------------------------------------------------------------------------------
 	public static final DialogLang JA = new DialogLang("ja", table(
+		"compat.title", "必要な mod 機能を利用できません",
+		"compat.intro", "この環境では次の必要な機能が動作しないことを Forbric が確認しました：",
+		"compat.note", "今回だけ起動を続けるか、終了して mod を変更できます。ウィンドウを閉じても続行には同意したことになりません。",
 			"title.deps", "Forbric ——必要な前提MODが見つからないMODがあります",
 			"title.mixins", "Forbric ——2つのMODがかみ合っていません",
 			"title.both", "Forbric ——前提MODが足りないMODと、かみ合っていないMODがあります",
@@ -398,6 +410,9 @@ public final class DialogLang {
 	// Korean.
 	// -------------------------------------------------------------------------------------------------------
 	public static final DialogLang KO = new DialogLang("ko", table(
+		"compat.title", "필수 모드 기능을 사용할 수 없습니다",
+		"compat.intro", "Forbric이 현재 환경에서 다음 필수 기능이 작동하지 않는 것을 확인했습니다:",
+		"compat.note", "이번 실행을 계속하거나 종료 후 모드를 변경할 수 있습니다. 창을 닫는 것은 계속 실행에 동의하는 것이 아닙니다.",
 			"title.deps", "Forbric - 어떤 모드에 필요한 것이 빠져 있습니다",
 			"title.mixins", "Forbric - 두 모드가 서로 맞지 않습니다",
 			"title.both", "Forbric - 일부 모드는 필요한 것이 빠져 있고, 일부 모드는 서로 맞지 않습니다",
@@ -444,6 +459,9 @@ public final class DialogLang {
 	// Russian.
 	// -------------------------------------------------------------------------------------------------------
 	public static final DialogLang RU = new DialogLang("ru", table(
+		"compat.title", "Необходимые функции модов недоступны",
+		"compat.intro", "Forbric подтвердил, что в этой сборке не работают следующие необходимые функции:",
+		"compat.note", "Можно продолжить этот запуск или выйти и изменить набор модов. Закрытие окна не означает согласие продолжить.",
 			"title.deps", "Forbric — моду не хватает того, что ему нужно",
 			"title.mixins", "Forbric — два мода не подходят друг другу",
 			"title.both", "Forbric — одним модам не хватает нужного, другие не подходят друг другу",
@@ -491,6 +509,9 @@ public final class DialogLang {
 	// German.
 	// -------------------------------------------------------------------------------------------------------
 	public static final DialogLang DE = new DialogLang("de", table(
+		"compat.title", "Erforderliche Mod-Funktionen sind nicht verfügbar",
+		"compat.intro", "Forbric hat bestätigt, dass diese erforderlichen Funktionen in dieser Instanz nicht funktionieren:",
+		"compat.note", "Du kannst diesen Start fortsetzen oder beenden und die Mods ändern. Das Schließen dieses Fensters erlaubt keine Fortsetzung.",
 			"title.deps", "Forbric - einem Mod fehlt etwas, das er braucht",
 			"title.mixins", "Forbric - zwei Mods passen nicht zueinander",
 			"title.both", "Forbric - einigen Mods fehlt etwas, und andere passen nicht zueinander",
@@ -538,6 +559,9 @@ public final class DialogLang {
 	// French.
 	// -------------------------------------------------------------------------------------------------------
 	public static final DialogLang FR = new DialogLang("fr", table(
+		"compat.title", "Des fonctions nécessaires des mods sont indisponibles",
+		"compat.intro", "Forbric a confirmé que ces fonctions nécessaires ne peuvent pas fonctionner dans cette instance :",
+		"compat.note", "Vous pouvez poursuivre ce lancement, ou quitter pour changer les mods. Fermer cette fenêtre ne vaut pas accord pour continuer.",
 			"title.deps", "Forbric - un mod ne trouve pas quelque chose dont il a besoin",
 			"title.mixins", "Forbric - deux mods ne s'accordent pas",
 			"title.both", "Forbric - certains mods ne trouvent pas ce dont ils ont besoin, et d'autres ne "
@@ -587,6 +611,9 @@ public final class DialogLang {
 	// Spanish.
 	// -------------------------------------------------------------------------------------------------------
 	public static final DialogLang ES = new DialogLang("es", table(
+		"compat.title", "Faltan funciones necesarias de los mods",
+		"compat.intro", "Forbric ha confirmado que estas funciones necesarias no funcionan en esta instancia:",
+		"compat.note", "Puedes continuar este inicio o salir para cambiar los mods. Cerrar esta ventana no autoriza continuar.",
 			"title.deps", "Forbric - a un mod le falta algo que necesita",
 			"title.mixins", "Forbric - dos mods no encajan entre sí",
 			"title.both", "Forbric - a algunos mods les faltan requisitos y otros no encajan entre sí",
@@ -634,6 +661,9 @@ public final class DialogLang {
 	// Brazilian Portuguese. Reached from any Portuguese region; see of(Locale).
 	// -------------------------------------------------------------------------------------------------------
 	public static final DialogLang PT_BR = new DialogLang("pt_br", table(
+		"compat.title", "Funções necessárias dos mods estão indisponíveis",
+		"compat.intro", "O Forbric confirmou que estas funções necessárias não funcionam nesta instância:",
+		"compat.note", "Você pode continuar esta inicialização ou sair para alterar os mods. Fechar esta janela não autoriza continuar.",
 			"title.deps", "Forbric - um mod está sem algo de que precisa",
 			"title.mixins", "Forbric - dois mods não se encaixam",
 			"title.both", "Forbric - alguns mods estão sem o que precisam, e outros não se encaixam",

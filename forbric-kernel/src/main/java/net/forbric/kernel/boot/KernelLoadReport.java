@@ -90,8 +90,12 @@ public final class KernelLoadReport {
 			// than where the suppression was decided, because the plugin does not exist yet at that point — and
 			// settled before failures() is read, so the first report is already the corrected one.
 			net.forbric.kernel.mixin.PluginDeclinedMixins.resolve();
+			writeCompatibility(file);
+			net.forbric.kernel.ui.CompatibilityDecision.queue();
 			List<ModCatalog.Entry> failures = ModCatalog.failures();
 			if (failures.isEmpty()) {
+				if (file != null) Files.deleteIfExists(file);
+				lastRendered = null;
 				if (reported.compareAndSet(false, true)) ForbricLog.info("[Forbric/Load] every mod finished loading");
 				return;
 			}
@@ -112,6 +116,18 @@ public final class KernelLoadReport {
 			}
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/Load] could not write the load report: %s", String.valueOf(t));
+		}
+	}
+
+	/** Machine evidence is always emitted, including a zero-finding census, and never follows a UI waiver. */
+	private static void writeCompatibility(Path report) {
+		if (report == null) return;
+		try {
+			Files.createDirectories(report.getParent());
+			Files.writeString(report.resolveSibling("compatibility-report.json"),
+					net.forbric.api.CompatibilityFindings.toJson(), StandardCharsets.UTF_8);
+		} catch (Exception failed) {
+			ForbricLog.warn("[Forbric/Compatibility] could not write compatibility-report.json", failed);
 		}
 	}
 

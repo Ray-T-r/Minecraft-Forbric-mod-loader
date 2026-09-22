@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import net.forbric.api.ModCatalog;
+import net.forbric.api.CompatibilityFinding;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -59,7 +59,7 @@ public final class PluginDeclinedMixins {
 
 	/** One held-back attribution: everything needed to either ask the plugin or mark the mod. */
 	record Pending(String configName, String pluginClass, String mixinEntry, String mixinClass, String target,
-			String detail) {
+			String detail, CompatibilityFinding.Confidence confidence, boolean required, List<String> evidence) {
 	}
 
 	private static final List<Pending> PENDING = java.util.Collections.synchronizedList(new ArrayList<>());
@@ -90,8 +90,14 @@ public final class PluginDeclinedMixins {
 	 */
 	static boolean defer(String configName, String pluginClass, String mixinEntry, String mixinClass, String target,
 			String detail) {
+		return defer(configName, pluginClass, mixinEntry, mixinClass, target, detail,
+				CompatibilityFinding.Confidence.CONFIRMED, true, List.of("kernel suppressed the mixin"));
+	}
+
+	static boolean defer(String configName, String pluginClass, String mixinEntry, String mixinClass, String target,
+			String detail, CompatibilityFinding.Confidence confidence, boolean required, List<String> evidence) {
 		if (!enabled() || pluginClass == null || pluginClass.isEmpty()) return false;
-		PENDING.add(new Pending(configName, pluginClass, mixinEntry, mixinClass, target, detail));
+		PENDING.add(new Pending(configName, pluginClass, mixinEntry, mixinClass, target, detail, confidence, required, evidence));
 		return true;
 	}
 
@@ -114,8 +120,7 @@ public final class PluginDeclinedMixins {
 				// The load report calls this; one bad entry must not cost the whole file. Mark and move on.
 				ForbricLog.debug("[Forbric/Mixin] could not settle the attribution for %s — %s", p.mixinClass(),
 						String.valueOf(t));
-				String modId = MixinConfigOwners.modIdOf(p.configName());
-				if (modId != null) ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, p.detail());
+				MixinCompatibility.record(p.configName(), p.mixinClass(), p.detail(), p.confidence(), p.required(), p.evidence());
 			}
 		}
 	}
@@ -123,14 +128,14 @@ public final class PluginDeclinedMixins {
 	/** One held-back attribution: cleared only by a clear {@code false}, marked on anything else. */
 	private static void settle(Pending p) {
 		if (Boolean.FALSE.equals(askThePlugin(p))) {
+			MixinCompatibility.resolve(p.configName(), p.mixinClass(), "the mod's own plugin disabled this mixin");
 			ForbricLog.info("[Forbric/Mixin] not marking %s for %s:%s — the mod's own config plugin %s does not "
 					+ "apply that mixin on this instance either, so leaving it out cost the mod nothing",
 					String.valueOf(MixinConfigOwners.modIdOf(p.configName())),
 					MixinConfigOwners.describe(p.configName()), p.mixinEntry(), p.pluginClass());
 			return;
 		}
-		String modId = MixinConfigOwners.modIdOf(p.configName());
-		if (modId != null) ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, p.detail());
+		MixinCompatibility.record(p.configName(), p.mixinClass(), p.detail(), p.confidence(), p.required(), p.evidence());
 	}
 
 	/**

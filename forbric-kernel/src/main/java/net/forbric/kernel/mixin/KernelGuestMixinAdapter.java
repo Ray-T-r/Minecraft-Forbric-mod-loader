@@ -38,6 +38,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.ModCatalog;
+import net.forbric.api.CompatibilityFinding;
 import net.forbric.kernel.boot.ArbitratedAwayClasses;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -151,6 +152,7 @@ public final class KernelGuestMixinAdapter {
 		// A config that declares a plugin can have switched a mixin off itself, and the plugin is never asked
 		// about an entry this method removes. PluginDeclinedMixins holds the attribution back to ask it later.
 		String pluginClass = asString(config.get(List.of("plugin")));
+		boolean required = Boolean.TRUE.equals(config.get(List.of("required")));
 		Map<String, byte[]> loaded = new LinkedHashMap<>();
 		List<String> suppress = new ArrayList<>();
 
@@ -191,13 +193,11 @@ public final class KernelGuestMixinAdapter {
 						//
 						// Says "did not attach", not "will crash". Whether it crashes is not something this layer
 						// can establish -- it knows an anchor did not resolve and nothing more.
-						ForbricLog.warn("[Forbric/Mixin] %s:%s targets ANOTHER MOD and did not attach — %s. Both "
-								+ "mods are installed and each is within the version range the other declares, so "
-								+ "nothing else will report this; one of them needs a different version.",
+						ForbricLog.warn("[Forbric/Mixin] %s:%s has unresolved preflight anchors on ANOTHER MOD — %s. "
+								+ "This is a suspected mismatch; actual application has not been observed yet.",
 								MixinConfigOwners.describe(configName), mixin, String.join(", ", fit.foreign()));
-						ForeignMixinBreaks.record(configName, mixin, fit.foreign());
-						attribute(configName, "its mixin " + mixin + " targets another mod's class that has changed ("
-								+ String.join(", ", fit.foreign()) + ")");
+						preflight(configName, pkg, mixin, pluginClass, classBytes, required,
+								"preflight could not resolve this mixin's anchors on another mod", fit.foreign());
 					} else if (fit.verdict() == MixinFit.Verdict.PARTIAL) {
 						// Before reporting a PARTIAL, ask whether it is one the merge MADE: an injector bound by
 						// explicit descriptor to a merge-added delegating stub whose body moved. If rebinding it to
@@ -214,6 +214,7 @@ public final class KernelGuestMixinAdapter {
 									after.verdict());
 							if (after.verdict() == MixinFit.Verdict.PARTIAL) {
 								notePartial(configName, mixin);
+								preflight(configName, pkg, mixin, pluginClass, classBytes, required, after.reason(), after.unresolved());
 								ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s still applies only partially — %s",
 										MixinConfigOwners.describe(configName), mixin, after.reason());
 							}
@@ -226,6 +227,7 @@ public final class KernelGuestMixinAdapter {
 									MixinConfigOwners.describe(configName), mixin, drifted, MergedBaseAnonymousDrift.describe(drifted));
 						}
 						notePartial(configName, mixin);
+						preflight(configName, pkg, mixin, pluginClass, classBytes, required, fit.reason(), fit.unresolved());
 						ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s applies only partially on the merged base "
 								+ "— %s (kept; -Dforbric.mixinFit=strict drops these)", MixinConfigOwners.describe(configName), mixin,
 								fit.reason());
@@ -251,8 +253,10 @@ public final class KernelGuestMixinAdapter {
 				String detail = "guest mixin " + mixin + " did not fit the merged game and was left out";
 				List<String> targets = MixinFit.mixinTargets(MixinFit.parse(classBytes));
 				if (!PluginDeclinedMixins.defer(configName, pluginClass, mixin, pkg + "." + mixin,
-						targets.isEmpty() ? null : targets.get(0).replace('/', '.'), detail)) {
-					attribute(configName, detail);
+						targets.isEmpty() ? null : targets.get(0).replace('/', '.'), detail,
+						CompatibilityFinding.Confidence.CONFIRMED, required, List.of(fit.reason(), "kernel suppressed this mixin"))) {
+					MixinCompatibility.record(configName, pkg + "." + mixin, detail,
+							CompatibilityFinding.Confidence.CONFIRMED, required, List.of(fit.reason(), "kernel suppressed this mixin"));
 				}
 			} catch (RuntimeException perMixin) {
 				ForbricLog.debug("[Forbric/Mixin] could not scan guest mixin %s:%s — %s", MixinConfigOwners.describe(configName), mixin,
@@ -266,6 +270,18 @@ public final class KernelGuestMixinAdapter {
 					suppress.size(), loaded.size());
 		}
 		return suppress;
+	}
+
+	/** A bytecode preflight cannot know which targets, plugins or preceding transforms will actually run. */
+	private static void preflight(String config, String pkg, String mixin, String plugin, byte[] bytes,
+			boolean required, String detail, List<String> evidence) {
+		List<String> targets = MixinFit.mixinTargets(MixinFit.parse(bytes));
+		if (!PluginDeclinedMixins.defer(config, plugin, mixin, pkg + "." + mixin,
+				targets.isEmpty() ? null : targets.get(0).replace('/', '.'), detail,
+				CompatibilityFinding.Confidence.SUSPECTED, required, evidence)) {
+			MixinCompatibility.record(config, pkg + "." + mixin, detail,
+					CompatibilityFinding.Confidence.SUSPECTED, required, evidence);
+		}
 	}
 
 	/**

@@ -20,7 +20,7 @@ import org.spongepowered.asm.mixin.extensibility.IMixinConfig;
 import org.spongepowered.asm.mixin.extensibility.IMixinErrorHandler;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 
-import net.forbric.api.ModCatalog;
+import net.forbric.api.CompatibilityFinding;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -71,6 +71,7 @@ public final class KernelMixinErrorHandler implements IMixinErrorHandler {
 		String modId = configName == null ? null : MixinConfigOwners.modIdOf(configName);
 		String replacement = SupersededMixins.replacementFor(mixinName);
 		if (replacement != null) {
+			MixinCompatibility.resolve(configName, mixinName, replacement);
 			// Not a loss, so not a mark: a report that cries wolf is worse than no report, because the next real
 			// one is read the same way.
 			ForbricLog.info("[Forbric/Mixin] %s:%s %s%s — %s, so its mod is not marked",
@@ -81,13 +82,16 @@ public final class KernelMixinErrorHandler implements IMixinErrorHandler {
 		ForbricLog.warn("[Forbric/Mixin] %s:%s %s%s — Mixin's own report follows; the owning mod%s",
 				configName == null ? "?" : MixinConfigOwners.describe(configName), mixinName, what, cause,
 				modId == null ? " is not known, so no row is marked" : " " + modId + " is marked");
-		if (modId != null) {
+		{
 			// The reason, when the kernel worked one out while READING the mixin. "InvalidInjectionException" is
 			// true and tells a player nothing; what the merge did to the target is the sentence worth carrying.
 			String why = MixinOverloadPin.reasonFor(mixinName);
-			ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, why != null
+			String detail = why != null
 					? "its mixin " + mixinName + " " + what + cause + " — " + why
-					: "its mixin " + mixinName + " " + what + cause);
+					: "its mixin " + mixinName + " " + what + cause;
+			boolean required = MixinCompatibility.required(configName, config != null && config.isRequired());
+			MixinCompatibility.record(configName, mixinName, detail, CompatibilityFinding.Confidence.CONFIRMED,
+					required, java.util.List.of(what, th == null ? "no exception supplied" : th.toString()));
 		}
 	}
 }

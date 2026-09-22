@@ -36,7 +36,35 @@ import net.forbric.api.ModCatalog;
 @org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
 class KernelLoadReportTest {
+	@org.junit.jupiter.api.BeforeEach
+	@org.junit.jupiter.api.AfterEach
+	void clearCompatibilityEvidence() { net.forbric.api.CompatibilityFindings.reset(); }
+
 	private List<ModCatalog.Entry> previous;
+
+	@Test
+	void machineEvidenceIncludesSuspicionsAndResolvedLossesWithoutMarkingThemAsFailures(
+			@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+		java.nio.file.Path text = dir.resolve("load-report.txt");
+		ModCatalog.publish(List.of(entry("alpha")));
+		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
+				"mixin:alpha", "alpha", "rendering", "mixin:alpha.json",
+				net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, true, "preflight miss", List.of("anchor absent")));
+		KernelLoadReport.writeTo(text);
+		assertFalse(java.nio.file.Files.exists(text));
+		String machine = java.nio.file.Files.readString(dir.resolve("compatibility-report.json"));
+		assertTrue(machine.contains("SUSPECTED"));
+		assertTrue(machine.contains("\"confirmedRequired\":0"));
+		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
+				"mixin:alpha", "alpha", "rendering", "mixin:alpha.json",
+				net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, true, "apply failed", List.of("InvalidInjectionException")));
+		KernelLoadReport.writeTo(text);
+		assertTrue(java.nio.file.Files.readString(text).contains("apply failed"));
+		net.forbric.api.CompatibilityFindings.resolve("mixin:alpha", "alpha", "kernel replacement verified");
+		KernelLoadReport.writeTo(text);
+		assertFalse(java.nio.file.Files.exists(text), "an old failure report must not survive a proved resolution");
+		assertTrue(java.nio.file.Files.readString(dir.resolve("compatibility-report.json")).contains("RESOLVED"));
+	}
 
 	@org.junit.jupiter.api.BeforeEach
 	void fresh() {

@@ -162,6 +162,25 @@ public final class DependencyDialog {
 		Path report = Files.createTempFile("forbric-deps", ".tsv");
 		try {
 			DependencyReport.write(report, rows, mixins);
+			return fork(report, extraJvmArgs, false);
+		} finally {
+			Files.deleteIfExists(report);
+		}
+	}
+
+	/** The same child process and layout, with a separate, fail-closed confirmation contract. */
+	static int askCompatibility(List<DependencyReport.CompatibilityRow> rows, List<String> extraJvmArgs) throws Exception {
+		Path report = Files.createTempFile("forbric-compatibility", ".tsv");
+		try {
+			DependencyReport.writeCompatibility(report, rows);
+			return fork(report, extraJvmArgs, true);
+		} finally {
+			Files.deleteIfExists(report);
+		}
+	}
+
+	private static int fork(Path report, List<String> extraJvmArgs, boolean confirmation) throws Exception {
+		try {
 			List<String> command = new ArrayList<>();
 			command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
 			command.addAll(extraJvmArgs);
@@ -176,6 +195,7 @@ public final class DependencyDialog {
 			command.add(ownJar());
 			command.add(DependencyDialogMain.class.getName());
 			command.add(report.toString());
+			if (confirmation) command.add("--compatibility");
 
 			Process child = new ProcessBuilder(command)
 					.redirectOutput(ProcessBuilder.Redirect.INHERIT)
@@ -187,8 +207,9 @@ public final class DependencyDialog {
 			Thread reaper = new Thread(child::destroyForcibly, "forbric-deps-dialog-reaper");
 			Runtime.getRuntime().addShutdownHook(reaper);
 			try {
-				return await(child);
+				return await(child, confirmation);
 			} finally {
+				if (child.isAlive()) child.destroyForcibly();
 				try {
 					Runtime.getRuntime().removeShutdownHook(reaper);
 				} catch (IllegalStateException alreadyShuttingDown) {
@@ -204,14 +225,15 @@ public final class DependencyDialog {
 		}
 	}
 
-	private static int await(Process child) throws InterruptedException {
+	private static int await(Process child, boolean confirmation) throws InterruptedException {
 		if (!child.waitFor(TIMEOUT_MINUTES, java.util.concurrent.TimeUnit.MINUTES)) {
 			child.destroy();
-			ForbricLog.warn("[Forbric/Deps] the dependency dialog did not answer within %d minutes — "
-					+ "launching anyway", TIMEOUT_MINUTES);
-			return DependencyDialogMain.CONTINUE;
+			ForbricLog.warn("[Forbric/Deps] the dialog did not answer within %d minutes — %s", TIMEOUT_MINUTES,
+					confirmation ? "continuation was not approved" : "launching anyway");
+			return confirmation ? DependencyDialogMain.QUIT : DependencyDialogMain.CONTINUE;
 		}
-		return child.exitValue();
+		return confirmation && child.exitValue() != DependencyDialogMain.CONTINUE
+				? DependencyDialogMain.QUIT : child.exitValue();
 	}
 
 	/**

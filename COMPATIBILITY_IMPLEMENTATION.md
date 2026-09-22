@@ -65,3 +65,14 @@ Pending implementation and acceptance items remain open even when a smaller batc
 - Trial on the actual three game jars: zero accepted, 999 declined. Output is under
   `/private/tmp/forbric-p1-merge-check/`; no original staged file was replaced. This is infrastructure, not
   evidence that any current mod's lost game behavior has been restored. The P1 behavior pilots remain open.
+
+### P2 finding and decision core
+
+- Added stable suspected/confirmed/resolved findings, machine JSON including unclassified legacy failures,
+  and a reversible display projection into ModCatalog. Preserved the mod's original Mixin `required` flag
+  before relaxing its config, so an actual application failure retains the correct contract.
+- New necessary-function confirmation requires an explicit continue decision; old dependency behavior is
+  preserved. Strict decisions cannot be waived by a prior interactive choice. Boot and safe late-UI
+  invocation are a separate, still-pending integration batch.
+- 133 tests in 11 suites passed with no failures or skips. XML and command log are archived under
+  `forbric-kernel/build/verification/compatibility-core/` before other Gradle tests overwrite their outputs.

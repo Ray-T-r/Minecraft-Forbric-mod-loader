@@ -392,6 +392,7 @@ public final class ForbricMixinService
 		try (InputStream source = in) {
 			byte[] bytes = source.readAllBytes();
 			String json = new String(bytes, StandardCharsets.UTF_8);
+			MixinCompatibility.rememberOriginalConfig(name, bytes);
 
 			if (scanForOwned) {
 				// Derive, from THIS config, the mixins that target a Forge/NeoForge-owned merged class — the general

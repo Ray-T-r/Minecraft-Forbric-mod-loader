@@ -168,17 +168,17 @@ public final class ModCatalog {
 	 * -- on a real pack they outnumber the answer five to one.
 	 */
 	public static List<Entry> all() {
-		return installed;
+		return CompatibilityFindings.project(installed);
 	}
 
 	/** Every mod, bundled ones included. For anything counting what is RUNNING rather than what was chosen. */
 	public static List<Entry> everything() {
-		return entries;
+		return CompatibilityFindings.project(entries);
 	}
 
 	/** What {@code modId}'s jar carries inside it, name-sorted. Empty for most mods. */
 	public static List<Entry> bundledBy(String modId) {
-		return entries.stream().filter(e -> e.bundledBy().equals(modId)).toList();
+		return everything().stream().filter(e -> e.bundledBy().equals(modId)).toList();
 	}
 
 	/** How many mods each ecosystem contributed, for the one-line boot summary and for the screen's subtitle. */
@@ -268,10 +268,15 @@ public final class ModCatalog {
 	/** The mods something went wrong with, name-sorted. Empty is the ordinary case. */
 	public static List<Entry> failures() {
 		List<Entry> out = new ArrayList<>();
-		for (Entry e : entries) {
+		for (Entry e : everything()) {
 			if (e.status() != Status.OK) out.add(e);
 		}
 		return List.copyOf(out);
+	}
+
+	/** Legacy marks have no structured proof or necessity classification; never guess those from their prose. */
+	static List<Entry> unclassifiedFailures() {
+		return entries.stream().filter(e -> e.status() != Status.OK).toList();
 	}
 
 	static void reset() {

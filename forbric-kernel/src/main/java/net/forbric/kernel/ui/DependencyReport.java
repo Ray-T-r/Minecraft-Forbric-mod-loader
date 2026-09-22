@@ -61,6 +61,35 @@ public final class DependencyReport {
 	public record MixinRow(String owner, String mixin, String anchors) {
 	}
 
+	/** A proven loss of a required feature. This section requires an explicit continue answer. */
+	public record CompatibilityRow(String modId, String modName, String feature, String detail,
+			String source, String evidence) { }
+
+	private static final String COMPATIBILITY = "--compatibility-v1--";
+
+	public static void writeCompatibility(Path file, List<CompatibilityRow> rows) throws IOException {
+		StringBuilder out = new StringBuilder(COMPATIBILITY).append('\n');
+		for (CompatibilityRow row : rows) {
+			out.append(field(row.modId())).append('\t').append(field(row.modName())).append('\t')
+					.append(field(row.feature())).append('\t').append(field(row.detail())).append('\t')
+					.append(field(row.source())).append('\t').append(field(row.evidence())).append('\n');
+		}
+		Files.writeString(file, out.toString(), StandardCharsets.UTF_8);
+	}
+
+	public static List<CompatibilityRow> readCompatibility(Path file) throws IOException {
+		List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+		if (lines.isEmpty() || !COMPATIBILITY.equals(lines.get(0))) throw new IOException("missing compatibility header");
+		List<CompatibilityRow> rows = new ArrayList<>();
+		for (String line : lines.subList(1, lines.size())) {
+			if (line.isBlank()) continue;
+			String[] fields = line.split("\t", -1);
+			if (fields.length != 6) throw new IOException("invalid compatibility row");
+			rows.add(new CompatibilityRow(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]));
+		}
+		return List.copyOf(rows);
+	}
+
 	/** Separates the two sections. A mod id can never be a bare double hyphen. */
 	private static final String SECTION = "--";
 
@@ -124,6 +153,6 @@ public final class DependencyReport {
 	/** Never null, never empty, never contains the separator — so a malformed row cannot be produced at all. */
 	private static String field(String raw) {
 		if (raw == null || raw.isBlank()) return "?";
-		return raw.replace('\t', ' ').replace('\n', ' ');
+		return raw.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
 	}
 }

@@ -49,6 +49,10 @@ import org.objectweb.asm.Type;
  */
 @org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
 class KernelGuestMixinAdapterTest {
+	@org.junit.jupiter.api.BeforeEach
+	@org.junit.jupiter.api.AfterEach
+	void clearCompatibilityEvidence() { net.forbric.api.CompatibilityFindings.reset(); }
+
 	private static final String PKG = "net/example/mixin";
 	private static final String SHADOW = "Lorg/spongepowered/asm/mixin/Shadow;";
 
@@ -529,6 +533,7 @@ class KernelGuestMixinAdapterTest {
 
 	@Test
 	void partialIsKeptByDefaultAndDroppedUnderStrict() {
+		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("example.mixins.json", "halfmod", Ecosystem.FABRIC)));
 		String t = "net/minecraft/client/renderer/GameRenderer";
 		Map<String, byte[]> classes = new HashMap<>();
 		classes.put(t + ".class", target(t, "unused", Opcodes.ACC_PRIVATE, true));
@@ -552,6 +557,9 @@ class KernelGuestMixinAdapterTest {
 
 		assertTrue(KernelGuestMixinAdapter.unfitMixins("example.mixins.json", cfg, resolver(classes)).isEmpty(),
 				"PARTIAL is kept by default so the change stays monotonic against the old rule");
+		var finding = net.forbric.api.CompatibilityFindings.all().getFirst();
+		assertEquals(net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, finding.confidence());
+		assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty());
 
 		System.setProperty("forbric.mixinFit", "strict");
 		try {
@@ -559,6 +567,7 @@ class KernelGuestMixinAdapterTest {
 					"-Dforbric.mixinFit=strict opts into dropping half-applied mixins");
 		} finally {
 			System.clearProperty("forbric.mixinFit");
+			MixinConfigOwners.reset();
 		}
 	}
 }

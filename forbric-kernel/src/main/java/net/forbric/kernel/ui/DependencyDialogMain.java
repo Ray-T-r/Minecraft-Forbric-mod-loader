@@ -150,6 +150,10 @@ public final class DependencyDialogMain {
 
 	public static void main(String[] args) {
 		avoidOverlayRenderingCorruption();
+		if (args.length > 1 && "--compatibility".equals(args[1])) {
+			confirmationMain(Path.of(args[0]));
+			return;
+		}
 		if (args.length < 1) System.exit(CONTINUE);
 		List<DependencyReport.Row> rows;
 		List<DependencyReport.MixinRow> mixins;
@@ -181,6 +185,37 @@ public final class DependencyDialogMain {
 		System.exit(answer);
 	}
 
+	private static void confirmationMain(Path report) {
+		int answer = QUIT;
+		try {
+			List<DependencyReport.CompatibilityRow> rows = DependencyReport.readCompatibility(report);
+			if (rows.isEmpty()) { System.exit(QUIT); return; }
+			DialogLang lang = DialogLang.ofSystem();
+			try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
+			catch (Exception ignored) { }
+			int[] result = { QUIT };
+			SwingUtilities.invokeAndWait(() -> result[0] = showCompatibility(lang, rows));
+			answer = result[0];
+		} catch (Throwable unavailable) {
+			// Unlike the legacy dependency notice, no answer is never permission to continue.
+		}
+		System.exit(answer);
+	}
+
+	private static int showCompatibility(DialogLang lang, List<DependencyReport.CompatibilityRow> rows) {
+		StringBuilder summary = new StringBuilder(lang.get("compat.intro")).append("\n\n");
+		StringBuilder details = new StringBuilder();
+		for (int i = 0; i < rows.size(); i++) {
+			DependencyReport.CompatibilityRow row = rows.get(i);
+			if (i < SUMMARY_BULLETS) summary.append(BULLET).append(row.modName()).append(": ")
+					.append(row.feature()).append(" — ").append(row.detail()).append('\n');
+			details.append(row.modName()).append(" (").append(row.modId()).append(")\n")
+					.append(row.detail()).append('\n').append(row.source()).append('\n').append(row.evidence()).append("\n\n");
+		}
+		return showContent(lang, List.of(summary.toString(), lang.get("compat.note")), details.toString(),
+				lang.get("compat.title"), true);
+	}
+
 	/**
 	 * Builds and shows the dialog on the event thread, and returns the exit code it earned.
 	 *
@@ -200,6 +235,11 @@ public final class DependencyDialogMain {
 			List<DependencyReport.MixinRow> mixins) {
 		List<String> spoken = blocks(lang, rows, mixins);
 		String detail = details(lang, rows, mixins);
+		return showContent(lang, spoken, detail, title(lang, rows, mixins), false);
+	}
+
+	private static int showContent(DialogLang lang, List<String> spoken, String detail, String title,
+			boolean confirmation) {
 
 		Font prose = legible(String.join("\n", spoken), 13, false);
 		JPanel content = new JPanel(new BorderLayout(0, 12));
@@ -240,8 +280,8 @@ public final class DependencyDialogMain {
 		content.add(below, BorderLayout.CENTER);
 		budget(headScroll, details, toggle);
 
-		JOptionPane pane = optionPane(lang, content);
-		JDialog dialog = pane.createDialog(null, title(lang, rows, mixins));
+		JOptionPane pane = confirmation ? confirmationPane(lang, content) : optionPane(lang, content);
+		JDialog dialog = pane.createDialog(null, title);
 		// createDialog fixes the size; forty findings want a window the player can drag bigger.
 		dialog.setResizable(true);
 
@@ -267,7 +307,17 @@ public final class DependencyDialogMain {
 		dialog.setVisible(true);
 		dialog.dispose();
 
-		return answerFrom(lang, pane.getValue());
+		return confirmation ? confirmationAnswerFrom(lang, pane.getValue()) : answerFrom(lang, pane.getValue());
+	}
+
+	static JOptionPane confirmationPane(DialogLang lang, Component content) {
+		return new JOptionPane(content, JOptionPane.WARNING_MESSAGE, JOptionPane.DEFAULT_OPTION,
+				null, options(lang), options(lang)[1]);
+	}
+
+	/** Closed, Escape, an uninitialised value and any unknown value are all an unapproved launch. */
+	static int confirmationAnswerFrom(DialogLang lang, Object value) {
+		return lang.get("button.continue").equals(value) ? CONTINUE : QUIT;
 	}
 
 	/**
