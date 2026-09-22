@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "forbrictransferfabric",
+  "version": "1.0.0",
+  "name": "Forbric M33 Fabric Machine",
+  "environment": "server",
+  "entrypoints": {"main": ["forbric.transferworld.ForbricTransferFabric"]},
+  "depends": {"fabricloader": ">=0.18.4", "fabric-transfer-api-v1": "*", "fabric-api-lookup-api-v1": "*"}
+}

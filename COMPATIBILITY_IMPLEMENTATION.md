@@ -210,3 +210,19 @@ Pending implementation and acceptance items remain open even when a smaller batc
   candidates and existing nested behavior. A test caught SAT4J exposing vector capacity as zero literals;
   assumptions now copy only logical entries. Evidence: `build/verification/compat-arbitration/nested-junit/`.
   Real nested-pack and broad client gates are still pending.
+
+### P3 real world routing and native controls
+
+- M33 passed on the fresh candidate: 12 item and 12 fluid routes across all six directed ecosystem pairs with
+  NORTH/null access, SOUTH rejection, native-provider priority, replacement invalidation and stale optional
+  refusal. An outer rollback restored the real inventory after a fractional fluid operation; 17 Fabric units
+  stayed in their source. Total inventory remained 60 items and 48,617 Fabric fluid units.
+- The same world saved and reloaded the exact item components and fluid quantities. A separate clean-chunk
+  probe showed abort leaves it clean, root commit dirties it, and both item/fluid writes persist on reload.
+  The bridge-off run failed the actual public lookup assertions as expected. All three phases had unchanged
+  source/artifact/mod fingerprints. Evidence: `build/verification/m33-transfer/` and `build/m33-driver.log`.
+- True native Fabric 0.19.5, Forge 26.2-65.0.1 and NeoForge 26.2.0.88 servers passed the same fixed-seed public
+  API scenarios as Forbric using byte-identical canary jars. All three comparisons are MATCHED_PASS, with
+  initialization/start/command registration exactly once, at least 20 real ticks, three world actions and
+  clean exit. Native controls contain no Forbric dependency. Evidence: `build/native-controls/results/`.
+  These scenarios do not replace the broader client, multiplayer and sustained-operation requirements.

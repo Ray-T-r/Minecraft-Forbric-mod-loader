@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "nativecontrolfabric",
+  "version": "1.0.0",
+  "name": "Native Control Fabric",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "nativecontrol.FabricControl"
+    ]
+  },
+  "depends": {
+    "minecraft": "26.2",
+    "fabricloader": ">=0.19.5",
+    "fabric-api": "0.155.2+26.2"
+  }
+}
