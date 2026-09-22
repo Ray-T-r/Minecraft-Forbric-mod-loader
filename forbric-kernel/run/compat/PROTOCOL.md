@@ -43,7 +43,10 @@ waiting on this Forge event" gets answered from bytecode instead of from `javap`
 a javadoc. `--list-presets` prints the named sets. `hook-worklist.sh` goes the other way round: it
 censuses which of a carrier's event hooks the merged base still calls, then joins the dead
 ones to the jars in a mods directory that name them, so the list is ordered by how many
-mods notice rather than by whatever order the byte-merge produced. Run each with
+mods notice rather than by whatever order the byte-merge produced. `repair-drift.sh`
+replays the compat transformer's claim ledger against a CANDIDATE game build and names
+the repairs that would stop applying, which is the question a carrier bump asks and that
+nothing answered before a player did. Run each with
 `--help` for its argument list. API usage must be proved from the downloaded candidate
 jar before treating the selection as final; metadata resolution alone cannot prove it.
 

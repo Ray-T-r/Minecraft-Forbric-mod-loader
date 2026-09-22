@@ -79,4 +79,7 @@
 - [ ] **E1** 跨生态内容级互操作(Fabric transfer/lookup ↔ Forge capability:**零桥、零测试**)
 - [ ] **E2** 常驻对照实例(归因准确率本身是一等产品问题)
 - [ ] **E3** 库 mod 爆炸半径(load-report 点名库,不点名被它拖死的十几个)
-- [ ] **E4** 载体版本漂移:49 条 repair 对新载体的有效性普查
+- [x] **E4** 载体版本漂移 —— `RepairDriftCensus` + `run/compat/repair-drift.sh`:把 claim 账本对着一个
+      **候选**构建重放,点名哪些 repair 会不再适用。在载体升级之前跑,而不是等玩家报上来。
+      实测当前 staged 与 Sep-10 备份两个基底都是 44/44 落地;负控制(候选里有一个类已经自带初始化)
+      恰好点名那一条 claim。
