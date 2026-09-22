@@ -107,7 +107,15 @@
       并且**只在实例方法里做**(静态方法的 slot 0 是第一个参数,压下去等于把 ItemStack 当 FuelValues 传)。
       实测:repair 在真服务端落地、m12 GREEN、`RepairDriftCensus` **45/45**。
       顺带被 `KernelRuntimeClassesTest` 抓了一次:boot 侧新点名了一个 runtime 类却没登记。
-- [ ] **工单余下 3 条** —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
+- [x] **工单第五条:`MobSpawnEvent$FinalizeSpawn`(←collective)** —— 两边都改了 `BaseSpawner.serverTick`,
+      NeoForge 的体赢了,于是 MinecraftForge 的 hook 一个调用点都没有。
+      **没有**去把 Forge 的指令段塞回一个用着 NeoForge 局部变量编号的方法体(那是这棵树没有的三方合并),
+      而是把**幸存的那个调用**重定向:内核方法用 NeoForge 的**完全相同的签名**,所以改的只是 owner,栈不动。
+      拒绝能带回去(Forge 的 hook 返回 null 表示被取消 → `setSpawnCancelled(true)`);
+      **改写 spawn data 带不回去**,会打一行说明而不是悄悄丢掉。
+      Forge 的 hook 还要一个 NeoForge 签名里没有的 `ValueInput`,传 null;真要紧就抛,抛了被接住 ——
+      下限锁死在"不比不问更糟"。实测 repair 落地、m12 GREEN、`RepairDriftCensus` **46/46**。
+- [ ] **工单余下 2 条** —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
       `AddPackFindersEvent`←collective、`LivingEntityUseItemEvent$Finish`←nutritiousmilk、
       `MobSpawnEvent$FinalizeSpawn`←collective、`PlayerEvent$StartTracking`←collective、
       `BlockEvent$PortalSpawnEvent`←collective、`FurnaceFuelBurnTimeEvent`←balm(**NeoForge 的事件**)、
