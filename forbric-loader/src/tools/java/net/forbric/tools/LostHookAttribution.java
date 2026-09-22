@@ -56,8 +56,9 @@ import org.objectweb.asm.tree.TypeInsnNode;
  * TRADE, not a repair, and it is only worth making when the hook gained has someone waiting and the hook given
  * up does not.
  *
- * <p>Waiting is decided the way {@code fapi-usage.py} decides it: a mod's constant pool naming the event class.
- * A resource string or a dependency declaration is not use.
+ * <p>Potential consumers are identified by an event class in a mod's constant pool. This is not proof of a
+ * registered listener, and absence is not proof that reflection or an unmodelled helper never uses it.
+ * Raw losses are reported separately from runtime restoration, which this tool does not assess.
  *
  * <p>Usage: {@code LostHookAttribution <forge-patched.jar> <neo-patched.jar> <merged.jar> <forge-runtime.jar>
  * <neoforge-runtime.jar> <merge-conflicts.txt> <mods-dir>}
@@ -83,7 +84,7 @@ public final class LostHookAttribution {
 		Map<String, ClassNode> neo = load(args[1], "neo-patched");
 		Map<String, ClassNode> merged = load(args[2], "merged");
 
-		// hook name+desc -> the events it constructs, from both carriers.
+		// hook owner#name+desc -> the events it constructs, from both carriers.
 		Map<String, Set<String>> eventsOfHook = new HashMap<>();
 		for (String carrier : new String[] { args[3], args[4] }) {
 			for (String hookClass : HOOK_CLASSES) collectEvents(carrier, hookClass, eventsOfHook);
@@ -91,38 +92,40 @@ public final class LostHookAttribution {
 		Set<String> wanted = eventsNamedByMods(Path.of(args[6]));
 		System.out.println("[attribution] mods name " + wanted.size() + " ecosystem event class(es)");
 
-		int judged = 0;
-		int noHookFound = 0;
-		List<String> netPositive = new ArrayList<>();
-		List<String> tradeAway = new ArrayList<>();
-		for (String[] c : conflicts(Path.of(args[5]))) {
-			MethodNode f = method(forge.get(c[0]), c[1]);
-			MethodNode n = method(neo.get(c[0]), c[1]);
-			MethodNode m = method(merged.get(c[0]), c[1]);
-			if (f == null || n == null || m == null) continue;
+		int judged = 0, noHookFound = 0, unobserved = 0;
+		List<String> candidates = new ArrayList<>(), trades = new ArrayList<>();
+		List<Conflict> conflicts = conflicts(Path.of(args[5]));
+		for (Conflict c : conflicts) {
+			MethodNode f = method(forge.get(c.owner()), c.method());
+			MethodNode n = method(neo.get(c.owner()), c.method());
+			MethodNode m = method(merged.get(c.owner()), c.method());
+			if (f == null || n == null || m == null) { unobserved++; continue; }
 			judged++;
-			Set<String> lostForge = new TreeSet<>(hookCalls(f));
-			lostForge.removeAll(hookCalls(m));
-			Set<String> keptNeo = new TreeSet<>(hookCalls(n));
-			keptNeo.retainAll(hookCalls(m));
-			if (lostForge.isEmpty()) {
-				noHookFound++;
-				continue;
-			}
-			boolean gainWanted = anyWanted(lostForge, eventsOfHook, wanted);
-			boolean giveUpWanted = anyWanted(keptNeo, eventsOfHook, wanted);
-			if (gainWanted && !giveUpWanted) {
-				netPositive.add(c[0] + "#" + c[1] + "   gain " + lostForge + "   give up " + keptNeo);
-			} else if (gainWanted) {
-				tradeAway.add(c[0] + "#" + c[1] + "   gain " + lostForge + "   BUT give up " + keptNeo);
-			}
+			MethodNode losing = c.lostFamily().equals("forge") ? f : n;
+			MethodNode retained = c.lostFamily().equals("forge") ? n : f;
+			Set<String> lost = new TreeSet<>(hookCalls(losing));
+			lost.removeAll(hookCalls(m));
+			Set<String> kept = new TreeSet<>(hookCalls(retained));
+			kept.retainAll(hookCalls(m));
+			if (lost.isEmpty()) { noHookFound++; continue; }
+			boolean gainWanted = anyWanted(lost, eventsOfHook, wanted);
+			boolean giveUpWanted = anyWanted(kept, eventsOfHook, wanted);
+			String row = c.owner() + "#" + c.method() + " lost-family=" + c.lostFamily()
+					+ " RAW-LOST " + lost + " RETAINED " + kept;
+			System.out.println("[attribution] " + row);
+			if (gainWanted && !giveUpWanted) candidates.add(row);
+			else if (gainWanted) trades.add(row);
 		}
-		System.out.println("[attribution] judged " + judged + " conflict(s); " + noHookFound
-				+ " had no Forge hook call to attribute (the merge took something else)");
-		System.out.println("[attribution] NET POSITIVE (a waited hook gained, none given up): " + netPositive.size());
-		for (String s : netPositive) System.out.println("    + " + s);
-		System.out.println("[attribution] TRADE (a waited hook gained, but a waited one given up): " + tradeAway.size());
-		for (String s : tradeAway) System.out.println("    ~ " + s);
+		System.out.println("[attribution] conflicts=" + conflicts.size() + " judged=" + judged
+				+ " no-modelled-direct-hook=" + noHookFound + " unobserved=" + unobserved);
+		System.out.println("[attribution] scope: " + HOOK_CLASSES.length + " hook facades; direct calls and event"
+				+ " construction only; event type references are potential consumers, not proof of subscription");
+		System.out.println("[attribution] runtime restoration=NOT_ASSESSED; use the effective pipeline/bridge census"
+				+ " before treating RAW-LOST as a remaining defect");
+		System.out.println("[attribution] CANDIDATES (lost event referenced, no retained event reference observed): " + candidates.size());
+		for (String row : candidates) System.out.println("    + " + row);
+		System.out.println("[attribution] TRADES (both event types referenced): " + trades.size());
+		for (String row : trades) System.out.println("    ~ " + row);
 	}
 
 	private static boolean anyWanted(Set<String> hooks, Map<String, Set<String>> eventsOfHook, Set<String> wanted) {
@@ -134,20 +137,20 @@ public final class LostHookAttribution {
 		return false;
 	}
 
-	/** {@code name+desc} of every hook-class call in this body. */
-	private static Set<String> hookCalls(MethodNode m) {
+	/** {@code owner#name+desc} of every modelled hook call in this body. */
+	static Set<String> hookCalls(MethodNode m) {
 		Set<String> out = new LinkedHashSet<>();
 		if (m.instructions == null) return out;
 		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 			if (!(insn instanceof MethodInsnNode mi)) continue;
 			for (String hookClass : HOOK_CLASSES) {
-				if (mi.owner.equals(hookClass)) out.add(mi.name + mi.desc);
+				if (mi.owner.equals(hookClass)) out.add(mi.owner + "#" + mi.name + mi.desc);
 			}
 		}
 		return out;
 	}
 
-	/** hook {@code name+desc} -> the ecosystem classes its body constructs. */
+	/** hook {@code owner#name+desc} -> the ecosystem classes its body constructs. */
 	private static void collectEvents(String carrier, String hookClass, Map<String, Set<String>> into)
 			throws IOException {
 		try (ZipFile zf = new ZipFile(carrier)) {
@@ -162,7 +165,7 @@ public final class LostHookAttribution {
 				for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 					if (insn.getOpcode() == Opcodes.NEW && insn instanceof TypeInsnNode t
 							&& (t.desc.startsWith("net/minecraftforge/") || t.desc.startsWith("net/neoforged/"))) {
-						into.computeIfAbsent(m.name + m.desc, k -> new TreeSet<>()).add(t.desc);
+						into.computeIfAbsent(hookClass + "#" + m.name + m.desc, k -> new TreeSet<>()).add(t.desc);
 					}
 				}
 			}
@@ -172,13 +175,13 @@ public final class LostHookAttribution {
 	/** Ecosystem event classes named in any mod jar's constant pool, nested jars included. */
 	private static Set<String> eventsNamedByMods(Path modsDir) throws IOException {
 		Set<String> named = new TreeSet<>();
-		if (!Files.isDirectory(modsDir)) return named;
+		if (!Files.isDirectory(modsDir)) throw new IOException("mods directory not found: " + modsDir);
 		try (var jars = Files.list(modsDir)) {
 			for (Path jar : jars.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
 				try (ZipFile zf = new ZipFile(jar.toFile())) {
 					namesIn(zf, named);
 				} catch (IOException unreadable) {
-					// A jar that cannot be opened contributes nothing; the others still answer.
+					throw new IOException("cannot inventory mod jar: " + jar, unreadable);
 				}
 			}
 		}
@@ -202,9 +205,9 @@ public final class LostHookAttribution {
 						if (name.startsWith("net/minecraftforge/") || name.startsWith("net/neoforged/")) into.add(name);
 					}
 				} catch (RuntimeException unparsable) {
-					// One unreadable class does not invalidate the jar's other answers.
+					throw new IOException("cannot inventory mod class: " + e.getName(), unparsable);
 				}
-			} else if (e.getName().endsWith(".jar") && e.getName().startsWith("META-INF/jars/")) {
+			} else if (e.getName().endsWith(".jar") && (e.getName().startsWith("META-INF/jars/") || e.getName().startsWith("META-INF/jarjar/"))) {
 				try (InputStream in = zf.getInputStream(e)) {
 					nested.add(in.readAllBytes());
 				}
@@ -218,7 +221,7 @@ public final class LostHookAttribution {
 					namesIn(inner, into);
 				}
 			} catch (IOException unreadable) {
-				// as above
+				throw new IOException("cannot inventory nested mod jar", unreadable);
 			} finally {
 				Files.deleteIfExists(tmp);
 			}
@@ -233,14 +236,18 @@ public final class LostHookAttribution {
 		return null;
 	}
 
-	private static List<String[]> conflicts(Path report) throws IOException {
-		List<String[]> out = new ArrayList<>();
+	record Conflict(String owner, String method, String lostFamily) { }
+
+	static List<Conflict> conflicts(Path report) throws IOException {
+		List<Conflict> out = new ArrayList<>();
 		for (String line : Files.readAllLines(report, StandardCharsets.UTF_8)) {
-			if (!line.contains("(forge hook lost)")) continue;
-			String body = line.substring(0, line.indexOf(" (forge hook lost)")).trim();
+			String family = line.endsWith(" (forge hook lost)") ? "forge"
+					: line.endsWith(" (neo hook lost)") ? "neo" : null;
+			if (family == null) continue;
+			String body = line.substring(0, line.lastIndexOf(" (" )).trim();
 			int hash = body.indexOf('#');
 			if (hash < 0) continue;
-			out.add(new String[] { body.substring(0, hash), body.substring(hash + 1) });
+			out.add(new Conflict(body.substring(0, hash), body.substring(hash + 1), family));
 		}
 		return out;
 	}

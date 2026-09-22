@@ -76,3 +76,13 @@ Pending implementation and acceptance items remain open even when a smaller batc
   invocation are a separate, still-pending integration batch.
 - 133 tests in 11 suites passed with no failures or skips. XML and command log are archived under
   `forbric-kernel/build/verification/compatibility-core/` before other Gradle tests overwrite their outputs.
+
+### P0 symmetric raw-hook attribution
+
+- Hook identities now include owner, name and descriptor; both Forge-lost and Neo-lost report rows are
+  traversed. Missing methods are counted as unobserved; unreadable mod inputs fail instead of implying no use.
+- Three tests pass, including a full synthetic two-family report and the same-name/different-owner collision.
+- Reference run: all 1,000 historical conflict rows examined, 705 without a modelled direct hook, 9 candidate
+  trades with only a lost event type observed and 14 with both event types observed. These are raw-input
+  observations across six facades, not remaining defects after runtime repair or proof of live subscriptions.
+- Log: `forbric-loader/build/verification/hook-attribution/reference.log`.
