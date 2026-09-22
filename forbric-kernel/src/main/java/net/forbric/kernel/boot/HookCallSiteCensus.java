@@ -128,6 +128,10 @@ public final class HookCallSiteCensus {
 	public static Census of(Path carrierJar, String hookClass, List<Path> baseJars) throws IOException {
 		ClassNode hooks = read(carrierJar, hookClass + ".class");
 		if (hooks == null) throw new IOException(hookClass + " is not in " + carrierJar);
+		// Only the hook's OWN ecosystem namespace counts as an event it posts. Without this, every ArrayList,
+		// Vec3 and StringBuilder a hook body allocates comes back as an "event nothing posts" — 171 of them on
+		// the real base, which buries the fourteen that are real and makes the count worse than no count.
+		String eventNamespace = namespaceOf(hookClass);
 
 		List<String> declared = new java.util.ArrayList<>();
 		Map<String, Set<String>> posters = new TreeMap<>();
@@ -140,7 +144,8 @@ public final class HookCallSiteCensus {
 			declared.add(key);
 			if (m.instructions == null) continue;
 			for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (insn.getOpcode() == Opcodes.NEW && insn instanceof TypeInsnNode t) {
+				if (insn.getOpcode() == Opcodes.NEW && insn instanceof TypeInsnNode t
+						&& t.desc.startsWith(eventNamespace)) {
 					posters.computeIfAbsent(t.desc, k -> new TreeSet<>()).add(key);
 				}
 			}
@@ -184,6 +189,22 @@ public final class HookCallSiteCensus {
 		Map<String, Set<String>> frozen = new LinkedHashMap<>();
 		posters.forEach((k, v) -> frozen.put(k, Set.copyOf(v)));
 		return new Census(hookClass, declared, live, dead, frozen, deadEvents);
+	}
+
+	/**
+	 * The hook class's ecosystem root: at most the first two segments of its package, with a trailing slash.
+	 *
+	 * <p>{@code net/minecraftforge/event/ForgeEventFactory} → {@code net/minecraftforge/};
+	 * {@code net/neoforged/neoforge/event/EventHooks} → {@code net/neoforged/}. A package shallower than two
+	 * segments yields itself, so a one-package fixture still matches its own types.
+	 */
+	static String namespaceOf(String internalName) {
+		int lastSlash = internalName.lastIndexOf('/');
+		if (lastSlash < 0) return "";
+		String pkg = internalName.substring(0, lastSlash);
+		int first = pkg.indexOf('/');
+		int second = first < 0 ? -1 : pkg.indexOf('/', first + 1);
+		return (second < 0 ? pkg : pkg.substring(0, second)) + "/";
 	}
 
 	private static ClassNode read(Path jar, String entry) throws IOException {

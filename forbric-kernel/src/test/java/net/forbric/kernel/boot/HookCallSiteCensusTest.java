@@ -100,6 +100,28 @@ class HookCallSiteCensusTest {
 		assertFalse(census.deadEvents().contains("forge/SharedEvent"));
 	}
 
+	@Test void onlyTheHooksOwnEcosystemNamespaceCountsAsAnEventItPosts() throws Exception {
+		// Without this the census calls every ArrayList a hook allocates an "event nothing posts": on the real
+		// base that was 171 of them, burying the fourteen that were real.
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, HOOKS, null, "java/lang/Object", null);
+		posts(cw, "onThing", "forge/RealEvent");
+		posts(cw, "onOther", "java/util/ArrayList");
+		cw.visitEnd();
+		Path carrier = carrier(Map.of(HOOKS + ".class", cw.toByteArray()));
+		var census = HookCallSiteCensus.of(carrier, HOOKS, List.of(base(callerCalling("game/Level", List.of()))));
+		assertEquals(java.util.Set.of("forge/RealEvent"), census.postersOf().keySet());
+		assertEquals(java.util.Set.of("forge/RealEvent"), census.deadEvents());
+	}
+
+	@Test void theEcosystemRootIsTheFirstTwoPackageSegments() {
+		assertEquals("net/minecraftforge/",
+				HookCallSiteCensus.namespaceOf("net/minecraftforge/event/ForgeEventFactory"));
+		assertEquals("net/neoforged/",
+				HookCallSiteCensus.namespaceOf("net/neoforged/neoforge/event/EventHooks"));
+		assertEquals("forge/", HookCallSiteCensus.namespaceOf("forge/Hooks"));
+	}
+
 	@Test void theSummaryLeadsWithTheDenominator() throws Exception {
 		Path carrier = carrier(hooks(hook("onCalled", "()V"), hook("onNeverCalled", "()V")));
 		Path base = base(callerCalling("game/Level", List.of(new Call("onCalled", "()V"))));

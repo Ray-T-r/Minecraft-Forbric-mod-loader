@@ -13,7 +13,10 @@
       自测 `forbric-loader/run/test-link-check.sh`:16/16 绿,含负控制。
 - [x] **A4b** `fapi-usage.py` 的符号集提成参数(`--preset` / `--symbols` / `--list-presets`),
       definer 排除也变成数据(`!` 行)而不是从 surface 前缀猜。6 个测试全绿,变异检查确认断言有牙。
-- [ ] **A2** `LostHookCensus` —— 把 682 条运行期 `forge hook lost` 分成 DATAGEN / RUNTIME_DEAD / RUNTIME_LIVE
+- [x] **A2** `DeadHookWorklist` + `run/compat/hook-worklist.sh` —— **改了计划里的做法**:原案是解析
+      `merge-conflicts.txt` 再做方法体 diff(带三条已知风险);A3 落地后发现更直接——死钩子的清单本来就是
+      普查的输出,不需要反推。真实 97 jar 整合包实测:**10 个死事件有 mod 在等且没有桥**(`collective`
+      一个库就占 8 个,`nutritiousmilk`/`balm`/`journeymap` 各一)。5 个测试钉 join 规则。
 - [x] **A3** `HookCallSiteCensus` —— 从字节码重新推导"哪些钩子还有调用点"。**复现了手工 javap 的数字**:
       `ForgeEventFactoryClient` 46 declared / 8 live(javadoc 写的就是这两个数),`ForgeEventFactory` 160/20,
       NeoForge `EventHooks` 114/106。6 个合成测试钉规则(三次变异全部被抓),3 个 staged 测试钉现实。

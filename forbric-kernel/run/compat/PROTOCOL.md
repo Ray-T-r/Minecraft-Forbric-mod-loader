@@ -40,7 +40,10 @@ guest jars. `fapi-usage.py` scans class references, including `META-INF/jars`, t
 that candidates actually call a named set of symbols — by default the Fabric loot/model
 surfaces, and with `--preset` / `--symbols` any other set, which is how "who is actually
 waiting on this Forge event" gets answered from bytecode instead of from `javap` notes in
-a javadoc. `--list-presets` prints the named sets. Run each with
+a javadoc. `--list-presets` prints the named sets. `hook-worklist.sh` goes the other way round: it
+censuses which of a carrier's event hooks the merged base still calls, then joins the dead
+ones to the jars in a mods directory that name them, so the list is ordered by how many
+mods notice rather than by whatever order the byte-merge produced. Run each with
 `--help` for its argument list. API usage must be proved from the downloaded candidate
 jar before treating the selection as final; metadata resolution alone cannot prove it.
 
