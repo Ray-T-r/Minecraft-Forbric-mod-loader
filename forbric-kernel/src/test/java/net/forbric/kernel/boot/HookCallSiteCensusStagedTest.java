@@ -49,8 +49,19 @@ class HookCallSiteCensusStagedTest {
 	private static final Set<String> KNOWN_DOUBLE_POSTED =
 			new TreeSet<>(List.of("net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent"));
 
+	/**
+	 * Resolved here rather than through a helper, and with these two literals in this file on purpose:
+	 * {@code StagedArtifactCoverageTest} finds the tests that read the staged artifacts by SCANNING the test
+	 * sources for {@code forbric-loader} and {@code FORBRIC_OLD}, precisely so nobody has to maintain a list.
+	 * A shared helper would have hidden this test from that sentinel — a bytecode test the coverage check cannot
+	 * see is one that can stop running without anyone noticing, which is the failure this whole file is about.
+	 *
+	 * <p>{@code FORBRIC_OLD} first, because that is what lets a second worktree run against the real tree.
+	 */
 	private static Path root() {
-		return StagedRoots.stagedRoot();
+		String override = System.getenv("FORBRIC_OLD");
+		if (override != null && !override.isBlank()) return Path.of(override, "run").normalize();
+		return Path.of(System.getProperty("user.dir"), "..", "forbric-loader", "run").normalize();
 	}
 
 	private static Path base() {

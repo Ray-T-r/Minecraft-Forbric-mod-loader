@@ -26,7 +26,11 @@
       "合并后的游戏从不发它",而这三个确实会发,把玩家的 mod 标成 DEGRADED 是假指控。三行已删。
 - [ ] **A4(后半)** 让审计看见 `addListener` —— 走 `KernelModLoader.publishedForgeMods()` 的 per-mod BusGroup,
       不用解析方法体
-- [ ] **A5** 元普查:gate-m0 skip 上限、`build.gradle` 的 `inputs.files`、`StagedArtifactCoverageTest` 覆盖新普查
+- [x] **A5** 元普查 —— 抓到一条真的:`build.gradle` 的三条 staged `inputs.files` **写死了相对路径**,
+      而认 `FORBRIC_OLD` 的 `stagedRoot` 就在上面三十行。于是在第二个 worktree(`FORBRIC_OLD` 存在的唯一
+      理由)上,声明的输入是个不存在的文件 —— **换掉合并基底,`test` 仍然 UP-TO-DATE 并报绿**。
+      已实测复现并验证修复:换 jar 前后,修复前 UP-TO-DATE/绿,修复后重跑/红。
+      另:新的 staged 测试原本用了共享 helper,会对 `StagedArtifactCoverageTest` 的源码扫描隐身,已改回内联。
 
 ## 已定位未修(有断言钉住,新增即红)
 
