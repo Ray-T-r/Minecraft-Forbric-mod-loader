@@ -27,22 +27,39 @@ final class CandidateContractScanner {
 	}
 	private record Metadata(List<UnifiedDependency> dependencies, Map<String, String> provides,
 			List<String> mixins, List<Entry> entries) { }
-	private static final Set<String> PLATFORM = Set.of("java", "minecraft", "forge", "neoforge", "fabricloader", "fml", "mixinextras");
+	private static final Set<String> PLATFORM = Set.of("java", "minecraft", "forge", "neoforge", "fabricloader", "fabric", "fml", "mixinextras");
 
 	private CandidateContractScanner() { }
 
 	static List<JointCandidateSelector.Rule> scan(List<DuplicateModArbiter.Claim> claims, EnvType side) {
+		Map<Path, Set<String>> owners = new LinkedHashMap<>();
+		for (var claim : claims) owners.put(JointCandidateSelector.path(claim), Set.copyOf(claim.modIds()));
+		return scan(claims, side, false, owners);
+	}
+
+	/** The complete graph supplies each physical jar separately; a parent must not claim a losing child's classes. */
+	static List<JointCandidateSelector.Rule> scanPhysical(List<DuplicateModArbiter.Claim> claims, EnvType side,
+			Map<Path, Set<String>> symbolOwners) {
+		return scan(claims, side, true, symbolOwners);
+	}
+
+	private static List<JointCandidateSelector.Rule> scan(List<DuplicateModArbiter.Claim> claims, EnvType side,
+			boolean physicalOnly, Map<Path, Set<String>> symbolOwners) {
 		Map<Path, Inventory> inventories = new LinkedHashMap<>();
 		Map<Path, Metadata> metadata = new LinkedHashMap<>();
 		List<JointCandidateSelector.Rule> rules = new ArrayList<>();
 		for (var claim : claims) {
 			Path path = JointCandidateSelector.path(claim);
 			try {
-				Inventory inventory = new Inventory(path);
+				Inventory inventory = new Inventory(path, physicalOnly);
 				inventories.put(path, inventory);
 				metadata.put(path, readMetadata(claim, inventory, side));
 			} catch (Exception unreadable) {
-				rules.add(unknown(path, "metadata", "candidate metadata could not be read: " + unreadable.getClass().getSimpleName()));
+				Map<String, String> knownProvides = new LinkedHashMap<>();
+				for (String id : claim.modIds()) knownProvides.put(JointCandidateSelector.key(id), claim.versionOf(id));
+				metadata.put(path, new Metadata(List.of(), knownProvides, List.of(), List.of()));
+				rules.add(new JointCandidateSelector.Rule("metadata", path, Set.of(), Set.of(path), true,
+						"candidate contracts could not be fully read: " + unreadable.getClass().getSimpleName()));
 			}
 		}
 		// Candidate bytecode is pre-Mixin. Even an optional/plugin-controlled declaration can add the very
@@ -67,12 +84,14 @@ final class CandidateContractScanner {
 				}
 				// Extraction has not run yet. A dependency with no candidate may live inside a parent jar; the
 				// complete post-extraction DependencyAudit owns missing installations, not this chooser.
-				if (!hasCandidate) continue;
+				if (!hasCandidate && !physicalOnly) continue;
 				rules.add(new JointCandidateSelector.Rule("dependency:" + dependency.getModId(), source, providers, unknown, true,
 						"requires " + dependency.getModId() + " " + dependency.getVersionConstraint()));
 			}
-			for (String config : mod.mixins()) scanMixins(source, config, inventory, mandatory, claims, inventories, side, rules);
-			for (Entry entry : mod.entries()) scanDirectCalls(source, entry, inventory, mandatory, claims, inventories, transformedTargets, rules);
+			List<UnifiedDependency> symbolDependencies = new ArrayList<>(mandatory);
+			if (physicalOnly) for (String own : symbolOwners.getOrDefault(source, Set.of())) symbolDependencies.add(new UnifiedDependency(own, "*", true));
+			for (String config : mod.mixins()) scanMixins(source, config, inventory, symbolDependencies, symbolOwners, inventories, side, rules);
+			for (Entry entry : mod.entries()) scanDirectCalls(source, entry, inventory, symbolDependencies, symbolOwners, inventories, transformedTargets, rules);
 		}
 		return List.copyOf(rules);
 	}
@@ -81,6 +100,7 @@ final class CandidateContractScanner {
 		List<UnifiedDependency> dependencies = new ArrayList<>(); Map<String, String> provides = new LinkedHashMap<>();
 		for (String id : claim.modIds()) provides.put(JointCandidateSelector.key(id), claim.versionOf(id));
 		List<String> mixins = new ArrayList<>(); List<Entry> entries = new ArrayList<>();
+		if (claim.ecosystem() == null) return new Metadata(List.of(), Map.of(), List.of(), List.of());
 		if (claim.ecosystem() == Ecosystem.FABRIC) {
 			byte[] manifest = jar.read("fabric.mod.json");
 			if (manifest == null) throw new IOException("no Fabric metadata");
@@ -109,7 +129,7 @@ final class CandidateContractScanner {
 	}
 
 	private static void scanMixins(Path source, String name, Inventory jar, List<UnifiedDependency> dependencies,
-			List<DuplicateModArbiter.Claim> claims, Map<Path, Inventory> inventories, EnvType side, List<JointCandidateSelector.Rule> rules) {
+			Map<Path, Set<String>> symbolOwners, Map<Path, Inventory> inventories, EnvType side, List<JointCandidateSelector.Rule> rules) {
 		try {
 			byte[] bytes = jar.read(name); if (bytes == null) { rules.add(unknown(source, "config:" + name, "mixin config not readable")); return; }
 			var config = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser().parse(new StringReader(new String(bytes, java.nio.charset.StandardCharsets.UTF_8)));
@@ -148,7 +168,7 @@ final class CandidateContractScanner {
 				}
 				if (disabledOnSide) continue;
 				for (String target : targets) {
-					if (!belongsToDependency(target, dependencies, claims, inventories)) continue;
+					if (!belongsToDependency(target, dependencies, symbolOwners, inventories)) continue;
 					addSymbolRule(source, "mixin:" + name + ":" + mixin + ":" + target, target, null, null, null,
 							required && unconditional && !conditionalAnnotation, "mixin " + mixin + " needs target " + target,
 							inventories, Set.of(), rules);
@@ -158,7 +178,7 @@ final class CandidateContractScanner {
 	}
 
 	private static void scanDirectCalls(Path source, Entry entry, Inventory jar, List<UnifiedDependency> dependencies,
-			List<DuplicateModArbiter.Claim> claims, Map<Path, Inventory> inventories, Set<String> transformedTargets,
+			Map<Path, Set<String>> symbolOwners, Map<Path, Inventory> inventories, Set<String> transformedTargets,
 			List<JointCandidateSelector.Rule> rules) {
 		ClassNode node = jar.node(entry.owner()); if (node == null) return;
 		List<MethodNode> methods = node.methods.stream().filter(m -> m.name.equals(entry.method()) && (m.access & Opcodes.ACC_PUBLIC) != 0).toList();
@@ -172,7 +192,7 @@ final class CandidateContractScanner {
 			String owner = null, name = null, descriptor = null; MemberUse use = null;
 			if (instruction instanceof MethodInsnNode call) { owner = call.owner; name = call.name; descriptor = call.desc; use = new MemberUse(false, call.getOpcode(), call.itf, entry.owner()); }
 			if (instruction instanceof FieldInsnNode call) { owner = call.owner; name = call.name; descriptor = call.desc; use = new MemberUse(true, call.getOpcode(), false, entry.owner()); }
-			if (owner != null && !jar.has(owner) && belongsToDependency(owner, dependencies, claims, inventories)) {
+			if (owner != null && !jar.has(owner) && belongsToDependency(owner, dependencies, symbolOwners, inventories)) {
 				addSymbolRule(source, "entry:" + entry.owner() + ":" + owner + "#" + name + descriptor + ":" + instruction.getOpcode(), owner, name, descriptor,
 						use, straight, "entrypoint " + entry.owner() + "." + entry.method() + " uses "
 								+ org.objectweb.asm.util.Printer.OPCODES[instruction.getOpcode()] + " " + owner + "#" + name + descriptor,
@@ -182,11 +202,11 @@ final class CandidateContractScanner {
 	}
 
 	private static boolean belongsToDependency(String owner, List<UnifiedDependency> dependencies,
-			List<DuplicateModArbiter.Claim> claims, Map<Path, Inventory> inventories) {
-		for (var claim : claims) {
-			Inventory inventory = inventories.get(JointCandidateSelector.path(claim));
+			Map<Path, Set<String>> symbolOwners, Map<Path, Inventory> inventories) {
+		for (var claim : symbolOwners.entrySet()) {
+			Inventory inventory = inventories.get(claim.getKey());
 			if (inventory == null || !inventory.has(owner)) continue;
-			for (String id : claim.modIds()) if (dependencies.stream().anyMatch(d -> JointCandidateSelector.key(d.getModId()).equals(JointCandidateSelector.key(id)))) return true;
+			for (String id : claim.getValue()) if (dependencies.stream().anyMatch(d -> JointCandidateSelector.key(d.getModId()).equals(JointCandidateSelector.key(id)))) return true;
 		}
 		return false;
 	}
@@ -259,12 +279,12 @@ final class CandidateContractScanner {
 		private final Path jar;
 		private final Map<String, List<String>> resources = new LinkedHashMap<>();
 		private final Map<String, ClassNode> nodes = new HashMap<>();
-		Inventory(Path jar) throws IOException {
+		Inventory(Path jar, boolean physicalOnly) throws IOException {
 			this.jar = jar;
 			try (JarFile zip = new JarFile(jar.toFile())) {
 				for (ZipEntry entry : zip.stream().toList()) {
 					resources.put(entry.getName(), List.of(entry.getName()));
-					if (entry.getName().endsWith(".jar")) try (InputStream in = zip.getInputStream(entry)) { indexNested(in, List.of(entry.getName()), 1); }
+					if (!physicalOnly && entry.getName().endsWith(".jar")) try (InputStream in = zip.getInputStream(entry)) { indexNested(in, List.of(entry.getName()), 1); }
 				}
 			}
 		}

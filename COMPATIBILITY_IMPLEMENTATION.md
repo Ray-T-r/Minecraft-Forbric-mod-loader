@@ -197,3 +197,16 @@ Pending implementation and acceptance items remain open even when a smaller batc
 - Twelve class-loading/evidence tests and six report tests pass with no skips. Evidence is archived under
   `forbric-kernel/build/verification/defined-class-evidence/` and
   `forbric-loader/build/verification/effective-hook-evidence/`. Full-game coverage export remains pending.
+
+### P2 whole-instance nested candidate selection
+
+- Discovery now inventories roots and both Fabric/JarJar nested declarations before choosing any winner.
+  SAT constraints bind children to selected parents, preserve same-ID wrapper payloads, and satisfy JarJar
+  coordinate/version ranges alongside dependency/member/Mixin contracts. Symbol supply is per physical jar.
+- Content-addressed extraction prevents same-basename or same-size collisions. Both ecosystem discoveries
+  consume the same selection; final SHA-256/materialization checks never silently select a second winner.
+  Unknown metadata and bounded searches remain explicitly unproved.
+- 65 tests passed with zero failures/errors/skips, including nine new graph/discovery cases, actual Jade
+  candidates and existing nested behavior. A test caught SAT4J exposing vector capacity as zero literals;
+  assumptions now copy only logical entries. Evidence: `build/verification/compat-arbitration/nested-junit/`.
+  Real nested-pack and broad client gates are still pending.

@@ -199,8 +199,8 @@ public final class KernelBoot {
 		// are merged. MultiLoaderArbiter cannot see that (it is keyed by jar path), and left alone both jars enter
 		// `owned` and shadow each other class-for-class, contribute each other's mixin configs, and register the
 		// same content twice. Decide once here; both discoveries below skip the losers.
-		// Phase one: the jars the user actually put in mods/. Phase two (arbitrateNested, below) adds what those
-		// jars nest -- it cannot run here, because the nested jars do not exist until these have been walked.
+		// Pre-scan every declared nested candidate before either discovery discards a root. The later
+		// arbitrateNested call verifies physical files against this same decision; it does not choose again.
 		DuplicateModArbiter.Decision topLevelDupes =
 				DuplicateModArbiter.arbitrate(gameDir.resolve("mods"), side.envType);
 
@@ -221,16 +221,15 @@ public final class KernelBoot {
 					+ "Fabric mod asking whether one of them is installed will be told no: %s", String.valueOf(t));
 		}
 		List<Path> modJars = new ArrayList<>(forgeFamily.jars());
-		List<Path> nested = extractForgeFamilyJarJar(modJars, gameDir);
+		// The pre-scan has already selected every root and nested candidate. Consume those exact files;
+		// the legacy extractor is only for the explicit arbitration-off mode.
+		NestedCandidatePlan candidatePlan = DuplicateModArbiter.currentPlan();
+		List<Path> nested = candidatePlan == null ? extractForgeFamilyJarJar(modJars, gameDir)
+				: candidatePlan.nestedFiles();
 
-		// The Fabric walk runs HERE rather than after this block, and registers nothing yet. Both families extract
-		// nested jars out of their mods, and neither walk can see the other's -- so "two jars claim this id" is a
-		// question with only half its evidence until both have run. Each loader deduplicates only within its own
-		// family (KernelFabricLoader.register keeps the first Fabric id, KernelModLoader the first @Mod), so a
-		// library nested by a Fabric mod AND by a MinecraftForge mod used to load and INITIALISE twice. Xaero's
-		// xaerolib is the worked example: its second construction threw on a duplicate config channel, but only
-		// after XaeroLib.<init> had overwritten INSTANCE with the half-built object, and a live mixin then called
-		// into it and took the client down on a render frame.
+		// Fabric discovery consumes the same preselected physical files and registers nothing yet. The union
+		// below is checked against the plan before either loader builds containers or adds losing jars to the
+		// classpath. When arbitration is explicitly disabled, both original discovery paths remain available.
 		FabricModDiscovery fabricScan = KernelFabricEcosystem.scan(side.envType, gameDir, topLevelDupes);
 		List<Path> allNested = new ArrayList<>(nested);
 		for (Path jar : fabricScan.getClasspathJars()) {

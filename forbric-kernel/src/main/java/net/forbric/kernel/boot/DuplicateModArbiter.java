@@ -122,6 +122,8 @@ public final class DuplicateModArbiter {
 
 	private static volatile Decision cached;
 	private static volatile Path cachedDir;
+	private static volatile EnvType cachedSide;
+	private static volatile NestedCandidatePlan wholeInstancePlan;
 
 	/**
 	 * What the top-level pass claimed, kept so the nested pass can arbitrate over the UNION rather than over the
@@ -149,6 +151,8 @@ public final class DuplicateModArbiter {
 	public static synchronized void reset() {
 		cached = null;
 		cachedDir = null;
+		cachedSide = null;
+		wholeInstancePlan = null;
 		topLevelClaims = List.of();
 		topLevelAliases = List.of();
 		fileOverrides = Map.of();
@@ -157,11 +161,13 @@ public final class DuplicateModArbiter {
 	/** Scans {@code modsDir} once and arbitrates. Repeat calls for the same directory return the same decision. */
 	public static synchronized Decision arbitrate(Path modsDir, EnvType envType) {
 		if ("off".equalsIgnoreCase(System.getProperty(SWITCH, "on"))) {
+			wholeInstancePlan = null;
+			cached = null; cachedDir = null; cachedSide = null;
 			ForbricLog.warn("[Forbric/DupeId] cross-jar arbitration DISABLED (-D%s=off) — two jars sharing a mod id "
 					+ "will BOTH load, shadowing each other's classes and applying each other's mixins", SWITCH);
 			return Decision.none();
 		}
-		if (cached != null && modsDir != null && modsDir.equals(cachedDir)) return cached;
+		if (cached != null && modsDir != null && modsDir.equals(cachedDir) && envType == cachedSide) return cached;
 
 		Path rundir = modsDir == null ? null : modsDir.getParent();
 		loadOverrideFile(rundir);
@@ -169,14 +175,43 @@ public final class DuplicateModArbiter {
 		List<Claim> claims = scan(modsDir, envType, universalAliases);
 		topLevelClaims = List.copyOf(claims);
 		topLevelAliases = List.copyOf(universalAliases);
-		Decision decision = arbitrateJoint(claims, universalAliases, envType);
-		for (String line : divergenceReport(claims, decision)) ForbricLog.info("%s", line);
+		Decision decision;
+		if (claims.isEmpty()) {
+			wholeInstancePlan = null;
+			decision = new Decision(Set.of(), Map.of(), List.copyOf(universalAliases));
+		} else {
+			NestedCandidateInventory inventory = NestedCandidateInventory.scan(claims,
+					rundir.resolve(".forbric-kernel").resolve("candidates"), envType);
+			List<Claim> all = inventory.claims();
+			Map<String, Ecosystem> overrides = new LinkedHashMap<>();
+			for (Claim claim : all) for (String id : claim.modIds()) { Ecosystem forced = overrideFor(id); if (forced != null) overrides.put(id, forced); }
+			List<JointCandidateSelector.Rule> contracts = CandidateContractScanner.scanPhysical(all, envType, inventory.symbolOwners());
+			var result = ReachableCandidateSelector.solve(inventory, contracts, preference(), nestedPreference(), overrides,
+					Math.max(1, Math.min(1_000_000, Integer.getInteger("forbric.arbitrationMaxNodes", 100_000))));
+			wholeInstancePlan = new NestedCandidatePlan(inventory, result);
+			reportSelection(all, result, overrides);
+			List<Alias> aliases = new ArrayList<>(universalAliases); aliases.addAll(inventory.universalAliases());
+			decision = decisionFromSelection(all, aliases, "whole-instance", result);
+			Set<Path> suppressed = new LinkedHashSet<>(decision.suppressedJars());
+			for (var node : inventory.nodes().values()) if (!result.selected().contains(node.path())) suppressed.add(node.path());
+			decision = new Decision(Set.copyOf(suppressed), decision.ownerByModId(), decision.aliases());
+			// Each physical candidate owns only its own classes. Do not count losing nested classes as a root's.
+			for (String line : divergenceReport(all, decision)) ForbricLog.info("%s", line);
+		}
 		writeOverrideTemplate(rundir, decision);
 		MergeReport.write(rundir, modsDir, decision);
 		cached = decision;
 		cachedDir = modsDir;
+		cachedSide = envType;
 		return decision;
 	}
+
+	/** For discovery only: another mods directory or physical side must never borrow this plan. */
+	public static NestedCandidatePlan planned(Path modsDir, EnvType side) {
+		return modsDir != null && modsDir.equals(cachedDir) && side == cachedSide ? wholeInstancePlan : null;
+	}
+
+	public static NestedCandidatePlan currentPlan() { return wholeInstancePlan; }
 
 	/**
 	 * The SECOND pass: the same arbitration, over the nested jars both families extract out of their mods.
@@ -319,6 +354,13 @@ public final class DuplicateModArbiter {
 	 */
 	private static Set<String> classEntries(Path jar) {
 		Set<String> names = new LinkedHashSet<>();
+		if (wholeInstancePlan != null && wholeInstancePlan.inventory().nodes().containsKey(jar.toAbsolutePath().normalize())) {
+			try (var zip = new java.util.zip.ZipFile(jar.toFile())) {
+				zip.stream().map(java.util.zip.ZipEntry::getName).filter(name -> name.endsWith(".class"))
+						.forEach(name -> names.add(name.substring(0, name.length() - 6).replace('/', '.')));
+				return names;
+			} catch (IOException unreadable) { return null; }
+		}
 		if (!collectClasses(jar, names)) return null;
 		return names;
 	}
@@ -353,6 +395,10 @@ public final class DuplicateModArbiter {
 	public static synchronized Decision arbitrateNested(EnvType envType, List<Path> nestedJars) {
 		Decision phase1 = current();
 		if ("off".equalsIgnoreCase(System.getProperty(SWITCH, "on"))) return phase1;
+		if (wholeInstancePlan != null && envType == cachedSide) {
+			wholeInstancePlan.verify(nestedJars == null ? List.of() : nestedJars);
+			return phase1;
+		}
 		if (nestedJars == null || nestedJars.isEmpty()) return phase1;
 
 		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
@@ -527,6 +573,14 @@ public final class DuplicateModArbiter {
 		int limit = Math.max(1, Math.min(1_000_000, Integer.getInteger("forbric.arbitrationMaxNodes", 100_000)));
 		JointCandidateSelector.Result result = JointCandidateSelector.solve(claims, rules, preference(), overrides, limit);
 		reportSelection(claims, result, overrides);
+		return decisionFromSelection(claims, universalAliases, pass, result);
+	}
+
+	private static Decision decisionFromSelection(List<Claim> claims, List<Alias> universalAliases, String pass,
+			JointCandidateSelector.Result result) {
+		Map<String, List<Claim>> byId = new java.util.TreeMap<>();
+		for (Claim claim : claims) for (String id : claim.modIds()) byId.computeIfAbsent(JointCandidateSelector.key(id), ignored -> new ArrayList<>()).add(claim);
+		long contested = byId.values().stream().filter(list -> list.size() > 1).count();
 		Set<Path> suppressed = new LinkedHashSet<>(); Map<String, Path> owners = new LinkedHashMap<>();
 		for (Claim claim : claims) if (!result.selected().contains(JointCandidateSelector.path(claim))) suppressed.add(claim.jar().toAbsolutePath());
 		List<Alias> aliases = new ArrayList<>(universalAliases);
@@ -868,13 +922,13 @@ public final class DuplicateModArbiter {
 	 * a JarJar/JiJ child is extracted to {@code .forbric-kernel/}, and the walk that produced this decision never
 	 * goes there.
 	 */
-	private static Claim claimOf(ForbricModDiscoverer discoverer, Path jar, EnvType envType, List<Alias> aliasesOut) {
+	static Claim claimOf(ForbricModDiscoverer discoverer, Path jar, EnvType envType, List<Alias> aliasesOut) {
 		Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
 		if (owner == null) return null;
 		Map<String, String> versions = new LinkedHashMap<>();
 		List<String> ids = owner == Ecosystem.FABRIC
 				? fabricIds(jar, envType, versions)
-				: forgeFamilyIds(discoverer, jar, versions);
+				: forgeFamilyIds(discoverer, jar, versions, owner);
 		collectUniversalAliases(discoverer, jar, owner, envType, aliasesOut);
 		return ids.isEmpty() ? null : new Claim(jar, owner, ids, Map.copyOf(versions));
 	}
@@ -897,7 +951,7 @@ public final class DuplicateModArbiter {
 			Map<String, String> versions = new LinkedHashMap<>();
 			List<String> ids = lost == Ecosystem.FABRIC
 					? fabricIds(jar, envType, versions)
-					: forgeFamilyIds(discoverer, jar, versions);
+					: forgeFamilyIds(discoverer, jar, versions, lost);
 			for (String id : ids) {
 				out.add(new Alias(id, lost, versions.get(id)));
 			}
@@ -925,11 +979,11 @@ public final class DuplicateModArbiter {
 	}
 
 	private static List<String> forgeFamilyIds(ForbricModDiscoverer discoverer, Path jar,
-			Map<String, String> versions) {
+			Map<String, String> versions, Ecosystem family) {
 		List<String> ids = new ArrayList<>();
 		try {
 			for (DiscoveredMod mod : discoverer.discoverJar(jar)) {
-				if (!mod.getEcosystem().isForgeFamily()) continue;
+				if (mod.getEcosystem() != family) continue;
 				if (mod.getId() == null || ids.contains(mod.getId())) continue;
 				ids.add(mod.getId());
 				if (mod.getVersion() != null) versions.put(mod.getId(), mod.getVersion());

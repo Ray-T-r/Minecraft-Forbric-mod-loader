@@ -79,6 +79,11 @@ public final class FabricModDiscovery {
 
 	/** Scans {@code modsDir} for jars carrying a {@code fabric.mod.json}. Non-Fabric jars are ignored. */
 	public void discover(Path modsDir) {
+		var plan = net.forbric.kernel.boot.DuplicateModArbiter.planned(modsDir, envType);
+		if (plan != null) {
+			discoverPlanned(plan);
+			return;
+		}
 		if (!Files.isDirectory(modsDir)) return;
 
 		List<Path> jars = new ArrayList<>();
@@ -100,6 +105,41 @@ public final class FabricModDiscovery {
 				continue;
 			}
 			discoverJar(jar, null);
+		}
+	}
+
+	/** Consumes the already selected physical files. No size cache, extraction or second version choice occurs. */
+	private void discoverPlanned(net.forbric.kernel.boot.NestedCandidatePlan plan) {
+		java.util.Map<Path, KernelModContainer> byPath = new java.util.LinkedHashMap<>();
+		java.util.Set<Path> visited = new java.util.LinkedHashSet<>();
+		List<net.forbric.kernel.boot.NestedCandidateInventory.Node> pending = new ArrayList<>(
+				plan.inventory().nodes().values().stream().filter(n -> plan.selected().contains(n.path())).toList());
+		while (!pending.isEmpty()) {
+			boolean progress = false;
+			for (var iterator = pending.iterator(); iterator.hasNext();) {
+				var node = iterator.next();
+				Path parentPath = plan.inventory().edges().stream().filter(e -> e.child().equals(node.path()) && visited.contains(e.parent()))
+						.map(net.forbric.kernel.boot.NestedCandidateInventory.Edge::parent).findFirst().orElse(null);
+				if (!node.root() && parentPath == null) continue;
+				try (JarFile jar = new JarFile(node.path().toFile())) {
+					ZipEntry manifest = jar.getEntry(MANIFEST);
+					if (manifest != null) try (InputStream in = jar.getInputStream(manifest)) {
+						KernelModMetadata metadata = FabricModMetadataParser.read(in);
+						if (metadata.getEnvironment().matches(envType)) {
+							KernelModContainer container = new KernelModContainer(metadata, node.path(), byPath.get(parentPath));
+							containers.add(container); classpathJars.add(node.path()); byPath.put(node.path(), container);
+						}
+					}
+				} catch (Exception failed) {
+					ForbricLog.warn("[Forbric/Fabric] could not read selected candidate %s: %s", node.path(), String.valueOf(failed));
+				}
+				visited.add(node.path()); iterator.remove(); progress = true;
+			}
+			if (!progress) {
+				ForbricLog.error("[Forbric/Fabric] selected nested candidates have no selected parent path: %s",
+						pending.stream().map(n -> n.path().toString()).toList());
+				break;
+			}
 		}
 	}
 
