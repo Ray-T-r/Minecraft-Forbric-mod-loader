@@ -106,10 +106,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(scanned("repairLambdaBootstrapHandles", "any class whose invokedynamic still names the old loader's hook owners"));
 		out.add(fixed("addBlockStateModelConflictResolvers", "net/minecraft/client/renderer/block/dispatch/BlockStateModel",
 				"every block model's geometry key and conflict resolver are gone — the merged BlockStateModel lacks the methods both families call"));
-		out.add(fixed("addBlockStateAppearanceResolver", "net/minecraft/world/level/block/state/BlockState",
-				"BlockState inherits getAppearance as a default from BOTH NeoForge and fabric-api and declares "
-						+ "neither, so the first mod to ask a neighbour what it looks like — any connected-texture "
-						+ "mod — dies on IncompatibleClassChangeError mid-frame"));
+		out.add(scanned("addBlockStateAppearanceResolver",
+				"net.minecraft.world.level.block.Block and ...block.state.BlockState, which each inherit "
+						+ "getAppearance as a default from BOTH NeoForge and fabric-api and declare neither, so the "
+						+ "first mod to ask a neighbour what it looks like — any connected-texture mod — dies on "
+						+ "IncompatibleClassChangeError mid-frame"));
 		out.add(scanned("addMissingForgeFluidTypeBridge", "every concrete fluid under net.minecraft.world.level.material implementing NeoForge's IFluidExtension"));
 		out.add(fixed("addMissingForgeKeyMappingLookupInitializer", KEY_MAPPING,
 				"MinecraftForge's KeyMapping.MAP is never initialised — every traditional-Forge key registration NPEs"));
@@ -544,7 +545,57 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * {@code checkcast}). Writing it directly also means the resolver does not depend on which of the two
 	 * interfaces is present at transform time — and fabric-api's is NOT, since a mixin adds it later.
 	 */
+	/**
+	 * The same conflict one level down, on {@code Block} — and the level that actually crashed.
+	 *
+	 * <p>Giving {@code BlockState} its own {@code getAppearance} was correct and it works: it resolves and
+	 * delegates to {@code getBlock().getAppearance(...)}. That delegate is where the SECOND copy of the same
+	 * defect lives. {@code Block} declares {@code IBlockExtension} (NeoForge) and {@code IForgeBlock}
+	 * (MinecraftForge); fabric-api's mixin adds {@code FabricBlock}; NeoForge's and Fabric's both default
+	 * {@code getAppearance} with the same descriptor and {@code Block} declares neither, so every subclass that
+	 * does not override it inherits two defaults:
+	 * <pre>
+	 * java.lang.IncompatibleClassChangeError: Conflicting default methods:
+	 *   net/neoforged/neoforge/common/extensions/IBlockExtension.getAppearance
+	 *   net/fabricmc/fabric/api/block/v1/FabricBlock.getAppearance
+	 *   at MudBlock.getAppearance
+	 *   at BlockState.getAppearance   &lt;- the first repair, working
+	 * </pre>
+	 * Measured on the reporting instance the day after the first half shipped. Fixing one frame of a crash and
+	 * not asking whether the frame below it has the same shape is what made this two crashes instead of one.
+	 *
+	 * <p>The family is now closed rather than patched twice. Census of the two interface pairs on this carrier:
+	 * {@code IBlockExtension} declares 64 defaults and {@code FabricBlock} 2; {@code IBlockStateExtension} 61
+	 * and {@code FabricBlockState} 2; the ONLY name declared default by both sides, in either pair, is
+	 * {@code getAppearance}. There is no third one waiting.
+	 *
+	 * <p>Both defaults here are literally {@code aload_1; areturn} — return the state you were asked about — so
+	 * again there is no side to choose, and writing the body out keeps the resolver independent of which
+	 * interface is present when the transformer runs.
+	 */
+	private static boolean addBlockAppearanceResolver(ClassNode node) {
+		String desc = "(Lnet/minecraft/world/level/block/state/BlockState;"
+				+ "Lnet/minecraft/world/level/BlockAndLightGetter;Lnet/minecraft/core/BlockPos;"
+				+ "Lnet/minecraft/core/Direction;Lnet/minecraft/world/level/block/state/BlockState;"
+				+ "Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;";
+		if (hasMethod(node, "getAppearance", desc)) return false;
+
+		MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "getAppearance", desc, null, null);
+		method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		method.instructions.add(new InsnNode(Opcodes.ARETURN));
+		method.maxStack = 1;
+		method.maxLocals = 7;
+		node.methods.add(method);
+
+		ForbricLog.warn("[Forbric/MergedBaseCompat] gave Block its own getAppearance — NeoForge's and fabric-api's "
+				+ "interfaces both default it identically and neither wins, so every block subclass that does not "
+				+ "override it died on IncompatibleClassChangeError the moment a connected-texture mod asked what "
+				+ "a neighbour looks like");
+		return true;
+	}
+
 	private static boolean addBlockStateAppearanceResolver(ClassNode node) {
+		if ("net/minecraft/world/level/block/Block".equals(node.name)) return addBlockAppearanceResolver(node);
 		if (!"net/minecraft/world/level/block/state/BlockState".equals(node.name)) return false;
 
 		String desc = "(Lnet/minecraft/world/level/BlockAndLightGetter;Lnet/minecraft/core/BlockPos;"
