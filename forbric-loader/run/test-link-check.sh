@@ -116,6 +116,36 @@ ck_out "repaired entry is labelled FIXED" '\[FIXED\].*game/Target\.gone' "$WORK/
 ck_out "summary counts the fix" 'baseline entries now fixed: 1' "$WORK/6.log"
 ck_out "and says to prune the file" 'prune .*baseline' "$WORK/6.log"
 
+echo "[test-link-check] packaged baseline and missing-input negative controls"
+mkdir -p "$TOOLS/test-baseline"
+cp "$BASE" "$TOOLS/test-baseline/known.txt"
+run --baseline-resource /test-baseline/known.txt "$WORK/merged.jar" > "$WORK/resource-new.log" 2>&1
+ck "packaged baseline rejects the additional defect" 1 $?
+ck_out "packaged mode retains the new-reference evidence" '\[NEW\].*game/Target\.alsoGone' "$WORK/resource-new.log"
+run --baseline-resource /missing.txt "$WORK/merged.jar" > "$WORK/resource-missing.log" 2>&1
+ck "missing packaged baseline fails" 1 $?
+ck_out "missing resource is named" 'missing packaged link baseline' "$WORK/resource-missing.log"
+mkdir -p "$WORK/empty"
+jar cf "$WORK/empty.jar" -C "$WORK/empty" . || exit 3
+run --baseline "$BASE" "$WORK/empty.jar" > "$WORK/empty.log" 2>&1
+ck "zero scanned classes cannot be green" 2 $?
+LINK_BASELINE="$WORK/missing.txt" bash "$HERE/check-merged-links.sh" "$WORK/merged.jar" > "$WORK/gate-baseline.log" 2>&1
+ck "integration gate requires a baseline" 2 $?
+LINK_BASELINE="$BASE" bash "$HERE/check-merged-links.sh" "$WORK/missing.jar" > "$WORK/gate-artifact.log" 2>&1
+ck "integration gate requires artifacts" 2 $?
+# Repair both fields: the exact same gate must now succeed, including packaged-baseline mode.
+cat > "$SRC/game/Target.java" <<'EOF'
+package game;
+public class Target { public static int ok = 1; public static int gone = 2; public static int alsoGone = 3; }
+EOF
+javac --release 17 -d "$OUT" "$SRC/game/Target.java" || exit 3
+jar cf "$WORK/repaired.jar" -C "$OUT" . || exit 3
+run --baseline-resource /test-baseline/known.txt "$WORK/repaired.jar" > "$WORK/resource-green.log" 2>&1
+ck "packaged baseline accepts repaired classes" 0 $?
+LINK_BASELINE="$BASE" bash "$HERE/check-merged-links.sh" "$WORK/repaired.jar" > "$WORK/gate-green.log" 2>&1
+ck "integration gate really scans the repaired jar" 0 $?
+ck_out "integration gate has a nonzero denominator" 'loaded 3 classes \(3 from the merged jar\)' "$WORK/gate-green.log"
+
 echo
 if [ "$FAIL" = "0" ]; then echo "[test-link-check] ✅ ALL GREEN"; else echo "[test-link-check] ❌ FAILED"; fi
 exit "$FAIL"

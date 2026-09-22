@@ -83,6 +83,7 @@ public final class MergedLinkChecker {
 
 	public static void main(String[] args) throws IOException {
 		Path baseline = null;
+		String baselineResource = null;
 		boolean writeBaseline = false;
 		List<String> jars = new ArrayList<>();
 		for (int i = 0; i < args.length; i++) {
@@ -92,21 +93,27 @@ public final class MergedLinkChecker {
 					baseline = Path.of(args[i]);
 				}
 				case "--write-baseline" -> writeBaseline = true;
+				case "--baseline-resource" -> {
+					if (++i >= args.length) usage("--baseline-resource needs a resource name");
+					baselineResource = args[i];
+				}
 				default -> jars.add(args[i]);
 			}
 		}
 		if (jars.isEmpty()) usage("no merged jar given");
 		if (writeBaseline && baseline == null) usage("--write-baseline needs --baseline <file>");
+		if (baseline != null && baselineResource != null) usage("choose a file or a packaged baseline, not both");
 
 		MergedLinkChecker c = new MergedLinkChecker();
 		c.loadPath(jars.get(0), true);
 		for (int i = 1; i < jars.size(); i++) c.loadPath(jars.get(i), false);
+		if (c.mergedOwned.isEmpty()) usage("the merged input contains no classes; no link check was performed");
 		List<String> dangling = c.check();
 
 		String scanned = "[link-check] loaded " + c.classes.size() + " classes ("
 				+ c.mergedOwned.size() + " from the merged jar); ";
 
-		if (baseline == null) {
+		if (baseline == null && baselineResource == null) {
 			dangling.forEach(r -> System.out.println("[DANGLING] " + r));
 			System.out.println(scanned + "dangling references: " + dangling.size());
 			System.exit(dangling.isEmpty() ? 0 : 1);
@@ -121,7 +128,7 @@ public final class MergedLinkChecker {
 			return;
 		}
 
-		if (!Files.isRegularFile(baseline)) {
+		if (baselineResource == null && !Files.isRegularFile(baseline)) {
 			dangling.forEach(r -> System.out.println("[DANGLING] " + r));
 			System.err.println(scanned + "dangling references: " + dangling.size()
 					+ ", but there is no baseline at " + baseline);
@@ -132,7 +139,13 @@ public final class MergedLinkChecker {
 			return;
 		}
 
-		Set<String> known = readBaseline(baseline);
+		Set<String> known;
+		if (baselineResource != null) {
+			try (java.io.InputStream in = MergedLinkChecker.class.getResourceAsStream(baselineResource)) {
+				if (in == null) throw new IOException("missing packaged link baseline: " + baselineResource);
+				known = parseBaseline(new String(in.readAllBytes(), StandardCharsets.UTF_8).lines().toList());
+			}
+		} else known = readBaseline(baseline);
 		List<String> fresh = new ArrayList<>();
 		Set<String> stillDangling = new LinkedHashSet<>(dangling);
 		for (String r : dangling) {
@@ -165,15 +178,19 @@ public final class MergedLinkChecker {
 	}
 
 	private static void usage(String why) {
-		System.err.println("usage: MergedLinkChecker [--baseline <file>] [--write-baseline] <merged.jar> [<cp.jar> ...]");
+		System.err.println("usage: MergedLinkChecker [--baseline <file> | --baseline-resource <name>] [--write-baseline] <merged.jar> [<cp.jar> ...]");
 		System.err.println("       (" + why + ")");
 		System.exit(2);
 	}
 
 	/** Baseline format: one report line per entry; {@code #} comments and blank lines ignored. */
 	private static Set<String> readBaseline(Path file) throws IOException {
+		return parseBaseline(Files.readAllLines(file, StandardCharsets.UTF_8));
+	}
+
+	private static Set<String> parseBaseline(List<String> lines) {
 		Set<String> out = new LinkedHashSet<>();
-		for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+		for (String line : lines) {
 			String t = line.strip();
 			if (t.isEmpty() || t.startsWith("#")) continue;
 			out.add(t);

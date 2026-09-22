@@ -57,8 +57,8 @@ sourceSets {
 	}
 	// Tests see the stubs as real fakes so the registration wiring is exercisable without a game boot.
 	test {
-		compileClasspath += sourceSets.stub.output
-		runtimeClasspath += sourceSets.stub.output
+		compileClasspath += sourceSets.stub.output + sourceSets.tools.output
+		runtimeClasspath += sourceSets.stub.output + sourceSets.tools.output
 	}
 }
 
@@ -193,6 +193,7 @@ processResources {
 }
 
 test {
+	dependsOn tasks.named('toolsClasses')
 	useJUnitPlatform()
 }
 
@@ -250,6 +251,10 @@ tasks.register('mergeToolsJar', Jar) {
 	description = "Build the merge-tools jar (net.forbric.tools + shaded ASM) the installer runs as a subprocess."
 	archiveBaseName = 'forbric-merge-tools'
 	from sourceSets.tools.output
+	// One reviewed baseline serves development, release gates and the installed build tool.
+	from('src/test/resources/merge/link-check-baseline.txt') {
+		into 'net/forbric/tools'
+	}
 	from { configurations.toolsRuntimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
 	// ASM's own jar metadata: signatures (meaningless once the classes are repacked, and fatal if kept -- the
 	// JVM rejects a signed entry whose jar has changed), module descriptors (this jar is a classpath jar, and a

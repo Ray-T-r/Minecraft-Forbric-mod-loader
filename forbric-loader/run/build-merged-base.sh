@@ -68,7 +68,7 @@ java -cp "$BUILD:$CP" net.forbric.tools.RuntimeInteropPatcher "$FORGE_RT" "$FORG
 # The baseline is supposed to SHRINK. When the tool prints [FIXED], delete that line from the file.
 #   seed/refresh:  ... MergedLinkChecker --baseline "$LINK_BASELINE" --write-baseline "$OUT" "$NEO_RT" "$FORGE_RT_PATCHED"
 #   escape hatch:  LINK_CHECK=warn ./build-merged-base.sh   (reports, never fails — for bisecting, not for CI)
-LINK_BASELINE="${LINK_BASELINE:-$HERE/merged-base/link-check-baseline.txt}"
+LINK_BASELINE="${LINK_BASELINE:-$PROJECT/src/test/resources/merge/link-check-baseline.txt}"
 echo "[build-merged-base] checking what the merge left dangling (baseline: $LINK_BASELINE) …"
 if [ "${LINK_CHECK:-enforce}" = "warn" ]; then
   java -cp "$BUILD:$CP" net.forbric.tools.MergedLinkChecker --baseline "$LINK_BASELINE" "$OUT" "$NEO_RT" "$FORGE_RT_PATCHED" \

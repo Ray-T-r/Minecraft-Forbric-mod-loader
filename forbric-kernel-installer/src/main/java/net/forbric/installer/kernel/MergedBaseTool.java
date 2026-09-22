@@ -138,12 +138,8 @@ final class MergedBaseTool {
 	 * link-checked, and a bug report from an installed instance carried no way to tell a merge that came out
 	 * normal from one that came out broken.
 	 *
-	 * <p><b>Reported, never fatal, and deliberately without a baseline.</b> The dev build enforces against a
-	 * committed baseline because a new dangling reference there means someone's merge change broke something. On
-	 * a player's machine the same finding means something else — their carrier jars are not the pair the baseline
-	 * was taken on — and failing the install would turn an upstream version bump into "the installer is broken".
-	 * The number is the diagnostic: when it does not match what the dev build reports, that difference IS the
-	 * story, and it is now in the log instead of nowhere.
+	 * <p>The installer pins the supported carrier versions. Its tools carry the same reviewed baseline as the
+	 * development build: a missing baseline or a new dangling reference prevents publishing a broken profile.
 	 */
 	void linkCheck(JdkLocator.Jvm jvm, Path mergedJar, Path neoRuntime, Path forgeRuntimeInterop)
 			throws IOException {
@@ -152,6 +148,7 @@ final class MergedBaseTool {
 		int code = exec.exec(List.of(
 				jvm.javaBin().toString(),
 				"-cp", tools.toString(), LINK_CHECK_MAIN,
+				"--baseline-resource", "/net/forbric/tools/link-check-baseline.txt",
 				mergedJar.toString(), neoRuntime.toString(), forgeRuntimeInterop.toString()),
 				"link-checking the merged base", tail);
 		String summary = tail.stream()
@@ -159,6 +156,10 @@ final class MergedBaseTool {
 				.reduce((a, b) -> b)
 				.orElse("[link-check] produced no summary line (exit " + code + ")");
 		log.accept("[merge] " + summary.strip());
+		if (code != 0 || !summary.contains(", new 0)")) {
+			throw new IOException("merged base failed the reviewed link baseline (exit " + code + "):\n"
+					+ String.join("\n", tail));
+		}
 	}
 
 	/**

@@ -91,43 +91,22 @@ step "4. the merged base links (against the committed baseline)"
 # same shape as the check whose exit code was thrown away: present, and never consulted.
 #
 # Here it costs one pass over three staged jars and answers the only question that matters between rebuilds:
-# is this the base the tree was calibrated against. Skipped, loudly, when the artifacts are not here.
+# is this the base the tree was calibrated against. This is an integration gate: missing inputs FAIL.
+# A clean checkout can still run `gradlew jar test` independently without staged game artifacts.
 # The baseline and the TOOL are SOURCE (committed, in this tree); the jars are ARTIFACTS (staged, wherever
 # FORBRIC_OLD says). Resolving source through RUN_OLD sends a second worktree to another checkout for both --
 # which it did on the first run here, compiling that checkout's copy of the tool, which had no --baseline flag
 # and read the flag as a jar path.
-LINK_BASELINE="${LINK_BASELINE:-$KERNEL/../forbric-loader/run/merged-base/link-check-baseline.txt}"
-LINK_JARS=("$RUN_OLD/merged-base/patched-mc-merged-26.2.jar" "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar"
-           "$RUN_OLD/merged-base/forge-runtime-interop.jar")
-if [ ! -f "$LINK_BASELINE" ]; then
-  echo "[kernel] SKIP link check (no baseline at $LINK_BASELINE — seed it with --write-baseline)"
-elif ! printf '%s\n' "${LINK_JARS[@]}" | while read -r j; do [ -f "$j" ] || exit 1; done; then
-  echo "[kernel] SKIP link check (staged artifacts absent under $RUN_OLD)"
+LINK_BASELINE="${LINK_BASELINE:-$KERNEL/../forbric-loader/src/test/resources/merge/link-check-baseline.txt}"
+LINKLOG="$BUILD/gate-m0-linkcheck.log"
+if LINK_BASELINE="$LINK_BASELINE" bash "$KERNEL/../forbric-loader/run/check-merged-links.sh" \
+    "$RUN_OLD/merged-base/patched-mc-merged-26.2.jar" \
+    "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar" \
+    "$RUN_OLD/merged-base/forge-runtime-interop.jar" > "$LINKLOG" 2>&1; then
+  check "the merged base links no worse than the baseline" "dangling references: [0-9]+ \(known [0-9]+, new 0\)" "$LINKLOG"
 else
-  LINK_TOOLS="$BUILD/link-check-tools"
-  rm -rf "$LINK_TOOLS"; mkdir -p "$LINK_TOOLS"
-  LINK_ASM="$(find "$HOME/.gradle/caches" -name 'asm-9*.jar' ! -name '*sources*' ! -name '*javadoc*' ! -name 'asm-tree*' ! -name 'asm-commons*' ! -name 'asm-analysis*' ! -name 'asm-util*' 2>/dev/null | sort -V | tail -1)"
-  LINK_ASM_TREE="$(find "$HOME/.gradle/caches" -name 'asm-tree-9*.jar' ! -name '*sources*' ! -name '*javadoc*' 2>/dev/null | sort -V | tail -1)"
-  if [ -z "$LINK_ASM" ] || [ -z "$LINK_ASM_TREE" ]; then
-    echo "[kernel] SKIP link check (ASM not in ~/.gradle/caches)"
-  elif ! javac --release 17 -cp "$LINK_ASM:$LINK_ASM_TREE" -d "$LINK_TOOLS" \
-      "$KERNEL/../forbric-loader/src/tools/java/net/forbric/tools/MergedLinkChecker.java" \
-      2>"$BUILD/gate-m0-linkcheck-javac.log"; then
-    echo "[kernel] FAIL link check (could not compile MergedLinkChecker — see $BUILD/gate-m0-linkcheck-javac.log)"; FAIL=1
-  else
-    LINKLOG="$BUILD/gate-m0-linkcheck.log"
-    java -cp "$LINK_TOOLS:$LINK_ASM:$LINK_ASM_TREE" net.forbric.tools.MergedLinkChecker \
-      --baseline "$LINK_BASELINE" "${LINK_JARS[@]}" > "$LINKLOG" 2>&1
-    # The tool's exit code is the verdict; the summary line is the evidence. Both, because a green exit with no
-    # summary would mean it never scanned anything.
-    if [ $? -eq 0 ]; then
-      check "the merged base links no worse than the baseline" "dangling references: [0-9]+ \(known [0-9]+, new 0\)" "$LINKLOG"
-    else
-      echo "[kernel] FAIL link check — NEW dangling references (see $LINKLOG)"; FAIL=1
-      grep -aE '^\[NEW\]' "$LINKLOG" | head -10
-    fi
-    grep -aE '^\[FIXED\]' "$LINKLOG" | head -10
-  fi
+  echo "[kernel] FAIL link check — missing inputs or new dangling references (see $LINKLOG)"; FAIL=1
+  tail -15 "$LINKLOG"
 fi
 
 step "5. differential oracle (kernel parser vs independent ground truth)"

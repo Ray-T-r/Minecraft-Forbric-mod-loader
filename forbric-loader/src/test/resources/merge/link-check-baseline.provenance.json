@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "referenceCommit": "b890449",
+  "pins": {
+    "minecraft": "26.2",
+    "forge": "26.2-65.0.1",
+    "neoforge": "26.2.0.88"
+  },
+  "inputs": {
+    "merged": {
+      "file": "patched-mc-merged-26.2.jar",
+      "sha256": "f5b2866641dd3a1a8c273621d609cf067327712a7e35859eebb49bda2e026dbb"
+    },
+    "neoRuntime": {
+      "file": "neoforge-runtime.jar",
+      "sha256": "bde765325d1925e0bcfdaaf141fcda21612fcbd25ad3378ff45cff2826134b67"
+    },
+    "forgeInterop": {
+      "file": "forge-runtime-interop.jar",
+      "sha256": "06bb751f870fc6b7731299c57d2f7c060a553daf9c3463943140beb84709de7f"
+    }
+  },
+  "baselineSha256": "642cc6d136c508f11cc246e8e9baf89e92e2db993e2d5d488537aedcdce45dbb",
+  "rawReferences": 24,
+  "review": "Raw-base exceptions only; runtime repairs must be checked separately. Includes capability members, anonymous switch field, Forge NBT builder, GameTest cleanup, condition context and world modifiers. No exception licenses a new reference."
+}
