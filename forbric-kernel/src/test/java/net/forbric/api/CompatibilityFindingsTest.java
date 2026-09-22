@@ -71,6 +71,7 @@ class CompatibilityFindingsTest {
 	void legacyFailuresStayVisibleWithoutGuessingThatTheirFeaturesAreRequired() {
 		ModCatalog.publish(List.of(entry()));
 		ModCatalog.mark("demo", ModCatalog.Status.DEGRADED, "old diagnostic with no structured proof");
+		CompatibilityFindings.observeInitializationFailures();
 		var parsed = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser()
 				.parse(new StringReader(CompatibilityFindings.toJson()));
 		assertEquals(0, ((Number) parsed.get("confirmedRequired")).intValue());
@@ -81,6 +82,40 @@ class CompatibilityFindingsTest {
 		assertEquals("UNCLASSIFIED", row.get("classification"));
 		assertEquals("DEGRADED", row.get("status"));
 		assertTrue(!row.contains("required"), "legacy prose must not be converted into invented necessity");
+	}
+
+	@Test
+	void failedInitializationIsObservedOnlyAtAnExplicitBoundaryAndDoesNotReobserveItsProjection() {
+		ModCatalog.publish(List.of(entry()));
+		ModCatalog.mark("demo", ModCatalog.Status.FAILED, "its @Mod constructor threw");
+		assertTrue(CompatibilityFindings.all().isEmpty(), "mark must not call back into the evidence catalogue");
+		CompatibilityFindings.observeInitializationFailures();
+		var failure = CompatibilityFindings.confirmedRequired().getFirst();
+		assertEquals("initialization:constructor", failure.id());
+		assertEquals("KernelModLoader @Mod construction", failure.source());
+		assertTrue(failure.evidence().contains("ModCatalog.Status.FAILED"));
+		long revision = CompatibilityFindings.revision();
+		CompatibilityFindings.observeInitializationFailures();
+		assertEquals(revision, CompatibilityFindings.revision());
+		assertEquals("its @Mod constructor threw", ModCatalog.all().getFirst().statusDetail());
+		var report = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser().parse(new StringReader(CompatibilityFindings.toJson()));
+		assertTrue(((List<?>) report.get("catalogFailures")).isEmpty(), "the typed observed failure is no longer unclassified");
+	}
+
+	@Test
+	void eachNecessaryLifecycleFailureKeepsItsOwnIdentityAndAnUnrelatedResolutionCannotClearIt() {
+		ModCatalog.publish(List.of(entry()));
+		ModCatalog.mark("demo", ModCatalog.Status.FAILED, "its main entrypoint threw");
+		ModCatalog.mark("demo", ModCatalog.Status.FAILED, "its client entrypoint threw");
+		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "mixin failed"));
+		CompatibilityFindings.observeInitializationFailures();
+		CompatibilityFindings.resolve("contract:item-use", "demo", "mixin replacement proved");
+		assertEquals(List.of("initialization:entrypoint:client", "initialization:entrypoint:main"),
+				CompatibilityFindings.confirmedRequired().stream().map(CompatibilityFinding::id).toList());
+		CompatibilityFindings.resolve("initialization:entrypoint:main", "demo", "an unrelated caller asserted recovery");
+		CompatibilityFindings.observeInitializationFailures();
+		assertEquals(2, CompatibilityFindings.confirmedRequired().size(), "the raw FAILED state is still proof that initialization did not complete");
+		assertEquals("its main entrypoint threw; its client entrypoint threw", ModCatalog.all().getFirst().statusDetail());
 	}
 
 	@Test
@@ -104,5 +139,20 @@ class CompatibilityFindingsTest {
 
 	private static ModCatalog.Entry entry() {
 		return new ModCatalog.Entry(Ecosystem.FABRIC, "demo", "Demo", "1", "", List.of(), "demo.jar", "", "");
+	}
+
+	@Test
+	void anAggregateFailedRowDoesNotPromoteUnrelatedOptionalReasons() {
+		ModCatalog.publish(List.of(entry().withStatus(ModCatalog.Status.FAILED,
+				"its optional configuration failed; its client entrypoint threw")));
+		CompatibilityFindings.observeInitializationFailures();
+		assertEquals(List.of("initialization:entrypoint:client"),
+				CompatibilityFindings.confirmedRequired().stream().map(CompatibilityFinding::id).toList());
+		var parsed = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser()
+				.parse(new StringReader(CompatibilityFindings.toJson()));
+		List<?> legacy = parsed.get("catalogFailures");
+		assertEquals(1, legacy.size(), "the optional unclassified reason must remain visible");
+		assertTrue(((com.electronwill.nightconfig.core.UnmodifiableConfig) legacy.getFirst())
+				.<String>get("detail").contains("optional configuration"));
 	}
 }

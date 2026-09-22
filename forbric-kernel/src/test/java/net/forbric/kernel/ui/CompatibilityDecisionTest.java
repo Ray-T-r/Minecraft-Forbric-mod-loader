@@ -9,6 +9,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
+import net.forbric.api.ModCatalog;
+import net.forbric.api.Ecosystem;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +25,7 @@ class CompatibilityDecisionTest {
 	void reset() {
 		CompatibilityDecision.reset();
 		CompatibilityFindings.reset();
+		ModCatalog.publish(List.of());
 		System.clearProperty(CompatibilityDecision.PROPERTY);
 	}
 
@@ -79,6 +82,20 @@ class CompatibilityDecisionTest {
 		CompatibilityFindings.resolve("resolved", "demo", "repair proved");
 		assertEquals(required(), CompatibilityDecision.drain());
 		assertTrue(CompatibilityDecision.drain().isEmpty());
+	}
+
+	@Test
+	void acceptingMainFailureDoesNotPreapproveALaterClientInitializationFailure() {
+		ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "demo", "Demo", "1", "", List.of(), "demo.jar", "", "")));
+		ModCatalog.mark("demo", ModCatalog.Status.FAILED, "its main entrypoint threw");
+		System.setProperty(CompatibilityDecision.PROPERTY, "continue");
+		assertTrue(CompatibilityDecision.check(false));
+		ModCatalog.mark("demo", ModCatalog.Status.FAILED, "its client entrypoint threw");
+		System.setProperty(CompatibilityDecision.PROPERTY, "ask");
+		assertFalse(CompatibilityDecision.check(false), "a new necessary lifecycle failure requires a new decision");
+		CompatibilityDecision.queue();
+		assertEquals(List.of("initialization:entrypoint:client"), CompatibilityDecision.drain().stream().map(CompatibilityFinding::id).toList());
+		assertEquals(2, CompatibilityFindings.confirmedRequired().size(), "a prior approval never erases its evidence");
 	}
 
 	@Test

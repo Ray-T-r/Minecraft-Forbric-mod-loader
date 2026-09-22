@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M24 gate — one mod failing stays one mod's failure, and the player can find out which.
+# M24 expected-failure policy gate — continuation is explicit and failure evidence never turns green.
 #
 # WHY THIS EXISTS. Every other gate here asserts that NO mod failed: gate-m4 and gate-m7 each carry a
 # check_absent "no @Mod construction failure". That is the right assertion for those gates and it is the exact
@@ -12,17 +12,18 @@
 # remove half your mods and try again.
 #
 # So: stage a mod that fails on purpose next to two healthy ones, and assert all three halves — the healthy mods
-# still load, the server still reaches Done, and the broken one is named in the log, in the catalogue and in the
-# load report. A negative control boots the same instance WITHOUT the broken mod, because "the report named one
-# mod" is worth little unless the run that should produce no report produces none.
+# still load under explicit continue, and the broken one remains a confirmed necessary failure in the report.
+# Strict policy must stop the same broken pack before Done. A final clean control must start under strict.
 # GATE-PARALLEL: rundirs=server-brokenmod mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 LOG="$BUILD/gate-m24-brokenmod.log"
 CONTROL="$BUILD/gate-m24-control.log"
+STRICT="$BUILD/gate-m24-strict.log"
 RUNDIR="$KERNEL/run/server-brokenmod"
 REPORT="$RUNDIR/.forbric-kernel/load-report.txt"
+COMPAT="$RUNDIR/.forbric-kernel/compatibility-report.json"
 BROKEN="$KERNEL/run/canary/forbricbrokencanary.jar"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
 NEO="$RUN_OLD/neoforge-runtime/forbricneolive.jar"
@@ -45,18 +46,55 @@ stage() { # stage <include-broken>
   echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 }
 
-boot() { # boot <log>
-  local log="$1"
+boot() { # boot <log> <policy> [expect-policy-stop]
+  local log="$1" policy="$2" mode="${3:-normal}"
   : > "$log"
-  ( sleep 30; echo stop ) | RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$log" 2>&1 &
+  rm -f "$log.exit"
+  (
+    launch() {
+      RUNDIR="$RUNDIR" FORBRIC_COMPAT_POLICY="$policy" \
+        FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.compatibilityPolicy=$policy" \
+        "$KERNEL/run/launch-kernel-server.sh"
+    }
+    if [ "$mode" = "expect-policy-stop" ]; then
+      # No sleeping stdin feeder may outlive an early policy stop and look like a leaked server process.
+      launch </dev/null
+    else
+      ( sleep 30; echo stop ) | launch
+    fi
+    code=$?
+    printf '%s\n' "$code" > "$log.exit"
+    exit "$code"
+  ) > "$log" 2>&1 &
   local pid=$!
   record_server_pid "$RUNDIR" "$pid"
   await_server "$pid" "$log" 130
 }
 
+required_finding() {
+  if python3 - "$COMPAT" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    report = json.load(stream)
+required = [f for f in report["findings"] if f["confidence"] == "CONFIRMED" and f["required"]]
+assert report["confirmedRequired"] == 1 and len(required) == 1, required
+finding = required[0]
+assert finding["modId"] == "forbricbrokencanary", finding
+assert finding["id"] == "initialization:entrypoint:main", finding
+assert "ModCatalog.Status.FAILED" in finding["evidence"], finding
+assert finding["source"] == "KernelFabricEcosystem main entrypoint", finding
+PY
+  then
+    echo "[kernel] PASS the intentional entrypoint failure remains CONFIRMED and required"
+  else
+    echo "[kernel] FAIL missing or misclassified necessary initialization evidence"; FAIL=1
+  fi
+}
+
 stage yes
-step "boot with one mod that fails on purpose"
-boot "$LOG"
+step "explicit continue with one mod that fails on purpose"
+boot "$LOG" continue
+check "explicit continue exited normally" "^0$" "$LOG.exit"
 
 step "the broken mod really did fail, and really did run (must PASS)"
 # Both halves: a mod that never ran would also produce no failure, and would satisfy every assertion below about
@@ -100,10 +138,24 @@ if [ -f "$REPORT" ]; then
 else
   echo "[kernel] FAIL no load report at $REPORT"; FAIL=1
 fi
+required_finding
+[ ! -f "$COMPAT" ] || cp "$COMPAT" "$BUILD/gate-m24-continue-compatibility.json"
+
+step "strict negative control: the same broken pack stops before a usable world"
+stage yes
+boot "$STRICT" strict expect-policy-stop
+check "strict exited with the policy stop code" "^78$" "$STRICT.exit"
+check "strict reached the actual failing entrypoint" "main entrypoint of forbricbrokencanary failed" "$STRICT"
+check "strict made an explicit compatibility decision" "Forbric/Compatibility\] launch stopped:" "$STRICT"
+check_absent "strict did not expose a running server" "Done \(" "$STRICT"
+check_absent "strict did not write a game crash report" "Preparing crash report" "$STRICT"
+required_finding
+[ ! -f "$COMPAT" ] || cp "$COMPAT" "$BUILD/gate-m24-strict-compatibility.json"
 
 step "negative control: the same instance without the broken mod"
 stage no
-boot "$CONTROL"
+boot "$CONTROL" strict
+check "healthy strict control exited normally" "^0$" "$CONTROL.exit"
 
 check "the control booted"                      "Done \("                    "$CONTROL"
 check "every mod finished loading"              "Forbric/Load\] every mod finished loading" "$CONTROL"
@@ -114,11 +166,23 @@ else
   # A file that appears only when something is wrong is a file whose presence already means something.
   echo "[kernel] PASS a clean boot writes no load report"
 fi
+if python3 - "$COMPAT" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    report = json.load(stream)
+assert report["confirmedRequired"] == 0, report
+assert not report["catalogFailures"], report
+PY
+then
+  echo "[kernel] PASS the healthy strict control has no required or unclassified loading failures"
+else
+  echo "[kernel] FAIL the healthy strict control reported a loading failure"; FAIL=1
+fi
 
 step "M24 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M24 BROKEN-MOD GATE GREEN — one mod's failure stays one mod's failure, and the player is told which"
+  echo "[kernel] ✅ M24 EXPECTED-FAILURE POLICY GATE GREEN — continue/strict decisions proved; the broken fixture remains incompatible"
 else
-  echo "[kernel] ❌ M24 GATE RED — run $LOG / control $CONTROL"
+  echo "[kernel] ❌ M24 GATE RED — continue $LOG / strict $STRICT / healthy $CONTROL"
 fi
 exit "$FAIL"

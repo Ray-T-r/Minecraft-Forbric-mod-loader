@@ -84,7 +84,10 @@ cd "$RUNDIR"
 # window nobody can see reads as a hang rather than a failure. A real install launches through the installer's
 # version profile, which does not pass this, so a player still gets it. FORBRIC_DEP_DIALOG=dryRun exercises the
 # whole fork with no display -- see gate-m20-depdialog.sh.
+# Developer runs fail closed by default instead of waiting on an unattended compatibility prompt. Installed
+# profiles keep the product's ask default; only deliberate negative canaries set FORBRIC_COMPAT_POLICY=continue.
 exec java -XstartOnFirstThread -Djava.library.path="$NATIVES" \
+  -Dforbric.compatibilityPolicy="${FORBRIC_COMPAT_POLICY:-strict}" \
   -Dforbric.dependencyDialog="${FORBRIC_DEP_DIALOG:-off}" ${FORBRIC_JVM:-} \
   -cp "$CP" net.forbric.kernel.boot.KernelClientLaunch \
   --gameJar "$MERGED" --runtimeJar "$FORGE_RT" --runtimeJar "$NEO_RT" \

@@ -30,6 +30,7 @@ public final class KernelClientLaunch {
 	}
 
 	public static void main(String[] args) throws Throwable {
-		KernelBoot.launch(KernelBoot.Side.CLIENT, args);
+		int code = CompatibilityLaunchBoundary.run(() -> KernelBoot.launch(KernelBoot.Side.CLIENT, args));
+		if (code != 0) System.exit(code);
 	}
 }

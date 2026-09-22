@@ -222,8 +222,8 @@ class KernelLoadReportTest {
 		String text = KernelLoadReport.render(false, List.of(failed("alpha", "Alpha", "a.jar", "x")));
 
 		assertTrue(text.contains("still partly present"), text);
-		assertTrue(text.contains("not a crash report"),
-				"the game did start, and a file that reads like a crash report says otherwise");
+		assertTrue(text.contains("records loading results"), "the report must describe loading without claiming the game started");
+		assertFalse(text.contains("the game did start"), "strict startup can stop before a game is ready");
 		assertFalse(text.contains("is not running"), text);
 	}
 

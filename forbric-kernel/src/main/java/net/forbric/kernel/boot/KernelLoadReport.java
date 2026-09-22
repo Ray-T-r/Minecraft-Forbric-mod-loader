@@ -90,6 +90,7 @@ public final class KernelLoadReport {
 			// than where the suppression was decided, because the plugin does not exist yet at that point — and
 			// settled before failures() is read, so the first report is already the corrected one.
 			net.forbric.kernel.mixin.PluginDeclinedMixins.resolve();
+			net.forbric.api.CompatibilityFindings.observeInitializationFailures();
 			writeCompatibility(file);
 			net.forbric.kernel.ui.CompatibilityDecision.queue();
 			List<ModCatalog.Entry> failures = ModCatalog.failures();
@@ -204,7 +205,7 @@ public final class KernelLoadReport {
 			sb.append("----\n");
 			sb.append("Forbric 不会因为一个 mod 出问题就停下来，它会把能装的都装上。所以上面这些 mod\n");
 			sb.append("其实还有一部分留在游戏里（它们的类已经加载了），只是没有走完自己的初始化。\n");
-			sb.append("这不是崩溃报告 —— 游戏是起来了的。\n");
+			sb.append("这份报告记录加载结果，是否继续由兼容性选择决定。\n");
 		} else {
 			sb.append("What to do\n");
 			sb.append("----------\n");
@@ -216,7 +217,7 @@ public final class KernelLoadReport {
 			sb.append("----\n");
 			sb.append("Forbric does not stop at the first mod that goes wrong; it loads everything it can. So the\n");
 			sb.append("mods above are still partly present — their classes did load — they just did not finish\n");
-			sb.append("initialising. This is not a crash report; the game did start.\n");
+			sb.append("initialising. This records loading results; whether the game continues depends on the compatibility decision.\n");
 		}
 		return sb.toString();
 	}

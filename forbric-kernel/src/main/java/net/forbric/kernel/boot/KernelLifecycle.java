@@ -1381,6 +1381,7 @@ public final class KernelLifecycle {
 		// partial one. A clean run writes no file and says one line.
 		net.forbric.kernel.access.AccessCensus.report();
 		KernelLoadReport.write();
+		net.forbric.kernel.ui.CompatibilityDecision.requireContinuation(false);
 	}
 
 	/**
@@ -1525,6 +1526,7 @@ public final class KernelLifecycle {
 		// whole story, and this is the last moment before the player is looking at a title screen.
 		net.forbric.kernel.access.AccessCensus.report();
 		KernelLoadReport.write();
+		net.forbric.kernel.ui.CompatibilityDecision.requireContinuation(true);
 	}
 
 	/**

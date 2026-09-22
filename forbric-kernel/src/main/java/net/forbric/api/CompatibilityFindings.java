@@ -13,6 +13,57 @@ public final class CompatibilityFindings {
 
 	private CompatibilityFindings() { }
 
+	/**
+	 * Observe the RAW catalogue only at a loading/report/decision boundary. FAILED has two audited production
+	 * sources: withdrawn @Mod construction, and Fabric main/client/server entrypoint failure. Partial setup and
+	 * optional feature losses use DEGRADED and are deliberately not promoted here. This never calls mark(), reads
+	 * the projected catalogue, or infers recovery from a later catalogue publication.
+	 */
+	public static synchronized void observeInitializationFailures() {
+		for (ModCatalog.Entry entry : ModCatalog.unclassifiedFailures()) {
+			if (entry.status() != ModCatalog.Status.FAILED) continue;
+			for (CompatibilityFinding observed : initializationFindings(entry)) {
+				CompatibilityFinding prior = FINDINGS.get(observed.key());
+				if (prior != null && prior.confidence() == observed.confidence() && prior.required() == observed.required()
+						&& prior.source().equals(observed.source()) && prior.detail().equals(observed.detail())
+						&& prior.evidence().containsAll(observed.evidence())) continue;
+				record(observed);
+			}
+		}
+	}
+
+	private static List<CompatibilityFinding> initializationFindings(ModCatalog.Entry entry) {
+		List<CompatibilityFinding> result = new ArrayList<>();
+		String detail = entry.statusDetail().isBlank() ? "The mod did not finish required initialization" : entry.statusDetail();
+		for (String reason : detail.split("; ")) {
+			String phase;
+			String source;
+			switch (reason) {
+				case "its @Mod constructor threw" -> { phase = "constructor"; source = "KernelModLoader @Mod construction"; }
+				case "its main entrypoint threw" -> { phase = "entrypoint:main"; source = "KernelFabricEcosystem main entrypoint"; }
+				case "its client entrypoint threw" -> { phase = "entrypoint:client"; source = "KernelFabricEcosystem client entrypoint"; }
+				case "its server entrypoint threw" -> { phase = "entrypoint:server"; source = "KernelFabricEcosystem server entrypoint"; }
+				default -> {
+					// A FAILED row may also retain earlier DEGRADED reasons. They are not new necessary
+					// failures merely because a later client/main constructor failure raised the row's status.
+					continue;
+				}
+			}
+			result.add(new CompatibilityFinding("initialization:" + phase, entry.modId(), "Mod initialization", source,
+					CompatibilityFinding.Confidence.CONFIRMED, true, reason,
+					List.of("ModCatalog.Status.FAILED", "phase=" + phase, "ecosystem=" + entry.ecosystem(),
+							"jar=" + entry.jar(), "version=" + entry.version(), reason)));
+		}
+		if (result.isEmpty()) {
+			// Unknown FAILED producers still require a decision, but the aggregate state is the evidence:
+			// do not infer that each prose fragment was a separate necessary initialization phase.
+			String id = "initialization:catalog:" + java.util.UUID.nameUUIDFromBytes(detail.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			result.add(new CompatibilityFinding(id, entry.modId(), "Mod initialization", "ModCatalog.Status.FAILED",
+					CompatibilityFinding.Confidence.CONFIRMED, true, detail, List.of("ModCatalog.Status.FAILED", detail)));
+		}
+		return result;
+	}
+
 	/** A later suspicion cannot erase a confirmed loss; repeated observations retain all evidence. */
 	public static synchronized void record(CompatibilityFinding finding) {
 		revision++;
@@ -53,7 +104,7 @@ public final class CompatibilityFindings {
 		List<ModCatalog.Entry> result = new ArrayList<>(entries.size());
 		for (ModCatalog.Entry entry : entries) {
 			List<String> reasons = new ArrayList<>();
-			if (!entry.statusDetail().isEmpty()) reasons.add(entry.statusDetail());
+			if (!entry.statusDetail().isEmpty()) reasons.addAll(List.of(entry.statusDetail().split("; ")));
 			for (CompatibilityFinding f : confirmed) {
 				if (entry.modId().equals(f.modId()) && !reasons.contains(f.detail())) reasons.add(f.detail());
 			}
@@ -92,7 +143,14 @@ public final class CompatibilityFindings {
 			out.append("]}");
 		}
 		out.append("],\"catalogFailures\":[");
-		List<ModCatalog.Entry> unclassified = ModCatalog.unclassifiedFailures();
+		List<ModCatalog.Entry> unclassified = ModCatalog.unclassifiedFailures().stream().filter(entry -> {
+			if (entry.status() != ModCatalog.Status.FAILED) return true;
+			List<CompatibilityFinding> observed = findings.stream().filter(f -> f.modId().equals(entry.modId())
+					&& f.id().startsWith("initialization:") && f.confirmedRequired()).toList();
+			if (observed.stream().anyMatch(f -> f.detail().equals(entry.statusDetail()))) return false;
+			return java.util.Arrays.stream(entry.statusDetail().split("; "))
+					.anyMatch(reason -> observed.stream().noneMatch(f -> f.detail().equals(reason)));
+		}).toList();
 		for (int i = 0; i < unclassified.size(); i++) {
 			ModCatalog.Entry entry = unclassified.get(i);
 			if (i != 0) out.append(',');

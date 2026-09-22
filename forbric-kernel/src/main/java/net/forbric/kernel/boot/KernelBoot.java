@@ -789,10 +789,7 @@ public final class KernelBoot {
 		FieldDriftAudit.report();
 		AbiLinkAudit.report();
 		KernelLoadReport.write();
-		if (!net.forbric.kernel.ui.CompatibilityDecision.check(side.api().isClient())) {
-			ForbricLog.error("[Forbric/Compatibility] FATAL: confirmed required features are unavailable; continuation was not approved");
-			throw new IllegalStateException("Forbric compatibility policy stopped this launch; see .forbric-kernel/compatibility-report.json");
-		}
+		net.forbric.kernel.ui.CompatibilityDecision.requireContinuation(side.api().isClient());
 
 		// Fabric preLaunch entrypoints, after Mixin is up and before any game class loads (their contract).
 		KernelFabricEcosystem.runPreLaunch();

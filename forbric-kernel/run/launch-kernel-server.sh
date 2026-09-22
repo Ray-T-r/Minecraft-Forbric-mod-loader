@@ -81,7 +81,8 @@ cd "$RUNDIR"
 # The MC libraries go BOTH on the parent -cp and to the kernel as owned jars (--libraryPath): mods mixin into
 # them (fabric-dimension-api-v1 targets DataFixerUpper's TaggedChoice), so the transforming loader must define
 # them. This is what Fabric's Knot does with the whole game classpath.
-exec java -Djava.awt.headless=true ${FORBRIC_JVM:-} \
+# Developer runs use strict compatibility decisions; installed profiles retain the product default (ask).
+exec java -Djava.awt.headless=true -Dforbric.compatibilityPolicy="${FORBRIC_COMPAT_POLICY:-strict}" ${FORBRIC_JVM:-} \
   -cp "$CP" net.forbric.kernel.boot.KernelServerLaunch \
   --gameJar "$MERGED" --runtimeJar "$FORGE_RT" --runtimeJar "$NEO_RT" \
   --libraryPath "$VANILLA_CP${JLINE:+:$JLINE}" \

@@ -17,6 +17,7 @@ public final class CompatibilityDecision {
 	public enum Policy { ASK, CONTINUE, STRICT }
 	private static final Set<String> ACCEPTED = new LinkedHashSet<>();
 	private static final Set<String> QUEUED = new LinkedHashSet<>();
+	private static volatile boolean launchStopRequested;
 
 	private CompatibilityDecision() { }
 
@@ -32,7 +33,35 @@ public final class CompatibilityDecision {
 
 	/** Boot integration: false means the caller must stop before entering the game. */
 	public static boolean check(boolean isClient) {
+		CompatibilityFindings.observeInitializationFailures();
 		return decide(CompatibilityFindings.confirmedRequired(), isClient);
+	}
+
+	/** An explicit loading-boundary decision, separate from the best-effort report writer and mod callbacks. */
+	public static void requireContinuation(boolean isClient) {
+		if (check(isClient)) return;
+		launchStopRequested = true;
+		ForbricLog.error("[Forbric/Compatibility] launch stopped: required mod initialization or features are unavailable; continuation was not approved");
+		throw new LaunchStopped();
+	}
+
+	/** Launch callers can distinguish a deliberate policy stop from a game/mod crash. */
+	public static final class LaunchStopped extends IllegalStateException {
+		private LaunchStopped() { super("Forbric compatibility policy stopped this launch; see .forbric-kernel/compatibility-report.json"); }
+	}
+
+	/** The game main may catch the typed stop before returning to the launcher. This is evidence, not cleanup. */
+	public static boolean launchStopRequested() { return launchStopRequested; }
+
+	public static boolean isLaunchStop(Throwable failure) {
+		Set<Throwable> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		while (failure != null && visited.add(failure)) {
+			if (failure instanceof LaunchStopped) return true;
+			if (failure instanceof java.lang.reflect.InvocationTargetException reflection) failure = reflection.getTargetException();
+			else if (failure instanceof ExceptionInInitializerError initialization) failure = initialization.getException();
+			else failure = failure.getCause();
+		}
+		return false;
 	}
 
 	/** Safe UI integration: call on the client UI thread, never from a transformer or server tick. */
@@ -104,5 +133,6 @@ public final class CompatibilityDecision {
 	public static synchronized void reset() {
 		ACCEPTED.clear();
 		QUEUED.clear();
+		launchStopRequested = false;
 	}
 }

@@ -138,3 +138,18 @@ Pending implementation and acceptance items remain open even when a smaller batc
 - Transfer core: 23 JVM transaction tests pass; the first real game run passed only 2/11 because final
   ItemStack/CompoundTag shapes were refused. This is unresolved and must not be counted as working Forge
   transaction writes. Final-definition dumps are being compared; no audit bypass was enabled.
+
+### P2 necessary initialization decisions
+
+- Actual withdrawn constructors and failed Fabric main/client/server entrypoints now become stable required
+  findings at explicit report/decision boundaries. DEGRADED remains unclassified unless separately proved;
+  mixed aggregate reasons are not all promoted. A different lifecycle failure requires a new acknowledgement.
+- The report remains pure output. Explicit lifecycle boundaries enforce the decision, and the launcher maps
+  only typed policy stops/cause chains to exit 78. Development launchers default to strict; installed profiles
+  retain ask. Reports no longer claim that every reported run reached a usable game.
+- The integrated 60-test batch passed, together with 23 separate transfer-engine tests (those do not prove
+  full transfer gameplay). M24 then passed all three real server cases: explicit continue retained the one
+  required failure, strict stopped with 78 before Done and without a game crash report, and a healthy strict
+  control reached Done and exited 0. Evidence: `build/verification/initialization-policy/gate.log` and the
+  three `build/gate-m24-*.log`/compatibility reports. This is an expected-failure policy test, not a claim that
+  the broken canary is compatible.
