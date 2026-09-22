@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.zip.ZipFile;
 
 import net.forbric.kernel.util.ForbricLog;
 
@@ -48,17 +49,20 @@ public final class KernelBundledJars {
 	 * @param onMissing what to tell the reader when it is not in the boot jar — the consequence first, then the
 	 *                  fix if there is one. Never a bare "not found": by the time anyone reads this line they
 	 *                  already know something is missing; what they do not know is what it costs them.
+	 * @param required  whether a boot without this jar on the classpath is worth attempting at all. A degraded
+	 *                  run is allowed to start and say what it lost; a run missing the kernel's OWN game-side
+	 *                  classes is not — it cannot get far enough to be diagnosed from where it dies.
 	 */
-	private record Bundled(String fileName, String onMissing) {
+	private record Bundled(String fileName, String onMissing, boolean required) {
 	}
 
 	private static final Bundled[] BUNDLED = {
 		new Bundled("mixinextras-fabric.jar",
-				"mods using MixinExtras (most of fabric-api) will fail to apply their mixins"),
+				"mods using MixinExtras (most of fabric-api) will fail to apply their mixins", false),
 		new Bundled("forbric-kernel-runtime.jar",
 				"this boot jar was built with no staged game artifacts, so the kernel's own game-side classes are "
 						+ "absent and anything that needs one will fail to link — rebuild with the staged jars in "
-						+ "place (../forbric-loader/run/) via: ./gradlew jar"),
+						+ "place (../forbric-loader/run/) via: ./gradlew jar", true),
 	};
 
 	private KernelBundledJars() {
@@ -87,11 +91,45 @@ public final class KernelBundledJars {
 				extracted.add(target);
 				ForbricLog.debug("[Forbric/Boot] extracted bundled game-side jar %s", name);
 			} catch (Exception e) {
+				// The write failed — but the COPY is not the point, the classpath entry is, and the file the
+				// previous run wrote is very often still lying there intact.
+				if (usable(target)) {
+					extracted.add(target);
+					ForbricLog.warn("[Forbric/Boot] could not rewrite bundled jar %s (%s) — the copy already on disk "
+							+ "opens and has entries, so it goes on the classpath unchanged. This is what a previous "
+							+ "instance still holding the file looks like on Windows; relaunching while the last one "
+							+ "is still shutting down is enough to cause it", name, String.valueOf(e));
+					continue;
+				}
+				// Nothing usable. Saying so and continuing is what turned this into a crash 14 seconds later and
+				// four frames away, naming a class instead of a jar (NoClassDefFoundError KernelFeatureFlags out of
+				// Bootstrap), so a required jar now fails HERE, where the cause is still in the message.
+				if (bundled.required()) {
+					throw new IllegalStateException("bundled jar " + name + " could not be extracted to " + target
+							+ " and no usable copy is there — " + bundled.onMissing(), e);
+				}
 				ForbricLog.warn("[Forbric/Boot] could not extract bundled jar %s: %s — %s",
 						name, String.valueOf(e), bundled.onMissing());
 			}
 		}
 
 		return extracted;
+	}
+
+	/**
+	 * Whether the file already at {@code target} can serve as the classpath entry.
+	 *
+	 * <p>Deliberately a real {@link ZipFile} open with an entry count, not an existence or size check: the case
+	 * this guards is a jar that was being rewritten when something else grabbed it, which leaves a file that
+	 * exists and is non-empty and still cannot be read as an archive. An existence check would wave that through
+	 * and the boot would die later, which is the failure mode this whole method now exists to stop.
+	 */
+	private static boolean usable(Path target) {
+		if (!Files.isRegularFile(target)) return false;
+		try (ZipFile zip = new ZipFile(target.toFile())) {
+			return zip.entries().hasMoreElements();
+		} catch (Exception unreadable) {
+			return false;
+		}
 	}
 }

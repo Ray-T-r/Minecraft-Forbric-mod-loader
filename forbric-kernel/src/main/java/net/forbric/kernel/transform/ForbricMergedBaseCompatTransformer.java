@@ -89,7 +89,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -229,6 +229,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 						"an atlas holding a sprite smaller than the mip level allows fails to upload — the FIRST resource "
 								+ "reload dies, every pack is dropped, and the client sits on a black screen with no further log")
 				: scanned("letTheAtlasLowerItsMipLevelLikeVanilla", "-D" + MIPMAP_PROPERTY + "=off"));
+		out.add(fixed("wrapTheStreamsVanillaWraps", BOOTSTRAP,
+				"System.out and System.err are never routed into log4j, so every line a mod PRINTS rather than logs "
+						+ "is absent from latest.log — including the debug output a mod is told to turn on when it "
+						+ "misbehaves"));
 		return List.copyOf(out);
 	}
 
@@ -315,6 +319,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 					dropTheKeyModifierSuffixBeforeParsingAKeyName(node));
 			changed |= claim(reporter, "letTheAtlasLowerItsMipLevelLikeVanilla",
 					letTheAtlasLowerItsMipLevelLikeVanilla(node));
+			changed |= claim(reporter, "wrapTheStreamsVanillaWraps", wrapTheStreamsVanillaWraps(node));
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -436,6 +441,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	/** NeoForge-only: MinecraftForge composes its ingredient codec in ForgeHooks, so ForeignType has no pair. */
 	private static final String NEO_INGREDIENT_CODECS = "net/neoforged/neoforge/common/crafting/IngredientCodecs";
 	static final String CODEC_TO_CODEC = "(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;";
+	private static final String BOOTSTRAP = "net/minecraft/server/Bootstrap";
 	private static final String RELOADABLE_SERVER_RESOURCES = "net/minecraft/server/ReloadableServerResources";
 	private static final String RELOAD_HOOK_DESC = "(L" + RELOADABLE_SERVER_RESOURCES
 			+ ";Lnet/minecraft/core/RegistryAccess;Ljava/util/Map;)Ljava/util/List;";
@@ -573,6 +579,72 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * again there is no side to choose, and writing the body out keeps the resolver independent of which
 	 * interface is present when the transformer runs.
 	 */
+	/**
+	 * Restores {@code Bootstrap.bootStrap()}'s call to its own {@code wrapStreams()}, which routes
+	 * {@code System.out}/{@code System.err} into log4j.
+	 *
+	 * <p>Vanilla calls it as the last thing bootstrap does. NeoForge's patch spends that exact slot on
+	 * {@code GameData.vanillaSnapshot()} instead, and the byte merge kept NeoForge's half — so the merged
+	 * {@code bootStrap()} runs the snapshot and never wraps the streams. Measured: stock 26.2 has
+	 * {@code invokestatic wrapStreams:()V} at bci 81; in the merged base the ONLY class mentioning
+	 * {@code wrapStreams} is {@code Bootstrap} itself, and inside it the only mention is the declaration.
+	 * The method's body survived the merge intact — it still builds {@code LoggedPrintStream("STDOUT")} and
+	 * calls {@code System.setOut} — so nothing needs writing, only calling.
+	 *
+	 * <p>What it costs while dead: every line a mod PRINTS instead of logging is gone. Not degraded, not
+	 * misfiled — absent. MouseTweaks writes its entire diagnostic output through {@code System.out}, so a
+	 * player told to turn on its debug mode produces a log with nothing in it, and the silence reads as
+	 * "the mod said nothing" rather than "nobody was listening". Any mod printing a stack trace to stderr
+	 * disappears the same way.
+	 *
+	 * <p>Both halves are kept. The snapshot is NeoForge's and it stays exactly where NeoForge put it; the
+	 * wrap goes after it, at vanilla's position relative to {@code bootstrapDuration}. Restoring one
+	 * ecosystem's line must not cost the other's — that is the merge failure this repair is undoing, and
+	 * doing it in reverse would be no better.
+	 */
+	private static boolean wrapTheStreamsVanillaWraps(ClassNode node) {
+		if (!BOOTSTRAP.equals(node.name) || node.methods == null) return false;
+		if (!hasMethod(node, "wrapStreams", "()V")) return false;
+
+		MethodNode bootStrap = null;
+		for (MethodNode method : node.methods) {
+			if ("bootStrap".equals(method.name) && "()V".equals(method.desc)) bootStrap = method;
+		}
+		if (bootStrap == null || bootStrap.instructions == null) return false;
+
+		// Already calling it (a future base that keeps vanilla's line) — this repair is then a no-op, and must
+		// report itself as one rather than inserting a second wrap that would nest the streams twice.
+		for (AbstractInsnNode insn : bootStrap.instructions) {
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
+					&& BOOTSTRAP.equals(call.owner) && "wrapStreams".equals(call.name)) {
+				return false;
+			}
+		}
+
+		// Vanilla's position: immediately before bootstrapDuration is written, which is the last thing the
+		// method does. Anchoring on that field write rather than on the preceding call keeps the insertion
+		// correct whichever ecosystem's calls precede it.
+		AbstractInsnNode anchor = null;
+		for (AbstractInsnNode insn : bootStrap.instructions) {
+			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
+					&& BOOTSTRAP.equals(field.owner) && "bootstrapDuration".equals(field.name)) {
+				anchor = insn;
+				break;
+			}
+		}
+		if (anchor == null) return false;
+
+		bootStrap.instructions.insertBefore(anchor,
+				new MethodInsnNode(Opcodes.INVOKESTATIC, BOOTSTRAP, "wrapStreams", "()V", false));
+		bootStrap.maxStack = Math.max(bootStrap.maxStack, 2);
+
+		ForbricLog.warn("[Forbric/MergedBaseCompat] Bootstrap now wraps System.out/System.err into log4j again "
+				+ "— NeoForge's patch spends vanilla's wrapStreams() slot on GameData.vanillaSnapshot() and the "
+				+ "merge kept only that half, so every line a mod PRINTED rather than logged was absent from the "
+				+ "log entirely (a mod's own debug mode produced a log with nothing in it). Both calls now run");
+		return true;
+	}
+
 	private static boolean addBlockAppearanceResolver(ClassNode node) {
 		String desc = "(Lnet/minecraft/world/level/block/state/BlockState;"
 				+ "Lnet/minecraft/world/level/BlockAndLightGetter;Lnet/minecraft/core/BlockPos;"
