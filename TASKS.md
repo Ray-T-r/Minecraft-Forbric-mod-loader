@@ -24,8 +24,10 @@
       (`ServerLevel#updateNeighborsAt` 还在调)、`LivingFallEvent`(`AbstractHorse`/`Llama#causeFallDamage`)、
       `EntityPlaceEvent`(`ReplaceDisk#apply`)。手工读的不是马虎,是**只读了一个类**;但这张表的断言是
       "合并后的游戏从不发它",而这三个确实会发,把玩家的 mod 标成 DEGRADED 是假指控。三行已删。
-- [ ] **A4(后半)** 让审计看见 `addListener` —— 走 `KernelModLoader.publishedForgeMods()` 的 per-mod BusGroup,
-      不用解析方法体
+- [x] **A4(后半)** 审计能看见 `addListener` 了 —— 走每个 MinecraftForge mod 自己的 BusGroup(内核本来就留着),
+      一个 mod 一次字段读取,不用再扫一遍方法体。注解扫描的输入本来只有
+      {类级 `@EventBusSubscriber`} × {`@SubscribeEvent` 方法},而对一个失败模式是"沉默"的审计,
+      看不见和没问题长得一模一样。
 - [x] **A5** 元普查 —— 抓到一条真的:`build.gradle` 的三条 staged `inputs.files` **写死了相对路径**,
       而认 `FORBRIC_OLD` 的 `stagedRoot` 就在上面三十行。于是在第二个 worktree(`FORBRIC_OLD` 存在的唯一
       理由)上,声明的输入是个不存在的文件 —— **换掉合并基底,`test` 仍然 UP-TO-DATE 并报绿**。
@@ -70,7 +72,14 @@
       在配置阶段结束时报差集。差集就是把玩家踢出世界的那一类(cardinal 的 `entity_sync`:mod 发得出包,
       对端没同意收,未处理的 payload 是断线不是跳过)。接在**已有的**两处遍历里,没有新增网络路径上的代码;
       整个类任何输入都不抛(一个能弄断连接的普查比没有普查更糟)。5 个测试。
-- [ ] **D1(后半)** 五个网络 gate 各加一条 check —— 需要真的跑一次 m12/m15/m16 才能确认措辞,本机没跑过
+- [x] **gate-m12 本机真跑了两次**(真 socket、真专用服、真客户端):
+      第一次 RED —— 但不是我的改动:`check_absent "…Incompatible…"` 匹配到了**内核自己**解释
+      `getAppearance` 修复时写的 "died on IncompatibleClassChangeError"。自己的成功信息被自己的失败模式匹配。
+      修法不是去改那句解释(下一句解释还会再犯),而是给 `check_absent` 加一个排除参数:
+      内核写给自己的一行不是游戏在做那件事。修完第二次 **GREEN**,`check_kept_up` 现场通过。
+- [x] **D1(后半,m12)** m12 加了两条频道普查断言(普查跑过 + 差集为 0),**本机实测 GREEN**。
+      第一次接线把一条跨行的 `check` 从中间劈开了(`$2: unbound variable`),已修并重跑确认。
+- [ ] **D1(余下)** m13/m14/m15/m16 也加同样两条 —— 没在本机跑过这四个
 - [ ] **D2** performance:`ServerTickSampler` + JFR 透传 + m31 式并排对照
 - [x] **D3** 语言提供者 —— `modLoader` 第一次有了消费者(`LanguageProviders`,接在发现阶段),
       并且 Kotlin `object` 那个形状真的能构造了(没有公开构造器时取 `INSTANCE`,正是 kotlinforforge 自己的做法)。

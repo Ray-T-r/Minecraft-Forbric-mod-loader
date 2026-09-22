@@ -69,16 +69,27 @@ check() {
   else printf '[kernel] FAIL %s (want>=%s got %s)\n' "$what" "$want" "${got:-0}"; FAIL=1; fi
 }
 
-# check_absent <what> <grep-pattern> <file> — fails if the pattern appears at all.
+# check_absent <what> <grep-pattern> <file> [except-pattern] — fails if the pattern appears at all.
 #
 # A missing or empty log FAILS here rather than passing. "The pattern is not in the log" and "there is no log"
 # are different answers, and only the first one is the one this assertion is making.
+#
+# `except` drops lines before counting, and exists for one specific way these assertions go wrong: the kernel
+# NARRATES the bugs it repairs, so a message explaining that something "died on IncompatibleClassChangeError"
+# is matched by an assertion looking for the word "Incompatible" in a rejection. gate-m12 went red on exactly
+# that — its own success message, matched by its own failure pattern — and the answer is not to reword the
+# explanation, because then the next explanation does it again. A line the kernel wrote about itself is not the
+# game doing the thing. Pass `except` as a pattern identifying that narration, e.g. '\[Forbric/'.
 check_absent() {
-  local what="$1" pat="$2" file="$3" got
+  local what="$1" pat="$2" file="$3" except="${4:-}" got
   if ! readable "$file"; then
     printf '[kernel] FAIL %s (no log to read: %s)\n' "$what" "$file"; FAIL=1; return
   fi
-  got=$(grep -acE "$pat" "$file" 2>/dev/null || true)
+  if [ -n "$except" ]; then
+    got=$(grep -avE "$except" "$file" 2>/dev/null | grep -acE "$pat" 2>/dev/null || true)
+  else
+    got=$(grep -acE "$pat" "$file" 2>/dev/null || true)
+  fi
   if [ "${got:-0}" -eq 0 ]; then printf '[kernel] PASS %s (absent)\n' "$what"
   else printf '[kernel] FAIL %s (present x%s)\n' "$what" "$got"; FAIL=1; fi
 }

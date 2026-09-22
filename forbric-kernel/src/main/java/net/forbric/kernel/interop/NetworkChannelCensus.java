@@ -88,6 +88,7 @@ public final class NetworkChannelCensus {
 	public static void reset() {
 		REGISTERED.clear();
 		DECLARED.clear();
+		lastReported = "";
 	}
 
 	/**
@@ -95,14 +96,43 @@ public final class NetworkChannelCensus {
 	 *
 	 * <p>This is the set that gets a player kicked: the mod can build the packet, the peer never agreed to
 	 * receive it, and an unhandled payload is a disconnect rather than a skip.
+	 *
+	 * <p><b>Only ecosystems this census actually watched declaring.</b> The first live run made the mistake this
+	 * whole branch is about: it recorded NeoForge's twenty registrations and Fabric's nineteen declarations, and
+	 * announced nine NeoForge configuration channels as never declared — on a connection that negotiated
+	 * perfectly, because NeoForge negotiates its own natives out of band and this census has no record of that
+	 * path. An ecosystem whose declarations were never seen cannot be judged, and saying it failed is the same
+	 * false accusation as marking a mod degraded for an event that is posted.
+	 *
+	 * <p>So a channel is judged only when the ecosystem that registered it has at least one declaration on
+	 * record. {@link #unjudged()} reports what that leaves out, because a shrinking numerator over an unstated
+	 * denominator is how a census stops meaning anything.
 	 */
 	public static List<String> registeredButNeverDeclared() {
-		Set<String> declared = new TreeSet<>();
-		DECLARED.values().forEach(declared::addAll);
+		Set<String> declaredAnywhere = new TreeSet<>();
+		DECLARED.values().forEach(declaredAnywhere::addAll);
 		Set<String> undeclared = new TreeSet<>();
-		REGISTERED.values().forEach(undeclared::addAll);
-		undeclared.removeAll(declared);
+		REGISTERED.forEach((ecosystem, ids) -> {
+			if (!watched(ecosystem)) return;
+			ids.forEach(id -> {
+				if (!declaredAnywhere.contains(id)) undeclared.add(id);
+			});
+		});
 		return List.copyOf(undeclared);
+	}
+
+	/** Registered channels belonging to an ecosystem whose declarations this census never saw. */
+	public static List<String> unjudged() {
+		Set<String> out = new TreeSet<>();
+		REGISTERED.forEach((ecosystem, ids) -> {
+			if (!watched(ecosystem)) out.addAll(ids);
+		});
+		return List.copyOf(out);
+	}
+
+	private static boolean watched(Ecosystem ecosystem) {
+		Set<String> declared = DECLARED.get(ecosystem);
+		return declared != null && !declared.isEmpty();
 	}
 
 	/**
@@ -117,17 +147,27 @@ public final class NetworkChannelCensus {
 		Map<String, Integer> declaredBy = new TreeMap<>();
 		DECLARED.forEach((eco, ids) -> declaredBy.put(eco.name().toLowerCase(java.util.Locale.ROOT), ids.size()));
 		List<String> undeclared = registeredButNeverDeclared();
+		List<String> unjudged = unjudged();
 		return "[Forbric/Net] channel census: registered " + registeredBy + ", declared " + declaredBy
+				+ ", not judged (no declaration path seen for that ecosystem): " + unjudged.size()
 				+ ", registered-but-never-declared: " + undeclared.size()
 				+ (undeclared.isEmpty() ? "" : " " + undeclared);
 	}
+
+	/** What was last said, so the same answer is not said twice for the same connection. */
+	private static volatile String lastReported = "";
 
 	/** Says it once, wherever the connection has finished negotiating. */
 	public static void report() {
 		try {
 			if (!enabled()) return;
 			if (REGISTERED.isEmpty() && DECLARED.isEmpty()) return;
-			ForbricLog.info("%s", summary());
+			String summary = summary();
+			// The declaration path this hangs off fires more than once per connection, and a census printed
+			// twice reads like two connections.
+			if (summary.equals(lastReported)) return;
+			lastReported = summary;
+			ForbricLog.info("%s", summary);
 			List<String> undeclared = registeredButNeverDeclared();
 			if (!undeclared.isEmpty()) {
 				ForbricLog.warn("[Forbric/Net] %d channel(s) have a payload type and no declaration: %s — a mod "

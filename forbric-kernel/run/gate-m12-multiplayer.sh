@@ -175,6 +175,15 @@ check_absent "client applied every registry sync" "Failed to sync registries|Fai
 # DISCONNECTS: joining a world ended with "This server requires Apoli: Legacy and Cardinal Components API".
 check "the client's Fabric PLAY channels are recorded on the connection" \
   "Forbric/Net\] recorded [1-9][0-9]* Fabric PLAY channel\(s\) the client declared during configuration" "$SLOG"
+
+# The channel census, in the two-sentence shape the other censuses use: it ran (a denominator), and what it
+# found. The set it counts is the one that kicked a player out of a world a second after joining — a payload
+# type with no channel declared behind it, which the peer answers by disconnecting rather than skipping.
+# "not judged" is in the line on purpose: this census watches Fabric's declaration path and not NeoForge's
+# out-of-band one, and the first live run announced nine of NeoForge's own channels as undeclared on a
+# connection that negotiated perfectly.
+check "the channel census ran" "channel census: registered \{" "$SLOG"
+check "no channel has a payload type and nothing declaring it" "registered-but-never-declared: 0" "$SLOG"
 check_absent "nobody was told the server requires a mod they have" \
   "This server requires" "$SLOG"
 
@@ -186,7 +195,9 @@ check "the server stopped its config file-watchers at exit" "Forbric/Shutdown\\]
 check "server saw the disconnect"    "lost connection|left the game"                    "$SLOG"
 # The line above is satisfied by a KICK as well as by a goodbye, so it cannot stand alone. This is the one that
 # actually says the handshake succeeded — and it is the one currently RED (see the header).
-check_absent "server did not reject the client" "This server requires|Incompatible|Connection closed - mismatched" "$SLOG"
+# The last argument: the kernel narrates the bugs it repairs, and one of those explanations contains
+# "IncompatibleClassChangeError". Its own success message was matching its own failure pattern.
+check_absent "server did not reject the client" "This server requires|Incompatible|Connection closed - mismatched" "$SLOG" '\[Forbric/'
 
 step "neither side broke (must be ABSENT)"
 check_absent "no client crash"       "Preparing crash report"                           "$CLOG"

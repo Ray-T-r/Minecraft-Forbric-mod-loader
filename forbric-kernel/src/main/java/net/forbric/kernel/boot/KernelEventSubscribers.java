@@ -237,7 +237,15 @@ public final class KernelEventSubscribers {
 		}
 		// Everything above is about listeners the kernel DID wire. This is about the ones it wired onto a hook the
 		// merged base no longer calls — registered successfully, and never to be reached.
-		DeadEventAudit.report(subscribedByMod);
+		//
+		// The scan above reads jars with SKIP_CODE, so its whole input is {class-level @EventBusSubscriber} x
+		// {@SubscribeEvent methods}. A listener registered with bus.addListener(...) lives in a method BODY and
+		// is invisible to it — and for an audit whose failure mode is silence, invisible reads exactly like
+		// fine. The kernel already holds each MinecraftForge mod's own BusGroup, whose internal map is keyed by
+		// the event classes that bus has actually seen, so the answer is one field read per mod rather than a
+		// second and much more expensive pass over every method body.
+		DeadEventAudit.report(ForgeBusSubscriptions.merge(subscribedByMod,
+				ForgeBusSubscriptions.byMod(KernelModLoader.publishedForgeMods())));
 		// Everything above is about listeners. This is about a whole subsystem the merged game does not carry.
 		CapabilityUseAudit.report(net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled(),
 				net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.composedRoots());
