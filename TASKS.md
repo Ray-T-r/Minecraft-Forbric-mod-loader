@@ -68,7 +68,10 @@
 
 - [ ] **D1** network-protocol:`NetworkChannelCensus` 单点产出,五个网络 gate 各一条 check
 - [ ] **D2** performance:`ServerTickSampler` + JFR 透传 + m31 式并排对照
-- [ ] **D3** 语言提供者:`modLoader` 被解析被暴露但 `src/main` 零消费者(Kotlin-for-Forge / lowcodefml)
+- [x] **D3** 语言提供者 —— `modLoader` 第一次有了消费者(`LanguageProviders`,接在发现阶段),
+      并且 Kotlin `object` 那个形状真的能构造了(没有公开构造器时取 `INSTANCE`,正是 kotlinforforge 自己的做法)。
+      原来的失败信息是"no public constructor",一句关于一个没坏的 mod 的真话,而真正的原因就写在它自己的 manifest 里。
+      判据窄:public + static + final + 类型是自己,否则一个叫 INSTANCE 的无关静态字段会被当成 mod 实例。
 - [ ] **D4** 时间轴与存档可携带性:长测 gate + 摘 mod 后开旧世界 / 跨构建搬世界 / 拿回原生 loader
 
 ## M-E 批评者补的

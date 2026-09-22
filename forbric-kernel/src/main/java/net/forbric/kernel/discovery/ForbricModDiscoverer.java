@@ -146,6 +146,7 @@ public final class ForbricModDiscoverer {
 			toml = ModsTomlParser.parse(in);
 		}
 		EcosystemVersions.audit(toml, source);
+		net.forbric.kernel.metadata.forge.LanguageProviders.audit(toml, source);
 
 		// Union of toml-declared ATs and the classic default path (if the jar actually carries it).
 		List<String> accessTransformers = new ArrayList<>(toml.getAccessTransformers());

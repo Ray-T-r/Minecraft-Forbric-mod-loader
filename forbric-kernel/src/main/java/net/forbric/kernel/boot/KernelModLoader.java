@@ -706,7 +706,21 @@ public final class KernelModLoader {
 		for (Constructor<?> c : modCls.getConstructors()) {
 			if (best == null || c.getParameterCount() > best.getParameterCount()) best = c;
 		}
-		if (best == null) throw new NoSuchMethodException("no public constructor on " + className);
+		if (best == null) {
+			Object singleton = languageProvidedInstance(modCls);
+			if (singleton != null) {
+				ForbricLog.info("[Forbric/ModLoader] %s has no constructor to call and one INSTANCE to use — "
+						+ "taking it, the way a language provider would", className);
+				return singleton;
+			}
+			// Name the gap instead of the symptom. A mod whose @Mod class has no public constructor is almost
+			// always not written in Java: mods.toml says so in `modLoader` (kotlinforforge, lowcodefml), the
+			// kernel parses that field, exposes it -- and has never had a single consumer of it, so the failure
+			// arrived as "no public constructor" and read like a broken mod.
+			throw new NoSuchMethodException("no public constructor and no INSTANCE on " + className
+					+ " — if its mods.toml declares a modLoader other than javafml (kotlinforforge, lowcodefml),"
+					+ " that language provider is not implemented here");
+		}
 
 		Class<?>[] params = best.getParameterTypes();
 		Object[] args = new Object[params.length];
@@ -726,6 +740,36 @@ public final class KernelModLoader {
 		}
 		best.setAccessible(true);
 		return best.newInstance(args);
+	}
+
+	/**
+	 * The instance a non-Java language provider would hand back instead of calling a constructor.
+	 *
+	 * <p>Kotlin's {@code object} compiles to a class with a private constructor and one
+	 * {@code public static final Self INSTANCE}; kotlinforforge's whole job on genuine Forge is to read that
+	 * field rather than call {@code newInstance}. The kernel constructs Forge-family mods by reflecting the
+	 * widest PUBLIC constructor, so such a mod fails with "no public constructor" — a true sentence about a mod
+	 * that is not broken.
+	 *
+	 * <p>Deliberately narrow: public, static, final, and typed as the mod class itself. That is the Kotlin
+	 * {@code object} shape exactly. A looser rule would start picking up an unrelated static field named
+	 * INSTANCE and hand the loader an object that is not the mod.
+	 */
+	static Object languageProvidedInstance(Class<?> modCls) {
+		try {
+			java.lang.reflect.Field instance = modCls.getDeclaredField("INSTANCE");
+			int mods = instance.getModifiers();
+			if (!java.lang.reflect.Modifier.isStatic(mods)
+					|| !java.lang.reflect.Modifier.isPublic(mods)
+					|| !java.lang.reflect.Modifier.isFinal(mods)
+					|| instance.getType() != modCls) {
+				return null;
+			}
+			instance.setAccessible(true);
+			return instance.get(null);
+		} catch (NoSuchFieldException | IllegalAccessException | RuntimeException | ExceptionInInitializerError notOne) {
+			return null;
+		}
 	}
 
 	/** The switch that constructs every traditional-MinecraftForge mod in the early window, as before. */
