@@ -195,7 +195,21 @@ public final class MergedBaseBuilder {
 	private static final Map<String, Set<String>> FORCE_FORGE_METHODS = Map.of(
 			"net/minecraft/world/level/chunk/ChunkGenerator", Set.of(
 					"<init>(Lnet/minecraft/world/level/biome/BiomeSource;Ljava/util/function/Function;)V",
-					"refreshFeaturesPerStep()V"));
+					"refreshFeaturesPerStep()V"),
+			// Chosen by measurement, not by direction. LostHookAttribution reads each conflict's body on both
+			// sides and names the hook the merge actually took, then asks whether any installed mod's constant
+			// pool names the event that hook posts. Of 995 conflicts, 773 lost no hook call at all, 8 are trades
+			// where both sides' hooks are waited for, and 9 gain a waited hook while giving up nothing waited.
+			// Six of those nine are already delivered by a bridge and two are the custom-payload seam the network
+			// interop injector owns, which leaves this one.
+			//
+			// It gains ChunkWatchEvent, which a mod in the test pack subscribes to, and gives up NeoForge's
+			// fireChunkSent, which nothing in that pack names. That is the whole justification: a whitelist entry
+			// is a TRADE, and this is one where the thing traded away has no waiter.
+			"net/minecraft/server/network/PlayerChunkSender", Set.of(
+					"sendChunk(Lnet/minecraft/server/network/ServerGamePacketListenerImpl;"
+							+ "Lnet/minecraft/server/level/ServerLevel;"
+							+ "Lnet/minecraft/world/level/chunk/LevelChunk;)V"));
 
 	/**
 	 * Concrete empty-collection impls for interface-typed exclusive-added fields the byte-merge left null.

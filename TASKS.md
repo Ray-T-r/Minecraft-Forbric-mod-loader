@@ -70,10 +70,17 @@
 
 ## M-B 仲裁
 
-- [ ] **B1** 白名单(未做,但现在有两份输入了):`DeadHookWorklist` 说哪些死事件真的有 mod 在等,
-      `MergeabilityCensus` 说哪些方法两边只是插入。交集就是"该留、且留得下"的那一批。
-      没动手是因为改仲裁要重建合并基底,而重建后 49 条 repair 的前提要全部重新验证 —— 那是一次完整的
-      验证轮次,不是一个提交。
+- [x] **B1 —— 做了,而且是按证据挑的一条**。新工具 `LostHookAttribution` 回答了报告本身回答不了的问题:
+      **每条冲突到底丢的是哪个钩子**(读两边的方法体做差集),以及**有没有 mod 在等它**(常量池点名事件类)。
+      995 条里:**773 条根本没丢钩子**(合并拿走的是别的东西)、8 条是**两边的钩子都有人等**的真交易、
+      9 条净赚。9 条里 6 条已经有桥在送、2 条是网络 interop 自己管的那条缝,**residual 只剩 1 条**。
+      于是 `FORCE_FORGE_METHODS` 加了这一条:`PlayerChunkSender#sendChunk` ——
+      赚到 `ChunkWatchEvent`(测试整合包里有 mod 订阅),让出 NeoForge 的 `fireChunkSent`(没人点名)。
+      **重建合并基底到临时目录并逐项验过**:冲突 1000→999、`forge hook lost` 995→994、
+      link check 24 known / **0 new**、`RepairDriftCensus` **44/44 全部落地**、gate-m12 在新基底上 **GREEN**。
+      (产物不入库 —— 改的是源,下一次重建就会产出它。)
+- [ ] **B1 余下** 那 8 条真交易需要"两边都留"才有意义,而合并工具目前没有"把两侧插入都拼进去"的能力;
+      `MergeabilityCensus` 说 66.6% 的冲突结构上允许这么做。
 - [x] **B2** 可合并性 —— `MergeabilityCensus` + `run/mergeability-census.sh`,**实测有答案了**:
       995 条被丢弃的 Forge 钩子里判了 961 条,**640 条(66.6%)是 ADDITIVE** —— 两边都只往原版体里
       **插入**,没有谁重写原版做的事,所以两边的钩子原则上都能留。321 条是 OVERLAPPING,真的没有
