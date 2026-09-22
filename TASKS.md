@@ -115,7 +115,20 @@
       **改写 spawn data 带不回去**,会打一行说明而不是悄悄丢掉。
       Forge 的 hook 还要一个 NeoForge 签名里没有的 `ValueInput`,传 null;真要紧就抛,抛了被接住 ——
       下限锁死在"不比不问更糟"。实测 repair 落地、m12 GREEN、`RepairDriftCensus` **46/46**。
-- [ ] **工单余下 2 条** —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
+- [x] **工单第六条:`AddPackFindersEvent`(←collective)** —— MinecraftForge 的 `addPackFindersServer`
+      在它自己的补丁游戏里有一个调用点、在合并基底里零个;NeoForge 的 `populatePackRepository` 活着。
+      NeoForge 这边**没有对应事件可听**,所以还是重定向(同签名,栈不动),然后把仓库自己的
+      `addPackFinder` 当 sink 交给 Forge 的 hook。只在 `SERVER_DATA` 上转发 —— 26.2 的 MinecraftForge
+      **只有服务端那一半**,没有 `addPackFindersClient`。
+      **第一次实跑直接把服务端打死了**:这是个 scanned repair(没有固定锚点),于是它把
+      `KernelPackFinders` **自己那句调用**也重定向了 —— 指向自己,第一个 pack repository 就把栈用完了
+      (`StackOverflowError`)。有固定锚点的 repair 不会犯这个错,scanned 的必须自己说明不许碰谁。
+      已排除并加测试钉住(去掉排除立刻红)。修完 m12 GREEN,而且
+      `MinecraftForge mods can add data-pack finders again` 在真服务端里真的打出来了。
+- [x] **工单第七条:`BlockEvent$EntityMultiPlaceEvent`(←journeymap)—— 不是 Forbric 的问题**。
+      `EventHooks.onMultiBlockPlace` 这个钩子存在,但**在 NeoForge 自己的补丁游戏里也是零调用点**
+      (合并基底里同样是零)。也就是说 journeymap 的这个监听器在**原生 NeoForge 26.2 上一样不会触发**。
+      判据是字节码,不是论证。 —— `hook-worklist.sh` 修掉名字匹配方向之后从 10 降到 7:
       `AddPackFindersEvent`←collective、`LivingEntityUseItemEvent$Finish`←nutritiousmilk、
       `MobSpawnEvent$FinalizeSpawn`←collective、`PlayerEvent$StartTracking`←collective、
       `BlockEvent$PortalSpawnEvent`←collective、`FurnaceFuelBurnTimeEvent`←balm(**NeoForge 的事件**)、

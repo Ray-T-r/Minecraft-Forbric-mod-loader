@@ -93,7 +93,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -243,6 +243,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("letMinecraftForgeSeeSpawnerMobs", BASE_SPAWNER,
 				"MobSpawnEvent$FinalizeSpawn is never posted, so a MinecraftForge mod can neither see nor refuse "
 						+ "a mob a spawner produces"));
+		out.add(scanned("letMinecraftForgeAddPackFinders",
+				"AddPackFindersEvent is never posted, so a MinecraftForge mod's own data pack is never offered "
+						+ "to any repository"));
 		return List.copyOf(out);
 	}
 
@@ -332,6 +335,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "wrapTheStreamsVanillaWraps", wrapTheStreamsVanillaWraps(node));
 		changed |= claim(reporter, "letBothEcosystemsSetBurnTime", letBothEcosystemsSetBurnTime(node));
 		changed |= claim(reporter, "letMinecraftForgeSeeSpawnerMobs", letMinecraftForgeSeeSpawnerMobs(node));
+		changed |= claim(reporter, "letMinecraftForgeAddPackFinders", letMinecraftForgeAddPackFinders(node));
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
 
 			byte[] result = classBytes;
@@ -427,6 +431,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String KERNEL_NEO_WORLDGEN = "net/forbric/kernel/runtime/KernelNeoWorldgen";
 	private static final String KERNEL_FUEL_VALUES = "net/forbric/kernel/runtime/KernelFuelValues";
 	private static final String KERNEL_SPAWNER_FINALIZE = "net/forbric/kernel/runtime/KernelSpawnerFinalize";
+	private static final String KERNEL_PACK_FINDERS = "net/forbric/kernel/runtime/KernelPackFinders";
+	private static final String NEO_RESOURCE_PACK_LOADER = "net/neoforged/neoforge/resource/ResourcePackLoader";
 	private static final String BASE_SPAWNER = "net/minecraft/world/level/BaseSpawner";
 	private static final String NEO_EVENT_HOOKS = "net/neoforged/neoforge/event/EventHooks";
 	private static final String FUEL_VALUES = "net/minecraft/world/level/block/entity/FuelValues";
@@ -4143,6 +4149,39 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		ForbricLog.info("[Forbric/MergedBaseCompat] BaseSpawner now asks both ecosystems about a mob it is "
 				+ "finishing (%d call site(s)) — the merge kept only NeoForge's hook, so "
 				+ "MobSpawnEvent$FinalizeSpawn was posted nowhere", redirected);
+		return true;
+	}
+
+	/**
+	 * Sends every pack-repository population through the kernel, so MinecraftForge is asked for finders too.
+	 *
+	 * <p>Four call sites, in two client screens and two {@code ServerPacksSource} factories, and no single class
+	 * to anchor on — hence a scanned claim rather than a fixed one. MinecraftForge's own call site is gone from
+	 * all of them and NeoForge's survived, so a Forge-family mod contributing a data pack is never asked.
+	 */
+	private static boolean letMinecraftForgeAddPackFinders(ClassNode node) {
+		// Not the redirect TARGET itself. Its whole body is a call to the method being redirected, so rewriting
+		// that call points it at itself: the first pack repository built recurses until the stack ends, and the
+		// server never reaches Done. A scanned repair with no fixed anchor has to say what it is not allowed to
+		// touch, because nothing else will.
+		if (KERNEL_PACK_FINDERS.equals(node.name)) return false;
+		int redirected = 0;
+		for (MethodNode method : node.methods) {
+			if (method.instructions == null) continue;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
+						|| !NEO_RESOURCE_PACK_LOADER.equals(call.owner)
+						|| !"populatePackRepository".equals(call.name)) {
+					continue;
+				}
+				call.owner = KERNEL_PACK_FINDERS;
+				redirected++;
+			}
+		}
+		if (redirected == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] %s now populates its pack repository through the kernel "
+				+ "(%d call site(s)) — the merge kept only NeoForge's, so MinecraftForge mods were never asked "
+				+ "for pack finders", node.name, redirected);
 		return true;
 	}
 
