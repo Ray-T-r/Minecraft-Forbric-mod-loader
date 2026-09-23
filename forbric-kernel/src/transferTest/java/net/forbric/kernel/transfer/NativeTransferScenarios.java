@@ -237,6 +237,32 @@ public final class NativeTransferScenarios {
 		}
 		yes(weak[0].get() == null && weak[1].get() == null);
 	}
+	/**
+	 * The bridge builds a fresh endpoint, and so a fresh watch, for every public query. A Forge provider that
+	 * returns its one cached LazyOptional must still hold ONE subscription from us, not one per query until the
+	 * block entity is invalidated; every still-watching endpoint must still hear the invalidation.
+	 */
+	public static void transientWatchesShareOneSubscription() throws Exception {
+		var notifications = new java.util.concurrent.atomic.AtomicInteger();
+		var cached = net.minecraftforge.common.util.LazyOptional.of(() -> "cached handler");
+		for (int i = 0; i < 10_000; i++) yes("cached handler".equals(new net.forbric.kernel.runtime.transfer.ForgeCapabilityWatch(() -> { }).observe(cached)));
+		var kept = new net.forbric.kernel.runtime.transfer.ForgeCapabilityWatch(notifications::incrementAndGet);
+		var moved = new net.forbric.kernel.runtime.transfer.ForgeCapabilityWatch(notifications::incrementAndGet);
+		kept.observe(cached); moved.observe(cached); kept.observe(cached);
+		var other = net.minecraftforge.common.util.LazyOptional.of(() -> "other handler");
+		moved.observe(other);
+		eq(1, listeners(cached).size()); eq(1, listeners(other).size());
+		cached.invalidate();
+		eq(1, notifications.get()); yes(!kept.isWatching()); yes(moved.isWatching());
+		other.invalidate(); eq(2, notifications.get()); yes(!moved.isWatching());
+		// An optional that is already invalid notifies at once, exactly like LazyOptional.addListener itself.
+		var dead = new net.forbric.kernel.runtime.transfer.ForgeCapabilityWatch(notifications::incrementAndGet);
+		dead.observe(cached); eq(3, notifications.get()); yes(!dead.isWatching());
+	}
+	private static java.util.Set<?> listeners(net.minecraftforge.common.util.LazyOptional<?> optional) throws Exception {
+		var field = net.minecraftforge.common.util.LazyOptional.class.getDeclaredField("listeners"); field.setAccessible(true);
+		return (java.util.Set<?>) field.get(optional);
+	}
 	@SuppressWarnings("unchecked")
 	private static java.lang.ref.WeakReference<Object>[] weakAfterReplacement(net.forbric.kernel.runtime.transfer.ForgeCapabilityWatch watch) {
 		Object handler = new Object();
