@@ -234,6 +234,12 @@ public final class ClientSoakController {
 			for (int attempt = 0; attempt < 10 && alive(after = weakEvidence()); attempt++) { System.gc(); Thread.sleep(200); }
 		}
 		boolean retained = alive(after);
+		if (completed && retained && Boolean.getBoolean("forbric.soak.heapDumpOnRetention")) {
+			// Taken after any reviewed native cut, so the shortest path in it is a root nothing has explained yet.
+			Path dump = output.resolve("retained-after-native-release.hprof");
+			ManagementFactory.getPlatformMXBean(com.sun.management.HotSpotDiagnosticMXBean.class).dumpHeap(dump.toString(), true);
+			write("heap-dump", fields("path", dump.toString()));
+		}
 		String status = !completed ? "FAIL" : retained ? "REVIEW_REQUIRED" : config.control() ? "CONTROL_PASS" : "RELEASE_PASS";
 		Map<String, Object> result = fields("status", status, "releaseEligible", !config.control(), "requiredSeconds", config.seconds(),
 				"activeNanos", machine.activeNanos(), "actualTicks", machine.actualTicks(), "sessions", machine.sessions(), "joins", machine.joins(),

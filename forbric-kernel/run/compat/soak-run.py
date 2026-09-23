@@ -170,7 +170,21 @@ def validate_native_release(result, roots, serial):
              'modJarSha256': allowed[row['root']]['modJarSha256']} for row in released]
 
 
-def validate_trace(rows, result, nonce, seconds, control, process_seconds, min_sessions=3, native_roots=()):
+HEAP_PATHS = Path(__file__).with_name('HeapPaths.java')
+
+
+def mod_owned_retention(java, dump, mods, game_jars, output):
+    """Ask HeapPaths whether every strong path to each retained server runs through state a mod keeps."""
+    command = [java, '-Xmx6g', str(HEAP_PATHS), str(dump), 'net.minecraft.client.server.IntegratedServer', '3',
+               '--mod-owned', str(mods), *map(str, game_jars)]
+    with Path(output).open('w') as log:
+        code = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT).returncode
+    verdicts = [line.split()[1:] for line in Path(output).read_text().splitlines() if line.startswith('VERDICT ')]
+    return {'exitCode': code, 'reachable': sum(v[1] == 'REACHABLE' for v in verdicts),
+            'unreachable': sum(v[1] == 'UNREACHABLE' for v in verdicts), 'analysis': str(output), 'sha256': digest(output)}
+
+
+def validate_trace(rows, result, nonce, seconds, control, process_seconds, min_sessions=3, native_roots=(), mod_owned=None):
     if not control and seconds < MIN_SECONDS:
         raise ValueError('release acceptance requires at least 7200 seconds')
     if not rows or rows[0]['type'] != 'start' or rows[-1]['type'] != 'finish':
@@ -266,9 +280,21 @@ def validate_trace(rows, result, nonce, seconds, control, process_seconds, min_s
             'visits': visits, 'unloads': unloads, 'reloads': reloads}
     attributed = validate_native_release(result, native_roots, serial)
     if attributed is None:
-        raise RetentionReview(activity)
-    if result['status'] == 'REVIEW_REQUIRED':
+        residual = sum(server['alive'] for server in result.get('oldServersAfterNativeRelease', result['oldServers']))
+        # Residual servers pass only when every strong path to each of them runs through a field a mod keeps (none
+        # through the game, a carrier or Forbric alone), and when most sessions' servers were collected, so that
+        # what is held is a mod's last-value state and not a per-session accumulation.
+        if (not mod_owned or mod_owned['exitCode'] != 0 or mod_owned['reachable'] != 0
+                or mod_owned['unreachable'] != residual or residual * 2 >= sessions):
+            raise RetentionReview(activity)
+        activity['modOwnedRetention'] = {'retained': residual, 'sessions': sessions,
+                                         'analysis': mod_owned['analysis'], 'sha256': mod_owned['sha256']}
+        attributed = []
+    if result['status'] == 'REVIEW_REQUIRED' and not any(server['alive'] for server in result['oldServers']):
         raise ValueError('controller requested retention review without a retained-server witness')
+    if result['status'] != 'REVIEW_REQUIRED' and any(server['alive'] for server in
+                                                    result.get('oldServersAfterNativeRelease', result['oldServers'])):
+        raise ValueError('controller reported a pass while a retired server is still reachable')
     if attributed:
         activity['nativeRetentionAttributed'] = attributed
     return {'status': expected, 'releaseAccepted': not control, **activity}
@@ -378,6 +404,7 @@ def launch(args):
                   'forbric.soak.settleSeconds': str(args.settle_seconds), 'forbric.compatibilityPolicy': args.policy,
                   'forbric.dependencyDialog': 'off', 'java.library.path': str(frozen / 'natives')}
     if native_roots: properties['forbric.soak.nativeRetentionRoots'] = ','.join(entry['root'] for entry in native_roots)
+    if getattr(args, 'heap_dump_on_retention', False) or not args.control: properties['forbric.soak.heapDumpOnRetention'] = 'true'
     command = [java] + (['-XstartOnFirstThread'] if platform.system() == 'Darwin' else []) + ['-Xmx' + args.heap]
     command += [f'-D{key}={value}' for key, value in properties.items()]
     command += ['-cp', os.pathsep.join(map(str, parent)), 'net.forbric.kernel.boot.KernelClientLaunch', '--gameJar', str(merged),
@@ -415,7 +442,12 @@ def launch(args):
         rows = [json.loads(line) for line in (evidence / 'telemetry.jsonl').read_text().splitlines()]
         result = json.loads((evidence / 'controller-result.json').read_text())
         if rows[0]['pid'] != process.pid: raise ValueError('telemetry is not from the launched child JVM')
-        validation.update(validate_trace(rows, result, nonce, args.seconds, args.control, elapsed, args.sessions, native_roots))
+        heap_dump = evidence / 'retained-after-native-release.hprof'
+        mod_owned = None
+        if heap_dump.is_file() and any(server['alive'] for server in result.get('oldServersAfterNativeRelease', result['oldServers'])):
+            mod_owned = mod_owned_retention(java, heap_dump, run / 'mods', [merged, forge, neo], evidence / 'retention-paths.txt')
+            validation['modOwnedAnalysis'] = mod_owned
+        validation.update(validate_trace(rows, result, nonce, args.seconds, args.control, elapsed, args.sessions, native_roots, mod_owned))
     except RetentionReview as review:
         validation.update(review.activity)
         validation.update(status='REVIEW_REQUIRED', releaseAccepted=False, detail=str(review))
@@ -450,6 +482,8 @@ def main():
     parser.add_argument('--timeout', type=int)
     parser.add_argument('--policy', choices=('strict', 'continue'), default='strict')
     parser.add_argument('--heap', default='4G')
+    parser.add_argument('--heap-dump-on-retention', action='store_true',
+                        help='write a live heap dump after the native cut when a retired server is still reachable')
     parser.add_argument('--java', default='java')
     return launch(parser.parse_args())
 
