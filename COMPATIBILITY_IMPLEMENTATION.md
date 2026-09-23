@@ -8,21 +8,34 @@ Claude memory is read-only. Each implementation batch is tested before being com
 
 ## Required work
 
+Status after the 2026-09-23 continuation (see the last sections). [x] means implemented with unit/JVM tests and,
+where the item names game behaviour, a real game run; [~] means implemented with named limitations.
+
 - [x] P0: reviewed, tracked link baseline shared by dev, integration gates and installer; missing inputs fail.
-- [ ] P0: evidence binds source revision/content, tool/input/output hashes, versions and mod manifest.
-- [ ] P0: symmetric, owner-qualified hook attribution; distinguish raw loss, repaired, residual and unobserved.
-- [ ] P1: conservative three-way composition with counterexamples and explicit rejection reasons.
-- [ ] P1: portal return-value/cancellation composition; no duplicate legacy bridge.
-- [ ] P1: spawner input/data fidelity and exactly one finalization; reject unsafe fall-hook composition.
-- [ ] P2: structured suspected/confirmed/resolved findings and final Mixin outcome reconciliation.
-- [ ] P2: confirmed necessary failures require an explicit client decision; headless/release strict.
-- [ ] P2: safely present late failures; targeted access replay after descriptor repair.
-- [ ] P2: dependency/member/Mixin-constrained arbitration with explicit override and unsatisfiable findings.
-- [ ] P3: real Fabric/Neo item/fluid transaction coordination, including nesting and re-entry.
-- [ ] P3: audited Forge snapshot adapters and legacy simulate/execute views.
-- [ ] P3: server block-entity lookup integration, native precedence, direction, invalidation and cycle guards.
-- [ ] P3: exact fluid units and lossless metadata; unsupported providers remain unavailable for writes.
-- [ ] Acceptance: native controls, mixed pack, real actions, multiplayer, save/reload and world re-entry.
+- [x] P0: evidence binds source revision/content, tool/input/output hashes, versions (pins read from the jars),
+      the jars the tests actually read, merge provenance and mod manifest; a release sweep refuses SKIP.
+- [x] P0: symmetric, owner-qualified hook attribution over every hook-lost row form; raw loss, restored,
+      residual and unobserved reported separately.
+- [~] P1: conservative three-way composition with counterexamples and explicit rejection reasons. The merger
+      composes the portal pilot on the real jars (accepted 1, declined 998 with per-reason counts); fall damage is
+      a pinned must-refuse counterexample; the spawner stays a runtime repair (the merger refuses it, reason named).
+- [x] P1: portal return-value/cancellation composition; no duplicate legacy bridge (structural stand-down).
+- [x] P1: spawner input/data fidelity and exactly one finalization; the repair stands down if a base ever carries
+      both native calls; reject unsafe fall-hook composition.
+- [x] P2: structured suspected/confirmed/resolved findings and final Mixin outcome reconciliation, including
+      MixinExtras injectors, kernel-made removals and superseded mixins resolved only on structural proof.
+- [x] P2: confirmed necessary failures require an explicit client decision in the existing dependency window;
+      headless/release strict; a client refusal is a typed exit-78 stop, not a vanilla crash.
+- [x] P2: safely present late failures (paged, re-asked on rejoin); targeted access replay after descriptor repair.
+- [~] P2: dependency/member/Mixin-constrained arbitration with explicit override and unsatisfiable findings.
+      Member-level Mixin contracts (@Shadow/@Invoker targets) are not modelled; only target classes are.
+- [x] P3: real Fabric/Neo item/fluid transaction coordination, including nesting and re-entry.
+- [x] P3: audited Forge snapshot adapters and legacy simulate/execute views.
+- [x] P3: server block-entity lookup integration, owner-ecosystem precedence, direction, invalidation (incl.
+      chunk unload) and cycle guards.
+- [x] P3: exact fluid units and lossless metadata; unsupported providers remain unavailable for writes.
+- [ ] Acceptance: native controls, mixed pack, real actions, multiplayer, save/reload and world re-entry, on the
+      merged candidate (see "Final acceptance").
 - [ ] Acceptance: at least two hours of sustained operation on the exact candidate artifacts.
 
 ## Evidence and decisions
@@ -556,3 +569,137 @@ Pending implementation and acceptance items remain open even when a smaller batc
   uncertain; fully satisfied guarded code is solved. M19's valid-selection assertion was not weakened.
 - All 74 tests across six arbitration/scanner suites pass without failures or skips. Before/after evidence:
   `forbric-kernel/build/verification/member-reference-closure/guard-after-summary.json` and adjacent archives.
+
+## Continuation by Claude (2026-09-23)
+
+Codex stopped before the acceptance items. The work below re-audited every batch above, fixed what the audit
+confirmed, and ran acceptance on one merged candidate.
+
+### Audit of the earlier batches
+
+- Eight areas (P0 evidence, P1 merge, P2 Mixin, P2 arbitration, §4 decisions, P3 transfer, §5 acceptance/soak,
+  regressions) were read against PLAN.md, and every reported defect was checked by two or three independent
+  refuters. 54 defects were reported and 47 confirmed; 50 plan gaps were reported and 47 not refuted.
+- The confirmed defects that hurt an ordinary pack: every boot turned an uninstalled optional or respelled
+  dependency into a hard arbitration rule; JarJar edges accepted only the exact artifact, so realistic
+  Forge-parent/NeoForge-child and Fabric JiJ layouts became UNSATISFIABLE; same-family nested duplicates were
+  chosen by content digest instead of version; any UNSAT dropped every contract; a malformed JarJar range
+  aborted the boot; every losing jar went onto the rescue class path; a release/installer build could silently
+  omit the transfer package; Fabric's generic Container view could answer (and write) for a Forge/NeoForge block
+  entity before its owner; cross-mod Mixin mismatches no longer reached the dependency window or the Mods screen;
+  a client refusal at client setup became a vanilla "Initializing game" crash with exit -1.
+- Each area was fixed in its own worktree branch (claude/compat-*), reviewed by an independent reviewer whose
+  issues were adversarially checked, and the confirmed review issues were fixed before merging.
+
+### P0 evidence (claude/compat-evidence)
+
+- LostHookAttribution and MergeabilityCensus parse every "... hook lost)" form, including the six
+  field-init-preserving constructor rows that were silently dropped (LivingEntity#<init> lost
+  ForgeHooks#onLivingMakeBrain); an unrecognised form stops the run.
+- Evidence manifests read the platform pins from the jars (26.2 / 26.2-65.0.1 / 26.2.0.88), record the jars the
+  build and its bytecode tests actually read (FORBRIC_OLD), and a release capture refuses a mismatch; gate-m0
+  step 0 refuses a split base. build-merged-base.sh writes merge provenance (inputs, tool sources, outputs, link
+  mode); a release refuses a missing or dirty one. `gates-all.sh --release` fails on SKIP or EXPECTED_RED, and
+  `evidence.py release-check` binds published jars to accepted manifests.
+- The link baseline is an input of the merge-tools/installer builds; the installer link-checks `--artifacts`.
+  gate-m0 now also runs transferTest, the Python evidence/soak tests, the link-check self tests and the installer
+  link gate. Defined-class evidence is content-addressed (case-insensitive file systems no longer collide).
+
+### P1 merge (claude/compat-merger)
+
+- AdditiveMethodMerger aligns each side with vanilla first and adds a paired-hook grammar. On the real jars it
+  now accepts BaseFireBlock#onPlace (the portal pilot): Neo call, then Forge's, same Optional, both vetoes kept.
+  accepted=1, declined=998 with per-reason counts. The kernel proves the restored caller and stands its legacy
+  forward down; a failing Forge listener keeps NeoForge's result instead of escaping onPlace.
+- Fall damage is a pinned must-refuse case on the real staged bytes ("hook stages differ"). The spawner stays a
+  runtime repair: the merger refuses it with its reason, and the repair stands down if a base ever carries both
+  native finalize calls. The portal mute is scoped to the dispatch in progress, not the whole thread.
+
+### P2 arbitration (claude/compat-arbitration)
+
+- Dependency rules exist only for installed contests; respelled ids match DependencyAudit; JarJar edges accept
+  any in-range build that claims the child's ids (top-level copy, other platform artifact, Fabric JiJ); newest
+  version wins inside one ecosystem; UNSAT relaxes only the conflicting pins/contracts; the search is bounded by
+  work, not wall-clock; proved providers beat unproved ones; breaks/conflicts/incompatible are exclusions;
+  findings are filed under the mods involved or "forbric"; only another ecosystem's build of a loaded mod can be
+  a rescue jar; nested inventories are no longer truncated at 1,024 archives. gate-m19 has main's real nested
+  shape again plus ranged and unsatisfiable strict cases.
+
+### P2 Mixin ledger (claude/compat-mixin-ledger)
+
+- Foreign cross-mod mismatches feed the dependency window's Mixin section and DEGRADED rows again (SUSPECTED,
+  non-blocking). Drift suspicions resolve only on their own evidence. A default-required injector is necessary
+  as in native Mixin (require/defaultRequire), plugin declines are asked per target, held-back preflight rows are
+  discharged by the final verdict. MixinExtras injectors are reconciled; an unaudited MixinExtras miss is
+  SUSPECTED, not CONFIRMED. Mixins and injectors the kernel removes by name are in the ledger.
+- The superseded-mixin proof exists twice on the branches; the merge keeps the evidence branch's version
+  (resolved at ForbricClassLoader's definition point, honouring the replacement's own switch).
+
+### §4 decisions (claude/compat-ui-decisions)
+
+- One startup window: required findings, the folded dependency notice (asked once), and a details pane with the
+  suspected findings. A client refusal leaves Minecraft.<init> through SilentInitException and exits 78. The
+  "every mod finished loading" line is written only at the real end of loading. Findings with no catalogue row
+  appear on the Mods screen and in load-report.txt; reports refresh during singleplayer play. Late prompts page
+  four findings at a time and re-ask on rejoin. gate-m20 asserts the policy outcome instead of the dialog line;
+  the Windows sweep forces strict and fails on any required loss.
+
+### P3 transfer (claude/compat-transfer)
+
+- The runtime jar can no longer be built without the transfer package. The owning ecosystem's provider answers
+  first; Fabric's generic Container view is never a write bridge over a Forge/NeoForge block entity. Forge
+  LazyOptional listeners are registered once and held weakly; legacy extraction stops at one stack; an empty
+  fluid tag moves as plain fluid; paired-transaction close ordering fixed. M33 now also covers chunk unload and
+  replacement without manual invalidation; gate-m39 runs the transfer engine suite and fails if it skips.
+
+### M34 soak (claude/compat-soak)
+
+- A saved test player that joins dead is respawned before measurement; a crash window is closed within five
+  seconds; a watchdog records FAIL with a thread dump when the client thread stays inside a native world-open or
+  disconnect loop; an unreachable probe fails within the timeout; a controller that cannot start stops the game.
+- Retention: a 12-session control retained all 12 stopped servers. After measurement the controller cuts only
+  reviewed native roots (native-retention.json: Unlit Campfire's CAMPFIRES, reproduced on native NeoForge with the
+  same jar) for its own stopped servers: 9 of 12 were then collected. run/compat/HeapPaths.java reads the heap
+  dump and cuts every mod-owned edge (mod classes, nested jars, lambdas, Mixin-added fields); the three left were
+  UNREACHABLE (first server: EMF's cached armor render state via TRansition's transitionEntity; last two: Xaero,
+  Chunky and Spark "last server" fields). A live server in a mid-session dump stays REACHABLE (negative control).
+  A release now accepts residual retention only when every retained server is UNREACHABLE once mod-owned edges
+  are cut and fewer than half the sessions' servers remain.
+
+### Fabric renderer slot regression found by the soak
+
+- Every soak on the mixed pack logged "NO renderer registered", and one crashed drawing a block in an item frame
+  ("Attempted to retrieve active rendering plug-in before one was registered"). Sodium 0.9.1's NeoForge build
+  declares contains_renderer in [modproperties] but ships no FRAPI renderer; since 8a9df2c (on main) that
+  declaration made Indigo stand down with nobody to take the slot. The declaration is now forwarded only from a
+  build that directly calls Renderer.register / RendererManager.registerRenderer. The next control logged
+  "[Indigo] Registering Indigo renderer!" and the slot held IndigoRenderer. main still carries the regression.
+
+### Merge and unit results
+
+- All seven branches merged into codex/compatibility-contracts. Kernel test 2,009, transferTest 42, loader 115,
+  Python 48: zero failures, errors or skips (before this continuation: 1,892 / 23 / 88).
+- Candidate rebuilt with the merged tools from committed sources: accepted=1 declined=998, 24 known / 0 new
+  dangling references, provenance written. Staged under build/claude/staged-root (a mirror of the reference
+  staged tree whose merged-base is the candidate), so the unit tests and the gates read the same base.
+
+### Preflight on the merged candidate
+
+- `gates-all.sh -j 2 --mem-budget 6000 --skip gate-m34-soak.sh` with FORBRIC_OLD on the candidate staged root:
+  all 39 other gates GREEN in 23 minutes, including M9 (97-jar strict client, zero required losses), M19
+  (restored nested shape), M20 (policy outcomes), M33 (owner-first routing, chunk unload, save/reload, red
+  bridge-off control) and M35 (11 cases on the merger-composed portal, exact repair-off counterexamples; the log
+  shows the proved restored portal call). This preflight is not evidence-bound; the release run follows.
+
+### Known limitations after this continuation
+
+- Arbitration models Mixin target classes, not the members a Mixin shadows or invokes; Mixin bodies and static
+  event-subscriber seeds are not scanned for member contracts. Rescue jars are limited to another ecosystem's
+  build of a loaded mod, not audited class by class.
+- Event/lifecycle chains are verified end to end for the repaired paths (portal, spawner, item use, entity
+  callbacks, enchantment, transfer); there is no general chain validator for every event.
+- The full-game effective hook census (defined-class evidence joined to the platform census) has tooling but no
+  archived full-game export yet.
+- Every launch hashes each mod jar for the candidate plan; large packs pay that time at boot.
+- The spawner is not composed by the merger; it stays a runtime repair with a structural stand-down.
+- main still carries the renderer-slot regression fixed here (8a9df2c forwards Sodium NeoForge's declaration).
