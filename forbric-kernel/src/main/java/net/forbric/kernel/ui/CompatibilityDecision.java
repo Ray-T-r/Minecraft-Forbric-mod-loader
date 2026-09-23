@@ -187,9 +187,14 @@ public final class CompatibilityDecision {
 		return findings.stream().anyMatch(f -> f.modId().equals(row.requiredBy()) && f.id().equalsIgnoreCase(id));
 	}
 
-	/** A mixin preflight row ({@code mixin:<config>:<class>}) for a break the notice's mixin section names. */
+	/**
+	 * A mixin preflight row for a break the notice's mixin section names. The finding's id is
+	 * {@code mixin:<config>:<package>.<mixin>}, while a break names the mixin as its config lists it, relative to
+	 * that package -- so the class is matched at a {@code .} boundary as well as a {@code :} one, within one owner.
+	 */
 	private static boolean sameMixin(CompatibilityFinding finding, DependencyReport.MixinRow mixin) {
-		return finding.id().startsWith("mixin:") && finding.id().endsWith(":" + mixin.mixin())
+		String id = finding.id();
+		return id.startsWith("mixin:") && (id.endsWith(":" + mixin.mixin()) || id.endsWith("." + mixin.mixin()))
 				&& (finding.modId().equals(mixin.owner()) || finding.modId().equals("config:" + mixin.owner()));
 	}
 

@@ -103,11 +103,12 @@ class CompatibilityDecisionTest {
 		final List<DependencyReport.Confirmation> confirmations = new java.util.ArrayList<>();
 		final List<DependencyDialog.Notice> notices = new java.util.ArrayList<>();
 		final List<String> unshown = new java.util.ArrayList<>();
+		final List<List<DependencyReport.CompatibilityRow>> noticeDetails = new java.util.ArrayList<>();
 		Integer answer = DependencyDialogMain.CONTINUE;
 		boolean noticeAnswer = true;
 		@Override public Integer confirm(DependencyReport.Confirmation confirmation) { confirmations.add(confirmation); return answer; }
 		@Override public boolean notice(DependencyDialog.Notice notice, List<DependencyReport.CompatibilityRow> suspected) {
-			notices.add(notice); return noticeAnswer;
+			notices.add(notice); noticeDetails.add(suspected); return noticeAnswer;
 		}
 		@Override public void unshown(DependencyDialog.Notice notice, String why) { unshown.add(why); }
 	}
@@ -174,6 +175,54 @@ class CompatibilityDecisionTest {
 		assertFalse(CompatibilityDecision.decide(List.of(), CompatibilityDecision.Policy.ASK, true, true, missingDependency(), windows),
 				"quitting the notice is the player's stop, carried to the launcher as the typed stop");
 		assertEquals(List.of(), windows.confirmations);
+	}
+
+	/**
+	 * A mixin whose anchors miss on another mod's class, recorded the way the guest adapter records it: the break
+	 * for the dependency window's non-blocking mixin section, and its SUSPECTED twin under MixinCompatibility's own
+	 * id, {@code mixin:<config>:<package>.<mixin>}. The break names the mixin as its config lists it, relative to
+	 * the package, so a match on {@code ":" + mixin} never found the twin and the window listed the same mixin
+	 * twice, once as a break and once as a note.
+	 */
+	@Test
+	void aForeignMixinBreakAloneOpensTheNoticeAndItsOwnSuspicionIsNotListedAgain() throws Exception {
+		String config = "mixins.iris.compat.sodium.json";
+		Class<?> breaks = Class.forName("net.forbric.kernel.mixin.ForeignMixinBreaks");
+		java.lang.reflect.Method forget = breaks.getDeclaredMethod("reset");
+		forget.setAccessible(true);
+		forget.invoke(null);
+		net.forbric.kernel.mixin.MixinConfigOwners.publish(List.of(
+				new net.forbric.kernel.mixin.MixinConfigOwners.Owned(config, "iris", Ecosystem.FABRIC)));
+		try {
+			net.forbric.kernel.mixin.ForeignMixinBreaks.record(config, "MixinRenderRegionManager",
+					List.of("@Redirect RenderRegion.clearAllCachedBatches in uploadResults"));
+			java.lang.reflect.Method suspect = Class.forName("net.forbric.kernel.mixin.MixinCompatibility").getDeclaredMethod(
+					"record", String.class, String.class, String.class, CompatibilityFinding.Confidence.class, boolean.class, List.class);
+			suspect.setAccessible(true);
+			suspect.invoke(null, config, "net.irisshaders.iris.compat.sodium.mixin.MixinRenderRegionManager",
+					"preflight could not resolve this mixin's anchors on another mod", CompatibilityFinding.Confidence.SUSPECTED,
+					false, List.of("@Redirect RenderRegion.clearAllCachedBatches in uploadResults"));
+			// Unrelated, and the kind every fabric-api boot has: it stays a note.
+			CompatibilityFindings.record(new CompatibilityFinding(
+					"mixin:fabric-content-registries-v0.mixins.json:net.fabricmc.fabric.mixin.content.registry.FuelValuesMixin",
+					"fabric-content-registries-v0", "Mixin FuelValuesMixin", "mixin:fabric-content-registries-v0.mixins.json",
+					CompatibilityFinding.Confidence.SUSPECTED, false, "1/2 anchors resolve", List.of("FuelValues.remove")));
+			net.forbric.kernel.boot.DependencyAudit.report(List.of(new net.forbric.api.DiscoveredMod(Ecosystem.FABRIC,
+					"iris", "1.11.2", "Iris", List.of(), List.of(), null, "iris.jar")), List.of(), net.forbric.api.Side.CLIENT);
+			DependencyDialog.Notice held = DependencyDialog.takeHeld();
+			assertEquals(List.of("iris:MixinRenderRegionManager"),
+					held.mixins().stream().map(m -> m.owner() + ":" + m.mixin()).toList(), "the audit holds the break");
+			Recorded windows = new Recorded();
+			assertTrue(CompatibilityDecision.decide(List.of(), CompatibilityDecision.Policy.ASK, true, true, held, windows));
+			assertEquals(1, windows.notices.size(), "a foreign break alone opens the one fail-open notice");
+			assertEquals(List.of("1/2 anchors resolve"),
+					windows.noticeDetails.getFirst().stream().map(DependencyReport.CompatibilityRow::detail).toList(),
+					"the break's own suspicion is not listed a second time in the details");
+			assertEquals(List.of(), windows.confirmations, "and nothing is asked: a suspicion needs no answer");
+		} finally {
+			forget.invoke(null);
+			net.forbric.kernel.mixin.MixinConfigOwners.publish(List.of());
+		}
 	}
 
 	@Test
