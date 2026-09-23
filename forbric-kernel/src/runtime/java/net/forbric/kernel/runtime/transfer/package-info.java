@@ -10,9 +10,10 @@
  * TransferIssues.setReporter can connect runtime findings to the kernel's attributed compatibility report.
  *
  * <p>The bridge pairs native transaction objects, including every outer ancestor, and closes both at the same
- * nesting boundary. Final notifications run only after both roots close, once per native participant. Transfer
- * during a close/final callback and joining independently-open roots are unsupported. A callback throwing after
- * commit is reported and both engines are released; external side effects are not magically rolled back.
+ * nesting boundary. Final notifications run only after both roots close, once per native participant, and may
+ * open new roots and transfer again. Transfer during a close callback and joining independently-open roots are
+ * unsupported. A callback throwing after commit is reported and both engines are released; external side effects
+ * are not magically rolled back.
  *
  * <p>Fabric SlottedStorage is required when exposing a NeoForge ResourceHandler: an arbitrary Storage cannot
  * supply indexed insertion. Fabric has no exact resource-specific validity query; our advertised validity is
