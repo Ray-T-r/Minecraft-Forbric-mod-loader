@@ -372,3 +372,16 @@ Pending implementation and acceptance items remain open even when a smaller batc
   Missing graft/API, unknown bodies and the off switch remain unchanged. Evidence: `build/verification/sound-contracts/`.
 - Full mixed-client acceptance follows the remaining inserted-parameter rendering adapter; this focused
   result does not by itself prove playback or full-pack acceptance.
+
+### P2 retain explicit lambda callbacks across uniquely inserted parameters
+
+- The shim requires actual pruner evidence, a single referenced live lambda, matching staticness/return,
+  and a unique ordered parameter embedding. Repeated resource handles retain their positions. It refuses
+  groups, locals/sugar, unknown anchors and ambiguous mappings. The original private helper retains its
+  name; its synthetic injector forwards the original callback object, preserving cancellation.
+- Seventeen focused regression tests pass with zero skips, including the actual two Litematica handlers
+  and a JVM execution probe for repeated objects, wide local slots and cancellation.
+- M9 passed on the full 97-jar client in STRICT mode: rendered world, simulation, normal save/disconnect,
+  normal JVM exit, and a fresh report with zero confirmed required losses. Sound and both rendering
+  callbacks are now attached. Four pre-existing unclassified DEGRADED rows remain visible and are not
+  promoted to verified functionality by this result. Evidence: `build/verification/inserted-lambda/`.

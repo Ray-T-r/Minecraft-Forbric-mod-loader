@@ -294,6 +294,7 @@ public final class ForbricMixinService
 		// …and an @Inject handler written for the other ecosystem's shape of the one surviving target is wrapped,
 		// so it still receives the values it asked for rather than failing the whole mixin class.
 		MixinHandlerShim.adapt(node, this::mergedBaseNode);
+		InsertedLambdaArgumentShim.adapt(node, this::mergedBaseNodeWithCode);
 		// …and whatever the wrap could NOT reach is explained rather than left as "Invalid descriptor". After the
 		// shim, never before it: a diagnosis for something that is about to be repaired is a false alarm.
 		MixinOverloadPin.pin(node, this::mergedBaseNode);
