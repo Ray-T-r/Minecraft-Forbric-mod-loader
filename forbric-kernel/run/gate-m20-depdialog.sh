@@ -110,7 +110,8 @@ cp "$KERNEL/run/client-merged-pack/options.txt" "$CLI/options.txt" 2>/dev/null \
 # M20_HELPERS_BEGIN — M20OutcomeContractTest runs these and the ask-outcome block below against fixture logs.
 # forks <game-log> — how many dialog children this boot started. Counted in the game's own log, which has each
 # line once (the launcher's console carries a second copy).
-forks() { grep -acE "Forbric/Deps\] -Dforbric.dependencyDialog=dryRun — forked the dialog" "$1" 2>/dev/null || echo 0; }
+# grep -c already prints 0 for no match; an unreadable log counts as none.
+forks() { local n; n=$(grep -acE "Forbric/Deps\] -Dforbric.dependencyDialog=dryRun — forked the dialog" "$1" 2>/dev/null); echo "${n:-0}"; }
 
 # report_field <json> <python-expr over report> — prints the value, or "missing" when there is no fresh report.
 report_field() {

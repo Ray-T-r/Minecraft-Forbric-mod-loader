@@ -48,6 +48,11 @@ class M20OutcomeContractTest {
 	}
 
 	@Test
+	void aStopWithNoWindowAtAllIsRed() throws Exception {
+		assertEquals(1, outcome("", STOPPED, 3, "78"), "the dry run must still fork the one real child");
+	}
+
+	@Test
 	void withNothingRequiredTheNoticeMustLetTheBootContinue() throws Exception {
 		String continued = NOTICE_FORK + LAUNCHING + "Sound engine started\n";
 		assertEquals(0, outcome(continued, continued, 0, "killed"));
