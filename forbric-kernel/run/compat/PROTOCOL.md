@@ -247,7 +247,7 @@ evidence, initial refusal focus, normal save/return to title and two fresh game 
 incompatible control scenario is separate from a strict compatibility acceptance run.
 
 `gate-m39-transfer-core.sh` packages the existing real-carrier transfer scenarios as a game canary. It
-requires all eleven Forge snapshot/alias/metadata cases and a real full watchdog thread dump, including
+requires all twelve Forge snapshot/alias/metadata/facade cases and a real full watchdog thread dump, including
 the final-defined native-helper equivalence finding. Inputs are hash-bound and its server remains strict.
 
 `gate-m34-soak.sh` builds once, then `soak-run.py` freezes the exact boot/runtime/game jars, dependencies and

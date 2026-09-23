@@ -154,6 +154,22 @@ public final class ForgeTransferGameScenarios {
 		eq(0, neoFacade.insertItem(0, input, false).getCount()); eq(31, neo.getAmountAsLong(0));
 		eq(31, neoFacade.extractItem(0, 31, false).getCount()); eq(0, neo.getAmountAsLong(0)); closed();
 	}
+	/**
+	 * IItemHandler's contract: one extraction returns at most one stack of the item, even from a store holding more
+	 * and a caller asking for more. A 1000-count ItemStack cannot be saved by the item codec (count 1..99).
+	 */
+	public static void legacyExtractionStopsAtOneStack() {
+		FabricItems fabric = new FabricItems(1000); fabric.variant = ItemVariant.of(taggedStone(1)); fabric.amount = 1000;
+		IItemHandler facade = ForgeLegacyFacades.items(NativeTransferAdapters.neo(fabric, TransferResources.ITEMS));
+		eq(1000, facade.getStackInSlot(0).getCount());
+		eq(64, facade.extractItem(0, facade.getStackInSlot(0).getCount(), true).getCount()); eq(1000, fabric.amount);
+		ItemStack taken = facade.extractItem(0, 99, false); eq(64, taken.getCount()); eq(936, fabric.amount);
+		yes(ItemStack.isSameItemSameComponents(taggedStone(1), taken));
+		FabricItems pearls = new FabricItems(100); pearls.variant = ItemVariant.of(Items.ENDER_PEARL); pearls.amount = 40;
+		IItemHandler pearlFacade = ForgeLegacyFacades.items(NativeTransferAdapters.neo(pearls, TransferResources.ITEMS));
+		eq(16, pearlFacade.extractItem(0, 40, false).getCount()); eq(24, pearls.amount);
+		eq(3, pearlFacade.extractItem(0, 3, false).getCount()); eq(21, pearls.amount); closed();
+	}
 	public static void fluidRollback() {
 		FluidTank nativeTank = new FluidTank(1000); nativeTank.fill(new FluidStack(Fluids.WATER, 200), IFluidHandler.FluidAction.EXECUTE);
 		AtomicInteger changed = new AtomicInteger();
