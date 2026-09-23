@@ -3,6 +3,7 @@ package net.forbric.tools;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.*;
@@ -21,6 +22,7 @@ class EffectiveHookEvidenceTest {
   var e=new EffectiveHookEvidence(root);String hook=HOOK+"#tick()V";
   assertEquals(EffectiveHookEvidence.State.DIRECT_RESTORED,e.state("game/Direct#tick()V",hook));
   assertEquals(EffectiveHookEvidence.State.VIA_DEFINED_HELPER,e.state("game/Helper#tick()V",hook));
+  // The helper is wired into game/Helper by a static call, so it restores that caller and no other.
   assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK,e.state("game/Residual#tick()V",hook));
   assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK,e.state("game/Virtual#tick()V",hook));
   assertEquals(EffectiveHookEvidence.State.UNOBSERVED,e.state("game/NeverLoaded#tick()V",hook));
@@ -59,6 +61,36 @@ class EffectiveHookEvidenceTest {
   put("game/B","net/forbric/kernel/runtime/Unknown",Opcodes.INVOKESTATIC);
   var e=new EffectiveHookEvidence(root);
   for(String name:new String[]{"game/A","game/B"})assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK,e.state(name+"#tick()V",HOOK+"#tick()V"));
+ }
+ /** A defined boot or interop helper is as exact a static route as a runtime one. */
+ @Test void staticHelpersOutsideTheRuntimePackageAreFollowed() throws Exception {
+  manifest();put("game/Boot","net/forbric/kernel/interop/Relay",Opcodes.INVOKESTATIC);
+  put("net/forbric/kernel/interop/Relay",HOOK,Opcodes.INVOKESTATIC);
+  assertEquals(EffectiveHookEvidence.State.VIA_DEFINED_HELPER,new EffectiveHookEvidence(root).state("game/Boot#tick()V",HOOK+"#tick()V"));
+ }
+ /**
+  * An event-bus forward: a kernel method no game class calls statically (a listener lambda) fires the lost hook.
+  * It is reported apart from residual loss, and a game class calling the same hook elsewhere is not a forward.
+  */
+ @Test void aKernelForwardIsReportedApartFromResidualLoss() throws Exception {
+  manifest();put("game/Teleport",null,0);put("game/Other",HOOK,Opcodes.INVOKESTATIC);
+  assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK,new EffectiveHookEvidence(root).state("game/Teleport#tick()V",HOOK+"#tick()V"));
+  put("net/forbric/kernel/runtime/KernelGamePlayerEvents",HOOK,Opcodes.INVOKESTATIC);
+  var e=new EffectiveHookEvidence(root);
+  assertEquals(EffectiveHookEvidence.State.VIA_KERNEL_BRIDGE,e.state("game/Teleport#tick()V",HOOK+"#tick()V"));
+  assertEquals(EffectiveHookEvidence.State.DIRECT_RESTORED,e.state("game/Other#tick()V",HOOK+"#tick()V"));
+  assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK,e.state("game/Teleport#tick()V",HOOK+"#other()V"));
+ }
+ /** A census row carries the source's occurrence count: one surviving call of two is not a restoration. */
+ @Test void aPartialLossIsNotRestoredByTheCallTheMergeKept() throws Exception {
+  manifest();put("game/Partial",HOOK,Opcodes.INVOKESTATIC);
+  var e=new EffectiveHookEvidence(root);
+  assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK,
+    e.state("game/Partial#tick()V",HOOK+"#tick()V",Map.of("INVOKESTATIC/itf=false",2)));
+  assertEquals(EffectiveHookEvidence.State.DIRECT_RESTORED,
+    e.state("game/Partial#tick()V",HOOK+"#tick()V",Map.of("INVOKESTATIC/itf=false",1)));
+  assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK,
+    e.state("game/Partial#tick()V",HOOK+"#tick()V",Map.of("INVOKEVIRTUAL/itf=false",1)),"a changed invocation form is not the same call");
  }
  private void manifest() throws Exception {Files.writeString(root.resolve("definitions.tsv"),EffectiveHookEvidence.HEADER+"\n");}
  private String put(String name,String target,int opcode) throws Exception {

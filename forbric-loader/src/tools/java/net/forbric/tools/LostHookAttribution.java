@@ -62,13 +62,15 @@ import org.objectweb.asm.tree.TypeInsnNode;
  *
  * <p>Potential consumers are identified by an event class in a mod's constant pool. This is not proof of a
  * registered listener, and absence is not proof that reflection or an unmodelled helper never uses it.
- * Raw losses are reported separately from runtime restoration, which this tool does not assess.
+ * Raw losses are reported separately from runtime restoration. Restoration is assessed only when the kernel's
+ * defined-class evidence is supplied, and then structurally ({@link EffectiveHookEvidence}), for the conflict rows
+ * and for every raw loss in the census alike.
  * The appended platform census covers every direct platform method invocation in both patched JARs,
  * including non-conflict callers and symbols outside the event-facade model. It does not equate those
- * platform symbols with event hooks or assess indirect/runtime behavior.
+ * platform symbols with event hooks.
  *
  * <p>Usage: {@code LostHookAttribution <forge-patched.jar> <neo-patched.jar> <merged.jar> <forge-runtime.jar>
- * <neoforge-runtime.jar> <merge-conflicts.txt> <mods-dir>}
+ * <neoforge-runtime.jar> <merge-conflicts.txt> <mods-dir> [defined-class-evidence-dir]}
  */
 public final class LostHookAttribution {
 
@@ -142,14 +144,16 @@ public final class LostHookAttribution {
 			for (var state : EffectiveHookEvidence.State.values())
 				System.out.println("[effective] " + state + "=" + effectiveCounts.getOrDefault(state, 0));
 			System.out.println("[effective] direct/helper restoration is structural evidence only, not proof of execution,"
-					+ " cancellation or return-value fidelity. OBSERVED_WITHOUT_HOOK is residual direct-call loss;"
-					+ " event-bus bridges, reflection and other unmodelled routes remain unassessed. UNOBSERVED is not a pass.");
+					+ " cancellation or return-value fidelity. VIA_KERNEL_BRIDGE means a defined kernel class invokes the"
+					+ " exact hook (an event-bus forward); its route from this caller is not proven. OBSERVED_WITHOUT_HOOK"
+					+ " is residual direct-call loss; reflection and other unmodelled routes remain unassessed."
+					+ " UNOBSERVED is not a pass.");
 		}
 		System.out.println("[attribution] CANDIDATES (lost event referenced, no retained event reference observed): " + candidates.size());
 		for (String row : candidates) System.out.println("    + " + row);
 		System.out.println("[attribution] TRADES (both event types referenced): " + trades.size());
 		for (String row : trades) System.out.println("    ~ " + row);
-		printPlatformCensus(forge, neo, merged, conflicts);
+		printPlatformCensus(forge, neo, merged, conflicts, effective);
 	}
 
 	/** Raw, same-caller bytecode coverage; none of these states asserts runtime event behavior. */
@@ -222,17 +226,17 @@ public final class LostHookAttribution {
 		return calls;
 	}
 
-	private static int occurrences(Map<String, Integer> forms) {
+	static int occurrences(Map<String, Integer> forms) {
 		return forms.values().stream().mapToInt(Integer::intValue).sum();
 	}
 
-	private static int invocationOverlap(Map<String, Integer> original, Map<String, Integer> merged) {
+	static int invocationOverlap(Map<String, Integer> original, Map<String, Integer> merged) {
 		int overlap = 0;
 		for (var form : original.entrySet()) overlap += Math.min(form.getValue(), merged.getOrDefault(form.getKey(), 0));
 		return overlap;
 	}
 
-	private static Map<String, Map<String, Integer>> platformCallForms(MethodNode method) {
+	static Map<String, Map<String, Integer>> platformCallForms(MethodNode method) {
 		Map<String, Map<String, Integer>> calls = new TreeMap<>();
 		if (method.instructions == null) return calls;
 		for (AbstractInsnNode insn : method.instructions) {
@@ -257,8 +261,28 @@ public final class LostHookAttribution {
 		return false;
 	}
 
+	/** Raw losses a census row can have; retained rows and callers the merge does not have are not losses. */
+	private static boolean rawLoss(RawCallState state) {
+		return state == RawCallState.RAW_LOST || state == RawCallState.RAW_PARTIAL_LOSS
+				|| state == RawCallState.RAW_INVOCATION_CHANGED;
+	}
+
+	/**
+	 * Every raw loss in the census joined to the final definitions -- listed conflict or not, modelled facade or
+	 * not. The conflict rows alone got this before, so a loss in an unlisted caller (the facade calls in lambdas,
+	 * anything outside the six-owner model) had a raw state and never a repaired, residual or unobserved one.
+	 */
+	static Map<PlatformCall, EffectiveHookEvidence.State> effectiveStates(PlatformCensus census,
+			EffectiveHookEvidence effective) {
+		Map<PlatformCall, EffectiveHookEvidence.State> out = new LinkedHashMap<>();
+		for (PlatformCall call : census.calls()) {
+			if (rawLoss(call.state())) out.put(call, effective.state(call.caller(), call.symbol(), call.originalForms()));
+		}
+		return out;
+	}
+
 	private static void printPlatformCensus(Map<String, ClassNode> forge, Map<String, ClassNode> neo,
-			Map<String, ClassNode> merged, List<Conflict> conflicts) {
+			Map<String, ClassNode> merged, List<Conflict> conflicts, EffectiveHookEvidence effective) {
 		System.out.println("[platform-census] scope: all loaded classes and declared methods in each patched JAR;"
 				+ " every direct MethodInsnNode targeting net/minecraftforge/ or net/neoforged/; both namespaces"
 				+ " scanned on both sides; caller and symbol identities are owner#name+descriptor");
@@ -268,13 +292,15 @@ public final class LostHookAttribution {
 		System.out.println("[platform-census] comparison: raw symbol+opcode+itf occurrence-count overlap in the same caller;"
 				+ " not call-site/control-flow equivalence; MERGED_CALLER_MISSING is unobserved, excluded from raw"
 				+ " retained/lost counts; RAW_INVOCATION_CHANGED means the symbol remains only with different invocation forms."
-				+ " Invokedynamic/handle targets, fields, reflection, helpers, runtime rewriting"
-				+ " and event-bus bridges are NOT_ASSESSED; raw absence is not proof of a behavior defect");
-		printPlatformCensus("forge", platformCensus(forge, merged, conflicts));
-		printPlatformCensus("neo", platformCensus(neo, merged, conflicts));
+				+ " Invokedynamic/handle targets, fields and reflection are NOT_ASSESSED; runtime rewriting, kernel"
+				+ " helpers and kernel event-bus forwards are classified per raw loss (effective=) only from supplied"
+				+ " defined-class evidence; raw absence is not proof of a behavior defect");
+		printPlatformCensus("forge", platformCensus(forge, merged, conflicts), effective);
+		printPlatformCensus("neo", platformCensus(neo, merged, conflicts), effective);
 	}
 
-	private static void printPlatformCensus(String side, PlatformCensus census) {
+	private static void printPlatformCensus(String side, PlatformCensus census, EffectiveHookEvidence effective) {
+		Map<PlatformCall, EffectiveHookEvidence.State> states = effective == null ? Map.of() : effectiveStates(census, effective);
 		Set<String> symbols = new TreeSet<>(), modelled = new TreeSet<>();
 		Map<String, long[]> groups = new TreeMap<>();
 		long occurrences = 0, retained = 0, lost = 0, unobserved = 0;
@@ -297,7 +323,8 @@ public final class LostHookAttribution {
 					+ (call.mergedOccurrences() < 0 ? "UNOBSERVED" : call.mergedOccurrences())
 					+ " original-forms=" + call.originalForms() + " merged-forms="
 					+ (call.mergedOccurrences() < 0 ? "UNOBSERVED" : call.mergedForms())
-					+ " retained-overlap=" + call.retainedOccurrences() + " raw-lost-occurrences=" + call.lostOccurrences());
+					+ " retained-overlap=" + call.retainedOccurrences() + " raw-lost-occurrences=" + call.lostOccurrences()
+					+ (rawLoss(call.state()) ? " effective=" + (effective == null ? "NOT_ASSESSED" : states.get(call)) : ""));
 		}
 		System.out.println("[platform-census] denominator side=" + side + " classes=" + census.classes()
 				+ " methods=" + census.methods() + " methods-without-platform-calls=" + (census.methods() - census.callers())
@@ -311,6 +338,16 @@ public final class LostHookAttribution {
 				+ " retained-overlap=" + retained + " raw-lost-occurrences=" + lost + " unobserved-occurrences=" + unobserved);
 		for (var group : groups.entrySet()) System.out.println("[platform-census] coverage side=" + side + " scope="
 				+ group.getKey() + " caller-symbol-pairs=" + group.getValue()[0] + " original-occurrences=" + group.getValue()[1]);
+		long rawLossPairs = census.calls().stream().filter(call -> rawLoss(call.state())).count();
+		if (effective == null) {
+			System.out.println("[platform-census] effective side=" + side + " raw-loss-pairs=" + rawLossPairs
+					+ " NOT_ASSESSED (no defined-class evidence supplied)");
+			return;
+		}
+		StringBuilder totals = new StringBuilder("[platform-census] effective side=" + side + " raw-loss-pairs=" + rawLossPairs);
+		for (var state : EffectiveHookEvidence.State.values())
+			totals.append(' ').append(state).append('=').append(states.values().stream().filter(state::equals).count());
+		System.out.println(totals);
 	}
 
 	private static boolean anyWanted(Set<String> hooks, Map<String, Set<String>> eventsOfHook, Set<String> wanted) {

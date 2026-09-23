@@ -192,6 +192,84 @@ class LostHookAttributionTest {
 		}
 	}
 
+	/**
+	 * Every raw loss in the census gets an effective state, not only the conflict rows: an UNLISTED caller whose
+	 * final definition restored the call is DIRECT_RESTORED, and a listed one that stayed lost is residual.
+	 */
+	@Test void everyCensusRawLossIsJoinedToTheFinalDefinitions() throws Exception {
+		String hook = "net/minecraftforge/common/ForgeHooks#tick()V";
+		String outside = "net/minecraftforge/registries/RegistryManager#tick()V";
+		ClassNode source = classNode("game/A", methodNode("listed", "()V", hook), methodNode("unlisted", "()V", hook, outside));
+		ClassNode merged = classNode("game/A", methodNode("listed", "()V"), methodNode("unlisted", "()V"));
+		var census = LostHookAttribution.platformCensus(Map.of(source.name, source), Map.of(merged.name, merged),
+				List.of(new LostHookAttribution.Conflict("game/A", "listed()V", "forge")));
+		Path evidence = evidence(classNode("game/A", methodNode("listed", "()V"), methodNode("unlisted", "()V", hook)));
+		var states = LostHookAttribution.effectiveStates(census, new EffectiveHookEvidence(evidence));
+		assertEquals(3, states.size(), "every raw loss, listed or not, modelled facade or not: " + states);
+		var bySymbol = new java.util.HashMap<String, EffectiveHookEvidence.State>();
+		states.forEach((call, state) -> bySymbol.put(call.caller() + " " + call.symbol(), state));
+		assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK, bySymbol.get("game/A#listed()V " + hook));
+		assertEquals(EffectiveHookEvidence.State.DIRECT_RESTORED, bySymbol.get("game/A#unlisted()V " + hook));
+		assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK, bySymbol.get("game/A#unlisted()V " + outside));
+	}
+
+	@Test void theCensusPrintsEffectiveTotalsPerSideOnlyFromSuppliedEvidence() throws Exception {
+		String forge = "net/minecraftforge/common/ForgeHooks", neo = "net/neoforged/neoforge/event/EventHooks";
+		Path f = jar("forge.jar", forge, forge), n = jar("neo.jar", neo, neo);
+		Path merged = jar("merged.jar", neo, forge), carrier = temporary.resolve("empty.jar");
+		try (JarOutputStream ignored = new JarOutputStream(Files.newOutputStream(carrier))) { }
+		Path report = temporary.resolve("report.txt"), mods = Files.createDirectory(temporary.resolve("mods"));
+		Files.writeString(report, "game/A#tick()V (forge hook lost)\n");
+		String[] args = {f.toString(), n.toString(), merged.toString(), carrier.toString(), carrier.toString(),
+				report.toString(), mods.toString()};
+		String without = run(args);
+		assertTrue(without.contains("[platform-census] effective side=forge raw-loss-pairs=1 NOT_ASSESSED"), without);
+		assertTrue(without.contains("state=RAW_LOST") && without.contains("effective=NOT_ASSESSED"), without);
+		Path evidence = evidence(classNode("game/A", methodNode("tick", "()V", forge + "#tick()V")),
+				classNode("game/B", methodNode("tick", "()V")));
+		String[] withEvidence = java.util.Arrays.copyOf(args, 8);
+		withEvidence[7] = evidence.toString();
+		String with = run(withEvidence);
+		assertTrue(with.contains("[platform-census] effective side=forge raw-loss-pairs=1 DIRECT_RESTORED=1"
+				+ " VIA_DEFINED_HELPER=0 VIA_KERNEL_BRIDGE=0 OBSERVED_WITHOUT_HOOK=0 UNOBSERVED=0"), with);
+		assertTrue(with.contains("[platform-census] effective side=neo raw-loss-pairs=1 DIRECT_RESTORED=0"
+				+ " VIA_DEFINED_HELPER=0 VIA_KERNEL_BRIDGE=0 OBSERVED_WITHOUT_HOOK=1 UNOBSERVED=0"), with);
+	}
+
+	private static String run(String[] args) throws Exception {
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		PrintStream previous = System.out;
+		try (PrintStream out = new PrintStream(bytes)) {
+			System.setOut(out);
+			LostHookAttribution.main(args);
+		} finally { System.setOut(previous); }
+		return bytes.toString(java.nio.charset.StandardCharsets.UTF_8);
+	}
+
+	/** A defined-class evidence session in the kernel's content-addressed layout. */
+	private Path evidence(ClassNode... defined) throws Exception {
+		Path root = Files.createTempDirectory(temporary, "definitions-");
+		StringBuilder manifest = new StringBuilder(EffectiveHookEvidence.HEADER + "\n");
+		for (ClassNode node : defined) {
+			node.version = Opcodes.V17;
+			node.superName = "java/lang/Object";
+			for (MethodNode method : node.methods) {
+				if (method.instructions.getLast() == null || method.instructions.getLast().getOpcode() != Opcodes.RETURN)
+					method.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.RETURN));
+				method.maxStack = 1;
+			}
+			ClassWriter writer = new ClassWriter(0);
+			node.accept(writer);
+			byte[] bytes = writer.toByteArray();
+			String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+			Files.createDirectories(root.resolve("blobs"));
+			Files.write(root.resolve("blobs").resolve(hash + ".class"), bytes);
+			manifest.append(node.name).append('\t').append(hash).append('\n');
+		}
+		Files.writeString(root.resolve("definitions.tsv"), manifest);
+		return root;
+	}
+
 	@Test void opcodeAndInterfaceOwnerChangesAreNotReportedAsPreservedInvocations() {
 		String owner = "net/minecraftforge/common/ForgeHooks", symbol = owner + "#tick()V";
 		for (var changed : List.of(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, owner, "tick", "()V", false),
