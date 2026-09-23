@@ -438,3 +438,14 @@ Pending implementation and acceptance items remain open even when a smaller batc
   prerequisite was rebuilt. No skipped case was counted as passed. Logs: `build/verification/network-render-sweep/`
   and `build/m14-final-driver.log`. Native compatibility UI assertions remain separate from strict release
   acceptance: the UI canary deliberately retains two required findings.
+
+### M34 independent activity proof keeps retention and release verdict separate
+
+- The verifier now checks every completed server session and independently recomputes occupied ticks,
+  duration and six-probe coverage before reporting a retained-server review. REVIEW_REQUIRED still exits
+  nonzero and still has releaseAccepted=false; proving activity never turns retention into a clean pass.
+- Release runs additionally require a fresh final STRICT compatibility report with a consistent zero
+  required count and no unclassified failed initialization. Thirteen Python verifier tests pass, including
+  stale/missing/continue reports, incomplete session observations and retained-but-insufficient activity.
+- Rechecking the actual short trace independently proves 264.450576581 occupied seconds and 5,430 ticks,
+  while preserving its retention review. The two-hour run has not yet completed.

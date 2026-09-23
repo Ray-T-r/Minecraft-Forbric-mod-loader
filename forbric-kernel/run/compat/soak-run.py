@@ -22,6 +22,26 @@ from evidence import source_record
 MIN_SECONDS = 7200
 
 
+class RetentionReview(ValueError):
+    """Activity can be proven while release acceptance remains refused."""
+    def __init__(self, activity):
+        super().__init__('retained old servers require evidence review; release acceptance remains refused')
+        self.activity = activity
+
+
+def validate_compatibility(path, started_ns):
+    path = Path(path)
+    if not path.is_file() or path.stat().st_mtime_ns < started_ns:
+        raise ValueError('missing or stale final compatibility report')
+    report = json.loads(path.read_text())
+    required = [row for row in report['findings'] if row['confidence'] == 'CONFIRMED' and row['required']]
+    if report['policy'] != 'STRICT' or report['confirmedRequired'] != len(required) or required:
+        raise ValueError('final compatibility report is not strict with zero required losses')
+    if any(row['status'] == 'FAILED' for row in report.get('catalogFailures', [])):
+        raise ValueError('unclassified initialization failure in final compatibility report')
+    return {'sha256': digest(path), 'policy': report['policy'], 'confirmedRequired': 0}
+
+
 def digest(path):
     value = hashlib.sha256()
     with Path(path).open('rb') as stream:
@@ -146,7 +166,7 @@ def validate_trace(rows, result, nonce, seconds, control, process_seconds, min_s
     if previous is not None or sessions != serial or opens != serial - 1 or sessions < min_sessions:
         raise ValueError('insufficient same-JVM normal save and reopen cycles')
     expected = 'CONTROL_PASS' if control else 'RELEASE_PASS'
-    if result['status'] != expected:
+    if result['status'] not in (expected, 'REVIEW_REQUIRED'):
         raise ValueError('controller did not pass: ' + result['status'] + '; retained-server evidence is reviewable, not proof of a leak')
     if ticks != result['actualTicks'] or active != result['activeNanos']:
         raise ValueError('reported activity differs from independently counted simulation')
@@ -157,11 +177,18 @@ def validate_trace(rows, result, nonce, seconds, control, process_seconds, min_s
     for name, measured in [('visits', visits), ('unloads', unloads), ('reloads', reloads)]:
         if measured != result[name]:
             raise ValueError('coverage counter mismatch: ' + name)
-    if any(server['alive'] for server in result['oldServers']):
-        raise ValueError('retained old servers require evidence review')
-    return {'status': expected, 'releaseAccepted': not control, 'actualTicks': ticks,
+    if sorted(server['server'] for server in result['oldServers']) != list(range(1, serial + 1)):
+        raise ValueError('retired-server observations do not cover every completed session')
+    if any(not server['stopped'] for server in result['oldServers']):
+        raise ValueError('a retired server was not stopped normally')
+    activity = {'activityVerified': True, 'actualTicks': ticks,
             'activeSeconds': active / 1_000_000_000, 'sessions': sessions,
             'visits': visits, 'unloads': unloads, 'reloads': reloads}
+    if any(server['alive'] for server in result['oldServers']):
+        raise RetentionReview(activity)
+    if result['status'] == 'REVIEW_REQUIRED':
+        raise ValueError('controller requested retention review without a retained-server witness')
+    return {'status': expected, 'releaseAccepted': not control, **activity}
 
 
 def launch(args):
@@ -275,6 +302,7 @@ def launch(args):
     dump(evidence / 'command.json', command)
     print(f'[M34] {"CONTROL ONLY" if args.control else "RELEASE SOAK"} nonce={nonce} evidence={evidence}', flush=True)
     began = time.monotonic()
+    started_ns = time.time_ns()
     with (evidence / 'client.log').open('w') as log:
         process = subprocess.Popen(command, cwd=run, stdout=log, stderr=subprocess.STDOUT)
         dump(evidence / 'process.json', {'pid': process.pid, 'nonce': nonce})
@@ -292,10 +320,15 @@ def launch(args):
         if source_record(kernel.parent, set()) != source_before: raise ValueError('source changed during the measured run')
         if any(digest(item['snapshot']) != item['sha256'] for item in records): raise ValueError('frozen artifacts changed during run')
         if inventory(world_source) != source_world_hashes: raise ValueError('source world changed during soak; cannot attest untouched original')
+        if not args.control:
+            validation['compatibility'] = validate_compatibility(run / '.forbric-kernel/compatibility-report.json', started_ns)
         rows = [json.loads(line) for line in (evidence / 'telemetry.jsonl').read_text().splitlines()]
         result = json.loads((evidence / 'controller-result.json').read_text())
         if rows[0]['pid'] != process.pid: raise ValueError('telemetry is not from the launched child JVM')
         validation.update(validate_trace(rows, result, nonce, args.seconds, args.control, elapsed, args.sessions))
+    except RetentionReview as review:
+        validation.update(review.activity)
+        validation.update(status='REVIEW_REQUIRED', releaseAccepted=False, detail=str(review))
     except Exception as failure:
         validation['detail'] = str(failure)
     validation['finalWorld'] = inventory(world)

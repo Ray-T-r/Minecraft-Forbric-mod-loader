@@ -29,7 +29,7 @@ def fixture():
         add('save-and-disconnect',server=server)
         add('disconnect',server=server,stopped=True,normalSaveRequested=True)
     add('finish')
-    result=dict(nonce=nonce,pid=123,status='CONTROL_PASS',actualTicks=480,activeNanos=24_000_000_000,visits=[4]*6,unloads=[4]*5+[2],reloads=[2]*6,oldServers=[dict(alive=False)])
+    result=dict(nonce=nonce,pid=123,status='CONTROL_PASS',actualTicks=480,activeNanos=24_000_000_000,visits=[4]*6,unloads=[4]*5+[2],reloads=[2]*6,oldServers=[dict(server=i,alive=False,stopped=True) for i in (1,2)])
     return rows,result
 
 class SoakVerifierTest(unittest.TestCase):
@@ -59,8 +59,26 @@ class SoakVerifierTest(unittest.TestCase):
             rows,result=fixture();rows[3][key]='wrong'
             with self.assertRaises(ValueError):self.check(rows,result)
     def test_retained_old_server_requires_review(self):
-        rows,result=fixture();result['oldServers']=[dict(alive=True)]
+        rows,result=fixture();result['oldServers'][0]['alive']=True;result['status']='REVIEW_REQUIRED'
+        with self.assertRaises(soak.RetentionReview) as caught:self.check(rows,result)
+        self.assertTrue(caught.exception.activity['activityVerified'])
+        self.assertEqual(480,caught.exception.activity['actualTicks'])
+    def test_retention_review_does_not_bypass_activity_or_missing_observations(self):
+        rows,result=fixture();result['oldServers'][0]['alive']=True;result['status']='REVIEW_REQUIRED'
+        with self.assertRaises(ValueError) as caught:self.check(rows,result,seconds=60)
+        self.assertNotIsInstance(caught.exception,soak.RetentionReview)
+        rows,result=fixture();result['oldServers']=[]
         with self.assertRaises(ValueError):self.check(rows,result)
+    def test_release_compatibility_requires_fresh_strict_consistent_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'report.json'
+            with self.assertRaises(ValueError):soak.validate_compatibility(path,0)
+            healthy=dict(policy='STRICT',confirmedRequired=0,findings=[],catalogFailures=[])
+            path.write_text(json.dumps(healthy));self.assertEqual('STRICT',soak.validate_compatibility(path,0)['policy'])
+            with self.assertRaises(ValueError):soak.validate_compatibility(path,path.stat().st_mtime_ns+1)
+            for change in (dict(policy='CONTINUE'),dict(confirmedRequired=1),dict(findings=[dict(confidence='CONFIRMED',required=True)]),dict(catalogFailures=[dict(status='FAILED')])):
+                path.write_text(json.dumps(healthy|change))
+                with self.assertRaises(ValueError):soak.validate_compatibility(path,0)
     def test_all_loaded_forever_does_not_prove_chunk_unload(self):
         rows,result=fixture()
         for row in rows:
