@@ -154,6 +154,49 @@ class NestedCandidateSelectionTest {
 		assertTrue(CompatibilityFindings.confirmedRequired().stream().anyMatch(f -> f.id().equals("arbitration:materialization")));
 	}
 
+	@Test void aMissingOrOutOfRangeDependencyWithNoContestIsLeftToTheDependencyAudit() throws Exception {
+		// gate-m20's shape: an ordinary pack whose only issue is a dependency nobody installed. DependencyAudit
+		// warns and offers its dialog; arbitration has no choice to make and must not turn it into a launch stop.
+		install("lonely.jar", fabric("lonely", "1", Map.of(), ",\"depends\":{\"forbricnosuchmod\":\"*\"}", Map.of()));
+		install("wants-new.jar", fabric("wants_new", "1", Map.of(), ",\"depends\":{\"old\":\">=5\"}", Map.of()));
+		install("old.jar", fabric("old", "4", Map.of(), "", Map.of()));
+		var decision = decide(); var plan = DuplicateModArbiter.currentPlan();
+		assertEquals(JointCandidateSelector.Status.SOLVED, plan.selection().status());
+		assertTrue(decision.suppressedJars().isEmpty());
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), () -> CompatibilityFindings.all().toString());
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.id().startsWith("arbitration:")), () -> CompatibilityFindings.all().toString());
+	}
+
+	@Test void aDependencySpelledTheOtherEcosystemsWayIsTheSameLibraryHereToo() throws Exception {
+		// gate-m20's second canary: DependencyAudit already calls forbric_dep_canary and forbricdepcanary one mod.
+		install("forbricdepcanary.jar", fabric("forbricdepcanary", "1.0.0", Map.of(), "", Map.of()));
+		install("forbriccrosseco.jar", fabric("forbriccrosseco", "1", Map.of(), ",\"depends\":{\"forbric_dep_canary\":\">=1.0.0\"}", Map.of()));
+		decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.id().startsWith("arbitration:")), () -> CompatibilityFindings.all().toString());
+	}
+
+	@Test void aRespelledVersionRequirementStillSteersTheContestedChoice() throws Exception {
+		Path preferred = install("foobar-neo.jar", neo("foobar", "1", Map.of(), Map.of(), Map.of()));
+		Path wanted = install("foobar-fabric.jar", fabric("foobar", "2", Map.of(), "", Map.of()));
+		install("consumer.jar", fabric("consumer", "1", Map.of(), ",\"depends\":{\"foo_bar\":\">=2\"}", Map.of()));
+		var decision = decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertTrue(decision.suppressed(preferred)); assertFalse(decision.suppressed(wanted));
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+	}
+
+	@Test void anAmbiguousRespellingIsNotGuessedAt() throws Exception {
+		// Two different mods collapse to the requested key: ModIds declines, so arbitration must not pick one.
+		Path first = install("foobar.jar", fabric("foobar", "1", Map.of(), "", Map.of()));
+		Path second = install("foo-dot-bar.jar", neo("foo.bar", "1", Map.of(), Map.of(), Map.of()));
+		install("consumer.jar", fabric("consumer", "1", Map.of(), ",\"depends\":{\"foo_bar\":\">=2\"}", Map.of()));
+		var decision = decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertFalse(decision.suppressed(first)); assertFalse(decision.suppressed(second));
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.id().startsWith("arbitration:")));
+	}
+
 	private static byte[] fabric(String id, String version, Map<String, byte[]> children, String extra, Map<String, byte[]> resources) throws Exception {
 		Map<String, byte[]> all = new LinkedHashMap<>(resources); all.putAll(children);
 		String jars = String.join(",", children.keySet().stream().map(name -> "{\"file\":\"" + name + "\"}").toList());

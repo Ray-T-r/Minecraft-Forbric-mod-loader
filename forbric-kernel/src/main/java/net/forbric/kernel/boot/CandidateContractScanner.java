@@ -75,29 +75,57 @@ final class CandidateContractScanner {
 			if (mod == null || inventory == null) continue;
 			List<UnifiedDependency> mandatory = mod.dependencies().stream().filter(UnifiedDependency::isMandatory)
 					.filter(d -> d.appliesOn(side == EnvType.SERVER ? Side.DEDICATED_SERVER : Side.CLIENT)).toList();
+			List<UnifiedDependency> symbolDependencies = new ArrayList<>();
 			for (UnifiedDependency dependency : mandatory) {
 				if (PLATFORM.contains(dependency.getModId())) continue;
-				Set<Path> providers = new LinkedHashSet<>(), unknown = new LinkedHashSet<>(); boolean hasCandidate = false;
+				String key = providedKey(dependency.getModId(), metadata);
+				// DependencyAudit owns a missing installation and a version nobody installed: it warns, offers its
+				// dialog and loads the mod anyway. Arbitration only decides between installed candidates, so a
+				// requirement that no candidate can meet is not a choice here and must not become one (gate-m20).
+				if (key == null) continue;
+				symbolDependencies.add(new UnifiedDependency(key, dependency.getVersionConstraint(), true));
+				Set<Path> providers = new LinkedHashSet<>(), unknown = new LinkedHashSet<>();
 				for (var candidate : metadata.entrySet()) {
-					String version = candidate.getValue().provides().get(JointCandidateSelector.key(dependency.getModId()));
+					String version = candidate.getValue().provides().get(key);
 					if (version == null) continue;
-					hasCandidate = true;
 					if (VersionPredicate.matchesStrictly(dependency.getVersionConstraint(), version)) providers.add(candidate.getKey());
 					else if (VersionPredicate.matches(dependency.getVersionConstraint(), version)) unknown.add(candidate.getKey());
 				}
-				// Extraction has not run yet. A dependency with no candidate may live inside a parent jar; the
-				// complete post-extraction DependencyAudit owns missing installations, not this chooser.
-				if (!hasCandidate && !physicalOnly) continue;
+				if (providers.isEmpty() && unknown.isEmpty()) continue;
 				rules.add(new JointCandidateSelector.Rule("dependency:" + dependency.getModId(), source, providers, unknown, true,
 						"requires " + dependency.getModId() + " " + dependency.getVersionConstraint()));
 			}
-			List<UnifiedDependency> symbolDependencies = new ArrayList<>(mandatory);
 			if (physicalOnly) for (String own : symbolOwners.getOrDefault(source, Set.of())) symbolDependencies.add(new UnifiedDependency(own, "*", true));
 			for (String config : mod.mixins()) scanMixins(source, config, inventory, symbolDependencies, symbolOwners, inventories, side, rules);
 			var calls = new EntrypointCalls(source, inventory, symbolDependencies, symbolOwners, inventories, transformedTargets, rules);
 			for (Entry entry : mod.entries()) calls.scan(entry);
 		}
 		return List.copyOf(rules);
+	}
+
+	/**
+	 * The provides key an installed candidate answers {@code id} under, or null when none does. Same order as
+	 * DependencyAudit: the exact id (and every provides alias) first, then {@link ModIds#collapsed} only when
+	 * exactly one installed mod collapses to it. Several jars of that ONE mod (its builds for each ecosystem) are
+	 * still one mod; two different mods collapsing to the same key decline, exactly as the audit does.
+	 */
+	private static String providedKey(String id, Map<Path, Metadata> metadata) {
+		String exact = JointCandidateSelector.key(id);
+		Set<String> keys = new TreeSet<>();
+		for (Metadata candidate : metadata.values()) keys.addAll(candidate.provides().keySet());
+		if (keys.contains(exact)) return exact;
+		if (!ModIds.enabled()) return null;
+		String wanted = ModIds.collapsed(id);
+		if (wanted == null || wanted.isEmpty()) return null;
+		// Keyed by who provides it: one mod reached under its id and a provides alias is still one candidate set.
+		Map<Set<Path>, String> spelled = new LinkedHashMap<>();
+		for (String key : keys) {
+			if (!wanted.equals(ModIds.collapsed(key))) continue;
+			Set<Path> providers = new HashSet<>();
+			for (var candidate : metadata.entrySet()) if (candidate.getValue().provides().containsKey(key)) providers.add(candidate.getKey());
+			spelled.putIfAbsent(providers, key);
+		}
+		return spelled.size() == 1 ? spelled.values().iterator().next() : null;
 	}
 
 	private static Metadata readMetadata(DuplicateModArbiter.Claim claim, Inventory jar, EnvType side) throws Exception {
