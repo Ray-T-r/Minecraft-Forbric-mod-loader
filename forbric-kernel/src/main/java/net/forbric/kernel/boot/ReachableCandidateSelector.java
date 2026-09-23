@@ -309,12 +309,25 @@ final class ReachableCandidateSelector {
 			int br = family(b) == null || !preference.contains(family(b)) ? preference.size() : preference.indexOf(family(b));
 			if (ar != br) return Integer.compare(ar, br);
 			// Two builds of one mod from the SAME ecosystem: both genuine loaders keep the highest version
-			// (cc2ec44). The candidate directory is a content digest, so the path is only the last resort.
+			// (cc2ec44). Copies of one JarJar artifact often declare one literal for every build, or an unresolved
+			// ${file.jarVersion}; FML keeps the newest artifactVersion, so that breaks their tie. The candidate
+			// directory is a content digest, so the path is only the last resort.
 			if (!artifacts.containsKey(id) && family(a) == family(b)) {
 				int version = VersionPredicate.compare(modVersion(b, id), modVersion(a, id)); if (version != 0) return version;
+				String aa = artifactVersion(a), ba = artifactVersion(b);
+				if (aa != null || ba != null) {
+					if (aa == null || ba == null) return aa == null ? 1 : -1;
+					version = VersionPredicate.compare(ba, aa); if (version != 0) return version;
+				}
 			}
 			return a.toString().compareTo(b.toString());
 		};
+	}
+
+	/** The artifactVersion a bundling parent's JarJar metadata recorded for {@code candidate}, or null. */
+	private String artifactVersion(Path candidate) {
+		for (Map<Path, Set<String>> copies : artifacts.values()) if (copies.containsKey(candidate)) return copies.get(candidate).iterator().next();
+		return null;
 	}
 
 	/**

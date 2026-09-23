@@ -291,6 +291,27 @@ class NestedCandidateSelectionTest {
 		assertEquals("2.0.4", plan.inventory().nodes().get(plan.nestedFiles().getFirst()).claim().versionOf("fabric-screen-api-v1"));
 	}
 
+	@Test void twoCopiesOfOneJarJarArtifactKeepTheNewestArtifactVersionWhateverTheirModsTomlSays() throws Exception {
+		// FML keeps the newest in-range artifactVersion of one artifact. Nested mods.toml files often declare the
+		// same literal for every build, or an unresolved ${file.jarVersion}, and the cache directory is a content
+		// digest: the mod-id contest must not hand the artifact to whichever copy's hash sorts first.
+		for (String declared : List.of("1", "${file.jarVersion}")) for (boolean olderSortsFirst : List.of(true, false)) {
+			reset(); Files.deleteIfExists(mods().resolve("a.jar")); Files.deleteIfExists(mods().resolve("b.jar"));
+			byte[] newer = neo("lib", declared, Map.of(), Map.of(), Map.of("lib/OnlyInTwo.class", type("lib/OnlyInTwo")));
+			byte[] older = null;
+			for (int pad = 0; older == null || sha(older).compareTo(sha(newer)) < 0 != olderSortsFirst; pad++)
+				older = neo("lib", declared, Map.of(), Map.of(), Map.of("pad-" + pad, new byte[] {1}));
+			install("a.jar", neo("a", "1", Map.of("META-INF/jarjar/lib.jar", older),
+					Map.of("META-INF/jarjar/lib.jar", new NestedCandidateInventory.Coordinate("example:lib", "[1.0,)", "1.0")), Map.of()));
+			install("b.jar", neo("b", "1", Map.of("META-INF/jarjar/lib.jar", newer),
+					Map.of("META-INF/jarjar/lib.jar", new NestedCandidateInventory.Coordinate("example:lib", "[1.0,)", "2.0")), Map.of()));
+			decide(); var plan = DuplicateModArbiter.currentPlan(); String label = declared + " olderSortsFirst=" + olderSortsFirst;
+			assertEquals(JointCandidateSelector.Status.SOLVED, plan.selection().status(), label);
+			assertEquals(1, plan.nestedFiles().size(), label);
+			try (ZipFile zip = new ZipFile(plan.nestedFiles().getFirst().toFile())) { assertNotNull(zip.getEntry("lib/OnlyInTwo.class"), label); }
+		}
+	}
+
 	/** jade has a NeoForge and a Fabric build; the addon's required Mixin needs the non-preferred Fabric one. */
 	private Path[] jadePair() throws Exception {
 		Path neo = install("jade-neo.jar", neo("jade", "1", Map.of(), Map.of(), Map.of("jade/Shared.class", type("jade/Shared"))));
