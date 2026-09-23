@@ -86,8 +86,15 @@ class KernelLoadReportTest {
 		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
 				"mixin:alpha", "alpha", "rendering", "mixin:alpha.json",
 				net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, true, "preflight miss", List.of("anchor absent")));
-		KernelLoadReport.writeTo(text);
-		assertFalse(java.nio.file.Files.exists(text));
+		String said = capture(() -> KernelLoadReport.writeTo(text));
+		// A suspicion alone is a clean boot. The file's presence is what says something failed -- push-and-run
+		// counts every load-report.txt as a named failure and the M9/M24/M30 controls read "no file" as clean --
+		// and fabric-api by itself brings two dozen preflight suspicions to every boot. The machine report carries
+		// them; the file carries them only beside a real failure (see the test below).
+		assertFalse(java.nio.file.Files.exists(text), "a suspicion alone must not write the failure report");
+		assertTrue(ModCatalog.failures().isEmpty(), "a suspicion marks no mod");
+		assertTrue(said.contains("every mod finished loading"), "a suspicion does not take the success line away: " + said);
+		assertFalse(said.contains("possible problem"), "a clean boot says one INFO line: " + said);
 		String machine = java.nio.file.Files.readString(dir.resolve("compatibility-report.json"));
 		assertTrue(machine.contains("SUSPECTED"));
 		assertTrue(machine.contains("\"confirmedRequired\":0"));
@@ -193,6 +200,132 @@ class KernelLoadReportTest {
 		} finally {
 			net.forbric.api.ModPresence.publishForgeFamily(List.of());
 		}
+	}
+
+	@Test
+	void aConfirmedLossNoInstalledModOwnsIsListedAndKeepsTheFile(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+			throws Exception {
+		java.nio.file.Path text = dir.resolve("load-report.txt");
+		ModCatalog.publish(List.of(entry("alpha")));
+		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding("transfer-initialization",
+				"forbric", "Item and fluid transfer", "KernelTransferInterop",
+				net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, true, "transfer bridge could not be installed",
+				List.of("install threw")));
+		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding("mixin:shared.mixins.json:M",
+				"config:shared.mixins.json", "Mixin M", "mixin:shared.mixins.json",
+				net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, true, "apply failed", List.of("two mods claim it")));
+		String said = capture(() -> KernelLoadReport.writeTo(text));
+		assertTrue(java.nio.file.Files.exists(text), "a confirmed loss must not delete the report: " + said);
+		String report = java.nio.file.Files.readString(text);
+		assertTrue(report.contains("transfer-initialization") && report.contains("transfer bridge could not be installed"), report);
+		assertTrue(report.contains("config:shared.mixins.json") && report.contains("apply failed"), report);
+		assertFalse(said.contains("every mod finished loading"), "the log must not contradict the prompt: " + said);
+		assertTrue(said.contains("2 confirmed compatibility finding(s) belong to no installed mod"), said);
+		var machine = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser().parse(
+				new java.io.StringReader(java.nio.file.Files.readString(dir.resolve("compatibility-report.json"))));
+		long listed = report.lines().filter(line -> line.strip().startsWith("transfer-initialization")
+				|| line.strip().startsWith("mixin:shared.mixins.json:M")).count();
+		assertEquals(((Number) machine.get("confirmedRequired")).intValue(), listed,
+				"the gate, the list and the text report read the same facts");
+	}
+
+	@Test
+	void besideARealFailureTheFileAlsoListsTheSuspicionsAsNotes(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+			throws Exception {
+		java.nio.file.Path text = dir.resolve("load-report.txt");
+		ModCatalog.publish(List.of(entry("alpha"), entry("beta")));
+		ModCatalog.mark("alpha", ModCatalog.Status.DEGRADED, "one of its deferred setup tasks threw");
+		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
+				"mixin:beta.mixins.json:beta.mixin.BetaMixin", "beta", "Mixin beta.mixin.BetaMixin", "mixin:beta.mixins.json",
+				net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, true, "1/2 anchors resolve", List.of("anchor absent")));
+		String said = capture(() -> KernelLoadReport.writeTo(text));
+		String report = java.nio.file.Files.readString(text);
+		// The reader troubleshooting alpha is the reader these notes are for; beta is named, and not called broken.
+		assertTrue(report.contains("one of its deferred setup tasks threw"), report);
+		assertTrue(report.contains("not confirmed") && report.contains("1/2 anchors resolve")
+				&& report.contains("mixin:beta.mixins.json:beta.mixin.BetaMixin"), report);
+		assertEquals(1, report.lines().filter(line -> line.contains("partly did not run")).count(), report);
+		assertTrue(said.contains("1 mod(s) did not finish loading: alpha"), said);
+	}
+
+	@Test
+	void theBoundaryBeforeAnyModRunsNeverSaysEveryModFinishedLoading(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+			throws Exception {
+		java.nio.file.Path file = dir.resolve("load-report.txt");
+		ModCatalog.publish(List.of(entry("alpha")));
+		String early = capture(() -> KernelLoadReport.writeTo(file, false));
+		assertFalse(early.contains("every mod finished loading"),
+				"nothing has initialised at the pre-launch boundary: " + early);
+		String end = capture(() -> KernelLoadReport.writeTo(file));
+		assertTrue(end.contains("[Forbric/Load] every mod finished loading"),
+				"the real end of loading must still be able to say it: " + end);
+		assertFalse(capture(() -> KernelLoadReport.writeTo(file)).contains("every mod finished loading"), "said once");
+	}
+
+	@Test
+	void aModThatFailsAfterThePreLaunchBoundaryIsNeverPrecededByASuccessLine(
+			@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+		java.nio.file.Path file = dir.resolve("load-report.txt");
+		ModCatalog.publish(List.of(entry("alpha")));
+		String log = capture(() -> {
+			KernelLoadReport.writeTo(file, false);
+			ModCatalog.mark("alpha", ModCatalog.Status.FAILED, "its main entrypoint threw");
+			KernelLoadReport.writeTo(file);
+		});
+		assertTrue(log.contains("1 mod(s) did not finish loading"), log);
+		assertFalse(log.contains("every mod finished loading"), "the log must not contradict itself: " + log);
+	}
+
+	@Test
+	void theLaunchBoundaryAndTheShutdownHookWriteEvidenceOnly() throws Exception {
+		java.nio.file.Path classes = java.nio.file.Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
+				"net", "forbric", "kernel", "boot").normalize();
+		org.objectweb.asm.tree.MethodNode launch = method(classes.resolve("KernelBoot.class"), "launch");
+		org.objectweb.asm.tree.MethodNode setRunDir = method(classes.resolve("KernelLoadReport.class"), "setRunDir");
+		assertTrue(calls(launch, "writeEvidence"), "KernelBoot.launch writes the pre-launch evidence");
+		assertFalse(calls(launch, "write"), "KernelBoot.launch runs before any mod initialises; it must not claim the end of loading");
+		boolean hookIsEvidence = false;
+		for (org.objectweb.asm.tree.AbstractInsnNode insn : setRunDir.instructions) {
+			if (insn instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy) {
+				for (Object arg : indy.bsmArgs) {
+					if (arg instanceof org.objectweb.asm.Handle handle && "net/forbric/kernel/boot/KernelLoadReport".equals(handle.getOwner())) {
+						assertEquals("writeEvidence", handle.getName(), "a process going down has not seen loading finish");
+						hookIsEvidence = true;
+					}
+				}
+			}
+		}
+		assertTrue(hookIsEvidence, "the shutdown hook still writes the report");
+	}
+
+	private static org.objectweb.asm.tree.MethodNode method(java.nio.file.Path file, String name) throws Exception {
+		assertTrue(java.nio.file.Files.isRegularFile(file), "compiled class missing: " + file);
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(java.nio.file.Files.readAllBytes(file)).accept(node, 0);
+		return node.methods.stream().filter(m -> m.name.equals(name)).findFirst().orElseThrow();
+	}
+
+	private static boolean calls(org.objectweb.asm.tree.MethodNode method, String name) {
+		for (org.objectweb.asm.tree.AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call
+					&& "net/forbric/kernel/boot/KernelLoadReport".equals(call.owner) && name.equals(call.name)) return true;
+		}
+		return false;
+	}
+
+	static String capture(Runnable body) {
+		java.io.PrintStream originalOut = System.out, originalErr = System.err;
+		java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+		java.io.PrintStream sink = new java.io.PrintStream(buffer, true, java.nio.charset.StandardCharsets.UTF_8);
+		System.setOut(sink);
+		System.setErr(sink);
+		try {
+			body.run();
+		} finally {
+			System.setOut(originalOut);
+			System.setErr(originalErr);
+		}
+		return buffer.toString(java.nio.charset.StandardCharsets.UTF_8);
 	}
 
 	private static ModCatalog.Entry entry(String id) {

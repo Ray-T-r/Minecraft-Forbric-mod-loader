@@ -157,9 +157,11 @@ public final class DependencyDialogMain {
 		if (args.length < 1) System.exit(CONTINUE);
 		List<DependencyReport.Row> rows;
 		List<DependencyReport.MixinRow> mixins;
+		List<DependencyReport.CompatibilityRow> suspected;
 		try {
 			rows = DependencyReport.read(Path.of(args[0]));
 			mixins = DependencyReport.readMixins(Path.of(args[0]));
+			suspected = DependencyReport.readSuspected(Path.of(args[0]));
 		} catch (Throwable unreadable) {
 			System.exit(CONTINUE);
 			return;
@@ -175,7 +177,7 @@ public final class DependencyDialogMain {
 
 		int answer;
 		try {
-			answer = askOnEventThread(lang, rows, mixins);
+			answer = askOnEventThread(lang, rows, mixins, suspected);
 		} catch (Throwable noDisplay) {
 			// The single net. See the class note: anything other than CONTINUE here would be the kernel quitting
 			// the game for a player who was never asked.
@@ -188,13 +190,13 @@ public final class DependencyDialogMain {
 	private static void confirmationMain(Path report) {
 		int answer = QUIT;
 		try {
-			List<DependencyReport.CompatibilityRow> rows = DependencyReport.readCompatibility(report);
-			if (rows.isEmpty()) { System.exit(QUIT); return; }
+			DependencyReport.Confirmation confirmation = DependencyReport.readConfirmation(report);
+			if (confirmation.required().isEmpty()) { System.exit(QUIT); return; }
 			DialogLang lang = DialogLang.ofSystem();
 			try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 			catch (Exception ignored) { }
 			int[] result = { QUIT };
-			SwingUtilities.invokeAndWait(() -> result[0] = showCompatibility(lang, rows));
+			SwingUtilities.invokeAndWait(() -> result[0] = showCompatibility(lang, confirmation));
 			answer = result[0];
 		} catch (Throwable unavailable) {
 			// Unlike the legacy dependency notice, no answer is never permission to continue.
@@ -202,18 +204,54 @@ public final class DependencyDialogMain {
 		System.exit(answer);
 	}
 
-	private static int showCompatibility(DialogLang lang, List<DependencyReport.CompatibilityRow> rows) {
-		StringBuilder summary = new StringBuilder(lang.get("compat.intro")).append("\n\n");
-		StringBuilder details = new StringBuilder();
-		for (int i = 0; i < rows.size(); i++) {
-			DependencyReport.CompatibilityRow row = rows.get(i);
-			if (i < SUMMARY_BULLETS) summary.append(BULLET).append(row.modName()).append(": ")
-					.append(row.feature()).append(" — ").append(row.detail()).append('\n');
-			details.append(row.modName()).append(" (").append(row.modId()).append(")\n")
-					.append(row.detail()).append('\n').append(row.source()).append('\n').append(row.evidence()).append("\n\n");
-		}
-		return showContent(lang, List.of(summary.toString(), lang.get("compat.note")), details.toString(),
+	private static int showCompatibility(DialogLang lang, DependencyReport.Confirmation confirmation) {
+		return showContent(lang, confirmationBlocks(lang, confirmation), confirmationDetails(lang, confirmation),
 				lang.get("compat.title"), true);
+	}
+
+	/**
+	 * The confirmation's text: the required losses that need the answer, then the dependency notice folded into
+	 * the same window, then what might fix it, then the caveat. A dependency a required row already asks about is
+	 * not listed a second time. Returned as text for the same reason {@link #blocks} is.
+	 */
+	static List<String> confirmationBlocks(DialogLang lang, DependencyReport.Confirmation confirmation) {
+		List<DependencyReport.CompatibilityRow> required = confirmation.required();
+		StringBuilder summary = new StringBuilder(lang.get("compat.intro")).append("\n\n");
+		int shown = Math.min(required.size(), SUMMARY_BULLETS);
+		for (int i = 0; i < shown; i++) {
+			DependencyReport.CompatibilityRow row = required.get(i);
+			summary.append(BULLET).append(row.modName()).append(": ").append(row.feature()).append(" — ")
+					.append(row.detail()).append('\n');
+		}
+		if (required.size() > shown) summary.append(MORE).append(lang.get("summary.more", required.size() - shown)).append('\n');
+		String notice = summary(lang, confirmation.deps(), confirmation.mixins());
+		if (!notice.isEmpty()) summary.append('\n').append(notice);
+
+		List<DependencyReport.Row> deps = allDeps(confirmation);
+		boolean anyNotice = !deps.isEmpty() || !confirmation.mixins().isEmpty();
+		String fixes = anyNotice ? fixes(lang, deps, confirmation.mixins()) : "";
+		String notes = notes(lang, deps, confirmation.mixins());
+		return List.of(summary.toString(), fixes, (notes.isEmpty() ? "" : notes + "\n") + lang.get("compat.note"));
+	}
+
+	/** Every required row with its evidence, then the notice's details, then the suspected notes. */
+	static String confirmationDetails(DialogLang lang, DependencyReport.Confirmation confirmation) {
+		StringBuilder text = new StringBuilder(lang.get("details.required.header")).append("\n\n");
+		for (DependencyReport.CompatibilityRow row : confirmation.required()) compatibilityDetail(text, row);
+		return text.append(details(lang, allDeps(confirmation), confirmation.mixins(), confirmation.suspected())).toString();
+	}
+
+	private static List<DependencyReport.Row> allDeps(DependencyReport.Confirmation confirmation) {
+		List<DependencyReport.Row> all = new ArrayList<>(confirmation.coveredDeps());
+		all.addAll(confirmation.deps());
+		return all;
+	}
+
+	private static void compatibilityDetail(StringBuilder text, DependencyReport.CompatibilityRow row) {
+		text.append("  ").append(row.modName()).append("  (").append(row.modId()).append(")\n")
+				.append("      ").append(row.feature()).append(" — ").append(row.detail()).append('\n')
+				.append("      ").append(row.source()).append('\n')
+				.append("      ").append(row.evidence()).append("\n\n");
 	}
 
 	/**
@@ -225,16 +263,16 @@ public final class DependencyDialogMain {
 	 * changed after it was shown.
 	 */
 	private static int askOnEventThread(DialogLang lang, List<DependencyReport.Row> rows,
-			List<DependencyReport.MixinRow> mixins) throws Exception {
+			List<DependencyReport.MixinRow> mixins, List<DependencyReport.CompatibilityRow> suspected) throws Exception {
 		int[] answer = { CONTINUE };
-		SwingUtilities.invokeAndWait(() -> answer[0] = show(lang, rows, mixins));
+		SwingUtilities.invokeAndWait(() -> answer[0] = show(lang, rows, mixins, suspected));
 		return answer[0];
 	}
 
 	private static int show(DialogLang lang, List<DependencyReport.Row> rows,
-			List<DependencyReport.MixinRow> mixins) {
+			List<DependencyReport.MixinRow> mixins, List<DependencyReport.CompatibilityRow> suspected) {
 		List<String> spoken = blocks(lang, rows, mixins);
-		String detail = details(lang, rows, mixins);
+		String detail = details(lang, rows, mixins, suspected);
 		return showContent(lang, spoken, detail, title(lang, rows, mixins), false);
 	}
 
@@ -556,6 +594,15 @@ public final class DependencyDialogMain {
 	 */
 	static String details(DialogLang lang, List<DependencyReport.Row> rows,
 			List<DependencyReport.MixinRow> mixins) {
+		return details(lang, rows, mixins, List.of());
+	}
+
+	/**
+	 * @param suspected what was noticed and not proved. Only ever here, in the details: a suspicion is never a
+	 *                  question, and a summary that listed it would read as one
+	 */
+	static String details(DialogLang lang, List<DependencyReport.Row> rows,
+			List<DependencyReport.MixinRow> mixins, List<DependencyReport.CompatibilityRow> suspected) {
 		StringBuilder text = new StringBuilder();
 		if (!rows.isEmpty()) {
 			text.append(lang.get("details.deps.header")).append("\n\n");
@@ -579,6 +626,10 @@ public final class DependencyDialogMain {
 				text.append("      ").append(lang.get("details.anchors", row.anchors())).append('\n');
 				text.append('\n');
 			}
+		}
+		if (!suspected.isEmpty()) {
+			text.append(lang.get("details.suspected.header")).append("\n\n");
+			for (DependencyReport.CompatibilityRow row : suspected) compatibilityDetail(text, row);
 		}
 		text.append(lang.get("details.log")).append('\n');
 		return text.toString();

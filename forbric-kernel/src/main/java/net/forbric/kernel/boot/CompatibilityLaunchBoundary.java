@@ -21,6 +21,25 @@ final class CompatibilityLaunchBoundary {
 		return CompatibilityDecision.launchStopRequested() ? stopped() : 0;
 	}
 
+	/**
+	 * The form a refusal must take to leave {@code Minecraft.<init>} without being reported as a crash.
+	 *
+	 * <p>{@code net.minecraft.client.main.SilentInitException}, created through the game loader because that is
+	 * the class {@code Main.main}'s handler names, with the typed stop as its cause so {@link
+	 * CompatibilityDecision#isLaunchStop} still recognises it anywhere else. Should the class ever be missing, the
+	 * stop itself is returned: a crash report for a deliberate refusal is wrong, but a refusal that let the game
+	 * continue would be worse.
+	 */
+	static RuntimeException insideClientMain(ClassLoader game, CompatibilityDecision.LaunchStopped stop) {
+		try {
+			Class<?> silent = Class.forName("net.minecraft.client.main.SilentInitException", false, game);
+			return (RuntimeException) silent.getConstructor(String.class, Throwable.class).newInstance(stop.getMessage(), stop);
+		} catch (ReflectiveOperationException | ClassCastException | LinkageError unavailable) {
+			stop.addSuppressed(unavailable);
+			return stop;
+		}
+	}
+
 	private static int stopped() {
 		System.err.println("[Forbric/Compatibility] launch stopped by compatibility policy; see .forbric-kernel/compatibility-report.json");
 		return POLICY_STOP;

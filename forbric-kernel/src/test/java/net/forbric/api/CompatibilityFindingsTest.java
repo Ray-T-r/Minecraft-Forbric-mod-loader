@@ -46,6 +46,26 @@ class CompatibilityFindingsTest {
 	}
 
 	@Test
+	void theRevisionMovesOnlyWhenTheLedgerChanges() {
+		// A spawner whose call site could not be upgraded records the same finding on every spawn. The revision is
+		// what the client tick and the dedicated server watch before they re-decide and rewrite the reports, so the
+		// same observation again must not look like news.
+		long start = CompatibilityFindings.revision();
+		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "BaseSpawner.serverTick"));
+		long recorded = CompatibilityFindings.revision();
+		assertNotEquals(start, recorded, "a new finding is news");
+		for (int i = 0; i < 3; i++) CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "BaseSpawner.serverTick"));
+		assertEquals(recorded, CompatibilityFindings.revision(), "the same observation again is not");
+		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.SUSPECTED, "BaseSpawner.serverTick"));
+		assertEquals(recorded, CompatibilityFindings.revision(), "nor is a suspicion a confirmed loss already outranks");
+		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "a second call site"));
+		long evidence = CompatibilityFindings.revision();
+		assertNotEquals(recorded, evidence, "new evidence is");
+		CompatibilityFindings.resolve("contract:item-use", "demo", "replacement proved");
+		assertNotEquals(evidence, CompatibilityFindings.revision(), "and so is a resolution");
+	}
+
+	@Test
 	void resolutionClearsOnlyTheStructuredLossAndPreservesAnUnrelatedFailure() {
 		ModCatalog.publish(List.of(entry()));
 		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "apply"));
@@ -123,6 +143,26 @@ class CompatibilityFindingsTest {
 		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "apply"));
 		assertTrue(ModCatalog.everything().isEmpty());
 		assertEquals(1, CompatibilityFindings.confirmedRequired().size(), "the evidence must still reach release checks");
+	}
+
+	@Test
+	void findingsNoRowCanCarryAreStillListedAndSuspicionsAreSeparateNotes() {
+		ModCatalog.publish(List.of(entry()));
+		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "owned"));
+		CompatibilityFindings.record(new CompatibilityFinding("transfer-initialization", "forbric", "Transfer", "kernel",
+				CompatibilityFinding.Confidence.CONFIRMED, true, "bridge failed", List.of("threw")));
+		CompatibilityFindings.record(new CompatibilityFinding("optional", "config:x.mixins.json", "Mixin X", "mixin:x",
+				CompatibilityFinding.Confidence.CONFIRMED, false, "optional loss", List.of("no owner")));
+		CompatibilityFindings.record(new CompatibilityFinding("suspect", "forbric", "Probe", "kernel",
+				CompatibilityFinding.Confidence.SUSPECTED, true, "unproved", List.of("preflight")));
+		CompatibilityFindings.record(new CompatibilityFinding("gone", "forbric", "Probe", "kernel",
+				CompatibilityFinding.Confidence.CONFIRMED, true, "repaired", List.of("x")));
+		CompatibilityFindings.resolve("gone", "forbric", "repair proved");
+		assertEquals(List.of("config:x.mixins.json:optional", "forbric:transfer-initialization"),
+				CompatibilityFindings.unattributed().stream().map(CompatibilityFinding::key).toList(),
+				"confirmed findings owned by a catalogue row are projected there instead; resolved ones are gone");
+		assertEquals(List.of("forbric:suspect"), CompatibilityFindings.suspected().stream().map(CompatibilityFinding::key).toList());
+		assertEquals(1, ModCatalog.failures().size(), "the catalogue still invents no row for them");
 	}
 
 	@Test

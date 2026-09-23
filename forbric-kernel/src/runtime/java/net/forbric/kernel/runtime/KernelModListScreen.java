@@ -20,6 +20,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import net.forbric.api.CompatibilityFinding;
+import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
 import net.minecraft.client.Minecraft;
@@ -61,6 +63,8 @@ public final class KernelModListScreen extends Screen {
 	 */
 	private static final int BROKEN = 0xFFE06C6C;
 	private static final String BROKEN_MARK = "! ";
+	/** How many unconfirmed notes the detail pane names for one mod before pointing at the machine report. */
+	private static final int SUSPECTED_NOTES = 3;
 	private static final int PAD = 6;
 	private static final int SEARCH_Y = 32;
 	private static final int LIST_TOP = 54;
@@ -203,6 +207,24 @@ public final class KernelModListScreen extends Screen {
 			g.text(this.font, Component.literal("see .forbric-kernel/load-report.txt"), x, y, DIM);
 			y += 14;
 		}
+		// Suspicions about this mod, dimmed and said to be unconfirmed: they change no status, and a player
+		// troubleshooting the mod should still be able to see what was noticed. The rest are pointed at the machine
+		// report, which always lists them all -- load-report.txt exists only when something failed, and a boot
+		// whose only findings are suspicions writes none.
+		List<CompatibilityFinding> notes = CompatibilityFindings.suspected().stream()
+				.filter(f -> f.modId().equals(e.modId())).toList();
+		for (int i = 0; i < Math.min(notes.size(), SUSPECTED_NOTES); i++) {
+			CompatibilityFinding f = notes.get(i);
+			String note = "possibly (not confirmed): " + f.feature() + " \u2014 " + f.detail();
+			g.textWithWordWrap(this.font, FormattedText.of(note), x, y, wrap, DIM);
+			y += 12 * this.font.split(FormattedText.of(note), wrap).size() + 2;
+		}
+		if (notes.size() > SUSPECTED_NOTES) {
+			g.text(this.font, Component.literal("and " + (notes.size() - SUSPECTED_NOTES)
+					+ " more in .forbric-kernel/compatibility-report.json"), x, y, DIM);
+			y += 12;
+		}
+		if (!notes.isEmpty()) y += 4;
 		if (!e.authors().isEmpty()) {
 			g.text(this.font, Component.literal("by " + String.join(", ", e.authors())), x, y, DIM);
 			y += 12;
@@ -257,7 +279,12 @@ public final class KernelModListScreen extends Screen {
 		int broken = ModCatalog.failures().size();
 		// "did not finish loading", never "not running": a withdrawn mod's classes ARE loaded and its mixins ARE
 		// applied. Telling a player it is absent sends them to reinstall something that is already there.
-		return broken == 0 ? counts : counts + "   \u00a7c" + broken + " did not finish loading";
+		String summary = broken == 0 ? counts : counts + "   \u00a7c" + broken + " did not finish loading";
+		// Confirmed losses no row can carry -- the kernel's own, or a config no single mod claims. The prompt that
+		// sent the player here counted them, so the screen has to say they exist and where they are written.
+		int unowned = CompatibilityFindings.unattributed().size();
+		return unowned == 0 ? summary
+				: summary + "   \u00a7c" + unowned + " not tied to one mod (see .forbric-kernel/load-report.txt)";
 	}
 
 	private static String label(Ecosystem ecosystem) {

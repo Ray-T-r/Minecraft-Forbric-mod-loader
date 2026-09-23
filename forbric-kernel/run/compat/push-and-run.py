@@ -242,7 +242,7 @@ with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as z:
         for p in base.rglob('*'):
             if not p.is_file(): continue
             rel = p.relative_to(base)
-            if p.suffix.lower() in ('.log', '.png', '.mca') or p.name == 'load-report.txt' or p.name.endswith('-status.json'):
+            if p.suffix.lower() in ('.log', '.png', '.mca') or p.name in ('load-report.txt', 'compatibility-report.json') or p.name.endswith('-status.json'):
                 if base == root and any(x in ('mods', 'mods-all', 'quarantine', '.forbric-compat') for x in rel.parts): continue
                 name = str(pathlib.Path('instance' if base == root else 'driver') / rel).replace('\\', '/')
                 info = p.stat()
@@ -274,6 +274,47 @@ def check(command, destination):
         except (OSError, subprocess.SubprocessError) as error:
             output.write('FAIL diagnostic could not run: ' + str(error) + '\n')
             return False
+
+
+# Where each side of a sweep leaves its machine report, inside the collected evidence.
+COMPATIBILITY_REPORTS = (('server', 'instance/server-gen/.forbric-kernel/compatibility-report.json'),
+                         ('client', 'instance/.forbric-kernel/compatibility-report.json'))
+
+
+def compatibility(output, artifacts, records):
+    """Acceptance is strict: each side must leave a report written by this run, decided under STRICT, with no
+    confirmed required loss and no unclassified FAILED mod. A player's Continue changes none of that, so a run
+    somebody clicked through, a report left over from an earlier run and a missing report all fail alike."""
+    lines, accepted = [], True
+    for stage, relative in COMPATIBILITY_REPORTS:
+        result = output / (stage + '-result.json')
+        started = json.loads(result.read_text()).get('started_ns') if result.is_file() else None
+        record = next((item for item in records if item['name'] == relative), None)
+        path = artifacts / relative
+        problem = None
+        if record is None or not path.is_file():
+            problem = 'missing'
+        elif started is None or record['mtime_ns'] <= started:
+            problem = 'not written by this run'
+        else:
+            try:
+                data = json.loads(path.read_text(encoding='utf-8'))
+            except ValueError:
+                data, problem = {}, 'unreadable'
+            required = [row for row in data.get('findings', []) if row.get('confidence') == 'CONFIRMED' and row.get('required')]
+            if problem:
+                pass
+            elif data.get('policy') != 'STRICT':
+                problem = 'decided under ' + str(data.get('policy')) + ', not STRICT'
+            elif required or data.get('confirmedRequired') != len(required):
+                problem = f'{len(required)} confirmed required loss(es): ' + ', '.join(
+                    str(row.get('modId')) + ':' + str(row.get('id')) for row in required)
+            elif any(row.get('status') == 'FAILED' for row in data.get('catalogFailures', [])):
+                problem = 'unclassified FAILED mod'
+        lines.append(f'{stage}: ' + (problem or 'STRICT, 0 confirmed required losses'))
+        accepted = accepted and problem is None
+    (output / 'compatibility.txt').write_text('\n'.join(lines) + '\n')
+    return accepted
 
 
 def report(args, output, artifacts, server, client, started, errors=()):
@@ -318,7 +359,8 @@ def report(args, output, artifacts, server, client, started, errors=()):
         # Keep the complete text: filtering English status words lost every name, and all Chinese failures.
         findings.append(str(path.relative_to(artifacts)) + '\n' + path.read_text(errors='replace'))
     (output / 'degraded.txt').write_text('\n\n'.join(findings) or 'No load-report.txt was produced.\n')
-    passed = client == 0 and frame if args.bisect else server == client == 0 and assertions and frame and region
+    strict = None if args.bisect else compatibility(output, artifacts, records)
+    passed = client == 0 and frame if args.bisect else server == client == 0 and assertions and frame and region and strict
     passed = passed and not errors
     try:
         commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=KERNEL, text=True, timeout=10).strip()
@@ -328,6 +370,7 @@ def report(args, output, artifacts, server, client, started, errors=()):
                   version=args.version, started=started, server=server, client=client,
                   assertions='PASS' if assertions else 'FAIL', frame='DREW' if frame else 'FAIL',
                   region='PASS' if region else 'FAIL', degraded=f'{len(findings)} report(s), see degraded.txt',
+                  compatibility='not judged (bisect)' if strict is None else 'PASS' if strict else 'FAIL, see compatibility.txt',
                   verdict='PASS' if passed else 'FAIL', errors='; '.join(map(str, errors)) or 'none')
     (output / 'report.md').write_text((HERE / 'report-template.md').read_text().format(**values))
     print((output / 'report.md').read_text(), flush=True)
@@ -455,7 +498,7 @@ def main():
         for local, name in files:
             print('MOD ' + local.name + ' -> ' + name)
         print('START_PROCESS server-gen -> client-join; POLL same PID/status; call timeout=240s')
-        print('COLLECT logs/screenshots/region/load-report; ASSERT; FRAME; REGION; REPORT report.md')
+        print('COLLECT logs/screenshots/region/load-report/compatibility-report; ASSERT; FRAME; REGION; STRICT REPORTS; REPORT report.md')
         return 0
     started = datetime.datetime.now(datetime.timezone.utc).isoformat()
     if args.manifest:

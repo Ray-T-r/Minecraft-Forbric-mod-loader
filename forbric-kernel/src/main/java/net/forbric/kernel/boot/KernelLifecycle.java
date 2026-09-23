@@ -1527,7 +1527,26 @@ public final class KernelLifecycle {
 		// whole story, and this is the last moment before the player is looking at a title screen.
 		net.forbric.kernel.access.AccessCensus.report();
 		KernelLoadReport.write();
-		net.forbric.kernel.ui.CompatibilityDecision.requireContinuation(true);
+		requireClientContinuation(cl);
+	}
+
+	/**
+	 * The client's end-of-loading decision, which runs inside {@code Minecraft.<init>}.
+	 *
+	 * <p>A refusal cannot leave as itself from here. The merged {@code Main.main} wraps {@code new Minecraft(..)}
+	 * in a catch-all that builds an "Initializing game" crash report and ends in {@code Minecraft.crash(.., -1)} —
+	 * {@code System.exit} before {@link CompatibilityLaunchBoundary} is ever reached — so the player's Quit, or a
+	 * strict stop, arrived as a game crash with a crash report and exit status 255. The same try has exactly one
+	 * quiet way out, ahead of the catch-all: {@code SilentInitException}, whose handler shuts the executors down,
+	 * logs, and RETURNS. Leaving through it lets {@code Main.main} return normally, and the boundary then turns the
+	 * recorded refusal into the typed exit 78 with no crash report. The policy stop stays the cause.
+	 */
+	static void requireClientContinuation(ClassLoader game) {
+		try {
+			net.forbric.kernel.ui.CompatibilityDecision.requireContinuation(true);
+		} catch (net.forbric.kernel.ui.CompatibilityDecision.LaunchStopped stop) {
+			throw CompatibilityLaunchBoundary.insideClientMain(game, stop);
+		}
 	}
 
 	/**

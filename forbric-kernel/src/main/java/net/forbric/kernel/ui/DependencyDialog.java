@@ -43,6 +43,15 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>Silent on a dedicated server and in any headless run. A server blocked on a dialog nobody can see is
  * strictly worse than the log line it replaces, and the gates run servers unattended.
+ *
+ * <h2>One window, not two</h2>
+ *
+ * <p>The audit no longer opens its window itself: it {@link #hold holds} the notice, and the launch's compatibility
+ * decision shows it. When nothing needs a decision, that is the notice above, unchanged. When a confirmed required
+ * loss does, the notice is folded into the {@link #confirm confirmation} -- the same child, the same layout -- whose
+ * contract is the opposite one: only an explicit click on continue approves, and a closed window, a timeout, no
+ * display or {@code -Dforbric.dependencyDialog=off} is a launch that was not approved. Either way the player is asked
+ * once, and suspected findings only ever reach the details.
  */
 public final class DependencyDialog {
 	/**
@@ -50,9 +59,12 @@ public final class DependencyDialog {
 	 *
 	 * <ul>
 	 *   <li>{@code off} — the warning stays in the log. What {@code run/launch-kernel-client.sh} passes unless
-	 *       told otherwise, so no gate and no developer run can ever block on a window.</li>
+	 *       told otherwise, so no gate and no developer run can ever block on a window. A confirmed required loss
+	 *       still needs an explicit continue, and with no window there is none: under the ask policy that launch
+	 *       is not approved rather than approved by default.</li>
 	 *   <li>{@code dryRun} — fork the real child, with AWT disabled inside it. Every part of the path runs: the
-	 *       report is written, the child JVM starts, reads it, finds it cannot draw, and exits CONTINUE. It
+	 *       report is written, the child JVM starts, reads it, finds it cannot draw, and exits — CONTINUE for the
+	 *       notice, QUIT for a confirmation, because neither contract may change for want of a display. It
 	 *       exists so a gate can assert on the machinery rather than on a mock of it. Nothing is drawn and
 	 *       nobody has to click, which is the only way a dialog is testable unattended.</li>
 	 *   <li>{@code on} — the real thing.</li>
@@ -78,6 +90,57 @@ public final class DependencyDialog {
 	}
 
 	/**
+	 * The unmet requirements and mixin breaks the audit found, held for the launch's one decision.
+	 *
+	 * @param rows   unmet requirements
+	 * @param mixins mixins that were written to attach to another mod and did not
+	 */
+	public record Notice(List<DependencyReport.Row> rows, List<DependencyReport.MixinRow> mixins) {
+		public static final Notice EMPTY = new Notice(List.of(), List.of());
+
+		public Notice {
+			rows = rows == null ? List.of() : List.copyOf(rows);
+			mixins = mixins == null ? List.of() : List.copyOf(mixins);
+		}
+
+		public boolean isEmpty() {
+			return rows.isEmpty() && mixins.isEmpty();
+		}
+
+		public int size() {
+			return rows.size() + mixins.size();
+		}
+	}
+
+	private static Notice held = Notice.EMPTY;
+
+	/** What the audit found, shown by the launch decision rather than in a window of its own. Replaces, never adds. */
+	public static synchronized void hold(List<DependencyReport.Row> rows, List<DependencyReport.MixinRow> mixins) {
+		held = new Notice(rows, mixins);
+	}
+
+	/** The held notice, handed over once: the first decision shows it and no later one can show it again. */
+	static synchronized Notice takeHeld() {
+		Notice taken = held;
+		held = Notice.EMPTY;
+		return taken;
+	}
+
+	/**
+	 * Says where a notice went when no window can show it.
+	 *
+	 * @param why the reason on a client; a server always says it is not the client, which is the guard gates name
+	 */
+	static void unshown(Notice notice, boolean isClient, String why) {
+		if (notice.isEmpty()) return;
+		if (!isClient) {
+			ForbricLog.debug("[Forbric/Deps] not the client — the %d finding(s) stay in the log", notice.size());
+			return;
+		}
+		ForbricLog.info("[Forbric/Deps] %s — %d finding(s) reported in the log only", why, notice.size());
+	}
+
+	/**
 	 * Shows the dialog if this run is one that can have a player in front of it, and quits if they say so.
 	 *
 	 * @param rows     the unmet requirements; nothing happens when empty
@@ -85,44 +148,53 @@ public final class DependencyDialog {
 	 *                 it, because guessing wrong in the silent direction costs a warning and guessing wrong in
 	 *                 the loud direction hangs a server
 	 */
-	public static void offer(List<DependencyReport.Row> rows, boolean isClient) {
-		offer(rows, List.of(), isClient);
+	public static boolean offer(List<DependencyReport.Row> rows, boolean isClient) {
+		return offer(rows, List.of(), isClient);
 	}
 
 	/**
 	 * @param mixins mixins that were written to attach to another mod and did not. A different problem from an
 	 *               unmet dependency and reported separately, because no dependency check can see it: both mods
 	 *               are installed and each is inside the range the other declares
+	 * @return false only when the player chose to quit; the caller turns that into the launch's typed stop rather
+	 *         than this class exiting the JVM from the middle of a boot
 	 */
-	public static void offer(List<DependencyReport.Row> rows, List<DependencyReport.MixinRow> mixins,
+	public static boolean offer(List<DependencyReport.Row> rows, List<DependencyReport.MixinRow> mixins,
 			boolean isClient) {
+		return offer(rows, mixins, List.of(), isClient);
+	}
+
+	/** @param suspected notes for the details pane. They never open a window by themselves. */
+	static boolean offer(List<DependencyReport.Row> rows, List<DependencyReport.MixinRow> mixins,
+			List<DependencyReport.CompatibilityRow> suspected, boolean isClient) {
 		if (rows == null) rows = List.of();
 		if (mixins == null) mixins = List.of();
-		if (rows.isEmpty() && mixins.isEmpty()) return;
+		if (suspected == null) suspected = List.of();
+		if (rows.isEmpty() && mixins.isEmpty()) return true;
 		int findings = rows.size() + mixins.size();
 		if (!isClient) {
 			ForbricLog.debug("[Forbric/Deps] not the client — the %d finding(s) stay in the log", findings);
-			return;
+			return true;
 		}
 		String mode = System.getProperty(SWITCH, "on");
 		if ("off".equalsIgnoreCase(mode)) {
 			ForbricLog.info("[Forbric/Deps] -D%s=off — %d finding(s) reported in the log only",
 					SWITCH, findings);
-			return;
+			return true;
 		}
 		boolean dryRun = DRY_RUN.equalsIgnoreCase(mode);
 		if (java.awt.GraphicsEnvironment.isHeadless()) {
 			// Measured safe to ask: on a JVM started with -XstartOnFirstThread this returns in ~12ms and starts
 			// no AWT thread, so the guard cannot be the thing that breaks the window it is guarding.
 			ForbricLog.info("[Forbric/Deps] headless — %d finding(s) reported in the log only", findings);
-			return;
+			return true;
 		}
 
 		int answer;
 		try {
 			// The dry run differs ONLY in the child's flags, so what a gate exercises is this method, this fork
 			// and this exit code — not a stand-in for them.
-			answer = ask(rows, mixins, dryRun ? List.of("-Djava.awt.headless=true") : List.of());
+			answer = ask(rows, mixins, suspected, dryRun ? List.of("-Djava.awt.headless=true") : List.of());
 			if (dryRun) {
 				ForbricLog.info("[Forbric/Deps] -D%s=dryRun — forked the dialog for %d finding(s) with "
 						+ "no display; it answered %d (launch anyway) without drawing anything",
@@ -131,15 +203,43 @@ public final class DependencyDialog {
 		} catch (Throwable failed) {
 			ForbricLog.warn("[Forbric/Deps] could not show the unmet-dependency dialog — the warnings above are "
 					+ "the whole of it; launching anyway", failed);
-			return;
+			return true;
 		}
 		if (answer == DependencyDialogMain.QUIT) {
 			ForbricLog.warn("[Forbric/Deps] the player chose to quit rather than launch with %d finding(s). "
 					+ "This is their decision, not the kernel refusing — -D%s=off launches without asking.",
 					findings, SWITCH);
-			System.exit(1);
+			return false;
 		}
 		ForbricLog.info("[Forbric/Deps] launching anyway with %d finding(s), at the player's choice", findings);
+		return true;
+	}
+
+	/**
+	 * The one window when a confirmed required loss needs an answer, with the held notice folded in.
+	 *
+	 * <p>Fail-closed where {@link #offer} is fail-open, and the switch keeps its meaning of "no window": with it off
+	 * nothing is asked, so nothing is approved. The dry run forks the real child with no display, which cannot
+	 * approve either -- so a gate sees the whole path and the refusal it must end in.
+	 *
+	 * @return {@link DependencyDialogMain#CONTINUE} only for an explicit click on continue
+	 */
+	static int confirm(DependencyReport.Confirmation confirmation) throws Exception {
+		int findings = confirmation.findings();
+		String mode = System.getProperty(SWITCH, "on");
+		if ("off".equalsIgnoreCase(mode)) {
+			ForbricLog.warn("[Forbric/Deps] -D%s=off — %d finding(s) reported in the log only; a required loss "
+					+ "needs an explicit continue, so continuation was not approved", SWITCH, findings);
+			return DependencyDialogMain.QUIT;
+		}
+		boolean dryRun = DRY_RUN.equalsIgnoreCase(mode);
+		int answer = askConfirmation(confirmation, dryRun ? List.of("-Djava.awt.headless=true") : List.of());
+		if (dryRun) {
+			ForbricLog.info("[Forbric/Deps] -D%s=dryRun — forked the dialog for %d finding(s) with no display; it "
+					+ "answered %d (%s) without drawing anything", SWITCH, findings, answer,
+					answer == DependencyDialogMain.CONTINUE ? "continue" : "not approved");
+		}
+		return answer;
 	}
 
 	static int ask(List<DependencyReport.Row> rows) throws Exception {
@@ -150,6 +250,11 @@ public final class DependencyDialog {
 		return ask(rows, List.of(), extraJvmArgs);
 	}
 
+	static int ask(List<DependencyReport.Row> rows, List<DependencyReport.MixinRow> mixins,
+			List<String> extraJvmArgs) throws Exception {
+		return ask(rows, mixins, List.of(), extraJvmArgs);
+	}
+
 	/**
 	 * Runs the child and reads its exit code.
 	 *
@@ -158,10 +263,10 @@ public final class DependencyDialog {
 	 *                     {@code -Djava.awt.headless=true} instead of a copy of it that proves nothing
 	 */
 	static int ask(List<DependencyReport.Row> rows, List<DependencyReport.MixinRow> mixins,
-			List<String> extraJvmArgs) throws Exception {
+			List<DependencyReport.CompatibilityRow> suspected, List<String> extraJvmArgs) throws Exception {
 		Path report = Files.createTempFile("forbric-deps", ".tsv");
 		try {
-			DependencyReport.write(report, rows, mixins);
+			DependencyReport.write(report, rows, mixins, suspected);
 			return fork(report, extraJvmArgs, false);
 		} finally {
 			Files.deleteIfExists(report);
@@ -170,9 +275,14 @@ public final class DependencyDialog {
 
 	/** The same child process and layout, with a separate, fail-closed confirmation contract. */
 	static int askCompatibility(List<DependencyReport.CompatibilityRow> rows, List<String> extraJvmArgs) throws Exception {
+		return askConfirmation(new DependencyReport.Confirmation(rows, List.of(), List.of(), List.of(), List.of()),
+				extraJvmArgs);
+	}
+
+	static int askConfirmation(DependencyReport.Confirmation confirmation, List<String> extraJvmArgs) throws Exception {
 		Path report = Files.createTempFile("forbric-compatibility", ".tsv");
 		try {
-			DependencyReport.writeCompatibility(report, rows);
+			DependencyReport.writeConfirmation(report, confirmation);
 			return fork(report, extraJvmArgs, true);
 		} finally {
 			Files.deleteIfExists(report);

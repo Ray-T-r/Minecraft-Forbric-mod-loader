@@ -210,6 +210,7 @@ class PushAndRunTest {
                     dict(name='instance/screenshots/z-old.png', mtime_ns=90, size=1),
                     dict(name='instance/screenshots/a-fresh.png', mtime_ns=150, size=1)]))
                 (output / 'client-result.json').write_text(json.dumps(dict(started_ns=100)))
+                strict_reports(artifacts)
                 commands = []
                 def check(command, destination):
                     commands.append(command)
@@ -242,6 +243,7 @@ class PushAndRunTest {
                 (artifacts / 'files.json').write_text(json.dumps([
                     dict(name='instance/screenshots/a.png', mtime_ns=150, size=1)]))
                 (output / 'client-result.json').write_text(json.dumps(dict(started_ns=100)))
+                strict_reports(artifacts)
                 text = {}
                 def check(command, destination):
                     destination.write_text(text['region'] if 'region-probe.py' in command[1] else 'verdict=DREW')
@@ -265,6 +267,67 @@ class PushAndRunTest {
     }
 
     @Test
+    void acceptanceNeedsAFreshStrictReportWithNoRequiredLossOnBothSides() throws Exception {
+        // A player's Continue must not turn a confirmed required loss into a passing sweep, and neither may a
+        // report left from an earlier run, a missing one, or one decided under another policy.
+        var result = python("""
+                import json
+                artifacts = output / 'artifacts'; artifacts.mkdir()
+                (artifacts / 'files.json').write_text(json.dumps([
+                    dict(name='instance/screenshots/a.png', mtime_ns=150, size=1)]))
+                (output / 'client-result.json').write_text(json.dumps(dict(started_ns=100)))
+                def check(command, destination):
+                    destination.write_text('unreadable: 0\\nminecraft:coal_ore: 11\\n' if 'region-probe.py' in command[1] else 'verdict=DREW')
+                    return True
+                m.check = check
+                assert m.report(args, output, artifacts, 0, 0, 'fixture-time') == 1, 'no report at all'
+                assert 'missing' in (output / 'compatibility.txt').read_text()
+                strict_reports(artifacts)
+                assert m.report(args, output, artifacts, 0, 0, 'fixture-time') == 0
+                assert 'Compatibility report (fresh, STRICT, 0 required losses on both sides): PASS' in (output / 'report.md').read_text()
+                assert (output / 'compatibility.txt').read_text().count('STRICT, 0 confirmed required losses') == 2
+                lost = dict(id='lost', modId='demo', confidence='CONFIRMED', required=True)
+                for bad, why in [(dict(policy='CONTINUE'), 'decided under CONTINUE'),
+                                 (dict(policy='ASK'), 'decided under ASK'),
+                                 (dict(findings=[lost]), 'demo:lost'),
+                                 (dict(failures=[dict(modId='x', status='FAILED')]), 'unclassified FAILED'),
+                                 (dict(written=50), 'not written by this run')]:
+                    strict_reports(artifacts, **bad)
+                    assert m.report(args, output, artifacts, 0, 0, 'fixture-time') == 1, bad
+                    assert why in (output / 'compatibility.txt').read_text(), (bad, (output / 'compatibility.txt').read_text())
+                    assert 'FAIL, see compatibility.txt' in (output / 'report.md').read_text()
+                # Suspicions and optional losses are evidence, not failures.
+                strict_reports(artifacts, findings=[dict(id='s', modId='d', confidence='SUSPECTED', required=True),
+                                                    dict(id='o', modId='d', confidence='CONFIRMED', required=False)])
+                assert m.report(args, output, artifacts, 0, 0, 'fixture-time') == 0
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
+    void theCollectorBringsBothCompatibilityReportsBack() throws Exception {
+        var result = python("""
+                import json, subprocess
+                root = output / 'fixture-instance'; root.mkdir()
+                drivers = output / 'fixture-drivers'; drivers.mkdir()
+                for relative in ('.forbric-kernel', 'server-gen/.forbric-kernel'):
+                    (root / relative).mkdir(parents=True)
+                    (root / relative / 'compatibility-report.json').write_text('{}')
+                m.remote = lambda _: ''
+                m.put = lambda *arguments: None
+                def get(source, destination):
+                    subprocess.run([sys.executable, str(output / 'collect.py'), str(root), str(drivers), str(destination)], check=True)
+                m.get = get
+                args.instance = str(root)
+                artifacts = m.collect(args, str(drivers), output)
+                names = [entry['name'] for entry in json.loads((artifacts / 'files.json').read_text())]
+                for stage, relative in m.COMPATIBILITY_REPORTS:
+                    assert relative in names, (relative, names)
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
     void shellEntryPointForwardsArgumentsToThePythonDriver() throws Exception {
         var result = DriverTools.run(Map.of(), "-c",
                 "import subprocess,sys; sys.exit(subprocess.call(['bash',sys.argv[1],'--help']))",
@@ -283,6 +346,21 @@ class PushAndRunTest {
                 args = SimpleNamespace(instance='D:\\\\fixture-instance', mc='D:\\\\fixture-mc', version='fixture',
                     label='fixture', python='python', world='chosen-world', timeout=120, java=None, jvm=[],
                     bisect=None, manifest=None, mods=None)
+                def strict_reports(artifacts, started=100, policy='STRICT', findings=(), failures=(), written=200):
+                    import json
+                    records = json.loads((artifacts / 'files.json').read_text()) if (artifacts / 'files.json').is_file() else []
+                    records = [r for r in records if not r['name'].endswith('compatibility-report.json')]
+                    required = [f for f in findings if f['confidence'] == 'CONFIRMED' and f['required']]
+                    for stage, relative in m.COMPATIBILITY_REPORTS:
+                        path = artifacts / relative; path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text(json.dumps(dict(policy=policy, schemaVersion=1, confirmedRequired=len(required),
+                            findings=list(findings), catalogFailures=list(failures), mods=[])))
+                        records.append(dict(name=relative, mtime_ns=written, size=1))
+                        result = output / (stage + '-result.json')
+                        state = json.loads(result.read_text()) if result.is_file() else {}
+                        state['started_ns'] = started
+                        result.write_text(json.dumps(state))
+                    (artifacts / 'files.json').write_text(json.dumps(records))
                 """;
         return DriverTools.run(Map.of(), "-c", prefix + body, DriverTools.COMPAT.resolve("push-and-run.py").toString(), temp.toString());
     }
