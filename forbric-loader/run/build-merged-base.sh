@@ -31,12 +31,16 @@ ASM_COMMONS="$(find "$HOME/.gradle/caches" -name 'asm-commons-9*.jar' ! -name '*
 CP="$ASM:$ASM_TREE:$ASM_COMMONS"
 BUILD="$HERE/.merged-base-tools"
 rm -rf "$BUILD"; mkdir -p "$BUILD" "$(dirname "$OUT")"
+# A previous build's provenance must not survive next to a base this run replaces and then fails to link.
+rm -f "$OUT.provenance.json"
 echo "[build-merged-base] compiling merge tools (ASM: $(basename "$ASM"), $(basename "$ASM_TREE"), $(basename "$ASM_COMMONS")) …"
-javac --release 17 -cp "$CP" -d "$BUILD" \
-  "$PROJECT/src/tools/java/net/forbric/tools/MergedBaseBuilder.java" \
-  "$PROJECT/src/tools/java/net/forbric/tools/AdditiveMethodMerger.java" \
-  "$PROJECT/src/tools/java/net/forbric/tools/RuntimeInteropPatcher.java" \
+TOOL_SOURCES=(
+  "$PROJECT/src/tools/java/net/forbric/tools/MergedBaseBuilder.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/AdditiveMethodMerger.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/RuntimeInteropPatcher.java"
   "$PROJECT/src/tools/java/net/forbric/tools/MergedLinkChecker.java"
+)
+javac --release 17 -cp "$CP" -d "$BUILD" "${TOOL_SOURCES[@]}"
 
 echo "[build-merged-base] vanilla=$(basename "$VANILLA")  forge=$(basename "$FORGE")  neo=$(basename "$NEO")"
 java -Xmx4g -cp "$BUILD:$CP" net.forbric.tools.MergedBaseBuilder "$VANILLA" "$FORGE" "$NEO" "$OUT" "$REPORT" "$FORGE_RT" "$NEO_RT"
@@ -77,3 +81,17 @@ if [ "${LINK_CHECK:-enforce}" = "warn" ]; then
 else
   java -cp "$BUILD:$CP" net.forbric.tools.MergedLinkChecker --baseline "$LINK_BASELINE" "$OUT" "$NEO_RT" "$FORGE_RT_PATCHED"
 fi
+
+# How this base was made, next to it: every input and output hash, the tool sources compiled above and whether
+# they were committed, and the link-check mode. Nothing else records it, and a release acceptance
+# (evidence.py --release) refuses a merged base without it: the jar it attests has to be the output of the
+# attested tools on the attested inputs, not merely a file of that name. Written last, so a build that failed
+# its link check leaves none.
+TOOL_ARGS=()
+for tool in "${TOOL_SOURCES[@]}"; do TOOL_ARGS+=(--tool "$tool"); done
+python3 "$PROJECT/../forbric-kernel/run/compat/evidence.py" merge-provenance --source "$PROJECT/.." \
+  --output "$OUT.provenance.json" --link-check "${LINK_CHECK:-enforce}" \
+  --input vanilla="$VANILLA" --input forge-patched="$FORGE" --input neo-patched="$NEO" \
+  --input forge-runtime="$FORGE_RT" --input neo-runtime="$NEO_RT" --input link-baseline="$LINK_BASELINE" \
+  --produced merged="$OUT" --produced forge-interop="$FORGE_RT_PATCHED" --produced report="$REPORT" \
+  "${TOOL_ARGS[@]}"
