@@ -46,7 +46,7 @@ import net.forbric.api.ModCatalog;
 class KernelMixinErrorHandlerTest {
 	@org.junit.jupiter.api.BeforeEach
 	@org.junit.jupiter.api.AfterEach
-	void clearCompatibilityEvidence() { net.forbric.api.CompatibilityFindings.reset(); }
+	void clearCompatibilityEvidence() { net.forbric.api.CompatibilityFindings.reset(); SupersededMixins.reset(); }
 
 	private List<ModCatalog.Entry> previous;
 
@@ -108,13 +108,14 @@ class KernelMixinErrorHandlerTest {
 	}
 
 	/**
-	 * A mixin the kernel has taken over is not a loss, so its mod is not marked.
+	 * A mixin the kernel has taken over is not a loss once the takeover is SEEN, so its mod is then not marked.
 	 *
-	 * <p>Both halves: no row, and the action still unchanged — suppressing the MARK must never suppress Mixin's
-	 * own decision about the failure, which is what keeps a required config erroring.
+	 * <p>Seen, not named: the failure is recorded like any other and resolved only when the class carrying the
+	 * replacement is defined with the replacement in its bytes. And the action stays unchanged throughout —
+	 * suppressing the MARK must never suppress Mixin's own decision, which is what keeps a required config erroring.
 	 */
 	@Test
-	void aMixinTheKernelSupersedesDoesNotMarkItsMod() {
+	void aMixinTheKernelSupersedesIsUnmarkedOnlyOnceItsReplacementIsDefined() {
 		String superseded = SupersededMixins.all().keySet().iterator().next();
 		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
 
@@ -123,8 +124,65 @@ class KernelMixinErrorHandlerTest {
 				IMixinErrorHandler.ErrorAction.WARN);
 
 		assertSame(IMixinErrorHandler.ErrorAction.WARN, out, "attribution never changes Mixin's own decision");
+		assertEquals(1, ModCatalog.failures().size(), "a table entry is a claim; nothing has shown the repair yet");
+		SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(false));
+		assertEquals(1, ModCatalog.failures().size(), "ConditionalOps defined without the wrap proves nothing");
+		SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(true));
 		assertTrue(ModCatalog.failures().isEmpty(),
 				"the kernel does this mixin's job itself, so marking its mod reports a loss that did not happen");
+		assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty());
+	}
+
+	/** A replacement proved before the mixin fails resolves the failure as it is recorded. */
+	@Test
+	void aReplacementDefinedBeforeTheFailureResolvesItOnArrival() {
+		String superseded = SupersededMixins.all().keySet().iterator().next();
+		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
+		SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(true));
+		new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo", new RuntimeException("boom"),
+				info("s.mixins.json", superseded), IMixinErrorHandler.ErrorAction.WARN);
+		assertTrue(ModCatalog.failures().isEmpty());
+	}
+
+	/** -Dforbric.fabricConditions=off leaves the wrap in place but makes it do nothing: the loss is real again. */
+	@Test
+	void aSwitchedOffReplacementDoesNotResolveTheLossEvenWhenItsBytesAreThere() {
+		String previous = System.getProperty("forbric.fabricConditions");
+		try {
+			System.setProperty("forbric.fabricConditions", "off");
+			String superseded = SupersededMixins.all().keySet().iterator().next();
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
+			new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo", new RuntimeException("boom"),
+					info("s.mixins.json", superseded), IMixinErrorHandler.ErrorAction.WARN);
+			SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(true));
+			assertEquals(1, ModCatalog.failures().size());
+			assertEquals(1, net.forbric.api.CompatibilityFindings.confirmedRequired().size());
+		} finally {
+			if (previous == null) System.clearProperty("forbric.fabricConditions");
+			else System.setProperty("forbric.fabricConditions", previous);
+		}
+	}
+
+	private static final String CONDITIONAL_OPS = "net.neoforged.neoforge.common.conditions.ConditionalOps";
+
+	/** ConditionalOps' codec factory, with or without the kernel's wrap before its one exit. */
+	private static byte[] conditionalOps(boolean wrapped) {
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+		writer.visit(org.objectweb.asm.Opcodes.V17, org.objectweb.asm.Opcodes.ACC_PUBLIC,
+				CONDITIONAL_OPS.replace('.', '/'), null, "java/lang/Object", null);
+		var factory = writer.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC,
+				"createConditionalCodecWithConditions",
+				"(Lcom/mojang/serialization/Codec;Ljava/lang/String;)Lcom/mojang/serialization/Codec;", null, null);
+		factory.visitCode();
+		factory.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+		if (wrapped) factory.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESTATIC,
+				"net/forbric/kernel/runtime/KernelFabricConditions", "alsoAskFabric",
+				"(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;", false);
+		factory.visitInsn(org.objectweb.asm.Opcodes.ARETURN);
+		factory.visitMaxs(1, 2);
+		factory.visitEnd();
+		writer.visitEnd();
+		return writer.toByteArray();
 	}
 
 	/** With the switch off it is an ordinary failure again — which is how the claim in each entry gets checked. */
