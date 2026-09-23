@@ -240,7 +240,8 @@ A release `run` refuses `--skip`, requires `gates-all.sh --release`, and records
 
 `evidence.py release-check --manifest <run.json> ... --publish kernel=<jar> ...` passes only when every manifest
 is a passed release run, all bind the same source and the same hash per role, and each published file is the
-accepted one.
+accepted one. The installer's `releaseAssets` requires `-PreleaseEvidence=<run.json>[,...]` and runs it on the
+kernel and merge-tools jars it is about to publish.
 
 `native-controls.py prepare` installs the fixed native Fabric, Forge and NeoForge servers into
 `build/native-controls`; `build` compiles one public-API canary per ecosystem. `run --engine native` and

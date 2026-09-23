@@ -219,13 +219,20 @@ if (project.hasProperty('releasePin')) {
 // Two-step on purpose, and the order cannot be collapsed: the pin is a digest of the manifest, so the manifest
 // has to exist before the installer that pins it is built.
 //
-//   ./gradlew releaseAssets -PreleaseTag=v0.1.0
+// What is published must be what was accepted. releaseAssets therefore takes the release acceptance's evidence
+// manifests (evidence.py run --release, comma-separated) and refuses to write any asset unless
+// `evidence.py release-check` finds them all passed, bound to one candidate, and the kernel and merge-tools jars
+// about to ship byte-identical to the accepted ones. Forbric's loader jars are not acceptance roles and are not
+// compared; the game artifacts are built on each player's machine and do not reproduce byte for byte (zip entry
+// times), so for them the installer's link check against the packaged baseline is the gate.
+//
+//   ./gradlew releaseAssets -PreleaseTag=v0.1.0 -PreleaseEvidence=build/evidence/release.json
 //   gh release create v0.1.0 build/release/assets/*
 //   ./gradlew jar -Pslim -PreleasePin=build/release/forbric-release.properties     (NOT with `clean`)
 //   gh release upload v0.1.0 build/libs/forbric-kernel-installer-*.jar
 tasks.register('releaseAssets') {
 	description = 'Write build/release/: the jars to attach to a GitHub release + the manifest the installer downloads.'
-	dependsOn 'bundleForbric'
+	dependsOn 'bundleForbric', 'buildMergeTools'
 	def repo = project.findProperty('releaseRepo') ?: 'https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader'
 	def outRoot = layout.buildDirectory.dir('release')
 	outputs.dir(outRoot)
@@ -236,6 +243,23 @@ tasks.register('releaseAssets') {
 		if (!staged.isFile()) throw new GradleException("missing ${staged} — run :bundleForbric first")
 		def manifest = new groovy.json.JsonSlurper().parse(staged)
 
+		def evidence = project.findProperty('releaseEvidence')
+		if (!evidence) {
+			throw new GradleException('releaseAssets needs -PreleaseEvidence=<manifest.json>[,...] from the release'
+					+ ' acceptance (evidence.py run --release); an unaccepted build is not published')
+		}
+		def kernelLib = manifest.libraries.find { (it.coordinate as String).startsWith('net.forbric:forbric-kernel:') }
+		if (kernelLib == null) throw new GradleException("${staged} lists no forbric-kernel jar")
+		def check = ['python3', new File(kernelDir, 'run/compat/evidence.py').path, 'release-check']
+		(evidence as String).split(',').each { check += ['--manifest', file(it.trim()).path] }
+		check += ['--publish', "kernel=${new File(genResources.get().asFile, (kernelLib.resource as String).substring(1))}",
+				  '--publish', "merge-tools=${mergeToolsJar}"]
+		def checking = new ProcessBuilder(check.collect { it.toString() }).redirectErrorStream(true).start()
+		def verdict = checking.inputStream.text
+		if (checking.waitFor() != 0) {
+			throw new GradleException("the jars about to be published are not the accepted ones:\n" + verdict)
+		}
+		println verdict.trim()
 
 		def root = outRoot.get().asFile
 		def assets = new File(root, 'assets')
