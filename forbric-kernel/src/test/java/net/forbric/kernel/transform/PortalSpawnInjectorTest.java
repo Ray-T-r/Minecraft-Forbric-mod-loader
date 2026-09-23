@@ -31,18 +31,22 @@ class PortalSpawnInjectorTest {
 
 	@Test void onlyTheHookOwnerChangesOnTheRealMergedBase() throws Exception {
 		byte[] original = staged("merged-base/patched-mc-merged-26.2.jar", PortalSpawnInjector.TARGET.replace('.', '/'));
-		// A base whose merge restored MinecraftForge's own call carries the proved pair: only the NeoForge call is
-		// scoped. A base that lost it gets the wrapper that forwards to Forge itself. Either way one call changes.
+		// A base whose merge restored MinecraftForge's own call carries the proved pair: each family's call is routed
+		// through its own runtime entry. A base that lost it gets the wrapper that forwards to Forge itself. Either
+		// way only call targets change.
 		boolean restored = calls(host(parse(original))).stream().anyMatch(c -> c.owner.equals(PortalSpawnInjector.FORGE));
 		byte[] changed = injector.transform(PortalSpawnInjector.TARGET, original, context);
 		assertNotSame(original, changed);
 		ClassNode after = parse(changed);
 		List<MethodInsnNode> runtime = calls(host(after)).stream().filter(c -> c.owner.equals(PortalSpawnInjector.RUNTIME)).toList();
-		assertEquals(1, runtime.size()); MethodInsnNode hook = runtime.getFirst();
-		assertEquals(restored ? PortalSpawnInjector.NEO_ONLY : "onTrySpawnPortal", hook.name);
-		assertEquals(PortalSpawnInjector.HOOK_DESC, hook.desc);
+		assertEquals(restored ? List.of(PortalSpawnInjector.NEO_ONLY, PortalSpawnInjector.FORGE_ONLY) : List.of("onTrySpawnPortal"),
+				runtime.stream().map(hook -> hook.name).toList());
+		for (MethodInsnNode hook : runtime) assertEquals(PortalSpawnInjector.HOOK_DESC, hook.desc);
 		new Analyzer<>(new BasicVerifier()).analyze(after.name, host(after));
-		hook.owner = PortalSpawnInjector.NEO; hook.name = "onTrySpawnPortal";
+		for (MethodInsnNode hook : runtime) {
+			hook.owner = hook.name.equals(PortalSpawnInjector.FORGE_ONLY) ? PortalSpawnInjector.FORGE : PortalSpawnInjector.NEO;
+			hook.name = "onTrySpawnPortal";
+		}
 		assertEquals(trace(parse(original)), trace(after), "all operands, frames, branches and the Optional consumer must be unchanged");
 		assertSame(changed, injector.transform(PortalSpawnInjector.TARGET, changed, context));
 	}

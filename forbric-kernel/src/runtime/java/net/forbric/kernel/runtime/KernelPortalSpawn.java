@@ -21,6 +21,9 @@ import net.neoforged.neoforge.event.EventHooks;
  *
  * <p>The current unmodified carriers return the input shape or empty. A mod transforming a hook can also
  * return a replacement: unlike an event-only forward, this call site has somewhere to carry that result.
+ *
+ * <p>A base whose merge restored MinecraftForge's own call keeps its native order and guards, and calls the two
+ * halves of the wrapper in its place: {@link #onTrySpawnPortalNeoOnly} and {@link #onTrySpawnPortalForgeOnly}.
  */
 public final class KernelPortalSpawn {
 	/** The arguments of each NeoForge dispatch this wrapper has in progress on this thread, innermost last. */
@@ -50,11 +53,20 @@ public final class KernelPortalSpawn {
 			Optional<PortalShape> original) {
 		Optional<PortalShape> neo = onTrySpawnPortalNeoOnly(level, position, original);
 		if (neo == null || neo.isEmpty()) return Optional.empty();
+		return onTrySpawnPortalForgeOnly(level, position, neo);
+	}
+
+	/**
+	 * MinecraftForge's half, called with NeoForge's nonempty result, by the wrapper and by a proved restored caller
+	 * in place of its native Forge call. It keeps the legacy bridge's failure policy either way: a failed Forge
+	 * listener cannot discard NeoForge's result, and no base rebuild turns it into an exception out of onPlace.
+	 */
+	public static Optional<PortalShape> onTrySpawnPortalForgeOnly(LevelAccessor level, BlockPos position,
+			Optional<PortalShape> neo) {
 		try {
 			Optional<PortalShape> forge = ForgeEventFactory.onTrySpawnPortal(level, position, neo);
 			return forge == null ? Optional.empty() : forge;
 		} catch (Throwable failure) {
-			// Preserve the legacy bridge's failure policy: a failed Forge listener cannot discard Neo's result.
 			if (WARNED.compareAndSet(false, true)) {
 				ForbricLog.warn("[Forbric/PortalSpawn] MinecraftForge portal hook failed; retaining NeoForge's result",
 						Reflect.unwrap(failure));
