@@ -143,6 +143,25 @@ class KernelGuestMixinAdapterTest {
 		return cw.toByteArray();
 	}
 
+	/** One anchor resolves ({@code render}) and one does not ({@code methodThatNoLongerExists}) — PARTIAL. */
+	private static byte[] halfMixin(String simpleName, String target) {
+		ClassWriter cw = beginMixin(simpleName, target);
+		for (String[] spec : new String[][] {{"onRender", "render"}, {"onGone", "methodThatNoLongerExists"}}) {
+			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE, spec[0], "()V", null, null);
+			AnnotationVisitor inject = mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", false);
+			AnnotationVisitor methods = inject.visitArray("method");
+			methods.visit(null, spec[1]);
+			methods.visitEnd();
+			inject.visitEnd();
+			mv.visitCode();
+			mv.visitInsn(Opcodes.RETURN);
+			mv.visitMaxs(0, 1);
+			mv.visitEnd();
+		}
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
 	/** A mixin whose one injector lists SEVERAL candidate selectors — Mixin's require=1 alternatives idiom. */
 	private static byte[] multiSelectorMixin(String simpleName, String target, String... selectors) {
 		ClassWriter cw = beginMixin(simpleName, target);
@@ -210,7 +229,8 @@ class KernelGuestMixinAdapterTest {
 	/** The same config with a {@code plugin}, which is what makes the attribution deferrable. */
 	private static byte[] configWithPlugin(String pkg, String plugin, String... clientMixins) {
 		String json = new String(config(pkg, clientMixins), StandardCharsets.UTF_8);
-		return json.replaceFirst("^\\{", "{\"plugin\":\"" + plugin + "\",").getBytes(StandardCharsets.UTF_8);
+		return json.replaceFirst("^\\{", java.util.regex.Matcher.quoteReplacement("{\"plugin\":\"" + plugin + "\","))
+				.getBytes(StandardCharsets.UTF_8);
 	}
 
 	private static Function<String, byte[]> resolver(Map<String, byte[]> classes) {
@@ -311,6 +331,14 @@ class KernelGuestMixinAdapterTest {
 			String detail = ModCatalog.failures().get(0).statusDetail();
 			assertTrue(detail.contains("FluidRendererImpl"), detail);
 			assertTrue(detail.contains("sodium"), "the row must name the mod whose build was arbitrated away: " + detail);
+			// And the ledger has it: the target never loads, so the mixin is confirmed not to run — but a missing
+			// target is only a warning to native Mixin, so it is not a necessary loss that stops a launch.
+			var finding = net.forbric.api.CompatibilityFindings.all().stream()
+					.filter(f -> f.id().equals(MixinCompatibility.id("iris.mixins.json",
+							PKG.replace('/', '.') + ".MixinFluidRendererImpl"))).findFirst().orElseThrow();
+			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, finding.confidence());
+			assertFalse(finding.required());
+			assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty());
 		} finally {
 			net.forbric.kernel.boot.ArbitratedAwayClasses.reset();
 			MixinConfigOwners.reset();
@@ -341,6 +369,118 @@ class KernelGuestMixinAdapterTest {
 		}
 	}
 
+	/**
+	 * Iris beside a Sodium that stopped making the call Iris redirects: the anchor misses on ANOTHER MOD's class.
+	 * Nothing has been observed to fail yet, so the finding is only SUSPECTED and asks nobody to continue or quit —
+	 * but a suspicion still belongs in the details. The dependency dialog's mixin section reads ForeignMixinBreaks
+	 * and the Mods screen reads the row; with neither fed, the render crash a frame later names no mod at all.
+	 */
+	@Test
+	void aMissOnAnotherModsClassReachesTheDialogAndTheRowButStaysSuspected() {
+		List<ModCatalog.Entry> previous = ModCatalog.everything();
+		try {
+			ForeignMixinBreaks.reset();
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("iris.mixins.json", "iris", Ecosystem.FABRIC)));
+			ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "iris", "Iris", "1", "", List.of(), "i.jar", "", "")));
+			String sodium = "net/caffeinemc/mods/sodium/client/render/chunk/RenderRegionManager";
+			Map<String, byte[]> classes = new HashMap<>();
+			classes.put(sodium + ".class", target(sodium, "unused", Opcodes.ACC_PRIVATE, true));
+			classes.put(PKG + "/MixinRenderRegionManager.class", halfMixin("MixinRenderRegionManager", sodium));
+
+			assertTrue(KernelGuestMixinAdapter.unfitMixins("iris.mixins.json",
+					config(PKG.replace('/', '.'), "MixinRenderRegionManager"), resolver(classes)).isEmpty(),
+					"a half-fitting cross-mod mixin is kept, like every PARTIAL");
+
+			List<ForeignMixinBreaks.Break> breaks = ForeignMixinBreaks.all();
+			assertEquals(1, breaks.size(), "the dependency dialog's mixin section is fed");
+			assertEquals("iris.mixins.json", breaks.get(0).config());
+			assertEquals("MixinRenderRegionManager", breaks.get(0).mixin());
+			assertTrue(breaks.get(0).anchors().stream().anyMatch(a -> a.contains("methodThatNoLongerExists")),
+					breaks.get(0).anchors().toString());
+
+			assertEquals(1, ModCatalog.failures().size(), "the Mods screen names the mod");
+			assertEquals(ModCatalog.Status.DEGRADED, ModCatalog.failures().get(0).status());
+			assertTrue(ModCatalog.failures().get(0).statusDetail().contains("another mod's class"),
+					ModCatalog.failures().get(0).statusDetail());
+
+			var finding = net.forbric.api.CompatibilityFindings.all().stream()
+					.filter(f -> f.id().equals(MixinCompatibility.id("iris.mixins.json",
+							PKG.replace('/', '.') + ".MixinRenderRegionManager"))).findFirst().orElseThrow();
+			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, finding.confidence());
+			assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty(),
+					"a preflight suspicion never asks the player to continue or quit");
+		} finally {
+			ForeignMixinBreaks.reset();
+			MixinConfigOwners.reset();
+			ModCatalog.publish(previous);
+		}
+	}
+
+	/**
+	 * A mixin on {@code ByteBufCodecs$15}, which the merge renumbered into three candidates, so nothing can move it.
+	 * Every handler then binds — to the unrelated class that now carries that name — and the final-class check
+	 * sees all of them attached. That is the evidence for "the anchors resolved", which is all it may discharge;
+	 * the drift is a question about WHICH class, and it has to survive the attachment.
+	 */
+	@Test
+	void aDriftedTargetIsNotDischargedByItsHandlersAttaching() {
+		MixinCompatibility.reset();
+		try {
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("drift.mixins.json", "driftmod", Ecosystem.FABRIC)));
+			String drifted = "net/minecraft/network/codec/ByteBufCodecs$15";
+			String mixinClass = PKG.replace('/', '.') + ".CodecMixin";
+			Map<String, byte[]> classes = new HashMap<>();
+			classes.put(drifted + ".class", target(drifted, "unused", Opcodes.ACC_PRIVATE, true));
+			classes.put(PKG + "/CodecMixin.class", shadowingMixin("CodecMixin", drifted, "unused"));
+			byte[] cfg = ("{\"required\":true,\"package\":\"" + PKG.replace('/', '.') + "\",\"mixins\":[\"CodecMixin\"],"
+					+ "\"injectors\":{\"defaultRequire\":1}}").getBytes(StandardCharsets.UTF_8);
+
+			MixinCompatibility.rememberOriginalConfig("drift.mixins.json", cfg);
+			assertTrue(KernelGuestMixinAdapter.unfitMixins("drift.mixins.json", cfg, resolver(classes)).isEmpty(),
+					"a drifted target is PARTIAL and kept");
+
+			org.objectweb.asm.tree.ClassNode mixin = new org.objectweb.asm.tree.ClassNode();
+			new org.objectweb.asm.ClassReader(classes.get(PKG + "/CodecMixin.class")).accept(mixin, 0);
+			FinalMixinApplications.remember(mixin);
+			// The final class: the merged handler, and the call the injector made to it.
+			ClassWriter cw = new ClassWriter(0);
+			cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, drifted, null, "java/lang/Object", null);
+			MethodVisitor handler = cw.visitMethod(Opcodes.ACC_PRIVATE, "handler$000$onRender", "()V", null, null);
+			AnnotationVisitor merged = handler.visitAnnotation("Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;", true);
+			merged.visit("mixin", mixinClass);
+			merged.visitEnd();
+			handler.visitCode();
+			handler.visitInsn(Opcodes.RETURN);
+			handler.visitMaxs(0, 1);
+			handler.visitEnd();
+			MethodVisitor render = cw.visitMethod(Opcodes.ACC_PUBLIC, "render", "()V", null, null);
+			render.visitCode();
+			render.visitVarInsn(Opcodes.ALOAD, 0);
+			render.visitMethodInsn(Opcodes.INVOKESPECIAL, drifted, "handler$000$onRender", "()V", false);
+			render.visitInsn(Opcodes.RETURN);
+			render.visitMaxs(1, 1);
+			render.visitEnd();
+			cw.visitEnd();
+			FinalMixinApplications.observe(drifted.replace('/', '.'), cw.toByteArray(),
+					(m, name, desc) -> List.of(new FinalMixinApplications.Renamed("handler$000$" + name, desc)));
+
+			var findings = net.forbric.api.CompatibilityFindings.all();
+			var whole = findings.stream().filter(f -> f.id().equals(MixinCompatibility.id("drift.mixins.json", mixinClass)))
+					.findFirst().orElseThrow();
+			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.RESOLVED, whole.confidence(),
+					"every anchor attached, and that part of the suspicion is answered");
+			var drift = findings.stream().filter(f -> f.id().equals(MixinCompatibility.driftId("drift.mixins.json", mixinClass)))
+					.findFirst().orElseThrow(() -> new AssertionError("no drift row survived: " + findings));
+			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, drift.confidence(),
+					"attachment cannot say the handlers bound to the class vanilla compiled at that name");
+			assertTrue(drift.evidence().stream().anyMatch(e -> e.contains("ByteBufCodecs$15")), drift.evidence().toString());
+			assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty());
+		} finally {
+			MixinCompatibility.reset();
+			MixinConfigOwners.reset();
+		}
+	}
+
 	@Test
 	void aConfigWithAPluginHoldsTheMarkBackUntilThePluginIsAsked() {
 		List<ModCatalog.Entry> previous = ModCatalog.everything();
@@ -365,6 +505,62 @@ class KernelGuestMixinAdapterTest {
 			PluginDeclinedMixins.resolve();
 			assertEquals(1, ModCatalog.failures().size());
 			assertTrue(ModCatalog.failures().get(0).statusDetail().contains("Dangling"));
+		} finally {
+			PluginDeclinedMixins.reset();
+			MixinConfigOwners.reset();
+			ModCatalog.publish(previous);
+		}
+	}
+
+	/** Declines the mixin for the first target only, the way a plugin reading {@code targetClassName} can. */
+	public static final class FirstTargetDecliningPlugin {
+		public boolean shouldApplyMixin(String target, String mixin) {
+			return !"net.minecraft.client.renderer.GameRenderer".equals(target);
+		}
+	}
+
+	/** The kernel removes a mixin from EVERY target, so the plugin must be asked about every target too. */
+	@Test
+	void aSuppressionIsSettledAgainstEveryTargetNotJustTheFirst() {
+		List<ModCatalog.Entry> previous = ModCatalog.everything();
+		try {
+			PluginDeclinedMixins.reset();
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("p.mixins.json", "pmod", Ecosystem.FABRIC)));
+			ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "pmod", "P", "1", "", List.of(), "p.jar", "", "")));
+			String first = "net/minecraft/client/renderer/GameRenderer";
+			String second = "net/minecraft/client/renderer/LevelRenderer";
+			Map<String, byte[]> classes = new HashMap<>();
+			classes.put(first + ".class", target(first, "unused", Opcodes.ACC_PRIVATE, true));
+			classes.put(second + ".class", target(second, "unused", Opcodes.ACC_PRIVATE, true));
+			ClassWriter cw = new ClassWriter(0);
+			cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, PKG + "/Both", null, "java/lang/Object", null);
+			AnnotationVisitor at = cw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+			AnnotationVisitor value = at.visitArray("value");
+			value.visit(null, Type.getObjectType(first));
+			value.visit(null, Type.getObjectType(second));
+			value.visitEnd();
+			at.visitEnd();
+			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE, "onGone", "()V", null, null);
+			AnnotationVisitor inject = mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", false);
+			AnnotationVisitor methods = inject.visitArray("method");
+			methods.visit(null, "methodThatNoLongerExists");
+			methods.visitEnd();
+			inject.visitEnd();
+			mv.visitCode();
+			mv.visitInsn(Opcodes.RETURN);
+			mv.visitMaxs(0, 1);
+			mv.visitEnd();
+			cw.visitEnd();
+			classes.put(PKG + "/Both.class", cw.toByteArray());
+
+			assertEquals(List.of("Both"), KernelGuestMixinAdapter.unfitMixins("p.mixins.json",
+					configWithPlugin(PKG.replace('/', '.'), FirstTargetDecliningPlugin.class.getName(), "Both"),
+					resolver(classes)));
+			PluginDeclinedMixins.rememberPlugin(new FirstTargetDecliningPlugin());
+			PluginDeclinedMixins.resolve();
+
+			assertEquals(1, ModCatalog.failures().size(),
+					"the plugin would have applied the mixin to LevelRenderer, so leaving it out there is a loss");
 		} finally {
 			PluginDeclinedMixins.reset();
 			MixinConfigOwners.reset();
@@ -461,6 +657,31 @@ class KernelGuestMixinAdapterTest {
 				"its cast-contract dependent must go with it, or the NPE becomes a CCE");
 	}
 
+	/** The dependent half goes because the kernel dropped its sibling: confirmed not to run, recorded as such. */
+	@Test
+	void theDependentHalfOfACastContractIsAConfirmedFinding() {
+		String gui = "net/minecraft/client/gui/render/SomeGuiThing";
+		String game = "net/minecraft/client/renderer/GameRenderer";
+		String contract = "net/fabricmc/fabric/impl/client/rendering/GuiRendererExtensions";
+		Map<String, byte[]> classes = new HashMap<>();
+		classes.put(gui + ".class", target(gui, "orphanedRenderers", Opcodes.ACC_PRIVATE, false));
+		classes.put(game + ".class", target(game, "unused", Opcodes.ACC_PRIVATE, true));
+		classes.put(PKG + "/GuiRendererMixin.class",
+				shadowingMixin("GuiRendererMixin", gui, "orphanedRenderers", contract));
+		classes.put(PKG + "/GameRendererMixin.class", castingMixin("GameRendererMixin", game, contract));
+
+		KernelGuestMixinAdapter.unfitMixins("example.mixins.json",
+				config(PKG.replace('/', '.'), "GuiRendererMixin", "GameRendererMixin"), resolver(classes));
+
+		var dependent = net.forbric.api.CompatibilityFindings.all().stream()
+				.filter(f -> f.id().equals(MixinCompatibility.id("example.mixins.json", PKG.replace('/', '.') + ".GameRendererMixin")))
+				.findFirst().orElseThrow(() -> new AssertionError("the cascade left no finding: "
+						+ net.forbric.api.CompatibilityFindings.all()));
+		assertEquals(net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, dependent.confidence());
+		assertFalse(dependent.required(), "the sibling's own row carries the necessity");
+		assertTrue(dependent.evidence().stream().anyMatch(e -> e.contains("GuiRendererExtensions")), dependent.evidence().toString());
+	}
+
 	@Test
 	void keepsPureAccessorsEvenOnAnOrphanedTarget() {
 		String gui = "net/minecraft/client/gui/render/SomeGuiThing";
@@ -538,21 +759,7 @@ class KernelGuestMixinAdapterTest {
 		Map<String, byte[]> classes = new HashMap<>();
 		classes.put(t + ".class", target(t, "unused", Opcodes.ACC_PRIVATE, true));
 		// One anchor resolves (render), one does not (methodThatNoLongerExists) → PARTIAL.
-		ClassWriter cw = beginMixin("HalfMixin", t);
-		for (String[] spec : new String[][] {{"onRender", "render"}, {"onGone", "methodThatNoLongerExists"}}) {
-			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE, spec[0], "()V", null, null);
-			AnnotationVisitor inject = mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", false);
-			AnnotationVisitor methods = inject.visitArray("method");
-			methods.visit(null, spec[1]);
-			methods.visitEnd();
-			inject.visitEnd();
-			mv.visitCode();
-			mv.visitInsn(Opcodes.RETURN);
-			mv.visitMaxs(0, 1);
-			mv.visitEnd();
-		}
-		cw.visitEnd();
-		classes.put(PKG + "/HalfMixin.class", cw.toByteArray());
+		classes.put(PKG + "/HalfMixin.class", halfMixin("HalfMixin", t));
 		byte[] cfg = config(PKG.replace('/', '.'), "HalfMixin");
 
 		assertTrue(KernelGuestMixinAdapter.unfitMixins("example.mixins.json", cfg, resolver(classes)).isEmpty(),

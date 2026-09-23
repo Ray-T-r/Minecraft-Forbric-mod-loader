@@ -391,7 +391,8 @@ public final class ForbricMixinService
 		if (in == null) return null;
 
 		boolean relax = isRelaxedConfig(name);
-		List<String> drop = new ArrayList<>(suppressedMixinsFor(name));
+		List<String> named = suppressedMixinsFor(name);
+		List<String> drop = new ArrayList<>(named);
 		// The general guest-mixin adapter needs the config's own bytes to enumerate its mixins, so it runs below
 		// after the JSON is read (only for things that look like mixin configs — not every resource on the path).
 		boolean scanForOwned = isMixinConfigName(name) && KernelGuestMixinAdapter.enabled();
@@ -410,6 +411,11 @@ public final class ForbricMixinService
 						r -> readAdapterClass(r))) {
 					if (!drop.contains(owned)) drop.add(owned);
 				}
+			}
+			if (!named.isEmpty()) {
+				java.util.Map<String, String> sources = new java.util.LinkedHashMap<>();
+				for (String mixin : named) sources.put(mixin, suppressionSource(name, mixin));
+				KernelGuestMixinAdapter.reportNamedSuppressions(name, bytes, sources, r -> readAdapterClass(r));
 			}
 
 			if (!relax && drop.isEmpty()) return new ByteArrayInputStream(bytes);
@@ -552,6 +558,18 @@ public final class ForbricMixinService
 		}
 
 		return out.isEmpty() ? Collections.emptyList() : out;
+	}
+
+	/** Which list put {@code configName:mixin} in {@link #suppressedMixinsFor}, in the words the report uses. */
+	static String suppressionSource(String configName, String mixin) {
+		String entry = configName + ":" + mixin;
+		if (MergedBaseMixinCompat.enabled() && MergedBaseMixinCompat.SUPPRESSED_MIXINS.contains(entry)) {
+			return "MergedBaseMixinCompat.SUPPRESSED_MIXINS";
+		}
+		if (MergedBaseMixinCompat.enabled() && MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED.contains(entry)) {
+			return "MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED (the injector pruner is off)";
+		}
+		return "-Dforbric.suppressMixins";
 	}
 
 	private static void collectSuppressed(List<String> entries, String configName, List<String> out) {

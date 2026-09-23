@@ -76,6 +76,53 @@ class ForbricMixinServiceTest {
 	 * ({@code SynchronizeRegistriesTaskMixin}, jade's {@code FogRendererMixin}) were diagnosed only once this
 	 * worked.
 	 */
+	/**
+	 * A hand-listed or property-listed suppression removes the mixin before Mixin reads the config, so it never
+	 * runs — and it used to leave one log line and nothing in the report. It is a confirmed removal the kernel
+	 * made on purpose: in the ledger, on the mod's row, and not a continue-or-quit question.
+	 */
+	@Test
+	void aSuppressionByNameIsAConfirmedFindingThatAsksNothing(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+			throws Exception {
+		String config = "fabric-registry-sync-v0.mixins.json";
+		String pkg = "net.fabricmc.fabric.mixin.registry.sync";
+		assertTrue(MergedBaseMixinCompat.SUPPRESSED_MIXINS.contains(config + ":BootstrapMixin"), "precondition");
+		java.nio.file.Path jar = dir.resolve("registry-sync.jar");
+		try (var out = new java.util.jar.JarOutputStream(java.nio.file.Files.newOutputStream(jar))) {
+			out.putNextEntry(new java.util.jar.JarEntry(config));
+			out.write(("{\"required\":true,\"package\":\"" + pkg + "\",\"mixins\":[\"BootstrapMixin\",\"StillRunsMixin\","
+					+ "\"PropertyListedMixin\"]}").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			out.closeEntry();
+		}
+		System.setProperty("forbric.suppressMixins", config + ":PropertyListedMixin");
+		net.forbric.api.CompatibilityFindings.reset();
+		try (var loader = new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[] {jar.toUri().toURL()},
+				getClass().getClassLoader())) {
+			ForbricMixinService.bind(loader, net.fabricmc.api.EnvType.CLIENT);
+			String rewritten;
+			try (var in = new ForbricMixinService().getResourceAsStream(config)) {
+				rewritten = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+			}
+			assertFalse(rewritten.contains("BootstrapMixin") || rewritten.contains("PropertyListedMixin"), rewritten);
+
+			var findings = net.forbric.api.CompatibilityFindings.all();
+			var hand = findings.stream().filter(f -> f.id().equals(MixinCompatibility.id(config, pkg + ".BootstrapMixin")))
+					.findFirst().orElseThrow(() -> new AssertionError("no finding for the hand-listed mixin: " + findings));
+			assertTrue(hand.confidence() == net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED && !hand.required(),
+					hand.toString());
+			assertTrue(hand.evidence().contains("source=MergedBaseMixinCompat.SUPPRESSED_MIXINS"), hand.evidence().toString());
+			assertTrue(hand.evidence().contains("config required=true"), "the mod's own declaration is kept: " + hand.evidence());
+			var property = findings.stream().filter(f -> f.id().equals(MixinCompatibility.id(config, pkg + ".PropertyListedMixin")))
+					.findFirst().orElseThrow();
+			assertTrue(property.evidence().contains("source=-Dforbric.suppressMixins"), property.evidence().toString());
+			assertTrue(findings.stream().noneMatch(f -> f.id().contains("StillRunsMixin")), "a kept mixin is not reported");
+			assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty());
+		} finally {
+			ForbricMixinService.bind(null, net.fabricmc.api.EnvType.SERVER);
+			net.forbric.api.CompatibilityFindings.reset();
+		}
+	}
+
 	@Test
 	void keepMixinsOverridesTheShippedSuppressionList() {
 		String config = "fabric-registry-sync-v0.mixins.json";
