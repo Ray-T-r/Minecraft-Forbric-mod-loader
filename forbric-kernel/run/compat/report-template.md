@@ -10,11 +10,12 @@
 - Frame: {frame}
 - Region: {region}
 - Load report / named failures: {degraded}
+- Compatibility report (fresh, STRICT, 0 required losses on both sides): {compatibility}
 - Observation / transport failures: {errors}
 - Verdict: **{verdict}**
 
 Evidence is kept next to this report: `artifacts/`, `assertions.txt`, `frame.txt`,
-`region.txt`, `degraded.txt`, `errors.json`, saved job handles/results, and the input manifest. A missing log, fresh screenshot,
+`region.txt`, `degraded.txt`, `compatibility.txt`, `errors.json`, saved job handles/results, and the input manifest. A missing log, fresh screenshot,
 or readable region is a failure. Baselines record failures without discarding the mod.
 
 Compare the same fields with the baseline. Record any quarantined jar, its reason,

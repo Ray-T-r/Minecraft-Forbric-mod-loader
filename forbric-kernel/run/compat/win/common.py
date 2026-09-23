@@ -322,6 +322,12 @@ def launch_command(configuration, server=False):
                       '--quickPlaySingleplayer', configuration['world']]
         (instance / 'quickPlay').mkdir(parents=True, exist_ok=True)
         main = child['mainClass']
+    # Acceptance is strict: a confirmed required loss stops the run instead of waiting on a window nobody at the
+    # sweep can answer, and an operator clicking Continue cannot turn it into a pass. After the profile's own
+    # arguments, because the last -D wins and an installed profile keeps the product's ask default; before the
+    # operator's --jvm, so a deliberate negative canary can still ask for continue (and the verdict, which reads
+    # the policy back from the compatibility report, then refuses it).
+    jvm += ['-Dforbric.compatibilityPolicy=strict']
     jvm += configuration['jvm']
     return [java] + jvm + [main] + kernel_args + ['--'] + game_args
 

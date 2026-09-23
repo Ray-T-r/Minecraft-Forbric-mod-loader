@@ -233,6 +233,15 @@ class WindowsDriversTest {
                 assert common.rules_allow({'rules':[{'action':'allow','os':{'name':'windows'}}]})
                 assert not common.rules_allow({'rules':[{'action':'allow','os':{'name':'linux'}}]})
                 assert not common.rules_allow({'rules':[{'action':'allow','features':{'is_demo_user':True}}]})
+                # Acceptance runs strict, whatever the installed profile says; only the operator's own --jvm may
+                # ask for another policy, and the last -D is the one the JVM keeps.
+                policy=lambda argv:[a for a in argv if a.startswith('-Dforbric.compatibilityPolicy=')][-1]
+                parent['arguments']['jvm'].append('-Dforbric.compatibilityPolicy=ask')
+                (mc/'versions'/'base'/'base.json').write_text(json.dumps(parent))
+                assert policy(common.launch_command(c))=='-Dforbric.compatibilityPolicy=strict'
+                assert policy(common.launch_command(c,server=True))=='-Dforbric.compatibilityPolicy=strict'
+                c['jvm']=['-Dforbric.compatibilityPolicy=continue']
+                assert policy(common.launch_command(c))=='-Dforbric.compatibilityPolicy=continue'
                 print('client and server arguments PASS')
                 """, DriverTools.COMPAT.resolve("win").toString(), temp.toString());
         assertEquals(0, result.exit(), result.output());
