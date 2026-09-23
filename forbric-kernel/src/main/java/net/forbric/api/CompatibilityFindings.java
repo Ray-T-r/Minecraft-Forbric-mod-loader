@@ -64,20 +64,29 @@ public final class CompatibilityFindings {
 		return result;
 	}
 
-	/** A later suspicion cannot erase a confirmed loss; repeated observations retain all evidence. */
+	/**
+	 * A later suspicion cannot erase a confirmed loss; repeated observations retain all evidence.
+	 *
+	 * <p>The revision moves only when the ledger does. A producer on a hot path -- a spawner call site the upgrade
+	 * could not prove records its finding on every spawn -- repeats the same observation, and the readers of
+	 * {@link #revision()} re-decide and rewrite the reports each time it moves.
+	 */
 	public static synchronized void record(CompatibilityFinding finding) {
-		revision++;
 		CompatibilityFinding previous = FINDINGS.get(finding.key());
 		if (previous == null) {
 			FINDINGS.put(finding.key(), finding);
+			revision++;
 			return;
 		}
 		CompatibilityFinding chosen = previous.confidence() != CompatibilityFinding.Confidence.SUSPECTED
 				&& finding.confidence() == CompatibilityFinding.Confidence.SUSPECTED ? previous : finding;
 		List<String> evidence = new ArrayList<>(previous.evidence());
 		for (String item : finding.evidence()) if (!evidence.contains(item)) evidence.add(item);
-		FINDINGS.put(finding.key(), new CompatibilityFinding(chosen.id(), chosen.modId(), chosen.feature(),
-				chosen.source(), chosen.confidence(), chosen.required(), chosen.detail(), evidence));
+		CompatibilityFinding merged = new CompatibilityFinding(chosen.id(), chosen.modId(), chosen.feature(),
+				chosen.source(), chosen.confidence(), chosen.required(), chosen.detail(), evidence);
+		if (merged.equals(previous)) return;
+		FINDINGS.put(finding.key(), merged);
+		revision++;
 	}
 
 	/** A repair or a plugin declining its own mixin can discharge a previously reported contract. */
@@ -139,7 +148,7 @@ public final class CompatibilityFindings {
 		revision++;
 	}
 
-	/** Cheap notification for the client tick; unchanged evidence does not require another snapshot. */
+	/** Cheap notification for the client tick; unchanged evidence does not move it or require another snapshot. */
 	public static long revision() { return revision; }
 
 	/** Stable machine report. Player acknowledgement deliberately does not change the release verdict. */

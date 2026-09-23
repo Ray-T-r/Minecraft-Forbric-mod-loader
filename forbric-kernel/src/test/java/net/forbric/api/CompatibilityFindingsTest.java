@@ -46,6 +46,26 @@ class CompatibilityFindingsTest {
 	}
 
 	@Test
+	void theRevisionMovesOnlyWhenTheLedgerChanges() {
+		// A spawner whose call site could not be upgraded records the same finding on every spawn. The revision is
+		// what the client tick and the dedicated server watch before they re-decide and rewrite the reports, so the
+		// same observation again must not look like news.
+		long start = CompatibilityFindings.revision();
+		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "BaseSpawner.serverTick"));
+		long recorded = CompatibilityFindings.revision();
+		assertNotEquals(start, recorded, "a new finding is news");
+		for (int i = 0; i < 3; i++) CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "BaseSpawner.serverTick"));
+		assertEquals(recorded, CompatibilityFindings.revision(), "the same observation again is not");
+		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.SUSPECTED, "BaseSpawner.serverTick"));
+		assertEquals(recorded, CompatibilityFindings.revision(), "nor is a suspicion a confirmed loss already outranks");
+		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "a second call site"));
+		long evidence = CompatibilityFindings.revision();
+		assertNotEquals(recorded, evidence, "new evidence is");
+		CompatibilityFindings.resolve("contract:item-use", "demo", "replacement proved");
+		assertNotEquals(evidence, CompatibilityFindings.revision(), "and so is a resolution");
+	}
+
+	@Test
 	void resolutionClearsOnlyTheStructuredLossAndPreservesAnUnrelatedFailure() {
 		ModCatalog.publish(List.of(entry()));
 		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "apply"));

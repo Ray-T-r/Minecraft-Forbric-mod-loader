@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
+import net.forbric.kernel.boot.KernelLoadReport;
 import net.forbric.kernel.ui.CompatibilityDecision;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraft.client.Minecraft;
@@ -41,6 +42,11 @@ public final class KernelCompatibilityPrompts {
 		long revision = CompatibilityFindings.revision();
 		if (revision != observedRevision) {
 			observedRevision = revision;
+			// The prompt below and the Mods screen send the player to load-report.txt and the machine report. On
+			// a singleplayer client nothing else rewrites them once the world is up -- the integrated server leaves
+			// late findings to this screen -- so a loss found during play would be named there only at JVM exit.
+			// Written before the prompt opens, and only when the ledger actually changed.
+			KernelLoadReport.write();
 			CompatibilityDecision.queue();
 		}
 		CompatibilityDecision.Policy policy = CompatibilityDecision.policy();

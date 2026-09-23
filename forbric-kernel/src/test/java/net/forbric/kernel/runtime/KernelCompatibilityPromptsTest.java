@@ -21,9 +21,13 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 @ResourceLock("ModCatalog") @ResourceLock("system-properties")
 class KernelCompatibilityPromptsTest {
 	@TempDir Path tmp;
-	@BeforeEach @AfterEach void reset() {
+	@BeforeEach @AfterEach void reset() throws Exception {
 		CompatibilityFindings.reset(); CompatibilityDecision.reset();
 		System.clearProperty(CompatibilityDecision.PROPERTY);
+		// The tick now writes the reports; what the last test wrote must not make this one's write look redundant.
+		var fresh = net.forbric.kernel.boot.KernelLoadReport.class.getDeclaredMethod("reset");
+		fresh.setAccessible(true);
+		fresh.invoke(null);
 	}
 
 	private static void loseFeature() {
@@ -135,6 +139,53 @@ class KernelCompatibilityPromptsTest {
 			assertEquals(List.of("screen:KernelCompatibilityScreen", "screen:KernelCompatibilityScreen"), fixture.events(),
 					"the warning comes straight back");
 			assertFalse(CompatibilityDecision.check(false), "and being replaced was not consent");
+		}
+	}
+
+	/** A spawner's call site the upgrade could not prove, recorded on the integrated server thread during play. */
+	private static void loseSpawnerInput() {
+		CompatibilityFindings.record(new CompatibilityFinding("spawner-finalize-input", "forbric", "Spawner finalization",
+				"KernelSpawnerFinalize", CompatibilityFinding.Confidence.CONFIRMED, true,
+				"The spawner call site did not supply its ValueInput; Forge finalization was not dispatched.",
+				List.of("BaseSpawner.serverTick")));
+	}
+
+	@Test void aLossRecordedDuringPlayIsInTheReportsThePromptAndTheModsScreenPointAt() throws Exception {
+		Path report = tmp.resolve(".forbric-kernel").resolve("load-report.txt");
+		Path machine = report.resolveSibling("compatibility-report.json");
+		net.forbric.kernel.boot.KernelLoadReport.setRunDir(tmp);
+		try (Fixture fixture = fixture()) {
+			fixture.enterWorld(); fixture.tick();
+			assertFalse(Files.exists(report), "nothing has failed yet");
+			// No catalogue row is "forbric", so the Mods screen can only count this and point at load-report.txt; on
+			// a singleplayer client nothing else rewrites that file until the JVM exits.
+			loseSpawnerInput(); fixture.tick();
+			assertEquals("KernelCompatibilityScreen", fixture.screen().getClass().getSimpleName());
+			assertTrue(Files.exists(report), "the file the Mods screen points at exists by the time the prompt is up");
+			assertTrue(Files.readString(report).contains("spawner-finalize-input"), Files.readString(report));
+			assertTrue(Files.readString(machine).contains("\"confirmedRequired\":1"), Files.readString(machine));
+		} finally {
+			net.forbric.kernel.boot.KernelLoadReport.setRunDir(null);
+		}
+	}
+
+	@Test void theSameObservationOnEverySpawnDoesNotRewriteTheReportsEveryTick() throws Exception {
+		Path machine = tmp.resolve(".forbric-kernel").resolve("compatibility-report.json");
+		net.forbric.kernel.boot.KernelLoadReport.setRunDir(tmp);
+		try (Fixture fixture = fixture()) {
+			fixture.enterWorld(); loseSpawnerInput(); fixture.tick();
+			fixture.answer(true); fixture.tick();
+			assertTrue(Files.exists(machine));
+			Files.delete(machine);
+			for (int spawn = 0; spawn < 3; spawn++) { loseSpawnerInput(); fixture.tick(); }
+			assertFalse(Files.exists(machine), "nothing changed, so nothing is written on the render thread");
+			CompatibilityFindings.record(new CompatibilityFinding("transfer-component", "forbric", "Item and fluid transfer",
+					"KernelTransferInterop", CompatibilityFinding.Confidence.CONFIRMED, false, "a component was skipped",
+					List.of("observed")));
+			fixture.tick();
+			assertTrue(Files.exists(machine), "a real change is written");
+		} finally {
+			net.forbric.kernel.boot.KernelLoadReport.setRunDir(null);
 		}
 	}
 

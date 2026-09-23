@@ -55,6 +55,7 @@ public final class KernelLoadReport {
 	private static volatile String lastRendered;
 	/** Whether anything was ever reported — the "every mod finished loading" line is said once, and only then. */
 	private static final AtomicBoolean reported = new AtomicBoolean();
+	private static final AtomicBoolean hooked = new AtomicBoolean();
 	private static final java.util.concurrent.atomic.AtomicInteger writes = new java.util.concurrent.atomic.AtomicInteger();
 
 	private KernelLoadReport() {
@@ -68,8 +69,11 @@ public final class KernelLoadReport {
 	public static void setRunDir(Path dir) {
 		rundir = dir;
 		// The boot that never reaches "loading finished" is the one a player most needs this for. Evidence only:
-		// a process going down before loading ended has not seen every mod finish, whatever the list says.
-		Runtime.getRuntime().addShutdownHook(new Thread(KernelLoadReport::writeEvidence, "forbric-load-report"));
+		// a process going down before loading ended has not seen every mod finish, whatever the list says. One
+		// hook however often the directory is set: it reads the directory when it runs.
+		if (hooked.compareAndSet(false, true)) {
+			Runtime.getRuntime().addShutdownHook(new Thread(KernelLoadReport::writeEvidence, "forbric-load-report"));
+		}
 	}
 
 	/**
@@ -80,8 +84,10 @@ public final class KernelLoadReport {
 	 * the last one written is not written again and says nothing, so a clean boot writes no file and says one
 	 * INFO line — a file that appears only when something is wrong is a file whose presence already means
 	 * something. A boot whose only findings are suspicions is a clean boot: they are listed as notes when the file
-	 * exists for a failure, and are always in {@code compatibility-report.json}. With {@link #REWRITE_PROPERTY} off,
-	 * the first write wins.
+	 * exists for a failure, and are always in {@code compatibility-report.json}. The client's tick calls this again
+	 * whenever the finding ledger changed during play: on a singleplayer client nothing else rewrites either file
+	 * before the JVM exits, and the Mods screen and the in-game prompt send the player to them. With
+	 * {@link #REWRITE_PROPERTY} off, the first write wins.
 	 */
 	public static void write() {
 		writeTo(target(), true);
