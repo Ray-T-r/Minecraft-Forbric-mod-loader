@@ -425,3 +425,16 @@ Pending implementation and acceptance items remain open even when a smaller batc
 - This reproduces the exact shortest root found in the short-run heap. It establishes one native mod
   retention issue, not absence of other roots. M34's REVIEW_REQUIRED result remains visible; neither
   release acceptance nor a two-hour run is claimed by this attribution.
+
+### P2 actual late confirmation UI and network/render acceptance
+
+- An independently declared client canary now publishes necessary findings from a background thread after
+  joining a copied real world. The displayed native screen initially focuses refusal. A real screen mouse
+  click on Continue preserves the world and failure evidence; closing a second prompt saves normally and
+  returns to title without consent or a repeated prompt. Two fresh game screenshots were visually checked.
+  The game exited 0 with unchanged source/artifact/mod hashes. Evidence: `build/compat-ui/latest.json`.
+- Actual M12/M13/M15/M16 networking and anti-cheat gates passed, as did M27's fresh nonblack game frame and
+  M32's save reload after a mod removal. M14 initially failed on its missing canary, then passed after that
+  prerequisite was rebuilt. No skipped case was counted as passed. Logs: `build/verification/network-render-sweep/`
+  and `build/m14-final-driver.log`. Native compatibility UI assertions remain separate from strict release
+  acceptance: the UI canary deliberately retains two required findings.
