@@ -74,6 +74,19 @@ class JointCandidateSelectorTest {
 		assertTrue(result.unsatisfied().isEmpty());
 	}
 
+	@Test void aDeclaredBreakMakesThePreferenceYieldAndAnUnavoidableOneIsUnsatisfiable() {
+		var app = candidate("app", Ecosystem.FABRIC, "app"); var neo = candidate("dep-neo", Ecosystem.NEOFORGE, "dep");
+		var fab = candidate("dep-fab", Ecosystem.FABRIC, "dep");
+		var breaks = new JointCandidateSelector.Rule("breaks:dep", app.jar(), Set.of(neo.jar()), Set.of(), true, "cannot run with dep", true);
+		var result = JointCandidateSelector.solve(List.of(app, neo, fab), List.of(breaks), ORDER, Map.of(), 100);
+		assertEquals(JointCandidateSelector.Status.SOLVED, result.status());
+		assertEquals(Set.of(app.jar(), fab.jar()), result.selected());
+		var both = new JointCandidateSelector.Rule("breaks:dep", app.jar(), Set.of(neo.jar(), fab.jar()), Set.of(), true, "cannot run with dep", true);
+		result = JointCandidateSelector.solve(List.of(app, neo, fab), List.of(both), ORDER, Map.of(), 100);
+		assertEquals(JointCandidateSelector.Status.UNSATISFIABLE, result.status());
+		assertEquals(List.of(both), result.unsatisfied());
+	}
+
 	@Test void aBoundedSearchCannotReturnSolvedWhenTheLimitWasReached() {
 		var a = candidate("a", Ecosystem.FABRIC, "a"); var b = candidate("b", Ecosystem.FABRIC, "b");
 		var result = JointCandidateSelector.solve(List.of(a, b), List.of(), ORDER, Map.of(), 1);

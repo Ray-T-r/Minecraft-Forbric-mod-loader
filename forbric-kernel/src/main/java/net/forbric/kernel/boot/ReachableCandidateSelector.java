@@ -105,9 +105,9 @@ final class ReachableCandidateSelector {
 		Set<Path> selected = search.selected();
 		List<JointCandidateSelector.Rule> failed = new ArrayList<>(), uncertain = new ArrayList<>(), unavoidable = new ArrayList<>();
 		for (var rule : model.rules) {
-			if (!selected.contains(rule.consumer()) || intersects(selected, rule.providers())) continue;
+			if (rule.provedBy(selected)) continue;
 			if (search.unavoidable().contains(rule)) unavoidable.add(rule);
-			else if (rule.hard() && !intersects(selected, rule.uncertainProviders())) failed.add(rule);
+			else if (rule.hard() && rule.brokenBy(selected)) failed.add(rule);
 			else uncertain.add(rule);
 		}
 		for (var issue : graph.issues()) if (selected.contains(issue.source())) uncertain.add(new JointCandidateSelector.Rule(
@@ -132,7 +132,9 @@ final class ReachableCandidateSelector {
 	private Search search() {
 		List<JointCandidateSelector.Rule> hard = new ArrayList<>();
 		for (var rule : rules) {
-			if (!rule.hard() || !variables.containsKey(rule.consumer()) || rule.possible().contains(rule.consumer())) continue;
+			if (!rule.hard() || !variables.containsKey(rule.consumer())) continue;
+			// Always met: a rule the consumer provides itself, or an exclusion with nothing PROVED to be excluded.
+			if (rule.excludes() ? rule.providers().stream().noneMatch(variables::containsKey) : rule.possible().contains(rule.consumer())) continue;
 			hard.add(rule);
 		}
 		int next = variables.size();
@@ -149,7 +151,7 @@ final class ReachableCandidateSelector {
 		// A second literal per contract that some build PROVABLY meets while others only might (an inaccessible
 		// pre-transform member, a declared Mixin target): the proved reading is preferred, never required.
 		Map<JointCandidateSelector.Rule, Integer> proofLiterals = new LinkedHashMap<>();
-		for (var rule : hard) if (!rule.providers().isEmpty() && !rule.uncertainProviders().isEmpty()) proofLiterals.put(rule, ++next);
+		for (var rule : hard) if (!rule.excludes() && !rule.providers().isEmpty() && !rule.uncertainProviders().isEmpty()) proofLiterals.put(rule, ++next);
 		if (next > VARIABLE_LIMIT) return new Search(fallback(), JointCandidateSelector.Status.SEARCH_LIMIT, Set.of(), Map.of(), impossible);
 		ISolver solver = SolverFactory.newDefault(); solver.newVar(next);
 		// A conflict count, not a clock: the same mods folder selects the same jars on every machine.
@@ -163,6 +165,12 @@ final class ReachableCandidateSelector {
 				clause(solver, pinned);
 			}
 			for (var rule : ruleLiterals.entrySet()) {
+				if (rule.getKey().excludes()) {
+					// Consumer and a build proved to be in its excluded range are never selected together.
+					for (Path excluded : rule.getKey().providers()) if (variables.containsKey(excluded))
+						clause(solver, -rule.getValue(), -variable(rule.getKey().consumer()), -variable(excluded));
+					continue;
+				}
 				List<Integer> required = new ArrayList<>(List.of(-rule.getValue(), -variable(rule.getKey().consumer())));
 				for (Path provider : rule.getKey().possible()) if (variables.containsKey(provider)) required.add(variable(provider));
 				clause(solver, required);

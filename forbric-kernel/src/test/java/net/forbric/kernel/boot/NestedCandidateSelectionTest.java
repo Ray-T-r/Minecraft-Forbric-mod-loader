@@ -502,6 +502,47 @@ class NestedCandidateSelectionTest {
 		}
 	}
 
+	/** foo 2.0 (Fabric, preferred here) and foo 1.9 (NeoForge); {@code app} declares it cannot run with foo >=2.0. */
+	private Path[] fooPair() throws Exception {
+		System.setProperty("forbric.dupeIdPreference", "fabric,neoforge,minecraftforge");
+		return new Path[] {install("foo-neo.jar", neo("foo", "1.9", Map.of(), Map.of(), Map.of())),
+				install("foo-fabric.jar", fabric("foo", "2.0", Map.of(), "", Map.of()))};
+	}
+
+	@Test void aDeclaredBreakSteersTheChoiceToTheBuildItCanRunWith() throws Exception {
+		for (String kind : List.of("fabric", "neoforge")) {
+			reset(); Path[] foo = fooPair();
+			if (kind.equals("fabric")) install("app.jar", fabric("app", "1", Map.of(), ",\"breaks\":{\"foo\":\">=2.0\"}", Map.of()));
+			else install("app.jar", neo("app", "1", Map.of(), Map.of(), Map.of(),
+					"[[dependencies.app]]\nmodId=\"foo\"\ntype=\"incompatible\"\nversionRange=\"[2.0,)\"\nside=\"BOTH\"\n"));
+			var decision = decide();
+			assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status(), kind);
+			assertFalse(decision.suppressed(foo[0]), kind); assertTrue(decision.suppressed(foo[1]), kind);
+			assertTrue(CompatibilityFindings.all().isEmpty(), () -> kind + CompatibilityFindings.all());
+		}
+		// Pinned to the build it declared it cannot run with: an explicit, confirmed conflict under the declaring mod.
+		reset(); fooPair(); System.setProperty("forbric.modOwner", "foo=fabric");
+		decide();
+		assertEquals(JointCandidateSelector.Status.UNSATISFIABLE, DuplicateModArbiter.currentPlan().selection().status());
+		assertTrue(CompatibilityFindings.confirmedRequired().stream().anyMatch(f -> f.id().equals("arbitration:breaks:foo") && f.modId().equals("app")));
+	}
+
+	@Test void aSoftConflictOrABreakNoBuildCanAvoidIsReportedButDoesNotStopTheLaunch() throws Exception {
+		Path[] foo = fooPair();
+		install("app.jar", fabric("app", "1", Map.of(), ",\"conflicts\":{\"foo\":\">=2.0\"}", Map.of()));
+		var decision = decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertTrue(decision.suppressed(foo[0]), "a soft conflict never overrides the preference");
+		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.id().equals("arbitration:conflicts:foo")
+				&& f.confidence() == net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED));
+		reset(); Files.delete(foo[0]);
+		install("app.jar", fabric("app", "1", Map.of(), ",\"breaks\":{\"foo\":\">=2.0\"}", Map.of()));
+		decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), "no choice here could avoid it: main loaded it anyway");
+		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.id().equals("arbitration:breaks:foo") && f.modId().equals("app")));
+	}
+
 	private static byte[] api(String name, int access) {
 		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
 		MethodVisitor method = writer.visitMethod(access, "needed", "()V", null, null);

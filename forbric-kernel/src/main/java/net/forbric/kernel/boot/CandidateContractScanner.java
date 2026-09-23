@@ -27,7 +27,9 @@ final class CandidateContractScanner {
 		boolean writesField() { return opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC; }
 	}
 	private record Metadata(List<UnifiedDependency> dependencies, Map<String, String> provides,
-			List<String> mixins, List<Entry> entries) { }
+			List<String> mixins, List<Entry> entries, List<Exclusion> exclusions) { }
+	/** A declared "cannot run with": {@code constraint} null means the range could not be read. */
+	private record Exclusion(String modId, String constraint, boolean hard) { }
 	private static final Set<String> PLATFORM = Set.of("java", "minecraft", "forge", "neoforge", "fabricloader", "fabric", "fml", "mixinextras");
 	static final int HELPER_DEPTH_LIMIT = 32;
 	static final int HELPER_NODE_LIMIT = 256;
@@ -61,7 +63,7 @@ final class CandidateContractScanner {
 			} catch (Exception unreadable) {
 				Map<String, String> knownProvides = new LinkedHashMap<>();
 				for (String id : claim.modIds()) knownProvides.put(JointCandidateSelector.key(id), claim.versionOf(id));
-				metadata.put(path, new Metadata(List.of(), knownProvides, List.of(), List.of()));
+				metadata.put(path, new Metadata(List.of(), knownProvides, List.of(), List.of(), List.of()));
 				rules.add(new JointCandidateSelector.Rule("metadata", path, Set.of(), Set.of(path), true,
 						"candidate contracts could not be fully read: " + unreadable.getClass().getSimpleName()));
 			}
@@ -95,6 +97,22 @@ final class CandidateContractScanner {
 				if (providers.isEmpty() && unknown.isEmpty()) continue;
 				rules.add(new JointCandidateSelector.Rule("dependency:" + dependency.getModId(), source, providers, unknown, true,
 						"requires " + dependency.getModId() + " " + dependency.getVersionConstraint()));
+			}
+			// Negative constraints are dependency constraints too (PLAN.md:62): prefer the build the mod can run with.
+			for (Exclusion exclusion : mod.exclusions()) {
+				if (PLATFORM.contains(exclusion.modId())) continue;
+				String key = providedKey(exclusion.modId(), metadata); if (key == null) continue;
+				Set<Path> excluded = new LinkedHashSet<>(), maybe = new LinkedHashSet<>();
+				for (var candidate : metadata.entrySet()) {
+					String version = candidate.getValue().provides().get(key);
+					if (version == null || candidate.getKey().equals(source)) continue;
+					if (exclusion.constraint() != null && VersionPredicate.matchesStrictly(exclusion.constraint(), version)) excluded.add(candidate.getKey());
+					else if (exclusion.constraint() == null || VersionPredicate.matches(exclusion.constraint(), version)) maybe.add(candidate.getKey());
+				}
+				if (excluded.isEmpty() && maybe.isEmpty()) continue;
+				String range = exclusion.constraint() == null ? "(unreadable range)" : exclusion.constraint();
+				rules.add(new JointCandidateSelector.Rule((exclusion.hard() ? "breaks:" : "conflicts:") + exclusion.modId(), source, excluded, maybe,
+						exclusion.hard(), (exclusion.hard() ? "declares it cannot run with " : "declares it conflicts with ") + exclusion.modId() + " " + range, true));
 			}
 			if (physicalOnly) for (String own : symbolOwners.getOrDefault(source, Set.of())) symbolDependencies.add(new UnifiedDependency(own, "*", true));
 			for (String config : mod.mixins()) scanMixins(source, config, inventory, symbolDependencies, symbolOwners, inventories, side, rules);
@@ -132,13 +150,18 @@ final class CandidateContractScanner {
 	private static Metadata readMetadata(DuplicateModArbiter.Claim claim, Inventory jar, EnvType side) throws Exception {
 		List<UnifiedDependency> dependencies = new ArrayList<>(); Map<String, String> provides = new LinkedHashMap<>();
 		for (String id : claim.modIds()) provides.put(JointCandidateSelector.key(id), claim.versionOf(id));
-		List<String> mixins = new ArrayList<>(); List<Entry> entries = new ArrayList<>();
-		if (claim.ecosystem() == null) return new Metadata(List.of(), Map.of(), List.of(), List.of());
+		List<String> mixins = new ArrayList<>(); List<Entry> entries = new ArrayList<>(); List<Exclusion> exclusions = new ArrayList<>();
+		if (claim.ecosystem() == null) return new Metadata(List.of(), Map.of(), List.of(), List.of(), List.of());
 		if (claim.ecosystem() == Ecosystem.FABRIC) {
 			byte[] manifest = jar.read("fabric.mod.json");
 			if (manifest == null) throw new IOException("no Fabric metadata");
 			var mod = FabricModMetadataParser.read(new ByteArrayInputStream(manifest));
 			dependencies.addAll(KernelFabricEcosystem.unifiedDependencies(mod));
+			for (var dependency : mod.getDependencies()) {
+				var kind = dependency.getKind();
+				if (kind == net.fabricmc.loader.api.metadata.ModDependency.Kind.BREAKS || kind == net.fabricmc.loader.api.metadata.ModDependency.Kind.CONFLICTS)
+					exclusions.add(new Exclusion(dependency.getModId(), KernelFabricEcosystem.constraintOf(dependency), !kind.isSoft()));
+			}
 			for (String alias : mod.getProvides()) provides.put(JointCandidateSelector.key(alias), mod.getVersion().getFriendlyString());
 			for (var config : mod.getMixinConfigs()) if (side == null || config.environment().matches(side)) mixins.add(config.config());
 			Map<String, String> phases = new LinkedHashMap<>(Map.of("preLaunch", "onPreLaunch", "main", "onInitialize"));
@@ -159,13 +182,43 @@ final class CandidateContractScanner {
 				if (mod.getEcosystem() != claim.ecosystem() || !claim.modIds().contains(mod.getId())) continue;
 				dependencies.addAll(mod.getDependencies()); mixins.addAll(mod.getMixinConfigs());
 			}
+			exclusions.addAll(forgeExclusions(claim, jar, side));
 			for (var entry : ModAnnotationScanner.scan(claim.jar())) {
 				if (entry.family != claim.ecosystem() || !claim.modIds().contains(entry.modId)) continue;
 				if (!entry.dists.isEmpty() && !entry.dists.contains(side == EnvType.SERVER ? "DEDICATED_SERVER" : "CLIENT")) continue;
 				entries.add(new Entry(entry.className.replace('.', '/'), "<init>", null));
 			}
 		}
-		return new Metadata(List.copyOf(dependencies), Map.copyOf(provides), List.copyOf(mixins), List.copyOf(entries));
+		return new Metadata(List.copyOf(dependencies), Map.copyOf(provides), List.copyOf(mixins), List.copyOf(entries), List.copyOf(exclusions));
+	}
+
+	/**
+	 * NeoForge {@code type="incompatible"} (hard) and {@code "discouraged"} (soft) entries, read from the toml here
+	 * because the shared parser models only positive dependencies and reads both as optional ones.
+	 */
+	private static List<Exclusion> forgeExclusions(DuplicateModArbiter.Claim claim, Inventory jar, EnvType side) throws IOException {
+		byte[] toml = jar.read(claim.ecosystem() == Ecosystem.NEOFORGE ? "META-INF/neoforge.mods.toml" : "META-INF/mods.toml");
+		if (toml == null) return List.of();
+		com.electronwill.nightconfig.core.UnmodifiableConfig config;
+		try { config = new com.electronwill.nightconfig.toml.TomlParser().parse(new StringReader(new String(toml, java.nio.charset.StandardCharsets.UTF_8))); }
+		catch (RuntimeException malformed) { return List.of(); }
+		List<Exclusion> exclusions = new ArrayList<>();
+		for (String id : claim.modIds()) {
+			Object declared = config.get(List.of("dependencies", id));
+			if (!(declared instanceof List<?> entries)) continue;
+			for (Object entry : entries) {
+				if (!(entry instanceof com.electronwill.nightconfig.core.UnmodifiableConfig dependency)) continue;
+				String type = dependency.getOrElse("type", ""), modId = dependency.getOrElse("modId", "");
+				boolean hard = "incompatible".equalsIgnoreCase(type.trim());
+				if (!hard && !"discouraged".equalsIgnoreCase(type.trim()) || modId.isBlank()) continue;
+				if (!UnifiedDependency.SideScope.parse(dependency.getOrElse("side", (String) null)).includes(side == EnvType.SERVER ? Side.DEDICATED_SERVER : Side.CLIENT)) continue;
+				String constraint;
+				try { constraint = net.forbric.kernel.metadata.forge.ForgeVersionRangeTranslator.toFabricPredicate(dependency.getOrElse("versionRange", (String) null)); }
+				catch (IllegalArgumentException malformed) { constraint = null; }
+				exclusions.add(new Exclusion(modId, constraint, hard));
+			}
+		}
+		return exclusions;
 	}
 
 	private static void scanMixins(Path source, String name, Inventory jar, List<UnifiedDependency> dependencies,

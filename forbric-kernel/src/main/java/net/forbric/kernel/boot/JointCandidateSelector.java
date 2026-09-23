@@ -9,18 +9,37 @@ import net.forbric.api.ModPresence;
 /** Bounded exact-cover search over whole jars, with conditional dependency and symbol clauses. */
 public final class JointCandidateSelector {
 	public enum Status { SOLVED, UNPROVED, UNSATISFIABLE, SEARCH_LIMIT }
-	/** If consumer is selected, at least one provider must be selected. Uncertain providers are never proof. */
+	/**
+	 * If consumer is selected, at least one provider must be selected. Uncertain providers are never proof.
+	 *
+	 * <p>{@code excludes} turns it around (Fabric {@code breaks}/{@code conflicts}, NeoForge
+	 * {@code incompatible}/{@code discouraged}): if consumer is selected, no provider may be. Providers are then
+	 * the candidates proved to be in the excluded range and uncertain providers those that only might be.
+	 */
 	public record Rule(String id, Path consumer, Set<Path> providers, Set<Path> uncertainProviders,
-			boolean hard, String detail) {
+			boolean hard, String detail, boolean excludes) {
 		public Rule {
 			consumer = consumer.toAbsolutePath().normalize();
 			providers = absolute(providers); uncertainProviders = absolute(uncertainProviders);
+		}
+		public Rule(String id, Path consumer, Set<Path> providers, Set<Path> uncertainProviders, boolean hard, String detail) {
+			this(id, consumer, providers, uncertainProviders, hard, detail, false);
 		}
 		private static Set<Path> absolute(Set<Path> paths) {
 			return paths.stream().map(p -> p.toAbsolutePath().normalize()).collect(java.util.stream.Collectors.toUnmodifiableSet());
 		}
 		Set<Path> possible() {
 			Set<Path> all = new LinkedHashSet<>(providers); all.addAll(uncertainProviders); return all;
+		}
+		/** This selection meets the rule with proof. */
+		boolean provedBy(Set<Path> selected) {
+			if (!selected.contains(consumer)) return true;
+			return excludes ? !intersects(selected, providers) && !intersects(selected, uncertainProviders) : intersects(selected, providers);
+		}
+		/** This selection certainly breaks the rule (whether or not it is hard). */
+		boolean brokenBy(Set<Path> selected) {
+			if (!selected.contains(consumer)) return false;
+			return excludes ? intersects(selected, providers) : !intersects(selected, possible());
 		}
 	}
 	/**
@@ -67,7 +86,7 @@ public final class JointCandidateSelector {
 		// First only PROVED providers count wherever some build provably meets a contract and another only might;
 		// the preference then chooses among builds shown to satisfy it. Only if that has no answer do unproved
 		// providers count, so an unproved build is preferred less, never rejected.
-		List<Rule> proved = rules.stream().map(r -> r.hard() && !r.providers().isEmpty() && !r.uncertainProviders().isEmpty()
+		List<Rule> proved = rules.stream().map(r -> r.hard() && !r.excludes() && !r.providers().isEmpty() && !r.uncertainProviders().isEmpty()
 				? new Rule(r.id(), r.consumer(), r.providers(), Set.of(), true, r.detail()) : r).toList();
 		JointCandidateSelector search = new JointCandidateSelector(claims, proved, preference, overrides, maxNodes);
 		search.walk(new LinkedHashMap<>(), new LinkedHashSet<>());
@@ -88,8 +107,8 @@ public final class JointCandidateSelector {
 		}
 		List<Rule> unmet = new ArrayList<>(), uncertain = new ArrayList<>();
 		for (Rule rule : rules) {
-			if (!selected.contains(rule.consumer()) || intersects(selected, rule.providers())) continue;
-			if (rule.hard() && !intersects(selected, rule.uncertainProviders())) unmet.add(rule);
+			if (rule.provedBy(selected)) continue;
+			if (rule.hard() && rule.brokenBy(selected)) unmet.add(rule);
 			else uncertain.add(rule);
 		}
 		if (status == Status.SOLVED && uncertain.stream().anyMatch(Rule::hard)) status = Status.UNPROVED;
@@ -116,6 +135,11 @@ public final class JointCandidateSelector {
 
 	private boolean feasible(Map<String, Path> owners, Set<Path> selected) {
 		for (Rule rule : rules) {
+			if (rule.excludes()) {
+				// Selections only grow along a branch, so a proved excluded build next to its consumer is final.
+				if (rule.hard() && rule.brokenBy(selected)) return false;
+				continue;
+			}
 			if (!rule.hard() || !selected.contains(rule.consumer()) || intersects(selected, rule.possible())) continue;
 			boolean couldStillProvide = rule.possible().stream().map(byPath::get).filter(Objects::nonNull)
 					.anyMatch(candidate -> compatible(candidate, owners));
