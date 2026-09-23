@@ -44,7 +44,7 @@ import net.forbric.api.CompatibilityFinding;
  * <p>The entry is a claim, and a claim is not evidence. A failure of a listed mixin is recorded as the loss it is,
  * and resolved only when the replacement is structurally there: in the bytes the kernel's transforms produce for
  * the class that carries it, checked at the failure, and again in that class's final definition. A repair that
- * stood down, or a switch that turned it into a pass-through, leaves the loss standing — with the name in hand.
+ * stood down, or a switch that turned it into a pass-through, leaves the loss standing whatever the table says.
  *
  * <p>{@code -Dforbric.supersededMixins=off} marks them like any other failure, which is how the claim in each
  * entry can be checked against what the game actually does.
