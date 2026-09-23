@@ -406,6 +406,39 @@ class NestedCandidateSelectionTest {
 		assertTrue(findings.stream().allMatch(f -> Set.of("zchild", "zzz").contains(f.modId())), findings::toString);
 	}
 
+	@Test void aKitchenSinkPackPastAThousandArchivesStillDiscoversEveryNestedLibrary() throws Exception {
+		for (int i = 0; i < 1030; i++) install(String.format("a-%04d.jar", i), fabric("filler" + i, "1", Map.of(), "", Map.of("n", Integer.toString(i).getBytes(StandardCharsets.UTF_8))));
+		install("zz-parent.jar", fabric("zzparent", "1", Map.of("META-INF/jars/lib.jar", fabric("zzlib", "1", Map.of(), "", Map.of())), "", Map.of()));
+		decide(); var plan = DuplicateModArbiter.currentPlan();
+		assertEquals(JointCandidateSelector.Status.SOLVED, plan.selection().status());
+		assertEquals(1, plan.nestedFiles().size(), "the parents queued after 1024 archives lost their libraries");
+	}
+
+	@Test void aNestedJarLargerThanSixtyFourMegabytesIsStillExtracted() throws Exception {
+		ByteArrayOutputStream big = new ByteArrayOutputStream();
+		try (ZipOutputStream zip = new ZipOutputStream(big)) {
+			zip.putNextEntry(new ZipEntry("fabric.mod.json"));
+			zip.write("{\"schemaVersion\":1,\"id\":\"natives\",\"version\":\"1\"}".getBytes(StandardCharsets.UTF_8)); zip.closeEntry();
+			byte[] payload = new byte[65 * 1024 * 1024]; java.util.zip.CRC32 crc = new java.util.zip.CRC32(); crc.update(payload);
+			ZipEntry stored = new ZipEntry("natives.bin"); stored.setMethod(ZipEntry.STORED); stored.setSize(payload.length); stored.setCrc(crc.getValue());
+			zip.putNextEntry(stored); zip.write(payload); zip.closeEntry();
+		}
+		install("host.jar", fabric("host", "1", Map.of("META-INF/jars/natives.jar", big.toByteArray()), "", Map.of()));
+		decide(); var plan = DuplicateModArbiter.currentPlan();
+		assertEquals(JointCandidateSelector.Status.SOLVED, plan.selection().status());
+		assertEquals(1, plan.nestedFiles().size());
+		assertTrue(plan.inventory().issues().isEmpty(), () -> plan.inventory().issues().toString());
+	}
+
+	@Test void aScanBoundIsAnExplicitFindingNotASilentlyTruncatedPlan() throws Exception {
+		byte[] inner = fabric("level9", "1", Map.of(), "", Map.of());
+		for (int level = 8; level >= 1; level--) inner = fabric("level" + level, "1", Map.of("META-INF/jars/l" + (level + 1) + ".jar", inner), "", Map.of());
+		install("deep.jar", fabric("deep", "1", Map.of("META-INF/jars/l1.jar", inner), "", Map.of()));
+		decide();
+		assertTrue(CompatibilityFindings.confirmedRequired().stream().anyMatch(f -> f.id().equals("arbitration:inventory")
+				&& !f.modId().equals("forbric")), () -> CompatibilityFindings.all().toString());
+	}
+
 	private static byte[] api(String name, int access) {
 		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
 		MethodVisitor method = writer.visitMethod(access, "needed", "()V", null, null);

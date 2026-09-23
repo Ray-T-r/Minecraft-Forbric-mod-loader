@@ -190,6 +190,14 @@ public final class DuplicateModArbiter {
 					Math.max(1, Math.min(1_000_000, Integer.getInteger("forbric.arbitrationMaxNodes", 100_000))));
 			wholeInstancePlan = new NestedCandidatePlan(inventory, result);
 			reportSelection(all, result, overrides);
+			// A parent the scan stopped inside has nested jars nobody examined, and both discoveries read only
+			// this plan, so they will not load. That must stop or prompt, not pass as a quiet suspicion.
+			for (var issue : inventory.issues()) if (issue.bound() && result.selected().contains(issue.source())) {
+				String owner = wholeInstancePlan.ownerOf(issue.source());
+				net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding("arbitration:inventory", owner,
+						"Bundled libraries", "arbitration:inventory", net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, true,
+						"Some libraries bundled in this mod were not examined and will not be loaded", List.of(issue.source() + ": " + issue.detail())));
+			}
 			List<Alias> aliases = new ArrayList<>(universalAliases); aliases.addAll(inventory.universalAliases());
 			decision = decisionFromSelection(all, aliases, "whole-instance", result);
 			Set<Path> suppressed = new LinkedHashSet<>(decision.suppressedJars());

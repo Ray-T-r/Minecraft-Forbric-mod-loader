@@ -76,7 +76,7 @@ public final class NestedCandidatePlan {
 	}
 
 	/** The mod a physical file belongs to: its own claim, else the nearest claimed bundling parent, else "forbric". */
-	private String ownerOf(Path file) {
+	String ownerOf(Path file) {
 		if (file == null) return "forbric";
 		Deque<Path> pending = new ArrayDeque<>(List.of(file.toAbsolutePath().normalize())); Set<Path> visited = new HashSet<>();
 		while (!pending.isEmpty()) {
