@@ -133,11 +133,7 @@ public final class CompatibilityDecision {
 	static boolean decide(List<CompatibilityFinding> findings, Policy policy, boolean display, boolean isClient,
 			DependencyDialog.Notice notice, Windows windows) {
 		List<CompatibilityFinding> required = findings.stream().filter(CompatibilityFinding::confirmedRequired).toList();
-		// Suspicions are only ever details. The ones the notice's mixin section already names are not listed twice.
-		List<DependencyReport.CompatibilityRow> suspected = CompatibilityFindings.suspected().stream()
-				.filter(f -> notice.mixins().stream().noneMatch(m -> sameMixin(f, m)))
-				.map(CompatibilityDecision::row).toList();
-		if (required.isEmpty()) return notice.isEmpty() || windows.notice(notice, suspected);
+		if (required.isEmpty()) return notice.isEmpty() || windows.notice(notice, suspected(notice));
 		// A release gate stays strict even if this process previously had an interactive approval. Strict never
 		// asks, so the notice is not shown either: a window offering a choice the policy has already made would lie.
 		if (policy == Policy.STRICT) {
@@ -146,13 +142,13 @@ public final class CompatibilityDecision {
 		}
 		if (policy == Policy.CONTINUE) {
 			accept(required);
-			return notice.isEmpty() || windows.notice(notice, suspected);
+			return notice.isEmpty() || windows.notice(notice, suspected(notice));
 		}
 		List<CompatibilityFinding> unanswered;
 		synchronized (CompatibilityDecision.class) {
 			unanswered = required.stream().filter(f -> !ACCEPTED.contains(f.key())).toList();
 		}
-		if (unanswered.isEmpty()) return notice.isEmpty() || windows.notice(notice, suspected);
+		if (unanswered.isEmpty()) return notice.isEmpty() || windows.notice(notice, suspected(notice));
 		if (!display) {
 			windows.unshown(notice, "no display to ask on");
 			return false;
@@ -163,13 +159,23 @@ public final class CompatibilityDecision {
 		Integer answer;
 		try {
 			answer = windows.confirm(new DependencyReport.Confirmation(unanswered.stream().map(CompatibilityDecision::row).toList(),
-					suspected, open, covered, notice.mixins()));
+					suspected(notice), open, covered, notice.mixins()));
 		} catch (RuntimeException failure) {
 			return false;
 		}
 		if (answer == null || answer != DependencyDialogMain.CONTINUE) return false;
 		accept(unanswered);
 		return true;
+	}
+
+	/**
+	 * Suspicions for a window's details, built only when a window opens. The ones the notice's mixin section already
+	 * names are not listed twice.
+	 */
+	private static List<DependencyReport.CompatibilityRow> suspected(DependencyDialog.Notice notice) {
+		return CompatibilityFindings.suspected().stream()
+				.filter(f -> notice.mixins().stream().noneMatch(m -> sameMixin(f, m)))
+				.map(CompatibilityDecision::row).toList();
 	}
 
 	/**
