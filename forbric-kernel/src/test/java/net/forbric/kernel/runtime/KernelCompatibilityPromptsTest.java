@@ -42,16 +42,22 @@ class KernelCompatibilityPromptsTest {
 		}
 	}
 
-	@Test void closingConfirmationSavesBeforeReturningAndDoesNotLoopAtTitle() throws Exception {
+	@Test void closingConfirmationSavesBeforeReturningAndAsksAgainInTheNextWorld() throws Exception {
 		try (Fixture fixture = fixture()) {
 			fixture.enterWorld(); loseFeature(); fixture.tick();
 			fixture.loader.loadClass("net.minecraft.client.gui.screens.Screen").getMethod("onClose").invoke(fixture.screen());
 			fixture.tick(); fixture.tick();
 			assertEquals(List.of("screen:KernelCompatibilityScreen", "save", "screen:TitleScreen"), fixture.events());
-			fixture.enterWorld(); fixture.tick();
-			assertEquals("TitleScreen", fixture.screen().getClass().getSimpleName());
 			assertEquals(1, fixture.events().stream().filter("screen:KernelCompatibilityScreen"::equals).count(),
-					"a declined contract does not reopen its prompt every tick");
+					"a declined contract does not reopen its prompt every tick at the title");
+			fixture.enterWorld(); fixture.tick();
+			// Not a silent bounce back to the title for the rest of the launch: the player is told why and may choose.
+			assertEquals("KernelCompatibilityScreen", fixture.screen().getClass().getSimpleName());
+			assertEquals(List.of("screen:KernelCompatibilityScreen", "save", "screen:TitleScreen", "screen:KernelCompatibilityScreen"),
+					fixture.events());
+			fixture.answer(true); fixture.tick();
+			assertTrue(CompatibilityDecision.check(false), "an explicit Continue in the new world is consent");
+			assertEquals(1, CompatibilityFindings.confirmedRequired().size(), "and it never clears the evidence");
 		}
 	}
 
@@ -60,6 +66,54 @@ class KernelCompatibilityPromptsTest {
 		try (Fixture fixture = fixture()) {
 			fixture.enterWorld(); loseFeature(); fixture.tick(); fixture.tick();
 			assertEquals(List.of("save", "stop"), fixture.events());
+			assertTrue(CompatibilityDecision.launchStopRequested(), "the launcher reports the late strict stop as the policy stop");
+		}
+	}
+
+	@Test void aDeathOrKickReplacingThePromptIsNeitherConsentNorRefusal() throws Exception {
+		try (Fixture fixture = fixture()) {
+			fixture.enterWorld(); loseFeature(); fixture.tick();
+			fixture.setScreen("DeathScreen");
+			fixture.tick();
+			assertEquals("KernelCompatibilityScreen", fixture.screen().getClass().getSimpleName(), "asked again");
+			assertFalse(fixture.events().contains("save"), "the player was not thrown out of the world");
+			fixture.answer(true);
+			assertEquals("DeathScreen", fixture.screen().getClass().getSimpleName(), "the answer returns to what replaced it");
+			assertTrue(CompatibilityDecision.check(false));
+		}
+	}
+
+	@Test void aRefusalOutsideAWorldKeepsTheScreenThatWasThere() throws Exception {
+		try (Fixture fixture = fixture()) {
+			fixture.setScreen("DisconnectedScreen");
+			loseFeature(); fixture.tick();
+			fixture.answer(false);
+			assertEquals("DisconnectedScreen", fixture.screen().getClass().getSimpleName(), "a kick reason is not overwritten");
+			assertFalse(fixture.events().contains("save"));
+			assertFalse(CompatibilityDecision.check(false), "not consent");
+		}
+	}
+
+	@Test void aContinueCoversOnlyTheFindingsItsScreenListed() throws Exception {
+		try (Fixture fixture = fixture()) {
+			fixture.enterWorld();
+			for (int i = 0; i < 6; i++) {
+				CompatibilityFindings.record(new CompatibilityFinding("lost" + i, "demo", "Feature " + i, "test",
+						CompatibilityFinding.Confidence.CONFIRMED, true, "not delivered", List.of("observed")));
+			}
+			fixture.tick();
+			String first = fixture.message();
+			for (int i = 0; i < 4; i++) assertTrue(first.contains("Feature " + i), first);
+			assertFalse(first.contains("Feature 4") || first.contains("Feature 5"), first);
+			assertTrue(first.contains(net.forbric.kernel.ui.DialogLang.ofSystem().get("compat.more", 2)), "says more follow: " + first);
+			fixture.answer(true);
+			assertFalse(CompatibilityDecision.check(false), "two losses were never shown, so they were not accepted");
+			fixture.tick();
+			String second = fixture.message();
+			assertTrue(second.contains("Feature 4") && second.contains("Feature 5"), second);
+			assertFalse(second.contains(net.forbric.kernel.ui.DialogLang.ofSystem().get("compat.more", 2)), second);
+			fixture.answer(true);
+			assertTrue(CompatibilityDecision.check(false));
 		}
 	}
 
@@ -78,7 +132,9 @@ class KernelCompatibilityPromptsTest {
 			fixture.enterWorld(); loseFeature(); fixture.tick();
 			fixture.gui.getClass().getField("current").set(fixture.gui, null);
 			fixture.tick();
-			assertEquals(List.of("screen:KernelCompatibilityScreen", "save", "screen:TitleScreen"), fixture.events());
+			assertEquals(List.of("screen:KernelCompatibilityScreen", "screen:KernelCompatibilityScreen"), fixture.events(),
+					"the warning comes straight back");
+			assertFalse(CompatibilityDecision.check(false), "and being replaced was not consent");
 		}
 	}
 
@@ -132,7 +188,8 @@ class KernelCompatibilityPromptsTest {
 					public class ConfirmScreen extends Screen {
 					 protected net.minecraft.client.gui.components.Button noButton;
 					 private final BooleanConsumer answer;
-					 public ConfirmScreen(BooleanConsumer a, Component title, Component message, Component yes, Component no) { answer=a; }
+					 public final Component message;
+					 public ConfirmScreen(BooleanConsumer a, Component title, Component message, Component yes, Component no) { answer=a; this.message=message; }
 					 public void respond(boolean yes) { answer.accept(yes); }
 					}
 					"""),
@@ -141,8 +198,10 @@ class KernelCompatibilityPromptsTest {
 				Map.entry("net/minecraft/client/multiplayer/ClientLevel.java", "package net.minecraft.client.multiplayer; public class ClientLevel {}"),
 				Map.entry("net/minecraft/client/gui/components/events/GuiEventListener.java", "package net.minecraft.client.gui.components.events; public interface GuiEventListener {}"),
 				Map.entry("net/minecraft/client/gui/components/Button.java", "package net.minecraft.client.gui.components; public class Button implements net.minecraft.client.gui.components.events.GuiEventListener {}"),
-				Map.entry("net/minecraft/network/chat/Component.java", "package net.minecraft.network.chat; public interface Component { static MutableComponent literal(String value) { return new MutableComponent(); } }"),
-				Map.entry("net/minecraft/network/chat/MutableComponent.java", "package net.minecraft.network.chat; public class MutableComponent implements Component {}"),
+				Map.entry("net/minecraft/network/chat/Component.java", "package net.minecraft.network.chat; public interface Component { static MutableComponent literal(String value) { return new MutableComponent(value); } }"),
+				Map.entry("net/minecraft/network/chat/MutableComponent.java", "package net.minecraft.network.chat; public class MutableComponent implements Component { public final String text; public MutableComponent(String text) { this.text = text; } }"),
+				Map.entry("net/minecraft/client/gui/screens/DeathScreen.java", "package net.minecraft.client.gui.screens; public class DeathScreen extends Screen {}"),
+				Map.entry("net/minecraft/client/gui/screens/DisconnectedScreen.java", "package net.minecraft.client.gui.screens; public class DisconnectedScreen extends Screen {}"),
 				Map.entry("it/unimi/dsi/fastutil/booleans/BooleanConsumer.java", "package it.unimi.dsi.fastutil.booleans; public interface BooleanConsumer { void accept(boolean yes); }"));
 		Path classes = tmp.resolve("classes"); Files.createDirectories(classes);
 		List<String> args = new ArrayList<>(List.of("-d", classes.toString()));
@@ -165,6 +224,13 @@ class KernelCompatibilityPromptsTest {
 		void tick() throws Exception { loader.loadClass("net.forbric.kernel.runtime.KernelCompatibilityPrompts").getMethod("tick", type).invoke(null, minecraft); }
 		Object screen() throws Exception { return gui.getClass().getMethod("screen").invoke(gui); }
 		void answer(boolean yes) throws Exception { loader.loadClass("net.minecraft.client.gui.screens.ConfirmScreen").getMethod("respond", boolean.class).invoke(screen(), yes); }
+		void setScreen(String simpleName) throws Exception {
+			gui.getClass().getField("current").set(gui, loader.loadClass("net.minecraft.client.gui.screens." + simpleName).getConstructor().newInstance());
+		}
+		String message() throws Exception {
+			Object message = loader.loadClass("net.minecraft.client.gui.screens.ConfirmScreen").getField("message").get(screen());
+			return (String) message.getClass().getField("text").get(message);
+		}
 		void enterWorld() throws Exception { type.getField("level").set(minecraft, loader.loadClass("net.minecraft.client.multiplayer.ClientLevel").getConstructor().newInstance()); }
 		@SuppressWarnings("unchecked") List<String> events() throws Exception { return (List<String>) type.getField("events").get(null); }
 		@Override public void close() throws Exception { loader.close(); }

@@ -13,8 +13,9 @@ import net.minecraft.network.chat.Component;
 final class KernelCompatibilityScreen extends ConfirmScreen {
 	private final BooleanConsumer answer;
 
-	KernelCompatibilityScreen(List<CompatibilityFinding> findings, BooleanConsumer answer) {
-		super(answer, Component.literal(DialogLang.ofSystem().get("compat.title")), message(findings),
+	/** @param more how many further findings the next prompt will show; this screen's answer covers none of them */
+	KernelCompatibilityScreen(List<CompatibilityFinding> findings, int more, BooleanConsumer answer) {
+		super(answer, Component.literal(DialogLang.ofSystem().get("compat.title")), message(findings, more),
 				Component.literal(DialogLang.ofSystem().get("compat.continuePlaying")),
 				Component.literal(DialogLang.ofSystem().get("compat.returnTitle")));
 		this.answer = answer;
@@ -26,14 +27,21 @@ final class KernelCompatibilityScreen extends ConfirmScreen {
 		setInitialFocus(noButton);
 	}
 
-	private static Component message(List<CompatibilityFinding> findings) {
-		StringBuilder text = new StringBuilder(DialogLang.ofSystem().get("compat.intro")).append("\n\n");
-		for (CompatibilityFinding finding : findings.stream().limit(4).toList()) {
+	/** Every finding the answer covers is named; the caller pages anything beyond what fits. */
+	static String text(List<CompatibilityFinding> findings, int more) {
+		DialogLang lang = DialogLang.ofSystem();
+		StringBuilder text = new StringBuilder(lang.get("compat.intro")).append("\n\n");
+		for (CompatibilityFinding finding : findings) {
 			String name = ModCatalog.everything().stream().filter(e -> e.modId().equals(finding.modId()))
 					.map(ModCatalog.Entry::name).findFirst().orElse(finding.modId());
 			text.append(name).append(": ").append(finding.feature()).append('\n');
 		}
-		text.append('\n').append(DialogLang.ofSystem().get("compat.reportDetails"));
-		return Component.literal(text.toString());
+		if (more > 0) text.append(lang.get("compat.more", more)).append('\n');
+		text.append('\n').append(lang.get("compat.reportDetails"));
+		return text.toString();
+	}
+
+	private static Component message(List<CompatibilityFinding> findings, int more) {
+		return Component.literal(text(findings, more));
 	}
 }

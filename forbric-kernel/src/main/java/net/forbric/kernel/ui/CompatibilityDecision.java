@@ -53,6 +53,12 @@ public final class CompatibilityDecision {
 	/** The game main may catch the typed stop before returning to the launcher. This is evidence, not cleanup. */
 	public static boolean launchStopRequested() { return launchStopRequested; }
 
+	/**
+	 * A policy stop the game carries out through its own loop (a late strict refusal on the client) rather than by
+	 * throwing. Recorded so the launcher boundary still reports it as the policy stop once the game main returns.
+	 */
+	public static void recordPolicyStop() { launchStopRequested = true; }
+
 	public static boolean isLaunchStop(Throwable failure) {
 		Set<Throwable> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 		while (failure != null && visited.add(failure)) {
