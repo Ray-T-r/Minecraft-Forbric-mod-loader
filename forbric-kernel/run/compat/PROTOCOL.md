@@ -246,7 +246,10 @@ clicks the actual native Continue button, then closes a second prompt. It requir
 evidence, initial refusal focus, normal save/return to title and two fresh game screenshots. Its deliberately
 incompatible control scenario is separate from a strict compatibility acceptance run.
 
-`gate-m39-transfer-core.sh` packages the existing real-carrier transfer scenarios as a game canary. It
+`gate-m39-transfer-core.sh` first runs the transfer engine suite (`transferTest`) as a required step: every
+`@Test` declared under `src/transferTest` must appear in its XML report, none failed, errored or skipped, and a
+missing game side fails instead of skipping. It then packages the existing real-carrier transfer scenarios as a
+game canary. It
 requires all thirteen Forge snapshot/alias/metadata/facade cases and a real full watchdog thread dump, including
 the final-defined native-helper equivalence finding. Inputs are hash-bound and its server remains strict.
 
