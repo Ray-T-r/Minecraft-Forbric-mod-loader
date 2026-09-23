@@ -193,9 +193,20 @@ public final class KernelGuestMixinAdapter {
 						//
 						// Says "did not attach", not "will crash". Whether it crashes is not something this layer
 						// can establish -- it knows an anchor did not resolve and nothing more.
+						//
+						// Three records, because three readers need it. The finding stays SUSPECTED: application
+						// has not been observed, and only an observed loss may ask the player to continue or quit.
+						// ForeignMixinBreaks is the dependency dialog's non-blocking mixin section -- the details a
+						// suspicion belongs in -- and the row is what the Mods screen shows. Without the last two
+						// the one pointer from "Unsupported stride" back to the pair of mods is gone.
 						ForbricLog.warn("[Forbric/Mixin] %s:%s has unresolved preflight anchors on ANOTHER MOD — %s. "
+								+ "Both mods are installed and each is within the version range the other declares, "
+								+ "so nothing else will report this; one of them probably needs a different version. "
 								+ "This is a suspected mismatch; actual application has not been observed yet.",
 								MixinConfigOwners.describe(configName), mixin, String.join(", ", fit.foreign()));
+						ForeignMixinBreaks.record(configName, mixin, fit.foreign());
+						attribute(configName, "its mixin " + mixin + " targets another mod's class that has changed ("
+								+ String.join(", ", fit.foreign()) + ")");
 						preflight(configName, pkg, mixin, pluginClass, classBytes, required,
 								"preflight could not resolve this mixin's anchors on another mod", fit.foreign());
 					} else if (fit.verdict() == MixinFit.Verdict.PARTIAL) {

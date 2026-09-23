@@ -143,6 +143,25 @@ class KernelGuestMixinAdapterTest {
 		return cw.toByteArray();
 	}
 
+	/** One anchor resolves ({@code render}) and one does not ({@code methodThatNoLongerExists}) — PARTIAL. */
+	private static byte[] halfMixin(String simpleName, String target) {
+		ClassWriter cw = beginMixin(simpleName, target);
+		for (String[] spec : new String[][] {{"onRender", "render"}, {"onGone", "methodThatNoLongerExists"}}) {
+			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE, spec[0], "()V", null, null);
+			AnnotationVisitor inject = mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", false);
+			AnnotationVisitor methods = inject.visitArray("method");
+			methods.visit(null, spec[1]);
+			methods.visitEnd();
+			inject.visitEnd();
+			mv.visitCode();
+			mv.visitInsn(Opcodes.RETURN);
+			mv.visitMaxs(0, 1);
+			mv.visitEnd();
+		}
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
 	/** A mixin whose one injector lists SEVERAL candidate selectors — Mixin's require=1 alternatives idiom. */
 	private static byte[] multiSelectorMixin(String simpleName, String target, String... selectors) {
 		ClassWriter cw = beginMixin(simpleName, target);
@@ -336,6 +355,53 @@ class KernelGuestMixinAdapterTest {
 					"a compat mixin for an uninstalled mod is normal, and marking it would be the false positive "
 							+ "this report exists to avoid");
 		} finally {
+			MixinConfigOwners.reset();
+			ModCatalog.publish(previous);
+		}
+	}
+
+	/**
+	 * Iris beside a Sodium that stopped making the call Iris redirects: the anchor misses on ANOTHER MOD's class.
+	 * Nothing has been observed to fail yet, so the finding is only SUSPECTED and asks nobody to continue or quit —
+	 * but a suspicion still belongs in the details. The dependency dialog's mixin section reads ForeignMixinBreaks
+	 * and the Mods screen reads the row; with neither fed, the render crash a frame later names no mod at all.
+	 */
+	@Test
+	void aMissOnAnotherModsClassReachesTheDialogAndTheRowButStaysSuspected() {
+		List<ModCatalog.Entry> previous = ModCatalog.everything();
+		try {
+			ForeignMixinBreaks.reset();
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("iris.mixins.json", "iris", Ecosystem.FABRIC)));
+			ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "iris", "Iris", "1", "", List.of(), "i.jar", "", "")));
+			String sodium = "net/caffeinemc/mods/sodium/client/render/chunk/RenderRegionManager";
+			Map<String, byte[]> classes = new HashMap<>();
+			classes.put(sodium + ".class", target(sodium, "unused", Opcodes.ACC_PRIVATE, true));
+			classes.put(PKG + "/MixinRenderRegionManager.class", halfMixin("MixinRenderRegionManager", sodium));
+
+			assertTrue(KernelGuestMixinAdapter.unfitMixins("iris.mixins.json",
+					config(PKG.replace('/', '.'), "MixinRenderRegionManager"), resolver(classes)).isEmpty(),
+					"a half-fitting cross-mod mixin is kept, like every PARTIAL");
+
+			List<ForeignMixinBreaks.Break> breaks = ForeignMixinBreaks.all();
+			assertEquals(1, breaks.size(), "the dependency dialog's mixin section is fed");
+			assertEquals("iris.mixins.json", breaks.get(0).config());
+			assertEquals("MixinRenderRegionManager", breaks.get(0).mixin());
+			assertTrue(breaks.get(0).anchors().stream().anyMatch(a -> a.contains("methodThatNoLongerExists")),
+					breaks.get(0).anchors().toString());
+
+			assertEquals(1, ModCatalog.failures().size(), "the Mods screen names the mod");
+			assertEquals(ModCatalog.Status.DEGRADED, ModCatalog.failures().get(0).status());
+			assertTrue(ModCatalog.failures().get(0).statusDetail().contains("another mod's class"),
+					ModCatalog.failures().get(0).statusDetail());
+
+			var finding = net.forbric.api.CompatibilityFindings.all().stream()
+					.filter(f -> f.id().equals(MixinCompatibility.id("iris.mixins.json",
+							PKG.replace('/', '.') + ".MixinRenderRegionManager"))).findFirst().orElseThrow();
+			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, finding.confidence());
+			assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty(),
+					"a preflight suspicion never asks the player to continue or quit");
+		} finally {
+			ForeignMixinBreaks.reset();
 			MixinConfigOwners.reset();
 			ModCatalog.publish(previous);
 		}
@@ -538,21 +604,7 @@ class KernelGuestMixinAdapterTest {
 		Map<String, byte[]> classes = new HashMap<>();
 		classes.put(t + ".class", target(t, "unused", Opcodes.ACC_PRIVATE, true));
 		// One anchor resolves (render), one does not (methodThatNoLongerExists) → PARTIAL.
-		ClassWriter cw = beginMixin("HalfMixin", t);
-		for (String[] spec : new String[][] {{"onRender", "render"}, {"onGone", "methodThatNoLongerExists"}}) {
-			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE, spec[0], "()V", null, null);
-			AnnotationVisitor inject = mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", false);
-			AnnotationVisitor methods = inject.visitArray("method");
-			methods.visit(null, spec[1]);
-			methods.visitEnd();
-			inject.visitEnd();
-			mv.visitCode();
-			mv.visitInsn(Opcodes.RETURN);
-			mv.visitMaxs(0, 1);
-			mv.visitEnd();
-		}
-		cw.visitEnd();
-		classes.put(PKG + "/HalfMixin.class", cw.toByteArray());
+		classes.put(PKG + "/HalfMixin.class", halfMixin("HalfMixin", t));
 		byte[] cfg = config(PKG.replace('/', '.'), "HalfMixin");
 
 		assertTrue(KernelGuestMixinAdapter.unfitMixins("example.mixins.json", cfg, resolver(classes)).isEmpty(),
