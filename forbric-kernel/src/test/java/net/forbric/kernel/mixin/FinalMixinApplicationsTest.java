@@ -85,6 +85,32 @@ class FinalMixinApplicationsTest {
   setup(1,-1,false,List.of(TARGET));suspect();observe(target(true,true,"handler$000$probe","(I)V"));
   assertEquals(CompatibilityFinding.Confidence.SUSPECTED,whole().confidence());assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
  }
+ /** A plugin config's preflight row is written at the load report, often after the target was already defined. */
+ @Test void aHeldBackSuspicionArrivingAfterAFullyAttachedDefinitionIsDischarged() {
+  setup(1,-1,false,List.of(TARGET));
+  try {
+   assertTrue(PluginDeclinedMixins.defer(CONFIG,"example.NoInstancePlugin","ProbeMixin",MIXIN,List.of(TARGET),"preflight unresolved anchors",
+     CompatibilityFinding.Confidence.SUSPECTED,true,List.of("probe")));
+   assertTrue(PluginDeclinedMixins.defer(MixinCompatibility.driftId(CONFIG,MIXIN),CONFIG,"example.NoInstancePlugin","ProbeMixin",MIXIN,
+     List.of(TARGET),"drifted target",CompatibilityFinding.Confidence.SUSPECTED,true,List.of("@Mixin target Target")));
+   observe(target(true,true,"handler$000$probe","()V"));
+   PluginDeclinedMixins.resolve();
+   assertEquals(CompatibilityFinding.Confidence.RESOLVED,whole().confidence());
+   assertEquals(CompatibilityFinding.Confidence.SUSPECTED,CompatibilityFindings.all().stream()
+     .filter(f->f.id().equals(MixinCompatibility.driftId(CONFIG,MIXIN))).findFirst().orElseThrow().confidence(),
+     "attachment never answers a drifted target");
+  } finally { PluginDeclinedMixins.reset(); }
+ }
+ @Test void aHeldBackSuspicionIsNotDischargedByAnIncompleteObservation() {
+  setup(1,-1,false,List.of(TARGET,"game.Other"));
+  try {
+   assertTrue(PluginDeclinedMixins.defer(CONFIG,"example.NoInstancePlugin","ProbeMixin",MIXIN,List.of(TARGET,"game.Other"),
+     "preflight unresolved anchors",CompatibilityFinding.Confidence.SUSPECTED,true,List.of("probe")));
+   observe(target(true,true,"handler$000$probe","()V"));
+   PluginDeclinedMixins.resolve();
+   assertEquals(CompatibilityFinding.Confidence.SUSPECTED,whole().confidence());
+  } finally { PluginDeclinedMixins.reset(); }
+ }
  @Test void otherTargetsMustAlsoBeObservedBeforeResolvingWholeMixin() {
   setup(1,-1,false,List.of(TARGET,"game.Other"));suspect();observe(target(true,true,"handler$000$probe","()V"));
   assertEquals(CompatibilityFinding.Confidence.SUSPECTED,whole().confidence());

@@ -36,10 +36,17 @@ public final class FinalMixinApplications {
  private static final Map<String, Plan> PLANS = new ConcurrentHashMap<>();
  private static final Map<String, Set<String>> TARGETS = new ConcurrentHashMap<>();
  private static final Map<String, Map<String, Outcome>> OUTCOMES = new ConcurrentHashMap<>();
+ /** Mixins whose every modelled injector was seen attached, optional or replaced on every target. Kept because a
+  * plugin config's preflight row is only written when the load report settles it, often after the definition. */
+ private static final Set<String> DISCHARGED = ConcurrentHashMap.newKeySet();
+ static final String DISCHARGE = "all modelled injectors are attached, originally optional or verified as replaced across all observed targets";
  private record DeferredDefinition(byte[] bytes,Renames names) { }
  private static volatile DeferredDefinition watchdog;
  private FinalMixinApplications() { }
- public static void reset() { CONFIGS.clear(); PLANS.clear(); TARGETS.clear(); OUTCOMES.clear(); watchdog=null;WatchdogDumpEquivalence.reset(); }
+ public static void reset() { CONFIGS.clear(); PLANS.clear(); TARGETS.clear(); OUTCOMES.clear(); DISCHARGED.clear(); watchdog=null;WatchdogDumpEquivalence.reset(); }
+
+ /** Whether the final classes already discharged a whole-mixin preflight suspicion about {@code mixin}. */
+ static boolean discharged(String mixin) { return DISCHARGED.contains(mixin); }
 
  static void config(String name, com.electronwill.nightconfig.core.UnmodifiableConfig json) {
   String pkg=json.getOrElse("package", "");
@@ -160,9 +167,10 @@ public final class FinalMixinApplications {
    boolean all=plan.complete()&&plan.targets().stream().allMatch(t->plan.injectors().stream().allMatch(i->{
     Outcome o=observed.get(t+"#"+i.symbol());return o==Outcome.ATTACHED||o==Outcome.OPTIONAL||o==Outcome.EQUIVALENT;
    }));
+   if(all)DISCHARGED.add(mixin);else DISCHARGED.remove(mixin);
    if(all&&CompatibilityFindings.all().stream().anyMatch(f->f.id().equals(MixinCompatibility.id(plan.config().name(),mixin))
       && f.modId().equals(owner(plan.config().name()))&&f.confidence()==CompatibilityFinding.Confidence.SUSPECTED))
-    MixinCompatibility.resolve(plan.config().name(),mixin,"all modelled injectors are attached, originally optional or verified as replaced across all observed targets");
+    MixinCompatibility.resolve(plan.config().name(),mixin,DISCHARGE);
   }
  }
  private static List<Renamed> renamed(String mixin,String name,String desc) {

@@ -174,6 +174,14 @@ public final class PluginDeclinedMixins {
 		}
 		MixinCompatibility.recordAs(p.id(), p.configName(), p.mixinClass(), p.detail(), p.confidence(), p.required(),
 				evidence);
+		// The row is written here, at the load report, and the target is often defined before that — when the
+		// final-class check had no row to discharge. The whole-mixin suspicion it already answered is answered
+		// now; any other identity (a drifted target) is not something attachment speaks to.
+		if (p.confidence() == CompatibilityFinding.Confidence.SUSPECTED
+				&& p.id().equals(MixinCompatibility.id(p.configName(), p.mixinClass()))
+				&& FinalMixinApplications.discharged(p.mixinClass())) {
+			MixinCompatibility.resolveAs(p.id(), p.configName(), FinalMixinApplications.DISCHARGE);
+		}
 	}
 
 	/**
