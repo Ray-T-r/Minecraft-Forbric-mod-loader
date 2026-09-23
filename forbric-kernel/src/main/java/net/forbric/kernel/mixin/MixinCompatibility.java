@@ -12,7 +12,7 @@ public final class MixinCompatibility {
 	private MixinCompatibility() { }
 
 	/** Every new loader session re-reads its own original declarations. */
-	public static void reset() { ORIGINAL_REQUIRED.clear(); FinalMixinApplications.reset(); }
+	public static void reset() { ORIGINAL_REQUIRED.clear(); FinalMixinApplications.reset(); SupersededMixins.reset(); }
 
 	/** Keep the mod's declaration before Forbric relaxes required=true in the bytes handed to Mixin. */
 	static void rememberOriginalConfig(String config, byte[] bytes) {

@@ -342,12 +342,20 @@ public final class Installer {
 	 * <p>A supplied directory is a fast path, not a requirement. It used to be the only path — the installer
 	 * looked for prebuilt jars and refused to continue without them, which worked on the machine that had built
 	 * them and nowhere else.
+	 *
+	 * <p>A supplied set is link-checked exactly as a built one is, against the same packaged baseline, before the
+	 * profile can be written. It used to be staged unchecked: a merged base with a new dangling reference, or
+	 * one built with {@code LINK_CHECK=warn}, installed without a verdict and failed in game instead.
 	 */
-	private Map<String, Path> obtainGameArtifacts(Path mcDir, String mcVersion, Path artifactDir, Path explicitJdk)
+	Map<String, Path> obtainGameArtifacts(Path mcDir, String mcVersion, Path artifactDir, Path explicitJdk)
 			throws IOException {
 		if (artifactDir != null) {
 			Map<String, Path> found = GameArtifacts.locate(mcVersion, artifactDir).all();
 			for (Map.Entry<String, Path> e : found.entrySet()) log.accept("  using " + e.getValue());
+			JdkLocator.Jvm jvm = JdkLocator.locate(mcDir, explicitJdk, line -> log.accept("link-check JVM: " + line));
+			new MergedBaseTool(mcDir.resolve(".forbric-build").resolve("tools"), log).linkCheck(jvm,
+					found.get(ArtifactBuilder.MERGED), found.get(ArtifactBuilder.NEOFORGE_RUNTIME),
+					found.get(ArtifactBuilder.FORGE_RUNTIME));
 			return found;
 		}
 		JdkLocator.Jvm jvm = JdkLocator.locate(mcDir, explicitJdk, line -> log.accept("build JVM: " + line));

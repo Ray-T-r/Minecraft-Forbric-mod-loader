@@ -42,9 +42,13 @@ final class GameArtifacts {
 	private static final Map<String, String> WANTED = new LinkedHashMap<>();
 
 	static {
-		WANTED.put("net.forbric:patched-mc-merged", "patched-mc-merged-%s.jar");
-		WANTED.put("net.forbric:forge-runtime", "forge-runtime.jar");
-		WANTED.put("net.forbric:neoforge-runtime", "neoforge-runtime.jar");
+		WANTED.put(ArtifactBuilder.MERGED, "patched-mc-merged-%s.jar");
+		// The INTEROP jar under the forge-runtime coordinate, as ArtifactBuilder stages it and as
+		// build-merged-base.sh and gate-m0 link-check it. The raw forge-runtime.jar lacks the bridge methods the
+		// merge makes necessary (an AbstractMethodError in game), and a link check cannot see a missing
+		// implementation -- so it is never picked up here, whichever directory holds it.
+		WANTED.put(ArtifactBuilder.FORGE_RUNTIME, "forge-runtime-interop.jar");
+		WANTED.put(ArtifactBuilder.NEOFORGE_RUNTIME, "neoforge-runtime.jar");
 	}
 
 	private final Map<String, Path> found = new LinkedHashMap<>();
@@ -87,8 +91,9 @@ final class GameArtifacts {
 			throw new IOException("cannot find the game artifacts this build needs: " + String.join(", ", missing)
 					+ ".\nThey contain Minecraft, MinecraftForge and NeoForge code, so they are built on your own "
 					+ "machine rather than shipped here. Produce them with forbric-loader/run/"
-					+ "assemble-minecraftforge-runtime.sh, assemble-neoforge-runtime.sh and build-merged-base.sh, "
-					+ "then point the installer at the directory holding them."
+					+ "assemble-minecraftforge-runtime.sh, assemble-neoforge-runtime.sh and build-merged-base.sh "
+					+ "(which writes merged-base/forge-runtime-interop.jar), then point the installer at the "
+					+ "directory holding them."
 					+ (roots.isEmpty() ? "" : "\nLooked under: " + roots));
 		}
 		return artifacts;

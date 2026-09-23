@@ -71,17 +71,17 @@ public final class KernelMixinErrorHandler implements IMixinErrorHandler {
 		String modId = configName == null ? null : MixinConfigOwners.modIdOf(configName);
 		String replacement = SupersededMixins.replacementFor(mixinName);
 		if (replacement != null) {
-			MixinCompatibility.resolve(configName, mixinName, replacement);
-			// Not a loss, so not a mark: a report that cries wolf is worse than no report, because the next real
-			// one is read the same way.
-			ForbricLog.info("[Forbric/Mixin] %s:%s %s%s — %s, so its mod is not marked",
+			// Recorded like any loss, and resolved only once the replacement is seen in the class the game
+			// defines (SupersededMixins.observeDefinition). The table entry alone is a claim, and a switched-off or
+			// never-installed repair would otherwise report a real loss as handled.
+			ForbricLog.info("[Forbric/Mixin] %s:%s %s%s — %s; its mod stays marked until that repair is seen in"
+					+ " the defined class", configName == null ? "?" : MixinConfigOwners.describe(configName),
+					mixinName, what, cause, replacement);
+		} else {
+			ForbricLog.warn("[Forbric/Mixin] %s:%s %s%s — Mixin's own report follows; the owning mod%s",
 					configName == null ? "?" : MixinConfigOwners.describe(configName), mixinName, what, cause,
-					replacement);
-			return;
+					modId == null ? " is not known, so no row is marked" : " " + modId + " is marked");
 		}
-		ForbricLog.warn("[Forbric/Mixin] %s:%s %s%s — Mixin's own report follows; the owning mod%s",
-				configName == null ? "?" : MixinConfigOwners.describe(configName), mixinName, what, cause,
-				modId == null ? " is not known, so no row is marked" : " " + modId + " is marked");
 		{
 			// The reason, when the kernel worked one out while READING the mixin. "InvalidInjectionException" is
 			// true and tells a player nothing; what the merge did to the target is the sentence worth carrying.
@@ -93,5 +93,6 @@ public final class KernelMixinErrorHandler implements IMixinErrorHandler {
 			MixinCompatibility.record(configName, mixinName, detail, CompatibilityFinding.Confidence.CONFIRMED,
 					required, java.util.List.of(what, th == null ? "no exception supplied" : th.toString()));
 		}
+		if (replacement != null) SupersededMixins.awaitProof(configName, mixinName);
 	}
 }

@@ -100,6 +100,50 @@ class SupersededMixinsTest {
 		assertNull(SupersededMixins.replacementFor("a.b.SomeOtherMixin"));
 	}
 
+	/** Turning the repair itself off turns the entry off too: a switched-off repair replaces nothing. */
+	@Test
+	void theRepairsOwnSwitchAnswersNothingAtAll() {
+		String previous = System.getProperty("forbric.fabricConditions");
+		try {
+			String any = SupersededMixins.all().keySet().iterator().next();
+			System.setProperty("forbric.fabricConditions", "off");
+			assertNull(SupersededMixins.replacementFor(any));
+			System.setProperty("forbric.fabricConditions", "on");
+			assertFalse(SupersededMixins.replacementFor(any) == null);
+		} finally {
+			if (previous == null) System.clearProperty("forbric.fabricConditions");
+			else System.setProperty("forbric.fabricConditions", previous);
+		}
+	}
+
+	/**
+	 * The proof reads what the real repair writes: NeoForge's own ConditionalOps is not proof, and the same class
+	 * after ForbricMergedBaseCompatTransformer is. A renamed or reshaped repair fails here rather than quietly
+	 * leaving every fabric-conditions failure reported forever -- or resolving it on a class that lacks it.
+	 */
+	@Test
+	void theProofMatchesWhatTheRealRepairWritesIntoTheRealClass() throws Exception {
+		Path carrier = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"),
+				"run", "neoforge-runtime", "neoforge-runtime.jar").normalize();
+		org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(carrier), "staged NeoForge carrier absent");
+		byte[] original;
+		try (var zip = new java.util.zip.ZipFile(carrier.toFile())) {
+			var entry = zip.getEntry("net/neoforged/neoforge/common/conditions/ConditionalOps.class");
+			assertTrue(entry != null, "ConditionalOps absent from " + carrier);
+			try (var in = zip.getInputStream(entry)) { original = in.readAllBytes(); }
+		}
+		byte[] repaired = new net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer()
+				.transform("net.neoforged.neoforge.common.conditions.ConditionalOps", original, null);
+		assertFalse(SupersededMixins.conditionalOpsAsksFabric(node(original)), "NeoForge's own class is not the repair");
+		assertTrue(SupersededMixins.conditionalOpsAsksFabric(node(repaired)), "the repaired class must prove itself");
+	}
+
+	private static org.objectweb.asm.tree.ClassNode node(byte[] bytes) {
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(bytes).accept(node, 0);
+		return node;
+	}
+
 	private static boolean exists(Path sourceRoot, String simpleName) throws Exception {
 		try (var files = Files.walk(sourceRoot)) {
 			return files.anyMatch(f -> f.getFileName().toString().equals(simpleName + ".java"));

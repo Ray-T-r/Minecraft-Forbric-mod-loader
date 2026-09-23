@@ -267,6 +267,18 @@ test {
 			.withPropertyName('forgeCarrier').optional()
 	inputs.files(files(stagedNeoRuntime))
 			.withPropertyName('neoforgeCarrier').optional()
+	// The bytecode tests find the staged jars themselves, through FORBRIC_OLD, so hand them the root this build
+	// compiled against. -Pforbric.stagedRoot used to move the compile and the declared inputs and leave the tests
+	// reading another base, the same divergence a release capture now refuses (evidence.py stagedBuildInputs).
+	environment 'FORBRIC_OLD', stagedRoot.parentFile.absolutePath
+	systemProperty 'forbric.stagedRoot', stagedRoot.absolutePath
+	// Refused when the tests RUN, never while the build is configured: this block configures every invocation,
+	// and a root that does not exist is the documented way to build the boot jar as a machine without staged
+	// artifacts would (above). run/test-staged-root.sh checks both halves.
+	doFirst {
+		if (stagedRoot.name != 'run') throw new GradleException("forbric.stagedRoot must name a run/ directory, as"
+				+ " FORBRIC_OLD/run does: the tests resolve FORBRIC_OLD + '/run'. Got ${stagedRoot}")
+	}
 	// No unit test may fork a window. DependencyAuditTest drives DependencyAudit.report with Side.CLIENT and
 	// deliberately unmet requirements, which is exactly the input that opens one -- and a test suite that stops
 	// on an invisible dialog looks like a hang, not a failure. DependencyDialogTest drives the fork itself, with

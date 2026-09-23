@@ -18,8 +18,6 @@ package net.forbric.tools;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -82,7 +80,9 @@ public final class MergeabilityCensus {
 		Map<String, ClassNode> forge = load(args[1]);
 		Map<String, ClassNode> neo = load(args[2]);
 		List<String[]> conflicts = conflicts(Path.of(args[3]));
-		System.out.println("[mergeability] " + conflicts.size() + " dropped Forge hook(s) to judge");
+		System.out.println("[mergeability] " + conflicts.size() + " dropped hook(s) to judge ("
+				+ conflicts.stream().filter(c -> c[2].equals("forge")).count() + " Forge, "
+				+ conflicts.stream().filter(c -> c[2].equals("neo")).count() + " NeoForge)");
 
 		// ---- calibration ----
 		int calTotal = 0;
@@ -160,15 +160,15 @@ public final class MergeabilityCensus {
 		return whole == 0 ? 0d : 100d * part / whole;
 	}
 
-	/** {@code owner#name+desc (forge hook lost)} lines, as {owner, name+desc}. */
-	private static List<String[]> conflicts(Path report) throws IOException {
+	/**
+	 * Every dropped-hook row, as {owner, name+desc, lost family}. Both families and both row forms, through the one
+	 * parser {@link LostHookAttribution} uses: this used to match {@code (forge hook lost)} alone, which dropped the
+	 * NeoForge losses and the field-init-kept rows, and the question "was it a choice" applies to all of them.
+	 */
+	static List<String[]> conflicts(Path report) throws IOException {
 		List<String[]> out = new ArrayList<>();
-		for (String line : Files.readAllLines(report, StandardCharsets.UTF_8)) {
-			if (!line.contains("(forge hook lost)")) continue;
-			String body = line.substring(0, line.indexOf(" (forge hook lost)")).trim();
-			int hash = body.indexOf('#');
-			if (hash < 0) continue;
-			out.add(new String[] { body.substring(0, hash), body.substring(hash + 1) });
+		for (LostHookAttribution.Conflict c : LostHookAttribution.conflicts(report)) {
+			out.add(new String[] { c.owner(), c.method(), c.lostFamily() });
 		}
 		return out;
 	}

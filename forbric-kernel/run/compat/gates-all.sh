@@ -31,9 +31,10 @@ while [ "$#" -gt 0 ]; do
     --mem-budget) [ "$#" -ge 2 ] || { echo '--mem-budget needs a size in MB' >&2; exit 2; }
       MEM="$2"; shift 2;;
     --progress) ARGS+=(--progress); shift;;
+    --release) ARGS+=(--release); shift;;
     --help)
       cat <<'USAGE'
-gates-all.sh [-j N|auto] [--mem-budget MB] [--skip gate-m12-multiplayer.sh] ... [--list]
+gates-all.sh [-j N|auto] [--mem-budget MB] [--skip gate-m12-multiplayer.sh] ... [--release] [--list]
 
   -j N           run up to N gates at once (default: auto — one slot per ~2 GB of budget, capped by cores).
                  -j 1 reproduces the old strictly-sequential run.
@@ -41,6 +42,8 @@ gates-all.sh [-j N|auto] [--mem-budget MB] [--skip gate-m12-multiplayer.sh] ... 
   --skip         do not run this gate; it is reported SKIP.
   --list         print the gate order and exit.
   --progress     also stream the running commentary to stderr.
+  --release      an acceptance run: a --skip'd or EXPECTED_RED gate fails it (exit 1). A gate that did not run,
+                 or did not pass, is not a passing gate, however it was declared.
 
 This script's OUTPUT is exactly the RESULT lines, the same bytes as build/gates/summary.txt — a contract
 gate-m0 asserts on, so nothing else may be printed to either stream. The running commentary (what started

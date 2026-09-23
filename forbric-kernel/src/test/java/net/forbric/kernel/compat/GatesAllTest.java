@@ -49,6 +49,37 @@ class GatesAllTest {
 		assertEquals(2, unknown.exitCode(), unknown.output());
 	}
 
+	/**
+	 * The lenient sweep above exits 0 with gate-m3 skipped and gate-m2 EXPECTED_RED. A release run is an acceptance:
+	 * a gate that was not run, or is still red by declaration, fails it -- and the line says which and why.
+	 */
+	@Test void aReleaseRunFailsOnASkippedOrExpectedRedGate() throws Exception {
+		Path gates = Files.createDirectory(temporary.resolve("release-gates"));
+		Path output = temporary.resolve("release-results");
+		write(gates, "gate-m1.sh", "exit 0\n");
+		write(gates, "gate-m2.sh", "# EXPECTED: RED until repair\necho '[kernel] EXPECTED-RED missing Forge registration'\nexit 2\n");
+		write(gates, "gate-m3.sh", "exit 0\n");
+		var env = Map.of("FORBRIC_GATE_DIR", gates.toString(), "FORBRIC_GATE_RESULTS", output.toString());
+		var lenient = CompatProbeProcess.run(temporary, env, "bash", "gates-all.sh", "--skip", "gate-m3.sh");
+		assertEquals(0, lenient.exitCode(), lenient.output());
+
+		var skipped = CompatProbeProcess.run(temporary, env, "bash", "gates-all.sh", "--release", "--skip", "gate-m3.sh");
+		assertEquals(1, skipped.exitCode(), skipped.output());
+		assertTrue(skipped.output().contains("RESULT gate-m3.sh SKIP (explicit --skip; not run, so the release run fails)"),
+				skipped.output());
+		assertTrue(skipped.output().contains("RESULT gate-m2.sh EXPECTED_RED (exit=2; still red, so the release run fails)"),
+				skipped.output());
+		assertEquals(skipped.output(), Files.readString(output.resolve("summary.txt")));
+
+		write(gates, "gate-m2.sh", "exit 0\n");
+		var skipOnly = CompatProbeProcess.run(temporary, env, "bash", "gates-all.sh", "--release", "--skip", "gate-m3.sh");
+		assertEquals(1, skipOnly.exitCode(), "a skip alone fails a release run: " + skipOnly.output());
+		var complete = CompatProbeProcess.run(temporary, env, "bash", "gates-all.sh", "--release");
+		assertEquals(0, complete.exitCode(), complete.output());
+		assertEquals(List.of("RESULT gate-m1.sh GREEN (exit=0)", "RESULT gate-m2.sh GREEN (exit=0)",
+				"RESULT gate-m3.sh GREEN (exit=0)"), complete.output().lines().toList());
+	}
+
 	@Test void theDefaultRunExecutesEveryGateWithoutAnySkipArguments() throws Exception {
 		Path gates = Files.createDirectory(temporary.resolve("default-gates"));
 		write(gates, "gate-m1.sh", "exit 0\n");

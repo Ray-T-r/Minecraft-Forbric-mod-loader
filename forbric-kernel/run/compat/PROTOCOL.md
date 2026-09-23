@@ -227,6 +227,22 @@ committed sources, a mods directory (empty is valid for zero-mod tests), and all
 `forge-patched`, `neo-patched`, `merged`, `forge-runtime`, `neo-runtime`, `forge-interop`, `kernel`,
 `kernel-runtime`, `merge-tools`. Missing inputs fail. Keep output under ignored `build/` or outside the repo.
 
+A release capture also fails unless:
+- the versions read out of the artifacts are the pins (Minecraft `26.2` from each game jar's `version.json`,
+  MinecraftForge `26.2-65.0.1` and NeoForge `26.2.0.88` from the carriers' manifests);
+- the merged base and both runtimes the kernel build compiles against and its bytecode tests read
+  (`$FORBRIC_OLD/run/...`, else `forbric-loader/run/...`) are byte-identical to the attested ones;
+- `<merged>.provenance.json`, written by `build-merged-base.sh`, names the attested inputs and outputs, an
+  enforced link check, and merge-tool sources identical to the attested commit.
+A release `run` refuses `--skip`, requires `gates-all.sh --release`, and records any `RESULT ... SKIP` or
+`EXPECTED_RED` line as a failed command. `${file.jarVersion}` mod versions are resolved from the archive's own
+`Implementation-Version` and kept beside the raw declaration.
+
+`evidence.py release-check --manifest <run.json> ... --publish kernel=<jar> ...` passes only when every manifest
+is a passed release run, all bind the same source and the same hash per role, and each published file is the
+accepted one. The installer's `releaseAssets` requires `-PreleaseEvidence=<run.json>[,...]` and runs it on the
+kernel and merge-tools jars it is about to publish.
+
 `native-controls.py prepare` installs the fixed native Fabric, Forge and NeoForge servers into
 `build/native-controls`; `build` compiles one public-API canary per ecosystem. `run --engine native` and
 `run --engine forbric` execute the same jar hashes, seed and world actions, each in a fresh owned instance.

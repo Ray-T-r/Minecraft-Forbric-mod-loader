@@ -34,7 +34,8 @@ ASM_TREE="$(find "$HOME/.gradle/caches" -name 'asm-tree-9*.jar' ! -name '*source
 
 BUILD="$HERE/.mergeability-tools"
 rm -rf "$BUILD"; mkdir -p "$BUILD"
-javac --release 17 -cp "$ASM:$ASM_TREE" -d "$BUILD" \
+# -sourcepath: the census reads the report through LostHookAttribution's parser, so javac compiles that too.
+javac --release 17 -cp "$ASM:$ASM_TREE" -sourcepath "$PROJECT/src/tools/java" -d "$BUILD" \
   "$PROJECT/src/tools/java/net/forbric/tools/MergeabilityCensus.java"
 exec java -Xmx4g -cp "$BUILD:$ASM:$ASM_TREE" net.forbric.tools.MergeabilityCensus \
   "$VANILLA" "$FORGE" "$NEO" "$REPORT"

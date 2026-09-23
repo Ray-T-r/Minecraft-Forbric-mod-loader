@@ -38,6 +38,9 @@ def genResources = layout.buildDirectory.dir('generated-resources')
 // would add a way for the build step to fail before it starts, to save a quarter of a megabyte.
 def genTools = layout.buildDirectory.dir('generated-tools')
 def isWindows = System.getProperty('os.name').toLowerCase().contains('win')
+// The reviewed link baseline the merge-tools jar carries: the same file build-merged-base.sh and gate-m0 read.
+def linkBaseline = file("${loaderDir}/src/test/resources/merge/link-check-baseline.txt")
+def mergeToolsJar = file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0.jar")
 
 tasks.register('buildForbricJars', Exec) {
 	description = "Build the kernel jar the installer bundles."
@@ -69,7 +72,13 @@ tasks.register('buildMergeTools', Exec) {
 	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', 'mergeToolsJar'] : ['./gradlew', 'mergeToolsJar'])
 	inputs.dir("${loaderDir}/src/tools")
 	inputs.file("${loaderDir}/build.gradle")
-	outputs.dir("${loaderDir}/build/libs")
+	// The baseline rides in this jar but lives under src/test/resources, which the two inputs above do not
+	// cover: a baseline-only change left this task UP-TO-DATE and the installer shipping the previous baseline,
+	// so players' installs judged the merge against a different list than every gate in the tree.
+	inputs.file(linkBaseline).withPropertyName('linkBaseline')
+	// The one file this task makes. Declaring the shared build/libs let buildLoaderJars' output decide whether
+	// this task was up to date.
+	outputs.file(mergeToolsJar)
 }
 
 tasks.register('bundleForbric') {
@@ -81,7 +90,7 @@ tasks.register('bundleForbric') {
 			file("${kernelDir}/build/libs/${kernelJar()}"),
 			file("${loaderDir}/build/libs/${loaderJar()}"),
 			file("${loaderDir}/build/libs/${runtimeJar()}"),
-			file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0.jar"))
+			mergeToolsJar)
 			.withPropertyName('forbricJars')
 			.withPathSensitivity(PathSensitivity.NONE)
 	outputs.dir(genResources)
@@ -146,12 +155,23 @@ tasks.register('bundleTools') {
 	// The loader dropped the -SNAPSHOT qualifier at 0.1.0, so this is the name :mergeToolsJar writes. Asking
 	// for the old one still "worked" for as long as a jar built before that release sat in build/libs: the
 	// bundled tools would have been whatever was last built under the old name, silently, forever.
-	inputs.file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0.jar")
+	inputs.file(mergeToolsJar)
 			.withPropertyName('mergeTools').withPathSensitivity(PathSensitivity.NONE)
+	inputs.file(linkBaseline).withPropertyName('linkBaseline').withPathSensitivity(PathSensitivity.NONE)
 	outputs.dir(genTools)
 	doLast {
-		def src = new File(loaderDir, 'build/libs/forbric-merge-tools-0.1.0.jar')
+		def src = mergeToolsJar
 		if (!src.isFile()) throw new GradleException("missing ${src} — build it first")
+		// What the installer will judge every player's merge against has to be the reviewed file, byte for byte.
+		// A stale jar reaching this point is refused here rather than shipped.
+		def packed = new java.util.zip.ZipFile(src).withCloseable { zip ->
+			def entry = zip.getEntry('net/forbric/tools/link-check-baseline.txt')
+			entry == null ? null : zip.getInputStream(entry).bytes
+		}
+		if (packed == null || !Arrays.equals(packed, linkBaseline.bytes)) {
+			throw new GradleException("${src} carries ${packed == null ? 'no' : 'a different'} link baseline than"
+					+ " ${linkBaseline}; rebuild it (:forbric-loader:mergeToolsJar) before bundling")
+		}
 		def dest = new File(genTools.get().asFile, 'forbric/tools/forbric-merge-tools.jar')
 		dest.parentFile.mkdirs()
 		dest.bytes = src.bytes
@@ -199,13 +219,20 @@ if (project.hasProperty('releasePin')) {
 // Two-step on purpose, and the order cannot be collapsed: the pin is a digest of the manifest, so the manifest
 // has to exist before the installer that pins it is built.
 //
-//   ./gradlew releaseAssets -PreleaseTag=v0.1.0
+// What is published must be what was accepted. releaseAssets therefore takes the release acceptance's evidence
+// manifests (evidence.py run --release, comma-separated) and refuses to write any asset unless
+// `evidence.py release-check` finds them all passed, bound to one candidate, and the kernel and merge-tools jars
+// about to ship byte-identical to the accepted ones. Forbric's loader jars are not acceptance roles and are not
+// compared; the game artifacts are built on each player's machine and do not reproduce byte for byte (zip entry
+// times), so for them the installer's link check against the packaged baseline is the gate.
+//
+//   ./gradlew releaseAssets -PreleaseTag=v0.1.0 -PreleaseEvidence=build/evidence/release.json
 //   gh release create v0.1.0 build/release/assets/*
 //   ./gradlew jar -Pslim -PreleasePin=build/release/forbric-release.properties     (NOT with `clean`)
 //   gh release upload v0.1.0 build/libs/forbric-kernel-installer-*.jar
 tasks.register('releaseAssets') {
 	description = 'Write build/release/: the jars to attach to a GitHub release + the manifest the installer downloads.'
-	dependsOn 'bundleForbric'
+	dependsOn 'bundleForbric', 'buildMergeTools'
 	def repo = project.findProperty('releaseRepo') ?: 'https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader'
 	def outRoot = layout.buildDirectory.dir('release')
 	outputs.dir(outRoot)
@@ -215,6 +242,24 @@ tasks.register('releaseAssets') {
 		def staged = new File(genResources.get().asFile, 'forbric-kernel-libraries.json')
 		if (!staged.isFile()) throw new GradleException("missing ${staged} — run :bundleForbric first")
 		def manifest = new groovy.json.JsonSlurper().parse(staged)
+
+		def evidence = project.findProperty('releaseEvidence')
+		if (!evidence) {
+			throw new GradleException('releaseAssets needs -PreleaseEvidence=<manifest.json>[,...] from the release'
+					+ ' acceptance (evidence.py run --release); an unaccepted build is not published')
+		}
+		def kernelLib = manifest.libraries.find { (it.coordinate as String).startsWith('net.forbric:forbric-kernel:') }
+		if (kernelLib == null) throw new GradleException("${staged} lists no forbric-kernel jar")
+		def check = ['python3', new File(kernelDir, 'run/compat/evidence.py').path, 'release-check']
+		(evidence as String).split(',').each { check += ['--manifest', file(it.trim()).path] }
+		check += ['--publish', "kernel=${new File(genResources.get().asFile, (kernelLib.resource as String).substring(1))}",
+				  '--publish', "merge-tools=${mergeToolsJar}"]
+		def checking = new ProcessBuilder(check.collect { it.toString() }).redirectErrorStream(true).start()
+		def verdict = checking.inputStream.text
+		if (checking.waitFor() != 0) {
+			throw new GradleException("the jars about to be published are not the accepted ones:\n" + verdict)
+		}
+		println verdict.trim()
 
 		def root = outRoot.get().asFile
 		def assets = new File(root, 'assets')

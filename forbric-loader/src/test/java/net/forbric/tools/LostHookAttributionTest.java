@@ -43,6 +43,53 @@ class LostHookAttributionTest {
 		assertEquals("game/B", rows.get(1).owner());
 	}
 
+	/** MergedBaseBuilder's second row form: the hooking side lost because only the other body inits a field. */
+	@Test void fieldInitKeptRowsAreInventoriedWithTheFamilyThatLostTheHook() throws Exception {
+		Path report = temporary.resolve("conflicts.txt");
+		Files.writeString(report, "game/A#tick()V (forge hook lost)\n"
+				+ "net/minecraft/world/entity/LivingEntity#<init>(Lnet/minecraft/world/entity/EntityType;"
+				+ "Lnet/minecraft/world/level/Level;)V (kept neo body to preserve base-added field init; forge hook lost)\n"
+				+ "game/B$Inner#<init>()V (kept forge body to preserve base-added field init; neo hook lost)\n");
+		var rows = LostHookAttribution.conflicts(report);
+		assertEquals(3, rows.size());
+		assertFalse(rows.get(0).fieldInitKept());
+		assertEquals("net/minecraft/world/entity/LivingEntity", rows.get(1).owner());
+		assertEquals("<init>(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/level/Level;)V", rows.get(1).method());
+		assertEquals("forge", rows.get(1).lostFamily());
+		assertTrue(rows.get(1).fieldInitKept());
+		assertEquals("game/B$Inner", rows.get(2).owner());
+		assertEquals("neo", rows.get(2).lostFamily());
+		assertTrue(rows.get(2).fieldInitKept());
+		assertEquals(List.of("forge", "forge", "neo"),
+				MergeabilityCensus.conflicts(report).stream().map(c -> c[2]).toList());
+	}
+
+	/** A form nobody taught the parser must stop the run, not shrink the denominator. */
+	@Test void anUnrecognisedHookLostRowFailsInsteadOfDisappearing() throws Exception {
+		Path report = temporary.resolve("conflicts.txt");
+		for (String row : List.of("game/A#tick()V (kept forge body for some new reason; neo hook lost)",
+				"game/A#tick()V (fabric hook lost)", "game/A (forge hook lost)",
+				"game/A#tick()V (kept forge body to preserve base-added field init; forge hook lost)")) {
+			Files.writeString(report, "game/Z#ok()V (neo hook lost)\n" + row + "\n");
+			var failure = assertThrows(java.io.IOException.class, () -> LostHookAttribution.conflicts(report), row);
+			assertTrue(failure.getMessage().contains(row), failure.getMessage());
+			assertThrows(java.io.IOException.class, () -> MergeabilityCensus.conflicts(report), row);
+		}
+	}
+
+	/** The tracked historical report: every row the builder wrote as a hook loss is a row the tools judge. */
+	@Test void everyHookLostRowOfTheTrackedReportEntersTheDenominator() throws Exception {
+		Path report = Path.of(System.getProperty("user.dir"), "run", "merged-base", "merge-conflicts.txt");
+		long written = Files.readAllLines(report).stream().filter(line -> line.trim().endsWith("hook lost)")).count();
+		var rows = LostHookAttribution.conflicts(report);
+		assertTrue(written > 1000, "the tracked report is the fixture this test reads: " + written);
+		assertEquals(written, rows.size());
+		assertEquals(6, rows.stream().filter(LostHookAttribution.Conflict::fieldInitKept).count());
+		assertTrue(rows.stream().anyMatch(r -> r.owner().equals("net/minecraft/world/entity/LivingEntity")
+				&& r.method().startsWith("<init>(") && r.lostFamily().equals("forge")));
+		assertEquals(written, MergeabilityCensus.conflicts(report).size());
+	}
+
 	@Test void realReportTraversalAttributesBothSidesAndNamesUnobservedConflicts() throws Exception {
 		String forge = "net/minecraftforge/common/ForgeHooks", neo = "net/neoforged/neoforge/event/EventHooks";
 		Path f = jar("forge.jar", forge, forge), n = jar("neo.jar", neo, neo);
@@ -143,6 +190,85 @@ class LostHookAttributionTest {
 				assertEquals(0, row.lostOccurrences());
 			}
 		}
+	}
+
+	/**
+	 * Every raw loss in the census gets an effective state, not only the conflict rows: an UNLISTED caller whose
+	 * final definition restored the call is DIRECT_RESTORED, and a listed one that stayed lost is residual.
+	 */
+	@Test void everyCensusRawLossIsJoinedToTheFinalDefinitions() throws Exception {
+		String hook = "net/minecraftforge/common/ForgeHooks#tick()V";
+		String outside = "net/minecraftforge/registries/RegistryManager#tick()V";
+		ClassNode source = classNode("game/A", methodNode("listed", "()V", hook), methodNode("unlisted", "()V", hook, outside));
+		ClassNode merged = classNode("game/A", methodNode("listed", "()V"), methodNode("unlisted", "()V"));
+		var census = LostHookAttribution.platformCensus(Map.of(source.name, source), Map.of(merged.name, merged),
+				List.of(new LostHookAttribution.Conflict("game/A", "listed()V", "forge")));
+		Path evidence = evidence(classNode("game/A", methodNode("listed", "()V"), methodNode("unlisted", "()V", hook)));
+		var states = LostHookAttribution.effectiveStates(census, new EffectiveHookEvidence(evidence));
+		assertEquals(3, states.size(), "every raw loss, listed or not, modelled facade or not: " + states);
+		var bySymbol = new java.util.HashMap<String, EffectiveHookEvidence.State>();
+		states.forEach((call, state) -> bySymbol.put(call.caller() + " " + call.symbol(), state));
+		assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK, bySymbol.get("game/A#listed()V " + hook));
+		assertEquals(EffectiveHookEvidence.State.DIRECT_RESTORED, bySymbol.get("game/A#unlisted()V " + hook));
+		assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK, bySymbol.get("game/A#unlisted()V " + outside));
+	}
+
+	@Test void theCensusPrintsEffectiveTotalsPerSideOnlyFromSuppliedEvidence() throws Exception {
+		String forge = "net/minecraftforge/common/ForgeHooks", neo = "net/neoforged/neoforge/event/EventHooks";
+		Path f = jar("forge.jar", forge, forge), n = jar("neo.jar", neo, neo);
+		Path merged = jar("merged.jar", neo, forge), carrier = temporary.resolve("empty.jar");
+		try (JarOutputStream ignored = new JarOutputStream(Files.newOutputStream(carrier))) { }
+		Path report = temporary.resolve("report.txt"), mods = Files.createDirectory(temporary.resolve("mods"));
+		Files.writeString(report, "game/A#tick()V (forge hook lost)\n");
+		String[] args = {f.toString(), n.toString(), merged.toString(), carrier.toString(), carrier.toString(),
+				report.toString(), mods.toString()};
+		String without = run(args);
+		assertTrue(without.contains("[platform-census] effective side=forge raw-loss-pairs=1 NOT_ASSESSED"), without);
+		assertTrue(without.contains("state=RAW_LOST") && without.contains("effective=NOT_ASSESSED"), without);
+		Path evidence = evidence(classNode("game/A", methodNode("tick", "()V", forge + "#tick()V")),
+				classNode("game/B", methodNode("tick", "()V")));
+		String[] withEvidence = java.util.Arrays.copyOf(args, 8);
+		withEvidence[7] = evidence.toString();
+		String with = run(withEvidence);
+		assertTrue(with.contains("[platform-census] effective side=forge raw-loss-pairs=1 DIRECT_RESTORED=1"
+				+ " VIA_DEFINED_HELPER=0 VIA_KERNEL_BRIDGE=0 OBSERVED_WITHOUT_HOOK=0 UNOBSERVED=0"), with);
+		assertTrue(with.contains("[platform-census] effective side=neo raw-loss-pairs=1 DIRECT_RESTORED=0"
+				+ " VIA_DEFINED_HELPER=0 VIA_KERNEL_BRIDGE=0 OBSERVED_WITHOUT_HOOK=1 UNOBSERVED=0"), with);
+	}
+
+	private static String run(String[] args) throws Exception {
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		PrintStream previous = System.out;
+		try (PrintStream out = new PrintStream(bytes)) {
+			System.setOut(out);
+			LostHookAttribution.main(args);
+		} finally { System.setOut(previous); }
+		return bytes.toString(java.nio.charset.StandardCharsets.UTF_8);
+	}
+
+	/** A defined-class evidence session in the kernel's content-addressed layout. */
+	private Path evidence(ClassNode... defined) throws Exception {
+		Path root = Files.createTempDirectory(temporary, "definitions-");
+		StringBuilder manifest = new StringBuilder(EffectiveHookEvidence.HEADER + "\n");
+		for (ClassNode node : defined) {
+			node.version = Opcodes.V17;
+			node.superName = "java/lang/Object";
+			for (MethodNode method : node.methods) {
+				if (method.instructions.getLast() == null || method.instructions.getLast().getOpcode() != Opcodes.RETURN)
+					method.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.RETURN));
+				method.maxStack = 1;
+			}
+			ClassWriter writer = new ClassWriter(0);
+			node.accept(writer);
+			byte[] bytes = writer.toByteArray();
+			String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+			Files.createDirectories(root.resolve("blobs"));
+			Files.write(root.resolve("blobs").resolve(hash + ".class"), bytes);
+			manifest.append(node.name).append('\t').append(hash).append('\n');
+		}
+		Files.writeString(root.resolve("definitions.tsv"), manifest);
+		Files.createFile(root.resolve(EffectiveHookEvidence.INTACT));
+		return root;
 	}
 
 	@Test void opcodeAndInterfaceOwnerChangesAreNotReportedAsPreservedInvocations() {
