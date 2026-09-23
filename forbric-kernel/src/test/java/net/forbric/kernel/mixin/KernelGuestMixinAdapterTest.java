@@ -408,6 +408,71 @@ class KernelGuestMixinAdapterTest {
 		}
 	}
 
+	/**
+	 * A mixin on {@code ByteBufCodecs$15}, which the merge renumbered into three candidates, so nothing can move it.
+	 * Every handler then binds — to the unrelated class that now carries that name — and the final-class check
+	 * sees all of them attached. That is the evidence for "the anchors resolved", which is all it may discharge;
+	 * the drift is a question about WHICH class, and it has to survive the attachment.
+	 */
+	@Test
+	void aDriftedTargetIsNotDischargedByItsHandlersAttaching() {
+		MixinCompatibility.reset();
+		try {
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("drift.mixins.json", "driftmod", Ecosystem.FABRIC)));
+			String drifted = "net/minecraft/network/codec/ByteBufCodecs$15";
+			String mixinClass = PKG.replace('/', '.') + ".CodecMixin";
+			Map<String, byte[]> classes = new HashMap<>();
+			classes.put(drifted + ".class", target(drifted, "unused", Opcodes.ACC_PRIVATE, true));
+			classes.put(PKG + "/CodecMixin.class", shadowingMixin("CodecMixin", drifted, "unused"));
+			byte[] cfg = ("{\"required\":true,\"package\":\"" + PKG.replace('/', '.') + "\",\"mixins\":[\"CodecMixin\"],"
+					+ "\"injectors\":{\"defaultRequire\":1}}").getBytes(StandardCharsets.UTF_8);
+
+			MixinCompatibility.rememberOriginalConfig("drift.mixins.json", cfg);
+			assertTrue(KernelGuestMixinAdapter.unfitMixins("drift.mixins.json", cfg, resolver(classes)).isEmpty(),
+					"a drifted target is PARTIAL and kept");
+
+			org.objectweb.asm.tree.ClassNode mixin = new org.objectweb.asm.tree.ClassNode();
+			new org.objectweb.asm.ClassReader(classes.get(PKG + "/CodecMixin.class")).accept(mixin, 0);
+			FinalMixinApplications.remember(mixin);
+			// The final class: the merged handler, and the call the injector made to it.
+			ClassWriter cw = new ClassWriter(0);
+			cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, drifted, null, "java/lang/Object", null);
+			MethodVisitor handler = cw.visitMethod(Opcodes.ACC_PRIVATE, "handler$000$onRender", "()V", null, null);
+			AnnotationVisitor merged = handler.visitAnnotation("Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;", true);
+			merged.visit("mixin", mixinClass);
+			merged.visitEnd();
+			handler.visitCode();
+			handler.visitInsn(Opcodes.RETURN);
+			handler.visitMaxs(0, 1);
+			handler.visitEnd();
+			MethodVisitor render = cw.visitMethod(Opcodes.ACC_PUBLIC, "render", "()V", null, null);
+			render.visitCode();
+			render.visitVarInsn(Opcodes.ALOAD, 0);
+			render.visitMethodInsn(Opcodes.INVOKESPECIAL, drifted, "handler$000$onRender", "()V", false);
+			render.visitInsn(Opcodes.RETURN);
+			render.visitMaxs(1, 1);
+			render.visitEnd();
+			cw.visitEnd();
+			FinalMixinApplications.observe(drifted.replace('/', '.'), cw.toByteArray(),
+					(m, name, desc) -> List.of(new FinalMixinApplications.Renamed("handler$000$" + name, desc)));
+
+			var findings = net.forbric.api.CompatibilityFindings.all();
+			var whole = findings.stream().filter(f -> f.id().equals(MixinCompatibility.id("drift.mixins.json", mixinClass)))
+					.findFirst().orElseThrow();
+			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.RESOLVED, whole.confidence(),
+					"every anchor attached, and that part of the suspicion is answered");
+			var drift = findings.stream().filter(f -> f.id().equals(MixinCompatibility.driftId("drift.mixins.json", mixinClass)))
+					.findFirst().orElseThrow(() -> new AssertionError("no drift row survived: " + findings));
+			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, drift.confidence(),
+					"attachment cannot say the handlers bound to the class vanilla compiled at that name");
+			assertTrue(drift.evidence().stream().anyMatch(e -> e.contains("ByteBufCodecs$15")), drift.evidence().toString());
+			assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty());
+		} finally {
+			MixinCompatibility.reset();
+			MixinConfigOwners.reset();
+		}
+	}
+
 	@Test
 	void aConfigWithAPluginHoldsTheMarkBackUntilThePluginIsAsked() {
 		List<ModCatalog.Entry> previous = ModCatalog.everything();

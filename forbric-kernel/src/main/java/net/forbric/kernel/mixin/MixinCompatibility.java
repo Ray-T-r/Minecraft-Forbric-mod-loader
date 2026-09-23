@@ -34,16 +34,36 @@ public final class MixinCompatibility {
 		return "mixin:" + config + ":" + mixin;
 	}
 
+	/**
+	 * A mixin whose {@code @Mixin} target is a renumbered anonymous class. A separate identity from {@link #id}
+	 * because final attachment answers the whole-mixin suspicion and cannot answer this one: the handlers bind to
+	 * whatever class carries that name here, so every one of them attaching is exactly what the drift looks like.
+	 */
+	static String driftId(String config, String mixin) {
+		return "mixin-target-drift:" + config + ":" + mixin;
+	}
+
 	static void record(String config, String mixin, String detail, CompatibilityFinding.Confidence confidence,
 			boolean required, List<String> evidence) {
-		String modId = config == null ? null : MixinConfigOwners.modIdOf(config);
-		CompatibilityFindings.record(new CompatibilityFinding(id(config, mixin),
-				modId == null ? "config:" + config : modId, "Mixin " + mixin, "mixin:" + config,
+		recordAs(id(config, mixin), config, mixin, detail, confidence, required, evidence);
+	}
+
+	static void recordAs(String id, String config, String mixin, String detail, CompatibilityFinding.Confidence confidence,
+			boolean required, List<String> evidence) {
+		CompatibilityFindings.record(new CompatibilityFinding(id, owner(config), "Mixin " + mixin, "mixin:" + config,
 				confidence, required, detail, evidence));
 	}
 
 	static void resolve(String config, String mixin, String reason) {
+		resolveAs(id(config, mixin), config, reason);
+	}
+
+	static void resolveAs(String id, String config, String reason) {
+		CompatibilityFindings.resolve(id, owner(config), reason);
+	}
+
+	private static String owner(String config) {
 		String modId = config == null ? null : MixinConfigOwners.modIdOf(config);
-		CompatibilityFindings.resolve(id(config, mixin), modId == null ? "config:" + config : modId, reason);
+		return modId == null ? "config:" + config : modId;
 	}
 }

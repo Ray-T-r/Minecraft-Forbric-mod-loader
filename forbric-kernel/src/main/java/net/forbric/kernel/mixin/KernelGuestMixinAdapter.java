@@ -225,6 +225,7 @@ public final class KernelGuestMixinAdapter {
 									after.verdict());
 							if (after.verdict() == MixinFit.Verdict.PARTIAL) {
 								notePartial(configName, mixin);
+								suspectDrift(configName, pkg, mixin, pluginClass, classBytes, required, after);
 								preflight(configName, pkg, mixin, pluginClass, classBytes, required, after.reason(), after.unresolved());
 								ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s still applies only partially — %s",
 										MixinConfigOwners.describe(configName), mixin, after.reason());
@@ -237,6 +238,7 @@ public final class KernelGuestMixinAdapter {
 									+ "base that name is a different class (%s); its injections bind to unrelated code",
 									MixinConfigOwners.describe(configName), mixin, drifted, MergedBaseAnonymousDrift.describe(drifted));
 						}
+						suspectDrift(configName, pkg, mixin, pluginClass, classBytes, required, fit);
 						notePartial(configName, mixin);
 						preflight(configName, pkg, mixin, pluginClass, classBytes, required, fit.reason(), fit.unresolved());
 						ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s applies only partially on the merged base "
@@ -261,12 +263,9 @@ public final class KernelGuestMixinAdapter {
 				suppress.add(mixin);
 				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — %s on the merged base (%s)",
 						MixinConfigOwners.describe(configName), mixin, fit.verdict(), fit.reason());
-				String detail = "guest mixin " + mixin + " did not fit the merged game and was left out";
-				if (!PluginDeclinedMixins.defer(configName, pluginClass, mixin, pkg + "." + mixin, dottedTargets(classBytes),
-						detail, CompatibilityFinding.Confidence.CONFIRMED, required, List.of(fit.reason(), "kernel suppressed this mixin"))) {
-					MixinCompatibility.record(configName, pkg + "." + mixin, detail,
-							CompatibilityFinding.Confidence.CONFIRMED, required, List.of(fit.reason(), "kernel suppressed this mixin"));
-				}
+				report(MixinCompatibility.id(configName, pkg + "." + mixin), configName, pkg, mixin, pluginClass, classBytes,
+						"guest mixin " + mixin + " did not fit the merged game and was left out",
+						CompatibilityFinding.Confidence.CONFIRMED, required, List.of(fit.reason(), "kernel suppressed this mixin"));
 			} catch (RuntimeException perMixin) {
 				ForbricLog.debug("[Forbric/Mixin] could not scan guest mixin %s:%s — %s", MixinConfigOwners.describe(configName), mixin,
 						String.valueOf(perMixin));
@@ -284,10 +283,35 @@ public final class KernelGuestMixinAdapter {
 	/** A bytecode preflight cannot know which targets, plugins or preceding transforms will actually run. */
 	private static void preflight(String config, String pkg, String mixin, String plugin, byte[] bytes,
 			boolean required, String detail, List<String> evidence) {
-		if (!PluginDeclinedMixins.defer(config, plugin, mixin, pkg + "." + mixin, dottedTargets(bytes), detail,
-				CompatibilityFinding.Confidence.SUSPECTED, required, evidence)) {
-			MixinCompatibility.record(config, pkg + "." + mixin, detail,
-					CompatibilityFinding.Confidence.SUSPECTED, required, evidence);
+		report(MixinCompatibility.id(config, pkg + "." + mixin), config, pkg, mixin, plugin, bytes, detail,
+				CompatibilityFinding.Confidence.SUSPECTED, required, evidence);
+	}
+
+	/**
+	 * A renumbered anonymous {@code @Mixin} target, on a row of its own.
+	 *
+	 * <p>On the whole-mixin row it was discharged by the very evidence it is about: the final class is checked for
+	 * references to each merged handler, and on a drifted target every handler binds cleanly — to the unrelated
+	 * class that carries vanilla's name here. Attachment proves nothing about WHICH class, so this row stays
+	 * SUSPECTED unless the mod's own plugin declines the mixin.
+	 */
+	private static void suspectDrift(String config, String pkg, String mixin, String plugin, byte[] bytes,
+			boolean required, MixinFit.Result fit) {
+		String drifted = driftedTarget(fit);
+		if (drifted == null) return;
+		List<String> evidence = fit.unresolved().stream().filter(r -> r.startsWith("@Mixin target ")).toList();
+		report(MixinCompatibility.driftId(config, pkg + "." + mixin), config, pkg, mixin, plugin, bytes,
+				"its mixin " + mixin + " targets " + drifted.replace('/', '.') + ", a renumbered anonymous class; on this "
+						+ "base that name is a different class, so its injections may bind to unrelated code",
+				CompatibilityFinding.Confidence.SUSPECTED, required, evidence);
+	}
+
+	/** Holds the row back for the mod's config plugin when it has one, and records it now when it does not. */
+	private static void report(String id, String config, String pkg, String mixin, String plugin, byte[] bytes,
+			String detail, CompatibilityFinding.Confidence confidence, boolean required, List<String> evidence) {
+		if (!PluginDeclinedMixins.defer(id, config, plugin, mixin, pkg + "." + mixin, dottedTargets(bytes), detail,
+				confidence, required, evidence)) {
+			MixinCompatibility.recordAs(id, config, pkg + "." + mixin, detail, confidence, required, evidence);
 		}
 	}
 

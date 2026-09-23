@@ -64,8 +64,9 @@ public final class PluginDeclinedMixins {
 	 * <p>Every {@code @Mixin} target, not the first: Mixin asks the plugin once PER TARGET and applies the mixin
 	 * to each one it accepts, so a plugin that declines one target and accepts another still wanted the mixin.
 	 */
-	record Pending(String configName, String pluginClass, String mixinEntry, String mixinClass, List<String> targets,
-			String detail, CompatibilityFinding.Confidence confidence, boolean required, List<String> evidence) {
+	record Pending(String id, String configName, String pluginClass, String mixinEntry, String mixinClass,
+			List<String> targets, String detail, CompatibilityFinding.Confidence confidence, boolean required,
+			List<String> evidence) {
 	}
 
 	private static final List<Pending> PENDING = java.util.Collections.synchronizedList(new ArrayList<>());
@@ -104,8 +105,16 @@ public final class PluginDeclinedMixins {
 	static boolean defer(String configName, String pluginClass, String mixinEntry, String mixinClass,
 			List<String> targets, String detail, CompatibilityFinding.Confidence confidence, boolean required,
 			List<String> evidence) {
+		return defer(MixinCompatibility.id(configName, mixinClass), configName, pluginClass, mixinEntry, mixinClass,
+				targets, detail, confidence, required, evidence);
+	}
+
+	/** The same, for a row with its own identity rather than the whole-mixin one ({@link MixinCompatibility#driftId}). */
+	static boolean defer(String id, String configName, String pluginClass, String mixinEntry, String mixinClass,
+			List<String> targets, String detail, CompatibilityFinding.Confidence confidence, boolean required,
+			List<String> evidence) {
 		if (!enabled() || pluginClass == null || pluginClass.isEmpty()) return false;
-		PENDING.add(new Pending(configName, pluginClass, mixinEntry, mixinClass, List.copyOf(targets), detail,
+		PENDING.add(new Pending(id, configName, pluginClass, mixinEntry, mixinClass, List.copyOf(targets), detail,
 				confidence, required, evidence));
 		return true;
 	}
@@ -129,7 +138,8 @@ public final class PluginDeclinedMixins {
 				// The load report calls this; one bad entry must not cost the whole file. Mark and move on.
 				ForbricLog.debug("[Forbric/Mixin] could not settle the attribution for %s — %s", p.mixinClass(),
 						String.valueOf(t));
-				MixinCompatibility.record(p.configName(), p.mixinClass(), p.detail(), p.confidence(), p.required(), p.evidence());
+				MixinCompatibility.recordAs(p.id(), p.configName(), p.mixinClass(), p.detail(), p.confidence(),
+						p.required(), p.evidence());
 			}
 		}
 	}
@@ -149,7 +159,7 @@ public final class PluginDeclinedMixins {
 			else wanted.add(target);
 		}
 		if (!declined.isEmpty() && wanted.isEmpty()) {
-			MixinCompatibility.resolve(p.configName(), p.mixinClass(), "the mod's own plugin disabled this mixin");
+			MixinCompatibility.resolveAs(p.id(), p.configName(), "the mod's own plugin disabled this mixin");
 			ForbricLog.info("[Forbric/Mixin] not marking %s for %s:%s — the mod's own config plugin %s does not "
 					+ "apply that mixin on this instance either, so leaving it out cost the mod nothing",
 					String.valueOf(MixinConfigOwners.modIdOf(p.configName())),
@@ -162,7 +172,8 @@ public final class PluginDeclinedMixins {
 			evidence.add("the mod's own plugin declines it for " + String.join(", ", declined));
 			evidence.add("the mod's own plugin applies it, or gives no answer, for " + String.join(", ", wanted));
 		}
-		MixinCompatibility.record(p.configName(), p.mixinClass(), p.detail(), p.confidence(), p.required(), evidence);
+		MixinCompatibility.recordAs(p.id(), p.configName(), p.mixinClass(), p.detail(), p.confidence(), p.required(),
+				evidence);
 	}
 
 	/**
