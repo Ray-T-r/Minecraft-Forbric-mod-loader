@@ -65,26 +65,47 @@ public final class KernelLoadReport {
 	/** Where to write. Set from the boot, which is the only place that knows the instance directory. */
 	public static void setRunDir(Path dir) {
 		rundir = dir;
-		// The boot that never reaches "loading finished" is the one a player most needs this for.
-		Runtime.getRuntime().addShutdownHook(new Thread(KernelLoadReport::write, "forbric-load-report"));
+		// The boot that never reaches "loading finished" is the one a player most needs this for. Evidence only:
+		// a process going down before loading ended has not seen every mod finish, whatever the list says.
+		Runtime.getRuntime().addShutdownHook(new Thread(KernelLoadReport::writeEvidence, "forbric-load-report"));
 	}
 
 	/**
-	 * Writes the report whenever what it would say has changed.
+	 * Writes the report whenever what it would say has changed, at the end of loading on a side.
 	 *
-	 * <p>Called at the end of loading on both sides, again once the server (integrated or dedicated) is up —
-	 * a mixin that fails to apply to a class first loaded at world creation is only known then — and from the
-	 * shutdown hook. A render equal to the last one written is not written again and says nothing, so a clean
-	 * boot writes no file and says one INFO line — a file that appears only when something is wrong is a file
-	 * whose presence already means something. With {@link #REWRITE_PROPERTY} off, the first write wins.
+	 * <p>Called at the end of loading on both sides, and again once the server (integrated or dedicated) is up —
+	 * a mixin that fails to apply to a class first loaded at world creation is only known then. A render equal to
+	 * the last one written is not written again and says nothing, so a clean boot writes no file and says one
+	 * INFO line — a file that appears only when something is wrong is a file whose presence already means
+	 * something. With {@link #REWRITE_PROPERTY} off, the first write wins.
 	 */
 	public static void write() {
-		Path dir = rundir;
-		writeTo(dir == null ? null : dir.resolve(".forbric-kernel").resolve(FILE));
+		writeTo(target(), true);
 	}
 
-	/** The write with its destination explicit (null: log only), so a test can watch a file it owns. */
+	/**
+	 * The same evidence from a boundary where loading has NOT finished: before the game's main runs, and from the
+	 * shutdown hook. It writes the machine report, queues late findings and names whatever already failed, but it
+	 * never says "every mod finished loading" and never spends the one-shot that line is guarded by. Said from the
+	 * pre-launch boundary, that line was printed before a single mod had initialised and was then suppressed at
+	 * the real end of loading, so a log could read "every mod finished loading" above "1 mod(s) did not finish".
+	 */
+	public static void writeEvidence() {
+		writeTo(target(), false);
+	}
+
+	private static Path target() {
+		Path dir = rundir;
+		return dir == null ? null : dir.resolve(".forbric-kernel").resolve(FILE);
+	}
+
+	/** The end-of-loading write with its destination explicit (null: log only), so a test can watch a file it owns. */
 	static void writeTo(Path file) {
+		writeTo(file, true);
+	}
+
+	/** @param loadingFinished whether this boundary may report that every mod finished loading */
+	static void writeTo(Path file, boolean loadingFinished) {
 		try {
 			// Attributions held back until the mod's own mixin config plugin could be asked. Settled here rather
 			// than where the suppression was decided, because the plugin does not exist yet at that point — and
@@ -97,7 +118,7 @@ public final class KernelLoadReport {
 			if (failures.isEmpty()) {
 				if (file != null) Files.deleteIfExists(file);
 				lastRendered = null;
-				if (reported.compareAndSet(false, true)) ForbricLog.info("[Forbric/Load] every mod finished loading");
+				if (loadingFinished && reported.compareAndSet(false, true)) ForbricLog.info("[Forbric/Load] every mod finished loading");
 				return;
 			}
 			String rendered = render(chinese(), failures);
