@@ -627,9 +627,17 @@ step "no row says the same thing twice (must PASS)"
 # M9_LOAD_REPORT_DEDUP_BEGIN — the contract test runs this exact step against a fixture report.
 python3 - "$RUNDIR/.forbric-kernel/load-report.txt" <<'PY_DEDUP'
 from pathlib import Path
-import sys
+import sys, json
 report = Path(sys.argv[1])
 if not report.is_file():
+    facts = report.with_name('compatibility-report.json')
+    if facts.is_file():
+        data = json.loads(facts.read_text(encoding='utf-8'))
+        mods = data.get('mods', [])
+        if data.get('schemaVersion') == 1 and data.get('confirmedRequired') == 0 and mods \
+                and all(mod['status'] == 'OK' for mod in mods) and not data.get('catalogFailures'):
+            print('[kernel] PASS all runtime mods report OK; no failure-only text report is expected')
+            raise SystemExit(0)
     print(f'[kernel] FAIL no load report at {report}')
     raise SystemExit(1)
 bad = []

@@ -69,6 +69,19 @@ class LoadReportDedupContractTest {
 		assertNotEquals(0, process.waitFor(), output(process));
 	}
 
+	@Test void anExplicitlyHealthyRuntimeInventoryExplainsTheAbsentFailureReport() throws Exception {
+		Path facts = temporary.resolve("compatibility-report.json");
+		Files.writeString(facts, "{\"schemaVersion\":1,\"confirmedRequired\":0,\"mods\":[{\"status\":\"OK\"}],\"catalogFailures\":[]}");
+		Process healthy = start(temporary.resolve("load-report.txt"));
+		assertEquals(0, healthy.waitFor(), output(healthy));
+		Files.writeString(facts, Files.readString(facts).replace("OK", "DEGRADED"));
+		Process missingFailure = start(temporary.resolve("load-report.txt"));
+		assertNotEquals(0, missingFailure.waitFor(), output(missingFailure));
+		Files.writeString(facts, "{\"schemaVersion\":1,\"confirmedRequired\":0,\"mods\":[],\"catalogFailures\":[]}");
+		Process empty = start(temporary.resolve("load-report.txt"));
+		assertNotEquals(0, empty.waitFor(), "an empty denominator must not explain a missing report: " + output(empty));
+	}
+
 	private Path write(String content) throws Exception {
 		Path report = temporary.resolve("load-report.txt");
 		Files.writeString(report, content, StandardCharsets.UTF_8);

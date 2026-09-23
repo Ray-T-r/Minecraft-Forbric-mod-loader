@@ -470,3 +470,20 @@ Pending implementation and acceptance items remain open even when a smaller batc
   structure-start differences. Evidence: `build/verification/watchdog-provenance/` and `build/m31-final-driver.log`.
 - The first full-soak attempt and remaining-gate sweep were interrupted to avoid mixing updated inputs with
   running acceptance. Neither interruption is counted as passing; the stable final sweep and soak are next.
+
+### P0 complete inventories and P2 safe resource enumeration for presence aliases
+
+- EMF/ETF's actual manifests contain literal control characters in description strings accepted by the
+  game metadata reader. The evidence collector now reads those without rewriting archive bytes, follows
+  declared JarJar paths outside conventional folders, and fails with the archive name for invalid or missing
+  metadata. Fourteen Python tests pass; the complete 97-jar pack inventories 253 physical archives.
+- Machine reports now include every catalog mod's resolved version, ecosystem, jar and parent identity.
+  The actual mixed client reports 163 resolved mod entries, with no unresolved version expressions.
+- Presence-only containers return NeoForge's native empty JarContents. They contribute no resources and
+  no duplicate initialization, while a third-party all-mod resource visitor can finish. A direct JVM probe
+  failed on the prior null and passes with the native empty view; real jar resources remain enumerable.
+- 43 related Java tests passed without skips. The hash-bound real M9 client passed under STRICT with zero
+  necessary losses and zero catalog failures; Crafting Tweaks' configuration callback now completes. A healthy
+  run removes the failure-only text report, so the dedup gate accepts absence only with a nonempty all-OK
+  machine inventory. Missing/empty evidence and a missing degraded report still fail.
+  Evidence: `build/verification/alias-inventory/` and `build/verification/alias-resource-m9-verified.*`.

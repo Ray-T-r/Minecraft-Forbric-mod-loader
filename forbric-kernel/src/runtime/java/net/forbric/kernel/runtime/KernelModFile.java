@@ -74,7 +74,9 @@ public final class KernelModFile implements IModFile {
 		this.modId = modId;
 		this.jar = jar;
 		this.path = jar != null ? jar : Path.of("forbric-kernel", modId + ".jar");
-		this.contents = jar == null ? null : contentsOf(jar);
+		// Native visitors enumerate every published identity, including cross-ecosystem aliases. An alias
+		// contributes no resources, but is still a valid file-shaped entry; null aborts the entire traversal.
+		this.contents = jar == null ? JarContents.empty(this.path) : contentsOf(jar);
 	}
 
 	private static JarContents contentsOf(Path jar) {

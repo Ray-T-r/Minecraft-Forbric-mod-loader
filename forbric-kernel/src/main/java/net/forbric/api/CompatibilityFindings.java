@@ -158,6 +158,15 @@ public final class CompatibilityFindings {
 					.append(",\"status\":").append(json(entry.status().name())).append(",\"detail\":")
 					.append(json(entry.statusDetail())).append(",\"classification\":\"UNCLASSIFIED\"}");
 		}
+		out.append("],\"mods\":[");
+		List<ModCatalog.Entry> mods = ModCatalog.everything();
+		for (int i = 0; i < mods.size(); i++) {
+			ModCatalog.Entry entry = mods.get(i);
+			if (i != 0) out.append(',');
+			out.append("{\"modId\":").append(json(entry.modId())).append(",\"version\":").append(json(entry.version()))
+					.append(",\"ecosystem\":").append(json(entry.ecosystem().name())).append(",\"jar\":").append(json(entry.jar()))
+					.append(",\"bundledBy\":").append(json(entry.bundledBy())).append(",\"status\":").append(json(entry.status().name())).append('}');
+		}
 		return out.append("]}\n").toString();
 	}
 

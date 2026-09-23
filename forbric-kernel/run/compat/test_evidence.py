@@ -82,6 +82,43 @@ class EvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "release evidence missing artifacts"):
             evidence.capture(self.source, {}, [self.mods], self.report, release=True)
 
+    def test_literal_control_characters_in_real_fabric_descriptions_preserve_identity(self):
+        path = self.mods / "description.jar"
+        with zipfile.ZipFile(path, "w") as jar:
+            jar.writestr("fabric.mod.json", '{"id":"description","version":"2.0","description":"line one\nline two\tend"}')
+        expected = evidence.digest(path)
+        result = self.capture()
+        recorded = result["mods"][0]["jars"][0]
+        self.assertEqual(expected, recorded["sha256"])
+        self.assertEqual("2.0", recorded["inventory"][0]["declarations"][0]["version"])
+        evidence.verify(self.report)
+
+    def test_jarjar_custom_paths_are_inventoried_and_missing_declared_jars_fail(self):
+        child = io.BytesIO()
+        with zipfile.ZipFile(child, "w") as jar:
+            jar.writestr("fabric.mod.json", '{"id":"child","version":"3.0"}')
+        path = self.mods / "parent.jar"
+        for exists in (True, False):
+            with zipfile.ZipFile(path, "w") as jar:
+                jar.writestr("fabric.mod.json", '{"id":"parent","version":"1.0"}')
+                jar.writestr("META-INF/jarjar/metadata.json", json.dumps({"jars": [{"path": "private-libs/child.jar"}]}))
+                if exists:
+                    jar.writestr("private-libs/child.jar", child.getvalue())
+            if exists:
+                entries = self.capture()["mods"][0]["jars"][0]["inventory"]
+                self.assertEqual(["parent", "child"], [row["declarations"][0]["id"] for row in entries])
+                self.assertEqual("3.0", entries[1]["declarations"][0]["version"])
+                evidence.verify(self.report)
+            else:
+                with self.assertRaisesRegex(ValueError, "declared nested jar missing.*private-libs/child.jar"):
+                    self.capture()
+
+    def test_malformed_metadata_names_the_archive_and_is_not_silently_dropped(self):
+        with zipfile.ZipFile(self.mods / "malformed.jar", "w") as jar:
+            jar.writestr("fabric.mod.json", '{"id": broken')
+        with self.assertRaisesRegex(ValueError, "malformed.jar::fabric.mod.json"):
+            self.capture()
+
     def test_output_inside_source_is_not_self_referential(self):
         self.report = self.source / "run-evidence.json"
         self.capture()

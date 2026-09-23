@@ -131,6 +131,29 @@ class KernelModFileInfoVersionTest {
                 .getConstructor(String.class, Path.class).newInstance("versionprobe", jar);
     }
 
+    @Test void presenceAliasesHaveAnEmptyNativeResourceViewAndRealFilesKeepTheirResources() throws Exception {
+        Path jar = fixture("real.jar", "META-INF/neoforge.mods.toml", "1.0.0", null);
+        try (URLClassLoader runtime = runtimeLoader()) {
+            Class<?> fileType = runtime.loadClass("net.forbric.kernel.runtime.KernelModFile");
+            Class<?> contentsType = runtime.loadClass("net.neoforged.fml.jarcontents.JarContents");
+            Class<?> visitorType = runtime.loadClass("net.neoforged.fml.jarcontents.JarResourceVisitor");
+            for (Path source : new Path[] {null, jar}) {
+                Object file = fileType.getConstructor(String.class, Path.class).newInstance("resourceprobe", source);
+                Object contents = fileType.getMethod("getContents").invoke(file);
+                assertNotNull(contents, "a native all-mod resource visitor must not dereference null for an alias");
+                java.util.List<String> names = new java.util.ArrayList<>();
+                Object visitor = java.lang.reflect.Proxy.newProxyInstance(runtime, new Class<?>[] {visitorType}, (proxy, method, args) -> {
+                    if (method.getName().equals("visit")) names.add((String) args[0]);
+                    return null;
+                });
+                contentsType.getMethod("visitContent", String.class, visitorType).invoke(contents, "", visitor);
+                if (source == null) assertTrue(names.isEmpty(), "aliases must not replay another build's resources");
+                else assertTrue(names.contains("META-INF/neoforge.mods.toml"), names.toString());
+                contentsType.getMethod("close").invoke(contents);
+            }
+        }
+    }
+
     private static String version(Object info) throws Exception {
         Object file = info.getClass().getMethod("getOwningFile").invoke(info);
         return (String) file.getClass().getMethod("versionString").invoke(file);

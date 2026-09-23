@@ -141,6 +141,21 @@ class CompatibilityFindingsTest {
 		return new ModCatalog.Entry(Ecosystem.FABRIC, "demo", "Demo", "1", "", List.of(), "demo.jar", "", "");
 	}
 
+	@Test void machineReportIncludesAllResolvedVersionsIncludingBundledModules() {
+		ModCatalog.publish(List.of(entry(), new ModCatalog.Entry(Ecosystem.NEOFORGE, "child", "Child", "4.2.1-dev+26.2",
+				"", List.of(), "child.jar", "", "parent")));
+		var parsed = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser()
+				.parse(new StringReader(CompatibilityFindings.toJson()));
+		List<com.electronwill.nightconfig.core.UnmodifiableConfig> mods = parsed.get("mods");
+		assertEquals(2, mods.size(), "successful and bundled mods remain in the evidence inventory");
+		var child = mods.stream().filter(m -> "child".equals(m.get("modId"))).findFirst().orElseThrow();
+		assertEquals("4.2.1-dev+26.2", child.get("version"));
+		assertEquals("NEOFORGE", child.get("ecosystem"));
+		assertEquals("child.jar", child.get("jar"));
+		assertEquals("parent", child.get("bundledBy"));
+		assertEquals(0, ((Number) parsed.get("confirmedRequired")).intValue());
+	}
+
 	@Test
 	void anAggregateFailedRowDoesNotPromoteUnrelatedOptionalReasons() {
 		ModCatalog.publish(List.of(entry().withStatus(ModCatalog.Status.FAILED,

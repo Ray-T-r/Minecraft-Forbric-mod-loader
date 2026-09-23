@@ -75,7 +75,12 @@ def archive_metadata(data, origin, depth=0):
         declarations = []
         nested = set()
         if "fabric.mod.json" in names:
-            meta = json.loads(jar.read("fabric.mod.json"))
+            # The real metadata reader accepts literal newlines/tabs in strings (the installed EMF/ETF
+            # manifests use them in descriptions). Retain the original bytes/hash; do not rewrite jars.
+            try:
+                meta = json.loads(jar.read("fabric.mod.json"), strict=False)
+            except (ValueError, UnicodeError) as invalid:
+                raise ValueError(f"cannot inventory {origin}::fabric.mod.json: {invalid}") from invalid
             declarations.append({"ecosystem": "FABRIC", "id": meta["id"], "version": str(meta["version"])})
             nested.update(entry["file"] for entry in meta.get("jars", []))
         for name, family in [("META-INF/mods.toml", "FORGE"), ("META-INF/neoforge.mods.toml", "NEOFORGE")]:
@@ -83,6 +88,16 @@ def archive_metadata(data, origin, depth=0):
                 meta = tomllib.loads(jar.read(name).decode("utf-8"))
                 declarations.extend({"ecosystem": family, "id": m["modId"], "version": str(m["version"])}
                                     for m in meta.get("mods", []))
+        if "META-INF/jarjar/metadata.json" in names:
+            try:
+                metadata = json.loads(jar.read("META-INF/jarjar/metadata.json"))
+                for entry in metadata.get("jars", []):
+                    path = entry["path"]
+                    if not isinstance(path, str) or not path:
+                        raise ValueError("nested path must be a nonempty string")
+                    nested.add(path)
+            except (KeyError, TypeError, ValueError, UnicodeError) as invalid:
+                raise ValueError(f"cannot inventory {origin}::META-INF/jarjar/metadata.json: {invalid}") from invalid
         nested.update(name for name in names if name.endswith(".jar") and
                       name.startswith(("META-INF/jars/", "META-INF/jarjar/")))
         # Retain unresolved version expressions: guessing would falsify the inventory. The archive hash
