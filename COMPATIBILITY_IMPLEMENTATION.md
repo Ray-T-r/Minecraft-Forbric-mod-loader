@@ -348,3 +348,16 @@ Pending implementation and acceptance items remain open even when a smaller batc
   all twelve failed with item adaptation off, with unchanged per-phase inputs. A Fabric-only language mod,
   vanilla Stick translation and Minecraft version.json path also pass in the real server. Evidence:
   `build/verification/enchantment-and-language/` and `build/verification/m38-entity/`.
+
+### P2 mining, stale block entities and contextual destruction rendering
+
+- The audited Fabric mining handler now preserves native reset/continue decisions and invokes the explicit
+  same-item Fabric override only when needed. A JVM execution test checks all four decision branches and
+  exact player/old/new object propagation through the adapted upstream handler.
+- The stale block-entity removal hook follows the uniquely proved blockEntities receiver, not the unrelated
+  pending-NBT map. It moves only when that removal precedes the original createBlockEntity slice boundary.
+  The renderer's pure no-op redirect accepts the exact new context arguments; any nontrivial body is refused.
+- 23 focused tests passed without skips. The real full mixed client entered, simulated, saved and exited
+  after these changes. Its confirmed necessary list fell from 16 to three: sound and two Litematica rendering
+  callbacks. This was explicit continuation for diagnosis; M9 correctly remained RED under the strict-report
+  rule. Evidence: `build/verification/client-anchor-adapters/` and `build/m9-after-client-adapters-driver.log`.
