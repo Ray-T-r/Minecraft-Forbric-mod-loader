@@ -412,3 +412,16 @@ Pending implementation and acceptance items remain open even when a smaller batc
   unloading/reloading. It remains REVIEW_REQUIRED because retired servers stayed reachable. A heap dump
   identifies the old-server path through Unlit Campfire's static CAMPFIRES set, a saved campfire and its
   level. Native comparison/review remains required; no full soak pass is claimed.
+
+### Native controls and attribution of the observed retained world
+
+- The three pinned native loaders and Forbric each passed the same own-ecosystem initialization and
+  world-action canaries. Comparisons verified identical mod hashes, seed and actions for all three pairs.
+  Durable evidence: `build/verification/native-comparison/` and `build/native-controls/results/`.
+- A separate campfire probe uses the unmodified Unlit Campfire 26.2-4.1.0.0 jar, saves a real campfire,
+  stops normally, then reads the upstream static cache during JVM shutdown. Native NeoForge and Forbric
+  both retain one campfire whose level references the stopped server; both use identical mod hashes.
+  No cache is modified. Evidence: `build/retention-control/comparison.json` and its per-arm manifests.
+- This reproduces the exact shortest root found in the short-run heap. It establishes one native mod
+  retention issue, not absence of other roots. M34's REVIEW_REQUIRED result remains visible; neither
+  release acceptance nor a two-hour run is claimed by this attribution.
