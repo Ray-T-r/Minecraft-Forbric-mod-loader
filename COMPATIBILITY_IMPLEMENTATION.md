@@ -397,3 +397,18 @@ Pending implementation and acceptance items remain open even when a smaller batc
   headless mode; actual window behavior remains the separately forked GUI/client gate's responsibility.
   50 focused Java tests passed without skips. The interrupted M0 is RED and will be rerun.
   Evidence: `build/verification/soak-launcher/`; no short or two-hour game soak is claimed yet.
+
+### P2 dedicated-server block-entity removal and final P3 world routing
+
+- The actual server lifecycle mixin uses the same displaced stale-block-entity map removal as its client
+  counterpart. Both now use the existing receiver/dataflow proof; neither handler body is rewritten.
+  Six focused tests passed with zero skips, including the unmodified upstream server handler.
+- M33 then passed all public item/fluid routes, side/null restrictions, native precedence, replacement
+  invalidation, exact fractional rollback/retry, real save/deserialization and the bridge-off negative.
+  Each phase retained unchanged source, artifact and mod hashes. Evidence: `build/verification/m33-transfer/`.
+- Before this small server-only extension, full M0 passed 1,864 tests without skips and all discovery/link
+  gates; link-check synthetic negatives and the actual installer subprocess tests passed as well.
+- M34 short control completed two normal same-JVM sessions, 5,430 simulation ticks and all six chunk probes
+  unloading/reloading. It remains REVIEW_REQUIRED because retired servers stayed reachable. A heap dump
+  identifies the old-server path through Unlit Campfire's static CAMPFIRES set, a saved campfire and its
+  level. Native comparison/review remains required; no full soak pass is claimed.

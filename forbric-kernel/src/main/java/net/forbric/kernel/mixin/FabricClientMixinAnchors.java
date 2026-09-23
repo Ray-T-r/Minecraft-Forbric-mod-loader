@@ -11,7 +11,8 @@ public final class FabricClientMixinAnchors {
  private FabricClientMixinAnchors(){}
  public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
   if("off".equalsIgnoreCase(System.getProperty(PROPERTY,"on")))return 0;
-  if(mixin.name.equals("net/fabricmc/fabric/mixin/event/lifecycle/client/LevelChunkMixin"))return removal(mixin,targets);
+  if(mixin.name.equals("net/fabricmc/fabric/mixin/event/lifecycle/client/LevelChunkMixin")
+    ||mixin.name.equals("net/fabricmc/fabric/mixin/event/lifecycle/server/LevelChunkMixin"))return removal(mixin,targets);
   if(mixin.name.equals("net/fabricmc/fabric/mixin/client/renderer/block/render/LevelRendererMixin"))return render(mixin,targets);
   return 0;
  }
