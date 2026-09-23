@@ -17,6 +17,16 @@ class FinalMixinApplicationsTest {
   assertEquals(0,CompatibilityFindings.confirmedRequired().size());observe(target(false,true,"handler$000$probe","()V"));
   assertEquals(1,CompatibilityFindings.confirmedRequired().size());assertTrue(CompatibilityFindings.confirmedRequired().getFirst().id().startsWith("mixin-injector:"));
  }
+ /** Native Mixin throws InjectionError below require/defaultRequire whatever the config's `required` says. */
+ @Test void aDefaultRequireMissInAnOptionalConfigIsStillANecessaryLoss() {
+  config(1,false);remember(-1,false,List.of(TARGET));observe(target(false,true,"handler$000$probe","()V"));
+  assertEquals(1,CompatibilityFindings.confirmedRequired().size());
+  assertTrue(CompatibilityFindings.confirmedRequired().getFirst().evidence().contains("config required=false"));
+ }
+ @Test void anOptionalConfigsExplicitZeroStaysOptional() {
+  config(1,false);remember(0,false,List.of(TARGET));observe(target(false,true,"handler$000$probe","()V"));
+  assertTrue(CompatibilityFindings.all().stream().noneMatch(f->f.confidence()==CompatibilityFinding.Confidence.CONFIRMED));
+ }
  @Test void explicitOptionalZeroDoesNotBecomeNecessaryFailure() {
   setup(1,0,false,List.of(TARGET));suspect();observe(target(false,true,"handler$000$probe","()V"));
   assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());assertEquals(CompatibilityFinding.Confidence.RESOLVED,whole().confidence());
@@ -67,7 +77,8 @@ class FinalMixinApplicationsTest {
   assertEquals(CompatibilityFinding.Confidence.SUSPECTED,whole().confidence());assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
  }
  private void setup(Integer minimum,int require,boolean group,List<String> targets){config(minimum);remember(require,group,targets);}
- private void config(Integer minimum){String json="{\"required\":true,\"package\":\"example\",\"mixins\":[\"ProbeMixin\"]"+(minimum==null?"":",\"injectors\":{\"defaultRequire\":"+minimum+"}")+"}";MixinCompatibility.rememberOriginalConfig(CONFIG,json.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+ private void config(Integer minimum){config(minimum,true);}
+ private void config(Integer minimum,boolean required){String json="{\"required\":"+required+",\"package\":\"example\",\"mixins\":[\"ProbeMixin\"]"+(minimum==null?"":",\"injectors\":{\"defaultRequire\":"+minimum+"}")+"}";MixinCompatibility.rememberOriginalConfig(CONFIG,json.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
  private void remember(int require,boolean group,List<String> targets){FinalMixinApplications.remember(mixin(require,group,targets));}
  private ClassNode mixin(int require,boolean group,List<String> targets){ClassNode n=new ClassNode();n.name=MIXIN.replace('.','/');n.visibleAnnotations=List.of(annotation("Lorg/spongepowered/asm/mixin/Mixin;","targets",targets));n.methods.add(injector("probe",require,group));return n;}
  private MethodNode injector(String name,int require,boolean group){MethodNode m=new MethodNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,name,"()V",null,null);m.visibleAnnotations=new ArrayList<>(List.of(annotation("Lorg/spongepowered/asm/mixin/injection/Inject;","require",require)));if(group)m.visibleAnnotations.add(annotation("Lorg/spongepowered/asm/mixin/injection/Group;","name","alternatives"));return m;}

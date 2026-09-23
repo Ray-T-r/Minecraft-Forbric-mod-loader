@@ -118,17 +118,21 @@ public final class FinalMixinApplications {
     if(replacement!=null)state=Outcome.EQUIVALENT;
     observed.put(binary+"#"+injector.symbol(),state);
     String id=id(plan,injector,binary),mod=owner(plan.config().name());
+    // Natively an injector below its require/defaultRequire throws InjectionError, an Error no config-level
+    // `required:false` catches: the author declared that injection mandatory whatever the config says.
+    boolean required=plan.config().required()||injector.minimum()>=1;
     if(pending)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.SUSPECTED,
-      plan.config().required(),"The audited watchdog report uses a native replacement whose final renderer has not been defined yet",
+      required,"The audited watchdog report uses a native replacement whose final renderer has not been defined yet",
       List.of("target="+binary,"pending final helper="+WatchdogDumpEquivalence.HELPER)));
     else if(state==Outcome.MISSING)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.CONFIRMED,
-      plan.config().required(),"A required standard injector has no attachment in the actual defined class",
-      List.of("target="+binary,"mixin="+mixin,"handler="+injector.symbol(),"original minimum="+injector.minimum(),"final handler references=0")));
+      required,"A required standard injector has no attachment in the actual defined class",
+      List.of("target="+binary,"mixin="+mixin,"handler="+injector.symbol(),"original minimum="+injector.minimum(),"final handler references=0",
+        "config required="+plan.config().required())));
     else if(state==Outcome.EQUIVALENT)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.RESOLVED,
-      plan.config().required(),"The missing injector is replaced by a verified implementation",List.of("target="+binary,replacement)));
+      required,"The missing injector is replaced by a verified implementation",List.of("target="+binary,replacement)));
     else if(state==Outcome.ATTACHED||state==Outcome.OPTIONAL)CompatibilityFindings.resolve(id,mod,
       state==Outcome.ATTACHED?"final defined class contains a reference to the exact merged handler":"original injector explicitly permits zero attachments");
    }
