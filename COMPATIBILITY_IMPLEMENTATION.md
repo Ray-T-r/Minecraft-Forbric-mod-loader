@@ -534,3 +534,14 @@ Pending implementation and acceptance items remain open even when a smaller batc
   behavior remain explicitly outside this raw census. Mod class references are labelled candidate filters.
 - Eleven tests pass without failures or skips; the actual 97-root/253-recursive-archive scan is archived
   under `build/verification/full-platform-call-census/`, with unchanged input/output hashes.
+
+### P1 restored portal calls suppress only the redundant legacy forward
+
+- A future base with both direct native calls is accepted only when removing the precise Forge insertion
+  restores the reviewed 26.2 caller fingerprint. The insertion must preserve Neo-to-Forge order, both veto
+  guards and the same consumed Optional. Only that Neo dispatch suppresses the legacy event forward.
+  Unknown two-call shapes keep their bytes and receive a suspected finding; independent producers still bridge.
+- Twenty-eight tests pass without skips, including real runtime descriptor/access linkage, the original
+  double-delivery negative, both cancellations, replacement consumption, nesting, exception cleanup and
+  malformed restoration shapes. Evidence: `forbric-kernel/build/verification/portal-direct-restoration/`.
+  A fresh full-game M35 run on the integrated candidate remains required.

@@ -27,6 +27,10 @@ final class PortalSpawnFixture implements AutoCloseable {
 	final Object level, position;
 
 	PortalSpawnFixture(Path directory, boolean realCarrierHooks) throws Exception {
+		this(directory, realCarrierHooks, null);
+	}
+
+	PortalSpawnFixture(Path directory, boolean realCarrierHooks, byte[] callerBytes) throws Exception {
 		Path classes = directory.resolve("classes"); Files.createDirectories(classes);
 		List<String> arguments = new ArrayList<>(List.of("-proc:none", "-d", classes.toString()));
 		for (var source : sources().entrySet()) {
@@ -35,6 +39,15 @@ final class PortalSpawnFixture implements AutoCloseable {
 		}
 		ByteArrayOutputStream errors = new ByteArrayOutputStream();
 		assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, errors, errors, arguments.toArray(String[]::new)), errors.toString());
+		if (callerBytes != null) {
+			ClassNode original = new ClassNode(), shell = new ClassNode();
+			new ClassReader(callerBytes).accept(original, 0);
+			Path target = classes.resolve("net/minecraft/world/level/block/BaseFireBlock.class");
+			new ClassReader(Files.readAllBytes(target)).accept(shell, 0);
+			shell.methods.removeIf(m -> m.name.equals("onPlace"));
+			shell.methods.add(original.methods.stream().filter(m -> m.name.equals("onPlace")).findFirst().orElseThrow());
+			ClassWriter writer = new ClassWriter(0); shell.accept(writer); Files.write(target, writer.toByteArray());
+		}
 		if (realCarrierHooks) {
 			copyCarrierHook(classes, "forge-runtime/forge-runtime.jar", "net.minecraftforge.event.ForgeEventFactory");
 			copyCarrierHook(classes, "neoforge-runtime/neoforge-runtime.jar", "net.neoforged.neoforge.event.EventHooks");
@@ -56,6 +69,19 @@ final class PortalSpawnFixture implements AutoCloseable {
 	Object shape() throws Exception { return type("net.minecraft.world.level.portal.PortalShape").getConstructor().newInstance(); }
 	void set(String name, Object value) throws Exception { probe.getField(name).set(null, value); }
 	int count(String name) throws Exception { return probe.getField(name).getInt(null); }
+	Object get(String name) throws Exception { return probe.getField(name).get(null); }
+	void place(Optional<?> input) throws Exception {
+		set("input", input); set("builtShape", null);
+		Class<?> fire = type("net.minecraft.world.level.block.BaseFireBlock"), state = type("net.minecraft.world.level.block.state.BlockState");
+		var method = fire.getDeclaredMethod("onPlace", state, level.getClass(), position.getClass(), state, boolean.class);
+		method.setAccessible(true);
+		try { method.invoke(fire.getConstructor().newInstance(), state.getConstructor().newInstance(), level, position, state.getConstructor().newInstance(), false); }
+		catch (InvocationTargetException wrapped) {
+			if (wrapped.getCause() instanceof RuntimeException failure) throw failure;
+			if (wrapped.getCause() instanceof Error failure) throw failure;
+			throw wrapped;
+		}
+	}
 	@SuppressWarnings("unchecked") List<String> trace() throws Exception { return (List<String>) probe.getField("trace").get(null); }
 	boolean guarded() throws Exception {
 		var method = wrapper.getDeclaredMethod("dispatchingNeo"); method.setAccessible(true); return (boolean) method.invoke(null);
@@ -87,14 +113,32 @@ final class PortalSpawnFixture implements AutoCloseable {
 
 	private static Map<String, String> sources() {
 		Map<String, String> out = new LinkedHashMap<>();
-		for (String name : List.of("net.minecraft.core.BlockPos", "net.minecraft.world.level.portal.PortalShape",
-				"net.minecraft.world.level.block.state.BlockState", "net.minecraft.world.item.ItemStack",
+		for (String name : List.of("net.minecraft.core.BlockPos", "net.minecraft.world.level.block.Block", "net.minecraft.world.item.ItemStack",
 				"net.minecraft.world.entity.LivingEntity")) {
 			int split = name.lastIndexOf('.');
 			out.put(name, "package " + name.substring(0, split) + "; public class " + name.substring(split + 1) + " {}");
 		}
 		out.put("net.minecraft.world.level.LevelAccessor", "package net.minecraft.world.level; public interface LevelAccessor { net.minecraft.world.level.block.state.BlockState getBlockState(net.minecraft.core.BlockPos p); }");
-		out.put("net.minecraft.world.level.Level", "package net.minecraft.world.level; public class Level implements LevelAccessor { public net.minecraft.world.level.block.state.BlockState getBlockState(net.minecraft.core.BlockPos p) { return new net.minecraft.world.level.block.state.BlockState(); } }");
+		out.put("net.minecraft.world.level.LevelReader", "package net.minecraft.world.level; public interface LevelReader {}");
+		out.put("net.minecraft.world.level.Level", "package net.minecraft.world.level; public class Level implements LevelAccessor, LevelReader { public net.minecraft.world.level.block.state.BlockState getBlockState(net.minecraft.core.BlockPos p) { return new net.minecraft.world.level.block.state.BlockState(); } public boolean removeBlock(net.minecraft.core.BlockPos p,boolean moving){return true;} }");
+		out.put("net.minecraft.core.Direction", "package net.minecraft.core; public class Direction { public enum Axis { X } }");
+		out.put("net.minecraft.world.level.block.state.BlockState", """
+			package net.minecraft.world.level.block.state;
+			public class BlockState { public net.minecraft.world.level.block.Block getBlock(){return new net.minecraft.world.level.block.Block();}
+			 public boolean is(Object block){return false;} public boolean canSurvive(net.minecraft.world.level.LevelReader l,net.minecraft.core.BlockPos p){return true;} }
+			""");
+		out.put("net.minecraft.world.level.portal.PortalShape", """
+			package net.minecraft.world.level.portal;
+			public class PortalShape { public static java.util.Optional<PortalShape> findEmptyPortalShape(net.minecraft.world.level.LevelAccessor l,net.minecraft.core.BlockPos p,net.minecraft.core.Direction.Axis a){return fixture.PortalProbe.input;}
+			 public void createPortalBlocks(net.minecraft.world.level.LevelAccessor l){fixture.PortalProbe.builtShape=this;} }
+			""");
+		out.put("net.minecraft.world.level.block.BaseFireBlock", """
+			package net.minecraft.world.level.block;
+			public class BaseFireBlock {
+			 public void onPlace(net.minecraft.world.level.block.state.BlockState a,net.minecraft.world.level.Level l,net.minecraft.core.BlockPos p,net.minecraft.world.level.block.state.BlockState b,boolean moving){}
+			 private static boolean inPortalDimension(net.minecraft.world.level.Level l){return true;}
+			}
+			""");
 		out.put("net.neoforged.bus.api.Event", "package net.neoforged.bus.api; public class Event {}");
 		out.put("net.neoforged.bus.api.EventPriority", "package net.neoforged.bus.api; public enum EventPriority { LOWEST }");
 		out.put("net.neoforged.bus.api.IEventBus", "package net.neoforged.bus.api; public interface IEventBus { <T extends Event> void addListener(EventPriority p, boolean canceled, Class<T> type, java.util.function.Consumer<T> c); Event post(Event e); }");
@@ -123,6 +167,7 @@ final class PortalSpawnFixture implements AutoCloseable {
 			public class PortalProbe {
 			 public static final List<String> trace = new ArrayList<>();
 			 public static int neoCalls, forgeCalls; public static boolean neoCanceled, forgeCanceled;
+			 public static Optional<PortalShape> input; public static PortalShape builtShape;
 			 public static RuntimeException neoFailure, forgeFailure; public static Runnable nested;
 			 public static UnaryOperator<Optional<PortalShape>> neoResult = x->x, forgeResult = x->x;
 			 public static final Bus bus = new Bus();

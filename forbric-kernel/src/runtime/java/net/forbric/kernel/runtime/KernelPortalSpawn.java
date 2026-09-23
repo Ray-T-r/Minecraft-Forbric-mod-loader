@@ -30,15 +30,7 @@ public final class KernelPortalSpawn {
 
 	public static Optional<PortalShape> onTrySpawnPortal(LevelAccessor level, BlockPos position,
 			Optional<PortalShape> original) {
-		Integer previous = NEO_DISPATCH_DEPTH.get();
-		NEO_DISPATCH_DEPTH.set(previous == null ? 1 : previous + 1);
-		Optional<PortalShape> neo;
-		try {
-			neo = EventHooks.onTrySpawnPortal(level, position, original);
-		} finally {
-			if (previous == null) NEO_DISPATCH_DEPTH.remove();
-			else NEO_DISPATCH_DEPTH.set(previous);
-		}
+		Optional<PortalShape> neo = onTrySpawnPortalNeoOnly(level, position, original);
 		if (neo == null || neo.isEmpty()) return Optional.empty();
 		try {
 			Optional<PortalShape> forge = ForgeEventFactory.onTrySpawnPortal(level, position, neo);
@@ -50,6 +42,19 @@ public final class KernelPortalSpawn {
 						Reflect.unwrap(failure));
 			}
 			return neo;
+		}
+	}
+
+	/** Only for a caller whose own subsequent Forge dispatch, veto guards and result consumer were proved. */
+	public static Optional<PortalShape> onTrySpawnPortalNeoOnly(LevelAccessor level, BlockPos position,
+			Optional<PortalShape> original) {
+		Integer previous = NEO_DISPATCH_DEPTH.get();
+		NEO_DISPATCH_DEPTH.set(previous == null ? 1 : previous + 1);
+		try {
+			return EventHooks.onTrySpawnPortal(level, position, original);
+		} finally {
+			if (previous == null) NEO_DISPATCH_DEPTH.remove();
+			else NEO_DISPATCH_DEPTH.set(previous);
 		}
 	}
 }
