@@ -543,6 +543,33 @@ class NestedCandidateSelectionTest {
 		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.id().equals("arbitration:breaks:foo") && f.modId().equals("app")));
 	}
 
+	/** gate-m19's fixture: Fabric JiJ with no JarJar metadata, MinecraftForge JarJar naming its platform artifact. */
+	private void m19(String range, String artifactVersion) throws Exception {
+		install("forbricnestfab.jar", fabric("forbricnestfab", "1.0.0", Map.of("META-INF/jars/forbricnestlib-fabric.jar",
+				fabric("forbricnestlib", "1.0.0", Map.of(), "", Map.of())), "", Map.of()));
+		install("forbricnestforge.jar", forge("forbricnestforge", "1.0.0", Map.of("META-INF/jarjar/forbricnestlib-forge.jar",
+				forge("forbricnestlib", "1.0.0", Map.of(), Map.of(), Map.of())), Map.of("META-INF/jarjar/forbricnestlib-forge.jar",
+				new NestedCandidateInventory.Coordinate("forbric.nestlib:forbricnestlib-forge", range, artifactVersion)), Map.of()));
+	}
+
+	@Test void theRealM19ShapeFollowsThePreferenceThePinAndTheRange() throws Exception {
+		m19("[1.0.0,)", "1.0.0"); decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertEquals(net.forbric.api.Ecosystem.FABRIC, selectedFamily("forbricnestlib"));
+		assertTrue(CompatibilityFindings.all().isEmpty(), () -> CompatibilityFindings.all().toString());
+		reset(); System.setProperty("forbric.modOwner", "forbricnestlib=minecraftforge"); m19("[1.0.0,)", "1.0.0"); decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertEquals(net.forbric.api.Ecosystem.FORGE, selectedFamily("forbricnestlib"));
+		reset(); m19("[2.0.0,)", "2.0.0"); decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertEquals(net.forbric.api.Ecosystem.FORGE, selectedFamily("forbricnestlib"), "the range, not the preference, decides");
+		reset(); System.setProperty("forbric.modOwner", "forbricnestlib=fabric"); m19("[2.0.0,)", "2.0.0"); decide();
+		assertEquals(JointCandidateSelector.Status.UNSATISFIABLE, DuplicateModArbiter.currentPlan().selection().status());
+		assertEquals(net.forbric.api.Ecosystem.FABRIC, selectedFamily("forbricnestlib"), "the explicit choice is kept and reported");
+		assertTrue(CompatibilityFindings.confirmedRequired().stream().anyMatch(f -> f.id().startsWith("arbitration:jarjar:")
+				&& f.modId().equals("forbricnestforge")), () -> CompatibilityFindings.all().toString());
+	}
+
 	private static byte[] api(String name, int access) {
 		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
 		MethodVisitor method = writer.visitMethod(access, "needed", "()V", null, null);
