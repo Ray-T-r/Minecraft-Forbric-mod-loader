@@ -371,6 +371,30 @@ class NestedCandidateSelectionTest {
 				"a bounded search still returns one build per id");
 	}
 
+	@Test void aSearchBoundNeverDropsThePlayersPin() throws Exception {
+		// The first model the solver returns has seen only the structure, never a pin. Wherever the bound falls,
+		// the pinned build loads; a pin the structure or another pin refuses is still reported as refused.
+		for (String family : List.of("neoforge", "fabric")) for (int bound = 1; bound <= 12; bound++) {
+			reset(); Files.deleteIfExists(mods().resolve("addon.jar"));
+			Path[] jade = jadePair();
+			System.setProperty("forbric.modOwner", "jade=" + family); System.setProperty("forbric.arbitrationMaxNodes", Integer.toString(bound));
+			var decision = decide(); String label = family + " bound=" + bound + " " + DuplicateModArbiter.currentPlan().selection().status();
+			assertFalse(decision.suppressed(family.equals("neoforge") ? jade[0] : jade[1]), label);
+			assertTrue(decision.suppressed(family.equals("neoforge") ? jade[1] : jade[0]), label);
+		}
+		for (int bound = 1; bound <= 12; bound++) {
+			reset(); Files.deleteIfExists(mods().resolve("addon.jar"));
+			jadePair(); // work left after the pins, so some bounds stop with the pins settled but the search unfinished
+			Path fabric = install("x-fabric.jar", fabric("x", "1", Map.of(), "", Map.of()));
+			Path bundle = install("bundle-neo.jar", neo("x", "1", Map.of(), Map.of(), Map.of(), "[[mods]]\nmodId=\"y\"\nversion=\"1\"\n"));
+			System.setProperty("forbric.modOwner", "x=fabric,y=neoforge"); System.setProperty("forbric.arbitrationMaxNodes", Integer.toString(bound));
+			var decision = decide(); String label = "bound=" + bound + " " + DuplicateModArbiter.currentPlan().selection().status();
+			var refused = CompatibilityFindings.confirmedRequired().stream().filter(f -> f.id().startsWith("arbitration:override:")).map(f -> f.modId()).toList();
+			if (decision.suppressed(fabric)) assertTrue(refused.contains("x"), () -> label + " " + CompatibilityFindings.all());
+			if (decision.suppressed(bundle)) assertTrue(refused.contains("y"), () -> label + " " + CompatibilityFindings.all());
+		}
+	}
+
 	@Test void aCandidateThatProvablyLinksBeatsThePreferredOneThatOnlyMight() throws Exception {
 		// dep-neo's member is private before transformation (UNKNOWN), dep-fabric's is public (YES).
 		Path neo = install("dep-neo.jar", neo("dep", "1", Map.of(), Map.of(), Map.of("dep/Api.class", api("dep/Api", Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC))));

@@ -186,10 +186,15 @@ final class ReachableCandidateSelector {
 		VecInt assumptions = new VecInt();
 		Set<Integer> relaxed = new LinkedHashSet<>();
 		Set<Path> selected = null;
+		boolean pinsSettled = false;
+		// A pin that cannot join the structure or an earlier pin is refused however far the search gets.
+		Map<String, Ecosystem> refused = new LinkedHashMap<>();
 		try {
 			if (!satisfiable(solver, assumptions)) return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), impossible);
 			// The user's choice first (PLAN: 用户指定优先), then the contracts, in scan order.
 			accept(solver, assumptions, List.copyOf(pinLiterals.values()), relaxed);
+			for (var pin : pinLiterals.entrySet()) if (relaxed.contains(pin.getValue())) refused.put(pin.getKey(), overrides.get(pin.getKey()));
+			pinsSettled = true;
 			accept(solver, assumptions, List.copyOf(ruleLiterals.values()), relaxed);
 			// PLAN: the ecosystem preference applies only among candidates that satisfy the constraints, and an
 			// unproved candidate has not been shown to. It still wins wherever no proved one is feasible.
@@ -209,21 +214,22 @@ final class ReachableCandidateSelector {
 			}
 			if (!satisfiable(solver, assumptions)) return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), impossible);
 			selected = fromModel();
-			boolean conflict = false;
-			Set<JointCandidateSelector.Rule> unavoidable = new LinkedHashSet<>();
 			// A pin whose build exists but cannot be combined with an earlier pin or with what the bundling
 			// structure requires is the player's to resolve: a real conflict.
-			Map<String, Ecosystem> refused = new LinkedHashMap<>();
-			for (var pin : pinLiterals.entrySet()) if (relaxed.contains(pin.getValue())) { refused.put(pin.getKey(), overrides.get(pin.getKey())); conflict = true; }
+			boolean conflict = !refused.isEmpty();
+			Set<JointCandidateSelector.Rule> unavoidable = new LinkedHashSet<>();
 			for (var rule : ruleLiterals.entrySet()) if (relaxed.contains(rule.getValue())) {
 				if (satisfiable(solver, new VecInt(new int[] {rule.getValue()}))) conflict = true; else unavoidable.add(rule.getKey());
 			}
 			return new Search(selected, conflict ? JointCandidateSelector.Status.UNSATISFIABLE : JointCandidateSelector.Status.SOLVED,
 					unavoidable, refused, impossible);
 		} catch (TimeoutException bounded) {
-			// The best structurally valid model found so far, not a contract-free preference pick.
-			return new Search(selected != null ? selected : lastModel != null ? fromModel() : fallback(),
-					JointCandidateSelector.Status.SEARCH_LIMIT, Set.of(), Map.of(), impossible);
+			// The last model always satisfies everything accepted so far (the structure, the settled pins, the
+			// contracts and choices taken before the bound). Before the pins are settled it may be the first,
+			// purely structural model, which never saw a pin: the fallback then keeps every pinned build instead.
+			// Ids the search had not reached yet keep that model's choice, which is why this is never SOLVED.
+			return new Search(selected != null ? selected : lastModel != null && pinsSettled ? fromModel() : fallback(),
+					JointCandidateSelector.Status.SEARCH_LIMIT, Set.of(), pinsSettled ? refused : Map.of(), impossible);
 		}
 	}
 
