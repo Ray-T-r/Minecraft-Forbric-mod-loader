@@ -17,24 +17,32 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
-/** Joins raw losses to actual final class definitions; never equates a call site with event delivery. */
+/**
+ * Joins raw losses to actual final class definitions; never equates a call site with event delivery.
+ *
+ * <p>Reads the kernel's {@code -Dforbric.definedClassEvidence} session: {@code definitions.tsv} maps each defined
+ * class to {@code blobs/<sha256>.class}. A session the kernel marked {@code #incomplete} is refused whole, because a
+ * record it could not write is a class this would otherwise report as never loaded.
+ */
 final class EffectiveHookEvidence {
 	enum State { DIRECT_RESTORED, VIA_DEFINED_HELPER, OBSERVED_WITHOUT_HOOK, UNOBSERVED }
+	static final String HEADER = "# forbric-defined-classes-v2";
 	private final Map<String, MethodNode> methods = new HashMap<>();
 	private final Set<String> classes = new HashSet<>();
 
 	EffectiveHookEvidence(Path directory) throws IOException {
 		Path root = directory.toAbsolutePath().normalize();
 		var rows = Files.readAllLines(root.resolve("definitions.tsv"));
-		if (rows.isEmpty() || !rows.get(0).equals("# forbric-defined-classes-v1"))
-			throw new IOException("Not a successful-definition evidence manifest: " + directory);
+		if (rows.isEmpty() || !rows.get(0).equals(HEADER))
+			throw new IOException("Not a successful-definition evidence manifest (" + HEADER + "): " + directory);
 		for (String row : rows) {
+			if (row.startsWith("#incomplete"))
+				throw new IOException("The kernel could not record every definition in this session: " + row);
 			if (row.startsWith("#") || row.isBlank()) continue;
 			String[] parts = row.split("\t", -1);
 			if (parts.length != 2 || !parts[1].matches("[0-9a-f]{64}")) throw new IOException("Invalid definition row: " + row);
-			Path file = root.resolve(parts[0] + ".class").normalize();
-			if (!file.startsWith(root) || !classes.add(parts[0])) throw new IOException("Invalid/duplicate definition: " + parts[0]);
-			byte[] bytes = Files.readAllBytes(file);
+			if (!classes.add(parts[0])) throw new IOException("Duplicate definition: " + parts[0]);
+			byte[] bytes = Files.readAllBytes(root.resolve("blobs").resolve(parts[1] + ".class"));
 			try {
 				if (!parts[1].equals(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))))
 					throw new IOException("Defined-class hash changed: " + parts[0]);
