@@ -227,7 +227,10 @@ final class ReachableCandidateSelector {
 		}
 	}
 
-	/** Accepts the longest prefix-greedy consistent subset of {@code literals}; the rest are relaxed one by one. */
+	/**
+	 * Accepts {@code literals} greedily in order: each is kept iff it is consistent with everything kept before it.
+	 * Halving only saves solver calls (a consistent block is kept whole); the result equals the one-by-one pass.
+	 */
 	private void accept(ISolver solver, VecInt assumptions, List<Integer> literals, Set<Integer> relaxed) throws TimeoutException {
 		if (literals.isEmpty()) return;
 		VecInt attempt = copy(assumptions); for (int literal : literals) attempt.push(literal);
