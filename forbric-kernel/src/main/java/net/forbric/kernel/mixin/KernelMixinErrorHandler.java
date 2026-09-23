@@ -69,29 +69,36 @@ public final class KernelMixinErrorHandler implements IMixinErrorHandler {
 		String mixinName = mixin == null ? "?" : mixin.getClassName();
 		String cause = th == null ? "" : " (" + th.getClass().getSimpleName() + ")";
 		String modId = configName == null ? null : MixinConfigOwners.modIdOf(configName);
+		// The reason, when the kernel worked one out while READING the mixin. "InvalidInjectionException" is
+		// true and tells a player nothing; what the merge did to the target is the sentence worth carrying.
+		String why = MixinOverloadPin.reasonFor(mixinName);
+		String detail = why != null
+				? "its mixin " + mixinName + " " + what + cause + " — " + why
+				: "its mixin " + mixinName + " " + what + cause;
+		boolean required = MixinCompatibility.required(configName, config != null && config.isRequired());
+		java.util.List<String> evidence = java.util.List.of(what, th == null ? "no exception supplied" : th.toString());
 		String replacement = SupersededMixins.replacementFor(mixinName);
 		if (replacement != null) {
-			MixinCompatibility.resolve(configName, mixinName, replacement);
-			// Not a loss, so not a mark: a report that cries wolf is worse than no report, because the next real
-			// one is read the same way.
-			ForbricLog.info("[Forbric/Mixin] %s:%s %s%s — %s, so its mod is not marked",
-					configName == null ? "?" : MixinConfigOwners.describe(configName), mixinName, what, cause,
-					replacement);
+			// A table entry is a claim; the loss is recorded, and resolved only when the replacement is there.
+			String proof = SupersededMixins.failed(configName, mixinName, detail, required, evidence);
+			if (proof != null) {
+				// Not a loss, so not a mark: a report that cries wolf is worse than no report, because the next
+				// real one is read the same way.
+				ForbricLog.info("[Forbric/Mixin] %s:%s %s%s — %s, so its mod is not marked",
+						configName == null ? "?" : MixinConfigOwners.describe(configName), mixinName, what, cause,
+						replacement);
+				return;
+			}
+			ForbricLog.warn("[Forbric/Mixin] %s:%s %s%s — the kernel's replacement (%s) is not structurally in place, "
+					+ "so this is a loss; the owning mod%s", configName == null ? "?" : MixinConfigOwners.describe(configName),
+					mixinName, what, cause, replacement,
+					modId == null ? " is not known, so no row is marked" : " " + modId + " is marked");
 			return;
 		}
 		ForbricLog.warn("[Forbric/Mixin] %s:%s %s%s — Mixin's own report follows; the owning mod%s",
 				configName == null ? "?" : MixinConfigOwners.describe(configName), mixinName, what, cause,
 				modId == null ? " is not known, so no row is marked" : " " + modId + " is marked");
-		{
-			// The reason, when the kernel worked one out while READING the mixin. "InvalidInjectionException" is
-			// true and tells a player nothing; what the merge did to the target is the sentence worth carrying.
-			String why = MixinOverloadPin.reasonFor(mixinName);
-			String detail = why != null
-					? "its mixin " + mixinName + " " + what + cause + " — " + why
-					: "its mixin " + mixinName + " " + what + cause;
-			boolean required = MixinCompatibility.required(configName, config != null && config.isRequired());
-			MixinCompatibility.record(configName, mixinName, detail, CompatibilityFinding.Confidence.CONFIRMED,
-					required, java.util.List.of(what, th == null ? "no exception supplied" : th.toString()));
-		}
+		MixinCompatibility.record(configName, mixinName, detail, CompatibilityFinding.Confidence.CONFIRMED,
+				required, evidence);
 	}
 }

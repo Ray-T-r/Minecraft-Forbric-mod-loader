@@ -94,6 +94,7 @@ public final class FinalMixinApplications {
  }
 
  public static void onClassDefined(String binary,byte[] bytes) {
+  SupersededMixins.observe(binary,bytes);
   if(!TARGETS.containsKey(binary)&&!WatchdogDumpEquivalence.HELPER.equals(binary))return;
   try { observe(binary,bytes,FinalMixinApplications::renamed); }
   catch(RuntimeException|LinkageError unavailable) {

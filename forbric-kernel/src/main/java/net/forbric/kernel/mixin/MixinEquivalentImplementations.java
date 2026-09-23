@@ -18,7 +18,44 @@ final class MixinEquivalentImplementations {
  private static final Map<String,String> CONSUMERS=Map.of(
   "lambda$scanDirectory$0(Lnet/minecraft/resources/Identifier;Lnet/minecraft/resources/Identifier;Ljava/util/Map;Ljava/util/Optional;)V","9f786840a42ee92c7f887edff24c25846101bcf9670a2ed36cfe19d7e6beb6c6",
   "lambda$scanDirectoryWithModifier$0(Lnet/minecraft/resources/Identifier;Ljava/util/Map;Ljava/util/Optional;)V","3b615345fd8eed2f7a6891f4f961ae0bc43aa9ddb8a164911cc27ba4d96de6bb");
+ static final String CONDITIONAL_OPS="net/neoforged/neoforge/common/conditions/ConditionalOps";
+ private static final String FUNNEL="createConditionalCodecWithConditions";
+ private static final String FUNNEL_DESC="(Lcom/mojang/serialization/Codec;Ljava/lang/String;)Lcom/mojang/serialization/Codec;";
+ private static final String WRAP_DESC="(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;";
  private MixinEquivalentImplementations() { }
+ /** The fabric:load_conditions evaluator SupersededMixins credits for the conditions mixin: ConditionalOps' one
+  * codec factory returns through KernelFabricConditions.alsoAskFabric, every other public factory delegates into
+  * the funnel, and the runtime switch has not turned the wrap into a pass-through. The name alone proves none of it. */
+ static String conditionsFunnel(ClassNode ops){
+  if("off".equalsIgnoreCase(System.getProperty("forbric.fabricConditions","on"))||!CONDITIONAL_OPS.equals(ops.name))return null;
+  MethodNode factory=ops.methods.stream().filter(m->m.name.equals(FUNNEL)&&m.desc.equals(FUNNEL_DESC)).findFirst().orElse(null);
+  if(factory==null)return null;
+  AbstractInsnNode exit=null;
+  for(AbstractInsnNode instruction:factory.instructions)if(instruction.getOpcode()==Opcodes.ARETURN){if(exit!=null)return null;exit=instruction;}
+  AbstractInsnNode wrap=exit==null?null:exit.getPrevious();
+  while(wrap!=null&&wrap.getOpcode()<0)wrap=wrap.getPrevious();
+  if(!(wrap instanceof MethodInsnNode call)||call.getOpcode()!=Opcodes.INVOKESTATIC||call.itf||!call.owner.equals(HELPER)
+    ||!call.name.equals("alsoAskFabric")||!call.desc.equals(WRAP_DESC))return null;
+  // Every other public factory must reach the wrapped one through ConditionalOps' own calls, not merely exist.
+  java.util.Set<String> reaches=new java.util.HashSet<>(java.util.Set.of(FUNNEL+FUNNEL_DESC));
+  for(boolean grew=true;grew;){
+   grew=false;
+   for(MethodNode method:ops.methods){
+    if(reaches.contains(method.name+method.desc))continue;
+    for(AbstractInsnNode instruction:method.instructions)if(instruction instanceof MethodInsnNode c&&c.owner.equals(CONDITIONAL_OPS)
+      &&reaches.contains(c.name+c.desc)){reaches.add(method.name+method.desc);grew=true;break;}
+   }
+  }
+  int entries=0;
+  for(MethodNode method:ops.methods){
+   if(method==factory||(method.access&Opcodes.ACC_PUBLIC)==0||(method.access&Opcodes.ACC_STATIC)==0)continue;
+   if(!method.name.startsWith("createConditionalCodec")&&!method.name.startsWith("decodeList"))continue;
+   if(!reaches.contains(method.name+method.desc))return null;
+   entries++;
+  }
+  return "ConditionalOps' single codec factory exit returns through KernelFabricConditions.alsoAskFabric and all "+entries
+    +" other public factories reach it, so every consumer asks Fabric's conditions";
+ }
  static boolean needsFingerprint(String mixin,MethodNode handler){return CONDITIONS.equals(mixin)&&handler.name.equals("skipData")&&handler.desc.equals(SKIP_DESC)
    ||WatchdogDumpEquivalence.names(mixin,handler.name,handler.desc);}
  static String proof(String mixin,String name,String desc,String fingerprint,ClassNode target){

@@ -342,6 +342,20 @@ public final class ForbricMixinService
 		}
 	}
 
+	/**
+	 * The bytes the kernel's transforms produce for {@code binary} — what Mixin and the final definition start
+	 * from — or null before {@link #bind} or when no owned jar carries it. The class is not loaded.
+	 */
+	static byte[] preMixinBytes(String binary) {
+		ForbricClassLoader l = gameLoader;
+		if (l == null) return null;
+		try {
+			return l.getPreMixinClassBytes(binary);
+		} catch (Throwable absent) {
+			return null;
+		}
+	}
+
 	/** Whether the merged base (or any owned jar) carries {@code binary}. Bytes only — the class is not loaded. */
 	private boolean mergedBaseHas(String binary) {
 		try {

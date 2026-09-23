@@ -16,8 +16,17 @@
 
 package net.forbric.kernel.mixin;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.tree.ClassNode;
+
+import net.forbric.api.CompatibilityFinding;
 
 /**
  * Guest mixins whose job the kernel has taken over, so their failure is not the mod's failure.
@@ -32,27 +41,48 @@ import java.util.Map;
  * mixin class with a second injection the kernel does not replace does not belong here, because suppressing the
  * mark would hide that half.
  *
+ * <p>The entry is a claim, and a claim is not evidence. A failure of a listed mixin is recorded as the loss it is,
+ * and resolved only when the replacement is structurally there: in the bytes the kernel's transforms produce for
+ * the class that carries it, checked at the failure, and again in that class's final definition. A repair that
+ * stood down, or a switch that turned it into a pass-through, leaves the loss standing — with the name in hand.
+ *
  * <p>{@code -Dforbric.supersededMixins=off} marks them like any other failure, which is how the claim in each
  * entry can be checked against what the game actually does.
  */
 public final class SupersededMixins {
 	static final String PROPERTY = "forbric.supersededMixins";
 
-	/** Mixin class → the kernel repair that does its job, in the words the log should use. */
-	private static final Map<String, String> SUPERSEDED = superseded();
+	/**
+	 * One entry: the words the log should use, the class whose bytes must carry the repair, and the structural
+	 * check of those bytes, which answers the proof sentence or null.
+	 */
+	private record Replacement(String description, String witness, Function<ClassNode, String> proof) {
+	}
 
-	private static Map<String, String> superseded() {
-		Map<String, String> map = new LinkedHashMap<>();
+	/** Mixin class → the kernel repair that does its job. */
+	private static final Map<String, Replacement> SUPERSEDED = superseded();
+
+	private static Map<String, Replacement> superseded() {
+		Map<String, Replacement> map = new LinkedHashMap<>();
 		// Both of this mixin's members are the fabric:load_conditions evaluator: a @WrapOperation on the codec
 		// parse that applies the conditions, and an @Inject that skips the entry it rejected. Neither can apply —
 		// NeoForge's patch of scanDirectory made the value Optional and reordered the lambda's captures, so the
 		// descriptor Mixin expects is not the one the mod was built against. KernelFabricConditions does both
 		// jobs one level down, on ConditionalOps' own funnel, which covers every consumer rather than this one.
 		map.put("net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin",
-				"the kernel evaluates fabric:load_conditions at ConditionalOps' funnel instead "
-						+ "(KernelFabricConditions), which covers every consumer rather than this one call site");
+				new Replacement("the kernel evaluates fabric:load_conditions at ConditionalOps' funnel instead "
+						+ "(KernelFabricConditions), which covers every consumer rather than this one call site",
+						MixinEquivalentImplementations.CONDITIONAL_OPS.replace('/', '.'),
+						MixinEquivalentImplementations::conditionsFunnel));
 		return Map.copyOf(map);
 	}
+
+	/** A failure of a listed mixin, kept until the class that would prove its replacement is defined. */
+	private record Failure(String config, String detail, boolean required, List<String> evidence) {
+	}
+
+	private static final Map<String, Failure> FAILED = new ConcurrentHashMap<>();
+
 
 	private SupersededMixins() {
 	}
@@ -68,11 +98,74 @@ public final class SupersededMixins {
 	 * ordinary marked failure rather than merely changing the wording.
 	 */
 	public static String replacementFor(String mixinClass) {
-		return enabled() ? SUPERSEDED.get(mixinClass) : null;
+		Replacement entry = enabled() ? SUPERSEDED.get(mixinClass) : null;
+		return entry == null ? null : entry.description();
 	}
 
-	/** The mixin classes with an entry, for the tests that check each claim is still true. */
+	/**
+	 * Records an apply failure of a listed mixin as a CONFIRMED loss, then resolves it at once when the witness
+	 * class's transformed bytes already carry the replacement. Remembered either way, so the witness's final
+	 * definition settles it again ({@link #observe}).
+	 *
+	 * @return the proof when the loss was resolved now, null when it stands
+	 */
+	static String failed(String config, String mixinClass, String detail, boolean required, List<String> evidence) {
+		Replacement entry = enabled() ? SUPERSEDED.get(mixinClass) : null;
+		if (entry == null) return null;
+		List<String> claimed = new ArrayList<>(evidence);
+		claimed.add("claimed replacement, pending its structural proof: " + entry.description());
+		MixinCompatibility.record(config, mixinClass, detail, CompatibilityFinding.Confidence.CONFIRMED, required, claimed);
+		FAILED.put(mixinClass, new Failure(config, detail, required, List.copyOf(claimed)));
+		String proof = prove(entry, ForbricMixinService.preMixinBytes(entry.witness()));
+		if (proof != null) {
+			MixinCompatibility.resolve(config, mixinClass, proof + " (transformed bytes of " + entry.witness() + ")");
+		}
+		return proof;
+	}
+
+	/**
+	 * The final definition of a class some remembered failure names as its witness: resolves the failure when
+	 * the replacement is there, and confirms the loss again when it is not — a resolution from the transformed
+	 * bytes is not allowed to outlive the class that actually runs.
+	 */
+	static void observe(String binary, byte[] bytes) {
+		if (FAILED.isEmpty()) return;
+		for (Map.Entry<String, Failure> e : FAILED.entrySet()) {
+			Replacement entry = enabled() ? SUPERSEDED.get(e.getKey()) : null;
+			if (entry == null || !entry.witness().equals(binary)) continue;
+			Failure failure = e.getValue();
+			String proof = prove(entry, bytes);
+			if (proof != null) {
+				MixinCompatibility.resolve(failure.config(), e.getKey(), proof + " (final definition of " + binary + ")");
+			} else {
+				List<String> evidence = new ArrayList<>(failure.evidence());
+				evidence.add("the final definition of " + binary + " does not carry the replacement");
+				MixinCompatibility.record(failure.config(), e.getKey(), failure.detail(),
+						CompatibilityFinding.Confidence.CONFIRMED, failure.required(), evidence);
+			}
+		}
+	}
+
+	private static String prove(Replacement entry, byte[] witness) {
+		if (witness == null) return null;
+		try {
+			ClassNode node = new ClassNode();
+			new ClassReader(witness).accept(node, ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
+			return entry.proof().apply(node);
+		} catch (RuntimeException unreadable) {
+			return null;
+		}
+	}
+
+	/** Every loader session starts with no remembered failures. */
+	static void reset() {
+		FAILED.clear();
+	}
+
+	/** The mixin classes with an entry, and the words each uses, for the tests that check each claim is still true. */
 	static Map<String, String> all() {
-		return SUPERSEDED;
+		Map<String, String> words = new LinkedHashMap<>();
+		SUPERSEDED.forEach((mixin, entry) -> words.put(mixin, entry.description()));
+		return words;
 	}
 }

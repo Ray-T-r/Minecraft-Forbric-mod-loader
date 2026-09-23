@@ -108,23 +108,145 @@ class KernelMixinErrorHandlerTest {
 	}
 
 	/**
-	 * A mixin the kernel has taken over is not a loss, so its mod is not marked.
+	 * A mixin the kernel has taken over is not a loss, so its mod is not marked — when the takeover is really
+	 * there: the transforming loader serves ConditionalOps with its one factory exit wrapped and every other
+	 * factory funnelling into it.
 	 *
 	 * <p>Both halves: no row, and the action still unchanged — suppressing the MARK must never suppress Mixin's
 	 * own decision about the failure, which is what keeps a required config erroring.
 	 */
 	@Test
-	void aMixinTheKernelSupersedesDoesNotMarkItsMod() {
+	void aMixinTheKernelSupersedesDoesNotMarkItsMod(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
 		String superseded = SupersededMixins.all().keySet().iterator().next();
 		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
 
-		IMixinErrorHandler.ErrorAction out = new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo",
-				new RuntimeException("boom"), info("s.mixins.json", superseded),
-				IMixinErrorHandler.ErrorAction.WARN);
+		IMixinErrorHandler.ErrorAction out = withConditionalOps(dir, conditionalOps(true), () -> new KernelMixinErrorHandler()
+				.onApplyError("net.minecraft.Foo", new RuntimeException("boom"), info("s.mixins.json", superseded),
+						IMixinErrorHandler.ErrorAction.WARN));
 
 		assertSame(IMixinErrorHandler.ErrorAction.WARN, out, "attribution never changes Mixin's own decision");
 		assertTrue(ModCatalog.failures().isEmpty(),
 				"the kernel does this mixin's job itself, so marking its mod reports a loss that did not happen");
+		assertEquals(net.forbric.api.CompatibilityFinding.Confidence.RESOLVED, finding(superseded).confidence());
+	}
+
+	/**
+	 * The table's name is a claim. With nothing proving the replacement — no witness class, the wrap missing, or
+	 * the evaluator switched to a pass-through — the failure is the loss it looks like.
+	 */
+	@Test
+	void aSupersededMixinWithoutItsStructuralWitnessIsALoss(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+		String superseded = SupersededMixins.all().keySet().iterator().next();
+		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
+
+		new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo", new RuntimeException("boom"),
+				info("s.mixins.json", superseded), IMixinErrorHandler.ErrorAction.WARN);
+		assertEquals(1, ModCatalog.failures().size(), "no witness class at all");
+		assertTrue(finding(superseded).confirmedRequired());
+
+		net.forbric.api.CompatibilityFindings.reset();
+		MixinCompatibility.reset();
+		withConditionalOps(dir.resolve("unwrapped"), conditionalOps(false), () -> new KernelMixinErrorHandler().onApplyError(
+				"net.minecraft.Foo", new RuntimeException("boom"), info("s.mixins.json", superseded),
+				IMixinErrorHandler.ErrorAction.WARN));
+		assertTrue(finding(superseded).confirmedRequired(), "the repair stood down, so the name proves nothing");
+
+		net.forbric.api.CompatibilityFindings.reset();
+		MixinCompatibility.reset();
+		System.setProperty("forbric.fabricConditions", "off");
+		try {
+			withConditionalOps(dir.resolve("switched-off"), conditionalOps(true), () -> new KernelMixinErrorHandler()
+					.onApplyError("net.minecraft.Foo", new RuntimeException("boom"), info("s.mixins.json", superseded),
+							IMixinErrorHandler.ErrorAction.WARN));
+		} finally {
+			System.clearProperty("forbric.fabricConditions");
+		}
+		assertTrue(finding(superseded).confirmedRequired(), "the wrap is there but passes everything through");
+	}
+
+	/** The class that actually runs has the last word, in both directions. */
+	@Test
+	void theWitnessesFinalDefinitionSettlesTheFailureAgain(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+		String superseded = SupersededMixins.all().keySet().iterator().next();
+		String ops = MixinEquivalentImplementations.CONDITIONAL_OPS.replace('/', '.');
+		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
+		try {
+			new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo", new RuntimeException("boom"),
+					info("s.mixins.json", superseded), IMixinErrorHandler.ErrorAction.WARN);
+			assertTrue(finding(superseded).confirmedRequired());
+			FinalMixinApplications.onClassDefined(ops, conditionalOps(true));
+			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.RESOLVED, finding(superseded).confidence(),
+					"the defined ConditionalOps carries the replacement");
+
+			net.forbric.api.CompatibilityFindings.reset();
+			MixinCompatibility.reset();
+			withConditionalOps(dir, conditionalOps(true), () -> new KernelMixinErrorHandler().onApplyError(
+					"net.minecraft.Foo", new RuntimeException("boom"), info("s.mixins.json", superseded),
+					IMixinErrorHandler.ErrorAction.WARN));
+			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.RESOLVED, finding(superseded).confidence());
+			FinalMixinApplications.onClassDefined(ops, conditionalOps(false));
+			assertTrue(finding(superseded).confirmedRequired(),
+					"a proof read from the transformed bytes may not outlive the class that actually runs");
+		} finally {
+			MixinCompatibility.reset();
+		}
+	}
+
+	private static net.forbric.api.CompatibilityFinding finding(String mixin) {
+		return net.forbric.api.CompatibilityFindings.all().stream()
+				.filter(f -> f.id().equals(MixinCompatibility.id("s.mixins.json", mixin))).findFirst().orElseThrow();
+	}
+
+	/**
+	 * NeoForge's ConditionalOps reduced to its factory shape: the funnel, and two public factories that reach it.
+	 * {@code wrapped} is what {@code letFabricResourceConditionsDecide} leaves behind.
+	 */
+	private static byte[] conditionalOps(boolean wrapped) {
+		String ops = MixinEquivalentImplementations.CONDITIONAL_OPS;
+		String codec = "Lcom/mojang/serialization/Codec;";
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(0);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, ops, null, "java/lang/Object", null);
+		int access = org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_STATIC;
+		var funnel = cw.visitMethod(access, "createConditionalCodecWithConditions", "(" + codec + "Ljava/lang/String;)" + codec, null, null);
+		funnel.visitCode();
+		funnel.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+		if (wrapped) funnel.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESTATIC, "net/forbric/kernel/runtime/KernelFabricConditions",
+				"alsoAskFabric", "(" + codec + ")" + codec, false);
+		funnel.visitInsn(org.objectweb.asm.Opcodes.ARETURN);
+		funnel.visitMaxs(1, 2);
+		funnel.visitEnd();
+		for (String[] entry : new String[][] {{"createConditionalCodecWithConditions", "(" + codec + ")" + codec},
+				{"createConditionalCodec", "(" + codec + ")" + codec}}) {
+			var m = cw.visitMethod(access, entry[0], entry[1], null, null);
+			m.visitCode();
+			m.visitVarInsn(org.objectweb.asm.Opcodes.ALOAD, 0);
+			m.visitInsn(org.objectweb.asm.Opcodes.ACONST_NULL);
+			m.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESTATIC, ops, "createConditionalCodecWithConditions",
+					"(" + codec + "Ljava/lang/String;)" + codec, false);
+			m.visitInsn(org.objectweb.asm.Opcodes.ARETURN);
+			m.visitMaxs(2, 1);
+			m.visitEnd();
+		}
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** Runs {@code action} with the transforming loader serving {@code bytes} as ConditionalOps, as in a game. */
+	private static <T> T withConditionalOps(Path dir, byte[] bytes, java.util.concurrent.Callable<T> action) throws Exception {
+		Files.createDirectories(dir);
+		Path jar = dir.resolve("neoforge.jar");
+		try (var out = new java.util.jar.JarOutputStream(Files.newOutputStream(jar))) {
+			out.putNextEntry(new java.util.jar.JarEntry(MixinEquivalentImplementations.CONDITIONAL_OPS + ".class"));
+			out.write(bytes);
+			out.closeEntry();
+		}
+		try (var loader = new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[] {jar.toUri().toURL()},
+				KernelMixinErrorHandlerTest.class.getClassLoader())) {
+			ForbricMixinService.bind(loader, net.fabricmc.api.EnvType.CLIENT);
+			return action.call();
+		} finally {
+			ForbricMixinService.bind(null, net.fabricmc.api.EnvType.SERVER);
+		}
 	}
 
 	/** With the switch off it is an ordinary failure again — which is how the claim in each entry gets checked. */

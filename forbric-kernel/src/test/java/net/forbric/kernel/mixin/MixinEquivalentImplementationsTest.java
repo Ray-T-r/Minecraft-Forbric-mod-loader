@@ -44,6 +44,20 @@ class MixinEquivalentImplementationsTest {
   for(MethodNode method:target.methods)for(var i:method.instructions)if(i instanceof MethodInsnNode c&&c.name.equals("ifSuccessWithoutAForeignSkipMarker")){c.name="unproved";break;}
   FinalMixinApplications.observe(READER.replace('/','.'),StagedFabricMixinFixture.bytes(target),names);assertEquals(1,CompatibilityFindings.confirmedRequired().size());
  }
+ /** SupersededMixins' witness, on the actual NeoForge ConditionalOps: the kernel's repair proves it, the original does not. */
+ @Test void theActualRepairedConditionalOpsProvesTheConditionsFunnelAndTheOriginalDoesNot()throws Exception{
+  java.nio.file.Path neo=java.nio.file.Path.of(System.getenv().getOrDefault("FORBRIC_OLD","../forbric-loader"),"run/neoforge-runtime/neoforge-runtime.jar");
+  org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isRegularFile(neo),"actual NeoForge carrier required");
+  byte[] original;
+  try(var zip=new java.util.zip.ZipFile(neo.toFile())){original=zip.getInputStream(zip.getEntry(MixinEquivalentImplementations.CONDITIONAL_OPS+".class")).readAllBytes();}
+  byte[] repaired=new net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer().transform(MixinEquivalentImplementations.CONDITIONAL_OPS.replace('/','.'),original,null);
+  assertNull(MixinEquivalentImplementations.conditionsFunnel(MixinFit.parse(original)));
+  String proof=MixinEquivalentImplementations.conditionsFunnel(MixinFit.parse(repaired));
+  assertNotNull(proof);assertTrue(proof.contains("all 4 other public factories"),proof);
+  ClassNode unfunnelled=MixinFit.parse(repaired);
+  for(MethodNode m:unfunnelled.methods)if(m.name.equals("decodeListWithElementConditions"))for(var i:m.instructions.toArray())if(i instanceof MethodInsnNode c&&c.name.startsWith("createConditionalCodec"))c.name="somewhereElse";
+  assertNull(MixinEquivalentImplementations.conditionsFunnel(unfunnelled),"a factory that stopped reaching the wrap is not covered by it");
+ }
  @Test void fingerprintsIgnoreOnlyMetadataNotExecutableInstructions()throws Exception{
   MethodNode method=StagedFabricMixinFixture.method(mixin(),"skipData");String hash=MixinInstructionFingerprint.hash(method);
   method.maxStack+=10;method.maxLocals+=10;method.access|=Opcodes.ACC_SYNTHETIC;
