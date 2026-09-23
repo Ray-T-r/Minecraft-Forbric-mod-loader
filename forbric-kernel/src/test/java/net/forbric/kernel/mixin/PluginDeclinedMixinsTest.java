@@ -49,6 +49,7 @@ class PluginDeclinedMixinsTest {
 	private static final String MIXIN_ENTRY = "compat.bobby.MixinIntegratedServer";
 	private static final String MIXIN_CLASS = "com.moulberry.flashback.mixin." + MIXIN_ENTRY;
 	private static final String TARGET = "de.johni0702.minecraft.bobby.mixin.IntegratedServerMixin";
+	private static final String OTHER_TARGET = "net.minecraft.client.server.IntegratedServer";
 	private static final String DETAIL = "guest mixin " + MIXIN_ENTRY + " did not fit the merged game and was left out";
 
 	private List<ModCatalog.Entry> previous;
@@ -66,6 +67,16 @@ class PluginDeclinedMixinsTest {
 	public static final class AcceptingPlugin {
 		public boolean shouldApplyMixin(String target, String mixin) {
 			return true;
+		}
+	}
+
+	/** Decides by target, as a plugin reading {@code targetClassName} does: no for {@link #TARGET}, yes elsewhere. */
+	public static final class TargetDecidingPlugin {
+		final List<String> asked = new ArrayList<>();
+
+		public boolean shouldApplyMixin(String target, String mixin) {
+			asked.add(target);
+			return !TARGET.equals(target);
 		}
 	}
 
@@ -123,6 +134,44 @@ class PluginDeclinedMixinsTest {
 
 		assertEquals(1, ModCatalog.failures().size(), "the mod wanted this mixin and lost it");
 		assertEquals(DETAIL, ModCatalog.failures().get(0).statusDetail());
+	}
+
+	/**
+	 * The kernel left the mixin out of BOTH targets, and Mixin would have asked about each one. A plugin that
+	 * declines the first and accepts the second still wanted the mixin on the second, so the loss stands — and
+	 * asking about the first target alone read it as "the mod switched this off itself".
+	 */
+	@Test
+	void aPluginThatDeclinesOnlySomeTargetsStillMarksTheMod() {
+		TargetDecidingPlugin plugin = new TargetDecidingPlugin();
+		PluginDeclinedMixins.rememberPlugin(plugin);
+		assertTrue(PluginDeclinedMixins.defer(CONFIG, TargetDecidingPlugin.class.getName(), MIXIN_ENTRY, MIXIN_CLASS,
+				List.of(TARGET, OTHER_TARGET), DETAIL, net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, true,
+				List.of("kernel suppressed the mixin")));
+
+		PluginDeclinedMixins.resolve();
+
+		assertEquals(List.of(TARGET, OTHER_TARGET), plugin.asked, "asked once per target, as Mixin asks");
+		assertEquals(1, ModCatalog.failures().size(), "the mixin was wanted on " + OTHER_TARGET + " and lost there");
+		var finding = net.forbric.api.CompatibilityFindings.confirmedRequired().getFirst();
+		assertTrue(finding.evidence().stream().anyMatch(e -> e.contains("declines it for " + TARGET)), finding.evidence().toString());
+		assertTrue(finding.evidence().stream().anyMatch(e -> e.endsWith("for " + OTHER_TARGET)), finding.evidence().toString());
+	}
+
+	/** The other half: a plugin that declines every target clears the mod exactly as the single-target case does. */
+	@Test
+	void aPluginThatDeclinesEveryTargetClearsTheMod() {
+		DecliningPlugin plugin = new DecliningPlugin();
+		PluginDeclinedMixins.rememberPlugin(plugin);
+		assertTrue(PluginDeclinedMixins.defer(CONFIG, DecliningPlugin.class.getName(), MIXIN_ENTRY, MIXIN_CLASS,
+				List.of(TARGET, OTHER_TARGET), DETAIL, net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, true,
+				List.of("kernel suppressed the mixin")));
+
+		PluginDeclinedMixins.resolve();
+
+		assertEquals(List.of(TARGET + "|" + MIXIN_CLASS, OTHER_TARGET + "|" + MIXIN_CLASS), plugin.asked);
+		assertTrue(ModCatalog.failures().isEmpty());
+		assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty());
 	}
 
 	@Test

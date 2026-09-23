@@ -43,7 +43,8 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>What this class changes is the REPORT, never what applies. The suppression still happens, at the same
  * moment, for the same reason. The attribution is held back and settled later, by asking the plugin the same
- * question Mixin would have: {@code shouldApplyMixin(target, mixin)}. Only a clear {@code false} clears the mod.
+ * question Mixin would have: {@code shouldApplyMixin(target, mixin)}, once per target as Mixin asks it. Only a
+ * clear {@code false} for every target clears the mod.
  * No plugin instance, a plugin that throws (the guard turns that into {@code true}), anything other than
  * {@code false} — all attribute exactly as before. Guessing in the mod's favour is how a report starts lying.
  *
@@ -57,8 +58,13 @@ import net.forbric.kernel.util.ForbricLog;
 public final class PluginDeclinedMixins {
 	static final String PROPERTY = "forbric.pluginDeclinedMixins";
 
-	/** One held-back attribution: everything needed to either ask the plugin or mark the mod. */
-	record Pending(String configName, String pluginClass, String mixinEntry, String mixinClass, String target,
+	/**
+	 * One held-back attribution: everything needed to either ask the plugin or mark the mod.
+	 *
+	 * <p>Every {@code @Mixin} target, not the first: Mixin asks the plugin once PER TARGET and applies the mixin
+	 * to each one it accepts, so a plugin that declines one target and accepts another still wanted the mixin.
+	 */
+	record Pending(String configName, String pluginClass, String mixinEntry, String mixinClass, List<String> targets,
 			String detail, CompatibilityFinding.Confidence confidence, boolean required, List<String> evidence) {
 	}
 
@@ -90,14 +96,17 @@ public final class PluginDeclinedMixins {
 	 */
 	static boolean defer(String configName, String pluginClass, String mixinEntry, String mixinClass, String target,
 			String detail) {
-		return defer(configName, pluginClass, mixinEntry, mixinClass, target, detail,
-				CompatibilityFinding.Confidence.CONFIRMED, true, List.of("kernel suppressed the mixin"));
+		return defer(configName, pluginClass, mixinEntry, mixinClass, target == null ? List.of() : List.of(target),
+				detail, CompatibilityFinding.Confidence.CONFIRMED, true, List.of("kernel suppressed the mixin"));
 	}
 
-	static boolean defer(String configName, String pluginClass, String mixinEntry, String mixinClass, String target,
-			String detail, CompatibilityFinding.Confidence confidence, boolean required, List<String> evidence) {
+	/** @param targets every {@code @Mixin} target, dotted, in declaration order */
+	static boolean defer(String configName, String pluginClass, String mixinEntry, String mixinClass,
+			List<String> targets, String detail, CompatibilityFinding.Confidence confidence, boolean required,
+			List<String> evidence) {
 		if (!enabled() || pluginClass == null || pluginClass.isEmpty()) return false;
-		PENDING.add(new Pending(configName, pluginClass, mixinEntry, mixinClass, target, detail, confidence, required, evidence));
+		PENDING.add(new Pending(configName, pluginClass, mixinEntry, mixinClass, List.copyOf(targets), detail,
+				confidence, required, evidence));
 		return true;
 	}
 
@@ -125,9 +134,21 @@ public final class PluginDeclinedMixins {
 		}
 	}
 
-	/** One held-back attribution: cleared only by a clear {@code false}, marked on anything else. */
+	/**
+	 * One held-back attribution: cleared only by a clear {@code false} for EVERY target, marked on anything else.
+	 *
+	 * <p>The kernel removed the mixin from all of its targets, so one declined target says nothing about the
+	 * others — a plugin that answers by {@code targetClassName} can decline A and accept B, and then the mod lost
+	 * the mixin on B. No targets at all means there was no question to ask, which attributes like no answer.
+	 */
 	private static void settle(Pending p) {
-		if (Boolean.FALSE.equals(askThePlugin(p))) {
+		List<String> declined = new ArrayList<>();
+		List<String> wanted = new ArrayList<>();
+		for (String target : p.targets()) {
+			if (Boolean.FALSE.equals(askThePlugin(p, target))) declined.add(target);
+			else wanted.add(target);
+		}
+		if (!declined.isEmpty() && wanted.isEmpty()) {
 			MixinCompatibility.resolve(p.configName(), p.mixinClass(), "the mod's own plugin disabled this mixin");
 			ForbricLog.info("[Forbric/Mixin] not marking %s for %s:%s — the mod's own config plugin %s does not "
 					+ "apply that mixin on this instance either, so leaving it out cost the mod nothing",
@@ -135,7 +156,13 @@ public final class PluginDeclinedMixins {
 					MixinConfigOwners.describe(p.configName()), p.mixinEntry(), p.pluginClass());
 			return;
 		}
-		MixinCompatibility.record(p.configName(), p.mixinClass(), p.detail(), p.confidence(), p.required(), p.evidence());
+		List<String> evidence = p.evidence();
+		if (!declined.isEmpty()) {
+			evidence = new ArrayList<>(evidence);
+			evidence.add("the mod's own plugin declines it for " + String.join(", ", declined));
+			evidence.add("the mod's own plugin applies it, or gives no answer, for " + String.join(", ", wanted));
+		}
+		MixinCompatibility.record(p.configName(), p.mixinClass(), p.detail(), p.confidence(), p.required(), evidence);
 	}
 
 	/**
@@ -144,12 +171,12 @@ public final class PluginDeclinedMixins {
 	 * <p>Reflective on purpose: the plugin is a guest class loaded by the game loader, and the kernel is not
 	 * compiled against Mixin's extensibility interface from here. Any failure answers null, which attributes.
 	 */
-	private static Boolean askThePlugin(Pending p) {
+	private static Boolean askThePlugin(Pending p, String target) {
 		Object plugin = PLUGINS.get(p.pluginClass());
 		if (plugin == null) return null;
 		try {
 			Method m = plugin.getClass().getMethod("shouldApplyMixin", String.class, String.class);
-			Object answer = m.invoke(plugin, p.target(), p.mixinClass());
+			Object answer = m.invoke(plugin, target, p.mixinClass());
 			return answer instanceof Boolean b ? b : null;
 		} catch (Throwable noAnswer) {
 			ForbricLog.debug("[Forbric/Mixin] could not ask %s about %s — %s", p.pluginClass(), p.mixinClass(),

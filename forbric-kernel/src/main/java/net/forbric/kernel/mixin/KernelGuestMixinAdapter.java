@@ -262,10 +262,8 @@ public final class KernelGuestMixinAdapter {
 				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — %s on the merged base (%s)",
 						MixinConfigOwners.describe(configName), mixin, fit.verdict(), fit.reason());
 				String detail = "guest mixin " + mixin + " did not fit the merged game and was left out";
-				List<String> targets = MixinFit.mixinTargets(MixinFit.parse(classBytes));
-				if (!PluginDeclinedMixins.defer(configName, pluginClass, mixin, pkg + "." + mixin,
-						targets.isEmpty() ? null : targets.get(0).replace('/', '.'), detail,
-						CompatibilityFinding.Confidence.CONFIRMED, required, List.of(fit.reason(), "kernel suppressed this mixin"))) {
+				if (!PluginDeclinedMixins.defer(configName, pluginClass, mixin, pkg + "." + mixin, dottedTargets(classBytes),
+						detail, CompatibilityFinding.Confidence.CONFIRMED, required, List.of(fit.reason(), "kernel suppressed this mixin"))) {
 					MixinCompatibility.record(configName, pkg + "." + mixin, detail,
 							CompatibilityFinding.Confidence.CONFIRMED, required, List.of(fit.reason(), "kernel suppressed this mixin"));
 				}
@@ -286,13 +284,16 @@ public final class KernelGuestMixinAdapter {
 	/** A bytecode preflight cannot know which targets, plugins or preceding transforms will actually run. */
 	private static void preflight(String config, String pkg, String mixin, String plugin, byte[] bytes,
 			boolean required, String detail, List<String> evidence) {
-		List<String> targets = MixinFit.mixinTargets(MixinFit.parse(bytes));
-		if (!PluginDeclinedMixins.defer(config, plugin, mixin, pkg + "." + mixin,
-				targets.isEmpty() ? null : targets.get(0).replace('/', '.'), detail,
+		if (!PluginDeclinedMixins.defer(config, plugin, mixin, pkg + "." + mixin, dottedTargets(bytes), detail,
 				CompatibilityFinding.Confidence.SUSPECTED, required, evidence)) {
 			MixinCompatibility.record(config, pkg + "." + mixin, detail,
 					CompatibilityFinding.Confidence.SUSPECTED, required, evidence);
 		}
+	}
+
+	/** Every {@code @Mixin} target, dotted, in declaration order — the names Mixin asks a config plugin about. */
+	private static List<String> dottedTargets(byte[] mixinBytes) {
+		return MixinFit.mixinTargets(MixinFit.parse(mixinBytes)).stream().map(t -> t.replace('/', '.')).toList();
 	}
 
 	/**

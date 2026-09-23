@@ -229,7 +229,8 @@ class KernelGuestMixinAdapterTest {
 	/** The same config with a {@code plugin}, which is what makes the attribution deferrable. */
 	private static byte[] configWithPlugin(String pkg, String plugin, String... clientMixins) {
 		String json = new String(config(pkg, clientMixins), StandardCharsets.UTF_8);
-		return json.replaceFirst("^\\{", "{\"plugin\":\"" + plugin + "\",").getBytes(StandardCharsets.UTF_8);
+		return json.replaceFirst("^\\{", java.util.regex.Matcher.quoteReplacement("{\"plugin\":\"" + plugin + "\","))
+				.getBytes(StandardCharsets.UTF_8);
 	}
 
 	private static Function<String, byte[]> resolver(Map<String, byte[]> classes) {
@@ -431,6 +432,62 @@ class KernelGuestMixinAdapterTest {
 			PluginDeclinedMixins.resolve();
 			assertEquals(1, ModCatalog.failures().size());
 			assertTrue(ModCatalog.failures().get(0).statusDetail().contains("Dangling"));
+		} finally {
+			PluginDeclinedMixins.reset();
+			MixinConfigOwners.reset();
+			ModCatalog.publish(previous);
+		}
+	}
+
+	/** Declines the mixin for the first target only, the way a plugin reading {@code targetClassName} can. */
+	public static final class FirstTargetDecliningPlugin {
+		public boolean shouldApplyMixin(String target, String mixin) {
+			return !"net.minecraft.client.renderer.GameRenderer".equals(target);
+		}
+	}
+
+	/** The kernel removes a mixin from EVERY target, so the plugin must be asked about every target too. */
+	@Test
+	void aSuppressionIsSettledAgainstEveryTargetNotJustTheFirst() {
+		List<ModCatalog.Entry> previous = ModCatalog.everything();
+		try {
+			PluginDeclinedMixins.reset();
+			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("p.mixins.json", "pmod", Ecosystem.FABRIC)));
+			ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "pmod", "P", "1", "", List.of(), "p.jar", "", "")));
+			String first = "net/minecraft/client/renderer/GameRenderer";
+			String second = "net/minecraft/client/renderer/LevelRenderer";
+			Map<String, byte[]> classes = new HashMap<>();
+			classes.put(first + ".class", target(first, "unused", Opcodes.ACC_PRIVATE, true));
+			classes.put(second + ".class", target(second, "unused", Opcodes.ACC_PRIVATE, true));
+			ClassWriter cw = new ClassWriter(0);
+			cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, PKG + "/Both", null, "java/lang/Object", null);
+			AnnotationVisitor at = cw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+			AnnotationVisitor value = at.visitArray("value");
+			value.visit(null, Type.getObjectType(first));
+			value.visit(null, Type.getObjectType(second));
+			value.visitEnd();
+			at.visitEnd();
+			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE, "onGone", "()V", null, null);
+			AnnotationVisitor inject = mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", false);
+			AnnotationVisitor methods = inject.visitArray("method");
+			methods.visit(null, "methodThatNoLongerExists");
+			methods.visitEnd();
+			inject.visitEnd();
+			mv.visitCode();
+			mv.visitInsn(Opcodes.RETURN);
+			mv.visitMaxs(0, 1);
+			mv.visitEnd();
+			cw.visitEnd();
+			classes.put(PKG + "/Both.class", cw.toByteArray());
+
+			assertEquals(List.of("Both"), KernelGuestMixinAdapter.unfitMixins("p.mixins.json",
+					configWithPlugin(PKG.replace('/', '.'), FirstTargetDecliningPlugin.class.getName(), "Both"),
+					resolver(classes)));
+			PluginDeclinedMixins.rememberPlugin(new FirstTargetDecliningPlugin());
+			PluginDeclinedMixins.resolve();
+
+			assertEquals(1, ModCatalog.failures().size(),
+					"the plugin would have applied the mixin to LevelRenderer, so leaving it out there is a loss");
 		} finally {
 			PluginDeclinedMixins.reset();
 			MixinConfigOwners.reset();
