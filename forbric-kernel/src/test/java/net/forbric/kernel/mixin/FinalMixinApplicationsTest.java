@@ -27,6 +27,22 @@ class FinalMixinApplicationsTest {
   config(1,false);remember(0,false,List.of(TARGET));observe(target(false,true,"handler$000$probe","()V"));
   assertTrue(CompatibilityFindings.all().stream().noneMatch(f->f.confidence()==CompatibilityFinding.Confidence.CONFIRMED));
  }
+ /** MixinExtras injectors are InjectionInfo too: a defaultRequire miss the relaxation silenced is a confirmed loss. */
+ @Test void aMissedMixinExtrasInjectorIsReconciledLikeAStandardOne() {
+  config(1);remember(extras(WRAP_OPERATION));observe(target(false,true,"handler$000$probe","()V"));
+  assertEquals(1,CompatibilityFindings.confirmedRequired().size());
+  assertTrue(CompatibilityFindings.confirmedRequired().getFirst().id().startsWith("mixin-injector:"));
+ }
+ @Test void anAttachedMixinExtrasInjectorDischargesTheWholeMixinSuspicion() {
+  config(1);remember(extras(MODIFY_EXPRESSION_VALUE));suspect();observe(target(true,true,"handler$000$probe","()V"));
+  assertEquals(CompatibilityFinding.Confidence.RESOLVED,whole().confidence());assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+ }
+ /** Sugar is still not modelled on a MixinExtras injector either. */
+ @Test void aSugaredMixinExtrasHandlerWithNoVisibleAttachmentIsOnlySuspected() {
+  config(1);remember(sugared(MODIFY_EXPRESSION_VALUE));observe(target(false,true,"handler$000$probe","()V"));
+  assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+  assertEquals(CompatibilityFinding.Confidence.SUSPECTED,CompatibilityFindings.all().stream().filter(f->f.id().startsWith("mixin-injector:")).findFirst().orElseThrow().confidence());
+ }
  /** Sugar is not modelled, so a zero-reference required handler cannot be CONFIRMED — but it must not vanish either. */
  @Test void anUnmodelledRequiredHandlerWithNoVisibleAttachmentIsSuspected() {
   config(1);remember(sugared(INJECT));observe(target(false,true,"handler$000$probe","()V"));
@@ -98,7 +114,8 @@ class FinalMixinApplicationsTest {
  private void config(Integer minimum){config(minimum,true);}
  private void config(Integer minimum,boolean required){String json="{\"required\":"+required+",\"package\":\"example\",\"mixins\":[\"ProbeMixin\"]"+(minimum==null?"":",\"injectors\":{\"defaultRequire\":"+minimum+"}")+"}";MixinCompatibility.rememberOriginalConfig(CONFIG,json.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
  private void remember(int require,boolean group,List<String> targets){FinalMixinApplications.remember(mixin(require,group,targets));}
- private static final String INJECT="Lorg/spongepowered/asm/mixin/injection/Inject;";
+ private static final String INJECT="Lorg/spongepowered/asm/mixin/injection/Inject;",WRAP_OPERATION="Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;",MODIFY_EXPRESSION_VALUE="Lcom/llamalad7/mixinextras/injector/ModifyExpressionValue;";
+ private ClassNode extras(String desc){ClassNode n=mixin(-1,false,List.of(TARGET));n.methods.getFirst().visibleAnnotations=new ArrayList<>(List.of(new AnnotationNode(desc)));return n;}
  private void remember(ClassNode mixin){FinalMixinApplications.remember(mixin);}
  private ClassNode sugared(String desc){ClassNode n=mixin(-1,false,List.of(TARGET));MethodNode m=n.methods.getFirst();m.visibleAnnotations=new ArrayList<>(List.of(new AnnotationNode(desc)));
   m.invisibleParameterAnnotations=new List[]{new ArrayList<>(List.of(new AnnotationNode("Lcom/llamalad7/mixinextras/sugar/Local;")))};return n;}

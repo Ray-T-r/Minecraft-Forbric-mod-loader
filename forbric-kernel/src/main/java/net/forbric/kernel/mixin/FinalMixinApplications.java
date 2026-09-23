@@ -15,8 +15,14 @@ import org.spongepowered.asm.mixin.transformer.ClassInfo;
 public final class FinalMixinApplications {
  private static final String PREFIX = "Lorg/spongepowered/asm/mixin/injection/";
  private static final String EXTRAS = "Lcom/llamalad7/mixinextras/";
+ /** Injectors whose every successful injection emits a direct call to the merged handler in the target class.
+  * MixinExtras' are built on Mixin's InjectionInfo, so require/defaultRequire mean the same thing for them; left
+  * out, the kernel's defaultRequire relaxation made their misses silent with nothing recorded at all. */
  private static final Set<String> STANDARD = Set.of(PREFIX+"Inject;", PREFIX+"Redirect;", PREFIX+"ModifyArg;",
-   PREFIX+"ModifyArgs;", PREFIX+"ModifyConstant;", PREFIX+"ModifyVariable;");
+   PREFIX+"ModifyArgs;", PREFIX+"ModifyConstant;", PREFIX+"ModifyVariable;",
+   EXTRAS+"injector/ModifyExpressionValue;", EXTRAS+"injector/ModifyReturnValue;", EXTRAS+"injector/ModifyReceiver;",
+   EXTRAS+"injector/WrapWithCondition;", EXTRAS+"injector/v2/WrapWithCondition;",
+   EXTRAS+"injector/wrapoperation/WrapOperation;", EXTRAS+"injector/wrapmethod/WrapMethod;");
  private static final String MERGED = "Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;";
  private record Config(String name, boolean required, int minimum) { }
  private record Injector(String name, String desc, int minimum, boolean understood, String bodyHash) {
