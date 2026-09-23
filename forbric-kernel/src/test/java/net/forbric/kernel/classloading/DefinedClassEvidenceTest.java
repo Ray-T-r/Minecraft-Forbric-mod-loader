@@ -53,6 +53,7 @@ class DefinedClassEvidenceTest {
      assertArrayEquals(type("game/Evidence"),recorded(session,"game/Evidence"));
      assertFalse(rows(session).containsKey("game/Broken"));
      try(var blobs=Files.list(session.resolve("blobs"))){assertEquals(1,blobs.count(),"only the successful definition has bytes");}
+     assertTrue(Files.isRegularFile(session.resolve(DefinedClassEvidence.INTACT)),"a session that lost nothing vouches for itself");
     }
    }
   } finally { if(old==null) System.clearProperty(DefinedClassEvidence.PROPERTY); else System.setProperty(DefinedClassEvidence.PROPERTY,old); }
@@ -74,6 +75,7 @@ class DefinedClassEvidenceTest {
    assertArrayEquals(lower,recorded(session,"game/a"));
    assertArrayEquals(upper,recorded(session,"game/A"));
    assertFalse(Files.readString(session.resolve("definitions.tsv")).contains("#incomplete"));
+   assertTrue(Files.isRegularFile(session.resolve(DefinedClassEvidence.INTACT)));
   } finally { if(old==null) System.clearProperty(DefinedClassEvidence.PROPERTY); else System.setProperty(DefinedClassEvidence.PROPERTY,old); }
  }
  /** A write that fails marks the session incomplete; it never turns a successful definition into an exception. */
@@ -90,8 +92,61 @@ class DefinedClassEvidenceTest {
    var manifest=Files.readAllLines(session.resolve("definitions.tsv"));
    assertTrue(manifest.stream().anyMatch(s->s.startsWith("#incomplete\tgame/Unrecorded\t")),manifest.toString());
    assertFalse(rows(session).containsKey("game/Unrecorded"));
+   assertFalse(Files.exists(session.resolve(DefinedClassEvidence.INTACT)));
   } finally {
    if(blobs!=null)blobs.toFile().setWritable(true,false);
+   if(old==null) System.clearProperty(DefinedClassEvidence.PROPERTY); else System.setProperty(DefinedClassEvidence.PROPERTY,old);
+  }
+ }
+ /**
+  * A full disk, or a read-only manifest: neither the blob nor the {@code #incomplete} row can be written, and the
+  * manifest then reads as a complete session that simply never defined the class. What still works is taking the
+  * marker away -- unlinking needs no free space and no writable manifest -- so the session stops vouching for
+  * itself and the reader refuses it.
+  */
+ @Test void aLossThatCannotEvenBeWrittenDownStillWithdrawsTheSession() throws Exception {
+  String old=System.getProperty(DefinedClassEvidence.PROPERTY);
+  System.setProperty(DefinedClassEvidence.PROPERTY, temporary.toString());
+  Path blobs=null,manifest=null;
+  try (var loader=new ForbricClassLoader(new URL[0],getClass().getClassLoader())) {
+   Path session;try(var sessions=Files.list(temporary)){session=sessions.findFirst().orElseThrow();}
+   assertTrue(Files.isRegularFile(session.resolve(DefinedClassEvidence.INTACT)),"a new session vouches for itself");
+   loader.defineRuntimeClass("game.Early",type("game/Early"));
+   blobs=session.resolve("blobs");manifest=session.resolve("definitions.tsv");
+   assertTrue(blobs.toFile().setWritable(false,false)&&manifest.toFile().setWritable(false,false));
+   Class<?> defined=assertDoesNotThrow(()->loader.defineRuntimeClass("game.Lost",type("game/Lost")));
+   assertSame(defined,loader.loadClass("game.Lost"));
+   String written=Files.readString(manifest);
+   assertFalse(written.contains("game/Lost"),"the loss itself could not be written: "+written);
+   assertTrue(rows(session).containsKey("game/Early"));
+   assertFalse(Files.exists(session.resolve(DefinedClassEvidence.INTACT)),
+     "without the marker gone, this session reads as complete and game/Lost as never loaded");
+  } finally {
+   if(blobs!=null)blobs.toFile().setWritable(true,false);
+   if(manifest!=null)manifest.toFile().setWritable(true,false);
+   if(old==null) System.clearProperty(DefinedClassEvidence.PROPERTY); else System.setProperty(DefinedClassEvidence.PROPERTY,old);
+  }
+ }
+ /**
+  * A session directory that refuses every change: nothing on disk can carry the loss, so the kernel says in the
+  * log which session to discard -- and the definition still succeeds.
+  */
+ @Test void aSessionThatCannotEvenWithdrawItselfSaysSoAndStillDefines() throws Exception {
+  String old=System.getProperty(DefinedClassEvidence.PROPERTY);
+  System.setProperty(DefinedClassEvidence.PROPERTY, temporary.toString());
+  Path session=null;
+  java.io.PrintStream err=System.err;java.io.ByteArrayOutputStream log=new java.io.ByteArrayOutputStream();
+  try (var loader=new ForbricClassLoader(new URL[0],getClass().getClassLoader())) {
+   try(var sessions=Files.list(temporary)){session=sessions.findFirst().orElseThrow();}
+   assertTrue(session.toFile().setWritable(false,false)&&session.resolve("definitions.tsv").toFile().setWritable(false,false));
+   System.setErr(new java.io.PrintStream(log,true,java.nio.charset.StandardCharsets.UTF_8));
+   Class<?> defined=assertDoesNotThrow(()->loader.defineRuntimeClass("game.Frozen",type("game/Frozen")));
+   assertSame(defined,loader.loadClass("game.Frozen"));
+   String said=log.toString(java.nio.charset.StandardCharsets.UTF_8);
+   assertTrue(said.contains("discard this evidence session")&&said.contains(session.toString()),said);
+  } finally {
+   System.setErr(err);
+   if(session!=null){session.toFile().setWritable(true,false);session.resolve("definitions.tsv").toFile().setWritable(true,false);}
    if(old==null) System.clearProperty(DefinedClassEvidence.PROPERTY); else System.setProperty(DefinedClassEvidence.PROPERTY,old);
   }
  }

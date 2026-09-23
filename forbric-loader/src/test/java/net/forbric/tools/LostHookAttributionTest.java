@@ -267,6 +267,7 @@ class LostHookAttributionTest {
 			manifest.append(node.name).append('\t').append(hash).append('\n');
 		}
 		Files.writeString(root.resolve("definitions.tsv"), manifest);
+		Files.createFile(root.resolve(EffectiveHookEvidence.INTACT));
 		return root;
 	}
 

@@ -49,6 +49,19 @@ class EffectiveHookEvidenceTest {
   var failure=assertThrows(java.io.IOException.class,()->new EffectiveHookEvidence(root));
   assertTrue(failure.getMessage().contains("game/B"),failure.getMessage());
  }
+ /**
+  * The kernel lost a record and could not even write the {@code #incomplete} row (a full disk, a read-only
+  * manifest). The rows it has are valid, so this is the session exactly as it looks then -- and accepting it
+  * reports the lost class UNOBSERVED and builds the helper set without its calls. The only thing left to say so
+  * is the marker the kernel withdrew.
+  */
+ @Test void aSessionThatNoLongerVouchesForItselfIsRefused() throws Exception {
+  manifest();put("game/Early",HOOK,Opcodes.INVOKESTATIC);
+  new EffectiveHookEvidence(root);
+  Files.delete(root.resolve(EffectiveHookEvidence.INTACT));
+  var failure=assertThrows(java.io.IOException.class,()->new EffectiveHookEvidence(root));
+  assertTrue(failure.getMessage().contains(EffectiveHookEvidence.INTACT),failure.getMessage());
+ }
  @Test void namesThatDifferOnlyInCaseAreDistinctDefinitions() throws Exception {
   manifest();put("game/a",HOOK,Opcodes.INVOKESTATIC);put("game/A",null,0);
   var e=new EffectiveHookEvidence(root);
@@ -92,7 +105,10 @@ class EffectiveHookEvidenceTest {
   assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK,
     e.state("game/Partial#tick()V",HOOK+"#tick()V",Map.of("INVOKEVIRTUAL/itf=false",1)),"a changed invocation form is not the same call");
  }
- private void manifest() throws Exception {Files.writeString(root.resolve("definitions.tsv"),EffectiveHookEvidence.HEADER+"\n");}
+ private void manifest() throws Exception {
+  Files.writeString(root.resolve("definitions.tsv"),EffectiveHookEvidence.HEADER+"\n");
+  Files.createFile(root.resolve(EffectiveHookEvidence.INTACT));
+ }
  private String put(String name,String target,int opcode) throws Exception {
   ClassWriter w=new ClassWriter(0);w.visit(Opcodes.V17,Opcodes.ACC_PUBLIC,name,null,"java/lang/Object",null);
   var m=w.visitMethod(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC,"tick","()V",null,null);m.visitCode();

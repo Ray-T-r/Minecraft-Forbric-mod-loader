@@ -21,8 +21,10 @@ import org.objectweb.asm.tree.MethodNode;
  * Joins raw losses to actual final class definitions; never equates a call site with event delivery.
  *
  * <p>Reads the kernel's {@code -Dforbric.definedClassEvidence} session: {@code definitions.tsv} maps each defined
- * class to {@code blobs/<sha256>.class}. A session the kernel marked {@code #incomplete} is refused whole, because a
- * record it could not write is a class this would otherwise report as never loaded.
+ * class to {@code blobs/<sha256>.class}. A session that lost a record is refused whole, because that record is a
+ * class this would otherwise report as never loaded, and a helper whose only caller it was would stop counting as
+ * one. The kernel says so twice: an {@code #incomplete} row when it can still write one, and always by removing
+ * the {@code intact} marker -- the one that survives a full disk or a read-only manifest.
  *
  * <p>States, strongest first. DIRECT_RESTORED: the final caller itself makes the call, as often and in the same
  * invocation form as the patched source did. VIA_DEFINED_HELPER: it reaches the call through exact static calls
@@ -34,7 +36,8 @@ import org.objectweb.asm.tree.MethodNode;
  */
 final class EffectiveHookEvidence {
 	enum State { DIRECT_RESTORED, VIA_DEFINED_HELPER, VIA_KERNEL_BRIDGE, OBSERVED_WITHOUT_HOOK, UNOBSERVED }
-	static final String HEADER = "# forbric-defined-classes-v2";
+	static final String HEADER = "# forbric-defined-classes-v3";
+	static final String INTACT = "intact";
 	private static final String KERNEL = "net/forbric/kernel/";
 	private final Map<String, MethodNode> methods = new HashMap<>();
 	private final Set<String> classes = new HashSet<>();
@@ -50,9 +53,13 @@ final class EffectiveHookEvidence {
 		var rows = Files.readAllLines(root.resolve("definitions.tsv"));
 		if (rows.isEmpty() || !rows.get(0).equals(HEADER))
 			throw new IOException("Not a successful-definition evidence manifest (" + HEADER + "): " + directory);
-		for (String row : rows) {
+		for (String row : rows)
 			if (row.startsWith("#incomplete"))
 				throw new IOException("The kernel could not record every definition in this session: " + row);
+		if (!Files.isRegularFile(root.resolve(INTACT)))
+			throw new IOException("The kernel lost a record in this session and could not write which: no "
+					+ INTACT + " marker in " + directory);
+		for (String row : rows) {
 			if (row.startsWith("#") || row.isBlank()) continue;
 			String[] parts = row.split("\t", -1);
 			if (parts.length != 2 || !parts[1].matches("[0-9a-f]{64}")) throw new IOException("Invalid definition row: " + row);

@@ -21,13 +21,20 @@ import java.util.HexFormat;
  * succeeded, so the caller got an error for a class the JVM now held. {@code definitions.tsv} maps each name to
  * its blob.
  *
- * <p>Recording never fails the definition it records. A write that fails marks the session {@code #incomplete}
- * in the manifest instead, and the reader refuses an incomplete session: a lost record fails closed where the
- * evidence is judged, not in the game it was observing.
+ * <p>Recording never fails the definition it records. A lost record fails closed where the evidence is judged,
+ * not in the game it was observing: the session is created with an empty {@link #INTACT} marker beside the
+ * manifest, the first lost record removes it, and the reader refuses a session without it. The manifest then gets
+ * an {@code #incomplete} row naming the class when it still can; on a full disk or a read-only manifest it cannot,
+ * and without the marker such a session read as complete, reporting the lost class as never loaded.
  */
 final class DefinedClassEvidence {
 	static final String PROPERTY = "forbric.definedClassEvidence";
-	static final String HEADER = "# forbric-defined-classes-v2";
+	static final String HEADER = "# forbric-defined-classes-v3";
+	/**
+	 * Present while every definition so far is recorded. Removing it is the one step a lost record takes first,
+	 * because unlinking needs no free space and no writable manifest.
+	 */
+	static final String INTACT = "intact";
 	private final Path directory;
 
 	DefinedClassEvidence() {
@@ -40,6 +47,7 @@ final class DefinedClassEvidence {
 			Files.writeString(directory.resolve("definitions.tsv"), HEADER + "\n"
 					+ "# <internal name> TAB <sha256 of blobs/<sha256>.class>; successfully defined bytes only."
 					+ " Class presence does not prove method execution.\n");
+			Files.createFile(directory.resolve(INTACT));
 			net.forbric.kernel.util.ForbricLog.info("[Forbric/Evidence] defined classes: %s", directory);
 		} catch (IOException failure) { throw new UncheckedIOException("Cannot create requested class evidence", failure); }
 	}
@@ -73,13 +81,28 @@ final class DefinedClassEvidence {
 	private void incomplete(String internal, Exception failure) {
 		String name = internal.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
 		String reason = String.valueOf(failure).replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
+		// First the step that still works when nothing else does: the session stops vouching for itself.
+		boolean withdrawn;
+		try {
+			Files.deleteIfExists(directory.resolve(INTACT));
+			withdrawn = true;
+		} catch (IOException | RuntimeException undeletable) {
+			withdrawn = false;
+		}
 		try {
 			append("#incomplete\t" + name + "\t" + reason + "\n");
 		} catch (IOException unwritable) {
-			// The manifest itself is gone or read-only; the reader then finds rows without blobs or no manifest,
-			// and refuses the session either way.
+			// A full disk or a read-only manifest: the row is lost, and the missing marker is what refuses the session.
 		}
-		net.forbric.kernel.util.ForbricLog.warn("[Forbric/Evidence] could not record defined bytes for %s; this"
-				+ " evidence session is incomplete (%s)", name, reason);
+		if (withdrawn) {
+			net.forbric.kernel.util.ForbricLog.warn("[Forbric/Evidence] could not record defined bytes for %s; this"
+					+ " evidence session is incomplete (%s)", name, reason);
+		} else {
+			// Only a session directory that refuses every change -- a volume gone read-only -- gets here, and then
+			// nothing on disk can carry the loss.
+			net.forbric.kernel.util.ForbricLog.error("[Forbric/Evidence] could not record defined bytes for %s, and"
+					+ " could not withdraw %s either; discard this evidence session, it cannot say it is"
+					+ " incomplete (%s)", name, directory.resolve(INTACT), reason);
+		}
 	}
 }
