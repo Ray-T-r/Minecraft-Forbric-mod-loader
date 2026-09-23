@@ -41,28 +41,32 @@ class PortalDirectRestorationTest {
 		byte[] compiled = Files.readAllBytes(runtime.resolve(binary.replace('.', '/') + ".class"));
 		byte[] nativeCaller = ForgeSpawnFixture.staged("merged-base/patched-mc-merged-26.2.jar", TARGET);
 		for (byte[] caller : List.of(adapt(nativeCaller), adapt(write(restoredCaller())))) {
-			ClassNode definition = new ClassNode(); new ClassReader(compiled).accept(definition, 0);
-			MethodInsnNode injected = injectedCall(caller);
-			assertPortalCallResolves(injected, definition);
-			for (int mutation = 0; mutation < 4; mutation++) {
-				ClassNode broken = new ClassNode(); new ClassReader(compiled).accept(broken, 0);
-				MethodNode method = broken.methods.stream().filter(m -> m.name.equals(injected.name) && m.desc.equals(injected.desc)).findFirst().orElseThrow();
-				if (mutation == 0) broken.methods.remove(method);
-				if (mutation == 1) method.desc = "()Ljava/util/Optional;";
-				if (mutation == 2) method.access &= ~Opcodes.ACC_STATIC;
-				if (mutation == 3) method.access &= ~Opcodes.ACC_PUBLIC;
-				assertThrows(AssertionError.class, () -> assertPortalCallResolves(injected, broken));
+			for (MethodInsnNode injected : injectedCalls(caller)) {
+				ClassNode definition = new ClassNode(); new ClassReader(compiled).accept(definition, 0);
+				assertPortalCallResolves(injected, definition);
+				for (int mutation = 0; mutation < 4; mutation++) {
+					ClassNode broken = new ClassNode(); new ClassReader(compiled).accept(broken, 0);
+					MethodNode method = broken.methods.stream().filter(m -> m.name.equals(injected.name) && m.desc.equals(injected.desc)).findFirst().orElseThrow();
+					if (mutation == 0) broken.methods.remove(method);
+					if (mutation == 1) method.desc = "()Ljava/util/Optional;";
+					if (mutation == 2) method.access &= ~Opcodes.ACC_STATIC;
+					if (mutation == 3) method.access &= ~Opcodes.ACC_PUBLIC;
+					assertThrows(AssertionError.class, () -> assertPortalCallResolves(injected, broken));
+				}
 			}
 		}
+		assertEquals(List.of("onTrySpawnPortalNeoOnly", "onTrySpawnPortalForgeOnly"),
+				injectedCalls(adapt(write(restoredCaller()))).stream().map(call -> call.name).toList(),
+				"a restored caller routes each family's own call through its runtime entrypoint, in the base's order");
 	}
 
-	private static MethodInsnNode injectedCall(byte[] caller) {
+	private static List<MethodInsnNode> injectedCalls(byte[] caller) {
 		ClassNode node = new ClassNode(); new ClassReader(caller).accept(node, 0);
 		List<MethodInsnNode> calls = new java.util.ArrayList<>();
 		for (var instruction : host(node).instructions) if (instruction instanceof MethodInsnNode call
 				&& call.owner.equals("net/forbric/kernel/runtime/KernelPortalSpawn")) calls.add(call);
-		assertEquals(1, calls.size(), "the caller must contain exactly one runtime portal entrypoint");
-		return calls.getFirst();
+		assertFalse(calls.isEmpty(), "the caller must contain a runtime portal entrypoint");
+		return calls;
 	}
 
 	private static void assertPortalCallResolves(MethodInsnNode call, ClassNode definition) {
@@ -117,17 +121,25 @@ class PortalDirectRestorationTest {
 		}
 	}
 
-	@Test void directCallerExceptionsRestoreScopeWithoutCatchingTheNativeForgeFailure() throws Exception {
+	@Test void directCallerNeoFailurePropagatesAndForgeFailureKeepsNeoForgesResult() throws Exception {
 		try (PortalSpawnFixture f = new PortalSpawnFixture(temporary, false, adapt(write(restoredCaller())))) {
-			f.installLegacyBridge(); Object shape = f.shape(); RuntimeException failure = new IllegalStateException("listener");
+			f.installLegacyBridge(); Object shape = f.shape(), neo = f.shape(); RuntimeException failure = new IllegalStateException("listener");
 			f.set("neoFailure", failure);
 			assertSame(failure, assertThrows(IllegalStateException.class, () -> f.place(Optional.of(shape))));
 			assertFalse(f.guarded()); assertEquals(0, f.count("forgeCalls"));
+			// The wrapper on a base that lost Forge's call, and the legacy bridge before it, keep NeoForge's answer when
+			// a MinecraftForge listener throws. The same caller rebuilt with Forge's call restored keeps that policy.
 			f.set("neoFailure", null); f.set("forgeFailure", failure);
-			assertSame(failure, assertThrows(IllegalStateException.class, () -> f.place(Optional.of(shape))));
-			assertFalse(f.guarded()); assertNull(f.get("builtShape"));
-			f.set("forgeFailure", null); f.directNeo(Optional.of(shape));
-			assertEquals(2, f.count("forgeCalls"));
+			f.set("neoResult", (UnaryOperator<Object>) input -> Optional.of(neo));
+			f.place(Optional.of(shape));
+			assertFalse(f.guarded()); assertEquals(1, f.count("forgeCalls"));
+			assertSame(neo, f.get("builtShape"), "a failed MinecraftForge listener must not discard NeoForge's result");
+			f.set("forgeFailure", null); f.set("forgeResult", (UnaryOperator<Object>) input -> null);
+			f.place(Optional.of(shape));
+			assertNull(f.get("builtShape"), "a hook answering null refuses, as through the wrapper");
+			f.set("forgeResult", (UnaryOperator<Object>) input -> input); f.set("neoResult", (UnaryOperator<Object>) input -> input);
+			f.directNeo(Optional.of(shape));
+			assertEquals(3, f.count("forgeCalls"), "independent producers still retain their forward");
 		}
 	}
 
@@ -145,7 +157,8 @@ class PortalDirectRestorationTest {
 	}
 
 	@Test void unknownDualCallShapesRemainUnchangedAndOnlySuspected() throws Exception {
-		for (Consumer<MethodNode> mutation : List.<Consumer<MethodNode>>of(
+		// The finding describes the base, not the repair: switched off, the legacy forward still runs beside it.
+		for (String setting : List.of("on", "off")) for (Consumer<MethodNode> mutation : List.<Consumer<MethodNode>>of(
 				m -> neoGuard(m).setOpcode(Opcodes.IFNE),
 				m -> forgeGuard(m).setOpcode(Opcodes.IFNE),
 				m -> ((VarInsnNode) previousCode(forge(m))).var = 1,
@@ -156,6 +169,7 @@ class PortalDirectRestorationTest {
 				m -> { MethodInsnNode forge = forge(m); m.instructions.insert(forge, forge.clone(null)); },
 				m -> { LabelNode entry = new LabelNode(); m.instructions.insertBefore(previousCode(previousCode(previousCode(forge(m)))), entry); m.instructions.insert(new JumpInsnNode(Opcodes.GOTO, entry)); },
 				m -> m.access |= Opcodes.ACC_SYNCHRONIZED)) {
+			System.setProperty(PortalSpawnInjector.PROPERTY, setting);
 			ClassNode caller = restoredCaller(); mutation.accept(host(caller)); byte[] bytes = write(caller);
 			assertSame(bytes, adapt(bytes));
 			var findings = CompatibilityFindings.all(); assertEquals(1, findings.size());
@@ -165,9 +179,31 @@ class PortalDirectRestorationTest {
 		}
 	}
 
-	@Test void offSwitchDoesNotClaimTheDirectCallerHasBeenRepaired() throws Exception {
-		byte[] bytes = write(restoredCaller()); System.setProperty(PortalSpawnInjector.PROPERTY, "off");
-		assertSame(bytes, adapt(bytes)); assertTrue(CompatibilityFindings.all().isEmpty());
+	/**
+	 * The switch turns Forbric's portal composition off; the legacy forward stays installed. A base that restored
+	 * MinecraftForge's own call must then lose it again, or the forward and the native call both post Forge.
+	 */
+	@Test void switchedOffRestoredCallerFallsBackToTheLegacyForwardAlone() throws Exception {
+		byte[] restored = write(restoredCaller()); System.setProperty(PortalSpawnInjector.PROPERTY, "off");
+		byte[] reverted = adapt(restored);
+		try (PortalSpawnFixture f = new PortalSpawnFixture(temporary, false, reverted)) {
+			f.installLegacyBridge(); Object shape = f.shape(), replacement = f.shape();
+			f.place(Optional.of(shape));
+			assertEquals(List.of("neo", "forge"), f.trace(), "MinecraftForge sees the portal once, through the legacy forward");
+			assertSame(shape, f.get("builtShape"));
+			f.set("forgeResult", (UnaryOperator<Object>) input -> Optional.of(replacement)); f.place(Optional.of(shape));
+			assertSame(shape, f.get("builtShape"), "switched off, only the event-only forward remains: it carries no replacement");
+			f.set("forgeResult", (UnaryOperator<Object>) input -> input); f.set("forgeCanceled", true); f.place(Optional.of(shape));
+			assertNull(f.get("builtShape"), "a MinecraftForge refusal still carries");
+			f.set("forgeCanceled", false); f.set("neoCanceled", true); f.place(Optional.of(shape));
+			assertNull(f.get("builtShape")); assertEquals(4, f.count("neoCalls")); assertEquals(3, f.count("forgeCalls"));
+		}
+		ClassNode node = new ClassNode(); new ClassReader(reverted).accept(node, 0);
+		List<String> hooks = new java.util.ArrayList<>();
+		for (var instruction : host(node).instructions) if (instruction instanceof MethodInsnNode call && call.name.startsWith("onTrySpawnPortal")) hooks.add(call.owner + "." + call.name);
+		assertEquals(List.of(NEO + ".onTrySpawnPortal"), hooks, "NeoForge's native call alone, with no kernel entrypoint");
+		assertSame(reverted, adapt(reverted), "a reverted caller is idempotent");
+		assertTrue(CompatibilityFindings.all().isEmpty(), "switching the composition off does not claim a repair or a failure");
 	}
 
 	private static byte[] adapt(byte[] bytes) { return new PortalSpawnInjector().transform(TARGET, bytes, null); }
@@ -183,9 +219,12 @@ class PortalDirectRestorationTest {
 	private static AbstractInsnNode nextCode(AbstractInsnNode instruction) { do { instruction = instruction.getNext(); } while (instruction != null && instruction.getOpcode() < 0); return instruction; }
 	private static AbstractInsnNode previousCode(AbstractInsnNode instruction) { do { instruction = instruction.getPrevious(); } while (instruction != null && instruction.getOpcode() < 0); return instruction; }
 	private static byte[] write(ClassNode caller) { ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS); caller.accept(writer); return writer.toByteArray(); }
+	/** The staged caller itself once the merge restores MinecraftForge's call; otherwise that restoration by hand. */
 	private static ClassNode restoredCaller() throws Exception {
 		ClassNode caller = new ClassNode(); new ClassReader(ForgeSpawnFixture.staged("merged-base/patched-mc-merged-26.2.jar", TARGET)).accept(caller, 0);
-		MethodNode host = host(caller); MethodInsnNode neo = neo(host); JumpInsnNode barrier = neoGuard(host);
+		MethodNode host = host(caller);
+		for (var instruction : host.instructions) if (instruction instanceof MethodInsnNode call && call.owner.equals(FORGE)) return caller;
+		MethodInsnNode neo = neo(host); JumpInsnNode barrier = neoGuard(host);
 		int slot = ((VarInsnNode) nextCode(neo)).var;
 		InsnList restored = new InsnList();
 		restored.add(new VarInsnNode(Opcodes.ALOAD, 2)); restored.add(new VarInsnNode(Opcodes.ALOAD, 3)); restored.add(new VarInsnNode(Opcodes.ALOAD, slot));

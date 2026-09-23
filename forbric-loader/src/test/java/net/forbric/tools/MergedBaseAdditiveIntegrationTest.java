@@ -7,6 +7,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -19,6 +21,11 @@ import org.objectweb.asm.tree.*;
 class MergedBaseAdditiveIntegrationTest {
 	@TempDir Path directory;
 	private static final String OWNER = "net/minecraft/EntryHookProbe";
+	/** The probe restorations these fixtures are allowed to make; the tool's own list names only reviewed pairs. */
+	private static final Set<String> PROBES_REVIEWED = Set.of(
+			"<entry> -> " + AdditiveMethodMergerTest.FORGE + ".observe(I)V",
+			AdditiveMethodMergerTest.NEO + ".filter(Ljava/util/Optional;)Ljava/util/Optional; -> "
+					+ AdditiveMethodMergerTest.FORGE + ".filter(Ljava/util/Optional;)Ljava/util/Optional;");
 
 	@Test
 	void builderKeepsBothProvenPrefixesAndReportsTheDecision() throws Exception {
@@ -55,10 +62,60 @@ class MergedBaseAdditiveIntegrationTest {
 		assertTrue(result.report.contains("restricted entry-hook merges: accepted=0 declined=1"));
 	}
 
+	@Test
+	void theToolsOwnReviewedListHoldsBackAProbeRestorationAndKeepsTheLossReported() throws Exception {
+		MethodNode vanilla = AdditiveMethodMergerTest.arithmetic();
+		Build result = build(new MergedBaseBuilder(), vanilla, AdditiveMethodMergerTest.prefix(vanilla, AdditiveMethodMergerTest.FORGE),
+				AdditiveMethodMergerTest.prefix(vanilla, AdditiveMethodMergerTest.NEO), true);
+		assertEquals(List.of(AdditiveMethodMergerTest.NEO), calls(result.method));
+		assertTrue(result.report.contains("DECLINED entry hooks compose, but no runtime stand-down is reviewed: restoring "
+				+ AdditiveMethodMergerTest.FORGE + ".observe(I)V"), result.report);
+		assertTrue(result.report.contains(OWNER + "#compute(I)I (forge hook lost)"));
+		assertTrue(result.report.contains("[merge]   declined 1: entry hooks compose, but no runtime stand-down is reviewed"));
+	}
+
+	@Test
+	void aHookThatDoesNotLinkInTheRuntimeJarsIsNotRestored() throws Exception {
+		MethodNode vanilla = AdditiveMethodMergerTest.arithmetic();
+		Build result = build(new MergedBaseBuilder(PROBES_REVIEWED), vanilla,
+				AdditiveMethodMergerTest.prefix(vanilla, AdditiveMethodMergerTest.FORGE),
+				AdditiveMethodMergerTest.prefix(vanilla, AdditiveMethodMergerTest.NEO), false);
+		assertEquals(List.of(AdditiveMethodMergerTest.NEO), calls(result.method));
+		assertTrue(result.report.contains("DECLINED entry hook does not resolve: "), result.report);
+		assertTrue(result.report.contains(OWNER + "#compute(I)I (forge hook lost)"));
+	}
+
+	@Test
+	void pairedResultHooksComposeThroughTheBuilderAndRunOnTheBasesOwnFrames() throws Exception {
+		MethodNode vanilla = AdditiveMethodMergerTest.choosing();
+		Build result = build(new MergedBaseBuilder(PROBES_REVIEWED), vanilla,
+				AdditiveMethodMergerTest.filtered(vanilla, AdditiveMethodMergerTest.FORGE),
+				AdditiveMethodMergerTest.filtered(vanilla, AdditiveMethodMergerTest.NEO), true);
+		assertEquals(List.of(AdditiveMethodMergerTest.NEO, "java/util/Optional", AdditiveMethodMergerTest.FORGE,
+				"java/util/Optional"), calls(result.method));
+		assertTrue(result.report.contains(OWNER + "#choose(Ljava/util/Optional;)I ACCEPTED paired hooks"), result.report);
+		assertFalse(result.report.contains("(forge hook lost)"));
+		// The builder writes with COMPUTE_MAXS only: the added guard jumps to a label whose frame the base already
+		// has, so defining and running the class is the proof those frames still hold.
+		assertEquals(1, AdditiveMethodMergerTest.chooseClass(OWNER, result.bytes, Optional.of("portal")));
+		assertEquals(0, AdditiveMethodMergerTest.chooseClass(OWNER, result.bytes, Optional.empty()));
+	}
+
 	private Build build(MethodNode vanilla, MethodNode forge, MethodNode neo) throws Exception {
-		Path v = jar("vanilla.jar", vanilla), f = jar("forge.jar", forge), n = jar("neo.jar", neo);
+		return build(new MergedBaseBuilder(PROBES_REVIEWED), vanilla, forge, neo, true);
+	}
+
+	private Build build(MergedBaseBuilder builder, MethodNode vanilla, MethodNode forge, MethodNode neo,
+			boolean runtimes) throws Exception {
+		Path v = jar("vanilla.jar", OWNER, AdditiveMethodMergerTest.classBytes(OWNER, vanilla));
+		Path f = jar("forge.jar", OWNER, AdditiveMethodMergerTest.classBytes(OWNER, forge));
+		Path n = jar("neo.jar", OWNER, AdditiveMethodMergerTest.classBytes(OWNER, neo));
+		Path forgeRuntime = runtimes ? jar("forge-runtime.jar", AdditiveMethodMergerTest.FORGE,
+				AdditiveMethodMergerTest.hookClass(AdditiveMethodMergerTest.FORGE)) : null;
+		Path neoRuntime = runtimes ? jar("neo-runtime.jar", AdditiveMethodMergerTest.NEO,
+				AdditiveMethodMergerTest.hookClass(AdditiveMethodMergerTest.NEO)) : null;
 		Path merged = directory.resolve("merged.jar"), report = directory.resolve("report.txt");
-		new MergedBaseBuilder().run(v, f, n, merged, report, null, null);
+		builder.run(v, f, n, merged, report, forgeRuntime, neoRuntime);
 		try (ZipFile zip = new ZipFile(merged.toFile())) {
 			ClassNode output = new ClassNode();
 			byte[] bytes = zip.getInputStream(zip.getEntry(OWNER + ".class")).readAllBytes();
@@ -67,11 +124,11 @@ class MergedBaseAdditiveIntegrationTest {
 		}
 	}
 
-	private Path jar(String name, MethodNode method) throws Exception {
+	private Path jar(String name, String owner, byte[] bytes) throws Exception {
 		Path path = directory.resolve(name);
 		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(path))) {
-			zip.putNextEntry(new ZipEntry(OWNER + ".class"));
-			zip.write(AdditiveMethodMergerTest.classBytes(OWNER, method));
+			zip.putNextEntry(new ZipEntry(owner + ".class"));
+			zip.write(bytes);
 			zip.closeEntry();
 		}
 		return path;

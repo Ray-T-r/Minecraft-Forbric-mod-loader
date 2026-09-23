@@ -23,7 +23,13 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.kernel.util.ForbricLog;
 
-/** Descriptor-preserving portal composition, including a narrowly proved restored direct-call pair. */
+/**
+ * Descriptor-preserving portal composition, including a narrowly proved restored direct-call pair.
+ *
+ * <p>{@code -Dforbric.portalSpawn=off} turns Forbric's portal composition off and leaves the legacy event-only
+ * forward as the only path to MinecraftForge, on every base. A base whose merge restored MinecraftForge's own call
+ * in the proved shape therefore loses that call again: kept beside the forward, it would post Forge twice.
+ */
 public final class PortalSpawnInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.portalSpawn";
 	static final String TARGET = "net.minecraft.world.level.block.BaseFireBlock";
@@ -35,13 +41,15 @@ public final class PortalSpawnInjector implements ClassTransformer {
 	static final String FORGE = "net/minecraftforge/event/ForgeEventFactory";
 	static final String RUNTIME = "net/forbric/kernel/runtime/KernelPortalSpawn";
 	static final String NEO_ONLY = "onTrySpawnPortalNeoOnly";
+	static final String FORGE_ONLY = "onTrySpawnPortalForgeOnly";
 	// Actual pinned 26.2 merged onPlace: both the Optional consumer and every outer branch are reviewed.
-	private static final String NATIVE_BODY = "6825b97e76072ed5a5ddcfe131fc7fb8609f41adf31011bffcc8113c5401b40f";
+	static final String NATIVE_BODY = "6825b97e76072ed5a5ddcfe131fc7fb8609f41adf31011bffcc8113c5401b40f";
 
 	@Override public String name() { return "forbric-portal-spawn"; }
 
 	@Override public AnchorSet anchors() {
-		if (!enabled()) return AnchorSet.scanned("switched off by -D" + PROPERTY);
+		if (!enabled()) return AnchorSet.scanned("switched off by -D" + PROPERTY
+				+ "; a restored MinecraftForge call is removed so the legacy forward posts it once");
 		return AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
 				"the portal hook result cannot reach BaseFireBlock through an event-only forward"));
 	}
@@ -49,7 +57,7 @@ public final class PortalSpawnInjector implements ClassTransformer {
 	private static boolean enabled() { return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on")); }
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
-		if (!enabled() || !TARGET.equals(className) || bytes == null || bytes.length == 0) return bytes;
+		if (!TARGET.equals(className) || bytes == null || bytes.length == 0) return bytes;
 		ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, 0);
 		if (!TARGET.replace('.', '/').equals(node.name)) return bytes;
 		MethodNode host = null;
@@ -62,26 +70,40 @@ public final class PortalSpawnInjector implements ClassTransformer {
 		int calls = 0, forgeCalls = 0;
 		for (AbstractInsnNode instruction : host.instructions) {
 			if (!(instruction instanceof MethodInsnNode call)) continue;
-			if (call.owner.equals(RUNTIME) && (call.name.equals("onTrySpawnPortal") || call.name.equals(NEO_ONLY))) return bytes;
+			if (call.owner.equals(RUNTIME) && (call.name.equals("onTrySpawnPortal") || call.name.equals(NEO_ONLY)
+					|| call.name.equals(FORGE_ONLY))) return bytes;
 			if (!call.name.equals("onTrySpawnPortal")) continue;
 			if (call.owner.equals(FORGE)) forgeCalls++;
 			if (call.owner.equals(NEO)) { target = call; calls++; }
 		}
 		if (calls > 0 && forgeCalls > 0) {
-			if (calls != 1 || forgeCalls != 1 || !provedDirectPair(host)) {
+			// Asked whether or not the composition is switched on: the legacy forward runs beside this caller either way.
+			List<AbstractInsnNode> restored = calls == 1 && forgeCalls == 1 ? provedDirectPair(host) : null;
+			if (restored == null) {
 				String reason = "The portal caller contains both native hooks, but their order, cancellation barriers and consumed result are not proved; the caller and legacy bridge remain unchanged and duplicate delivery has not been ruled out.";
 				CompatibilityFindings.record(new CompatibilityFinding("portal-direct-composition", "forbric", "Portal creation",
 						"PortalSpawnInjector", CompatibilityFinding.Confidence.SUSPECTED, false, reason,
 						List.of(TARGET + "#onPlace" + HOST_DESC, reason)));
 				return bytes;
 			}
+			if (!enabled()) {
+				// Straight-line, stack-neutral code that nothing jumps into, and the local it writes holds the same
+				// Optional before and after, so the existing frames stay valid without it.
+				for (AbstractInsnNode instruction : restored) host.instructions.remove(instruction);
+				ClassWriter writer = new ClassWriter(0); node.accept(writer);
+				ForbricLog.info("[Forbric/PortalSpawn] switched off: removed the base's restored MinecraftForge portal call; the legacy forward posts it once");
+				return writer.toByteArray();
+			}
+			MethodInsnNode forge = (MethodInsnNode) restored.get(3);
 			target.owner = RUNTIME;
 			target.name = NEO_ONLY;
+			forge.owner = RUNTIME;
+			forge.name = FORGE_ONLY;
 			ClassWriter writer = new ClassWriter(0); node.accept(writer);
-			ForbricLog.info("[Forbric/PortalSpawn] proved direct NeoForge then MinecraftForge portal calls; suppressing the legacy forward only inside that NeoForge call");
+			ForbricLog.info("[Forbric/PortalSpawn] proved direct NeoForge then MinecraftForge portal calls; suppressing the legacy forward only inside that NeoForge call and keeping NeoForge's result if a MinecraftForge listener fails");
 			return writer.toByteArray();
 		}
-		if (forgeCalls > 0) return bytes;
+		if (!enabled() || forgeCalls > 0) return bytes;
 		if (calls != 1 || target.getOpcode() != Opcodes.INVOKESTATIC || target.itf || !target.desc.equals(HOOK_DESC)) return bytes;
 		AbstractInsnNode next = target.getNext();
 		while (next != null && next.getOpcode() < 0) next = next.getNext();
@@ -97,16 +119,16 @@ public final class PortalSpawnInjector implements ClassTransformer {
 	 * Forge with that same result, store its answer, and repeat the same guard before the original consumer.
 	 * Restoring the reviewed executable fingerprint proves the enclosing branches as well. Merely finding
 	 * both symbols (or even the right adjacent loads) cannot justify disabling an event forward.
+	 *
+	 * @return the eight inserted instructions in {@code host}, MinecraftForge's call fourth, or null when not proved
 	 */
-	private static boolean provedDirectPair(MethodNode host) {
-		if ((host.access & Opcodes.ACC_SYNCHRONIZED) != 0 || !host.tryCatchBlocks.isEmpty()) return false;
-		MethodNode copy = new MethodNode(host.access, host.name, host.desc, host.signature, host.exceptions.toArray(String[]::new)); host.accept(copy);
-		List<AbstractInsnNode> code = new ArrayList<>();
-		for (AbstractInsnNode instruction : copy.instructions) if (instruction.getOpcode() >= 0) code.add(instruction);
+	private static List<AbstractInsnNode> provedDirectPair(MethodNode host) {
+		if ((host.access & Opcodes.ACC_SYNCHRONIZED) != 0 || !host.tryCatchBlocks.isEmpty()) return null;
+		List<AbstractInsnNode> code = code(host);
 		int at = -1;
 		for (int i = 0; i < code.size(); i++) if (call(code.get(i), Opcodes.INVOKESTATIC, NEO, "onTrySpawnPortal", HOOK_DESC)) at = i;
 		if (at < 3 || at + 18 >= code.size() || !(code.get(at + 1) instanceof VarInsnNode store)
-				|| store.getOpcode() != Opcodes.ASTORE) return false;
+				|| store.getOpcode() != Opcodes.ASTORE) return null;
 		int slot = store.var;
 		if (!variable(code.get(at - 3), Opcodes.ALOAD, 2) || !variable(code.get(at - 2), Opcodes.ALOAD, 3)
 				|| !variable(code.get(at - 1), Opcodes.ALOAD, slot)
@@ -127,18 +149,26 @@ public final class PortalSpawnInjector implements ClassTransformer {
 				|| !cast.desc.equals("net/minecraft/world/level/portal/PortalShape")
 				|| !variable(code.get(at + 16), Opcodes.ALOAD, 2)
 				|| !call(code.get(at + 17), Opcodes.INVOKEVIRTUAL, cast.desc, "createPortalBlocks", "(Lnet/minecraft/world/level/LevelAccessor;)V")
-				|| code.get(at + 18).getOpcode() != Opcodes.RETURN) return false;
-		List<AbstractInsnNode> inserted = code.subList(at + 5, at + 13);
+				|| code.get(at + 18).getOpcode() != Opcodes.RETURN) return null;
+		List<AbstractInsnNode> inserted = List.copyOf(code.subList(at + 5, at + 13));
 		// No outside entry into the insertion may disappear when we normalize it away for the fingerprint.
-		for (AbstractInsnNode instruction : copy.instructions) {
-			if (instruction instanceof JumpInsnNode jump && inserted.contains(nextCode(jump.label))) return false;
+		for (AbstractInsnNode instruction : host.instructions) {
+			if (instruction instanceof JumpInsnNode jump && inserted.contains(nextCode(jump.label))) return null;
 			if (instruction instanceof TableSwitchInsnNode table
-					&& (inserted.contains(nextCode(table.dflt)) || table.labels.stream().anyMatch(l -> inserted.contains(nextCode(l))))) return false;
+					&& (inserted.contains(nextCode(table.dflt)) || table.labels.stream().anyMatch(l -> inserted.contains(nextCode(l))))) return null;
 			if (instruction instanceof LookupSwitchInsnNode lookup
-					&& (inserted.contains(nextCode(lookup.dflt)) || lookup.labels.stream().anyMatch(l -> inserted.contains(nextCode(l))))) return false;
+					&& (inserted.contains(nextCode(lookup.dflt)) || lookup.labels.stream().anyMatch(l -> inserted.contains(nextCode(l))))) return null;
 		}
-		for (AbstractInsnNode instruction : inserted) copy.instructions.remove(instruction);
-		return NATIVE_BODY.equals(MixinInstructionFingerprint.hash(copy));
+		MethodNode copy = new MethodNode(host.access, host.name, host.desc, host.signature, host.exceptions.toArray(String[]::new)); host.accept(copy);
+		List<AbstractInsnNode> copied = code(copy);
+		for (int i = at + 5; i < at + 13; i++) copy.instructions.remove(copied.get(i));
+		return NATIVE_BODY.equals(MixinInstructionFingerprint.hash(copy)) ? inserted : null;
+	}
+
+	private static List<AbstractInsnNode> code(MethodNode method) {
+		List<AbstractInsnNode> code = new ArrayList<>();
+		for (AbstractInsnNode instruction : method.instructions) if (instruction.getOpcode() >= 0) code.add(instruction);
+		return code;
 	}
 
 	private static AbstractInsnNode nextCode(LabelNode label) {

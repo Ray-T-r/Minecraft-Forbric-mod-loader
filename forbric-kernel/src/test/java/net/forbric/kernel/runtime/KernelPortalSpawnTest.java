@@ -73,6 +73,27 @@ class KernelPortalSpawnTest {
 		}
 	}
 
+	@Test void anotherProducersEventNestedOnTheSameThreadStillReachesMinecraftForge() throws Exception {
+		try (PortalSpawnFixture f = fixture(false)) {
+			f.installLegacyBridge(); Object outer = f.shape(), other = f.shape();
+			AtomicReference<Object> nestedResult = new AtomicReference<>();
+			f.set("nested", (Runnable) () -> {
+				try {
+					assertTrue(f.guarded(), "the wrapper's own dispatch is in progress on this thread");
+					f.set("forgeCanceled", true);
+					nestedResult.set(f.directNeo(Optional.of(other)));
+					f.set("forgeCanceled", false);
+				} catch (Exception failure) { throw new AssertionError(failure); }
+			});
+			assertEquals(Optional.of(outer), f.call(Optional.of(outer)));
+			assertEquals(List.of("neo", "neo", "forge", "forge"), f.trace(),
+					"a different producer's portal event is forwarded even while the wrapper dispatches its own");
+			assertEquals(2, f.count("forgeCalls"));
+			assertEquals(Optional.empty(), nestedResult.get(), "MinecraftForge's veto of the nested portal must carry");
+			assertFalse(f.guarded());
+		}
+	}
+
 	@Test void neoFailureAlwaysClearsScopeAndForgeFailureRetainsTheExistingFallback() throws Exception {
 		try (PortalSpawnFixture f = fixture(false)) {
 			f.installLegacyBridge(); Object shape = f.shape(); RuntimeException failure = new IllegalStateException("listener");
