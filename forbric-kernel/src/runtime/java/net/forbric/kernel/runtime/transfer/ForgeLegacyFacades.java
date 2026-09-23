@@ -50,9 +50,13 @@ public final class ForgeLegacyFacades {
 			if (maximum == 0) return ItemStack.EMPTY;
 			ItemResource resource = handler.getResource(slot);
 			if (resource.isEmpty()) return ItemStack.EMPTY;
+			// IItemHandler's contract, as ItemStackHandler and NeoForge's own adapter implement it: the result is at
+			// most ONE stack, even when the store holds more and the caller asks for more. getStackInSlot may still
+			// report the whole amount. An oversized ItemStack is not even encodable by the item codec.
+			int limit = Math.min(maximum, resource.getMaxStackSize());
 			try (var transaction = scope()) {
-				int moved = handler.extract(slot, resource, maximum, transaction);
-				ForgeSnapshotAdapters.checkAmount(moved, maximum);
+				int moved = handler.extract(slot, resource, limit, transaction);
+				ForgeSnapshotAdapters.checkAmount(moved, limit);
 				if (!simulate) transaction.commit();
 				return resource.toStack(moved);
 			}

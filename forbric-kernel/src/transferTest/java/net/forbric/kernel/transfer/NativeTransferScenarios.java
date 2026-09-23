@@ -237,6 +237,32 @@ public final class NativeTransferScenarios {
 		}
 		yes(weak[0].get() == null && weak[1].get() == null);
 	}
+	/**
+	 * The bridge builds a fresh endpoint, and so a fresh watch, for every public query. A Forge provider that
+	 * returns its one cached LazyOptional must still hold ONE subscription from us, not one per query until the
+	 * block entity is invalidated; every still-watching endpoint must still hear the invalidation.
+	 */
+	public static void transientWatchesShareOneSubscription() throws Exception {
+		var notifications = new java.util.concurrent.atomic.AtomicInteger();
+		var cached = net.minecraftforge.common.util.LazyOptional.of(() -> "cached handler");
+		for (int i = 0; i < 10_000; i++) yes("cached handler".equals(new net.forbric.kernel.runtime.transfer.ForgeCapabilityWatch(() -> { }).observe(cached)));
+		var kept = new net.forbric.kernel.runtime.transfer.ForgeCapabilityWatch(notifications::incrementAndGet);
+		var moved = new net.forbric.kernel.runtime.transfer.ForgeCapabilityWatch(notifications::incrementAndGet);
+		kept.observe(cached); moved.observe(cached); kept.observe(cached);
+		var other = net.minecraftforge.common.util.LazyOptional.of(() -> "other handler");
+		moved.observe(other);
+		eq(1, listeners(cached).size()); eq(1, listeners(other).size());
+		cached.invalidate();
+		eq(1, notifications.get()); yes(!kept.isWatching()); yes(moved.isWatching());
+		other.invalidate(); eq(2, notifications.get()); yes(!moved.isWatching());
+		// An optional that is already invalid notifies at once, exactly like LazyOptional.addListener itself.
+		var dead = new net.forbric.kernel.runtime.transfer.ForgeCapabilityWatch(notifications::incrementAndGet);
+		dead.observe(cached); eq(3, notifications.get()); yes(!dead.isWatching());
+	}
+	private static java.util.Set<?> listeners(net.minecraftforge.common.util.LazyOptional<?> optional) throws Exception {
+		var field = net.minecraftforge.common.util.LazyOptional.class.getDeclaredField("listeners"); field.setAccessible(true);
+		return (java.util.Set<?>) field.get(optional);
+	}
 	@SuppressWarnings("unchecked")
 	private static java.lang.ref.WeakReference<Object>[] weakAfterReplacement(net.forbric.kernel.runtime.transfer.ForgeCapabilityWatch watch) {
 		Object handler = new Object();
@@ -311,6 +337,86 @@ public final class NativeTransferScenarios {
 			expectedRuntimeFailure(root::close);
 		}
 		eq(1, denied.get()); eq(50, source.amount); eq(0, destination.amount); eq(0, source.notifications); eq(0, destination.notifications); closed();
+	}
+	/**
+	 * NeoForge's own contract: "new root transactions can safely be opened from" onRootCommit. A machine's
+	 * auto-output from its final notification must work when the commit that triggered it came through a pairing,
+	 * exactly as it does after a NeoForge-only commit, and the original commit must not throw afterwards.
+	 */
+	public static void neoFinalCommitMayTransferAgain() {
+		FabricTank output = new FabricTank(100); var bridgedOutput = NativeTransferAdapters.neo(output, codec(1));
+		var moved = new java.util.concurrent.atomic.AtomicInteger();
+		NeoTank machine = new NeoTank(100) {
+			@Override protected void onRootCommit(Long original) {
+				super.onRootCommit(original);
+				if (moved.get() != 0) return;
+				try (var auto = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot()) {
+					int out = extract(0, VALUE, 4, auto); moved.addAndGet(bridgedOutput.insert(0, VALUE, out, auto)); auto.commit();
+				}
+			}
+		};
+		var target = NativeTransferAdapters.fabric(machine, codec(1));
+		try (Transaction pipe = Transaction.openOuter()) { eq(10, target.insert(VALUE, 10, pipe)); pipe.commit(); }
+		eq(4, moved.get()); eq(6, machine.amount); eq(4, output.amount); eq(2, machine.notifications); eq(1, output.notifications); closed();
+	}
+	/** The mirror: a Fabric store's onFinalCommit after a NeoForge-origin paired commit moves into a bridged NeoForge store. */
+	public static void fabricFinalCommitMayTransferAgain() {
+		NeoTank output = new NeoTank(100); var bridgedOutput = NativeTransferAdapters.fabric(output, codec(1));
+		var moved = new java.util.concurrent.atomic.AtomicLong();
+		FabricTank machine = new FabricTank(100) {
+			@Override protected void onFinalCommit() {
+				super.onFinalCommit();
+				if (moved.get() != 0) return;
+				try (Transaction auto = Transaction.openOuter()) {
+					long out = extract(VALUE, 4, auto); moved.addAndGet(bridgedOutput.insert(VALUE, out, auto)); auto.commit();
+				}
+			}
+		};
+		var target = NativeTransferAdapters.neo(machine, codec(1));
+		try (var hopper = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot()) { eq(10, target.insert(0, VALUE, 10, hopper)); hopper.commit(); }
+		eq(4, moved.get()); eq(6, machine.amount); eq(4, output.amount); eq(2, machine.notifications); eq(1, output.notifications); closed();
+	}
+	/**
+	 * Root invariants are checked when the ORIGIN closes. By the time its peer closes the outcome is fixed: the
+	 * origin already committed natively, so a second check can only fail after the fact, and it failed before the
+	 * peer's native close ran, leaving that engine open on this thread for good.
+	 */
+	public static void fabricOriginCommitValidatesOnce() {
+		var checks = new java.util.concurrent.atomic.AtomicInteger(); var mutated = new java.util.concurrent.atomic.AtomicBoolean();
+		NeoTank destination = new NeoTank(100); var target = NativeTransferAdapters.fabric(destination, codec(1));
+		try (Transaction root = Transaction.openOuter()) {
+			eq(10, target.insert(VALUE, 10, root));
+			var peer = net.neoforged.neoforge.transfer.transaction.Transaction.getCurrentOpenedTransaction();
+			net.forbric.kernel.runtime.transfer.PairedTransactions.addValidation(peer, checks, () -> {
+				checks.incrementAndGet(); if (mutated.get()) throw new IllegalStateException("changed after the origin committed");
+			});
+			// Runs inside Fabric's native close, after the origin's check and before its peer closes.
+			root.addCloseCallback((context, result) -> mutated.set(true));
+			root.commit();
+		}
+		eq(1, checks.get()); eq(10, destination.amount); eq(1, destination.notifications); closed();
+		try (var again = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot()) { eq(1, destination.insert(0, VALUE, 1, again)); again.commit(); }
+		eq(11, destination.amount); closed();
+	}
+	/** The same at a nested boundary with NeoForge as the origin: its Fabric peer child must still close. */
+	public static void neoOriginNestedCommitValidatesOnce() {
+		var checks = new java.util.concurrent.atomic.AtomicInteger(); var mutated = new java.util.concurrent.atomic.AtomicBoolean();
+		FabricTank destination = new FabricTank(100); var target = NativeTransferAdapters.neo(destination, codec(1));
+		NeoTank witness = new NeoTank(100) { @Override protected void releaseSnapshot(Long snapshot) { super.releaseSnapshot(snapshot); mutated.set(true); } };
+		try (var root = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot()) {
+			eq(1, witness.insert(0, VALUE, 1, root));
+			try (var child = net.neoforged.neoforge.transfer.transaction.Transaction.open(root)) {
+				eq(10, target.insert(0, VALUE, 10, child)); eq(1, witness.insert(0, VALUE, 1, child));
+				net.forbric.kernel.runtime.transfer.PairedTransactions.addValidation(child, checks, () -> {
+					checks.incrementAndGet(); if (mutated.get()) throw new IllegalStateException("changed after the origin committed");
+				});
+				// NeoForge releases the child's journal snapshot inside its native close: after the origin's check.
+				child.commit();
+			}
+			yes(mutated.getAndSet(false)); yes(Transaction.isOpen() && Transaction.getCurrentUnsafe().nestingDepth() == 0);
+			root.commit();
+		}
+		eq(2, checks.get()); eq(10, destination.amount); eq(2, witness.amount); closed();
 	}
 	static class NeoTank extends SnapshotJournal<Long> implements ResourceHandler<Token> {
 		long amount; final long capacity; int notifications;

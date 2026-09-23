@@ -10,13 +10,21 @@ import net.fabricmc.fabric.api.transfer.v1.item.ItemVariant;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleVariantStorage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.Container;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -38,8 +46,19 @@ public final class Machines {
 	public static final Map<String, Block> BLOCKS = new ConcurrentHashMap<>();
 	public static final Map<String, BlockEntityType<Machine>> TYPES = new ConcurrentHashMap<>();
 	public static final BlockPos PRIORITY = new BlockPos(22, 80, 16);
+	/** Container-shaped machines: a Forge crate and a NeoForge crate, and a NeoForge BaseContainerBlockEntity cabinet. */
+	public static final Map<String, Block> CRATE_BLOCKS = new ConcurrentHashMap<>();
+	public static final Map<String, BlockEntityType<Crate>> CRATE_TYPES = new ConcurrentHashMap<>();
+	public static final AtomicReference<Block> CABINET_BLOCK = new AtomicReference<>();
+	private static final AtomicReference<BlockEntityType<Cabinet>> CABINET_TYPE = new AtomicReference<>();
+	/** BaseContainerBlockEntity machines that leave getCapability alone: a Forge bin and kiln, and a Fabric bin. */
+	public static final Map<String, Block> BIN_BLOCKS = new ConcurrentHashMap<>();
+	public static final Map<String, BlockEntityType<Bin>> BIN_TYPES = new ConcurrentHashMap<>();
+	public static final AtomicReference<Block> KILN_BLOCK = new AtomicReference<>();
+	private static final AtomicReference<BlockEntityType<Kiln>> KILN_TYPE = new AtomicReference<>();
 	private Machines() { }
 	public static Identifier id(String owner) { return Identifier.fromNamespaceAndPath(owner, "machine"); }
+	public static Identifier id(String owner, String path) { return Identifier.fromNamespaceAndPath(owner, path); }
 	public static boolean permits(Direction side) { return side == null || side == Direction.NORTH; }
 	public static Block block(String owner) {
 		Block result = new MachineBlock(BlockBehaviour.Properties.of().setId(ResourceKey.create(Registries.BLOCK, id(owner))).strength(1));
@@ -49,6 +68,123 @@ public final class Machines {
 		AtomicReference<BlockEntityType<Machine>> self = new AtomicReference<>();
 		BlockEntityType<Machine> type = new BlockEntityType<>((pos, state) -> new Machine(self.get(), owner, pos, state), Set.of(block));
 		self.set(type); TYPES.put(owner, type); return type;
+	}
+	public static Block crateBlock(String owner) {
+		Block result = new CrateBlock(BlockBehaviour.Properties.of().setId(ResourceKey.create(Registries.BLOCK, id(owner, "crate"))).strength(1));
+		CRATE_BLOCKS.put(owner, result); return result;
+	}
+	public static BlockEntityType<Crate> crateType(String owner, Block block) {
+		AtomicReference<BlockEntityType<Crate>> self = new AtomicReference<>();
+		BlockEntityType<Crate> type = new BlockEntityType<>((pos, state) -> new Crate(self.get(), pos, state), Set.of(block));
+		self.set(type); CRATE_TYPES.put(owner, type); return type;
+	}
+	/** Only the NeoForge fixture registers a cabinet; it is owned by NEO. */
+	public static Block cabinetBlock() {
+		Block result = new CabinetBlock(BlockBehaviour.Properties.of().setId(ResourceKey.create(Registries.BLOCK, id(NEO, "cabinet"))).strength(1));
+		CABINET_BLOCK.set(result); return result;
+	}
+	public static BlockEntityType<Cabinet> cabinetType(Block block) {
+		BlockEntityType<Cabinet> type = new BlockEntityType<>((pos, state) -> new Cabinet(CABINET_TYPE.get(), pos, state), Set.of(block));
+		CABINET_TYPE.set(type); return type;
+	}
+	public static Block binBlock(String owner) {
+		Block result = new BinBlock(BlockBehaviour.Properties.of().setId(ResourceKey.create(Registries.BLOCK, id(owner, "bin"))).strength(1));
+		BIN_BLOCKS.put(owner, result); return result;
+	}
+	public static BlockEntityType<Bin> binType(String owner, Block block) {
+		AtomicReference<BlockEntityType<Bin>> self = new AtomicReference<>();
+		BlockEntityType<Bin> type = new BlockEntityType<>((pos, state) -> new Bin(self.get(), pos, state), Set.of(block));
+		self.set(type); BIN_TYPES.put(owner, type); return type;
+	}
+	/** Only the Forge fixture registers a kiln; it is owned by FORGE. */
+	public static Block kilnBlock() {
+		Block result = new KilnBlock(BlockBehaviour.Properties.of().setId(ResourceKey.create(Registries.BLOCK, id(FORGE, "kiln"))).strength(1));
+		KILN_BLOCK.set(result); return result;
+	}
+	public static BlockEntityType<Kiln> kilnType(Block block) {
+		BlockEntityType<Kiln> type = new BlockEntityType<>((pos, state) -> new Kiln(KILN_TYPE.get(), pos, state), Set.of(block));
+		KILN_TYPE.set(type); return type;
+	}
+	public static final class BinBlock extends Block implements EntityBlock {
+		public BinBlock(BlockBehaviour.Properties properties) { super(properties); }
+		@Override public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
+			return BIN_TYPES.get(BuiltInRegistries.BLOCK.getKey(this).getNamespace()).create(pos, state);
+		}
+	}
+	public static final class KilnBlock extends Block implements EntityBlock {
+		public KilnBlock(BlockBehaviour.Properties properties) { super(properties); }
+		@Override public BlockEntity newBlockEntity(BlockPos pos, BlockState state) { return KILN_TYPE.get().create(pos, state); }
+	}
+	public static final class CrateBlock extends Block implements EntityBlock {
+		public CrateBlock(BlockBehaviour.Properties properties) { super(properties); }
+		@Override public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
+			return CRATE_TYPES.get(BuiltInRegistries.BLOCK.getKey(this).getNamespace()).create(pos, state);
+		}
+	}
+	public static final class CabinetBlock extends Block implements EntityBlock {
+		public CabinetBlock(BlockBehaviour.Properties properties) { super(properties); }
+		@Override public BlockEntity newBlockEntity(BlockPos pos, BlockState state) { return CABINET_TYPE.get().create(pos, state); }
+	}
+	/**
+	 * A machine that is ALSO a plain Container, so Fabric API's generic Container fallback would answer for it with
+	 * every slot writable on every face. Its owner's own capability is a separate one-slot handler on NORTH/null.
+	 * Every Container write is counted: Fabric's generic wrapper writes (and rolls back) through setItem.
+	 */
+	public static final class Crate extends BlockEntity implements Container {
+		public final NonNullList<ItemStack> slots = NonNullList.withSize(3, ItemStack.EMPTY);
+		public int containerWrites;
+		public final ItemStackHandler forgeItems = new ItemStackHandler(1);
+		public final ItemStacksResourceHandler neoItems = new ItemStacksResourceHandler(1) {
+			@Override protected void onContentsChanged(int slot, ItemStack previous) { setChanged(); }
+		};
+		public Crate(BlockEntityType<?> type, BlockPos pos, BlockState state) { super(type, pos, state); }
+		@Override public int getContainerSize() { return slots.size(); }
+		@Override public boolean isEmpty() { return slots.stream().allMatch(ItemStack::isEmpty); }
+		@Override public ItemStack getItem(int slot) { return slots.get(slot); }
+		@Override public ItemStack removeItem(int slot, int count) { containerWrites++; return ContainerHelper.removeItem(slots, slot, count); }
+		@Override public ItemStack removeItemNoUpdate(int slot) { containerWrites++; return ContainerHelper.takeItem(slots, slot); }
+		@Override public void setItem(int slot, ItemStack stack) { containerWrites++; slots.set(slot, stack); }
+		@Override public boolean stillValid(Player player) { return true; }
+		@Override public void clearContent() { containerWrites++; slots.clear(); }
+	}
+	/**
+	 * A NeoForge machine built on BaseContainerBlockEntity. The merged game's Forge override of that class answers
+	 * ITEM_HANDLER with a generic wrapper over the whole Container and hands every other capability to the
+	 * super-call, so a Forge consumer met neither the owner's item handler nor any fluid at all.
+	 */
+	public static final class Cabinet extends BaseContainerBlockEntity {
+		public NonNullList<ItemStack> slots = NonNullList.withSize(3, ItemStack.EMPTY);
+		public final ItemStacksResourceHandler neoItems = new ItemStacksResourceHandler(1) {
+			@Override protected void onContentsChanged(int slot, ItemStack previous) { setChanged(); }
+		};
+		public final FluidStacksResourceHandler neoFluids = new FluidStacksResourceHandler(1, 1000) {
+			@Override protected void onContentsChanged(int slot, net.neoforged.neoforge.fluids.FluidStack previous) { setChanged(); }
+		};
+		public Cabinet(BlockEntityType<?> type, BlockPos pos, BlockState state) { super(type, pos, state); }
+		@Override protected Component getDefaultName() { return Component.literal("M33 cabinet"); }
+		@Override protected NonNullList<ItemStack> getItems() { return slots; }
+		@Override protected void setItems(NonNullList<ItemStack> items) { slots = items; }
+		@Override protected AbstractContainerMenu createMenu(int id, Inventory inventory) { return null; }
+		@Override public int getContainerSize() { return slots.size(); }
+	}
+	/**
+	 * A plain storage bin on BaseContainerBlockEntity that overrides nothing transfer touches, as most mod chests
+	 * do. Every Forge query of it is answered by the merged override's generic InvWrapper over the whole Container.
+	 */
+	public static class Bin extends BaseContainerBlockEntity {
+		public NonNullList<ItemStack> slots = NonNullList.withSize(3, ItemStack.EMPTY);
+		public Bin(BlockEntityType<?> type, BlockPos pos, BlockState state) { super(type, pos, state); }
+		@Override protected Component getDefaultName() { return Component.literal("M33 bin"); }
+		@Override protected NonNullList<ItemStack> getItems() { return slots; }
+		@Override protected void setItems(NonNullList<ItemStack> items) { slots = items; }
+		@Override protected AbstractContainerMenu createMenu(int id, Inventory inventory) { return null; }
+		@Override public int getContainerSize() { return slots.size(); }
+	}
+	/** A bin whose Container has writes of its own: every setItem restarts its work, as a furnace-like machine's does. */
+	public static final class Kiln extends Bin {
+		public int restarts;
+		public Kiln(BlockEntityType<?> type, BlockPos pos, BlockState state) { super(type, pos, state); }
+		@Override public void setItem(int slot, ItemStack stack) { restarts++; super.setItem(slot, stack); }
 	}
 	public static final class MachineBlock extends Block implements EntityBlock {
 		public MachineBlock(BlockBehaviour.Properties properties) { super(properties); }

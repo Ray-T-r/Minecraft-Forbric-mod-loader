@@ -13,8 +13,10 @@ import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 /**
  * Couples REAL Fabric and NeoForge transactions. No transaction context is simulated: NeoForge journals cast
  * their context to their final Transaction class. The narrow lifecycle hooks close the peer at the same nesting
- * boundary, and defer final notifications until BOTH engines have closed. Cross-API transfer from close/final
- * callbacks is deliberately rejected; arbitrary external side effects are not made reversible by this bridge.
+ * boundary, and defer final notifications until BOTH engines have closed. Cross-API transfer from a close
+ * callback, while a paired close is in progress, is deliberately rejected; arbitrary external side effects are not
+ * made reversible by this bridge. A final notification runs after both engines closed and may open new roots and
+ * transfer again, as NeoForge's onRootCommit contract allows; finals those transfers queue join the same flush.
  */
 public final class PairedTransactions {
 	private PairedTransactions() { }
@@ -90,7 +92,8 @@ public final class PairedTransactions {
 	private static State usable() {
 		checkHooks();
 		State state = LOCAL.get();
-		if (state.closing != 0 || state.flushing) throw new IllegalStateException("Cross-API transfer during a transaction close callback is unsupported");
+		// Not while flushing: both engines are fully closed there, and a new pair is as safe as any other.
+		if (state.closing != 0) throw new IllegalStateException("Cross-API transfer during a transaction close callback is unsupported");
 		return state;
 	}
 
@@ -130,7 +133,10 @@ public final class PairedTransactions {
 		// The peer must be closable BEFORE the native source commits or aborts. Checking only in afterClose
 		// would leave one engine committed when an unpaired peer child makes the other root refuse to close.
 		if (pair != null && pair.origin == null) checkPeer(pair, transaction);
-		if (committed) {
+		// Root invariants are the ORIGIN's check. When its peer closes, the origin has already committed natively:
+		// a second run cannot change the outcome, and a throw here would skip the peer's native close entirely,
+		// leaving that engine's transaction open on this thread for good.
+		if (committed && (pair == null || pair.origin == null)) {
 			Object neo = transaction instanceof net.neoforged.neoforge.transfer.transaction.Transaction ? transaction : pair == null ? null : pair.neo;
 			if (neo != null) {
 				Object root = NeoAccess.ancestors(neo).get(0);
@@ -171,7 +177,9 @@ public final class PairedTransactions {
 			state.pairs.remove(pair.neo);
 			state.closing--;
 		}
-		if (state.pairs.isEmpty() && state.closing == 0) {
+		// A final notification that transferred again closes its own pair inside the flush below. Its finals were
+		// queued behind the current ones; the outermost loop runs them, and only it releases the thread state.
+		if (state.pairs.isEmpty() && state.closing == 0 && !state.flushing) {
 			state.flushing = true;
 			try {
 				while (!state.finals.isEmpty()) {

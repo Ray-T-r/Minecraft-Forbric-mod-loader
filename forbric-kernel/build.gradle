@@ -35,24 +35,39 @@ def stagedForgeRuntime = new File(stagedRoot, 'forge-runtime/forge-runtime.jar')
 def stagedNeoRuntime   = new File(stagedRoot, 'neoforge-runtime/neoforge-runtime.jar')
 def stagedGameJars = [stagedMergedBase, stagedForgeRuntime, stagedNeoRuntime].findAll { it.isFile() }
 
-// Compile the optional transfer bridge against the exact API staged for the compatibility pack. These
-// modules remain supplied by the installed Fabric API mod; none is bundled in either kernel jar.
+// Compile the transfer bridge against the exact API staged for the compatibility pack. These modules remain
+// supplied by the installed Fabric API mod; none is bundled in either kernel jar.
+//
+// The transfer package is NOT optional in a built game side. It was: a missing dev-pack jar here quietly
+// excluded net/forbric/kernel/runtime/transfer/** from a runtime jar that was still built and nested, the build
+// stayed green, and every player with fabric-api then met KernelTransferInterop's required loss "this kernel build
+// is missing its transfer component" -- a dedicated server exited 78 on a pack that launched before the bridge
+// existed. A machine that builds the game side must supply the API (-Pforbric.fabricApi=<fabric-api jar>) or the
+// build fails naming the file; a machine with no staged game jars builds neither half, exactly as before.
 def stagedFabricApi = file(project.findProperty('forbric.fabricApi') ?: new File(stagedRoot.parentFile.parentFile,
 		'forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar'))
-def transferAvailable = stagedGameJars.size() == 3 && stagedFabricApi.isFile()
+def transferApiModules = ['fabric-transfer-api-v1-', 'fabric-api-lookup-api-v1-', 'fabric-api-base-']
 def transferModulesDir = layout.buildDirectory.dir('transfer-api-compile')
 def extractTransferApis = tasks.register('extractTransferApis', Sync) {
-	onlyIf { transferAvailable }
-	if (stagedFabricApi.isFile()) {
-		from zipTree(stagedFabricApi)
-		include 'META-INF/jars/fabric-transfer-api-v1-*.jar', 'META-INF/jars/fabric-api-lookup-api-v1-*.jar',
-				'META-INF/jars/fabric-api-base-*.jar'
-		eachFile { path = name }
-		includeEmptyDirs = false
-	}
+	onlyIf { !stagedGameJars.isEmpty() }
+	// Lazy, so a missing jar reaches compileRuntimeJava's message instead of failing while inputs are snapshotted.
+	from { stagedFabricApi.isFile() ? zipTree(stagedFabricApi) : files() }
+	include transferApiModules.collect { "META-INF/jars/${it}*.jar" }
+	eachFile { path = name }
+	includeEmptyDirs = false
 	into transferModulesDir
+	// A fabric-api jar nesting two versions of one module would put both on the compile path; one of each.
+	doLast {
+		def extracted = transferModulesDir.get().asFile.listFiles()*.name
+		transferApiModules.each { prefix ->
+			def found = extracted.findAll { it.startsWith(prefix) && it.endsWith('.jar') }
+			if (found.size() != 1) throw new GradleException("${stagedFabricApi} must nest exactly one ${prefix}*.jar; found ${found}")
+		}
+	}
 }
 def transferModuleFiles = files(fileTree(transferModulesDir) { include '*.jar' }).builtBy(extractTransferApis)
+// Integration runs pass -Pforbric.requireTransfer=true: there a skipped transfer suite is a failure, not a pass.
+def requireTransfer = project.findProperty('forbric.requireTransfer') == 'true'
 
 // Minecraft's OWN libraries, for the game-side set only. A game-side class cannot build a piece of text without
 // brigadier: net.minecraft.network.chat.Component extends com.mojang.brigadier.Message, so javac needs it to read
@@ -111,7 +126,6 @@ sourceSets {
 	// the build script to run, and `compileRuntimeJava` / `test` skip it so M0 (boot-side only) still builds.
 	runtime {
 		java { srcDir 'src/runtime/java' }
-		if (!transferAvailable) java.exclude 'net/forbric/kernel/runtime/transfer/**'
 		compileClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries) + transferModuleFiles
 		runtimeClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries) + transferModuleFiles
 	}
@@ -200,6 +214,12 @@ tasks.named('compileRuntimeJava') {
 		}
 		return true
 	}
+	// Here rather than in extractTransferApis: with no jar that task has no source, and Gradle skips it unrun.
+	doFirst {
+		if (!stagedFabricApi.isFile()) throw new GradleException("The kernel game side includes its transfer " +
+				"component and compiles it against Fabric API's transfer modules, but ${stagedFabricApi} does not " +
+				"exist. Pass -Pforbric.fabricApi=<a fabric-api jar for 26.2> (the compatibility pack's is the default).")
+	}
 }
 
 test {
@@ -254,14 +274,32 @@ test {
 	systemProperty 'forbric.dependencyDialog', 'off'
 }
 
-tasks.named('compileTransferTestJava') { onlyIf { transferAvailable } }
+// The engine tests need the whole game side. Without staged game jars they are skipped and say so, except in an
+// integration run, where -Pforbric.requireTransfer=true turns that skip into a failure.
+def transferSuiteRuns = { String task ->
+	if (stagedGameJars.size() == 3 || requireTransfer) return true
+	logger.lifecycle("${task}: SKIPPED — staged game jars absent (${stagedGameJars.size()}/3 under ${stagedRoot})")
+	return false
+}
+tasks.named('compileTransferTestJava') {
+	onlyIf { transferSuiteRuns('compileTransferTestJava') }
+	// Thrown from an action, not from onlyIf, where Gradle would bury the message under "could not evaluate spec".
+	doFirst {
+		if (stagedGameJars.size() != 3) throw new GradleException("The staged game jars are absent (" +
+				"${stagedGameJars.size()}/3 under ${stagedRoot}), and -Pforbric.requireTransfer=true forbids skipping " +
+				"the transfer engine tests")
+	}
+}
 tasks.register('transferTest', Test) {
 	description = 'Exercises transfer conservation and nested rollback using the real Fabric/NeoForge transaction engines.'
-	onlyIf { transferAvailable }
+	onlyIf { transferSuiteRuns('transferTest') }
 	testClassesDirs = sourceSets.transferTest.output.classesDirs
 	classpath = sourceSets.transferTest.runtimeClasspath
 	useJUnitPlatform()
-	systemProperty 'forbric.transferTestClasspath', sourceSets.transferTest.runtimeClasspath.asPath
+	// Resolved at execution, NOT configuration. The classpath includes the extracted API modules, and read at
+	// configuration time on a clean build directory that glob is still empty: every scenario then failed with
+	// NoClassDefFoundError on the first run after `clean` and passed on the second.
+	doFirst { systemProperty 'forbric.transferTestClasspath', classpath.asPath }
 }
 tasks.named('check') { dependsOn tasks.named('transferTest') }
 
@@ -288,6 +326,14 @@ tasks.register('runtimeJar', Jar) {
 	archiveBaseName = 'forbric-kernel-runtime'
 	dependsOn 'compileRuntimeJava'
 	from sourceSets.runtime.output
+	// The boot seam requires exactly these three when the transfer APIs are installed; a jar without them is a
+	// release that turns every fabric-api pack into a required loss. Checked on the artifact itself.
+	doLast {
+		def entries = new java.util.zip.ZipFile(archiveFile.get().asFile).withCloseable { zip -> Collections.list(zip.entries())*.name as Set }
+		def missing = ['BlockTransferBridge', 'TransferIssues', 'PairedTransactions']
+				.collect { "net/forbric/kernel/runtime/transfer/${it}.class".toString() }.findAll { !entries.contains(it) }
+		if (missing) throw new GradleException("forbric-kernel-runtime.jar was built without its transfer component: ${missing}")
+	}
 }
 
 // Carry the game-side jar INSIDE the boot jar, next to MixinExtras and delivered the same way — so the kernel

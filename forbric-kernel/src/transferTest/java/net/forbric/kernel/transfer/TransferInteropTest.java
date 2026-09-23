@@ -29,12 +29,17 @@ class TransferInteropTest {
 	@Test void openNeoChildCannotCauseHalfCommittedFabricRoot() throws Exception { scenario("unbalancedNeoChild", true); }
 	@Test void openFabricChildCannotCauseHalfCommittedNeoRoot() throws Exception { scenario("unbalancedFabricChild", true); }
 	@Test void capabilityWatchReplacesSubscriptionsAndReleasesInvalidValues() throws Exception { scenario("optionalWatch", true); }
+	@Test void transientWatchesHoldOneSubscriptionPerCachedOptional() throws Exception { scenario("transientWatchesShareOneSubscription", true); }
 	@Test void invalidationCannotHideNeoRollbackFailure() throws Exception { scenario("neoRollbackFailure", true); }
 	@Test void invalidationCannotHideFabricRollbackFailure() throws Exception { scenario("fabricRollbackFailure", true); }
 	@Test void fabricCloseCallbackCannotOpenPeerChild() throws Exception { scenario("fabricCallbackOpensPeer", true); }
 	@Test void fabricCloseCallbackCannotClosePeerEarly() throws Exception { scenario("fabricCallbackClosesPeer", true); }
 	@Test void neoCloseCallbackCannotOpenPeerChild() throws Exception { scenario("neoCallbackOpensPeer", true); }
 	@Test void neoCloseCallbackCannotClosePeerEarly() throws Exception { scenario("neoCallbackClosesPeer", true); }
+	@Test void neoFinalNotificationMayTransferAfterAPairedCommit() throws Exception { scenario("neoFinalCommitMayTransferAgain", true); }
+	@Test void fabricFinalNotificationMayTransferAfterAPairedCommit() throws Exception { scenario("fabricFinalCommitMayTransferAgain", true); }
+	@Test void fabricOriginValidatesRootInvariantsOnce() throws Exception { scenario("fabricOriginCommitValidatesOnce", true); }
+	@Test void neoOriginNestedCommitValidatesOnceAndClosesItsPeer() throws Exception { scenario("neoOriginNestedCommitValidatesOnce", true); }
 
 	private void scenario(String method, boolean transform) throws Exception {
 		String[] entries = System.getProperty("forbric.transferTestClasspath").split(File.pathSeparator);

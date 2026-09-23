@@ -20,8 +20,10 @@ public final class ForgeTransferCanary implements ModInitializer {
 		scenarios.put("shared FluidStack and independent empty tanks", ForgeTransferGameScenarios::fluidAliases);
 		scenarios.put("backing replacement rejects commit before mutation", ForgeTransferGameScenarios::backingReplacement);
 		scenarios.put("legacy item simulate/execute and capacity", ForgeTransferGameScenarios::legacyItems);
+		scenarios.put("legacy extraction returns at most one stack", ForgeTransferGameScenarios::legacyExtractionStopsAtOneStack);
 		scenarios.put("fluid rollback and 81:1 conservation", ForgeTransferGameScenarios::fluidRollback);
 		scenarios.put("legacy fluid simulate/execute", ForgeTransferGameScenarios::legacyFluids);
+		scenarios.put("empty-but-present fluid tag moves as plain fluid", ForgeTransferGameScenarios::emptyFluidTagStillMoves);
 		scenarios.put("unknown subclass/proxy/validator denied", ForgeTransferGameScenarios::unknownHandlers);
 		scenarios.put("unknown fluid metadata denied", ForgeTransferGameScenarios::metadataDenied);
 		scenarios.put("explicit metadata codec round trip", ForgeTransferGameScenarios::metadataCodec);

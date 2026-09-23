@@ -294,10 +294,22 @@ public final class ForgeSnapshotAdapters {
 			java.util.Objects.checkIndex(slot, 1); FluidStack stack = ForgeFluidMetadata.toForge(resource, 1);
 			return writable() && stack != null && !stack.isEmpty() && handler.isFluidValid(stack);
 		}
+		/**
+		 * The Forge request for a resource the tank already holds. An empty-but-present tag ({}) is plain fluid to the
+		 * other APIs, yet FluidTank's fill and drain compare tags with null != {}: a request rebuilt from the plain
+		 * resource never matched such a tank, and every bridged fill and drain moved 0 for as long as it held that
+		 * stack. A copy of the tank's own stack carries its exact tag.
+		 */
+		private FluidStack request(FluidResource resource, int maximum) {
+			FluidStack held = handler.getFluid();
+			if (!held.isEmpty() && held.hasTag() && held.getTag().isEmpty() && resource.isComponentsPatchEmpty()
+					&& held.getFluid() == resource.getFluid()) return new FluidStack(held, maximum);
+			return ForgeFluidMetadata.toForge(resource, maximum);
+		}
 		public int insert(int slot, FluidResource resource, int maximum, TransactionContext tx) {
 			java.util.Objects.checkIndex(slot, 1); if (maximum < 0) throw new IllegalArgumentException("Negative fluid amount");
 			if (maximum == 0 || resource.isEmpty() || !writable()) return 0;
-			FluidStack stack = ForgeFluidMetadata.toForge(resource, maximum); if (stack == null) return 0;
+			FluidStack stack = request(resource, maximum); if (stack == null) return 0;
 			ForgeJournal journal = journal(); journal.prepare(handler, tx);
 			int moved = handler.fill(stack, IFluidHandler.FluidAction.EXECUTE); checkAmount(moved, maximum);
 			journal.nativeFluidOperationFinished(handler);
@@ -306,7 +318,7 @@ public final class ForgeSnapshotAdapters {
 		public int extract(int slot, FluidResource resource, int maximum, TransactionContext tx) {
 			java.util.Objects.checkIndex(slot, 1); if (maximum < 0) throw new IllegalArgumentException("Negative fluid amount");
 			if (maximum == 0 || resource.isEmpty() || !writable()) return 0;
-			FluidStack stack = ForgeFluidMetadata.toForge(resource, maximum); if (stack == null) return 0;
+			FluidStack stack = request(resource, maximum); if (stack == null) return 0;
 			ForgeJournal journal = journal(); journal.prepare(handler, tx);
 			int moved = handler.drain(stack, IFluidHandler.FluidAction.EXECUTE).getAmount(); checkAmount(moved, maximum);
 			journal.nativeFluidOperationFinished(handler);

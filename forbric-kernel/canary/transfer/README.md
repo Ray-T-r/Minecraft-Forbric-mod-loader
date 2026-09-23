@@ -19,7 +19,18 @@ Transfers query `ItemStorage/FluidStorage.SIDED`, `ServerLevel.getCapability`, a
 
 The positive phase checks all six directed item/fluid routes with BOTH NORTH and null (12 operations per
 resource family), face preservation, SOUTH refusal, native
-provider priority (including competing providers), and cached views after replacing a real block entity. The
+provider priority (including competing providers), and cached views after replacing a real block entity.
+Container-shaped machines check ownership precedence: a Forge crate and a NeoForge crate are plain Containers
+whose owners expose a separate handler on NORTH/null only, and a NeoForge cabinet extends BaseContainerBlockEntity.
+Fabric API's generic Container fallback and the merged Forge override's generic wrapper must not answer for
+them: a refused face stays refused for NeoForge and Forge consumers, and every foreign consumer on the permitted
+face reaches the owner's handler (and the cabinet's fluid handler) without one write into the Container slots.
+Three more BaseContainerBlockEntity machines leave getCapability alone, the shape of most mod chests, so Forge
+answers each with its own InvWrapper over the whole Container. A NeoForge consumer of the Forge bin gets
+NeoForge's own Container wrapper on every face: an aborted insert leaves the bin empty and committed moves land in
+its slots. It gets nothing for the Forge kiln, whose Container declares its own setItem. A Forge consumer of the
+Fabric bin (no Fabric storage of its own) keeps the native InvWrapper. The gate also requires the kiln's
+CONTAINER_WRITES_NOT_VANILLA finding and forbids any "InvWrapper is not rollback-safe" finding. The
 three primary inventories retain 60 component-tagged cobblestone and 48,617 Fabric fluid units, including a
 17-unit remainder. A Neo query also requests 201 mB from the real Fabric store holding 200 mB plus 17 units,
 forcing an actual fractional return, nested rollback/retry, then outer rollback. Temporary priority/invalidation
@@ -37,6 +48,13 @@ Finally, the gate creates another owned test world with the bridge disabled. The
 must fail at a foreign public lookup; its acceptance command and recorded probe result must be red. Each run
 uses `run/compat/evidence.py` to retain source, kernel, carrier, Fabric API and full mod hashes, the exact
 command, logs and input-drift verdict under `build/verification/m33-transfer/`.
+
+Replacement is checked without calling invalidateCapabilities by hand: removing the block entity must invalidate
+every cached view by itself. After the save, three more machines stand in a chunk at (4096, 4096) that nothing
+else touches. Every foreign view of them is cached, and the probe keeps ticking until the server has unloaded
+that chunk on its own. While it is unloaded and after it is reloaded, every cached view must move nothing and
+every cached Forge LazyOptional must be empty; the reloaded machines keep their contents, and fresh public
+queries reach them. The phase result is written only when this finishes (at most 1200 ticks).
 
 These assertions supplement the lower-level transaction/alias canary; they do not replace it. No Gradle or
 game run is implied merely by creating these sources.
