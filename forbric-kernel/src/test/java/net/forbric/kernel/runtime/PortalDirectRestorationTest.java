@@ -157,7 +157,8 @@ class PortalDirectRestorationTest {
 	}
 
 	@Test void unknownDualCallShapesRemainUnchangedAndOnlySuspected() throws Exception {
-		for (Consumer<MethodNode> mutation : List.<Consumer<MethodNode>>of(
+		// The finding describes the base, not the repair: switched off, the legacy forward still runs beside it.
+		for (String setting : List.of("on", "off")) for (Consumer<MethodNode> mutation : List.<Consumer<MethodNode>>of(
 				m -> neoGuard(m).setOpcode(Opcodes.IFNE),
 				m -> forgeGuard(m).setOpcode(Opcodes.IFNE),
 				m -> ((VarInsnNode) previousCode(forge(m))).var = 1,
@@ -168,6 +169,7 @@ class PortalDirectRestorationTest {
 				m -> { MethodInsnNode forge = forge(m); m.instructions.insert(forge, forge.clone(null)); },
 				m -> { LabelNode entry = new LabelNode(); m.instructions.insertBefore(previousCode(previousCode(previousCode(forge(m)))), entry); m.instructions.insert(new JumpInsnNode(Opcodes.GOTO, entry)); },
 				m -> m.access |= Opcodes.ACC_SYNCHRONIZED)) {
+			System.setProperty(PortalSpawnInjector.PROPERTY, setting);
 			ClassNode caller = restoredCaller(); mutation.accept(host(caller)); byte[] bytes = write(caller);
 			assertSame(bytes, adapt(bytes));
 			var findings = CompatibilityFindings.all(); assertEquals(1, findings.size());
@@ -177,9 +179,31 @@ class PortalDirectRestorationTest {
 		}
 	}
 
-	@Test void offSwitchDoesNotClaimTheDirectCallerHasBeenRepaired() throws Exception {
-		byte[] bytes = write(restoredCaller()); System.setProperty(PortalSpawnInjector.PROPERTY, "off");
-		assertSame(bytes, adapt(bytes)); assertTrue(CompatibilityFindings.all().isEmpty());
+	/**
+	 * The switch turns Forbric's portal composition off; the legacy forward stays installed. A base that restored
+	 * MinecraftForge's own call must then lose it again, or the forward and the native call both post Forge.
+	 */
+	@Test void switchedOffRestoredCallerFallsBackToTheLegacyForwardAlone() throws Exception {
+		byte[] restored = write(restoredCaller()); System.setProperty(PortalSpawnInjector.PROPERTY, "off");
+		byte[] reverted = adapt(restored);
+		try (PortalSpawnFixture f = new PortalSpawnFixture(temporary, false, reverted)) {
+			f.installLegacyBridge(); Object shape = f.shape(), replacement = f.shape();
+			f.place(Optional.of(shape));
+			assertEquals(List.of("neo", "forge"), f.trace(), "MinecraftForge sees the portal once, through the legacy forward");
+			assertSame(shape, f.get("builtShape"));
+			f.set("forgeResult", (UnaryOperator<Object>) input -> Optional.of(replacement)); f.place(Optional.of(shape));
+			assertSame(shape, f.get("builtShape"), "switched off, only the event-only forward remains: it carries no replacement");
+			f.set("forgeResult", (UnaryOperator<Object>) input -> input); f.set("forgeCanceled", true); f.place(Optional.of(shape));
+			assertNull(f.get("builtShape"), "a MinecraftForge refusal still carries");
+			f.set("forgeCanceled", false); f.set("neoCanceled", true); f.place(Optional.of(shape));
+			assertNull(f.get("builtShape")); assertEquals(4, f.count("neoCalls")); assertEquals(3, f.count("forgeCalls"));
+		}
+		ClassNode node = new ClassNode(); new ClassReader(reverted).accept(node, 0);
+		List<String> hooks = new java.util.ArrayList<>();
+		for (var instruction : host(node).instructions) if (instruction instanceof MethodInsnNode call && call.name.startsWith("onTrySpawnPortal")) hooks.add(call.owner + "." + call.name);
+		assertEquals(List.of(NEO + ".onTrySpawnPortal"), hooks, "NeoForge's native call alone, with no kernel entrypoint");
+		assertSame(reverted, adapt(reverted), "a reverted caller is idempotent");
+		assertTrue(CompatibilityFindings.all().isEmpty(), "switching the composition off does not claim a repair or a failure");
 	}
 
 	private static byte[] adapt(byte[] bytes) { return new PortalSpawnInjector().transform(TARGET, bytes, null); }

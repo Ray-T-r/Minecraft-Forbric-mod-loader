@@ -51,6 +51,21 @@ class PortalSpawnInjectorTest {
 		assertSame(changed, injector.transform(PortalSpawnInjector.TARGET, changed, context));
 	}
 
+	@Test void switchedOffTheRealMergedBaseCarriesOnlyTheReviewedNeoForgeCaller() throws Exception {
+		byte[] original = staged("merged-base/patched-mc-merged-26.2.jar", PortalSpawnInjector.TARGET.replace('.', '/'));
+		boolean restored = calls(host(parse(original))).stream().anyMatch(c -> c.owner.equals(PortalSpawnInjector.FORGE));
+		System.setProperty(PortalSpawnInjector.PROPERTY, "off");
+		byte[] changed = injector.transform(PortalSpawnInjector.TARGET, original, context);
+		if (!restored) assertSame(original, changed, "a base that lost MinecraftForge's call is left to the legacy forward");
+		ClassNode after = parse(changed);
+		assertEquals(List.of(PortalSpawnInjector.NEO), calls(host(after)).stream()
+				.filter(c -> c.name.startsWith("onTrySpawnPortal")).map(c -> c.owner).toList());
+		new Analyzer<>(new BasicVerifier()).analyze(after.name, host(after));
+		assertEquals(PortalSpawnInjector.NATIVE_BODY, net.forbric.kernel.mixin.MixinInstructionFingerprint.hash(host(after)),
+				"switched off, the caller is exactly the reviewed one the legacy forward was built for");
+		assertSame(changed, injector.transform(PortalSpawnInjector.TARGET, changed, context));
+	}
+
 	@Test void bothActualCarrierHooksHaveTheRedirectedStaticDescriptor() throws Exception {
 		for (String[] entry : List.of(new String[] {"forge-runtime/forge-runtime.jar", PortalSpawnInjector.FORGE},
 				new String[] {"neoforge-runtime/neoforge-runtime.jar", PortalSpawnInjector.NEO})) {

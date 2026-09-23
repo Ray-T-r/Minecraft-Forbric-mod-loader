@@ -60,7 +60,8 @@ final class AdditiveMethodMerger {
 
 		/**
 		 * The runtime's compensation for {@code restored} stands down on structural proof once the base carries it,
-		 * composed after {@code alongside}: the base's own paired call, or null for an entry prefix.
+		 * composed after {@code alongside}: the base's own paired call, or null for an entry prefix. That must hold
+		 * in every runtime configuration, including the repair's own off switch, since the base cannot see either.
 		 */
 		boolean reviewed(MethodInsnNode alongside, MethodInsnNode restored);
 	}
@@ -72,8 +73,9 @@ final class AdditiveMethodMerger {
 	 * Restorations whose runtime compensation stands down on structural proof, keyed as {@link #restorationKey}.
 	 * The kernel's PortalSpawnInjector fingerprints exactly the guarded composition this merger emits for this pair
 	 * (NeoForge's call, its nonempty guard repeated, then MinecraftForge's) and then limits the legacy forward to
-	 * that NeoForge dispatch. No other bridge or repair has such a stand-down yet, so every other composable pair
-	 * is held back with a reason rather than restored into a double delivery.
+	 * that NeoForge dispatch; switched off with -Dforbric.portalSpawn=off, it removes the restored call again and
+	 * leaves Forge to the forward alone. No other bridge or repair has such a stand-down yet, so every other
+	 * composable pair is held back with a reason rather than restored into a double delivery.
 	 */
 	static final Set<String> REVIEWED_RESTORATIONS = Set.of(
 			"net/neoforged/neoforge/event/EventHooks." + PORTAL_HOOK
