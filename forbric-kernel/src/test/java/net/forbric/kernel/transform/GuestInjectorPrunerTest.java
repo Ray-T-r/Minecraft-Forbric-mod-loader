@@ -72,6 +72,32 @@ class GuestInjectorPrunerTest {
 	@AfterEach
 	void reset() {
 		System.clearProperty(GuestInjectorPruner.PROPERTY);
+		net.forbric.api.CompatibilityFindings.reset();
+	}
+
+	/**
+	 * The pruned pair never runs, and a log line was all that said so. Each is a confirmed finding on the owning
+	 * config, naming the residual loss — and not a continue-or-quit question, since the kernel ships this trim.
+	 */
+	@Test
+	void eachPrunedInjectorIsAConfirmedFindingThatAsksNothing() throws Exception {
+		net.forbric.api.CompatibilityFindings.reset();
+		new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, realMixin(), null);
+
+		String config = GuestInjectorPruner.CONFIGS.get(GuestInjectorPruner.MODEL_MANAGER_MIXIN);
+		assertTrue(net.forbric.kernel.mixin.MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED.contains(config + ":ModelManagerMixin"),
+				"the config named here is the one the whole-mixin pin names");
+		var findings = net.forbric.api.CompatibilityFindings.all();
+		for (String gone : PRUNED) {
+			var finding = findings.stream().filter(f -> f.id().startsWith("mixin-injector:" + config + ":"
+					+ GuestInjectorPruner.MODEL_MANAGER_MIXIN + "#" + gone + "(")).findFirst()
+					.orElseThrow(() -> new AssertionError("no finding for pruned " + gone + ": " + findings));
+			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, finding.confidence());
+			assertFalse(finding.required());
+			assertTrue(finding.detail().contains("fabric:type"), finding.detail());
+		}
+		assertEquals(PRUNED.size(), findings.size(), "nothing else is reported: " + findings);
+		assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty());
 	}
 
 	@Test

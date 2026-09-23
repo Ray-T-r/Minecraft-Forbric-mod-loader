@@ -81,6 +81,9 @@ public final class GuestInjectorPruner implements ClassTransformer {
 			new Prune("actuallyDeserializeModel",
 					"(Ljava/lang/Object;Ljava/io/Reader;)Ljava/lang/Object;", MODEL_LAMBDA)));
 
+	/** The mixin config each entry is declared in, which names the owning mod on the finding. */
+	static final Map<String, String> CONFIGS = Map.of(MODEL_MANAGER_MIXIN, "fabric-model-loading-api-v1.mixins.json");
+
 	/** Every annotation that makes a mixin method an injector: Mixin's own and MixinExtras'. */
 	static final Set<String> INJECTOR_DESCS = Set.of(
 			"Lorg/spongepowered/asm/mixin/injection/Inject;",
@@ -154,6 +157,16 @@ public final class GuestInjectorPruner implements ClassTransformer {
 
 		node.methods.removeAll(victims);
 		pruned += victims.size();
+		// Removed, so never run: a confirmed finding for each, naming what NeoForge's parser does not cover. The
+		// log line below is not the report.
+		for (MethodNode victim : victims) {
+			net.forbric.kernel.mixin.MixinCompatibility.recordRemovedInjector(CONFIGS.get(className), className,
+					victim.name, victim.desc, "the kernel removed this injector: NeoForge's UnbakedModelParser now "
+							+ "reads block models at its call site, so Fabric's fabric:type custom model formats "
+							+ "(UnbakedModelDeserializer) are not consulted",
+					List.of("kernel pruned " + victim.name + victim.desc + " from " + className,
+							"target selector " + MODEL_LAMBDA, "source=GuestInjectorPruner"));
+		}
 		ForbricLog.info("[Forbric/GuestInjectorPruner] pruned %d injector(s) from %s — NeoForge replaced "
 				+ "CuboidModel.fromStream with UnbakedModelParser.parse at that site, so fabric's @Redirect could not "
 				+ "bind while its @ModifyArg did and re-read a consumed Reader (every block model missingno); the "

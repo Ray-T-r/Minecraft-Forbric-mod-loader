@@ -62,6 +62,18 @@ public final class MixinCompatibility {
 		CompatibilityFindings.resolve(id, owner(config), reason);
 	}
 
+	/**
+	 * One injector method the kernel removed from a guest mixin before Mixin read it. CONFIRMED — it never runs —
+	 * and not necessary on the prompt's terms, like every other measured kernel removal; the residual loss belongs
+	 * in {@code detail}.
+	 */
+	public static void recordRemovedInjector(String config, String mixin, String name, String desc, String detail,
+			List<String> evidence) {
+		CompatibilityFindings.record(new CompatibilityFinding("mixin-injector:" + config + ":" + mixin + "#" + name + desc,
+				owner(config), "Mixin injection " + name, "mixin:" + config, CompatibilityFinding.Confidence.CONFIRMED,
+				false, detail, evidence));
+	}
+
 	private static String owner(String config) {
 		String modId = config == null ? null : MixinConfigOwners.modIdOf(config);
 		return modId == null ? "config:" + config : modId;

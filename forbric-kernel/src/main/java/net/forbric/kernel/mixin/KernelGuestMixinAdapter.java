@@ -309,9 +309,55 @@ public final class KernelGuestMixinAdapter {
 	/** Holds the row back for the mod's config plugin when it has one, and records it now when it does not. */
 	private static void report(String id, String config, String pkg, String mixin, String plugin, byte[] bytes,
 			String detail, CompatibilityFinding.Confidence confidence, boolean required, List<String> evidence) {
-		if (!PluginDeclinedMixins.defer(id, config, plugin, mixin, pkg + "." + mixin, dottedTargets(bytes), detail,
+		report(id, config, pkg, mixin, plugin, dottedTargets(bytes), detail, confidence, required, evidence);
+	}
+
+	private static void report(String id, String config, String pkg, String mixin, String plugin, List<String> targets,
+			String detail, CompatibilityFinding.Confidence confidence, boolean required, List<String> evidence) {
+		if (!PluginDeclinedMixins.defer(id, config, plugin, mixin, pkg + "." + mixin, targets, detail,
 				confidence, required, evidence)) {
 			MixinCompatibility.recordAs(id, config, pkg + "." + mixin, detail, confidence, required, evidence);
+		}
+	}
+
+	/**
+	 * Puts the mixins the kernel leaves out BY NAME in the finding ledger: {@link MergedBaseMixinCompat}'s measured
+	 * hand list, the pruner's whole-mixin fallback and {@code -Dforbric.suppressMixins}. Until now each was one log
+	 * line, so the report said nothing about a mixin that never runs.
+	 *
+	 * <p>CONFIRMED, because the entry is gone from the config before Mixin reads it. Not a necessary loss on the
+	 * prompt's terms: every entry is a measured decision the kernel ships, or the player's own switch, and a
+	 * continue-or-quit question on every launch could change neither. The mod's own declaration is kept in the
+	 * evidence, and a config plugin that would not have applied the mixin still clears it.
+	 *
+	 * @param sources mixin entry → where the suppression came from, as the report should name it
+	 */
+	static void reportNamedSuppressions(String configName, byte[] configJson, Map<String, String> sources,
+			Function<String, byte[]> resource) {
+		if (sources.isEmpty()) return;
+		UnmodifiableConfig config;
+		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(configJson), StandardCharsets.UTF_8)) {
+			config = JsonFormat.fancyInstance().createParser().parse(reader);
+		} catch (RuntimeException | java.io.IOException notAMixinConfig) {
+			return;
+		}
+		String pkg = asString(config.get(List.of("package")));
+		if (pkg == null || pkg.isEmpty()) return;
+		String pluginClass = asString(config.get(List.of("plugin")));
+		boolean required = Boolean.TRUE.equals(config.get(List.of("required")));
+		for (Map.Entry<String, String> e : sources.entrySet()) {
+			String mixin = e.getKey();
+			List<String> targets = List.of();
+			try {
+				byte[] classBytes = resource.apply(pkg.replace('.', '/') + "/" + mixin.replace('.', '/') + ".class");
+				if (classBytes != null) targets = dottedTargets(classBytes);
+			} catch (RuntimeException unreadable) {
+				// No targets means no question for the plugin, which records the row: the removal is certain.
+			}
+			report(MixinCompatibility.id(configName, pkg + "." + mixin), configName, pkg, mixin, pluginClass, targets,
+					"the kernel leaves out its mixin " + mixin + " on the merged game",
+					CompatibilityFinding.Confidence.CONFIRMED, false,
+					List.of("kernel suppressed this mixin by name", "source=" + e.getValue(), "config required=" + required));
 		}
 	}
 
