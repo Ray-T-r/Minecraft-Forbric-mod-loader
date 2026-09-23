@@ -273,7 +273,7 @@ public final class KernelBoot {
 
 		// Fabric mods (+ extracted JiJ children). Also Mojmap on this game version. Creates the FabricLoader.
 		List<Path> fabricJars = KernelFabricEcosystem.build(fabricScan, side.envType, gameDir, gameVersion,
-				gameArgs.toArray(new String[0]), dupes);
+				gameArgs.toArray(new String[0]), dupes, gameJar);
 
 		// Game-side bundled libraries (MixinExtras) and the kernel's own runtime jar. The latter also carries
 		// the kernel's client assets -- the Mods button's icon lives in it -- so its extracted path is handed to
@@ -347,6 +347,10 @@ public final class KernelBoot {
 		// One mod's mixin config plugin must not be able to abort config preparation for every other mod. Mixin
 		// guards plugin construction but not the calls, and a throw there escapes select(). See GuestMixinPluginGuard.
 		chain.register(TransformPhase.COREMOD, new GuestMixinPluginGuard());
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricItemContractTransformer(name -> {
+			try (var in = loader.getGameResourceAsStream(name + ".class")) { return in != null; }
+			catch (java.io.IOException unavailable) { return false; }
+		}));
 		if (transferInterop) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TransferTransactionHooks());
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TransferCapabilityFallback());

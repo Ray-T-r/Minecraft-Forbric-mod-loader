@@ -333,3 +333,18 @@ Pending implementation and acceptance items remain open even when a smaller batc
   contradictory reports. The access assertion now checks real replay instead of an obsolete warning line.
 - 47 tests passed, zero failures/errors/skips. Evidence: `build/verification/equivalent-implementation/`,
   `build/verification/equivalence-reviewed-symbols.json` and `build/equivalence-tests.log`.
+
+### P2 preserve Fabric and native enchantment decisions plus server language resources
+
+- Three actual item-event redirects follow native stack-based decisions. The primary-enchantment method
+  reference gets a typed same-capture wrapper so the real Fabric injector can attach. Fabric's default item
+  implementation delegates to native item decisions; explicit Fabric event opinions and per-item overrides
+  keep their original precedence. Reviewed handler bodies, fixed descriptors and unique sites constrain edits.
+- The item module's real dependency closure exposed two additional server-language gaps. Fabric language
+  merging now occurs before the native map capture without replacing the native mutable/string/component
+  maps. Resource opening follows the live parser overload. Minecraft's builtin container has its actual game
+  jar roots while remaining excluded from foreign-mod presence aliases. Unknown bodies/groups stand down.
+- 14 focused tests pass without skips. M38 passed twelve strict real-world command/loot/candidate cases and
+  all twelve failed with item adaptation off, with unchanged per-phase inputs. A Fabric-only language mod,
+  vanilla Stick translation and Minecraft version.json path also pass in the real server. Evidence:
+  `build/verification/enchantment-and-language/` and `build/verification/m38-entity/`.

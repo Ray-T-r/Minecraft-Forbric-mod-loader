@@ -298,6 +298,8 @@ public final class ForbricMixinService
 		// shim, never before it: a diagnosis for something that is about to be repaired is a false alarm.
 		MixinOverloadPin.pin(node, this::mergedBaseNode);
 		FabricEntityMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
+		FabricEnchantmentMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		FabricServerLanguageMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FinalMixinApplications.remember(node);
 
 		return node;

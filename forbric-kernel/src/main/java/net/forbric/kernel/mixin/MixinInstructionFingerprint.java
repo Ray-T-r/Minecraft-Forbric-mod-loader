@@ -3,9 +3,9 @@ package net.forbric.kernel.mixin;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
 /** Executable instructions and control-flow only; debug, frames, access and max-stack metadata are excluded. */
-final class MixinInstructionFingerprint {
+public final class MixinInstructionFingerprint {
  private MixinInstructionFingerprint() { }
- static String hash(MethodNode original) {
+ public static String hash(MethodNode original) {
   MethodNode method=new MethodNode(original.access&Opcodes.ACC_STATIC,"body",original.desc,null,null);
   var labels=new java.util.IdentityHashMap<LabelNode,LabelNode>();for(var instruction:original.instructions)if(instruction instanceof LabelNode label)labels.put(label,new LabelNode());
   for(var instruction:original.instructions)if(instruction.getOpcode()>=0||instruction instanceof LabelNode)method.instructions.add(instruction.clone(labels));

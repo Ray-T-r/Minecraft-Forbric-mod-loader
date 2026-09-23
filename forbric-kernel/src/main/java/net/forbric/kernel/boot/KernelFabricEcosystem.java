@@ -132,11 +132,16 @@ public final class KernelFabricEcosystem {
 	 */
 	public static List<Path> build(FabricModDiscovery discovery, EnvType envType, Path gameDir, String gameVersion,
 			String[] launchArgs, DuplicateModArbiter.Decision dupes) {
+		return build(discovery, envType, gameDir, gameVersion, launchArgs, dupes, null);
+	}
+
+	public static List<Path> build(FabricModDiscovery discovery, EnvType envType, Path gameDir, String gameVersion,
+			String[] launchArgs, DuplicateModArbiter.Decision dupes, Path gameJar) {
 		KernelFabricLoader fabric = KernelFabricLoader.create(envType, gameDir, gameDir.resolve("config"),
 				launchArgs, gameVersion);
 
 		fabric.register(new KernelModContainer(
-				KernelModMetadata.builtin("minecraft", gameVersion, "Minecraft"), null, null));
+				KernelModMetadata.builtin("minecraft", gameVersion, "Minecraft"), gameJar, null));
 		fabric.register(new KernelModContainer(
 				KernelModMetadata.builtin("java", String.valueOf(Runtime.version().feature()), "Java"), null, null));
 		fabric.register(new KernelModContainer(
@@ -216,6 +221,8 @@ public final class KernelFabricEcosystem {
 		for (ModContainer container : fabric.getAllMods()) {
 			if (!(container instanceof KernelModContainer kernel) || kernel.getJar() == null) continue;
 			String id = kernel.getMetadata().getId();
+			// Minecraft has real resource roots, but remains a builtin rather than a foreign mod alias.
+			if (id != null && java.util.Set.of("minecraft", "java", "fabricloader").contains(id)) continue;
 			if (id == null || id.isBlank() || ModPresence.isLoaded(id)) continue;
 			// The provides aliases ride along. FabricLoader resolves them itself, but the Forge-family lists and
 			// ModPresence are built from THIS list, and every LibJF module is named through an alias.
