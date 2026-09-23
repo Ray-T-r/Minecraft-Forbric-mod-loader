@@ -347,6 +347,25 @@ public final class KernelBoot {
 		// One mod's mixin config plugin must not be able to abort config preparation for every other mod. Mixin
 		// guards plugin construction but not the calls, and a throw there escapes select(). See GuestMixinPluginGuard.
 		chain.register(TransformPhase.COREMOD, new GuestMixinPluginGuard());
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CorpseNameTagAdapter(name -> {
+			try {
+				String binary = name.replace('/', '.');
+				if (loader.isClassLoadedByName(binary)) {
+					// Inspect an already-defined class without initializing it; late mixins may have restored a field.
+					Class<?> type = Class.forName(binary, false, loader);
+					org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode(); node.name = name;
+					for (var field : type.getDeclaredFields()) node.fields.add(new org.objectweb.asm.tree.FieldNode(
+							field.getModifiers(), field.getName(), org.objectweb.asm.Type.getDescriptor(field.getType()), null, null));
+					return node;
+				}
+				try (var in = loader.getGameResourceAsStream(name + ".class")) {
+					if (in == null) return null;
+					org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+					new org.objectweb.asm.ClassReader(in).accept(node, org.objectweb.asm.ClassReader.SKIP_CODE);
+					return node;
+				}
+			} catch (ReflectiveOperationException | java.io.IOException | LinkageError unavailable) { return null; }
+		}));
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricItemContractTransformer(name -> {
 			try (var in = loader.getGameResourceAsStream(name + ".class")) { return in != null; }
 			catch (java.io.IOException unavailable) { return false; }

@@ -264,3 +264,10 @@ confirmed necessary losses and no unclassified failed initialization.
 Use `--control --seconds 30 --sessions 2 --dwell-ticks 20 --settle-seconds 10` only to test the controller;
 CONTROL_PASS is never release acceptance. `python3 run/compat/test_soak.py` verifies rejection of stale or
 incomplete telemetry, fake activity totals, missing reentry/unload observations and short release claims.
+
+`corpse-repro.py` compiles two read-only Mixin probes and opens a nonce-owned copy of the mixed pack. It
+requires Corpse's actual dummy constructor to complete with vanilla name-tag distance zero and its actual
+render submission to run, then requires screenshots and normal save/exit. The unmodified mod jar remains
+hash-bound. A crash marker terminates only this child process group within five seconds. Run the offline
+CorpseNameTagAdapterTest before this client test; an off-adapter graphics run is unnecessary to reproduce
+the known missing-field error because the actual original constructor is executed in the JVM test.

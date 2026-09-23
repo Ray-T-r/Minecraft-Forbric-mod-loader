@@ -502,3 +502,22 @@ Pending implementation and acceptance items remain open even when a smaller batc
 - Both previously red gates now pass with their meaningful negative controls intact. Evidence:
   `build/verification/final-fixture-contracts/`. This does not count M34 as passed or remove the native
   Unlit Campfire retention review. The complete final source/artifact set will be frozen for the long run.
+
+### Real rendered death exposed an upstream attribute API removal
+
+- The attempted final soak and a following client both hit Corpse's DummyPlayer constructor after drowning:
+  NeoForgeMod.NAMETAG_DISTANCE no longer exists. The crash windows did not exit normally and the owned test
+  processes were stopped. Both runs remain failures; no two-hour acceptance is claimed.
+- Upstream NeoForge PR 3333 removed that field in 26.2.0.30 in favor of Attributes.NAME_TAG_DISTANCE:
+  https://github.com/neoforged/NeoForge/pull/3333 . Nonzero crouching-distance behavior differs, so the repair
+  is restricted to Corpse's audited constructor whose only operation is setting distance to zero. It rewrites
+  one read, only when the old field is absent and the public static vanilla replacement exists. It adds no
+  registry or global alias. Existing legacy fields, changed constructors and nonzero variants are refused.
+- Three offline tests execute the actual original/adapted constructor: the original throws NoSuchFieldError;
+  the adapted one suppresses the name while preserving world/profile, equipment, model and position.
+- A real full-pack client reproduced drowning and exited normally. A second isolated run with read-only
+  probes confirmed the actual completed dummy has name-tag distance 0.0 and CorpseRenderer.submit ran.
+  It produced two fresh screenshots, saved, exited 0 and retained unchanged source/artifact/mod hashes.
+  Evidence: `build/verification/corpse-name-tag/`, `build/corpse-render-control/latest.json`.
+- `corpse-repro.py` bounds a detected crash window to five seconds and targets only its owned process group.
+  Remaining long-run validation resumes after restoring a live-player precondition in the soak controller.

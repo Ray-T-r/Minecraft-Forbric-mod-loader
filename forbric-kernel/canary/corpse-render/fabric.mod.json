@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"forbric_corpse_probe","version":"1.0.0","name":"Corpse rendering contract probe","environment":"client","mixins":["corpse-probe.mixins.json"],"depends":{"corpse":"*","minecraft":"26.2"}}
