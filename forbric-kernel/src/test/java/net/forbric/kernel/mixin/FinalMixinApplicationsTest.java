@@ -27,11 +27,46 @@ class FinalMixinApplicationsTest {
   config(1,false);remember(0,false,List.of(TARGET));observe(target(false,true,"handler$000$probe","()V"));
   assertTrue(CompatibilityFindings.all().stream().noneMatch(f->f.confidence()==CompatibilityFinding.Confidence.CONFIRMED));
  }
- /** MixinExtras injectors are InjectionInfo too: a defaultRequire miss the relaxation silenced is a confirmed loss. */
- @Test void aMissedMixinExtrasInjectorIsReconciledLikeAStandardOne() {
-  config(1);remember(extras(WRAP_OPERATION));observe(target(false,true,"handler$000$probe","()V"));
-  assertEquals(1,CompatibilityFindings.confirmedRequired().size());
-  assertTrue(CompatibilityFindings.confirmedRequired().getFirst().id().startsWith("mixin-injector:"));
+ /** A MixinExtras miss is recorded with the proof that its handler did not attach, but no audited replacement says
+  * whether the feature is lost, so it is not a continue-or-quit question. The standard @Inject miss beside it
+  * (silentlyRelaxedNecessaryInjectorIsConfirmedOnlyAfterFinalDefinition) is the negative control. */
+ @Test void aMissedMixinExtrasInjectorIsRecordedButOnlySuspected() {
+  config(1);remember(extras(WRAP_OPERATION));suspect();observe(target(false,true,"handler$000$probe","()V"));
+  assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(),CompatibilityFindings.all().toString());
+  CompatibilityFinding injector=CompatibilityFindings.all().stream().filter(f->f.id().startsWith("mixin-injector:")).findFirst().orElseThrow();
+  assertEquals(CompatibilityFinding.Confidence.SUSPECTED,injector.confidence());assertTrue(injector.required());
+  assertTrue(injector.evidence().contains("final handler references=0"),injector.evidence().toString());
+  assertEquals(CompatibilityFinding.Confidence.SUSPECTED,whole().confidence(),"a miss never discharges the whole-mixin suspicion");
+ }
+ /** The stock fabric-api jar every Fabric pack carries: ItemStackMixin's plain @WrapOperation on Item.useOn, in a
+  * required config with defaultRequire 1, finds nothing in the merged ItemStack.useOn (the call moved into a
+  * NeoForge lambda). Confirming it stopped every dedicated server at boot and asked every client to quit. */
+ @Test void theStockFabricApiUseOnWrapThatMissesTheMergedBaseDoesNotStopTheLaunch() throws Exception {
+  String config="fabric-events-interaction-v0.mixins.json",mixinName="net.fabricmc.fabric.mixin.event.interaction.ItemStackMixin";
+  MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned(config,"fabric-events-interaction-v0",Ecosystem.FABRIC)));
+  MixinCompatibility.rememberOriginalConfig(config,fabricApiResource("fabric-events-interaction-v0",config));
+  ClassNode mixin=StagedFabricMixinFixture.mixin("fabric-events-interaction-v0",mixinName.replace('.','/'));FinalMixinApplications.remember(mixin);
+  ClassNode stack=StagedFabricMixinFixture.game("net/minecraft/world/item/ItemStack",false);
+  assertFalse(calls(StagedFabricMixinFixture.method(stack,"useOn"),"net/minecraft/world/item/Item","useOn"),"premise: the merged useOn no longer calls Item.useOn itself");
+  assertTrue(calls(StagedFabricMixinFixture.method(stack,"use"),"net/minecraft/world/item/Item","use"),"premise: use still does");
+  // What Mixin leaves behind: both handlers merged under their renamed names, only the use wrap called.
+  MethodNode caller=new MethodNode(Opcodes.ACC_PRIVATE,"forbric$attachedUse","()V",null,null);
+  for(String handler:List.of("handleUseEvent","handleUseOnEvent")) {
+   MethodNode original=StagedFabricMixinFixture.method(mixin,handler),merged=new MethodNode(original.access,"wrapOperation$fbr000$"+handler,original.desc,null,null);
+   merged.instructions.add(new InsnNode(Opcodes.ACONST_NULL));merged.instructions.add(new InsnNode(Opcodes.ARETURN));
+   merged.visibleAnnotations=new ArrayList<>(List.of(annotation("Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;","mixin",mixinName)));stack.methods.add(merged);
+   if(handler.equals("handleUseEvent"))caller.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,stack.name,merged.name,merged.desc,false));
+  }
+  caller.instructions.add(new InsnNode(Opcodes.RETURN));stack.methods.add(caller);
+  MixinCompatibility.record(config,mixinName,"3/4 anchors resolve, missing: @At(INVOKE) ItemStack.useOn in useOn",CompatibilityFinding.Confidence.SUSPECTED,true,List.of("preflight"));
+  FinalMixinApplications.observe("net.minecraft.world.item.ItemStack",StagedFabricMixinFixture.bytes(stack),
+    (m,name,desc)->List.of(new FinalMixinApplications.Renamed("wrapOperation$fbr000$"+name,desc)));
+  assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(),CompatibilityFindings.all().toString());
+  CompatibilityFinding useOn=CompatibilityFindings.all().stream().filter(f->f.id().startsWith("mixin-injector:")&&f.id().contains("#handleUseOnEvent")).findFirst().orElseThrow();
+  assertEquals(CompatibilityFinding.Confidence.SUSPECTED,useOn.confidence());assertTrue(useOn.required());
+  assertTrue(useOn.evidence().contains("final handler references=0"),useOn.evidence().toString());
+  assertTrue(CompatibilityFindings.all().stream().noneMatch(f->f.id().contains("#handleUseEvent")),"the attached wrap owes nothing");
+  assertEquals(CompatibilityFinding.Confidence.SUSPECTED,CompatibilityFindings.all().stream().filter(f->f.id().equals(MixinCompatibility.id(config,mixinName))).findFirst().orElseThrow().confidence());
  }
  @Test void anAttachedMixinExtrasInjectorDischargesTheWholeMixinSuspicion() {
   config(1);remember(extras(MODIFY_EXPRESSION_VALUE));suspect();observe(target(true,true,"handler$000$probe","()V"));
@@ -151,5 +186,14 @@ class FinalMixinApplicationsTest {
  private void observe(ClassNode n){ClassWriter w=new ClassWriter(0);n.accept(w);FinalMixinApplications.observe(TARGET,w.toByteArray(),(mixin,name,desc)->List.of(new FinalMixinApplications.Renamed(name.equals("second")?"handler$001$second":"handler$000$probe",desc)));}
  private void suspect(){MixinCompatibility.record(CONFIG,MIXIN,"preflight unresolved anchors",CompatibilityFinding.Confidence.SUSPECTED,true,List.of("probe"));}
  private CompatibilityFinding whole(){return CompatibilityFindings.all().stream().filter(f->f.id().equals(MixinCompatibility.id(CONFIG,MIXIN))).findFirst().orElseThrow();}
+ private static boolean calls(MethodNode method,String owner,String name){for(AbstractInsnNode i:method.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(owner)&&c.name.equals(name))return true;return false;}
+ private static byte[] fabricApiResource(String module,String name)throws Exception{
+  java.nio.file.Path api=java.nio.file.Path.of("run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar");Assumptions.assumeTrue(java.nio.file.Files.isRegularFile(api),"actual Fabric API fixture required");
+  try(java.util.zip.ZipFile z=new java.util.zip.ZipFile(api.toFile())){
+   java.util.zip.ZipEntry e=z.stream().filter(x->x.getName().startsWith("META-INF/jars/"+module+"-")).findFirst().orElseThrow();
+   try(java.util.zip.ZipInputStream inner=new java.util.zip.ZipInputStream(z.getInputStream(e))){for(java.util.zip.ZipEntry entry;(entry=inner.getNextEntry())!=null;)if(entry.getName().equals(name))return inner.readAllBytes();}
+  }
+  throw new AssertionError("actual resource not found: "+name);
+ }
  private static AnnotationNode annotation(String desc,String key,Object value){AnnotationNode a=new AnnotationNode(desc);a.values=new ArrayList<>(List.of(key,value));return a;}
 }

@@ -15,17 +15,26 @@ import org.spongepowered.asm.mixin.transformer.ClassInfo;
 public final class FinalMixinApplications {
  private static final String PREFIX = "Lorg/spongepowered/asm/mixin/injection/";
  private static final String EXTRAS = "Lcom/llamalad7/mixinextras/";
- /** Injectors whose every successful injection emits a direct call to the merged handler in the target class.
-  * MixinExtras' are built on Mixin's InjectionInfo, so require/defaultRequire mean the same thing for them; left
-  * out, the kernel's defaultRequire relaxation made their misses silent with nothing recorded at all. */
+ /** Mixin's own injectors. Every successful injection emits a direct call to the merged handler in the target class,
+  * and the kernel's anchor repairs and replacement proofs are audited against them, so an unproved miss is a
+  * confirmed loss. */
  private static final Set<String> STANDARD = Set.of(PREFIX+"Inject;", PREFIX+"Redirect;", PREFIX+"ModifyArg;",
-   PREFIX+"ModifyArgs;", PREFIX+"ModifyConstant;", PREFIX+"ModifyVariable;",
+   PREFIX+"ModifyArgs;", PREFIX+"ModifyConstant;", PREFIX+"ModifyVariable;");
+ /** MixinExtras' injectors are built on Mixin's InjectionInfo, so require/defaultRequire mean the same thing, and
+  * each successful injection is a direct call to the merged handler too: zero references still proves the handler
+  * did not attach. Left out, the kernel's defaultRequire relaxation made their misses silent. What zero references
+  * does not settle is whether the feature is lost. Stock fabric-api misses this way on the merged base in many
+  * places, and the kernel supplies some of those features outside any mixin: eleven of HudMixin's @WrapOperation
+  * handlers attach nowhere, and KernelHudBridge draws what they would have. None of those replacements is a
+  * structural proof here yet. Confirming them would stop every dedicated server carrying fabric-api at boot, so an
+  * unproved miss stays SUSPECTED. */
+ private static final Set<String> EXTRAS_INJECTORS = Set.of(
    EXTRAS+"injector/ModifyExpressionValue;", EXTRAS+"injector/ModifyReturnValue;", EXTRAS+"injector/ModifyReceiver;",
    EXTRAS+"injector/WrapWithCondition;", EXTRAS+"injector/v2/WrapWithCondition;",
    EXTRAS+"injector/wrapoperation/WrapOperation;", EXTRAS+"injector/wrapmethod/WrapMethod;");
  private static final String MERGED = "Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;";
  private record Config(String name, boolean required, int minimum) { }
- private record Injector(String name, String desc, int minimum, boolean understood, String bodyHash) {
+ private record Injector(String name, String desc, int minimum, boolean understood, boolean audited, String bodyHash) {
   String symbol() { return name+desc; }
  }
  private record Plan(String mixin, Config config, List<String> targets, List<Injector> injectors, boolean complete) { }
@@ -72,19 +81,19 @@ public final class FinalMixinApplications {
    List<AnnotationNode> annotations=annotations(method);
    boolean grouped=annotations.stream().anyMatch(a->a.desc.equals(PREFIX+"Group;"));
    boolean sugar=hasSugar(method.visibleParameterAnnotations)||hasSugar(method.invisibleParameterAnnotations);
-   List<AnnotationNode> standard=annotations.stream().filter(a->STANDARD.contains(a.desc)).toList();
+   List<AnnotationNode> injecting=annotations.stream().filter(a->STANDARD.contains(a.desc)||EXTRAS_INJECTORS.contains(a.desc)).toList();
    // A MixinExtras form this does not model leaves the whole-mixin verdict open; the handler's own attachment
    // is still a direct call and still counted.
-   boolean extension=annotations.stream().anyMatch(a->a.desc.startsWith(EXTRAS)&&!STANDARD.contains(a.desc));
+   boolean extension=annotations.stream().anyMatch(a->a.desc.startsWith(EXTRAS)&&!EXTRAS_INJECTORS.contains(a.desc));
    if(extension)complete=false;
-   for(AnnotationNode annotation:standard) {
+   for(AnnotationNode annotation:injecting) {
     // As InjectionInfo.readInjectionPoints: an explicit require wins; otherwise defaultRequire applies only
     // outside a named @Group, whose members are counted by the group and individually require nothing.
     Object declared=value(annotation,"require");int minimum=declared instanceof Number n?n.intValue():-1;
     if(minimum<0)minimum=grouped?0:config.minimum();
-    injectors.add(new Injector(method.name,method.desc,minimum,!grouped&&!sugar&&standard.size()==1,
+    injectors.add(new Injector(method.name,method.desc,minimum,!grouped&&!sugar&&injecting.size()==1,STANDARD.contains(annotation.desc),
       MixinEquivalentImplementations.needsFingerprint(binary,method)?MixinInstructionFingerprint.hash(method):""));
-    if(grouped||sugar||extension||standard.size()!=1)complete=false;
+    if(grouped||sugar||extension||injecting.size()!=1)complete=false;
    }
   }
   if(injectors.isEmpty())return;
@@ -144,6 +153,11 @@ public final class FinalMixinApplications {
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.SUSPECTED,
       required,"The audited watchdog report uses a native replacement whose final renderer has not been defined yet",
       List.of("target="+binary,"pending final helper="+WatchdogDumpEquivalence.HELPER)));
+    else if(state==Outcome.MISSING&&!injector.audited())CompatibilityFindings.record(new CompatibilityFinding(id,mod,
+      "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.SUSPECTED,
+      required,"A required MixinExtras injector has no attachment in the actual defined class; no audited replacement says whether its feature is lost",
+      List.of("target="+binary,"mixin="+mixin,"handler="+injector.symbol(),"original minimum="+injector.minimum(),"final handler references=0",
+        "config required="+plan.config().required(),"MixinExtras injector: replacements unaudited")));
     else if(state==Outcome.MISSING)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.CONFIRMED,
       required,"A required injector has no attachment in the actual defined class",
