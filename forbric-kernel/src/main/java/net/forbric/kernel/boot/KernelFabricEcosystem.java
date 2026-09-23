@@ -16,6 +16,8 @@
 
 package net.forbric.kernel.boot;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -651,11 +653,34 @@ public final class KernelFabricEcosystem {
 		for (Map.Entry<String, Object> entry : properties.entrySet()) {
 			values.put(entry.getKey(), KernelCustomValue.of(entry.getValue()));
 		}
+		if (values.containsKey(CONTAINS_RENDERER) && !keepsRendererPromise(mod)) values.remove(CONTAINS_RENDERER);
+		if (values.isEmpty()) return Map.of();
 		ForbricLog.info("[Forbric/Fabric] %s's %d [modproperties] key(s) are now Fabric custom values %s — a Fabric "
 				+ "mod asking this mod what it offers (Indigo asking Sodium whether a renderer is already here) "
 				+ "reads the same declaration its own family would have written", mod.getId(), values.size(),
 				values.keySet());
 		return values;
+	}
+
+	static final String CONTAINS_RENDERER = "fabric-renderer-api-v1:contains_renderer";
+
+	/**
+	 * Forwarding {@code contains_renderer} makes Indigo stand down, so it is forwarded only when the loaded build can
+	 * keep the promise (see {@link FrapiRendererEvidence}). Unreadable jars keep the declaration, as before.
+	 */
+	static boolean keepsRendererPromise(DiscoveredMod mod) {
+		String source = mod.getSource();
+		if (source == null || !Files.isRegularFile(Path.of(source))) return true;
+		try {
+			if (FrapiRendererEvidence.registersRenderer(Path.of(source))) return true;
+		} catch (IOException | RuntimeException unreadable) {
+			ForbricLog.warn("[Forbric/Fabric] could not check whether %s registers a Fabric renderer; keeping its "
+					+ "declaration", mod.getId(), unreadable);
+			return true;
+		}
+		ForbricLog.warn("[Forbric/Fabric] %s declares %s, but the build that loaded never registers a Fabric renderer "
+				+ "— not forwarding it, so Indigo takes the slot instead of leaving it empty", mod.getId(), CONTAINS_RENDERER);
+		return false;
 	}
 
 	/**
