@@ -69,6 +69,51 @@ class SoakVerifierTest(unittest.TestCase):
         self.assertNotIsInstance(caught.exception,soak.RetentionReview)
         rows,result=fixture();result['oldServers']=[]
         with self.assertRaises(ValueError):self.check(rows,result)
+    ROOT='de.cech12.unlitcampfire.CommonLoader.CAMPFIRES'
+    ENTRY=dict(root=ROOT,mod='unlitcampfire.jar',modJarSha256='ab'*32,nativeEvidence='build/retention-control/comparison.json',reproduce='retention-control.py')
+    def retained(self,after_alive,rows_cut):
+        rows,result=fixture();result['oldServers'][0]['alive']=True
+        result['nativeRetentionRelease']=[dict(root=root,present=True,removedStoppedServerEntries=2) for root in rows_cut]
+        result['oldServersAfterNativeRelease']=[dict(server=i,alive=(i==1 and after_alive),stopped=True) for i in (1,2)]
+        result['status']='REVIEW_REQUIRED' if after_alive else 'CONTROL_PASS'
+        return rows,result
+    def test_retention_freed_only_by_a_reviewed_native_root_is_attributed_not_waived(self):
+        out=self.check(*self.retained(False,[self.ROOT]),native_roots=[self.ENTRY])
+        self.assertEqual('CONTROL_PASS',out['status'])
+        self.assertEqual([dict(root=self.ROOT,removedStoppedServerEntries=2,modJarSha256='ab'*32)],out['nativeRetentionAttributed'])
+    def test_a_server_still_reachable_after_the_native_cut_stays_a_review(self):
+        with self.assertRaises(soak.RetentionReview):self.check(*self.retained(True,[self.ROOT]),native_roots=[self.ENTRY])
+    def test_the_controller_may_not_cut_a_root_that_is_not_reviewed_for_this_run(self):
+        for roots in ([],[dict(self.ENTRY,root='other.Mod.CACHE')]):
+            with self.assertRaises(ValueError) as caught:self.check(*self.retained(False,[self.ROOT]),native_roots=roots)
+            self.assertNotIsInstance(caught.exception,soak.RetentionReview)
+    def test_cutting_without_any_retention_or_losing_a_session_is_rejected(self):
+        rows,result=fixture();result['nativeRetentionRelease']=[dict(root=self.ROOT,removedStoppedServerEntries=0)]
+        with self.assertRaises(ValueError):self.check(rows,result,native_roots=[self.ENTRY])
+        rows,result=self.retained(False,[self.ROOT]);result['oldServersAfterNativeRelease']=result['oldServersAfterNativeRelease'][:1]
+        with self.assertRaises(ValueError):self.check(rows,result,native_roots=[self.ENTRY])
+    def test_only_roots_whose_exact_jar_is_frozen_in_the_run_are_offered(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            registry=Path(temporary)/'r.json';registry.write_text(json.dumps(dict(schema=1,roots=[self.ENTRY])))
+            self.assertEqual([self.ENTRY],soak.native_retention_roots(['cd'*32,'ab'*32],registry))
+            self.assertEqual([],soak.native_retention_roots(['cd'*32],registry))
+    def test_release_rereads_the_named_native_reproduction(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            kernel=Path(temporary);(kernel/'build/retention-control').mkdir(parents=True)
+            with self.assertRaises(ValueError):soak.verify_native_evidence(kernel,self.ENTRY)
+            arms=[]
+            for engine in ('native','forbric'):
+                inputs=kernel/f'{engine}.json';inputs.write_text(json.dumps(dict(modSet=[dict(sha256='ab'*32)])))
+                arms.append(dict(engine=engine,nativeRetentionReproduced=True,proof=dict(root=self.ROOT),inputs=dict(path=str(inputs),sha256=soak.digest(inputs))))
+            comparison=kernel/self.ENTRY['nativeEvidence']
+            comparison.write_text(json.dumps(dict(sameModHashes=True,arms=arms)))
+            self.assertEqual(self.ROOT,soak.verify_native_evidence(kernel,self.ENTRY)['root'])
+            for broken in (dict(sameModHashes=False,arms=arms),dict(sameModHashes=True,arms=arms[:1]),
+                           dict(sameModHashes=True,arms=[dict(arms[0],nativeRetentionReproduced=False),arms[1]])):
+                comparison.write_text(json.dumps(broken))
+                with self.assertRaises(ValueError):soak.verify_native_evidence(kernel,self.ENTRY)
+            comparison.write_text(json.dumps(dict(sameModHashes=True,arms=arms)))
+            with self.assertRaises(ValueError):soak.verify_native_evidence(kernel,dict(self.ENTRY,modJarSha256='cd'*32))
     def test_release_compatibility_requires_fresh_strict_consistent_evidence(self):
         with tempfile.TemporaryDirectory() as temporary:
             path=Path(temporary)/'report.json'

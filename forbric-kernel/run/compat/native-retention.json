@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "meaning": "Static roots whose retention of a stopped server was reproduced on the unmodified native loader with byte-identical mod jars. M34 may cut ONLY these roots' entries for its own stopped servers, and only after measurement has finished; a server that stays reachable afterwards is still a retention review.",
+  "roots": [
+    {
+      "root": "de.cech12.unlitcampfire.CommonLoader.CAMPFIRES",
+      "shape": "static Collection<BlockEntity>",
+      "mod": "unlitcampfire-neoforge-26.2-4.1.0.0.jar",
+      "modJarSha256": "c06d0e052cd221ea0f4a92711b6d8c666ffd8580a0d89bc28a5bcc2051cff1bb",
+      "why": "addCampfire() stores every saved server-side campfire in a static HashSet that only a finished sleep prunes; the block entity keeps its ServerLevel and so the stopped server.",
+      "nativeEvidence": "build/retention-control/comparison.json",
+      "reproduce": "python3 run/compat/retention-control.py"
+    }
+  ]
+}
