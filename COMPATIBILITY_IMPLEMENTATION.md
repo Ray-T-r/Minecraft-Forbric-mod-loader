@@ -299,3 +299,21 @@ Pending implementation and acceptance items remain open even when a smaller batc
   disabling the adapter leaves the original value and a confirmed necessary loss with normal strict halt.
 - Evidence: `build/verification/fixed-index-widening/`, `build/verification/m36-outcome/` and
   `build/m36-fixed-index-driver.log`. The remaining mixed-client findings still require work.
+
+### P2 restore actual Fabric entity event contracts
+
+- Rebound effect callbacks to NeoForge's corresponding validation/removal stage and gliding callbacks before
+  both its attribute and equipment branches, preserving the movement prerequisites. The nearby-monster
+  check follows the actual same-signature lambda invoked by the native sleeping method. Ambiguous shapes,
+  shifted constructor phases and callback groups are refused. Native vanilla bodies remain unchanged.
+- The bed occupancy redirect accepts only the reviewed original handler instruction body. Its replacement
+  honors Fabric's handled result, then uses the current block's native setter. A Fabric non-bed is not
+  overwritten, and a NeoForge custom bed without vanilla OCCUPIED retains its own property and setter.
+- 22 focused tests passed without skips. M37 then passed eleven strict real-world cases and all eleven
+  precisely failed with the adapter disabled. Cases prove duration writeback, effect removal timing, flight
+  veto/custom results, ordinary/custom/non-bed state and nearby-monster sleep success. The positive run had
+  zero confirmed required findings; both runs retained unchanged source/artifact/mod hashes and saved normally.
+  Evidence: `build/verification/entity-callback-adapters/` and `build/verification/m37-entity/`.
+- This is the actual unmodified Fabric entity-event module and base module. The full mixed pack still needs
+  its remaining item, sound, renderer and equivalent-implementation findings resolved; no broad acceptance
+  or two-hour result is claimed by this focused gate.
