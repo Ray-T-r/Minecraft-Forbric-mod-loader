@@ -51,16 +51,23 @@ final class ReachableCandidateSelector {
 			if (edge.coordinate() == null || graph.nodes().get(edge.child()).excluded()) continue;
 			Set<Path> providers = new LinkedHashSet<>(), unknown = new LinkedHashSet<>();
 			String range = edge.coordinate().range();
-			String predicate = ForgeVersionRangeTranslator.toFabricPredicate(range);
-			boolean unreadable = "*".equals(predicate) && range != null && !range.isBlank()
+			String predicate;
+			boolean malformed = false;
+			// Hand-written metadata.json can carry "[1.0" or "[]". The legacy extractor never parsed ranges and
+			// loaded such packs; one bad constraint must leave its choice unproved, not abort the whole boot.
+			try { predicate = ForgeVersionRangeTranslator.toFabricPredicate(range); }
+			catch (IllegalArgumentException unparseable) { predicate = "*"; malformed = true; }
+			boolean unreadable = malformed || "*".equals(predicate) && range != null && !range.isBlank()
 					&& !Set.of("*", "(,)", "[,)", "(,]", "[,]").contains(range);
+			String translated = predicate; boolean open = unreadable;
 			for (var candidate : artifacts.get(artifactId(edge.coordinate().id())).entrySet()) {
-				boolean all = !unreadable && candidate.getValue().stream().allMatch(v -> VersionPredicate.matchesStrictly(predicate, v));
-				boolean any = unreadable || candidate.getValue().stream().anyMatch(v -> VersionPredicate.matches(predicate, v));
+				boolean all = !open && candidate.getValue().stream().allMatch(v -> VersionPredicate.matchesStrictly(translated, v));
+				boolean any = open || candidate.getValue().stream().anyMatch(v -> VersionPredicate.matches(translated, v));
 				if (all) providers.add(candidate.getKey()); else if (any) unknown.add(candidate.getKey());
 			}
 			expanded.add(new JointCandidateSelector.Rule("jarjar:" + edge.entry(), edge.parent(), providers, unknown, true,
-					"requires bundled artifact " + edge.coordinate().id() + " " + range));
+					(malformed ? "malformed JarJar version range, left unproved: " : "") + "requires bundled artifact "
+							+ edge.coordinate().id() + " " + range));
 		}
 		this.rules = List.copyOf(expanded);
 	}

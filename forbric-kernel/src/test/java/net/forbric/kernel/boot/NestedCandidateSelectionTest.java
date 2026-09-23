@@ -197,6 +197,21 @@ class NestedCandidateSelectionTest {
 		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.id().startsWith("arbitration:")));
 	}
 
+	@Test void aMalformedJarJarRangeIsUnprovedInsteadOfAbortingTheBoot() throws Exception {
+		for (String range : List.of("[1.0", "[]")) {
+			reset();
+			byte[] lib = bytes(Map.of("version.txt", range.getBytes(StandardCharsets.UTF_8)));
+			install("parent.jar", neo("parent", "1", Map.of("META-INF/jarjar/lib.jar", lib),
+					Map.of("META-INF/jarjar/lib.jar", new NestedCandidateInventory.Coordinate("example:lib", range, "1")), Map.of()));
+			decide(); var plan = DuplicateModArbiter.currentPlan();
+			assertEquals(JointCandidateSelector.Status.UNPROVED, plan.selection().status(), range);
+			assertEquals(1, plan.nestedFiles().size(), "the library is still loaded, as the legacy extractor did");
+			assertTrue(plan.selection().uncertain().stream().anyMatch(r -> r.detail().contains("malformed JarJar version range")), range);
+			assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+			Files.delete(mods().resolve("parent.jar"));
+		}
+	}
+
 	private static byte[] fabric(String id, String version, Map<String, byte[]> children, String extra, Map<String, byte[]> resources) throws Exception {
 		Map<String, byte[]> all = new LinkedHashMap<>(resources); all.putAll(children);
 		String jars = String.join(",", children.keySet().stream().map(name -> "{\"file\":\"" + name + "\"}").toList());
