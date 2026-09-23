@@ -4130,12 +4130,15 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * have. This first exchange preserves the descriptor. The following injector adds the actual ValueInput
 	 * from the entity-loading data flow; without it, the legacy entry reports the missing input rather than
 	 * inventing a null Forge argument or pretending an already-finalized mob can be changed retroactively.
+	 *
+	 * <p>A method that already calls MinecraftForge's own finalize hook is left alone: the kernel entry would post
+	 * that event a second time. SpawnerFinalizeInjector reports such a caller.
 	 */
 	private static boolean letMinecraftForgeSeeSpawnerMobs(ClassNode node) {
 		if (!BASE_SPAWNER.equals(node.name)) return false;
 		int redirected = 0;
 		for (MethodNode method : node.methods) {
-			if (method.instructions == null) continue;
+			if (method.instructions == null || SpawnerFinalizeInjector.carriesForgeFinalize(method)) continue;
 			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
 						|| !NEO_EVENT_HOOKS.equals(call.owner)

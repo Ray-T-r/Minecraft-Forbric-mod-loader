@@ -33,6 +33,12 @@ public final class SpawnerFinalizeInjector implements ClassTransformer {
 	static final String HOST_DESC = "(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/core/BlockPos;)V";
 	static final String NEO = "net/neoforged/neoforge/event/EventHooks";
 	static final String RUNTIME = "net/forbric/kernel/runtime/KernelSpawnerFinalize";
+	static final String FORGE = "net/minecraftforge/event/ForgeEventFactory";
+	static final String FORGE_HOOK = "onFinalizeSpawnSpawner";
+	static final String FORGE_DESC = "(Lnet/minecraft/world/entity/Mob;Lnet/minecraft/world/level/ServerLevelAccessor;"
+			+ "Lnet/minecraft/world/DifficultyInstance;Lnet/minecraft/world/entity/SpawnGroupData;"
+			+ "Lnet/minecraft/world/level/storage/ValueInput;Lnet/minecraft/world/level/BaseSpawner;)"
+			+ "Lnet/minecraftforge/event/entity/living/MobSpawnEvent$FinalizeSpawn;";
 	static final String INPUT = "Lnet/minecraft/world/level/storage/ValueInput;";
 	static final String OLD_DESC = "(Lnet/minecraft/world/entity/Mob;Lnet/minecraft/world/level/ServerLevelAccessor;"
 			+ "Lnet/minecraft/world/DifficultyInstance;Lnet/minecraft/world/entity/EntitySpawnReason;"
@@ -60,6 +66,7 @@ public final class SpawnerFinalizeInjector implements ClassTransformer {
 		if (methods.size() != 1) return declined(bytes, "serverTick declaration is missing or ambiguous");
 		MethodNode host = methods.getFirst();
 		if ((host.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) return declined(bytes, "serverTick is not a concrete instance method");
+		if (carriesForgeFinalize(host)) return standDown(bytes);
 		MethodInsnNode target = null;
 		int count = 0;
 		for (AbstractInsnNode instruction : host.instructions) {
@@ -81,6 +88,18 @@ public final class SpawnerFinalizeInjector implements ClassTransformer {
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS); node.accept(writer);
 		ForbricLog.info("[Forbric/Spawner] finalization now supplies the proven ValueInput before both event families decide");
 		return writer.toByteArray();
+	}
+
+	/**
+	 * Whether the caller already posts MinecraftForge's finalize event itself, as a base that restored the call
+	 * would. The kernel entry dispatches Forge and finalizes the mob once; routing NeoForge's call there as well
+	 * would post Forge's event a second time and could finalize twice. The legacy repair asks the same question.
+	 */
+	static boolean carriesForgeFinalize(MethodNode host) {
+		for (AbstractInsnNode instruction : host.instructions) {
+			if (instruction instanceof MethodInsnNode call && call.owner.equals(FORGE) && call.name.equals(FORGE_HOOK)) return true;
+		}
+		return false;
 	}
 
 	/** SourceInterpreter preserves each reaching ASTORE, including branch/handler joins and overwrites. */
@@ -132,6 +151,17 @@ public final class SpawnerFinalizeInjector implements ClassTransformer {
 		while (next != null && next.getOpcode() < 0) next = next.getNext();
 		return next;
 	}
+	/**
+	 * No reviewed shape exists for a caller carrying both native finalize hooks, so nothing is proved about it
+	 * except that adding a kernel dispatch would duplicate Forge's. Leave it native and say what is unknown.
+	 */
+	private static byte[] standDown(byte[] bytes) {
+		String reason = "The spawner caller already contains MinecraftForge's own finalize hook next to NeoForge's; the kernel adds no second Forge dispatch or finalization, and whether this caller finalizes the mob exactly once has not been proved.";
+		CompatibilityFindings.record(new CompatibilityFinding("spawner-finalize-direct-composition", "forbric", "Spawner finalization",
+				"SpawnerFinalizeInjector", CompatibilityFinding.Confidence.SUSPECTED, false, reason, List.of(TARGET + "#serverTick" + HOST_DESC, reason)));
+		return bytes;
+	}
+
 	private static byte[] declined(byte[] bytes, String reason) {
 		CompatibilityFindings.record(new CompatibilityFinding("spawner-finalize-callsite", "forbric", "Spawner finalization",
 				"SpawnerFinalizeInjector", CompatibilityFinding.Confidence.SUSPECTED, false,
