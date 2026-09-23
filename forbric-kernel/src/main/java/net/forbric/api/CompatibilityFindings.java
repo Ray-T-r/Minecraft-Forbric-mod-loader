@@ -96,6 +96,24 @@ public final class CompatibilityFindings {
 		return all().stream().filter(CompatibilityFinding::confirmedRequired).toList();
 	}
 
+	/**
+	 * Confirmed findings whose owner is no catalogue row: the kernel's own ({@code forbric}) and a mixin config no
+	 * single mod claims ({@code config:<name>}). {@link #project} can attach nothing to them and the catalogue
+	 * must never invent a row, so every player-facing list that reads the catalogue has to read these as well --
+	 * otherwise the gate counts a loss the Mods screen and the text report never show.
+	 */
+	public static List<CompatibilityFinding> unattributed() {
+		java.util.Set<String> rows = new java.util.HashSet<>();
+		for (ModCatalog.Entry entry : ModCatalog.everything()) rows.add(entry.modId());
+		return all().stream().filter(f -> f.confidence() == CompatibilityFinding.Confidence.CONFIRMED
+				&& !rows.contains(f.modId())).toList();
+	}
+
+	/** What was noticed and not proved. Shown as notes; it never marks a mod, prompts or blocks a gate. */
+	public static List<CompatibilityFinding> suspected() {
+		return all().stream().filter(f -> f.confidence() == CompatibilityFinding.Confidence.SUSPECTED).toList();
+	}
+
 	/** Display is a projection: resolving a finding removes only its own reason, not unrelated failures. */
 	static List<ModCatalog.Entry> project(List<ModCatalog.Entry> entries) {
 		List<CompatibilityFinding> confirmed = all().stream()

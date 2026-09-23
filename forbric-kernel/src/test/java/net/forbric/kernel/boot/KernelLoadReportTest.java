@@ -86,8 +86,14 @@ class KernelLoadReportTest {
 		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
 				"mixin:alpha", "alpha", "rendering", "mixin:alpha.json",
 				net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, true, "preflight miss", List.of("anchor absent")));
-		KernelLoadReport.writeTo(text);
-		assertFalse(java.nio.file.Files.exists(text));
+		String said = capture(() -> KernelLoadReport.writeTo(text));
+		// A suspicion is a note a player can read, not a failure: the file lists it, and nothing calls the mod broken.
+		String notes = java.nio.file.Files.readString(text);
+		assertTrue(notes.contains("preflight miss") && notes.contains("mixin:alpha"), notes);
+		assertTrue(notes.contains("not confirmed"), notes);
+		assertFalse(notes.contains("did not finish loading") || notes.contains("partly did not run"), notes);
+		assertTrue(ModCatalog.failures().isEmpty(), "a suspicion marks no mod");
+		assertTrue(said.contains("every mod finished loading"), "a suspicion does not take the success line away: " + said);
 		String machine = java.nio.file.Files.readString(dir.resolve("compatibility-report.json"));
 		assertTrue(machine.contains("SUSPECTED"));
 		assertTrue(machine.contains("\"confirmedRequired\":0"));
@@ -193,6 +199,33 @@ class KernelLoadReportTest {
 		} finally {
 			net.forbric.api.ModPresence.publishForgeFamily(List.of());
 		}
+	}
+
+	@Test
+	void aConfirmedLossNoInstalledModOwnsIsListedAndKeepsTheFile(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+			throws Exception {
+		java.nio.file.Path text = dir.resolve("load-report.txt");
+		ModCatalog.publish(List.of(entry("alpha")));
+		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding("transfer-initialization",
+				"forbric", "Item and fluid transfer", "KernelTransferInterop",
+				net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, true, "transfer bridge could not be installed",
+				List.of("install threw")));
+		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding("mixin:shared.mixins.json:M",
+				"config:shared.mixins.json", "Mixin M", "mixin:shared.mixins.json",
+				net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, true, "apply failed", List.of("two mods claim it")));
+		String said = capture(() -> KernelLoadReport.writeTo(text));
+		assertTrue(java.nio.file.Files.exists(text), "a confirmed loss must not delete the report: " + said);
+		String report = java.nio.file.Files.readString(text);
+		assertTrue(report.contains("transfer-initialization") && report.contains("transfer bridge could not be installed"), report);
+		assertTrue(report.contains("config:shared.mixins.json") && report.contains("apply failed"), report);
+		assertFalse(said.contains("every mod finished loading"), "the log must not contradict the prompt: " + said);
+		assertTrue(said.contains("2 confirmed compatibility finding(s) belong to no installed mod"), said);
+		var machine = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser().parse(
+				new java.io.StringReader(java.nio.file.Files.readString(dir.resolve("compatibility-report.json"))));
+		long listed = report.lines().filter(line -> line.strip().startsWith("transfer-initialization")
+				|| line.strip().startsWith("mixin:shared.mixins.json:M")).count();
+		assertEquals(((Number) machine.get("confirmedRequired")).intValue(), listed,
+				"the gate, the list and the text report read the same facts");
 	}
 
 	@Test

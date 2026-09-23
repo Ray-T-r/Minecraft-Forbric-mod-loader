@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import net.forbric.api.CompatibilityFinding;
+import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -115,21 +117,43 @@ public final class KernelLoadReport {
 			writeCompatibility(file);
 			net.forbric.kernel.ui.CompatibilityDecision.queue();
 			List<ModCatalog.Entry> failures = ModCatalog.failures();
-			if (failures.isEmpty()) {
+			// The catalogue projection attaches a finding only to a row with the same id, so a confirmed loss owned
+			// by the kernel itself or by a config no single mod claims reaches the gate and the prompt and nothing a
+			// player reads. Those are listed here in their own section, and they keep the file and the warning.
+			List<CompatibilityFinding> unattributed = CompatibilityFindings.unattributed();
+			// Noticed and not proved. Notes, not failures: they mark no mod and never stop the success line.
+			List<CompatibilityFinding> suspected = CompatibilityFindings.suspected();
+			boolean clean = failures.isEmpty() && unattributed.isEmpty();
+			if (clean && loadingFinished && reported.compareAndSet(false, true)) {
+				ForbricLog.info("[Forbric/Load] every mod finished loading");
+			}
+			if (clean && suspected.isEmpty()) {
 				if (file != null) Files.deleteIfExists(file);
 				lastRendered = null;
-				if (loadingFinished && reported.compareAndSet(false, true)) ForbricLog.info("[Forbric/Load] every mod finished loading");
 				return;
 			}
-			String rendered = render(chinese(), failures);
+			String rendered = render(chinese(), failures, unattributed, suspected);
 			synchronized (KernelLoadReport.class) {
 				if (rendered.equals(lastRendered)) return;
 				if (lastRendered != null && !rewriteEnabled()) return;
-				List<String> ids = new ArrayList<>();
-				for (ModCatalog.Entry e : failures) ids.add(e.modId());
-				ForbricLog.warn("[Forbric/Load] %d mod(s) did not finish loading: %s — details in .forbric-kernel/%s",
-						failures.size(), String.join(", ", ids), FILE);
-				reported.set(true);
+				if (!failures.isEmpty()) {
+					List<String> ids = new ArrayList<>();
+					for (ModCatalog.Entry e : failures) ids.add(e.modId());
+					ForbricLog.warn("[Forbric/Load] %d mod(s) did not finish loading: %s — details in .forbric-kernel/%s",
+							failures.size(), String.join(", ", ids), FILE);
+				}
+				if (!unattributed.isEmpty()) {
+					List<String> keys = new ArrayList<>();
+					for (CompatibilityFinding f : unattributed) keys.add(f.key());
+					ForbricLog.warn("[Forbric/Load] %d confirmed compatibility finding(s) belong to no installed mod: %s — "
+							+ "details in .forbric-kernel/%s", unattributed.size(), String.join(", ", keys), FILE);
+				}
+				if (clean) {
+					ForbricLog.info("[Forbric/Load] %d possible problem(s) could not be confirmed — listed as notes in "
+							+ ".forbric-kernel/%s", suspected.size(), FILE);
+				} else {
+					reported.set(true);
+				}
 				lastRendered = rendered;
 				if (file == null) return;
 				Files.createDirectories(file.getParent());
@@ -182,15 +206,26 @@ public final class KernelLoadReport {
 
 	/** Package-private so both renderings can be asserted without a locale dance. */
 	static String render(boolean zh, List<ModCatalog.Entry> failures) {
+		return render(zh, failures, List.of(), List.of());
+	}
+
+	/**
+	 * @param unattributed confirmed findings no catalogue row can carry; see {@link CompatibilityFindings#unattributed}
+	 * @param suspected    findings nobody proved; listed as notes so a player or a bug report can see them without
+	 *                     any mod being called broken
+	 */
+	static String render(boolean zh, List<ModCatalog.Entry> failures, List<CompatibilityFinding> unattributed,
+			List<CompatibilityFinding> suspected) {
 		StringBuilder sb = new StringBuilder();
+		boolean headline = !failures.isEmpty() || (unattributed.isEmpty() && suspected.isEmpty());
 		if (zh) {
 			sb.append("Forbric 加载报告\n");
 			sb.append("=================\n\n");
-			sb.append("这一次启动，有 ").append(failures.size()).append(" 个 mod 没有完成加载。\n\n");
+			if (headline) sb.append("这一次启动，有 ").append(failures.size()).append(" 个 mod 没有完成加载。\n\n");
 		} else {
 			sb.append("Forbric load report\n");
 			sb.append("===================\n\n");
-			sb.append(failures.size()).append(" mod(s) did not finish loading this time.\n\n");
+			if (headline) sb.append(failures.size()).append(" mod(s) did not finish loading this time.\n\n");
 		}
 
 		for (ModCatalog.Entry e : failures) {
@@ -218,6 +253,47 @@ public final class KernelLoadReport {
 			sb.append('\n');
 		}
 
+		if (!unattributed.isEmpty()) {
+			if (zh) {
+				sb.append("不属于某一个 mod 的问题\n");
+				sb.append("----------------------\n");
+				sb.append("Forbric 确认了下面这些问题，但它们不属于你装的任何一个 mod（属于 Forbric 自己，\n");
+				sb.append("或者属于一个没有唯一主人的 mixin 配置），所以 Mods 界面上没有对应的那一行。\n\n");
+			} else {
+				sb.append("Not tied to one mod\n");
+				sb.append("-------------------\n");
+				sb.append("Forbric confirmed these problems, but they belong to no installed mod (they are Forbric's own,\n");
+				sb.append("or a mixin config no single mod claims), so no row on the Mods screen carries them.\n\n");
+			}
+			for (CompatibilityFinding f : unattributed) finding(sb, f);
+			sb.append('\n');
+		}
+		if (!suspected.isEmpty()) {
+			if (zh) {
+				sb.append("可能的问题（未确认）\n");
+				sb.append("--------------------\n");
+				sb.append("下面这些是 Forbric 注意到、但没能证实的情况。它们没有让任何 mod 被标记为出错，\n");
+				sb.append("也没有阻止启动；列在这里只是为了排查问题时能看到。\n\n");
+			} else {
+				sb.append("Possible problems (not confirmed)\n");
+				sb.append("---------------------------------\n");
+				sb.append("Forbric noticed these but could not prove them. They did not mark any mod as broken and did not\n");
+				sb.append("stop anything; they are listed so that they can be seen when something needs troubleshooting.\n\n");
+			}
+			for (CompatibilityFinding f : suspected) finding(sb, f);
+			sb.append('\n');
+		}
+		// The advice below is about mods that did not finish; with none, it would only send the reader to remove
+		// something that is not the problem.
+		if (failures.isEmpty()) {
+			if (!unattributed.isEmpty()) {
+				sb.append(zh ? "在 logs/latest.log 里搜上面的编号，那里有具体的报错；证据在 .forbric-kernel/compatibility-report.json。\n"
+						: "Search logs/latest.log for the ids above for the actual error; the evidence is in\n"
+								+ ".forbric-kernel/compatibility-report.json.\n");
+			}
+			return sb.toString();
+		}
+
 		if (zh) {
 			sb.append("怎么办\n");
 			sb.append("------\n");
@@ -243,5 +319,16 @@ public final class KernelLoadReport {
 			sb.append("initialising. This records loading results; whether the game continues depends on the compatibility decision.\n");
 		}
 		return sb.toString();
+	}
+
+	/** One finding as a player reads it: who, what, why, and the id a log search or a bug report can quote. */
+	private static void finding(StringBuilder sb, CompatibilityFinding f) {
+		String name = ModCatalog.everything().stream().filter(e -> e.modId().equals(f.modId()))
+				.map(ModCatalog.Entry::name).findFirst().orElse(f.modId());
+		sb.append("  ").append(name);
+		if (!name.equals(f.modId())) sb.append("  (").append(f.modId()).append(')');
+		sb.append('\n');
+		sb.append("    ").append(f.feature()).append(" — ").append(f.detail()).append('\n');
+		sb.append("    ").append(f.id()).append('\n');
 	}
 }

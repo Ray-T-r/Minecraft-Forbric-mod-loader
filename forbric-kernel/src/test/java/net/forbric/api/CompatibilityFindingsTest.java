@@ -126,6 +126,26 @@ class CompatibilityFindingsTest {
 	}
 
 	@Test
+	void findingsNoRowCanCarryAreStillListedAndSuspicionsAreSeparateNotes() {
+		ModCatalog.publish(List.of(entry()));
+		CompatibilityFindings.record(finding(CompatibilityFinding.Confidence.CONFIRMED, "owned"));
+		CompatibilityFindings.record(new CompatibilityFinding("transfer-initialization", "forbric", "Transfer", "kernel",
+				CompatibilityFinding.Confidence.CONFIRMED, true, "bridge failed", List.of("threw")));
+		CompatibilityFindings.record(new CompatibilityFinding("optional", "config:x.mixins.json", "Mixin X", "mixin:x",
+				CompatibilityFinding.Confidence.CONFIRMED, false, "optional loss", List.of("no owner")));
+		CompatibilityFindings.record(new CompatibilityFinding("suspect", "forbric", "Probe", "kernel",
+				CompatibilityFinding.Confidence.SUSPECTED, true, "unproved", List.of("preflight")));
+		CompatibilityFindings.record(new CompatibilityFinding("gone", "forbric", "Probe", "kernel",
+				CompatibilityFinding.Confidence.CONFIRMED, true, "repaired", List.of("x")));
+		CompatibilityFindings.resolve("gone", "forbric", "repair proved");
+		assertEquals(List.of("config:x.mixins.json:optional", "forbric:transfer-initialization"),
+				CompatibilityFindings.unattributed().stream().map(CompatibilityFinding::key).toList(),
+				"confirmed findings owned by a catalogue row are projected there instead; resolved ones are gone");
+		assertEquals(List.of("forbric:suspect"), CompatibilityFindings.suspected().stream().map(CompatibilityFinding::key).toList());
+		assertEquals(1, ModCatalog.failures().size(), "the catalogue still invents no row for them");
+	}
+
+	@Test
 	void machineReportIsValidJsonAndContainsAZeroDenominatorExplicitly() {
 		String empty = CompatibilityFindings.toJson();
 		assertTrue(empty.contains("\"confirmedRequired\":0"));
