@@ -79,7 +79,9 @@ public final class KernelLoadReport {
 	 * a mixin that fails to apply to a class first loaded at world creation is only known then. A render equal to
 	 * the last one written is not written again and says nothing, so a clean boot writes no file and says one
 	 * INFO line — a file that appears only when something is wrong is a file whose presence already means
-	 * something. With {@link #REWRITE_PROPERTY} off, the first write wins.
+	 * something. A boot whose only findings are suspicions is a clean boot: they are listed as notes when the file
+	 * exists for a failure, and are always in {@code compatibility-report.json}. With {@link #REWRITE_PROPERTY} off,
+	 * the first write wins.
 	 */
 	public static void write() {
 		writeTo(target(), true);
@@ -121,17 +123,21 @@ public final class KernelLoadReport {
 			// by the kernel itself or by a config no single mod claims reaches the gate and the prompt and nothing a
 			// player reads. Those are listed here in their own section, and they keep the file and the warning.
 			List<CompatibilityFinding> unattributed = CompatibilityFindings.unattributed();
-			// Noticed and not proved. Notes, not failures: they mark no mod and never stop the success line.
-			List<CompatibilityFinding> suspected = CompatibilityFindings.suspected();
 			boolean clean = failures.isEmpty() && unattributed.isEmpty();
 			if (clean && loadingFinished && reported.compareAndSet(false, true)) {
 				ForbricLog.info("[Forbric/Load] every mod finished loading");
 			}
-			if (clean && suspected.isEmpty()) {
+			// Suspicions alone are a clean boot and keep no file. Its presence is the signal -- push-and-run counts
+			// every load-report.txt as a named failure, the gate controls read "no file" as clean -- and fabric-api
+			// on its own brings two dozen preflight suspicions to every boot. They are in the machine report always,
+			// and in this file as notes beside a real failure, which is when someone is reading it to troubleshoot.
+			if (clean) {
 				if (file != null) Files.deleteIfExists(file);
 				lastRendered = null;
 				return;
 			}
+			// Noticed and not proved. Notes, not failures: they mark no mod and never stop the success line.
+			List<CompatibilityFinding> suspected = CompatibilityFindings.suspected();
 			String rendered = render(chinese(), failures, unattributed, suspected);
 			synchronized (KernelLoadReport.class) {
 				if (rendered.equals(lastRendered)) return;
@@ -148,12 +154,7 @@ public final class KernelLoadReport {
 					ForbricLog.warn("[Forbric/Load] %d confirmed compatibility finding(s) belong to no installed mod: %s — "
 							+ "details in .forbric-kernel/%s", unattributed.size(), String.join(", ", keys), FILE);
 				}
-				if (clean) {
-					ForbricLog.info("[Forbric/Load] %d possible problem(s) could not be confirmed — listed as notes in "
-							+ ".forbric-kernel/%s", suspected.size(), FILE);
-				} else {
-					reported.set(true);
-				}
+				reported.set(true);
 				lastRendered = rendered;
 				if (file == null) return;
 				Files.createDirectories(file.getParent());

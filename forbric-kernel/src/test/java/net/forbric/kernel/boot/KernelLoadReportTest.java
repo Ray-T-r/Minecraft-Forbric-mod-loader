@@ -87,13 +87,14 @@ class KernelLoadReportTest {
 				"mixin:alpha", "alpha", "rendering", "mixin:alpha.json",
 				net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, true, "preflight miss", List.of("anchor absent")));
 		String said = capture(() -> KernelLoadReport.writeTo(text));
-		// A suspicion is a note a player can read, not a failure: the file lists it, and nothing calls the mod broken.
-		String notes = java.nio.file.Files.readString(text);
-		assertTrue(notes.contains("preflight miss") && notes.contains("mixin:alpha"), notes);
-		assertTrue(notes.contains("not confirmed"), notes);
-		assertFalse(notes.contains("did not finish loading") || notes.contains("partly did not run"), notes);
+		// A suspicion alone is a clean boot. The file's presence is what says something failed -- push-and-run
+		// counts every load-report.txt as a named failure and the M9/M24/M30 controls read "no file" as clean --
+		// and fabric-api by itself brings two dozen preflight suspicions to every boot. The machine report carries
+		// them; the file carries them only beside a real failure (see the test below).
+		assertFalse(java.nio.file.Files.exists(text), "a suspicion alone must not write the failure report");
 		assertTrue(ModCatalog.failures().isEmpty(), "a suspicion marks no mod");
 		assertTrue(said.contains("every mod finished loading"), "a suspicion does not take the success line away: " + said);
+		assertFalse(said.contains("possible problem"), "a clean boot says one INFO line: " + said);
 		String machine = java.nio.file.Files.readString(dir.resolve("compatibility-report.json"));
 		assertTrue(machine.contains("SUSPECTED"));
 		assertTrue(machine.contains("\"confirmedRequired\":0"));
@@ -226,6 +227,25 @@ class KernelLoadReportTest {
 				|| line.strip().startsWith("mixin:shared.mixins.json:M")).count();
 		assertEquals(((Number) machine.get("confirmedRequired")).intValue(), listed,
 				"the gate, the list and the text report read the same facts");
+	}
+
+	@Test
+	void besideARealFailureTheFileAlsoListsTheSuspicionsAsNotes(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+			throws Exception {
+		java.nio.file.Path text = dir.resolve("load-report.txt");
+		ModCatalog.publish(List.of(entry("alpha"), entry("beta")));
+		ModCatalog.mark("alpha", ModCatalog.Status.DEGRADED, "one of its deferred setup tasks threw");
+		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
+				"mixin:beta.mixins.json:beta.mixin.BetaMixin", "beta", "Mixin beta.mixin.BetaMixin", "mixin:beta.mixins.json",
+				net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, true, "1/2 anchors resolve", List.of("anchor absent")));
+		String said = capture(() -> KernelLoadReport.writeTo(text));
+		String report = java.nio.file.Files.readString(text);
+		// The reader troubleshooting alpha is the reader these notes are for; beta is named, and not called broken.
+		assertTrue(report.contains("one of its deferred setup tasks threw"), report);
+		assertTrue(report.contains("not confirmed") && report.contains("1/2 anchors resolve")
+				&& report.contains("mixin:beta.mixins.json:beta.mixin.BetaMixin"), report);
+		assertEquals(1, report.lines().filter(line -> line.contains("partly did not run")).count(), report);
+		assertTrue(said.contains("1 mod(s) did not finish loading: alpha"), said);
 	}
 
 	@Test

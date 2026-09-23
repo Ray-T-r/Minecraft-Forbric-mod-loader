@@ -63,7 +63,7 @@ public final class KernelModListScreen extends Screen {
 	 */
 	private static final int BROKEN = 0xFFE06C6C;
 	private static final String BROKEN_MARK = "! ";
-	/** How many unconfirmed notes the detail pane names for one mod before pointing at the load report. */
+	/** How many unconfirmed notes the detail pane names for one mod before pointing at the machine report. */
 	private static final int SUSPECTED_NOTES = 3;
 	private static final int PAD = 6;
 	private static final int SEARCH_Y = 32;
@@ -208,7 +208,9 @@ public final class KernelModListScreen extends Screen {
 			y += 14;
 		}
 		// Suspicions about this mod, dimmed and said to be unconfirmed: they change no status, and a player
-		// troubleshooting the mod should still be able to see what was noticed. The load report lists them all.
+		// troubleshooting the mod should still be able to see what was noticed. The rest are pointed at the machine
+		// report, which always lists them all -- load-report.txt exists only when something failed, and a boot
+		// whose only findings are suspicions writes none.
 		List<CompatibilityFinding> notes = CompatibilityFindings.suspected().stream()
 				.filter(f -> f.modId().equals(e.modId())).toList();
 		for (int i = 0; i < Math.min(notes.size(), SUSPECTED_NOTES); i++) {
@@ -219,7 +221,7 @@ public final class KernelModListScreen extends Screen {
 		}
 		if (notes.size() > SUSPECTED_NOTES) {
 			g.text(this.font, Component.literal("and " + (notes.size() - SUSPECTED_NOTES)
-					+ " more in .forbric-kernel/load-report.txt"), x, y, DIM);
+					+ " more in .forbric-kernel/compatibility-report.json"), x, y, DIM);
 			y += 12;
 		}
 		if (!notes.isEmpty()) y += 4;
