@@ -3,7 +3,7 @@
     {
       "identifier": { "group": "forbric.nestlib", "artifact": "forbricnestlib" },
       "version": { "range": "[1.0.0,)", "artifactVersion": "1.0.0" },
-      "path": "META-INF/jarjar/forbricnestlib-forge.jar",
+      "path": "META-INF/jars/forbricnestlib-fabric.jar",
       "isObfuscated": false
     }
   ]

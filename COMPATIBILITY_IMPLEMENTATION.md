@@ -487,3 +487,18 @@ Pending implementation and acceptance items remain open even when a smaller batc
   run removes the failure-only text report, so the dedup gate accepts absence only with a nonempty all-OK
   machine inventory. Missing/empty evidence and a missing degraded report still fail.
   Evidence: `build/verification/alias-inventory/` and `build/verification/alias-resource-m9-verified.*`.
+
+### Acceptance fixtures enforce the current contracts instead of obsolete implementation details
+
+- The prior full 39-gate sweep (M34 separately excluded) passed 37 gates; only M19/M30 were red. M19's
+  old Forge-only artifact coordinate made Fabric an invalid replacement under the new joint constraints.
+  Both canary builds now explicitly provide one shared artifact contract. The actual five-run gate proves
+  the preferred valid build, one initialization, both parent lifecycles, the opposite manual selection, the
+  presence-rewrite negative, and strict refusal of deliberately incompatible artifact coordinates.
+- M30's old FluidPlaceBlockEvent premise contradicted the existing audited table: the Forge carrier posts
+  that event. Its independent canary now listens for the still-missing CreateFluidSourceEvent. Four distinct
+  degraded mods and all reasons are required; same-row Mixin reasons are checked without pinning order.
+  The after-world report update and clean/no-canary negative remain. The real gate passes.
+- Both previously red gates now pass with their meaningful negative controls intact. Evidence:
+  `build/verification/final-fixture-contracts/`. This does not count M34 as passed or remove the native
+  Unlit Campfire retention review. The complete final source/artifact set will be frozen for the long run.

@@ -37,6 +37,7 @@ done
 
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
+rm -f "$RUNDIR/forbric-mods.txt"
 mkdir -p "$RUNDIR/mods"
 cp "$FAB" "$FORGE" "$RUNDIR/mods/"
 seed_server_properties "$RUNDIR"
@@ -55,12 +56,12 @@ step "boot with both parents installed"
 boot "$LOG"
 
 step "both nested copies were seen, and the contest was decided (must PASS)"
-check "the Forge family extracted its nested build" \
-  "extracted nested JarJar library forbricnestlib-forge" "$LOG"
-check "the contest was found and named as cross-ecosystem" \
-  "nested mod id 'forbricnestlib' is claimed by 2 jars across" "$LOG"
+check "the whole-instance constraints were satisfied" \
+  "Forbric/Arbitration\] status=SOLVED;.*confirmed violations=0; unproved contracts=0" "$LOG"
+check "both nested candidates participated and the feasible preference won" \
+  "mod id 'forbricnestlib' claimed by 2 jars.*loading forbricnestlib-fabric.jar \(FABRIC\)" "$LOG"
 check "exactly one nested jar was withdrawn" \
-  "nested pass: [0-9]+ nested jar\(s\), 1 mod id\(s\) claimed across ecosystems, 1 nested jar\(s\) suppressed" "$LOG"
+  "cross-jar arbitration \(whole-instance\): 1 duplicate mod id\(s\), 1 jar\(s\) suppressed" "$LOG"
 
 step "the library was constructed exactly ONCE (must PASS)"
 # The behavioural half. Without arbitration both bootstraps reach the one loaded copy of NestLibRegistry and the
@@ -102,7 +103,7 @@ step "the OTHER direction is enforced too (must PASS)"
 FLIP="$BUILD/gate-m19-flipped.log"
 boot "$FLIP" "-Dforbric.modOwner=forbricnestlib=forge"
 check "the override reached a nested jar" \
-  "nested mod id 'forbricnestlib' is claimed by 2 jars across .* loading forbricnestlib-forge" "$FLIP"
+  "mod id 'forbricnestlib' claimed by 2 jars.*loading forbricnestlib-forge.jar \(FORGE\)" "$FLIP"
 assert_eq "still claimed exactly once" "1" "$(grep -acE '\[ForbricNestLib\] claimed by' "$FLIP")"
 check "and by the side the override named" "ForbricNestLib\] claimed by forge" "$FLIP"
 check_absent "no duplicate registration either way" "ForbricNestLib\] DUPLICATE registration" "$FLIP"
@@ -119,6 +120,27 @@ check "the Forge side loses sight of it without ModPresence" \
   "ForbricNestParent\] forge sees forbricnestlib=false" "$PRESENCE"
 check "while the side that owns the container still sees it" \
   "ForbricNestParent\] fabric sees forbricnestlib=true" "$PRESENCE"
+
+step "incompatible artifact contracts are reported, never hidden by an ecosystem override"
+# The two parents now require distinct platform artifacts with one shared mod id. Both cannot be
+# active in the same instance. Change only the gate-owned copy, keeping the source canary intact.
+python3 - "$RUNDIR/mods/forbricnestforge.jar" <<'PY_CONFLICT'
+import json,pathlib,sys,zipfile
+path=pathlib.Path(sys.argv[1]);temporary=path.with_suffix('.tmp')
+with zipfile.ZipFile(path) as source,zipfile.ZipFile(temporary,'w') as output:
+    for entry in source.infolist():
+        data=source.read(entry.filename)
+        if entry.filename=='META-INF/jarjar/metadata.json':
+            metadata=json.loads(data);metadata['jars'][0]['identifier']['artifact']='forbricnestlib-forge'
+            data=json.dumps(metadata).encode()
+        output.writestr(entry,data)
+temporary.replace(path)
+PY_CONFLICT
+CONFLICT="$BUILD/gate-m19-unsatisfiable.log"
+boot "$CONFLICT" "-Dforbric.modOwner=forbricnestlib=fabric -Dforbric.compatibilityPolicy=strict"
+check "the incompatible coordinate combination is explicitly unsatisfiable" 'Forbric/Arbitration\] status=UNSATISFIABLE' "$CONFLICT"
+check "strict policy refuses the unsatisfied selection" 'launch stopped by compatibility policy|launch stopped: required mod initialization or features are unavailable' "$CONFLICT"
+check_absent "a manual preference did not turn the invalid combination into a world" 'Done \(' "$CONFLICT"
 
 step "M19 result"
 if [ "${FAIL:-0}" -eq 0 ]; then

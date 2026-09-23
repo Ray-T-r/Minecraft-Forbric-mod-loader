@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the three single-defect canaries gate-m30 stages: a Fabric mod with two mixins that go wrong (one unfit,
+# Builds the four attribution canaries gate-m30 stages: a Fabric mod with two mixins that go wrong (one unfit,
 # one failing at apply on a class first loaded at world creation), a NeoForge mod with a subscriber whose <clinit>
 # throws and one waiting on a dead event, and a NeoForge mod compiled against a class this instance does not
 # carry, touched from a deferred setup task. Each is ONE defect, so the gate can assert ONE attribution each.

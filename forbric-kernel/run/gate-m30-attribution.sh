@@ -6,10 +6,11 @@
 # of those was one WARN in a ten-thousand-line log that named a class and not a mod, and load-report.txt was
 # written once, at load-complete, so a failure during world creation never reached it at all.
 #
-# Three single-defect canaries beside two healthy ones, so each attribution is asserted on its own:
+# Four attribution canaries beside two healthy ones, so each attribution is asserted on its own:
 #   forbricmixincanary      UnfitMixin (left out by the fit check) + ApplyFailingMixin (fails at apply on RegionFileStorage,
 #                           a class first loaded at world creation — AFTER load-complete)
-#   forbricsubscribercanary BrokenSubscriber (<clinit> throws) + TooltipWaiter (NeoForge ItemTooltipEvent, dead here)
+#   forbricsubscribercanary BrokenSubscriber (<clinit> throws)
+#   forbricforgecanary      FluidSourceWaiter (Forge CreateFluidSourceEvent has no game hook)
 #   forbricabicanary        compiled against net.neoforged.neoforge.event.ForbricVanishedEvent, absent here; its
 #                           common-setup deferred task touches it (the bucket_of_frog shape)
 #
@@ -22,7 +23,7 @@
 #   M30_EXTRA_JVM=-Dforbric.abiAudit=off              no AbiAudit line and no 'compiled against a different NeoForge'
 #                                                     in the report — forbricabicanary is still named, by its
 #                                                     deferred task (J5), which is why the check is on the reason
-#   M30_EXTRA_JVM=-Dforbric.deadEventAudit=off        no DeadEvents line and no 'it listens for ItemTooltipEvent'
+#   M30_EXTRA_JVM=-Dforbric.deadEventAudit=off        no DeadEvents line and no 'it listens for BlockEvent.CreateFluidSourceEvent'
 # GATE-PARALLEL: rundirs=server-attribution mem=1800
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -36,7 +37,7 @@ NEO="$RUN_OLD/neoforge-runtime/forbricneolive.jar"
 CANARIES="$KERNEL/run/canary/forbricmixincanary.jar $KERNEL/run/canary/forbricsubscribercanary.jar $KERNEL/run/canary/forbricabicanary.jar $KERNEL/run/canary/forbricforgecanary.jar"
 mkdir -p "$BUILD"
 
-step "stage three single-defect canaries and two healthy ones"
+step "stage four attribution canaries and two healthy ones"
 "$KERNEL/run/build-attribution-canaries.sh" >"$BUILD/gate-m30-canary.log" 2>&1
 "$KERNEL/run/build-fabric-canary.sh" >>"$BUILD/gate-m30-canary.log" 2>&1
 for jar in $CANARIES "$FABRIC" "$NEO"; do
@@ -63,7 +64,7 @@ boot() { # boot <log>
 }
 
 stage yes
-step "boot with the three canaries"
+step "boot with the four attribution canaries"
 boot "$LOG"
 
 step "the server still works with all three defects aboard"
@@ -79,10 +80,9 @@ step "each defect happened, and the kernel said so where it happened"
 check "the unfit mixin was left out"          "auto-suppressing guest mixin forbricmixincanary \(forbricmixincanary.mixins.json\):UnfitMixin" "$LOG"
 check "the apply failure was attributed"      "Forbric/Mixin\] forbricmixincanary \(forbricmixincanary.mixins.json\):forbric.mixincanary.mixin.ApplyFailingMixin failed to apply to net.minecraft.world.level.chunk.storage.RegionFileStorage" "$LOG"
 check "the subscriber could not register"     "Forbric/EBS\] could not register forbric.subscribercanary.BrokenSubscriber" "$LOG"
-# A MinecraftForge canary, because NeoForge's side of the ledger no longer has a dead row: ItemTooltipEvent was
-# the last one and it is bridged now. FluidPlaceBlockEvent still is — the merged LiquidBlock asks only NeoForge's
-# hook — so it is what proves the kernel still NAMES a mod waiting on something nothing posts.
-check "the dead event named its listener"     "Forbric/DeadEvents\].*FluidPlaceBlockEvent.*forbricforgecanary" "$LOG"
+# Use the current dead-hook ledger: FluidPlaceBlockEvent is posted by a Forge carrier and was deliberately
+# removed. CreateFluidSourceEvent still has no corresponding game hook; it is the real attribution canary.
+check "the dead event named its listener"     "Forbric/DeadEvents\].*CreateFluidSourceEvent.*forbricforgecanary" "$LOG"
 check "the deferred task named its owner"     "deferred task\(s\) failed during common setup — forbricabicanary" "$LOG"
 check "the abi audit named the jar"           "Forbric/AbiAudit\] forbricabicanary.jar was compiled against a different NeoForge.*ForbricVanishedEvent" "$LOG"
 
@@ -104,9 +104,9 @@ if [ -f "$REPORT" ]; then
   cp "$REPORT" "$BUILD/gate-m30-load-report.txt"   # the control run below wipes the instance's copy
   check "the unfit mixin"          "guest mixin UnfitMixin did not fit the merged game and was left out" "$REPORT"
   check "the apply failure"        "its mixin forbric.mixincanary.mixin.ApplyFailingMixin failed to apply" "$REPORT"
-  check "two reasons on one row"   "left out; its mixin"                                                  "$REPORT"
+  check "two reasons on one row"   "left out; its mixin|ApplyFailingMixin.*; guest mixin UnfitMixin"        "$REPORT"
   check "the broken subscriber"    "its @EventBusSubscriber BrokenSubscriber could not be registered"    "$REPORT"
-  check "the dead event"           "it listens for BlockEvent.FluidPlaceBlockEvent, which this merged game never posts" "$REPORT"
+  check "the dead event"           "it listens for BlockEvent.CreateFluidSourceEvent, which this merged game never posts" "$REPORT"
   check "the deferred task"        "one of its deferred setup tasks threw during common setup"          "$REPORT"
   check "the abi finding"          "compiled against a different NeoForge — net.neoforged.neoforge.event.ForbricVanishedEvent is not in this instance" "$REPORT"
   # The report is written in the system language; both wordings are accepted.
@@ -116,7 +116,7 @@ else
   echo "[kernel] FAIL no load report at $REPORT"; FAIL=1
 fi
 
-step "negative control: the same instance without the three canaries"
+step "negative control: the same instance without the four attribution canaries"
 stage no
 boot "$CONTROL"
 check "the control booted"                      "Done \("                    "$CONTROL"
