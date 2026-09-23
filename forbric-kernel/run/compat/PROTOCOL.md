@@ -233,3 +233,15 @@ committed sources, a mods directory (empty is valid for zero-mod tests), and all
 `compare <native-result.json> <forbric-result.json>` rejects mismatched inputs before comparing behavior.
 `NATIVE_CONTROL_CACHE` selects the read-only reference checkout; its default is the parent of `FORBRIC_OLD`,
 or this checkout when that variable is absent. All generated files remain under this kernel's `build/`.
+
+`gate-m34-soak.sh` builds once, then `soak-run.py` freezes the exact boot/runtime/game jars, dependencies and
+mod pack into a nonce-owned copy of the test world. Default acceptance requires at least 7,200 seconds of
+occupied, advancing simulation, three normal same-JVM world sessions, all three dimensions and six chunks
+observed unloading and reloading. Paused time cannot satisfy the requirement. Sources and snapshots must
+remain unchanged; release runs require committed sources and strict compatibility policy. The original
+world is never opened by the client. Retained retired servers produce REVIEW_REQUIRED, not a pass or an
+unsupported claim of a leak. Heap, thread and chunk samples and thread dumps remain in the run's evidence.
+
+Use `--control --seconds 30 --sessions 2 --dwell-ticks 20 --settle-seconds 10` only to test the controller;
+CONTROL_PASS is never release acceptance. `python3 run/compat/test_soak.py` verifies rejection of stale or
+incomplete telemetry, fake activity totals, missing reentry/unload observations and short release claims.

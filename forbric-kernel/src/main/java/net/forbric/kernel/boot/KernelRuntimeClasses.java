@@ -164,6 +164,8 @@ public final class KernelRuntimeClasses {
 		// Called by game bytecode; its signatures name Minecraft client types, not boot-side seam types.
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeClientInit", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelCompatibilityPrompts", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.soak.ClientSoakController", new Entry(Origin.COMPILED,
+				List.of(new Call("onTick", void.class, Object.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelPortalSpawn", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put(KernelTransferInterop.BRIDGE, new Entry(Origin.COMPILED, List.of(new Call("install", void.class))));
 		CLASSES.put(KernelTransferInterop.ISSUES, new Entry(Origin.COMPILED,

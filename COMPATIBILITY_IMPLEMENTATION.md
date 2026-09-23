@@ -272,3 +272,17 @@ Pending implementation and acceptance items remain open even when a smaller batc
   silently misses one default-required injector: strict mode runs the valid handler and stops normally
   before tick three; optional/declined runs finish normally, and continue leaves the necessary loss visible.
   Evidence: `build/verification/final-mixin-and-late-server/` and `build/verification/m36-outcome/`.
+
+### Sustained-run controller (acceptance not yet performed)
+
+- Recovered and completed the M34 controller and frozen-input launcher. It requires occupied, unpaused
+  server/world tick advances, all three dimensions, six fixed chunk unload/reload probes, normal saves and
+  new integrated-server objects in the same JVM. Idle time cannot replace measured simulation. Old server
+  weak references, heap/thread/chunk counters and thread dumps support retention review.
+- Release mode enforces >=7,200 active seconds, >=144,000 real ticks, three sessions, committed unchanged
+  sources, unchanged copied binaries and strict policy. A short explicit control can never be release proof.
+- 29 focused JVM tests and ten independent Python verifier negative controls pass. Compilation uses
+  ServerPlayer.level(), the actual 26.2 API. Evidence: `build/verification/soak-model/` and `build/soak-tests.log`.
+  Short real-client control and the full two-hour run are still pending; this batch is not soak acceptance.
+- The first renewed M9 mixed-pack run stopped strictly on 13 final missing-injector findings. Those need
+  equivalent-implementation/remaining-loss review before a passing broad client acceptance can be claimed.

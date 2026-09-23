@@ -4,6 +4,7 @@ build/
 out/
 bin/
 *.class
+__pycache__/
 .merged-base-tools/
 .linkcheck-tools/
 

@@ -117,7 +117,7 @@ public final class KernelClientSmoke {
 
 	/** Whether the smoke run is armed. Read per call so a test can drive both modes in one JVM. */
 	public static boolean enabled() {
-		return Boolean.getBoolean(ENABLED);
+		return Boolean.getBoolean(ENABLED) || KernelSoakHooks.enabled();
 	}
 
 	/**
@@ -125,6 +125,7 @@ public final class KernelClientSmoke {
 	 * {@code net.minecraft} types at compile time — the same widening-reference trick the other hooks use.
 	 */
 	public static void onClientTick(Object minecraft) {
+		if (KernelSoakHooks.enabled()) { KernelSoakHooks.onClientTick(minecraft); return; }
 		if (minecraft == null || stopRequested || !enabled()) return;
 		try {
 			tick(minecraft);
