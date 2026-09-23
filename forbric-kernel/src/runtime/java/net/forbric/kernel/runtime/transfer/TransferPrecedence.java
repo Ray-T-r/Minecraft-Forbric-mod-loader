@@ -14,11 +14,26 @@ import net.forbric.api.ModCatalog;
  *
  * <p>Fabric mods do rely on that fallback, and vanilla containers are its purpose, so it still speaks for block
  * entities Fabric owns and for vanilla/unknown ones. For a Forge or NeoForge owner the bridge asks only Fabric's
- * explicit providers (one registered for the block, or a SidedStorageBlockEntity). Pure: tested off-game.
+ * explicit providers (one registered for the block, or a SidedStorageBlockEntity).
+ *
+ * <p>Pure: BlockTransferBridge asks {@link #answer} for every foreign query, and the transfer tests drive the same
+ * function through their own Site, off-game.
  */
 public final class TransferPrecedence {
 	private TransferPrecedence() { }
 	public enum Source { NEOFORGE, FORGE, FABRIC }
+	/** FABRIC answers through Fabric's whole lookup, FABRIC_EXPLICIT only through what Fabric has for exactly this block. */
+	public enum Answer { NEOFORGE, FORGE, FABRIC, FABRIC_EXPLICIT }
+	/** What one query (one kind, one face) finds in each ecosystem. The bridge's endpoint asks the loaded world. */
+	public interface Site {
+		Ecosystem owner();
+		/** NeoForge's capability answers. */
+		boolean neo();
+		/** Forge's capability answers with a handler the audited adapter accepts. */
+		boolean forge();
+		/** Fabric answers: through its whole lookup when generic, otherwise only through its providers for this block. */
+		boolean fabric(boolean generic);
+	}
 
 	/** The mod catalogue's ecosystem for the namespace that registered a block entity type; null for vanilla or unknown. */
 	public static Ecosystem ownerOf(String namespace, List<ModCatalog.Entry> mods) {
@@ -40,5 +55,18 @@ public final class TransferPrecedence {
 			case NEOFORGE -> fabricGenericAllowed(owner) ? List.of(Source.FABRIC, Source.FORGE) : List.of(Source.FORGE, Source.FABRIC);
 			case FORGE -> owner == Ecosystem.FABRIC ? List.of(Source.FABRIC, Source.NEOFORGE) : List.of(Source.NEOFORGE, Source.FABRIC);
 		};
+	}
+	/** The first foreign source, in the owner's order, that answers a consumer whose own ecosystem found nothing; null if none. */
+	public static Answer answer(Ecosystem consumer, Site site) {
+		Ecosystem owner = site.owner();
+		boolean generic = fabricGenericAllowed(owner);
+		for (Source source : order(consumer, owner)) {
+			switch (source) {
+				case NEOFORGE -> { if (site.neo()) return Answer.NEOFORGE; }
+				case FORGE -> { if (site.forge()) return Answer.FORGE; }
+				case FABRIC -> { if (site.fabric(generic)) return generic ? Answer.FABRIC : Answer.FABRIC_EXPLICIT; }
+			}
+		}
+		return null;
 	}
 }
