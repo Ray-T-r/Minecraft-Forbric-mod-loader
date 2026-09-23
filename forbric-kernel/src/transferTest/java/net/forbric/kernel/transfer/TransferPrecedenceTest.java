@@ -30,8 +30,9 @@ class TransferPrecedenceTest {
 	private static String resolve(Ecosystem consumer, Ecosystem owner, String forge, String neo, String fabricExplicit, String fabricGeneric) {
 		return resolve(consumer, new Table(owner, forge, neo, fabricExplicit, fabricGeneric));
 	}
-	private static String resolve(Ecosystem consumer, Table site) {
-		Answer answer = TransferPrecedence.answer(consumer, site);
+	private static String resolve(Ecosystem consumer, Table site) { return resolve(consumer, site, false); }
+	private static String resolve(Ecosystem consumer, Table site, boolean replacingGenericView) {
+		Answer answer = TransferPrecedence.answer(consumer, site, replacingGenericView);
 		if (answer == null) return null;
 		return switch (answer) {
 			case NEOFORGE -> site.neo;
@@ -115,6 +116,23 @@ class TransferPrecedenceTest {
 		Table neoMachine = new Table(Ecosystem.NEOFORGE, null, null, null, GENERIC);
 		assertNull(resolve(Ecosystem.FORGE, neoMachine));
 		assertEquals(List.of("neo", "fabric-explicit"), neoMachine.asked);
+	}
+	/**
+	 * A BaseContainerBlockEntity already answers a Forge consumer with Forge's own InvWrapper over the whole
+	 * Container (forgeOwnerFirst). Only the owner's real capability replaces it, never Fabric's generic view of the
+	 * same Container: that would trade a native IItemHandlerModifiable for a Forbric write bridge.
+	 */
+	@Test void fabricsGenericViewNeverReplacesForgesOwnGenericView() {
+		// A Fabric mod's barrel with no storage of its own: nothing replaces the InvWrapper.
+		Table plainBarrel = new Table(Ecosystem.FABRIC, null, null, null, GENERIC);
+		assertNull(resolve(Ecosystem.FORGE, plainBarrel, true));
+		assertEquals(List.of("fabric-explicit", "neo"), plainBarrel.asked);
+		// The Fabric owner's own storage does, and a NeoForge owner's capability does, ahead of any Fabric provider.
+		assertEquals(EXPLICIT, resolve(Ecosystem.FORGE, new Table(Ecosystem.FABRIC, null, null, EXPLICIT, GENERIC), true));
+		assertEquals("neo", resolve(Ecosystem.FORGE, new Table(Ecosystem.NEOFORGE, null, "neo", EXPLICIT, GENERIC), true));
+		// A Fabric Container that is not a BaseContainerBlockEntity has no Forge view at all, so the owner's generic
+		// view is still the only one there, as before.
+		assertEquals(GENERIC, resolve(Ecosystem.FORGE, new Table(Ecosystem.FABRIC, null, null, null, GENERIC), false));
 	}
 	@Test void theOwnerIsTheModThatRegisteredTheTypeNamespace() {
 		var mods = List.of(entry(Ecosystem.FABRIC, "forbrictransferfabric"), entry(Ecosystem.FORGE, "forbrictransferforge"),

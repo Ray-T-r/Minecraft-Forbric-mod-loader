@@ -183,14 +183,15 @@ public final class BlockTransferBridge {
 		else return existing;
 		Endpoint endpoint = endpoint(entity.getLevel(), entity.getBlockPos(), entity, (Direction) context, fluid);
 		if (endpoint == null) return existing;
-		LazyOptional<?> bridged = forgeView(endpoint);
+		LazyOptional<?> bridged = forgeView(endpoint, false);
 		return bridged == null ? existing : bridged;
 	}
 	/**
 	 * BaseContainerBlockEntity answers ITEM_HANDLER with Forge's generic InvWrapper over the whole Container before
 	 * any provider is asked. For a block entity a Fabric or NeoForge mod owns (and that does not override the
 	 * query itself), the owner's real item capability answers first; the generic wrapper remains the answer when
-	 * the owner has none.
+	 * the owner has none. Fabric's own generic Container view is not the owner's capability: a Fabric mod's plain
+	 * barrel keeps Forge's InvWrapper, as it does under Forge.
 	 */
 	public static Object forgeOwnerFirst(Object generic, Object rawEntity, Object capability, Object context) {
 		if (!enabled || !forgeEnabled || capability != ForgeCapabilities.ITEM_HANDLER || !(generic instanceof LazyOptional<?> result)
@@ -199,12 +200,12 @@ public final class BlockTransferBridge {
 				|| !result.isPresent()) return generic;
 		Endpoint endpoint = endpoint(entity.getLevel(), entity.getBlockPos(), entity, (Direction) context, false);
 		if (endpoint == null) return generic;
-		LazyOptional<?> owned = forgeView(endpoint);
+		LazyOptional<?> owned = forgeView(endpoint, true);
 		return owned == null ? generic : owned;
 	}
 	private static boolean foreignToForge(Ecosystem owner) { return owner == Ecosystem.FABRIC || owner == Ecosystem.NEOFORGE; }
-	private static LazyOptional<?> forgeView(Endpoint endpoint) {
-		Answer answer = TransferPrecedence.answer(Ecosystem.FORGE, endpoint);
+	private static LazyOptional<?> forgeView(Endpoint endpoint, boolean replacingGenericView) {
+		Answer answer = TransferPrecedence.answer(Ecosystem.FORGE, endpoint, replacingGenericView);
 		if (answer == null) return null;
 		if (endpoint.fluid) { var found = fluidView(endpoint, answer); return endpoint.track(LazyOptional.of(() -> ForgeLegacyFacades.fluids(found))); }
 		var found = itemView(endpoint, answer); return endpoint.track(LazyOptional.of(() -> ForgeLegacyFacades.items(found)));

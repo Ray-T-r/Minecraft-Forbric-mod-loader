@@ -57,9 +57,16 @@ public final class TransferPrecedence {
 		};
 	}
 	/** The first foreign source, in the owner's order, that answers a consumer whose own ecosystem found nothing; null if none. */
-	public static Answer answer(Ecosystem consumer, Site site) {
+	public static Answer answer(Ecosystem consumer, Site site) { return answer(consumer, site, false); }
+	/**
+	 * As above, for a consumer whose own ecosystem already answered with its generic whole-Container view: Forge's
+	 * InvWrapper on a BaseContainerBlockEntity. Only an owner's real capability may replace that, never Fabric's
+	 * generic view of the same Container. That one is a Forbric write bridge that drops IItemHandlerModifiable,
+	 * renumbers a WorldlyContainer's slots, and has every simulate write and restore the slots through setItem.
+	 */
+	public static Answer answer(Ecosystem consumer, Site site, boolean replacingGenericView) {
 		Ecosystem owner = site.owner();
-		boolean generic = fabricGenericAllowed(owner);
+		boolean generic = fabricGenericAllowed(owner) && !replacingGenericView;
 		for (Source source : order(consumer, owner)) {
 			switch (source) {
 				case NEOFORGE -> { if (site.neo()) return Answer.NEOFORGE; }
