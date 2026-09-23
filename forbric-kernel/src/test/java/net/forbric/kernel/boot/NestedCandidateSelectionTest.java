@@ -439,6 +439,39 @@ class NestedCandidateSelectionTest {
 				&& !f.modId().equals("forbric")), () -> CompatibilityFindings.all().toString());
 	}
 
+	/** Loads {@code name} through a real kernel loader whose only rescue jars are the ones the boot would offer. */
+	private boolean rescued(DuplicateModArbiter.Decision decision, String name) throws Exception {
+		Path empty = root.resolve("owned-" + System.nanoTime() + ".jar"); Files.write(empty, bytes(Map.of("owned.txt", new byte[] {1})));
+		try (var loader = new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[] {empty.toUri().toURL()}, getClass().getClassLoader())) {
+			loader.setRescueJars(KernelBoot.rescueUrls(decision));
+			try { loader.loadClass(name); return true; } catch (ClassNotFoundException absent) { return false; }
+		}
+	}
+
+	@Test void onlyTheOtherEcosystemsBuildOfAWinningModIsOfferedAsARescueJar() throws Exception {
+		// The one rescue the loader was built for: a mod on the losing side linking a class only the dropped build has.
+		install("host-neo.jar", neo("host", "1", Map.of(), Map.of(), Map.of()));
+		install("host-fabric.jar", fabric("host", "1", Map.of("META-INF/jars/ghost.jar",
+				fabric("ghost", "1", Map.of(), "", Map.of("ghost/Only.class", type("ghost/Only")))), "", Map.of("hostfab/Only.class", type("hostfab/Only"))));
+		var decision = decide();
+		assertTrue(rescued(decision, "hostfab.Only"), "a class only the superseded other-ecosystem build has stays linkable");
+		assertFalse(rescued(decision, "ghost.Only"), "a losing root's whole nested tree must not come back through rescue");
+	}
+
+	@Test void aSideExcludedOrVersionLosingJarIsNeverARescueJar() throws Exception {
+		byte[] clientOnly = bytes(Map.of("fabric.mod.json", "{\"schemaVersion\":1,\"id\":\"keys\",\"version\":\"1\",\"environment\":\"client\"}".getBytes(StandardCharsets.UTF_8),
+				"keys/ClientApi.class", type("keys/ClientApi")));
+		install("api.jar", fabric("api", "1", Map.of("META-INF/jars/keys.jar", clientOnly), "", Map.of()));
+		install("a.jar", neo("a", "1", Map.of("META-INF/jarjar/lib-1.jar", bytes(Map.of("lib/Core.class", type("lib/Core")))),
+				Map.of("META-INF/jarjar/lib-1.jar", new NestedCandidateInventory.Coordinate("example:lib", "[1,2)", "1")), Map.of()));
+		install("b.jar", neo("b", "1", Map.of("META-INF/jarjar/lib-2.jar", bytes(Map.of("lib/Core.class", type("lib/Core"), "lib/OnlyInTwo.class", type("lib/OnlyInTwo")))),
+				Map.of("META-INF/jarjar/lib-2.jar", new NestedCandidateInventory.Coordinate("example:lib", "[1,3)", "2")), Map.of()));
+		var decision = DuplicateModArbiter.arbitrate(mods(), EnvType.SERVER);
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertFalse(rescued(decision, "keys.ClientApi"), "a client-only nested module must not become loadable on a server");
+		assertFalse(rescued(decision, "lib.OnlyInTwo"), "two builds of one library must not be mixed through rescue");
+	}
+
 	private static byte[] api(String name, int access) {
 		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
 		MethodVisitor method = writer.visitMethod(access, "needed", "()V", null, null);

@@ -100,8 +100,21 @@ public final class DuplicateModArbiter {
 	public record Alias(String modId, Ecosystem ecosystem, String version) {
 	}
 
-	/** Which jars must not be loaded, who owns each contested id, and which ecosystems need a presence alias. */
-	public record Decision(Set<Path> suppressedJars, Map<String, Path> ownerByModId, List<Alias> aliases) {
+	/**
+	 * Which jars must not be loaded, who owns each contested id, and which ecosystems need a presence alias.
+	 *
+	 * <p>{@code rescueJars} is the subset the class loader may still serve a missing class from (see
+	 * ForbricClassLoader.setRescueJars). It is NOT every suppressed jar: discovery must skip every unselected
+	 * physical candidate, but only the other ecosystem's build of a mod that did load may lend it a class. A
+	 * losing JarJar version would mix two builds of one library, a side-excluded jar would make client-only
+	 * code loadable on a server, and a losing root's nested tree was never meant to run (PLAN.md:63).
+	 */
+	public record Decision(Set<Path> suppressedJars, Map<String, Path> ownerByModId, List<Alias> aliases, Set<Path> rescueJars) {
+		/** The top-level-only passes, where every suppressed jar is exactly such another-ecosystem build. */
+		public Decision(Set<Path> suppressedJars, Map<String, Path> ownerByModId, List<Alias> aliases) {
+			this(suppressedJars, ownerByModId, aliases, suppressedJars);
+		}
+
 		public boolean suppressed(Path jar) {
 			return jar != null && suppressedJars.contains(jar.toAbsolutePath());
 		}
@@ -202,7 +215,7 @@ public final class DuplicateModArbiter {
 			decision = decisionFromSelection(all, aliases, "whole-instance", result);
 			Set<Path> suppressed = new LinkedHashSet<>(decision.suppressedJars());
 			for (var node : inventory.nodes().values()) if (!result.selected().contains(node.path())) suppressed.add(node.path());
-			decision = new Decision(Set.copyOf(suppressed), decision.ownerByModId(), decision.aliases());
+			decision = new Decision(Set.copyOf(suppressed), decision.ownerByModId(), decision.aliases(), rescuable(inventory, result));
 			// Each physical candidate owns only its own classes. Do not count losing nested classes as a root's.
 			for (String line : divergenceReport(all, decision)) ForbricLog.info("%s", line);
 		}
@@ -212,6 +225,31 @@ public final class DuplicateModArbiter {
 		cachedDir = modsDir;
 		cachedSide = envType;
 		return decision;
+	}
+
+	/**
+	 * Unselected candidates that are another ecosystem's build of a mod that did load: every id they claim is
+	 * owned by a selected build of a different ecosystem, and they were themselves reachable (a root, or a child
+	 * of a selected parent). Side-excluded jars, same-ecosystem version losers, anonymous libraries and anything
+	 * inside a losing root are left out.
+	 */
+	static Set<Path> rescuable(NestedCandidateInventory inventory, JointCandidateSelector.Result result) {
+		Map<String, Set<Ecosystem>> winners = new HashMap<>();
+		for (var node : inventory.nodes().values()) {
+			if (!result.selected().contains(node.path()) || node.claim() == null) continue;
+			for (String id : node.claim().modIds()) winners.computeIfAbsent(JointCandidateSelector.key(id), k -> new HashSet<>()).add(node.claim().ecosystem());
+		}
+		Set<Path> rescue = new LinkedHashSet<>();
+		for (var node : inventory.nodes().values()) {
+			if (result.selected().contains(node.path()) || node.excluded() || node.claim() == null || node.claim().modIds().isEmpty()) continue;
+			boolean reachable = node.root() || inventory.edges().stream().anyMatch(e -> e.child().equals(node.path()) && result.selected().contains(e.parent()));
+			boolean otherBuild = node.claim().modIds().stream().allMatch(id -> {
+				Set<Ecosystem> owners = winners.get(JointCandidateSelector.key(id));
+				return owners != null && !owners.contains(node.claim().ecosystem());
+			});
+			if (reachable && otherBuild) rescue.add(node.path());
+		}
+		return Set.copyOf(rescue);
 	}
 
 	/** For discovery only: another mods directory or physical side must never borrow this plan. */
