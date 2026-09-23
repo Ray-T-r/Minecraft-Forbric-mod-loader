@@ -226,3 +226,18 @@ Pending implementation and acceptance items remain open even when a smaller batc
   initialization/start/command registration exactly once, at least 20 real ticks, three world actions and
   clean exit. Native controls contain no Forbric dependency. Evidence: `build/native-controls/results/`.
   These scenarios do not replace the broader client, multiplayer and sustained-operation requirements.
+
+### Persistent checkout recovery and full integration gate
+
+- The temporary worktree disappeared after the interrupted session. All committed code was recovered from
+  the branch into `build/compatibility-contracts` under the original checkout; original source and worlds were
+  not edited. Uncommitted behavior/soak drafts were recovered from this task's own tool records and still
+  require validation. Historical generated evidence in the temporary directory is no longer available.
+- Rebuilt the candidate from the same fixed inputs: 24 known/zero new link defects. Restaged read-only
+  third-party fixtures and reran M0: 1,792 tests ran, zero failures/errors/skips, both three-ecosystem discovery
+  controls matched, and the candidate link gate passed. The separate 23 real-engine transaction tests pass.
+- M0 now rejects any skipped fixture, uses the requested candidate paths and checks the actual build exit
+  status. The oracle rejects missing/empty fixtures; its missing-directory negative control passed. Fixed
+  portable native-control cache lookup, documented evidence tests, declared the replay transformer's dynamic
+  targets, and updated the boot boundary assertion to the typed continuation check. Evidence:
+  `forbric-kernel/build/m0-candidate-driver.log` and `build/verification/recovery-{test,transferTest}/`.

@@ -15,7 +15,7 @@ set -uo pipefail
 kernel_classpath
 rc=0
 for dir in "$@"; do
-  [ -d "$dir" ] || { echo "[oracle] SKIP (no dir): $dir"; continue; }
+  [ -d "$dir" ] || { echo "[oracle] FAIL required directory missing: $dir"; rc=1; continue; }
   out="$BUILD/scan/$(basename "$dir")-$(basename "$(dirname "$dir")").json"
   mkdir -p "$(dirname "$out")"
   kernel_scan "$dir" "$out" >/dev/null
@@ -64,6 +64,9 @@ for jar in sorted(pathlib.Path(mods_dir).glob("*.jar")):
 # --- kernel's answer ---
 k = json.loads(pathlib.Path(kernel_json).read_text())
 kernel = {(m["ecosystem"], m["id"]) for m in k["mods"]}
+if not truth or not kernel:
+    print(f"[oracle] FAIL empty discovery fixture: {mods_dir}")
+    sys.exit(1)
 
 missing = truth - kernel     # ground truth found it, kernel missed it
 spurious = kernel - truth     # kernel invented it

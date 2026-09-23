@@ -22,7 +22,8 @@ import zipfile
 KERNEL = Path(__file__).resolve().parents[2]
 BASE = KERNEL / "build/native-controls"
 SOURCE = KERNEL / "canary/native-controls"
-ORIGINAL = Path(os.environ.get("NATIVE_CONTROL_CACHE", "/Users/jerry/Documents/Forbric"))
+ORIGINAL = Path(os.environ.get("NATIVE_CONTROL_CACHE", Path(os.environ["FORBRIC_OLD"]).resolve().parent
+                              if os.environ.get("FORBRIC_OLD") else KERNEL.parent))
 MC = Path(os.environ.get("MC_DIR", Path.home() / "Library/Application Support/minecraft"))
 VERSIONS = {"fabric": "0.19.5", "forge": "65.0.1", "neo": "26.2.0.88"}
 INSTALLERS = {

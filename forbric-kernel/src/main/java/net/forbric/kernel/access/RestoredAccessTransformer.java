@@ -13,6 +13,10 @@ public final class RestoredAccessTransformer implements ClassTransformer {
 		this.forge = forge;
 	}
 	@Override public String name() { return "forbric-restored-access"; }
+	@Override public net.forbric.kernel.transform.AnchorSet anchors() {
+		return net.forbric.kernel.transform.AnchorSet.scanned(
+				"replays only explicit mod access directives missed before member restoration; targets depend on installed mods");
+	}
 	@Override public byte[] transform(String name, byte[] bytes, TransformContext context) {
 		if (bytes == null || bytes.length == 0) return bytes;
 		if (fabric != null) bytes = fabric.replayRestored(name, bytes);

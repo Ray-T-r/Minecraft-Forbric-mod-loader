@@ -10,9 +10,11 @@ set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 step "1. offline build (boot jar)"
-if "$KERNEL/gradlew" --offline -q -p "$KERNEL" jar 2>&1 | filter_noise | grep -iE 'error|failed'; then
-  echo "[kernel] FAIL build"; FAIL=1
-else echo "[kernel] PASS build"; fi
+if "$KERNEL/gradlew" --offline -q -p "$KERNEL" jar >"$BUILD/gate-m0-build.log" 2>&1; then
+  echo "[kernel] PASS build"
+else
+  echo "[kernel] FAIL build — see $BUILD/gate-m0-build.log"; FAIL=1
+fi
 
 # The verdict comes from the JUnit XML, not from gradle's exit code, and the task is forced to RUN.
 #
@@ -54,11 +56,9 @@ elif [ "${xmls:-0}" -eq 0 ] || [ "${tests:-0}" -eq 0 ]; then
   FAIL=1
 elif [ "${failures:-0}" -ne 0 ] || [ "${errors:-0}" -ne 0 ]; then
   echo "[kernel] FAIL unit tests — $failures failed, $errors errored of $tests; see $TESTLOG"; FAIL=1
-elif [ "${skipped:-0}" -gt 10 ]; then
-  # A ceiling, now that it can be one. Every remaining skip is an assumeTrue on a staged artifact, and on a
-  # machine that can run this gate the artifacts are there -- so a suite that starts skipping in bulk is a suite
-  # that has quietly stopped checking the bytecode claims, which is exactly how a green run comes to mean
-  # nothing. It was 0 when this ceiling was set.
+elif [ "${skipped:-0}" -gt 0 ]; then
+  # This integration gate requires every staged fixture; an unexecuted assertion is not a passing one.
+  # Ordinary boot-only compilation and tests can still run independently without game artifacts.
   echo "[kernel] FAIL unit tests — $skipped of $tests skipped; on a machine with the staged artifacts that means "
   echo "[kernel]      those assertions are no longer reading them. See $TESTLOG"
   FAIL=1
@@ -70,7 +70,7 @@ step "3. --scan across both merged mod sets"
 kernel_classpath
 for set in server-merged client-merged; do
   dir="$RUN_OLD/$set/mods"
-  [ -d "$dir" ] || { echo "[kernel] SKIP $set (no $dir)"; continue; }
+  [ -d "$dir" ] || { echo "[kernel] FAIL $set (required fixture missing: $dir)"; FAIL=1; continue; }
   out="$BUILD/scan/$set.json"; mkdir -p "$BUILD/scan"
   kernel_scan "$dir" "$out" >/dev/null
   # well-formed + non-empty + all three ecosystems represented
@@ -100,9 +100,9 @@ step "4. the merged base links (against the committed baseline)"
 LINK_BASELINE="${LINK_BASELINE:-$KERNEL/../forbric-loader/src/test/resources/merge/link-check-baseline.txt}"
 LINKLOG="$BUILD/gate-m0-linkcheck.log"
 if LINK_BASELINE="$LINK_BASELINE" bash "$KERNEL/../forbric-loader/run/check-merged-links.sh" \
-    "$RUN_OLD/merged-base/patched-mc-merged-26.2.jar" \
-    "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar" \
-    "$RUN_OLD/merged-base/forge-runtime-interop.jar" > "$LINKLOG" 2>&1; then
+    "${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}" \
+    "${NEO_RT:-$RUN_OLD/neoforge-runtime/neoforge-runtime.jar}" \
+    "${FORGE_RT:-$RUN_OLD/merged-base/forge-runtime-interop.jar}" > "$LINKLOG" 2>&1; then
   check "the merged base links no worse than the baseline" "dangling references: [0-9]+ \(known [0-9]+, new 0\)" "$LINKLOG"
 else
   echo "[kernel] FAIL link check — missing inputs or new dangling references (see $LINKLOG)"; FAIL=1

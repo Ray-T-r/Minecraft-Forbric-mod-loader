@@ -33,7 +33,7 @@ class CompatibilityPromptTickInjectorTest {
 			if (instruction instanceof MethodInsnNode call) {
 				if (call.owner.equals("net/forbric/api/CompatibilityFindings") && call.name.equals("reset")) reset = step;
 				if (call.owner.equals("net/forbric/kernel/boot/KernelLoadReport") && call.name.equals("write")) report = step;
-				if (call.owner.equals("net/forbric/kernel/ui/CompatibilityDecision") && call.name.equals("check")) decision = step;
+				if (call.owner.equals("net/forbric/kernel/ui/CompatibilityDecision") && call.name.equals("requireContinuation")) decision = step;
 			}
 			step++;
 		}

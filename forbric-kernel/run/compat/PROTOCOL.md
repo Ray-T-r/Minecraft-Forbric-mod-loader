@@ -211,6 +211,9 @@ command; afterwards it verifies that none changed. The command log and JSON verd
 manifest. An exit-zero command whose inputs changed is a failure. This is provenance, not a substitute for
 the command's own behavior assertions.
 
+`python3 run/compat/test_evidence.py` checks the evidence recorder, including missing required inputs,
+changed source/mod/archive bytes, and a nominally successful command that changes its own inputs.
+
 ```bash
 python3 run/compat/evidence.py run --source .. \
   --artifact kernel=build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar \
@@ -223,3 +226,10 @@ actual game/runtime/tool jar as a named `--artifact` in real acceptance runs. `-
 committed sources, a mods directory (empty is valid for zero-mod tests), and all of: `vanilla`,
 `forge-patched`, `neo-patched`, `merged`, `forge-runtime`, `neo-runtime`, `forge-interop`, `kernel`,
 `kernel-runtime`, `merge-tools`. Missing inputs fail. Keep output under ignored `build/` or outside the repo.
+
+`native-controls.py prepare` installs the fixed native Fabric, Forge and NeoForge servers into
+`build/native-controls`; `build` compiles one public-API canary per ecosystem. `run --engine native` and
+`run --engine forbric` execute the same jar hashes, seed and world actions, each in a fresh owned instance.
+`compare <native-result.json> <forbric-result.json>` rejects mismatched inputs before comparing behavior.
+`NATIVE_CONTROL_CACHE` selects the read-only reference checkout; its default is the parent of `FORBRIC_OLD`,
+or this checkout when that variable is absent. All generated files remain under this kernel's `build/`.
