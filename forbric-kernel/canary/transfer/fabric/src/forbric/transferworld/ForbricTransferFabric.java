@@ -13,6 +13,9 @@ public final class ForbricTransferFabric implements ModInitializer {
 		Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, Machines.id(Machines.FABRIC), type);
 		ItemStorage.SIDED.registerForBlockEntity((be, face) -> { be.lastFabric = face; return Machines.permits(face) ? be.fabricItems : null; }, type);
 		FluidStorage.SIDED.registerForBlockEntity((be, face) -> { be.lastFabric = face; return Machines.permits(face) ? be.fabricFluids : null; }, type);
+		// A plain bin with no Fabric storage of its own: Fabric mods leave such a Container to Fabric's generic fallback.
+		var bin = Registry.register(BuiltInRegistries.BLOCK, Machines.id(Machines.FABRIC, "bin"), Machines.binBlock(Machines.FABRIC));
+		Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, Machines.id(Machines.FABRIC, "bin"), Machines.binType(Machines.FABRIC, bin));
 		System.out.println("[M33Transfer] REGISTERED fabric " + Machines.FABRIC);
 	}
 }

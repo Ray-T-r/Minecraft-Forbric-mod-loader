@@ -23,6 +23,11 @@ public final class ForbricTransferForge {
 	private static final java.util.function.Supplier<BlockEntityType<Machines.Machine>> TYPE = TYPES.register("machine", () -> Machines.type(Machines.FORGE, BLOCK.get()));
 	private static final java.util.function.Supplier<Block> CRATE_BLOCK = BLOCKS.register("crate", () -> Machines.crateBlock(Machines.FORGE));
 	private static final java.util.function.Supplier<BlockEntityType<Machines.Crate>> CRATE = TYPES.register("crate", () -> Machines.crateType(Machines.FORGE, CRATE_BLOCK.get()));
+	// A bin and a kiln on BaseContainerBlockEntity with no capability of their own: Forge answers with its InvWrapper.
+	private static final java.util.function.Supplier<Block> BIN_BLOCK = BLOCKS.register("bin", () -> Machines.binBlock(Machines.FORGE));
+	private static final java.util.function.Supplier<BlockEntityType<Machines.Bin>> BIN = TYPES.register("bin", () -> Machines.binType(Machines.FORGE, BIN_BLOCK.get()));
+	private static final java.util.function.Supplier<Block> KILN_BLOCK = BLOCKS.register("kiln", Machines::kilnBlock);
+	private static final java.util.function.Supplier<BlockEntityType<Machines.Kiln>> KILN = TYPES.register("kiln", () -> Machines.kilnType(KILN_BLOCK.get()));
 	public ForbricTransferForge(FMLJavaModLoadingContext context) {
 		BLOCKS.register(context.getModBusGroup()); TYPES.register(context.getModBusGroup());
 		AttachCapabilitiesEvent.BlockEntities.BUS.addListener(event -> {

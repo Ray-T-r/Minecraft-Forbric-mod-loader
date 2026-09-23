@@ -24,7 +24,13 @@ Container-shaped machines check ownership precedence: a Forge crate and a NeoFor
 whose owners expose a separate handler on NORTH/null only, and a NeoForge cabinet extends BaseContainerBlockEntity.
 Fabric API's generic Container fallback and the merged Forge override's generic wrapper must not answer for
 them: a refused face stays refused for NeoForge and Forge consumers, and every foreign consumer on the permitted
-face reaches the owner's handler (and the cabinet's fluid handler) without one write into the Container slots. The
+face reaches the owner's handler (and the cabinet's fluid handler) without one write into the Container slots.
+Three more BaseContainerBlockEntity machines leave getCapability alone, the shape of most mod chests, so Forge
+answers each with its own InvWrapper over the whole Container. A NeoForge consumer of the Forge bin gets
+NeoForge's own Container wrapper on every face: an aborted insert leaves the bin empty and committed moves land in
+its slots. It gets nothing for the Forge kiln, whose Container declares its own setItem. A Forge consumer of the
+Fabric bin (no Fabric storage of its own) keeps the native InvWrapper. The gate also requires the kiln's
+CONTAINER_WRITES_NOT_VANILLA finding and forbids any "InvWrapper is not rollback-safe" finding. The
 three primary inventories retain 60 component-tagged cobblestone and 48,617 Fabric fluid units, including a
 17-unit remainder. A Neo query also requests 201 mB from the real Fabric store holding 200 mB plus 17 units,
 forcing an actual fractional return, nested rollback/retry, then outer rollback. Temporary priority/invalidation

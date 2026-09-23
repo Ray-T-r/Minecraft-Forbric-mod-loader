@@ -32,6 +32,7 @@ import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.items.IItemHandler;
+import net.minecraftforge.items.wrapper.InvWrapper;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.transfer.ResourceHandler;
 import net.neoforged.neoforge.transfer.fluid.FluidResource;
@@ -45,6 +46,7 @@ public final class TransferWorldProbe {
 	private static final long FLUID_TOTAL = 3 * 200 * 81L + 17;
 	private static final BlockPos DIRTY_PROBE = new BlockPos(112, 80, 16);
 	private static final BlockPos FORGE_CRATE = new BlockPos(28, 80, 16), NEO_CRATE = new BlockPos(30, 80, 16), NEO_CABINET = new BlockPos(32, 80, 16);
+	private static final BlockPos FORGE_BIN = new BlockPos(34, 80, 16), FORGE_KILN = new BlockPos(36, 80, 16), FABRIC_BIN = new BlockPos(38, 80, 16);
 	// A chunk nothing else touches, far from spawn and from every other probe position.
 	private static final BlockPos UNLOAD = new BlockPos(4096, 80, 4096);
 	private static final int UNLOAD_TICKS = 1200;
@@ -81,7 +83,7 @@ public final class TransferWorldProbe {
 					Machines.Machine be = place(level, POSITIONS.get(family), family);
 					be.seed(tagged(20), 200 * 81L + (family.equals(Machines.FABRIC) ? 17 : 0));
 				}
-				checkQueriesAndFaces(level); checkNativePriority(level); checkOwnerPrecedence(level);
+				checkQueriesAndFaces(level); checkNativePriority(level); checkOwnerPrecedence(level); checkGenericContainerViews(level);
 				for (String consumer : FAMILIES) for (String destination : FAMILIES) {
 					if (consumer.equals(destination)) continue;
 					for (Direction face : new Direction[] {Direction.NORTH, null}) {
@@ -335,6 +337,42 @@ public final class TransferWorldProbe {
 		equal(5, cabinet.neoItems.getAmountAsLong(0)); equal(6, cabinet.neoFluids.getAmountAsLong(0));
 		yes(cabinet.isEmpty(), "a foreign consumer wrote into the cabinet's Container slots instead of its owner's handler");
 		System.out.println("[M33Transfer] PASS owner providers precede Fabric's generic Container view and Forge's generic wrapper");
+	}
+
+	/**
+	 * BaseContainerBlockEntity machines that leave getCapability alone, the shape of most mod chests. Forge answers
+	 * every face with its own InvWrapper over the whole Container. For a Forge owner that is the owner's answer: a
+	 * NeoForge consumer gets NeoForge's own wrapper of the same Container, which writes through the game's setItem,
+	 * and an abort leaves it untouched. A kiln whose Container declares its own setItem is not offered to NeoForge at
+	 * all. For a Fabric mod's bin with no storage of its own, a Forge consumer keeps that native InvWrapper rather
+	 * than a bridge over Fabric's generic view.
+	 */
+	private static void checkGenericContainerViews(ServerLevel level) {
+		Machines.Bin forgeBin = place(level, FORGE_BIN, Machines.BIN_BLOCKS.get(Machines.FORGE), Machines.Bin.class);
+		Machines.Kiln kiln = place(level, FORGE_KILN, Machines.KILN_BLOCK.get(), Machines.Kiln.class);
+		place(level, FABRIC_BIN, Machines.BIN_BLOCKS.get(Machines.FABRIC), Machines.Bin.class);
+		for (Direction face : new Direction[] {Direction.NORTH, Direction.SOUTH, null}) {
+			ResourceHandler<ItemResource> neo = level.getCapability(Capabilities.Item.BLOCK, FORGE_BIN, face);
+			yes(neo != null, "NeoForge cannot reach the Forge bin's Container on face " + face);
+			try (var tx = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot()) { equal(2, neo.insert(0, ItemResource.of(tagged(1)), 2, tx)); }
+			yes(forgeBin.isEmpty(), "an aborted NeoForge insert stayed in the Forge bin");
+		}
+		ResourceHandler<ItemResource> neo = level.getCapability(Capabilities.Item.BLOCK, FORGE_BIN, Direction.NORTH);
+		try (var tx = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot()) { equal(3, neo.insert(0, ItemResource.of(tagged(1)), 3, tx)); tx.commit(); }
+		try (var tx = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot()) { equal(1, neo.extract(0, ItemResource.of(tagged(1)), 1, tx)); tx.commit(); }
+		equal(2, forgeBin.getItem(0).getCount());
+		IItemHandler forge = forgeProvider(level, FORGE_BIN).getCapability(ForgeCapabilities.ITEM_HANDLER, Direction.NORTH).resolve().orElseThrow();
+		yes(forge.getClass() == InvWrapper.class, "Forge's own view of the Forge bin changed to " + forge.getClass().getName());
+		equal(2, forge.getStackInSlot(0).getCount());
+		Storage<ItemVariant> fabric = ItemStorage.SIDED.find(level, FORGE_BIN, Direction.NORTH);
+		yes(fabric != null, "Fabric cannot reach the Forge bin");
+		try (Transaction tx = Transaction.openOuter()) { equal(1, fabric.insert(ItemVariant.of(tagged(1)), 1, tx)); tx.commit(); }
+		equal(3, forgeBin.getItem(0).getCount());
+		yes(level.getCapability(Capabilities.Item.BLOCK, FORGE_KILN, Direction.NORTH) == null, "NeoForge was given the kiln's Container, whose writes are its own");
+		equal(0, kiln.restarts);
+		IItemHandler onFabric = forgeProvider(level, FABRIC_BIN).getCapability(ForgeCapabilities.ITEM_HANDLER, Direction.NORTH).resolve().orElseThrow();
+		yes(onFabric.getClass() == InvWrapper.class, "a Forge consumer of a Fabric mod's plain bin got " + onFabric.getClass().getName() + " instead of Forge's InvWrapper");
+		System.out.println("[M33Transfer] PASS Forge's generic InvWrapper: NeoForge's own Container view for a Forge bin, none for a kiln, native for a Fabric bin");
 	}
 
 	private static void moveItems(ServerLevel level, String source, String destination, Direction face) {
