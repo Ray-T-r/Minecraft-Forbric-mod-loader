@@ -625,16 +625,25 @@ public final class DuplicateModArbiter {
 		recordOverrides(result.impossibleOverrides(), overrides, false);
 		if (result.status() != JointCandidateSelector.Status.SOLVED) {
 			boolean confirmed = result.status() == JointCandidateSelector.Status.UNSATISFIABLE;
-			String mod = claims.stream().filter(c -> result.selected().contains(JointCandidateSelector.path(c)))
-					.flatMap(c -> c.modIds().stream()).findFirst().orElse("forbric");
+			// The aggregate row is the arbitration's own verdict. Filing it under the first selected jar marked
+			// whichever mod sorted first in mods/ DEGRADED and named it in the prompt; the mods actually involved
+			// already carry their own rows (recordRule / recordOverrides) and are listed here as evidence.
+			Set<String> involved = new LinkedHashSet<>();
+			for (var rule : confirmed ? result.unsatisfied() : result.uncertain()) {
+				Claim owner = byPath.get(rule.consumer());
+				if (owner != null && !owner.modIds().isEmpty()) involved.add(owner.modIds().getFirst());
+			}
+			for (String pinned : result.refusedOverrides().keySet()) {
+				involved.add(overrides.keySet().stream().filter(raw -> JointCandidateSelector.key(raw).equals(pinned)).findFirst().orElse(pinned));
+			}
 			net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
-					"arbitration:selection", mod, "Mod dependency combination", "arbitration",
+					"arbitration:selection", "forbric", "Mod dependency combination", "arbitration",
 					confirmed ? net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED : net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED,
 					confirmed, confirmed ? "No installed candidate combination satisfies all modeled required contracts and explicit overrides"
 							: result.status() == JointCandidateSelector.Status.SEARCH_LIMIT
 									? "Candidate search reached its bound; this selection has not been proved compatible"
 									: "Some required candidate contracts could not be verified; this selection remains unproved",
-					List.of("status=" + result.status(), "visited=" + result.visited(), "overrides=" + overrides)));
+					List.of("status=" + result.status(), "visited=" + result.visited(), "overrides=" + overrides, "involved=" + involved)));
 		}
 		ForbricLog.info("[Forbric/Arbitration] status=%s; nodes=%d; confirmed violations=%d; unproved contracts=%d%s",
 				result.status(), result.visited(), bounded ? 0 : result.unsatisfied().size(), result.uncertain().size(),

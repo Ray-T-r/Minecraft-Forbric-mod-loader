@@ -367,6 +367,45 @@ class NestedCandidateSelectionTest {
 		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), () -> CompatibilityFindings.all().toString());
 	}
 
+	@Test void anUnsatisfiableCombinationIsFiledUnderItsPartiesNotUnderTheFirstJarInTheFolder() throws Exception {
+		install("aaa-unrelated.jar", fabric("aaa", "1", Map.of(), "", Map.of()));
+		install("dep-neo.jar", neo("dep", "1", Map.of(), Map.of(), Map.of("dep/NeoOnly.class", type("dep/NeoOnly"))));
+		install("dep-fabric.jar", fabric("dep", "1", Map.of(), "", Map.of("dep/FabricOnly.class", type("dep/FabricOnly"))));
+		requiredMixin("app1", "dep", "dep/FabricOnly");
+		requiredMixin("app2", "dep", "dep/NeoOnly");
+		decide();
+		assertEquals(JointCandidateSelector.Status.UNSATISFIABLE, DuplicateModArbiter.currentPlan().selection().status());
+		var selection = CompatibilityFindings.all().stream().filter(f -> f.id().equals("arbitration:selection")).toList();
+		assertEquals(1, selection.size());
+		assertEquals("forbric", selection.getFirst().modId(), "the aggregate row is the arbitration itself, not a mod");
+		assertTrue(selection.getFirst().evidence().stream().anyMatch(e -> e.startsWith("involved=") && (e.contains("app1") || e.contains("app2"))));
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.modId().equals("aaa")), () -> CompatibilityFindings.all().toString());
+	}
+
+	@Test void twoContradictoryPinsAreFiledUnderThePinnedMod() throws Exception {
+		install("aaa-unrelated.jar", fabric("aaa", "1", Map.of(), "", Map.of()));
+		install("x-fabric.jar", fabric("x", "1", Map.of(), "", Map.of()));
+		install("bundle-neo.jar", neo("x", "1", Map.of(), Map.of(), Map.of(), "[[mods]]\nmodId=\"y\"\nversion=\"1\"\n"));
+		System.setProperty("forbric.modOwner", "x=fabric,y=neoforge");
+		decide();
+		assertEquals(JointCandidateSelector.Status.UNSATISFIABLE, DuplicateModArbiter.currentPlan().selection().status());
+		var refused = CompatibilityFindings.confirmedRequired().stream().filter(f -> f.id().startsWith("arbitration:override:")).toList();
+		assertEquals(1, refused.size(), () -> CompatibilityFindings.all().toString());
+		assertTrue(Set.of("x", "y").contains(refused.getFirst().modId()));
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.modId().equals("aaa")));
+	}
+
+	@Test void aMaterializationMismatchIsFiledUnderTheModWhoseFileChanged() throws Exception {
+		install("aaa-unrelated.jar", fabric("aaa", "1", Map.of(), "", Map.of()));
+		install("zzz.jar", fabric("zzz", "1", Map.of("META-INF/jars/child.jar", fabric("zchild", "1", Map.of(), "", Map.of())), "", Map.of()));
+		decide(); var plan = DuplicateModArbiter.currentPlan();
+		Files.write(plan.nestedFiles().getFirst(), fabric("different", "2", Map.of(), "", Map.of()));
+		assertFalse(plan.verify(plan.nestedFiles()));
+		var findings = CompatibilityFindings.all().stream().filter(f -> f.id().equals("arbitration:materialization")).toList();
+		assertFalse(findings.isEmpty());
+		assertTrue(findings.stream().allMatch(f -> Set.of("zchild", "zzz").contains(f.modId())), findings::toString);
+	}
+
 	private static byte[] api(String name, int access) {
 		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
 		MethodVisitor method = writer.visitMethod(access, "needed", "()V", null, null);
@@ -408,8 +447,11 @@ class NestedCandidateSelectionTest {
 		return bytes(all);
 	}
 	private static byte[] neo(String id, String version, Map<String, byte[]> children, Map<String, NestedCandidateInventory.Coordinate> coordinates, Map<String, byte[]> resources) throws Exception {
+		return neo(id, version, children, coordinates, resources, "");
+	}
+	private static byte[] neo(String id, String version, Map<String, byte[]> children, Map<String, NestedCandidateInventory.Coordinate> coordinates, Map<String, byte[]> resources, String extraToml) throws Exception {
 		Map<String, byte[]> all = new LinkedHashMap<>(resources); all.putAll(children);
-		all.put("META-INF/neoforge.mods.toml", ("modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"" + id + "\"\nversion=\"" + version + "\"\n").getBytes(StandardCharsets.UTF_8));
+		all.put("META-INF/neoforge.mods.toml", ("modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"" + id + "\"\nversion=\"" + version + "\"\n" + extraToml).getBytes(StandardCharsets.UTF_8));
 		if (!coordinates.isEmpty()) {
 			List<String> entries = new ArrayList<>();
 			for (var entry : coordinates.entrySet()) { String[] parts = entry.getValue().id().split(":", 2);

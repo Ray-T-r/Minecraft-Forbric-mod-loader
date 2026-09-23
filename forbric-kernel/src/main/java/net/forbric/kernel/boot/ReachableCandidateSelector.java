@@ -137,14 +137,20 @@ final class ReachableCandidateSelector {
 		}
 		int next = variables.size();
 		Map<String, Integer> pinLiterals = new LinkedHashMap<>();
-		for (String id : overrides.keySet()) pinLiterals.put(id, ++next);
+		// A pin naming an ecosystem that has no usable build of the id cannot be a choice at all; the old per-id
+		// pick warned and kept the automatic answer, and so does this. Every other pin is asserted.
+		Map<String, Ecosystem> impossible = new LinkedHashMap<>();
+		for (var pin : overrides.entrySet()) {
+			if (identities.getOrDefault(pin.getKey(), List.of()).stream().anyMatch(p -> family(p) == pin.getValue())) pinLiterals.put(pin.getKey(), ++next);
+			else impossible.put(pin.getKey(), pin.getValue());
+		}
 		Map<JointCandidateSelector.Rule, Integer> ruleLiterals = new LinkedHashMap<>();
 		for (var rule : hard) ruleLiterals.put(rule, ++next);
 		// A second literal per contract that some build PROVABLY meets while others only might (an inaccessible
 		// pre-transform member, a declared Mixin target): the proved reading is preferred, never required.
 		Map<JointCandidateSelector.Rule, Integer> proofLiterals = new LinkedHashMap<>();
 		for (var rule : hard) if (!rule.providers().isEmpty() && !rule.uncertainProviders().isEmpty()) proofLiterals.put(rule, ++next);
-		if (next > VARIABLE_LIMIT) return new Search(fallback(), JointCandidateSelector.Status.SEARCH_LIMIT, Set.of(), Map.of(), Map.of());
+		if (next > VARIABLE_LIMIT) return new Search(fallback(), JointCandidateSelector.Status.SEARCH_LIMIT, Set.of(), Map.of(), impossible);
 		ISolver solver = SolverFactory.newDefault(); solver.newVar(next);
 		// A conflict count, not a clock: the same mods folder selects the same jars on every machine.
 		solver.setTimeoutOnConflicts(CONFLICT_BUDGET);
@@ -166,14 +172,14 @@ final class ReachableCandidateSelector {
 				for (Path provider : rule.getKey().providers()) if (variables.containsKey(provider)) proved.add(variable(provider));
 				clause(solver, proved);
 			}
-		} catch (ContradictionException impossible) {
-			return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), Map.of());
+		} catch (ContradictionException contradiction) {
+			return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), impossible);
 		}
 		VecInt assumptions = new VecInt();
 		Set<Integer> relaxed = new LinkedHashSet<>();
 		Set<Path> selected = null;
 		try {
-			if (!satisfiable(solver, assumptions)) return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), Map.of());
+			if (!satisfiable(solver, assumptions)) return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), impossible);
 			// The user's choice first (PLAN: 用户指定优先), then the contracts, in scan order.
 			accept(solver, assumptions, List.copyOf(pinLiterals.values()), relaxed);
 			accept(solver, assumptions, List.copyOf(ruleLiterals.values()), relaxed);
@@ -193,15 +199,14 @@ final class ReachableCandidateSelector {
 					if (satisfiable(solver, attempt)) { assumptions = attempt; break; }
 				}
 			}
-			if (!satisfiable(solver, assumptions)) return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), Map.of());
+			if (!satisfiable(solver, assumptions)) return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), impossible);
 			selected = fromModel();
 			boolean conflict = false;
 			Set<JointCandidateSelector.Rule> unavoidable = new LinkedHashSet<>();
-			Map<String, Ecosystem> refused = new LinkedHashMap<>(), impossible = new LinkedHashMap<>();
-			for (var pin : pinLiterals.entrySet()) if (relaxed.contains(pin.getValue())) {
-				boolean alone = satisfiable(solver, new VecInt(new int[] {pin.getValue()}));
-				(alone ? refused : impossible).put(pin.getKey(), overrides.get(pin.getKey())); conflict |= alone;
-			}
+			// A pin whose build exists but cannot be combined with an earlier pin or with what the bundling
+			// structure requires is the player's to resolve: a real conflict.
+			Map<String, Ecosystem> refused = new LinkedHashMap<>();
+			for (var pin : pinLiterals.entrySet()) if (relaxed.contains(pin.getValue())) { refused.put(pin.getKey(), overrides.get(pin.getKey())); conflict = true; }
 			for (var rule : ruleLiterals.entrySet()) if (relaxed.contains(rule.getValue())) {
 				if (satisfiable(solver, new VecInt(new int[] {rule.getValue()}))) conflict = true; else unavoidable.add(rule.getKey());
 			}
@@ -210,7 +215,7 @@ final class ReachableCandidateSelector {
 		} catch (TimeoutException bounded) {
 			// The best structurally valid model found so far, not a contract-free preference pick.
 			return new Search(selected != null ? selected : lastModel != null ? fromModel() : fallback(),
-					JointCandidateSelector.Status.SEARCH_LIMIT, Set.of(), Map.of(), Map.of());
+					JointCandidateSelector.Status.SEARCH_LIMIT, Set.of(), Map.of(), impossible);
 		}
 	}
 
