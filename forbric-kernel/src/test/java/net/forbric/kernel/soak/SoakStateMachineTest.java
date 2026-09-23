@@ -25,4 +25,8 @@ class SoakStateMachineTest {
  }
  @Test void missingChunkActivityCannotBeReplacedByElapsedTime(){var m=new SoakStateMachine(config(true,1),0);m.joined(sample(0,1,0,-1,false,true));for(int i=1;i<=5;i++)m.observe(sample(i*1_000_000_000L,1,i*20,-1,false,true));assertTrue(m.activeNanos()>=1_000_000_000L);assertFalse(m.activityComplete());}
  @Test void closingAndOpeningHaveBoundedTimeouts(){var m=new SoakStateMachine(config(true,1),0);assertEquals(Kind.STOP,m.heartbeat(6_000_000_000L).kind());assertEquals(State.FAILED,m.state());}
+ @Test void aProbeThatIsNeverReachedFailsInsteadOfWaitingForTheLauncher(){var m=new SoakStateMachine(config(true,1),0);m.joined(sample(0,1,0,-1,false,true));Action a=m.observe(sample(1_000_000_000L,1,20,-1,false,true));assertEquals(Kind.MOVE,a.kind());
+  for(int i=2;i<=6&&m.state()==State.RUNNING;i++)m.observe(sample(i*1_000_000_000L,1,i*20,-1,false,true));
+  assertEquals(State.RUNNING,m.state(),"still inside the arrival bound");assertEquals(Kind.NONE,m.heartbeat(6_000_000_000L).kind(),"ticks advance, so the stall timeout cannot see it");
+  assertEquals(Kind.STOP,m.observe(sample(7_000_000_000L,1,140,-1,false,true)).kind());assertEquals(State.FAILED,m.state());assertTrue(m.failure().contains("probe 0"));}
 }

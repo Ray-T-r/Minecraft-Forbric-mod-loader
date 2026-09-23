@@ -238,7 +238,8 @@ or this checkout when that variable is absent. All generated files remain under 
 the copied mixed pack. It compiles an independent canary, saves a real campfire and compares the untouched
 mod's static cache after normal shutdown on native NeoForge and Forbric. Both arms and their exact mod
 hashes must agree. This attributes one observed native retention issue; it does not clear another retained
-root or turn M34's REVIEW_REQUIRED into release acceptance. Evidence stays under `build/retention-control/`.
+root by itself. Evidence stays under `build/retention-control/`, and `native-retention.json` names the root
+and exact jar hash it proved; a release M34 run re-reads that evidence before launching.
 
 `ui-control.py` requires the built kernel, `FORBRIC_OLD`, `MERGED`, `FORGE_RT` and `NEO_RT`. It creates a
 nonce-owned copy of the full mixed pack/world under `build/compat-ui/`, publishes late necessary findings,
@@ -256,7 +257,13 @@ occupied, advancing simulation, three normal same-JVM world sessions, all three 
 observed unloading and reloading. Paused time cannot satisfy the requirement. Sources and snapshots must
 remain unchanged; release runs require committed sources and strict compatibility policy. The original
 world is never opened by the client. Retained retired servers produce REVIEW_REQUIRED, not a pass or an
-unsupported claim of a leak. Heap, thread and chunk samples and thread dumps remain in the run's evidence.
+unsupported claim of a leak. The one exception is differential: after measurement ends, the controller
+removes only the entries of `native-retention.json` roots (present in this run with the registered jar hash)
+that belong to its own stopped servers, then collects again. If every retired server is then gone, nothing
+else held it and the acceptance records `nativeRetentionAttributed`; if any server survives, it is still a
+review. Heap, thread and chunk samples and thread dumps remain in the run's evidence. A watchdog records a
+FAIL result with a thread dump and halts the owned JVM when the client thread stays inside a native world
+open or save-and-disconnect loop longer than the timeout, and a controller that cannot start stops the game.
 Activity is independently verified even when retention requires review; releaseAccepted remains false and
 the command remains nonzero. Release runs also require a fresh final strict compatibility report with zero
 confirmed necessary losses and no unclassified failed initialization.

@@ -12,8 +12,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import net.forbric.kernel.soak.SoakJson;
@@ -24,6 +27,7 @@ import net.forbric.kernel.soak.SoakStateMachine.Sample;
 import net.forbric.kernel.soak.SoakStateMachine.State;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.server.IntegratedServer;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.GameType;
@@ -42,12 +46,18 @@ public final class ClientSoakController {
 	private final AtomicReference<String> asynchronousFailure = new AtomicReference<>();
 	private final AtomicBoolean sampling = new AtomicBoolean();
 	private final List<Retired> retired = new ArrayList<>();
+	private final List<String> nativeRetentionRoots;
+	// Written by the client thread on every controller tick, read by the watchdog. Minecraft.disconnect and the
+	// world-load screen spin renderFrame without calling tick(), so a wedged integrated server stops these updates.
+	private final AtomicLong lastTick = new AtomicLong(System.nanoTime());
+	private volatile String blockedIn = "client tick";
 	private IntegratedServer current;
 	private long lastSample, lastIdle, lastGc, sequence;
 	private int serial;
 	private int respawnRequests;
 	private long lastRespawnRequest;
-	private boolean joining, finished, ownershipChecked;
+	private boolean joining, ownershipChecked;
+	private volatile boolean finished, resultWritten;
 	private record Observation(Sample sample, List<Integer> chunks, String dimension, double x, double z) { }
 	private record Retired(int serial, long at, WeakReference<IntegratedServer> reference) { }
 	private static final int[] COORDINATES = { 2048, 8192, 2048, 8192, 2048, 8192 };
@@ -67,12 +77,17 @@ public final class ClientSoakController {
 				(int) number("dwellTicks", 600), (int) number("routes", 2), (int) number("sessions", 3),
 				(int) number("warmupTicks", 40), number("betweenSeconds", 10), number("settleSeconds", 60), number("timeoutSeconds", 300));
 		machine = new SoakStateMachine(config, started);
+		String roots = System.getProperty("forbric.soak.nativeRetentionRoots", "");
+		nativeRetentionRoots = roots.isBlank() ? List.of() : List.of(roots.split(","));
 		minecraft.options.pauseOnLostFocus = false;
 		minecraft.options.renderDistance().set(4);
 		minecraft.options.simulationDistance().set(4);
 		write("start", fields("releaseEligible", !config.control(), "requiredSeconds", config.seconds(),
 				"dwellTicks", config.dwellTicks(), "routes", config.routesPerSession(), "minSessions", config.minSessions(),
-				"world", world.toString(), "java", System.getProperty("java.version")));
+				"world", world.toString(), "java", System.getProperty("java.version"), "nativeRetentionRoots", nativeRetentionRoots));
+		Thread watchdog = new Thread(this::watch, "forbric-soak-watchdog");
+		watchdog.setDaemon(true);
+		watchdog.start();
 	}
 	public static void onTick(Object object) {
 		if (!Boolean.getBoolean("forbric.clientSoak")) return;
@@ -88,6 +103,7 @@ public final class ClientSoakController {
 	private void tick(Minecraft minecraft) throws Exception {
 		if (finished) return;
 		long now = System.nanoTime();
+		lastTick.set(now);
 		String error = asynchronousFailure.getAndSet(null);
 		if (error != null) throw new IllegalStateException(error);
 		Observation observation = pending.getAndSet(null);
@@ -188,10 +204,11 @@ public final class ClientSoakController {
 					} catch (Throwable failure) { asynchronousFailure.set("movement failed: " + failure); }
 				});
 			}
-			case DISCONNECT -> { write("save-and-disconnect", fields("server", serial)); minecraft.disconnectWithSavingScreen(); }
+			case DISCONNECT -> { write("save-and-disconnect", fields("server", serial)); blocking("native save-and-disconnect", () -> minecraft.disconnectWithSavingScreen()); }
 			case OPEN_WORLD -> {
 				owner(world.resolve(".forbric-soak-world")); write("open", fields("world", worldName));
-				minecraft.createWorldOpenFlows().openWorld(worldName, () -> asynchronousFailure.set("native WorldOpenFlows cancelled or failed opening copied world"));
+				blocking("native world open", () -> minecraft.createWorldOpenFlows().openWorld(worldName,
+						() -> asynchronousFailure.set("native WorldOpenFlows cancelled or failed opening copied world")));
 			}
 			case STOP -> finish(minecraft);
 		}
@@ -206,27 +223,86 @@ public final class ClientSoakController {
 	private void finish(Minecraft minecraft) throws Exception {
 		if (finished) return;
 		finished = true;
-		if (current != null && ownershipChecked) { minecraft.disconnectWithSavingScreen(); current = null; }
+		if (current != null && ownershipChecked) { blocking("native save-and-disconnect while finishing", () -> minecraft.disconnectWithSavingScreen()); current = null; }
 		List<Map<String, Object>> weak = weakEvidence();
-		boolean retained = weak.stream().anyMatch(item -> Boolean.TRUE.equals(item.get("alive")));
 		boolean completed = machine.state() == State.FINISHED && machine.activityComplete();
+		List<Map<String, Object>> released = List.of(), after = weak;
+		if (completed && alive(weak) && !nativeRetentionRoots.isEmpty()) {
+			// Measurement is over and every session's server has stopped. Cut only the reviewed native roots' entries
+			// for those servers; if the servers then become collectable, nothing else held them.
+			released = releaseNativeRoots();
+			for (int attempt = 0; attempt < 10 && alive(after = weakEvidence()); attempt++) { System.gc(); Thread.sleep(200); }
+		}
+		boolean retained = alive(after);
+		if (completed && retained && Boolean.getBoolean("forbric.soak.heapDumpOnRetention")) {
+			// Taken after any reviewed native cut, so the shortest path in it is a root nothing has explained yet.
+			Path dump = output.resolve("retained-after-native-release.hprof");
+			ManagementFactory.getPlatformMXBean(com.sun.management.HotSpotDiagnosticMXBean.class).dumpHeap(dump.toString(), true);
+			write("heap-dump", fields("path", dump.toString()));
+		}
 		String status = !completed ? "FAIL" : retained ? "REVIEW_REQUIRED" : config.control() ? "CONTROL_PASS" : "RELEASE_PASS";
 		Map<String, Object> result = fields("status", status, "releaseEligible", !config.control(), "requiredSeconds", config.seconds(),
 				"activeNanos", machine.activeNanos(), "actualTicks", machine.actualTicks(), "sessions", machine.sessions(), "joins", machine.joins(),
 				"visits", longs(machine.visits()), "unloads", longs(machine.unloads()), "reloads", longs(machine.reloads()),
-				"failure", machine.failure(), "oldServers", weak, "retentionMeaning", "reachable after explicit GC and settling; evidence for review, not a proven leak");
+				"failure", machine.failure(), "oldServers", weak, "nativeRetentionRelease", released, "oldServersAfterNativeRelease", after,
+				"retentionMeaning", "reachable after explicit GC and settling; evidence for review, not a proven leak");
 		write("finish", result); dumpThreads("final");
-		result.put("nonce", nonce); result.put("pid", ProcessHandle.current().pid());
-		Files.writeString(output.resolve("controller-result.json"), SoakJson.encode(result) + "\n", StandardCharsets.UTF_8);
+		writeResult(result);
 		System.out.println("[Forbric/ClientSoak] " + status + " activeTicks=" + machine.actualTicks() + " sessions=" + machine.sessions());
 		minecraft.stop();
+	}
+	private static boolean alive(List<Map<String, Object>> weak) { return weak.stream().anyMatch(item -> Boolean.TRUE.equals(item.get("alive"))); }
+	/** Strong references to the retired servers live only in this frame, which has returned before the GC above. */
+	private List<Map<String, Object>> releaseNativeRoots() {
+		Set<MinecraftServer> stopped = Collections.newSetFromMap(new IdentityHashMap<>());
+		for (Retired entry : retired) { IntegratedServer server = entry.reference().get(); if (server != null) stopped.add(server); }
+		try { return NativeRetentionRelease.release(nativeRetentionRoots, stopped, ClientSoakController.class.getClassLoader()); }
+		finally { stopped.clear(); }
+	}
+	private synchronized void writeResult(Map<String, Object> result) throws IOException {
+		if (resultWritten) return;
+		resultWritten = true;
+		result.put("nonce", nonce); result.put("pid", ProcessHandle.current().pid());
+		Files.writeString(output.resolve("controller-result.json"), SoakJson.encode(result) + "\n", StandardCharsets.UTF_8);
+	}
+	private interface Blocking { void run() throws Exception; }
+	private void blocking(String what, Blocking call) throws Exception {
+		blockedIn = what; lastTick.set(System.nanoTime());
+		try { call.run(); } finally { blockedIn = "client tick"; lastTick.set(System.nanoTime()); }
+	}
+	/** Records a verdict when the client thread stops returning to the controller (see lastTick), then halts the
+	 *  owned JVM: nothing on a thread wedged inside a native loop can be recovered, and without this the launcher
+	 *  only learns of it at its own timeout, with no controller result and no thread dump. */
+	private void watch() {
+		long limit = config.timeoutSeconds() * 1_000_000_000L;
+		while (true) {
+			try { Thread.sleep(5_000); } catch (InterruptedException stop) { return; }
+			long silent = System.nanoTime() - lastTick.get();
+			// finish() itself may be what is wedged (its save-and-disconnect), so only a written result stands us down.
+			if (resultWritten || silent <= limit) continue;
+			String reason = "client thread did not return to the soak controller for " + silent / 1_000_000_000L + " seconds (in " + blockedIn + ")";
+			synchronized (this) {
+				if (resultWritten) continue;
+				finished = true;
+				try {
+					Map<String, Object> result = fields("status", "FAIL", "releaseEligible", !config.control(), "requiredSeconds", config.seconds(),
+							"activeNanos", machine.activeNanos(), "actualTicks", machine.actualTicks(), "sessions", machine.sessions(), "joins", machine.joins(),
+							"visits", longs(machine.visits()), "unloads", longs(machine.unloads()), "reloads", longs(machine.reloads()),
+							"failure", reason, "watchdog", true, "oldServers", weakEvidence());
+					write("watchdog", fields("reason", reason)); dumpThreads("watchdog");
+					writeResult(result);
+				} catch (Throwable evidence) { evidence.printStackTrace(); }
+				System.out.println("[Forbric/ClientSoak] FAIL " + reason);
+				Runtime.getRuntime().halt(75);
+			}
+		}
 	}
 	private List<Map<String, Object>> weakEvidence() {
 		long now = System.nanoTime(); List<Map<String, Object>> result = new ArrayList<>();
 		for (Retired entry : retired) { IntegratedServer server = entry.reference().get(); result.add(fields("server", entry.serial(), "ageNanos", now - entry.at(), "alive", server != null, "stopped", server == null || server.isStopped())); }
 		return result;
 	}
-	private void write(String type, Map<String, Object> values) throws IOException {
+	private synchronized void write(String type, Map<String, Object> values) throws IOException {
 		Map<String, Object> event = fields("type", type, "nonce", nonce, "pid", ProcessHandle.current().pid(), "sequence", ++sequence,
 				"utc", Instant.now().toString(), "nano", System.nanoTime(), "elapsedNanos", System.nanoTime() - started);
 		event.putAll(values);

@@ -24,7 +24,7 @@ public final class SoakStateMachine {
 	}
 	private final Config config;
 	private State state = State.WAIT_WORLD;
-	private long phaseAt, progressAt, activeNanos, actualTicks;
+	private long phaseAt, progressAt, activeNanos, actualTicks, movedAt;
 	private Sample previous;
 	private int server, joins, sessions, desired = -1, visitsThisSession, arrivedTick;
 	private boolean awaitingArrival;
@@ -69,18 +69,22 @@ public final class SoakStateMachine {
 		}
 		if (sample.nanoTime() - progressAt > config.timeoutSeconds() * 1_000_000_000L) return fail("no advancing occupied, unpaused simulation");
 		if (desired < 0) {
-			if (sample.tick() - arrivedTick >= config.warmupTicks()) return move(0);
+			if (sample.tick() - arrivedTick >= config.warmupTicks()) return move(0, sample.nanoTime());
 		} else if (awaitingArrival) {
 			if (sample.playerPoint() == desired && sample.loaded()[desired]) {
 				visits[desired]++; visitsThisSession++; arrivedTick = sample.tick(); awaitingArrival = false;
+			} else if (sample.nanoTime() - movedAt > config.timeoutSeconds() * 1_000_000_000L) {
+				// Ticks keep advancing while a displaced player or a chunk that never reports loaded waits here, so the
+				// stall timeout above cannot see it; without this bound only the launcher's kill ends the run.
+				return fail("probe " + desired + " was not reached within " + config.timeoutSeconds() + " seconds");
 			}
 		} else if (sample.tick() - arrivedTick >= config.dwellTicks()) {
 			if (visitsThisSession >= 6 * config.routesPerSession()) { state = State.WAIT_DISCONNECT; phaseAt = sample.nanoTime(); return new Action(Kind.DISCONNECT, -1); }
-			return move((desired + 1) % 6);
+			return move((desired + 1) % 6, sample.nanoTime());
 		}
 		return Action.none();
 	}
-	private Action move(int point) { desired = point; awaitingArrival = true; return new Action(Kind.MOVE, point); }
+	private Action move(int point, long now) { desired = point; awaitingArrival = true; movedAt = now; return new Action(Kind.MOVE, point); }
 	public void disconnected(long now) {
 		if (state != State.WAIT_DISCONNECT) throw new IllegalStateException("disconnect was not requested");
 		sessions++; previous = null; phaseAt = now;
