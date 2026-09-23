@@ -28,6 +28,9 @@ final class CandidateContractScanner {
 	private record Metadata(List<UnifiedDependency> dependencies, Map<String, String> provides,
 			List<String> mixins, List<Entry> entries) { }
 	private static final Set<String> PLATFORM = Set.of("java", "minecraft", "forge", "neoforge", "fabricloader", "fabric", "fml", "mixinextras");
+	static final int HELPER_DEPTH_LIMIT = 32;
+	static final int HELPER_NODE_LIMIT = 256;
+	static final int HELPER_INSTRUCTION_LIMIT = 32768;
 
 	private CandidateContractScanner() { }
 
@@ -91,7 +94,8 @@ final class CandidateContractScanner {
 			List<UnifiedDependency> symbolDependencies = new ArrayList<>(mandatory);
 			if (physicalOnly) for (String own : symbolOwners.getOrDefault(source, Set.of())) symbolDependencies.add(new UnifiedDependency(own, "*", true));
 			for (String config : mod.mixins()) scanMixins(source, config, inventory, symbolDependencies, symbolOwners, inventories, side, rules);
-			for (Entry entry : mod.entries()) scanDirectCalls(source, entry, inventory, symbolDependencies, symbolOwners, inventories, transformedTargets, rules);
+			var calls = new EntrypointCalls(source, inventory, symbolDependencies, symbolOwners, inventories, transformedTargets, rules);
+			for (Entry entry : mod.entries()) calls.scan(entry);
 		}
 		return List.copyOf(rules);
 	}
@@ -177,27 +181,122 @@ final class CandidateContractScanner {
 		} catch (Exception malformed) { rules.add(unknown(source, "config:" + name, "could not verify mixin activation: " + malformed.getClass().getSimpleName())); }
 	}
 
-	private static void scanDirectCalls(Path source, Entry entry, Inventory jar, List<UnifiedDependency> dependencies,
-			Map<Path, Set<String>> symbolOwners, Map<Path, Inventory> inventories, Set<String> transformedTargets,
-			List<JointCandidateSelector.Rule> rules) {
-		ClassNode node = jar.node(entry.owner()); if (node == null) return;
-		List<MethodNode> methods = node.methods.stream().filter(m -> m.name.equals(entry.method()) && (m.access & Opcodes.ACC_PUBLIC) != 0).toList();
-		if (methods.size() != 1) return; // constructor/entrypoint dispatch was not proved
-		MethodNode method = methods.getFirst();
-		boolean straight = method.tryCatchBlocks.isEmpty();
-		for (AbstractInsnNode instruction : method.instructions) {
-			if (instruction instanceof JumpInsnNode || instruction instanceof TableSwitchInsnNode || instruction instanceof LookupSwitchInsnNode) straight = false;
+	/** Bounded same-jar closure, not a reflection/lambda or general virtual-dispatch analysis. */
+	private static final class EntrypointCalls {
+		private record MethodRef(String owner, String name, String desc) {
+			String symbol() { return owner + "#" + name + desc; }
 		}
-		for (AbstractInsnNode instruction : method.instructions) {
-			String owner = null, name = null, descriptor = null; MemberUse use = null;
-			if (instruction instanceof MethodInsnNode call) { owner = call.owner; name = call.name; descriptor = call.desc; use = new MemberUse(false, call.getOpcode(), call.itf, entry.owner()); }
-			if (instruction instanceof FieldInsnNode call) { owner = call.owner; name = call.name; descriptor = call.desc; use = new MemberUse(true, call.getOpcode(), false, entry.owner()); }
-			if (owner != null && !jar.has(owner) && belongsToDependency(owner, dependencies, symbolOwners, inventories)) {
-				addSymbolRule(source, "entry:" + entry.owner() + ":" + owner + "#" + name + descriptor + ":" + instruction.getOpcode(), owner, name, descriptor,
-						use, straight, "entrypoint " + entry.owner() + "." + entry.method() + " uses "
-								+ org.objectweb.asm.util.Printer.OPCODES[instruction.getOpcode()] + " " + owner + "#" + name + descriptor,
-						inventories, transformedTargets, rules);
+		private record Visit(MethodRef method, boolean hard) { }
+		private final Path source;
+		private final Inventory jar;
+		private final List<UnifiedDependency> dependencies;
+		private final Map<Path, Set<String>> symbolOwners;
+		private final Map<Path, Inventory> inventories;
+		private final Set<String> transformedTargets;
+		private final List<JointCandidateSelector.Rule> rules;
+		private final Set<MethodRef> active = new HashSet<>();
+		private final Map<Visit, Boolean> visited = new HashMap<>();
+		private final Set<String> issues = new HashSet<>();
+		private int nodes, instructions;
+
+		EntrypointCalls(Path source, Inventory jar, List<UnifiedDependency> dependencies,
+				Map<Path, Set<String>> symbolOwners, Map<Path, Inventory> inventories, Set<String> transformedTargets,
+				List<JointCandidateSelector.Rule> rules) {
+			this.source = source; this.jar = jar; this.dependencies = dependencies; this.symbolOwners = symbolOwners;
+			this.inventories = inventories; this.transformedTargets = transformedTargets; this.rules = rules;
+		}
+
+		void scan(Entry entry) {
+			ClassNode node = jar.node(entry.owner());
+			List<MethodNode> methods = node == null ? List.of() : node.methods.stream()
+					.filter(m -> m.name.equals(entry.method()) && (m.access & Opcodes.ACC_PUBLIC) != 0).toList();
+			if (methods.size() != 1) {
+				unproved(entry.owner() + "#" + entry.method(), "entrypoint dispatch/body is not uniquely known", true);
+				return;
 			}
+			walk(node, methods.getFirst(), true, 0);
+		}
+
+		/** False means later instructions cannot inherit a proved unconditional call/return path. */
+		private boolean walk(ClassNode owner, MethodNode method, boolean hard, int depth) {
+			MethodRef ref = new MethodRef(owner.name, method.name, method.desc);
+			if (active.contains(ref)) { unproved(ref.symbol(), "recursive helper call", hard); return false; }
+			Visit visit = new Visit(ref, hard);
+			Boolean previous = visited.get(visit); if (previous != null) return previous;
+			if (depth > HELPER_DEPTH_LIMIT || nodes >= HELPER_NODE_LIMIT || instructions >= HELPER_INSTRUCTION_LIMIT) {
+				unproved(ref.symbol(), "helper closure limit (depth=" + depth + ", nodes=" + nodes + ", instructions=" + instructions + ")", hard);
+				return false;
+			}
+			nodes++;
+			if ((method.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0 || method.instructions.size() == 0) {
+				unproved(ref.symbol(), "helper has no inspectable executable body", hard); visited.put(visit, false); return false;
+			}
+			boolean straight = method.tryCatchBlocks.isEmpty();
+			for (AbstractInsnNode instruction : method.instructions) {
+				if (instruction instanceof JumpInsnNode || instruction instanceof TableSwitchInsnNode || instruction instanceof LookupSwitchInsnNode) straight = false;
+			}
+			// Branches/handlers weaken member requirements, but a fully scanned guard is not an
+			// uncovered member contract. Only unresolved calls/bodies or bounds produce closure findings.
+			if (transformedTargets.contains(owner.name)) {
+				unproved(ref.symbol(), "local body may be changed by a declared Mixin", hard); straight = false;
+			}
+			boolean path = hard && straight, complete = straight;
+			active.add(ref);
+			try {
+				for (AbstractInsnNode instruction : method.instructions) {
+					if (++instructions > HELPER_INSTRUCTION_LIMIT) {
+						unproved(ref.symbol(), "helper instruction limit", path); complete = false; break;
+					}
+					String target = null, name = null, descriptor = null; MemberUse use = null;
+					if (instruction instanceof MethodInsnNode call) {
+						target = call.owner; name = call.name; descriptor = call.desc;
+						use = new MemberUse(false, call.getOpcode(), call.itf, owner.name);
+						if (jar.has(target)) {
+							ClassNode local = jar.node(target);
+							List<MethodNode> matches = local == null ? List.of() : local.methods.stream()
+									.filter(m -> m.name.equals(call.name) && m.desc.equals(call.desc)).toList();
+							if (matches.size() != 1) {
+								unproved(target + "#" + name + descriptor, "local helper resolution is not unique", path);
+								path = false; complete = false; continue;
+							}
+							MethodNode helper = matches.getFirst();
+							boolean staticCall = call.getOpcode() == Opcodes.INVOKESTATIC;
+							boolean unique = staticCall == ((helper.access & Opcodes.ACC_STATIC) != 0)
+									&& call.itf == ((local.access & Opcodes.ACC_INTERFACE) != 0)
+									&& Inventory.accessible(helper.access, local.name, owner.name)
+									&& (staticCall || (helper.access & (Opcodes.ACC_PRIVATE | Opcodes.ACC_FINAL)) != 0
+											|| (local.access & Opcodes.ACC_FINAL) != 0);
+							if (!unique) unproved(target + "#" + name + descriptor, "local helper dispatch may select another body", path);
+							boolean followed = walk(local, helper, path && unique, depth + 1);
+							if (!unique || !followed) { path = false; complete = false; }
+							continue;
+						}
+					}
+					if (instruction instanceof FieldInsnNode call) {
+						target = call.owner; name = call.name; descriptor = call.desc;
+						use = new MemberUse(true, call.getOpcode(), false, owner.name);
+					}
+					if (target != null && !jar.has(target) && belongsToDependency(target, dependencies, symbolOwners, inventories)) {
+						addSymbolRule(source, "entry:" + ref.symbol() + ":" + target + "#" + name + descriptor + ":" + instruction.getOpcode(),
+								target, name, descriptor, use, path, "entrypoint-reachable " + ref.symbol() + " uses "
+										+ org.objectweb.asm.util.Printer.OPCODES[instruction.getOpcode()] + " " + target + "#" + name + descriptor,
+								inventories, transformedTargets, rules);
+					}
+					// Do not promote unreachable instructions after an unconditional return/throw into contracts.
+					int opcode = instruction.getOpcode();
+					if (opcode == Opcodes.ATHROW || opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN) {
+						if (straight) { if (opcode == Opcodes.ATHROW) complete = false; break; }
+					}
+				}
+			} finally { active.remove(ref); }
+			visited.put(visit, complete);
+			return complete;
+		}
+
+		private void unproved(String symbol, String reason, boolean requiredPath) {
+			String id = "entry-closure:" + symbol + ":" + reason + ":" + requiredPath;
+			if (issues.add(id)) rules.add(new JointCandidateSelector.Rule(id, source, Set.of(), Set.of(source), requiredPath,
+					"Entrypoint member closure remains unproved: " + symbol + ": " + reason));
 		}
 	}
 

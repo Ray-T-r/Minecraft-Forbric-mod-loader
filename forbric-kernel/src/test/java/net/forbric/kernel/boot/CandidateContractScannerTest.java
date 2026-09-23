@@ -148,6 +148,155 @@ class CandidateContractScannerTest {
 		assertFalse(decision.suppressed(claims.get(2).jar()));
 	}
 
+	@Test void uniquelyDispatchedHelperChainsConstrainTheActualExternalMember() throws Exception {
+		for (int access : List.of(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, Opcodes.ACC_PRIVATE, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL)) {
+			reset(); var claims = helperPack("straight", access, false, 3);
+			var decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+			assertTrue(decision.suppressed(claims.get(1).jar()), "proved helper closure must reject the missing API");
+			assertFalse(decision.suppressed(claims.get(2).jar()));
+			assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+		}
+		reset(); var claims = helperPack("straight", Opcodes.ACC_PUBLIC, true, 2);
+		assertTrue(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT).suppressed(claims.get(1).jar()),
+				"a final receiver class also proves the unique method body");
+		reset(); claims = helperPack("other-class", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, false, 2);
+		assertTrue(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT).suppressed(claims.get(1).jar()),
+				"a separate same-jar helper class is included in the closure");
+	}
+
+	@Test void conditionalAndExceptionHandledHelpersNeverBecomeHardDependencies() throws Exception {
+		for (String shape : List.of("entry-branch", "helper-branch", "helper-catch")) {
+			reset(); var claims = helperPack(shape, Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, false, 2);
+			var decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+			assertFalse(decision.suppressed(claims.get(1).jar()), shape);
+			assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), shape);
+			assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.confidence() == CompatibilityFinding.Confidence.SUSPECTED
+					&& f.detail().contains("dep/Api#needed")), "retain the conditional member observation");
+		}
+	}
+
+	@Test void satisfiedConditionalHelpersDoNotInventUnknownContracts() throws Exception {
+		for (String shape : List.of("jdk-guard", "helper-branch-satisfied", "helper-catch-satisfied")) {
+			reset(); var claims = helperPack(shape, Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, false, 1);
+			var result = helperSelection(claims);
+			assertEquals(JointCandidateSelector.Status.SOLVED, result.status(), shape);
+			assertTrue(result.uncertain().isEmpty(), () -> shape + ": " + result.uncertain());
+			assertTrue(result.unsatisfied().isEmpty());
+		}
+	}
+
+	@Test void recursiveAndPolymorphicHelpersRemainExplicitlyUnproved() throws Exception {
+		for (String shape : List.of("recursive", "polymorphic")) {
+			reset(); var claims = helperPack(shape, shape.equals("recursive") ? Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC : Opcodes.ACC_PUBLIC, false, 1);
+			var result = helperSelection(claims);
+			assertEquals(JointCandidateSelector.Status.UNPROVED, result.status(), shape);
+			assertTrue(result.selected().contains(claims.get(1).jar()), "an unproved body must not force the other ecosystem");
+			assertTrue(result.unsatisfied().isEmpty());
+			assertTrue(result.uncertain().stream().anyMatch(r -> r.detail().contains(shape.equals("recursive") ? "recursive helper" : "another body")));
+			assertTrue(result.uncertain().stream().anyMatch(r -> r.detail().contains("dep/Api#needed") && !r.hard()));
+		}
+	}
+
+	@Test void depthAndNodeBudgetsAreVisibleAndCannotTurnOmittedCallsIntoProof() throws Exception {
+		for (String shape : List.of("straight", "fanout")) {
+			reset(); int count = shape.equals("straight") ? CandidateContractScanner.HELPER_DEPTH_LIMIT + 2 : CandidateContractScanner.HELPER_NODE_LIMIT + 1;
+			var claims = helperPack(shape, Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, false, count);
+			var result = helperSelection(claims);
+			assertEquals(JointCandidateSelector.Status.UNPROVED, result.status(), shape);
+			assertTrue(result.selected().contains(claims.get(1).jar()));
+			assertTrue(result.unsatisfied().isEmpty());
+			assertTrue(result.uncertain().stream().anyMatch(r -> r.detail().contains("closure limit")));
+		}
+	}
+
+	@Test void manualSelectionCannotSatisfyAMemberMissingBehindAProvedHelper() throws Exception {
+		var claims = helperPack("straight", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, false, 2);
+		System.setProperty(DuplicateModArbiter.OWNER_OVERRIDE, "dep=neoforge");
+		var decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+		assertFalse(decision.suppressed(claims.get(1).jar()), "keep the explicit choice visible");
+		assertTrue(CompatibilityFindings.confirmedRequired().stream().anyMatch(f -> f.detail().contains("dep/Api#needed")));
+		assertTrue(CompatibilityFindings.confirmedRequired().stream().anyMatch(f -> f.id().equals("arbitration:selection")));
+	}
+
+	@Test void instructionBudgetAlsoLeavesAnExplicitUnprovedResult() throws Exception {
+		var claims = helperPack("instruction-limit", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, false, 1);
+		var result = helperSelection(claims);
+		assertEquals(JointCandidateSelector.Status.UNPROVED, result.status());
+		assertTrue(result.selected().contains(claims.get(1).jar()));
+		assertTrue(result.uncertain().stream().anyMatch(r -> r.detail().contains("instruction limit")));
+	}
+
+	@Test void anUnreachableMemberAfterRecursiveCallOrReturnCannotBecomeHard() throws Exception {
+		for (String shape : List.of("recursive", "early-return")) {
+			reset(); var claims = helperPack(shape, Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, false, 1);
+			var result = helperSelection(claims);
+			assertTrue(result.selected().contains(claims.get(1).jar()));
+			assertTrue(result.unsatisfied().isEmpty());
+		}
+	}
+
+	private static JointCandidateSelector.Result helperSelection(List<DuplicateModArbiter.Claim> claims) {
+		return JointCandidateSelector.solve(claims, CandidateContractScanner.scan(claims, EnvType.CLIENT),
+				List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC, Ecosystem.FORGE), Map.of(), 1000);
+	}
+
+	private List<DuplicateModArbiter.Claim> helperPack(String shape, int helperAccess, boolean finalClass, int count) throws Exception {
+		ClassWriter writer = new ClassWriter(0);
+		writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | (finalClass ? Opcodes.ACC_FINAL : 0), "app/Main", null,
+				"java/lang/Object", new String[] {"net/fabricmc/api/ModInitializer"});
+		MethodVisitor entry = writer.visitMethod(Opcodes.ACC_PUBLIC, "onInitialize", "()V", null, null); entry.visitCode();
+		String helperOwner = shape.equals("other-class") ? "app/Helpers" : "app/Main";
+		Label skip = new Label();
+		if (shape.equals("entry-branch")) { entry.visitInsn(Opcodes.ICONST_0); entry.visitJumpInsn(Opcodes.IFEQ, skip); }
+		for (int i = 0; i < (shape.equals("fanout") ? count : 1); i++) helperCall(entry, helperOwner, helperAccess, "h" + i);
+		entry.visitLabel(skip); entry.visitInsn(Opcodes.RETURN); entry.visitMaxs(2, 1); entry.visitEnd();
+		Map<String, byte[]> classes = new LinkedHashMap<>();
+		if (shape.equals("other-class")) {
+			writer.visitEnd(); classes.put("app/Main.class", writer.toByteArray()); writer = new ClassWriter(0);
+			writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, helperOwner, null, "java/lang/Object", null);
+		}
+		if (shape.equals("jdk-guard")) writer.visitField(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, "registered", "Z", null, null).visitEnd();
+		for (int i = 0; i < count; i++) {
+			MethodVisitor helper = writer.visitMethod(helperAccess, "h" + i, "()V", null, null); helper.visitCode();
+			boolean last = i == count - 1;
+			Label end = new Label(), begin = new Label(), caught = new Label();
+			if (last && shape.startsWith("helper-catch")) helper.visitTryCatchBlock(begin, end, caught, "java/lang/Exception");
+			helper.visitLabel(begin);
+			if (last && shape.startsWith("helper-branch")) { helper.visitInsn(Opcodes.ICONST_0); helper.visitJumpInsn(Opcodes.IFEQ, end); }
+			if (shape.equals("jdk-guard")) {
+				// M19's NestLibRegistry shape: reject a duplicate registration; otherwise record it and log.
+				Label register = new Label();
+				helper.visitFieldInsn(Opcodes.GETSTATIC, helperOwner, "registered", "Z"); helper.visitJumpInsn(Opcodes.IFEQ, register);
+				helper.visitTypeInsn(Opcodes.NEW, "java/lang/IllegalStateException"); helper.visitInsn(Opcodes.DUP);
+				helper.visitLdcInsn("duplicate registration"); helper.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/IllegalStateException", "<init>", "(Ljava/lang/String;)V", false);
+				helper.visitInsn(Opcodes.ATHROW); helper.visitLabel(register); helper.visitInsn(Opcodes.ICONST_1);
+				helper.visitFieldInsn(Opcodes.PUTSTATIC, helperOwner, "registered", "Z");
+				helper.visitFieldInsn(Opcodes.GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;"); helper.visitLdcInsn("registered");
+				helper.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V", false);
+			}
+			if (shape.equals("recursive")) helperCall(helper, helperOwner, helperAccess, "h0");
+			if (shape.equals("early-return")) helper.visitInsn(Opcodes.RETURN);
+			if (shape.equals("instruction-limit")) for (int j = 0; j < CandidateContractScanner.HELPER_INSTRUCTION_LIMIT; j++) helper.visitInsn(Opcodes.NOP);
+			if (!last && !shape.equals("fanout")) helperCall(helper, helperOwner, helperAccess, "h" + (i + 1));
+			if (last && !shape.equals("jdk-guard")) helper.visitMethodInsn(Opcodes.INVOKESTATIC, "dep/Api", "needed", "()V", false);
+			helper.visitLabel(end); helper.visitInsn(Opcodes.RETURN);
+			if (last && shape.startsWith("helper-catch")) { helper.visitLabel(caught); helper.visitInsn(Opcodes.POP); helper.visitInsn(Opcodes.RETURN); }
+			helper.visitMaxs(3, (helperAccess & Opcodes.ACC_STATIC) == 0 ? 1 : 0); helper.visitEnd();
+		}
+		writer.visitEnd(); classes.put(helperOwner + ".class", writer.toByteArray());
+		Path app = fabric("app.jar", "app", "1", ",\"depends\":{\"dep\":\"*\"},\"entrypoints\":{\"main\":[\"app.Main\"]}", classes);
+		Path neo = neo("dep-neo.jar", "dep", "1", Map.of("dep/Api.class", api("dep/Api", shape.endsWith("-satisfied"))));
+		Path fab = fabric("dep-fab.jar", "dep", "2", "", Map.of("dep/Api.class", api("dep/Api", true)));
+		return claims(app, neo, fab);
+	}
+
+	private static void helperCall(MethodVisitor method, String owner, int access, String name) {
+		boolean isStatic = (access & Opcodes.ACC_STATIC) != 0;
+		if (!isStatic) method.visitVarInsn(Opcodes.ALOAD, 0);
+		method.visitMethodInsn(isStatic ? Opcodes.INVOKESTATIC : (access & Opcodes.ACC_PRIVATE) != 0 ? Opcodes.INVOKESPECIAL : Opcodes.INVOKEVIRTUAL,
+				owner, name, "()V", false);
+	}
+
 	private List<DuplicateModArbiter.Claim> abiPack(int opcode, boolean interfaceCall, boolean neoInterface,
 			boolean neoStatic, boolean fabricInterface, boolean fabricStatic, boolean field, boolean neoPrivate) throws Exception {
 		ClassWriter entry = new ClassWriter(0); entry.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Main", null, "java/lang/Object", new String[] {"net/fabricmc/api/ModInitializer"});

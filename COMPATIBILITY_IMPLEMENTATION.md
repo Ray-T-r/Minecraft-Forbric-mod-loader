@@ -545,3 +545,14 @@ Pending implementation and acceptance items remain open even when a smaller batc
   double-delivery negative, both cancellations, replacement consumption, nesting, exception cleanup and
   malformed restoration shapes. Evidence: `forbric-kernel/build/verification/portal-direct-restoration/`.
   A fresh full-game M35 run on the integrated candidate remains required.
+
+### P2 bounded entrypoint helper member contracts
+
+- Candidate selection follows inspectable same-jar static/private/final helper calls from entrypoints.
+  Conditional references stay soft; ambiguous dispatch, missing bodies, recursion and explicit depth/node/
+  instruction bounds remain unproved. This does not claim reflection or general virtual-dispatch coverage.
+- A review caught a false unknown for ordinary branch/try guards. The new regression first failed, then
+  passed after removing only the branch-presence finding. Actual conditional missing references remain
+  uncertain; fully satisfied guarded code is solved. M19's valid-selection assertion was not weakened.
+- All 74 tests across six arbitration/scanner suites pass without failures or skips. Before/after evidence:
+  `forbric-kernel/build/verification/member-reference-closure/guard-after-summary.json` and adjacent archives.
