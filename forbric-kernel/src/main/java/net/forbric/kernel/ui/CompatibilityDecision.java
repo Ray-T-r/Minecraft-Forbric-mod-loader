@@ -1,6 +1,7 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.ui;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -41,7 +42,14 @@ public final class CompatibilityDecision {
 	public static void requireContinuation(boolean isClient) {
 		if (check(isClient)) return;
 		launchStopRequested = true;
-		ForbricLog.error("[Forbric/Compatibility] launch stopped: required mod initialization or features are unavailable; continuation was not approved");
+		if (CompatibilityFindings.confirmedRequired().isEmpty()) {
+			// Only the dependency notice can refuse without a required loss, and only by the player's own Quit.
+			ForbricLog.error("[Forbric/Compatibility] launch stopped: the player chose to quit at the dependency notice");
+		} else {
+			ForbricLog.error("[Forbric/Compatibility] launch stopped: required mod initialization or features are unavailable; "
+					+ "continuation was not approved (policy %s). Evidence: .forbric-kernel/compatibility-report.json. "
+					+ "-D%s=continue launches anyway, for runs with nobody to ask", policy(), PROPERTY);
+		}
 		throw new LaunchStopped();
 	}
 
@@ -70,47 +78,120 @@ public final class CompatibilityDecision {
 		return false;
 	}
 
-	/** Safe UI integration: call on the client UI thread, never from a transformer or server tick. */
+	/**
+	 * Safe UI integration: call on the client UI thread, never from a transformer or server tick.
+	 *
+	 * <p>The first decision of a launch also shows the dependency notice the audit held back, so the player sees
+	 * ONE window: the fail-closed confirmation, with the notice folded in, when a required loss needs an answer;
+	 * the old fail-open notice when nothing does; nothing at all under strict or without a display.
+	 */
 	public static boolean decide(List<CompatibilityFinding> findings, boolean isClient) {
-		return decide(findings, policy(), isClient && !java.awt.GraphicsEnvironment.isHeadless(), rows -> {
-			try {
-				return DependencyDialog.askCompatibility(rows, List.of());
-			} catch (Exception failure) {
-				if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
-				ForbricLog.warn("[Forbric/Compatibility] confirmation unavailable; continuation was not approved", failure);
-				return DependencyDialogMain.QUIT;
-			}
+		return decide(findings, policy(), isClient && !java.awt.GraphicsEnvironment.isHeadless(), isClient,
+				DependencyDialog.takeHeld(), new Windows() {
+					@Override public Integer confirm(DependencyReport.Confirmation confirmation) {
+						try {
+							return DependencyDialog.confirm(confirmation);
+						} catch (Exception failure) {
+							if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
+							ForbricLog.warn("[Forbric/Compatibility] confirmation unavailable; continuation was not approved", failure);
+							return DependencyDialogMain.QUIT;
+						}
+					}
+
+					@Override public boolean notice(DependencyDialog.Notice notice, List<DependencyReport.CompatibilityRow> suspected) {
+						return DependencyDialog.offer(notice.rows(), notice.mixins(), suspected, isClient);
+					}
+
+					@Override public void unshown(DependencyDialog.Notice notice, String why) {
+						DependencyDialog.unshown(notice, isClient, why);
+					}
+				});
+	}
+
+	/** The windows a decision may open. An interface so a test can stand in for the child process. */
+	interface Windows {
+		/** The fail-closed confirmation; only {@link DependencyDialogMain#CONTINUE} approves. */
+		Integer confirm(DependencyReport.Confirmation confirmation);
+
+		/** The fail-open dependency notice; false only when the player chose to quit. */
+		boolean notice(DependencyDialog.Notice notice, List<DependencyReport.CompatibilityRow> suspected);
+
+		/** Nothing can be shown: say so, and where the findings are. */
+		void unshown(DependencyDialog.Notice notice, String why);
+	}
+
+	/** The confirmation alone, as the tests that predate the folded notice drive it. */
+	static boolean decide(List<CompatibilityFinding> findings, Policy policy, boolean display,
+			Function<List<DependencyReport.CompatibilityRow>, Integer> ask) {
+		return decide(findings, policy, display, display, DependencyDialog.Notice.EMPTY, new Windows() {
+			@Override public Integer confirm(DependencyReport.Confirmation confirmation) { return ask.apply(confirmation.required()); }
+			@Override public boolean notice(DependencyDialog.Notice notice, List<DependencyReport.CompatibilityRow> suspected) { return true; }
+			@Override public void unshown(DependencyDialog.Notice notice, String why) { }
 		});
 	}
 
-	static boolean decide(List<CompatibilityFinding> findings, Policy policy, boolean display,
-			Function<List<DependencyReport.CompatibilityRow>, Integer> ask) {
+	static boolean decide(List<CompatibilityFinding> findings, Policy policy, boolean display, boolean isClient,
+			DependencyDialog.Notice notice, Windows windows) {
 		List<CompatibilityFinding> required = findings.stream().filter(CompatibilityFinding::confirmedRequired).toList();
-		if (required.isEmpty()) return true;
-		// A release gate stays strict even if this process previously had an interactive approval.
-		if (policy == Policy.STRICT) return false;
+		// Suspicions are only ever details. The ones the notice's mixin section already names are not listed twice.
+		List<DependencyReport.CompatibilityRow> suspected = CompatibilityFindings.suspected().stream()
+				.filter(f -> notice.mixins().stream().noneMatch(m -> sameMixin(f, m)))
+				.map(CompatibilityDecision::row).toList();
+		if (required.isEmpty()) return notice.isEmpty() || windows.notice(notice, suspected);
+		// A release gate stays strict even if this process previously had an interactive approval. Strict never
+		// asks, so the notice is not shown either: a window offering a choice the policy has already made would lie.
+		if (policy == Policy.STRICT) {
+			windows.unshown(notice, "strict compatibility policy");
+			return false;
+		}
 		if (policy == Policy.CONTINUE) {
 			accept(required);
-			return true;
+			return notice.isEmpty() || windows.notice(notice, suspected);
 		}
 		List<CompatibilityFinding> unanswered;
 		synchronized (CompatibilityDecision.class) {
 			unanswered = required.stream().filter(f -> !ACCEPTED.contains(f.key())).toList();
 		}
-		if (unanswered.isEmpty()) return true;
-		if (!display) return false;
-		List<DependencyReport.CompatibilityRow> rows = unanswered.stream().map(f -> {
-			String name = ModCatalog.everything().stream().filter(e -> e.modId().equals(f.modId()))
-					.map(ModCatalog.Entry::name).findFirst().orElse(f.modId());
-			return new DependencyReport.CompatibilityRow(f.modId(), name, f.feature(), f.detail(), f.source(),
-					String.join("; ", f.evidence()));
-		}).toList();
+		if (unanswered.isEmpty()) return notice.isEmpty() || windows.notice(notice, suspected);
+		if (!display) {
+			windows.unshown(notice, "no display to ask on");
+			return false;
+		}
+		List<DependencyReport.Row> open = new ArrayList<>();
+		List<DependencyReport.Row> covered = new ArrayList<>();
+		for (DependencyReport.Row row : notice.rows()) (asksAbout(unanswered, row) ? covered : open).add(row);
 		Integer answer;
-		try { answer = ask.apply(rows); }
-		catch (RuntimeException failure) { return false; }
+		try {
+			answer = windows.confirm(new DependencyReport.Confirmation(unanswered.stream().map(CompatibilityDecision::row).toList(),
+					suspected, open, covered, notice.mixins()));
+		} catch (RuntimeException failure) {
+			return false;
+		}
 		if (answer == null || answer != DependencyDialogMain.CONTINUE) return false;
 		accept(unanswered);
 		return true;
+	}
+
+	/**
+	 * Whether an unmet requirement the audit reported is the same question as a required finding the candidate
+	 * arbitration recorded for it ({@code arbitration:dependency:<id>} on the consumer). Asked once, not twice.
+	 */
+	static boolean asksAbout(List<CompatibilityFinding> findings, DependencyReport.Row row) {
+		String id = "arbitration:dependency:" + row.requiredId();
+		return findings.stream().anyMatch(f -> f.modId().equals(row.requiredBy()) && f.id().equalsIgnoreCase(id));
+	}
+
+	/** A mixin preflight row ({@code mixin:<config>:<class>}) for a break the notice's mixin section names. */
+	private static boolean sameMixin(CompatibilityFinding finding, DependencyReport.MixinRow mixin) {
+		return finding.id().startsWith("mixin:") && finding.id().endsWith(":" + mixin.mixin())
+				&& (finding.modId().equals(mixin.owner()) || finding.modId().equals("config:" + mixin.owner()));
+	}
+
+	private static DependencyReport.CompatibilityRow row(CompatibilityFinding f) {
+		String name = ModCatalog.everything().stream().filter(e -> e.modId().equals(f.modId()))
+				.map(ModCatalog.Entry::name).findFirst().orElse(f.modId());
+		return new DependencyReport.CompatibilityRow(f.modId(), name, f.feature(), f.detail(), f.source(),
+				String.join("; ", f.evidence()));
 	}
 
 	private static synchronized void accept(List<CompatibilityFinding> findings) {
@@ -140,5 +221,6 @@ public final class CompatibilityDecision {
 		ACCEPTED.clear();
 		QUEUED.clear();
 		launchStopRequested = false;
+		DependencyDialog.takeHeld();
 	}
 }

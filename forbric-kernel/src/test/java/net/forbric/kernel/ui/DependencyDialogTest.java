@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -243,6 +244,102 @@ class DependencyDialogTest {
 
 		assertTrue(DependencyReport.read(file).isEmpty());
 		assertEquals(1, DependencyReport.readMixins(file).size());
+	}
+
+	private static DependencyReport.CompatibilityRow requiredLoss() {
+		return new DependencyReport.CompatibilityRow("biomesoplenty", "Biomes O' Plenty", "Mod dependency integration",
+				"requires terrablender >=26.2.0.0.1", "arbitration:bop.jar", "candidate=bop.jar; providers=[]");
+	}
+
+	private static DependencyReport.CompatibilityRow suspicion() {
+		return new DependencyReport.CompatibilityRow("sodium", "Sodium", "Mixin ChunkMixin",
+				"preflight could not resolve 1/2 anchors", "mixin:sodium.mixins.json", "anchor absent");
+	}
+
+	@Test
+	void theFoldedConfirmationSurvivesTheRoundTripAndRejectsAnyMalformedSection() throws Exception {
+		Path file = tmp.resolve("confirmation.tsv");
+		var confirmation = new DependencyReport.Confirmation(List.of(requiredLoss()), List.of(suspicion()),
+				List.of(wrongVersion()), List.of(absent()), List.of(mixinBreak()));
+		DependencyReport.writeConfirmation(file, confirmation);
+		assertEquals(confirmation, DependencyReport.readConfirmation(file));
+		assertEquals(List.of(requiredLoss()), DependencyReport.readCompatibility(file), "only the required rows are the question");
+		String written = java.nio.file.Files.readString(file);
+		for (String broken : List.of(written.replace("anchor absent", "anchor\tabsent"),
+				written.replace("0.8.1", "0.8.1\textra"), written.replace("--mixins--", "--mystery--"))) {
+			java.nio.file.Files.writeString(file, broken);
+			assertThrows(java.io.IOException.class, () -> DependencyReport.readConfirmation(file), broken);
+		}
+	}
+
+	@Test
+	void aLegacyNoticeCarriesSuspicionsInAThirdSectionThatTheOtherReadersIgnore() throws Exception {
+		Path file = tmp.resolve("notice.tsv");
+		DependencyReport.write(file, List.of(absent()), List.of(), List.of(suspicion()));
+		assertEquals(List.of(absent()), DependencyReport.read(file));
+		assertEquals(List.of(), DependencyReport.readMixins(file));
+		assertEquals(List.of(suspicion()), DependencyReport.readSuspected(file));
+		DependencyReport.write(file, List.of(absent()), List.of(mixinBreak()), List.of(suspicion()));
+		assertEquals(List.of(mixinBreak()), DependencyReport.readMixins(file), "a note is never read as a mixin row");
+	}
+
+	@Test
+	void oneWindowAsksAboutTheRequiredLossAndFoldsTheNoticeInWithoutRepeatingIt() {
+		var confirmation = new DependencyReport.Confirmation(List.of(requiredLoss()), List.of(suspicion()),
+				List.of(wrongVersion()), List.of(absent()), List.of(mixinBreak()));
+		List<String> blocks = DependencyDialogMain.confirmationBlocks(EN, confirmation);
+		String summary = blocks.get(0);
+		assertTrue(summary.contains("requires terrablender"), "the question: " + summary);
+		assertTrue(summary.contains("Iris Shaders needs sodium"), "the uncovered notice row is folded in: " + summary);
+		assertFalse(summary.contains("terrablender, which is not installed"),
+				"a dependency the required row already asks about is not listed a second time: " + summary);
+		assertTrue(summary.contains("could not attach"), summary);
+		assertTrue(blocks.get(1).contains("Install terrablender"), "the covered dependency keeps its suggestion: " + blocks.get(1));
+		assertTrue(blocks.get(2).contains(EN.get("compat.note")), "the fail-closed note is the caveat: " + blocks.get(2));
+		assertFalse(String.join("\n", blocks).contains("preflight could not resolve"), "a suspicion is never part of the question");
+
+		String details = DependencyDialogMain.confirmationDetails(EN, confirmation);
+		assertTrue(details.contains(EN.get("details.required.header")) && details.contains("candidate=bop.jar"), details);
+		assertTrue(details.contains("modrinth.com/mods?q=terrablender"), "the covered dependency's search stays in the details");
+		assertTrue(details.contains(EN.get("details.suspected.header")) && details.contains("preflight could not resolve"), details);
+		assertTrue(details.indexOf("preflight could not resolve") > details.indexOf(EN.get("details.suspected.header")));
+	}
+
+	@Test
+	void theFailOpenNoticeShowsSuspicionsOnlyInItsDetails() {
+		String details = DependencyDialogMain.details(EN, List.of(absent()), List.of(), List.of(suspicion()));
+		assertTrue(details.contains(EN.get("details.suspected.header")) && details.contains("preflight could not resolve"), details);
+		assertFalse(String.join("\n", DependencyDialogMain.blocks(EN, List.of(absent()), List.of()))
+				.contains("preflight could not resolve"));
+		assertFalse(DependencyDialogMain.details(EN, List.of(absent()), List.of()).contains(EN.get("details.suspected.header")),
+				"no header over nothing");
+	}
+
+	@Test
+	void theFoldedConfirmationForkedWithNoDisplayCannotApprove() throws Exception {
+		var confirmation = new DependencyReport.Confirmation(List.of(requiredLoss()), List.of(suspicion()),
+				List.of(wrongVersion()), List.of(absent()), List.of(mixinBreak()));
+		assertEquals(DependencyDialogMain.QUIT, DependencyDialog.askConfirmation(confirmation, List.of("-Djava.awt.headless=true")));
+		// The notice alone keeps its old contract through the same child.
+		assertEquals(DependencyDialogMain.CONTINUE, DependencyDialog.ask(List.of(absent()), List.of(mixinBreak()),
+				List.of(suspicion()), List.of("-Djava.awt.headless=true")));
+	}
+
+	@Test
+	void withTheSwitchOffTheConfirmationAsksNothingAndSoApprovesNothing() throws Exception {
+		String before = System.getProperty(DependencyDialog.SWITCH);
+		java.io.PrintStream err = System.err;
+		java.io.ByteArrayOutputStream log = new java.io.ByteArrayOutputStream();
+		try {
+			System.setProperty(DependencyDialog.SWITCH, "off");
+			System.setErr(new java.io.PrintStream(log, true, java.nio.charset.StandardCharsets.UTF_8));
+			assertEquals(DependencyDialogMain.QUIT, DependencyDialog.confirm(new DependencyReport.Confirmation(
+					List.of(requiredLoss()), List.of(), List.of(absent()), List.of(), List.of())));
+		} finally {
+			System.setErr(err);
+			if (before == null) System.clearProperty(DependencyDialog.SWITCH); else System.setProperty(DependencyDialog.SWITCH, before);
+		}
+		assertTrue(log.toString(java.nio.charset.StandardCharsets.UTF_8).contains("continuation was not approved"), log.toString());
 	}
 
 	@Test

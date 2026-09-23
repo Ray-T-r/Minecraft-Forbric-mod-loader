@@ -223,22 +223,22 @@ public final class DependencyAudit {
 
 		// Everything above is the log, unchanged. This is the same findings put where a player will see them —
 		// the WARNs are one line each in a ten-thousand-line file, and what they predict arrives much later
-		// wearing another mod's name. Client only, and it never changes what loads; see DependencyDialog.
-		offerDialog(unmet, physicalSide);
+		// wearing another mod's name. Held for the launch's compatibility decision, which shows them in the one
+		// window the player gets; it never changes what loads. See DependencyDialog.
+		holdForDialog(unmet);
 	}
 
 	/**
 	 * Hands the findings to the dialog, if there are any.
 	 *
-	 * <p>Wrapped, because this class is a diagnostic and a diagnostic must never be able to fail the boot it
-	 * reports on. The caller in {@code PassiveSeeder} wraps it too; this second net exists because the failure
-	 * modes here are a child process and a windowing system rather than the audit's own arithmetic, and those
-	 * deserve their own sentence in the log.
+	 * <p>Held rather than shown: a confirmed required loss found at the same boundary needs its own answer, and a
+	 * separate window here meant a player who clicked "launch anyway" on this one was then asked again about the
+	 * same missing mod. The decision shows both in one window. Wrapped, because this class is a diagnostic and a
+	 * diagnostic must never be able to fail the boot it reports on.
 	 */
-	private static void offerDialog(List<Unmet> unmet, Side physicalSide) {
+	private static void holdForDialog(List<Unmet> unmet) {
 		List<net.forbric.kernel.mixin.ForeignMixinBreaks.Break> breaks =
 				net.forbric.kernel.mixin.ForeignMixinBreaks.all();
-		if (unmet.isEmpty() && breaks.isEmpty()) return;
 		try {
 			List<net.forbric.kernel.ui.DependencyReport.Row> rows = new ArrayList<>();
 			for (Unmet one : unmet) {
@@ -257,10 +257,9 @@ public final class DependencyAudit {
 						owner == null ? one.config() : owner, one.mixin(),
 						String.join(", ", one.anchors())));
 			}
-			net.forbric.kernel.ui.DependencyDialog.offer(rows, mixinRows,
-					physicalSide != null && physicalSide.isClient());
+			net.forbric.kernel.ui.DependencyDialog.hold(rows, mixinRows);
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Deps] could not offer the unmet-dependency dialog: %s", String.valueOf(t));
+			ForbricLog.debug("[Forbric/Deps] could not hold the unmet-dependency findings for the dialog: %s", String.valueOf(t));
 		}
 	}
 
