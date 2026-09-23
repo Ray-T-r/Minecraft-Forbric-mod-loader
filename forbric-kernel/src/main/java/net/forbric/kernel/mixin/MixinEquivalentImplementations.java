@@ -19,8 +19,11 @@ final class MixinEquivalentImplementations {
   "lambda$scanDirectory$0(Lnet/minecraft/resources/Identifier;Lnet/minecraft/resources/Identifier;Ljava/util/Map;Ljava/util/Optional;)V","9f786840a42ee92c7f887edff24c25846101bcf9670a2ed36cfe19d7e6beb6c6",
   "lambda$scanDirectoryWithModifier$0(Lnet/minecraft/resources/Identifier;Ljava/util/Map;Ljava/util/Optional;)V","3b615345fd8eed2f7a6891f4f961ae0bc43aa9ddb8a164911cc27ba4d96de6bb");
  private MixinEquivalentImplementations() { }
- static boolean needsFingerprint(String mixin,MethodNode handler){return CONDITIONS.equals(mixin)&&handler.name.equals("skipData")&&handler.desc.equals(SKIP_DESC);}
+ static boolean needsFingerprint(String mixin,MethodNode handler){return CONDITIONS.equals(mixin)&&handler.name.equals("skipData")&&handler.desc.equals(SKIP_DESC)
+   ||WatchdogDumpEquivalence.names(mixin,handler.name,handler.desc);}
  static String proof(String mixin,String name,String desc,String fingerprint,ClassNode target){
+  if(WatchdogDumpEquivalence.candidate(mixin,name,desc,fingerprint,target)&&WatchdogDumpEquivalence.helperProved())
+   return "The actual watchdog report and its delegating entry use the final-defined audited NeoForge full-thread renderer; every frame is retained without Fabric's truncated-Object append patch";
   if(!CONDITIONS.equals(mixin)||!name.equals("skipData")||!desc.equals(SKIP_DESC)||!ORIGINAL_SKIP.equals(fingerprint)||!target.name.equals(READER))return null;
   for(var expected:CONSUMERS.entrySet()) {
    MethodNode consumer=target.methods.stream().filter(m->(m.name+m.desc).equals(expected.getKey())).findFirst().orElse(null);

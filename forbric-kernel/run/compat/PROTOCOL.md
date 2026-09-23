@@ -234,6 +234,22 @@ committed sources, a mods directory (empty is valid for zero-mod tests), and all
 `NATIVE_CONTROL_CACHE` selects the read-only reference checkout; its default is the parent of `FORBRIC_OLD`,
 or this checkout when that variable is absent. All generated files remain under this kernel's `build/`.
 
+`retention-control.py` requires the prepared native NeoForge image and the fixed Unlit Campfire jar in
+the copied mixed pack. It compiles an independent canary, saves a real campfire and compares the untouched
+mod's static cache after normal shutdown on native NeoForge and Forbric. Both arms and their exact mod
+hashes must agree. This attributes one observed native retention issue; it does not clear another retained
+root or turn M34's REVIEW_REQUIRED into release acceptance. Evidence stays under `build/retention-control/`.
+
+`ui-control.py` requires the built kernel, `FORBRIC_OLD`, `MERGED`, `FORGE_RT` and `NEO_RT`. It creates a
+nonce-owned copy of the full mixed pack/world under `build/compat-ui/`, publishes late necessary findings,
+clicks the actual native Continue button, then closes a second prompt. It requires preserved failure
+evidence, initial refusal focus, normal save/return to title and two fresh game screenshots. Its deliberately
+incompatible control scenario is separate from a strict compatibility acceptance run.
+
+`gate-m39-transfer-core.sh` packages the existing real-carrier transfer scenarios as a game canary. It
+requires all eleven Forge snapshot/alias/metadata cases and a real full watchdog thread dump, including
+the final-defined native-helper equivalence finding. Inputs are hash-bound and its server remains strict.
+
 `gate-m34-soak.sh` builds once, then `soak-run.py` freezes the exact boot/runtime/game jars, dependencies and
 mod pack into a nonce-owned copy of the test world. Default acceptance requires at least 7,200 seconds of
 occupied, advancing simulation, three normal same-JVM world sessions, all three dimensions and six chunks
@@ -241,6 +257,9 @@ observed unloading and reloading. Paused time cannot satisfy the requirement. So
 remain unchanged; release runs require committed sources and strict compatibility policy. The original
 world is never opened by the client. Retained retired servers produce REVIEW_REQUIRED, not a pass or an
 unsupported claim of a leak. Heap, thread and chunk samples and thread dumps remain in the run's evidence.
+Activity is independently verified even when retention requires review; releaseAccepted remains false and
+the command remains nonzero. Release runs also require a fresh final strict compatibility report with zero
+confirmed necessary losses and no unclassified failed initialization.
 
 Use `--control --seconds 30 --sessions 2 --dwell-ticks 20 --settle-seconds 10` only to test the controller;
 CONTROL_PASS is never release acceptance. `python3 run/compat/test_soak.py` verifies rejection of stale or

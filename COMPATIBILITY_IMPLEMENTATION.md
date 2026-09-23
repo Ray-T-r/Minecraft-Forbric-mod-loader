@@ -449,3 +449,24 @@ Pending implementation and acceptance items remain open even when a smaller batc
   stale/missing/continue reports, incomplete session observations and retained-but-insufficient activity.
 - Rechecking the actual short trace independently proves 264.450576581 occupied seconds and 5,430 ticks,
   while preserving its retention review. The two-hour run has not yet completed.
+
+### P2 deferred native watchdog proof and selected nested provenance
+
+- The broader sweep exposed the native full-thread renderer behind the old Fabric append patch. The final
+  ledger now records SUSPECTED while that exact native helper is unobserved; only its successfully defined,
+  audited executable body plus both actual caller shapes resolves the finding. Altered handlers/callers or a
+  defined altered/missing helper remain CONFIRMED. A later helper definition rechecks the deferred caller.
+- The same sweep exposed two stale assumptions: the MixinExtras gate expected a pre-content-addressed path,
+  and the catalog guessed bundled ownership from that old directory layout. Bundle class/config locations
+  now must share one actual digest; nested display ownership uses selected parent edges, with ambiguity
+  preserved. A module defining its own API is excluded as a third-party consumer even when installed alone.
+- 63 focused tests passed without skips. M2b now passes under strict policy with no catalog failures; its
+  unexecuted native renderer remains explicitly suspected. New M39 runs the eleven real Forge snapshot,
+  alias, metadata and transaction scenarios plus an actual full diagnostic dump. All twelve pass, and the
+  final watchdog finding becomes RESOLVED after the real renderer executes. Inputs remain hash-bound.
+- Operational documentation now names the UI/retention controls and M39; generated M19 instances are ignored.
+  The initial final M0 was red only for those missing instructions. Its 23 separate native transaction-engine
+  tests passed; the merge-tool tests passed. M31 compared 400 full chunks on each side with zero biome or
+  structure-start differences. Evidence: `build/verification/watchdog-provenance/` and `build/m31-final-driver.log`.
+- The first full-soak attempt and remaining-gate sweep were interrupted to avoid mixing updated inputs with
+  running acceptance. Neither interruption is counted as passing; the stable final sweep and soak are next.

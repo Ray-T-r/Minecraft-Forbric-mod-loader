@@ -37,6 +37,17 @@ import net.neoforged.neoforge.transfer.item.ItemStacksResourceHandler;
  */
 public final class ForgeTransferGameScenarios {
 	private ForgeTransferGameScenarios() { }
+	public static void watchdogDump() { deepWatchdog(35); }
+	private static void deepWatchdog(int depth) {
+		if (depth > 0) { deepWatchdog(depth - 1); return; }
+		// Only constructs diagnostic text. It never invokes the watchdog run/exit or writes a crash report.
+		var report = net.minecraft.server.dedicated.ServerWatchdog.createWatchdogCrashReport("Forbric diagnostic proof", Thread.currentThread().threadId());
+		String text = report.getFriendlyReport(net.minecraft.ReportType.TEST);
+		int dump = text.indexOf("-- Thread Dump --"); yes(dump >= 0);
+		yes(text.substring(dump).split("deepWatchdog", -1).length > 35);
+		yes(net.forbric.api.CompatibilityFindings.all().stream().anyMatch(f -> f.id().contains("ServerWatchdogMixin#printEntireThreadDump")
+				&& f.confidence() == net.forbric.api.CompatibilityFinding.Confidence.RESOLVED));
+	}
 	private static void eq(long wanted, long actual) { if (wanted != actual) throw new AssertionError(wanted + " != " + actual); }
 	private static void yes(boolean value) { if (!value) throw new AssertionError("condition failed"); }
 	private static void closed() {

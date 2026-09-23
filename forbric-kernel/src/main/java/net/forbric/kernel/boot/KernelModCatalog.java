@@ -103,15 +103,19 @@ public final class KernelModCatalog {
 	/**
 	 * Which installed jar carries this one, or {@code ""} if a player put it in {@code mods/} themselves.
 	 *
-	 * <p>Decided by WHERE the jar is, not by what it declares, because that is the thing the kernel actually
-	 * knows: a jar directly in {@code mods/} is one someone chose, and every other jar reaching discovery was
-	 * unpacked out of one by the kernel itself. Fabric's extraction keeps the parent in the path
-	 * ({@code .forbric-kernel/jij/<parent>/…}) so that name survives; the Forge families' JarJar extraction
-	 * flattens into one directory, and there the honest answer is "bundled, parent unknown" rather than a guess.
+	 * <p>The selected candidate graph supplies provenance for content-addressed files. Only selected parent
+	 * edges count; multiple possible mod owners remain unknown. Legacy discovery without a matching plan falls
+	 * back to the original layout: direct {@code mods/} children are installed, Fabric's old {@code jij/<parent>}
+	 * paths retain their parent, and flattened JarJar files remain bundled with an unknown parent.
 	 */
 	static String bundledBy(String source, Path modsDir) {
 		if (source == null || source.isBlank() || modsDir == null) return "";
 		Path jar = Path.of(source).toAbsolutePath().normalize();
+		NestedCandidatePlan plan = DuplicateModArbiter.currentPlan();
+		if (plan != null) {
+			var owner = plan.bundledBy(jar);
+			if (owner.isPresent()) return owner.get();
+		}
 		Path parent = jar.getParent();
 		if (parent != null && parent.equals(modsDir.toAbsolutePath().normalize())) return "";
 		// .forbric-kernel/jij/<parent-mod-id>/<child>.jar

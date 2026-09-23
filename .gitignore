@@ -80,3 +80,5 @@ CLAUDE.md
 # ---- Gradle's own download scratch ----
 # Two empty .lck/.part files from an interrupted wrapper download, tracked here for months.
 .gradle-local/
+# Generated nested arbitration gate instance; its inputs are declared by gate-m19, not source files.
+/forbric-kernel/run/server-nesteddupe/

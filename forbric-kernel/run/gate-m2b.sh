@@ -63,7 +63,7 @@ check "Mixin up, kernel is the service"        "Mixin up on the sovereign kernel
 check "MixinExtras initialized game-side"      "MixinExtras [0-9.]+ initialized \(game-side\)" "$LOG"
 check "kernel-supplied MixinExtras version"    "MixinExtras $MEX_PATTERN initialized \(game-side\)" "$LOG"
 check "MixinExtras class and config from bundle" \
-  'MixinExtras sources: class=[^;]*/\.forbric-kernel/lib/mixinextras-fabric\.jar; config=[^;]*/\.forbric-kernel/lib/mixinextras-fabric\.jar!/mixinextras\.init\.mixins\.json; game-side=true' "$LOG"
+  'MixinExtras sources: class=[^;]*/\.forbric-kernel/lib/([0-9a-f]{64})/mixinextras-fabric\.jar; config=[^;]*/\.forbric-kernel/lib/\1/mixinextras-fabric\.jar!/mixinextras\.init\.mixins\.json; game-side=true' "$LOG"
 if [ -n "${M2B_BADPACKETS:-}" ]; then
   check "old MixinExtras wrapper actually staged" 'extracted nested JarJar library mixinextras-forge-0\.3\.5\.jar from badpackets' "$LOG"
   check "old MixinExtras common child actually staged" 'extracted nested JarJar library MixinExtras-0\.3\.5\.jar from mixinextras-forge-0\.3\.5\.jar' "$LOG"

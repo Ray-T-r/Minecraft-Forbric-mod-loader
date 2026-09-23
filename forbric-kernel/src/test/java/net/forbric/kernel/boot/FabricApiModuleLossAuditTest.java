@@ -157,6 +157,15 @@ class FabricApiModuleLossAuditTest {
 		assertEquals(2, FabricApiModuleLossAudit.users().size(), "two surfaces, one jar each");
 	}
 
+	@Test void separatelyInstalledDefiningModuleIsNotItsOwnThirdPartyConsumer() {
+		publish(entry("fabric-registry-sync-v0", "module.jar", ""), entry("consumer", "consumer.jar", ""));
+		FabricApiModuleLossAudit.note("module.jar", classNaming(SETUP_CALLBACK));
+		FabricApiModuleLossAudit.note("consumer.jar", classNaming(SETUP_CALLBACK));
+		FabricApiModuleLossAudit.report(Side.DEDICATED_SERVER);
+		assertTrue(degraded("fabric-registry-sync-v0") == null);
+		assertTrue(degraded("consumer") != null);
+	}
+
 	@Test
 	void switchedOffItRecordsAndMarksNothing() {
 		publish(entry("balm", "balm.jar", ""));

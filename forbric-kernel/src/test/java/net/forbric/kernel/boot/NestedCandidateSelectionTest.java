@@ -51,8 +51,16 @@ class NestedCandidateSelectionTest {
 		assertEquals(1, plan.nestedFiles().size());
 		Path child = plan.nestedFiles().getFirst();
 		assertEquals(2, plan.inventory().edges().stream().filter(e -> e.child().equals(child)).count());
+		assertEquals(KernelModCatalog.UNKNOWN_PARENT, KernelModCatalog.bundledBy(child.toString(), mods()), "shared content must not invent a single parent");
 		FabricModDiscovery discovery = new FabricModDiscovery(EnvType.CLIENT, root.resolve("old")); discovery.discover(mods());
 		assertEquals(1, discovery.getContainers().stream().filter(c -> c.getMetadata().getId().equals("shared")).count());
+	}
+	@Test void selectedParentIdentitySurvivesContentAddressedExtraction() throws Exception {
+		Path parent = install("api.jar", fabric("fabric-api", "1", Map.of("META-INF/jars/module.jar", fabric("module", "1", Map.of(), "", Map.of())), "", Map.of()));
+		decide(); var plan = DuplicateModArbiter.currentPlan(); Path child = plan.nestedFiles().getFirst();
+		assertEquals("fabric-api", KernelModCatalog.bundledBy(child.toString(), mods()));
+		assertEquals("", KernelModCatalog.bundledBy(parent.toString(), mods()));
+		assertTrue(plan.bundledBy(root.resolve("never-selected.jar")).isEmpty());
 	}
 
 	@Test void aChildOfAnUnselectedParentCannotActivateItsParentOrLeakOntoTheClasspath() throws Exception {

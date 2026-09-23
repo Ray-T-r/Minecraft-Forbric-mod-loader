@@ -17,6 +17,24 @@ public final class NestedCandidatePlan {
 	public NestedCandidateInventory inventory() { return inventory; }
 	public Set<Path> selected() { return selection.selected(); }
 	public JointCandidateSelector.Result selection() { return selection; }
+	/** Uses selected parent edges, never the digest directory's name, as display provenance. */
+	Optional<String> bundledBy(Path file) {
+		Path path = file.toAbsolutePath().normalize();
+		var node = inventory.nodes().get(path);
+		if (node == null || !selected().contains(path)) return Optional.empty();
+		if (node.root()) return Optional.of("");
+		Set<String> owners = new LinkedHashSet<>(); Set<Path> visited = new HashSet<>();
+		Deque<Path> pending = new ArrayDeque<>(); pending.add(path);
+		while (!pending.isEmpty()) {
+			Path child = pending.removeFirst(); if (!visited.add(child)) continue;
+			for (var edge : inventory.edges()) if (edge.child().equals(child) && selected().contains(edge.parent())) {
+				var parent = inventory.nodes().get(edge.parent());
+				if (parent.claim() != null && !parent.claim().modIds().isEmpty()) owners.addAll(parent.claim().modIds());
+				else pending.add(edge.parent());
+			}
+		}
+		return Optional.of(owners.size() == 1 ? owners.iterator().next() : KernelModCatalog.UNKNOWN_PARENT);
+	}
 	public List<Path> nestedFiles() {
 		return inventory.nodes().values().stream().filter(n -> !n.root() && selected().contains(n.path()))
 				.map(NestedCandidateInventory.Node::path).toList();

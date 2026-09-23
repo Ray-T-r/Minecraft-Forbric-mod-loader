@@ -153,7 +153,7 @@ public final class FabricApiModuleLossAudit {
 			Set<String> thirdParty = new LinkedHashSet<>();
 			for (ModCatalog.Entry entry : catalog) {
 				if (entry.jar() == null || !jars.contains(entry.jar())) continue;
-				if (FABRIC_API.equals(entry.modId()) || FABRIC_API.equals(entry.bundledBy())) continue;
+				if (FABRIC_API.equals(entry.modId()) || FABRIC_API.equals(entry.bundledBy()) || loss.module().equals(entry.modId())) continue;
 				ModCatalog.mark(entry.modId(), ModCatalog.Status.DEGRADED, loss.module() + ": " + loss.cost());
 				named.add(entry.modId());
 				thirdParty.add(entry.jar());

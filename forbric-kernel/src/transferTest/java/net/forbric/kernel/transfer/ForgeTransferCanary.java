@@ -25,6 +25,7 @@ public final class ForgeTransferCanary implements ModInitializer {
 		scenarios.put("unknown subclass/proxy/validator denied", ForgeTransferGameScenarios::unknownHandlers);
 		scenarios.put("unknown fluid metadata denied", ForgeTransferGameScenarios::metadataDenied);
 		scenarios.put("explicit metadata codec round trip", ForgeTransferGameScenarios::metadataCodec);
+		scenarios.put("final native watchdog dump replaces Fabric truncation patch", ForgeTransferGameScenarios::watchdogDump);
 		int passed = 0;
 		for (var scenario : scenarios.entrySet()) {
 			try { scenario.getValue().run(); passed++; System.out.println("[Forbric/TransferCanary] PASS " + scenario.getKey()); }

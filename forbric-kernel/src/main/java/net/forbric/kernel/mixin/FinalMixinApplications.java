@@ -29,8 +29,10 @@ public final class FinalMixinApplications {
  private static final Map<String, Plan> PLANS = new ConcurrentHashMap<>();
  private static final Map<String, Set<String>> TARGETS = new ConcurrentHashMap<>();
  private static final Map<String, Map<String, Outcome>> OUTCOMES = new ConcurrentHashMap<>();
+ private record DeferredDefinition(byte[] bytes,Renames names) { }
+ private static volatile DeferredDefinition watchdog;
  private FinalMixinApplications() { }
- public static void reset() { CONFIGS.clear(); PLANS.clear(); TARGETS.clear(); OUTCOMES.clear(); }
+ public static void reset() { CONFIGS.clear(); PLANS.clear(); TARGETS.clear(); OUTCOMES.clear(); watchdog=null;WatchdogDumpEquivalence.reset(); }
 
  static void config(String name, com.electronwill.nightconfig.core.UnmodifiableConfig json) {
   String pkg=json.getOrElse("package", "");
@@ -73,7 +75,7 @@ public final class FinalMixinApplications {
  }
 
  public static void onClassDefined(String binary,byte[] bytes) {
-  if(!TARGETS.containsKey(binary))return;
+  if(!TARGETS.containsKey(binary)&&!WatchdogDumpEquivalence.HELPER.equals(binary))return;
   try { observe(binary,bytes,FinalMixinApplications::renamed); }
   catch(RuntimeException|LinkageError unavailable) {
    for(String mixin:TARGETS.getOrDefault(binary,Set.of())) {
@@ -84,7 +86,15 @@ public final class FinalMixinApplications {
   }
  }
  static void observe(String binary,byte[] bytes,Renames names) {
+  if(WatchdogDumpEquivalence.HELPER.equals(binary)) {
+   ClassNode helper=new ClassNode();new ClassReader(bytes).accept(helper,ClassReader.SKIP_FRAMES|ClassReader.SKIP_DEBUG);
+   WatchdogDumpEquivalence.observeHelper(helper);
+   DeferredDefinition previous=watchdog;
+   if(previous!=null)observe(WatchdogDumpEquivalence.TARGET,previous.bytes(),previous.names());
+   return;
+  }
   if(!TARGETS.containsKey(binary))return;
+  if(WatchdogDumpEquivalence.TARGET.equals(binary))watchdog=new DeferredDefinition(bytes.clone(),names);
   ClassNode target=new ClassNode();new ClassReader(bytes).accept(target,ClassReader.SKIP_FRAMES|ClassReader.SKIP_DEBUG);
   Map<String,List<MethodNode>> merged=new HashMap<>();
   for(MethodNode method:target.methods)for(AnnotationNode annotation:annotations(method))if(annotation.desc.equals(MERGED)) {
@@ -102,10 +112,17 @@ public final class FinalMixinApplications {
      state=references>0?(references>=injector.minimum()?Outcome.ATTACHED:Outcome.UNKNOWN):injector.minimum()==0?Outcome.OPTIONAL:Outcome.MISSING;
     }
     String replacement=state==Outcome.MISSING?MixinEquivalentImplementations.proof(mixin,injector.name(),injector.desc(),injector.bodyHash(),target):null;
+    boolean pending=state==Outcome.MISSING&&WatchdogDumpEquivalence.helperUnknown()
+      &&WatchdogDumpEquivalence.candidate(mixin,injector.name(),injector.desc(),injector.bodyHash(),target);
+    if(pending)state=Outcome.UNKNOWN;
     if(replacement!=null)state=Outcome.EQUIVALENT;
     observed.put(binary+"#"+injector.symbol(),state);
     String id=id(plan,injector,binary),mod=owner(plan.config().name());
-    if(state==Outcome.MISSING)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
+    if(pending)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
+      "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.SUSPECTED,
+      plan.config().required(),"The audited watchdog report uses a native replacement whose final renderer has not been defined yet",
+      List.of("target="+binary,"pending final helper="+WatchdogDumpEquivalence.HELPER)));
+    else if(state==Outcome.MISSING)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.CONFIRMED,
       plan.config().required(),"A required standard injector has no attachment in the actual defined class",
       List.of("target="+binary,"mixin="+mixin,"handler="+injector.symbol(),"original minimum="+injector.minimum(),"final handler references=0")));
