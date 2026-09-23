@@ -12,6 +12,12 @@ import org.sat4j.specs.*;
 
 /** Whole-instance Boolean model: nested candidates exist only through selected parents. */
 final class ReachableCandidateSelector {
+	/**
+	 * Work bounds only, never a clock. Conflicts per satisfiability check and model size are the same on a fast
+	 * Mac and a loaded Windows box, so the same mods folder always selects the same jars.
+	 */
+	static final int CONFLICT_BUDGET = 200_000;
+	static final int VARIABLE_LIMIT = 500_000;
 	private final NestedCandidateInventory graph;
 	private final List<JointCandidateSelector.Rule> rules;
 	private final Map<Path, Integer> variables = new LinkedHashMap<>();
@@ -22,17 +28,16 @@ final class ReachableCandidateSelector {
 	private final Map<Path, Integer> depth = new HashMap<>();
 	private final Map<String, Ecosystem> overrides;
 	private final List<Ecosystem> rootPreference, nestedPreference;
-	private final long deadline;
 	private final int checkLimit;
 	private long checks;
+	/** The most recent model the solver returned; it answers every later trial it already satisfies. */
+	private boolean[] lastModel;
 
 	private ReachableCandidateSelector(NestedCandidateInventory graph, List<JointCandidateSelector.Rule> contracts,
 			List<Ecosystem> rootPreference, List<Ecosystem> nestedPreference, Map<String, Ecosystem> overrides, int checkLimit) {
 		this.graph = graph; this.rootPreference = rootPreference; this.nestedPreference = nestedPreference;
 		Map<String, Ecosystem> pins = new LinkedHashMap<>(); overrides.forEach((id, family) -> pins.put(JointCandidateSelector.key(id), family));
 		this.overrides = pins; this.checkLimit = Math.max(1, checkLimit);
-		long millis = Math.max(1, Math.min(30_000, Long.getLong("forbric.arbitrationTimeoutMillis", 5_000L)));
-		deadline = System.nanoTime() + millis * 1_000_000;
 		for (var node : graph.nodes().values()) {
 			variables.put(node.path(), variables.size() + 1);
 			if (node.excluded() || node.claim() == null) continue;
@@ -96,98 +101,170 @@ final class ReachableCandidateSelector {
 	static JointCandidateSelector.Result solve(NestedCandidateInventory graph, List<JointCandidateSelector.Rule> contracts,
 			List<Ecosystem> roots, List<Ecosystem> nested, Map<String, Ecosystem> overrides, int limit) {
 		ReachableCandidateSelector model = new ReachableCandidateSelector(graph, contracts, roots, nested, overrides, limit);
-		JointCandidateSelector.Status status = JointCandidateSelector.Status.SOLVED;
-		Set<Path> selected;
-		try { selected = model.solve(true); if (selected == null) status = JointCandidateSelector.Status.UNSATISFIABLE; }
-		catch (TimeoutException bounded) { selected = null; status = JointCandidateSelector.Status.SEARCH_LIMIT; }
-		if (selected == null) {
-			try { selected = model.solve(false); } catch (TimeoutException ignored) { }
-			if (selected == null) selected = model.fallback();
-		}
-		List<JointCandidateSelector.Rule> failed = new ArrayList<>(), uncertain = new ArrayList<>();
+		Search search = model.search();
+		Set<Path> selected = search.selected();
+		List<JointCandidateSelector.Rule> failed = new ArrayList<>(), uncertain = new ArrayList<>(), unavoidable = new ArrayList<>();
 		for (var rule : model.rules) {
 			if (!selected.contains(rule.consumer()) || intersects(selected, rule.providers())) continue;
-			if (rule.hard() && !intersects(selected, rule.uncertainProviders())) failed.add(rule); else uncertain.add(rule);
+			if (search.unavoidable().contains(rule)) unavoidable.add(rule);
+			else if (rule.hard() && !intersects(selected, rule.uncertainProviders())) failed.add(rule);
+			else uncertain.add(rule);
 		}
 		for (var issue : graph.issues()) if (selected.contains(issue.source())) uncertain.add(new JointCandidateSelector.Rule(
 				"nested-scan:" + issue.detail(), issue.source(), Set.of(), Set.of(), true, issue.detail()));
+		JointCandidateSelector.Status status = search.status();
 		if (status == JointCandidateSelector.Status.SOLVED && uncertain.stream().anyMatch(JointCandidateSelector.Rule::hard)) status = JointCandidateSelector.Status.UNPROVED;
-		return new JointCandidateSelector.Result(status, Set.copyOf(selected), List.copyOf(failed), List.copyOf(uncertain), model.checks);
+		return new JointCandidateSelector.Result(status, Set.copyOf(selected), List.copyOf(failed), List.copyOf(uncertain), model.checks,
+				List.copyOf(unavoidable), Map.copyOf(search.refused()), Map.copyOf(search.impossible()));
 	}
 
-	private Set<Path> solve(boolean contracts) throws TimeoutException {
-		if (variables.size() > 1024 || rules.size() > 20_000 || System.nanoTime() >= deadline) throw new TimeoutException("candidate model size/time bound");
-		ISolver solver = SolverFactory.newDefault(); solver.newVar(variables.size());
+	private record Search(Set<Path> selected, JointCandidateSelector.Status status, Set<JointCandidateSelector.Rule> unavoidable,
+			Map<String, Ecosystem> refused, Map<String, Ecosystem> impossible) { }
+
+	/**
+	 * Structure first (reachability, one build per id, roots present, bundling edges), then the user's pins, then
+	 * every hard contract, each behind its own activation literal. A pin or contract that cannot join what was
+	 * already accepted is relaxed ALONE; everything else stays in force, so one unsatisfiable rule no longer
+	 * hands every other contested id back to the bare ecosystem preference. A relaxed item that no selection at
+	 * all could meet (a pin for an ecosystem with no candidate, a contract no installed build provides) is not a
+	 * combination problem and is reported apart from the real conflicts.
+	 */
+	private Search search() {
+		List<JointCandidateSelector.Rule> hard = new ArrayList<>();
+		for (var rule : rules) {
+			if (!rule.hard() || !variables.containsKey(rule.consumer()) || rule.possible().contains(rule.consumer())) continue;
+			hard.add(rule);
+		}
+		int next = variables.size();
+		Map<String, Integer> pinLiterals = new LinkedHashMap<>();
+		for (String id : overrides.keySet()) pinLiterals.put(id, ++next);
+		Map<JointCandidateSelector.Rule, Integer> ruleLiterals = new LinkedHashMap<>();
+		for (var rule : hard) ruleLiterals.put(rule, ++next);
+		if (next > VARIABLE_LIMIT) return new Search(fallback(), JointCandidateSelector.Status.SEARCH_LIMIT, Set.of(), Map.of(), Map.of());
+		ISolver solver = SolverFactory.newDefault(); solver.newVar(next);
+		// A conflict count, not a clock: the same mods folder selects the same jars on every machine.
+		solver.setTimeoutOnConflicts(CONFLICT_BUDGET);
+		lastModel = null;
 		try {
-			for (var node : graph.nodes().values()) {
-				if (node.excluded()) { clause(solver, -variable(node.path())); continue; }
-				if (!node.root()) {
-					List<Integer> reachable = new ArrayList<>(List.of(-variable(node.path())));
-					for (Path parent : parents.getOrDefault(node.path(), List.of())) reachable.add(variable(parent));
-					clause(solver, reachable);
-				}
+			structure(solver);
+			for (var pin : pinLiterals.entrySet()) {
+				List<Integer> pinned = new ArrayList<>(List.of(-pin.getValue()));
+				for (Path candidate : identities.getOrDefault(pin.getKey(), List.of())) if (family(candidate) == overrides.get(pin.getKey())) pinned.add(variable(candidate));
+				clause(solver, pinned);
 			}
-			for (var group : identities.entrySet()) {
-				if (System.nanoTime() >= deadline) throw new TimeoutException("candidate model time bound");
-				List<Path> candidates = group.getValue();
-				for (int a = 0; a < candidates.size(); a++) for (int b = a + 1; b < candidates.size(); b++) {
-					if (!graph.payloadRelated(candidates.get(a), candidates.get(b))) clause(solver, -variable(candidates.get(a)), -variable(candidates.get(b)));
-				}
-				if (rootIds.contains(group.getKey())) clause(solver, candidates.stream().map(this::variable).toList());
-				Ecosystem pin = overrides.get(group.getKey());
-				if (pin != null) {
-					List<Integer> pinned = candidates.stream().filter(p -> family(p) == pin).map(this::variable).toList();
-					clause(solver, pinned);
-				}
-			}
-			for (var edge : graph.edges()) {
-				var child = graph.nodes().get(edge.child()); if (child.excluded()) continue;
-				if (edge.payload() || (child.claim() == null && edge.coordinate() == null)) {
-					clause(solver, -variable(edge.parent()), variable(edge.child()));
-				} else if (edge.coordinate() != null) {
-					List<Integer> required = new ArrayList<>(List.of(-variable(edge.parent())));
-					for (Path provider : edgeProviders(edge)) required.add(variable(provider));
-					clause(solver, required);
-				} else if (child.claim() != null) {
-					for (String id : child.claim().modIds()) {
-						List<Integer> required = new ArrayList<>(List.of(-variable(edge.parent())));
-						for (Path provider : identities.get(JointCandidateSelector.key(id))) required.add(variable(provider));
-						clause(solver, required);
-					}
-				}
-			}
-			if (contracts) for (var rule : rules) if (rule.hard()) {
-				List<Integer> required = new ArrayList<>(List.of(-variable(rule.consumer())));
-				for (Path provider : rule.possible()) if (variables.containsKey(provider)) required.add(variable(provider));
+			for (var rule : ruleLiterals.entrySet()) {
+				List<Integer> required = new ArrayList<>(List.of(-rule.getValue(), -variable(rule.getKey().consumer())));
+				for (Path provider : rule.getKey().possible()) if (variables.containsKey(provider)) required.add(variable(provider));
 				clause(solver, required);
 			}
-		} catch (ContradictionException impossible) { return null; }
-		VecInt assumptions = new VecInt();
-		if (!satisfiable(solver, assumptions)) return null;
-		for (String id : decisionOrder()) {
-			List<Path> candidates = new ArrayList<>(identities.get(id)); candidates.sort(candidateOrder(rootIds.contains(id), id));
-			if (!rootIds.contains(id)) {
-				VecInt absent = copy(assumptions); for (Path candidate : candidates) absent.push(-variable(candidate));
-				if (satisfiable(solver, absent)) { assumptions = absent; continue; }
-			}
-			boolean chosen = false;
-			for (Path candidate : candidates) {
-				VecInt attempt = copy(assumptions); attempt.push(variable(candidate));
-				if (satisfiable(solver, attempt)) { assumptions = attempt; chosen = true; break; }
-			}
-			if (!chosen) return null;
+		} catch (ContradictionException impossible) {
+			return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), Map.of());
 		}
-		if (!satisfiable(solver, assumptions)) return null;
-		Set<Integer> positive = new HashSet<>(); for (int value : solver.model()) if (value > 0) positive.add(value);
-		Set<Path> result = new LinkedHashSet<>(); variables.forEach((path, variable) -> { if (positive.contains(variable)) result.add(path); });
-		return result;
+		VecInt assumptions = new VecInt();
+		Set<Integer> relaxed = new LinkedHashSet<>();
+		Set<Path> selected = null;
+		try {
+			if (!satisfiable(solver, assumptions)) return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), Map.of());
+			// The user's choice first (PLAN: 用户指定优先), then the contracts, in scan order.
+			accept(solver, assumptions, List.copyOf(pinLiterals.values()), relaxed);
+			accept(solver, assumptions, List.copyOf(ruleLiterals.values()), relaxed);
+			for (String id : decisionOrder()) {
+				List<Path> candidates = new ArrayList<>(identities.get(id)); candidates.sort(candidateOrder(rootIds.contains(id), id));
+				if (!rootIds.contains(id)) {
+					VecInt absent = copy(assumptions); for (Path candidate : candidates) absent.push(-variable(candidate));
+					if (satisfiable(solver, absent)) { assumptions = absent; continue; }
+				}
+				for (Path candidate : candidates) {
+					VecInt attempt = copy(assumptions); attempt.push(variable(candidate));
+					if (satisfiable(solver, attempt)) { assumptions = attempt; break; }
+				}
+			}
+			if (!satisfiable(solver, assumptions)) return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), Map.of());
+			selected = fromModel();
+			boolean conflict = false;
+			Set<JointCandidateSelector.Rule> unavoidable = new LinkedHashSet<>();
+			Map<String, Ecosystem> refused = new LinkedHashMap<>(), impossible = new LinkedHashMap<>();
+			for (var pin : pinLiterals.entrySet()) if (relaxed.contains(pin.getValue())) {
+				boolean alone = satisfiable(solver, new VecInt(new int[] {pin.getValue()}));
+				(alone ? refused : impossible).put(pin.getKey(), overrides.get(pin.getKey())); conflict |= alone;
+			}
+			for (var rule : ruleLiterals.entrySet()) if (relaxed.contains(rule.getValue())) {
+				if (satisfiable(solver, new VecInt(new int[] {rule.getValue()}))) conflict = true; else unavoidable.add(rule.getKey());
+			}
+			return new Search(selected, conflict ? JointCandidateSelector.Status.UNSATISFIABLE : JointCandidateSelector.Status.SOLVED,
+					unavoidable, refused, impossible);
+		} catch (TimeoutException bounded) {
+			// The best structurally valid model found so far, not a contract-free preference pick.
+			return new Search(selected != null ? selected : lastModel != null ? fromModel() : fallback(),
+					JointCandidateSelector.Status.SEARCH_LIMIT, Set.of(), Map.of(), Map.of());
+		}
+	}
+
+	/** Accepts the longest prefix-greedy consistent subset of {@code literals}; the rest are relaxed one by one. */
+	private void accept(ISolver solver, VecInt assumptions, List<Integer> literals, Set<Integer> relaxed) throws TimeoutException {
+		if (literals.isEmpty()) return;
+		VecInt attempt = copy(assumptions); for (int literal : literals) attempt.push(literal);
+		if (satisfiable(solver, attempt)) { for (int literal : literals) assumptions.push(literal); return; }
+		if (literals.size() == 1) { relaxed.add(literals.getFirst()); assumptions.push(-literals.getFirst()); return; }
+		int half = literals.size() / 2;
+		accept(solver, assumptions, literals.subList(0, half), relaxed);
+		accept(solver, assumptions, literals.subList(half, literals.size()), relaxed);
+	}
+
+	private void structure(ISolver solver) throws ContradictionException {
+		for (var node : graph.nodes().values()) {
+			if (node.excluded()) { clause(solver, -variable(node.path())); continue; }
+			if (!node.root()) {
+				List<Integer> reachable = new ArrayList<>(List.of(-variable(node.path())));
+				for (Path parent : parents.getOrDefault(node.path(), List.of())) reachable.add(variable(parent));
+				clause(solver, reachable);
+			}
+		}
+		for (var group : identities.entrySet()) {
+			List<Path> candidates = group.getValue();
+			for (int a = 0; a < candidates.size(); a++) for (int b = a + 1; b < candidates.size(); b++) {
+				if (!graph.payloadRelated(candidates.get(a), candidates.get(b))) clause(solver, -variable(candidates.get(a)), -variable(candidates.get(b)));
+			}
+			if (rootIds.contains(group.getKey())) clause(solver, candidates.stream().map(this::variable).toList());
+		}
+		for (var edge : graph.edges()) {
+			var child = graph.nodes().get(edge.child()); if (child.excluded()) continue;
+			if (edge.payload() || (child.claim() == null && edge.coordinate() == null)) {
+				clause(solver, -variable(edge.parent()), variable(edge.child()));
+			} else if (edge.coordinate() != null) {
+				List<Integer> required = new ArrayList<>(List.of(-variable(edge.parent())));
+				for (Path provider : edgeProviders(edge)) required.add(variable(provider));
+				clause(solver, required);
+			} else if (child.claim() != null) {
+				for (String id : child.claim().modIds()) {
+					List<Integer> required = new ArrayList<>(List.of(-variable(edge.parent())));
+					for (Path provider : identities.get(JointCandidateSelector.key(id))) required.add(variable(provider));
+					clause(solver, required);
+				}
+			}
+		}
 	}
 
 	private boolean satisfiable(ISolver solver, VecInt assumptions) throws TimeoutException {
-		long remaining = deadline - System.nanoTime();
-		if (++checks > checkLimit || remaining <= 0) throw new TimeoutException("bounded candidate search");
-		solver.setTimeoutMs(Math.max(1, remaining / 1_000_000));
-		return solver.isSatisfiable(assumptions);
+		// The last model already answers any trial it satisfies; only a real question costs a solver call.
+		if (lastModel != null) {
+			boolean known = true;
+			for (int i = 0; i < assumptions.size() && known; i++) { int literal = assumptions.get(i); known = lastModel[Math.abs(literal)] == literal > 0; }
+			if (known) return true;
+		}
+		if (++checks > checkLimit) throw new TimeoutException("bounded candidate search");
+		if (!solver.isSatisfiable(assumptions)) return false;
+		int[] values = solver.model(); int size = solver.nVars();
+		for (int literal : values) size = Math.max(size, Math.abs(literal));
+		boolean[] model = new boolean[size + 1];
+		for (int literal : values) if (literal > 0) model[literal] = true;
+		lastModel = model;
+		return true;
+	}
+
+	private Set<Path> fromModel() {
+		Set<Path> result = new LinkedHashSet<>(); variables.forEach((path, variable) -> { if (lastModel[variable]) result.add(path); });
+		return result;
 	}
 
 	private Comparator<Path> candidateOrder(boolean root, String id) {

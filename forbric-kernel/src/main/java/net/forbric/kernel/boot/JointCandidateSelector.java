@@ -23,7 +23,18 @@ public final class JointCandidateSelector {
 			Set<Path> all = new LinkedHashSet<>(providers); all.addAll(uncertainProviders); return all;
 		}
 	}
-	public record Result(Status status, Set<Path> selected, List<Rule> unsatisfied, List<Rule> uncertain, long visited) { }
+	/**
+	 * {@code unsatisfied} are contracts the selection breaks although another combination could meet them.
+	 * {@code unavoidable} are contracts no installed combination can meet at all: not a choice this selector made.
+	 * The two override maps (keyed by spelling key) are pins not honoured because they conflict with another pin
+	 * or the bundling structure, and pins naming an ecosystem that has no usable candidate for the id.
+	 */
+	public record Result(Status status, Set<Path> selected, List<Rule> unsatisfied, List<Rule> uncertain, long visited,
+			List<Rule> unavoidable, Map<String, Ecosystem> refusedOverrides, Map<String, Ecosystem> impossibleOverrides) {
+		public Result(Status status, Set<Path> selected, List<Rule> unsatisfied, List<Rule> uncertain, long visited) {
+			this(status, selected, unsatisfied, uncertain, visited, List.of(), Map.of(), Map.of());
+		}
+	}
 
 	private final List<DuplicateModArbiter.Claim> claims;
 	private final List<Rule> rules;

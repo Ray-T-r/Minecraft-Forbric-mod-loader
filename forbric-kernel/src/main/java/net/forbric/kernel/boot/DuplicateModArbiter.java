@@ -614,8 +614,15 @@ public final class DuplicateModArbiter {
 	private static void reportSelection(List<Claim> claims, JointCandidateSelector.Result result, Map<String, Ecosystem> overrides) {
 		Map<Path, Claim> byPath = new HashMap<>();
 		for (Claim claim : claims) byPath.put(JointCandidateSelector.path(claim), claim);
-		for (var rule : result.unsatisfied()) recordRule(byPath.get(rule.consumer()), rule, true);
+		// A bounded search's selection is its best model so far, not a proof that the rest is impossible: what it
+		// leaves unmet stays visible but cannot be confirmed (the same pack must not stop on a slower machine).
+		boolean bounded = result.status() == JointCandidateSelector.Status.SEARCH_LIMIT;
+		for (var rule : result.unsatisfied()) recordRule(byPath.get(rule.consumer()), rule, !bounded);
 		for (var rule : result.uncertain()) recordRule(byPath.get(rule.consumer()), rule, false);
+		// No installed combination meets these, so no choice made here caused them: reported, never a launch stop.
+		for (var rule : result.unavoidable()) recordRule(byPath.get(rule.consumer()), rule, false);
+		recordOverrides(result.refusedOverrides(), overrides, true);
+		recordOverrides(result.impossibleOverrides(), overrides, false);
 		if (result.status() != JointCandidateSelector.Status.SOLVED) {
 			boolean confirmed = result.status() == JointCandidateSelector.Status.UNSATISFIABLE;
 			String mod = claims.stream().filter(c -> result.selected().contains(JointCandidateSelector.path(c)))
@@ -629,8 +636,28 @@ public final class DuplicateModArbiter {
 									: "Some required candidate contracts could not be verified; this selection remains unproved",
 					List.of("status=" + result.status(), "visited=" + result.visited(), "overrides=" + overrides)));
 		}
-		ForbricLog.info("[Forbric/Arbitration] status=%s; nodes=%d; confirmed violations=%d; unproved contracts=%d",
-				result.status(), result.visited(), result.unsatisfied().size(), result.uncertain().size());
+		ForbricLog.info("[Forbric/Arbitration] status=%s; nodes=%d; confirmed violations=%d; unproved contracts=%d%s",
+				result.status(), result.visited(), bounded ? 0 : result.unsatisfied().size(), result.uncertain().size(),
+				result.unavoidable().isEmpty() ? "" : "; unmeetable by any installed build=" + result.unavoidable().size());
+	}
+
+	/**
+	 * A pin that was not honoured, filed under the pinned mod. {@code conflicting}: it clashes with another pin or
+	 * with what a bundling parent requires, which the player has to resolve. Otherwise the named ecosystem has no
+	 * usable build of the mod at all; like the old per-id pick, that is a warning and the automatic choice stands.
+	 */
+	private static void recordOverrides(Map<String, Ecosystem> pins, Map<String, Ecosystem> requested, boolean conflicting) {
+		for (var pin : pins.entrySet()) {
+			String id = requested.keySet().stream().filter(raw -> JointCandidateSelector.key(raw).equals(pin.getKey())).findFirst().orElse(pin.getKey());
+			if (!conflicting) ForbricLog.warn("[Forbric/DupeId] %s asks for '%s' from %s, but no usable jar of that ecosystem claims it — "
+					+ "keeping the automatic choice", OVERRIDE_FILE + " / -D" + OWNER_OVERRIDE, id, pin.getValue());
+			net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
+					"arbitration:override:" + id, id, "Chosen mod build", "arbitration:override",
+					conflicting ? net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED : net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED,
+					conflicting, conflicting ? "The requested " + pin.getValue() + " build cannot be combined with the other explicit choices or its bundling mods"
+							: "No usable " + pin.getValue() + " build of this mod is installed; the automatic choice was kept",
+					List.of("override=" + id + "=" + pin.getValue())));
+		}
 	}
 
 	private static void recordRule(Claim owner, JointCandidateSelector.Rule rule, boolean confirmed) {

@@ -291,6 +291,65 @@ class NestedCandidateSelectionTest {
 		assertEquals("2.0.4", plan.inventory().nodes().get(plan.nestedFiles().getFirst()).claim().versionOf("fabric-screen-api-v1"));
 	}
 
+	/** jade has a NeoForge and a Fabric build; the addon's required Mixin needs the non-preferred Fabric one. */
+	private Path[] jadePair() throws Exception {
+		Path neo = install("jade-neo.jar", neo("jade", "1", Map.of(), Map.of(), Map.of("jade/Shared.class", type("jade/Shared"))));
+		Path fabric = install("jade-fabric.jar", fabric("jade", "1", Map.of(), "", Map.of("jade/FabricOnly.class", type("jade/FabricOnly"))));
+		requiredMixin("addon", "jade", "jade/FabricOnly");
+		return new Path[] {neo, fabric};
+	}
+	private Path requiredMixin(String id, String dependency, String target) throws Exception {
+		String config = "{\"required\":true,\"package\":\"" + id + ".mixin\",\"mixins\":[\"Need\"]}";
+		return install(id + ".jar", fabric(id, "1", Map.of(), ",\"depends\":{\"" + dependency + "\":\"*\"},\"mixins\":[\"" + id + ".mixins.json\"]",
+				Map.of(id + ".mixins.json", config.getBytes(StandardCharsets.UTF_8), id + "/mixin/Need.class", mixin(id + "/mixin/Need", target))));
+	}
+
+	@Test void oneUnsatisfiableContractDoesNotSwitchOffEveryOtherContract() throws Exception {
+		Path[] jade = jadePair();
+		install("dep-neo.jar", neo("dep", "1", Map.of(), Map.of(), Map.of("dep/NeoOnly.class", type("dep/NeoOnly"))));
+		install("dep-fabric.jar", fabric("dep", "1", Map.of(), "", Map.of("dep/FabricOnly.class", type("dep/FabricOnly"))));
+		Path first = requiredMixin("app1", "dep", "dep/FabricOnly");
+		Path second = requiredMixin("app2", "dep", "dep/NeoOnly");
+		var decision = decide(); var result = DuplicateModArbiter.currentPlan().selection();
+		assertEquals(JointCandidateSelector.Status.UNSATISFIABLE, result.status());
+		assertFalse(decision.suppressed(jade[1]), "the unrelated addon's satisfiable contract still picks jade-fabric");
+		assertEquals(1, result.unsatisfied().size(), () -> result.unsatisfied().toString());
+		assertTrue(Set.of(first, second).contains(result.unsatisfied().getFirst().consumer()));
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.id().contains("addon.mixins.json")),
+				"the addon's own contract is met, so it has no finding");
+	}
+
+	@Test void aStalePinForAnEcosystemWithNoCandidateIsWarnedAboutNotObeyedAtEveryContractsExpense() throws Exception {
+		Path[] jade = jadePair();
+		System.setProperty("forbric.modOwner", "jade=minecraftforge");
+		var decision = decide(); var result = DuplicateModArbiter.currentPlan().selection();
+		assertEquals(JointCandidateSelector.Status.SOLVED, result.status());
+		assertFalse(decision.suppressed(jade[1]));
+		assertTrue(result.unsatisfied().isEmpty());
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), () -> CompatibilityFindings.all().toString());
+		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.modId().equals("jade")
+				&& f.confidence() == net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED), "the ignored pin stays visible");
+	}
+
+	@Test void theSelectionDoesNotDependOnTheMachinesSpeed() throws Exception {
+		Path[] jade = jadePair();
+		for (int i = 0; i < 24; i++) install("filler-" + i + ".jar", fabric("filler" + i, "1", Map.of(), "", Map.of()));
+		System.setProperty("forbric.arbitrationTimeoutMillis", "1");
+		var decision = decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertFalse(decision.suppressed(jade[1]));
+	}
+
+	@Test void aSearchBoundKeepsTheBestModelAndNeverConfirmsItsOwnViolations() throws Exception {
+		jadePair();
+		System.setProperty("forbric.arbitrationMaxNodes", "1");
+		decide(); var result = DuplicateModArbiter.currentPlan().selection();
+		assertEquals(JointCandidateSelector.Status.SEARCH_LIMIT, result.status());
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), () -> CompatibilityFindings.all().toString());
+		assertEquals(1, result.selected().stream().filter(p -> p.getFileName().toString().startsWith("jade-")).count(),
+				"a bounded search still returns one build per id");
+	}
+
 	private static String sha(byte[] bytes) throws Exception {
 		return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
 	}
