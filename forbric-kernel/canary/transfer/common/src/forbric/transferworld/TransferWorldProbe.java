@@ -41,6 +41,7 @@ public final class TransferWorldProbe {
 	static { for (int i = 0; i < FAMILIES.size(); i++) POSITIONS.put(FAMILIES.get(i), new BlockPos(16 + i * 2, 80, 16)); }
 	private static final long FLUID_TOTAL = 3 * 200 * 81L + 17;
 	private static final BlockPos DIRTY_PROBE = new BlockPos(112, 80, 16);
+	private static final BlockPos FORGE_CRATE = new BlockPos(28, 80, 16), NEO_CRATE = new BlockPos(30, 80, 16), NEO_CABINET = new BlockPos(32, 80, 16);
 	private static int itemRoutes, fluidRoutes;
 	private TransferWorldProbe() { }
 
@@ -72,7 +73,7 @@ public final class TransferWorldProbe {
 					Machines.Machine be = place(level, POSITIONS.get(family), family);
 					be.seed(tagged(20), 200 * 81L + (family.equals(Machines.FABRIC) ? 17 : 0));
 				}
-				checkQueriesAndFaces(level); checkNativePriority(level);
+				checkQueriesAndFaces(level); checkNativePriority(level); checkOwnerPrecedence(level);
 				for (String consumer : FAMILIES) for (String destination : FAMILIES) {
 					if (consumer.equals(destination)) continue;
 					for (Direction face : new Direction[] {Direction.NORTH, null}) {
@@ -177,6 +178,49 @@ public final class TransferWorldProbe {
 		System.out.println("[M33Transfer] PASS native providers take priority, including competing Fabric/Neo answers");
 	}
 
+	/**
+	 * Container-shaped machines. Fabric API's generic fallback wraps ANY Container as a writable store on every face
+	 * and runs before any bridge; it must not answer for a Forge or NeoForge owner. A face the owner refuses stays
+	 * refused for every foreign consumer, and on the permitted face every consumer reaches the owner's own handler,
+	 * never the Container slots (which count every write).
+	 */
+	private static void checkOwnerPrecedence(ServerLevel level) {
+		Machines.Crate forgeCrate = place(level, FORGE_CRATE, Machines.CRATE_BLOCKS.get(Machines.FORGE), Machines.Crate.class);
+		Machines.Crate neoCrate = place(level, NEO_CRATE, Machines.CRATE_BLOCKS.get(Machines.NEO), Machines.Crate.class);
+		yes(level.getCapability(Capabilities.Item.BLOCK, FORGE_CRATE, Direction.SOUTH) == null, "NeoForge got a generic Container bridge on the Forge crate's refused face");
+		yes(level.getCapability(Capabilities.Item.BLOCK, NEO_CRATE, Direction.SOUTH) == null, "NeoForge got a generic Container bridge on its own crate's refused face");
+		yes(forgeProvider(level, NEO_CRATE).getCapability(ForgeCapabilities.ITEM_HANDLER, Direction.SOUTH).resolve().isEmpty(),
+				"Forge got a generic Container bridge on the NeoForge crate's refused face");
+		for (BlockPos pos : List.of(FORGE_CRATE, NEO_CRATE)) {
+			Storage<ItemVariant> fabric = ItemStorage.SIDED.find(level, pos, Direction.NORTH);
+			yes(fabric != null, "missing Fabric view of the crate at " + pos);
+			try (Transaction tx = Transaction.openOuter()) { equal(3, fabric.insert(ItemVariant.of(tagged(1)), 3, tx)); tx.commit(); }
+		}
+		ResourceHandler<ItemResource> neoOnForge = level.getCapability(Capabilities.Item.BLOCK, FORGE_CRATE, Direction.NORTH);
+		yes(neoOnForge != null, "missing NeoForge view of the Forge crate");
+		try (var tx = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot()) { equal(2, neoOnForge.insert(0, ItemResource.of(tagged(1)), 2, tx)); tx.commit(); }
+		IItemHandler forgeOnNeo = forgeProvider(level, NEO_CRATE).getCapability(ForgeCapabilities.ITEM_HANDLER, Direction.NORTH).resolve().orElseThrow();
+		equal(0, forgeOnNeo.insertItem(0, tagged(2), false).getCount());
+		equal(5, forgeCrate.forgeItems.getStackInSlot(0).getCount()); equal(5, neoCrate.neoItems.getAmountAsLong(0));
+		for (Machines.Crate crate : List.of(forgeCrate, neoCrate)) {
+			equal(0, crate.containerWrites); yes(crate.isEmpty(), "a foreign consumer wrote into the Container slots of " + crate.getBlockPos());
+		}
+		// BaseContainerBlockEntity: the merged Forge override's generic whole-Container wrapper is not the owner.
+		Machines.Cabinet cabinet = place(level, NEO_CABINET, Machines.CABINET_BLOCK.get(), Machines.Cabinet.class);
+		IItemHandler items = forgeProvider(level, NEO_CABINET).getCapability(ForgeCapabilities.ITEM_HANDLER, Direction.NORTH).resolve().orElseThrow();
+		equal(0, items.insertItem(0, tagged(4), false).getCount());
+		IFluidHandler fluids = forgeProvider(level, NEO_CABINET).getCapability(ForgeCapabilities.FLUID_HANDLER, Direction.NORTH).resolve().orElse(null);
+		yes(fluids != null, "Forge cannot see the NeoForge cabinet's own fluid handler");
+		equal(6, fluids.fill(new FluidStack(Fluids.WATER, 6), IFluidHandler.FluidAction.EXECUTE));
+		yes(forgeProvider(level, NEO_CABINET).getCapability(ForgeCapabilities.FLUID_HANDLER, Direction.SOUTH).resolve().isEmpty(),
+				"Forge got a fluid handler on the cabinet's refused face");
+		Storage<ItemVariant> fabricOnCabinet = ItemStorage.SIDED.find(level, NEO_CABINET, Direction.NORTH);
+		try (Transaction tx = Transaction.openOuter()) { equal(1, fabricOnCabinet.insert(ItemVariant.of(tagged(1)), 1, tx)); tx.commit(); }
+		equal(5, cabinet.neoItems.getAmountAsLong(0)); equal(6, cabinet.neoFluids.getAmountAsLong(0));
+		yes(cabinet.isEmpty(), "a foreign consumer wrote into the cabinet's Container slots instead of its owner's handler");
+		System.out.println("[M33Transfer] PASS owner providers precede Fabric's generic Container view and Forge's generic wrapper");
+	}
+
 	private static void moveItems(ServerLevel level, String source, String destination, Direction face) {
 		BlockPos from = POSITIONS.get(source), to = POSITIONS.get(destination); ItemStack stack = tagged(2);
 		switch (source) {
@@ -264,12 +308,17 @@ public final class TransferWorldProbe {
 		}
 	}
 	private static Machines.Machine place(ServerLevel level, BlockPos pos, String family) {
+		return place(level, pos, Machines.BLOCKS.get(family), Machines.Machine.class);
+	}
+	private static <T> T place(ServerLevel level, BlockPos pos, net.minecraft.world.level.block.Block block, Class<T> type) {
 		level.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
-		yes(level.setBlockAndUpdate(pos, Machines.BLOCKS.get(family).defaultBlockState()), "could not place " + family);
-		return machine(level, pos);
+		yes(level.setBlockAndUpdate(pos, block.defaultBlockState()), "could not place " + block + " at " + pos);
+		return type.cast(java.util.Objects.requireNonNull(level.getBlockEntity(pos), "missing block entity at " + pos));
 	}
 	private static Machines.Machine machine(ServerLevel level, BlockPos pos) { return (Machines.Machine) java.util.Objects.requireNonNull(level.getBlockEntity(pos), "missing machine at " + pos); }
-	private static ICapabilityProvider forgeProvider(ServerLevel level, BlockPos pos) { return (ICapabilityProvider) (Object) machine(level, pos); }
+	private static ICapabilityProvider forgeProvider(ServerLevel level, BlockPos pos) {
+		return (ICapabilityProvider) (Object) java.util.Objects.requireNonNull(level.getBlockEntity(pos), "missing block entity at " + pos);
+	}
 	private static long itemTotal(ServerLevel level) { return POSITIONS.values().stream().mapToLong(pos -> machine(level, pos).itemSnapshot().getCount()).sum(); }
 	private static long fluidTotal(ServerLevel level) { return POSITIONS.values().stream().mapToLong(pos -> machine(level, pos).fluidUnits()).sum(); }
 	private static ItemStack tagged(int amount) {

@@ -6,7 +6,9 @@
  * <p>Boot integration: install TransferTransactionHooks and TransferCapabilityFallback in the pre-Mixin chain
  * only when both selected APIs exist. After native capability registration, invoke BlockTransferBridge.install
  * through the GAME classloader. Installation checks every hook marker before exposing any fallback. The native
- * provider gets the first answer; a provider from another ecosystem is consulted only when that answer is absent.
+ * provider gets the first answer; a provider from another ecosystem is consulted only when that answer is absent,
+ * the block entity's owner (the mod that registered its type) first. Fabric's generic fallbacks, which wrap any
+ * Container, speak only for Fabric-owned and vanilla block entities (TransferPrecedence).
  * TransferIssues.setReporter can connect runtime findings to the kernel's attributed compatibility report.
  *
  * <p>The bridge pairs native transaction objects, including every outer ancestor, and closes both at the same
@@ -36,6 +38,8 @@
  * <p>Register ForgeTransferCapabilityFallback immediately after the existing capability composition. Its root
  * BlockEntity fallback declines to answer from a super-call when a subclass overrides getCapability, preserving
  * that subclass's native authority. A Forge consumer can query Fabric/NeoForge block entities inheriting the
- * composed root; arbitrary override shapes are not rewritten. The existing provider and invalidation remain live.
+ * composed root; arbitrary override shapes are not rewritten. The one exception is BaseContainerBlockEntity's own
+ * override, for a Fabric or NeoForge owner: its generic InvWrapper yields to the owner's item capability, and its
+ * super-call reaches the fallback for fluids. The existing provider and invalidation remain live.
  */
 package net.forbric.kernel.runtime.transfer;

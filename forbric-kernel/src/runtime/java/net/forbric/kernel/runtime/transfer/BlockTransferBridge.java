@@ -5,22 +5,34 @@ import java.util.HashSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.WeakHashMap;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
+import net.fabricmc.fabric.api.lookup.v1.block.BlockApiLookup;
 import net.fabricmc.fabric.api.transfer.v1.fluid.FluidStorage;
 import net.fabricmc.fabric.api.transfer.v1.fluid.FluidVariant;
 import net.fabricmc.fabric.api.transfer.v1.item.ItemStorage;
 import net.fabricmc.fabric.api.transfer.v1.item.ItemVariant;
 import net.fabricmc.fabric.api.transfer.v1.storage.SlottedStorage;
 import net.fabricmc.fabric.api.transfer.v1.storage.Storage;
+import net.fabricmc.fabric.api.transfer.v1.storage.base.SidedStorageBlockEntity;
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ModCatalog;
+import net.forbric.kernel.runtime.transfer.TransferPrecedence.Source;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.BlockCapability;
@@ -37,6 +49,8 @@ import net.minecraftforge.common.util.LazyOptional;
  * Fallbacks for loaded server block entities only. Native providers always get the first answer. Face (including
  * null) is passed unchanged; lookup recursion is rejected by endpoint identity. Dynamic foreign providers are
  * resolved for every operation, so a caller caching our wrapper cannot pin an obsolete capability instance.
+ * Among foreign providers the block entity's OWNER answers first, and a generic wrapper of another ecosystem never
+ * speaks for it; see TransferPrecedence.
  */
 public final class BlockTransferBridge {
 	private BlockTransferBridge() { }
@@ -44,12 +58,17 @@ public final class BlockTransferBridge {
 	private static volatile boolean enabled;
 	private static volatile boolean forgeEnabled;
 	private static final Map<BlockEntity, List<WeakReference<Endpoint>>> ENDPOINTS = new WeakHashMap<>();
-	private static final ClassValue<Boolean> INHERITS_FORGE_QUERY = new ClassValue<>() {
-		protected Boolean computeValue(Class<?> type) {
-			try { return type.getMethod("getCapability", Capability.class, Direction.class).getDeclaringClass() == BlockEntity.class; }
-			catch (NoSuchMethodException absent) { return false; }
+	/** The class that answers Forge's getCapability for this block entity class; null if none can be read. */
+	private static final ClassValue<Class<?>> FORGE_QUERY_OWNER = new ClassValue<>() {
+		protected Class<?> computeValue(Class<?> type) {
+			try { return type.getMethod("getCapability", Capability.class, Direction.class).getDeclaringClass(); }
+			catch (NoSuchMethodException absent) { return null; }
 		}
 	};
+	// Ownership is the mod that registered the block entity TYPE, not the jar its class came from: a mod may reuse
+	// another jar's class (the M33 fixture ships every machine class in its Fabric jar). Cached once the registry
+	// names the type. Vanilla and unknown namespaces have no owner and keep the previous order.
+	private static final Map<BlockEntityType<?>, Optional<Ecosystem>> OWNERS = new ConcurrentHashMap<>();
 	private record Query(Level level, BlockPos pos, Direction face, boolean fluid) { }
 	private static final ThreadLocal<Set<Query>> LOOKUPS = ThreadLocal.withInitial(HashSet::new);
 
@@ -60,8 +79,10 @@ public final class BlockTransferBridge {
 		try { BlockCapability.class.getDeclaredMethod("forbric$transferFallback"); }
 		catch (NoSuchMethodException drift) { throw new IllegalStateException("NeoForge transfer capability fallback hook is missing", drift); }
 		if (!INSTALLED.compareAndSet(false, true)) return;
-		ItemStorage.SIDED.registerFallback(BlockTransferBridge::fabricItems);
-		FluidStorage.SIDED.registerFallback(BlockTransferBridge::fabricFluids);
+		ItemStorage.SIDED.registerFallback(BlockTransferBridge::itemsAfterGeneric);
+		FluidStorage.SIDED.registerFallback(BlockTransferBridge::fluidsAfterGeneric);
+		ahead(ItemStorage.SIDED, BlockTransferBridge::itemsBeforeGeneric);
+		ahead(FluidStorage.SIDED, BlockTransferBridge::fluidsBeforeGeneric);
 		try { BlockEntity.class.getDeclaredMethod("forbric$forgeTransferFallback"); forgeEnabled = true; }
 		catch (NoSuchMethodException absent) { TransferIssues.report("FORGE_QUERY_HOOK_MISSING", null,
 				"Forge block transfer fallback is not installed; Fabric/NeoForge transfers remain available"); }
@@ -69,18 +90,48 @@ public final class BlockTransferBridge {
 		enabled = true;
 	}
 
-	private static Storage<ItemVariant> fabricItems(Level level, BlockPos pos, BlockState state, BlockEntity entity, Direction face) {
+	/**
+	 * Fabric has no public way to run a fallback before its own, and its first two answer for every
+	 * SidedStorageBlockEntity and every Container. Its lookup exposes the live list; if that ever changes, the
+	 * provider is appended instead and a Fabric consumer sees Fabric's generic view first, as it did before.
+	 */
+	@SuppressWarnings("unchecked")
+	private static <A> void ahead(BlockApiLookup<A, Direction> lookup, BlockApiLookup.BlockApiProvider<A, Direction> provider) {
+		try {
+			((List<BlockApiLookup.BlockApiProvider<A, Direction>>) lookup.getClass().getMethod("getFallbackProviders").invoke(lookup)).add(0, provider);
+		} catch (ReflectiveOperationException | RuntimeException drift) {
+			lookup.registerFallback(provider);
+			TransferIssues.report("FABRIC_FALLBACK_ORDER", lookup, "Fabric's generic fallbacks answer before a Forge or NeoForge owner's provider");
+		}
+	}
+	private static Storage<ItemVariant> itemsBeforeGeneric(Level level, BlockPos pos, BlockState state, BlockEntity entity, Direction face) {
+		return entity != null && TransferPrecedence.fabricAsksBeforeGeneric(owner(entity)) ? fabricItems(level, pos, entity, face) : null;
+	}
+	private static Storage<ItemVariant> itemsAfterGeneric(Level level, BlockPos pos, BlockState state, BlockEntity entity, Direction face) {
+		return entity != null && !TransferPrecedence.fabricAsksBeforeGeneric(owner(entity)) ? fabricItems(level, pos, entity, face) : null;
+	}
+	private static Storage<FluidVariant> fluidsBeforeGeneric(Level level, BlockPos pos, BlockState state, BlockEntity entity, Direction face) {
+		return entity != null && TransferPrecedence.fabricAsksBeforeGeneric(owner(entity)) ? fabricFluids(level, pos, entity, face) : null;
+	}
+	private static Storage<FluidVariant> fluidsAfterGeneric(Level level, BlockPos pos, BlockState state, BlockEntity entity, Direction face) {
+		return entity != null && !TransferPrecedence.fabricAsksBeforeGeneric(owner(entity)) ? fabricFluids(level, pos, entity, face) : null;
+	}
+	private static Storage<ItemVariant> fabricItems(Level level, BlockPos pos, BlockEntity entity, Direction face) {
 		Endpoint endpoint = endpoint(level, pos, entity, face, false);
 		if (endpoint == null) return null;
-		if (endpoint.neoItems() != null) return NativeTransferAdapters.fabric(LiveTransferEndpoints.neo(endpoint::neoItems, endpoint::valid, endpoint::generation, ItemResource.EMPTY), TransferResources.ITEMS);
-		if (endpoint.forgeItems() != null) return NativeTransferAdapters.fabric(LiveTransferEndpoints.neo(endpoint::forgeItems, endpoint::valid, endpoint::generation, ItemResource.EMPTY), TransferResources.ITEMS);
+		for (Source source : TransferPrecedence.order(Ecosystem.FABRIC, endpoint.owner)) {
+			if (source == Source.NEOFORGE && endpoint.neoItems() != null) return NativeTransferAdapters.fabric(LiveTransferEndpoints.neo(endpoint::neoItems, endpoint::valid, endpoint::generation, ItemResource.EMPTY), TransferResources.ITEMS);
+			if (source == Source.FORGE && endpoint.forgeItems() != null) return NativeTransferAdapters.fabric(LiveTransferEndpoints.neo(endpoint::forgeItems, endpoint::valid, endpoint::generation, ItemResource.EMPTY), TransferResources.ITEMS);
+		}
 		return null;
 	}
-	private static Storage<FluidVariant> fabricFluids(Level level, BlockPos pos, BlockState state, BlockEntity entity, Direction face) {
+	private static Storage<FluidVariant> fabricFluids(Level level, BlockPos pos, BlockEntity entity, Direction face) {
 		Endpoint endpoint = endpoint(level, pos, entity, face, true);
 		if (endpoint == null) return null;
-		if (endpoint.neoFluids() != null) return NativeTransferAdapters.fabric(LiveTransferEndpoints.neo(endpoint::neoFluids, endpoint::valid, endpoint::generation, FluidResource.EMPTY), TransferResources.FLUIDS);
-		if (endpoint.forgeFluids() != null) return NativeTransferAdapters.fabric(LiveTransferEndpoints.neo(endpoint::forgeFluids, endpoint::valid, endpoint::generation, FluidResource.EMPTY), TransferResources.FLUIDS);
+		for (Source source : TransferPrecedence.order(Ecosystem.FABRIC, endpoint.owner)) {
+			if (source == Source.NEOFORGE && endpoint.neoFluids() != null) return NativeTransferAdapters.fabric(LiveTransferEndpoints.neo(endpoint::neoFluids, endpoint::valid, endpoint::generation, FluidResource.EMPTY), TransferResources.FLUIDS);
+			if (source == Source.FORGE && endpoint.forgeFluids() != null) return NativeTransferAdapters.fabric(LiveTransferEndpoints.neo(endpoint::forgeFluids, endpoint::valid, endpoint::generation, FluidResource.EMPTY), TransferResources.FLUIDS);
+		}
 		return null;
 	}
 
@@ -94,37 +145,75 @@ public final class BlockTransferBridge {
 		else return null;
 		Endpoint endpoint = endpoint(level, pos, entity, (Direction) context, fluid);
 		if (endpoint == null) return null;
-		if (fluid) {
-			if (endpoint.fabricFluids() != null) return NativeTransferAdapters.neo(LiveTransferEndpoints.fabric(endpoint::fabricFluids, endpoint::valid, endpoint::generation, FluidVariant.blank()), TransferResources.FLUIDS);
-			return endpoint.forgeFluids() == null ? null : LiveTransferEndpoints.neo(endpoint::forgeFluids, endpoint::valid, endpoint::generation, FluidResource.EMPTY);
+		// A Forge or NeoForge owner: its Forge capability (audited, or refused) first, and only Fabric's explicit
+		// providers after it. Fabric's generic Container wrapper would expose every slot on every face as a write
+		// bridge whose rollback runs the mod's own setItem.
+		for (Source source : TransferPrecedence.order(Ecosystem.NEOFORGE, endpoint.owner)) {
+			if (fluid) {
+				if (source == Source.FABRIC && endpoint.fabricFluids() != null) return NativeTransferAdapters.neo(LiveTransferEndpoints.fabric(endpoint::fabricFluids, endpoint::valid, endpoint::generation, FluidVariant.blank()), TransferResources.FLUIDS);
+				if (source == Source.FORGE && endpoint.forgeFluids() != null) return LiveTransferEndpoints.neo(endpoint::forgeFluids, endpoint::valid, endpoint::generation, FluidResource.EMPTY);
+			} else {
+				if (source == Source.FABRIC && endpoint.fabricItems() != null) return NativeTransferAdapters.neo(LiveTransferEndpoints.fabric(endpoint::fabricItems, endpoint::valid, endpoint::generation, ItemVariant.blank()), TransferResources.ITEMS);
+				if (source == Source.FORGE && endpoint.forgeItems() != null) return LiveTransferEndpoints.neo(endpoint::forgeItems, endpoint::valid, endpoint::generation, ItemResource.EMPTY);
+			}
 		}
-		if (endpoint.fabricItems() != null) return NativeTransferAdapters.neo(LiveTransferEndpoints.fabric(endpoint::fabricItems, endpoint::valid, endpoint::generation, ItemVariant.blank()), TransferResources.ITEMS);
-		return endpoint.forgeItems() == null ? null : LiveTransferEndpoints.neo(endpoint::forgeItems, endpoint::valid, endpoint::generation, ItemResource.EMPTY);
+		return null;
 	}
 
-	/** After the composed Forge provider declined. Never let a super-call preempt a subclass's native answer. */
+	/**
+	 * After the composed Forge provider declined. Never let a super-call preempt a subclass's native answer. The one
+	 * game class whose override is let through is BaseContainerBlockEntity, and only for a Fabric or NeoForge owner:
+	 * the override answers ITEM_HANDLER itself (see forgeOwnerFirst) and passes everything else, fluids included,
+	 * straight to this super-call, so such a block entity's fluids were never reachable from Forge at all.
+	 */
 	public static Object forgeFallback(Object existing, Object rawEntity, Object capability, Object context) {
 		if (!enabled || !forgeEnabled || !(existing instanceof LazyOptional<?> result) || result.isPresent()
-				|| !(rawEntity instanceof BlockEntity entity) || !INHERITS_FORGE_QUERY.get(entity.getClass())
-				|| (context != null && !(context instanceof Direction))) return existing;
+				|| !(rawEntity instanceof BlockEntity entity) || (context != null && !(context instanceof Direction))) return existing;
+		Class<?> query = FORGE_QUERY_OWNER.get(entity.getClass());
+		if (query != BlockEntity.class && !(query == BaseContainerBlockEntity.class && foreignToForge(owner(entity)))) return existing;
 		boolean fluid;
 		if (capability == ForgeCapabilities.ITEM_HANDLER) fluid = false;
 		else if (capability == ForgeCapabilities.FLUID_HANDLER) fluid = true;
 		else return existing;
 		Endpoint endpoint = endpoint(entity.getLevel(), entity.getBlockPos(), entity, (Direction) context, fluid);
 		if (endpoint == null) return existing;
-		if (fluid) {
-			ResourceHandler<FluidResource> handler;
-			if (endpoint.neoFluids() != null) handler = LiveTransferEndpoints.neo(endpoint::neoFluids, endpoint::valid, endpoint::generation, FluidResource.EMPTY);
-			else if (endpoint.fabricFluids() != null) handler = NativeTransferAdapters.neo(LiveTransferEndpoints.fabric(endpoint::fabricFluids, endpoint::valid, endpoint::generation, FluidVariant.blank()), TransferResources.FLUIDS);
-			else return existing;
-			return endpoint.track(LazyOptional.of(() -> ForgeLegacyFacades.fluids(handler)));
+		LazyOptional<?> bridged = fluid ? forgeFluids(endpoint) : forgeItems(endpoint);
+		return bridged == null ? existing : bridged;
+	}
+	/**
+	 * BaseContainerBlockEntity answers ITEM_HANDLER with Forge's generic InvWrapper over the whole Container before
+	 * any provider is asked. For a block entity a Fabric or NeoForge mod owns (and that does not override the
+	 * query itself), the owner's real item capability answers first; the generic wrapper remains the answer when
+	 * the owner has none.
+	 */
+	public static Object forgeOwnerFirst(Object generic, Object rawEntity, Object capability, Object context) {
+		if (!enabled || !forgeEnabled || capability != ForgeCapabilities.ITEM_HANDLER || !(generic instanceof LazyOptional<?> result)
+				|| !(rawEntity instanceof BlockEntity entity) || (context != null && !(context instanceof Direction))
+				|| FORGE_QUERY_OWNER.get(entity.getClass()) != BaseContainerBlockEntity.class || !foreignToForge(owner(entity))
+				|| !result.isPresent()) return generic;
+		Endpoint endpoint = endpoint(entity.getLevel(), entity.getBlockPos(), entity, (Direction) context, false);
+		if (endpoint == null) return generic;
+		LazyOptional<?> owned = forgeItems(endpoint);
+		return owned == null ? generic : owned;
+	}
+	private static boolean foreignToForge(Ecosystem owner) { return owner == Ecosystem.FABRIC || owner == Ecosystem.NEOFORGE; }
+	private static LazyOptional<?> forgeItems(Endpoint endpoint) {
+		for (Source source : TransferPrecedence.order(Ecosystem.FORGE, endpoint.owner)) {
+			ResourceHandler<ItemResource> handler = null;
+			if (source == Source.NEOFORGE && endpoint.neoItems() != null) handler = LiveTransferEndpoints.neo(endpoint::neoItems, endpoint::valid, endpoint::generation, ItemResource.EMPTY);
+			if (source == Source.FABRIC && endpoint.fabricItems() != null) handler = NativeTransferAdapters.neo(LiveTransferEndpoints.fabric(endpoint::fabricItems, endpoint::valid, endpoint::generation, ItemVariant.blank()), TransferResources.ITEMS);
+			if (handler != null) { var found = handler; return endpoint.track(LazyOptional.of(() -> ForgeLegacyFacades.items(found))); }
 		}
-		ResourceHandler<ItemResource> handler;
-		if (endpoint.neoItems() != null) handler = LiveTransferEndpoints.neo(endpoint::neoItems, endpoint::valid, endpoint::generation, ItemResource.EMPTY);
-		else if (endpoint.fabricItems() != null) handler = NativeTransferAdapters.neo(LiveTransferEndpoints.fabric(endpoint::fabricItems, endpoint::valid, endpoint::generation, ItemVariant.blank()), TransferResources.ITEMS);
-		else return existing;
-		return endpoint.track(LazyOptional.of(() -> ForgeLegacyFacades.items(handler)));
+		return null;
+	}
+	private static LazyOptional<?> forgeFluids(Endpoint endpoint) {
+		for (Source source : TransferPrecedence.order(Ecosystem.FORGE, endpoint.owner)) {
+			ResourceHandler<FluidResource> handler = null;
+			if (source == Source.NEOFORGE && endpoint.neoFluids() != null) handler = LiveTransferEndpoints.neo(endpoint::neoFluids, endpoint::valid, endpoint::generation, FluidResource.EMPTY);
+			if (source == Source.FABRIC && endpoint.fabricFluids() != null) handler = NativeTransferAdapters.neo(LiveTransferEndpoints.fabric(endpoint::fabricFluids, endpoint::valid, endpoint::generation, FluidVariant.blank()), TransferResources.FLUIDS);
+			if (handler != null) { var found = handler; return endpoint.track(LazyOptional.of(() -> ForgeLegacyFacades.fluids(found))); }
+		}
+		return null;
 	}
 	/** The existing composition calls this after native invalidateCaps; it does not replace that provider. */
 	public static void forgeInvalidated(Object rawEntity) {
@@ -139,7 +228,18 @@ public final class BlockTransferBridge {
 	private static Endpoint endpoint(Level level, BlockPos pos, BlockEntity entity, Direction face, boolean fluid) {
 		if (!enabled || !(level instanceof ServerLevel server) || !server.getServer().isSameThread() || entity == null || !server.hasChunkAt(pos)
 				|| entity.isRemoved() || server.getBlockEntity(pos) != entity) return null;
-		return new Endpoint(server, pos.immutable(), entity, face, fluid);
+		return new Endpoint(server, pos.immutable(), entity, face, fluid, owner(entity));
+	}
+	static Ecosystem owner(BlockEntity entity) {
+		BlockEntityType<?> type = entity.getType();
+		Optional<Ecosystem> known = OWNERS.get(type);
+		if (known == null) {
+			Identifier key = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
+			if (key == null) return null; // not registered (yet): decide again next time rather than caching a guess
+			known = Optional.ofNullable(TransferPrecedence.ownerOf(key.getNamespace(), ModCatalog.everything()));
+			OWNERS.put(type, known);
+		}
+		return known.orElse(null);
 	}
 	private static final class Endpoint {
 		final WeakReference<ServerLevel> level;
@@ -147,14 +247,15 @@ public final class BlockTransferBridge {
 		final BlockPos pos;
 		final Direction face;
 		final boolean fluid;
+		final Ecosystem owner;
 		long epoch;
 		final List<LazyOptional<?>> exposed = new ArrayList<>();
 		final ForgeCapabilityWatch watch = new ForgeCapabilityWatch(this::invalidate);
 		// The level holds capability listeners weakly; retain this one for exactly the wrapper's lifetime.
 		final ICapabilityInvalidationListener listener;
-		Endpoint(ServerLevel level, BlockPos pos, BlockEntity entity, Direction face, boolean fluid) {
+		Endpoint(ServerLevel level, BlockPos pos, BlockEntity entity, Direction face, boolean fluid, Ecosystem owner) {
 			this.level = new WeakReference<>(level); this.entity = new WeakReference<>(entity);
-			this.pos = pos; this.face = face; this.fluid = fluid;
+			this.pos = pos; this.face = face; this.fluid = fluid; this.owner = owner;
 			listener = () -> { invalidate(); return valid(); };
 			level.registerCapabilityListener(pos, listener);
 			synchronized (ENDPOINTS) {
@@ -212,7 +313,7 @@ public final class BlockTransferBridge {
 		}
 		@SuppressWarnings("unchecked") SlottedStorage<ItemVariant> fabricItems() {
 			return lookup(() -> {
-				Storage<ItemVariant> storage = ItemStorage.SIDED.find(level.get(), pos, entity.get().getBlockState(), entity.get(), face);
+				Storage<ItemVariant> storage = fabric(ItemStorage.SIDED, SidedStorageBlockEntity::getItemStorage);
 				if (storage != null && !(storage instanceof SlottedStorage<?>)) TransferIssues.report("UNSLOTTED_STORAGE", storage,
 						"NeoForge's indexed item API cannot represent this Fabric storage; cross-API transfer was not exposed");
 				return storage instanceof SlottedStorage<?> slots ? (SlottedStorage<ItemVariant>) slots : null;
@@ -220,11 +321,19 @@ public final class BlockTransferBridge {
 		}
 		@SuppressWarnings("unchecked") SlottedStorage<FluidVariant> fabricFluids() {
 			return lookup(() -> {
-				Storage<FluidVariant> storage = FluidStorage.SIDED.find(level.get(), pos, entity.get().getBlockState(), entity.get(), face);
+				Storage<FluidVariant> storage = fabric(FluidStorage.SIDED, SidedStorageBlockEntity::getFluidStorage);
 				if (storage != null && !(storage instanceof SlottedStorage<?>)) TransferIssues.report("UNSLOTTED_STORAGE", storage,
 						"NeoForge's indexed fluid API cannot represent this Fabric storage; cross-API transfer was not exposed");
 				return storage instanceof SlottedStorage<?> slots ? (SlottedStorage<FluidVariant>) slots : null;
 			});
+		}
+		/** The full Fabric lookup, or for a Forge/NeoForge owner only the providers Fabric has for exactly this block. */
+		private <A> A fabric(BlockApiLookup<A, Direction> lookup, BiFunction<SidedStorageBlockEntity, Direction, A> sided) {
+			BlockEntity target = entity.get(); BlockState state = target.getBlockState();
+			if (TransferPrecedence.fabricGenericAllowed(owner)) return lookup.find(level.get(), pos, state, target, face);
+			var provider = lookup.getProvider(state.getBlock());
+			A found = provider == null ? null : provider.find(level.get(), pos, state, target, face);
+			return found == null && (Object) target instanceof SidedStorageBlockEntity storage ? sided.apply(storage, face) : found;
 		}
 	}
 }

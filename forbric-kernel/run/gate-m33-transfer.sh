@@ -134,6 +134,7 @@ check_absent "positive probe emitted no failure marker" "M33Transfer\] FAIL" "$R
 for family in fabric forge neo; do check "the independent $family canary initialized" "M33Transfer\] REGISTERED $family " "$RESULTS/prepare-inputs.log"; done
 check "public API face/null coverage ran" "PASS all three public APIs preserve NORTH/null" "$RESULTS/prepare-inputs.log"
 check "native priority ran" "PASS native providers take priority" "$RESULTS/prepare-inputs.log"
+check "owner providers precede generic Container wrappers" "PASS owner providers precede Fabric's generic Container view" "$RESULTS/prepare-inputs.log"
 check "actual fractional return was rolled back and retried" "PASS world fluid quantization retains 17 units" "$RESULTS/prepare-inputs.log"
 check "world replacement invalidation ran" "PASS cached foreign views" "$RESULTS/prepare-inputs.log"
 

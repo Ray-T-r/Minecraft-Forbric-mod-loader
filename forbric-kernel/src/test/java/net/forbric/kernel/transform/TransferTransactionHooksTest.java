@@ -86,6 +86,37 @@ class TransferTransactionHooksTest {
 			assertTrue(nativeCall, "the real capability composition is still used"); assertTrue(fallback);
 		}
 	}
+	/**
+	 * BaseContainerBlockEntity's merged Forge override returns a generic whole-Container InvWrapper for ITEM_HANDLER
+	 * before any provider is asked. Every result it returns must pass the owner-first hook, and nothing else changes.
+	 */
+	@Test void baseContainerItemQueryPassesTheOwnerFirstHook() throws Exception {
+		Path merged = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", "../forbric-loader"), "run/merged-base/patched-mc-merged-26.2.jar");
+		byte[] original = bytes(merged, ForgeTransferCapabilityFallback.BASE_CONTAINER);
+		var transformer = new ForgeTransferCapabilityFallback();
+		byte[] changed = transformer.transform(ForgeTransferCapabilityFallback.BASE_CONTAINER, original, null);
+		assertNotSame(original, changed); assertSame(changed, transformer.transform(ForgeTransferCapabilityFallback.BASE_CONTAINER, changed, null));
+		ClassNode before = node(original), after = node(changed);
+		var query = after.methods.stream().filter(method -> method.name.equals("getCapability") && method.desc.equals(
+				"(Lnet/minecraftforge/common/capabilities/Capability;Lnet/minecraft/core/Direction;)Lnet/minecraftforge/common/util/LazyOptional;")).findFirst().orElseThrow();
+		new Analyzer<>(new BasicVerifier()).analyze(after.name, query);
+		int returns = 0, hooks = 0; boolean generic = false, superCall = false;
+		for (var instruction : query.instructions) {
+			if (instruction.getOpcode() == org.objectweb.asm.Opcodes.ARETURN) {
+				returns++;
+				var hook = instruction.getPrevious().getPrevious();
+				assertTrue(hook instanceof MethodInsnNode call && call.name.equals("forgeOwnerFirst"), "every result passes the hook");
+			}
+			if (instruction instanceof MethodInsnNode call && call.name.equals("forgeOwnerFirst")) hooks++;
+			if (instruction instanceof org.objectweb.asm.tree.FieldInsnNode field && field.name.equals("itemHandler")) generic = true;
+			if (instruction instanceof MethodInsnNode call && call.name.equals("getCapability") && call.owner.endsWith("/BlockEntity")) superCall = true;
+		}
+		assertTrue(returns >= 2 && hooks == returns, returns + " returns, " + hooks + " hooks");
+		assertTrue(generic && superCall, "the native wrapper and the super-call are both still there");
+		assertEquals(before.methods.size(), after.methods.size());
+		// BlockEntity itself is still handled exactly as before.
+		assertSame(original, transformer.transform("net.minecraft.world.level.block.entity.ChestBlockEntity", original, null));
+	}
 	@Test void standardForgeCertificateRejectsInjectedBehaviorEvenIfClassNameIsUnchanged() throws Exception {
 		Path forge = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", "../forbric-loader"), "run/forge-runtime/forge-runtime.jar");
 		for (String name : List.of("net.minecraftforge.items.ItemStackHandler", "net.minecraftforge.fluids.capability.templates.FluidTank")) {
