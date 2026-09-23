@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.transformer.ClassInfo;
  * prove that handler was not attached. A reference proves attachment, not runtime execution of the feature. */
 public final class FinalMixinApplications {
  private static final String PREFIX = "Lorg/spongepowered/asm/mixin/injection/";
+ private static final String EXTRAS = "Lcom/llamalad7/mixinextras/";
  private static final Set<String> STANDARD = Set.of(PREFIX+"Inject;", PREFIX+"Redirect;", PREFIX+"ModifyArg;",
    PREFIX+"ModifyArgs;", PREFIX+"ModifyConstant;", PREFIX+"ModifyVariable;");
  private static final String MERGED = "Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;";
@@ -59,13 +60,18 @@ public final class FinalMixinApplications {
    boolean grouped=annotations.stream().anyMatch(a->a.desc.equals(PREFIX+"Group;"));
    boolean sugar=hasSugar(method.visibleParameterAnnotations)||hasSugar(method.invisibleParameterAnnotations);
    List<AnnotationNode> standard=annotations.stream().filter(a->STANDARD.contains(a.desc)).toList();
-   if(annotations.stream().anyMatch(a->a.desc.startsWith("Lcom/llamalad7/mixinextras/")))complete=false;
+   // A MixinExtras form this does not model leaves the whole-mixin verdict open; the handler's own attachment
+   // is still a direct call and still counted.
+   boolean extension=annotations.stream().anyMatch(a->a.desc.startsWith(EXTRAS)&&!STANDARD.contains(a.desc));
+   if(extension)complete=false;
    for(AnnotationNode annotation:standard) {
+    // As InjectionInfo.readInjectionPoints: an explicit require wins; otherwise defaultRequire applies only
+    // outside a named @Group, whose members are counted by the group and individually require nothing.
     Object declared=value(annotation,"require");int minimum=declared instanceof Number n?n.intValue():-1;
-    if(minimum<0)minimum=config.minimum();
+    if(minimum<0)minimum=grouped?0:config.minimum();
     injectors.add(new Injector(method.name,method.desc,minimum,!grouped&&!sugar&&standard.size()==1,
       MixinEquivalentImplementations.needsFingerprint(binary,method)?MixinInstructionFingerprint.hash(method):""));
-    if(grouped||sugar||standard.size()!=1)complete=false;
+    if(grouped||sugar||extension||standard.size()!=1)complete=false;
    }
   }
   if(injectors.isEmpty())return;
@@ -107,10 +113,9 @@ public final class FinalMixinApplications {
     List<Renamed> rename=names.find(mixin,injector.name(),injector.desc());
     List<MethodNode> candidates=merged.get(mixin).stream().filter(m->rename.stream().anyMatch(n->n.name().equals(m.name)&&n.desc().equals(m.desc))).toList();
     Outcome state=Outcome.UNKNOWN;
-    if(injector.understood()&&candidates.size()==1) {
-     MethodNode handler=candidates.getFirst();int references=references(target,handler);
+    int references=candidates.size()==1?references(target,candidates.getFirst()):-1;
+    if(injector.understood()&&references>=0)
      state=references>0?(references>=injector.minimum()?Outcome.ATTACHED:Outcome.UNKNOWN):injector.minimum()==0?Outcome.OPTIONAL:Outcome.MISSING;
-    }
     String replacement=state==Outcome.MISSING?MixinEquivalentImplementations.proof(mixin,injector.name(),injector.desc(),injector.bodyHash(),target):null;
     boolean pending=state==Outcome.MISSING&&WatchdogDumpEquivalence.helperUnknown()
       &&WatchdogDumpEquivalence.candidate(mixin,injector.name(),injector.desc(),injector.bodyHash(),target);
@@ -127,7 +132,7 @@ public final class FinalMixinApplications {
       List.of("target="+binary,"pending final helper="+WatchdogDumpEquivalence.HELPER)));
     else if(state==Outcome.MISSING)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.CONFIRMED,
-      required,"A required standard injector has no attachment in the actual defined class",
+      required,"A required injector has no attachment in the actual defined class",
       List.of("target="+binary,"mixin="+mixin,"handler="+injector.symbol(),"original minimum="+injector.minimum(),"final handler references=0",
         "config required="+plan.config().required())));
     else if(state==Outcome.EQUIVALENT)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
@@ -135,6 +140,14 @@ public final class FinalMixinApplications {
       required,"The missing injector is replaced by a verified implementation",List.of("target="+binary,replacement)));
     else if(state==Outcome.ATTACHED||state==Outcome.OPTIONAL)CompatibilityFindings.resolve(id,mod,
       state==Outcome.ATTACHED?"final defined class contains a reference to the exact merged handler":"original injector explicitly permits zero attachments");
+    // Unproved either way, but an author-mandated count that the final class does not visibly meet is worth a
+    // detail line: the relaxation made it silent, and otherwise nothing at all records it.
+    else if(injector.minimum()>=1&&references<injector.minimum())CompatibilityFindings.record(new CompatibilityFinding(id,mod,
+      "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.SUSPECTED,
+      required,"A required injector's attachment in the actual defined class could not be established",
+      List.of("target="+binary,"mixin="+mixin,"handler="+injector.symbol(),"original minimum="+injector.minimum(),
+        references<0?"merged handler not identified ("+candidates.size()+" candidates)":"final handler references="+references,
+        injector.understood()?"partial count":"grouped, sugar or several injector annotations")));
    }
    // An old whole-mixin suspicion may concern another handler or target. Discharge it only after every
    // understood declaration has been observed on every target, and never erase a confirmed apply failure.
@@ -143,7 +156,7 @@ public final class FinalMixinApplications {
    }));
    if(all&&CompatibilityFindings.all().stream().anyMatch(f->f.id().equals(MixinCompatibility.id(plan.config().name(),mixin))
       && f.modId().equals(owner(plan.config().name()))&&f.confidence()==CompatibilityFinding.Confidence.SUSPECTED))
-    MixinCompatibility.resolve(plan.config().name(),mixin,"all standard injectors are attached, originally optional or verified as replaced across all observed targets");
+    MixinCompatibility.resolve(plan.config().name(),mixin,"all modelled injectors are attached, originally optional or verified as replaced across all observed targets");
   }
  }
  private static List<Renamed> renamed(String mixin,String name,String desc) {
