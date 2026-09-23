@@ -32,6 +32,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -119,7 +121,7 @@ public final class LostHookAttribution {
 			boolean gainWanted = anyWanted(lost, eventsOfHook, wanted);
 			boolean giveUpWanted = anyWanted(kept, eventsOfHook, wanted);
 			String row = c.owner() + "#" + c.method() + " lost-family=" + c.lostFamily()
-					+ " RAW-LOST " + lost + " RETAINED " + kept;
+					+ (c.fieldInitKept() ? " kind=FIELD_INIT_KEPT" : "") + " RAW-LOST " + lost + " RETAINED " + kept;
 			System.out.println("[attribution] " + row);
 			if (effective != null) for (String hook : lost) {
 				var state = effective.state(c.owner() + "#" + c.method(), hook);
@@ -130,7 +132,8 @@ public final class LostHookAttribution {
 			else if (gainWanted) trades.add(row);
 		}
 		System.out.println("[attribution] conflicts=" + conflicts.size() + " judged=" + judged
-				+ " no-modelled-direct-hook=" + noHookFound + " unobserved=" + unobserved);
+				+ " no-modelled-direct-hook=" + noHookFound + " unobserved=" + unobserved
+				+ " field-init-kept=" + conflicts.stream().filter(Conflict::fieldInitKept).count());
 		System.out.println("[attribution] scope: " + HOOK_CLASSES.length + " hook facades; direct calls and event"
 				+ " construction only; event type references are potential consumers, not proof of subscription");
 		if (effective == null) System.out.println("[attribution] runtime restoration=NOT_ASSESSED; supply actual defined-class evidence"
@@ -259,8 +262,8 @@ public final class LostHookAttribution {
 		System.out.println("[platform-census] scope: all loaded classes and declared methods in each patched JAR;"
 				+ " every direct MethodInsnNode targeting net/minecraftforge/ or net/neoforged/; both namespaces"
 				+ " scanned on both sides; caller and symbol identities are owner#name+descriptor");
-		System.out.println("[platform-census] conflict-membership: only parsed '(forge hook lost)' / '(neo hook lost)'"
-				+ " rows; UNLISTED callers are scanned equally; MODELLED_FACADE is the existing six-owner model;"
+		System.out.println("[platform-census] conflict-membership: every '... hook lost)' row of the report, plain and"
+				+ " field-init-kept (an unrecognised form stops the run); UNLISTED callers are scanned equally; MODELLED_FACADE is the existing six-owner model;"
 				+ " OUTSIDE_EVENT_MODEL symbols are not classified as event hooks");
 		System.out.println("[platform-census] comparison: raw symbol+opcode+itf occurrence-count overlap in the same caller;"
 				+ " not call-site/control-flow equivalence; MERGED_CALLER_MISSING is unobserved, excluded from raw"
@@ -418,18 +421,36 @@ public final class LostHookAttribution {
 		return null;
 	}
 
-	record Conflict(String owner, String method, String lostFamily) { }
+	/**
+	 * One method whose hook the merge gave up. {@code fieldInitKept} marks MergedBaseBuilder's second form: the
+	 * side that hooked the method lost because only the other side's body initialises a field that side added.
+	 */
+	record Conflict(String owner, String method, String lostFamily, boolean fieldInitKept) {
+		Conflict(String owner, String method, String lostFamily) {
+			this(owner, method, lostFamily, false);
+		}
+	}
+
+	/**
+	 * Both row forms MergedBaseBuilder writes. The plain one ends {@code (forge hook lost)}; the field-init one ends
+	 * {@code (kept neo body to preserve base-added field init; forge hook lost)}, and matching the plain suffix
+	 * alone dropped all six of those without a word -- LivingEntity's constructor, and with it onLivingMakeBrain,
+	 * never reached the attribution while the census labelled it UNLISTED although the report lists it.
+	 */
+	private static final Pattern CONFLICT_ROW = Pattern.compile(
+			"^([^\\s#]+)#(\\S+) \\((?:kept (forge|neo) body to preserve base-added field init; )?(forge|neo) hook lost\\)$");
 
 	static List<Conflict> conflicts(Path report) throws IOException {
 		List<Conflict> out = new ArrayList<>();
 		for (String line : Files.readAllLines(report, StandardCharsets.UTF_8)) {
-			String family = line.endsWith(" (forge hook lost)") ? "forge"
-					: line.endsWith(" (neo hook lost)") ? "neo" : null;
-			if (family == null) continue;
-			String body = line.substring(0, line.lastIndexOf(" (" )).trim();
-			int hash = body.indexOf('#');
-			if (hash < 0) continue;
-			out.add(new Conflict(body.substring(0, hash), body.substring(hash + 1), family));
+			if (!line.trim().endsWith("hook lost)")) continue;
+			// A row the parser does not understand is a row the denominator silently loses, so it stops the run:
+			// the next form MergedBaseBuilder learns to write has to be taught here, not skipped here.
+			Matcher row = CONFLICT_ROW.matcher(line.trim());
+			if (!row.matches()) throw new IOException("unrecognised hook-lost row in " + report + ": " + line);
+			String kept = row.group(3), lost = row.group(4);
+			if (kept != null && kept.equals(lost)) throw new IOException("row keeps and loses the same side: " + line);
+			out.add(new Conflict(row.group(1), row.group(2), lost, kept != null));
 		}
 		return out;
 	}

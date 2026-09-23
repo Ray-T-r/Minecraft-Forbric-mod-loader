@@ -43,6 +43,53 @@ class LostHookAttributionTest {
 		assertEquals("game/B", rows.get(1).owner());
 	}
 
+	/** MergedBaseBuilder's second row form: the hooking side lost because only the other body inits a field. */
+	@Test void fieldInitKeptRowsAreInventoriedWithTheFamilyThatLostTheHook() throws Exception {
+		Path report = temporary.resolve("conflicts.txt");
+		Files.writeString(report, "game/A#tick()V (forge hook lost)\n"
+				+ "net/minecraft/world/entity/LivingEntity#<init>(Lnet/minecraft/world/entity/EntityType;"
+				+ "Lnet/minecraft/world/level/Level;)V (kept neo body to preserve base-added field init; forge hook lost)\n"
+				+ "game/B$Inner#<init>()V (kept forge body to preserve base-added field init; neo hook lost)\n");
+		var rows = LostHookAttribution.conflicts(report);
+		assertEquals(3, rows.size());
+		assertFalse(rows.get(0).fieldInitKept());
+		assertEquals("net/minecraft/world/entity/LivingEntity", rows.get(1).owner());
+		assertEquals("<init>(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/level/Level;)V", rows.get(1).method());
+		assertEquals("forge", rows.get(1).lostFamily());
+		assertTrue(rows.get(1).fieldInitKept());
+		assertEquals("game/B$Inner", rows.get(2).owner());
+		assertEquals("neo", rows.get(2).lostFamily());
+		assertTrue(rows.get(2).fieldInitKept());
+		assertEquals(List.of("forge", "forge", "neo"),
+				MergeabilityCensus.conflicts(report).stream().map(c -> c[2]).toList());
+	}
+
+	/** A form nobody taught the parser must stop the run, not shrink the denominator. */
+	@Test void anUnrecognisedHookLostRowFailsInsteadOfDisappearing() throws Exception {
+		Path report = temporary.resolve("conflicts.txt");
+		for (String row : List.of("game/A#tick()V (kept forge body for some new reason; neo hook lost)",
+				"game/A#tick()V (fabric hook lost)", "game/A (forge hook lost)",
+				"game/A#tick()V (kept forge body to preserve base-added field init; forge hook lost)")) {
+			Files.writeString(report, "game/Z#ok()V (neo hook lost)\n" + row + "\n");
+			var failure = assertThrows(java.io.IOException.class, () -> LostHookAttribution.conflicts(report), row);
+			assertTrue(failure.getMessage().contains(row), failure.getMessage());
+			assertThrows(java.io.IOException.class, () -> MergeabilityCensus.conflicts(report), row);
+		}
+	}
+
+	/** The tracked historical report: every row the builder wrote as a hook loss is a row the tools judge. */
+	@Test void everyHookLostRowOfTheTrackedReportEntersTheDenominator() throws Exception {
+		Path report = Path.of(System.getProperty("user.dir"), "run", "merged-base", "merge-conflicts.txt");
+		long written = Files.readAllLines(report).stream().filter(line -> line.trim().endsWith("hook lost)")).count();
+		var rows = LostHookAttribution.conflicts(report);
+		assertTrue(written > 1000, "the tracked report is the fixture this test reads: " + written);
+		assertEquals(written, rows.size());
+		assertEquals(6, rows.stream().filter(LostHookAttribution.Conflict::fieldInitKept).count());
+		assertTrue(rows.stream().anyMatch(r -> r.owner().equals("net/minecraft/world/entity/LivingEntity")
+				&& r.method().startsWith("<init>(") && r.lostFamily().equals("forge")));
+		assertEquals(written, MergeabilityCensus.conflicts(report).size());
+	}
+
 	@Test void realReportTraversalAttributesBothSidesAndNamesUnobservedConflicts() throws Exception {
 		String forge = "net/minecraftforge/common/ForgeHooks", neo = "net/neoforged/neoforge/event/EventHooks";
 		Path f = jar("forge.jar", forge, forge), n = jar("neo.jar", neo, neo);
