@@ -1,6 +1,7 @@
 package net.forbric.kernel.boot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -15,6 +16,16 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 import org.junit.jupiter.api.Test;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
 
 /**
  * Re-derives, from the staged bytecode, the hook census this project had only ever done by hand.
@@ -181,8 +192,66 @@ class HookCallSiteCensusStagedTest {
 		assumeTrue(Files.isRegularFile(base()), "staged merged base absent");
 		List<String> both = HookCallSiteCensus.methodsCallingBothFamilies(List.of(base()));
 		System.out.println("[Forbric/Hooks] methods calling both ecosystems' event hooks: " + both.size());
-		assertEquals(List.of(), both,
-				"a method that posts through both families can deliver a bridged event twice to one subscriber: "
-						+ both);
+		List<String> unproved = new ArrayList<>();
+		for (String method : both) if (!bridgeStandsDown(method, classBytes(method.substring(0, method.indexOf('#'))))) unproved.add(method);
+		assertEquals(List.of(), unproved,
+				"a method that posts through both families can deliver a bridged event twice to one subscriber, unless "
+						+ "the kernel proves the pair from its bytecode and stands its legacy forward down: " + unproved);
+	}
+
+	@Test
+	void aDualFamilyPortalCallerWithoutTheProvedShapeIsStillReported() throws Exception {
+		assumeTrue(Files.isRegularFile(base()), "staged merged base absent");
+		ClassNode node = new ClassNode();
+		new ClassReader(classBytes(PORTAL_OWNER)).accept(node, 0);
+		MethodNode host = node.methods.stream().filter(m -> (m.name + m.desc).equals(PORTAL_METHOD)).findFirst().orElseThrow();
+		// An unguarded MinecraftForge call at entry: both families are called, but not in the reviewed shape.
+		InsnList unguarded = new InsnList();
+		unguarded.add(new VarInsnNode(Opcodes.ALOAD, 2));
+		unguarded.add(new VarInsnNode(Opcodes.ALOAD, 3));
+		unguarded.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "java/util/Optional", "empty", "()Ljava/util/Optional;", false));
+		unguarded.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/minecraftforge/event/ForgeEventFactory", "onTrySpawnPortal",
+				"(Lnet/minecraft/world/level/LevelAccessor;Lnet/minecraft/core/BlockPos;Ljava/util/Optional;)Ljava/util/Optional;", false));
+		unguarded.add(new InsnNode(Opcodes.POP));
+		host.instructions.insert(unguarded);
+		ClassWriter writer = new ClassWriter(0);
+		node.accept(writer);
+		try {
+			assertFalse(bridgeStandsDown(PORTAL_OWNER + "#" + PORTAL_METHOD, writer.toByteArray()));
+		} finally {
+			net.forbric.api.CompatibilityFindings.reset();
+		}
+	}
+
+	private static final String PORTAL_OWNER = "net/minecraft/world/level/block/BaseFireBlock";
+	private static final String PORTAL_METHOD = "onPlace(Lnet/minecraft/world/level/block/state/BlockState;"
+			+ "Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;Z)V";
+
+	/**
+	 * Whether the kernel proves this dual-family caller from its bytecode and confines the legacy forward to one
+	 * family. Only the portal caller has such a proof: PortalSpawnInjector accepts the reviewed composition and
+	 * scopes the NeoForge call, and leaves anything else unchanged.
+	 */
+	private static boolean bridgeStandsDown(String method, byte[] bytes) {
+		if (!method.equals(PORTAL_OWNER + "#" + PORTAL_METHOD)) return false;
+		byte[] adapted = new net.forbric.kernel.transform.PortalSpawnInjector()
+				.transform(PORTAL_OWNER.replace('/', '.'), bytes, null);
+		if (adapted == bytes) return false;
+		ClassNode node = new ClassNode();
+		new ClassReader(adapted).accept(node, 0);
+		for (MethodNode m : node.methods) {
+			if (!(m.name + m.desc).equals(PORTAL_METHOD)) continue;
+			for (AbstractInsnNode instruction : m.instructions) {
+				if (instruction instanceof MethodInsnNode call && call.owner.equals("net/forbric/kernel/runtime/KernelPortalSpawn")
+						&& call.name.equals("onTrySpawnPortalNeoOnly")) return true;
+			}
+		}
+		return false;
+	}
+
+	private static byte[] classBytes(String owner) throws Exception {
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(base().toFile())) {
+			return zip.getInputStream(zip.getEntry(owner + ".class")).readAllBytes();
+		}
 	}
 }

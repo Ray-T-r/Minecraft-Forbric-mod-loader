@@ -31,12 +31,18 @@ class PortalSpawnInjectorTest {
 
 	@Test void onlyTheHookOwnerChangesOnTheRealMergedBase() throws Exception {
 		byte[] original = staged("merged-base/patched-mc-merged-26.2.jar", PortalSpawnInjector.TARGET.replace('.', '/'));
+		// A base whose merge restored MinecraftForge's own call carries the proved pair: only the NeoForge call is
+		// scoped. A base that lost it gets the wrapper that forwards to Forge itself. Either way one call changes.
+		boolean restored = calls(host(parse(original))).stream().anyMatch(c -> c.owner.equals(PortalSpawnInjector.FORGE));
 		byte[] changed = injector.transform(PortalSpawnInjector.TARGET, original, context);
 		assertNotSame(original, changed);
-		ClassNode after = parse(changed); MethodInsnNode hook = hook(host(after));
-		assertEquals(PortalSpawnInjector.RUNTIME, hook.owner); assertEquals(PortalSpawnInjector.HOOK_DESC, hook.desc);
+		ClassNode after = parse(changed);
+		List<MethodInsnNode> runtime = calls(host(after)).stream().filter(c -> c.owner.equals(PortalSpawnInjector.RUNTIME)).toList();
+		assertEquals(1, runtime.size()); MethodInsnNode hook = runtime.getFirst();
+		assertEquals(restored ? PortalSpawnInjector.NEO_ONLY : "onTrySpawnPortal", hook.name);
+		assertEquals(PortalSpawnInjector.HOOK_DESC, hook.desc);
 		new Analyzer<>(new BasicVerifier()).analyze(after.name, host(after));
-		hook.owner = PortalSpawnInjector.NEO;
+		hook.owner = PortalSpawnInjector.NEO; hook.name = "onTrySpawnPortal";
 		assertEquals(trace(parse(original)), trace(after), "all operands, frames, branches and the Optional consumer must be unchanged");
 		assertSame(changed, injector.transform(PortalSpawnInjector.TARGET, changed, context));
 	}
@@ -80,6 +86,11 @@ class PortalSpawnInjectorTest {
 		m.maxStack = 3; m.maxLocals = 7; n.methods.add(m); return n;
 	}
 	private static MethodNode host(ClassNode n) { return n.methods.stream().filter(m -> m.name.equals("onPlace")).findFirst().orElseThrow(); }
+	private static List<MethodInsnNode> calls(MethodNode m) {
+		List<MethodInsnNode> out = new java.util.ArrayList<>();
+		for (AbstractInsnNode instruction : m.instructions) if (instruction instanceof MethodInsnNode c) out.add(c);
+		return out;
+	}
 	private static MethodInsnNode hook(MethodNode m) {
 		for (AbstractInsnNode instruction : m.instructions) if (instruction instanceof MethodInsnNode c && c.name.equals("onTrySpawnPortal")) return c;
 		throw new AssertionError("missing portal hook");

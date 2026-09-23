@@ -183,9 +183,12 @@ class PortalDirectRestorationTest {
 	private static AbstractInsnNode nextCode(AbstractInsnNode instruction) { do { instruction = instruction.getNext(); } while (instruction != null && instruction.getOpcode() < 0); return instruction; }
 	private static AbstractInsnNode previousCode(AbstractInsnNode instruction) { do { instruction = instruction.getPrevious(); } while (instruction != null && instruction.getOpcode() < 0); return instruction; }
 	private static byte[] write(ClassNode caller) { ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS); caller.accept(writer); return writer.toByteArray(); }
+	/** The staged caller itself once the merge restores MinecraftForge's call; otherwise that restoration by hand. */
 	private static ClassNode restoredCaller() throws Exception {
 		ClassNode caller = new ClassNode(); new ClassReader(ForgeSpawnFixture.staged("merged-base/patched-mc-merged-26.2.jar", TARGET)).accept(caller, 0);
-		MethodNode host = host(caller); MethodInsnNode neo = neo(host); JumpInsnNode barrier = neoGuard(host);
+		MethodNode host = host(caller);
+		for (var instruction : host.instructions) if (instruction instanceof MethodInsnNode call && call.owner.equals(FORGE)) return caller;
+		MethodInsnNode neo = neo(host); JumpInsnNode barrier = neoGuard(host);
 		int slot = ((VarInsnNode) nextCode(neo)).var;
 		InsnList restored = new InsnList();
 		restored.add(new VarInsnNode(Opcodes.ALOAD, 2)); restored.add(new VarInsnNode(Opcodes.ALOAD, 3)); restored.add(new VarInsnNode(Opcodes.ALOAD, slot));
