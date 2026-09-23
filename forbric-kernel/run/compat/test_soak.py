@@ -4,6 +4,11 @@ import copy
 import importlib.util
 from pathlib import Path
 import unittest
+import argparse
+import json
+import tempfile
+import zipfile
+from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('soak_run',Path(__file__).with_name('soak-run.py'))
 soak=importlib.util.module_from_spec(spec);spec.loader.exec_module(soak)
 
@@ -66,4 +71,40 @@ class SoakVerifierTest(unittest.TestCase):
     def test_missing_finish_cannot_pass(self):
         rows,result=fixture();rows.pop()
         with self.assertRaises(ValueError):self.check(rows,result)
+    def test_launcher_freezes_source_record_even_after_copying_native_library_paths(self):
+        # Drive the real snapshot/manifest path, with only the external JVM replaced.
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);kernel=root/'kernel';staged=root/'staged';pack=root/'pack';mc=root/'minecraft'
+            def put(path,data=b'fixture'):
+                path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data);return path
+            def jar(path,entries):
+                path.parent.mkdir(parents=True,exist_ok=True)
+                with zipfile.ZipFile(path,'w') as output:
+                    for key,value in entries.items():output.writestr(key,value)
+                return path
+            runtime=put(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar')
+            jar(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar',{'bundled/forbric-kernel-runtime.jar':runtime.read_bytes()})
+            merged=jar(staged/'merged-base/patched-mc-merged-26.2.jar',{'version.json':'{}'})
+            put(staged/'merged-base/forge-runtime-interop.jar');put(staged/'neoforge-runtime/neoforge-runtime.jar')
+            put(pack/'saves/ForbricTest/level.dat');put(pack/'mods/probe.jar');put(pack/'options.txt')
+            metadata={'id':'26.2','assetIndex':{'id':'test'},'libraries':[{'name':'group:test:1','downloads':{'artifact':{'path':'test.jar'}}}]}
+            put(mc/'versions/26.2/26.2.json',json.dumps(metadata).encode());put(mc/'libraries/test.jar');put(mc/'assets/indexes/test.json',b'{}');put(mc/'versions/26.2/26.2-natives/probe.dylib')
+            cp=put(root/'boot-classpath.txt',str(put(root/'dependency.jar')).encode())
+            args=argparse.Namespace(kernel=str(kernel),staged=str(staged),fixture=str(pack),minecraft=str(mc),world_source=None,merged=str(merged),forge=None,neo=None,natives=None,boot_classpath=str(cp),seconds=1,control=True,sessions=2,dwell_ticks=20,between_seconds=0,settle_seconds=0,timeout=60,policy='strict',heap='1G',java='unused-test-java')
+            source={'root':str(root),'commit':'test','sha256':'source-content','files':{},'dirty':False}
+            manifests=[]
+            class Child:
+                pid=123
+                def __init__(self,command,cwd,**kwargs):
+                    evidence=cwd/'evidence';manifest=json.loads((evidence/'manifest.json').read_text());manifests.append(manifest)
+                    rows,result=fixture()
+                    for row in rows:row['nonce']=manifest['nonce']
+                    result['nonce']=manifest['nonce']
+                    (evidence/'telemetry.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in rows))
+                    (evidence/'controller-result.json').write_text(json.dumps(result))
+                def wait(self,timeout=None):return 0
+            with patch.object(soak,'source_record',return_value=source),patch.object(soak.subprocess,'Popen',Child),patch.object(soak.time,'monotonic',side_effect=[0,24]):
+                self.assertEqual(0,soak.launch(args))
+            self.assertEqual(source,manifests[0]['source'])
+            self.assertFalse(json.loads((kernel/'build/verification/m34-soak/last-control.json').read_text())['acceptance']['releaseAccepted'])
 if __name__=='__main__':unittest.main()

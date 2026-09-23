@@ -204,6 +204,9 @@ tasks.named('compileRuntimeJava') {
 
 test {
 	useJUnitPlatform()
+	// Component/decision tests do not own macOS's first UI thread. Actual windows are exercised
+	// by the separately forked dialog/client gates, not by the Gradle worker's AppKit instance.
+	systemProperty 'java.awt.headless', 'true'
 	// The GAME-side output is an INPUT to these tests, and Gradle cannot see that on its own.
 	//
 	// Several tests load src/runtime classes through a URLClassLoader over build/classes/java/runtime -- it is the

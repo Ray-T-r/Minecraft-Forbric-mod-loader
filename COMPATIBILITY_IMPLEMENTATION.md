@@ -385,3 +385,15 @@ Pending implementation and acceptance items remain open even when a smaller batc
   normal JVM exit, and a fresh report with zero confirmed required losses. Sound and both rendering
   callbacks are now attached. Four pre-existing unclassified DEGRADED rows remain visible and are not
   promoted to verified functionality by this result. Evidence: `build/verification/inserted-lambda/`.
+
+### Acceptance runner fixes from actual launch attempts
+
+- M9's actual sound/lambda off control restored exactly the three named required losses; the diagnostic
+  continue run remained RED. Reports and logs are retained beside the strict-positive artifacts.
+- M34's first snapshot attempt correctly failed before launching: a library Path shadowed the captured
+  source record. Separate source identity now survives the copy loop; a real launcher snapshot test with
+  a replaced external JVM checks the complete frozen manifest/verifier path. Eleven Python tests pass.
+- The full M0 worker aborted while constructing Swing components. Those unit tests now use explicit
+  headless mode; actual window behavior remains the separately forked GUI/client gate's responsibility.
+  50 focused Java tests passed without skips. The interrupted M0 is RED and will be rerun.
+  Evidence: `build/verification/soak-launcher/`; no short or two-hour game soak is claimed yet.

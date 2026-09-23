@@ -172,8 +172,8 @@ def launch(args):
     if args.sessions < (2 if args.control else 3):
         raise ValueError('at least three release sessions (two control sessions) are required')
     kernel, staged, fixture = Path(args.kernel).resolve(), Path(args.staged).resolve(), Path(args.fixture).resolve()
-    source = source_record(kernel.parent, set())
-    if not args.control and source['dirty']:
+    source_before = source_record(kernel.parent, set())
+    if not args.control and source_before['dirty']:
         raise ValueError('release soak requires committed source changes')
     mc = Path(args.minecraft).resolve()
     nonce = str(uuid.uuid4())
@@ -254,7 +254,7 @@ def launch(args):
                 'createdUtc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                 'run': str(run), 'fixture': str(fixture), 'worldSource': str(world_source), 'sourceWorld': source_world_hashes,
                 'initialConfiguration': configuration, 'artifacts': records, 'policy': args.policy,
-                'assetsReadOnlySource': str(mc / 'assets'), 'source': source}
+                'assetsReadOnlySource': str(mc / 'assets'), 'source': source_before}
     dump(evidence / 'manifest.json', manifest)
     (evidence / 'manifest.sha256').write_text(digest(evidence / 'manifest.json') + '\n')
     java = args.java
@@ -289,7 +289,7 @@ def launch(args):
     validation = {'status': 'FAIL', 'releaseAccepted': False, 'nonce': nonce, 'pid': process.pid, 'exitCode': code, 'processSeconds': elapsed}
     try:
         if code != 0: raise ValueError(f'client exited abnormally: {code}')
-        if source_record(kernel.parent, set()) != source: raise ValueError('source changed during the measured run')
+        if source_record(kernel.parent, set()) != source_before: raise ValueError('source changed during the measured run')
         if any(digest(item['snapshot']) != item['sha256'] for item in records): raise ValueError('frozen artifacts changed during run')
         if inventory(world_source) != source_world_hashes: raise ValueError('source world changed during soak; cannot attest untouched original')
         rows = [json.loads(line) for line in (evidence / 'telemetry.jsonl').read_text().splitlines()]
