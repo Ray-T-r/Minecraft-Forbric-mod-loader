@@ -28,6 +28,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -68,7 +69,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
  *   <li><b>both hook it</b> &rarr; base = the NeoForge-patched class; splice in every Forge-ADDED member
  *       (method/field absent on the Neo side) and every method where ONLY Forge injected a hook; MERGE the
  *       {@code implements} list (both ecosystems' extension interfaces); a method where BOTH sides inject a hook
-	 *       attempts the restricted entry-hook merge in {@link AdditiveMethodMerger}; if it declines, keeps the
+	 *       attempts the restricted three-way merge in {@link AdditiveMethodMerger}; if it declines, keeps the
 	 *       Neo body and reports both the lost hook and why the additive merge declined.</li>
  *   <li><b>neither hooks it</b> &rarr; take vanilla (or whichever patched side happens to carry the class).</li>
  * </ul>
@@ -100,7 +101,22 @@ public final class MergedBaseBuilder {
 	private final List<String> conflicts = new ArrayList<>();
 	private final List<String> structuralConflicts = new ArrayList<>();
 	private final List<String> additiveDecisions = new ArrayList<>();
+	/** Each refusal's category (its reason up to the first colon), counted, so a census is one read of the report. */
+	private final Map<String, Integer> additiveRefusals = new TreeMap<>();
 	private int additiveMethodsMerged;
+	/** Which restored hooks the runtime is known to stand down for; see {@link AdditiveMethodMerger#REVIEWED_RESTORATIONS}. */
+	private final Set<String> reviewedRestorations;
+	/** Built once the input jars are read: hook owners resolve against both patched games and both runtimes. */
+	private AdditiveMethodMerger.Context hookContext;
+
+	public MergedBaseBuilder() {
+		this(AdditiveMethodMerger.REVIEWED_RESTORATIONS);
+	}
+
+	/** Tests name the probe hooks they restore; the tool itself only ever uses the reviewed production list. */
+	MergedBaseBuilder(Set<String> reviewedRestorations) {
+		this.reviewedRestorations = Set.copyOf(reviewedRestorations);
+	}
 	private int classesTakenVanilla, classesTakenForge, classesTakenNeo, classesMerged, classesForgeOnly;
 	private int splicedMethods, splicedFields, mergedInterfaces, conflictMethods, conflictFields;
 	private int lambdasRealigned;
@@ -246,8 +262,13 @@ public final class MergedBaseBuilder {
 		indexInterfaceDefaults(vanilla);
 		indexInterfaceDefaults(forge);
 		indexInterfaceDefaults(neo);
-		if (forgeRuntimeJar != null) indexInterfaceDefaults(readClasses(forgeRuntimeJar));
-		if (neoRuntimeJar != null) indexInterfaceDefaults(readClasses(neoRuntimeJar));
+		Map<String, byte[]> forgeRuntime = forgeRuntimeJar != null ? readClasses(forgeRuntimeJar) : Map.of();
+		Map<String, byte[]> neoRuntime = neoRuntimeJar != null ? readClasses(neoRuntimeJar) : Map.of();
+		indexInterfaceDefaults(forgeRuntime);
+		indexInterfaceDefaults(neoRuntime);
+		// A restored hook call has to link. Its owner lives in a runtime jar (ForgeEventFactory, EventHooks) or,
+		// for the few classes Forge bakes into its patched game, in that jar; without them nothing is restored.
+		hookContext = AdditiveMethodMerger.context(List.of(forgeRuntime, neoRuntime, forge, neo), reviewedRestorations);
 
 		// Non-class resources of the merged jar: take the union, Neo first (its patched game is the base),
 		// then Forge's, then vanilla's — first writer wins so a class's own jar's resources are preferred.
@@ -974,13 +995,15 @@ public final class MergedBaseBuilder {
 				splicedMethods++;
 				recordAnonymousOverrides(name, om, otherPkg);
 			} else if (otherHook && baseHook) {
-				AdditiveMethodMerger.Result addition = AdditiveMethodMerger.merge(vm, bm, om, basePkg, otherPkg);
+				AdditiveMethodMerger.Result addition = AdditiveMethodMerger.merge(vm, bm, om, basePkg, otherPkg, hookContext);
 				additiveDecisions.add(name + "#" + key + (addition.accepted() ? " ACCEPTED " : " DECLINED ")
 						+ addition.reason());
 				if (addition.accepted()) {
 					replaceMethod(baseN, key, addition.method(), baseMethods);
 					additiveMethodsMerged++;
 				} else {
+					int colon = addition.reason().indexOf(':');
+					additiveRefusals.merge(colon < 0 ? addition.reason() : addition.reason().substring(0, colon), 1, Integer::sum);
 					// A refusal deliberately preserves the previous choice, including its known limitations.
 					conflictMethods++;
 					conflicts.add(name + "#" + om.name + om.desc + (baseIsForge ? " (neo hook lost)" : " (forge hook lost)"));
@@ -1832,5 +1855,6 @@ public final class MergedBaseBuilder {
 				+ " class-access-widened=" + classAccessWidened);
 		ps.println("[merge] restricted entry-hook merges: accepted=" + additiveMethodsMerged
 				+ " declined=" + (additiveDecisions.size() - additiveMethodsMerged));
+		additiveRefusals.forEach((reason, count) -> ps.println("[merge]   declined " + count + ": " + reason));
 	}
 }
