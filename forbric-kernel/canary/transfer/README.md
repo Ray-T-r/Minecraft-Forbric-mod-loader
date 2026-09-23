@@ -43,5 +43,12 @@ must fail at a foreign public lookup; its acceptance command and recorded probe 
 uses `run/compat/evidence.py` to retain source, kernel, carrier, Fabric API and full mod hashes, the exact
 command, logs and input-drift verdict under `build/verification/m33-transfer/`.
 
+Replacement is checked without calling invalidateCapabilities by hand: removing the block entity must invalidate
+every cached view by itself. After the save, three more machines stand in a chunk at (4096, 4096) that nothing
+else touches. Every foreign view of them is cached, and the probe keeps ticking until the server has unloaded
+that chunk on its own. While it is unloaded and after it is reloaded, every cached view must move nothing and
+every cached Forge LazyOptional must be empty; the reloaded machines keep their contents, and fresh public
+queries reach them. The phase result is written only when this finishes (at most 1200 ticks).
+
 These assertions supplement the lower-level transaction/alias canary; they do not replace it. No Gradle or
 game run is implied merely by creating these sources.

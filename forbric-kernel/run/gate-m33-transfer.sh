@@ -137,6 +137,7 @@ check "native priority ran" "PASS native providers take priority" "$RESULTS/prep
 check "owner providers precede generic Container wrappers" "PASS owner providers precede Fabric's generic Container view" "$RESULTS/prepare-inputs.log"
 check "actual fractional return was rolled back and retried" "PASS world fluid quantization retains 17 units" "$RESULTS/prepare-inputs.log"
 check "world replacement invalidation ran" "PASS cached foreign views" "$RESULTS/prepare-inputs.log"
+check "a real chunk unload and reload ran" "PASS chunk unload: cached views refuse" "$RESULTS/prepare-inputs.log"
 
 step "reload the same gate-owned world and verify persisted components and quantities"
 run_phase reload on

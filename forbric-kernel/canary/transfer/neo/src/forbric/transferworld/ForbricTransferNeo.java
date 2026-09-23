@@ -28,6 +28,7 @@ public final class ForbricTransferNeo {
 		NeoForge.EVENT_BUS.addListener(ServerStartedEvent.class, event -> pending.set(event.getServer()));
 		NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, event -> {
 			if (pending.compareAndSet(event.getServer(), null)) TransferWorldProbe.run(event.getServer());
+			else TransferWorldProbe.tick(event.getServer());
 		});
 		System.out.println("[M33Transfer] REGISTERED neo " + Machines.NEO);
 	}
