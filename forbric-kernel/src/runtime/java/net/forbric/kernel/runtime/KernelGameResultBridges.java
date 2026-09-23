@@ -85,7 +85,9 @@ public final class KernelGameResultBridges {
 	/**
 	 * NeoForge {@code BlockEvent.PortalSpawnEvent} → MinecraftForge {@code onTrySpawnPortal}.
 	 *
-	 * <p>Fallback for event producers outside the repaired BaseFireBlock call. The current native hooks return
+	 * <p>Fallback for event producers outside the repaired BaseFireBlock call. It skips only the one event that
+	 * call's wrapper is dispatching, never the whole thread: a NeoForge listener that lights another portal
+	 * through its own producer during that dispatch still reaches MinecraftForge. The current native hooks return
 	 * the input shape or empty. If a mod changes a hook to return another shape, this event-only path cannot
 	 * carry it through NeoForge's getter-only event; the BaseFireBlock wrapper can and handles its own forward.
 	 */
@@ -95,9 +97,9 @@ public final class KernelGameResultBridges {
 		AtomicBoolean saidReplacement = new AtomicBoolean();
 		((IEventBus) neoBus).addListener(EventPriority.LOWEST, false, BlockEvent.PortalSpawnEvent.class,
 				event -> {
-					if (KernelPortalSpawn.dispatchingNeo()) return;
 					try {
 						PortalShape before = event.getPortalSize();
+						if (KernelPortalSpawn.postedByWrapper(event.getLevel(), event.getPos(), before)) return;
 						Optional<PortalShape> after = ForgeEventFactory.onTrySpawnPortal(
 								event.getLevel(), event.getPos(), Optional.ofNullable(before));
 						if (after == null || after.isEmpty()) {
