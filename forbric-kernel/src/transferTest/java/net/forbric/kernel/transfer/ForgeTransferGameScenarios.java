@@ -188,6 +188,21 @@ public final class ForgeTransferGameScenarios {
 		}
 		eq(97217, source.amount + 81L * nativeTank.getFluidAmount()); eq(1, changed.get()); closed();
 	}
+	/** Water whose Forge stack carries an empty-but-present tag ({}) is plain water to the other APIs, and moves like it. */
+	public static void emptyFluidTagStillMoves() {
+		FluidTank tank = new FluidTank(1000); tank.setFluid(new FluidStack(Fluids.WATER, 500, new CompoundTag()));
+		yes(tank.getFluid().hasTag() && tank.getFluid().getTag().isEmpty());
+		AtomicInteger changed = new AtomicInteger();
+		var view = ForgeSnapshotAdapters.fluids(tank, tank, changed::incrementAndGet); FluidResource water = FluidResource.of(Fluids.WATER);
+		yes(view.getResource(0).getFluid() == Fluids.WATER && view.getResource(0).isComponentsPatchEmpty()); eq(500, view.getAmountAsLong(0));
+		try (var tx = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot()) {
+			eq(100, view.extract(0, water, 100, tx)); eq(50, view.insert(0, water, 50, tx)); tx.commit();
+		}
+		eq(450, tank.getFluidAmount()); yes(tank.getFluid().hasTag() && tank.getFluid().getTag().isEmpty()); eq(1, changed.get());
+		var storage = NativeTransferAdapters.fabric(view, TransferResources.FLUIDS);
+		try (Transaction outer = Transaction.openOuter()) { eq(81 * 30, storage.extract(FluidVariant.of(Fluids.WATER), 81 * 30, outer)); eq(420, tank.getFluidAmount()); }
+		eq(450, tank.getFluidAmount()); yes(tank.getFluid().hasTag() && tank.getFluid().getTag().isEmpty()); eq(1, changed.get()); closed();
+	}
 	public static void legacyFluids() {
 		FabricFluids fabric = new FabricFluids(10000);
 		IFluidHandler facade = ForgeLegacyFacades.fluids(NativeTransferAdapters.neo(fabric, TransferResources.FLUIDS));
