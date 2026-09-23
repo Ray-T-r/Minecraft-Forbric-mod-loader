@@ -32,7 +32,9 @@ class CompatibilityPromptTickInjectorTest {
 		for (AbstractInsnNode instruction : launch.instructions) {
 			if (instruction instanceof MethodInsnNode call) {
 				if (call.owner.equals("net/forbric/api/CompatibilityFindings") && call.name.equals("reset")) reset = step;
-				if (call.owner.equals("net/forbric/kernel/boot/KernelLoadReport") && call.name.equals("write")) report = step;
+				// The pre-launch boundary writes the evidence (settle, observe, machine report, queue) without claiming
+				// that loading finished; KernelLoadReportTest pins that it never calls the end-of-loading write().
+				if (call.owner.equals("net/forbric/kernel/boot/KernelLoadReport") && call.name.equals("writeEvidence")) report = step;
 				if (call.owner.equals("net/forbric/kernel/ui/CompatibilityDecision") && call.name.equals("requireContinuation")) decision = step;
 			}
 			step++;
