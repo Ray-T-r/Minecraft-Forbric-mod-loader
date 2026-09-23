@@ -5,7 +5,7 @@ import org.spongepowered.asm.mixin.extensibility.*;
 public final class OutcomePlugin implements IMixinConfigPlugin {
  public void onLoad(String pkg){}
  public String getRefMapperConfig(){return null;}
- public boolean shouldApplyMixin(String target,String mixin){String mode=System.getProperty("forbric.outcomeMode", "declined");return mixin.endsWith("RequiredMixin")?mode.equals("required"):mode.equals("optional");}
+ public boolean shouldApplyMixin(String target,String mixin){String mode=System.getProperty("forbric.outcomeMode", "declined");return mixin.endsWith("RequiredMixin")?mode.equals("required"):mixin.endsWith("OptionalMixin")?mode.equals("optional"):mode.equals("widened");}
  public void acceptTargets(Set<String> mine,Set<String> others){}
  public List<String> getMixins(){return null;}
  public void preApply(String target,ClassNode node,String mixin,IMixinInfo info){}

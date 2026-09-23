@@ -12,7 +12,7 @@ import json, os, pathlib, shutil, subprocess, time, uuid, signal
 kernel=pathlib.Path(os.environ['KERNEL']);root=kernel.parent
 run=kernel/'run/server-mixin-outcome-m36';results=kernel/'build/verification/m36-outcome';results.mkdir(parents=True,exist_ok=True)
 inputs=json.loads((kernel/'run/canary/m36-build-inputs.json').read_text())
-for phase,mode,policy,required in [('required-strict','required','strict',True),('required-continue','required','continue',True),('optional','optional','strict',False),('declined','declined','strict',False)]:
+for phase,mode,policy,required in [('required-strict','required','strict',True),('required-continue','required','continue',True),('optional','optional','strict',False),('declined','declined','strict',False),('widened','widened','strict',False),('widened-off','widened','strict',True)]:
  if run.exists():
   if not (run/'.m36-owned').is_file():raise RuntimeError('refusing to delete unowned M36 instance')
   shutil.rmtree(run)
@@ -20,7 +20,7 @@ for phase,mode,policy,required in [('required-strict','required','strict',True),
  shutil.copy2(kernel/'run/canary/forbricoutcome.jar',run/'mods/forbricoutcome.jar')
  (run/'eula.txt').write_text('eula=true\n')
  (run/'server.properties').write_text('server-ip=127.0.0.1\nserver-port=25596\nonline-mode=false\nlevel-name=world\nmax-tick-time=-1\npause-when-empty-seconds=0\nview-distance=2\nsimulation-distance=2\n')
- env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY=policy,FORBRIC_JVM=f'-Dforbric.outcomeMode={mode}')
+ env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY=policy,FORBRIC_JVM=f'-Dforbric.outcomeMode={mode} -Dforbric.mixinAtWiden=' + ('off' if phase=='widened-off' else 'on'))
  for key,role in [('MERGED','merged'),('FORGE_RT','forge'),('NEO_RT','neo')]:env[key]=inputs[role]['path']
  command=['python3',str(kernel/'run/compat/evidence.py'),'run','--source',str(root),'--mods',str(run/'mods'),'--output',str(results/(phase+'.json'))]
  for role,path in [('merged',env['MERGED']),('forge-interop',env['FORGE_RT']),('neo-runtime',env['NEO_RT']),('kernel',str(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')),('kernel-runtime',str(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar'))]:command+=['--artifact',role+'='+path]
@@ -43,7 +43,8 @@ for phase,mode,policy,required in [('required-strict','required','strict',True),
  assert ('reached third tick' in text) is (not strict),(phase,'late policy did not take effect at the next boundary')
  assert ('completed-tick boundary' in text) is strict,(phase,'safe halt evidence differs')
  assert 'All dimensions are saved' in text and 'Preparing crash report' not in text,(phase,'not a normal saved shutdown')
- if required:assert len(losses)==1 and 'missing' in losses[0]['id'],losses
+ if required:assert len(losses)==1 and ('change' if mode=='widened' else 'missing') in losses[0]['id'],losses
+ if mode=='widened':assert ('value=changed|context' if phase=='widened' else 'value=initial|context') in text,(phase,'argument result did not match')
  assert ('required present handler ran' in text)==(mode=='required')
  assert ('optional present handler ran' in text)==(mode=='optional')
  print('[M36] PASS',phase,'real defaultRequire result and completed-tick policy',flush=True)

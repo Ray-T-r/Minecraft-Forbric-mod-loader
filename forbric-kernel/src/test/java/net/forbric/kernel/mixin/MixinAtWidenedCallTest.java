@@ -59,6 +59,68 @@ class MixinAtWidenedCallTest {
 		assertEquals(MOVED, atTarget(mixin));
 	}
 
+	@Test void aSingleModifiedArgumentAtAnExplicitIndexSurvivesAppendedParameters() {
+		ClassNode mixin = mixin("Lorg/spongepowered/asm/mixin/injection/ModifyArg;");
+		MethodNode handler = mixin.methods.getFirst();
+		handler.desc = "(Ljava/util/List;)Ljava/util/List;";
+		handler.visibleAnnotations.getFirst().values.addAll(List.of("index", 0));
+		assertEquals(1, MixinAtWidenedCall.widen(mixin, name -> targetClass(LONG_DESC)));
+		assertEquals(MOVED, atTarget(mixin));
+	}
+
+	@Test void aModifyArgThatCapturesAllParametersOrInfersItsIndexRemainsUntouched() {
+		for (String desc : List.of("(Ljava/util/List;Ljava/lang/Object;)Ljava/util/List;", "(Ljava/util/List;)Z")) {
+			ClassNode mixin = mixin("Lorg/spongepowered/asm/mixin/injection/ModifyArg;");
+			mixin.methods.getFirst().desc = desc;
+			mixin.methods.getFirst().visibleAnnotations.getFirst().values.addAll(List.of("index", 0));
+			assertEquals(0, MixinAtWidenedCall.widen(mixin, name -> targetClass(LONG_DESC)));
+		}
+		ClassNode mixin = mixin("Lorg/spongepowered/asm/mixin/injection/ModifyArg;");
+		mixin.methods.getFirst().desc = "(Ljava/util/List;)Ljava/util/List;";
+		assertEquals(0, MixinAtWidenedCall.widen(mixin, name -> targetClass(LONG_DESC)));
+	}
+
+	@Test void fixedIndexMustNameAnOriginalArgumentAndGroupsStillDoNotMove() {
+		for (int index : List.of(-1, 1)) {
+			ClassNode mixin = mixin("Lorg/spongepowered/asm/mixin/injection/ModifyArg;");
+			mixin.methods.getFirst().desc = "(Ljava/util/List;)Ljava/util/List;";
+			mixin.methods.getFirst().visibleAnnotations.getFirst().values.addAll(List.of("index", index));
+			assertEquals(0, MixinAtWidenedCall.widen(mixin, name -> targetClass(LONG_DESC)));
+		}
+		ClassNode mixin = mixin("Lorg/spongepowered/asm/mixin/injection/ModifyArg;");
+		mixin.methods.getFirst().desc = "(Ljava/util/List;)Ljava/util/List;";
+		mixin.methods.getFirst().visibleAnnotations.getFirst().values.addAll(List.of("index", 0));
+		mixin.methods.getFirst().invisibleAnnotations = List.of(new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Group;"));
+		assertEquals(0, MixinAtWidenedCall.widen(mixin, name -> targetClass(LONG_DESC)));
+	}
+
+	@Test void actualFabricRegistryListReplacementTargetsTheCurrentFiveArgumentLoader() throws Exception {
+		java.nio.file.Path api = java.nio.file.Path.of("run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar");
+		java.nio.file.Path base = java.nio.file.Path.of(System.getenv().getOrDefault("FORBRIC_OLD", "../forbric-loader"),
+				"run/merged-base/patched-mc-merged-26.2.jar");
+		org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isRegularFile(api) && java.nio.file.Files.isRegularFile(base), "actual Fabric API and game inputs required");
+		byte[] mixinBytes = null, targetBytes;
+		try (java.util.zip.ZipFile outer = new java.util.zip.ZipFile(api.toFile())) {
+			var module = outer.stream().filter(e -> e.getName().startsWith("META-INF/jars/fabric-registry-sync-v0-")).findFirst().orElseThrow();
+			try (var inner = new java.util.zip.ZipInputStream(outer.getInputStream(module))) {
+				for (java.util.zip.ZipEntry e; (e = inner.getNextEntry()) != null;) {
+					if (e.getName().equals("net/fabricmc/fabric/mixin/registry/sync/WorldLoaderMixin.class")) { mixinBytes = inner.readAllBytes(); break; }
+				}
+			}
+		}
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(base.toFile())) {
+			targetBytes = zip.getInputStream(zip.getEntry("net/minecraft/server/WorldLoader.class")).readAllBytes();
+		}
+		org.junit.jupiter.api.Assertions.assertNotNull(mixinBytes);
+		targetBytes = new net.forbric.kernel.transform.DuplicateLambdaPruneInjector().transform("net.minecraft.server.WorldLoader", targetBytes, null);
+		ClassNode target = MixinFit.parse(targetBytes), mixin = MixinFit.parse(mixinBytes);
+		assertEquals(1, MixinAtWidenedCall.widen(mixin, name -> target));
+		MethodNode handler = mixin.methods.stream().filter(m -> m.name.equals("modifyLoadedEntries")).findFirst().orElseThrow();
+		AnnotationNode at = MixinFit.atNodes(MixinFit.injectorOf(handler)).getFirst();
+		String member = (String) MixinFit.value(at, "target");
+		org.junit.jupiter.api.Assertions.assertTrue(member.contains("Ljava/util/concurrent/Executor;Ljava/util/List;)Ljava/util/concurrent/CompletableFuture;"), member);
+	}
+
 	/**
 	 * The restriction. {@code @WrapOperation}'s handler takes the call's own arguments, so a longer call means a
 	 * handler Mixin rejects — the mixin stops applying entirely, which is worse than the point not matching.

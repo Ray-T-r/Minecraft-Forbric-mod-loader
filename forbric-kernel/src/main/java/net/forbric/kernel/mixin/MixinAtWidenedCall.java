@@ -47,7 +47,7 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code HelloS2CPayload cannot be cast to DiscardedPayload}: a Netty stack naming the mod and the game, and
  * nothing about a method signature that grew two parameters.
  *
- * <h2>Why only two annotations</h2>
+ * <h2>Which handler contracts survive appended arguments</h2>
  *
  * <p>Moving a point is only safe when the handler's signature does not describe the CALL. {@code @Inject} takes
  * the enclosing method's parameters and {@code @ModifyExpressionValue} takes the value the call returned, so
@@ -55,6 +55,10 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code @ModifyArg} family mirror the call's own arguments, and pointing one of those at a longer call makes
  * Mixin reject the handler outright — which is exactly what happened to fabric-networking's own
  * {@code @WrapOperation} on this same method the first time this rule was written without the restriction.
+ *
+ * <p>A single-argument {@code @ModifyArg} is also safe when it declares an explicit original argument index
+ * and both its parameter and return type equal that argument. Appending parameters cannot change that index.
+ * A handler receiving the entire argument list or relying on an inferred index remains untouched.
  *
  * <p>The move itself is a prefix, and only a prefix: same owner, same name, same return type, and the parameters
  * the mixin named must be the FIRST ones of the call it lands on. It fires only when the named call is nowhere in
@@ -89,6 +93,7 @@ public final class MixinAtWidenedCall {
 	 * {@code InvalidInjectionException} that named the group and not the move.
 	 */
 	private static final String GROUP_DESC = "Lorg/spongepowered/asm/mixin/injection/Group;";
+	private static final String MODIFY_ARG = "Lorg/spongepowered/asm/mixin/injection/ModifyArg;";
 
 	private MixinAtWidenedCall() {
 	}
@@ -193,12 +198,12 @@ public final class MixinAtWidenedCall {
 			List<AnnotationNode> annotations = new ArrayList<>();
 			if (method.visibleAnnotations != null) annotations.addAll(method.visibleAnnotations);
 			if (method.invisibleAnnotations != null) annotations.addAll(method.invisibleAnnotations);
-			widened += widenAll(mixin.name, annotations, declared);
+			widened += widenAll(mixin.name, method, annotations, declared);
 		}
 		return widened;
 	}
 
-	private static int widenAll(String mixinName, List<AnnotationNode> annotations, List<MethodNode> declared) {
+	private static int widenAll(String mixinName, MethodNode handler, List<AnnotationNode> annotations, List<MethodNode> declared) {
 		if (annotations == null) return 0;
 		// One @Group anywhere on this handler and nothing on it moves: the group is the mod's own statement that
 		// some of these points are meant to miss.
@@ -207,12 +212,26 @@ public final class MixinAtWidenedCall {
 		}
 		int widened = 0;
 		for (AnnotationNode injector : annotations) {
-			if (!ARGUMENT_BLIND.contains(injector.desc)) continue;
+			if (!ARGUMENT_BLIND.contains(injector.desc) && !MODIFY_ARG.equals(injector.desc)) continue;
 			List<MethodNode> bodies = selected(injector, declared);
 			if (bodies.isEmpty()) continue;
-			widened += widenOne(mixinName, injector, bodies);
+			widened += widenOne(mixinName, injector, bodies, member -> ARGUMENT_BLIND.contains(injector.desc)
+					|| singleArgumentAtFixedIndex(handler, injector, member));
 		}
 		return widened;
+	}
+
+	/** A fixed prefix argument keeps its index/type when the carrier appends arguments. A full-arguments
+	 * handler or inferred index does not have this proof and is left unchanged. */
+	private static boolean singleArgumentAtFixedIndex(MethodNode handler, AnnotationNode injector, String target) {
+		Object rawIndex = MixinFit.value(injector, "index");
+		if (!(rawIndex instanceof Integer index) || index < 0) return false;
+		Member member = parse(target);
+		if (member == null) return false;
+		Type[] parameters = Type.getArgumentTypes(member.descriptor());
+		Type[] captured = Type.getArgumentTypes(handler.desc);
+		return index < parameters.length && captured.length == 1 && captured[0].equals(parameters[index])
+				&& Type.getReturnType(handler.desc).equals(parameters[index]);
 	}
 
 	/** The target methods this injector's {@code method} selectors name, matched exactly as written. */
@@ -245,7 +264,8 @@ public final class MixinAtWidenedCall {
 	}
 
 	/** Walks the injector's values — {@code @At} sits nested inside it, sometimes in a list. */
-	private static int widenOne(String mixinName, AnnotationNode annotation, List<MethodNode> bodies) {
+	private static int widenOne(String mixinName, AnnotationNode annotation, List<MethodNode> bodies,
+			java.util.function.Predicate<String> safe) {
 		if (annotation == null || annotation.values == null) return 0;
 
 		int widened = 0;
@@ -263,7 +283,7 @@ public final class MixinAtWidenedCall {
 			Object value = annotation.values.get(i + 1);
 			if (isAt && "target".equals(name) && value instanceof String target && CALL_SITES.contains(atValue)) {
 				String moved = widenedAcross(bodies, target);
-				if (moved != null) {
+				if (moved != null && safe.test(target)) {
 					annotation.values.set(i + 1, moved);
 					widened++;
 					ForbricLog.info("[Forbric/Mixin] %s: injection point %s names the vanilla signature, and nothing "
@@ -271,10 +291,10 @@ public final class MixinAtWidenedCall {
 							+ "parameters the surviving carrier appended", mixinName.replace('/', '.'), target, moved);
 				}
 			} else if (value instanceof AnnotationNode nested) {
-				widened += widenOne(mixinName, nested, bodies);
+				widened += widenOne(mixinName, nested, bodies, safe);
 			} else if (value instanceof List<?> list) {
 				for (Object item : new ArrayList<>(list)) {
-					if (item instanceof AnnotationNode nested) widened += widenOne(mixinName, nested, bodies);
+					if (item instanceof AnnotationNode nested) widened += widenOne(mixinName, nested, bodies, safe);
 				}
 			}
 		}

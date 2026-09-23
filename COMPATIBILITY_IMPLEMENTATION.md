@@ -286,3 +286,16 @@ Pending implementation and acceptance items remain open even when a smaller batc
   Short real-client control and the full two-hour run are still pending; this batch is not soak acceptance.
 - The first renewed M9 mixed-pack run stopped strictly on 13 final missing-injector findings. Those need
   equivalent-implementation/remaining-loss review before a passing broad client acceptance can be claimed.
+
+### P2 preserve fixed-index argument injection after appended parameters
+
+- The full mixed client exposes 16 missing standard handlers after world loading. One is Fabric registry
+  sync's actual WorldLoader list replacement: NeoForge appended a fifth argument, while the modifier still
+  named the four-argument call. The adapter now handles single-argument ModifyArg only when its index is
+  explicit and its parameter/return type match the same original prefix argument. Full-argument handlers,
+  inferred indices, groups, changed prefixes/returns and ambiguous call forms remain unchanged.
+- 23 tests passed, including the actual Fabric API 0.155.2 WorldLoader and current five-argument game call.
+  M36's six real-game cases passed: the adapted argument becomes changed while the added context survives;
+  disabling the adapter leaves the original value and a confirmed necessary loss with normal strict halt.
+- Evidence: `build/verification/fixed-index-widening/`, `build/verification/m36-outcome/` and
+  `build/m36-fixed-index-driver.log`. The remaining mixed-client findings still require work.
