@@ -45,6 +45,8 @@ public final class ClientSoakController {
 	private IntegratedServer current;
 	private long lastSample, lastIdle, lastGc, sequence;
 	private int serial;
+	private int respawnRequests;
+	private long lastRespawnRequest;
 	private boolean joining, finished, ownershipChecked;
 	private record Observation(Sample sample, List<Integer> chunks, String dimension, double x, double z) { }
 	private record Retired(int serial, long at, WeakReference<IntegratedServer> reference) { }
@@ -95,7 +97,13 @@ public final class ClientSoakController {
 					"gameTime", sample.gameTime(), "paused", sample.paused(), "occupied", sample.player(),
 					"point", sample.playerPoint(), "loaded", booleans(sample.loaded()), "chunks", observation.chunks(),
 					"dimension", observation.dimension(), "x", observation.x(), "z", observation.z());
-			if (joining) { machine.joined(sample); joining = false; write("join", payload); }
+			if (joining) {
+				// A saved test player can arrive dead or drown while the client is still loading. Such time
+				// is preparation, not occupied gameplay; wait for the native respawn handshake to complete.
+				if (sample.player() && minecraft.player != null && !minecraft.player.isDeadOrDying()) {
+					machine.joined(sample); joining = false; write("join", payload);
+				} else write("waiting-for-live-player", payload);
+			}
 			else { Action action = machine.observe(sample); write("sample", payload); apply(minecraft, action); }
 		}
 		if (machine.state() == State.WAIT_WORLD && current == null && minecraft.player != null && minecraft.level != null) {
@@ -104,14 +112,21 @@ public final class ClientSoakController {
 				if (!server.getWorldPath(LevelResource.ROOT).toRealPath().equals(world)) throw new IllegalStateException("integrated server is not the nonce-owned copied world");
 				owner(world.resolve(".forbric-soak-world")); ownershipChecked = true;
 				for (Retired old : retired) if (old.reference().get() == server) throw new IllegalStateException("reopening reused the old integrated server instance");
-				current = server; serial++; joining = true; lastSample = 0;
+				current = server; serial++; joining = true; lastSample = 0; respawnRequests = 0; lastRespawnRequest = 0;
 			}
+		}
+		if (joining && minecraft.player != null && minecraft.player.isDeadOrDying()
+				&& now - lastRespawnRequest >= 5_000_000_000L) {
+			if (++respawnRequests > 3) throw new IllegalStateException("native initial-player respawn did not complete");
+			lastRespawnRequest = now;
+			write("respawn-request", fields("server", serial, "attempt", respawnRequests));
+			minecraft.player.respawn();
 		}
 		if ((machine.state() == State.RUNNING || joining) && current != null && now - lastSample >= 1_000_000_000L && sampling.compareAndSet(false, true)) {
 			lastSample = now;
-			IntegratedServer server = current; int id = serial;
+			IntegratedServer server = current; int id = serial; boolean preparing = joining;
 			server.execute(() -> {
-				try { pending.set(observe(server, id)); }
+				try { pending.set(observe(server, id, preparing)); }
 				catch (Throwable failure) { asynchronousFailure.set("server observation failed: " + failure); }
 				finally { sampling.set(false); }
 			});
@@ -129,9 +144,11 @@ public final class ClientSoakController {
 		}
 		apply(minecraft, machine.heartbeat(now));
 	}
-	private Observation observe(IntegratedServer server, int id) {
+	private Observation observe(IntegratedServer server, int id, boolean preparing) {
 		List<ServerPlayer> players = server.getPlayerList().getPlayers();
 		ServerPlayer player = players.size() == 1 ? players.get(0) : null;
+		boolean alive = player != null && !player.isDeadOrDying();
+		if (preparing && alive) preparePlayer(player);
 		boolean[] loaded = new boolean[6]; List<Integer> chunks = new ArrayList<>();
 		for (int dimension = 0; dimension < 3; dimension++) {
 			ServerLevel level = level(server, dimension);
@@ -145,7 +162,11 @@ public final class ClientSoakController {
 			for (int i = 0; i < 6; i++) if (player.level() == level(server, i / 2) && Math.abs(x - COORDINATES[i] - .5) < 2 && Math.abs(z - COORDINATES[i] - .5) < 2) point = i;
 		}
 		return new Observation(new Sample(System.nanoTime(), id, server.getTickCount(), server.overworld().getGameTime(),
-				server.isPaused(), player != null, point, loaded), List.copyOf(chunks), dimension, x, z);
+				server.isPaused(), alive, point, loaded), List.copyOf(chunks), dimension, x, z);
+	}
+	private static void preparePlayer(ServerPlayer player) {
+		player.setGameMode(GameType.CREATIVE); player.setInvulnerable(true); player.setNoGravity(true);
+		player.getAbilities().mayfly = true; player.getAbilities().flying = true; player.onUpdateAbilities();
 	}
 	private static ServerLevel level(IntegratedServer server, int dimension) {
 		return server.getLevel(switch (dimension) { case 0 -> Level.OVERWORLD; case 1 -> Level.NETHER; default -> Level.END; });
@@ -161,8 +182,7 @@ public final class ClientSoakController {
 						List<ServerPlayer> players = server.getPlayerList().getPlayers();
 						if (players.size() != 1) throw new IllegalStateException("soak requires exactly one actual connected player");
 						ServerPlayer player = players.get(0);
-						player.setGameMode(GameType.CREATIVE); player.setInvulnerable(true); player.setNoGravity(true);
-						player.getAbilities().mayfly = true; player.getAbilities().flying = true; player.onUpdateAbilities();
+						preparePlayer(player);
 						if (!player.teleportTo(level(server, point / 2), COORDINATES[point] + .5, 160, COORDINATES[point] + .5,
 								Set.of(), 0, 0, true)) throw new IllegalStateException("native dimension teleport refused point " + point);
 					} catch (Throwable failure) { asynchronousFailure.set("movement failed: " + failure); }

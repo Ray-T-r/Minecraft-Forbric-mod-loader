@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -20,6 +21,33 @@ sys.dont_write_bytecode = True
 from evidence import source_record
 
 MIN_SECONDS = 7200
+
+
+def signal_owned_group(process, value):
+    # The owned child may exit between poll() and signaling. Preserve its real exit status.
+    try:
+        os.killpg(process.pid, value)
+    except ProcessLookupError:
+        pass
+
+
+def wait_for_client(process, log, timeout):
+    """Keep a reported game crash from leaving an unresponsive test window until the soak timeout."""
+    began = time.monotonic()
+    crash_seen = None
+    offset, tail = 0, ''
+    while process.poll() is None:
+        with Path(log).open(errors='replace') as stream:
+            stream.seek(offset); tail = (tail + stream.read())[-8192:]; offset = stream.tell()
+        if crash_seen is None and '#@!@# Game crashed!' in tail:
+            crash_seen = time.monotonic()
+            signal_owned_group(process, signal.SIGTERM)
+        if (crash_seen is not None and time.monotonic() - crash_seen > 5) or time.monotonic() - began > timeout:
+            signal_owned_group(process, signal.SIGKILL)
+            process.wait()
+            return process.returncode
+        time.sleep(.5)
+    return process.returncode
 
 
 class RetentionReview(ValueError):
@@ -304,14 +332,14 @@ def launch(args):
     began = time.monotonic()
     started_ns = time.time_ns()
     with (evidence / 'client.log').open('w') as log:
-        process = subprocess.Popen(command, cwd=run, stdout=log, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(command, cwd=run, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         dump(evidence / 'process.json', {'pid': process.pid, 'nonce': nonce})
         try:
-            code = process.wait(timeout=args.timeout or max(args.seconds * 2, args.seconds + 1800))
-        except (subprocess.TimeoutExpired, KeyboardInterrupt):
-            process.terminate()
+            code = wait_for_client(process, evidence / 'client.log', args.timeout or max(args.seconds * 2, args.seconds + 1800))
+        except KeyboardInterrupt:
+            signal_owned_group(process, signal.SIGTERM)
             try: process.wait(timeout=30)
-            except subprocess.TimeoutExpired: process.kill(); process.wait()
+            except subprocess.TimeoutExpired: signal_owned_group(process, signal.SIGKILL); process.wait()
             code = -1
     elapsed = time.monotonic() - began
     validation = {'status': 'FAIL', 'releaseAccepted': False, 'nonce': nonce, 'pid': process.pid, 'exitCode': code, 'processSeconds': elapsed}

@@ -79,11 +79,37 @@ class SoakVerifierTest(unittest.TestCase):
             for change in (dict(policy='CONTINUE'),dict(confirmedRequired=1),dict(findings=[dict(confidence='CONFIRMED',required=True)]),dict(catalogFailures=[dict(status='FAILED')])):
                 path.write_text(json.dumps(healthy|change))
                 with self.assertRaises(ValueError):soak.validate_compatibility(path,0)
+    def test_detected_game_crash_stops_only_the_owned_group_and_cannot_wait_for_two_hours(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log=Path(temporary)/'client.log';log.write_text('#@!@# Game crashed! Crash report saved\n')
+            class Child:
+                pid=321
+                returncode=None
+                def poll(self):return self.returncode
+                def wait(self):self.returncode=-9;return -9
+            child=Child();clock=[0]
+            with patch.object(soak.os,'killpg') as kill,patch.object(soak.time,'monotonic',side_effect=lambda:clock[0]),patch.object(soak.time,'sleep',side_effect=lambda n:clock.__setitem__(0,clock[0]+n)):
+                self.assertEqual(-9,soak.wait_for_client(child,log,7200))
+                self.assertEqual([(321,soak.signal.SIGTERM),(321,soak.signal.SIGKILL)],[call.args for call in kill.call_args_list])
+                self.assertLess(clock[0],7)
     def test_all_loaded_forever_does_not_prove_chunk_unload(self):
         rows,result=fixture()
         for row in rows:
             if row['type']=='sample':row['loaded']=[True]*6
         with self.assertRaises(ValueError):self.check(rows,result)
+    def test_crash_signal_racing_normal_exit_preserves_exit_code(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log=Path(temporary)/'client.log';log.write_text('#@!@# Game crashed!\n')
+            class Child:
+                pid=321
+                returncode=None
+                def poll(self):return self.returncode
+            child=Child()
+            def exited(pid,value):
+                child.returncode=42
+                raise ProcessLookupError()
+            with patch.object(soak.os,'killpg',side_effect=exited),patch.object(soak.time,'sleep'):
+                self.assertEqual(42,soak.wait_for_client(child,log,7200))
     def test_insufficient_measured_activity_is_rejected(self):
         with self.assertRaises(ValueError):self.check(*fixture(),seconds=60)
     def test_missing_finish_cannot_pass(self):
@@ -113,6 +139,7 @@ class SoakVerifierTest(unittest.TestCase):
             manifests=[]
             class Child:
                 pid=123
+                returncode=0
                 def __init__(self,command,cwd,**kwargs):
                     evidence=cwd/'evidence';manifest=json.loads((evidence/'manifest.json').read_text());manifests.append(manifest)
                     rows,result=fixture()
@@ -121,7 +148,8 @@ class SoakVerifierTest(unittest.TestCase):
                     (evidence/'telemetry.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in rows))
                     (evidence/'controller-result.json').write_text(json.dumps(result))
                 def wait(self,timeout=None):return 0
-            with patch.object(soak,'source_record',return_value=source),patch.object(soak.subprocess,'Popen',Child),patch.object(soak.time,'monotonic',side_effect=[0,24]):
+                def poll(self):return 0
+            with patch.object(soak,'source_record',return_value=source),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',return_value=0),patch.object(soak.time,'monotonic',side_effect=[0,24]):
                 self.assertEqual(0,soak.launch(args))
             self.assertEqual(source,manifests[0]['source'])
             self.assertFalse(json.loads((kernel/'build/verification/m34-soak/last-control.json').read_text())['acceptance']['releaseAccepted'])
