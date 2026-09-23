@@ -441,8 +441,8 @@ public final class KernelGuestMixinAdapter {
 	 * {@code GameRendererMixin} does {@code checkcast GuiRendererExtensions} and resolves cleanly, so it would be
 	 * kept — and would then throw {@code ClassCastException} on a path that works today.
 	 *
-	 * <p>Each one is CONFIRMED — the kernel removed it — but not necessary on its own account: it goes because a
-	 * sibling went, and natively it would fail the same cast. The sibling's own row carries the necessity.
+	 * <p>Each one is CONFIRMED — the kernel removed it — but not necessary on its own account: it goes only because
+	 * the kernel dropped a sibling, and kept alone it would throw. The sibling's own row carries the necessity.
 	 */
 	private static void closeOverCastContracts(String configName, String pkg, String pluginClass, Map<String, byte[]> loaded,
 			List<String> suppress) {
