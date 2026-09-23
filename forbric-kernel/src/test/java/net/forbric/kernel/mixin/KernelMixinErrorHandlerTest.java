@@ -163,6 +163,76 @@ class KernelMixinErrorHandlerTest {
 		}
 	}
 
+	/**
+	 * gate-m9's superseded-mixin block, run against what the handler and the proof actually log.
+	 *
+	 * <p>The gate once asserted the wording of the name-only resolution after the handler had stopped printing it,
+	 * so a run in which the repair WAS seen went red, and nothing printed when the proof resolved the failure. The
+	 * block is executed here, not copied: green once the repair is seen in the defined ConditionalOps, in either
+	 * order, and red while it is not, or when either switch turns the repair off.
+	 */
+	@Test
+	void gateM9PassesOnlyWhenTheRepairIsSeenInTheDefinedClass(@org.junit.jupiter.api.io.TempDir Path temporary)
+			throws Exception {
+		String superseded = SupersededMixins.all().keySet().iterator().next();
+		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
+		Runnable fail = () -> new KernelMixinErrorHandler().onApplyError(
+				"net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener",
+				new RuntimeException("InvalidInjectionException"), info("s.mixins.json", superseded),
+				IMixinErrorHandler.ErrorAction.WARN);
+		Runnable wrapped = () -> SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(true));
+		Runnable unwrapped = () -> SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(false));
+
+		GateRun seen = gateM9(temporary, null, fail, wrapped);
+		assertEquals(0, seen.exit(), seen.output());
+		GateRun seenFirst = gateM9(temporary, null, wrapped, fail);
+		assertEquals(0, seenFirst.exit(), seenFirst.output());
+		GateRun notSeen = gateM9(temporary, null, fail, unwrapped);
+		assertTrue(notSeen.exit() != 0 && notSeen.output().contains("FAIL"), notSeen.output());
+		GateRun neverDefined = gateM9(temporary, null, fail);
+		assertTrue(neverDefined.exit() != 0, neverDefined.output());
+		GateRun tableOff = gateM9(temporary, SupersededMixins.PROPERTY, fail, wrapped);
+		assertTrue(tableOff.exit() != 0, tableOff.output());
+		GateRun repairOff = gateM9(temporary, "forbric.fabricConditions", fail, wrapped);
+		assertTrue(repairOff.exit() != 0, repairOff.output());
+	}
+
+	private record GateRun(int exit, String output) { }
+
+	/** The steps' log, with {@code switchOff} set to off while they run, judged by gate-m9's own block. */
+	private static GateRun gateM9(Path temporary, String switchOff, Runnable... steps) throws Exception {
+		net.forbric.api.CompatibilityFindings.reset();
+		SupersededMixins.reset();
+		String previous = switchOff == null ? null : System.getProperty(switchOff);
+		java.io.PrintStream out = System.out, err = System.err;
+		java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+		// ForbricLog has no log4j here: info goes to System.out, warn to System.err. Both, or half the log is lost.
+		java.io.PrintStream sink = new java.io.PrintStream(buffer, true, java.nio.charset.StandardCharsets.UTF_8);
+		try {
+			if (switchOff != null) System.setProperty(switchOff, "off");
+			System.setOut(sink);
+			System.setErr(sink);
+			for (Runnable step : steps) step.run();
+		} finally {
+			System.setOut(out);
+			System.setErr(err);
+			if (switchOff != null && previous == null) System.clearProperty(switchOff);
+			else if (switchOff != null) System.setProperty(switchOff, previous);
+		}
+		Path log = Files.createTempFile(temporary, "boot", ".log");
+		Files.write(log, buffer.toByteArray());
+		String script = Files.readString(Path.of("run/gate-m9-client.sh"));
+		int begin = script.indexOf("# M9_SUPERSEDED_MIXIN_BEGIN");
+		int end = script.indexOf("# M9_SUPERSEDED_MIXIN_END", begin);
+		assertTrue(begin >= 0 && end > begin, "missing executable superseded-mixin contract in gate-m9");
+		ProcessBuilder builder = new ProcessBuilder("bash", "-c",
+				". run/lib.sh\n" + script.substring(begin, end) + "\nexit \"$FAIL\"");
+		builder.environment().put("LOG", log.toString());
+		Process process = builder.redirectErrorStream(true).start();
+		String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+		return new GateRun(process.waitFor(), output + "\n--- log ---\n" + Files.readString(log));
+	}
+
 	private static final String CONDITIONAL_OPS = "net.neoforged.neoforge.common.conditions.ConditionalOps";
 
 	/** ConditionalOps' codec factory, with or without the kernel's wrap before its one exit. */

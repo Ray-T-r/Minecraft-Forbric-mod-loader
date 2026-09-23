@@ -664,10 +664,17 @@ step "a mixin the kernel took over does not report a loss that did not happen (m
 # So the mod lost nothing, and marking it reports a loss that did not happen. A report that cries wolf is worse
 # than no report: the next real one is read the same way. RED with M9_EXTRA_JVM=-Dforbric.supersededMixins=off,
 # which turns it back into an ordinary marked failure — that is how the claim gets checked against the game.
-check "the failure is reported as superseded, not as a loss" \
-  "Forbric/Mixin\].*SimpleJsonResourceReloadListenerMixin failed to apply.*so its mod is not marked" "$LOG"
+#
+# The failure is recorded like any other and resolved only when ConditionalOps is DEFINED with the kernel's wrap
+# in its bytes (SupersededMixins), so the line asserted is the resolution, not the handler's "stays marked until
+# that repair is seen" -- the table naming a repair is a claim. Also RED with -Dforbric.fabricConditions=off.
+# KernelMixinErrorHandlerTest runs this block against the handler's and the proof's own output.
+# M9_SUPERSEDED_MIXIN_BEGIN
+check "the failure is resolved as superseded, by the repair seen in the defined ConditionalOps" \
+  "Forbric/Mixin\].*SimpleJsonResourceReloadListenerMixin is superseded.*seen in the defined net\.neoforged\.neoforge\.common\.conditions\.ConditionalOps, so its mod is not marked" "$LOG"
 check_absent "and its mod is not marked" \
   "Forbric/Mixin\].*SimpleJsonResourceReloadListenerMixin.*is marked" "$LOG"
+# M9_SUPERSEDED_MIXIN_END
 check "and the conditions are still judged by someone" \
   "Forbric/Conditions\] Fabric's own resource-condition evaluator is live" "$LOG"
 

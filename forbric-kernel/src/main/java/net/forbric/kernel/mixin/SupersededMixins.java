@@ -162,8 +162,12 @@ public final class SupersededMixins {
 	private static void resolve(String config, String mixinClass) {
 		String words = replacementFor(mixinClass);
 		if (words == null) return;
-		MixinCompatibility.resolve(config, mixinClass, words + "; seen in the defined "
-				+ SUPERSEDED.get(mixinClass).witnessClass());
+		String proof = words + "; seen in the defined " + SUPERSEDED.get(mixinClass).witnessClass();
+		MixinCompatibility.resolve(config, mixinClass, proof);
+		// The line gate-m9 reads. The handler's line only says the failure is pending; this one says the repair
+		// was seen, and it is the only place that knows.
+		ForbricLog.info("[Forbric/Mixin] %s:%s is superseded — %s, so its mod is not marked",
+				config == null ? "?" : MixinConfigOwners.describe(config), mixinClass, proof);
 	}
 
 	/** ConditionalOps' codec factory hands its one result to KernelFabricConditions.alsoAskFabric, then returns. */
