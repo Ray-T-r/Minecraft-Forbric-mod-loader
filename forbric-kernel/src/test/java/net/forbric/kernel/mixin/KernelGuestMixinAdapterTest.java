@@ -331,6 +331,14 @@ class KernelGuestMixinAdapterTest {
 			String detail = ModCatalog.failures().get(0).statusDetail();
 			assertTrue(detail.contains("FluidRendererImpl"), detail);
 			assertTrue(detail.contains("sodium"), "the row must name the mod whose build was arbitrated away: " + detail);
+			// And the ledger has it: the target never loads, so the mixin is confirmed not to run — but a missing
+			// target is only a warning to native Mixin, so it is not a necessary loss that stops a launch.
+			var finding = net.forbric.api.CompatibilityFindings.all().stream()
+					.filter(f -> f.id().equals(MixinCompatibility.id("iris.mixins.json",
+							PKG.replace('/', '.') + ".MixinFluidRendererImpl"))).findFirst().orElseThrow();
+			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, finding.confidence());
+			assertFalse(finding.required());
+			assertTrue(net.forbric.api.CompatibilityFindings.confirmedRequired().isEmpty());
 		} finally {
 			net.forbric.kernel.boot.ArbitratedAwayClasses.reset();
 			MixinConfigOwners.reset();
@@ -647,6 +655,31 @@ class KernelGuestMixinAdapterTest {
 		assertTrue(dropped.contains("GuiRendererMixin"), "the orphaned mixin is the hazard");
 		assertTrue(dropped.contains("GameRendererMixin"),
 				"its cast-contract dependent must go with it, or the NPE becomes a CCE");
+	}
+
+	/** The dependent half goes because the kernel dropped its sibling: confirmed not to run, recorded as such. */
+	@Test
+	void theDependentHalfOfACastContractIsAConfirmedFinding() {
+		String gui = "net/minecraft/client/gui/render/SomeGuiThing";
+		String game = "net/minecraft/client/renderer/GameRenderer";
+		String contract = "net/fabricmc/fabric/impl/client/rendering/GuiRendererExtensions";
+		Map<String, byte[]> classes = new HashMap<>();
+		classes.put(gui + ".class", target(gui, "orphanedRenderers", Opcodes.ACC_PRIVATE, false));
+		classes.put(game + ".class", target(game, "unused", Opcodes.ACC_PRIVATE, true));
+		classes.put(PKG + "/GuiRendererMixin.class",
+				shadowingMixin("GuiRendererMixin", gui, "orphanedRenderers", contract));
+		classes.put(PKG + "/GameRendererMixin.class", castingMixin("GameRendererMixin", game, contract));
+
+		KernelGuestMixinAdapter.unfitMixins("example.mixins.json",
+				config(PKG.replace('/', '.'), "GuiRendererMixin", "GameRendererMixin"), resolver(classes));
+
+		var dependent = net.forbric.api.CompatibilityFindings.all().stream()
+				.filter(f -> f.id().equals(MixinCompatibility.id("example.mixins.json", PKG.replace('/', '.') + ".GameRendererMixin")))
+				.findFirst().orElseThrow(() -> new AssertionError("the cascade left no finding: "
+						+ net.forbric.api.CompatibilityFindings.all()));
+		assertEquals(net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, dependent.confidence());
+		assertFalse(dependent.required(), "the sibling's own row carries the necessity");
+		assertTrue(dependent.evidence().stream().anyMatch(e -> e.contains("GuiRendererExtensions")), dependent.evidence().toString());
 	}
 
 	@Test

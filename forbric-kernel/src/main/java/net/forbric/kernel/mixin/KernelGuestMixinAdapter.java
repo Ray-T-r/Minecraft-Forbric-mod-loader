@@ -161,7 +161,7 @@ public final class KernelGuestMixinAdapter {
 			if (classBytes == null) continue;
 			loaded.put(mixin, classBytes);
 			try {
-				if (reportTargetsArbitratedAway(configName, mixin, classBytes)) continue;
+				if (reportTargetsArbitratedAway(configName, pkg, mixin, pluginClass, classBytes)) continue;
 				if (isPureAccessorMixin(classBytes)) {
 					// Never suppressed (the cast to its generated interface must keep working), but a member it
 					// cannot bind is worth a line here: Mixin's own report is an InvalidAccessorException naming a
@@ -272,7 +272,7 @@ public final class KernelGuestMixinAdapter {
 			}
 		}
 
-		closeOverCastContracts(configName, loaded, suppress);
+		closeOverCastContracts(configName, pkg, pluginClass, loaded, suppress);
 		if (!suppress.isEmpty()) {
 			ForbricLog.info("[Forbric/Mixin] %s: left out %d of %d mixin(s)", MixinConfigOwners.describe(configName),
 					suppress.size(), loaded.size());
@@ -321,11 +321,6 @@ public final class KernelGuestMixinAdapter {
 	}
 
 	/**
-	 * Puts what happened on the owning mod's row — the Mods screen and load-report.txt both read
-	 * {@link ModCatalog} — when the config has exactly one owner. A config nobody or more than one mod claims
-	 * marks nobody: a confidently wrong name is worse than none.
-	 */
-	/**
 	 * Names a guest mixin whose target class exists only in the build of a duplicated mod the kernel did not load.
 	 *
 	 * <p>Such a mixin is INERT and silent: Mixin never applies a mixin whose target does not load, and that is not
@@ -346,9 +341,14 @@ public final class KernelGuestMixinAdapter {
 	 * NeoForge build, so a resource check was silent on the one case this was written for. The registry already
 	 * means "only the build that was NOT loaded has this", which is exactly the condition.
 	 *
+	 * <p>CONFIRMED, since the target never loads, but not a necessary loss by the mod's own contract: native Mixin
+	 * only warns about a missing target class, whatever the config's {@code required} says. Whether the build
+	 * choice itself was acceptable is the arbitration's finding, not this one.
+	 *
 	 * @return true when this mixin was reported, so the caller skips the anchor scan that cannot say anything
 	 */
-	private static boolean reportTargetsArbitratedAway(String configName, String mixin, byte[] classBytes) {
+	private static boolean reportTargetsArbitratedAway(String configName, String pkg, String mixin, String pluginClass,
+			byte[] classBytes) {
 		if (!ArbitratedAwayClasses.warningEnabled()) return false;
 		for (String target : MixinFit.mixinTargets(MixinFit.parse(classBytes))) {
 			ArbitratedAwayClasses.Loss loss = ArbitratedAwayClasses.lost(target.replace('/', '.'));
@@ -363,14 +363,23 @@ public final class KernelGuestMixinAdapter {
 					loss.modId(), loss.loser().toString().toLowerCase(java.util.Locale.ROOT),
 					modId == null ? "that mod" : modId,
 					loss.winner() == null ? "matching" : loss.winner().toString());
-			attribute(configName, "its mixin " + mixin + " targets " + target.replace('/', '.')
-					+ ", which only " + loss.modId() + "'s " + loss.loser() + " build has, and this instance "
-					+ "loaded the other one");
+			report(MixinCompatibility.id(configName, pkg + "." + mixin), configName, pkg, mixin, pluginClass, classBytes,
+					"its mixin " + mixin + " targets " + target.replace('/', '.') + ", which only " + loss.modId()
+							+ "'s " + loss.loser() + " build has, and this instance loaded the other one",
+					CompatibilityFinding.Confidence.CONFIRMED, false,
+					List.of("target " + target.replace('/', '.') + " never loads: " + loss.describe(target.replace('/', '.')),
+							"arbitrated away with " + loss.modId() + "'s " + loss.loser() + " build"));
 			return true;
 		}
 		return false;
 	}
 
+	/**
+	 * Puts what happened on the owning mod's row — the Mods screen and load-report.txt both read
+	 * {@link ModCatalog} — when the config has exactly one owner. A config nobody or more than one mod claims
+	 * marks nobody: a confidently wrong name is worse than none. Only for what is not a finding of its own; a
+	 * CONFIRMED finding reaches the row through the catalogue's projection.
+	 */
 	private static void attribute(String configName, String detail) {
 		String modId = MixinConfigOwners.modIdOf(configName);
 		if (modId != null) ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, detail);
@@ -385,8 +394,12 @@ public final class KernelGuestMixinAdapter {
 	 * HAZARD (it {@code @Shadow}s the orphaned {@code pictureInPictureRenderers}); its sibling
 	 * {@code GameRendererMixin} does {@code checkcast GuiRendererExtensions} and resolves cleanly, so it would be
 	 * kept — and would then throw {@code ClassCastException} on a path that works today.
+	 *
+	 * <p>Each one is CONFIRMED — the kernel removed it — but not necessary on its own account: it goes because a
+	 * sibling went, and natively it would fail the same cast. The sibling's own row carries the necessity.
 	 */
-	private static void closeOverCastContracts(String configName, Map<String, byte[]> loaded, List<String> suppress) {
+	private static void closeOverCastContracts(String configName, String pkg, String pluginClass, Map<String, byte[]> loaded,
+			List<String> suppress) {
 		for (int round = 0; round < 8; round++) {
 			Set<String> contracts = new LinkedHashSet<>();
 			for (String dropped : suppress) {
@@ -407,8 +420,11 @@ public final class KernelGuestMixinAdapter {
 				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — it casts the target to an "
 						+ "interface a suppressed sibling contributes, which would ClassCastException",
 						configName, e.getKey());
-				attribute(configName, "guest mixin " + e.getKey() + " was left out with the sibling whose interface "
-						+ "it casts to");
+				report(MixinCompatibility.id(configName, pkg + "." + e.getKey()), configName, pkg, e.getKey(), pluginClass,
+						e.getValue(), "guest mixin " + e.getKey() + " was left out with the sibling whose interface it casts to",
+						CompatibilityFinding.Confidence.CONFIRMED, false,
+						List.of("kernel suppressed this mixin with " + String.join(", ", suppress),
+								"it casts to an interface one of them contributes: " + String.join(", ", contracts)));
 			}
 			if (added.isEmpty()) return;
 			suppress.addAll(added);
