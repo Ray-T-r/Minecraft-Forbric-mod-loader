@@ -1,6 +1,7 @@
 package net.forbric.kernel.runtime.transfer;
 
 import java.lang.ref.WeakReference;
+import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,15 +25,18 @@ import net.fabricmc.fabric.api.transfer.v1.storage.base.SidedStorageBlockEntity;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.runtime.transfer.TransferPrecedence.Answer;
+import net.forbric.kernel.runtime.transfer.TransferPrecedence.ForgeAnswer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.Container;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.BlockCapability;
@@ -40,10 +44,14 @@ import net.neoforged.neoforge.capabilities.ICapabilityInvalidationListener;
 import net.neoforged.neoforge.transfer.ResourceHandler;
 import net.neoforged.neoforge.transfer.fluid.FluidResource;
 import net.neoforged.neoforge.transfer.item.ItemResource;
+import net.neoforged.neoforge.transfer.item.VanillaContainerWrapper;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.common.capabilities.ICapabilityProvider;
 import net.minecraftforge.common.util.LazyOptional;
+import net.minecraftforge.fluids.capability.IFluidHandler;
+import net.minecraftforge.items.IItemHandler;
+import net.minecraftforge.items.wrapper.InvWrapper;
 
 /**
  * Fallbacks for loaded server block entities only. Native providers always get the first answer. Face (including
@@ -63,6 +71,15 @@ public final class BlockTransferBridge {
 		protected Class<?> computeValue(Class<?> type) {
 			try { return type.getMethod("getCapability", Capability.class, Direction.class).getDeclaringClass(); }
 			catch (NoSuchMethodException absent) { return null; }
+		}
+	};
+	private static final ClassValue<Boolean> VANILLA_WRITES = new ClassValue<>() {
+		protected Boolean computeValue(Class<?> type) {
+			if (!BaseContainerBlockEntity.class.isAssignableFrom(type)) return false;
+			for (Class<?> at = type; at != BaseContainerBlockEntity.class && at != RandomizableContainerBlockEntity.class; at = at.getSuperclass()) {
+				for (Method method : at.getDeclaredMethods()) if (method.getName().equals("setItem") || method.getName().equals("onTransfer")) return false;
+			}
+			return true;
 		}
 	};
 	// Ownership is the mod that registered the block entity TYPE, not the jar its class came from: a mod may reuse
@@ -132,6 +149,7 @@ public final class BlockTransferBridge {
 		return switch (answer) {
 			case NEOFORGE -> LiveTransferEndpoints.neo(endpoint::neoItems, endpoint::valid, endpoint::generation, ItemResource.EMPTY);
 			case FORGE -> LiveTransferEndpoints.neo(endpoint::forgeItems, endpoint::valid, endpoint::generation, ItemResource.EMPTY);
+			case NEOFORGE_CONTAINER -> LiveTransferEndpoints.neo(endpoint::containerItems, endpoint::valid, endpoint::generation, ItemResource.EMPTY);
 			case FABRIC, FABRIC_EXPLICIT -> {
 				boolean generic = answer == Answer.FABRIC;
 				yield NativeTransferAdapters.neo(LiveTransferEndpoints.fabric(() -> endpoint.fabricItems(generic), endpoint::valid, endpoint::generation, ItemVariant.blank()), TransferResources.ITEMS);
@@ -142,6 +160,7 @@ public final class BlockTransferBridge {
 		return switch (answer) {
 			case NEOFORGE -> LiveTransferEndpoints.neo(endpoint::neoFluids, endpoint::valid, endpoint::generation, FluidResource.EMPTY);
 			case FORGE -> LiveTransferEndpoints.neo(endpoint::forgeFluids, endpoint::valid, endpoint::generation, FluidResource.EMPTY);
+			case NEOFORGE_CONTAINER -> throw new IllegalStateException("A Container wrapper holds no fluids");
 			case FABRIC, FABRIC_EXPLICIT -> {
 				boolean generic = answer == Answer.FABRIC;
 				yield NativeTransferAdapters.neo(LiveTransferEndpoints.fabric(() -> endpoint.fabricFluids(generic), endpoint::valid, endpoint::generation, FluidVariant.blank()), TransferResources.FLUIDS);
@@ -204,6 +223,20 @@ public final class BlockTransferBridge {
 		return owned == null ? generic : owned;
 	}
 	private static boolean foreignToForge(Ecosystem owner) { return owner == Ecosystem.FABRIC || owner == Ecosystem.NEOFORGE; }
+	/**
+	 * Forge's own generic view of a whole Container: exactly InvWrapper, what BaseContainerBlockEntity hands out when
+	 * a mod leaves the query alone. A subclass may add its own rules, so it stays a handler for the audit to judge.
+	 */
+	static boolean wholeContainer(Object handler) { return handler != null && handler.getClass() == InvWrapper.class; }
+	/**
+	 * Whether NeoForge's own VanillaContainerWrapper writes this Container exactly as the game would. That wrapper
+	 * writes, and on abort restores, through setItem(slot, stack, true), which BaseContainerBlockEntity implements
+	 * WITHOUT calling the two-argument setItem a mod overrides. So every class below the vanilla base must leave
+	 * both setItem forms and onTransfer alone. A mod that re-declares any of them has writes of its own (a recipe
+	 * check, a progress reset, a craft on insert) that the wrapper would skip or replay on every simulate, and the
+	 * Container is not offered to NeoForge consumers at all.
+	 */
+	static boolean vanillaWrites(Class<?> type) { return VANILLA_WRITES.get(type); }
 	private static LazyOptional<?> forgeView(Endpoint endpoint, boolean replacingGenericView) {
 		Answer answer = TransferPrecedence.answer(Ecosystem.FORGE, endpoint, replacingGenericView);
 		if (answer == null) return null;
@@ -284,7 +317,17 @@ public final class BlockTransferBridge {
 		}
 		public Ecosystem owner() { return owner; }
 		public boolean neo() { return (fluid ? neoFluids() : neoItems()) != null; }
-		public boolean forge() { return (fluid ? forgeFluids() : forgeItems()) != null; }
+		public ForgeAnswer forge() {
+			if (!forgeEnabled) return ForgeAnswer.NONE;
+			ForgeAnswer answer = lookup(() -> {
+				if (fluid) return audited(forgeHandler(ForgeCapabilities.FLUID_HANDLER)) != null ? ForgeAnswer.AUDITED : ForgeAnswer.NONE;
+				IItemHandler handler = forgeHandler(ForgeCapabilities.ITEM_HANDLER);
+				if (wholeContainer(handler)) return ForgeAnswer.WHOLE_CONTAINER;
+				return audited(handler) != null ? ForgeAnswer.AUDITED : ForgeAnswer.NONE;
+			});
+			return answer == null ? ForgeAnswer.NONE : answer;
+		}
+		public boolean neoContainer() { return containerItems() != null; }
 		public boolean fabric(boolean generic) { return (fluid ? fabricFluids(generic) : fabricItems(generic)) != null; }
 		ResourceHandler<ItemResource> neoItems() {
 			return lookup(() -> level.get().getCapability(Capabilities.Item.BLOCK, pos, entity.get().getBlockState(), entity.get(), face));
@@ -293,22 +336,40 @@ public final class BlockTransferBridge {
 			return lookup(() -> level.get().getCapability(Capabilities.Fluid.BLOCK, pos, entity.get().getBlockState(), entity.get(), face));
 		}
 		ResourceHandler<ItemResource> forgeItems() {
-			if (!forgeEnabled) return null;
-			return lookup(() -> {
-				BlockEntity target = entity.get();
-				if (!((Object) target instanceof ICapabilityProvider provider)) return null;
-				var handler = observe(provider.getCapability(ForgeCapabilities.ITEM_HANDLER, face));
-				return ForgeSnapshotAdapters.items(handler, target, this::committed);
-			});
+			return forgeEnabled ? lookup(() -> audited(forgeHandler(ForgeCapabilities.ITEM_HANDLER))) : null;
 		}
 		ResourceHandler<FluidResource> forgeFluids() {
+			return forgeEnabled ? lookup(() -> audited(forgeHandler(ForgeCapabilities.FLUID_HANDLER))) : null;
+		}
+		/**
+		 * NeoForge's own wrapper of the whole Container a Forge owner exposes through Forge's InvWrapper, the same one
+		 * NeoForge gives its consumers for a vanilla chest or barrel; null unless it writes that Container as the game
+		 * would. Resolved again for every operation, like every other view.
+		 */
+		ResourceHandler<ItemResource> containerItems() {
 			if (!forgeEnabled) return null;
 			return lookup(() -> {
-				BlockEntity target = entity.get();
-				if (!((Object) target instanceof ICapabilityProvider provider)) return null;
-				var handler = observe(provider.getCapability(ForgeCapabilities.FLUID_HANDLER, face));
-				return ForgeSnapshotAdapters.fluids(handler, target, this::committed);
+				IItemHandler handler = forgeHandler(ForgeCapabilities.ITEM_HANDLER);
+				if (!wholeContainer(handler)) return null;
+				Container container = ((InvWrapper) handler).getInv();
+				if (vanillaWrites(container.getClass())) return VanillaContainerWrapper.of(container);
+				TransferIssues.report("CONTAINER_WRITES_NOT_VANILLA", entity.get(), "The Container behind this block's Forge InvWrapper "
+						+ "is not a BaseContainerBlockEntity writing through the game's own setItem; NeoForge's Container wrapper would "
+						+ "bypass or replay its writes, so NeoForge consumers were not given it");
+				return null;
 			});
+		}
+		/** Forge's answer on this face; only inside a lookup. */
+		private <T> T forgeHandler(Capability<T> capability) {
+			BlockEntity target = entity.get();
+			return (Object) target instanceof ICapabilityProvider provider ? observe(provider.getCapability(capability, face)) : null;
+		}
+		/** Forge's InvWrapper is not an owner's handler: it is neither audited nor reported as refused. */
+		private ResourceHandler<ItemResource> audited(IItemHandler handler) {
+			return wholeContainer(handler) ? null : ForgeSnapshotAdapters.items(handler, entity.get(), this::committed);
+		}
+		private ResourceHandler<FluidResource> audited(IFluidHandler handler) {
+			return ForgeSnapshotAdapters.fluids(handler, entity.get(), this::committed);
 		}
 		@SuppressWarnings("unchecked") SlottedStorage<ItemVariant> fabricItems(boolean generic) {
 			return lookup(() -> {

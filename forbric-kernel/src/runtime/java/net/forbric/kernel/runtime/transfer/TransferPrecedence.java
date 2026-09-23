@@ -22,15 +22,30 @@ import net.forbric.api.ModCatalog;
 public final class TransferPrecedence {
 	private TransferPrecedence() { }
 	public enum Source { NEOFORGE, FORGE, FABRIC }
-	/** FABRIC answers through Fabric's whole lookup, FABRIC_EXPLICIT only through what Fabric has for exactly this block. */
-	public enum Answer { NEOFORGE, FORGE, FABRIC, FABRIC_EXPLICIT }
+	/**
+	 * FABRIC answers through Fabric's whole lookup, FABRIC_EXPLICIT only through what Fabric has for exactly this
+	 * block. NEOFORGE_CONTAINER is NeoForge's own wrapper of the whole Container a Forge owner exposes through
+	 * Forge's generic InvWrapper; no Forbric bridge is involved.
+	 */
+	public enum Answer { NEOFORGE, FORGE, FABRIC, FABRIC_EXPLICIT, NEOFORGE_CONTAINER }
+	/**
+	 * What Forge's capability answered. WHOLE_CONTAINER is Forge's own generic InvWrapper (what BaseContainerBlockEntity
+	 * hands out when a mod does not override the query): the whole Container, unsided, not an audited handler and
+	 * not one to refuse either.
+	 */
+	public enum ForgeAnswer { NONE, AUDITED, WHOLE_CONTAINER }
 	/** What one query (one kind, one face) finds in each ecosystem. The bridge's endpoint asks the loaded world. */
 	public interface Site {
 		Ecosystem owner();
 		/** NeoForge's capability answers. */
 		boolean neo();
-		/** Forge's capability answers with a handler the audited adapter accepts. */
-		boolean forge();
+		/** What Forge's capability answers. */
+		ForgeAnswer forge();
+		/**
+		 * NeoForge's own Container wrapper can write the Container behind that InvWrapper exactly as the game would
+		 * (BlockTransferBridge.vanillaWrites).
+		 */
+		boolean neoContainer();
 		/** Fabric answers: through its whole lookup when generic, otherwise only through its providers for this block. */
 		boolean fabric(boolean generic);
 	}
@@ -70,7 +85,15 @@ public final class TransferPrecedence {
 		for (Source source : order(consumer, owner)) {
 			switch (source) {
 				case NEOFORGE -> { if (site.neo()) return Answer.NEOFORGE; }
-				case FORGE -> { if (site.forge()) return Answer.FORGE; }
+				case FORGE -> {
+					ForgeAnswer forge = site.forge();
+					if (forge == ForgeAnswer.AUDITED) return Answer.FORGE;
+					// Forge's InvWrapper speaks for a Forge owner only: that owner chose "my whole Container". A NeoForge
+					// consumer then gets NeoForge's own view of it. A Fabric consumer has one of its own, which answers
+					// after the bridge, and a Forge consumer already holds the InvWrapper.
+					if (forge == ForgeAnswer.WHOLE_CONTAINER && consumer == Ecosystem.NEOFORGE && owner == Ecosystem.FORGE
+							&& site.neoContainer()) return Answer.NEOFORGE_CONTAINER;
+				}
 				case FABRIC -> { if (site.fabric(generic)) return generic ? Answer.FABRIC : Answer.FABRIC_EXPLICIT; }
 			}
 		}

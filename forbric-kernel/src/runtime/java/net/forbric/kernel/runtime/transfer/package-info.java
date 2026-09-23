@@ -39,7 +39,14 @@
  * BlockEntity fallback declines to answer from a super-call when a subclass overrides getCapability, preserving
  * that subclass's native authority. A Forge consumer can query Fabric/NeoForge block entities inheriting the
  * composed root; arbitrary override shapes are not rewritten. The one exception is BaseContainerBlockEntity's own
- * override, for a Fabric or NeoForge owner: its generic InvWrapper yields to the owner's item capability, and its
- * super-call reaches the fallback for fluids. The existing provider and invalidation remain live.
+ * override, for a Fabric or NeoForge owner: its generic InvWrapper yields to the owner's item capability (never to
+ * Fabric's generic Container view), and its super-call reaches the fallback for fluids. The existing provider and
+ * invalidation remain live.
+ *
+ * <p>That InvWrapper is Forge's own generic view, not a handler to audit, and is never reported as refused. For a
+ * Forge owner it is the owner's answer, "my whole Container": a NeoForge consumer then gets NeoForge's own
+ * VanillaContainerWrapper of that Container, the one NeoForge uses for vanilla chests, with no Forbric bridge. Only
+ * when no class below the vanilla base declares setItem or onTransfer; a Container with writes of its own gets no
+ * NeoForge view at all.
  */
 package net.forbric.kernel.runtime.transfer;

@@ -11,6 +11,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
 import net.forbric.kernel.runtime.transfer.TransferPrecedence;
 import net.forbric.kernel.runtime.transfer.TransferPrecedence.Answer;
+import net.forbric.kernel.runtime.transfer.TransferPrecedence.ForgeAnswer;
 import net.forbric.kernel.runtime.transfer.TransferPrecedence.Source;
 
 /**
@@ -21,6 +22,8 @@ import net.forbric.kernel.runtime.transfer.TransferPrecedence.Source;
  */
 class TransferPrecedenceTest {
 	private static final String GENERIC = "Fabric's generic Container view", EXPLICIT = "Fabric provider for this block";
+	/** Forge's own InvWrapper over the whole Container, and NeoForge's own wrapper of that Container. */
+	private static final String WHOLE = "Forge's InvWrapper", NEO_CONTAINER = "NeoForge's Container wrapper";
 
 	/**
 	 * What a consumer receives, given what each source would answer. Nulls are "nothing on this face". Fabric's
@@ -39,18 +42,25 @@ class TransferPrecedenceTest {
 			case FORGE -> site.forge;
 			case FABRIC -> site.fabricExplicit != null ? site.fabricExplicit : site.fabricGeneric;
 			case FABRIC_EXPLICIT -> site.fabricExplicit;
+			case NEOFORGE_CONTAINER -> NEO_CONTAINER;
 		};
 	}
 	/** A Site that answers from a table and records every question the bridge's precedence asked it, in order. */
 	static final class Table implements TransferPrecedence.Site {
 		final Ecosystem owner; final String forge, neo, fabricExplicit, fabricGeneric;
 		final List<String> asked = new ArrayList<>();
+		/** Whether NeoForge's Container wrapper can write the Container behind a WHOLE answer as the game would. */
+		boolean vanillaWrites = true;
 		Table(Ecosystem owner, String forge, String neo, String fabricExplicit, String fabricGeneric) {
 			this.owner = owner; this.forge = forge; this.neo = neo; this.fabricExplicit = fabricExplicit; this.fabricGeneric = fabricGeneric;
 		}
 		public Ecosystem owner() { return owner; }
 		public boolean neo() { asked.add("neo"); return neo != null; }
-		public boolean forge() { asked.add("forge"); return forge != null; }
+		public ForgeAnswer forge() {
+			asked.add("forge");
+			return forge == null ? ForgeAnswer.NONE : forge.equals(WHOLE) ? ForgeAnswer.WHOLE_CONTAINER : ForgeAnswer.AUDITED;
+		}
+		public boolean neoContainer() { asked.add("neo-container"); return vanillaWrites; }
 		public boolean fabric(boolean generic) {
 			asked.add(generic ? "fabric" : "fabric-explicit");
 			return fabricExplicit != null || generic && fabricGeneric != null;
@@ -133,6 +143,40 @@ class TransferPrecedenceTest {
 		// A Fabric Container that is not a BaseContainerBlockEntity has no Forge view at all, so the owner's generic
 		// view is still the only one there, as before.
 		assertEquals(GENERIC, resolve(Ecosystem.FORGE, new Table(Ecosystem.FABRIC, null, null, null, GENERIC), false));
+	}
+	/**
+	 * A Forge mod's chest that leaves getCapability alone answers every face with Forge's InvWrapper over its whole
+	 * Container. That is the owner's choice, not a handler to audit: a NeoForge consumer gets NeoForge's own wrapper
+	 * of the same Container, the one NeoForge uses for a vanilla chest. Before this it got nothing, and a NeoForge
+	 * pipe could not move a single item out of any such chest.
+	 */
+	@Test void aNeoForgeConsumerGetsItsOwnContainerViewOfAForgeOwnersWholeContainer() {
+		Table forgeChest = new Table(Ecosystem.FORGE, WHOLE, null, null, GENERIC);
+		assertEquals(NEO_CONTAINER, resolve(Ecosystem.NEOFORGE, forgeChest));
+		assertEquals(List.of("forge", "neo-container"), forgeChest.asked);
+		// A Forge machine whose Container declares its own writes: nothing, and still no Fabric generic view.
+		Table forgeMachine = new Table(Ecosystem.FORGE, WHOLE, null, null, GENERIC);
+		forgeMachine.vanillaWrites = false;
+		assertNull(resolve(Ecosystem.NEOFORGE, forgeMachine));
+		assertEquals(List.of("forge", "neo-container", "fabric-explicit"), forgeMachine.asked);
+		// The owner's explicit Fabric storage still answers there, if it has one.
+		Table withStorage = new Table(Ecosystem.FORGE, WHOLE, null, EXPLICIT, GENERIC);
+		withStorage.vanillaWrites = false;
+		assertEquals(EXPLICIT, resolve(Ecosystem.NEOFORGE, withStorage));
+	}
+	/** The same InvWrapper, inherited by a block entity Forge does not own, speaks for nobody. */
+	@Test void forgesInvWrapperSpeaksOnlyForAForgeOwnerAndOnlyToNeoForge() {
+		// A NeoForge machine whose own provider declined this face: nothing, as in NeoForge.
+		Table neoMachine = new Table(Ecosystem.NEOFORGE, WHOLE, null, null, GENERIC);
+		assertNull(resolve(Ecosystem.NEOFORGE, neoMachine));
+		assertEquals(List.of("forge", "fabric-explicit"), neoMachine.asked);
+		// A Fabric consumer: Fabric's own generic view answers after the bridge, so the bridge offers nothing.
+		Table forgeChest = new Table(Ecosystem.FORGE, WHOLE, null, null, GENERIC);
+		assertNull(resolve(Ecosystem.FABRIC, forgeChest));
+		assertEquals(List.of("forge", "neo"), forgeChest.asked);
+		assertNull(resolve(Ecosystem.FABRIC, new Table(Ecosystem.NEOFORGE, WHOLE, null, null, GENERIC)));
+		// A Forge consumer of a NeoForge machine never gets the NeoForge wrapper of it through the bridge.
+		assertNull(resolve(Ecosystem.FORGE, new Table(Ecosystem.NEOFORGE, WHOLE, null, null, GENERIC), true));
 	}
 	@Test void theOwnerIsTheModThatRegisteredTheTypeNamespace() {
 		var mods = List.of(entry(Ecosystem.FABRIC, "forbrictransferfabric"), entry(Ecosystem.FORGE, "forbrictransferforge"),
