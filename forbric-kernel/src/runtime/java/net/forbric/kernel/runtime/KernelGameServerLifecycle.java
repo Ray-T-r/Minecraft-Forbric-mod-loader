@@ -62,6 +62,12 @@ import net.neoforged.neoforge.event.server.ServerStoppingEvent;
  * pre-opens.
  */
 public final class KernelGameServerLifecycle {
+	/** Invoked by the fixed tick return seam, independently of optional cross-ecosystem event forwarding. */
+	public static void onCompatibilityTick(Object value) {
+		MinecraftServer server = (MinecraftServer) value;
+		net.forbric.kernel.boot.LateServerCompatibility.tick(server, server.isDedicatedServer(), () -> server.halt(false));
+	}
+
 	private KernelGameServerLifecycle() {
 	}
 

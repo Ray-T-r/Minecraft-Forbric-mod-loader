@@ -297,6 +297,7 @@ public final class ForbricMixinService
 		// …and whatever the wrap could NOT reach is explained rather than left as "Invalid descriptor". After the
 		// shim, never before it: a diagnosis for something that is about to be repaired is a false alarm.
 		MixinOverloadPin.pin(node, this::mergedBaseNode);
+		FinalMixinApplications.remember(node);
 
 		return node;
 	}

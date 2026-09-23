@@ -256,3 +256,19 @@ Pending implementation and acceptance items remain open even when a smaller batc
   public visibility separately. Production spawn behavior was not altered to accommodate the test.
 - Evidence: `build/verification/m35-behavior/`, final defined classes in `build/verification/m35-defined/`,
   and the structural raw/effective hook comparison in `build/verification/m35-hook-attribution.log`.
+
+### P2 final attachment reconciliation and safe late dedicated-server handling
+
+- Retains original config/default requirements and final adapter injector declarations. After successful JVM
+  definition, exact Mixin rename metadata and merged-handler references distinguish missing necessary
+  standard injectors from optional zero matches. Group alternatives, unknown renames, incomplete minimum
+  counts and unsupported extension forms remain unproved. An aggregate suspicion resolves only after all
+  understood injectors/targets have been observed; a confirmed independent failure is never erased.
+- Late dedicated-server findings are now consumed after a completed tick, independently of optional event
+  forwarding. Strict/headless refusal requests normal save/stop once; integrated servers retain the client
+  screen path. Recording a finding itself never stops the server. Explicit continue preserves the finding.
+- 34 focused tests passed with zero failures/errors/skips. Real M36 then passed required-strict,
+  required-continue, optional and plugin-declined cases with unchanged hashed inputs. Its actual Mixin
+  silently misses one default-required injector: strict mode runs the valid handler and stops normally
+  before tick three; optional/declined runs finish normally, and continue leaves the necessary loss visible.
+  Evidence: `build/verification/final-mixin-and-late-server/` and `build/verification/m36-outcome/`.

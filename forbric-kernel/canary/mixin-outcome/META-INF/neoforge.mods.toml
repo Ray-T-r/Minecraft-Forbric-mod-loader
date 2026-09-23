@@ -1,0 +1,9 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="Apache-2.0"
+[[mods]]
+modId="forbricoutcome"
+version="1.0.0"
+displayName="Final Mixin outcome test"
+[[mixins]]
+config="outcome-canary.mixins.json"
