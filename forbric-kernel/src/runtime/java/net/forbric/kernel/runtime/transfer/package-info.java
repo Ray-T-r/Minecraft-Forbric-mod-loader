@@ -1,6 +1,7 @@
 /**
  * Cross-ecosystem block-entity item/fluid transfer, compiled against Fabric transfer 8.0.11 and NeoForge
- * 26.2.0.88. This package is optional when the Fabric API compile fixture is absent and is never a Fabric mod.
+ * 26.2.0.88. Every built game side carries this package: without the Fabric API compile input the build fails
+ * rather than shipping a runtime jar without it. It is never a Fabric mod.
  *
  * <p>Boot integration: install TransferTransactionHooks and TransferCapabilityFallback in the pre-Mixin chain
  * only when both selected APIs exist. After native capability registration, invoke BlockTransferBridge.install

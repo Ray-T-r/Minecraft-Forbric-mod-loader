@@ -51,6 +51,21 @@ class KernelTransferInteropTest {
 			assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
 		}
 	}
+	/**
+	 * The build may not decide by itself that the transfer component is optional. It used to: an absent dev-pack
+	 * Fabric API jar excluded the whole package from a runtime jar that was still built and nested, and every
+	 * fabric-api player then met the required loss pinned above. The game side is compiled for this suite (test
+	 * depends on compileRuntimeJava), so whenever it exists, the three classes the boot seam checks must exist.
+	 */
+	@Test void aBuiltGameSideAlwaysCarriesTheTransferComponent() {
+		Path classes = Path.of("build/classes/java/runtime");
+		boolean gameSide = Files.isRegularFile(classes.resolve("net/forbric/kernel/runtime/KernelGameLookupHelper.class"));
+		if ("1".equals(System.getenv("FORBRIC_COMPAT_FIXTURES_REQUIRED"))) assertTrue(gameSide, "game-side classes were not compiled");
+		org.junit.jupiter.api.Assumptions.assumeTrue(gameSide, "no staged game jars, so no game side was built");
+		for (String name : List.of(KernelTransferInterop.BRIDGE, KernelTransferInterop.ISSUES, KernelTransferInterop.TRANSACTIONS)) {
+			assertTrue(Files.isRegularFile(classes.resolve(name.replace('.', '/') + ".class")), name + " was left out of the game side");
+		}
+	}
 	private ForbricClassLoader loader(boolean apis, boolean runtime) throws Exception {
 		Path jar = directory.resolve("fixture.jar");
 		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
