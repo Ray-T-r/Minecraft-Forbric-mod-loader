@@ -38,6 +38,9 @@ def genResources = layout.buildDirectory.dir('generated-resources')
 // would add a way for the build step to fail before it starts, to save a quarter of a megabyte.
 def genTools = layout.buildDirectory.dir('generated-tools')
 def isWindows = System.getProperty('os.name').toLowerCase().contains('win')
+// The reviewed link baseline the merge-tools jar carries: the same file build-merged-base.sh and gate-m0 read.
+def linkBaseline = file("${loaderDir}/src/test/resources/merge/link-check-baseline.txt")
+def mergeToolsJar = file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0.jar")
 
 tasks.register('buildForbricJars', Exec) {
 	description = "Build the kernel jar the installer bundles."
@@ -69,7 +72,13 @@ tasks.register('buildMergeTools', Exec) {
 	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', 'mergeToolsJar'] : ['./gradlew', 'mergeToolsJar'])
 	inputs.dir("${loaderDir}/src/tools")
 	inputs.file("${loaderDir}/build.gradle")
-	outputs.dir("${loaderDir}/build/libs")
+	// The baseline rides in this jar but lives under src/test/resources, which the two inputs above do not
+	// cover: a baseline-only change left this task UP-TO-DATE and the installer shipping the previous baseline,
+	// so players' installs judged the merge against a different list than every gate in the tree.
+	inputs.file(linkBaseline).withPropertyName('linkBaseline')
+	// The one file this task makes. Declaring the shared build/libs let buildLoaderJars' output decide whether
+	// this task was up to date.
+	outputs.file(mergeToolsJar)
 }
 
 tasks.register('bundleForbric') {
@@ -81,7 +90,7 @@ tasks.register('bundleForbric') {
 			file("${kernelDir}/build/libs/${kernelJar()}"),
 			file("${loaderDir}/build/libs/${loaderJar()}"),
 			file("${loaderDir}/build/libs/${runtimeJar()}"),
-			file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0.jar"))
+			mergeToolsJar)
 			.withPropertyName('forbricJars')
 			.withPathSensitivity(PathSensitivity.NONE)
 	outputs.dir(genResources)
@@ -146,12 +155,23 @@ tasks.register('bundleTools') {
 	// The loader dropped the -SNAPSHOT qualifier at 0.1.0, so this is the name :mergeToolsJar writes. Asking
 	// for the old one still "worked" for as long as a jar built before that release sat in build/libs: the
 	// bundled tools would have been whatever was last built under the old name, silently, forever.
-	inputs.file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0.jar")
+	inputs.file(mergeToolsJar)
 			.withPropertyName('mergeTools').withPathSensitivity(PathSensitivity.NONE)
+	inputs.file(linkBaseline).withPropertyName('linkBaseline').withPathSensitivity(PathSensitivity.NONE)
 	outputs.dir(genTools)
 	doLast {
-		def src = new File(loaderDir, 'build/libs/forbric-merge-tools-0.1.0.jar')
+		def src = mergeToolsJar
 		if (!src.isFile()) throw new GradleException("missing ${src} — build it first")
+		// What the installer will judge every player's merge against has to be the reviewed file, byte for byte.
+		// A stale jar reaching this point is refused here rather than shipped.
+		def packed = new java.util.zip.ZipFile(src).withCloseable { zip ->
+			def entry = zip.getEntry('net/forbric/tools/link-check-baseline.txt')
+			entry == null ? null : zip.getInputStream(entry).bytes
+		}
+		if (packed == null || !Arrays.equals(packed, linkBaseline.bytes)) {
+			throw new GradleException("${src} carries ${packed == null ? 'no' : 'a different'} link baseline than"
+					+ " ${linkBaseline}; rebuild it (:forbric-loader:mergeToolsJar) before bundling")
+		}
 		def dest = new File(genTools.get().asFile, 'forbric/tools/forbric-merge-tools.jar')
 		dest.parentFile.mkdirs()
 		dest.bytes = src.bytes
@@ -215,6 +235,7 @@ tasks.register('releaseAssets') {
 		def staged = new File(genResources.get().asFile, 'forbric-kernel-libraries.json')
 		if (!staged.isFile()) throw new GradleException("missing ${staged} — run :bundleForbric first")
 		def manifest = new groovy.json.JsonSlurper().parse(staged)
+
 
 		def root = outRoot.get().asFile
 		def assets = new File(root, 'assets')

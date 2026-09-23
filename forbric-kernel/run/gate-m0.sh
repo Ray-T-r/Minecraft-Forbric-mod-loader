@@ -180,6 +180,13 @@ if "$KERNEL/../forbric-loader/gradlew" --offline -q -p "$KERNEL/../forbric-loade
 else
   echo "[kernel] FAIL the installer's link gate — see $INSTALLERLOG"; FAIL=1
 fi
+# And the installer build bundles the tracked baseline, not the one it bundled last (in a throwaway copy).
+BUNDLELOG="$BUILD/gate-m0-bundled-baseline.log"
+if bash "$KERNEL/../forbric-kernel-installer/run/test-bundled-baseline.sh" >"$BUNDLELOG" 2>&1; then
+  check "the installer bundles the tracked link baseline" "ALL GREEN" "$BUNDLELOG"
+else
+  echo "[kernel] FAIL the installer bundles a stale link baseline — see $BUNDLELOG"; FAIL=1
+fi
 
 step "M0 result"
 if [ "$FAIL" -eq 0 ]; then echo "[kernel] ✅ M0 GATE GREEN"; else echo "[kernel] ❌ M0 GATE RED"; fi
