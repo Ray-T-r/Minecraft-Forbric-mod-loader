@@ -521,3 +521,16 @@ Pending implementation and acceptance items remain open even when a smaller batc
   Evidence: `build/verification/corpse-name-tag/`, `build/corpse-render-control/latest.json`.
 - `corpse-repro.py` bounds a detected crash window to five seconds and targets only its owned process group.
   Remaining long-run validation resumes after restoring a live-player precondition in the soak controller.
+
+### P0 complete direct-platform-call denominator
+
+- The attribution tool now scans every declared method on both patched inputs, including callers absent
+  from the conflict report and APIs outside the six event facades. Caller/callee identities include owner,
+  name and descriptor; occurrence comparison also preserves opcode/interface form. Missing callers are
+  unobserved. Raw symbol overlap is not control-flow equivalence or proof of event behavior.
+- Fixed inputs contain 1,095 Forge-side and 1,678 Neo-side platform calls: respectively 789 and 18 raw
+  missing instructions, with another 16 Forge instructions unobserved because the merged caller is absent.
+  Existing runtime-restoration reporting remains separate. Reflection, handles, fields, bridges and helper
+  behavior remain explicitly outside this raw census. Mod class references are labelled candidate filters.
+- Eleven tests pass without failures or skips; the actual 97-root/253-recursive-archive scan is archived
+  under `build/verification/full-platform-call-census/`, with unchanged input/output hashes.

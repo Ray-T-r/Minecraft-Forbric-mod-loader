@@ -22,6 +22,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -59,6 +61,9 @@ import org.objectweb.asm.tree.TypeInsnNode;
  * <p>Potential consumers are identified by an event class in a mod's constant pool. This is not proof of a
  * registered listener, and absence is not proof that reflection or an unmodelled helper never uses it.
  * Raw losses are reported separately from runtime restoration, which this tool does not assess.
+ * The appended platform census covers every direct platform method invocation in both patched JARs,
+ * including non-conflict callers and symbols outside the event-facade model. It does not equate those
+ * platform symbols with event hooks or assess indirect/runtime behavior.
  *
  * <p>Usage: {@code LostHookAttribution <forge-patched.jar> <neo-patched.jar> <merged.jar> <forge-runtime.jar>
  * <neoforge-runtime.jar> <merge-conflicts.txt> <mods-dir>}
@@ -92,7 +97,8 @@ public final class LostHookAttribution {
 			for (String hookClass : HOOK_CLASSES) collectEvents(carrier, hookClass, eventsOfHook);
 		}
 		Set<String> wanted = eventsNamedByMods(Path.of(args[6]));
-		System.out.println("[attribution] mods name " + wanted.size() + " ecosystem event class(es)");
+		System.out.println("[attribution] mods name " + wanted.size()
+				+ " ecosystem class references (candidate filter; not event/subscriber count)");
 
 		int judged = 0, noHookFound = 0, unobserved = 0;
 		List<String> candidates = new ArrayList<>(), trades = new ArrayList<>();
@@ -140,6 +146,168 @@ public final class LostHookAttribution {
 		for (String row : candidates) System.out.println("    + " + row);
 		System.out.println("[attribution] TRADES (both event types referenced): " + trades.size());
 		for (String row : trades) System.out.println("    ~ " + row);
+		printPlatformCensus(forge, neo, merged, conflicts);
+	}
+
+	/** Raw, same-caller bytecode coverage; none of these states asserts runtime event behavior. */
+	enum RawCallState { RAW_RETAINED, RAW_PARTIAL_LOSS, RAW_LOST, RAW_INVOCATION_CHANGED, MERGED_CALLER_MISSING }
+
+	record PlatformCall(String caller, String symbol, boolean modelledFacade, boolean listedConflict,
+			RawCallState state, int originalOccurrences, int mergedOccurrences,
+			Map<String, Integer> originalForms, Map<String, Integer> mergedForms) {
+		int retainedOccurrences() {
+			return state == RawCallState.MERGED_CALLER_MISSING ? 0 : invocationOverlap(originalForms, mergedForms);
+		}
+
+		int lostOccurrences() {
+			return state == RawCallState.MERGED_CALLER_MISSING ? 0 : originalOccurrences - retainedOccurrences();
+		}
+	}
+
+	record PlatformCensus(int classes, int methods, int callers, int listedConflictCallers,
+			int missingMergedMethods, int missingMergedCallers, List<PlatformCall> calls) { }
+
+	/**
+	 * Full denominator for direct invocation instructions in the supplied patched JAR, including callers
+	 * absent from the conflict report. Symbols are owner + name + descriptor, not names or event guesses.
+	 * Repeated calls and opcode/itf are counted: overlap is a multiset comparison inside an exact matching caller,
+	 * not a claim that the same control-flow site survived. Missing callers are unobserved, not raw losses.
+	 */
+	static PlatformCensus platformCensus(Map<String, ClassNode> source, Map<String, ClassNode> merged,
+			List<Conflict> conflicts) {
+		Set<String> listed = new TreeSet<>();
+		for (Conflict conflict : conflicts) listed.add(conflict.owner() + "#" + conflict.method());
+		int methods = 0, callers = 0, listedCallers = 0, missingMethods = 0, missingCallers = 0;
+		List<PlatformCall> rows = new ArrayList<>();
+		for (ClassNode cn : new TreeMap<>(source).values()) {
+			for (MethodNode original : cn.methods.stream().sorted(Comparator.comparing(m -> m.name + m.desc)).toList()) {
+				methods++;
+				String caller = cn.name + "#" + original.name + original.desc;
+				MethodNode counterpart = method(merged.get(cn.name), original.name + original.desc);
+				if (counterpart == null) missingMethods++;
+				Map<String, Map<String, Integer>> originalCalls = platformCallForms(original);
+				if (originalCalls.isEmpty()) continue;
+				callers++;
+				boolean listedConflict = listed.contains(caller);
+				if (listedConflict) listedCallers++;
+				if (counterpart == null) missingCallers++;
+				Map<String, Map<String, Integer>> mergedCalls = counterpart == null ? Map.of() : platformCallForms(counterpart);
+				for (var call : originalCalls.entrySet()) {
+					Map<String, Integer> originalForms = call.getValue(), mergedForms = mergedCalls.getOrDefault(call.getKey(), Map.of());
+					int originalCount = occurrences(originalForms), mergedCount = occurrences(mergedForms);
+					int retainedCount = invocationOverlap(originalForms, mergedForms);
+					RawCallState state = counterpart == null ? RawCallState.MERGED_CALLER_MISSING
+							: mergedCount == 0 ? RawCallState.RAW_LOST
+							: retainedCount == 0 ? RawCallState.RAW_INVOCATION_CHANGED
+							: retainedCount < originalCount ? RawCallState.RAW_PARTIAL_LOSS : RawCallState.RAW_RETAINED;
+					String owner = call.getKey().substring(0, call.getKey().indexOf('#'));
+					rows.add(new PlatformCall(caller, call.getKey(), isModelledFacade(owner), listedConflict,
+							state, originalCount, counterpart == null ? -1 : mergedCount,
+							Collections.unmodifiableMap(new TreeMap<>(originalForms)),
+							Collections.unmodifiableMap(new TreeMap<>(mergedForms))));
+				}
+			}
+		}
+		return new PlatformCensus(source.size(), methods, callers, listedCallers, missingMethods, missingCallers,
+				List.copyOf(rows));
+	}
+
+	/** Every direct invocation of either platform namespace, including non-event APIs and constructors. */
+	static Map<String, Integer> platformCalls(MethodNode method) {
+		Map<String, Integer> calls = new TreeMap<>();
+		platformCallForms(method).forEach((symbol, forms) -> calls.put(symbol, occurrences(forms)));
+		return calls;
+	}
+
+	private static int occurrences(Map<String, Integer> forms) {
+		return forms.values().stream().mapToInt(Integer::intValue).sum();
+	}
+
+	private static int invocationOverlap(Map<String, Integer> original, Map<String, Integer> merged) {
+		int overlap = 0;
+		for (var form : original.entrySet()) overlap += Math.min(form.getValue(), merged.getOrDefault(form.getKey(), 0));
+		return overlap;
+	}
+
+	private static Map<String, Map<String, Integer>> platformCallForms(MethodNode method) {
+		Map<String, Map<String, Integer>> calls = new TreeMap<>();
+		if (method.instructions == null) return calls;
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof MethodInsnNode call && (call.owner.startsWith("net/minecraftforge/")
+					|| call.owner.startsWith("net/neoforged/"))) {
+				String opcode = switch (call.getOpcode()) {
+					case Opcodes.INVOKESTATIC -> "INVOKESTATIC";
+					case Opcodes.INVOKEVIRTUAL -> "INVOKEVIRTUAL";
+					case Opcodes.INVOKESPECIAL -> "INVOKESPECIAL";
+					case Opcodes.INVOKEINTERFACE -> "INVOKEINTERFACE";
+					default -> "opcode-" + call.getOpcode();
+				};
+				calls.computeIfAbsent(call.owner + "#" + call.name + call.desc, ignored -> new TreeMap<>())
+						.merge(opcode + "/itf=" + call.itf, 1, Integer::sum);
+			}
+		}
+		return calls;
+	}
+
+	private static boolean isModelledFacade(String owner) {
+		for (String facade : HOOK_CLASSES) if (facade.equals(owner)) return true;
+		return false;
+	}
+
+	private static void printPlatformCensus(Map<String, ClassNode> forge, Map<String, ClassNode> neo,
+			Map<String, ClassNode> merged, List<Conflict> conflicts) {
+		System.out.println("[platform-census] scope: all loaded classes and declared methods in each patched JAR;"
+				+ " every direct MethodInsnNode targeting net/minecraftforge/ or net/neoforged/; both namespaces"
+				+ " scanned on both sides; caller and symbol identities are owner#name+descriptor");
+		System.out.println("[platform-census] conflict-membership: only parsed '(forge hook lost)' / '(neo hook lost)'"
+				+ " rows; UNLISTED callers are scanned equally; MODELLED_FACADE is the existing six-owner model;"
+				+ " OUTSIDE_EVENT_MODEL symbols are not classified as event hooks");
+		System.out.println("[platform-census] comparison: raw symbol+opcode+itf occurrence-count overlap in the same caller;"
+				+ " not call-site/control-flow equivalence; MERGED_CALLER_MISSING is unobserved, excluded from raw"
+				+ " retained/lost counts; RAW_INVOCATION_CHANGED means the symbol remains only with different invocation forms."
+				+ " Invokedynamic/handle targets, fields, reflection, helpers, runtime rewriting"
+				+ " and event-bus bridges are NOT_ASSESSED; raw absence is not proof of a behavior defect");
+		printPlatformCensus("forge", platformCensus(forge, merged, conflicts));
+		printPlatformCensus("neo", platformCensus(neo, merged, conflicts));
+	}
+
+	private static void printPlatformCensus(String side, PlatformCensus census) {
+		Set<String> symbols = new TreeSet<>(), modelled = new TreeSet<>();
+		Map<String, long[]> groups = new TreeMap<>();
+		long occurrences = 0, retained = 0, lost = 0, unobserved = 0;
+		for (PlatformCall call : census.calls()) {
+			symbols.add(call.symbol());
+			if (call.modelledFacade()) modelled.add(call.symbol());
+			String scope = call.modelledFacade() ? "MODELLED_FACADE" : "OUTSIDE_EVENT_MODEL";
+			String membership = call.listedConflict() ? "LISTED" : "UNLISTED";
+			long[] counts = groups.computeIfAbsent(scope + " conflict=" + membership + " state=" + call.state(),
+					ignored -> new long[2]);
+			counts[0]++;
+			counts[1] += call.originalOccurrences();
+			occurrences += call.originalOccurrences();
+			retained += call.retainedOccurrences();
+			lost += call.lostOccurrences();
+			if (call.state() == RawCallState.MERGED_CALLER_MISSING) unobserved += call.originalOccurrences();
+			System.out.println("[platform-census] call side=" + side + " caller=" + call.caller() + " symbol=" + call.symbol()
+					+ " scope=" + scope + " conflict=" + membership + " state=" + call.state()
+					+ " original-occurrences=" + call.originalOccurrences() + " merged-occurrences="
+					+ (call.mergedOccurrences() < 0 ? "UNOBSERVED" : call.mergedOccurrences())
+					+ " original-forms=" + call.originalForms() + " merged-forms="
+					+ (call.mergedOccurrences() < 0 ? "UNOBSERVED" : call.mergedForms())
+					+ " retained-overlap=" + call.retainedOccurrences() + " raw-lost-occurrences=" + call.lostOccurrences());
+		}
+		System.out.println("[platform-census] denominator side=" + side + " classes=" + census.classes()
+				+ " methods=" + census.methods() + " methods-without-platform-calls=" + (census.methods() - census.callers())
+				+ " platform-callers=" + census.callers() + " listed-conflict-callers=" + census.listedConflictCallers()
+				+ " unlisted-callers=" + (census.callers() - census.listedConflictCallers())
+				+ " merged-methods-missing=" + census.missingMergedMethods()
+				+ " merged-platform-callers-missing=" + census.missingMergedCallers());
+		System.out.println("[platform-census] totals side=" + side + " symbols=" + symbols.size()
+				+ " modelled-facade-symbols=" + modelled.size() + " outside-event-model-symbols=" + (symbols.size() - modelled.size())
+				+ " caller-symbol-pairs=" + census.calls().size() + " original-occurrences=" + occurrences
+				+ " retained-overlap=" + retained + " raw-lost-occurrences=" + lost + " unobserved-occurrences=" + unobserved);
+		for (var group : groups.entrySet()) System.out.println("[platform-census] coverage side=" + side + " scope="
+				+ group.getKey() + " caller-symbol-pairs=" + group.getValue()[0] + " original-occurrences=" + group.getValue()[1]);
 	}
 
 	private static boolean anyWanted(Set<String> hooks, Map<String, Set<String>> eventsOfHook, Set<String> wanted) {
@@ -277,7 +445,9 @@ public final class LostHookAttribution {
 				try (InputStream in = zf.getInputStream(e)) {
 					new ClassReader(in.readAllBytes()).accept(cn, ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
 				}
-				out.put(cn.name, cn);
+				if (out.putIfAbsent(cn.name, cn) != null) {
+					throw new IOException("ambiguous duplicate class identity in " + jar + ": " + cn.name);
+				}
 			}
 		}
 		System.out.println("[attribution] " + label + " : " + out.size() + " classes");
