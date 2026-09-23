@@ -472,6 +472,36 @@ class NestedCandidateSelectionTest {
 		assertFalse(rescued(decision, "lib.OnlyInTwo"), "two builds of one library must not be mixed through rescue");
 	}
 
+	@Test void kotlinAndMethodReferenceEntrypointsConstrainTheChoiceLikeAnyOther() throws Exception {
+		// dep/Api#needed exists only in the Fabric build; the preferred NeoForge build would throw NoSuchMethodError.
+		for (String entry : List.of("{\"adapter\":\"kotlin\",\"value\":\"app.Main\"}", "\"app.Main::start\"")) {
+			reset();
+			Path neo = install("dep-neo.jar", neo("dep", "1", Map.of(), Map.of(), Map.of("dep/Api.class", type("dep/Api"))));
+			Path fab = install("dep-fabric.jar", fabric("dep", "1", Map.of(), "", Map.of("dep/Api.class", api("dep/Api", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC))));
+			byte[] main = entry.contains("::") ? caller("app/Main", "dep/Api", "start", true) : caller("app/Main", "dep/Api");
+			install("app.jar", fabric("app", "1", Map.of(), ",\"depends\":{\"dep\":\"*\"},\"entrypoints\":{\"main\":[" + entry + "]}", Map.of("app/Main.class", main)));
+			var decision = decide();
+			assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status(), entry);
+			assertTrue(decision.suppressed(neo), entry); assertFalse(decision.suppressed(fab), entry);
+			Files.delete(mods().resolve("app.jar"));
+		}
+	}
+
+	@Test void anEntrypointFormTheScanCannotFollowIsUnprovedNotSolved() throws Exception {
+		for (String entry : List.of("{\"adapter\":\"scala\",\"value\":\"app.Main\"}", "\"app.Main::INSTANCE\"")) {
+			reset();
+			install("dep-neo.jar", neo("dep", "1", Map.of(), Map.of(), Map.of("dep/Api.class", type("dep/Api"))));
+			install("dep-fabric.jar", fabric("dep", "1", Map.of(), "", Map.of("dep/Api.class", api("dep/Api", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC))));
+			install("app.jar", fabric("app", "1", Map.of(), ",\"depends\":{\"dep\":\"*\"},\"entrypoints\":{\"main\":[" + entry + "]}",
+					Map.of("app/Main.class", caller("app/Main", "dep/Api"))));
+			decide(); var result = DuplicateModArbiter.currentPlan().selection();
+			assertEquals(JointCandidateSelector.Status.UNPROVED, result.status(), entry);
+			assertTrue(result.uncertain().stream().anyMatch(r -> r.detail().contains("app/Main")), entry);
+			assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), entry);
+			Files.delete(mods().resolve("app.jar"));
+		}
+	}
+
 	private static byte[] api(String name, int access) {
 		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
 		MethodVisitor method = writer.visitMethod(access, "needed", "()V", null, null);
@@ -480,9 +510,12 @@ class NestedCandidateSelectionTest {
 	}
 	/** A Fabric main entrypoint whose straight-line body calls {@code target.needed()} statically. */
 	private static byte[] caller(String name, String target) {
+		return caller(name, target, "onInitialize", false);
+	}
+	private static byte[] caller(String name, String target, String entry, boolean isStatic) {
 		ClassWriter writer = new ClassWriter(0);
 		writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", new String[] {"net/fabricmc/api/ModInitializer"});
-		MethodVisitor method = writer.visitMethod(Opcodes.ACC_PUBLIC, "onInitialize", "()V", null, null); method.visitCode();
+		MethodVisitor method = writer.visitMethod(Opcodes.ACC_PUBLIC | (isStatic ? Opcodes.ACC_STATIC : 0), entry, "()V", null, null); method.visitCode();
 		method.visitMethodInsn(Opcodes.INVOKESTATIC, target, "needed", "()V", false);
 		method.visitInsn(Opcodes.RETURN); method.visitMaxs(1, 1); method.visitEnd(); writer.visitEnd();
 		return writer.toByteArray();

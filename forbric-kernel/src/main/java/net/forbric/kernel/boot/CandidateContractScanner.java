@@ -20,7 +20,8 @@ import org.objectweb.asm.tree.*;
 /** Reads only evidence strong enough to constrain candidate selection; arbitrary class references are not requirements. */
 final class CandidateContractScanner {
 	private enum Match { YES, NO, UNKNOWN }
-	private record Entry(String owner, String method) { }
+	/** {@code unsupported} names an entrypoint form the closure cannot follow; it is then unproved, never skipped. */
+	private record Entry(String owner, String method, String unsupported) { }
 	private record MemberUse(boolean field, int opcode, boolean interfaceOwner, String caller) {
 		boolean staticUse() { return opcode == Opcodes.INVOKESTATIC || opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC; }
 		boolean writesField() { return opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC; }
@@ -143,8 +144,15 @@ final class CandidateContractScanner {
 			Map<String, String> phases = new LinkedHashMap<>(Map.of("preLaunch", "onPreLaunch", "main", "onInitialize"));
 			phases.put(side == EnvType.SERVER ? "server" : "client", side == EnvType.SERVER ? "onInitializeServer" : "onInitializeClient");
 			for (var phase : phases.entrySet()) for (var entry : mod.getEntrypoints().getOrDefault(phase.getKey(), List.of())) {
-				if (!entry.isDefaultAdapter() || entry.value().contains("::")) continue;
-				entries.add(new Entry(entry.value().replace('.', '/'), phase.getValue()));
+				// These all run (KernelFabricLoader resolves "Cls::member" and hands other adapters to their
+				// language adapter), so none may be dropped silently. The default and Kotlin adapters both call the
+				// named method, or the phase method on the class/object; another adapter is explicitly unproved.
+				String value = entry.value(); int member = value.indexOf("::");
+				String owner = (member < 0 ? value : value.substring(0, member)).replace('.', '/');
+				if (!entry.isDefaultAdapter() && !"kotlin".equals(entry.adapter())) {
+					entries.add(new Entry(owner, null, "language adapter '" + entry.adapter() + "'")); continue;
+				}
+				entries.add(new Entry(owner, member < 0 ? phase.getValue() : value.substring(member + 2), null));
 			}
 		} else {
 			for (DiscoveredMod mod : new ForbricModDiscoverer().discoverJar(claim.jar())) {
@@ -154,7 +162,7 @@ final class CandidateContractScanner {
 			for (var entry : ModAnnotationScanner.scan(claim.jar())) {
 				if (entry.family != claim.ecosystem() || !claim.modIds().contains(entry.modId)) continue;
 				if (!entry.dists.isEmpty() && !entry.dists.contains(side == EnvType.SERVER ? "DEDICATED_SERVER" : "CLIENT")) continue;
-				entries.add(new Entry(entry.className.replace('.', '/'), "<init>"));
+				entries.add(new Entry(entry.className.replace('.', '/'), "<init>", null));
 			}
 		}
 		return new Metadata(List.copyOf(dependencies), Map.copyOf(provides), List.copyOf(mixins), List.copyOf(entries));
@@ -235,6 +243,10 @@ final class CandidateContractScanner {
 		}
 
 		void scan(Entry entry) {
+			if (entry.unsupported() != null) {
+				unproved(entry.owner(), "entrypoint uses " + entry.unsupported() + ", which this scan does not follow", true);
+				return;
+			}
 			ClassNode node = jar.node(entry.owner());
 			List<MethodNode> methods = node == null ? List.of() : node.methods.stream()
 					.filter(m -> m.name.equals(entry.method()) && (m.access & Opcodes.ACC_PUBLIC) != 0).toList();
