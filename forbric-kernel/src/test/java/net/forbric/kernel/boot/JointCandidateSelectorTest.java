@@ -57,7 +57,17 @@ class JointCandidateSelectorTest {
 		var fab = candidate("dep-fab", Ecosystem.FABRIC, "dep");
 		var optional = new JointCandidateSelector.Rule("optional", app.jar(), Set.of(fab.jar()), Set.of(), false, "optional target");
 		var unknown = new JointCandidateSelector.Rule("unknown", app.jar(), Set.of(fab.jar()), Set.of(neo.jar()), true, "unresolved ancestor");
-		var result = JointCandidateSelector.solve(List.of(app, neo, fab), List.of(optional, unknown), ORDER, Map.of(), 100);
+		// A soft contract never moves the choice.
+		var soft = JointCandidateSelector.solve(List.of(app, neo, fab), List.of(optional), ORDER, Map.of(), 100);
+		assertEquals(JointCandidateSelector.Status.SOLVED, soft.status());
+		assertTrue(soft.selected().contains(neo.jar()));
+		// A proved provider is preferred over one that only might link (PLAN: preference among satisfying builds).
+		var proved = JointCandidateSelector.solve(List.of(app, neo, fab), List.of(optional, unknown), ORDER, Map.of(), 100);
+		assertEquals(JointCandidateSelector.Status.SOLVED, proved.status());
+		assertTrue(proved.selected().contains(fab.jar()));
+		assertTrue(proved.uncertain().isEmpty());
+		// ...but the unproved one is never rejected: where the proved one is not allowed it runs, UNPROVED.
+		var result = JointCandidateSelector.solve(List.of(app, neo, fab), List.of(optional, unknown), ORDER, Map.of("dep", Ecosystem.NEOFORGE), 100);
 		assertEquals(JointCandidateSelector.Status.UNPROVED, result.status());
 		assertTrue(result.selected().contains(neo.jar()));
 		assertEquals(2, result.uncertain().size());

@@ -140,6 +140,10 @@ final class ReachableCandidateSelector {
 		for (String id : overrides.keySet()) pinLiterals.put(id, ++next);
 		Map<JointCandidateSelector.Rule, Integer> ruleLiterals = new LinkedHashMap<>();
 		for (var rule : hard) ruleLiterals.put(rule, ++next);
+		// A second literal per contract that some build PROVABLY meets while others only might (an inaccessible
+		// pre-transform member, a declared Mixin target): the proved reading is preferred, never required.
+		Map<JointCandidateSelector.Rule, Integer> proofLiterals = new LinkedHashMap<>();
+		for (var rule : hard) if (!rule.providers().isEmpty() && !rule.uncertainProviders().isEmpty()) proofLiterals.put(rule, ++next);
 		if (next > VARIABLE_LIMIT) return new Search(fallback(), JointCandidateSelector.Status.SEARCH_LIMIT, Set.of(), Map.of(), Map.of());
 		ISolver solver = SolverFactory.newDefault(); solver.newVar(next);
 		// A conflict count, not a clock: the same mods folder selects the same jars on every machine.
@@ -157,6 +161,11 @@ final class ReachableCandidateSelector {
 				for (Path provider : rule.getKey().possible()) if (variables.containsKey(provider)) required.add(variable(provider));
 				clause(solver, required);
 			}
+			for (var rule : proofLiterals.entrySet()) {
+				List<Integer> proved = new ArrayList<>(List.of(-rule.getValue(), -variable(rule.getKey().consumer())));
+				for (Path provider : rule.getKey().providers()) if (variables.containsKey(provider)) proved.add(variable(provider));
+				clause(solver, proved);
+			}
 		} catch (ContradictionException impossible) {
 			return new Search(fallback(), JointCandidateSelector.Status.UNSATISFIABLE, Set.of(), Map.of(), Map.of());
 		}
@@ -168,6 +177,11 @@ final class ReachableCandidateSelector {
 			// The user's choice first (PLAN: 用户指定优先), then the contracts, in scan order.
 			accept(solver, assumptions, List.copyOf(pinLiterals.values()), relaxed);
 			accept(solver, assumptions, List.copyOf(ruleLiterals.values()), relaxed);
+			// PLAN: the ecosystem preference applies only among candidates that satisfy the constraints, and an
+			// unproved candidate has not been shown to. It still wins wherever no proved one is feasible.
+			List<Integer> proofs = new ArrayList<>();
+			for (var rule : proofLiterals.entrySet()) if (!relaxed.contains(ruleLiterals.get(rule.getKey()))) proofs.add(rule.getValue());
+			accept(solver, assumptions, proofs, new HashSet<>());
 			for (String id : decisionOrder()) {
 				List<Path> candidates = new ArrayList<>(identities.get(id)); candidates.sort(candidateOrder(rootIds.contains(id), id));
 				if (!rootIds.contains(id)) {

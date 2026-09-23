@@ -350,6 +350,39 @@ class NestedCandidateSelectionTest {
 				"a bounded search still returns one build per id");
 	}
 
+	@Test void aCandidateThatProvablyLinksBeatsThePreferredOneThatOnlyMight() throws Exception {
+		// dep-neo's member is private before transformation (UNKNOWN), dep-fabric's is public (YES).
+		Path neo = install("dep-neo.jar", neo("dep", "1", Map.of(), Map.of(), Map.of("dep/Api.class", api("dep/Api", Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC))));
+		Path fab = install("dep-fabric.jar", fabric("dep", "1", Map.of(), "", Map.of("dep/Api.class", api("dep/Api", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC))));
+		install("app.jar", fabric("app", "1", Map.of(), ",\"depends\":{\"dep\":\"*\"},\"entrypoints\":{\"main\":[\"app.Main\"]}",
+				Map.of("app/Main.class", caller("app/Main", "dep/Api"))));
+		var decision = decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertTrue(decision.suppressed(neo)); assertFalse(decision.suppressed(fab));
+		// Preferring proof is not rejecting the unproved build: pinned, it runs and stays merely unproved.
+		reset(); System.setProperty("forbric.modOwner", "dep=neoforge");
+		decision = decide();
+		assertEquals(JointCandidateSelector.Status.UNPROVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertFalse(decision.suppressed(neo));
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), () -> CompatibilityFindings.all().toString());
+	}
+
+	private static byte[] api(String name, int access) {
+		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+		MethodVisitor method = writer.visitMethod(access, "needed", "()V", null, null);
+		method.visitCode(); method.visitInsn(Opcodes.RETURN); method.visitMaxs(0, 0); method.visitEnd(); writer.visitEnd();
+		return writer.toByteArray();
+	}
+	/** A Fabric main entrypoint whose straight-line body calls {@code target.needed()} statically. */
+	private static byte[] caller(String name, String target) {
+		ClassWriter writer = new ClassWriter(0);
+		writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", new String[] {"net/fabricmc/api/ModInitializer"});
+		MethodVisitor method = writer.visitMethod(Opcodes.ACC_PUBLIC, "onInitialize", "()V", null, null); method.visitCode();
+		method.visitMethodInsn(Opcodes.INVOKESTATIC, target, "needed", "()V", false);
+		method.visitInsn(Opcodes.RETURN); method.visitMaxs(1, 1); method.visitEnd(); writer.visitEnd();
+		return writer.toByteArray();
+	}
+
 	private static String sha(byte[] bytes) throws Exception {
 		return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
 	}

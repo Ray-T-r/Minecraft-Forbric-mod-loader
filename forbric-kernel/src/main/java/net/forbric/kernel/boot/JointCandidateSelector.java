@@ -64,8 +64,19 @@ public final class JointCandidateSelector {
 	/** Ecosystem preference chooses only among satisfying combinations; it never relaxes a hard clause. */
 	public static Result solve(List<DuplicateModArbiter.Claim> claims, List<Rule> rules, List<Ecosystem> preference,
 			Map<String, Ecosystem> overrides, int maxNodes) {
-		JointCandidateSelector search = new JointCandidateSelector(claims, rules, preference, overrides, maxNodes);
+		// First only PROVED providers count wherever some build provably meets a contract and another only might;
+		// the preference then chooses among builds shown to satisfy it. Only if that has no answer do unproved
+		// providers count, so an unproved build is preferred less, never rejected.
+		List<Rule> proved = rules.stream().map(r -> r.hard() && !r.providers().isEmpty() && !r.uncertainProviders().isEmpty()
+				? new Rule(r.id(), r.consumer(), r.providers(), Set.of(), true, r.detail()) : r).toList();
+		JointCandidateSelector search = new JointCandidateSelector(claims, proved, preference, overrides, maxNodes);
 		search.walk(new LinkedHashMap<>(), new LinkedHashSet<>());
+		long visited = search.visited;
+		if (search.solution == null && !proved.equals(rules)) {
+			search = new JointCandidateSelector(claims, rules, preference, overrides, maxNodes);
+			search.walk(new LinkedHashMap<>(), new LinkedHashSet<>());
+			visited += search.visited;
+		}
 		Status status = search.solution != null ? Status.SOLVED : search.exhausted ? Status.SEARCH_LIMIT : Status.UNSATISFIABLE;
 		Set<Path> selected = search.solution;
 		if (selected == null) {
@@ -82,7 +93,7 @@ public final class JointCandidateSelector {
 			else uncertain.add(rule);
 		}
 		if (status == Status.SOLVED && uncertain.stream().anyMatch(Rule::hard)) status = Status.UNPROVED;
-		return new Result(status, Set.copyOf(selected), List.copyOf(unmet), List.copyOf(uncertain), search.visited);
+		return new Result(status, Set.copyOf(selected), List.copyOf(unmet), List.copyOf(uncertain), visited);
 	}
 
 	private void walk(Map<String, Path> owners, Set<Path> selected) {

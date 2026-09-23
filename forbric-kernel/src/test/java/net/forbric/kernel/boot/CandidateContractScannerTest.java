@@ -123,6 +123,12 @@ class CandidateContractScannerTest {
 	@Test void aPrivateMemberThatAnAccessWidenerCouldExposeIsUnknownRatherThanBrokenOrProved() throws Exception {
 		var claims = abiPack(Opcodes.INVOKESTATIC, false, false, true, false, true, false, true);
 		var decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+		assertTrue(decision.suppressed(claims.get(1).jar()), "the build that provably links is preferred");
+		assertFalse(decision.suppressed(claims.get(2).jar()));
+		assertTrue(CompatibilityFindings.all().isEmpty());
+		// Unknown is not broken: chosen explicitly it loads and is reported unproved, never confirmed.
+		reset(); System.setProperty(DuplicateModArbiter.OWNER_OVERRIDE, "dep=neoforge");
+		decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
 		assertFalse(decision.suppressed(claims.get(1).jar()));
 		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
 		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.id().equals("arbitration:selection")
@@ -134,6 +140,10 @@ class CandidateContractScannerTest {
 			reset(); var claims = apiPack(false);
 			addAugmentingMixin(claims.getFirst().jar(), plugin, null);
 			var decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+			assertTrue(decision.suppressed(claims.get(1).jar()), "the build that already has the member is preferred");
+			assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+			reset(); System.setProperty(DuplicateModArbiter.OWNER_OVERRIDE, "dep=neoforge");
+			decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
 			assertFalse(decision.suppressed(claims.get(1).jar()), "pre-Mixin absence cannot disqualify a candidate whose target may change");
 			assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
 			assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.confidence() == CompatibilityFinding.Confidence.SUSPECTED));
