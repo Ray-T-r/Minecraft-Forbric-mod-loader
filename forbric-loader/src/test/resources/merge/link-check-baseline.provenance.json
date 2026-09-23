@@ -1,15 +1,45 @@
 {
-  "schema": 1,
-  "referenceCommit": "b890449",
+  "schema": 2,
+  "baselineSha256": "642cc6d136c508f11cc246e8e9baf89e92e2db993e2d5d488537aedcdce45dbb",
+  "rawReferences": 24,
   "pins": {
     "minecraft": "26.2",
     "forge": "26.2-65.0.1",
     "neoforge": "26.2.0.88"
   },
+  "toolCommit": "3be73b36de1a31952c27cccfaf95d82ce6ea632b",
+  "toolSources": {
+    "MergedBaseBuilder.java": "2d2f4e5a7c1923814d0d85dadef5bf501f2828e7cde27ec035173aed458f8983",
+    "AdditiveMethodMerger.java": "afc3614fb41367bc8e2778671bd8f6fcc79bfc4fc8027cb40e5054f55b3eb1bd",
+    "RuntimeInteropPatcher.java": "bd8485e871b69df4f2f3272dc7299fa23f29ff5099b5c9483f65728184c9aeee",
+    "MergedLinkChecker.java": "211977054c3c5a1db585b753302b2d6b3d53e6e016dad97ce0833cf92ac24f9f"
+  },
+  "mergeInputs": {
+    "vanilla": {
+      "file": "26.2.jar",
+      "sha256": "40896ee9f1e2bec3c934daac7e93d41e9e3d9c2f8ae0ca366d52ffbfd1afa290"
+    },
+    "forge-patched": {
+      "file": "patched-mc-forge-26.2.jar",
+      "sha256": "6e0e9d17ac1bd46990b6f2826f23a70ef2baad32cf724da14b2f6288f8624162"
+    },
+    "neo-patched": {
+      "file": "patched-mc-neoforge-26.2.jar",
+      "sha256": "f790e8fa9e35f8d47aa477ba147cac0eba23fdb340df02bda4e59806678a580b"
+    },
+    "forge-runtime": {
+      "file": "forge-runtime.jar",
+      "sha256": "60558d445681de895d95bfa6ce0fe8b5540fc2c9c39ebb72aab75b7b4c5ce61c"
+    },
+    "neo-runtime": {
+      "file": "neoforge-runtime.jar",
+      "sha256": "bde765325d1925e0bcfdaaf141fcda21612fcbd25ad3378ff45cff2826134b67"
+    }
+  },
   "inputs": {
     "merged": {
       "file": "patched-mc-merged-26.2.jar",
-      "sha256": "f5b2866641dd3a1a8c273621d609cf067327712a7e35859eebb49bda2e026dbb"
+      "sha256": "0d03b6c711c0eea06ada27eaefb463c7fdd5d85832552e177fd3cefe36023506"
     },
     "neoRuntime": {
       "file": "neoforge-runtime.jar",
@@ -17,10 +47,10 @@
     },
     "forgeInterop": {
       "file": "forge-runtime-interop.jar",
-      "sha256": "06bb751f870fc6b7731299c57d2f7c060a553daf9c3463943140beb84709de7f"
+      "sha256": "d1b19f99e193a9715e997fceda9cd5c63dfbe96b87a51ea0ee2e2db0a3f5183a"
     }
   },
-  "baselineSha256": "642cc6d136c508f11cc246e8e9baf89e92e2db993e2d5d488537aedcdce45dbb",
-  "rawReferences": 24,
+  "result": "dangling references: 24 (known 24, new 0); baseline entries now fixed: 0",
+  "reproduction": "inputs.merged and inputs.forgeInterop are the compatibility candidate (forbric-kernel/build/candidate/ in the compatibility-contracts worktree). Rebuilding with forbric-loader/run/build-merged-base.sh from toolCommit's toolSources (unchanged since) and mergeInputs gives the same 30472 merged entries and 2911 interop entries in the same order with the same CRCs, and a byte-identical merge-conflicts.txt; only zip entry timestamps differ, so the jar hashes themselves do not reproduce. The staged reference base f5b2866641dd... predates 6881f11 and is not the output of these tools.",
   "review": "Raw-base exceptions only; runtime repairs must be checked separately. Includes capability members, anonymous switch field, Forge NBT builder, GameTest cleanup, condition context and world modifiers. No exception licenses a new reference."
 }

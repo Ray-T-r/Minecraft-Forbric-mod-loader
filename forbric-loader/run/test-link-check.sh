@@ -133,6 +133,24 @@ LINK_BASELINE="$WORK/missing.txt" bash "$HERE/check-merged-links.sh" "$WORK/merg
 ck "integration gate requires a baseline" 2 $?
 LINK_BASELINE="$BASE" bash "$HERE/check-merged-links.sh" "$WORK/missing.jar" > "$WORK/gate-artifact.log" 2>&1
 ck "integration gate requires artifacts" 2 $?
+# The baseline's provenance must describe the baseline it sits beside; a stale one refuses the gate.
+python3 - "$BASE" "$WORK/merged.jar" "${BASE%.txt}.provenance.json" <<'PY'
+import hashlib, json, sys
+digest = lambda path: hashlib.sha256(open(path, "rb").read()).hexdigest()
+json.dump({"baselineSha256": "0" * 64, "inputs": {"merged": {"sha256": digest(sys.argv[2])}}}, open(sys.argv[3], "w"))
+PY
+LINK_BASELINE="$BASE" bash "$HERE/check-merged-links.sh" "$WORK/merged.jar" > "$WORK/gate-stale-provenance.log" 2>&1
+ck "a provenance describing another baseline refuses the gate" 2 $?
+ck_out "the stale provenance is named" 'does not describe' "$WORK/gate-stale-provenance.log"
+python3 - "$BASE" "$WORK/merged.jar" "${BASE%.txt}.provenance.json" <<'PY'
+import hashlib, json, sys
+digest = lambda path: hashlib.sha256(open(path, "rb").read()).hexdigest()
+json.dump({"baselineSha256": digest(sys.argv[1]), "inputs": {"merged": {"sha256": digest(sys.argv[2])}}}, open(sys.argv[3], "w"))
+PY
+LINK_BASELINE="$BASE" bash "$HERE/check-merged-links.sh" "$WORK/merged.jar" > "$WORK/gate-provenance.log" 2>&1
+ck "a matching provenance lets the link check itself decide" 1 $?
+ck_out "the reviewed jar is recognised" 'merged.jar is the reviewed merged' "$WORK/gate-provenance.log"
+rm -f "${BASE%.txt}.provenance.json"
 # Repair both fields: the exact same gate must now succeed, including packaged-baseline mode.
 cat > "$SRC/game/Target.java" <<'EOF'
 package game;
