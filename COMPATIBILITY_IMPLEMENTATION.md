@@ -361,3 +361,14 @@ Pending implementation and acceptance items remain open even when a smaller batc
   after these changes. Its confirmed necessary list fell from 16 to three: sound and two Litematica rendering
   callbacks. This was explicit continuation for diagnosis; M9 correctly remained RED under the strict-report
   rule. Evidence: `build/verification/client-anchor-adapters/` and `build/m9-after-client-adapters-driver.log`.
+
+### P2 compose sound stream overrides without bypassing native priority
+
+- The audited native SoundInstance default now dispatches Fabric's audio-stream callback after the actual
+  interface graft. A sound overriding the native method keeps normal virtual-dispatch priority. The original
+  upstream redirect follows that native call only after its default dispatch is structurally present.
+- Four focused tests pass with zero skips. They execute the adapted upstream default and handler in a JVM,
+  verify identical future/library/path/loop values, and prove native overrides bypass the Fabric fallback.
+  Missing graft/API, unknown bodies and the off switch remain unchanged. Evidence: `build/verification/sound-contracts/`.
+- Full mixed-client acceptance follows the remaining inserted-parameter rendering adapter; this focused
+  result does not by itself prove playback or full-pack acceptance.

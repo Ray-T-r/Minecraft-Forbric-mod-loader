@@ -351,6 +351,10 @@ public final class KernelBoot {
 			try (var in = loader.getGameResourceAsStream(name + ".class")) { return in != null; }
 			catch (java.io.IOException unavailable) { return false; }
 		}));
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricSoundContractTransformer(name -> {
+			try (var in = loader.getGameResourceAsStream(name + ".class")) { return in != null; }
+			catch (java.io.IOException unavailable) { return false; }
+		}));
 		if (transferInterop) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TransferTransactionHooks());
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TransferCapabilityFallback());
