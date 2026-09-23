@@ -26,6 +26,11 @@ someone who never read this file is slow, not silently broken. It says so on std
 
 -j 1 is exactly the old sequential behaviour: same order, same summary.txt, same exit code.
 
+--release IS AN ACCEPTANCE, NOT A SWEEP. An ordinary sweep reports an explicit --skip as SKIP and a declared
+EXPECTED_RED as itself, and exits 0 when nothing else is red -- the right answer while developing. For a release
+both are the same fact: a gate whose assertions did not pass. So in release mode either one makes the exit code 1,
+and its RESULT line says why, because a gate that was never run cannot be counted as passing.
+
 STDOUT IS STILL ONLY THE RESULT LINES. A run now takes minutes with several gates interleaved, so there is a
 lot worth saying while it happens -- but gates-all.sh's output is asserted to equal summary.txt byte for byte
 (GatesAllTest), and the probe harness merges stderr into it, so neither stream is free. The running commentary
@@ -175,6 +180,8 @@ def main() -> int:
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--progress", action="store_true",
                     help="mirror <results>/progress.log to stderr as the run goes")
+    ap.add_argument("--release", action="store_true",
+                    help="acceptance run: a skipped or expected-red gate fails the run")
     args = ap.parse_args()
 
     run_dir, out_dir = Path(args.run_dir), Path(args.out_dir)
@@ -322,11 +329,18 @@ def main() -> int:
     for g in gates:
         v, rc, secs = results.get(g.name, ("RED", -1, 0.0))
         if v == "SKIP":
-            lines.append(f"RESULT {g.name} SKIP (explicit --skip)")
+            if args.release:
+                failed = 1
+                lines.append(f"RESULT {g.name} SKIP (explicit --skip; not run, so the release run fails)")
+            else:
+                lines.append(f"RESULT {g.name} SKIP (explicit --skip)")
             continue
-        if v == "RED":
+        if v == "RED" or (v == "EXPECTED_RED" and args.release):
             failed = 1
-        lines.append(f"RESULT {g.name} {v} (exit={rc})")
+        if v == "EXPECTED_RED" and args.release:
+            lines.append(f"RESULT {g.name} {v} (exit={rc}; still red, so the release run fails)")
+        else:
+            lines.append(f"RESULT {g.name} {v} (exit={rc})")
     (out_dir / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
 
