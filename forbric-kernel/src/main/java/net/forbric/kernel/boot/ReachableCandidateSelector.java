@@ -18,6 +18,8 @@ final class ReachableCandidateSelector {
 	private final Map<String, List<Path>> identities = new TreeMap<>();
 	private final Set<String> rootIds = new TreeSet<>();
 	private final Map<String, Map<Path, Set<String>>> artifacts = new TreeMap<>();
+	private final Map<Path, List<Path>> parents = new HashMap<>();
+	private final Map<Path, Integer> depth = new HashMap<>();
 	private final Map<String, Ecosystem> overrides;
 	private final List<Ecosystem> rootPreference, nestedPreference;
 	private final long deadline;
@@ -40,11 +42,24 @@ final class ReachableCandidateSelector {
 				if (node.root()) rootIds.add(id);
 			}
 		}
-		for (var edge : graph.edges()) if (edge.coordinate() != null && !graph.nodes().get(edge.child()).excluded()) {
+		for (var edge : graph.edges()) {
+			parents.computeIfAbsent(edge.child(), ignored -> new ArrayList<>()).add(edge.parent());
+			if (edge.coordinate() == null || graph.nodes().get(edge.child()).excluded()) continue;
 			String id = artifactId(edge.coordinate().id());
 			artifacts.computeIfAbsent(id, ignored -> new LinkedHashMap<>()).computeIfAbsent(edge.child(), ignored -> new LinkedHashSet<>()).add(edge.coordinate().version());
 			List<Path> candidates = identities.computeIfAbsent(id, ignored -> new ArrayList<>());
 			if (!candidates.contains(edge.child())) candidates.add(edge.child());
+		}
+		// Shallowest nesting level of each node, so a parent's identity is always decided before its children's.
+		Map<Path, List<Path>> children = new HashMap<>();
+		for (var edge : graph.edges()) children.computeIfAbsent(edge.parent(), ignored -> new ArrayList<>()).add(edge.child());
+		Deque<Path> frontier = new ArrayDeque<>();
+		for (var node : graph.nodes().values()) if (node.root()) { depth.put(node.path(), 0); frontier.add(node.path()); }
+		while (!frontier.isEmpty()) {
+			Path parent = frontier.removeFirst();
+			for (Path child : children.getOrDefault(parent, List.of())) if (!depth.containsKey(child)) {
+				depth.put(child, depth.get(parent) + 1); frontier.add(child);
+			}
 		}
 		List<JointCandidateSelector.Rule> expanded = new ArrayList<>(contracts);
 		for (var edge : graph.edges()) {
@@ -60,10 +75,16 @@ final class ReachableCandidateSelector {
 			boolean unreadable = malformed || "*".equals(predicate) && range != null && !range.isBlank()
 					&& !Set.of("*", "(,)", "[,)", "(,]", "[,]").contains(range);
 			String translated = predicate; boolean open = unreadable;
-			for (var candidate : artifacts.get(artifactId(edge.coordinate().id())).entrySet()) {
-				boolean all = !open && candidate.getValue().stream().allMatch(v -> VersionPredicate.matchesStrictly(translated, v));
-				boolean any = open || candidate.getValue().stream().anyMatch(v -> VersionPredicate.matches(translated, v));
-				if (all) providers.add(candidate.getKey()); else if (any) unknown.add(candidate.getKey());
+			Map<Path, Set<String>> sameArtifact = artifacts.get(artifactId(edge.coordinate().id()));
+			for (Path candidate : edgeProviders(edge)) {
+				// The coordinate's own artifact is judged by the version the parent's metadata recorded for it;
+				// another build of the same mod (a top-level copy, another ecosystem's platform artifact, a
+				// Fabric JiJ child that carries no JarJar metadata at all) by the version that build declares.
+				Set<String> versions = sameArtifact.containsKey(candidate) ? sameArtifact.get(candidate)
+						: Set.of(modVersion(candidate, graph.nodes().get(edge.child()).claim().modIds().getFirst()));
+				boolean all = !open && versions.stream().allMatch(v -> VersionPredicate.matchesStrictly(translated, v));
+				boolean any = open || versions.stream().anyMatch(v -> VersionPredicate.matches(translated, v));
+				if (all) providers.add(candidate); else if (any) unknown.add(candidate);
 			}
 			expanded.add(new JointCandidateSelector.Rule("jarjar:" + edge.entry(), edge.parent(), providers, unknown, true,
 					(malformed ? "malformed JarJar version range, left unproved: " : "") + "requires bundled artifact "
@@ -102,7 +123,7 @@ final class ReachableCandidateSelector {
 				if (node.excluded()) { clause(solver, -variable(node.path())); continue; }
 				if (!node.root()) {
 					List<Integer> reachable = new ArrayList<>(List.of(-variable(node.path())));
-					for (var edge : graph.edges()) if (edge.child().equals(node.path())) reachable.add(variable(edge.parent()));
+					for (Path parent : parents.getOrDefault(node.path(), List.of())) reachable.add(variable(parent));
 					clause(solver, reachable);
 				}
 			}
@@ -125,7 +146,7 @@ final class ReachableCandidateSelector {
 					clause(solver, -variable(edge.parent()), variable(edge.child()));
 				} else if (edge.coordinate() != null) {
 					List<Integer> required = new ArrayList<>(List.of(-variable(edge.parent())));
-					for (Path provider : identities.get(artifactId(edge.coordinate().id()))) required.add(variable(provider));
+					for (Path provider : edgeProviders(edge)) required.add(variable(provider));
 					clause(solver, required);
 				} else if (child.claim() != null) {
 					for (String id : child.claim().modIds()) {
@@ -143,9 +164,7 @@ final class ReachableCandidateSelector {
 		} catch (ContradictionException impossible) { return null; }
 		VecInt assumptions = new VecInt();
 		if (!satisfiable(solver, assumptions)) return null;
-		List<String> order = new ArrayList<>(rootIds);
-		for (String id : identities.keySet()) if (!rootIds.contains(id)) order.add(id);
-		for (String id : order) {
+		for (String id : decisionOrder()) {
 			List<Path> candidates = new ArrayList<>(identities.get(id)); candidates.sort(candidateOrder(rootIds.contains(id), id));
 			if (!rootIds.contains(id)) {
 				VecInt absent = copy(assumptions); for (Path candidate : candidates) absent.push(-variable(candidate));
@@ -181,8 +200,55 @@ final class ReachableCandidateSelector {
 			List<Ecosystem> preference = root ? rootPreference : nestedPreference;
 			int ar = family(a) == null || !preference.contains(family(a)) ? preference.size() : preference.indexOf(family(a));
 			int br = family(b) == null || !preference.contains(family(b)) ? preference.size() : preference.indexOf(family(b));
-			return ar != br ? Integer.compare(ar, br) : a.toString().compareTo(b.toString());
+			if (ar != br) return Integer.compare(ar, br);
+			// Two builds of one mod from the SAME ecosystem: both genuine loaders keep the highest version
+			// (cc2ec44). The candidate directory is a content digest, so the path is only the last resort.
+			if (!artifacts.containsKey(id) && family(a) == family(b)) {
+				int version = VersionPredicate.compare(modVersion(b, id), modVersion(a, id)); if (version != 0) return version;
+			}
+			return a.toString().compareTo(b.toString());
 		};
+	}
+
+	/**
+	 * Roots first, then every other identity from the shallowest nesting level down, mod ids before JarJar
+	 * artifacts at each level. A child identity is only decided once its parents are, so trying "absent" first
+	 * for a nested id can never switch off the parent that bundles it, and an artifact identity cannot take a
+	 * build away from the mod-id contest that owns the preference.
+	 */
+	private List<String> decisionOrder() {
+		List<String> order = new ArrayList<>(rootIds), nested = new ArrayList<>();
+		for (String id : identities.keySet()) if (!rootIds.contains(id)) nested.add(id);
+		nested.sort(Comparator.<String>comparingInt(id -> identities.get(id).stream().mapToInt(p -> depth.getOrDefault(p, Integer.MAX_VALUE)).min().orElse(Integer.MAX_VALUE))
+				.thenComparing(id -> id.startsWith("@jarjar:")).thenComparing(Comparator.naturalOrder()));
+		order.addAll(nested);
+		return order;
+	}
+
+	/**
+	 * What can satisfy a JarJar coordinate: the named artifact, or any build that claims every mod id the bundled
+	 * child claims. FML resolves by mod id; a platform-specific artifact name (xaerolib-forge-26.2 against
+	 * xaerolib-neoforge-26.2) or a Fabric parent that carries no JarJar metadata must not make one library
+	 * two mutually required, mutually exclusive jars.
+	 */
+	private Set<Path> edgeProviders(NestedCandidateInventory.Edge edge) {
+		Set<Path> providers = new LinkedHashSet<>(identities.getOrDefault(artifactId(edge.coordinate().id()), List.of()));
+		var child = graph.nodes().get(edge.child()).claim();
+		if (child == null || child.modIds().isEmpty()) return providers;
+		Set<String> needed = new HashSet<>(); for (String id : child.modIds()) needed.add(JointCandidateSelector.key(id));
+		for (Path candidate : identities.getOrDefault(JointCandidateSelector.key(child.modIds().getFirst()), List.of())) {
+			var claim = graph.nodes().get(candidate).claim();
+			if (claim.modIds().stream().map(JointCandidateSelector::key).collect(java.util.stream.Collectors.toSet()).containsAll(needed)) providers.add(candidate);
+		}
+		return providers;
+	}
+
+	/** The version a candidate declares for {@code id} (either spelling), or "0" when it declares none. */
+	private String modVersion(Path candidate, String id) {
+		var claim = graph.nodes().get(candidate).claim(); if (claim == null) return "0";
+		String key = JointCandidateSelector.key(id);
+		for (String raw : claim.modIds()) if (JointCandidateSelector.key(raw).equals(key)) return claim.versionOf(raw);
+		return "0";
 	}
 
 	/** An explicit non-solution: retain chosen roots and only reachable descendants, never every losing jar. */
@@ -206,7 +272,7 @@ final class ReachableCandidateSelector {
 				if (edge.payload() || (child.claim() == null && edge.coordinate() == null)) { changed |= selected.add(edge.child()); continue; }
 				List<String> ids = child.claim() == null ? List.of(artifactId(edge.coordinate().id())) : child.claim().modIds().stream().map(JointCandidateSelector::key).toList();
 				for (String id : ids) if (!intersects(selected, Set.copyOf(identities.get(id)))) {
-					List<Path> candidates = new ArrayList<>(identities.get(id)); candidates.sort(candidateOrder(false, id));
+					List<Path> candidates = new ArrayList<>(identities.get(id)); candidates.sort(candidateOrder(rootIds.contains(id), id));
 					Path choice = candidates.stream().filter(p -> graph.nodes().get(p).root() || graph.edges().stream().anyMatch(e -> e.child().equals(p) && selected.contains(e.parent())))
 							.findFirst().orElse(edge.child());
 					changed |= selected.add(choice);

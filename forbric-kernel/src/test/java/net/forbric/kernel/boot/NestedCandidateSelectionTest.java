@@ -212,6 +212,103 @@ class NestedCandidateSelectionTest {
 		}
 	}
 
+	/** The real xaero pair: two Forge-family parents name their own platform artifact of one shared mod id. */
+	private void xaeroPair() throws Exception {
+		install("xaerominimap-forge.jar", forge("xaerominimap", "26.5.1", Map.of("META-INF/jarjar/xaerolib-forge.jar", forge("xaerolib", "1.7.3", Map.of(), Map.of(), Map.of())),
+				Map.of("META-INF/jarjar/xaerolib-forge.jar", new NestedCandidateInventory.Coordinate("xaero.lib:xaerolib-forge-26.2", "[1.7.3,)", "1.7.3")), Map.of()));
+		install("xaeroworldmap-neoforge.jar", neo("xaeroworldmap", "1.46.0", Map.of("META-INF/jarjar/xaerolib-neoforge.jar", neo("xaerolib", "1.7.3", Map.of(), Map.of(), Map.of())),
+				Map.of("META-INF/jarjar/xaerolib-neoforge.jar", new NestedCandidateInventory.Coordinate("xaero.lib:xaerolib-neoforge-26.2", "[1.7.0,1.8)", "1.7.3")), Map.of()));
+	}
+	private net.forbric.api.Ecosystem selectedFamily(String id) {
+		var plan = DuplicateModArbiter.currentPlan();
+		var chosen = plan.inventory().nodes().values().stream().filter(n -> plan.selected().contains(n.path()) && n.claim() != null
+				&& n.claim().modIds().contains(id)).toList();
+		assertEquals(1, chosen.size(), () -> id + " selected " + chosen);
+		return chosen.getFirst().claim().ecosystem();
+	}
+
+	@Test void samePlatformLibraryUnderTwoPlatformArtifactsFollowsTheNestedPreference() throws Exception {
+		xaeroPair();
+		decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertEquals(net.forbric.api.Ecosystem.NEOFORGE, selectedFamily("xaerolib"));
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), () -> CompatibilityFindings.all().toString());
+		// The order is a preference among satisfying builds, not an artifact the first-sorted identity forced.
+		reset(); System.setProperty("forbric.nestedDupePreference", "minecraftforge,neoforge,fabric");
+		xaeroPair(); decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertEquals(net.forbric.api.Ecosystem.FORGE, selectedFamily("xaerolib"));
+		reset(); System.setProperty("forbric.modOwner", "xaerolib=minecraftforge");
+		xaeroPair(); decide();
+		assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status());
+		assertEquals(net.forbric.api.Ecosystem.FORGE, selectedFamily("xaerolib"));
+	}
+
+	@Test void aFabricBuildWithoutJarJarMetadataCanStandInForAForgeCoordinate() throws Exception {
+		// Real Fabric JiJ parents ship no META-INF/jarjar/metadata.json (xaerominimap-fabric), yet the MinecraftForge
+		// parent's coordinate is met by any build of the same mod whose version is in range.
+		install("parent-fabric.jar", fabric("parentfabric", "1", Map.of("META-INF/jars/lib-fabric.jar", fabric("lib", "2.0.0", Map.of(), "", Map.of())),
+				",\"depends\":{\"lib\":\">=2.0.0\"}", Map.of()));
+		install("parent-forge.jar", forge("parentforge", "1", Map.of("META-INF/jarjar/lib-forge.jar", forge("lib", "1.5.0", Map.of(), Map.of(), Map.of())),
+				Map.of("META-INF/jarjar/lib-forge.jar", new NestedCandidateInventory.Coordinate("example:lib-forge", "[1.5,)", "1.5.0")), Map.of()));
+		for (String pin : List.of("", "lib=fabric")) {
+			reset(); if (!pin.isEmpty()) System.setProperty("forbric.modOwner", pin);
+			decide();
+			assertEquals(JointCandidateSelector.Status.SOLVED, DuplicateModArbiter.currentPlan().selection().status(), pin);
+			assertEquals(net.forbric.api.Ecosystem.FABRIC, selectedFamily("lib"), pin);
+			assertTrue(CompatibilityFindings.confirmedRequired().isEmpty(), () -> pin + CompatibilityFindings.all());
+		}
+	}
+
+	@Test void aNewerTopLevelCopySatisfiesABundlingParentsCoordinate() throws Exception {
+		install("a.jar", neo("a", "1", Map.of("META-INF/jarjar/lib-1.jar", neo("lib", "1.0", Map.of(), Map.of(), Map.of())),
+				Map.of("META-INF/jarjar/lib-1.jar", new NestedCandidateInventory.Coordinate("example:lib", "[1.0,)", "1.0")), Map.of()));
+		Path topLevel = install("lib-2.jar", neo("lib", "2.0", Map.of(), Map.of(), Map.of()));
+		for (boolean consumer : List.of(false, true)) {
+			reset();
+			if (consumer) install("b.jar", fabric("b", "1", Map.of(), ",\"depends\":{\"lib\":\">=2.0\"}", Map.of()));
+			var decision = decide(); var plan = DuplicateModArbiter.currentPlan();
+			assertEquals(JointCandidateSelector.Status.SOLVED, plan.selection().status(), "consumer=" + consumer);
+			assertFalse(decision.suppressed(topLevel), "the jar the player installed is not silently replaced");
+			assertTrue(plan.nestedFiles().isEmpty(), "the older bundled copy stays out");
+			assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+		}
+	}
+
+	@Test void sameFamilyNestedDuplicatesResolveToTheHighestVersionNotTheDigestOrder() throws Exception {
+		// Distant Horizons nests fabric-api 0.149's modules next to the player's fabric-api 0.161. The candidate
+		// directory is the content digest, so ordering by path picked whichever hash sorted first.
+		byte[] newer = fabric("fabric-screen-api-v1", "2.0.4", Map.of(), "", Map.of());
+		byte[] older = null;
+		for (int pad = 0; older == null || sha(older).compareTo(sha(newer)) > 0; pad++)
+			older = fabric("fabric-screen-api-v1", "2.0.3", Map.of(), "", Map.of("pad-" + pad, new byte[] {1}));
+		assertTrue(sha(older).compareTo(sha(newer)) < 0, "the older copy's cache directory sorts first");
+		install("fabric-api.jar", fabric("fabric-api", "0.161.0", Map.of("META-INF/jars/screen.jar", newer), "", Map.of()));
+		install("distanthorizons.jar", fabric("distanthorizons", "3.3.0", Map.of("META-INF/jars/screen.jar", older), "", Map.of()));
+		decide(); var plan = DuplicateModArbiter.currentPlan();
+		assertEquals(JointCandidateSelector.Status.SOLVED, plan.selection().status());
+		assertEquals(1, plan.nestedFiles().size());
+		assertEquals("2.0.4", plan.inventory().nodes().get(plan.nestedFiles().getFirst()).claim().versionOf("fabric-screen-api-v1"));
+	}
+
+	private static String sha(byte[] bytes) throws Exception {
+		return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+	}
+	private static byte[] forge(String id, String version, Map<String, byte[]> children, Map<String, NestedCandidateInventory.Coordinate> coordinates, Map<String, byte[]> resources) throws Exception {
+		Map<String, byte[]> all = new LinkedHashMap<>();
+		for (var entry : zip(neo(id, version, children, coordinates, resources)).entrySet()) {
+			all.put(entry.getKey().equals("META-INF/neoforge.mods.toml") ? "META-INF/mods.toml" : entry.getKey(), entry.getValue());
+		}
+		return bytes(all);
+	}
+	private static Map<String, byte[]> zip(byte[] jar) throws Exception {
+		Map<String, byte[]> entries = new LinkedHashMap<>();
+		try (ZipInputStream in = new ZipInputStream(new java.io.ByteArrayInputStream(jar))) {
+			for (ZipEntry entry; (entry = in.getNextEntry()) != null;) entries.put(entry.getName(), in.readAllBytes());
+		}
+		return entries;
+	}
+
 	private static byte[] fabric(String id, String version, Map<String, byte[]> children, String extra, Map<String, byte[]> resources) throws Exception {
 		Map<String, byte[]> all = new LinkedHashMap<>(resources); all.putAll(children);
 		String jars = String.join(",", children.keySet().stream().map(name -> "{\"file\":\"" + name + "\"}").toList());
