@@ -42,6 +42,18 @@ class KernelLoadReportTest {
 
 	private List<ModCatalog.Entry> previous;
 
+	@Test void machineReportDistinguishesStrictFromExplicitContinuation(
+			@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+		String key = net.forbric.kernel.ui.CompatibilityDecision.PROPERTY, previousPolicy = System.getProperty(key);
+		try {
+			for (String policy : List.of("strict", "continue")) {
+				System.setProperty(key, policy); KernelLoadReport.writeTo(dir.resolve("load-report.txt"));
+				String json = java.nio.file.Files.readString(dir.resolve("compatibility-report.json"));
+				assertTrue(json.contains("\"policy\":\"" + policy.toUpperCase(java.util.Locale.ROOT) + "\""));
+			}
+		} finally { if (previousPolicy == null) System.clearProperty(key); else System.setProperty(key, previousPolicy); }
+	}
+
 	@Test
 	void concurrentReportWritersNeverExposeATruncatedJsonToAReader(
 			@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {

@@ -317,3 +317,19 @@ Pending implementation and acceptance items remain open even when a smaller batc
 - This is the actual unmodified Fabric entity-event module and base module. The full mixed pack still needs
   its remaining item, sound, renderer and equivalent-implementation findings resolved; no broad acceptance
   or two-hour result is claimed by this focused gate.
+
+### P2 prove known replacements instead of reporting them as lost
+
+- Final injection reconciliation now recognizes the condition skip consumer only when the original Fabric
+  handler instruction fingerprint, both actual kernel filter calls, and both audited native Optional
+  consumers agree. A missing filter, changed consumer or unknown handler remains a confirmed loss. A repair
+  name or registration alone cannot resolve it. Original marker handling and native consumers are pinned
+  to reviewed upstream executable bodies; shared fingerprints ignore only non-executable metadata.
+- Real compiled KernelFabricConditions and real DataResult tests prove that the marker no longer reaches
+  the casting consumer, normal Optional data and decode errors are retained, and the unfiltered baseline
+  throws. Final-ledger tests prove RESOLVED becomes CONFIRMED again if its structural witness is removed.
+- Machine reports include effective policy. M9 requires a fresh STRICT report with zero necessary losses
+  and no unclassified failed initialization. Its actual shell section rejects missing/stale/continue and
+  contradictory reports. The access assertion now checks real replay instead of an obsolete warning line.
+- 47 tests passed, zero failures/errors/skips. Evidence: `build/verification/equivalent-implementation/`,
+  `build/verification/equivalence-reviewed-symbols.json` and `build/equivalence-tests.log`.

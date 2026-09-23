@@ -127,7 +127,9 @@ public final class KernelLoadReport {
 		try {
 			Files.createDirectories(report.getParent());
 			temporary = Files.createTempFile(report.getParent(), ".compatibility-report-", ".json");
-			Files.writeString(temporary, net.forbric.api.CompatibilityFindings.toJson(), StandardCharsets.UTF_8);
+			String facts = net.forbric.api.CompatibilityFindings.toJson();
+			String policy = net.forbric.kernel.ui.CompatibilityDecision.policy().name();
+			Files.writeString(temporary, "{\"policy\":\"" + policy + "\"," + facts.substring(1), StandardCharsets.UTF_8);
 			Files.move(temporary, report.resolveSibling("compatibility-report.json"),
 					java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 		} catch (Exception failed) {

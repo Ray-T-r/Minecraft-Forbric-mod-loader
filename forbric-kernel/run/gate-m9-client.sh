@@ -20,6 +20,7 @@ set -uo pipefail
 RUNDIR="${M9_RUNDIR:-$KERNEL/run/client-merged-pack}"
 WORLD="${M9_WORLD:-ForbricTest}"
 LOG="$BUILD/gate-m9-client-boot.log"
+COMPAT_STARTED_NS="$(python3 -c 'import time; print(time.time_ns())')"
 mkdir -p "$BUILD"
 
 if [ ! -d "$RUNDIR/saves/$WORLD" ]; then
@@ -612,8 +613,8 @@ step "an access directive the kernel already satisfies does not mark its mod (mu
 # It loses nothing: the COREMOD repair gives the field vanilla's descriptor back AND makes it public non-final,
 # which is the widener's whole job. The ACCESS phase simply runs first. Both halves are asserted because either
 # alone passes with the judgement broken — the line must SAY what the field is now, and no row may be marked.
-check "the directive is reported as already satisfied" \
-  "Forbric/Access\] AW directive from fabric-biome-api.*ClearableLazy; here.*but the kernel gives that field" "$LOG"
+check "the restored directive was replayed" \
+  "Forbric/Access\] replayed [1-9][0-9]* previously unmatched directive" "$LOG"
 check_absent "and its mod is not marked for it" \
   "Forbric/Access\] AW directive from fabric-biome-api.*the mod is marked" "$LOG"
 
@@ -731,6 +732,22 @@ check_absent "nothing aborted the stop"    "Exception stopping the server"      
 step "nothing leaked past main"
 # Vanilla logs this ~15s after main returns when a non-daemon thread is still alive — a leaked mod thread.
 check_absent "no thread leaked past main"   "Client shutdown from post-main"                   "$LOG"
+
+# M9_COMPATIBILITY_REPORT_BEGIN
+if python3 - "$RUNDIR/.forbric-kernel/compatibility-report.json" "$COMPAT_STARTED_NS" <<'PY_COMPAT'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+assert path.is_file() and path.stat().st_mtime_ns >= int(sys.argv[2]), 'missing or stale compatibility evidence'
+report = json.loads(path.read_text())
+assert report['schemaVersion'] == 1 and report['policy'] == 'STRICT', 'diagnostic continuation cannot satisfy acceptance'
+required = [row for row in report['findings'] if row['confidence'] == 'CONFIRMED' and row['required']]
+assert report['confirmedRequired'] == len(required) == 0, 'confirmed required losses: ' + str([row['id'] for row in required])
+assert not any(row['status'] == 'FAILED' for row in report.get('catalogFailures', [])), 'unclassified initialization failure'
+PY_COMPAT
+then echo "[kernel] PASS fresh strict compatibility evidence has no required losses"
+else echo "[kernel] FAIL strict compatibility acceptance — see compatibility-report.json"; FAIL=1
+fi
+# M9_COMPATIBILITY_REPORT_END
 
 step "M9 result"
 if [ "$FAIL" -eq 0 ]; then
