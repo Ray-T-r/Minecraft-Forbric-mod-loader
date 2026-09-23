@@ -34,9 +34,12 @@ where the item names game behaviour, a real game run; [~] means implemented with
 - [x] P3: server block-entity lookup integration, owner-ecosystem precedence, direction, invalidation (incl.
       chunk unload) and cycle guards.
 - [x] P3: exact fluid units and lossless metadata; unsupported providers remain unavailable for writes.
-- [ ] Acceptance: native controls, mixed pack, real actions, multiplayer, save/reload and world re-entry, on the
-      merged candidate (see "Final acceptance").
-- [ ] Acceptance: at least two hours of sustained operation on the exact candidate artifacts.
+- [x] Acceptance: native controls, mixed pack, real actions, multiplayer, save/reload and world re-entry, on the
+      merged candidate: 39 gates GREEN in two evidence-bound release runs, plus the non-gate controls (see
+      "Final acceptance").
+- [~] Acceptance: at least two hours of sustained operation on the exact candidate artifacts: RELEASE_PASS on the
+      mixed pack without JourneyMap. With JourneyMap 6.0.1 the full pack deadlocks inside that mod after 80–100
+      minutes of the soak's teleport loop, so M34 on the full pack is RED.
 
 ## Evidence and decisions
 
@@ -703,3 +706,32 @@ confirmed, and ran acceptance on one merged candidate.
 - Every launch hashes each mod jar for the candidate plan; large packs pay that time at boot.
 - The spawner is not composed by the merger; it stays a runtime repair with a structural stand-down.
 - main still carries the renderer-slot regression fixed here (8a9df2c forwards Sodium NeoForge's declaration).
+
+### Final acceptance on the merged candidate
+
+- Release attempt 1 (`evidence.py run --release`, all ten roles, `gates-all.sh --release -j 2 --mem-budget 6000`,
+  evidence `forbric-kernel/build/verification/final-release/`): 39 of 40 gates GREEN, inputs unchanged. M34 was
+  RED at 96 minutes (session 14 of the 97-jar pack): the new watchdog recorded FAIL with a thread dump after the
+  client thread had not returned for 301 seconds. The dump shows a deadlock inside JourneyMap 6.0.1's own
+  MapRenderer: sortRegions (a background worker) replaces the `regions` field with a new synchronized map and,
+  holding the new map's lock, copies the old one (needs the old lock); loadInMemoryRegions (render thread) holds
+  the old map's lock and re-reads the field, then waits for the new map's lock. Both paths are the mod's
+  bytecode (javap of journeymap/client/render/map/MapRenderer); no Forbric frame is between the two locks. It is
+  a timing race in the mod, not a Forbric defect, and it is recorded rather than waived.
+- Non-gate controls on the same candidate, all passing: native Fabric 0.19.5 / Forge 26.2-65.0.1 / NeoForge
+  26.2.0.88 against Forbric with byte-identical canaries (three MATCHED_PASS), Unlit Campfire retention
+  reproduced on both arms, the late-prompt UI control (explicit Continue, close refuses and saves), and the Corpse
+  render control. Log: `build/claude/controls.log` in the original checkout.
+- Release attempt 2 (same command, evidence `final-release-2/`): again 39 of 40 GREEN with inputs unchanged, and
+  M34 RED at 79 minutes on the identical JourneyMap deadlock (same two frames). The soak teleports every ~30
+  seconds across six probes in three dimensions, so the minimap re-centres far more often than in normal play;
+  the race is reproducible here within 80–100 minutes. The default M34 fixture keeps JourneyMap, so M34 on the
+  full 97-jar pack stays RED until JourneyMap fixes it.
+- Two-hour release soak on the same candidate with only JourneyMap removed (96 jars; evidence
+  `final-soak-no-journeymap/`, run 162f7bcf): RELEASE_PASS, releaseAccepted=true, exit 0, inputs unchanged.
+  7,264 active seconds and 145,773 real ticks over 19 same-JVM sessions, every probe visited 38 times and seen
+  unloading/reloading in all three dimensions, final STRICT report with zero required losses. Retention: all 19
+  stopped servers were held before the post-measurement cut; cutting only the reviewed Unlit Campfire root freed
+  15 (980 cache entries removed); the 4 left are UNREACHABLE once mod-owned edges are cut (three through EMF's
+  Mixin-added HumanoidArmorLayer.humanoidRenderState and TRansition's EntityRenderState.transitionEntity, one
+  through Xaero's ServerConfigManager.server).
