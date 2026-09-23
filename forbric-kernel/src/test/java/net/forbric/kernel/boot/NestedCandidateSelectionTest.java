@@ -517,6 +517,23 @@ class NestedCandidateSelectionTest {
 		assertFalse(rescued(decision, "lib.OnlyInTwo"), "two builds of one library must not be mixed through rescue");
 	}
 
+	@Test void aSameEcosystemVersionLoserOfAClaimedLibraryIsNeverARescueJar() throws Exception {
+		// The anonymous libraries above never reach the ecosystem test. Here lib 2 is a real NeoForge mod, reachable
+		// through its selected parent b, and it loses only on a's range: the ecosystem test alone keeps it out.
+		install("a.jar", neo("a", "1", Map.of("META-INF/jarjar/lib-1.jar", neo("lib", "1", Map.of(), Map.of(), Map.of("lib/Core.class", type("lib/Core")))),
+				Map.of("META-INF/jarjar/lib-1.jar", new NestedCandidateInventory.Coordinate("example:lib", "[1,2)", "1")), Map.of()));
+		install("b.jar", neo("b", "1", Map.of("META-INF/jarjar/lib-2.jar", neo("lib", "2", Map.of(), Map.of(),
+						Map.of("lib/Core.class", type("lib/Core"), "lib/OnlyInTwo.class", type("lib/OnlyInTwo")))),
+				Map.of("META-INF/jarjar/lib-2.jar", new NestedCandidateInventory.Coordinate("example:lib", "[1,3)", "2")), Map.of()));
+		var decision = decide(); var plan = DuplicateModArbiter.currentPlan();
+		assertEquals(JointCandidateSelector.Status.SOLVED, plan.selection().status());
+		assertEquals(1, plan.nestedFiles().size());
+		assertEquals("1", plan.inventory().nodes().get(plan.nestedFiles().getFirst()).claim().versionOf("lib"));
+		Path loser = plan.inventory().nodes().values().stream().filter(n -> n.claim() != null && "2".equals(n.claim().versionOf("lib"))).findFirst().orElseThrow().path();
+		assertTrue(decision.suppressed(loser), "the losing build stays off the classpath");
+		assertFalse(rescued(decision, "lib.OnlyInTwo"), "two builds of one library must not be mixed through rescue");
+	}
+
 	@Test void kotlinAndMethodReferenceEntrypointsConstrainTheChoiceLikeAnyOther() throws Exception {
 		// dep/Api#needed exists only in the Fabric build; the preferred NeoForge build would throw NoSuchMethodError.
 		for (String entry : List.of("{\"adapter\":\"kotlin\",\"value\":\"app.Main\"}", "\"app.Main::start\"")) {
