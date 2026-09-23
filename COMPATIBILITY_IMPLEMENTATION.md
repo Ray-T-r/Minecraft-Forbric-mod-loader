@@ -241,3 +241,18 @@ Pending implementation and acceptance items remain open even when a smaller batc
   portable native-control cache lookup, documented evidence tests, declared the replay transformer's dynamic
   targets, and updated the boot boundary assertion to the typed continuation check. Evidence:
   `forbric-kernel/build/m0-candidate-driver.log` and `build/verification/recovery-{test,transferTest}/`.
+
+### P1 actual caller behavior, positive and repair-off controls
+
+- M35 passed all 11 actual-world cases: four portal decisions including a mod-rewritten shape result, six
+  native spawner paths with real ValueInput identity/data and distinct finalization/insertion cancellation,
+  and natural item consumption through real entity ticks with Neo→Forge result/component writeback.
+- The same jar failed exactly the expected cases when repairs were disabled: portal replacement only; five
+  Forge-dependent spawner cases; item result only. Four runs reached the game and retained unchanged input
+  hashes; crashes, missing probes or startup failure cannot satisfy the negative controls.
+- The initial probe incorrectly equated the public visible-entity lookup with insertion. Native bytecode
+  proves ServerLevel marks added-to-level only after its section manager accepts the entity; new sections
+  may not yet be visible during the same tick. The test now asserts that actual insertion flag and records
+  public visibility separately. Production spawn behavior was not altered to accommodate the test.
+- Evidence: `build/verification/m35-behavior/`, final defined classes in `build/verification/m35-defined/`,
+  and the structural raw/effective hook comparison in `build/verification/m35-hook-attribution.log`.

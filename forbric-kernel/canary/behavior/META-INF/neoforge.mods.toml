@@ -1,0 +1,9 @@
+modLoader="javafml"
+loaderVersion="[3,)"
+license="Apache-2.0"
+[[mods]]
+modId="forbricbehaviorprobe"
+version="1.0.0"
+displayName="Forbric M35 World Behavior Probe"
+[[mixins]]
+config="forbricbehaviorprobe.mixins.json"
