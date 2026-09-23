@@ -187,6 +187,14 @@ if bash "$KERNEL/../forbric-kernel-installer/run/test-bundled-baseline.sh" >"$BU
 else
   echo "[kernel] FAIL the installer bundles a stale link baseline — see $BUNDLELOG"; FAIL=1
 fi
+# And -Pforbric.stagedRoot keeps its documented use (a root that does not exist still configures the boot-jar
+# build) while the test task still refuses a root its tests cannot resolve.
+STAGEDLOG="$BUILD/gate-m0-staged-root.log"
+if bash "$KERNEL/run/test-staged-root.sh" >"$STAGEDLOG" 2>&1; then
+  check "a staged-root override is refused by the test task only" "ALL GREEN" "$STAGEDLOG"
+else
+  echo "[kernel] FAIL a staged-root override breaks the build or reaches the tests — see $STAGEDLOG"; FAIL=1
+fi
 
 step "M0 result"
 if [ "$FAIL" -eq 0 ]; then echo "[kernel] ✅ M0 GATE GREEN"; else echo "[kernel] ❌ M0 GATE RED"; fi
