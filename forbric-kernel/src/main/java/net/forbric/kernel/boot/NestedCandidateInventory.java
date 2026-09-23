@@ -17,7 +17,13 @@ public final class NestedCandidateInventory {
 	public record Node(Path path, String digest, DuplicateModArbiter.Claim claim, boolean root, boolean excluded) { }
 	public record Coordinate(String id, String range, String version) { }
 	public record Edge(Path parent, Path child, String entry, Coordinate coordinate, boolean payload) { }
-	public record Issue(Path source, String detail) { }
+	/** {@code bound}: the scan stopped here, so this parent's nested jars were NOT all examined. */
+	public record Issue(Path source, String detail, boolean bound) {
+		public Issue(Path source, String detail) { this(source, detail, false); }
+	}
+	/** Zip-bomb guards only; a real pack's nested archives total well under 1 GB. There is no archive-count cap. */
+	static final int MAX_DEPTH = 8;
+	static final long ENTRY_BYTES = 1L << 30, TOTAL_BYTES = 16L << 30;
 
 	private final Map<Path, Node> nodes;
 	private final List<Edge> edges;
@@ -74,6 +80,10 @@ public final class NestedCandidateInventory {
 		} catch (java.security.NoSuchAlgorithmException impossible) { throw new AssertionError(impossible); }
 	}
 
+	private static final class BoundReached extends IOException {
+		BoundReached(String detail) { super(detail); }
+	}
+
 	private static final class Builder {
 		private final Path cache;
 		private final EnvType side;
@@ -106,7 +116,9 @@ public final class NestedCandidateInventory {
 			while (!work.isEmpty()) {
 				Work parent = work.remove();
 				if (!visited.add(parent.path() + ":" + parent.forgeWalk())) continue;
-				if (parent.depth() >= 8 || nodes.size() > 1024) { issues.add(new Issue(parent.path(), "nested candidate scan reached its depth/size bound")); continue; }
+				// No cap on how many archives an instance has: a kitchen-sink pack passes a thousand, and every parent
+				// left unopened would silently lose its libraries, because both discoveries read only this plan.
+				if (parent.depth() >= MAX_DEPTH) { issues.add(new Issue(parent.path(), "nested candidate scan reached its depth bound", true)); continue; }
 				try (ZipFile zip = new ZipFile(parent.path().toFile())) {
 					Set<String> entries = new TreeSet<>();
 					ZipEntry fabric = zip.getEntry("fabric.mod.json");
@@ -126,12 +138,10 @@ public final class NestedCandidateInventory {
 						try {
 							ZipEntry entry = zip.getEntry(entryName);
 							if (entry == null || entry.isDirectory()) throw new IOException("declared nested jar is absent");
-							byte[] bytes; try (InputStream in = zip.getInputStream(entry)) { bytes = in.readNBytes(64 * 1024 * 1024 + 1); }
-							if (bytes.length > 64 * 1024 * 1024 || (extractedBytes += bytes.length) > 2L * 1024 * 1024 * 1024) throw new IOException("nested archive scan byte bound");
-							String hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+							String hash = hash(zip, entry);
 							Path child = content.get(hash);
 							if (child == null) {
-								child = materialize(hash, entryName, bytes);
+								child = materialize(hash, entryName, zip, entry);
 								var claim = DuplicateModArbiter.claimOf(discoverer, child, side, aliases);
 								boolean excluded = claim == null && excludedBySide(child);
 								if (claim == null && !excluded && MultiLoaderArbiter.ownerOf(child) != null) issues.add(new Issue(child, "nested mod identity was unreadable; retaining its physical library without claiming a valid mod"));
@@ -143,14 +153,30 @@ public final class NestedCandidateInventory {
 							if (!edges.contains(edge)) edges.add(edge);
 							if (!childNode.excluded()) work.add(new Work(child, parent.depth() + 1,
 									parent.forgeWalk() || (childNode.claim() != null && childNode.claim().ecosystem().isForgeFamily())));
-						} catch (Exception failure) { issues.add(new Issue(parent.path(), entryName + ": " + failure.getMessage())); }
+						} catch (Exception failure) { issues.add(new Issue(parent.path(), entryName + ": " + failure.getMessage(), failure instanceof BoundReached)); }
 					}
 				} catch (Exception failure) { issues.add(new Issue(parent.path(), "nested metadata could not be read: " + failure)); }
 			}
 			return new NestedCandidateInventory(nodes, edges, issues, aliases);
 		}
 
-		private Path materialize(String hash, String entry, byte[] bytes) throws IOException {
+		/** Streams one nested entry through SHA-256; a large native bundle is never held in memory whole. */
+		private String hash(ZipFile zip, ZipEntry entry) throws IOException {
+			MessageDigest sha;
+			try { sha = MessageDigest.getInstance("SHA-256"); } catch (java.security.NoSuchAlgorithmException impossible) { throw new AssertionError(impossible); }
+			long size = 0;
+			try (InputStream in = zip.getInputStream(entry)) {
+				byte[] buffer = new byte[65536];
+				for (int n; (n = in.read(buffer)) >= 0;) {
+					if ((size += n) > ENTRY_BYTES) throw new BoundReached("nested archive exceeds the " + (ENTRY_BYTES >> 20) + " MB scan bound");
+					sha.update(buffer, 0, n);
+				}
+			}
+			if ((extractedBytes += size) > TOTAL_BYTES) throw new BoundReached("nested archives exceed the " + (TOTAL_BYTES >> 30) + " GB scan bound");
+			return HexFormat.of().formatHex(sha.digest());
+		}
+
+		private Path materialize(String hash, String entry, ZipFile zip, ZipEntry source) throws IOException {
 			String name = entry.substring(entry.lastIndexOf('/') + 1).replaceAll("[^A-Za-z0-9._+() -]", "_");
 			name = name.replaceAll("[. ]+$", "_");
 			if (name.matches("(?i)(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\..*)?")) name = "_" + name;
@@ -163,7 +189,7 @@ public final class NestedCandidateInventory {
 			}
 			Path temporary = Files.createTempFile(directory, ".candidate-", ".jar");
 			try {
-				Files.write(temporary, bytes);
+				try (InputStream in = zip.getInputStream(source)) { Files.copy(in, temporary, StandardCopyOption.REPLACE_EXISTING); }
 				try (ZipFile ignored = new ZipFile(temporary.toFile())) { }
 				try {
 					try { Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }

@@ -121,24 +121,37 @@ check "the Forge side loses sight of it without ModPresence" \
 check "while the side that owns the container still sees it" \
   "ForbricNestParent\] fabric sees forbricnestlib=true" "$PRESENCE"
 
-step "incompatible artifact contracts are reported, never hidden by an ecosystem override"
-# The two parents now require distinct platform artifacts with one shared mod id. Both cannot be
-# active in the same instance. Change only the gate-owned copy, keeping the source canary intact.
-python3 - "$RUNDIR/mods/forbricnestforge.jar" <<'PY_CONFLICT'
+step "a JarJar range decides the build; an override that breaks it is refused, not obeyed (must PASS)"
+# The fixture is the real shape: the Fabric parent JiJ-nests with no JarJar metadata, the MinecraftForge parent
+# names its own platform artifact (forbricnestlib-forge). Any in-range build of the mod id meets that coordinate,
+# so above the preference picked Fabric. Raise the Forge parent's range past the Fabric build's 1.0.0 in the
+# gate-owned copy only: now the constraint, not the preference, must choose -- and a pin to the build the range
+# excludes is an unsatisfiable combination that strict policy must refuse rather than silently load.
+python3 - "$RUNDIR/mods/forbricnestforge.jar" <<'PY_RANGE'
 import json,pathlib,sys,zipfile
 path=pathlib.Path(sys.argv[1]);temporary=path.with_suffix('.tmp')
 with zipfile.ZipFile(path) as source,zipfile.ZipFile(temporary,'w') as output:
     for entry in source.infolist():
         data=source.read(entry.filename)
         if entry.filename=='META-INF/jarjar/metadata.json':
-            metadata=json.loads(data);metadata['jars'][0]['identifier']['artifact']='forbricnestlib-forge'
+            metadata=json.loads(data)
+            metadata['jars'][0]['version']={'range':'[2.0.0,)','artifactVersion':'2.0.0'}
             data=json.dumps(metadata).encode()
         output.writestr(entry,data)
 temporary.replace(path)
-PY_CONFLICT
+PY_RANGE
+RANGED="$BUILD/gate-m19-ranged.log"
+boot "$RANGED" "-Dforbric.compatibilityPolicy=strict"
+check "the range-constrained combination is solved" \
+  "Forbric/Arbitration\] status=SOLVED;.*confirmed violations=0; unproved contracts=0" "$RANGED"
+check "the range, not the Fabric-first nested preference, chose the build" \
+  "mod id 'forbricnestlib' claimed by 2 jars.*loading forbricnestlib-forge.jar \(FORGE\)" "$RANGED"
+assert_eq "still claimed exactly once" "1" "$(grep -acE '\[ForbricNestLib\] claimed by' "$RANGED")"
+check "by the build the range allows" "ForbricNestLib\] claimed by forge" "$RANGED"
+check "and the server came up under strict policy" 'Done \(' "$RANGED"
 CONFLICT="$BUILD/gate-m19-unsatisfiable.log"
 boot "$CONFLICT" "-Dforbric.modOwner=forbricnestlib=fabric -Dforbric.compatibilityPolicy=strict"
-check "the incompatible coordinate combination is explicitly unsatisfiable" 'Forbric/Arbitration\] status=UNSATISFIABLE' "$CONFLICT"
+check "the pinned build outside the range is explicitly unsatisfiable" 'Forbric/Arbitration\] status=UNSATISFIABLE' "$CONFLICT"
 check "strict policy refuses the unsatisfied selection" 'launch stopped by compatibility policy|launch stopped: required mod initialization or features are unavailable' "$CONFLICT"
 check_absent "a manual preference did not turn the invalid combination into a world" 'Done \(' "$CONFLICT"
 
@@ -146,6 +159,6 @@ step "M19 result"
 if [ "${FAIL:-0}" -eq 0 ]; then
   echo "[kernel] ✅ M19 GATE GREEN — a library nested by a Fabric mod and a MinecraftForge mod is constructed once"
 else
-  echo "[kernel] ❌ M19 GATE RED — see $LOG / $CONTROL / $BUILD/gate-m19-flipped.log / $BUILD/gate-m19-nopresence.log"
+  echo "[kernel] ❌ M19 GATE RED — see $LOG / $CONTROL / $BUILD/gate-m19-flipped.log / $BUILD/gate-m19-nopresence.log / $BUILD/gate-m19-ranged.log / $BUILD/gate-m19-unsatisfiable.log"
   exit 1
 fi

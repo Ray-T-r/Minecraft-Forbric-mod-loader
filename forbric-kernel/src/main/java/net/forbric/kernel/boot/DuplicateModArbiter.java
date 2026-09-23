@@ -100,8 +100,21 @@ public final class DuplicateModArbiter {
 	public record Alias(String modId, Ecosystem ecosystem, String version) {
 	}
 
-	/** Which jars must not be loaded, who owns each contested id, and which ecosystems need a presence alias. */
-	public record Decision(Set<Path> suppressedJars, Map<String, Path> ownerByModId, List<Alias> aliases) {
+	/**
+	 * Which jars must not be loaded, who owns each contested id, and which ecosystems need a presence alias.
+	 *
+	 * <p>{@code rescueJars} is the subset the class loader may still serve a missing class from (see
+	 * ForbricClassLoader.setRescueJars). It is NOT every suppressed jar: discovery must skip every unselected
+	 * physical candidate, but only the other ecosystem's build of a mod that did load may lend it a class. A
+	 * losing JarJar version would mix two builds of one library, a side-excluded jar would make client-only
+	 * code loadable on a server, and a losing root's nested tree was never meant to run (PLAN.md:63).
+	 */
+	public record Decision(Set<Path> suppressedJars, Map<String, Path> ownerByModId, List<Alias> aliases, Set<Path> rescueJars) {
+		/** The top-level-only passes, where every suppressed jar is exactly such another-ecosystem build. */
+		public Decision(Set<Path> suppressedJars, Map<String, Path> ownerByModId, List<Alias> aliases) {
+			this(suppressedJars, ownerByModId, aliases, suppressedJars);
+		}
+
 		public boolean suppressed(Path jar) {
 			return jar != null && suppressedJars.contains(jar.toAbsolutePath());
 		}
@@ -190,11 +203,19 @@ public final class DuplicateModArbiter {
 					Math.max(1, Math.min(1_000_000, Integer.getInteger("forbric.arbitrationMaxNodes", 100_000))));
 			wholeInstancePlan = new NestedCandidatePlan(inventory, result);
 			reportSelection(all, result, overrides);
+			// A parent the scan stopped inside has nested jars nobody examined, and both discoveries read only
+			// this plan, so they will not load. That must stop or prompt, not pass as a quiet suspicion.
+			for (var issue : inventory.issues()) if (issue.bound() && result.selected().contains(issue.source())) {
+				String owner = wholeInstancePlan.ownerOf(issue.source());
+				net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding("arbitration:inventory", owner,
+						"Bundled libraries", "arbitration:inventory", net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, true,
+						"Some libraries bundled in this mod were not examined and will not be loaded", List.of(issue.source() + ": " + issue.detail())));
+			}
 			List<Alias> aliases = new ArrayList<>(universalAliases); aliases.addAll(inventory.universalAliases());
 			decision = decisionFromSelection(all, aliases, "whole-instance", result);
 			Set<Path> suppressed = new LinkedHashSet<>(decision.suppressedJars());
 			for (var node : inventory.nodes().values()) if (!result.selected().contains(node.path())) suppressed.add(node.path());
-			decision = new Decision(Set.copyOf(suppressed), decision.ownerByModId(), decision.aliases());
+			decision = new Decision(Set.copyOf(suppressed), decision.ownerByModId(), decision.aliases(), rescuable(inventory, result));
 			// Each physical candidate owns only its own classes. Do not count losing nested classes as a root's.
 			for (String line : divergenceReport(all, decision)) ForbricLog.info("%s", line);
 		}
@@ -204,6 +225,31 @@ public final class DuplicateModArbiter {
 		cachedDir = modsDir;
 		cachedSide = envType;
 		return decision;
+	}
+
+	/**
+	 * Unselected candidates that are another ecosystem's build of a mod that did load: every id they claim is
+	 * owned by a selected build of a different ecosystem, and they were themselves reachable (a root, or a child
+	 * of a selected parent). Side-excluded jars, same-ecosystem version losers, anonymous libraries and anything
+	 * inside a losing root are left out.
+	 */
+	static Set<Path> rescuable(NestedCandidateInventory inventory, JointCandidateSelector.Result result) {
+		Map<String, Set<Ecosystem>> winners = new HashMap<>();
+		for (var node : inventory.nodes().values()) {
+			if (!result.selected().contains(node.path()) || node.claim() == null) continue;
+			for (String id : node.claim().modIds()) winners.computeIfAbsent(JointCandidateSelector.key(id), k -> new HashSet<>()).add(node.claim().ecosystem());
+		}
+		Set<Path> rescue = new LinkedHashSet<>();
+		for (var node : inventory.nodes().values()) {
+			if (result.selected().contains(node.path()) || node.excluded() || node.claim() == null || node.claim().modIds().isEmpty()) continue;
+			boolean reachable = node.root() || inventory.edges().stream().anyMatch(e -> e.child().equals(node.path()) && result.selected().contains(e.parent()));
+			boolean otherBuild = node.claim().modIds().stream().allMatch(id -> {
+				Set<Ecosystem> owners = winners.get(JointCandidateSelector.key(id));
+				return owners != null && !owners.contains(node.claim().ecosystem());
+			});
+			if (reachable && otherBuild) rescue.add(node.path());
+		}
+		return Set.copyOf(rescue);
 	}
 
 	/** For discovery only: another mods directory or physical side must never borrow this plan. */
@@ -614,23 +660,59 @@ public final class DuplicateModArbiter {
 	private static void reportSelection(List<Claim> claims, JointCandidateSelector.Result result, Map<String, Ecosystem> overrides) {
 		Map<Path, Claim> byPath = new HashMap<>();
 		for (Claim claim : claims) byPath.put(JointCandidateSelector.path(claim), claim);
-		for (var rule : result.unsatisfied()) recordRule(byPath.get(rule.consumer()), rule, true);
+		// A bounded search's selection is its best model so far, not a proof that the rest is impossible: what it
+		// leaves unmet stays visible but cannot be confirmed (the same pack must not stop on a slower machine).
+		boolean bounded = result.status() == JointCandidateSelector.Status.SEARCH_LIMIT;
+		for (var rule : result.unsatisfied()) recordRule(byPath.get(rule.consumer()), rule, !bounded);
 		for (var rule : result.uncertain()) recordRule(byPath.get(rule.consumer()), rule, false);
+		// No installed combination meets these, so no choice made here caused them: reported, never a launch stop.
+		for (var rule : result.unavoidable()) recordRule(byPath.get(rule.consumer()), rule, false);
+		recordOverrides(result.refusedOverrides(), overrides, true);
+		recordOverrides(result.impossibleOverrides(), overrides, false);
 		if (result.status() != JointCandidateSelector.Status.SOLVED) {
 			boolean confirmed = result.status() == JointCandidateSelector.Status.UNSATISFIABLE;
-			String mod = claims.stream().filter(c -> result.selected().contains(JointCandidateSelector.path(c)))
-					.flatMap(c -> c.modIds().stream()).findFirst().orElse("forbric");
+			// The aggregate row is the arbitration's own verdict. Filing it under the first selected jar marked
+			// whichever mod sorted first in mods/ DEGRADED and named it in the prompt; the mods actually involved
+			// already carry their own rows (recordRule / recordOverrides) and are listed here as evidence.
+			Set<String> involved = new LinkedHashSet<>();
+			for (var rule : confirmed ? result.unsatisfied() : result.uncertain()) {
+				Claim owner = byPath.get(rule.consumer());
+				if (owner != null && !owner.modIds().isEmpty()) involved.add(owner.modIds().getFirst());
+			}
+			for (String pinned : result.refusedOverrides().keySet()) {
+				involved.add(overrides.keySet().stream().filter(raw -> JointCandidateSelector.key(raw).equals(pinned)).findFirst().orElse(pinned));
+			}
 			net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
-					"arbitration:selection", mod, "Mod dependency combination", "arbitration",
+					"arbitration:selection", "forbric", "Mod dependency combination", "arbitration",
 					confirmed ? net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED : net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED,
 					confirmed, confirmed ? "No installed candidate combination satisfies all modeled required contracts and explicit overrides"
 							: result.status() == JointCandidateSelector.Status.SEARCH_LIMIT
 									? "Candidate search reached its bound; this selection has not been proved compatible"
 									: "Some required candidate contracts could not be verified; this selection remains unproved",
-					List.of("status=" + result.status(), "visited=" + result.visited(), "overrides=" + overrides)));
+					List.of("status=" + result.status(), "visited=" + result.visited(), "overrides=" + overrides, "involved=" + involved)));
 		}
-		ForbricLog.info("[Forbric/Arbitration] status=%s; nodes=%d; confirmed violations=%d; unproved contracts=%d",
-				result.status(), result.visited(), result.unsatisfied().size(), result.uncertain().size());
+		ForbricLog.info("[Forbric/Arbitration] status=%s; nodes=%d; confirmed violations=%d; unproved contracts=%d%s",
+				result.status(), result.visited(), bounded ? 0 : result.unsatisfied().size(), result.uncertain().size(),
+				result.unavoidable().isEmpty() ? "" : "; unmeetable by any installed build=" + result.unavoidable().size());
+	}
+
+	/**
+	 * A pin that was not honoured, filed under the pinned mod. {@code conflicting}: it clashes with another pin or
+	 * with what a bundling parent requires, which the player has to resolve. Otherwise the named ecosystem has no
+	 * usable build of the mod at all; like the old per-id pick, that is a warning and the automatic choice stands.
+	 */
+	private static void recordOverrides(Map<String, Ecosystem> pins, Map<String, Ecosystem> requested, boolean conflicting) {
+		for (var pin : pins.entrySet()) {
+			String id = requested.keySet().stream().filter(raw -> JointCandidateSelector.key(raw).equals(pin.getKey())).findFirst().orElse(pin.getKey());
+			if (!conflicting) ForbricLog.warn("[Forbric/DupeId] %s asks for '%s' from %s, but no usable jar of that ecosystem claims it — "
+					+ "keeping the automatic choice", OVERRIDE_FILE + " / -D" + OWNER_OVERRIDE, id, pin.getValue());
+			net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
+					"arbitration:override:" + id, id, "Chosen mod build", "arbitration:override",
+					conflicting ? net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED : net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED,
+					conflicting, conflicting ? "The requested " + pin.getValue() + " build cannot be combined with the other explicit choices or its bundling mods"
+							: "No usable " + pin.getValue() + " build of this mod is installed; the automatic choice was kept",
+					List.of("override=" + id + "=" + pin.getValue())));
+		}
 	}
 
 	private static void recordRule(Claim owner, JointCandidateSelector.Rule rule, boolean confirmed) {

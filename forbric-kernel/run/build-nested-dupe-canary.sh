@@ -61,10 +61,9 @@ javac -nowarn -proc:none --release 21 -cp "$FORGE_RT" -d "$WORK/parforge" \
 cp "$SRC/parentfabric/fabric.mod.json" "$WORK/parfab/"
 mkdir -p "$WORK/parfab/META-INF/jars"
 cp "$WORK/forbricnestlib-fabric.jar" "$WORK/parfab/META-INF/jars/"
-# Both platform builds explicitly implement the same artifact contract. Equal mod ids alone do not
-# establish that a Fabric jar satisfies the Forge parent's JarJar coordinate/range requirement.
-mkdir -p "$WORK/parfab/META-INF/jarjar"
-cp "$SRC/parentfabric/metadata.json" "$WORK/parfab/META-INF/jarjar/"
+# No META-INF/jarjar/metadata.json here, on purpose: real Fabric JiJ parents (xaerominimap-fabric) ship none, and
+# the MinecraftForge parent names its own platform artifact (forbricnestlib-forge, as xaerolib-forge-26.2 does).
+# The gate must hold on that real shape: any in-range build of the same mod id meets the Forge coordinate.
 
 mkdir -p "$WORK/parforge/META-INF/jarjar"
 cp "$SRC/parentforge/mods.toml" "$WORK/parforge/META-INF/"

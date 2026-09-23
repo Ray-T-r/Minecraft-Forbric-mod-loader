@@ -461,7 +461,7 @@ public final class KernelFabricEcosystem {
 	}
 
 	/** The predicate as declared; the array form is OR-joined, which is what {@code VersionPredicate} reads. */
-	private static String constraintOf(ModDependency dep) {
+	static String constraintOf(ModDependency dep) {
 		if (dep instanceof KernelMetadataSupport.SimpleModDependency simple && !simple.getConstraints().isEmpty()) {
 			return String.join(" || ", simple.getConstraints());
 		}

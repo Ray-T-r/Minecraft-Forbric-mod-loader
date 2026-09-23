@@ -1239,9 +1239,10 @@ public final class KernelBoot {
 	}
 
 	/** The superseded jars as URLs, sorted so the last-resort lookup order is stable run to run. */
-	private static List<URL> rescueUrls(DuplicateModArbiter.Decision dupes) {
+	static List<URL> rescueUrls(DuplicateModArbiter.Decision dupes) {
 		List<URL> urls = new ArrayList<>();
-		for (Path jar : new java.util.TreeSet<>(dupes.suppressedJars())) {
+		// Only the other ecosystem's build of a mod that loaded; see Decision.rescueJars for what is kept out.
+		for (Path jar : new java.util.TreeSet<>(dupes.rescueJars())) {
 			try {
 				urls.add(jar.toUri().toURL());
 			} catch (Exception e) {

@@ -1,7 +1,7 @@
 {
   "jars": [
     {
-      "identifier": { "group": "forbric.nestlib", "artifact": "forbricnestlib" },
+      "identifier": { "group": "forbric.nestlib", "artifact": "forbricnestlib-forge" },
       "version": { "range": "[1.0.0,)", "artifactVersion": "1.0.0" },
       "path": "META-INF/jarjar/forbricnestlib-forge.jar",
       "isObfuscated": false
