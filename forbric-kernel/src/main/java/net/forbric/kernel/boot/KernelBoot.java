@@ -536,6 +536,8 @@ public final class KernelBoot {
 				return null;
 			}
 		}));
+		// Each LootPool constructor fills the other family's fields too, so a pool built one way encodes the other.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LootPoolFieldsInjector());
 		// The only performance measurement in the tree. Beside the smoke tick because it is the same shape:
 		// one static call at the head of a tick, no mixin config, nothing new in the list a gate asserts on.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ServerTickSamplerInjector());
