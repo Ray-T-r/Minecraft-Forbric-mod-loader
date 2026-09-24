@@ -28,8 +28,8 @@ where the item names game behaviour, a real game run; [~] means implemented with
       headless/release strict; a client refusal is a typed exit-78 stop, not a vanilla crash.
 - [x] P2: safely present late failures (paged, re-asked on rejoin); targeted access replay after descriptor repair.
 - [x] P2: dependency/member/Mixin-constrained arbitration with explicit override and unsatisfiable findings,
-      including the members a cross-mod Mixin needs its target to declare. Static event-subscriber methods are
-      still not scanned for member references (see "Mixin member contracts in arbitration").
+      including the members a cross-mod Mixin needs its target to declare and what Forge-family
+      @EventBusSubscriber listeners call (see "Mixin member contracts in arbitration" and "Remaining gaps closed").
 - [x] P3: real Fabric/Neo item/fluid transaction coordination, including nesting and re-entry.
 - [x] P3: audited Forge snapshot adapters and legacy simulate/execute views.
 - [x] P3: server block-entity lookup integration, owner-ecosystem precedence, direction, invalidation (incl.
@@ -38,9 +38,10 @@ where the item names game behaviour, a real game run; [~] means implemented with
 - [x] Acceptance: native controls, mixed pack, real actions, multiplayer, save/reload and world re-entry, on the
       merged candidate: 39 gates GREEN in two evidence-bound release runs, plus the non-gate controls (see
       "Final acceptance").
-- [~] Acceptance: at least two hours of sustained operation on the exact candidate artifacts: RELEASE_PASS on the
+- [x] Acceptance: at least two hours of sustained operation on the exact candidate artifacts: RELEASE_PASS on the
       mixed pack without JourneyMap. With JourneyMap 6.0.1 the full pack deadlocks inside that mod after 80–100
-      minutes of the soak's teleport loop, so M34 on the full pack is RED.
+      minutes of the soak's teleport loop, so M34 on the full pack is RED; the same deadlock (same two frames) was
+      reproduced on native NeoForge 26.2.0.88 with JourneyMap alone ("Remaining gaps closed").
 
 ## Evidence and decisions
 
@@ -699,13 +700,16 @@ confirmed, and ran acceptance on one merged candidate.
 
 - Arbitration models Mixin target classes, not the members a Mixin shadows or invokes; Mixin bodies and static
   event-subscriber seeds are not scanned for member contracts. Rescue jars are limited to another ecosystem's
-  build of a loaded mod, not audited class by class. (The Mixin part is closed by "Mixin member contracts in
-  arbitration" below; event subscribers remain.)
+  build of a loaded mod, not audited class by class. (The Mixin and event-subscriber parts are closed below.)
 - Event/lifecycle chains are verified end to end for the repaired paths (portal, spawner, item use, entity
-  callbacks, enchantment, transfer); there is no general chain validator for every event.
+  callbacks, enchantment, transfer); there is no general chain validator for every event. (Closed below for every
+  bus-to-bus forward by M41; call-site composites keep their own gates.)
 - The full-game effective hook census (defined-class evidence joined to the platform census) has tooling but no
-  archived full-game export yet.
+  archived full-game export yet. (Exported below.)
 - Every launch hashes each mod jar for the candidate plan; large packs pay that time at boot.
+- Fabric mixins aimed at vanilla calls NeoForge's patches replaced still fail where the merged base keeps
+  NeoForge's body: on the popular pack architectury's two BaseSpawner redirects and apoli-legacy's ServerPlayer
+  inject are required losses, so its dedicated server stops under STRICT (see "Remaining gaps closed").
 - The spawner is not composed by the merger; it stays a runtime repair with a structural stand-down.
 - The renderer-slot regression that 8a9df2c introduced on main is fixed there too since the merge (ed1211d).
 
@@ -836,3 +840,59 @@ confirmed, and ran acceptance on one merged candidate.
   follows the worker pool; the mob does not. `world-parity.py` now compares spawner mobs only where both worlds
   have a spawner at the same position (what caught the nextInt(400) draw, where all six dungeons disagreed at the
   same spots) and reports differing positions as evidence; `test_world_parity.py` (4 tests) runs in gate-m0.
+
+## Remaining gaps closed (2026-09-24)
+
+- Event-subscriber member contracts: arbitration now also follows the static @SubscribeEvent methods of a
+  Forge-family mod's @EventBusSubscriber classes. A listener for an FML lifecycle event of this side (common,
+  client or server setup, load complete, IMC) runs on every launch and gets entrypoint rules; any other may never
+  fire, so what it calls is a soft contract and what the scan could not follow in it is not reported. On the
+  popular pack this adds 68 (client) and 21 (server) member rules, all met. Commit c66b5ab.
+- The 97-mod pack's load-report.txt carried 850 "entrypoint member closure remains unproved" notes: soft rules
+  that name no member and steer nothing. They stay in the arbitration count and are no longer player findings;
+  hard ones still are (same commit).
+- Full-game hook census: exported from an M9 client session (97 jars, world entered and left, GREEN) with
+  -Dforbric.definedClassEvidence, 25,566 defined classes. Conflict rows 1,004 (710 without a modelled direct hook);
+  conflict-row hooks VIA_DEFINED_HELPER 8, VIA_KERNEL_BRIDGE 32, OBSERVED_WITHOUT_HOOK 297, UNOBSERVED 6. The
+  export found a tool gap: forwards written as method references (ForgeEventFactory::onPreClientTick) were
+  counted as residual loss; EffectiveHookEvidence now reads lambda implementation handles (3d167fc, 4 rows moved).
+  Evidence and input hashes: `forbric-kernel/build/verification/full-game-hook-census/SUMMARY.md`.
+- General event-chain validator: `-Dforbric.eventChainAudit` wraps NeoForge's dispatch loop and MinecraftForge's
+  post/fire and checks every post the kernel makes on one bus inside the other's dispatch: one forward per
+  NeoForge listener (a bridge installed twice, or a one-to-one forward that sometimes posts twice, is a
+  violation; a listener that always fans out is not), the inner cancel carried back, no failure inside. Posts by
+  mod or game code inside a dispatch are incidental and not judged. Gate M41: the 97-mod client forwards 27
+  required bridges exactly once with 0 violations; a MinecraftForge veto on a NeoForge entity join is carried back
+  and keeps the entity out; with -Dforbric.unifiedEvents=off there is no forward and no veto. Commit 4a55248.
+  Not covered: call-site composites (portal, spawner, loot, fuel, tooltips) and result fields other than cancel.
+- JourneyMap on native NeoForge: official NeoForge 26.2.0.88 client (installer SHA-1 3b11639b…, FancyModLoader
+  11.0.16), JourneyMap 6.0.1 and a driver mod teleporting every 5 s across the soak's six probes: the JVM reported
+  a Java-level deadlock after ~36 minutes (teleport 426) between MapRenderer.sortRegions:235 and
+  loadInMemoryRegions:199 on the two SynchronizedSortedMap instances, the same frames as Forbric's M34 dumps with
+  the threads' roles swapped. The full-pack M34 RED is JourneyMap's own bug. Evidence:
+  `forbric-kernel/build/journeymap-native/evidence/RESULT.md`.
+
+- Windows acceptance (the player's Windows 11 machine, push-and-run, 2026-09-24). The machine's only Forbric
+  version holds the player's world, so the run used an isolated copy (`C:\ForbricAccept\mc`: vanilla files copied
+  read-only from .minecraft, the current installer run ON Windows with the candidate artifacts, removed
+  afterwards; the player's version was not touched). A profile generated on the Mac is not valid there: the
+  installer writes the host's path separator and native libraries.
+  - 97-mod pack: server world created, client joined and drew frames (DREW), region readable, STRICT compatibility
+    report with 0 required losses on both sides. The one failing log check, "FML construct posted (Forge)",
+    does not apply: every Forge-labelled jar of this pack is a universal jar that loads as NeoForge (0
+    traditional-Forge mod buses, the same on the Mac).
+  - The first run found a first-launch crash the long-lived Mac pack could never show: LambDynamicLights asks its
+    Fabric presence identity (through yumi) for its default config, and presence identities had no jar. Fixed in
+    3cc490b (presence identities read their files from the jar that loaded the mod; the seeded NeoForge
+    LoadingModList's ModFile contents open the jar on first read); reproduced and verified fixed on the Mac with
+    the config removed.
+  - Popular pack (37 jars): the dedicated server stops under STRICT on Windows and the Mac alike. One of its
+    required losses was false (fabric-resource-conditions' superseded skipData injector, resolved only in one
+    class-definition order; fixed in d6806a3). Three remain and are real: architectury's @Redirects on
+    Mob.checkSpawnRules/checkSpawnObstruction in BaseSpawner (NeoForge replaced both calls with
+    EventHooks.checkSpawnPositionSpawner) and apoli-legacy's preventAvianSleep in ServerPlayer. They need the
+    vanilla call shape restored inside NeoForge's version and are left open.
+  Evidence: `forbric-kernel/build/compat/win-accept-97c/`, `win-accept-popular/`, `win-accept-97b/` (the crash).
+- Regression sweep on all of the above (HEAD d6806a3, candidate staged root): `gates-all.sh -j 2 --mem-budget 6000
+  --skip gate-m34-soak.sh`, all 41 other gates GREEN, including the new M41 and M31 with its spawner comparison.
+  Kernel test 2049, zero failures or skips.
