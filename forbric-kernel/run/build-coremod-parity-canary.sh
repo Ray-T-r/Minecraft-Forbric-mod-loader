@@ -11,7 +11,7 @@ python3 - <<'PY'
 import hashlib, json, os, pathlib, subprocess, zipfile
 kernel, old, work = (pathlib.Path(os.environ[key]) for key in ('M42_KERNEL', 'M42_OLD', 'M42_WORK'))
 mc = pathlib.Path(os.environ.get('MC_DIR', pathlib.Path.home() / 'Library/Application Support/minecraft'))
-compile_game = pathlib.Path(os.environ.get('MERGED', old / 'run/merged-base/patched-mc-merged-26.2.jar'))
+compile_game = pathlib.Path(os.environ.get('M42_COMPILE_GAME', old / 'run/neoforge-patched/patched-mc-neoforge-26.2.jar'))
 forge = pathlib.Path(os.environ.get('FORGE_RT', old / 'run/merged-base/forge-runtime-interop.jar'))
 if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
