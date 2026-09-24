@@ -27,8 +27,9 @@ where the item names game behaviour, a real game run; [~] means implemented with
 - [x] P2: confirmed necessary failures require an explicit client decision in the existing dependency window;
       headless/release strict; a client refusal is a typed exit-78 stop, not a vanilla crash.
 - [x] P2: safely present late failures (paged, re-asked on rejoin); targeted access replay after descriptor repair.
-- [~] P2: dependency/member/Mixin-constrained arbitration with explicit override and unsatisfiable findings.
-      Member-level Mixin contracts (@Shadow/@Invoker targets) are not modelled; only target classes are.
+- [x] P2: dependency/member/Mixin-constrained arbitration with explicit override and unsatisfiable findings,
+      including the members a cross-mod Mixin needs its target to declare. Static event-subscriber methods are
+      still not scanned for member references (see "Mixin member contracts in arbitration").
 - [x] P3: real Fabric/Neo item/fluid transaction coordination, including nesting and re-entry.
 - [x] P3: audited Forge snapshot adapters and legacy simulate/execute views.
 - [x] P3: server block-entity lookup integration, owner-ecosystem precedence, direction, invalidation (incl.
@@ -698,7 +699,8 @@ confirmed, and ran acceptance on one merged candidate.
 
 - Arbitration models Mixin target classes, not the members a Mixin shadows or invokes; Mixin bodies and static
   event-subscriber seeds are not scanned for member contracts. Rescue jars are limited to another ecosystem's
-  build of a loaded mod, not audited class by class.
+  build of a loaded mod, not audited class by class. (The Mixin part is closed by "Mixin member contracts in
+  arbitration" below; event subscribers remain.)
 - Event/lifecycle chains are verified end to end for the repaired paths (portal, spawner, item use, entity
   callbacks, enchantment, transfer); there is no general chain validator for every event.
 - The full-game effective hook census (defined-class evidence joined to the platform census) has tooling but no
@@ -806,3 +808,31 @@ confirmed, and ran acceptance on one merged candidate.
   original checkout, keeping the `forbric-kernel/build/...` layout the sections above cite. The candidate staged
   root used for acceptance is `build/claude/staged-root/`. A later release soak in another checkout must re-run
   `run/compat/retention-control.py` so `native-retention.json`'s evidence exists there.
+
+## Mixin member contracts in arbitration (2026-09-24)
+
+- Choosing between builds of a mod now also checks what another mod's Mixin needs the target class itself to
+  declare: @Shadow fields/methods (shadow prefix and aliases, static modifier), @Overwrite, @Accessor and @Invoker
+  (Mixin's get/is/set and call/invoke inflection, factory invokers as `<init>`), and the `method` selectors of Mixin
+  and MixinExtras injectors. Native Mixin 0.8.7 (`MixinPreProcessorStandard`) rejects the whole Mixin when one of the
+  first four is missing, so they are required whenever the target itself is (required config, no plugin, no
+  conditional annotation); an injector is required only when its `require`, or the config's
+  `injectors.defaultRequire`, asks for a match. A member another declared Mixin adds is unproved, not missing.
+  Wildcard, pattern and dynamic selectors and targets the mod ships itself are not modelled.
+- What a Mixin's own code calls or reads in its dependencies is recorded as a non-required contract: reported as a
+  suspicion when the chosen build lacks it, never a reason to switch builds, because that code runs only when its
+  target does.
+- Tests: `CandidateContractScannerTest` 34 (was 22), including the whole-instance selection path; 9 of the new
+  tests fail with the member rules removed. Kernel `test` 2,030, zero failures, errors or skips.
+- Real packs (local probe, not committed): client-merged-pack (97 jars), client-neo-pack (63), client-popular (37)
+  and client-kernel (38), client and server side: 380 member rules and 1,092 Mixin-body rules, every one met by an
+  installed build, no new finding. Scan time on the 97-jar pack about 0.1–0.2 s more (623→748 ms warm).
+- `gates-all.sh -j 2 --mem-budget 6000 --skip gate-m34-soak.sh` (candidate staged root) on this change: 39 of 40
+  other gates GREEN; M31 RED on "every dungeon spawns vanilla's mob" (2 chunks). Not caused by this change (M31 has
+  zero mods, so arbitration never runs) but by the assertion: the two chunks are edge chunks where a mineshaft
+  corridor's cave spider spawner stood at -168,32,-52 in vanilla (three vanilla runs) and at -168,32,-46 in Forbric
+  (two runs; a third, on the reverted code, matched vanilla). Vanilla's `MineShaftCorridor` keeps a mutable
+  `hasPlacedSpider` and places the spawner from whichever chunk first draws a spot inside itself, so the position
+  follows the worker pool; the mob does not. `world-parity.py` now compares spawner mobs only where both worlds
+  have a spawner at the same position (what caught the nextInt(400) draw, where all six dungeons disagreed at the
+  same spots) and reports differing positions as evidence; `test_world_parity.py` (4 tests) runs in gate-m0.
