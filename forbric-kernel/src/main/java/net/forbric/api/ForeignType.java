@@ -65,6 +65,9 @@ public enum ForeignType {
 			"net.neoforged.api.distmarker.Dist"),
 	EVENT_HOOKS("net.minecraftforge.common.ForgeHooks",
 			"net.neoforged.neoforge.event.EventHooks"),
+	/** The base of every event each family's bus dispatches (EventChainAuditInjector wraps both dispatches). */
+	EVENT("net.minecraftforge.eventbus.internal.Event",
+			"net.neoforged.bus.api.Event"),
 	BLOCK_TINT_EVENT("net.minecraftforge.client.event.RegisterColorHandlersEvent$Block",
 			"net.neoforged.neoforge.client.event.RegisterColorHandlersEvent$BlockTintSources"),
 	// The mod-lifecycle phases. Paired because the kernel posts each one at BOTH families and the two events are

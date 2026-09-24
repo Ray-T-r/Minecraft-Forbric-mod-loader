@@ -521,6 +521,8 @@ public final class KernelBoot {
 		// Inert unless -Dforbric.clientSmoke=true. It is what lets gate-m9 run a client unattended: enter a
 		// world, live in it, disconnect and stop, so the gate waits for an outcome instead of a timeout.
 		chain.register(TransformPhase.COREMOD, new ClientSmokeTickInjector());
+		// Inert unless -Dforbric.eventChainAudit=<report>: wraps both families' bus dispatch for gate-m41.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.EventChainAuditInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CompatibilityPromptTickInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PortalSpawnInjector());
 		// After merged-base compatibility: upgrade its owner-only redirect with the proven spawn input.

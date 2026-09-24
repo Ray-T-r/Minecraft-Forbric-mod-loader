@@ -258,6 +258,9 @@ tasks.named('compileRuntimeJava') { dependsOn verifyRebornEnergy }
 
 test {
 	useJUnitPlatform()
+	// Only EventChainAuditTest's own loader gets log4j (the real buses need it); the test classpath keeps none,
+	// because several tests assert ForbricLog's fallback when log4j is absent.
+	doFirst { systemProperty 'forbric.log4jApiForTests', configurations.compileClasspath.files.find { it.name.startsWith('log4j-api-') }?.absolutePath ?: '' }
 	// Component/decision tests do not own macOS's first UI thread. Actual windows are exercised
 	// by the separately forked dialog/client gates, not by the Gradle worker's AppKit instance.
 	systemProperty 'java.awt.headless', 'true'
