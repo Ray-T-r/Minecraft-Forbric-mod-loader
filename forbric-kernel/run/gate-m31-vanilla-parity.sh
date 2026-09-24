@@ -14,7 +14,11 @@
 # feature runs — and there BOTH vanilla against itself and Forbric against itself agree on all 1764 chunks.
 # The mob a dungeon spawner was built with is the same kind of fact and is asserted too: it caught the kernel
 # drawing it through NeoForge's weighted data map (nextInt(400)) where vanilla draws nextInt(4) — the same
-# distribution, a different mob on the same seed, and all six dungeons in this area disagreed.
+# distribution, a different mob on the same seed, and all six dungeons in this area disagreed. It is compared
+# only where both worlds have a spawner at the same spot: a mineshaft corridor's cave spider spawner goes to
+# whichever chunk first draws a spot inside itself (vanilla's mutable MineShaftCorridor.hasPlacedSpider), so its
+# position follows the worker pool. On this seed vanilla put one at -168,32,-52 three times and Forbric at
+# -168,32,-46 twice (2026-09-24); spawner positions are evidence.
 #
 # TEETH (recorded 2026-09-21): M31_UNFIXED=1 runs the Forbric arm with -Dforbric.randomSourcePrecision=off,
 # which puts the float-rounded draw back. The biome check then reports 11 differing chunks and this gate is RED.
@@ -137,7 +141,8 @@ if [ -s "$REPORT" ]; then
   assert_eq "every chunk carries vanilla's structure starts" "0" "$(field 'differ structures')"
   assert_eq "every dungeon spawns vanilla's mob"     "0" "$(field 'differ spawner_mobs')"
   echo "[kernel] evidence (not asserted — vanilla does not reproduce itself here):" \
-       "heightmaps=$(field 'differ heightmaps') blocks=$(field 'differ blocks') block_entities=$(field 'differ block_entities')"
+       "spawner_positions=$(field 'differ spawner_positions') heightmaps=$(field 'differ heightmaps') blocks=$(field 'differ blocks')" \
+       "block_entities=$(field 'differ block_entities')"
 else
   echo "[kernel] FAIL the comparison produced no report at $REPORT"; FAIL=1
 fi

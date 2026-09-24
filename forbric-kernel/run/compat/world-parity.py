@@ -9,13 +9,19 @@ Prints one machine-readable line per fact, for a gate to assert on:
     full: a=400 b=400
     differ biomes: 0
     differ structures: 0
+    differ spawner_mobs: 0
+    differ spawner_positions: 2
     differ heightmaps: 186
     differ blocks: 242
     differ block_entities: 17
 
-`spawner_mobs` is the mob each dungeon spawner was built with, keyed by position. It is an assertion
-for the same reason biomes are: the feature decides it once, from its own random stream, and both
-vanilla and Forbric reproduce it exactly against themselves.
+`spawner_mobs` compares the mob of every spawner that stands at the same position in both worlds. It is
+an assertion for the same reason biomes are: the feature decides it once, from its own random stream.
+WHERE a spawner stands is not always that kind of fact: a mineshaft corridor that crosses chunks places its
+cave spider spawner from whichever chunk first draws a spot inside itself (vanilla's mutable
+`MineShaftCorridor.hasPlacedSpider`), so which of two neighbouring chunks gets it follows the worker pool.
+Seen on seed `forbrickernel` at x=-168: vanilla put it at z=-52 three times, a Forbric run at z=-46.
+`spawner_positions` counts chunks whose spawner positions differ and is evidence only.
 
 Which facets are EVIDENCE and which are ASSERTIONS is not a detail — vanilla does not reproduce
 itself at the block level. Features that read a neighbouring chunk (dripstone, sculk) resolve by
@@ -38,7 +44,7 @@ import sys
 import zlib
 from pathlib import Path
 
-FACETS = ("biomes", "structures", "spawner_mobs", "heightmaps", "blocks", "block_entities")
+FACETS = ("biomes", "structures", "spawner_mobs", "spawner_positions", "heightmaps", "blocks", "block_entities")
 
 
 def _read(buf, off, kind):
@@ -158,7 +164,7 @@ def facets(root):
             mob = (spawn.get("entity") or {}).get("id") if isinstance(spawn, dict) else None
             spawners[(entity.get("x"), entity.get("y"), entity.get("z"))] = mob
     return {
-        "spawner_mobs": digest(sorted((list(k), v) for k, v in spawners.items())),
+        "_spawners": spawners,
         "blocks": digest(blocks),
         "biomes": digest(biomes),
         "heightmaps": digest(root.get("Heightmaps", {})),
@@ -166,6 +172,15 @@ def facets(root):
         "structures": digest(root.get("structures", {})),
         "_full": root.get("Status") == "minecraft:full",
     }
+
+
+def differs(facet, a, b):
+    """Whether one chunk's facet differs. Spawners are compared position by position (see the module notes)."""
+    if facet == "spawner_mobs":
+        return any(a["_spawners"][pos] != b["_spawners"][pos] for pos in set(a["_spawners"]) & set(b["_spawners"]))
+    if facet == "spawner_positions":
+        return set(a["_spawners"]) != set(b["_spawners"])
+    return a[facet] != b[facet]
 
 
 def load(directory):
@@ -190,7 +205,7 @@ def main():
           % (len(a), len(b), len(common), len(set(a) - set(b)), len(set(b) - set(a))))
     print("full: a=%d b=%d" % (sum(1 for c in a.values() if c["_full"]), sum(1 for c in b.values() if c["_full"])))
     for facet in FACETS:
-        differing = [c for c in common if a[c][facet] != b[c][facet]]
+        differing = [c for c in common if differs(facet, a[c], b[c])]
         named = " ".join("%d,%d" % c for c in differing[:args.list])
         print("differ %s: %d%s" % (facet, len(differing), ("  " + named) if named else ""))
     return 0

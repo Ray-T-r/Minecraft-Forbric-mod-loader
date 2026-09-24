@@ -110,11 +110,14 @@ jar before treating the selection as final; metadata resolution alone cannot pro
    chunk; record every unreadable chunk.
    `world-parity.py` is not part of the sweep: gate-m31 runs it over two saved
    overworlds — one written by a pure-vanilla server, one by the kernel with zero mods —
-   and it prints, per facet, how many common chunks differ. Only `differ biomes` and
-   `differ structures` may be asserted on. Vanilla does not reproduce itself at the block
+   and it prints, per facet, how many common chunks differ. Only `differ biomes`,
+   `differ structures` and `differ spawner_mobs` (the mob of spawners standing at the same
+   position in both worlds) may be asserted on. Vanilla does not reproduce itself at the block
    level, so `differ blocks`, `differ heightmaps` and `differ block_entities` are evidence
-   and nothing more. A comparison over two absent or half-generated worlds reports zero
-   differences, so the `chunks:` and `full:` counts must be checked before any zero counts.
+   and nothing more, and so is `differ spawner_positions`: a mineshaft corridor's spawner goes
+   to whichever chunk generated first. A comparison over two absent or half-generated worlds
+   reports zero differences, so the `chunks:` and `full:` counts must be checked before any
+   zero counts. `test_world_parity.py` checks which spawner differences count; gate-m0 runs it.
 9. `push-and-run.py` implements the shell entry point's orchestration and writes
    `report.md` using `report-template.md`, with commit, manifest, phase results, log
    assertions, frame verdict, region evidence and named load-report failures. Retain
