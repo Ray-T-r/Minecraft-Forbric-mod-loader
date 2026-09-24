@@ -187,8 +187,8 @@ public final class KernelFabricEcosystem {
 		// that gates an integration on that check silently disables it. Register the identity, nothing else: no
 		// entrypoints, no mixins, no assets, all of which the winner already provides.
 		for (DuplicateModArbiter.Alias alias : dupes.aliasesFor(Ecosystem.FABRIC)) {
-			fabric.register(new KernelModContainer(KernelModMetadata.builtin(alias.modId(), alias.version(),
-					alias.modId(), foreignCustomValues(alias.modId())), null, null));
+			fabric.register(KernelModContainer.presence(KernelModMetadata.builtin(alias.modId(), alias.version(),
+					alias.modId(), foreignCustomValues(alias.modId())), dupes.ownerByModId().get(alias.modId())));
 			ForbricLog.info("[Forbric/Fabric] presence alias '%s' %s — its Fabric jar lost arbitration, but the "
 					+ "winning jar supplies the classes; isModLoaded now answers", alias.modId(), alias.version());
 		}
@@ -202,10 +202,10 @@ public final class KernelFabricEcosystem {
 		for (DiscoveredMod mod : ModPresence.forgeFamilyMods()) {
 			if (mod.getId() == null || mod.getId().isBlank()) continue;
 			if (fabric.getModContainer(mod.getId()).isPresent()) continue;
-			fabric.register(new KernelModContainer(KernelModMetadata.builtin(mod.getId(),
+			fabric.register(KernelModContainer.presence(KernelModMetadata.builtin(mod.getId(),
 					mod.getVersion() == null ? "0" : mod.getVersion(),
 					mod.getDisplayName() == null ? mod.getId() : mod.getDisplayName(),
-					customValuesOf(mod)), null, null));
+					customValuesOf(mod)), loadedFrom(mod)));
 			foreign++;
 		}
 		if (foreign > 0) {
@@ -681,6 +681,16 @@ public final class KernelFabricEcosystem {
 		ForbricLog.warn("[Forbric/Fabric] %s declares %s, but the build that loaded never registers a Fabric renderer "
 				+ "— not forwarding it, so Indigo takes the slot instead of leaving it empty", mod.getId(), CONTAINS_RENDERER);
 		return false;
+	}
+
+	/** The jar a Forge-family mod was discovered in, when it is one this machine can read. */
+	private static Path loadedFrom(DiscoveredMod mod) {
+		try {
+			Path source = mod.getSource() == null ? null : Path.of(mod.getSource());
+			return source != null && (Files.isRegularFile(source) || Files.isDirectory(source)) ? source : null;
+		} catch (RuntimeException unusable) {
+			return null;
+		}
 	}
 
 	/**

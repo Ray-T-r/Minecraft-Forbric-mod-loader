@@ -962,8 +962,14 @@ public final class PassiveSeeder {
 	}
 
 	/**
-	 * A constructor-free {@code ModFile} backed by {@code JarContents.empty(jar)} — NeoForge's own "a file at this
-	 * path whose contents are not indexed" value, which performs no I/O and opens no handle.
+	 * A constructor-free {@code ModFile} whose contents are the mod's jar, opened the first time anyone reads them
+	 * ({@link #lazyContents}); until then it performs no I/O and opens no handle.
+	 *
+	 * <p>It used to be {@code JarContents.empty(jar)} for good, and a mod that reads its own files through
+	 * {@code FMLLoader.getLoadingModList()} got nothing: LambDynamicLights (through yumi) looks for the default
+	 * {@code lambdynlights.toml} inside its jar on the first launch, found none and stopped the game with "This
+	 * distribution of LambDynamicLights is broken". Every later launch passed, because the config it had failed to
+	 * copy was by then written by hand or by an earlier build, which is why a long-lived test pack never saw it.
 	 *
 	 * <p>It exists so the file-shaped seams answer instead of NPE-ing: {@code ModFileInfo.toString()} is literally
 	 * {@code modFile.getId()}, {@code getFilePath()} is {@code contents.getPrimaryPath()}, and NeoForge's mod-error
@@ -980,8 +986,7 @@ public final class PassiveSeeder {
 			Class<?> typeCls = Class.forName(ForeignType.MOD_FILE_TYPE.binary(Ecosystem.NEOFORGE), false, gameLoader);
 
 			Object modFile = allocate(gameLoader, modFileCls);
-			setInstanceField(modFileCls, "contents", modFile, contentsCls.getMethod("empty", Path.class)
-					.invoke(null, jar.toAbsolutePath()));
+			setInstanceField(modFileCls, "contents", modFile, lazyContents(gameLoader, contentsCls, jar));
 			setInstanceField(modFileCls, "id", modFile, id);
 			setInstanceField(modFileCls, "jarVersion", modFile, version);
 			setInstanceField(modFileCls, "modFileType", modFile, Enum.valueOf(typeCls.asSubclass(Enum.class), "MOD"));
@@ -1004,6 +1009,45 @@ public final class PassiveSeeder {
 					+ "file stays null", id, String.valueOf(t));
 			return null;
 		}
+	}
+
+	/**
+	 * NeoForge's {@code JarContents} for {@code jar}: {@code getPrimaryPath()} answers at once, and every other
+	 * call opens {@code JarContents.ofPath(jar)} once and asks it. A jar that cannot be opened reads as
+	 * {@code JarContents.empty}, as before, and says so once.
+	 */
+	static Object lazyContents(ClassLoader gameLoader, Class<?> contentsCls, Path jar) throws ReflectiveOperationException {
+		Path path = jar.toAbsolutePath();
+		Method ofPath = contentsCls.getMethod("ofPath", Path.class), empty = contentsCls.getMethod("empty", Path.class);
+		Object[] opened = {null};
+		InvocationHandler handler = (proxy, method, args) -> {
+			switch (method.getName()) {
+				case "getPrimaryPath" -> { if (method.getParameterCount() == 0) return path; }
+				case "toString" -> { if (method.getParameterCount() == 0) return "JarContents(" + path + ", opened on first read)"; }
+				case "hashCode" -> { if (method.getParameterCount() == 0) return System.identityHashCode(proxy); }
+				case "equals" -> { if (method.getParameterCount() == 1) return proxy == args[0]; }
+				case "close" -> {
+					synchronized (opened) { if (opened[0] instanceof java.io.Closeable closeable) closeable.close(); opened[0] = null; }
+					return null;
+				}
+				default -> { }
+			}
+			Object target;
+			synchronized (opened) {
+				if (opened[0] == null) {
+					try { opened[0] = ofPath.invoke(null, path); }
+					catch (java.lang.reflect.InvocationTargetException unreadable) {
+						ForbricLog.warn("[Forbric/Seed] could not open %s for its mod's own file reads (%s) — it reads as empty",
+								path.getFileName(), String.valueOf(unreadable.getCause()));
+						opened[0] = empty.invoke(null, path);
+					}
+				}
+				target = opened[0];
+			}
+			try { return method.invoke(target, args); }
+			catch (java.lang.reflect.InvocationTargetException thrown) { throw thrown.getCause(); }
+		};
+		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {contentsCls}, handler);
 	}
 
 	/**

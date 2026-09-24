@@ -47,14 +47,34 @@ public final class KernelModContainer implements ModContainer {
 	private final List<KernelModContainer> children = new ArrayList<>();
 
 	private volatile List<Path> rootPaths;
+	/** For a presence identity only: the jar its files are read from. {@link #getJar()} stays null. */
+	private final Path loadedFrom;
 
 	/** @param jar the mod's jar, or {@code null} for a builtin (synthetic) mod such as {@code minecraft} */
 	public KernelModContainer(KernelModMetadata metadata, Path jar, KernelModContainer parent) {
+		this(metadata, jar, parent, null);
+	}
+
+	private KernelModContainer(KernelModMetadata metadata, Path jar, KernelModContainer parent, Path loadedFrom) {
 		this.metadata = metadata;
 		this.jar = jar;
 		this.parent = parent;
+		this.loadedFrom = loadedFrom;
 
 		if (parent != null) parent.children.add(this);
+	}
+
+	/**
+	 * An identity registered for presence only: the mod is loaded, from {@code loadedFrom}, by another jar or another
+	 * family. It has no jar of its own, so nothing takes code, entrypoints, mixins or assets from it — but a mod
+	 * reads its OWN files through its own container ({@link #findPath}), and that has to find them in the jar that
+	 * did load it. LambDynamicLights, a universal jar that loads as NeoForge, asks its Fabric container (through yumi)
+	 * for its default config on the first launch and stopped the game when the alias answered with nothing.
+	 *
+	 * @param loadedFrom the jar the mod was actually loaded from, or null when there is none to read
+	 */
+	public static KernelModContainer presence(KernelModMetadata metadata, Path loadedFrom) {
+		return new KernelModContainer(metadata, null, null, loadedFrom);
 	}
 
 	/** The jar this mod was loaded from (an extracted file for JiJ-nested mods), or {@code null} if builtin. */
@@ -69,6 +89,7 @@ public final class KernelModContainer implements ModContainer {
 
 	@Override
 	public List<Path> getRootPaths() {
+		Path jar = this.jar != null ? this.jar : loadedFrom;
 		if (jar == null) return List.of();
 
 		List<Path> paths = rootPaths;

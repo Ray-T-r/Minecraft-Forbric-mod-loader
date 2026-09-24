@@ -115,6 +115,30 @@ class PassiveSeederLoadingModListTest {
 		assertEquals("kerneltestmod", fileInfo.toString(), "ModFileInfo.toString() is modFile.getId()");
 	}
 
+	/**
+	 * A mod reading a file out of its own jar through the seeded list (LambDynamicLights copying its default
+	 * config on the first launch) must find it. It found nothing while the seeded file's contents were empty.
+	 */
+	@Test
+	void aModReadsItsOwnFilesThroughTheSeededList() throws Exception {
+		ClassLoader game = neoForgeLoader();
+		Path mods = Files.createDirectories(tmp.resolve("mods"));
+		Path jar = mods.resolve("[Lambd的动态光源] kerneltestmod-1+26.2.jar");
+		writeModJar(jar, "kerneltestmod", "1", "Kernel Test Mod", true);
+		try (var zip = java.nio.file.FileSystems.newFileSystem(jar)) {
+			Files.writeString(zip.getPath("kerneltestmod.toml"), "enabled = true\n");
+		}
+		FakeFmlLoader loader = new FakeFmlLoader();
+		PassiveSeeder.seedNeoForgeLoadingModList(game, FakeFmlLoader.class, loader, mods);
+		Object file = call(call(seededList(loader), "getModFileById", String.class, "kerneltestmod"), "getFile");
+		Object contents = call(file, "getContents");
+		assertEquals(jar.toAbsolutePath(), call(contents, "getPrimaryPath"));
+		assertEquals(Boolean.TRUE, call(contents, "containsFile", String.class, "kerneltestmod.toml"));
+		assertEquals("enabled = true\n", new String((byte[]) call(contents, "readFile", String.class, "kerneltestmod.toml"),
+				java.nio.charset.StandardCharsets.UTF_8));
+		assertEquals(Boolean.FALSE, call(contents, "containsFile", String.class, "missing.toml"));
+	}
+
 	@Test
 	void offSwitchRestoresTheEmptyList() throws Exception {
 		ClassLoader game = neoForgeLoader();
