@@ -58,3 +58,28 @@ queries reach them. The phase result is written only when this finishes (at most
 
 These assertions supplement the lower-level transaction/alias canary; they do not replace it. No Gradle or
 game run is implied merely by creating these sources.
+
+# M40 energy fixture
+
+Run `bash forbric-kernel/run/gate-m40-energy.sh`. It builds the same three jars plus three energy cells
+(`TRANSFER_CANARY_ENERGY=1`) into `build/energy-canary/`, never into `run/canary/`, so it cannot rewrite what M33 reads.
+The shared `EnergyMachines` and `EnergyWorldProbe` ship in the M33 Fabric jar and name no Team Reborn Energy type.
+`forbricenergyfabric` (a Reborn `SimpleEnergyStorage` on `EnergyStorage.SIDED`) is the only fixture that depends on
+Reborn; `forbricenergyforge` attaches Forge's exact `EnergyStorage` on `ForgeCapabilities.ENERGY`, and
+`forbricenergyneo` registers a `SimpleEnergyHandler` on `Capabilities.Energy.BLOCK` and runs the probe. Every
+provider answers NORTH and null only. The Reborn jar is copied from `M40_REBORN_ENERGY` (default
+`forbric-kernel/run/energy-api/energy-5.0.0.jar` beside the staged tree); the gate fails if it is missing.
+
+The probe uses only public lookups. `prepare` seeds 20,000 E in each primary cell and checks: every consumer sees
+every cell on NORTH/null with the face passed through, and SOUTH refused; each consumer's own native store wins where
+another ecosystem could be bridged, and the owner answers first among foreign stores; a custom Forge
+`IEnergyStorage` gets no write bridge (reported once for its class) while a subclass of `EnergyStorage` that adds only
+its own state is bridged; each store's capacity/maxInsert/maxExtract applies; twelve routes (six directed pairs x
+NORTH/null, 1,000 E each, the consumer's own move helper) keep the total at 60,000; a committed nested move under an
+aborted root restores every cell on both engines; replacing a block entity makes every cached view move nothing; a
+bridged write into a Forge cell in a clean chunk stays clean on abort and dirties it exactly once per root commit;
+a 5,000,000,000 E Reborn cell reads as Integer.MAX_VALUE through int APIs and moving all of it into an int cell moves
+exactly 2,147,483,647 and keeps the rest. `reload` checks every amount after a real save and runs the routes again.
+`noreborn` removes Reborn and the Fabric cell: Forge <-> NeoForge still work (4 routes, 40,000 E), and the JVM's own
+class-load log must contain no `team.reborn` class and no Reborn half of the bridge. `negative` turns the bridge off
+and must fail at a foreign lookup. Evidence: `build/verification/m40-energy/`.

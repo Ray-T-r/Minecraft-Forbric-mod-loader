@@ -44,6 +44,11 @@ class EnergyInteropTest {
 		run(RebornAbsentEnergyScenarios.class.getName(), "forgeAndNeoBridgeEachOtherWithoutReborn", true, requested);
 		assertEquals(List.of(), requested, "a Reborn class was requested in a pack without Team Reborn Energy");
 	}
+	@Test void aFailedRebornInstallLeavesForgeAndNeoEnergyUntouched() throws Exception {
+		List<String> requested = new CopyOnWriteArrayList<>();
+		run(RebornAbsentEnergyScenarios.class.getName(), "aFailedRebornInstallExposesNothing", true, requested);
+		assertTrue(requested.stream().anyMatch(name -> name.startsWith("team.reborn.")), "the install never reached Reborn: " + requested);
+	}
 	/** The control for the test above: the same loader does refuse Reborn, so an empty record is a real answer. */
 	@Test void theRebornFreeLoaderReallyRefusesReborn() throws Exception {
 		List<String> requested = new CopyOnWriteArrayList<>();

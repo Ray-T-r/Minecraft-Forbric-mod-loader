@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Three separate ecology fixtures for M33. Common classes live only in the Fabric jar.
+# With TRANSFER_CANARY_ENERGY=1 also the three M40 energy cells (forbricenergy{fabric,forge,neo}); only the Fabric one
+# compiles against Team Reborn Energy (M40_REBORN_ENERGY, default forbric-kernel/run/energy-api/energy-5.0.0.jar
+# beside the staged tree), and it is required then. TRANSFER_CANARY_OUT redirects the output (default run/canary),
+# so the energy gate never rewrites the jars M33 is reading.
 set -euo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 canary_scratch transfer-world
@@ -18,8 +22,10 @@ if not forge.is_file(): forge = old / 'run/forge-runtime/forge-runtime.jar'
 neo = pathlib.Path(os.environ.get('NEO_RT', old / 'run/neoforge-runtime/neoforge-runtime.jar'))
 compile_game = pathlib.Path(os.environ.get('M33_COMPILE_GAME', old / 'run/neoforge-patched/patched-mc-neoforge-26.2.jar'))
 boot = kernel / 'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar'
-for path in (fapi, merged, forge, neo, compile_game, boot):
-    if not path.is_file(): raise SystemExit(f'M33 prerequisite missing: {path}')
+energy = os.environ.get('TRANSFER_CANARY_ENERGY') == '1'
+reborn = pathlib.Path(os.environ.get('M40_REBORN_ENERGY', old.parent / 'forbric-kernel/run/energy-api/energy-5.0.0.jar'))
+for path in (fapi, merged, forge, neo, compile_game, boot) + ((reborn,) if energy else ()):
+    if not path.is_file(): raise SystemExit(f'M33/M40 prerequisite missing: {path}')
 modules = work / 'modules'; modules.mkdir()
 with zipfile.ZipFile(fapi) as source:
     for name in source.namelist():
@@ -36,24 +42,28 @@ for library in metadata.get('libraries', []):
 classpath = [compile_game, merged, boot, forge, neo, *modules.glob('*.jar'), *libraries]
 root = kernel / 'canary/transfer'
 compiled = {}
-for family in ('fabric', 'forge', 'neo'):
+families = ('fabric', 'forge', 'neo') + (('energy-fabric', 'energy-forge', 'energy-neo') if energy else ())
+for family in families:
     destination = work / family; destination.mkdir()
     sources = sorted((root / family / 'src').rglob('*.java'))
     if family == 'fabric': sources += sorted((root / 'common/src').rglob('*.java'))
-    cp = [*classpath] + ([compiled['fabric']] if family != 'fabric' else [])
+    # Team Reborn Energy is on the classpath of the one fixture that depends on it, and of nothing else: the shared
+    # classes in the Fabric jar must compile (and so load) without it.
+    cp = [*classpath] + ([compiled['fabric']] if family != 'fabric' else []) + ([reborn] if family == 'energy-fabric' else [])
     subprocess.run(['javac', '-proc:none', '--release', '21', '-cp', os.pathsep.join(map(str, cp)),
                     '-d', str(destination), *map(str, sources)], check=True)
     compiled[family] = destination
-output = kernel / 'run/canary'; output.mkdir(parents=True, exist_ok=True)
+output = pathlib.Path(os.environ.get('TRANSFER_CANARY_OUT', kernel / 'run/canary')); output.mkdir(parents=True, exist_ok=True)
 staged = []
 for family, destination in compiled.items():
-    name = {'fabric':'forbrictransferfabric', 'forge':'forbrictransferforge', 'neo':'forbrictransferneo'}[family]
+    name = {'fabric':'forbrictransferfabric', 'forge':'forbrictransferforge', 'neo':'forbrictransferneo',
+            'energy-fabric':'forbricenergyfabric', 'energy-forge':'forbricenergyforge', 'energy-neo':'forbricenergyneo'}[family]
     jar = work / (name + '.jar')
     with zipfile.ZipFile(jar, 'w', zipfile.ZIP_DEFLATED) as target:
         for path in sorted(destination.rglob('*.class')): target.write(path, path.relative_to(destination).as_posix())
-        if family == 'fabric': target.write(root / family / 'fabric.mod.json', 'fabric.mod.json')
+        if family.endswith('fabric'): target.write(root / family / 'fabric.mod.json', 'fabric.mod.json')
         else:
-            metadata_name = 'mods.toml' if family == 'forge' else 'neoforge.mods.toml'
+            metadata_name = 'mods.toml' if family.endswith('forge') else 'neoforge.mods.toml'
             target.write(root / family / 'META-INF' / metadata_name, 'META-INF/' + metadata_name)
     staged.append((jar, output / jar.name))
 for source, target in staged: os.replace(source, target)
@@ -62,6 +72,7 @@ def record(path):
     return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 inputs = {'fabricApi': record(fapi), 'merged': record(merged), 'forge': record(forge), 'neo': record(neo),
           'compileGame': record(compile_game), 'kernel': record(boot), 'mods': [record(target) for _, target in staged]}
+if energy: inputs['rebornEnergy'] = record(reborn)
 (output / 'm33-build-inputs.json').write_text(json.dumps(inputs, indent=2) + '\n')
-print('[M33Transfer] built separate Fabric, Forge and NeoForge machine mods')
+print('[M33Transfer] built separate Fabric, Forge and NeoForge machine mods' + (' and energy cells' if energy else ''))
 PY

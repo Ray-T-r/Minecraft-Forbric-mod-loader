@@ -66,6 +66,7 @@ run/.gate-clones/
 
 # Hash-bound compatibility gates own these instances and generated build manifests.
 run/server-transfer-m33/
+run/server-energy-m40/
 run/server-behavior-m35/
 run/server-mixin-outcome-m36/
 run/canary/m33-build-inputs.json

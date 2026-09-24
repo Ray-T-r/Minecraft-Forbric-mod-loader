@@ -51,6 +51,23 @@ public final class RebornAbsentEnergyScenarios {
 		eq(2700, neo.getAmountAsLong()); eq(6000, neo.getAmountAsLong() + forge.getEnergyStored());
 		yes(!Transaction.isOpen() && net.neoforged.neoforge.transfer.transaction.Transaction.getCurrentOpenedTransaction() == null, "a transaction was left open");
 	}
+	/**
+	 * The Reborn half installed where Reborn cannot link (drifted, or absent while the seam thought otherwise) must fail
+	 * with NOTHING exposed. It used to hand BlockTransferBridge its Fabric side first; the lookup then failed, and every
+	 * later NeoForge or Forge energy query that reached that side threw NoClassDefFoundError.
+	 */
+	public static void aFailedRebornInstallExposesNothing() throws Exception {
+		ClassLoader loader = RebornAbsentEnergyScenarios.class.getClassLoader();
+		Class<?> bridge = Class.forName("net.forbric.kernel.runtime.transfer.BlockTransferBridge", true, loader);
+		var enabled = bridge.getDeclaredField("enabled"); enabled.setAccessible(true); enabled.setBoolean(null, true);
+		var side = bridge.getDeclaredField("fabricEnergy"); side.setAccessible(true);
+		Throwable failure = null;
+		try { Class.forName("net.forbric.kernel.runtime.transfer.RebornEnergyBridge", true, loader).getMethod("install").invoke(null); }
+		catch (java.lang.reflect.InvocationTargetException thrown) { failure = thrown.getCause(); }
+		yes(failure instanceof LinkageError, "installing the Reborn half without Reborn did not fail: " + failure);
+		yes(side.get(null) == null, "a failed Reborn install left its Fabric side exposed to NeoForge and Forge queries");
+		enabled.setBoolean(null, false);
+	}
 	private static void link(Class<?> type) throws Exception {
 		type.getDeclaredMethods(); type.getDeclaredFields(); type.getDeclaredConstructors();
 		for (Class<?> nested : type.getDeclaredClasses()) link(Class.forName(nested.getName(), true, type.getClassLoader()));

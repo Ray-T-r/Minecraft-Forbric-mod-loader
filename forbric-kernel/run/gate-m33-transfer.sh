@@ -141,6 +141,8 @@ check_absent "Forge's own InvWrapper was never refused as an unaudited handler" 
 check "actual fractional return was rolled back and retried" "PASS world fluid quantization retains 17 units" "$RESULTS/prepare-inputs.log"
 check "world replacement invalidation ran" "PASS cached foreign views" "$RESULTS/prepare-inputs.log"
 check "a real chunk unload and reload ran" "PASS chunk unload: cached views refuse" "$RESULTS/prepare-inputs.log"
+# This pack has no energy mod and no Team Reborn Energy: the energy half of the bridge must stay silent (M40 tests it).
+check_absent "an item/fluid pack sees no energy bridge activity or finding" "Team Reborn Energy|transfer-energy|RebornEnergy" "$RESULTS/prepare-inputs.log"
 
 step "reload the same gate-owned world and verify persisted components and quantities"
 run_phase reload on

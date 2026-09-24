@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "forbricenergyfabric",
+  "version": "1.0.0",
+  "name": "Forbric M40 Fabric Energy Cell",
+  "environment": "server",
+  "entrypoints": {"main": ["forbric.transferworld.energy.ForbricEnergyFabric"]},
+  "depends": {"fabricloader": ">=0.18.4", "team_reborn_energy": ">=5.0.0", "forbrictransferfabric": "*", "fabric-transfer-api-v1": "*", "fabric-api-lookup-api-v1": "*"}
+}

@@ -1,0 +1,13 @@
+modLoader="javafml"
+loaderVersion="[3,)"
+license="Apache-2.0"
+[[mods]]
+modId="forbricenergyneo"
+version="1.0.0"
+displayName="Forbric M40 NeoForge Energy Cell"
+[[dependencies.forbricenergyneo]]
+modId="forbrictransferfabric"
+type="required"
+versionRange="[1,)"
+ordering="AFTER"
+side="BOTH"
