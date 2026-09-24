@@ -244,6 +244,11 @@ public final class MixinRetarget {
 		List<Rewrite> out = new ArrayList<>();
 		for (String selector : selectors) {
 			List<MethodNode> named = resolveSelector(target, selector, resolver);
+			// Mixin injects into the target's OWN method; a superclass method of the same name and descriptor is
+			// the one it overrides, not a second candidate. apoli-legacy selects "startSleepInBed" by bare name
+			// and ServerPlayer overrides Player's, which made this rule decline a body NeoForge moved into a lambda.
+			List<MethodNode> own = named.stream().filter(target.methods::contains).toList();
+			if (!own.isEmpty()) named = own;
 			if (named.size() != 1) continue;    // an overload set is R1's ambiguity, not this rule's business
 			MethodNode selected = named.get(0);
 
@@ -257,7 +262,9 @@ public final class MixinRetarget {
 
 			MethodNode renamed = null;
 			for (MethodNode candidate : target.methods) {
-				if (candidate == selected || !candidate.desc.equals(selected.desc)) continue;
+				// Same descriptor AND same static-ness: an instance handler cannot bind into a static body.
+				if (candidate == selected || !candidate.desc.equals(selected.desc)
+						|| (candidate.access & Opcodes.ACC_STATIC) != (selected.access & Opcodes.ACC_STATIC)) continue;
 				boolean all = true;
 				for (String member : wanted) {
 					if (!MixinFit.containsMember(candidate, member)) { all = false; break; }

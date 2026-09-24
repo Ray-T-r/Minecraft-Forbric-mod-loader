@@ -109,6 +109,30 @@ class MixinRetargetRenamedBodyTest {
 		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin("addDetailsToTooltip")), resolver(target)).isEmpty());
 	}
 
+	/**
+	 * The mod names the method by bare name, and the target OVERRIDES a superclass method of the same name and
+	 * descriptor (ServerPlayer.startSleepInBed over Player's). That is still one method to Mixin, and NeoForge's
+	 * lambda that now carries the body is rebound to, as apoli-legacy's preventAvianSleep needs.
+	 */
+	@Test
+	void anOverriddenSuperclassMethodIsNotASecondCandidate() {
+		byte[] base = baseWith(method("addDetailsToTooltip", DESC, false));
+		byte[] target = targetWith("net/example/Base", method("addDetailsToTooltip", DESC, false),
+				method("lambda$addDetailsToTooltip$0", DESC, true));
+		Function<String, byte[]> resolver = Map.of(TARGET + ".class", target, "net/example/Base.class", base)::get;
+		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixin("addDetailsToTooltip")), resolver);
+		assertEquals(1, plan.rewrites().size(), plan.describe());
+		assertEquals("lambda$addDetailsToTooltip$0" + DESC, plan.rewrites().get(0).to());
+	}
+
+	/** A static body cannot take an instance handler: refused whatever it calls. */
+	@Test
+	void aCandidateOfTheOtherStaticnessIsRefused() {
+		byte[] target = targetWith(null, method("addDetailsToTooltip", DESC, false),
+				new MethodSpec("lambda$addDetailsToTooltip$0", DESC, true, true));
+		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin("addDetailsToTooltip")), resolver(target)).isEmpty());
+	}
+
 	@Test
 	void theSwitchOffPlansNothing() {
 		System.setProperty(MixinRetarget.PROPERTY, "off");
@@ -126,20 +150,38 @@ class MixinRetargetRenamedBodyTest {
 		return targetWith(specs);
 	}
 
-	private record MethodSpec(String name, String desc, boolean callsShows) { }
+	private record MethodSpec(String name, String desc, boolean callsShows, boolean isStatic) {
+		MethodSpec(String name, String desc, boolean callsShows) { this(name, desc, callsShows, false); }
+	}
 
 	private static MethodSpec method(String name, String desc, boolean callsShows) {
 		return new MethodSpec(name, desc, callsShows);
 	}
 
 	private static byte[] targetWith(Object... specs) {
-		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
-		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, TARGET, null, "java/lang/Object", null);
+		return targetWith(null, specs);
+	}
+
+	private static byte[] baseWith(MethodSpec spec) {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "net/example/Base", null, "java/lang/Object", null);
+		MethodVisitor m = cw.visitMethod(Opcodes.ACC_PUBLIC, spec.name(), spec.desc(), null, null);
+		m.visitCode(); m.visitInsn(Opcodes.RETURN); m.visitMaxs(0, 0); m.visitEnd(); cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	private static byte[] targetWith(String superName, Object... specs) {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, TARGET, null, superName == null ? "java/lang/Object" : superName, null);
 		for (Object raw : specs) {
 			MethodSpec spec = (MethodSpec) raw;
-			MethodVisitor m = cw.visitMethod(Opcodes.ACC_PRIVATE, spec.name(), spec.desc(), null, null);
+			MethodVisitor m = cw.visitMethod(Opcodes.ACC_PRIVATE | (spec.isStatic() ? Opcodes.ACC_STATIC : 0), spec.name(), spec.desc(), null, null);
 			m.visitCode();
-			if (spec.callsShows()) {
+			if (spec.callsShows() && spec.isStatic()) {
+				m.visitInsn(Opcodes.ACONST_NULL);
+				m.visitMethodInsn(Opcodes.INVOKEVIRTUAL, TARGET, "shows", "()Z", false);
+				m.visitInsn(Opcodes.POP);
+			} else if (spec.callsShows()) {
 				m.visitVarInsn(Opcodes.ALOAD, 0);
 				m.visitMethodInsn(Opcodes.INVOKEVIRTUAL, TARGET, "shows", "()Z", false);
 				m.visitInsn(Opcodes.POP);
