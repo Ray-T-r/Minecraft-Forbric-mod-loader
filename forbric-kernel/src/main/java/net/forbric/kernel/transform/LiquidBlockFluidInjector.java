@@ -26,8 +26,9 @@ import org.objectweb.asm.tree.VarInsnNode;
  * one vanilla uses ({@code FlowingFluid, Properties}) sets the {@code fluid} field and never the supplier. So the
  * getter threw a NullPointerException for every vanilla liquid — for MinecraftForge's own fluid utilities and for
  * every mod that asks a liquid block for its fluid (JourneyMap's map tint, pipes). The getter now returns the field
- * when it is set and falls back to the supplier, which covers both constructors. {@code -Dforbric.liquidBlockFluid=off}
- * leaves it as merged.
+ * when it is set and falls back to the supplier, which covers both constructors. This is a merge repair, not one of
+ * NeoForge's coremods; it sits under the same master switch ({@code -Dforbric.coremodParity=off}) so that switch
+ * restores everything this round changed, and {@code -Dforbric.liquidBlockFluid=off} turns it off alone.
  */
 public final class LiquidBlockFluidInjector implements ClassTransformer {
 	static final String PROPERTY = "forbric.liquidBlockFluid";
@@ -37,7 +38,7 @@ public final class LiquidBlockFluidInjector implements ClassTransformer {
 	static final String SUPPLIER = "java/util/function/Supplier";
 
 	static boolean enabled() {
-		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
+		return NativeCoremodParity.on(PROPERTY);
 	}
 
 	@Override public String name() { return "forbric-liquid-block-fluid"; }

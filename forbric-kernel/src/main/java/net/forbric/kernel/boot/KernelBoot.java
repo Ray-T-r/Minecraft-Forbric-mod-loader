@@ -545,11 +545,13 @@ public final class KernelBoot {
 		// Each LootPool constructor fills the other family's fields too, so a pool built one way encodes the other.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LootPoolFieldsInjector());
 		// NeoForge's coremods never run on the merged base; NativeCoremodParity does their rewrites after Mixin. These
-		// are the parts that must come before it: the flower pot's constructor, lookup and addPlant, the liquid
-		// block's getter, and the biome modifier pass starting from the biome's current climate.
+		// are the parts that must come before it: the flower pot's constructor, lookup and addPlant; the biome modifier
+		// pass starting from the biome's current climate, and the biome's getters yielding to a later replacement.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FlowerPotRepairInjector());
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LiquidBlockFluidInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BiomeInfoRebaseInjector());
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BiomeLateWriteInjector());
+		// A merge repair beside them, not a coremod: MinecraftForge's liquid getter over NeoForge's constructor.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LiquidBlockFluidInjector());
 		// The only performance measurement in the tree. Beside the smoke tick because it is the same shape:
 		// one static call at the head of a tick, no mixin config, nothing new in the list a gate asserts on.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ServerTickSamplerInjector());

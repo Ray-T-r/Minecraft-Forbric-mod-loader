@@ -2,6 +2,7 @@
 package net.forbric.kernel.runtime;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
@@ -23,6 +24,7 @@ import net.neoforged.neoforge.common.world.ModifiableBiomeInfo;
  */
 public final class KernelBiomeView {
 	private static volatile Field climate, effects;
+	private static volatile Method mark;
 	private static volatile int rebased;
 
 	private KernelBiomeView() {
@@ -34,6 +36,7 @@ public final class KernelBiomeView {
 			Biome biome = holder.value();
 			Biome.ClimateSettings rawClimate = (Biome.ClimateSettings) field("climateSettings").get(biome);
 			BiomeSpecialEffects rawEffects = (BiomeSpecialEffects) field("specialEffects").get(biome);
+			markPass(biome, rawClimate, rawEffects);
 			if (rawClimate == original.climateSettings() && rawEffects == original.effects()) return original;
 			if (rebased++ == 0) {
 				ForbricLog.info("[Forbric/Worldgen] NeoForge's biome modifiers now start from the climate a Fabric mod "
@@ -46,6 +49,25 @@ public final class KernelBiomeView {
 			ForbricLog.warn("[Forbric/Worldgen] could not read the current climate of a biome; NeoForge's modifiers start "
 					+ "from its original info (%s)", Reflect.unwrap(failure));
 			return original;
+		}
+	}
+
+	/**
+	 * Tells the biome what it held at the pass, so a later replacement wins over the view (BiomeLateWriteInjector).
+	 * Absent when that injector stood down; the view then simply holds.
+	 */
+	private static void markPass(Biome biome, Biome.ClimateSettings climate, BiomeSpecialEffects effects) {
+		try {
+			Method method = mark;
+			if (method == null) {
+				method = Biome.class.getMethod("forbric$markPass", Biome.ClimateSettings.class, BiomeSpecialEffects.class);
+				mark = method;
+			}
+			method.invoke(biome, climate, effects);
+		} catch (NoSuchMethodException absent) {
+			// the late-write half is not on this base; nothing to record
+		} catch (Throwable failure) {
+			ForbricLog.debug("[Forbric/Worldgen] could not record a biome's pass-time climate: %s", failure);
 		}
 	}
 

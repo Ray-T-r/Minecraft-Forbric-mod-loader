@@ -90,6 +90,41 @@ class CoremodRepairInjectorsTest {
 				"the same switch as the read rewrite, so the two never apply apart");
 	}
 
+	@Test void aBiomeReplacedAfterNeoForgesPassWinsOverTheView() throws Exception {
+		String biome = BiomeLateWriteInjector.OWNER;
+		byte[] original = NativeCoremodParityTest.read(MERGED, biome);
+		byte[] out = new BiomeLateWriteInjector().transform(BiomeLateWriteInjector.TARGET, original, null);
+		assertNotSame(original, out);
+		ClassNode node = node(out);
+		for (var guarded : BiomeLateWriteInjector.GUARDED) {
+			assertTrue(node.fields.stream().anyMatch(f -> f.name.equals(guarded.atPass()) && f.desc.equals(guarded.desc())));
+			MethodNode getter = method(node, guarded.getter(), "()" + guarded.desc());
+			List<AbstractInsnNode> real = java.util.Arrays.stream(getter.instructions.toArray()).filter(i -> i.getOpcode() >= 0).toList();
+			assertTrue(real.get(1) instanceof FieldInsnNode f && f.name.equals(guarded.atPass()), "the pass-time record is asked first");
+			assertNotNull(find(getter, MethodInsnNode.class, c -> c.name.equals("modifiableBiomeInfo")), "then NeoForge's own answer");
+			new Analyzer<>(new BasicVerifier()).analyze(biome, getter);
+		}
+		MethodNode mark = method(node, BiomeLateWriteInjector.MARK, BiomeLateWriteInjector.MARK_DESC);
+		assertNull(find(mark, FieldInsnNode.class, f -> f.getOpcode() == Opcodes.GETFIELD), "the record takes its values as arguments");
+		new Analyzer<>(new BasicVerifier()).analyze(biome, mark);
+		assertSame(out, new BiomeLateWriteInjector().transform(BiomeLateWriteInjector.TARGET, out, null), "a second pass changes nothing");
+		// The read rewrite after Mixin still takes the class: the getters are NeoForge's, only guarded.
+		ClassNode parity = node(NativeCoremodParity.apply(biome, out));
+		long views = parity.methods.stream().flatMap(m -> java.util.Arrays.stream(m.instructions.toArray()))
+				.filter(i -> i instanceof MethodInsnNode c && c.owner.equals(biome) && c.name.startsWith("getModified")).count();
+		long before = node.methods.stream().flatMap(m -> java.util.Arrays.stream(m.instructions.toArray()))
+				.filter(i -> i instanceof MethodInsnNode c && c.owner.equals(biome) && c.name.startsWith("getModified")).count();
+		assertEquals(16, views - before);
+		System.setProperty(NativeCoremodParity.BIOME, "off");
+		assertSame(original, new BiomeLateWriteInjector().transform(BiomeLateWriteInjector.TARGET, original, null));
+	}
+
+	@Test void theMasterSwitchCoversTheLiquidRepairToo() throws Exception {
+		byte[] original = NativeCoremodParityTest.read(MERGED, LiquidBlockFluidInjector.OWNER);
+		System.setProperty(NativeCoremodParity.PROPERTY, "off");
+		assertSame(original, new LiquidBlockFluidInjector().transform(LiquidBlockFluidInjector.TARGET, original, null));
+	}
+
 	private static <T extends AbstractInsnNode> T find(MethodNode m, Class<T> type, java.util.function.Predicate<T> test) {
 		for (AbstractInsnNode insn : m.instructions) if (type.isInstance(insn) && test.test(type.cast(insn))) return type.cast(insn);
 		return null;

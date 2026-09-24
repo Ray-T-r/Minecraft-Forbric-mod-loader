@@ -195,7 +195,7 @@ public final class NativeCoremodParity {
 			}
 		}
 		if (field == null || (field.access & Opcodes.ACC_STATIC) != 0 || getters != 1 || (getter.access & Opcodes.ACC_STATIC) != 0
-				|| readsField(getter, node.name, rule)) {
+				|| returnsField(getter, node.name, rule)) {
 			report(node.name, "field-getter:" + rule.field(), "NeoForge routes reads of " + rule.field() + " through "
 					+ rule.getter() + "(), but this class does not have that field and getter in NeoForge's shape; reads stay raw");
 			return -1;
@@ -214,13 +214,17 @@ public final class NativeCoremodParity {
 		return rewritten;
 	}
 
-	/** A getter that reads the field it replaces would call itself forever once reads go through it. */
-	private static boolean readsField(MethodNode getter, String owner, FieldGetter rule) {
-		for (AbstractInsnNode insn : getter.instructions) {
-			if (insn instanceof FieldInsnNode read && read.getOpcode() == Opcodes.GETFIELD && read.owner.equals(owner)
-					&& read.name.equals(rule.field())) return true;
-		}
-		return false;
+	/**
+	 * Vanilla's getter, {@code return this.field}: the field is the value, and there is nothing to route reads to.
+	 * (A getter that also reads the field, as BiomeLateWriteInjector's does, is still NeoForge's; it is never
+	 * rewritten itself, being the one method with its descriptor excluded.)
+	 */
+	private static boolean returnsField(MethodNode getter, String owner, FieldGetter rule) {
+		List<AbstractInsnNode> real = new java.util.ArrayList<>();
+		for (AbstractInsnNode insn : getter.instructions) if (insn.getOpcode() >= 0) real.add(insn);
+		return real.size() == 3 && real.get(0).getOpcode() == Opcodes.ALOAD && real.get(1) instanceof FieldInsnNode read
+				&& read.getOpcode() == Opcodes.GETFIELD && read.owner.equals(owner) && read.name.equals(rule.field())
+				&& real.get(2).getOpcode() == Opcodes.ARETURN;
 	}
 
 	static int redirectFinalize(ClassNode node) {
