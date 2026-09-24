@@ -74,6 +74,11 @@ public final class KernelRegistryContent {
 	 *
 	 * @return how many states the map holds, or -1 when it already agreed with the registry
 	 */
+	/** NeoForge's flower pot table, which its bake callback would fill and never does here. See KernelFlowerPots. */
+	public static int rebuildFlowerPotTable() {
+		return KernelFlowerPots.rebuildTable();
+	}
+
 	/** The switch that puts back the old rule: a non-empty map is left exactly as the first pass built it. */
 	static final String STATE_ID_SWITCH = "forbric.blockStateIdRefill";
 

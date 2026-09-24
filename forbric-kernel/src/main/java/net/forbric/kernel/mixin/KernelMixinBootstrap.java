@@ -69,6 +69,8 @@ public final class KernelMixinBootstrap {
 
 		if (configs.isEmpty()) {
 			ForbricLog.info("[Forbric/Mixin] no mixin configs declared — Mixin not started");
+			// NeoForge's coremods still apply; they are the stage after Mixin, not part of it.
+			loader.setMixinTransformer(net.forbric.kernel.transform.NativeCoremodParity::apply);
 			return;
 		}
 
@@ -121,8 +123,11 @@ public final class KernelMixinBootstrap {
 				return null;
 			}
 		});
+		// NativeCoremodParity directly after Mixin, where NeoForge runs its own coremods: a mixin aimed at the vanilla
+		// field read or finalizeSpawn call still binds, and what a mixin adds to those classes is rewritten too.
 		loader.setMixinTransformer((name, bytes) -> net.forbric.kernel.transform.ForgeTransferShapeAudit.certify(name,
-				conflicts.transform(name, bytes, PostMixinFixups.apply(name, transformer.transformClassBytes(name, name, bytes)))));
+				conflicts.transform(name, bytes, PostMixinFixups.apply(name, net.forbric.kernel.transform.NativeCoremodParity
+						.apply(name, transformer.transformClassBytes(name, name, bytes))))));
 
 		// Leave PREINIT so the registered configs are prepared and their targets become weavable.
 		gotoPhase(MixinEnvironment.Phase.INIT);

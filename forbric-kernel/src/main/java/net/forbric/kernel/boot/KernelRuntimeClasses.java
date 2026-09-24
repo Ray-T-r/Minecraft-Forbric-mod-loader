@@ -143,6 +143,7 @@ public final class KernelRuntimeClasses {
 		// See KernelRegistryContent.
 		CLASSES.put("net.forbric.kernel.runtime.KernelRegistryContent", new Entry(Origin.COMPILED, List.of(
 				new Call("rebuildBlockStateIds", int.class),
+				new Call("rebuildFlowerPotTable", int.class),
 				new Call("initialiseBlockStateCaches", int.class),
 				new Call("initialiseBlockInfoCaches", boolean.class),
 				new Call("sortCreativeTabs", void.class),
@@ -353,6 +354,11 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelSpawnerFinalize", new Entry(Origin.COMPILED, List.of()));
 		// Called from the position check SpawnPositionCallsInjector writes into BaseSpawner.serverTick.
 		CLASSES.put("net.forbric.kernel.runtime.KernelSpawnPosition", new Entry(Origin.COMPILED, List.of()));
+		// NeoForge's coremods, done after Mixin (NativeCoremodParity) and before it (FlowerPotRepairInjector,
+		// BiomeInfoRebaseInjector): the call targets and helpers they route to.
+		CLASSES.put("net.forbric.kernel.runtime.KernelFinalizeSpawn", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelFlowerPots", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelBiomeView", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelPackFinders", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoDataMapWatch", new Entry(Origin.COMPILED, List.of(
 				new Call("installDataMapWatch", void.class, Object.class))));

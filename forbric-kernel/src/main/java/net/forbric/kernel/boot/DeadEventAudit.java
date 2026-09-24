@@ -204,7 +204,8 @@ public final class DeadEventAudit {
 	 * <p>Some seams cannot be bridged. A bridge listens to the other ecosystem's event and re-posts this one, so
 	 * it needs that other event to exist and be posted; where it does not, the only lever is redirecting the
 	 * surviving call into the kernel and asking both sides there. Three of these now exist — fuel burn time,
-	 * a spawner finishing a mob, and pack finders.
+	 * a mob's finalization (the spawner's call, and every call NeoForge's coremod redirects: NativeCoremodParity
+	 * sends them through KernelFinalizeSpawn, which posts both families' events), and pack finders.
 	 *
 	 * <p>They belong here because everything that decides "is this event delivered" reads these tables, and the
 	 * one that does not would go on listing them as work. That already happened once, from the other direction:
