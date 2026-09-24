@@ -22,10 +22,32 @@ final class CandidateContractScanner {
 	private enum Match { YES, NO, UNKNOWN }
 	/** {@code unsupported} names an entrypoint form the closure cannot follow; it is then unproved, never skipped. */
 	private record Entry(String owner, String method, String unsupported) { }
-	private record MemberUse(boolean field, int opcode, boolean interfaceOwner, String caller) {
+	/** {@code merged}: Mixin code runs inside its target, where access wideners and subclass access apply. */
+	private record MemberUse(boolean field, int opcode, boolean interfaceOwner, String caller, boolean merged) {
+		MemberUse(boolean field, int opcode, boolean interfaceOwner, String caller) { this(field, opcode, interfaceOwner, caller, false); }
 		boolean staticUse() { return opcode == Opcodes.INVOKESTATIC || opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC; }
 		boolean writesField() { return opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC; }
 	}
+	/** One way a Mixin member can be located in its target: {@code desc} null matches any descriptor. */
+	record Selector(String name, String desc) { }
+	/**
+	 * What a Mixin needs its target to declare itself (Mixin searches the target class, not its supertypes).
+	 * {@code isStatic} null means the modifier is not compared (injector targets); {@code necessary} false means
+	 * Mixin carries on without it (an injector nobody requires to match).
+	 */
+	private record MixinMember(boolean field, List<Selector> alternatives, Boolean isStatic, String kind, boolean necessary) { }
+	/** Every declared Mixin target, and the members each Mixin (by class) merges into it. */
+	private record Declared(Set<String> targets, Map<String, Map<String, Set<String>>> added) { }
+	private static final String SHADOW = "Lorg/spongepowered/asm/mixin/Shadow;", OVERWRITE = "Lorg/spongepowered/asm/mixin/Overwrite;",
+			ACCESSOR = "Lorg/spongepowered/asm/mixin/gen/Accessor;", INVOKER = "Lorg/spongepowered/asm/mixin/gen/Invoker;";
+	/** Injectors whose {@code method} selectors name methods of the target (Mixin and MixinExtras). */
+	private static final Set<String> INJECTORS = Set.of("Lorg/spongepowered/asm/mixin/injection/Inject;",
+			"Lorg/spongepowered/asm/mixin/injection/Redirect;", "Lorg/spongepowered/asm/mixin/injection/ModifyArg;",
+			"Lorg/spongepowered/asm/mixin/injection/ModifyArgs;", "Lorg/spongepowered/asm/mixin/injection/ModifyVariable;",
+			"Lorg/spongepowered/asm/mixin/injection/ModifyConstant;", "Lcom/llamalad7/mixinextras/injector/ModifyExpressionValue;",
+			"Lcom/llamalad7/mixinextras/injector/ModifyReceiver;", "Lcom/llamalad7/mixinextras/injector/ModifyReturnValue;",
+			"Lcom/llamalad7/mixinextras/injector/WrapWithCondition;", "Lcom/llamalad7/mixinextras/injector/v2/WrapWithCondition;",
+			"Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;", "Lcom/llamalad7/mixinextras/injector/wrapmethod/WrapMethod;");
 	private record Metadata(List<UnifiedDependency> dependencies, Map<String, String> provides,
 			List<String> mixins, List<Entry> entries, List<Exclusion> exclusions) { }
 	/** A declared "cannot run with": {@code constraint} null means the range could not be read. */
@@ -71,7 +93,13 @@ final class CandidateContractScanner {
 		// Candidate bytecode is pre-Mixin. Even an optional/plugin-controlled declaration can add the very
 		// member an entrypoint will call; its declaration proves uncertainty, not that the member stays absent.
 		Set<String> transformedTargets = new HashSet<>();
-		for (var entry : metadata.entrySet()) transformedTargets.addAll(declaredMixinTargets(entry.getValue(), inventories.get(entry.getKey()), side));
+		Map<String, Map<String, Set<String>>> mixinAdded = new HashMap<>();
+		for (var entry : metadata.entrySet()) {
+			Declared declared = declaredMixins(entry.getValue(), inventories.get(entry.getKey()), side);
+			transformedTargets.addAll(declared.targets());
+			declared.added().forEach((target, members) -> members.forEach((member, by) ->
+					mixinAdded.computeIfAbsent(target, k -> new HashMap<>()).computeIfAbsent(member, k -> new HashSet<>()).addAll(by)));
+		}
 		for (var claim : claims) {
 			Path source = JointCandidateSelector.path(claim);
 			Metadata mod = metadata.get(source); Inventory inventory = inventories.get(source);
@@ -115,7 +143,8 @@ final class CandidateContractScanner {
 						exclusion.hard(), (exclusion.hard() ? "declares it cannot run with " : "declares it conflicts with ") + exclusion.modId() + " " + range, true));
 			}
 			if (physicalOnly) for (String own : symbolOwners.getOrDefault(source, Set.of())) symbolDependencies.add(new UnifiedDependency(own, "*", true));
-			for (String config : mod.mixins()) scanMixins(source, config, inventory, symbolDependencies, symbolOwners, inventories, side, rules);
+			for (String config : mod.mixins()) scanMixins(source, config, inventory, symbolDependencies, symbolOwners, inventories, side,
+					transformedTargets, mixinAdded, rules);
 			var calls = new EntrypointCalls(source, inventory, symbolDependencies, symbolOwners, inventories, transformedTargets, rules);
 			for (Entry entry : mod.entries()) calls.scan(entry);
 		}
@@ -222,25 +251,26 @@ final class CandidateContractScanner {
 	}
 
 	private static void scanMixins(Path source, String name, Inventory jar, List<UnifiedDependency> dependencies,
-			Map<Path, Set<String>> symbolOwners, Map<Path, Inventory> inventories, EnvType side, List<JointCandidateSelector.Rule> rules) {
+			Map<Path, Set<String>> symbolOwners, Map<Path, Inventory> inventories, EnvType side, Set<String> transformedTargets,
+			Map<String, Map<String, Set<String>>> mixinAdded, List<JointCandidateSelector.Rule> rules) {
 		try {
 			byte[] bytes = jar.read(name); if (bytes == null) { rules.add(unknown(source, "config:" + name, "mixin config not readable")); return; }
 			var config = com.electronwill.nightconfig.json.JsonFormat.fancyInstance().createParser().parse(new StringReader(new String(bytes, java.nio.charset.StandardCharsets.UTF_8)));
 			String pkg = config.get("package"); if (pkg == null) return;
 			boolean required = Boolean.TRUE.equals(config.get("required"));
 			boolean unconditional = config.get("plugin") == null;
+			// Native Mixin: an injector's own require wins; otherwise the config's injectors.defaultRequire (default 0).
+			int defaultRequire = config.get(List.of("injectors", "defaultRequire")) instanceof Number number ? number.intValue() : 0;
 			List<String> mixins = new ArrayList<>();
 			for (String list : List.of("mixins", side == EnvType.SERVER ? "server" : "client")) {
 				Object value = config.get(list); if (value instanceof List<?> rows) for (Object row : rows) if (row instanceof String text) mixins.add(text);
 			}
+			Set<String> memberIds = new HashSet<>();
 			for (String mixin : mixins) {
 				ClassNode node = jar.node((pkg + "." + mixin).replace('.', '/'));
 				if (node == null) { rules.add(unknown(source, "mixin:" + name + ":" + mixin, "mixin class not readable")); continue; }
 				List<String> targets = new ArrayList<>(); boolean conditionalAnnotation = false, disabledOnSide = false;
-				List<AnnotationNode> annotations = new ArrayList<>();
-				if (node.visibleAnnotations != null) annotations.addAll(node.visibleAnnotations);
-				if (node.invisibleAnnotations != null) annotations.addAll(node.invisibleAnnotations);
-				for (AnnotationNode annotation : annotations) {
+				for (AnnotationNode annotation : annotations(node.visibleAnnotations, node.invisibleAnnotations)) {
 					if (annotation.desc.equals("Lorg/spongepowered/asm/mixin/Mixin;")) {
 						if (annotation.values == null) continue;
 						for (int i = 0; i < annotation.values.size(); i += 2) {
@@ -260,14 +290,180 @@ final class CandidateContractScanner {
 					} else conditionalAnnotation = true;
 				}
 				if (disabledOnSide) continue;
+				boolean hard = required && unconditional && !conditionalAnnotation;
 				for (String target : targets) {
 					if (!belongsToDependency(target, dependencies, symbolOwners, inventories)) continue;
 					addSymbolRule(source, "mixin:" + name + ":" + mixin + ":" + target, target, null, null, null,
-							required && unconditional && !conditionalAnnotation, "mixin " + mixin + " needs target " + target,
-							inventories, Set.of(), rules);
+							hard, "mixin " + mixin + " needs target " + target, inventories, Set.of(), rules);
+					// A class this jar ships itself is the build the Mixin was compiled with: no choice between builds.
+					if (jar.has(target)) continue;
+					Map<String, Set<String>> added = mixinAdded.getOrDefault(target, Map.of());
+					for (MixinMember member : mixinMembers(node, target, defaultRequire)) {
+						String wanted = member.alternatives().stream().map(s -> s.name() + (s.desc() == null ? "" : (member.field() ? ":" : "") + s.desc()))
+								.collect(java.util.stream.Collectors.joining("|"));
+						String id = "mixin-member:" + name + ":" + mixin + ":" + target + ":" + member.kind() + ":" + wanted + ":" + (hard && member.necessary());
+						if (!memberIds.add(id)) continue;
+						// Mixin rejects the whole class when one of these is missing, exactly like a missing target;
+						// an injector only when its require (or the config's defaultRequire) asks for a match.
+						addRule(source, id, target,
+								candidate -> candidate.mixinMember(target, member, added, node.name), hard && member.necessary(),
+								"mixin " + mixin + " " + member.kind() + " " + target + "#" + wanted, inventories, rules);
+					}
 				}
+				scanMixinBody(source, mixin, node, targets, jar, dependencies, symbolOwners, inventories, transformedTargets, rules);
 			}
 		} catch (Exception malformed) { rules.add(unknown(source, "config:" + name, "could not verify mixin activation: " + malformed.getClass().getSimpleName())); }
+	}
+
+	/**
+	 * The members a Mixin's own code calls or reads in its dependencies. That code runs only when its target
+	 * does, so a missing member is a suspicion to report, never a required contract.
+	 */
+	private static void scanMixinBody(Path source, String mixin, ClassNode node, List<String> targets, Inventory jar,
+			List<UnifiedDependency> dependencies, Map<Path, Set<String>> symbolOwners, Map<Path, Inventory> inventories,
+			Set<String> transformedTargets, List<JointCandidateSelector.Rule> rules) {
+		String caller = targets.isEmpty() ? node.name : targets.getFirst();
+		Set<String> seen = new HashSet<>();
+		for (MethodNode method : node.methods) {
+			if (method.instructions.size() == 0 || annotations(method.visibleAnnotations, method.invisibleAnnotations).stream()
+					.anyMatch(a -> a.desc.equals(SHADOW) || a.desc.equals(ACCESSOR) || a.desc.equals(INVOKER))) continue;
+			for (AbstractInsnNode instruction : method.instructions) {
+				String owner, member, desc; MemberUse use;
+				if (instruction instanceof MethodInsnNode call) {
+					owner = call.owner; member = call.name; desc = call.desc; use = new MemberUse(false, call.getOpcode(), call.itf, caller, true);
+				} else if (instruction instanceof FieldInsnNode field) {
+					owner = field.owner; member = field.name; desc = field.desc; use = new MemberUse(true, field.getOpcode(), false, caller, true);
+				} else continue;
+				if (jar.has(owner) || !belongsToDependency(owner, dependencies, symbolOwners, inventories)) continue;
+				String id = "mixin-use:" + mixin + ":" + owner + "#" + member + desc + ":" + instruction.getOpcode();
+				if (!seen.add(id)) continue;
+				addSymbolRule(source, id, owner, member, desc, use, false, "mixin " + mixin + " (runs only when its target does) uses "
+						+ org.objectweb.asm.util.Printer.OPCODES[instruction.getOpcode()] + " " + owner + "#" + member + desc,
+						inventories, transformedTargets, rules);
+			}
+		}
+	}
+
+	/** The members this Mixin needs {@code target} itself to declare, with the name rules native Mixin applies. */
+	private static List<MixinMember> mixinMembers(ClassNode mixin, String target, int defaultRequire) {
+		List<MixinMember> members = new ArrayList<>();
+		for (FieldNode field : mixin.fields) {
+			AnnotationNode shadow = find(annotations(field.visibleAnnotations, field.invisibleAnnotations), SHADOW);
+			if (shadow == null) continue;
+			List<Selector> names = new ArrayList<>(List.of(new Selector(field.name, field.desc)));
+			for (String alias : strings(shadow, "aliases")) names.add(new Selector(alias, field.desc));
+			members.add(new MixinMember(true, names, (field.access & Opcodes.ACC_STATIC) != 0, "shadows field", true));
+		}
+		for (MethodNode method : mixin.methods) {
+			boolean isStatic = (method.access & Opcodes.ACC_STATIC) != 0;
+			for (AnnotationNode annotation : annotations(method.visibleAnnotations, method.invisibleAnnotations)) {
+				if (annotation.desc.equals(SHADOW) || annotation.desc.equals(OVERWRITE)) {
+					boolean shadow = annotation.desc.equals(SHADOW);
+					String prefix = shadow ? string(annotation, "prefix", "shadow$") : "";
+					String own = !prefix.isEmpty() && method.name.startsWith(prefix) ? method.name.substring(prefix.length()) : method.name;
+					List<Selector> names = new ArrayList<>(List.of(new Selector(own, method.desc)));
+					for (String alias : strings(annotation, "aliases")) names.add(new Selector(alias, method.desc));
+					members.add(new MixinMember(false, names, isStatic, shadow ? "shadows method" : "overwrites", true));
+				} else if (annotation.desc.equals(ACCESSOR)) {
+					Type[] arguments = Type.getArgumentTypes(method.desc); Type returned = Type.getReturnType(method.desc);
+					String fieldDesc = arguments.length == 0 && returned.getSort() != Type.VOID ? returned.getDescriptor()
+							: arguments.length == 1 && returned.getSort() == Type.VOID ? arguments[0].getDescriptor() : null;
+					List<String> names = named(annotation, method.name, target, "get|is|set");
+					if (fieldDesc == null || names.isEmpty()) continue;
+					members.add(new MixinMember(true, names.stream().map(n -> new Selector(n, fieldDesc)).toList(), isStatic, "accesses field", true));
+				} else if (annotation.desc.equals(INVOKER)) {
+					Type[] arguments = Type.getArgumentTypes(method.desc);
+					java.util.regex.Matcher factory = java.util.regex.Pattern.compile("^(new|create)[A-Z].*").matcher(method.name);
+					String explicit = string(annotation, "value", "");
+					if (explicit.equals("<init>") || explicit.isEmpty() && factory.matches()) {
+						// A factory invoker calls the target's constructor with the same arguments.
+						if (!Type.getReturnType(method.desc).getDescriptor().equals("L" + target + ";")) continue;
+						members.add(new MixinMember(false, List.of(new Selector("<init>", Type.getMethodDescriptor(Type.VOID_TYPE, arguments))), null, "invokes", true));
+						continue;
+					}
+					List<String> names = named(annotation, method.name, target, "call|invoke");
+					if (names.isEmpty()) continue;
+					members.add(new MixinMember(false, names.stream().map(n -> new Selector(n, method.desc)).toList(), isStatic, "invokes", true));
+				} else if (INJECTORS.contains(annotation.desc)) {
+					List<String> raw = strings(annotation, "method");
+					List<Selector> alternatives = new ArrayList<>();
+					for (String text : raw) {
+						Selector selector = selector(text, target);
+						// A wildcard, pattern or dynamic selector names no single member; leave the injector unmodelled.
+						if (selector == null || selector.name() == null) { alternatives.clear(); break; }
+						alternatives.add(selector);
+					}
+					if (alternatives.isEmpty()) continue;
+					int require = annotation.values == null ? -1 : value(annotation, "require") instanceof Integer n ? n : -1;
+					members.add(new MixinMember(false, List.copyOf(alternatives), null, "injects into", (require < 0 ? defaultRequire : require) > 0));
+				}
+			}
+		}
+		return members;
+	}
+
+	/** An accessor/invoker's explicit name, or the name Mixin inflects from the method (both cases tried). */
+	private static List<String> named(AnnotationNode annotation, String method, String target, String prefixes) {
+		String explicit = string(annotation, "value", "");
+		if (!explicit.isEmpty()) {
+			Selector selector = selector(explicit, target);
+			return selector == null || selector.name() == null ? List.of() : List.of(selector.name());
+		}
+		java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("^(" + prefixes + ")(([A-Z])(.*?))(_\\$md.*)?$").matcher(method);
+		if (!matcher.matches()) return List.of();
+		String part = matcher.group(2);
+		String inflected = part.equals(part.toUpperCase(Locale.ROOT)) ? part : matcher.group(3).toLowerCase(Locale.ROOT) + matcher.group(4);
+		return inflected.equals(part) ? List.of(part) : List.of(inflected, part);
+	}
+
+	/**
+	 * Mixin's member selector ({@code name}, {@code name(desc)ret}, {@code Lowner;name(desc)ret}, {@code name:desc},
+	 * quantifier suffixes). Null for patterns, dynamic selectors and selectors naming another class; a null name
+	 * for a wildcard.
+	 */
+	static Selector selector(String raw, String target) {
+		String text = raw == null ? "" : raw.replaceAll("\\s", "");
+		if (text.isEmpty() || text.startsWith("/") || text.startsWith("@") || text.contains("->")) return null;
+		String owner = null;
+		int dot = text.lastIndexOf('.'), semicolon = text.indexOf(';');
+		if (dot > -1) { owner = text.substring(0, dot).replace('.', '/'); text = text.substring(dot + 1); }
+		else if (semicolon > -1 && text.startsWith("L")) { owner = text.substring(1, semicolon); text = text.substring(semicolon + 1); }
+		String desc = null;
+		int paren = text.indexOf('('), colon = text.indexOf(':');
+		if (paren > -1) {
+			desc = text.substring(paren); text = text.substring(0, paren);
+			int close = desc.indexOf(')'); if (close < 0 || close == desc.length() - 1) return null;
+		} else if (colon > -1) { desc = text.substring(colon + 1); text = text.substring(0, colon); if (desc.isEmpty()) return null; }
+		if (owner != null && target != null && !owner.equals(target)) return null;
+		if (text.contains("/")) return null;
+		text = text.replaceFirst("(\\*|\\+|\\{[0-9,]*\\})$", "");
+		if (text.contains("*") || text.contains("{") || text.contains("+")) return null;
+		return new Selector(text.isEmpty() ? null : text, desc);
+	}
+
+	private static List<AnnotationNode> annotations(List<AnnotationNode> visible, List<AnnotationNode> invisible) {
+		List<AnnotationNode> all = new ArrayList<>();
+		if (visible != null) all.addAll(visible);
+		if (invisible != null) all.addAll(invisible);
+		return all;
+	}
+	private static AnnotationNode find(List<AnnotationNode> annotations, String desc) {
+		for (AnnotationNode annotation : annotations) if (annotation.desc.equals(desc)) return annotation;
+		return null;
+	}
+	private static Object value(AnnotationNode annotation, String key) {
+		if (annotation.values != null) for (int i = 0; i + 1 < annotation.values.size(); i += 2) if (key.equals(annotation.values.get(i))) return annotation.values.get(i + 1);
+		return null;
+	}
+	private static String string(AnnotationNode annotation, String key, String fallback) {
+		return value(annotation, key) instanceof String text ? text : fallback;
+	}
+	private static List<String> strings(AnnotationNode annotation, String key) {
+		Object value = value(annotation, key);
+		if (value instanceof String text) return List.of(text);
+		List<String> all = new ArrayList<>();
+		if (value instanceof List<?> list) for (Object item : list) if (item instanceof String text) all.add(text);
+		return all;
 	}
 
 	/** Bounded same-jar closure, not a reflection/lambda or general virtual-dispatch analysis. */
@@ -405,10 +601,17 @@ final class CandidateContractScanner {
 
 	private static void addSymbolRule(Path source, String id, String owner, String name, String descriptor, MemberUse use,
 			boolean hard, String detail, Map<Path, Inventory> inventories, Set<String> transformedTargets, List<JointCandidateSelector.Rule> rules) {
+		addRule(source, id, owner, candidate -> name == null ? Match.YES : candidate.member(owner, name, descriptor, use, transformedTargets),
+				hard, detail, inventories, rules);
+	}
+
+	/** Every candidate that ships {@code owner} is asked by {@code probe}; the others cannot provide it. */
+	private static void addRule(Path source, String id, String owner, java.util.function.Function<Inventory, Match> probe,
+			boolean hard, String detail, Map<Path, Inventory> inventories, List<JointCandidateSelector.Rule> rules) {
 		Set<Path> providers = new LinkedHashSet<>(), uncertain = new LinkedHashSet<>();
 		for (var candidate : inventories.entrySet()) {
 			if (!candidate.getValue().has(owner)) continue;
-			Match match = name == null ? Match.YES : candidate.getValue().member(owner, name, descriptor, use, transformedTargets);
+			Match match = probe.apply(candidate.getValue());
 			if (match == Match.YES) providers.add(candidate.getKey());
 			else if (match == Match.UNKNOWN) uncertain.add(candidate.getKey());
 		}
@@ -424,8 +627,9 @@ final class CandidateContractScanner {
 		return new JointCandidateSelector.Rule(id, source, Set.of(), Set.of(), false, detail);
 	}
 
-	private static Set<String> declaredMixinTargets(Metadata metadata, Inventory jar, EnvType side) {
+	private static Declared declaredMixins(Metadata metadata, Inventory jar, EnvType side) {
 		Set<String> targets = new HashSet<>();
+		Map<String, Map<String, Set<String>>> added = new HashMap<>();
 		for (String configName : metadata.mixins()) {
 			try {
 				byte[] bytes = jar.read(configName); if (bytes == null) continue;
@@ -437,12 +641,9 @@ final class CandidateContractScanner {
 					for (Object entry : mixins) {
 						if (!(entry instanceof String name)) continue;
 						ClassNode node = jar.node((pkg + "." + name).replace('.', '/')); if (node == null) continue;
-						List<AnnotationNode> annotations = new ArrayList<>();
-						if (node.visibleAnnotations != null) annotations.addAll(node.visibleAnnotations);
-						if (node.invisibleAnnotations != null) annotations.addAll(node.invisibleAnnotations);
 						boolean disabled = false;
 						Set<String> declared = new HashSet<>();
-						for (AnnotationNode annotation : annotations) {
+						for (AnnotationNode annotation : annotations(node.visibleAnnotations, node.invisibleAnnotations)) {
 							if (annotation.values == null) continue;
 							for (int i = 0; i < annotation.values.size(); i += 2) {
 								Object value = annotation.values.get(i + 1);
@@ -456,14 +657,29 @@ final class CandidateContractScanner {
 								for (Object target : list) declared.add(target instanceof Type type ? type.getInternalName() : String.valueOf(target).replace('.', '/'));
 							}
 						}
-						if (!disabled) targets.addAll(declared);
+						if (disabled) continue;
+						targets.addAll(declared);
+						// What this Mixin merges into each target under its own name. Injector handlers are renamed
+						// on merge, and shadows/overwrites add nothing.
+						Set<String> members = new HashSet<>();
+						for (FieldNode field : node.fields) {
+							if (find(annotations(field.visibleAnnotations, field.invisibleAnnotations), SHADOW) != null) continue;
+							members.add("f:" + field.name); members.add("f:" + field.name + ":" + field.desc);
+						}
+						for (MethodNode method : node.methods) {
+							if (method.name.startsWith("<") || annotations(method.visibleAnnotations, method.invisibleAnnotations).stream()
+									.anyMatch(a -> a.desc.equals(SHADOW) || a.desc.equals(OVERWRITE) || INJECTORS.contains(a.desc))) continue;
+							members.add("m:" + method.name); members.add("m:" + method.name + method.desc);
+						}
+						for (String target : declared) for (String member : members)
+							added.computeIfAbsent(target, k -> new HashMap<>()).computeIfAbsent(member, k -> new HashSet<>()).add(node.name);
 					}
 				}
 			} catch (IOException | RuntimeException ignored) {
 				// scanMixins keeps the unreadable declaration as its own uncertainty finding.
 			}
 		}
-		return targets;
+		return new Declared(targets, added);
 	}
 
 	/** Resource inventory including bundled jars. Reads requested classes lazily and caps archive nesting. */
@@ -518,8 +734,30 @@ final class CandidateContractScanner {
 				return transformedTargets.contains(owner) ? Match.UNKNOWN : Match.NO;
 			}
 			Match resolved = memberInHierarchy(owner, name, descriptor, use, transformedTargets, new HashSet<>());
-			if (resolved == Match.YES && !accessible(symbolicOwner.access, owner, use.caller())) return Match.UNKNOWN;
+			if (resolved == Match.YES && !use.merged() && !accessible(symbolicOwner.access, owner, use.caller())) return Match.UNKNOWN;
 			return resolved;
+		}
+		/**
+		 * Mixin looks the member up in the target class itself, after the Mixins applied before it. A member only
+		 * another Mixin adds is therefore unproved rather than missing.
+		 */
+		Match mixinMember(String owner, MixinMember member, Map<String, Set<String>> added, String self) {
+			ClassNode node = node(owner); if (node == null) return Match.UNKNOWN;
+			for (Selector selector : member.alternatives()) {
+				if (member.field()) {
+					for (FieldNode field : node.fields) if (field.name.equals(selector.name()) && (selector.desc() == null || field.desc.equals(selector.desc()))
+							&& (member.isStatic() == null || ((field.access & Opcodes.ACC_STATIC) != 0) == member.isStatic())) return Match.YES;
+				} else {
+					for (MethodNode method : node.methods) if (method.name.equals(selector.name()) && (selector.desc() == null || method.desc.equals(selector.desc()))
+							&& (member.isStatic() == null || ((method.access & Opcodes.ACC_STATIC) != 0) == member.isStatic())) return Match.YES;
+				}
+			}
+			for (Selector selector : member.alternatives()) {
+				String key = (member.field() ? "f:" : "m:") + selector.name() + (selector.desc() == null ? "" : (member.field() ? ":" : "") + selector.desc());
+				Set<String> by = added.get(key);
+				if (by != null && by.stream().anyMatch(mixin -> !mixin.equals(self))) return Match.UNKNOWN;
+			}
+			return Match.NO;
 		}
 		private Match memberInHierarchy(String owner, String name, String descriptor, MemberUse use,
 				Set<String> transformedTargets, Set<String> visited) {
@@ -531,7 +769,7 @@ final class CandidateContractScanner {
 				if (((access & Opcodes.ACC_STATIC) != 0) != use.staticUse()) return transformedTargets.contains(owner) ? Match.UNKNOWN : Match.NO;
 				// Access wideners/transformers can legitimately change these flags before linkage. An inaccessible
 				// pre-transform member is unproved, never a reason to reject a candidate as necessarily broken.
-				if (!accessible(access, owner, use.caller()) || (use.writesField() && (access & Opcodes.ACC_FINAL) != 0)) return Match.UNKNOWN;
+				if (!use.merged() && !accessible(access, owner, use.caller()) || (use.writesField() && (access & Opcodes.ACC_FINAL) != 0)) return Match.UNKNOWN;
 				return Match.YES;
 			}
 			if (name.equals("<init>")) return transformedTargets.contains(owner) ? Match.UNKNOWN : Match.NO;

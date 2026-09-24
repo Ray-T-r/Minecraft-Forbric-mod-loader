@@ -75,6 +75,132 @@ class CandidateContractScannerTest {
 		assertTrue(CompatibilityFindings.all().isEmpty(), "a known disabled mixin is neither broken nor suspected");
 	}
 
+	@Test void aShadowedFieldChoosesTheBuildThatDeclaresIt() throws Exception {
+		var claims = memberPack(true, "", mixin(shadowField("count", "I", false)), shared(), shared("f:count:I"));
+		var decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+		assertTrue(decision.suppressed(claims.get(1).jar()), "the preferred NeoForge build lacks the shadowed field");
+		assertFalse(decision.suppressed(claims.get(2).jar()));
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+	}
+
+	@Test void aShadowMustAlsoMatchTheTargetsStaticModifier() throws Exception {
+		var claims = memberPack(true, "", mixin(shadowField("count", "I", false)), shared("sf:count:I"), shared("f:count:I"));
+		assertTrue(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT).suppressed(claims.get(1).jar()));
+	}
+
+	@Test void shadowPrefixesAndAliasesAreTheNamesMixinLooksFor() throws Exception {
+		var claims = memberPack(true, "", mixin(shadowMethod("shadow$tick", "()V", null, List.of())), shared(), shared("m:tick()V"));
+		assertTrue(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT).suppressed(claims.get(1).jar()));
+		reset();
+		claims = memberPack(true, "", mixin(shadowMethod("tick", "()V", null, List.of("legacyTick"))), shared("m:legacyTick()V"), shared("m:tick()V"));
+		assertFalse(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT).suppressed(claims.get(1).jar()),
+				"an alias the preferred build declares satisfies the shadow");
+	}
+
+	@Test void accessorAndInvokerNamesAreInflectedLikeMixinDoes() throws Exception {
+		for (var shape : List.of(
+				List.of("accessor:getCount:()I", "f:count:I"),
+				List.of("accessor:setCount:(I)V", "f:count:I"),
+				List.of("accessor:getMAX_SIZE:()I", "f:MAX_SIZE:I"),
+				List.of("invoker:callTick:()V", "m:tick()V"),
+				List.of("invoker:createShared:()Ldep/Shared;", "m:<init>()V"))) {
+			reset();
+			String[] parts = shape.get(0).split(":");
+			var claims = memberPack(true, "", mixin(generated(parts[0], parts[1], parts[2])), shared(), shared(shape.get(1)));
+			assertTrue(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT).suppressed(claims.get(1).jar()), shape.toString());
+		}
+	}
+
+	@Test void anInjectorTargetIsRequiredOnlyWhenMixinWouldRequireAMatch() throws Exception {
+		var claims = memberPack(true, "", mixin(inject("tick", null)), shared(), shared("m:tick()V"));
+		assertFalse(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT).suppressed(claims.get(1).jar()));
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.detail().contains("injects into dep/Shared#tick")),
+				"an unrequired injector that cannot match is still reported");
+		for (String requirement : List.of("config", "annotation")) {
+			reset();
+			claims = memberPack(true, requirement.equals("config") ? ",\"injectors\":{\"defaultRequire\":1}" : "",
+					mixin(inject("tick()V", requirement.equals("annotation") ? 1 : null)), shared("m:tock()V"), shared("m:tick()V"));
+			assertTrue(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT).suppressed(claims.get(1).jar()), requirement);
+		}
+	}
+
+	@Test void aMemberThatAnotherMixinAddsIsUnprovedRatherThanMissing() throws Exception {
+		var claims = memberPack(true, "", mixin(shadowField("count", "I", false)), shared(), shared());
+		addMixin(claims.get(0).jar(), "Adds", "dep/Shared", writer -> writer.visitField(Opcodes.ACC_PRIVATE, "count", "I", null, null).visitEnd());
+		var decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+		assertFalse(decision.suppressed(claims.get(1).jar()), "no build is proved to miss it, so the preference stands");
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+	}
+
+	@Test void optionalMixinMembersAreOnlySuspicions() throws Exception {
+		var claims = memberPack(false, "", mixin(shadowField("count", "I", false)), shared(), shared("f:count:I"));
+		assertFalse(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT).suppressed(claims.get(1).jar()));
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.detail().contains("shadows field dep/Shared#count:I")));
+	}
+
+	@Test void noInstalledBuildWithTheMemberIsReportedButNeverAStop() throws Exception {
+		var claims = memberPack(true, "", mixin(shadowField("count", "I", false)), shared(), shared());
+		var decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+		assertFalse(decision.suppressed(claims.get(1).jar()));
+		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.detail().contains("shadows field dep/Shared#count:I")));
+	}
+
+	@Test void whatAMixinBodyCallsInADependencyIsASuspicionNotAChoice() throws Exception {
+		var claims = memberPack(true, "", mixinOn("net/minecraft/Game", writer -> {
+			MethodVisitor handler = writer.visitMethod(Opcodes.ACC_PRIVATE, "onTick", "()V", null, null); handler.visitCode();
+			handler.visitMethodInsn(Opcodes.INVOKESTATIC, "dep/Shared", "needed", "()V", false);
+			handler.visitInsn(Opcodes.RETURN); handler.visitMaxs(0, 1); handler.visitEnd();
+		}), shared(), shared("sm:needed()V"));
+		assertFalse(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT).suppressed(claims.get(1).jar()));
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.detail().contains("runs only when its target does")
+				&& f.detail().contains("dep/Shared#needed()V")));
+		reset();
+		claims = memberPack(true, "", mixinOn("net/minecraft/Game", writer -> {
+			MethodVisitor handler = writer.visitMethod(Opcodes.ACC_PRIVATE, "onTick", "()V", null, null); handler.visitCode();
+			handler.visitMethodInsn(Opcodes.INVOKESTATIC, "dep/Shared", "needed", "()V", false);
+			handler.visitInsn(Opcodes.RETURN); handler.visitMaxs(0, 1); handler.visitEnd();
+		}), shared("sm:needed()V"), shared("sm:needed()V"));
+		DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+		assertTrue(CompatibilityFindings.all().isEmpty(), "a body reference the chosen build meets is silent");
+	}
+
+	@Test void aTargetTheModShipsItselfIsNotAChoiceBetweenBuilds() throws Exception {
+		var claims = memberPack(true, "", mixinOn("app/Own", writer -> writer.visitField(Opcodes.ACC_PRIVATE, "count", "I", null, null)
+				.visitAnnotation("Lorg/spongepowered/asm/mixin/Shadow;", false).visitEnd()), shared(), shared());
+		addClass(claims.get(0).jar(), "app/Own", classWith("app/Own"));
+		DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.detail().contains("shadows field")));
+	}
+
+	@Test void theWholeInstanceSelectionAlsoHonoursMixinMembers() throws Exception {
+		var claims = memberPack(true, "", mixin(shadowField("count", "I", false)), shared(), shared("f:count:I"));
+		Path mods = Files.createDirectories(dir.resolve("instance").resolve("mods"));
+		for (var claim : claims) Files.copy(claim.jar(), mods.resolve(claim.jar().getFileName()));
+		var decision = DuplicateModArbiter.arbitrate(mods, EnvType.CLIENT);
+		assertTrue(decision.suppressed(mods.resolve("dep-neo.jar")), "the preferred NeoForge build lacks the shadowed field");
+		assertFalse(decision.suppressed(mods.resolve("dep-fab.jar")));
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+	}
+
+	@Test void selectorsAreParsedTheWayMixinReadsThem() {
+		assertEquals("tick", CandidateContractScanner.selector("tick", "dep/Shared").name());
+		assertNull(CandidateContractScanner.selector("tick", "dep/Shared").desc());
+		assertEquals("(I)V", CandidateContractScanner.selector("tick(I)V", "dep/Shared").desc());
+		assertEquals("tick", CandidateContractScanner.selector("Ldep/Shared;tick(I)V", "dep/Shared").name());
+		assertEquals("tick", CandidateContractScanner.selector("dep.Shared.tick(I)V", "dep/Shared").name());
+		assertEquals("count", CandidateContractScanner.selector("count:I", "dep/Shared").name());
+		assertEquals("tick", CandidateContractScanner.selector("tick*", "dep/Shared").name());
+		assertEquals("<init>", CandidateContractScanner.selector("<init>(I)V", "dep/Shared").name());
+		assertNull(CandidateContractScanner.selector("*", "dep/Shared").name(), "a wildcard names no member");
+		assertNull(CandidateContractScanner.selector("Ldep/Other;tick(I)V", "dep/Shared"), "another class's member");
+		assertNull(CandidateContractScanner.selector("/tick.*/", "dep/Shared"));
+		assertNull(CandidateContractScanner.selector("@Dynamic", "dep/Shared"));
+		assertNull(CandidateContractScanner.selector("tick(I", "dep/Shared"), "an unterminated descriptor");
+	}
+
 	@Test void directUnconditionalEntrypointCallsCheckTheActualMemberDescriptor() throws Exception {
 		var claims = apiPack(false);
 		var decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
@@ -336,6 +462,121 @@ class CandidateContractScannerTest {
 			method.visitEnd();
 		}
 		writer.visitEnd(); return writer.toByteArray();
+	}
+
+	private List<DuplicateModArbiter.Claim> memberPack(boolean required, String configExtra, byte[] mixin, byte[] neoShared, byte[] fabShared) throws Exception {
+		String config = "{\"required\":" + required + ",\"package\":\"app.mixin\",\"mixins\":[\"Target\"]" + configExtra + "}";
+		Path app = fabric("app.jar", "app", "1", ",\"depends\":{\"dep\":\"*\"},\"mixins\":[\"app.mixins.json\"]",
+				Map.of("app.mixins.json", config.getBytes(StandardCharsets.UTF_8), "app/mixin/Target.class", mixin));
+		Path neo = neo("dep-neo.jar", "dep", "1", Map.of("dep/Shared.class", neoShared));
+		Path fab = fabric("dep-fab.jar", "dep", "2", "", Map.of("dep/Shared.class", fabShared));
+		return claims(app, neo, fab);
+	}
+
+	/** dep/Shared with members written as f:name:desc, sf: (static field), m:name(desc) or sm: (static method). */
+	private static byte[] shared(String... members) {
+		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "dep/Shared", null, "java/lang/Object", null);
+		for (String member : members) {
+			String[] parts = member.split(":", 2);
+			boolean isStatic = parts[0].startsWith("s");
+			int access = Opcodes.ACC_PRIVATE | (isStatic ? Opcodes.ACC_STATIC : 0);
+			if (parts[0].endsWith("f")) {
+				String[] field = parts[1].split(":");
+				writer.visitField(access, field[0], field[1], null, null).visitEnd();
+			} else {
+				int paren = parts[1].indexOf('(');
+				MethodVisitor method = writer.visitMethod(access, parts[1].substring(0, paren), parts[1].substring(paren), null, null);
+				method.visitCode(); method.visitInsn(Opcodes.RETURN); method.visitMaxs(0, isStatic ? 0 : 1); method.visitEnd();
+			}
+		}
+		writer.visitEnd(); return writer.toByteArray();
+	}
+
+	private static byte[] mixin(java.util.function.Consumer<ClassWriter> body) { return mixinOn("dep/Shared", body); }
+
+	private static byte[] mixinOn(String target, java.util.function.Consumer<ClassWriter> body) {
+		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT, "app/mixin/Target", null, "java/lang/Object", null);
+		AnnotationVisitor annotation = writer.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+		AnnotationVisitor targets = annotation.visitArray("value"); targets.visit(null, Type.getObjectType(target)); targets.visitEnd(); annotation.visitEnd();
+		body.accept(writer); writer.visitEnd(); return writer.toByteArray();
+	}
+
+	private static java.util.function.Consumer<ClassWriter> shadowField(String name, String desc, boolean isStatic) {
+		return writer -> {
+			FieldVisitor field = writer.visitField(Opcodes.ACC_PRIVATE | (isStatic ? Opcodes.ACC_STATIC : 0), name, desc, null, null);
+			field.visitAnnotation("Lorg/spongepowered/asm/mixin/Shadow;", false).visitEnd(); field.visitEnd();
+		};
+	}
+
+	private static java.util.function.Consumer<ClassWriter> shadowMethod(String name, String desc, String prefix, List<String> aliases) {
+		return writer -> {
+			MethodVisitor method = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT, name, desc, null, null);
+			AnnotationVisitor shadow = method.visitAnnotation("Lorg/spongepowered/asm/mixin/Shadow;", false);
+			if (prefix != null) shadow.visit("prefix", prefix);
+			if (!aliases.isEmpty()) { AnnotationVisitor list = shadow.visitArray("aliases"); for (String alias : aliases) list.visit(null, alias); list.visitEnd(); }
+			shadow.visitEnd(); method.visitEnd();
+		};
+	}
+
+	/** An @Accessor or @Invoker method whose target name Mixin infers from the method name. */
+	private static java.util.function.Consumer<ClassWriter> generated(String kind, String name, String desc) {
+		return writer -> {
+			boolean factory = name.startsWith("create");
+			MethodVisitor method = writer.visitMethod(Opcodes.ACC_PUBLIC | (factory ? Opcodes.ACC_STATIC : Opcodes.ACC_ABSTRACT), name, desc, null, null);
+			method.visitAnnotation(kind.equals("accessor") ? "Lorg/spongepowered/asm/mixin/gen/Accessor;" : "Lorg/spongepowered/asm/mixin/gen/Invoker;", false).visitEnd();
+			if (factory) {
+				method.visitCode(); method.visitTypeInsn(Opcodes.NEW, "java/lang/AssertionError"); method.visitInsn(Opcodes.DUP);
+				method.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/AssertionError", "<init>", "()V", false); method.visitInsn(Opcodes.ATHROW);
+				method.visitMaxs(2, 0);
+			}
+			method.visitEnd();
+		};
+	}
+
+	private static java.util.function.Consumer<ClassWriter> inject(String selector, Integer require) {
+		return writer -> {
+			MethodVisitor method = writer.visitMethod(Opcodes.ACC_PRIVATE, "onTick", "(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V", null, null);
+			AnnotationVisitor inject = method.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", false);
+			AnnotationVisitor list = inject.visitArray("method"); list.visit(null, selector); list.visitEnd();
+			if (require != null) inject.visit("require", require);
+			inject.visitEnd(); method.visitCode(); method.visitInsn(Opcodes.RETURN); method.visitMaxs(0, 2); method.visitEnd();
+		};
+	}
+
+	private static byte[] classWith(String name) {
+		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+		writer.visitEnd(); return writer.toByteArray();
+	}
+
+	/** Adds one more Mixin to the app jar's config, targeting {@code target}. */
+	private static void addMixin(Path appJar, String name, String target, java.util.function.Consumer<ClassWriter> body) throws Exception {
+		Map<String, byte[]> resources = read(appJar);
+		String config = new String(resources.get("app.mixins.json"), StandardCharsets.UTF_8).replace("\"mixins\":[\"Target\"]", "\"mixins\":[\"Target\",\"" + name + "\"]");
+		resources.put("app.mixins.json", config.getBytes(StandardCharsets.UTF_8));
+		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/mixin/" + name, null, "java/lang/Object", null);
+		AnnotationVisitor annotation = writer.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+		AnnotationVisitor targets = annotation.visitArray("value"); targets.visit(null, Type.getObjectType(target)); targets.visitEnd(); annotation.visitEnd();
+		body.accept(writer); writer.visitEnd();
+		resources.put("app/mixin/" + name + ".class", writer.toByteArray());
+		write(appJar, resources);
+	}
+
+	private static void addClass(Path jar, String name, byte[] bytes) throws Exception {
+		Map<String, byte[]> resources = read(jar); resources.put(name + ".class", bytes); write(jar, resources);
+	}
+
+	private static Map<String, byte[]> read(Path jar) throws Exception {
+		Map<String, byte[]> resources = new LinkedHashMap<>();
+		try (java.util.jar.JarFile zip = new java.util.jar.JarFile(jar.toFile())) {
+			for (ZipEntry entry : zip.stream().toList()) resources.put(entry.getName(), zip.getInputStream(entry).readAllBytes());
+		}
+		return resources;
+	}
+
+	private static void write(Path jar, Map<String, byte[]> resources) throws Exception {
+		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
+			for (var entry : resources.entrySet()) { zip.putNextEntry(new ZipEntry(entry.getKey())); zip.write(entry.getValue()); zip.closeEntry(); }
+		}
 	}
 
 	private static void addAugmentingMixin(Path appJar, boolean plugin, String environment) throws Exception {
