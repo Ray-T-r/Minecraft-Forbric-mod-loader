@@ -20,8 +20,14 @@ import org.objectweb.asm.tree.*;
 /** Reads only evidence strong enough to constrain candidate selection; arbitrary class references are not requirements. */
 final class CandidateContractScanner {
 	private enum Match { YES, NO, UNKNOWN }
-	/** {@code unsupported} names an entrypoint form the closure cannot follow; it is then unproved, never skipped. */
-	private record Entry(String owner, String method, String unsupported) { }
+	/**
+	 * {@code unsupported} names an entrypoint form the closure cannot follow; it is then unproved, never skipped.
+	 * {@code desc} null means the one public method of that name. {@code alwaysRuns} false (an event listener whose
+	 * event may never fire) keeps every contract it finds soft and does not report what it could not follow.
+	 */
+	private record Entry(String owner, String method, String unsupported, String desc, boolean alwaysRuns) {
+		Entry(String owner, String method, String unsupported) { this(owner, method, unsupported, null, true); }
+	}
 	/** {@code merged}: Mixin code runs inside its target, where access wideners and subclass access apply. */
 	private record MemberUse(boolean field, int opcode, boolean interfaceOwner, String caller, boolean merged) {
 		MemberUse(boolean field, int opcode, boolean interfaceOwner, String caller) { this(field, opcode, interfaceOwner, caller, false); }
@@ -52,6 +58,19 @@ final class CandidateContractScanner {
 			List<String> mixins, List<Entry> entries, List<Exclusion> exclusions) { }
 	/** A declared "cannot run with": {@code constraint} null means the range could not be read. */
 	private record Exclusion(String modId, String constraint, boolean hard) { }
+	private static final Set<String> LISTENERS = Set.of("Lnet/minecraftforge/eventbus/api/listener/SubscribeEvent;",
+			"Lnet/minecraftforge/eventbus/api/SubscribeEvent;", "Lnet/neoforged/bus/api/SubscribeEvent;");
+	/** Mod-bus lifecycle events FML posts on every launch of that side; a null side means both. */
+	private static final Map<String, Optional<EnvType>> LIFECYCLE = lifecycleEvents();
+	private static Map<String, Optional<EnvType>> lifecycleEvents() {
+		Map<String, Optional<EnvType>> events = new HashMap<>();
+		for (String pkg : List.of("net/minecraftforge/fml/event/lifecycle/", "net/neoforged/fml/event/lifecycle/")) {
+			for (String common : List.of("FMLCommonSetupEvent", "FMLLoadCompleteEvent", "InterModEnqueueEvent", "InterModProcessEvent")) events.put(pkg + common, Optional.empty());
+			events.put(pkg + "FMLClientSetupEvent", Optional.of(EnvType.CLIENT));
+			events.put(pkg + "FMLDedicatedServerSetupEvent", Optional.of(EnvType.SERVER));
+		}
+		return Map.copyOf(events);
+	}
 	private static final Set<String> PLATFORM = Set.of("java", "minecraft", "forge", "neoforge", "fabricloader", "fabric", "fml", "mixinextras");
 	static final int HELPER_DEPTH_LIMIT = 32;
 	static final int HELPER_NODE_LIMIT = 256;
@@ -217,8 +236,35 @@ final class CandidateContractScanner {
 				if (!entry.dists.isEmpty() && !entry.dists.contains(side == EnvType.SERVER ? "DEDICATED_SERVER" : "CLIENT")) continue;
 				entries.add(new Entry(entry.className.replace('.', '/'), "<init>", null));
 			}
+			entries.addAll(subscriberEntries(claim, jar, side));
 		}
 		return new Metadata(List.copyOf(dependencies), Map.copyOf(provides), List.copyOf(mixins), List.copyOf(entries), List.copyOf(exclusions));
+	}
+
+	/**
+	 * The static listeners of a Forge-family mod's {@code @EventBusSubscriber} classes. One for an FML lifecycle
+	 * event of this side runs on every launch, so it is held to entrypoint rules; any other may never fire.
+	 */
+	private static List<Entry> subscriberEntries(DuplicateModArbiter.Claim claim, Inventory jar, EnvType side) throws IOException {
+		String annotation = claim.ecosystem() == Ecosystem.NEOFORGE ? "Lnet/neoforged/fml/common/EventBusSubscriber;" : "Lnet/minecraftforge/fml/common/Mod$EventBusSubscriber;";
+		String dist = side == EnvType.SERVER ? "DEDICATED_SERVER" : "CLIENT";
+		List<Entry> entries = new ArrayList<>();
+		for (ClassNode node : jar.classesMentioning("EventBusSubscriber")) {
+			AnnotationNode subscriber = find(annotations(node.visibleAnnotations, node.invisibleAnnotations), annotation);
+			if (subscriber == null) continue;
+			if (value(subscriber, "modid") instanceof String owner && !owner.isEmpty() && !claim.modIds().contains(owner)) continue;
+			if (side != null && value(subscriber, "value") instanceof List<?> dists && !dists.isEmpty()
+					&& dists.stream().noneMatch(d -> d instanceof String[] e && e.length == 2 && e[1].equals(dist))) continue;
+			for (MethodNode method : node.methods) {
+				if ((method.access & Opcodes.ACC_STATIC) == 0 || annotations(method.visibleAnnotations, method.invisibleAnnotations)
+						.stream().noneMatch(a -> LISTENERS.contains(a.desc))) continue;
+				Type[] arguments = Type.getArgumentTypes(method.desc);
+				Optional<EnvType> lifecycle = arguments.length == 1 && arguments[0].getSort() == Type.OBJECT ? LIFECYCLE.get(arguments[0].getInternalName()) : null;
+				boolean always = lifecycle != null && (lifecycle.isEmpty() || lifecycle.get() == side);
+				entries.add(new Entry(node.name, method.name, null, method.desc, always));
+			}
+		}
+		return entries;
 	}
 
 	/**
@@ -483,6 +529,7 @@ final class CandidateContractScanner {
 		private final Map<Visit, Boolean> visited = new HashMap<>();
 		private final Set<String> issues = new HashSet<>();
 		private int nodes, instructions;
+		private boolean reportSoft = true;
 
 		EntrypointCalls(Path source, Inventory jar, List<UnifiedDependency> dependencies,
 				Map<Path, Set<String>> symbolOwners, Map<Path, Inventory> inventories, Set<String> transformedTargets,
@@ -492,18 +539,19 @@ final class CandidateContractScanner {
 		}
 
 		void scan(Entry entry) {
+			reportSoft = entry.alwaysRuns();
 			if (entry.unsupported() != null) {
-				unproved(entry.owner(), "entrypoint uses " + entry.unsupported() + ", which this scan does not follow", true);
+				unproved(entry.owner(), "entrypoint uses " + entry.unsupported() + ", which this scan does not follow", entry.alwaysRuns());
 				return;
 			}
 			ClassNode node = jar.node(entry.owner());
-			List<MethodNode> methods = node == null ? List.of() : node.methods.stream()
-					.filter(m -> m.name.equals(entry.method()) && (m.access & Opcodes.ACC_PUBLIC) != 0).toList();
+			List<MethodNode> methods = node == null ? List.of() : node.methods.stream().filter(m -> m.name.equals(entry.method())
+					&& (entry.desc() == null ? (m.access & Opcodes.ACC_PUBLIC) != 0 : m.desc.equals(entry.desc()))).toList();
 			if (methods.size() != 1) {
-				unproved(entry.owner() + "#" + entry.method(), "entrypoint dispatch/body is not uniquely known", true);
+				unproved(entry.owner() + "#" + entry.method(), "entrypoint dispatch/body is not uniquely known", entry.alwaysRuns());
 				return;
 			}
-			walk(node, methods.getFirst(), true, 0);
+			walk(node, methods.getFirst(), entry.alwaysRuns(), 0);
 		}
 
 		/** False means later instructions cannot inherit a proved unconditional call/return path. */
@@ -583,6 +631,8 @@ final class CandidateContractScanner {
 		}
 
 		private void unproved(String symbol, String reason, boolean requiredPath) {
+			// A listener that may never run: what the scan could not follow in it says nothing about the mod.
+			if (!requiredPath && !reportSoft) return;
 			String id = "entry-closure:" + symbol + ":" + reason + ":" + requiredPath;
 			if (issues.add(id)) rules.add(new JointCandidateSelector.Rule(id, source, Set.of(), Set.of(source), requiredPath,
 					"Entrypoint member closure remains unproved: " + symbol + ": " + reason));
@@ -707,6 +757,37 @@ final class CandidateContractScanner {
 			}
 		}
 		boolean has(String owner) { return resources.containsKey(owner + ".class"); }
+		/** This jar's own classes whose bytes contain {@code needle}, a cheap filter before parsing. */
+		List<ClassNode> classesMentioning(String needle) throws IOException {
+			byte[] wanted = needle.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			List<ClassNode> found = new ArrayList<>();
+			try (JarFile zip = new JarFile(jar.toFile())) {
+				for (ZipEntry entry : zip.stream().toList()) {
+					String name = entry.getName();
+					if (!name.endsWith(".class") || name.startsWith("META-INF/")) continue;
+					byte[] bytes;
+					try (InputStream in = zip.getInputStream(entry)) { bytes = bounded(in); }
+					if (!contains(bytes, wanted)) continue;
+					String owner = name.substring(0, name.length() - ".class".length());
+					ClassNode node = nodes.get(owner);
+					if (node == null) {
+						try { node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES); }
+						catch (RuntimeException malformed) { node = null; }
+						nodes.put(owner, node);
+					}
+					if (node != null) found.add(node);
+				}
+			}
+			return found;
+		}
+		private static boolean contains(byte[] haystack, byte[] needle) {
+			outer:
+			for (int i = 0; i <= haystack.length - needle.length; i++) {
+				for (int j = 0; j < needle.length; j++) if (haystack[i + j] != needle[j]) continue outer;
+				return true;
+			}
+			return false;
+		}
 		byte[] read(String resource) throws IOException {
 			List<String> path = resources.get(resource); if (path == null) return null;
 			try (JarFile zip = new JarFile(jar.toFile()); InputStream in = zip.getInputStream(zip.getEntry(path.getFirst()))) {

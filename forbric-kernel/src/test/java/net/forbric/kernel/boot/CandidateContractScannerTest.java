@@ -185,6 +185,38 @@ class CandidateContractScannerTest {
 		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
 	}
 
+	@Test void aLifecycleListenerIsHeldToTheMembersItCalls() throws Exception {
+		var claims = subscriberPack("Lnet/neoforged/fml/event/lifecycle/FMLCommonSetupEvent;", null);
+		var decision = DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+		assertTrue(decision.suppressed(claims.get(1).jar()), "common setup runs on every launch and calls what the preferred build lacks");
+		assertFalse(decision.suppressed(claims.get(2).jar()));
+	}
+
+	@Test void anyOtherListenerIsOnlyASuspicion() throws Exception {
+		var claims = subscriberPack("Lnet/neoforged/neoforge/event/tick/ServerTickEvent$Post;", null);
+		assertFalse(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT).suppressed(claims.get(1).jar()));
+		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.detail().contains("dep/Api#needed()V")));
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.detail().contains("closure remains unproved")),
+				"what the scan cannot follow in a listener that may never run is not reported");
+	}
+
+	@Test void aListenerForTheOtherSideIsNotScanned() throws Exception {
+		var claims = subscriberPack("Lnet/neoforged/fml/event/lifecycle/FMLCommonSetupEvent;", "CLIENT");
+		assertFalse(DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.SERVER).suppressed(claims.get(1).jar()));
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.detail().contains("dep/Api#needed()V")));
+	}
+
+	@Test void whatTheScanCouldNotFollowOnAPathThatMayNotRunIsNotAPlayerNote() throws Exception {
+		var claims = helperPack("entry-branch", Opcodes.ACC_PUBLIC, false, 1);
+		assertTrue(helperSelection(claims).uncertain().stream().anyMatch(r -> !r.hard() && r.id().startsWith("entry-closure:")),
+				"the rule itself is kept");
+		reset();
+		claims = helperPack("entry-branch", Opcodes.ACC_PUBLIC, false, 1);
+		DuplicateModArbiter.arbitrateJoint(claims, List.of(), EnvType.CLIENT);
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.detail().contains("closure remains unproved")));
+	}
+
 	@Test void selectorsAreParsedTheWayMixinReadsThem() {
 		assertEquals("tick", CandidateContractScanner.selector("tick", "dep/Shared").name());
 		assertNull(CandidateContractScanner.selector("tick", "dep/Shared").desc());
@@ -462,6 +494,31 @@ class CandidateContractScannerTest {
 			method.visitEnd();
 		}
 		writer.visitEnd(); return writer.toByteArray();
+	}
+
+	/** A NeoForge app requiring dep, whose @EventBusSubscriber listens for {@code event} and calls dep/Api.needed(). */
+	private List<DuplicateModArbiter.Claim> subscriberPack(String event, String dist) throws Exception {
+		ClassWriter writer = new ClassWriter(0); writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Events", null, "java/lang/Object", null);
+		AnnotationVisitor subscriber = writer.visitAnnotation("Lnet/neoforged/fml/common/EventBusSubscriber;", true);
+		subscriber.visit("modid", "app");
+		if (dist != null) { AnnotationVisitor dists = subscriber.visitArray("value"); dists.visitEnum(null, "Lnet/neoforged/api/distmarker/Dist;", dist); dists.visitEnd(); }
+		subscriber.visitEnd();
+		MethodVisitor listener = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "on", "(" + event + ")V", null, null);
+		listener.visitAnnotation("Lnet/neoforged/bus/api/SubscribeEvent;", true).visitEnd();
+		listener.visitCode(); listener.visitMethodInsn(Opcodes.INVOKESTATIC, "dep/Api", "needed", "()V", false);
+		// A native helper the closure cannot follow.
+		listener.visitMethodInsn(Opcodes.INVOKESTATIC, "app/Events", "opaque", "()V", false);
+		listener.visitInsn(Opcodes.RETURN); listener.visitMaxs(0, 1); listener.visitEnd();
+		writer.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_NATIVE, "opaque", "()V", null, null).visitEnd();
+		writer.visitEnd();
+		String toml = "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n[[mods]]\nmodId=\"app\"\nversion=\"1\"\n"
+				+ "[[dependencies.app]]\nmodId=\"dep\"\ntype=\"required\"\nversionRange=\"[0,)\"\nordering=\"NONE\"\nside=\"BOTH\"\n";
+		Path app = jar("app-neo.jar", Map.of("META-INF/neoforge.mods.toml", toml.getBytes(StandardCharsets.UTF_8), "app/Events.class", writer.toByteArray()));
+		Path neo = neo("dep-neo.jar", "dep", "1", Map.of("dep/Api.class", api("dep/Api", false)));
+		Path fab = fabric("dep-fab.jar", "dep", "2", "", Map.of("dep/Api.class", api("dep/Api", true)));
+		return List.of(new DuplicateModArbiter.Claim(app, Ecosystem.NEOFORGE, List.of("app"), Map.of("app", "1")),
+				new DuplicateModArbiter.Claim(neo, Ecosystem.NEOFORGE, List.of("dep"), Map.of("dep", "1")),
+				new DuplicateModArbiter.Claim(fab, Ecosystem.FABRIC, List.of("dep"), Map.of("dep", "2")));
 	}
 
 	private List<DuplicateModArbiter.Claim> memberPack(boolean required, String configExtra, byte[] mixin, byte[] neoShared, byte[] fabShared) throws Exception {

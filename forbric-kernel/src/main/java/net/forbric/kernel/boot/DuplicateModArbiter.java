@@ -664,7 +664,9 @@ public final class DuplicateModArbiter {
 		// leaves unmet stays visible but cannot be confirmed (the same pack must not stop on a slower machine).
 		boolean bounded = result.status() == JointCandidateSelector.Status.SEARCH_LIMIT;
 		for (var rule : result.unsatisfied()) recordRule(byPath.get(rule.consumer()), rule, !bounded);
-		for (var rule : result.uncertain()) recordRule(byPath.get(rule.consumer()), rule, false);
+		// A soft closure rule only says the scan could not follow a path that may not run; it steers nothing and
+		// names no member, so it stays in the count below instead of becoming one of hundreds of player notes.
+		for (var rule : result.uncertain()) if (rule.hard() || !rule.id().startsWith("entry-closure:")) recordRule(byPath.get(rule.consumer()), rule, false);
 		// No installed combination meets these, so no choice made here caused them: reported, never a launch stop.
 		for (var rule : result.unavoidable()) recordRule(byPath.get(rule.consumer()), rule, false);
 		recordOverrides(result.refusedOverrides(), overrides, true);
