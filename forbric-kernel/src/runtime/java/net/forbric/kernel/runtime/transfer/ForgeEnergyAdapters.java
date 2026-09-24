@@ -10,6 +10,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import net.forbric.kernel.transform.ForgeTransferShapeAudit;
+import net.minecraftforge.energy.EmptyEnergyStorage;
 import net.minecraftforge.energy.EnergyStorage;
 import net.minecraftforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.transfer.energy.EnergyHandler;
@@ -30,6 +31,15 @@ import net.neoforged.neoforge.transfer.transaction.TransactionContext;
  * IEnergyStorage gets no view at all and is reported once per class as FORGE_HANDLER_NOT_ROLLBACK_SAFE; there is no
  * switch that grants it one. A non-transactional write to the same store while a transaction holding it is open is
  * undone with that transaction if it aborts, as with the item and fluid journals.
+ *
+ * <p>The standard store can hold more than its capacity (or less than nothing): its deserializeNBT sets the field
+ * unclamped, so a save made before a config lowered the capacity loads that way. Its own receiveEnergy then answers a
+ * NEGATIVE amount and lowers the field. That is Forge's code on a state Forge allows, not a broken provider, so the
+ * view refuses the operation instead of throwing into the consumer's tick: the field is put back as it was and nothing
+ * moves. The store still gives its energy away normally, down into its bounds.
+ *
+ * <p>Forge's own {@code EmptyEnergyStorage} (that exact class) holds nothing and accepts nothing. It is the owner's
+ * answer "no energy here", not a store to audit: it becomes an empty view that answers for the owner, and no finding.
  *
  * <p>{@link #forge}: the opposite direction, a Forge consumer of a transactional store. Every simulate is a real
  * operation in a transaction that is then aborted, and every execute commits it; an already-open NeoForge (or paired
@@ -92,6 +102,7 @@ public final class ForgeEnergyAdapters {
 		// A Forge view of a transactional store handed back to us (a cable passing on its neighbour's handler): the
 		// store itself, never a bridge of a bridge.
 		if (storage instanceof Facade own) return own.handler();
+		if (storage.getClass() == EmptyEnergyStorage.class) return Empty.INSTANCE;
 		if (!supports(storage)) { refused(storage); return null; }
 		return new View((EnergyStorage) storage, owner, changed);
 	}
@@ -100,6 +111,7 @@ public final class ForgeEnergyAdapters {
 	public static IEnergyStorage forge(EnergyHandler handler) {
 		Objects.requireNonNull(handler);
 		if (handler instanceof View own) return own.storage();
+		if (handler == Empty.INSTANCE) return EmptyEnergyStorage.INSTANCE;
 		return new Facade(handler);
 	}
 
@@ -164,9 +176,15 @@ public final class ForgeEnergyAdapters {
 			if (maximum == 0) return 0;
 			if (!supports(storage)) { refused(storage); return 0; }
 			Journal journal = journal(); journal.prepare(storage, transaction);
-			// The store's own code, with its own capacity and receive/extract limits. A result outside [0, maximum]
-			// throws after the journal has its snapshot, so the caller's abort restores the store.
-			int moved = (int) EnergyUnits.moved(insert ? storage.receiveEnergy(maximum, false) : storage.extractEnergy(maximum, false), maximum);
+			// The store's own code, with its own capacity and receive/extract limits.
+			int before = read(storage);
+			int moved = insert ? storage.receiveEnergy(maximum, false) : storage.extractEnergy(maximum, false);
+			if (moved < 0 || moved > maximum) {
+				// Only a store outside its own bounds answers this (see the class comment); the certified code cannot
+				// otherwise. Nothing moved: the field is exactly what it was, with or without a later abort.
+				write(storage, before);
+				return 0;
+			}
 			if (moved > 0) journal.notifications.put(owner, changed);
 			return moved;
 		}
@@ -174,6 +192,21 @@ public final class ForgeEnergyAdapters {
 		public boolean canExtract() { return storage.canExtract(); }
 		@Override public boolean equals(Object other) { return this == other; }
 		@Override public int hashCode() { return System.identityHashCode(this); }
+	}
+
+	/** The view of Forge's EmptyEnergyStorage: nothing stored, nothing accepted, no direction. Never touches the store. */
+	private enum Empty implements EnergyHandler, EnergyAbilities {
+		INSTANCE;
+		public long getAmountAsLong() { return 0; }
+		public long getCapacityAsLong() { return 0; }
+		public int insert(int maximum, TransactionContext transaction) { return nothing(maximum); }
+		public int extract(int maximum, TransactionContext transaction) { return nothing(maximum); }
+		private static int nothing(int maximum) {
+			if (maximum < 0) throw new IllegalArgumentException("Negative energy amount: " + maximum);
+			return 0;
+		}
+		public boolean canInsert() { return false; }
+		public boolean canExtract() { return false; }
 	}
 
 	private record Facade(EnergyHandler handler) implements IEnergyStorage {
@@ -185,6 +218,13 @@ public final class ForgeEnergyAdapters {
 				int moved = (int) EnergyUnits.moved(insert ? handler.insert(maximum, transaction) : handler.extract(maximum, transaction), maximum);
 				if (!simulate) transaction.commit();
 				return moved;
+			} catch (LiveTransferEndpoints.Unavailable invalidated) {
+				// The endpoint went away during the operation (its block replaced, its capabilities invalidated). The
+				// scope above was closed uncommitted, so the provider's own engine rolled it back; a Forge caller, which
+				// has no transaction to abort, is told nothing moved, exactly as the Reborn and NeoForge views tell theirs.
+				NativeTransferAdapters.requireSuccessfulRollback(invalidated, handler);
+				TransferIssues.report("ENDPOINT_INVALIDATED", handler, invalidated.getMessage() + "; the operation was rolled back");
+				return 0;
 			}
 		}
 		public int getEnergyStored() { return EnergyUnits.saturated(handler.getAmountAsLong()); }

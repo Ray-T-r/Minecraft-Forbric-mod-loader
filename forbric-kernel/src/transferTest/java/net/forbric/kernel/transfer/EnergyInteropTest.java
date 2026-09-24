@@ -36,6 +36,10 @@ class EnergyInteropTest {
 		run(NativeEnergyScenarios.class.getName(), "uncertifiedStandardStoreIsRefused", false, null);
 	}
 	@Test void invalidProviderAmountsAreRolledBack() throws Exception { scenario("invalidProviderAmountsRollBack"); }
+	@Test void anOutOfBoundsForgeStoreMovesNothingInsteadOfThrowing() throws Exception { scenario("outOfBoundsForgeStoresMoveNothing"); }
+	@Test void aForgeConsumerOfAnEndpointInvalidatedMidOperationMovesNothing() throws Exception { scenario("forgeConsumerOfAnInvalidatedEndpointMovesNothing"); }
+	@Test void forgesEmptyStoreIsAnEmptyAnswerNotARefusal() throws Exception { scenario("forgesEmptyStoreIsAnEmptyAnswer"); }
+	@Test void liveRebornViewsResolveAgainAndMoveNothingOnceInvalidated() throws Exception { scenario("liveRebornStoresMoveNothingOnceInvalidated"); }
 	@Test void liveViewsResolveAgainAndAnInvalidatedEndpointMovesNothing() throws Exception { scenario("liveEndpointsResolveAndRefuseAfterInvalidation"); }
 	@Test void bridgeViewsAreNeverWrappedAgain() throws Exception { scenario("bridgesNeverStack"); }
 	@Test void finalNotificationsWaitForBothRoots() throws Exception { scenario("finalNotificationsAfterBothRootsClose"); }
