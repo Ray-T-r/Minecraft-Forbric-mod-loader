@@ -796,3 +796,13 @@ confirmed, and ran acceptance on one merged candidate.
 - The item and fluid Forge facades (`ForgeLegacyFacades`) now treat an endpoint invalidated mid-operation like the
   energy facade does (nothing moved, ENDPOINT_INVALIDATED, rollback required); M39 proves it on a real carrier
   (15/15) and is RED without the change.
+
+### Energy interop regression sweep and evidence location
+
+- On the energy branch, `gates-all.sh -j 2 --mem-budget 6000 --skip gate-m34-soak.sh` (candidate staged root): all
+  40 other gates GREEN, including the new M40 energy gate. The soak was not rerun for this change.
+- The generated evidence of the 2026-09-23/24 runs (verification reports, gate logs, soak evidence without heap
+  dumps, native/retention/UI/Corpse controls) is archived outside git under `build/claude/evidence-archive/` of the
+  original checkout, keeping the `forbric-kernel/build/...` layout the sections above cite. The candidate staged
+  root used for acceptance is `build/claude/staged-root/`. A later release soak in another checkout must re-run
+  `run/compat/retention-control.py` so `native-retention.json`'s evidence exists there.
