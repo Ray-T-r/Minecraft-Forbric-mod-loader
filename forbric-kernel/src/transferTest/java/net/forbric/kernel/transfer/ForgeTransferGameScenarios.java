@@ -216,6 +216,43 @@ public final class ForgeTransferGameScenarios {
 		eq(90, neoFacade.fill(input, IFluidHandler.FluidAction.EXECUTE));
 		eq(90, neoFacade.drain(input, IFluidHandler.FluidAction.EXECUTE).getAmount()); eq(0, neo.getAmountAsLong(0)); closed();
 	}
+	/**
+	 * A Forge caller of a live endpoint that goes away mid-operation (its block replaced, its capability invalidated):
+	 * nothing moves, nothing throws into the Forge mod's tick, and the provider's own engine rolled the attempt back.
+	 */
+	public static void legacyFacadesOfADyingEndpoint() {
+		var generation = new java.util.concurrent.atomic.AtomicLong();
+		var present = new java.util.concurrent.atomic.AtomicBoolean(true);
+		ItemStacksResourceHandler items = new ItemStacksResourceHandler(1) {
+			@Override public int insert(int index, ItemResource resource, int amount, net.neoforged.neoforge.transfer.transaction.TransactionContext tx) {
+				int moved = super.insert(index, resource, amount, tx); generation.incrementAndGet(); return moved;
+			}
+			@Override public int extract(int index, ItemResource resource, int amount, net.neoforged.neoforge.transfer.transaction.TransactionContext tx) {
+				int moved = super.extract(index, resource, amount, tx); present.set(false); return moved;
+			}
+		};
+		IItemHandler itemFacade = ForgeLegacyFacades.items(net.forbric.kernel.runtime.transfer.LiveTransferEndpoints.neo(() -> items, present::get, generation::get, ItemResource.EMPTY));
+		ItemStack stone = new ItemStack(Items.STONE, 5);
+		eq(5, itemFacade.insertItem(0, stone, false).getCount()); eq(0, items.getAmountAsLong(0)); eq(5, stone.getCount());
+		try (var tx = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot()) { eq(7, items.insert(0, ItemResource.of(Items.STONE), 7, tx)); tx.commit(); }
+		generation.set(0);
+		yes(itemFacade.extractItem(0, 3, false).isEmpty()); eq(7, items.getAmountAsLong(0));
+		present.set(true); generation.set(0);
+		FluidStacksResourceHandler fluids = new FluidStacksResourceHandler(1, 1000) {
+			@Override public int insert(int index, FluidResource resource, int amount, net.neoforged.neoforge.transfer.transaction.TransactionContext tx) {
+				int moved = super.insert(index, resource, amount, tx); generation.incrementAndGet(); return moved;
+			}
+			@Override public int extract(int index, FluidResource resource, int amount, net.neoforged.neoforge.transfer.transaction.TransactionContext tx) {
+				int moved = super.extract(index, resource, amount, tx); present.set(false); return moved;
+			}
+		};
+		IFluidHandler fluidFacade = ForgeLegacyFacades.fluids(net.forbric.kernel.runtime.transfer.LiveTransferEndpoints.neo(() -> fluids, present::get, generation::get, FluidResource.EMPTY));
+		eq(0, fluidFacade.fill(new FluidStack(Fluids.WATER, 100), IFluidHandler.FluidAction.EXECUTE)); eq(0, fluids.getAmountAsLong(0));
+		try (var tx = net.neoforged.neoforge.transfer.transaction.Transaction.openRoot()) { eq(300, fluids.insert(0, FluidResource.of(Fluids.WATER), 300, tx)); tx.commit(); }
+		generation.set(0);
+		yes(fluidFacade.drain(100, IFluidHandler.FluidAction.EXECUTE).isEmpty()); eq(300, fluids.getAmountAsLong(0));
+		closed();
+	}
 	public static void unknownHandlers() {
 		yes(ForgeSnapshotAdapters.items(new ItemStackHandler(1) { }) == null);
 		yes(ForgeSnapshotAdapters.fluids(new FluidTank(100) { }) == null);

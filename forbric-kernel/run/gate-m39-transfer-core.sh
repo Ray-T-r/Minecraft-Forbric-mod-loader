@@ -68,7 +68,7 @@ python3 "$KERNEL/run/compat/evidence.py" run --source "$KERNEL/.." \
   --mods "$RUNDIR/mods" --output "$RUNDIR/inputs.json" \
   -- bash "$KERNEL/run/gate-m39-transfer-core.sh" --execute "$RUNDIR"
 LOG="$RUNDIR/inputs.log"
-check "all thirteen storage scenarios and the native diagnostic proof ran" 'TransferCanary\] 14/14 passed' "$LOG"
+check "all fourteen storage scenarios and the native diagnostic proof ran" 'TransferCanary\] 15/15 passed' "$LOG"
 check_absent "no real carrier scenario failed" 'TransferCanary\] FAIL' "$LOG"
 check "the actual server ticked and accepted stop" 'Stopping the server|commands\.stop\.stopping' "$LOG"
 check "the actual world was saved" 'All dimensions are saved' "$LOG"

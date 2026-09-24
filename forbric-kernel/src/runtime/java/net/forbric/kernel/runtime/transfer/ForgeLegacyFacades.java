@@ -26,6 +26,16 @@ public final class ForgeLegacyFacades {
 		if (parent == null && Transaction.isOpen()) parent = PairedTransactions.neo(Transaction.getCurrentUnsafe());
 		return net.neoforged.neoforge.transfer.transaction.Transaction.open(parent);
 	}
+	/**
+	 * The endpoint went away during the operation (its block replaced, its capabilities invalidated). The scope was
+	 * closed uncommitted, so the provider's own engine rolled it back; a Forge caller, which has no transaction to
+	 * abort, is told nothing moved -- as the energy facade and the Reborn/NeoForge views tell theirs -- instead of an
+	 * exception thrown into the Forge mod's tick.
+	 */
+	private static void invalidated(LiveTransferEndpoints.Unavailable failure, Object handler) {
+		NativeTransferAdapters.requireSuccessfulRollback(failure, handler);
+		TransferIssues.report("ENDPOINT_INVALIDATED", handler, failure.getMessage() + "; the operation was rolled back");
+	}
 	private static int amount(long amount) {
 		if (amount < 0) throw new IllegalStateException("Provider advertised a negative amount");
 		return (int) Math.min(Integer.MAX_VALUE, amount);
@@ -43,6 +53,9 @@ public final class ForgeLegacyFacades {
 				ForgeSnapshotAdapters.checkAmount(moved, maximum);
 				if (!simulate) transaction.commit();
 				return input.copyWithCount(maximum - moved);
+			} catch (LiveTransferEndpoints.Unavailable gone) {
+				invalidated(gone, handler);
+				return input.copy();
 			}
 		}
 		public ItemStack extractItem(int slot, int maximum, boolean simulate) {
@@ -59,6 +72,9 @@ public final class ForgeLegacyFacades {
 				ForgeSnapshotAdapters.checkAmount(moved, limit);
 				if (!simulate) transaction.commit();
 				return resource.toStack(moved);
+			} catch (LiveTransferEndpoints.Unavailable gone) {
+				invalidated(gone, handler);
+				return ItemStack.EMPTY;
 			}
 		}
 	}
@@ -82,6 +98,9 @@ public final class ForgeLegacyFacades {
 				ForgeSnapshotAdapters.checkAmount(moved, stack.getAmount());
 				if (action.execute()) transaction.commit();
 				return moved;
+			} catch (LiveTransferEndpoints.Unavailable gone) {
+				invalidated(gone, handler);
+				return 0;
 			}
 		}
 		public FluidStack drain(FluidStack stack, FluidAction action) {
@@ -113,6 +132,9 @@ public final class ForgeLegacyFacades {
 				if (result == null) return FluidStack.EMPTY;
 				if (action.execute()) transaction.commit();
 				return result;
+			} catch (LiveTransferEndpoints.Unavailable gone) {
+				invalidated(gone, handler);
+				return FluidStack.EMPTY;
 			}
 		}
 	}

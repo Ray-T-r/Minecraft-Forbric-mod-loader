@@ -267,7 +267,7 @@ incompatible control scenario is separate from a strict compatibility acceptance
 `@Test` declared under `src/transferTest` must appear in its XML report, none failed, errored or skipped, and a
 missing game side fails instead of skipping. It then packages the existing real-carrier transfer scenarios as a
 game canary. It
-requires all thirteen Forge snapshot/alias/metadata/facade cases and a real full watchdog thread dump, including
+requires all fourteen Forge snapshot/alias/metadata/facade cases (including a dying endpoint) and a real full watchdog thread dump, including
 the final-defined native-helper equivalence finding. Inputs are hash-bound and its server remains strict.
 
 `gate-m40-energy.sh` checks block-entity energy between Team Reborn Energy (the Fabric energy API; Fabric API
