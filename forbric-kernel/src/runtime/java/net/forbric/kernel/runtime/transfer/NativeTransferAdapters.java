@@ -44,7 +44,7 @@ public final class NativeTransferAdapters {
 		if (moved < 0 || moved > maximum) throw new IllegalStateException("Provider returned an invalid transfer amount: " + moved + "/" + maximum);
 		return moved;
 	}
-	private static void requireSuccessfulRollback(LiveTransferEndpoints.Unavailable failure, Object provider) {
+	static void requireSuccessfulRollback(LiveTransferEndpoints.Unavailable failure, Object provider) {
 		// try-with-resources suppresses a close/rollback failure onto the original invalidation exception.
 		// Returning zero in that case would assert a rollback the native participant failed to perform.
 		if (failure.getSuppressed().length != 0) {

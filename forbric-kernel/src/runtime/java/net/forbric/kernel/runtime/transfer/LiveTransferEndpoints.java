@@ -11,6 +11,7 @@ import net.fabricmc.fabric.api.transfer.v1.storage.StorageView;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleSlotStorage;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.energy.EnergyHandler;
 import net.neoforged.neoforge.transfer.resource.Resource;
 
 /**
@@ -23,7 +24,7 @@ public final class LiveTransferEndpoints {
 	static final class Unavailable extends IllegalStateException {
 		Unavailable(String message) { super(message); }
 	}
-	private static void stillValid(BooleanSupplier valid) {
+	static void stillValid(BooleanSupplier valid) {
 		if (!valid.getAsBoolean()) throw new Unavailable("Transfer endpoint invalidated during an operation");
 	}
 	public static <N extends Resource> ResourceHandler<N> neo(Supplier<ResourceHandler<N>> lookup, BooleanSupplier valid, N empty) {
@@ -49,6 +50,31 @@ public final class LiveTransferEndpoints {
 				int amount = h.extract(slot, resource, max, tx); stillValid(valid); unchanged(before, generation); return amount;
 			}
 		};
+	}
+	/** The same rules for a NeoForge energy handler: resolved per operation, empty once its endpoint is gone. */
+	public static EnergyHandler energy(Supplier<EnergyHandler> lookup, BooleanSupplier valid, LongSupplier generation) {
+		return new LiveEnergy(lookup, valid, generation);
+	}
+	private record LiveEnergy(Supplier<EnergyHandler> lookup, BooleanSupplier valid, LongSupplier generation) implements EnergyHandler, EnergyAbilities {
+		private EnergyHandler current() { return valid.getAsBoolean() ? lookup.get() : null; }
+		public long getAmountAsLong() { var h = current(); return h == null ? 0 : h.getAmountAsLong(); }
+		public long getCapacityAsLong() { var h = current(); return h == null ? 0 : h.getCapacityAsLong(); }
+		public int insert(int max, net.neoforged.neoforge.transfer.transaction.TransactionContext tx) {
+			var h = current(); if (h == null) return 0;
+			long before = generation.getAsLong();
+			int amount = h.insert(max, tx); stillValid(valid); unchanged(before, generation); return amount;
+		}
+		public int extract(int max, net.neoforged.neoforge.transfer.transaction.TransactionContext tx) {
+			var h = current(); if (h == null) return 0;
+			long before = generation.getAsLong();
+			int amount = h.extract(max, tx); stillValid(valid); unchanged(before, generation); return amount;
+		}
+		// The store's own flag when it has one; otherwise NeoForge's legacy rule, capacity > 0. Nothing when gone.
+		public boolean canInsert() { var h = current(); return h != null && EnergyAbilities.forgeCanInsert(h); }
+		public boolean canExtract() { var h = current(); return h != null && EnergyAbilities.forgeCanExtract(h); }
+		// Identity, not the record's component equality: two live views of one place are two endpoints.
+		@Override public boolean equals(Object other) { return this == other; }
+		@Override public int hashCode() { return System.identityHashCode(this); }
 	}
 	public static <F> SlottedStorage<F> fabric(Supplier<SlottedStorage<F>> lookup, BooleanSupplier valid, F empty) {
 		return fabric(lookup, valid, () -> 0L, empty);
@@ -98,7 +124,7 @@ public final class LiveTransferEndpoints {
 			}
 		};
 	}
-	private static void unchanged(long before, LongSupplier generation) {
+	static void unchanged(long before, LongSupplier generation) {
 		if (before != generation.getAsLong()) throw new Unavailable("Transfer capability invalidated during an operation");
 	}
 }

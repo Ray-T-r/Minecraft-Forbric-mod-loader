@@ -170,6 +170,9 @@ public final class KernelRuntimeClasses {
 		CLASSES.put(KernelTransferInterop.BRIDGE, new Entry(Origin.COMPILED, List.of(new Call("install", void.class))));
 		CLASSES.put(KernelTransferInterop.ISSUES, new Entry(Origin.COMPILED,
 				List.of(new Call("setReporter", void.class, java.util.function.Consumer.class))));
+		// Only required, loaded and verified when Team Reborn Energy is installed: its signatures stay free of Reborn
+		// types, but its body is the one place that links against them.
+		CLASSES.put(KernelTransferInterop.ENERGY, new Entry(Origin.COMPILED, List.of(new Call("install", void.class))));
 		CLASSES.put(KernelTransferInterop.TRANSACTIONS, new Entry(Origin.COMPILED, List.of(
 				new Call("beforeOpen", void.class), new Call("beforeClose", void.class, Object.class, boolean.class),
 				new Call("afterClose", void.class, Object.class, Throwable.class),
@@ -390,7 +393,8 @@ public final class KernelRuntimeClasses {
 	public static List<String> compiled() {
 		return CLASSES.entrySet().stream()
 				.filter(e -> e.getValue().origin() == Origin.COMPILED)
-				.filter(e -> !KernelTransferInterop.ownsOptionalRuntime(e.getKey()) || KernelTransferInterop.active())
+				.filter(e -> !KernelTransferInterop.ownsOptionalRuntime(e.getKey())
+						|| KernelTransferInterop.optionalRuntimeActive(e.getKey()))
 				.map(Map.Entry::getKey)
 				.toList();
 	}

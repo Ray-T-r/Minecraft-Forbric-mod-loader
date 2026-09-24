@@ -21,7 +21,7 @@ public final class ForgeLegacyFacades {
 	public static IFluidHandler fluids(ResourceHandler<FluidResource> handler) { return new Fluids(java.util.Objects.requireNonNull(handler)); }
 	static ResourceHandler<ItemResource> unwrapItems(IItemHandler handler) { return handler instanceof Items own ? own.handler : null; }
 	static ResourceHandler<FluidResource> unwrapFluids(IFluidHandler handler) { return handler instanceof Fluids own ? own.handler : null; }
-	private static net.neoforged.neoforge.transfer.transaction.Transaction scope() {
+	static net.neoforged.neoforge.transfer.transaction.Transaction scope() {
 		var parent = net.neoforged.neoforge.transfer.transaction.Transaction.getCurrentOpenedTransaction();
 		if (parent == null && Transaction.isOpen()) parent = PairedTransactions.neo(Transaction.getCurrentUnsafe());
 		return net.neoforged.neoforge.transfer.transaction.Transaction.open(parent);

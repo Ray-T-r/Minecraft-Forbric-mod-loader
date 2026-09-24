@@ -66,6 +66,13 @@ def extractTransferApis = tasks.register('extractTransferApis', Sync) {
 	}
 }
 def transferModuleFiles = files(fileTree(transferModulesDir) { include '*.jar' }).builtBy(extractTransferApis)
+// Team Reborn Energy 5.0.0 (mod id team_reborn_energy, MIT), the energy API Fabric mods use: Fabric API has none.
+// The energy half of the transfer component compiles against it and, like the transfer modules, it is never bundled:
+// a pack that wants Fabric energy installs it as an ordinary mod. Same rule as above: a machine that builds the game
+// side must supply it (-Pforbric.rebornEnergy=<energy jar>) or the build fails naming the file, so no game side can
+// quietly ship without the energy bridge.
+def stagedRebornEnergy = file(project.findProperty('forbric.rebornEnergy') ?: new File(stagedRoot.parentFile.parentFile,
+		'forbric-kernel/run/energy-api/energy-5.0.0.jar'))
 // Integration runs pass -Pforbric.requireTransfer=true: there a skipped transfer suite is a failure, not a pass.
 def requireTransfer = project.findProperty('forbric.requireTransfer') == 'true'
 
@@ -98,14 +105,16 @@ def stagedMcLibraries = lastByNameUnder('com/mojang/brigadier/**/*.jar') +
 		// local Minecraft install as the other two, never bundled — the game supplies it at runtime.
 		lastByNameUnder('com/google/code/gson/**/*.jar')
 
-// LazyOptional's real carrier implementation uses Commons Lang's Mutable types. Resolve the exact library
-// chosen by Minecraft 26.2 (the same version JSON launch-kernel-server.sh reads), rather than a stub or whichever
-// cached commons-lang3 jar happens to sort last. This is test runtime linkage only and is never bundled.
+// LazyOptional's real carrier implementation uses Commons Lang's Mutable types, and every Team Reborn Energy store
+// initialises Reborn's EnergyStorage interface, whose static fields build an Identifier and a DataComponentType
+// (netty, joml, ...). Resolve Minecraft 26.2's OWN library set from its version JSON (the one launch-kernel-server.sh
+// puts on the game's classpath), rather than a stub or whichever cached jar happens to sort last. This is test
+// runtime linkage only and is never bundled.
 def stagedTransferTestLibraries = []
 def stagedMcVersionJson = new File(mcLibraries.parentFile, 'versions/26.2/26.2.json')
 if (stagedMcVersionJson.isFile()) {
 	def versionMetadata = new groovy.json.JsonSlurper().parse(stagedMcVersionJson)
-	versionMetadata.libraries.findAll { it.name?.startsWith('org.apache.commons:commons-lang3:') }.each { library ->
+	versionMetadata.libraries.each { library ->
 		def relativePath = library.downloads?.artifact?.path
 		if (relativePath) {
 			def artifact = new File(mcLibraries, relativePath)
@@ -126,8 +135,8 @@ sourceSets {
 	// the build script to run, and `compileRuntimeJava` / `test` skip it so M0 (boot-side only) still builds.
 	runtime {
 		java { srcDir 'src/runtime/java' }
-		compileClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries) + transferModuleFiles
-		runtimeClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries) + transferModuleFiles
+		compileClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries) + transferModuleFiles + files(stagedRebornEnergy)
+		runtimeClasspath += sourceSets.main.output + files(stagedGameJars) + files(stagedMcLibraries) + transferModuleFiles + files(stagedRebornEnergy)
 	}
 	transferTest {
 		java { srcDir 'src/transferTest/java' }
@@ -219,6 +228,9 @@ tasks.named('compileRuntimeJava') {
 		if (!stagedFabricApi.isFile()) throw new GradleException("The kernel game side includes its transfer " +
 				"component and compiles it against Fabric API's transfer modules, but ${stagedFabricApi} does not " +
 				"exist. Pass -Pforbric.fabricApi=<a fabric-api jar for 26.2> (the compatibility pack's is the default).")
+		if (!stagedRebornEnergy.isFile()) throw new GradleException("The kernel game side includes its energy bridge " +
+				"and compiles it against Team Reborn Energy, but ${stagedRebornEnergy} does not exist. Pass " +
+				"-Pforbric.rebornEnergy=<energy-5.0.0.jar> (forbric-kernel/run/energy-api/energy-5.0.0.jar is the default).")
 	}
 }
 
@@ -342,9 +354,13 @@ tasks.register('runtimeJar', Jar) {
 	// release that turns every fabric-api pack into a required loss. Checked on the artifact itself.
 	doLast {
 		def entries = new java.util.zip.ZipFile(archiveFile.get().asFile).withCloseable { zip -> Collections.list(zip.entries())*.name as Set }
-		def missing = ['BlockTransferBridge', 'TransferIssues', 'PairedTransactions']
+		def missing = ['BlockTransferBridge', 'TransferIssues', 'PairedTransactions', 'RebornEnergyBridge',
+				'RebornEnergyAdapters', 'ForgeEnergyAdapters', 'EnergyUnits']
 				.collect { "net/forbric/kernel/runtime/transfer/${it}.class".toString() }.findAll { !entries.contains(it) }
 		if (missing) throw new GradleException("forbric-kernel-runtime.jar was built without its transfer component: ${missing}")
+		// Team Reborn Energy is the player's mod, compiled against and never shipped.
+		def bundled = entries.findAll { it.startsWith('team/reborn/') }
+		if (bundled) throw new GradleException("forbric-kernel-runtime.jar must not bundle Team Reborn Energy: ${bundled.take(3)}")
 	}
 }
 

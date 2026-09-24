@@ -137,6 +137,7 @@ class TransferTransactionHooksTest {
 	@Test void everyRequiredHelperMatchesTheReviewedCarrierAndGameShapes() throws Exception {
 		Path stage = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", "../forbric-loader"), "run");
 		var helpers = new java.util.LinkedHashSet<>(ForgeTransferShapeAudit.ITEM_HELPERS); helpers.addAll(ForgeTransferShapeAudit.FLUID_HELPERS);
+		helpers.addAll(ForgeTransferShapeAudit.ENERGY_HELPERS);
 		for (String name : helpers) {
 			Path jar = name.startsWith("net.minecraftforge.") ? stage.resolve("forge-runtime/forge-runtime.jar")
 					: name.startsWith("net.neoforged.") ? stage.resolve("neoforge-runtime/neoforge-runtime.jar")
@@ -144,6 +145,27 @@ class TransferTransactionHooksTest {
 			byte[] approved = ForgeTransferShapeAudit.certify(name, bytes(jar, name));
 			assertTrue(node(approved).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)), name);
 		}
+	}
+	/**
+	 * Forge's standard EnergyStorage is certified as a whole: the bridge writes through its own receive/extract code and
+	 * restores only its int energy field, so a change to any of its methods, or to that field, withdraws the write view.
+	 */
+	@Test void forgeEnergyStorageCertificateCoversItsWholeTransferContract() throws Exception {
+		String name = "net.minecraftforge.energy.EnergyStorage";
+		byte[] original = bytes(Path.of(System.getenv().getOrDefault("FORBRIC_OLD", "../forbric-loader"), "run/forge-runtime/forge-runtime.jar"), name);
+		assertTrue(ForgeTransferShapeAudit.ENERGY_HELPERS.contains(name));
+		assertTrue(node(ForgeTransferShapeAudit.certify(name, original)).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)));
+		for (String changedMethod : List.of("receiveEnergy", "extractEnergy", "getEnergyStored", "getMaxEnergyStored", "canReceive", "canExtract", "<init>")) {
+			ClassNode changed = node(original);
+			changed.methods.stream().filter(method -> method.name.equals(changedMethod)).findFirst().orElseThrow()
+					.instructions.insert(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.NOP));
+			ClassWriter writer = new ClassWriter(0); changed.accept(writer);
+			assertFalse(node(ForgeTransferShapeAudit.certify(name, writer.toByteArray())).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)), changedMethod);
+		}
+		ClassNode retyped = node(original);
+		retyped.fields.stream().filter(field -> field.name.equals("energy")).findFirst().orElseThrow().access |= org.objectweb.asm.Opcodes.ACC_VOLATILE;
+		ClassWriter writer = new ClassWriter(0); retyped.accept(writer);
+		assertFalse(node(ForgeTransferShapeAudit.certify(name, writer.toByteArray())).methods.stream().anyMatch(method -> method.name.equals(ForgeTransferShapeAudit.MARKER)), "energy field");
 	}
 	@Test void itemStackTooltipChangesRemainAllowedButCountMutationDoesNot() throws Exception {
 		String name = "net.minecraft.world.item.ItemStack";

@@ -53,6 +53,8 @@ public final class ForgeTransferShapeAudit {
 			Map.entry("net.minecraftforge.items.ItemStackHandler", "be15e7bbc1b280544259474b1cc4eddd66fc6a17f0451486259e1ce4e56bef93"),
 			Map.entry("net.minecraftforge.items.ItemHandlerHelper", "ad43a680f428c4302b0163475ff2f7b92c3ddd752b8d572f70883fc623ad2d0d"),
 			Map.entry("net.minecraftforge.fluids.capability.templates.FluidTank", "02e1047767b92e0a462b4389f1e68fc7c76e942384d221181234a0437ad35604"),
+			// Forge's standard energy store: the whole class, since its int energy field IS its whole transferable state.
+			Map.entry("net.minecraftforge.energy.EnergyStorage", "311f4f17b084726f5693daead0bc92757450bca4e94e803e7965e580fefe48b7"),
 			Map.entry("net.minecraftforge.fluids.FluidStack", "87cd29310cdb4e2ec664585e20361e48d66945847eda6f7c8e6f86d4f3c57262"),
 			Map.entry("net.minecraftforge.common.capabilities.CapabilityProvider", "caea2630c926db9524090cef952d2e31925f68297e23022ca9c62087e4b65ddb"),
 			Map.entry("net.minecraftforge.common.capabilities.CapabilityProvider$ItemStacks", "a8819ec238eacbeda5c62d3f0674f2e9dc5389d651348b743c32039ae77f042d"),
@@ -71,6 +73,8 @@ public final class ForgeTransferShapeAudit {
 			Map.entry("net.neoforged.neoforge.common.extensions.IItemExtension", "7040f6660c671ecf6a8dadf0911a83dfef146128c20bf61a5cbb1c21efc00654"));
 	public static final List<String> ITEM_HELPERS = List.of("net.minecraftforge.items.ItemHandlerHelper", "net.minecraft.world.item.ItemStack", "net.minecraft.world.item.Item", "net.minecraft.core.NonNullList", "net.minecraft.core.component.PatchedDataComponentMap", "net.minecraft.core.component.DataComponentPatch", "net.minecraft.core.component.DataComponentHolder", "net.minecraft.core.component.DataComponentGetter", "net.minecraftforge.common.capabilities.CapabilityProvider", "net.minecraftforge.common.capabilities.CapabilityProvider$ItemStacks", "net.neoforged.neoforge.transfer.item.ItemResource", "net.neoforged.neoforge.transfer.resource.DataComponentHolderResource", "net.neoforged.neoforge.common.MutableDataComponentHolder", "net.neoforged.neoforge.common.extensions.IItemExtension");
 	public static final List<String> FLUID_HELPERS = List.of("net.minecraftforge.fluids.FluidStack", "net.minecraft.nbt.CompoundTag", "net.minecraft.core.component.DataComponentPatch", "net.minecraft.core.component.DataComponentHolder", "net.minecraft.core.component.DataComponentGetter", "net.neoforged.neoforge.transfer.fluid.FluidResource", "net.neoforged.neoforge.transfer.resource.DataComponentHolderResource");
+	/** ForgeEnergyAdapters writes only through this class's own code and restores only its energy field. */
+	public static final List<String> ENERGY_HELPERS = List.of("net.minecraftforge.energy.EnergyStorage");
 	private static final Map<String, String> DECLINED = new ConcurrentHashMap<>();
 	public static String declined(String name) { return DECLINED.getOrDefault(name, "the final definition did not receive a transfer-shape certificate"); }
 

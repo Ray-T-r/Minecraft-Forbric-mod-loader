@@ -1,7 +1,8 @@
 /**
- * Cross-ecosystem block-entity item/fluid transfer, compiled against Fabric transfer 8.0.11 and NeoForge
- * 26.2.0.88. Every built game side carries this package: without the Fabric API compile input the build fails
- * rather than shipping a runtime jar without it. It is never a Fabric mod.
+ * Cross-ecosystem block-entity item/fluid/energy transfer, compiled against Fabric transfer 8.0.11, NeoForge
+ * 26.2.0.88 and Team Reborn Energy 5.0.0. Every built game side carries this package: without the Fabric API or Reborn
+ * compile input the build fails rather than shipping a runtime jar without it. It is never a Fabric mod, and neither
+ * Fabric API nor Reborn is bundled.
  *
  * <p>Boot integration: install TransferTransactionHooks and TransferCapabilityFallback in the pre-Mixin chain
  * only when both selected APIs exist. After native capability registration, invoke BlockTransferBridge.install
@@ -33,7 +34,15 @@
  * share one real journal. Subclasses and arbitrary proxies are rejected. ForgeLegacyFacades supports the opposite
  * direction using a real transaction per simulate/execute call; it never promises that separate old-style calls
  * form an atomic transfer. Non-empty Forge fluid tags require a per-fluid codec that round-trips exactly to the
- * other APIs' component patch. Unslotted Fabric storage, entity/item capabilities and energy remain outside scope.
+ * other APIs' component patch. Unslotted Fabric storage and entity/item capabilities remain outside scope.
+ *
+ * <p>Energy (placed block entities only; item energy is not bridged) uses the same seams, endpoints, precedence,
+ * invalidation and recursion guard. 1 FE = 1 E; see EnergyUnits for the int/long rule. Fabric's side is Team Reborn
+ * Energy's EnergyStorage.SIDED, through RebornEnergyAdapters (PairedTransactions) and RebornEnergyBridge, the only two
+ * classes that name a Reborn type and the only ones the boot seam loads when Reborn is installed. ForgeEnergyAdapters
+ * writes transactionally only to Forge's certified standard EnergyStorage (and subclasses declaring none of the
+ * IEnergyStorage methods) through a per-thread journal of its energy field, and gives Forge consumers
+ * simulate-by-abort / execute-by-commit views of the other two. Without Reborn, Forge and NeoForge energy still bridge.
  *
  * <p>Register ForgeTransferCapabilityFallback immediately after the existing capability composition. Its root
  * BlockEntity fallback declines to answer from a super-call when a subclass overrides getCapability, preserving
