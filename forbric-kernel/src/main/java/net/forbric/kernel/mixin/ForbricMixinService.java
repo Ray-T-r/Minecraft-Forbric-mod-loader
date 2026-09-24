@@ -645,11 +645,12 @@ public final class ForbricMixinService
 	 * Kernel configs, never relaxed — a genuine failure in our own code must crash loudly.
 	 *
 	 * <p>This used to also exclude {@code forge.}, {@code neoforge.} and {@code minecraft.}, on the theory that they
-	 * name the ecosystem runtimes' own configs. They do not reach here: the runtimes arrive via {@code --runtimeJar}
-	 * (see {@code KernelBoot}), which contributes nothing to mixin discovery, and discovery only scans
-	 * {@code <gameDir>/mods}. Meanwhile the moment Forge/NeoForge GUEST configs joined the registered set, those
-	 * prefixes became a live hazard: a guest config legitimately named {@code forge.mixins.json} or
-	 * {@code neoforge.mixins.json} would silently not be relaxed, so one unpatchable injector in it becomes a fatal
+	 * name the ecosystem runtimes' own configs. One runtime config exists: NeoForge's {@code neoforge.mixins.json}
+	 * (two accessors), which {@code KernelBoot} registers from the {@code --runtimeJar} it came in, like a mod's. It
+	 * is relaxed like a guest's on purpose — an accessor the merged base cannot take then breaks only the NeoForge
+	 * feature that casts to it, and is reported, instead of stopping the game. And the moment Forge/NeoForge GUEST
+	 * configs joined the registered set, those prefixes became a live hazard: a guest config legitimately named
+	 * {@code forge.mixins.json} would silently not be relaxed, so one unpatchable injector in it becomes a fatal
 	 * {@code MixinApplyError} instead of the soft skip that general relaxation exists to provide.
 	 *
 	 * <p>Keep {@code forbric}: the kernel authors no mixins today, but if it ever does, that one must fail loudly.

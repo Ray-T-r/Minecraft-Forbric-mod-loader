@@ -20,8 +20,10 @@ NeoForge custom bed with its own occupancy property and setter. Eleven cases exe
   put the player to sleep, not merely deliver the event.
 
 The positive run is strict and must have zero confirmed required findings. The same eleven cases all fail
-with `forbric.fabricEntityAnchors=off`; that deliberate negative experiment explicitly uses continue, retains
-its confirmed missing-injector evidence, and has a failing inner command. Each phase binds sources, game,
+with `forbric.fabricEntityAnchors=off` and `forbric.mixinRetarget=off` — the generic renamed-body retarget moves
+the sleep redirects into NeoForge's `startSleepInBed` lambda on its own, before the entity anchors are asked, so
+with the anchors alone off the nearby-monster case still passes. That deliberate negative experiment explicitly
+uses continue, retains its confirmed missing-injector evidence, and has a failing inner command. Each phase binds sources, game,
 runtime and mod bytes. Startup failures, crashes, timeouts or missing cases cannot satisfy the gate.
 
 The occupancy adapter checks the original handler's instruction fingerprint before substituting its
