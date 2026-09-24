@@ -755,22 +755,42 @@ confirmed, and ran acceptance on one merged candidate.
   once per root commit. Any other Forge store gets no write view and one FORGE_HANDLER_NOT_ROLLBACK_SAFE finding per
   class; no player choice enables it. A non-transactional write to a store while a transaction holding it is open is
   undone if that transaction aborts, as for items and fluids.
+- Out-of-bounds Forge stores: Forge's `EnergyStorage.deserializeNBT` sets `energy` unclamped, so a save made before a
+  config lowered the capacity loads above capacity (or below zero), and Forge's own receiveEnergy/extractEnergy then
+  answers a negative amount. The view puts the field back and moves nothing, instead of throwing into the consumer's
+  tick (NeoForge's `EnergyHandlerUtil.move` turned the throw into a crash report, on every restart). The energy above
+  capacity is kept and extraction works normally. A lying transactional provider (NeoForge/Reborn) is still rejected
+  and rolled back.
+- Forge's own `EmptyEnergyStorage` (that exact class) is the owner's answer "no energy here": an empty view (0/0,
+  cannot insert or extract, handed back to Forge as `EmptyEnergyStorage.INSTANCE`), no finding, and precedence stops
+  there. A subclass of it is audited and refused like any other store.
+- A Forge consumer whose live endpoint is invalidated or removed during receive/extract gets 0: its scope rolls the
+  provider back and ENDPOINT_INVALIDATED is reported, as for Reborn and NeoForge consumers.
 - Reborn is optional. Only RebornEnergyBridge/RebornEnergyAdapters name it; the boot seam detects it as a resource and
   requires and installs that half only when it is present (a missing half is a non-necessary finding). Without Reborn,
   Forge <-> NeoForge energy works and no Reborn class is loaded. The Reborn half links Reborn's API before exposing
   anything, so a failed install leaves Forge/NeoForge energy unchanged. Energy follows `-Dforbric.transferBridge` and,
   like the whole transfer component, is active only when Fabric's transfer API and NeoForge's transfer API are present.
 - Build: the game side compiles against `energy-5.0.0.jar` (`-Pforbric.rebornEnergy`, default
-  `forbric-kernel/run/energy-api/energy-5.0.0.jar` beside the staged tree, SHA-256 `889afc43...`); absent, the build
-  fails naming it. It is not bundled (the runtime jar check refuses `team/reborn/` entries).
-- Tests: kernel `test` 2,018 (was 2,009) and `transferTest` 57 (was 42), zero failures, errors or skips; the 15 energy
+  `forbric-kernel/run/energy-api/energy-5.0.0.jar` beside the staged tree, else in this checkout's own
+  `forbric-kernel/run/energy-api/`). `verifyRebornEnergy` runs before every game-side compile and transfer-test run and
+  fails naming the file when it is absent or its SHA-256 is not `889afc438d3e4add5cfdac76517da7987a2c495e4731690a56f2c5dee775db59`
+  (compileRuntimeJava's up-to-date check sees only the API, so it never caught a different same-API file). It is not
+  bundled (the runtime jar check refuses `team/reborn/` entries).
+- Tests: kernel `test` 2,018 (was 2,009) and `transferTest` 61 (was 42), zero failures, errors or skips; the 19 energy
   engine tests use the real Fabric/NeoForge engines, Reborn's SimpleEnergyStorage, NeoForge's SimpleEnergyHandler and
-  Forge's certified EnergyStorage, including a Reborn-free loader that records any Reborn class request. 13 transfer,
-  7 unit and 2 game-level mutations each turned their tests red: `forbric-kernel/build/verification/energy-mutations/`.
-- Game: new `gate-m40-energy.sh` GREEN on the candidate (prepare, reload, noreborn, red bridge-off), evidence
-  `forbric-kernel/build/verification/m40-energy/`, driver `forbric-kernel/build/m40-driver.log`; M33 (now also
-  requiring an energy-silent item/fluid pack) and M39 (57/57 engine tests, 14/14 carrier scenarios) GREEN on the same
+  Forge's certified EnergyStorage, including a Reborn-free loader that records any Reborn class request. Mutation
+  proofs, one targeted test at a time: `forbric-kernel/build/verification/energy-mutations/review/RESULTS.txt` (12
+  transfer, 7 unit, 3 whole-gate). The first commit's claim that every new test was red under a mutation was not
+  shown for five of them; `energy-mutations/RESULTS.txt` records the correction.
+- Game: `gate-m40-energy.sh` GREEN (prepare, reload, noreborn, red bridge-off), now also covering the cached
+  NeoForge/Forge views of a replaced Reborn cell, a Fabric addon's explicit Reborn provider on a NeoForge block, and a
+  Forge battery loaded at 1,500/1,000 E before and after a restart and without Reborn. Evidence
+  `forbric-kernel/build/verification/m40-energy/`, driver `forbric-kernel/build/m40-driver.log`; M33 (energy-silent
+  item/fluid pack) and M39 (61/61 engine tests, 13 storage scenarios and the native diagnostic proof) GREEN on the same
   code, drivers `forbric-kernel/build/m33-driver.log` and `forbric-kernel/build/m39-driver.log`.
 - Limits: the Fabric side is Team Reborn Energy only; other Fabric energy APIs are not bridged. Directional abilities
   (canReceive/supportsInsertion) are passed on where the store has them; NeoForge's EnergyHandler has none, so its
   stores answer NeoForge's own rule (capacity > 0). No mixed real-mod energy pack was run; the gates use fixture mods.
+  The Reborn jar is not fetched by any script. The item and fluid Forge facades (`ForgeLegacyFacades`) still let an
+  endpoint invalidated mid-operation throw into a Forge caller; only the energy facade was changed.

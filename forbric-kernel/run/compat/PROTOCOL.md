@@ -277,14 +277,21 @@ public lookups only. It needs `energy-5.0.0.jar` (team_reborn_energy, MIT): `M40
 it into its own world's mods. The canaries are built with `TRANSFER_CANARY_ENERGY=1` into `build/energy-canary/`,
 never into `run/canary/`. Four hash-bound phases in the nonce-owned `run/server-energy-m40`: `prepare` (all three
 ecosystems: 12 routes, 60,000 E conserved, faces, native precedence, a refused custom Forge store reported once, store
-limits, nested rollback, replacement, one dirty mark per root commit, long/int clamping), `reload` (amounts after a
-real save), `noreborn` (the same pack without Reborn: 4 Forge <-> NeoForge routes, and the JVM's class-load log must
-show no Reborn class) and `negative` (bridge off, must fail at a foreign lookup). 1 FE = 1 E. Item energy is not
-bridged. Evidence: `build/verification/m40-energy/`.
+limits, nested rollback, replacement including the cached NeoForge/Forge views of a Reborn cell, a Fabric addon's
+explicit Reborn provider on a NeoForge block reached by NeoForge and Forge consumers, a Forge battery loaded at
+1,500/1,000 E that moves nothing on bridged insertion and keeps its energy, one dirty mark per root commit, long/int
+clamping), `reload` (amounts after a real save; the overfull battery refuses again after the restart, then drains
+into its bounds), `noreborn` (the same pack without Reborn: 4 Forge <-> NeoForge routes, the overfull battery for
+NeoForge, and the JVM's class-load log must show no Reborn class) and `negative` (bridge off, must fail at a foreign
+lookup). 1 FE = 1 E. Item energy is not bridged. Evidence: `build/verification/m40-energy/`.
 
-The kernel game side compiles the energy bridge against the same jar (`-Pforbric.rebornEnergy=<jar>`, same default).
-A build without it fails and names the file, as for `-Pforbric.fabricApi`; the runtime jar is checked to contain the
-energy classes and to bundle no `team/reborn/` entry. M33 also requires that its item/fluid-only pack logs no energy
+The kernel game side compiles the energy bridge against the same jar (`-Pforbric.rebornEnergy=<jar>`, same default,
+else this checkout's own `forbric-kernel/run/energy-api/energy-5.0.0.jar`). Nothing fetches it and `*.jar` is not
+committed: take it from Team Reborn Energy's release (https://github.com/TechReborn/Energy, the project page in the
+jar's own `fabric.mod.json`). `verifyRebornEnergy` runs before every game-side compile and transfer-test run and fails
+naming the file when it is missing or when its SHA-256 is not
+`889afc438d3e4add5cfdac76517da7987a2c495e4731690a56f2c5dee775db59`; the runtime jar is checked to contain the energy
+classes and to bundle no `team/reborn/` entry. M33 also requires that its item/fluid-only pack logs no energy
 bridge activity.
 
 `gate-m34-soak.sh` builds once, then `soak-run.py` freezes the exact boot/runtime/game jars, dependencies and
