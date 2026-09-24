@@ -709,7 +709,8 @@ confirmed, and ran acceptance on one merged candidate.
 - Every launch hashes each mod jar for the candidate plan; large packs pay that time at boot.
 - Fabric mixins aimed at vanilla calls NeoForge's patches replaced still fail where the merged base keeps
   NeoForge's body: on the popular pack architectury's two BaseSpawner redirects and apoli-legacy's ServerPlayer
-  inject are required losses, so its dedicated server stops under STRICT (see "Remaining gaps closed").
+  inject are required losses, so its dedicated server stops under STRICT (see "Remaining gaps closed"). (Closed in
+  "Popular pack under STRICT".)
 - The spawner is not composed by the merger; it stays a runtime repair with a structural stand-down.
 - The renderer-slot regression that 8a9df2c introduced on main is fixed there too since the merge (ed1211d).
 
@@ -891,8 +892,72 @@ confirmed, and ran acceptance on one merged candidate.
     class-definition order; fixed in d6806a3). Three remain and are real: architectury's @Redirects on
     Mob.checkSpawnRules/checkSpawnObstruction in BaseSpawner (NeoForge replaced both calls with
     EventHooks.checkSpawnPositionSpawner) and apoli-legacy's preventAvianSleep in ServerPlayer. They need the
-    vanilla call shape restored inside NeoForge's version and are left open.
+    vanilla call shape restored inside NeoForge's version and are left open. (Closed in "Popular pack under STRICT".)
   Evidence: `forbric-kernel/build/compat/win-accept-97c/`, `win-accept-popular/`, `win-accept-97b/` (the crash).
 - Regression sweep on all of the above (HEAD d6806a3, candidate staged root): `gates-all.sh -j 2 --mem-budget 6000
   --skip gate-m34-soak.sh`, all 41 other gates GREEN, including the new M41 and M31 with its spawner comparison.
   Kernel test 2049, zero failures or skips.
+
+## Popular pack under STRICT (2026-09-24)
+
+The popular pack's (37 jars) dedicated server stopped under STRICT on three required Mixin losses. Fixing them
+exposed four more walls behind them; all seven are closed and the server now starts, runs and stops cleanly with
+0 confirmed required losses (Mac, `run/server-popular` mods, candidate staged root).
+
+- apoli-legacy `preventAvianSleep` (ServerPlayer.startSleepInBed → NeoForge's lambda): the renamed-body retarget
+  (MixinRetarget R3) saw two candidates because the name also resolved Player.startSleepInBed, which ServerPlayer
+  overrides. Mixin injects into the target's own method, so an own match now wins, and a lambda of the other
+  static-ness is never a candidate. The same rule now also moves fabric-api's sleep redirect, so M37's negative
+  control switches both repairs off (-Dforbric.mixinRetarget=off). Commits 696ea11, 88dff5a.
+- architectury `MixinBaseSpawner` and `MixinNaturalSpawner` (@Redirect on Mob.checkSpawnRules /
+  checkSpawnObstruction): NeoForge replaced that vanilla pair with one EventHooks call in BaseSpawner.serverTick,
+  NaturalSpawner (natural and chunk-generation spawns) and SpawnUtil — the only three classes where vanilla's calls
+  are missing from the merged base. SpawnPositionCallsInjector inlines the hook: the same PositionCheck event
+  (KernelSpawnPosition), its non-DEFAULT answer as is, and on DEFAULT the two vanilla calls in the caller. The
+  unit test checks every vanilla method that makes the calls has them back, and that architectury's mixin fits
+  the rewritten classes and not the merged ones. Commit 543d551.
+- Corail Tombstone stopped every datapack load: the merged LootPool has both families' fields, the builder uses
+  NeoForge's constructor (MinecraftForge's `forge_condition` left null) and the codec is MinecraftForge's, so
+  encoding a mod-built pool threw. Each constructor now also fills the other family's fields. Commit c261a5c.
+- architectury `onBreak` (vanilla-order locals capture) and apoli-legacy `modifyEffectiveTool` (@ModifyVariable
+  ordinal 1) in ServerPlayerGameMode.destroyBlock: NeoForge's body keeps its BreakBlockEvent in a local and
+  replaces hasCorrectToolForDrops with canHarvestBlock, stored before the removal. FabricBlockBreakMixinAdapter
+  wraps onBreak to capture the merged frame and moves the modifier to ordinal 0, only when the merged body proves
+  the values (read from level.getBlockState/getBlockEntity of the position; stored straight from canHarvestBlock;
+  vanilla's call gone). Vanilla's own body is left alone; both guards are mutation-checked. Apoli's
+  `actionOnBlockBreak` reads the two booleans by @Local ordinal and gets them swapped on the merged body; it only
+  ANDs them, so it is left alone. Commit 459a5c0.
+- NeoForge's own `neoforge.mixins.json` (accessors on BlockEntityType.validBlocks and
+  MappedRegistry.registrationInfos) was never registered: runtime jars do not go through mod discovery. NeoForge
+  itself then threw ClassCastException in BlockEntityTypeAddBlocksEvent for every mod using it (tofucraft), and
+  its biome/structure modifier re-sync would have too. The runtime jars' declared configs now join the
+  Forge-family list. Commit 6b957ba.
+- Not Forbric: tofucraft's loot tables name `tofucraft:soymilk_cocoa` and similar, but the mod registers
+  `soymilk_cocoa_bottle`; those two tables fail to parse on any loader.
+- The popular-pack server after all of the above: Done, 120 s of ticking, clean stop, 0 confirmed required losses;
+  the ClassCastException lines went from 4 to 0. Kernel test 2066, zero failures or skips.
+- Regression sweeps (candidate staged root, `gates-all.sh -j 2 --mem-budget 6000 --skip gate-m34-soak.sh`): after
+  the first four fixes 40/41 GREEN, M37 RED only because its negative control still expected the sleep case to
+  fail with the entity anchors off (fixed in 88dff5a, M37 then GREEN alone); after 6b957ba all 41 GREEN.
+- Adversarial review of the six commits (6 reviewers, 2 skeptics each, read-only): 14 findings, 3 survived, all
+  stale descriptions (M37's README, the mixin service's note on runtime configs), corrected in 62feca7. The census
+  behind the R3 finding: across 2,361 (popular) and 2,901 (97-pack) mixins, only fabric-entity-events'
+  ServerPlayerMixin (3 handlers) and apoli's preventAvianSleep get a new plan, all into
+  `lambda$startSleepInBed$0`, the lambda the native method actually calls.
+
+### Open gaps the review found (older than this round, not yet fixed)
+
+- NeoForge's coremods never run on the merged base (`net.neoforged.neoforge-coremods`, ClassProcessorProvider):
+  - FlowerPotBlock: all three constructors store null in `potted` and NeoForge rewrites every read to
+    `getPotted()`; without it `isEmpty()` is never true and `useWithoutItem`/`getCloneItemStack` build an ItemStack
+    from null. The merged `useItemOn` is MinecraftForge's body, reading a `fullPots` map nothing fills and casting
+    its default (a Holder) to Supplier. Found in bytecode, not yet reproduced in a running game.
+  - Biome `climateSettings`/`specialEffects` and Structure `settings` are read directly, so NeoForge biome and
+    structure modifiers that change them have no effect.
+  - The `finalize_spawn_targets` redirects (Mob.finalizeSpawn → EventHooks.finalizeMobSpawn in 26 classes) are
+    missing, so FinalizeSpawn is posted only from spawners; DeadEventAudit still reports it as repaired.
+- fabric-api's PlayerBlockBreakEvents.AFTER (`onBlockBroken`, anchored on Block.destroy) finds nothing in the merged
+  destroyBlock, where NeoForge moved that call into its own removeBlock; reported as SUSPECTED, no pack mod
+  affected.
+- A MinecraftForge `LootPool.Builder.when(ICondition)` is dropped by the merged builder, and a pool-level
+  `forge:condition` is decoded but never evaluated; no pack mod uses either.
