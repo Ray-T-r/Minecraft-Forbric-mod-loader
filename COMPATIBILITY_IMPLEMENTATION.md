@@ -676,7 +676,7 @@ confirmed, and ran acceptance on one merged candidate.
   declares contains_renderer in [modproperties] but ships no FRAPI renderer; since 8a9df2c (on main) that
   declaration made Indigo stand down with nobody to take the slot. The declaration is now forwarded only from a
   build that directly calls Renderer.register / RendererManager.registerRenderer. The next control logged
-  "[Indigo] Registering Indigo renderer!" and the slot held IndigoRenderer. main still carries the regression.
+  "[Indigo] Registering Indigo renderer!" and the slot held IndigoRenderer. (Merged into main with this branch.)
 
 ### Merge and unit results
 
