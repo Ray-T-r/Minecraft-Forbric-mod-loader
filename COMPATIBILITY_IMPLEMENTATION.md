@@ -735,3 +735,42 @@ confirmed, and ran acceptance on one merged candidate.
   15 (980 cache entries removed); the 4 left are UNREACHABLE once mod-owned edges are cut (three through EMF's
   Mixin-added HumanoidArmorLayer.humanoidRenderState and TRansition's EntityRenderState.transitionEntity, one
   through Xaero's ServerConfigManager.server).
+
+## Energy interop (claude/energy-interop, 2026-09-24)
+
+- Bridged: energy stored in placed block entities, in all six directed pairs of Team Reborn Energy 5.0.0
+  (`EnergyStorage.SIDED`, the Fabric energy API; Fabric API has none), NeoForge 26.2.0.88 (`Capabilities.Energy.BLOCK`,
+  `EnergyHandler`) and MinecraftForge 26.2-65.0.1 (`ForgeCapabilities.ENERGY`, `IEnergyStorage`). Item energy
+  (batteries in inventories, `EnergyStorage.ITEM`, `Capabilities.Energy.ITEM`) is not bridged. The same seams,
+  endpoints, owner-first precedence, face/null passing, recursion guard and invalidation (replacement, capability
+  invalidation, chunk unload, Forge LazyOptional) as items and fluids; no new transformer.
+- Units: 1 FE = 1 E. Forge and NeoForge are int, Reborn is long: a long request is clamped to Integer.MAX_VALUE before
+  anything moves, the int side reports what it moved, and the rest stays in the source. Int reads of a long amount
+  saturate. Provider answers outside [0, request] are rejected before the nested scope commits.
+- Transactions: Reborn <-> NeoForge through PairedTransactions (real nested scopes of both engines, finals after both
+  roots). A Forge consumer gets simulate = aborted operation, execute = commit, inside any open scope. A Forge store is
+  written transactionally only if it is Forge's `EnergyStorage` whose final definition carries the
+  ForgeTransferShapeAudit certificate (whole-class fingerprint `311f4f17...`), or a subclass declaring none of the six
+  IEnergyStorage methods; a per-thread journal snapshots the `energy` field at every depth and dirties the block entity
+  once per root commit. Any other Forge store gets no write view and one FORGE_HANDLER_NOT_ROLLBACK_SAFE finding per
+  class; no player choice enables it. A non-transactional write to a store while a transaction holding it is open is
+  undone if that transaction aborts, as for items and fluids.
+- Reborn is optional. Only RebornEnergyBridge/RebornEnergyAdapters name it; the boot seam detects it as a resource and
+  requires and installs that half only when it is present (a missing half is a non-necessary finding). Without Reborn,
+  Forge <-> NeoForge energy works and no Reborn class is loaded. The Reborn half links Reborn's API before exposing
+  anything, so a failed install leaves Forge/NeoForge energy unchanged. Energy follows `-Dforbric.transferBridge` and,
+  like the whole transfer component, is active only when Fabric's transfer API and NeoForge's transfer API are present.
+- Build: the game side compiles against `energy-5.0.0.jar` (`-Pforbric.rebornEnergy`, default
+  `forbric-kernel/run/energy-api/energy-5.0.0.jar` beside the staged tree, SHA-256 `889afc43...`); absent, the build
+  fails naming it. It is not bundled (the runtime jar check refuses `team/reborn/` entries).
+- Tests: kernel `test` 2,018 (was 2,009) and `transferTest` 57 (was 42), zero failures, errors or skips; the 15 energy
+  engine tests use the real Fabric/NeoForge engines, Reborn's SimpleEnergyStorage, NeoForge's SimpleEnergyHandler and
+  Forge's certified EnergyStorage, including a Reborn-free loader that records any Reborn class request. 13 transfer,
+  7 unit and 2 game-level mutations each turned their tests red: `forbric-kernel/build/verification/energy-mutations/`.
+- Game: new `gate-m40-energy.sh` GREEN on the candidate (prepare, reload, noreborn, red bridge-off), evidence
+  `forbric-kernel/build/verification/m40-energy/`, driver `forbric-kernel/build/m40-driver.log`; M33 (now also
+  requiring an energy-silent item/fluid pack) and M39 (57/57 engine tests, 14/14 carrier scenarios) GREEN on the same
+  code, drivers `forbric-kernel/build/m33-driver.log` and `forbric-kernel/build/m39-driver.log`.
+- Limits: the Fabric side is Team Reborn Energy only; other Fabric energy APIs are not bridged. Directional abilities
+  (canReceive/supportsInsertion) are passed on where the store has them; NeoForge's EnergyHandler has none, so its
+  stores answer NeoForge's own rule (capacity > 0). No mixed real-mod energy pack was run; the gates use fixture mods.

@@ -270,6 +270,23 @@ game canary. It
 requires all thirteen Forge snapshot/alias/metadata/facade cases and a real full watchdog thread dump, including
 the final-defined native-helper equivalence finding. Inputs are hash-bound and its server remains strict.
 
+`gate-m40-energy.sh` checks block-entity energy between Team Reborn Energy (the Fabric energy API; Fabric API
+has none), NeoForge's `Capabilities.Energy.BLOCK` and MinecraftForge's `ForgeCapabilities.ENERGY`, through those
+public lookups only. It needs `energy-5.0.0.jar` (team_reborn_energy, MIT): `M40_REBORN_ENERGY`, default
+`forbric-kernel/run/energy-api/energy-5.0.0.jar` beside the staged tree; the gate fails if it is missing and copies
+it into its own world's mods. The canaries are built with `TRANSFER_CANARY_ENERGY=1` into `build/energy-canary/`,
+never into `run/canary/`. Four hash-bound phases in the nonce-owned `run/server-energy-m40`: `prepare` (all three
+ecosystems: 12 routes, 60,000 E conserved, faces, native precedence, a refused custom Forge store reported once, store
+limits, nested rollback, replacement, one dirty mark per root commit, long/int clamping), `reload` (amounts after a
+real save), `noreborn` (the same pack without Reborn: 4 Forge <-> NeoForge routes, and the JVM's class-load log must
+show no Reborn class) and `negative` (bridge off, must fail at a foreign lookup). 1 FE = 1 E. Item energy is not
+bridged. Evidence: `build/verification/m40-energy/`.
+
+The kernel game side compiles the energy bridge against the same jar (`-Pforbric.rebornEnergy=<jar>`, same default).
+A build without it fails and names the file, as for `-Pforbric.fabricApi`; the runtime jar is checked to contain the
+energy classes and to bundle no `team/reborn/` entry. M33 also requires that its item/fluid-only pack logs no energy
+bridge activity.
+
 `gate-m34-soak.sh` builds once, then `soak-run.py` freezes the exact boot/runtime/game jars, dependencies and
 mod pack into a nonce-owned copy of the test world. Default acceptance requires at least 7,200 seconds of
 occupied, advancing simulation, three normal same-JVM world sessions, all three dimensions and six chunks
