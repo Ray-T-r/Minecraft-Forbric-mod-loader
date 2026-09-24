@@ -705,7 +705,7 @@ confirmed, and ran acceptance on one merged candidate.
   archived full-game export yet.
 - Every launch hashes each mod jar for the candidate plan; large packs pay that time at boot.
 - The spawner is not composed by the merger; it stays a runtime repair with a structural stand-down.
-- main still carries the renderer-slot regression fixed here (8a9df2c forwards Sodium NeoForge's declaration).
+- The renderer-slot regression that 8a9df2c introduced on main is fixed there too since the merge (ed1211d).
 
 ### Final acceptance on the merged candidate
 
