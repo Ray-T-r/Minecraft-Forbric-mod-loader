@@ -302,6 +302,7 @@ public final class ForbricMixinService
 		FabricEnchantmentMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricServerLanguageMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricMiningMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		FabricBlockBreakMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricClientMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		FabricSoundMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FinalMixinApplications.remember(node);
