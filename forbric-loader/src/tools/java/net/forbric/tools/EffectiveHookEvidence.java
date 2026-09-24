@@ -12,8 +12,10 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.Set;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -94,8 +96,14 @@ final class EffectiveHookEvidence {
 		for (var method : methods.entrySet()) {
 			if (!method.getKey().startsWith(KERNEL) || helpers.contains(method.getKey())) continue;
 			if (method.getValue().instructions == null) continue;
-			for (var instruction : method.getValue().instructions)
+			for (var instruction : method.getValue().instructions) {
 				if (instruction instanceof MethodInsnNode call) kernelInvoked.add(call.owner + "#" + call.name + call.desc);
+				// A forward written as a method reference (ForgeEventFactory::onPreClientTick) names the hook only
+				// as the lambda's implementation handle.
+				else if (instruction instanceof InvokeDynamicInsnNode lambda)
+					for (Object argument : lambda.bsmArgs) if (argument instanceof Handle handle)
+						kernelInvoked.add(handle.getOwner() + "#" + handle.getName() + handle.getDesc());
+			}
 		}
 	}
 

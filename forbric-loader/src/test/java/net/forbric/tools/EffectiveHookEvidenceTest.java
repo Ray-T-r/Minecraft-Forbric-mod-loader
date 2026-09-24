@@ -94,6 +94,23 @@ class EffectiveHookEvidenceTest {
   assertEquals(EffectiveHookEvidence.State.DIRECT_RESTORED,e.state("game/Other#tick()V",HOOK+"#tick()V"));
   assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK,e.state("game/Teleport#tick()V",HOOK+"#other()V"));
  }
+ /** The same forward written as a method reference (NeoForge bus listener = ForgeEventFactory::hook). */
+ @Test void aKernelForwardWrittenAsAMethodReferenceIsABridge() throws Exception {
+  manifest();put("game/Teleport",null,0);
+  assertEquals(EffectiveHookEvidence.State.OBSERVED_WITHOUT_HOOK,new EffectiveHookEvidence(root).state("game/Teleport#tick()V",HOOK+"#tick()V"));
+  ClassWriter w=new ClassWriter(0);String name="net/forbric/kernel/runtime/KernelGameClientTickEvents";
+  w.visit(Opcodes.V17,Opcodes.ACC_PUBLIC,name,null,"java/lang/Object",null);
+  var m=w.visitMethod(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC,"install","()Ljava/lang/Runnable;",null,null);m.visitCode();
+  m.visitInvokeDynamicInsn("run","()Ljava/lang/Runnable;",
+    new Handle(Opcodes.H_INVOKESTATIC,"java/lang/invoke/LambdaMetafactory","metafactory",
+      "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",false),
+    Type.getType("()V"),new Handle(Opcodes.H_INVOKESTATIC,HOOK,"tick","()V",false),Type.getType("()V"));
+  m.visitInsn(Opcodes.ARETURN);m.visitMaxs(1,0);m.visitEnd();w.visitEnd();byte[] bytes=w.toByteArray();
+  String hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+  Path p=root.resolve("blobs").resolve(hash+".class");Files.createDirectories(p.getParent());Files.write(p,bytes);
+  Files.writeString(root.resolve("definitions.tsv"),name+"\t"+hash+"\n",StandardOpenOption.APPEND);
+  assertEquals(EffectiveHookEvidence.State.VIA_KERNEL_BRIDGE,new EffectiveHookEvidence(root).state("game/Teleport#tick()V",HOOK+"#tick()V"));
+ }
  /** A census row carries the source's occurrence count: one surviving call of two is not a restoration. */
  @Test void aPartialLossIsNotRestoredByTheCallTheMergeKept() throws Exception {
   manifest();put("game/Partial",HOOK,Opcodes.INVOKESTATIC);
