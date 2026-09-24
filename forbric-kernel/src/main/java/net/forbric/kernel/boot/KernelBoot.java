@@ -269,7 +269,13 @@ public final class KernelBoot {
 		// (inside Mob Champions) is constructed — so leaving their configs out would be arbitrary. Pure libraries
 		// declare none and cost one manifest read.
 		List<KernelForgeFamilyMixins.ForgeMixinConfig> forgeMixinDecls = new ArrayList<>(forgeFamily.mixinConfigs());
-		forgeMixinDecls.addAll(discoverNestedForgeMixinConfigs(nested));
+		forgeMixinDecls.addAll(discoverForgeMixinConfigs(nested, "nested mod jar"));
+		// And the runtimes' own. NeoForge's jar declares neoforge.mixins.json — two accessors its own code casts to
+		// (BlockEntityTypeAddBlocksEvent on BlockEntityType.validBlocks, the biome/structure modifier re-sync on
+		// MappedRegistry.registrationInfos) — and the runtime jars never went through discovery, so it was never
+		// registered: every mod adding blocks to a block entity type got a ClassCastException from NeoForge itself
+		// (tofucraft on the popular pack). The genuine loader registers it like any mod's.
+		forgeMixinDecls.addAll(discoverForgeMixinConfigs(runtimeJars, "runtime jar"));
 
 		// Fabric mods (+ extracted JiJ children). Also Mojmap on this game version. Creates the FabricLoader.
 		List<Path> fabricJars = KernelFabricEcosystem.build(fabricScan, side.envType, gameDir, gameVersion,
@@ -1238,16 +1244,16 @@ public final class KernelBoot {
 	}
 
 	/** The mixin configs declared by JarJar-extracted nested jars. Same pass, applied to the children. */
-	private static List<KernelForgeFamilyMixins.ForgeMixinConfig> discoverNestedForgeMixinConfigs(List<Path> nested) {
+	static List<KernelForgeFamilyMixins.ForgeMixinConfig> discoverForgeMixinConfigs(List<Path> jars, String what) {
 		List<KernelForgeFamilyMixins.ForgeMixinConfig> configs = new ArrayList<>();
-		if (nested.isEmpty()) return configs;
+		if (jars.isEmpty()) return configs;
 		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
 		List<Path> ignored = new ArrayList<>();
-		for (Path jar : nested) {
+		for (Path jar : jars) {
 			try {
 				collectForgeFamily(discoverer, jar, ignored, configs);
 			} catch (IOException e) {
-				ForbricLog.warn("could not inspect nested mod jar %s: %s", jar.getFileName(), e.getMessage());
+				ForbricLog.warn("could not inspect %s %s: %s", what, jar.getFileName(), e.getMessage());
 			}
 		}
 		return configs;
