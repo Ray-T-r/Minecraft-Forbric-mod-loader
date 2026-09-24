@@ -145,10 +145,17 @@ public final class FinalMixinApplications {
     if(replacement!=null)state=Outcome.EQUIVALENT;
     observed.put(binary+"#"+injector.symbol(),state);
     String id=id(plan,injector,binary),mod=owner(plan.config().name());
+    // A mixin the kernel does the whole job of: its injector's miss is that job moving, not a loss, once the
+    // replacement is seen; until then it is recorded as usual and resolved when SupersededMixins proves it.
+    String superseded=state==Outcome.MISSING?SupersededMixins.provedReplacement(mixin):null;
+    if(state==Outcome.MISSING&&superseded==null&&SupersededMixins.replacementFor(mixin)!=null)SupersededMixins.awaitProof(plan.config().name(),mixin);
     // Natively an injector below its require/defaultRequire throws InjectionError, an Error no config-level
     // `required:false` catches: the author declared that injection mandatory whatever the config says.
     boolean required=plan.config().required()||injector.minimum()>=1;
-    if(pending)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
+    if(superseded!=null)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
+      "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.RESOLVED,
+      plan.config().required()||injector.minimum()>=1,superseded,List.of("target="+binary,"handler="+injector.symbol(),superseded)));
+    else if(pending)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.SUSPECTED,
       required,"The audited watchdog report uses a native replacement whose final renderer has not been defined yet",
       List.of("target="+binary,"pending final helper="+WatchdogDumpEquivalence.HELPER)));

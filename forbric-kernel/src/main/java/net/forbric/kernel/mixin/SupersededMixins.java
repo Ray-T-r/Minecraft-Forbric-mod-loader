@@ -114,6 +114,15 @@ public final class SupersededMixins {
 		return words;
 	}
 
+	/**
+	 * What replaced {@code mixinClass}, with where it was seen, once the replacement has been proved; null before
+	 * that, and whenever a switch turns the entry off.
+	 */
+	static String provedReplacement(String mixinClass) {
+		String words = replacementFor(mixinClass);
+		return words == null || !PROVED.contains(mixinClass) ? null : words + "; seen in the defined " + SUPERSEDED.get(mixinClass).witnessClass();
+	}
+
 	/** A recorded failure of a superseded mixin: resolved now if its replacement is proved, else when it is. */
 	static void awaitProof(String config, String mixinClass) {
 		if (PROVED.contains(mixinClass)) {
@@ -164,6 +173,17 @@ public final class SupersededMixins {
 		if (words == null) return;
 		String proof = words + "; seen in the defined " + SUPERSEDED.get(mixinClass).witnessClass();
 		MixinCompatibility.resolve(config, mixinClass, proof);
+		// The replacement does the WHOLE mixin's job, so each of its injectors' own "no attachment" verdicts is
+		// resolved with it. Left standing, one of them stopped a strict dedicated server on the popular pack while
+		// the mixin-level row beside it already said the job was done (which of the two comes first follows the
+		// order the target and the witness class happen to be defined in).
+		String injectors = ":" + mixinClass + "#";
+		for (net.forbric.api.CompatibilityFinding finding : net.forbric.api.CompatibilityFindings.all()) {
+			if (!finding.id().startsWith("mixin-injector:") || !finding.id().contains(injectors)) continue;
+			if (config != null && !finding.id().startsWith("mixin-injector:" + config + ":")) continue;
+			if (finding.confidence() == net.forbric.api.CompatibilityFinding.Confidence.RESOLVED) continue;
+			net.forbric.api.CompatibilityFindings.resolve(finding.id(), finding.modId(), proof);
+		}
 		// The line gate-m9 reads. The handler's line only says the failure is pending; this one says the repair
 		// was seen, and it is the only place that knows.
 		ForbricLog.info("[Forbric/Mixin] %s:%s is superseded — %s, so its mod is not marked",
