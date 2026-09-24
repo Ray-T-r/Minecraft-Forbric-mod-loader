@@ -351,6 +351,8 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelFuelValues", new Entry(Origin.COMPILED, List.of()));
 		// Same shape as the one above: reached from a redirected instruction in BaseSpawner, not from boot code.
 		CLASSES.put("net.forbric.kernel.runtime.KernelSpawnerFinalize", new Entry(Origin.COMPILED, List.of()));
+		// Called from the position check SpawnPositionCallsInjector writes into BaseSpawner.serverTick.
+		CLASSES.put("net.forbric.kernel.runtime.KernelSpawnPosition", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelPackFinders", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoDataMapWatch", new Entry(Origin.COMPILED, List.of(
 				new Call("installDataMapWatch", void.class, Object.class))));

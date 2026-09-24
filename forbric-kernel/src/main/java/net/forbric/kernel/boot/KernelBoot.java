@@ -527,6 +527,15 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PortalSpawnInjector());
 		// After merged-base compatibility: upgrade its owner-only redirect with the proven spawn input.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.SpawnerFinalizeInjector());
+		// After it, so the finalize repair reads NeoForge's serverTick shape: vanilla's spawn-position calls go back
+		// into the spawner, natural and summon paths, for Fabric mixins that redirect them (architectury).
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.SpawnPositionCallsInjector(path -> {
+			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
+				return in == null ? null : in.readAllBytes();
+			} catch (java.io.IOException unreadable) {
+				return null;
+			}
+		}));
 		// The only performance measurement in the tree. Beside the smoke tick because it is the same shape:
 		// one static call at the head of a tick, no mixin config, nothing new in the list a gate asserts on.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ServerTickSamplerInjector());
