@@ -947,7 +947,8 @@ exposed four more walls behind them; all seven are closed and the server now sta
 
 ### Open gaps the review found (older than this round, not yet fixed)
 
-- NeoForge's coremods never run on the merged base (`net.neoforged.neoforge-coremods`, ClassProcessorProvider):
+- NeoForge's coremods never run on the merged base (`net.neoforged.neoforge-coremods`, ClassProcessorProvider)
+  (closed 2026-09-25, see "NeoForge's coremods on the merged base"):
   - FlowerPotBlock: all three constructors store null in `potted` and NeoForge rewrites every read to
     `getPotted()`; without it `isEmpty()` is never true and `useWithoutItem`/`getCloneItemStack` build an ItemStack
     from null. The merged `useItemOn` is MinecraftForge's body, reading a `fullPots` map nothing fills and casting
@@ -961,3 +962,53 @@ exposed four more walls behind them; all seven are closed and the server now sta
   affected.
 - A MinecraftForge `LootPool.Builder.when(ICondition)` is dropped by the merged builder, and a pool-level
   `forge:condition` is decoded but never evaluated; no pack mod uses either.
+
+## NeoForge's coremods on the merged base (2026-09-25)
+
+NeoForge ships its coremods in a separate jar (`net.neoforged.neoforge-coremods`, a `ClassProcessorProvider`) and
+MinecraftForge ships the matching `FieldToMethodTransformer`/`MethodRedirector`; the kernel loaded neither, and the
+merged bodies are written for them. A probe mod on a bare server measured the result before any change: every flower
+pot threw an NPE on pick-block, planting, taking a plant out and clicking with another item (empty pots too);
+NeoForge's pot table had 0 entries; `LiquidBlock.getFluid()` threw for vanilla water and lava; `EntityType.spawn` and
+`/summon` posted 0 NeoForge and 0 MinecraftForge finalization events; NeoForge biome/structure modifiers ran but
+nothing read their result. (Buckets were fine: the static reading that predicted an ICCE there was wrong.)
+
+- NativeCoremodParity, after Mixin (where NeoForge runs its processors; installed in KernelMixinBootstrap, also when
+  Mixin does not start): NeoForge's field-to-getter rewrites for `FlowerPotBlock.potted`, `Biome.climateSettings`/
+  `specialEffects` and `Structure.settings` (owner+name+desc, getter-descriptor methods and constructors excluded, no
+  private check since the ACCESS phase may widen them), and the finalize redirect in NeoForge's 26 classes (pinned by
+  a test against NeoForge's and MinecraftForge's own target lists) to KernelFinalizeSpawn: NeoForge's event, then
+  MinecraftForge's with what NeoForge left, one `finalizeSpawn` with what MinecraftForge left; either cancel skips
+  it; a NeoForge veto survives a MinecraftForge listener clearing the shared flag. TrialSpawner's NeoForge spawner
+  hook gets a two-family twin that posts MinecraftForge's event only where vanilla initializes.
+- Before Mixin: FlowerPotRepairInjector (vanilla constructor stores its plant and fills `POTTED_BY_CONTENT`; the
+  MinecraftForge lookup in `useItemOn` asks KernelFlowerPots — explicit `addPlant` entries, then NeoForge's table;
+  `addPlant` records again) and KernelFlowerPots.rebuildTable at both registration-window closes (NeoForge's bake
+  callback never runs on the merged block registry; 80 pots on the popular pack); LiquidBlockFluidInjector (field
+  first, then supplier; a merge repair, not a coremod); BiomeInfoRebaseInjector (NeoForge's pass starts from the
+  biome's current climate/effects, so a fabric-biome-api weather change survives the view) and BiomeLateWriteInjector
+  (a climate/effects replaced after the pass wins, as on Fabric — lithostitched-fabric's replace_* do that).
+- Switches: `-Dforbric.coremodParity=off` (everything above), and per part `forbric.flowerPotRepair`,
+  `biomeModifiedView`, `structureModifiedView`, `finalizeSpawnRedirect`, `liquidBlockFluid`; `forbric.biomeRebase`
+  is a diagnostic control for M42 only.
+- Gate M42 (canary/coremod-parity, 22 cases): vanilla/NeoForge/addPlant pots and pick-block, NeoForge's getFullPot,
+  the liquid getter, a counting probe mob through EntityType.spawn and /summon (one finalization with MinecraftForge's
+  data), both cancels, the veto, a NeoForge biome modifier on the server and through NETWORK_CODEC, a NeoForge
+  structure modifier, a Fabric weather change and a post-pass climate replacement. Positive 22/22 under STRICT; with
+  the master switch off every repaired case fails and only the two raw Fabric climates hold; with the rebase off only
+  those two fail. KernelFinalizeSpawnTest runs the helper against NeoForge's real spawner hook (7 cases; two
+  mutations caught). Kernel test 2085.
+- Adversarial review (4 reviewers, 2 skeptics each): 16 findings, 6 survived — no exact-once proof and the gate
+  calling the trial spawner covered (fixed: fixture test + counting mob), a chicken-jockey flake in M42 (fixed),
+  post-pass biome writers now dropped (fixed: BiomeLateWriteInjector), and the master switch not covering the liquid
+  repair (fixed). Commits cdd7374, 750edc8, aaf840d, ac276c6.
+- Known limits: a biome value mutated in place after the pass is not seen (the view holds a copy); MinecraftForge's
+  own FieldToMethod targets `MobEffectInstance.effect` and `BucketItem.content` are not ported (no pack effect
+  measured; buckets work); guest mixins aimed at `ForgeEventFactory.onFinalizeSpawn` (a pre-Mixin anchor that only
+  exists natively on MinecraftForge) find nothing; the trial spawner and natural/structure spawns are proven by tests,
+  not in a running world; no rendered client was run for this round.
+- Regression sweep (`gates-all.sh -j 2 --mem-budget 6000 --skip gate-m34-soak.sh`, candidate staged root, HEAD
+  ac276c6): 31 GREEN in the sweep; the other 11 went red while another project's batch jobs held the machine at a
+  load average near 30 on 10 cores (servers timed out mid-boot, no error in their logs) and are GREEN rerun one at a
+  time (M3 on a second run once the load fell). An earlier sweep's reds were a stopped sweep's orphaned M24 server
+  still holding port 25710.
