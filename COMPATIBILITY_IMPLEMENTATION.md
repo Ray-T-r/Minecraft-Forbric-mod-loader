@@ -792,5 +792,7 @@ confirmed, and ran acceptance on one merged candidate.
 - Limits: the Fabric side is Team Reborn Energy only; other Fabric energy APIs are not bridged. Directional abilities
   (canReceive/supportsInsertion) are passed on where the store has them; NeoForge's EnergyHandler has none, so its
   stores answer NeoForge's own rule (capacity > 0). No mixed real-mod energy pack was run; the gates use fixture mods.
-  The Reborn jar is not fetched by any script. The item and fluid Forge facades (`ForgeLegacyFacades`) still let an
-  endpoint invalidated mid-operation throw into a Forge caller; only the energy facade was changed.
+  The Reborn jar is not fetched by any script (it goes in forbric-kernel/run/energy-api/ or -Pforbric.rebornEnergy).
+- The item and fluid Forge facades (`ForgeLegacyFacades`) now treat an endpoint invalidated mid-operation like the
+  energy facade does (nothing moved, ENDPOINT_INVALIDATED, rollback required); M39 proves it on a real carrier
+  (15/15) and is RED without the change.
