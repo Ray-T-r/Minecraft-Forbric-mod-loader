@@ -40,6 +40,7 @@ public final class ForbricEnergyFabric implements ModInitializer {
 			team.reborn.energy.api.EnergyStorage.SIDED.registerForBlockEntity((cell, face) -> { cell.face(face); return EnergyMachines.permits(face) ? cell.fabricEnergy : null; }, type);
 		}
 		EnergyMachines.FABRIC_CONSUMER.set(new FabricConsumer());
+		EnergyMachines.FABRIC_ADDON.set(new Addon());
 		System.out.println("[M40Energy] REGISTERED fabric " + EnergyMachines.FABRIC);
 	}
 
@@ -71,6 +72,25 @@ public final class ForbricEnergyFabric implements ModInitializer {
 		@Override public void setChanged() { changes++; super.setChanged(); }
 		@Override protected void saveAdditional(ValueOutput output) { super.saveAdditional(output); output.putLong("m40_energy", fabricEnergy.amount); }
 		@Override protected void loadAdditional(ValueInput input) { super.loadAdditional(input); fabricEnergy.amount = input.getLongOr("m40_energy", 0); loadedFromDisk = true; }
+	}
+
+	/** A Fabric energy addon: Reborn's SIDED provider registered explicitly for another mod's block. */
+	static final class Addon implements EnergyMachines.FabricAddon {
+		private final java.util.Map<BlockPos, SimpleEnergyStorage> stores = new java.util.concurrent.ConcurrentHashMap<>();
+		private volatile Direction lastFace = Direction.UP;
+		public void attach(Block block) {
+			team.reborn.energy.api.EnergyStorage.SIDED.registerForBlocks((level, pos, state, entity, face) -> {
+				lastFace = face;
+				return EnergyMachines.permits(face) ? (SimpleEnergyStorage) store(pos) : null;
+			}, block);
+		}
+		public Object store(BlockPos pos) {
+			return stores.computeIfAbsent(pos.immutable(), key -> new SimpleEnergyStorage(EnergyMachines.Spec.CELL.capacity(),
+					EnergyMachines.Spec.CELL.maxInsert(), EnergyMachines.Spec.CELL.maxExtract()));
+		}
+		public long energy(BlockPos pos) { return ((SimpleEnergyStorage) store(pos)).amount; }
+		public Direction lastFace() { return lastFace; }
+		public void face(Direction face) { lastFace = face; }
 	}
 
 	/** Fabric's public energy API: EnergyStorage.SIDED and Reborn's transactions. */

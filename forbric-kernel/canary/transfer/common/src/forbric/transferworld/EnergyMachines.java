@@ -49,6 +49,12 @@ public final class EnergyMachines {
 	public static final BlockPos BATTERY = new BlockPos(28, 80, 48);
 	public static final BlockPos INVALIDATE_FORGE = new BlockPos(30, 80, 48), INVALIDATE_NEO = new BlockPos(32, 80, 48);
 	public static final BlockPos RESERVOIR = new BlockPos(34, 80, 48), SINK = new BlockPos(36, 80, 48);
+	/** A Fabric (Reborn) cell whose cached NeoForge and Forge views must stop writing once it is replaced (Reborn phases). */
+	public static final BlockPos INVALIDATE_FABRIC = new BlockPos(38, 80, 48);
+	/** A NeoForge-owned block with no energy of its own, on which a Fabric addon registers a Reborn store (Reborn phases). */
+	public static final BlockPos EXPLICIT = new BlockPos(40, 80, 48);
+	/** A Forge battery loaded with more energy than its capacity, as Forge's own deserializeNBT allows. */
+	public static final BlockPos OVERFULL = new BlockPos(42, 80, 48);
 	/** Its own chunk: nothing else dirties it. */
 	public static final BlockPos DIRTY = new BlockPos(112, 80, 48);
 
@@ -174,4 +180,21 @@ public final class EnergyMachines {
 	}
 	/** Set by forbricenergyfabric when Team Reborn Energy is installed. */
 	public static final AtomicReference<Consumer> FABRIC_CONSUMER = new AtomicReference<>();
+
+	/**
+	 * A Fabric energy addon, as such addons are written: it registers Reborn's EnergyStorage.SIDED for exactly one
+	 * block of ANOTHER mod (so Reborn's lookup has an explicit provider for a block Fabric does not own) and keeps one
+	 * store per position. Supplied by forbricenergyfabric; its stores live in memory only.
+	 */
+	public interface FabricAddon {
+		/** Registers the addon's provider for {@code block} through Reborn's public API (NORTH and null only). */
+		void attach(Block block);
+		/** The addon's own store at {@code pos}, created on first use. */
+		Object store(BlockPos pos);
+		long energy(BlockPos pos);
+		/** The face the provider was last asked with; {@link #face} resets it. */
+		Direction lastFace();
+		void face(Direction face);
+	}
+	public static final AtomicReference<FabricAddon> FABRIC_ADDON = new AtomicReference<>();
 }

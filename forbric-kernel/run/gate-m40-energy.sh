@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # M40: block energy between Team Reborn Energy (Fabric), NeoForge and MinecraftForge through the PUBLIC lookups only:
 # six directed routes on NORTH and null, face refusal, native precedence, a refused custom Forge store, store limits,
-# nested rollback on both engines, replacement invalidation, dirty-once per root commit, long/int clamping, and
-# save/reload of the amounts; then the same pack WITHOUT Team Reborn Energy (Forge <-> NeoForge only, and no Reborn
-# class ever loaded); then a bridge-off negative control that must go RED.
+# nested rollback on both engines, replacement invalidation (a Reborn cell's views included), a Fabric addon's explicit
+# Reborn provider on a NeoForge block, a Forge battery loaded above its capacity (no crash, no loss, before and after a
+# restart), dirty-once per root commit, long/int clamping, and save/reload of the amounts; then the same pack WITHOUT
+# Team Reborn Energy (Forge <-> NeoForge only, and no Reborn class ever loaded); then a bridge-off negative control
+# that must go RED.
 # GATE-PARALLEL: rundirs=server-energy-m40 mem=2000
 set -uo pipefail
 GATE_PORT="${GATE_PORT:-25594}"
@@ -167,6 +169,10 @@ check "store limits are the stores' own" "PASS capacity, maxInsert and maxExtrac
 check "all twelve routes ran" "M40Energy\] PASS route " "$LOG" 12
 check "nested rollback on both engines" "PASS nested commit then root abort restored every cell" "$LOG"
 check "replacement invalidated every cached view" "PASS cached foreign energy views and Forge LazyOptional cannot write replaced" "$LOG"
+check "cached views of a replaced Reborn cell moved nothing, fresh ones reached the new cell" "PASS cached NeoForge and Forge views of a replaced Reborn cell move nothing" "$LOG"
+check "a Fabric addon's explicit provider reached NeoForge and Forge consumers" "PASS a Fabric addon's explicit Reborn provider on a NeoForge block" "$LOG"
+check "an overfull Forge battery moved nothing on bridged insertion" "PASS an overfull Forge battery \(1500/1000\) moves nothing" "$LOG"
+check_absent "no energy provider answer was rejected" "Energy provider returned an invalid amount" "$LOG"
 check "one root commit dirtied the block entity once" "PASS clean chunk -> abort stays clean -> one root commit dirties it once" "$LOG"
 check "long amounts clamp to int without loss" "PASS long energy: int views saturate" "$LOG"
 
@@ -175,6 +181,7 @@ run_phase reload on
 assert_phase reload pass
 check_absent "reload probe emitted no failure marker" "M40Energy\] FAIL" "$RESULTS/reload-inputs.log"
 check "real deserialization was verified" "M40Energy\] PASS save/reload:" "$RESULTS/reload-inputs.log"
+check "the overfull Forge battery still moved nothing after a restart and drained into its bounds" "PASS an overfull Forge battery reloaded at 1500/1000" "$RESULTS/reload-inputs.log"
 
 step "a pack without Team Reborn Energy: Forge and NeoForge still bridge, no Reborn class is loaded"
 fresh_world no
@@ -183,6 +190,7 @@ assert_phase noreborn pass
 LOG="$RESULTS/noreborn-inputs.log"; CLASSES="$RESULTS/noreborn-classes.log"
 check_absent "the Reborn-free probe emitted no failure marker" "M40Energy\] FAIL" "$LOG"
 check "Forge <-> NeoForge routes ran on both faces" "M40Energy\] PASS route " "$LOG" 4
+check "an overfull Forge battery moved nothing on bridged insertion without Reborn" "PASS an overfull Forge battery \(1500/1000\) moves nothing" "$LOG"
 check_absent "the kernel did not try to connect Team Reborn Energy" "Team Reborn Energy|transfer-energy" "$LOG"
 check "the energy path really ran in this JVM" "net\.forbric\.kernel\.runtime\.transfer\.ForgeEnergyAdapters " "$CLASSES"
 check_absent "no Team Reborn Energy class and no Reborn half of the bridge was loaded" "team\.reborn\.|RebornEnergy" "$CLASSES"

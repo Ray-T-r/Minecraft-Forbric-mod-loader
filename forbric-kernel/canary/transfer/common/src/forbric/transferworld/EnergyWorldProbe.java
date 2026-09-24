@@ -117,6 +117,7 @@ public final class EnergyWorldProbe {
 				checkQueriesAndFaces(level, consumers, primaries);
 				checkRoutes(level, consumers, primaries);
 				checkPrimaryState(level, primaries);
+				checkOverfull(level, consumers, primaries, true);
 			} else {
 				for (var entry : primaries.entrySet()) place(level, entry.getValue(), entry.getKey(), "cell").seed(SEED);
 				checkQueriesAndFaces(level, consumers, primaries);
@@ -128,6 +129,8 @@ public final class EnergyWorldProbe {
 				checkPrimaryState(level, primaries);
 				checkInvalidation(level, consumers);
 				checkDirtyCommit(level, server, consumers);
+				checkExplicitFabric(level, consumers);
+				checkOverfull(level, consumers, primaries, false);
 				if (fabric != null) checkClamp(level, fabric);
 				server.saveEverything(false, true, true);
 				System.out.println("[M40Energy] PASS save: " + routes + " public-lookup routes committed");
@@ -275,7 +278,25 @@ public final class EnergyWorldProbe {
 		Cell neoCell = place(level, EnergyMachines.INVALIDATE_NEO, EnergyMachines.NEO, "cell");
 		LazyOptional<IEnergyStorage> optional = optional(level, EnergyMachines.INVALIDATE_NEO, Direction.NORTH);
 		IEnergyStorage facade = optional.resolve().orElseThrow();
-		for (BlockPos pos : List.of(EnergyMachines.INVALIDATE_FORGE, EnergyMachines.INVALIDATE_NEO)) level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+		// A Reborn cell's foreign views are the Reborn half's own (its live store), not the Forge/NeoForge ones above:
+		// NeoForge's cached handler and Forge's cached LazyOptional of it (Reborn phases only).
+		boolean reborn = EnergyMachines.FABRIC_CONSUMER.get() != null;
+		List<BlockPos> replaced = new ArrayList<>(List.of(EnergyMachines.INVALIDATE_FORGE, EnergyMachines.INVALIDATE_NEO));
+		Cell fabricCell = null;
+		List<Object[]> cachedFabric = new ArrayList<>();
+		LazyOptional<IEnergyStorage> fabricOptional = null;
+		if (reborn) {
+			fabricCell = place(level, EnergyMachines.INVALIDATE_FABRIC, EnergyMachines.FABRIC, "cell");
+			for (Consumer consumer : List.of(NEO_CONSUMER, FORGE_CONSUMER)) {
+				Object port = consumer.find(level, EnergyMachines.INVALIDATE_FABRIC, Direction.NORTH);
+				yes(port != null, "missing " + consumer.family() + " energy provider for the Fabric cell before replacement");
+				cachedFabric.add(new Object[] {consumer, port});
+			}
+			fabricOptional = optional(level, EnergyMachines.INVALIDATE_FABRIC, Direction.NORTH);
+			yes(fabricOptional.isPresent(), "missing Forge LazyOptional for the Fabric cell before replacement");
+			replaced.add(EnergyMachines.INVALIDATE_FABRIC);
+		}
+		for (BlockPos pos : replaced) level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
 		Cell forgeReplacement = place(level, EnergyMachines.INVALIDATE_FORGE, EnergyMachines.FORGE, "cell");
 		Cell neoReplacement = place(level, EnergyMachines.INVALIDATE_NEO, EnergyMachines.NEO, "cell");
 		yes(forgeReplacement != forgeCell && neoReplacement != neoCell && ((BlockEntity) forgeCell).isRemoved() && ((BlockEntity) neoCell).isRemoved(), "world did not replace the cells");
@@ -284,6 +305,85 @@ public final class EnergyWorldProbe {
 		equal(0, facade.receiveEnergy(10, false));
 		for (Cell cell : List.of(forgeCell, neoCell, forgeReplacement, neoReplacement)) equal(0, cell.energy());
 		System.out.println("[M40Energy] PASS cached foreign energy views and Forge LazyOptional cannot write replaced block entities");
+		if (reborn) {
+			Cell fabricReplacement = place(level, EnergyMachines.INVALIDATE_FABRIC, EnergyMachines.FABRIC, "cell");
+			yes(fabricReplacement != fabricCell && ((BlockEntity) fabricCell).isRemoved(), "world did not replace the Fabric cell");
+			for (Object[] entry : cachedFabric) equal(0, ((Consumer) entry[0]).insert(entry[1], 10, true));
+			yes(!fabricOptional.isPresent(), "the cached Forge LazyOptional of a Reborn cell survived removal");
+			equal(0, fabricCell.energy()); equal(0, fabricReplacement.energy());
+			// Asked again, each consumer reaches the new cell.
+			for (Consumer consumer : List.of(NEO_CONSUMER, FORGE_CONSUMER)) {
+				long before = fabricReplacement.energy();
+				equal(10, consumer.insert(consumer.find(level, EnergyMachines.INVALIDATE_FABRIC, Direction.NORTH), 10, true));
+				equal(before + 10, fabricReplacement.energy());
+			}
+			equal(0, fabricCell.energy());
+			System.out.println("[M40Energy] PASS cached NeoForge and Forge views of a replaced Reborn cell move nothing; asked again they reach the new cell");
+		}
+	}
+
+	/**
+	 * A Fabric energy addon registers Reborn's SIDED provider for a NeoForge mod's block that has no energy of its own.
+	 * That is Fabric's EXPLICIT provider for the block, the only Fabric answer a Forge or NeoForge owner admits: NeoForge
+	 * and Forge consumers must reach it, with the face passed through (null included), and moves land in the addon's
+	 * store. Before the addon registers, nothing answers for the block (Reborn phases only).
+	 */
+	private static void checkExplicitFabric(ServerLevel level, List<Consumer> consumers) {
+		EnergyMachines.FabricAddon addon = EnergyMachines.FABRIC_ADDON.get();
+		Consumer fabric = EnergyMachines.FABRIC_CONSUMER.get();
+		if (addon == null || fabric == null) return;
+		place(level, EnergyMachines.EXPLICIT, EnergyMachines.NEO, "bare");
+		for (Consumer consumer : consumers) yes(consumer.find(level, EnergyMachines.EXPLICIT, Direction.NORTH) == null,
+				consumer.family() + " found energy on a block nothing provides it for");
+		addon.attach(java.util.Objects.requireNonNull(EnergyMachines.BLOCKS.get(EnergyMachines.NEO + ":bare"), "unregistered bare block"));
+		yes(fabric.find(level, EnergyMachines.EXPLICIT, Direction.NORTH) == addon.store(EnergyMachines.EXPLICIT), "the addon's own provider was replaced for Fabric");
+		for (Consumer consumer : List.of(NEO_CONSUMER, FORGE_CONSUMER)) {
+			for (Direction face : new Direction[] {Direction.NORTH, null}) {
+				addon.face(Direction.UP);
+				yes(consumer.find(level, EnergyMachines.EXPLICIT, face) != null, "missing " + consumer.family() + " energy provider for the Fabric addon's store face=" + face);
+				yes(addon.lastFace() == face, "face changed on " + consumer.family() + " -> the Fabric addon: " + face + " -> " + addon.lastFace());
+			}
+			yes(consumer.find(level, EnergyMachines.EXPLICIT, Direction.SOUTH) == null, "unexpected " + consumer.family() + " energy provider for the Fabric addon's store face=SOUTH");
+		}
+		Object neo = NEO_CONSUMER.find(level, EnergyMachines.EXPLICIT, Direction.NORTH), forge = FORGE_CONSUMER.find(level, EnergyMachines.EXPLICIT, null);
+		equal(300, NEO_CONSUMER.insert(neo, 300, false)); equal(0, addon.energy(EnergyMachines.EXPLICIT));
+		equal(300, NEO_CONSUMER.insert(neo, 300, true)); equal(300, addon.energy(EnergyMachines.EXPLICIT));
+		equal(200, FORGE_CONSUMER.insert(forge, 200, true)); equal(500, addon.energy(EnergyMachines.EXPLICIT));
+		equal(100, FORGE_CONSUMER.extract(forge, 100, true)); equal(400, addon.energy(EnergyMachines.EXPLICIT));
+		equal(400, NEO_CONSUMER.amount(neo)); equal(100_000, FORGE_CONSUMER.capacity(forge));
+		System.out.println("[M40Energy] PASS a Fabric addon's explicit Reborn provider on a NeoForge block reaches NeoForge and Forge consumers");
+	}
+
+	/**
+	 * A Forge battery holding more than its capacity: Forge's deserializeNBT sets the field unclamped, so a save made
+	 * before a config lowered the capacity loads this way, and Forge's own receiveEnergy then answers a NEGATIVE amount.
+	 * A bridged insertion (a single one, and each consumer's own move helper, as a cable calls it every tick) must move
+	 * nothing instead of throwing into the consumer's tick, and the energy above capacity must stay. The prepare phase
+	 * saves it that way; the reload phase proves the same after a restart, then drains it back into its bounds.
+	 */
+	private static void checkOverfull(ServerLevel level, List<Consumer> consumers, Map<String, BlockPos> primaries, boolean reload) {
+		Cell battery;
+		if (reload) { battery = cell(level, EnergyMachines.OVERFULL); yes(battery.loadedFromDisk(), "the overfull battery was not deserialized"); }
+		else { battery = place(level, EnergyMachines.OVERFULL, EnergyMachines.FORGE, "battery"); battery.seed(1_500); }
+		equal(1_500, battery.energy());
+		for (Consumer consumer : consumers) {
+			// A Forge consumer holds Forge's own store here; nothing is bridged.
+			if (consumer.family().equals(EnergyMachines.FORGE)) continue;
+			Object port = consumer.find(level, EnergyMachines.OVERFULL, Direction.NORTH);
+			yes(port != null, "missing " + consumer.family() + " energy provider for the overfull Forge battery");
+			equal(0, consumer.insert(port, 10, true));
+			equal(0, consumer.move(consumer.find(level, primaries.get(consumer.family()), Direction.NORTH), port, 10));
+			equal(1_500, battery.energy());
+		}
+		checkPrimaryState(level, primaries);
+		if (!reload) {
+			System.out.println("[M40Energy] PASS an overfull Forge battery (1500/1000) moves nothing on bridged insertion and keeps its energy");
+			return;
+		}
+		Object port = NEO_CONSUMER.find(level, EnergyMachines.OVERFULL, Direction.NORTH);
+		equal(600, NEO_CONSUMER.extract(port, 600, true)); equal(900, battery.energy());
+		equal(50, NEO_CONSUMER.insert(port, 50, true)); equal(950, battery.energy());
+		System.out.println("[M40Energy] PASS an overfull Forge battery reloaded at 1500/1000 still moves nothing on bridged insertion and drains back into its bounds");
 	}
 
 	/** A bridged write dirties its block entity once per root commit, and an aborted one leaves the chunk clean. */
