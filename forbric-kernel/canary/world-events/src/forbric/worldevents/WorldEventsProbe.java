@@ -86,7 +86,14 @@ public final class WorldEventsProbe {
 			if (tagged(e.getEntity(), "m49_immune") && e.getEffectInstance().is(MobEffects.SLOWNESS)) e.setResult(Result.DENY);
 		});
 		LivingConversionEvent.Pre.BUS.addListener((Predicate<LivingConversionEvent.Pre>) e -> tagged(e.getEntity(), "m49_noconvert"));
-		LivingConversionEvent.Post.BUS.addListener((Consumer<LivingConversionEvent.Post>) e -> hear("conversion.post"));
+		LivingConversionEvent.Post.BUS.addListener((Consumer<LivingConversionEvent.Post>) e -> {
+			hear("conversion.post");
+			if (tagged(e.getEntity(), "m49_drown")) hear("drown.forge");
+		});
+		// NeoForge's own Post, as a NeoForge mod hears it: the merged Zombie's lambdas were MinecraftForge's.
+		NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.event.entity.living.LivingConversionEvent.Post.class, e -> {
+			if (tagged(e.getEntity(), "m49_drown")) hear("drown.neo");
+		});
 		ProjectileImpactEvent.BUS.addListener((Consumer<ProjectileImpactEvent>) e -> {
 			if (tagged(e.getProjectile(), "m49_nohit")) e.setImpactResult(ProjectileImpactEvent.ImpactResult.STOP_AT_CURRENT_NO_DAMAGE);
 		});
@@ -147,6 +154,13 @@ public final class WorldEventsProbe {
 			require(pig.isRemoved(), "an untouched pig did not convert");
 		});
 		test("conversion.post", () -> require(heard.getOrDefault("conversion.post", 0) > 0, "the finished conversion was not heard"));
+		test("drown.neo", () -> {
+			LivingEntity zombie = drown(level);
+			require(zombie.isRemoved() && heard.getOrDefault("drown.neo", 0) == 1, "NeoForge heard the zombie drown "
+					+ heard.getOrDefault("drown.neo", 0) + " time(s)");
+		});
+		test("drown.forge", () -> require(heard.getOrDefault("drown.forge", 0) == 1, "MinecraftForge heard the zombie drown "
+				+ heard.getOrDefault("drown.forge", 0) + " time(s)"));
 		test("conversion.veto", () -> {
 			LivingEntity pig = pig(level, "m49_noconvert");
 			((net.minecraft.world.entity.animal.pig.Pig) pig).thunderHit(level, EntityTypes.LIGHTNING_BOLT.create(level, EntitySpawnReason.COMMAND));
@@ -207,6 +221,21 @@ public final class WorldEventsProbe {
 			leaving.discard();
 			require(heard.getOrDefault("entity.leave", 0) > 0, "an entity leaving the level was not heard");
 		});
+	}
+
+	/** A zombie turned into a drowned the way drowning does it (Zombie.convertToZombieType), once. */
+	private static LivingEntity drown(ServerLevel level) throws Exception {
+		LivingEntity zombie = EntityTypes.ZOMBIE.create(level, EntitySpawnReason.COMMAND);
+		require(zombie != null, "zombie creation");
+		zombie.snapTo(20.5, -60, 40.5);
+		zombie.addTag("m49_drown");
+		require(level.addFreshEntity(zombie), "zombie insertion");
+		spawned.add(zombie);
+		var convert = net.minecraft.world.entity.monster.zombie.Zombie.class.getDeclaredMethod("convertToZombieType",
+				ServerLevel.class, net.minecraft.world.entity.EntityType.class);
+		convert.setAccessible(true);
+		convert.invoke(zombie, level, EntityTypes.DROWNED);
+		return zombie;
 	}
 
 	private static net.minecraft.world.level.block.state.BlockState till(ServerLevel level, BlockPos pos) {

@@ -100,8 +100,8 @@ public final class KernelGameWorldEvents {
 	}
 
 	/**
-	 * A finished conversion. The Zombie paths kept MinecraftForge's bodies, which post MinecraftForge's Post and never
-	 * NeoForge's, so this cannot deliver one twice.
+	 * A finished conversion. The Zombie paths kept MinecraftForge's lambdas, which NeoConversionPostInjector sends through
+	 * KernelConversions: NeoForge's Post there too, and MinecraftForge's only through this forward — once either way.
 	 */
 	public static void installConversionPost(Object neoBus) {
 		KernelGameServerEvents.forward((IEventBus) neoBus, LivingConversionEvent.Post.class, "LivingConversionEvent.Post",

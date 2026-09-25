@@ -20,7 +20,7 @@ set -uo pipefail
 SERVER_DIR="$KERNEL/run/world-events-m49"
 RESULTS="$BUILD/verification/m49-world-events"
 FAIL=0
-REPAIRED="{'chunk.load', 'tags.updated', 'entity.section', 'player.wakeup', 'effect.added', 'applicable.deny', 'conversion.post', 'conversion.veto', 'projectile.cancel', 'trample.cancel', 'command.cancel', 'interact.specific', 'heal.cancel', 'heal.change', 'visibility.halve', 'critical.force', 'tool.veto', 'effect.expired', 'entity.leave'}"
+REPAIRED="{'chunk.load', 'tags.updated', 'entity.section', 'player.wakeup', 'effect.added', 'applicable.deny', 'conversion.post', 'conversion.veto', 'projectile.cancel', 'trample.cancel', 'command.cancel', 'interact.specific', 'heal.cancel', 'heal.change', 'visibility.halve', 'critical.force', 'tool.veto', 'effect.expired', 'entity.leave', 'drown.neo'}"
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 
 kernel_jar
@@ -55,7 +55,7 @@ import json, sys
 report, phase, rule = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
 assert report['phase'] == phase, report['phase']
 cases = {c['name']: c for c in report['cases']}
-assert len(cases) == 26, sorted(cases)
+assert len(cases) == 28, sorted(cases)
 failed = {name for name, c in cases.items() if not c['pass']}
 for name in sorted(failed): print(f"[kernel]   {phase}: {name} failed — {cases[name]['detail'][:240]}")
 assert eval(rule, {'failed': failed, 'cases': cases}), (phase, sorted(failed))
@@ -66,14 +66,14 @@ PY
 
 step "1. positive: MinecraftForge's world and entity listeners hear and are obeyed"
 run_server positive strict ""
-judge positive "not failed" "all 26 cases pass"
+judge positive "not failed" "all 28 cases pass"
 if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r['confirmedRequired']==0 else 1)" "$RESULTS/positive-compatibility.json" 2>/dev/null
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 check_absent "positive: no forward failed" 'forward failed' "$RESULTS/positive.log"
 
 step "2. off: the same server with the bridges switched off"
-run_server off continue "-Dforbric.unifiedEvents=off"
+run_server off continue "-Dforbric.unifiedEvents=off -Dforbric.neoConversionPost=off"
 judge off "failed == $REPAIRED" "exactly the repaired cases fail; the controls hold"
 
 if [ "$FAIL" -eq 0 ]; then
