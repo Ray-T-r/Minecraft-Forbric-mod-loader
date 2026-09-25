@@ -371,6 +371,9 @@ public final class KernelRuntimeClasses {
 		// names the MinecraftForge one too. Same shape as above, same reason it carries no stand-in descriptor.
 		// poolElementCodec is called from NeoForge's rewritten lootPoolsCodec (ForgeLootPoolConditionsInjector).
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeConditions", new Entry(Origin.COMPILED, List.of()));
+		// The reordering Operation a wrapped @WrapOperation handler receives; called from the outer handler
+		// MixinWrapOperationShim writes into a guest mixin, so there is no boot-side entry point.
+		CLASSES.put("net.forbric.kernel.runtime.KernelWrapOperations", new Entry(Origin.COMPILED, List.of()));
 		// Both ecosystems collect mod entity attributes into a map of their own and the merge kept only NeoForge's
 		// reader in DefaultAttributes, so a traditional MinecraftForge mod's entities had no attributes at all.
 		// attributesView() is called from a REWRITTEN CALL SITE and so carries the descriptor that site had.

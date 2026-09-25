@@ -192,6 +192,8 @@ dependencies {
 	api "net.fabricmc:mapping-io:${project.mapping_io_version}"
 
 	nestedMods "io.github.llamalad7:mixinextras-fabric:${project.mixin_extras_version}"
+	// The game side names MixinExtras' Operation (KernelWrapOperations); the game supplies the nested copy above.
+	runtimeCompileOnly "io.github.llamalad7:mixinextras-fabric:${project.mixin_extras_version}"
 
 	// TOML (mods.toml) + JSON (fabric.mod.json) readers — same libs the ecosystems use.
 	api "com.electronwill.night-config:core:${project.night_config_version}"
@@ -261,6 +263,8 @@ test {
 	// Only EventChainAuditTest's own loader gets log4j (the real buses need it); the test classpath keeps none,
 	// because several tests assert ForbricLog's fallback when log4j is absent.
 	doFirst { systemProperty 'forbric.log4jApiForTests', configurations.compileClasspath.files.find { it.name.startsWith('log4j-api-') }?.absolutePath ?: '' }
+	// Game-side tests that name MixinExtras (KernelWrapOperationsTest) load it beside build/classes/java/runtime.
+	doFirst { systemProperty 'forbric.mixinExtrasForTests', configurations.nestedMods.files.find { it.name.startsWith('mixinextras-') }?.absolutePath ?: '' }
 	// Component/decision tests do not own macOS's first UI thread. Actual windows are exercised
 	// by the separately forked dialog/client gates, not by the Gradle worker's AppKit instance.
 	systemProperty 'java.awt.headless', 'true'

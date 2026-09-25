@@ -546,6 +546,9 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LootPoolFieldsInjector());
 		// And a MinecraftForge pool condition is kept by the builder and judged by the pool decoder, as natively.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeLootPoolConditionsInjector());
+		// MinecraftForge's ItemStack.useOn posts NeoForge's ITEM_AFTER_BLOCK phase again, and its Item.useOn calls go
+		// through one ItemStack relay that Fabric's ItemEvents.USE_ON wraps (MixinRelocatedCall moves the injector).
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ItemUseOnInjector());
 		// NeoForge's coremods never run on the merged base; NativeCoremodParity does their rewrites after Mixin. These
 		// are the parts that must come before it: the flower pot's constructor, lookup and addPlant; the biome modifier
 		// pass starting from the biome's current climate, and the biome's getters yielding to a later replacement.
