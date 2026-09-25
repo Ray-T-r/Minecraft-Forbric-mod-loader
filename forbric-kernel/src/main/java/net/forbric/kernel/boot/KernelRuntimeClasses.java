@@ -301,6 +301,10 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelConversions", new Entry(Origin.COMPILED, List.of()));
 		// fabric-content-registries' fuel events on NeoForge's fuel builder; FabricFuelValuesInjector calls apply.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFabricFuel", new Entry(Origin.COMPILED, List.of()));
+		// NeoForge's item tooltip appenders, built once from the kernel's copy of postRegisterEvents' tail; also the
+		// per-container delivery NeoTooltipAppendersInjector sends ItemTooltipHandler.init's event through.
+		CLASSES.put("net.forbric.kernel.runtime.KernelNeoTooltips", new Entry(Origin.COMPILED, List.of(
+				new Call("init", void.class))));
 		// A MinecraftForge brewing recipe as NeoForge's registry reads it; wrapped in PotionBrewing.Builder.add.
 		CLASSES.put("net.forbric.kernel.runtime.KernelBrewing", new Entry(Origin.COMPILED, List.of()));
 		// MinecraftForge's attack, shield, knockback and fall events off NeoForge's at the same positions.

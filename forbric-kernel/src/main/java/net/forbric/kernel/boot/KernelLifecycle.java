@@ -57,6 +57,8 @@ public final class KernelLifecycle {
 	// ClientNeoForgeMod on the same bus and route the game's mod-bus events to it.
 	private static volatile Object baselineBus;
 	private static volatile Object baselineContainer;
+	/** {@code -Dforbric.neoTooltipAppenders=off} leaves NeoForge's item tooltip appenders unbuilt, as the kernel used to. */
+	public static final String NEO_TOOLTIP_APPENDERS = "forbric.neoTooltipAppenders";
 
 	private KernelLifecycle() {
 	}
@@ -792,6 +794,15 @@ public final class KernelLifecycle {
 			invokeStaticOn(cl, "net.minecraft.world.entity.SpawnPlacements", "fireSpawnPlacementEvent");
 			postModBusEvent(cl, "net.neoforged.neoforge.event.BlockEntityTypeAddBlocksEvent");
 			invokeStaticOn(cl, "net.minecraft.world.level.gamerules.GameRuleCategory", "registerModdedCategories");
+			// Last in postRegisterEvents: NeoForge builds its item tooltip appenders — every vanilla component line
+			// (enchantments, lore, attributes, durability, …) and every mod's. Left out of this copy of the tail,
+			// the merged ItemStack's dispatcher walked three empty lists and tooltips showed only the name.
+			if (!"off".equalsIgnoreCase(System.getProperty(NEO_TOOLTIP_APPENDERS, "on"))) {
+				invokeStaticOn(cl, "net.forbric.kernel.runtime.KernelNeoTooltips", "init");
+			} else {
+				ForbricLog.warn("[Forbric/Tooltips] NeoForge's tooltip appenders left unbuilt with -D%s=off — item "
+						+ "tooltips show no component lines", NEO_TOOLTIP_APPENDERS);
+			}
 			ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent x%d on %d bus(es) [NeoForge baseline + %d mod(s)] "
 					+ "+ %d traditional-Forge mod bus(es) + baked Forge registries", n, buses.size(),
 					buses.size() - 1, forgeHandles.size());
@@ -1454,11 +1465,32 @@ public final class KernelLifecycle {
 			ForbricLog.warn("[Forbric/Lifecycle] could not build " + eventClassName, unwrap(t));
 			return;
 		}
+		deliverModBusEvent(acceptEvent, event, eventClassName);
+	}
 
+	/**
+	 * The same per-container delivery for a mod-bus event game code built itself and would have handed to
+	 * {@code ModLoader.postEvent} — {@code ItemTooltipHandler.init}'s {@code RegisterTooltipAppendersEvent}. Returns
+	 * how many containers took it.
+	 */
+	public static int postModBusEvent(Object event) {
+		ClassLoader cl = event.getClass().getClassLoader();
+		Method acceptEvent;
+		try {
+			acceptEvent = modContainerClass(cl).getMethod("acceptEvent", Class.forName("net.neoforged.bus.api.Event", false, cl));
+		} catch (ReflectiveOperationException absent) {
+			ForbricLog.warn("[Forbric/Lifecycle] no NeoForge mod container to post " + event.getClass().getName() + " through",
+					absent);
+			return 0;
+		}
+		return deliverModBusEvent(acceptEvent, event, event.getClass().getName());
+	}
+
+	private static int deliverModBusEvent(Method acceptEvent, Object event, String eventClassName) {
 		java.util.Map<String, Object> byId = new java.util.LinkedHashMap<>();
 		if (baselineContainer != null) byId.put("neoforge", baselineContainer);
 		KernelModLoader.publishedNeoMods().forEach((id, identity) -> byId.put(id, identity.container()));
-		if (byId.isEmpty()) return;
+		if (byId.isEmpty()) return 0;
 
 		int delivered = 0;
 		for (java.util.Map.Entry<String, Object> e : byId.entrySet()) {
@@ -1472,6 +1504,7 @@ public final class KernelLifecycle {
 			}
 		}
 		ForbricLog.debug("[Forbric/Lifecycle] posted %s to %d container(s)", eventClassName, delivered);
+		return delivered;
 	}
 
 	/**

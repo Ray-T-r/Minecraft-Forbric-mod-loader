@@ -1,0 +1,7 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="Apache-2.0"
+[[mods]]
+modId="forbrictooltips"
+version="1.0.0"
+displayName="Item tooltip probe"
