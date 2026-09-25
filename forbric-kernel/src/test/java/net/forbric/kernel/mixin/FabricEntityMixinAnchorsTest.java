@@ -13,7 +13,7 @@ class FabricEntityMixinAnchorsTest {
  private ClassNode elytra()throws Exception{return StagedFabricMixinFixture.mixin("fabric-entity-events-v1",ROOT+"elytra/LivingEntityMixin");}
  private ClassNode beds()throws Exception{return StagedFabricMixinFixture.mixin("fabric-entity-events-v1",ROOT+"LivingEntityMixin");}
  @Test void actualBedBridgePreservesNativeCustomBedsAndFabricHandledOccupation()throws Exception{
-  ClassNode mixin=beds(),target=StagedFabricMixinFixture.living(false);assertEquals(1,FabricEntityMixinAnchors.adapt(mixin,n->target));
+  ClassNode mixin=beds(),target=StagedFabricMixinFixture.living(false);assertEquals(2,FabricEntityMixinAnchors.adapt(mixin,n->target),"occupation and sleeping direction");
   assertNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"setOccupiedState")));
   MethodNode bridge=StagedFabricMixinFixture.method(mixin,"forbric$setBedOccupied");
   assertTrue(String.valueOf(MixinFit.value(StagedFabricMixinFixture.at(mixin,"forbric$setBedOccupied"),"target")).contains("BlockState;setBedOccupied"));
@@ -23,12 +23,13 @@ class FabricEntityMixinAnchorsTest {
  @Test void unknownOccupationHandlerBodyIsNotReimplemented()throws Exception{
   ClassNode mixin=beds(),target=StagedFabricMixinFixture.living(false);
   StagedFabricMixinFixture.method(mixin,"setOccupiedState").instructions.insert(new InsnNode(Opcodes.NOP));
-  assertEquals(0,FabricEntityMixinAnchors.adapt(mixin,n->target));assertNotNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"setOccupiedState")));
+  assertEquals(1,FabricEntityMixinAnchors.adapt(mixin,n->target),"only the sleeping direction");assertNotNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"setOccupiedState")));
  }
  @Test void sleepAndOccupationAlternativesKeepTheirGroupContract()throws Exception{
   ClassNode bed=beds(),living=StagedFabricMixinFixture.living(false);
   StagedFabricMixinFixture.method(bed,"setOccupiedState").visibleAnnotations.add(new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Group;"));
-  assertEquals(0,FabricEntityMixinAnchors.adapt(bed,n->living));
+  assertEquals(1,FabricEntityMixinAnchors.adapt(bed,n->living),"the grouped occupation stays; the sleeping direction is its own handler");
+  assertNotNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(bed,"setOccupiedState")));
   ClassNode sleep=StagedFabricMixinFixture.mixin("fabric-entity-events-v1",ROOT+"ServerPlayerMixin"),player=StagedFabricMixinFixture.game("net/minecraft/server/level/ServerPlayer",false);
   StagedFabricMixinFixture.method(sleep,"hasNoMonstersNearby").visibleAnnotations.add(new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Group;"));
   assertEquals(0,FabricEntityMixinAnchors.adapt(sleep,n->player));
@@ -163,5 +164,32 @@ class FabricEntityMixinAnchorsTest {
   ClassNode mixin=elytra(),target=StagedFabricMixinFixture.living(false);
   assertEquals(1,FabricEntityMixinAnchors.adapt(mixin,n->target));
   assertEquals(GET_RANDOM,MixinFit.value(StagedFabricMixinFixture.at(mixin,"injectElytraTick"),"target"));
+ }
+ /** Fabric's sleeping direction modifies NeoForge's answer: every return, the event asked only with a sleeping position. */
+ @Test void sleepingDirectionModifiesNeoForgesBedAnswer()throws Exception{
+  ClassNode mixin=beds(),target=StagedFabricMixinFixture.living(false);
+  FabricEntityMixinAnchors.adapt(mixin,n->target);
+  assertNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"onGetSleepingDirection")),"the wrap that bound nowhere is gone");
+  MethodNode handler=StagedFabricMixinFixture.method(mixin,"forbric$modifySleepingDirection");
+  AnnotationNode modify=MixinFit.injectorOf(handler);
+  assertEquals("Lcom/llamalad7/mixinextras/injector/ModifyReturnValue;",modify.desc);
+  assertEquals(List.of("getBedOrientation()Lnet/minecraft/core/Direction;"),MixinFit.stringList(MixinFit.value(modify,"method")));
+  assertEquals("RETURN",MixinFit.value(StagedFabricMixinFixture.at(mixin,"forbric$modifySleepingDirection"),"value"));
+  new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(mixin.name,handler);
+  assertTrue(java.util.Arrays.stream(handler.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode m&&m.name.equals("modifySleepDirection")));
+  assertEquals(0,FabricEntityMixinAnchors.adapt(mixin,n->target),"a second pass changes nothing");
+ }
+ @Test void aChangedSleepDirectionHandlerOrASecondBedQuestionIsNotGuessed()throws Exception{
+  ClassNode mixin=beds(),target=StagedFabricMixinFixture.living(false);
+  StagedFabricMixinFixture.method(mixin,"onGetSleepingDirection").instructions.insert(new InsnNode(Opcodes.NOP));
+  FabricEntityMixinAnchors.adapt(mixin,n->target);
+  assertNotNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"onGetSleepingDirection")));
+  assertTrue(mixin.methods.stream().noneMatch(m->m.name.equals("forbric$modifySleepingDirection")));
+  ClassNode twice=StagedFabricMixinFixture.living(false),fresh=beds();
+  MethodNode host=twice.methods.stream().filter(m->m.name.equals("getBedOrientation")).findFirst().orElseThrow();
+  for(var i:host.instructions)if(i instanceof MethodInsnNode m&&m.name.equals("getBedDirection")){host.instructions.insert(i,new InsnNode(Opcodes.POP));host.instructions.insert(i,m.clone(null));
+   host.instructions.insert(i,new InsnNode(Opcodes.DUP));break;}
+  FabricEntityMixinAnchors.adapt(fresh,n->twice);
+  assertTrue(fresh.methods.stream().noneMatch(m->m.name.equals("forbric$modifySleepingDirection")),"two native bed answers: not the body this was written against");
  }
 }

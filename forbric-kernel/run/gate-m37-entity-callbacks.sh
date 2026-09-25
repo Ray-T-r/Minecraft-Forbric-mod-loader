@@ -22,7 +22,7 @@ import json, os, pathlib, shutil, subprocess, uuid, signal
 kernel=pathlib.Path(os.environ['KERNEL']);root=kernel.parent;results=kernel/'build/verification/m37-entity';results.mkdir(parents=True,exist_ok=True)
 inputs=json.loads((kernel/'run/canary/m37-build-inputs.json').read_text())
 EXPECT_FAIL={'positive':set(),'tick-off':{'glide-tick'}}
-ALL={'effect-add','effect-remove','effect-clear-veto','glide-deny','glide-custom','glide-boolean','glide-tick','glide-tick-native','bed-native','bed-handled','bed-nonbed','bed-custom-native','bed-custom-handled','nearby-monsters'}
+ALL={'effect-add','effect-remove','effect-clear-veto','glide-deny','glide-custom','glide-boolean','glide-tick','glide-tick-native','bed-native','bed-handled','bed-nonbed','bed-custom-native','bed-custom-handled','direction-bed','direction-nonbed','nearby-monsters'}
 # Fabric's flight tick anchors natively on the glider-slot choice, which a real elytra reaches: that control holds off.
 EXPECT_FAIL['off']=ALL-{'glide-tick-native'}
 for phase in ('positive','off','tick-off'):
@@ -51,7 +51,7 @@ for phase in ('positive','off','tick-off'):
    raise RuntimeError('M37 owned process group timed out')
  assert code==(0 if phase=='positive' else 1),(phase,'unexpected command result',code)
  proof=json.loads((run/'probe.json').read_text());shutil.copy2(run/'probe.json',results/(phase+'-probe.json'))
- assert proof['nonce']==nonce and proof['phase']==phase and len(proof['cases'])==14,proof
+ assert proof['nonce']==nonce and proof['phase']==phase and len(proof['cases'])==16,proof
  failed={c['name'] for c in proof['cases'] if not c['pass']}
  assert failed==EXPECT_FAIL[phase],(phase,sorted(failed))
  outcome=json.loads((results/(phase+'.result.json')).read_text());assert outcome['inputsUnchanged'] is True,outcome
@@ -63,6 +63,6 @@ for phase in ('positive','off','tick-off'):
  tick="fabric-api's elytra flight tick now runs before NeoForge's empty-glider guard"
  if phase=='positive':assert 'restored 2 '+elytra in text and tick in text,'positive: the gliding decision and the flight tick both restored'
  if phase=='tick-off':assert 'restored 1 '+elytra in text and tick not in text,'tick-off: only the gliding decision restored'
- print('[M37] PASS',phase,'fourteen actual entity callback cases with expected verdicts',flush=True)
+ print('[M37] PASS',phase,'sixteen actual entity callback cases with expected verdicts',flush=True)
 print('[M37] GATE GREEN')
 PY

@@ -39,7 +39,8 @@ public final class EntityCallbacks {
  private static MinecraftServer server; private static ServerLevel level;
  private static final BlockPos BED=new BlockPos(8,80,8);
  private static String phase,nonce; private static Path root;
- private static int ticks,adds,removes,early,allow,custom,customTick,glideEvents,occupation,nearby;
+ private static int ticks,adds,removes,early,allow,custom,customTick,glideEvents,occupation,nearby,directions;
+ private static Direction nativeDirection;
  private static boolean beforeRemoval,vanillaNearby,originalStone;
  private static MobEffectInstance effect;
  private static String mode="";
@@ -53,7 +54,9 @@ public final class EntityCallbacks {
   EntityElytraEvents.CUSTOM.register((entity,tick)->{if(entity!=player)return false;custom++;if(tick)customTick++;return mode.startsWith("glide-custom")||mode.equals("glide-boolean")||mode.equals("glide-tick");});
   NeoForge.EVENT_BUS.addListener(VanillaGameEvent.class,e->{if(e.getCause()==player&&e.getVanillaEvent().is(GameEvent.ELYTRA_GLIDE.key()))glideEvents++;});
   EntitySleepEvents.SET_BED_OCCUPATION_STATE.register((entity,pos,state,occupied)->{if(entity!=player)return false;occupation++;if(mode.equals("bed-nonbed"))originalStone=state.is(Blocks.STONE);return mode.equals("bed-handled")||mode.equals("bed-custom-handled");});
-  EntitySleepEvents.ALLOW_BED.register((entity,pos,state,vanilla)->entity==player&&mode.equals("bed-nonbed")?EventResult.ALLOW:EventResult.PASS);
+  EntitySleepEvents.ALLOW_BED.register((entity,pos,state,vanilla)->entity==player&&(mode.equals("bed-nonbed")||mode.equals("direction-nonbed"))?EventResult.ALLOW:EventResult.PASS);
+  EntitySleepEvents.MODIFY_SLEEPING_DIRECTION.register((entity,pos,direction)->{if(entity!=player||!mode.startsWith("direction-"))return direction;
+   directions++;nativeDirection=direction;return direction==null?Direction.EAST:direction.getOpposite();});
   EntitySleepEvents.ALLOW_NEARBY_MONSTERS.register((p,pos,vanilla)->{if(p!=player||!mode.equals("nearby-monsters"))return EventResult.PASS;nearby++;vanillaNearby=vanilla;return EventResult.ALLOW;});
   NeoForge.EVENT_BUS.addListener(ServerStartedEvent.class,e->{try{
    root=Path.of(System.getProperty("forbric.entityRoot")).toAbsolutePath().normalize();nonce=System.getProperty("forbric.entityNonce");phase=System.getProperty("forbric.entityPhase");
@@ -98,6 +101,14 @@ public final class EntityCallbacks {
   test("bed-nonbed",()->{level.setBlock(BED,Blocks.STONE.defaultBlockState(),2);player.startSleeping(BED);require(occupation==1&&originalStone&&level.getBlockState(BED).is(Blocks.STONE),"Fabric non-bed was overwritten or context differed");player.stopSleeping();require(occupation==2&&level.getBlockState(BED).is(Blocks.STONE),"non-bed wake was overwritten");});
   test("bed-custom-native",()->{NativeBed block=NATIVE_BED.get();block.writes=0;level.setBlock(BED,block.defaultBlockState(),2);player.startSleeping(BED);require(occupation==1&&block.writes==1&&block.actor==player&&level.getBlockState(BED).getValue(NativeBed.ACTIVE),"native custom bed setter or actor lost");player.stopSleeping();require(occupation==2&&block.writes==2&&!level.getBlockState(BED).getValue(NativeBed.ACTIVE),"native custom wake setter lost");});
   test("bed-custom-handled",()->{NativeBed block=NATIVE_BED.get();block.writes=0;level.setBlock(BED,block.defaultBlockState(),2);player.startSleeping(BED);require(occupation==1&&block.writes==0&&!level.getBlockState(BED).getValue(NativeBed.ACTIVE),"Fabric handled custom bed still wrote native state");player.stopSleeping();require(occupation==2&&block.writes==0&&!level.getBlockState(BED).getValue(NativeBed.ACTIVE),"Fabric handled custom wake still wrote native state");});
+  // What the sleeping body is drawn and the camera faced by: Fabric's listener turns a bed around, and gives a non-bed
+  // sleeping spot a direction. Asked only while there is a sleeping position, as vanilla asked.
+  test("direction-bed",()->{bed();require(player.getBedOrientation()==null&&directions==0,"asked without a sleeping position");
+   player.startSleeping(BED);directions=0;Direction faced=player.getBedOrientation();
+   require(faced==Direction.SOUTH&&directions==1&&nativeDirection==Direction.NORTH,"a north-facing bed read "+faced+" after "+directions+" call(s), native "+nativeDirection);});
+  test("direction-nonbed",()->{player.stopSleeping();level.setBlock(BED,Blocks.STONE.defaultBlockState(),2);player.startSleeping(BED);directions=0;nativeDirection=Direction.UP;
+   Direction faced=player.getBedOrientation();
+   require(faced==Direction.EAST&&directions==1&&nativeDirection==null,"a non-bed spot read "+faced+" after "+directions+" call(s), native "+nativeDirection);});
   test("nearby-monsters",()->{bed();player.snapTo(9,80,8);require(!level.getEntitiesOfClass(Monster.class,new AABB(BED).inflate(8,5,8)).isEmpty(),"actual monster was not visible");var result=player.startSleepInBed(BED);require(nearby==1&&!vanillaNearby&&result.right().isPresent()&&player.isSleeping(),"Fabric nearby-monster result not consumed: "+result);player.stopSleepInBed(true,true);});
  }
  /** One flight tick on a damage tick: the FakePlayer does not tick itself, so its flight step is driven directly. */
@@ -113,16 +124,16 @@ public final class EntityCallbacks {
  }
  private static boolean occupied(){return level.getBlockState(BED).getValue(BedBlock.OCCUPIED);}
  @FunctionalInterface private interface Probe{void run()throws Exception;}
- private static void test(String name,Probe probe){mode=name;adds=removes=early=allow=custom=customTick=glideEvents=occupation=nearby=0;beforeRemoval=vanillaNearby=originalStone=false;
+ private static void test(String name,Probe probe){mode=name;adds=removes=early=allow=custom=customTick=glideEvents=occupation=nearby=directions=0;nativeDirection=null;beforeRemoval=vanillaNearby=originalStone=false;
   boolean pass=false;String detail="";try{probe.run();pass=true;}catch(Throwable failure){detail=failure.toString();failure.printStackTrace();}
-  Map<String,Object> result=row(name,pass,detail);result.put("adds",adds);result.put("removes",removes);result.put("early",early);result.put("allow",allow);result.put("custom",custom);result.put("customTick",customTick);result.put("glideEvents",glideEvents);result.put("occupation",occupation);result.put("nearby",nearby);cases.add(result);
+  Map<String,Object> result=row(name,pass,detail);result.put("adds",adds);result.put("removes",removes);result.put("early",early);result.put("allow",allow);result.put("custom",custom);result.put("customTick",customTick);result.put("glideEvents",glideEvents);result.put("occupation",occupation);result.put("nearby",nearby);result.put("directions",directions);cases.add(result);
   System.out.println("[M37Entity] "+(pass?"PASS":"FAIL")+" "+result);mode="";player.stopFallFlying();player.stopSleeping();player.removeAllEffects();player.setItemSlot(EquipmentSlot.CHEST,ItemStack.EMPTY);
  }
  private static Map<String,Object> row(String name,boolean pass,String detail){Map<String,Object> r=new LinkedHashMap<>();r.put("name",name);r.put("pass",pass);r.put("detail",detail);return r;}
  private static void require(boolean condition,String detail){if(!condition)throw new IllegalStateException(detail);}
  private static void finish(){try{
   if(monster!=null)monster.discard();if(player!=null)level.removePlayerImmediately(player,Entity.RemovalReason.DISCARDED);if(level!=null)level.setChunkForced(0,0,false);
-  Map<String,Object> r=new LinkedHashMap<>();r.put("phase",phase);r.put("nonce",nonce);r.put("pass",cases.size()==14&&cases.stream().allMatch(c->Boolean.TRUE.equals(c.get("pass"))));r.put("cases",cases);r.put("ticks",ticks);
+  Map<String,Object> r=new LinkedHashMap<>();r.put("phase",phase);r.put("nonce",nonce);r.put("pass",cases.size()==16&&cases.stream().allMatch(c->Boolean.TRUE.equals(c.get("pass"))));r.put("cases",cases);r.put("ticks",ticks);
   Files.writeString(root.resolve("probe.json"),new GsonBuilder().setPrettyPrinting().create().toJson(r));
  }catch(Exception failure){failure.printStackTrace();}finally{MinecraftServer stop=server;server=null;if(stop!=null)stop.halt(false);}}
 }

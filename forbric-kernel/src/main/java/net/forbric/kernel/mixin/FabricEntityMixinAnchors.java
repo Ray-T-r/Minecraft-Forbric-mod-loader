@@ -60,6 +60,7 @@ public final class FabricEntityMixinAnchors {
   }
   if(mixin.name.equals(BASE+"ServerPlayerMixin"))changed+=sleepLambda(mixin,target);
   if(mixin.name.equals(BASE+"LivingEntityMixin"))changed+=bedOccupation(mixin,target);
+  if(mixin.name.equals(BASE+"LivingEntityMixin"))changed+=sleepDirection(mixin,target);
   if(changed>0)ForbricLog.info("[Forbric/Mixin] restored %d entity callback anchor(s) in %s at the corresponding native decision stage",changed,mixin.name.replace('/','.'));
   return changed;
  }
@@ -129,6 +130,58 @@ public final class FabricEntityMixinAnchors {
   code.add(new VarInsnNode(Opcodes.ALOAD,6));code.add(new VarInsnNode(Opcodes.ALOAD,2));code.add(new VarInsnNode(Opcodes.ALOAD,3));code.add(new VarInsnNode(Opcodes.ALOAD,4));code.add(new VarInsnNode(Opcodes.ILOAD,5));
   code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,STATE,"setBedOccupied",BED_CALL,false));code.add(end);code.add(new FrameNode(Opcodes.F_SAME,0,null,0,null));code.add(new InsnNode(Opcodes.RETURN));
   bridge.maxStack=5;bridge.maxLocals=7;mixin.methods.add(bridge);return 1;
+ }
+ /** fabric-entity-events-v1 5.0.4/5.0.5's onGetSleepingDirection: one Operation.call, then MODIFY_SLEEPING_DIRECTION. */
+ static final String SLEEP_DIRECTION_BODY="6a7ab73c3bbee71f32b7af99490b87be878b9208bda2296f9240638ad59d7a73";
+ private static final String DIRECTION="Lnet/minecraft/core/Direction;";
+ /** Fabric's MODIFY_SLEEPING_DIRECTION wraps vanilla's BedBlock.getBedOrientation in LivingEntity.getBedOrientation —
+  * what the sleeping body is drawn and the sleeping camera faced by. NeoForge's body asks the block instead
+  * (isBed, getBedDirection) and never calls it, so the wrap bound nowhere. The same event is asked on the answer:
+  * when the entity has a sleeping position, the native direction (FACING for a vanilla bed, the block's own for a
+  * modded one, null for a non-bed spot) goes through the listeners, as vanilla's did. */
+ private static int sleepDirection(ClassNode mixin,ClassNode target) {
+  MethodNode host=method(target,"getBedOrientation","()"+DIRECTION);
+  if(host==null||countCalls(host,"net/minecraft/world/level/block/BedBlock","getBedOrientation","(Lnet/minecraft/world/level/BlockGetter;"+POSITION+")"+DIRECTION)!=0
+    ||countCalls(host,STATE,"isBed","(Lnet/minecraft/world/level/BlockGetter;"+POSITION+"L"+LIVING+";)Z")!=1
+    ||countCalls(host,STATE,"getBedDirection","(Lnet/minecraft/world/level/LevelReader;"+POSITION+")"+DIRECTION)!=1
+    ||countCalls(host,LIVING,"getSleepingPos","()Ljava/util/Optional;")!=1)return 0;
+  MethodNode old=method(mixin,"onGetSleepingDirection","(Lnet/minecraft/world/level/BlockGetter;"+POSITION+"L"+OPERATION+";)"+DIRECTION);
+  if(old==null||hasGroup(old.visibleAnnotations)||hasGroup(old.invisibleAnnotations)||!bodyHash(old).equals(SLEEP_DIRECTION_BODY))return 0;
+  AnnotationNode wrap=MixinFit.injectorOf(old);
+  if(wrap==null||!wrap.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;")
+    ||!MixinFit.stringList(MixinFit.value(wrap,"method")).equals(List.of("getBedOrientation")))return 0;
+  List<AnnotationNode> points=MixinFit.atNodes(wrap);
+  if(points.size()!=1||!"INVOKE".equals(MixinFit.value(points.getFirst(),"value"))
+    ||!("Lnet/minecraft/world/level/block/BedBlock;getBedOrientation(Lnet/minecraft/world/level/BlockGetter;"+POSITION+")"+DIRECTION).equals(MixinFit.value(points.getFirst(),"target")))return 0;
+  String desc="("+DIRECTION+")"+DIRECTION;
+  if(method(mixin,"forbric$modifySleepingDirection",desc)!=null)return 0;
+  if(old.visibleAnnotations!=null)old.visibleAnnotations.remove(wrap);if(old.invisibleAnnotations!=null)old.invisibleAnnotations.remove(wrap);
+  MethodNode handler=new MethodNode(Opcodes.ACC_PRIVATE,"forbric$modifySleepingDirection",desc,null,null);
+  AnnotationNode at=new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");at.values=new ArrayList<>(List.of("value","RETURN"));
+  AnnotationNode modify=new AnnotationNode("Lcom/llamalad7/mixinextras/injector/ModifyReturnValue;");
+  modify.values=new ArrayList<>(List.of("method",new ArrayList<>(List.of("getBedOrientation()"+DIRECTION)),"at",new ArrayList<>(List.of(at))));
+  handler.visibleAnnotations=new ArrayList<>(List.of(modify));
+  // Every return, so a return another mixin adds is covered too; without a sleeping position the answer is
+  // passed through untouched, which is when vanilla never reached the wrapped call either.
+  InsnList code=handler.instructions;LabelNode fire=new LabelNode();
+  code.add(new VarInsnNode(Opcodes.ALOAD,0));code.add(new TypeInsnNode(Opcodes.CHECKCAST,LIVING));
+  code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,LIVING,"getSleepingPos","()Ljava/util/Optional;",false));
+  code.add(new InsnNode(Opcodes.ACONST_NULL));code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"java/util/Optional","orElse","(Ljava/lang/Object;)Ljava/lang/Object;",false));
+  code.add(new TypeInsnNode(Opcodes.CHECKCAST,"net/minecraft/core/BlockPos"));code.add(new VarInsnNode(Opcodes.ASTORE,2));
+  code.add(new VarInsnNode(Opcodes.ALOAD,2));code.add(new JumpInsnNode(Opcodes.IFNONNULL,fire));
+  code.add(new VarInsnNode(Opcodes.ALOAD,1));code.add(new InsnNode(Opcodes.ARETURN));
+  code.add(fire);code.add(new FrameNode(Opcodes.F_APPEND,1,new Object[]{"net/minecraft/core/BlockPos"},0,null));
+  String event="net/fabricmc/fabric/api/entity/event/v1/EntitySleepEvents",callback=event+"$ModifySleepingDirection";
+  code.add(new FieldInsnNode(Opcodes.GETSTATIC,event,"MODIFY_SLEEPING_DIRECTION","Lnet/fabricmc/fabric/api/event/Event;"));
+  code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"net/fabricmc/fabric/api/event/Event","invoker","()Ljava/lang/Object;",false));
+  code.add(new TypeInsnNode(Opcodes.CHECKCAST,callback));
+  code.add(new VarInsnNode(Opcodes.ALOAD,0));code.add(new TypeInsnNode(Opcodes.CHECKCAST,LIVING));code.add(new VarInsnNode(Opcodes.ALOAD,2));code.add(new VarInsnNode(Opcodes.ALOAD,1));
+  code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,callback,"modifySleepDirection","(L"+LIVING+";"+POSITION+DIRECTION+")"+DIRECTION,true));
+  code.add(new InsnNode(Opcodes.ARETURN));
+  handler.maxStack=4;handler.maxLocals=3;mixin.methods.add(handler);
+  ForbricLog.info("[Forbric/Mixin] fabric-api's sleeping direction now modifies LivingEntity.getBedOrientation's answer — "
+    +"NeoForge's body asks the bed block instead of BedBlock.getBedOrientation, so the wrap bound nowhere");
+  return 1;
  }
  private static final String OPERATION="com/llamalad7/mixinextras/injector/wrapoperation/Operation";
  private static final String EFFECT_REMOVED="(L"+LIVING+";"+EFFECT+")Z";
