@@ -40,6 +40,23 @@ public final class KernelFluidTypes {
 		return NeoForgeMod.EMPTY_TYPE.value();
 	}
 
+	/**
+	 * MinecraftForge's fluid type for a fluid that does not override MinecraftForge's {@code getFluidType()} — a NeoForge
+	 * or Fabric mod's (vanilla's are bridged per class). MinecraftForge's default throws the same "Mod fluids must
+	 * override getFluidType." for it; merged entity-fluid code and any MinecraftForge mod walking fluids ask it. Decided
+	 * by the same tags, as MinecraftForge's water, lava or empty type.
+	 */
+	public static net.minecraftforge.fluids.FluidType forgeType(Fluid fluid) {
+		FluidState state = fluid == null ? null : fluid.defaultFluidState();
+		try {
+			if (state != null && state.is(FluidTags.WATER)) return net.minecraftforge.common.ForgeMod.WATER_TYPE.get();
+			if (state != null && state.is(FluidTags.LAVA)) return net.minecraftforge.common.ForgeMod.LAVA_TYPE.get();
+		} catch (IllegalStateException unbound) {
+			// Tags are not bound yet; see foreignType.
+		}
+		return net.minecraftforge.common.ForgeMod.EMPTY_TYPE.get();
+	}
+
 	/** Whether NeoForge's getVanillaFluidType knows this fluid: vanilla's own, and NeoForge's milk. */
 	private static boolean native_(Fluid fluid) {
 		Identifier id = BuiltInRegistries.FLUID.getKey(fluid);

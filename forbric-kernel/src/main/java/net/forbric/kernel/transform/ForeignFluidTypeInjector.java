@@ -32,6 +32,10 @@ import org.objectweb.asm.tree.VarInsnNode;
  * NeoForge's lookup would throw on, from the fluid's tags the way vanilla decides — water, lava, or none — and is not
  * cached, since tags are bound late and rebound on reload. Every fluid NeoForge answers keeps NeoForge's cached path.
  * Only on the reviewed shape: the method caches in its own field and its only call is {@code getVanillaFluidType}.
+ *
+ * <p>MinecraftForge's {@code getFluidType()} (a different return type) has the same throwing default, and merged
+ * entity-fluid code and MinecraftForge mods ask it too; {@code Fluid} gets a concrete one answering from the same
+ * tags, which a MinecraftForge fluid still overrides and vanilla's per-class bridges still shadow.
  * {@code -Dforbric.foreignFluidTypes=off} leaves it as merged.
  */
 public final class ForeignFluidTypeInjector implements ClassTransformer {
@@ -39,6 +43,7 @@ public final class ForeignFluidTypeInjector implements ClassTransformer {
 	static final String FLUID = "net.minecraft.world.level.material.Fluid";
 	static final String FLUID_INTERNAL = "net/minecraft/world/level/material/Fluid";
 	static final String TYPE = ForeignType.FLUID_TYPE.internal(Ecosystem.NEOFORGE);
+	static final String FORGE_TYPE = ForeignType.FLUID_TYPE.internal(Ecosystem.FORGE);
 	static final String RUNTIME = "net/forbric/kernel/runtime/KernelFluidTypes";
 
 	static boolean enabled() {
@@ -61,7 +66,8 @@ public final class ForeignFluidTypeInjector implements ClassTransformer {
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		ForbricLog.info("[Forbric/Fluid] a fluid with no NeoForge type of its own (a Fabric or MinecraftForge mod's) gets the "
-				+ "one its fluid tags imply, instead of NeoForge's \"Mod fluids must override getFluidType\"");
+				+ "one its fluid tags imply, instead of NeoForge's \"Mod fluids must override getFluidType\" — and likewise "
+				+ "MinecraftForge's type for a fluid without one");
 		return writer.toByteArray();
 	}
 
@@ -92,7 +98,24 @@ public final class ForeignFluidTypeInjector implements ClassTransformer {
 		ask.add(new FrameNode(Opcodes.F_SAME1, 0, null, 1, new Object[] { TYPE }));
 		ask.add(new InsnNode(Opcodes.POP));
 		method.instructions.insert(cached, ask);
+		addForgeType(fluid);
 		return 1;
+	}
+
+	/**
+	 * MinecraftForge's {@code getFluidType()} on {@code Fluid} itself, when only its interface default (which throws for
+	 * any mod fluid) supplies it: a MinecraftForge fluid still overrides it, vanilla's fluids keep their per-class bridge,
+	 * and every other fluid answers from its tags ({@code KernelFluidTypes.forgeType}).
+	 */
+	static void addForgeType(ClassNode fluid) {
+		String desc = "()L" + FORGE_TYPE + ";";
+		for (MethodNode m : fluid.methods) if (m.name.equals("getFluidType") && m.desc.equals(desc)) return;
+		if (fluid.interfaces == null || !fluid.interfaces.contains("net/minecraftforge/common/extensions/IForgeFluid")) return;
+		MethodNode forge = new MethodNode(Opcodes.ASM9, Opcodes.ACC_PUBLIC, "getFluidType", desc, null, null);
+		forge.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		forge.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, RUNTIME, "forgeType", "(L" + FLUID_INTERNAL + ";)L" + FORGE_TYPE + ";", false));
+		forge.instructions.add(new InsnNode(Opcodes.ARETURN));
+		fluid.methods.add(forge);
 	}
 
 	private static int declined(String reason) {

@@ -13,7 +13,7 @@
 #   remainders through ItemStack, Item(ItemStack) and NeoForge's Item(ItemInstance) (control); a cake crafted from its
 #   recipe leaves three buckets; an idle furnace ticks (control) and a lit one smelts raw iron; a brewing stand makes
 #   awkward potions; a pig stands in a Fabric mod's untagged fluid (no interaction) and in its water-tagged fluid (it
-#   swims); a dragon is added and found by its part, hurt through it, and removed; the server stops cleanly.
+#   swims), and MinecraftForge's fluid type of each is its water or empty type; a dragon is added and found by its part, hurt through it, and removed; the server stops cleanly.
 #   Fabric fluids — a Fabric mod's fluid declares no NeoForge FluidType, and NeoForge's lookup threw "Mod fluids must
 #     override getFluidType" at the first entity to touch one: 'Ticking entity' took the server down
 #     (ForeignFluidTypeInjector gives it the type its fluid tags imply).
@@ -30,7 +30,7 @@ set -uo pipefail
 SERVER_DIR="$KERNEL/run/server-everyday-m45"
 RESULTS="$BUILD/verification/m45-everyday-actions"
 FAIL=0
-REPAIRED="{'remainder.stack', 'remainder.item', 'craft.cake', 'furnace.smelt', 'brewing.awkward', 'fluid.untagged', 'fluid.water', 'dragon.add', 'dragon.hurt', 'dragon.remove'}"
+REPAIRED="{'remainder.stack', 'remainder.item', 'craft.cake', 'furnace.smelt', 'brewing.awkward', 'fluid.minecraftForgeType', 'fluid.untagged', 'fluid.water', 'dragon.add', 'dragon.hurt', 'dragon.remove'}"
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 
 kernel_jar
@@ -65,7 +65,7 @@ import json, sys
 report, phase, rule = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
 assert report['phase'] == phase, report['phase']
 cases = {c['name']: c for c in report['cases']}
-assert len(cases) == 12, sorted(cases)
+assert len(cases) == 13, sorted(cases)
 failed = {name for name, c in cases.items() if not c['pass']}
 for name in sorted(failed): print(f"[kernel]   {phase}: {name} failed — {cases[name]['detail'][:240]}")
 assert eval(rule, {'failed': failed, 'cases': cases}), (phase, sorted(failed))
@@ -76,7 +76,7 @@ PY
 
 step "1. positive: crafting, smelting, brewing and the dragon work"
 run_server positive strict ""
-judge positive "not failed" "all 12 cases pass"
+judge positive "not failed" "all 13 cases pass"
 check_absent "positive: the server stopped without an exception" 'Exception stopping the server|still alive .* after announcing its stop' "$RESULTS/positive.log"
 if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r['confirmedRequired']==0 else 1)" "$RESULTS/positive-compatibility.json" 2>/dev/null
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"

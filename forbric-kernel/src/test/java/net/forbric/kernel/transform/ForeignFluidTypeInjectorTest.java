@@ -37,6 +37,11 @@ class ForeignFluidTypeInjectorTest {
 		assertTrue(real.stream().anyMatch(i -> i instanceof MethodInsnNode call && call.name.equals("getVanillaFluidType")),
 				"NeoForge's lookup still answers every fluid it knows, and still caches it");
 		new Analyzer<>(new BasicVerifier()).analyze(FLUID, type);
+		ClassNode node = new ClassNode();
+		new ClassReader(out).accept(node, 0);
+		MethodNode forge = node.methods.stream().filter(m -> m.name.equals("getFluidType") && m.desc.equals("()L" + ForeignFluidTypeInjector.FORGE_TYPE + ";"))
+				.findFirst().orElseThrow(() -> new AssertionError("Fluid answers MinecraftForge's getFluidType() itself"));
+		assertTrue(Arrays.stream(forge.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode c && c.name.equals("forgeType")));
 		assertSame(out, new ForeignFluidTypeInjector().transform(ForeignFluidTypeInjector.FLUID, out, null), "a second pass changes nothing");
 	}
 
