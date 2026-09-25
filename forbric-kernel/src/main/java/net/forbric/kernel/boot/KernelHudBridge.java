@@ -18,13 +18,27 @@ package net.forbric.kernel.boot;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
+import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.util.ForbricLog;
@@ -75,6 +89,14 @@ import net.forbric.kernel.util.ForbricLog;
  * the wrong game mode is cosmetic; drawing nothing is the bug being fixed. The alternative — bridge only
  * {@code hotbar} and warn when {@code spectator_menu} has attachments — is not obviously better and nothing in
  * the observed mod sets uses that root.
+ *
+ * <p>A root the game already dispatches through fabric-rendering-v1's own {@code HudMixin} is left to it. The
+ * kernel's renamed-body retarget moves the health, armor, food and air handlers from vanilla's
+ * {@code extractPlayerHealth} into NeoForge's {@code extractHealthLevel} and its siblings — which the
+ * {@code player_health}, {@code armor_level}, {@code food_level} and {@code air_level} layers call — so wrapping those
+ * layers as well drew every element attached around those roots twice a frame. The mixin is the better owner: it
+ * wraps exactly the vanilla call, leaving NeoForge's {@code leftHeight}/{@code rightHeight} bookkeeping outside a
+ * replaced element. Which roots it owns is read off the final {@code Hud} class ({@link #liveRoots}).
  *
  * <p>When {@code fabric-rendering-v1} is absent {@link #wrap} returns the layer BY IDENTITY, so the render path
  * is byte-for-byte what it would be without the kernel and costs nothing per frame. {@code -Dforbric.hudBridge=off}
@@ -137,6 +159,12 @@ public final class KernelHudBridge {
 	private static Method getRoot;
 	private static Class<?> vanillaElements;
 	private static int bridged;
+	private static int settled;
+
+	private static final String HUD = "net.minecraft.client.gui.Hud";
+	private static final String VANILLA_ELEMENTS_INTERNAL = VANILLA_ELEMENTS.replace('.', '/');
+	/** {@code VanillaHudElements} fields some live method of the final {@code Hud} class already dispatches. */
+	private static volatile Set<String> mixinOwned = Set.of();
 
 	private KernelHudBridge() {
 	}
@@ -156,7 +184,69 @@ public final class KernelHudBridge {
 			getRoot = null;
 			vanillaElements = null;
 			bridged = 0;
+			settled = 0;
 		}
+	}
+
+	/**
+	 * Called with every class the kernel loader defines; reads the final {@code Hud} — after Mixin, before its
+	 * constructor registers a single layer — for the roots fabric-rendering-v1's own handlers already dispatch.
+	 */
+	public static void observeDefinition(String name, byte[] bytes) {
+		if (!HUD.equals(name) || bytes == null) return;
+		try {
+			ClassNode hud = new ClassNode();
+			new ClassReader(bytes).accept(hud, ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
+			Set<String> owned = liveRoots(hud);
+			mixinOwned = owned;
+			if (!owned.isEmpty()) {
+				ForbricLog.info("[Forbric/HudBridge] %s already dispatched by fabric-rendering-v1's own HudMixin in "
+						+ "live Hud code — the layer bridge leaves those roots to it, so their elements draw once",
+						String.join(", ", owned));
+			}
+		} catch (RuntimeException unreadable) {
+			ForbricLog.debug("[Forbric/HudBridge] could not read the final Hud class (%s) — bridging every mapped root",
+					String.valueOf(unreadable));
+		}
+	}
+
+	/**
+	 * The {@code VanillaHudElements} fields read by a method reachable from what the game calls: the layers
+	 * {@code registerVanillaLayers} registers (method handles) and {@code extractRenderState}, following the class's
+	 * own calls and handles. A HudMixin handler bound in orphaned vanilla code — {@code extractHotbarAndDecorations},
+	 * which nothing calls on this base — is not reachable and owns nothing.
+	 */
+	static Set<String> liveRoots(ClassNode hud) {
+		Map<String, MethodNode> byKey = new HashMap<>();
+		for (MethodNode method : hud.methods) byKey.put(method.name + method.desc, method);
+		Deque<MethodNode> work = new ArrayDeque<>();
+		Set<MethodNode> seen = new HashSet<>();
+		for (MethodNode method : hud.methods) {
+			if (method.name.equals("registerVanillaLayers") || method.name.equals("extractRenderState")) {
+				if (seen.add(method)) work.add(method);
+			}
+		}
+		Set<String> owned = new TreeSet<>();
+		while (!work.isEmpty()) {
+			MethodNode method = work.poll();
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
+						&& field.owner.equals(VANILLA_ELEMENTS_INTERNAL)) {
+					owned.add(field.name);
+				} else if (insn instanceof MethodInsnNode call && call.owner.equals(hud.name)) {
+					MethodNode next = byKey.get(call.name + call.desc);
+					if (next != null && seen.add(next)) work.add(next);
+				} else if (insn instanceof InvokeDynamicInsnNode indy) {
+					for (Object argument : indy.bsmArgs) {
+						if (argument instanceof Handle handle && handle.getOwner().equals(hud.name)) {
+							MethodNode next = byKey.get(handle.getName() + handle.getDesc());
+							if (next != null && seen.add(next)) work.add(next);
+						}
+					}
+				}
+			}
+		}
+		return java.util.Collections.unmodifiableSet(owned);
 	}
 
 	/**
@@ -203,9 +293,11 @@ public final class KernelHudBridge {
 		if (!resolve()) return layer;
 
 		Object wrapped = layer;
+		Set<String> owned = mixinOwned;
 		try {
 			// Innermost first: the LAST name in the array ends up closest to the vanilla layer.
 			for (int i = rootNames.length - 1; i >= 0; i--) {
+				if (owned.contains(rootNames[i])) continue;    // HudMixin already dispatches it: one owner per root
 				Object root = getRoot.invoke(null, vanillaElements.getField(rootNames[i]).get(null));
 				if (root == null) continue;
 				wrapped = generatedCtor.newInstance(root, wrapped);
@@ -215,14 +307,14 @@ public final class KernelHudBridge {
 					+ "attached to it will not render", t);
 			return layer;
 		}
-		if (wrapped == layer) return layer;
-
 		synchronized (KernelHudBridge.class) {
-			if (++bridged == ROOTS.size()) {
+			if (wrapped != layer) bridged++;
+			if (++settled == ROOTS.size()) {
 				ForbricLog.info("[Forbric/HudBridge] bridged %d of %d vanilla HUD layers to Fabric's "
 						+ "HudElementRegistry — NeoForge won Hud.extractRenderState, so fabric-rendering-v1's element "
-						+ "dispatch had nothing to hook and every Fabric HUD element drew nothing",
-						bridged, ROOTS.size());
+						+ "dispatch had nothing to hook and every Fabric HUD element drew nothing%s",
+						bridged, ROOTS.size(), bridged == ROOTS.size() ? ""
+								: " (the other " + (ROOTS.size() - bridged) + " are dispatched by HudMixin itself)");
 			}
 		}
 		return wrapped;

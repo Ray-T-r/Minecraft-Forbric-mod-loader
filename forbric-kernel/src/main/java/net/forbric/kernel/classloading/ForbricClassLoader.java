@@ -371,6 +371,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 			definitionEvidence.defined(name, bytes);
 			net.forbric.kernel.mixin.FinalMixinApplications.onClassDefined(name, bytes);
 			net.forbric.kernel.mixin.SupersededMixins.observeDefinition(name, bytes);
+			net.forbric.kernel.boot.KernelHudBridge.observeDefinition(name, bytes);
 			return defined;
 		} catch (LinkageError duplicate) {
 			Class<?> already = findLoadedClass(name);

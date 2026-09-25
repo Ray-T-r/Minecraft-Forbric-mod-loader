@@ -170,6 +170,33 @@ class KernelHudBridgeTest {
 	}
 
 	@Test
+	void rootsHudMixinDispatchesInLiveCodeAreLeftToIt() throws Exception {
+		assumeTrue(Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		ClassNode hud = new ClassNode();
+		new ClassReader(readFromJar(MERGED_BASE, "net/minecraft/client/gui/Hud.class")).accept(hud, 0);
+		assertEquals(Set.of(), KernelHudBridge.liveRoots(hud), "the base before Mixin dispatches no Fabric root");
+
+		// What Mixin leaves after the renamed-body retarget: a merged handler reading HEALTH_BAR called from NeoForge's
+		// player_health layer body, and one reading HOTBAR bound in orphaned vanilla code nothing calls.
+		boundHandler(hud, "extractHealthLevel", "wrapOperation$forbricTest$health", "HEALTH_BAR");
+		boundHandler(hud, "extractHotbarAndDecorations", "wrapOperation$forbricTest$hotbar", "HOTBAR");
+		assertEquals(Set.of("HEALTH_BAR"), KernelHudBridge.liveRoots(hud),
+				"only the root dispatched from a registered layer is the mixin's; the orphaned one stays the bridge's");
+	}
+
+	private static void boundHandler(ClassNode hud, String host, String handler, String root) {
+		MethodNode method = new MethodNode(org.objectweb.asm.Opcodes.ACC_PRIVATE | org.objectweb.asm.Opcodes.ACC_STATIC,
+				handler, "()V", null, null);
+		method.instructions.add(new FieldInsnNode(org.objectweb.asm.Opcodes.GETSTATIC,
+				"net/fabricmc/fabric/api/client/rendering/v1/hud/VanillaHudElements", root, "Lnet/minecraft/resources/Identifier;"));
+		method.instructions.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.POP));
+		method.instructions.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.RETURN));
+		hud.methods.add(method);
+		MethodNode caller = hud.methods.stream().filter(m -> m.name.equals(host)).findFirst().orElseThrow();
+		caller.instructions.insert(new MethodInsnNode(org.objectweb.asm.Opcodes.INVOKESTATIC, hud.name, handler, "()V", false));
+	}
+
+	@Test
 	void withoutFabricRenderingTheLayerIsReturnedByIdentity() {
 		// No loader bound: the registry cannot resolve, so the render path must be exactly what it is today —
 		// same object, nothing allocated, no per-frame cost.
