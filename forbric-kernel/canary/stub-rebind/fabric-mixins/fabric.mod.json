@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"forbricstubmixins","version":"1.0.0","name":"Stub rebind probe mixins (gate M46)","environment":"*","mixins":["forbricstubmixins.mixins.json"],"depends":{"fabricloader":"*"}}
