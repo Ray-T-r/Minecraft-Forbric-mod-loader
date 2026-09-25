@@ -46,13 +46,13 @@ for phase in ('positive','off'):
    raise RuntimeError('M37 owned process group timed out')
  assert code==(0 if phase=='positive' else 1),(phase,'unexpected command result',code)
  proof=json.loads((run/'probe.json').read_text());shutil.copy2(run/'probe.json',results/(phase+'-probe.json'))
- assert proof['nonce']==nonce and proof['phase']==phase and len(proof['cases'])==11,proof
+ assert proof['nonce']==nonce and proof['phase']==phase and len(proof['cases'])==12,proof
  assert all(c['pass'] is (phase=='positive') for c in proof['cases']),proof
  outcome=json.loads((results/(phase+'.result.json')).read_text());assert outcome['inputsUnchanged'] is True,outcome
  report=json.loads((results/(phase+'-compatibility.json')).read_text())
  if phase=='positive':assert report['confirmedRequired']==0,report
  else:assert report['confirmedRequired']>0,report
  text=(results/(phase+'.log')).read_text();assert 'Done (' in text and 'Preparing crash report' not in text and 'All dimensions are saved' in text
- print('[M37] PASS',phase,'eleven actual entity callback cases with expected verdicts',flush=True)
+ print('[M37] PASS',phase,'twelve actual entity callback cases with expected verdicts',flush=True)
 print('[M37] GATE GREEN')
 PY

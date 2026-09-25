@@ -35,7 +35,7 @@ public final class EntityCallbacks {
  private static MinecraftServer server; private static ServerLevel level;
  private static final BlockPos BED=new BlockPos(8,80,8);
  private static String phase,nonce; private static Path root;
- private static int ticks,adds,removes,allow,custom,occupation,nearby;
+ private static int ticks,adds,removes,early,allow,custom,occupation,nearby;
  private static boolean beforeRemoval,vanillaNearby,originalStone;
  private static MobEffectInstance effect;
  private static String mode="";
@@ -43,6 +43,7 @@ public final class EntityCallbacks {
  public EntityCallbacks(net.neoforged.bus.api.IEventBus bus){
   BLOCKS.register(bus);
   ServerMobEffectEvents.BEFORE_ADD.register((value,entity,context)->{if(entity==player&&mode.equals("effect-add")){adds++;require(value==effect,"before-add input identity");value.update(new MobEffectInstance(MobEffects.SPEED,400));}});
+  ServerMobEffectEvents.ALLOW_EARLY_REMOVE.register((value,entity,context)->{if(entity!=player||!mode.equals("effect-clear-veto"))return true;early++;return !value.is(MobEffects.SPEED);});
   ServerMobEffectEvents.BEFORE_REMOVE.register((value,entity,context)->{if(entity==player&&mode.equals("effect-remove")){removes++;beforeRemoval=entity.hasEffect(value.getEffect());}});
   EntityElytraEvents.ALLOW.register(entity->{if(entity!=player)return true;allow++;return !mode.equals("glide-deny");});
   EntityElytraEvents.CUSTOM.register((entity,tick)->{if(entity!=player)return false;custom++;return mode.startsWith("glide-custom")||mode.equals("glide-boolean");});
@@ -72,6 +73,8 @@ public final class EntityCallbacks {
  private static void run()throws Exception{
   test("effect-add",()->{effect=new MobEffectInstance(MobEffects.SPEED,200);player.forceAddEffect(effect,null);require(adds==1&&player.getEffect(MobEffects.SPEED)==effect&&effect.getDuration()==400,"effect callback/count/updated duration");});
   test("effect-remove",()->{player.forceAddEffect(new MobEffectInstance(MobEffects.SPEED,200),null);require(player.removeAllEffects(),"native removal result");require(removes==1&&beforeRemoval&&!player.hasEffect(MobEffects.SPEED),"before-remove did not precede real removal");});
+  test("effect-clear-veto",()->{player.forceAddEffect(new MobEffectInstance(MobEffects.SPEED,200),null);player.forceAddEffect(new MobEffectInstance(MobEffects.HASTE,200),null);
+   require(player.removeAllEffects(),"native removal result");require(early==2&&player.hasEffect(MobEffects.SPEED)&&!player.hasEffect(MobEffects.HASTE),"Fabric clear-all veto did not keep the vetoed effect and only it");});
   test("glide-deny",()->{flight(1);require(!player.tryToStartFallFlying()&&!player.isFallFlying()&&allow==1&&custom==0,"Fabric veto did not prevent native allowed flight");});
   test("glide-custom",()->{flight(0);require(player.tryToStartFallFlying()&&player.isFallFlying()&&allow==1&&custom==1,"Fabric custom flight was not consumed");});
   test("glide-boolean",()->{flight(0);var method=LivingEntity.class.getDeclaredMethod("canGlide",boolean.class);method.setAccessible(true);require(Boolean.TRUE.equals(method.invoke(player,false))&&allow==1&&custom==1,"equipment branch did not consult custom flight");});
@@ -90,16 +93,16 @@ public final class EntityCallbacks {
  }
  private static boolean occupied(){return level.getBlockState(BED).getValue(BedBlock.OCCUPIED);}
  @FunctionalInterface private interface Probe{void run()throws Exception;}
- private static void test(String name,Probe probe){mode=name;adds=removes=allow=custom=occupation=nearby=0;beforeRemoval=vanillaNearby=originalStone=false;
+ private static void test(String name,Probe probe){mode=name;adds=removes=early=allow=custom=occupation=nearby=0;beforeRemoval=vanillaNearby=originalStone=false;
   boolean pass=false;String detail="";try{probe.run();pass=true;}catch(Throwable failure){detail=failure.toString();failure.printStackTrace();}
-  Map<String,Object> result=row(name,pass,detail);result.put("adds",adds);result.put("removes",removes);result.put("allow",allow);result.put("custom",custom);result.put("occupation",occupation);result.put("nearby",nearby);cases.add(result);
+  Map<String,Object> result=row(name,pass,detail);result.put("adds",adds);result.put("removes",removes);result.put("early",early);result.put("allow",allow);result.put("custom",custom);result.put("occupation",occupation);result.put("nearby",nearby);cases.add(result);
   System.out.println("[M37Entity] "+(pass?"PASS":"FAIL")+" "+result);mode="";player.stopFallFlying();player.stopSleeping();player.removeAllEffects();
  }
  private static Map<String,Object> row(String name,boolean pass,String detail){Map<String,Object> r=new LinkedHashMap<>();r.put("name",name);r.put("pass",pass);r.put("detail",detail);return r;}
  private static void require(boolean condition,String detail){if(!condition)throw new IllegalStateException(detail);}
  private static void finish(){try{
   if(monster!=null)monster.discard();if(player!=null)level.removePlayerImmediately(player,Entity.RemovalReason.DISCARDED);if(level!=null)level.setChunkForced(0,0,false);
-  Map<String,Object> r=new LinkedHashMap<>();r.put("phase",phase);r.put("nonce",nonce);r.put("pass",cases.size()==11&&cases.stream().allMatch(c->Boolean.TRUE.equals(c.get("pass"))));r.put("cases",cases);r.put("ticks",ticks);
+  Map<String,Object> r=new LinkedHashMap<>();r.put("phase",phase);r.put("nonce",nonce);r.put("pass",cases.size()==12&&cases.stream().allMatch(c->Boolean.TRUE.equals(c.get("pass"))));r.put("cases",cases);r.put("ticks",ticks);
   Files.writeString(root.resolve("probe.json"),new GsonBuilder().setPrettyPrinting().create().toJson(r));
  }catch(Exception failure){failure.printStackTrace();}finally{MinecraftServer stop=server;server=null;if(stop!=null)stop.halt(false);}}
 }

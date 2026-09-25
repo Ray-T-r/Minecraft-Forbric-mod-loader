@@ -9,7 +9,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
 
 /** Preserve Fabric entity callbacks at the corresponding stage of the pinned NeoForge body. Effects,
- * flight and monster checks retain their original handlers. Occupancy bridges its audited handled-result
+ * flight and monster checks retain their original handlers; the clear-all veto wraps NeoForge's per-effect question. Occupancy bridges its audited handled-result
  * contract to the native bed setter, including native beds with no vanilla OCCUPIED property. */
 public final class FabricEntityMixinAnchors {
  public static final String PROPERTY="forbric.fabricEntityAnchors";
@@ -38,6 +38,7 @@ public final class FabricEntityMixinAnchors {
       && remove.instructions.iterator().hasNext() && countNew(remove,"java/util/HashMap")==1)
     changed+=move(mixin,"beforeRemoveAllEffects","("+CIR+")V","removeAllEffects",null,"INVOKE",
       "Lcom/google/common/collect/Maps;newHashMap(Ljava/util/Map;)Ljava/util/HashMap;","NEW","java/util/HashMap");
+   if(remove!=null)changed+=earlyRemoveVeto(mixin,remove);
   } else if(mixin.name.equals(BASE+"elytra/LivingEntityMixin")) {
    MethodNode plain=method(target,"canGlide","()Z"),extended=method(target,"canGlide","(Z)Z");
    if(delegatesToAttributePath(plain) && attributeAfterMovementChecks(extended))
@@ -116,6 +117,57 @@ public final class FabricEntityMixinAnchors {
   code.add(new VarInsnNode(Opcodes.ALOAD,6));code.add(new VarInsnNode(Opcodes.ALOAD,2));code.add(new VarInsnNode(Opcodes.ALOAD,3));code.add(new VarInsnNode(Opcodes.ALOAD,4));code.add(new VarInsnNode(Opcodes.ILOAD,5));
   code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,STATE,"setBedOccupied",BED_CALL,false));code.add(end);code.add(new FrameNode(Opcodes.F_SAME,0,null,0,null));code.add(new InsnNode(Opcodes.RETURN));
   bridge.maxStack=5;bridge.maxLocals=7;mixin.methods.add(bridge);return 1;
+ }
+ private static final String OPERATION="com/llamalad7/mixinextras/injector/wrapoperation/Operation";
+ private static final String EFFECT_REMOVED="(L"+LIVING+";"+EFFECT+")Z";
+ private static final String ALLOW_EARLY="net/fabricmc/fabric/api/entity/event/v1/effect/ServerMobEffectEvents$AllowEarlyRemove";
+ private static final String CONTEXT="Lnet/fabricmc/fabric/api/entity/event/v1/effect/EffectEventContext;";
+ /** Fabric's ALLOW_EARLY_REMOVE veto for "clear every effect" (milk, /effect clear). Fabric wraps vanilla's
+  * activeEffects.clear() and puts a vetoed effect back; NeoForge's body has no clear() — it asks
+  * EventHooks.onEffectRemoved once per effect and keeps the effect when that answers true. The same veto therefore
+  * becomes a wrap of that one call: NeoForge keeping it keeps it, otherwise Fabric's listeners decide. A vetoed effect
+  * is also never handed to onEffectsRemoved, which the clear()-and-put-back original could not avoid. */
+ private static int earlyRemoveVeto(ClassNode mixin,MethodNode remove) {
+  if(countCalls(remove,"java/util/Map","clear","()V")!=0||countCalls(remove,"net/neoforged/neoforge/event/EventHooks","onEffectRemoved",EFFECT_REMOVED)!=1)return 0;
+  MethodNode old=method(mixin,"allowRemoveAllEffects","(Ljava/util/Map;L"+OPERATION+";)V");
+  if(old==null||hasGroup(old.visibleAnnotations)||hasGroup(old.invisibleAnnotations))return 0;
+  AnnotationNode wrap=MixinFit.injectorOf(old);
+  if(wrap==null||!wrap.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;")
+    ||!MixinFit.stringList(MixinFit.value(wrap,"method")).equals(List.of("removeAllEffects")))return 0;
+  List<AnnotationNode> points=MixinFit.atNodes(wrap);
+  if(points.size()!=1||!"INVOKE".equals(MixinFit.value(points.getFirst(),"value"))||!"Ljava/util/Map;clear()V".equals(MixinFit.value(points.getFirst(),"target")))return 0;
+  // The handler this reproduces: one clear() through the Operation, then one ALLOW_EARLY_REMOVE question per effect,
+  // putting back the ones it vetoes — and nothing else a listener could observe.
+  if(countCalls(old,OPERATION,"call","([Ljava/lang/Object;)Ljava/lang/Object;")!=1
+    ||countCalls(old,ALLOW_EARLY,"allowEarlyRemove","("+EFFECT+"L"+LIVING+";"+CONTEXT+")Z")!=1
+    ||countCalls(old,"java/util/Map","put","(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")!=1
+    ||method(mixin,"isClient","()Z")==null||method(mixin,"self","()L"+LIVING+";")==null)return 0;
+  String desc="(L"+LIVING+";"+EFFECT+"L"+OPERATION+";)Z";
+  if(method(mixin,"forbric$allowEarlyRemove",desc)!=null)return 0;
+  MethodNode handler=new MethodNode(Opcodes.ACC_PRIVATE,"forbric$allowEarlyRemove",desc,null,null);
+  handler.visibleAnnotations=new ArrayList<>(List.of(wrap));
+  if(old.visibleAnnotations!=null)old.visibleAnnotations.remove(wrap);if(old.invisibleAnnotations!=null)old.invisibleAnnotations.remove(wrap);
+  set(points.getFirst(),"target","Lnet/neoforged/neoforge/event/EventHooks;onEffectRemoved"+EFFECT_REMOVED);
+  InsnList code=handler.instructions;LabelNode removable=new LabelNode(),server=new LabelNode(),allowed=new LabelNode();
+  code.add(new VarInsnNode(Opcodes.ALOAD,3));code.add(new InsnNode(Opcodes.ICONST_2));code.add(new TypeInsnNode(Opcodes.ANEWARRAY,"java/lang/Object"));
+  code.add(new InsnNode(Opcodes.DUP));code.add(new InsnNode(Opcodes.ICONST_0));code.add(new VarInsnNode(Opcodes.ALOAD,1));code.add(new InsnNode(Opcodes.AASTORE));
+  code.add(new InsnNode(Opcodes.DUP));code.add(new InsnNode(Opcodes.ICONST_1));code.add(new VarInsnNode(Opcodes.ALOAD,2));code.add(new InsnNode(Opcodes.AASTORE));
+  code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,OPERATION,"call","([Ljava/lang/Object;)Ljava/lang/Object;",true));
+  code.add(new TypeInsnNode(Opcodes.CHECKCAST,"java/lang/Boolean"));code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"java/lang/Boolean","booleanValue","()Z",false));
+  code.add(new JumpInsnNode(Opcodes.IFEQ,removable));code.add(new InsnNode(Opcodes.ICONST_1));code.add(new InsnNode(Opcodes.IRETURN));
+  code.add(removable);code.add(new FrameNode(Opcodes.F_SAME,0,null,0,null));
+  code.add(new VarInsnNode(Opcodes.ALOAD,0));code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,mixin.name,"isClient","()Z",false));
+  code.add(new JumpInsnNode(Opcodes.IFEQ,server));code.add(new InsnNode(Opcodes.ICONST_0));code.add(new InsnNode(Opcodes.IRETURN));
+  code.add(server);code.add(new FrameNode(Opcodes.F_SAME,0,null,0,null));
+  code.add(new FieldInsnNode(Opcodes.GETSTATIC,"net/fabricmc/fabric/api/entity/event/v1/effect/ServerMobEffectEvents","ALLOW_EARLY_REMOVE","Lnet/fabricmc/fabric/api/event/Event;"));
+  code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"net/fabricmc/fabric/api/event/Event","invoker","()Ljava/lang/Object;",false));
+  code.add(new TypeInsnNode(Opcodes.CHECKCAST,ALLOW_EARLY));code.add(new VarInsnNode(Opcodes.ALOAD,2));
+  code.add(new VarInsnNode(Opcodes.ALOAD,0));code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,mixin.name,"self","()L"+LIVING+";",false));
+  code.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"net/fabricmc/fabric/impl/entity/event/effect/MobEffectUtil","getCommandContext","()"+CONTEXT,false));
+  code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,ALLOW_EARLY,"allowEarlyRemove","("+EFFECT+"L"+LIVING+";"+CONTEXT+")Z",true));
+  code.add(new JumpInsnNode(Opcodes.IFNE,allowed));code.add(new InsnNode(Opcodes.ICONST_1));code.add(new InsnNode(Opcodes.IRETURN));
+  code.add(allowed);code.add(new FrameNode(Opcodes.F_SAME,0,null,0,null));code.add(new InsnNode(Opcodes.ICONST_0));code.add(new InsnNode(Opcodes.IRETURN));
+  handler.maxStack=5;handler.maxLocals=4;mixin.methods.add(handler);return 1;
  }
  static String bodyHash(MethodNode original) { return MixinInstructionFingerprint.hash(original); }
 

@@ -6,10 +6,12 @@ Mixin configs, class tweakers and handlers run. This is a focused entity-module 
 whole Fabric API umbrella or the broad mixed client pack.
 
 A fresh nonce-owned server world contains a real fake player, a visible zombie, ordinary beds and a registered
-NeoForge custom bed with its own occupancy property and setter. Eleven cases execute through game methods:
+NeoForge custom bed with its own occupancy property and setter. Twelve cases execute through game methods:
 
 - Force-add an effect: one before-add callback mutates its duration; the actual installed effect retains it.
 - Remove effects: one before-remove callback sees the still-active effect; the game then removes it.
+- Clear all effects with an early-removal veto on one of two: the vetoed effect stays, the other goes, and the
+  veto is asked once per effect (NeoForge asks per effect where vanilla clears the map).
 - Veto native permitted gliding, provide custom gliding without a native attribute, and cover the boolean
   equipment path. Actual flight flags and callback counts are checked.
 - Sleep/wake in an ordinary bed, intercept its occupation writes, and allow sleeping on a stone block
@@ -19,8 +21,9 @@ NeoForge custom bed with its own occupancy property and setter. Eleven cases exe
 - Override the nearby-monster sleep check with an actual visible zombie. The game must return success and
   put the player to sleep, not merely deliver the event.
 
-The positive run is strict and must have zero confirmed required findings. The same eleven cases all fail
-with `forbric.fabricEntityAnchors=off` and `forbric.mixinRetarget=off` — the generic renamed-body retarget moves
+The positive run is strict and must have zero confirmed required findings. The same twelve cases all fail
+with `forbric.fabricEntityAnchors=off`, `forbric.mixinRetarget=off` and `forbric.mixinStubRebind=off` (the
+carrier-stub rebind would move the boolean elytra check on its own) — the generic renamed-body retarget moves
 the sleep redirects into NeoForge's `startSleepInBed` lambda on its own, before the entity anchors are asked, so
 with the anchors alone off the nearby-monster case still passes. That deliberate negative experiment explicitly
 uses continue, retains its confirmed missing-injector evidence, and has a failing inner command. Each phase binds sources, game,

@@ -42,10 +42,34 @@ class FabricEntityMixinAnchorsTest {
  }
  @Test void actualEffectHandlersMoveToNativeValidationAndPreRemovalSnapshotStages()throws Exception{
   ClassNode mixin=effects(),target=StagedFabricMixinFixture.living(false);
-  assertEquals(2,FabricEntityMixinAnchors.adapt(mixin,n->target));
+  assertEquals(3,FabricEntityMixinAnchors.adapt(mixin,n->target));
   assertTrue(String.valueOf(MixinFit.value(StagedFabricMixinFixture.at(mixin,"beforeForceAddEffect"),"target")).contains("CommonHooks;canMobEffectBeApplied"));
   AnnotationNode remove=StagedFabricMixinFixture.at(mixin,"beforeRemoveAllEffects");assertEquals("NEW",MixinFit.value(remove,"value"));assertEquals("java/util/HashMap",MixinFit.value(remove,"target"));
   assertEquals(0,FabricEntityMixinAnchors.adapt(mixin,n->target),"second adaptation is a no-op");
+ }
+ @Test void clearAllVetoWrapsNeoForgesPerEffectQuestion()throws Exception{
+  ClassNode mixin=effects(),target=StagedFabricMixinFixture.living(false);
+  assertEquals(3,FabricEntityMixinAnchors.adapt(mixin,n->target));
+  assertNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"allowRemoveAllEffects")),"the dead clear() wrap is gone");
+  MethodNode handler=StagedFabricMixinFixture.method(mixin,"forbric$allowEarlyRemove");
+  AnnotationNode wrap=MixinFit.injectorOf(handler);
+  assertEquals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;",wrap.desc);
+  assertEquals(List.of("removeAllEffects"),MixinFit.stringList(MixinFit.value(wrap,"method")));
+  assertEquals("Lnet/neoforged/neoforge/event/EventHooks;onEffectRemoved(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/effect/MobEffectInstance;)Z",
+    MixinFit.value(StagedFabricMixinFixture.at(mixin,"forbric$allowEarlyRemove"),"target"));
+  new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(mixin.name,handler);
+  assertEquals(0,FabricEntityMixinAnchors.adapt(mixin,n->target),"second adaptation is a no-op");
+ }
+ @Test void clearAllVetoNeedsExactlyOneNativeQuestionAndTheKnownHandler()throws Exception{
+  ClassNode target=StagedFabricMixinFixture.living(false),mixin=effects();
+  MethodNode remove=StagedFabricMixinFixture.method(target,"removeAllEffects");
+  for(var i:remove.instructions)if(i instanceof MethodInsnNode c&&c.name.equals("onEffectRemoved")){remove.instructions.insert(i,new MethodInsnNode(Opcodes.INVOKESTATIC,c.owner,c.name,c.desc,false));break;}
+  FabricEntityMixinAnchors.adapt(mixin,n->target);
+  assertNotNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"allowRemoveAllEffects")),"two native questions: not guessed");
+  ClassNode plain=StagedFabricMixinFixture.living(false),changed=effects();
+  StagedFabricMixinFixture.method(changed,"allowRemoveAllEffects").instructions.insert(new MethodInsnNode(Opcodes.INVOKEINTERFACE,"java/util/Map","put","(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",true));
+  FabricEntityMixinAnchors.adapt(changed,n->plain);
+  assertTrue(changed.methods.stream().noneMatch(m->m.name.equals("forbric$allowEarlyRemove")),"a handler that does more is not reimplemented");
  }
  @Test void elytraVetoAndCustomFlightAreBeforeBothNativeAttributeAndEquipmentPaths()throws Exception{
   ClassNode mixin=elytra(),target=StagedFabricMixinFixture.living(false);
@@ -71,13 +95,14 @@ class FabricEntityMixinAnchorsTest {
   assertEquals(0,FabricEntityMixinAnchors.adapt(mixin,n->target));
   ClassNode finalTarget=StagedFabricMixinFixture.living(false);mixin=effects();
   StagedFabricMixinFixture.method(finalTarget,"removeAllEffects").instructions.insert(new TypeInsnNode(Opcodes.NEW,"java/util/HashMap"));
-  assertEquals(1,FabricEntityMixinAnchors.adapt(mixin,n->finalTarget));
+  assertEquals(2,FabricEntityMixinAnchors.adapt(mixin,n->finalTarget),"force-add and the clear-all veto; the snapshot stays");
   assertEquals("INVOKE",MixinFit.value(StagedFabricMixinFixture.at(mixin,"beforeRemoveAllEffects"),"value"));
  }
  @Test void explicitAlternativeGroupAndChangedConstructorPhaseAreNotGuessed()throws Exception{
   ClassNode target=StagedFabricMixinFixture.living(false),mixin=effects();
   StagedFabricMixinFixture.method(mixin,"beforeForceAddEffect").visibleAnnotations.add(new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Group;"));
   StagedFabricMixinFixture.at(mixin,"beforeRemoveAllEffects").values.addAll(List.of("shift",new String[]{"Lorg/spongepowered/asm/mixin/injection/At$Shift;","AFTER"}));
+  StagedFabricMixinFixture.method(mixin,"allowRemoveAllEffects").visibleAnnotations.add(new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Group;"));
   assertEquals(0,FabricEntityMixinAnchors.adapt(mixin,n->target));
  }
 }
