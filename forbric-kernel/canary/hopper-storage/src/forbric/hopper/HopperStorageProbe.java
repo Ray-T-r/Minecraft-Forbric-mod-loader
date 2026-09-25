@@ -138,6 +138,11 @@ public final class HopperStorageProbe implements ModInitializer {
 			place(kind, probe);
 			premise.put(KINDS[kind] + ".neoSees", neoSees(probe));
 		}
+		boolean lithium = false;
+		for (Class<?> implemented : HopperBlockEntity.class.getInterfaces()) {
+			lithium |= implemented.getName().equals("net.caffeinemc.mods.lithium.common.hopper.UpdateReceiver");
+		}
+		premise.put("lithiumHopper", lithium);
 		premise.put("unslottedIsSlotted", ((Object) new net.fabricmc.fabric.api.transfer.v1.storage.base.CombinedStorage<>(List.of()))
 				instanceof net.fabricmc.fabric.api.transfer.v1.storage.SlottedStorage);
 

@@ -62,7 +62,10 @@ public final class NeoTooltipAppendersInjector implements ClassTransformer {
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
 		boolean delivered = repair(node);
-		boolean spliced = GuestInjectorPruner.fabricTooltipBridgeOn() && wrapComponentAppenders(node);
+		// Fabric's first and last are registered in the delivery, before/after in the splice: both or neither, so the
+		// bridge never draws half of what the pruned injectors drew.
+		boolean delivers = delivered || calls(node, "init", "postRegisterAppenders");
+		boolean spliced = delivers && GuestInjectorPruner.fabricTooltipBridgeOn() && wrapComponentAppenders(node);
 		if (spliced) around = true;
 		if (!delivered && !spliced) return bytes;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
@@ -108,6 +111,16 @@ public final class NeoTooltipAppendersInjector implements ClassTransformer {
 			wrap.add(new MethodInsnNode(Opcodes.INVOKESTATIC, RUNTIME, "around", AROUND_DESC, false));
 			method.instructions.insert(cast, wrap);
 			return true;
+		}
+		return false;
+	}
+
+	private static boolean calls(ClassNode node, String method, String name) {
+		for (MethodNode m : node.methods) {
+			if (!m.name.equals(method)) continue;
+			for (AbstractInsnNode insn : m.instructions) {
+				if (insn instanceof MethodInsnNode call && call.owner.equals(RUNTIME) && call.name.equals(name)) return true;
+			}
 		}
 		return false;
 	}

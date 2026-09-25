@@ -38,5 +38,7 @@ strict, turns off only `forbric.fabricElytraTickAnchor`: exactly the glider-less
 
 The occupancy adapter checks the original handler's instruction fingerprint before substituting its
 handled-result contract. Unknown bodies and callback groups are not rewritten. Native operation still uses
-the current world's block state and its native setter, including modded beds. The other adapters move only
-proven annotation anchors; they do not synthesize or manually post the Fabric events.
+the current world's block state and its native setter, including modded beds. The clear-all veto and
+sleeping-direction adapters synthesize their own handler, which asks ALLOW_EARLY_REMOVE or MODIFY_SLEEPING_DIRECTION
+itself (each only after the original handler matches its audited shape); the remaining adapters move only proven
+annotation anchors.

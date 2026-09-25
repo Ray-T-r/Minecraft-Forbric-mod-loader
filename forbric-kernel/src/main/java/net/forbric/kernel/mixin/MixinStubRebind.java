@@ -116,8 +116,54 @@ public final class MixinStubRebind {
 		return moved;
 	}
 
+	/**
+	 * The body a Fabric mod's injector bound to a carrier stub will move to, or null when it will not move: every check
+	 * {@link #adapt} makes, and nothing changed. MixinFit asks this so its verdict and the rebind cannot disagree.
+	 */
+	public static MethodNode destination(String mixinInternalName, MethodNode handler, ClassNode target) {
+		if (!enabled() || handler == null || target == null || target.methods == null) return null;
+		if (ECOSYSTEMS.get(mixinInternalName) != Ecosystem.FABRIC) return null;
+		Plan plan = plan(handler, target);
+		return plan == null ? null : plan.delegation().delegate();
+	}
+
+	/** Whether {@code method} of {@code target} heads a row of carrier-stubs.txt — cheap, for callers deciding whether to look closer. */
+	public static boolean isCarrierStub(ClassNode target, MethodNode method) {
+		if (target == null || method == null) return false;
+		String head = target.name + "#" + method.name + method.desc + " -> ";
+		for (String row : carrierStubs()) if (row.startsWith(head)) return true;
+		return false;
+	}
+
+	/** What one move needs: the injector, the stub it is bound to, where that forwards, and whether it captures the stub's arguments. */
+	private record Plan(AnnotationNode injector, MethodNode stub, Delegation delegation, boolean captures) {
+	}
+
 	/** The handler to carry the injector after the move (the same one, or a new outer), or null when nothing moves. */
 	private static MethodNode move(ClassNode mixin, MethodNode handler, ClassNode target) {
+		Plan plan = plan(handler, target);
+		if (plan == null) return null;
+		AnnotationNode injector = plan.injector();
+		MethodNode stub = plan.stub();
+		Delegation delegation = plan.delegation();
+		MethodNode delegate = delegation.delegate();
+		Type[] stubParams = Type.getArgumentTypes(stub.desc);
+		boolean captures = plan.captures();
+		String selector = delegate.name + delegate.desc;
+		MethodNode carrier = handler;
+		if (captures) {
+			carrier = shim(mixin, handler, injector, delegate, delegation.positions(), stubParams.length);
+		}
+		for (int i = 0; i + 1 < injector.values.size(); i += 2) {
+			if ("method".equals(injector.values.get(i))) injector.values.set(i + 1, new ArrayList<>(List.of(selector)));
+		}
+		ForbricLog.info("[Forbric/Mixin] %s: %s now targets %s.%s%s — Mixin bound its selector to the merge-added stub %s, "
+				+ "which only forwards to it%s", mixin.name.replace('/', '.'), handler.name, target.name.replace('/', '.'),
+				delegate.name, delegate.desc, stub.desc, captures ? "; the handler still receives the stub's arguments" : "");
+		return carrier;
+	}
+
+	private static Plan plan(MethodNode handler, ClassNode target) {
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
 		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
@@ -172,20 +218,11 @@ public final class MixinStubRebind {
 			if (names.size() != 1 || MixinFit.value(local, "argsOnly") != null || !hasLocal(delegate, names.getFirst(), params[i])) return null;
 		}
 
-		String selector = delegate.name + delegate.desc;
 		boolean captures = inject && plain - 1 == stubParams.length && stubParams.length > 0;
-		MethodNode carrier = handler;
 		if (captures) {
 			for (int i = 0; i < stubParams.length; i++) if (delegation.positions()[i] < 0) return null;
-			carrier = shim(mixin, handler, injector, delegate, delegation.positions(), stubParams.length);
 		}
-		for (int i = 0; i + 1 < injector.values.size(); i += 2) {
-			if ("method".equals(injector.values.get(i))) injector.values.set(i + 1, new ArrayList<>(List.of(selector)));
-		}
-		ForbricLog.info("[Forbric/Mixin] %s: %s now targets %s.%s%s — Mixin bound its selector to the merge-added stub %s, "
-				+ "which only forwards to it%s", mixin.name.replace('/', '.'), handler.name, target.name.replace('/', '.'),
-				delegate.name, delegate.desc, stub.desc, captures ? "; the handler still receives the stub's arguments" : "");
-		return carrier;
+		return new Plan(injector, stub, delegation, captures);
 	}
 
 	/** The outer handler for an {@code @Inject} that captured the stub's arguments: delegate parameters in, the original called. */

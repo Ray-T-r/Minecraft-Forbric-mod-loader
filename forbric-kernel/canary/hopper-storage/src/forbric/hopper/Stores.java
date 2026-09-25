@@ -53,12 +53,23 @@ public final class Stores {
 		return BlockBehaviour.Properties.of().setId(ResourceKey.create(Registries.BLOCK, id(path))).strength(1);
 	}
 
+	/** A block entity's store and a block-only store are different classes, so the kernel's log names which one it served. */
 	public static SingleVariantStorage<ItemVariant> newStore(Runnable changed) {
-		return new SingleVariantStorage<>() {
-			@Override protected ItemVariant getBlankVariant() { return ItemVariant.blank(); }
-			@Override protected long getCapacity(ItemVariant variant) { return 64; }
-			@Override protected void onFinalCommit() { changed.run(); }
-		};
+		return new BlockOnlyStore(changed);
+	}
+
+	public static class EntityStore extends SingleVariantStorage<ItemVariant> {
+		private final Runnable changed;
+
+		EntityStore(Runnable changed) { this.changed = changed; }
+
+		@Override protected ItemVariant getBlankVariant() { return ItemVariant.blank(); }
+		@Override protected long getCapacity(ItemVariant variant) { return 64; }
+		@Override protected void onFinalCommit() { changed.run(); }
+	}
+
+	public static final class BlockOnlyStore extends EntityStore {
+		BlockOnlyStore(Runnable changed) { super(changed); }
 	}
 
 	static void register() {
@@ -87,7 +98,7 @@ public final class Stores {
 	}
 
 	public static final class StoreEntity extends BlockEntity {
-		public final SingleVariantStorage<ItemVariant> store = newStore(this::setChanged);
+		public final SingleVariantStorage<ItemVariant> store = new EntityStore(this::setChanged);
 
 		public StoreEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) { super(type, pos, state); }
 	}

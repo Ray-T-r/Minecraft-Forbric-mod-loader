@@ -90,12 +90,13 @@ PY
 
 step "1. positive: hoppers reach every Fabric storage, NeoForge-visible or not"
 run_server positive strict ""
-judge positive "not failed and premise['slotted.neoSees'] is True and premise['unslotted.neoSees'] is False and premise['blockonly.neoSees'] is False and premise['unslottedIsSlotted'] is False" "all 24 cases pass; NeoForge sees only the slotted store"
+judge positive "not failed and premise['slotted.neoSees'] is True and premise['unslotted.neoSees'] is False and premise['blockonly.neoSees'] is False and premise['unslottedIsSlotted'] is False and premise['lithiumHopper'] is False" "all 24 cases pass; NeoForge sees only the slotted store"
 resolved positive
 check "positive: the hopper asks Fabric's lookup" 'Hopper\] HopperBlockEntity.ejectItems and suckInItems ask Fabric' "$RESULTS/positive.log"
 check "positive: fabric-transfer's hopper mixin is superseded" 'net.fabricmc.fabric.mixin.transfer.HopperBlockEntityMixin is superseded' "$RESULTS/positive.log"
 check "positive: an unslotted store went through Fabric's lookup" "Hopper\] a hopper .* Fabric storage net.fabricmc.fabric.api.transfer.v1.storage.base.CombinedStorage through Fabric's own lookup" "$RESULTS/positive.log"
-check "positive: a block-only store went through Fabric's lookup" "Hopper\] a hopper .* Fabric storage forbric.hopper.Stores.* through Fabric's own lookup" "$RESULTS/positive.log"
+check "positive: a block-only store went through Fabric's lookup" "Hopper\] a hopper .* Fabric storage forbric.hopper.Stores\\\$BlockOnlyStore through Fabric's own lookup" "$RESULTS/positive.log"
+check_absent "positive: the slotted store went through the bridge, not the fallback" "Hopper\] a hopper .* Fabric storage forbric.hopper.Stores\\\$EntityStore through" "$RESULTS/positive.log"
 check_absent "positive: no verifier error" 'VerifyError|Exception stopping' "$RESULTS/positive.log"
 
 step "2. off: the same server with the hopper left as merged"
@@ -108,15 +109,14 @@ step "3. bridge-off: every Fabric storage through the hopper's own fallback"
 run_server bridge-off strict "-Dforbric.transferBridge=off"
 judge bridge-off "not failed and premise['slotted.neoSees'] is False" "all 24 cases pass with NeoForge seeing none of the stores"
 resolved bridge-off
-check "bridge-off: the slotted store went through Fabric's lookup" "Hopper\] a hopper .* Fabric storage forbric.hopper.Stores.* through Fabric's own lookup" "$RESULTS/bridge-off.log"
+check "bridge-off: the slotted store went through Fabric's lookup" "Hopper\] a hopper .* Fabric storage forbric.hopper.Stores\\\$EntityStore through Fabric's own lookup" "$RESULTS/bridge-off.log"
 
 step "4. lithium: lithium-neoforge's hopper mixins on the same methods"
 if [ -z "$LITHIUM" ]; then
   echo "[kernel] FAIL lithium: no lithium-neoforge jar in run/client-merged-pack/mods"; FAIL=1
 else
   run_server lithium continue "" "$LITHIUM"
-  judge lithium "not failed" "all 24 cases pass beside lithium's hopper mixins"
-  check "lithium: lithium is loaded" 'lithium' "$RESULTS/lithium.log"
+  judge lithium "not failed and premise['lithiumHopper'] is True" "all 24 cases pass with lithium's hopper mixin woven into the hopper"
   check_absent "lithium: no verifier error" 'VerifyError|Exception stopping' "$RESULTS/lithium.log"
 fi
 

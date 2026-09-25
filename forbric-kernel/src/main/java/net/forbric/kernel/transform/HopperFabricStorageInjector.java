@@ -30,8 +30,11 @@ import org.objectweb.asm.tree.VarInsnNode;
  * entities, {@code KernelFabricHopperStorage.extract(level, hopper)} is asked first; a Fabric storage's answer is
  * returned, {@code NOT_FOUND} continues as before.</li>
  * </ul>
- * No local, field read, or call to a hopper method is added, so every other injector's anchors and ordinals are
- * unchanged. Both edits or neither; a vanilla or MinecraftForge body, where Fabric's own mixin applies, is left alone.
+ * No local, field read, or call to a hopper or {@code ContainerOrHandler} method is added, so INVOKE and FIELD anchors
+ * on those, and their ordinals, are unchanged (lithium's among them). Other kinds do move: {@code ejectItems} loses its
+ * first {@code intValue=0} constant and gains argument loads, and {@code suckInItems} gains one {@code IRETURN} and one
+ * jump before its item pickup, so RETURN/JUMP/LOAD ordinals from there on shift by one — no mod in any pack uses them
+ * here. Both edits or neither; a vanilla or MinecraftForge body, where Fabric's own mixin applies, is left alone.
  * {@code -Dforbric.hopperFabricStorage=off}.
  */
 public final class HopperFabricStorageInjector implements ClassTransformer {

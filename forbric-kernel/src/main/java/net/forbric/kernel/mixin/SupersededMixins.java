@@ -155,8 +155,15 @@ public final class SupersededMixins {
 				ClassNode node = new ClassNode();
 				new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 				if (!replacement.witness().test(node)) {
-					ForbricLog.warn("[Forbric/Mixin] %s was defined without the repair that supersedes %s, so its"
-							+ " failure stays reported", binaryName, entry.getKey());
+					// Loud only when a failure is waiting on this proof: the class is defined on every boot, and a repair
+					// that was never meant to run (its mod absent) has nothing to supersede.
+					if (PENDING.containsKey(entry.getKey())) {
+						ForbricLog.warn("[Forbric/Mixin] %s was defined without the repair that supersedes %s, so its"
+								+ " failure stays reported", binaryName, entry.getKey());
+					} else {
+						ForbricLog.debug("[Forbric/Mixin] %s defined without the repair for %s; nothing waits on it",
+								binaryName, entry.getKey());
+					}
 					continue;
 				}
 			} catch (RuntimeException unreadable) {

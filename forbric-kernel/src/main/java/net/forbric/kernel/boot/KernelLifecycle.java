@@ -1448,7 +1448,10 @@ public final class KernelLifecycle {
 	 * and each failure names the mod it belongs to.
 	 *
 	 * <p>The baseline container goes first, as it does in {@code ModList}, so NeoForge's own handlers still run
-	 * before the mods'.
+	 * before the mods'. And it is delivered phase by phase, as {@code ModLoader.postEvent} does: every mod's
+	 * {@code HIGHEST} listeners, then every mod's {@code HIGH}, and so on. One container at a time with all its phases
+	 * would let an earlier mod's {@code LOWEST} listener run before a later mod's {@code HIGHEST}; for an event whose
+	 * registration order is draw order ({@code RegisterTooltipAppendersEvent}) that is visible on screen.
 	 */
 	private static void postModBusEvent(ClassLoader cl, String eventClassName) {
 		Object event;
@@ -1465,7 +1468,7 @@ public final class KernelLifecycle {
 			ForbricLog.warn("[Forbric/Lifecycle] could not build " + eventClassName, unwrap(t));
 			return;
 		}
-		deliverModBusEvent(acceptEvent, event, eventClassName);
+		deliverModBusEvent(cl, acceptEvent, event, eventClassName);
 	}
 
 	/**
@@ -1483,26 +1486,42 @@ public final class KernelLifecycle {
 					absent);
 			return 0;
 		}
-		return deliverModBusEvent(acceptEvent, event, event.getClass().getName());
+		return deliverModBusEvent(cl, acceptEvent, event, event.getClass().getName());
 	}
 
-	private static int deliverModBusEvent(Method acceptEvent, Object event, String eventClassName) {
+	private static int deliverModBusEvent(ClassLoader cl, Method acceptEvent, Object event, String eventClassName) {
 		java.util.Map<String, Object> byId = new java.util.LinkedHashMap<>();
 		if (baselineContainer != null) byId.put("neoforge", baselineContainer);
 		KernelModLoader.publishedNeoMods().forEach((id, identity) -> byId.put(id, identity.container()));
 		if (byId.isEmpty()) return 0;
 
-		int delivered = 0;
-		for (java.util.Map.Entry<String, Object> e : byId.entrySet()) {
-			try {
-				acceptEvent.invoke(e.getValue(), event);
-				delivered++;
-			} catch (Throwable perMod) {
-				ForbricLog.warn("[Forbric/Lifecycle] " + e.getKey() + " threw during " + eventClassName
-						+ " — its own registration from that event is lost, every other mod still gets it",
-						unwrap(perMod));
+		// Phase by phase where the carrier offers it (ModContainer.acceptEvent(EventPriority, Event)); otherwise each
+		// container with all its phases.
+		Method phased = null;
+		Object[] phases = null;
+		try {
+			Class<?> priority = Class.forName("net.neoforged.bus.api.EventPriority", false, cl);
+			phased = modContainerClass(cl).getMethod("acceptEvent", priority, Class.forName("net.neoforged.bus.api.Event", false, cl));
+			phases = priority.getEnumConstants();
+		} catch (ReflectiveOperationException | LinkageError single) {
+			ForbricLog.debug("[Forbric/Lifecycle] no phased acceptEvent — %s goes to each container whole", eventClassName);
+		}
+		java.util.Set<String> failed = new java.util.HashSet<>();
+		for (Object phase : phases == null ? new Object[] {null} : phases) {
+			for (java.util.Map.Entry<String, Object> e : byId.entrySet()) {
+				if (failed.contains(e.getKey())) continue;
+				try {
+					if (phase == null) acceptEvent.invoke(e.getValue(), event);
+					else phased.invoke(e.getValue(), phase, event);
+				} catch (Throwable perMod) {
+					failed.add(e.getKey());
+					ForbricLog.warn("[Forbric/Lifecycle] " + e.getKey() + " threw during " + eventClassName
+							+ " — its own registration from that event is lost, every other mod still gets it",
+							unwrap(perMod));
+				}
 			}
 		}
+		int delivered = byId.size() - failed.size();
 		ForbricLog.debug("[Forbric/Lifecycle] posted %s to %d container(s)", eventClassName, delivered);
 		return delivered;
 	}

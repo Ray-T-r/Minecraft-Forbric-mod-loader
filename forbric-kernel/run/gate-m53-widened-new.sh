@@ -75,8 +75,8 @@ assert not rows, rows
 PY
 then echo "[kernel] PASS positive: zero confirmed required findings; no particle NEW injector reported"
 else echo "[kernel] FAIL positive: STRICT report missing, confirmed required findings, or particle injector rows"; FAIL=1; fi
-check "positive: fabric-particles' sprint dust point moved" 'EntityMixin: injection point NEW .*BlockParticleOption; names the vanilla constructor' "$RESULTS/positive.log"
-check "positive: fabric-particles' landing dust point moved" 'LivingEntityMixin: injection point NEW .*BlockParticleOption; names the vanilla constructor' "$RESULTS/positive.log"
+check "positive: fabric-particles' sprint dust point moved" 'particle\.EntityMixin: injection point NEW .*BlockParticleOption; names the vanilla constructor' "$RESULTS/positive.log"
+check "positive: fabric-particles' landing dust point moved" 'particle\.LivingEntityMixin: injection point NEW .*BlockParticleOption; names the vanilla constructor' "$RESULTS/positive.log"
 
 step "2. off: the same server with NEW points left as compiled"
 run_server off continue "-Dforbric.mixinAtWidenNew=off"

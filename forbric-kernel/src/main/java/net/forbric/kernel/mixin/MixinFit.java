@@ -268,6 +268,7 @@ public final class MixinFit {
 	}
 
 	private static List<Anchor> anchorsOf(ClassNode mixin, ClassNode target, Function<String, byte[]> resolver) {
+		ClassNode withLocals = null;
 		List<Anchor> out = new ArrayList<>();
 
 		// @Shadow fields: the member must still be declared (walking the superclass chain).
@@ -333,6 +334,21 @@ public final class MixinFit {
 					: String.join("|", misses) + " (" + hits.size() + "/" + selectors.size() + " selectors hit)";
 			out.add(new Anchor("@Inject target", where, !hits.isEmpty()));
 			if (hits.isEmpty()) continue;
+			// The move MixinStubRebind will make for a Fabric mod's injector bound to a carrier stub, judged here too
+			// so the verdict and the rebind cannot disagree: its anchors are asked of the body it lands on.
+			if (selectors.size() == 1 && hits.size() == 1 && MixinStubRebind.isCarrierStub(target, hits.get(0))) {
+				MethodNode moved = MixinStubRebind.destination(mixin.name, m, target);
+				// A @Local by name is checked against the body's local variable table, which this read skipped.
+				if (moved == null && withLocals == null) {
+					byte[] bytes = resolver.apply(target.name + ".class");
+					if (bytes != null) {
+						withLocals = new ClassNode();
+						new ClassReader(bytes).accept(withLocals, ClassReader.SKIP_FRAMES);
+					}
+				}
+				if (moved == null && withLocals != null) moved = MixinStubRebind.destination(mixin.name, m, withLocals);
+				if (moved != null) hits = new ArrayList<>(List.of(moved));
+			}
 
 			// Each @At(INVOKE/FIELD, target=…) must name an instruction inside a method the injector actually
 			// bound to — again ANY, for the same require=1 reason.

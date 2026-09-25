@@ -107,6 +107,23 @@ class KernelLifecycleFailureReportingTest {
 						+ "costs only that mod");
 	}
 
+	/**
+	 * Phase by phase, as ModLoader.postEvent: every mod's HIGHEST before any mod's HIGH. One container with all its
+	 * phases let an earlier mod's LOWEST tooltip appender register before a later mod's HIGHEST one.
+	 */
+	@Test
+	void modBusEventsAreDeliveredPhaseByPhase() throws Exception {
+		ClassNode node = compiled();
+		assumeTrue(node != null, "KernelLifecycle not compiled yet");
+		MethodNode deliver = node.methods.stream().filter(m -> "deliverModBusEvent".equals(m.name)).findFirst()
+				.orElseThrow(() -> new AssertionError("deliverModBusEvent is gone"));
+		boolean priority = false;
+		for (AbstractInsnNode insn : deliver.instructions.toArray()) {
+			if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc && "net.neoforged.bus.api.EventPriority".equals(ldc.cst)) priority = true;
+		}
+		assertTrue(priority, "deliverModBusEvent must use ModContainer.acceptEvent(EventPriority, Event)");
+	}
+
 	private static ClassNode compiled() throws Exception {
 		Path file = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
 				"net", "forbric", "kernel", "boot", "KernelLifecycle.class");

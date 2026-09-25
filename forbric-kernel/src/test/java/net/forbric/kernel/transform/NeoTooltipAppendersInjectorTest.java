@@ -48,6 +48,27 @@ class NeoTooltipAppendersInjectorTest {
 		assertSame(out, new NeoTooltipAppendersInjector().transform(NeoTooltipAppendersInjector.HANDLER, out, null));
 	}
 
+	/** Fabric's first/last ride on the delivery, before/after on the splice: a drifted delivery gets no splice either. */
+	@Test void noDeliveryNoSplice() throws Exception {
+		ClassNode drifted = node(NativeCoremodParityTest.read(NEO_RT, HANDLER));
+		for (MethodNode m : drifted.methods) {
+			if (!m.name.equals("init")) continue;
+			for (AbstractInsnNode insn : m.instructions.toArray()) {
+				if (insn instanceof MethodInsnNode c && c.name.equals("postEvent")) m.instructions.insertBefore(insn, new InsnNode(Opcodes.NOP));
+			}
+			for (AbstractInsnNode insn : m.instructions.toArray()) {
+				if (insn instanceof MethodInsnNode c && c.name.equals("postEvent")) {
+					m.instructions.insertBefore(insn, new InsnNode(Opcodes.DUP));
+					m.instructions.insertBefore(insn, new InsnNode(Opcodes.POP));
+				}
+			}
+		}
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+		drifted.accept(writer);
+		byte[] bytes = writer.toByteArray();
+		assertSame(bytes, new NeoTooltipAppendersInjector().transform(NeoTooltipAppendersInjector.HANDLER, bytes, null));
+	}
+
 	@Test void theBridgeSwitchLeavesOnlyTheDelivery() throws Exception {
 		System.setProperty(GuestInjectorPruner.FABRIC_TOOLTIP_BRIDGE, "off");
 		ClassNode handler = node(new NeoTooltipAppendersInjector().transform(NeoTooltipAppendersInjector.HANDLER,

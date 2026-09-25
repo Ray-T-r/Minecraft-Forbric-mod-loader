@@ -161,8 +161,9 @@ public final class FabricEntityMixinAnchors {
   AnnotationNode modify=new AnnotationNode("Lcom/llamalad7/mixinextras/injector/ModifyReturnValue;");
   modify.values=new ArrayList<>(List.of("method",new ArrayList<>(List.of("getBedOrientation()"+DIRECTION)),"at",new ArrayList<>(List.of(at))));
   handler.visibleAnnotations=new ArrayList<>(List.of(modify));
-  // Every return, so a return another mixin adds is covered too; without a sleeping position the answer is
-  // passed through untouched, which is when vanilla never reached the wrapped call either.
+  // Every return in the body as it stands when injections are prepared (an @Overwrite's included). An early return
+  // another mixin's cancellable @Inject adds is not seen — it bypassed Fabric's own wrap of the inner call too. Without
+  // a sleeping position the answer is passed through untouched, which is when vanilla never reached the wrapped call.
   InsnList code=handler.instructions;LabelNode fire=new LabelNode();
   code.add(new VarInsnNode(Opcodes.ALOAD,0));code.add(new TypeInsnNode(Opcodes.CHECKCAST,LIVING));
   code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,LIVING,"getSleepingPos","()Ljava/util/Optional;",false));

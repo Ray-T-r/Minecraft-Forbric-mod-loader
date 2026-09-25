@@ -118,6 +118,27 @@ class MixinStubRebindTest {
 		assertEquals(0, MixinStubRebind.adapt(neo, name -> language), "not a Fabric mod's mixin");
 	}
 
+	/** MixinFit asks the rebind: malilib's hook reads FIT for a Fabric mod (where it moves), PARTIAL otherwise. */
+	@Test void theVerdictFollowsTheRebind() throws Exception {
+		Path jar = MERGED_PACK.resolve("malilib-fabric-26.2-0.29.3.jar");
+		Assumptions.assumeTrue(Files.isRegularFile(jar), "malilib absent from the merged pack");
+		byte[] mixin;
+		try (ZipFile zip = new ZipFile(jar.toFile())) {
+			mixin = zip.getInputStream(zip.getEntry("fi/dy/masa/malilib/mixin/client/MixinLanguage.class")).readAllBytes();
+		}
+		byte[] language;
+		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
+			language = zip.getInputStream(zip.getEntry("net/minecraft/locale/Language.class")).readAllBytes();
+		}
+		java.util.function.Function<String, byte[]> resolver = name -> name.equals("net/minecraft/locale/Language.class") ? language : null;
+		assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(mixin, resolver).verdict(), "premise: bound to the stub");
+		MixinStubRebind.noteEcosystem("fi/dy/masa/malilib/mixin/client/MixinLanguage", Ecosystem.FABRIC);
+		MixinFit.Result fit = MixinFit.evaluate(mixin, resolver);
+		assertEquals(MixinFit.Verdict.FIT, fit.verdict(), fit.toString());
+		System.setProperty(MixinStubRebind.PROPERTY, "off");
+		assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(mixin, resolver).verdict(), "the rebind's switch");
+	}
+
 	/** A non-capturing lambda is a constant; a capturing one, or a string concatenation, is work the stub does. */
 	@Test void aLambdaStubIsAStubButACapturingOneIsNot() throws Exception {
 		ClassNode language = merged("net/minecraft/locale/Language");

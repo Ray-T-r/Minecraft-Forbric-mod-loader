@@ -138,6 +138,12 @@ public final class GuestInjectorPruner implements ClassTransformer {
 			ITEM_STACK_MIXIN, "NeoForge's ItemStack draws tooltips from its appender lists, where the kernel draws "
 					+ "Fabric's component tooltip providers now; these would have drawn them a second time, or nowhere");
 
+	/** What happens to an entry's mixin when a reshaped fabric-api leaves it untouched. */
+	private static final Map<String, String> DRIFT = Map.of(MODEL_MANAGER_MIXIN, "it will read PARTIAL and apply half — the state that made every block "
+					+ "model missingno",
+			ITEM_STACK_MIXIN, "it is retargeted as before and the kernel's tooltip bridge stands down; Fabric component "
+					+ "tooltip providers show only above the item id in advanced tooltips");
+
 	/** The finding a removed injector records, or none when a kernel repair does its job. */
 	private static final Map<String, String> LOSSES = Map.of(MODEL_MANAGER_MIXIN,
 			"the kernel removed this injector: NeoForge's UnbakedModelParser now reads block models at its call site, so "
@@ -223,13 +229,12 @@ public final class GuestInjectorPruner implements ClassTransformer {
 					return classBytes;
 				}
 				ForbricLog.warn("[Forbric/GuestInjectorPruner] %s has no %s%s — fabric-api reshaped the mixin, leaving "
-						+ "it untouched (it will read PARTIAL and stay pinned)", className, prune.name(), prune.desc());
+						+ "it untouched (%s)", className, prune.name(), prune.desc(), DRIFT.get(className));
 				return classBytes;
 			}
 			if (!(prune.exact() ? isInjectorExactlyInto(found, prune.selectorPrefix()) : isInjectorInto(found, prune.selectorPrefix()))) {
 				ForbricLog.warn("[Forbric/GuestInjectorPruner] %s.%s no longer injects into %s — fabric-api reshaped "
-						+ "the mixin, leaving it untouched (it will read PARTIAL and stay pinned)", className,
-						prune.name(), prune.selectorPrefix());
+						+ "the mixin, leaving it untouched (%s)", className, prune.name(), prune.selectorPrefix(), DRIFT.get(className));
 				return classBytes;
 			}
 			victims.add(found);

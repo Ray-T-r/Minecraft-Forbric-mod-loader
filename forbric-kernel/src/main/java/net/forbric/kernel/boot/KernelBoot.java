@@ -651,14 +651,16 @@ public final class KernelBoot {
 					net.forbric.kernel.transform.LootTableEventBridgeInjector.PROPERTY);
 		}
 
-		// Client only: trim fabric-model-loading-api-v1's ModelManagerMixin to the injectors that fit the merged
-		// ModelManager (NeoForge replaced CuboidModel.fromStream at one site), so ModelLoadingPlugins dispatch instead
-		// of the whole mixin being pinned. Guest MIXIN classes pass through this chain via getPreMixinClassBytes.
+		// Trim guest mixins to the injectors that fit: fabric-model-loading-api-v1's ModelManagerMixin (client;
+		// NeoForge replaced CuboidModel.fromStream at one site), so ModelLoadingPlugins dispatch instead of the whole
+		// mixin being pinned; and fabric-item-api-v1's ItemStackMixin (both sides), whose tooltip injectors the kernel
+		// replaces from NeoForge's appenders. Guest MIXIN classes pass through this chain via getPreMixinClassBytes.
 		if (net.forbric.kernel.transform.GuestInjectorPruner.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.GuestInjectorPruner());
 		} else {
 			ForbricLog.warn("[Forbric/GuestInjectorPruner] -D%s=off — ModelManagerMixin is pinned whole again; Fabric "
-					+ "ModelLoadingPlugins are registered and never called",
+					+ "ModelLoadingPlugins are registered and never called, and Fabric component tooltip providers show only "
+					+ "above the item id in advanced tooltips",
 					net.forbric.kernel.transform.GuestInjectorPruner.PROPERTY);
 		}
 

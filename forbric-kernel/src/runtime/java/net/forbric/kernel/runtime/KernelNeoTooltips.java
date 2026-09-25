@@ -163,13 +163,16 @@ public final class KernelNeoTooltips {
 		try {
 			impl = Class.forName(IMPL, false, ItemStack.class.getClassLoader());
 		} catch (ClassNotFoundException | LinkageError absent) {
+			if (GuestInjectorPruner.fabricTooltipInjectorsPruned()) lost("its registry class is missing: " + absent);
 			return null;
 		}
-		if (!GuestInjectorPruner.fabricTooltipInjectorsPruned() || !NeoTooltipAppendersInjector.aroundSpliced()) {
-			ForbricLog.warn("[Forbric/Tooltips] fabric-item-api is installed but its tooltip injectors were %s — the "
-					+ "kernel does not draw its component tooltip providers, so they show only where those injectors do",
-					GuestInjectorPruner.fabricTooltipInjectorsPruned() ? "pruned without NeoForge's appender splice"
-							: "not pruned");
+		if (!GuestInjectorPruner.fabricTooltipInjectorsPruned()) {
+			ForbricLog.warn("[Forbric/Tooltips] fabric-item-api's tooltip injectors were not pruned — the kernel does not "
+					+ "draw its component tooltip providers; they show only above the item id in advanced tooltips");
+			return null;
+		}
+		if (!NeoTooltipAppendersInjector.aroundSpliced()) {
+			lost("NeoForge's ItemTooltipHandler was not the shape the kernel draws them into");
 			return null;
 		}
 		try {
@@ -183,10 +186,22 @@ public final class KernelNeoTooltips {
 					lookup.findStatic(impl, "onBefore", sides), lookup.findStatic(impl, "onAfter", sides));
 			return found;
 		} catch (ReflectiveOperationException drifted) {
-			ForbricLog.warn("[Forbric/Tooltips] fabric-item-api's tooltip registry is not the one the kernel draws from — "
-					+ "a Fabric mod's component tooltip providers are not drawn", drifted);
+			lost("its registry is not the one the kernel draws from: " + drifted);
 			return null;
 		}
+	}
+
+	/**
+	 * fabric-item-api's own tooltip injectors are gone (pruned) and the kernel's replacement did not come up: every
+	 * Fabric component tooltip provider is drawn nowhere. A loss on the owning module, not just a log line.
+	 */
+	private static void lost(String why) {
+		String detail = "fabric-item-api's tooltip injectors were removed for the kernel's bridge, and the bridge did not "
+				+ "come up (" + why + "): a Fabric mod's component tooltip providers are not drawn";
+		ForbricLog.warn("[Forbric/Tooltips] %s", detail);
+		net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding("fabric-tooltip-bridge",
+				"fabric-item-api-v1", "Component tooltip providers", "KernelNeoTooltips",
+				net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, false, detail, List.of(why)));
 	}
 
 	/** Fabric's anchors are its own scrape of vanilla's order; one NeoForge does not list never fires. */
