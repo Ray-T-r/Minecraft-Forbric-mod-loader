@@ -137,6 +137,7 @@ public final class KernelClientSmoke {
 	}
 
 	private static void tick(Object minecraft) {
+		if (!connectionProbesArmed) armConnectionProbes(minecraft);
 		Object level = fieldValue(minecraft, "level");
 		Object player = fieldValue(minecraft, "player");
 
@@ -152,6 +153,10 @@ public final class KernelClientSmoke {
 				disconnectRequested = false;
 				stopRequested = true;
 				probeIds(minecraft, "after disconnect");
+				if (connectionProbesArmed) {
+					ForbricLog.info("[Forbric/ClientSmoke] MinecraftForge connection events: LoggingIn %d, LoggingOut %d",
+							forgeLogins[0], forgeLogins[1]);
+				}
 				ForbricLog.info("[Forbric/ClientSmoke] clean disconnect observed; stopping client");
 				invokeNoArg(minecraft, "stop");
 			}
@@ -176,6 +181,7 @@ public final class KernelClientSmoke {
 		if (!ready && worldTicks >= Integer.getInteger(READY_TICKS, 60)) {
 			ready = true;
 			ForbricLog.info("[Forbric/ClientSmoke] client-ready after %d world tick(s)", worldTicks);
+			if (connectionProbesArmed) reportClientCommands(minecraft);
 			reportWindowTitle(minecraft);
 		}
 		if (ready && !drillDone && Boolean.getBoolean(DRILL)) drill(minecraft, player);
@@ -197,6 +203,86 @@ public final class KernelClientSmoke {
 	}
 
 	private static boolean keyBindsTried;
+
+	/** LoggingIn, LoggingOut as MinecraftForge listeners saw them. */
+	private static final int[] forgeLogins = new int[2];
+	private static boolean connectionProbesArmed;
+
+	/**
+	 * Listens the way a MinecraftForge mod does for the client joining and leaving, and registers one client command
+	 * through each family's registration event, before any world is joined. What the game's command tree holds after
+	 * joining says whether both registrations reached the dispatcher the game runs — and whether MinecraftForge's own
+	 * handler replaced it with a tree of its own (the NeoForge command would then be gone).
+	 */
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	private static void armConnectionProbes(Object minecraft) {
+		connectionProbesArmed = true;
+		try {
+			ClassLoader cl = minecraft.getClass().getClassLoader();
+			Class<?> literal = Class.forName("com.mojang.brigadier.builder.LiteralArgumentBuilder", true, cl);
+			java.util.function.BiConsumer<Object, String> register = (dispatcher, name) -> {
+				try {
+					Object node = literal.getMethod("literal", String.class).invoke(null, name);
+					dispatcher.getClass().getMethod("register", literal).invoke(dispatcher, node);
+				} catch (ReflectiveOperationException e) {
+					throw new IllegalStateException(e);
+				}
+			};
+			String forgeNet = "net.minecraftforge.client.event.ClientPlayerNetworkEvent$";
+			forgeListen(cl, forgeNet + "LoggingIn", e -> forgeLogins[0]++);
+			forgeListen(cl, forgeNet + "LoggingOut", e -> forgeLogins[1]++);
+			forgeListen(cl, net.forbric.api.ForeignType.CLIENT_COMMANDS_EVENT.binary(net.forbric.api.Ecosystem.FORGE),
+					e -> register.accept(invoke(e, "getDispatcher"), "forbricsmokeforge"));
+			Object neoBus = Class.forName("net.neoforged.neoforge.common.NeoForge", true, cl).getField("EVENT_BUS").get(null);
+			Class<?> neoEvent = Class.forName(net.forbric.api.ForeignType.CLIENT_COMMANDS_EVENT.binary(net.forbric.api.Ecosystem.NEOFORGE), true, cl);
+			neoBus.getClass().getMethod("addListener", Class.class, java.util.function.Consumer.class).invoke(neoBus, neoEvent,
+					(java.util.function.Consumer) e -> register.accept(invoke(e, "getDispatcher"), "forbricsmokeneo"));
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/ClientSmoke] not both families on this client — no connection probes");
+			connectionProbesArmed = false;
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] could not arm the connection probes", t);
+			connectionProbesArmed = false;
+		}
+	}
+
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	private static void forgeListen(ClassLoader cl, String event, java.util.function.Consumer<Object> listener) throws Exception {
+		Object bus = Class.forName(event, true, cl).getField("BUS").get(null);
+		// The bus's public interface, not its class: the implementation is not public.
+		for (Class<?> type = bus.getClass(); type != null; type = type.getSuperclass()) {
+			for (Class<?> api : type.getInterfaces()) {
+				try {
+					api.getMethod("addListener", java.util.function.Consumer.class).invoke(bus, (java.util.function.Consumer) listener);
+					return;
+				} catch (NoSuchMethodException elsewhere) {
+					continue;
+				}
+			}
+		}
+		throw new NoSuchMethodException(event + ".BUS.addListener(Consumer)");
+	}
+
+	private static Object invoke(Object target, String method) {
+		try {
+			return target.getClass().getMethod(method).invoke(target);
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException(e);
+		}
+	}
+
+	/** Which of the two probe commands the joined connection's command tree has. */
+	private static void reportClientCommands(Object minecraft) {
+		try {
+			Object connection = invoke(minecraft, "getConnection");
+			Object root = invoke(invoke(connection, "getCommands"), "getRoot");
+			java.lang.reflect.Method child = root.getClass().getMethod("getChild", String.class);
+			ForbricLog.info("[Forbric/ClientSmoke] client command tree after joining: forge=%s neo=%s",
+					child.invoke(root, "forbricsmokeforge") != null, child.invoke(root, "forbricsmokeneo") != null);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] could not read the client command tree", t);
+		}
+	}
 
 	/**
 	 * Opens vanilla's key binds screen the way the options menu does and reports what the game shows. A NeoForge mod

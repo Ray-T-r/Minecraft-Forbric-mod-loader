@@ -199,6 +199,12 @@ public enum ForeignType {
 	 * merged game casts to NeoForge's (DragonPartsInjector, and the frame recomputer that follows its rebase).
 	 */
 	PART_ENTITY("net.minecraftforge.entity.PartEntity", "net.neoforged.neoforge.entity.PartEntity"),
+	/**
+	 * Each family's client-command registration event, both handing out the one {@code CommandDispatcher} type: the
+	 * merged game runs NeoForge's, and MinecraftForge's is posted with that dispatcher (KernelGameClientNetworkEvents).
+	 */
+	CLIENT_COMMANDS_EVENT("net.minecraftforge.client.event.RegisterClientCommandsEvent",
+			"net.neoforged.neoforge.client.event.RegisterClientCommandsEvent"),
 	/** Each family's global-loot-modifier reload listener: same directory, two ideas of what a list file is. */
 	LOOT_MODIFIER_MANAGER("net.minecraftforge.common.loot.LootModifierManager",
 			"net.neoforged.neoforge.common.loot.LootModifierManager");

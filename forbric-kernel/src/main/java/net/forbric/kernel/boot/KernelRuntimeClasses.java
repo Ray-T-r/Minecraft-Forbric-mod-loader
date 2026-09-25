@@ -243,6 +243,13 @@ public final class KernelRuntimeClasses {
 				new Call("installLivingDeath", void.class, Object.class),
 				new Call("installLivingDrops", void.class, Object.class),
 				new Call("installEntityJoinLevel", void.class, Object.class))));
+		// The client connection lifecycle and client commands, for MinecraftForge mods; client-only (names NeoForge's
+		// client event package).
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientNetworkEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installLoggingIn", void.class, Object.class),
+				new Call("installLoggingOut", void.class, Object.class),
+				new Call("installClone", void.class, Object.class),
+				new Call("installClientCommands", void.class, Object.class))));
 		// MinecraftForge's attack, shield, knockback and fall events off NeoForge's at the same positions.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameDamageEvents", new Entry(Origin.COMPILED, List.of(
 				new Call("installLivingAttack", void.class, Object.class),

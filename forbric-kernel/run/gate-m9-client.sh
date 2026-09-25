@@ -510,6 +510,13 @@ ROWS=$(grep -oE 'frame\(s\) listing [0-9]+ mod' "$LOG" | grep -oE '[0-9]+' | hea
 [ "${ROWS:-0}" -ge 1 ] && echo "[kernel] PASS and it listed mods ($ROWS rows)" \
   || { echo "[kernel] FAIL the Mods screen listed nothing (got ${ROWS:-none})"; FAIL=1; }
 check_absent "the screen did not throw" "the unified Mods screen could not be opened" "$LOG"
+# The client connection lifecycle and client commands for MinecraftForge mods (KernelGameClientNetworkEvents): a
+# MinecraftForge listener hears the join and the leave, and a client command registered through each family's event is
+# in the tree the game runs.
+check "MinecraftForge hears the client join and leave" \
+  "ClientSmoke\] MinecraftForge connection events: LoggingIn [1-9][0-9]*, LoggingOut [1-9]" "$LOG"
+check "both families' client commands are in the game's command tree" \
+  "ClientSmoke\] client command tree after joining: forge=true neo=true" "$LOG"
 # NeoForge's ScreenEvent.Opening, judged by a NeoForge mod's own answer: Controlling swaps vanilla's key binds screen
 # for its own. The merged Gui.setScreen is MinecraftForge's and asked only MinecraftForge's (NeoScreenEventsInjector).
 check "a NeoForge mod's screen swap is obeyed (Controlling)" \

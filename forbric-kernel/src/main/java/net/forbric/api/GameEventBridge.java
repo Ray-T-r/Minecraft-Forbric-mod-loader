@@ -168,6 +168,17 @@ public enum GameEventBridge {
 			"a MinecraftForge mod never sees the scroll wheel inside a screen, so moving items between a chest "
 					+ "and the inventory with the wheel does nothing at all — the mod is loaded, its listener is "
 					+ "registered, and the wheel only scrolls the screen"),
+	CLIENT_LOGGING_IN(Pass.CLIENT_GAME_BUS, "ClientPlayerNetworkEvent.LoggingIn",
+			"a MinecraftForge mod never learns the client joined a world or server, so its handshake, map session "
+					+ "or server-synced config never starts"),
+	CLIENT_LOGGING_OUT(Pass.CLIENT_GAME_BUS, "ClientPlayerNetworkEvent.LoggingOut",
+			"a MinecraftForge mod never learns the client left, so per-server state and synced config linger into "
+					+ "the next world"),
+	CLIENT_PLAYER_CLONE(Pass.CLIENT_GAME_BUS, "ClientPlayerNetworkEvent.Clone",
+			"a MinecraftForge mod keeps state on the client player object that respawning replaced"),
+	CLIENT_COMMANDS(Pass.CLIENT_GAME_BUS, "RegisterClientCommandsEvent",
+			"a MinecraftForge mod's client commands do not exist — the player types one and the server answers "
+					+ "\"Unknown command\""),
 	CLIENT_RELOAD_LISTENERS(Pass.CLIENT_MOD_BUS, "RegisterClientReloadListenersEvent",
 			"a MinecraftForge mod's client reload listeners are registered on a bus nobody posts to — GeckoLib's "
 					+ "whole client model and animation cache hangs off exactly this"),

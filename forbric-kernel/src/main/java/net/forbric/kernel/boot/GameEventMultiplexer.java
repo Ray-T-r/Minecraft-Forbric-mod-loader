@@ -210,6 +210,16 @@ public final class GameEventMultiplexer {
 						() -> screenMouseBridge(cl, "installDragPre").invoke(null, neoBus));
 				install(GameEventBridge.SCREEN_MOUSE_SCROLL_POST,
 						() -> screenMouseBridge(cl, "installScrollPost").invoke(null, neoBus));
+				// The connection lifecycle and client commands: the merged ClientPacketListener and Minecraft post
+				// NeoForge's events at MinecraftForge's positions and nothing calls MinecraftForge's hooks.
+				install(GameEventBridge.CLIENT_LOGGING_IN,
+						() -> clientNetworkBridge(cl, "installLoggingIn").invoke(null, neoBus));
+				install(GameEventBridge.CLIENT_LOGGING_OUT,
+						() -> clientNetworkBridge(cl, "installLoggingOut").invoke(null, neoBus));
+				install(GameEventBridge.CLIENT_PLAYER_CLONE,
+						() -> clientNetworkBridge(cl, "installClone").invoke(null, neoBus));
+				install(GameEventBridge.CLIENT_COMMANDS,
+						() -> clientNetworkBridge(cl, "installClientCommands").invoke(null, neoBus));
 				EventBridges.verify(GameEventBridge.Pass.CLIENT_GAME_BUS);
 			}
 		} catch (ClassNotFoundException single) {
@@ -317,6 +327,12 @@ public final class GameEventMultiplexer {
 	/** One entry point on the game-side cancellable-entity bridge. Complete literal, for the reason above. */
 	private static Method entityBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameEntityEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side client connection bridge. Complete literal, for the reason above. */
+	private static Method clientNetworkBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameClientNetworkEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 
