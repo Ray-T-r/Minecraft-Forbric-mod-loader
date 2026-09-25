@@ -41,7 +41,6 @@ public final class StubDriver {
   test("speed.control",()->{dirt[0]=player.getDestroySpeed(Blocks.DIRT.defaultBlockState(),pos);return expect(dirt[0]>0f,"dirt speed "+dirt[0]);});
   test("speed.rebound",()->{float sponge=player.getDestroySpeed(Blocks.SPONGE.defaultBlockState(),pos);
    return expect(Math.abs(sponge-7f*dirt[0])<1e-4f,"sponge speed "+sponge+" vs dirt "+dirt[0]+" (the Fabric mod's RETURN injection makes it sevenfold)");});
-  // Fabric API's elytra CUSTOM event: its injection reads a field only the carrier's canGlide(boolean) body has.
   // randomTeleport: the game calls NeoForge's overload that also takes the item; the Fabric HEAD injection was written
   // for vanilla's four-argument one, which on the merged base is the carrier's stub.
   test("teleport.control",()->{level.setBlock(new BlockPos(3,100,3),Blocks.STONE.defaultBlockState(),3);player.snapTo(0.5,120,0.5);player.removeTag("forbric_pinned");

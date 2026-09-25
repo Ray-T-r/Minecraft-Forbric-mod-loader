@@ -77,7 +77,7 @@ if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r[
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 check "positive: the probe's getDestroySpeed injection moved (wrapped)" 'forbric\$sevenfoldOnSponge.* now targets net.minecraft.world.entity.player.Player.getDestroySpeed\(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;\)F' "$RESULTS/positive.log"
-check "positive: fabric-api's elytra check restored at NeoForge's gliding decision" 'restored [0-9]+ entity callback anchor\(s\) in net.fabricmc.fabric.mixin.entity.event.elytra.LivingEntityMixin' "$RESULTS/positive.log"
+check "positive: fabric-api's elytra check restored at NeoForge's gliding decision (and its flight tick)" 'restored 2 entity callback anchor\(s\) in net.fabricmc.fabric.mixin.entity.event.elytra.LivingEntityMixin' "$RESULTS/positive.log"
 check_absent "positive: the rebind leaves fabric-api's elytra check to that one owner" 'injectElytraCheck now targets' "$RESULTS/positive.log"
 check "positive: the probe's randomTeleport injection moved" 'forbric\$pinned now targets net.minecraft.world.entity.LivingEntity.randomTeleport\(DDDZLnet/minecraft/world/item/ItemStack;\)Z' "$RESULTS/positive.log"
 

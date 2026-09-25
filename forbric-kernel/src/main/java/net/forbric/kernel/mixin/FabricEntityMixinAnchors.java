@@ -10,9 +10,14 @@ import org.objectweb.asm.tree.*;
 
 /** Preserve Fabric entity callbacks at the corresponding stage of the pinned NeoForge body. Effects,
  * flight and monster checks retain their original handlers; the clear-all veto wraps NeoForge's per-effect question. Occupancy bridges its audited handled-result
- * contract to the native bed setter, including native beds with no vanilla OCCUPIED property. */
+ * contract to the native bed setter, including native beds with no vanilla OCCUPIED property. The elytra flight tick
+ * (EntityElytraEvents.CUSTOM with tickElytra) moves from vanilla's glider-slot choice to NeoForge's empty-glider guard
+ * just before it: behind that guard, custom flight with no glider item never reached Fabric's tick. */
 public final class FabricEntityMixinAnchors {
  public static final String PROPERTY="forbric.fabricEntityAnchors";
+ /** {@code -Dforbric.fabricElytraTickAnchor=off} leaves fabric-api's elytra flight tick at the glider-slot choice. */
+ public static final String TICK_PROPERTY="forbric.fabricElytraTickAnchor";
+ private static final String GET_RANDOM="Lnet/minecraft/util/Util;getRandom(Ljava/util/List;Lnet/minecraft/util/RandomSource;)Ljava/lang/Object;";
  private static final String LIVING="net/minecraft/world/entity/LivingEntity";
  private static final String BASE="net/fabricmc/fabric/mixin/entity/event/";
  private static final String EFFECT="Lnet/minecraft/world/effect/MobEffectInstance;";
@@ -45,6 +50,13 @@ public final class FabricEntityMixinAnchors {
     changed+=move(mixin,"injectElytraCheck","("+CIR+")V","canGlide","canGlide(Z)Z","FIELD",
       "Lnet/minecraft/world/entity/EquipmentSlot;VALUES:Ljava/util/List;","FIELD",
       "Lnet/neoforged/neoforge/common/NeoForgeMod;GLIDING_FLIGHT:Lnet/minecraft/core/Holder;");
+   if(!"off".equalsIgnoreCase(System.getProperty(TICK_PROPERTY,"on"))&&damageChoiceBehindEmptyGuard(method(target,"updateFallFlying","()V"))
+     &&plainPoint(mixin,"injectElytraTick","("+CI+")V")) {
+    int tick=move(mixin,"injectElytraTick","("+CI+")V","updateFallFlying()V",null,"INVOKE",GET_RANDOM,"INVOKE","Ljava/util/List;isEmpty()Z");
+    if(tick>0)ForbricLog.info("[Forbric/Mixin] fabric-api's elytra flight tick now runs before NeoForge's empty-glider guard in "
+      +"LivingEntity.updateFallFlying — custom flight without a glider item reaches EntityElytraEvents.CUSTOM(entity, true) again");
+    changed+=tick;
+   }
   }
   if(mixin.name.equals(BASE+"ServerPlayerMixin"))changed+=sleepLambda(mixin,target);
   if(mixin.name.equals(BASE+"LivingEntityMixin"))changed+=bedOccupation(mixin,target);
@@ -187,6 +199,52 @@ public final class FabricEntityMixinAnchors {
   set(at,"value",newKind);set(at,"target",newTarget);
   if(replacementSelector!=null)set(injector,"method",new ArrayList<>(List.of(replacementSelector)));
   return 1;
+ }
+ /**
+  * NeoForge's updateFallFlying: {@code list = …toList(); if (list.isEmpty()) skip; slot = Util.getRandom(list, random)}
+  * — the one isEmpty, straight before the one getRandom, both on the same list, and the guard skipping to the label
+  * the odd-tens test ({@code ticks % 2 != 0}) skips to. The only way to the guard is falling through that test: no
+  * branch in between and no label there anything jumps to. So the guard is reached exactly where vanilla reached the
+  * slot choice, and on the path that skips it.
+  */
+ static boolean damageChoiceBehindEmptyGuard(MethodNode method) {
+  if(method==null||countCalls(method,"java/util/List","isEmpty","()Z")!=1
+    ||countCalls(method,"net/minecraft/util/Util","getRandom","(Ljava/util/List;Lnet/minecraft/util/RandomSource;)Ljava/lang/Object;")!=1)return false;
+  List<AbstractInsnNode> code=code(method);
+  int g=-1;for(int i=0;i<code.size();i++)if(call(code.get(i),"java/util/List","isEmpty","()Z"))g=i;
+  if(g<3||g+5>=code.size())return false;
+  if(!call(code.get(g-3),"java/util/stream/Stream","toList","()Ljava/util/List;")
+    ||!(code.get(g-2) instanceof VarInsnNode store)||store.getOpcode()!=Opcodes.ASTORE
+    ||!(code.get(g-1) instanceof VarInsnNode load)||load.getOpcode()!=Opcodes.ALOAD||load.var!=store.var
+    ||!(code.get(g+1) instanceof JumpInsnNode guard)||guard.getOpcode()!=Opcodes.IFNE
+    ||!(code.get(g+2) instanceof VarInsnNode list)||list.getOpcode()!=Opcodes.ALOAD||list.var!=store.var
+    ||!(code.get(g+3) instanceof VarInsnNode self)||self.getOpcode()!=Opcodes.ALOAD||self.var!=0
+    ||!(code.get(g+4) instanceof FieldInsnNode random)||!random.name.equals("random")||!random.desc.equals("Lnet/minecraft/util/RandomSource;")
+    ||!call(code.get(g+5),"net/minecraft/util/Util","getRandom","(Ljava/util/List;Lnet/minecraft/util/RandomSource;)Ljava/lang/Object;"))return false;
+  int k=-1;
+  for(int i=0;i<g;i++)if(code.get(i) instanceof JumpInsnNode jump&&jump.label==guard.label){if(k>=0)return false;k=i;}
+  if(k<2||code.get(k).getOpcode()!=Opcodes.IFNE||code.get(k-1).getOpcode()!=Opcodes.IREM||code.get(k-2).getOpcode()!=Opcodes.ICONST_2)return false;
+  for(int i=k+1;i<g;i++)if(code.get(i) instanceof JumpInsnNode||code.get(i) instanceof TableSwitchInsnNode||code.get(i) instanceof LookupSwitchInsnNode)return false;
+  java.util.Set<LabelNode> between=new java.util.HashSet<>();
+  for(AbstractInsnNode i=code.get(k).getNext();i!=code.get(g);i=i.getNext())if(i instanceof LabelNode label)between.add(label);
+  for(var i:method.instructions){
+   if(i instanceof JumpInsnNode jump&&between.contains(jump.label))return false;
+   if(i instanceof TableSwitchInsnNode t&&(between.contains(t.dflt)||t.labels.stream().anyMatch(between::contains)))return false;
+   if(i instanceof LookupSwitchInsnNode l&&(between.contains(l.dflt)||l.labels.stream().anyMatch(between::contains)))return false;
+  }
+  if(method.tryCatchBlocks!=null)for(var block:method.tryCatchBlocks)if(between.contains(block.handler))return false;
+  return true;
+ }
+ /** An @Inject whose one point is a plain INVOKE: no shift, by, ordinal, opcode, slice or captured locals to reinterpret. */
+ static boolean plainPoint(ClassNode mixin,String name,String desc) {
+  MethodNode handler=method(mixin,name,desc);if(handler==null)return false;
+  if(hasGroup(handler.visibleAnnotations)||hasGroup(handler.invisibleAnnotations))return false;
+  AnnotationNode injector=MixinFit.injectorOf(handler);
+  if(injector==null||MixinFit.value(injector,"slice")!=null||MixinFit.value(injector,"locals")!=null)return false;
+  List<AnnotationNode> points=MixinFit.atNodes(injector);
+  if(points.size()!=1)return false;
+  for(String key:List.of("shift","by","ordinal","opcode"))if(MixinFit.value(points.getFirst(),key)!=null)return false;
+  return true;
  }
  private static boolean delegatesToAttributePath(MethodNode method) {
   if(method==null)return false;List<AbstractInsnNode> code=code(method);
