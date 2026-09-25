@@ -68,6 +68,11 @@ class MergedBaseLostAncestorsTest {
 				"the merged base, both patched sides and both carriers must be staged");
 
 		Map<String, String> merged = supers(MERGED, FORGE_RT, NEO_RT);
+		// The hierarchy the game LOADS: the kernel rebases EnderDragonPart onto NeoForge's PartEntity at load time.
+		for (String owner : List.copyOf(merged.keySet())) {
+			String rebased = DragonPartsInjector.rebasedSuperclass(owner);
+			if (rebased != null) merged.put(owner, rebased);
+		}
 		Map<String, String> forge = supers(FORGE_BASE, FORGE_RT);
 		Map<String, String> neo = supers(NEO_BASE, NEO_RT);
 
@@ -125,6 +130,10 @@ class MergedBaseLostAncestorsTest {
 		assumeTrue(Files.isRegularFile(CONFLICTS) && Files.isRegularFile(MERGED)
 				&& Files.isRegularFile(FORGE_RT) && Files.isRegularFile(NEO_RT), "the merge report is absent");
 		Map<String, String> merged = supers(MERGED, FORGE_RT, NEO_RT);
+		for (String owner : List.copyOf(merged.keySet())) {
+			String rebased = DragonPartsInjector.rebasedSuperclass(owner);
+			if (rebased != null) merged.put(owner, rebased);
+		}
 
 		List<String> unaccounted = new ArrayList<>();
 		for (String line : Files.readAllLines(CONFLICTS, StandardCharsets.UTF_8)) {

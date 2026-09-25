@@ -189,6 +189,11 @@ public enum ForeignType {
 			"net.neoforged.neoforge.common.world.BiomeModifiers$RemoveSpawnsBiomeModifier"),
 	/** The static hook class each family's patched game calls to post its events. */
 	EVENT_FACTORY("net.minecraftforge.event.ForgeEventFactory", "net.neoforged.neoforge.event.EventHooks"),
+	/**
+	 * Each family's multipart-entity part: the Ender Dragon's parts are one or the other, and every consumer in the
+	 * merged game casts to NeoForge's (DragonPartsInjector, and the frame recomputer that follows its rebase).
+	 */
+	PART_ENTITY("net.minecraftforge.entity.PartEntity", "net.neoforged.neoforge.entity.PartEntity"),
 	/** Each family's global-loot-modifier reload listener: same directory, two ideas of what a list file is. */
 	LOOT_MODIFIER_MANAGER("net.minecraftforge.common.loot.LootModifierManager",
 			"net.neoforged.neoforge.common.loot.LootModifierManager");
