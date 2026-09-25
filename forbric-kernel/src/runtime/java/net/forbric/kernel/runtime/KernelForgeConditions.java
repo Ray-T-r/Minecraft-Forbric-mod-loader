@@ -189,7 +189,6 @@ public final class KernelForgeConditions {
 
 	private static volatile boolean judgementFailureReported;
 
-	/** {@code -Dforbric.forgeConditionContext=off}: the Forge event answers {@code EMPTY} instead of adapting NeoForge's. */
 	/** Launch-time switch for {@link #poolElementCodec}; the pool list codec that asks is built once. */
 	public static final String POOL_PROPERTY = "forbric.forgePoolConditions";
 
@@ -204,6 +203,7 @@ public final class KernelForgeConditions {
 		return LootPool.CONDITIONAL_CODEC;
 	}
 
+	/** {@code -Dforbric.forgeConditionContext=off}: the Forge event answers {@code EMPTY} instead of adapting NeoForge's. */
 	public static final String CONTEXT_PROPERTY = "forbric.forgeConditionContext";
 	private static volatile boolean contextFailureReported;
 

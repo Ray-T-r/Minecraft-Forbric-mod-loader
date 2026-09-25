@@ -104,7 +104,10 @@ public final class FabricBlockBreakMixinAdapter {
 	private FabricBlockBreakMixinAdapter() {
 	}
 
-	/** Adapts whichever of the two handlers {@code mixin} carries; returns how many were changed. */
+	/**
+	 * Adapts whichever of the three handlers {@code mixin} carries (architectury's {@code onBreak}, apoli-legacy's
+	 * {@code modifyEffectiveTool}, fabric-api's {@code onBlockBroken}); returns how many were changed.
+	 */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
 		if ("off".equalsIgnoreCase(System.getProperty(PROPERTY, "on")) || mixin == null || targets == null) return 0;
 		if (!mixin.name.equals(ARCHITECTURY) && !mixin.name.equals(APOLI) && !mixin.name.equals(FABRIC)) return 0;

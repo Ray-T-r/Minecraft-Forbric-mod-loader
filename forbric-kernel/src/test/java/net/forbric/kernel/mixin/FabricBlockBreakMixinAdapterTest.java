@@ -19,7 +19,10 @@ import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
 
-/** The two popular-pack destroyBlock mixins, as shipped, against the real merged and vanilla bodies. */
+/**
+ * The three destroyBlock mixins as shipped — architectury's and apoli-legacy's from the popular pack, fabric-api's
+ * onBlockBroken from the merged pack's fabric-api — against the real merged and vanilla bodies.
+ */
 @ResourceLock("system-properties")
 class FabricBlockBreakMixinAdapterTest {
 	private static final Path MODS = Path.of("run/client-popular/mods");
@@ -116,10 +119,26 @@ class FabricBlockBreakMixinAdapterTest {
 		assertEquals(List.of("blockEntity"), MixinFit.stringList(MixinFit.value(outer.invisibleParameterAnnotations[2].getFirst(), "name")));
 		assertEquals(List.of("adjustedState"), MixinFit.stringList(MixinFit.value(outer.invisibleParameterAnnotations[3].getFirst(), "name")));
 		assertNull(MixinFit.injectorOf(method(mixin, "onBlockBroken" + MixinHandlerShim.INNER_SUFFIX)), "fabric-api's own handler is only called");
-		assertTrue(java.util.Arrays.stream(outer.instructions.toArray()).anyMatch(i -> i.getOpcode() == Opcodes.IFEQ), "only when the block was removed");
+		List<AbstractInsnNode> real = java.util.Arrays.stream(outer.instructions.toArray()).filter(i -> i.getOpcode() >= 0).toList();
+		assertTrue(real.get(0) instanceof VarInsnNode load && load.getOpcode() == Opcodes.ILOAD && load.var == 1, "the removal result first");
+		assertTrue(real.get(1) instanceof JumpInsnNode skip && skip.getOpcode() == Opcodes.IFEQ, "then skip when the block was not removed");
+		int call = java.util.stream.IntStream.range(0, real.size()).filter(k -> real.get(k) instanceof MethodInsnNode m
+				&& m.name.equals("onBlockBroken" + MixinHandlerShim.INNER_SUFFIX)).findFirst().orElseThrow();
+		int skipTo = outer.instructions.indexOf(((JumpInsnNode) real.get(1)).label);
+		assertTrue(outer.instructions.indexOf(real.get(call)) < skipTo, "fabric-api's handler runs only on the removed branch");
+		assertEquals(List.of(Opcodes.ILOAD, Opcodes.IRETURN), real.subList(real.size() - 2, real.size()).stream().map(AbstractInsnNode::getOpcode).toList(),
+				"and the result is returned unchanged");
 		new Analyzer<>(new BasicVerifier()).analyze(mixin.name, outer);
 		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target), "a second pass changes nothing");
-		assertNotNull(MixinFit.injectorOf(method(fabricInteraction(), "breakBlock")), "BEFORE binds as it is and is left alone");
+		ClassNode fresh = fabricInteraction();
+		for (MethodNode kept : fresh.methods) {
+			if (kept.name.equals("onBlockBroken")) continue;
+			MethodNode adapted = method(mixin, kept.name);
+			assertEquals(kept.desc, adapted.desc, kept.name);
+			assertEquals(kept.instructions.size(), adapted.instructions.size(), kept.name + " is left alone");
+			assertEquals(String.valueOf(MixinFit.injectorOf(kept) == null ? null : MixinFit.value(MixinFit.injectorOf(kept), "method")),
+					String.valueOf(MixinFit.injectorOf(adapted) == null ? null : MixinFit.value(MixinFit.injectorOf(adapted), "method")), kept.name);
+		}
 	}
 
 	@Test void fabricApisAfterBreakIsLeftAloneWhereTheMergedBodyDoesNotProveIt() throws Exception {

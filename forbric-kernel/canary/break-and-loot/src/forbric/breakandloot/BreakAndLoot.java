@@ -73,6 +73,10 @@ public final class BreakAndLoot {
   test("break.nested",()->{EVENTS.clear();player.setGameMode(GameType.SURVIVAL);level.setBlock(pos,Blocks.CHEST.defaultBlockState(),3);level.setBlock(pos.above(),Blocks.DIRT.defaultBlockState(),3);
    mode="nested";boolean broken=player.gameMode.destroyBlock(pos);mode="";String r="broken="+broken+" events="+EVENTS+" above="+id(level.getBlockState(pos.above()));
    return expect(r.equals("broken=true events=[before:minecraft:chest+be, after:minecraft:chest+be, before:minecraft:dirt, after:minecraft:dirt] above=minecraft:air"),r);});
+  // Breaking air: NeoForge's removal reports nothing removed, so vanilla's Block.destroy — and AFTER — never happen.
+  test("break.removalFailed",()->{EVENTS.clear();player.setGameMode(GameType.SURVIVAL);level.setBlock(pos,Blocks.AIR.defaultBlockState(),3);
+   boolean broken=player.gameMode.destroyBlock(pos);String r="broken="+broken+" now="+id(level.getBlockState(pos))+" events="+EVENTS;
+   return expect(!EVENTS.contains("after:minecraft:air")&&EVENTS.stream().noneMatch(e->e.startsWith("after:")),r);});
   test("break.neoCancel",()->{mode="neo-cancel";String r=breakIt.apply(Blocks.DIRT.defaultBlockState(),GameType.SURVIVAL);mode="";return expect(r.equals("broken=false now=minecraft:dirt events=[]"),r);});
   test("break.veto",()->{mode="veto";String r=breakIt.apply(Blocks.DIRT.defaultBlockState(),GameType.SURVIVAL);mode="";return expect(r.equals("broken=false now=minecraft:dirt events=[before:minecraft:dirt, canceled:minecraft:dirt]"),r);});
 
