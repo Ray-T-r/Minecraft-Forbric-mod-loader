@@ -22,7 +22,7 @@ for entry in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries
 modules = kernel / 'run/canary/m45-modules'; modules.mkdir(parents=True, exist_ok=True)
 selected = []
 with zipfile.ZipFile(fapi) as archive:
-    for prefix in ('fabric-api-base-', 'fabric-resource-loader-v1-', 'fabric-item-api-v1-'):
+    for prefix in ('fabric-api-base-', 'fabric-resource-loader-v1-', 'fabric-item-api-v1-', 'fabric-content-registries-v0-', 'fabric-lifecycle-events-v1-'):
         names = [n for n in archive.namelist() if n.startswith('META-INF/jars/' + prefix) and n.endswith('.jar')]
         if len(names) != 1: raise SystemExit('required actual Fabric module missing or ambiguous: ' + prefix)
         target = modules / pathlib.PurePosixPath(names[0]).name; target.write_bytes(archive.read(names[0])); selected.append(target)
@@ -48,7 +48,7 @@ kernel_jar = kernel / 'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar'
 for path in [vanilla, kernel_jar]:
     if not path.is_file(): raise SystemExit(f'M45 prerequisite absent: {path}')
 fluid_classes = work / 'fluid-classes'; fluid_classes.mkdir()
-subprocess.run(['javac', '-proc:none', '-nowarn', '--release', '21', '-cp', os.pathsep.join(map(str, [vanilla, kernel_jar, *libraries])),
+subprocess.run(['javac', '-proc:none', '-nowarn', '--release', '21', '-cp', os.pathsep.join(map(str, [vanilla, kernel_jar, *selected, *libraries])),
                 '-d', str(fluid_classes), *map(str, sorted((fluids / 'src').rglob('*.java')))], check=True)
 staged_fluids = work / 'forbricgoo.jar'
 with zipfile.ZipFile(staged_fluids, 'w', zipfile.ZIP_DEFLATED) as target:

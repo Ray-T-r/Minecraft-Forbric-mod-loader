@@ -297,6 +297,8 @@ public final class KernelRuntimeClasses {
 				new Call("installAnvilUpdate", void.class, Object.class),
 				new Call("installAnvilRepair", void.class, Object.class),
 				new Call("installToolModification", void.class, Object.class))));
+		// fabric-content-registries' fuel events on NeoForge's fuel builder; FabricFuelValuesInjector calls apply.
+		CLASSES.put("net.forbric.kernel.runtime.KernelFabricFuel", new Entry(Origin.COMPILED, List.of()));
 		// A MinecraftForge brewing recipe as NeoForge's registry reads it; wrapped in PotionBrewing.Builder.add.
 		CLASSES.put("net.forbric.kernel.runtime.KernelBrewing", new Entry(Origin.COMPILED, List.of()));
 		// MinecraftForge's attack, shield, knockback and fall events off NeoForge's at the same positions.

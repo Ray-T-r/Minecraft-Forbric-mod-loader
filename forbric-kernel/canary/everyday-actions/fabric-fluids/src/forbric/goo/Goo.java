@@ -29,7 +29,12 @@ import net.minecraft.world.level.material.FluidState;
  * swimmable.
  */
 public final class Goo implements ModInitializer {
- @Override public void onInitialize(){ register("goo"); register("brine"); }
+ @Override public void onInitialize(){
+  register("goo"); register("brine");
+  // Fuels the way a Fabric mod adds them in 26.2: dirt burns for 300 ticks, and carpets are excluded.
+  net.fabricmc.fabric.api.registry.FuelValueEvents.BUILD.register((builder,context)->builder.add(Items.DIRT,300));
+  net.fabricmc.fabric.api.registry.FuelValueEvents.EXCLUSIONS.register((builder,context)->builder.remove(net.minecraft.tags.ItemTags.WOOL_CARPETS));
+ }
  static void register(String name){
   Family f=new Family();
   f.still=Registry.register(BuiltInRegistries.FLUID,Identifier.fromNamespaceAndPath("forbricgoo",name),new Source(f));

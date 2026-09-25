@@ -565,6 +565,8 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NeoScreenEventsInjector());
 		// A MinecraftForge brewing recipe goes into the merged builder's NeoForge-typed list wrapped as NeoForge's.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeBrewingRecipesInjector());
+		// The merged game builds its fuels from NeoForge's data map; Fabric's fuel events run on that builder too.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFuelValuesInjector());
 		// NeoForge's coremods never run on the merged base; NativeCoremodParity does their rewrites after Mixin. These
 		// are the parts that must come before it: the flower pot's constructor, lookup and addPlant; the biome modifier
 		// pass starting from the biome's current climate, and the biome's getters yielding to a later replacement.

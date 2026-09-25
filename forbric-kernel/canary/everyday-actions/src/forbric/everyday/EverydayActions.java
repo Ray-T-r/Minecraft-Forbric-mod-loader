@@ -86,6 +86,10 @@ public final class EverydayActions {
     String potion=String.valueOf(b.getItem(0).get(net.minecraft.core.component.DataComponents.POTION_CONTENTS));
     return expect(potion.contains("awkward")&&b.getItem(3).isEmpty(),"bottle="+potion+" ingredient="+id(b.getItem(3)));}
    finally{b.clearContent();level.setBlock(pos,Blocks.AIR.defaultBlockState(),3);}});
+  // Fuels: a vanilla fuel (control), and the Fabric mod's own fuel and exclusion through fabric-content-registries.
+  test("fuel.vanilla",()->{var f=server.fuelValues();return expect(f.burnDuration(new ItemStack(Items.COAL))==1600,"coal burns "+f.burnDuration(new ItemStack(Items.COAL)));});
+  test("fuel.fabric",()->{var f=server.fuelValues();ItemStack dirt=new ItemStack(Items.DIRT);return expect(f.isFuel(dirt)&&f.burnDuration(dirt)==300,"the Fabric mod's dirt fuel burns "+f.burnDuration(dirt));});
+  test("fuel.exclusion",()->{var f=server.fuelValues();ItemStack carpet=new ItemStack(Items.CARPET.white());return expect(!f.isFuel(carpet),"the Fabric mod's excluded carpet still burns "+f.burnDuration(carpet));});
   // The Ender Dragon: added to a world, found by its parts, hurt through one, removed.
   test("dragon.add",()->{dragon=EntityTypes.ENDER_DRAGON.create(level,EntitySpawnReason.COMMAND);dragon.snapTo(8,120,8);
    boolean added=level.addFreshEntity(dragon);var part=dragon.getSubEntities()[0];
