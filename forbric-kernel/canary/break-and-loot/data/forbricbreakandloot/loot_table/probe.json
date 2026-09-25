@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:generic",
+  "pools": [
+    {"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:stone"}]},
+    {"forge:condition": {"type": "forge:false"},
+     "rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:dirt"}]},
+    {"forge:condition": {"type": "forge:mod_loaded", "modid": "forbricbreakandloot"},
+     "rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:diamond"}]},
+    {"neoforge:conditions": [{"type": "neoforge:never"}],
+     "rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:emerald"}]},
+    {"forge:condition": {"type": "forge:true"}, "neoforge:conditions": [{"type": "neoforge:always"}],
+     "rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:gold_ingot"}]}
+  ]
+}
