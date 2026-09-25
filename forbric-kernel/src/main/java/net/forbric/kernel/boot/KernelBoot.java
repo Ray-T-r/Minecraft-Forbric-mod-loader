@@ -549,6 +549,11 @@ public final class KernelBoot {
 		// MinecraftForge's ItemStack.useOn posts NeoForge's ITEM_AFTER_BLOCK phase again, and its Item.useOn calls go
 		// through one ItemStack relay that Fabric's ItemEvents.USE_ON wraps (MixinRelocatedCall moves the injector).
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ItemUseOnInjector());
+		// NeoForge's furnace tick calls MinecraftForge's instance canBurn/consumeFuel/burn as static; the ticked furnace
+		// is the receiver MinecraftForge's own tick uses.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FurnaceTickCallsInjector());
+		// The Ender Dragon's parts are NeoForge PartEntitys, as every part consumer in the merged game casts them.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.DragonPartsInjector());
 		// NeoForge's coremods never run on the merged base; NativeCoremodParity does their rewrites after Mixin. These
 		// are the parts that must come before it: the flower pot's constructor, lookup and addPlant; the biome modifier
 		// pass starting from the biome's current climate, and the biome's getters yielding to a later replacement.

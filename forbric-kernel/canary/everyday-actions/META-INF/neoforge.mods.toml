@@ -1,0 +1,7 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="Apache-2.0"
+[[mods]]
+modId="forbriceveryday"
+version="1.0.0"
+displayName="Everyday actions world probe"
