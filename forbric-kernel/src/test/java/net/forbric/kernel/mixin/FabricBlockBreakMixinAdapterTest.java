@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
@@ -99,6 +100,52 @@ class FabricBlockBreakMixinAdapterTest {
 		System.clearProperty(FabricBlockBreakMixinAdapter.PROPERTY);
 		mixin.name = "another/ServerPlayerGameModeMixin";
 		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
+	}
+
+	@Test void fabricApisAfterBreakFiresOnNeoForgesRemovalResultWithTheSameValues() throws Exception {
+		ClassNode mixin = fabricInteraction(), target = merged();
+		assertEquals(1, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
+		MethodNode outer = method(mixin, "onBlockBroken");
+		assertEquals("(ZLnet/minecraft/core/BlockPos;" + ENTITY + STATE + ")Z", outer.desc);
+		AnnotationNode modify = MixinFit.injectorOf(outer);
+		assertEquals(FabricBlockBreakMixinAdapter.MODIFY_EXPRESSION_VALUE, modify.desc);
+		assertEquals(List.of("destroyBlock"), MixinFit.stringList(MixinFit.value(modify, "method")));
+		assertEquals("L" + FabricBlockBreakMixinAdapter.TARGET + ";removeBlock" + FabricBlockBreakMixinAdapter.REMOVE_BLOCK_DESC,
+				MixinFit.value(MixinFit.atNodes(modify).getFirst(), "target"));
+		assertEquals(Boolean.TRUE, MixinFit.value(outer.invisibleParameterAnnotations[1].getFirst(), "argsOnly"));
+		assertEquals(List.of("blockEntity"), MixinFit.stringList(MixinFit.value(outer.invisibleParameterAnnotations[2].getFirst(), "name")));
+		assertEquals(List.of("adjustedState"), MixinFit.stringList(MixinFit.value(outer.invisibleParameterAnnotations[3].getFirst(), "name")));
+		assertNull(MixinFit.injectorOf(method(mixin, "onBlockBroken" + MixinHandlerShim.INNER_SUFFIX)), "fabric-api's own handler is only called");
+		assertTrue(java.util.Arrays.stream(outer.instructions.toArray()).anyMatch(i -> i.getOpcode() == Opcodes.IFEQ), "only when the block was removed");
+		new Analyzer<>(new BasicVerifier()).analyze(mixin.name, outer);
+		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target), "a second pass changes nothing");
+		assertNotNull(MixinFit.injectorOf(method(fabricInteraction(), "breakBlock")), "BEFORE binds as it is and is left alone");
+	}
+
+	@Test void fabricApisAfterBreakIsLeftAloneWhereTheMergedBodyDoesNotProveIt() throws Exception {
+		ClassNode vanilla = vanilla(), mixin = fabricInteraction();
+		byte[] before = StagedFabricMixinFixture.bytes(mixin);
+		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> vanilla), "vanilla calls Block.destroy itself");
+		assertArrayEquals(before, StagedFabricMixinFixture.bytes(mixin));
+		ClassNode renamed = merged();
+		destroyBlock(renamed).localVariables.stream().filter(l -> l.name.equals("blockEntity")).forEach(l -> l.name = "entity");
+		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(fabricInteraction(), name -> renamed), "the block entity the handler names is not there");
+		ClassNode noDestroy = merged();
+		MethodNode helper = noDestroy.methods.stream().filter(m -> m.name.equals("removeBlock") && m.desc.equals(FabricBlockBreakMixinAdapter.REMOVE_BLOCK_DESC)).findFirst().orElseThrow();
+		for (AbstractInsnNode insn : helper.instructions) if (insn instanceof MethodInsnNode call && call.name.equals("destroy")) call.name = "destroyedElsewhere";
+		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(fabricInteraction(), name -> noDestroy), "removal no longer means Block.destroy ran");
+		ClassNode callbackReader = fabricInteraction(), target = merged();
+		method(callbackReader, "onBlockBroken").instructions.insert(new InsnNode(Opcodes.POP));
+		method(callbackReader, "onBlockBroken").instructions.insert(new VarInsnNode(Opcodes.ALOAD, 2));
+		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(callbackReader, name -> target), "a handler that reads its callback cannot be handed null");
+	}
+
+	private static MethodNode destroyBlock(ClassNode node) {
+		return node.methods.stream().filter(m -> m.name.equals("destroyBlock")).findFirst().orElseThrow();
+	}
+
+	private static ClassNode fabricInteraction() throws Exception {
+		return StagedFabricMixinFixture.mixin("fabric-events-interaction-v0", FabricBlockBreakMixinAdapter.FABRIC);
 	}
 
 	private static ClassNode merged() throws Exception {
