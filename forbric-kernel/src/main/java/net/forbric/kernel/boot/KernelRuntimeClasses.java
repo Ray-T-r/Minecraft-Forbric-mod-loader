@@ -256,6 +256,30 @@ public final class KernelRuntimeClasses {
 				new Call("installExperienceDrop", void.class, Object.class),
 				new Call("installExplosionDetonate", void.class, Object.class),
 				new Call("installBrewingRecipes", void.class, Object.class))));
+		// The rest of the world and entity events the merged game posts only NeoForge's version of (MinecraftForge side).
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameWorldEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installChunkLoad", void.class, Object.class),
+				new Call("installChunkUnload", void.class, Object.class),
+				new Call("installEntityLeaveLevel", void.class, Object.class),
+				new Call("installEnteringSection", void.class, Object.class),
+				new Call("installPlayerWakeUp", void.class, Object.class),
+				new Call("installTagsUpdated", void.class, Object.class),
+				new Call("installEffectAdded", void.class, Object.class),
+				new Call("installEffectExpired", void.class, Object.class),
+				new Call("installEffectApplicable", void.class, Object.class),
+				new Call("installConversionPre", void.class, Object.class),
+				new Call("installConversionPost", void.class, Object.class),
+				new Call("installProjectileImpact", void.class, Object.class),
+				new Call("installFarmlandTrample", void.class, Object.class),
+				new Call("installPermissionsChanged", void.class, Object.class),
+				new Call("installCommand", void.class, Object.class),
+				new Call("installEntityInteractSpecific", void.class, Object.class),
+				new Call("installHeal", void.class, Object.class),
+				new Call("installVisibility", void.class, Object.class),
+				new Call("installCriticalHit", void.class, Object.class),
+				new Call("installAnvilUpdate", void.class, Object.class),
+				new Call("installAnvilRepair", void.class, Object.class),
+				new Call("installToolModification", void.class, Object.class))));
 		// A MinecraftForge brewing recipe as NeoForge's registry reads it; wrapped in PotionBrewing.Builder.add.
 		CLASSES.put("net.forbric.kernel.runtime.KernelBrewing", new Entry(Origin.COMPILED, List.of()));
 		// MinecraftForge's attack, shield, knockback and fall events off NeoForge's at the same positions.

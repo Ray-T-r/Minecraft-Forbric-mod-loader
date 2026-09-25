@@ -241,6 +241,28 @@ public final class DeadEventAudit {
 		map.put("net/minecraftforge/event/entity/living/LivingExperienceDropEvent", GameEventBridge.EXPERIENCE_DROP);
 		map.put("net/minecraftforge/event/level/ExplosionEvent$Detonate", GameEventBridge.EXPLOSION_DETONATE);
 		map.put("net/minecraftforge/event/brewing/BrewingRecipeRegisterEvent", GameEventBridge.BREWING_RECIPES);
+		map.put("net/minecraftforge/event/level/ChunkEvent$Load", GameEventBridge.CHUNK_LOAD);
+		map.put("net/minecraftforge/event/level/ChunkEvent$Unload", GameEventBridge.CHUNK_UNLOAD);
+		map.put("net/minecraftforge/event/entity/EntityLeaveLevelEvent", GameEventBridge.ENTITY_LEAVE_LEVEL);
+		map.put("net/minecraftforge/event/entity/EntityEvent$EnteringSection", GameEventBridge.ENTERING_SECTION);
+		map.put("net/minecraftforge/event/entity/player/PlayerWakeUpEvent", GameEventBridge.PLAYER_WAKE_UP);
+		map.put("net/minecraftforge/event/TagsUpdatedEvent", GameEventBridge.TAGS_UPDATED);
+		map.put("net/minecraftforge/event/entity/living/MobEffectEvent$Added", GameEventBridge.EFFECT_ADDED);
+		map.put("net/minecraftforge/event/entity/living/MobEffectEvent$Expired", GameEventBridge.EFFECT_EXPIRED);
+		map.put("net/minecraftforge/event/entity/living/MobEffectEvent$Applicable", GameEventBridge.EFFECT_APPLICABLE);
+		map.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Pre", GameEventBridge.CONVERSION_PRE);
+		map.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Post", GameEventBridge.CONVERSION_POST);
+		map.put("net/minecraftforge/event/entity/ProjectileImpactEvent", GameEventBridge.PROJECTILE_IMPACT);
+		map.put("net/minecraftforge/event/level/BlockEvent$FarmlandTrampleEvent", GameEventBridge.FARMLAND_TRAMPLE);
+		map.put("net/minecraftforge/event/entity/player/PermissionsChangedEvent", GameEventBridge.PERMISSIONS_CHANGED);
+		map.put("net/minecraftforge/event/CommandEvent", GameEventBridge.COMMAND);
+		map.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$EntityInteractSpecific", GameEventBridge.ENTITY_INTERACT_SPECIFIC);
+		map.put("net/minecraftforge/event/entity/living/LivingHealEvent", GameEventBridge.LIVING_HEAL);
+		map.put("net/minecraftforge/event/entity/living/LivingEvent$LivingVisibilityEvent", GameEventBridge.LIVING_VISIBILITY);
+		map.put("net/minecraftforge/event/entity/player/CriticalHitEvent", GameEventBridge.CRITICAL_HIT);
+		map.put("net/minecraftforge/event/AnvilUpdateEvent", GameEventBridge.ANVIL_UPDATE);
+		map.put("net/minecraftforge/event/entity/player/AnvilRepairEvent", GameEventBridge.ANVIL_REPAIR);
+		map.put("net/minecraftforge/event/level/BlockEvent$BlockToolModificationEvent", GameEventBridge.TOOL_MODIFICATION);
 		map.put("net/minecraftforge/event/entity/EntityJoinLevelEvent", GameEventBridge.ENTITY_JOIN_LEVEL);
 		map.put("net/minecraftforge/event/level/BlockEvent$BreakEvent", GameEventBridge.BLOCK_BREAK);
 		map.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$RightClickBlock",

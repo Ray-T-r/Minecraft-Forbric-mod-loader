@@ -133,6 +133,53 @@ public final class GameEventMultiplexer {
 					() -> serverBridge(cl, "installExplosionDetonate").invoke(null, neoBus));
 			install(GameEventBridge.BREWING_RECIPES,
 					() -> serverBridge(cl, "installBrewingRecipes").invoke(null, neoBus));
+			// The rest of the world and entity events the merged game posts only NeoForge's version of: chunks,
+			// section moves, leaving a level, waking, tag reloads, effects, conversions, impacts, trampling,
+			// permissions, commands, entity interaction, healing, visibility, critical hits, anvils and tools.
+			install(GameEventBridge.CHUNK_LOAD,
+					() -> worldBridge(cl, "installChunkLoad").invoke(null, neoBus));
+			install(GameEventBridge.CHUNK_UNLOAD,
+					() -> worldBridge(cl, "installChunkUnload").invoke(null, neoBus));
+			install(GameEventBridge.ENTITY_LEAVE_LEVEL,
+					() -> worldBridge(cl, "installEntityLeaveLevel").invoke(null, neoBus));
+			install(GameEventBridge.ENTERING_SECTION,
+					() -> worldBridge(cl, "installEnteringSection").invoke(null, neoBus));
+			install(GameEventBridge.PLAYER_WAKE_UP,
+					() -> worldBridge(cl, "installPlayerWakeUp").invoke(null, neoBus));
+			install(GameEventBridge.TAGS_UPDATED,
+					() -> worldBridge(cl, "installTagsUpdated").invoke(null, neoBus));
+			install(GameEventBridge.EFFECT_ADDED,
+					() -> worldBridge(cl, "installEffectAdded").invoke(null, neoBus));
+			install(GameEventBridge.EFFECT_EXPIRED,
+					() -> worldBridge(cl, "installEffectExpired").invoke(null, neoBus));
+			install(GameEventBridge.EFFECT_APPLICABLE,
+					() -> worldBridge(cl, "installEffectApplicable").invoke(null, neoBus));
+			install(GameEventBridge.CONVERSION_PRE,
+					() -> worldBridge(cl, "installConversionPre").invoke(null, neoBus));
+			install(GameEventBridge.CONVERSION_POST,
+					() -> worldBridge(cl, "installConversionPost").invoke(null, neoBus));
+			install(GameEventBridge.PROJECTILE_IMPACT,
+					() -> worldBridge(cl, "installProjectileImpact").invoke(null, neoBus));
+			install(GameEventBridge.FARMLAND_TRAMPLE,
+					() -> worldBridge(cl, "installFarmlandTrample").invoke(null, neoBus));
+			install(GameEventBridge.PERMISSIONS_CHANGED,
+					() -> worldBridge(cl, "installPermissionsChanged").invoke(null, neoBus));
+			install(GameEventBridge.COMMAND,
+					() -> worldBridge(cl, "installCommand").invoke(null, neoBus));
+			install(GameEventBridge.ENTITY_INTERACT_SPECIFIC,
+					() -> worldBridge(cl, "installEntityInteractSpecific").invoke(null, neoBus));
+			install(GameEventBridge.LIVING_HEAL,
+					() -> worldBridge(cl, "installHeal").invoke(null, neoBus));
+			install(GameEventBridge.LIVING_VISIBILITY,
+					() -> worldBridge(cl, "installVisibility").invoke(null, neoBus));
+			install(GameEventBridge.CRITICAL_HIT,
+					() -> worldBridge(cl, "installCriticalHit").invoke(null, neoBus));
+			install(GameEventBridge.ANVIL_UPDATE,
+					() -> worldBridge(cl, "installAnvilUpdate").invoke(null, neoBus));
+			install(GameEventBridge.ANVIL_REPAIR,
+					() -> worldBridge(cl, "installAnvilRepair").invoke(null, neoBus));
+			install(GameEventBridge.TOOL_MODIFICATION,
+					() -> worldBridge(cl, "installToolModification").invoke(null, neoBus));
 			install(GameEventBridge.ENTITY_JOIN_LEVEL,
 					() -> entityBridge(cl, "installEntityJoinLevel").invoke(null, neoBus));
 			// The level lifecycle. Every producer in the merged base is NeoForge's (Minecraft x3 and
@@ -338,6 +385,12 @@ public final class GameEventMultiplexer {
 	/** One entry point on the game-side cancellable-entity bridge. Complete literal, for the reason above. */
 	private static Method entityBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameEntityEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side world-events bridge. Complete literal, for the reason above. */
+	private static Method worldBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameWorldEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 
