@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"forbricnewprobe","version":"1.0.0","name":"Particle capture for gate M53","environment":"*","mixins":["forbricnewprobe.mixins.json"],"depends":{"fabricloader":"*"}}

@@ -22,12 +22,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TypeInsnNode;
 
 import net.forbric.kernel.util.ForbricLog;
 
@@ -65,6 +67,13 @@ import net.forbric.kernel.util.ForbricLog;
  * the bodies the injector selects and exactly ONE widened call is; two and it declines, because picking between
  * overloads is how an injection lands silently in the wrong place.
  *
+ * <p>The same holds for a construction. NeoForge builds {@code BlockParticleOption} with the block position appended
+ * in {@code Entity.spawnSprintParticle} and {@code LivingEntity.checkFallDamage}; fabric-particles'
+ * {@code @ModifyExpressionValue} names vanilla's {@code NEW (ParticleType, BlockState)} there, so it attached nowhere
+ * and a mob's landing dust and sprint dust never learned the ground block. An {@code @At(NEW)} whose target is a
+ * constructor descriptor moves the same way — only for the argument-blind injectors, pairing each {@code NEW} with
+ * its own {@code <init>} ({@code -Dforbric.mixinAtWidenNew=off} for this part alone).
+ *
  * <p>{@code -Dforbric.mixinAtWiden=off} leaves every injection point as compiled.
  */
 public final class MixinAtWidenedCall {
@@ -100,6 +109,56 @@ public final class MixinAtWidenedCall {
 
 	public static boolean enabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
+	}
+
+	/** {@code -Dforbric.mixinAtWidenNew=off} leaves {@code @At(NEW)} points as compiled; INVOKE widening goes on. */
+	public static final String NEW_PROPERTY = "forbric.mixinAtWidenNew";
+
+	static boolean newEnabled() {
+		return enabled() && !"off".equalsIgnoreCase(System.getProperty(NEW_PROPERTY, "on"));
+	}
+
+	/** Whether an injector of this kind ignores the arguments of the call or construction it anchors on. */
+	static boolean argumentBlind(String injectorDesc) {
+		return ARGUMENT_BLIND.contains(injectorDesc);
+	}
+
+	/**
+	 * The one construction inside {@code body} that is the {@code @At(NEW)} target {@code (args)Ltype;} with the
+	 * carrier's extra constructor parameters, as a NEW target; {@code null} when the named constructor is built there,
+	 * nothing widened is, or more than one widened form is. Each {@code NEW} is paired with its own {@code <init>}
+	 * by nesting depth (as Mixin's BeforeNew does), so {@code new Outer(new T(a, b, c))} is judged by T's.
+	 */
+	public static String widenedNewIn(MethodNode body, String target) {
+		if (!newEnabled() || body == null || body.instructions == null || target == null || !target.startsWith("(")) return null;
+		Type method;
+		try {
+			method = Type.getMethodType(target);
+		} catch (RuntimeException malformed) {
+			return null;
+		}
+		if (method.getReturnType().getSort() != Type.OBJECT) return null;
+		String type = method.getReturnType().getInternalName();
+		String named = Type.getMethodDescriptor(Type.VOID_TYPE, method.getArgumentTypes());
+		Set<String> widened = new LinkedHashSet<>();
+		for (AbstractInsnNode insn : body.instructions) {
+			if (!(insn instanceof TypeInsnNode created) || created.getOpcode() != Opcodes.NEW || !created.desc.equals(type)) continue;
+			MethodInsnNode init = null;
+			int depth = 0;
+			for (AbstractInsnNode next = insn.getNext(); next != null; next = next.getNext()) {
+				if (next.getOpcode() == Opcodes.NEW) depth++;
+				if (next instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL && call.name.equals("<init>")) {
+					if (depth == 0) { init = call; break; }
+					depth--;
+				}
+			}
+			if (init == null || !init.owner.equals(type)) return null;
+			if (init.desc.equals(named)) return null;
+			if (widens(named, init.desc)) widened.add(init.desc);
+		}
+		if (widened.size() != 1) return null;
+		String desc = widened.iterator().next();
+		return Type.getMethodDescriptor(Type.getObjectType(type), Type.getArgumentTypes(desc));
 	}
 
 	/** One {@code @At} member target, split into the parts this rule reasons about. */
@@ -216,7 +275,7 @@ public final class MixinAtWidenedCall {
 			List<MethodNode> bodies = selected(injector, declared);
 			if (bodies.isEmpty()) continue;
 			widened += widenOne(mixinName, injector, bodies, member -> ARGUMENT_BLIND.contains(injector.desc)
-					|| singleArgumentAtFixedIndex(handler, injector, member));
+					|| singleArgumentAtFixedIndex(handler, injector, member), ARGUMENT_BLIND.contains(injector.desc));
 		}
 		return widened;
 	}
@@ -265,7 +324,7 @@ public final class MixinAtWidenedCall {
 
 	/** Walks the injector's values — {@code @At} sits nested inside it, sometimes in a list. */
 	private static int widenOne(String mixinName, AnnotationNode annotation, List<MethodNode> bodies,
-			java.util.function.Predicate<String> safe) {
+			java.util.function.Predicate<String> safe, boolean blind) {
 		if (annotation == null || annotation.values == null) return 0;
 
 		int widened = 0;
@@ -290,11 +349,21 @@ public final class MixinAtWidenedCall {
 							+ "in the method it selects calls that — pointed at %s, the same call with the "
 							+ "parameters the surviving carrier appended", mixinName.replace('/', '.'), target, moved);
 				}
+			} else if (isAt && "target".equals(name) && value instanceof String target && "NEW".equals(atValue) && blind
+					&& target.startsWith("(")) {
+				String moved = widenedNewAcross(bodies, target);
+				if (moved != null) {
+					annotation.values.set(i + 1, moved);
+					widened++;
+					ForbricLog.info("[Forbric/Mixin] %s: injection point NEW %s names the vanilla constructor, and nothing in "
+							+ "the method it selects constructs that — pointed at %s, the same construction with the "
+							+ "arguments the surviving carrier appended", mixinName.replace('/', '.'), target, moved);
+				}
 			} else if (value instanceof AnnotationNode nested) {
-				widened += widenOne(mixinName, nested, bodies, safe);
+				widened += widenOne(mixinName, nested, bodies, safe, blind);
 			} else if (value instanceof List<?> list) {
 				for (Object item : new ArrayList<>(list)) {
-					if (item instanceof AnnotationNode nested) widened += widenOne(mixinName, nested, bodies, safe);
+					if (item instanceof AnnotationNode nested) widened += widenOne(mixinName, nested, bodies, safe, blind);
 				}
 			}
 		}
@@ -307,6 +376,22 @@ public final class MixinAtWidenedCall {
 		for (MethodNode body : bodies) {
 			String one = widenedIn(body, target);
 			if (one == null && callsExactly(body, target)) return null;
+			if (one != null) moved.add(one);
+		}
+		return moved.size() == 1 ? moved.iterator().next() : null;
+	}
+
+	/** The one widened construction across every selected body, or {@code null} if any body builds the named one. */
+	private static String widenedNewAcross(List<MethodNode> bodies, String target) {
+		Set<String> moved = new LinkedHashSet<>();
+		Type method = Type.getMethodType(target);
+		String named = Type.getMethodDescriptor(Type.VOID_TYPE, method.getArgumentTypes());
+		for (MethodNode body : bodies) {
+			if (body.instructions != null) for (AbstractInsnNode insn : body.instructions) {
+				if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL && call.name.equals("<init>")
+						&& call.owner.equals(method.getReturnType().getInternalName()) && call.desc.equals(named)) return null;
+			}
+			String one = widenedNewIn(body, target);
 			if (one != null) moved.add(one);
 		}
 		return moved.size() == 1 ? moved.iterator().next() : null;

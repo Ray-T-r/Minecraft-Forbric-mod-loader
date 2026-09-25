@@ -1,0 +1,1 @@
+{"required": true, "package": "forbric.newprobe", "compatibilityLevel": "JAVA_21", "mixins": ["ServerLevelCaptureMixin", "LevelCaptureMixin"], "injectors": {"defaultRequire": 1}}

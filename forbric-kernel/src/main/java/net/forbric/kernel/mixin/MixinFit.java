@@ -829,9 +829,15 @@ public final class MixinFit {
 		}
 		String simple = type.substring(type.lastIndexOf('/') + 1);
 		String where = " in " + hits.get(0).name;
+		// The same move MixinAtWidenedCall makes for an argument-blind injector, so verdict and rewrite agree.
+		if (!resolved && wanted != null && MixinAtWidenedCall.argumentBlind(injector.desc)) {
+			for (MethodNode hit : hits) if (MixinAtWidenedCall.widenedNewIn(hit, atTarget) != null) { resolved = true; break; }
+		}
 		if (resolved) return new Anchor("@At(NEW)", simple + where, true);
 		if (!constructed) return new Anchor("@At(NEW)", simple + " is not constructed" + where, false);
-		return new Anchor("@At(NEW)", simple + ": handler wraps a " + (expect == null ? -1 : expect.length)
+		if (expect == null) return new Anchor("@At(NEW)", simple + ": names the " + (wanted == null ? "?" : wanted.length)
+				+ "-arg constructor, the call site constructs with " + seen + where, false);
+		return new Anchor("@At(NEW)", simple + ": handler wraps a " + expect.length
 				+ "-arg constructor, the call site constructs with " + seen + where, false);
 	}
 
