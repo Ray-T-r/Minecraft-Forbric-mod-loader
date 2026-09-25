@@ -46,6 +46,9 @@ class HookCallSiteCensusStagedTest {
 	private static final Map<String, String> HOOK_CLASSES = Map.of(
 			"net/minecraftforge/event/ForgeEventFactory", "forge-runtime/forge-runtime.jar",
 			"net/minecraftforge/client/event/ForgeEventFactoryClient", "forge-runtime/forge-runtime.jar",
+			// ForgeHooks posts the damage family (attack, hurt, damage) and more; left out, the census was blind to
+			// every one of them and the dead table never grew rows for them.
+			"net/minecraftforge/common/ForgeHooks", "forge-runtime/forge-runtime.jar",
 			"net/neoforged/neoforge/event/EventHooks", "neoforge-runtime/neoforge-runtime.jar");
 
 	private static Path root() {
