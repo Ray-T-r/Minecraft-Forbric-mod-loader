@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"forbricgoo","version":"1.0.0","name":"Fabric fluids for gate M45","environment":"*","entrypoints":{"main":["forbric.goo.Goo"]},"depends":{"fabricloader":"*"}}

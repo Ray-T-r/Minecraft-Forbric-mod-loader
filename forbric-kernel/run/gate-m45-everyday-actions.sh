@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M45 — the things every player does: craft, smelt, brew, meet the Ender Dragon. Three of them threw on the merged base.
+# M45 — the things every player does: craft, smelt, brew, swim, meet the Ender Dragon. Each of them threw on the merged base.
 #
 #   crafting remainders — fabric-item-api-v1's class tweaker injects FabricItem into Item, whose merged hierarchy has
 #     MinecraftForge's IForgeItem; both default getCraftingRemainder(ItemStack), so with fabric-api installed every
@@ -12,10 +12,15 @@
 # A dedicated server with a probe mod (canary/everyday-actions) and the unmodified fabric-item-api-v1:
 #   remainders through ItemStack, Item(ItemStack) and NeoForge's Item(ItemInstance) (control); a cake crafted from its
 #   recipe leaves three buckets; an idle furnace ticks (control) and a lit one smelts raw iron; a brewing stand makes
-#   awkward potions; a dragon is added and found by its part, hurt through it, and removed; the server stops cleanly.
+#   awkward potions; a pig stands in a Fabric mod's untagged fluid (no interaction) and in its water-tagged fluid (it
+#   swims); a dragon is added and found by its part, hurt through it, and removed; the server stops cleanly.
+#   Fabric fluids — a Fabric mod's fluid declares no NeoForge FluidType, and NeoForge's lookup threw "Mod fluids must
+#     override getFluidType" at the first entity to touch one: 'Ticking entity' took the server down
+#     (ForeignFluidTypeInjector gives it the type its fluid tags imply).
 #
 #   1. positive — STRICT, every case passes, zero confirmed required findings, no exception on stop.
-#   2. off — -Dforbric.defaultConflictRepair=off -Dforbric.furnaceTickCalls=off -Dforbric.dragonParts=off: exactly the
+#   2. off — -Dforbric.defaultConflictRepair=off -Dforbric.furnaceTickCalls=off -Dforbric.dragonParts=off
+#      -Dforbric.foreignFluidTypes=off: exactly the
 #      repaired cases fail and the controls hold.
 # Not covered here: a client (the dragon's parts in the client's entity lookups), and a native server as an oracle.
 # GATE-PARALLEL: rundirs=server-everyday-m45 mem=2000
@@ -25,7 +30,7 @@ set -uo pipefail
 SERVER_DIR="$KERNEL/run/server-everyday-m45"
 RESULTS="$BUILD/verification/m45-everyday-actions"
 FAIL=0
-REPAIRED="{'remainder.stack', 'remainder.item', 'craft.cake', 'furnace.smelt', 'brewing.awkward', 'dragon.add', 'dragon.hurt', 'dragon.remove'}"
+REPAIRED="{'remainder.stack', 'remainder.item', 'craft.cake', 'furnace.smelt', 'brewing.awkward', 'fluid.untagged', 'fluid.water', 'dragon.add', 'dragon.hurt', 'dragon.remove'}"
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 
 kernel_jar
@@ -38,7 +43,7 @@ run_server() {
   reap_stale_server "$SERVER_DIR"
   rm -rf "$SERVER_DIR/world" "$SERVER_DIR/mods" "$SERVER_DIR/.forbric-kernel" "$SERVER_DIR/logs"
   mkdir -p "$SERVER_DIR/mods"
-  cp "$KERNEL/run/canary/forbriceveryday.jar" "$KERNEL"/run/canary/m45-modules/*.jar "$SERVER_DIR/mods/"
+  cp "$KERNEL/run/canary/forbriceveryday.jar" "$KERNEL/run/canary/forbricgoo.jar" "$KERNEL"/run/canary/m45-modules/*.jar "$SERVER_DIR/mods/"
   echo "eula=true" > "$SERVER_DIR/eula.txt"
   seed_server_properties "$SERVER_DIR"
   printf 'level-name=world\nlevel-type=minecraft:flat\ngenerate-structures=false\nmax-tick-time=-1\npause-when-empty-seconds=0\nonline-mode=false\n' >> "$SERVER_DIR/server.properties"
@@ -60,7 +65,7 @@ import json, sys
 report, phase, rule = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
 assert report['phase'] == phase, report['phase']
 cases = {c['name']: c for c in report['cases']}
-assert len(cases) == 10, sorted(cases)
+assert len(cases) == 12, sorted(cases)
 failed = {name for name, c in cases.items() if not c['pass']}
 for name in sorted(failed): print(f"[kernel]   {phase}: {name} failed — {cases[name]['detail'][:240]}")
 assert eval(rule, {'failed': failed, 'cases': cases}), (phase, sorted(failed))
@@ -71,7 +76,7 @@ PY
 
 step "1. positive: crafting, smelting, brewing and the dragon work"
 run_server positive strict ""
-judge positive "not failed" "all 10 cases pass"
+judge positive "not failed" "all 12 cases pass"
 check_absent "positive: the server stopped without an exception" 'Exception stopping the server|still alive .* after announcing its stop' "$RESULTS/positive.log"
 if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r['confirmedRequired']==0 else 1)" "$RESULTS/positive-compatibility.json" 2>/dev/null
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
@@ -79,13 +84,14 @@ else echo "[kernel] FAIL positive: STRICT report missing or has confirmed requir
 check "positive: Item's remainder conflict was settled" 'Item inherits getCraftingRemainder.*gave it one that asks getCraftingRemainder\(Lnet/minecraft/world/item/ItemInstance' "$RESULTS/positive.log"
 check "positive: the furnace tick was bridged" 'tick calls canBurn, consumeFuel, burn on the furnace it ticks' "$RESULTS/positive.log"
 check "positive: the dragon's parts are NeoForge's" 'EnderDragonPart is a NeoForge PartEntity' "$RESULTS/positive.log"
+check "positive: foreign fluids get a NeoForge type" 'gets the one its fluid tags imply' "$RESULTS/positive.log"
 
-step "2. off: the same server with the three repairs switched off"
-run_server off continue "-Dforbric.defaultConflictRepair=off -Dforbric.furnaceTickCalls=off -Dforbric.dragonParts=off"
+step "2. off: the same server with the four repairs switched off"
+run_server off continue "-Dforbric.defaultConflictRepair=off -Dforbric.furnaceTickCalls=off -Dforbric.dragonParts=off -Dforbric.foreignFluidTypes=off"
 judge off "failed == $REPAIRED" "exactly the repaired cases fail; the controls hold"
 
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M45 EVERYDAY GATE GREEN — crafting, smelting, brewing and the dragon work, each by its repair"
+  echo "[kernel] ✅ M45 EVERYDAY GATE GREEN — crafting, smelting, brewing, mod fluids and the dragon work, each by its repair"
 else
   echo "[kernel] ❌ M45 GATE RED — inspect $RESULTS"
 fi

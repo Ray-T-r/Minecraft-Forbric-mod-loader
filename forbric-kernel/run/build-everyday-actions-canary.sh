@@ -41,9 +41,25 @@ with zipfile.ZipFile(staged, 'w', zipfile.ZIP_DEFLATED) as target:
     for path in sorted((root / 'data').rglob('*.json')): target.write(path, path.relative_to(root).as_posix())
 jar = output / 'forbriceveryday.jar'
 os.replace(staged, jar)
+# The Fabric fluid mod, compiled the way a Fabric mod is: against vanilla's jar, knowing nothing of NeoForge's FluidType.
+fluids = kernel / 'canary/everyday-actions/fabric-fluids'
+vanilla = mc / 'versions/26.2/26.2.jar'
+kernel_jar = kernel / 'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar'
+for path in [vanilla, kernel_jar]:
+    if not path.is_file(): raise SystemExit(f'M45 prerequisite absent: {path}')
+fluid_classes = work / 'fluid-classes'; fluid_classes.mkdir()
+subprocess.run(['javac', '-proc:none', '-nowarn', '--release', '21', '-cp', os.pathsep.join(map(str, [vanilla, kernel_jar, *libraries])),
+                '-d', str(fluid_classes), *map(str, sorted((fluids / 'src').rglob('*.java')))], check=True)
+staged_fluids = work / 'forbricgoo.jar'
+with zipfile.ZipFile(staged_fluids, 'w', zipfile.ZIP_DEFLATED) as target:
+    for path in sorted(fluid_classes.rglob('*.class')): target.write(path, path.relative_to(fluid_classes).as_posix())
+    target.write(fluids / 'fabric.mod.json', 'fabric.mod.json')
+    for path in sorted((fluids / 'data').rglob('*.json')): target.write(path, path.relative_to(fluids).as_posix())
+fluid_jar = output / 'forbricgoo.jar'
+os.replace(staged_fluids, fluid_jar)
 def record(path):
     path = path.resolve(); return {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
-(output / 'm45-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'compileGame': record(compile_game),
+(output / 'm45-build-inputs.json').write_text(json.dumps({'mod': record(jar), 'fluidMod': record(fluid_jar), 'vanilla': record(vanilla), 'compileGame': record(compile_game),
     'forge': record(forge), 'neo': record(neo), 'fabricApi': record(fapi), 'modules': [record(p) for p in selected]}, indent=2) + '\n')
 print('[M45Everyday] built the everyday-actions probe')
 PY

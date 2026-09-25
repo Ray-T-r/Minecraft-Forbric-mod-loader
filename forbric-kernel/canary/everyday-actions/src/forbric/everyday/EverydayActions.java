@@ -97,6 +97,19 @@ public final class EverydayActions {
    float before=dragon.getHealth();boolean hurt=dragon.getSubEntities()[0].hurtServer(level,level.damageSources().playerAttack(attacker),10f);
    return expect(hurt&&dragon.getHealth()<before,"hurt="+hurt+" health "+before+" -> "+dragon.getHealth());});
   test("dragon.remove",()->{if(dragon==null)return "no dragon";dragon.discard();return expect(level.getEntityOrPart(dragon.getSubEntities()[0].getId())==null,"a part is still found after removal");});
+  // A Fabric mod's fluids (canary/everyday-actions/fabric-fluids): goo in no fluid tag, brine in minecraft:water. A pig
+  // stands in each; NeoForge's entity code asks the fluid's NeoForge type, which a Fabric fluid does not declare. Last,
+  // in the tick that reports: without the repair the fluid's own scheduled ticks throw on the next world tick.
+  for(String name:new String[]{"goo","brine"})test(name.equals("goo")?"fluid.untagged":"fluid.water",()->{
+   var fluid=BuiltInRegistries.FLUID.getValue(net.minecraft.resources.Identifier.fromNamespaceAndPath("forbricgoo",name));
+   if(fluid==null||fluid==net.minecraft.world.level.material.Fluids.EMPTY)return "the Fabric fluid mod is not loaded";
+   BlockPos pos=new BlockPos(name.equals("goo")?10:14,100,10);var pig=EntityTypes.PIG.create(level,EntitySpawnReason.COMMAND);
+   try{level.setBlock(pos.below(),Blocks.STONE.defaultBlockState(),3);level.setBlock(pos,fluid.defaultFluidState().createLegacyBlock(),3);level.setBlock(pos.above(),fluid.defaultFluidState().createLegacyBlock(),3);
+    pig.snapTo(pos.getX()+0.5,pos.getY(),pos.getZ()+0.5);level.addFreshEntity(pig);
+    for(int i=0;i<5;i++)pig.tick();
+    boolean water=name.equals("brine");
+    return expect(pig.isInWater()==water&&pig.isUnderWater()==water,"a pig in "+name+": inWater="+pig.isInWater()+" underWater="+pig.isUnderWater());}
+   finally{pig.discard();level.setBlock(pos,Blocks.AIR.defaultBlockState(),3);level.setBlock(pos.above(),Blocks.AIR.defaultBlockState(),3);}});
  }
  private static void finish(){
   Map<String,Object> out=new LinkedHashMap<>();out.put("phase",System.getProperty("forbric.everydayPhase"));out.put("cases",CASES);
