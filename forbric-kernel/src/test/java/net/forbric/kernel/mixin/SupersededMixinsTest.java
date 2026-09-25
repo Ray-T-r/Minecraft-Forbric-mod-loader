@@ -81,7 +81,7 @@ class SupersededMixinsTest {
 		String previous = System.getProperty(SupersededMixins.PROPERTY);
 		try {
 			System.clearProperty(SupersededMixins.PROPERTY);
-			String any = SupersededMixins.all().keySet().iterator().next();
+			String any = "net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin";
 			assertTrue(SupersededMixins.enabled());
 			assertFalse(SupersededMixins.replacementFor(any) == null);
 
@@ -105,7 +105,7 @@ class SupersededMixinsTest {
 	void theRepairsOwnSwitchAnswersNothingAtAll() {
 		String previous = System.getProperty("forbric.fabricConditions");
 		try {
-			String any = SupersededMixins.all().keySet().iterator().next();
+			String any = "net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin";
 			System.setProperty("forbric.fabricConditions", "off");
 			assertNull(SupersededMixins.replacementFor(any));
 			System.setProperty("forbric.fabricConditions", "on");
@@ -147,6 +147,35 @@ class SupersededMixinsTest {
 	private static boolean exists(Path sourceRoot, String simpleName) throws Exception {
 		try (var files = Files.walk(sourceRoot)) {
 			return files.anyMatch(f -> f.getFileName().toString().equals(simpleName + ".java"));
+		}
+	}
+
+	/** The hopper entry's proof matches what HopperFabricStorageInjector writes into the real merged hopper. */
+	@Test
+	void theHopperProofMatchesWhatTheRealRepairWritesIntoTheRealClass() throws Exception {
+		java.nio.file.Path merged = java.nio.file.Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"),
+				"merged-base/patched-mc-merged-26.2.jar");
+		org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isRegularFile(merged), "actual game required");
+		byte[] original;
+		try (var zip = new java.util.zip.ZipFile(merged.toFile())) {
+			original = zip.getInputStream(zip.getEntry("net/minecraft/world/level/block/entity/HopperBlockEntity.class")).readAllBytes();
+		}
+		assertFalse(SupersededMixins.hopperAsksFabric(node(original)));
+		byte[] repaired = new net.forbric.kernel.transform.HopperFabricStorageInjector()
+				.transform("net.minecraft.world.level.block.entity.HopperBlockEntity", original, null);
+		assertTrue(SupersededMixins.hopperAsksFabric(node(repaired)));
+	}
+
+	@Test
+	void theHopperRepairsOwnSwitchAnswersNothing() {
+		String mixin = "net.fabricmc.fabric.mixin.transfer.HopperBlockEntityMixin";
+		try {
+			System.setProperty("forbric.hopperFabricStorage", "off");
+			assertNull(SupersededMixins.replacementFor(mixin));
+			System.clearProperty("forbric.hopperFabricStorage");
+			assertFalse(SupersededMixins.replacementFor(mixin) == null);
+		} finally {
+			System.clearProperty("forbric.hopperFabricStorage");
 		}
 	}
 }

@@ -20,6 +20,7 @@ class KernelTransferInteropTest {
 	@AfterEach void reset() throws Exception {
 		CompatibilityFindings.reset();
 		System.clearProperty("forbric.transferBridge");
+		System.clearProperty("forbric.hopperFabricStorage");
 		try (var loader = new ForbricClassLoader(new java.net.URL[0], getClass().getClassLoader())) {
 			KernelTransferInterop.configure(loader);
 		}
@@ -64,7 +65,7 @@ class KernelTransferInteropTest {
 		if ("1".equals(System.getenv("FORBRIC_COMPAT_FIXTURES_REQUIRED"))) assertTrue(gameSide, "game-side classes were not compiled");
 		org.junit.jupiter.api.Assumptions.assumeTrue(gameSide, "no staged game jars, so no game side was built");
 		for (String name : List.of(KernelTransferInterop.BRIDGE, KernelTransferInterop.ISSUES, KernelTransferInterop.TRANSACTIONS,
-				KernelTransferInterop.ENERGY)) {
+				KernelTransferInterop.ENERGY, KernelTransferInterop.HOPPER)) {
 			assertTrue(Files.isRegularFile(classes.resolve(name.replace('.', '/') + ".class")), name + " was left out of the game side");
 		}
 	}
@@ -138,6 +139,46 @@ class KernelTransferInteropTest {
 		assertFalse(naming.isEmpty(), "the energy bridge was compiled without its Reborn half");
 		for (String name : naming) assertTrue(name.startsWith("net/forbric/kernel/runtime/transfer/RebornEnergyAdapters")
 				|| name.startsWith("net/forbric/kernel/runtime/transfer/RebornEnergyBridge"), name + " names Team Reborn Energy");
+	}
+	/**
+	 * Hoppers ask Fabric's lookup whenever fabric-transfer-api and NeoForge's hopper are both present — with or without
+	 * the bridge, as Fabric's own mixin would — and the component is required only then.
+	 */
+	@Test void theHopperComponentFollowsFabricAndNeoForgesHopperNotTheBridge() throws Exception {
+		try (var loader = hopperLoader(true, true)) {
+			KernelTransferInterop.configure(loader);
+			assertTrue(KernelTransferInterop.hopperActive());
+			assertTrue(KernelRuntimeClasses.compiled().contains(KernelTransferInterop.HOPPER));
+			System.setProperty("forbric.transferBridge", "off");
+			KernelTransferInterop.configure(loader);
+			assertTrue(KernelTransferInterop.hopperActive(), "the bridge switch does not take the hopper with it");
+			System.setProperty("forbric.hopperFabricStorage", "off");
+			KernelTransferInterop.configure(loader);
+			assertFalse(KernelTransferInterop.hopperActive());
+			assertFalse(KernelRuntimeClasses.compiled().contains(KernelTransferInterop.HOPPER));
+		}
+		System.clearProperty("forbric.transferBridge");
+		System.clearProperty("forbric.hopperFabricStorage");
+		try (var loader = hopperLoader(false, true)) {
+			KernelTransferInterop.configure(loader);
+			assertFalse(KernelTransferInterop.hopperActive(), "without fabric-transfer-api there is nothing to ask");
+			assertTrue(CompatibilityFindings.all().isEmpty(), CompatibilityFindings.all()::toString);
+		}
+		try (var loader = hopperLoader(true, false)) {
+			KernelTransferInterop.configure(loader);
+			assertFalse(KernelTransferInterop.hopperActive());
+			assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.id().equals("transfer-hopper-component") && !f.required()),
+					CompatibilityFindings.all()::toString);
+		}
+	}
+	private ForbricClassLoader hopperLoader(boolean fabric, boolean runtime) throws Exception {
+		Path jar = directory.resolve("hopper.jar");
+		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+			add(out, "net/neoforged/neoforge/transfer/item/ContainerOrHandler");
+			if (fabric) add(out, "net/fabricmc/fabric/api/transfer/v1/item/ItemStorage");
+			if (runtime) add(out, KernelTransferInterop.HOPPER.replace('.', '/'));
+		}
+		return new ForbricClassLoader(new java.net.URL[] {jar.toUri().toURL()}, getClass().getClassLoader());
 	}
 	private ForbricClassLoader loader(boolean apis, boolean runtime) throws Exception { return loader(apis, runtime, false, false); }
 	private ForbricClassLoader loader(boolean apis, boolean runtime, boolean reborn, boolean energyRuntime) throws Exception {

@@ -86,6 +86,16 @@ public final class SupersededMixins {
 						+ "(KernelFabricConditions), which covers every consumer rather than this one call site",
 						"forbric.fabricConditions", "net.neoforged.neoforge.common.conditions.ConditionalOps",
 						SupersededMixins::conditionalOpsAsksFabric));
+		// fabric-transfer-api's hopper mixin is two injectors, both "ask ItemStorage.SIDED where vanilla found no
+		// container": after getAttachedContainer in ejectItems, after getSourceContainer in suckInItems. NeoForge's
+		// hopper calls neither. KernelFabricHopperStorage runs the same lookup, faces and one-item move on NeoForge's
+		// two found-nothing branches. Seen when HopperBlockEntity is defined with both calls in place, while
+		// -Dforbric.hopperFabricStorage is not off.
+		map.put("net.fabricmc.fabric.mixin.transfer.HopperBlockEntityMixin",
+				new Replacement("the kernel runs Fabric's hopper storage lookup on NeoForge's found-nothing branches of "
+						+ "ejectItems and suckInItems instead (KernelFabricHopperStorage)",
+						"forbric.hopperFabricStorage", "net.minecraft.world.level.block.entity.HopperBlockEntity",
+						SupersededMixins::hopperAsksFabric));
 		return Map.copyOf(map);
 	}
 
@@ -188,6 +198,22 @@ public final class SupersededMixins {
 		// was seen, and it is the only place that knows.
 		ForbricLog.info("[Forbric/Mixin] %s:%s is superseded — %s, so its mod is not marked",
 				config == null ? "?" : MixinConfigOwners.describe(config), mixinClass, proof);
+	}
+
+	/** HopperBlockEntity's ejectItems asks KernelFabricHopperStorage.insert and its suckInItems asks extract. */
+	static boolean hopperAsksFabric(ClassNode node) {
+		boolean insert = false, extract = false;
+		for (MethodNode method : node.methods) {
+			boolean eject = "ejectItems".equals(method.name), suck = "suckInItems".equals(method.name);
+			if (!eject && !suck) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
+						|| !"net/forbric/kernel/runtime/transfer/KernelFabricHopperStorage".equals(call.owner)) continue;
+				insert |= eject && "insert".equals(call.name);
+				extract |= suck && "extract".equals(call.name);
+			}
+		}
+		return insert && extract;
 	}
 
 	/** ConditionalOps' codec factory hands its one result to KernelFabricConditions.alsoAskFabric, then returns. */

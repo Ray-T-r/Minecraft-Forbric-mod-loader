@@ -147,8 +147,11 @@ public final class FinalMixinApplications {
     String id=id(plan,injector,binary),mod=owner(plan.config().name());
     // A mixin the kernel does the whole job of: its injector's miss is that job moving, not a loss, once the
     // replacement is seen; until then it is recorded as usual and resolved when SupersededMixins proves it.
-    String superseded=state==Outcome.MISSING?SupersededMixins.provedReplacement(mixin):null;
-    if(state==Outcome.MISSING&&superseded==null&&SupersededMixins.replacementFor(mixin)!=null)SupersededMixins.awaitProof(plan.config().name(),mixin);
+    // An injector this does not model (sugar, a group) is still visibly unattached when nothing in the final class
+    // calls its merged handler; that is the miss a superseding repair answers for, as much as a modelled one's.
+    boolean unattached=state==Outcome.MISSING||state==Outcome.UNKNOWN&&!pending&&references==0;
+    String superseded=unattached?SupersededMixins.provedReplacement(mixin):null;
+    if(unattached&&superseded==null&&SupersededMixins.replacementFor(mixin)!=null)SupersededMixins.awaitProof(plan.config().name(),mixin);
     // Natively an injector below its require/defaultRequire throws InjectionError, an Error no config-level
     // `required:false` catches: the author declared that injection mandatory whatever the config says.
     boolean required=plan.config().required()||injector.minimum()>=1;

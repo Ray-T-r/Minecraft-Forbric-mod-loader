@@ -384,6 +384,10 @@ public final class KernelBoot {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TransferTransactionHooks());
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.TransferCapabilityFallback());
 		}
+		// Hoppers ask Fabric's item storage lookup where NeoForge's hopper found nothing, with or without the bridge.
+		if (KernelTransferInterop.hopperActive()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.HopperFabricStorageInjector());
+		}
 
 		LifecycleHookInjector lifecycleHook = side.injector();
 		chain.register(TransformPhase.COREMOD, lifecycleHook);

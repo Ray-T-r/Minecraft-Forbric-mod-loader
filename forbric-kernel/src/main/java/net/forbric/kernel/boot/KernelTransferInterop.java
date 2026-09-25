@@ -23,10 +23,13 @@ public final class KernelTransferInterop {
 	static final String ISSUES = "net.forbric.kernel.runtime.transfer.TransferIssues";
 	static final String TRANSACTIONS = "net.forbric.kernel.runtime.transfer.PairedTransactions";
 	static final String ENERGY = "net.forbric.kernel.runtime.transfer.RebornEnergyBridge";
+	/** A hopper against Fabric storages NeoForge's cannot see; independent of the bridge switch, like Fabric's own mixin. */
+	static final String HOPPER = "net.forbric.kernel.runtime.transfer.KernelFabricHopperStorage";
 	/** Team Reborn Energy's public API, the one class every Fabric energy mod names. */
 	static final String REBORN_API = "team/reborn/energy/api/EnergyStorage.class";
 	private static volatile boolean active;
 	private static volatile boolean energy;
+	private static volatile boolean hopper;
 	private static boolean installed;
 	private KernelTransferInterop() { }
 
@@ -44,6 +47,18 @@ public final class KernelTransferInterop {
 					true, "This kernel build is missing its transfer component; native transactions remain unchanged.",
 					List.of("transfer APIs present", "kernel transfer runtime classes absent")));
 		}
+		// NeoForge's hopper body (ContainerOrHandler) is what fabric-transfer's hopper mixin cannot attach to; a carrier
+		// without it runs Fabric's mixin as written.
+		boolean hopperWanted = !"off".equalsIgnoreCase(System.getProperty("forbric.hopperFabricStorage", "on"))
+				&& present(loader, "net/fabricmc/fabric/api/transfer/v1/item/ItemStorage.class")
+				&& present(loader, "net/neoforged/neoforge/transfer/item/ContainerOrHandler.class");
+		hopper = hopperWanted && present(loader, HOPPER.replace('.', '/') + ".class");
+		if (hopperWanted && !hopper) {
+			CompatibilityFindings.record(new CompatibilityFinding("transfer-hopper-component", "forbric",
+					"Hoppers and Fabric item storages", "KernelTransferInterop", CompatibilityFinding.Confidence.CONFIRMED,
+					false, "This kernel build is missing its hopper component; hoppers ignore Fabric storages NeoForge cannot see.",
+					List.of("fabric-transfer-api present", "kernel hopper runtime class absent")));
+		}
 		boolean reborn = active && present(loader, REBORN_API);
 		energy = reborn && present(loader, ENERGY.replace('.', '/') + ".class");
 		if (reborn && !energy) {
@@ -59,11 +74,13 @@ public final class KernelTransferInterop {
 	public static boolean active() { return active; }
 	/** Whether Team Reborn Energy is installed and its half of the bridge is required and will be installed. */
 	public static boolean energyActive() { return energy; }
+	/** Whether hoppers ask Fabric's item storage lookup where NeoForge's found nothing (HopperFabricStorageInjector). */
+	public static boolean hopperActive() { return hopper; }
 	static boolean ownsOptionalRuntime(String name) {
-		return BRIDGE.equals(name) || ISSUES.equals(name) || TRANSACTIONS.equals(name) || ENERGY.equals(name);
+		return BRIDGE.equals(name) || ISSUES.equals(name) || TRANSACTIONS.equals(name) || ENERGY.equals(name) || HOPPER.equals(name);
 	}
 	/** For an optional runtime class: whether this boot needs it. */
-	static boolean optionalRuntimeActive(String name) { return ENERGY.equals(name) ? energy : active; }
+	static boolean optionalRuntimeActive(String name) { return ENERGY.equals(name) ? energy : HOPPER.equals(name) ? hopper : active; }
 	private static boolean present(ForbricClassLoader loader, String path) {
 		try (var stream = loader.getGameResourceAsStream(path)) { return stream != null; }
 		catch (java.io.IOException unreadable) { return false; }

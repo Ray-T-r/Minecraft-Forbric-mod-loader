@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"forbrichopper","version":"1.0.0","name":"Hopper and Fabric storages for gate M52","environment":"*","entrypoints":{"main":["forbric.hopper.HopperStorageProbe"]},"depends":{"fabricloader":"*","fabric-transfer-api-v1":"*","fabric-api-lookup-api-v1":"*","fabric-lifecycle-events-v1":"*"}}

@@ -21,7 +21,7 @@ import org.objectweb.asm.tree.*;
 class SupersededInjectorTest {
 	private static final String CONFIG = "fabric-resource-conditions-api-v1.mixins.json", TARGET = "game.Target",
 			CONDITIONAL_OPS = "net.neoforged.neoforge.common.conditions.ConditionalOps";
-	private static final String MIXIN = SupersededMixins.all().keySet().iterator().next();
+	private static final String MIXIN = "net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin";
 
 	@BeforeEach @AfterEach void reset() {
 		MixinCompatibility.reset(); CompatibilityFindings.reset(); SupersededMixins.reset();
@@ -51,6 +51,54 @@ class SupersededInjectorTest {
 		observeMissingInjector();
 		SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(false));
 		assertEquals(1, CompatibilityFindings.confirmedRequired().size());
+	}
+
+	/**
+	 * fabric-transfer's hopper injectors capture a local (sugar), so their attachment is not modelled; with nothing in
+	 * the final class calling the merged handler they are unattached all the same, and the proved repair resolves them.
+	 * One that IS called stays as it was: a repair beside a live handler is not a replacement for it.
+	 */
+	@Test void anUnmodelledInjectorNothingCallsIsResolvedWithTheMixin() {
+		FinalMixinApplications.remember(sugaredMixin());
+		observe(false);
+		assertTrue(CompatibilityFindings.all().stream().anyMatch(f -> f.id().startsWith("mixin-injector:")
+				&& f.confidence() == CompatibilityFinding.Confidence.SUSPECTED), "premise: recorded as unestablished");
+		SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(true));
+		assertTrue(CompatibilityFindings.all().stream().filter(f -> f.id().startsWith("mixin-injector:"))
+				.allMatch(f -> f.confidence() == CompatibilityFinding.Confidence.RESOLVED), CompatibilityFindings.all().toString());
+
+		CompatibilityFindings.reset(); SupersededMixins.reset();
+		SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(true));
+		observe(true);
+		assertTrue(CompatibilityFindings.all().stream().noneMatch(f -> f.id().startsWith("mixin-injector:")
+				&& f.confidence() == CompatibilityFinding.Confidence.RESOLVED), "a called handler is not superseded: " + CompatibilityFindings.all());
+	}
+
+	private static ClassNode sugaredMixin() {
+		ClassNode node = mixin();
+		MethodNode skipData = node.methods.getFirst();
+		skipData.desc = "(Ljava/lang/Object;)V";
+		@SuppressWarnings("unchecked") List<AnnotationNode>[] parameters = new List[] {List.of(new AnnotationNode("Lcom/llamalad7/mixinextras/sugar/Local;"))};
+		skipData.visibleParameterAnnotations = parameters;
+		return node;
+	}
+
+	private void observe(boolean called) {
+		ClassNode target = new ClassNode(); target.version = Opcodes.V21; target.name = TARGET.replace('.', '/');
+		target.superName = "java/lang/Object"; target.access = Opcodes.ACC_PUBLIC;
+		MethodNode handler = new MethodNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, "handler$000$skipData", "(Ljava/lang/Object;)V", null, null);
+		handler.instructions.add(new InsnNode(Opcodes.RETURN));
+		handler.visibleAnnotations = List.of(annotation("Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;", "mixin", MIXIN));
+		target.methods.add(handler);
+		if (called) {
+			MethodNode caller = new MethodNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "tick", "()V", null, null);
+			caller.instructions.add(new InsnNode(Opcodes.ACONST_NULL));
+			caller.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, target.name, handler.name, handler.desc, false));
+			caller.instructions.add(new InsnNode(Opcodes.RETURN));
+			target.methods.add(caller);
+		}
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS); target.accept(writer);
+		FinalMixinApplications.observe(TARGET, writer.toByteArray(), (mixin, name, desc) -> List.of(new FinalMixinApplications.Renamed("handler$000$skipData", desc)));
 	}
 
 	private void observeMissingInjector() {

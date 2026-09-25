@@ -34,7 +34,9 @@
  * share one real journal. Subclasses and arbitrary proxies are rejected. ForgeLegacyFacades supports the opposite
  * direction using a real transaction per simulate/execute call; it never promises that separate old-style calls
  * form an atomic transfer. Non-empty Forge fluid tags require a per-fluid codec that round-trips exactly to the
- * other APIs' component patch. Unslotted Fabric storage and entity/item capabilities remain outside scope.
+ * other APIs' component patch. Unslotted Fabric storage and entity/item capabilities remain outside scope. Hoppers
+ * are the exception: they reach unslotted and block-only Fabric storages through Fabric's own lookup on NeoForge's
+ * found-nothing branches (KernelFabricHopperStorage), independently of the bridge switch.
  *
  * <p>Energy (placed block entities only; item energy is not bridged) uses the same seams, endpoints, precedence,
  * invalidation and recursion guard. 1 FE = 1 E; see EnergyUnits for the int/long rule. Fabric's side is Team Reborn

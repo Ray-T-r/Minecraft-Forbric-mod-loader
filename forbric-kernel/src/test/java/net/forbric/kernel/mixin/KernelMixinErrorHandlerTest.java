@@ -116,7 +116,7 @@ class KernelMixinErrorHandlerTest {
 	 */
 	@Test
 	void aMixinTheKernelSupersedesIsUnmarkedOnlyOnceItsReplacementIsDefined() {
-		String superseded = SupersededMixins.all().keySet().iterator().next();
+		String superseded = "net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin";
 		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
 
 		IMixinErrorHandler.ErrorAction out = new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo",
@@ -136,7 +136,7 @@ class KernelMixinErrorHandlerTest {
 	/** A replacement proved before the mixin fails resolves the failure as it is recorded. */
 	@Test
 	void aReplacementDefinedBeforeTheFailureResolvesItOnArrival() {
-		String superseded = SupersededMixins.all().keySet().iterator().next();
+		String superseded = "net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin";
 		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
 		SupersededMixins.observeDefinition(CONDITIONAL_OPS, conditionalOps(true));
 		new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo", new RuntimeException("boom"),
@@ -150,7 +150,7 @@ class KernelMixinErrorHandlerTest {
 		String previous = System.getProperty("forbric.fabricConditions");
 		try {
 			System.setProperty("forbric.fabricConditions", "off");
-			String superseded = SupersededMixins.all().keySet().iterator().next();
+			String superseded = "net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin";
 			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
 			new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo", new RuntimeException("boom"),
 					info("s.mixins.json", superseded), IMixinErrorHandler.ErrorAction.WARN);
@@ -174,7 +174,7 @@ class KernelMixinErrorHandlerTest {
 	@Test
 	void gateM9PassesOnlyWhenTheRepairIsSeenInTheDefinedClass(@org.junit.jupiter.api.io.TempDir Path temporary)
 			throws Exception {
-		String superseded = SupersededMixins.all().keySet().iterator().next();
+		String superseded = "net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin";
 		MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
 		Runnable fail = () -> new KernelMixinErrorHandler().onApplyError(
 				"net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener",
@@ -261,7 +261,7 @@ class KernelMixinErrorHandlerTest {
 		String previousValue = System.getProperty(SupersededMixins.PROPERTY);
 		try {
 			System.setProperty(SupersededMixins.PROPERTY, "off");
-			String superseded = SupersededMixins.all().keySet().iterator().next();
+			String superseded = "net.fabricmc.fabric.mixin.resource.conditions.SimpleJsonResourceReloadListenerMixin";
 			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned("s.mixins.json", "xmod", Ecosystem.FABRIC)));
 
 			new KernelMixinErrorHandler().onApplyError("net.minecraft.Foo", new RuntimeException("boom"),

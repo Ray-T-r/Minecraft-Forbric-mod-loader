@@ -174,6 +174,9 @@ public final class KernelRuntimeClasses {
 		// Only required, loaded and verified when Team Reborn Energy is installed: its signatures stay free of Reborn
 		// types, but its body is the one place that links against them.
 		CLASSES.put(KernelTransferInterop.ENERGY, new Entry(Origin.COMPILED, List.of(new Call("install", void.class))));
+		// Called by the merged HopperBlockEntity's bytecode (HopperFabricStorageInjector); required whenever
+		// fabric-transfer-api and NeoForge's hopper are both present, with or without the bridge.
+		CLASSES.put(KernelTransferInterop.HOPPER, new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put(KernelTransferInterop.TRANSACTIONS, new Entry(Origin.COMPILED, List.of(
 				new Call("beforeOpen", void.class), new Call("beforeClose", void.class, Object.class, boolean.class),
 				new Call("afterClose", void.class, Object.class, Throwable.class),
