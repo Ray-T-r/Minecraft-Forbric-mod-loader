@@ -1055,3 +1055,71 @@ condition.
   no mod in either pack uses them.
 - Regression sweep (`gates-all.sh -j 2 --mem-budget 6000 --skip gate-m34-soak.sh`, candidate staged root, HEAD
   f77e5b6): all 43 other gates GREEN in one run, including M42 and M43; no orphaned server afterwards. Kernel test 2091.
+
+## Everyday crashes, stub-first injectors and the lost event families (2026-09-25)
+
+A triage of every remaining SUSPECTED finding in the popular and merged packs (five readers, each finding checked
+against bytecode), then three spec readers for the MinecraftForge event families the merge left undelivered. Four of
+the findings were crashes every release player can hit; the rest were features that loaded, registered and never ran.
+
+- Fabric's `ItemEvents.USE_ON` and `PlayerPickItemEvents.BLOCK`, and NeoForge's `ITEM_AFTER_BLOCK` phase (0096638,
+  gate M44): the merged `ItemStack.useOn` is MinecraftForge's body; `ItemUseOnInjector` posts NeoForge's phase and
+  routes every `Item.useOn` through one relay Fabric's wrap reaches (`MixinRelocatedCall`); pick-block's wrap is
+  reordered onto NeoForge's four-argument call (`MixinWrapOperationShim`, allow-listed — fabric-networking's codec
+  wraps have the same shape and PayloadInterop already serves them).
+- **Four crashes** (gate M45, "everyday"): the first smelt of any furnace (NeoForge's `serverTick` calls
+  MinecraftForge's instance `canBurn/consumeFuel/burn` as static — `FurnaceTickCallsInjector`); crafting any remainder
+  with fabric-api installed (a class tweaker's `FabricItem` default against `IForgeItem`'s — the default-conflict
+  repair now judges against the jar's own bytes and settles through NeoForge's `ItemInstance` overload); the Ender
+  Dragon (its parts were MinecraftForge `PartEntity`s, every consumer NeoForge's — `DragonPartsInjector`); a Fabric or
+  MinecraftForge mod's fluid ("Mod fluids must override getFluidType" on place or touch — `ForeignFluidTypeInjector`).
+  Also MinecraftForge's `ParticleEngine.registerParticleGroup` on NeoForge's engine (46bd2aa).
+- **Stub-first injectors** (92732c0, gate M46): Mixin binds a name-only selector to the FIRST declared overload, which
+  on a carrier is often a merge-added delegating stub nothing calls; 59 such stubs are pinned in `carrier-stubs.txt`
+  and a Fabric mod's injector on one moves to the body (`MixinStubRebind`, run after every specific adapter —
+  51891db). architectury's and Collective's break-speed events were the visible losses.
+- Fabric: `ServerMobEffectEvents.ALLOW_EARLY_REMOVE` on clearing all effects (d8b6c4d, M37 case 12); per-screen
+  `ScreenEvents.beforeExtract/afterExtract` on NeoForge's screen-stack draw (558101f, M9 counts 22/22, 0/0 with the
+  adapter off); `FuelValueEvents` on NeoForge's fuel builder (fb5fc33, M45 fuel cases); the anvil's enchanting
+  contract (645b752, M38 16 cases). HUD: health/armor/food/air elements drew twice (HudMixin retargeted and the layer
+  bridge both owned them) — the bridge now leaves a root to HudMixin when live code dispatches it (fb6cf37, M41 logs
+  17 of 21 bridged).
+- NeoForge: `ScreenEvent.Opening/Closing` were never posted (the merged `Gui.setScreen` is MinecraftForge's) —
+  Controlling, JEI, Balm and PuzzlesLib never saw a screen change (4d1073e; M9: Controlling's `NewKeyBindsScreen`
+  shown, vanilla's with the fix off).
+- MinecraftForge event families (each merged site posts NeoForge's event and reads it back; forwards at LOWEST carry
+  the answer back one way):
+  - damage (6af398c, gate M47, 12 cases): attack, shield, knockback and fall forwarded; Hurt, Damage and a player's
+    zero-damage attack have no NeoForge event and are posted by seams in `actuallyHurt` and `Player.hurtServer`
+    (`ForgeDamageSeamsInjector`) — Tombstone's ghost immunity, Voodoo Poppet and perks;
+  - what players keep (777c103, gate M48): respawn Clone (packedup's backpacks vanished on death), experience drop
+    (Tombstone's experience came back twice), explosion Detonate (creepers blew up graves), brewing registration —
+    and a registered MinecraftForge brewing recipe then threw ClassCastException at the first brewing-stand check
+    (`ForgeBrewingRecipesInjector` wraps it; M48 proves it with the wrap alone off);
+  - 22 more world and entity events (0c30904, gate M49, 26 cases): chunk load/unload, leaving a level, section moves,
+    waking, tags, effects added/expired/applicable, conversions, projectile impacts, trampling, permissions, commands,
+    entity interaction, healing, visibility, critical hits, anvils, tool modification;
+  - client (3f1ec58, cf2a909): login/logout/respawn and client commands (registered into NeoForge's dispatcher), chat,
+    keys, mouse, interaction keys, fog, fog colour, FOV, block overlays, boss bars, screen drawing, atlas stitching and
+    model baking. Where MinecraftForge's hook is not a pure emitter (fog, FOV, screen drawing, interaction keys) the
+    event is built and posted directly. M9's smoke listens on MinecraftForge's buses and asserts each event it produces.
+- Not bridged on purpose: `MobEffectEvent.Remove` (live — the merge kept MinecraftForge's `onEffectsRemoved`),
+  `InputEvent.MouseButton.Post` (the merged handler reaches it after a screen took the click), MinecraftForge's own
+  `ClientCommandHandler` (left as native; a no-op showed no difference and would leave its dispatcher null).
+- lithostitched's Fabric load predicates (e9fd92f, gate M50): its `@Inject` anchors on `Decoder.parse`; NeoForge's body
+  calls the same method as `Codec.parse`, so every gated entry loaded. `MixinSubtypeOwnerRetarget` moves such an anchor
+  only for a known same-method pair, one call through the subtype, none with the recorded owner, and every named
+  `@Local` live at the call; fabric-resource-conditions' own mixin there is left out (its conditions are already asked
+  at NeoForge's funnel). lithostitched's Fabric build uses fabric-api's registry builder without declaring it.
+- NeoForge's `LivingConversionEvent.Post` on drowning, a husk's conversion and villager zombification (4eb0e6f, M49 28
+  cases): the merged `Zombie` calls MinecraftForge's lambdas (identical but for the event); `KernelConversions` posts
+  NeoForge's and the forward tells MinecraftForge once.
+- Report precision: MixinFit judged an `@At(NEW)` wrap by all handler parameters, so sugar parameters made
+  fabric-item-api's registry-load mixin read PARTIAL (c1accd8); the hook census now covers `ForgeHooks` (36cd866).
+- Still open: Fabric's component tooltip providers (latent — no pack mod registers one; NeoForge's appender graph has
+  no after-all hook), the hopper fallback for unslotted or block-only Fabric storages (no pack mod has one), Fabric's
+  elytra CUSTOM against NeoForge's gliding attribute, and three cosmetic misses (malilib number formatting, sleeping
+  direction, the particle `@At(NEW)` whose NeoForge constructor takes one more argument).
+- Regression sweep (`gates-all.sh -j 2 --mem-budget 6000 --skip gate-m34-soak.sh`, candidate staged root, HEAD
+  36cd866): all 50 gates GREEN in one run, M44–M50 included; kernel tests 2147, none skipped. An earlier sweep at
+  645b752 was 49/49 GREEN before M50 existed.
