@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -89,6 +90,61 @@ class MixinStubRebindTest {
 		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
 		ClassNode player = merged("net/minecraft/world/entity/player/Player");
 		assertEquals(0, MixinStubRebind.adapt(mixin, name -> player));
+	}
+
+	/**
+	 * malilib keeps its mods' number formats (%d, %02d, %.2f) out of vanilla's rewrite with a @ModifyArgs on
+	 * Language.loadFromJson(InputStream, BiConsumer) — on the merged base a stub passing a no-op lambda to NeoForge's
+	 * three-argument body, which is the one ClientLanguage calls. The handler's @Local entry is in the body's table.
+	 */
+	@Test void malilibsFormatRestoreMovesToTheBodyClientLanguageCalls() throws Exception {
+		Path jar = MERGED_PACK.resolve("malilib-fabric-26.2-0.29.3.jar");
+		Assumptions.assumeTrue(Files.isRegularFile(jar), "malilib absent from the merged pack");
+		ClassNode mixin = fromJar(jar, "fi/dy/masa/malilib/mixin/client/MixinLanguage");
+		ClassNode language = merged("net/minecraft/locale/Language");
+		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
+		MethodNode handler = mixin.methods.stream().filter(m -> m.name.equals("malilib_onLoadCustomText")).findFirst().orElseThrow();
+		String desc = handler.desc;
+		assertEquals(1, MixinStubRebind.adapt(mixin, name -> language));
+		handler = mixin.methods.stream().filter(m -> m.name.equals("malilib_onLoadCustomText")).findFirst().orElseThrow();
+		assertEquals(List.of("loadFromJson(Ljava/io/InputStream;Ljava/util/function/BiConsumer;Ljava/util/function/BiConsumer;)V"),
+				MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(handler), "method")));
+		assertEquals(desc, handler.desc, "a @ModifyArgs handler keeps its own signature");
+		assertTrue(mixin.methods.stream().noneMatch(m -> m.name.endsWith(MixinHandlerShim.INNER_SUFFIX)));
+		assertEquals(0, MixinStubRebind.adapt(mixin, name -> language), "a second pass changes nothing");
+		MixinStubRebind.forget();
+		ClassNode neo = fromJar(jar, "fi/dy/masa/malilib/mixin/client/MixinLanguage");
+		MixinStubRebind.noteEcosystem(neo.name, Ecosystem.NEOFORGE);
+		assertEquals(0, MixinStubRebind.adapt(neo, name -> language), "not a Fabric mod's mixin");
+	}
+
+	/** A non-capturing lambda is a constant; a capturing one, or a string concatenation, is work the stub does. */
+	@Test void aLambdaStubIsAStubButACapturingOneIsNot() throws Exception {
+		ClassNode language = merged("net/minecraft/locale/Language");
+		MethodNode stub = language.methods.stream().filter(m -> m.name.equals("loadFromJson")
+				&& m.desc.equals("(Ljava/io/InputStream;Ljava/util/function/BiConsumer;)V")).findFirst().orElseThrow();
+		assertNotNull(MixinStubRebind.delegation(language, stub));
+		org.objectweb.asm.tree.InvokeDynamicInsnNode indy = Arrays.stream(stub.instructions.toArray())
+				.filter(org.objectweb.asm.tree.InvokeDynamicInsnNode.class::isInstance).map(org.objectweb.asm.tree.InvokeDynamicInsnNode.class::cast)
+				.findFirst().orElseThrow();
+		String nonCapturing = indy.desc;
+		indy.desc = "(Ljava/lang/Object;)Ljava/util/function/BiConsumer;";
+		stub.instructions.insertBefore(indy, new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.ACONST_NULL));
+		assertNull(MixinStubRebind.delegation(language, stub), "a capturing lambda");
+		indy.desc = nonCapturing;
+		stub.instructions.remove(indy.getPrevious());
+		indy.bsm = new org.objectweb.asm.Handle(org.objectweb.asm.Opcodes.H_INVOKESTATIC, "java/lang/invoke/StringConcatFactory",
+				"makeConcatWithConstants", indy.bsm.getDesc(), false);
+		assertNull(MixinStubRebind.delegation(language, stub), "a string concatenation");
+	}
+
+	/** An interface default forwarding to an abstract overload has nowhere to inject: no stub. */
+	@Test void aDefaultForwardingToAnAbstractOverloadIsNoStub() throws Exception {
+		ClassNode loader = merged("net/minecraft/client/renderer/texture/atlas/SpriteResourceLoader");
+		MethodNode forwarding = loader.methods.stream().filter(m -> m.name.equals("loadSprite")
+				&& Type.getArgumentTypes(m.desc).length == 2 && m.instructions.size() > 0).findFirst().orElse(null);
+		Assumptions.assumeTrue(forwarding != null, "SpriteResourceLoader.loadSprite reshaped");
+		assertNull(MixinStubRebind.delegation(loader, forwarding));
 	}
 
 	private static ClassNode merged(String name) throws Exception {

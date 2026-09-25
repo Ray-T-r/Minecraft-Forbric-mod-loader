@@ -627,6 +627,11 @@ check_absent "the mixin is no longer retargeted into a body nothing calls" \
   "retargeted guest mixin fabric-item-api-v1.*ItemStackMixin" "$LOG"
 check_absent "the stale 'recorded but not applied' claim is gone" \
   "recorded but not applied" "$LOG"
+# malilib keeps its mods' number formats (%02d, %.2f) through a @ModifyArgs on Language.loadFromJson(InputStream,
+# BiConsumer) — on the merged base a stub passing a no-op lambda to NeoForge's three-argument body, which the rebind
+# now follows (gate M46 proves the formats). RED with M9_EXTRA_JVM=-Dforbric.mixinStubRebind=off.
+check "malilib's language format hook reaches the body the game calls" \
+  "MixinLanguage: malilib_onLoadCustomText now targets net.minecraft.locale.Language.loadFromJson\(Ljava/io/InputStream;Ljava/util/function/BiConsumer;Ljava/util/function/BiConsumer;\)V" "$LOG"
 
 step "an access directive the kernel already satisfies does not mark its mod (must PASS)"
 # fabric-biome-api's widener asks for ChunkGenerator.featuresPerStep as vanilla's Supplier. MinecraftForge

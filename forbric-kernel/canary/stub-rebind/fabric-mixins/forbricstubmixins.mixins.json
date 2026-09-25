@@ -1,1 +1,1 @@
-{"required": true, "package": "forbric.stubmixins", "compatibilityLevel": "JAVA_21", "mixins": ["PlayerSpeedMixin", "PinnedTeleportMixin"], "injectors": {"defaultRequire": 1}}
+{"required": true, "package": "forbric.stubmixins", "compatibilityLevel": "JAVA_21", "mixins": ["PlayerSpeedMixin", "PinnedTeleportMixin", "LanguageFormatMixin"], "injectors": {"defaultRequire": 1}}

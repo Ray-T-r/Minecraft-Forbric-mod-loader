@@ -49,7 +49,20 @@ public final class StubDriver {
   test("teleport.rebound",()->{player.snapTo(0.5,120,0.5);player.addTag("forbric_pinned");
    boolean moved=teleport(player,3.5,101,3.5);player.removeTag("forbric_pinned");
    return expect(!moved,"a pinned player teleported");});
+  // Language.loadFromJson: the Fabric mod's @ModifyArgs was written for vanilla's two-argument body; on the merged base
+  // that is a stub, and the entries are read in NeoForge's three-argument one — which ClientLanguage calls.
+  String json="{\"forbricstub.fmt\":\"[%02d|%.2f]\",\"other.fmt\":\"[%02d|%.2f]\",\"forbricstub.obj\":{\"text\":\"x\"}}";
+  Map<String,String> two=new HashMap<>(),three=new HashMap<>();Map<String,net.minecraft.network.chat.Component> components=new HashMap<>();
+  test("language.control",()->{net.minecraft.locale.Language.loadFromJson(stream(json),two::put);return expect("[%s|%s]".equals(two.get("other.fmt")),"vanilla's rewrite: "+two);});
+  test("language.rebound",()->{net.minecraft.locale.Language.loadFromJson(stream(json),three::put,components::put);
+   String raw=three.get("forbricstub.fmt");
+   return expect("[%02d|%.2f]".equals(two.get("forbricstub.fmt"))&&"[%02d|%.2f]".equals(raw)&&"[05|1.23]".equals(String.format(Locale.ROOT,raw,5,1.23456)),
+    "the mod's format was rewritten: two-argument "+two.get("forbricstub.fmt")+", three-argument "+raw);});
+  test("language.component",()->{net.minecraft.network.chat.Component c=components.get("forbricstub.obj");
+   // NeoForge hands an object entry to both consumers, its text to the string one: the handler must leave it alone.
+   return expect(c!=null&&"x".equals(c.getString())&&"x".equals(three.get("forbricstub.obj")),"an object entry: "+components+" "+three);});
  }
+ private static java.io.InputStream stream(String json){return new java.io.ByteArrayInputStream(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
  /** NeoForge's randomTeleport(x, y, z, particles, item), by descriptor: what chorus fruit calls on the merged base. */
  private static boolean teleport(FakePlayer player,double x,double y,double z)throws Exception{
   java.lang.reflect.Method m=net.minecraft.world.entity.LivingEntity.class.getDeclaredMethod("randomTeleport",double.class,double.class,double.class,boolean.class,net.minecraft.world.item.ItemStack.class);

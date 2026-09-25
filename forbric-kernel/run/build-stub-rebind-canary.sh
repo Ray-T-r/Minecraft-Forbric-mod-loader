@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds gate-m46's canaries: run/canary/forbricstubmixins.jar, a Fabric mod whose mixin is compiled against vanilla
-# (a name-only getDestroySpeed injection, the shape architectury and Collective ship), and run/canary/forbricstubdriver.jar,
+# (a name-only getDestroySpeed injection, the shape architectury and Collective ship; malilib's language @ModifyArgs), and run/canary/forbricstubdriver.jar,
 # a NeoForge mod that calls those methods the way the merged game does and listens through fabric-entity-events-v1.
 # Only javac/jar; no kernel Gradle. The gate owns the separately scheduled kernel build.
 set -euo pipefail
@@ -43,8 +43,11 @@ def build(name, sources, classpath, extra):
         for path in sorted(classes.rglob('*.class')): target.write(path, path.relative_to(classes).as_posix())
         for source, arc in extra: target.write(source, arc)
     jar = output / (name + '.jar'); os.replace(staged, jar); return jar
+# MixinExtras' annotations (the language mixin's @Local), as the kernel ships them.
+extras = work / 'mixinextras-fabric.jar'
+with zipfile.ZipFile(kernel_jar) as archive: extras.write_bytes(archive.read('META-INF/jars/mixinextras-fabric.jar'))
 # The Fabric mod: against vanilla and Mixin's annotations only, as a Fabric mod is built.
-mixins = build('forbricstubmixins', root / 'fabric-mixins/src', [vanilla, kernel_jar, mixin, *libraries],
+mixins = build('forbricstubmixins', root / 'fabric-mixins/src', [vanilla, kernel_jar, mixin, extras, *libraries],
                [(root / 'fabric-mixins/fabric.mod.json', 'fabric.mod.json'),
                 (root / 'fabric-mixins/forbricstubmixins.mixins.json', 'forbricstubmixins.mixins.json')])
 driver = build('forbricstubdriver', root / 'driver/src', [compile_game, forge, neo, *selected, *libraries],

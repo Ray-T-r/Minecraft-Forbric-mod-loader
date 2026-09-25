@@ -16,6 +16,7 @@ import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.LocalVariableNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -47,8 +48,11 @@ import net.forbric.kernel.util.ForbricLog;
  *       forwarding to the three-argument one) and a mod that chose the short one there meant it;</li>
  *   <li>only mixins from Fabric mods — a NeoForge or MinecraftForge mod was compiled against the stub-first shape and
  *       gets what it would get natively;</li>
- *   <li>only a PURE stub: loads, constants, static fields, zero-argument static factories and argument construction,
- *       then one call to a same-name overload of the same class and static-ness, returning its result unchanged;</li>
+ *   <li>only a PURE stub: loads, constants, static fields, zero-argument static factories, non-capturing lambdas and
+ *       method references (a constant, like a static field — NeoForge's {@code Language.loadFromJson(InputStream,
+ *       BiConsumer)} passes a no-op component consumer) and argument construction, then one call to a same-name
+ *       overload of the same class and static-ness, returning its result unchanged; the overload must have a body
+ *       (an interface default forwarding to an abstract overload is no stub);</li>
  *   <li>every {@code INVOKE}/{@code FIELD}/{@code NEW} anchor absent from the stub and present in the delegate
  *       ({@code HEAD}, {@code RETURN} and {@code TAIL} are equivalent on both: the stub returns what the delegate
  *       returns);</li>
@@ -286,6 +290,10 @@ public final class MixinStubRebind {
 				stack.add(-1);
 			} else if (insn instanceof TypeInsnNode type && op == Opcodes.NEW) {
 				stack.add(-1);
+			} else if (insn instanceof InvokeDynamicInsnNode indy && Type.getArgumentTypes(indy.desc).length == 0
+					&& "java/lang/invoke/LambdaMetafactory".equals(indy.bsm.getOwner())
+					&& ("metafactory".equals(indy.bsm.getName()) || "altMetafactory".equals(indy.bsm.getName()))) {
+				stack.add(-1);   // a non-capturing lambda or method reference: a constant
 			} else if (op == Opcodes.DUP) {
 				if (stack.isEmpty()) return null;
 				stack.add(stack.getLast());
@@ -323,6 +331,8 @@ public final class MixinStubRebind {
 				MethodNode delegate = null;
 				for (MethodNode candidate : owner.methods) if (candidate.name.equals(m.name) && candidate.desc.equals(m.desc)) delegate = candidate;
 				if (delegate == null || (delegate.access & Opcodes.ACC_STATIC) != (stub.access & Opcodes.ACC_STATIC)) return null;
+				if ((delegate.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0 || delegate.instructions == null
+						|| delegate.instructions.size() == 0) return null;   // nothing there to inject into
 				if (!Type.getReturnType(delegate.desc).equals(Type.getReturnType(stub.desc))) return null;
 				mapping = positions;
 				found = delegate;
