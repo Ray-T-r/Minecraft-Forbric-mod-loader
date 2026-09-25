@@ -1116,10 +1116,73 @@ the findings were crashes every release player can hit; the rest were features t
   NeoForge's and the forward tells MinecraftForge once.
 - Report precision: MixinFit judged an `@At(NEW)` wrap by all handler parameters, so sugar parameters made
   fabric-item-api's registry-load mixin read PARTIAL (c1accd8); the hook census now covers `ForgeHooks` (36cd866).
-- Still open: Fabric's component tooltip providers (latent — no pack mod registers one; NeoForge's appender graph has
-  no after-all hook), the hopper fallback for unslotted or block-only Fabric storages (no pack mod has one), Fabric's
-  elytra CUSTOM against NeoForge's gliding attribute, and three cosmetic misses (malilib number formatting, sleeping
-  direction, the particle `@At(NEW)` whose NeoForge constructor takes one more argument).
+- Still open at the time (all closed in the next section): Fabric's component tooltip providers, the hopper fallback
+  for unslotted or block-only Fabric storages, Fabric's elytra CUSTOM against NeoForge's gliding attribute, and three
+  cosmetic misses (malilib number formatting, sleeping direction, the particle `@At(NEW)` whose NeoForge constructor
+  takes one more argument).
 - Regression sweep (`gates-all.sh -j 2 --mem-budget 6000 --skip gate-m34-soak.sh`, candidate staged root, HEAD
   36cd866): all 50 gates GREEN in one run, M44–M50 included; kernel tests 2147, none skipped. An earlier sweep at
   645b752 was 49/49 GREEN before M50 existed.
+
+## Item tooltips, hoppers against Fabric storages, and the last callback misses (2026-09-25)
+
+Four spec readers, each followed by an adversarial verifier, took the items left open above back to bytecode. One of
+them turned up a loss every player had.
+
+- **Item tooltips had no component lines** (697fef3, gate M51): the merged `ItemStack.addDetailsToTooltip` is
+  NeoForge's dispatcher over the appender lists `ItemTooltipHandler.init` builds, and the kernel's copy of
+  `GameData.postRegisterEvents`' tail left `init` out — every tooltip showed the item's name and its own lines, and no
+  enchantments, lore, attribute modifiers or durability. The tail now builds them once (`KernelNeoTooltips.init`); the
+  registration event goes to each mod on its own instead of through `ModLoader.postEvent` (`NeoTooltipAppendersInjector`).
+  `NeoPostRegisterTailCensusTest` pins every step NeoForge takes after its RegisterEvent loop to one the kernel names.
+  M51 renders tooltips on a dedicated server; with `-Dforbric.neoTooltipAppenders=off` exactly the vanilla and NeoForge
+  cases fail. M9 now draws one advanced tooltip in the world on the 97-mod client (lore, attributes, durability).
+- Fabric's component tooltip providers (1936ff3, M51): fabric-item-api's five tooltip injectors thread one `@Share`
+  through vanilla's single body; the retarget had put three into a renamed body nothing calls and one onto the tail,
+  where it drew every Fabric line at once above the id in F3+H. The five are pruned while the bridge is on
+  (`GuestInjectorPruner`, exact selector and `@Share` required; `hookDamage` stays) and `KernelNeoTooltips` draws the
+  registry from NeoForge's lists — first in `POST_CUSTOM` ahead of mods', last in `PRE_ITEM_INFO` after mods', and
+  before/after around each vanilla component's own appender, read live so later registrations show. M51 carries a
+  Fabric mod with every position and one registered at server start: `fabricTooltipBridge=off` fails exactly the seven
+  Fabric cases and reproduces the old placement. The loss audit names a mod's use of the registry when the bridge is off.
+- Hoppers against Fabric storages NeoForge cannot see (ec233e1, gate M52): fabric-transfer's hopper mixin anchors on
+  vanilla's `getAttachedContainer`/`getSourceContainer`, which NeoForge's hopper does not call; the capability bridge
+  exposes only slotted storages on block entities. `HopperFabricStorageInjector` asks Fabric's own lookup
+  (`KernelFabricHopperStorage`: same faces, `ContainerStorage` view, one-item move and answer) on NeoForge's two
+  found-nothing branches, independently of the bridge switch; the mixin is superseded once the defined hopper carries
+  both calls. M52: 24 cases (slotted, unslotted, block-only; into, out of, refused face, locked, refilled; pickup stop;
+  vanilla chests), `hopperFabricStorage=off` fails exactly the 11 unslotted/block-only ones, bridge off passes all,
+  lithium-neoforge beside it passes all. The spec's lithium "hopper sleeps forever" premise was refuted by its verifier:
+  on NeoForge's body lithium's entity trackers are never set up, so it never sleeps such a hopper.
+  `FinalMixinApplications` now lets a proved repair answer for an unmodelled (sugar) injector nothing in the final class calls.
+- Elytra: the gliding decision was already restored (the backlog line was stale); what was lost is the flight tick
+  (16bbe34, gate M37). NeoForge put a `List.isEmpty` guard before vanilla's glider-slot choice, so custom flight with no
+  glider item never reached `EntityElytraEvents.CUSTOM(entity, true)` — no per-tick wear or fuel, and the glide game
+  event twice as often. `FabricEntityMixinAnchors` moves the tick onto the guard when it is proven to be the only way to
+  the slot choice. M37's `glide-tick` fails alone with `-Dforbric.fabricElytraTickAnchor=off`; a real elytra is the control.
+- Sleeping direction (5e75f87, M37): `MODIFY_SLEEPING_DIRECTION` wrapped `BedBlock.getBedOrientation`, which NeoForge's
+  `LivingEntity.getBedOrientation` no longer calls; it now modifies that method's answer whenever there is a sleeping
+  position. Both new M37 cases (a turned bed, a stone spot) fail with the anchors off.
+- malilib's number formats (6c61905, gate M46): `Language.loadFromJson(InputStream, BiConsumer)` is a stub passing a
+  non-capturing lambda to NeoForge's three-argument body; `MixinStubRebind` now treats such a lambda as a constant and
+  refuses a delegate without a body. The census grows by exactly three rows. M46's malilib-shaped mixin keeps `%02d`;
+  it fails only with the rebind off.
+- fabric-particles' ground block on sprint and landing dust (b14f149, gate M53): an argument-blind `@At(NEW)` naming
+  vanilla's constructor moves to the one construction NeoForge widened (`MixinAtWidenedCall`, depth-paired;
+  `-Dforbric.mixinAtWidenNew=off`); MixinFit judges it the same way and names both constructors when it does not fit.
+- An adversarial review of these seven commits (four readers, four verifiers; 10 findings, all confirmed, none a
+  crash) was closed in b17d0eb: mod-bus events the kernel delivers per container now go phase by phase as
+  `ModLoader.postEvent` does (an earlier mod's LOWEST tooltip appender registered before a later mod's HIGHEST); the
+  tooltip bridge is both-or-nothing and a pruned-but-not-drawing bridge is a CONFIRMED finding on fabric-item-api-v1;
+  a superseded mixin's witness warns only when a failure waits on it; MixinFit asks `MixinStubRebind.destination`
+  where a Fabric injector on a carrier stub will land (malilib's language hook no longer reads PARTIAL once moved);
+  M52 names its stores by class and proves lithium's hopper mixin is woven; M53's two move checks no longer match
+  each other's line.
+- Still open: no item from the previous list remains. Not done on
+  purpose: a reachability guard in the renamed-body retarget (it would turn malilib's `MixinItemStack` "last" hook from
+  a false FIT into a required loss on M9 without restoring it), and the FACING-less sleeping spot on the server
+  (NeoForge's `startSleepInBed` lambda returns before Fabric's direction veto — no pack mod sleeps on such a block).
+- Regression sweeps (`gates-all.sh -j 2 --mem-budget 6000 --skip gate-m34-soak.sh`, candidate staged root): at b14f149
+  all 53 gates GREEN in one run (M51–M53 new); at b17d0eb 52/53, M9 red only on two log checks that named which
+  adapter moves fabric-transfer's `setItem` injectors (now the rebind, before the retarget; same destination) — fixed
+  in the gate and re-run GREEN. Kernel tests 2182, none skipped.
