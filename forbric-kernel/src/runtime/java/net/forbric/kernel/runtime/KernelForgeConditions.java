@@ -29,6 +29,7 @@ import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.MapCodec;
 
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraftforge.common.crafting.conditions.ICondition;
 import net.minecraftforge.registries.ForgeRegistries;
 
@@ -44,7 +45,8 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code net/minecraftforge/common/crafting/conditions/ConditionCodec.wrap} at offset 15, while its own
  * {@code lambda$load$1} builds NeoForge's {@code ConditionalOps}. {@code LootPool} names the same MinecraftForge
  * class. So MinecraftForge's condition evaluator is live, global, and strict — over every datapack-registry
- * element and every loot pool, whichever ecosystem shipped the file.
+ * element, whichever ecosystem shipped the file, and (since ForgeLootPoolConditionsInjector, see
+ * {@link #poolElementCodec}) over every loot pool.
  *
  * <p>Its failure path is the one already paid for once on the NeoForge side. {@code OptionalConditionalDecoder}
  * parses the {@code forge:condition} value through {@code ICondition.CODEC}; a registry dispatch that cannot
@@ -188,6 +190,20 @@ public final class KernelForgeConditions {
 	private static volatile boolean judgementFailureReported;
 
 	/** {@code -Dforbric.forgeConditionContext=off}: the Forge event answers {@code EMPTY} instead of adapting NeoForge's. */
+	/** Launch-time switch for {@link #poolElementCodec}; the pool list codec that asks is built once. */
+	public static final String POOL_PROPERTY = "forbric.forgePoolConditions";
+
+	/**
+	 * The element codec NeoForge's pool list codec ({@code CommonHooks.lootPoolsCodec}) decodes each loot pool with:
+	 * MinecraftForge's {@code LootPool.CONDITIONAL_CODEC}, which judges a pool-level {@code forge:condition} and puts an
+	 * empty pool in place of one whose condition is false — what MinecraftForge's own {@code LootTable} reads pools
+	 * with. NeoForge's wrapper around it still judges {@code neoforge:conditions} first (ForgeLootPoolConditionsInjector).
+	 */
+	public static Codec<LootPool> poolElementCodec(Codec<LootPool> neoforge) {
+		if ("off".equalsIgnoreCase(System.getProperty(POOL_PROPERTY, "on"))) return neoforge;
+		return LootPool.CONDITIONAL_CODEC;
+	}
+
 	public static final String CONTEXT_PROPERTY = "forbric.forgeConditionContext";
 	private static volatile boolean contextFailureReported;
 

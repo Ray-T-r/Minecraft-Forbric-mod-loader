@@ -544,6 +544,8 @@ public final class KernelBoot {
 		}));
 		// Each LootPool constructor fills the other family's fields too, so a pool built one way encodes the other.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LootPoolFieldsInjector());
+		// And a MinecraftForge pool condition is kept by the builder and judged by the pool decoder, as natively.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeLootPoolConditionsInjector());
 		// NeoForge's coremods never run on the merged base; NativeCoremodParity does their rewrites after Mixin. These
 		// are the parts that must come before it: the flower pot's constructor, lookup and addPlant; the biome modifier
 		// pass starting from the biome's current climate, and the biome's getters yielding to a later replacement.
