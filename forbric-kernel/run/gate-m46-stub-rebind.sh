@@ -12,9 +12,9 @@
 # a tagged entity), the unmodified fabric-entity-events-v1, and a NeoForge driver that calls the methods the way the
 # merged game does:
 #   dirt speed (control), sponge speed through the moved and wrapped injection; an untagged teleport (control), a tagged
-#   one cancelled through the moved injection. Fabric API's elytra check is moved too (log line) — whether its CUSTOM
-#   event lets a player glide is a separate gap: NeoForge's canGlide(true) answers from its gliding attribute before
-#   ever reaching the equipment loop Fabric hooks.
+#   one cancelled through the moved injection. Fabric API's elytra check has ONE owner: the rebind runs after every
+#   specific adapter, so FabricEntityMixinAnchors has already put it at NeoForge's gliding decision (M37 proves the
+#   callbacks) and the rebind must leave it alone — moving it too would bind it twice.
 #
 #   1. positive — STRICT, every case passes, zero confirmed required findings.
 #   2. off — -Dforbric.mixinStubRebind=off: exactly the two moved cases fail and the controls hold.
@@ -77,7 +77,8 @@ if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r[
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 check "positive: the probe's getDestroySpeed injection moved (wrapped)" 'forbric\$sevenfoldOnSponge.* now targets net.minecraft.world.entity.player.Player.getDestroySpeed\(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;\)F' "$RESULTS/positive.log"
-check "positive: fabric-api's elytra check moved" 'injectElytraCheck now targets net.minecraft.world.entity.LivingEntity.canGlide\(Z\)Z' "$RESULTS/positive.log"
+check "positive: fabric-api's elytra check restored at NeoForge's gliding decision" 'restored [0-9]+ entity callback anchor\(s\) in net.fabricmc.fabric.mixin.entity.event.elytra.LivingEntityMixin' "$RESULTS/positive.log"
+check_absent "positive: the rebind leaves fabric-api's elytra check to that one owner" 'injectElytraCheck now targets' "$RESULTS/positive.log"
 check "positive: the probe's randomTeleport injection moved" 'forbric\$pinned now targets net.minecraft.world.entity.LivingEntity.randomTeleport\(DDDZLnet/minecraft/world/item/ItemStack;\)Z' "$RESULTS/positive.log"
 
 step "2. off: the same server with the rebind switched off"

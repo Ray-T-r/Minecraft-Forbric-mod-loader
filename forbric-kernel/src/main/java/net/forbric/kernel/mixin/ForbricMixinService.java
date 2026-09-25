@@ -275,9 +275,6 @@ public final class ForbricMixinService
 		// The one seam MixinInfo.loadMixinClass reads a mixin through: a retarget plan the adapter remembered for
 		// this mixin is applied to the node Mixin receives, never to jar bytes.
 		MixinRetarget.applyRemembered(name, node);
-		// …and a Fabric mod's injector that Mixin binds to a merge-added delegating stub moves to the method carrying
-		// the body — Mixin binds a name-only selector to the FIRST declared overload, which is the carrier's stub.
-		MixinStubRebind.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a single-point injector compiled with an array-valued `at` (another Mixin fork's shape) is given the
 		// shape this Mixin declares, before MixinExtras' pre-apply transformer casts it.
 		MixinAtShape.normalise(node);
@@ -314,6 +311,11 @@ public final class ForbricMixinService
 		FabricBlockBreakMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricClientMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		FabricSoundMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		// …and, LAST, a Fabric mod's injector that Mixin still binds to a carrier's delegating stub moves to the method
+		// carrying the body — Mixin binds a name-only selector to the FIRST declared overload, which is that stub.
+		// Last so every specific adapter above has had its say: FabricEntityMixinAnchors moves fabric-api's elytra
+		// check onto NeoForge's gliding attribute read, and a rebind first would have changed the selector it matches.
+		MixinStubRebind.adapt(node, this::mergedBaseNodeWithCode);
 		FinalMixinApplications.remember(node);
 
 		return node;

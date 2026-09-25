@@ -28,9 +28,10 @@ for phase in ('positive','off'):
  for item in [inputs['mod'],*inputs['modules']]:source=pathlib.Path(item['path']);shutil.copy2(source,run/'mods'/source.name)
  env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY='strict' if phase=='positive' else 'continue',M37_RESULT_COMPATIBILITY=str(results/(phase+'-compatibility.json')),
    FORBRIC_JVM=f'-Dforbric.fabricEntityAnchors={"on" if phase=="positive" else "off"} -Dforbric.entityPhase={phase} -Dforbric.entityNonce={nonce} -Dforbric.entityRoot={run}'
-   # The generic renamed-body retarget (MixinRetarget R3) also moves the sleep redirect into NeoForge's lambda,
-   # so the negative control turns it off too: every case must show it depends on a repair.
-   +('' if phase=='positive' else ' -Dforbric.mixinRetarget=off'))
+   # The generic renamed-body retarget (MixinRetarget R3) also moves the sleep redirect into NeoForge's lambda, and the
+   # carrier-stub rebind moves fabric-api's boolean elytra check off Player's delegating canGlide stub onto the body,
+   # so the negative control turns both off too: every case must show it depends on a repair.
+   +('' if phase=='positive' else ' -Dforbric.mixinRetarget=off -Dforbric.mixinStubRebind=off'))
  for key,role in [('MERGED','merged'),('FORGE_RT','forge'),('NEO_RT','neo')]:env[key]=inputs[role]['path']
  command=['python3',str(kernel/'run/compat/evidence.py'),'run','--source',str(root),'--mods',str(run/'mods'),'--output',str(results/(phase+'.json'))]
  for role,path in [('merged',env['MERGED']),('forge-interop',env['FORGE_RT']),('neo-runtime',env['NEO_RT']),('fabric-api',inputs['fabricApi']['path']),('kernel',str(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')),('kernel-runtime',str(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar'))]:command+=['--artifact',role+'='+path]
