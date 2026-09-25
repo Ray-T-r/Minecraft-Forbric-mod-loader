@@ -72,6 +72,17 @@ import org.objectweb.asm.tree.MethodNode;
  * Nothing wove fastutil; that conflict is its own and it is not a defect. Only a signature whose declarers were NOT
  * all reachable before weaving is one the merge and a mixin created together.
  *
+ * <p><b>"Before" means the jar's own bytes.</b> A class tweaker's {@code inject-interface} is the other way a mod puts a
+ * second interface on a base class, and it runs in the kernel's pre-mixin chain — so the bytes Mixin is handed already
+ * carry it, and judged against those, the conflict looked like the class's own. fabric-item-api-v1 injects
+ * {@code FabricItem} into {@code Item}, whose merged hierarchy already has MinecraftForge's {@code IForgeItem}; both
+ * default {@code getCraftingRemainder(ItemStack)}, so every crafting-table result, brew and furnace fuel threw
+ * {@code IncompatibleClassChangeError} with fabric-api installed. The interfaces the class had in its jar are what the
+ * carrier shipped settled; anything added on top is the kernel's pipeline's to settle.
+ *
+ * <p>{@link #CHAINED} names the one signature where the override asks a third, wider hook instead of picking one of
+ * the two: see its javadoc.
+ *
  * <p>{@code -Dforbric.defaultConflictRepair=off} leaves the conflict in place.
  */
 public final class InterfaceDefaultConflictRepair {
@@ -80,6 +91,20 @@ public final class InterfaceDefaultConflictRepair {
 	/** Owners whose interfaces are part of the base rather than something a mod brought. */
 	private static final List<String> BASE_PACKAGES =
 			List.of("net/minecraft/", "net/neoforged/", "net/minecraftforge/", "com/mojang/");
+
+	/**
+	 * {@code owner#name+desc} → the overload of the same name the override calls instead of either default.
+	 *
+	 * <p>{@code Item.getCraftingRemainder(ItemStack)}: MinecraftForge's {@code IForgeItem} and fabric-api's
+	 * {@code FabricItem} both default it to vanilla's {@code getCraftingRemainder()}, and so does NeoForge's
+	 * {@code IItemExtension.getCraftingRemainder(ItemInstance)} — which nothing on the merged base asked, because
+	 * {@code ItemStack.getCraftingRemainder()} resolved to MinecraftForge's chain. Calling NeoForge's overload returns
+	 * the same answer for every item that overrides none of them, lets a MinecraftForge or Fabric item's override win
+	 * by dispatch as before, and lets a NeoForge item's override be reached at all.
+	 */
+	static final java.util.Map<String, String> CHAINED = java.util.Map.of(
+			"net/minecraft/world/item/Item#getCraftingRemainder(Lnet/minecraft/world/item/ItemStack;)Lnet/minecraft/world/item/ItemStackTemplate;",
+			"getCraftingRemainder(Lnet/minecraft/world/item/ItemInstance;)Lnet/minecraft/world/item/ItemStackTemplate;");
 
 	private final Function<String, byte[]> classBytes;
 	/** internal name → (name+desc → the interface that DECLARES that default, which may be an ancestor). */
@@ -147,7 +172,9 @@ public final class InterfaceDefaultConflictRepair {
 			}
 		}
 
-		Set<String> before = interfacesBefore(original);
+		// The jar's own bytes when there are any: a class tweaker's injected interface is already in `original`.
+		byte[] shipped = classBytes.apply(node.name);
+		Set<String> before = interfacesBefore(shipped != null ? shipped : original);
 		List<String[]> conflicts = new ArrayList<>();
 		for (Map.Entry<String, List<String>> e : suppliers.entrySet()) {
 			List<String> from = e.getValue();
@@ -163,9 +190,21 @@ public final class InterfaceDefaultConflictRepair {
 		}
 		if (conflicts.isEmpty()) return bytes;
 
+		// With its frames: the class is written back without recomputing them, and a class (not an interface) has
+		// branching methods whose stack map must survive. The one method added here has no branch and needs none.
 		ClassNode full = new ClassNode();
-		new ClassReader(bytes).accept(full, ClassReader.SKIP_FRAMES);
+		new ClassReader(bytes).accept(full, 0);
 		for (String[] conflict : conflicts) {
+			String chained = CHAINED.get(full.name + "#" + conflict[0]);
+			if (chained != null && defaultsOf(full.interfaces).containsKey(chained)) {
+				addChained(full, conflict[0], chained);
+				if (repaired.add(full.name + '.' + conflict[0])) {
+					ForbricLog.info("[Forbric/DefaultConflict] %s inherits %s as a default from two unrelated interfaces (%s) — gave "
+							+ "it one that asks %s, the overload all of them answer the same way (-D%s=off to leave it)",
+							full.name.replace('/', '.'), conflict[0], conflict[2].replace('/', '.'), chained, SWITCH);
+				}
+				continue;
+			}
 			add(full, conflict[0], conflict[1]);
 			if (repaired.add(full.name + '.' + conflict[0])) {
 				ForbricLog.info("[Forbric/DefaultConflict] %s inherits %s as a default from two unrelated "
@@ -198,6 +237,32 @@ public final class InterfaceDefaultConflictRepair {
 		m.visitInsn(Type.getReturnType(desc).getOpcode(Opcodes.IRETURN));
 		m.visitMaxs(slot + 1, slot);
 		node.methods.add(m);
+	}
+
+	/** {@code X m(a…) { return this.m(a… as the overload's parameters); }} — see {@link #CHAINED}. */
+	private static void addChained(ClassNode node, String nameAndDesc, String overload) {
+		int split = nameAndDesc.indexOf('(');
+		String name = nameAndDesc.substring(0, split);
+		String desc = nameAndDesc.substring(split);
+		String overloadDesc = overload.substring(overload.indexOf('('));
+		MethodNode m = new MethodNode(Opcodes.ACC_PUBLIC, name, desc, null, null);
+		m.visitVarInsn(Opcodes.ALOAD, 0);
+		int slot = 1;
+		for (Type arg : Type.getArgumentTypes(desc)) {
+			m.visitVarInsn(arg.getOpcode(Opcodes.ILOAD), slot);
+			slot += arg.getSize();
+		}
+		m.visitMethodInsn(Opcodes.INVOKEVIRTUAL, node.name, name, overloadDesc, false);
+		m.visitInsn(Type.getReturnType(desc).getOpcode(Opcodes.IRETURN));
+		m.visitMaxs(slot + 1, slot);
+		node.methods.add(m);
+	}
+
+	/** Every default the interfaces supply, keyed name+desc. */
+	private Map<String, String> defaultsOf(List<String> interfaces) {
+		Map<String, String> all = new LinkedHashMap<>();
+		if (interfaces != null) for (String iface : interfaces) defaultsOf(iface).forEach(all::putIfAbsent);
+		return all;
 	}
 
 	/** The non-base declarer, else the first: see the class javadoc for why that way round. */

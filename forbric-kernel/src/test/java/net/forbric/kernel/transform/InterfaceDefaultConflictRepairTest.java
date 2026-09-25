@@ -78,7 +78,9 @@ class InterfaceDefaultConflictRepairTest {
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
 		byte[] bytes = writer.toByteArray();
-		world.put(name, bytes);
+		// The first bytes written under a name are its JAR bytes, which is what the repair reads a class's own
+		// interfaces from; a later implementor(...) of the same name is the woven copy handed to transform().
+		world.putIfAbsent(name, bytes);
 		return bytes;
 	}
 
@@ -199,6 +201,21 @@ class InterfaceDefaultConflictRepairTest {
 		new ClassReader(out).accept(read, 0);
 		assertEquals(1, read.methods.stream().filter(m -> m.name.equals("who")).count(),
 				"the class had settled it already; a second copy would not even verify");
+	}
+
+	@Test
+	void anInterfaceAClassTweakerInjectedIsJudgedAgainstTheJarNotThePreMixinBytes() throws Exception {
+		iface("net/neoforged/Ext", "neoforge");
+		iface("mod/FabricExt", "mod");
+		implementor("game/Renderer", "net/neoforged/Ext");                                 // the jar
+		byte[] tweaked = implementor("game/Renderer", "net/neoforged/Ext", "mod/FabricExt"); // pre-mixin: tweaker ran
+
+		// Nothing wove the class: Mixin hands back what it was given, and `original` already has both interfaces.
+		byte[] fixed = repair.transform("game.Renderer", tweaked, tweaked);
+		assertNotNull(find(fixed, "who"), "the injected interface is not the jar's own shape");
+		world.put("game/Renderer", fixed);
+		Class<?> type = define(fixed, "game/Renderer");
+		assertEquals("mod", type.getMethod("who").invoke(type.getDeclaredConstructor().newInstance()));
 	}
 
 	@Test
