@@ -231,31 +231,26 @@ class MixinFitTest {
 	}
 
 	/**
-	 * Mixin binds a bare-name selector to EVERY same-name overload and injects into each; the {@code @At} inside is
-	 * satisfied when ANY of them contains the instruction. Judging only the first overload reported
-	 * fabric-model-loading-api-v1's {@code discoverModelDependencies} injector as missing {@code
-	 * ModelDiscovery.resolve()} — the call sits in the four-arg overload, the three-arg one merely delegates — and
-	 * made the real ModelManagerMixin read PARTIAL on an anchor that was applied.
+	 * Mixin binds a bare-name selector to the FIRST declared overload only (single-match quantifier; TargetSelectors
+	 * stops at the first match). fabric-model-loading-api-v1's {@code discoverModelDependencies} injector lands on the
+	 * three-arg stub, and its handler measured zero references at runtime: PARTIAL is the truth, and MixinStubRebind is
+	 * what moves it.
 	 */
 	@Test
-	void aBareNameSelectorIsJudgedAgainstEveryOverload() {
+	void aBareNameSelectorIsJudgedAgainstTheFirstDeclaredOverloadAsMixinBindsIt() {
 		String target = "net/example/ModelManager";
 		byte[] targetBytes = twoOverloads(target, "net/example/Discovery", "resolve", "()Ljava/util/Map;");
 		java.util.function.Function<String, byte[]> resolver =
 				name -> (target + ".class").equals(name) ? targetBytes : null;
 
-		MixinFit.Result fit = MixinFit.evaluate(
-				injectMixin(target, "Lnet/example/Discovery;resolve()Ljava/util/Map;"), resolver);
-		assertEquals(MixinFit.Verdict.FIT, fit.verdict(),
-				"the call lives in the second overload, which Mixin injects into as well: " + fit.unresolved());
-		assertTrue(fit.unresolved().isEmpty(), fit.unresolved().toString());
-
-		// And the sibling case: the instruction exists in NEITHER overload, so the @At really is unresolved.
+		// Mixin binds "discover" to discover()V, declared first — the stub. The call lives only in the second overload,
+		// so Mixin finds nothing to inject at: PARTIAL, as the zero handler references measured at runtime said.
 		MixinFit.Result partial = MixinFit.evaluate(
-				injectMixin(target, "Lnet/example/Discovery;somethingElse()Ljava/util/Map;"), resolver);
-		assertEquals(MixinFit.Verdict.PARTIAL, partial.verdict(), partial.unresolved().toString());
+				injectMixin(target, "Lnet/example/Discovery;resolve()Ljava/util/Map;"), resolver);
+		assertEquals(MixinFit.Verdict.PARTIAL, partial.verdict(),
+				"a bare name binds the first declared overload only: " + partial.unresolved());
 		assertEquals(1, partial.unresolved().size(), partial.unresolved().toString());
-		assertTrue(partial.unresolved().get(0).contains("somethingElse"), partial.unresolved().toString());
+		assertTrue(partial.unresolved().get(0).contains("resolve"), partial.unresolved().toString());
 	}
 
 	/** A target whose method constructs {@code T} with {@code arity} arguments (all int). */

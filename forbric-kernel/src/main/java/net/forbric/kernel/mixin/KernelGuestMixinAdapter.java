@@ -156,7 +156,10 @@ public final class KernelGuestMixinAdapter {
 		Map<String, byte[]> loaded = new LinkedHashMap<>();
 		List<String> suppress = new ArrayList<>();
 
+		net.forbric.api.Ecosystem ecosystem = MixinConfigOwners.ecosystemOf(configName);
 		for (String mixin : mixins) {
+			// Which family's mod wrote it decides what shape it was compiled against (MixinStubRebind).
+			MixinStubRebind.noteEcosystem(pkgPath + "/" + mixin.replace('.', '/'), ecosystem);
 			byte[] classBytes = resource.apply(pkgPath + "/" + mixin.replace('.', '/') + ".class");
 			if (classBytes == null) continue;
 			loaded.put(mixin, classBytes);

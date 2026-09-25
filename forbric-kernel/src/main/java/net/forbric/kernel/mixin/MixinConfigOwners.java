@@ -112,6 +112,12 @@ public final class MixinConfigOwners {
 		return one == null ? null : one.modId();
 	}
 
+	/** The declaring mod's ecosystem, or null when nothing or more than one mod claims this config. */
+	public static net.forbric.api.Ecosystem ecosystemOf(String config) {
+		Owned one = owners.get(config);
+		return one == null ? null : one.ecosystem();
+	}
+
 	/**
 	 * How a config should be named to a reader: {@code "<mod id> (<config>)"} when that is known and unambiguous,
 	 * the bare config name otherwise, and the jar that bundled it when there is one.

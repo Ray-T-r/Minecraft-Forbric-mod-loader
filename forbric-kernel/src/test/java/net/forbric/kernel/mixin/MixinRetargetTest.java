@@ -202,11 +202,12 @@ class MixinRetargetTest {
 	}
 
 	@Test
-	void aNameOnlySelectorIsLeftToOverloadResolution() {
+	void aNameOnlySelectorIsLeftToMixinStubRebind() {
 		byte[] mixinBytes = mixin(REDIRECT, "setItem", "(L" + TARGET + ";)V", -1);
-		assertTrue(MixinRetarget.plan(MixinFit.parse(mixinBytes), resolver(target(false))).isEmpty());
-		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(mixinBytes, resolver(target(false))).verdict(),
-				"a bare name already binds to every overload");
+		assertTrue(MixinRetarget.plan(MixinFit.parse(mixinBytes), resolver(target(false))).isEmpty(),
+				"R1 moves only an explicit descriptor; a bare name on a carrier's stub is MixinStubRebind's");
+		assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(mixinBytes, resolver(target(false))).verdict(),
+				"a bare name binds the first declared overload — the stub — which does not make the call");
 	}
 
 	@Test

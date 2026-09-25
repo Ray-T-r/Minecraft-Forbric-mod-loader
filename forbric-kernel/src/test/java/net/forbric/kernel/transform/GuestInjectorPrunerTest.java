@@ -147,8 +147,21 @@ class GuestInjectorPrunerTest {
 
 		byte[] pruned = new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, original, null);
 		MixinFit.Result now = MixinFit.evaluate(pruned, resolver);
-		assertEquals(MixinFit.Verdict.FIT, now.verdict(), "after pruning: " + now.unresolved());
-		assertTrue(now.unresolved().isEmpty(), now.unresolved().toString());
+		// Pruning removes the fromStream miss. What remains is resolveExtraModels: Mixin binds its bare
+		// "discoverModelDependencies" to the carrier's three-argument stub declared first, and resolve() is in the
+		// four-argument body — MixinStubRebind's to move, for a Fabric mod, at load time.
+		assertEquals(java.util.List.of("@At(INVOKE) ModelManager.resolve in discoverModelDependencies"), now.unresolved(),
+				"after pruning, only the stub-bound anchor remains");
+		ClassNode node = net.forbric.kernel.mixin.MixinFit.parse(pruned);
+		net.forbric.kernel.mixin.MixinStubRebindAccess.fabric(node.name);
+		ClassNode target = new ClassNode();
+		new ClassReader(resolver.apply("net/minecraft/client/resources/model/ModelManager.class")).accept(target, 0);
+		assertEquals(1, net.forbric.kernel.mixin.MixinStubRebind.adapt(node, name -> target));
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+		node.accept(writer);
+		MixinFit.Result rebound = MixinFit.evaluate(writer.toByteArray(), resolver);
+		assertEquals(MixinFit.Verdict.FIT, rebound.verdict(), "after the rebind: " + rebound.unresolved());
+		net.forbric.kernel.mixin.MixinStubRebindAccess.forget();
 	}
 
 	@Test

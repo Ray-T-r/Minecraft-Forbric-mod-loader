@@ -144,7 +144,7 @@ public final class MixinRetarget {
 		int semi = s.indexOf(';');
 		if (s.startsWith("L") && semi > 0) s = s.substring(semi + 1);
 		int paren = s.indexOf('(');
-		if (paren <= 0) return null;    // a name-only selector already binds to every overload
+		if (paren <= 0) return null;    // a name-only selector on a stub is MixinStubRebind's (Fabric mods, carrier-added stubs)
 		String name = s.substring(0, paren);
 		String desc = s.substring(paren);
 

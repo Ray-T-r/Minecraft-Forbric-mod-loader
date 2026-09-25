@@ -470,25 +470,25 @@ public final class MixinFit {
 	}
 
 	/**
-	 * Every method in the hierarchy named {@code name} (and, when {@code desc} is given, with that descriptor).
+	 * The method a selector binds: the one with {@code desc}, or for a bare name the FIRST declared method of that
+	 * name — the target's own first, then up the hierarchy.
 	 *
-	 * <p>Mixin binds a bare-name selector to EVERY same-name overload and injects into each, so an {@code @At}
-	 * inside such an injector is satisfied if ANY overload contains the instruction. Returning only the first
-	 * overload here made fabric-model-loading-api-v1's {@code method="discoverModelDependencies"} bind to the
-	 * three-arg delegating overload of the merged {@code ModelManager} and report {@code ModelDiscovery.resolve()}
-	 * unresolved, when the four-arg overload Mixin also injects into contains it — a false PARTIAL on a mixin
-	 * whose injector was applied.
+	 * <p>Mixin configures a member selector with the single-match quantifier and {@code TargetSelectors} stops at the
+	 * first declared match, so a bare name binds ONE overload. Commit 5a39483 judged it against every overload instead,
+	 * and fabric-model-loading-api-v1's {@code discoverModelDependencies} read FIT because the four-arg overload has
+	 * {@code ModelDiscovery.resolve()} — while at runtime its handler had zero references: Mixin had bound the
+	 * three-arg stub declared first. MixinStubRebind now moves such a Fabric injector to the body; this reports what
+	 * Mixin would do without it.
 	 */
 	private static List<MethodNode> findMethods(ClassNode node, String name, String desc,
 			Function<String, byte[]> resolver) {
-		List<MethodNode> out = new ArrayList<>();
 		for (ClassNode c : hierarchy(node, resolver)) {
 			if (c.methods == null) continue;
 			for (MethodNode m : c.methods) {
-				if (m.name.equals(name) && (desc == null || m.desc.equals(desc))) out.add(m);
+				if (m.name.equals(name) && (desc == null || m.desc.equals(desc))) return List.of(m);
 			}
 		}
-		return out;
+		return List.of();
 	}
 
 	/** The target and its superclass chain, as far as the resolver can see. */
@@ -506,7 +506,7 @@ public final class MixinFit {
 
 	/**
 	 * A Mixin method selector: {@code name}, {@code name(desc)ret}, or {@code Lowner;name(desc)ret}. A bare name
-	 * resolves to EVERY same-named overload, as Mixin binds it. Anything with a wildcard or a shape this does not
+	 * resolves to the FIRST declared method of that name, as Mixin binds it. Anything with a wildcard or a shape this does not
 	 * understand resolves to the first method, and to "resolved" if there is none to compare against — see the
 	 * conservatism note on the class.
 	 */
