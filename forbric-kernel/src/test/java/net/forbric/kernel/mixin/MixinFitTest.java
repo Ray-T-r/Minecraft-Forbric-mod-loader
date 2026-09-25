@@ -325,6 +325,27 @@ class MixinFitTest {
 		assertEquals(1, noMethod.unresolved().size(), "and no NEW anchor is added for a selector that bound nowhere: " + noMethod.unresolved());
 	}
 
+	/**
+	 * A sugar parameter after the Operation (fabric-resource-conditions' {@code @Local(argsOnly=true) Resource}) is the
+	 * target method's, not the constructor's: the handler still wraps the constructor it names.
+	 */
+	@Test
+	void aSugarParameterIsNotCountedAsAConstructorArgument() {
+		String type = "net/example/Snippet";
+		java.util.function.Function<String, byte[]> three = name -> "net/example/Builder.class".equals(name) ? constructing(type, 3) : null;
+		org.objectweb.asm.tree.ClassNode mixin = MixinFit.parse(wrappingNew(type, 3));
+		org.objectweb.asm.tree.MethodNode wrap = mixin.methods.stream().filter(m -> m.name.equals("wrap")).findFirst().orElseThrow();
+		wrap.desc = wrap.desc.replace("Operation;)", "Operation;I)");
+		@SuppressWarnings("unchecked")
+		java.util.List<org.objectweb.asm.tree.AnnotationNode>[] params = new java.util.List[5];
+		params[4] = new java.util.ArrayList<>(java.util.List.of(new org.objectweb.asm.tree.AnnotationNode("Lcom/llamalad7/mixinextras/sugar/Local;")));
+		wrap.invisibleParameterAnnotations = params;
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+		mixin.accept(writer);
+		MixinFit.Result result = MixinFit.evaluate(writer.toByteArray(), three);
+		assertEquals(MixinFit.Verdict.FIT, result.verdict(), result.unresolved().toString());
+	}
+
 	/** An {@code @Accessor} names a field by name AND descriptor; the merge re-typed AttributeSupplier$Builder.builder. */
 	@Test
 	void anAccessorOnAReTypedFieldIsAnUnresolvedAnchor() {

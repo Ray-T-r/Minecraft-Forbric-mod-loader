@@ -800,13 +800,15 @@ public final class MixinFit {
 			type = atTarget.startsWith("L") && atTarget.endsWith(";") ? atTarget.substring(1, atTarget.length() - 1) : atTarget;
 		}
 		Type[] expect = null;
+		// The constructor's own arguments, as the handler receives them: before a @WrapOperation's Operation, and never
+		// a MixinExtras sugar parameter (@Local, @Share) — those come from the target method, not the call.
+		List<Type> own = new ArrayList<>();
 		Type[] params = Type.getArgumentTypes(handler.desc);
-		if (WRAP_OPERATION_DESC.equals(injector.desc)) {
-			int n = params.length > 0 && OPERATION_DESC.equals(params[params.length - 1].getDescriptor()) ? params.length - 1 : params.length;
-			expect = java.util.Arrays.copyOf(params, n);
-		} else if (REDIRECT_DESC.equals(injector.desc)) {
-			expect = params;
+		for (int i = 0; i < params.length; i++) {
+			if (WRAP_OPERATION_DESC.equals(injector.desc) && OPERATION_DESC.equals(params[i].getDescriptor())) break;
+			if (!sugar(handler, i)) own.add(params[i]);
 		}
+		if (WRAP_OPERATION_DESC.equals(injector.desc) || REDIRECT_DESC.equals(injector.desc)) expect = own.toArray(new Type[0]);
 		boolean constructed = false;
 		boolean resolved = false;
 		int seen = -1;
@@ -819,7 +821,7 @@ public final class MixinFit {
 						constructed = true;
 						seen = args.length;
 						if (wanted != null && !java.util.Arrays.equals(args, wanted)) break;
-						if (expect == null || java.util.Arrays.equals(args, expect)) resolved = true;
+						if (expect == null || java.util.Arrays.equals(args, expect) || capturesTargetArgs(expect, args, hit)) resolved = true;
 						break;
 					}
 				}
@@ -831,6 +833,24 @@ public final class MixinFit {
 		if (!constructed) return new Anchor("@At(NEW)", simple + " is not constructed" + where, false);
 		return new Anchor("@At(NEW)", simple + ": handler wraps a " + (expect == null ? -1 : expect.length)
 				+ "-arg constructor, the call site constructs with " + seen + where, false);
+	}
+
+	/** Whether handler parameter {@code index} carries a MixinExtras sugar annotation (@Local, @Share, …). */
+	static boolean sugar(MethodNode handler, int index) {
+		for (List<AnnotationNode>[] set : java.util.Arrays.asList(handler.visibleParameterAnnotations, handler.invisibleParameterAnnotations)) {
+			if (set == null || index >= set.length || set[index] == null) continue;
+			for (AnnotationNode a : set[index]) if (a.desc.startsWith("Lcom/llamalad7/mixinextras/sugar/")) return true;
+		}
+		return false;
+	}
+
+	/** A @Redirect of NEW may also take the target method's arguments after the constructor's: args + host's own. */
+	private static boolean capturesTargetArgs(Type[] expect, Type[] args, MethodNode host) {
+		Type[] captured = Type.getArgumentTypes(host.desc);
+		if (expect.length != args.length + captured.length) return false;
+		for (int i = 0; i < args.length; i++) if (!expect[i].equals(args[i])) return false;
+		for (int i = 0; i < captured.length; i++) if (!expect[args.length + i].equals(captured[i])) return false;
+		return true;
 	}
 
 	private static Anchor accessorAnchor(MethodNode m, ClassNode target, Function<String, byte[]> resolver) {
