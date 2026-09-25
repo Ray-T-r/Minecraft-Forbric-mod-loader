@@ -561,6 +561,8 @@ public final class KernelBoot {
 		// MinecraftForge's Hurt, Damage and player-Attack events have no NeoForge event at their positions to bridge
 		// from; seams in the merged actuallyHurt and Player.hurtServer post them where MinecraftForge did.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeDamageSeamsInjector());
+		// The merged Gui.setScreen is MinecraftForge's; NeoForge's ScreenEvent.Opening and Closing go in after its hooks.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NeoScreenEventsInjector());
 		// NeoForge's coremods never run on the merged base; NativeCoremodParity does their rewrites after Mixin. These
 		// are the parts that must come before it: the flower pot's constructor, lookup and addPlant; the biome modifier
 		// pass starting from the biome's current climate, and the biome's getters yielding to a later replacement.

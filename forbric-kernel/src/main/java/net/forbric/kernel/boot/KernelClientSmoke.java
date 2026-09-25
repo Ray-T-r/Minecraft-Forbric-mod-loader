@@ -78,6 +78,8 @@ public final class KernelClientSmoke {
 	 * machine. This opens it on a real client and reads back how many frames it drew.
 	 */
 	public static final String MODS_SCREEN = "forbric.clientSmokeModsScreen";
+	/** World tick at which vanilla's key binds screen is opened, to see which screen the game ends up showing. */
+	public static final String KEY_BINDS_SCREEN = "forbric.clientSmokeKeyBinds";
 	/** Take a screenshot of the pause menu with the mods button on it, instead of pressing it. */
 	public static final String MODS_BUTTON_SHOT = "forbric.clientSmokeModsButtonShot";
 	/**
@@ -180,6 +182,7 @@ public final class KernelClientSmoke {
 		if (ready) elytraCheck(minecraft, player);
 		if (ready) screenMouseIfDue(minecraft, player);
 		if (ready) screenshotIfDue(minecraft);
+		if (ready) keyBindsScreenIfDue(minecraft);
 		if (ready) modsScreenIfDue(minecraft);
 		if (ready && !probed && worldTicks >= Integer.getInteger(PROBE_TICKS, 160)) {
 			probed = true;
@@ -190,6 +193,33 @@ public final class KernelClientSmoke {
 			disconnectRequested = true;
 			ForbricLog.info("[Forbric/ClientSmoke] requesting clean disconnect after %d world tick(s)", worldTicks);
 			invokeNoArg(minecraft, "disconnectWithSavingScreen");
+		}
+	}
+
+	private static boolean keyBindsTried;
+
+	/**
+	 * Opens vanilla's key binds screen the way the options menu does and reports what the game shows. A NeoForge mod
+	 * that swaps screens on {@code ScreenEvent.Opening} — Controlling replaces this one with its own — is how the
+	 * answer differs from what was asked for, so the report is that mod's own behaviour, not a counter of ours.
+	 */
+	private static void keyBindsScreenIfDue(Object minecraft) {
+		int due = Integer.getInteger(KEY_BINDS_SCREEN, 0);
+		if (due <= 0 || keyBindsTried || worldTicks < due) return;
+		keyBindsTried = true;
+		try {
+			ClassLoader cl = minecraft.getClass().getClassLoader();
+			Class<?> screenType = Class.forName("net.minecraft.client.gui.screens.Screen", false, cl);
+			Class<?> optionsType = Class.forName("net.minecraft.client.Options", false, cl);
+			Object screen = Class.forName("net.minecraft.client.gui.screens.options.controls.KeyBindsScreen", true, cl)
+					.getConstructor(screenType, optionsType).newInstance(null, fieldValue(minecraft, "options"));
+			setScreen(minecraft, screen);
+			Object shown = fieldValue(fieldValue(minecraft, "gui"), "screen");
+			ForbricLog.info("[Forbric/ClientSmoke] opened vanilla's KeyBindsScreen; the game shows %s",
+					shown == null ? "no screen" : shown.getClass().getName());
+			setScreen(minecraft, null);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] could not open vanilla's key binds screen", t);
 		}
 	}
 

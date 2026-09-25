@@ -387,6 +387,8 @@ public final class KernelRuntimeClasses {
 		// MinecraftForge's Hurt, Damage and player Attack, from the seams ForgeDamageSeamsInjector writes into the merged
 		// actuallyHurt and Player.hurtServer; Player.<clinit> reports the attack seam in.
 		CLASSES.put("net.forbric.kernel.runtime.KernelLivingDamage", new Entry(Origin.COMPILED, List.of()));
+		// NeoForge's ScreenEvent.Opening/Closing from the merged (MinecraftForge) Gui.setScreen; NeoScreenEventsInjector.
+		CLASSES.put("net.forbric.kernel.runtime.KernelScreenEvents", new Entry(Origin.COMPILED, List.of()));
 		// Both ecosystems collect mod entity attributes into a map of their own and the merge kept only NeoForge's
 		// reader in DefaultAttributes, so a traditional MinecraftForge mod's entities had no attributes at all.
 		// attributesView() is called from a REWRITTEN CALL SITE and so carries the descriptor that site had.

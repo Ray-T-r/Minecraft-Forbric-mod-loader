@@ -95,7 +95,7 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #                                                   ClickCrystals then killed the client inside Minecraft.<init>.
 # Verified with
 # -Dforbric.pruneDuplicateLambdas=off, which brings back StubException and the failed world load.
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
+FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeKeyBinds=70 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1 &
 CLIENT_PID=$!
@@ -510,6 +510,10 @@ ROWS=$(grep -oE 'frame\(s\) listing [0-9]+ mod' "$LOG" | grep -oE '[0-9]+' | hea
 [ "${ROWS:-0}" -ge 1 ] && echo "[kernel] PASS and it listed mods ($ROWS rows)" \
   || { echo "[kernel] FAIL the Mods screen listed nothing (got ${ROWS:-none})"; FAIL=1; }
 check_absent "the screen did not throw" "the unified Mods screen could not be opened" "$LOG"
+# NeoForge's ScreenEvent.Opening, judged by a NeoForge mod's own answer: Controlling swaps vanilla's key binds screen
+# for its own. The merged Gui.setScreen is MinecraftForge's and asked only MinecraftForge's (NeoScreenEventsInjector).
+check "a NeoForge mod's screen swap is obeyed (Controlling)" \
+  "ClientSmoke\] opened vanilla's KeyBindsScreen; the game shows com.blamejared.controlling.client.NewKeyBindsScreen" "$LOG"
 # fabric-screen-api's per-screen draw events (Jade's overlay on an open screen): NeoForge draws the screen from
 # ClientHooks.extractScreen, so Fabric's own wrap binds nothing and FabricClientMixinAnchors moves it onto that call.
 check "Fabric's screen draw events reach an open screen" \
