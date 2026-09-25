@@ -38,6 +38,26 @@ class FabricClientMixinAnchorsTest {
   assertEquals(1,nativeCalls);assertEquals(1,fabricCalls);new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(mixin.name,handler);
   assertEquals(0,FabricMiningMixinAdapter.adapt(mixin,n->target));
  }
+ private ClassNode screens()throws Exception{return StagedFabricMixinFixture.mixin("fabric-screen-api-v1","net/fabricmc/fabric/mixin/screen/GuiMixin");}
+ @Test void screenExtractEventsBracketNeoForgesScreenStackCall()throws Exception{
+  ClassNode mixin=screens(),gui=StagedFabricMixinFixture.game("net/minecraft/client/gui/Gui",false);
+  assertEquals(1,FabricClientMixinAnchors.adapt(mixin,n->gui));
+  assertNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"onExtractGui")),"the dead direct-call wrap is gone");
+  MethodNode moved=StagedFabricMixinFixture.method(mixin,"forbric$onExtractScreens");
+  assertEquals(List.of("extractRenderState"),MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(moved),"method")));
+  assertEquals("Lnet/neoforged/neoforge/client/ClientHooks;extractScreen(Lnet/minecraft/client/gui/screens/Screen;Ljava/util/Stack;Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V",
+    MixinFit.value(StagedFabricMixinFixture.at(mixin,"forbric$onExtractScreens"),"target"));
+  List<String> order=new ArrayList<>();for(var i:moved.instructions)if(i instanceof MethodInsnNode c&&(c.name.equals("beforeExtract")||c.name.equals("afterExtract")||c.name.equals("call"))&&c.getOpcode()!=Opcodes.INVOKESTATIC)order.add(c.name);
+  assertEquals(List.of("beforeExtract","call","afterExtract"),order);
+  new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(mixin.name,moved);
+  assertEquals(0,FabricClientMixinAnchors.adapt(mixin,n->gui),"second adaptation is a no-op");
+ }
+ @Test void screenExtractIsLeftAloneWhereFabricsOwnAnchorExistsOrTheHandlerChanged()throws Exception{
+  ClassNode vanilla=StagedFabricMixinFixture.game("net/minecraft/client/gui/Gui",true);assertEquals(0,FabricClientMixinAnchors.adapt(screens(),n->vanilla));
+  ClassNode gui=StagedFabricMixinFixture.game("net/minecraft/client/gui/Gui",false),changed=screens();
+  StagedFabricMixinFixture.method(changed,"onExtractGui").instructions.insert(new MethodInsnNode(Opcodes.INVOKEINTERFACE,"com/llamalad7/mixinextras/injector/wrapoperation/Operation","call","([Ljava/lang/Object;)Ljava/lang/Object;",true));
+  assertEquals(0,FabricClientMixinAnchors.adapt(changed,n->gui),"a handler that draws twice is not reimplemented");
+ }
  @Test void nativeVanillaAndDisabledClientAdaptersRemainUnchanged()throws Exception{
 	ClassNode vanillaChunk=StagedFabricMixinFixture.game(CHUNK,true);assertEquals(0,FabricClientMixinAnchors.adapt(lifecycle(),n->vanillaChunk));
   ClassNode vanilla=StagedFabricMixinFixture.game(RENDER,true);assertEquals(0,FabricClientMixinAnchors.adapt(renderer(),n->vanilla));

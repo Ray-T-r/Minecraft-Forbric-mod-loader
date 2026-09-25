@@ -510,6 +510,10 @@ ROWS=$(grep -oE 'frame\(s\) listing [0-9]+ mod' "$LOG" | grep -oE '[0-9]+' | hea
 [ "${ROWS:-0}" -ge 1 ] && echo "[kernel] PASS and it listed mods ($ROWS rows)" \
   || { echo "[kernel] FAIL the Mods screen listed nothing (got ${ROWS:-none})"; FAIL=1; }
 check_absent "the screen did not throw" "the unified Mods screen could not be opened" "$LOG"
+# fabric-screen-api's per-screen draw events (Jade's overlay on an open screen): NeoForge draws the screen from
+# ClientHooks.extractScreen, so Fabric's own wrap binds nothing and FabricClientMixinAnchors moves it onto that call.
+check "Fabric's screen draw events reach an open screen" \
+  "ClientSmoke\] Fabric ScreenEvents on the Mods screen: beforeExtract [1-9][0-9]*, afterExtract [1-9]" "$LOG"
 
 step "a mod's assets are applied but are not resource packs the player has to see (must PASS)"
 # Pack.isHidden gates LISTING, never application: getAvailableIds/getSelectedIds filter on it, openAllSelected

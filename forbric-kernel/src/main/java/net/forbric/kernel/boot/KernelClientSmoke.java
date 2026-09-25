@@ -221,6 +221,7 @@ public final class KernelClientSmoke {
 						Class.forName("net.minecraft.client.gui.screens.Screen", false, cl)).newInstance((Object) null);
 				setScreen(minecraft, screen);
 				ForbricLog.info("[Forbric/ClientSmoke] opened the unified Mods screen at world tick %d", worldTicks);
+				listenToFabricScreenDraws(screen, cl);
 				return;
 			}
 			if (shotDueAt > 0) {
@@ -250,11 +251,55 @@ public final class KernelClientSmoke {
 				int rows = (int) screenCls.getMethod("rowsBuilt").invoke(null);
 				ForbricLog.info("[Forbric/ClientSmoke] the unified Mods screen drew %d frame(s) listing %d mod(s) "
 						+ "from every ecosystem, then closed", frames, rows);
+				if (fabricScreenDrawsArmed) {
+					ForbricLog.info("[Forbric/ClientSmoke] Fabric ScreenEvents on the Mods screen: beforeExtract %d, "
+							+ "afterExtract %d", fabricScreenDraws[0], fabricScreenDraws[1]);
+				}
 				setScreen(minecraft, null);
 			}
 		} catch (Throwable t) {
 			modsScreenClosed = true;
 			ForbricLog.warn("[Forbric/ClientSmoke] the unified Mods screen could not be opened", t);
+		}
+	}
+
+	/** beforeExtract, afterExtract calls fabric-screen-api made on the smoke's Mods screen. */
+	private static final int[] fabricScreenDraws = new int[2];
+	private static boolean fabricScreenDrawsArmed;
+
+	/**
+	 * Registers the way a Fabric mod does (Jade draws its overlay from these): per-screen before/after-extract
+	 * listeners on the screen just opened, which counted, say whether Fabric's screen draw events reach a screen at
+	 * all on this base. Nothing when fabric-screen-api is not installed.
+	 */
+	private static void listenToFabricScreenDraws(Object screen, ClassLoader cl) {
+		try {
+			Class<?> events = Class.forName("net.fabricmc.fabric.api.client.screen.v1.ScreenEvents", true, cl);
+			Class<?> event = Class.forName("net.fabricmc.fabric.api.event.Event", false, events.getClassLoader());
+			Class<?> screenType = Class.forName("net.minecraft.client.gui.screens.Screen", false, cl);
+			String[][] kinds = {{"beforeExtract", "BeforeExtract"}, {"afterExtract", "AfterExtract"}};
+			for (int i = 0; i < kinds.length; i++) {
+				int slot = i;
+				Class<?> callback = Class.forName(events.getName() + "$" + kinds[i][1], false, events.getClassLoader());
+				Object listener = java.lang.reflect.Proxy.newProxyInstance(callback.getClassLoader(), new Class<?>[] {callback},
+						(proxy, method, args) -> {
+							if (method.getDeclaringClass() == Object.class) {
+								return switch (method.getName()) {
+									case "hashCode" -> System.identityHashCode(proxy);
+									case "equals" -> proxy == args[0];
+									default -> "ForbricSmokeScreenDraws";
+								};
+							}
+							fabricScreenDraws[slot]++;
+							return null;
+						});
+				event.getMethod("register", Object.class).invoke(events.getMethod(kinds[i][0], screenType).invoke(null, screen), listener);
+			}
+			fabricScreenDrawsArmed = true;
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/ClientSmoke] fabric-screen-api not installed — no screen draw events to count");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] could not listen to Fabric's screen draw events", t);
 		}
 	}
 
