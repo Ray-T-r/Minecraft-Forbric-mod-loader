@@ -56,7 +56,7 @@ public final class EnchantmentProbe {
   require(net.fabricmc.loader.api.FabricLoader.getInstance().getModContainer("minecraft").orElseThrow().findPath("version.json").isPresent(),"Minecraft container has no actual root");
   var level=running.overworld();player=new FakePlayer(level,new GameProfile(UUID.fromString("aa790f79-93fd-46fc-a615-e3ef8d29c146"),"EnchantProbe"));level.addNewPlayer(player);
   enchantment=level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT).getOrThrow(Enchantments.SHARPNESS);
-  for(String selectedRoute:List.of("command","loot","table"))for(String selectedMode:List.of("pass","deny","allow","custom")){
+  for(String selectedRoute:List.of("command","loot","table","anvil"))for(String selectedMode:List.of("pass","deny","allow","custom")){
    route=selectedRoute;mode=selectedMode;events=supports=primary=custom=0;observed=null;current=new ItemStack(mode.equals("custom")?CUSTOM.get():NATIVE.get());
    boolean pass=false;String detail="";boolean changed=false;
    try{
@@ -68,6 +68,13 @@ public final class EnchantmentProbe {
      LootContext context=new LootContext.Builder(new LootParams.Builder(level).create(LootContextParamSets.EMPTY)).withOptionalRandomSeed(38).create(Optional.empty());
      ItemStack result=EnchantRandomlyFunction.randomEnchantment().withEnchantment(enchantment).build().apply(current,context);
      changed=EnchantmentHelper.getItemEnchantmentLevel(enchantment,result)>0;
+    }else if(route.equals("anvil")){
+     // Putting the item and a book in the anvil recomputes its result, as a player's clicks do.
+     var menu=new net.minecraft.world.inventory.AnvilMenu(0,player.getInventory());
+     menu.getSlot(0).set(current);menu.getSlot(1).set(EnchantmentHelper.createBook(new EnchantmentInstance(enchantment,1)));
+     // Filling the slots already recomputed it; count exactly one recompute.
+     events=supports=primary=custom=0;observed=null;menu.createResult();
+     changed=EnchantmentHelper.getItemEnchantmentLevel(enchantment,menu.getSlot(2).getItem())>0;
     }else changed=!EnchantmentHelper.getAvailableEnchantmentResults(20,current,Stream.of(enchantment)).isEmpty();
     require(changed!=mode.equals("deny"),"game result ignored selected opinion");require(events==1,"Fabric event count="+events);
     require(observed==(route.equals("table")?EnchantingContext.PRIMARY:EnchantingContext.ACCEPTABLE),"wrong enchanting context");
@@ -79,7 +86,7 @@ public final class EnchantmentProbe {
   }
  }catch(Throwable failure){failure.printStackTrace();}finally{try{
   if(player!=null)running.overworld().removePlayerImmediately(player,Entity.RemovalReason.DISCARDED);
-  Map<String,Object> result=new LinkedHashMap<>();result.put("nonce",nonce);result.put("phase",phase);result.put("cases",cases);result.put("pass",cases.size()==12&&cases.stream().allMatch(c->Boolean.TRUE.equals(c.get("pass"))));Files.writeString(root.resolve("probe.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));
+  Map<String,Object> result=new LinkedHashMap<>();result.put("nonce",nonce);result.put("phase",phase);result.put("cases",cases);result.put("pass",cases.size()==16&&cases.stream().allMatch(c->Boolean.TRUE.equals(c.get("pass"))));Files.writeString(root.resolve("probe.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));
  }catch(Exception failure){failure.printStackTrace();}running.halt(false);}}
  private static void require(boolean ok,String message){if(!ok)throw new IllegalStateException(message);}
 }

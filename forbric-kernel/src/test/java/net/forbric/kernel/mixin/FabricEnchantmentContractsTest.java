@@ -31,8 +31,8 @@ class FabricEnchantmentContractsTest {
   int handles=0;for(var instruction:StagedFabricMixinFixture.method(node,"getAvailableEnchantmentResults").instructions)if(instruction instanceof InvokeDynamicInsnNode d)for(Object argument:d.bsmArgs)if(argument instanceof Handle h&&h.getName().equals(FabricItemContractTransformer.PRIMARY_HELPER)){handles++;assertEquals(Opcodes.H_INVOKESTATIC,h.getTag());assertEquals(FabricItemContractTransformer.PRIMARY_DESC,h.getDesc());}
   assertEquals(1,handles);byte[] bytes=StagedFabricMixinFixture.bytes(node);assertSame(bytes,transformer.transform(node.name.replace('/','.'),bytes,null));
  }
- @Test void allThreeActualFabricMixinsAttachToTheCorrespondingNativeDecision()throws Exception{
-  for(String[] pair:List.of(new String[]{"EnchantCommandMixin","net/minecraft/server/commands/EnchantCommand"},new String[]{"EnchantRandomlyFunctionMixin","net/minecraft/world/level/storage/loot/functions/EnchantRandomlyFunction"},new String[]{"EnchantmentHelperMixin",FabricItemContractTransformer.HELPER})){
+ @Test void allFourActualFabricMixinsAttachToTheCorrespondingNativeDecision()throws Exception{
+  for(String[] pair:List.of(new String[]{"EnchantCommandMixin","net/minecraft/server/commands/EnchantCommand"},new String[]{"EnchantRandomlyFunctionMixin","net/minecraft/world/level/storage/loot/functions/EnchantRandomlyFunction"},new String[]{"EnchantmentHelperMixin",FabricItemContractTransformer.HELPER},new String[]{"AnvilMenuMixin","net/minecraft/world/inventory/AnvilMenu"})){
    ClassNode mixin=StagedFabricMixinFixture.mixin("fabric-item-api-v1","net/fabricmc/fabric/mixin/item/"+pair[0]);ClassNode target=StagedFabricMixinFixture.game(pair[1],false);
    target=MixinFit.parse(new DuplicateLambdaPruneInjector().transform(pair[1].replace('/','.'),StagedFabricMixinFixture.bytes(target),null));
    if(pair[1].equals(FabricItemContractTransformer.HELPER))target=transformed(pair[1],target);ClassNode finalTarget=target;

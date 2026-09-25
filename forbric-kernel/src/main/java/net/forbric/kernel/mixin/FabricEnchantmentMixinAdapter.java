@@ -9,10 +9,14 @@ import net.forbric.kernel.transform.FabricItemContractTransformer;
 /** Follow the actual native item decision while retaining Fabric's event/context and per-item override. */
 public final class FabricEnchantmentMixinAdapter {
  private static final String ROOT="net/fabricmc/fabric/mixin/item/",STACK="net/minecraft/world/item/ItemStack",HOLDER="Lnet/minecraft/core/Holder;";
- private record Route(String mixin,String handler,String originalDesc,String host,String selector,String callOwner,String call,String context,String fingerprint){}
+ private record Route(String mixin,String handler,String originalDesc,String host,String selector,String callOwner,String call,String context,String fingerprint,String caller){
+  Route(String mixin,String handler,String originalDesc,String host,String selector,String callOwner,String call,String context,String fingerprint){this(mixin,handler,originalDesc,host,selector,callOwner,call,context,fingerprint,null);}
+ }
  private static final List<Route> ROUTES=List.of(
   new Route("EnchantCommandMixin","callAllowEnchantingEvent","(Lnet/minecraft/world/item/enchantment/Enchantment;L"+STACK+";Lnet/minecraft/commands/CommandSourceStack;Ljava/util/Collection;"+HOLDER+")Z","net/minecraft/server/commands/EnchantCommand","enchant",STACK,"supportsEnchantment","ACCEPTABLE","306baaaf4d1e5b9a07f88fba0d917657229cd68f02f8b2b81e7711d96615721c"),
   new Route("EnchantRandomlyFunctionMixin","callAllowEnchantingEvent","(Lnet/minecraft/world/item/enchantment/Enchantment;L"+STACK+";ZL"+STACK+";"+HOLDER+")Z","net/minecraft/world/level/storage/loot/functions/EnchantRandomlyFunction","lambda$run$1",STACK,"supportsEnchantment","ACCEPTABLE","382f001750ed446c89b3d535321b00ce4e3426ba73eb2c98bdd103daf47d3282"),
+  // The anvil: NeoForge's createResult only calls createResultInternal, where the one supportsEnchantment is.
+  new Route("AnvilMenuMixin","callAllowEnchantingEvent","(Lnet/minecraft/world/item/enchantment/Enchantment;L"+STACK+";"+HOLDER+")Z","net/minecraft/world/inventory/AnvilMenu","createResultInternal",STACK,"supportsEnchantment","ACCEPTABLE","435315c8b267fce39331355800303cf84cb6cbdd9b427863228254f8a3337180","createResult"),
   new Route("EnchantmentHelperMixin","useCustomEnchantingChecks","(Lnet/minecraft/world/item/enchantment/Enchantment;L"+STACK+";L"+STACK+";Z"+HOLDER+")Z",FabricItemContractTransformer.HELPER,FabricItemContractTransformer.PRIMARY_HELPER,FabricItemContractTransformer.NATIVE,"isPrimaryItemFor","PRIMARY","3fd5cfcc5fca7bda021fde5f314be0177460b1edd91cc13ebcb05dbdaf9b0896"));
  private FabricEnchantmentMixinAdapter(){}
  public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
@@ -23,6 +27,7 @@ public final class FabricEnchantmentMixinAdapter {
    for(var annotations:Arrays.asList(handler.visibleAnnotations,handler.invisibleAnnotations))if(annotations!=null&&annotations.stream().anyMatch(a->a.desc.equals("Lorg/spongepowered/asm/mixin/injection/Group;")))return 0;
    ClassNode target=targets.apply(route.host());if(target==null)return 0;
    List<MethodNode> hosts=target.methods.stream().filter(m->m.name.equals(route.selector())).toList();if(hosts.size()!=1)return 0;
+   if(route.caller()!=null&&target.methods.stream().noneMatch(m->m.name.equals(route.caller())&&calls(m,target.name,route.selector())))return 0;
    int calls=0;for(var i:hosts.getFirst().instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(route.callOwner())&&c.name.equals(route.call())&&c.desc.equals("("+HOLDER+")Z"))calls++;
    if(calls!=1)return 0;
    AnnotationNode redirect=MixinFit.injectorOf(handler);if(redirect==null||!redirect.desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;"))return 0;
@@ -37,5 +42,6 @@ public final class FabricEnchantmentMixinAdapter {
   }
   return 0;
  }
+ private static boolean calls(MethodNode m,String owner,String name){for(var i:m.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(owner)&&c.name.equals(name))return true;return false;}
  private static void set(AnnotationNode a,String key,Object value){for(int i=0;i<a.values.size();i+=2)if(key.equals(a.values.get(i))){a.values.set(i+1,value);return;}a.values.add(key);a.values.add(value);}
 }
