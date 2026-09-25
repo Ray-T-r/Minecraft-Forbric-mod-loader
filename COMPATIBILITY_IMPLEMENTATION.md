@@ -959,9 +959,9 @@ exposed four more walls behind them; all seven are closed and the server now sta
     missing, so FinalizeSpawn is posted only from spawners; DeadEventAudit still reports it as repaired.
 - fabric-api's PlayerBlockBreakEvents.AFTER (`onBlockBroken`, anchored on Block.destroy) finds nothing in the merged
   destroyBlock, where NeoForge moved that call into its own removeBlock; reported as SUSPECTED, no pack mod
-  affected.
+  affected. (Closed 2026-09-25, see "Fabric's AFTER break event and MinecraftForge loot pool conditions".)
 - A MinecraftForge `LootPool.Builder.when(ICondition)` is dropped by the merged builder, and a pool-level
-  `forge:condition` is decoded but never evaluated; no pack mod uses either.
+  `forge:condition` is decoded but never evaluated; no pack mod uses either. (Closed 2026-09-25, same section.)
 
 ## NeoForge's coremods on the merged base (2026-09-25)
 
@@ -1012,3 +1012,46 @@ nothing read their result. (Buckets were fine: the static reading that predicted
   load average near 30 on 10 cores (servers timed out mid-boot, no error in their logs) and are GREEN rerun one at a
   time (M3 on a second run once the load fell). An earlier sweep's reds were a stopped sweep's orphaned M24 server
   still holding port 25710.
+
+## Fabric's AFTER break event and MinecraftForge loot pool conditions (2026-09-25)
+
+The two gaps left open by the coremod round's review. A probe mod on a bare server measured both before any change:
+PlayerBlockBreakEvents.AFTER never fired (survival, a chest, creative; BEFORE and CANCELED were fine), a
+`forge:condition: forge:false` pool still gave its item, and a pool built with `when(FalseCondition)` lost its
+condition.
+
+- AFTER (ae7356e): fabric-api's `onBlockBroken` anchors on vanilla's `Block.destroy` in `destroyBlock`; NeoForge's
+  body moved that call into its own `removeBlock(pos, state, canHarvest, tool)`, which calls it exactly when it
+  removed the block and returns that answer. FabricBlockBreakMixinAdapter wraps fabric-api's own handler in a
+  MixinExtras `@ModifyExpressionValue` on both `removeBlock` calls (creative and survival path, `@Local` block entity
+  and adjusted state by name), which runs the handler only when the result is true — so AFTER fires exactly once per
+  removed block, with the vanilla arguments, and fabric-api's handler stays the only thing that fires it. It applies
+  only when the merged body proves this (no `Block.destroy` of its own, the two calls with the named locals in scope,
+  the one `Block.destroy` inside, a handler that never reads its callback). Two orderings are the merged body's, not
+  the wrapper's: AFTER runs after `Block.destroy` (multiblocks such as apexcore/fantasyfurniture have cleared their
+  partner blocks by then), and the tool and harvest decision are fixed before the removal.
+- Loot conditions (7bff8a0): ForgeLootPoolConditionsInjector makes `LootPool.Builder.build()` also store
+  `Optional.ofNullable(forge_condition)` (as MinecraftForge's builder; only the encoder reads it, as natively), and
+  gives NeoForge's `CommonHooks.lootPoolsCodec` MinecraftForge's `LootPool.CONDITIONAL_CODEC` as its element codec,
+  inside NeoForge's own conditional wrapper — a false pool becomes an empty pool in place, as natively; neoforge and
+  fabric conditions are judged first and unchanged. Like the kernel's other condition keys, `forge:condition` is
+  judged for every mod's data. `-Dforbric.forgePoolConditions=off` is read at launch.
+- Gate M43 (canary/break-and-loot, 15 cases, the unmodified fabric-events-interaction-v0 modules): breaking in
+  survival, a chest, creative, inside an AFTER listener, breaking air (no AFTER), a Fabric veto, a NeoForge cancel;
+  loot pools with forge:condition false/true, neoforge:conditions never, both true, and a code-built pool kept,
+  encoded and read back empty by MinecraftForge's own codec. Positive 15/15 under STRICT; with both repairs off
+  exactly the 8 repaired cases fail and the controls hold. (NeoForge 26.2 names its constant conditions
+  `neoforge:always`/`neoforge:never`; `neoforge:true`/`false` are not NeoForge's.)
+- Adversarial review (3 reviewers, 2 skeptics each): 11 findings, 4 survived, all low — no failed-removal case (M43
+  now breaks air; the unit test pins the wrapper's branch order), stale javadocs, an orphaned doc comment, and a
+  unit assertion on a fresh parse instead of the adapted mixin; fixed in f77e5b6.
+- Gate infrastructure (52571e7): `kill_tree` killed only the recorded pid and its direct children. M24 records a
+  subshell with the java server two or three levels down, so a timed-out M24 left its server re-parented to launchd
+  holding port 25710; two sweeps in a row went red on "Address already in use" in every later gate that wanted it.
+  It now stops the root and kills the whole tree depth first.
+- Still open: fabric-api's `ItemEvents.USE_ON` (the merged `ItemStack.useOn` is MinecraftForge's body, which reaches
+  `Item.useOn` only through `ForgeHooks.onPlaceItemIntoWorld` or a lambda) and `PlayerPickItemEvents.BLOCK` (pick-block
+  calls NeoForge's four-argument `getCloneItemStack`, the Fabric wrap names vanilla's three-argument one) never fire;
+  no mod in either pack uses them.
+- Regression sweep (`gates-all.sh -j 2 --mem-budget 6000 --skip gate-m34-soak.sh`, candidate staged root, HEAD
+  f77e5b6): all 43 other gates GREEN in one run, including M42 and M43; no orphaned server afterwards. Kernel test 2091.
