@@ -311,6 +311,9 @@ public final class ForbricMixinService
 		FabricBlockBreakMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricClientMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		FabricSoundMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		// …and an @Inject anchored on a call the merged body makes through a subtype of the same method
+		// (Decoder.parse → Codec.parse: lithostitched's Fabric load predicates) moves to that one call.
+		MixinSubtypeOwnerRetarget.adapt(node, this::mergedBaseNodeWithCode);
 		// …and, LAST, a Fabric mod's injector that Mixin still binds to a carrier's delegating stub moves to the method
 		// carrying the body — Mixin binds a name-only selector to the FIRST declared overload, which is that stub.
 		// Last so every specific adapter above has had its say: FabricEntityMixinAnchors moves fabric-api's elytra
