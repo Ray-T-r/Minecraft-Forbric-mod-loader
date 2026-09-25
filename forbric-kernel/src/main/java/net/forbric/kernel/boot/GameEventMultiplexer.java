@@ -278,6 +278,32 @@ public final class GameEventMultiplexer {
 						() -> clientNetworkBridge(cl, "installClone").invoke(null, neoBus));
 				install(GameEventBridge.CLIENT_COMMANDS,
 						() -> clientNetworkBridge(cl, "installClientCommands").invoke(null, neoBus));
+				// Chat, input, fog, field of view, overlays, the boss bar and screen drawing: each merged producer
+				// posts NeoForge's event and reads it back, and no MinecraftForge hook is called.
+				install(GameEventBridge.CLIENT_CHAT_RECEIVED,
+						() -> clientBridge(cl, "installChatReceived").invoke(null, neoBus));
+				install(GameEventBridge.CLIENT_CHAT_SEND,
+						() -> clientBridge(cl, "installChatSend").invoke(null, neoBus));
+				install(GameEventBridge.KEY_INPUT,
+						() -> clientBridge(cl, "installKey").invoke(null, neoBus));
+				install(GameEventBridge.MOUSE_BUTTON_PRE,
+						() -> clientBridge(cl, "installMouseButtonPre").invoke(null, neoBus));
+				install(GameEventBridge.INTERACTION_KEY,
+						() -> clientBridge(cl, "installInteractionKey").invoke(null, neoBus));
+				install(GameEventBridge.RENDER_FOG,
+						() -> clientBridge(cl, "installRenderFog").invoke(null, neoBus));
+				install(GameEventBridge.FOG_COLOR,
+						() -> clientBridge(cl, "installFogColor").invoke(null, neoBus));
+				install(GameEventBridge.FOV_MODIFIER,
+						() -> clientBridge(cl, "installFovModifier").invoke(null, neoBus));
+				install(GameEventBridge.BLOCK_OVERLAY,
+						() -> clientBridge(cl, "installBlockOverlay").invoke(null, neoBus));
+				install(GameEventBridge.BOSS_EVENT_PROGRESS,
+						() -> clientBridge(cl, "installBossEventProgress").invoke(null, neoBus));
+				install(GameEventBridge.SCREEN_RENDER_PRE,
+						() -> clientBridge(cl, "installScreenRenderPre").invoke(null, neoBus));
+				install(GameEventBridge.SCREEN_RENDER_POST,
+						() -> clientBridge(cl, "installScreenRenderPost").invoke(null, neoBus));
 				EventBridges.verify(GameEventBridge.Pass.CLIENT_GAME_BUS);
 			}
 		} catch (ClassNotFoundException single) {
@@ -340,6 +366,11 @@ public final class GameEventMultiplexer {
 					.getMethod("install", Object.class).invoke(null, modBus);
 			EventBridges.installed(GameEventBridge.CLIENT_RELOAD_LISTENERS);
 			ForbricLog.info("[Forbric/EventMux] installed the Neo→Forge client reload-listener bridge");
+			// An atlas stitched and the models baked: NeoForge posts both on this bus and nothing calls MinecraftForge's.
+			Class.forName("net.forbric.kernel.runtime.KernelGameClientResourceEvents", true, cl)
+					.getMethod("install", Object.class).invoke(null, modBus);
+			EventBridges.installed(GameEventBridge.TEXTURE_STITCHED);
+			EventBridges.installed(GameEventBridge.MODELS_BAKED);
 			EventBridges.verify(GameEventBridge.Pass.CLIENT_MOD_BUS);
 		} catch (ClassNotFoundException single) {
 			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no reload-listener bridge needed");
@@ -385,6 +416,12 @@ public final class GameEventMultiplexer {
 	/** One entry point on the game-side cancellable-entity bridge. Complete literal, for the reason above. */
 	private static Method entityBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameEntityEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side client-events bridge. Complete literal, for the reason above. */
+	private static Method clientBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameClientEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 

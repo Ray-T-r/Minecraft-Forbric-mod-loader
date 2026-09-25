@@ -70,7 +70,9 @@ class EventBridgesTest {
 	/** The two passes run at different times; the client one must not be credited to the game-bus one. */
 	@Test
 	void thePassesAreAccountedSeparately() {
-		EventBridges.installed(GameEventBridge.CLIENT_RELOAD_LISTENERS);
+		for (GameEventBridge b : GameEventBridge.values()) {
+			if (b.pass() == GameEventBridge.Pass.CLIENT_MOD_BUS) EventBridges.installed(b);
+		}
 
 		assertTrue(EventBridges.verify(GameEventBridge.Pass.CLIENT_MOD_BUS));
 		assertFalse(EventBridges.verify(GameEventBridge.Pass.GAME_BUS),

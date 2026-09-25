@@ -156,6 +156,11 @@ public final class KernelClientSmoke {
 				if (connectionProbesArmed) {
 					ForbricLog.info("[Forbric/ClientSmoke] MinecraftForge connection events: LoggingIn %d, LoggingOut %d",
 							forgeLogins[0], forgeLogins[1]);
+					StringBuilder census = new StringBuilder();
+					for (String[] heard : FORGE_CLIENT_CENSUS) {
+						census.append(' ').append(heard[0]).append('=').append(forgeHeard.getOrDefault(heard[0], 0));
+					}
+					ForbricLog.info("[Forbric/ClientSmoke] MinecraftForge client events heard:%s", census);
 				}
 				ForbricLog.info("[Forbric/ClientSmoke] clean disconnect observed; stopping client");
 				invokeNoArg(minecraft, "stop");
@@ -206,6 +211,17 @@ public final class KernelClientSmoke {
 
 	/** LoggingIn, LoggingOut as MinecraftForge listeners saw them. */
 	private static final int[] forgeLogins = new int[2];
+	/** MinecraftForge client events a smoke run produces on its own, each heard by a listener as a mod's would be. */
+	private static final String[][] FORGE_CLIENT_CENSUS = {
+			{"RenderFog", "net.minecraftforge.client.event.ViewportEvent$RenderFog"},
+			{"FogColor", "net.minecraftforge.client.event.ViewportEvent$ComputeFogColor"},
+			{"FovModifier", "net.minecraftforge.client.event.ComputeFovModifierEvent"},
+			{"ScreenRenderPre", "net.minecraftforge.client.event.ScreenEvent$Render$Pre"},
+			{"ScreenRenderPost", "net.minecraftforge.client.event.ScreenEvent$Render$Post"},
+			{"SystemMessage", "net.minecraftforge.client.event.SystemMessageReceivedEvent"},
+			{"TextureStitched", "net.minecraftforge.client.event.TextureStitchEvent$Post"},
+			{"ModelsBaked", "net.minecraftforge.client.event.ModelEvent$BakingCompleted"}};
+	private static final java.util.Map<String, Integer> forgeHeard = new java.util.concurrent.ConcurrentHashMap<>();
 	private static boolean connectionProbesArmed;
 
 	/**
@@ -229,6 +245,9 @@ public final class KernelClientSmoke {
 				}
 			};
 			String forgeNet = "net.minecraftforge.client.event.ClientPlayerNetworkEvent$";
+			for (String[] heard : FORGE_CLIENT_CENSUS) {
+				forgeListen(cl, heard[1], e -> forgeHeard.merge(heard[0], 1, Integer::sum));
+			}
 			forgeListen(cl, forgeNet + "LoggingIn", e -> forgeLogins[0]++);
 			forgeListen(cl, forgeNet + "LoggingOut", e -> forgeLogins[1]++);
 			forgeListen(cl, net.forbric.api.ForeignType.CLIENT_COMMANDS_EVENT.binary(net.forbric.api.Ecosystem.FORGE),

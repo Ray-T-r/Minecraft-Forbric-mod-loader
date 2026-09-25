@@ -215,6 +215,10 @@ dependencies {
 	// javac's need to READ the class files, which is all this is for, so the pin is about reproducibility.
 	runtimeCompileOnly 'com.google.guava:guava:33.6.0-jre'
 
+	// JOML, GAME side only, on the same terms: fog data carries its colour as a Vector4f, and the MinecraftForge fog
+	// event KernelGameClientEvents posts takes it. Pinned to the version Minecraft 26.2 lists.
+	runtimeCompileOnly('org.joml:joml:1.10.8') { transitive = false }
+
 	testImplementation "org.junit.jupiter:junit-jupiter:${project.junit_version}"
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

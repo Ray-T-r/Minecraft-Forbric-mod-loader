@@ -256,6 +256,23 @@ public final class KernelRuntimeClasses {
 				new Call("installExperienceDrop", void.class, Object.class),
 				new Call("installExplosionDetonate", void.class, Object.class),
 				new Call("installBrewingRecipes", void.class, Object.class))));
+		// Chat, input, fog, FOV, overlays, boss bar and screen drawing for MinecraftForge mods; client-only.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installChatReceived", void.class, Object.class),
+				new Call("installChatSend", void.class, Object.class),
+				new Call("installKey", void.class, Object.class),
+				new Call("installMouseButtonPre", void.class, Object.class),
+				new Call("installInteractionKey", void.class, Object.class),
+				new Call("installRenderFog", void.class, Object.class),
+				new Call("installFogColor", void.class, Object.class),
+				new Call("installFovModifier", void.class, Object.class),
+				new Call("installBlockOverlay", void.class, Object.class),
+				new Call("installBossEventProgress", void.class, Object.class),
+				new Call("installScreenRenderPre", void.class, Object.class),
+				new Call("installScreenRenderPost", void.class, Object.class))));
+		// An atlas stitched and the models baked, on NeoForge's mod bus, for MinecraftForge mods; client-only.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientResourceEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("install", void.class, Object.class))));
 		// The rest of the world and entity events the merged game posts only NeoForge's version of (MinecraftForge side).
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameWorldEvents", new Entry(Origin.COMPILED, List.of(
 				new Call("installChunkLoad", void.class, Object.class),

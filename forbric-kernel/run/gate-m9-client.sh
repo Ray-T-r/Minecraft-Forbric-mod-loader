@@ -219,7 +219,7 @@ check_absent "no mod failed a phase"  "failed during (construct|IMC enqueue|IMC 
 # The client half of the Neo->Forge bridge inventory. This one bridge carries every MinecraftForge mod's client
 # reload listeners -- GeckoLib's whole model and animation cache hangs off it -- and it used to be reported only
 # by an unasserted "installed the ... bridge" line.
-check "the client-side bridge pass is complete" "all 1 CLIENT_MOD_BUS bridge\(s\) installed" "$LOG"
+check "the client-side bridge pass is complete" "all 3 CLIENT_MOD_BUS bridge\(s\) installed" "$LOG"
 # By "complete", not by count -- see gate-m4 for why. The client ticks are their own pass because they name
 # NeoForge's client event package, which a dedicated server must never resolve.
 check "the game-bus bridge pass is complete too" "EventMux\] all [0-9][0-9]* GAME_BUS bridge\(s\) installed"      "$LOG"
@@ -515,6 +515,11 @@ check_absent "the screen did not throw" "the unified Mods screen could not be op
 # in the tree the game runs.
 check "MinecraftForge hears the client join and leave" \
   "ClientSmoke\] MinecraftForge connection events: LoggingIn [1-9][0-9]*, LoggingOut [1-9]" "$LOG"
+# Chat, fog, field of view and screen drawing, and the atlas and model reload, reach MinecraftForge listeners
+# (KernelGameClientEvents, KernelGameClientResourceEvents): each is produced by the smoke run itself.
+for heard in RenderFog FogColor FovModifier ScreenRenderPre ScreenRenderPost SystemMessage TextureStitched ModelsBaked; do
+  check "MinecraftForge hears $heard" "ClientSmoke\] MinecraftForge client events heard:.* $heard=[1-9]" "$LOG"
+done
 check "both families' client commands are in the game's command tree" \
   "ClientSmoke\] client command tree after joining: forge=true neo=true" "$LOG"
 # NeoForge's ScreenEvent.Opening, judged by a NeoForge mod's own answer: Controlling swaps vanilla's key binds screen
