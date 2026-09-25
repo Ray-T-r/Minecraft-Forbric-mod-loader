@@ -376,6 +376,8 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelWrapOperations", new Entry(Origin.COMPILED, List.of()));
 		// Asked by the merged Fluid.getFluidType() (ForeignFluidTypeInjector) before NeoForge's throwing lookup.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidTypes", new Entry(Origin.COMPILED, List.of()));
+		// Called from NeoForge's ParticleEngine constructor after its group event (ParticleGroupsInjector).
+		CLASSES.put("net.forbric.kernel.runtime.KernelParticleGroups", new Entry(Origin.COMPILED, List.of()));
 		// Both ecosystems collect mod entity attributes into a map of their own and the merge kept only NeoForge's
 		// reader in DefaultAttributes, so a traditional MinecraftForge mod's entities had no attributes at all.
 		// attributesView() is called from a REWRITTEN CALL SITE and so carries the descriptor that site had.
