@@ -237,6 +237,10 @@ public final class DeadEventAudit {
 		map.put("net/minecraftforge/event/entity/living/ShieldBlockEvent", GameEventBridge.SHIELD_BLOCK);
 		map.put("net/minecraftforge/event/entity/living/LivingKnockBackEvent", GameEventBridge.LIVING_KNOCKBACK);
 		map.put("net/minecraftforge/event/entity/living/LivingFallEvent", GameEventBridge.LIVING_FALL);
+		map.put("net/minecraftforge/event/entity/player/PlayerEvent$Clone", GameEventBridge.PLAYER_CLONE);
+		map.put("net/minecraftforge/event/entity/living/LivingExperienceDropEvent", GameEventBridge.EXPERIENCE_DROP);
+		map.put("net/minecraftforge/event/level/ExplosionEvent$Detonate", GameEventBridge.EXPLOSION_DETONATE);
+		map.put("net/minecraftforge/event/brewing/BrewingRecipeRegisterEvent", GameEventBridge.BREWING_RECIPES);
 		map.put("net/minecraftforge/event/entity/EntityJoinLevelEvent", GameEventBridge.ENTITY_JOIN_LEVEL);
 		map.put("net/minecraftforge/event/level/BlockEvent$BreakEvent", GameEventBridge.BLOCK_BREAK);
 		map.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$RightClickBlock",

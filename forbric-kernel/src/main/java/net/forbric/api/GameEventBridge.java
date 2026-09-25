@@ -95,6 +95,17 @@ public enum GameEventBridge {
 			"a MinecraftForge mod that cancels or changes knockback has no effect"),
 	LIVING_FALL(Pass.GAME_BUS, "LivingFallEvent",
 			"a MinecraftForge mod that cancels or changes fall damage does it for horses and llamas only"),
+	PLAYER_CLONE(Pass.GAME_BUS, "PlayerEvent.Clone",
+			"a MinecraftForge mod never copies its data to the respawned player, so what it kept for a dead player "
+					+ "— backpacks, capabilities, effects — is lost"),
+	EXPERIENCE_DROP(Pass.GAME_BUS, "LivingExperienceDropEvent",
+			"a MinecraftForge mod cannot cancel or change dropped experience, so a grave mod that keeps it returns "
+					+ "it twice"),
+	EXPLOSION_DETONATE(Pass.GAME_BUS, "ExplosionEvent.Detonate",
+			"a MinecraftForge mod cannot spare blocks or entities from an explosion, so protected blocks — graves — "
+					+ "are blown up"),
+	BREWING_RECIPES(Pass.GAME_BUS, "BrewingRecipeRegisterEvent",
+			"a MinecraftForge mod's brewing recipes are never registered, so its potions cannot be brewed"),
 	LIVING_DROPS(Pass.GAME_BUS, "LivingDropsEvent",
 			"a MinecraftForge mod that adds, removes or suppresses mob drops has no effect"),
 	ENTITY_JOIN_LEVEL(Pass.GAME_BUS, "EntityJoinLevelEvent",

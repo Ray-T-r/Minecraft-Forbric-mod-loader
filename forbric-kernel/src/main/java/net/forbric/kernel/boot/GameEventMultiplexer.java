@@ -122,6 +122,17 @@ public final class GameEventMultiplexer {
 					() -> damageBridge(cl, "installKnockBack").invoke(null, neoBus));
 			install(GameEventBridge.LIVING_FALL,
 					() -> damageBridge(cl, "installFall").invoke(null, neoBus));
+			// What a player keeps: a respawn copy (backpacks kept by a mod), the experience a death drops, the blocks
+			// an explosion spares, and a mod's brewing recipes. Each merged site posts NeoForge's event and reads it
+			// back, and none of MinecraftForge's hooks is called.
+			install(GameEventBridge.PLAYER_CLONE,
+					() -> serverBridge(cl, "installPlayerClone").invoke(null, neoBus));
+			install(GameEventBridge.EXPERIENCE_DROP,
+					() -> serverBridge(cl, "installExperienceDrop").invoke(null, neoBus));
+			install(GameEventBridge.EXPLOSION_DETONATE,
+					() -> serverBridge(cl, "installExplosionDetonate").invoke(null, neoBus));
+			install(GameEventBridge.BREWING_RECIPES,
+					() -> serverBridge(cl, "installBrewingRecipes").invoke(null, neoBus));
 			install(GameEventBridge.ENTITY_JOIN_LEVEL,
 					() -> entityBridge(cl, "installEntityJoinLevel").invoke(null, neoBus));
 			// The level lifecycle. Every producer in the merged base is NeoForge's (Minecraft x3 and
@@ -327,6 +338,12 @@ public final class GameEventMultiplexer {
 	/** One entry point on the game-side cancellable-entity bridge. Complete literal, for the reason above. */
 	private static Method entityBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameEntityEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side server-events bridge. Complete literal, for the reason above. */
+	private static Method serverBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameServerEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 
