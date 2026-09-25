@@ -239,10 +239,12 @@ check "ModelManagerMixin trimmed, not pinned" "GuestInjectorPruner\] pruned 2 in
 check_absent "block models still parse"       "JSON data was null or empty"                "$LOG"
 # G1: an injector bound by explicit descriptor to a merge-added DELEGATING STUB (NeoForge moved the body of
 # SimpleContainer.setItem(int,ItemStack) into a 3-arg overload) is rebound to the delegate, so fabric-transfer's
-# setChanged suppression applies again instead of reading PARTIAL. RED with M9_EXTRA_JVM=-Dforbric.mixinRetarget=off
-# (the two 'retargeted' lines are absent and the 'applies only partially' lines return).
-check "fabric-transfer's SimpleContainer suppression rebound" "Forbric/Mixin\] retargeted guest mixin fabric-transfer-api-v1 .*SimpleContainerMixin .*setItem\(ILnet/minecraft/world/item/ItemStack;\)V → setItem\(ILnet/minecraft/world/item/ItemStack;Z\)V.*PARTIAL→FIT" "$LOG"
-check "…and its BaseContainerBlockEntity twin"      "Forbric/Mixin\] retargeted guest mixin fabric-transfer-api-v1 .*BaseContainerBlockEntityMixin .*PARTIAL→FIT" "$LOG"
+# setChanged suppression applies again instead of reading PARTIAL. MixinStubRebind makes the move (setItem is a
+# carrier-stubs.txt row, and MixinFit judges it where it lands); with it off, MixinRetarget's renamed-body rule makes
+# the same one. RED with M9_EXTRA_JVM="-Dforbric.mixinRetarget=off -Dforbric.mixinStubRebind=off" (no move line, and
+# the 'applies only partially' lines return).
+check "fabric-transfer's SimpleContainer suppression rebound" "Forbric/Mixin\] (retargeted guest mixin fabric-transfer-api-v1 .*SimpleContainerMixin .*setItem\(ILnet/minecraft/world/item/ItemStack;\)V → setItem\(ILnet/minecraft/world/item/ItemStack;Z\)V.*PARTIAL→FIT|net.fabricmc.fabric.mixin.transfer.SimpleContainerMixin: fabric_redirectChanged now targets net.minecraft.world.SimpleContainer.setItem\(ILnet/minecraft/world/item/ItemStack;Z\)V)" "$LOG"
+check "…and its BaseContainerBlockEntity twin"      "Forbric/Mixin\] (retargeted guest mixin fabric-transfer-api-v1 .*BaseContainerBlockEntityMixin .*PARTIAL→FIT|net.fabricmc.fabric.mixin.transfer.BaseContainerBlockEntityMixin: fabric_redirectSetChanged now targets net.minecraft.world.level.block.entity.BaseContainerBlockEntity.setItem\(ILnet/minecraft/world/item/ItemStack;Z\)V)" "$LOG"
 check_absent "SimpleContainerMixin no longer half-applied" "SimpleContainerMixin applies only partially" "$LOG"
 check_absent "BaseContainerBlockEntityMixin no longer half-applied" "BaseContainerBlockEntityMixin applies only partially" "$LOG"
 # G3: NeoForge's 12-arg Snippet constructor made MixinExtras reject fabric-rendering-v1's 11-arg wrap whole
