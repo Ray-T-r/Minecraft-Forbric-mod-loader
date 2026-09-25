@@ -1,6 +1,8 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.transform;
 
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -36,7 +38,7 @@ public final class ForeignFluidTypeInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.foreignFluidTypes";
 	static final String FLUID = "net.minecraft.world.level.material.Fluid";
 	static final String FLUID_INTERNAL = "net/minecraft/world/level/material/Fluid";
-	static final String TYPE = "net/neoforged/neoforge/fluids/FluidType";
+	static final String TYPE = ForeignType.FLUID_TYPE.internal(Ecosystem.NEOFORGE);
 	static final String RUNTIME = "net/forbric/kernel/runtime/KernelFluidTypes";
 
 	static boolean enabled() {

@@ -190,6 +190,11 @@ public enum ForeignType {
 	/** The static hook class each family's patched game calls to post its events. */
 	EVENT_FACTORY("net.minecraftforge.event.ForgeEventFactory", "net.neoforged.neoforge.event.EventHooks"),
 	/**
+	 * Each family's fluid type: the merged Fluid answers NeoForge's (ForeignFluidTypeInjector gives a fluid without one
+	 * the type its tags imply) and a vanilla fluid is bridged to MinecraftForge's (ForbricMergedBaseCompatTransformer).
+	 */
+	FLUID_TYPE("net.minecraftforge.fluids.FluidType", "net.neoforged.neoforge.fluids.FluidType"),
+	/**
 	 * Each family's multipart-entity part: the Ender Dragon's parts are one or the other, and every consumer in the
 	 * merged game casts to NeoForge's (DragonPartsInjector, and the frame recomputer that follows its rebase).
 	 */
