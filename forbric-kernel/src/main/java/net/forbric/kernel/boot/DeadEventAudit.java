@@ -216,7 +216,10 @@ public final class DeadEventAudit {
 	static final java.util.Set<String> REPAIRED = java.util.Set.of(
 			"net/neoforged/neoforge/event/furnace/FurnaceFuelBurnTimeEvent",
 			"net/minecraftforge/event/entity/living/MobSpawnEvent$FinalizeSpawn",
-			"net/minecraftforge/event/AddPackFindersEvent");
+			"net/minecraftforge/event/AddPackFindersEvent",
+			// ForgeDamageSeamsInjector: no NeoForge event sits where these were, so the pipeline posts them.
+			"net/minecraftforge/event/entity/living/LivingHurtEvent",
+			"net/minecraftforge/event/entity/living/LivingDamageEvent");
 
 	/** Package-private for the same reason as {@link #DEAD}. */
 	static final Map<String, GameEventBridge> BRIDGED = bridged();
@@ -230,6 +233,10 @@ public final class DeadEventAudit {
 				GameEventBridge.PLAYER_LOGGED_OUT);
 		map.put("net/minecraftforge/event/entity/living/LivingDeathEvent", GameEventBridge.LIVING_DEATH);
 		map.put("net/minecraftforge/event/entity/living/LivingDropsEvent", GameEventBridge.LIVING_DROPS);
+		map.put("net/minecraftforge/event/entity/living/LivingAttackEvent", GameEventBridge.LIVING_ATTACK);
+		map.put("net/minecraftforge/event/entity/living/ShieldBlockEvent", GameEventBridge.SHIELD_BLOCK);
+		map.put("net/minecraftforge/event/entity/living/LivingKnockBackEvent", GameEventBridge.LIVING_KNOCKBACK);
+		map.put("net/minecraftforge/event/entity/living/LivingFallEvent", GameEventBridge.LIVING_FALL);
 		map.put("net/minecraftforge/event/entity/EntityJoinLevelEvent", GameEventBridge.ENTITY_JOIN_LEVEL);
 		map.put("net/minecraftforge/event/level/BlockEvent$BreakEvent", GameEventBridge.BLOCK_BREAK);
 		map.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$RightClickBlock",

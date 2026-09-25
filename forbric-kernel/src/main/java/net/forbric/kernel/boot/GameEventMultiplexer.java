@@ -110,6 +110,18 @@ public final class GameEventMultiplexer {
 					() -> entityBridge(cl, "installLivingDeath").invoke(null, neoBus));
 			install(GameEventBridge.LIVING_DROPS,
 					() -> entityBridge(cl, "installLivingDrops").invoke(null, neoBus));
+			// The damage family. Nothing on the merged base calls MinecraftForge's attack, shield or knockback
+			// hooks, and its fall hook only from horses and llamas; NeoForge posts its own event at each of those
+			// positions and reads it back, so these forward at LOWEST with the answer carried back. Hurt and Damage
+			// have no NeoForge event to forward from: ForgeDamageSeamsInjector posts them in the pipeline itself.
+			install(GameEventBridge.LIVING_ATTACK,
+					() -> damageBridge(cl, "installLivingAttack").invoke(null, neoBus));
+			install(GameEventBridge.SHIELD_BLOCK,
+					() -> damageBridge(cl, "installShieldBlock").invoke(null, neoBus));
+			install(GameEventBridge.LIVING_KNOCKBACK,
+					() -> damageBridge(cl, "installKnockBack").invoke(null, neoBus));
+			install(GameEventBridge.LIVING_FALL,
+					() -> damageBridge(cl, "installFall").invoke(null, neoBus));
 			install(GameEventBridge.ENTITY_JOIN_LEVEL,
 					() -> entityBridge(cl, "installEntityJoinLevel").invoke(null, neoBus));
 			// The level lifecycle. Every producer in the merged base is NeoForge's (Minecraft x3 and
@@ -305,6 +317,12 @@ public final class GameEventMultiplexer {
 	/** One entry point on the game-side cancellable-entity bridge. Complete literal, for the reason above. */
 	private static Method entityBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameEntityEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side damage bridge. Complete literal, for the reason above. */
+	private static Method damageBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameDamageEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 

@@ -86,6 +86,15 @@ public enum GameEventBridge {
 			"a MinecraftForge mod that prevents or reacts to a death — graves, keep-inventory, totems — does "
 					+ "nothing at all, and because the event is cancellable its listener runs, decides, and is "
 					+ "ignored, which looks like it works"),
+	LIVING_ATTACK(Pass.GAME_BUS, "LivingAttackEvent",
+			"a MinecraftForge mod that makes an entity immune to an attack or reacts to one — ghost forms, "
+					+ "shields, on-hit perks — does nothing"),
+	SHIELD_BLOCK(Pass.GAME_BUS, "ShieldBlockEvent",
+			"a MinecraftForge mod that changes what a shield blocks, or whether it wears, has no effect"),
+	LIVING_KNOCKBACK(Pass.GAME_BUS, "LivingKnockBackEvent",
+			"a MinecraftForge mod that cancels or changes knockback has no effect"),
+	LIVING_FALL(Pass.GAME_BUS, "LivingFallEvent",
+			"a MinecraftForge mod that cancels or changes fall damage does it for horses and llamas only"),
 	LIVING_DROPS(Pass.GAME_BUS, "LivingDropsEvent",
 			"a MinecraftForge mod that adds, removes or suppresses mob drops has no effect"),
 	ENTITY_JOIN_LEVEL(Pass.GAME_BUS, "EntityJoinLevelEvent",

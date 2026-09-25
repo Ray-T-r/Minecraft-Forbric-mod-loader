@@ -243,6 +243,12 @@ public final class KernelRuntimeClasses {
 				new Call("installLivingDeath", void.class, Object.class),
 				new Call("installLivingDrops", void.class, Object.class),
 				new Call("installEntityJoinLevel", void.class, Object.class))));
+		// MinecraftForge's attack, shield, knockback and fall events off NeoForge's at the same positions.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameDamageEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installLivingAttack", void.class, Object.class),
+				new Call("installShieldBlock", void.class, Object.class),
+				new Call("installKnockBack", void.class, Object.class),
+				new Call("installFall", void.class, Object.class))));
 		// The cancellable BLOCK events, apart from the entity ones because they name NeoForge's block-event
 		// package; a renamed entry point here is a protection mod that stops protecting, silently.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameBlockEvents", new Entry(Origin.COMPILED, List.of(
@@ -378,6 +384,9 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidTypes", new Entry(Origin.COMPILED, List.of()));
 		// Called from NeoForge's ParticleEngine constructor after its group event (ParticleGroupsInjector).
 		CLASSES.put("net.forbric.kernel.runtime.KernelParticleGroups", new Entry(Origin.COMPILED, List.of()));
+		// MinecraftForge's Hurt, Damage and player Attack, from the seams ForgeDamageSeamsInjector writes into the merged
+		// actuallyHurt and Player.hurtServer; Player.<clinit> reports the attack seam in.
+		CLASSES.put("net.forbric.kernel.runtime.KernelLivingDamage", new Entry(Origin.COMPILED, List.of()));
 		// Both ecosystems collect mod entity attributes into a map of their own and the merge kept only NeoForge's
 		// reader in DefaultAttributes, so a traditional MinecraftForge mod's entities had no attributes at all.
 		// attributesView() is called from a REWRITTEN CALL SITE and so carries the descriptor that site had.
