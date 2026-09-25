@@ -192,10 +192,16 @@ filter_noise() { grep -vE 'WARNING: |native-access|Restricted method|--enable-na
 
 _pidfile() { echo "${1:-$KERNEL/run}/.forbric-gate.pid"; }
 
+# The WHOLE tree, depth first. Children only is not a tree: a gate that records a subshell (M24's boot, anything
+# piping a stdin feeder into launch-kernel-server.sh) has the java server two or three levels down, and killing the
+# subshell and its direct children left that server running, re-parented to launchd, still holding the port —
+# measured twice, each time failing every later gate that wanted port 25710 with "Address already in use".
 kill_tree() {
-  local root="$1" pid
+  local root="$1" child
   case "$root" in ''|*[!0-9]*) return 0;; esac
-  for pid in $(pgrep -P "$root" 2>/dev/null) "$root"; do kill -9 "$pid" 2>/dev/null; done
+  kill -STOP "$root" 2>/dev/null   # it cannot spawn a new child while its children are being collected
+  for child in $(pgrep -P "$root" 2>/dev/null); do kill_tree "$child"; done
+  kill -9 "$root" 2>/dev/null
 }
 
 # reap_stale_server <rundir> — clean up a server left running by an INTERRUPTED earlier run of this same gate.
