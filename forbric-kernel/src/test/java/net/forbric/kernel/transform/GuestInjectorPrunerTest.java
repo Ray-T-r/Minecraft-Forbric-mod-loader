@@ -72,7 +72,78 @@ class GuestInjectorPrunerTest {
 	@AfterEach
 	void reset() {
 		System.clearProperty(GuestInjectorPruner.PROPERTY);
+		System.clearProperty(GuestInjectorPruner.FABRIC_TOOLTIP_BRIDGE);
+		System.clearProperty("forbric.neoTooltipAppenders");
 		net.forbric.api.CompatibilityFindings.reset();
+	}
+
+	private static final String ITEM_STACK_ENTRY = "net/fabricmc/fabric/mixin/item/ItemStackMixin.class";
+	private static final Set<String> TOOLTIP_INJECTORS = Set.of("preAppendComponentTooltip", "preShouldDisplay",
+			"preAttributeModifiers", "postTooltipsAdvanced", "postTooltipsNonAdvanced");
+
+	private static byte[] realItemStackMixin() throws Exception {
+		Path fabricApi = fabricApiJar();
+		assumeTrue(fabricApi != null, "fabric-api jar absent from run/client-kernel/mods");
+		byte[] bytes = readFromNestedJar(fabricApi, "fabric-item-api-v1", ITEM_STACK_ENTRY);
+		assumeTrue(bytes != null, "ItemStackMixin absent from the nested fabric-item-api-v1 module");
+		return bytes;
+	}
+
+	/**
+	 * fabric-item-api's five tooltip injectors go together — the kernel draws Fabric's providers from NeoForge's
+	 * appenders — and nothing is reported for them; the custom-damage hook and the shared helper stay.
+	 */
+	@Test
+	void fabricItemApisTooltipInjectorsGoTogetherAndNothingIsReported() throws Exception {
+		net.forbric.api.CompatibilityFindings.reset();
+		byte[] original = realItemStackMixin();
+		ClassNode before = read(original);
+		for (String name : TOOLTIP_INJECTORS) assertNotNull(method(before, name), "premise: the real mixin carries " + name);
+		byte[] pruned = new GuestInjectorPruner().transform(GuestInjectorPruner.ITEM_STACK_MIXIN, original, null);
+		assertNotSame(original, pruned);
+		ClassNode after = read(pruned);
+		for (String name : TOOLTIP_INJECTORS) assertEquals(null, method(after, name), name + " must be pruned");
+		assertNotNull(method(after, "hookDamage"), "the custom damage handler hook stays");
+		assertTrue(isInjector(method(after, "hookDamage")));
+		assertNotNull(method(after, "preAppendTooltip"), "the unique helper stays (nothing calls it now)");
+		assertEquals(before.methods.size() - TOOLTIP_INJECTORS.size(), after.methods.size());
+		assertTrue(GuestInjectorPruner.fabricTooltipInjectorsPruned());
+		assertTrue(net.forbric.api.CompatibilityFindings.all().isEmpty(), "the bridge does their job: "
+				+ net.forbric.api.CompatibilityFindings.all());
+		assertSame(pruned, new GuestInjectorPruner().transform(GuestInjectorPruner.ITEM_STACK_MIXIN, pruned, null),
+				"a second pass changes nothing");
+	}
+
+	@Test
+	void fabricItemApisTooltipInjectorsStayWhileTheBridgeIsOff() throws Exception {
+		byte[] original = realItemStackMixin();
+		for (String off : List.of(GuestInjectorPruner.FABRIC_TOOLTIP_BRIDGE, "forbric.neoTooltipAppenders")) {
+			System.setProperty(off, "off");
+			assertSame(original, new GuestInjectorPruner().transform(GuestInjectorPruner.ITEM_STACK_MIXIN, original, null), off);
+			System.clearProperty(off);
+		}
+	}
+
+	/** {@code addDetailsToTooltip} is also the prefix of NeoForge's two renamed bodies; the match is the whole selector. */
+	@Test
+	void aTooltipInjectorAlreadyMovedOrWithoutItsSharedIndexIsNotGuessed() throws Exception {
+		ClassNode moved = read(realItemStackMixin());
+		MethodNode first = method(moved, "preShouldDisplay");
+		for (AnnotationNode a : first.visibleAnnotations) {
+			if (!GuestInjectorPruner.INJECTOR_DESCS.contains(a.desc)) continue;
+			for (int i = 0; i + 1 < a.values.size(); i += 2) {
+				if ("method".equals(a.values.get(i))) a.values.set(i + 1, List.of("addDetailsToTooltipComponents"));
+			}
+		}
+		byte[] drifted = write(moved);
+		assertSame(drifted, new GuestInjectorPruner().transform(GuestInjectorPruner.ITEM_STACK_MIXIN, drifted, null));
+
+		ClassNode unshared = read(realItemStackMixin());
+		MethodNode nonAdvanced = method(unshared, "postTooltipsNonAdvanced");
+		nonAdvanced.invisibleParameterAnnotations = null;
+		nonAdvanced.visibleParameterAnnotations = null;
+		byte[] drifted2 = write(unshared);
+		assertSame(drifted2, new GuestInjectorPruner().transform(GuestInjectorPruner.ITEM_STACK_MIXIN, drifted2, null));
 	}
 
 	/**

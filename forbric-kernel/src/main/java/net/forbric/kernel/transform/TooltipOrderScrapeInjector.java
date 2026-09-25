@@ -47,8 +47,8 @@ import net.forbric.kernel.util.ForbricLog;
  * its marker — into the head of {@code addDetailsToTooltip} as straight-line {@code GETSTATIC; POP} pairs.
  * Verifier-trivial, no frames, dead to the JIT, and derived from the merge's own bytes rather than a hand-typed
  * list, so a NeoForge rename of the private body stands the repair down loudly instead of serving a stale
- * order. The ordering FEATURE itself stays NeoForge's ({@code ItemTooltipHandler} orders tooltips on this base;
- * fabric's {@code ItemStackMixin} anchors on calls that are gone), which the catalog says on fabric-item-api-v1.
+ * order. The ordering FEATURE itself is NeoForge's ({@code ItemTooltipHandler} orders tooltips on this base), and
+ * Fabric's providers are drawn inside it by {@code KernelNeoTooltips}; Fabric's anchors are the order scraped here.
  * {@code -Dforbric.tooltipOrderScrape=off}.
  */
 public final class TooltipOrderScrapeInjector implements ClassTransformer {
@@ -138,10 +138,10 @@ public final class TooltipOrderScrapeInjector implements ClassTransformer {
 				+ "NeoForge moved the body to %s and fabric-item-api's tooltip-order registry scrapes the original name",
 				order.size(), METHOD, RENAMED);
 		// No claim about the ORDERING is made here, and that is the point of the comment. This repair only makes
-		// the registry loadable; whether the entries it records are APPLIED depends on whether fabric-item-api's
-		// own ItemStackMixin binds, which is decided later and elsewhere (MixinRetarget's R3 puts it on the
-		// renamed body). Asserting "recorded but not applied" from here outlived the truth by exactly as long as
-		// it took to fix the binding — the row went on saying it after the entries had started applying.
+		// the registry loadable; whether the entries it records are DRAWN is decided elsewhere. MixinRetarget's R3
+		// once put fabric-item-api's ItemStackMixin on the renamed body and this was believed to draw them — but
+		// nothing calls that body, so they were drawn nowhere. They are drawn from NeoForge's appenders now
+		// (KernelNeoTooltips), with the mixin's tooltip injectors pruned (GuestInjectorPruner).
 
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);

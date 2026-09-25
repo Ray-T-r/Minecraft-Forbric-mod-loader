@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"forbrictooltipsfabric","version":"1.0.0","name":"Fabric tooltip providers for gate M51","environment":"*","entrypoints":{"main":["forbric.tooltipsfabric.FabricTooltips"]},"depends":{"fabricloader":"*","fabric-item-api-v1":"*","fabric-lifecycle-events-v1":"*"}}

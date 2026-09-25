@@ -195,6 +195,7 @@ public final class KernelClientSmoke {
 		if (ready) screenshotIfDue(minecraft);
 		if (ready) keyBindsScreenIfDue(minecraft);
 		if (ready) modsScreenIfDue(minecraft);
+		if (ready && !tooltipProbed) probeTooltip(level, player);
 		if (ready && !probed && worldTicks >= Integer.getInteger(PROBE_TICKS, 160)) {
 			probed = true;
 			probeBlocks(level);
@@ -1558,6 +1559,51 @@ public final class KernelClientSmoke {
 	 * have no "neighbouring state" to hide an off-by-one in, so a server that gives the player one item and a client
 	 * that reads back another is the plainest registry-id mismatch there is.
 	 */
+	private static boolean tooltipProbed;
+
+	/**
+	 * One advanced tooltip, drawn the way the inventory screen draws it, for a damaged iron sword carrying lore: its
+	 * lore, attribute and durability lines come from NeoForge's appenders, with every installed mod's tooltip listeners
+	 * in the path. Keys are read from the components, not their text, so the client's language does not matter.
+	 */
+	private static void probeTooltip(Object level, Object player) {
+		tooltipProbed = true;
+		try {
+			ClassLoader cl = level.getClass().getClassLoader();
+			Class<?> stackCls = Class.forName("net.minecraft.world.item.ItemStack", false, cl);
+			Class<?> componentCls = Class.forName("net.minecraft.network.chat.Component", false, cl);
+			Class<?> typeCls = Class.forName("net.minecraft.core.component.DataComponentType", false, cl);
+			Object sword = Class.forName("net.minecraft.world.item.Items", false, cl).getField("IRON_SWORD").get(null);
+			Object stack = stackCls.getConstructor(Class.forName("net.minecraft.world.level.ItemLike", false, cl)).newInstance(sword);
+			Class<?> components = Class.forName("net.minecraft.core.component.DataComponents", false, cl);
+			Method set = stackCls.getMethod("set", typeCls, Object.class);
+			set.invoke(stack, components.getField("DAMAGE").get(null), 5);
+			Object line = componentCls.getMethod("literal", String.class).invoke(null, "forbric-smoke-lore");
+			Object lore = Class.forName("net.minecraft.world.item.component.ItemLore", false, cl).getConstructor(java.util.List.class)
+					.newInstance(java.util.List.of(line));
+			set.invoke(stack, components.getField("LORE").get(null), lore);
+			Class<?> contextCls = Class.forName("net.minecraft.world.item.Item$TooltipContext", false, cl);
+			Object context = contextCls.getMethod("of", Class.forName("net.minecraft.world.level.Level", false, cl)).invoke(null, level);
+			Class<?> flagCls = Class.forName("net.minecraft.world.item.TooltipFlag", false, cl);
+			Object advanced = flagCls.getField("ADVANCED").get(null);
+			java.util.List<?> lines = (java.util.List<?>) stackCls.getMethod("getTooltipLines", contextCls,
+					Class.forName("net.minecraft.world.entity.player.Player", false, cl), flagCls).invoke(stack, context, player, advanced);
+			boolean loreShown = false, durability = false, attributes = false;
+			for (Object drawn : lines) {
+				if (String.valueOf(componentCls.getMethod("getString").invoke(drawn)).contains("forbric-smoke-lore")) loreShown = true;
+				Object contents = componentCls.getMethod("getContents").invoke(drawn);
+				if (!contents.getClass().getSimpleName().equals("TranslatableContents")) continue;
+				String key = String.valueOf(contents.getClass().getMethod("getKey").invoke(contents));
+				durability |= key.equals("item.durability");
+				attributes |= key.startsWith("item.modifiers.");
+			}
+			ForbricLog.info("[Forbric/ClientSmoke] advanced tooltip of a damaged iron sword with lore: %d line(s), lore %s, "
+					+ "attributes %s, durability %s", lines.size(), loreShown, attributes, durability);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/ClientSmoke] tooltip probe failed", t instanceof java.lang.reflect.InvocationTargetException i ? i.getCause() : t);
+		}
+	}
+
 	private static void probeHotbar(Object level) {
 		Object player = drillPlayer != null ? drillPlayer : lastPlayer;
 		if (player == null) return;

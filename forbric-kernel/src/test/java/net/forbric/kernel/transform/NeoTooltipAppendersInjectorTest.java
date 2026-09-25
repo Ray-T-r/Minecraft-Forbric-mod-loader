@@ -23,7 +23,38 @@ class NeoTooltipAppendersInjectorTest {
 	private static final Path NEO_RT = STAGED.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final String HANDLER = "net/neoforged/neoforge/common/tooltip/ItemTooltipHandler";
 
-	@AfterEach void reset() { System.clearProperty(KernelLifecycle.NEO_TOOLTIP_APPENDERS); }
+	@AfterEach void reset() {
+		System.clearProperty(KernelLifecycle.NEO_TOOLTIP_APPENDERS);
+		System.clearProperty(GuestInjectorPruner.FABRIC_TOOLTIP_BRIDGE);
+	}
+
+	/** Each component appender goes into the middle list through KernelNeoTooltips.around, with its own type. */
+	@Test void eachComponentAppenderIsListedThroughAround() throws Exception {
+		byte[] out = new NeoTooltipAppendersInjector().transform(NeoTooltipAppendersInjector.HANDLER,
+				NativeCoremodParityTest.read(NEO_RT, HANDLER), null);
+		ClassNode handler = node(out);
+		List<MethodInsnNode> around = calls(handler, NeoTooltipAppendersInjector.RUNTIME, "around");
+		assertEquals(1, around.size());
+		assertEquals(NeoTooltipAppendersInjector.AROUND_DESC, around.get(0).desc);
+		AbstractInsnNode key = around.get(0).getPrevious();
+		AbstractInsnNode cast = key.getPrevious();
+		AbstractInsnNode add = around.get(0).getNext();
+		assertTrue(cast instanceof TypeInsnNode t && t.getOpcode() == Opcodes.CHECKCAST && t.desc.equals(NeoTooltipAppendersInjector.APPENDER));
+		assertTrue(key instanceof VarInsnNode v && v.getOpcode() == Opcodes.ALOAD && v.var == 4, "the loop's component type");
+		assertTrue(add instanceof MethodInsnNode m && m.name.equals("add"), "straight into MIDDLE_APPENDERS.add");
+		MethodNode method = handler.methods.stream().filter(m -> m.name.equals("addDataComponentAppenders")).findFirst().orElseThrow();
+		new Analyzer<>(new BasicVerifier()).analyze(HANDLER, method);
+		assertTrue(NeoTooltipAppendersInjector.aroundSpliced());
+		assertSame(out, new NeoTooltipAppendersInjector().transform(NeoTooltipAppendersInjector.HANDLER, out, null));
+	}
+
+	@Test void theBridgeSwitchLeavesOnlyTheDelivery() throws Exception {
+		System.setProperty(GuestInjectorPruner.FABRIC_TOOLTIP_BRIDGE, "off");
+		ClassNode handler = node(new NeoTooltipAppendersInjector().transform(NeoTooltipAppendersInjector.HANDLER,
+				NativeCoremodParityTest.read(NEO_RT, HANDLER), null));
+		assertTrue(calls(handler, NeoTooltipAppendersInjector.RUNTIME, "around").isEmpty());
+		assertEquals(1, calls(handler, NeoTooltipAppendersInjector.RUNTIME, "postRegisterAppenders").size());
+	}
 
 	@Test void initPostsItsOwnEventThroughTheKernelsDelivery() throws Exception {
 		byte[] original = NativeCoremodParityTest.read(NEO_RT, HANDLER);

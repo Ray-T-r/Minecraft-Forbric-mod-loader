@@ -83,7 +83,10 @@ public final class FabricApiModuleLossAudit {
 					() -> true),
 			// The CLASS, not the package: lithostitched names DynamicRegistries in the same package, which works.
 			new Loss("fabric-registry-sync-v0", "net/fabricmc/fabric/api/event/registry/DynamicRegistrySetupCallback", null,
-					"DynamicRegistrySetupCallback never fires (RegistryDataLoaderMixin is pinned)", () -> true));
+					"DynamicRegistrySetupCallback never fires (RegistryDataLoaderMixin is pinned)", () -> true),
+			new Loss("fabric-item-api-v1", "net/fabricmc/fabric/api/item/v1/ItemComponentTooltipProviderRegistry", null,
+					"a component tooltip provider is drawn nowhere in normal tooltips and bunched above the item id in advanced ones",
+					() -> !GuestInjectorPruner.enabled() || !GuestInjectorPruner.fabricTooltipBridgeOn()));
 
 	private static final byte[][] NEEDLES = needles();
 	private static final Map<Loss, Set<String>> USERS = new LinkedHashMap<>();

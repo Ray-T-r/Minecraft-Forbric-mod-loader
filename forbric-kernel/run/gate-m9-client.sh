@@ -608,20 +608,23 @@ check "and it says which member differs" \
   "Forbric/PortAudit\].*registerConfig.*Lnet/neoforged/fml/ModContainer;" "$LOG"
 check_absent "nothing actually failed on that API" "NoSuchMethodError.*ConfigTracker" "$LOG"
 
-step "a Fabric mod's tooltip providers reach the body that runs (must PASS)"
-# NeoForge's patch moved vanilla's ItemStack.addDetailsToTooltip body into a private
-# addDetailsToTooltipComponents with the IDENTICAL descriptor and made the original a dispatcher over its own
-# ItemTooltipHandler. fabric-item-api's ItemStackMixin has five injections into that method — two @ModifyArgs,
-# two @Injects and a @ModifyExpressionValue sharing one LocalIntRef — and every one of their anchors ended up in
-# the renamed method, so a Fabric mod registering a tooltip provider had its entry recorded and never applied.
-#
-# The identical descriptor is what makes the rewrite safe: the handlers' parameters, their CallbackInfo and every
-# @Local they capture stay exactly as valid. RED with M9_EXTRA_JVM=-Dforbric.mixinRetarget=off: these two go red,
-# and so do this gate's other retarget checks — that switch turns off every rule, not just this one.
-check "the mixin is retargeted onto the renamed body" \
-  "Forbric/Mixin\] retargeted guest mixin fabric-item-api-v1.*addDetailsToTooltip.*addDetailsToTooltipComponents" "$LOG"
-check "and almost every anchor resolves afterwards" \
-  "Forbric/Mixin\] guest mixin fabric-item-api-v1.*still applies only partially.*1[0-9]/1[0-9] anchors resolve" "$LOG"
+step "item tooltips have their component lines and Fabric's providers are drawn among them (must PASS)"
+# The merged ItemStack.addDetailsToTooltip is NeoForge's dispatcher over the appender lists ItemTooltipHandler.init
+# builds; the kernel's copy of GameData.postRegisterEvents' tail left init out, so tooltips showed only the name.
+# fabric-item-api's ItemStackMixin threads five injectors through vanilla's single body: R3 once moved three of them
+# into NeoForge's renamed addDetailsToTooltipComponents — which nothing calls — and one onto the tail, where it drew
+# every Fabric line at once above the id in F3+H. The five are pruned and the kernel draws Fabric's providers from
+# NeoForge's appenders (gate M51 renders them). RED with M9_EXTRA_JVM=-Dforbric.fabricTooltipBridge=off.
+check "NeoForge's tooltip appenders are built" \
+  "Tooltips\] NeoForge tooltip appenders built: 32 vanilla component appender" "$LOG"
+check "fabric-item-api's tooltip injectors are pruned" \
+  "GuestInjectorPruner\] pruned 5 injector\(s\) from net.fabricmc.fabric.mixin.item.ItemStackMixin" "$LOG"
+check "and Fabric's providers are drawn from NeoForge's appenders" \
+  "Tooltips\] fabric-item-api's component tooltip providers are drawn from NeoForge's appenders" "$LOG"
+check "a tooltip drawn in the world has its lore, attribute and durability lines" \
+  "ClientSmoke\] advanced tooltip of a damaged iron sword with lore: [0-9]+ line\(s\), lore true, attributes true, durability true" "$LOG"
+check_absent "the mixin is no longer retargeted into a body nothing calls" \
+  "retargeted guest mixin fabric-item-api-v1.*ItemStackMixin" "$LOG"
 check_absent "the stale 'recorded but not applied' claim is gone" \
   "recorded but not applied" "$LOG"
 
