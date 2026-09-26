@@ -67,20 +67,25 @@ public final class KernelClientPackSource {
 	 * keeps them applied and {@code hidden} is what keeps them out of the screen; neither substitutes for the
 	 * other. A mod's own assets are not a resource pack the player chose to add, and they were appearing as
 	 * seventy rows nobody could turn off.
+	 *
+	 * <p>{@code vanillaReader} is the boot side's answer to which reader this jar's own loader would have used;
+	 * see {@code KernelClientPacks.readsItsMetadataTheVanillaWay}.
 	 */
-	public static Object buildPack(String id, Path jar, boolean asChild) {
+	public static Object buildPack(String id, Path jar, boolean asChild, boolean vanillaReader) {
 		Component title = Component.literal(id);
 		Pack.ResourcesSupplier resources = new FilePackResources.FileResourcesSupplier(jar);
 		PackLocationInfo location =
 				new PackLocationInfo(id, title, PackSource.BUILT_IN, Optional.empty());
 		PackSelectionConfig selection = new PackSelectionConfig(!asChild, Pack.Position.TOP, !asChild);
 
-		// NeoForge's own reader first: it opens the jar's real pack.mcmeta and builds the Metadata from it, which
-		// is where a pack's OVERLAYS live. The kernel synthesised that record with an empty overlay list, so a
-		// Forge-family mod declaring overlays — the mechanism a mod uses to ship one set of assets per game
-		// version — had them dropped without a word. Their reader forces COMPATIBLE exactly as the synthesis
-		// below does, so nothing is lost on that axis, and it fills in the feature flags too.
-		Pack pack = readWithTheJarsOwnMeta(location, resources, selection);
+		// Vanilla's reader for a jar NeoForge does not own: it is the one MinecraftForge and fabric-api build their
+		// mods' packs with, and so the one their mods hook (fusion mounts its overrides folder as an overlay there).
+		Pack pack = vanillaReader ? readThroughVanilla(location, resources, selection) : null;
+		// NeoForge's own reader otherwise: it opens the jar's real pack.mcmeta and builds the Metadata from it,
+		// which is where a pack's OVERLAYS live. The kernel synthesised that record with an empty overlay list, so
+		// a Forge-family mod declaring overlays — the mechanism a mod uses to ship one set of assets per game
+		// version — had them dropped without a word. It fills in the feature flags too.
+		if (pack == null) pack = readWithTheJarsOwnMeta(location, resources, selection);
 		if (pack == null) {
 			// Synthesised: worse but not broken — the mod keeps its assets and loses only its overlays.
 			Pack.Metadata metadata = new Pack.Metadata(
@@ -175,6 +180,38 @@ public final class KernelClientPackSource {
 				return describedAs;
 			}
 		});
+	}
+
+	/**
+	 * A {@code Pack} whose metadata vanilla's {@code Pack.readPackMetadata} read, or null when it read none.
+	 *
+	 * <p>Called for the hooks, not for the parse: the parse is the same one NeoForge's reader does, but a guest
+	 * {@code @ModifyArg} on the {@code Pack$Metadata} constructor INSIDE {@code readPackMetadata} only runs when
+	 * that method does. fusion's {@code PackMixin} adds a pack's {@code fusion-overrides} folder to the overlay
+	 * list there, which is how Rechiseled Anti-Blocks' connected-texture models are mounted at all.
+	 *
+	 * <p>What it returns is rebuilt as {@code COMPATIBLE}, keeping everything else it read — the overlays a hook
+	 * added included. {@code readPackMetadata} judges compatibility against this game's pack format, and a mod
+	 * jar's {@code pack_format} is routinely a version or two behind; serving mod assets forced compatible is the
+	 * kernel's policy for these packs ({@code KernelClientPacks}), and the synthesised fallback does the same.
+	 *
+	 * <p>Null — no metadata section, or an unreadable one — sends the caller to NeoForge's reader, and from there
+	 * to the synthesised metadata, exactly the path every jar took before.
+	 */
+	private static Pack readThroughVanilla(
+			PackLocationInfo location, Pack.ResourcesSupplier resources, PackSelectionConfig selection) {
+		try {
+			PackFormat current = SharedConstants.getCurrentVersion().packVersion(PackType.CLIENT_RESOURCES);
+			Pack.Metadata read = Pack.readPackMetadata(location, resources, current, PackType.CLIENT_RESOURCES);
+			if (read == null) return null;
+			Pack.Metadata compatible = new Pack.Metadata(read.description(), PackCompatibility.COMPATIBLE,
+					read.requestedFeatures(), read.overlays(), read.isHidden());
+			return new Pack(location, resources, compatible, selection);
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/ClientPacks] vanilla's pack reader could not read %s, using NeoForge's: %s",
+					location.id(), String.valueOf(Reflect.unwrap(t)));
+			return null;
+		}
 	}
 
 	/**

@@ -134,7 +134,7 @@ public final class KernelRuntimeClasses {
 		// that lets a player's own pack sit above mod textures, the overlay count and the RepositorySource. The
 		// policy stays boot-side in KernelClientPacks. See KernelClientPackSource.
 		CLASSES.put("net.forbric.kernel.runtime.KernelClientPackSource", new Entry(Origin.COMPILED, List.of(
-				new Call("buildPack", Object.class, String.class, Path.class, boolean.class),
+				new Call("buildPack", Object.class, String.class, Path.class, boolean.class, boolean.class),
 				new Call("buildParentPack", Object.class, String.class, List.class),
 				new Call("withOverlays", int.class, List.class),
 				new Call("addSource", void.class, Object.class, List.class, String.class))));

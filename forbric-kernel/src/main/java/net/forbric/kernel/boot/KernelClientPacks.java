@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 
@@ -66,11 +67,21 @@ public final class KernelClientPacks {
 				return;
 			}
 
+			// Decided once per jar: both the child pass and the flat fallback below build from the same answer.
+			List<Boolean> vanillaReader = new ArrayList<>();
+			int readByVanilla = 0;
+			for (Path jar : packJars) {
+				boolean vanilla = readsItsMetadataTheVanillaWay(jar);
+				vanillaReader.add(vanilla);
+				if (vanilla) readByVanilla++;
+			}
+
 			List<Object> packs = new ArrayList<>();
 			List<String> ids = new ArrayList<>();
-			for (Path jar : packJars) {
+			for (int i = 0; i < packJars.size(); i++) {
+				Path jar = packJars.get(i);
 				String id = "forbric/" + stripExtension(jar.getFileName().toString());
-				Object pack = buildPack(cl, id, jar, true);
+				Object pack = buildPack(cl, id, jar, true, vanillaReader.get(i));
 				if (pack != null) {
 					packs.add(pack);
 					ids.add(id);
@@ -102,9 +113,10 @@ public final class KernelClientPacks {
 				// no textures.
 				packs = new ArrayList<>();
 				ids = new ArrayList<>();
-				for (Path jar : packJars) {
+				for (int i = 0; i < packJars.size(); i++) {
+					Path jar = packJars.get(i);
 					String id = "forbric/" + stripExtension(jar.getFileName().toString());
-					Object pack = buildPack(cl, id, jar, false);
+					Object pack = buildPack(cl, id, jar, false, vanillaReader.get(i));
 					if (pack != null) {
 						packs.add(pack);
 						ids.add(id);
@@ -116,8 +128,8 @@ public final class KernelClientPacks {
 			gameSide(cl).getMethod("addSource", Object.class, List.class, String.class)
 					.invoke(null, packRepository, source, describedAs);
 			ForbricLog.info("[Forbric/ClientPacks] served %d ecosystem asset pack(s) to the client PackRepository "
-					+ "(forced-compatible), %d of them declaring overlays: %s", ids.size(), withOverlays(cl, packs),
-					ids);
+					+ "(forced-compatible, %d read through vanilla's Pack.readPackMetadata), %d of them declaring "
+					+ "overlays: %s", ids.size(), readByVanilla, withOverlays(cl, packs), ids);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ClientPacks] could not serve ecosystem assets to the client PackRepository "
 					+ "(ecosystem shaders/textures will be missing)", Reflect.unwrap(t));
@@ -160,9 +172,48 @@ public final class KernelClientPacks {
 	}
 
 	/** One hidden {@code Pack} over {@code jar}; the shape it is given is written down game-side. */
-	private static Object buildPack(ClassLoader cl, String id, Path jar, boolean asChild) throws Exception {
-		return gameSide(cl).getMethod("buildPack", String.class, Path.class, boolean.class)
-				.invoke(null, id, jar, asChild);
+	private static Object buildPack(ClassLoader cl, String id, Path jar, boolean asChild, boolean vanillaReader)
+			throws Exception {
+		return gameSide(cl).getMethod("buildPack", String.class, Path.class, boolean.class, boolean.class)
+				.invoke(null, id, jar, asChild, vanillaReader);
+	}
+
+	/** {@code -Dforbric.vanillaPackMetadata=off} reads every served jar's metadata with NeoForge's reader, as before. */
+	static final String VANILLA_READER = "forbric.vanillaPackMetadata";
+
+	/**
+	 * Whether {@code jar}'s {@code pack.mcmeta} is read by vanilla's {@code Pack.readPackMetadata} rather than by
+	 * NeoForge's {@code ResourcePackLoader.readWithOptionalMeta}.
+	 *
+	 * <p>The reader is part of the contract, because mods hook it. MinecraftForge builds each mod's pack through
+	 * {@code Pack.readPackMetadata} (native {@code ResourcePackLoader.findPacks}), and so does fabric-api's resource
+	 * loader; NeoForge's reader builds the {@code Pack$Metadata} itself and never calls it. fusion (a MinecraftForge
+	 * mod here) mounts a pack's {@code fusion-overrides} folder as an OVERLAY with a {@code @ModifyArg} on the
+	 * metadata constructor inside {@code readPackMetadata} — so while every jar went through NeoForge's reader,
+	 * Rechiseled Anti-Blocks' 24 connected-texture models were never even read, and nothing said so.
+	 *
+	 * <p>So: vanilla's reader for every jar NeoForge does not own, which is what that jar's own loader would have
+	 * used; NeoForge's for NeoForge's, which is what NeoForge would have used. Only a jar that ships a
+	 * {@code pack.mcmeta} can be read by vanilla at all — without one it returns null and logs "Missing metadata",
+	 * where NeoForge's reader supplies a default — so those stay on NeoForge's. Game side, a vanilla read that
+	 * yields nothing falls back to NeoForge's reader, and then to the synthesised metadata.
+	 */
+	static boolean readsItsMetadataTheVanillaWay(Path jar) {
+		if ("off".equalsIgnoreCase(System.getProperty(VANILLA_READER, "on"))) return false;
+		if (MultiLoaderArbiter.ownerOf(jar) == Ecosystem.NEOFORGE) return false;
+		return declaresPackMetadata(jar);
+	}
+
+	private static boolean declaresPackMetadata(Path jar) {
+		if (jar == null || !Files.isRegularFile(jar)) return false;
+		try (FileSystem fs = FileSystems.newFileSystem(jar, (ClassLoader) null)) {
+			for (Path root : fs.getRootDirectories()) {
+				if (Files.isRegularFile(root.resolve("pack.mcmeta"))) return true;
+			}
+		} catch (Throwable ignored) {
+			// unreadable — NeoForge's reader, which is what it had before
+		}
+		return false;
 	}
 
 	/**
