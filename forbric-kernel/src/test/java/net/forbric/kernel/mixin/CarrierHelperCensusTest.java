@@ -61,13 +61,15 @@ class CarrierHelperCensusTest {
 				if (!entry.getName().endsWith(".class") || !entry.getName().startsWith("net/minecraft/")) continue;
 				ClassNode merged = read(zip, entry.getName());
 				for (MethodNode method : merged.methods) {
-					if ((method.access & (Opcodes.ACC_BRIDGE | Opcodes.ACC_SYNTHETIC)) != 0) continue;
+					if ((method.access & (Opcodes.ACC_BRIDGE | Opcodes.ACC_SYNTHETIC)) != 0 || method.name.startsWith("<")) continue;
 					List<MethodInsnNode> pieces = CarrierHelpers.dispatchedHelpers(merged, method);
-					if (pieces == null) continue;
+					Map<String, Integer> helpers = pieces == null ? helperCalls(merged, method) : Map.of();
+					if (pieces == null && helpers.isEmpty()) continue;
 					for (Map.Entry<Ecosystem, ZipFile> reference : references.entrySet()) {
 						ClassNode original = read(reference.getValue(), entry.getName());
 						MethodNode before = CarrierHelpers.declared(original, method.name, method.desc);
-						splitRows(merged, method, pieces, original, before, reference.getKey(), derived);
+						if (pieces != null) splitRows(merged, method, pieces, original, before, reference.getKey(), derived);
+						else edgeRows(merged, method, helpers, original, before, reference.getKey(), derived);
 					}
 				}
 			}
@@ -125,6 +127,48 @@ class CarrierHelperCensusTest {
 			String head = merged.name + "#" + method.name + method.desc + " -> " + home.name + home.desc + " : " + member + " | SPLIT";
 			out.computeIfAbsent(head, k -> EnumSet.noneOf(Ecosystem.class)).add(ecosystem);
 		}
+	}
+
+	/**
+	 * HEAD/TAIL: the merged method keeps a body; a helper it calls exactly once, which the reference does not declare,
+	 * makes a call the reference's method made exactly once and the merged method no longer makes — exactly once, as
+	 * its first or last act ({@link CarrierHelpers#reached}). Same-name overloads are a stub's business (carrier-stubs.txt,
+	 * MixinStubRebind), and constructors are left alone.
+	 */
+	private static void edgeRows(ClassNode merged, MethodNode method, Map<String, Integer> helpers, ClassNode original,
+			MethodNode before, Ecosystem ecosystem, Map<String, Set<Ecosystem>> out) {
+		if (before == null || before.instructions == null) return;
+		Set<String> calls = new LinkedHashSet<>();
+		for (AbstractInsnNode insn : before.instructions) if (insn instanceof MethodInsnNode) calls.add(CarrierHelpers.member(insn));
+		for (Map.Entry<String, Integer> called : helpers.entrySet()) {
+			if (called.getValue() != 1) continue;
+			int paren = called.getKey().indexOf('(');
+			String name = called.getKey().substring(0, paren), desc = called.getKey().substring(paren);
+			if (CarrierHelpers.declared(original, name, desc) != null) continue;
+			MethodNode helper = CarrierHelpers.declared(merged, name, desc);
+			for (String member : calls) {
+				if (CarrierHelpers.occurrences(before, member) != 1 || CarrierHelpers.occurrences(method, member) != 0) continue;
+				Set<CarrierHelpers.Shape> shapes = CarrierHelpers.reached(merged, method, helper, member);
+				if (shapes.isEmpty()) continue;
+				String head = merged.name + "#" + method.name + method.desc + " -> " + helper.name + helper.desc + " : " + member
+						+ " | " + String.join(",", shapes.stream().sorted().map(Enum::name).toList());
+				out.computeIfAbsent(head, k -> EnumSet.noneOf(Ecosystem.class)).add(ecosystem);
+			}
+		}
+	}
+
+	/** Same-class methods with a body that {@code method} calls, other than its own name and constructors, with how often. */
+	private static Map<String, Integer> helperCalls(ClassNode owner, MethodNode method) {
+		Map<String, Integer> out = new LinkedHashMap<>();
+		if (method.instructions == null) return out;
+		for (AbstractInsnNode insn : method.instructions) {
+			if (!(insn instanceof MethodInsnNode call) || !call.owner.equals(owner.name) || call.name.equals(method.name)
+					|| call.name.startsWith("<")) continue;
+			MethodNode helper = CarrierHelpers.declared(owner, call.name, call.desc);
+			if (helper == null || helper.instructions == null || helper.instructions.size() == 0) continue;
+			out.merge(call.name + call.desc, 1, Integer::sum);
+		}
+		return out;
 	}
 
 	private static ClassNode read(ZipFile zip, String name) throws Exception {

@@ -53,6 +53,26 @@ class MixinRetargetCarrierHelperStagedTest {
 		assertEquals(MixinFit.Verdict.FIT, after.verdict(), "after: " + after.unresolved());
 	}
 
+	/** Highlighter's MinecraftForge build: its AFTER-itemDecorations mark follows the call into renderSlotContents. */
+	@Test
+	void highlightersSlotMarkFollowsTheDecorationsIntoRenderSlotContents() throws Exception {
+		Function<String, byte[]> resolver = mergedResolver();
+		String entry = "com/anthonyhilyard/highlighter/forge/mixin/AbstractContainerScreenMixin";
+		byte[] mixin = fromJar(SWEEP.resolve("Highlighter-26.2-forge-1.2.2.jar"), entry + ".class");
+		MixinStubRebind.noteEcosystem(entry, Ecosystem.FORGE);
+		MixinFit.Result before = MixinFit.evaluate(mixin, resolver);
+		assertEquals(MixinFit.Verdict.PARTIAL, before.verdict(), "premise: " + before.unresolved());
+
+		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixin), resolver);
+		assertEquals(1, plan.rewrites().size(), plan.describe());
+		assertEquals(MixinRetarget.Element.AT_TARGET, plan.rewrites().get(0).element());
+		assertEquals("Lnet/minecraft/client/gui/screens/inventory/AbstractContainerScreen;renderSlotContents("
+				+ "Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/world/item/ItemStack;"
+				+ "Lnet/minecraft/world/inventory/Slot;Ljava/lang/String;)V", plan.rewrites().get(0).to());
+		MixinFit.Result after = MixinFit.evaluate(MixinRetarget.rewritten(mixin, plan), resolver);
+		assertEquals(MixinFit.Verdict.FIT, after.verdict(), "after: " + after.unresolved());
+	}
+
 	/** fabric-rendering-v1's HudMixin: each anchor has one home, so R3 moves it and R4 never runs. */
 	@Test
 	void fabricRenderingsHudMixinPlanIsTheSameWithTheSplitRuleOnOrOff() throws Exception {

@@ -73,6 +73,8 @@ public final class MixinRetarget {
 	static final String SUGAR_BOUNDARY_PROPERTY = "forbric.mixinRetarget.sugarBoundary";
 	/** {@code -Dforbric.mixinRetargetSplit=off}: R3 refuses two fits again, dispatcher or not (R4 off). */
 	static final String SPLIT_PROPERTY = "forbric.mixinRetargetSplit";
+	/** {@code -Dforbric.mixinExtractedHelper=off}: no {@code @Inject} point follows a call into a carrier's helper (R5 off). */
+	static final String EXTRACTED_HELPER_PROPERTY = "forbric.mixinExtractedHelper";
 
 	static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	static final String LOCAL_SUGAR = "Lcom/llamalad7/mixinextras/sugar/Local;";
@@ -132,12 +134,19 @@ public final class MixinRetarget {
 				AnnotationNode injector = MixinFit.injectorOf(handler);
 				if (injector == null) continue;
 				List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
+				List<Rewrite> own = new ArrayList<>();
 				for (String selector : selectors) {
 					Rewrite rewrite = rewriteFor(handler, injector, selector, target, resolver);
-					if (rewrite != null) rewrites.add(rewrite);
+					if (rewrite != null) own.add(rewrite);
 				}
-				rewrites.addAll(swappedCallees(handler, injector, selectors, target, resolver));
-				rewrites.addAll(renamedBodies(mixin.name, handler, injector, selectors, target, resolver));
+				own.addAll(swappedCallees(handler, injector, selectors, target, resolver));
+				own.addAll(renamedBodies(mixin.name, handler, injector, selectors, target, resolver));
+				// The selector moves when the method is a stub, a rename or a split; the point moves only when the method
+				// keeps a body of its own and the call went one level down. Never both for one handler.
+				if (own.stream().noneMatch(r -> r.element() == Element.SELECTOR)) {
+					own.addAll(movedCalls(mixin.name, handler, injector, selectors, target, resolver));
+				}
+				rewrites.addAll(own);
 			}
 		}
 		return new Plan(mixin.name, List.copyOf(rewrites));
@@ -339,6 +348,72 @@ public final class MixinRetarget {
 		}
 		return new Rewrite(handler.name, Element.SELECTOR, selector, helper.name + helper.desc,
 				"a carrier split the vanilla body into helpers, and " + helper.name + " is the piece that makes the call");
+	}
+
+	/**
+	 * Rule R5: an {@code @Inject} whose {@code @At(INVOKE)} names a call the carrier moved out of the method into a
+	 * helper it added — the method keeps its body and calls the helper once, and the call is the helper's first or last
+	 * act — has its point moved to the helper call. The selector stays: the handler still binds to the method it was
+	 * written for, with its arguments and its callback, at the same program point.
+	 *
+	 * <p>NeoForge made {@code AbstractContainerScreen.extractSlot} hand the slot's item to its overridable
+	 * {@code renderSlotContents}, which draws it and then, as its last act, the item decorations. Highlighter's
+	 * MinecraftForge build injects AFTER the {@code itemDecorations} call in {@code extractSlot} to draw its "new item"
+	 * mark; the call was gone, and no container screen ever showed a mark. AFTER {@code renderSlotContents} is what
+	 * vanilla's AFTER {@code itemDecorations} was: the instruction before {@code extractSlot}'s return, on every path
+	 * that drew the item. A screen that overrides {@code renderSlotContents} gets the mark over its own contents. One
+	 * difference: other mods' {@code RETURN} injections into {@code extractSlot} now sit at the same instruction, so
+	 * their order against this one follows Mixin's application order rather than always coming after.
+	 *
+	 * <p>Only along a {@code HEAD} or {@code TAIL} row of {@code carrier-helpers.txt} for the mod's ecosystem, re-checked
+	 * on the live bytes ({@link CarrierHelpers#reached}): BEFORE the call needs it at the helper's head, AFTER needs it at
+	 * the tail, and no other shift moves. Only an {@code @Inject} that captures no locals and has no sugar, slice or
+	 * {@code @Group}; other kinds' handlers describe the call, and moving them would need the helper to have no other
+	 * caller, which a protected override point cannot promise. {@code -Dforbric.mixinExtractedHelper=off} leaves the
+	 * point as compiled.
+	 */
+	private static List<Rewrite> movedCalls(String mixinName, MethodNode handler, AnnotationNode injector,
+			List<String> selectors, ClassNode target, Function<String, byte[]> resolver) {
+		if (!INJECT.equals(injector.desc) || selectors.size() != 1) return List.of();
+		if ("off".equalsIgnoreCase(System.getProperty(EXTRACTED_HELPER_PROPERTY, "on"))) return List.of();
+		net.forbric.api.Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixinName);
+		if (ecosystem == null || !plainInject(handler, injector)) return List.of();
+		List<MethodNode> named = resolveSelector(target, selectors.get(0), resolver);
+		List<MethodNode> own = named.stream().filter(target.methods::contains).toList();
+		if (own.size() != 1) return List.of();
+		MethodNode method = own.get(0);
+
+		List<Rewrite> out = new ArrayList<>();
+		for (AnnotationNode at : MixinFit.atNodes(injector)) {
+			String member = MixinFit.asString(MixinFit.value(at, "target"));
+			if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value"))) || member == null
+					|| MixinFit.containsMember(method, member)) continue;
+			String shift = MixinFit.asString(MixinFit.value(at, "shift"));
+			CarrierHelpers.Shape shape = shift == null || "BEFORE".equals(shift) ? CarrierHelpers.Shape.HEAD
+					: "AFTER".equals(shift) ? CarrierHelpers.Shape.TAIL : null;
+			// The reference made the call once, so any ordinal past the first missed natively too.
+			if (shape == null || MixinFit.value(at, "ordinal") instanceof Integer ordinal && ordinal > 0) continue;
+			CarrierHelpers.Row row = CarrierHelpers.find(target.name, method.name + method.desc, member, shape, ecosystem);
+			if (row == null) continue;
+			int paren = row.helper().indexOf('(');
+			MethodNode helper = CarrierHelpers.declared(target, row.helper().substring(0, paren), row.helper().substring(paren));
+			if (helper == null || !CarrierHelpers.reached(target, method, helper, row.member()).contains(shape)) continue;
+			out.add(new Rewrite(handler.name, Element.AT_TARGET, member, "L" + target.name + ";" + helper.name + helper.desc,
+					"the carrier moved the call into " + helper.name + ", whose " + (shape == CarrierHelpers.Shape.TAIL
+							? "last" : "first") + " act it is"));
+		}
+		return out;
+	}
+
+	/** An {@code @Inject} bound by its own arguments and callback only: no locals capture, sugar, slice or {@code @Group}. */
+	private static boolean plainInject(MethodNode handler, AnnotationNode injector) {
+		List<AnnotationNode> annotations = new ArrayList<>();
+		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
+		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
+		if (annotations.stream().anyMatch(a -> GROUP.equals(a.desc))) return false;
+		if (MixinFit.value(injector, "slice") != null || MixinFit.value(injector, "locals") != null) return false;
+		for (int i = 0; i < Type.getArgumentTypes(handler.desc).length; i++) if (MixinFit.sugar(handler, i)) return false;
+		return true;
 	}
 
 	/**

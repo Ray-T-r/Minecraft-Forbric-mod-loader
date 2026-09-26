@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -14,8 +15,14 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.LookupSwitchInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TableSwitchInsnNode;
+import org.objectweb.asm.tree.TryCatchBlockNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.api.Ecosystem;
@@ -33,13 +40,20 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>{@code SPLIT}: the merged method is nothing but calls to same-shaped helpers the carrier added, each handed the
  * method's own arguments in place — NeoForge turned {@code Hud.extractPlayerHealth} into
  * {@code extractHealthLevel; extractArmorLevel; extractFoodLevel; extractAirLevel} so each can be a HUD layer.
+ *
+ * <p>{@code HEAD} / {@code TAIL}: the merged method keeps a body and calls the helper exactly once, and the call is the
+ * helper's first act (only loads before it, nothing jumps back to it) or its last (only a {@code pop} and the one
+ * {@code return} after it, no other way out, nothing jumps past it). Before the helper call and before the call inside
+ * it, or after the one and after the other, are then the same program point. NeoForge moved the item decorations out
+ * of {@code AbstractContainerScreen.extractSlot} into its {@code renderSlotContents} override point, whose last act
+ * they are.
  */
 public final class CarrierHelpers {
 	/** The shipped table; CarrierHelperCensusTest pins it to the staged artifacts. */
 	static final String TABLE = "/net/forbric/kernel/mixin/carrier-helpers.txt";
 
 	/** How the helper is reached from the method the mod named. */
-	enum Shape { SPLIT }
+	enum Shape { SPLIT, HEAD, TAIL }
 
 	/**
 	 * @param owner      the class (internal name)
@@ -182,6 +196,120 @@ public final class CarrierHelpers {
 			i++;
 		}
 		return null;
+	}
+
+	/**
+	 * Where {@code member} — a call made exactly once in {@code helper} — stands in it: {@code HEAD} when nothing but
+	 * loads and constants come before it and no jump, switch or handler lands at or before it; {@code TAIL} when after
+	 * it come at most a {@code pop} and the helper's one return, no return comes before it, and nothing lands after
+	 * it. Empty when neither, or when the call is not made exactly once.
+	 */
+	static Set<Shape> edges(MethodNode helper, String member) {
+		if (helper.instructions == null || occurrences(helper, member) != 1) return Set.of();
+		MixinFit.Member want = MixinFit.parseMember(member);
+		AbstractInsnNode[] insns = helper.instructions.toArray();
+		int at = -1;
+		for (int i = 0; i < insns.length; i++) {
+			if (insns[i] instanceof MethodInsnNode call && matches(want, new MixinFit.Member(call.owner, call.name, call.desc))) at = i;
+		}
+		if (at < 0) return Set.of();
+		Set<LabelNode> landings = landings(helper);
+
+		boolean head = true;
+		for (int i = 0; i < at && head; i++) {
+			AbstractInsnNode insn = insns[i];
+			if (insn instanceof LabelNode label) { if (landings.contains(label)) head = false; continue; }
+			int op = insn.getOpcode();
+			if (op < 0) continue;
+			boolean load = insn instanceof VarInsnNode && op >= Opcodes.ILOAD && op <= Opcodes.ALOAD;
+			if (!load && !(insn instanceof LdcInsnNode) && !(op >= Opcodes.ACONST_NULL && op <= Opcodes.SIPUSH)) head = false;
+		}
+
+		boolean tail = true;
+		for (int i = 0; i < at && tail; i++) {
+			int op = insns[i].getOpcode();
+			if (op >= Opcodes.IRETURN && op <= Opcodes.RETURN) tail = false;    // a way out that skips the call
+		}
+		int returns = 0;
+		int first = nextReal(insns, at);
+		for (int i = at + 1; i < insns.length && tail; i++) {
+			AbstractInsnNode insn = insns[i];
+			if (insn instanceof LabelNode label) { if (landings.contains(label)) tail = false; continue; }
+			int op = insn.getOpcode();
+			if (op < 0) continue;
+			if (returns > 0) tail = false;
+			else if (op >= Opcodes.IRETURN && op <= Opcodes.RETURN) returns++;
+			else if (!((op == Opcodes.POP || op == Opcodes.POP2) && i == first)) tail = false;
+		}
+		if (returns != 1) tail = false;
+
+		Set<Shape> shapes = EnumSet.noneOf(Shape.class);
+		if (head) shapes.add(Shape.HEAD);
+		if (tail) shapes.add(Shape.TAIL);
+		return shapes;
+	}
+
+	/**
+	 * {@link #edges} of {@code member} in {@code helper}, as reached from {@code method}'s one call to it: {@code HEAD}
+	 * only when that call's receiver and arguments are plain loads and constants with nothing landing among them, so
+	 * that "before the helper call" has run nothing the reference's "before the call" had not.
+	 */
+	static Set<Shape> reached(ClassNode owner, MethodNode method, MethodNode helper, String member) {
+		MethodInsnNode call = null;
+		for (AbstractInsnNode insn : method.instructions) {
+			if (!(insn instanceof MethodInsnNode c) || !c.owner.equals(owner.name) || !c.name.equals(helper.name)
+					|| !c.desc.equals(helper.desc)) continue;
+			if (call != null) return Set.of();    // called twice: which call stands for the reference's is a guess
+			call = c;
+		}
+		if (call == null) return Set.of();
+		Set<Shape> shapes = EnumSet.noneOf(Shape.class);
+		shapes.addAll(edges(helper, member));
+		if (shapes.contains(Shape.HEAD) && !argumentsLoaded(method, call)) shapes.remove(Shape.HEAD);
+		return shapes.isEmpty() ? Set.of() : shapes;
+	}
+
+	/** Whether the values {@code call} consumes are pushed by the loads and constants right before it, nothing landing between. */
+	private static boolean argumentsLoaded(MethodNode method, MethodInsnNode call) {
+		Set<LabelNode> landings = landings(method);
+		int values = Type.getArgumentTypes(call.desc).length + (call.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1);
+		for (AbstractInsnNode insn = call.getPrevious(); values > 0; insn = insn.getPrevious()) {
+			if (insn == null) return false;
+			if (insn instanceof LabelNode label && landings.contains(label)) return false;
+			int op = insn.getOpcode();
+			if (op < 0) continue;
+			boolean load = insn instanceof VarInsnNode && op >= Opcodes.ILOAD && op <= Opcodes.ALOAD;
+			if (!load && !(insn instanceof LdcInsnNode) && !(op >= Opcodes.ACONST_NULL && op <= Opcodes.SIPUSH)) return false;
+			values--;
+		}
+		return true;
+	}
+
+	/** Every label a jump, a switch or an exception handler can land on in {@code method}. */
+	private static Set<LabelNode> landings(MethodNode method) {
+		Set<LabelNode> landings = new HashSet<>();
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof JumpInsnNode jump) landings.add(jump.label);
+			else if (insn instanceof TableSwitchInsnNode table) { landings.add(table.dflt); landings.addAll(table.labels); }
+			else if (insn instanceof LookupSwitchInsnNode lookup) { landings.add(lookup.dflt); landings.addAll(lookup.labels); }
+		}
+		if (method.tryCatchBlocks != null) for (TryCatchBlockNode block : method.tryCatchBlocks) landings.add(block.handler);
+		return landings;
+	}
+
+	private static int nextReal(AbstractInsnNode[] insns, int from) {
+		for (int i = from + 1; i < insns.length; i++) if (insns[i].getOpcode() >= 0) return i;
+		return -1;
+	}
+
+	/** How many times {@code method} calls {@code owner}'s {@code helper} ({@code name + descriptor}). */
+	static int callsTo(MethodNode method, String owner, String helper) {
+		if (method.instructions == null) return 0;
+		int count = 0;
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof MethodInsnNode call && call.owner.equals(owner) && helper.equals(call.name + call.desc)) count++;
+		}
+		return count;
 	}
 
 	static MethodNode declared(ClassNode owner, String name, String desc) {
