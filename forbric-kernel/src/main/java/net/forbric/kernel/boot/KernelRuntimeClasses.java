@@ -304,6 +304,8 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelConversions", new Entry(Origin.COMPILED, List.of()));
 		// fabric-content-registries' fuel events on NeoForge's fuel builder; FabricFuelValuesInjector calls apply.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFabricFuel", new Entry(Origin.COMPILED, List.of()));
+		// Fabric's fluid models for NeoForge's completeness check; FabricFluidModelsInjector calls hasModel.
+		CLASSES.put("net.forbric.kernel.runtime.KernelFabricFluidModels", new Entry(Origin.COMPILED, List.of()));
 		// NeoForge's item tooltip appenders, built once from the kernel's copy of postRegisterEvents' tail; also the
 		// per-container delivery NeoTooltipAppendersInjector sends ItemTooltipHandler.init's event through.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoTooltips", new Entry(Origin.COMPILED, List.of(
