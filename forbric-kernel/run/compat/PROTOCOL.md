@@ -68,6 +68,11 @@ jar before treating the selection as final; metadata resolution alone cannot pro
    `.physics_mod_cache`, and the three console logs. Preserve natives, `options.txt`,
    backup ZIPs, launcher metadata and PCL files. `mods-all` is refreshed only from the
    new pack and serves as the source for a later subset test.
+   Through a relayed tunnel that throttles or stalls (a UU Remote port forward stalls for minutes after tens of
+   megabytes), pass `--remote-mods`: only the manifest crosses the transport and `win/fetch-mods.py` downloads each
+   jar on the Windows side from its own URL, verifying size and SHA-1 against the manifest; an upload whose remote
+   SHA-256 already matches is skipped either way. `COMPAT_CALL_TIMEOUT` (default 240) raises the per-call ceiling
+   for such a tunnel; whether a stalled call may be repeated is the `WINSH`/`WINFILE` command's own decision.
 5. `version-json-sync.py` updates SHA-1/size for exactly four supplied `group:artifact`
    pairs. It keeps library order and all other metadata. A missing pair is an error.
    Upload the artifacts and refreshed profile, then the driver tools and mod archive.
