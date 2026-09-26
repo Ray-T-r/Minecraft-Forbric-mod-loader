@@ -250,19 +250,27 @@ public final class MixinFit {
 		final boolean resolved;
 		/** Listed in the reason and worth PARTIAL, but never UNFIT: a soft anchor cannot get a mixin dropped. */
 		final boolean soft;
+		/** The detail already names its own owner, which is not the mixin's target; see {@link #atDetail}. */
+		final boolean ownerNamed;
 
 		Anchor(String kind, String detail, boolean resolved) {
 			this(kind, detail, resolved, false);
 		}
 
 		Anchor(String kind, String detail, boolean resolved, boolean soft) {
+			this(kind, detail, resolved, soft, false);
+		}
+
+		Anchor(String kind, String detail, boolean resolved, boolean soft, boolean ownerNamed) {
 			this.kind = kind;
 			this.detail = detail;
 			this.resolved = resolved;
 			this.soft = soft;
+			this.ownerNamed = ownerNamed;
 		}
 
 		String describe(String target) {
+			if (ownerNamed) return kind + " " + detail;
 			return kind + " " + target.substring(target.lastIndexOf('/') + 1) + "." + detail;
 		}
 	}
@@ -395,8 +403,8 @@ public final class MixinFit {
 						if (MixinAtWidenedCall.widenedIn(hit, atTarget) != null) { anywhere = true; break; }
 					}
 				}
-				out.add(new Anchor("@At(" + atValue + ")",
-						shortMember(atTarget) + " in " + hits.get(0).name, anywhere));
+				out.add(new Anchor("@At(" + atValue + ")", atDetail(atTarget, target.name) + " in " + hits.get(0).name,
+						anywhere, false, ownedElsewhere(atTarget, target.name)));
 			}
 		}
 		return out;
@@ -948,6 +956,26 @@ public final class MixinFit {
 	private static String shortMember(String target) {
 		Member m = parseMember(target);
 		return m == null ? target : m.name();
+	}
+
+	/**
+	 * An {@code @At} target as the report names it: {@code Owner.member} when the member belongs to another class
+	 * than the mixin's target, the bare member otherwise (the target's name is prefixed by {@link Anchor#describe}).
+	 *
+	 * <p>It used to always be the bare member, so every call into ANOTHER class was reported under the target's
+	 * name. owo's {@code MainMixin} anchors on Fabric Loader's {@code Hooks.startServer}, and the report said
+	 * "missing: @At(INVOKE) Main.startServer in main" — a method that does not exist, which pointed triage at the
+	 * merged {@code Main} instead of at the missing {@code Hooks} call that was the real cause.
+	 */
+	private static String atDetail(String atTarget, String targetName) {
+		if (!ownedElsewhere(atTarget, targetName)) return shortMember(atTarget);
+		Member m = parseMember(atTarget);
+		return m.owner().substring(m.owner().lastIndexOf('/') + 1) + "." + m.name();
+	}
+
+	private static boolean ownedElsewhere(String atTarget, String targetName) {
+		Member m = parseMember(atTarget);
+		return m != null && m.owner() != null && !m.owner().equals(targetName);
 	}
 
 	private static ClassNode read(byte[] bytes, boolean withCode) {

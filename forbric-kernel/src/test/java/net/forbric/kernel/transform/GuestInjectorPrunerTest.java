@@ -220,9 +220,10 @@ class GuestInjectorPrunerTest {
 		MixinFit.Result now = MixinFit.evaluate(pruned, resolver);
 		// Pruning removes the fromStream miss. What remains is resolveExtraModels: Mixin binds its bare
 		// "discoverModelDependencies" to the carrier's three-argument stub declared first, and resolve() is in the
-		// four-argument body — MixinStubRebind's to move, for a Fabric mod, at load time.
-		assertEquals(java.util.List.of("@At(INVOKE) ModelManager.resolve in discoverModelDependencies"), now.unresolved(),
-				"after pruning, only the stub-bound anchor remains");
+		// four-argument body — MixinStubRebind's to move, for a Fabric mod, at load time. resolve() is
+		// ModelDiscovery's, and the report names it so.
+		assertEquals(java.util.List.of("@At(INVOKE) ModelDiscovery.resolve in discoverModelDependencies"),
+				now.unresolved(), "after pruning, only the stub-bound anchor remains");
 		ClassNode node = net.forbric.kernel.mixin.MixinFit.parse(pruned);
 		net.forbric.kernel.mixin.MixinStubRebindAccess.fabric(node.name);
 		ClassNode target = new ClassNode();

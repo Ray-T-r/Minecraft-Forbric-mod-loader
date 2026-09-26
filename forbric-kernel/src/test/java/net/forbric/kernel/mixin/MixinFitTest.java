@@ -253,6 +253,41 @@ class MixinFitTest {
 		assertTrue(partial.unresolved().get(0).contains("resolve"), partial.unresolved().toString());
 	}
 
+	/**
+	 * An {@code @At} into ANOTHER class is reported under that class's name. It used to be reported under the mixin's
+	 * target: owo's anchor on Fabric Loader's {@code Hooks.startServer} read "missing: @At(INVOKE) Main.startServer in
+	 * main", a method that does not exist, which hid that the missing piece was Fabric Loader's {@code Hooks} call.
+	 */
+	@Test
+	void anAnchorIntoAnotherClassIsReportedUnderThatClass() {
+		String target = "net/example/ModelManager";
+		byte[] targetBytes = twoOverloads(target, "net/example/Discovery", "resolve", "()Ljava/util/Map;");
+		java.util.function.Function<String, byte[]> resolver =
+				name -> (target + ".class").equals(name) ? targetBytes : null;
+
+		assertEquals(java.util.List.of("@At(INVOKE) Discovery.resolve in discover"),
+				MixinFit.evaluate(injectMixin(target, "Lnet/example/Discovery;resolve()Ljava/util/Map;"), resolver)
+						.unresolved());
+		assertEquals(java.util.List.of("@At(INVOKE) Discovery.resolve in discover"),
+				MixinFit.evaluate(injectMixin(target, "net/example/Discovery.resolve()Ljava/util/Map;"), resolver)
+						.unresolved(), "the dotted owner form names the same class");
+	}
+
+	/** An anchor into the target itself, or with no owner at all, keeps the form it always had. */
+	@Test
+	void anAnchorIntoTheTargetItselfKeepsTheTargetsName() {
+		String target = "net/example/ModelManager";
+		byte[] targetBytes = twoOverloads(target, target, "resolve", "()Ljava/util/Map;");
+		java.util.function.Function<String, byte[]> resolver =
+				name -> (target + ".class").equals(name) ? targetBytes : null;
+
+		assertEquals(java.util.List.of("@At(INVOKE) ModelManager.resolve in discover"),
+				MixinFit.evaluate(injectMixin(target, "Lnet/example/ModelManager;resolve()Ljava/util/Map;"), resolver)
+						.unresolved());
+		assertEquals(java.util.List.of("@At(INVOKE) ModelManager.resolve in discover"),
+				MixinFit.evaluate(injectMixin(target, "resolve()Ljava/util/Map;"), resolver).unresolved());
+	}
+
 	/** A target whose method constructs {@code T} with {@code arity} arguments (all int). */
 	private static byte[] constructing(String type, int arity) {
 		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
