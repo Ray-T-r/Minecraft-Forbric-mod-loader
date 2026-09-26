@@ -132,7 +132,7 @@ jar before treating the selection as final; metadata resolution alone cannot pro
      it, Minecraft's rewrite from the killed run included (`startedCleanly:false`, and whatever else it saved), and
      so does a file the client created where the player had none.
    - A second client or bisect run on the same instance refuses to start while the first one's writer is alive,
-     naming its pid and the record, and touches nothing.
+     naming its pid and the record, and touches nothing of options.txt.
    - A record that cannot be read is acted on by nobody: the driver, or the stop after its kill, fails naming the
      file to delete once `options.txt` has been checked by hand.
    - Not covered: anything else writing `options.txt` during a run (the player starting the same instance) is

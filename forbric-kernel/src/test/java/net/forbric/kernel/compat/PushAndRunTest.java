@@ -103,7 +103,10 @@ class PushAndRunTest {
                            + ', [NullString]::Value) } else { [IO.File]::Move(' + temporary + ', ' + options + ') }')
                 assert tail.count(replace) == 2, tail
                 assert 'Move-Item' not in command, command
-                assert tail.endswith('Remove-Item -LiteralPath ' + record + ' -Force -ErrorAction SilentlyContinue } }'), tail
+                assert tail.endswith('Remove-Item -LiteralPath ' + record + ' -Force -ErrorAction SilentlyContinue } } }'), tail
+                # A PID that refuses to die throws; the restore of a writer already killed still runs, in the finally.
+                opened, closed = command.index('try { foreach ($file in @('), command.index('} finally { ')
+                assert noted < opened < kill < closed < named, command
                 # The unreadable-record error names the file to delete, before and after the kill alike.
                 message = m.ps(ntpath.join(instance, 'options.txt.forbric-sweep') + ' is not a sweep record')[:-1]
                 assert command.count('throw ' + message) == 2 and 'then delete ' + ntpath.join(instance, 'options.txt.forbric-sweep').replace("'", "''") in command, command

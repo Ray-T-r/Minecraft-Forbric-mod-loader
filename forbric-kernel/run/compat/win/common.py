@@ -186,7 +186,7 @@ def language_argument(argument_parser):
         '--lang', type=client_language, default=os.environ.get('FORBRIC_LANG', ''),
         help=f"language the client plays; default {SWEEP_LANGUAGE}, also for an empty FORBRIC_LANG; "
              f"'{PLAYER_LANGUAGE}' plays the player's options.txt as it is. Either way the player's options.txt is put "
-             f"back as it was afterwards")
+             f"back as it was afterwards (after a reboot mid-run, only its lang line)")
 
 
 def describe_language(code, player, absent=False):

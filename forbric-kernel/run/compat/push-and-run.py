@@ -79,7 +79,9 @@ def stop_command(instance):
     files = [ntpath.join(instance, name) for name in ('.forbric-sweep.pid', '.forbric-gate.pid')]
     files.append(ntpath.join(instance, 'server-gen', '.forbric-gate.pid'))
     before, after = sweep_record_commands(instance)
-    return (before +
+    # The restore sits in a finally: a PID that refuses to die throws, and a writer killed before that throw would
+    # otherwise keep Minecraft's own rewrite of the player's file. `after` never restores while the writer lives.
+    return (before + "try { " +
             "foreach ($file in @(" + ','.join(map(ps, files)) + ")) { "
             "if (Test-Path -LiteralPath $file) { foreach ($line in (Get-Content -LiteralPath $file)) { "
             "if ($line -match '^\\d+$' -and [int]$line -gt 0) { "
@@ -88,7 +90,7 @@ def stop_command(instance):
             "if ($LASTEXITCODE -ne 0 -and (Get-Process -Id ([int]$line) -ErrorAction SilentlyContinue)) "
             "{ throw ('could not stop recorded PID ' + $line) }; "
             "Wait-Process -Id ([int]$line) -Timeout 10 -ErrorAction SilentlyContinue } } }; "
-            "Remove-Item -LiteralPath $file -Force } }; " + after)
+            "Remove-Item -LiteralPath $file -Force } } } finally { " + after + " }")
 
 
 def sweep_record_commands(instance):
