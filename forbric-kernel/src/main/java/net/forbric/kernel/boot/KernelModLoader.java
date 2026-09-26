@@ -34,6 +34,8 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
+import net.forbric.kernel.metadata.forge.LanguageProviders;
+import net.forbric.kernel.metadata.forge.ModsTomlParser;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
 import net.forbric.api.ModCatalog;
@@ -94,6 +96,18 @@ public final class KernelModLoader {
 	}
 
 	private static volatile Map<String, NeoIdentity> publishedNeo = Map.of();
+
+	/**
+	 * The part of {@link #publishedNeoMods()} that declares no {@code @Mod} class — see
+	 * {@link #declaredWithoutClass}. Its buses carry only what an {@code @EventBusSubscriber} put there, and the
+	 * lifecycle needs them apart because it posts {@code RegisterEvent} per CONSTRUCTED mod, a list these are
+	 * deliberately not in.
+	 */
+	public static Map<String, NeoIdentity> classlessNeoMods() {
+		return classlessNeo;
+	}
+
+	private static volatile Map<String, NeoIdentity> classlessNeo = Map.of();
 
 	/**
 	 * The traditional-Forge mods this kernel constructed, by mod id — the MinecraftForge counterpart of
@@ -192,9 +206,44 @@ public final class KernelModLoader {
 						Reflect.unwrap(t));
 			}
 		}
+		// Declared-only mods: a [[mods]] entry with no @Mod class behind it. That is a legal NeoForge mod — FML gives
+		// every mod it lists an FMLModContainer, classes or not, and lowcodefml is mapped onto the same provider —
+		// but the kernel built containers only for @Mod classes, so these were in no ModList at all. LibJF paid for
+		// it: its Translate module is exactly this shape, LibJF enumerates ModList for `libjf:config` entry points,
+		// and the config native NeoForge registers for it never existed here. So were the Modrinth datapack
+		// wrappers (mr_fall_effects, mr_no_croptrample), which native NeoForge lists and version-checks.
+		//
+		// Unlike an alias these ARE the mod, not a stand-in for one that loaded under another jar: they stay in
+		// publishedNeo so an @EventBusSubscriber naming them finds their bus and the lifecycle reaches it. They
+		// are kept out of `neo`, whose ids are settled by what their constructors did — a mod with no constructor
+		// cannot have one that threw.
+		Set<String> taken = new LinkedHashSet<>(neo.keySet());
+		for (ModAnnotationScanner.ModClassInfo info : claimed) taken.add(safeId(info));
+		taken.addAll(aliases.keySet());
+		Map<String, NeoIdentity> classless = new LinkedHashMap<>();
+		for (Declared entry : declaredWithoutClass(declared, taken, Ecosystem.NEOFORGE)) {
+			String modId = entry.mod().getId();
+			try {
+				Object bus = KernelBusSupport.makeModBus(cl);
+				classless.put(modId, new NeoIdentity(bus,
+						KernelModContainerFactory.create(cl, modId, bus, entry.jar(), entry.mod())));
+			} catch (Throwable t) {
+				ForbricLog.warn("[Forbric/ModLoader] could not build a ModContainer for NeoForge mod " + modId
+						+ ", which declares no @Mod class", Reflect.unwrap(t));
+			}
+		}
+		if (!classless.isEmpty()) {
+			ForbricLog.info("[Forbric/ModLoader] %d NeoForge mod(s) declare no @Mod class and now have a container "
+					+ "of their own, as NeoForge gives every mod it lists — ModList, a config, and a bus for their "
+					+ "@EventBusSubscriber classes (-D%s=off to go back): %s", classless.size(), CLASSLESS_SWITCH,
+					classless.keySet());
+		}
+		classlessNeo = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(classless));
+
 		// Aliases go into ModList but NOT into publishedNeo: nothing must post setup events at a mod that has no
 		// @Mod class here, and no caller should resolve an alias as if it were a constructed mod.
 		Map<String, NeoIdentity> published = new LinkedHashMap<>(neo);
+		published.putAll(classless);
 		published.putAll(aliases);
 
 		// Phase 2b — the traditional-MinecraftForge twin of phase 2, and the reason it can exist at all: a
@@ -220,7 +269,7 @@ public final class KernelModLoader {
 			}
 		}
 
-		publishedNeo = Map.copyOf(neo);
+		publishedNeo = Map.copyOf(withClassless(neo, classless));
 		publishNeoModList(cl, published, false);
 		publishedForge = Map.copyOf(forge);
 		publishForgeModList(cl, publishedForge, false);
@@ -307,9 +356,11 @@ public final class KernelModLoader {
 		if (neoNeedsWithdrawal(neo.keySet(), neoBuilt)) {
 			List<String> droppedNeo = new ArrayList<>();
 			Map<String, NeoIdentity> keptNeo = keepConstructed(neo, neoBuilt, droppedNeo);
-			publishedNeo = Map.copyOf(keptNeo);
+			publishedNeo = Map.copyOf(withClassless(keptNeo, classless));
 
 			Map<String, NeoIdentity> republish = new LinkedHashMap<>(keptNeo);
+			// A declared-only mod has no constructor that could have thrown, so it stays whatever else went.
+			republish.putAll(classless);
 			republish.putAll(aliases);
 			// allowEmpty: "every NeoForge mod failed and there are no aliases" must publish an EMPTY list rather
 			// than leave the full one standing.
@@ -466,6 +517,92 @@ public final class KernelModLoader {
 				out.putIfAbsent(mod.getId(), new Declared(mod, jar));
 			}
 		}
+		return out;
+	}
+
+	/** {@code -Dforbric.classlessModContainers=off} gives a mod with no {@code @Mod} class no container, as before. */
+	static final String CLASSLESS_SWITCH = "forbric.classlessModContainers";
+
+	/**
+	 * The declared mods of {@code family} that no {@code @Mod} class claims and that the family's own loader
+	 * would still give a container, in dependency order among themselves.
+	 *
+	 * <p>Which ones get a container is the loader's rule, not the kernel's. NeoForge's FancyModLoader gives one to
+	 * every mod of a {@code javafml} file whether or not a class carries its id, and maps the deprecated
+	 * {@code lowcodefml} onto the same provider (the native log says so for LibJF's own jar). Any other language
+	 * belongs to a provider the kernel does not have, and inventing a container for it would claim a mod is
+	 * loaded that the real loader might have refused.
+	 *
+	 * @param taken ids something else already answers for — an {@code @Mod} class of any family, or a presence
+	 *              alias — which must not get a second container
+	 */
+	static List<Declared> declaredWithoutClass(Map<String, Declared> declared, Set<String> taken, Ecosystem family) {
+		return declaredWithoutClass(declared, taken, family, entry -> languageOf(entry.jar(), family));
+	}
+
+	/** As above, with the language lookup handed in so a test can say what each jar declares. */
+	static List<Declared> declaredWithoutClass(Map<String, Declared> declared, Set<String> taken, Ecosystem family,
+			java.util.function.Function<Declared, String> languageOf) {
+		if ("off".equalsIgnoreCase(System.getProperty(CLASSLESS_SWITCH, "on"))) return List.of();
+
+		List<Declared> out = new ArrayList<>();
+		Map<Path, String> languages = new java.util.HashMap<>();
+		for (Declared entry : declared.values()) {
+			if (entry.mod().getEcosystem() != family || taken.contains(entry.mod().getId())) continue;
+			String language = languages.containsKey(entry.jar()) ? languages.get(entry.jar()) : languageOf.apply(entry);
+			languages.put(entry.jar(), language);
+			if (!getsAContainer(family, language)) {
+				ForbricLog.debug("[Forbric/ModLoader] %s declares mod %s with no @Mod class under modLoader=%s, which "
+						+ "%s gives no container of its own", entry.jar().getFileName(), entry.mod().getId(), language,
+						family);
+				continue;
+			}
+			out.add(entry);
+		}
+		if (out.size() < 2) return out;
+		try {
+			List<DiscoveredMod> mods = new ArrayList<>();
+			for (Declared entry : out) mods.add(entry.mod());
+			return ModConstructionOrder.sort(out, entry -> entry.mod().getId(), ModConstructionOrder.of(mods));
+		} catch (Throwable t) {
+			// An order is an improvement, never a precondition — the same rule orderByDependency keeps.
+			return out;
+		}
+	}
+
+	/** Whether {@code family}'s own loader builds a container for a class-less mod written in {@code language}. */
+	static boolean getsAContainer(Ecosystem family, String language) {
+		if (language == null) return false;
+		if (family == Ecosystem.NEOFORGE) {
+			return LanguageProviders.JAVA.equals(language) || LanguageProviders.LOW_CODE.equals(language);
+		}
+		return false;
+	}
+
+	/**
+	 * The {@code modLoader} {@code jar}'s manifest for {@code family} declares, normalised; null when there is no
+	 * such manifest or it cannot be read. A manifest that names none is a Java one.
+	 */
+	static String languageOf(Path jar, Ecosystem family) {
+		String manifest = family == Ecosystem.FORGE ? ForbricModDiscoverer.FORGE_MANIFEST
+				: ForbricModDiscoverer.NEOFORGE_MANIFEST;
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
+			java.util.zip.ZipEntry entry = zip.getEntry(manifest);
+			if (entry == null) return null;
+			try (java.io.InputStream in = zip.getInputStream(entry)) {
+				return LanguageProviders.of(ModsTomlParser.parse(in));
+			}
+		} catch (Exception unreadable) {
+			ForbricLog.debug("[Forbric/ModLoader] could not read the %s of %s: %s", manifest, jar.getFileName(),
+					String.valueOf(unreadable));
+			return null;
+		}
+	}
+
+	/** {@code constructed} followed by {@code classless}, which never share an id. */
+	static <T> Map<String, T> withClassless(Map<String, T> constructed, Map<String, T> classless) {
+		Map<String, T> out = new LinkedHashMap<>(constructed);
+		out.putAll(classless);
 		return out;
 	}
 

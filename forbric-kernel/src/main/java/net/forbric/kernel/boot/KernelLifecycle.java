@@ -609,6 +609,32 @@ public final class KernelLifecycle {
 	}
 
 	/**
+	 * The NeoForge mod buses the registry events go to, each once: every constructed mod's, then every
+	 * declared-only mod's.
+	 *
+	 * <p>Deduped by IDENTITY: a NeoForge mod has ONE bus shared by all its {@code @Mod} classes (balm ships
+	 * NeoForgeBalm + NeoForgeBalmClient, FallingTree the same), so a per-entry list would fire RegisterEvent twice
+	 * on that bus and register the mod's content twice.
+	 *
+	 * <p>The declared-only mods — a {@code [[mods]]} entry with no {@code @Mod} class, see
+	 * {@link KernelModLoader#classlessNeoMods()} — had nothing constructed, but FML posts the registry events to
+	 * every container it lists, and for such a mod an {@code @EventBusSubscriber} registering its content from
+	 * RegisterEvent is the whole of its code.
+	 */
+	static List<Object> registrationBuses(List<KernelModLoader.ConstructedMod> mods,
+			java.util.Collection<KernelModLoader.NeoIdentity> classless) {
+		List<Object> buses = new ArrayList<>();
+		java.util.Set<Object> seenBuses = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		for (KernelModLoader.ConstructedMod m : mods) {
+			if (m.bus() != null && seenBuses.add(m.bus())) buses.add(m.bus());
+		}
+		for (KernelModLoader.NeoIdentity identity : classless) {
+			if (identity.bus() != null && seenBuses.add(identity.bus())) buses.add(identity.bus());
+		}
+		return buses;
+	}
+
+	/**
 	 * Constructs NeoForge's baseline mod ({@code NeoForgeMod}) on a fresh mod-event bus — which registers its
 	 * {@code DeferredRegister}s — then fires {@code RegisterEvent} per registry so those DeferredRegisters flush
 	 * their default content (the empty/water/lava FluidTypes, default attributes, …). A single unfreeze/freeze
@@ -709,14 +735,7 @@ public final class KernelLifecycle {
 					: KernelModLoader.publishedForgeMods().entrySet()) {
 				if (!deferredForge.contains(entry.getKey())) forgeHandles.add(entry.getValue());
 			}
-			// Dedupe by IDENTITY: a NeoForge mod has ONE bus shared by all its @Mod classes (balm ships
-			// NeoForgeBalm + NeoForgeBalmClient, FallingTree the same), so a per-entry list would fire
-			// RegisterEvent twice on that bus and register the mod's content twice.
-			java.util.Set<Object> seenBuses =
-					java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-			for (KernelModLoader.ConstructedMod m : mods) {
-				if (m.bus() != null && seenBuses.add(m.bus())) buses.add(m.bus());
-			}
+			buses.addAll(registrationBuses(mods, KernelModLoader.classlessNeoMods().values()));
 
 			// Capture the post-Bootstrap vanilla registry state for NEOFORGE only, before the window opens. NeoForge's
 			// unfreeze clear-callback empties its blockstate→id map, and BlockCallbacks.onBake only re-adds blocks that
