@@ -32,6 +32,7 @@ import org.objectweb.asm.Opcodes;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
 import net.forbric.api.Side;
+import net.forbric.kernel.transform.CreativePagerBridgeInjector;
 import net.forbric.kernel.transform.GuestInjectorPruner;
 import net.forbric.kernel.transform.LootTableEventBridgeInjector;
 
@@ -51,6 +52,7 @@ class FabricApiModuleLossAuditTest {
 		FabricApiModuleLossAudit.reset();
 		System.clearProperty(LootTableEventBridgeInjector.PROPERTY);
 		System.clearProperty(GuestInjectorPruner.PROPERTY);
+		System.clearProperty(CreativePagerBridgeInjector.PROPERTY);
 		System.clearProperty(FabricApiModuleLossAudit.SWITCH);
 		if (previous != null) ModCatalog.publish(previous);
 	}
@@ -108,12 +110,51 @@ class FabricApiModuleLossAuditTest {
 	@Test
 	void aClientOnlySurfaceIsALossOnTheClientAndNotOnTheServer() {
 		publish(entry("pager", "pager.jar", ""));
+		System.setProperty(CreativePagerBridgeInjector.PROPERTY, "off");
 		FabricApiModuleLossAudit.note("pager.jar", classNaming(CREATIVE));
 		FabricApiModuleLossAudit.report(Side.DEDICATED_SERVER);
 		assertTrue(ModCatalog.failures().isEmpty(), "a dedicated server never opens the creative screen");
 		FabricApiModuleLossAudit.report(Side.CLIENT);
 		ModCatalog.Entry pager = degraded("pager");
 		assertTrue(pager != null && pager.statusDetail().startsWith("fabric-creative-tab-api-v1: "), String.valueOf(pager));
+	}
+
+	/** A class IMPLEMENTING the creative-tab interface: owo-lib's mixin, which the fallback leaves out. */
+	private static byte[] classImplementing(String itf) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT, "com/example/PagerMixin", null, "java/lang/Object",
+				new String[] {itf});
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	@Test
+	void theCreativePagerRowFollowsTheBridgeAndNamesTheAssertionErrorNotACast() {
+		publish(entry("pager", "pager.jar", ""));
+		FabricApiModuleLossAudit.note("pager.jar", classNaming(CREATIVE));
+		FabricApiModuleLossAudit.report(Side.CLIENT);
+		assertTrue(ModCatalog.failures().isEmpty(), "the bridge backs the interface from NeoForge's pager: " + ModCatalog.failures());
+
+		System.setProperty(CreativePagerBridgeInjector.PROPERTY, "off");
+		FabricApiModuleLossAudit.report(Side.CLIENT);
+		ModCatalog.Entry pager = degraded("pager");
+		assertTrue(pager != null && pager.statusDetail().contains("AssertionError"), String.valueOf(pager));
+		assertFalse(pager.statusDetail().contains("ClassCastException"),
+				"fabric-api's class tweaker injects the interface, so a cast succeeds: " + pager.statusDetail());
+	}
+
+	@Test
+	void aModImplementingTheCreativeInterfaceIsToldItsMixinIsLeftOut() {
+		publish(entry("owo", "owo.jar", ""), entry("caller", "caller.jar", ""));
+		System.setProperty(CreativePagerBridgeInjector.PROPERTY, "off");
+		FabricApiModuleLossAudit.note("owo.jar", classImplementing(CREATIVE));
+		FabricApiModuleLossAudit.note("caller.jar", classNaming(CREATIVE));
+		FabricApiModuleLossAudit.report(Side.CLIENT);
+		ModCatalog.Entry owo = degraded("owo");
+		assertTrue(owo != null && owo.statusDetail().contains("mixin implementing FabricCreativeModeInventoryScreen is left out"),
+				String.valueOf(owo));
+		ModCatalog.Entry caller = degraded("caller");
+		assertTrue(caller != null && caller.statusDetail().contains("every call throws AssertionError"), String.valueOf(caller));
 	}
 
 	@Test

@@ -928,6 +928,48 @@ public final class MixinFit {
 		return out;
 	}
 
+	/**
+	 * The methods of duck interface {@code contract} its implementer has to supply: the abstract ones, and the defaults
+	 * that only throw — Fabric writes {@code throw new AssertionError("Implemented by mixin")} for every method its
+	 * mixin implements, so an interface can be fully "default" and still have nothing behind it. A default that calls
+	 * back into the contract ({@code switchToNextPage} is {@code switchToPage(getCurrentPage() + 1)}) is not counted:
+	 * it works once the others do. As {@code name + descriptor}.
+	 */
+	public static Set<String> implementerSupplies(ClassNode contract) {
+		Set<String> out = new LinkedHashSet<>();
+		if (contract.methods == null) return out;
+		for (MethodNode m : contract.methods) {
+			if ((m.access & (Opcodes.ACC_STATIC | Opcodes.ACC_PRIVATE)) != 0 || m.name.startsWith("<")) continue;
+			if ((m.access & Opcodes.ACC_ABSTRACT) != 0) {
+				out.add(m.name + m.desc);
+				continue;
+			}
+			boolean throwsOnly = false, delegates = false;
+			for (AbstractInsnNode insn : m.instructions) {
+				if (insn.getOpcode() == Opcodes.ATHROW) throwsOnly = true;
+				if (insn instanceof MethodInsnNode call && call.owner.equals(contract.name)) delegates = true;
+			}
+			if (throwsOnly && !delegates) out.add(m.name + m.desc);
+		}
+		return out;
+	}
+
+	/**
+	 * The {@link #implementerSupplies} methods of {@code contract} that {@code target} does not declare with a body —
+	 * empty when the target stands behind the interface on its own, whoever implants it.
+	 */
+	public static List<String> unsupplied(ClassNode contract, ClassNode target) {
+		Set<String> declared = new LinkedHashSet<>();
+		if (target.methods != null) {
+			for (MethodNode m : target.methods) {
+				if ((m.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_STATIC)) == 0) declared.add(m.name + m.desc);
+			}
+		}
+		List<String> out = new ArrayList<>();
+		for (String method : implementerSupplies(contract)) if (!declared.contains(method)) out.add(method);
+		return out;
+	}
+
 	/** Whether {@code mixin} depends on any of {@code interfaces} — implements it, casts to it, or calls through it. */
 	public static boolean referencesAny(ClassNode mixin, Set<String> interfaces) {
 		if (interfaces.isEmpty()) return false;

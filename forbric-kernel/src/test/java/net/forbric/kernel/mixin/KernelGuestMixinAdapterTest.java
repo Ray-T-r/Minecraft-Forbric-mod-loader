@@ -806,4 +806,121 @@ class KernelGuestMixinAdapterTest {
 			MixinConfigOwners.reset();
 		}
 	}
+
+	// --- a pinned mixin's interface, relied on from another mod's config -----------------------------------------
+
+	private static final MergedBaseMixinCompat.PinnedContract PINNED = MergedBaseMixinCompat.PINNED_CONTRACTS.getFirst();
+
+	/**
+	 * The pinned contract in miniature, shaped as fabric-api writes it: one method only its implementer supplies
+	 * ({@code getCurrentPage()I}, a default that throws) and one that works once that does.
+	 */
+	private static byte[] pinnedContract() {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE, PINNED.contract(), null,
+				"java/lang/Object", null);
+		MethodVisitor page = cw.visitMethod(Opcodes.ACC_PUBLIC, "getCurrentPage", "()I", null, null);
+		page.visitCode();
+		page.visitTypeInsn(Opcodes.NEW, "java/lang/AssertionError");
+		page.visitInsn(Opcodes.DUP);
+		page.visitLdcInsn("Implemented by mixin");
+		page.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/AssertionError", "<init>", "(Ljava/lang/Object;)V", false);
+		page.visitInsn(Opcodes.ATHROW);
+		page.visitMaxs(3, 1);
+		page.visitEnd();
+		MethodVisitor next = cw.visitMethod(Opcodes.ACC_PUBLIC, "switchToNextPage", "()Z", null, null);
+		next.visitCode();
+		next.visitVarInsn(Opcodes.ALOAD, 0);
+		next.visitMethodInsn(Opcodes.INVOKEINTERFACE, PINNED.contract(), "getCurrentPage", "()I", true);
+		next.visitInsn(Opcodes.POP);
+		next.visitInsn(Opcodes.ICONST_1);
+		next.visitInsn(Opcodes.IRETURN);
+		next.visitMaxs(1, 1);
+		next.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** The creative screen with a {@code selectTab} to anchor on, backed ({@code getCurrentPage()I}) or not. */
+	private static byte[] creativeScreen(boolean backed) {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, PINNED.target(), null, "java/lang/Object", new String[] {PINNED.contract()});
+		for (String[] m : backed ? new String[][] {{"selectTab", "()V"}, {"getCurrentPage", "()I"}} : new String[][] {{"selectTab", "()V"}}) {
+			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, m[0], m[1], null, null);
+			mv.visitCode();
+			if (m[1].endsWith("I")) {
+				mv.visitInsn(Opcodes.ICONST_0);
+				mv.visitInsn(Opcodes.IRETURN);
+			} else {
+				mv.visitInsn(Opcodes.RETURN);
+			}
+			mv.visitMaxs(1, 1);
+			mv.visitEnd();
+		}
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** owo-lib's shape: implements the contract, and calls {@code getCurrentPage()} from an inject at selectTab's tail. */
+	private static byte[] pagerMemoryMixin() {
+		ClassWriter cw = beginMixin("PagerMemoryMixin", PINNED.target(), PINNED.contract());
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE, "captureSetTab", "()V", null, null);
+		AnnotationVisitor inject = mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", false);
+		AnnotationVisitor methods = inject.visitArray("method");
+		methods.visit(null, "selectTab");
+		methods.visitEnd();
+		inject.visitEnd();
+		mv.visitCode();
+		mv.visitVarInsn(Opcodes.ALOAD, 0);
+		mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, PKG + "/PagerMemoryMixin", "getCurrentPage", "()I", false);
+		mv.visitInsn(Opcodes.POP);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(1, 1);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	private static List<String> judgePagerMemory(boolean backed) {
+		Map<String, byte[]> classes = new HashMap<>();
+		classes.put(PINNED.target() + ".class", creativeScreen(backed));
+		classes.put(PINNED.contract() + ".class", pinnedContract());
+		classes.put(PKG + "/PagerMemoryMixin.class", pagerMemoryMixin());
+		return KernelGuestMixinAdapter.unfitMixins("owo.mixins.json", config(PKG.replace('/', '.'), "PagerMemoryMixin"),
+				resolver(classes));
+	}
+
+	@Test
+	void aMixinRelyingOnAPinnedMixinsInterfaceGoesWhenNothingStandsBehindIt() {
+		assertEquals(List.of("PagerMemoryMixin"), judgePagerMemory(false),
+				"kept, its getCurrentPage() is the interface default and the creative inventory throws AssertionError");
+		var finding = net.forbric.api.CompatibilityFindings.all().stream()
+				.filter(f -> f.id().equals(MixinCompatibility.id("owo.mixins.json", PKG.replace('/', '.') + ".PagerMemoryMixin")))
+				.findFirst().orElseThrow(() -> new AssertionError(String.valueOf(net.forbric.api.CompatibilityFindings.all())));
+		assertEquals(net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, finding.confidence());
+		assertFalse(finding.required(), "the pin's own row carries the necessity");
+		assertTrue(finding.evidence().stream().anyMatch(e -> e.contains("getCurrentPage()I")), finding.evidence().toString());
+	}
+
+	@Test
+	void theSameMixinStaysWhenTheTargetStandsBehindTheInterface() {
+		assertEquals(List.of(), judgePagerMemory(true), "the creative pager bridge backs the screen: nothing to protect");
+	}
+
+	@Test
+	@org.junit.jupiter.api.parallel.ResourceLock("system-properties")
+	void theClosureFollowsThePinAndItsOwnSwitch() {
+		System.setProperty("forbric.keepMixins", PINNED.pin());
+		try {
+			assertEquals(List.of(), judgePagerMemory(false), "the pin is kept, so Fabric's own mixin implements it");
+		} finally {
+			System.clearProperty("forbric.keepMixins");
+		}
+		System.setProperty(KernelGuestMixinAdapter.PINNED_CONTRACTS_PROPERTY, "off");
+		try {
+			assertEquals(List.of(), judgePagerMemory(false), "-Dforbric.pinnedContracts=off keeps it (and it throws)");
+		} finally {
+			System.clearProperty(KernelGuestMixinAdapter.PINNED_CONTRACTS_PROPERTY);
+		}
+	}
 }

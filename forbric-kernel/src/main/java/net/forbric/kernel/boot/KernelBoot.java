@@ -579,6 +579,19 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeDamageSeamsInjector());
 		// The merged Gui.setScreen is MinecraftForge's; NeoForge's ScreenEvent.Opening and Closing go in after its hooks.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NeoScreenEventsInjector());
+		// Client only: fabric-api's class tweaker injects FabricCreativeModeInventoryScreen into the creative screen, and
+		// the mixin that implements it is pinned (MergedBaseMixinCompat), so every call threw AssertionError — owo-lib
+		// makes one the moment the creative inventory opens. The screen answers it from NeoForge's pager instead.
+		if (net.forbric.kernel.transform.CreativePagerBridgeInjector.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CreativePagerBridgeInjector(name -> {
+				try (var in = loader.getGameResourceAsStream(name + ".class")) { return in != null; }
+				catch (java.io.IOException unavailable) { return false; }
+			}));
+		} else {
+			ForbricLog.warn("[Forbric/CreativePager] -D%s=off — FabricCreativeModeInventoryScreen has nothing behind it on the "
+					+ "creative screen: a guest mixin relying on it (owo-lib's per-page tab memory) is left out, and any other "
+					+ "call throws AssertionError", net.forbric.kernel.transform.CreativePagerBridgeInjector.PROPERTY);
+		}
 		// A MinecraftForge brewing recipe goes into the merged builder's NeoForge-typed list wrapped as NeoForge's.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeBrewingRecipesInjector());
 		// The merged game builds its fuels from NeoForge's data map; Fabric's fuel events run on that builder too.

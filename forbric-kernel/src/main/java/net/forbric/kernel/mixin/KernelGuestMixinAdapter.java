@@ -306,6 +306,7 @@ public final class KernelGuestMixinAdapter {
 			}
 		}
 
+		closeOverPinnedContracts(configName, pkg, pluginClass, loaded, suppress, resource);
 		closeOverCastContracts(configName, pkg, pluginClass, loaded, suppress);
 		if (!suppress.isEmpty()) {
 			ForbricLog.info("[Forbric/Mixin] %s: left out %d of %d mixin(s)", MixinConfigOwners.describe(configName),
@@ -471,6 +472,66 @@ public final class KernelGuestMixinAdapter {
 	private static void attribute(String configName, String detail) {
 		String modId = MixinConfigOwners.modIdOf(configName);
 		if (modId != null) ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, detail);
+	}
+
+	/** {@code -Dforbric.pinnedContracts=off} keeps a mixin that relies on a pinned mixin's interface; its calls then throw. */
+	static final String PINNED_CONTRACTS_PROPERTY = "forbric.pinnedContracts";
+
+	/**
+	 * Leaves out every mixin of this config that relies on an interface only a {@link MergedBaseMixinCompat} pin
+	 * implements, while that pin is in force and the target does not stand behind the interface by itself. See
+	 * {@link MergedBaseMixinCompat.PinnedContract}: the pin is another mod's, dropped by name before this config is
+	 * read, so {@link #closeOverCastContracts} never sees it.
+	 *
+	 * <p>The worked case is owo-lib's {@code MixinCreativeModeInventoryScreenMixin} with the creative pager bridge
+	 * switched off: kept, it called the interface default at the tail of every {@code selectTab} and the creative
+	 * inventory threw {@code AssertionError} on opening. CONFIRMED, since the kernel removes it; not necessary on its
+	 * own account — the pin's row carries that.
+	 */
+	private static void closeOverPinnedContracts(String configName, String pkg, String pluginClass,
+			Map<String, byte[]> loaded, List<String> suppress, Function<String, byte[]> resource) {
+		if ("off".equalsIgnoreCase(System.getProperty(PINNED_CONTRACTS_PROPERTY, "on"))) return;
+		for (MergedBaseMixinCompat.PinnedContract row : MergedBaseMixinCompat.PINNED_CONTRACTS) {
+			List<String> unsupplied = null; // judged at the first mixin that relies on it: almost no config has one
+			for (Map.Entry<String, byte[]> e : loaded.entrySet()) {
+				String mixin = e.getKey();
+				if (suppress.contains(mixin) || row.pin().equals(configName + ":" + mixin)) continue;
+				try {
+					if (!MixinFit.referencesAny(MixinFit.parse(e.getValue()), Set.of(row.contract()))) continue;
+				} catch (RuntimeException unreadable) {
+					continue;
+				}
+				if (unsupplied == null) unsupplied = pinInForce(row.pin()) ? unsuppliedOnTarget(row, resource) : List.of();
+				if (unsupplied.isEmpty()) break;
+				suppress.add(mixin);
+				String contract = row.contract().substring(row.contract().lastIndexOf('/') + 1);
+				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — it relies on %s, which only the pinned "
+						+ "%s implements, and %s does not implement %s itself: kept, its calls would throw AssertionError",
+						MixinConfigOwners.describe(configName), mixin, contract, row.pin(),
+						row.target().substring(row.target().lastIndexOf('/') + 1), String.join(", ", unsupplied));
+				report(MixinCompatibility.id(configName, pkg + "." + mixin), configName, pkg, mixin, pluginClass, e.getValue(),
+						"guest mixin " + mixin + " was left out: it relies on " + contract + ", which nothing implements "
+								+ "on the merged game",
+						CompatibilityFinding.Confidence.CONFIRMED, false,
+						List.of("it implements, casts to or calls through " + row.contract(),
+								"only " + row.pin() + " implements it, and the kernel leaves that mixin out",
+								row.target().replace('/', '.') + " lacks " + String.join(", ", unsupplied)));
+			}
+		}
+	}
+
+	/** Whether the named pin is being left out on this boot — not switched off, not kept by {@code -Dforbric.keepMixins}. */
+	private static boolean pinInForce(String pin) {
+		int colon = pin.indexOf(':');
+		return ForbricMixinService.suppressedMixinsFor(pin.substring(0, colon)).contains(pin.substring(colon + 1));
+	}
+
+	/** The target's missing interface methods, as Mixin will see the target; nothing to judge when either is absent. */
+	private static List<String> unsuppliedOnTarget(MergedBaseMixinCompat.PinnedContract row, Function<String, byte[]> resource) {
+		byte[] target = resource.apply(row.target() + ".class");
+		byte[] contract = resource.apply(row.contract() + ".class");
+		if (target == null || contract == null) return List.of();
+		return MixinFit.unsupplied(MixinFit.parse(contract), MixinFit.parse(target));
 	}
 
 	/**

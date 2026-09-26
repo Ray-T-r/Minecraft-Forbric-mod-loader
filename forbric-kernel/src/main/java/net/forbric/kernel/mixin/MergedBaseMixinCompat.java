@@ -95,9 +95,13 @@ public final class MergedBaseMixinCompat {
 	 *       change. Net effect: a mod tab beyond the first ten was registered, sorted, searchable, and
 	 *       {@code shouldDisplay()==true}, yet drawn on NO page — Fabric hid it on NeoForge's page 2 while
 	 *       NeoForge's pager kept it off page 1. One pager must own the merged screen, and only NeoForge's is part
-	 *       of the base. Cost: the {@code FabricCreativeModeInventoryScreen} duck interface is no longer implanted,
-	 *       so a Fabric mod extending creative-screen paging would ClassCastException — none of the current set
-	 *       does, and that API could never work correctly under the NeoForge pager anyway.</li>
+	 *       of the base. What this mixin also carried is the implementation of {@code FabricCreativeModeInventoryScreen},
+	 *       and that is NOT left out with it: fabric-api's class tweaker injects the interface into the screen
+	 *       regardless, so without an implementation every call is the interface default,
+	 *       {@code AssertionError("Implemented by mixin")} — owo-lib makes one each time the creative inventory
+	 *       opens. {@link net.forbric.kernel.transform.CreativePagerBridgeInjector} implements it from NeoForge's pager
+	 *       instead, so the pin costs Fabric's own page buttons and PageUp/PageDown paging, not the API. With that
+	 *       switched off, {@link #PINNED_CONTRACTS} has the mixin adapter leave out the mixins that rely on it.</li>
 	 *   <li><b>Shoulder Surfing {@code CapeLayerMixin} — the only entry here that arbitrates between two MODS
 	 *       rather than against the merged base.</b> Both it and CustomSkinLoader rewrite the SAME instruction:
 	 *       the {@code RenderTypes.entitySolid} call inside {@code CapeLayer.submit}. Shoulder Surfing gets there
@@ -176,6 +180,28 @@ public final class MergedBaseMixinCompat {
 			// silently discard their max checks too: a blast radius far wider than the one entry it would remove.
 			// So this stays a pin, by measurement rather than by omission.
 			"mixins.essential.json:events.Mixin_GuiDrawScreenEvent_Priority");
+
+	/**
+	 * A duck interface that {@code pin}, a {@link #SUPPRESSED_MIXINS} entry, implements on {@code target} (internal
+	 * names).
+	 *
+	 * <p>{@link KernelGuestMixinAdapter}'s cast-contract closure only sees the mixins it drops itself, one config at a
+	 * time; a pin is dropped by name, before, and from another mod's config. owo-lib's
+	 * {@code MixinCreativeModeInventoryScreenMixin} implements the pin's interface and calls through it, and nothing
+	 * connected the two. So each row is checked for every config: while the pin is in force and the target, as it
+	 * reaches Mixin, lacks any method the interface leaves to its implementer ({@link MixinFit#unsupplied}), a mixin
+	 * that implements, casts to or calls through the interface is left out and reported — a lost feature instead of an
+	 * {@code AssertionError}. When something does back the target
+	 * ({@link net.forbric.kernel.transform.CreativePagerBridgeInjector}), the row is inert.
+	 */
+	public record PinnedContract(String pin, String target, String contract) {
+	}
+
+	/** Every pin that implements an interface. {@code MergedBaseMixinCompatPinnedContractsTest} reads each off its jar. */
+	public static final List<PinnedContract> PINNED_CONTRACTS = List.of(
+			new PinnedContract("fabric-creative-tab-api-v1.client.mixins.json:CreativeModeInventoryScreenMixin",
+					"net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen",
+					"net/fabricmc/fabric/api/client/creativetab/v1/FabricCreativeModeInventoryScreen"));
 
 	/**
 	 * Whole mixin configs to leave unregistered, because no sub-selection of their mixins is coherent.

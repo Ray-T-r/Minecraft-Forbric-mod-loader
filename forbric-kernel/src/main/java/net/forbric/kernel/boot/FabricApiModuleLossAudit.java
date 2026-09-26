@@ -31,6 +31,7 @@ import java.util.zip.ZipFile;
 
 import net.forbric.api.ModCatalog;
 import net.forbric.api.Side;
+import net.forbric.kernel.transform.CreativePagerBridgeInjector;
 import net.forbric.kernel.transform.GuestInjectorPruner;
 import net.forbric.kernel.transform.LootTableEventBridgeInjector;
 import net.forbric.kernel.util.ByteScan;
@@ -60,13 +61,19 @@ public final class FabricApiModuleLossAudit {
 	/**
 	 * One surface that is (or can be) switched off.
 	 *
-	 * @param module    the fabric-api module that defines it
-	 * @param needle    the internal name (or package prefix) a user's constant pool carries
-	 * @param side      the only side the surface exists on, or {@code null} for both
-	 * @param cost      what a user loses, in one sentence
-	 * @param stillLost whether it is lost on this boot (kill switches bind here)
+	 * @param module          the fabric-api module that defines it
+	 * @param needle          the internal name (or package prefix) a user's constant pool carries
+	 * @param side            the only side the surface exists on, or {@code null} for both
+	 * @param cost            what a user loses, in one sentence
+	 * @param stillLost       whether it is lost on this boot (kill switches bind here)
+	 * @param implementerCost what a user whose class IMPLEMENTS an interface under the needle loses instead, or
+	 *                        {@code null} when that is no different — for a duck interface it is: the implementer is
+	 *                        a mixin, and what happens to a mixin is not what happens to a caller
 	 */
-	record Loss(String module, String needle, Side side, String cost, BooleanSupplier stillLost) {
+	record Loss(String module, String needle, Side side, String cost, BooleanSupplier stillLost, String implementerCost) {
+		Loss(String module, String needle, Side side, String cost, BooleanSupplier stillLost) {
+			this(module, needle, side, cost, stillLost, null);
+		}
 	}
 
 	static final List<Loss> LOSSES = List.of(
@@ -78,9 +85,16 @@ public final class FabricApiModuleLossAudit {
 					() -> !GuestInjectorPruner.enabled()),
 			new Loss("fabric-model-loading-api-v1", "net/fabricmc/fabric/api/client/model/loading/v1/UnbakedModelDeserializer",
 					Side.CLIENT, "fabric:type model formats are parsed by NeoForge's loader instead", () -> true),
+			// Not a ClassCastException, which is what this row used to say: fabric-api's class tweaker injects the
+			// interface into the screen whatever the kernel pins, so the cast works and the call is the interface's
+			// own default. owo-lib implements it, from a mixin — the pinned-contract closure leaves that mixin out.
 			new Loss("fabric-creative-tab-api-v1", "net/fabricmc/fabric/api/client/creativetab/v1/", Side.CLIENT,
-					"FabricCreativeModeInventoryScreen is not implanted — a cast to it throws ClassCastException",
-					() -> true),
+					"FabricCreativeModeInventoryScreen has nothing behind it on the creative screen — every call throws "
+							+ "AssertionError(\"Implemented by mixin\")",
+					() -> !CreativePagerBridgeInjector.enabled(),
+					"its mixin implementing FabricCreativeModeInventoryScreen is left out, as nothing stands behind that "
+							+ "interface on the creative screen (kept, its first call would throw AssertionError, not "
+							+ "ClassCastException)"),
 			// The CLASS, not the package: lithostitched names DynamicRegistries in the same package, which works.
 			new Loss("fabric-registry-sync-v0", "net/fabricmc/fabric/api/event/registry/DynamicRegistrySetupCallback", null,
 					"DynamicRegistrySetupCallback never fires (RegistryDataLoaderMixin is pinned)", () -> true),
@@ -90,6 +104,8 @@ public final class FabricApiModuleLossAudit {
 
 	private static final byte[][] NEEDLES = needles();
 	private static final Map<Loss, Set<String>> USERS = new LinkedHashMap<>();
+	/** The jars among {@link #USERS} with a class implementing an interface under the needle, per surface. */
+	private static final Map<Loss, Set<String>> IMPLEMENTERS = new LinkedHashMap<>();
 
 	private FabricApiModuleLossAudit() {
 	}
@@ -122,15 +138,30 @@ public final class FabricApiModuleLossAudit {
 		}
 	}
 
-	/** Records {@code jarName} under every surface {@code classBytes} names. */
+	/** Records {@code jarName} under every surface {@code classBytes} names, and whether it implements one. */
 	public static void note(String jarName, byte[] classBytes) {
 		if (jarName == null || classBytes == null || !ByteScan.containsAny(classBytes, NEEDLES)) return;
 		for (int i = 0; i < NEEDLES.length; i++) {
 			if (!ByteScan.contains(classBytes, NEEDLES[i])) continue;
+			Loss loss = LOSSES.get(i);
+			boolean implementer = loss.implementerCost() != null && implementsUnder(classBytes, loss.needle());
 			synchronized (USERS) {
-				USERS.computeIfAbsent(LOSSES.get(i), l -> new LinkedHashSet<>()).add(jarName);
+				USERS.computeIfAbsent(loss, l -> new LinkedHashSet<>()).add(jarName);
+				if (implementer) IMPLEMENTERS.computeIfAbsent(loss, l -> new LinkedHashSet<>()).add(jarName);
 			}
 		}
+	}
+
+	/** Whether the class declares an interface named by {@code needle}; the header only, and never a refusal. */
+	private static boolean implementsUnder(byte[] classBytes, String needle) {
+		try {
+			for (String itf : new org.objectweb.asm.ClassReader(classBytes).getInterfaces()) {
+				if (needle.endsWith("/") ? itf.startsWith(needle) : itf.equals(needle)) return true;
+			}
+		} catch (RuntimeException notAClass) {
+			// A constant pool that names the surface is still recorded as a use.
+		}
+		return false;
 	}
 
 	/**
@@ -140,10 +171,13 @@ public final class FabricApiModuleLossAudit {
 	public static void report(Side side) {
 		if (!enabled()) return;
 		Map<Loss, Set<String>> users;
+		Map<Loss, Set<String>> implementers;
 		synchronized (USERS) {
 			if (USERS.isEmpty()) return;
 			users = new LinkedHashMap<>();
 			for (var e : USERS.entrySet()) users.put(e.getKey(), Set.copyOf(e.getValue()));
+			implementers = new LinkedHashMap<>();
+			for (var e : IMPLEMENTERS.entrySet()) implementers.put(e.getKey(), Set.copyOf(e.getValue()));
 		}
 		List<ModCatalog.Entry> catalog = ModCatalog.everything();
 		for (Loss loss : LOSSES) {
@@ -153,18 +187,23 @@ public final class FabricApiModuleLossAudit {
 			if (!loss.stillLost().getAsBoolean()) continue;
 
 			List<String> named = new ArrayList<>();
+			List<String> implementing = new ArrayList<>();
 			Set<String> thirdParty = new LinkedHashSet<>();
 			for (ModCatalog.Entry entry : catalog) {
 				if (entry.jar() == null || !jars.contains(entry.jar())) continue;
 				if (FABRIC_API.equals(entry.modId()) || FABRIC_API.equals(entry.bundledBy()) || loss.module().equals(entry.modId())) continue;
-				ModCatalog.mark(entry.modId(), ModCatalog.Status.DEGRADED, loss.module() + ": " + loss.cost());
+				boolean implementer = implementers.getOrDefault(loss, Set.of()).contains(entry.jar());
+				ModCatalog.mark(entry.modId(), ModCatalog.Status.DEGRADED,
+						loss.module() + ": " + (implementer ? loss.implementerCost() : loss.cost()));
 				named.add(entry.modId());
+				if (implementer) implementing.add(entry.modId());
 				thirdParty.add(entry.jar());
 			}
 			if (thirdParty.isEmpty()) continue;
-			ForbricLog.warn("[Forbric/FabricApi] %d mod jar(s) use %s's %s, which is switched off on the merged base — %s. "
+			ForbricLog.warn("[Forbric/FabricApi] %d mod jar(s) use %s's %s, which is switched off on the merged base — %s%s. "
 					+ "Marked DEGRADED: %s (jars: %s)", thirdParty.size(), loss.module(), simple(loss.needle()),
-					loss.cost(), named, thirdParty);
+					loss.cost(), implementing.isEmpty() ? "" : "; for " + implementing + ", " + loss.implementerCost(),
+					named, thirdParty);
 		}
 	}
 
@@ -186,6 +225,7 @@ public final class FabricApiModuleLossAudit {
 	static void reset() {
 		synchronized (USERS) {
 			USERS.clear();
+			IMPLEMENTERS.clear();
 		}
 	}
 }
