@@ -27,39 +27,11 @@ public final class InsertedLambdaArgumentShim {
         if (target == null) return 0;
         List<MethodNode> added = new ArrayList<>();
         for (MethodNode handler : List.copyOf(mixin.methods)) {
-            AnnotationNode inject = MixinFit.injectorOf(handler);
-            if (inject == null || !INJECT.equals(inject.desc) || (handler.access & Opcodes.ACC_PRIVATE) == 0
-                    || !Type.getReturnType(handler.desc).equals(Type.VOID_TYPE) || hasExtraContract(handler)) continue;
-            List<String> selectors = MixinFit.stringList(MixinFit.value(inject, "method"));
-            if (selectors.size() != 1 || MixinFit.value(inject, "slice") != null) continue;
-            Object locals = MixinFit.value(inject, "locals");
-            boolean capturing = locals != null && (!(locals instanceof String[] e) || !e[1].equals("NO_CAPTURE"));
-            if (capturing && !(locals instanceof String[] mode && mode[1].startsWith("CAPTURE_"))) continue;
-            String selector = selectors.getFirst(); int split = selector.indexOf('(');
-            if (!selector.startsWith("lambda$") || split < 0) continue;
-            String name = selector.substring(0, split), oldDesc = selector.substring(split);
-            if (!DuplicateLambdaPruneInjector.droppedDescriptors(target.name, name).contains(oldDesc)) continue;
-            List<MethodNode> live = target.methods.stream().filter(m -> m.name.equals(name)).toList();
-            if (live.size() != 1) continue;
-            MethodNode method = live.getFirst();
-            if (oldDesc.equals(method.desc) || !Type.getReturnType(oldDesc).equals(Type.getReturnType(method.desc))
-                    || ((method.access ^ handler.access) & Opcodes.ACC_STATIC) != 0 || !referenced(target, method)
-                    || !anchorExists(inject, method)) continue;
-            Type[] oldArgs = Type.getArgumentTypes(oldDesc), newArgs = Type.getArgumentTypes(method.desc);
-            Type callback = Type.getType(Type.getReturnType(oldDesc).equals(Type.VOID_TYPE) ? CALLBACK : RETURNABLE);
-            Type[] handlerArgs = Type.getArgumentTypes(handler.desc);
-            if (handlerArgs.length < oldArgs.length + 1) continue;
-            Type[] expected = Arrays.copyOf(oldArgs, oldArgs.length + 1); expected[oldArgs.length] = callback;
-            if (!Arrays.equals(expected, Arrays.copyOf(handlerArgs, expected.length))) continue;
-            // A handler that captures locals takes them after the callback. They are forwarded untouched, and
-            // only when the live lambda provably holds exactly those types in the slots after ITS arguments at
-            // the anchor: the inserted argument shifts every local, and Mixin captures from the first slot past
-            // the arguments of the method it actually injects into.
-            Type[] captured = Arrays.copyOfRange(handlerArgs, expected.length, handlerArgs.length);
-            if (capturing != (captured.length > 0)) continue;
-            if (capturing && !localsAtAnchor(inject, method, captured)) continue;
-            int[] mapping = uniqueEmbedding(oldArgs, newArgs);
-            if (mapping == null) continue;
+            Plan plan = plan(handler, target);
+            if (plan == null) continue;
+            AnnotationNode inject = plan.inject(); MethodNode method = plan.live(); String name = method.name;
+            Type[] oldArgs = plan.oldArgs(), newArgs = plan.newArgs(), captured = plan.captured();
+            Type callback = plan.callback(); int[] mapping = plan.mapping();
             String shimName = "forbric$expanded$" + handler.name;
             if (mixin.methods.stream().anyMatch(m -> m.name.equals(shimName))) continue;
             Type[] shimArgs = Arrays.copyOf(newArgs, newArgs.length + 1 + captured.length); shimArgs[newArgs.length] = callback;
@@ -97,6 +69,59 @@ public final class InsertedLambdaArgumentShim {
                     mixin.name, handler.name, name, method.desc);
         }
         mixin.methods.addAll(added); return added.size();
+    }
+
+    /** Where one handler goes and how its arguments line up; {@code null} when the shim declines it. */
+    record Plan(AnnotationNode inject, MethodNode live, Type[] oldArgs, Type[] newArgs, Type callback, Type[] captured,
+            int[] mapping) {
+    }
+
+    /**
+     * The live lambda a handler's pruned selector moves to — the same decision {@link #adapt} acts on, so
+     * {@link MixinFit} can judge the injector where it will land instead of calling it unfit and removing it before
+     * the shim ever runs. {@code target} must carry code, and its local variable table when the handler captures.
+     */
+    public static MethodNode destination(MethodNode handler, ClassNode target) {
+        if (handler == null || target == null || "off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return null;
+        Plan plan = plan(handler, target);
+        return plan == null ? null : plan.live();
+    }
+
+    static Plan plan(MethodNode handler, ClassNode target) {
+        AnnotationNode inject = MixinFit.injectorOf(handler);
+        if (inject == null || !INJECT.equals(inject.desc) || (handler.access & Opcodes.ACC_PRIVATE) == 0
+                || !Type.getReturnType(handler.desc).equals(Type.VOID_TYPE) || hasExtraContract(handler)) return null;
+        List<String> selectors = MixinFit.stringList(MixinFit.value(inject, "method"));
+        if (selectors.size() != 1 || MixinFit.value(inject, "slice") != null) return null;
+        Object locals = MixinFit.value(inject, "locals");
+        boolean capturing = locals != null && (!(locals instanceof String[] e) || !e[1].equals("NO_CAPTURE"));
+        if (capturing && !(locals instanceof String[] mode && mode[1].startsWith("CAPTURE_"))) return null;
+        String selector = selectors.getFirst(); int split = selector.indexOf('(');
+        if (!selector.startsWith("lambda$") || split < 0) return null;
+        String name = selector.substring(0, split), oldDesc = selector.substring(split);
+        if (!DuplicateLambdaPruneInjector.droppedDescriptors(target.name, name).contains(oldDesc)) return null;
+        List<MethodNode> live = target.methods.stream().filter(m -> m.name.equals(name)).toList();
+        if (live.size() != 1) return null;
+        MethodNode method = live.getFirst();
+        if (oldDesc.equals(method.desc) || !Type.getReturnType(oldDesc).equals(Type.getReturnType(method.desc))
+                || ((method.access ^ handler.access) & Opcodes.ACC_STATIC) != 0 || !referenced(target, method)
+                || !anchorExists(inject, method)) return null;
+        Type[] oldArgs = Type.getArgumentTypes(oldDesc), newArgs = Type.getArgumentTypes(method.desc);
+        Type callback = Type.getType(Type.getReturnType(oldDesc).equals(Type.VOID_TYPE) ? CALLBACK : RETURNABLE);
+        Type[] handlerArgs = Type.getArgumentTypes(handler.desc);
+        if (handlerArgs.length < oldArgs.length + 1) return null;
+        Type[] expected = Arrays.copyOf(oldArgs, oldArgs.length + 1); expected[oldArgs.length] = callback;
+        if (!Arrays.equals(expected, Arrays.copyOf(handlerArgs, expected.length))) return null;
+        // A handler that captures locals takes them after the callback. They are forwarded untouched, and only when
+        // the live lambda provably holds exactly those types in the slots after ITS arguments at the anchor: the
+        // inserted argument shifts every local, and Mixin captures from the first slot past the arguments of the
+        // method it actually injects into.
+        Type[] captured = Arrays.copyOfRange(handlerArgs, expected.length, handlerArgs.length);
+        if (capturing != (captured.length > 0)) return null;
+        if (capturing && !localsAtAnchor(inject, method, captured)) return null;
+        int[] mapping = uniqueEmbedding(oldArgs, newArgs);
+        if (mapping == null) return null;
+        return new Plan(inject, method, oldArgs, newArgs, callback, captured, mapping);
     }
 
     static int[] uniqueEmbedding(Type[] oldArgs, Type[] newArgs) {

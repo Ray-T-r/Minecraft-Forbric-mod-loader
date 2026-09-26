@@ -91,6 +91,29 @@ class InsertedLambdaArgumentShimTest {
   Object first=new Object(),second=new Object();CallbackInfo callback=new CallbackInfo("render",false);method.invoke(null,7L,first,"inserted",second,1.5d,callback,"local",5);
   assertArrayEquals(new Object[]{7L,first,second,1.5d,callback,"local",5},(Object[])defined.getField("seen").get(null));
  }
+ @Test void mixinFitJudgesTheShimmedSelectorWhereItWillLandInsteadOfRemovingIt()throws Exception{
+  ClassNode shell=localsShell(),target=targetWithLocals(true,"Ljava/lang/String;");byte[] targetBytes=StagedFabricMixinFixture.bytes(target);
+  MixinFit.Result fit=MixinFit.evaluate(StagedFabricMixinFixture.bytes(shell),path->path.equals("probe/Target.class")?targetBytes:null);
+  assertEquals(MixinFit.Verdict.FIT,fit.verdict(),"UNFIT here removes the mixin from its config before the shim can run: "+fit.unresolved());
+  System.setProperty(InsertedLambdaArgumentShim.PROPERTY,"off");
+  try{assertEquals(MixinFit.Verdict.UNFIT,MixinFit.evaluate(StagedFabricMixinFixture.bytes(localsShell()),path->path.equals("probe/Target.class")?targetBytes:null).verdict(),"without the shim the pruned selector resolves nothing");}
+  finally{System.clearProperty(InsertedLambdaArgumentShim.PROPERTY);}
+ }
+ @Test void actualFusionSpriteLoaderHookFollowsNeoForgesLiveLambda()throws Exception{
+  Path jar=Path.of("build/compat-inputs/sweep90/mods/fusion-1.3.15a-forge-mc26.2.jar");Assumptions.assumeTrue(Files.isRegularFile(jar),"sweep pack absent");
+  ClassNode mixin;try(ZipFile z=new ZipFile(jar.toFile())){mixin=MixinFit.parse(z.getInputStream(z.getEntry("com/supermartijn642/fusion/mixin/SpriteResourceLoaderMixin.class")).readAllBytes());}
+  String owner="net/minecraft/client/renderer/texture/atlas/SpriteResourceLoader";
+  // The raw class, local variable table included: the fixture's parse drops it, and the live table is the proof.
+  Path merged=Path.of(System.getenv().getOrDefault("FORBRIC_OLD","../forbric-loader"),"run/merged-base/patched-mc-merged-26.2.jar");Assumptions.assumeTrue(Files.isRegularFile(merged),"actual game required");
+  byte[] raw;try(ZipFile z=new ZipFile(merged.toFile())){raw=z.getInputStream(z.getEntry(owner+".class")).readAllBytes();}
+  byte[] pruned=new DuplicateLambdaPruneInjector().transform(owner.replace('/','.'),raw,null);
+  ClassNode target=new ClassNode();new ClassReader(pruned).accept(target,ClassReader.SKIP_FRAMES);
+  MixinFit.Result real=MixinFit.evaluate(StagedFabricMixinFixture.bytes(mixin),path->path.equals(owner+".class")?pruned:null);assertEquals(MixinFit.Verdict.FIT,real.verdict(),real.unresolved()+" dropped="+DuplicateLambdaPruneInjector.droppedDescriptors(owner,"lambda$create$0"));
+  assertEquals(1,InsertedLambdaArgumentShim.adapt(mixin,n->target));
+  MethodNode shim=StagedFabricMixinFixture.method(mixin,"forbric$expanded$handleFusionTextures");
+  assertEquals(8+1,Type.getArgumentTypes(shim.desc).length,"4 live arguments, the callback, 4 captured locals");
+  new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(mixin.name,shim);
+ }
  @Test void capturedLocalsWithoutATableOrOfAnotherTypeRefuse()throws Exception{
   assertEquals(0,InsertedLambdaArgumentShim.adapt(localsShell(),n->{try{return targetWithLocals(false,"Ljava/lang/String;");}catch(Exception e){throw new RuntimeException(e);}}),"no table, no proof");
   assertEquals(0,InsertedLambdaArgumentShim.adapt(localsShell(),n->{try{return targetWithLocals(true,"Ljava/lang/Object;");}catch(Exception e){throw new RuntimeException(e);}}),"slot 7 holds another type");

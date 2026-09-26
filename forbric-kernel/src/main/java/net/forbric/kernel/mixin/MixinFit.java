@@ -329,6 +329,29 @@ public final class MixinFit {
 				if (!targetMethods.isEmpty()) hits.addAll(targetMethods); else misses.add(selector);
 			}
 			if (selectors.isEmpty()) continue;
+			// The move InsertedLambdaArgumentShim will make for a selector naming a lambda the pruner dropped, judged
+			// here too: otherwise a one-injector mixin (fusion's sprite loader hook) is UNFIT, removed from its
+			// config, and never reaches the shim that would have given it the live lambda. Captured locals are
+			// proven from the local variable table, which the plain read skipped.
+			if (hits.isEmpty() && selectors.size() == 1) {
+				MethodNode shimmed = InsertedLambdaArgumentShim.destination(m, target);
+				if (shimmed == null && withLocals == null) {
+					byte[] bytes = resolver.apply(target.name + ".class");
+					if (bytes != null) {
+						withLocals = new ClassNode();
+						new ClassReader(bytes).accept(withLocals, ClassReader.SKIP_FRAMES);
+					}
+				}
+				if (shimmed == null && withLocals != null) {
+					MethodNode twin = InsertedLambdaArgumentShim.destination(m, withLocals);
+					if (twin != null) shimmed = findMethod(target, twin.name, twin.desc, resolver);
+					if (shimmed == null) shimmed = twin;
+				}
+				if (shimmed != null) {
+					hits.add(shimmed);
+					misses.clear();
+				}
+			}
 			String where = misses.isEmpty() ? String.join("|", selectors)
 					: hits.isEmpty() ? String.join("|", misses)
 					: String.join("|", misses) + " (" + hits.size() + "/" + selectors.size() + " selectors hit)";
