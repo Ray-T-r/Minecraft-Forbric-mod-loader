@@ -32,16 +32,23 @@ import org.objectweb.asm.tree.MethodNode;
 class CarrierStubCensusTest {
 	private static final String OLD = System.getenv().getOrDefault("FORBRIC_OLD", "../forbric-loader");
 	private static final Path MERGED = Path.of(OLD, "run/merged-base/patched-mc-merged-26.2.jar");
-	private static final Path FORGE = Path.of(OLD, "run/forge-patched/patched-mc-forge-26.2.jar");
+	private static final Path MC = Path.of(System.getProperty("user.home"), "Library/Application Support/minecraft");
+	/**
+	 * The two jars build-merged-base.sh merges by default. Not run/forge-patched's MinecraftForge jar: it is an older
+	 * build, and its LivingEntity differs from the one the merge took.
+	 */
+	private static final Path FORGE = MC.resolve("libraries/net/forbric/patched-mc-forge/26.2-65.0.1/patched-mc-forge-26.2-65.0.1.jar");
 	private static final Path NEO = Path.of(OLD, "run/neoforge-patched/patched-mc-neoforge-26.2.jar");
-	private static final Path VANILLA = Path.of(System.getProperty("user.home"), "Library/Application Support/minecraft/versions/26.2/26.2.jar");
+	private static final Path VANILLA = MC.resolve("versions/26.2/26.2.jar");
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
 		Assumptions.assumeTrue(Files.isRegularFile(MERGED) && Files.isRegularFile(VANILLA), "merged base and vanilla jar required");
-		Assumptions.assumeTrue(Files.isRegularFile(FORGE) && Files.isRegularFile(NEO), "both carriers' patched game jars required");
+		// The rows themselves need only the merged base and vanilla; each row's forge=/neo= columns need both carriers.
+		boolean carriers = Files.isRegularFile(FORGE) && Files.isRegularFile(NEO);
 		Map<String, ClassNode> vanilla = read(VANILLA, true);
 		TreeSet<String> rows = new TreeSet<>();
-		try (ZipFile zip = new ZipFile(MERGED.toFile()); ZipFile forge = new ZipFile(FORGE.toFile()); ZipFile neo = new ZipFile(NEO.toFile())) {
+		try (ZipFile zip = new ZipFile(MERGED.toFile()); ZipFile forge = carriers ? new ZipFile(FORGE.toFile()) : null;
+				ZipFile neo = carriers ? new ZipFile(NEO.toFile()) : null) {
 			for (ZipEntry entry : Collections.list(zip.entries())) {
 				if (!entry.getName().endsWith(".class") || !entry.getName().startsWith("net/minecraft/")) continue;
 				ClassNode merged = new ClassNode();
@@ -55,7 +62,8 @@ class CarrierStubCensusTest {
 					if (delegation == null) continue;
 					String delegate = delegation.delegate().desc;
 					if (!declares(original, stub.name, stub.desc) || declares(original, delegation.delegate().name, delegate)) continue;
-					rows.add(merged.name + "#" + stub.name + stub.desc + " -> " + delegate
+					String row = merged.name + "#" + stub.name + stub.desc + " -> " + delegate;
+					rows.add(!carriers ? row : row
 							+ " forge=" + MixinStubRebind.Shape.of(entry(forge, merged.name), stub.name, stub.desc, delegate).token
 							+ " neo=" + MixinStubRebind.Shape.of(entry(neo, merged.name), stub.name, stub.desc, delegate).token);
 				}
@@ -67,6 +75,11 @@ class CarrierStubCensusTest {
 			for (String line : new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
 				if (!line.isBlank() && !line.startsWith("#")) shipped.add(line.trim());
 			}
+		}
+		if (!carriers) {
+			assertEquals(rows, new TreeSet<>(shipped.stream().map(line -> line.replaceAll(" (forge|neo)=\\S+", "")).toList()),
+					"carrier-stubs.txt's rows must equal what the staged merged base and vanilla say");
+			Assumptions.abort("both carriers' patched game jars required for the forge=/neo= columns");
 		}
 		if (System.getenv("FORBRIC_WRITE_CARRIER_STUBS") != null) {
 			Path out = Path.of("src/main/resources" + MixinStubRebind.TABLE);
