@@ -143,6 +143,11 @@ public final class MixinStubRebind {
 		if (mixinInternalName != null && ecosystem != null) ECOSYSTEMS.put(mixinInternalName, ecosystem);
 	}
 
+	/** Which family's mod declared {@code mixinInternalName}; null when not recorded or the config's owner is ambiguous. */
+	static Ecosystem ecosystemOf(String mixinInternalName) {
+		return mixinInternalName == null ? null : ECOSYSTEMS.get(mixinInternalName);
+	}
+
 	/** Test seam. */
 	static void forget() {
 		ECOSYSTEMS.clear();

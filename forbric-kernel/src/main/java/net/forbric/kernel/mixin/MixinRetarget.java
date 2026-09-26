@@ -71,9 +71,12 @@ public final class MixinRetarget {
 	public static final String PROPERTY = "forbric.mixinRetarget";
 	/** {@code -Dforbric.mixinRetarget.sugarBoundary=off}: any parameter annotation ends an {@code @At}-driven handler's call part. */
 	static final String SUGAR_BOUNDARY_PROPERTY = "forbric.mixinRetarget.sugarBoundary";
+	/** {@code -Dforbric.mixinRetargetSplit=off}: R3 refuses two fits again, dispatcher or not (R4 off). */
+	static final String SPLIT_PROPERTY = "forbric.mixinRetargetSplit";
 
 	static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	static final String LOCAL_SUGAR = "Lcom/llamalad7/mixinextras/sugar/Local;";
+	static final String GROUP = "Lorg/spongepowered/asm/mixin/injection/Group;";
 	static final String CALLBACK_INFO = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
 	static final String CALLBACK_INFO_RETURNABLE = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 
@@ -134,7 +137,7 @@ public final class MixinRetarget {
 					if (rewrite != null) rewrites.add(rewrite);
 				}
 				rewrites.addAll(swappedCallees(handler, injector, selectors, target, resolver));
-				rewrites.addAll(renamedBodies(handler, injector, selectors, target, resolver));
+				rewrites.addAll(renamedBodies(mixin.name, handler, injector, selectors, target, resolver));
 			}
 		}
 		return new Plan(mixin.name, List.copyOf(rewrites));
@@ -237,10 +240,11 @@ public final class MixinRetarget {
 	 * <p>Demanded, all of it: every resolvable {@code @At} member of the injector absent from the method the
 	 * selector names, present in the renamed one, and exactly ONE method in the class fitting that description.
 	 * A second candidate and the rule declines — a rewrite to the wrong body is an injection running somewhere
-	 * the mod did not ask for, silently, which is worse than the anchors simply missing.
+	 * the mod did not ask for, silently, which is worse than the anchors simply missing — unless R4 can tell which of
+	 * them is a piece of the method the mod named.
 	 */
-	private static List<Rewrite> renamedBodies(MethodNode handler, AnnotationNode injector, List<String> selectors,
-			ClassNode target, Function<String, byte[]> resolver) {
+	private static List<Rewrite> renamedBodies(String mixinName, MethodNode handler, AnnotationNode injector,
+			List<String> selectors, ClassNode target, Function<String, byte[]> resolver) {
 		List<AnnotationNode> ats = MixinFit.atNodes(injector);
 		if (ats.isEmpty()) return List.of();
 
@@ -263,7 +267,7 @@ public final class MixinRetarget {
 			}
 			if (wanted.isEmpty()) continue;
 
-			MethodNode renamed = null;
+			List<MethodNode> fits = new ArrayList<>();
 			for (MethodNode candidate : target.methods) {
 				// Same descriptor AND same static-ness: an instance handler cannot bind into a static body.
 				if (candidate == selected || !candidate.desc.equals(selected.desc)
@@ -272,17 +276,94 @@ public final class MixinRetarget {
 				for (String member : wanted) {
 					if (!MixinFit.containsMember(candidate, member)) { all = false; break; }
 				}
-				if (!all) continue;
-				if (renamed != null) { renamed = null; break; }    // two fits: refuse
-				renamed = candidate;
+				if (all) fits.add(candidate);
 			}
-			if (renamed == null) continue;
+			if (fits.size() > 1) {
+				// Two fits: refuse, unless the method is a carrier's split of vanilla's body and exactly one of them is
+				// the piece it dispatches to (R4).
+				Rewrite split = splitHelper(mixinName, handler, injector, selector, target, selected, fits, wanted);
+				if (split != null) out.add(split);
+				continue;
+			}
+			if (fits.isEmpty()) continue;
+			MethodNode renamed = fits.get(0);
 
 			out.add(new Rewrite(handler.name, Element.SELECTOR, selector, renamed.name + renamed.desc,
 					"a carrier renamed the vanilla body to " + renamed.name + " and left a dispatcher of the same "
 							+ "shape behind"));
 		}
 		return out;
+	}
+
+	/**
+	 * Rule R4, R3's tie-break for a body a carrier SPLIT: the selected method is a pure dispatcher over same-shaped
+	 * helpers it added ({@link CarrierHelpers#dispatchedHelpers}), and of the methods that make every call the
+	 * injector anchors on, exactly one is among them.
+	 *
+	 * <p>NeoForge cut {@code Hud.extractPlayerHealth} into four HUD layers. Better Mount HUD {@code @Redirect}s the
+	 * {@code getVehicleMaxHearts} check that hides the hunger bar while riding; the call now sits in
+	 * {@code extractFoodLevel} AND in {@code extractVehicleHealth}, both {@code (GuiGraphicsExtractor)V}, so R3 refused
+	 * and the hunger bar vanished on every mount. Only {@code extractFoodLevel} is a piece of
+	 * {@code extractPlayerHealth}; the other is a layer of its own, where the redirect would hide the mount's hearts.
+	 *
+	 * <p>Kept exactly, and the table is the only thing that authorizes a move: every anchor on a {@code SPLIT} row of
+	 * {@code carrier-helpers.txt} to that one helper, for the mod's own ecosystem (MinecraftForge keeps vanilla's
+	 * shape, so its mods move too; NeoForge's mods were compiled against the split and do not), and made exactly once
+	 * there. The handler must not depend on anything but the call and the arguments the dispatcher hands on in
+	 * place: an {@code @At}-driven kind, or an {@code @Inject} that cannot cancel (cancelling in the helper would skip
+	 * only that piece where vanilla skipped the rest of the method) and captures no locals; no sugar, no slice, no
+	 * {@code @Group}, and no point but calls and field accesses. {@code -Dforbric.mixinRetargetSplit=off} refuses two
+	 * fits as before.
+	 */
+	private static Rewrite splitHelper(String mixinName, MethodNode handler, AnnotationNode injector, String selector,
+			ClassNode target, MethodNode selected, List<MethodNode> fits, List<String> wanted) {
+		if ("off".equalsIgnoreCase(System.getProperty(SPLIT_PROPERTY, "on"))) return null;
+		net.forbric.api.Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixinName);
+		if (ecosystem == null || !movableWhole(handler, injector)) return null;
+		List<MethodInsnNode> pieces = CarrierHelpers.dispatchedHelpers(target, selected);
+		if (pieces == null) return null;
+		MethodNode helper = null;
+		for (MethodNode fit : fits) {
+			boolean piece = false;
+			for (MethodInsnNode call : pieces) if (call.name.equals(fit.name) && call.desc.equals(fit.desc)) piece = true;
+			if (!piece) continue;
+			if (helper != null) return null;    // two pieces make the call: which half the mod meant is a guess
+			helper = fit;
+		}
+		if (helper == null) return null;
+		for (String member : wanted) {
+			CarrierHelpers.Row row = CarrierHelpers.find(target.name, selected.name + selected.desc, member,
+					CarrierHelpers.Shape.SPLIT, ecosystem);
+			if (row == null || !row.helper().equals(helper.name + helper.desc)) return null;
+			if (CarrierHelpers.occurrences(helper, member) != 1) return null;
+		}
+		return new Rewrite(handler.name, Element.SELECTOR, selector, helper.name + helper.desc,
+				"a carrier split the vanilla body into helpers, and " + helper.name + " is the piece that makes the call");
+	}
+
+	/**
+	 * Whether an injector's handler depends on nothing but the call it anchors on and the target's own arguments,
+	 * so that it means the same in a piece of the method as in the whole: see {@link #splitHelper}.
+	 */
+	private static boolean movableWhole(MethodNode handler, AnnotationNode injector) {
+		List<AnnotationNode> annotations = new ArrayList<>();
+		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
+		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
+		if (annotations.stream().anyMatch(a -> GROUP.equals(a.desc))) return false;
+		if (MixinFit.value(injector, "slice") != null) return false;
+		if (INJECT.equals(injector.desc)) {
+			if (Boolean.TRUE.equals(MixinFit.value(injector, "cancellable")) || MixinFit.value(injector, "locals") != null) return false;
+		} else if (!AT_DRIVEN.contains(injector.desc)) {
+			return false;
+		}
+		List<AnnotationNode> points = MixinFit.atNodes(injector);
+		if (points.isEmpty()) return false;
+		for (AnnotationNode at : points) {
+			String value = MixinFit.asString(MixinFit.value(at, "value"));
+			if (value == null || !MixinFit.RESOLVABLE_AT.contains(value) || MixinFit.value(at, "target") == null) return false;
+		}
+		for (int i = 0; i < Type.getArgumentTypes(handler.desc).length; i++) if (MixinFit.sugar(handler, i)) return false;
+		return true;
 	}
 
 	/** The {@code @At} members this kernel can look for in a method body — the rest say nothing either way. */
