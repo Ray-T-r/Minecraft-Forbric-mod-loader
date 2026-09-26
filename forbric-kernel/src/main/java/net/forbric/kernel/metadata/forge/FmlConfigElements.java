@@ -17,6 +17,7 @@
 package net.forbric.kernel.metadata.forge;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.UnaryOperator;
@@ -66,6 +67,8 @@ public final class FmlConfigElements {
 	 * {@code KernelModFileInfo.getConfig()} null), gives the kernel's own {@code KernelModInfo} and the seeded
 	 * MinecraftForge {@code ModInfo} their empty {@code [[mods]]} answers back, and returns
 	 * {@code KernelForgeModInfo} to its strings-only reading of the jar — each object's answer before this class.
+	 * The older {@code -Dforbric.configElements=off} covers only the seeded NeoForge {@code ModInfo}; it does not
+	 * reach the {@code [[mods]]} answers this switch owns, so each switch restores just its own objects.
 	 */
 	public static final String SWITCH = "forbric.fileConfigElements";
 
@@ -98,7 +101,7 @@ public final class FmlConfigElements {
 
 	/** The copy MinecraftForge's answer falls back to where Guava cannot be reached: unmodifiable, like the real one. */
 	public static Map<String, Object> unmodifiableCopy(Map<String, Object> entries) {
-		return Collections.unmodifiableMap(new java.util.LinkedHashMap<>(entries));
+		return Collections.unmodifiableMap(new LinkedHashMap<>(entries));
 	}
 
 	/**
