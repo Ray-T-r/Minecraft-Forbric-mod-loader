@@ -296,6 +296,15 @@ public final class PassiveSeeder {
 	 */
 	static void seedNeoForgeLoadingModList(ClassLoader gameLoader, Class<?> fmlLoader, Object loaderInstance,
 			Path modsDir) {
+		seedNeoForgeLoadingModList(gameLoader, fmlLoader, loaderInstance, modsDir, KernelBoot.nestedJarJarJars());
+	}
+
+	/**
+	 * @param nestedJars the Forge-family jar-in-jar files this boot extracted and put on the classpath — see
+	 *                   {@link #arbitratedNestedForgeFamilyMods}. Null before extraction has run.
+	 */
+	static void seedNeoForgeLoadingModList(ClassLoader gameLoader, Class<?> fmlLoader, Object loaderInstance,
+			Path modsDir, List<Path> nestedJars) {
 		if ("off".equalsIgnoreCase(System.getProperty(SEED_SWITCH, "on"))) {
 			ForbricLog.warn("[Forbric/Seed] -D%s=off — seeding an EMPTY NeoForge LoadingModList; mods that look "
 					+ "themselves up through FMLLoader.getLoadingModList() will not find themselves", SEED_SWITCH);
@@ -325,6 +334,10 @@ public final class PassiveSeeder {
 		List<DiscoveredMod> presence = new ArrayList<>(mods);
 		Set<String> presenceIds = new LinkedHashSet<>();
 		for (DiscoveredMod mod : mods) presenceIds.add(mod.getId());
+		// The Forge-family mods that came out of another mod's jar go in beside them — into THIS list only, never into
+		// forgeFamilyMods above, for the same handshake reason as the Fabric mods below. See the method.
+		List<DiscoveredMod> nested = arbitratedNestedForgeFamilyMods(nestedJars, presenceIds);
+		presence.addAll(nested);
 		for (DiscoveredMod mod : ModPresence.fabricMods()) {
 			if (mod.getId() != null && mod.getSource() != null && presenceIds.add(mod.getId())) presence.add(mod);
 		}
@@ -372,11 +385,13 @@ public final class PassiveSeeder {
 				if (ids.length() > 0) ids.append(", ");
 				ids.append(mod.getId());
 			}
+			int forgeFamily = mods.size() + nested.size();
 			ForbricLog.info("[Forbric/Seed] seeded NeoForge LoadingModList with %d mod(s) (%d Forge-family, %d "
 					+ "Fabric for presence) — mods that resolve themselves through FMLLoader.getLoadingModList() "
 					+ "(Iris' version probe, yumi/LambDynamicLights' mod lookup) find themselves, and mods that ask "
-					+ "it about ANOTHER ecosystem's mod get the truth. [%s]", presence.size(), mods.size(),
-					presence.size() - mods.size(), ids);
+					+ "it about ANOTHER ecosystem's mod get the truth; %d of the Forge-family ones came out of "
+					+ "another mod's jar. [%s]", presence.size(), forgeFamily, presence.size() - forgeFamily,
+					nested.size(), ids);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Seed] could not seed a populated NeoForge LoadingModList — falling back to the "
 					+ "empty list; mods that look themselves up through it will not find themselves", unwrap(t));
@@ -434,6 +449,62 @@ public final class PassiveSeeder {
 				if (mod.getId() == null || mod.getId().isBlank() || mod.getSource() == null) continue;
 				// owner == null means "no loader manifest at all", which cannot happen for a Forge-family mod; treat
 				// it as unowned (keep) rather than as "not mine", per the arbiter's own contract.
+				if (owner != null && owner != mod.getEcosystem()) continue;
+				if (!seen.add(mod.getId())) continue;
+				out.add(mod);
+			}
+		}
+		return out;
+	}
+
+	/** {@code -Dforbric.seedNestedMods=off} leaves the jar-in-jar Forge-family mods out of the seeded list again. */
+	static final String NESTED_SWITCH = "forbric.seedNestedMods";
+
+	/**
+	 * The Forge-family mods inside {@code nestedJars} — the jar-in-jar files this boot extracted, already past
+	 * cross-jar arbitration — each through the same two filters {@link #arbitratedForgeFamilyMods} applies to
+	 * {@code mods/}, first-wins by id against everything already in {@code seen} (which this adds to).
+	 *
+	 * <p>{@link #arbitratedForgeFamilyMods} lists only the jars directly in {@code mods/}, and nothing descended into
+	 * them, so a mod shipped inside another mod's jar was loaded and constructed but was not in the list a mod
+	 * resolves itself or a neighbour through. Native NeoForge's list has every one of them: LibJF alone brings twelve
+	 * ({@code libjf_base} … {@code libjf_web_v1}), and Fake Players brings commonnetworking. The one reader found
+	 * that pays for the gap is LibJF's own entry-point lookup, which walks {@code getMods()} while {@code ModList}
+	 * does not exist yet — at mixin-plugin time — and caches what it finds: its {@code libjf:asm} declarer,
+	 * {@code libjf_data_manipulation_v0}, is one of the nested twelve.
+	 *
+	 * <p>The source is the extracted list itself, whose paths are the files the classes are served from, so a
+	 * seeded file's contents and scan read the right bytes. Only the NeoForge list gains them: the list this feeds
+	 * is presence, and {@code forgeFamilyMods} — which becomes MinecraftForge's handshake list — is left alone,
+	 * because whether MinecraftForge announces a jar-in-jar mod is a separate question from whether it is here.
+	 *
+	 * @param nestedJars null when extraction has not run, which contributes nothing
+	 */
+	static List<DiscoveredMod> arbitratedNestedForgeFamilyMods(List<Path> nestedJars, Set<String> seen) {
+		List<DiscoveredMod> out = new ArrayList<>();
+		if (nestedJars == null || nestedJars.isEmpty()) return out;
+		if ("off".equalsIgnoreCase(System.getProperty(NESTED_SWITCH, "on"))) {
+			ForbricLog.info("[Forbric/Seed] -D%s=off — mods carried inside another mod's jar are left out of the "
+					+ "NeoForge LoadingModList", NESTED_SWITCH);
+			return out;
+		}
+
+		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
+		DuplicateModArbiter.Decision dupes = DuplicateModArbiter.current();
+		for (Path jar : nestedJars) {
+			if (jar == null || dupes.suppressed(jar)) continue;
+			List<DiscoveredMod> declared;
+			try {
+				declared = discoverer.discoverJar(jar);
+			} catch (Throwable t) {
+				ForbricLog.debug("[Forbric/Seed] could not read nested %s for the NeoForge LoadingModList (%s) — "
+						+ "skipping it", jar.getFileName(), String.valueOf(t));
+				continue;
+			}
+			Ecosystem owner = MultiLoaderArbiter.ownerOf(jar);
+			for (DiscoveredMod mod : declared) {
+				if (!mod.getEcosystem().isForgeFamily()) continue;
+				if (mod.getId() == null || mod.getId().isBlank() || mod.getSource() == null) continue;
 				if (owner != null && owner != mod.getEcosystem()) continue;
 				if (!seen.add(mod.getId())) continue;
 				out.add(mod);
