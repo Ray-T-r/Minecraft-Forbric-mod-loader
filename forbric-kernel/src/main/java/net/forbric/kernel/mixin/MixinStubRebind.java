@@ -72,7 +72,15 @@ import net.forbric.kernel.util.ForbricLog;
  *       else. fusion's overlay-model hook takes the {@code ModelDiscovery} of
  *       {@code ModelManager.discoverModelDependencies} that way: the body is NeoForge's four-argument overload, where
  *       {@code result} is the only one ({@code -Dforbric.mixinStubRebind.typedLocal=off} leaves these where they
- *       are); no {@code @Share}, no {@code @Group};</li>
+ *       are); an argsOnly {@code @Local} (by type, or type and ordinal) when the stub argument it picks is passed
+ *       through as the delegate argument the same rule picks; a {@code @Share} in the mixin's own namespace only when
+ *       every handler sharing that key on the stub moves to the same body, since MixinExtras allocates one value per
+ *       target method. owo's lang hooks (a de-nesting wrap on {@code JsonObject.entrySet}, a rich-text wrap on
+ *       {@code GsonHelper.convertToString} and a skip on {@code BiConsumer.accept}) pass three flags between them that
+ *       way on {@code Language.loadFromJson}, whose body is NeoForge's three-argument overload; left on the stub,
+ *       none of them attached and NeoForge rejected owo's nested keys, dropping every owo-based mod's whole lang file
+ *       ({@code -Dforbric.mixinStubRebind.shared=off} leaves these where they are). No {@code @Group}, and never more
+ *       anchors in the body than the injector's {@code allow};</li>
  *   <li>the {@code @At}-driven kinds only when every parameter past the injector's own contract — the value it
  *       modifies, or the receiver and arguments of the call it replaces or wraps — is a capture of the stub's LEADING
  *       arguments that the stub passes to the delegate at the same positions. Mixin lets any of these kinds take a
@@ -115,11 +123,17 @@ public final class MixinStubRebind {
 	public static final String FORGE_FAMILY_PROPERTY = "forbric.mixinStubRebind.forgeFamily";
 	/** {@code -Dforbric.mixinStubRebind.typedLocal=off}: a handler with a by-type-only {@code @Local} stays on the stub. */
 	public static final String TYPED_LOCAL_PROPERTY = "forbric.mixinStubRebind.typedLocal";
+	/** {@code -Dforbric.mixinStubRebind.shared=off}: a handler with a {@code @Share} or an argsOnly {@code @Local} stays on the stub. */
+	public static final String SHARED_PROPERTY = "forbric.mixinStubRebind.shared";
+	/** {@code -Dforbric.mixinStubRebind.allow=off}: an injector moves whatever its {@code allow} says, as before (A/B only). */
+	public static final String ALLOW_PROPERTY = "forbric.mixinStubRebind.allow";
 
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String CALLBACK_INFO = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
 	private static final String CALLBACK_INFO_RETURNABLE = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 	private static final String LOCAL = "Lcom/llamalad7/mixinextras/sugar/Local;";
+	private static final String SHARE = "Lcom/llamalad7/mixinextras/sugar/Share;";
+	private static final String REDIRECT = "Lorg/spongepowered/asm/mixin/injection/Redirect;";
 	private static final String GROUP = "Lorg/spongepowered/asm/mixin/injection/Group;";
 	private static final String MODIFY_VARIABLE = "Lorg/spongepowered/asm/mixin/injection/ModifyVariable;";
 	private static final String MODIFY_ARG = "Lorg/spongepowered/asm/mixin/injection/ModifyArg;";
@@ -135,7 +149,7 @@ public final class MixinStubRebind {
 			MODIFY_ARGS);
 	/** Kinds whose own contract is the receiver and arguments of the access they replace or guard. */
 	private static final Set<String> CALL_SHAPED = Set.of(
-			"Lorg/spongepowered/asm/mixin/injection/Redirect;",
+			REDIRECT,
 			"Lcom/llamalad7/mixinextras/injector/WrapWithCondition;",
 			"Lcom/llamalad7/mixinextras/injector/v2/WrapWithCondition;",
 			WRAP_OPERATION);
@@ -176,6 +190,10 @@ public final class MixinStubRebind {
 		return !"off".equalsIgnoreCase(System.getProperty(TYPED_LOCAL_PROPERTY, "on"));
 	}
 
+	static boolean sharedEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(SHARED_PROPERTY, "on"));
+	}
+
 	/** Records which family's mod declared {@code mixinInternalName}; null when the config's owner is ambiguous. */
 	public static void noteEcosystem(String mixinInternalName, Ecosystem ecosystem) {
 		if (mixinInternalName != null && ecosystem != null) ECOSYSTEMS.put(mixinInternalName, ecosystem);
@@ -208,10 +226,11 @@ public final class MixinStubRebind {
 		ClassNode target = targets.apply(targetNames.getFirst());
 		if (target == null || target.methods == null) return 0;
 		int moved = 0;
-		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
-			if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX)) continue;
-			MethodNode outer = move(mixin, handler, target, ecosystem);
-			if (outer == null) continue;
+		for (Map.Entry<MethodNode, Plan> planned : plans(mixin, target, ecosystem,
+				(handler, stub, delegate) -> staysOnStub(mixin, handler, target, stub, delegate)).entrySet()) {
+			if (planned.getValue() == null) continue;
+			MethodNode handler = planned.getKey();
+			MethodNode outer = move(mixin, handler, target, ecosystem, planned.getValue());
 			if (outer != handler) mixin.methods.add(outer);
 			moved++;
 		}
@@ -219,15 +238,72 @@ public final class MixinStubRebind {
 	}
 
 	/**
-	 * The body an injector bound to a carrier stub will move to, or null when it will not move: every check
-	 * {@link #adapt} makes, and nothing changed. MixinFit asks this so its verdict and the rebind cannot disagree.
+	 * The body an injector of {@code mixin} bound to a carrier stub will move to, or null when it will not move: every
+	 * check {@link #adapt} makes — the handler's own, and its {@code @Share} group's — and nothing changed. MixinFit asks
+	 * this so its verdict and the rebind cannot disagree.
 	 */
-	public static MethodNode destination(String mixinInternalName, MethodNode handler, ClassNode target) {
-		if (!enabled() || handler == null || target == null || target.methods == null) return null;
-		Ecosystem ecosystem = ECOSYSTEMS.get(mixinInternalName);
+	public static MethodNode destination(ClassNode mixin, MethodNode handler, ClassNode target) {
+		if (!enabled() || mixin == null || mixin.methods == null || handler == null || target == null || target.methods == null) return null;
+		Ecosystem ecosystem = ECOSYSTEMS.get(mixin.name);
 		if (ecosystem == null) return null;
-		Plan plan = plan(handler, target, ecosystem, null);
+		if (MixinOverloadPin.targetsOf(mixin).size() != 1) return null;   // adapt moves nothing in a mixin of several targets
+		Plan plan = plans(mixin, target, ecosystem, null).get(handler);
 		return plan == null ? null : plan.delegation().delegate();
+	}
+
+	/**
+	 * Every handler's plan, with every {@code @Share} group that cannot move whole dropped. MixinExtras gives each key
+	 * one value per target method (in the mixin's own namespace), so handlers sharing a key in the method Mixin bound them
+	 * to must all land in the same body, or each would get a value of its own: owo's three lang hooks pass the "skip the
+	 * next key" and "rich translations" flags between them that way.
+	 *
+	 * @param capturesLost told {@code (handler, stub, delegate)} for a handler that would have moved but for its trailing
+	 *                     captures of the stub's arguments; {@code null} when the caller only wants the answer
+	 */
+	private static Map<MethodNode, Plan> plans(ClassNode mixin, ClassNode target, Ecosystem ecosystem,
+			CapturesLost capturesLost) {
+		Map<MethodNode, Plan> plans = new java.util.LinkedHashMap<>();
+		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
+			if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX)) continue;
+			plans.put(handler, plan(handler, target, ecosystem, capturesLost == null ? null
+					: (stub, delegate) -> capturesLost.accept(handler, stub, delegate)));
+		}
+		for (boolean dropped = true; dropped; ) {   // dropping one sharer can leave another group incomplete
+			dropped = false;
+			for (Map.Entry<MethodNode, Plan> entry : plans.entrySet()) {
+				Plan plan = entry.getValue();
+				if (plan == null || plan.shares().isEmpty()) continue;
+				for (MethodNode other : plans.keySet()) {
+					if (other == entry.getKey() || java.util.Collections.disjoint(shareKeys(other), plan.shares())) continue;
+					if (!boundTo(other, target, plan.stub())) continue;   // a key is shared within one target method only
+					Plan theirs = plans.get(other);
+					if (theirs == null || theirs.delegation().delegate() != plan.delegation().delegate()) {
+						entry.setValue(null);
+						dropped = true;
+						break;
+					}
+				}
+			}
+		}
+		return plans;
+	}
+
+	/** The keys {@code handler} shares in its mixin's own namespace. */
+	private static Set<String> shareKeys(MethodNode handler) {
+		Set<String> keys = new java.util.HashSet<>();
+		for (int i = 0; i < Type.getArgumentTypes(handler.desc).length; i++) {
+			AnnotationNode share = sugar(handler, i, SHARE);
+			if (share != null && MixinFit.value(share, "namespace") == null && MixinFit.value(share, "value") instanceof String key) keys.add(key);
+		}
+		return keys;
+	}
+
+	/** Whether any of {@code handler}'s selectors binds {@code method}. */
+	private static boolean boundTo(MethodNode handler, ClassNode target, MethodNode method) {
+		AnnotationNode injector = MixinFit.injectorOf(handler);
+		if (injector == null) return false;
+		for (String selector : MixinFit.stringList(MixinFit.value(injector, "method"))) if (bound(target, selector) == method) return true;
+		return false;
 	}
 
 	/** Whether {@code method} of {@code target} heads a row of carrier-stubs.txt — cheap, for callers deciding whether to look closer. */
@@ -238,15 +314,21 @@ public final class MixinStubRebind {
 		return false;
 	}
 
-	/** What one move needs: the injector, the stub it is bound to, where that forwards, and whether it captures the stub's arguments. */
-	private record Plan(AnnotationNode injector, MethodNode stub, Delegation delegation, boolean captures) {
+	/**
+	 * What one move needs: the injector, the stub it is bound to, where that forwards, whether it captures the stub's
+	 * arguments, and the {@code @Share} keys it holds in its mixin's namespace.
+	 */
+	private record Plan(AnnotationNode injector, MethodNode stub, Delegation delegation, boolean captures, List<String> shares) {
 	}
 
-	/** The handler to carry the injector after the move (the same one, or a new outer), or null when nothing moves. */
-	private static MethodNode move(ClassNode mixin, MethodNode handler, ClassNode target, Ecosystem ecosystem) {
-		Plan plan = plan(handler, target, ecosystem,
-				(stub, delegate) -> staysOnStub(mixin, handler, target, stub, delegate));
-		if (plan == null) return null;
+	/** Told which handler its captures keep on which stub, and the body it would have moved to. */
+	@FunctionalInterface
+	private interface CapturesLost {
+		void accept(MethodNode handler, MethodNode stub, MethodNode delegate);
+	}
+
+	/** The handler to carry the injector after {@code plan}'s move: the same one, or a new outer. */
+	private static MethodNode move(ClassNode mixin, MethodNode handler, ClassNode target, Ecosystem ecosystem, Plan plan) {
 		AnnotationNode injector = plan.injector();
 		MethodNode stub = plan.stub();
 		Delegation delegation = plan.delegation();
@@ -338,16 +420,38 @@ public final class MixinStubRebind {
 			lost = !capturesSurvive(injector, params, own, plain, stub, delegation);
 		}
 		for (int i = 0; i < plain; i++) if (trailingSugar(handler, i)) return null;
+		List<String> shares = new ArrayList<>();
 		for (int i = plain; i < params.length; i++) {
+			AnnotationNode share = sugar(handler, i, SHARE);
+			if (share != null) {
+				// Only the default namespace, which is the mixin class itself: an explicit one can be shared with injectors
+				// this cannot see. Whether every sharer moves too is decided over the whole mixin (plans).
+				String key = MixinFit.asString(MixinFit.value(share, "value"));
+				if (!sharedEnabled() || key == null || MixinFit.value(share, "namespace") != null) return null;
+				// Not a @Redirect's: one that shares state with its siblings replaces the call as part of a takeover set up
+				// elsewhere in the method, and on the merged body that call can be a carrier's own pipeline.
+				// fabric-renderer-api's SectionCompilerMixin hands every block of a chunk section to the FRAPI renderer
+				// that way, and on NeoForge's compile overload the call it replaces is NeoForge's per-block renderer.
+				// Moving it would switch chunk meshing for every client without Sodium: a separate, measured decision.
+				if (REDIRECT.equals(injector.desc)) return null;
+				shares.add(key);
+				continue;
+			}
 			AnnotationNode local = local(handler, i);
-			if (local == null) return null;   // a trailing capture of the stub's arguments, or @Share
+			if (local == null) return null;   // a trailing capture of the stub's arguments, or other sugar
 			List<String> names = MixinFit.stringList(MixinFit.value(local, "name"));
+			if (Boolean.TRUE.equals(MixinFit.value(local, "argsOnly"))) {
+				if (!sharedEnabled() || !names.isEmpty() || MixinFit.value(local, "index") != null
+						|| !argumentSurvives(params[i], MixinFit.value(local, "ordinal"), stub, delegation)) return null;
+				continue;
+			}
 			if (names.isEmpty() && byTypeOnly(local)) {
 				if (!typedLocalEnabled() || !theOnlyLocalOfItsType(target, delegate, params[i], points)) return null;
 				continue;
 			}
 			if (names.size() != 1 || MixinFit.value(local, "argsOnly") != null || !hasLocal(delegate, names.getFirst(), params[i])) return null;
 		}
+		if (!withinAllow(injector, points, delegate)) return null;
 		if (lost) {
 			if (capturesLost != null) capturesLost.accept(stub, delegate);
 			return null;
@@ -357,7 +461,79 @@ public final class MixinStubRebind {
 		if (captures) {
 			for (int i = 0; i < stubParams.length; i++) if (delegation.positions()[i] < 0) return null;
 		}
-		return new Plan(injector, stub, delegation, captures);
+		return new Plan(injector, stub, delegation, captures, List.copyOf(shares));
+	}
+
+	/**
+	 * Whether an {@code argsOnly} {@code @Local} of {@code type} — the {@code ordinal}-th argument of that type, or the
+	 * only one — reads the same value on the delegate: the stub's argument it picks there is passed through unchanged as
+	 * the argument the same rule picks on the delegate. owo's lang hook takes the {@code InputStream}, first on both.
+	 */
+	static boolean argumentSurvives(Type type, Object ordinal, MethodNode stub, Delegation delegation) {
+		int from = pick(Type.getArgumentTypes(stub.desc), type, ordinal);
+		int to = pick(Type.getArgumentTypes(delegation.delegate().desc), type, ordinal);
+		return from >= 0 && to >= 0 && delegation.positions()[from] == to;
+	}
+
+	/** Which argument an argsOnly {@code @Local} of {@code type} picks: the {@code ordinal}-th of that type, or the only one; -1 otherwise. */
+	private static int pick(Type[] arguments, Type type, Object ordinal) {
+		List<Integer> ofType = new ArrayList<>();
+		for (int i = 0; i < arguments.length; i++) if (arguments[i].equals(type)) ofType.add(i);
+		if (ordinal == null) return ofType.size() == 1 ? ofType.getFirst() : -1;
+		return ordinal instanceof Integer n && n >= 0 && n < ofType.size() ? ofType.get(n) : -1;
+	}
+
+	/**
+	 * Whether the delegate stays within the injector's {@code allow}: the body can hold an anchor more often than
+	 * vanilla's method did (NeoForge's {@code Language.loadFromJson} calls {@code BiConsumer.accept} three times where
+	 * vanilla called it once), and past {@code allow} Mixin fails the injection outright.
+	 */
+	private static boolean withinAllow(AnnotationNode injector, List<AnnotationNode> points, MethodNode delegate) {
+		if ("off".equalsIgnoreCase(System.getProperty(ALLOW_PROPERTY, "on"))) return true;
+		if (!(MixinFit.value(injector, "allow") instanceof Integer allow) || allow < 0) return true;
+		int matches = 0;
+		for (AnnotationNode at : points) {
+			String value = MixinFit.asString(MixinFit.value(at, "value"));
+			int found;
+			if ("HEAD".equals(value) || "TAIL".equals(value)) {
+				found = 1;
+			} else if ("RETURN".equals(value)) {
+				found = 0;
+				for (AbstractInsnNode insn : delegate.instructions) {
+					if (insn.getOpcode() >= Opcodes.IRETURN && insn.getOpcode() <= Opcodes.RETURN) found++;
+				}
+			} else {
+				List<AbstractInsnNode> hits = anchors(delegate, value, MixinFit.asString(MixinFit.value(at, "target")));
+				if (hits == null) return false;   // a point this cannot count: the bound cannot be shown to hold
+				found = hits.size();
+			}
+			if (MixinFit.value(at, "ordinal") instanceof Integer ordinal) found = found > ordinal ? 1 : 0;
+			matches += found;
+		}
+		return matches <= allow;
+	}
+
+	/** The instructions an {@code INVOKE}/{@code INVOKE_ASSIGN} or {@code FIELD} point names in {@code body}; null for other points. */
+	private static List<AbstractInsnNode> anchors(MethodNode body, String value, String member) {
+		boolean call = "INVOKE".equals(value) || "INVOKE_ASSIGN".equals(value);
+		if (!call && !"FIELD".equals(value) || member == null || body.instructions == null) return null;
+		MixinFit.Member want = MixinFit.parseMember(member);
+		if (want == null) return null;
+		List<AbstractInsnNode> found = new ArrayList<>();
+		for (AbstractInsnNode insn : body.instructions) {
+			String name, owner, desc;
+			if (call && insn instanceof MethodInsnNode invoke) {
+				name = invoke.name; owner = invoke.owner; desc = invoke.desc;
+			} else if (!call && insn instanceof FieldInsnNode field) {
+				name = field.name; owner = field.owner; desc = field.desc;
+			} else {
+				continue;
+			}
+			if (name.equals(want.name()) && (want.owner() == null || owner.equals(want.owner())) && (want.desc() == null || desc.equals(want.desc()))) {
+				found.add(insn);
+			}
+		}
+		return found;
 	}
 
 	/**
@@ -807,22 +983,9 @@ public final class MixinStubRebind {
 			if (!"INVOKE".equals(value) && !"FIELD".equals(value) || member == null) return false;
 			// BEFORE and AFTER one call or field access leave the locals as they are; BY walks past other instructions.
 			if (MixinFit.value(at, "shift") instanceof String[] shift && !"BEFORE".equals(shift[1]) && !"AFTER".equals(shift[1])) return false;
-			MixinFit.Member want = MixinFit.parseMember(member);
-			if (want == null) return false;
-			int before = anchors.size();
-			for (AbstractInsnNode insn : delegate.instructions) {
-				String name, memberOwner, desc;
-				if ("INVOKE".equals(value) && insn instanceof MethodInsnNode call) {
-					name = call.name; memberOwner = call.owner; desc = call.desc;
-				} else if ("FIELD".equals(value) && insn instanceof FieldInsnNode field) {
-					name = field.name; memberOwner = field.owner; desc = field.desc;
-				} else {
-					continue;
-				}
-				if (name.equals(want.name()) && (want.owner() == null || memberOwner.equals(want.owner()))
-						&& (want.desc() == null || desc.equals(want.desc()))) anchors.add(insn);
-			}
-			if (anchors.size() == before) return false;
+			List<AbstractInsnNode> found = anchors(delegate, value, member);
+			if (found == null || found.isEmpty()) return false;
+			anchors.addAll(found);
 		}
 		org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.BasicValue>[] frames;
 		try {
@@ -904,8 +1067,13 @@ public final class MixinStubRebind {
 	}
 
 	private static AnnotationNode local(MethodNode handler, int parameter) {
+		return sugar(handler, parameter, LOCAL);
+	}
+
+	/** The annotation {@code desc} on {@code handler}'s {@code parameter}, visible or not; null when absent. */
+	private static AnnotationNode sugar(MethodNode handler, int parameter, String desc) {
 		for (List<AnnotationNode>[] all : List.of(nonNull(handler.visibleParameterAnnotations), nonNull(handler.invisibleParameterAnnotations))) {
-			if (parameter < all.length && all[parameter] != null) for (AnnotationNode a : all[parameter]) if (LOCAL.equals(a.desc)) return a;
+			if (parameter < all.length && all[parameter] != null) for (AnnotationNode a : all[parameter]) if (desc.equals(a.desc)) return a;
 		}
 		return null;
 	}

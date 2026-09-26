@@ -45,6 +45,7 @@ class MixinStubRebindTest {
 		System.clearProperty(MixinStubRebind.SUGAR_BOUNDARY_PROPERTY);
 		System.clearProperty(MixinStubRebind.FORGE_FAMILY_PROPERTY);
 		System.clearProperty(MixinStubRebind.TYPED_LOCAL_PROPERTY);
+		System.clearProperty(MixinStubRebind.SHARED_PROPERTY);
 		MixinStubRebind.forget();
 	}
 
@@ -227,6 +228,118 @@ class MixinStubRebindTest {
 		assertFalse(resolvedModelsMissing.test(fit), fit.toString());
 	}
 
+	// --- @Share groups and argsOnly locals: owo's lang hooks ---
+
+	private static final String LANGUAGE = "net/minecraft/locale/Language";
+	private static final String LOAD_FROM_JSON_BODY = "loadFromJson(Ljava/io/InputStream;Ljava/util/function/BiConsumer;Ljava/util/function/BiConsumer;)V";
+	private static final String LOAD_FROM_JSON_STUB = "loadFromJson(Ljava/io/InputStream;Ljava/util/function/BiConsumer;)V";
+	private static final List<String> OWO_HOOKS = List.of("deNestNestedKeys", "handleRichTranslationsAndErrors", "doSkip");
+
+	private static ClassNode owoLanguageMixin() throws Exception {
+		return fromJar(SWEEP.resolve("owo-lib-0.13.1+26.2.jar"), "io/wispforest/owo/mixin/text/LanguageMixin");
+	}
+
+	/**
+	 * owo's three lang hooks pass flags through @Share and read the InputStream as an argsOnly @Local. On the stub none
+	 * attached, NeoForge's body parsed owo's nested '.{}' keys as components and dropped owo's whole lang file.
+	 */
+	@Test void owosLangHooksMoveTogetherToTheBodyClientLanguageCalls() throws Exception {
+		ClassNode language = merged(LANGUAGE);
+		ClassNode mixin = owoLanguageMixin();
+		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
+		for (String hook : OWO_HOOKS) {
+			MethodNode handler = mixin.methods.stream().filter(m -> m.name.equals(hook)).findFirst().orElseThrow();
+			assertEquals(LOAD_FROM_JSON_BODY, describe(MixinStubRebind.destination(mixin, handler, language)), hook);
+		}
+		assertEquals(3, MixinStubRebind.adapt(mixin, name -> language));
+		for (String hook : OWO_HOOKS) assertEquals(List.of(LOAD_FROM_JSON_BODY), selectors(mixin, hook), hook);
+		assertEquals(0, MixinStubRebind.adapt(mixin, name -> language), "a second pass changes nothing");
+
+		System.setProperty(MixinStubRebind.SHARED_PROPERTY, "off");
+		ClassNode off = owoLanguageMixin();
+		assertEquals(0, MixinStubRebind.adapt(off, name -> language), "the switch");
+	}
+
+	/** One sharer that cannot move holds its whole group — and, through the keys they share, every group linked to it. */
+	@Test void aShareGroupMovesWholeOrNotAtAll() throws Exception {
+		ClassNode language = merged(LANGUAGE);
+		// doSkip allows one BiConsumer.accept; NeoForge's body has three. It stays, so does the handler it shares the
+		// skip flag with, and so does the one sharing the other two flags with that.
+		ClassNode bounded = owoLanguageMixin();
+		MixinStubRebind.noteEcosystem(bounded.name, Ecosystem.FABRIC);
+		MixinFit.injectorOf(bounded.methods.stream().filter(m -> m.name.equals("doSkip")).findFirst().orElseThrow()).values.addAll(List.of("allow", 1));
+		assertEquals(0, MixinStubRebind.adapt(bounded, name -> language));
+		for (String hook : OWO_HOOKS) assertEquals(List.of(LOAD_FROM_JSON_STUB), selectors(bounded, hook), hook);
+
+		// An explicit namespace can be shared with injectors elsewhere: that handler stays. It is its own key, so the other
+		// two, which now share only with each other, still move.
+		ClassNode named = owoLanguageMixin();
+		MixinStubRebind.noteEcosystem(named.name, Ecosystem.FABRIC);
+		MethodNode deNest = named.methods.stream().filter(m -> m.name.equals("deNestNestedKeys")).findFirst().orElseThrow();
+		for (List<AnnotationNode> parameter : deNest.invisibleParameterAnnotations == null ? List.<List<AnnotationNode>>of() : Arrays.asList(deNest.invisibleParameterAnnotations)) {
+			if (parameter != null) for (AnnotationNode a : parameter) if (a.desc.endsWith("/Share;")) a.values.addAll(List.of("namespace", "elsewhere"));
+		}
+		for (List<AnnotationNode> parameter : deNest.visibleParameterAnnotations == null ? List.<List<AnnotationNode>>of() : Arrays.asList(deNest.visibleParameterAnnotations)) {
+			if (parameter != null) for (AnnotationNode a : parameter) if (a.desc.endsWith("/Share;")) a.values.addAll(List.of("namespace", "elsewhere"));
+		}
+		assertEquals(2, MixinStubRebind.adapt(named, name -> language));
+		assertEquals(List.of(LOAD_FROM_JSON_STUB), selectors(named, "deNestNestedKeys"));
+		assertEquals(List.of(LOAD_FROM_JSON_BODY), selectors(named, "doSkip"));
+	}
+
+	/**
+	 * fabric-renderer-api's chunk-meshing takeover: an @Inject sets the FRAPI renderer up through @Share, a @Redirect hands
+	 * it every block. On NeoForge's compile overload the redirected call is NeoForge's own per-block renderer, so the
+	 * group stays on the stub — switching chunk meshing is not this rule's to decide.
+	 */
+	@Test void aShareGroupWithARedirectStays() throws Exception {
+		ClassNode mixin = StagedFabricMixinFixture.mixin("fabric-renderer-api-v1", "net/fabricmc/fabric/mixin/client/renderer/block/render/SectionCompilerMixin");
+		ClassNode compiler = merged("net/minecraft/client/renderer/chunk/SectionCompiler");
+		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
+		assertEquals(0, MixinStubRebind.adapt(mixin, name -> compiler));
+		assertEquals(List.of("compile"), selectors(mixin, "beforeLoopCompile"));
+		assertEquals(List.of("compile"), selectors(mixin, "tesselateBlockProxy"));
+	}
+
+	/** MixinFit asks the same group rule: owo's lang mixin reads FIT where the three move, PARTIAL where they cannot. */
+	@Test void owosVerdictFollowsTheGroup() throws Exception {
+		Path jar = SWEEP.resolve("owo-lib-0.13.1+26.2.jar");
+		Assumptions.assumeTrue(Files.isRegularFile(jar) && Files.isRegularFile(MERGED), "owo and the merged base required");
+		byte[] mixin, language;
+		try (ZipFile zip = new ZipFile(jar.toFile())) {
+			mixin = zip.getInputStream(zip.getEntry("io/wispforest/owo/mixin/text/LanguageMixin.class")).readAllBytes();
+		}
+		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
+			language = zip.getInputStream(zip.getEntry(LANGUAGE + ".class")).readAllBytes();
+		}
+		java.util.function.Function<String, byte[]> resolver = name -> name.equals(LANGUAGE + ".class") ? language : null;
+		assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(mixin, resolver).verdict(), "premise: bound to the stub");
+		MixinStubRebind.noteEcosystem("io/wispforest/owo/mixin/text/LanguageMixin", Ecosystem.FABRIC);
+		MixinFit.Result fit = MixinFit.evaluate(mixin, resolver);
+		assertEquals(MixinFit.Verdict.FIT, fit.verdict(), fit.toString());
+		System.setProperty(MixinStubRebind.SHARED_PROPERTY, "off");
+		assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(mixin, resolver).verdict(), "the switch");
+	}
+
+	/** An argsOnly @Local reads the argument its type (and ordinal) picks: the stub must pass that one through to the one it picks there. */
+	@Test void anArgsOnlyLocalMovesOnlyWhereTheStubPassesItsArgumentThrough() {
+		MethodNode stub = new MethodNode(Opcodes.ACC_STATIC, "f", "(IILjava/io/InputStream;)V", null, null);
+		MethodNode body = new MethodNode(Opcodes.ACC_STATIC, "f", "(IILjava/io/InputStream;Z)V", null, null);
+		Type in = Type.getType("Ljava/io/InputStream;");
+		MixinStubRebind.Delegation straight = new MixinStubRebind.Delegation(body, new int[] { 0, 1, 2 });
+		MixinStubRebind.Delegation swapped = new MixinStubRebind.Delegation(body, new int[] { 1, 0, 2 });
+		assertTrue(MixinStubRebind.argumentSurvives(in, null, stub, straight));
+		assertTrue(MixinStubRebind.argumentSurvives(Type.INT_TYPE, 1, stub, straight));
+		assertFalse(MixinStubRebind.argumentSurvives(Type.INT_TYPE, 0, stub, swapped), "the stub hands its first int over as the second");
+		assertFalse(MixinStubRebind.argumentSurvives(Type.INT_TYPE, null, stub, straight), "two ints and no ordinal: Mixin's own pick fails");
+		assertFalse(MixinStubRebind.argumentSurvives(in, null, stub, new MixinStubRebind.Delegation(body, new int[] { 0, 1, -1 })),
+				"the stream is not passed through");
+	}
+
+	private static String describe(MethodNode method) {
+		return method == null ? null : method.name + method.desc;
+	}
+
 	/** The mirror: MinecraftForge forwards PackDetector's two-argument detectPackResources; NeoForge kept it as the body. */
 	@Test void aNeoForgeModMovesOffAStubOnlyMinecraftForgeHas() throws Exception {
 		String owner = "net/minecraft/server/packs/repository/PackDetector";
@@ -405,7 +518,7 @@ class MixinStubRebindTest {
 				"(" + FUEL_VALUES + PROVIDER + FLAGS + "I)" + FUEL_VALUES, true, injector(MODIFY_RETURN, STUB_BURN, List.of(at("RETURN"))));
 		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC, "torrential.mixins.json");
 		MethodNode handler = mixin.methods.getFirst();
-		assertNull(MixinStubRebind.destination(mixin.name, handler, fuel));
+		assertNull(MixinStubRebind.destination(mixin, handler, fuel));
 		assertTrue(CompatibilityFindings.all().isEmpty(), "asking where it would go reports nothing");
 		assertEquals(0, MixinStubRebind.adapt(mixin, name -> fuel));
 		assertEquals(List.of(STUB_BURN), selectors(mixin, "torrential$modifyFuelValues"));
@@ -566,7 +679,7 @@ class MixinStubRebindTest {
 		ClassNode player = merged("net/minecraft/world/entity/player/Player");
 		ClassNode mixin = conduit("(F" + STATE + ")F", "speed", 0);
 		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
-		assertEquals("getDestroySpeed", MixinStubRebind.destination(mixin.name, mixin.methods.getFirst(), player).name);
+		assertEquals("getDestroySpeed", MixinStubRebind.destination(mixin, mixin.methods.getFirst(), player).name);
 		assertEquals(1, MixinStubRebind.adapt(mixin, name -> player));
 		assertEquals(List.of("getDestroySpeed(" + STATE + POS + ")F"), selectors(mixin, "torrential$applyConduitModifier"));
 		assertEquals(0, MixinStubRebind.adapt(mixin, name -> player), "a second pass changes nothing");
@@ -576,7 +689,8 @@ class MixinStubRebindTest {
 			new ClassReader(zip.getInputStream(zip.getEntry("net/minecraft/world/entity/player/Player.class")).readAllBytes())
 					.accept(noTable, ClassReader.SKIP_DEBUG);
 		}
-		assertNull(MixinStubRebind.destination(mixin.name, conduit("(F" + STATE + ")F", "speed", 0).methods.getFirst(), noTable),
+		ClassNode again = conduit("(F" + STATE + ")F", "speed", 0);
+		assertNull(MixinStubRebind.destination(again, again.methods.getFirst(), noTable),
 				"no local variable table, no proof (MixinFit re-reads with it)");
 	}
 

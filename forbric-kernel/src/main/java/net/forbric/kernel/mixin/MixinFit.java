@@ -470,10 +470,10 @@ public final class MixinFit {
 		// (any Fabric mod's; a Forge-family mod's where the other carrier added the stub), judged here too so the
 		// verdict and the rebind cannot disagree: its anchors are asked of the body it lands on.
 		if (selectors.size() == 1 && hits.size() == 1 && MixinStubRebind.isCarrierStub(target, hits.get(0))) {
-			MethodNode moved = MixinStubRebind.destination(mixin.name, m, target);
+			MethodNode moved = MixinStubRebind.destination(mixin, m, target);
 			// A @Local by name is checked against the body's local variable table, which this read skipped.
 			ClassNode locals = moved == null ? withLocals.get() : null;
-			if (locals != null) moved = MixinStubRebind.destination(mixin.name, m, locals);
+			if (locals != null) moved = MixinStubRebind.destination(mixin, m, locals);
 			if (moved != null) hits = new ArrayList<>(List.of(moved));
 		}
 		// Bound is not run. An injector whose every method is one nothing in the merged game calls attaches and
