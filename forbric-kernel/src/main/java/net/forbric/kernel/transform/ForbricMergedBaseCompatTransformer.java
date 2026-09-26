@@ -93,7 +93,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
+	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "addMissingForgeFluidTypeBridge", "addMissingForgeKeyMappingLookupInitializer", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsMinecraftForgeFace", "giveTheVanillaParticleMapAViewOfTheLiveOne", "giveFeaturesPerStepItsVanillaDescriptorBack", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letForeignResourceConditionsThroughMinecraftForge", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "serveDefaultAttributesBothEcosystems", "restoreForgeClientInit", "restoreForgeGeometryReload", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "routePlaceItemHookToNeoForge", "bridgeOrphanedPipRenderers", "keepForgeOutboundProtocolCurrent", "surviveTheMissingForgeModelDataManager", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "postNeoForgesItemTooltipEvent", "askNeoForgeWhatAnItemsAttributesAre", "readTheSpawnReasonThatIsActuallyWritten", "giveTheUnwrittenLoggerAValue", "addTheMissingCapabilityLifecycleStubs", "addTheMissingNbtBuilderFactory", "postMinecraftForgesReloadListenerEvent", "giveMinecraftForgesReloadEventItsConditionContext", "letMinecraftForgeIngredientTypesDecode", "letMinecraftForgeFluidsChooseTheirModel", "giveMinecraftForgesParticleLookupItsFirstVariant", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail", "letBothEcosystemsSetBurnTime", "letMinecraftForgeSeeSpawnerMobs", "letMinecraftForgeAddPackFinders");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -237,6 +237,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"System.out and System.err are never routed into log4j, so every line a mod PRINTS rather than logs "
 						+ "is absent from latest.log — including the debug output a mod is told to turn on when it "
 						+ "misbehaves"));
+		out.add(fixed("returnFromANestedBootstrapBeforeItsTail", BOOTSTRAP,
+				"MinecraftForge's ForgeRegistries re-enters Bootstrap.bootStrap() from inside the first one, so every "
+						+ "mixin at its TAIL runs twice, the first time half-way through bootstrap — a Fabric mod that "
+						+ "initialises there once (cristellib) throws and the server does not start"));
 		out.add(fixed("letBothEcosystemsSetBurnTime", FUEL_VALUES,
 				"NeoForge's FurnaceFuelBurnTimeEvent is never posted, so a NeoForge mod cannot change how long "
 						+ "anything burns while a MinecraftForge one can"));
@@ -333,6 +337,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "letTheAtlasLowerItsMipLevelLikeVanilla",
 					letTheAtlasLowerItsMipLevelLikeVanilla(node));
 			changed |= claim(reporter, "wrapTheStreamsVanillaWraps", wrapTheStreamsVanillaWraps(node));
+			changed |= claim(reporter, "returnFromANestedBootstrapBeforeItsTail", returnFromANestedBootstrapBeforeItsTail(node));
 		changed |= claim(reporter, "letBothEcosystemsSetBurnTime", letBothEcosystemsSetBurnTime(node));
 		changed |= claim(reporter, "letMinecraftForgeSeeSpawnerMobs", letMinecraftForgeSeeSpawnerMobs(node));
 		changed |= claim(reporter, "letMinecraftForgeAddPackFinders", letMinecraftForgeAddPackFinders(node));
@@ -671,6 +676,74 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "merge kept only that half, so every line a mod PRINTED rather than logged was absent from the "
 				+ "log entirely (a mod's own debug mode produced a log with nothing in it). Both calls now run");
 		return true;
+	}
+
+	/**
+	 * Gives {@code Bootstrap.bootStrap()}'s already-bootstrapped path its own {@code return}, ahead of the body, so
+	 * the method's last {@code return} — the one a mixin's {@code @At("TAIL")} names — is reached only by the call
+	 * that actually bootstrapped.
+	 *
+	 * <p>Vanilla's shape is {@code if (!isBootstrapped) { isBootstrapped = true; ... } return;}: one return, reached
+	 * by every call. On vanilla and on Fabric that is one call per process ({@code Main.main} / the client's
+	 * {@code Main}), so a mod injecting at TAIL runs once, after bootstrap. The merged game also carries
+	 * MinecraftForge's {@code ForgeRegistries.<clinit>}, whose {@code init()} calls {@code Bootstrap.bootStrap()}
+	 * to make sure bootstrap has happened — and it is first touched from INSIDE bootstrap, while {@code Items}
+	 * constructs a bucket. {@code isBootstrapped} is already true there, the nested call skips the body and falls
+	 * through to the same return, and every TAIL handler runs half-way through bootstrap and then again at its
+	 * end. Measured with {@code -Xlog:class+init}: {@code ForgeRegistries} initialises between {@code BucketItem}
+	 * and cristellib's {@code CristelLib}; cristellib's TAIL handler freezes its pack registry and config data the
+	 * first time and throws "Cannot set Auto Config data twice" the second, and the server does not start.
+	 *
+	 * <p>Only TAIL changes. The early return is still a return, so an {@code @At("RETURN")} handler still sees
+	 * every call; HEAD is untouched; the body and the call that runs it are exactly what they were.
+	 */
+	private static boolean returnFromANestedBootstrapBeforeItsTail(ClassNode node) {
+		if (!BOOTSTRAP.equals(node.name) || node.methods == null) return false;
+		MethodNode bootStrap = null;
+		for (MethodNode method : node.methods) {
+			if ("bootStrap".equals(method.name) && "()V".equals(method.desc)) bootStrap = method;
+		}
+		if (bootStrap == null || bootStrap.instructions == null) return false;
+
+		// The guard: the first real instructions are GETSTATIC isBootstrapped; IFNE skip.
+		AbstractInsnNode first = realAfter(bootStrap.instructions.getFirst(), true);
+		if (!(first instanceof FieldInsnNode read) || read.getOpcode() != Opcodes.GETSTATIC
+				|| !BOOTSTRAP.equals(read.owner) || !"isBootstrapped".equals(read.name) || !"Z".equals(read.desc)) {
+			return false;
+		}
+		AbstractInsnNode next = realAfter(first.getNext(), true);
+		// Already repaired (IFEQ body; RETURN) or a base that returns early itself: nothing to do.
+		if (!(next instanceof JumpInsnNode guard) || guard.getOpcode() != Opcodes.IFNE) return false;
+
+		// The guard must skip to the method's LAST return, or this is not the shape the repair is about.
+		AbstractInsnNode skipped = realAfter(guard.label, true);
+		AbstractInsnNode lastReturn = null;
+		for (AbstractInsnNode insn = bootStrap.instructions.getLast(); insn != null; insn = insn.getPrevious()) {
+			if (insn.getOpcode() == Opcodes.RETURN) { lastReturn = insn; break; }
+		}
+		if (skipped == null || skipped != lastReturn) return false;
+
+		LabelNode body = new LabelNode();
+		InsnList early = new InsnList();
+		early.add(new InsnNode(Opcodes.RETURN));
+		early.add(body);
+		// Method entry's frame: a static no-argument method, nothing on the stack.
+		early.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+		bootStrap.instructions.insert(guard, early);
+		guard.setOpcode(Opcodes.IFEQ);
+		guard.label = body;
+
+		ForbricLog.info("[Forbric/MergedBaseCompat] Bootstrap.bootStrap() returns before its TAIL when bootstrap has "
+				+ "already begun — MinecraftForge's ForgeRegistries calls it again from inside the first call, which ran "
+				+ "every TAIL handler twice, the first time half-way through bootstrap");
+		return true;
+	}
+
+	/** The first instruction at or after {@code from} that is not a label, line number or frame. */
+	private static AbstractInsnNode realAfter(AbstractInsnNode from, boolean inclusive) {
+		AbstractInsnNode insn = inclusive ? from : (from == null ? null : from.getNext());
+		while (insn != null && insn.getOpcode() < 0) insn = insn.getNext();
+		return insn;
 	}
 
 	private static boolean addBlockAppearanceResolver(ClassNode node) {
