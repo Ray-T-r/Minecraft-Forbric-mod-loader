@@ -17,10 +17,16 @@
 package net.forbric.kernel.mixin;
 
 import java.util.List;
+import java.util.Set;
+
+import net.forbric.api.Ecosystem;
 
 /**
  * Descriptor-identical callee swaps the merge made inside vanilla method bodies, and the few a guest mixin's
  * {@code @At(INVOKE)} may follow.
+ *
+ * <p>A second, narrower table, {@link #SUBSTITUTED}, holds the swaps that change the callee's owner, name or return
+ * type as well: see {@link Substitution}. Only an {@code @Inject} may follow one of those.
  *
  * <p>Where NeoForge's patch of a vanilla method replaces one call with another of the same descriptor on the
  * same owner — {@code BlockState.isAir()Z} → {@code isEmpty()Z} in {@code LevelChunkSection.setBlockState} —
@@ -70,7 +76,61 @@ public final class MergedBaseCalleeSwaps {
 					"accept(Lnet/minecraft/world/level/block/state/BlockState;I)V",
 					BLOCK_STATE, "isAir", "isEmpty", "()Z", WHY));
 
+	/**
+	 * One call the surviving carrier SUBSTITUTED for another inside a method whose body is otherwise the one the
+	 * listed ecosystems' mods were compiled against: same instructions, same local variable table, and at exactly one
+	 * instruction {@code member} there, {@code replacement} here, taking the same arguments. The callee's owner, name
+	 * and return type may all differ, which is why {@link Swap}'s rule (the handler's shape is the callee's, identical
+	 * on both sides) cannot cover it; what does not change is the program point, and an {@code @Inject} is bound to
+	 * nothing else. {@code MergedBaseCalleeSwapTest} proves every row against the reference jars instruction by
+	 * instruction, so a base or carrier rebuild that changes anything but that one call turns the row red.
+	 *
+	 * @param target      the class the mixin targets (internal name)
+	 * @param method      the target method, {@code name + descriptor}
+	 * @param member      the call the listed ecosystems' own jars make there, as an {@code @At} target
+	 * @param replacement the call the merged body makes at the same instruction instead, as an {@code @At} target
+	 * @param ecosystems  the mods compiled against {@code member} in this method
+	 * @param because     why the point before and after {@code replacement} means what it meant around {@code member}
+	 */
+	public record Substitution(String target, String method, String member, String replacement, Set<Ecosystem> ecosystems,
+			String because) {
+	}
+
+	public static final List<Substitution> SUBSTITUTED = List.of(
+			new Substitution("net/minecraft/client/resources/model/ModelManager",
+					"lambda$loadBlockModels$2(Ljava/util/Map$Entry;)Lcom/mojang/datafixers/util/Pair;",
+					"Lnet/minecraft/client/resources/model/cuboid/CuboidModel;fromStream(Ljava/io/Reader;)"
+							+ "Lnet/minecraft/client/resources/model/cuboid/CuboidModel;",
+					"Lnet/neoforged/neoforge/client/model/UnbakedModelParser;parse(Ljava/io/Reader;)"
+							+ "Lnet/minecraft/client/resources/model/UnbakedModel;",
+					Set.of(Ecosystem.FABRIC, Ecosystem.FORGE),
+					"both calls turn the model file's Reader into the model, on the thread that loads it, and that is the "
+							+ "whole of what the lambda does with them; NeoForge's parse reads it through CuboidModel.GSON, "
+							+ "whose UnbakedModel adapter is NeoForge's loader dispatch, and a model it does not own reaches "
+							+ "the same vanilla CuboidModel$Deserializer fromStream used (ModelFormatFunnelInjector). So "
+							+ "BEFORE the call is still 'this model's file is about to be parsed': fusion (MinecraftForge) "
+							+ "stores the model's id there, and its hook in that deserializer reads it back to name every "
+							+ "connected-texture model it builds"));
+
 	private MergedBaseCalleeSwaps() {
+	}
+
+	/**
+	 * The {@link #SUBSTITUTED} row for {@code anchor} (as the mod wrote it) in {@code target#method}, for a mod of
+	 * {@code ecosystem}; null when none. A mod of an ecosystem the row does not list was compiled against the
+	 * replacement, or against neither, and its anchor missing is what it would do natively.
+	 */
+	public static Substitution substitution(String target, String method, String anchor, Ecosystem ecosystem) {
+		if (ecosystem == null) return null;
+		MixinFit.Member want = MixinFit.parseMember(anchor);
+		if (want == null) return null;
+		for (Substitution row : SUBSTITUTED) {
+			if (!row.target().equals(target) || !row.method().equals(method) || !row.ecosystems().contains(ecosystem)) continue;
+			MixinFit.Member have = MixinFit.parseMember(row.member());
+			if (want.name().equals(have.name()) && (want.owner() == null || want.owner().equals(have.owner()))
+					&& (want.desc() == null || want.desc().equals(have.desc()))) return row;
+		}
+		return null;
 	}
 
 	/** The row for a miss of {@code owner.vanillaName desc} inside {@code target.method}, or null. */

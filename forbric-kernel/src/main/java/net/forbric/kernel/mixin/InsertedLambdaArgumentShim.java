@@ -164,7 +164,15 @@ public final class InsertedLambdaArgumentShim {
     static boolean localsAtAnchor(AnnotationNode inject, MethodNode target, Type[] captured) {
         if (target.localVariables == null || target.localVariables.isEmpty()) return false;
         Object member = MixinFit.value(MixinFit.atNodes(inject).getFirst(), "target");
-        if (!(member instanceof String s)) return false;
+        return member instanceof String s && localsAtCall(s, target, captured);
+    }
+
+    /**
+     * {@link #localsAtAnchor} for the call {@code s} names ({@code Lowner;name(desc)}), whatever the injector says —
+     * MixinRetarget asks it about the call an anchor is about to be moved to.
+     */
+    static boolean localsAtCall(String s, MethodNode target, Type[] captured) {
+        if (target.localVariables == null || target.localVariables.isEmpty()) return false;
         int first = (target.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
         for (Type arg : Type.getArgumentTypes(target.desc)) first += arg.getSize();
         boolean any = false;

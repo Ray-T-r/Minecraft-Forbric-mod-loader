@@ -24,19 +24,27 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
+import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FrameNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.LookupSwitchInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TableSwitchInsnNode;
+import org.objectweb.asm.tree.TryCatchBlockNode;
 import org.objectweb.asm.tree.VarInsnNode;
+
+import net.forbric.kernel.util.ForbricLog;
 
 /**
  * Rebinds a guest injector from a merge-added DELEGATING STUB to the method that carries the body it wants.
@@ -76,6 +84,22 @@ public final class MixinRetarget {
 	 * helper along a census row (R5); the reviewed rows have {@code -Dforbric.mixinAbsorbedCall=off}.
 	 */
 	static final String EXTRACTED_HELPER_PROPERTY = "forbric.mixinRetarget.extractedHelper";
+	/**
+	 * {@code -Dforbric.mixinRetarget.substitutedCall=off}: no {@code @Inject} point follows a call the carrier
+	 * substituted along a {@link MergedBaseCalleeSwaps#SUBSTITUTED} row (R6).
+	 */
+	static final String SUBSTITUTED_CALL_PROPERTY = "forbric.mixinRetarget.substitutedCall";
+	/**
+	 * {@code -Dforbric.mixinRetarget.substitutedCall.guard=off}: an R6 move keeps the handler as the mod wrote it, so a
+	 * {@code LinkageError} from it propagates into the method it was moved into, as it would natively.
+	 */
+	static final String SUBSTITUTED_CALL_GUARD_PROPERTY = "forbric.mixinRetarget.substitutedCall.guard";
+	/** The suffix an R6-guarded handler's own body moves to, under the guard that keeps its name and annotation. */
+	static final String GUARDED_SUFFIX = "$forbricguard";
+	private static final String SELF = "net/forbric/kernel/mixin/MixinRetarget";
+	private static final String LINKAGE_ERROR = "java/lang/LinkageError";
+	/** Handlers whose {@code LinkageError} R6's guard has reported: once each, however many models they skip. */
+	private static final Set<String> SKIPPED = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	static final String LOCAL_SUGAR = "Lcom/llamalad7/mixinextras/sugar/Local;";
@@ -95,8 +119,11 @@ public final class MixinRetarget {
 			"Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;",
 			"Lcom/llamalad7/mixinextras/injector/v2/WrapWithCondition;");
 
-	/** What a rewrite edits: the injector's {@code method} selector, or one of its {@code @At.target}s. */
-	public enum Element { SELECTOR, AT_TARGET }
+	/**
+	 * What a rewrite edits: the injector's {@code method} selector, one of its {@code @At.target}s, or (R6) the handler
+	 * itself, which is put behind a guard: {@code from} is the handler, {@code to} where its body moves.
+	 */
+	public enum Element { SELECTOR, AT_TARGET, GUARD }
 
 	/** One rewrite inside one handler's injector annotation. */
 	public record Rewrite(String handler, Element element, String from, String to, String why) {
@@ -151,6 +178,8 @@ public final class MixinRetarget {
 				if (oneTarget && own.stream().noneMatch(r -> r.element() == Element.SELECTOR)) {
 					own.addAll(movedCalls(mixin.name, handler, injector, selectors, target, resolver));
 				}
+				// Neither moved nor split: the method kept its body and the call its place, and only the callee changed.
+				if (oneTarget && own.isEmpty()) own.addAll(substitutedCalls(mixin.name, handler, injector, selectors, target, resolver));
 				rewrites.addAll(own);
 			}
 		}
@@ -441,6 +470,135 @@ public final class MixinRetarget {
 				+ "MergedBaseAbsorbedCalls");
 	}
 
+	/**
+	 * Rule R6: an {@code @Inject} whose {@code @At(INVOKE)} names a call the surviving carrier SUBSTITUTED — the method
+	 * kept its body, instruction for instruction and local for local, and makes a different call taking the same
+	 * arguments at that one instruction ({@link MergedBaseCalleeSwaps#SUBSTITUTED}) — has its point moved to the call
+	 * the merged body makes. The selector stays, and with it everything the handler is bound to: the method's
+	 * arguments, its callback, and the locals at that instruction, which the row's census proves are the ones the mod
+	 * was compiled against.
+	 *
+	 * <p>NeoForge substituted {@code UnbakedModelParser.parse} for {@code CuboidModel.fromStream} in
+	 * {@code ModelManager.lambda$loadBlockModels$2}, which parses each block-model file. fusion's MinecraftForge build
+	 * records the id of the model about to be parsed BEFORE {@code fromStream}, and its hook in the vanilla model
+	 * deserializer names every fusion model it builds with that id (the connected-texture models Rechiseled and
+	 * Anti-Blocks ship). The anchor missed and the handler attached nowhere, so every fusion model was built as
+	 * {@code fusion:unknown} and its warnings and bake errors named that instead of the file; and since fusion requires
+	 * its mixins, a STRICT client asked to continue or quit on every launch.
+	 *
+	 * <p>R2 cannot take this: its rows keep the callee's descriptor, because the kinds it moves are shaped by the
+	 * callee. Only an {@code @Inject} follows a substitution, since its handler sees neither the call's arguments nor
+	 * its result, only the point. And only with no slice, {@code @Group}, sugar, parameter annotation or {@code @At}
+	 * args; a shift of BEFORE or AFTER and no ordinal past the first (the row's call is made once); for a mod of an
+	 * ecosystem the row lists (the others were compiled against the replacement, or against neither, and miss natively
+	 * too); in a mixin with one target. A handler that captures locals moves only when the live method's local variable
+	 * table holds exactly those at the new call ({@link InsertedLambdaArgumentShim#localsAtCall}) — Mixin reads the same
+	 * table to decide what it captures; with no table there is no proof and the point stays.
+	 *
+	 * <p>The handler then runs where it never ran on this base, and a {@code LinkageError} from it — code compiled
+	 * against another base — is not an {@code Exception}: in the one row's method it would escape the per-file catch,
+	 * fail the whole resource reload, and a failed reload drops every resource pack. So the move also puts the handler
+	 * behind a guard ({@link Element#GUARD}) that says so once and skips it, which is where things stood before the
+	 * move. {@code -Dforbric.mixinRetarget.substitutedCall=off} leaves every such point as compiled, and
+	 * {@code -Dforbric.mixinRetarget.substitutedCall.guard=off} moves it without the guard.
+	 */
+	private static List<Rewrite> substitutedCalls(String mixinName, MethodNode handler, AnnotationNode injector,
+			List<String> selectors, ClassNode target, Function<String, byte[]> resolver) {
+		if (!INJECT.equals(injector.desc) || selectors.size() != 1
+				|| "off".equalsIgnoreCase(System.getProperty(SUBSTITUTED_CALL_PROPERTY, "on"))) return List.of();
+		net.forbric.api.Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixinName);
+		if (ecosystem == null) return List.of();
+		List<MethodNode> own = resolveSelector(target, selectors.get(0), resolver).stream().filter(target.methods::contains).toList();
+		if (own.size() != 1) return List.of();
+		MethodNode method = own.get(0);
+		Type[] captured = callbackLocals(handler, injector, method);
+		if (captured == null) return List.of();
+
+		List<Rewrite> out = new ArrayList<>();
+		MethodNode withLocals = null;
+		for (AnnotationNode at : MixinFit.atNodes(injector)) {
+			String member = MixinFit.asString(MixinFit.value(at, "target"));
+			if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value"))) || member == null
+					|| MixinFit.containsMember(method, member) || MixinFit.value(at, "args") != null) continue;
+			String shift = MixinFit.asString(MixinFit.value(at, "shift"));
+			if (shift != null && !"BEFORE".equals(shift) && !"AFTER".equals(shift)) continue;
+			if (MixinFit.value(at, "ordinal") instanceof Integer ordinal && ordinal > 0) continue;
+			MergedBaseCalleeSwaps.Substitution row = MergedBaseCalleeSwaps.substitution(target.name,
+					method.name + method.desc, member, ecosystem);
+			if (row == null || CarrierHelpers.occurrences(method, row.replacement()) != 1) continue;
+			if (captured.length > 0) {
+				if (withLocals == null) withLocals = withLocalVariables(target.name, method, resolver);
+				if (withLocals == null || !InsertedLambdaArgumentShim.localsAtCall(row.replacement(), withLocals, captured)) continue;
+			}
+			MixinFit.Member callee = MixinFit.parseMember(row.replacement());
+			out.add(new Rewrite(handler.name, Element.AT_TARGET, member, row.replacement(), "the carrier substituted "
+					+ callee.owner().substring(callee.owner().lastIndexOf('/') + 1) + "." + callee.name() + " for this call "
+					+ "at the same instruction of an otherwise unchanged body, a census-pinned row of MergedBaseCalleeSwaps"));
+		}
+		if (!out.isEmpty() && !"off".equalsIgnoreCase(System.getProperty(SUBSTITUTED_CALL_GUARD_PROPERTY, "on"))) {
+			out.add(new Rewrite(handler.name, Element.GUARD, handler.name + handler.desc, handler.name + GUARDED_SUFFIX,
+					"a LinkageError from the moved handler skips it instead of failing the method it now runs in"));
+		}
+		return out;
+	}
+
+	/**
+	 * The locals an {@code @Inject} handler captures after its callback, empty when it captures none; null when the
+	 * handler is not a plain callback of {@code method}: void, its arguments and callback (or the callback alone), no
+	 * sugar or other parameter annotation, no slice, no {@code @Group}, and locals only under a {@code CAPTURE_*} mode.
+	 */
+	private static Type[] callbackLocals(MethodNode handler, AnnotationNode injector, MethodNode method) {
+		List<AnnotationNode> annotations = new ArrayList<>();
+		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
+		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
+		if (annotations.stream().anyMatch(a -> GROUP.equals(a.desc)) || MixinFit.value(injector, "slice") != null) return null;
+		for (List<AnnotationNode>[] set : java.util.Arrays.asList(handler.visibleParameterAnnotations, handler.invisibleParameterAnnotations)) {
+			if (set != null) for (List<AnnotationNode> list : set) if (list != null && !list.isEmpty()) return null;
+		}
+		if (!Type.VOID_TYPE.equals(Type.getReturnType(handler.desc))) return null;
+		Type[] params = Type.getArgumentTypes(handler.desc);
+		Type[] args = Type.getArgumentTypes(method.desc);
+		int callback;
+		if (params.length == 1) {
+			callback = 0;
+		} else {
+			if (params.length < args.length + 1) return null;
+			for (int i = 0; i < args.length; i++) if (!params[i].equals(args[i])) return null;
+			callback = args.length;
+		}
+		String descriptor = params.length == 0 ? null : params[callback].getDescriptor();
+		if (!CALLBACK_INFO.equals(descriptor) && !CALLBACK_INFO_RETURNABLE.equals(descriptor)) return null;
+		Type[] captured = java.util.Arrays.copyOfRange(params, callback + 1, params.length);
+		Object locals = MixinFit.value(injector, "locals");
+		String mode = MixinFit.asString(locals);
+		boolean capturing = mode != null && !"NO_CAPTURE".equals(mode);
+		if (capturing && !mode.startsWith("CAPTURE_")) return null;
+		if (!capturing && captured.length > 0) return null;
+		return captured;
+	}
+
+	/** {@code method} read again from the target's bytes WITH its local variable table, which MixinFit's read drops. */
+	private static MethodNode withLocalVariables(String targetName, MethodNode method, Function<String, byte[]> resolver) {
+		byte[] bytes = resolver.apply(targetName + ".class");
+		if (bytes == null) return null;
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES);
+		return CarrierHelpers.declared(node, method.name, method.desc);
+	}
+
+	/**
+	 * Called from R6's guard, inside the target class, when a moved handler throws a {@code LinkageError}. The
+	 * handler is skipped and the method carries on, as it did before the move; the first time for each handler that
+	 * is said, with the error, because nothing else would say it.
+	 */
+	public static void hookDidNotLink(LinkageError error, String hook) {
+		if (!SKIPPED.add(hook)) return;
+		ForbricLog.warn("[Forbric/Mixin] %s does not link on the merged base (%s) — skipped wherever it runs, as it was "
+				+ "before its injection point was moved to the call the merge substituted, instead of failing the method "
+				+ "around it (for a block-model hook, the whole resource reload, which drops every resource pack)",
+				hook, String.valueOf(error));
+	}
+
 	/** An {@code @Inject} bound by its own arguments and callback only: no locals capture, sugar, slice or {@code @Group}. */
 	private static boolean plainInject(MethodNode handler, AnnotationNode injector) {
 		List<AnnotationNode> annotations = new ArrayList<>();
@@ -618,6 +776,10 @@ public final class MixinRetarget {
 		if (node.methods == null) return 0;
 		int applied = 0;
 		for (Rewrite rewrite : plan.rewrites()) {
+			if (rewrite.element() == Element.GUARD) {
+				if (guard(node, rewrite)) applied++;
+				continue;
+			}
 			for (MethodNode m : node.methods) {
 				if (!m.name.equals(rewrite.handler())) continue;
 				AnnotationNode injector = MixinFit.injectorOf(m);
@@ -652,6 +814,62 @@ public final class MixinRetarget {
 		return applied;
 	}
 
+	/**
+	 * R6's guard: the handler {@code rewrite.from()} names keeps its name, descriptor and injector annotation, and its
+	 * body moves to {@code rewrite.to()}. What now carries the annotation calls that body inside a {@code try} and, on
+	 * a {@code LinkageError}, reports it ({@link #hookDidNotLink}) and returns — the callback left as the handler found
+	 * it, so the target method carries on as if the handler had not been there. Any other throwable passes through
+	 * untouched, as it does natively.
+	 *
+	 * <p>The handler's frame is written by hand, as in GuestMixinPluginGuard: the starting locals and one
+	 * {@code LinkageError}. Mixin writes the target class with {@code COMPUTE_FRAMES} anyway; the frame is for anything
+	 * that writes the mixin class node without it. Returns false, changing nothing, when the handler is not there or
+	 * already guarded.
+	 */
+	private static boolean guard(ClassNode mixin, Rewrite rewrite) {
+		MethodNode handler = null;
+		for (MethodNode m : mixin.methods) {
+			if ((m.name + m.desc).equals(rewrite.from()) && MixinFit.injectorOf(m) != null) handler = m;
+		}
+		if (handler == null) return false;
+		for (MethodNode m : mixin.methods) if (m.name.equals(rewrite.to()) && m.desc.equals(handler.desc)) return false;
+		AnnotationNode injector = MixinFit.injectorOf(handler);
+		boolean isStatic = (handler.access & Opcodes.ACC_STATIC) != 0;
+
+		MethodNode outer = new MethodNode(Opcodes.ASM9, handler.access, handler.name, handler.desc, handler.signature,
+				handler.exceptions == null ? null : handler.exceptions.toArray(new String[0]));
+		boolean visible = handler.visibleAnnotations != null && handler.visibleAnnotations.remove(injector);
+		if (!visible && handler.invisibleAnnotations != null) handler.invisibleAnnotations.remove(injector);
+		if (visible) outer.visibleAnnotations = new ArrayList<>(List.of(injector));
+		else outer.invisibleAnnotations = new ArrayList<>(List.of(injector));
+
+		LabelNode start = new LabelNode(), end = new LabelNode(), caught = new LabelNode();
+		outer.tryCatchBlocks.add(new TryCatchBlockNode(start, end, caught, LINKAGE_ERROR));
+		InsnList code = outer.instructions;
+		code.add(start);
+		int slot = 0;
+		if (!isStatic) code.add(new VarInsnNode(Opcodes.ALOAD, slot++));
+		for (Type arg : Type.getArgumentTypes(handler.desc)) {
+			code.add(new VarInsnNode(arg.getOpcode(Opcodes.ILOAD), slot));
+			slot += arg.getSize();
+		}
+		code.add(MixinHandlerShim.callOwn(mixin, isStatic, rewrite.to(), handler.desc));
+		code.add(end);
+		code.add(new InsnNode(Opcodes.RETURN));
+		code.add(caught);
+		code.add(new FrameNode(Opcodes.F_SAME1, 0, null, 1, new Object[] {LINKAGE_ERROR}));
+		code.add(new LdcInsnNode(mixin.name.replace('/', '.') + "." + handler.name));
+		code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, SELF, "hookDidNotLink",
+				"(L" + LINKAGE_ERROR + ";Ljava/lang/String;)V", false));
+		code.add(new InsnNode(Opcodes.RETURN));
+		outer.maxLocals = slot;
+		outer.maxStack = Math.max(slot, 2);
+
+		handler.name = rewrite.to();
+		mixin.methods.add(outer);
+		return true;
+	}
+
 	/** {@code mixinBytes} with {@code plan} applied, for re-evaluation. */
 	static byte[] rewritten(byte[] mixinBytes, Plan plan) {
 		ClassNode node = MixinFit.parse(mixinBytes);
@@ -680,5 +898,11 @@ public final class MixinRetarget {
 	/** Test seam. */
 	static void reset() {
 		PLANS.clear();
+		SKIPPED.clear();
+	}
+
+	/** Test seam: the handlers R6's guard has skipped for a {@code LinkageError}, as {@code mixin.handler}. */
+	static Set<String> skippedHooks() {
+		return Set.copyOf(SKIPPED);
 	}
 }

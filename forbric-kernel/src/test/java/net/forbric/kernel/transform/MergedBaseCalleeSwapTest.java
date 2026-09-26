@@ -40,12 +40,27 @@ import java.util.zip.ZipFile;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.IincInsnNode;
+import org.objectweb.asm.tree.IntInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.LocalVariableNode;
+import org.objectweb.asm.tree.LookupSwitchInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.MultiANewArrayInsnNode;
+import org.objectweb.asm.tree.TableSwitchInsnNode;
+import org.objectweb.asm.tree.TryCatchBlockNode;
+import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.mixin.MergedBaseCalleeSwaps;
 
 /**
@@ -62,6 +77,8 @@ class MergedBaseCalleeSwapTest {
 	private static final Path MERGED = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path FORGE_RT = RUN.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path NEO_RT = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path FORGE_PATCHED = RUN.resolve("forge-patched/patched-mc-forge-26.2.jar");
+	private static final Path NEO_PATCHED = RUN.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
 
 	/** {@code owner.method | callee-owner.vanilla→merged desc}, one line per swap — 25 on the staged base. */
 	static final Set<String> PINNED = new TreeSet<>(List.of(
@@ -143,6 +160,144 @@ class MergedBaseCalleeSwapTest {
 		for (MergedBaseCalleeSwaps.Swap row : MergedBaseCalleeSwaps.KNOWN) {
 			String line = row.target() + "." + row.method() + " | " + row.owner() + "." + row.vanillaName() + "→" + row.mergedName() + " " + row.desc();
 			assertTrue(found.contains(line), "KNOWN row is not a swap the merged base makes any more: " + line);
+		}
+	}
+
+	/**
+	 * Every {@link MergedBaseCalleeSwaps#SUBSTITUTED} row, proven against each ecosystem's own jar: for the ecosystems
+	 * it lists, the reference method and the merged one are the same instructions, try/catch ranges and local variable
+	 * table, except that at exactly one instruction the reference calls {@code member} and the merged body calls
+	 * {@code replacement}, with the same opcode and the same argument types; for the others, the reference method IS
+	 * the merged one (the replacement is that carrier's own code, so its mods were compiled against it). Anything else
+	 * turns the row red, because R6 moves an {@code @Inject} and its captured locals on exactly this.
+	 */
+	@Test
+	void everySubstitutionIsOneCallInAnOtherwiseUnchangedBody() throws Exception {
+		Path vanilla = vanillaJar();
+		for (Path jar : List.of(MERGED, vanilla, FORGE_PATCHED, NEO_PATCHED)) assumeTrue(Files.isRegularFile(jar), jar + " absent");
+		assertTrue(!MergedBaseCalleeSwaps.SUBSTITUTED.isEmpty());
+		for (MergedBaseCalleeSwaps.Substitution row : MergedBaseCalleeSwaps.SUBSTITUTED) {
+			String where = row.target() + "." + row.method();
+			MethodNode merged = debugMethod(MERGED, row.target(), row.method());
+			assertTrue(merged != null, where + " is not in the merged base");
+			assertEquals(0, occurrences(merged, row.member()), where + ": the merged body makes the reference call again");
+			assertEquals(1, occurrences(merged, row.replacement()), where + ": the merged body no longer makes the replacement once");
+			for (Ecosystem ecosystem : Ecosystem.values()) {
+				Path reference = switch (ecosystem) { case FABRIC -> vanilla; case FORGE -> FORGE_PATCHED; case NEOFORGE -> NEO_PATCHED; };
+				MethodNode original = debugMethod(reference, row.target(), row.method());
+				assertTrue(original != null, where + " is not in " + ecosystem + "'s own jar");
+				List<Integer> differ = differingInstructions(original, merged);
+				if (!row.ecosystems().contains(ecosystem)) {
+					assertEquals(List.of(), differ, where + ": " + ecosystem + "'s own body is not the merged one");
+					continue;
+				}
+				assertEquals(1, occurrences(original, row.member()), where + ": " + ecosystem + "'s own body does not make the call once");
+				assertEquals(1, differ.size(), where + ": " + ecosystem + "'s body and the merged one differ at " + differ);
+				MethodInsnNode was = (MethodInsnNode) real(original).get(differ.get(0));
+				MethodInsnNode is = (MethodInsnNode) real(merged).get(differ.get(0));
+				assertEquals(row.member(), "L" + was.owner + ";" + was.name + was.desc, where + ": " + ecosystem);
+				assertEquals(row.replacement(), "L" + is.owner + ";" + is.name + is.desc, where);
+				assertEquals(was.getOpcode(), is.getOpcode(), where + ": the calls are not made the same way");
+				assertEquals(List.of(Type.getArgumentTypes(was.desc)), List.of(Type.getArgumentTypes(is.desc)),
+						where + ": the calls do not take the same arguments");
+				assertEquals(locals(original), locals(merged), where + ": " + ecosystem + "'s local variable table is not the merged one's");
+				assertEquals(handlers(original), handlers(merged), where + ": " + ecosystem + "'s try/catch ranges are not the merged one's");
+			}
+		}
+	}
+
+	/**
+	 * GuestInjectorPruner removes fabric-model-loading's @Redirect/@ModifyArg pair from this lambda on the premise that
+	 * NeoForge replaced fromStream with parse there; that premise is the substitution row R6 follows for @Injects, so
+	 * the two stand or fall together.
+	 */
+	@Test
+	void thePrunersModelPremiseIsTheSubstitutionRow() {
+		assertTrue(MergedBaseCalleeSwaps.SUBSTITUTED.stream().anyMatch(row -> row.target().equals("net/minecraft/client/resources/model/ModelManager")
+				&& row.method().startsWith(GuestInjectorPruner.MODEL_LAMBDA + "(") && row.member().contains("CuboidModel;fromStream(")),
+				"GuestInjectorPruner prunes fabric's pair at " + GuestInjectorPruner.MODEL_LAMBDA + " because of this substitution");
+	}
+
+	/** The indices, among real instructions, where the two bodies differ; every index when their lengths do. */
+	private static List<Integer> differingInstructions(MethodNode a, MethodNode b) {
+		List<AbstractInsnNode> ra = real(a), rb = real(b);
+		List<Integer> out = new ArrayList<>();
+		for (int i = 0; i < Math.max(ra.size(), rb.size()); i++) {
+			if (i >= ra.size() || i >= rb.size() || !key(a, ra.get(i)).equals(key(b, rb.get(i)))) out.add(i);
+		}
+		return out;
+	}
+
+	private static List<AbstractInsnNode> real(MethodNode m) {
+		List<AbstractInsnNode> out = new ArrayList<>();
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) if (insn.getOpcode() >= 0) out.add(insn);
+		return out;
+	}
+
+	/** Where a label lands, counted in real instructions, so two bodies with different constant pools compare. */
+	private static int at(MethodNode m, LabelNode label) {
+		int index = 0;
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null && insn != label; insn = insn.getNext()) {
+			if (insn.getOpcode() >= 0) index++;
+		}
+		return index;
+	}
+
+	private static String key(MethodNode m, AbstractInsnNode insn) {
+		StringBuilder b = new StringBuilder().append(insn.getOpcode());
+		if (insn instanceof MethodInsnNode c) b.append(' ').append(c.owner).append('.').append(c.name).append(c.desc);
+		else if (insn instanceof FieldInsnNode f) b.append(' ').append(f.owner).append('.').append(f.name).append(f.desc);
+		else if (insn instanceof TypeInsnNode t) b.append(' ').append(t.desc);
+		else if (insn instanceof VarInsnNode v) b.append(' ').append(v.var);
+		else if (insn instanceof IincInsnNode v) b.append(' ').append(v.var).append(' ').append(v.incr);
+		else if (insn instanceof IntInsnNode v) b.append(' ').append(v.operand);
+		else if (insn instanceof LdcInsnNode v) b.append(' ').append(v.cst);
+		else if (insn instanceof JumpInsnNode j) b.append(" →").append(at(m, j.label));
+		else if (insn instanceof InvokeDynamicInsnNode d) b.append(' ').append(d.name).append(d.desc).append(List.of(d.bsmArgs));
+		else if (insn instanceof MultiANewArrayInsnNode d) b.append(' ').append(d.desc).append(d.dims);
+		else if (insn instanceof TableSwitchInsnNode t) {
+			b.append(' ').append(t.min).append("..").append(t.max).append(" →").append(at(m, t.dflt));
+			for (LabelNode l : t.labels) b.append(',').append(at(m, l));
+		} else if (insn instanceof LookupSwitchInsnNode t) {
+			b.append(' ').append(t.keys).append(" →").append(at(m, t.dflt));
+			for (LabelNode l : t.labels) b.append(',').append(at(m, l));
+		}
+		return b.toString();
+	}
+
+	private static Set<String> locals(MethodNode m) {
+		Set<String> out = new TreeSet<>();
+		if (m.localVariables != null) {
+			for (LocalVariableNode v : m.localVariables) out.add(v.index + " " + v.name + " " + v.desc + " [" + at(m, v.start) + "," + at(m, v.end) + ")");
+		}
+		return out;
+	}
+
+	private static List<String> handlers(MethodNode m) {
+		List<String> out = new ArrayList<>();
+		for (TryCatchBlockNode t : m.tryCatchBlocks) out.add("[" + at(m, t.start) + "," + at(m, t.end) + ")→" + at(m, t.handler) + " " + t.type);
+		return out;
+	}
+
+	private static int occurrences(MethodNode m, String member) {
+		int count = 0;
+		for (AbstractInsnNode insn : real(m)) {
+			if (insn instanceof MethodInsnNode c && member.equals("L" + c.owner + ";" + c.name + c.desc)) count++;
+		}
+		return count;
+	}
+
+	/** {@code owner.nameAndDesc} read WITH its local variable table, which the census proof compares. */
+	private static MethodNode debugMethod(Path jar, String owner, String nameAndDesc) throws IOException {
+		try (ZipFile zip = new ZipFile(jar.toFile())) {
+			ZipEntry entry = zip.getEntry(owner + ".class");
+			if (entry == null) return null;
+			ClassNode node = new ClassNode();
+			try (InputStream in = zip.getInputStream(entry)) {
+				new ClassReader(in.readAllBytes()).accept(node, ClassReader.SKIP_FRAMES);
+			}
+			for (MethodNode m : node.methods) if ((m.name + m.desc).equals(nameAndDesc)) return m;
+			return null;
 		}
 	}
 

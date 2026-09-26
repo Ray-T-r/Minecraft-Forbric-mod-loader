@@ -55,6 +55,11 @@ import net.forbric.kernel.util.ForbricLog;
  * on. With it off, each removed injector is a confirmed finding naming that loss: Traveler's Backpack's backpacks
  * are {@code fabric:type} models, and without the funnel every one of them fails to bake.
  *
+ * <p>NeoForge's substitution at that site is a census-pinned row of
+ * {@link net.forbric.kernel.mixin.MergedBaseCalleeSwaps#SUBSTITUTED}. MixinRetarget moves an {@code @Inject} along it
+ * (fusion's capture of the model id before the parse), because such a handler sees only the point; it never moves
+ * this pair, whose handlers are the call and its argument, and {@code parse} is not {@code fromStream}.
+ *
  * <p>Guest mixin classes reach the transform chain through {@code ForbricClassLoader.getPreMixinClassBytes},
  * which is also what {@link net.forbric.kernel.mixin.MixinFit} and Mixin itself read, so the pruned bytes are
  * the only bytes anyone judges or applies. Both methods must be present, each carrying an injector annotation
