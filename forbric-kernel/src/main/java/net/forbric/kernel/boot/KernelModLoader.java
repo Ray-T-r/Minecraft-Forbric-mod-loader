@@ -109,6 +109,27 @@ public final class KernelModLoader {
 
 	private static volatile Map<String, NeoIdentity> classlessNeo = Map.of();
 
+	/** The jar that declares each of {@link #classlessNeoMods()}. */
+	private static volatile Map<String, Path> classlessNeoJars = Map.of();
+
+	/**
+	 * The one mod of {@link #classlessNeoMods()} that {@code jar} declares, or null when it declares none or several.
+	 *
+	 * <p>FML injects a jar's {@code @EventBusSubscriber} classes through the containers of that jar's mods, and a
+	 * subscriber that names no mod id belongs to the container injecting it. A mod with no {@code @Mod} class gets
+	 * a container like any other, so an unnamed subscriber in its jar is its own — which only this can say, since
+	 * no {@code @Mod} class in that jar names it.
+	 */
+	static String soleClasslessNeoModIn(Path jar) {
+		String only = null;
+		for (Map.Entry<String, Path> entry : classlessNeoJars.entrySet()) {
+			if (!entry.getValue().equals(jar)) continue;
+			if (only != null) return null;
+			only = entry.getKey();
+		}
+		return only;
+	}
+
 	/**
 	 * The traditional-Forge mods this kernel constructed, by mod id — the MinecraftForge counterpart of
 	 * {@link #publishedNeoMods()}.
@@ -228,12 +249,14 @@ public final class KernelModLoader {
 		for (ModAnnotationScanner.ModClassInfo info : claimed) taken.add(safeId(info));
 		taken.addAll(aliases.keySet());
 		Map<String, NeoIdentity> classless = new LinkedHashMap<>();
+		Map<String, Path> classlessJars = new LinkedHashMap<>();
 		for (Declared entry : declaredWithoutClass(declared, taken, Ecosystem.NEOFORGE)) {
 			String modId = entry.mod().getId();
 			try {
 				Object bus = KernelBusSupport.makeModBus(cl);
 				classless.put(modId, new NeoIdentity(bus,
 						KernelModContainerFactory.create(cl, modId, bus, entry.jar(), entry.mod())));
+				classlessJars.put(modId, entry.jar());
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/ModLoader] could not build a ModContainer for NeoForge mod " + modId
 						+ ", which declares no @Mod class", Reflect.unwrap(t));
@@ -246,6 +269,7 @@ public final class KernelModLoader {
 					classless.keySet());
 		}
 		classlessNeo = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(classless));
+		classlessNeoJars = Map.copyOf(classlessJars);
 
 		// Aliases go into ModList but NOT into publishedNeo: nothing must post setup events at a mod that has no
 		// @Mod class here, and no caller should resolve an alias as if it were a constructed mod.

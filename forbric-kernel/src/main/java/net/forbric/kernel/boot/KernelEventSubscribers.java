@@ -188,7 +188,7 @@ public final class KernelEventSubscribers {
 				if (sub.modId() == null || sub.modId().isBlank()) {
 					if (modsInJar == null) modsInJar = scanModClasses(jar);
 				}
-				String modId = ownerModId(sub, modsInJar);
+				String modId = ownerModId(sub, modsInJar, () -> KernelModLoader.soleClasslessNeoModIn(jar));
 				// A mod whose constructor threw registered nothing and initialised nothing; its listeners would
 				// touch its own half-initialised classes the first time an event fires (wthit: NoClassDefFoundError
 				// inside RegisterClientReloadListenersEvent, which killed the client). A native loader never gets
@@ -358,17 +358,28 @@ public final class KernelEventSubscribers {
 	 * The mod that owns {@code sub}: its declared {@code modid()}, else the jar's single {@code @Mod} of the same
 	 * family. Returns null when the jar declares several and the annotation named none — guessing would attach a
 	 * mod's listeners to a sibling's bus.
+	 *
+	 * <p>A NeoForge jar with no {@code @Mod} class at all falls back to its single mod that has none: FML gives that
+	 * mod a container, and the container injecting an unnamed subscriber is its owner (its mod-bus listeners then
+	 * reach that mod's bus, as on NeoForge, rather than no bus). {@code -Dforbric.classlessModContainers=off}
+	 * builds no such container, so the fallback finds none.
+	 *
+	 * @param soleClasslessNeo the jar's one NeoForge mod with no {@code @Mod} class, or null; asked only when the
+	 *                         fallback is reached
 	 */
-	private static String ownerModId(Subscriber sub, List<ModAnnotationScanner.ModClassInfo> modsInJar) {
+	static String ownerModId(Subscriber sub, List<ModAnnotationScanner.ModClassInfo> modsInJar,
+			java.util.function.Supplier<String> soleClasslessNeo) {
 		if (sub.modId() != null && !sub.modId().isBlank()) return sub.modId();
-		if (modsInJar == null) return null;
 		String only = null;
-		for (ModAnnotationScanner.ModClassInfo info : modsInJar) {
-			if (info.family != sub.family() || info.modId == null) continue;
-			if (only != null) return null;
-			only = info.modId;
+		if (modsInJar != null) {
+			for (ModAnnotationScanner.ModClassInfo info : modsInJar) {
+				if (info.family != sub.family() || info.modId == null) continue;
+				if (only != null) return null;
+				only = info.modId;
+			}
 		}
-		return only;
+		if (only != null || sub.family() != Ecosystem.NEOFORGE) return only;
+		return soleClasslessNeo.get();
 	}
 
 	private static List<ModAnnotationScanner.ModClassInfo> scanModClasses(Path jar) {

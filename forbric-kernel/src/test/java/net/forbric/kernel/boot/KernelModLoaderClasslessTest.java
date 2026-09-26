@@ -183,6 +183,9 @@ class KernelModLoaderClasslessTest {
 				"the lifecycle posts at publishedNeoMods, and an @EventBusSubscriber resolves its bus there");
 		assertEquals(Set.of("classlesstest_data"), KernelModLoader.classlessNeoMods().keySet());
 		assertTrue(KernelModLoader.publishedNeoMods().containsKey("classlesstest_main"));
+		assertEquals("classlesstest_data", KernelModLoader.soleClasslessNeoModIn(pairJar),
+				"an unnamed @EventBusSubscriber with no @Mod class beside it resolves to the jar's class-less mod");
+		assertNull(KernelModLoader.soleClasslessNeoModIn(shared.resolve("elsewhere.jar")));
 	}
 
 	@Test
@@ -195,6 +198,7 @@ class KernelModLoaderClasslessTest {
 		assertNull(container(game, "classlesstest_data"), "off => the old behaviour, no container");
 		assertFalse(KernelModLoader.publishedNeoMods().containsKey("classlesstest_data"));
 		assertTrue(KernelModLoader.classlessNeoMods().isEmpty());
+		assertNull(KernelModLoader.soleClasslessNeoModIn(pairJar), "and no subscriber falls back to it");
 	}
 
 	// One game loader for the class. KernelModContainerFactory memoises its game-side method once per process —

@@ -295,6 +295,41 @@ class KernelEventSubscribersTest {
 				KernelEventSubscribers.busGroupChoice("BOTH", false));
 	}
 
+	// --- ownerModId: whose bus an unnamed subscriber reaches ----------------------------------------------------
+
+	/**
+	 * FML injects a jar's subscribers through each of its mods' containers, a mod with no {@code @Mod} class
+	 * included, and an unnamed one belongs to the container injecting it. With no {@code @Mod} class in the jar to
+	 * name it, only the jar's class-less mod can.
+	 */
+	@Test
+	void anUnnamedNeoForgeSubscriberInAJarWithNoModClassBelongsToItsClasslessMod() {
+		KernelEventSubscribers.Subscriber unnamed = new KernelEventSubscribers.Subscriber("a.Events",
+				Ecosystem.NEOFORGE, Set.of(), null, null);
+		assertEquals("data_only", KernelEventSubscribers.ownerModId(unnamed, java.util.List.of(), () -> "data_only"));
+		assertNull(KernelEventSubscribers.ownerModId(unnamed, java.util.List.of(), () -> null),
+				"none, or several, class-less mods in the jar: no owner, as before");
+	}
+
+	@Test
+	void theClasslessFallbackNeverOverridesWhatAlreadyAnswered() {
+		java.util.function.Supplier<String> classless = () -> "data_only";
+		KernelEventSubscribers.Subscriber unnamed = new KernelEventSubscribers.Subscriber("a.Events",
+				Ecosystem.NEOFORGE, Set.of(), null, null);
+		assertEquals("named", KernelEventSubscribers.ownerModId(new KernelEventSubscribers.Subscriber("a.Events",
+				Ecosystem.NEOFORGE, Set.of(), "named", null), java.util.List.of(), classless));
+		assertEquals("code", KernelEventSubscribers.ownerModId(unnamed, java.util.List.of(
+				new ModAnnotationScanner.ModClassInfo("a.Code", "code", Ecosystem.NEOFORGE)), classless),
+				"the jar's @Mod class still owns it");
+		assertNull(KernelEventSubscribers.ownerModId(unnamed, java.util.List.of(
+				new ModAnnotationScanner.ModClassInfo("a.One", "one", Ecosystem.NEOFORGE),
+				new ModAnnotationScanner.ModClassInfo("a.Two", "two", Ecosystem.NEOFORGE)), classless),
+				"two @Mod classes and no name is still ambiguous");
+		assertNull(KernelEventSubscribers.ownerModId(new KernelEventSubscribers.Subscriber("a.Events",
+				Ecosystem.FORGE, Set.of(), null, null), java.util.List.of(), classless),
+				"MinecraftForge builds no container for a javafml mod without a class");
+	}
+
 	@Test
 	void aModBusSubscriberWithNoConstructedModIsSkippedNotDowngraded() {
 		// Parking a mod-bus listener on the game bus would never fire and would hide the problem.
