@@ -169,6 +169,186 @@ public class MixinHandlerShimTest {
 		}
 	}
 
+	// --- the census table: a lambda the merge kept once, its captures in another order ---
+
+	/** Vanilla's WorldLoader.lambda$load$1 and the merged one, as the shipped table has them. */
+	private static final String WORLD_LOADER = "net/minecraft/server/WorldLoader";
+	private static final String CIR = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
+	private static final String VANILLA_LOAD = "(Ljava/util/List;Lnet/minecraft/server/packs/resources/CloseableResourceManager;"
+			+ "Ljava/util/concurrent/Executor;Lcom/mojang/datafixers/util/Pair;Lnet/minecraft/server/WorldLoader$WorldDataSupplier;"
+			+ "Lnet/minecraft/core/LayeredRegistryAccess;Ljava/util/List;Lnet/minecraft/server/WorldLoader$InitConfig;"
+			+ "Ljava/util/concurrent/Executor;Lnet/minecraft/server/WorldLoader$ResultFactory;Lnet/minecraft/core/RegistryAccess$Frozen;)";
+	private static final String MERGED_LOAD = "(Ljava/util/List;Lnet/minecraft/server/packs/resources/CloseableResourceManager;"
+			+ "Ljava/util/concurrent/Executor;Ljava/util/List;Lcom/mojang/datafixers/util/Pair;Lnet/minecraft/server/WorldLoader$WorldDataSupplier;"
+			+ "Lnet/minecraft/core/LayeredRegistryAccess;Lnet/minecraft/server/WorldLoader$InitConfig;"
+			+ "Ljava/util/concurrent/Executor;Lnet/minecraft/server/WorldLoader$ResultFactory;Lnet/minecraft/core/RegistryAccess$Frozen;)";
+	private static final String STAGE = "Ljava/util/concurrent/CompletionStage;";
+
+	/**
+	 * The same reordering in types a test can load: two Lists and two Executors, so a mapping by type is a coin toss
+	 * and only the row can say which List is which.
+	 */
+	private static final String VANILLA_JDK = "(Ljava/util/List;Ljava/lang/CharSequence;Ljava/util/concurrent/Executor;Ljava/lang/Number;"
+			+ "Ljava/lang/Runnable;Ljava/lang/Comparable;Ljava/util/List;Ljava/lang/Iterable;Ljava/util/concurrent/Executor;"
+			+ "Ljava/lang/Cloneable;Ljava/lang/Appendable;)";
+	private static final String MERGED_JDK = "(Ljava/util/List;Ljava/lang/CharSequence;Ljava/util/concurrent/Executor;Ljava/util/List;"
+			+ "Ljava/lang/Number;Ljava/lang/Runnable;Ljava/lang/Comparable;Ljava/lang/Iterable;Ljava/util/concurrent/Executor;"
+			+ "Ljava/lang/Cloneable;Ljava/lang/Appendable;)";
+	private static final String PERM = "0,1,2,4,5,6,3,7,8,9,10";
+
+	@org.junit.jupiter.api.AfterEach
+	void shippedTable() {
+		MixinHandlerShim.useTable(null);
+		System.clearProperty(MixinHandlerShim.TABLE_PROPERTY);
+	}
+
+	/**
+	 * wover-events' WorldLoaderMixin, against the SHIPPED row: the vanilla-shaped static HEAD handler gets an outer of
+	 * the merged shape that reads staticLayerTags from where NeoForge's lambda keeps it.
+	 */
+	@Test
+	void woverEventsRegistryHookIsWrappedAlongTheShippedRow() {
+		ClassNode mixin = mixin(withCallback(VANILLA_LOAD, CIR), true);
+		retarget(mixin, WORLD_LOADER);
+		setSelector(mixin, "lambda$load$1");
+		ClassNode target = staticTarget(WORLD_LOADER, "lambda$load$1", MERGED_LOAD + STAGE);
+
+		System.setProperty(MixinHandlerShim.TABLE_PROPERTY, "off");
+		assertEquals(0, MixinHandlerShim.adapt(mixin, targets(target)), "no pruner record: only the census is evidence here");
+		System.clearProperty(MixinHandlerShim.TABLE_PROPERTY);
+		assertEquals(1, MixinHandlerShim.adapt(mixin, targets(target)));
+		MethodNode outer = mixin.methods.stream().filter(m -> m.name.equals("handler") && m.visibleAnnotations != null
+				&& !m.visibleAnnotations.isEmpty()).findFirst().orElseThrow();
+		assertEquals(withCallback(MERGED_LOAD, CIR), outer.desc);
+		assertTrue((outer.access & Opcodes.ACC_STATIC) != 0);
+		List<Integer> loads = new ArrayList<>();
+		for (var insn : outer.instructions) if (insn instanceof org.objectweb.asm.tree.VarInsnNode load) loads.add(load.var);
+		assertEquals(List.of(0, 1, 2, 4, 5, 6, 3, 7, 8, 9, 10, 11), loads);
+		assertEquals(List.of("lambda$load$1"), MixinFit.value(MixinFit.injectorOf(outer), "method"), "a bare name stays bare");
+		assertEquals(0, MixinHandlerShim.adapt(mixin, targets(target)), "a second pass changes nothing");
+	}
+
+	/** Defined and called: two Lists and two Executors, and each reaches the parameter the mod declared for it. */
+	@Test
+	void theRowHandsEachRepeatedTypeItsOwnValue() throws Exception {
+		RECEIVED.clear();
+		MixinHandlerShim.useTable(List.of(TARGET + "#lambda$load$1" + VANILLA_JDK + "V -> " + MERGED_JDK + "V " + PERM));
+		ClassNode mixin = mixin(withCallback(VANILLA_JDK, CI), true);
+		setSelector(mixin, "lambda$load$1");
+		assertEquals(1, MixinHandlerShim.adapt(mixin, targets(staticTarget(TARGET, "lambda$load$1", MERGED_JDK + "V"))));
+
+		Class<?> defined = define(mixin);
+		Method outer = null;
+		for (Method m : defined.getDeclaredMethods()) if (m.getName().equals("handler")) outer = m;
+		assertNotNull(outer);
+		outer.setAccessible(true);
+		List<Object> tags = new ArrayList<>(List.of("staticLayerTags")), contexts = new ArrayList<>(List.of("worldgenContext"));
+		java.util.concurrent.Executor background = task -> { }, main = task -> task.run();
+		Object[] merged = { contexts, "resources", background, tags, 4, (Runnable) () -> { }, "comparable", List.of("iterable"),
+				main, new java.util.ArrayList<>(), new StringBuilder(), null };
+		outer.invoke(null, merged);
+
+		assertEquals(11, RECEIVED.size());
+		assertEquals(contexts, RECEIVED.get(0));
+		assertTrue(RECEIVED.get(2) == background, "the background executor stays third");
+		assertTrue(RECEIVED.get(6) == tags, "the merged lambda's fourth argument is the handler's seventh");
+		assertTrue(RECEIVED.get(8) == main, "the main-thread executor stays ninth");
+		assertTrue(RECEIVED.get(3) == merged[4], "everything after the moved capture shifts back");
+	}
+
+	/** A mod that spelled vanilla's descriptor has the selector rewritten to the live one, and MixinFit judges it there. */
+	@Test
+	void aSpelledVanillaDescriptorIsRewrittenAndJudgedWhereItLands() throws Exception {
+		MixinHandlerShim.useTable(List.of(TARGET + "#lambda$load$1" + VANILLA_JDK + "V -> " + MERGED_JDK + "V " + PERM));
+		ClassNode target = staticTarget(TARGET, "lambda$load$1", MERGED_JDK + "V");
+		byte[] targetBytes = bytes(target);
+		java.util.function.Function<String, byte[]> resolver = name -> name.equals(TARGET + ".class") ? targetBytes : null;
+
+		ClassNode mixin = mixin(withCallback(VANILLA_JDK, CI), true);
+		setSelector(mixin, "lambda$load$1" + VANILLA_JDK + "V");
+		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(bytes(mixin), resolver).verdict());
+		System.setProperty(MixinHandlerShim.TABLE_PROPERTY, "off");
+		assertEquals(MixinFit.Verdict.UNFIT, MixinFit.evaluate(bytes(mixin), resolver).verdict(),
+				"without the table the spelled selector names nothing: the verdict and the wrap agree both ways");
+		System.clearProperty(MixinHandlerShim.TABLE_PROPERTY);
+
+		assertEquals(1, MixinHandlerShim.adapt(mixin, targets(target)));
+		MethodNode outer = mixin.methods.stream().filter(m -> m.name.equals("handler")).findFirst().orElseThrow();
+		assertEquals(List.of("lambda$load$1" + MERGED_JDK + "V"), MixinFit.value(MixinFit.injectorOf(outer), "method"));
+	}
+
+	/** Every case the row is not evidence for leaves the mixin exactly as compiled. */
+	@Test
+	void withoutEvidenceFromTheRowNothingIsWrapped() {
+		String row = TARGET + "#lambda$load$1" + VANILLA_JDK + "V -> " + MERGED_JDK + "V " + PERM;
+		String[] why = { "no row", "the live lambda is not the row's merged one (a stale table)", "a static lambda, an instance handler",
+				"a local captured after the callback", "the table switched off", "the handler already fits the live lambda",
+				"the bare name names two methods" };
+		for (int mode = 0; mode < why.length; mode++) {
+			MixinHandlerShim.useTable(mode == 0 ? List.of() : List.of(row));
+			String handlerDesc = switch (mode) {
+				case 3 -> withCallback(VANILLA_JDK, CI + "Ljava/lang/String;");
+				case 5 -> withCallback(MERGED_JDK, CI);
+				default -> withCallback(VANILLA_JDK, CI);
+			};
+			ClassNode mixin = mixin(handlerDesc, mode != 2);
+			setSelector(mixin, "lambda$load$1");
+			String live = mode == 1 ? MERGED_JDK.replace("Ljava/lang/Cloneable;Ljava/lang/Appendable;", "Ljava/lang/Appendable;Ljava/lang/Cloneable;")
+					: MERGED_JDK;
+			ClassNode target = staticTarget(TARGET, "lambda$load$1", live + "V");
+			if (mode == 4) System.setProperty(MixinHandlerShim.TABLE_PROPERTY, "off");
+			if (mode == 6) target.methods.add(new MethodNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, "lambda$load$1", "()V", null, null));
+			List<Object> selector = new ArrayList<>((List<?>) MixinFit.value(MixinFit.injectorOf(methodNamed(mixin, "handler")), "method"));
+
+			assertEquals(0, MixinHandlerShim.adapt(mixin, targets(target)), why[mode]);
+			assertNull(methodNamed(mixin, "handler" + MixinHandlerShim.INNER_SUFFIX), why[mode]);
+			assertEquals(selector, MixinFit.value(MixinFit.injectorOf(methodNamed(mixin, "handler")), "method"), why[mode]);
+			assertNull(MixinHandlerShim.destination(methodNamed(mixin, "handler"), target), why[mode]);
+			System.clearProperty(MixinHandlerShim.TABLE_PROPERTY);
+		}
+	}
+
+	@Test
+	void aRowThatIsNotOneReorderingIsNotARow() {
+		assertNotNull(MixinHandlerShim.Permutation.parse("a/B#lambda$x$0(ILjava/lang/String;)V -> (Ljava/lang/String;I)V 1,0"));
+		assertNull(MixinHandlerShim.Permutation.parse("a/B#lambda$x$0(ILjava/lang/String;)V -> (Ljava/lang/String;I)V 0,1"), "types disagree");
+		assertNull(MixinHandlerShim.Permutation.parse("a/B#lambda$x$0(II)V -> (II)V 1,0"), "no reordering at all");
+		assertNull(MixinHandlerShim.Permutation.parse("a/B#lambda$x$0(IJ)V -> (JI)V 1,1"), "not a bijection");
+		assertNull(MixinHandlerShim.Permutation.parse("a/B#lambda$x$0(IJ)V -> (JI)Z 1,0"), "another return type");
+		assertNull(MixinHandlerShim.Permutation.parse("a/B lambda$x$0(IJ)V -> (JI)V 1,0"), "no owner");
+	}
+
+	private static ClassNode staticTarget(String owner, String name, String desc) {
+		ClassNode target = new ClassNode();
+		target.version = Opcodes.V21;
+		target.access = Opcodes.ACC_PUBLIC;
+		target.name = owner;
+		target.superName = "java/lang/Object";
+		MethodNode lambda = new MethodNode(Opcodes.ASM9, Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, name, desc, null, null);
+		Type returned = Type.getReturnType(desc);
+		lambda.instructions.add(new InsnNode(returned.getSort() == Type.VOID ? Opcodes.RETURN : Opcodes.ACONST_NULL));
+		if (returned.getSort() != Type.VOID) lambda.instructions.add(new InsnNode(Opcodes.ARETURN));
+		lambda.maxStack = 1;
+		lambda.maxLocals = 16;
+		target.methods = new ArrayList<>(List.of(lambda));
+		return target;
+	}
+
+	/** A handler descriptor: {@code params} (with its closing parenthesis), then the callback, returning void. */
+	private static String withCallback(String params, String callback) {
+		return params.substring(0, params.length() - 1) + callback + ")V";
+	}
+
+	private static void retarget(ClassNode mixin, String owner) {
+		mixin.visibleAnnotations.get(0).values.set(1, new ArrayList<>(List.of(Type.getObjectType(owner))));
+	}
+
+	private static byte[] bytes(ClassNode node) {
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		node.accept(writer);
+		return writer.toByteArray();
+	}
+
 	// --- fixtures ---
 
 	/** NeoForge's surviving shape, with vanilla's recorded as dropped by the pruner. */

@@ -340,9 +340,11 @@ public final class MixinFit {
 			// The move InsertedLambdaArgumentShim will make for a selector naming a lambda the pruner dropped, judged
 			// here too: otherwise a one-injector mixin (fusion's sprite loader hook) is UNFIT, removed from its
 			// config, and never reaches the shim that would have given it the live lambda. Captured locals are
-			// proven from the local variable table, which the plain read skipped.
+			// proven from the local variable table, which the plain read skipped. MixinHandlerShim's first: a selector
+			// spelling vanilla's descriptor of a lambda whose captures the merge reordered lands on the one live lambda.
 			if (hits.isEmpty() && selectors.size() == 1) {
-				MethodNode shimmed = InsertedLambdaArgumentShim.destination(m, target);
+				MethodNode shimmed = MixinHandlerShim.destination(m, target);
+				if (shimmed == null) shimmed = InsertedLambdaArgumentShim.destination(m, target);
 				if (shimmed == null && withLocals == null) {
 					byte[] bytes = resolver.apply(target.name + ".class");
 					if (bytes != null) {

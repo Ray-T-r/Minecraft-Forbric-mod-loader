@@ -303,7 +303,8 @@ public final class ForbricMixinService
 		// …and a name-only @Inject selector that the merge left pointing at two methods is pinned to the overload
 		// the handler was written for, instead of failing the whole mixin class on the first one.
 		// …and an @Inject handler written for the other ecosystem's shape of the one surviving target is wrapped,
-		// so it still receives the values it asked for rather than failing the whole mixin class.
+		// so it still receives the values it asked for rather than failing the whole mixin class — on the pruner's
+		// record, or on the census of lambdas whose captures a carrier patch reordered (wover-events' WorldLoader hook).
 		MixinHandlerShim.adapt(node, this::mergedBaseNode);
 		InsertedLambdaArgumentShim.adapt(node, this::mergedBaseNodeWithCode);
 		// …and whatever the wrap could NOT reach is explained rather than left as "Invalid descriptor". After the

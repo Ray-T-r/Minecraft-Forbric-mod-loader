@@ -17,7 +17,9 @@
 package net.forbric.kernel.mixin;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 import org.objectweb.asm.Opcodes;
@@ -58,6 +60,24 @@ import net.forbric.kernel.util.ForbricLog;
  * is not an inference about Mixin: it is the fact that the shape the mod was written for was in this class until
  * the merge chose the other ecosystem's body of the enclosing method.
  *
+ * <h2>The second evidence: a lambda the merge kept once, with its captures reordered</h2>
+ *
+ * <p>The pruner only knows about names the merge carried TWICE. {@code WorldLoader.load}'s {@code lambda$load$1} it
+ * carried once — NeoForge's — and NeoForge's patch passes {@code staticLayerTags} on to
+ * {@code RegistryDataLoader.load}; javac orders a lambda's captures by first use, so that one capture moved from
+ * sixth to fourth and nothing else changed. wover-events (bclib, WorldWeaver) hooks that lambda's HEAD with a
+ * vanilla-shaped handler to publish the worldgen registries; Mixin rejected the descriptor, the whole required mixin
+ * aborted, and a dedicated server with bclib died on "Failed to load datapacks" before it made a world.
+ *
+ * <p>So {@code lambda-permutations.txt}, which LambdaPermutationCensusTest re-derives from the vanilla jar and the
+ * staged merged base, lists every vanilla lambda the merged class declares once with the same parameters in another
+ * order — and the order is taken from the local variable NAMES, each vanilla parameter matching exactly one merged
+ * one by name and type. The type-only guard below would refuse WorldLoader's (two {@code List}s, two
+ * {@code Executor}s); a row does not need it, because a row is not a guess. A row is used only when the handler fits
+ * its vanilla descriptor, does not fit the live one, and the live descriptor IS the row's merged one: a table left
+ * stale by a base rebuild is a no-op, never a wrong mapping. A selector that spells the vanilla descriptor is
+ * rewritten to the live one. {@code -Dforbric.lambdaPermutations=off} turns this source off alone.
+ *
  * <h2>The mapping guard</h2>
  *
  * <p>Every parameter of the inner handler must occur EXACTLY ONCE among the target's parameters. Zero and there
@@ -75,6 +95,13 @@ import net.forbric.kernel.util.ForbricLog;
 public final class MixinHandlerShim {
 	static final String PROPERTY = "forbric.mixinHandlerShim";
 
+	/** {@code -Dforbric.lambdaPermutations=off}: no wrap on the census table's evidence; the pruner's still counts. */
+	static final String TABLE_PROPERTY = "forbric.lambdaPermutations";
+
+	/** The shipped census of reordered lambdas; LambdaPermutationCensusTest pins it to the staged artifacts. */
+	static final String TABLE = "/net/forbric/kernel/mixin/lambda-permutations.txt";
+	private static volatile Map<String, Permutation> permutations;
+
 	/** The suffix the original handler is moved to. Distinctive, so a second pass recognises its own work. */
 	static final String INNER_SUFFIX = "$forbricshim";
 
@@ -90,6 +117,10 @@ public final class MixinHandlerShim {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
 	}
 
+	static boolean tableEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(TABLE_PROPERTY, "on"));
+	}
+
 	/**
 	 * Wraps every {@code @Inject} handler in {@code mixin} whose only target has a shape it can be handed.
 	 *
@@ -103,56 +134,191 @@ public final class MixinHandlerShim {
 		List<MethodNode> added = new ArrayList<>();
 		int wrapped = 0;
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
-			if (handler.name.endsWith(INNER_SUFFIX)) continue;
-			AnnotationNode inject = injectOf(handler);
-			if (inject == null) continue;
-			String selector = onlyNameSelector(inject);
-			if (selector == null) continue;
-
-			MethodNode target = onlyTarget(selector, targetNames, targets);
-			if (target == null) continue;
-			if (!wasWrittenForAShapeTheMergeDropped(handler, selector, target, targetNames, targets)) continue;
-
-			MethodNode outer = wrap(mixin, handler, inject, target);
-			if (outer == null) continue;
+			Plan plan = plan(handler, targetNames, targets);
+			if (plan == null) continue;
+			String selector = plan.live().name;
+			MethodNode outer = wrap(mixin, handler, plan);
 			added.add(outer);
 			wrapped++;
-			ForbricLog.warn("[Forbric/Mixin] %s.%s was written for a differently shaped %s — the merge kept the "
-					+ "other ecosystem's, which takes %s. Its handler is wrapped so it still receives the values it "
-					+ "asked for, in the order it asked for them", mixin.name, handler.name, selector, target.desc);
+			if (plan.row() == null) {
+				ForbricLog.warn("[Forbric/Mixin] %s.%s was written for a differently shaped %s — the merge kept the "
+						+ "other ecosystem's, which takes %s. Its handler is wrapped so it still receives the values it "
+						+ "asked for, in the order it asked for them", mixin.name, outer.name, selector, plan.live().desc);
+			} else {
+				ForbricLog.warn("[Forbric/Mixin] %s.%s was written for a differently shaped %s — vanilla's %s; the merged "
+						+ "base keeps the same parameters in another order, %s (a carrier patch uses a capture earlier). Its "
+						+ "handler is wrapped so it still receives the values it asked for, in the order it asked for them",
+						mixin.name, outer.name, selector, plan.row().vanillaDesc(), plan.live().desc);
+			}
 		}
 		mixin.methods.addAll(added);
 		return wrapped;
 	}
 
 	/**
-	 * Builds the outer handler and turns {@code handler} into its inner one, or null when it cannot be done.
-	 *
-	 * <p>Mutates {@code handler} only on success: it is renamed and loses the annotation, which the outer takes.
+	 * The method {@code handler}'s injection lands on once {@link #adapt} has wrapped it, or null when it will not be
+	 * wrapped — the same decision, nothing changed. {@link MixinFit} asks this for a selector that spells vanilla's
+	 * descriptor of a reordered lambda: without it that injector reads as a miss and a one-injector mixin is removed
+	 * from its config before the wrap could ever run.
 	 */
-	private static MethodNode wrap(ClassNode mixin, MethodNode handler, AnnotationNode inject, MethodNode target) {
+	public static MethodNode destination(MethodNode handler, ClassNode target) {
+		if (!enabled() || handler == null || target == null || target.methods == null) return null;
+		Plan plan = plan(handler, List.of(target.name), name -> name.equals(target.name) ? target : null);
+		return plan == null ? null : plan.live();
+	}
+
+	/**
+	 * One wrap, decided: the injector, the one method it lands on, which target argument each handler argument is,
+	 * the selector to write when the mod spelled vanilla's descriptor, and the census row when that was the evidence.
+	 */
+	private record Plan(AnnotationNode inject, MethodNode live, int[] mapping, String selector, Permutation row) {
+	}
+
+	private static Plan plan(MethodNode handler, List<String> targetNames, Function<String, ClassNode> targets) {
+		if (handler.name.endsWith(INNER_SUFFIX)) return null;
+		AnnotationNode inject = injectOf(handler);
+		if (inject == null) return null;
+		String selector = onlySelector(inject);
+		if (selector == null) return null;
+		int paren = selector.indexOf('(');
+		String name = paren < 0 ? selector : selector.substring(0, paren);
+
+		String[] owner = new String[1];
+		MethodNode target = onlyTarget(name, targetNames, targets, owner);
+		if (target == null) return null;
+
 		Type[] wanted = Type.getArgumentTypes(handler.desc);
 		Type[] available = Type.getArgumentTypes(target.desc);
 		if (wanted.length == 0) return null;
-
 		// Everything before the callback is a value to be handed over; the callback itself is the last parameter.
 		String callback = wanted[wanted.length - 1].getInternalName();
 		if (!CALLBACK_INFO.equals(callback) && !CALLBACK_INFO_RETURNABLE.equals(callback)) return null;
-
 		boolean targetStatic = (target.access & Opcodes.ACC_STATIC) != 0;
 		boolean handlerStatic = (handler.access & Opcodes.ACC_STATIC) != 0;
 		if (targetStatic && !handlerStatic) return null;    // no receiver to call the inner one on
 
-		int[] mapping = new int[wanted.length - 1];
-		for (int i = 0; i < mapping.length; i++) {
-			int found = -1;
-			for (int j = 0; j < available.length; j++) {
-				if (!available[j].equals(wanted[i])) continue;
-				if (found >= 0) return null;    // twice: a coin toss, and a coin toss hands over the wrong object
-				found = j;
+		// The pruner's record first, for a bare name only: its guard maps by type and refuses a repeated one.
+		if (paren < 0 && wasWrittenForAShapeTheMergeDropped(handler, name, target, targetNames, targets)) {
+			int[] mapping = new int[wanted.length - 1];
+			for (int i = 0; i < mapping.length; i++) {
+				int found = -1;
+				for (int j = 0; j < available.length; j++) {
+					if (!available[j].equals(wanted[i])) continue;
+					if (found >= 0) return null;    // twice: a coin toss, and a coin toss hands over the wrong object
+					found = j;
+				}
+				if (found < 0) return null;
+				mapping[i] = found;
 			}
-			if (found < 0) return null;
-			mapping[i] = found;
+			return new Plan(inject, target, mapping, null, null);
+		}
+
+		// Then the census: the row's own order, proven by name and type when it was derived.
+		Permutation row = rowFor(owner[0], name, paren < 0 ? null : selector.substring(paren), handler, target);
+		if (row == null || row.perm().length != wanted.length - 1) return null;
+		for (int i = 0; i < row.perm().length; i++) if (!available[row.perm()[i]].equals(wanted[i])) return null;
+		return new Plan(inject, target, row.perm().clone(), paren < 0 ? null : name + target.desc, row);
+	}
+
+	/**
+	 * The census row that is evidence for this handler on this live method, or null: the handler fits vanilla's
+	 * descriptor and not the live one, the live one is the row's merged one, and a spelled selector names vanilla's.
+	 */
+	private static Permutation rowFor(String owner, String name, String spelled, MethodNode handler, MethodNode live) {
+		if (!tableEnabled() || owner == null) return null;
+		Permutation row = permutations().get(owner + "#" + name);
+		if (row == null || !live.desc.equals(row.mergedDesc())) return null;
+		if (spelled != null && !spelled.equals(row.vanillaDesc())) return null;
+		if (!MixinOverloadPin.fits(handler.desc, row.vanillaDesc()) || MixinOverloadPin.fits(handler.desc, live.desc)) return null;
+		return row;
+	}
+
+	/**
+	 * One census row: {@code owner#name vanillaDesc -> mergedDesc p0,p1,…}, where {@code p[i]} is the merged index
+	 * holding vanilla's parameter {@code i}.
+	 */
+	record Permutation(String owner, String name, String vanillaDesc, String mergedDesc, int[] perm) {
+		/** The row, or null when it is not one reordering of one parameter list into the other. */
+		static Permutation parse(String line) {
+			try {
+				String row = line.trim();
+				int arrow = row.indexOf(" -> "), hash = row.indexOf('#');
+				if (arrow < 0 || hash <= 0 || hash > arrow) return null;
+				String left = row.substring(0, arrow);
+				int paren = left.indexOf('(', hash);
+				if (paren < 0) return null;
+				String[] right = row.substring(arrow + 4).trim().split(" ");
+				if (right.length != 2) return null;
+				String vanillaDesc = left.substring(paren), mergedDesc = right[0];
+				Type[] from = Type.getArgumentTypes(vanillaDesc), to = Type.getArgumentTypes(mergedDesc);
+				if (vanillaDesc.equals(mergedDesc) || from.length != to.length
+						|| !Type.getReturnType(vanillaDesc).equals(Type.getReturnType(mergedDesc))) return null;
+				String[] indices = right[1].split(",");
+				if (indices.length != from.length) return null;
+				int[] perm = new int[from.length];
+				boolean[] taken = new boolean[to.length];
+				for (int i = 0; i < perm.length; i++) {
+					perm[i] = Integer.parseInt(indices[i]);
+					if (perm[i] < 0 || perm[i] >= to.length || taken[perm[i]] || !to[perm[i]].equals(from[i])) return null;
+					taken[perm[i]] = true;
+				}
+				return new Permutation(left.substring(0, hash), left.substring(hash + 1, paren), vanillaDesc, mergedDesc, perm);
+			} catch (RuntimeException malformed) {
+				return null;
+			}
+		}
+	}
+
+	private static Map<String, Permutation> permutations() {
+		Map<String, Permutation> rows = permutations;
+		if (rows != null) return rows;
+		List<String> lines = new ArrayList<>();
+		try (java.io.InputStream in = MixinHandlerShim.class.getResourceAsStream(TABLE)) {
+			if (in != null) lines.addAll(List.of(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n")));
+		} catch (java.io.IOException unreadable) {
+			ForbricLog.warn("[Forbric/Mixin] could not read %s; no handler is wrapped on its evidence", TABLE);
+		}
+		permutations = index(lines);
+		return permutations;
+	}
+
+	private static Map<String, Permutation> index(List<String> lines) {
+		Map<String, Permutation> rows = new HashMap<>();
+		for (String line : lines) {
+			if (line.isBlank() || line.startsWith("#")) continue;
+			Permutation row = Permutation.parse(line);
+			if (row == null) {
+				ForbricLog.warn("[Forbric/Mixin] %s: ignoring a row that is not one reordering: %s", TABLE, line.trim());
+				continue;
+			}
+			rows.put(row.owner() + "#" + row.name(), row);
+		}
+		return Map.copyOf(rows);
+	}
+
+	/** Test seam: these rows instead of the shipped table; {@code null} goes back to the shipped one. */
+	static void useTable(List<String> rows) {
+		permutations = rows == null ? null : index(rows);
+	}
+
+	/**
+	 * Builds the outer handler and turns {@code handler} into its inner one.
+	 *
+	 * <p>Mutates {@code handler}: it is renamed and loses the annotation, which the outer takes — with the selector
+	 * rewritten to the live descriptor when the mod spelled vanilla's.
+	 */
+	private static MethodNode wrap(ClassNode mixin, MethodNode handler, Plan plan) {
+		AnnotationNode inject = plan.inject();
+		MethodNode target = plan.live();
+		int[] mapping = plan.mapping();
+		Type[] wanted = Type.getArgumentTypes(handler.desc);
+		Type[] available = Type.getArgumentTypes(target.desc);
+		boolean targetStatic = (target.access & Opcodes.ACC_STATIC) != 0;
+		boolean handlerStatic = (handler.access & Opcodes.ACC_STATIC) != 0;
+		if (plan.selector() != null) {
+			for (int i = 0; i + 1 < inject.values.size(); i += 2) {
+				if ("method".equals(inject.values.get(i))) inject.values.set(i + 1, new ArrayList<>(List.of(plan.selector())));
+			}
 		}
 
 		String innerName = handler.name + INNER_SUFFIX;
@@ -209,29 +375,40 @@ public final class MixinHandlerShim {
 		return slots;
 	}
 
-	/** The one method {@code selector} names across the targets, or null when there is not exactly one. */
-	private static MethodNode onlyTarget(String selector, List<String> targetNames,
-			Function<String, ClassNode> targets) {
+	/**
+	 * The one method named {@code name} across the targets, or null when there is not exactly one; its class's
+	 * internal name goes into {@code owner[0]}.
+	 */
+	private static MethodNode onlyTarget(String name, List<String> targetNames, Function<String, ClassNode> targets,
+			String[] owner) {
 		MethodNode only = null;
 		for (String targetName : targetNames) {
 			ClassNode target = targets.apply(targetName);
 			if (target == null || target.methods == null) continue;
 			for (MethodNode method : target.methods) {
-				if (!method.name.equals(selector)) continue;
+				if (!method.name.equals(name)) continue;
 				if (only != null) return null;
 				only = method;
+				owner[0] = targetName;
 			}
 		}
 		return only;
 	}
 
-	/** The selector when the annotation carries exactly one, written as a bare name. */
-	private static String onlyNameSelector(AnnotationNode inject) {
+	/**
+	 * The selector when the annotation carries exactly one: a bare name, or {@code name(descriptor)} — the second
+	 * form only ever meets the census, which is the one source that knows which descriptor a mod could have spelled.
+	 */
+	private static String onlySelector(AnnotationNode inject) {
 		if (inject.values == null) return null;
 		for (int i = 0; i + 1 < inject.values.size(); i += 2) {
 			if (!"method".equals(inject.values.get(i)) || !(inject.values.get(i + 1) instanceof List<?> raw)) continue;
 			if (raw.size() != 1 || !(raw.get(0) instanceof String selector)) return null;
-			return selector.indexOf('(') >= 0 ? null : selector;
+			String s = selector.trim();
+			int paren = s.indexOf('('), semi = s.indexOf(';');
+			if (s.isEmpty() || semi >= 0 && (paren < 0 || semi < paren)) return null;   // an owner-qualified selector
+			if (s.indexOf('*') >= 0 || s.startsWith("/") || s.indexOf(' ') >= 0 || s.indexOf('=') >= 0) return null;
+			return s;
 		}
 		return null;
 	}
