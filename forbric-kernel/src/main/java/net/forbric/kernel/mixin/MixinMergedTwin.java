@@ -79,8 +79,60 @@ public final class MixinMergedTwin {
 			if (!MIXIN_DESC.equals(annotation.desc) || annotation.values == null) continue;
 			added += addTwins(mixin.name, annotation, present, twinned);
 		}
-		if (!twinned.isEmpty()) unpinInjectionPointOwners(mixin, twinned);
+		if (!twinned.isEmpty()) {
+			unpinInjectionPointOwners(mixin, twinned);
+			unmapShadows(mixin);
+		}
 		return added;
+	}
+
+	static final String SHADOW_DESC = "Lorg/spongepowered/asm/mixin/Shadow;";
+
+	/**
+	 * Turns {@code remap} off on every {@code @Shadow} of a mixin that just gained a twin — the third half.
+	 *
+	 * <p>Mixin refuses a remappable shadow in any mixin with more than one target
+	 * ({@code MixinInfo$State.validateRemappables}: "Found a remappable @Shadow annotation on val$builder"), and a
+	 * second target is exactly what the twin is. The refusal is an {@code InvalidMixinException}, so the mixin is
+	 * dropped from BOTH targets, not just the new one: fabric-api's {@code TagAppenderMixin$TagAppender1Mixin}
+	 * shadows the anonymous class's captured {@code val$builder} and was lost entirely the moment its twin was
+	 * added. Remapping is a refmap lookup from compile-time to runtime names; this game runs under the names the
+	 * mod compiled against, so {@code remap = false} changes no name — it only lets the second target stand.
+	 */
+	static int unmapShadows(ClassNode mixin) {
+		int unmapped = 0;
+		if (mixin.fields != null) {
+			for (org.objectweb.asm.tree.FieldNode field : mixin.fields) unmapped += unmap(field.visibleAnnotations);
+		}
+		for (MethodNode method : mixin.methods) unmapped += unmap(method.visibleAnnotations);
+		if (unmapped > 0) {
+			ForbricLog.info("[Forbric/Mixin] %s: %d @Shadow(s) no longer ask to be remapped — Mixin refuses a remappable "
+					+ "shadow in a mixin with two targets and would drop it from both; this game runs under the "
+					+ "names the mod compiled against, so no name changes", mixin.name.replace('/', '.'), unmapped);
+		}
+		return unmapped;
+	}
+
+	private static int unmap(List<AnnotationNode> annotations) {
+		if (annotations == null) return 0;
+		int unmapped = 0;
+		for (AnnotationNode annotation : annotations) {
+			if (!SHADOW_DESC.equals(annotation.desc)) continue;
+			if (annotation.values == null) annotation.values = new ArrayList<>();
+			int at = -1;
+			for (int i = 0; i + 1 < annotation.values.size(); i += 2) {
+				if ("remap".equals(annotation.values.get(i))) at = i + 1;
+			}
+			if (at >= 0) {
+				if (Boolean.FALSE.equals(annotation.values.get(at))) continue;
+				annotation.values.set(at, Boolean.FALSE);
+			} else {
+				annotation.values.add("remap");
+				annotation.values.add(Boolean.FALSE);
+			}
+			unmapped++;
+		}
+		return unmapped;
 	}
 
 	/**

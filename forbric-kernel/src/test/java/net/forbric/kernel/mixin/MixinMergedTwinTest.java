@@ -81,6 +81,39 @@ class MixinMergedTwinTest {
 	}
 
 	@Test
+	void aTwinnedMixinsShadowsStopAskingToBeRemapped() {
+		ClassNode mixin = mixinTargeting(TARGET);
+		org.objectweb.asm.tree.FieldNode captured = new org.objectweb.asm.tree.FieldNode(Opcodes.ACC_PRIVATE,
+				"val$builder", "Lnet/minecraft/tags/TagBuilder;", null, null);
+		captured.visibleAnnotations = new java.util.ArrayList<>(List.of(new AnnotationNode(MixinMergedTwin.SHADOW_DESC)));
+		mixin.fields.add(captured);
+		org.objectweb.asm.tree.MethodNode shadowed = new org.objectweb.asm.tree.MethodNode(Opcodes.ACC_PUBLIC,
+				"getInternalBuilder", "()Lnet/minecraft/tags/TagBuilder;", null, null);
+		AnnotationNode explicit = new AnnotationNode(MixinMergedTwin.SHADOW_DESC);
+		explicit.values = new java.util.ArrayList<>(List.of("remap", Boolean.TRUE));
+		shadowed.visibleAnnotations = new java.util.ArrayList<>(List.of(explicit));
+		mixin.methods.add(shadowed);
+
+		assertEquals(1, MixinMergedTwin.addTwins(mixin, present(TARGET + MixinMergedTwin.NEO_SUFFIX)));
+
+		// Mixin's validateRemappables throws on a remappable @Shadow once a mixin has two targets, and that drops
+		// the mixin from BOTH — fabric-api's TagAppender1Mixin was lost entirely the moment its twin was added.
+		assertEquals(List.of("remap", Boolean.FALSE), captured.visibleAnnotations.get(0).values);
+		assertEquals(List.of("remap", Boolean.FALSE), explicit.values);
+	}
+
+	@Test
+	void aMixinWithoutATwinKeepsItsShadowsRemappable() {
+		ClassNode mixin = mixinTargeting("net.minecraft.world.entity.Entity");
+		org.objectweb.asm.tree.FieldNode field = new org.objectweb.asm.tree.FieldNode(Opcodes.ACC_PRIVATE, "level",
+				"Lnet/minecraft/world/level/Level;", null, null);
+		field.visibleAnnotations = new java.util.ArrayList<>(List.of(new AnnotationNode(MixinMergedTwin.SHADOW_DESC)));
+		mixin.fields.add(field);
+		assertEquals(0, MixinMergedTwin.addTwins(mixin, present()));
+		assertEquals(null, field.visibleAnnotations.get(0).values, "one target: Mixin accepts it, nothing to change");
+	}
+
+	@Test
 	void aTargetWithNoTwinIsLeftExactlyAsCompiled() {
 		ClassNode mixin = mixinTargeting("net.minecraft.world.entity.Entity");
 		assertEquals(0, MixinMergedTwin.addTwins(mixin, present()));
