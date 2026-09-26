@@ -159,7 +159,12 @@ public final class FinalMixinApplications {
       &&WatchdogDumpEquivalence.candidate(mixin,injector.name(),injector.desc(),injector.bodyHash(),target);
     if(pending)state=Outcome.UNKNOWN;
     if(replacement!=null)state=Outcome.EQUIVALENT;
-    observed.put(binary+"#"+injector.symbol(),state);
+    // Attached, but only inside a forwarding stub the merge kept for vanilla's signature, where the mod's own platform
+    // ran code: it runs only when something still calls that old signature. torrential's fuel hook stays on
+    // FuelValues.vanillaBurnTimes' stub (its captures need the stub's arguments), which only the client calls, so the
+    // server never counts its fuel. Still a reference, so not a loss; not a discharge either.
+    String stub=references>0?stubOnlyHost(target,candidates.getFirst(),plan.config().name()):null;
+    observed.put(binary+"#"+injector.symbol(),stub!=null?Outcome.UNKNOWN:state);
     String id=id(plan,injector,binary),mod=owner(plan.config().name());
     // A mixin the kernel does the whole job of: its injector's miss is that job moving, not a loss, once the
     // replacement is seen; until then it is recorded as usual and resolved when SupersededMixins proves it.
@@ -200,6 +205,10 @@ public final class FinalMixinApplications {
     else if(state==Outcome.EQUIVALENT)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.RESOLVED,
       required,"The missing injector is replaced by a verified implementation",List.of("target="+binary,replacement)));
+    else if(stub!=null)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
+      "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.SUSPECTED,
+      required,"Attached only inside a forwarding stub the merged base keeps for the old signature; it runs only when something still calls that signature",
+      List.of("target="+binary,"mixin="+mixin,"handler="+injector.symbol(),"stub="+stub,"final handler references="+references)));
     else if(state==Outcome.ATTACHED||state==Outcome.OPTIONAL)CompatibilityFindings.resolve(id,mod,
       state==Outcome.ATTACHED?"final defined class contains a reference to the exact merged handler":"original injector explicitly permits zero attachments");
     // Unproved either way, but an author-mandated count that the final class does not visibly meet is worth a
@@ -253,6 +262,21 @@ public final class FinalMixinApplications {
    hosts.add(target.name.substring(target.name.lastIndexOf('/')+1)+"."+method.name+" ("+why+")");
   }
   return hosts.isEmpty()?null:String.join("; ",hosts);
+ }
+ /** {@code -Dforbric.mixinStubHostReport=off}: a handler attached only inside a carrier stub reads ATTACHED, as before. */
+ static final String STUB_HOST_PROPERTY="forbric.mixinStubHostReport";
+ /** The stub every reference to {@code handler} sits in, when each is a carrier stub over code the mod's own platform ran
+  * (MixinStubRebind's table and the config owner's family); null when any reference is elsewhere or nothing says. */
+ private static String stubOnlyHost(ClassNode target,MethodNode handler,String config) {
+  if("off".equalsIgnoreCase(System.getProperty(STUB_HOST_PROPERTY,"on")))return null;
+  net.forbric.api.Ecosystem ecosystem=MixinConfigOwners.ecosystemOf(config);if(ecosystem==null)return null;
+  String host=null;
+  for(MethodNode method:target.methods) {
+   if(method==handler||references(target,method,handler)==0)continue;
+   if(!MixinStubRebind.isStubOverBody(target,method,ecosystem))return null;
+   host=method.name+method.desc;
+  }
+  return host;
  }
  private static boolean same(ClassNode target,MethodNode handler,Handle handle) {return handle.getOwner().equals(target.name)&&handle.getName().equals(handler.name)&&handle.getDesc().equals(handler.desc);}
  private static String id(Plan plan,Injector injector,String target) {return "mixin-injector:"+plan.config().name()+":"+plan.mixin()+"#"+injector.symbol()+"@"+target;}

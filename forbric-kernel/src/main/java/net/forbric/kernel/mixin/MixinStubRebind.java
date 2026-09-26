@@ -315,6 +315,20 @@ public final class MixinStubRebind {
 	}
 
 	/**
+	 * Whether {@code method} of {@code target} heads a carrier-stubs.txt row where a mod of {@code ecosystem} was compiled
+	 * against code, by either selector form: an injector of that mod attached only there runs just for callers of the
+	 * old signature, which on the merged base are often none (FinalMixinApplications reports it).
+	 */
+	public static boolean isStubOverBody(ClassNode target, MethodNode method, Ecosystem ecosystem) {
+		if (target == null || method == null || ecosystem == null) return false;
+		String head = target.name + "#" + method.name + method.desc + " -> ";
+		for (Map.Entry<String, Row> row : carrierStubs().entrySet()) {
+			if (row.getKey().startsWith(head)) return row.getValue().ranOnCode(ecosystem);
+		}
+		return false;
+	}
+
+	/**
 	 * What one move needs: the injector, the stub it is bound to, where that forwards, whether it captures the stub's
 	 * arguments, and the {@code @Share} keys it holds in its mixin's namespace.
 	 */
@@ -814,6 +828,13 @@ public final class MixinStubRebind {
 			if (!forgeFamilyEnabled()) return false;
 			Shape shape = ecosystem == Ecosystem.FORGE ? forge : ecosystem == Ecosystem.NEOFORGE ? neo : null;
 			return shape != null && shape.ranOnCode(byName);
+		}
+
+		/** Whether a selector of either form ran on code on {@code ecosystem}'s own platform, whatever the switches say. */
+		boolean ranOnCode(Ecosystem ecosystem) {
+			if (ecosystem == Ecosystem.FABRIC) return true;
+			Shape shape = ecosystem == Ecosystem.FORGE ? forge : ecosystem == Ecosystem.NEOFORGE ? neo : null;
+			return shape != null && (shape.ranOnCode(true) || shape.ranOnCode(false));
 		}
 	}
 

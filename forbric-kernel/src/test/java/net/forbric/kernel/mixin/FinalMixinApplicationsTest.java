@@ -171,6 +171,34 @@ class FinalMixinApplicationsTest {
   setup(2,-1,false,List.of(TARGET));suspect();observe(target(true,true,"handler$000$probe","()V"));
   assertEquals(CompatibilityFinding.Confidence.SUSPECTED,whole().confidence());assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
  }
+ private static final String FUEL="net.minecraft.world.level.block.entity.FuelValues",
+   BURN_STUB="(Lnet/minecraft/core/HolderLookup$Provider;Lnet/minecraft/world/flag/FeatureFlagSet;I)Lnet/minecraft/world/level/block/entity/FuelValues;",
+   BURN_BODY="(Lnet/minecraft/world/level/block/entity/FuelValues$Builder;I)Lnet/minecraft/world/level/block/entity/FuelValues;";
+ /** torrential's fuel hook stays on vanillaBurnTimes' stub, which the server never calls: attached, and reported as such. */
+ @Test void anInjectorAttachedOnlyInsideACarrierStubIsSuspectedNotResolved() {
+  config(1);remember(-1,false,List.of(FUEL));
+  observeFuel(fuel(false));
+  CompatibilityFinding row=injectorRow();assertEquals(CompatibilityFinding.Confidence.SUSPECTED,row.confidence(),row.toString());
+  assertTrue(row.evidence().contains("stub=vanillaBurnTimes"+BURN_STUB),row.evidence().toString());assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+ }
+ @Test void aStubAttachmentIsNativeForAModWhoseCarrierKeepsThatStubAndFineWhereTheBodyIsReachedToo() {
+  MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned(CONFIG,"probe",Ecosystem.NEOFORGE)));
+  config(1);remember(-1,false,List.of(FUEL));observeFuel(fuel(false));
+  assertFalse(stubSuspected(),"NeoForge's own FuelValues has that stub: native");
+  reset();config(1);remember(-1,false,List.of(FUEL));observeFuel(fuel(true));
+  assertFalse(stubSuspected(),"the body references it too");
+  reset();System.setProperty(FinalMixinApplications.STUB_HOST_PROPERTY,"off");
+  try{config(1);remember(-1,false,List.of(FUEL));observeFuel(fuel(false));assertFalse(stubSuspected(),"the switch");}
+  finally{System.clearProperty(FinalMixinApplications.STUB_HOST_PROPERTY);}
+ }
+ /** The final FuelValues: vanillaBurnTimes' three-argument stub calls the merged handler; with {@code alsoBody}, so does the body. */
+ private ClassNode fuel(boolean alsoBody){ClassNode n=target(false,true,"handler$000$probe","()V");n.name=FUEL.replace('.','/');
+  for(String desc:alsoBody?List.of(BURN_STUB,BURN_BODY):List.of(BURN_STUB)){MethodNode m=new MethodNode(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC,"vanillaBurnTimes",desc,null,null);
+   m.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,n.name,"handler$000$probe","()V",false));m.instructions.add(new InsnNode(Opcodes.ACONST_NULL));m.instructions.add(new InsnNode(Opcodes.ARETURN));n.methods.add(m);}
+  return n;}
+ private void observeFuel(ClassNode n){ClassWriter w=new ClassWriter(0);n.accept(w);FinalMixinApplications.observe(FUEL,w.toByteArray(),(mixin,name,desc)->List.of(new FinalMixinApplications.Renamed("handler$000$probe",desc)));}
+ private boolean stubSuspected(){return CompatibilityFindings.all().stream().anyMatch(f->f.id().startsWith("mixin-injector:")&&f.confidence()==CompatibilityFinding.Confidence.SUSPECTED);}
+ private CompatibilityFinding injectorRow(){return CompatibilityFindings.all().stream().filter(f->f.id().startsWith("mixin-injector:")).findFirst().orElseThrow();}
  private void setup(Integer minimum,int require,boolean group,List<String> targets){config(minimum);remember(require,group,targets);}
  private void config(Integer minimum){config(minimum,true);}
  private void config(Integer minimum,boolean required){String json="{\"required\":"+required+",\"package\":\"example\",\"mixins\":[\"ProbeMixin\"]"+(minimum==null?"":",\"injectors\":{\"defaultRequire\":"+minimum+"}")+"}";MixinCompatibility.rememberOriginalConfig(CONFIG,json.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
