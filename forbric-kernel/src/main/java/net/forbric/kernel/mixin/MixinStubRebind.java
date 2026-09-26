@@ -89,7 +89,9 @@ import net.forbric.kernel.util.ForbricLog;
  *       int)} captures all three, the stub feeds the first two into a {@code Builder}, and moving it to
  *       {@code (Builder, int)} made MixinExtras reject the handler and the whole required mixin with it. It now
  *       stays on the stub, where it binds, and is reported SUSPECTED: it then runs only where something calls the
- *       stub, and the dedicated server never does ({@code -Dforbric.mixinStubRebind.stubFinding=off} drops the
+ *       stub. The merged dedicated server builds its fuel without calling it; the kernel's fuel bridge
+ *       ({@code KernelFabricFuel.throughVanillaReturnHooks}) now calls it there, so this one runs on both sides unless
+ *       {@code -Dforbric.fabricFuel.returnHooks=off} ({@code -Dforbric.mixinStubRebind.stubFinding=off} drops the
  *       finding); puzzleslib's {@code getDestroySpeed(float, BlockState)} still moves,
  *       because the stub passes its {@code BlockState} straight through as the delegate's first argument. When the
  *       contract's size cannot be told, nothing moves;</li>
@@ -613,8 +615,10 @@ public final class MixinStubRebind {
 	 * code can call the body directly, and then the handler silently never runs: torrential's
 	 * {@code FuelValuesMixin} stays on {@code FuelValues.vanillaBurnTimes(Provider, FeatureFlagSet, int)}; the client
 	 * reaches it through {@code ClientPacketListener}, the dedicated server builds its fuel through NeoForge's
-	 * {@code DataMapHooks.populateFuelValues} and never does. The Angling Table burns on the client and not on the
-	 * server. The old outcome was a visible "did not finish loading"; this keeps the quiet one from being silent.
+	 * {@code DataMapHooks.populateFuelValues} and never did. That one case is bridged -- the kernel now hands the
+	 * server's table through the stub ({@code KernelFabricFuel.throughVanillaReturnHooks}, off with
+	 * {@code -Dforbric.fabricFuel.returnHooks=off}) -- but the finding is about the stub, and says so for every handler
+	 * it keeps. The old outcome was a visible "did not finish loading"; this keeps the quiet one from being silent.
 	 */
 	private static void staysOnStub(ClassNode mixin, MethodNode handler, ClassNode target, MethodNode stub,
 			MethodNode delegate) {

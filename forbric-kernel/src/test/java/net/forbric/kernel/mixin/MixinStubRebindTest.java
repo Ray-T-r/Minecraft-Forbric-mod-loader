@@ -622,7 +622,8 @@ class MixinStubRebindTest {
 		assertTrue(CompatibilityFindings.all().isEmpty(), "asking where it would go reports nothing");
 		assertEquals(0, MixinStubRebind.adapt(mixin, name -> fuel));
 		assertEquals(List.of(STUB_BURN), selectors(mixin, "torrential$modifyFuelValues"));
-		// It binds on the stub and runs only where the stub is called: the dedicated server builds fuel without it.
+		// It binds on the stub and runs only where the stub is called (the merged server reaches it only through the
+		// kernel's fuel bridge, KernelFabricFuel.throughVanillaReturnHooks).
 		List<CompatibilityFinding> stays = CompatibilityFindings.all();
 		assertEquals(1, stays.size(), stays.toString());
 		assertEquals(CompatibilityFinding.Confidence.SUSPECTED, stays.getFirst().confidence());

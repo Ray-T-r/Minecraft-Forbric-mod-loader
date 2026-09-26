@@ -174,7 +174,7 @@ class FinalMixinApplicationsTest {
  private static final String FUEL="net.minecraft.world.level.block.entity.FuelValues",
    BURN_STUB="(Lnet/minecraft/core/HolderLookup$Provider;Lnet/minecraft/world/flag/FeatureFlagSet;I)Lnet/minecraft/world/level/block/entity/FuelValues;",
    BURN_BODY="(Lnet/minecraft/world/level/block/entity/FuelValues$Builder;I)Lnet/minecraft/world/level/block/entity/FuelValues;";
- /** torrential's fuel hook stays on vanillaBurnTimes' stub, which the server never calls: attached, and reported as such. */
+ /** torrential's fuel hook stays on vanillaBurnTimes' stub, which only old-signature callers reach: attached, and reported as such. */
  @Test void anInjectorAttachedOnlyInsideACarrierStubIsSuspectedNotResolved() {
   config(1);remember(-1,false,List.of(FUEL));
   observeFuel(fuel(false));
