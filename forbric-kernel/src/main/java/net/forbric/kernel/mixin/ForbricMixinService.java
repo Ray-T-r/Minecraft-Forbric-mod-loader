@@ -325,6 +325,9 @@ public final class ForbricMixinService
 		// check onto NeoForge's gliding attribute read, and a rebind first would have changed the selector it matches.
 		MixinStubRebind.adapt(node, this::mergedBaseNodeWithCode);
 		FinalMixinApplications.remember(node);
+		// …and, after remember has the author's own counts, an injector-level require/allow on a relaxed guest mixin
+		// stops being able to abandon the whole target class: the mod is reported, the class is defined.
+		if (!DIAGNOSTICS) MixinLocalsCapture.softenRequirements(node, ForbricMixinService::allOwnersRelaxed);
 
 		return node;
 	}
@@ -686,6 +689,12 @@ public final class ForbricMixinService
 	 * distinction is invisible at runtime until exactly one injector fails, at which point it decides between a soft
 	 * skip and a fatal apply error.
 	 */
+	/** Whether every config that declares mixin {@code binary} is one the kernel relaxes (never an unknown owner). */
+	static boolean allOwnersRelaxed(String binary) {
+		java.util.Set<String> owners = FinalMixinApplications.configNames(binary);
+		return !owners.isEmpty() && owners.stream().allMatch(ForbricMixinService::isRelaxedConfig);
+	}
+
 	static boolean isRelaxedConfig(String name) {
 		if (guestConfigs.contains(name)) return true;
 

@@ -47,6 +47,61 @@ class MixinLocalsCaptureTest {
 	}
 
 	@Test
+	void anInjectorsOwnRequireAndAllowStopBeingAbleToAbandonTheTargetClass() {
+		ClassNode node = new ClassNode();
+		node.name = "guest/RedirectMixin";
+		MethodNode redirect = new MethodNode(Opcodes.ACC_PRIVATE, "handler", "()V", null, null);
+		AnnotationNode r = new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Redirect;");
+		r.values = new java.util.ArrayList<>(java.util.List.of("method", java.util.List.of("m"), "require", 1));
+		redirect.visibleAnnotations = new java.util.ArrayList<>(java.util.List.of(r));
+		MethodNode inject = new MethodNode(Opcodes.ACC_PRIVATE, "other", "()V", null, null);
+		AnnotationNode i = new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Inject;");
+		i.values = new java.util.ArrayList<>(java.util.List.of("method", java.util.List.of("m"), "allow", 2));
+		inject.visibleAnnotations = new java.util.ArrayList<>(java.util.List.of(i));
+		MethodNode optional = new MethodNode(Opcodes.ACC_PRIVATE, "optional", "()V", null, null);
+		AnnotationNode o = new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Inject;");
+		o.values = new java.util.ArrayList<>(java.util.List.of("method", java.util.List.of("m"), "require", 0));
+		optional.visibleAnnotations = new java.util.ArrayList<>(java.util.List.of(o));
+		node.methods.add(redirect);
+		node.methods.add(inject);
+		node.methods.add(optional);
+
+		assertEquals(0, MixinLocalsCapture.softenRequirements(node, binary -> false), "an owner the kernel does not relax keeps its counts");
+		assertEquals(1, r.values.get(3));
+
+		System.setProperty(MixinLocalsCapture.REQUIRE_PROPERTY, "off");
+		try {
+			assertEquals(0, MixinLocalsCapture.softenRequirements(node, binary -> true));
+		} finally {
+			System.clearProperty(MixinLocalsCapture.REQUIRE_PROPERTY);
+		}
+
+		// Natively a miss (or an overshoot) of these throws InjectionError, which no handler sees and which makes
+		// Mixin abandon the target class for every mod: creativecore's require=1 redirect took down
+		// ServerConfigurationPacketListenerImpl and, through it, the main entrypoints of seven other mods.
+		assertEquals(2, MixinLocalsCapture.softenRequirements(node, "guest.RedirectMixin"::equals));
+		assertEquals(0, r.values.get(3));
+		assertEquals(java.util.List.of("method", java.util.List.of("m")), i.values, "allow is dropped");
+		assertEquals(0, o.values.get(3), "an explicit zero is already what it should be");
+		assertEquals(0, MixinLocalsCapture.softenRequirements(node, binary -> true), "idempotent");
+	}
+
+	@Test
+	void actualCreativeCoreConfigurationRedirectIsSoftened() throws Exception {
+		Path jar = Path.of("build/compat-inputs/sweep90/mods/CreativeCore_FABRIC_v2.14.16_mc26.2.jar");
+		assumeTrue(Files.isRegularFile(jar), "sweep pack absent");
+		ClassNode node;
+		try (ZipFile zip = new ZipFile(jar.toFile());
+				InputStream in = zip.getInputStream(zip.getEntry("team/creative/creativecore/mixin/ServerConfigurationPacketListenerImplMixin.class"))) {
+			node = parse(in.readAllBytes());
+		}
+		assertEquals(1, MixinLocalsCapture.softenRequirements(node, binary -> true));
+		AnnotationNode redirect = node.methods.stream().filter(m -> m.name.equals("handleConfigurationFinished"))
+				.findFirst().orElseThrow().visibleAnnotations.get(0);
+		assertEquals(0, redirect.values.get(redirect.values.indexOf("require") + 1));
+	}
+
+	@Test
 	void failHardBecomesFailSoft() {
 		ClassNode node = parse(mixin("CAPTURE_FAILHARD"));
 		assertEquals(1, MixinLocalsCapture.soften(node));

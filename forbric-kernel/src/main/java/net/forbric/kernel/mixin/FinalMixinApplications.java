@@ -70,6 +70,15 @@ public final class FinalMixinApplications {
   }
  }
 
+ /** Whether {@code desc} is an injector annotation this ledger counts (Mixin's own and MixinExtras'). */
+ static boolean isInjector(String desc) { return STANDARD.contains(desc)||EXTRAS_INJECTORS.contains(desc); }
+
+ /** The configs that declare {@code binary} (dotted), as read from their original JSON; empty when unknown. */
+ static Set<String> configNames(String binary) {
+  Set<Config> configs=CONFIGS.get(binary);if(configs==null)return Set.of();
+  Set<String> names=new java.util.LinkedHashSet<>();for(Config c:configs)names.add(c.name());return names;
+ }
+
  /** Called on the final adapter output handed to Mixin; no guessed pre-adapter descriptors. */
  static void remember(ClassNode mixin) {
   String binary=mixin.name.replace('/','.');Set<Config> configs=CONFIGS.get(binary);

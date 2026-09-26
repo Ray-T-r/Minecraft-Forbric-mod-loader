@@ -36,8 +36,10 @@ import net.forbric.kernel.util.ForbricLog;
  * through the service's class provider, i.e. the game loader, which delegates kernel packages to the parent.
  *
  * <p>Not covered: a raw {@code InjectionError} — an {@link Error}, not an {@code InvalidMixinException} — bypasses
- * every error handler. It is only reachable under {@code -Dforbric.mixinDiagnostics}, where the injection
- * requirements are kept strict on purpose.
+ * every error handler, and Mixin then abandons the whole target class. An injector's OWN {@code require} (or
+ * {@code allow}) produces one whatever the config says; {@link MixinLocalsCapture#softenRequirements} lowers those
+ * on relaxed guest mixins, so it is reachable only under {@code -Dforbric.mixinDiagnostics} (requirements kept
+ * strict on purpose), {@code -Dforbric.requireFailSoft=off}, or in a config the kernel does not relax.
  *
  * <p>{@code -Dforbric.mixinErrorAttribution=off} skips the registration.
  */
