@@ -1056,8 +1056,9 @@ public final class PassiveSeeder {
 	 * {@code KernelModFile} that {@code ModList} holds for the same jar answer with one object, as a single native
 	 * {@code ModFile} would.
 	 *
-	 * <p>It never throws out of {@code getScanResult()}: an index that cannot be built reads as an empty one and
-	 * says so once for the jar — a mod walking the list must not die on a neighbour's unreadable file.
+	 * <p>An index that cannot be built reads as an empty one and says so once for the jar — a mod walking the list
+	 * must not die on a neighbour's unreadable file. So {@code getScanResult()} does not throw while the carrier's
+	 * {@code ModFileScanData} can itself be instantiated; if even that fails, the carrier reports the failed scan.
 	 *
 	 * <p>{@code -Dforbric.seededScanData=off} leaves the field null, which is the behaviour before this.
 	 */

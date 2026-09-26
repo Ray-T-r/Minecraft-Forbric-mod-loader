@@ -224,15 +224,15 @@ public final class KernelModLoader {
 		// @Mod classes this side is not supposed to construct. They keep their container — the mod IS installed,
 		// and a neighbour asking about it must be told so — they simply do not run here.
 		Set<String> otherSide = new LinkedHashSet<>();
-		// NeoForge mod ids at least one of whose @Mod constructors threw. Kept apart from otherSide because one id
-		// can be in both: see settleNeo.
-		Set<String> failedNeo = new LinkedHashSet<>();
+		// NeoForge mod ids at least one of whose @Mod constructors threw, with the classes that threw. Kept apart
+		// from otherSide because one id can be in both: see settleNeo.
+		Map<String, List<String>> failedNeo = new LinkedHashMap<>();
 		for (ModAnnotationScanner.ModClassInfo info : claimed) {
 			// NeoForge's @Mod declares which sides it belongs to, and the kernel constructed every class on every
 			// side regardless. Sodium's SodiumForgeMod says dist = {CLIENT}; on a dedicated server its constructor
 			// reaches a client-only type and dies with a NoClassDefFoundError blamed on the mod.
 			if (!info.runsOn(side.distName())) {
-				otherSide.add(safeId(info));
+				recordNeoOutcome(info, false, null, otherSide, failedNeo);
 				ForbricLog.info("[Forbric/ModLoader] @Mod %s (%s) declares it belongs to %s — not constructing it "
 						+ "on %s, which is what its own annotation asks for", safeId(info), info.className,
 						info.dists, side.distName());
@@ -256,7 +256,7 @@ public final class KernelModLoader {
 				built.add(mod);
 				if (mod.forgeHandle() != null) constructed.add(mod.modId());
 			} catch (Throwable t) {
-				if (info.family != Ecosystem.FORGE) failedNeo.add(safeId(info));
+				recordNeoOutcome(info, true, t, otherSide, failedNeo);
 				ForbricLog.warn("[Forbric/ModLoader] failed to construct @Mod " + info.className,
 						Reflect.unwrap(t));
 			}
@@ -294,9 +294,9 @@ public final class KernelModLoader {
 		for (ConstructedMod mod : built) {
 			if (mod.forgeHandle() == null) neoConstructed.add(mod.modId());
 		}
-		NeoSettlement settled = settleNeo(otherSide, neoConstructed, failedNeo);
+		NeoSettlement settled = settleNeo(otherSide, neoConstructed, failedNeo.keySet());
 		Set<String> neoBuilt = settled.kept();
-		markPartlyConstructed(settled.degraded());
+		markPartlyConstructed(settled.degraded(), failedNeo);
 		if (neoNeedsWithdrawal(neo.keySet(), neoBuilt)) {
 			List<String> droppedNeo = new ArrayList<>();
 			Map<String, NeoIdentity> keptNeo = keepConstructed(neo, neoBuilt, droppedNeo);
@@ -310,7 +310,7 @@ public final class KernelModLoader {
 			ForbricLog.warn("[Forbric/ModLoader] withdrew %d NeoForge container(s) from ModList — their @Mod "
 					+ "constructor threw, so the bus those containers hand out is one nothing will ever post "
 					+ "to %s", droppedNeo.size(), droppedNeo);
-			markWithdrawn(droppedNeo, "its @Mod constructor threw");
+			for (String id : droppedNeo) markWithdrawn(List.of(id), constructorThrew(failedNeo.get(id)));
 		}
 		return built;
 	}
@@ -336,6 +336,33 @@ public final class KernelModLoader {
 	}
 
 	static final String NEO_TWIN_SWITCH = "forbric.neoTwinCtorFailure";
+
+	/**
+	 * The per-class half of what {@link #settleNeo} settles from: a class that does not run on this side, or a
+	 * NeoForge class whose constructor threw, recorded under its id with the class that threw.
+	 *
+	 * <p>Pulled out of the construction loop so the wiring into settleNeo is tested, not only settleNeo: dropping
+	 * either branch in the loop brought back RollingGate's masking while every settleNeo test stayed green.
+	 */
+	static void recordNeoOutcome(ModAnnotationScanner.ModClassInfo info, boolean runsHere, Throwable failure,
+			Set<String> otherSide, Map<String, List<String>> failedNeo) {
+		if (!runsHere) {
+			otherSide.add(safeId(info));
+			return;
+		}
+		if (failure != null && info.family != Ecosystem.FORGE) {
+			failedNeo.computeIfAbsent(safeId(info), id -> new ArrayList<>()).add(info.className);
+		}
+	}
+
+	/**
+	 * The FAILED reason for a withdrawn NeoForge mod, naming the {@code @Mod} classes that threw when known. It starts
+	 * with the plain reason, which is what {@code CompatibilityFindings} keys the constructor finding on.
+	 */
+	static String constructorThrew(List<String> classes) {
+		return classes == null || classes.isEmpty() ? "its @Mod constructor threw"
+				: "its @Mod constructor threw (" + String.join(", ", classes) + ")";
+	}
 
 	/**
 	 * What the NeoForge side keeps after construction: {@code kept} is every id whose container stays in
@@ -953,14 +980,18 @@ public final class KernelModLoader {
 	 * Reports the NeoForge mods {@link #settleNeo} kept although one of their {@code @Mod} constructors threw.
 	 * DEGRADED, not FAILED: the container stays and the class that did construct keeps running, so "did not
 	 * finish loading" would be untrue — but OK, which is what these rows said before, is untrue too.
+	 *
+	 * <p>The row names the class that threw: RollingGate's common half and its client half share one id, and "one of
+	 * its @Mod constructors threw" could not say which half is missing.
 	 */
-	static void markPartlyConstructed(Set<String> modIds) {
+	static void markPartlyConstructed(Set<String> modIds, Map<String, List<String>> threw) {
 		for (String id : modIds) {
-			ForbricLog.warn("[Forbric/ModLoader] NeoForge mod '%s' keeps its container although one of its @Mod "
-					+ "constructors threw: another @Mod class of the same id ran on this side and put its listeners "
-					+ "on the bus they share, so withdrawing would cut those too. Whatever the failed one sets up "
-					+ "is missing", id);
-			ModCatalog.mark(id, ModCatalog.Status.DEGRADED, "one of its @Mod constructors threw");
+			List<String> classes = threw.getOrDefault(id, List.of());
+			String which = classes.isEmpty() ? "one of its @Mod constructors" : "@Mod " + String.join(", ", classes);
+			ForbricLog.warn("[Forbric/ModLoader] NeoForge mod '%s' keeps its container although %s threw: another "
+					+ "@Mod class of the same id ran on this side and put its listeners on the bus they share, so "
+					+ "withdrawing would cut those too. Whatever the failed one sets up is missing", id, which);
+			ModCatalog.mark(id, ModCatalog.Status.DEGRADED, which + " threw");
 		}
 	}
 }

@@ -17,6 +17,7 @@
 package net.forbric.kernel.discovery;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -32,6 +33,7 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.AnnotationVisitor;
@@ -286,6 +288,40 @@ class ModFileScannerTest {
 		assertNull(ModFileScanner.scan(jar, getClass().getClassLoader()));
 		assertNull(ModFileScanner.scan(Files.writeString(dir.resolve("nope.jar"), "not a zip"),
 				getClass().getClassLoader()));
+	}
+
+	@AfterEach
+	void clearSwitch() {
+		System.clearProperty(ModFileScanner.REAL_PATH_KEY_PROPERTY);
+	}
+
+	@Test
+	void aJarReachedThroughALinkIsOneCacheKey(@TempDir Path dir) throws Exception {
+		// Two readers of one jar — the seeded LoadingModList's ModFile and ModList's KernelModFile — must land on one
+		// key, or the jar is scanned twice and the "one object per jar" promise breaks without a sound.
+		Path jar = Files.writeString(dir.resolve("real.jar"), "x");
+		Path link = Files.createSymbolicLink(dir.resolve("link.jar"), jar);
+		Path dotted = Files.createDirectories(dir.resolve("sub")).resolve("..").resolve("real.jar");
+
+		assertEquals(ModFileScanner.cacheKey(jar), ModFileScanner.cacheKey(link));
+		assertEquals(ModFileScanner.cacheKey(jar), ModFileScanner.cacheKey(dotted), "and a spelling with ..");
+		// On macOS the temp directory is itself under a link (/var -> /private/var), the case the review named.
+		assertEquals(jar.toRealPath(), ModFileScanner.cacheKey(jar));
+	}
+
+	@Test
+	void aJarThatDoesNotExistKeepsItsNormalisedSpelling(@TempDir Path dir) {
+		Path missing = dir.resolve("gone").resolve("..").resolve("missing.jar");
+		assertEquals(missing.toAbsolutePath().normalize(), ModFileScanner.cacheKey(missing));
+	}
+
+	@Test
+	void offSwitchKeysOnTheSpellingAgain(@TempDir Path dir) throws Exception {
+		Path jar = Files.writeString(dir.resolve("real.jar"), "x");
+		Path link = Files.createSymbolicLink(dir.resolve("link.jar"), jar);
+		System.setProperty(ModFileScanner.REAL_PATH_KEY_PROPERTY, "off");
+		assertNotEquals(ModFileScanner.cacheKey(jar), ModFileScanner.cacheKey(link));
+		assertEquals(link.toAbsolutePath().normalize(), ModFileScanner.cacheKey(link));
 	}
 
 	private interface JarBody {

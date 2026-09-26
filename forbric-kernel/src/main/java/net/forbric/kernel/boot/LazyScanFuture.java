@@ -44,6 +44,8 @@ import java.util.function.Supplier;
  */
 final class LazyScanFuture extends CompletableFuture<Object> {
 	private Supplier<Object> compute;
+	/** The thread running the supplier, while it runs; guarded by {@code this}. */
+	private Thread computing;
 
 	LazyScanFuture(Supplier<Object> compute) {
 		this.compute = compute;
@@ -52,18 +54,30 @@ final class LazyScanFuture extends CompletableFuture<Object> {
 	/**
 	 * Runs the supplier once, whoever gets here first. The lock is held across the computation, so a second
 	 * reader waits for the one scan rather than starting its own; everyone after reads the completed value.
+	 *
+	 * <p>The one reader that must not wait is the scan itself. The monitor is re-entrant, so a supplier whose class
+	 * loading came back to this same file's {@code getScanResult()} would find the supplier already taken and then
+	 * wait in {@code super.get()} for a result only it could produce: a silent hang on the main thread. It is refused
+	 * instead, which makes the scan fail loudly as a failed scan.
 	 */
 	private void ensure() {
 		if (super.isDone()) return;
 		Supplier<Object> pending;
 		synchronized (this) {
+			if (computing == Thread.currentThread()) {
+				throw new IllegalStateException("re-entrant scan read: the scan of this mod file asked for its own "
+						+ "result");
+			}
 			pending = compute;
 			compute = null;
 			if (pending == null) return; // already ran, and has completed this future
+			computing = Thread.currentThread();
 			try {
 				complete(pending.get());
 			} catch (Throwable t) {
 				completeExceptionally(t);
+			} finally {
+				computing = null;
 			}
 		}
 	}

@@ -113,6 +113,25 @@ class PassiveSeederScanResultTest {
 	}
 
 	@Test
+	void aKernelModFileReachingTheJarThroughALinkStillReadsTheSameIndex() throws Exception {
+		// The seeded list names the jar by its mods/ path; ModList's KernelModFile may hold another spelling of the
+		// same file (a linked instance folder, macOS's /var for /private/var). One jar is one index either way.
+		try (URLClassLoader game = runtimeLoader()) {
+			Path mods = Files.createDirectories(tmp.resolve("mods"));
+			Path neoJar = mods.resolve("linkprobe.jar");
+			writeJar(neoJar, "META-INF/neoforge.mods.toml", toml("linkprobe"), "probe/link/RuleContainer");
+			Path link = Files.createSymbolicLink(tmp.resolve("linked.jar"), neoJar);
+
+			Object list = seed(game, mods);
+			Object seeded = scanOf(list, "linkprobe");
+
+			Object kernelFile = Class.forName("net.forbric.kernel.runtime.KernelModFile", true, game)
+					.getConstructor(String.class, Path.class).newInstance("linkprobe", link);
+			assertSame(seeded, call(kernelFile, "getScanResult"));
+		}
+	}
+
+	@Test
 	void nothingIsScannedUntilAModAsks() throws Exception {
 		try (URLClassLoader game = runtimeLoader()) {
 			Path mods = Files.createDirectories(tmp.resolve("mods"));

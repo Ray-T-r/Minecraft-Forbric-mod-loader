@@ -38,7 +38,9 @@ public final class CompatibilityFindings {
 		for (String reason : detail.split("; ")) {
 			String phase;
 			String source;
-			switch (reason) {
+			// A withdrawn NeoForge mod's reason names the @Mod classes that threw after the plain one.
+			String kind = reason.startsWith("its @Mod constructor threw (") ? "its @Mod constructor threw" : reason;
+			switch (kind) {
 				case "its @Mod constructor threw" -> { phase = "constructor"; source = "KernelModLoader @Mod construction"; }
 				case "its preLaunch entrypoint threw" -> { phase = "entrypoint:preLaunch"; source = "KernelFabricEcosystem preLaunch entrypoint"; }
 				case "its main entrypoint threw" -> { phase = "entrypoint:main"; source = "KernelFabricEcosystem main entrypoint"; }

@@ -72,6 +72,7 @@ public final class ModFileScanner {
 	private static final String GAME_SIDE_FORGE = "net.forbric.kernel.runtime.KernelForgeScanData";
 	public static final String FORGE_INDEX_PROPERTY = "forbric.forgeScanData";
 	public static final String SEEDED_INDEX_PROPERTY = "forbric.seededScanData";
+	public static final String REAL_PATH_KEY_PROPERTY = "forbric.seededScanData.realPath";
 
 	private ModFileScanner() {
 	}
@@ -221,7 +222,7 @@ public final class ModFileScanner {
 	 */
 	public static Object scanShared(Path jar, ClassLoader gameLoader) {
 		if (!seededIndexEnabled()) return scan(jar, gameLoader);
-		Path key = jar.toAbsolutePath().normalize();
+		Path key = cacheKey(jar);
 		synchronized (SHARED_NEO_INDEX) {
 			Map<Path, Object> byJar = SHARED_NEO_INDEX.get(gameLoader);
 			Object known = byJar == null ? null : byJar.get(key);
@@ -235,6 +236,23 @@ public final class ModFileScanner {
 			Object first = SHARED_NEO_INDEX.computeIfAbsent(gameLoader, loader -> new java.util.HashMap<>())
 					.putIfAbsent(key, built);
 			return first != null ? first : built;
+		}
+	}
+
+	/**
+	 * The one spelling of a jar both readers share. The real path, so a symlink, macOS's {@code /tmp} for
+	 * {@code /private/tmp} or a Windows 8.3 short name cannot make one jar two keys, two scans and two indexes, the
+	 * split {@link #scanShared} exists to prevent. The normalised absolute path when the file cannot be resolved.
+	 *
+	 * <p>{@code -Dforbric.seededScanData.realPath=off} keys on the normalised absolute path alone, as before.
+	 */
+	static Path cacheKey(Path jar) {
+		Path spelled = jar.toAbsolutePath().normalize();
+		if ("off".equalsIgnoreCase(System.getProperty(REAL_PATH_KEY_PROPERTY, "on"))) return spelled;
+		try {
+			return jar.toRealPath();
+		} catch (java.io.IOException | SecurityException unresolvable) {
+			return spelled;
 		}
 	}
 
