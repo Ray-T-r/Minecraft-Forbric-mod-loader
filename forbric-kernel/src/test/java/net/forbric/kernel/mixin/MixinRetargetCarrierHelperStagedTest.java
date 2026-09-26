@@ -24,7 +24,9 @@ import net.forbric.api.Ecosystem;
 class MixinRetargetCarrierHelperStagedTest {
 	private static final Path MERGED_BASE = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
-	private static final Path SWEEP = Path.of(System.getProperty("user.dir"), "build", "compat-inputs", "sweep90", "mods").normalize();
+	private static final Path NEO_RUNTIME = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
+			"neoforge-runtime", "neoforge-runtime.jar").normalize();
+	private static final Path SWEEP =Path.of(System.getProperty("user.dir"), "build", "compat-inputs", "sweep90", "mods").normalize();
 	private static final String G = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;)V";
 
 	@AfterEach
@@ -69,6 +71,37 @@ class MixinRetargetCarrierHelperStagedTest {
 		assertEquals("Lnet/minecraft/client/gui/screens/inventory/AbstractContainerScreen;renderSlotContents("
 				+ "Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/world/item/ItemStack;"
 				+ "Lnet/minecraft/world/inventory/Slot;Ljava/lang/String;)V", plan.rewrites().get(0).to());
+		MixinFit.Result after = MixinFit.evaluate(MixinRetarget.rewritten(mixin, plan), resolver);
+		assertEquals(MixinFit.Verdict.FIT, after.verdict(), "after: " + after.unresolved());
+	}
+
+	/**
+	 * puzzleslib's FOG_COLOR hook: AFTER vanilla's final dest.set, which NeoForge absorbed into ClientHooks.getFogColor —
+	 * read from the carrier, as the kernel's own resolver serves it.
+	 */
+	@Test
+	void puzzleslibsFogColourFollowsTheSetIntoClientHooks() throws Exception {
+		Function<String, byte[]> merged = mergedResolver();
+		assumeTrue(Files.isRegularFile(NEO_RUNTIME), "staged neoforge-runtime.jar absent");
+		Function<String, byte[]> resolver = name -> {
+			byte[] bytes = merged.apply(name);
+			if (bytes != null) return bytes;
+			try {
+				return readFromJar(NEO_RUNTIME, name);
+			} catch (Exception e) {
+				return null;
+			}
+		};
+		String entry = "fuzs/puzzleslib/fabric/mixin/client/FogRendererFabricMixin";
+		byte[] mixin = fromJar(SWEEP.resolve("PuzzlesLib-v26.2.4-mc26.2.x-Fabric.jar"), entry + ".class");
+		MixinStubRebind.noteEcosystem(entry, Ecosystem.FABRIC);
+		MixinFit.Result before = MixinFit.evaluate(mixin, resolver);
+		assertEquals(MixinFit.Verdict.PARTIAL, before.verdict(), "premise: " + before.unresolved());
+
+		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixin), resolver);
+		assertEquals(1, plan.rewrites().size(), plan.describe());
+		assertEquals("Lnet/neoforged/neoforge/client/ClientHooks;getFogColor(Lnet/minecraft/client/Camera;F"
+				+ "Lnet/minecraft/client/multiplayer/ClientLevel;IFFFFLorg/joml/Vector4f;)V", plan.rewrites().get(0).to());
 		MixinFit.Result after = MixinFit.evaluate(MixinRetarget.rewritten(mixin, plan), resolver);
 		assertEquals(MixinFit.Verdict.FIT, after.verdict(), "after: " + after.unresolved());
 	}

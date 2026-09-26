@@ -73,7 +73,10 @@ public final class MixinRetarget {
 	static final String SUGAR_BOUNDARY_PROPERTY = "forbric.mixinRetarget.sugarBoundary";
 	/** {@code -Dforbric.mixinRetargetSplit=off}: R3 refuses two fits again, dispatcher or not (R4 off). */
 	static final String SPLIT_PROPERTY = "forbric.mixinRetargetSplit";
-	/** {@code -Dforbric.mixinExtractedHelper=off}: no {@code @Inject} point follows a call into a carrier's helper (R5 off). */
+	/**
+	 * {@code -Dforbric.mixinExtractedHelper=off}: no {@code @Inject} point follows a call into a carrier's helper along a
+	 * census row (R5); the reviewed rows have {@code -Dforbric.mixinAbsorbedCall=off}.
+	 */
 	static final String EXTRACTED_HELPER_PROPERTY = "forbric.mixinExtractedHelper";
 
 	static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
@@ -370,12 +373,14 @@ public final class MixinRetarget {
 	 * the tail, and no other shift moves. Only an {@code @Inject} that captures no locals and has no sugar, slice or
 	 * {@code @Group}; other kinds' handlers describe the call, and moving them would need the helper to have no other
 	 * caller, which a protected override point cannot promise. {@code -Dforbric.mixinExtractedHelper=off} leaves the
-	 * point as compiled.
+	 * point as compiled. An AFTER point with no census row may still follow a reviewed row of
+	 * {@link MergedBaseAbsorbedCalls} ({@link #absorbedCall}).
 	 */
 	private static List<Rewrite> movedCalls(String mixinName, MethodNode handler, AnnotationNode injector,
 			List<String> selectors, ClassNode target, Function<String, byte[]> resolver) {
 		if (!INJECT.equals(injector.desc) || selectors.size() != 1) return List.of();
-		if ("off".equalsIgnoreCase(System.getProperty(EXTRACTED_HELPER_PROPERTY, "on"))) return List.of();
+		boolean census = !"off".equalsIgnoreCase(System.getProperty(EXTRACTED_HELPER_PROPERTY, "on"));
+		if (!census && !MergedBaseAbsorbedCalls.enabled()) return List.of();
 		net.forbric.api.Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixinName);
 		if (ecosystem == null || !plainInject(handler, injector)) return List.of();
 		List<MethodNode> named = resolveSelector(target, selectors.get(0), resolver);
@@ -393,8 +398,13 @@ public final class MixinRetarget {
 					: "AFTER".equals(shift) ? CarrierHelpers.Shape.TAIL : null;
 			// The reference made the call once, so any ordinal past the first missed natively too.
 			if (shape == null || MixinFit.value(at, "ordinal") instanceof Integer ordinal && ordinal > 0) continue;
-			CarrierHelpers.Row row = CarrierHelpers.find(target.name, method.name + method.desc, member, shape, ecosystem);
-			if (row == null) continue;
+			CarrierHelpers.Row row = census ? CarrierHelpers.find(target.name, method.name + method.desc, member, shape, ecosystem) : null;
+			if (row == null) {
+				Rewrite absorbed = shape == CarrierHelpers.Shape.TAIL
+						? absorbedCall(handler, target, method, member, ecosystem, resolver) : null;
+				if (absorbed != null) out.add(absorbed);
+				continue;
+			}
 			int paren = row.helper().indexOf('(');
 			MethodNode helper = CarrierHelpers.declared(target, row.helper().substring(0, paren), row.helper().substring(paren));
 			if (helper == null || !CarrierHelpers.reached(target, method, helper, row.member()).contains(shape)) continue;
@@ -403,6 +413,29 @@ public final class MixinRetarget {
 							? "last" : "first") + " act it is"));
 		}
 		return out;
+	}
+
+	/**
+	 * R5's reviewed tier: AFTER a call the surviving carrier absorbed into a static hook of its own
+	 * ({@link MergedBaseAbsorbedCalls}, each row with the argument for it) is AFTER the hook call. The hook does more
+	 * than the call, so no census can prove this; what is re-checked on the live bytes is the shape the review was
+	 * about: the method calls the hook once, as its last act, and the hook — read through the same resolver — makes the
+	 * call once. puzzleslib's FOG_COLOR event (FogRendererFabricMixin) sets its colour AFTER vanilla's final
+	 * {@code dest.set}, which NeoForge moved into {@code ClientHooks.getFogColor}.
+	 */
+	private static Rewrite absorbedCall(MethodNode handler, ClassNode target, MethodNode method, String member,
+			net.forbric.api.Ecosystem ecosystem, Function<String, byte[]> resolver) {
+		MergedBaseAbsorbedCalls.Absorbed row = MergedBaseAbsorbedCalls.find(target.name, method.name + method.desc, member, ecosystem);
+		if (row == null) return null;
+		if (!CarrierHelpers.edges(method, row.hook()).contains(CarrierHelpers.Shape.TAIL)) return null;
+		MixinFit.Member hook = MixinFit.parseMember(row.hook());
+		byte[] hookBytes = resolver.apply(hook.owner() + ".class");
+		if (hookBytes == null) return null;
+		MethodNode body = CarrierHelpers.declared(MixinFit.parse(hookBytes), hook.name(), hook.desc());
+		if (body == null || CarrierHelpers.occurrences(body, row.member()) != 1) return null;
+		return new Rewrite(handler.name, Element.AT_TARGET, member, row.hook(), "the carrier absorbed the call into "
+				+ hook.owner().substring(hook.owner().lastIndexOf('/') + 1) + "." + hook.name() + ", a reviewed row of "
+				+ "MergedBaseAbsorbedCalls");
 	}
 
 	/** An {@code @Inject} bound by its own arguments and callback only: no locals capture, sugar, slice or {@code @Group}. */

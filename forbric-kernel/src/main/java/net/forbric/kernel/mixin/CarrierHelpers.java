@@ -64,10 +64,7 @@ public final class CarrierHelpers {
 	 * @param ecosystems whose own patched jar makes the call in the method — the mods compiled against that shape
 	 */
 	record Row(String owner, String method, String helper, String member, Set<Shape> shapes, Set<Ecosystem> ecosystems) {
-		String line() {
-			return owner + "#" + method + " -> " + helper + " : " + member + " | " + join(shapes) + " | " + join(ecosystems);
-		}
-
+		/** {@code <class>#<method> -> <helper> : <member> | <shapes> | <ecosystems>}, as the census writes it; null when not that. */
 		static Row parse(String line) {
 			String[] columns = line.split(" \\| ");
 			if (columns.length != 3) return null;
@@ -84,10 +81,6 @@ public final class CarrierHelpers {
 			} catch (IllegalArgumentException unknown) {
 				return null;
 			}
-		}
-
-		private static String join(Set<? extends Enum<?>> values) {
-			return String.join(",", values.stream().sorted().map(Enum::name).toList());
 		}
 	}
 
