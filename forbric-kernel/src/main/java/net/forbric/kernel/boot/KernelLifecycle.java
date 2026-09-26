@@ -826,6 +826,9 @@ public final class KernelLifecycle {
 					+ "+ %d traditional-Forge mod bus(es) + baked Forge registries", n, buses.size(),
 					buses.size() - 1, forgeHandles.size());
 			logRegisteredContent(cl);
+			// A dedicated server has now run every MinecraftForge gather state. A client has not: the Forge mods
+			// that wait for Minecraft construct in its <init> window, so constructDeferredForgeMods records them.
+			if (!side.isClient()) publishForgeGatherStates(cl);
 		} catch (Throwable t) {
 			setForgeLoadingState(cl, false);
 			ForbricLog.warn("[Forbric/Lifecycle] could not register ecosystem content", unwrap(t));
@@ -849,6 +852,76 @@ public final class KernelLifecycle {
 			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge loading state to publish");
 		} catch (ReflectiveOperationException failed) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not publish MinecraftForge loading state", failed);
+		}
+	}
+
+	/** {@code off} leaves MinecraftForge's completed-state set empty, which is what it always was before. */
+	static final String FORGE_LOADING_STATES = "forbric.forgeLoadingStates";
+
+	/**
+	 * MinecraftForge's GATHER states, as {@code holder#field}: the core loader's two, then ForgeStatesProvider's
+	 * four. Every state {@code gatherAndInitializeMods} dispatches, and nothing past it: the LOAD and COMPLETE
+	 * phases (setup, IMC, FREEZE_DATA, NETWORK_LOCK) happen elsewhere and are not claimed here.
+	 */
+	static final List<String> FORGE_GATHER_STATES = List.of(
+			"net.minecraftforge.fml.core.ModStateProvider#VALIDATE",
+			"net.minecraftforge.fml.core.ModStateProvider#CONSTRUCT",
+			"net.minecraftforge.common.ForgeStatesProvider#CREATE_REGISTRIES",
+			"net.minecraftforge.common.ForgeStatesProvider#INJECT_CAPABILITIES",
+			"net.minecraftforge.common.ForgeStatesProvider#UNFREEZE_DATA",
+			"net.minecraftforge.common.ForgeStatesProvider#LOAD_REGISTRIES");
+
+	/**
+	 * Records MinecraftForge's GATHER states as completed, once the kernel has done what they stand for.
+	 *
+	 * <p>MinecraftForge marks a state done in {@code ModLoader.dispatchAndHandleError}, i.e. only when its own
+	 * {@code gatherAndInitializeMods} runs it. The kernel replaced that method with its own stage — it constructs the
+	 * mods, fires NewRegistryEvent, injects capabilities, unfreezes and fires the RegisterEvent stream itself — and
+	 * only ever flipped {@code loadingStateValid}. So {@code hasCompletedState} answered false for every state,
+	 * forever. The merged {@code Sheets.<clinit>} asks exactly that about {@code LOAD_REGISTRIES}, and every client
+	 * boot logged "net.minecraft.client.renderer.Sheets loaded too early, modded registry-based materials may not
+	 * work correctly" with a stack, after every Forge RegisterEvent had already run (107 of them in the sweep pack).
+	 * A MinecraftForge mod asking the same question would get the same wrong answer.
+	 *
+	 * <p>Only while {@code isLoadingStateValid()}: a failed registration window turns that off, and a failed
+	 * native load does not complete its states either. The instances are the carrier's own statics, read through
+	 * the game loader, because the set compares them by equality. Adding to a set is idempotent, so a second call
+	 * changes nothing and re-dispatches nothing.
+	 *
+	 * @return how many states were newly recorded
+	 */
+	@SuppressWarnings("unchecked")
+	static int publishForgeGatherStates(ClassLoader cl) {
+		if ("off".equalsIgnoreCase(System.getProperty(FORGE_LOADING_STATES, "on"))) return 0;
+		try {
+			Class<?> loader = Class.forName(ForeignType.FML_MOD_LOADER.binary(Ecosystem.FORGE), false, cl);
+			if (!Boolean.TRUE.equals(loader.getMethod("isLoadingStateValid").invoke(null))) {
+				ForbricLog.debug("[Forbric/Lifecycle] MinecraftForge's loading state is not valid — its gather "
+						+ "states stay uncompleted");
+				return 0;
+			}
+			Field completed = loader.getDeclaredField("COMPLETED_STATES");
+			completed.setAccessible(true);
+			java.util.Set<Object> states = (java.util.Set<Object>) completed.get(null);
+			int added = 0;
+			for (String state : FORGE_GATHER_STATES) {
+				int hash = state.indexOf('#');
+				Object instance = Class.forName(state.substring(0, hash), true, cl).getField(state.substring(hash + 1)).get(null);
+				if (instance != null && states.add(instance)) added++;
+			}
+			if (added > 0) {
+				ForbricLog.info("[Forbric/Lifecycle] recorded %d MinecraftForge gather state(s) as completed "
+						+ "(VALIDATE..LOAD_REGISTRIES) — the kernel ran them itself, and Sheets asks "
+						+ "ModLoader.hasCompletedState(LOAD_REGISTRIES)", added);
+			}
+			return added;
+		} catch (ClassNotFoundException absent) {
+			ForbricLog.debug("[Forbric/Lifecycle] no MinecraftForge loading states to record");
+			return 0;
+		} catch (ReflectiveOperationException | RuntimeException | LinkageError failed) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not record MinecraftForge's gather states — Sheets will "
+					+ "report it was \"loaded too early\" although every registry event has run", failed);
+			return 0;
 		}
 	}
 
@@ -2591,17 +2664,22 @@ public final class KernelLifecycle {
 	private static void constructDeferredForgeMods(ClassLoader cl) {
 		try {
 			java.util.List<KernelForgeModContext.Handle> late = KernelModLoader.constructDeferredForgeMods(cl);
-			if (late.isEmpty()) return;
-
-			fireForgeSetupPhase(cl, late, ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
-			int fired = KernelForgeModContext.fireRegisterEvents(cl, late);
-			ForbricLog.info("[Forbric/Lifecycle] constructed %d traditional-Forge mod(s) in the Minecraft.<init> "
-					+ "window, where MinecraftForge constructs its own, and fired RegisterEvent x%d for them",
-					late.size(), fired);
+			if (!late.isEmpty()) {
+				fireForgeSetupPhase(cl, late, ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
+				int fired = KernelForgeModContext.fireRegisterEvents(cl, late);
+				ForbricLog.info("[Forbric/Lifecycle] constructed %d traditional-Forge mod(s) in the Minecraft.<init> "
+						+ "window, where MinecraftForge constructs its own, and fired RegisterEvent x%d for them",
+						late.size(), fired);
+			}
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not construct the deferred traditional-Forge mods — they "
 					+ "stay unconstructed, which is where they were before", unwrap(t));
+			return;
 		}
+		// The point MinecraftForge's own ClientModLoader.begin finishes gathering: every Forge mod is constructed
+		// and has had its RegisterEvent stream. Sheets, which asks whether LOAD_REGISTRIES completed, is first
+		// loaded later in this same constructor.
+		publishForgeGatherStates(cl);
 	}
 
 	/**
