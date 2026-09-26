@@ -81,6 +81,11 @@ public final class ForbricMixinService
 
 	private final ReEntranceLock lock = new ReEntranceLock(1);
 
+	/** The side Mixin prepares configs for: which of a config's {@code client}/{@code server} arrays is applied. */
+	public static EnvType side() {
+		return envType;
+	}
+
 	/** Points the service at the transforming loader + side. Must be called before {@code MixinBootstrap.init()}. */
 	public static void bind(ForbricClassLoader loader, EnvType side) {
 		gameLoader = loader;
@@ -423,14 +428,14 @@ public final class ForbricMixinService
 				// form of MergedBaseMixinCompat's hand-listed renderer/pipeline entries. Each mixin class is a game
 				// resource resolvable through the same loader, so no separate mod-jar inventory is needed.
 				for (String owned : KernelGuestMixinAdapter.unfitMixins(name, bytes,
-						r -> readAdapterClass(r))) {
+						r -> readAdapterClass(r), envType)) {
 					if (!drop.contains(owned)) drop.add(owned);
 				}
 			}
 			if (!named.isEmpty()) {
 				java.util.Map<String, String> sources = new java.util.LinkedHashMap<>();
 				for (String mixin : named) sources.put(mixin, suppressionSource(name, mixin));
-				KernelGuestMixinAdapter.reportNamedSuppressions(name, bytes, sources, r -> readAdapterClass(r));
+				KernelGuestMixinAdapter.reportNamedSuppressions(name, bytes, sources, r -> readAdapterClass(r), envType);
 			}
 
 			if (!relax && drop.isEmpty()) return new ByteArrayInputStream(bytes);

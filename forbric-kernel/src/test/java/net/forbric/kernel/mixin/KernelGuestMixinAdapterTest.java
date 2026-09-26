@@ -262,6 +262,35 @@ class KernelGuestMixinAdapterTest {
 	}
 
 	@Test
+	void onlyTheArraysMixinPreparesOnThisSideAreJudged() {
+		String t = "net/minecraft/client/renderer/GameRenderer";
+		Map<String, byte[]> classes = new HashMap<>();
+		classes.put(t + ".class", target(t, "unused", Opcodes.ACC_PRIVATE, true));
+		classes.put(PKG + "/ClientUnfit.class", danglingMixin("ClientUnfit", t));
+		classes.put(PKG + "/ServerUnfit.class", danglingMixin("ServerUnfit", t));
+		classes.put(PKG + "/CommonUnfit.class", danglingMixin("CommonUnfit", t));
+		byte[] cfg = ("{\"package\":\"" + PKG.replace('/', '.') + "\",\"required\":true,\"mixins\":[\"CommonUnfit\"],"
+				+ "\"client\":[\"ClientUnfit\"],\"server\":[\"ServerUnfit\"]}").getBytes(StandardCharsets.UTF_8);
+
+		// fusion's client-array mixin was judged on a dedicated server, recorded as a required loss, and the
+		// default STRICT policy stopped a server that would never have applied it.
+		assertEquals(List.of("CommonUnfit", "ServerUnfit"), KernelGuestMixinAdapter.unfitMixins("s.mixins.json", cfg,
+				resolver(classes), net.fabricmc.api.EnvType.SERVER));
+		assertEquals(List.of("CommonUnfit", "ClientUnfit"), KernelGuestMixinAdapter.unfitMixins("s.mixins.json", cfg,
+				resolver(classes), net.fabricmc.api.EnvType.CLIENT));
+		assertEquals(List.of("CommonUnfit", "ClientUnfit", "ServerUnfit"),
+				KernelGuestMixinAdapter.unfitMixins("s.mixins.json", cfg, resolver(classes)), "no side known: every array");
+
+		System.setProperty(KernelGuestMixinAdapter.SIDED_PROPERTY, "off");
+		try {
+			assertEquals(List.of("CommonUnfit", "ClientUnfit", "ServerUnfit"), KernelGuestMixinAdapter.unfitMixins(
+					"s.mixins.json", cfg, resolver(classes), net.fabricmc.api.EnvType.SERVER), "the switch judges both sides");
+		} finally {
+			System.clearProperty(KernelGuestMixinAdapter.SIDED_PROPERTY);
+		}
+	}
+
+	@Test
 	void keepsAPublicFieldWrittenElsewhere() {
 		// MovingBlockRenderState.biome: public, read in-class, written by whoever populates the render state.
 		// A class-local putfield scan calls this orphaned; judging only private fields is what makes it sound.

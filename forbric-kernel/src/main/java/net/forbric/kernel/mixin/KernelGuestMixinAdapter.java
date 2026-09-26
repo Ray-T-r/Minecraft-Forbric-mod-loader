@@ -130,6 +130,37 @@ public final class KernelGuestMixinAdapter {
 	 * any parse/scan failure on one entry skips that entry, never the config.
 	 */
 	public static List<String> unfitMixins(String configName, byte[] configJson, Function<String, byte[]> resource) {
+		return unfitMixins(configName, configJson, resource, null);
+	}
+
+	/** {@code -Dforbric.mixinFitSided=off} judges every array on both sides again, as before. */
+	static final String SIDED_PROPERTY = "forbric.mixinFitSided";
+
+	/**
+	 * The entries Mixin will actually prepare on {@code side}: {@code mixins}, plus {@code client} on the client or
+	 * {@code server} on a dedicated server ({@code MixinConfig.prepare} switches on the environment side and never
+	 * looks at the other array). {@code null} — no side known — is every array.
+	 *
+	 * <p>Judging the other side's array was not merely noise. A client-only mod's client mixin, unfit on the merged
+	 * game, was recorded as a CONFIRMED required loss on a dedicated server, where Mixin would never have applied
+	 * it, and the default STRICT policy stopped the server: fusion (connected textures) in a server's mods folder
+	 * was enough. Same rule as {@code CandidateContractScanner}'s.
+	 */
+	static LinkedHashSet<String> appliedEntries(UnmodifiableConfig config, net.fabricmc.api.EnvType side) {
+		LinkedHashSet<String> mixins = new LinkedHashSet<>();
+		addMixinEntries(config.get(List.of("mixins")), mixins);
+		boolean sided = side != null && !"off".equalsIgnoreCase(System.getProperty(SIDED_PROPERTY, "on"));
+		if (!sided || side == net.fabricmc.api.EnvType.CLIENT) addMixinEntries(config.get(List.of("client")), mixins);
+		if (!sided || side == net.fabricmc.api.EnvType.SERVER) addMixinEntries(config.get(List.of("server")), mixins);
+		return mixins;
+	}
+
+	/**
+	 * {@link #unfitMixins(String, byte[], Function)} for the entries Mixin prepares on {@code side} only; an entry of
+	 * the other side's array is neither judged nor reported — nothing is lost where it never runs.
+	 */
+	public static List<String> unfitMixins(String configName, byte[] configJson, Function<String, byte[]> resource,
+			net.fabricmc.api.EnvType side) {
 		if (!enabled()) return List.of();
 
 		UnmodifiableConfig config;
@@ -142,10 +173,7 @@ public final class KernelGuestMixinAdapter {
 		String pkg = asString(config.get(List.of("package")));
 		if (pkg == null || pkg.isEmpty()) return List.of();
 
-		LinkedHashSet<String> mixins = new LinkedHashSet<>();
-		addMixinEntries(config.get(List.of("mixins")), mixins);
-		addMixinEntries(config.get(List.of("client")), mixins);
-		addMixinEntries(config.get(List.of("server")), mixins);
+		LinkedHashSet<String> mixins = appliedEntries(config, side);
 		if (mixins.isEmpty()) return List.of();
 
 		String pkgPath = pkg.replace('.', '/');
@@ -337,6 +365,12 @@ public final class KernelGuestMixinAdapter {
 	 */
 	static void reportNamedSuppressions(String configName, byte[] configJson, Map<String, String> sources,
 			Function<String, byte[]> resource) {
+		reportNamedSuppressions(configName, configJson, sources, resource, null);
+	}
+
+	/** As above, for a named entry Mixin prepares on {@code side}: one of the other side's array loses nothing here. */
+	static void reportNamedSuppressions(String configName, byte[] configJson, Map<String, String> sources,
+			Function<String, byte[]> resource, net.fabricmc.api.EnvType side) {
 		if (sources.isEmpty()) return;
 		UnmodifiableConfig config;
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(configJson), StandardCharsets.UTF_8)) {
@@ -348,8 +382,10 @@ public final class KernelGuestMixinAdapter {
 		if (pkg == null || pkg.isEmpty()) return;
 		String pluginClass = asString(config.get(List.of("plugin")));
 		boolean required = Boolean.TRUE.equals(config.get(List.of("required")));
+		java.util.Set<String> applied = appliedEntries(config, side);
 		for (Map.Entry<String, String> e : sources.entrySet()) {
 			String mixin = e.getKey();
+			if (side != null && !applied.contains(mixin)) continue;
 			List<String> targets = List.of();
 			try {
 				byte[] classBytes = resource.apply(pkg.replace('.', '/') + "/" + mixin.replace('.', '/') + ".class");

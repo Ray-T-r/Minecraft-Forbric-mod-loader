@@ -133,10 +133,9 @@ public final class ForeignMixinTargets {
 		String pkgPath = pkg.toString().replace('.', '/');
 		if (pkgPath.isEmpty()) return List.of();
 
-		Set<String> entries = new LinkedHashSet<>();
-		addEntries(config.get(List.of("mixins")), entries);
-		addEntries(config.get(List.of("client")), entries);
-		addEntries(config.get(List.of("server")), entries);
+		// Only what Mixin prepares on this side: a claim from another config's client array cannot keep a mixin
+		// alive on a dedicated server, where that claimer is never applied either.
+		Set<String> entries = KernelGuestMixinAdapter.appliedEntries(config, ForbricMixinService.side());
 
 		List<String> targets = new ArrayList<>();
 		for (String mixin : entries) {
@@ -151,10 +150,4 @@ public final class ForeignMixinTargets {
 		return targets;
 	}
 
-	private static void addEntries(Object value, Set<String> out) {
-		if (!(value instanceof List<?> list)) return;
-		for (Object element : list) {
-			if (element instanceof String s && !s.isBlank()) out.add(s.trim());
-		}
-	}
 }
