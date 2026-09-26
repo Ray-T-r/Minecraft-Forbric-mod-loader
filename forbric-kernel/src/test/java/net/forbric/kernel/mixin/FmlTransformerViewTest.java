@@ -160,6 +160,18 @@ class FmlTransformerViewTest {
 		assertSame(wrapper, MixinWeaverSlot.currentOr(fallback));
 	}
 
+	/** A second boot in one process weaves with its own Mixin, not through the first boot's view of the old one. */
+	@Test
+	void installingAWeaverForgetsTheSlotOfTheLastOne() {
+		MixinWeaverSlot.install(weaver());
+		IMixinTransformer oldWrapper = weaver();
+		MixinWeaverSlot.watch(() -> oldWrapper);
+
+		IMixinTransformer next = weaver();
+		MixinWeaverSlot.install(next);
+		assertSame(next, MixinWeaverSlot.currentOr(next));
+	}
+
 	/**
 	 * The kernel's class pipeline weaves through the slot, not through the transformer it captured at bootstrap:
 	 * the captured one is exactly the field nobody would read after a wrapper replaced it.

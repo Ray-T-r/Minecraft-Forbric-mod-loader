@@ -61,13 +61,6 @@ public final class ModuleClassLoaderInitInjector implements ClassTransformer {
 	/** The first of the three exceptions the carrier already catches around the IMPL_LOOKUP lookup. */
 	private static final String GUARDED = "java/lang/NoSuchFieldException";
 
-	private static volatile boolean applied;
-
-	/** Whether the loaded {@code ModuleClassLoader} tolerates an unopened java.lang.invoke. */
-	public static boolean applied() {
-		return applied;
-	}
-
 	@Override
 	public String name() {
 		return "forbric-module-class-loader-init";
@@ -94,9 +87,11 @@ public final class ModuleClassLoaderInitInjector implements ClassTransformer {
 		}
 		if (clinit == null || !tolerate(clinit)) return classBytes;
 
-		applied = true;
-		ForbricLog.info("[Forbric/FmlView] ModuleClassLoader now initialises without java.lang.invoke opened — "
-				+ "LAYER_BIND_TO_LOADER stays null, which only a constructor the kernel never calls reads");
+		// Debug, not info: the class is loaded on every boot (verifying the view's signature loads it), whether or
+		// not any mod is ever handed the view, so this says nothing about the pack.
+		ForbricLog.debug("[Forbric/FmlView] patched ModuleClassLoader's initialiser to finish without "
+				+ "java.lang.invoke opened — it matters only if a NeoForge mod is handed FML's TransformingClassLoader "
+				+ "view; LAYER_BIND_TO_LOADER then stays null, which only a constructor the kernel never calls reads");
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();

@@ -29,7 +29,7 @@ import org.spongepowered.asm.mixin.transformer.IMixinTransformer;
  * <p>On NeoForge the live weaver sits in a field: {@code FMLMixinClassProcessor.transformer}, which the processor
  * reads again for every class it handles. LibJF's ASM layer depends on exactly that — its mixin plugin walks
  * {@code TransformingClassLoader} to that field, wraps what it finds in its own {@code AsmTransformer}, and writes
- * the wrapper back, so every class after that goes through LibJF's patches and then Mixin. The kernel captured its
+ * the wrapper back, so every class after that goes through Mixin and then LibJF's patches. The kernel captured its
  * transformer once, in a local the define lambda closed over, so there was nothing a guest could replace: even with
  * the rest of that object graph in place, the wrapper would have been written into a field nobody reads.
  *
@@ -61,9 +61,13 @@ public final class MixinWeaverSlot {
 		return !"off".equalsIgnoreCase(System.getProperty(SWITCH, "on"));
 	}
 
-	/** Records the transformer Mixin gave the kernel, before anything can ask for a view of it. */
+	/**
+	 * Records the transformer Mixin gave the kernel, before anything can ask for a view of it. A slot left from an
+	 * earlier boot in this process is forgotten: it reads a view built around that boot's weaver.
+	 */
 	static void install(IMixinTransformer weaver) {
 		original = weaver;
+		slot = null;
 	}
 
 	/** The transformer the kernel weaves with when no guest has replaced it; null before Mixin is up. */
