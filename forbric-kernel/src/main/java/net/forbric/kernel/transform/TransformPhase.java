@@ -34,7 +34,10 @@ public enum TransformPhase {
 	RAW_PATCH,
 	/** Remap a mod's bytecode from its source namespace (intermediary or SRG/Mojmap) to the canonical runtime namespace. */
 	DEOBF_REMAP,
-	/** Strip members annotated for the other physical side (Fabric {@code @Environment}). */
+	/**
+	 * Strip members annotated for the other physical side (Fabric {@code @Environment}), in guest classes from jars
+	 * arbitrated to Fabric. See {@link EnvironmentStripTransformer}.
+	 */
 	ENV_STRIP,
 	/** Apply the unified access model (Fabric Access Wideners + Forge Access Transformers). */
 	ACCESS,

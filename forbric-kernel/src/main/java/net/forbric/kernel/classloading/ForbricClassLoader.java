@@ -454,16 +454,41 @@ public final class ForbricClassLoader extends URLClassLoader {
 	}
 
 	/**
-	 * Records the family of the jar a freshly defined class came from. The URL is {@code jar:file:/…/x.jar!/a/B.class};
-	 * only single-family jars are in the map, so an unowned origin simply records nothing.
+	 * The loader family of the jar this loader WILL read {@code binaryName} from, or {@code null} when that jar is
+	 * unowned (see {@link #setJarFamilies}) or no jar has the class.
+	 *
+	 * <p>{@link #familyOfClass} cannot answer this for a transformer that edits what Mixin sees. It is filled in as a
+	 * class is DEFINED, and Mixin's view ({@link #getPreMixinClassBytes}) runs the same chain first -- for a mixin
+	 * class, the only time, since a mixin class is never defined. Fabric's environment stripping is the case: asking by
+	 * definition, it would leave every mixin class unstripped and Mixin would merge the client-only handlers Fabric
+	 * removes. This makes the same lookup both paths make, so both get the same answer.
+	 *
+	 * <p>The superseded-jar fallback mirrors {@link #tryDefineGameClass}; a superseded jar lost arbitration and is in
+	 * no family, so what it serves answers {@code null}. The lookup is a {@code findResource}, so callers ask only
+	 * about the few classes that need it.
+	 */
+	public LoaderProbePolicy.Family familyOfResource(String binaryName) {
+		if (jarFamilies.isEmpty()) return null;
+		String path = binaryName.replace('.', '/') + ".class";
+		URL resource = findResource(path);
+		if (resource == null) resource = rescueResource(path);
+		return resource == null ? null : familyOfUrl(resource);
+	}
+
+	/**
+	 * Records the family of the jar a freshly defined class came from. Only single-family jars are in the map, so an
+	 * unowned origin simply records nothing.
 	 */
 	private void rememberOrigin(String name, URL resource) {
+		LoaderProbePolicy.Family family = familyOfUrl(resource);
+		if (family != null) classFamilies.put(name, family);
+	}
+
+	/** The family of the jar a {@code jar:file:/…/x.jar!/a/B.class} URL points into, or {@code null}. */
+	private LoaderProbePolicy.Family familyOfUrl(URL resource) {
 		String url = resource.toString();
 		int bang = url.indexOf("!/");
-		if (bang < 0) return;
-
-		LoaderProbePolicy.Family family = jarFamilies.get(url.substring(0, bang));
-		if (family != null) classFamilies.put(name, family);
+		return bang < 0 ? null : jarFamilies.get(url.substring(0, bang));
 	}
 
 	// Owned single-family jars, keyed by "jar:file:…!"-prefix; and the per-class answer derived from them.

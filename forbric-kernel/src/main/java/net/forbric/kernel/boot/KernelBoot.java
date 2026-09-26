@@ -334,6 +334,15 @@ public final class KernelBoot {
 		TransformChain chain = new TransformChain();
 		boolean transferInterop = KernelTransferInterop.configure(loader);
 
+		// Fabric Loader's @Environment stripping, in the phase TransformPhase always reserved for it: before ACCESS, as
+		// on Fabric, so an access widener naming a stripped member matches nothing there too. Only classes from jars
+		// arbitrated to Fabric -- Forge and NeoForge strip nothing, and Fabric does not strip Minecraft. Asked by
+		// RESOURCE, because Mixin sees a class through this chain before it is defined. Without it CreativeCore's main
+		// entrypoint died on every dedicated server. See EnvironmentStripTransformer.
+		net.forbric.kernel.transform.EnvironmentStripTransformer envStrip =
+				net.forbric.kernel.transform.EnvironmentStripTransformer.configured(loader::familyOfResource);
+		if (envStrip != null) chain.register(TransformPhase.ENV_STRIP, envStrip);
+
 		// Fabric access wideners before Mixin (ACCESS phase): the weaver must see the widened members.
 		ClassTweakerTransformer accessWideners =
 				ClassTweakerTransformer.createFrom(KernelFabricEcosystem.accessWidenerFiles(), loader::putGeneratedClass);
