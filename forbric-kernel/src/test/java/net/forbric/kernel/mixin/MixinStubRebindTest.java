@@ -207,6 +207,66 @@ class MixinStubRebindTest {
 		}
 	}
 
+	/**
+	 * What MixinExtras' implicit @Local counts, as Mixin's own Locals.getLocalsAt reports it on these javac shapes: each
+	 * slot typed by its table entry and carried down the method from above. {@code List x = new ArrayList()} beside
+	 * {@code List y} is two Lists to it, and so is an x a block, a loop or a catch above left behind; on two it fails
+	 * the injection, and the mixin with it. The data flow at the anchor saw only y in each. An argument counts, never
+	 * read or not; {@code this} never does: an instance method's own class is no candidate there, and one copy of it is
+	 * the only one.
+	 */
+	@Test void aByTypeLocalCountsWhatMixinExtrasCounts() throws Exception {
+		ClassNode shapes = new ClassNode();
+		try (java.io.InputStream in = TypedLocals.class.getResourceAsStream("MixinStubRebindTest$TypedLocals.class")) {
+			new ClassReader(in).accept(shapes, 0);
+		}
+		List<AnnotationNode> yield = List.of(at("INVOKE", "target", "Ljava/lang/Thread;yield()V"));
+		java.util.Map<String, Boolean> decided = new java.util.TreeMap<>();
+		for (MethodNode shape : shapes.methods) {
+			if (shape.name.startsWith("<")) continue;
+			Type wanted = Type.getType((shape.access & Opcodes.ACC_STATIC) != 0 ? List.class : TypedLocals.class);
+			decided.put(shape.name, MixinStubRebind.theOnlyLocalOfItsType(shapes, shape, wanted, yield));
+		}
+		assertEquals(java.util.Map.of("twoLists", false, "anArrayListAndAList", true, "aBlockAbove", false, "aLoopAbove", false,
+				"aCatchAbove", false, "aSlotReused", true, "onlyItself", false, "itselfAndACopy", true, "anArgument", true,
+				"anArgumentAndALocal", false), decided);
+	}
+
+	/** javac's shapes around a {@code Thread.yield()} anchor, for a by-type {@code @Local List} (or TypedLocals, in its own methods). */
+	@SuppressWarnings({"rawtypes", "unused"})
+	private static final class TypedLocals {
+		static void twoLists() { List x = new java.util.ArrayList(); List y = List.of(); Thread.yield(); x.size(); y.size(); }
+		static void anArrayListAndAList() { java.util.ArrayList x = new java.util.ArrayList(); List y = List.of(); Thread.yield(); x.size(); y.size(); }
+		static void aBlockAbove() { List y = List.of(); { List x = new java.util.ArrayList(); x.size(); } Thread.yield(); y.size(); }
+		static void aLoopAbove() { List y = List.of(); for (int i = 0; i < 3; i++) { List x = new java.util.ArrayList(); x.size(); } Thread.yield(); y.size(); }
+		static void aCatchAbove() { List y = List.of(); try { y.size(); } catch (RuntimeException e) { List x = new java.util.ArrayList(); x.size(); } Thread.yield(); y.size(); }
+		static void aSlotReused() { { List x = new java.util.ArrayList(); x.size(); } List y = List.of(); Thread.yield(); y.size(); }
+		static void anArgument(List a) { Thread.yield(); }
+		static void anArgumentAndALocal(List a) { List y = List.of(); Thread.yield(); y.size(); }
+		void onlyItself() { Thread.yield(); }
+		void itselfAndACopy() { TypedLocals y = this; Thread.yield(); y.hashCode(); }
+	}
+
+	/**
+	 * Mixin's walk can lose a live slot at a frame: right after Player.doSweepAttack's entity loop it holds no
+	 * ServerLevel, though {@code serverLevel} is live and the table names it, so MixinExtras finds none at that
+	 * getYRot and fails the injection. In the loop, and past the next read of it, Mixin holds it again.
+	 */
+	@Test void aByTypeLocalMixinLosesAtALoopsExitIsLeft() throws Exception {
+		ClassNode player = merged("net/minecraft/world/entity/player/Player");
+		MethodNode sweep = player.methods.stream().filter(m -> m.name.equals("doSweepAttack") && m.desc.equals("(Lnet/minecraft/world/entity/"
+				+ "Entity;FLnet/minecraft/world/damagesource/DamageSource;FLnet/minecraft/world/phys/AABB;)V")).findFirst().orElseThrow();
+		Type level = Type.getType("Lnet/minecraft/server/level/ServerLevel;");
+		assertFalse(MixinStubRebind.theOnlyLocalOfItsType(player, sweep, level, List.of(at("INVOKE", "target",
+				"Lnet/minecraft/world/entity/player/Player;getYRot()F"))), "one of its getYRot calls follows the loop's exit");
+		assertTrue(MixinStubRebind.theOnlyLocalOfItsType(player, sweep, level, List.of(at("INVOKE", "target",
+				"Lnet/minecraft/world/entity/LivingEntity;hurtServer(Lnet/minecraft/server/level/ServerLevel;"
+						+ "Lnet/minecraft/world/damagesource/DamageSource;F)Z"))), "in the loop");
+		assertTrue(MixinStubRebind.theOnlyLocalOfItsType(player, sweep, level, List.of(at("INVOKE", "target",
+				"Lnet/minecraft/server/level/ServerLevel;sendParticles(Lnet/minecraft/core/particles/ParticleOptions;DDDIDDDD)I"))),
+				"read again after it");
+	}
+
 	/** MixinFit asks the same rule: the ResolvedModels anchor reads found for the MinecraftForge mod, missing otherwise. */
 	@Test void fusionsVerdictFindsTheAnchorWhereTheRebindPutsIt() throws Exception {
 		Path jar = SWEEP.resolve("fusion-1.3.15a-forge-mc26.2.jar");

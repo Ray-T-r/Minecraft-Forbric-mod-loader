@@ -68,8 +68,8 @@ import net.forbric.kernel.util.ForbricLog;
  *   <li>{@code @Inject} capturing nothing or exactly the stub's arguments, no locals capture; a MixinExtras
  *       {@code @Local} by a name the delegate's local variable table has in that type, or by its type alone (no name,
  *       ordinal, index or argsOnly) when, at every {@code INVOKE}/{@code FIELD} anchor in the delegate, exactly one
- *       local slot can hold that type and the table names it there — MixinExtras then picks that one and nothing
- *       else. fusion's overlay-model hook takes the {@code ModelDiscovery} of
+ *       local slot is of that type as Mixin's own walk down the method types it, the table names it there and that
+ *       walk still holds it — MixinExtras then picks that one and nothing else. fusion's overlay-model hook takes the {@code ModelDiscovery} of
  *       {@code ModelManager.discoverModelDependencies} that way: the body is NeoForge's four-argument overload, where
  *       {@code result} is the only one ({@code -Dforbric.mixinStubRebind.typedLocal=off} leaves these where they
  *       are); an argsOnly {@code @Local} (by type, or type and ordinal) when the stub argument it picks is passed
@@ -989,12 +989,12 @@ public final class MixinStubRebind {
 
 	/**
 	 * Whether a by-type-only {@code @Local} of {@code type} is decided on {@code delegate}: at every {@code INVOKE} or
-	 * {@code FIELD} anchor of {@code points}, exactly one local slot can hold that type — MixinExtras' implicit mode fails
-	 * the injection on none or on two — and the delegate's local variable table names that slot there. The count comes
-	 * from the method's data flow, not from the table: a slot a try-with-resources temp or a reused index still holds at
-	 * the anchor is a candidate to MixinExtras as well, so one the table has already closed still counts against the move.
+	 * {@code FIELD} anchor of {@code points}, exactly one local slot past {@code this} can hold that type there as
+	 * MixinExtras counts ({@link #typedAbove}) — its implicit mode fails the injection on none or on two — the
+	 * delegate's local variable table names that slot there, and Mixin still holds it there
+	 * ({@link #loadedOrStoredSinceAFrame}).
 	 */
-	private static boolean theOnlyLocalOfItsType(ClassNode owner, MethodNode delegate, Type type, List<AnnotationNode> points) {
+	static boolean theOnlyLocalOfItsType(ClassNode owner, MethodNode delegate, Type type, List<AnnotationNode> points) {
 		if (delegate.localVariables == null || delegate.instructions == null) return false;
 		if (type.getSort() != Type.OBJECT && type.getSort() != Type.ARRAY) return false;
 		List<AbstractInsnNode> anchors = new ArrayList<>();
@@ -1014,26 +1014,71 @@ public final class MixinStubRebind {
 		} catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unanalysable) {
 			return false;
 		}
+		int base = (delegate.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;   // Mixin's baseArgIndex: never `this`
 		for (AbstractInsnNode anchor : anchors) {
 			int at = delegate.instructions.indexOf(anchor);
-			var frame = frames[at];
-			if (frame == null) return false;   // unreachable: nothing to prove it by
-			int slot = -1;
-			for (int s = 0; s < frame.getLocals(); s++) {
-				org.objectweb.asm.tree.analysis.BasicValue held = frame.getLocal(s);
-				if (held == null || !type.equals(held.getType()) && !held.equals(TypedValues.PERHAPS)) continue;
-				if (slot >= 0) return false;   // two: MixinExtras would refuse the injection
-				slot = s;
-			}
-			if (slot < 0) return false;
+			if (frames[at] == null) return false;   // unreachable: nothing to prove it by
+			java.util.BitSet candidates = typedAbove(delegate, frames, type, at);
+			candidates.clear(0, base);
+			if (candidates.cardinality() != 1) return false;   // none, or two: MixinExtras would refuse the injection
+			int slot = candidates.nextSetBit(0);
 			boolean named = false;
 			for (LocalVariableNode local : delegate.localVariables) {
 				if (local.index == slot && local.desc.equals(type.getDescriptor()) && delegate.instructions.indexOf(local.start) <= at
 						&& at < delegate.instructions.indexOf(local.end)) named = true;
 			}
-			if (!named) return false;
+			if (!named || !loadedOrStoredSinceAFrame(delegate, slot, anchor)) return false;
 		}
 		return true;
+	}
+
+	/**
+	 * Whether {@code slot} is loaded or stored between the last frame before {@code anchor} and it. Mixin's walk can
+	 * lose a slot at a frame: it sizes a {@code CHOP} or {@code APPEND} frame as at least the method's arguments, so
+	 * the {@code CHOP} a loop's exit leaves drops every local past them (Player.doSweepAttack's {@code serverLevel}
+	 * right after its entity loop), and MixinExtras then finds none. Only an access after it is sure to bring the slot
+	 * back. A frame stands wherever one must — a jump, switch or handler target — so this reads the same with frames
+	 * skipped (MixinFit's read) as with them. An argument's slot is never lost: no frame is sized below them.
+	 */
+	private static boolean loadedOrStoredSinceAFrame(MethodNode method, int slot, AbstractInsnNode anchor) {
+		if (slot < (Type.getArgumentsAndReturnSizes(method.desc) >> 2) - ((method.access & Opcodes.ACC_STATIC) != 0 ? 1 : 0)) return true;
+		Set<org.objectweb.asm.tree.LabelNode> targets = new java.util.HashSet<>();
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof org.objectweb.asm.tree.JumpInsnNode jump) targets.add(jump.label);
+			if (insn instanceof org.objectweb.asm.tree.TableSwitchInsnNode table) { targets.add(table.dflt); targets.addAll(table.labels); }
+			if (insn instanceof org.objectweb.asm.tree.LookupSwitchInsnNode lookup) { targets.add(lookup.dflt); targets.addAll(lookup.labels); }
+		}
+		if (method.tryCatchBlocks != null) for (var block : method.tryCatchBlocks) targets.add(block.handler);
+		for (AbstractInsnNode insn = anchor.getPrevious(); insn != null; insn = insn.getPrevious()) {
+			if (insn instanceof VarInsnNode access && access.var == slot) return true;
+			if (insn instanceof org.objectweb.asm.tree.FrameNode || targets.contains(insn)) return false;
+		}
+		return false;
+	}
+
+	/**
+	 * Every slot that can be of {@code type} to MixinExtras at instruction {@code at}. It types each slot by Mixin's
+	 * {@code Locals.getLocalsAt}, which reads the method top to bottom, not along its branches: a slot keeps the table
+	 * entry it was last stored or loaded under, and a frame that drops it can keep it as a zombie a later access revives. So
+	 * a {@code List x = new ArrayList()} is a {@code List}, not the {@code ArrayList} the data flow sees, and one declared
+	 * in a block, a loop, a catch or a switch case above the anchor still is after the join the data flow calls dead.
+	 * Counted, then: every slot the table declares that type in anywhere above {@code at}, and every slot the data flow
+	 * gives exactly that type anywhere above it (a temp the table never names, which Mixin types by its own analysis).
+	 */
+	private static java.util.BitSet typedAbove(MethodNode method, org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.BasicValue>[] frames,
+			Type type, int at) {
+		java.util.BitSet typed = new java.util.BitSet();
+		for (LocalVariableNode local : method.localVariables) {
+			if (local.desc.equals(type.getDescriptor()) && method.instructions.indexOf(local.start) <= at) typed.set(local.index);
+		}
+		for (int i = 0; i <= at; i++) {
+			if (frames[i] == null) continue;
+			for (int s = 0; s < frames[i].getLocals(); s++) {
+				org.objectweb.asm.tree.analysis.BasicValue held = frames[i].getLocal(s);
+				if (held != null && (type.equals(held.getType()) || held.equals(TypedValues.PERHAPS))) typed.set(s);
+			}
+		}
+		return typed;
 	}
 
 	/**
