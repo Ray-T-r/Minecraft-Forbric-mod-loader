@@ -134,6 +134,27 @@ class KernelModelFormatsTest {
 		}
 	}
 
+	/**
+	 * A LinkageError is not an Exception: out of guest code it would leave ModelManager's per-model catch, fail the
+	 * reload, and a failed reload drops every resource pack and leaves a black screen. One model fails instead.
+	 */
+	@Test
+	void aForeignFormatThatDoesNotLinkFailsOneModelNotTheReload() throws Exception {
+		try (Game game = game(true)) {
+			Throwable fabric = game.fail("{\"fabric:type\": \"fabrictest:broken\"}");
+			assertEquals("com.google.gson.JsonParseException", fabric.getClass().getName());
+			assertTrue(fabric.getMessage().startsWith("fabric:type fabrictest:broken does not link"), fabric.getMessage());
+			assertInstanceOf(NoSuchMethodError.class, fabric.getCause());
+
+			Throwable forge = game.fail("{\"loader\": \"brokenfmt:model\"}");
+			assertEquals("com.google.gson.JsonParseException", forge.getClass().getName());
+			assertTrue(forge.getMessage().startsWith("\"loader\": \"brokenfmt:model\" does not link"), forge.getMessage());
+			assertInstanceOf(NoClassDefFoundError.class, forge.getCause());
+
+			assertEquals("fabric", game.parse("{\"fabric:type\": \"fabrictest:backpack\"}"), "and the next model still parses");
+		}
+	}
+
 	@Test
 	void aLoaderNeoForgeDoesNotOwnReachesTheDeserializerMinecraftForgeAndFusionRead() throws Exception {
 		try (Game funnelled = game(true); Game shipped = game(false)) {
@@ -341,6 +362,12 @@ class KernelModelFormatsTest {
 					return model("fabric");
 				});
 				fabricApi.getMethod("register", identifier, fabricApi).invoke(null, parse.invoke(null, "fabrictest:backpack"), fabric);
+				// One compiled against another base: its first call into the game does not link.
+				Object broken = Proxy.newProxyInstance(loader, new Class<?>[] {fabricApi}, (proxy, method, args) -> {
+					if (!"deserialize".equals(method.getName())) return null;
+					throw new NoSuchMethodError("'void net.minecraft.client.renderer.block.model.BlockModel.<init>()'");
+				});
+				fabricApi.getMethod("register", identifier, fabricApi).invoke(null, parse.invoke(null, "fabrictest:broken"), broken);
 			}
 
 			// The vanilla cuboid deserializer and what sits on it — see the class javadoc.
@@ -352,6 +379,7 @@ class KernelModelFormatsTest {
 				if (id == null) return model("plain");
 				cuboidLoaders.add(id);
 				if ("fusion:model".equals(id)) return model("fusion");
+				if ("brokenfmt:model".equals(id)) throw new NoClassDefFoundError("net/minecraftforge/client/model/Gone");
 				throw (Throwable) parseException.getConstructor(String.class).newInstance(
 						"Model loader '" + id + "' not found. Registered loaders: forge:obj");
 			});

@@ -102,6 +102,16 @@ import net.forbric.kernel.util.Reflect;
  * {@code getElements} is MinecraftForge's, reads the key as a string and throws. The plain parse gets a copy
  * without the key, which is what native NeoForge's deserializer would have seen.
  *
+ * <h2>Linkage errors stay inside one model</h2>
+ *
+ * <p>The funnel runs guest code — a Fabric mod's deserializer, MinecraftForge's geometry loaders, fusion's hook —
+ * inside {@code ModelManager.lambda$loadBlockModels$2}, whose per-model {@code catch} covers {@code Exception}
+ * and nothing else. A {@code NoSuchMethodError} or {@code NoClassDefFoundError} from code compiled against
+ * another base is not an {@code Exception}: it would leave that catch, fail the whole block-model load, and a
+ * failed resource reload makes Minecraft drop every resource pack, reload, and sit on a black screen. So a
+ * {@code LinkageError} from anything the funnel dispatches to is rethrown as a {@code JsonParseException} naming
+ * the format: that model fails, logged by the game's own "Failed to load model", and the reload goes on.
+ *
  * <p>{@code -Dforbric.modelFormatFunnel=off} restores the previous behaviour on both halves: the injector is not
  * registered, and this method answers null.
  */
@@ -145,7 +155,7 @@ public final class KernelModelFormats {
 			announce(LOADER_KEY, id, "\"loader\": \"%s\" is not a NeoForge loader — handed to the vanilla cuboid "
 					+ "deserializer, where MinecraftForge's geometry loaders and guest hooks on it (fusion) read the "
 					+ "key as they do on MinecraftForge; an id none of them claims still fails the model");
-			return asCuboid(json, context);
+			return asCuboid(json, context, "\"loader\": \"" + id + "\"");
 		}
 		if (loader.isJsonObject()) {
 			JsonObject spec = loader.getAsJsonObject();
@@ -159,7 +169,7 @@ public final class KernelModelFormats {
 			announce("optional " + LOADER_KEY, id, "optional loader %s is absent — parsed as a plain model without "
 					+ "the loader object, which MinecraftForge's half of the merged cuboid deserializer would read as a "
 					+ "string and reject");
-			return asCuboid(plain, context);
+			return asCuboid(plain, context, "a plain model (optional loader " + id + " absent)");
 		}
 		return null;
 	}
@@ -204,7 +214,7 @@ public final class KernelModelFormats {
 		try {
 			deserializer = fabricLookup.invoke(id);
 		} catch (Throwable t) {
-			throw rethrow(t);
+			throw rethrow(t, FABRIC_KEY + " " + id);
 		}
 		if (deserializer == null) {
 			if (loaderDecidesAMiss) {
@@ -221,7 +231,7 @@ public final class KernelModelFormats {
 		try {
 			return (UnbakedModel) fabricDeserialize.invoke(deserializer, json, context);
 		} catch (Throwable t) {
-			throw rethrow(t);
+			throw rethrow(t, FABRIC_KEY + " " + id);
 		}
 	}
 
@@ -245,9 +255,17 @@ public final class KernelModelFormats {
 	 * <p>Through {@code (Type)} on purpose: the generic {@code deserialize} would otherwise make javac cast the
 	 * result to {@code CuboidModel}, and a guest hook on that deserializer answers with whatever its format builds.
 	 * NeoForge's own call site casts only to {@code UnbakedModel}, so this does too.
+	 *
+	 * <p>{@code format} names what was handed on, for the one failure this does not pass through as it came: a
+	 * {@code LinkageError} (see the class javadoc).
 	 */
-	private static UnbakedModel asCuboid(JsonObject json, JsonDeserializationContext context) {
-		Object parsed = context.deserialize(json, (Type) CuboidModel.class);
+	private static UnbakedModel asCuboid(JsonObject json, JsonDeserializationContext context, String format) {
+		Object parsed;
+		try {
+			parsed = context.deserialize(json, (Type) CuboidModel.class);
+		} catch (LinkageError e) {
+			throw doesNotLink(format, e);
+		}
 		return (UnbakedModel) parsed;
 	}
 
@@ -282,11 +300,26 @@ public final class KernelModelFormats {
 		if (ANNOUNCED.add(route + " " + id)) ForbricLog.info("[Forbric/ModelFormats] " + what, id);
 	}
 
-	private static RuntimeException rethrow(Throwable t) {
+	private static RuntimeException rethrow(Throwable t, String format) {
 		Throwable cause = Reflect.unwrap(t);
 		if (cause instanceof RuntimeException runtime) return runtime;
+		if (cause instanceof LinkageError linkage) return doesNotLink(format, linkage);
 		if (cause instanceof Error error) throw error;
 		return new JsonParseException(cause);
+	}
+
+	/**
+	 * A {@code LinkageError} from guest code as the {@code Exception} the game's per-model catch can hold — so one
+	 * model fails, not the resource reload. Said once per format at WARN, since the game's own line names only the
+	 * model file.
+	 */
+	private static JsonParseException doesNotLink(String format, LinkageError error) {
+		if (ANNOUNCED.add("linkage " + format)) {
+			ForbricLog.warn("[Forbric/ModelFormats] the code parsing %s does not link on the merged base (%s) — each "
+					+ "model in that format fails on its own instead of failing the resource reload, which would drop "
+					+ "every resource pack", format, String.valueOf(error));
+		}
+		return new JsonParseException(format + " does not link on the merged base: " + error, error);
 	}
 
 	static boolean enabled() {
