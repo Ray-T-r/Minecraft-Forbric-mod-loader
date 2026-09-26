@@ -698,6 +698,19 @@ public final class KernelBoot {
 					net.forbric.kernel.transform.GuestInjectorPruner.PROPERTY);
 		}
 
+		// Client only: NeoForge's model deserializer throws "Unknown loader" for every loader it did not register,
+		// BEFORE the vanilla cuboid deserializer that MinecraftForge's geometry loaders and fusion's model hook read,
+		// and it never reads Fabric's fabric:type at all (the two injectors that dispatched it are the pair pruned
+		// above). One call ahead of NeoForge's dispatch lets each format's owner parse it. Matches only
+		// UnbakedModelParser$Deserializer, which a dedicated server never loads.
+		if (net.forbric.kernel.transform.ModelFormatFunnelInjector.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ModelFormatFunnelInjector());
+		} else {
+			ForbricLog.warn("[Forbric/ModelFormats] -D%s=off — Fabric fabric:type model formats parse as plain models, "
+					+ "and a MinecraftForge geometry loader or fusion model fails as \"Unknown loader\"",
+					net.forbric.kernel.transform.ModelFormatFunnelInjector.PROPERTY);
+		}
+
 		// Client only: fire the Fabric client entrypoints from inside Minecraft.<init> (before Options), the window
 		// Fabric uses — so a client entrypoint touching Minecraft.getInstance() (keymapping registration etc.) sees a
 		// live instance. Matches only Minecraft.<init>, which a dedicated server never loads.

@@ -35,6 +35,7 @@ import net.forbric.kernel.mixin.MergedBaseMixinCompat;
 import net.forbric.kernel.transform.CreativePagerBridgeInjector;
 import net.forbric.kernel.transform.GuestInjectorPruner;
 import net.forbric.kernel.transform.LootTableEventBridgeInjector;
+import net.forbric.kernel.transform.ModelFormatFunnelInjector;
 import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -45,10 +46,11 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>{@link net.forbric.kernel.mixin.MergedBaseMixinCompat} pins a handful of fabric-api mixins that cannot fit
  * the merged base. Most of what they carried is restored by other means now (loot events by
- * {@link LootTableEventDispatch}, model-loading plugins by {@link GuestInjectorPruner}); what is NOT is listed
- * here, one surface per row, with the predicate that says whether it is still lost on THIS boot — so switching a
- * restoration off with its {@code -Dforbric.<x>=off} makes its users show up here, and the row goes quiet again
- * the day the surface is restored. Same needle/note/report shape as {@link CapabilityUseAudit}.
+ * {@link LootTableEventDispatch}, model-loading plugins by {@link GuestInjectorPruner}, {@code fabric:type} model
+ * formats by {@link ModelFormatFunnelInjector}); what is NOT is listed here, one surface per row, with the
+ * predicate that says whether it is still lost on THIS boot — so switching a restoration off with its
+ * {@code -Dforbric.<x>=off} makes its users show up here, and the row goes quiet again the day the surface is
+ * restored. Same needle/note/report shape as {@link CapabilityUseAudit}.
  *
  * <p>A constant-pool needle over-reports a mod that names the API only in an optional compat class. That is the
  * safe direction: a DEGRADED row that turns out not to matter costs a glance; a silent loss costs a bug hunt.
@@ -85,7 +87,8 @@ public final class FabricApiModuleLossAudit {
 					"ModelLoadingPlugin is never invoked",
 					() -> !GuestInjectorPruner.enabled()),
 			new Loss("fabric-model-loading-api-v1", "net/fabricmc/fabric/api/client/model/loading/v1/UnbakedModelDeserializer",
-					Side.CLIENT, "fabric:type model formats are parsed by NeoForge's loader instead", () -> true),
+					Side.CLIENT, "fabric:type model formats are parsed by NeoForge's loader instead",
+					() -> !ModelFormatFunnelInjector.enabled()),
 			// Not a ClassCastException, which is what this row used to say: fabric-api's class tweaker injects the
 			// interface into the screen whatever the kernel pins, so the cast works and the call is the interface's
 			// own default. owo-lib implements it, from a mixin — the pinned-contract closure leaves that mixin out.

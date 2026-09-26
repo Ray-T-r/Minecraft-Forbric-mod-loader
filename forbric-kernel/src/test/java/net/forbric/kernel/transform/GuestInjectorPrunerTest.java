@@ -74,6 +74,7 @@ class GuestInjectorPrunerTest {
 		System.clearProperty(GuestInjectorPruner.PROPERTY);
 		System.clearProperty(GuestInjectorPruner.FABRIC_TOOLTIP_BRIDGE);
 		System.clearProperty("forbric.neoTooltipAppenders");
+		System.clearProperty(ModelFormatFunnelInjector.PROPERTY);
 		net.forbric.api.CompatibilityFindings.reset();
 	}
 
@@ -147,12 +148,28 @@ class GuestInjectorPrunerTest {
 	}
 
 	/**
-	 * The pruned pair never runs, and a log line was all that said so. Each is a confirmed finding on the owning
-	 * config, naming the residual loss — and not a continue-or-quit question, since the kernel ships this trim.
+	 * The pair's job — dispatching {@code fabric:type} — is the model-format funnel's inside NeoForge's own
+	 * deserializer, so removing them loses nothing and nothing is reported. Traveler's Backpack's backpacks are
+	 * {@code fabric:type} models; a finding here would have marked a working mod as degraded.
+	 */
+	@Test
+	void whileTheModelFormatFunnelIsOnThePrunedPairReportsNothing() throws Exception {
+		net.forbric.api.CompatibilityFindings.reset();
+		byte[] pruned = new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, realMixin(), null);
+		for (String gone : PRUNED) assertEquals(null, method(read(pruned), gone), gone + " is still pruned");
+		assertTrue(net.forbric.api.CompatibilityFindings.all().isEmpty(), "the funnel does their job: "
+				+ net.forbric.api.CompatibilityFindings.all());
+	}
+
+	/**
+	 * With the funnel off the pruned pair never runs, and a log line was all that said so. Each is a confirmed
+	 * finding on the owning config, naming the residual loss — and not a continue-or-quit question, since the
+	 * kernel ships this trim.
 	 */
 	@Test
 	void eachPrunedInjectorIsAConfirmedFindingThatAsksNothing() throws Exception {
 		net.forbric.api.CompatibilityFindings.reset();
+		System.setProperty(ModelFormatFunnelInjector.PROPERTY, "off");
 		new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, realMixin(), null);
 
 		String config = GuestInjectorPruner.CONFIGS.get(GuestInjectorPruner.MODEL_MANAGER_MIXIN);

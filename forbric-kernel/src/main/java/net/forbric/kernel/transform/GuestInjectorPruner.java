@@ -49,9 +49,11 @@ import net.forbric.kernel.util.ForbricLog;
  * reload HEAD, the on-load model and block-state modifiers, the thread-local dispatcher around collect and bake,
  * extra-model resolution and the post-upload capture — anchor on instructions the merged {@code ModelManager}
  * still has. Removing the pair from the mixin's bytes lets Mixin apply the rest as written, while NeoForge's
- * parser keeps the call site, so NeoForge {@code "loader"} models keep working too. The residual loss is Fabric's
- * {@code fabric:type} custom model formats ({@code UnbakedModelDeserializer}), which now parse through
- * NeoForge's Gson instead — no staged mod uses them.
+ * parser keeps the call site, so NeoForge {@code "loader"} models keep working too. What the pair did —
+ * dispatch Fabric's {@code fabric:type} custom model formats ({@code UnbakedModelDeserializer}) — is done by
+ * {@link ModelFormatFunnelInjector} inside NeoForge's own deserializer, so nothing is recorded for them while it is
+ * on. With it off, each removed injector is a confirmed finding naming that loss: Traveler's Backpack's backpacks
+ * are {@code fabric:type} models, and without the funnel every one of them fails to bake.
  *
  * <p>Guest mixin classes reach the transform chain through {@code ForbricClassLoader.getPreMixinClassBytes},
  * which is also what {@link net.forbric.kernel.mixin.MixinFit} and Mixin itself read, so the pruned bytes are
@@ -147,7 +149,17 @@ public final class GuestInjectorPruner implements ClassTransformer {
 	/** The finding a removed injector records, or none when a kernel repair does its job. */
 	private static final Map<String, String> LOSSES = Map.of(MODEL_MANAGER_MIXIN,
 			"the kernel removed this injector: NeoForge's UnbakedModelParser now reads block models at its call site, so "
-					+ "Fabric's fabric:type custom model formats (UnbakedModelDeserializer) are not consulted");
+					+ "Fabric's fabric:type custom model formats (UnbakedModelDeserializer) are not consulted — the "
+					+ "kernel's own dispatch of them is off (-D" + ModelFormatFunnelInjector.PROPERTY + "=off)");
+
+	/**
+	 * The finding an entry's removed injectors record on this boot, or null when something does their job:
+	 * the model pair's {@code fabric:type} dispatch is {@link ModelFormatFunnelInjector}'s while it is on.
+	 */
+	static String lossOf(String mixin) {
+		if (MODEL_MANAGER_MIXIN.equals(mixin) && ModelFormatFunnelInjector.enabled()) return null;
+		return LOSSES.get(mixin);
+	}
 
 	private static volatile boolean fabricTooltipsPruned;
 
@@ -245,7 +257,7 @@ public final class GuestInjectorPruner implements ClassTransformer {
 		if (ITEM_STACK_MIXIN.equals(className)) fabricTooltipsPruned = true;
 		// Removed, so never run: a confirmed finding for each where nothing does its job, naming what is not
 		// covered. The log line below is not the report.
-		String loss = LOSSES.get(className);
+		String loss = lossOf(className);
 		for (MethodNode victim : loss == null ? List.<MethodNode>of() : victims) {
 			net.forbric.kernel.mixin.MixinCompatibility.recordRemovedInjector(CONFIGS.get(className), className,
 					victim.name, victim.desc, loss,
