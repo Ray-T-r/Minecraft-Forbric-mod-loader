@@ -528,6 +528,18 @@ public final class KernelBoot {
 		// does the work.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistrySyncParityInjector());
 
+		// A Fabric mod's registry reads its data where native Fabric reads it. The merged Registries body is
+		// NeoForge's, which prefixes the namespace itself; Fabric prefixes in a return-value mixin instead, and
+		// WorldWeaver's own mixin hands back the body's answer ahead of it — so here its world presets and biome
+		// data were read from data/<ns>/wover/wover/…, which nothing ships, and loaded empty.
+		if (net.forbric.kernel.transform.RegistryDirectoryOwnerInjector.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistryDirectoryOwnerInjector());
+		} else {
+			ForbricLog.warn("[Forbric/Registries] -D%s=off — every registry reads the merged (NeoForge) directory, "
+					+ "and WorldWeaver's world presets and biome data load empty",
+					net.forbric.kernel.transform.RegistryDirectoryOwnerInjector.PROPERTY);
+		}
+
 		// The kernel owns the single registry freeze, and NeoForge's lifecycle puts it at ClientModLoader.begin() —
 		// before `new Minecraft(...)`, where Fabric's is after it. A guest mixin that waits for "the real freeze"
 		// therefore wakes its mod's <clinit> while Minecraft.getInstance() is still null, and fabric-api's

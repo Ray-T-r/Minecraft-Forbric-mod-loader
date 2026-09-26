@@ -241,6 +241,48 @@ class ModPresenceTest {
 		}
 	}
 
+	/**
+	 * Whose loader's rules apply to what a mod owns. A registry's data directory is the first such question:
+	 * WorldWeaver's registries have to be answered as native Fabric answers them, a NeoForge mod's as NeoForge does.
+	 */
+	@org.junit.jupiter.api.Test
+	void soleEcosystemNamesTheOneFamilyThatLoadedAMod() {
+		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "wover"),
+				mod(Ecosystem.FABRIC, "libjf-base").withAliases(List.of("libjf_base"))));
+		ModPresence.publishForgeFamily(List.of(mod(Ecosystem.NEOFORGE, "jade"), mod(Ecosystem.FORGE, "fusion")));
+
+		assertEquals(Ecosystem.FABRIC, ModPresence.soleEcosystem("wover"));
+		assertEquals(Ecosystem.FABRIC, ModPresence.soleEcosystem("libjf_base"), "an alias is the same mod");
+		assertEquals(Ecosystem.NEOFORGE, ModPresence.soleEcosystem("jade"));
+		assertEquals(Ecosystem.FORGE, ModPresence.soleEcosystem("fusion"));
+		assertNull(ModPresence.soleEcosystem("notinstalled"));
+		assertNull(ModPresence.soleEcosystem(null), "a null id must answer null, not throw");
+	}
+
+	@org.junit.jupiter.api.Test
+	void aModTwoEcosystemsPublishHasNoSoleOwner() {
+		// One mod ported across two ecosystems, published under each one's spelling. Neither loader's rules are
+		// "the" rules for it, so the caller keeps what the merged game does instead of guessing.
+		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "cloth-config")));
+		ModPresence.publishForgeFamily(List.of(mod(Ecosystem.NEOFORGE, "cloth_config")));
+
+		assertNull(ModPresence.soleEcosystem("cloth-config"));
+		assertNull(ModPresence.soleEcosystem("cloth_config"));
+	}
+
+	@org.junit.jupiter.api.Test
+	void soleEcosystemIgnoresTheCrossEcosystemSwitch() {
+		// Who owns a mod is not whether another ecosystem may see it; the switch must not reroute WorldWeaver's data.
+		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "wover")));
+		System.setProperty("forbric.crossEcosystemPresence", "off");
+		try {
+			assertFalse(ModPresence.isLoaded("wover"));
+			assertEquals(Ecosystem.FABRIC, ModPresence.soleEcosystem("wover"));
+		} finally {
+			System.clearProperty("forbric.crossEcosystemPresence");
+		}
+	}
+
 	private static DiscoveredMod mod(Ecosystem ecosystem, String id) {
 		return new DiscoveredMod(ecosystem, id, "1.0.0", id, List.of(), List.of(), null, id + ".jar");
 	}

@@ -75,6 +75,11 @@ public final class ModPresence {
 	/** {@link #spellingKey} of every id above, for the second question in {@link #isLoaded}. */
 	private static volatile Set<String> spellings = Set.of();
 	private static volatile Map<String, DiscoveredMod> byId = Map.of();
+	/**
+	 * {@link #spellingKey} of every id and alias to the one ecosystem that published it; a key two ecosystems
+	 * both publish is absent. See {@link #soleEcosystem}.
+	 */
+	private static volatile Map<String, Ecosystem> soleOwner = Map.of();
 
 	private ModPresence() {
 	}
@@ -190,6 +195,30 @@ public final class ModPresence {
 		}
 	}
 
+	/**
+	 * The ecosystem that loaded the mod answering to this id, or null when no mod does or mods of more than one
+	 * ecosystem do.
+	 *
+	 * <p>This is "whose native rules apply to it", which is a different question from {@link #isLoaded}: where
+	 * the three loaders disagree about something a mod owns, the owner's loader is the one whose answer that mod
+	 * was written against. The first such question is a registry's data directory — NeoForge computes it in
+	 * {@code Registries}' body and Fabric in a return-value mixin, and WorldWeaver's own mixin relies on seeing
+	 * the body's answer before Fabric's — so a registry id's namespace is looked up here. An ambiguous answer is
+	 * null rather than a guess: a caller then keeps what the merged game already does.
+	 *
+	 * <p>Spelling-insensitive like {@link #isLoaded}, and for the ambiguity above all: a NeoForge
+	 * {@code cloth_config} and a Fabric {@code cloth-config} are the same mod published twice, and neither
+	 * ecosystem is its sole owner. Deliberately NOT gated by {@link #SWITCH}, for the reason {@link #metadata}
+	 * is not: who owns a mod is not whether another ecosystem may see it.
+	 */
+	public static Ecosystem soleEcosystem(String id) {
+		try {
+			return id == null ? null : soleOwner.get(spellingKey(id));
+		} catch (Throwable t) {
+			return null;
+		}
+	}
+
 	private static void reindex() {
 		Set<String> merged = new LinkedHashSet<>();
 		for (DiscoveredMod mod : forgeFamily) add(merged, mod);
@@ -206,7 +235,29 @@ public final class ModPresence {
 		for (DiscoveredMod mod : fabric) index(index, mod);
 		byId = Map.copyOf(index);
 
+		// Each list is one family by construction, whatever an entry's own field says: the Fabric list is FABRIC,
+		// and a Forge-family entry keeps which of the two families it is.
+		Map<String, Ecosystem> owners = new LinkedHashMap<>();
+		Set<String> shared = new LinkedHashSet<>();
+		for (DiscoveredMod mod : forgeFamily) {
+			Ecosystem family = mod.getEcosystem() != null && mod.getEcosystem().isForgeFamily()
+					? mod.getEcosystem() : Ecosystem.NEOFORGE;
+			own(owners, shared, mod, family);
+		}
+		for (DiscoveredMod mod : fabric) own(owners, shared, mod, Ecosystem.FABRIC);
+		owners.keySet().removeAll(shared);
+		soleOwner = Map.copyOf(owners);
+
 		ForbricLog.debug("[Forbric/Presence] %s", summary());
+	}
+
+	private static void own(Map<String, Ecosystem> owners, Set<String> shared, DiscoveredMod mod, Ecosystem family) {
+		Set<String> names = new LinkedHashSet<>();
+		add(names, mod);
+		for (String name : names) {
+			Ecosystem before = owners.putIfAbsent(spellingKey(name), family);
+			if (before != null && before != family) shared.add(spellingKey(name));
+		}
 	}
 
 	private static void index(Map<String, DiscoveredMod> into, DiscoveredMod mod) {
