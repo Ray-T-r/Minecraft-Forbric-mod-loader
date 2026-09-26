@@ -42,7 +42,8 @@ def ps(value):
 def transport(function, *arguments):
     result = subprocess.run(['bash', '-c', '. "$1"; shift; "$@"', 'compat',
                              str(HERE / 'lib-compat.sh'), function, *map(str, arguments)],
-                            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=490)
+                            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            timeout=2 * int(os.environ.get('COMPAT_CALL_TIMEOUT', '240')) + 10)
     if result.returncode:
         raise RuntimeError(f'{function} failed ({result.returncode}): {result.stdout}')
     return result.stdout.strip()

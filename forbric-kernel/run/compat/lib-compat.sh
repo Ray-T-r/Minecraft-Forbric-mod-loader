@@ -5,7 +5,11 @@ compat_transport() {
   python3 - "$@" <<'PY'
 import hashlib, os, pathlib, re, shlex, subprocess, sys, tempfile, uuid
 
-def invoke(key, arguments, attempts=1, per_attempt=240):
+# 240 s per remote call suits a LAN. COMPAT_CALL_TIMEOUT raises it for a relayed tunnel that stalls for minutes at a
+# time; the transport command itself decides whether a stalled call may be repeated.
+CEILING = int(os.environ.get('COMPAT_CALL_TIMEOUT', '240'))
+
+def invoke(key, arguments, attempts=1, per_attempt=CEILING):
     """Runs the configured transport command.
 
     `attempts` > 1 retries ONLY a timeout, and only for the file transport. A file transfer is safe to repeat:
@@ -22,7 +26,7 @@ def invoke(key, arguments, attempts=1, per_attempt=240):
         # Escalating, because the two reasons a transfer does not finish need opposite deadlines: a wedged
         # service never answers at all and should be abandoned quickly, while a 35 MB upload legitimately needs
         # minutes and must not be cut off and retried forever. Short first, then long enough for the real thing.
-        deadline = min(per_attempt * (attempt + 1), 240)
+        deadline = min(per_attempt * (attempt + 1), CEILING)
         try:
             result = subprocess.run(command + arguments, timeout=deadline, text=True,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -80,7 +84,7 @@ try:
                 sys.exit(0)
         except RuntimeError:
             pass
-        output = invoke('WINFILE', ['put', source, target], attempts=3, per_attempt=60)
+        output = invoke('WINFILE', ['put', source, target], attempts=3, per_attempt=max(60, CEILING // 4))
         if remote_fingerprint(target) != expected:
             raise RuntimeError('upload fingerprint mismatch: ' + target)
         print(output, end='')
@@ -92,7 +96,7 @@ try:
         # A failed transfer must never be mistaken for a stale file from an earlier download.
         with tempfile.TemporaryDirectory(prefix='.forbric-download-', dir=target.parent) as temp:
             temporary = pathlib.Path(temp) / target.name
-            output = invoke('WINFILE', ['get', source, str(temporary)], attempts=3, per_attempt=60)
+            output = invoke('WINFILE', ['get', source, str(temporary)], attempts=3, per_attempt=max(60, CEILING // 4))
             if not temporary.is_file() or fingerprint(temporary) != expected:
                 raise RuntimeError('download missing or fingerprint mismatch: ' + source)
             temporary.replace(target)
