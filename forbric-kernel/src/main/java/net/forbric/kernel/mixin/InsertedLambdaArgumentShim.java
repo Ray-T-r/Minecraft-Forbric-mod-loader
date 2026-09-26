@@ -53,8 +53,7 @@ public final class InsertedLambdaArgumentShim {
                 shim.instructions.add(new VarInsnNode(local.getOpcode(Opcodes.ILOAD), next));
                 next += local.getSize(); stack += local.getSize();
             }
-            shim.instructions.add(new MethodInsnNode(isStatic ? Opcodes.INVOKESTATIC : Opcodes.INVOKESPECIAL,
-                    mixin.name, handler.name, handler.desc, false));
+            shim.instructions.add(MixinHandlerShim.callOwn(mixin, isStatic, handler.name, handler.desc));
             shim.instructions.add(new InsnNode(Opcodes.RETURN));
             shim.maxStack = stack; shim.maxLocals = next;
             // Keep the original helper's name so internal calls (including recursion) stay intact.

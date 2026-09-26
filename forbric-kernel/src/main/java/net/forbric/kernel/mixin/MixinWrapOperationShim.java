@@ -237,8 +237,8 @@ public final class MixinWrapOperationShim {
 		for (int i = trailingFrom; i < outerParams.size(); i++) {
 			outer.instructions.add(new VarInsnNode(outerParams.get(i).getOpcode(Opcodes.ILOAD), slots[i]));
 		}
-		outer.instructions.add(new MethodInsnNode(handlerStatic ? Opcodes.INVOKESTATIC : Opcodes.INVOKESPECIAL, mixin.name,
-				handler.name + MixinHandlerShim.INNER_SUFFIX, handler.desc, false));
+		outer.instructions.add(MixinHandlerShim.callOwn(mixin, handlerStatic, handler.name + MixinHandlerShim.INNER_SUFFIX,
+				handler.desc));
 		outer.instructions.add(new InsnNode(Type.getReturnType(handler.desc).getOpcode(Opcodes.IRETURN)));
 		outer.maxLocals = slot;
 		outer.maxStack = 8 + slot * 2;

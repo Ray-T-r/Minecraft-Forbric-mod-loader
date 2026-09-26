@@ -173,8 +173,8 @@ public final class FabricBlockBreakMixinAdapter {
 		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
 		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, 3 + frame.indexOf(entity)));
 		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, 3 + frame.indexOf(state)));
-		outer.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, mixin.name,
-				handler.name + MixinHandlerShim.INNER_SUFFIX, handler.desc, false));
+		outer.instructions.add(MixinHandlerShim.callOwn(mixin, false, handler.name + MixinHandlerShim.INNER_SUFFIX,
+				handler.desc));
 		outer.instructions.add(new InsnNode(Opcodes.RETURN));
 		outer.maxStack = 5;
 		outer.maxLocals = outerParams.size() + 1;
@@ -254,8 +254,8 @@ public final class FabricBlockBreakMixinAdapter {
 		outer.instructions.add(new InsnNode(Opcodes.ACONST_NULL));            // the handler never reads its callback
 		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, 3));
 		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, 4));
-		outer.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, mixin.name,
-				handler.name + MixinHandlerShim.INNER_SUFFIX, handler.desc, false));
+		outer.instructions.add(MixinHandlerShim.callOwn(mixin, false, handler.name + MixinHandlerShim.INNER_SUFFIX,
+				handler.desc));
 		outer.instructions.add(kept);
 		outer.instructions.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
 		outer.instructions.add(new VarInsnNode(Opcodes.ILOAD, 1));

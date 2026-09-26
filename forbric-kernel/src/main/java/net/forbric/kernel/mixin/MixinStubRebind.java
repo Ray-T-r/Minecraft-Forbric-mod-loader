@@ -310,8 +310,8 @@ public final class MixinStubRebind {
 		for (int i = delegateParams.length; i < outerParams.size(); i++) {
 			outer.instructions.add(new VarInsnNode(outerParams.get(i).getOpcode(Opcodes.ILOAD), slots[i]));
 		}
-		outer.instructions.add(new MethodInsnNode(handlerStatic ? Opcodes.INVOKESTATIC : Opcodes.INVOKESPECIAL, mixin.name,
-				handler.name + MixinHandlerShim.INNER_SUFFIX, handler.desc, false));
+		outer.instructions.add(MixinHandlerShim.callOwn(mixin, handlerStatic, handler.name + MixinHandlerShim.INNER_SUFFIX,
+				handler.desc));
 		outer.instructions.add(new InsnNode(Type.getReturnType(handler.desc).getOpcode(Opcodes.IRETURN)));
 		outer.maxLocals = slot;
 		outer.maxStack = slot + 2;

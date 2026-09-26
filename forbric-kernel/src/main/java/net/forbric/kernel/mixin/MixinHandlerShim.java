@@ -342,9 +342,7 @@ public final class MixinHandlerShim {
 		}
 		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD, callbackSlot));
 		stack++;
-		outer.instructions.add(new MethodInsnNode(
-				handlerStatic ? Opcodes.INVOKESTATIC : Opcodes.INVOKESPECIAL,
-				mixin.name, innerName, handler.desc, false));
+		outer.instructions.add(callOwn(mixin, handlerStatic, innerName, handler.desc));
 		outer.instructions.add(new InsnNode(Opcodes.RETURN));
 		outer.maxStack = stack;
 		outer.maxLocals = callbackSlot + 1;
@@ -354,6 +352,17 @@ public final class MixinHandlerShim {
 		handler.visibleAnnotations = withoutInject(handler.visibleAnnotations);
 		handler.invisibleAnnotations = withoutInject(handler.invisibleAnnotations);
 		return outer;
+	}
+
+	/**
+	 * A generated method's call to one of its own mixin's methods. A mixin onto an interface is itself an interface,
+	 * and the JVM links a call to an interface's method only through an InterfaceMethodref — a plain Methodref
+	 * verifies, defines and then throws IncompatibleClassChangeError the first time it runs (fusion's sprite hook onto
+	 * {@code SpriteResourceLoader} did, inside the first resource reload, and the client stayed black).
+	 */
+	static MethodInsnNode callOwn(ClassNode mixin, boolean isStatic, String name, String desc) {
+		return new MethodInsnNode(isStatic ? Opcodes.INVOKESTATIC : Opcodes.INVOKESPECIAL, mixin.name, name, desc,
+				(mixin.access & Opcodes.ACC_INTERFACE) != 0);
 	}
 
 	private static Type[] withCallback(Type[] params, Type callback) {

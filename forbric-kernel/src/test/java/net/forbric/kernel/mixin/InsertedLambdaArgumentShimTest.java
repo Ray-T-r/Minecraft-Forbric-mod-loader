@@ -16,8 +16,14 @@ class InsertedLambdaArgumentShimTest {
   public static Object[] seen;
   private static void capture(long number,Object first,Object second,double fraction,CallbackInfo callback){seen=new Object[]{number,first,second,fraction,callback};callback.cancel();}
  }
- private ClassNode shell()throws Exception{
-  ClassNode node;try(var in=Shell.class.getResourceAsStream("InsertedLambdaArgumentShimTest$Shell.class")){node=MixinFit.parse(in.readAllBytes());}
+ /** A mixin onto an interface is compiled as an interface — fusion's SpriteResourceLoaderMixin is one. */
+ public interface InterfaceShell {
+  Object[][] SEEN=new Object[1][];
+  private static void capture(long number,Object first,Object second,double fraction,CallbackInfo callback){SEEN[0]=new Object[]{number,first,second,fraction,callback};callback.cancel();}
+ }
+ private ClassNode shell()throws Exception{return shell(Shell.class);}
+ private ClassNode shell(Class<?> source)throws Exception{
+  ClassNode node;try(var in=source.getResourceAsStream(source.getName().substring(source.getName().lastIndexOf('.')+1)+".class")){node=MixinFit.parse(in.readAllBytes());}
   node.nestHostClass=null;node.innerClasses.clear();
   AnnotationNode mixin=new AnnotationNode("Lorg/spongepowered/asm/mixin/Mixin;");mixin.values=new ArrayList<>(List.of("value",List.of(Type.getObjectType("probe/Target"))));node.invisibleAnnotations=new ArrayList<>(List.of(mixin));
   AnnotationNode at=new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");at.values=new ArrayList<>(List.of("value","INVOKE","target","Lprobe/Anchor;call()V","ordinal",0));
@@ -42,6 +48,17 @@ class InsertedLambdaArgumentShimTest {
   byte[] bytes=StagedFabricMixinFixture.bytes(shell);Class<?> defined=new ClassLoader(getClass().getClassLoader()){Class<?> define(){return defineClass(shell.name.replace('/','.'),bytes,0,bytes.length);}}.define();
   var method=defined.getDeclaredMethod(shim.name,long.class,Object.class,String.class,Object.class,double.class,CallbackInfo.class);method.setAccessible(true);Object first=new Object(),second=new Object();CallbackInfo callback=new CallbackInfo("render",true);method.invoke(null,123456789012L,first,"inserted",second,3.25d,callback);
   Object[] seen=(Object[])defined.getField("seen").get(null);assertArrayEquals(new Object[]{123456789012L,first,second,3.25d,callback},seen);assertTrue(callback.isCancelled());
+ }
+ @Test void aShimInAnInterfaceMixinCallsItsHandlerThroughAnInterfaceMethodref()throws Exception{
+  ClassNode shell=shell(InterfaceShell.class),target=target();assertTrue((shell.access&Opcodes.ACC_INTERFACE)!=0);
+  assertEquals(1,InsertedLambdaArgumentShim.adapt(shell,n->target));
+  MethodNode shim=StagedFabricMixinFixture.method(shell,"forbric$expanded$capture");
+  MethodInsnNode call=null;for(var i:shim.instructions)if(i instanceof MethodInsnNode c)call=c;
+  assertTrue(call.itf,"a Methodref to an interface's method verifies and then throws IncompatibleClassChangeError when it runs");
+  byte[] bytes=StagedFabricMixinFixture.bytes(shell);Class<?> defined=new ClassLoader(getClass().getClassLoader()){Class<?> define(){return defineClass(shell.name.replace('/','.'),bytes,0,bytes.length);}}.define();
+  var method=defined.getDeclaredMethod(shim.name,long.class,Object.class,String.class,Object.class,double.class,CallbackInfo.class);method.setAccessible(true);Object first=new Object(),second=new Object();CallbackInfo callback=new CallbackInfo("render",true);
+  method.invoke(null,42L,first,"inserted",second,0.5d,callback);
+  assertArrayEquals(new Object[]{42L,first,second,0.5d,callback},((Object[][])defined.getField("SEEN").get(null))[0]);assertTrue(callback.isCancelled());
  }
  @Test void actualLitematicaOpaqueAndTranslucentHandlersFollowThePrunedLiveLambda()throws Exception{
   Path jar;try(var files=Files.list(Path.of("run/client-merged-pack/mods"))){jar=files.filter(p->p.getFileName().toString().contains("litematica")&&p.toString().endsWith(".jar")).findFirst().orElseThrow();}
@@ -112,6 +129,8 @@ class InsertedLambdaArgumentShimTest {
   assertEquals(1,InsertedLambdaArgumentShim.adapt(mixin,n->target));
   MethodNode shim=StagedFabricMixinFixture.method(mixin,"forbric$expanded$handleFusionTextures");
   assertEquals(8+1,Type.getArgumentTypes(shim.desc).length,"4 live arguments, the callback, 4 captured locals");
+  assertTrue((mixin.access&Opcodes.ACC_INTERFACE)!=0,"fusion's mixin onto the SpriteResourceLoader interface is an interface");
+  for(var i:shim.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(mixin.name))assertTrue(c.itf,"its call must be an InterfaceMethodref or the first reload throws");
   new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(mixin.name,shim);
  }
  @Test void capturedLocalsWithoutATableOrOfAnotherTypeRefuse()throws Exception{
