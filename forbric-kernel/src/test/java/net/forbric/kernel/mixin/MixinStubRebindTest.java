@@ -44,6 +44,7 @@ class MixinStubRebindTest {
 		System.clearProperty(MixinStubRebind.CAPTURES_PROPERTY);
 		System.clearProperty(MixinStubRebind.SUGAR_BOUNDARY_PROPERTY);
 		System.clearProperty(MixinStubRebind.FORGE_FAMILY_PROPERTY);
+		System.clearProperty(MixinStubRebind.TYPED_LOCAL_PROPERTY);
 		MixinStubRebind.forget();
 	}
 
@@ -134,6 +135,96 @@ class MixinStubRebindTest {
 					stays == Ecosystem.FORGE ? "the switch: Fabric mods only" : "a NeoForge mod was compiled against that very stub");
 			System.clearProperty(MixinStubRebind.FORGE_FAMILY_PROPERTY);
 		}
+	}
+
+	private static final String DISCOVER_STUB = "discoverModelDependencies(Ljava/util/Map;Lnet/minecraft/client/resources/model/BlockStateModelLoader$LoadedModels;"
+			+ "Lnet/minecraft/client/resources/model/ClientItemInfoLoader$LoadedClientInfos;)Lnet/minecraft/client/resources/model/ModelManager$ResolvedModels;";
+	private static final String DISCOVER_BODY = "discoverModelDependencies(Ljava/util/Map;Lnet/minecraft/client/resources/model/BlockStateModelLoader$LoadedModels;"
+			+ "Lnet/minecraft/client/resources/model/ClientItemInfoLoader$LoadedClientInfos;"
+			+ "Lnet/neoforged/neoforge/client/model/standalone/StandaloneModelLoader$LoadedModels;)Lnet/minecraft/client/resources/model/ModelManager$ResolvedModels;";
+
+	/**
+	 * fusion's overlay models are added as discovery roots through the ModelDiscovery the method builds, taken by a
+	 * @Local with nothing but its type. The ResolvedModels construction it anchors on is only in NeoForge's overload,
+	 * where `result` is the one ModelDiscovery live there.
+	 */
+	@Test void fusionsOverlayHookMovesWithTheOnlyModelDiscoveryInTheBody() throws Exception {
+		ClassNode manager = merged(MODEL_MANAGER);
+		ClassNode mixin = fromJar(SWEEP.resolve("fusion-1.3.15a-forge-mc26.2.jar"), "com/supermartijn642/fusion/mixin/ModelManagerMixin");
+		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FORGE);
+		assertEquals(2, MixinStubRebind.adapt(mixin, name -> manager), "the sprite capture and the overlay hook");
+		assertEquals(List.of(DISCOVER_BODY), selectors(mixin, "registerBlockModelOverlays"));
+
+		System.setProperty(MixinStubRebind.TYPED_LOCAL_PROPERTY, "off");
+		ClassNode off = fromJar(SWEEP.resolve("fusion-1.3.15a-forge-mc26.2.jar"), "com/supermartijn642/fusion/mixin/ModelManagerMixin");
+		MixinStubRebind.adapt(off, name -> manager);
+		assertEquals(List.of(DISCOVER_STUB), selectors(off, "registerBlockModelOverlays"), "the switch");
+	}
+
+	/**
+	 * supermartijn642corelib (Fabric) hooks the same method before ModelDiscovery.missingModel, capturing the stub's
+	 * three arguments and the ModelDiscovery by type: wrapped, the @Local stays on the outer's last parameter.
+	 */
+	@Test void coreLibsModelHookMovesWrappedWithItsByTypeLocal() throws Exception {
+		ClassNode manager = merged(MODEL_MANAGER);
+		ClassNode mixin = fromJar(SWEEP.resolve("supermartijn642corelib-1.1.24b-fabric-mc26.2.jar"), "com/supermartijn642/core/mixin/ModelManagerMixin");
+		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
+		assertEquals(1, MixinStubRebind.adapt(mixin, name -> manager));
+		MethodNode outer = mixin.methods.stream().filter(m -> m.name.equals("discoverModelDependencies")).findFirst().orElseThrow();
+		assertEquals(List.of(DISCOVER_BODY), MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(outer), "method")));
+		Type[] params = Type.getArgumentTypes(outer.desc);
+		assertEquals("Lnet/minecraft/client/resources/model/ModelDiscovery;", params[params.length - 1].getDescriptor());
+		assertTrue(MixinStubRebind.annotated(outer, params.length - 1), "the @Local moved with its parameter");
+		new Analyzer<>(new BasicVerifier()).analyze(mixin.name, outer);
+	}
+
+	/** A second ModelDiscovery live at the anchor, or the one there unnamed by the table: MixinExtras' pick is not the proof's. */
+	@Test void aByTypeLocalIsLeftWhereTheBodyDoesNotDecideIt() throws Exception {
+		String discovery = "Lnet/minecraft/client/resources/model/ModelDiscovery;";
+		for (String why : List.of("a second ModelDiscovery slot", "the one slot unnamed", "no local variable table")) {
+			ClassNode manager = merged(MODEL_MANAGER);
+			MethodNode body = manager.methods.stream().filter(m -> DISCOVER_BODY.equals(m.name + m.desc)).findFirst().orElseThrow();
+			switch (why) {
+				case "a second ModelDiscovery slot" -> {
+					int slot = body.maxLocals;
+					body.maxLocals++;
+					org.objectweb.asm.tree.LabelNode start = new org.objectweb.asm.tree.LabelNode(), end = new org.objectweb.asm.tree.LabelNode();
+					body.instructions.insert(start);
+					body.instructions.insert(new VarInsnNode(Opcodes.ASTORE, slot));
+					body.instructions.insert(new org.objectweb.asm.tree.TypeInsnNode(Opcodes.CHECKCAST, "net/minecraft/client/resources/model/ModelDiscovery"));
+					body.instructions.insert(new org.objectweb.asm.tree.InsnNode(Opcodes.ACONST_NULL));
+					body.instructions.add(end);
+					body.localVariables.add(new org.objectweb.asm.tree.LocalVariableNode("other", discovery, null, start, end, slot));
+				}
+				case "the one slot unnamed" -> body.localVariables.removeIf(l -> l.desc.equals(discovery));
+				default -> body.localVariables = null;
+			}
+			ClassNode mixin = fromJar(SWEEP.resolve("fusion-1.3.15a-forge-mc26.2.jar"), "com/supermartijn642/fusion/mixin/ModelManagerMixin");
+			MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FORGE);
+			MixinStubRebind.adapt(mixin, name -> manager);
+			assertEquals(List.of(DISCOVER_STUB), selectors(mixin, "registerBlockModelOverlays"), why);
+		}
+	}
+
+	/** MixinFit asks the same rule: the ResolvedModels anchor reads found for the MinecraftForge mod, missing otherwise. */
+	@Test void fusionsVerdictFindsTheAnchorWhereTheRebindPutsIt() throws Exception {
+		Path jar = SWEEP.resolve("fusion-1.3.15a-forge-mc26.2.jar");
+		Assumptions.assumeTrue(Files.isRegularFile(jar) && Files.isRegularFile(MERGED), "fusion and the merged base required");
+		byte[] mixin, manager;
+		try (ZipFile zip = new ZipFile(jar.toFile())) {
+			mixin = zip.getInputStream(zip.getEntry("com/supermartijn642/fusion/mixin/ModelManagerMixin.class")).readAllBytes();
+		}
+		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
+			manager = zip.getInputStream(zip.getEntry(MODEL_MANAGER + ".class")).readAllBytes();
+		}
+		java.util.function.Function<String, byte[]> resolver = name -> name.equals(MODEL_MANAGER + ".class") ? manager : null;
+		java.util.function.Predicate<MixinFit.Result> resolvedModelsMissing =
+				fit -> fit.unresolved().stream().anyMatch(u -> u.contains("<init>") && u.contains("discoverModelDependencies"));
+		MixinStubRebind.noteEcosystem("com/supermartijn642/fusion/mixin/ModelManagerMixin", Ecosystem.NEOFORGE);
+		assertTrue(resolvedModelsMissing.test(MixinFit.evaluate(mixin, resolver)), "premise: bound to the stub");
+		MixinStubRebind.noteEcosystem("com/supermartijn642/fusion/mixin/ModelManagerMixin", Ecosystem.FORGE);
+		MixinFit.Result fit = MixinFit.evaluate(mixin, resolver);
+		assertFalse(resolvedModelsMissing.test(fit), fit.toString());
 	}
 
 	/** The mirror: MinecraftForge forwards PackDetector's two-argument detectPackResources; NeoForge kept it as the body. */

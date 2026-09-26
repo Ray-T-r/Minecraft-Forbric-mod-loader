@@ -66,8 +66,13 @@ import net.forbric.kernel.util.ForbricLog;
  *       ({@code HEAD}, {@code RETURN} and {@code TAIL} are equivalent on both: the stub returns what the delegate
  *       returns);</li>
  *   <li>{@code @Inject} capturing nothing or exactly the stub's arguments, no locals capture; a MixinExtras
- *       {@code @Local} only by a name the delegate's local variable table has in that type; no {@code @Share}, no
- *       {@code @Group};</li>
+ *       {@code @Local} by a name the delegate's local variable table has in that type, or by its type alone (no name,
+ *       ordinal, index or argsOnly) when, at every {@code INVOKE}/{@code FIELD} anchor in the delegate, exactly one
+ *       local slot can hold that type and the table names it there — MixinExtras then picks that one and nothing
+ *       else. fusion's overlay-model hook takes the {@code ModelDiscovery} of
+ *       {@code ModelManager.discoverModelDependencies} that way: the body is NeoForge's four-argument overload, where
+ *       {@code result} is the only one ({@code -Dforbric.mixinStubRebind.typedLocal=off} leaves these where they
+ *       are); no {@code @Share}, no {@code @Group};</li>
  *   <li>the {@code @At}-driven kinds only when every parameter past the injector's own contract — the value it
  *       modifies, or the receiver and arguments of the call it replaces or wraps — is a capture of the stub's LEADING
  *       arguments that the stub passes to the delegate at the same positions. Mixin lets any of these kinds take a
@@ -108,6 +113,8 @@ public final class MixinStubRebind {
 	public static final String STUB_FINDING_PROPERTY = "forbric.mixinStubRebind.stubFinding";
 	/** {@code -Dforbric.mixinStubRebind.forgeFamily=off}: only Fabric mods' injectors move, as before the carrier columns. */
 	public static final String FORGE_FAMILY_PROPERTY = "forbric.mixinStubRebind.forgeFamily";
+	/** {@code -Dforbric.mixinStubRebind.typedLocal=off}: a handler with a by-type-only {@code @Local} stays on the stub. */
+	public static final String TYPED_LOCAL_PROPERTY = "forbric.mixinStubRebind.typedLocal";
 
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String CALLBACK_INFO = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
@@ -163,6 +170,10 @@ public final class MixinStubRebind {
 
 	static boolean forgeFamilyEnabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(FORGE_FAMILY_PROPERTY, "on"));
+	}
+
+	static boolean typedLocalEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(TYPED_LOCAL_PROPERTY, "on"));
 	}
 
 	/** Records which family's mod declared {@code mixinInternalName}; null when the config's owner is ambiguous. */
@@ -331,6 +342,10 @@ public final class MixinStubRebind {
 			AnnotationNode local = local(handler, i);
 			if (local == null) return null;   // a trailing capture of the stub's arguments, or @Share
 			List<String> names = MixinFit.stringList(MixinFit.value(local, "name"));
+			if (names.isEmpty() && byTypeOnly(local)) {
+				if (!typedLocalEnabled() || !theOnlyLocalOfItsType(target, delegate, params[i], points)) return null;
+				continue;
+			}
 			if (names.size() != 1 || MixinFit.value(local, "argsOnly") != null || !hasLocal(delegate, names.getFirst(), params[i])) return null;
 		}
 		if (lost) {
@@ -767,6 +782,119 @@ public final class MixinStubRebind {
 		if (call == null || after == null || after.getOpcode() < Opcodes.IRETURN || after.getOpcode() > Opcodes.RETURN) return null;
 		for (AbstractInsnNode insn = after.getNext(); insn != null; insn = insn.getNext()) if (insn.getOpcode() >= 0) return null;
 		return new Delegation(found, mapping);
+	}
+
+	/** A {@code @Local} that names nothing — no ordinal or index, not limited to the arguments: MixinExtras' implicit mode. */
+	private static boolean byTypeOnly(AnnotationNode local) {
+		return MixinFit.value(local, "ordinal") == null && MixinFit.value(local, "index") == null
+				&& !Boolean.TRUE.equals(MixinFit.value(local, "argsOnly"));
+	}
+
+	/**
+	 * Whether a by-type-only {@code @Local} of {@code type} is decided on {@code delegate}: at every {@code INVOKE} or
+	 * {@code FIELD} anchor of {@code points}, exactly one local slot can hold that type — MixinExtras' implicit mode fails
+	 * the injection on none or on two — and the delegate's local variable table names that slot there. The count comes
+	 * from the method's data flow, not from the table: a slot a try-with-resources temp or a reused index still holds at
+	 * the anchor is a candidate to MixinExtras as well, so one the table has already closed still counts against the move.
+	 */
+	private static boolean theOnlyLocalOfItsType(ClassNode owner, MethodNode delegate, Type type, List<AnnotationNode> points) {
+		if (delegate.localVariables == null || delegate.instructions == null) return false;
+		if (type.getSort() != Type.OBJECT && type.getSort() != Type.ARRAY) return false;
+		List<AbstractInsnNode> anchors = new ArrayList<>();
+		for (AnnotationNode at : points) {
+			String value = MixinFit.asString(MixinFit.value(at, "value"));
+			String member = MixinFit.asString(MixinFit.value(at, "target"));
+			if (!"INVOKE".equals(value) && !"FIELD".equals(value) || member == null) return false;
+			// BEFORE and AFTER one call or field access leave the locals as they are; BY walks past other instructions.
+			if (MixinFit.value(at, "shift") instanceof String[] shift && !"BEFORE".equals(shift[1]) && !"AFTER".equals(shift[1])) return false;
+			MixinFit.Member want = MixinFit.parseMember(member);
+			if (want == null) return false;
+			int before = anchors.size();
+			for (AbstractInsnNode insn : delegate.instructions) {
+				String name, memberOwner, desc;
+				if ("INVOKE".equals(value) && insn instanceof MethodInsnNode call) {
+					name = call.name; memberOwner = call.owner; desc = call.desc;
+				} else if ("FIELD".equals(value) && insn instanceof FieldInsnNode field) {
+					name = field.name; memberOwner = field.owner; desc = field.desc;
+				} else {
+					continue;
+				}
+				if (name.equals(want.name()) && (want.owner() == null || memberOwner.equals(want.owner()))
+						&& (want.desc() == null || desc.equals(want.desc()))) anchors.add(insn);
+			}
+			if (anchors.size() == before) return false;
+		}
+		org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.BasicValue>[] frames;
+		try {
+			frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new TypedValues(type)).analyze(owner.name, delegate);
+		} catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unanalysable) {
+			return false;
+		}
+		for (AbstractInsnNode anchor : anchors) {
+			int at = delegate.instructions.indexOf(anchor);
+			var frame = frames[at];
+			if (frame == null) return false;   // unreachable: nothing to prove it by
+			int slot = -1;
+			for (int s = 0; s < frame.getLocals(); s++) {
+				org.objectweb.asm.tree.analysis.BasicValue held = frame.getLocal(s);
+				if (held == null || !type.equals(held.getType()) && !held.equals(TypedValues.PERHAPS)) continue;
+				if (slot >= 0) return false;   // two: MixinExtras would refuse the injection
+				slot = s;
+			}
+			if (slot < 0) return false;
+			boolean named = false;
+			for (LocalVariableNode local : delegate.localVariables) {
+				if (local.index == slot && local.desc.equals(type.getDescriptor()) && delegate.instructions.indexOf(local.start) <= at
+						&& at < delegate.instructions.indexOf(local.end)) named = true;
+			}
+			if (!named) return false;
+		}
+		return true;
+	}
+
+	/**
+	 * ASM's {@code BasicInterpreter}, keeping each reference's declared type: a slot is a candidate for a by-type
+	 * {@code @Local} when it holds that type — or, after two paths meet with different references and one of them was
+	 * that type, perhaps holds it, which counts too.
+	 */
+	private static final class TypedValues extends org.objectweb.asm.tree.analysis.BasicInterpreter {
+		/** Its own type, so no real value compares equal to it and a frame merge cannot drop it. */
+		static final org.objectweb.asm.tree.analysis.BasicValue PERHAPS =
+				new org.objectweb.asm.tree.analysis.BasicValue(Type.getObjectType("net/forbric/kernel/mixin/PerhapsTheWantedType"));
+		private final Type wanted;
+
+		TypedValues(Type wanted) {
+			super(Opcodes.ASM9);
+			this.wanted = wanted;
+		}
+
+		@Override
+		public org.objectweb.asm.tree.analysis.BasicValue newValue(Type type) {
+			if (type != null && (type.getSort() == Type.OBJECT || type.getSort() == Type.ARRAY)) {
+				return new org.objectweb.asm.tree.analysis.BasicValue(type);
+			}
+			return super.newValue(type);
+		}
+
+		@Override
+		public org.objectweb.asm.tree.analysis.BasicValue binaryOperation(AbstractInsnNode insn, org.objectweb.asm.tree.analysis.BasicValue array,
+				org.objectweb.asm.tree.analysis.BasicValue index) throws org.objectweb.asm.tree.analysis.AnalyzerException {
+			if (insn.getOpcode() == Opcodes.AALOAD && array.getType() != null && array.getType().getSort() == Type.ARRAY) {
+				return newValue(Type.getType(array.getType().getDescriptor().substring(1)));   // an element of a T[] is a T
+			}
+			return super.binaryOperation(insn, array, index);
+		}
+
+		@Override
+		public org.objectweb.asm.tree.analysis.BasicValue merge(org.objectweb.asm.tree.analysis.BasicValue a,
+				org.objectweb.asm.tree.analysis.BasicValue b) {
+			if (a.equals(b)) return a;
+			if (a.isReference() && b.isReference()) {
+				return a.equals(PERHAPS) || b.equals(PERHAPS) || wanted.equals(a.getType()) || wanted.equals(b.getType())
+						? PERHAPS : org.objectweb.asm.tree.analysis.BasicValue.REFERENCE_VALUE;
+			}
+			return org.objectweb.asm.tree.analysis.BasicValue.UNINITIALIZED_VALUE;
+		}
 	}
 
 	private static boolean hasLocal(MethodNode method, String name, Type type) {
