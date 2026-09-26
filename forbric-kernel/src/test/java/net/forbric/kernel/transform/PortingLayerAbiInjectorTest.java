@@ -213,6 +213,67 @@ class PortingLayerAbiInjectorTest {
 	}
 
 	@Test
+	void theCarriersWholeTypeLoadPassesOverAConfigThatIsAlreadyOpen() throws Exception {
+		// The port loads SERVER configs in Fabric's SERVER_STARTING and NeoForge loads them again from initServer:
+		// every config was opened twice — a second Loading event and a second file watcher on each.
+		String cfg = "net/neoforged/fml/config/ModConfig";
+		String loaded = "net/neoforged/fml/config/IConfigSpec$ILoadedConfig";
+		java.util.Map<String, byte[]> classes = new java.util.HashMap<>();
+		ClassWriter iface = new ClassWriter(0);
+		iface.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT, loaded, null, "java/lang/Object", null);
+		classes.put(loaded, iface.toByteArray());
+		ClassWriter mc = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+		mc.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, cfg, null, "java/lang/Object", null);
+		mc.visitField(Opcodes.ACC_PUBLIC, "value", "L" + loaded + ";", null, null);
+		var ctor = mc.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		ctor.visitVarInsn(Opcodes.ALOAD, 0);
+		ctor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+		ctor.visitInsn(Opcodes.RETURN);
+		ctor.visitMaxs(0, 0);
+		var get = mc.visitMethod(Opcodes.ACC_PUBLIC, "getLoadedConfig", "()L" + loaded + ";", null, null);
+		get.visitVarInsn(Opcodes.ALOAD, 0);
+		get.visitFieldInsn(Opcodes.GETFIELD, cfg, "value", "L" + loaded + ";");
+		get.visitInsn(Opcodes.ARETURN);
+		get.visitMaxs(0, 0);
+		classes.put(cfg, mc.toByteArray());
+		ClassWriter tw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+		tw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, TRACKER, null, "java/lang/Object", null);
+		tw.visitField(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "opened", "I", null, null);
+		var each = tw.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, "lambda$loadConfigs$0",
+				"(Ljava/nio/file/Path;Ljava/nio/file/Path;L" + cfg + ";)V", null, null);
+		each.visitFieldInsn(Opcodes.GETSTATIC, TRACKER, "opened", "I");
+		each.visitInsn(Opcodes.ICONST_1);
+		each.visitInsn(Opcodes.IADD);
+		each.visitFieldInsn(Opcodes.PUTSTATIC, TRACKER, "opened", "I");
+		each.visitInsn(Opcodes.RETURN);
+		each.visitMaxs(0, 0);
+		byte[] out = new PortingLayerAbiInjector().transform(TRACKER.replace('/', '.'), tw.toByteArray(), null);
+		classes.put(TRACKER, out);
+		assertSame(out, new PortingLayerAbiInjector().transform(TRACKER.replace('/', '.'), out, null), "guarded once");
+
+		ClassLoader loader = new ClassLoader(getClass().getClassLoader()) {
+			@Override
+			protected Class<?> findClass(String name) throws ClassNotFoundException {
+				byte[] bytes = classes.get(name.replace('.', '/'));
+				if (bytes == null) throw new ClassNotFoundException(name);
+				return defineClass(name, bytes, 0, bytes.length);
+			}
+		};
+		Class<?> tracker = loader.loadClass(TRACKER.replace('/', '.'));
+		Class<?> modConfig = loader.loadClass(cfg.replace('/', '.'));
+		var lambda = tracker.getDeclaredMethod("lambda$loadConfigs$0", Path.class, Path.class, modConfig);
+		lambda.setAccessible(true);
+		Object fresh = modConfig.getConstructor().newInstance();
+		lambda.invoke(null, null, null, fresh);
+		assertEquals(1, tracker.getField("opened").getInt(null), "an unloaded config is opened");
+		Object open = modConfig.getConstructor().newInstance();
+		modConfig.getField("value").set(open, java.lang.reflect.Proxy.newProxyInstance(loader,
+				new Class<?>[] {loader.loadClass(loaded.replace('/', '.'))}, (proxy, method, args) -> null));
+		lambda.invoke(null, null, null, open);
+		assertEquals(1, tracker.getField("opened").getInt(null), "an open one is passed over");
+	}
+
+	@Test
 	void anUnrelatedClassIsUntouched() {
 		byte[] bytes = {(byte) 0xCA, (byte) 0xFE};
 		assertSame(bytes, new PortingLayerAbiInjector().transform("com.example.Whatever", bytes, null));

@@ -22,10 +22,15 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FrameNode;
+import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.kernel.util.ForbricLog;
 
@@ -104,6 +109,7 @@ public final class PortingLayerAbiInjector implements ClassTransformer {
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
+		if ("net.neoforged.fml.config.ConfigTracker".equals(className)) return leaveAnOpenConfigOpen(classBytes);
 		boolean port = "fuzs.forgeconfigapiport.fabric.impl.core.ConfigRegistryImpl".equals(className)
 				|| "fuzs.forgeconfigapiport.fabric.impl.core.ForgeConfigSpecAdapter".equals(className);
 		// The screen constructor is named by the port's CONSUMERS, not by the port, so it can be in any class.
@@ -136,6 +142,60 @@ public final class PortingLayerAbiInjector implements ClassTransformer {
 			ForbricLog.warn("[Forbric/PortShim] could not adapt " + className, e);
 			return classBytes;
 		}
+	}
+
+	/** {@code -Dforbric.skipLoadedConfigs=off} lets the carrier's whole-type load re-open a config again. */
+	static final String SKIP_LOADED_SWITCH = "forbric.skipLoadedConfigs";
+
+	/**
+	 * Makes the carrier's whole-type {@code ConfigTracker.loadConfigs} pass over a config that is already open.
+	 *
+	 * <p>Two openers meet on the SERVER type, and only here: the port's own {@code ServerLifecycleHandler} loads
+	 * SERVER configs in Fabric's {@code SERVER_STARTING} (its early phase, so other mods' listeners see values), and
+	 * NeoForge's {@code handleServerAboutToStart} loads them again moments later from {@code initServer}. Each
+	 * config then goes through {@code openConfig} twice: "Opening a config that was already loaded", a second
+	 * {@code Loading} event, and a second file watcher, so every later edit to e.g. {@code neoforge-server.toml}
+	 * reloads twice. Neither loader alone can do this — natively the port never meets NeoForge — and NeoForge
+	 * itself only warns about it, so skipping a loaded config is its own intent. A stopped server unloads the type,
+	 * so the next world still loads fresh.
+	 */
+	private static byte[] leaveAnOpenConfigOpen(byte[] classBytes) {
+		if ("off".equalsIgnoreCase(System.getProperty(SKIP_LOADED_SWITCH, "on"))) return classBytes;
+		ClassNode node = new ClassNode();
+		new ClassReader(classBytes).accept(node, 0);
+		String desc = "(Ljava/nio/file/Path;Ljava/nio/file/Path;" + MOD_CONFIG + ")V";
+		MethodNode each = null;
+		for (MethodNode method : node.methods) {
+			if (method.name.startsWith("lambda$loadConfigs$") && desc.equals(method.desc)
+					&& (method.access & Opcodes.ACC_STATIC) != 0) {
+				if (each != null) return classBytes; // two candidates: not the shape this was written for
+				each = method;
+			}
+		}
+		if (each == null || each.instructions == null || each.instructions.size() == 0) return classBytes;
+		AbstractInsnNode first = each.instructions.getFirst();
+		while (first != null && first.getOpcode() < 0) first = first.getNext();
+		if (first instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var == 2
+				&& load.getNext() instanceof MethodInsnNode call && "getLoadedConfig".equals(call.name)) {
+			return classBytes; // already guarded
+		}
+		LabelNode open = new LabelNode();
+		InsnList guard = new InsnList();
+		guard.add(new VarInsnNode(Opcodes.ALOAD, 2));
+		guard.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "net/neoforged/fml/config/ModConfig", "getLoadedConfig",
+				"()Lnet/neoforged/fml/config/IConfigSpec$ILoadedConfig;", false));
+		guard.add(new JumpInsnNode(Opcodes.IFNULL, open));
+		guard.add(new InsnNode(Opcodes.RETURN));
+		guard.add(open);
+		guard.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+		each.instructions.insert(guard);
+		each.maxStack = Math.max(each.maxStack, 1);
+		ClassWriter writer = new ClassWriter(0);
+		node.accept(writer);
+		ForbricLog.info("[Forbric/PortShim] ConfigTracker.loadConfigs passes over a config that is already open — the "
+				+ "config port and NeoForge each load SERVER configs at server start, and the second open doubled "
+				+ "every Loading event and file watcher");
+		return writer.toByteArray();
 	}
 
 	private static boolean routeRegistrationsThroughTheBridge(ClassNode node) {
