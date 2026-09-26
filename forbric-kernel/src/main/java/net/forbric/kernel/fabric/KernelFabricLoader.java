@@ -213,6 +213,46 @@ public final class KernelFabricLoader implements FabricLoader {
 	}
 
 	/**
+	 * Puts the registered mods in {@code order}, and every entrypoint key's list with them.
+	 *
+	 * <p>Fabric Loader fills its entrypoint storage mod by mod, walking its mod list, so each key hands its
+	 * entrypoints back grouped by mod, in mod order, and in declaration order within one mod. Re-sorting each key by
+	 * the new position of the mod that declared the entry keeps that shape. The sort is stable, so a mod's own entries
+	 * keep the order it declared them in.
+	 *
+	 * <p>Only the order changes. The id and alias lookups were settled at registration, so which container answers
+	 * for an id (the first registered, see {@link #register}) stays the same.
+	 *
+	 * @param order exactly the mods registered so far, each once, compared by identity
+	 * @throws IllegalStateException if the loader is already frozen, because entrypoints may have run in the old order
+	 * @throws IllegalArgumentException if {@code order} is not a permutation of the registered mods. Nothing is changed.
+	 */
+	public synchronized void reorder(List<? extends ModContainer> order) {
+		if (frozen) throw new IllegalStateException("mods reordered after freeze");
+
+		Map<ModContainer, Integer> rank = new IdentityHashMap<>();
+		for (ModContainer mod : order) {
+			if (rank.putIfAbsent(mod, rank.size()) != null) {
+				throw new IllegalArgumentException("mod listed twice in the new order: " + mod);
+			}
+		}
+		if (rank.size() != mods.size()) {
+			throw new IllegalArgumentException("the new order lists " + rank.size() + " mod(s), " + mods.size()
+					+ " are registered");
+		}
+		for (ModContainer mod : mods) {
+			if (!rank.containsKey(mod)) throw new IllegalArgumentException("the new order leaves out " + mod);
+		}
+
+		mods.clear();
+		mods.addAll(order);
+		for (List<Entrypoint> entries : entrypointsByKey.values()) {
+			entries.sort(java.util.Comparator.comparingInt(
+					entry -> rank.getOrDefault(entry.provider(), Integer.MAX_VALUE)));
+		}
+	}
+
+	/**
 	 * Seals the mod set. Everything after this point is read-only, so entrypoint lookup needs no lock — with one
 	 * exception, {@link #adoptFabricStorage}, which runs on the boot thread between the entrypoint phases.
 	 */
@@ -265,9 +305,9 @@ public final class KernelFabricLoader implements FabricLoader {
 	 *
 	 * <p>Not re-sorting is the point. Core Lib appends its {@code RegistryEntryPoints} to the END of {@code main},
 	 * because that entrypoint flushes the registrations every SuperMartijn642 mod queued in its own
-	 * {@code onInitialize}. Sorting it back into dependency order would put it BEFORE those mods (they depend on Core
-	 * Lib), and each would then throw "Cannot register new entries after mod initialization!" from its own
-	 * {@code onInitialize}.
+	 * {@code onInitialize}. Sorting it back into mod order would put it at Core Lib's own place, ahead of every one of
+	 * those mods whose id sorts after {@code supermartijn642corelib}, and each of them would then throw "Cannot
+	 * register new entries after mod initialization!" from its own {@code onInitialize}.
 	 *
 	 * <p>A no-op until a mod has reached for the storage, and under {@code -Dforbric.fabricImpl=off}. Called after
 	 * {@code preLaunch} and again before the {@code main}, {@code server} and {@code client} phases. An entry added

@@ -79,7 +79,8 @@ class FabricEntrypointStorageTest {
 		RAN.clear();
 		loader = KernelFabricLoader.create(EnvType.CLIENT, dir, dir.resolve("config"), new String[0], "26.2");
 		loader.setGameLoader(getClass().getClassLoader());
-		// Registration order is dependency order, as KernelFabricEcosystem.build registers: the library first.
+		// Registered in Fabric Loader's order, by mod id, which KernelFabricEcosystem.build ends with: "corelib"
+		// sorts before "dependent", so the library comes first here as it does natively.
 		register("corelib", "{\"main\":[\"" + LibMain.class.getName() + "\"],\"client\":[\""
 				+ LibClient.class.getName() + "\"],\"preLaunch\":[\"" + CoreLibLikePreLaunch.class.getName() + "\"]}",
 				"{\"fabricloader\":\"*\"}");
@@ -100,7 +101,7 @@ class FabricEntrypointStorageTest {
 
 	/**
 	 * The appended entrypoint runs, and runs LAST — after the mod that depends on its provider. Sorting it back into
-	 * dependency order would run it before that mod, which would then register into an already-flushed library.
+	 * mod order would run it before that mod, which would then register into an already-flushed library.
 	 */
 	@Test
 	void theAppendedEntrypointRunsLastAfterItsOwnDependents() throws Exception {

@@ -164,6 +164,7 @@ public final class KernelFabricEcosystem {
 		fabric.register(new KernelModContainer(
 				KernelModMetadata.builtin("fabricloader", FABRIC_LOADER_API_LEVEL, "Fabric Loader (Forbric kernel)"),
 				null, null));
+		int builtins = fabric.getAllMods().size();
 
 		// A universal jar also ships a fabric.mod.json; register it as a Fabric mod only if Fabric OWNS the jar,
 		// otherwise the same mod runs its Fabric entrypoints on top of the Forge/NeoForge @Mod that already claimed
@@ -171,9 +172,9 @@ public final class KernelFabricEcosystem {
 		// classes; only the Fabric-side registration (and with it the entrypoints) is skipped.
 		int suppressed = 0;
 		int lostNested = 0;
-		// In DEPENDENCY order, not discovery order. Registration order is the order FabricLoader hands entry
-		// points back in, and therefore the order onInitialize runs in — so a mod whose jar sorted before a
-		// library it requires initialised first and called that library before it was ready.
+		// Registered in DEPENDENCY order, and put in Fabric Loader's order (by mod id) just before the freeze; see
+		// putInFabricOrder. The dependency order still decides which of two same-id containers is kept, as it
+		// always did, and it is the order the Forge-family seeders read the Fabric mods in below.
 		for (KernelModContainer container : orderByDependency(discovery.getContainers())) {
 			Path jar = container.getJar();
 			if (jar != null && MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FABRIC)) {
@@ -189,6 +190,8 @@ public final class KernelFabricEcosystem {
 			}
 			fabric.register(container);
 		}
+		// Everything registered so far is what Fabric Loader itself would list: the builtins and the Fabric mods.
+		int fabricOwn = fabric.getAllMods().size();
 		if (lostNested > 0) {
 			ForbricLog.info("[Forbric/Fabric] skipped %d Fabric registration(s) whose mod id another jar won",
 					lostNested);
@@ -228,14 +231,23 @@ public final class KernelFabricEcosystem {
 					+ "asking isModLoaded() about one of them now gets the truth instead of no", foreign);
 		}
 
+		// Read before the reorder: this is the order the Forge-family seeders below have always been given.
+		List<ModContainer> registered = List.copyOf(fabric.getAllMods());
+		putInFabricOrder(fabric, registered, builtins, fabricOwn);
+
 		fabric.freeze();
 		loader = fabric;
 
 		// The mirror image: what the Forge-family lists have to be seeded with so their mods can see these.
 		// Built-ins and the jar-less aliases above are left out — NeoForge's list is built per JAR, and those
 		// have no jar; "minecraft"/"java"/"fabricloader" are not mods a compatibility branch asks about anyway.
+		//
+		// In registration order, not getAllMods() order. KernelModLoader orders the Forge-family @Mod classes over
+		// a graph that includes these (a NeoForge mod can require a Fabric one), and where a Fabric mod sits in that
+		// graph's input decides where a Forge-family mod waiting on it lands. Handing it the Fabric order would
+		// reorder NeoForge and MinecraftForge mods as a side effect.
 		List<DiscoveredMod> fabricMods = new ArrayList<>();
-		for (ModContainer container : fabric.getAllMods()) {
+		for (ModContainer container : registered) {
 			if (!(container instanceof KernelModContainer kernel) || kernel.getJar() == null) continue;
 			String id = kernel.getMetadata().getId();
 			// Minecraft has real resource roots, but remains a builtin rather than a foreign mod alias.
@@ -451,19 +463,14 @@ public final class KernelFabricEcosystem {
 	}
 
 	/**
-	 * Runs the Fabric {@code client} entrypoints, exactly once. Called from within {@code Minecraft.<init>} (after the
-	 * singleton is set, before {@code Options} is built) by {@code ClientEntrypointHookInjector} — the window Fabric
-	 * itself uses, so mods that touch {@code Minecraft.getInstance()} (keymappings, renderers) see a live instance.
+	 * The containers in dependency order: the order they are registered in, which decides which of two same-id
+	 * containers is kept, and the order the Forge-family seeders are given the Fabric mods in.
 	 *
-	 * @return true if this call ran them, false if already run or off the client
-	 */
-	/**
-	 * The containers in dependency order.
-	 *
-	 * <p>Registration order is the order FabricLoader hands entry points back in, and therefore the order
-	 * {@code onInitialize} runs in. It was discovery order — jar file name, alphabetically — so a mod whose file
-	 * sorted before a library it requires initialised first and called that library's API before the library had
-	 * set itself up. The requirements are already parsed; they were simply never used for this.
+	 * <p>It is the order they INITIALISE in only under {@code -Dforbric.fabricOrder=off}; by default
+	 * {@link #putInFabricOrder} puts them in Fabric Loader's order before anything runs. It was introduced to
+	 * replace discovery order (jar file name, alphabetically), which made a mod whose file sorted before a library it
+	 * requires initialise first. Fabric Loader has no such rule, and Fabric mods are written against the one it
+	 * does have (see {@link FabricLoadOrder}), so the switch is where this order now lives.
 	 *
 	 * <p>Best effort: an order is an improvement, never a precondition, and losing it must not cost the pack its
 	 * mods.
@@ -483,7 +490,9 @@ public final class KernelFabricEcosystem {
 
 			List<KernelModContainer> sorted = ModConstructionOrder.sort(containers,
 					c -> c.getMetadata().getId(), ModConstructionOrder.of(known));
-			if (!sorted.equals(containers)) {
+			// Said only when it is also the order they initialise in. By default it is not, and this line would
+			// claim the opposite of what happens.
+			if (!sorted.equals(containers) && !FabricLoadOrder.enabled()) {
 				ForbricLog.info("[Forbric/Order] %d Fabric mod(s) initialise in dependency order, not jar-file "
 						+ "order (-Dforbric.modOrder=name to go back)", sorted.size());
 			}
@@ -492,6 +501,40 @@ public final class KernelFabricEcosystem {
 			ForbricLog.warn("[Forbric/Order] could not order Fabric mods by dependency; using discovery order",
 					t);
 			return containers;
+		}
+	}
+
+	/**
+	 * Puts the Fabric mods in Fabric Loader's order — by mod id — before any of them runs.
+	 *
+	 * <p>Fabric Loader lists its mods, fills every entrypoint key and registers mixin configs in the order its
+	 * resolver returns, which is the resolved set sorted by id, nested mods and builtins included (see
+	 * {@link FabricLoadOrder}). Pets Mod is the case that showed it matters: its client JOIN listener throws in every
+	 * singleplayer world, fabric-api's JOIN invoker does not catch per listener, and so every listener registered
+	 * after it is skipped. Natively that spares bclib and OptiGUI, whose ids sort first; in dependency order both
+	 * came after Pets Mod and lost their join handlers.
+	 *
+	 * <p>The first {@code fabricOwn} entries of {@code registered} — the builtins and the Fabric mods — are sorted.
+	 * The presence-only identities after them have no Fabric Loader counterpart and keep their place at the end.
+	 *
+	 * <p>Best effort, like the dependency order it replaces: a failure keeps the registration order and says so.
+	 *
+	 * @param builtins how many of {@code registered} are the builtins, which are not counted as mods in the log line
+	 */
+	private static void putInFabricOrder(KernelFabricLoader fabric, List<ModContainer> registered, int builtins,
+			int fabricOwn) {
+		if (!FabricLoadOrder.enabled()) return;
+		try {
+			List<ModContainer> order = new ArrayList<>(FabricLoadOrder.byModId(registered.subList(0, fabricOwn),
+					container -> container.getMetadata().getId()));
+			order.addAll(registered.subList(fabricOwn, registered.size()));
+			fabric.reorder(order);
+			ForbricLog.info("[Forbric/Order] %d Fabric mod(s) initialise in Fabric Loader's order, by mod id, as "
+					+ "native Fabric orders them (-D%s=off for dependency order)", fabricOwn - builtins,
+					FabricLoadOrder.SWITCH);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Order] could not put Fabric mods in Fabric Loader's order; they initialise in "
+					+ "the order they were registered in", t);
 		}
 	}
 
@@ -539,6 +582,13 @@ public final class KernelFabricEcosystem {
 		return current == null ? null : Side.parse(String.valueOf(current.getEnvironmentType()));
 	}
 
+	/**
+	 * Runs the Fabric {@code client} entrypoints, exactly once. Called from within {@code Minecraft.<init>} (after the
+	 * singleton is set, before {@code Options} is built) by {@code ClientEntrypointHookInjector} — the window Fabric
+	 * itself uses, so mods that touch {@code Minecraft.getInstance()} (keymappings, renderers) see a live instance.
+	 *
+	 * @return true if this call ran them, false if already run or off the client
+	 */
 	public static boolean runClientEntrypoints() {
 		if (loader == null || loader.getEnvironmentType() != EnvType.CLIENT) return false;
 		adoptFabricStorage();

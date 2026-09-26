@@ -25,7 +25,7 @@ abs "…not from the pre-Minecraft window" "\[main/INFO\]: \[Forbric/Lifecycle\]
 ck  "registration events ran"           "ran NeoForge.s registration events.* [1-9][0-9]* data map type"
 ck  "load complete posted"              "posted FML load complete to [1-9][0-9]* NeoForge mod"
 ck  "construction is dependency order"  "Forbric/Order\] construction order is dependency order"
-ck  "Fabric init is dependency order"   "Forbric/Order\] [1-9][0-9]* Fabric mod\(s\) initialise in dependency order"
+ck  "Fabric init is Fabric Loader order" "Forbric/Order\] [1-9][0-9]* Fabric mod\(s\) initialise in Fabric Loader.s order, by mod id"
 ck  "Fabric mains in Minecraft.<init>" "\[Render thread/INFO\]: \[Forbric/Fabric\] invoked [1-9][0-9]* Fabric main entrypoint\(s\) in the Minecraft.<init> window"
 abs "…not the pre-Minecraft window"     "\[main/INFO\]: \[Forbric/Fabric\] invoked [0-9]+ Fabric main entrypoint"
 ck  "datapacks served"                  "Forbric/DataPacks\] served [1-9][0-9]* datapack"

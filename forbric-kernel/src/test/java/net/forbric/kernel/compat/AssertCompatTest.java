@@ -29,7 +29,7 @@ class AssertCompatTest {
 			ran NeoForge's registration events (7 step(s), each on its own) — capabilities and data maps are registered, 11 data map type(s)
 			posted FML load complete to 2 NeoForge mods
 			[Forbric/Order] construction order is dependency order
-			[Forbric/Order] 2 Fabric mod(s) initialise in dependency order
+			[Forbric/Order] 2 Fabric mod(s) initialise in Fabric Loader's order, by mod id, as native Fabric orders them
 			[Render thread/INFO]: [Forbric/Fabric] invoked 2 Fabric main entrypoint(s) in the Minecraft.<init> window
 			[Forbric/DataPacks] served 2 datapacks
 			[Forbric/Aliases] gave registries alias-resolving lookup

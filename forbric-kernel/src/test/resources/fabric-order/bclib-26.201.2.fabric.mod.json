@@ -1,0 +1,80 @@
+{
+    "schemaVersion": 1,
+    "id": "bclib",
+    "version": "26.201.2",
+    "name": "BCLib",
+    "description": "A library for BetterX team mods",
+    "authors": [
+        "Quiqueck",
+        "paulevs",
+        "Bulldog83"
+    ],
+    "contact": {
+        "homepage": "https://modrinth.com/mod/bclib",
+        "issues": "https://github.com/quiqueck/bclib/issues",
+        "sources": "https://github.com/quiqueck/bclib"
+    },
+    "license": "MIT (CC BY-NC-SA 4.0 for some Assets)",
+    "icon": "assets/bclib/icon.png",
+    "environment": "*",
+    "entrypoints": {
+        "main": [
+            "org.betterx.bclib.BCLib"
+        ],
+        "client": [
+            "org.betterx.bclib.client.BCLibClient"
+        ],
+        "server": [
+            "org.betterx.bclib.server.BCLibServer"
+        ],
+        "modmenu": [
+            "org.betterx.bclib.integration.modmenu.ModMenuEntryPoint"
+        ],
+        "emi_disabled": [
+            "org.betterx.bclib.integration.emi.EMIPlugin"
+        ],
+        "jei_mod_plugin": [
+            "org.betterx.bclib.integration.jei.JeiPlugin"
+        ],
+        "fabric-datagen": [
+            "org.betterx.datagen.bclib.BCLibDatagen"
+        ]
+    },
+    "accessWidener": "bclib.accesswidener",
+    "mixins": [
+        "ui.mixins.client.json",
+        "bclib.mixins.common.json",
+        "bclib.mixins.client.json"
+    ],
+    "depends": {
+        "fabricloader": ">=0.19.0",
+        "fabric-api": ">=0.155.0",
+        "java": ">=25",
+        "minecraft": [
+            "26.2"
+        ],
+        "wunderlib": "26.201.x",
+        "wover": "26.201.x"
+    },
+    "breaks": {
+        "wunderlib": "<26.201.0",
+        "wover": "<26.201.2"
+    },
+    "suggests": {
+        "jei": ">=29.0.0"
+    },
+    "custom": {
+        "wover": {
+            "updater_icon": "icon_updater.png",
+            "downloads": {
+                "modrinth": "https://modrinth.com/mod/bclib",
+                "curseforge": "https://legacy.curseforge.com/minecraft/mc-mods/bclib"
+            }
+        },
+        "modmenu": {
+            "links": {
+                "title.link.bclib.discord": "https://discord.gg/kYuATbYbKW"
+            }
+        }
+    }
+}

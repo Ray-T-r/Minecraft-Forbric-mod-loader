@@ -181,10 +181,13 @@ check "construct phase posted"        "posted FML construct to [1-9][0-9]* NeoFo
 # AFTER its user, so alphabetical order gets both of them wrong.
 check "construction is in dependency order" \
   "Forbric/Order\] construction order is dependency order" "$LOG"
-# The Fabric half of the same fix: registration order is the order entry points are handed back in, so it is the
-# order onInitialize runs in.
-check "Fabric mods initialise in dependency order" \
-  "Forbric/Order\] [1-9][0-9]* Fabric mod\(s\) initialise in dependency order" "$LOG"
+# Fabric mods are NOT in dependency order, because Fabric Loader has none: it sorts its resolved set by mod id and
+# hands every entrypoint key back in that order, and Fabric mods are written against it. Pets Mod's JOIN listener
+# throws in every singleplayer world and fabric-api's invoker does not catch per listener, so each listener
+# registered after it is skipped. Natively that spares bclib and OptiGUI, whose ids sort first. In dependency order
+# both came after Pets Mod and lost their join handlers. The line is written only once the reorder has happened.
+check "Fabric mods initialise in Fabric Loader's order (by mod id)" \
+  "Forbric/Order\] [1-9][0-9]* Fabric mod\(s\) initialise in Fabric Loader.s order, by mod id" "$LOG"
 for PAIR in "balm:cookingforblockheads" "creativecore:ambientsounds"; do
   LIB="${PAIR%%:*}"; USER_MOD="${PAIR##*:}"
   LIB_AT=$(grep -nE "constructed @Mod $LIB " "$LOG" | head -1 | cut -d: -f1)

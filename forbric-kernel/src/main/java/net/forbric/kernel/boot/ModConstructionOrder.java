@@ -41,8 +41,20 @@ import net.forbric.kernel.util.ForbricLog;
  * and called that library's API before the library had initialised. What comes back is an error inside the
  * library, attributed to the library, on a line that has nothing to do with the real cause.
  *
- * <p>Both real loaders sort by dependency: NeoForge and Forge topologically sort by requirements plus the
- * explicit {@code ordering} key, and Fabric resolves by id and then walks the dependency graph.
+ * <h2>What the real loaders do</h2>
+ *
+ * <p>NeoForge's and MinecraftForge's {@code ModSorter} sort topologically, but the only edges a mod's own metadata
+ * draws there come from the explicit {@code ordering} key ({@code BEFORE}/{@code AFTER}). A requirement with no
+ * ordering draws none. Ties go to mod-file order. This class goes further than both: a mod also comes after everything it requires, so it
+ * cannot run before a library it needs.
+ *
+ * <p>Fabric Loader does not sort by dependency at all. 0.19.5's {@code ModResolver.findCompatibleSet} returns the
+ * resolved set sorted by mod id, and mods, entrypoints and mixin configs all follow that list. Dependencies only
+ * decide which mods are selected. Fabric mods are written against that order, and at least one set of them depends
+ * on it (see {@link FabricLoadOrder}), so this class no longer orders Fabric mods' initialisation. It still orders
+ * Fabric mods in two places. It decides which of two same-id Fabric jars is registered, and it gives the
+ * Forge-family seeders the Fabric mods in this order. Under {@code -Dforbric.fabricOrder=off}, Fabric mods also
+ * initialise in it again.
  *
  * <h2>The rules, and why ties are broken the way they are</h2>
  *
@@ -60,6 +72,7 @@ import net.forbric.kernel.util.ForbricLog;
  * those mods that their authors need to hear.
  *
  * <p>Escape hatch: {@code -Dforbric.modOrder=name} restores the file-name order for a pack that somehow needs it.
+ * For the order Fabric mods initialise in, it matters only together with {@code -Dforbric.fabricOrder=off}.
  */
 public final class ModConstructionOrder {
 	static final String SWITCH = "forbric.modOrder";
