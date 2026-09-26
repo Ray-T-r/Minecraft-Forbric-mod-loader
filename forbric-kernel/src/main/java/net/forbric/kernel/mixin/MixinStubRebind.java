@@ -275,7 +275,7 @@ public final class MixinStubRebind {
 				if (plan == null || plan.shares().isEmpty()) continue;
 				for (MethodNode other : plans.keySet()) {
 					if (other == entry.getKey() || java.util.Collections.disjoint(shareKeys(other), plan.shares())) continue;
-					if (!boundTo(other, target, plan.stub())) continue;   // a key is shared within one target method only
+					if (!mayBind(other, target, plan.stub())) continue;   // a key is shared within one target method only
 					Plan theirs = plans.get(other);
 					if (theirs == null || theirs.delegation().delegate() != plan.delegation().delegate()) {
 						entry.setValue(null);
@@ -298,11 +298,23 @@ public final class MixinStubRebind {
 		return keys;
 	}
 
-	/** Whether any of {@code handler}'s selectors binds {@code method}. */
-	private static boolean boundTo(MethodNode handler, ClassNode target, MethodNode method) {
-		AnnotationNode injector = MixinFit.injectorOf(handler);
-		if (injector == null) return false;
-		for (String selector : MixinFit.stringList(MixinFit.value(injector, "method"))) if (bound(target, selector) == method) return true;
+	/**
+	 * Whether {@code handler} may be injected into {@code method}: any selector of any annotation on it that names
+	 * target methods — not only the injectors MixinFit reads; MixinExtras' {@code @ModifyReceiver} or a library's own
+	 * injector shares values too — binds it, or cannot be read (a wildcard, a regex, a {@code @Desc} target). Left on
+	 * the stub, such a sharer would keep a value of its own while the rest of its group moved.
+	 */
+	private static boolean mayBind(MethodNode handler, ClassNode target, MethodNode method) {
+		List<AnnotationNode> annotations = new ArrayList<>();
+		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
+		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
+		for (AnnotationNode annotation : annotations) {
+			Object selectors = MixinFit.value(annotation, "method");
+			if (selectors == null && MixinFit.value(annotation, "target") != null) return true;   // @Desc: not read here
+			for (String selector : MixinFit.stringList(selectors)) {
+				if (plainSelector(selector) == null || bound(target, selector) == method) return true;
+			}
+		}
 		return false;
 	}
 

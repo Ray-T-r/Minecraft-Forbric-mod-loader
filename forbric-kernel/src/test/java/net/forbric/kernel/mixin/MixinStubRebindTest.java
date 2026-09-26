@@ -348,6 +348,30 @@ class MixinStubRebindTest {
 	}
 
 	/**
+	 * A sharer whose injector MixinFit does not read (MixinExtras' @ModifyReceiver, a library's own) or whose selector it
+	 * cannot resolve (a wildcard, a @Desc) is still injected into the stub, and would keep a flag of its own there: its
+	 * group stays with it.
+	 */
+	@Test void aShareGroupWithASharerThisCannotReadStays() throws Exception {
+		ClassNode language = merged(LANGUAGE);
+		for (String why : List.of("an injector MixinFit does not know", "a wildcard selector", "a @Desc target")) {
+			ClassNode mixin = owoLanguageMixin();
+			MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
+			AnnotationNode injector = MixinFit.injectorOf(mixin.methods.stream().filter(m -> m.name.equals("doSkip")).findFirst().orElseThrow());
+			int method = injector.values.indexOf("method");
+			if (why.startsWith("an injector")) injector.desc = "Lcom/llamalad7/mixinextras/injector/ModifyReceiver;";
+			else if (why.startsWith("a wildcard")) injector.values.set(method + 1, new java.util.ArrayList<>(List.of("loadFromJson*")));
+			else injector.values.subList(method, method + 2).clear();
+			if (why.startsWith("a @Desc")) injector.values.addAll(List.of("target", new java.util.ArrayList<>(List.of(
+					new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Desc;")))));
+			assertEquals(0, MixinStubRebind.adapt(mixin, name -> language), why);
+			for (String hook : List.of("deNestNestedKeys", "handleRichTranslationsAndErrors")) {
+				assertEquals(List.of(LOAD_FROM_JSON_STUB), selectors(mixin, hook), why + ": " + hook);
+			}
+		}
+	}
+
+	/**
 	 * fabric-renderer-api's chunk-meshing takeover: an @Inject sets the FRAPI renderer up through @Share, a @Redirect hands
 	 * it every block. On NeoForge's compile overload the redirected call is NeoForge's own per-block renderer, so the
 	 * group stays on the stub — switching chunk meshing is not this rule's to decide.
