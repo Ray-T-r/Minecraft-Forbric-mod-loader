@@ -71,13 +71,13 @@ public final class MixinRetarget {
 	public static final String PROPERTY = "forbric.mixinRetarget";
 	/** {@code -Dforbric.mixinRetarget.sugarBoundary=off}: any parameter annotation ends an {@code @At}-driven handler's call part. */
 	static final String SUGAR_BOUNDARY_PROPERTY = "forbric.mixinRetarget.sugarBoundary";
-	/** {@code -Dforbric.mixinRetargetSplit=off}: R3 refuses two fits again, dispatcher or not (R4 off). */
-	static final String SPLIT_PROPERTY = "forbric.mixinRetargetSplit";
+	/** {@code -Dforbric.mixinRetarget.split=off}: R3 refuses two fits again, dispatcher or not (R4 off). */
+	static final String SPLIT_PROPERTY = "forbric.mixinRetarget.split";
 	/**
-	 * {@code -Dforbric.mixinExtractedHelper=off}: no {@code @Inject} point follows a call into a carrier's helper along a
-	 * census row (R5); the reviewed rows have {@code -Dforbric.mixinAbsorbedCall=off}.
+	 * {@code -Dforbric.mixinRetarget.extractedHelper=off}: no {@code @Inject} point follows a call into a carrier's
+	 * helper along a census row (R5); the reviewed rows have {@code -Dforbric.mixinAbsorbedCall=off}.
 	 */
-	static final String EXTRACTED_HELPER_PROPERTY = "forbric.mixinExtractedHelper";
+	static final String EXTRACTED_HELPER_PROPERTY = "forbric.mixinRetarget.extractedHelper";
 
 	static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	static final String LOCAL_SUGAR = "Lcom/llamalad7/mixinextras/sugar/Local;";
@@ -324,7 +324,7 @@ public final class MixinRetarget {
 	 * there. The handler must not depend on anything but the call and the arguments the dispatcher hands on in
 	 * place: an {@code @At}-driven kind, or an {@code @Inject} that cannot cancel (cancelling in the helper would skip
 	 * only that piece where vanilla skipped the rest of the method) and captures no locals; no sugar, no slice, no
-	 * {@code @Group}, and no point but calls and field accesses. {@code -Dforbric.mixinRetargetSplit=off} refuses two
+	 * {@code @Group}, and no point but calls and field accesses. {@code -Dforbric.mixinRetarget.split=off} refuses two
 	 * fits as before.
 	 */
 	private static Rewrite splitHelper(String mixinName, MethodNode handler, AnnotationNode injector, String selector,
@@ -372,8 +372,8 @@ public final class MixinRetarget {
 	 * on the live bytes ({@link CarrierHelpers#reached}): BEFORE the call needs it at the helper's head, AFTER needs it at
 	 * the tail, and no other shift moves. Only an {@code @Inject} that captures no locals and has no sugar, slice or
 	 * {@code @Group}; other kinds' handlers describe the call, and moving them would need the helper to have no other
-	 * caller, which a protected override point cannot promise. {@code -Dforbric.mixinExtractedHelper=off} leaves the
-	 * point as compiled. An AFTER point with no census row may still follow a reviewed row of
+	 * caller, which a protected override point cannot promise. {@code -Dforbric.mixinRetarget.extractedHelper=off}
+	 * leaves the point as compiled. An AFTER point with no census row may still follow a reviewed row of
 	 * {@link MergedBaseAbsorbedCalls} ({@link #absorbedCall}).
 	 */
 	private static List<Rewrite> movedCalls(String mixinName, MethodNode handler, AnnotationNode injector,
