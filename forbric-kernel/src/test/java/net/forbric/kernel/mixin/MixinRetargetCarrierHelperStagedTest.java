@@ -26,7 +26,7 @@ class MixinRetargetCarrierHelperStagedTest {
 			"merged-base", "patched-mc-merged-26.2.jar").normalize();
 	private static final Path NEO_RUNTIME = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"), "run",
 			"neoforge-runtime", "neoforge-runtime.jar").normalize();
-	private static final Path SWEEP =Path.of(System.getProperty("user.dir"), "build", "compat-inputs", "sweep90", "mods").normalize();
+	private static final Path SWEEP = Path.of(System.getProperty("user.dir"), "build", "compat-inputs", "sweep90", "mods").normalize();
 	private static final String G = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;)V";
 
 	@AfterEach

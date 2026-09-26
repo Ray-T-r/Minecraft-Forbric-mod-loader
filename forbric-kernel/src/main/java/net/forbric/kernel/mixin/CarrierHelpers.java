@@ -295,16 +295,6 @@ public final class CarrierHelpers {
 		return -1;
 	}
 
-	/** How many times {@code method} calls {@code owner}'s {@code helper} ({@code name + descriptor}). */
-	static int callsTo(MethodNode method, String owner, String helper) {
-		if (method.instructions == null) return 0;
-		int count = 0;
-		for (AbstractInsnNode insn : method.instructions) {
-			if (insn instanceof MethodInsnNode call && call.owner.equals(owner) && helper.equals(call.name + call.desc)) count++;
-		}
-		return count;
-	}
-
 	static MethodNode declared(ClassNode owner, String name, String desc) {
 		if (owner == null || owner.methods == null) return null;
 		for (MethodNode m : owner.methods) if (m.name.equals(name) && m.desc.equals(desc)) return m;
