@@ -54,7 +54,8 @@ import net.forbric.kernel.util.ForbricLog;
  * because the stack now reaches three. The hook names only {@code String} and is parent-loaded, so the new call
  * cannot fail to link on a resource-reload path.
  *
- * <p>{@code -Dforbric.registryDirectoryOwner=off} leaves {@code Registries} exactly as merged.
+ * <p>{@code -Dforbric.registryDirectoryOwner=off} leaves {@code Registries} exactly as merged; {@code =force} keeps
+ * the edit but stops the hook checking that fabric-registry-sync's modifier is in {@code Registries} first.
  */
 public final class RegistryDirectoryOwnerInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.registryDirectoryOwner";

@@ -17,14 +17,18 @@
 package net.forbric.kernel.transform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -46,6 +50,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -57,6 +62,7 @@ import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModPresence;
 import net.forbric.kernel.boot.KernelRegistryDirectories;
+import net.forbric.kernel.mixin.MergedBaseMixinCompat;
 
 /**
  * WorldWeaver's world presets and biome data are read from the directory WorldWeaver ships them in, as on native
@@ -90,6 +96,8 @@ class RegistryDirectoryOwnerInjectorTest {
 	private static final String FABRIC_MIXIN = "net/fabricmc/fabric/mixin/registry/sync/RegistriesMixin";
 	private static final String WOVER_MIXIN = "de/ambertation/wover/core/mixin/registry/RegistryDataLoaderMixinEarly";
 	private static final String WOVER_BUILDER = "de/ambertation/wover/core/impl/registry/DatapackRegistryBuilderImpl";
+	private static final String MIXIN_MERGED = "Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;";
+	private static final String NOT_IN_REGISTRIES = "RegistriesMixin is not in Registries";
 	private static final Set<String> DIR_METHODS = Set.of("registryDirPath", "elementsDirPath", "tagsDirPath",
 			"componentsDirPath");
 
@@ -102,6 +110,9 @@ class RegistryDirectoryOwnerInjectorTest {
 		System.clearProperty(RegistryDirectoryOwnerInjector.PROPERTY);
 		ModPresence.publishForgeFamily(List.of());
 		ModPresence.publishFabric(List.of());
+		// The arms run fabric-registry-sync's modifier beside Registries rather than merged into it, so the hook is
+		// told it is there; the tests of that question below build a Registries that carries it, or does not.
+		KernelRegistryDirectories.resetForTests(Boolean.TRUE);
 	}
 
 	@Test
@@ -224,6 +235,66 @@ class RegistryDirectoryOwnerInjectorTest {
 				"before the Fabric mods are published, every registry keeps the merged answer");
 	}
 
+	@Test
+	void aRegistriesThatTookFabricsModifierHandsFabricRegistriesVanillasDirectory() throws Exception {
+		assumeAll(VANILLA, MERGED_BASE, NEO_RUNTIME, FABRIC_API, WORLDWEAVER);
+		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "wover")));
+		Arm nativeFabric = arm(registries(VANILLA, false));
+		KernelRegistryDirectories.resetForTests(null);
+		Arm after = arm(withFabricsModifier(registries(MERGED_BASE, true)));
+
+		String log = capture(() -> {
+			for (String registry : List.of(PRESET_INFO, BIOME_DATA)) {
+				assertEquals(nativeFabric.elements("wover", registry), after.elements("wover", registry), registry);
+			}
+		});
+		assertFalse(log.contains(NOT_IN_REGISTRIES), log);
+	}
+
+	@Test
+	void withoutFabricsModifierInRegistriesEveryRegistryKeepsTheMergedDirectory() throws Exception {
+		assumeAll(MERGED_BASE, NEO_RUNTIME, FABRIC_API, WORLDWEAVER);
+		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "wover"), mod(Ecosystem.FABRIC, "owo")));
+		Arm before = arm(registries(MERGED_BASE, false));
+		KernelRegistryDirectories.resetForTests(null);
+		// Mixin never merged fabric-registry-sync's mixin into this one: pinned, dropped as unfit, or not installed.
+		Arm after = arm(registries(MERGED_BASE, true));
+
+		String log = capture(() -> {
+			for (String registry : List.of(PRESET_INFO, BIOME_DATA)) {
+				assertEquals(before.elements("wover", registry), after.elements("wover", registry), registry);
+			}
+			// vanilla's path here would have nothing to put the namespace back
+			assertEquals("owo/owo_things", after.body("elementsDirPath", "owo", "owo_things"));
+			assertEquals("tags/owo/owo_things", after.body("tagsDirPath", "owo", "owo_things"));
+		});
+		assertEquals(1, log.split(NOT_IN_REGISTRIES, -1).length - 1, "one WARN, however many registries ask: " + log);
+	}
+
+	@Test
+	void forceHandsFabricRegistriesVanillasDirectoryWithoutAsking() throws Exception {
+		assumeAll(VANILLA, MERGED_BASE, NEO_RUNTIME, FABRIC_API, WORLDWEAVER);
+		System.setProperty(RegistryDirectoryOwnerInjector.PROPERTY, "force");
+		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "wover")));
+		Arm nativeFabric = arm(registries(VANILLA, false));
+		KernelRegistryDirectories.resetForTests(null);
+		Arm after = arm(registries(MERGED_BASE, true));
+
+		for (String registry : List.of(PRESET_INFO, BIOME_DATA)) {
+			assertEquals(nativeFabric.elements("wover", registry), after.elements("wover", registry), registry);
+		}
+	}
+
+	@Test
+	void fabricsModifierIsNotPinnedOffTheMergedBase() {
+		// Pinned, it would not crash anything: the hook finds it missing from Registries, every registry keeps the
+		// merged directory, and WorldWeaver's world presets and biome data load empty again. That cost is the pin's.
+		String mixin = "fabric-registry-sync-v0.mixins.json:RegistriesMixin";
+		assertFalse(MergedBaseMixinCompat.SUPPRESSED_MIXINS.contains(mixin), mixin);
+		assertFalse(MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED.contains(mixin), mixin);
+		assertFalse(MergedBaseMixinCompat.DISABLED_CONFIGS.contains("fabric-registry-sync-v0.mixins.json"));
+	}
+
 	// --- one arm: Registries' directory methods, plus the two mixins as Mixin lays them out on native Fabric ---
 
 	private record Arm(Class<?> registries, Class<?> identifier, Class<?> resourceKey, Method fabricElements,
@@ -303,6 +374,27 @@ class RegistryDirectoryOwnerInjectorTest {
 			bytes = out;
 		}
 		return only(node(bytes), DIR_METHODS);
+	}
+
+	/**
+	 * {@code registries} as Mixin leaves it once fabric-registry-sync's mixin applied: the mixin's two handlers
+	 * merged in, each marked the way Mixin marks every method it merges. The arm still calls fabric's handlers
+	 * itself, where Mixin's injection would; the mark is what the hook reads.
+	 */
+	private static byte[] withFabricsModifier(byte[] registries) throws IOException {
+		ClassNode target = node(registries);
+		ClassNode fabric = node(only(node(nestedClassBytes(FABRIC_API, "fabric-registry-sync-v0-", FABRIC_MIXIN)),
+				Set.of("prependDirectoryWithNamespace", "prependTagDirectoryWithNamespace")));
+		for (MethodNode handler : fabric.methods) {
+			AnnotationNode merged = new AnnotationNode(MIXIN_MERGED);
+			merged.values = new ArrayList<>(List.of("mixin", FABRIC_MIXIN.replace('/', '.'), "priority", 1000,
+					"sessionId", "test"));
+			handler.visibleAnnotations = new ArrayList<>(List.of(merged));
+			target.methods.add(handler);
+		}
+		ClassWriter writer = new ClassWriter(0);
+		target.accept(writer);
+		return writer.toByteArray();
 	}
 
 	/**
@@ -449,6 +541,27 @@ class RegistryDirectoryOwnerInjectorTest {
 	}
 
 	// --- plumbing ---
+
+	private interface Body {
+		void run() throws Exception;
+	}
+
+	/** What {@code body} logged; without log4j on the test classpath ForbricLog writes to the standard streams. */
+	private static String capture(Body body) throws Exception {
+		PrintStream out = System.out;
+		PrintStream err = System.err;
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		PrintStream sink = new PrintStream(buffer, true, StandardCharsets.UTF_8);
+		System.setOut(sink);
+		System.setErr(sink);
+		try {
+			body.run();
+		} finally {
+			System.setOut(out);
+			System.setErr(err);
+		}
+		return buffer.toString(StandardCharsets.UTF_8);
+	}
 
 	private static byte[] transform(byte[] bytes) {
 		return new RegistryDirectoryOwnerInjector().transform(RegistryDirectoryOwnerInjector.TARGET, bytes, null);
