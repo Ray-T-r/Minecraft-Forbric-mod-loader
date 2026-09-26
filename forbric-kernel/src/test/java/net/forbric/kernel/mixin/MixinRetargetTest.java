@@ -50,6 +50,7 @@ class MixinRetargetTest {
 	@AfterEach
 	void reset() {
 		System.clearProperty(MixinRetarget.PROPERTY);
+		System.clearProperty(MixinRetarget.SUGAR_BOUNDARY_PROPERTY);
 		MixinRetarget.reset();
 	}
 
@@ -100,6 +101,11 @@ class MixinRetargetTest {
 	 * descriptor; {@code localParam} marks the parameter index to annotate {@code @Local}, or -1.
 	 */
 	private static byte[] mixin(String kind, String selector, String handlerDesc, int localParam) {
+		return mixin(kind, selector, handlerDesc, localParam, MixinRetarget.LOCAL_SUGAR, true);
+	}
+
+	/** As above, with {@code annotation} on parameter {@code param}, runtime-visible or not. */
+	private static byte[] mixin(String kind, String selector, String handlerDesc, int param, String annotation, boolean visible) {
 		ClassWriter cw = new ClassWriter(0);
 		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "test/ContainerMixin", null, "java/lang/Object", null);
 		AnnotationVisitor m = cw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
@@ -117,7 +123,7 @@ class MixinRetargetTest {
 		at.visit("target", AT_SET_CHANGED);
 		at.visitEnd();
 		inj.visitEnd();
-		if (localParam >= 0) h.visitParameterAnnotation(localParam, MixinRetarget.LOCAL_SUGAR, true).visitEnd();
+		if (param >= 0) h.visitParameterAnnotation(param, annotation, visible).visitEnd();
 		h.visitCode();
 		h.visitInsn(Opcodes.RETURN);
 		h.visitMaxs(0, 8);
@@ -193,6 +199,26 @@ class MixinRetargetTest {
 		// @Local boolean IS among the delegate's parameters.
 		byte[] ok = mixin(WRAP, STUB, "(L" + TARGET + ";" + OPERATION + "Z)V", 2);
 		assertEquals(1, MixinRetarget.plan(MixinFit.parse(ok), resolver(target(false))).rewrites().size());
+	}
+
+	/**
+	 * Only MixinExtras sugar ends a {@code @Redirect}'s call part. A {@code @Coerce} receiver is the call's own, and the
+	 * invisible {@code @NotNull} Kotlin puts on every handler parameter is nothing at all; read as the boundary, either
+	 * made the receiver look like more than the handler has, and R1 left the injector on the stub.
+	 */
+	@Test
+	void aParameterAnnotationThatIsNotSugarDoesNotEndTheCallsPart() {
+		String desc = "(L" + TARGET + ";)V";
+		for (String annotation : List.of("Lorg/spongepowered/asm/mixin/injection/Coerce;", "Lorg/jetbrains/annotations/NotNull;")) {
+			byte[] mixinBytes = mixin(REDIRECT, STUB, desc, 0, annotation, annotation.contains("Coerce"));
+			MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixinBytes), resolver(target(false)));
+			assertEquals(1, plan.rewrites().size(), annotation + ": " + plan.describe());
+			assertEquals(DELEGATE, plan.rewrites().get(0).to());
+		}
+		System.setProperty(MixinRetarget.SUGAR_BOUNDARY_PROPERTY, "off");
+		byte[] coerced = mixin(REDIRECT, STUB, desc, 0, "Lorg/spongepowered/asm/mixin/injection/Coerce;", true);
+		assertTrue(MixinRetarget.plan(MixinFit.parse(coerced), resolver(target(false))).isEmpty(),
+				"switched off, any annotation ends the call's part again");
 	}
 
 	@Test
