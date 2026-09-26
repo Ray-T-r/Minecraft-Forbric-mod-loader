@@ -72,6 +72,14 @@ try:
     elif operation == 'put':
         source, target = arguments
         expected = fingerprint(source)
+        # An artifact that is already there, byte for byte, is not sent again: the merged base alone is 35 MB,
+        # and through a throttling relay that is the difference between a sweep and a stalled transport.
+        try:
+            if remote_fingerprint(target) == expected:
+                print('unchanged: ' + target)
+                sys.exit(0)
+        except RuntimeError:
+            pass
         output = invoke('WINFILE', ['put', source, target], attempts=3, per_attempt=60)
         if remote_fingerprint(target) != expected:
             raise RuntimeError('upload fingerprint mismatch: ' + target)

@@ -418,6 +418,10 @@ def main():
     parser.add_argument('--output', type=Path)
     parser.add_argument('--timeout', type=int, default=2400)
     parser.add_argument('--dry-run', action='store_true')
+    # The pack crosses the transport as one zip by default. Through a relayed tunnel that throttles after tens of
+    # megabytes, every later remote call then stalls for minutes; with this, only the manifest crosses and the
+    # Windows side fetches each jar from its own URL, verified against the manifest's SHA-1 (win/fetch-mods.py).
+    parser.add_argument('--remote-mods', action='store_true')
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--bisect', type=Path, metavar='SUBSET_TXT')
     modes.add_argument('--quarantine', metavar='JAR')
@@ -473,6 +477,8 @@ def main():
         return finish_run(args, output, remote_tools, 'reused world', code, started, errors)
     if args.mods is None:
         parser.error('--mods is required for a new run')
+    if args.remote_mods and not args.manifest:
+        parser.error('--remote-mods fetches from the manifest, so --manifest is required')
     files = mod_files(args.mods)
     if args.dry_run and not args.version_json:
         parser.error('--dry-run needs --version-json so all four artifact destinations can be verified')
@@ -512,9 +518,10 @@ def main():
         sync += ['--artifact', coordinate + '=' + str(local)]
     subprocess.run(sync, check=True)
     bundle = output / 'mods.zip'
-    with zipfile.ZipFile(bundle, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for local, name in files:
-            archive.write(local, 'mods/' + name)
+    if not args.remote_mods:
+        with zipfile.ZipFile(bundle, 'w', zipfile.ZIP_DEFLATED) as archive:
+            for local, name in files:
+                archive.write(local, 'mods/' + name)
     server, client, errors = -1, -1, []
     try:
         remote(stop_command(args.instance))
@@ -526,9 +533,17 @@ def main():
         put(profile_path, ntpath.join(args.mc, 'versions', args.version, args.version + '.json'))
         remote(clean_command(args.instance))
         tools_dir = stage_tools(args, output)
-        remote_bundle = ntpath.join(remote_tools, 'mods.zip')
-        put(bundle, remote_bundle)
-        remote(f'Expand-Archive -LiteralPath {ps(remote_bundle)} -DestinationPath {ps(args.instance)} -Force; '
+        if args.remote_mods:
+            remote_manifest = ntpath.join(remote_tools, 'mods-manifest.json')
+            put(args.manifest, remote_manifest)
+            if run_job(args, 'fetch', tools_dir, output, 'fetch-mods.py', ['--manifest', remote_manifest]) != 0:
+                raise RuntimeError('the Windows side could not fetch and verify every jar of the manifest; see fetch.log')
+            unpack = ''
+        else:
+            remote_bundle = ntpath.join(remote_tools, 'mods.zip')
+            put(bundle, remote_bundle)
+            unpack = f'Expand-Archive -LiteralPath {ps(remote_bundle)} -DestinationPath {ps(args.instance)} -Force; '
+        remote(unpack +
                f'if (Test-Path -LiteralPath {ps(ntpath.join(args.instance, "mods-all"))}) {{ '
                f'Remove-Item -LiteralPath {ps(ntpath.join(args.instance, "mods-all"))} -Recurse -Force }}; '
                f'Copy-Item -LiteralPath {ps(ntpath.join(args.instance, "mods"))} -Destination {ps(ntpath.join(args.instance, "mods-all"))} -Recurse')

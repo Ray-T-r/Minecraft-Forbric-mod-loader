@@ -37,6 +37,16 @@ class CompatTransportTest {
     }
 
     @Test
+    void anArtifactAlreadyThereByteForByteIsNotSentAgain() throws Exception {
+        // Through a throttling relay the 35 MB merged base alone stalled every later remote call for minutes.
+        Path source = Files.writeString(temp.resolve("artifact.jar"), "same bytes");
+        Path remote = Files.writeString(temp.resolve("remote artifact.jar"), "same bytes");
+        var result = transport(Map.of("FAKE_FAIL_PUT", "1"), "remote_put", source.toString(), remote.toString());
+        assertEquals(0, result.exit(), result.output());
+        assertTrue(result.output().contains("unchanged: "), result.output());
+    }
+
+    @Test
     void aMissingOrCorruptDownloadCannotReuseAStaleLocalFile() throws Exception {
         Path remote = Files.writeString(temp.resolve("remote.bin"), "correct bytes");
         Path target = Files.writeString(temp.resolve("target.bin"), "old local bytes");
@@ -75,6 +85,7 @@ class CompatTransportTest {
                     print(sentinel)
                 elif operation == 'file':
                     action, source, destination = args
+                    if os.environ.get('FAKE_FAIL_' + action.upper()): print('transport should not have been used'); sys.exit(1)
                     if os.environ.get('FAKE_DROP_' + action.upper()): sys.exit(0)
                     if action == 'get' and os.environ.get('FAKE_CORRUPT_GET'):
                         pathlib.Path(destination).write_text('corrupt')
