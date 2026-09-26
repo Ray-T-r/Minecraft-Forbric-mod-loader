@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
@@ -503,7 +504,7 @@ public final class PassiveSeeder {
 				fileById.putIfAbsent(mod.getId(), fileInfo);
 			}
 			fillModFileInfo(gameLoader, fileInfoCls, fileInfo, Path.of(jar.getKey()), jar.getValue().get(0),
-					List.copyOf(ownMods));
+					List.copyOf(ownMods), indexedForNeoForge(jar.getValue()));
 			fileInfos.add(fileInfo);
 		}
 
@@ -667,7 +668,7 @@ public final class PassiveSeeder {
 			Object scanData = FORGE_SCAN_CACHE.get(jar);
 			if (scanData == null) scanData = ModFileScanner.scanForge(jar, modFileCls.getClassLoader());
 			if (scanData == null) {
-				scanData = Class.forName("net.minecraftforge.forgespi.language.ModFileScanData", true,
+				scanData = Class.forName(ForeignType.MOD_FILE_SCAN_DATA.binary(Ecosystem.FORGE), true,
 						modFileCls.getClassLoader()).getConstructor().newInstance();
 			}
 			setOptionalInstanceField(modFileCls, "fileModFileScanData", modFile, scanData);
@@ -948,7 +949,7 @@ public final class PassiveSeeder {
 	 * called through it.
 	 */
 	private static void fillModFileInfo(ClassLoader gameLoader, Class<?> fileInfoCls, Object fileInfo, Path jar,
-			DiscoveredMod first, List<Object> ownMods) throws Exception {
+			DiscoveredMod first, List<Object> ownMods, boolean indexed) throws Exception {
 		setInstanceField(fileInfoCls, "config", fileInfo, emptyConfigurable(gameLoader, Ecosystem.NEOFORGE));
 		setInstanceField(fileInfoCls, "mods", fileInfo, ownMods);
 		setInstanceField(fileInfoCls, "languageSpecs", fileInfo, List.of());
@@ -958,7 +959,25 @@ public final class PassiveSeeder {
 		// String (it is written into it unguarded) instead of a null.
 		setInstanceField(fileInfoCls, "license", fileInfo, "");
 		setInstanceField(fileInfoCls, "modFile", fileInfo,
-				buildModFile(gameLoader, fileInfo, jar, first.getId(), version(first)));
+				buildModFile(gameLoader, fileInfo, jar, first.getId(), version(first), indexed));
+	}
+
+	/**
+	 * Whether a seeded file is given its jar's REAL annotation index: only when the jar is here as a NeoForge mod.
+	 *
+	 * <p>The other two kinds of entry get an empty index, and that is the truthful answer rather than a shortcut.
+	 * Natively neither is in a NeoForge {@code LoadingModList} at all — the Fabric ones are listed for presence
+	 * only, and a MinecraftForge jar belongs to the other FML. What an index would add is a mod walking every
+	 * file's annotations and loading whatever it finds out of a jar the arbiter handed to another ecosystem: the
+	 * NeoForge half of a universal jar that Fabric is already running, or a MinecraftForge {@code @JeiPlugin}
+	 * handed to the NeoForge build of JEI. It is also exactly what {@code KernelModFile} answers for a mod with no
+	 * jar behind it.
+	 */
+	static boolean indexedForNeoForge(List<DiscoveredMod> modsOfJar) {
+		for (DiscoveredMod mod : modsOfJar) {
+			if (mod.getEcosystem() == Ecosystem.NEOFORGE) return true;
+		}
+		return false;
 	}
 
 	/**
@@ -977,9 +996,15 @@ public final class PassiveSeeder {
 	 * null {@code modFile} each of those turns a real error into an NPE that MASKS it.
 	 *
 	 * <p>Best-effort: on any failure the caller's {@code modFile} stays null, which is still strictly better than
-	 * the empty list this whole method replaces.
+	 * the empty list this whole method replaces — but it is said at WARN, because a null file is not quiet for
+	 * long: a mod walking the list calls {@code getFile().getScanResult()} on every entry, and RollingGate's
+	 * constructor would NPE on this one.
+	 *
+	 * @param indexed whether this file answers {@code getScanResult()} with its jar's real index (see
+	 *                {@link #indexedForNeoForge}) rather than an empty one
 	 */
-	private static Object buildModFile(ClassLoader gameLoader, Object fileInfo, Path jar, String id, String version) {
+	private static Object buildModFile(ClassLoader gameLoader, Object fileInfo, Path jar, String id, String version,
+			boolean indexed) {
 		try {
 			Class<?> modFileCls = Class.forName(ForeignType.MOD_FILE.binary(Ecosystem.NEOFORGE), false, gameLoader);
 			Class<?> contentsCls = Class.forName("net.neoforged.fml.jarcontents.JarContents", false, gameLoader);
@@ -1003,12 +1028,76 @@ public final class PassiveSeeder {
 				ForbricLog.debug("[Forbric/Seed] no ModFileDiscoveryAttributes.DEFAULT (%s) — leaving it null",
 						String.valueOf(optional));
 			}
+			seedScanResult(modFileCls, modFile, gameLoader, jar, indexed);
 			return modFile;
 		} catch (Throwable t) {
-			ForbricLog.debug("[Forbric/Seed] could not build a synthetic ModFile for '%s' (%s) — the ModFileInfo's "
-					+ "file stays null", id, String.valueOf(t));
+			ForbricLog.warn("[Forbric/Seed] could not build a synthetic ModFile for '%s' (%s) — the ModFileInfo's "
+					+ "file stays null, and a mod that walks FMLLoader.getLoadingModList().getModFiles() calling "
+					+ "getFile() on each entry will NPE on this one", id, String.valueOf(t));
 			return null;
 		}
+	}
+
+	/**
+	 * Gives a seeded {@code ModFile} a scan result, so {@code getScanResult()} answers instead of throwing FML's
+	 * "Scanning of this mod file has not started yet."
+	 *
+	 * <p>FML fills {@code futureScanResult} from {@code startScan}, which is its background scan at discovery; the
+	 * kernel runs no FML discovery, so on a seeded file the field was null forever and the getter threw every
+	 * time. That was invisible until a mod asked. RollingGate's constructor walks
+	 * {@code LoadingModList.getModFiles()} and calls {@code getFile().getScanResult().getAnnotations()} on every
+	 * entry to find its rule containers — so it threw out of its own constructor, and every RollingGate rule and
+	 * every Server++ rule (found by the same walk) was simply missing from the server.
+	 *
+	 * <p>LAZY, on purpose: a {@link LazyScanFuture} does nothing until it is read. Most instances never ask, and
+	 * an eager index would be an ASM pass over every NeoForge jar on every boot, run from the pre-Mixin window
+	 * ({@code KernelBoot} seeds the FML identity before Mixin starts), which should load no more game-side
+	 * classes than it has to. The jar's index comes from {@link ModFileScanner#scanShared}, so this file and the
+	 * {@code KernelModFile} that {@code ModList} holds for the same jar answer with one object, as a single native
+	 * {@code ModFile} would.
+	 *
+	 * <p>It never throws out of {@code getScanResult()}: an index that cannot be built reads as an empty one and
+	 * says so once for the jar — a mod walking the list must not die on a neighbour's unreadable file.
+	 *
+	 * <p>{@code -Dforbric.seededScanData=off} leaves the field null, which is the behaviour before this.
+	 */
+	private static void seedScanResult(Class<?> modFileCls, Object modFile, ClassLoader gameLoader, Path jar,
+			boolean indexed) {
+		if (!ModFileScanner.seededIndexEnabled()) return;
+		try {
+			setInstanceField(modFileCls, "futureScanResult", modFile, seededScan(gameLoader, jar, indexed));
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Seed] could not give the seeded NeoForge ModFile for %s a scan result (%s) — "
+					+ "its getScanResult() throws \"Scanning of this mod file has not started yet.\", which kills "
+					+ "any mod that walks the LoadingModList's scan data from its constructor (RollingGate)",
+					jar.getFileName(), String.valueOf(unwrap(t)));
+		}
+	}
+
+	/** The lazy future {@link #seedScanResult} installs: the jar's shared index, or an empty one. */
+	private static CompletableFuture<Object> seededScan(ClassLoader gameLoader, Path jar, boolean indexed) {
+		return new LazyScanFuture(() -> {
+			if (indexed) {
+				Object real = null;
+				String why = "the scan produced no index";
+				try {
+					real = ModFileScanner.scanShared(jar, gameLoader);
+				} catch (Throwable t) {
+					why = String.valueOf(t);
+				}
+				if (real != null) return real;
+				ForbricLog.warn("[Forbric/Seed] could not index %s for the seeded NeoForge LoadingModList (%s) — "
+						+ "it answers getScanResult() with an EMPTY index, so a mod that finds its own members by "
+						+ "walking that list (RollingGate's rule containers) finds nothing in this jar",
+						jar.getFileName(), why);
+			}
+			String empty = ForeignType.MOD_FILE_SCAN_DATA.binary(Ecosystem.NEOFORGE);
+			try {
+				return Class.forName(empty, true, gameLoader).getConstructor().newInstance();
+			} catch (ReflectiveOperationException e) {
+				throw new IllegalStateException("could not build an empty " + empty, e);
+			}
+		});
 	}
 
 	/**

@@ -71,6 +71,7 @@ public final class ModFileScanner {
 	private static final String GAME_SIDE = "net.forbric.kernel.runtime.KernelScanData";
 	private static final String GAME_SIDE_FORGE = "net.forbric.kernel.runtime.KernelForgeScanData";
 	public static final String FORGE_INDEX_PROPERTY = "forbric.forgeScanData";
+	public static final String SEEDED_INDEX_PROPERTY = "forbric.seededScanData";
 
 	private ModFileScanner() {
 	}
@@ -182,6 +183,59 @@ public final class ModFileScanner {
 	 */
 	public static boolean forgeIndexEnabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(FORGE_INDEX_PROPERTY, "on"));
+	}
+
+	/**
+	 * {@code -Dforbric.seededScanData=off} puts back both halves of the shared NeoForge index: the {@code ModFile}s
+	 * in the seeded NeoForge {@code LoadingModList} go back to having no scan at all (so {@code getScanResult()}
+	 * throws FML's own "Scanning of this mod file has not started yet."), and each {@code KernelModFile} goes back
+	 * to scanning its jar for itself ({@link #scanShared} becomes plain {@link #scan}).
+	 */
+	public static boolean seededIndexEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(SEEDED_INDEX_PROPERTY, "on"));
+	}
+
+	/**
+	 * NeoForge indexes already built, per game loader and then per jar. Per loader because an index is an
+	 * instance of THAT loader's {@code ModFileScanData}, and handed to a reader under another loader it is a
+	 * ClassCastException; in a real boot there is exactly one key.
+	 */
+	private static final Map<ClassLoader, Map<Path, Object>> SHARED_NEO_INDEX = new java.util.HashMap<>();
+
+	/**
+	 * {@link #scan}, built at most once per jar and handed to every reader of that jar — or null, uncached, when
+	 * the index cannot be built, so each caller keeps its own fallback.
+	 *
+	 * <p>There are two readers and natively they are one object. FML builds ONE {@code ModFile} per jar and
+	 * {@code ModList} is made out of {@code LoadingModList}, so {@code ModList.getAllScanData()} and a walk over
+	 * {@code LoadingModList.getModFiles()} read the very same {@code ModFileScanData}. The kernel builds two
+	 * different file objects for those two lists (its own {@code KernelModFile} and the seeded concrete
+	 * {@code ModFile}); without this they would scan the same jar twice and hand out two indexes, and whatever is
+	 * added to one of them (every collection in a {@code ModFileScanData} is mutable) would be missing from the
+	 * other.
+	 *
+	 * <p>What made the second reader matter: RollingGate's constructor walks {@code LoadingModList.getModFiles()}
+	 * for its rule containers (Server++'s are found by the same walk), so an instance with RollingGate asks for
+	 * the index of every NeoForge jar from inside that one constructor — and then JEI, Jade and Sophisticated Core
+	 * ask {@code ModList} for the same jars again.
+	 */
+	public static Object scanShared(Path jar, ClassLoader gameLoader) {
+		if (!seededIndexEnabled()) return scan(jar, gameLoader);
+		Path key = jar.toAbsolutePath().normalize();
+		synchronized (SHARED_NEO_INDEX) {
+			Map<Path, Object> byJar = SHARED_NEO_INDEX.get(gameLoader);
+			Object known = byJar == null ? null : byJar.get(key);
+			if (known != null) return known;
+		}
+		// Built outside the lock: a slow jar must not hold up the others. Two threads racing on one jar both scan
+		// it, and the loser takes the winner's object, which is what keeps the answer a single object.
+		Object built = scan(jar, gameLoader);
+		if (built == null) return null;
+		synchronized (SHARED_NEO_INDEX) {
+			Object first = SHARED_NEO_INDEX.computeIfAbsent(gameLoader, loader -> new java.util.HashMap<>())
+					.putIfAbsent(key, built);
+			return first != null ? first : built;
+		}
 	}
 
 	private static Object materialise(Path jar, ClassLoader gameLoader, String gameSide, String ecosystem) {

@@ -62,8 +62,13 @@ import net.forbric.api.DiscoveredMod;
  * always runs.
  */
 class PassiveSeederLoadingModListTest {
-	private static final Path NEO_RUNTIME = Path.of(System.getProperty("user.dir"), "..",
-			"forbric-loader", "run", "neoforge-runtime", "neoforge-runtime.jar").normalize();
+	/**
+	 * Through {@code FORBRIC_OLD} when it is set, as every other staged-bytecode test resolves it: this class
+	 * hardcoded the relative path, so in a second worktree every case here skipped and the suite reported green.
+	 */
+	static final Path NEO_RUNTIME = Path.of(System.getenv().getOrDefault("FORBRIC_OLD",
+			System.getProperty("user.dir") + "/../forbric-loader"), "run", "neoforge-runtime", "neoforge-runtime.jar")
+			.normalize();
 
 	@TempDir
 	Path tmp;
@@ -188,17 +193,17 @@ class PassiveSeederLoadingModListTest {
 
 	// --- helpers ---
 
-	private static Object seededList(FakeFmlLoader loader) throws Exception {
+	static Object seededList(FakeFmlLoader loader) throws Exception {
 		Field field = FakeFmlLoader.class.getDeclaredField("loadingModList");
 		field.setAccessible(true);
 		return field.get(loader);
 	}
 
-	private static Object call(Object target, String method) throws Exception {
+	static Object call(Object target, String method) throws Exception {
 		return target.getClass().getMethod(method).invoke(target);
 	}
 
-	private static Object call(Object target, String method, Class<?> argType, Object arg) throws Exception {
+	static Object call(Object target, String method, Class<?> argType, Object arg) throws Exception {
 		return target.getClass().getMethod(method, argType).invoke(target, arg);
 	}
 
@@ -211,16 +216,22 @@ class PassiveSeederLoadingModListTest {
 	private ClassLoader neoForgeLoader() throws Exception {
 		assumeTrue(Files.isRegularFile(NEO_RUNTIME),
 				"staged neoforge-runtime.jar absent — skipping real-bytecode LoadingModList seeding check");
-		Path stubs = Files.createDirectories(tmp.resolve("stubs"));
-		writeClass(stubs, "org/slf4j/Logger", emptyInterface("org/slf4j/Logger"));
-		writeClass(stubs, "org/slf4j/Marker", emptyInterface("org/slf4j/Marker"));
-		writeClass(stubs, "org/slf4j/LoggerFactory", loggerFactory());
-		writeClass(stubs, "com/mojang/logging/LogUtils", logUtils());
+		Path stubs = loggingStubs(tmp.resolve("stubs"));
 		return new URLClassLoader(new URL[] {stubs.toUri().toURL(), NEO_RUNTIME.toUri().toURL()},
 				ClassLoader.getPlatformClassLoader());
 	}
 
-	private static void writeClass(Path root, String internalName, byte[] bytes) throws IOException {
+	/** Writes the logging stand-ins {@link #neoForgeLoader} describes into {@code dir}, and returns it. */
+	static Path loggingStubs(Path dir) throws IOException {
+		Path stubs = Files.createDirectories(dir);
+		writeClass(stubs, "org/slf4j/Logger", emptyInterface("org/slf4j/Logger"));
+		writeClass(stubs, "org/slf4j/Marker", emptyInterface("org/slf4j/Marker"));
+		writeClass(stubs, "org/slf4j/LoggerFactory", loggerFactory());
+		writeClass(stubs, "com/mojang/logging/LogUtils", logUtils());
+		return stubs;
+	}
+
+	static void writeClass(Path root, String internalName, byte[] bytes) throws IOException {
 		Path out = root.resolve(internalName + ".class");
 		Files.createDirectories(out.getParent());
 		Files.write(out, bytes);
@@ -284,7 +295,7 @@ class PassiveSeederLoadingModListTest {
 		}
 	}
 
-	private static void put(ZipOutputStream zip, String name, String content) throws IOException {
+	static void put(ZipOutputStream zip, String name, String content) throws IOException {
 		zip.putNextEntry(new ZipEntry(name));
 		OutputStream out = zip;
 		out.write(content.getBytes(StandardCharsets.UTF_8));

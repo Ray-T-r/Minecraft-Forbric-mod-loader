@@ -138,6 +138,13 @@ public enum ForeignType {
 	MOD_FILE_TYPE("net.minecraftforge.forgespi.locating.IModFile$Type",
 			"net.neoforged.neoforgespi.locating.IModFile$Type"),
 	/**
+	 * Each family's annotation index for one mod file. Paired because the kernel seeds BOTH loading lists with
+	 * files that must answer {@code getScanResult()}, and a half named inline is a family whose annotation walkers
+	 * find nothing — or, on NeoForge, throw "Scanning of this mod file has not started yet." (RollingGate).
+	 */
+	MOD_FILE_SCAN_DATA("net.minecraftforge.forgespi.language.ModFileScanData",
+			"net.neoforged.neoforgespi.language.ModFileScanData"),
+	/**
 	 * Each family's rewriter for enums a mod may add constants to. Same job, and the two are reached the same
 	 * way — the kernel supplies the class node and their compiled processor does the rewrite — but they sit in
 	 * different packages and take different arguments, so both injectors name this and neither may drift alone.

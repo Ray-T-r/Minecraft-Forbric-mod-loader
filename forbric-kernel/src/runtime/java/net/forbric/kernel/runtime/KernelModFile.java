@@ -112,11 +112,16 @@ public final class KernelModFile implements IModFile {
 	 * Sodium's third-party config hooks) finds what it would on the carrier. Only a jar-less presence alias — a
 	 * mod id the kernel publishes without a file behind it — gets the empty result, which reads exactly like a
 	 * mod file that declares no annotations.
+	 *
+	 * <p>The index is the one the seeded {@code LoadingModList}'s {@code ModFile} for the same jar hands out
+	 * ({@code ModFileScanner.scanShared}): natively {@code ModList} is built out of {@code LoadingModList}, so
+	 * both hand out the same {@code ModFile} and therefore the same index — and the jar is walked once, however
+	 * many entries of the two lists ask.
 	 */
 	@Override
 	public synchronized ModFileScanData getScanResult() {
 		if (scanResult == null) {
-			Object real = jar == null ? null : ModFileScanner.scan(jar, getClass().getClassLoader());
+			Object real = jar == null ? null : ModFileScanner.scanShared(jar, getClass().getClassLoader());
 			scanResult = real instanceof ModFileScanData data ? data : new ModFileScanData();
 		}
 		return scanResult;
