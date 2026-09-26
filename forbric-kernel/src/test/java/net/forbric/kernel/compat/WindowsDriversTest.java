@@ -154,6 +154,33 @@ class WindowsDriversTest {
         assertTrue(result.output().contains("server properties PASS"), result.output());
     }
 
+    @Test void aFirstRunScreenIsMarkedSeenWithoutTouchingTheModsOtherSettings() throws Exception {
+        // sweep90-win-r6 sat on wover-ui's BetterX welcome for five minutes: vanilla runs quick-play only after it.
+        var result = DriverTools.run(Map.of(), "-c", """
+                import json, pathlib, sys
+                sys.path.insert(0, sys.argv[1]); import common
+                instance = pathlib.Path(sys.argv[2])
+                common.acknowledge_first_run(instance)
+                fresh = json.loads((instance / 'config/wover/client.json').read_text())
+                assert fresh == {'internal': {'did_present_welcome_screen': True}}, fresh
+                (instance / 'config/wover/client.json').write_text(json.dumps({'create_version': '26.201.2',
+                    'internal': {'did_present_welcome_screen': False}, 'general': {'check_for_new_versions': True}}))
+                common.acknowledge_first_run(instance)
+                merged = json.loads((instance / 'config/wover/client.json').read_text())
+                assert merged == {'create_version': '26.201.2', 'internal': {'did_present_welcome_screen': True},
+                                  'general': {'check_for_new_versions': True}}, merged
+                (instance / 'config/wover/client.json').write_text('not json')
+                common.acknowledge_first_run(instance)
+                assert json.loads((instance / 'config/wover/client.json').read_text())['internal']['did_present_welcome_screen']
+                for driver in ('run-client-test.py', 'bisect.py'):
+                    source = (pathlib.Path(sys.argv[1]) / driver).read_text()
+                    assert source.index('acknowledge_first_run(instance)') < source.index("driver_command(configuration, 'forbric-launch.py')"), driver
+                print('first run PASS')
+                """, DriverTools.COMPAT.resolve("win").toString(), temp.toString());
+        assertEquals(0, result.exit(), result.output());
+        assertTrue(result.output().contains("first run PASS"), result.output());
+    }
+
     @Test void pidBookkeepingPreservesOtherProcessesAndSanitizesNames() throws Exception {
         var result = DriverTools.run(Map.of(), "-c", """
                 import pathlib,sys,subprocess

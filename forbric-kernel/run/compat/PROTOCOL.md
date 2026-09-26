@@ -100,7 +100,9 @@ jar before treating the selection as final; metadata resolution alone cannot pro
    datapacks or terrain. The source server save is untouched; `--check` is read only. `win/run-client-test.py`
    drives `win/forbric-launch.py` into it, requests Minecraft's own screenshot at tick
    100, and requires a clean disconnect. Both launchers resolve the installed version
-   JSON rather than a developer classpath. `win/common.py` owns shared arguments,
+   JSON rather than a developer classpath. Vanilla runs quick-play only after its chain of first-run screens, so
+   before the client starts `common.FIRST_RUN_SEEN` marks a mod's own first-run screen as already dismissed (today
+   wover-ui's BetterX welcome) — the state of a player who has clicked through it once. `win/common.py` owns shared arguments,
    PID recording, launch resolution, frame inspection, and F2 fallback.
 7. Long jobs run with `Start-Process` (no stream redirection: the job writes its own
    logs, so it inherits nothing of the remote shell and the start returns at once)

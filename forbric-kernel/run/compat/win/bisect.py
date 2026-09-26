@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import sys
 import time
-from common import (config, driver_command, finish, frame_verdict, fresh_shots, own_driver,
+from common import (acknowledge_first_run, config, driver_command, finish, frame_verdict, fresh_shots, own_driver,
                     parser, safe_filename, screenshot_fallback, spawn)
 
 
@@ -46,6 +46,7 @@ def main():
     flags = ['-Dforbric.clientSmoke=true', '-Dforbric.clientSmokeWorld=' + configuration['world'],
              '-Dforbric.clientSmokeReadyTicks=60', '-Dforbric.clientSmokeScreenshots=100',
              '-Dforbric.clientSmokeDisconnectTicks=200']
+    acknowledge_first_run(instance)
     command = driver_command(configuration, 'forbric-launch.py') + ['--jvm=' + flag for flag in flags]
     started = time.time()
     with own_driver(configuration), (instance / 'bisect-console.log').open('w', encoding='utf-8') as output:

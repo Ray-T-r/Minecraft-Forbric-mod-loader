@@ -6,8 +6,8 @@ import subprocess
 import sys
 import threading
 import time
-from common import (await_outcome, config, driver_command, finish, frame_verdict, fresh_shots, own_driver,
-                    parser, screenshot_fallback, spawn)
+from common import (acknowledge_first_run, await_outcome, config, driver_command, finish, frame_verdict, fresh_shots,
+                    own_driver, parser, screenshot_fallback, spawn)
 
 
 def main():
@@ -34,6 +34,7 @@ def main():
     flags = ['-Dforbric.clientSmoke=true', '-Dforbric.clientSmokeWorld=' + configuration['world'],
              '-Dforbric.clientSmokeReadyTicks=80', '-Dforbric.clientSmokeModsScreen=100',
              '-Dforbric.clientSmokeScreenshots=100', '-Dforbric.clientSmokeDisconnectTicks=200']
+    acknowledge_first_run(instance)
     command = driver_command(configuration, 'forbric-launch.py') + ['--jvm=' + flag for flag in flags]
     outcome, failed = threading.Event(), threading.Event()
     last_output = [time.monotonic()]

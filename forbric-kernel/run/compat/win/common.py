@@ -102,6 +102,35 @@ def own_driver(configuration):
         record_pid(configuration, os.getpid(), remove=True)
 
 
+# A mod's first-run screen joins vanilla's initial-screen chain (Gui.buildInitialScreens), and vanilla runs quick-play
+# only as that chain's LAST link — so a first launch sits on the mod's welcome screen until a player clicks through,
+# on a native loader exactly as on Forbric. sweep90-win-r6 drew wover-ui's BetterX welcome for five minutes and never
+# joined the world. A sweep plays the player who has already dismissed it: each row is the mod's own "seen" flag,
+# merged into its config before the client starts; every other setting stays the mod's default.
+FIRST_RUN_SEEN = (
+    ('config/wover/client.json', ('internal', 'did_present_welcome_screen'), True),
+)
+
+
+def acknowledge_first_run(instance, rows=FIRST_RUN_SEEN):
+    for relative, keys, value in rows:
+        target = Path(instance) / relative
+        try:
+            data = json.loads(target.read_text(encoding='utf-8')) if target.is_file() else {}
+        except ValueError:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        node = data
+        for key in keys[:-1]:
+            if not isinstance(node.get(key), dict):
+                node[key] = {}
+            node = node[key]
+        node[keys[-1]] = value
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(data, indent=2), encoding='utf-8')
+
+
 def spawn(configuration, command, **kwargs):
     process = subprocess.Popen(command, **kwargs)
     record_pid(configuration, process.pid)
