@@ -486,6 +486,10 @@ public final class KernelRuntimeClasses {
 		// NeoForge's model deserializer throws on a loader it did not register and never reads fabric:type. Called
 		// from an inserted instruction ahead of its dispatch, with the JsonObject and context NeoForge holds there.
 		CLASSES.put("net.forbric.kernel.runtime.KernelModelFormats", new Entry(Origin.COMPILED, List.of()));
+		// Between a NeoForge mod's getContextClassLoader() and its cast to FML's TransformingClassLoader
+		// (FmlContextLoaderRewriter): LibJF's ASM layer reaches the Mixin weaver through what it returns.
+		CLASSES.put("net.forbric.kernel.runtime.KernelFmlTransformerView", new Entry(Origin.COMPILED, List.of(
+				new Call("contextLoader", ClassLoader.class, ClassLoader.class))));
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));

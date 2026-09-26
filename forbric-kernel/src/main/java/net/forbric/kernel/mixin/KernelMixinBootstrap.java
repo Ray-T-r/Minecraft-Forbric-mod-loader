@@ -125,9 +125,13 @@ public final class KernelMixinBootstrap {
 		});
 		// NativeCoremodParity directly after Mixin, where NeoForge runs its own coremods: a mixin aimed at the vanilla
 		// field read or finalizeSpawn call still binds, and what a mixin adds to those classes is rewritten too.
+		// The transformer is read from MixinWeaverSlot per class rather than captured: a guest that wraps the weaver
+		// the way NeoForge lets it (LibJF's ASM layer) must be the one that weaves from then on. With no wrapper it
+		// is `transformer`, one volatile read away.
+		MixinWeaverSlot.install(transformer);
 		loader.setMixinTransformer((name, bytes) -> net.forbric.kernel.transform.ForgeTransferShapeAudit.certify(name,
 				conflicts.transform(name, bytes, PostMixinFixups.apply(name, net.forbric.kernel.transform.NativeCoremodParity
-						.apply(name, transformer.transformClassBytes(name, name, bytes))))));
+						.apply(name, MixinWeaverSlot.currentOr(transformer).transformClassBytes(name, name, bytes))))));
 
 		// Leave PREINIT so the registered configs are prepared and their targets become weavable.
 		gotoPhase(MixinEnvironment.Phase.INIT);

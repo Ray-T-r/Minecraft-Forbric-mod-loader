@@ -362,6 +362,20 @@ public final class KernelBoot {
 		LoaderProbeRewriter loaderProbes = new LoaderProbeRewriter(loader::familyOfClass);
 		if (LoaderProbePolicy.enabled()) chain.register(TransformPhase.COREMOD, loaderProbes);
 
+		// A NeoForge mod that reaches the Mixin weaver the way NeoForge lets it -- casting the context loader to FML's
+		// TransformingClassLoader and wrapping FMLMixinClassProcessor.transformer -- is handed a view of that object
+		// graph at the cast, and ModuleClassLoader is let initialise without java.lang.invoke opened so the view can
+		// exist. LibJF's ASM layer paid for it ("Could not initialize LibJF ASM"). See FmlContextLoaderRewriter.
+		if (net.forbric.kernel.mixin.MixinWeaverSlot.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FmlContextLoaderRewriter(
+					loader::familyOfClass));
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ModuleClassLoaderInitInjector());
+		} else {
+			ForbricLog.warn("[Forbric/FmlView] -D%s=off -- a NeoForge mod that reaches the Mixin weaver through FML's "
+					+ "TransformingClassLoader (LibJF's ASM layer) fails its cast and applies none of its class patches",
+					net.forbric.kernel.mixin.MixinWeaverSlot.SWITCH);
+		}
+
 		// One mod's mixin config plugin must not be able to abort config preparation for every other mod. Mixin
 		// guards plugin construction but not the calls, and a throw there escapes select(). See GuestMixinPluginGuard.
 		chain.register(TransformPhase.COREMOD, new GuestMixinPluginGuard());
