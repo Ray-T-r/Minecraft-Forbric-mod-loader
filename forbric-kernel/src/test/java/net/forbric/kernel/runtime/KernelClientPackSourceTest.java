@@ -112,6 +112,23 @@ class KernelClientPackSourceTest {
 		}
 	}
 
+	/**
+	 * The served line counts what vanilla's reader READ, not what was routed to it. A routed pack it read nothing
+	 * from is still served, through NeoForge's reader — but without what a hook on vanilla's reader adds, which is
+	 * exactly the pack a count of the routing would have reported as read.
+	 */
+	@Test
+	void aPackVanillaReadsNothingFromIsServedButNotCountedAsRead() throws Exception {
+		try (Game game = game()) {
+			Object read = game.readPack("forbric/antiblocksrechiseled", true);
+			Object fellBack = game.readPack("forbric/nometadata", false);
+			assertEquals(List.of("fusion-overrides"), game.overlays(read));
+			assertEquals(List.of(), game.overlays(fellBack), "served by NeoForge's reader, so without the hook's overlay");
+			assertEquals(1, game.readByVanilla(List.of(read, fellBack)), "both were routed to vanilla's reader; one was read");
+			assertEquals(0, game.readByVanilla(List.of(fellBack)));
+		}
+	}
+
 	/** The routing: vanilla's reader only when the boot side says so, and NeoForge's after it, never instead of it. */
 	@Test
 	void buildPackTriesVanillasReaderFirstOnlyWhenAskedTo() throws Exception {
@@ -121,15 +138,21 @@ class KernelClientPackSourceTest {
 		new ClassReader(Files.readAllBytes(compiled)).accept(node, 0);
 		MethodNode build = node.methods.stream().filter(m -> "buildPack".equals(m.name)
 				&& "(Ljava/lang/String;Ljava/nio/file/Path;ZZ)Ljava/lang/Object;".equals(m.desc)).findFirst().orElseThrow();
-		List<String> calls = new ArrayList<>();
-		for (AbstractInsnNode insn : build.instructions) {
-			if (insn instanceof MethodInsnNode call && SOURCE.equals(call.owner)) calls.add(call.name);
-		}
+		assertTrue(calls(build).contains("readPack"), "buildPack reads the pack through readPack");
+		List<String> calls = calls(node.methods.stream().filter(m -> "readPack".equals(m.name)).findFirst().orElseThrow());
 		assertTrue(calls.indexOf("readThroughVanilla") >= 0, calls.toString());
 		assertTrue(calls.indexOf("readThroughVanilla") < calls.indexOf("readWithTheJarsOwnMeta"), calls.toString());
 		assertTrue(node.methods.stream().noneMatch(m -> "buildPack".equals(m.name)
 				&& "(Ljava/lang/String;Ljava/nio/file/Path;Z)Ljava/lang/Object;".equals(m.desc)),
 				"one entry point, so the boot side cannot reach the old one and skip the question");
+	}
+
+	private static List<String> calls(MethodNode method) {
+		List<String> calls = new ArrayList<>();
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof MethodInsnNode call && SOURCE.equals(call.owner)) calls.add(call.name);
+		}
+		return calls;
 	}
 
 	// ---------------------------------------------------------------------------------------------------------
@@ -251,6 +274,8 @@ class KernelClientPackSourceTest {
 		private final Class<?> location;
 		private final Class<?> supplier;
 		private final Class<?> selection;
+		private final Class<?> component;
+		private final Class<?> packSource;
 		private final Object locationInfo;
 		private final Object selectionConfig;
 		private final Object section;
@@ -263,9 +288,9 @@ class KernelClientPackSourceTest {
 			this.loader = loader;
 			type("net.minecraft.SharedConstants").getMethod("tryDetectVersion").invoke(null);
 			source = type(SOURCE.replace('/', '.'));
-			Class<?> component = type("net.minecraft.network.chat.Component");
+			component = type("net.minecraft.network.chat.Component");
 			Object title = component.getMethod("literal", String.class).invoke(null, "forbric/antiblocksrechiseled");
-			Class<?> packSource = type("net.minecraft.server.packs.repository.PackSource");
+			packSource = type("net.minecraft.server.packs.repository.PackSource");
 			location = type("net.minecraft.server.packs.PackLocationInfo");
 			locationInfo = location.getConstructor(String.class, component, packSource, Optional.class)
 					.newInstance("forbric/antiblocksrechiseled", title, packSource.getField("BUILT_IN").get(null), Optional.empty());
@@ -295,27 +320,48 @@ class KernelClientPackSourceTest {
 
 		/** One of KernelClientPackSource's two readers over a pack that has (or lacks) its pack section. */
 		Object read(String reader, boolean withSection) throws Exception {
+			Method read = source.getDeclaredMethod(reader, location, supplier, selection);
+			read.setAccessible(true);
+			try {
+				return read.invoke(null, locationInfo, resources(locationInfo, withSection), selectionConfig);
+			} catch (InvocationTargetException e) {
+				throw new AssertionError(reader + " threw", e.getCause());
+			}
+		}
+
+		/** buildPack's reader order over a pack routed to vanilla's reader, as the boot side routes a Forge mod's. */
+		Object readPack(String id, boolean withSection) throws Exception {
+			Object at = location.getConstructor(String.class, component, packSource, Optional.class)
+					.newInstance(id, component.getMethod("literal", String.class).invoke(null, id),
+							packSource.getField("BUILT_IN").get(null), Optional.empty());
+			Method readPack = source.getDeclaredMethod("readPack", location, supplier, selection, boolean.class);
+			readPack.setAccessible(true);
+			try {
+				return readPack.invoke(null, at, resources(at, withSection), selectionConfig, true);
+			} catch (InvocationTargetException e) {
+				throw new AssertionError("readPack threw", e.getCause());
+			}
+		}
+
+		int readByVanilla(List<Object> packs) throws Exception {
+			return (int) source.getMethod("readByVanilla", List.class).invoke(null, packs);
+		}
+
+		private Object resources(Object at, boolean withSection) throws Exception {
 			Class<?> resourcesType = type("net.minecraft.server.packs.PackResources");
 			Object resources = Proxy.newProxyInstance(loader, new Class<?>[] {resourcesType}, (proxy, method, args) ->
 					switch (method.getName()) {
 						case "getMetadataSection" -> withSection && args[0] == clientType ? section : null;
-						case "location" -> locationInfo;
+						case "location" -> at;
 						case "isHidden" -> false;
-						case "packId" -> "forbric/antiblocksrechiseled";
+						case "packId" -> location.getMethod("id").invoke(at);
 						case "knownPackInfo" -> Optional.empty();
 						case "hashCode" -> System.identityHashCode(proxy);
 						case "equals" -> proxy == args[0];
 						default -> null;
 					});
-			Object resourcesSupplier = Proxy.newProxyInstance(loader, new Class<?>[] {supplier},
+			return Proxy.newProxyInstance(loader, new Class<?>[] {supplier},
 					(proxy, method, args) -> method.getName().startsWith("open") ? resources : null);
-			Method read = source.getDeclaredMethod(reader, location, supplier, selection);
-			read.setAccessible(true);
-			try {
-				return read.invoke(null, locationInfo, resourcesSupplier, selectionConfig);
-			} catch (InvocationTargetException e) {
-				throw new AssertionError(reader + " threw", e.getCause());
-			}
 		}
 
 		List<?> overlays(Object pack) throws Exception {

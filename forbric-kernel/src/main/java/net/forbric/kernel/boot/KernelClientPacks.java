@@ -74,11 +74,11 @@ public final class KernelClientPacks {
 
 			// Decided once per jar: both the child pass and the flat fallback below build from the same answer.
 			List<Boolean> vanillaReader = new ArrayList<>();
-			int readByVanilla = 0;
+			int routedToVanilla = 0;
 			for (Path jar : packJars) {
 				boolean vanilla = readsItsMetadataTheVanillaWay(jar, carriers != null && carriers.contains(jar));
 				vanillaReader.add(vanilla);
-				if (vanilla) readByVanilla++;
+				if (vanilla) routedToVanilla++;
 			}
 
 			List<Object> packs = new ArrayList<>();
@@ -132,9 +132,12 @@ public final class KernelClientPacks {
 			}
 			gameSide(cl).getMethod("addSource", Object.class, List.class, String.class)
 					.invoke(null, packRepository, source, describedAs);
+			// Read, not routed: a routed jar vanilla's reader returned nothing for is served through NeoForge's, and
+			// counting the routing would hide exactly the pack whose loader's hooks on that reader never ran.
 			ForbricLog.info("[Forbric/ClientPacks] served %d ecosystem asset pack(s) to the client PackRepository "
-					+ "(forced-compatible, %d read through vanilla's Pack.readPackMetadata), %d of them declaring "
-					+ "overlays: %s", ids.size(), readByVanilla, withOverlays(cl, packs), ids);
+					+ "(forced-compatible, %d of the %d routed to vanilla's Pack.readPackMetadata read by it), %d of them "
+					+ "declaring overlays: %s", ids.size(), readByVanilla(cl, packs), routedToVanilla,
+					withOverlays(cl, packs), ids);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ClientPacks] could not serve ecosystem assets to the client PackRepository "
 					+ "(ecosystem shaders/textures will be missing)", Reflect.unwrap(t));
@@ -288,6 +291,17 @@ public final class KernelClientPacks {
 			return (int) gameSide(cl).getMethod("withOverlays", List.class).invoke(null, packs);
 		} catch (Throwable t) {
 			ForbricLog.debug("[Forbric/ClientPacks] could not count declared overlays: %s",
+					String.valueOf(Reflect.unwrap(t)));
+			return 0;
+		}
+	}
+
+	/** How many of the built packs vanilla's {@code Pack.readPackMetadata} actually read; the game side keeps count. */
+	private static int readByVanilla(ClassLoader cl, List<Object> packs) {
+		try {
+			return (int) gameSide(cl).getMethod("readByVanilla", List.class).invoke(null, packs);
+		} catch (Throwable t) {
+			ForbricLog.debug("[Forbric/ClientPacks] could not count vanilla-read packs: %s",
 					String.valueOf(Reflect.unwrap(t)));
 			return 0;
 		}

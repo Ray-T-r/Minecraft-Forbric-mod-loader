@@ -21,6 +21,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 import net.forbric.kernel.util.ForbricLog;
@@ -52,6 +54,11 @@ import net.neoforged.neoforge.resource.ResourcePackLoader;
  * name-dispatching {@code Proxy} with a {@code default -> null} arm.
  */
 public final class KernelClientPackSource {
+	/** Ids of the packs whose metadata vanilla's reader supplied — what the boot side's served line counts. */
+	private static final Set<String> READ_BY_VANILLA = ConcurrentHashMap.newKeySet();
+	/** Ids whose fall-back from vanilla's reader was already said: the flat pass and a second call rebuild them. */
+	private static final Set<String> FELL_BACK = ConcurrentHashMap.newKeySet();
+
 	private KernelClientPackSource() {
 	}
 
@@ -77,10 +84,16 @@ public final class KernelClientPackSource {
 		PackLocationInfo location =
 				new PackLocationInfo(id, title, PackSource.BUILT_IN, Optional.empty());
 		PackSelectionConfig selection = new PackSelectionConfig(!asChild, Pack.Position.TOP, !asChild);
+		return readPack(location, resources, selection, vanillaReader).hidden();
+	}
 
+	/** The readers, in order, over one pack's resources: {@link #buildPack}'s body once the jar is opened. */
+	private static Pack readPack(PackLocationInfo location, Pack.ResourcesSupplier resources,
+			PackSelectionConfig selection, boolean vanillaReader) {
 		// Vanilla's reader for a jar NeoForge does not own: it is the one MinecraftForge and fabric-api build their
 		// mods' packs with, and so the one their mods hook (fusion mounts its overrides folder as an overlay there).
 		Pack pack = vanillaReader ? readThroughVanilla(location, resources, selection) : null;
+		if (vanillaReader) countVanillaRead(location.id(), pack != null);
 		// NeoForge's own reader otherwise: it opens the jar's real pack.mcmeta and builds the Metadata from it,
 		// which is where a pack's OVERLAYS live. The kernel synthesised that record with an empty overlay list, so
 		// a Forge-family mod declaring overlays — the mechanism a mod uses to ship one set of assets per game
@@ -89,10 +102,38 @@ public final class KernelClientPackSource {
 		if (pack == null) {
 			// Synthesised: worse but not broken — the mod keeps its assets and loses only its overlays.
 			Pack.Metadata metadata = new Pack.Metadata(
-					title, PackCompatibility.COMPATIBLE, FeatureFlagSet.of(), List.of());
+					location.title(), PackCompatibility.COMPATIBLE, FeatureFlagSet.of(), List.of());
 			pack = new Pack(location, resources, metadata, selection);
 		}
-		return pack.hidden();
+		return pack;
+	}
+
+	/**
+	 * Keeps the count of what vanilla's reader actually read, and says so when a jar routed to it was served
+	 * through NeoForge's reader instead. That fall-back keeps the jar's assets, but whatever its loader's mods hook
+	 * on vanilla's reader did not run for it — fusion's overlay, for one — and a count of the ROUTING would have
+	 * reported it as read.
+	 */
+	private static void countVanillaRead(String id, boolean read) {
+		if (read) {
+			READ_BY_VANILLA.add(id);
+			return;
+		}
+		READ_BY_VANILLA.remove(id);
+		if (FELL_BACK.add(id)) {
+			ForbricLog.info("[Forbric/ClientPacks] vanilla's Pack.readPackMetadata read nothing from %s (vanilla logs "
+					+ "why) — serving it through NeoForge's reader, so a hook its loader's mods put on vanilla's reader "
+					+ "(fusion mounts its overlays there) did not run for it", id);
+		}
+	}
+
+	/** How many of {@code packs} vanilla's reader built the metadata of. */
+	public static int readByVanilla(List<Object> packs) {
+		int read = 0;
+		for (Object pack : packs) {
+			if (READ_BY_VANILLA.contains(((Pack) pack).getId())) read++;
+		}
+		return read;
 	}
 
 	/**
@@ -197,6 +238,20 @@ public final class KernelClientPackSource {
 	 *
 	 * <p>Null — no metadata section, or an unreadable one — sends the caller to NeoForge's reader, and from there
 	 * to the synthesised metadata, exactly the path every jar took before.
+	 *
+	 * <p>Vanilla's reader is stricter than NeoForge's, and what it says about a pack it reads is its own, in its
+	 * own log lines — the lines this jar's own loader prints for it too. A {@code pack} section vanilla's primary
+	 * codec rejects (fusion-1.3.15a-forge declares a multi-version range from format 4; vanilla's floor for one is
+	 * 15) gets its WARN "Error reading pack metadata, attempting fallback type" with a stack trace, and the
+	 * fallback type then reads it. A section that will not parse at all ends in its outer catch, "Failed to read
+	 * pack … metadata", and null — and here that jar is still served, through NeoForge's reader, which tolerates a
+	 * broken {@code overlays} with a warning of its own. A namespaced section ({@code neoforge:overlays},
+	 * {@code fabric:overlays}) never gets that far: {@code PackMetadataFailSoftInjector} treats one that will not
+	 * parse as absent. So the residue is a Forge or Fabric mod jar with a malformed BARE {@code overlays}: its
+	 * assets stay served, but the line gate-m9-client asserts absent appears, as it would on that jar's own loader.
+	 * The only gate-pack jar with a bare {@code overlays} is Stellarity, which NeoForge owns. The flat fallback
+	 * pass, which runs only when the parent pack cannot be built, reads each jar a second time and so repeats
+	 * vanilla's lines once.
 	 */
 	private static Pack readThroughVanilla(
 			PackLocationInfo location, Pack.ResourcesSupplier resources, PackSelectionConfig selection) {
