@@ -88,6 +88,11 @@ public final class MixinStubRebind {
 	 * as they did before trailing captures were told apart — an A/B switch; with it torrential's fuel hook fails again.
 	 */
 	public static final String CAPTURES_PROPERTY = "forbric.mixinStubRebind.captures";
+	/**
+	 * {@code -Dforbric.mixinStubRebind.sugarBoundary=off}: any parameter annotation ends a handler's call part (here and
+	 * in MixinRetarget's R1), and one in that part keeps the injector on the stub, as before.
+	 */
+	public static final String SUGAR_BOUNDARY_PROPERTY = "forbric.mixinStubRebind.sugarBoundary";
 
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String CALLBACK_INFO = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
@@ -270,13 +275,13 @@ public final class MixinStubRebind {
 			plain = callback + 1;
 		} else {
 			plain = params.length;
-			for (int i = 0; i < params.length; i++) if (annotated(handler, i)) { plain = i; break; }
+			for (int i = 0; i < params.length; i++) if (trailingSugar(handler, i)) { plain = i; break; }
 			// Past the injector's own contract, un-annotated parameters are captures of the target's arguments: they
 			// must still be the delegate's, in the same places, carrying what the stub was handed.
 			int own = capturesGuarded() ? intrinsicArity(injector, params, plain, delegate) : plain;
 			if (own < 0 || own > plain || !capturesSurvive(injector, params, own, plain, stub, delegation)) return null;
 		}
-		for (int i = 0; i < plain; i++) if (annotated(handler, i)) return null;
+		for (int i = 0; i < plain; i++) if (trailingSugar(handler, i)) return null;
 		for (int i = plain; i < params.length; i++) {
 			AnnotationNode local = local(handler, i);
 			if (local == null) return null;   // a trailing capture of the stub's arguments, or @Share
@@ -603,6 +608,20 @@ public final class MixinStubRebind {
 			if (parameter < all.length && all[parameter] != null) for (AnnotationNode a : all[parameter]) if (LOCAL.equals(a.desc)) return a;
 		}
 		return null;
+	}
+
+	/**
+	 * Whether a handler's trailing part — what MixinExtras fills from the target, not the call — begins at
+	 * {@code parameter}: a MixinExtras sugar parameter ({@code @Local}, {@code @Share}, …).
+	 *
+	 * <p>Any annotation used to count. A {@code @Coerce} receiver is part of the call's shape, and Kotlin (and some Java
+	 * mods) put an invisible {@code @NotNull} on every handler parameter; with the call's part ending at parameter 0,
+	 * the injector's own contract read as longer than the handler, and both this rebind and R1 left such an injector on
+	 * the stub, where its anchors miss. {@code -Dforbric.mixinStubRebind.sugarBoundary=off} counts any annotation again.
+	 */
+	static boolean trailingSugar(MethodNode handler, int parameter) {
+		if ("off".equalsIgnoreCase(System.getProperty(SUGAR_BOUNDARY_PROPERTY, "on"))) return annotated(handler, parameter);
+		return MixinFit.sugar(handler, parameter);
 	}
 
 	static boolean annotated(MethodNode handler, int parameter) {

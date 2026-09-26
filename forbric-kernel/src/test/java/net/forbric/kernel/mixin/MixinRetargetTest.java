@@ -50,7 +50,7 @@ class MixinRetargetTest {
 	@AfterEach
 	void reset() {
 		System.clearProperty(MixinRetarget.PROPERTY);
-		System.clearProperty(MixinRetarget.SUGAR_BOUNDARY_PROPERTY);
+		System.clearProperty(MixinStubRebind.SUGAR_BOUNDARY_PROPERTY);
 		MixinRetarget.reset();
 	}
 
@@ -215,7 +215,7 @@ class MixinRetargetTest {
 			assertEquals(1, plan.rewrites().size(), annotation + ": " + plan.describe());
 			assertEquals(DELEGATE, plan.rewrites().get(0).to());
 		}
-		System.setProperty(MixinRetarget.SUGAR_BOUNDARY_PROPERTY, "off");
+		System.setProperty(MixinStubRebind.SUGAR_BOUNDARY_PROPERTY, "off");
 		byte[] coerced = mixin(REDIRECT, STUB, desc, 0, "Lorg/spongepowered/asm/mixin/injection/Coerce;", true);
 		assertTrue(MixinRetarget.plan(MixinFit.parse(coerced), resolver(target(false))).isEmpty(),
 				"switched off, any annotation ends the call's part again");

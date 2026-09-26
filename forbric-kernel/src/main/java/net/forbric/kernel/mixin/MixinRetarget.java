@@ -69,8 +69,6 @@ import org.objectweb.asm.tree.VarInsnNode;
  */
 public final class MixinRetarget {
 	public static final String PROPERTY = "forbric.mixinRetarget";
-	/** {@code -Dforbric.mixinRetarget.sugarBoundary=off}: any parameter annotation ends an {@code @At}-driven handler's call part. */
-	static final String SUGAR_BOUNDARY_PROPERTY = "forbric.mixinRetarget.sugarBoundary";
 	/** {@code -Dforbric.mixinRetarget.split=off}: R3 refuses two fits again, dispatcher or not (R4 off). */
 	static final String SPLIT_PROPERTY = "forbric.mixinRetarget.split";
 	/**
@@ -581,7 +579,7 @@ public final class MixinRetarget {
 		if (AT_DRIVEN.contains(injector.desc)) {
 			if (!MixinStubRebind.capturesGuarded()) return true;
 			int end = params.length;
-			for (int i = 0; i < params.length; i++) if (trailingSugar(handler, i)) { end = i; break; }
+			for (int i = 0; i < params.length; i++) if (MixinStubRebind.trailingSugar(handler, i)) { end = i; break; }
 			int own = MixinStubRebind.intrinsicArity(injector, params, end, delegate);
 			return own >= 0 && own <= end && MixinStubRebind.capturesSurvive(injector, params, own, end, stub,
 					own == end ? null : MixinStubRebind.delegation(owner, stub));
@@ -598,22 +596,6 @@ public final class MixinRetarget {
 			return true;
 		}
 		return false;    // @ModifyVariable and friends index the target's locals: not movable by rule
-	}
-
-	/**
-	 * Whether an {@code @At}-driven handler's trailing part — what MixinExtras fills from the target, not the call —
-	 * begins at {@code parameter}: a MixinExtras sugar parameter ({@code @Local}, {@code @Share}, …).
-	 *
-	 * <p>Any annotation used to count. A {@code @Coerce} receiver is part of the call's shape, and Kotlin (and some Java
-	 * mods) put an invisible {@code @NotNull} on every handler parameter; with the call's part ending at parameter 0,
-	 * the injector's own contract read as longer than the handler and R1 declined a move it made before the captures
-	 * were told apart. {@code -Dforbric.mixinRetarget.sugarBoundary=off} counts any annotation again.
-	 */
-	private static boolean trailingSugar(MethodNode handler, int parameter) {
-		if ("off".equalsIgnoreCase(System.getProperty(SUGAR_BOUNDARY_PROPERTY, "on"))) {
-			return MixinStubRebind.annotated(handler, parameter);
-		}
-		return MixinFit.sugar(handler, parameter);
 	}
 
 	private static boolean isAnnotated(MethodNode handler, int parameter, String desc) {

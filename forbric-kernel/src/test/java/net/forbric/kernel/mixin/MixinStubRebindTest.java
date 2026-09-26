@@ -37,6 +37,7 @@ class MixinStubRebindTest {
 		System.clearProperty(MixinStubRebind.PROPERTY);
 		System.clearProperty(MixinStubRebind.MODIFY_VARIABLE_PROPERTY);
 		System.clearProperty(MixinStubRebind.CAPTURES_PROPERTY);
+		System.clearProperty(MixinStubRebind.SUGAR_BOUNDARY_PROPERTY);
 		MixinStubRebind.forget();
 	}
 
@@ -187,6 +188,9 @@ class MixinStubRebindTest {
 	private static final String WRAP_OPERATION = "Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;";
 	private static final String OPERATION = "Lcom/llamalad7/mixinextras/injector/wrapoperation/Operation;";
 	private static final String MODIFY_VARIABLE = "Lorg/spongepowered/asm/mixin/injection/ModifyVariable;";
+	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
+	private static final String COERCE = "Lorg/spongepowered/asm/mixin/injection/Coerce;";
+	private static final String NOT_NULL = "Lorg/jetbrains/annotations/NotNull;";
 
 	/**
 	 * torrential's fuel modifier captures all three of the stub's arguments after the value it modifies. Two of them
@@ -246,6 +250,65 @@ class MixinStubRebindTest {
 				injector(WRAP_OPERATION, STUB_BURN, List.of(at("INVOKE", "target", add))));
 		assertEquals(1, MixinStubRebind.adapt(plain, name -> fuel));
 		assertEquals(List.of(BODY_BURN), selectors(plain, "wrapAdd"));
+	}
+
+	/**
+	 * Only MixinExtras sugar ends a handler's call part. A {@code @Coerce} receiver is the call's own, and the invisible
+	 * {@code @NotNull} Kotlin puts on every handler parameter is nothing at all; read as the boundary, or as a reason to
+	 * refuse, either left the injector on the stub, where its anchor is missing. R1 reads the same rule.
+	 */
+	@Test void aParameterAnnotationThatIsNotSugarDoesNotKeepTheInjectorOnTheStub() throws Exception {
+		ClassNode fuel = merged(FUEL);
+		MethodNode stub = fuel.methods.stream().filter(m -> STUB_BURN.equals(m.name + m.desc)).findFirst().orElseThrow();
+		MethodNode body = fuel.methods.stream().filter(m -> BODY_BURN.equals(m.name + m.desc)).findFirst().orElseThrow();
+		String add = "L" + FUEL + "$Builder;add(Lnet/minecraft/world/level/ItemLike;I)" + BUILDER;
+		String wrap = "(" + BUILDER + "Lnet/minecraft/world/level/ItemLike;I" + OPERATION + ")" + BUILDER;
+		for (String annotation : List.of(COERCE, NOT_NULL)) {
+			ClassNode mixin = synthetic("com/example/FuelWrap", FUEL, "wrapAdd", wrap, true,
+					injector(WRAP_OPERATION, STUB_BURN, List.of(at("INVOKE", "target", add))));
+			MethodNode handler = annotate(mixin, annotation);
+			MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
+			assertTrue(MixinRetarget.handlerFits(handler, MixinFit.injectorOf(handler), fuel, stub, body), annotation + ": R1 agrees");
+			assertEquals(1, MixinStubRebind.adapt(mixin, name -> fuel), annotation);
+			assertEquals(List.of(BODY_BURN), selectors(mixin, "wrapAdd"), annotation);
+		}
+
+		ClassNode player = merged("net/minecraft/world/entity/player/Player");
+		ClassNode inject = synthetic("com/example/BreakSpeed", "net/minecraft/world/entity/player/Player", "onSpeed",
+				"(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;)V", false,
+				injector(INJECT, "getDestroySpeed", List.of(at("RETURN"))));
+		annotate(inject, NOT_NULL);
+		MixinStubRebind.noteEcosystem(inject.name, Ecosystem.FABRIC);
+		assertEquals(1, MixinStubRebind.adapt(inject, name -> player), "an @Inject whose callback Kotlin marked @NotNull");
+		assertEquals(List.of("getDestroySpeed(" + STATE + POS + ")F"), selectors(inject, "onSpeed"));
+
+		System.setProperty(MixinStubRebind.SUGAR_BOUNDARY_PROPERTY, "off");
+		for (String annotation : List.of(COERCE, NOT_NULL)) {
+			ClassNode mixin = synthetic("com/example/FuelWrap", FUEL, "wrapAdd", wrap, true,
+					injector(WRAP_OPERATION, STUB_BURN, List.of(at("INVOKE", "target", add))));
+			MethodNode handler = annotate(mixin, annotation);
+			assertFalse(MixinRetarget.handlerFits(handler, MixinFit.injectorOf(handler), fuel, stub, body), annotation + ": R1 agrees");
+			assertEquals(0, MixinStubRebind.adapt(mixin, name -> fuel), annotation + ": switched off, it stays on the stub again");
+		}
+		ClassNode offInject = synthetic("com/example/BreakSpeed", "net/minecraft/world/entity/player/Player", "onSpeed",
+				"(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;)V", false,
+				injector(INJECT, "getDestroySpeed", List.of(at("RETURN"))));
+		annotate(offInject, NOT_NULL);
+		assertEquals(0, MixinStubRebind.adapt(offInject, name -> player), "switched off, the @Inject stays too");
+	}
+
+	/** Marks the only handler's receiver {@code @Coerce} (visible), or every parameter {@code @NotNull} (invisible). */
+	@SuppressWarnings("unchecked")
+	private static MethodNode annotate(ClassNode mixin, String annotation) {
+		MethodNode handler = mixin.methods.getFirst();
+		int count = Type.getArgumentTypes(handler.desc).length;
+		List<AnnotationNode>[] parameters = new List[count];
+		for (int i = 0; i < count; i++) {
+			if (i == 0 || annotation.equals(NOT_NULL)) parameters[i] = new java.util.ArrayList<>(List.of(new AnnotationNode(annotation)));
+		}
+		if (annotation.equals(COERCE)) handler.visibleParameterAnnotations = parameters;
+		else handler.invisibleParameterAnnotations = parameters;
+		return handler;
 	}
 
 	/** The injector's own part, per kind: the value, or the receiver and arguments of the access, or declined. */
