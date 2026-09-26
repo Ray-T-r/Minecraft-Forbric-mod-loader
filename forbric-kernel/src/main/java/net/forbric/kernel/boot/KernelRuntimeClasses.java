@@ -455,7 +455,8 @@ public final class KernelRuntimeClasses {
 		// The vanilla-shaped Operation a Fabric shears wrap is handed at the carrier's canPerformAction; called from the
 		// outer handler MixinShearsRelay writes into the guest mixin.
 		CLASSES.put("net.forbric.kernel.runtime.KernelShears", new Entry(Origin.COMPILED, List.of()));
-		// Asked by the merged Fluid.getFluidType() (ForeignFluidTypeInjector) before NeoForge's throwing lookup.
+		// Asked by the merged Fluid.getFluidType() (ForeignFluidTypeInjector) before NeoForge's throwing lookup, and by
+		// EntityFluidInteraction.getFluidTypeByTag before its throw (FabricFluidBehaviorInjector).
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidTypes", new Entry(Origin.COMPILED, List.of()));
 		// Called from NeoForge's ParticleEngine constructor after its group event (ParticleGroupsInjector).
 		CLASSES.put("net.forbric.kernel.runtime.KernelParticleGroups", new Entry(Origin.COMPILED, List.of()));

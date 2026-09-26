@@ -572,6 +572,9 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.DragonPartsInjector());
 		// A Fabric or MinecraftForge mod's fluid has no NeoForge type; it gets the one its fluid tags imply.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForeignFluidTypeInjector());
+		// …and a tag a Fabric mod gave a fluid behaviour has that behaviour's fluid type where the merged
+		// EntityFluidInteraction turns tags into types, instead of the IllegalArgumentException fabric-api hit every tick.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFluidBehaviorInjector());
 		// MinecraftForge's ParticleEngine.registerParticleGroup against NeoForge's engine: its statics, merged in on build.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ParticleGroupsInjector());
 		// MinecraftForge's Hurt, Damage and player-Attack events have no NeoForge event at their positions to bridge

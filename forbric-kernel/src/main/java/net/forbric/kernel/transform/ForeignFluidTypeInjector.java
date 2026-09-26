@@ -29,9 +29,10 @@ import org.objectweb.asm.tree.VarInsnNode;
  * pig to walk into a Fabric mod's fluid threw "Ticking entity" and stopped the server.
  *
  * <p>Before NeoForge's lookup, the method now asks {@code KernelFluidTypes.foreignType}, which answers only for a fluid
- * NeoForge's lookup would throw on, from the fluid's tags the way vanilla decides — water, lava, or none — and is not
- * cached, since tags are bound late and rebound on reload. Every fluid NeoForge answers keeps NeoForge's cached path.
- * Only on the reviewed shape: the method caches in its own field and its only call is {@code getVanillaFluidType}.
+ * NeoForge's lookup would throw on, from the fluid's tags the way vanilla decides — water, lava, a Fabric mod's fluid
+ * behaviour (KernelFabricFluidBehaviors), or none — and is not cached, since tags are bound late and rebound on
+ * reload. Every fluid NeoForge answers keeps NeoForge's cached path. Only on the reviewed shape: the method caches in
+ * its own field and its only call is {@code getVanillaFluidType}.
  *
  * <p>MinecraftForge's {@code getFluidType()} (a different return type) has the same throwing default, and merged
  * entity-fluid code and MinecraftForge mods ask it too; {@code Fluid} gets a concrete one answering from the same
