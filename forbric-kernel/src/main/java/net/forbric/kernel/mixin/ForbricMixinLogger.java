@@ -18,6 +18,8 @@ package net.forbric.kernel.mixin;
 
 import org.spongepowered.asm.logging.Level;
 import org.spongepowered.asm.logging.LoggerAdapterAbstract;
+import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
+import org.spongepowered.asm.mixin.transformer.throwables.InvalidMixinException;
 
 import net.forbric.kernel.util.ForbricLog;
 
@@ -71,6 +73,11 @@ final class ForbricMixinLogger extends LoggerAdapterAbstract {
 	public void log(Level level, String message, Throwable t) {
 		String rendered = prefix(message);
 
+		if (supersededFailure(level, t)) {
+			ForbricLog.debug(rendered + ": " + t);
+			return;
+		}
+
 		switch (level) {
 			case FATAL, ERROR -> ForbricLog.error(rendered, t);
 			case WARN -> ForbricLog.warn(rendered, t);
@@ -79,6 +86,35 @@ final class ForbricMixinLogger extends LoggerAdapterAbstract {
 			default -> ForbricLog.debug(rendered + ": " + t);
 		}
 	}
+
+	/**
+	 * Whether this is Mixin's own report of a failure the kernel has already reported and taken over.
+	 *
+	 * <p>fabric-resource-conditions' {@code SimpleJsonResourceReloadListenerMixin} fails on every boot: NeoForge's
+	 * patch gave {@code lambda$scanDirectory$0} another shape, and its {@code skipData} injector throws
+	 * {@code InvalidInjectionException}. Nothing is lost — {@link SupersededMixins} says so, KernelFabricConditions
+	 * judges {@code fabric:load_conditions} at ConditionalOps' funnel instead, and {@link KernelMixinErrorHandler}
+	 * has just logged one INFO line naming the failure, its exception class and the repair, and put the exception
+	 * text in the compatibility report. Mixin then logged the same failure again as a WARN with a sixty-line stack,
+	 * which is what a player reading the log sees, and it reads as a real break. That second report, and only that,
+	 * goes to DEBUG (still printed under {@code -Dforbric.debug}).
+	 *
+	 * <p>Only at WARN, i.e. a relaxed config that Mixin drops the mixin from and carries on. An ERROR is a config
+	 * that stays required and stops the game, and that must stay loud. Only while {@link
+	 * SupersededMixins#replacementFor} names a replacement, which it does not when either that table or the
+	 * repair's own switch is off — so switching the repair off brings the stack back with the loss. And only while
+	 * the kernel's error handler is registered, since its line is the one left standing.
+	 * {@code -Dforbric.supersededMixins.quiet=off} keeps Mixin's report as it was.
+	 */
+	static boolean supersededFailure(Level level, Throwable t) {
+		if (level != Level.WARN || !(t instanceof InvalidMixinException invalid)) return false;
+		if ("off".equalsIgnoreCase(System.getProperty(QUIET_PROPERTY, "on")) || !KernelMixinErrorHandler.enabled()) return false;
+		IMixinInfo mixin = invalid.getMixin();
+		return mixin != null && SupersededMixins.replacementFor(mixin.getClassName()) != null;
+	}
+
+	/** {@code off} keeps Mixin's own WARN and stack for a mixin the kernel has superseded. */
+	static final String QUIET_PROPERTY = "forbric.supersededMixins.quiet";
 
 	private String prefix(String message) {
 		return "[Mixin/" + getId() + "] " + message;
