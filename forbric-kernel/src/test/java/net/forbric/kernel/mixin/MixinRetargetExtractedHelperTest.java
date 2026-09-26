@@ -3,6 +3,8 @@ package net.forbric.kernel.mixin;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -14,6 +16,8 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AnnotationNode;
+import org.objectweb.asm.tree.ClassNode;
 
 import net.forbric.api.Ecosystem;
 
@@ -37,6 +41,7 @@ class MixinRetargetExtractedHelperTest {
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String REDIRECT = "Lorg/spongepowered/asm/mixin/injection/Redirect;";
 	private static final String MIXIN = "test/ScreenMixin";
+	private static final String OTHER = "test/OtherScreen";
 	/** Highlighter's handler: extractSlot's own arguments and the callback. */
 	private static final String HANDLER = "(" + G + SLOT + "II" + MixinRetarget.CALLBACK_INFO + ")V";
 
@@ -107,6 +112,25 @@ class MixinRetargetExtractedHelperTest {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FORGE);
 		String desc = "(" + G + "Lnet/minecraft/client/gui/Font;" + STACK + "IILjava/lang/String;)V";
 		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin(REDIRECT, desc, null, false, false)), resolver(screen(1, false))).isEmpty());
+	}
+
+	/**
+	 * The new point names AbstractContainerScreen's helper, but the annotation is shared by every target: on a second
+	 * target whose extractSlot still makes the call itself, the move would take a resolved anchor away.
+	 */
+	@Test
+	void aMixinWithASecondTargetKeepsItsPoint() {
+		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FORGE);
+		Map<String, byte[]> classes = new HashMap<>(Map.of(SCREEN + ".class", screen(1, false)));
+		classes.put(OTHER + ".class", other());
+		Function<String, byte[]> resolver = classes::get;
+		MixinRetarget.Plan alone = MixinRetarget.plan(MixinFit.parse(mixin(INJECT, HANDLER, "AFTER", false, false)), resolver);
+		assertEquals(1, alone.rewrites().size(), "premise: with AbstractContainerScreen alone it moves");
+		byte[] both = withSecondTarget(mixin(INJECT, HANDLER, "AFTER", false, false));
+		assertTrue(MixinFit.evaluate(MixinRetarget.rewritten(both, alone), resolver).unresolved().stream()
+				.anyMatch(u -> u.contains(CONTENTS)), "premise: the moved point is not in the other target's extractSlot");
+
+		assertTrue(MixinRetarget.plan(MixinFit.parse(both), resolver).isEmpty());
 	}
 
 	@Test
@@ -203,6 +227,38 @@ class MixinRetargetExtractedHelperTest {
 		h.visitMaxs(0, 8);
 		h.visitEnd();
 		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** A second target whose {@code extractSlot} still makes the decorations call itself. */
+	private static byte[] other() {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, OTHER, null, "java/lang/Object", null);
+		MethodVisitor m = cw.visitMethod(Opcodes.ACC_PUBLIC, "extractSlot", EXTRACT_SLOT, null, null);
+		m.visitCode();
+		m.visitVarInsn(Opcodes.ALOAD, 1);
+		m.visitInsn(Opcodes.ACONST_NULL);
+		m.visitInsn(Opcodes.ACONST_NULL);
+		m.visitInsn(Opcodes.ICONST_0);
+		m.visitInsn(Opcodes.ICONST_0);
+		m.visitInsn(Opcodes.ACONST_NULL);
+		m.visitMethodInsn(Opcodes.INVOKEVIRTUAL, G.substring(1, G.length() - 1), "itemDecorations", DECORATIONS_DESC, false);
+		m.visitInsn(Opcodes.RETURN);
+		m.visitMaxs(0, 0);
+		m.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** {@code mixin} with {@link #OTHER} added to its {@code @Mixin} targets. */
+	@SuppressWarnings("unchecked")
+	private static byte[] withSecondTarget(byte[] mixin) {
+		ClassNode node = MixinFit.parse(mixin);
+		for (AnnotationNode a : node.invisibleAnnotations) {
+			if (a.desc.equals("Lorg/spongepowered/asm/mixin/Mixin;")) ((List<Object>) a.values.get(1)).add(Type.getObjectType(OTHER));
+		}
+		ClassWriter cw = new ClassWriter(0);
+		node.accept(cw);
 		return cw.toByteArray();
 	}
 

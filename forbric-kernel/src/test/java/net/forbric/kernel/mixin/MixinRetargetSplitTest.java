@@ -3,6 +3,7 @@ package net.forbric.kernel.mixin;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -15,6 +16,8 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AnnotationNode;
+import org.objectweb.asm.tree.ClassNode;
 
 import net.forbric.api.Ecosystem;
 
@@ -33,6 +36,7 @@ class MixinRetargetSplitTest {
 	private static final String REDIRECT = "Lorg/spongepowered/asm/mixin/injection/Redirect;";
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String MIXIN = "test/HudMixin";
+	private static final String OTHER = "test/OtherHud";
 
 	@AfterEach
 	void reset() {
@@ -119,6 +123,25 @@ class MixinRetargetSplitTest {
 		MixinRetarget.Plan off = MixinRetarget.plan(MixinFit.parse(redirect(MAX_HEARTS)), resolver);
 		assertEquals(off.describe(), on.describe());
 		assertEquals(1, on.rewrites().size());
+	}
+
+	/**
+	 * The new selector names Hud's piece, but the annotation is shared by every target: on a second target whose
+	 * extractPlayerHealth still makes the call, the move would take a resolved anchor away.
+	 */
+	@Test
+	void aMixinWithASecondTargetIsNotSplit() {
+		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
+		Map<String, byte[]> classes = new HashMap<>(Map.of(HUD + ".class", hud(List.of("extractHealthLevel", "extractFoodLevel"), false)));
+		classes.put(OTHER + ".class", other());
+		Function<String, byte[]> resolver = classes::get;
+		MixinRetarget.Plan alone = MixinRetarget.plan(MixinFit.parse(redirect(MAX_HEARTS)), resolver);
+		assertEquals(1, alone.rewrites().size(), "premise: with Hud alone it moves");
+		byte[] both = withSecondTarget(redirect(MAX_HEARTS));
+		assertTrue(MixinFit.evaluate(MixinRetarget.rewritten(both, alone), resolver).unresolved().stream()
+				.anyMatch(u -> u.contains("OtherHud")), "premise: the moved selector breaks the other target");
+
+		assertTrue(MixinRetarget.plan(MixinFit.parse(both), resolver).isEmpty());
 	}
 
 	@Test
@@ -226,6 +249,35 @@ class MixinRetargetSplitTest {
 		h.visitMaxs(1, 4);
 		h.visitEnd();
 		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** A second target whose {@code extractPlayerHealth} still makes the redirected call itself. */
+	private static byte[] other() {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, OTHER, null, "java/lang/Object", null);
+		MethodVisitor m = cw.visitMethod(Opcodes.ACC_PUBLIC, "extractPlayerHealth", SHAPE, null, null);
+		m.visitCode();
+		m.visitInsn(Opcodes.ACONST_NULL);
+		m.visitInsn(Opcodes.ACONST_NULL);
+		m.visitMethodInsn(Opcodes.INVOKEVIRTUAL, HUD, "getVehicleMaxHearts", "(" + LIVING + ")I", false);
+		m.visitInsn(Opcodes.POP);
+		m.visitInsn(Opcodes.RETURN);
+		m.visitMaxs(0, 0);
+		m.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** {@code mixin} with {@link #OTHER} added to its {@code @Mixin} targets. */
+	@SuppressWarnings("unchecked")
+	private static byte[] withSecondTarget(byte[] mixin) {
+		ClassNode node = MixinFit.parse(mixin);
+		for (AnnotationNode a : node.invisibleAnnotations) {
+			if (a.desc.equals("Lorg/spongepowered/asm/mixin/Mixin;")) ((List<Object>) a.values.get(1)).add(Type.getObjectType(OTHER));
+		}
+		ClassWriter cw = new ClassWriter(0);
+		node.accept(cw);
 		return cw.toByteArray();
 	}
 

@@ -129,7 +129,11 @@ public final class MixinRetarget {
 	static Plan plan(ClassNode mixin, Function<String, byte[]> resolver) {
 		if (!enabled() || mixin.methods == null) return new Plan(mixin.name, List.of());
 		List<Rewrite> rewrites = new ArrayList<>();
-		for (String targetName : MixinFit.mixinTargets(mixin)) {
+		List<String> targets = MixinFit.mixinTargets(mixin);
+		// R4 and R5 write one target's piece or helper into the annotation every target shares: with a second target,
+		// a move that helps one could break an anchor that resolves on the other, and the adapter only counts the total.
+		boolean oneTarget = targets.size() == 1;
+		for (String targetName : targets) {
 			byte[] targetBytes = resolver.apply(targetName + ".class");
 			if (targetBytes == null) continue;
 			ClassNode target = MixinFit.parse(targetBytes);
@@ -143,10 +147,10 @@ public final class MixinRetarget {
 					if (rewrite != null) own.add(rewrite);
 				}
 				own.addAll(swappedCallees(handler, injector, selectors, target, resolver));
-				own.addAll(renamedBodies(mixin.name, handler, injector, selectors, target, resolver));
+				own.addAll(renamedBodies(mixin.name, oneTarget, handler, injector, selectors, target, resolver));
 				// The selector moves when the method is a stub, a rename or a split; the point moves only when the method
 				// keeps a body of its own and the call went one level down. Never both for one handler.
-				if (own.stream().noneMatch(r -> r.element() == Element.SELECTOR)) {
+				if (oneTarget && own.stream().noneMatch(r -> r.element() == Element.SELECTOR)) {
 					own.addAll(movedCalls(mixin.name, handler, injector, selectors, target, resolver));
 				}
 				rewrites.addAll(own);
@@ -255,8 +259,8 @@ public final class MixinRetarget {
 	 * the mod did not ask for, silently, which is worse than the anchors simply missing — unless R4 can tell which of
 	 * them is a piece of the method the mod named.
 	 */
-	private static List<Rewrite> renamedBodies(String mixinName, MethodNode handler, AnnotationNode injector,
-			List<String> selectors, ClassNode target, Function<String, byte[]> resolver) {
+	private static List<Rewrite> renamedBodies(String mixinName, boolean oneTarget, MethodNode handler,
+			AnnotationNode injector, List<String> selectors, ClassNode target, Function<String, byte[]> resolver) {
 		List<AnnotationNode> ats = MixinFit.atNodes(injector);
 		if (ats.isEmpty()) return List.of();
 
@@ -293,7 +297,7 @@ public final class MixinRetarget {
 			if (fits.size() > 1) {
 				// Two fits: refuse, unless the method is a carrier's split of vanilla's body and exactly one of them is
 				// the piece it dispatches to (R4).
-				Rewrite split = splitHelper(mixinName, handler, injector, selector, target, selected, fits, wanted);
+				Rewrite split = oneTarget ? splitHelper(mixinName, handler, injector, selector, target, selected, fits, wanted) : null;
 				if (split != null) out.add(split);
 				continue;
 			}
@@ -324,8 +328,8 @@ public final class MixinRetarget {
 	 * there. The handler must not depend on anything but the call and the arguments the dispatcher hands on in
 	 * place: an {@code @At}-driven kind, or an {@code @Inject} that cannot cancel (cancelling in the helper would skip
 	 * only that piece where vanilla skipped the rest of the method) and captures no locals; no sugar, no slice, no
-	 * {@code @Group}, and no point but calls and field accesses. {@code -Dforbric.mixinRetarget.split=off} refuses two
-	 * fits as before.
+	 * {@code @Group}, and no point but calls and field accesses; and a mixin with one target, since the new selector
+	 * names that target's piece. {@code -Dforbric.mixinRetarget.split=off} refuses two fits as before.
 	 */
 	private static Rewrite splitHelper(String mixinName, MethodNode handler, AnnotationNode injector, String selector,
 			ClassNode target, MethodNode selected, List<MethodNode> fits, List<String> wanted) {
@@ -371,8 +375,9 @@ public final class MixinRetarget {
 	 * <p>Only along a {@code HEAD} or {@code TAIL} row of {@code carrier-helpers.txt} for the mod's ecosystem, re-checked
 	 * on the live bytes ({@link CarrierHelpers#reached}): BEFORE the call needs it at the helper's head, AFTER needs it at
 	 * the tail, and no other shift moves. Only an {@code @Inject} that captures no locals and has no sugar, slice or
-	 * {@code @Group}; other kinds' handlers describe the call, and moving them would need the helper to have no other
-	 * caller, which a protected override point cannot promise. {@code -Dforbric.mixinRetarget.extractedHelper=off}
+	 * {@code @Group}, in a mixin with one target (the new point names that target's helper); other kinds' handlers
+	 * describe the call, and moving them would need the helper to have no other caller, which a protected override
+	 * point cannot promise. {@code -Dforbric.mixinRetarget.extractedHelper=off}
 	 * leaves the point as compiled. An AFTER point with no census row may still follow a reviewed row of
 	 * {@link MergedBaseAbsorbedCalls} ({@link #absorbedCall}).
 	 */
