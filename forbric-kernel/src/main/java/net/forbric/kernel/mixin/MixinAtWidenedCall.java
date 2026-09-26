@@ -74,6 +74,16 @@ import net.forbric.kernel.util.ForbricLog;
  * constructor descriptor moves the same way — only for the argument-blind injectors, pairing each {@code NEW} with
  * its own {@code <init>} ({@code -Dforbric.mixinAtWidenNew=off} for this part alone).
  *
+ * <h2>One decision, two readers</h2>
+ *
+ * <p>{@link MixinFit} judges a mixin at config-read time, before this rewrite runs, and counted an {@code @At(INVOKE)}
+ * as resolved whenever a widened call existed — for ANY injector. The rewrite moves only the argument-blind kinds and a
+ * fixed-index {@code @ModifyArg}, never a handler in a {@code @Group}. So creativecore's {@code require=1}
+ * {@code @Redirect} of {@code RegistryFriendlyByteBuf.decorator(RegistryAccess)}, which NeoForge's configuration
+ * listener calls with a {@code ConnectionType} appended, read FIT: no "applies only partially" line, no preflight row,
+ * and nothing warned before its miss took the class down. {@link #wouldMove} is the rewrite's own decision, and both
+ * the rewrite and the verdict ask it.
+ *
  * <p>{@code -Dforbric.mixinAtWiden=off} leaves every injection point as compiled.
  */
 public final class MixinAtWidenedCall {
@@ -252,32 +262,67 @@ public final class MixinAtWidenedCall {
 
 		int widened = 0;
 		for (MethodNode method : mixin.methods) {
-			// Both lists together: @Group and @Inject are on the same handler but a compiler may put them in
-			// different retention buckets, and checking one list at a time would miss the group half the time.
-			List<AnnotationNode> annotations = new ArrayList<>();
-			if (method.visibleAnnotations != null) annotations.addAll(method.visibleAnnotations);
-			if (method.invisibleAnnotations != null) annotations.addAll(method.invisibleAnnotations);
-			widened += widenAll(mixin.name, method, annotations, declared);
+			for (AnnotationNode injector : annotationsOf(method)) {
+				List<MethodNode> bodies = movable(method, injector, declared);
+				if (bodies != null) widened += widenOne(mixin.name, method, injector, injector, bodies);
+			}
 		}
 		return widened;
 	}
 
-	private static int widenAll(String mixinName, MethodNode handler, List<AnnotationNode> annotations, List<MethodNode> declared) {
-		if (annotations == null) return 0;
-		// One @Group anywhere on this handler and nothing on it moves: the group is the mod's own statement that
-		// some of these points are meant to miss.
-		for (AnnotationNode annotation : annotations) {
-			if (GROUP_DESC.equals(annotation.desc)) return 0;
+	/**
+	 * Where {@link #widen} will point one {@code @At(atValue, target)} of {@code handler}'s {@code injector}, or null
+	 * when it leaves that point as compiled. The rewrite's own decision, for {@link MixinFit}: the verdict and the move
+	 * cannot disagree. {@code declared} is the target class's methods WITH instructions.
+	 */
+	public static String wouldMove(MethodNode handler, AnnotationNode injector, List<MethodNode> declared, String atValue,
+			String target) {
+		if (!enabled() || handler == null || injector == null || declared == null || atValue == null || target == null) return null;
+		List<MethodNode> bodies = movable(handler, injector, declared);
+		return bodies == null ? null : decide(handler, injector, bodies, atValue, target);
+	}
+
+	/**
+	 * The bodies an injector's points may move within, or null when none of its points moves: a handler in a
+	 * {@code @Group} (the group is the mod's own statement that some of these points are meant to miss), an injector
+	 * whose handler describes the call, or a selector naming nothing.
+	 */
+	private static List<MethodNode> movable(MethodNode handler, AnnotationNode injector, List<MethodNode> declared) {
+		if (!annotationsOf(handler).contains(injector) || inGroup(handler)) return null;
+		if (!ARGUMENT_BLIND.contains(injector.desc) && !MODIFY_ARG.equals(injector.desc)) return null;
+		List<MethodNode> bodies = selected(injector, declared);
+		return bodies.isEmpty() ? null : bodies;
+	}
+
+	/** Whether {@code handler} is one alternative of a callback {@code @Group}, which no point of it moves out of. */
+	static boolean inGroup(MethodNode handler) {
+		for (AnnotationNode annotation : annotationsOf(handler)) {
+			if (GROUP_DESC.equals(annotation.desc)) return true;
 		}
-		int widened = 0;
-		for (AnnotationNode injector : annotations) {
-			if (!ARGUMENT_BLIND.contains(injector.desc) && !MODIFY_ARG.equals(injector.desc)) continue;
-			List<MethodNode> bodies = selected(injector, declared);
-			if (bodies.isEmpty()) continue;
-			widened += widenOne(mixinName, injector, bodies, member -> ARGUMENT_BLIND.contains(injector.desc)
-					|| singleArgumentAtFixedIndex(handler, injector, member), ARGUMENT_BLIND.contains(injector.desc));
+		return false;
+	}
+
+	/**
+	 * Both lists together: {@code @Group} and {@code @Inject} are on the same handler but a compiler may put them in
+	 * different retention buckets, and checking one list at a time would miss the group half the time.
+	 */
+	private static List<AnnotationNode> annotationsOf(MethodNode handler) {
+		List<AnnotationNode> annotations = new ArrayList<>();
+		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
+		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
+		return annotations;
+	}
+
+	/** The moved target for one point of an injector that {@link #movable} allowed, or null. */
+	private static String decide(MethodNode handler, AnnotationNode injector, List<MethodNode> bodies, String atValue,
+			String target) {
+		boolean blind = ARGUMENT_BLIND.contains(injector.desc);
+		if (CALL_SITES.contains(atValue)) {
+			String moved = widenedAcross(bodies, target);
+			return moved != null && (blind || singleArgumentAtFixedIndex(handler, injector, target)) ? moved : null;
 		}
-		return widened;
+		if ("NEW".equals(atValue) && blind && target.startsWith("(")) return widenedNewAcross(bodies, target);
+		return null;
 	}
 
 	/** A fixed prefix argument keeps its index/type when the carrier appends arguments. A full-arguments
@@ -323,8 +368,8 @@ public final class MixinAtWidenedCall {
 	}
 
 	/** Walks the injector's values — {@code @At} sits nested inside it, sometimes in a list. */
-	private static int widenOne(String mixinName, AnnotationNode annotation, List<MethodNode> bodies,
-			java.util.function.Predicate<String> safe, boolean blind) {
+	private static int widenOne(String mixinName, MethodNode handler, AnnotationNode injector, AnnotationNode annotation,
+			List<MethodNode> bodies) {
 		if (annotation == null || annotation.values == null) return 0;
 
 		int widened = 0;
@@ -341,17 +386,16 @@ public final class MixinAtWidenedCall {
 			Object name = annotation.values.get(i);
 			Object value = annotation.values.get(i + 1);
 			if (isAt && "target".equals(name) && value instanceof String target && CALL_SITES.contains(atValue)) {
-				String moved = widenedAcross(bodies, target);
-				if (moved != null && safe.test(target)) {
+				String moved = decide(handler, injector, bodies, atValue, target);
+				if (moved != null) {
 					annotation.values.set(i + 1, moved);
 					widened++;
 					ForbricLog.info("[Forbric/Mixin] %s: injection point %s names the vanilla signature, and nothing "
 							+ "in the method it selects calls that — pointed at %s, the same call with the "
 							+ "parameters the surviving carrier appended", mixinName.replace('/', '.'), target, moved);
 				}
-			} else if (isAt && "target".equals(name) && value instanceof String target && "NEW".equals(atValue) && blind
-					&& target.startsWith("(")) {
-				String moved = widenedNewAcross(bodies, target);
+			} else if (isAt && "target".equals(name) && value instanceof String target && "NEW".equals(atValue)) {
+				String moved = decide(handler, injector, bodies, atValue, target);
 				if (moved != null) {
 					annotation.values.set(i + 1, moved);
 					widened++;
@@ -360,10 +404,10 @@ public final class MixinAtWidenedCall {
 							+ "arguments the surviving carrier appended", mixinName.replace('/', '.'), target, moved);
 				}
 			} else if (value instanceof AnnotationNode nested) {
-				widened += widenOne(mixinName, nested, bodies, safe, blind);
+				widened += widenOne(mixinName, handler, injector, nested, bodies);
 			} else if (value instanceof List<?> list) {
 				for (Object item : new ArrayList<>(list)) {
-					if (item instanceof AnnotationNode nested) widened += widenOne(mixinName, nested, bodies, safe, blind);
+					if (item instanceof AnnotationNode nested) widened += widenOne(mixinName, handler, injector, nested, bodies);
 				}
 			}
 		}

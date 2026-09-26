@@ -284,6 +284,122 @@ class MixinAtWidenedCallTest {
 		}
 	}
 
+	/**
+	 * For every injector kind, MixinFit calls the widened INVOKE point resolved exactly when the rewrite will move it.
+	 * It used to call it resolved for ANY kind, so a @Redirect or @WrapOperation read FIT while nothing would ever
+	 * attach it.
+	 */
+	@Test void theInvokeVerdictAgreesWithTheRewriteForEveryInjector() throws Exception {
+		String[][] kinds = {
+				{ "Lorg/spongepowered/asm/mixin/injection/Inject;", "()V", null },
+				{ "Lcom/llamalad7/mixinextras/injector/ModifyExpressionValue;", "()V", null },
+				{ "Lorg/spongepowered/asm/mixin/injection/Redirect;", "(Ljava/util/List;)Lnet/minecraft/network/codec/StreamCodec;", null },
+				{ "Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;", "()V", null },
+				{ "Lorg/spongepowered/asm/mixin/injection/ModifyArgs;", "()V", null },
+				{ "Lcom/llamalad7/mixinextras/injector/WrapWithCondition;", "()V", null },
+				{ "Lorg/spongepowered/asm/mixin/injection/ModifyArg;", "(Ljava/util/List;)Ljava/util/List;", null },
+				{ "Lorg/spongepowered/asm/mixin/injection/ModifyArg;", "(Ljava/util/List;)Ljava/util/List;", "index" } };
+		int moved = 0;
+		for (String[] kind : kinds) {
+			ClassNode mixin = mixin(kind[0]);
+			mixin.methods.getFirst().desc = kind[1];
+			if ("index".equals(kind[2])) mixin.methods.getFirst().visibleAnnotations.getFirst().values.addAll(List.of("index", 0));
+			if ("group".equals(kind[2])) mixin.methods.getFirst().visibleAnnotations.add(new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Group;"));
+			byte[] target = bytes(targetClass(LONG_DESC));
+			MixinFit.Result verdict = MixinFit.evaluate(bytes(mixin), name -> name.equals("net/example/Target.class") ? target : null);
+			int widened = MixinAtWidenedCall.widen(mixin, name -> targetClass(LONG_DESC));
+			moved += widened;
+			assertEquals(widened == 1 ? MixinFit.Verdict.FIT : MixinFit.Verdict.PARTIAL, verdict.verdict(),
+					java.util.Arrays.toString(kind) + ": " + verdict.reason());
+		}
+		assertEquals(3, moved, "@Inject, @ModifyExpressionValue and the fixed-index @ModifyArg");
+
+		// The switch: a widened call reads as resolved for any kind again, the @Redirect included.
+		System.setProperty(MixinFit.ANCHOR_MOVERS_PROPERTY, "off");
+		try {
+			ClassNode redirect = mixin("Lorg/spongepowered/asm/mixin/injection/Redirect;");
+			redirect.methods.getFirst().desc = "(Ljava/util/List;)Lnet/minecraft/network/codec/StreamCodec;";
+			byte[] target = bytes(targetClass(LONG_DESC));
+			assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(bytes(redirect), name -> name.equals("net/example/Target.class") ? target : null).verdict());
+		} finally {
+			System.clearProperty(MixinFit.ANCHOR_MOVERS_PROPERTY);
+		}
+	}
+
+	/**
+	 * A @Group alternative is never moved, and is still judged by whether its call is there in widened form: Iris's
+	 * addMainPass group names vanilla's six-argument call beside NeoForge's seven-argument one, and the group — not
+	 * that one point — has to hit. Judged by the rewrite, the satisfied group would read as a miss.
+	 */
+	@Test void aGroupAlternativeOnAWidenedCallIsJudgedAsAnAlternative() throws Exception {
+		ClassNode mixin = mixin("Lorg/spongepowered/asm/mixin/injection/Inject;");
+		mixin.methods.getFirst().visibleAnnotations.add(new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Group;"));
+		byte[] target = bytes(targetClass(LONG_DESC));
+		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(bytes(mixin), name -> name.equals("net/example/Target.class") ? target : null).verdict());
+		assertEquals(0, MixinAtWidenedCall.widen(mixin, name -> targetClass(LONG_DESC)), "and it is not moved");
+	}
+
+	/**
+	 * creativecore's shape: a @Redirect of RegistryFriendlyByteBuf.decorator(RegistryAccess), which NeoForge's
+	 * configuration listener calls with a ConnectionType appended. No adapter moves a redirect — it would replace the
+	 * carrier's call — so beside a hook that does resolve, the mixin is PARTIAL and says which point is missing.
+	 */
+	@Test void aRedirectOfAWidenedStaticCallIsPartial() {
+		String listener = "net/minecraft/server/network/ServerConfigurationPacketListenerImpl";
+		String buf = "net/minecraft/network/RegistryFriendlyByteBuf";
+		ClassNode target = new ClassNode();
+		target.version = Opcodes.V21;
+		target.access = Opcodes.ACC_PUBLIC;
+		target.name = listener;
+		target.superName = "java/lang/Object";
+		MethodNode finished = new MethodNode(Opcodes.ACC_PUBLIC, "handleConfigurationFinished", "()V", null, null);
+		finished.instructions.add(new InsnNode(Opcodes.ACONST_NULL));
+		finished.instructions.add(new InsnNode(Opcodes.ACONST_NULL));
+		finished.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, buf, "decorator",
+				"(Lnet/minecraft/core/RegistryAccess;Lnet/neoforged/neoforge/network/connection/ConnectionType;)Ljava/util/function/Function;", false));
+		finished.instructions.add(new InsnNode(Opcodes.POP));
+		finished.instructions.add(new InsnNode(Opcodes.RETURN));
+		target.methods = new ArrayList<>(List.of(finished, new MethodNode(Opcodes.ACC_PUBLIC, "startConfiguration", "()V", null, null)));
+		target.methods.get(1).instructions.add(new InsnNode(Opcodes.RETURN));
+
+		ClassNode mixin = new ClassNode();
+		mixin.version = Opcodes.V21;
+		mixin.name = "team/creative/creativecore/mixin/ServerConfigurationPacketListenerImplMixin";
+		mixin.superName = "java/lang/Object";
+		AnnotationNode type = new AnnotationNode("Lorg/spongepowered/asm/mixin/Mixin;");
+		type.values = new ArrayList<>(List.of("value", new ArrayList<>(List.of(Type.getObjectType(listener)))));
+		mixin.invisibleAnnotations = new ArrayList<>(List.of(type));
+		AnnotationNode at = new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");
+		at.values = new ArrayList<>(List.of("value", "INVOKE", "target",
+				"L" + buf + ";decorator(Lnet/minecraft/core/RegistryAccess;)Ljava/util/function/Function;"));
+		AnnotationNode redirect = new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Redirect;");
+		redirect.values = new ArrayList<>(List.of("method", new ArrayList<>(List.of("handleConfigurationFinished")), "at", at, "require", 1));
+		MethodNode handler = new MethodNode(Opcodes.ACC_PRIVATE, "handleConfigurationFinished",
+				"(Lnet/minecraft/core/RegistryAccess;)Ljava/util/function/Function;", null, null);
+		handler.visibleAnnotations = new ArrayList<>(List.of(redirect));
+		AnnotationNode head = new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");
+		head.values = new ArrayList<>(List.of("value", "HEAD"));
+		AnnotationNode inject = new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Inject;");
+		inject.values = new ArrayList<>(List.of("method", new ArrayList<>(List.of("startConfiguration")), "at", new ArrayList<>(List.of(head))));
+		MethodNode other = new MethodNode(Opcodes.ACC_PRIVATE, "onStart", "(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V", null, null);
+		other.visibleAnnotations = new ArrayList<>(List.of(inject));
+		mixin.methods = new ArrayList<>(List.of(handler, other));
+
+		byte[] targetBytes = bytes(target);
+		MixinFit.Result verdict = MixinFit.evaluate(bytes(mixin), name -> name.equals(listener + ".class") ? targetBytes : null);
+		assertEquals(MixinFit.Verdict.PARTIAL, verdict.verdict(), verdict.reason());
+		assertEquals(List.of("@At(INVOKE) ServerConfigurationPacketListenerImpl.decorator in handleConfigurationFinished"), verdict.unresolved());
+		assertEquals(0, MixinAtWidenedCall.widen(mixin, name -> target), "and the rewrite agrees: nothing moves");
+	}
+
+	private static byte[] bytes(ClassNode node) {
+		if (node.version == 0) node.version = Opcodes.V21;
+		if (node.superName == null) node.superName = "java/lang/Object";
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		node.accept(writer);
+		return writer.toByteArray();
+	}
+
 	/** A wrap or redirect of NEW mirrors the constructor's arguments: never widened. */
 	@Test void aConstructorWrapIsNeverWidened() throws Exception {
 		ClassNode mixin = StagedFabricMixinFixture.mixin("fabric-particles-v1", "net/fabricmc/fabric/mixin/particle/EntityMixin");

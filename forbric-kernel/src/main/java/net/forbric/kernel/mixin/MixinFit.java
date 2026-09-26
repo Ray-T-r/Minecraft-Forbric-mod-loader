@@ -156,6 +156,16 @@ public final class MixinFit {
 		return "strict".equalsIgnoreCase(System.getProperty("forbric.mixinFit", "default"));
 	}
 
+	/**
+	 * {@code -Dforbric.mixinFit.anchorMovers=off}: an {@code @At(INVOKE)}/{@code @At(NEW)} point on a call the carrier
+	 * widened reads as resolved for any injector kind again, as before the verdict asked the adapters that move points.
+	 */
+	static final String ANCHOR_MOVERS_PROPERTY = "forbric.mixinFit.anchorMovers";
+
+	static boolean asksAnchorMovers() {
+		return !"off".equalsIgnoreCase(System.getProperty(ANCHOR_MOVERS_PROPERTY, "on"));
+	}
+
 	private MixinFit() {
 	}
 
@@ -390,7 +400,7 @@ public final class MixinFit {
 				String atTarget = asString(value(at, "target"));
 				if (atTarget == null || atValue == null) continue;
 				if ("NEW".equals(atValue)) {
-					out.add(newAnchor(injector, m, atTarget, hits));
+					out.add(newAnchor(injector, m, atTarget, hits, target.methods));
 					continue;
 				}
 				if (!RESOLVABLE_AT.contains(atValue)) continue;
@@ -398,12 +408,23 @@ public final class MixinFit {
 				for (MethodNode hit : hits) {
 					if (containsMember(hit, atTarget)) { anywhere = true; break; }
 				}
-				// The same move MixinAtWidenedCall will make, judged here too so the verdict and the rewrite
-				// cannot disagree about whether this point resolves.
-				if (!anywhere) {
+				// The move MixinAtWidenedCall or a reviewed MixinWrapOperationShim wrap will make, decided by the
+				// adapter's own predicate so the verdict and the rewrite cannot disagree. It used to be "a widened call
+				// exists", for any injector: creativecore's @Redirect of the decorator call NeoForge widened read FIT,
+				// though no adapter moves a redirect (it would replace the carrier's call), and its require=1 miss then
+				// went unannounced.
+				//
+				// A handler in a @Group is the exception, judged as before by whether the call is there in widened form:
+				// it is one of the mod's own alternatives, never moved, and the group — not this point — has to hit.
+				// Iris's addMainPass group names vanilla's six-argument call beside NeoForge's seven-argument one; judged
+				// by the rewrite, the vanilla alternative would read as a miss in a group that is satisfied.
+				if (!anywhere && (!asksAnchorMovers() || MixinAtWidenedCall.inGroup(m))) {
 					for (MethodNode hit : hits) {
 						if (MixinAtWidenedCall.widenedIn(hit, atTarget) != null) { anywhere = true; break; }
 					}
+				} else if (!anywhere) {
+					anywhere = MixinAtWidenedCall.wouldMove(m, injector, target.methods, atValue, atTarget) != null
+							|| MixinWrapOperationShim.wouldWrap(mixin.name, m, target.methods) != null;
 				}
 				out.add(new Anchor("@At(" + atValue + ")", atDetail(atTarget, target.name) + " in " + hits.get(0).name,
 						anywhere, false, ownedElsewhere(atTarget, target.name)));
@@ -838,7 +859,8 @@ public final class MixinFit {
 	 * ("has an invalid signature"), which drops the whole mixin. Judged by arity and types against every
 	 * construction of the type inside the hit methods; other injector kinds only need the construction to exist.
 	 */
-	private static Anchor newAnchor(AnnotationNode injector, MethodNode handler, String atTarget, List<MethodNode> hits) {
+	private static Anchor newAnchor(AnnotationNode injector, MethodNode handler, String atTarget, List<MethodNode> hits,
+			List<MethodNode> declared) {
 		String type;
 		Type[] wanted = null;
 		if (atTarget.startsWith("(")) {
@@ -878,9 +900,14 @@ public final class MixinFit {
 		}
 		String simple = type.substring(type.lastIndexOf('/') + 1);
 		String where = " in " + hits.get(0).name;
-		// The same move MixinAtWidenedCall makes for an argument-blind injector, so verdict and rewrite agree.
-		if (!resolved && wanted != null && MixinAtWidenedCall.argumentBlind(injector.desc)) {
-			for (MethodNode hit : hits) if (MixinAtWidenedCall.widenedNewIn(hit, atTarget) != null) { resolved = true; break; }
+		// The same move MixinAtWidenedCall makes for an argument-blind injector, by its own predicate, so verdict and
+		// rewrite agree; a @Group alternative is judged as before, for the reason given at the INVOKE points above.
+		if (!resolved && wanted != null && (!asksAnchorMovers() || MixinAtWidenedCall.inGroup(handler))) {
+			if (MixinAtWidenedCall.argumentBlind(injector.desc)) {
+				for (MethodNode hit : hits) if (MixinAtWidenedCall.widenedNewIn(hit, atTarget) != null) { resolved = true; break; }
+			}
+		} else if (!resolved && wanted != null && MixinAtWidenedCall.wouldMove(handler, injector, declared, "NEW", atTarget) != null) {
+			resolved = true;
 		}
 		if (resolved) return new Anchor("@At(NEW)", simple + where, true);
 		if (!constructed) return new Anchor("@At(NEW)", simple + " is not constructed" + where, false);

@@ -77,6 +77,15 @@ public final class KernelFabricLoader implements FabricLoader {
 	private static final java.util.Set<String> SENSITIVE_ARGUMENTS =
 			java.util.Set.of("--accessToken", "--username", "--uuid", "--xuid");
 
+	/**
+	 * {@code -Dforbric.entrypointResolveFailure=warn}: an entrypoint whose class cannot be loaded is skipped with a
+	 * WARN, as before, instead of failing its mod (lifecycle keys) or recording a finding (other keys).
+	 */
+	public static final String RESOLVE_FAILURE_PROPERTY = "forbric.entrypointResolveFailure";
+
+	/** The keys the kernel itself drives through the lifecycle; a mod whose entry among them cannot load did not start. */
+	private static final java.util.Set<String> LIFECYCLE_KEYS = java.util.Set.of("main", "client", "server", "preLaunch");
+
 	private final EnvType envType;
 	private final Path gameDir;
 	private final Path configDir;
@@ -198,7 +207,7 @@ public final class KernelFabricLoader implements FabricLoader {
 			List<Entrypoint> sink = entrypointsByKey.computeIfAbsent(entry.getKey(), k -> new ArrayList<>());
 
 			for (EntrypointDecl decl : entry.getValue()) {
-				sink.add(new Entrypoint(container, decl));
+				sink.add(new Entrypoint(entry.getKey(), container, decl));
 			}
 		}
 	}
@@ -581,6 +590,7 @@ public final class KernelFabricLoader implements FabricLoader {
 	 * added through Fabric Loader's entrypoint storage, which builds its own instances.
 	 */
 	private final class Entrypoint {
+		private final String key;
 		private final KernelModContainer provider;
 		private final EntrypointDecl decl;
 		/** Non-null for an entrypoint a mod added through the storage; it is then also the storage entry. */
@@ -589,8 +599,11 @@ public final class KernelFabricLoader implements FabricLoader {
 		private volatile Object value;
 		private volatile Class<?> resolvedClass;
 		private volatile EntrypointStorage.Entry storageEntry;
+		/** Whether this declaration's load failure has been said; {@link #provides} runs once per query of its key. */
+		private volatile boolean unresolvableReported;
 
-		Entrypoint(KernelModContainer provider, EntrypointDecl decl) {
+		Entrypoint(String key, KernelModContainer provider, EntrypointDecl decl) {
+			this.key = key;
 			this.provider = provider;
 			this.decl = decl;
 			this.added = null;
@@ -647,10 +660,53 @@ public final class KernelFabricLoader implements FabricLoader {
 
 				return false;
 			} catch (Throwable t) {
-				ForbricLog.warn("[Forbric/Fabric] %s: cannot resolve entrypoint '%s': %s", provider.getMetadata().getId(),
-						decl.value(), String.valueOf(t));
+				return unresolvable(t);
+			}
+		}
+
+		/**
+		 * An entrypoint whose class, or a type its members name, cannot be loaded or linked here.
+		 *
+		 * <p>Nothing above throws for a declaration of another type — that is the {@code return false} paths — so
+		 * anything that lands here is a load failure, and it used to be a WARN and a skip. fabric-networking's
+		 * {@code CommonPacketsImpl::init} names {@code ServerConfigurationPacketListenerImpl} in a lambda's signature;
+		 * when creativecore's required redirect made that class fail its weave, reflection on the entrypoint class
+		 * threw, the entrypoint was dropped, Fabric's common packet handshake never registered, and the report had no
+		 * word about fabric-networking. Fabric itself throws here, for the whole key.
+		 *
+		 * <p>For the keys the kernel drives ({@code main}, {@code client}, {@code server}, {@code preLaunch}) the
+		 * declaration is handed on as matching: construction throws the same error inside the lifecycle driver's own
+		 * catch, which already fails the mod and records its CONFIRMED initialization finding — one reporting path, and
+		 * Fabric's outcome. For any other key the mod that reads it decides; the entry is skipped as before and a
+		 * SUSPECTED finding names the key, because a class that links natively but not here can be a plugin
+		 * (modmenu, emi, jade) for a mod that is otherwise fine. {@link #RESOLVE_FAILURE_PROPERTY}{@code =warn}
+		 * restores the plain skip.
+		 */
+		private boolean unresolvable(Throwable t) {
+			String id = provider.getMetadata().getId();
+			if ("warn".equalsIgnoreCase(System.getProperty(RESOLVE_FAILURE_PROPERTY, "fail"))) {
+				ForbricLog.warn("[Forbric/Fabric] %s: cannot resolve entrypoint '%s': %s", id, decl.value(), String.valueOf(t));
 				return false;
 			}
+			boolean first = !unresolvableReported;
+			unresolvableReported = true;
+			if (LIFECYCLE_KEYS.contains(key)) {
+				if (first) {
+					ForbricLog.warn("[Forbric/Fabric] %s: %s entrypoint '%s' cannot be loaded here (%s) — it is handed to the "
+							+ "%s driver, which fails the mod as Fabric would", id, key, decl.value(), String.valueOf(t), key);
+				}
+				return true;
+			}
+			if (first) {
+				ForbricLog.warn("[Forbric/Fabric] %s: its '%s' entrypoint '%s' cannot be loaded here (%s) — whatever reads "
+						+ "'%s' goes without it", id, key, decl.value(), String.valueOf(t), key);
+				net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(
+						"entrypoint:" + key + ":" + decl.value(), id, "Mod integration",
+						"KernelFabricLoader entrypoint resolution", net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED,
+						false, "its '" + key + "' entrypoint " + decl.value() + " cannot be loaded, so the mod reading '" + key
+								+ "' goes without it", List.of("key=" + key, "entrypoint=" + decl.value(), String.valueOf(t))));
+			}
+			return false;
 		}
 
 		Object get(Class<?> type) {

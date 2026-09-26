@@ -95,16 +95,32 @@ public final class MixinWrapOperationShim {
 		if (declared.isEmpty()) return 0;
 		int wrapped = 0;
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
-			if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX) || !REVIEWED.containsKey(mixin.name + "#" + handler.name)) continue;
-			MethodNode outer = wrap(mixin, handler, declared);
-			if (outer == null) continue;
-			mixin.methods.add(outer);
+			Plan plan = plan(mixin.name, handler, declared);
+			if (plan == null) continue;
+			mixin.methods.add(wrap(mixin, handler, plan));
 			wrapped++;
 		}
 		return wrapped;
 	}
 
-	private static MethodNode wrap(ClassNode mixin, MethodNode handler, List<MethodNode> declared) {
+	/**
+	 * The merged call {@link #adapt} will point this handler's {@code @At} at, as an {@code @At} target, or null when it
+	 * wraps nothing — the same decision, nothing changed. {@link MixinFit} asks this so a reviewed wrap's anchor reads as
+	 * resolved exactly when the wrap will make it so. {@code declared}: the target's methods WITH instructions.
+	 */
+	public static String wouldWrap(String mixinName, MethodNode handler, List<MethodNode> declared) {
+		if (!enabled() || mixinName == null || handler == null || declared == null) return null;
+		Plan plan = plan(mixinName, handler, declared);
+		return plan == null ? null : "L" + plan.named().owner() + ";" + plan.named().name() + plan.merged();
+	}
+
+	/** One wrap, decided: the injector and its point, the call it named, the merged call, and the argument mapping. */
+	private record Plan(AnnotationNode injector, AnnotationNode at, MixinAtWidenedCall.Member named, String merged,
+			int[] mapping, boolean staticCall) {
+	}
+
+	private static Plan plan(String mixinName, MethodNode handler, List<MethodNode> declared) {
+		if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX) || !REVIEWED.containsKey(mixinName + "#" + handler.name)) return null;
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
 		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
@@ -156,6 +172,22 @@ public final class MixinWrapOperationShim {
 		for (MethodNode body : bodies) {
 			if (handlerStatic != ((body.access & Opcodes.ACC_STATIC) != 0)) return null;
 		}
+		return new Plan(injector, at, named, merged, mapping, staticCall);
+	}
+
+	/** Builds the outer handler along {@code plan} and turns {@code handler} into its inner one. */
+	private static MethodNode wrap(ClassNode mixin, MethodNode handler, Plan plan) {
+		AnnotationNode injector = plan.injector();
+		AnnotationNode at = plan.at();
+		MixinAtWidenedCall.Member named = plan.named();
+		String merged = plan.merged();
+		int[] mapping = plan.mapping();
+		Type[] wanted = Type.getArgumentTypes(named.descriptor());
+		Type[] available = Type.getArgumentTypes(merged);
+		Type[] params = Type.getArgumentTypes(handler.desc);
+		int receiver = plan.staticCall() ? 0 : 1;
+		int head = receiver + wanted.length + 1;
+		boolean handlerStatic = (handler.access & Opcodes.ACC_STATIC) != 0;
 
 		// The new handler: (receiver?, merged arguments, Operation, trailing) → the original.
 		List<Type> outerParams = new ArrayList<>();

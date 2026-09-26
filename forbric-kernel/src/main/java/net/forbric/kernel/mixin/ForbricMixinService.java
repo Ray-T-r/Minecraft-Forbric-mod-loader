@@ -291,8 +291,9 @@ public final class ForbricMixinService
 		// …and an injection point on a call the kernel relocated out of its method (MinecraftForge's ItemStack.useOn)
 		// selects the one-call relay that now makes it.
 		MixinRelocatedCall.adapt(node, this::mergedBaseNodeWithCode);
-		// …and a @WrapOperation or @Redirect whose call the surviving carrier reordered or widened is wrapped, so it
-		// binds to the merged call and its handler still receives the arguments it was written for.
+		// …and a reviewed @WrapOperation whose call the surviving carrier reordered or widened is wrapped, so it binds
+		// to the merged call and its handler still receives the arguments it was written for (never a @Redirect: it
+		// would replace the carrier's call).
 		MixinWrapOperationShim.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a target whose NUMBER the merge gave to a carrier's anonymous class is moved to where vanilla's
 		// body went. Before the twin pass: the class this lands on may itself have a renamed twin.

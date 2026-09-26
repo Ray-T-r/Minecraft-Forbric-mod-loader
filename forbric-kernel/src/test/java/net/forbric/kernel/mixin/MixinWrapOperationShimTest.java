@@ -84,6 +84,38 @@ class MixinWrapOperationShimTest {
 		}
 	}
 
+	/**
+	 * MixinFit asks the shim: the reviewed pick-block wrap's reordered call reads as resolved (the shim will bind it),
+	 * and as missing with the shim switched off.
+	 */
+	@Test void theVerdictFollowsTheReviewedWrap() throws Exception {
+		byte[] mixin = StagedFabricMixinFixture.bytes(fabric());
+		byte[] listener = StagedFabricMixinFixture.bytes(game(merged()));
+		java.util.function.Function<String, byte[]> resolver = name -> name.equals(LISTENER + ".class") ? listener : null;
+		MixinFit.Result fit = MixinFit.evaluate(mixin, resolver);
+		assertTrue(fit.unresolved().stream().noneMatch(u -> u.contains("getCloneItemStack")), fit.reason());
+		System.setProperty(MixinWrapOperationShim.PROPERTY, "off");
+		MixinFit.Result off = MixinFit.evaluate(mixin, resolver);
+		assertTrue(off.unresolved().stream().anyMatch(u -> u.contains("getCloneItemStack in handlePickItemFromBlock")), off.reason());
+	}
+
+	/**
+	 * fabric-networking's configuration-channel wrap on the decorator call NeoForge widened: no adapter binds it (a
+	 * wrap there would put Fabric's lookup in front of the kernel's), and the verdict now says so instead of reading
+	 * FIT because a widened call exists. PARTIAL keeps the mixin by default; only -Dforbric.mixinFit=strict drops it.
+	 */
+	@Test void fabricNetworkingsDecoratorWrapIsReportedAsTheMissItIs() throws Exception {
+		String name = "net/fabricmc/fabric/mixin/networking/ServerConfigurationPacketListenerImplMixin";
+		String listener = "net/minecraft/server/network/ServerConfigurationPacketListenerImpl";
+		byte[] mixin = StagedFabricMixinFixture.bytes(StagedFabricMixinFixture.mixin("fabric-networking-api-v1", name));
+		byte[] target = StagedFabricMixinFixture.bytes(game(merged(), listener));
+		MixinFit.Result fit = MixinFit.evaluate(mixin, n -> n.equals(listener + ".class") ? target : null);
+		assertEquals(MixinFit.Verdict.PARTIAL, fit.verdict(), fit.reason());
+		assertTrue(fit.unresolved().contains("@At(INVOKE) ServerConfigurationPacketListenerImpl.decorator in handleConfigurationFinished"),
+				fit.unresolved().toString());
+		assertFalse(fit.shouldSuppress(), "PARTIAL is kept unless strict");
+	}
+
 	@Test void aRepeatedTypeIsAGuessAndIsRefused() {
 		Type pos = Type.getObjectType("net/minecraft/core/BlockPos"), level = Type.getObjectType("net/minecraft/world/level/LevelReader");
 		assertArrayEquals(new int[] { 1, 0, 2 }, MixinWrapOperationShim.embedding(new Type[] { level, pos, Type.BOOLEAN_TYPE },
