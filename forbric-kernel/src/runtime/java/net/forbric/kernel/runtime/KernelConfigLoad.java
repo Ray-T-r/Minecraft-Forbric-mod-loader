@@ -64,7 +64,7 @@ public final class KernelConfigLoad {
 		try {
 			Path configDir = FMLPaths.CONFIGDIR.get();
 			Method openConfig = openConfig();
-			int opened = 0, all = 0;
+			int opened = 0, all = 0, alreadyLoaded = 0;
 			for (String t : types) {
 				// The carrier's loadConfigs(type, dir) is exactly this forEach over configSets.get(type) — spelled
 				// out so ONE config that will not open costs only its own mod a row, not every config after it.
@@ -72,13 +72,41 @@ public final class KernelConfigLoad {
 				if (configs == null) continue;
 				for (ModConfig config : List.copyOf(configs)) {
 					all++;
+					// A config-port registration opened itself where the port opens it (openAtRegistration); a
+					// second open warns and installs a second file watcher, so every later edit reloads twice.
+					if (config.getLoadedConfig() != null) { alreadyLoaded++; continue; }
 					if (open(openConfig, config, configDir, t, "early")) opened++;
 				}
 			}
-			ForbricLog.info("[Forbric/Lifecycle] loaded NeoForge configs (%s) from %s — opened %d of %d config(s)",
-					String.join("+", types), configDir, opened, all);
+			ForbricLog.info("[Forbric/Lifecycle] loaded NeoForge configs (%s) from %s — opened %d of %d config(s), "
+					+ "%d already loaded", String.join("+", types), configDir, opened, all, alreadyLoaded);
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Lifecycle] could not load NeoForge configs", Reflect.unwrap(t));
+		}
+	}
+
+	/** {@code -Dforbric.portConfigOpenOnRegister=off}: a config-port registration is registration only again. */
+	public static final String OPEN_ON_REGISTER_PROPERTY = "forbric.portConfigOpenOnRegister";
+
+	/**
+	 * Opens a config the Fabric config port just registered, the moment it is registered — every type but SERVER,
+	 * exactly the port's own rule ({@code ConfigTracker.registerConfig}: {@code if (type != SERVER) openConfig(...)}).
+	 *
+	 * <p>A Fabric mod registers its config and reads it in the same {@code onInitialize}: Traveler's Backpack
+	 * registers COMMON and a few lines later asks {@code enableLoot}, so no later kernel pass can be early enough —
+	 * the carrier's own {@code registerConfig} opens only STARTUP, the mod got "Cannot get config value before
+	 * config is loaded", and everything after that line (its fluids, handlers, recipes) never ran. SERVER still
+	 * opens per world; an already loaded config (STARTUP) is left alone; a config that will not open costs its own
+	 * mod a DEGRADED row, never an exception into the mod.
+	 */
+	public static void openAtRegistration(ModConfig config) {
+		if (config == null || "off".equalsIgnoreCase(System.getProperty(OPEN_ON_REGISTER_PROPERTY, "on"))) return;
+		if (config.getType() == ModConfig.Type.SERVER || config.getLoadedConfig() != null) return;
+		try {
+			open(openConfig(), config, FMLPaths.CONFIGDIR.get(), config.getType().name(), "registration");
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not open " + config.getModId() + "'s config at registration",
+					Reflect.unwrap(t));
 		}
 	}
 

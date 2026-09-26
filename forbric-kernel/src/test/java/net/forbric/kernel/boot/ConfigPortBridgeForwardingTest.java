@@ -83,6 +83,27 @@ class ConfigPortBridgeForwardingTest {
 	}
 
 	@Test
+	void bothRegistrationFormsOpenTheConfigRightAfterRegisteringIt() throws Exception {
+		ClassNode node = bridge();
+		int forms = 0;
+		for (MethodNode method : node.methods) {
+			if (!method.name.equals("registerConfig")) continue;
+			forms++;
+			int registered = -1, opened = -1, index = 0;
+			for (AbstractInsnNode insn : method.instructions) {
+				index++;
+				if (!(insn instanceof MethodInsnNode call)) continue;
+				if (call.owner.endsWith("ConfigTracker") && call.name.equals("registerConfig")) registered = index;
+				if (call.owner.endsWith("KernelConfigLoad") && call.name.equals("openAtRegistration")) opened = index;
+				assertTrue(!call.name.equals("loadConfigs"), "a whole-type load from the bridge opens other mods' configs");
+			}
+			// Traveler's Backpack registers COMMON and reads it in the same onInitialize: the port opens it there.
+			assertTrue(registered > 0 && opened > registered, method.desc + " opens after registering");
+		}
+		assertTrue(forms >= 2, "both the 3-arg and the 4-arg forms");
+	}
+
+	@Test
 	void allThreeConfigEventsAreForwarded() throws Exception {
 		ClassNode node = bridge();
 

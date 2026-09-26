@@ -147,20 +147,24 @@ public final class KernelConfigPortBridge {
 	/**
 	 * The mod-ID-keyed 3-arg registration the porting layer compiled against.
 	 *
-	 * <p>Registration only. The carrier opens a STARTUP config here and leaves the rest to the lifecycle, and that
-	 * is kept: a config registered from a Fabric entrypoint that runs before the kernel's early-config pass would
-	 * otherwise be opened twice, and the carrier's second open warns and installs a second file watcher, so every
-	 * later edit fires the reload twice. {@code KernelLifecycle} opens what is still unopened, once, afterwards.
+	 * <p>Registered with the carrier, then opened as the port opens it — every type but SERVER, right here
+	 * ({@link KernelConfigLoad#openAtRegistration}): a Fabric mod reads its config in the same {@code onInitialize}
+	 * that registers it. The kernel's early pass skips what is already loaded, so nothing is opened twice (a second
+	 * open warns and installs a second file watcher, and every later edit fires the reload twice).
 	 */
 	public static ModConfig registerConfig(ConfigTracker tracker, ModConfig.Type type, IConfigSpec spec,
 			String modId) {
-		return tracker.registerConfig(type, spec, containerFor(modId));
+		ModConfig config = tracker.registerConfig(type, spec, containerFor(modId));
+		KernelConfigLoad.openAtRegistration(config);
+		return config;
 	}
 
 	/** The 4-arg form, with the mod's own file name. */
 	public static ModConfig registerConfig(ConfigTracker tracker, ModConfig.Type type, IConfigSpec spec,
 			String modId, String fileName) {
-		return tracker.registerConfig(type, spec, containerFor(modId), fileName);
+		ModConfig config = tracker.registerConfig(type, spec, containerFor(modId), fileName);
+		KernelConfigLoad.openAtRegistration(config);
+		return config;
 	}
 
 	/**

@@ -55,7 +55,12 @@ class KernelNeoConfigLoadShapeTest {
 						"loadEarly hands whole types to ConfigTracker.loadConfigs again");
 			}
 		}
-		for (String pass : new String[] { "loadEarly", "openLate" }) {
+		assertTrue(reaches(node, "loadEarly", "net/neoforged/fml/config/ModConfig", "getLoadedConfig", new HashSet<>()),
+				"the early pass skips a config the port already opened at registration, or it is opened twice");
+		assertTrue(reaches(node, "openAtRegistration", "net/neoforged/fml/config/ModConfig", "getLoadedConfig", new HashSet<>())
+				&& reaches(node, "openAtRegistration", "net/neoforged/fml/config/ModConfig", "getType", new HashSet<>()),
+				"registration opens only an unloaded, non-SERVER config");
+		for (String pass : new String[] { "loadEarly", "openLate", "openAtRegistration" }) {
 			assertTrue(reaches(node, pass, "net/forbric/api/ModCatalog", "mark", new HashSet<>()),
 					pass + " reaches ModCatalog.mark (directly or through the shared open)");
 		}
