@@ -34,7 +34,7 @@ class AssertCompatTest {
 			[Forbric/DataPacks] served 2 datapacks
 			[Forbric/Aliases] gave registries alias-resolving lookup
 			fired RegisterEvent in NeoForge's registration order
-			all 1 CLIENT_MOD_BUS bridge(s) installed
+			[Forbric/EventMux] all 3 CLIENT_MOD_BUS bridge(s) installed
 			[Forbric/EventMux] all 2 GAME_BUS bridge(s) installed
 			[Forbric/EventMux] all 2 CLIENT_GAME_BUS bridge(s) installed
 			""";

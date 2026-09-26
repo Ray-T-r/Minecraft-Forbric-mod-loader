@@ -31,7 +31,7 @@ abs "…not the pre-Minecraft window"     "\[main/INFO\]: \[Forbric/Fabric\] inv
 ck  "datapacks served"                  "Forbric/DataPacks\] served [1-9][0-9]* datapack"
 ck  "registry alias parity restored"    "Forbric/Aliases\] gave .* alias-resolving lookup"
 ck  "NeoForge registration order"       "fired RegisterEvent in NeoForge.s registration order"
-ck  "client bridge pass complete"       "all 1 CLIENT_MOD_BUS bridge\(s\) installed"
+ck  "client bridge pass complete"       "EventMux\] all [0-9]+ CLIENT_MOD_BUS bridge\(s\) installed"
 ck  "game-bus bridge pass complete"     "EventMux\] all [0-9]+ GAME_BUS bridge\(s\) installed"
 ck  "client game-bus bridges on"        "EventMux\] all [0-9]+ CLIENT_GAME_BUS bridge\(s\) installed"
 echo "== must be absent =="
