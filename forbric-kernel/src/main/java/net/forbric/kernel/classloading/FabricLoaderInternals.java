@@ -24,8 +24,9 @@ import java.util.Set;
  * <p>The kernel implements no Fabric Loader machinery. But mods link against a handful of its internals anyway, and on
  * Fabric those links hold: Core Lib's {@code preLaunch} (and every SuperMartijn642 mod's content with it) goes through
  * {@code FabricLoaderImpl}'s entrypoint storage, its mixin plugin reads the legacy
- * {@code net.fabricmc.loader.FabricLoader}, and pets-mod calls {@code StringUtil.capitalize}. Each is shipped as the
- * narrowest surface those mods use, by exact name, so anything beyond it still fails by name.
+ * {@code net.fabricmc.loader.FabricLoader}, pets-mod calls {@code StringUtil.capitalize}, and owo anchors on
+ * {@code Hooks.startServer}. Each is shipped as the narrowest surface those mods use, by exact name, so anything beyond
+ * it still fails by name.
  *
  * <p><b>Pinned to the parent, by exact name.</b> There must be one copy, the kernel's: a mod that shaded Fabric
  * Loader's real {@code FabricLoaderImpl} would otherwise win child-first and run Fabric's own static initialiser in
@@ -34,7 +35,9 @@ import java.util.Set;
  *
  * <p><b>Withheld by {@code -Dforbric.fabricImpl=off}.</b> The class loader then answers
  * {@code ClassNotFoundException} for every name in {@link #SWITCHED}, and the kernel stops reading the entrypoint
- * storage back — exactly the behaviour from before these classes existed.
+ * storage back — exactly the behaviour from before these classes existed. {@code Hooks} is not in that set: the game's
+ * own entry points call it, and it has its own switch ({@code -Dforbric.fabricHooks=off}) that stops the calls
+ * being emitted in the first place.
  */
 public final class FabricLoaderInternals {
 	/** {@code -Dforbric.fabricImpl=off}: mods see none of {@link #SWITCHED}, and the storage is not read back. */
@@ -52,6 +55,9 @@ public final class FabricLoaderInternals {
 			"net.fabricmc.loader.impl.util.DefaultLanguageAdapter",
 			"net.fabricmc.loader.impl.util.StringUtil");
 
+	/** Shipped internals the game itself calls; pinned, never withheld. */
+	static final Set<String> ALWAYS = Set.of("net.fabricmc.loader.impl.game.minecraft.Hooks");
+
 	private FabricLoaderInternals() {
 	}
 
@@ -62,7 +68,7 @@ public final class FabricLoaderInternals {
 
 	/** Whether {@code className} is one of the shipped internals, which only the parent may define. */
 	public static boolean pinned(String className) {
-		return SWITCHED.contains(className);
+		return SWITCHED.contains(className) || ALWAYS.contains(className);
 	}
 
 	/** Whether the class loader must answer {@code ClassNotFoundException} for {@code className}. */

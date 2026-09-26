@@ -64,7 +64,11 @@ class ClientWindowOrderTest {
 	private static final String MINECRAFT = "net.minecraft.client.Minecraft";
 	private static final String OPTIONS = "net/minecraft/client/Options";
 	private static final String NEO_CLIENT_MOD_LOADER = "net/neoforged/neoforge/client/loading/ClientModLoader";
-	private static final String FABRIC_HOOK = "onClientEntrypoints";
+	/**
+	 * The Fabric window's landmark: Fabric Loader's own {@code Hooks.startClient}, which the kernel's window runs
+	 * from, or the bare {@code KernelLifecycle.onClientEntrypoints} under {@code -Dforbric.fabricHooks=off}.
+	 */
+	private static final String FABRIC_HOOK = "fabric-client-entrypoints";
 	private static final String NEO_HOOK = "onNeoClientSetup";
 
 	/** On the REAL merged base, with both injectors applied, the three landmarks come out in the right order. */
@@ -150,13 +154,20 @@ class ClientWindowOrderTest {
 						&& OPTIONS.equals(type.desc) && !marks.contains("NEW " + OPTIONS)) {
 					marks.add("NEW " + OPTIONS);
 				} else if (insn instanceof MethodInsnNode call
-						&& (FABRIC_HOOK.equals(call.name) || NEO_HOOK.equals(call.name))
-						&& !marks.contains(call.name)) {
+						&& isFabricHook(call) && !marks.contains(FABRIC_HOOK)) {
+					marks.add(FABRIC_HOOK);
+				} else if (insn instanceof MethodInsnNode call
+						&& NEO_HOOK.equals(call.name) && !marks.contains(call.name)) {
 					marks.add(call.name);
 				}
 			}
 		}
 		return marks;
+	}
+
+	private static boolean isFabricHook(MethodInsnNode call) {
+		return ("net/fabricmc/loader/impl/game/minecraft/Hooks".equals(call.owner) && "startClient".equals(call.name))
+				|| ("net/forbric/kernel/boot/KernelLifecycle".equals(call.owner) && "onClientEntrypoints".equals(call.name));
 	}
 
 	private static byte[] bothInjectors(byte[] in, boolean fabricFirst) {

@@ -20,6 +20,7 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -58,6 +59,12 @@ import net.forbric.kernel.util.ForbricLog;
  * <p><b>Fail-loud.</b> If the targeted entry is transformed but no known trigger is found (the merged base moved
  * the call), {@link #missedRequiredExcision()} reports it so the kernel refuses to boot rather than silently
  * firing a genuine lifecycle or leaving the entry un-hooked.
+ *
+ * <p><b>Fabric's own marker.</b> On the server, the redirected call is followed by
+ * {@code Hooks.startServer(null, null)} — the call Fabric Loader patches into {@code Main.main} and mods anchor on
+ * as "every mod has initialised" (owo freezes its channels right after it). It goes after the kernel's window, not at
+ * Fabric's literal spot after {@code Bootstrap.validate}, because only here is that post-condition true in the
+ * kernel; see {@code net.fabricmc.loader.impl.game.minecraft.Hooks}. {@code -Dforbric.fabricHooks=off} leaves it out.
  */
 public final class LifecycleHookInjector implements ClassTransformer {
 
@@ -67,6 +74,18 @@ public final class LifecycleHookInjector implements ClassTransformer {
 	public static final String CLIENT_MAIN = "net.minecraft.client.main.Main";
 
 	private static final String KERNEL_HOOK_OWNER = "net/forbric/kernel/boot/KernelLifecycle";
+
+	/** Fabric Loader's hook class, whose calls mods anchor on. Shipped by the kernel, parent-loaded. */
+	static final String FABRIC_HOOKS = "net/fabricmc/loader/impl/game/minecraft/Hooks";
+	/** {@code Hooks.startServer} / {@code Hooks.startClient}: {@code (File runDir, Object gameInstance)}. */
+	static final String FABRIC_HOOK_DESC = "(Ljava/io/File;Ljava/lang/Object;)V";
+	/** {@code -Dforbric.fabricHooks=off}: emit neither Fabric hook call, exactly the bytecode from before they existed. */
+	public static final String FABRIC_HOOKS_SWITCH = "forbric.fabricHooks";
+
+	/** Whether the entries carry Fabric's {@code Hooks.startServer}/{@code startClient} calls. Read per transform. */
+	static boolean fabricHooksEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(FABRIC_HOOKS_SWITCH, "on"));
+	}
 
 	/**
 	 * A genuine mod-loading trigger the byte-merge can leave in an entry, and the kernel hook it redirects to.
@@ -105,29 +124,37 @@ public final class LifecycleHookInjector implements ClassTransformer {
 	private final String transformClass;
 	private final String transformMethod;
 	private final Trigger[] triggers;
+	/**
+	 * Whether a redirected trigger is followed by Fabric's {@code Hooks.startServer}. Server only: the client's
+	 * equivalent, {@code Hooks.startClient}, belongs in {@code Minecraft.<init>} and is emitted there by
+	 * {@code ClientEntrypointHookInjector}.
+	 */
+	private final boolean fabricServerHook;
 
 	private volatile boolean transformedRequiredEntry;
 	private volatile boolean redirectedAtRequiredEntry;
 
-	private LifecycleHookInjector(String transformClass, String transformMethod, Trigger[] triggers) {
+	private LifecycleHookInjector(String transformClass, String transformMethod, Trigger[] triggers,
+			boolean fabricServerHook) {
 		this.transformClass = transformClass;
 		this.transformMethod = transformMethod;
 		this.triggers = triggers;
+		this.fabricServerHook = fabricServerHook;
 	}
 
 	/** The injector for the dedicated-server entry ({@code Main.main}). */
 	public static LifecycleHookInjector forServer() {
-		return new LifecycleHookInjector(SERVER_MAIN, "main", SERVER_TRIGGERS);
+		return new LifecycleHookInjector(SERVER_MAIN, "main", SERVER_TRIGGERS, true);
 	}
 
 	/** The injector for the client ({@code net.minecraft.client.main.Main.main}). */
 	public static LifecycleHookInjector forClient() {
-		return new LifecycleHookInjector(CLIENT_MAIN, "main", CLIENT_TRIGGERS);
+		return new LifecycleHookInjector(CLIENT_MAIN, "main", CLIENT_TRIGGERS, false);
 	}
 
 	/** Backwards-compatible default: the server entry (existing callers/tests). */
 	public LifecycleHookInjector() {
-		this(SERVER_MAIN, "main", SERVER_TRIGGERS);
+		this(SERVER_MAIN, "main", SERVER_TRIGGERS, true);
 	}
 
 	@Override
@@ -139,6 +166,7 @@ public final class LifecycleHookInjector implements ClassTransformer {
 		new ClassReader(classBytes).accept(node, 0);
 
 		int redirected = 0;
+		boolean fabricHooks = fabricServerHook && fabricHooksEnabled();
 		for (MethodNode m : node.methods) {
 			if (!m.name.equals(transformMethod)) continue;
 			for (var insn : m.instructions.toArray()) {
@@ -165,6 +193,23 @@ public final class LifecycleHookInjector implements ClassTransformer {
 				ForbricLog.info("[Forbric/Lifecycle] redirected genuine loader trigger %s.%s to %s.%s from %s.%s "
 						+ "— kernel owns the lifecycle", t.owner(), t.name(), KERNEL_HOOK_OWNER, t.hookName(),
 						transformClass, transformMethod);
+
+				if (fabricHooks) {
+					// Right after the window, on the same path: the NeoForge base only loads mods when the launch
+					// is not --initSettings, and neither may the marker claim they were. Fabric passes (null, null).
+					InsnList marker = new InsnList();
+					marker.add(new InsnNode(Opcodes.ACONST_NULL));
+					marker.add(new InsnNode(Opcodes.ACONST_NULL));
+					marker.add(new MethodInsnNode(Opcodes.INVOKESTATIC, FABRIC_HOOKS, "startServer", FABRIC_HOOK_DESC,
+							false));
+					m.instructions.insert(call, marker);
+					// Two references on top of whatever the void call left, which is nothing at this statement
+					// boundary; the frames are untouched (no branch in, no branch out, stack balanced).
+					m.maxStack += 2;
+					ForbricLog.info("[Forbric/Fabric] emitted Fabric Loader's Hooks.startServer after the server "
+							+ "mod-loading window — mods anchored on it (owo's freeze) see every mod initialised, "
+							+ "as on Fabric (-D%s=off to go back)", FABRIC_HOOKS_SWITCH);
+				}
 			}
 		}
 

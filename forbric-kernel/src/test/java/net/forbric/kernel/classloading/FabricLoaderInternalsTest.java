@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 
 import net.fabricmc.loader.impl.FabricLoaderImpl;
+import net.fabricmc.loader.impl.game.minecraft.Hooks;
 
 /**
  * Which of Fabric Loader's internals mods can link against, from where, and what the switch takes away.
@@ -80,6 +81,7 @@ class FabricLoaderInternalsTest {
 		assertTrue(DelegationPolicy.alwaysParent(IMPL));
 		assertTrue(DelegationPolicy.alwaysParent(LEGACY));
 		assertTrue(DelegationPolicy.alwaysParent("net.fabricmc.loader.impl.entrypoint.EntrypointStorage$NewEntry"));
+		assertTrue(DelegationPolicy.alwaysParent(Hooks.class.getName()));
 		assertFalse(DelegationPolicy.alwaysParent("net.fabricmc.loader.impl.util.version.SemanticVersionImpl"),
 				"an internal the kernel does not ship keeps the child-first rule it always had");
 	}
@@ -113,7 +115,7 @@ class FabricLoaderInternalsTest {
 		}
 	}
 
-	/** {@code -Dforbric.fabricImpl=off}: not there, as before. */
+	/** {@code -Dforbric.fabricImpl=off}: not there, as before — except the hook the game itself calls. */
 	@Test
 	void switchedOffTheyAreNotThere() throws Exception {
 		System.setProperty(FabricLoaderInternals.SWITCH, "off");
@@ -122,6 +124,8 @@ class FabricLoaderInternalsTest {
 			for (String name : FabricLoaderInternals.SWITCHED) {
 				assertThrows(ClassNotFoundException.class, () -> loader.loadClass(name), name);
 			}
+			assertSame(Hooks.class, loader.loadClass(Hooks.class.getName()),
+					"Hooks has its own switch; withholding it would break the game's own entry points");
 		}
 	}
 }

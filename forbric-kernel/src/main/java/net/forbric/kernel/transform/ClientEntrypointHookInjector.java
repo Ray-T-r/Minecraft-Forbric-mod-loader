@@ -21,9 +21,14 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
+import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.kernel.util.ForbricLog;
 
@@ -40,15 +45,24 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code Options} with "GameOptions has already been initialised").
  *
  * <p>The injection point is the first {@code new net/minecraft/client/Options} in the constructor: the singleton was
- * assigned earlier in the same {@code <init>}, and {@code Options} has not been constructed yet. A no-arg void
- * {@code INVOKESTATIC} inserted there is stack-neutral (adds no operands, no branch), so it needs no frame or
- * max-stack change.
+ * assigned earlier in the same {@code <init>}, and {@code Options} has not been constructed yet.
+ *
+ * <p><b>The call is Fabric's own.</b> What is inserted is {@code Hooks.startClient(this.gameDirectory, this)} — the
+ * call Fabric Loader patches into this constructor — and the kernel's client-entrypoint window runs from inside it.
+ * Mods anchor on that call: owo's {@code MinecraftMixin} injects after it to freeze its channels once every client
+ * entrypoint has run, in a {@code @Group(min = 1)} that failed outright when the kernel inserted its own
+ * {@code KernelLifecycle.onClientEntrypoints()} there instead. {@code -Dforbric.fabricHooks=off} inserts that bare
+ * call again. Either form adds no branch and leaves the stack as it found it, so the frames stay valid; the Fabric
+ * form needs two more operand slots while it builds its arguments.
  */
 public final class ClientEntrypointHookInjector implements ClassTransformer {
 	private static final String MINECRAFT = "net.minecraft.client.Minecraft";
 	private static final String OPTIONS = "net/minecraft/client/Options";
 	private static final String HOOK_OWNER = "net/forbric/kernel/boot/KernelLifecycle";
 	private static final String HOOK_NAME = "onClientEntrypoints";
+	/** The field Fabric passes as {@code startClient}'s run directory; assigned well before the first Options. */
+	private static final String GAME_DIRECTORY = "gameDirectory";
+	private static final String FILE_DESC = "Ljava/io/File;";
 
 	@Override
 	public String name() {
@@ -75,8 +89,14 @@ public final class ClientEntrypointHookInjector implements ClassTransformer {
 			if (!m.name.equals("<init>")) continue;
 			AbstractInsnNode newOptions = firstNewOptions(m);
 			if (newOptions == null) continue;
-			m.instructions.insertBefore(newOptions,
-					new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, HOOK_NAME, "()V", false));
+			if (LifecycleHookInjector.fabricHooksEnabled()) {
+				m.instructions.insertBefore(newOptions, fabricStartClient(node));
+				// aload_0 + the File, on top of whatever is already there: +2 at the peak, balanced after the call.
+				m.maxStack += 2;
+			} else {
+				m.instructions.insertBefore(newOptions,
+						new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, HOOK_NAME, "()V", false));
+			}
 			changed = true;
 			ForbricLog.info("[Forbric/Fabric] wired client-entrypoint hook into Minecraft.<init> (before Options) — "
 					+ "Fabric client entrypoints now fire with a live Minecraft.getInstance()");
@@ -84,11 +104,37 @@ public final class ClientEntrypointHookInjector implements ClassTransformer {
 		}
 		if (!changed) return classBytes;
 
-		// ClassWriter(0): the inserted call is stack-neutral and adds no branch target, so the original frames stay
-		// valid (their offsets shift, which ASM handles on write) and neither COMPUTE_FRAMES nor COMPUTE_MAXS is needed.
+		// ClassWriter(0): the inserted code adds no branch target and leaves the stack as it found it, so the original
+		// frames stay valid (their offsets shift, which ASM handles on write); max stack is raised by hand above.
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
 		return writer.toByteArray();
+	}
+
+	/**
+	 * {@code Hooks.startClient(this.gameDirectory, this)} — Fabric's arguments. A base without the field passes
+	 * {@code null}, which {@code Hooks} accepts as Fabric does (it means "the working directory"); reading a field
+	 * that is not there would fail {@code Minecraft.<init>} itself.
+	 */
+	private static InsnList fabricStartClient(ClassNode minecraft) {
+		InsnList call = new InsnList();
+		if (hasGameDirectory(minecraft)) {
+			call.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			call.add(new FieldInsnNode(Opcodes.GETFIELD, minecraft.name, GAME_DIRECTORY, FILE_DESC));
+		} else {
+			call.add(new InsnNode(Opcodes.ACONST_NULL));
+		}
+		call.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		call.add(new MethodInsnNode(Opcodes.INVOKESTATIC, LifecycleHookInjector.FABRIC_HOOKS, "startClient",
+				LifecycleHookInjector.FABRIC_HOOK_DESC, false));
+		return call;
+	}
+
+	private static boolean hasGameDirectory(ClassNode minecraft) {
+		for (FieldNode f : minecraft.fields) {
+			if (GAME_DIRECTORY.equals(f.name) && FILE_DESC.equals(f.desc) && (f.access & Opcodes.ACC_STATIC) == 0) return true;
+		}
+		return false;
 	}
 
 	private static AbstractInsnNode firstNewOptions(MethodNode ctor) {
