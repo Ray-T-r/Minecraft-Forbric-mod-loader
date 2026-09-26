@@ -1507,24 +1507,35 @@ public final class KernelLifecycle {
 	 * own vanilla providers included, and no mod's data maps existed.
 	 *
 	 * <p>Called through NeoForge's method rather than reimplemented: the contents are its internals, they change
-	 * between versions, and a hand-rolled copy would rot silently. It is package-private, hence the declared
-	 * lookup. Once only — the client and server paths each reach this point, and both must not run it.
+	 * between versions, and a hand-rolled copy would rot silently. Its steps are run one at a time where its
+	 * bytecode allows — {@link RegistrationEventSteps} — so one failing step no longer takes the rest with it.
+	 * Once only — the client and server paths each reach this point, and both must not run it.
 	 */
 	private static void fireRegistrationEvents(ClassLoader cl) {
 		if (!REGISTRATION_EVENTS_FIRED.compareAndSet(false, true)) return;
+		RegistrationEventSteps.Outcome outcome;
 		try {
-			Class<?> events = Class.forName("net.neoforged.neoforge.internal.RegistrationEvents", false, cl);
-			Method init = events.getDeclaredMethod("init");
-			init.setAccessible(true);
-			init.invoke(null);
-			KernelTransferInterop.install(cl);
-			ForbricLog.info("[Forbric/Lifecycle] ran NeoForge's registration events — capabilities and data maps "
-					+ "are registered, and its cauldron/forced-chunk/data-component/POI built-ins initialised");
-		} catch (ClassNotFoundException | NoSuchMethodException absent) {
-			ForbricLog.debug("[Forbric/Lifecycle] no RegistrationEvents.init to run: %s", String.valueOf(absent));
+			outcome = RegistrationEventSteps.fire(cl);
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] NeoForge's registration events failed — capabilities and data "
-					+ "maps will be missing", unwrap(t));
+			ForbricLog.warn("[Forbric/Lifecycle] could not run NeoForge's registration events — capabilities and "
+					+ "data maps will be missing", unwrap(t));
+			return;
+		}
+		if (outcome == null) return;
+		// Outside the call, and waiting only on the step it needs. It used to follow init in the same try, so on the
+		// sweep pack's client a data-map listener's failure also cost the cross-ecosystem transfer bridge, which has
+		// nothing to do with data maps; it is installed "after native capability registration", and that is the one
+		// step it is gated on now.
+		if (outcome.capabilitiesRegistered()) {
+			KernelTransferInterop.install(cl);
+		} else if (KernelTransferInterop.active()) {
+			ForbricLog.warn("[Forbric/Transfer] not initialized: NeoForge's capability registration failed, and the "
+					+ "bridge answers after the native providers it registers");
+			CompatibilityFindings.record(new CompatibilityFinding("transfer-initialization", "forbric",
+					"Cross-ecosystem item and fluid transfer", "KernelTransferInterop",
+					CompatibilityFinding.Confidence.CONFIRMED, true,
+					"NeoForge's capability registration failed, so the transfer APIs were not connected; foreign "
+							+ "storage is unavailable.", List.of("capability registration failed")));
 		}
 	}
 
