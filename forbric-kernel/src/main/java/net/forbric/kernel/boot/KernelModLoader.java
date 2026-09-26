@@ -27,10 +27,12 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.api.ModPresence;
 import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.discovery.ModAnnotationScanner;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.Reflect;
@@ -133,6 +135,10 @@ public final class KernelModLoader {
 			}
 		}
 
+		// What each jar's own manifest declares, by id. Every container below is described with it, and it is the
+		// only list that knows a mod with no @Mod class at all. See declaredMods.
+		Map<String, Declared> declared = declaredMods(modJars);
+
 		// Phase 1b — put them in DEPENDENCY order. Until now this list was in jar-file-name order, alphabetically,
 		// which is not an order at all: a mod whose jar sorts before a library it requires was constructed first
 		// and called that library's API before the library had initialised. What comes back is an error inside the
@@ -159,8 +165,9 @@ public final class KernelModLoader {
 
 			try {
 				Object bus = KernelBusSupport.makeModBus(cl);
+				Path jar = jarOfMod.get(modId);
 				neo.put(modId, new NeoIdentity(bus,
-						KernelModContainerFactory.create(cl, modId, bus, jarOfMod.get(modId))));
+						KernelModContainerFactory.create(cl, modId, bus, jar, declaredIn(declared, modId, jar))));
 			} catch (Throwable t) {
 				ForbricLog.warn("[Forbric/ModLoader] could not build ModContainer for NeoForge mod " + modId,
 						Reflect.unwrap(t));
@@ -421,6 +428,55 @@ public final class KernelModLoader {
 	static boolean neoNeedsWithdrawal(Set<String> published, Set<String> kept) {
 		if ("off".equalsIgnoreCase(System.getProperty(NEO_TWIN_SWITCH, "on"))) return kept.size() != published.size();
 		return !kept.containsAll(published);
+	}
+
+	/** One Forge-family {@code [[mods]]} entry and the jar whose manifest declares it. */
+	record Declared(DiscoveredMod mod, Path jar) {
+	}
+
+	/**
+	 * Every Forge-family mod the jars' own manifests declare, by id, first declaration winning.
+	 *
+	 * <p>Only the family that OWNS each jar counts: {@link MultiLoaderArbiter} has already given a universal jar to
+	 * one family, and its other manifest describes a mod that is not being loaded as that family here.
+	 *
+	 * <p>This is the only description the kernel has of a mod nested inside another mod's jar. Discovery's
+	 * {@code ModPresence} list is built from the jars in {@code mods/}, so the containers built for LibJF's twelve
+	 * modules — every one of them a jar-in-jar — described themselves at version "0.0" with an empty
+	 * {@code [modproperties]} table, and LibJF, which finds every one of its entry points in that table, found none
+	 * of theirs.
+	 */
+	static Map<String, Declared> declaredMods(List<Path> modJars) {
+		Map<String, Declared> out = new LinkedHashMap<>();
+		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
+		for (Path jar : modJars) {
+			List<DiscoveredMod> mods;
+			try {
+				mods = discoverer.discoverJar(jar);
+			} catch (Throwable t) {
+				// The @Mod scan below reports an unreadable jar in its own words; one line per jar is enough.
+				ForbricLog.debug("[Forbric/ModLoader] could not read the manifest of %s: %s", jar.getFileName(),
+						String.valueOf(t));
+				continue;
+			}
+			for (DiscoveredMod mod : mods) {
+				if (!mod.getEcosystem().isForgeFamily()) continue;
+				if (mod.getId() == null || mod.getId().isBlank()) continue;
+				if (MultiLoaderArbiter.suppressedFor(jar, mod.getEcosystem())) continue;
+				out.putIfAbsent(mod.getId(), new Declared(mod, jar));
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * The entry {@code jar} itself declares for {@code modId}, or null. Only the same jar's entry answers: a
+	 * container is built from the jar its {@code @Mod} class came from, and it must not be described with another
+	 * jar's claim to the same id.
+	 */
+	static DiscoveredMod declaredIn(Map<String, Declared> declared, String modId, Path jar) {
+		Declared entry = modId == null ? null : declared.get(modId);
+		return entry != null && entry.jar().equals(jar) ? entry.mod() : null;
 	}
 
 	/**

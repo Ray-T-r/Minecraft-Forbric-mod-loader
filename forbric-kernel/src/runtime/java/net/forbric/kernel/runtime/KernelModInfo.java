@@ -25,6 +25,7 @@ import java.util.Optional;
 import org.apache.maven.artifact.versioning.ArtifactVersion;
 import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 
+import net.forbric.api.DiscoveredMod;
 import net.neoforged.neoforgespi.language.IConfigurable;
 import net.neoforged.neoforgespi.language.IModFileInfo;
 import net.neoforged.neoforgespi.language.IModInfo;
@@ -48,12 +49,23 @@ public final class KernelModInfo implements IModInfo {
 	private final IConfigurable config;
 	private final String displayName;
 	private final ArtifactVersion version;
+	/** What the mod's own jar declared, or null to describe it from ModPresence alone. */
+	private final DiscoveredMod declared;
 
 	public KernelModInfo(String modId, Path jar) {
+		this(modId, jar, null);
+	}
+
+	/**
+	 * @param declared the mod's own {@code [[mods]]} entry, read from {@code jar} — the only description there is
+	 *                 of a mod nested inside another mod's jar. See {@code KernelModMetadata.resolve}.
+	 */
+	public KernelModInfo(String modId, Path jar, DiscoveredMod declared) {
 		this.modId = modId;
+		this.declared = declared;
 		this.config = new KernelConfigurable(modId);
-		this.displayName = KernelModMetadata.displayNameOf(modId);
-		this.version = new DefaultArtifactVersion(KernelModMetadata.versionOf(modId));
+		this.displayName = KernelModMetadata.displayNameOf(modId, declared);
+		this.version = new DefaultArtifactVersion(KernelModMetadata.versionOf(modId, declared));
 
 		// The owning file's getMods() has to return THIS object, so it is handed a slot to read back from.
 		IModInfo[] self = new IModInfo[1];
@@ -118,7 +130,7 @@ public final class KernelModInfo implements IModInfo {
 
 	@Override
 	public Map<String, Object> getModProperties() {
-		return KernelModMetadata.propertiesOf(modId);
+		return KernelModMetadata.propertiesOf(modId, declared);
 	}
 
 	@Override

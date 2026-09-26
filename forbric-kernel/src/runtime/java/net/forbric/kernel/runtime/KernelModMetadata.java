@@ -39,12 +39,44 @@ final class KernelModMetadata {
 	/** The conventional unknown-version placeholder, and what both implementations used to answer always. */
 	static final String UNKNOWN_VERSION = "0.0";
 
+	/**
+	 * {@code -Dforbric.declaredModMetadata=off} describes every kernel-built mod info from {@link ModPresence}
+	 * alone again, which has never heard of a mod that arrived inside another mod's jar.
+	 */
+	static final String DECLARED_SWITCH = "forbric.declaredModMetadata";
+
 	private KernelModMetadata() {
+	}
+
+	/**
+	 * What to describe {@code modId} with: the entry its OWN jar declared when the caller holds one, else what
+	 * discovery published.
+	 *
+	 * <p>{@link ModPresence} is published from the Forge-family jars directly in {@code mods/} plus the Fabric list,
+	 * so a NeoForge mod that came out of another mod's jar-in-jar — all twelve LibJF modules, commonnetworking inside
+	 * Fake Players — was a mod it had never heard of, and every answer here was the placeholder. That cost more than
+	 * a "0.0" on the Mods screen: LibJF finds its configs through {@code getModProperties()}, and against an empty
+	 * table LibJF Translate's {@code libjf:config} entry point, which native NeoForge registers, never registered.
+	 *
+	 * <p>The declared entry wins because it is the more specific answer: for a jar in {@code mods/} it is the very
+	 * object discovery published, and for a nested one it is the only answer there is.
+	 */
+	static DiscoveredMod resolve(String modId, DiscoveredMod declared) {
+		if (declared != null && modId != null && modId.equals(declared.getId())
+				&& !"off".equalsIgnoreCase(System.getProperty(DECLARED_SWITCH, "on"))) {
+			return declared;
+		}
+		return lookup(modId);
 	}
 
 	/** The mod's real display name, or its id when discovery has none. Never null, never blank. */
 	static String displayNameOf(String modId) {
-		DiscoveredMod mod = lookup(modId);
+		return displayNameOf(modId, null);
+	}
+
+	/** As {@link #displayNameOf(String)}, preferring what the mod's own jar declared. See {@link #resolve}. */
+	static String displayNameOf(String modId, DiscoveredMod declared) {
+		DiscoveredMod mod = resolve(modId, declared);
 		String name = mod == null ? null : mod.getDisplayName();
 		return usable(name) ? name : modId;
 	}
@@ -59,7 +91,12 @@ final class KernelModMetadata {
 	 * did not exist — the declaration was parsed by nobody and the table reached no one.
 	 */
 	static Map<String, Object> propertiesOf(String modId) {
-		DiscoveredMod mod = lookup(modId);
+		return propertiesOf(modId, null);
+	}
+
+	/** As {@link #propertiesOf(String)}, preferring what the mod's own jar declared. See {@link #resolve}. */
+	static Map<String, Object> propertiesOf(String modId, DiscoveredMod declared) {
+		DiscoveredMod mod = resolve(modId, declared);
 		return mod == null ? Map.of() : mod.getModProperties();
 	}
 
@@ -71,7 +108,12 @@ final class KernelModMetadata {
 	 * Mods screen would be worse than admitting the version is unknown.
 	 */
 	static String versionOf(String modId) {
-		DiscoveredMod mod = lookup(modId);
+		return versionOf(modId, null);
+	}
+
+	/** As {@link #versionOf(String)}, preferring what the mod's own jar declared. See {@link #resolve}. */
+	static String versionOf(String modId, DiscoveredMod declared) {
+		DiscoveredMod mod = resolve(modId, declared);
 		String version = mod == null ? null : mod.getVersion();
 		if (!usable(version) || version.contains("${")) return UNKNOWN_VERSION;
 		return version;

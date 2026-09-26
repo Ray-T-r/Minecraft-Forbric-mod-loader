@@ -20,6 +20,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 
+import net.forbric.api.DiscoveredMod;
+
 /**
  * The boot-side door to the kernel's mod-container factory, which lives on the GAME side.
  *
@@ -65,12 +67,24 @@ public final class KernelModContainerFactory {
 	 *            load. Null for a presence alias, which has no jar of its own.
 	 */
 	public static Object create(ClassLoader cl, String modId, Object bus, Path jar) throws Exception {
+		return create(cl, modId, bus, jar, null);
+	}
+
+	/**
+	 * @param declared the mod's own {@code [[mods]]} entry as discovery read it out of {@code jar}, or null. It is
+	 *                 what the container's {@code IModInfo} describes the mod with — name, version and, above all,
+	 *                 its {@code [modproperties]} table. Without it a mod nested inside another mod's jar is
+	 *                 described from {@code ModPresence}, which lists only what sits in {@code mods/}, so every
+	 *                 LibJF module answered "0.0" and an empty table, and LibJF found none of their entry points.
+	 */
+	public static Object create(ClassLoader cl, String modId, Object bus, Path jar, DiscoveredMod declared)
+			throws Exception {
 		Method m = containerMethod;
 		if (m == null) {
-			m = gameSide(cl).getMethod("container", String.class, Object.class, Path.class);
+			m = gameSide(cl).getMethod("container", String.class, Object.class, Path.class, Object.class);
 			containerMethod = m;
 		}
-		return invoke(m, modId, bus, jar);
+		return invoke(m, modId, bus, jar, declared);
 	}
 
 	/**

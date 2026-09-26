@@ -93,6 +93,7 @@ public final class KernelRuntimeClasses {
 		// reached through it, game-side, with the compiler checking every call. See KernelModContainerFactory.
 		CLASSES.put("net.forbric.kernel.runtime.KernelContainers", new Entry(Origin.COMPILED, List.of(
 				new Call("container", Object.class, String.class, Object.class, Path.class),
+				new Call("container", Object.class, String.class, Object.class, Path.class, Object.class),
 				new Call("modInfo", Object.class, String.class, Path.class),
 				new Call("minecraftContainer", Object.class))));
 		// The traditional-Forge loading context: BusGroup + FMLModContainer + FMLJavaModLoadingContext, and the

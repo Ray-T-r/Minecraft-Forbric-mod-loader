@@ -20,6 +20,7 @@ import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.util.HashMap;
 
+import net.forbric.api.DiscoveredMod;
 import net.forbric.kernel.util.ForbricLog;
 import net.minecraftforge.unsafe.UnsafeHacks;
 import net.neoforged.bus.api.IEventBus;
@@ -82,8 +83,20 @@ public final class KernelContainers {
 	 * @param jar the mod's own jar, or null for a presence alias
 	 */
 	public static Object container(String modId, Object bus, Path jar) {
+		return container(modId, bus, jar, null);
+	}
+
+	/**
+	 * As {@link #container(String, Object, Path)}, describing the mod with the {@code [[mods]]} entry its own jar
+	 * declared.
+	 *
+	 * @param declared a {@code net.forbric.api.DiscoveredMod}, or null to describe the mod from what discovery
+	 *                 published — which knows nothing of a mod nested inside another mod's jar
+	 */
+	public static Object container(String modId, Object bus, Path jar, Object declared) {
 		IEventBus eventBus = (IEventBus) bus;
-		IModInfo modInfo = new KernelModInfo(modId, jar);
+		IModInfo modInfo = new KernelModInfo(modId, jar,
+				declared instanceof DiscoveredMod mod ? mod : null);
 
 		ModContainer genuine = genuineFmlContainer(modId, modInfo, eventBus);
 		if (genuine != null) return genuine;
