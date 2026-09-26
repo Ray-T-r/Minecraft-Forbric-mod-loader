@@ -2385,7 +2385,8 @@ public final class KernelLifecycle {
 		List<Path> jars = new ArrayList<>(runtimeJars);
 		jars.addAll(modJars);
 		jars.addAll(kernelAssetJars);
-		KernelClientPacks.addTo(packRepository, cl, jars);
+		// The carriers are named as such: they are their ecosystems' own mod files, not mods anyone arbitrates.
+		KernelClientPacks.addTo(packRepository, cl, jars, runtimeJars);
 	}
 
 	/**

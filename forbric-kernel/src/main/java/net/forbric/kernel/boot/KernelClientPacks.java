@@ -21,6 +21,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import net.forbric.api.Ecosystem;
@@ -54,8 +55,12 @@ public final class KernelClientPacks {
 	/**
 	 * Adds a {@code RepositorySource} serving each of {@code jars} that actually carries client resources.
 	 * Best-effort: a failure costs assets (missing textures/shaders), never the boot.
+	 *
+	 * <p>{@code carriers} are the ecosystem runtime jars among {@code jars}: each is its ecosystem's own mod file
+	 * rather than a mod anybody arbitrates, which changes how its reader is chosen (see
+	 * {@link #readsItsMetadataTheVanillaWay}).
 	 */
-	public static void addTo(Object packRepository, ClassLoader cl, List<Path> jars) {
+	public static void addTo(Object packRepository, ClassLoader cl, List<Path> jars, Collection<Path> carriers) {
 		if (packRepository == null || jars == null || jars.isEmpty()) return;
 		try {
 			List<Path> packJars = new ArrayList<>();
@@ -71,7 +76,7 @@ public final class KernelClientPacks {
 			List<Boolean> vanillaReader = new ArrayList<>();
 			int readByVanilla = 0;
 			for (Path jar : packJars) {
-				boolean vanilla = readsItsMetadataTheVanillaWay(jar);
+				boolean vanilla = readsItsMetadataTheVanillaWay(jar, carriers != null && carriers.contains(jar));
 				vanillaReader.add(vanilla);
 				if (vanilla) readByVanilla++;
 			}
@@ -197,11 +202,25 @@ public final class KernelClientPacks {
 	 * {@code pack.mcmeta} can be read by vanilla at all — without one it returns null and logs "Missing metadata",
 	 * where NeoForge's reader supplies a default — so those stay on NeoForge's. Game side, a vanilla read that
 	 * yields nothing falls back to NeoForge's reader, and then to the synthesised metadata.
+	 *
+	 * <p>A {@code carrier} is an ecosystem runtime jar, and what it is comes from its own manifest, never from
+	 * {@link MultiLoaderArbiter}: nobody arbitrates a carrier, and each one also ships a {@code fabric.mod.json}, so
+	 * asking the arbiter scanned the 4 MB MinecraftForge carrier for {@code @Mod} classes on the render thread
+	 * inside {@code Minecraft.<init>} and logged that it was "loading it as FORGE only, suppressing [FABRIC]" —
+	 * while nothing was being loaded or suppressed. NeoForge's carrier is read by NeoForge's reader, as NeoForge
+	 * reads it; MinecraftForge's by vanilla's, as MinecraftForge reads it.
 	 */
-	static boolean readsItsMetadataTheVanillaWay(Path jar) {
+	static boolean readsItsMetadataTheVanillaWay(Path jar, boolean carrier) {
 		if ("off".equalsIgnoreCase(System.getProperty(VANILLA_READER, "on"))) return false;
-		if (MultiLoaderArbiter.ownerOf(jar) == Ecosystem.NEOFORGE) return false;
-		return declaresPackMetadata(jar);
+		// The cheap question first: without a pack.mcmeta there is nothing to route, and no owner to ask about.
+		if (!declaresPackMetadata(jar)) return false;
+		Ecosystem owner = carrier ? carrierEcosystem(jar) : MultiLoaderArbiter.ownerOf(jar);
+		return owner != Ecosystem.NEOFORGE;
+	}
+
+	/** The ecosystem a runtime carrier is: NeoForge's declares {@code neoforge.mods.toml}, MinecraftForge's does not. */
+	private static Ecosystem carrierEcosystem(Path jar) {
+		return MultiLoaderArbiter.declaredBy(jar).contains(Ecosystem.NEOFORGE) ? Ecosystem.NEOFORGE : Ecosystem.FORGE;
 	}
 
 	private static boolean declaresPackMetadata(Path jar) {
