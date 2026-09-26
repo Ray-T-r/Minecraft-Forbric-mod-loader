@@ -477,7 +477,7 @@ public final class MixinStubRebind {
 			}
 			if (names.size() != 1 || MixinFit.value(local, "argsOnly") != null || !hasLocal(delegate, names.getFirst(), params[i])) return null;
 		}
-		if (!withinAllow(injector, points, delegate)) return null;
+		if (!withinAllow(injector, handler, points, delegate)) return null;
 		if (lost) {
 			if (capturesLost != null) capturesLost.accept(stub, delegate);
 			return null;
@@ -512,9 +512,11 @@ public final class MixinStubRebind {
 	/**
 	 * Whether the delegate stays within the injector's {@code allow}: the body can hold an anchor more often than
 	 * vanilla's method did (NeoForge's {@code Language.loadFromJson} calls {@code BiConsumer.accept} three times where
-	 * vanilla called it once), and past {@code allow} Mixin fails the injection outright.
+	 * vanilla called it once), and past {@code allow} Mixin fails the injection outright. Each point is counted from
+	 * above: a {@code LOAD}/{@code STORE} by every access of its named slot ({@link #localAccesses}), an
+	 * {@code INVOKE_STRING} by every call of its member, whatever constant it is passed.
 	 */
-	private static boolean withinAllow(AnnotationNode injector, List<AnnotationNode> points, MethodNode delegate) {
+	private static boolean withinAllow(AnnotationNode injector, MethodNode handler, List<AnnotationNode> points, MethodNode delegate) {
 		if ("off".equalsIgnoreCase(System.getProperty(ALLOW_PROPERTY, "on"))) return true;
 		if (!(MixinFit.value(injector, "allow") instanceof Integer allow) || allow < 0) return true;
 		int matches = 0;
@@ -528,15 +530,42 @@ public final class MixinStubRebind {
 				for (AbstractInsnNode insn : delegate.instructions) {
 					if (insn.getOpcode() >= Opcodes.IRETURN && insn.getOpcode() <= Opcodes.RETURN) found++;
 				}
+			} else if (LOCAL_POINTS.contains(value)) {
+				found = localAccesses(injector, handler, delegate, "STORE".equals(value));
+				if (found < 0) return false;
 			} else {
-				List<AbstractInsnNode> hits = anchors(delegate, value, MixinFit.asString(MixinFit.value(at, "target")));
-				if (hits == null) return false;   // a point this cannot count: the bound cannot be shown to hold
+				String point = "INVOKE_STRING".equals(value) ? "INVOKE" : value;
+				List<AbstractInsnNode> hits = anchors(delegate, point, MixinFit.asString(MixinFit.value(at, "target")));
+				// A point this cannot count: the bound cannot be shown to hold. (No NEW gets here: plan finds none in a body.)
+				if (hits == null) return false;
 				found = hits.size();
 			}
 			if (MixinFit.value(at, "ordinal") instanceof Integer ordinal) found = found > ordinal ? 1 : 0;
 			matches += found;
 		}
 		return matches <= allow;
+	}
+
+	/**
+	 * How often a {@code @ModifyVariable}'s one named local is loaded (or stored) in {@code body}: every access of the
+	 * one slot the table gives that name, which is all its discriminator can match there; -1 when no one slot is named.
+	 */
+	private static int localAccesses(AnnotationNode injector, MethodNode handler, MethodNode body, boolean store) {
+		List<String> names = MixinFit.stringList(MixinFit.value(injector, "name"));
+		Type[] params = Type.getArgumentTypes(handler.desc);
+		if (names.size() != 1 || params.length == 0 || body.localVariables == null || body.instructions == null) return -1;
+		int slot = -1;
+		for (LocalVariableNode local : body.localVariables) {
+			if (!local.name.equals(names.getFirst())) continue;
+			if (slot >= 0 && slot != local.index) return -1;
+			slot = local.index;
+		}
+		if (slot < 0) return -1;
+		int opcode = params[0].getOpcode(store ? Opcodes.ISTORE : Opcodes.ILOAD), found = 0;
+		for (AbstractInsnNode insn : body.instructions) {
+			if (insn instanceof VarInsnNode access && access.getOpcode() == opcode && access.var == slot) found++;
+		}
+		return found;
 	}
 
 	/** The instructions an {@code INVOKE}/{@code INVOKE_ASSIGN} or {@code FIELD} point names in {@code body}; null for other points. */

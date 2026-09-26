@@ -46,6 +46,7 @@ class MixinStubRebindTest {
 		System.clearProperty(MixinStubRebind.FORGE_FAMILY_PROPERTY);
 		System.clearProperty(MixinStubRebind.TYPED_LOCAL_PROPERTY);
 		System.clearProperty(MixinStubRebind.SHARED_PROPERTY);
+		System.clearProperty(MixinStubRebind.ALLOW_PROPERTY);
 		MixinStubRebind.forget();
 	}
 
@@ -808,6 +809,36 @@ class MixinStubRebindTest {
 			assertEquals(List.of("getDestroySpeed"), selectors(mixin, "torrential$applyConduitModifier"), why[mode]);
 			System.clearProperty(MixinStubRebind.MODIFY_VARIABLE_PROPERTY);
 		}
+	}
+
+	/**
+	 * An allow bounds a @ModifyVariable by what its name can match in the body — torrential's first store of `speed` is
+	 * one, every store of it eight — and an INVOKE_STRING point by every call of its member: they still move within it.
+	 */
+	@Test void anAllowIsCountedForLocalAndStringPointsToo() throws Exception {
+		ClassNode player = merged("net/minecraft/world/entity/player/Player");
+		ClassNode first = conduit("(F" + STATE + ")F", "speed", 0);
+		MixinFit.injectorOf(first.methods.getFirst()).values.addAll(List.of("allow", 1));
+		MixinStubRebind.noteEcosystem(first.name, Ecosystem.FABRIC);
+		assertEquals(1, MixinStubRebind.adapt(first, name -> player), "the first store of speed");
+
+		ClassNode every = conduit("(F" + STATE + ")F", "speed", 0);
+		AnnotationNode variable = MixinFit.injectorOf(every.methods.getFirst());
+		variable.values.set(variable.values.indexOf("at") + 1, at("STORE"));
+		variable.values.addAll(List.of("allow", 1));
+		assertEquals(0, MixinStubRebind.adapt(every, name -> player), "every store of speed: eight");
+		variable.values.set(variable.values.indexOf("allow") + 1, 8);
+		assertEquals(1, MixinStubRebind.adapt(every, name -> player), "within eight");
+
+		ClassNode string = synthetic("com/example/PlayerStringMixin", "net/minecraft/world/entity/player/Player", "onAttribute",
+				"(" + CALLBACK_INFO_RETURNABLE + ")V", false, injector(INJECT, "getDestroySpeed", List.of(at("INVOKE_STRING", "target",
+						"Lnet/minecraft/world/entity/player/Player;getAttributeValue(Lnet/minecraft/core/Holder;)D"))));
+		AnnotationNode inject = MixinFit.injectorOf(string.methods.getFirst());
+		inject.values.addAll(List.of("allow", 1));
+		MixinStubRebind.noteEcosystem(string.name, Ecosystem.FABRIC);
+		assertEquals(0, MixinStubRebind.adapt(string, name -> player), "two calls of it in the body");
+		inject.values.set(inject.values.indexOf("allow") + 1, 2);
+		assertEquals(1, MixinStubRebind.adapt(string, name -> player), "within two");
 	}
 
 	private static ClassNode conduit(String desc, String local, int ordinal) {
