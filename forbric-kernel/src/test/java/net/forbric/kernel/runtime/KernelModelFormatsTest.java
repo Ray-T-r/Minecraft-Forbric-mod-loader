@@ -111,6 +111,29 @@ class KernelModelFormatsTest {
 		}
 	}
 
+	/**
+	 * One JSON shared by a mod's builds can carry both keys, and only the installed build registered anything. The
+	 * NeoForge or MinecraftForge build next to fabric-api used to fail every such model on Fabric's "unknown type".
+	 */
+	@Test
+	void aModelNamingBothKeysIsDecidedByTheBuildThatIsInstalled() throws Exception {
+		try (Game game = game(true)) {
+			assertEquals("neo", game.parse("{\"fabric:type\": \"fabrictest:missing\", \"loader\": \"neotest:fmt\"}"),
+					"the NeoForge build is installed: NeoForge's loader, as on NeoForge");
+			assertEquals("neo", game.parse("{\"fabric:type\": \"fabrictest:missing\", \"loader\": {\"id\": \"neotest:fmt\"}}"));
+			assertEquals("fusion", game.parse("{\"fabric:type\": \"fabrictest:missing\", \"loader\": \"fusion:model\"}"),
+					"a MinecraftForge build: the cuboid deserializer and the hooks on it, as on MinecraftForge");
+			assertEquals("neo", game.parse("{\"fabric:type\": [], \"loader\": \"neotest:fmt\"}"),
+					"a key that does not even parse is ignored as every non-Fabric loader ignores it");
+			assertEquals("neo", game.parse("{\"fabric:type\": {\"optional\": true}, \"loader\": \"neotest:fmt\"}"));
+
+			assertEquals("fabric", game.parse("{\"fabric:type\": \"fabrictest:backpack\", \"loader\": \"neotest:fmt\"}"),
+					"a registered type is the mod's Fabric build saying it is the one running; on Fabric \"loader\" means nothing");
+			assertTrue(game.fail("{\"fabric:type\": \"fabrictest:missing\"}").getMessage().startsWith("Cannot deserialize"),
+					"with no loader to decide, a miss is still Fabric's error");
+		}
+	}
+
 	@Test
 	void aLoaderNeoForgeDoesNotOwnReachesTheDeserializerMinecraftForgeAndFusionRead() throws Exception {
 		try (Game funnelled = game(true); Game shipped = game(false)) {

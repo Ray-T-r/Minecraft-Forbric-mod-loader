@@ -77,7 +77,17 @@ import net.forbric.kernel.util.Reflect;
  * non-null answer is returned as the model; null means "NeoForge's", and its dispatch runs exactly as before.
  * What stays unchanged, deliberately:
  * <ul>
- *   <li>A loader id NeoForge registered is always NeoForge's. Precedence is not renegotiated.</li>
+ *   <li>A {@code "loader"} id NeoForge registered is always NeoForge's. Precedence among the readers of that key
+ *       is not renegotiated.</li>
+ *   <li>A model naming BOTH keys — one JSON shared by a mod's builds, which {@code fabric:type} being namespaced
+ *       allows — is decided by the build that is installed, because only that build registered anything.
+ *       {@code fabric:type} claims it only when fabric-model-loading has a deserializer under that id; a type
+ *       nobody registered, or one that does not even parse, leaves the model to its {@code "loader"}, exactly
+ *       as a loader without Fabric's reader would. Without that, installing the NeoForge or MinecraftForge build
+ *       of such a mod next to fabric-api failed every one of its models on Fabric's "unknown type" error. When
+ *       both ids ARE registered, fabric:type wins: the registration is the mod's Fabric build saying it is the
+ *       one running, whereas a NeoForge id is as likely NeoForge's own built-in, and on Fabric — the only
+ *       loader that reads this key — {@code "loader"} means nothing.</li>
  *   <li>A string loader nobody claims still fails the model — with MinecraftForge's
  *       {@code Model loader '%s' not found} instead of NeoForge's message, because that is the last deserializer
  *       that looked. There is no "whose namespace is this" heuristic: {@code forge:} is not a mod jar's namespace,
@@ -163,25 +173,32 @@ public final class KernelModelFormats {
 	 * plain cuboid, and here NeoForge's deserializer carries on, which for a model with no {@code "loader"} is the
 	 * same plain cuboid.
 	 *
+	 * <p>A model that also names a {@code "loader"} is claimed only by a type that resolves to a registered
+	 * deserializer. Any other answer — unregistered, or a key that will not parse — is null, and the loader key
+	 * decides, as it does on every loader that does not read this one (see the class javadoc).
+	 *
 	 * <p>Without fabric-model-loading nothing reads the key, on any loader — so it is not even parsed then.
 	 */
 	private static UnbakedModel fabricType(JsonObject json, JsonDeserializationContext context) {
 		if (!resolveFabric()) return null;
+		boolean loaderDecidesAMiss = json.has(LOADER_KEY);
 		JsonElement spec = json.get(FABRIC_KEY);
 		String type;
 		boolean optional;
 		if (spec.isJsonPrimitive()) {
 			type = spec.getAsString();
 			optional = false;
-		} else if (spec.isJsonObject()) {
+		} else if (spec.isJsonObject() && (!loaderDecidesAMiss || GsonHelper.isStringValue(spec.getAsJsonObject(), "id"))) {
 			JsonObject object = spec.getAsJsonObject();
 			type = GsonHelper.getAsString(object, "id");
 			optional = GsonHelper.getAsBoolean(object, "optional", false);
 		} else {
+			if (loaderDecidesAMiss) return null;
 			throw new JsonSyntaxException("Expected " + FABRIC_KEY + " to be a string or object, was "
 					+ GsonHelper.getType(spec));
 		}
-		Identifier id = Identifier.parse(type);
+		Identifier id = loaderDecidesAMiss ? Identifier.tryParse(type) : Identifier.parse(type);
+		if (id == null) return null;
 
 		Object deserializer;
 		try {
@@ -190,6 +207,12 @@ public final class KernelModelFormats {
 			throw rethrow(t);
 		}
 		if (deserializer == null) {
+			if (loaderDecidesAMiss) {
+				announce(FABRIC_KEY + " miss", id, FABRIC_KEY + " %s has no deserializer registered, and the model "
+						+ "also names a \"loader\" — left to that key, as on a loader that does not read " + FABRIC_KEY
+						+ " (the build of this mod that is installed is not its Fabric one)");
+				return null;
+			}
 			if (optional) return null;
 			throw new JsonParseException("Cannot deserialize custom unbaked model of unknown type '" + id + "'");
 		}
