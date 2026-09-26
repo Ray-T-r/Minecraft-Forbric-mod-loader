@@ -54,6 +54,61 @@ class KernelCustomValueTest {
 	}
 
 	/**
+	 * A Forge-family mod's {@code [modproperties]} reach Fabric mods as custom values (Indigo asks Sodium's NeoForge
+	 * build for {@code fabric-renderer-api-v1:contains_renderer} that way). The table now keeps FML's nested
+	 * night-config {@code Config}s rather than flattened maps; the Fabric side must read the SAME tree either way.
+	 * Pinned on LibJF Translate's real manifest, whose tables are nested two levels and hold arrays of tables.
+	 */
+	@Test
+	void aForgeFamilyModsNestedTablesReadTheSameAsCustomValuesInEitherShape() throws Exception {
+		Map<String, Object> asFmlGivesIt = libjfTranslateProperties();
+		System.setProperty(net.forbric.kernel.metadata.forge.ModsTomlParser.NIGHT_CONFIG_TABLES, "off");
+		Map<String, Object> flattened;
+		try {
+			flattened = libjfTranslateProperties();
+		} finally {
+			System.clearProperty(net.forbric.kernel.metadata.forge.ModsTomlParser.NIGHT_CONFIG_TABLES);
+		}
+		assertTrue(asFmlGivesIt.get("libjf:config") instanceof com.electronwill.nightconfig.core.Config);
+		assertTrue(flattened.get("libjf:config") instanceof LinkedHashMap);
+
+		assertEquals(asFmlGivesIt.keySet(), flattened.keySet());
+		for (String key : asFmlGivesIt.keySet()) {
+			assertEquals(render(KernelCustomValue.of(flattened.get(key))), render(KernelCustomValue.of(asFmlGivesIt.get(key))),
+					key);
+		}
+		CustomValue previous = KernelCustomValue.of(asFmlGivesIt.get("libjf:config")).getAsObject().get("previous_names");
+		assertEquals("libjf_translate_v1", previous.getAsArray().get(0).getAsObject().get("name").getAsString());
+	}
+
+	private static Map<String, Object> libjfTranslateProperties() throws Exception {
+		try (java.io.InputStream in = KernelCustomValueTest.class.getResourceAsStream(
+				"/forge/libjf-translate-v1.neoforge.mods.toml")) {
+			return net.forbric.kernel.metadata.forge.ModsTomlParser.parse(in).getMods().get(0).getProperties();
+		}
+	}
+
+	/** The whole tree as text, keys sorted, so two trees compare by content rather than by identity. */
+	private static String render(CustomValue value) {
+		switch (value.getType()) {
+			case OBJECT: {
+				java.util.TreeMap<String, String> sorted = new java.util.TreeMap<>();
+				for (Map.Entry<String, CustomValue> entry : value.getAsObject()) sorted.put(entry.getKey(), render(entry.getValue()));
+				return "{" + sorted + "}";
+			}
+			case ARRAY: {
+				List<String> out = new ArrayList<>();
+				for (CustomValue element : value.getAsArray()) out.add(render(element));
+				return out.toString();
+			}
+			case STRING: return "\"" + value.getAsString() + "\"";
+			case NUMBER: return String.valueOf(value.getAsNumber());
+			case BOOLEAN: return String.valueOf(value.getAsBoolean());
+			default: return "null";
+		}
+	}
+
+	/**
 	 * A JSON {@code null} becomes a CustomValue of type NULL, never a Java {@code null}. The difference is the
 	 * whole reason the type exists: a caller that got {@code null} back would NPE on {@code getType()} instead of
 	 * being told the key is present and empty.

@@ -117,6 +117,36 @@ class KernelModInfoDeclaredTest {
 		}
 	}
 
+	/**
+	 * The object LibJF Config Core actually reads: {@code ModList.getModContainerById("libjf_translate_v1")
+	 * .getModInfo()} is this class, and on a first launch its migration lambda casts
+	 * {@code getModProperties().get("libjf:config")} to night-config's {@code Config} — which native FML hands it,
+	 * because FML keeps the table's nested values as they were parsed. Built from LibJF's real manifest.
+	 */
+	@Test
+	void libjfTranslatesMigrationTableReachesConfigCoreAsTheConfigItCastsTo() throws Exception {
+		Path jar = tmp.resolve("libjf-translate-v1-26.2.2+forge.jar");
+		try (java.io.InputStream in = getClass().getResourceAsStream("/forge/libjf-translate-v1.neoforge.mods.toml");
+				ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
+			zip.putNextEntry(new ZipEntry("META-INF/neoforge.mods.toml"));
+			zip.write(in.readAllBytes());
+			zip.closeEntry();
+		}
+		DiscoveredMod declared = new ForbricModDiscoverer().discoverJar(jar).get(0);
+
+		try (URLClassLoader runtime = runtimeLoader()) {
+			Object info = modInfo(runtime, jar, declared);
+			Map<?, ?> properties = (Map<?, ?>) info.getClass().getMethod("getModProperties").invoke(info);
+
+			// DslConfigInstance.lambda$migrateFiles$0, one checkcast at a time.
+			com.electronwill.nightconfig.core.Config libjfConfig =
+					(com.electronwill.nightconfig.core.Config) properties.get("libjf:config");
+			List<?> previousNames = (List<?>) libjfConfig.get("previous_names");
+			assertEquals("libjf_translate_v1",
+					((com.electronwill.nightconfig.core.Config) previousNames.get(0)).get("name"));
+		}
+	}
+
 	private static Object modInfo(ClassLoader runtime, Path jar, DiscoveredMod declared) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelModInfo", true, runtime)
 				.getConstructor(String.class, Path.class, DiscoveredMod.class)

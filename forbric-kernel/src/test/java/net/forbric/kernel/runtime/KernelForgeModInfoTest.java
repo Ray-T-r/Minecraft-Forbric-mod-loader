@@ -31,12 +31,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import com.electronwill.nightconfig.core.Config;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import net.forbric.api.ModPresence;
+import net.forbric.kernel.discovery.ForbricModDiscoverer;
 
 /** wthit's read: getModInfo().getOwningFile().getConfig().getConfigElement("issueTrackerURL") answers from the jar's mods.toml. */
 class KernelForgeModInfoTest {
@@ -65,6 +70,34 @@ class KernelForgeModInfoTest {
 
 			Object modConfig = call(info, "getConfig");
 			assertEquals(Optional.of("What the hell is that?"), element(modConfig, "description"), "its OWN [[mods]] table, not waila's");
+		}
+	}
+
+	/**
+	 * A MinecraftForge mod's {@code [modproperties]} reach a reader with MinecraftForge's own value types. FML builds
+	 * that map as an {@code ImmutableMap} of the table's entries — shallow, so a nested table is still
+	 * night-config's {@code Config} and an array of tables a {@code List} of them. The kernel handed
+	 * {@code LinkedHashMap}s, which a {@code (Config)} cast rejects.
+	 */
+	@Test
+	void modPropertiesKeepMinecraftForgesValueTypes(@TempDir Path dir) throws Exception {
+		Path jar = jar(dir.resolve("iceberg.jar"), "modLoader = \"javafml\"\nloaderVersion = \"[65,)\"\nlicense = \"MIT\"\n\n"
+				+ "[[mods]]\nmodId = \"iceberg\"\nversion = \"1.4.2.2\"\n\n"
+				+ "[modproperties.iceberg]\n"
+				+ "configuredProviders=[\n\"com.anthonyhilyard.iceberg.compat.configured.IcebergConfigProvider\"\n]\n"
+				+ "[modproperties.iceberg.nested]\ninner = \"yes\"\n"
+				+ "[[modproperties.iceberg.entries]]\nvalue = \"example.Entry\"\n");
+		ModPresence.publishForgeFamily(new ForbricModDiscoverer().discoverJar(jar));
+		try (URLClassLoader cl = gameSideLoader()) {
+			Object info = Class.forName("net.forbric.kernel.runtime.KernelForgeModInfo", true, cl)
+					.getConstructor(String.class, Path.class).newInstance("iceberg", jar);
+			Map<?, ?> properties = (Map<?, ?>) call(info, "getModProperties");
+			assertEquals(List.of("com.anthonyhilyard.iceberg.compat.configured.IcebergConfigProvider"),
+					properties.get("configuredProviders"), "Iceberg's real declaration, a list of strings");
+			assertEquals("yes", ((Config) properties.get("nested")).get("inner"));
+			assertEquals("example.Entry", ((Config) ((List<?>) properties.get("entries")).get(0)).get("value"));
+		} finally {
+			ModPresence.publishForgeFamily(List.of());
 		}
 	}
 

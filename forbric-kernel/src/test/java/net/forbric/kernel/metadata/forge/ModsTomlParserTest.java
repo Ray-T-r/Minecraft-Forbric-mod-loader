@@ -16,16 +16,27 @@
 
 package net.forbric.kernel.metadata.forge;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
 
+import com.electronwill.nightconfig.core.Config;
 import org.junit.jupiter.api.Test;
 import net.forbric.api.UnifiedDependency;
 
@@ -84,13 +95,11 @@ class ModsTomlParserTest {
 		assertEquals(Boolean.TRUE, properties.get("fabric-renderer-api-v1:contains_renderer"),
 				"a boolean stays a boolean rather than being stringified");
 
-		// Plain JDK types all the way down: the reader branches on `instanceof Map` and the kernel ships its own
-		// night-config, so handing back night-config's Config would be a class-identity mismatch inside the
-		// reader's catch-all — it would look exactly like the mod declaring nothing.
-		assertInstanceOf(Map.class, properties.get("nested"));
-		assertFalse(properties.get("nested") instanceof com.electronwill.nightconfig.core.UnmodifiableConfig,
-				"night-config types must not escape the parser");
-		assertEquals("yes", ((Map<?, ?>) properties.get("nested")).get("inner"));
+		// A nested table stays night-config's own Config, which is what both FMLs hand a mod: the table is the
+		// shallow valueMap() of [modproperties.<id>], so anything one level down is still a Config. LibJF casts
+		// to exactly that type — see libjfTranslatesMigrationTableIsTheConfigConfigCoreCastsTo.
+		assertInstanceOf(Config.class, properties.get("nested"));
+		assertEquals("yes", ((Config) properties.get("nested")).get(List.of("inner")));
 
 		assertTrue(parsed.getMods().get(1).getProperties().isEmpty(),
 				"a mod with no table gets an empty map, never null");
@@ -132,12 +141,103 @@ class ModsTomlParserTest {
 		assertEquals("iris", entry.get("modId"), "the entry carries its own scalars");
 		assertEquals("Iris", entry.get("displayName"));
 
+		// Held as the Config the entry's own valueMap() holds; IConfigurable.getConfigElement answers it with that
+		// Config's valueMap(), the way NeoForge's NightConfigWrapper does (FmlTomlShapeOracleTest pins that).
 		Object sodium = entry.get("sodium:options");
-		assertInstanceOf(Map.class, sodium, "the colon-bearing sub-table name survives as one key");
-		assertEquals(Boolean.FALSE, ((Map<?, ?>) sodium).get("mixin.features.render.world.sky"),
+		assertInstanceOf(Config.class, sodium, "the colon-bearing sub-table name survives as one key");
+		assertEquals(Boolean.FALSE, ((Config) sodium).valueMap().get("mixin.features.render.world.sky"),
 				"one literal dotted key, not five nested levels, and still a Boolean");
-		assertFalse(sodium instanceof com.electronwill.nightconfig.core.UnmodifiableConfig,
-				"night-config types must not escape the parser");
+	}
+
+	/**
+	 * LibJF Translate's real {@code neoforge.mods.toml}, read the way LibJF Config Core reads it.
+	 *
+	 * <p>{@code DslConfigInstance.migrateFiles} runs whenever a config file does not exist yet — so on every first
+	 * launch — and its lambda does, instruction for instruction: {@code (Config) getModProperties().get("libjf:config")},
+	 * then {@code (List) .get("previous_names")}, then {@code (Config)} each element and {@code (String) .get("name")}.
+	 * Native FML hands it a Config there, because {@code ModInfo} stores the SHALLOW {@code valueMap()} of
+	 * {@code [modproperties.libjf_translate_v1]}. The kernel handed it a {@code LinkedHashMap}, the checkcast threw,
+	 * {@code TranslateConfig.<clinit>} failed with it, and so did the {@code ConfigCore} constructor that loads it —
+	 * LibJF Config Core was withdrawn from the mod list on every launch, server and client.
+	 */
+	@Test
+	void libjfTranslatesMigrationTableIsTheConfigConfigCoreCastsTo() {
+		Map<String, Object> properties = libjfTranslate().getProperties();
+
+		Config libjfConfig = (Config) properties.get("libjf:config");
+		List<?> previousNames = (List<?>) libjfConfig.get("previous_names");
+		List<String> names = new ArrayList<>();
+		for (Object previous : previousNames) names.add((String) ((Config) previous).get("name"));
+		assertEquals(List.of("libjf_translate_v1"), names);
+	}
+
+	/**
+	 * The other LibJF read of the same table must keep working: {@code NeoforgeEntrypointStorage.asMap} takes a
+	 * {@code Config} through {@code valueMap()} and a {@code Map} as it is, and every entry point LibJF has —
+	 * including the {@code libjf:config} one that registers Translate's config — is found through it.
+	 */
+	@Test
+	void libjfsEntrypointReaderStillFindsTranslatesConfigEntrypoint() {
+		Map<String, Object> entrypoints = asLibjfMap(libjfTranslate().getProperties().get("libjf:entrypoints"));
+		List<?> configs = (List<?>) entrypoints.get("libjf:config");
+		assertEquals(1, configs.size());
+		assertEquals("dev.jfronny.libjf.translate.impl.TranslateConfig", asLibjfMap(configs.get(0)).get("value"));
+	}
+
+	@Test
+	void switchedOffEveryTableIsFlattenedToAPlainMapAgain() {
+		System.setProperty(ModsTomlParser.NIGHT_CONFIG_TABLES, "off");
+		try {
+			Map<String, Object> properties = libjfTranslate().getProperties();
+			assertInstanceOf(java.util.LinkedHashMap.class, properties.get("libjf:config"), "off => the old flattening");
+			assertThrows(ClassCastException.class, () -> {
+				Config ignored = (Config) properties.get("libjf:config");
+			}, "and with it the cast LibJF Config Core died on");
+		} finally {
+			System.clearProperty(ModsTomlParser.NIGHT_CONFIG_TABLES);
+		}
+	}
+
+	/** The fixture is byte-for-byte the manifest LibJF ships, when the sweep's copy of the jar is here to check. */
+	@Test
+	void theFixtureIsTheManifestLibjfShips() throws Exception {
+		Path outer = Path.of("build/compat-inputs/sweep90/mods/libjf-26.2.2+forge.jar");
+		assumeTrue(Files.isRegularFile(outer), "the sweep's LibJF jar is not staged here");
+		byte[] shipped;
+		try (ZipFile zip = new ZipFile(outer.toFile())) {
+			byte[] nested = zip.getInputStream(zip.getEntry("META-INF/jars/libjf-translate-v1-26.2.2+forge.jar"))
+					.readAllBytes();
+			try (ZipInputStream in = new ZipInputStream(new ByteArrayInputStream(nested))) {
+				ZipEntry entry;
+				byte[] found = null;
+				while ((entry = in.getNextEntry()) != null) {
+					if (entry.getName().equals("META-INF/neoforge.mods.toml")) found = in.readAllBytes();
+				}
+				shipped = found;
+			}
+		}
+		try (InputStream fixture = getClass().getResourceAsStream(LIBJF_TRANSLATE)) {
+			assertArrayEquals(shipped, fixture.readAllBytes());
+		}
+	}
+
+	static final String LIBJF_TRANSLATE = "/forge/libjf-translate-v1.neoforge.mods.toml";
+
+	private ForgeModEntry libjfTranslate() {
+		try (InputStream in = getClass().getResourceAsStream(LIBJF_TRANSLATE)) {
+			assertNotNull(in, LIBJF_TRANSLATE + " fixture missing");
+			ForgeModEntry entry = ModsTomlParser.parse(in).getMods().get(0);
+			assertEquals("libjf_translate_v1", entry.getModId());
+			return entry;
+		} catch (java.io.IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	/** {@code NeoforgeEntrypointStorage.asMap}, as its bytecode reads: a Config through valueMap(), else a Map. */
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> asLibjfMap(Object value) {
+		return value instanceof Config config ? config.valueMap() : (Map<String, Object>) value;
 	}
 
 	@Test

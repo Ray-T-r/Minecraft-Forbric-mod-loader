@@ -85,6 +85,38 @@ class PassiveSeederNestedModsTest {
 		}
 	}
 
+	/**
+	 * The seeded NeoForge {@code ModInfo} — what a mod walking {@code LoadingModList.getMods()} reads — carries LibJF
+	 * Translate's real {@code [modproperties]} with the value types FML gives: the nested {@code libjf:config} table
+	 * is night-config's {@code Config}, which LibJF Config Core casts it to.
+	 */
+	@Test
+	void theSeededModInfoCarriesLibjfsTablesAsTheConfigsFmlWouldHaveParsed() throws Exception {
+		Path mods = Files.createDirectories(tmp.resolve("mods"));
+		KernelModLoaderDeclaredTest.neoJar(mods.resolve("libjf.jar"), "lowcodefml", "libjf", "26.2.2+forge", "");
+		Path nested = tmp.resolve("candidates/ef/libjf-translate-v1.jar");
+		Files.createDirectories(nested.getParent());
+		try (java.io.InputStream in = getClass().getResourceAsStream("/forge/libjf-translate-v1.neoforge.mods.toml");
+				ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(nested))) {
+			zip.putNextEntry(new java.util.zip.ZipEntry("META-INF/neoforge.mods.toml"));
+			zip.write(in.readAllBytes());
+			zip.closeEntry();
+		}
+
+		try (URLClassLoader game = neoForgeLoader()) {
+			PassiveSeederLoadingModListTest.FakeFmlLoader loader = new PassiveSeederLoadingModListTest.FakeFmlLoader();
+			PassiveSeeder.seedNeoForgeLoadingModList(game, PassiveSeederLoadingModListTest.FakeFmlLoader.class, loader,
+					mods, List.of(nested));
+			Object info = modInfo(PassiveSeederLoadingModListTest.seededList(loader), "libjf_translate_v1");
+			assertNotNull(info);
+			Map<?, ?> properties = (Map<?, ?>) info.getClass().getMethod("getModProperties").invoke(info);
+			com.electronwill.nightconfig.core.Config libjfConfig =
+					(com.electronwill.nightconfig.core.Config) properties.get("libjf:config");
+			assertEquals("libjf_translate_v1", ((com.electronwill.nightconfig.core.Config)
+					((List<?>) libjfConfig.get("previous_names")).get(0)).get("name"));
+		}
+	}
+
 	@Test
 	void switchedOffTheNestedModIsAbsentAgain() throws Exception {
 		System.setProperty(PassiveSeeder.NESTED_SWITCH, "off");

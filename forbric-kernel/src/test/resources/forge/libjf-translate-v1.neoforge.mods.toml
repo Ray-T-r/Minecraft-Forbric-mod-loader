@@ -1,0 +1,38 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+issueTrackerURL = "https://git.jfronny.dev/JfMods/LibJF/issues"
+license = "MIT"
+
+[[mods]]
+modId = "libjf_translate_v1"
+version = "26.2.2+forge"
+displayName = "LibJF Translate"
+authors = "JFronny"
+displayURL = "https://git.jfronny.dev/JfMods/LibJF"
+
+[[dependencies.libjf_translate_v1]]
+modId = "neoforge"
+type = "required"
+versionRange = "[26.2.0.50-beta,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.libjf_translate_v1]]
+modId = "minecraft"
+type = "required"
+versionRange = "[26.2,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.libjf_translate_v1]]
+modId = "libjf_base"
+type = "required"
+versionRange = "[26.2.2+forge,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[modproperties.libjf_translate_v1."libjf:config"."previous_names"]]
+name = "libjf_translate_v1"
+
+[[modproperties.libjf_translate_v1."libjf:entrypoints"."libjf:config"]]
+value = "dev.jfronny.libjf.translate.impl.TranslateConfig"

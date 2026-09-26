@@ -113,7 +113,11 @@ public final class DiscoveredMod {
 				accessTransformers, source, aliases, modProperties, elements);
 	}
 
-	/** This mod's {@code [[mods]]} entry as plain data, never null. */
+	/**
+	 * This mod's {@code [[mods]]} entry, never null: its top-level keys, with a nested table left as night-config's
+	 * own {@code Config}, as FML leaves it. The kernel's {@code IConfigurable} answers a table with its
+	 * {@code valueMap()}, which is what NeoForge's wrapper hands a mod.
+	 */
 	public Map<String, Object> getConfigElements() {
 		return configElements;
 	}
@@ -121,9 +125,12 @@ public final class DiscoveredMod {
 	/**
 	 * The {@code [modproperties.<id>]} table, never null.
 	 *
-	 * <p>Values are plain {@code Boolean}/{@code String}/{@code List}/{@code Map} — never night-config's own
-	 * {@code Config}. A reader branches on {@code instanceof Map} and the kernel ships its own night-config, so
-	 * handing back a {@code Config} would be a class-identity mismatch inside the reader's catch-all.
+	 * <p>With the value types FML gives a mod, because mods are written against them: the table is SHALLOW, so a
+	 * scalar or list is itself, a nested table is night-config's own {@code Config} and an array of tables a
+	 * {@code List} of them. LibJF Config Core casts {@code get("libjf:config")} straight to {@code Config}; when this
+	 * handed it a {@code LinkedHashMap} instead, LibJF Config Core failed to construct on every launch. There is one
+	 * night-config in the JVM (the kernel's class loader pins the package to its parent), so the {@code Config} here
+	 * is the one a mod links against. {@code -Dforbric.nightConfigTables=off} flattens it to plain maps again.
 	 */
 	public Map<String, Object> getModProperties() {
 		return modProperties;

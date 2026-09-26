@@ -32,6 +32,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
+import com.electronwill.nightconfig.core.UnmodifiableConfig;
+
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
@@ -990,17 +992,33 @@ public final class PassiveSeeder {
 		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, handler);
 	}
 
-	/** Walks {@code elements} by literal key. {@code args} is {@code String[]}, a bare {@code String}, or null. */
-	private static Optional<Object> lookup(Map<String, Object> elements, Object[] args) {
+	/**
+	 * Walks {@code elements} by literal key. {@code args} is {@code String[]}, a bare {@code String}, or null.
+	 *
+	 * <p>Answers the way NeoForge's {@code NightConfigWrapper.getConfigElement} does. A table below the entry's top
+	 * level is night-config's own {@code Config} (the parser keeps FML's shallow shape, so LibJF can cast a
+	 * {@code [modproperties]} value to {@code Config}), and the wrapper never hands a {@code Config} out: it answers
+	 * a table with its {@code valueMap()}, whose own nested tables stay {@code Config}. So this descends through
+	 * either shape, and a table it lands on is answered as that table's {@code valueMap()} — the {@code Map} Sodium
+	 * reads {@code sodium:options} out of. Not modelled: the wrapper THROWS {@code InvalidModFileException} for a
+	 * path that lands on an array of tables; this answers the list.
+	 */
+	static Optional<Object> lookup(Map<String, Object> elements, Object[] args) {
 		if (args == null || args.length == 0 || args[0] == null) return Optional.empty();
 		String[] path = args[0] instanceof String[] keys ? keys : new String[] {String.valueOf(args[0])};
 		Object current = elements;
 		for (String key : path) {
-			if (!(current instanceof Map<?, ?> map)) return Optional.empty();
-			current = map.get(key);
+			if (current instanceof Map<?, ?> map) {
+				current = map.get(key);
+			} else if (current instanceof UnmodifiableConfig table) {
+				// One literal key: get(String) would split iris' "mixin.features.render.world.sky" on its dots.
+				current = table.get(java.util.Collections.singletonList(key));
+			} else {
+				return Optional.empty();
+			}
 			if (current == null) return Optional.empty();
 		}
-		return Optional.of(current);
+		return Optional.of(current instanceof UnmodifiableConfig table ? table.valueMap() : current);
 	}
 
 	private static String displayName(DiscoveredMod mod) {

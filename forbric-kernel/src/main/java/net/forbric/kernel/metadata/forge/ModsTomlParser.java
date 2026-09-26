@@ -36,7 +36,9 @@ import net.forbric.api.UnifiedDependency;
  * <p>Written against the public {@code mods.toml} schema using the same TOML library Forge/NeoForge
  * use ({@code night-config}). It deliberately contains no FML source. Output is a plain data model
  * ({@link ForgeModsToml}); turning that into Forbric's unified mod model and feeding the dependency
- * solver happens in the discovery layer (milestone P4).
+ * solver happens in the discovery layer (milestone P4). The one exception is the two tables a mod reads back
+ * through FML — {@code [modproperties.<id>]} and the {@code [[mods]]} entry — which keep the value types FML
+ * gives them (see {@link #tableValues}).
  */
 public final class ModsTomlParser {
 	private ModsTomlParser() {
@@ -71,10 +73,11 @@ public final class ModsTomlParser {
 					getString(modConfig, "description"),
 					parseDependencies(dependenciesTable, modId),
 					parseProperties(propertiesTable, modId),
-					// The whole [[mods]] entry as plain data. Walked by ENTRY like the properties table, for the
-					// same reason: iris' key is the single literal "mixin.features.render.world.sky", and
-					// night-config's get(String) is a DOTTED PATH lookup that would split it into five.
-					toPlain(modConfig) instanceof Map<?, ?> entryTable ? castProperties(entryTable) : Map.of());
+					// The whole [[mods]] entry, shaped as its own IConfigurable sees it (see tableValues). Walked by
+					// ENTRY like the properties table, for the same reason: iris' key is the single literal
+					// "mixin.features.render.world.sky", and night-config's get(String) is a DOTTED PATH lookup
+					// that would split it into five.
+					tableValues(modConfig));
 
 			mods.add(entry);
 		}
@@ -98,25 +101,56 @@ public final class ModsTomlParser {
 	}
 
 	/**
-	 * One mod's {@code [modproperties.<modId>]} table, converted to plain JDK types.
+	 * One mod's {@code [modproperties.<modId>]} table, with the value types FML gives it (see {@link #tableValues}).
 	 *
 	 * <p>The keys here are the reason this cannot use {@link #getString}: they are quoted and contain a colon
 	 * ({@code "sodium:config_api_user"}), and night-config's dotted-path {@code get(String)} would split a key
 	 * on a dot. Every lookup in this file goes through {@code Collections.singletonList(key)} for that reason,
 	 * and the whole sub-table is walked by ENTRY rather than looked up key by key.
-	 *
-	 * <p>Values are unwrapped recursively because the consumer is another ecosystem's code: it branches on
-	 * {@code instanceof Map} and the kernel ships its own night-config, so handing back a night-config
-	 * {@code Config} is a class-identity mismatch that lands in the reader's swallow-all catch. Scalars are left
-	 * alone — sodium declares both {@code = true} and {@code = ["indium"]}, and a reader that wants a String
-	 * warns about a non-String itself rather than being lied to.
 	 */
 	private static Map<String, Object> parseProperties(UnmodifiableConfig propertiesTable, String modId) {
 		if (propertiesTable == null || modId == null) return Map.of();
 		UnmodifiableConfig mine = getSubConfig(propertiesTable, modId);
 		if (mine == null) return Map.of();
-		Object plain = toPlain(mine);
-		return plain instanceof Map<?, ?> map ? castProperties(map) : Map.of();
+		return tableValues(mine);
+	}
+
+	/**
+	 * {@code -Dforbric.nightConfigTables=off} flattens every nested table into a {@code LinkedHashMap} again, which
+	 * is what this parser handed out before — and what LibJF Config Core's {@code (Config)} cast rejects.
+	 */
+	public static final String NIGHT_CONFIG_TABLES = "forbric.nightConfigTables";
+
+	/** Whether nested tables stay night-config's own {@code Config}, as FML leaves them. On unless switched off. */
+	public static boolean nightConfigTables() {
+		return !"off".equalsIgnoreCase(System.getProperty(NIGHT_CONFIG_TABLES, "on"));
+	}
+
+	/**
+	 * A table's own entries, the way FML hands them to a mod: the table's {@code valueMap()}, SHALLOW.
+	 *
+	 * <p>Both FMLs build {@code IModInfo.getModProperties()} as
+	 * {@code NightConfigWrapper.getConfigElement("modproperties", modId)}, which answers a table with its
+	 * {@code valueMap()} (NeoForge) or an {@code ImmutableMap} of the same entries (MinecraftForge). Neither
+	 * descends, so a table one level down is still night-config's own {@code Config} and an array of tables is a
+	 * {@code List} of them — and mods are written against exactly that. LibJF Config Core casts
+	 * {@code getModProperties().get("libjf:config")} to {@code Config} on every first launch; LibJF Translate
+	 * declares that key as {@code [[modproperties.libjf_translate_v1."libjf:config"."previous_names"]]}. This parser
+	 * used to flatten every level into {@code LinkedHashMap}/{@code ArrayList}, the cast threw, and LibJF Config Core
+	 * failed to construct on server and client alike. The readers that accept either shape (LibJF's entry-point
+	 * storage, yumi's custom values, Jade's metadata) take their {@code Config} branch here, as they do natively.
+	 *
+	 * <p>Handing out a {@code Config} is safe on class identity because there is exactly one night-config in the
+	 * JVM: {@code DelegationPolicy} pins {@code com.electronwill.nightconfig.} to the parent loader, so the
+	 * {@code Config} this parser builds IS the {@code Config} a mod links against. (The flattening was introduced on
+	 * the opposite belief, that the kernel's copy was a different class from the mods'.)
+	 */
+	private static Map<String, Object> tableValues(UnmodifiableConfig table) {
+		if (!nightConfigTables()) {
+			Object plain = toPlain(table);
+			return plain instanceof Map<?, ?> map ? castProperties(map) : Map.of();
+		}
+		return new java.util.LinkedHashMap<>(table.valueMap());
 	}
 
 	@SuppressWarnings("unchecked")
@@ -124,7 +158,10 @@ public final class ModsTomlParser {
 		return (Map<String, Object>) map;
 	}
 
-	/** night-config {@code Config}/{@code List} to {@code LinkedHashMap}/{@code ArrayList}; scalars unchanged. */
+	/**
+	 * night-config {@code Config}/{@code List} to {@code LinkedHashMap}/{@code ArrayList}; scalars unchanged. Only
+	 * reached with {@link #NIGHT_CONFIG_TABLES} switched off.
+	 */
 	private static Object toPlain(Object value) {
 		if (value instanceof UnmodifiableConfig cfg) {
 			Map<String, Object> out = new java.util.LinkedHashMap<>();

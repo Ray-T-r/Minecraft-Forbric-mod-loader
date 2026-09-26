@@ -54,8 +54,8 @@ public final class ForgeModEntry {
 	}
 
 	/**
-	 * This mod's whole {@code [[mods]]} entry as plain data, the thing {@code IConfigurable.getConfigElement}
-	 * answers from.
+	 * This mod's whole {@code [[mods]]} entry — its top-level keys, with a nested table left as night-config's own
+	 * {@code Config} the way FML leaves it — the thing {@code IConfigurable.getConfigElement} answers from.
 	 *
 	 * <p>Separate from {@link #getProperties()} because they are different accessors with different readers:
 	 * {@code getModProperties} answers the {@code [modproperties.<id>]} table, this answers the mod entry
@@ -71,6 +71,7 @@ public final class ForgeModEntry {
 	 *
 	 * <p>Not loader data. It is how a mod tells another mod something, and the reader is whoever looks: Sodium
 	 * reads {@code sodium:config_api_user} out of it to find the class that builds the mod's Video Settings page.
+	 * Shallow, as FML's is: a nested table is night-config's {@code Config}, which LibJF casts it to.
 	 */
 	public Map<String, Object> getProperties() {
 		return properties;
