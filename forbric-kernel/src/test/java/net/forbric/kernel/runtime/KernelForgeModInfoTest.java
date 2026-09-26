@@ -36,12 +36,17 @@ import java.util.Optional;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import java.util.TreeMap;
+
 import com.electronwill.nightconfig.core.Config;
+import com.electronwill.nightconfig.core.UnmodifiableConfig;
+import com.electronwill.nightconfig.toml.TomlParser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.forbric.api.ModPresence;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
+import net.forbric.kernel.metadata.forge.FmlConfigElements;
 
 /** wthit's read: getModInfo().getOwningFile().getConfig().getConfigElement("issueTrackerURL") answers from the jar's mods.toml. */
 class KernelForgeModInfoTest {
@@ -101,6 +106,83 @@ class KernelForgeModInfoTest {
 		}
 	}
 
+	/**
+	 * wthit's real {@code mods.toml}, through the kernel's owning file and each of its two mods, against
+	 * MinecraftForge's own {@code NightConfigWrapper} over the same file: every key answers the same value of the same
+	 * class — a table as Guava's {@code ImmutableMap}. The line-by-line reading this replaced answered strings only,
+	 * and lost {@code waila}'s description outright: it has escaped quotes in it.
+	 */
+	@Test
+	void wthitsRealManifestAnswersEveryKeyAsMinecraftForgeDoes(@TempDir Path dir) throws Exception {
+		String toml = KernelModInfoConfigTest.fixture("wthit.mods.toml");
+		Path jar = jar(dir.resolve("wthit.jar"), toml);
+		UnmodifiableConfig root = new TomlParser().parse(toml);
+		try (URLClassLoader cl = gameSideLoader()) {
+			Object wthit = Class.forName("net.forbric.kernel.runtime.KernelForgeModInfo", true, cl)
+					.getConstructor(String.class, Path.class).newInstance("wthit", jar);
+			Object fileConfig = call(call(wthit, "getOwningFile"), "getConfig");
+			Object fileWrapper = forgeWrapper(cl, root);
+			for (Map.Entry<String, Object> key : new TreeMap<>(root.valueMap()).entrySet()) {
+				if (key.getValue() instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof UnmodifiableConfig) continue;
+				assertSameAnswer(element(fileWrapper, key.getKey()), element(fileConfig, key.getKey()), "file " + key.getKey());
+			}
+			assertTrue(Class.forName("com.google.common.collect.ImmutableMap", false, cl)
+					.isInstance(((Optional<?>) element(fileConfig, "dependencies")).orElseThrow()),
+					"a table comes back as MinecraftForge's ImmutableMap");
+
+			for (Object table : (List<?>) root.get(List.of("mods"))) {
+				UnmodifiableConfig entry = (UnmodifiableConfig) table;
+				String modId = entry.get("modId");
+				Object info = Class.forName("net.forbric.kernel.runtime.KernelForgeModInfo", true, cl)
+						.getConstructor(String.class, Path.class).newInstance(modId, jar);
+				Object modConfig = call(info, "getConfig");
+				Object entryWrapper = forgeWrapper(cl, entry);
+				for (String key : new TreeMap<>(entry.valueMap()).keySet()) {
+					assertSameAnswer(element(entryWrapper, key), element(modConfig, key), modId + " " + key);
+				}
+			}
+			Object waila = Class.forName("net.forbric.kernel.runtime.KernelForgeModInfo", true, cl)
+					.getConstructor(String.class, Path.class).newInstance("waila", jar);
+			assertEquals(Optional.of("Actually WTHIT but with \"waila\" as it's id lmao"),
+					element(call(waila, "getConfig"), "description"));
+			assertEquals("CC-BY-NC-SA-4.0", call(call(waila, "getOwningFile"), "getLicense"));
+		}
+	}
+
+	/** Switched off, the owning file and each mod are read the strings-only way again, as they were. */
+	@Test
+	void switchedOffTheManifestIsReadAsStringsAgain(@TempDir Path dir) throws Exception {
+		System.setProperty(FmlConfigElements.SWITCH, "off");
+		try {
+			Path jar = jar(dir.resolve("wthit.jar"), KernelModInfoConfigTest.fixture("wthit.mods.toml"));
+			try (URLClassLoader cl = gameSideLoader()) {
+				Object waila = Class.forName("net.forbric.kernel.runtime.KernelForgeModInfo", true, cl)
+						.getConstructor(String.class, Path.class).newInstance("waila", jar);
+				assertEquals(Optional.empty(), element(call(waila, "getConfig"), "description"));
+				Object fileConfig = call(call(waila, "getOwningFile"), "getConfig");
+				assertEquals(Optional.of("https://github.com/badasintended/wthit/issues"), element(fileConfig, "issueTrackerURL"));
+				assertEquals(Optional.empty(), element(fileConfig, "dependencies"));
+			}
+		} finally {
+			System.clearProperty(FmlConfigElements.SWITCH);
+		}
+	}
+
+	private static void assertSameAnswer(Object nativeAnswer, Object kernelAnswer, String what) {
+		assertEquals(KernelModInfoConfigTest.shape(nativeAnswer), KernelModInfoConfigTest.shape(kernelAnswer), what);
+		if (nativeAnswer instanceof Optional<?> present && present.isPresent()) {
+			assertEquals(present.get().getClass(), ((Optional<?>) kernelAnswer).orElseThrow().getClass(), what);
+		}
+	}
+
+	/** MinecraftForge's own wrapper over {@code config}; the class is package-private, its constructor public. */
+	private static Object forgeWrapper(ClassLoader cl, UnmodifiableConfig config) throws Exception {
+		java.lang.reflect.Constructor<?> ctor = Class.forName("net.minecraftforge.fml.loading.moddiscovery.NightConfigWrapper",
+				true, cl).getConstructor(UnmodifiableConfig.class);
+		ctor.setAccessible(true);
+		return ctor.newInstance(config);
+	}
+
 	@Test
 	void aJarWithoutAModsTomlStillHasAnOwningFileThatDeclaresNothing(@TempDir Path dir) throws Exception {
 		try (URLClassLoader cl = gameSideLoader()) {
@@ -154,7 +236,7 @@ class KernelForgeModInfoTest {
 		return new URLClassLoader(urls.toArray(new URL[0]), KernelForgeModInfoTest.class.getClassLoader());
 	}
 
-	private static Path newestUnder(String pattern) throws java.io.IOException {
+	static Path newestUnder(String pattern) throws java.io.IOException {
 		String env = System.getenv("MC_DIR");
 		Path root = Path.of(env != null ? env + "/libraries" : System.getProperty("user.home") + "/Library/Application Support/minecraft/libraries");
 		Path under = root.resolve(pattern);

@@ -153,10 +153,10 @@ public final class KernelForgeModInfo implements IModInfo {
 
 	// --- the two the proxy never named, still answering what its fallback answered ------------------------
 
-	/** Null, as before. See the class javadoc. */
+	/** This mod's own {@code [[mods]]} table. See KernelForgeConfigurable. */
 	@Override
 	public IConfigurable getConfig() {
-		return new KernelForgeConfigurable(toml.mod(modId), java.util.List.of());
+		return KernelForgeConfigurable.mod(toml, modId);
 	}
 
 	/** Null, as before. See the class javadoc — a non-null value here would fail a checkcast, not fix anything. */

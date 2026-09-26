@@ -43,6 +43,7 @@ public final class DiscoveredMod {
 	private final List<String> aliases;
 	private final Map<String, Object> modProperties;
 	private final Map<String, Object> configElements;
+	private final Map<String, Object> fileConfigElements;
 
 	public DiscoveredMod(Ecosystem ecosystem, String id, String version, String displayName,
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig, String source) {
@@ -53,13 +54,14 @@ public final class DiscoveredMod {
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig,
 			List<String> accessTransformers, String source) {
 		this(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig, accessTransformers,
-				source, Collections.emptyList(), Map.of(), Map.of());
+				source, Collections.emptyList(), Map.of(), Map.of(), Map.of());
 	}
 
 	private DiscoveredMod(Ecosystem ecosystem, String id, String version, String displayName,
 			List<UnifiedDependency> dependencies, List<String> mixinConfigs, String accessConfig,
 			List<String> accessTransformers, String source, List<String> aliases,
-			Map<String, Object> modProperties, Map<String, Object> configElements) {
+			Map<String, Object> modProperties, Map<String, Object> configElements,
+			Map<String, Object> fileConfigElements) {
 		this.ecosystem = ecosystem;
 		this.id = id;
 		this.version = version;
@@ -72,6 +74,7 @@ public final class DiscoveredMod {
 		this.aliases = frozen(aliases);
 		this.modProperties = modProperties == null ? Map.of() : Map.copyOf(modProperties);
 		this.configElements = configElements == null ? Map.of() : Map.copyOf(configElements);
+		this.fileConfigElements = fileConfigElements == null ? Map.of() : Map.copyOf(fileConfigElements);
 	}
 
 	/**
@@ -82,7 +85,7 @@ public final class DiscoveredMod {
 	 */
 	public DiscoveredMod withAliases(List<String> aliases) {
 		return new DiscoveredMod(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig,
-				accessTransformers, source, aliases, modProperties, configElements);
+				accessTransformers, source, aliases, modProperties, configElements, fileConfigElements);
 	}
 
 	/**
@@ -97,7 +100,7 @@ public final class DiscoveredMod {
 	 */
 	public DiscoveredMod withModProperties(Map<String, Object> properties) {
 		return new DiscoveredMod(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig,
-				accessTransformers, source, aliases, properties, configElements);
+				accessTransformers, source, aliases, properties, configElements, fileConfigElements);
 	}
 
 	/**
@@ -110,7 +113,30 @@ public final class DiscoveredMod {
 	 */
 	public DiscoveredMod withConfigElements(Map<String, Object> elements) {
 		return new DiscoveredMod(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig,
-				accessTransformers, source, aliases, modProperties, elements);
+				accessTransformers, source, aliases, modProperties, elements, fileConfigElements);
+	}
+
+	/**
+	 * A copy carrying the top level of the {@code mods.toml} this mod was declared in, which is what its owning
+	 * {@code ModFileInfo.getConfigElement} answers from.
+	 *
+	 * <p>A third accessor with its own readers, and the one that was missing. Unlit Campfire asks Lithium to switch
+	 * off its campfire sleeping mixin with a TOP-LEVEL {@code ["lithium:options"]} table, and Lithium reads it from
+	 * {@code getOwningFile()}, not from the {@code [[mods]]} entry; Not Enough Crashes reads {@code issueTrackerURL}
+	 * from the same place. Every mod in one file carries the same table.
+	 */
+	public DiscoveredMod withFileConfigElements(Map<String, Object> elements) {
+		return new DiscoveredMod(ecosystem, id, version, displayName, dependencies, mixinConfigs, accessConfig,
+				accessTransformers, source, aliases, modProperties, configElements, elements);
+	}
+
+	/**
+	 * The top level of the {@code mods.toml} this mod came from, never null: its keys, with a table left as
+	 * night-config's own {@code Config} as FML leaves it. Empty for a Fabric mod. The kernel's file-level
+	 * {@code IConfigurable}s answer from it the way each FML's {@code NightConfigWrapper} answers from the parsed file.
+	 */
+	public Map<String, Object> getFileConfigElements() {
+		return fileConfigElements;
 	}
 
 	/**

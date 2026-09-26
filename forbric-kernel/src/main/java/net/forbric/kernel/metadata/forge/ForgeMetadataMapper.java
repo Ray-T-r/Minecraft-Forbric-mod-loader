@@ -120,7 +120,11 @@ public final class ForgeMetadataMapper {
 					// The whole [[mods]] entry, which IConfigurable.getConfigElement answers from. The version is
 					// overwritten with the RESOLVED one: the raw entry still says ${file.jarVersion}, and a reader
 					// asking this seam for a version next to IModInfo.getVersion() must not get two answers.
-					.withConfigElements(resolvedEntry(mod, jarVersion)));
+					.withConfigElements(resolvedEntry(mod, jarVersion))
+					// The file's top level, which the owning ModFileInfo answers from: Unlit Campfire's
+					// ["lithium:options"] and every mod's issueTrackerURL live there, in no [[mods]] entry. Raw, as
+					// FML's wrapper over the parsed file leaves it.
+					.withFileConfigElements(toml.getConfigElements()));
 
 			// Said out loud because the reader is another ecosystem's code and the failure is silent: Sodium looks
 			// up sodium:config_api_user in here to build this mod's page in Video Settings, and when the kernel

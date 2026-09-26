@@ -17,30 +17,48 @@
 package net.forbric.kernel.runtime;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
+import net.forbric.kernel.metadata.forge.FmlConfigElements;
 import net.neoforged.neoforgespi.language.IConfigurable;
 
 /**
- * The {@code IConfigurable} the kernel's synthetic mods report: "this mod declares nothing".
+ * The {@code IConfigurable} the kernel's NeoForge mod infos report: one table of the mod's {@code neoforge.mods.toml}
+ * — its {@code [[mods]]} entry for {@code KernelModInfo}, the file's top level for {@code KernelModFileInfo} — or
+ * "declares nothing".
  *
- * <p>Genuine NeoForge backs this with the parsed {@code neoforge.mods.toml} section. The kernel constructs its
- * containers directly and has no such section, but the value may not be null — {@code ModListScreen.updateCache}
- * dereferences it from the screen's TICK, i.e. on every frame the Mods list is open, so a null crashed the
- * client the moment that list was shown again (which is what closing a mod's config screen with Done does).
+ * <p>Genuine NeoForge backs this with the parsed {@code neoforge.mods.toml} section. The value may not be null —
+ * {@code ModListScreen.updateCache} dereferences it from the screen's TICK, i.e. on every frame the Mods list is open,
+ * so a null crashed the client the moment that list was shown again (which is what closing a mod's config screen with
+ * Done does).
  *
- * <p>Both answers mean "every lookup finds nothing", which is the truthful answer here rather than a placeholder.
+ * <p>It answered nothing at all for a long time, which was not the truth: the kernel had parsed the table. Not
+ * Enough Crashes reads {@code authors} from here and {@code issueTrackerURL} from the file's, for every mod it lists
+ * when it attributes a crash; Puzzles Lib reads {@code authors}, {@code credits} and {@code displayURL}. A lookup
+ * answers as NeoForge's {@code NightConfigWrapper} does ({@link FmlConfigElements#neoForge}): a scalar or a list as
+ * itself, a table as its {@code valueMap()}, each path element a literal key. {@code getConfigList} still answers
+ * nothing; no reader of it was found.
  */
 public final class KernelConfigurable implements IConfigurable {
 	private final String modId;
+	private final Map<String, Object> elements;
 
+	/** "This mod declares nothing". */
 	public KernelConfigurable(String modId) {
+		this(modId, Map.of());
+	}
+
+	/** @param elements one table of the mod's {@code neoforge.mods.toml}, shallow, as FML leaves it; never null */
+	public KernelConfigurable(String modId, Map<String, Object> elements) {
 		this.modId = modId;
+		this.elements = elements == null ? Map.of() : elements;
 	}
 
 	@Override
+	@SuppressWarnings("unchecked")
 	public <T> Optional<T> getConfigElement(String... key) {
-		return Optional.empty();
+		return (Optional<T>) FmlConfigElements.neoForge(elements, key);
 	}
 
 	@Override

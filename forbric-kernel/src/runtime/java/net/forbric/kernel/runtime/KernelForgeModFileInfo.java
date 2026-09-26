@@ -65,7 +65,7 @@ final class KernelForgeModFileInfo implements IModFileInfo {
 
 	@Override
 	public String getLicense() {
-		return toml.top.getOrDefault("license", "");
+		return toml.license();
 	}
 
 	@Override
@@ -88,9 +88,10 @@ final class KernelForgeModFileInfo implements IModFileInfo {
 		return null;
 	}
 
+	/** The file's top level, as MinecraftForge's wrapper over the parsed file answers it. See KernelForgeConfigurable. */
 	@Override
 	public IConfigurable getConfig() {
-		return new KernelForgeConfigurable(toml.top, toml.mods);
+		return KernelForgeConfigurable.file(toml);
 	}
 
 	@Override

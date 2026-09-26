@@ -31,8 +31,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-
-import com.electronwill.nightconfig.core.UnmodifiableConfig;
+import java.util.function.UnaryOperator;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
@@ -42,6 +41,7 @@ import net.forbric.api.ModPresence;
 import net.forbric.api.Side;
 import net.forbric.kernel.discovery.ForbricModDiscoverer;
 import net.forbric.kernel.discovery.ModFileScanner;
+import net.forbric.kernel.metadata.forge.FmlConfigElements;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -646,7 +646,7 @@ public final class PassiveSeeder {
 	 * @param files    MinecraftForge {@code ModFile}s, one per jar
 	 * @param modInfos MinecraftForge {@code ModInfo}s, one per declared mod
 	 */
-	private record ForgeLoadingLists(List<Object> files, List<Object> modInfos) {
+	record ForgeLoadingLists(List<Object> files, List<Object> modInfos) {
 	}
 
 	/**
@@ -664,7 +664,7 @@ public final class PassiveSeeder {
 	 * touches the jars. Nothing calls it here — the lazy holder is the only builder — and seeding must stay a
 	 * description of what was loaded, not a second loading pass.
 	 */
-	private static ForgeLoadingLists buildForgeLoadingLists(ClassLoader gameLoader, List<DiscoveredMod> mods)
+	static ForgeLoadingLists buildForgeLoadingLists(ClassLoader gameLoader, List<DiscoveredMod> mods)
 			throws Exception {
 		Class<?> modFileCls = Class.forName(ForeignType.MOD_FILE.binary(Ecosystem.FORGE), false, gameLoader);
 		Class<?> fileInfoCls = Class.forName(ForeignType.MOD_FILE_INFO.binary(Ecosystem.FORGE), false, gameLoader);
@@ -690,7 +690,8 @@ public final class PassiveSeeder {
 				ownMods.add(modInfo);
 				modInfos.add(modInfo);
 			}
-			fillForgeModFileInfo(gameLoader, fileInfoCls, fileInfo, modFile, List.copyOf(ownMods));
+			fillForgeModFileInfo(gameLoader, fileInfoCls, fileInfo, modFile, List.copyOf(ownMods),
+					jar.getValue().get(0));
 			annotations += fillForgeModFile(modFileCls, modFile, fileInfo, Path.of(jar.getKey()),
 					version(jar.getValue().get(0)));
 			files.add(modFile);
@@ -799,11 +800,15 @@ public final class PassiveSeeder {
 		}
 	}
 
+	/**
+	 * {@code config} is the file's own top level (see {@link #fileConfigurable}): MinecraftForge's
+	 * {@code ModFileInfo.getConfigElement} delegates straight to it and {@code getConfig()} answers the file itself.
+	 */
 	private static void fillForgeModFileInfo(ClassLoader gameLoader, Class<?> fileInfoCls, Object fileInfo,
-			Object modFile, List<Object> ownMods) throws Exception {
+			Object modFile, List<Object> ownMods, DiscoveredMod first) throws Exception {
 		setInstanceField(fileInfoCls, "modFile", fileInfo, modFile);
 		setInstanceField(fileInfoCls, "mods", fileInfo, ownMods);
-		setInstanceField(fileInfoCls, "config", fileInfo, emptyConfigurable(gameLoader, Ecosystem.FORGE));
+		setInstanceField(fileInfoCls, "config", fileInfo, fileConfigurable(gameLoader, Ecosystem.FORGE, first));
 		setInstanceField(fileInfoCls, "languageSpecs", fileInfo, List.of());
 		setInstanceField(fileInfoCls, "properties", fileInfo, Map.of());
 		setInstanceField(fileInfoCls, "usesServices", fileInfo, List.of());
@@ -829,7 +834,12 @@ public final class PassiveSeeder {
 
 		Map<String, Object> byComponent = new LinkedHashMap<>();
 		byComponent.put("getOwningFile", owningFile);
-		byComponent.put("getConfig", emptyConfigurable(gameLoader, Ecosystem.FORGE));
+		// The mod's own [[mods]] entry, as MinecraftForge's record holds it: the record's getConfigElement delegates
+		// here, and Forge's own mod list reads authors, credits and displayURL out of it. Empty with the file switch
+		// off, as before.
+		byComponent.put("getConfig", FmlConfigElements.enabled()
+				? configurableOver(gameLoader, Ecosystem.FORGE, mod.getConfigElements())
+				: emptyConfigurable(gameLoader, Ecosystem.FORGE));
 		byComponent.put("getModId", mod.getId());
 		byComponent.put("getNamespace", mod.getId());
 		byComponent.put("getVersion", artifactVersion(gameLoader, version(mod)));
@@ -955,7 +965,8 @@ public final class PassiveSeeder {
 	}
 
 	/**
-	 * An {@code IConfigurable} that answers from the mod's own {@code [[mods]]} entry.
+	 * An {@code IConfigurable} of {@code family} that answers from {@code elements} — a mod's own {@code [[mods]]}
+	 * entry, or the top level of the file it came from — the way that family's own {@code NightConfigWrapper} would.
 	 *
 	 * <p>{@code getConfigElement} is how a mod tells ANOTHER mod something through the loader. Sodium's
 	 * {@code ForgeMixinOverrides} walks {@code LoadingModList} asking each {@code IModInfo} for
@@ -963,7 +974,14 @@ public final class PassiveSeeder {
 	 * would otherwise do the same work twice — iris declares
 	 * {@code [mods."sodium:options"] "mixin.features.render.world.sky" = false} for the sky it draws itself.
 	 * Every seeded mod answered {@link #EMPTY_CONFIGURABLE}, so the table reached nobody:
-	 * {@code Loaded configuration file for Sodium: 37 options available, 0 override(s) found}.
+	 * {@code Loaded configuration file for Sodium: 37 options available, 0 override(s) found}. Lithium reads the
+	 * same kind of table one level up, from the owning FILE (see {@link #fileConfigurable}).
+	 *
+	 * <p>A MinecraftForge configurable answers a table as an {@code ImmutableMap}, as MinecraftForge's wrapper does
+	 * (see {@link FmlConfigElements}). Guava is the game's, reached through {@code gameLoader} once, here, rather than
+	 * inside the handler; where it cannot be reached the table is an unmodifiable map of the same entries.
+	 *
+	 * <p>Whether to answer at all is the caller's decision, because each seam has its own switch.
 	 *
 	 * <p>A PARALLEL path, not a re-route: {@link #EMPTY_CONFIGURABLE} stays the one shared instance for mods
 	 * with nothing to declare, which is what {@code EmptyConfigurableTest} asserts by identity.
@@ -975,10 +993,11 @@ public final class PassiveSeeder {
 	 */
 	private static Object configurableOver(ClassLoader gameLoader, Ecosystem family, Map<String, Object> elements)
 			throws Exception {
-		if (elements == null || elements.isEmpty() || !configElementsEnabled()) {
+		if (elements == null || elements.isEmpty()) {
 			return emptyConfigurable(gameLoader, family);
 		}
 		Class<?> iConfigurable = Class.forName(ForeignType.CONFIGURABLE.binary(family), false, gameLoader);
+		UnaryOperator<Map<String, Object>> immutable = family == Ecosystem.FORGE ? guavaImmutableCopy(gameLoader) : null;
 		InvocationHandler handler = (proxy, method, args) -> switch (method.getName()) {
 			// Unconditionally empty: building a nested IConfigurable here would mean Class.forName and a second
 			// Proxy inside the handler, on whatever thread happens to ask.
@@ -986,10 +1005,60 @@ public final class PassiveSeeder {
 			case "toString" -> "KernelSeededConfig";
 			case "hashCode" -> System.identityHashCode(proxy);
 			case "equals" -> proxy == (args == null ? null : args[0]);
-			case "getConfigElement" -> lookup(elements, args);
+			case "getConfigElement" -> immutable == null ? lookup(elements, args)
+					: FmlConfigElements.minecraftForge(elements, immutable, path(args));
 			default -> unmodelled("configurable", method);
 		};
 		return Proxy.newProxyInstance(gameLoader, new Class<?>[] {iConfigurable}, handler);
+	}
+
+	/**
+	 * The top level of the file {@code first} came from, as an {@code IConfigurable} of {@code family}: what the seeded
+	 * {@code ModFileInfo}'s {@code config} field holds, and so what its {@code getConfigElement} answers.
+	 *
+	 * <p>Natively that field is a {@code NightConfigWrapper} over the whole parsed {@code mods.toml}. Here it was
+	 * {@link #EMPTY_CONFIGURABLE}, so every file-level key read as undeclared. Lithium's {@code NeoForgeMixinOverrides}
+	 * walks {@code LoadingModList.getMods()} and asks each {@code getOwningFile().getConfigElement("lithium:options")};
+	 * Unlit Campfire declares that table at the top level of its file to switch off Lithium's campfire sleeping
+	 * mixin, and the player's log said {@code 0 override(s) found}.
+	 *
+	 * <p>A Fabric mod listed here for presence has no such file and keeps the empty answer. {@code first} is any mod of
+	 * the jar: every mod of one file carries the same table. {@code -Dforbric.fileConfigElements=off} answers empty.
+	 */
+	private static Object fileConfigurable(ClassLoader gameLoader, Ecosystem family, DiscoveredMod first)
+			throws Exception {
+		if (!FmlConfigElements.enabled() || first == null || !first.getEcosystem().isForgeFamily()) {
+			return emptyConfigurable(gameLoader, family);
+		}
+		return configurableOver(gameLoader, family, first.getFileConfigElements());
+	}
+
+	/**
+	 * {@code ImmutableMap.copyOf}, from the game's own Guava: MinecraftForge's wrapper answers a table with an
+	 * {@code ImmutableMap}. Resolved once per configurable, and an unmodifiable map where Guava is absent.
+	 */
+	private static UnaryOperator<Map<String, Object>> guavaImmutableCopy(ClassLoader gameLoader) {
+		Method copyOf;
+		try {
+			copyOf = Class.forName("com.google.common.collect.ImmutableMap", false, gameLoader).getMethod("copyOf", Map.class);
+		} catch (ReflectiveOperationException | LinkageError absent) {
+			return FmlConfigElements::unmodifiableCopy;
+		}
+		return entries -> {
+			try {
+				@SuppressWarnings("unchecked")
+				Map<String, Object> copy = (Map<String, Object>) copyOf.invoke(null, entries);
+				return copy;
+			} catch (ReflectiveOperationException | RuntimeException refused) {
+				return FmlConfigElements.unmodifiableCopy(entries);
+			}
+		};
+	}
+
+	/** A proxied {@code getConfigElement}'s arguments as a path: {@code String[]}, a bare {@code String}, or none. */
+	private static String[] path(Object[] args) {
+		if (args == null || args.length == 0 || args[0] == null) return new String[0];
+		return args[0] instanceof String[] keys ? keys : new String[] {String.valueOf(args[0])};
 	}
 
 	/**
@@ -1001,24 +1070,11 @@ public final class PassiveSeeder {
 	 * a table with its {@code valueMap()}, whose own nested tables stay {@code Config}. So this descends through
 	 * either shape, and a table it lands on is answered as that table's {@code valueMap()} — the {@code Map} Sodium
 	 * reads {@code sodium:options} out of. Not modelled: the wrapper THROWS {@code InvalidModFileException} for a
-	 * path that lands on an array of tables; this answers the list.
+	 * path that lands on an array of tables; this answers the list. The walk itself is {@link FmlConfigElements},
+	 * which the kernel's own mod infos answer through as well.
 	 */
 	static Optional<Object> lookup(Map<String, Object> elements, Object[] args) {
-		if (args == null || args.length == 0 || args[0] == null) return Optional.empty();
-		String[] path = args[0] instanceof String[] keys ? keys : new String[] {String.valueOf(args[0])};
-		Object current = elements;
-		for (String key : path) {
-			if (current instanceof Map<?, ?> map) {
-				current = map.get(key);
-			} else if (current instanceof UnmodifiableConfig table) {
-				// One literal key: get(String) would split iris' "mixin.features.render.world.sky" on its dots.
-				current = table.get(java.util.Collections.singletonList(key));
-			} else {
-				return Optional.empty();
-			}
-			if (current == null) return Optional.empty();
-		}
-		return Optional.of(current instanceof UnmodifiableConfig table ? table.valueMap() : current);
+		return FmlConfigElements.neoForge(elements, path(args));
 	}
 
 	private static String displayName(DiscoveredMod mod) {
@@ -1043,11 +1099,12 @@ public final class PassiveSeeder {
 	 * <p>{@code config} must not be null: {@code ModFileInfo.getConfigElement}/{@code getConfigList} delegate to it
 	 * straight through, and NeoForge's own {@code ModInfo} construction path reads it. It is a {@link Proxy}, which
 	 * is safe here precisely because that field is typed as the INTERFACE {@code IConfigurable} and is only ever
-	 * called through it.
+	 * called through it. It answers from the file's own top level ({@link #fileConfigurable}), which is where
+	 * Lithium looks for Unlit Campfire's {@code ["lithium:options"]}.
 	 */
 	private static void fillModFileInfo(ClassLoader gameLoader, Class<?> fileInfoCls, Object fileInfo, Path jar,
 			DiscoveredMod first, List<Object> ownMods, boolean indexed) throws Exception {
-		setInstanceField(fileInfoCls, "config", fileInfo, emptyConfigurable(gameLoader, Ecosystem.NEOFORGE));
+		setInstanceField(fileInfoCls, "config", fileInfo, fileConfigurable(gameLoader, Ecosystem.NEOFORGE, first));
 		setInstanceField(fileInfoCls, "mods", fileInfo, ownMods);
 		setInstanceField(fileInfoCls, "languageSpecs", fileInfo, List.of());
 		setInstanceField(fileInfoCls, "properties", fileInfo, Map.of());
@@ -1273,8 +1330,9 @@ public final class PassiveSeeder {
 		// As in buildForgeModInfo: the declared table, so a NeoForge mod asking a kernel-built IModInfo about
 		// its properties gets the truth rather than silence.
 		setInstanceField(modInfoCls, "properties", modInfo, mod.getModProperties());
-		setInstanceField(modInfoCls, "config", modInfo,
-				configurableOver(gameLoader, Ecosystem.NEOFORGE, mod.getConfigElements()));
+		setInstanceField(modInfoCls, "config", modInfo, configElementsEnabled()
+				? configurableOver(gameLoader, Ecosystem.NEOFORGE, mod.getConfigElements())
+				: emptyConfigurable(gameLoader, Ecosystem.NEOFORGE));
 		// logoBlur stays at its allocation default (false).
 		return modInfo;
 	}

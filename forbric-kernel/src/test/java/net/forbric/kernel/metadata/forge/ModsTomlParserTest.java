@@ -198,6 +198,25 @@ class ModsTomlParserTest {
 		}
 	}
 
+	/**
+	 * The file's own top level is kept, shallow, as FML's wrapper over the parsed file sees it. Unlit Campfire's
+	 * {@code ["lithium:options"]} is a TOP-LEVEL table — in no {@code [[mods]]} entry — so this is the only place it
+	 * survives parsing; its one key is the literal {@code mixin.world.block_entity_ticking.sleeping.campfire}.
+	 */
+	@Test
+	void theFilesTopLevelKeepsUnlitCampfiresLithiumOptions() throws Exception {
+		ForgeModsToml toml;
+		try (InputStream in = getClass().getResourceAsStream("/forge/unlitcampfire.neoforge.mods.toml")) {
+			toml = ModsTomlParser.parse(in);
+		}
+		Map<String, Object> top = toml.getConfigElements();
+		assertEquals("https://github.com/cech12/UnlitCampfire/issues", top.get("issueTrackerURL"));
+		Config lithium = (Config) top.get("lithium:options");
+		assertEquals(Map.of("mixin.world.block_entity_ticking.sleeping.campfire", false), lithium.valueMap());
+		assertFalse(toml.getMods().get(0).getConfigElements().containsKey("lithium:options"),
+				"a file-level table, not the mod's own entry");
+	}
+
 	/** The fixture is byte-for-byte the manifest LibJF ships, when the sweep's copy of the jar is here to check. */
 	@Test
 	void theFixtureIsTheManifestLibjfShips() throws Exception {

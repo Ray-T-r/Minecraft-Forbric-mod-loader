@@ -101,6 +101,28 @@ final class KernelModMetadata {
 	}
 
 	/**
+	 * The mod's own {@code [[mods]]} entry, or an empty map — what its {@code IModInfo.getConfig()} answers from.
+	 *
+	 * <p>Not Enough Crashes reads {@code authors} out of it and Puzzles Lib reads {@code authors}, {@code credits}
+	 * and {@code displayURL}. The version in it is the resolved one, as on the seeded {@code ModInfo}.
+	 */
+	static Map<String, Object> configElementsOf(String modId, DiscoveredMod declared) {
+		DiscoveredMod mod = resolve(modId, declared);
+		return mod == null ? Map.of() : mod.getConfigElements();
+	}
+
+	/**
+	 * The top level of the {@code mods.toml} the mod came from, or an empty map — what its owning file answers from.
+	 *
+	 * <p>A different table from {@link #configElementsOf}: {@code issueTrackerURL} and {@code license} are here, and so
+	 * is any top-level table a mod addresses to another mod (Unlit Campfire's {@code ["lithium:options"]}).
+	 */
+	static Map<String, Object> fileConfigElementsOf(String modId, DiscoveredMod declared) {
+		DiscoveredMod mod = resolve(modId, declared);
+		return mod == null ? Map.of() : mod.getFileConfigElements();
+	}
+
+	/**
 	 * The mod's real version, or {@code "0.0"}.
 	 *
 	 * <p>An unresolved placeholder counts as no version. A jar whose metadata says {@code ${file.jarVersion}}

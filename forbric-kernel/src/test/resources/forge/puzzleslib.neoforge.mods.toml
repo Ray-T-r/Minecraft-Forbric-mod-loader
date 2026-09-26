@@ -1,0 +1,36 @@
+modLoader = "javafml"
+loaderVersion = "*"
+license = "MPL-2.0"
+licenseURL = "https://github.com/Fuzss/puzzles-lib/blob/main/LICENSE.md"
+issueTrackerURL = "https://github.com/Fuzss/puzzles-lib/issues"
+
+[[mods]]
+    modId = "puzzleslib"
+    version = "26.2.4"
+    displayName = "Puzzles Lib"
+    description = "Why is it called Puzzles? That's the puzzle."
+    iconFile = "pack.png"
+    logoFile = "pack.png"
+    updateJSONURL = "https://api.modrinth.com/updates/QAGBst4M/forge_updates.json?neoforge=only"
+    authors = "Fuzs"
+    displayURL = "https://modrinth.com/mod/puzzles-lib"
+
+[[mixins]]
+    config = "puzzleslib.common.mixins.json"
+
+[[mixins]]
+    config = "puzzleslib.neoforge.mixins.json"
+
+[[dependencies.puzzleslib]]
+    modId = "minecraft"
+    mandatory = true
+    type = "REQUIRED"
+    versionRange = "[26.2,26.3)"
+    referralUrl = "https://www.minecraft.net/"
+
+[[dependencies.puzzleslib]]
+    modId = "neoforge"
+    mandatory = true
+    type = "REQUIRED"
+    versionRange = "[26.2.0.57,)"
+    referralUrl = "https://neoforged.net/"

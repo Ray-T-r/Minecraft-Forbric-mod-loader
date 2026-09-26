@@ -26,6 +26,7 @@ import org.apache.maven.artifact.versioning.ArtifactVersion;
 import org.apache.maven.artifact.versioning.DefaultArtifactVersion;
 
 import net.forbric.api.DiscoveredMod;
+import net.forbric.kernel.metadata.forge.FmlConfigElements;
 import net.neoforged.neoforgespi.language.IConfigurable;
 import net.neoforged.neoforgespi.language.IModFileInfo;
 import net.neoforged.neoforgespi.language.IModInfo;
@@ -63,13 +64,17 @@ public final class KernelModInfo implements IModInfo {
 	public KernelModInfo(String modId, Path jar, DiscoveredMod declared) {
 		this.modId = modId;
 		this.declared = declared;
-		this.config = new KernelConfigurable(modId);
+		boolean answers = FmlConfigElements.enabled();
+		this.config = answers
+				? new KernelConfigurable(modId, KernelModMetadata.configElementsOf(modId, declared))
+				: new KernelConfigurable(modId);
 		this.displayName = KernelModMetadata.displayNameOf(modId, declared);
 		this.version = new DefaultArtifactVersion(KernelModMetadata.versionOf(modId, declared));
 
 		// The owning file's getMods() has to return THIS object, so it is handed a slot to read back from.
 		IModInfo[] self = new IModInfo[1];
-		this.owningFile = new KernelModFileInfo(modId, jar, self);
+		this.owningFile = new KernelModFileInfo(modId, jar, self,
+				answers ? new KernelConfigurable(modId, KernelModMetadata.fileConfigElementsOf(modId, declared)) : null);
 		self[0] = this;
 	}
 
@@ -110,6 +115,10 @@ public final class KernelModInfo implements IModInfo {
 	 * Never null: {@code ModListScreen.updateCache} runs from the screen's TICK — so on every frame the Mods list
 	 * is open — and calls {@code getConfig().getConfigElement(...)} unguarded. A null crashed the client the
 	 * moment that list was shown again, which is what closing a mod's config screen with Done does.
+	 *
+	 * <p>It answers from the mod's own {@code [[mods]]} entry, as NeoForge's {@code ModInfo} does. It used to answer
+	 * nothing, and every mod that describes another mod from this seam — Not Enough Crashes' {@code authors}, Puzzles
+	 * Lib's {@code authors}/{@code credits}/{@code displayURL} — read a mod that declares none.
 	 */
 	@Override
 	public IConfigurable getConfig() {

@@ -27,23 +27,46 @@ import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import net.forbric.kernel.metadata.forge.FmlConfigElements;
+import net.forbric.kernel.metadata.forge.ForgeModEntry;
+import net.forbric.kernel.metadata.forge.ForgeModsToml;
+import net.forbric.kernel.metadata.forge.ModsTomlParser;
+
 /**
- * The string keys of a jar's {@code META-INF/mods.toml}: the top-level ones and each {@code [[mods]]} table's.
+ * A jar's {@code META-INF/mods.toml}, as what a traditional-Forge mod reads back through
+ * {@code IModFileInfo.getConfig()} and {@code IModInfo.getConfig()}: the file's top level and each {@code [[mods]]}
+ * table.
  *
- * <p>Enough for what a traditional-Forge mod reads back through {@code IModFileInfo.getConfig()} — wthit asks
- * for {@code issueTrackerURL} in its static initialiser and dies when it is absent. Only {@code key = "value"}
- * lines are read; multi-line strings and non-string values are left out, which reads as "not declared".
+ * <p>Parsed the way MinecraftForge parses it, by night-config through the kernel's one {@code mods.toml} parser, so
+ * every value keeps its TOML type and a table stays a {@code Config} (which {@link KernelForgeConfigurable} answers as
+ * MinecraftForge's {@code ImmutableMap}). This used to be a line-by-line reading of {@code key = "value"} lines, which
+ * answered strings only: a boolean, a number, a list or a table read as undeclared, and so did a string with an
+ * escaped quote in it — wthit's second mod, {@code waila}, describes itself as
+ * {@code "Actually WTHIT but with \"waila\" as it's id lmao"}, and that line matched nothing.
+ *
+ * <p>{@code -Dforbric.fileConfigElements=off} reads the strings-only way again, and so does a file night-config
+ * cannot parse, which reads no worse than it did.
  */
 final class KernelForgeModsToml {
 	static final String PATH = "META-INF/mods.toml";
 	private static final Pattern STRING_LINE = Pattern.compile("^\\s*([A-Za-z0-9_.-]+)\\s*=\\s*\"([^\"]*)\"\\s*(#.*)?$");
 	private static final Pattern TABLE = Pattern.compile("^\\s*\\[\\[?\\s*([A-Za-z0-9_.-]+)\\s*\\]?\\]\\s*$");
 
-	final Map<String, String> top = new LinkedHashMap<>();
-	final List<Map<String, String>> mods = new ArrayList<>();
+	/** The file's top level: shallow, with a table left as night-config's {@code Config}. */
+	final Map<String, Object> top;
+	/** Each {@code [[mods]]} table, in file order. */
+	final List<Map<String, Object>> mods;
+	/** Whether the values are night-config's own (true) or the strings-only reading (false). */
+	final boolean typed;
+
+	private KernelForgeModsToml(Map<String, Object> top, List<Map<String, Object>> mods, boolean typed) {
+		this.top = top;
+		this.mods = mods;
+		this.typed = typed;
+	}
 
 	static KernelForgeModsToml empty() {
-		return new KernelForgeModsToml();
+		return new KernelForgeModsToml(Map.of(), List.of(), FmlConfigElements.enabled());
 	}
 
 	/** The parsed file, or {@link #empty()} when {@code jar} is null, unreadable or has no mods.toml. */
@@ -59,14 +82,30 @@ final class KernelForgeModsToml {
 	}
 
 	static KernelForgeModsToml parse(String text) {
-		KernelForgeModsToml out = new KernelForgeModsToml();
-		Map<String, String> current = out.top;
+		if (FmlConfigElements.enabled()) {
+			try {
+				ForgeModsToml toml = ModsTomlParser.parse(text);
+				List<Map<String, Object>> mods = new ArrayList<>();
+				for (ForgeModEntry mod : toml.getMods()) mods.add(mod.getConfigElements());
+				return new KernelForgeModsToml(toml.getConfigElements(), List.copyOf(mods), true);
+			} catch (RuntimeException malformed) {
+				// Fall through: the strings-only reading tolerated what night-config refuses, and must stay no worse.
+			}
+		}
+		return strings(text);
+	}
+
+	/** The reading before night-config: {@code key = "value"} lines only. */
+	private static KernelForgeModsToml strings(String text) {
+		Map<String, Object> top = new LinkedHashMap<>();
+		List<Map<String, Object>> mods = new ArrayList<>();
+		Map<String, Object> current = top;
 		for (String line : text.split("\\R")) {
 			Matcher table = TABLE.matcher(line);
 			if (table.matches()) {
 				if ("mods".equals(table.group(1)) && line.contains("[[")) {
 					current = new LinkedHashMap<>();
-					out.mods.add(current);
+					mods.add(current);
 				} else {
 					current = new LinkedHashMap<>(); // some other table: read, never reported
 				}
@@ -75,12 +114,17 @@ final class KernelForgeModsToml {
 			Matcher kv = STRING_LINE.matcher(line);
 			if (kv.matches()) current.put(kv.group(1), kv.group(2));
 		}
-		return out;
+		return new KernelForgeModsToml(top, mods, false);
 	}
 
 	/** The {@code [[mods]]} table declaring {@code modId}, or an empty map. */
-	Map<String, String> mod(String modId) {
-		for (Map<String, String> table : mods) if (modId.equals(table.get("modId"))) return table;
+	Map<String, Object> mod(String modId) {
+		for (Map<String, Object> table : mods) if (modId.equals(table.get("modId"))) return table;
 		return Map.of();
+	}
+
+	/** The file's {@code license}, or {@code ""} — MinecraftForge's own default, and what the Mods screen writes. */
+	String license() {
+		return top.get("license") instanceof String license ? license : "";
 	}
 }

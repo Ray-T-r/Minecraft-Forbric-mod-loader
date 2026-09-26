@@ -18,6 +18,7 @@ package net.forbric.kernel.metadata.forge;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The parsed contents of a Forge {@code META-INF/mods.toml} (or {@code META-INF/neoforge.mods.toml}) file.
@@ -28,6 +29,7 @@ public final class ForgeModsToml {
 	private final List<ForgeModEntry> mods;
 	private final List<String> mixinConfigs;
 	private final List<String> accessTransformers;
+	private final Map<String, Object> configElements;
 
 	public ForgeModsToml(String modLoader, String loaderVersion, List<ForgeModEntry> mods, List<String> mixinConfigs) {
 		this(modLoader, loaderVersion, mods, mixinConfigs, Collections.emptyList());
@@ -35,11 +37,27 @@ public final class ForgeModsToml {
 
 	public ForgeModsToml(String modLoader, String loaderVersion, List<ForgeModEntry> mods,
 			List<String> mixinConfigs, List<String> accessTransformers) {
+		this(modLoader, loaderVersion, mods, mixinConfigs, accessTransformers, Map.of());
+	}
+
+	public ForgeModsToml(String modLoader, String loaderVersion, List<ForgeModEntry> mods,
+			List<String> mixinConfigs, List<String> accessTransformers, Map<String, Object> configElements) {
 		this.modLoader = modLoader;
 		this.loaderVersion = loaderVersion;
 		this.mods = mods == null ? Collections.emptyList() : Collections.unmodifiableList(mods);
 		this.mixinConfigs = mixinConfigs == null ? Collections.emptyList() : Collections.unmodifiableList(mixinConfigs);
 		this.accessTransformers = accessTransformers == null ? Collections.emptyList() : Collections.unmodifiableList(accessTransformers);
+		this.configElements = configElements == null ? Map.of() : Map.copyOf(configElements);
+	}
+
+	/**
+	 * The file's top level, never null — its keys, with a table left as night-config's own {@code Config} the way FML
+	 * leaves it. This is what the owning {@code ModFileInfo.getConfigElement} answers from, which is a different
+	 * object from any one mod's {@code [[mods]]} entry: {@code issueTrackerURL} and {@code license} live here, and so
+	 * does any top-level table a mod addresses to another mod, like Unlit Campfire's {@code ["lithium:options"]}.
+	 */
+	public Map<String, Object> getConfigElements() {
+		return configElements;
 	}
 
 	/** The declared mod-loading language, e.g. {@code "javafml"} (or {@code "lowcodefml"} / {@code "kotlinforforge"}). */

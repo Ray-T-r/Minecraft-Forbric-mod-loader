@@ -38,27 +38,31 @@ import net.neoforged.neoforgespi.locating.IModFile;
  * to a default. The version string now follows the carriers' first-mod contract as well: a null there prevented
  * Player Animation Library from constructing when it checked whether its own version contained "dev".
  *
- * <p>The one worth arguing about is {@link #getConfig()}: it returns null here, while {@code IModInfo.getConfig()}
- * on the very same mod is carefully non-null because a null there crashes the Mods screen on every tick. The two
- * were written at different times and the second lesson was never applied to the first. Whether anything reads
- * THIS one has not been established, so it is left as it was rather than changed on a hunch.
+ * <p>{@link #getConfig()} was null here, while {@code IModInfo.getConfig()} on the very same mod was carefully
+ * non-null, and it was left that way until a reader was established. There is more than one. Not Enough Crashes
+ * builds its description of every mod it names from {@code getOwningFile().getConfig().getConfigElement(
+ * "issueTrackerURL")} and threw on the null, and NeoForge's own mod-loading crash report asks the same object for
+ * the same key.
  */
 public final class KernelModFileInfo implements IModFileInfo {
 	private final String modId;
 	private final KernelModFile file;
 	private final IModInfo[] owner;
+	private final IConfigurable config;
 
 	/**
-	 * @param owner a one-slot holder back-filled with the {@link KernelModInfo} once it exists. The two types
-	 *              refer to each other — a mod info has an owning file, and that file's {@code getMods()} must
-	 *              return the mod info — so one of them has to be constructed second. NeoForge's title-screen
-	 *              version check is what reads it back: {@code getModFileById(id).getMods().get(0)}.
+	 * @param owner  a one-slot holder back-filled with the {@link KernelModInfo} once it exists. The two types
+	 *               refer to each other — a mod info has an owning file, and that file's {@code getMods()} must
+	 *               return the mod info — so one of them has to be constructed second. NeoForge's title-screen
+	 *               version check is what reads it back: {@code getModFileById(id).getMods().get(0)}.
+	 * @param config the file's top level, or null with {@code -Dforbric.fileConfigElements=off}
 	 */
-	KernelModFileInfo(String modId, Path jar, IModInfo[] owner) {
+	KernelModFileInfo(String modId, Path jar, IModInfo[] owner, IConfigurable config) {
 		this.modId = modId;
 		this.file = new KernelModFile(modId, jar);
 		this.file.setModFileInfo(this);
 		this.owner = owner;
+		this.config = config;
 	}
 
 	@Override
@@ -79,10 +83,15 @@ public final class KernelModFileInfo implements IModFileInfo {
 
 	// --- answered the way the proxy's defaultReturn answered them -----------------------------------------
 
-	/** Null, as before. Unlike {@code IModInfo.getConfig()}, nothing has been shown to dereference this one. */
+	/**
+	 * The top level of the mod's {@code neoforge.mods.toml}, answered as NeoForge's {@code NightConfigWrapper} over the
+	 * parsed file answers it; native {@code ModFileInfo.getConfig()} is the file itself, which delegates to that
+	 * wrapper. {@code issueTrackerURL} and {@code license} are here, and so is any top-level table one mod addresses to
+	 * another. Null only with {@code -Dforbric.fileConfigElements=off}, as it always was before.
+	 */
 	@Override
 	public IConfigurable getConfig() {
-		return null;
+		return config;
 	}
 
 	/**

@@ -36,9 +36,9 @@ import net.forbric.api.UnifiedDependency;
  * <p>Written against the public {@code mods.toml} schema using the same TOML library Forge/NeoForge
  * use ({@code night-config}). It deliberately contains no FML source. Output is a plain data model
  * ({@link ForgeModsToml}); turning that into Forbric's unified mod model and feeding the dependency
- * solver happens in the discovery layer (milestone P4). The one exception is the two tables a mod reads back
- * through FML — {@code [modproperties.<id>]} and the {@code [[mods]]} entry — which keep the value types FML
- * gives them (see {@link #tableValues}).
+ * solver happens in the discovery layer (milestone P4). The one exception is the three tables a mod reads back
+ * through FML — {@code [modproperties.<id>]}, the {@code [[mods]]} entry and the file's own top level — which keep
+ * the value types FML gives them (see {@link #tableValues}).
  */
 public final class ModsTomlParser {
 	private ModsTomlParser() {
@@ -97,7 +97,9 @@ public final class ModsTomlParser {
 			if (file != null) accessTransformers.add(file);
 		}
 
-		return new ForgeModsToml(modLoader, loaderVersion, mods, mixinConfigs, accessTransformers);
+		// The whole file's top level, shaped the same way: what the owning ModFileInfo's getConfigElement answers
+		// from. Unlit Campfire's ["lithium:options"] is a top-level table, so it is here and in no [[mods]] entry.
+		return new ForgeModsToml(modLoader, loaderVersion, mods, mixinConfigs, accessTransformers, tableValues(config));
 	}
 
 	/**

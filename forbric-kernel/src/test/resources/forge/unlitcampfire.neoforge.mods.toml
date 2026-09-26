@@ -1,0 +1,37 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+issueTrackerURL="https://github.com/cech12/UnlitCampfire/issues"
+license="The MIT License (MIT)"
+[[mods]]
+modId="unlitcampfire"
+version="26.2-4.1.0.0"
+displayName="Unlit Campfire"
+displayURL="https://github.com/cech12/UnlitCampfire"
+logoFile="logo.png"
+authors="Cech12"
+description='''A mod where placed campfires are unlit.'''
+["lithium:options"]
+"mixin.world.block_entity_ticking.sleeping.campfire"=false
+[[mixins]]
+config = "unlitcampfire.mixins.json"
+[[accessTransformers]]
+file="META-INF/accesstransformer.cfg"
+[[dependencies.unlitcampfire]]
+modId="neoforge"
+type="required"
+versionRange="[26.2.0.3-beta,)"
+ordering="NONE"
+side="BOTH"
+[[dependencies.unlitcampfire]]
+modId="minecraft"
+type="required"
+versionRange="[26.2, 27)"
+ordering="NONE"
+side="BOTH"
+[[dependencies.unlitcampfire]]
+modId="jade"
+type="optional"
+versionRange="[26.2.2,)"
+referralUrl="https://www.curseforge.com/minecraft/mc-mods/jade"
+ordering="NONE"
+side="BOTH"
