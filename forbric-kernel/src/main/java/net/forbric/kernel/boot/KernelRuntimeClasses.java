@@ -452,6 +452,9 @@ public final class KernelRuntimeClasses {
 		// The reordering Operation a wrapped @WrapOperation handler receives; called from the outer handler
 		// MixinWrapOperationShim writes into a guest mixin, so there is no boot-side entry point.
 		CLASSES.put("net.forbric.kernel.runtime.KernelWrapOperations", new Entry(Origin.COMPILED, List.of()));
+		// The vanilla-shaped Operation a Fabric shears wrap is handed at the carrier's canPerformAction; called from the
+		// outer handler MixinShearsRelay writes into the guest mixin.
+		CLASSES.put("net.forbric.kernel.runtime.KernelShears", new Entry(Origin.COMPILED, List.of()));
 		// Asked by the merged Fluid.getFluidType() (ForeignFluidTypeInjector) before NeoForge's throwing lookup.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidTypes", new Entry(Origin.COMPILED, List.of()));
 		// Called from NeoForge's ParticleEngine constructor after its group event (ParticleGroupsInjector).
