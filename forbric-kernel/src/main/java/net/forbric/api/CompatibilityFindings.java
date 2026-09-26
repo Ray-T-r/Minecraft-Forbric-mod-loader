@@ -40,6 +40,7 @@ public final class CompatibilityFindings {
 			String source;
 			switch (reason) {
 				case "its @Mod constructor threw" -> { phase = "constructor"; source = "KernelModLoader @Mod construction"; }
+				case "its preLaunch entrypoint threw" -> { phase = "entrypoint:preLaunch"; source = "KernelFabricEcosystem preLaunch entrypoint"; }
 				case "its main entrypoint threw" -> { phase = "entrypoint:main"; source = "KernelFabricEcosystem main entrypoint"; }
 				case "its client entrypoint threw" -> { phase = "entrypoint:client"; source = "KernelFabricEcosystem client entrypoint"; }
 				case "its server entrypoint threw" -> { phase = "entrypoint:server"; source = "KernelFabricEcosystem server entrypoint"; }

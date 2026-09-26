@@ -24,16 +24,21 @@ import org.objectweb.asm.tree.VarInsnNode;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
 
+import net.forbric.api.CompatibilityFinding;
+import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.Ecosystem;
 
 /** Fabric mods' injectors on the merged base's carrier stubs, as shipped, against the real merged classes. */
 @ResourceLock("system-properties")
+@ResourceLock("ModCatalog")
 class MixinStubRebindTest {
 	private static final Path MERGED = Path.of(System.getenv().getOrDefault("FORBRIC_OLD", "../forbric-loader"), "run/merged-base/patched-mc-merged-26.2.jar");
 	private static final Path POPULAR = Path.of("run/client-popular/mods");
 	private static final Path MERGED_PACK = Path.of("run/client-merged-pack/mods");
 
 	@AfterEach void reset() {
+		CompatibilityFindings.reset();
+		System.clearProperty(MixinStubRebind.STUB_FINDING_PROPERTY);
 		System.clearProperty(MixinStubRebind.PROPERTY);
 		System.clearProperty(MixinStubRebind.MODIFY_VARIABLE_PROPERTY);
 		System.clearProperty(MixinStubRebind.CAPTURES_PROPERTY);
@@ -201,11 +206,25 @@ class MixinStubRebindTest {
 		ClassNode fuel = merged(FUEL);
 		ClassNode mixin = synthetic("sircow/torrential/mixin/FuelValuesMixin", FUEL, "torrential$modifyFuelValues",
 				"(" + FUEL_VALUES + PROVIDER + FLAGS + "I)" + FUEL_VALUES, true, injector(MODIFY_RETURN, STUB_BURN, List.of(at("RETURN"))));
-		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
+		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC, "torrential.mixins.json");
 		MethodNode handler = mixin.methods.getFirst();
 		assertNull(MixinStubRebind.destination(mixin.name, handler, fuel));
+		assertTrue(CompatibilityFindings.all().isEmpty(), "asking where it would go reports nothing");
 		assertEquals(0, MixinStubRebind.adapt(mixin, name -> fuel));
 		assertEquals(List.of(STUB_BURN), selectors(mixin, "torrential$modifyFuelValues"));
+		// It binds on the stub and runs only where the stub is called: the dedicated server builds fuel without it.
+		List<CompatibilityFinding> stays = CompatibilityFindings.all();
+		assertEquals(1, stays.size(), stays.toString());
+		assertEquals(CompatibilityFinding.Confidence.SUSPECTED, stays.getFirst().confidence());
+		assertFalse(stays.getFirst().required());
+		assertTrue(stays.getFirst().id().startsWith("mixin-stub-bound:torrential.mixins.json:"), stays.getFirst().id());
+		assertTrue(stays.getFirst().detail().contains("torrential$modifyFuelValues stays on "
+				+ "net.minecraft.world.level.block.entity.FuelValues." + STUB_BURN), stays.getFirst().detail());
+		CompatibilityFindings.reset();
+		System.setProperty(MixinStubRebind.STUB_FINDING_PROPERTY, "off");
+		assertEquals(0, MixinStubRebind.adapt(mixin, name -> fuel));
+		assertTrue(CompatibilityFindings.all().isEmpty(), "its switch drops the finding and moves nothing");
+		System.clearProperty(MixinStubRebind.STUB_FINDING_PROPERTY);
 
 		MethodNode stub = fuel.methods.stream().filter(m -> STUB_BURN.equals(m.name + m.desc)).findFirst().orElseThrow();
 		MethodNode body = fuel.methods.stream().filter(m -> BODY_BURN.equals(m.name + m.desc)).findFirst().orElseThrow();
@@ -221,6 +240,7 @@ class MixinStubRebindTest {
 				"(" + FUEL_VALUES + ")" + FUEL_VALUES, true, injector(MODIFY_RETURN, STUB_BURN, List.of(at("RETURN"))));
 		assertEquals(1, MixinStubRebind.adapt(plain, name -> fuel), "no capture: the move it always made");
 		assertEquals(List.of(BODY_BURN), selectors(plain, "modify"));
+		assertTrue(CompatibilityFindings.all().isEmpty(), "a handler that moves is nothing to report");
 	}
 
 	/** puzzleslib's break-speed modifier captures the state, which the stub passes through first: it still moves. */

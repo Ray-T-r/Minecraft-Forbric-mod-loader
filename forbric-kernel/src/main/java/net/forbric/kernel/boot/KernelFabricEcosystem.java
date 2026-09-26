@@ -351,8 +351,20 @@ public final class KernelFabricEcosystem {
 	}
 
 	/**
+	 * {@code -Dforbric.preLaunchFailure=warn}: a {@code preLaunch} entrypoint that throws, or cannot be loaded, is only
+	 * logged again, and its mod still reads as loaded.
+	 */
+	public static final String PRELAUNCH_FAILURE_PROPERTY = "forbric.preLaunchFailure";
+
+	/**
 	 * Runs the {@code preLaunch} entrypoints, before any game class is loaded. Per Fabric's contract these must
 	 * not touch game classes; the kernel does not enforce that, but it does run them at the correct point.
+	 *
+	 * <p>A {@code preLaunch} that throws fails its mod, as {@code main}, {@code client} and {@code server} already did:
+	 * on Fabric it takes the whole game down. It used to be an ERROR line and nothing else, so Core Lib's preLaunch
+	 * dying on a missing Fabric Loader internal left every SuperMartijn642 mod without its content while the Mods
+	 * screen called Core Lib loaded. An entrypoint that cannot even be loaded arrives here too: the loader hands a
+	 * lifecycle key's load failure to its driver.
 	 */
 	public static void runPreLaunch() {
 		if (loader == null) return;
@@ -367,6 +379,9 @@ public final class KernelFabricEcosystem {
 					ForbricLog.info("[Forbric/Fabric] preLaunch entrypoint of %s", id);
 				} catch (Throwable t) {
 					ForbricLog.error("[Forbric/Fabric] preLaunch entrypoint of " + id + " failed", t);
+					if (!"warn".equalsIgnoreCase(System.getProperty(PRELAUNCH_FAILURE_PROPERTY, "fail"))) {
+						ModCatalog.mark(id, ModCatalog.Status.FAILED, "its preLaunch entrypoint threw");
+					}
 				}
 			}
 		}

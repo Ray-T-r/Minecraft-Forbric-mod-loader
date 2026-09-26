@@ -43,6 +43,7 @@ class EntrypointResolveFailureTest {
 	@BeforeEach @AfterEach void reset() {
 		ModCatalog.publish(List.of()); CompatibilityFindings.reset(); CompatibilityDecision.reset(); KernelLoadReport.reset();
 		System.clearProperty(KernelFabricLoader.RESOLVE_FAILURE_PROPERTY);
+		System.clearProperty(KernelFabricEcosystem.PRELAUNCH_FAILURE_PROPERTY);
 		healthyRuns = 0;
 	}
 
@@ -61,6 +62,38 @@ class EntrypointResolveFailureTest {
 		CompatibilityFinding finding = CompatibilityFindings.confirmedRequired().getFirst();
 		assertEquals("brokennet", finding.modId());
 		assertEquals("initialization:entrypoint:main", finding.id());
+	}
+
+	/**
+	 * preLaunch is one of the keys the loader hands to its driver, so its driver must fail the mod too. It only logged
+	 * an ERROR: Core Lib's preLaunch died that way on every sweep and the Mods screen still called Core Lib loaded.
+	 */
+	@Test void aPreLaunchEntrypointThatCannotLoadFailsItsModThroughTheDriver() throws Exception {
+		KernelFabricLoader loader = loader();
+		register(loader, "brokenpre", "preLaunch", "probe.PreLaunch");
+		loader.freeze();
+		ModCatalog.publish(List.of(entry("brokenpre")));
+
+		runPreLaunch(loader);
+
+		assertEquals(List.of("brokenpre"), ModCatalog.failures().stream().map(ModCatalog.Entry::modId).toList());
+		assertEquals("its preLaunch entrypoint threw", ModCatalog.failures().getFirst().statusDetail());
+		KernelLoadReport.writeTo(directory.resolve("load-report.txt"));
+		CompatibilityFinding finding = CompatibilityFindings.confirmedRequired().getFirst();
+		assertEquals("brokenpre", finding.modId());
+		assertEquals("initialization:entrypoint:preLaunch", finding.id());
+	}
+
+	@Test void aPreLaunchFailureIsOnlyLoggedWithItsSwitch() throws Exception {
+		System.setProperty(KernelFabricEcosystem.PRELAUNCH_FAILURE_PROPERTY, "warn");
+		KernelFabricLoader loader = loader();
+		register(loader, "brokenpre", "preLaunch", "probe.PreLaunch");
+		loader.freeze();
+		ModCatalog.publish(List.of(entry("brokenpre")));
+
+		runPreLaunch(loader);
+
+		assertTrue(ModCatalog.failures().isEmpty(), "an ERROR line and nothing else, as it used to be");
 	}
 
 	@Test void theSwitchSkipsItAsBefore() throws Exception {
@@ -136,6 +169,19 @@ class EntrypointResolveFailureTest {
 		} finally {
 			active.set(null, previous);
 			if (shim == null) System.clearProperty(KernelForeignShimContext.SWITCH); else System.setProperty(KernelForeignShimContext.SWITCH, shim);
+		}
+	}
+
+	private static void runPreLaunch(KernelFabricLoader loader) throws Exception {
+		Field active = KernelFabricEcosystem.class.getDeclaredField("loader");
+		active.setAccessible(true);
+		Object previous = active.get(null);
+		try {
+			active.set(null, loader);
+			KernelFabricEcosystem.runPreLaunch();
+		} finally {
+			active.set(null, previous);
+			KernelFabricEcosystem.resetPhasesForTests();
 		}
 	}
 

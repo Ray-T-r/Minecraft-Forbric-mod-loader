@@ -38,9 +38,11 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>fabric-loot-api-v3's {@code ReloadableServerRegistriesMixin} cannot fit the merged base and stays pinned in
  * {@link net.forbric.kernel.mixin.MergedBaseMixinCompat}: NeoForge swapped the last two parameters of
- * {@code lambda$scheduleRegistryLoad$0} and split vanilla's one element map into two, so the mixin's handler
- * descriptor and its {@code @Local Map} can never bind (the recorded {@code VerifyError}). What survived the
- * merge, verbatim, are two single instructions in the class:
+ * {@code lambda$scheduleRegistryLoad$0} and split vanilla's one element map into two, so {@code modifyLootTable}'s
+ * {@code @Local Map} can never bind (the recorded {@code VerifyError}). Only that handler: its sibling
+ * {@code onLootTablesLoaded} is vanilla-shaped and {@code MixinHandlerShim} would wrap it onto the reordered lambda,
+ * so the pin is also what keeps ALL_LOADED from firing twice -- once there and once from this bridge. What survived
+ * the merge, verbatim, are two single instructions in the class:
  * <ul>
  *   <li>{@code invokestatic EventHooks.loadLootTable(HolderLookup.Provider, Identifier, LootTable)} inside
  *       {@code lambda$scheduleRegistryLoad$1} — reached for every loaded {@code LootTable}, a {@code null} result

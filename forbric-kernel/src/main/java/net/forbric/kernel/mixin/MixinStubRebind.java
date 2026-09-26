@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 
 import org.objectweb.asm.Opcodes;
@@ -24,6 +25,7 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
 
@@ -66,7 +68,9 @@ import net.forbric.kernel.util.ForbricLog;
  *       call: torrential's {@code @ModifyReturnValue} on {@code FuelValues.vanillaBurnTimes(Provider, FeatureFlagSet,
  *       int)} captures all three, the stub feeds the first two into a {@code Builder}, and moving it to
  *       {@code (Builder, int)} made MixinExtras reject the handler and the whole required mixin with it. It now
- *       stays on the stub, where it binds; puzzleslib's {@code getDestroySpeed(float, BlockState)} still moves,
+ *       stays on the stub, where it binds, and is reported SUSPECTED: it then runs only where something calls the
+ *       stub, and the dedicated server never does ({@code -Dforbric.mixinStubRebind.stubFinding=off} drops the
+ *       finding); puzzleslib's {@code getDestroySpeed(float, BlockState)} still moves,
  *       because the stub passes its {@code BlockState} straight through as the delegate's first argument. When the
  *       contract's size cannot be told, nothing moves;</li>
  *   <li>a {@code @ModifyVariable} only by one {@code name} (never {@code ordinal}/{@code index}, which count locals by
@@ -93,6 +97,8 @@ public final class MixinStubRebind {
 	 * in MixinRetarget's R1), and one in that part keeps the injector on the stub, as before.
 	 */
 	public static final String SUGAR_BOUNDARY_PROPERTY = "forbric.mixinStubRebind.sugarBoundary";
+	/** {@code -Dforbric.mixinStubRebind.stubFinding=off}: a handler its captures keep on a stub is not reported. */
+	public static final String STUB_FINDING_PROPERTY = "forbric.mixinStubRebind.stubFinding";
 
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String CALLBACK_INFO = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
@@ -127,6 +133,8 @@ public final class MixinStubRebind {
 
 	/** Mixin class (internal name) → the ecosystem of the mod whose config declares it; filled as configs are read. */
 	private static final Map<String, Ecosystem> ECOSYSTEMS = new ConcurrentHashMap<>();
+	/** Mixin class (internal name) → the config that declares it, so a finding can name the mod. */
+	private static final Map<String, String> CONFIGS = new ConcurrentHashMap<>();
 
 	private MixinStubRebind() {
 	}
@@ -153,9 +161,16 @@ public final class MixinStubRebind {
 		return mixinInternalName == null ? null : ECOSYSTEMS.get(mixinInternalName);
 	}
 
+	/** {@link #noteEcosystem}, and the config that declared it, which is how a finding about it names the mod. */
+	public static void noteEcosystem(String mixinInternalName, Ecosystem ecosystem, String configName) {
+		noteEcosystem(mixinInternalName, ecosystem);
+		if (mixinInternalName != null && configName != null) CONFIGS.put(mixinInternalName, configName);
+	}
+
 	/** Test seam. */
 	static void forget() {
 		ECOSYSTEMS.clear();
+		CONFIGS.clear();
 	}
 
 	/** Moves every eligible injector of a Fabric mod's {@code mixin}; returns how many. {@code targets} must return nodes WITH code. */
@@ -184,7 +199,7 @@ public final class MixinStubRebind {
 	public static MethodNode destination(String mixinInternalName, MethodNode handler, ClassNode target) {
 		if (!enabled() || handler == null || target == null || target.methods == null) return null;
 		if (ECOSYSTEMS.get(mixinInternalName) != Ecosystem.FABRIC) return null;
-		Plan plan = plan(handler, target);
+		Plan plan = plan(handler, target, null);
 		return plan == null ? null : plan.delegation().delegate();
 	}
 
@@ -202,7 +217,7 @@ public final class MixinStubRebind {
 
 	/** The handler to carry the injector after the move (the same one, or a new outer), or null when nothing moves. */
 	private static MethodNode move(ClassNode mixin, MethodNode handler, ClassNode target) {
-		Plan plan = plan(handler, target);
+		Plan plan = plan(handler, target, (stub, delegate) -> staysOnStub(mixin, handler, target, stub, delegate));
 		if (plan == null) return null;
 		AnnotationNode injector = plan.injector();
 		MethodNode stub = plan.stub();
@@ -224,7 +239,11 @@ public final class MixinStubRebind {
 		return carrier;
 	}
 
-	private static Plan plan(MethodNode handler, ClassNode target) {
+	/**
+	 * @param capturesLost told {@code (stub, delegate)} when the handler would have moved but for its trailing captures
+	 *                     of the stub's arguments; {@code null} when the caller only wants the answer
+	 */
+	private static Plan plan(MethodNode handler, ClassNode target, BiConsumer<MethodNode, MethodNode> capturesLost) {
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
 		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
@@ -264,6 +283,7 @@ public final class MixinStubRebind {
 		Type[] stubParams = Type.getArgumentTypes(stub.desc);
 		// Where the handler's call-shaped part ends and its trailing (sugar) parameters begin.
 		int plain;
+		boolean lost = false;
 		if (inject) {
 			int callback = -1;
 			for (int i = 0; i < params.length; i++) {
@@ -279,7 +299,9 @@ public final class MixinStubRebind {
 			// Past the injector's own contract, un-annotated parameters are captures of the target's arguments: they
 			// must still be the delegate's, in the same places, carrying what the stub was handed.
 			int own = capturesGuarded() ? intrinsicArity(injector, params, plain, delegate) : plain;
-			if (own < 0 || own > plain || !capturesSurvive(injector, params, own, plain, stub, delegation)) return null;
+			if (own < 0 || own > plain) return null;
+			// Decided last: everything below must also hold for "only its captures kept it here" to be true.
+			lost = !capturesSurvive(injector, params, own, plain, stub, delegation);
 		}
 		for (int i = 0; i < plain; i++) if (trailingSugar(handler, i)) return null;
 		for (int i = plain; i < params.length; i++) {
@@ -288,12 +310,44 @@ public final class MixinStubRebind {
 			List<String> names = MixinFit.stringList(MixinFit.value(local, "name"));
 			if (names.size() != 1 || MixinFit.value(local, "argsOnly") != null || !hasLocal(delegate, names.getFirst(), params[i])) return null;
 		}
+		if (lost) {
+			if (capturesLost != null) capturesLost.accept(stub, delegate);
+			return null;
+		}
 
 		boolean captures = inject && plain - 1 == stubParams.length && stubParams.length > 0;
 		if (captures) {
 			for (int i = 0; i < stubParams.length; i++) if (delegation.positions()[i] < 0) return null;
 		}
 		return new Plan(injector, stub, delegation, captures);
+	}
+
+	/**
+	 * A SUSPECTED finding for a handler that stays on a carrier-added stub only because the body does not receive the
+	 * stub's arguments it captures.
+	 *
+	 * <p>It binds there -- that is why it stays -- but it now runs only where something calls the stub. The game's own
+	 * code can call the body directly, and then the handler silently never runs: torrential's
+	 * {@code FuelValuesMixin} stays on {@code FuelValues.vanillaBurnTimes(Provider, FeatureFlagSet, int)}; the client
+	 * reaches it through {@code ClientPacketListener}, the dedicated server builds its fuel through NeoForge's
+	 * {@code DataMapHooks.populateFuelValues} and never does. The Angling Table burns on the client and not on the
+	 * server. The old outcome was a visible "did not finish loading"; this keeps the quiet one from being silent.
+	 */
+	private static void staysOnStub(ClassNode mixin, MethodNode handler, ClassNode target, MethodNode stub,
+			MethodNode delegate) {
+		if ("off".equalsIgnoreCase(System.getProperty(STUB_FINDING_PROPERTY, "on"))) return;
+		String config = CONFIGS.get(mixin.name);
+		String dotted = mixin.name.replace('/', '.');
+		String owner = target.name.replace('/', '.');
+		String detail = handler.name + " stays on " + owner + "." + stub.name + stub.desc + ", a stub the merged base "
+				+ "added that only forwards to " + delegate.name + delegate.desc + ": the handler captures stub "
+				+ "arguments the body is not handed, so it cannot move. It runs only where the game calls the stub; "
+				+ "code that calls the body directly skips it (a side that never calls the stub never runs it)";
+		ForbricLog.info("[Forbric/Mixin] %s: %s", dotted, detail);
+		MixinCompatibility.recordAs("mixin-stub-bound:" + config + ":" + dotted + "#" + handler.name + handler.desc,
+				config, dotted, detail, CompatibilityFinding.Confidence.SUSPECTED, false,
+				List.of("stub=" + owner + "." + stub.name + stub.desc, "body=" + owner + "." + delegate.name + delegate.desc,
+						"handler=" + handler.name + handler.desc));
 	}
 
 	/** The outer handler for an {@code @Inject} that captured the stub's arguments: delegate parameters in, the original called. */

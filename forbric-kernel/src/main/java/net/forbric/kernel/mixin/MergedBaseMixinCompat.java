@@ -79,10 +79,14 @@ public final class MergedBaseMixinCompat {
 	 *   <li><b>loot-api-v3 {@code ReloadableServerRegistriesMixin}</b> — its generated callback loads a local slot
 	 *       the merged base's method does not have: {@code VerifyError: Bad local variable type} at
 	 *       {@code ReloadableServerRegistries.handler$…$modifyLootTable} — NeoForge swapped the last two parameters
-	 *       of {@code lambda$scheduleRegistryLoad$0} and split vanilla's one element map into two, so the handler
-	 *       can never bind. The pin stays, but it no longer costs the API: {@link
-	 *       net.forbric.kernel.boot.LootTableEventDispatch} fires REPLACE / MODIFY / ALL_LOADED from NeoForge's own
-	 *       {@code LootTableLoadEvent} seam ({@code -Dforbric.lootBridge=off} to see the old behaviour).</li>
+	 *       of {@code lambda$scheduleRegistryLoad$0} and split vanilla's one element map into two, so
+	 *       {@code modifyLootTable}'s {@code @Local Map} can never bind. Its sibling {@code onLootTablesLoaded}
+	 *       (an {@code @Inject} at RETURN in vanilla's shape) is a different matter: {@code MixinHandlerShim} wraps
+	 *       it along that lambda's row of {@code lambda-permutations.txt}, so it WOULD bind. The pin stays, and it no
+	 *       longer costs the API: {@link net.forbric.kernel.boot.LootTableEventDispatch} fires REPLACE / MODIFY /
+	 *       ALL_LOADED from NeoForge's own {@code LootTableLoadEvent} seam ({@code -Dforbric.lootBridge=off} to see
+	 *       the old behaviour). Lifting the pin on the strength of the shim would fire ALL_LOADED twice, once from the
+	 *       bridge and once from {@code onLootTablesLoaded}, and still fail on {@code modifyLootTable}.</li>
 	 *   <li><b>creative-tab CLIENT {@code CreativeModeInventoryScreenMixin}</b> — Fabric's creative-screen PAGER.
 	 *       The merged screen already carries NeoForge's pager as a base patch ({@code CreativeTabsScreenPage},
 	 *       the "&lt; N/M &gt;" buttons), so with this mixin woven BOTH pagers run at once — and they fight:

@@ -172,10 +172,10 @@ public final class LootTableEventDispatch {
 			}
 		}
 		ForbricLog.info("[Forbric/LootBridge] offered %d loot table(s) to fabric-loot-api-v3: REPLACE took %d, MODIFY "
-				+ "fired %d, ALL_LOADED fired with %d entries — ReloadableServerRegistriesMixin cannot fit the merged "
-				+ "base (NeoForge swapped the lambda's parameters and split its one map into two), so the kernel fires "
-				+ "the events from NeoForge's own LootTableLoadEvent seam", OFFERED.getAndSet(0), REPLACE_TOOK.getAndSet(0),
-				MODIFY_FIRED.getAndSet(0), sizeOf(registry));
+				+ "fired %d, ALL_LOADED fired with %d entries — ReloadableServerRegistriesMixin's modifyLootTable cannot "
+				+ "bind on the merged base (NeoForge swapped the lambda's parameters and split its one map into two), so "
+				+ "the kernel fires the events from NeoForge's own LootTableLoadEvent seam", OFFERED.getAndSet(0),
+				REPLACE_TOOK.getAndSet(0), MODIFY_FIRED.getAndSet(0), sizeOf(registry));
 	}
 
 	private static int sizeOf(Object registry) {
