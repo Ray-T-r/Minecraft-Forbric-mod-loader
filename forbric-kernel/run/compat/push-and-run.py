@@ -18,12 +18,18 @@ HERE = Path(__file__).resolve().parent
 KERNEL = HERE.parent.parent
 STAGED = Path(os.environ.get('FORBRIC_OLD', KERNEL.parent / 'forbric-loader')) / 'run'
 sys.path.insert(0, str(HERE / 'win'))
-from common import safe_filename
+from common import LANG_LINE, SWEEP_RECORD, client_language, safe_filename
 
 # Explicit children only. Never delete the instance directory or a launcher-owned file.
+#
+# replay_recordings is a previous run's output, never an input, and a killed client leaves its recording unfinished.
+# At startup ReplayMod 2.6.27 (ReplayFilesService) moves recording/ into the replay folder and opens RestoreReplayGui
+# over the title screen for every unfinished recording it finds, and quick-play waits behind that screen: in a Mac run
+# behind sweep90-win-r7c's diagnosis it logged `Found partially saved replay, offering recovery` for an earlier run's
+# recording as the title screen came up, and the world started loading only after `Attempting recovery`, 72 s later.
 CLEAN = ('config', 'mods', 'saves', 'logs', '.forbric-kernel', '.mixin.out', '.fabric',
          'crash-reports', 'screenshots', 'server-gen', 'quickPlay', 'resourcepacks',
-         'defaultconfigs', '.cache', '.physics_mod_cache', 'client-console.log',
+         'defaultconfigs', '.cache', '.physics_mod_cache', 'replay_recordings', 'client-console.log',
          'server-console.log', 'bisect-console.log')
 ARTIFACTS = {
     'net.forbric:forbric-kernel': KERNEL / 'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar',
@@ -66,17 +72,90 @@ def get(source, local):
 
 
 def stop_command(instance):
-    # Only PIDs recorded by these drivers/gates, never a process-name kill.
+    # Only PIDs recorded by these drivers/gates, never a process-name kill. The recorded PIDs include the client and
+    # bisect drivers themselves, so the kill also skips their own restore of the player's options.txt: the stop notes
+    # before its kill whether the sweep that owns the file is alive, and does that restore itself once every killed
+    # process has let go of the file (sweep_record_commands).
     files = [ntpath.join(instance, name) for name in ('.forbric-sweep.pid', '.forbric-gate.pid')]
     files.append(ntpath.join(instance, 'server-gen', '.forbric-gate.pid'))
-    return ("foreach ($file in @(" + ','.join(map(ps, files)) + ")) { "
+    before, after = sweep_record_commands(instance)
+    return (before +
+            "foreach ($file in @(" + ','.join(map(ps, files)) + ")) { "
             "if (Test-Path -LiteralPath $file) { foreach ($line in (Get-Content -LiteralPath $file)) { "
             "if ($line -match '^\\d+$' -and [int]$line -gt 0) { "
             "$owned = Get-Process -Id ([int]$line) -ErrorAction SilentlyContinue; "
             "if ($owned) { & taskkill /T /F /PID $line | Out-Null; "
             "if ($LASTEXITCODE -ne 0 -and (Get-Process -Id ([int]$line) -ErrorAction SilentlyContinue)) "
-            "{ throw ('could not stop recorded PID ' + $line) } } } }; "
-            "Remove-Item -LiteralPath $file -Force } }")
+            "{ throw ('could not stop recorded PID ' + $line) }; "
+            "Wait-Process -Id ([int]$line) -Timeout 10 -ErrorAction SilentlyContinue } } }; "
+            "Remove-Item -LiteralPath $file -Force } }; " + after)
+
+
+def sweep_record_commands(instance):
+    """The stop's part in win/common.py's SWEEP_RECORD, as PowerShell to run before its kill and after it.
+
+    Before the kill it reads the record and notes whether the process that wrote it is alive: its pid together with
+    its start time, the identity observe_command uses, so a pid Windows has handed on after a reboot is not taken for
+    it. After the kill:
+      - the writer was alive and this stop killed it: its own finally never ran, so the stop does what it would have,
+        and the player's file goes back whole from the record, or the one the client wrote goes when the player had
+        none. The lang line alone would leave Minecraft's own rewrite behind, startedCleanly:false above all.
+      - the writer was already gone before the stop (a reboot): only the lang line goes back, and only while it still
+        names the sweep's language, since the player may have changed settings since. A file the client created where
+        the player had none stays.
+      - the writer still runs: it is not one this stop killed, and its own finally restores the file.
+    A record nobody can read is acted on by nobody: the stop kills first, then fails naming the file to delete.
+    Python twin: note_sweep_writer / restore_after_stop, which the tests run; PowerShell cannot run here. Bytes are
+    read as Latin-1, as the record's strings are, so every byte survives the round trip."""
+    options, record, temporary = (ps(ntpath.join(instance, name))
+                                  for name in ('options.txt', SWEEP_RECORD, 'options.txt.forbric-tmp'))
+    lang_line = "'(?m)" + LANG_LINE.pattern.decode('ascii') + "'"
+    path = ntpath.join(instance, SWEEP_RECORD)
+    unreadable = ps(f'{path} is not a sweep record, so nothing acted on it and options.txt was left as it is; '
+                    f'check options.txt (its lang: line above all), then delete {path}')
+    # One step, like os.replace on the Python side: Move-Item -Force onto an existing file deletes it first, and a kill
+    # in between would leave no options.txt. A plain $null reaches Replace as an empty backup name, which it refuses.
+    # Replace needs a file to replace; one the player removed meanwhile gets a plain move.
+    replace = (f"if (Test-Path -LiteralPath {options}) {{ [IO.File]::Replace({temporary}, {options}, [NullString]::Value) }} "
+               f"else {{ [IO.File]::Move({temporary}, {options}) }}")
+    functions = (
+        "function Read-SweepRecord { try { "
+        f"$r = Get-Content -Raw -LiteralPath {record} | ConvertFrom-Json; "
+        "if (-not (@('lang', 'was', 'absent', 'pid', 'started', 'original') "
+        "| Where-Object { $r.PSObject.Properties.Name -notcontains $_ }) "
+        "-and ($null -eq $r.lang -or $r.lang -is [string]) -and ($null -eq $r.was -or $r.was -is [string]) "
+        "-and $r.absent -is [bool] -and ($r.pid -is [int] -or $r.pid -is [long]) -and $r.pid -ge 0 "
+        "-and ($r.started -is [int] -or $r.started -is [long]) -and $r.started -ge 0 "
+        "-and ($r.absent -or $null -ne [Convert]::FromBase64String($r.original))) { return $r } } catch { }; "
+        "return $null }; "
+        "function Test-SweepWriter($r) { try { $p = Get-Process -Id ([int]$r.pid) -ErrorAction SilentlyContinue; "
+        "return [bool]($p -and $p.StartTime.ToUniversalTime().Ticks -eq [long]$r.started) } catch { return $false } }; ")
+    before = (functions +
+              "$sweepWriter = $null; $sweepUnreadable = $false; "
+              f"if (Test-Path -LiteralPath {record}) {{ $r = Read-SweepRecord; "
+              "if ($null -eq $r) { $sweepUnreadable = $true } "
+              "elseif (Test-SweepWriter $r) { $sweepWriter = [string]$r.pid + ':' + [string]$r.started; "
+              "$sweepWriterPid = [int]$r.pid } }; ")
+    # The kill loop waits only for the PIDs it finds alive, and taskkill /T has already ended the driver as a child of
+    # its job: wait for the writer itself, so a driver still being torn down is not taken for one this stop missed.
+    after = (f"if ($sweepUnreadable) {{ throw {unreadable} }}; "
+             "if ($sweepWriter) { Wait-Process -Id $sweepWriterPid -Timeout 10 -ErrorAction SilentlyContinue }; "
+             f"if (Test-Path -LiteralPath {record}) {{ $r = Read-SweepRecord; "
+             f"if ($null -eq $r) {{ throw {unreadable} }}; "
+             "if (-not (Test-SweepWriter $r)) { "
+             "if ($sweepWriter -eq ([string]$r.pid + ':' + [string]$r.started)) { "
+             f"if ($r.absent) {{ if (Test-Path -LiteralPath {options}) {{ Remove-Item -LiteralPath {options} -Force }} }} "
+             f"else {{ [IO.File]::WriteAllBytes({temporary}, [Convert]::FromBase64String($r.original)); {replace} }} }} "
+             f"elseif (-not $r.absent -and $null -ne $r.lang -and (Test-Path -LiteralPath {options})) {{ "
+             "$latin1 = [Text.Encoding]::GetEncoding(28591); "
+             f"$text = $latin1.GetString([IO.File]::ReadAllBytes({options})); "
+             f"$langs = @([regex]::Matches($text, {lang_line}) | ForEach-Object {{ $_.Groups[1].Value }}); "
+             "if ($langs.Count -gt 0 -and @($langs | Where-Object { $_ -cne $r.lang }).Count -eq 0) { "
+             "if ($null -eq $r.was) { $text = [regex]::Replace($text, '(?m)^lang:[^\\r\\n]*(\\r?\\n)?', '') } "
+             "else { $text = [regex]::Replace($text, '(?m)^lang:[^\\r\\n]*', ('lang:' + $r.was).Replace('$', '$$')) }; "
+             f"[IO.File]::WriteAllBytes({temporary}, $latin1.GetBytes($text)); {replace} }} }}; "
+             f"Remove-Item -LiteralPath {record} -Force -ErrorAction SilentlyContinue }} }}")
+    return before, after
 
 
 def clean_command(instance):
@@ -322,6 +401,16 @@ def compatibility(output, artifacts, records):
     return accepted
 
 
+def played_language(args, artifacts):
+    """The driver's own `client language ...` line (win/common.py `describe_language`): what the client played and what
+    the player's file names. A language decides which assets every mod loads, so a verdict is only comparable with
+    another played in the same one, and --client-lang alone says what was asked for, not what ran."""
+    log = artifacts / 'driver' / ('bisect.log' if args.bisect else 'client.log')
+    text = log.read_text(encoding='utf-8', errors='replace') if log.is_file() else ''
+    found = re.search(r'^client language (.+)$', text, re.M)
+    return found[1].strip() if found else f'asked for {args.client_lang}; no client driver reported one'
+
+
 def report(args, output, artifacts, server, client, started, errors=()):
     errors = list(errors)
     logs = list((artifacts / 'instance').glob('bisect-console.log' if args.bisect else 'client-console.log'))
@@ -373,6 +462,7 @@ def report(args, output, artifacts, server, client, started, errors=()):
         commit = 'unavailable'
     values = dict(label=args.label, commit=commit, manifest=str(args.manifest or args.mods),
                   version=args.version, started=started, server=server, client=client,
+                  language=played_language(args, artifacts),
                   assertions='PASS' if assertions else 'FAIL', frame='DREW' if frame else 'FAIL',
                   region='PASS' if region else 'FAIL', degraded=f'{len(findings)} report(s), see degraded.txt',
                   compatibility='not judged (bisect)' if strict is None else 'PASS' if strict else 'FAIL, see compatibility.txt',
@@ -431,6 +521,12 @@ def main():
     # build/libs last held while report.md named the current commit: sweep90-win-r5 reported 4f229131 and ran a
     # jar from before 8d0fb2ee, so the very fix it was meant to prove looked like it had failed.
     parser.add_argument('--no-build', action='store_true', help='stage build/libs as it is, without building it')
+    # The Windows job starts from the remote shell's environment, not this one, so the client's language crosses as an
+    # argument; otherwise only a FORBRIC_LANG exported on the Windows side could change it, invisibly to this run and its
+    # report. `player` plays the player's own options.txt as it is.
+    parser.add_argument('--client-lang', type=client_language, default=os.environ.get('FORBRIC_LANG', ''),
+                        help="language the sweep's client plays (win/common.py sweep_language); default en_us, also "
+                             "for an empty FORBRIC_LANG; 'player' plays the player's options.txt as it is")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--bisect', type=Path, metavar='SUBSET_TXT')
     modes.add_argument('--quarantine', metavar='JAR')
@@ -467,7 +563,7 @@ def main():
         return 0
     if args.bisect:
         if args.dry_run:
-            print('BISECT frame-verdict.py; subset=' + str(args.bisect)); return 0
+            print('BISECT frame-verdict.py; subset=' + str(args.bisect) + '; --lang ' + args.client_lang); return 0
         if output.exists() and any(output.iterdir()):
             parser.error('output already contains evidence; choose a new --label or --output')
         if not args.bisect.is_file():
@@ -480,7 +576,7 @@ def main():
             tools_dir = stage_tools(args, output)
             subset = ntpath.join(remote_tools, 'subset.txt')
             put(args.bisect, subset)
-            code = run_job(args, 'bisect', tools_dir, output, 'bisect.py', ['--subset', subset])
+            code = run_job(args, 'bisect', tools_dir, output, 'bisect.py', ['--subset', subset, '--lang', args.client_lang])
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             errors.append(str(error))
         return finish_run(args, output, remote_tools, 'reused world', code, started, errors)
@@ -517,7 +613,7 @@ def main():
         print('SYNC_VERSION_JSON by group:artifact; preserve other libraries')
         for local, name in files:
             print('MOD ' + local.name + ' -> ' + name)
-        print('START_PROCESS server-gen -> client-join; POLL same PID/status; call timeout=240s')
+        print('START_PROCESS server-gen -> client-join --lang ' + args.client_lang + '; POLL same PID/status; call timeout=240s')
         print('COLLECT logs/screenshots/region/load-report/compatibility-report; ASSERT; FRAME; REGION; STRICT REPORTS; REPORT report.md')
         return 0
     started = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -562,7 +658,8 @@ def main():
                f'Remove-Item -LiteralPath {ps(ntpath.join(args.instance, "mods-all"))} -Recurse -Force }}; '
                f'Copy-Item -LiteralPath {ps(ntpath.join(args.instance, "mods"))} -Destination {ps(ntpath.join(args.instance, "mods-all"))} -Recurse')
         server = run_job(args, 'server', tools_dir, output, 'run-server-test.py')
-        client = run_job(args, 'client', tools_dir, output, 'run-client-test.py') if server == 0 else -1
+        client = (run_job(args, 'client', tools_dir, output, 'run-client-test.py', ['--lang', args.client_lang])
+                  if server == 0 else -1)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         errors.append(str(error))
     return finish_run(args, output, remote_tools, server, client, started, errors)

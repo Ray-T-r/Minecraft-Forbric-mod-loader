@@ -44,12 +44,151 @@ class PushAndRunTest {
         assertEquals(4, result.output().lines().filter(line -> line.startsWith("PUT_ARTIFACT ")).count());
         String clean = result.output().lines().filter(line -> line.startsWith("CLEAN ")).findFirst().orElseThrow();
         assertTrue(clean.contains("\"config\"") && clean.contains("\"saves\"") && clean.contains("\"mods\""));
+        assertTrue(clean.contains("\"replay_recordings\""), clean);
         for (String preserved : new String[] {"options.txt", "natives", ".zip", "PCL"}) assertFalse(clean.contains(preserved));
         assertTrue(result.output().contains(".forbric-sweep.pid"));
         assertTrue(result.output().contains("taskkill /T /F /PID $line"));
+        assertTrue(result.output().contains("options.txt.forbric-sweep"), result.output());
+        assertTrue(result.output().contains("client-join --lang en_us"), result.output());
         assertFalse(result.output().contains("taskkill /IM"));
         assertTrue(result.output().contains("MOD a?b.jar -> a_b.jar"));
         assertFalse(Files.exists(temp.resolve("unused-output")), "dry run must not create report artifacts");
+    }
+
+    /**
+     * The stop kills every recorded PID, the client and bisect drivers among them, so their own restore of the
+     * player's options.txt never runs, and the stop does it instead. Before its kill it notes whether the record's writer
+     * (pid and start time) is alive; after the kill, a writer it saw alive gets its restore done for it, whole, over
+     * Minecraft's own rewrite, while a record a reboot left gets only its lang line undone. A record nobody can read
+     * must not stop the kill, so the stop names it only afterwards. PowerShell cannot run here, so this pins the parts
+     * that carry those promises; win/common.py's note_sweep_writer / restore_after_stop are the executed twin
+     * (WindowsDriversTest).
+     */
+    @Test
+    void theStopPutsBackWhatItsOwnKillKeptTheDriverFromRestoring() throws Exception {
+        var result = python("""
+                import ntpath
+                import common
+                instance = ntpath.join('D:' + chr(92), "Jerry's MC", 'versions', '26.2-forbric')
+                command = m.stop_command(instance)
+                path = lambda name: m.ps(ntpath.join(instance, name))
+                record, options, temporary = path('options.txt.forbric-sweep'), path('options.txt'), path('options.txt.forbric-tmp')
+                assert "Jerry''s MC" in command and "Jerry's" not in command, command
+                noted = command.index('elseif (Test-SweepWriter $r) { $sweepWriter = ')
+                kill = command.index('taskkill /T /F /PID $line')
+                waited = command.index('Wait-Process -Id ([int]$line)')
+                named = command.index('if ($sweepUnreadable) { throw ')
+                writer = command.index('if ($sweepWriter) { Wait-Process -Id $sweepWriterPid')
+                restore = command.index('if (Test-Path -LiteralPath ' + record + ') { $r = Read-SweepRecord; if ($null -eq $r) { throw ')
+                assert noted < kill < waited < named < writer < restore, command
+                head, tail = command[:kill], command[restore:]
+                # Before the kill nothing throws and nothing is written: an unreadable record only sets a flag.
+                assert 'throw' not in head and 'WriteAllBytes' not in head and 'Remove-Item' not in head, head
+                assert "if ($null -eq $r) { $sweepUnreadable = $true }" in head, head
+                # The writer is its pid and its start time, as observe_command identifies a job.
+                assert '$p.StartTime.ToUniversalTime().Ticks -eq [long]$r.started' in command, command
+                # The killed writer's restore, done whole: its original bytes, or the file it created removed.
+                whole = tail.index("if ($sweepWriter -eq ([string]$r.pid + ':' + [string]$r.started)) {")
+                assert tail.index('if (-not (Test-SweepWriter $r)) {') < whole, tail
+                assert ('[IO.File]::WriteAllBytes(' + temporary + ', [Convert]::FromBase64String($r.original))') in tail[whole:], tail
+                assert ('if ($r.absent) { if (Test-Path -LiteralPath ' + options + ') { Remove-Item -LiteralPath ' + options
+                        + ' -Force } }') in tail[whole:], tail
+                # Otherwise the lang line only, and only while every lang line still names what the sweep wrote.
+                only = tail.index('elseif (-not $r.absent -and $null -ne $r.lang -and (Test-Path -LiteralPath ' + options + ')) {')
+                assert whole < only, tail
+                assert "'(?m)" + common.LANG_LINE.pattern.decode() + "'" in tail[only:], tail
+                assert '$_ -cne $r.lang' in tail[only:], tail
+                # One-step replace, a plain move only where there is nothing to replace, never Move-Item -Force.
+                replace = ('if (Test-Path -LiteralPath ' + options + ') { [IO.File]::Replace(' + temporary + ', ' + options
+                           + ', [NullString]::Value) } else { [IO.File]::Move(' + temporary + ', ' + options + ') }')
+                assert tail.count(replace) == 2, tail
+                assert 'Move-Item' not in command, command
+                assert tail.endswith('Remove-Item -LiteralPath ' + record + ' -Force -ErrorAction SilentlyContinue } }'), tail
+                # The unreadable-record error names the file to delete, before and after the kill alike.
+                message = m.ps(ntpath.join(instance, 'options.txt.forbric-sweep') + ' is not a sweep record')[:-1]
+                assert command.count('throw ' + message) == 2 and 'then delete ' + ntpath.join(instance, 'options.txt.forbric-sweep').replace("'", "''") in command, command
+                for key in ('lang', 'was', 'absent', 'pid', 'started', 'original'):
+                    assert "'" + key + "'" in command, key
+                assert command.count('{') == command.count('}') and command.count('(') == command.count(')'), command
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    /**
+     * The client's language crosses to Windows as an argument: the job starts from the remote shell's environment,
+     * not this one. A blank FORBRIC_LANG is the default, `player` passes through, and a bad value stops the run
+     * before anything remote is touched.
+     */
+    @Test
+    void theClientLanguageReachesTheWindowsDriverAsAnArgument() throws Exception {
+        var result = python("""
+                import json, os
+                jobs, touched = [], []
+                m.remote = lambda command: touched.append(command) or ''
+                m.put = lambda *arguments: touched.append(arguments)
+                m.stage_tools = lambda args, output: 'D:\\\\tools'
+                m.subprocess.run = lambda *arguments, **options: None
+                def run_job(args, stage, tools, output, driver, extra=()):
+                    jobs.append((driver, list(extra)))
+                    return 0
+                m.run_job = run_job
+                m.finish_run = lambda args, output, remote_tools, server, client, started, errors: 1 if errors else 0
+                mods = output / 'mods'; mods.mkdir(); (mods / 'a.jar').write_bytes(b'PK')
+                profile = output / 'profile.json'
+                profile.write_text(json.dumps(dict(libraries=[dict(name=f'net.forbric:{n}:1', downloads=dict(artifact=dict(path=f'x/{n}.jar')))
+                    for n in ('forbric-kernel', 'patched-mc-merged', 'forge-runtime', 'neoforge-runtime')])))
+                subset = output / 'subset.txt'; subset.write_text('a.jar\\n')
+                def main(label, *arguments, environment={}):
+                    os.environ.pop('FORBRIC_LANG', None); os.environ.update(environment)
+                    jobs.clear(); touched.clear()
+                    sys.argv = ['push-and-run.py', '--label', label, '--mc', 'D:\\\\fixture-mc', '--version', 'fixture',
+                                '--no-build', '--output', str(output / label), *arguments]
+                    assert m.main() == 0
+                    return list(jobs)
+                run = ['--mods', str(mods), '--version-json', str(profile)]
+                assert main('default', *run) == [('run-server-test.py', []), ('run-client-test.py', ['--lang', 'en_us'])], jobs
+                assert main('blank', *run, environment={'FORBRIC_LANG': ''})[-1] == ('run-client-test.py', ['--lang', 'en_us'])
+                assert main('chinese', *run, environment={'FORBRIC_LANG': 'zh_cn'})[-1] == ('run-client-test.py', ['--lang', 'zh_cn'])
+                assert main('player', *run, '--client-lang', 'player')[-1] == ('run-client-test.py', ['--lang', 'player'])
+                bisect = main('bisect', '--bisect', str(subset), '--client-lang', 'zh_cn')
+                assert [driver for driver, _ in bisect] == ['bisect.py'] and bisect[0][1][-2:] == ['--lang', 'zh_cn'], bisect
+                for arguments, environment in ([('--client-lang', 'zh cn'), {}], [(), {'FORBRIC_LANG': 'zh cn'}]):
+                    try:
+                        main('rejected', *run, *arguments, environment=environment)
+                        raise AssertionError('a bad language was staged')
+                    except SystemExit as exit:
+                        assert exit.code == 2, exit.code
+                    assert touched == [] and jobs == [], (touched, jobs)
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
+    void theReportSaysWhichLanguageTheClientPlayed() throws Exception {
+        // A language decides which assets every mod loads; two verdicts are only comparable when both name theirs.
+        var result = python("""
+                import json
+                import common
+                artifacts = output / 'artifacts'; (artifacts / 'driver').mkdir(parents=True)
+                (artifacts / 'files.json').write_text('[]')
+                m.check = lambda command, destination: destination.write_text('') or False
+                m.report(args, output, artifacts, 0, -1, 'fixture-time')
+                assert '- Client language: asked for en_us; no client driver reported one' in (output / 'report.md').read_text()
+                (artifacts / 'driver' / 'client.log').write_text(
+                    "options.txt: a sweep ended before its own restore; put the player's lang:zh_cn back\\nclient language "
+                    + common.describe_language('en_us', 'zh_cn') + '\\nmods=1\\n')
+                m.report(args, output, artifacts, 0, 1, 'fixture-time')
+                assert "- Client language: en_us; the player's options.txt names zh_cn, restored after the run" in (output / 'report.md').read_text()
+                args.bisect = output / 'subset.txt'
+                (artifacts / 'driver' / 'bisect.log').write_text('client language ' + common.describe_language('player', 'zh_cn') + '\\n')
+                m.report(args, output, artifacts, 'reused world', 1, 'fixture-time')
+                assert "- Client language: zh_cn; the player's options.txt, played as it is and restored after the run" in (output / 'report.md').read_text()
+                (artifacts / 'driver' / 'bisect.log').write_text('client language ' + common.describe_language('en_us', None, True) + '\\n')
+                m.report(args, output, artifacts, 'reused world', 1, 'fixture-time')
+                assert ("- Client language: en_us; the player has no options.txt (vanilla plays en_us), and the one the client writes "
+                        "is removed after the run") in (output / 'report.md').read_text()
+                """);
+        assertEquals(0, result.exit(), result.output());
     }
 
     @Test
@@ -408,7 +547,7 @@ class PushAndRunTest {
                 output = pathlib.Path(sys.argv[2])
                 args = SimpleNamespace(instance='D:\\\\fixture-instance', mc='D:\\\\fixture-mc', version='fixture',
                     label='fixture', python='python', world='chosen-world', timeout=120, java=None, jvm=[],
-                    bisect=None, manifest=None, mods=None)
+                    bisect=None, manifest=None, mods=None, client_lang='en_us')
                 def strict_reports(artifacts, started=100, policy='STRICT', findings=(), failures=(), written=200):
                     import json
                     records = json.loads((artifacts / 'files.json').read_text()) if (artifacts / 'files.json').is_file() else []

@@ -6,6 +6,7 @@
 - Started: {started}
 - Server generation: {server}
 - Client world join: {client}
+- Client language: {language}
 - Log assertions: {assertions}
 - Frame: {frame}
 - Region: {region}

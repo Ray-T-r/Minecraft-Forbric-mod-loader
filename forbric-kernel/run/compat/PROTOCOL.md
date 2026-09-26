@@ -62,10 +62,15 @@ jar before treating the selection as final; metadata resolution alone cannot pro
    all four artifact uploads, sanitized mod names, PID stop, cleanup, and evidence.
 3. Stop only PIDs read from `.forbric-sweep.pid` / `.forbric-gate.pid`, including the
    server subdirectory's gate file. Never kill all Java/Python/game processes by name.
+   Those PIDs include the client and bisect drivers, so a stop also skips their own restore of the player's
+   `options.txt`. The stop does that restore itself: before its kill it notes whether the process that wrote
+   `options.txt.forbric-sweep` is alive, and after the kill it puts the file back from that record (step 6).
 4. Clean the explicit test-state children: `config`, `mods`, `saves`, `logs`,
    `.forbric-kernel`, `.mixin.out`, `.fabric`, `crash-reports`, `screenshots`,
    `server-gen`, `quickPlay`, `resourcepacks`, `defaultconfigs`, `.cache`,
-   `.physics_mod_cache`, and the three console logs. Preserve natives, `options.txt`,
+   `.physics_mod_cache`, `replay_recordings`, and the three console logs. A recording a killed client left
+   unfinished makes ReplayMod hold the title screen on its recovery prompt, and quick-play waits behind it
+   (72 s in one Mac run). Preserve natives, `options.txt`,
    backup ZIPs, launcher metadata and PCL files. `mods-all` is refreshed only from the
    new pack and serves as the source for a later subset test.
    The kernel jar is built from the working tree (`./gradlew --offline jar`) before anything is staged, so the
@@ -102,8 +107,41 @@ jar before treating the selection as final; metadata resolution alone cannot pro
    100, and requires a clean disconnect. Both launchers resolve the installed version
    JSON rather than a developer classpath. Vanilla runs quick-play only after its chain of first-run screens, so
    before the client starts `common.FIRST_RUN_SEEN` marks a mod's own first-run screen as already dismissed (today
-   wover-ui's BetterX welcome) — the state of a player who has clicked through it once. `win/common.py` owns shared arguments,
-   PID recording, launch resolution, frame inspection, and F2 fallback.
+   wover-ui's BetterX welcome) — the state of a player who has clicked through it once. The client also plays one
+   language whoever runs it: `common.sweep_language` sets options.txt's `lang:` to `en_us` for the run.
+   `push-and-run --client-lang` (default `en_us`, also for an empty `FORBRIC_LANG`) passes another code to the
+   driver's `--lang`; `player` leaves the player's language as it is. report.md records the language the client
+   played. The language decides which assets every mod loads, and the Windows profile's zh_cn is what killed
+   sweep90-win-r7c: Axiom 6.1.3's bundled Dear ImGui keeps a pointer into font arrays the JVM may move, and its CJK
+   fonts are big enough to trigger that GC. Native Fabric with only Axiom and fabric-api asserts the same way once a
+   GC lands between the add and the build (forced, or under `-XX:+UseSerialGC -Xmn16m`); under default G1 that
+   minimal native pack did not crash in the runs recorded. en_us narrows the race, it does not close it.
+   `options.txt` is the player's own file, and Minecraft rewrites all of it while the client loads (it saves
+   `startedCleanly:false` at startup and `true` only once loading finishes; a false one makes the player's next start
+   reset its fullscreen mode). What the client and bisect drivers promise about it, in every `--lang`:
+   - Before anything is written, the driver keeps `options.txt.forbric-sweep`: the player's file as it was (or that
+     there was none), the `lang:` it wrote and the one it replaced, and its own pid and process start time.
+   - The run ends, normally or with an exception: the player's bytes go back exactly, over the client's rewrite too,
+     or the file the client wrote is removed when the player had none.
+   - The stop (step 3) kills a running or loading client: the stop saw the record's writer alive before its kill,
+     so after the kill it puts back the same exact bytes, or removes the file, as the driver would have.
+   - The writer died any other way, a reboot above all: the next stop or client or bisect run finds a record whose
+     writer is gone (pid and start time, so a pid Windows has handed on does not count). The player may have played
+     since, so only the `lang:` line goes back (under `player` nothing does), and only while every `lang:` line
+     still names the sweep's language; a line the sweep added is taken out. Everything else stays as the file has
+     it, Minecraft's rewrite from the killed run included (`startedCleanly:false`, and whatever else it saved), and
+     so does a file the client created where the player had none.
+   - A second client or bisect run on the same instance refuses to start while the first one's writer is alive,
+     naming its pid and the record, and touches nothing.
+   - A record that cannot be read is acted on by nobody: the driver, or the stop after its kill, fails naming the
+     file to delete once `options.txt` has been checked by hand.
+   - Not covered: anything else writing `options.txt` during a run (the player starting the same instance) is
+     overwritten by the restore. Two copies of the stop at once (`winsh` re-sending one after a relay stall) can race
+     each other, and the player then gets the language back but may keep the killed client's rewrite. A restore that
+     itself fails (the file held open by something else) leaves the record, which is then undone like a reboot's.
+   The stop's side is PowerShell; `common.note_sweep_writer` / `common.restore_after_stop` are its Python twin, and
+   the tests run that twin. `win/common.py` owns shared arguments, PID recording, launch resolution, frame
+   inspection, and F2 fallback.
 7. Long jobs run with `Start-Process` (no stream redirection: the job writes its own
    logs, so it inherits nothing of the remote shell and the start returns at once)
    and a saved PID/status handle. Poll that same

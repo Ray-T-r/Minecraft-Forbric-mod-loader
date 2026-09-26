@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 from common import (acknowledge_first_run, await_outcome, config, driver_command, finish, frame_verdict, fresh_shots,
-                    own_driver, parser, screenshot_fallback, spawn)
+                    language_argument, own_driver, parser, screenshot_fallback, spawn, sweep_language)
 
 
 def main():
@@ -24,6 +24,7 @@ def main():
     # can carry; anything tighter would be a guess about a run nobody here has recorded.
     argument_parser.add_argument('--stall', type=int, default=int(os.environ.get('CLIENT_STALL', '300')))
     argument_parser.add_argument('--grace', type=int, default=int(os.environ.get('GRACE', '45')))
+    language_argument(argument_parser)
     args = argument_parser.parse_args()
     configuration = config(args, argument_parser)
     if not configuration:
@@ -39,7 +40,9 @@ def main():
     outcome, failed = threading.Event(), threading.Event()
     last_output = [time.monotonic()]
     started = time.time()
-    with own_driver(configuration), (instance / 'client-console.log').open('w', encoding='utf-8') as output:
+    with sweep_language(instance, args.lang) as played, own_driver(configuration), \
+            (instance / 'client-console.log').open('w', encoding='utf-8') as output:
+        print('client language ' + played, flush=True)
         process = spawn(configuration, command, cwd=instance, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                         text=True, encoding='utf-8', errors='replace', bufsize=1)
         def pump():

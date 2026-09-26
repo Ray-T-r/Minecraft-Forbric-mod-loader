@@ -23,7 +23,7 @@ final class DriverTools {
         Path output = Files.createTempFile("compat-driver-output", ".txt");
         ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(output.toFile());
         for (String variable : List.of("MODRINTH_API", "EXCLUDE_MANIFEST", "EXCLUDE", "SEED", "WANT_FABRIC", "WANT_NEO", "WANT_FORGE",
-                "FORBRIC_MC", "FORBRIC_VERSION", "FORBRIC_INSTANCE", "FORBRIC_WORLD", "FORBRIC_JAVA", "FORBRIC_NATIVES")) {
+                "FORBRIC_MC", "FORBRIC_VERSION", "FORBRIC_INSTANCE", "FORBRIC_WORLD", "FORBRIC_JAVA", "FORBRIC_NATIVES", "FORBRIC_LANG")) {
             builder.environment().remove(variable);
         }
         builder.environment().putAll(environment);
