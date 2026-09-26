@@ -60,10 +60,10 @@ import java.util.function.Function;
  * so the listener throws in every singleplayer world, on native Fabric too. Natively that costs the mods whose ids
  * sort after {@code pets-mod}. bclib and OptiGUI sort before it, so they registered first and their join handlers
  * run. Under the dependency order, bclib waited for wover and wunderlib, and OptiGUI waited for
- * fabric-language-kotlin and five fabric-api modules. Both landed after Pets Mod, and both join handlers were skipped: bclib never sent its
- * client-to-server data handlers, and OptiGUI never set its interaction data. All three register in the default
- * phase, which is why registration order decides. Voice Chat registers its listener in its own earlier phase, so it
- * runs first under either order.
+ * fabric-language-kotlin and five fabric-api modules. Both landed after Pets Mod, and both join handlers were
+ * skipped: bclib never sent its client-to-server data handlers, and OptiGUI never set its interaction data. All
+ * three register in the default phase, which is why registration order decides. Voice Chat registers its listener
+ * in its own earlier phase, so it runs first under either order.
  *
  * <p>So the Fabric mods are registered as before and then put in Fabric Loader's order, just before the loader
  * freezes and before any of them runs. Registration still decides which container wins when two claim one id, or

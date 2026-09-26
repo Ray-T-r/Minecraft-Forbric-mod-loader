@@ -913,9 +913,10 @@ public final class KernelBoot {
 		//
 		// Fabric first, Forge-family APPENDED. Within one environment Mixin selects by priority (the config's, then
 		// each @Mixin's); registration order is only the tiebreak among equal priorities, where a later-registered
-		// mixin applies AFTER an earlier one on the same target. Appending therefore leaves every existing
-		// Fabric-vs-Fabric ordering byte-identical — so gate-m2b cannot move for ordering reasons — and makes the
-		// newly-introduced, least-proven set the OUTER wrapper around a known-good stack rather than the inner one.
+		// mixin applies AFTER an earlier one on the same target. Appending therefore leaves the Fabric-vs-Fabric
+		// ordering exactly as the Fabric configs come in — Fabric Loader's own order, by mod id, unless
+		// -Dforbric.fabricOrder=off — and makes the newly-introduced, least-proven set the OUTER wrapper around a
+		// known-good stack rather than the inner one.
 		List<MixinConfigOwners.Owned> fabricConfigs = KernelFabricEcosystem.mixinConfigs();
 		List<MixinConfigOwners.Owned> forgeConfigs = KernelForgeFamilyMixins.select(forgeMixinDecls);
 		List<MixinConfigOwners.Owned> ownedConfigs = new ArrayList<>(fabricConfigs);

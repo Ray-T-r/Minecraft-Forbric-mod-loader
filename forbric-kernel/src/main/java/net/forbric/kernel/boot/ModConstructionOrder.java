@@ -45,8 +45,8 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>NeoForge's and MinecraftForge's {@code ModSorter} sort topologically, but the only edges a mod's own metadata
  * draws there come from the explicit {@code ordering} key ({@code BEFORE}/{@code AFTER}). A requirement with no
- * ordering draws none. Ties go to mod-file order. This class goes further than both: a mod also comes after everything it requires, so it
- * cannot run before a library it needs.
+ * ordering draws none. Ties go to mod-file order. This class goes further than both: a mod also comes after
+ * everything it requires, so it cannot run before a library it needs.
  *
  * <p>Fabric Loader does not sort by dependency at all. 0.19.5's {@code ModResolver.findCompatibleSet} returns the
  * resolved set sorted by mod id, and mods, entrypoints and mixin configs all follow that list. Dependencies only
@@ -158,8 +158,9 @@ public final class ModConstructionOrder {
 				}
 			}
 			ForbricLog.warn("[Forbric/Order] %d mod(s) declare a dependency cycle and cannot be ordered, so they "
-					+ "keep the order they were found in — whichever of them initialises first may call the other "
-					+ "before it is ready: %s", cycle.size(), cycle);
+					+ "keep the order they were found in — whichever of them is constructed first may call the other "
+					+ "before it is ready (Fabric mods still initialise by mod id unless -D%s=off): %s", cycle.size(),
+					FabricLoadOrder.SWITCH, cycle);
 		}
 		return ordered;
 	}

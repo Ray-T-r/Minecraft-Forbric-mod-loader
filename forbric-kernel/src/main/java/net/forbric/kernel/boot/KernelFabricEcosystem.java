@@ -529,9 +529,11 @@ public final class KernelFabricEcosystem {
 					container -> container.getMetadata().getId()));
 			order.addAll(registered.subList(fabricOwn, registered.size()));
 			fabric.reorder(order);
-			ForbricLog.info("[Forbric/Order] %d Fabric mod(s) initialise in Fabric Loader's order, by mod id, as "
-					+ "native Fabric orders them (-D%s=off for dependency order)", fabricOwn - builtins,
-					FabricLoadOrder.SWITCH);
+			if (fabricOwn > builtins) {
+				ForbricLog.info("[Forbric/Order] %d Fabric mod(s) initialise in Fabric Loader's order, by mod id, as "
+						+ "native Fabric orders them (-D%s=off for Forbric's previous order)", fabricOwn - builtins,
+						FabricLoadOrder.SWITCH);
+			}
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/Order] could not put Fabric mods in Fabric Loader's order; they initialise in "
 					+ "the order they were registered in", t);
