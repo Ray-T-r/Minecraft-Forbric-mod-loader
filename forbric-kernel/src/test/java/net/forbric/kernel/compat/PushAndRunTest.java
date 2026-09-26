@@ -115,6 +115,37 @@ class PushAndRunTest {
     }
 
     @Test
+    void theKernelJarIsBuiltBeforeAnythingIsStagedAndAFailedBuildStagesNothing() throws Exception {
+        // sweep90-win-r5 reported 4f229131 and ran a build/libs jar from before 8d0fb2ee.
+        var result = python("""
+                import json, os, stat, sys
+                kernel = output / 'kernel'; kernel.mkdir()
+                gradlew = kernel / 'gradlew'
+                gradlew.write_text('#!/bin/sh\\necho "$@" > "$(dirname "$0")/built"\\necho compile error\\nexit 1\\n')
+                gradlew.chmod(gradlew.stat().st_mode | stat.S_IEXEC)
+                m.KERNEL = kernel
+                calls = []
+                m.remote = lambda command: calls.append(command) or ''
+                m.put = lambda *a: calls.append(a)
+                mods = output / 'mods'; mods.mkdir(); (mods / 'a.jar').write_bytes(b'PK')
+                profile = output / 'profile.json'
+                profile.write_text(json.dumps(dict(libraries=[dict(name=f'net.forbric:{n}:1', downloads=dict(artifact=dict(path=f'x/{n}.jar')))
+                    for n in ('forbric-kernel', 'patched-mc-merged', 'forge-runtime', 'neoforge-runtime')])))
+                sys.argv = ['push-and-run.py', '--label', 'built', '--mc', 'D:\\\\fixture-mc', '--version', 'fixture',
+                            '--mods', str(mods), '--version-json', str(profile), '--output', str(output / 'run')]
+                try:
+                    m.main(); raise AssertionError('a failed build was staged')
+                except SystemExit as exit:
+                    assert exit.code == 2, exit.code
+                assert (kernel / 'built').read_text().split() == ['--offline', '-q', 'jar']
+                assert calls == [], calls
+                """);
+        assertEquals(0, result.exit(), result.output());
+        assertTrue(result.output().contains("building the kernel jar failed") && result.output().contains("compile error"),
+                result.output());
+    }
+
+    @Test
     void theJobInheritsNoStreamOfTheRemoteShellAndWritesItsOwnLogs() throws Exception {
         // With -RedirectStandard* the job held the remote shell's output pipe, and the start command of every
         // client run sat on it until the game exited — past the shell server's 300 s limit.

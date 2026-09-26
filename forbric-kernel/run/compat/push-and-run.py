@@ -427,6 +427,10 @@ def main():
     # megabytes, every later remote call then stalls for minutes; with this, only the manifest crosses and the
     # Windows side fetches each jar from its own URL, verified against the manifest's SHA-1 (win/fetch-mods.py).
     parser.add_argument('--remote-mods', action='store_true')
+    # The kernel jar is built from the working tree before it is staged. Without this a run shipped whatever jar
+    # build/libs last held while report.md named the current commit: sweep90-win-r5 reported 4f229131 and ran a
+    # jar from before 8d0fb2ee, so the very fix it was meant to prove looked like it had failed.
+    parser.add_argument('--no-build', action='store_true', help='stage build/libs as it is, without building it')
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--bisect', type=Path, metavar='SUBSET_TXT')
     modes.add_argument('--quarantine', metavar='JAR')
@@ -490,6 +494,11 @@ def main():
     if not args.dry_run:
         if output.exists() and any(output.iterdir()):
             parser.error('output already contains evidence; choose a new --label or --output')
+        if not args.no_build:
+            build = subprocess.run([str(KERNEL / 'gradlew'), '--offline', '-q', 'jar'], cwd=KERNEL, text=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            if build.returncode:
+                parser.error('building the kernel jar failed; nothing was staged:\n' + build.stdout[-4000:])
         output.mkdir(parents=True, exist_ok=True)
         profile_path = output / 'version.json'
         if args.version_json:

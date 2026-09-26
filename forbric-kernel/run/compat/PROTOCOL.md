@@ -68,6 +68,8 @@ jar before treating the selection as final; metadata resolution alone cannot pro
    `.physics_mod_cache`, and the three console logs. Preserve natives, `options.txt`,
    backup ZIPs, launcher metadata and PCL files. `mods-all` is refreshed only from the
    new pack and serves as the source for a later subset test.
+   The kernel jar is built from the working tree (`./gradlew --offline jar`) before anything is staged, so the
+   commit report.md names is the code that ran; `--no-build` stages `build/libs` as it is.
    Through a relayed tunnel that throttles or stalls (a UU Remote port forward stalls for minutes after tens of
    megabytes), pass `--remote-mods`: only the manifest crosses the transport and `win/fetch-mods.py` downloads each
    jar on the Windows side from its own URL, verifying size and SHA-1 against the manifest; an upload whose remote
