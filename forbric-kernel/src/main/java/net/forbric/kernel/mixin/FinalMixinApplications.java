@@ -40,7 +40,8 @@ public final class FinalMixinApplications {
  private record Plan(String mixin, Config config, List<String> targets, List<Injector> injectors, boolean complete) { }
  record Renamed(String name, String desc) { }
  interface Renames { List<Renamed> find(String mixin, String name, String desc); }
- private enum Outcome { ATTACHED, OPTIONAL, EQUIVALENT, MISSING, UNKNOWN }
+ /** NEVER_RUNS: attached, but only in methods nothing in the merged game calls (MergedBaseUncalledMethods). */
+ private enum Outcome { ATTACHED, OPTIONAL, EQUIVALENT, MISSING, NEVER_RUNS, UNKNOWN }
  private static final Map<String, Set<Config>> CONFIGS = new ConcurrentHashMap<>();
  private static final Map<String, Plan> PLANS = new ConcurrentHashMap<>();
  private static final Map<String, Set<String>> TARGETS = new ConcurrentHashMap<>();
@@ -145,10 +146,16 @@ public final class FinalMixinApplications {
     List<MethodNode> candidates=merged.get(mixin).stream().filter(m->rename.stream().anyMatch(n->n.name().equals(m.name)&&n.desc().equals(m.desc))).toList();
     Outcome state=Outcome.UNKNOWN;
     int references=candidates.size()==1?references(target,candidates.getFirst()):-1;
-    if(injector.understood()&&references>=0)
+    // Attached is not run: every call of the handler in a method nothing in the merged game calls. Judged whatever the
+    // injector's shape, because a call in dead code is dead however it is counted; a mandatory one is then a loss.
+    String dead=references>0?neverRuns(plan,target,candidates.getFirst()):null;
+    if(dead!=null)
+     state=injector.minimum()==0?Outcome.OPTIONAL:Outcome.NEVER_RUNS;
+    else if(injector.understood()&&references>=0)
      state=references>0?(references>=injector.minimum()?Outcome.ATTACHED:Outcome.UNKNOWN):injector.minimum()==0?Outcome.OPTIONAL:Outcome.MISSING;
-    String replacement=state==Outcome.MISSING?MixinEquivalentImplementations.proof(mixin,injector.name(),injector.desc(),injector.bodyHash(),target):null;
-    boolean pending=state==Outcome.MISSING&&WatchdogDumpEquivalence.helperUnknown()
+    boolean lost=state==Outcome.MISSING||state==Outcome.NEVER_RUNS;
+    String replacement=lost?MixinEquivalentImplementations.proof(mixin,injector.name(),injector.desc(),injector.bodyHash(),target):null;
+    boolean pending=lost&&WatchdogDumpEquivalence.helperUnknown()
       &&WatchdogDumpEquivalence.candidate(mixin,injector.name(),injector.desc(),injector.bodyHash(),target);
     if(pending)state=Outcome.UNKNOWN;
     if(replacement!=null)state=Outcome.EQUIVALENT;
@@ -158,7 +165,7 @@ public final class FinalMixinApplications {
     // replacement is seen; until then it is recorded as usual and resolved when SupersededMixins proves it.
     // An injector this does not model (sugar, a group) is still visibly unattached when nothing in the final class
     // calls its merged handler; that is the miss a superseding repair answers for, as much as a modelled one's.
-    boolean unattached=state==Outcome.MISSING||state==Outcome.UNKNOWN&&!pending&&references==0;
+    boolean unattached=lost||state==Outcome.UNKNOWN&&!pending&&references==0;
     String superseded=unattached?SupersededMixins.provedReplacement(mixin):null;
     if(unattached&&superseded==null&&SupersededMixins.replacementFor(mixin)!=null)SupersededMixins.awaitProof(plan.config().name(),mixin);
     // Natively an injector below its require/defaultRequire throws InjectionError, an Error no config-level
@@ -171,6 +178,15 @@ public final class FinalMixinApplications {
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.SUSPECTED,
       required,"The audited watchdog report uses a native replacement whose final renderer has not been defined yet",
       List.of("target="+binary,"pending final helper="+WatchdogDumpEquivalence.HELPER)));
+    // Proved from the final class and the merged game's census, not observed: a guest mod calling the dead method itself
+    // is outside both. So it marks the mod's row and never asks the player to quit or stops a STRICT server; the author's
+    // requirement stays in the evidence. MixinExtras kinds stay SUSPECTED, as for MISSING (KernelHudBridge draws some).
+    else if(state==Outcome.NEVER_RUNS)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
+      "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),
+      injector.audited()&&injector.understood()?CompatibilityFinding.Confidence.CONFIRMED:CompatibilityFinding.Confidence.SUSPECTED,
+      false,"injector "+injector.name()+" is attached only in "+dead+", so it never runs",
+      List.of("target="+binary,"mixin="+mixin,"handler="+injector.symbol(),"attached only in "+dead,"original minimum="+injector.minimum(),
+        "config required="+plan.config().required(),"-D"+MixinFit.LIVENESS_PROPERTY+"=off counts it as attached")));
     else if(state==Outcome.MISSING&&!injector.audited())CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.SUSPECTED,
       required,"A required MixinExtras injector has no attachment in the actual defined class; no audited replacement says whether its feature is lost",
@@ -213,15 +229,30 @@ public final class FinalMixinApplications {
  }
  private static int references(ClassNode target,MethodNode handler) {
   int result=0;
-  for(MethodNode method:target.methods) {
-   if(method==handler)continue; // A self-call is not an injection into the target.
-   for(AbstractInsnNode instruction:method.instructions) {
-    if(instruction instanceof MethodInsnNode call&&call.owner.equals(target.name)&&call.name.equals(handler.name)&&call.desc.equals(handler.desc))result++;
-    else if(instruction instanceof InvokeDynamicInsnNode dynamic) { for(Object argument:dynamic.bsmArgs)if(argument instanceof Handle h&&same(target,handler,h))result++; }
-    else if(instruction instanceof LdcInsnNode constant&&constant.cst instanceof Handle h&&same(target,handler,h))result++;
-   }
+  for(MethodNode method:target.methods)if(method!=handler)result+=references(target,method,handler); // A self-call is not an injection into the target.
+  return result;
+ }
+ private static int references(ClassNode target,MethodNode method,MethodNode handler) {
+  int result=0;
+  for(AbstractInsnNode instruction:method.instructions) {
+   if(instruction instanceof MethodInsnNode call&&call.owner.equals(target.name)&&call.name.equals(handler.name)&&call.desc.equals(handler.desc))result++;
+   else if(instruction instanceof InvokeDynamicInsnNode dynamic) { for(Object argument:dynamic.bsmArgs)if(argument instanceof Handle h&&same(target,handler,h))result++; }
+   else if(instruction instanceof LdcInsnNode constant&&constant.cst instanceof Handle h&&same(target,handler,h))result++;
   }
   return result;
+ }
+ /** "Hud.extractHotbarAndDecorations (nothing in the merged game calls it; …)" when every method of the final class that
+  * calls {@code handler} is one MergedBaseUncalledMethods lists for the config's ecosystem; null when any may run. */
+ private static String neverRuns(Plan plan,ClassNode target,MethodNode handler) {
+  if(!MixinFit.asksLiveness()||!MergedBaseUncalledMethods.lists(target.name))return null;
+  net.forbric.api.Ecosystem ecosystem=MixinConfigOwners.ecosystemOf(plan.config().name());if(ecosystem==null)return null;
+  List<String> hosts=new ArrayList<>();
+  for(MethodNode method:target.methods) {
+   if(method==handler||references(target,method,handler)==0)continue;
+   String why=MergedBaseUncalledMethods.neverRuns(target,method,ecosystem);if(why==null)return null;
+   hosts.add(target.name.substring(target.name.lastIndexOf('/')+1)+"."+method.name+" ("+why+")");
+  }
+  return hosts.isEmpty()?null:String.join("; ",hosts);
  }
  private static boolean same(ClassNode target,MethodNode handler,Handle handle) {return handle.getOwner().equals(target.name)&&handle.getName().equals(handler.name)&&handle.getDesc().equals(handler.desc);}
  private static String id(Plan plan,Injector injector,String target) {return "mixin-injector:"+plan.config().name()+":"+plan.mixin()+"#"+injector.symbol()+"@"+target;}

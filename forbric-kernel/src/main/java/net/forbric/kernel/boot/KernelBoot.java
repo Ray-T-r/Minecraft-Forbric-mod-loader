@@ -304,6 +304,9 @@ public final class KernelBoot {
 		// Which installed jars read a vanilla field with a descriptor the merge no longer declares (NoSuchFieldError
 		// at that access); reported after the catalog is published, so the rows reach load-report.txt.
 		FieldDriftAudit.scan(shadowCandidates);
+		// Which merged-base methods nothing in the merged game calls an installed mod calls itself: an injector bound
+		// there still runs. Read before Mixin prepares a config, so MixinFit's liveness verdict can ask.
+		net.forbric.kernel.mixin.MergedBaseUncalledMethods.scanGuests(shadowCandidates);
 		// Which installed jars name a Forge-family class that exists in no carrier, not the merged base and no
 		// installed jar (compiled against another NeoForge/MinecraftForge); reported after the catalog is published.
 		List<Path> abiUniverse = new ArrayList<>(runtimeJars);

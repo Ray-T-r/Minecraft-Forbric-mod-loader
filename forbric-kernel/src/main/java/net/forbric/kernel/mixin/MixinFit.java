@@ -166,6 +166,17 @@ public final class MixinFit {
 		return !"off".equalsIgnoreCase(System.getProperty(ANCHOR_MOVERS_PROPERTY, "on"));
 	}
 
+	/**
+	 * {@code -Dforbric.mixinFit.liveness=off}: an injector bound only to a merged-base method nothing in the merged game
+	 * calls ({@link MergedBaseUncalledMethods}) reads as resolved again, and the final-class ledger counts a handler
+	 * called only from such a method as attached, as before.
+	 */
+	static final String LIVENESS_PROPERTY = "forbric.mixinFit.liveness";
+
+	static boolean asksLiveness() {
+		return !"off".equalsIgnoreCase(System.getProperty(LIVENESS_PROPERTY, "on"));
+	}
+
 	private MixinFit() {
 	}
 
@@ -200,6 +211,7 @@ public final class MixinFit {
 		int resolved = 0;
 		int total = 0;
 		int softMisses = 0;
+		int bound = 0;
 
 		List<String> foreign = new ArrayList<>();
 		for (String declared : targets) {
@@ -234,6 +246,7 @@ public final class MixinFit {
 				} else {
 					unresolved.add(anchor.describe(targetName));
 					if (anchor.soft) softMisses++;
+					if (anchor.bound) bound++;
 					if (!gameOwned) foreign.add(anchor.describe(targetName));
 				}
 			}
@@ -244,8 +257,9 @@ public final class MixinFit {
 		// null at runtime. It outranks the count-based verdicts precisely because nothing else detects it.
 		if (!orphaned.isEmpty()) return new Result(Verdict.HAZARD, orphaned, resolved, total, List.of());
 		if (total == 0 || unresolved.isEmpty()) return new Result(Verdict.FIT, List.of(), resolved, total, List.of());
-		// UNFIT is "no HARD anchor resolves"; a soft miss alone is PARTIAL, whatever else is there.
-		boolean anyHardResolved = resolved > 0 || unresolved.size() == softMisses;
+		// UNFIT is "no HARD anchor resolves"; a soft miss alone is PARTIAL, whatever else is there. An injector bound where
+		// nothing runs still bound — it is what resolved before liveness was asked — so it keeps a mixin from UNFIT.
+		boolean anyHardResolved = resolved > 0 || bound > 0 || unresolved.size() == softMisses;
 		return new Result(anyHardResolved ? Verdict.PARTIAL : Verdict.UNFIT, unresolved, resolved, total,
 				List.copyOf(foreign));
 	}
@@ -262,6 +276,11 @@ public final class MixinFit {
 		final boolean soft;
 		/** The detail already names its own owner, which is not the mixin's target; see {@link #atDetail}. */
 		final boolean ownerNamed;
+		/**
+		 * Bound, but where nothing runs it: a miss for the report, a hit for UNFIT. The binding is what used to count as
+		 * resolved, and the mixin still applies there, so it must not become the reason a mixin is dropped.
+		 */
+		final boolean bound;
 
 		Anchor(String kind, String detail, boolean resolved) {
 			this(kind, detail, resolved, false);
@@ -272,11 +291,21 @@ public final class MixinFit {
 		}
 
 		Anchor(String kind, String detail, boolean resolved, boolean soft, boolean ownerNamed) {
+			this(kind, detail, resolved, soft, ownerNamed, false);
+		}
+
+		Anchor(String kind, String detail, boolean resolved, boolean soft, boolean ownerNamed, boolean bound) {
 			this.kind = kind;
 			this.detail = detail;
 			this.resolved = resolved;
 			this.soft = soft;
 			this.ownerNamed = ownerNamed;
+			this.bound = bound;
+		}
+
+		/** An injector bound only to methods nothing in the merged game calls: soft, and bound. */
+		static Anchor neverRuns(String detail) {
+			return new Anchor("@Inject target", detail, false, true, false, true);
 		}
 
 		String describe(String target) {
@@ -375,8 +404,10 @@ public final class MixinFit {
 			String where = misses.isEmpty() ? String.join("|", selectors)
 					: hits.isEmpty() ? String.join("|", misses)
 					: String.join("|", misses) + " (" + hits.size() + "/" + selectors.size() + " selectors hit)";
-			out.add(new Anchor("@Inject target", where, !hits.isEmpty()));
-			if (hits.isEmpty()) continue;
+			if (hits.isEmpty()) {
+				out.add(new Anchor("@Inject target", where, false));
+				continue;
+			}
 			// The move MixinStubRebind will make for a Fabric mod's injector bound to a carrier stub, judged here too
 			// so the verdict and the rebind cannot disagree: its anchors are asked of the body it lands on.
 			if (selectors.size() == 1 && hits.size() == 1 && MixinStubRebind.isCarrierStub(target, hits.get(0))) {
@@ -392,6 +423,12 @@ public final class MixinFit {
 				if (moved == null && withLocals != null) moved = MixinStubRebind.destination(mixin.name, m, withLocals);
 				if (moved != null) hits = new ArrayList<>(List.of(moved));
 			}
+			// Bound is not run. An injector whose every method is one nothing in the merged game calls attaches and
+			// never fires: Better Mount HUD's XP redirect in Hud.extractHotbarAndDecorations, whose vanilla caller
+			// NeoForge's HUD layers replaced. Soft — it makes the mixin PARTIAL with the reason, never UNFIT, and no
+			// injector moves because of it.
+			String never = neverRuns(mixin, target, hits, resolver);
+			out.add(never == null ? new Anchor("@Inject target", where, true) : Anchor.neverRuns(never));
 
 			// Each @At(INVOKE/FIELD, target=…) must name an instruction inside a method the injector actually
 			// bound to — again ANY, for the same require=1 reason.
@@ -559,6 +596,34 @@ public final class MixinFit {
 			}
 		}
 		return List.of();
+	}
+
+	/**
+	 * "extractHotbarAndDecorations never runs: …" when every method the injector bound is one
+	 * {@link MergedBaseUncalledMethods} lists for the mod's ecosystem and the live bytes agree; null when any may run, the
+	 * rule is off, or the mod's ecosystem is unknown (a config two mods claim).
+	 */
+	private static String neverRuns(ClassNode mixin, ClassNode target, List<MethodNode> hits,
+			Function<String, byte[]> resolver) {
+		if (!asksLiveness()) return null;
+		for (MethodNode hit : hits) if (!MergedBaseUncalledMethods.lists(hit.name, hit.desc)) return null;
+		net.forbric.api.Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixin.name);
+		if (ecosystem == null) return null;
+		List<String> dead = new ArrayList<>();
+		for (MethodNode hit : hits) {
+			ClassNode owner = null;
+			for (ClassNode c : hierarchy(target, resolver)) {
+				if (c.methods != null && c.methods.stream().anyMatch(x -> x.name.equals(hit.name) && x.desc.equals(hit.desc))) {
+					owner = c;
+					break;
+				}
+			}
+			String why = owner == null ? null : MergedBaseUncalledMethods.neverRuns(owner, hit, ecosystem, resolver);
+			if (why == null) return null;
+			String line = hit.name + " never runs: " + why;
+			if (!dead.contains(line)) dead.add(line);
+		}
+		return dead.isEmpty() ? null : String.join("; ", dead);
 	}
 
 	/** The target and its superclass chain, as far as the resolver can see. */

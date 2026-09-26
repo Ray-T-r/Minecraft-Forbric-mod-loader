@@ -2,6 +2,7 @@ package net.forbric.kernel.mixin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.InputStream;
@@ -51,8 +52,19 @@ class MixinRetargetCarrierHelperStagedTest {
 		assertEquals("bettermounthud$alwaysRenderFood", plan.rewrites().get(0).handler());
 		assertEquals("extractPlayerHealth", plan.rewrites().get(0).from());
 		assertEquals("extractFoodLevel" + G, plan.rewrites().get(0).to());
+		// What still does not run is the other hook, the XP redirect in Hud.extractHotbarAndDecorations, which nothing in
+		// the merged game calls; the food redirect's own anchors all resolve in live code.
 		MixinFit.Result after = MixinFit.evaluate(MixinRetarget.rewritten(mixin, plan), resolver);
-		assertEquals(MixinFit.Verdict.FIT, after.verdict(), "after: " + after.unresolved());
+		assertEquals(MixinFit.Verdict.PARTIAL, after.verdict(), "after: " + after.unresolved());
+		assertEquals(1, after.unresolved().size(), "after: " + after.unresolved());
+		assertTrue(after.unresolved().get(0).startsWith("@Inject target Hud.extractHotbarAndDecorations never runs"), "after: " + after.unresolved());
+		System.setProperty(MixinFit.LIVENESS_PROPERTY, "off");
+		try {
+			MixinFit.Result bound = MixinFit.evaluate(MixinRetarget.rewritten(mixin, plan), resolver);
+			assertEquals(MixinFit.Verdict.FIT, bound.verdict(), "resolution alone: " + bound.unresolved());
+		} finally {
+			System.clearProperty(MixinFit.LIVENESS_PROPERTY);
+		}
 	}
 
 	/** Highlighter's MinecraftForge build: its AFTER-itemDecorations mark follows the call into renderSlotContents. */
