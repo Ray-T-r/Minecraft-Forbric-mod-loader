@@ -109,15 +109,19 @@ class ModelFormatFunnelInjectorTest {
 		assertEquals(Opcodes.POP, nextReal(ret).getOpcode());
 	}
 
-	/** Frames are the risky half of a branch insertion; the analyzer and the class writer both have to agree. */
+	/**
+	 * The funnelled method's stack and locals still add up. That is all this proves: BasicVerifier works out its
+	 * own frames and never reads the StackMapTable, and neither does a ClassWriter copying it, so a wrong frame at
+	 * the new branch target passes here. The frame is proved where the JVM checks it — KernelModelFormatsTest
+	 * defines the funnelled class and parses models through it, and a frame that does not match is a VerifyError
+	 * there before the first model parses (checked by writing one on purpose).
+	 */
 	@Test
 	void theFunnelledMethodStillVerifies() throws Exception {
 		byte[] funnelled = new ModelFormatFunnelInjector().transform(BINARY, original(), null);
 		ClassNode node = new ClassNode();
 		new ClassReader(funnelled).accept(node, 0);
 		for (MethodNode m : node.methods) new Analyzer<>(new BasicVerifier()).analyze(node.name, m);
-		// Re-reading with frames and re-writing with none recomputed would throw on a malformed StackMapTable.
-		new ClassReader(funnelled).accept(new ClassWriter(0), 0);
 	}
 
 	@Test
