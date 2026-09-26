@@ -269,6 +269,7 @@ public final class FinalMixinApplications {
   * (MixinStubRebind's table and the config owner's family); null when any reference is elsewhere or nothing says. */
  private static String stubOnlyHost(ClassNode target,MethodNode handler,String config) {
   if("off".equalsIgnoreCase(System.getProperty(STUB_HOST_PROPERTY,"on")))return null;
+  if(!MixinStubRebind.ownsCarrierStub(target.name))return null; // no row here: no method of it could be the host
   net.forbric.api.Ecosystem ecosystem=MixinConfigOwners.ecosystemOf(config);if(ecosystem==null)return null;
   String host=null;
   for(MethodNode method:target.methods) {

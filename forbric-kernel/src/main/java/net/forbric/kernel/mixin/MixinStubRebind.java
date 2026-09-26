@@ -318,6 +318,20 @@ public final class MixinStubRebind {
 		return false;
 	}
 
+	/** The owners (internal names) that head any row of carrier-stubs.txt. */
+	private static volatile Set<String> stubOwners;
+
+	/** Whether any row of carrier-stubs.txt is headed by a method of {@code owner}: most classes head none. */
+	public static boolean ownsCarrierStub(String owner) {
+		Set<String> owners = stubOwners;
+		if (owners == null) {
+			Set<String> collected = new java.util.HashSet<>();
+			for (String row : carrierStubs().keySet()) collected.add(row.substring(0, row.indexOf('#')));
+			stubOwners = owners = Set.copyOf(collected);
+		}
+		return owners.contains(owner);
+	}
+
 	/** Whether {@code method} of {@code target} heads a row of carrier-stubs.txt — cheap, for callers deciding whether to look closer. */
 	public static boolean isCarrierStub(ClassNode target, MethodNode method) {
 		if (target == null || method == null) return false;

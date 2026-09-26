@@ -488,6 +488,21 @@ class MixinStubRebindTest {
 		return method;
 	}
 
+	/**
+	 * FinalMixinApplications asks, for every attached injector, whether it sits only inside a carrier stub; a class that
+	 * heads no row answers no before any of its methods is read. The filter is the table's owners exactly.
+	 */
+	@Test void theOwnersThatHeadARowAreTheTablesOwners() {
+		java.util.Set<String> owners = new java.util.TreeSet<>();
+		for (String row : MixinStubRebind.carrierStubs().keySet()) owners.add(row.substring(0, row.indexOf('#')));
+		assertFalse(owners.isEmpty());
+		for (String owner : owners) assertTrue(MixinStubRebind.ownsCarrierStub(owner), owner);
+		for (String owner : List.of("net/minecraft/client/Minecraft", "net/minecraft/world/level/Level", "game/Target")) {
+			assertFalse(MixinStubRebind.ownsCarrierStub(owner), owner);
+		}
+		assertTrue(MixinStubRebind.ownsCarrierStub("net/minecraft/world/level/block/entity/FuelValues"), "torrential's fuel hook's host");
+	}
+
 	@Test void theSwitchMovesNothing() throws Exception {
 		System.setProperty(MixinStubRebind.PROPERTY, "off");
 		ClassNode mixin = fromJar(POPULAR.resolve("architectury-fabric-21.1.10.jar"), "dev/architectury/mixin/fabric/MixinPlayer");
