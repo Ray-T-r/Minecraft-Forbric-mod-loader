@@ -59,8 +59,10 @@ public final class KernelFabricFluidModels {
 		if (models == null) return null;
 		try {
 			return models.invoke(null) instanceof Map<?, ?> map ? map : null;
-		} catch (ReflectiveOperationException | RuntimeException unreadable) {
-			// Answering "no Fabric model" keeps NeoForge's warning, which is the behaviour before this existed.
+		} catch (ReflectiveOperationException | RuntimeException | LinkageError unreadable) {
+			// Answering "no Fabric model" keeps NeoForge's warning, which is the behaviour before this existed. A
+			// LinkageError too (Method.invoke throws a failed class initialisation as it is, unwrapped): this runs in
+			// the model bake of a resource reload, where an Error makes Minecraft drop every pack and stay black.
 			return null;
 		}
 	}

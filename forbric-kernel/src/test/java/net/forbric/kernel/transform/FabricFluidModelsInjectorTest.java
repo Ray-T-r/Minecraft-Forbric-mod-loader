@@ -60,7 +60,7 @@ class FabricFluidModelsInjectorTest {
 
 	/** Traveler's Backpack's shape: NeoForge's map lacks the fluid, Fabric's registry has it. */
 	@Test void aFluidFabricGivesAModelIsNotReportedMissing() throws Exception {
-		try (URLClassLoader cl = runtimeLoader(true)) {
+		try (URLClassLoader cl = runtimeLoader(fabricRegistry(false))) {
 			Method hasModel = hook(cl);
 			Object potion = "travelersbackpack:potion_still", water = "minecraft:water", stray = "somemod:no_model";
 			assertEquals(true, hasModel.invoke(null, Map.of(water, "model"), water), "NeoForge's own answer still counts");
@@ -70,9 +70,22 @@ class FabricFluidModelsInjectorTest {
 	}
 
 	@Test void withoutFabricRenderingFluidsTheCheckIsNeoForgesOwn() throws Exception {
-		try (URLClassLoader cl = runtimeLoader(false)) {
+		try (URLClassLoader cl = runtimeLoader(null)) {
 			Method hasModel = hook(cl);
 			assertEquals(false, hasModel.invoke(null, Map.of(), "travelersbackpack:potion_still"));
+			assertEquals(true, hasModel.invoke(null, Map.of("minecraft:water", "model"), "minecraft:water"));
+		}
+	}
+
+	/**
+	 * The check runs in the model bake of a resource reload, where an Error that is not an Exception makes Minecraft
+	 * drop every pack and sit on a black screen. A Fabric registry whose class initialisation fails reaches the hook
+	 * as an ExceptionInInitializerError, straight out of Method.invoke; the answer is then NeoForge's own.
+	 */
+	@Test void aFabricRegistryThatCannotInitialiseLeavesTheCheckToNeoForge() throws Exception {
+		try (URLClassLoader cl = runtimeLoader(fabricRegistry(true))) {
+			Method hasModel = hook(cl);
+			assertEquals(false, hasModel.invoke(null, Map.of(), "travelersbackpack:potion_still"), "no Error escapes the check");
 			assertEquals(true, hasModel.invoke(null, Map.of("minecraft:water", "model"), "minecraft:water"));
 		}
 	}
@@ -82,24 +95,37 @@ class FabricFluidModelsInjectorTest {
 				.getMethod("hasModel", Map.class, Object.class);
 	}
 
-	/** The compiled game-side hook, plus (optionally) a Fabric registry holding one model, in a loader of their own. */
-	private static URLClassLoader runtimeLoader(boolean withFabric) throws Exception {
+	/** The compiled game-side hook, plus (when given) a Fabric registry, in a loader of their own. */
+	private static URLClassLoader runtimeLoader(byte[] registry) throws Exception {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
 		assumeTrue(Files.isDirectory(compiled), "the game-side set is not compiled");
-		byte[] registry = fabricRegistry();
 		return new URLClassLoader(new URL[] { compiled.toUri().toURL() }, FabricFluidModelsInjectorTest.class.getClassLoader()) {
 			@Override
 			protected Class<?> findClass(String name) throws ClassNotFoundException {
-				if (withFabric && name.equals(FABRIC_REGISTRY.replace('/', '.'))) return defineClass(name, registry, 0, registry.length);
+				if (registry != null && name.equals(FABRIC_REGISTRY.replace('/', '.'))) return defineClass(name, registry, 0, registry.length);
 				return super.findClass(name);
 			}
 		};
 	}
 
-	/** {@code FluidRenderingRegistryImpl.getUnbakedModels()} answering one registered fluid. */
-	private static byte[] fabricRegistry() {
+	/**
+	 * {@code FluidRenderingRegistryImpl.getUnbakedModels()} answering one registered fluid; with {@code broken}, a
+	 * static initialiser that throws, so the first call fails its class initialisation instead.
+	 */
+	private static byte[] fabricRegistry(boolean broken) {
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL, FABRIC_REGISTRY, null, "java/lang/Object", null);
+		if (broken) {
+			MethodVisitor clinit = cw.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+			clinit.visitCode();
+			clinit.visitTypeInsn(Opcodes.NEW, "java/lang/IllegalStateException");
+			clinit.visitInsn(Opcodes.DUP);
+			clinit.visitLdcInsn("a registry that cannot initialise");
+			clinit.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/IllegalStateException", "<init>", "(Ljava/lang/String;)V", false);
+			clinit.visitInsn(Opcodes.ATHROW);
+			clinit.visitMaxs(0, 0);
+			clinit.visitEnd();
+		}
 		MethodVisitor models = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "getUnbakedModels", "()Ljava/util/Map;", null, null);
 		models.visitCode();
 		models.visitLdcInsn("travelersbackpack:potion_still");
