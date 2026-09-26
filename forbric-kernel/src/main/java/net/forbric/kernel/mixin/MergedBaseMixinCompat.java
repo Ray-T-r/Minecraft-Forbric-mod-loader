@@ -65,7 +65,12 @@ public final class MergedBaseMixinCompat {
 	 *       it re-runs {@code BuiltInRegistries.bootStrap()} from {@code Minecraft.<init>} after the kernel already
 	 *       froze, giving {@code IllegalStateException: Registry is already frozen}. Same redundancy as its three
 	 *       common-config siblings above — the kernel owns the single freeze — so it is suppressed for the same
-	 *       reason; without it no fabric-api CLIENT can boot.</li>
+	 *       reason; without it no fabric-api CLIENT can boot. "Redundant" holds for registry CONTENTS, not for
+	 *       timing: on a client the kernel's root registry is frozen from the end of the pre-{@code Minecraft}
+	 *       window until {@code onClientEntrypoints} reopens it, a gap in which Fabric's is still open and no
+	 *       Fabric main has run. Nothing the kernel forces may run Fabric code in that gap — its datapack-registry
+	 *       declaration did, through {@code RegistryDataLoader.<clinit>}, and poisoned world loading for the
+	 *       session; see {@code DatapackRegistryDeclaration}.</li>
 	 *   <li><b>registry-sync {@code RegistryDataLoaderMixin}</b> — binds a {@code ScopedValue IS_SERVER} in one
 	 *       wrap and reads it in another, re-binding across the async boundary in two more. The re-bind wraps do
 	 *       not match the merged base's {@code RegistryDataLoader.load}, so the read throws

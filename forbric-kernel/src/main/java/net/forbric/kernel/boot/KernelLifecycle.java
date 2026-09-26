@@ -24,6 +24,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import net.forbric.api.CompatibilityFinding;
+import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.Side;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.EventBridges;
@@ -202,7 +204,24 @@ public final class KernelLifecycle {
 		// stayed vanilla-only and lithostitched died the moment a world loaded: "Missing registry:
 		// lithostitched:worldgen_modifier" out of RegistryAccess.lookupOrThrow, on the server tick loop. Must run
 		// before any world is created; here is the first point where every mod's listeners are registered.
-		registerDataPackRegistries(cl);
+		//
+		// Not here on a client whose Fabric mains run in Minecraft.<init>, though. This step initialises
+		// RegistryDataLoader, whose initialiser runs Fabric mod code (WorldWeaver's datapack entrypoints ride a TAIL
+		// injector there), and on native Fabric that code first runs at world load, after every main. Left here it
+		// ran before any of them, with minecraft:root frozen: wover-biome's codec registry, which its own main
+		// creates, was created from the initialiser instead, threw "Registry is already frozen", and poisoned
+		// RegistryDataLoader and DataPackRegistriesHooks for the session — no world could be created, loaded or
+		// joined, and NeoForge's data maps died with them. It moved when the client mains did (09d86de) and this
+		// step did not. It runs at the end of onClientEntrypoints instead: after every main and client entrypoint,
+		// the root frozen again, which is the state the dedicated server already declares in, cleanly.
+		if (DatapackRegistryDeclaration.waitsForFabric(side, KernelFabricEcosystem.active(),
+				KernelFabricEcosystem.mainsRunInConstructor())) {
+			ForbricLog.info("[Forbric/Lifecycle] datapack-registry declaration waits for the Fabric main and client "
+					+ "entrypoints in Minecraft.<init> — its initialisers run Fabric mod code, which must not run "
+					+ "before those mains (-D%s=off to declare here)", DatapackRegistryDeclaration.DEFERRAL_SWITCH);
+		} else {
+			registerDataPackRegistries(cl);
+		}
 		// Step 3a2: open the game event buses — HERE, not after the setup lifecycle.
 		//
 		// Genuine NeoForge starts NeoForge.EVENT_BUS at the end of CommonModLoader.begin, immediately after its
@@ -1111,8 +1130,13 @@ public final class KernelLifecycle {
 	 * <p>The baseline bus is included deliberately. NeoForge declares its OWN datapack registries through this same
 	 * event ({@code neoforge:biome_modifier}, {@code neoforge:structure_modifier}), so posting it there is what
 	 * makes those resolvable — the gap that forced {@code ServerLifecycleHooks.runModifiers} to be neutered.
+	 *
+	 * <p>Once per process, and never retried: a client reaches it from up to three places (see
+	 * {@link DatapackRegistryDeclaration#waitsForFabric}), and a second post would hand every mod's listener the
+	 * event twice, while a failed first attempt has usually left a class erroneous that a retry cannot revive.
 	 */
 	private static void registerDataPackRegistries(ClassLoader cl) {
+		if (!DATAPACK_REGISTRIES_DECLARED.compareAndSet(false, true)) return;
 		try {
 			Class<?> eventCls = Class.forName(
 					"net.neoforged.neoforge.registries.DataPackRegistryEvent$NewRegistry", false, cl);
@@ -1160,13 +1184,88 @@ public final class KernelLifecycle {
 					+ "(%s), %d total", posted, now.size() - before, added, now.size());
 
 			mirrorIntoFabricDynamicRegistries(cl, now.subList(before, now.size()));
+			// Before the Fabric mirror: that one would also carry these across, but as bare (key, codec) copies.
+			reconcileLoaderRegistriesIntoNeoForge(cl, hooksCls);
 			mirrorFabricDynamicRegistriesIntoNeoForge(cl, eventCls, hooksCls);
 			declareMinecraftForgeModifierRegistries(cl, eventCls, hooksCls);
 		} catch (ClassNotFoundException absent) {
 			ForbricLog.debug("[Forbric/Lifecycle] no NeoForge DataPackRegistryEvent — skipping");
 		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not declare mods' datapack registries — a mod with its own "
-					+ "worldgen registry will fail with \"Missing registry\" the moment a world loads", unwrap(t));
+			// A class that failed to initialise is a different failure from a declaration that failed, and a far
+			// bigger one; it gets a finding, so the player hears it before the title screen and not at "Create".
+			CompatibilityFinding poisoned = DatapackRegistryDeclaration.poisonedLoader(t);
+			if (poisoned != null) {
+				CompatibilityFindings.record(poisoned);
+				ForbricLog.error("[Forbric/Lifecycle] " + poisoned.detail(), unwrap(t));
+			} else {
+				ForbricLog.warn("[Forbric/Lifecycle] could not declare mods' datapack registries — a mod with its own "
+						+ "worldgen registry will fail with \"Missing registry\" the moment a world loads", unwrap(t));
+			}
+		}
+	}
+
+	private static final java.util.concurrent.atomic.AtomicBoolean DATAPACK_REGISTRIES_DECLARED =
+			new java.util.concurrent.atomic.AtomicBoolean();
+
+	/**
+	 * Declares to NeoForge whatever {@code RegistryDataLoader.WORLDGEN_REGISTRIES} ended up holding that NeoForge's
+	 * list lacks — the entries a {@code <clinit>} TAIL injector added after NeoForge had already copied the list,
+	 * which happens whenever the loader initialises before the hooks. See
+	 * {@link DatapackRegistryDeclaration#reconcile} for why the order is not the kernel's to choose.
+	 *
+	 * <p>Through NeoForge's own {@code addRegistryCodec}, the method {@code NewRegistry.process()} ends in, with the
+	 * loader's entry object itself and no network codec — exactly what the hooks-first copy would have put there.
+	 * {@code -Dforbric.datapackRegistryReconcile=off} leaves NeoForge's list as it was copied.
+	 */
+	private static void reconcileLoaderRegistriesIntoNeoForge(ClassLoader cl, Class<?> hooksCls) {
+		try {
+			Class<?> loaderCls = Class.forName(DatapackRegistryDeclaration.LOADER, false, cl);
+			Class<?> dataCls = Class.forName("net.minecraft.resources.RegistryDataLoader$RegistryData", false, cl);
+			Class<?> wrapperCls = Class.forName(
+					"net.neoforged.neoforge.registries.DataPackRegistryEvent$DataPackRegistryData", false, cl);
+			Class<?> codecCls = Class.forName("com.mojang.serialization.Codec", false, cl);
+			Method key = dataCls.getMethod("key");
+			Constructor<?> wrap = wrapperCls.getDeclaredConstructor(dataCls, codecCls);
+			wrap.setAccessible(true);
+			Method add = hooksCls.getDeclaredMethod("addRegistryCodec", wrapperCls);
+			add.setAccessible(true);
+			Field worldgen = loaderCls.getDeclaredField("WORLDGEN_REGISTRIES");
+			worldgen.setAccessible(true);
+
+			java.util.List<?> loaderList = (java.util.List<?>) worldgen.get(null);
+			java.util.List<?> neoList = (java.util.List<?>) hooksCls.getMethod("getDataPackRegistries").invoke(null);
+			java.util.List<Object> replaced = new java.util.ArrayList<>();
+			java.util.List<Object> declared = DatapackRegistryDeclaration.reconcile(loaderList, neoList,
+					data -> {
+						try {
+							return key.invoke(data);
+						} catch (ReflectiveOperationException e) {
+							throw new IllegalStateException(e);
+						}
+					},
+					data -> {
+						try {
+							add.invoke(null, wrap.newInstance(data, null));
+						} catch (ReflectiveOperationException e) {
+							throw new IllegalStateException(e);
+						}
+					}, replaced);
+			if (!declared.isEmpty()) {
+				java.util.List<String> keys = new java.util.ArrayList<>();
+				for (Object data : declared) keys.add(String.valueOf(key.invoke(data)));
+				ForbricLog.info("[Forbric/Lifecycle] reconciled %d datapack registr(ies) from RegistryDataLoader's own "
+						+ "list into NeoForge's — the loader initialised before DataPackRegistriesHooks, so NeoForge "
+						+ "copied the list before a mixin added these, and worlds load only NeoForge's list: %s",
+						keys.size(), keys);
+			}
+			if (!replaced.isEmpty()) {
+				ForbricLog.warn("[Forbric/Lifecycle] RegistryDataLoader's list and NeoForge's disagree on the entry for "
+						+ "%s — NeoForge's is the one worlds load, so a mixin that replaced it in place is not in effect",
+						replaced);
+			}
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Lifecycle] could not reconcile RegistryDataLoader's list with NeoForge's — a "
+					+ "registry a mixin added to the loader may be missing at world load", unwrap(t));
 		}
 	}
 
@@ -2462,6 +2561,12 @@ public final class KernelLifecycle {
 			openLateConfigs(cl, Side.CLIENT, "the Fabric client entrypoints");
 		}
 
+		// Step 3a, where a client whose mains run here declares it (driveNativeRegistration says why it waits).
+		// After the window has closed, not inside it: native Fabric first initialises RegistryDataLoader at world
+		// load, with the root frozen, and NeoForge processes NewRegistry with it frozen too — the state the
+		// dedicated server declares in. Before NeoForge's client setup, whose RegisterDataMapTypesEvent reads the
+		// declared list. A no-op when the pre-Minecraft window already declared.
+		registerDataPackRegistries(cl);
 	}
 
 	/**
@@ -2505,6 +2610,9 @@ public final class KernelLifecycle {
 		// noticed later as an empty Controls screen.
 		EventBridges.verify(GameEventBridge.Pass.CLIENT_INIT);
 		preloadClientResources(cl);
+		// Step 3a's last chance: client setup posts RegisterDataMapTypesEvent, which reads the declared list, so the
+		// declaration must have happened by now even if the Fabric hook above never landed. Normally a no-op.
+		registerDataPackRegistries(cl);
 		fireClientSetupLifecycle(cl);
 		// Common setup now runs in there, and registering a config is one of the things mods do from it. On the
 		// server the pass right after the setup lifecycle catches those; the client had no equivalent once the
