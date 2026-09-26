@@ -306,6 +306,9 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelFabricFuel", new Entry(Origin.COMPILED, List.of()));
 		// Fabric's fluid models for NeoForge's completeness check; FabricFluidModelsInjector calls hasModel.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFabricFluidModels", new Entry(Origin.COMPILED, List.of()));
+		// Vanilla's compostables map behind NeoForge's data map: the merged ComposterBlock's bootStrap records vanilla's
+		// own entries and its four composter sites ask the rest (CompostablesFallbackInjector); no boot-side call.
+		CLASSES.put("net.forbric.kernel.runtime.KernelCompostables", new Entry(Origin.COMPILED, List.of()));
 		// NeoForge's item tooltip appenders, built once from the kernel's copy of postRegisterEvents' tail; also the
 		// per-container delivery NeoTooltipAppendersInjector sends ItemTooltipHandler.init's event through.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoTooltips", new Entry(Origin.COMPILED, List.of(
