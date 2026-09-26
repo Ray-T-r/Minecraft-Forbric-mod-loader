@@ -29,6 +29,7 @@ import java.util.Optional;
 
 import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.metadata.ModOrigin;
+import net.fabricmc.loader.impl.ModContainerImpl;
 
 import net.forbric.kernel.util.ForbricLog;
 
@@ -39,8 +40,12 @@ import net.forbric.kernel.util.ForbricLog;
  * open for the JVM's life (mods call {@code findPath(...)} at arbitrary times — e.g. fabric-api reading a
  * bundled resource, ModMenu reading the icon). The filesystem is opened lazily so a mod that never reads its
  * own jar costs nothing.
+ *
+ * <p>It extends Fabric Loader's internal {@link ModContainerImpl} — an empty type here — because that is what every
+ * container is on Fabric, and a mod that casts to it (SuperMartijn642's Core Lib, to add its own entrypoint) must
+ * succeed for every mod, builtins and presence identities included.
  */
-public final class KernelModContainer implements ModContainer {
+public final class KernelModContainer extends ModContainerImpl {
 	private final KernelModMetadata metadata;
 	private final Path jar;
 	private final KernelModContainer parent;

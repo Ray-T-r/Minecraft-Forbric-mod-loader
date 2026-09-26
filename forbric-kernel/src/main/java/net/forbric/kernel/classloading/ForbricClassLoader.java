@@ -262,6 +262,10 @@ public final class ForbricClassLoader extends URLClassLoader {
 		synchronized (getClassLoadingLock(name)) {
 			Class<?> c = findLoadedClass(name);
 			if (c == null) {
+				// -Dforbric.fabricImpl=off: the shipped Fabric Loader internals are not there, as before they were.
+				if (FabricLoaderInternals.withheld(name)) {
+					throw new ClassNotFoundException(name + " (withheld: -D" + FabricLoaderInternals.SWITCH + "=off)");
+				}
 				if (DelegationPolicy.alwaysParent(name)) {
 					c = parent.loadClass(name);
 				} else if (DelegationPolicy.alwaysGame(name)) {

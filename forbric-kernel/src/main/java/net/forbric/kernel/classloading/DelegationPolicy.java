@@ -29,8 +29,9 @@ package net.forbric.kernel.classloading;
  *   <li><b>ALWAYS_PARENT</b> — never define here even if the bytes are reachable: the JDK, the ASM + Mixin
  *       libraries the transformer itself runs on, log4j/slf4j (one logging instance shared by game and kernel),
  *       NightConfig (a carrier bundles an old unshaded copy that would otherwise win child-first), the vendored
- *       Fabric mod-facing API, and the kernel's BOOT packages (everything under {@code net.forbric.kernel}
- *       EXCEPT {@code net.forbric.kernel.runtime}, which is game-side).</li>
+ *       Fabric mod-facing API, the few Fabric Loader internals the kernel ships ({@link FabricLoaderInternals}, by
+ *       exact name), and the kernel's BOOT packages (everything under {@code net.forbric.kernel} EXCEPT
+ *       {@code net.forbric.kernel.runtime}, which is game-side).</li>
  *   <li><b>ALWAYS_GAME</b> — always define here (with transforms), because these are the game + ecosystems and
  *       the kernel's game-side runtime: {@code net.minecraft}, {@code com.mojang.blaze3d}, {@code net.minecraftforge},
  *       {@code net.neoforged}, {@code net.fabricmc.fabric}, {@code net.forbric.kernel.runtime}, and MixinExtras'
@@ -112,7 +113,7 @@ public final class DelegationPolicy {
 	public static boolean alwaysParent(String className) {
 		if (alwaysGame(className)) return false;
 
-		return startsWithAny(className, ALWAYS_PARENT);
+		return startsWithAny(className, ALWAYS_PARENT) || FabricLoaderInternals.pinned(className);
 	}
 
 	/** True if {@code className} must always be defined (and transformed) by the game-side transforming loader. */

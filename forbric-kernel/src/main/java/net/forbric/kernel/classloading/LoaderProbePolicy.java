@@ -116,7 +116,10 @@ public final class LoaderProbePolicy {
 	 */
 	private static final Map<String, Family> PROBES = Map.of(
 			"net.fabricmc.loader.api.FabricLoader", Family.FABRIC,
+			// These two exist now (FabricLoaderInternals), so a Forge-family class asking about them has to be told
+			// no here, as it always was by their absence; a Fabric class is told yes, as on Fabric.
 			"net.fabricmc.loader.impl.FabricLoaderImpl", Family.FABRIC,
+			"net.fabricmc.loader.FabricLoader", Family.FABRIC,
 			ForeignType.FML_LOADER.binary(Ecosystem.FORGE), Family.FORGE,
 			ForeignType.FML_LOADER.binary(Ecosystem.NEOFORGE), Family.NEOFORGE);
 

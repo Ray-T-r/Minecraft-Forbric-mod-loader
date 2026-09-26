@@ -23,6 +23,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -70,13 +72,16 @@ import net.forbric.api.ModCatalog;
 public final class KernelFabricEcosystem {
 	/**
 	 * The Fabric Loader API level the kernel implements. Vendored from the fabric-loader 0.19.3 API sources; the
-	 * shipped ecosystem requires {@code >=0.18.4}. This is NOT a claim that Fabric Loader is present — no
-	 * {@code net.fabricmc.loader.impl} class exists in this process.
+	 * shipped ecosystem requires {@code >=0.18.4}. This is NOT a claim that Fabric Loader is present — the only
+	 * {@code net.fabricmc.loader.impl} classes in this process are the slivers mods link against (see
+	 * {@code FabricLoaderInternals}), in front of the kernel's own loader.
 	 */
 	public static final String FABRIC_LOADER_API_LEVEL = "0.19.3";
 
 	private static final AtomicBoolean MAINS_RAN = new AtomicBoolean();
 	private static final AtomicBoolean CLIENTS_RAN = new AtomicBoolean();
+	/** The entrypoint keys whose phase has run, for {@link KernelFabricLoader#adoptFabricStorage}. */
+	private static final Set<String> PHASES_RAN = ConcurrentHashMap.newKeySet();
 
 	private static volatile KernelFabricLoader loader;
 
@@ -340,18 +345,40 @@ public final class KernelFabricEcosystem {
 	 * not touch game classes; the kernel does not enforce that, but it does run them at the correct point.
 	 */
 	public static void runPreLaunch() {
-		if (loader == null || !loader.hasEntrypoints("preLaunch")) return;
+		if (loader == null) return;
 
-		for (EntrypointContainer<PreLaunchEntrypoint> c
-				: loader.getEntrypointContainers("preLaunch", PreLaunchEntrypoint.class)) {
-			String id = c.getProvider().getMetadata().getId();
+		if (loader.hasEntrypoints("preLaunch")) {
+			for (EntrypointContainer<PreLaunchEntrypoint> c
+					: loader.getEntrypointContainers("preLaunch", PreLaunchEntrypoint.class)) {
+				String id = c.getProvider().getMetadata().getId();
 
-			try {
-				c.getEntrypoint().onPreLaunch();
-				ForbricLog.info("[Forbric/Fabric] preLaunch entrypoint of %s", id);
-			} catch (Throwable t) {
-				ForbricLog.error("[Forbric/Fabric] preLaunch entrypoint of " + id + " failed", t);
+				try {
+					c.getEntrypoint().onPreLaunch();
+					ForbricLog.info("[Forbric/Fabric] preLaunch entrypoint of %s", id);
+				} catch (Throwable t) {
+					ForbricLog.error("[Forbric/Fabric] preLaunch entrypoint of " + id + " failed", t);
+				}
 			}
+		}
+		PHASES_RAN.add("preLaunch");
+		// preLaunch is where Fabric mods edit Fabric Loader's own entrypoint index (Core Lib appends the entrypoint
+		// that flushes every SuperMartijn642 mod's registrations), and a mixin plugin may already have: take it back
+		// now, before the first phase that could run what was added.
+		adoptFabricStorage();
+	}
+
+	/**
+	 * Reads back Fabric Loader's internal entrypoint storage, if a mod has reached for it. Idempotent — an unchanged
+	 * storage changes nothing — and so called again before each later phase, in case one was edited in between.
+	 */
+	private static void adoptFabricStorage() {
+		KernelFabricLoader current = loader;
+		if (current == null) return;
+		try {
+			current.adoptFabricStorage(PHASES_RAN);
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Fabric] could not read back Fabric Loader's internal entrypoint storage — "
+					+ "entrypoints a mod added there will not run", t);
 		}
 	}
 
@@ -374,9 +401,12 @@ public final class KernelFabricEcosystem {
 	 */
 	public static boolean runMainEntrypoints() {
 		if (loader == null) return false;
+		adoptFabricStorage();
 		if (!MAINS_RAN.compareAndSet(false, true)) return false;
 
 		EnvType envType = loader.getEnvironmentType();
+		PHASES_RAN.add("main");
+		if (envType != EnvType.CLIENT) PHASES_RAN.add("server");
 		int main = invoke("main", ModInitializer.class, ModInitializer::onInitialize);
 
 		if (envType == EnvType.CLIENT) {
@@ -482,7 +512,9 @@ public final class KernelFabricEcosystem {
 
 	public static boolean runClientEntrypoints() {
 		if (loader == null || loader.getEnvironmentType() != EnvType.CLIENT) return false;
+		adoptFabricStorage();
 		if (!CLIENTS_RAN.compareAndSet(false, true)) return false;
+		PHASES_RAN.add("client");
 
 		int client = invoke("client", ClientModInitializer.class, ClientModInitializer::onInitializeClient);
 		ForbricLog.info("[Forbric/Fabric] invoked %d Fabric client entrypoint(s) (Minecraft.<init> window)", client);
