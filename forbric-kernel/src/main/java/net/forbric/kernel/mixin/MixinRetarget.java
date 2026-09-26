@@ -55,8 +55,9 @@ import org.objectweb.asm.tree.VarInsnNode;
  * whose {@code @At} member is absent from the stub but present in that delegate, has its selector rewritten to
  * the delegate, provided the handler does not depend on the stub's parameter list: {@code @At}-driven kinds
  * ({@code @Redirect}, {@code @WrapOperation}, {@code @ModifyArg(s)}, {@code @ModifyExpressionValue},
- * {@code @ModifyReturnValue}, {@code @ModifyConstant}, {@code @WrapWithCondition}), or an {@code @Inject} that
- * captures nothing or exactly the delegate's parameters; and every {@code @Local} sugar parameter must name a
+ * {@code @ModifyReturnValue}, {@code @ModifyConstant}, {@code @WrapWithCondition}) whose captures of the target's
+ * arguments, if any, the stub passes to the delegate in place (MixinStubRebind's rule, shared), or an {@code @Inject}
+ * that captures nothing or exactly the delegate's parameters; and every {@code @Local} sugar parameter must name a
  * type the delegate's own parameters carry (fabric-content-registries' {@code FuelValuesMixin} captures the
  * {@code HolderLookup.Provider} and {@code FeatureFlagSet} that only the stub has, so it is left alone).
  *
@@ -174,7 +175,7 @@ public final class MixinRetarget {
 			if (!MixinFit.containsMember(stub, atTarget) && MixinFit.containsMember(delegate, atTarget)) moved = true;
 		}
 		if (!moved) return null;
-		if (!handlerFits(handler, injector, delegate)) return null;
+		if (!handlerFits(handler, injector, owner, stub, delegate)) return null;
 
 		return new Rewrite(handler.name, Element.SELECTOR, selector, name + delegate.desc, "merge-added delegating stub");
 	}
@@ -358,8 +359,15 @@ public final class MixinRetarget {
 				|| op == Opcodes.BIPUSH || op == Opcodes.SIPUSH;
 	}
 
-	/** Whether {@code handler}'s signature survives the move from the stub's parameter list to the delegate's. */
-	static boolean handlerFits(MethodNode handler, AnnotationNode injector, MethodNode delegate) {
+	/**
+	 * Whether {@code handler}'s signature survives the move from the stub's parameter list to the delegate's.
+	 *
+	 * <p>An {@code @At}-driven handler used to pass on its kind alone, but Mixin lets every one of those kinds take a
+	 * prefix of the target's arguments after its own contract; torrential's {@code @ModifyReturnValue} on
+	 * {@code FuelValues.vanillaBurnTimes} takes all three of the stub's, which the delegate does not have. The rule is
+	 * MixinStubRebind's, so the two adapters and MixinFit (which asks MixinStubRebind) cannot disagree.
+	 */
+	static boolean handlerFits(MethodNode handler, AnnotationNode injector, ClassNode owner, MethodNode stub, MethodNode delegate) {
 		Type[] params = Type.getArgumentTypes(handler.desc);
 		Type[] delegateParams = Type.getArgumentTypes(delegate.desc);
 		List<Type> plain = new ArrayList<>();
@@ -374,7 +382,14 @@ public final class MixinRetarget {
 			}
 			plain.add(params[i]);
 		}
-		if (AT_DRIVEN.contains(injector.desc)) return true;
+		if (AT_DRIVEN.contains(injector.desc)) {
+			if (!MixinStubRebind.capturesGuarded()) return true;
+			int end = params.length;
+			for (int i = 0; i < params.length; i++) if (MixinStubRebind.annotated(handler, i)) { end = i; break; }
+			int own = MixinStubRebind.intrinsicArity(injector, params, end, delegate);
+			return own >= 0 && own <= end && MixinStubRebind.capturesSurvive(injector, params, own, end, stub,
+					own == end ? null : MixinStubRebind.delegation(owner, stub));
+		}
 		if (INJECT.equals(injector.desc)) {
 			if (!plain.isEmpty()) {
 				String last = plain.get(plain.size() - 1).getDescriptor();

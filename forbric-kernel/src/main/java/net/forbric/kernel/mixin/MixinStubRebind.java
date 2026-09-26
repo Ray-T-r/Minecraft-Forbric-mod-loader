@@ -56,20 +56,63 @@ import net.forbric.kernel.util.ForbricLog;
  *   <li>every {@code INVOKE}/{@code FIELD}/{@code NEW} anchor absent from the stub and present in the delegate
  *       ({@code HEAD}, {@code RETURN} and {@code TAIL} are equivalent on both: the stub returns what the delegate
  *       returns);</li>
- *   <li>{@code @Inject} capturing nothing or exactly the stub's arguments, no locals capture; the {@code @At}-driven
- *       kinds without trailing captures; a MixinExtras {@code @Local} only by a name the delegate's local variable
- *       table has in that type; no {@code @Share}, no {@code @Group}.</li>
+ *   <li>{@code @Inject} capturing nothing or exactly the stub's arguments, no locals capture; a MixinExtras
+ *       {@code @Local} only by a name the delegate's local variable table has in that type; no {@code @Share}, no
+ *       {@code @Group};</li>
+ *   <li>the {@code @At}-driven kinds only when every parameter past the injector's own contract — the value it
+ *       modifies, or the receiver and arguments of the call it replaces or wraps — is a capture of the stub's LEADING
+ *       arguments that the stub passes to the delegate at the same positions. Mixin lets any of these kinds take a
+ *       prefix of the target's arguments after its own, and the rule used to read every one of them as part of the
+ *       call: torrential's {@code @ModifyReturnValue} on {@code FuelValues.vanillaBurnTimes(Provider, FeatureFlagSet,
+ *       int)} captures all three, the stub feeds the first two into a {@code Builder}, and moving it to
+ *       {@code (Builder, int)} made MixinExtras reject the handler and the whole required mixin with it. It now
+ *       stays on the stub, where it binds; puzzleslib's {@code getDestroySpeed(float, BlockState)} still moves,
+ *       because the stub passes its {@code BlockState} straight through as the delegate's first argument. When the
+ *       contract's size cannot be told, nothing moves;</li>
+ *   <li>a {@code @ModifyVariable} only by one {@code name} (never {@code ordinal}/{@code index}, which count locals by
+ *       type across a body the carrier widened), at {@code LOAD}/{@code STORE} with no slice, when the stub has no
+ *       local of that name and the delegate's table has it in one slot of the handler's type, accessed while live more
+ *       times than the {@code @At}'s ordinal. torrential's Conduit Power mining bonus names {@code speed} in
+ *       {@code Player.getDestroySpeed}; the merged stub has no {@code speed}, the body is the overload the game calls,
+ *       and the bonus silently never applied. {@code -Dforbric.mixinStubRebind.modifyVariable=off} leaves these where
+ *       they are.</li>
  * </ul>
  * {@code -Dforbric.mixinStubRebind=off} leaves every selector as compiled.
  */
 public final class MixinStubRebind {
 	public static final String PROPERTY = "forbric.mixinStubRebind";
+	/** {@code -Dforbric.mixinStubRebind.modifyVariable=off}: no {@code @ModifyVariable} moves; everything else still does. */
+	public static final String MODIFY_VARIABLE_PROPERTY = "forbric.mixinStubRebind.modifyVariable";
+	/**
+	 * {@code -Dforbric.mixinStubRebind.captures=off}: the {@code @At}-driven kinds move (here and in MixinRetarget's R1)
+	 * as they did before trailing captures were told apart — an A/B switch; with it torrential's fuel hook fails again.
+	 */
+	public static final String CAPTURES_PROPERTY = "forbric.mixinStubRebind.captures";
 
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String CALLBACK_INFO = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
 	private static final String CALLBACK_INFO_RETURNABLE = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 	private static final String LOCAL = "Lcom/llamalad7/mixinextras/sugar/Local;";
 	private static final String GROUP = "Lorg/spongepowered/asm/mixin/injection/Group;";
+	private static final String MODIFY_VARIABLE = "Lorg/spongepowered/asm/mixin/injection/ModifyVariable;";
+	private static final String MODIFY_ARG = "Lorg/spongepowered/asm/mixin/injection/ModifyArg;";
+	private static final String MODIFY_ARGS = "Lorg/spongepowered/asm/mixin/injection/ModifyArgs;";
+	private static final String WRAP_OPERATION = "Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;";
+	private static final String OPERATION = "Lcom/llamalad7/mixinextras/injector/wrapoperation/Operation;";
+	/** Kinds whose own contract is ONE value: the one they modify, or {@code @ModifyArgs}' {@code Args}. */
+	private static final Set<String> ONE_VALUE = Set.of(
+			"Lcom/llamalad7/mixinextras/injector/ModifyReturnValue;",
+			"Lcom/llamalad7/mixinextras/injector/ModifyExpressionValue;",
+			"Lorg/spongepowered/asm/mixin/injection/ModifyConstant;",
+			MODIFY_VARIABLE,
+			MODIFY_ARGS);
+	/** Kinds whose own contract is the receiver and arguments of the access they replace or guard. */
+	private static final Set<String> CALL_SHAPED = Set.of(
+			"Lorg/spongepowered/asm/mixin/injection/Redirect;",
+			"Lcom/llamalad7/mixinextras/injector/WrapWithCondition;",
+			"Lcom/llamalad7/mixinextras/injector/v2/WrapWithCondition;",
+			WRAP_OPERATION);
+	private static final Set<String> LOCAL_POINTS = Set.of("LOAD", "STORE");
 	private static final Set<String> CALL_POINTS = Set.of("INVOKE", "INVOKE_ASSIGN", "INVOKE_STRING", "FIELD", "NEW");
 	private static final Set<String> EDGE_POINTS = Set.of("HEAD", "RETURN", "TAIL");
 
@@ -85,6 +128,14 @@ public final class MixinStubRebind {
 
 	static boolean enabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
+	}
+
+	static boolean modifyVariableEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(MODIFY_VARIABLE_PROPERTY, "on"));
+	}
+
+	static boolean capturesGuarded() {
+		return !"off".equalsIgnoreCase(System.getProperty(CAPTURES_PROPERTY, "on"));
 	}
 
 	/** Records which family's mod declared {@code mixinInternalName}; null when the config's owner is ambiguous. */
@@ -171,7 +222,9 @@ public final class MixinStubRebind {
 		AnnotationNode injector = MixinFit.injectorOf(handler);
 		if (injector == null) return null;
 		boolean inject = INJECT.equals(injector.desc);
-		if (!inject && !MixinRetarget.AT_DRIVEN.contains(injector.desc)) return null;
+		boolean variable = MODIFY_VARIABLE.equals(injector.desc);
+		if (variable && !modifyVariableEnabled()) return null;
+		if (!inject && !variable && !MixinRetarget.AT_DRIVEN.contains(injector.desc)) return null;
 		if (MixinFit.value(injector, "locals") != null || MixinFit.value(injector, "slice") != null) return null;
 		List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
 		if (selectors.size() != 1) return null;
@@ -185,12 +238,16 @@ public final class MixinStubRebind {
 
 		List<AnnotationNode> points = MixinFit.atNodes(injector);
 		if (points.isEmpty()) return null;
-		for (AnnotationNode at : points) {
-			String value = MixinFit.asString(MixinFit.value(at, "value"));
-			if (EDGE_POINTS.contains(value)) continue;
-			String member = MixinFit.asString(MixinFit.value(at, "target"));
-			if (!CALL_POINTS.contains(value) || member == null) return null;
-			if (MixinFit.containsMember(stub, member) || !MixinFit.containsMember(delegate, member)) return null;
+		if (variable) {
+			if (!namedLocalMoved(injector, handler, stub, delegate)) return null;
+		} else {
+			for (AnnotationNode at : points) {
+				String value = MixinFit.asString(MixinFit.value(at, "value"));
+				if (EDGE_POINTS.contains(value)) continue;
+				String member = MixinFit.asString(MixinFit.value(at, "target"));
+				if (!CALL_POINTS.contains(value) || member == null) return null;
+				if (MixinFit.containsMember(stub, member) || !MixinFit.containsMember(delegate, member)) return null;
+			}
 		}
 
 		Type[] params = Type.getArgumentTypes(handler.desc);
@@ -209,6 +266,10 @@ public final class MixinStubRebind {
 		} else {
 			plain = params.length;
 			for (int i = 0; i < params.length; i++) if (annotated(handler, i)) { plain = i; break; }
+			// Past the injector's own contract, un-annotated parameters are captures of the target's arguments: they
+			// must still be the delegate's, in the same places, carrying what the stub was handed.
+			int own = capturesGuarded() ? intrinsicArity(injector, params, plain, delegate) : plain;
+			if (own < 0 || own > plain || !capturesSurvive(injector, params, own, plain, stub, delegation)) return null;
 		}
 		for (int i = 0; i < plain; i++) if (annotated(handler, i)) return null;
 		for (int i = plain; i < params.length; i++) {
@@ -260,6 +321,150 @@ public final class MixinStubRebind {
 		handler.visibleParameterAnnotations = null;
 		handler.invisibleParameterAnnotations = null;
 		return outer;
+	}
+
+	/**
+	 * How many of an {@code @At}-driven handler's leading parameters its injector's own contract fills, before any
+	 * capture of the target method's arguments; -1 when that cannot be told. One for the value kinds; for
+	 * {@code @ModifyArg} one, or all of the call's arguments (this Mixin lets it capture nothing); for the call-shaped
+	 * kinds the receiver (when the access has one) and arguments of the access the {@code @At} names in {@code body},
+	 * plus the {@code Operation} of a {@code @WrapOperation}. {@code plain} is where the handler's annotated (sugar)
+	 * parameters begin.
+	 */
+	static int intrinsicArity(AnnotationNode injector, Type[] params, int plain, MethodNode body) {
+		if (injector == null) return -1;
+		if (ONE_VALUE.contains(injector.desc)) return plain >= 1 ? 1 : -1;
+		List<AnnotationNode> points = MixinFit.atNodes(injector);
+		if (points.size() != 1) return -1;
+		AnnotationNode at = points.getFirst();
+		String value = MixinFit.asString(MixinFit.value(at, "value"));
+		String target = MixinFit.asString(MixinFit.value(at, "target"));
+		if (MODIFY_ARG.equals(injector.desc)) {
+			if (plain == 1) return 1;
+			MixinFit.Member member = target == null ? null : MixinFit.parseMember(target);
+			if (member == null || member.desc() == null || !member.desc().startsWith("(")) return -1;
+			Type[] call = Type.getArgumentTypes(member.desc());
+			return call.length == plain && Arrays.equals(call, Arrays.copyOf(params, plain)) ? plain : -1;
+		}
+		if (!CALL_SHAPED.contains(injector.desc) || target == null || value == null) return -1;
+		int own = accessShape(value, target, at, body);
+		if (own < 0) return -1;
+		if (WRAP_OPERATION.equals(injector.desc)) {
+			if (own >= plain || !OPERATION.equals(params[own].getDescriptor())) return -1;
+			own++;
+		}
+		return own;
+	}
+
+	/** Receiver plus arguments of the access {@code target} names in {@code body}; -1 when absent or not one shape. */
+	private static int accessShape(String value, String target, AnnotationNode at, MethodNode body) {
+		if (body == null || body.instructions == null) return -1;
+		if ("NEW".equals(value)) {
+			if (!target.startsWith("(")) return -1;   // a class-name NEW: which constructor is not written down
+			try {
+				return Type.getArgumentTypes(target).length;
+			} catch (RuntimeException malformed) {
+				return -1;
+			}
+		}
+		MixinFit.Member member = MixinFit.parseMember(target);
+		if (member == null) return -1;
+		boolean field = "FIELD".equals(value);
+		if (field && MixinFit.value(at, "args") != null) return -1;   // array element access: another handler shape
+		if (!field && !CALL_POINTS.contains(value)) return -1;
+		int shape = -1;
+		for (AbstractInsnNode insn : body.instructions) {
+			int one;
+			if (!field && insn instanceof MethodInsnNode call) {
+				if (member.desc() == null || !call.name.equals(member.name()) || !call.desc.equals(member.desc())
+						|| member.owner() != null && !call.owner.equals(member.owner())) continue;
+				one = (call.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1) + Type.getArgumentTypes(call.desc).length;
+			} else if (field && insn instanceof FieldInsnNode access) {
+				if (!access.name.equals(member.name()) || member.desc() != null && !access.desc.equals(member.desc())
+						|| member.owner() != null && !access.owner.equals(member.owner())) continue;
+				one = switch (access.getOpcode()) {
+					case Opcodes.GETSTATIC -> 0;
+					case Opcodes.GETFIELD, Opcodes.PUTSTATIC -> 1;
+					default -> 2;   // PUTFIELD: the receiver and the value
+				};
+			} else {
+				continue;
+			}
+			if (shape >= 0 && shape != one) return -1;   // a read and a write of one field: no single handler shape
+			shape = one;
+		}
+		return shape;
+	}
+
+	/**
+	 * Whether the handler's parameters {@code own..plain} — captures of the target's leading arguments — bind to the
+	 * same values on the delegate: each is the stub's argument at that position, the stub passes it through as the
+	 * delegate's argument at the SAME position, and the delegate declares the same type there. {@code @ModifyArgs}
+	 * takes all of the target's arguments or none, and the move changes how many there are.
+	 */
+	static boolean capturesSurvive(AnnotationNode injector, Type[] params, int own, int plain, MethodNode stub, Delegation delegation) {
+		int captured = plain - own;
+		if (captured == 0) return true;
+		if (captured < 0 || MODIFY_ARGS.equals(injector.desc) || delegation == null) return false;
+		Type[] stubParams = Type.getArgumentTypes(stub.desc);
+		Type[] delegateParams = Type.getArgumentTypes(delegation.delegate().desc);
+		if (captured > stubParams.length || captured > delegateParams.length) return false;
+		for (int i = 0; i < captured; i++) {
+			if (!params[own + i].equals(stubParams[i]) || delegation.positions()[i] != i || !delegateParams[i].equals(stubParams[i])) return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Whether a {@code @ModifyVariable}'s one named local is in the delegate and not the stub, provably, and reached by
+	 * its {@code @At}: one name and no {@code ordinal}/{@code index}/{@code argsOnly} discriminator; the stub declares
+	 * no local of that name; every entry of that name in the delegate's table is one slot of the handler's type; and
+	 * the delegate loads or stores that slot, while the name is live, more times than the {@code @At}'s ordinal.
+	 */
+	private static boolean namedLocalMoved(AnnotationNode injector, MethodNode handler, MethodNode stub, MethodNode delegate) {
+		List<String> names = MixinFit.stringList(MixinFit.value(injector, "name"));
+		if (names.size() != 1 || MixinFit.value(injector, "index") != null || MixinFit.value(injector, "ordinal") != null
+				|| Boolean.TRUE.equals(MixinFit.value(injector, "argsOnly"))) return false;
+		Type[] params = Type.getArgumentTypes(handler.desc);
+		if (params.length == 0 || !params[0].equals(Type.getReturnType(handler.desc))) return false;
+		String name = names.getFirst();
+		if (stub.localVariables != null && stub.localVariables.stream().anyMatch(local -> local.name.equals(name))) return false;
+		if (delegate.localVariables == null) return false;
+		List<LocalVariableNode> entries = delegate.localVariables.stream().filter(local -> local.name.equals(name)).toList();
+		if (entries.isEmpty()) return false;
+		int slot = entries.getFirst().index;
+		for (LocalVariableNode entry : entries) if (entry.index != slot || !entry.desc.equals(params[0].getDescriptor())) return false;
+
+		List<AnnotationNode> points = MixinFit.atNodes(injector);
+		if (points.size() != 1) return false;
+		AnnotationNode at = points.getFirst();
+		String value = MixinFit.asString(MixinFit.value(at, "value"));
+		if (!LOCAL_POINTS.contains(value) || MixinFit.value(at, "slice") != null || MixinFit.value(at, "shift") != null
+				|| MixinFit.value(at, "target") != null) return false;
+		Object ordinal = MixinFit.value(at, "ordinal");
+		if (ordinal != null && !(ordinal instanceof Integer)) return false;
+		boolean store = "STORE".equals(value);
+		int opcode = params[0].getOpcode(store ? Opcodes.ISTORE : Opcodes.ILOAD);
+		int accesses = 0;
+		for (AbstractInsnNode insn : delegate.instructions) {
+			if (!(insn instanceof VarInsnNode access) || access.getOpcode() != opcode || access.var != slot) continue;
+			// A store starts the variable: the name is live from the next instruction, not at the store itself.
+			AbstractInsnNode live = insn;
+			if (store) {
+				live = insn.getNext();
+				while (live != null && live.getOpcode() < 0) live = live.getNext();
+			}
+			if (live == null) continue;
+			int where = delegate.instructions.indexOf(live);
+			for (LocalVariableNode entry : entries) {
+				if (delegate.instructions.indexOf(entry.start) <= where && where < delegate.instructions.indexOf(entry.end)) {
+					accesses++;
+					break;
+				}
+			}
+		}
+		int wanted = ordinal instanceof Integer n ? n : -1;
+		return wanted < 0 ? accesses > 0 : accesses > wanted;
 	}
 
 	static Set<String> carrierStubs() {
@@ -395,7 +600,7 @@ public final class MixinStubRebind {
 		return null;
 	}
 
-	private static boolean annotated(MethodNode handler, int parameter) {
+	static boolean annotated(MethodNode handler, int parameter) {
 		for (List<AnnotationNode>[] all : List.of(nonNull(handler.visibleParameterAnnotations), nonNull(handler.invisibleParameterAnnotations))) {
 			if (parameter < all.length && all[parameter] != null && !all[parameter].isEmpty()) return true;
 		}
