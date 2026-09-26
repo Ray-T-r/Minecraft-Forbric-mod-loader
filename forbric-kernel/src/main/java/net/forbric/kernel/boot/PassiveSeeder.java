@@ -418,7 +418,7 @@ public final class PassiveSeeder {
 		Set<String> seen = new LinkedHashSet<>();
 		if (!Files.isDirectory(modsDir)) return out;
 
-		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
+		ForbricModDiscoverer discoverer = MANIFESTS;
 		List<Path> jars;
 		try (var entries = Files.list(modsDir)) {
 			jars = entries.filter(p -> p.getFileName().toString().endsWith(".jar"))
@@ -457,6 +457,14 @@ public final class PassiveSeeder {
 		return out;
 	}
 
+	/**
+	 * The one discoverer the seeder's reads of {@code mods/} and of the nested jars go through, and that
+	 * {@link KernelModLoader#declaredMods} reads the same jars through later. A discoverer remembers what it has
+	 * parsed only for itself, so with one each the same jar was parsed again for every pass — and every parse logs
+	 * its {@code [modproperties]} line again, which reads like a second mod declaring them.
+	 */
+	static final ForbricModDiscoverer MANIFESTS = new ForbricModDiscoverer();
+
 	/** {@code -Dforbric.seedNestedMods=off} leaves the jar-in-jar Forge-family mods out of the seeded list again. */
 	static final String NESTED_SWITCH = "forbric.seedNestedMods";
 
@@ -489,7 +497,7 @@ public final class PassiveSeeder {
 			return out;
 		}
 
-		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
+		ForbricModDiscoverer discoverer = MANIFESTS;
 		DuplicateModArbiter.Decision dupes = DuplicateModArbiter.current();
 		for (Path jar : nestedJars) {
 			if (jar == null || dupes.suppressed(jar)) continue;

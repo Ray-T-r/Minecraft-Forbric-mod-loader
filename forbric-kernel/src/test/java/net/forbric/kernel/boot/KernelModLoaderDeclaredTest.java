@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -110,6 +111,22 @@ class KernelModLoaderDeclaredTest {
 		Path good = neoJar(tmp.resolve("good.jar"), "javafml", "good", "1.0", "");
 		Map<String, KernelModLoader.Declared> declared = KernelModLoader.declaredMods(List.of(broken, good));
 		assertEquals(List.of("good"), List.copyOf(declared.keySet()));
+	}
+
+	/**
+	 * The seeder has already parsed every jar this reads, nested ones included, and each parse logs the jar's
+	 * {@code [modproperties]} again — so this reads through the seeder's discoverer rather than parsing anew.
+	 */
+	@Test
+	void aJarTheSeederReadIsNotParsedAgain() throws Exception {
+		Path nested = neoJar(tmp.resolve("candidates/cd/libjf-translate-v1.jar"), "javafml", "libjf_translate_v1",
+				"26.2.2+forge", "");
+		List<net.forbric.api.DiscoveredMod> seeded =
+				PassiveSeeder.arbitratedNestedForgeFamilyMods(List.of(nested), new java.util.LinkedHashSet<>());
+		assertEquals(1, seeded.size());
+
+		assertSame(seeded.get(0), KernelModLoader.declaredMods(List.of(nested)).get("libjf_translate_v1").mod(),
+				"the seeder's parse, not a second one");
 	}
 
 	// --- fixtures ---

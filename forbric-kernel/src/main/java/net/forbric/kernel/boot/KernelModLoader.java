@@ -530,7 +530,8 @@ public final class KernelModLoader {
 	 */
 	static Map<String, Declared> declaredMods(List<Path> modJars) {
 		Map<String, Declared> out = new LinkedHashMap<>();
-		ForbricModDiscoverer discoverer = new ForbricModDiscoverer();
+		// The seeder's discoverer: it has already parsed these jars, so they are not parsed (or logged) again here.
+		ForbricModDiscoverer discoverer = PassiveSeeder.MANIFESTS;
 		for (Path jar : modJars) {
 			List<DiscoveredMod> mods;
 			try {
