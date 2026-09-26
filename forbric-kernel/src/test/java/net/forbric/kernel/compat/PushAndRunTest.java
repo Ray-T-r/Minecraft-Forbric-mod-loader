@@ -115,6 +115,38 @@ class PushAndRunTest {
     }
 
     @Test
+    void theJobInheritsNoStreamOfTheRemoteShellAndWritesItsOwnLogs() throws Exception {
+        // With -RedirectStandard* the job held the remote shell's output pipe, and the start command of every
+        // client run sat on it until the game exited — past the shell server's 300 s limit.
+        var result = python("""
+                import json, subprocess
+                commands = []
+                def remote(command):
+                    commands.append(command)
+                    if len(commands) == 1: return 'FORBRIC_PID=42\\nFORBRIC_STARTED=123'
+                    return json.dumps(dict(alive=False, result=dict(state='done', pid=42, returncode=0)))
+                m.remote = remote
+                m.time.sleep = lambda _: None
+                assert m.run_job(args, 'client', 'D:\\\\fixture-tools', output, 'run-client-test.py') == 0
+                assert 'RedirectStandard' not in commands[0], commands[0]
+                assert 'client.log' in commands[0] and 'client-stderr.log' in commands[0], commands[0]
+
+                tools = output / 'tools'; tools.mkdir()
+                (tools / 'job.py').write_text(m.JOB)
+                (tools / 'common.py').write_text((pathlib.Path(sys.argv[1]).parent / 'win' / 'common.py').read_text())
+                (tools / 'driver.py').write_text('import sys\\nprint("driver out")\\nprint("driver err", file=sys.stderr)\\n')
+                status, out, err = output / 'status.json', output / 'out.log', output / 'err.log'
+                ran = subprocess.run([sys.executable, str(tools / 'job.py'), str(status), str(output / 'instance'),
+                                      str(out), str(err), str(tools / 'driver.py')], capture_output=True, text=True, timeout=60)
+                assert ran.returncode == 0 and ran.stdout == '' and ran.stderr == '', ran
+                assert out.read_text() == 'driver out\\n', out.read_text()
+                assert err.read_text() == 'driver err\\n', err.read_text()
+                assert json.loads(status.read_text())['returncode'] == 0
+                """);
+        assertEquals(0, result.exit(), result.output());
+    }
+
+    @Test
     void aJobPublishedByAProcessWeDidNotStartIsNamedAtOnceAndNeverRetried() throws Exception {
         // A launcher shim re-executes a different interpreter, so the driver publishes ITS pid. Retrying that as
         // if it were transport flakiness reported a server test that had returned 0 as a FAIL, 15 minutes late.

@@ -120,10 +120,15 @@ def mod_files(directory):
     return files
 
 
-# The long process owns its status file. Polling never starts a replacement job.
+# The long process owns its status file. Polling never starts a replacement job. It also owns its two log files:
+# Start-Process with -RedirectStandard* creates the child with inherited handles, so the job held the remote shell's
+# own output pipe and the start command could not return until the game exited — past the shell server's 300 s
+# limit for every client run. Started without redirection, nothing of the shell is inherited.
 JOB = '''import json, os, pathlib, subprocess, sys, time, traceback
 from common import own_driver
-status, instance, *command = sys.argv[1:]
+status, instance, out_log, err_log, *command = sys.argv[1:]
+sys.stdout = open(out_log, 'w', encoding='utf-8', buffering=1)
+sys.stderr = open(err_log, 'w', encoding='utf-8', buffering=1)
 path = pathlib.Path(status)
 started_ns = time.time_ns()
 def publish(state, **fields):
@@ -133,7 +138,7 @@ def publish(state, **fields):
 with own_driver(dict(pid_file=str(pathlib.Path(instance) / '.forbric-sweep.pid'))):
     publish('running')
     try:
-        result = subprocess.run([sys.executable, *command])
+        result = subprocess.run([sys.executable, *command], stdin=subprocess.DEVNULL, stdout=sys.stdout, stderr=sys.stderr)
         publish('done', returncode=result.returncode)
     except BaseException:
         publish('done', returncode=2, error=traceback.format_exc())
@@ -163,6 +168,7 @@ def run_job(args, stage, remote_tools, output, driver, extra=()):
     run_dir = ntpath.join(args.instance, '.forbric-compat', args.label)
     status = ntpath.join(run_dir, stage + '-status.json')
     command = [ntpath.join(remote_tools, 'job.py'), status, args.instance,
+               ntpath.join(run_dir, stage + '.log'), ntpath.join(run_dir, stage + '-stderr.log'),
                ntpath.join(remote_tools, driver), '--mc', args.mc, '--version', args.version,
                '--instance', args.instance, '--world', args.world]
     if getattr(args, 'java', None):
@@ -172,9 +178,7 @@ def run_job(args, stage, remote_tools, output, driver, extra=()):
     argument_line = subprocess.list2cmdline(command)
     start = (f'Remove-Item -LiteralPath {ps(status)} -Force -ErrorAction SilentlyContinue; '
              f'$job = Start-Process -FilePath {ps(args.python)} -ArgumentList {ps(argument_line)} '
-             f'-WorkingDirectory {ps(remote_tools)} -PassThru '
-             f'-RedirectStandardOutput {ps(ntpath.join(run_dir, stage + ".log"))} '
-             f'-RedirectStandardError {ps(ntpath.join(run_dir, stage + "-stderr.log"))}; '
+             f'-WorkingDirectory {ps(remote_tools)} -PassThru -WindowStyle Hidden; '
              "Write-Output ('FORBRIC_PID=' + $job.Id); "
              "Write-Output ('FORBRIC_STARTED=' + $job.StartTime.ToUniversalTime().Ticks)")
     handle = dict(status=status, driver=driver)

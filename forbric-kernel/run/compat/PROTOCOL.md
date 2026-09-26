@@ -100,7 +100,9 @@ jar before treating the selection as final; metadata resolution alone cannot pro
    100, and requires a clean disconnect. Both launchers resolve the installed version
    JSON rather than a developer classpath. `win/common.py` owns shared arguments,
    PID recording, launch resolution, frame inspection, and F2 fallback.
-7. Long jobs run with `Start-Process` and a saved PID/status handle. Poll that same
+7. Long jobs run with `Start-Process` (no stream redirection: the job writes its own
+   logs, so it inherits nothing of the remote shell and the start returns at once)
+   and a saved PID/status handle. Poll that same
    handle; an observation timeout is not a terminal job and never authorizes starting
    another copy. Re-inspect the handle after a connection interruption. Each remote
    command remains below 240 seconds even when the game takes tens of minutes.
