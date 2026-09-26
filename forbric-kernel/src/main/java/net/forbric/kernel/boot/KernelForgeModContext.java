@@ -89,6 +89,15 @@ public final class KernelForgeModContext {
 		return (Handle) call(cl, "create", String.class).invoke(null, modId);
 	}
 
+	/**
+	 * MinecraftForge's own {@code LowCodeModContainer} for a {@code lowcodefml} mod — the container MinecraftForge
+	 * builds for a mod that has no class at all. No bus group and no loading context: nothing is constructed and
+	 * nothing is posted to it, exactly as on MinecraftForge.
+	 */
+	public static Object lowCode(ClassLoader cl, String modId, java.nio.file.Path jar) throws Exception {
+		return call(cl, "lowCode", String.class, java.nio.file.Path.class).invoke(null, modId, jar);
+	}
+
 	/** Makes {@code container} the active {@code ModLoadingContext} (what {@code *.get()} reads). */
 	public static void setActiveContainer(ClassLoader cl, Object container) throws Exception {
 		call(cl, "setActiveContainer", Object.class).invoke(null, container);

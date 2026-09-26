@@ -33,6 +33,7 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.IModBusEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.javafmlmod.FMLModContainer;
+import net.minecraftforge.fml.lowcodemod.LowCodeModContainer;
 import net.minecraftforge.unsafe.UnsafeHacks;
 
 /**
@@ -95,6 +96,21 @@ public final class KernelForgeContainers {
 		usetIfPresent(ModContainer.class, "modInfo", container, new KernelForgeModInfo(modId));
 
 		return new Handle(modId, busGroup, container, jctx);
+	}
+
+	/**
+	 * The container MinecraftForge's {@code LowCodeModLanguageProvider} builds for a {@code lowcodefml} mod, built
+	 * through its own public constructor.
+	 *
+	 * <p>Unlike {@link #create} nothing here has to be allocated around a constructor: this one takes only the mod's
+	 * info, and ignores its scan data and module layer — which is also why it is safe to hand it neither. It has
+	 * no bus group, as on MinecraftForge; the constructor itself drops the display test a data-only mod has no use
+	 * for.
+	 *
+	 * @param jar the mod's own jar, which its info's owning file is read from
+	 */
+	public static Object lowCode(String modId, java.nio.file.Path jar) {
+		return new LowCodeModContainer(new KernelForgeModInfo(modId, jar), null, null);
 	}
 
 	/**

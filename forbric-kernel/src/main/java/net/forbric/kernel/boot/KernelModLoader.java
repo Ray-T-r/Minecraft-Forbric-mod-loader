@@ -124,6 +124,13 @@ public final class KernelModLoader {
 
 	private static volatile Map<String, KernelForgeModContext.Handle> publishedForge = Map.of();
 
+	/**
+	 * MinecraftForge low-code mods' {@code LowCodeModContainer}s, by id. Not handles: such a container has no bus
+	 * group and no loading context, so nothing that walks {@link #publishedForgeMods()} has anything to do with
+	 * one — but every write of MinecraftForge's {@code ModList} carries them, because that write REPLACES.
+	 */
+	private static volatile Map<String, Object> lowCodeForge = Map.of();
+
 	/** Scans + constructs every {@code @Mod} in {@code modJars}. Best-effort per mod. */
 	public static List<ConstructedMod> constructMods(ClassLoader cl, List<Path> modJars, Side side) {
 		// Phase 1 — scan and ARBITRATE everything first, so the full NeoForge mod set is known before any mod's
@@ -260,6 +267,30 @@ public final class KernelModLoader {
 		Map<String, KernelForgeModContext.Handle> forge;
 		if (KernelForgeModContext.available(cl)) {
 			forge = buildForgeHandles(claimed, modId -> KernelForgeModContext.create(cl, modId));
+			// The MinecraftForge twin of the declared-only NeoForge mods above, narrower because its loader is:
+			// MinecraftForge builds a container for a mod with no @Mod class only under lowcodefml (a
+			// LowCodeModContainer, no bus), and a javafml one is its own load error ("missingclasses"), which must
+			// not be papered over with a container here. Dungeons and Taverns ships exactly that low-code shape and
+			// is in native MinecraftForge's ModList; here it was in none.
+			Set<String> forgeTaken = new LinkedHashSet<>(taken);
+			forgeTaken.addAll(forge.keySet());
+			forgeTaken.addAll(classless.keySet());
+			Map<String, Object> lowCode = new LinkedHashMap<>();
+			for (Declared entry : declaredWithoutClass(declared, forgeTaken, Ecosystem.FORGE)) {
+				String modId = entry.mod().getId();
+				try {
+					lowCode.put(modId, KernelForgeModContext.lowCode(cl, modId, entry.jar()));
+				} catch (Throwable t) {
+					ForbricLog.warn("[Forbric/ModLoader] could not build a LowCodeModContainer for MinecraftForge mod "
+							+ modId, Reflect.unwrap(t));
+				}
+			}
+			if (!lowCode.isEmpty()) {
+				ForbricLog.info("[Forbric/ModLoader] %d MinecraftForge low-code mod(s) now have the "
+						+ "LowCodeModContainer MinecraftForge gives them (-D%s=off to go back): %s", lowCode.size(),
+						CLASSLESS_SWITCH, lowCode.keySet());
+			}
+			lowCodeForge = java.util.Collections.unmodifiableMap(lowCode);
 		} else {
 			forge = new LinkedHashMap<>();
 			for (ModAnnotationScanner.ModClassInfo info : claimed) {
@@ -570,12 +601,21 @@ public final class KernelModLoader {
 		}
 	}
 
-	/** Whether {@code family}'s own loader builds a container for a class-less mod written in {@code language}. */
+	/**
+	 * Whether {@code family}'s own loader builds a container for a class-less mod written in {@code language}.
+	 *
+	 * <p>The two families differ, and each is read off its own carrier. NeoForge's FancyModLoader builds an
+	 * {@code FMLModContainer} for every mod of a {@code javafml} file and routes {@code lowcodefml} to the same
+	 * provider. MinecraftForge's {@code ModLoader.buildMods} gives a {@code javafml} mod with no {@code @Mod} class
+	 * the {@code fml.modloading.missingclasses} error instead, and only its {@code LowCodeModLanguageProvider}
+	 * builds a container — a {@code LowCodeModContainer} — for a mod with no class at all.
+	 */
 	static boolean getsAContainer(Ecosystem family, String language) {
 		if (language == null) return false;
 		if (family == Ecosystem.NEOFORGE) {
 			return LanguageProviders.JAVA.equals(language) || LanguageProviders.LOW_CODE.equals(language);
 		}
+		if (family == Ecosystem.FORGE) return LanguageProviders.LOW_CODE.equals(language);
 		return false;
 	}
 
@@ -701,29 +741,49 @@ public final class KernelModLoader {
 					+ "construction will now FAIL, not merely get \"absent\" from a later lookup");
 			return;
 		}
-		if (!allowEmpty && forge.isEmpty()) return;
+		Map<String, Object> lowCode = lowCodeForge;
+		if (!allowEmpty && forge.isEmpty() && lowCode.isEmpty()) return;
 		try {
 			Class<?> modListCls = Class.forName(ForeignType.MOD_LIST.binary(Ecosystem.FORGE), false, cl);
 			Class<?> containerCls = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.FORGE), false, cl);
-			List<Object> containers = new ArrayList<>();
-			for (KernelForgeModContext.Handle handle : forge.values()) {
-				if (containerCls.isInstance(handle.container())) containers.add(handle.container());
-			}
+			List<Object> containers = forgeListContents(forge.values(), lowCode.values(), containerCls::isInstance);
 			Method setLoadedMods = modListCls.getDeclaredMethod("setLoadedMods", List.class);
 			boolean wrote = publishForgeContainers(containers, allowEmpty, list -> {
 				setLoadedMods.setAccessible(true);
 				setLoadedMods.invoke(null, list); // static on MinecraftForge; NeoForge's twin is an instance method
 			});
 			if (!wrote) return;
+			Set<String> ids = new LinkedHashSet<>(forge.keySet());
+			ids.addAll(lowCode.keySet());
 			ForbricLog.info("[Forbric/ModLoader] published %d MinecraftForge mod(s) into its ModList %s — its own "
 					+ "isLoaded/getModContainerById answered \"absent\" for every one of them until now",
-					containers.size(), forge.keySet());
+					containers.size(), ids);
 		} catch (ClassNotFoundException absent) {
 			ForbricLog.debug("[Forbric/ModLoader] traditional-Forge ModList not present — nothing to publish");
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/ModLoader] could not publish into MinecraftForge's ModList — a Forge mod asking "
 					+ "whether another is loaded still gets no", Reflect.unwrap(t));
 		}
+	}
+
+	/**
+	 * What MinecraftForge's {@code ModList} is written with: each handle's container, then each low-code
+	 * container.
+	 *
+	 * <p>The low-code ones ride along on EVERY write, not only the first. {@code setLoadedMods} replaces the list,
+	 * and it is written three times in a boot — at publication, after a constructor throws, and after the deferred
+	 * client constructors — so a container added once would be dropped by whichever write came next.
+	 */
+	static List<Object> forgeListContents(java.util.Collection<KernelForgeModContext.Handle> handles,
+			java.util.Collection<Object> lowCode, java.util.function.Predicate<Object> isContainer) {
+		List<Object> containers = new ArrayList<>();
+		for (KernelForgeModContext.Handle handle : handles) {
+			if (isContainer.test(handle.container())) containers.add(handle.container());
+		}
+		for (Object container : lowCode) {
+			if (isContainer.test(container)) containers.add(container);
+		}
+		return containers;
 	}
 
 	/** Writes the container list into MinecraftForge's ModList. Split out so a test can drive the decision. */

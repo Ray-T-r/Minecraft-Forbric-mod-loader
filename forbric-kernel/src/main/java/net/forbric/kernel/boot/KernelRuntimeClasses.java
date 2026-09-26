@@ -110,6 +110,7 @@ public final class KernelRuntimeClasses {
 						Object.class))));
 		CLASSES.put("net.forbric.kernel.runtime.KernelForgeContainers", new Entry(Origin.COMPILED, List.of(
 				new Call("create", KernelForgeModContext.Handle.class, String.class),
+				new Call("lowCode", Object.class, String.class, Path.class),
 				new Call("setActiveContainer", void.class, Object.class),
 				new Call("constructMod", Object.class, String.class, KernelForgeModContext.Handle.class),
 				new Call("startup", void.class, Object.class))));
