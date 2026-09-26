@@ -30,7 +30,8 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Moves a Fabric mod's injector off a merge-added delegating stub onto the method that carries the body.
+ * Moves a mod's injector off a merge-added delegating stub onto the method that carries the body, when the mod was
+ * compiled against a class where that signature was the body.
  *
  * <p>Mixin binds a selector without a descriptor to the FIRST declared method of that name (the selector's default
  * quantifier is one match; {@code TargetSelectors} stops there), and one with a descriptor to exactly that method. A
@@ -48,8 +49,14 @@ import net.forbric.kernel.util.ForbricLog;
  *   <li>only along a row of {@code carrier-stubs.txt}: the stub's signature is vanilla's and the overload is the
  *       carrier's. Vanilla keeps stub-and-overload pairs of its own ({@code Minecraft.disconnect(Screen, boolean)}
  *       forwarding to the three-argument one) and a mod that chose the short one there meant it;</li>
- *   <li>only mixins from Fabric mods — a NeoForge or MinecraftForge mod was compiled against the stub-first shape and
- *       gets what it would get natively;</li>
+ *   <li>only for a mod whose own platform ran that selector on code. A Fabric mod was compiled against vanilla, so
+ *       it moves along every row. A MinecraftForge or NeoForge mod moves only where its carrier's own patched class
+ *       has vanilla's signature as the body (or, for a name-only selector, only the widened overload) — the row's
+ *       {@code forge=}/{@code neo=} column. Most rows are NeoForge's stubs over a signature MinecraftForge kept as the
+ *       body: fusion's sprite capture on {@code ModelManager.loadModels} sat on the forwarding stub nothing calls,
+ *       its static stayed null, and every block and item model on the client failed to bake. A mod whose carrier
+ *       keeps the same stub itself (NeoForge mods on NeoForge's stubs) gets what it would get natively.
+ *       {@code -Dforbric.mixinStubRebind.forgeFamily=off} moves Fabric mods' injectors only, as before;</li>
  *   <li>only a PURE stub: loads, constants, static fields, zero-argument static factories, non-capturing lambdas and
  *       method references (a constant, like a static field — NeoForge's {@code Language.loadFromJson(InputStream,
  *       BiConsumer)} passes a no-op component consumer) and argument construction, then one call to a same-name
@@ -99,6 +106,8 @@ public final class MixinStubRebind {
 	public static final String SUGAR_BOUNDARY_PROPERTY = "forbric.mixinStubRebind.sugarBoundary";
 	/** {@code -Dforbric.mixinStubRebind.stubFinding=off}: a handler its captures keep on a stub is not reported. */
 	public static final String STUB_FINDING_PROPERTY = "forbric.mixinStubRebind.stubFinding";
+	/** {@code -Dforbric.mixinStubRebind.forgeFamily=off}: only Fabric mods' injectors move, as before the carrier columns. */
+	public static final String FORGE_FAMILY_PROPERTY = "forbric.mixinStubRebind.forgeFamily";
 
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String CALLBACK_INFO = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
@@ -129,7 +138,8 @@ public final class MixinStubRebind {
 
 	/** The shipped table of carrier-added stubs; CarrierStubCensusTest pins it to the staged artifacts. */
 	static final String TABLE = "/net/forbric/kernel/mixin/carrier-stubs.txt";
-	private static volatile Set<String> carrierStubs;
+	/** {@code owner#stubNameDesc -> delegateDesc} → what each Forge family was compiled against there. */
+	private static volatile Map<String, Row> carrierStubs;
 
 	/** Mixin class (internal name) → the ecosystem of the mod whose config declares it; filled as configs are read. */
 	private static final Map<String, Ecosystem> ECOSYSTEMS = new ConcurrentHashMap<>();
@@ -149,6 +159,10 @@ public final class MixinStubRebind {
 
 	static boolean capturesGuarded() {
 		return !"off".equalsIgnoreCase(System.getProperty(CAPTURES_PROPERTY, "on"));
+	}
+
+	static boolean forgeFamilyEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(FORGE_FAMILY_PROPERTY, "on"));
 	}
 
 	/** Records which family's mod declared {@code mixinInternalName}; null when the config's owner is ambiguous. */
@@ -173,10 +187,11 @@ public final class MixinStubRebind {
 		CONFIGS.clear();
 	}
 
-	/** Moves every eligible injector of a Fabric mod's {@code mixin}; returns how many. {@code targets} must return nodes WITH code. */
+	/** Moves every eligible injector of {@code mixin}; returns how many. {@code targets} must return nodes WITH code. */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
 		if (!enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
-		if (ECOSYSTEMS.get(mixin.name) != Ecosystem.FABRIC) return 0;
+		Ecosystem ecosystem = ECOSYSTEMS.get(mixin.name);
+		if (ecosystem == null) return 0;   // no known owner: nothing says what it was compiled against
 		List<String> targetNames = MixinOverloadPin.targetsOf(mixin);
 		if (targetNames.size() != 1) return 0;   // one target: a selector means one method
 		ClassNode target = targets.apply(targetNames.getFirst());
@@ -184,7 +199,7 @@ public final class MixinStubRebind {
 		int moved = 0;
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
 			if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX)) continue;
-			MethodNode outer = move(mixin, handler, target);
+			MethodNode outer = move(mixin, handler, target, ecosystem);
 			if (outer == null) continue;
 			if (outer != handler) mixin.methods.add(outer);
 			moved++;
@@ -193,13 +208,14 @@ public final class MixinStubRebind {
 	}
 
 	/**
-	 * The body a Fabric mod's injector bound to a carrier stub will move to, or null when it will not move: every check
+	 * The body an injector bound to a carrier stub will move to, or null when it will not move: every check
 	 * {@link #adapt} makes, and nothing changed. MixinFit asks this so its verdict and the rebind cannot disagree.
 	 */
 	public static MethodNode destination(String mixinInternalName, MethodNode handler, ClassNode target) {
 		if (!enabled() || handler == null || target == null || target.methods == null) return null;
-		if (ECOSYSTEMS.get(mixinInternalName) != Ecosystem.FABRIC) return null;
-		Plan plan = plan(handler, target, null);
+		Ecosystem ecosystem = ECOSYSTEMS.get(mixinInternalName);
+		if (ecosystem == null) return null;
+		Plan plan = plan(handler, target, ecosystem, null);
 		return plan == null ? null : plan.delegation().delegate();
 	}
 
@@ -207,7 +223,7 @@ public final class MixinStubRebind {
 	public static boolean isCarrierStub(ClassNode target, MethodNode method) {
 		if (target == null || method == null) return false;
 		String head = target.name + "#" + method.name + method.desc + " -> ";
-		for (String row : carrierStubs()) if (row.startsWith(head)) return true;
+		for (String row : carrierStubs().keySet()) if (row.startsWith(head)) return true;
 		return false;
 	}
 
@@ -216,8 +232,9 @@ public final class MixinStubRebind {
 	}
 
 	/** The handler to carry the injector after the move (the same one, or a new outer), or null when nothing moves. */
-	private static MethodNode move(ClassNode mixin, MethodNode handler, ClassNode target) {
-		Plan plan = plan(handler, target, (stub, delegate) -> staysOnStub(mixin, handler, target, stub, delegate));
+	private static MethodNode move(ClassNode mixin, MethodNode handler, ClassNode target, Ecosystem ecosystem) {
+		Plan plan = plan(handler, target, ecosystem,
+				(stub, delegate) -> staysOnStub(mixin, handler, target, stub, delegate));
 		if (plan == null) return null;
 		AnnotationNode injector = plan.injector();
 		MethodNode stub = plan.stub();
@@ -234,8 +251,10 @@ public final class MixinStubRebind {
 			if ("method".equals(injector.values.get(i))) injector.values.set(i + 1, new ArrayList<>(List.of(selector)));
 		}
 		ForbricLog.info("[Forbric/Mixin] %s: %s now targets %s.%s%s — Mixin bound its selector to the merge-added stub %s, "
-				+ "which only forwards to it%s", mixin.name.replace('/', '.'), handler.name, target.name.replace('/', '.'),
-				delegate.name, delegate.desc, stub.desc, captures ? "; the handler still receives the stub's arguments" : "");
+				+ "which only forwards to it%s%s", mixin.name.replace('/', '.'), handler.name, target.name.replace('/', '.'),
+				delegate.name, delegate.desc, stub.desc, captures ? "; the handler still receives the stub's arguments" : "",
+				ecosystem == Ecosystem.FABRIC ? "" : "; a " + ecosystem.displayName() + " mod, and " + ecosystem.displayName()
+						+ "'s own class runs that selector on the body");
 		return carrier;
 	}
 
@@ -243,7 +262,8 @@ public final class MixinStubRebind {
 	 * @param capturesLost told {@code (stub, delegate)} when the handler would have moved but for its trailing captures
 	 *                     of the stub's arguments; {@code null} when the caller only wants the answer
 	 */
-	private static Plan plan(MethodNode handler, ClassNode target, BiConsumer<MethodNode, MethodNode> capturesLost) {
+	private static Plan plan(MethodNode handler, ClassNode target, Ecosystem ecosystem,
+			BiConsumer<MethodNode, MethodNode> capturesLost) {
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
 		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
@@ -263,7 +283,10 @@ public final class MixinStubRebind {
 		if (delegation == null) return null;
 		MethodNode delegate = delegation.delegate();
 		// Only where the carrier added the overload: when vanilla has both, a Fabric mod that chose the short one meant it.
-		if (!carrierStubs().contains(target.name + "#" + stub.name + stub.desc + " -> " + delegate.desc)) return null;
+		Row row = carrierStubs().get(target.name + "#" + stub.name + stub.desc + " -> " + delegate.desc);
+		// And only where the mod's own platform ran this selector on code: a NeoForge mod on NeoForge's stub was
+		// compiled against the stub and gets exactly that.
+		if (row == null || !row.moves(ecosystem, selectorDescriptor(selectors.getFirst()) == null)) return null;
 
 		List<AnnotationNode> points = MixinFit.atNodes(injector);
 		if (points.isEmpty()) return null;
@@ -531,33 +554,128 @@ public final class MixinStubRebind {
 		return wanted < 0 ? accesses > 0 : accesses > wanted;
 	}
 
-	static Set<String> carrierStubs() {
-		Set<String> rows = carrierStubs;
+	/**
+	 * What a mod of one Forge family was compiled against where a row's stub now stands: how that carrier's OWN patched
+	 * class binds the two selectors that land on the merged stub — vanilla's name alone, and vanilla's descriptor.
+	 * CarrierStubCensusTest reads it off patched-mc-forge and patched-mc-neoforge with {@link #of}.
+	 */
+	enum Shape {
+		/** Vanilla's signature is a body there, the first of its name: both selectors ran on code. */
+		BODY("body", true, true),
+		/** A body, but another overload of that name is declared before it: only the descriptor ran on code. */
+		DESCRIPTOR_BODY("descriptor-body", false, true),
+		/**
+		 * Vanilla's signature is gone there and the widened overload, first of its name, is a body: only the name ran on
+		 * code. MinecraftForge widened {@code ServerExplosion.hurtEntities} and kept no stub; NeoForge kept one.
+		 */
+		OVERLOAD_BODY("overload-body", true, false),
+		/** The carrier keeps a forwarding stub there itself: the mod was compiled against the stub-first shape. */
+		STUB("stub", false, false),
+		/** Nothing there a selector of vanilla's could have landed on. */
+		ABSENT("absent", false, false);
+
+		final String token;
+		private final boolean byName, byDescriptor;
+
+		Shape(String token, boolean byName, boolean byDescriptor) {
+			this.token = token;
+			this.byName = byName;
+			this.byDescriptor = byDescriptor;
+		}
+
+		/** Whether a selector of that form ran on code on this platform. */
+		boolean ranOnCode(boolean byName) {
+			return byName ? this.byName : byDescriptor;
+		}
+
+		static Shape parse(String token) {
+			for (Shape shape : values()) if (shape.token.equals(token)) return shape;
+			return null;
+		}
+
+		/** How {@code platform} (a carrier's own patched class, with code) holds vanilla's {@code name+stubDesc}. */
+		static Shape of(ClassNode platform, String name, String stubDesc, String delegateDesc) {
+			if (platform == null || platform.methods == null) return ABSENT;
+			MethodNode first = null, stub = null, overload = null;
+			for (MethodNode m : platform.methods) {
+				if (!m.name.equals(name)) continue;
+				if (first == null) first = m;
+				if (m.desc.equals(stubDesc)) stub = m;
+				if (m.desc.equals(delegateDesc)) overload = m;
+			}
+			if (stub != null) {
+				if (stub.instructions == null || stub.instructions.size() == 0) return ABSENT;   // abstract: nothing ran there
+				if (delegation(platform, stub) != null) return STUB;
+				return first == stub ? BODY : DESCRIPTOR_BODY;
+			}
+			if (overload != null && first == overload && overload.instructions != null && overload.instructions.size() > 0) {
+				return delegation(platform, overload) != null ? STUB : OVERLOAD_BODY;
+			}
+			return ABSENT;
+		}
+	}
+
+	/** One row's columns: what a MinecraftForge and a NeoForge mod were compiled against at that stub. */
+	record Row(Shape forge, Shape neo) {
+		/** Whether a mod of {@code ecosystem} with a name-only ({@code byName}) or descriptor selector moves along this row. */
+		boolean moves(Ecosystem ecosystem, boolean byName) {
+			if (ecosystem == Ecosystem.FABRIC) return true;   // compiled against vanilla, where the row's signature is the body
+			if (!forgeFamilyEnabled()) return false;
+			Shape shape = ecosystem == Ecosystem.FORGE ? forge : ecosystem == Ecosystem.NEOFORGE ? neo : null;
+			return shape != null && shape.ranOnCode(byName);
+		}
+	}
+
+	/** The rows by {@code owner#stubNameDesc -> delegateDesc}; a row without columns moves Fabric mods only. */
+	static Map<String, Row> carrierStubs() {
+		Map<String, Row> rows = carrierStubs;
 		if (rows != null) return rows;
-		Set<String> loaded = new java.util.HashSet<>();
+		Map<String, Row> loaded = new java.util.HashMap<>();
 		try (java.io.InputStream in = MixinStubRebind.class.getResourceAsStream(TABLE)) {
 			if (in != null) {
 				for (String line : new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n")) {
-					if (!line.isBlank() && !line.startsWith("#")) loaded.add(line.trim());
+					if (line.isBlank() || line.startsWith("#")) continue;
+					String[] parts = line.trim().split(" ");
+					if (parts.length < 3 || !"->".equals(parts[1])) continue;
+					Shape forge = Shape.STUB, neo = Shape.STUB;
+					for (int i = 3; i < parts.length; i++) {
+						if (parts[i].startsWith("forge=")) forge = java.util.Objects.requireNonNullElse(Shape.parse(parts[i].substring(6)), Shape.STUB);
+						if (parts[i].startsWith("neo=")) neo = java.util.Objects.requireNonNullElse(Shape.parse(parts[i].substring(4)), Shape.STUB);
+					}
+					loaded.put(parts[0] + " -> " + parts[2], new Row(forge, neo));
 				}
 			}
 		} catch (java.io.IOException unreadable) {
 			ForbricLog.warn("[Forbric/Mixin] could not read %s; no injector moves off a stub", TABLE);
 		}
-		carrierStubs = Set.copyOf(loaded);
+		carrierStubs = Map.copyOf(loaded);
 		return carrierStubs;
 	}
 
 	/** The target method Mixin binds {@code selector} to: the first declared of that name, or the one with that descriptor. */
 	static MethodNode bound(ClassNode target, String selector) {
-		String s = selector.trim();
-		if (s.indexOf('*') >= 0 || s.startsWith("/") || s.indexOf(' ') >= 0 || s.indexOf('=') >= 0) return null;
-		int semi = s.indexOf(';');
-		if (s.startsWith("L") && semi > 0) s = s.substring(semi + 1);
+		String s = plainSelector(selector);
+		if (s == null) return null;
 		int paren = s.indexOf('(');
 		String name = paren < 0 ? s : s.substring(0, paren), desc = paren < 0 ? null : s.substring(paren);
 		for (MethodNode m : target.methods) if (m.name.equals(name) && (desc == null || m.desc.equals(desc))) return m;
 		return null;
+	}
+
+	/** The descriptor {@code selector} spells, or null for a name-only one. */
+	private static String selectorDescriptor(String selector) {
+		String s = plainSelector(selector);
+		int paren = s == null ? -1 : s.indexOf('(');
+		return paren < 0 ? null : s.substring(paren);
+	}
+
+	/** {@code selector} without an owner prefix; null for the forms this does not reason about (wildcards, regexes). */
+	private static String plainSelector(String selector) {
+		String s = selector.trim();
+		if (s.indexOf('*') >= 0 || s.startsWith("/") || s.indexOf(' ') >= 0 || s.indexOf('=') >= 0) return null;
+		int semi = s.indexOf(';');
+		if (s.startsWith("L") && semi > 0) s = s.substring(semi + 1);
+		return s;
 	}
 
 	/** A stub's delegate, and for each stub parameter the delegate position it reaches unchanged (-1: not directly). */

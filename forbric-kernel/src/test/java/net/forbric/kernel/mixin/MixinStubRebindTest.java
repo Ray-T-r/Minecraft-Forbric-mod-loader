@@ -43,6 +43,7 @@ class MixinStubRebindTest {
 		System.clearProperty(MixinStubRebind.MODIFY_VARIABLE_PROPERTY);
 		System.clearProperty(MixinStubRebind.CAPTURES_PROPERTY);
 		System.clearProperty(MixinStubRebind.SUGAR_BOUNDARY_PROPERTY);
+		System.clearProperty(MixinStubRebind.FORGE_FAMILY_PROPERTY);
 		MixinStubRebind.forget();
 	}
 
@@ -90,8 +91,112 @@ class MixinStubRebindTest {
 		ClassNode player = merged("net/minecraft/world/entity/player/Player");
 		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.NEOFORGE);
 		assertEquals(0, MixinStubRebind.adapt(mixin, name -> player), "compiled against the stub-first shape: native behaviour");
+		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FORGE);
+		assertEquals(0, MixinStubRebind.adapt(mixin, name -> player), "MinecraftForge keeps the same stub: native behaviour too");
 		MixinStubRebind.forget();
 		assertEquals(0, MixinStubRebind.adapt(mixin, name -> player), "no known owner: no move");
+	}
+
+	// --- a Forge-family mod on the other carrier's stub ---
+
+	private static final Path SWEEP = Path.of("build/compat-inputs/sweep90/mods");
+	private static final String MODEL_MANAGER = "net/minecraft/client/resources/model/ModelManager";
+	private static final String LOAD_MODELS_BODY = "loadModels(Lnet/minecraft/client/renderer/texture/SpriteLoader$Preparations;"
+			+ "Lnet/minecraft/client/renderer/texture/SpriteLoader$Preparations;Lnet/minecraft/client/resources/model/ModelBakery;"
+			+ "Lnet/minecraft/client/renderer/block/LoadedBlockModels;Lit/unimi/dsi/fastutil/objects/Object2IntMap;"
+			+ "Lnet/minecraft/client/model/geom/EntityModelSet;Ljava/util/concurrent/Executor;"
+			+ "Lnet/neoforged/neoforge/client/entity/animation/json/AnimationLoader$PendingAnimations;)Ljava/util/concurrent/CompletableFuture;";
+
+	/**
+	 * fusion is a MinecraftForge mod. MinecraftForge's ModelManager has one loadModels, the body; NeoForge added an
+	 * overload and left the seven-argument one as a stub nothing calls. fusion's name-only HEAD capture of the block
+	 * atlas bound that stub, its static stayed null, and every model bake threw on it (35,845 "Unable to bake model").
+	 */
+	@Test void fusionsSpriteCaptureMovesToTheBodyMinecraftForgeRan() throws Exception {
+		ClassNode mixin = fromJar(SWEEP.resolve("fusion-1.3.15a-forge-mc26.2.jar"), "com/supermartijn642/fusion/mixin/ModelManagerMixin");
+		ClassNode manager = merged(MODEL_MANAGER);
+		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FORGE);
+		MixinStubRebind.adapt(mixin, name -> manager);
+		MethodNode outer = mixin.methods.stream().filter(m -> m.name.equals("captureBlockItemSprites")).findFirst().orElseThrow();
+		assertEquals(List.of(LOAD_MODELS_BODY), MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(outer), "method")));
+		assertNull(MixinFit.injectorOf(mixin.methods.stream().filter(m -> m.name.equals("captureBlockItemSprites" + MixinHandlerShim.INNER_SUFFIX))
+				.findFirst().orElseThrow()));
+		List<Integer> loads = Arrays.stream(outer.instructions.toArray()).filter(VarInsnNode.class::isInstance).map(i -> ((VarInsnNode) i).var).toList();
+		assertEquals(List.of(0, 1, 2, 3, 4, 5, 6, 8), loads, "the stub's seven arguments, then the callback past the pending animations");
+		new Analyzer<>(new BasicVerifier()).analyze(mixin.name, outer);
+
+		for (Ecosystem stays : List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE)) {
+			ClassNode again = fromJar(SWEEP.resolve("fusion-1.3.15a-forge-mc26.2.jar"), "com/supermartijn642/fusion/mixin/ModelManagerMixin");
+			MixinStubRebind.noteEcosystem(again.name, stays);
+			if (stays == Ecosystem.FORGE) System.setProperty(MixinStubRebind.FORGE_FAMILY_PROPERTY, "off");
+			MixinStubRebind.adapt(again, name -> manager);
+			assertEquals(List.of("loadModels"), selectors(again, "captureBlockItemSprites"),
+					stays == Ecosystem.FORGE ? "the switch: Fabric mods only" : "a NeoForge mod was compiled against that very stub");
+			System.clearProperty(MixinStubRebind.FORGE_FAMILY_PROPERTY);
+		}
+	}
+
+	/** The mirror: MinecraftForge forwards PackDetector's two-argument detectPackResources; NeoForge kept it as the body. */
+	@Test void aNeoForgeModMovesOffAStubOnlyMinecraftForgeHas() throws Exception {
+		String owner = "net/minecraft/server/packs/repository/PackDetector";
+		ClassNode detector = merged(owner);
+		for (Ecosystem ecosystem : List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE)) {
+			ClassNode mixin = synthetic("com/example/PackDetectorMixin", owner, "onDetect", "(" + CALLBACK_INFO_RETURNABLE + ")V", false,
+					injector(INJECT, "detectPackResources", List.of(at("HEAD"))));
+			MixinStubRebind.noteEcosystem(mixin.name, ecosystem);
+			assertEquals(ecosystem == Ecosystem.NEOFORGE ? 1 : 0, MixinStubRebind.adapt(mixin, name -> detector), ecosystem.name());
+			assertEquals(List.of(ecosystem == Ecosystem.NEOFORGE ? "detectPackResources(Ljava/nio/file/Path;Ljava/util/List;Z)Ljava/lang/Object;"
+					: "detectPackResources"), selectors(mixin, "onDetect"), ecosystem.name());
+		}
+	}
+
+	/** Each native shape moves the selector forms that ran on code there, and only for its own family. */
+	@Test void aRowMovesTheSelectorFormsThatRanOnCodeOnTheModsOwnPlatform() {
+		String stub = "(I)V", overload = "(IZ)V";
+		assertEquals(MixinStubRebind.Shape.BODY, MixinStubRebind.Shape.of(platform(m("f", stub, false), m("g", "()V", false)), "f", stub, overload));
+		assertEquals(MixinStubRebind.Shape.DESCRIPTOR_BODY, MixinStubRebind.Shape.of(platform(m("f", "()V", false), m("f", stub, false)), "f", stub, overload));
+		assertEquals(MixinStubRebind.Shape.OVERLOAD_BODY, MixinStubRebind.Shape.of(platform(m("f", overload, false)), "f", stub, overload));
+		assertEquals(MixinStubRebind.Shape.STUB, MixinStubRebind.Shape.of(platform(m("f", stub, true), m("f", overload, false)), "f", stub, overload));
+		assertEquals(MixinStubRebind.Shape.ABSENT, MixinStubRebind.Shape.of(platform(m("f", "()V", false), m("f", overload, false)), "f", stub, overload),
+				"another overload binds the name first, and nothing has the descriptor");
+		assertEquals(MixinStubRebind.Shape.ABSENT, MixinStubRebind.Shape.of(null, "f", stub, overload));
+
+		MixinStubRebind.Row neoAdded = new MixinStubRebind.Row(MixinStubRebind.Shape.BODY, MixinStubRebind.Shape.STUB);
+		assertTrue(neoAdded.moves(Ecosystem.FABRIC, true));
+		assertTrue(neoAdded.moves(Ecosystem.FORGE, true));
+		assertTrue(neoAdded.moves(Ecosystem.FORGE, false));
+		assertFalse(neoAdded.moves(Ecosystem.NEOFORGE, true));
+		MixinStubRebind.Row late = new MixinStubRebind.Row(MixinStubRebind.Shape.DESCRIPTOR_BODY, MixinStubRebind.Shape.OVERLOAD_BODY);
+		assertFalse(late.moves(Ecosystem.FORGE, true), "natively the name bound the other overload");
+		assertTrue(late.moves(Ecosystem.FORGE, false));
+		assertTrue(late.moves(Ecosystem.NEOFORGE, true));
+		assertFalse(late.moves(Ecosystem.NEOFORGE, false), "natively that descriptor bound nothing");
+		MixinStubRebind.Row both = new MixinStubRebind.Row(MixinStubRebind.Shape.STUB, MixinStubRebind.Shape.ABSENT);
+		assertTrue(both.moves(Ecosystem.FABRIC, false));
+		assertFalse(both.moves(Ecosystem.FORGE, true));
+		assertFalse(both.moves(Ecosystem.NEOFORGE, true));
+		System.setProperty(MixinStubRebind.FORGE_FAMILY_PROPERTY, "off");
+		assertFalse(neoAdded.moves(Ecosystem.FORGE, true), "the switch");
+		assertTrue(neoAdded.moves(Ecosystem.FABRIC, true));
+	}
+
+	private static ClassNode platform(MethodNode... methods) {
+		ClassNode node = new ClassNode();
+		node.name = "p/C";
+		node.methods = new java.util.ArrayList<>(List.of(methods));
+		return node;
+	}
+
+	/** A static method: a body ({@code return}), or a stub forwarding its int to {@code f(IZ)V}. */
+	private static MethodNode m(String name, String desc, boolean forwards) {
+		MethodNode method = new MethodNode(Opcodes.ACC_STATIC, name, desc, null, null);
+		if (forwards) {
+			method.instructions.add(new VarInsnNode(Opcodes.ILOAD, 0));
+			method.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ICONST_0));
+			method.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "p/C", name, "(IZ)V", false));
+		}
+		method.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.RETURN));
+		return method;
 	}
 
 	@Test void theSwitchMovesNothing() throws Exception {
@@ -196,6 +301,7 @@ class MixinStubRebindTest {
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String COERCE = "Lorg/spongepowered/asm/mixin/injection/Coerce;";
 	private static final String NOT_NULL = "Lorg/jetbrains/annotations/NotNull;";
+	private static final String CALLBACK_INFO_RETURNABLE = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 
 	/**
 	 * torrential's fuel modifier captures all three of the stub's arguments after the value it modifies. Two of them

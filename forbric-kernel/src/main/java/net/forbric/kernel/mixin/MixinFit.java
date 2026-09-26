@@ -466,8 +466,9 @@ public final class MixinFit {
 			out.add(new Anchor("@Inject target", where, false));
 			return;
 		}
-		// The move MixinStubRebind will make for a Fabric mod's injector bound to a carrier stub, judged here too
-		// so the verdict and the rebind cannot disagree: its anchors are asked of the body it lands on.
+		// The move MixinStubRebind will make for an injector bound to a carrier stub its own platform ran as a body
+		// (any Fabric mod's; a Forge-family mod's where the other carrier added the stub), judged here too so the
+		// verdict and the rebind cannot disagree: its anchors are asked of the body it lands on.
 		if (selectors.size() == 1 && hits.size() == 1 && MixinStubRebind.isCarrierStub(target, hits.get(0))) {
 			MethodNode moved = MixinStubRebind.destination(mixin.name, m, target);
 			// A @Local by name is checked against the body's local variable table, which this read skipped.
