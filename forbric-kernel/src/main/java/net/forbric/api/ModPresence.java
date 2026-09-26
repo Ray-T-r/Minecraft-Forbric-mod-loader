@@ -206,10 +206,13 @@ public final class ModPresence {
 	 * the body's answer before Fabric's — so a registry id's namespace is looked up here. An ambiguous answer is
 	 * null rather than a guess: a caller then keeps what the merged game already does.
 	 *
-	 * <p>Spelling-insensitive like {@link #isLoaded}, and for the ambiguity above all: a NeoForge
-	 * {@code cloth_config} and a Fabric {@code cloth-config} are the same mod published twice, and neither
-	 * ecosystem is its sole owner. Deliberately NOT gated by {@link #SWITCH}, for the reason {@link #metadata}
-	 * is not: who owns a mod is not whether another ecosystem may see it.
+	 * <p>Spelling-insensitive like {@link #isLoaded}: a NeoForge {@code cloth_config} and a Fabric
+	 * {@code cloth-config} are the same mod. At boot the Fabric copy of such a mod is normally never published —
+	 * {@code KernelFabricEcosystem} leaves out every Fabric mod {@link #isLoaded} already answers — so the answer is
+	 * the Forge family. Both copies are published only with {@link #SWITCH} off, or when a Fabric mod's
+	 * {@code provides} alias names a Forge-family mod; then neither ecosystem is the sole owner and the answer is
+	 * null. Either way the caller keeps what the merged game does. Deliberately NOT gated by {@link #SWITCH}, for
+	 * the reason {@link #metadata} is not: who owns a mod is not whether another ecosystem may see it.
 	 */
 	public static Ecosystem soleEcosystem(String id) {
 		try {

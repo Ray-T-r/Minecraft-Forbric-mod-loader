@@ -261,8 +261,10 @@ class ModPresenceTest {
 
 	@org.junit.jupiter.api.Test
 	void aModTwoEcosystemsPublishHasNoSoleOwner() {
-		// One mod ported across two ecosystems, published under each one's spelling. Neither loader's rules are
-		// "the" rules for it, so the caller keeps what the merged game does instead of guessing.
+		// One mod ported across two ecosystems, published under each one's spelling. Boot publishes both only with
+		// the presence switch off or through a Fabric provides alias (with it on, the Fabric copy is left out and
+		// the answer is the Forge family). Neither loader's rules are "the" rules for it, so the caller keeps what
+		// the merged game does instead of guessing.
 		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "cloth-config")));
 		ModPresence.publishForgeFamily(List.of(mod(Ecosystem.NEOFORGE, "cloth_config")));
 
