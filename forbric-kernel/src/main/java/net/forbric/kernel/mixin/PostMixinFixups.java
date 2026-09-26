@@ -92,7 +92,92 @@ public final class PostMixinFixups {
 		String internal = name.replace('.', '/');
 		if (PACK.equals(internal)) return repairPackParentsPredicate(bytes);
 		if (GUI_RENDERER.equals(internal)) return seedOrphanedPipRenderers(bytes);
+		if (MAPPED_REGISTRY.equals(internal)) bytes = askTheRegistryWhetherAnAliasTargetExists(bytes);
 		return replayDelegatedConstructorInjections(internal, bytes);
+	}
+
+	private static final String MAPPED_REGISTRY = "net/minecraft/core/MappedRegistry";
+	/** {@code off} leaves fabric-registry-sync's alias-target warning reading {@code byLocation} directly. */
+	static final String ALIAS_PRESENCE_PROPERTY = "forbric.aliasPresenceParity";
+	/** The warning's own text, which is what marks the one {@code containsKey} this repair may touch. */
+	private static final String ALIAS_TARGET_WARNING = "Adding {} as an alias for {}, but the latter doesn't exist";
+
+	/**
+	 * Makes fabric-registry-sync's "alias target doesn't exist" warning ask the registry, not its vanilla map.
+	 *
+	 * <p>The mixin-added {@code MappedRegistry.addAlias} warns when {@code !this.byLocation.containsKey(target)}.
+	 * On the merged base {@code BuiltInRegistries.BLOCK} and {@code ITEM} are MinecraftForge
+	 * {@code NamespacedWrapper}s: their {@code register} goes to a {@code ForgeRegistry} and never writes the
+	 * inherited {@code byLocation}, so the check fails even when the target was registered first. More Nemo's
+	 * Woodcutter Variants registers each woodcutter and then aliases its old id to it, and every one of them — 11
+	 * blocks and 11 items — logged "Adding … as an alias for …, but the latter doesn't exist" on Forbric and nowhere
+	 * else. The alias itself was recorded and resolves (RegistryAliasParityInjector); only the warning was wrong.
+	 *
+	 * <p>The map read becomes {@code this.keySet()}, whose {@code contains} is the same exact, non-resolving lookup:
+	 * {@code byLocation}'s key set on a vanilla or NeoForge registry, the ForgeRegistry's own names on a wrapper.
+	 * Not {@code containsKey(Identifier)}, which fabric-api's {@code @ModifyVariable} and the parity injector both
+	 * resolve through aliases, so an alias chain would change what the warning says. The answer then goes through
+	 * {@code KernelRegistryAliases.aliasTargetPresent}, which also knows NeoForge's own alias-first order.
+	 *
+	 * <p>Only the warning's check, found by the text right after it. The collision check before it ("already
+	 * present in registry", which throws) reads the same map for the ALIAS, and is left alone: making it see the
+	 * wrapper's names would turn a collision the game accepts today into a crash for a Forge-family mod.
+	 * Straight-line replacement with the same stack shape (the receiver, then the id, then a boolean), so every
+	 * frame stays valid. {@code -Dforbric.aliasPresenceParity=off} leaves the method as Mixin wove it.
+	 */
+	static byte[] askTheRegistryWhetherAnAliasTargetExists(byte[] bytes) {
+		if ("off".equalsIgnoreCase(System.getProperty(ALIAS_PRESENCE_PROPERTY, "on"))) return bytes;
+		if (!ByteScan.contains(bytes, ALIAS_WARNING_NEEDLE)) return bytes;
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, 0);
+		int repaired = 0;
+		for (MethodNode method : node.methods) {
+			if (!method.name.equals("addAlias") || (method.access & Opcodes.ACC_STATIC) != 0) continue;
+			for (AbstractInsnNode insn : method.instructions.toArray()) {
+				if (!(insn instanceof MethodInsnNode contains) || contains.getOpcode() != Opcodes.INVOKEINTERFACE
+						|| !contains.owner.equals("java/util/Map") || !contains.name.equals("containsKey")) continue;
+				AbstractInsnNode key = realPrevious(contains);
+				AbstractInsnNode map = key == null ? null : realPrevious(key);
+				if (!(key instanceof VarInsnNode load) || load.getOpcode() != Opcodes.ALOAD
+						|| !(map instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETFIELD
+						|| !field.owner.equals(node.name) || !field.name.equals("byLocation")
+						|| !warnsNext(contains)) continue;
+				method.instructions.set(field, new MethodInsnNode(Opcodes.INVOKEVIRTUAL, node.name, "keySet",
+						"()Ljava/util/Set;", false));
+				method.instructions.set(contains, new MethodInsnNode(Opcodes.INVOKESTATIC,
+						"net/forbric/kernel/boot/KernelRegistryAliases", "aliasTargetPresent",
+						"(Ljava/util/Set;Ljava/lang/Object;)Z", false));
+				repaired++;
+			}
+		}
+		if (repaired == 0) return bytes;
+		ForbricLog.info("[Forbric/Aliases] post-mixin repair: fabric-registry-sync's addAlias asks the registry's own "
+				+ "key set whether an alias target exists — MinecraftForge's wrapped registries (block, item, …) never "
+				+ "fill the map it read, so every alias to a registered block warned that the block did not exist");
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		node.accept(writer);
+		return writer.toByteArray();
+	}
+
+	private static final byte[] ALIAS_WARNING_NEEDLE = ByteScan.needle(ALIAS_TARGET_WARNING);
+
+	/** Whether the branch on this check leads straight into fabric-registry-sync's target-missing warning. */
+	private static boolean warnsNext(AbstractInsnNode check) {
+		AbstractInsnNode insn = check;
+		for (int i = 0; i < 4 && insn != null; i++) {
+			insn = insn.getNext();
+			while (insn != null && insn.getOpcode() < 0) insn = insn.getNext();
+			if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc && ldc.cst instanceof String text) {
+				return text.startsWith(ALIAS_TARGET_WARNING);
+			}
+		}
+		return false;
+	}
+
+	private static AbstractInsnNode realPrevious(AbstractInsnNode insn) {
+		AbstractInsnNode previous = insn.getPrevious();
+		while (previous != null && previous.getOpcode() < 0) previous = previous.getPrevious();
+		return previous;
 	}
 
 	/**
