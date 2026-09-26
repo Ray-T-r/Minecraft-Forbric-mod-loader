@@ -369,7 +369,7 @@ public final class KernelFabricLoader implements FabricLoader {
 					+ "(%s) names no mod this loader knows — skipped", key, String.valueOf(stored));
 			return null;
 		}
-		return new Entrypoint(provider, stored);
+		return new Entrypoint(key, provider, stored);
 	}
 
 	private boolean sameEntrypoints(Map<String, List<Entrypoint>> rebuilt) {
@@ -609,7 +609,8 @@ public final class KernelFabricLoader implements FabricLoader {
 			this.added = null;
 		}
 
-		Entrypoint(KernelModContainer provider, EntrypointStorage.Entry added) {
+		Entrypoint(String key, KernelModContainer provider, EntrypointStorage.Entry added) {
+			this.key = key;
 			this.provider = provider;
 			this.decl = null;
 			this.added = added;
