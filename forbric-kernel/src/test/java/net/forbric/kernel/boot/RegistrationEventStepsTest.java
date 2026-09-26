@@ -37,6 +37,7 @@ import java.util.zip.ZipFile;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Label;
@@ -189,6 +190,32 @@ class RegistrationEventStepsTest {
 		assertFalse(outcome.isolated());
 	}
 
+	/**
+	 * Every step returned and no data map type exists: the finding says so, and the log line must not be the clean
+	 * one, which gates m7/m9 and compat/assert.sh take as "capabilities and data maps are registered". Each of those
+	 * three patterns is run through grep against both lines, so the gates and the wording cannot drift apart.
+	 */
+	@Test
+	void aCleanRunWithNoDataMapTypeIsNotTheCleanLine(@TempDir Path dir) throws Exception {
+		String empty = logOf(() -> RegistrationEventSteps.fire(cleanCarrier(0)));
+		assertTrue(empty.contains("all returned, but no data map type was registered, 0 data map type(s)"), empty);
+		assertFalse(empty.contains("ran NeoForge's registration events"), empty);
+		assertNotNull(finding("neoforge-data-maps"), "zero types after a clean run is still a loss");
+
+		CompatibilityFindings.reset();
+		String registered = logOf(() -> RegistrationEventSteps.fire(cleanCarrier(11)));
+		assertTrue(registered.contains("ran NeoForge's registration events"), registered);
+		assertNull(finding("neoforge-data-maps"));
+
+		for (String gate : List.of("run/gate-m7-neo.sh", "run/gate-m9-client.sh", "run/compat/assert.sh")) {
+			String pattern = registrationPattern(gate);
+			assertTrue(grep(dir, pattern, registered), gate + " must accept a run that registered data maps");
+			assertFalse(grep(dir, pattern, empty), gate + " must not accept a run that registered none");
+			assertFalse(grep(dir, pattern, registered.replace(", 11 data map type(s)", "")),
+					gate + " must not accept a run whose count could not be read");
+		}
+	}
+
 	/** Out of the shared try: the kernel installs the bridge after the call, gated on the capability step. */
 	@Test
 	void theTransferBridgeIsGatedOnCapabilitiesOnly() throws Exception {
@@ -230,6 +257,83 @@ class RegistrationEventStepsTest {
 
 		private Recorder() {
 		}
+	}
+
+	/** A carrier whose four steps all return, with {@code types} data map types registered afterwards. */
+	private static Carrier cleanCarrier(int types) {
+		Map<String, byte[]> classes = new HashMap<>();
+		classes.put(CAULDRON, step(CAULDRON, "init", "cauldron", false, false));
+		classes.put(CAPABILITIES, step(CAPABILITIES, "init", "capabilities", false, false));
+		classes.put(REGISTRY_MANAGER, dataMapsStep(types));
+		classes.put(POI, step(POI, "init", "poi", false, false));
+		classes.put(EVENTS, events(false, CAULDRON, CAPABILITIES, REGISTRY_MANAGER + "#initDataMaps", POI));
+		return new Carrier(classes, classes);
+	}
+
+	/** {@code initDataMaps()} returns; {@code getDataMaps()} answers one registry holding {@code types} types. */
+	private static byte[] dataMapsStep(int types) {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, REGISTRY_MANAGER, null, "java/lang/Object", null);
+		MethodVisitor init = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "initDataMaps", "()V", null, null);
+		init.visitCode();
+		init.visitInsn(Opcodes.RETURN);
+		init.visitMaxs(0, 0);
+		init.visitEnd();
+		MethodVisitor get = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "getDataMaps", "()Ljava/util/Map;",
+				null, null);
+		get.visitCode();
+		get.visitTypeInsn(Opcodes.NEW, "java/util/HashMap");
+		get.visitInsn(Opcodes.DUP);
+		get.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/util/HashMap", "<init>", "()V", false);
+		for (int i = 0; i < types; i++) {
+			get.visitInsn(Opcodes.DUP);
+			get.visitLdcInsn("type" + i);
+			get.visitLdcInsn("codec" + i);
+			get.visitMethodInsn(Opcodes.INVOKEINTERFACE, "java/util/Map", "put",
+					"(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", true);
+			get.visitInsn(Opcodes.POP);
+		}
+		get.visitVarInsn(Opcodes.ASTORE, 0);
+		get.visitLdcInsn("minecraft:item");
+		get.visitVarInsn(Opcodes.ALOAD, 0);
+		get.visitMethodInsn(Opcodes.INVOKESTATIC, "java/util/Map", "of",
+				"(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map;", true);
+		get.visitInsn(Opcodes.ARETURN);
+		get.visitMaxs(0, 0);
+		get.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** The INFO lines {@code ForbricLog} wrote while {@code run} ran: stdout, log4j being absent from the test classpath. */
+	private static String logOf(Runnable run) {
+		java.io.ByteArrayOutputStream log = new java.io.ByteArrayOutputStream();
+		java.io.PrintStream out = System.out;
+		try {
+			System.setOut(new java.io.PrintStream(log, true, java.nio.charset.StandardCharsets.UTF_8));
+			run.run();
+		} finally {
+			System.setOut(out);
+		}
+		return log.toString(java.nio.charset.StandardCharsets.UTF_8);
+	}
+
+	/** The pattern a gate's "registration events ran" check greps for. */
+	private static String registrationPattern(String gate) throws Exception {
+		for (String line : Files.readAllLines(Path.of(gate))) {
+			java.util.regex.Matcher m = java.util.regex.Pattern
+					.compile("^(?:check|ck)\\s+\"registration events ran\"\\s+\"([^\"]+)\"").matcher(line);
+			if (m.find()) return m.group(1);
+		}
+		throw new AssertionError(gate + " has no \"registration events ran\" check");
+	}
+
+	/** Whether {@code grep -acE pattern} counts a line of {@code text}, as the gates ask. */
+	private static boolean grep(Path dir, String pattern, String text) throws Exception {
+		Path log = Files.writeString(dir.resolve("boot.log"), text);
+		Process grep = new ProcessBuilder("grep", "-acE", pattern, log.toString()).redirectErrorStream(true).start();
+		assertTrue(grep.waitFor(15, java.util.concurrent.TimeUnit.SECONDS), "grep timed out");
+		return !"0".equals(new String(grep.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).strip());
 	}
 
 	private static CompatibilityFinding finding(String id) {

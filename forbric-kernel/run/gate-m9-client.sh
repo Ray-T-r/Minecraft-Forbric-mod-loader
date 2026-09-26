@@ -211,7 +211,9 @@ if [ -n "$COMMON_AT" ] && [ -n "$CLIENT_AT" ] && [ "$COMMON_AT" -lt "$CLIENT_AT"
 else
   printf '[kernel] FAIL common setup precedes the sided phase (common=%s client=%s)\n' "${COMMON_AT:-none}" "${CLIENT_AT:-none}"; FAIL=1
 fi
-check "registration events ran"       "ran NeoForge.s registration events"               "$LOG"
+# With a data map count: NeoForge registers eleven types of its own, so a run whose count is zero or unreadable
+# has no proof its data maps exist (the kernel words a zero-count run so that it cannot match this line either).
+check "registration events ran"       "ran NeoForge.s registration events.* [1-9][0-9]* data map type" "$LOG"
 check "IMC enqueued and processed"    "posted FML IMC (enqueue|process) to [1-9][0-9]* NeoForge mod" "$LOG" 2
 check "load complete posted"          "posted FML load complete to [1-9][0-9]* NeoForge mod"  "$LOG"
 check_absent "no mod failed a phase"  "failed during (construct|IMC enqueue|IMC process)" "$LOG"
@@ -769,6 +771,16 @@ check "Fabric main entrypoints run where Fabric runs them" \
   "\[Render thread/INFO\]: \[Forbric/Fabric\] invoked [1-9][0-9]* Fabric main entrypoint\(s\) in the Minecraft.<init> window" "$LOG"
 check_absent "and not in the pre-Minecraft window" \
   "\[main/INFO\]: \[Forbric/Fabric\] invoked [0-9]+ Fabric main entrypoint" "$LOG"
+
+# The datapack-registry declaration initialises RegistryDataLoader, whose initialiser runs Fabric mod code
+# (WorldWeaver's datapack entrypoints ride a TAIL injector there). Declared from the pre-Minecraft window it ran
+# before every Fabric main with minecraft:root frozen; on the sweep pack that threw "Registry is already frozen" and
+# poisoned world loading for the session. It follows the mains into Minecraft.<init>, so the thread is the evidence
+# again. -Dforbric.datapackDeclarationAfterFabric=off declares from the pre-Minecraft window and turns both red.
+check "datapack registries are declared after the Fabric mains" \
+  "\[Render thread/INFO\]: \[Forbric/Lifecycle\] posted datapack-registry declaration to" "$LOG"
+check_absent "and not before them" \
+  "\[main/INFO\]: \[Forbric/Lifecycle\] posted datapack-registry declaration" "$LOG"
 
 check "the save ran on the way out"        "Saving worlds"                                    "$LOG"
 check "and it finished"                    "ThreadedAnvilChunkStorage: All dimensions are saved" "$LOG"

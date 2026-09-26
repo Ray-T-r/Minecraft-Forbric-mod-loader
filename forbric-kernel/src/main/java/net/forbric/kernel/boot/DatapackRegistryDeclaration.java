@@ -45,7 +45,12 @@ import net.forbric.api.Side;
  * decisions that keep that from happening, and the report for when it happens anyway.
  */
 final class DatapackRegistryDeclaration {
-	/** {@code -Dforbric.datapackDeclarationAfterFabric=off} declares from {@code Main.main} again on a client. */
+	/**
+	 * {@code -Dforbric.datapackDeclarationAfterFabric=off} declares from {@code Main.main} again on a client. Only
+	 * the placement: the reconcile ({@link #RECONCILE_SWITCH}) and the poisoned-loader finding stay on, so on the
+	 * sweep pack's client the old placement now ends in that CONFIRMED, required finding -- a strict launch stops
+	 * with exit 78 where it used to reach a title screen that could load no world.
+	 */
 	static final String DEFERRAL_SWITCH = "forbric.datapackDeclarationAfterFabric";
 	/** {@code -Dforbric.datapackRegistryReconcile=off} leaves NeoForge's list as its initialiser copied it. */
 	static final String RECONCILE_SWITCH = "forbric.datapackRegistryReconcile";
@@ -55,10 +60,16 @@ final class DatapackRegistryDeclaration {
 
 	/**
 	 * A Mixin-merged injector method: {@code handler$cgo000$wover-core$wover_init}. Mixin names the merged method
-	 * {@code <prefix>$<unique id>$<mod id>$<name>}, so the frame is the one place a stack names the mod whose
-	 * injector was running.
+	 * {@code <prefix>$<class id><method id>$<mod id>$<name>}, so the frame is the one place a stack names the mod
+	 * whose injector was running. Mixin 0.8.7's {@code MethodMapper}: the class id is the mixin's index in hex with
+	 * each digit shifted into letters and padded to at least three with {@code z} ({@code zza}, and longer past the
+	 * 4096th mixin); the method id is {@code %03x}, a hex counter per name and descriptor. So
+	 * {@code handler$zza00c$wover-core$wover_init} is the same mod's frame, once ten or more handlers share that name
+	 * and descriptor -- common for one like {@code onInit(CallbackInfo)}. The old {@code [a-z]{3}\d{3}} matched
+	 * neither a hex method id nor a longer class id, and the finding then named no mod.
 	 */
-	private static final Pattern MERGED_INJECTOR = Pattern.compile("^[a-zA-Z]+\\$[a-z]{3}\\d{3}\\$([^$]+)\\$.+$");
+	private static final Pattern MERGED_INJECTOR =
+			Pattern.compile("^[a-zA-Z]+\\$[a-z]{3,}[0-9a-f]{3,}\\$([^$]+)\\$.+$");
 
 	private DatapackRegistryDeclaration() {
 	}
@@ -146,7 +157,7 @@ final class DatapackRegistryDeclaration {
 			root = t;
 			if (t instanceof NoClassDefFoundError && t.getMessage() != null) {
 				for (String cls : List.of(LOADER, HOOKS)) {
-					if (t.getMessage().contains("Could not initialize class " + cls) && poisoned == null) poisoned = cls;
+					if (poisoned == null && couldNotInitialize(t.getMessage(), cls)) poisoned = cls;
 				}
 			}
 			for (StackTraceElement frame : t.getStackTrace()) {
@@ -177,6 +188,14 @@ final class DatapackRegistryDeclaration {
 						+ "created, loaded or joined this session, and datapack registries and NeoForge data maps "
 						+ "are unavailable",
 				evidence);
+	}
+
+	/**
+	 * Whether the JVM's "Could not initialize class" message names {@code cls} itself: not a nested class of it such
+	 * as {@code RegistryDataLoader$RegistryData}, which a plain prefix match took for the loader.
+	 */
+	static boolean couldNotInitialize(String message, String cls) {
+		return Pattern.compile("Could not initialize class " + Pattern.quote(cls) + "(?![\\w$])").matcher(message).find();
 	}
 
 	private static String simpleName(String binary) {

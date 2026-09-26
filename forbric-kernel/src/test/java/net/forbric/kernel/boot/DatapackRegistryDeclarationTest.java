@@ -36,7 +36,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -98,6 +100,33 @@ class DatapackRegistryDeclarationTest {
 		int declares = firstCall(drive, "registerDataPackRegistries");
 		assertTrue(asks >= 0, "driveNativeRegistration must ask whether a client waits for its Fabric mains");
 		assertTrue(declares > asks, "and only then declare");
+
+		// And the answer decides it: the declaration sits only on the branch taken when the client does NOT wait.
+		// Order alone would still pass with the call moved out of the else, declaring from Main.main every time.
+		AbstractInsnNode[] insns = drive.instructions.toArray();
+		AbstractInsnNode next = insns[asks + 1];
+		while (next.getOpcode() < 0) next = next.getNext();
+		assertTrue(next instanceof JumpInsnNode jump && (jump.getOpcode() == Opcodes.IFEQ || jump.getOpcode() == Opcodes.IFNE),
+				"the waitsForFabric result must be branched on right away");
+		JumpInsnNode branch = (JumpInsnNode) next;
+		int target = drive.instructions.indexOf(branch.label);
+		int from = drive.instructions.indexOf(branch);
+		// IFEQ jumps when it does not wait: the declaration must be past the target, and the fall-through (the
+		// waiting path) must leave by a GOTO that lands past the declaration too.
+		boolean declaresWhenJumping = branch.getOpcode() == Opcodes.IFEQ;
+		int waitingStart = declaresWhenJumping ? from : target;
+		int waitingEnd = declaresWhenJumping ? target : insns.length;
+		for (int i = waitingStart + 1; i < waitingEnd; i++) {
+			if (insns[i] instanceof MethodInsnNode call && "registerDataPackRegistries".equals(call.name)) {
+				throw new AssertionError("the waiting path declares too, at " + i);
+			}
+			if (insns[i] instanceof JumpInsnNode leave && leave.getOpcode() == Opcodes.GOTO) {
+				assertTrue(drive.instructions.indexOf(leave.label) > declares,
+						"the waiting path must jump past the declaration");
+				break;
+			}
+		}
+		assertTrue(!declaresWhenJumping || declares > target, "the declaration is on the not-waiting branch");
 	}
 
 	/**
@@ -228,7 +257,102 @@ class DatapackRegistryDeclarationTest {
 		assertEquals(List.of(vanilla), neo);
 	}
 
+	/**
+	 * The failure itself, on stand-ins: a TAIL injector in the loader's initialiser that creates a registry, as
+	 * WorldWeaver's does for wover-biome's codec registry. Declared while the root is frozen and before the mod's main
+	 * has created it -- the old order -- the initialiser throws and the class is dead for the process, every later
+	 * touch a "Could not initialize class". After the main, with the root frozen again -- the new order -- it has
+	 * nothing to create and initialises cleanly.
+	 */
+	@Test
+	void theOldOrderPoisonsTheLoaderAndTheNewOneDoesNot() throws Exception {
+		ClassLoader before = fresh(FakeRoot.class, FakeCodecRegistry.class, FakeWoverMain.class, FakeTailLoader.class);
+		frozen(before, true);   // the pre-Minecraft window has closed; no Fabric main has run
+		Throwable first = org.junit.jupiter.api.Assertions.assertThrows(ExceptionInInitializerError.class,
+				() -> Class.forName(FakeTailLoader.class.getName(), true, before));
+		assertTrue(String.valueOf(first.getCause()).contains("Registry is already frozen"), String.valueOf(first));
+		NoClassDefFoundError later = org.junit.jupiter.api.Assertions.assertThrows(NoClassDefFoundError.class,
+				() -> Class.forName(FakeTailLoader.class.getName(), true, before));
+		assertTrue(DatapackRegistryDeclaration.couldNotInitialize(later.getMessage(), FakeTailLoader.class.getName()),
+				later.getMessage());
+
+		ClassLoader after = fresh(FakeRoot.class, FakeCodecRegistry.class, FakeWoverMain.class, FakeTailLoader.class);
+		frozen(after, false);   // Minecraft.<init>: the kernel reopened the root for the Fabric mains
+		Class.forName(FakeWoverMain.class.getName(), true, after).getMethod("onInitialize").invoke(null);
+		frozen(after, true);    // and closed it again before declaring
+		Class.forName(FakeTailLoader.class.getName(), true, after);
+		assertEquals(List.of("wover:biome_codec"), keys(after), "created once, by the mod's own main");
+	}
+
 	// --- the report ---------------------------------------------------------------------------------------------
+
+	/**
+	 * Mixin 0.8.7 writes the method part of a merged injector's name as {@code %03x} and pads the class part to at
+	 * least three letters, so both can be longer or hex: a later {@code wover_init}, and a mixin past the 4096th.
+	 */
+	@Test
+	void theInjectorsModIsReadWhateverMixinsCountersSay() {
+		for (String handler : List.of("handler$cgo000$wover-core$wover_init", "handler$zza00c$wover-core$wover_init",
+				"handler$baaa0f3$wover-core$wover_init")) {
+			ExceptionInInitializerError init = new ExceptionInInitializerError(new IllegalStateException("frozen"));
+			init.setStackTrace(new StackTraceElement[] {
+					frame("net.minecraft.resources.RegistryDataLoader", handler),
+					frame("net.minecraft.resources.RegistryDataLoader", "<clinit>"),
+			});
+			CompatibilityFinding finding = DatapackRegistryDeclaration.poisonedLoader(init);
+			assertNotNull(finding, handler);
+			assertTrue(finding.detail().contains("a mixin from wover-core ran in it"), handler + ": " + finding.detail());
+		}
+	}
+
+	/** "Could not initialize class RegistryDataLoader$RegistryData" is not the loader failing to initialise. */
+	@Test
+	void aNestedClassOfTheLoaderIsNotTheLoader() {
+		assertNull(DatapackRegistryDeclaration.poisonedLoader(new NoClassDefFoundError(
+				"Could not initialize class net.minecraft.resources.RegistryDataLoader$RegistryData")));
+		assertTrue(DatapackRegistryDeclaration.couldNotInitialize(
+				"Could not initialize class net.minecraft.resources.RegistryDataLoader",
+				DatapackRegistryDeclaration.LOADER));
+		assertTrue(DatapackRegistryDeclaration.couldNotInitialize(
+				"Could not initialize class net.minecraft.resources.RegistryDataLoader [in thread \"main\"]",
+				DatapackRegistryDeclaration.LOADER));
+	}
+
+	/**
+	 * The reconcile reaches NeoForge by reflection, and a signature that drifted would turn it into a WARN with no test
+	 * saying so. Every member it names, as the staged carrier and merged base declare them.
+	 */
+	@Test
+	void theReconcilesReflectiveTargetsExistWithTheseShapes() throws Exception {
+		Path runtime = staged("neoforge-runtime", "neoforge-runtime.jar");
+		Path merged = staged("merged-base", "patched-mc-merged-26.2.jar");
+		assumeTrue(Files.isRegularFile(runtime) && Files.isRegularFile(merged), "carrier or merged base not staged");
+
+		ClassNode wrapper = classIn(runtime, "net/neoforged/neoforge/registries/DataPackRegistryEvent$DataPackRegistryData");
+		assertTrue(declares(wrapper, "<init>", "(Lnet/minecraft/resources/RegistryDataLoader$RegistryData;"
+				+ "Lcom/mojang/serialization/Codec;)V"), "DataPackRegistryData(RegistryData, Codec)");
+		ClassNode hooks = classIn(runtime, "net/neoforged/neoforge/registries/DataPackRegistriesHooks");
+		assertTrue(declares(hooks, "addRegistryCodec",
+				"(Lnet/neoforged/neoforge/registries/DataPackRegistryEvent$DataPackRegistryData;)V"), "addRegistryCodec");
+		assertTrue(declares(hooks, "getDataPackRegistries", "()Ljava/util/List;"), "getDataPackRegistries");
+		ClassNode loader = classIn(merged, "net/minecraft/resources/RegistryDataLoader");
+		assertTrue(loader.fields.stream().anyMatch(f -> "WORLDGEN_REGISTRIES".equals(f.name)
+				&& "Ljava/util/List;".equals(f.desc) && (f.access & Opcodes.ACC_STATIC) != 0), "WORLDGEN_REGISTRIES");
+		ClassNode data = classIn(merged, "net/minecraft/resources/RegistryDataLoader$RegistryData");
+		assertTrue(declares(data, "key", "()Lnet/minecraft/resources/ResourceKey;"), "RegistryData.key()");
+
+		// And these are the names the kernel looks up.
+		MethodNode reconcile = method("reconcileLoaderRegistriesIntoNeoForge");
+		assumeTrue(reconcile != null, "KernelLifecycle not compiled yet");
+		List<Object> constants = new ArrayList<>();
+		for (AbstractInsnNode insn : reconcile.instructions) {
+			if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc) constants.add(ldc.cst);
+		}
+		for (String name : List.of("net.neoforged.neoforge.registries.DataPackRegistryEvent$DataPackRegistryData",
+				"addRegistryCodec", "WORLDGEN_REGISTRIES", "key", "getDataPackRegistries")) {
+			assertTrue(constants.contains(name), "the reconcile no longer looks up " + name + ": " + constants);
+		}
+	}
 
 	/** The stack the sweep pack's client printed, reduced to the frames the finding reads. */
 	@Test
@@ -309,14 +433,75 @@ class DatapackRegistryDeclarationTest {
 		}
 	}
 
+	/** Stand-in for {@code minecraft:root}: the kernel freezes it outside its registration windows. */
+	public static final class FakeRoot {
+		public static boolean frozen;
+		public static final List<String> KEYS = new ArrayList<>();
+
+		public static void register(String key) {
+			if (frozen) throw new IllegalStateException("Registry is already frozen (trying to add key " + key + ")");
+			KEYS.add(key);
+		}
+
+		private FakeRoot() {
+		}
+	}
+
+	/** Stand-in for wover-biome's {@code BiomeCodecRegistryImpl}: its initialiser creates the registry. */
+	public static final class FakeCodecRegistry {
+		static {
+			FakeRoot.register("wover:biome_codec");
+		}
+
+		public static void touch() {
+		}
+
+		private FakeCodecRegistry() {
+		}
+	}
+
+	/** Stand-in for wover-biome's main entrypoint, which is what creates the registry on native Fabric. */
+	public static final class FakeWoverMain {
+		public static void onInitialize() {
+			FakeCodecRegistry.touch();
+		}
+
+		private FakeWoverMain() {
+		}
+	}
+
+	/** Stand-in for {@code RegistryDataLoader} with WorldWeaver's TAIL injector running a datapack entrypoint. */
+	public static final class FakeTailLoader {
+		static {
+			FakeCodecRegistry.touch();
+		}
+
+		private FakeTailLoader() {
+		}
+	}
+
+	private static void frozen(ClassLoader fresh, boolean value) throws Exception {
+		Class.forName(FakeRoot.class.getName(), true, fresh).getField("frozen").setBoolean(null, value);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<String> keys(ClassLoader fresh) throws Exception {
+		return (List<String>) Class.forName(FakeRoot.class.getName(), true, fresh).getField("KEYS").get(null);
+	}
+
 	/** A loader that defines the two stand-ins itself, so each test runs their initialisers afresh. */
 	private static ClassLoader freshPair() {
+		return fresh(FakeLoader.class, FakeHooks.class);
+	}
+
+	/** A loader that defines {@code classes} itself, so each test runs their initialisers afresh. */
+	private static ClassLoader fresh(Class<?>... classes) {
+		java.util.Set<String> names = new java.util.HashSet<>();
+		for (Class<?> c : classes) names.add(c.getName());
 		return new ClassLoader(DatapackRegistryDeclarationTest.class.getClassLoader()) {
 			@Override
 			protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-				if (!name.equals(FakeLoader.class.getName()) && !name.equals(FakeHooks.class.getName())) {
-					return super.loadClass(name, resolve);
-				}
+				if (!names.contains(name)) return super.loadClass(name, resolve);
 				synchronized (getClassLoadingLock(name)) {
 					Class<?> c = findLoadedClass(name);
 					if (c != null) return c;
@@ -340,6 +525,27 @@ class DatapackRegistryDeclarationTest {
 	@SuppressWarnings("unchecked")
 	private static List<String> neo(ClassLoader fresh) throws Exception {
 		return (List<String>) Class.forName(FakeHooks.class.getName(), true, fresh).getField("NEO").get(null);
+	}
+
+	private static Path staged(String dir, String jar) {
+		return Path.of(System.getenv().getOrDefault("FORBRIC_OLD", System.getProperty("user.dir") + "/../forbric-loader"),
+				"run", dir, jar).normalize();
+	}
+
+	private static ClassNode classIn(Path jar, String internalName) throws Exception {
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
+			java.util.zip.ZipEntry entry = zip.getEntry(internalName + ".class");
+			assertNotNull(entry, internalName + " absent from " + jar.getFileName());
+			try (InputStream in = zip.getInputStream(entry)) {
+				ClassNode node = new ClassNode();
+				new ClassReader(in.readAllBytes()).accept(node, ClassReader.SKIP_CODE);
+				return node;
+			}
+		}
+	}
+
+	private static boolean declares(ClassNode node, String name, String desc) {
+		return node.methods.stream().anyMatch(m -> name.equals(m.name) && desc.equals(m.desc));
 	}
 
 	private static StackTraceElement frame(String cls, String method) {

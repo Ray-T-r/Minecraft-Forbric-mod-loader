@@ -26,7 +26,7 @@ class AssertCompatTest {
 			posted FML construct to 2 traditional-Forge mods
 			posted FML client setup to 2 NeoForge mods
 			[Render thread/INFO]: [Forbric/Lifecycle] posted FML common setup to 2 NeoForge mods
-			ran NeoForge's registration events
+			ran NeoForge's registration events (7 step(s), each on its own) — capabilities and data maps are registered, 11 data map type(s)
 			posted FML load complete to 2 NeoForge mods
 			[Forbric/Order] construction order is dependency order
 			[Forbric/Order] 2 Fabric mod(s) initialise in dependency order

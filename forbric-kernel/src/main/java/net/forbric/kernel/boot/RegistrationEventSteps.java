@@ -58,6 +58,11 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code -Dforbric.isolatedRegistrationEvents=off} calls the method whole.
  */
 final class RegistrationEventSteps {
+	/**
+	 * {@code -Dforbric.isolatedRegistrationEvents=off} calls {@code init} whole. Only the way it is called: a failure
+	 * is still the {@code neoforge-registration-events} finding and empty data maps still {@code neoforge-data-maps},
+	 * both CONFIRMED and required, where before this class a failure was a WARN alone.
+	 */
 	static final String SWITCH = "forbric.isolatedRegistrationEvents";
 	static final String EVENTS = "net.neoforged.neoforge.internal.RegistrationEvents";
 	static final Step CAPABILITIES = new Step("net/neoforged/neoforge/capabilities/CapabilityHooks", "init");
@@ -170,7 +175,7 @@ final class RegistrationEventSteps {
 			return null;
 		}
 
-		List<Step> steps = "off".equalsIgnoreCase(System.getProperty(SWITCH, "on")) ? null : planFor(events, cl);
+		List<Step> steps = "off".equalsIgnoreCase(System.getProperty(SWITCH, "on")) ? null : planFor(events);
 		Outcome outcome;
 		if (steps == null) {
 			Throwable failure = null;
@@ -184,7 +189,7 @@ final class RegistrationEventSteps {
 			Map<Step, Throwable> failures = new LinkedHashMap<>();
 			for (Step step : steps) {
 				try {
-					resolve(step, cl).invoke(null);
+					resolve(step, events.getClassLoader()).invoke(null);
 				} catch (Throwable t) {
 					failures.put(step, unwrap(t));
 				}
@@ -200,12 +205,19 @@ final class RegistrationEventSteps {
 	 * the file does not. That is what a Mixin injector into {@code init} leaves behind (its merged handler), and
 	 * replaying the file's steps would silently skip it.
 	 */
-	private static List<Step> planFor(Class<?> events, ClassLoader cl) {
+	private static List<Step> planFor(Class<?> events) {
+		// The loader that DEFINED the class: its own INVOKESTATICs resolve through it, and so must the replay.
+		ClassLoader cl = events.getClassLoader();
 		byte[] bytes;
 		try (InputStream in = cl.getResourceAsStream(EVENTS.replace('.', '/') + ".class")) {
 			bytes = in == null ? null : in.readAllBytes();
 		} catch (Exception unreadable) {
 			bytes = null;
+		}
+		if (bytes == null) {
+			ForbricLog.info("[Forbric/Lifecycle] could not read NeoForge's RegistrationEvents class file — calling "
+					+ "init whole, so one failing step still ends it");
+			return null;
 		}
 		List<Step> steps;
 		try {
@@ -234,7 +246,10 @@ final class RegistrationEventSteps {
 		return steps;
 	}
 
-	/** The method an {@code INVOKESTATIC owner.name()V} resolves to: declared on the owner or a superclass. */
+	/**
+	 * The method an {@code INVOKESTATIC owner.name()V} resolves to: declared on the owner or a superclass, looked up
+	 * through {@code cl}, which must be the loader that defined {@code RegistrationEvents}.
+	 */
 	private static Method resolve(Step step, ClassLoader cl) throws ReflectiveOperationException {
 		Class<?> owner = Class.forName(step.owner().replace('/', '.'), false, cl);
 		for (Class<?> c = owner; c != null; c = c.getSuperclass()) {
@@ -304,7 +319,12 @@ final class RegistrationEventSteps {
 		}
 
 		String types = outcome.dataMapTypes() < 0 ? "" : ", " + outcome.dataMapTypes() + " data map type(s)";
-		if (outcome.clean()) {
+		if (outcome.clean() && outcome.dataMapsEmpty()) {
+			// Every step returned and yet no data map type exists: the event reached nobody, NeoForge's own eleven
+			// included. Not the clean line -- gates m7/m9 and compat/assert.sh read that as "data maps registered".
+			ForbricLog.info("[Forbric/Lifecycle] NeoForge's registration events all returned, but no data map type "
+					+ "was registered%s", types);
+		} else if (outcome.clean()) {
 			ForbricLog.info("[Forbric/Lifecycle] ran NeoForge's registration events%s — capabilities and data maps "
 					+ "are registered, and its cauldron/forced-chunk/data-component/POI built-ins initialised%s",
 					outcome.isolated() ? " (" + outcome.steps().size() + " step(s), each on its own)" : "", types);

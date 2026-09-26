@@ -22,7 +22,7 @@ ck  "FML construct posted (Forge)"      "posted FML construct to [1-9][0-9]* tra
 ck  "client setup posted"               "posted FML client setup to [1-9][0-9]* NeoForge mod"
 ck  "common setup inside Minecraft ctor" "\[Render thread/INFO\]: \[Forbric/Lifecycle\] posted FML common setup to [1-9][0-9]* NeoForge mod"
 abs "…not from the pre-Minecraft window" "\[main/INFO\]: \[Forbric/Lifecycle\] posted FML common setup"
-ck  "registration events ran"           "ran NeoForge.s registration events"
+ck  "registration events ran"           "ran NeoForge.s registration events.* [1-9][0-9]* data map type"
 ck  "load complete posted"              "posted FML load complete to [1-9][0-9]* NeoForge mod"
 ck  "construction is dependency order"  "Forbric/Order\] construction order is dependency order"
 ck  "Fabric init is dependency order"   "Forbric/Order\] [1-9][0-9]* Fabric mod\(s\) initialise in dependency order"

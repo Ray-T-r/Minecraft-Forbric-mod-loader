@@ -129,7 +129,9 @@ step "the full FML mod lifecycle ran on the server side too"
 # no capability was ever registered, and all IMC was dead.
 check "construct phase posted"       "posted FML construct to [1-9][0-9]* NeoForge mod"              "$LOG"
 check "sided phase posted"           "posted FML dedicated server setup to [1-9][0-9]* NeoForge mod" "$LOG"
-check "registration events ran"      "ran NeoForge.s registration events"                       "$LOG"
+# With a data map count: NeoForge registers eleven types of its own, so a run whose count is zero or unreadable
+# has no proof its data maps exist (the kernel words a zero-count run so that it cannot match this line either).
+check "registration events ran"      "ran NeoForge.s registration events.* [1-9][0-9]* data map type" "$LOG"
 check "IMC enqueued and processed"   "posted FML IMC (enqueue|process) to [1-9][0-9]* NeoForge mod"  "$LOG" 2
 check_absent "no mod failed a phase" "failed during (construct|dedicated server setup|IMC)"     "$LOG"
 # ModConfig.Type.SERVER is NOT one of the missing phases, which is worth pinning down rather than re-deriving:
