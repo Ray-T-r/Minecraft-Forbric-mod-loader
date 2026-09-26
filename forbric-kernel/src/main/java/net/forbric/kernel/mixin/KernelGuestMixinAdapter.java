@@ -40,6 +40,7 @@ import org.objectweb.asm.tree.MethodNode;
 import net.forbric.api.ModCatalog;
 import net.forbric.api.CompatibilityFinding;
 import net.forbric.kernel.boot.ArbitratedAwayClasses;
+import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -493,15 +494,14 @@ public final class KernelGuestMixinAdapter {
 		if ("off".equalsIgnoreCase(System.getProperty(PINNED_CONTRACTS_PROPERTY, "on"))) return;
 		for (MergedBaseMixinCompat.PinnedContract row : MergedBaseMixinCompat.PINNED_CONTRACTS) {
 			List<String> unsupplied = null; // judged at the first mixin that relies on it: almost no config has one
+			byte[] named = ByteScan.needle(row.contract());
 			for (Map.Entry<String, byte[]> e : loaded.entrySet()) {
 				String mixin = e.getKey();
 				if (suppress.contains(mixin) || row.pin().equals(configName + ":" + mixin)) continue;
-				try {
-					if (!MixinFit.referencesAny(MixinFit.parse(e.getValue()), Set.of(row.contract()))) continue;
-				} catch (RuntimeException unreadable) {
-					continue;
+				if (!reliesOn(e.getValue(), row.contract(), named)) continue;
+				if (unsupplied == null) {
+					unsupplied = MergedBaseMixinCompat.pinInForce(row.pin()) ? unsuppliedOnTarget(row, resource) : List.of();
 				}
-				if (unsupplied == null) unsupplied = pinInForce(row.pin()) ? unsuppliedOnTarget(row, resource) : List.of();
 				if (unsupplied.isEmpty()) break;
 				suppress.add(mixin);
 				String contract = row.contract().substring(row.contract().lastIndexOf('/') + 1);
@@ -520,10 +520,18 @@ public final class KernelGuestMixinAdapter {
 		}
 	}
 
-	/** Whether the named pin is being left out on this boot — not switched off, not kept by {@code -Dforbric.keepMixins}. */
-	private static boolean pinInForce(String pin) {
-		int colon = pin.indexOf(':');
-		return ForbricMixinService.suppressedMixinsFor(pin.substring(0, colon)).contains(pin.substring(colon + 1));
+	/**
+	 * Whether a mixin implements, casts to or calls through {@code contract}. Each of those names the interface in the
+	 * class's constant pool, so the raw bytes are asked first: this runs for every mixin of every config on every boot,
+	 * and almost none of them mention it — only those few are parsed.
+	 */
+	static boolean reliesOn(byte[] mixin, String contract, byte[] named) {
+		if (!ByteScan.contains(mixin, named)) return false;
+		try {
+			return MixinFit.referencesAny(MixinFit.parse(mixin), Set.of(contract));
+		} catch (RuntimeException unreadable) {
+			return false;
+		}
 	}
 
 	/** The target's missing interface methods, as Mixin will see the target; nothing to judge when either is absent. */

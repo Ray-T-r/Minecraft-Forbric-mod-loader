@@ -2,9 +2,13 @@
 package net.forbric.kernel.transform;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.function.Predicate;
+import java.util.Set;
+import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 
+import net.forbric.kernel.mixin.MixinFit;
 import net.forbric.kernel.util.ForbricLog;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -32,21 +36,27 @@ import org.objectweb.asm.tree.VarInsnNode;
  * its other injector, per-page tab memory at the head of Fabric's private {@code updateSelection()}, had no method to
  * attach to.
  *
- * <p>Before Mixin, the merged screen gets, when the interface is installed:
+ * <p>Before Mixin, the merged screen gets, when the interface is installed and Fabric's mixin is pinned:
  * <ul>
- *   <li>every interface method whose default only throws, delegating to {@code KernelCreativePager}, which answers
- *       from NeoForge's {@code pages}/{@code currentPage} — NeoForge's pager stays the only one drawn;</li>
+ *   <li>every interface method whose default only throws ({@link MixinFit#implementerSupplies} of the installed
+ *       interface), delegating to {@code KernelCreativePager}, which answers from NeoForge's {@code pages}/
+ *       {@code currentPage} — NeoForge's pager stays the only one drawn. One the bridge has no body for (a newer
+ *       fabric-api) is named in a warning, never passed over in silence;</li>
  *   <li>a private {@code updateSelection()V} under Fabric's name, so owo's hook binds with Fabric's meaning;</li>
  *   <li>after each of NeoForge's two page buttons sets the page, a call that runs {@code updateSelection} for its
- *       hooks while its own body stands aside — NeoForge's buttons behave exactly as before unless a mod hooks it;</li>
+ *       hooks while its own body stands aside — NeoForge's buttons behave exactly as before unless a mod hooks it.
+ *       A carrier whose buttons are shaped otherwise keeps the rest, and the warning says the turns go unannounced;</li>
  *   <li>{@code KernelCreativePagerScreen}, one-instruction trampolines to the private state the pager needs.</li>
  * </ul>
  *
  * <p>The added methods go after the existing ones: Mixin binds a selector without a descriptor to the FIRST method of
  * that name, and a NeoForge mod aiming at {@code getCurrentPage} means NeoForge's page-returning one. Applied only to
- * exactly the merged shape (NeoForge's fields and setter, two page-button bodies each setting the page once), never
- * twice. {@code -Dforbric.creativePagerBridge=off} leaves the screen as merged; the mixin adapter then leaves out any
- * guest mixin that relies on the interface ({@code MergedBaseMixinCompat.PINNED_CONTRACTS}) instead of letting it throw.
+ * the merged shape (NeoForge's fields, setter and {@code selectTab}), never twice. {@code -Dforbric.creativePagerBridge=off}
+ * leaves the screen as merged; the mixin adapter then leaves out any guest mixin that relies on the interface
+ * ({@code MergedBaseMixinCompat.PINNED_CONTRACTS}) instead of letting it throw. With the pin lifted
+ * ({@code -Dforbric.keepMixins}, {@code -Dforbric.mergedBaseCompat=off}) the bridge stands aside too: Fabric's mixin
+ * implements the interface itself, and on a screen that already had these methods it would overwrite them (or, with
+ * overwrite annotations required, fail to apply) and leave owo hooked on a {@code updateSelection} nothing calls.
  */
 public final class CreativePagerBridgeInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.creativePagerBridge";
@@ -66,9 +76,10 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 	static final String UPDATE_SELECTION = "updateSelection";
 
 	/**
-	 * The interface methods given a body, as {@code name, descriptor, pager method or null}: null reads the static
-	 * {@code selectedTab} directly. {@code switchToNextPage}/{@code switchToPreviousPage} are absent on purpose —
-	 * their defaults already go through {@code getCurrentPage} and {@code switchToPage}.
+	 * The interface methods the bridge can back, as {@code name, descriptor, pager method or null}: null reads the
+	 * static {@code selectedTab} directly. A row gets its body only while the installed interface leaves that method to
+	 * its implementer. {@code switchToNextPage}/{@code switchToPreviousPage} are absent on purpose — their defaults
+	 * already go through {@code getCurrentPage} and {@code switchToPage}.
 	 */
 	static final String[][] API_METHODS = {
 			{"getCurrentPage", "()I", "currentPage"},
@@ -80,59 +91,103 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 			{"getSelectedTab", "()" + TAB, null},
 			{"setSelectedTab", "(" + TAB + ")Z", "setSelectedTab"}};
 
-	private final Predicate<String> present;
+	private final Function<String, byte[]> gameClass;
+	private final BooleanSupplier pinInForce;
 
-	/** @param present whether an internal class name is a game resource (the interface is a mod's, not the base's) */
-	public CreativePagerBridgeInjector(Predicate<String> present) {
-		this.present = present;
+	/**
+	 * @param gameClass  the bytes of a game resource by internal name, or null — the interface is a mod's, not the base's
+	 * @param pinInForce whether Fabric's own {@code CreativeModeInventoryScreenMixin} is left out on this boot
+	 */
+	public CreativePagerBridgeInjector(Function<String, byte[]> gameClass, BooleanSupplier pinInForce) {
+		this.gameClass = gameClass;
+		this.pinInForce = pinInForce;
 	}
 
 	public static boolean enabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
 	}
 
-	private boolean active() {
-		return enabled() && present.test(API);
-	}
-
 	@Override public String name() { return "forbric-creative-pager-bridge"; }
 
 	@Override public AnchorSet anchors() {
 		if (!enabled()) return AnchorSet.scanned("FabricCreativeModeInventoryScreen left unimplemented with -D" + PROPERTY + "=off");
-		if (!present.test(API)) return AnchorSet.scanned("fabric-creative-tab-api-v1 is not installed, so there is no interface to back");
+		if (!pinInForce.getAsBoolean()) {
+			return AnchorSet.scanned("Fabric's CreativeModeInventoryScreenMixin is not pinned on this boot and implements the interface itself");
+		}
+		if (gameClass.apply(API) == null) return AnchorSet.scanned("fabric-creative-tab-api-v1 is not installed, so there is no interface to back");
 		return AnchorSet.of(new AnchorSet.Anchor(SCREEN_BINARY, AnchorSet.Severity.REQUIRED,
 				"every FabricCreativeModeInventoryScreen call throws AssertionError — owo-lib crashes the client when the "
 						+ "creative inventory opens"));
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
-		if (bytes == null || bytes.length == 0 || !SCREEN_BINARY.equals(className) || !active()) return bytes;
+		if (bytes == null || bytes.length == 0 || !SCREEN_BINARY.equals(className) || !enabled() || !pinInForce.getAsBoolean()) {
+			return bytes;
+		}
+		byte[] api = gameClass.apply(API);
+		if (api == null) return bytes;
+		Set<String> needed;
+		try {
+			needed = MixinFit.implementerSupplies(MixinFit.parse(api));
+		} catch (RuntimeException unreadable) { // the chain does not catch: a throw here would fail the screen's load
+			ForbricLog.warn("[Forbric/CreativePager] FabricCreativeModeInventoryScreen is unreadable (%s) — the creative screen "
+					+ "is left as merged", unreadable);
+			return bytes;
+		}
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
-		if (!repair(node)) return bytes;
+		Repair done = repair(node, needed);
+		if (done == null) return bytes;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		ForbricLog.info("[Forbric/CreativePager] CreativeModeInventoryScreen answers FabricCreativeModeInventoryScreen from "
 				+ "NeoForge's pager — the interface fabric-api injects had no implementation behind it, and every call threw "
 				+ "AssertionError");
+		if (!done.uncovered().isEmpty()) {
+			ForbricLog.warn("[Forbric/CreativePager] FabricCreativeModeInventoryScreen also leaves %s to its implementer, and "
+					+ "the bridge has no body for it — a call to it still throws AssertionError", done.uncovered());
+		}
+		if (!done.turnsAnnounced()) {
+			ForbricLog.warn("[Forbric/CreativePager] NeoForge's page buttons on CreativeModeInventoryScreen are not the two the "
+					+ "bridge knows — a mod hooked on updateSelection (owo-lib's per-page tab memory) does not see their page "
+					+ "turns, only the Fabric API's");
+		}
 		return writer.toByteArray();
 	}
 
-	static boolean repair(ClassNode screen) {
-		if (!SCREEN.equals(screen.name)) return false;
+	/**
+	 * What {@link #repair} did.
+	 *
+	 * @param uncovered      interface methods left to the implementer that the bridge has no body for
+	 * @param turnsAnnounced whether NeoForge's two page buttons now run {@code updateSelection}
+	 */
+	record Repair(List<String> uncovered, boolean turnsAnnounced) {
+	}
+
+	/**
+	 * Backs the interface on {@code screen}, or {@code null} when it is not the merged shape or already backed.
+	 *
+	 * @param needed the interface's {@link MixinFit#implementerSupplies}, as {@code name + descriptor}
+	 */
+	static Repair repair(ClassNode screen, Set<String> needed) {
+		if (!SCREEN.equals(screen.name)) return null;
 		if (!field(screen, "pages", LIST, false) || !field(screen, "currentPage", PAGE, false)
-				|| !field(screen, "selectedTab", TAB, true)) return false;
-		if (!instanceMethod(screen, "setCurrentPage", "(" + PAGE + ")V") || !instanceMethod(screen, "selectTab", "(" + TAB + ")V")) return false;
+				|| !field(screen, "selectedTab", TAB, true)) return null;
+		if (!instanceMethod(screen, "setCurrentPage", "(" + PAGE + ")V") || !instanceMethod(screen, "selectTab", "(" + TAB + ")V")) return null;
 		// Once only, and never over a body something else already gave the screen.
-		if (method(screen, UPDATE_SELECTION, "()V") != null) return false;
-		for (String[] api : API_METHODS) if (method(screen, api[0], api[1]) != null) return false;
-		List<MethodInsnNode> turns = pageButtonTurns(screen);
-		if (turns.size() != 2) return false;
+		if (method(screen, UPDATE_SELECTION, "()V") != null) return null;
+		List<String[]> backed = new ArrayList<>();
+		Set<String> uncovered = new LinkedHashSet<>(needed);
+		for (String[] api : API_METHODS) {
+			if (!uncovered.remove(api[0] + api[1])) continue; // the interface implements it itself, or has no such method
+			if (method(screen, api[0], api[1]) != null) return null;
+			backed.add(api);
+		}
 
 		if (!screen.interfaces.contains(API)) screen.interfaces.add(API);
 		screen.interfaces.add(PAGER_SCREEN);
 
-		for (String[] api : API_METHODS) {
+		for (String[] api : backed) {
 			MethodNode body = new MethodNode(Opcodes.ACC_PUBLIC, api[0], api[1],
 					api[0].equals("getTabsOnPage") ? "(I)Ljava/util/List<Lnet/minecraft/world/item/CreativeModeTab;>;" : null, null);
 			if (api[2] == null) {
@@ -162,14 +217,19 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 		call(screen, "forbric$selectTab", "(" + TAB + ")V", "selectTab");
 		call(screen, "forbric$updateSelection", "()V", UPDATE_SELECTION);
 
-		for (MethodInsnNode turn : turns) {
-			MethodNode owner = ownerOf(screen, turn);
-			InsnList announce = new InsnList();
-			announce.add(new VarInsnNode(Opcodes.ALOAD, 0));
-			announce.add(new MethodInsnNode(Opcodes.INVOKESTATIC, PAGER, "pageTurned", "(" + SCREEN_ARG + ")V", false));
-			owner.instructions.insert(turn, announce);
+		// The buttons are the one part a reshaped carrier can take away; the interface bodies do not depend on them.
+		List<MethodInsnNode> turns = pageButtonTurns(screen);
+		boolean announced = turns.size() == 2;
+		if (announced) {
+			for (MethodInsnNode turn : turns) {
+				MethodNode owner = ownerOf(screen, turn);
+				InsnList announce = new InsnList();
+				announce.add(new VarInsnNode(Opcodes.ALOAD, 0));
+				announce.add(new MethodInsnNode(Opcodes.INVOKESTATIC, PAGER, "pageTurned", "(" + SCREEN_ARG + ")V", false));
+				owner.instructions.insert(turn, announce);
+			}
 		}
-		return true;
+		return new Repair(List.copyOf(uncovered), announced);
 	}
 
 	/**

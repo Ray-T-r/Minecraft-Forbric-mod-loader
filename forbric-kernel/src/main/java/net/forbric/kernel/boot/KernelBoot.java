@@ -579,18 +579,25 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeDamageSeamsInjector());
 		// The merged Gui.setScreen is MinecraftForge's; NeoForge's ScreenEvent.Opening and Closing go in after its hooks.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NeoScreenEventsInjector());
-		// Client only: fabric-api's class tweaker injects FabricCreativeModeInventoryScreen into the creative screen, and
-		// the mixin that implements it is pinned (MergedBaseMixinCompat), so every call threw AssertionError — owo-lib
-		// makes one the moment the creative inventory opens. The screen answers it from NeoForge's pager instead.
-		if (net.forbric.kernel.transform.CreativePagerBridgeInjector.enabled()) {
-			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CreativePagerBridgeInjector(name -> {
-				try (var in = loader.getGameResourceAsStream(name + ".class")) { return in != null; }
-				catch (java.io.IOException unavailable) { return false; }
-			}));
-		} else {
-			ForbricLog.warn("[Forbric/CreativePager] -D%s=off — FabricCreativeModeInventoryScreen has nothing behind it on the "
-					+ "creative screen: a guest mixin relying on it (owo-lib's per-page tab memory) is left out, and any other "
-					+ "call throws AssertionError", net.forbric.kernel.transform.CreativePagerBridgeInjector.PROPERTY);
+		// fabric-api's class tweaker injects FabricCreativeModeInventoryScreen into the creative screen, and the mixin that
+		// implements it is pinned (MergedBaseMixinCompat), so every call threw AssertionError — owo-lib makes one the
+		// moment the creative inventory opens. The screen answers it from NeoForge's pager instead. Client only: a
+		// dedicated server never loads the screen, so it carries no anchor for it.
+		if (side == Side.CLIENT) {
+			java.util.function.Function<String, byte[]> gameClass = name -> {
+				try (var in = loader.getGameResourceAsStream(name + ".class")) { return in == null ? null : in.readAllBytes(); }
+				catch (java.io.IOException unavailable) { return null; }
+			};
+			java.util.function.BooleanSupplier pinned = () -> net.forbric.kernel.mixin.MergedBaseMixinCompat.pinInForce(
+					net.forbric.kernel.mixin.MergedBaseMixinCompat.CREATIVE_PAGER_PIN);
+			if (net.forbric.kernel.transform.CreativePagerBridgeInjector.enabled()) {
+				chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CreativePagerBridgeInjector(gameClass, pinned));
+			} else if (pinned.getAsBoolean() && gameClass.apply(net.forbric.kernel.transform.CreativePagerBridgeInjector.API) != null) {
+				ForbricLog.warn("[Forbric/CreativePager] -D%s=off — FabricCreativeModeInventoryScreen has nothing behind it on "
+						+ "the creative screen: a guest mixin relying on it (owo-lib's per-page tab memory) is left out unless "
+						+ "-Dforbric.pinnedContracts=off keeps it, and any call through it throws AssertionError",
+						net.forbric.kernel.transform.CreativePagerBridgeInjector.PROPERTY);
+			}
 		}
 		// A MinecraftForge brewing recipe goes into the merged builder's NeoForge-typed list wrapped as NeoForge's.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeBrewingRecipesInjector());

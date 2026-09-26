@@ -153,8 +153,26 @@ class FabricApiModuleLossAuditTest {
 		ModCatalog.Entry owo = degraded("owo");
 		assertTrue(owo != null && owo.statusDetail().contains("mixin implementing FabricCreativeModeInventoryScreen is left out"),
 				String.valueOf(owo));
+		assertTrue(owo.statusDetail().contains("unless -Dforbric.pinnedContracts=off"), "that switch keeps it: " + owo.statusDetail());
 		ModCatalog.Entry caller = degraded("caller");
 		assertTrue(caller != null && caller.statusDetail().contains("every call throws AssertionError"), String.valueOf(caller));
+	}
+
+	/** With Fabric's own mixin unpinned it implements the interface itself: nothing is lost, bridge or not. */
+	@Test
+	@org.junit.jupiter.api.parallel.ResourceLock("system-properties")
+	void theCreativePagerRowIsNoLossWhileFabricsOwnMixinApplies() {
+		publish(entry("owo", "owo.jar", ""), entry("caller", "caller.jar", ""));
+		System.setProperty(CreativePagerBridgeInjector.PROPERTY, "off");
+		System.setProperty("forbric.keepMixins", net.forbric.kernel.mixin.MergedBaseMixinCompat.CREATIVE_PAGER_PIN);
+		try {
+			FabricApiModuleLossAudit.note("owo.jar", classImplementing(CREATIVE));
+			FabricApiModuleLossAudit.note("caller.jar", classNaming(CREATIVE));
+			FabricApiModuleLossAudit.report(Side.CLIENT);
+			assertTrue(ModCatalog.failures().isEmpty(), String.valueOf(ModCatalog.failures()));
+		} finally {
+			System.clearProperty("forbric.keepMixins");
+		}
 	}
 
 	@Test

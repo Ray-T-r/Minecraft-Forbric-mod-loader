@@ -590,4 +590,47 @@ class MixinFitTest {
 	void aWildcardIsNotOursToJudge() {
 		assertNull(MixinFit.parseMember("render*"), "a wildcard target must stay unjudged, not resolve to nothing");
 	}
+
+	/**
+	 * What an interface leaves to its implementer: the abstract methods and the defaults that can only throw. A default
+	 * with a guard throw before a real body works on its own; counted, a future pinned-contract row would drop mixins
+	 * over a method nothing needs to supply.
+	 */
+	@Test
+	void onlyAThrowOnlyDefaultIsLeftToTheImplementer() {
+		String duck = "test/Duck";
+		org.objectweb.asm.ClassWriter cw = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_FRAMES
+				| org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		int itf = org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_ABSTRACT | org.objectweb.asm.Opcodes.ACC_INTERFACE;
+		cw.visit(org.objectweb.asm.Opcodes.V21, itf, duck, null, "java/lang/Object", null);
+		// Fabric's shape: throw new AssertionError("Implemented by mixin").
+		org.objectweb.asm.MethodVisitor mixinOnly = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC, "page", "()I", null, null);
+		mixinOnly.visitCode();
+		mixinOnly.visitTypeInsn(org.objectweb.asm.Opcodes.NEW, "java/lang/AssertionError");
+		mixinOnly.visitInsn(org.objectweb.asm.Opcodes.DUP);
+		mixinOnly.visitLdcInsn("Implemented by mixin");
+		mixinOnly.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESPECIAL, "java/lang/AssertionError", "<init>", "(Ljava/lang/Object;)V", false);
+		mixinOnly.visitInsn(org.objectweb.asm.Opcodes.ATHROW);
+		mixinOnly.visitMaxs(0, 0);
+		mixinOnly.visitEnd();
+		// if (page < 0) throw new IllegalArgumentException(); return page;
+		org.objectweb.asm.MethodVisitor guarded = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC, "checked", "(I)I", null, null);
+		guarded.visitCode();
+		org.objectweb.asm.Label ok = new org.objectweb.asm.Label();
+		guarded.visitVarInsn(org.objectweb.asm.Opcodes.ILOAD, 1);
+		guarded.visitJumpInsn(org.objectweb.asm.Opcodes.IFGE, ok);
+		guarded.visitTypeInsn(org.objectweb.asm.Opcodes.NEW, "java/lang/IllegalArgumentException");
+		guarded.visitInsn(org.objectweb.asm.Opcodes.DUP);
+		guarded.visitMethodInsn(org.objectweb.asm.Opcodes.INVOKESPECIAL, "java/lang/IllegalArgumentException", "<init>", "()V", false);
+		guarded.visitInsn(org.objectweb.asm.Opcodes.ATHROW);
+		guarded.visitLabel(ok);
+		guarded.visitVarInsn(org.objectweb.asm.Opcodes.ILOAD, 1);
+		guarded.visitInsn(org.objectweb.asm.Opcodes.IRETURN);
+		guarded.visitMaxs(0, 0);
+		guarded.visitEnd();
+		cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PUBLIC | org.objectweb.asm.Opcodes.ACC_ABSTRACT, "count", "()I", null, null).visitEnd();
+		cw.visitEnd();
+
+		assertEquals(java.util.Set.of("page()I", "count()I"), MixinFit.implementerSupplies(MixinFit.parse(cw.toByteArray())));
+	}
 }

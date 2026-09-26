@@ -31,6 +31,7 @@ import java.util.zip.ZipFile;
 
 import net.forbric.api.ModCatalog;
 import net.forbric.api.Side;
+import net.forbric.kernel.mixin.MergedBaseMixinCompat;
 import net.forbric.kernel.transform.CreativePagerBridgeInjector;
 import net.forbric.kernel.transform.GuestInjectorPruner;
 import net.forbric.kernel.transform.LootTableEventBridgeInjector;
@@ -88,13 +89,15 @@ public final class FabricApiModuleLossAudit {
 			// Not a ClassCastException, which is what this row used to say: fabric-api's class tweaker injects the
 			// interface into the screen whatever the kernel pins, so the cast works and the call is the interface's
 			// own default. owo-lib implements it, from a mixin — the pinned-contract closure leaves that mixin out.
+			// Lost only while Fabric's mixin is pinned and the bridge is off: with the pin lifted, Fabric implements it.
 			new Loss("fabric-creative-tab-api-v1", "net/fabricmc/fabric/api/client/creativetab/v1/", Side.CLIENT,
 					"FabricCreativeModeInventoryScreen has nothing behind it on the creative screen — every call throws "
 							+ "AssertionError(\"Implemented by mixin\")",
-					() -> !CreativePagerBridgeInjector.enabled(),
-					"its mixin implementing FabricCreativeModeInventoryScreen is left out, as nothing stands behind that "
-							+ "interface on the creative screen (kept, its first call would throw AssertionError, not "
-							+ "ClassCastException)"),
+					() -> MergedBaseMixinCompat.pinInForce(MergedBaseMixinCompat.CREATIVE_PAGER_PIN)
+							&& !CreativePagerBridgeInjector.enabled(),
+					"its mixin implementing FabricCreativeModeInventoryScreen is left out unless -Dforbric.pinnedContracts=off "
+							+ "keeps it, as nothing stands behind that interface on the creative screen (kept, its first "
+							+ "call throws AssertionError, not ClassCastException)"),
 			// The CLASS, not the package: lithostitched names DynamicRegistries in the same package, which works.
 			new Loss("fabric-registry-sync-v0", "net/fabricmc/fabric/api/event/registry/DynamicRegistrySetupCallback", null,
 					"DynamicRegistrySetupCallback never fires (RegistryDataLoaderMixin is pinned)", () -> true),

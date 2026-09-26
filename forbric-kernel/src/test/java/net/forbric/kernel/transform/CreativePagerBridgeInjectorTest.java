@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -36,7 +38,19 @@ class CreativePagerBridgeInjectorTest {
 	@AfterEach void reset() { System.clearProperty(CreativePagerBridgeInjector.PROPERTY); }
 
 	private static CreativePagerBridgeInjector bridge(boolean installed) {
-		return new CreativePagerBridgeInjector(name -> installed && name.equals(CreativePagerBridgeInjector.API));
+		return bridge(installed, true);
+	}
+
+	/** The bridge over fabric-api's real interface, installed or not, with Fabric's own mixin pinned or not. */
+	private static CreativePagerBridgeInjector bridge(boolean installed, boolean pinned) {
+		return new CreativePagerBridgeInjector(name -> {
+			if (!installed || !name.equals(CreativePagerBridgeInjector.API)) return null;
+			try {
+				return CreativePagerFixtures.creativeModule(CreativePagerBridgeInjector.API + ".class");
+			} catch (Exception unreadable) {
+				throw new AssertionError(unreadable);
+			}
+		}, () -> pinned);
 	}
 
 	/** The screen as the COREMOD phase receives it on a client with fabric-api: merged, then class-tweaked. */
@@ -112,6 +126,69 @@ class CreativePagerBridgeInjectorTest {
 		System.setProperty(CreativePagerBridgeInjector.PROPERTY, "off");
 		assertSame(tweaked, bridge(true).transform(CreativePagerBridgeInjector.SCREEN_BINARY, tweaked, null));
 		assertTrue(scanned(bridge(true).anchors()));
+	}
+
+	/**
+	 * With the pin lifted, Fabric's own mixin implements the interface. Over a bridged screen it would replace the eight
+	 * bodies (the kernel relaxes guest configs; strict, {@code "overwrites": {"requireAnnotations": true}} refuses to
+	 * apply it at all) and its private updateSelection would be renamed around the kernel's, leaving owo hooked on a
+	 * method Fabric's switch never calls. So the bridge stands aside and the kill switch gives the old screen back.
+	 */
+	@Test void withFabricsOwnMixinUnpinnedTheBridgeStandsAside() throws Exception {
+		byte[] tweaked = tweakedScreen();
+		assertSame(tweaked, bridge(true, false).transform(CreativePagerBridgeInjector.SCREEN_BINARY, tweaked, null));
+		AnchorSet anchors = bridge(true, false).anchors();
+		assertTrue(scanned(anchors) && anchors.scanNote().contains("not pinned"), String.valueOf(anchors.scanNote()));
+		assertFalse(scanned(bridge(true, true).anchors()), "pinned, the screen is a REQUIRED anchor");
+	}
+
+	/** A carrier whose page buttons are not NeoForge's two keeps the crash fix; only the turn announcement goes. */
+	@Test void aReshapedPagerKeepsTheInterfaceBodiesAndOnlyLosesTheTurnAnnouncement() throws Exception {
+		ClassNode reshaped = node(tweakedScreen());
+		// A third page button that sets the page once, as a carrier with a "first page" button would have.
+		MethodNode first = new MethodNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_SYNTHETIC, "lambda$init$2",
+				CreativePagerBridgeInjector.BUTTON_HANDLER, null, null);
+		first.instructions.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, 0));
+		first.instructions.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, 0));
+		first.instructions.add(new org.objectweb.asm.tree.FieldInsnNode(Opcodes.GETFIELD, SCREEN, "currentPage",
+				CreativePagerBridgeInjector.PAGE));
+		first.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, SCREEN, "setCurrentPage",
+				"(" + CreativePagerBridgeInjector.PAGE + ")V", false));
+		first.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.RETURN));
+		reshaped.methods.add(first);
+		assertEquals(3, CreativePagerBridgeInjector.pageButtonTurns(reshaped).size());
+
+		CreativePagerBridgeInjector.Repair done = CreativePagerBridgeInjector.repair(reshaped,
+				MixinFit.implementerSupplies(contract()));
+		assertNotNull(done, "the interface bodies do not depend on the buttons");
+		assertFalse(done.turnsAnnounced());
+		assertEquals(List.of(), MixinFit.unsupplied(contract(), reshaped), "no call through the interface throws");
+		assertNotNull(method(reshaped, "updateSelection", "()V"), "owo's hook still binds, and Fabric switches run it");
+		for (MethodNode method : reshaped.methods) {
+			for (AbstractInsnNode insn : method.instructions) {
+				assertFalse(insn instanceof MethodInsnNode call && call.name.equals("pageTurned"), method.name + " announces a turn");
+			}
+		}
+	}
+
+	/**
+	 * What the bridge backs is read off the installed interface, not assumed: a method a newer fabric-api leaves to its
+	 * implementer is named rather than reported as backed, and one it implements itself is left to it.
+	 */
+	@Test void theBackedMethodsFollowTheInstalledInterface() throws Exception {
+		Set<String> needed = new LinkedHashSet<>(MixinFit.implementerSupplies(contract()));
+		assertEquals(8, needed.size(), needed.toString());
+		needed.add("scrollToTab(Lnet/minecraft/world/item/CreativeModeTab;)Z"); // a newer fabric-api's
+		needed.remove("getSelectedTab()Lnet/minecraft/world/item/CreativeModeTab;"); // a working default there
+
+		ClassNode screen = node(tweakedScreen());
+		CreativePagerBridgeInjector.Repair done = CreativePagerBridgeInjector.repair(screen, needed);
+		assertNotNull(done);
+		assertEquals(List.of("scrollToTab(Lnet/minecraft/world/item/CreativeModeTab;)Z"), done.uncovered());
+		assertNull(method(screen, "getSelectedTab", "()Lnet/minecraft/world/item/CreativeModeTab;"),
+				"the interface's own default answers it");
+		assertNotNull(method(screen, "getCurrentPage", "()I"));
+		assertTrue(done.turnsAnnounced());
 	}
 
 	@Test void owoLibsMixinFitsOnlyOnceTheBridgeRan() throws Exception {

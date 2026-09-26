@@ -933,7 +933,8 @@ public final class MixinFit {
 	 * that only throw — Fabric writes {@code throw new AssertionError("Implemented by mixin")} for every method its
 	 * mixin implements, so an interface can be fully "default" and still have nothing behind it. A default that calls
 	 * back into the contract ({@code switchToNextPage} is {@code switchToPage(getCurrentPage() + 1)}) is not counted:
-	 * it works once the others do. As {@code name + descriptor}.
+	 * it works once the others do. Nor is one that can return — a guard throw before a real body is a working
+	 * default. As {@code name + descriptor}.
 	 */
 	public static Set<String> implementerSupplies(ClassNode contract) {
 		Set<String> out = new LinkedHashSet<>();
@@ -944,12 +945,14 @@ public final class MixinFit {
 				out.add(m.name + m.desc);
 				continue;
 			}
-			boolean throwsOnly = false, delegates = false;
+			boolean throwsAny = false, returns = false, delegates = false;
 			for (AbstractInsnNode insn : m.instructions) {
-				if (insn.getOpcode() == Opcodes.ATHROW) throwsOnly = true;
+				int op = insn.getOpcode();
+				if (op == Opcodes.ATHROW) throwsAny = true;
+				if (op >= Opcodes.IRETURN && op <= Opcodes.RETURN) returns = true;
 				if (insn instanceof MethodInsnNode call && call.owner.equals(contract.name)) delegates = true;
 			}
-			if (throwsOnly && !delegates) out.add(m.name + m.desc);
+			if (throwsAny && !returns && !delegates) out.add(m.name + m.desc);
 		}
 		return out;
 	}

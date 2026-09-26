@@ -146,7 +146,8 @@ class KernelCreativePagerTest {
 		byte[] screen = CreativePagerFixtures.classTweaked(SCREEN,
 				Files.readAllBytes(classes.resolve(SCREEN.replace('.', '/') + ".class")));
 		if (bridged) {
-			screen = new CreativePagerBridgeInjector(name -> name.equals(CreativePagerFixtures.INTERFACE))
+			byte[] api = defined.get(API);
+			screen = new CreativePagerBridgeInjector(name -> name.equals(CreativePagerFixtures.INTERFACE) ? api : null, () -> true)
 					.transform(SCREEN, screen, null);
 		}
 		if (hooked) screen = hookUpdateSelection(screen);

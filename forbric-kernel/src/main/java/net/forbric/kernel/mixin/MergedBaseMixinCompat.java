@@ -197,11 +197,24 @@ public final class MergedBaseMixinCompat {
 	public record PinnedContract(String pin, String target, String contract) {
 	}
 
+	/** Fabric's creative pager, the pin whose interface {@link net.forbric.kernel.transform.CreativePagerBridgeInjector} backs. */
+	public static final String CREATIVE_PAGER_PIN = "fabric-creative-tab-api-v1.client.mixins.json:CreativeModeInventoryScreenMixin";
+
 	/** Every pin that implements an interface. {@code MergedBaseMixinCompatPinnedContractsTest} reads each off its jar. */
 	public static final List<PinnedContract> PINNED_CONTRACTS = List.of(
-			new PinnedContract("fabric-creative-tab-api-v1.client.mixins.json:CreativeModeInventoryScreenMixin",
+			new PinnedContract(CREATIVE_PAGER_PIN,
 					"net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen",
 					"net/fabricmc/fabric/api/client/creativetab/v1/FabricCreativeModeInventoryScreen"));
+
+	/**
+	 * Whether {@code pin} ({@code <config>:<MixinEntry>}) is left out on this boot: listed, and neither
+	 * {@code -Dforbric.mergedBaseCompat=off} nor {@code -Dforbric.keepMixins} lifted it. Lifted, the pinned mixin
+	 * applies and implements its interface itself — whatever stands in for it has to stand aside.
+	 */
+	public static boolean pinInForce(String pin) {
+		int colon = pin.indexOf(':');
+		return ForbricMixinService.suppressedMixinsFor(pin.substring(0, colon)).contains(pin.substring(colon + 1));
+	}
 
 	/**
 	 * Whole mixin configs to leave unregistered, because no sub-selection of their mixins is coherent.

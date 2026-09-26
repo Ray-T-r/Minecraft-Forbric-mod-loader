@@ -18,6 +18,7 @@ import java.util.zip.ZipInputStream;
 
 import net.forbric.kernel.transform.CreativePagerFixtures;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 
 /**
  * {@link MergedBaseMixinCompat#PINNED_CONTRACTS} is a hand list, so it is read back off fabric-api itself: every row's
@@ -50,6 +51,62 @@ class MergedBaseMixinCompatPinnedContractsTest {
 		assertTrue(judged >= 6, "the fabric-api pins were all read: " + judged);
 		assertEquals(Set.copyOf(read), Set.copyOf(MergedBaseMixinCompat.PINNED_CONTRACTS));
 		for (var row : MergedBaseMixinCompat.PINNED_CONTRACTS) assertTrue(MergedBaseMixinCompat.SUPPRESSED_MIXINS.contains(row.pin()));
+	}
+
+	/** Lifted by -Dforbric.keepMixins or -Dforbric.mergedBaseCompat=off, a pin's mixin applies and implements its interface. */
+	@Test @ResourceLock("system-properties")
+	void aPinIsInForceUntilSomethingLiftsIt() {
+		String pin = MergedBaseMixinCompat.CREATIVE_PAGER_PIN;
+		assertTrue(MergedBaseMixinCompat.pinInForce(pin));
+		assertFalse(MergedBaseMixinCompat.pinInForce(pin.substring(0, pin.indexOf(':') + 1) + "NotPinned"));
+		try {
+			System.setProperty("forbric.keepMixins", pin);
+			assertFalse(MergedBaseMixinCompat.pinInForce(pin), "kept by name");
+			System.clearProperty("forbric.keepMixins");
+			System.setProperty("forbric.mergedBaseCompat", "off");
+			assertFalse(MergedBaseMixinCompat.pinInForce(pin), "the built-in lists switched off");
+			System.setProperty("forbric.suppressMixins", pin);
+			assertTrue(MergedBaseMixinCompat.pinInForce(pin), "named again by hand");
+		} finally {
+			System.clearProperty("forbric.keepMixins");
+			System.clearProperty("forbric.mergedBaseCompat");
+			System.clearProperty("forbric.suppressMixins");
+		}
+	}
+
+	/**
+	 * The raw-byte check in front of the pinned-contract parse turns away only what the parse would: across every class
+	 * of owo-lib and fabric-api's creative-tab module, a class relies on the interface exactly when its bytes pass. A
+	 * needle spelled as a descriptor or with dots would miss owo's mixin here, and let it throw in the game.
+	 */
+	@Test
+	void thePinnedContractPrefilterTurnsAwayOnlyWhatTheParseWould() throws Exception {
+		MergedBaseMixinCompat.PinnedContract row = MergedBaseMixinCompat.PINNED_CONTRACTS.getFirst();
+		byte[] named = net.forbric.kernel.util.ByteScan.needle(row.contract());
+		Map<String, byte[]> classes = new HashMap<>();
+		for (var e : entries(fabricApiModules().get("fabric-creative-tab-api-v1")).entrySet()) {
+			if (e.getKey().endsWith(".class")) classes.put(e.getKey(), e.getValue());
+		}
+		try (ZipFile owo = new ZipFile(CreativePagerFixtures.owo().toFile())) {
+			for (ZipEntry e : owo.stream().toList()) {
+				if (e.getName().endsWith(".class")) classes.put(e.getName(), owo.getInputStream(e).readAllBytes());
+			}
+		}
+		List<String> relying = new ArrayList<>();
+		int turnedAway = 0;
+		for (var e : classes.entrySet()) {
+			boolean parsed;
+			try {
+				parsed = MixinFit.referencesAny(MixinFit.parse(e.getValue()), Set.of(row.contract()));
+			} catch (RuntimeException unreadable) {
+				parsed = false;
+			}
+			assertEquals(parsed, KernelGuestMixinAdapter.reliesOn(e.getValue(), row.contract(), named), e.getKey());
+			if (parsed) relying.add(e.getKey());
+			if (!net.forbric.kernel.util.ByteScan.contains(e.getValue(), named)) turnedAway++;
+		}
+		assertTrue(relying.contains(CreativePagerFixtures.OWO_MIXIN + ".class"), relying.toString());
+		assertTrue(turnedAway > classes.size() * 9 / 10, turnedAway + " of " + classes.size() + " never parsed");
 	}
 
 	/** fabric-api's nested module jars, by module id (the file name up to its version). */
