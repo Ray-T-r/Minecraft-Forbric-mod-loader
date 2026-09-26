@@ -56,6 +56,45 @@ class InsertedLambdaArgumentShimTest {
  @Test void groupLocalsSugarAndStaticMismatchCannotBorrowTheShim()throws Exception{
   for(int mode=0;mode<4;mode++){ClassNode mixin=shell(),target=target();MethodNode handler=StagedFabricMixinFixture.method(mixin,"capture");AnnotationNode inject=MixinFit.injectorOf(handler);if(mode==0)handler.visibleAnnotations.add(new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Group;"));if(mode==1){inject.values.add("locals");inject.values.add(new String[]{"Lorg/spongepowered/asm/mixin/injection/callback/LocalCapture;","CAPTURE_FAILHARD"});}if(mode==2){handler.visibleParameterAnnotations=new List[5];handler.visibleParameterAnnotations[0]=List.of(new AnnotationNode("Lcom/llamalad7/mixinextras/sugar/Local;"));}if(mode==3)handler.access&=~Opcodes.ACC_STATIC;assertEquals(0,InsertedLambdaArgumentShim.adapt(mixin,n->target),"mode="+mode);}
  }
+ public static class LocalsShell {
+  public static Object[] seen;
+  private static void capture(long number,Object first,Object second,double fraction,CallbackInfo callback,String name,int count){seen=new Object[]{number,first,second,fraction,callback,name,count};}
+ }
+ /** Fusion's SpriteResourceLoaderMixin shape: CAPTURE_FAILHARD, the captured locals after the callback. */
+ private ClassNode localsShell(String... localsDescs)throws Exception{
+  ClassNode node;try(var in=LocalsShell.class.getResourceAsStream("InsertedLambdaArgumentShimTest$LocalsShell.class")){node=MixinFit.parse(in.readAllBytes());}
+  node.nestHostClass=null;node.innerClasses.clear();
+  AnnotationNode mixin=new AnnotationNode("Lorg/spongepowered/asm/mixin/Mixin;");mixin.values=new ArrayList<>(List.of("value",List.of(Type.getObjectType("probe/Target"))));node.invisibleAnnotations=new ArrayList<>(List.of(mixin));
+  AnnotationNode at=new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");at.values=new ArrayList<>(List.of("value","INVOKE","target","Lprobe/Anchor;call()V"));
+  AnnotationNode inject=new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Inject;");inject.values=new ArrayList<>(List.of("method",new ArrayList<>(List.of("lambda$render$0"+OLD)),"at",List.of(at),"locals",new String[]{"Lorg/spongepowered/asm/mixin/injection/callback/LocalCapture;","CAPTURE_FAILHARD"}));
+  StagedFabricMixinFixture.method(node,"capture").visibleAnnotations=new ArrayList<>(List.of(inject));return node;
+ }
+ /** The live lambda with an inserted String argument, its two locals in the slots after it (7 and 8), and a table. */
+ private ClassNode targetWithLocals(boolean table,String nameDesc)throws Exception{
+  ClassNode target=target();MethodNode lambda=StagedFabricMixinFixture.method(target,"lambda$render$0");lambda.instructions.clear();
+  LabelNode start=new LabelNode(),end=new LabelNode();
+  lambda.instructions.add(new LdcInsnNode("local"));lambda.instructions.add(new VarInsnNode(Opcodes.ASTORE,7));
+  lambda.instructions.add(new InsnNode(Opcodes.ICONST_5));lambda.instructions.add(new VarInsnNode(Opcodes.ISTORE,8));
+  lambda.instructions.add(start);lambda.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"probe/Anchor","call","()V",false));
+  lambda.instructions.add(end);lambda.instructions.add(new InsnNode(Opcodes.RETURN));
+  if(table)lambda.localVariables=new ArrayList<>(List.of(new LocalVariableNode("name",nameDesc,null,start,end,7),new LocalVariableNode("count","I",null,start,end,8)));
+  return target;
+ }
+ @Test void capturedLocalsAreForwardedWhenTheLiveLambdaHoldsThemAfterItsArguments()throws Exception{
+  ClassNode shell=localsShell(),target=targetWithLocals(true,"Ljava/lang/String;");
+  assertEquals(1,InsertedLambdaArgumentShim.adapt(shell,n->target));
+  MethodNode shim=StagedFabricMixinFixture.method(shell,"forbric$expanded$capture");
+  assertEquals("(JLjava/lang/Object;Ljava/lang/String;Ljava/lang/Object;D"+CI+"Ljava/lang/String;I)V",shim.desc,"the live arguments, the callback, then the captured locals");
+  new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(shell.name,shim);
+  byte[] bytes=StagedFabricMixinFixture.bytes(shell);Class<?> defined=new ClassLoader(getClass().getClassLoader()){Class<?> define(){return defineClass(shell.name.replace('/','.'),bytes,0,bytes.length);}}.define();
+  var method=defined.getDeclaredMethod(shim.name,long.class,Object.class,String.class,Object.class,double.class,CallbackInfo.class,String.class,int.class);method.setAccessible(true);
+  Object first=new Object(),second=new Object();CallbackInfo callback=new CallbackInfo("render",false);method.invoke(null,7L,first,"inserted",second,1.5d,callback,"local",5);
+  assertArrayEquals(new Object[]{7L,first,second,1.5d,callback,"local",5},(Object[])defined.getField("seen").get(null));
+ }
+ @Test void capturedLocalsWithoutATableOrOfAnotherTypeRefuse()throws Exception{
+  assertEquals(0,InsertedLambdaArgumentShim.adapt(localsShell(),n->{try{return targetWithLocals(false,"Ljava/lang/String;");}catch(Exception e){throw new RuntimeException(e);}}),"no table, no proof");
+  assertEquals(0,InsertedLambdaArgumentShim.adapt(localsShell(),n->{try{return targetWithLocals(true,"Ljava/lang/Object;");}catch(Exception e){throw new RuntimeException(e);}}),"slot 7 holds another type");
+ }
  @Test void absentPrunerEvidenceAndExplicitOffRefuse()throws Exception{
   ClassNode mixin=shell(),target=target();target.name="probe/NeverPruned";assertEquals(0,InsertedLambdaArgumentShim.adapt(mixin,n->target));System.setProperty(InsertedLambdaArgumentShim.PROPERTY,"off");assertEquals(0,InsertedLambdaArgumentShim.adapt(shell(),n->target()));
  }

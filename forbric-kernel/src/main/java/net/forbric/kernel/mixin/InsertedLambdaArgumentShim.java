@@ -33,7 +33,8 @@ public final class InsertedLambdaArgumentShim {
             List<String> selectors = MixinFit.stringList(MixinFit.value(inject, "method"));
             if (selectors.size() != 1 || MixinFit.value(inject, "slice") != null) continue;
             Object locals = MixinFit.value(inject, "locals");
-            if (locals != null && (!(locals instanceof String[] e) || !e[1].equals("NO_CAPTURE"))) continue;
+            boolean capturing = locals != null && (!(locals instanceof String[] e) || !e[1].equals("NO_CAPTURE"));
+            if (capturing && !(locals instanceof String[] mode && mode[1].startsWith("CAPTURE_"))) continue;
             String selector = selectors.getFirst(); int split = selector.indexOf('(');
             if (!selector.startsWith("lambda$") || split < 0) continue;
             String name = selector.substring(0, split), oldDesc = selector.substring(split);
@@ -46,13 +47,23 @@ public final class InsertedLambdaArgumentShim {
                     || !anchorExists(inject, method)) continue;
             Type[] oldArgs = Type.getArgumentTypes(oldDesc), newArgs = Type.getArgumentTypes(method.desc);
             Type callback = Type.getType(Type.getReturnType(oldDesc).equals(Type.VOID_TYPE) ? CALLBACK : RETURNABLE);
+            Type[] handlerArgs = Type.getArgumentTypes(handler.desc);
+            if (handlerArgs.length < oldArgs.length + 1) continue;
             Type[] expected = Arrays.copyOf(oldArgs, oldArgs.length + 1); expected[oldArgs.length] = callback;
-            if (!Arrays.equals(expected, Type.getArgumentTypes(handler.desc))) continue;
+            if (!Arrays.equals(expected, Arrays.copyOf(handlerArgs, expected.length))) continue;
+            // A handler that captures locals takes them after the callback. They are forwarded untouched, and
+            // only when the live lambda provably holds exactly those types in the slots after ITS arguments at
+            // the anchor: the inserted argument shifts every local, and Mixin captures from the first slot past
+            // the arguments of the method it actually injects into.
+            Type[] captured = Arrays.copyOfRange(handlerArgs, expected.length, handlerArgs.length);
+            if (capturing != (captured.length > 0)) continue;
+            if (capturing && !localsAtAnchor(inject, method, captured)) continue;
             int[] mapping = uniqueEmbedding(oldArgs, newArgs);
             if (mapping == null) continue;
             String shimName = "forbric$expanded$" + handler.name;
             if (mixin.methods.stream().anyMatch(m -> m.name.equals(shimName))) continue;
-            Type[] shimArgs = Arrays.copyOf(newArgs, newArgs.length + 1); shimArgs[newArgs.length] = callback;
+            Type[] shimArgs = Arrays.copyOf(newArgs, newArgs.length + 1 + captured.length); shimArgs[newArgs.length] = callback;
+            System.arraycopy(captured, 0, shimArgs, newArgs.length + 1, captured.length);
             boolean isStatic = (handler.access & Opcodes.ACC_STATIC) != 0;
             MethodNode shim = new MethodNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_SYNTHETIC | (isStatic ? Opcodes.ACC_STATIC : 0),
                     shimName, Type.getMethodDescriptor(Type.VOID_TYPE, shimArgs), null, null);
@@ -65,10 +76,15 @@ public final class InsertedLambdaArgumentShim {
                 stack += oldArgs[i].getSize();
             }
             shim.instructions.add(new VarInsnNode(Opcodes.ALOAD, slot));
+            int next = slot + 1; stack += 1;
+            for (Type local : captured) {
+                shim.instructions.add(new VarInsnNode(local.getOpcode(Opcodes.ILOAD), next));
+                next += local.getSize(); stack += local.getSize();
+            }
             shim.instructions.add(new MethodInsnNode(isStatic ? Opcodes.INVOKESTATIC : Opcodes.INVOKESPECIAL,
                     mixin.name, handler.name, handler.desc, false));
             shim.instructions.add(new InsnNode(Opcodes.RETURN));
-            shim.maxStack = stack + 1; shim.maxLocals = slot + 1;
+            shim.maxStack = stack; shim.maxLocals = next;
             // Keep the original helper's name so internal calls (including recursion) stay intact.
             if (handler.visibleAnnotations != null) handler.visibleAnnotations.remove(inject);
             if (handler.invisibleAnnotations != null) handler.invisibleAnnotations.remove(inject);
@@ -114,6 +130,35 @@ public final class InsertedLambdaArgumentShim {
                 if (a instanceof Handle h && h.getOwner().equals(owner.name) && h.getName().equals(target.name) && h.getDesc().equals(target.desc)) return true;
         }
         return false;
+    }
+
+    /**
+     * Whether the live lambda's local variable table puts exactly {@code captured}, in order, in the slots right after
+     * its arguments at every instruction the anchor names. Without a table there is no proof, and the handler is
+     * left alone (Mixin itself reads the table to decide what it captures).
+     */
+    static boolean localsAtAnchor(AnnotationNode inject, MethodNode target, Type[] captured) {
+        if (target.localVariables == null || target.localVariables.isEmpty()) return false;
+        Object member = MixinFit.value(MixinFit.atNodes(inject).getFirst(), "target");
+        if (!(member instanceof String s)) return false;
+        int first = (target.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+        for (Type arg : Type.getArgumentTypes(target.desc)) first += arg.getSize();
+        boolean any = false;
+        for (AbstractInsnNode insn : target.instructions) {
+            if (!(insn instanceof MethodInsnNode c) || !s.equals("L" + c.owner + ";" + c.name + c.desc)) continue;
+            any = true;
+            int index = target.instructions.indexOf(insn), slot = first;
+            for (Type local : captured) {
+                LocalVariableNode live = null;
+                for (LocalVariableNode variable : target.localVariables) {
+                    if (variable.index == slot && target.instructions.indexOf(variable.start) <= index
+                            && index < target.instructions.indexOf(variable.end)) live = variable;
+                }
+                if (live == null || !live.desc.equals(local.getDescriptor())) return false;
+                slot += local.getSize();
+            }
+        }
+        return any;
     }
 
     private static boolean anchorExists(AnnotationNode inject, MethodNode target) {
