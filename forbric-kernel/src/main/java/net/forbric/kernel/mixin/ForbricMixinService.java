@@ -649,7 +649,9 @@ public final class ForbricMixinService
 			for (String config : configs) {
 				if (config != null && !config.isEmpty()) all.add(config);
 			}
-			registeredConfigs = java.util.Set.copyOf(all);
+			// In registration order, as the getter promises: Set.copyOf kept none, and MixinAddedMembers needs the
+			// order Mixin creates the configs in to tell which of two equal-priority mixins applies first.
+			registeredConfigs = java.util.Collections.unmodifiableSet(all);
 		}
 
 		if (configs == null || "off".equalsIgnoreCase(System.getProperty("forbric.relaxGuestMixins", "on"))) {

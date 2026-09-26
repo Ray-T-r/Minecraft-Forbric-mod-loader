@@ -208,8 +208,11 @@ public final class KernelGuestMixinAdapter {
 				}
 				if (isExplicitlyKept(configName, mixin)) continue;
 
+				// What the mixins Mixin applies first add to the same targets: a @Shadow of one of those members binds,
+				// on Fabric and here (moreculling's shadow of the mesh field fabric-renderer-api adds).
+				MixinAddedMembers.View added = MixinAddedMembers.before(configName, mixin, resource);
 				MixinFit.Result fit = MixinFit.evaluate(classBytes, resource,
-						net.forbric.kernel.classloading.DelegationPolicy::alwaysGame);
+						net.forbric.kernel.classloading.DelegationPolicy::alwaysGame, added);
 				if (!fit.shouldSuppress()) {
 					if (!fit.foreign().isEmpty()) {
 						// A DIFFERENT thing from the line below, and the reason the two are separated. An anchor
@@ -248,7 +251,7 @@ public final class KernelGuestMixinAdapter {
 						MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(classBytes), resource);
 						MixinFit.Result after = plan.isEmpty() ? null : MixinFit.evaluate(
 								MixinRetarget.rewritten(classBytes, plan), resource,
-								net.forbric.kernel.classloading.DelegationPolicy::alwaysGame);
+								net.forbric.kernel.classloading.DelegationPolicy::alwaysGame, added);
 						if (after != null && after.unresolved().size() < fit.unresolved().size()) {
 							MixinRetarget.remember(plan);
 							ForbricLog.info("[Forbric/Mixin] retargeted guest mixin %s:%s — %s; verdict %s→%s",

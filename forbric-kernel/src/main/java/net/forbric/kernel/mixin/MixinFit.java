@@ -205,6 +205,15 @@ public final class MixinFit {
 	 */
 	public static Result evaluate(byte[] mixinBytes, Function<String, byte[]> targetResolver,
 			java.util.function.Predicate<String> gameClass) {
+		return evaluate(mixinBytes, targetResolver, gameClass, MixinAddedMembers.View.NONE);
+	}
+
+	/**
+	 * @param added what other mixins add to the targets before this one is applied; a {@code @Shadow} of such a member
+	 *              resolves, as it does on Fabric. {@link MixinAddedMembers#before} is the production answer
+	 */
+	public static Result evaluate(byte[] mixinBytes, Function<String, byte[]> targetResolver,
+			java.util.function.Predicate<String> gameClass, MixinAddedMembers.View added) {
 		ClassNode mixin = read(mixinBytes, false);
 		List<String> targets = mixinTargets(mixin);
 		if (targets.isEmpty()) return new Result(Verdict.FIT, List.of(), 0, 0, List.of());
@@ -234,7 +243,8 @@ public final class MixinFit {
 			// same 1226 there is not one of the latter.
 			boolean gameOwned = gameClass.test(targetName.replace('/', '.'));
 
-			List<Anchor> anchors = new ArrayList<>(anchorsOf(mixin, target, targetResolver));
+			List<Anchor> anchors = new ArrayList<>(anchorsOf(mixin, target, targetResolver,
+					added == null ? MixinAddedMembers.View.NONE : added, declared));
 			// A renumbered anonymous class: every member anchor may resolve and still belong to a different class
 			// than the one vanilla compiled at that name. Soft — it forces PARTIAL, never UNFIT.
 			if (moved == null && gameOwned && MergedBaseAnonymousDrift.drifted(targetName)) {
@@ -326,7 +336,8 @@ public final class MixinFit {
 		}
 	}
 
-	private static List<Anchor> anchorsOf(ClassNode mixin, ClassNode target, Function<String, byte[]> resolver) {
+	private static List<Anchor> anchorsOf(ClassNode mixin, ClassNode target, Function<String, byte[]> resolver,
+			MixinAddedMembers.View added, String declared) {
 		// The target again with its local variable tables, read once and only if an injector needs it.
 		Supplier<ClassNode> withLocals = new Supplier<>() {
 			private ClassNode read;
@@ -345,12 +356,13 @@ public final class MixinFit {
 		};
 		List<Anchor> out = new ArrayList<>();
 
-		// @Shadow fields: the member must still be declared (walking the superclass chain).
+		// @Shadow fields: the member must still be declared (walking the superclass chain), or be added by a mixin
+		// Mixin applies to the target first (MixinAddedMembers: moreculling's shadow of fabric-renderer's mesh).
 		if (mixin.fields != null) {
 			for (FieldNode f : mixin.fields) {
 				if (!has(f.visibleAnnotations, SHADOW_DESC) && !has(f.invisibleAnnotations, SHADOW_DESC)) continue;
-				out.add(new Anchor("@Shadow field", f.name,
-						findField(target, f.name, f.desc, resolver) != null));
+				out.add(new Anchor("@Shadow field", f.name, findField(target, f.name, f.desc, resolver) != null
+						|| addedBefore(added, declared, target.name, true, f.name, f.desc)));
 			}
 		}
 
@@ -360,8 +372,8 @@ public final class MixinFit {
 
 			// @Shadow methods: must still exist by name+desc.
 			if (has(m.visibleAnnotations, SHADOW_DESC) || has(m.invisibleAnnotations, SHADOW_DESC)) {
-				out.add(new Anchor("@Shadow method", m.name + m.desc,
-						findMethod(target, m.name, m.desc, resolver) != null));
+				out.add(new Anchor("@Shadow method", m.name + m.desc, findMethod(target, m.name, m.desc, resolver) != null
+						|| addedBefore(added, declared, target.name, false, m.name, m.desc)));
 				continue;
 			}
 
@@ -396,6 +408,16 @@ public final class MixinFit {
 			}
 		}
 		return countsGroups() ? settleGroups(out) : out;
+	}
+
+	/** Whether a mixin applied first adds the member to the target, by the name the mixin declares it or its home. */
+	private static boolean addedBefore(MixinAddedMembers.View added, String declared, String target, boolean field,
+			String name, String desc) {
+		if (added == MixinAddedMembers.View.NONE) return false;
+		for (String owner : declared == null || declared.equals(target) ? List.of(target) : List.of(declared, target)) {
+			if (field ? added.field(owner, name, desc) : added.method(owner, name, desc)) return true;
+		}
+		return false;
 	}
 
 	/**
