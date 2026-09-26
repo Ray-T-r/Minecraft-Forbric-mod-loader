@@ -169,6 +169,10 @@ public final class LifecycleHookInjector implements ClassTransformer {
 		boolean fabricHooks = fabricServerHook && fabricHooksEnabled();
 		for (MethodNode m : node.methods) {
 			if (!m.name.equals(transformMethod)) continue;
+			// One marker per method, after the first trigger. SERVER_TRIGGERS keeps both load forms, and a base
+			// carrying both would otherwise call Hooks.startServer twice -- owo's @Group(max = 1) then fails with
+			// "expected 1 but 2", losing the freeze the marker is there for. Fabric's own Main calls it once.
+			boolean marked = false;
 			for (var insn : m.instructions.toArray()) {
 				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC) continue;
 				Trigger t = matchTrigger(call);
@@ -194,7 +198,8 @@ public final class LifecycleHookInjector implements ClassTransformer {
 						+ "— kernel owns the lifecycle", t.owner(), t.name(), KERNEL_HOOK_OWNER, t.hookName(),
 						transformClass, transformMethod);
 
-				if (fabricHooks) {
+				if (fabricHooks && !marked) {
+					marked = true;
 					// Right after the window, on the same path: the NeoForge base only loads mods when the launch
 					// is not --initSettings, and neither may the marker claim they were. Fabric passes (null, null).
 					InsnList marker = new InsnList();

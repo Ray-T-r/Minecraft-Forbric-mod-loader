@@ -83,6 +83,16 @@ public final class KernelFabricEcosystem {
 	/** The entrypoint keys whose phase has run, for {@link KernelFabricLoader#adoptFabricStorage}. */
 	private static final Set<String> PHASES_RAN = ConcurrentHashMap.newKeySet();
 
+	/**
+	 * Forgets which phases ran, so one test's {@code preLaunch} or {@code main} does not follow the next one around the
+	 * JVM as "already ran". Tests only; a real process runs each phase once.
+	 */
+	public static void resetPhasesForTests() {
+		MAINS_RAN.set(false);
+		CLIENTS_RAN.set(false);
+		PHASES_RAN.clear();
+	}
+
 	private static volatile KernelFabricLoader loader;
 
 	private KernelFabricEcosystem() {
@@ -406,13 +416,17 @@ public final class KernelFabricEcosystem {
 
 		EnvType envType = loader.getEnvironmentType();
 		PHASES_RAN.add("main");
-		if (envType != EnvType.CLIENT) PHASES_RAN.add("server");
 		int main = invoke("main", ModInitializer.class, ModInitializer::onInitialize);
 
 		if (envType == EnvType.CLIENT) {
 			ForbricLog.info("[Forbric/Fabric] invoked %d Fabric main entrypoint(s) in the %s window", main,
 					mainsRunInConstructor() ? "Minecraft.<init>" : "pre-Minecraft registration");
 		} else {
+			// Fabric's startServer reads the storage afresh for each phase, so a 'server' entry a mod adds during its
+			// own onInitialize runs. Read it back here too, and only then call the phase run; marking 'server' as run
+			// before main dropped such an entry with a warning that it came too late.
+			adoptFabricStorage();
+			PHASES_RAN.add("server");
 			int server = invoke("server", DedicatedServerModInitializer.class,
 					DedicatedServerModInitializer::onInitializeServer);
 			ForbricLog.info("[Forbric/Fabric] invoked %d Fabric main entrypoint(s) + %d server entrypoint(s)",

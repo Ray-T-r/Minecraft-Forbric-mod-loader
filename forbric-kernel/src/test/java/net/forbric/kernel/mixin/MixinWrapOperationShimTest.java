@@ -96,7 +96,8 @@ class MixinWrapOperationShimTest {
 		assertTrue(fit.unresolved().stream().noneMatch(u -> u.contains("getCloneItemStack")), fit.reason());
 		System.setProperty(MixinWrapOperationShim.PROPERTY, "off");
 		MixinFit.Result off = MixinFit.evaluate(mixin, resolver);
-		assertTrue(off.unresolved().stream().anyMatch(u -> u.contains("getCloneItemStack in handlePickItemFromBlock")), off.reason());
+		assertTrue(off.unresolved().stream().anyMatch(
+				u -> u.contains("getCloneItemStack in ServerGamePacketListenerImpl.handlePickItemFromBlock")), off.reason());
 	}
 
 	/**
@@ -111,7 +112,8 @@ class MixinWrapOperationShimTest {
 		byte[] target = StagedFabricMixinFixture.bytes(game(merged(), listener));
 		MixinFit.Result fit = MixinFit.evaluate(mixin, n -> n.equals(listener + ".class") ? target : null);
 		assertEquals(MixinFit.Verdict.PARTIAL, fit.verdict(), fit.reason());
-		assertTrue(fit.unresolved().contains("@At(INVOKE) RegistryFriendlyByteBuf.decorator in handleConfigurationFinished"),
+		assertTrue(fit.unresolved().contains("@At(INVOKE) net.minecraft.network.RegistryFriendlyByteBuf.decorator in "
+				+ "ServerConfigurationPacketListenerImpl.handleConfigurationFinished"),
 				fit.unresolved().toString());
 		assertFalse(fit.shouldSuppress(), "PARTIAL is kept unless strict");
 	}

@@ -388,7 +388,8 @@ class MixinAtWidenedCallTest {
 		byte[] targetBytes = bytes(target);
 		MixinFit.Result verdict = MixinFit.evaluate(bytes(mixin), name -> name.equals(listener + ".class") ? targetBytes : null);
 		assertEquals(MixinFit.Verdict.PARTIAL, verdict.verdict(), verdict.reason());
-		assertEquals(List.of("@At(INVOKE) RegistryFriendlyByteBuf.decorator in handleConfigurationFinished"), verdict.unresolved());
+		assertEquals(List.of("@At(INVOKE) net.minecraft.network.RegistryFriendlyByteBuf.decorator in "
+				+ "ServerConfigurationPacketListenerImpl.handleConfigurationFinished"), verdict.unresolved());
 		assertEquals(0, MixinAtWidenedCall.widen(mixin, name -> target), "and the rewrite agrees: nothing moves");
 	}
 

@@ -20,8 +20,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
@@ -77,6 +79,7 @@ public final class MixinFit {
 	private static final String OPERATION_DESC = "Lcom/llamalad7/mixinextras/injector/wrapoperation/Operation;";
 	private static final String WRAP_OPERATION_DESC = "Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;";
 	private static final String REDIRECT_DESC = "Lorg/spongepowered/asm/mixin/injection/Redirect;";
+	private static final String GROUP_DESC = "Lorg/spongepowered/asm/mixin/injection/Group;";
 
 	/** Injector annotations whose {@code method} value names one or more target methods on the mixin's target. */
 	static final Set<String> INJECTOR_DESCS = Set.of(
@@ -281,6 +284,10 @@ public final class MixinFit {
 		 * resolved, and the mixin still applies there, so it must not become the reason a mixin is dropped.
 		 */
 		final boolean bound;
+		/** The {@code @Group} the injector naming this anchor belongs to, or {@code null}; see {@link #settleGroups}. */
+		String group;
+		/** That injector, so a group can tell its alternatives apart. */
+		MethodNode handler;
 
 		Anchor(String kind, String detail, boolean resolved) {
 			this(kind, detail, resolved, false);
@@ -308,6 +315,11 @@ public final class MixinFit {
 			return new Anchor("@Inject target", detail, false, true, false, true);
 		}
 
+		void alternativeOf(String group, MethodNode handler) {
+			this.group = group;
+			this.handler = handler;
+		}
+
 		String describe(String target) {
 			if (ownerNamed) return kind + " " + detail;
 			return kind + " " + target.substring(target.lastIndexOf('/') + 1) + "." + detail;
@@ -315,7 +327,22 @@ public final class MixinFit {
 	}
 
 	private static List<Anchor> anchorsOf(ClassNode mixin, ClassNode target, Function<String, byte[]> resolver) {
-		ClassNode withLocals = null;
+		// The target again with its local variable tables, read once and only if an injector needs it.
+		Supplier<ClassNode> withLocals = new Supplier<>() {
+			private ClassNode read;
+
+			@Override
+			public ClassNode get() {
+				if (read == null) {
+					byte[] bytes = resolver.apply(target.name + ".class");
+					if (bytes != null) {
+						read = new ClassNode();
+						new ClassReader(bytes).accept(read, ClassReader.SKIP_FRAMES);
+					}
+				}
+				return read;
+			}
+		};
 		List<Anchor> out = new ArrayList<>();
 
 		// @Shadow fields: the member must still be declared (walking the superclass chain).
@@ -361,113 +388,175 @@ public final class MixinFit {
 
 			AnnotationNode injector = injectorOf(m);
 			if (injector == null) continue;
-
-			// An injector's `method` is a list of CANDIDATE selectors, not a conjunction. Mixin's default
-			// require=1 counts matches across the whole list, so mods routinely ship alternative names to span
-			// mappings or MC versions — Iris's LevelRenderer mixin carries both `lambda$addSkyPass$0` AND
-			// `lambda$addSkyPass$8` for the same handler. Requiring EVERY selector to resolve reported those as
-			// missing anchors and made 11 of Iris's 41 look unapplied when the injector was installed the whole
-			// time. Judge the injector, not the selector: it is applied iff ANY selector resolves.
-			List<String> selectors = stringList(value(injector, "method"));
-			List<MethodNode> hits = new ArrayList<>();
-			List<String> misses = new ArrayList<>();
-			for (String selector : selectors) {
-				List<MethodNode> targetMethods = resolveSelector(target, selector, resolver);
-				if (!targetMethods.isEmpty()) hits.addAll(targetMethods); else misses.add(selector);
-			}
-			if (selectors.isEmpty()) continue;
-			// The move InsertedLambdaArgumentShim will make for a selector naming a lambda the pruner dropped, judged
-			// here too: otherwise a one-injector mixin (fusion's sprite loader hook) is UNFIT, removed from its
-			// config, and never reaches the shim that would have given it the live lambda. Captured locals are
-			// proven from the local variable table, which the plain read skipped. MixinHandlerShim's first: a selector
-			// spelling vanilla's descriptor of a lambda whose captures the merge reordered lands on the one live lambda.
-			if (hits.isEmpty() && selectors.size() == 1) {
-				MethodNode shimmed = MixinHandlerShim.destination(m, target);
-				if (shimmed == null) shimmed = InsertedLambdaArgumentShim.destination(m, target);
-				if (shimmed == null && withLocals == null) {
-					byte[] bytes = resolver.apply(target.name + ".class");
-					if (bytes != null) {
-						withLocals = new ClassNode();
-						new ClassReader(bytes).accept(withLocals, ClassReader.SKIP_FRAMES);
-					}
-				}
-				if (shimmed == null && withLocals != null) {
-					MethodNode twin = InsertedLambdaArgumentShim.destination(m, withLocals);
-					if (twin != null) shimmed = findMethod(target, twin.name, twin.desc, resolver);
-					if (shimmed == null) shimmed = twin;
-				}
-				if (shimmed != null) {
-					hits.add(shimmed);
-					misses.clear();
-				}
-			}
-			String where = misses.isEmpty() ? String.join("|", selectors)
-					: hits.isEmpty() ? String.join("|", misses)
-					: String.join("|", misses) + " (" + hits.size() + "/" + selectors.size() + " selectors hit)";
-			if (hits.isEmpty()) {
-				out.add(new Anchor("@Inject target", where, false));
-				continue;
-			}
-			// The move MixinStubRebind will make for a Fabric mod's injector bound to a carrier stub, judged here too
-			// so the verdict and the rebind cannot disagree: its anchors are asked of the body it lands on.
-			if (selectors.size() == 1 && hits.size() == 1 && MixinStubRebind.isCarrierStub(target, hits.get(0))) {
-				MethodNode moved = MixinStubRebind.destination(mixin.name, m, target);
-				// A @Local by name is checked against the body's local variable table, which this read skipped.
-				if (moved == null && withLocals == null) {
-					byte[] bytes = resolver.apply(target.name + ".class");
-					if (bytes != null) {
-						withLocals = new ClassNode();
-						new ClassReader(bytes).accept(withLocals, ClassReader.SKIP_FRAMES);
-					}
-				}
-				if (moved == null && withLocals != null) moved = MixinStubRebind.destination(mixin.name, m, withLocals);
-				if (moved != null) hits = new ArrayList<>(List.of(moved));
-			}
-			// Bound is not run. An injector whose every method is one nothing in the merged game calls attaches and
-			// never fires: Better Mount HUD's XP redirect in Hud.extractHotbarAndDecorations, whose vanilla caller
-			// NeoForge's HUD layers replaced. Soft — it makes the mixin PARTIAL with the reason, never UNFIT, and no
-			// injector moves because of it.
-			String never = neverRuns(mixin, target, hits, resolver);
-			out.add(never == null ? new Anchor("@Inject target", where, true) : Anchor.neverRuns(never));
-
-			// Each @At(INVOKE/FIELD, target=…) must name an instruction inside a method the injector actually
-			// bound to — again ANY, for the same require=1 reason.
-			for (AnnotationNode at : atNodes(injector)) {
-				String atValue = asString(value(at, "value"));
-				String atTarget = asString(value(at, "target"));
-				if (atTarget == null || atValue == null) continue;
-				if ("NEW".equals(atValue)) {
-					out.add(newAnchor(injector, m, atTarget, hits, target.methods));
-					continue;
-				}
-				if (!RESOLVABLE_AT.contains(atValue)) continue;
-				boolean anywhere = false;
-				for (MethodNode hit : hits) {
-					if (containsMember(hit, atTarget)) { anywhere = true; break; }
-				}
-				// The move MixinAtWidenedCall or a reviewed MixinWrapOperationShim wrap will make, decided by the
-				// adapter's own predicate so the verdict and the rewrite cannot disagree. It used to be "a widened call
-				// exists", for any injector: creativecore's @Redirect of the decorator call NeoForge widened read FIT,
-				// though no adapter moves a redirect (it would replace the carrier's call), and its require=1 miss then
-				// went unannounced.
-				//
-				// A handler in a @Group is the exception, judged as before by whether the call is there in widened form:
-				// it is one of the mod's own alternatives, never moved, and the group — not this point — has to hit.
-				// Iris's addMainPass group names vanilla's six-argument call beside NeoForge's seven-argument one; judged
-				// by the rewrite, the vanilla alternative would read as a miss in a group that is satisfied.
-				if (!anywhere && (!asksAnchorMovers() || MixinAtWidenedCall.inGroup(m))) {
-					for (MethodNode hit : hits) {
-						if (MixinAtWidenedCall.widenedIn(hit, atTarget) != null) { anywhere = true; break; }
-					}
-				} else if (!anywhere) {
-					anywhere = MixinAtWidenedCall.wouldMove(m, injector, target.methods, atValue, atTarget) != null
-							|| MixinWrapOperationShim.wouldWrap(mixin.name, m, target.methods) != null;
-				}
-				out.add(new Anchor("@At(" + atValue + ")", atDetail(atTarget, target.name) + " in " + hits.get(0).name,
-						anywhere, false, ownedElsewhere(atTarget, target.name)));
+			int first = out.size();
+			injectorAnchors(mixin, m, injector, target, resolver, withLocals, out);
+			String group = groupOf(m);
+			if (group != null) {
+				for (int i = first; i < out.size(); i++) out.get(i).alternativeOf(group, m);
 			}
 		}
-		return out;
+		return countsGroups() ? settleGroups(out) : out;
+	}
+
+	/**
+	 * The anchors one injector names: its target selectors, then each {@code @At} point inside what they bind. Appended
+	 * to {@code out}; nothing when the injector names no selector.
+	 */
+	private static void injectorAnchors(ClassNode mixin, MethodNode m, AnnotationNode injector, ClassNode target,
+			Function<String, byte[]> resolver, Supplier<ClassNode> withLocals, List<Anchor> out) {
+		// An injector's `method` is a list of CANDIDATE selectors, not a conjunction. Mixin's default
+		// require=1 counts matches across the whole list, so mods routinely ship alternative names to span
+		// mappings or MC versions — Iris's LevelRenderer mixin carries both `lambda$addSkyPass$0` AND
+		// `lambda$addSkyPass$8` for the same handler. Requiring EVERY selector to resolve reported those as
+		// missing anchors and made 11 of Iris's 41 look unapplied when the injector was installed the whole
+		// time. Judge the injector, not the selector: it is applied iff ANY selector resolves.
+		List<String> selectors = stringList(value(injector, "method"));
+		List<MethodNode> hits = new ArrayList<>();
+		List<String> misses = new ArrayList<>();
+		for (String selector : selectors) {
+			List<MethodNode> targetMethods = resolveSelector(target, selector, resolver);
+			if (!targetMethods.isEmpty()) hits.addAll(targetMethods); else misses.add(selector);
+		}
+		if (selectors.isEmpty()) return;
+		// The move InsertedLambdaArgumentShim will make for a selector naming a lambda the pruner dropped, judged
+		// here too: otherwise a one-injector mixin (fusion's sprite loader hook) is UNFIT, removed from its
+		// config, and never reaches the shim that would have given it the live lambda. Captured locals are
+		// proven from the local variable table, which the plain read skipped. MixinHandlerShim's first: a selector
+		// spelling vanilla's descriptor of a lambda whose captures the merge reordered lands on the one live lambda.
+		if (hits.isEmpty() && selectors.size() == 1) {
+			MethodNode shimmed = MixinHandlerShim.destination(m, target);
+			if (shimmed == null) shimmed = InsertedLambdaArgumentShim.destination(m, target);
+			ClassNode locals = shimmed == null ? withLocals.get() : null;
+			if (shimmed == null && locals != null) {
+				MethodNode twin = InsertedLambdaArgumentShim.destination(m, locals);
+				if (twin != null) shimmed = findMethod(target, twin.name, twin.desc, resolver);
+				if (shimmed == null) shimmed = twin;
+			}
+			if (shimmed != null) {
+				hits.add(shimmed);
+				misses.clear();
+			}
+		}
+		String where = misses.isEmpty() ? String.join("|", selectors)
+				: hits.isEmpty() ? String.join("|", misses)
+				: String.join("|", misses) + " (" + hits.size() + "/" + selectors.size() + " selectors hit)";
+		if (hits.isEmpty()) {
+			out.add(new Anchor("@Inject target", where, false));
+			return;
+		}
+		// The move MixinStubRebind will make for a Fabric mod's injector bound to a carrier stub, judged here too
+		// so the verdict and the rebind cannot disagree: its anchors are asked of the body it lands on.
+		if (selectors.size() == 1 && hits.size() == 1 && MixinStubRebind.isCarrierStub(target, hits.get(0))) {
+			MethodNode moved = MixinStubRebind.destination(mixin.name, m, target);
+			// A @Local by name is checked against the body's local variable table, which this read skipped.
+			ClassNode locals = moved == null ? withLocals.get() : null;
+			if (locals != null) moved = MixinStubRebind.destination(mixin.name, m, locals);
+			if (moved != null) hits = new ArrayList<>(List.of(moved));
+		}
+		// Bound is not run. An injector whose every method is one nothing in the merged game calls attaches and
+		// never fires: Better Mount HUD's XP redirect in Hud.extractHotbarAndDecorations, whose vanilla caller
+		// NeoForge's HUD layers replaced. Soft — it makes the mixin PARTIAL with the reason, never UNFIT, and no
+		// injector moves because of it.
+		String never = neverRuns(mixin, target, hits, resolver);
+		out.add(never == null ? new Anchor("@Inject target", where, true) : Anchor.neverRuns(never));
+
+		// Each @At(INVOKE/FIELD, target=…) must name an instruction inside a method the injector actually
+		// bound to — again ANY, for the same require=1 reason.
+		for (AnnotationNode at : atNodes(injector)) {
+			String atValue = asString(value(at, "value"));
+			String atTarget = asString(value(at, "target"));
+			if (atTarget == null || atValue == null) continue;
+			if ("NEW".equals(atValue)) {
+				out.add(newAnchor(injector, m, atTarget, hits, target.methods));
+				continue;
+			}
+			if (!RESOLVABLE_AT.contains(atValue)) continue;
+			boolean anywhere = false;
+			for (MethodNode hit : hits) {
+				if (containsMember(hit, atTarget)) { anywhere = true; break; }
+			}
+			// The move MixinAtWidenedCall or a reviewed MixinWrapOperationShim wrap will make, decided by the
+			// adapter's own predicate so the verdict and the rewrite cannot disagree. It used to be "a widened call
+			// exists", for any injector: creativecore's @Redirect of the decorator call NeoForge widened read FIT,
+			// though no adapter moves a redirect (it would replace the carrier's call), and its require=1 miss then
+			// went unannounced.
+			//
+			// A handler in a @Group is the exception, judged as before by whether the call is there in widened form:
+			// it is one of the mod's own alternatives, never moved, and the group — not this point — has to hit.
+			// Iris's addMainPass group names vanilla's six-argument call beside NeoForge's seven-argument one; judged
+			// by the rewrite, the vanilla alternative would read as a miss in a group that is satisfied.
+			if (!anywhere && (!asksAnchorMovers() || MixinAtWidenedCall.inGroup(m))) {
+				for (MethodNode hit : hits) {
+					if (MixinAtWidenedCall.widenedIn(hit, atTarget) != null) { anywhere = true; break; }
+				}
+			} else if (!anywhere) {
+				anywhere = MixinAtWidenedCall.wouldMove(m, injector, target.methods, atValue, atTarget) != null
+						|| MixinWrapOperationShim.wouldWrap(mixin.name, m, target.methods) != null;
+			}
+			// An anchor into another class names that class in full and still says where it was looked for: owo's
+			// Fabric and Quilt alternatives both anchor on a class called Hooks, and "Hooks.startServer in main" read
+			// the same for the one the kernel now emits and the one that can never exist here.
+			boolean elsewhere = ownedElsewhere(atTarget, target.name);
+			String site = elsewhere ? simpleName(target.name) + "." + hits.get(0).name : hits.get(0).name;
+			out.add(new Anchor("@At(" + atValue + ")", atDetail(atTarget, target.name) + " in " + site, anywhere, false,
+					elsewhere));
+		}
+	}
+
+	/**
+	 * {@code -Dforbric.mixinFit.groups=off}: every injector of a {@code @Group} is judged on its own again, so a group's
+	 * alternative that can never bind here keeps its mixin PARTIAL although another alternative did.
+	 */
+	static final String GROUPS_PROPERTY = "forbric.mixinFit.groups";
+
+	static boolean countsGroups() {
+		return !"off".equalsIgnoreCase(System.getProperty(GROUPS_PROPERTY, "on"));
+	}
+
+	/**
+	 * The {@code @Group} an injector is in, by name, or {@code null} when it is in none. An unnamed group is the
+	 * config's default group, which every unnamed {@code @Group} of the mixin shares; {@code ""} stands for it.
+	 */
+	static String groupOf(MethodNode m) {
+		for (List<AnnotationNode> table : java.util.Arrays.asList(m.invisibleAnnotations, m.visibleAnnotations)) {
+			if (table == null) continue;
+			for (AnnotationNode a : table) {
+				if (!GROUP_DESC.equals(a.desc)) continue;
+				String name = asString(value(a, "name"));
+				return name == null ? "" : name;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Drops the misses of a {@code @Group}'s alternatives once one alternative binds completely.
+	 *
+	 * <p>A group is Mixin's way of saying "one of these": its {@code min}/{@code max} replace each member's own
+	 * {@code require}, so a member that finds nothing is not a failure while another member of the group injects.
+	 * owo's freeze hooks are the case: {@code MainMixin} and {@code MinecraftMixin} each carry a Fabric alternative
+	 * ({@code net.fabricmc...Hooks.startServer}) and a Quilt one ({@code org.quiltmc...Hooks.startServer}) in a
+	 * {@code @Group(min = 1, max = 1)}. Judged member by member, the Quilt miss kept both mixins PARTIAL -- a
+	 * SUSPECTED finding on every boot -- after the Fabric call they bind to was put in the game.
+	 *
+	 * <p>Only toward FIT: nothing is added, and a group none of whose members binds completely keeps every miss.
+	 */
+	private static List<Anchor> settleGroups(List<Anchor> anchors) {
+		Map<MethodNode, Boolean> complete = new java.util.IdentityHashMap<>();
+		for (Anchor anchor : anchors) {
+			if (anchor.group != null) complete.merge(anchor.handler, anchor.resolved, Boolean::logicalAnd);
+		}
+		Set<String> satisfied = new java.util.HashSet<>();
+		for (Anchor anchor : anchors) {
+			if (anchor.group != null && complete.get(anchor.handler)) satisfied.add(anchor.group);
+		}
+		if (satisfied.isEmpty()) return anchors;
+		List<Anchor> kept = new ArrayList<>(anchors.size());
+		for (Anchor anchor : anchors) {
+			if (!anchor.resolved && anchor.group != null && satisfied.contains(anchor.group)) continue;
+			kept.add(anchor);
+		}
+		return kept;
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
@@ -1060,11 +1149,18 @@ public final class MixinFit {
 	 * name. owo's {@code MainMixin} anchors on Fabric Loader's {@code Hooks.startServer}, and the report said
 	 * "missing: @At(INVOKE) Main.startServer in main" — a method that does not exist, which pointed triage at the
 	 * merged {@code Main} instead of at the missing {@code Hooks} call that was the real cause.
+	 *
+	 * <p>The owner is named in full: owo's Quilt alternative anchors on a class ALSO called {@code Hooks}, and by simple
+	 * name its miss read exactly like the Fabric call that had just been fixed.
 	 */
 	private static String atDetail(String atTarget, String targetName) {
 		if (!ownedElsewhere(atTarget, targetName)) return shortMember(atTarget);
 		Member m = parseMember(atTarget);
-		return m.owner().substring(m.owner().lastIndexOf('/') + 1) + "." + m.name();
+		return m.owner().replace('/', '.') + "." + m.name();
+	}
+
+	private static String simpleName(String internalName) {
+		return internalName.substring(internalName.lastIndexOf('/') + 1);
 	}
 
 	private static boolean ownedElsewhere(String atTarget, String targetName) {

@@ -270,8 +270,8 @@ public final class KernelFabricLoader implements FabricLoader {
 	 * {@code onInitialize}.
 	 *
 	 * <p>A no-op until a mod has reached for the storage, and under {@code -Dforbric.fabricImpl=off}. Called after
-	 * {@code preLaunch} and again before the {@code main} and {@code client} phases. An entry added under a key whose
-	 * phase has already run is reported: it never runs, as on Fabric.
+	 * {@code preLaunch} and again before the {@code main}, {@code server} and {@code client} phases. An entry added
+	 * under a key whose phase has already run is reported: it never runs, as on Fabric.
 	 *
 	 * @param alreadyRan the entrypoint keys whose phase has run
 	 * @return the entries this call adopted, as {@code key:modId->definition}

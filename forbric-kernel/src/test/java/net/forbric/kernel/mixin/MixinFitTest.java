@@ -254,9 +254,11 @@ class MixinFitTest {
 	}
 
 	/**
-	 * An {@code @At} into ANOTHER class is reported under that class's name. It used to be reported under the mixin's
-	 * target: owo's anchor on Fabric Loader's {@code Hooks.startServer} read "missing: @At(INVOKE) Main.startServer in
-	 * main", a method that does not exist, which hid that the missing piece was Fabric Loader's {@code Hooks} call.
+	 * An {@code @At} into ANOTHER class is reported under that class's full name, and says which of the target's
+	 * methods it was looked for in. It used to be reported under the mixin's target: owo's anchor on Fabric Loader's
+	 * {@code Hooks.startServer} read "missing: @At(INVOKE) Main.startServer in main", a method that does not exist.
+	 * Then under the owner's simple name, where owo's Quilt alternative -- also a class called {@code Hooks} -- read
+	 * exactly like the Fabric call that had just been fixed.
 	 */
 	@Test
 	void anAnchorIntoAnotherClassIsReportedUnderThatClass() {
@@ -265,12 +267,107 @@ class MixinFitTest {
 		java.util.function.Function<String, byte[]> resolver =
 				name -> (target + ".class").equals(name) ? targetBytes : null;
 
-		assertEquals(java.util.List.of("@At(INVOKE) Discovery.resolve in discover"),
+		assertEquals(java.util.List.of("@At(INVOKE) net.example.Discovery.resolve in ModelManager.discover"),
 				MixinFit.evaluate(injectMixin(target, "Lnet/example/Discovery;resolve()Ljava/util/Map;"), resolver)
 						.unresolved());
-		assertEquals(java.util.List.of("@At(INVOKE) Discovery.resolve in discover"),
+		assertEquals(java.util.List.of("@At(INVOKE) net.example.Discovery.resolve in ModelManager.discover"),
 				MixinFit.evaluate(injectMixin(target, "net/example/Discovery.resolve()Ljava/util/Map;"), resolver)
 						.unresolved(), "the dotted owner form names the same class");
+	}
+
+	/**
+	 * A {@code @Group}'s members are alternatives: its min/max replace each member's own require, so once one member
+	 * binds completely the others' misses are not misses. Only within that group -- another group none of whose
+	 * members binds keeps its miss, and so does an injector in no group.
+	 */
+	@Test
+	void aSatisfiedGroupForgivesItsOtherAlternativesAndNothingElse() {
+		String target = "net/example/ModelManager";
+		byte[] targetBytes = twoOverloads(target, "net/example/Discovery", "resolve", "()Ljava/util/Map;");
+		java.util.function.Function<String, byte[]> resolver =
+				name -> (target + ".class").equals(name) ? targetBytes : null;
+		String here = "Lnet/example/ModelManager;discover(I)V";   // discover()V calls it: resolves
+		String gone = "Lnet/example/Gone;call()V";
+
+		MixinFit.Result result = MixinFit.evaluate(groupedMixin(target, new String[][] {
+				{"fabricAlternative", "hooks", here},
+				{"quiltAlternative", "hooks", gone},
+				{"loneAlternative", "other", gone},
+				{"unnamedHit", "", here},
+				{"unnamedMiss", "", gone},
+				{"ungrouped", null, gone},
+		}), resolver);
+
+		assertEquals(MixinFit.Verdict.PARTIAL, result.verdict());
+		String miss = "@At(INVOKE) net.example.Gone.call in ModelManager.discover";
+		assertEquals(java.util.List.of(miss, miss), result.unresolved(),
+				"only the group with no binding member, and the injector in none, keep their miss");
+	}
+
+	@Test
+	void switchedOffEveryGroupMemberIsJudgedAlone() {
+		String target = "net/example/ModelManager";
+		byte[] targetBytes = twoOverloads(target, "net/example/Discovery", "resolve", "()Ljava/util/Map;");
+		java.util.function.Function<String, byte[]> resolver =
+				name -> (target + ".class").equals(name) ? targetBytes : null;
+		byte[] mixin = groupedMixin(target, new String[][] {
+				{"fabricAlternative", "hooks", "Lnet/example/ModelManager;discover(I)V"},
+				{"quiltAlternative", "hooks", "Lnet/example/Gone;call()V"},
+		});
+		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(mixin, resolver).verdict());
+
+		String old = System.getProperty(MixinFit.GROUPS_PROPERTY);
+		try {
+			System.setProperty(MixinFit.GROUPS_PROPERTY, "off");
+			assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(mixin, resolver).verdict());
+		} finally {
+			if (old == null) System.clearProperty(MixinFit.GROUPS_PROPERTY);
+			else System.setProperty(MixinFit.GROUPS_PROPERTY, old);
+		}
+	}
+
+	/** {@code handlers[i] = {name, group ("" = unnamed @Group, null = none), @At(INVOKE) target}}, each on "discover". */
+	private static byte[] groupedMixin(String target, String[][] handlers) {
+		org.objectweb.asm.ClassWriter cw =
+				new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+		cw.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, "test/GroupedMixin",
+				null, "java/lang/Object", null);
+		org.objectweb.asm.AnnotationVisitor mixin = cw.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+		org.objectweb.asm.AnnotationVisitor targets = mixin.visitArray("targets");
+		targets.visit(null, target);
+		targets.visitEnd();
+		mixin.visitEnd();
+		for (String[] handler : handlers) {
+			org.objectweb.asm.MethodVisitor mv = cw.visitMethod(org.objectweb.asm.Opcodes.ACC_PRIVATE, handler[0],
+					"(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V", null, null);
+			org.objectweb.asm.AnnotationVisitor inject =
+					mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", true);
+			org.objectweb.asm.AnnotationVisitor method = inject.visitArray("method");
+			method.visit(null, "discover");
+			method.visitEnd();
+			org.objectweb.asm.AnnotationVisitor ats = inject.visitArray("at");
+			org.objectweb.asm.AnnotationVisitor at =
+					ats.visitAnnotation(null, "Lorg/spongepowered/asm/mixin/injection/At;");
+			at.visit("value", "INVOKE");
+			at.visit("target", handler[2]);
+			at.visitEnd();
+			ats.visitEnd();
+			inject.visitEnd();
+			if (handler[1] != null) {
+				// @Group is CLASS-retained: the invisible table, as javac writes it.
+				org.objectweb.asm.AnnotationVisitor group =
+						mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Group;", false);
+				if (!handler[1].isEmpty()) group.visit("name", handler[1]);
+				group.visit("min", 1);
+				group.visitEnd();
+			}
+			mv.visitCode();
+			mv.visitInsn(org.objectweb.asm.Opcodes.RETURN);
+			mv.visitMaxs(0, 0);
+			mv.visitEnd();
+		}
+		cw.visitEnd();
+		return cw.toByteArray();
 	}
 
 	/** An anchor into the target itself, or with no owner at all, keeps the form it always had. */

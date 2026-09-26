@@ -96,7 +96,9 @@ check_absent "no tick forward failure"        "forward failed" "$LOG"
 check_absent "no entrypoint failed"           "entrypoint of .* failed" "$LOG"
 check_absent "no Tags not bound"              "Tags not bound" "$LOG"
 check_absent "no genuine FancyModLoader"      "gatherAndInitializeMods|dispatchParallelEvent" "$LOG"
-check_absent "no genuine Fabric Loader"       "FabricLoaderImpl|KnotClassLoader" "$LOG"
+# The kernel ships a FabricLoaderImpl facade that Core Lib links against, so a stack trace through it names the
+# class; only Knot and the genuine loader's own setup/load/freeze mean Fabric Loader itself ran.
+check_absent "no genuine Fabric Loader"       "KnotClassLoader|net\.fabricmc\.loader\.impl\.launch\.knot|FabricLoaderImpl\.(setup|load|freeze)" "$LOG"
 awk '/Done \(/{d=1} d' "$LOG" > "$BUILD/gate-m4-canary-postdone.log"
 check_absent "no post-Done exception"         "Encountered an unexpected exception" "$BUILD/gate-m4-canary-postdone.log"
 

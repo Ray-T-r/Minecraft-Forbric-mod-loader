@@ -92,7 +92,9 @@ check "server ticked (the stop command ran)"  "Stopping the server|commands\.sto
 check "shutdown began"                        "Stopping server" "$LOG"
 
 step "zero genuine Fabric Loader (must be ABSENT)"
-check_absent "no FabricLoaderImpl"            "FabricLoaderImpl" "$LOG"
+# The kernel ships a FabricLoaderImpl facade that Core Lib links against, so a stack trace through it names the
+# class; only Knot and the genuine loader's own setup/load/freeze mean Fabric Loader itself ran.
+check_absent "no genuine FabricLoaderImpl"    "FabricLoaderImpl\.(setup|load|freeze)" "$LOG"
 check_absent "no Knot classloader"            "net\.fabricmc\.loader\.impl\.launch\.knot|KnotClassLoader" "$LOG"
 check_absent "no genuine FancyModLoader loading" "gatherAndInitializeMods|dispatchParallelEvent" "$LOG"
 check_absent "no entrypoint failed"           "entrypoint of .* failed" "$LOG"

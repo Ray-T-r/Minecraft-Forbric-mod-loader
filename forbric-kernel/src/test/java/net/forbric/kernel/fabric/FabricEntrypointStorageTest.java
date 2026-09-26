@@ -40,6 +40,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
@@ -89,6 +90,9 @@ class FabricEntrypointStorageTest {
 	@AfterEach
 	void tearDown() {
 		KernelFabricLoader.resetForTests();
+		// runPreLaunch/runMainEntrypoints record their phase in a static set; left there, the next test in this JVM
+		// would read "preLaunch already ran".
+		KernelFabricEcosystem.resetPhasesForTests();
 		KernelLanguageAdapters.reset();
 		System.clearProperty(FabricLoaderInternals.SWITCH);
 		RAN.clear();
@@ -139,6 +143,36 @@ class FabricEntrypointStorageTest {
 
 		assertEquals(List.of(LibMain.class.getName(), DependentMain.class.getName(), Flush.class.getName()),
 				definitions("main"));
+	}
+
+	/**
+	 * On a dedicated server, a {@code server} entrypoint a mod adds to the storage from its own {@code onInitialize}
+	 * runs, as Fabric's {@code startServer} reads the storage for each phase. The kernel marked {@code server} as run
+	 * before invoking {@code main} and never read the storage back in between, so such an entry was dropped with a
+	 * warning that it came too late.
+	 */
+	@Test
+	void aServerEntrypointAddedDuringMainRunsOnADedicatedServer() throws Exception {
+		KernelFabricLoader.resetForTests();
+		KernelFabricEcosystem.resetPhasesForTests();
+		loader = KernelFabricLoader.create(EnvType.SERVER, dir, dir.resolve("config"), new String[0], "26.2");
+		loader.setGameLoader(getClass().getClassLoader());
+		register("corelib", "{\"main\":[\"" + AddsServerDuringMain.class.getName() + "\"],\"server\":[\""
+				+ LibServer.class.getName() + "\"]}", "{\"fabricloader\":\"*\"}");
+		loader.freeze();
+
+		Field active = KernelFabricEcosystem.class.getDeclaredField("loader");
+		active.setAccessible(true);
+		Object previous = active.get(null);
+		try {
+			active.set(null, loader);
+
+			KernelFabricEcosystem.runMainEntrypoints();
+		} finally {
+			active.set(null, previous);
+		}
+
+		assertEquals(List.of("AddsServerDuringMain", "LibServer", "Flush.server"), RAN);
 	}
 
 	/** The switch: the storage is still there to write to, but nothing written reaches the kernel — as before. */
@@ -273,8 +307,8 @@ class FabricEntrypointStorageTest {
 		}
 	}
 
-	/** Core Lib's {@code RegistryEntryPoints}: both a main and a client entrypoint. */
-	public static final class Flush implements ModInitializer, ClientModInitializer {
+	/** Core Lib's {@code RegistryEntryPoints}: a main, a client and (for the server test) a server entrypoint. */
+	public static final class Flush implements ModInitializer, ClientModInitializer, DedicatedServerModInitializer {
 		@Override
 		public void onInitialize() {
 			RAN.add("Flush.main");
@@ -283,6 +317,39 @@ class FabricEntrypointStorageTest {
 		@Override
 		public void onInitializeClient() {
 			RAN.add("Flush.client");
+		}
+
+		@Override
+		public void onInitializeServer() {
+			RAN.add("Flush.server");
+		}
+	}
+
+	public static final class LibServer implements DedicatedServerModInitializer {
+		@Override
+		public void onInitializeServer() {
+			RAN.add("LibServer");
+		}
+	}
+
+	/** A main entrypoint that appends a {@code server} entry to Fabric Loader's storage, as Core Lib does in preLaunch. */
+	public static final class AddsServerDuringMain implements ModInitializer {
+		@Override
+		@SuppressWarnings({"unchecked", "rawtypes"})
+		public void onInitialize() {
+			RAN.add("AddsServerDuringMain");
+			try {
+				Class<?> entryClass = Class.forName("net.fabricmc.loader.impl.entrypoint.EntrypointStorage$NewEntry");
+				Constructor<?> entryConstructor = entryClass.getDeclaredConstructor(ModContainerImpl.class,
+						LanguageAdapter.class, String.class);
+				entryConstructor.setAccessible(true);
+				ModContainerImpl self = FabricLoader.getInstance().getModContainer("corelib")
+						.map(ModContainerImpl.class::cast).get();
+				((List) storage().get("server")).add(entryConstructor.newInstance(self, DefaultLanguageAdapter.INSTANCE,
+						Flush.class.getName()));
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
 		}
 	}
 

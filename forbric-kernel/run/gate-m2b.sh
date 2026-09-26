@@ -116,7 +116,9 @@ check_absent "no fatal mixin error"            "MixinTransformerError|InjectionE
 check_absent "MixinExtras EXPRESSION supported" 'MIXINEXTRAS:EXPRESSION is not a valid injection point specifier' "$LOG"
 check_absent "no invalid partially applied handler" 'VerifyError' "$LOG"
 check_absent "no Tags not bound"               "Tags not bound" "$LOG"
-check_absent "no genuine Fabric Loader"        "FabricLoaderImpl|KnotClassLoader" "$LOG"
+# The kernel ships a FabricLoaderImpl facade that Core Lib links against, so a stack trace through it names the
+# class; only Knot and the genuine loader's own setup/load/freeze mean Fabric Loader itself ran.
+check_absent "no genuine Fabric Loader"        "KnotClassLoader|net\.fabricmc\.loader\.impl\.launch\.knot|FabricLoaderImpl\.(setup|load|freeze)" "$LOG"
 check_absent "no genuine FancyModLoader"       "gatherAndInitializeMods|dispatchParallelEvent" "$LOG"
 awk '/Done \(/{d=1} d' "$LOG" > "$BUILD/gate-m2b-postdone.log"
 check_absent "no post-Done exception"          "Encountered an unexpected exception" "$BUILD/gate-m2b-postdone.log"

@@ -77,9 +77,13 @@ class FabricHooksCallTest {
 	private static final String MINECRAFT = "net/minecraft/client/Minecraft";
 	private static final String OPTIONS = "net/minecraft/client/Options";
 
+	private static final String QUILT_HOOKS = "org/quiltmc/loader/impl/game/minecraft/Hooks";
+	private static final Path OWO = Path.of("build/compat-inputs/sweep90/mods/owo-lib-0.13.1+26.2.jar");
+
 	@AfterEach
 	void restore() {
 		System.clearProperty(LifecycleHookInjector.FABRIC_HOOKS_SWITCH);
+		System.clearProperty("forbric.mixinFit.groups");
 	}
 
 	// --- server ---------------------------------------------------------------------------------------------------
@@ -120,6 +124,27 @@ class FabricHooksCallTest {
 		int marker = main.instructions.indexOf(callTo(main, HOOKS, "startServer"));
 		assertTrue(main.instructions.indexOf(skip.label) > marker,
 				"the branch that skips mod loading must also skip the marker");
+	}
+
+	/**
+	 * A base carrying BOTH server triggers gets one marker. SERVER_TRIGGERS keeps the no-argument form in case a base
+	 * flips back to it; two markers would fail owo's {@code @Group(max = 1)} with "expected 1 but 2".
+	 */
+	@Test
+	void aMainWithBothTriggersGetsOneMarker() throws Exception {
+		byte[] out = LifecycleHookInjector.forServer().transform(LifecycleHookInjector.SERVER_MAIN, serverMainBothForms(),
+				null);
+
+		MethodNode main = method(out, "main");
+		int markers = 0;
+		for (AbstractInsnNode insn : main.instructions) {
+			if (insn instanceof MethodInsnNode call && call.owner.equals(HOOKS) && call.name.equals("startServer")) markers++;
+		}
+		assertEquals(1, markers, "one Hooks.startServer per method, whatever the number of triggers");
+		assertTrue(indexOfCall(real(main), KERNEL_LIFECYCLE, "onServerModLoading") >= 0
+				&& indexOfCall(real(main), KERNEL_LIFECYCLE, "onServerModLoadingNoArg") >= 0,
+				"premise: both triggers were redirected");
+		verify("net.minecraft.server.Main", out);
 	}
 
 	/** The switch puts back exactly the bytes from before: the plain owner+name redirect, nothing else. */
@@ -268,11 +293,51 @@ class FabricHooksCallTest {
 
 		MixinFit.Result missing = MixinFit.evaluate(mixin, name -> "net/minecraft/server/Main.class".equals(name) ? before : null);
 		assertEquals(MixinFit.Verdict.PARTIAL, missing.verdict(), missing.unresolved().toString());
-		assertEquals(List.of("@At(INVOKE) Hooks.startServer in main"), missing.unresolved(),
-				"the anchor's owner is Fabric Loader's Hooks, not the Main it is looked for in");
+		assertEquals(List.of("@At(INVOKE) net.fabricmc.loader.impl.game.minecraft.Hooks.startServer in Main.main",
+				"@At(INVOKE) org.quiltmc.loader.impl.game.minecraft.Hooks.startServer in Main.main"), missing.unresolved(),
+				"each anchor names its owner in full -- two classes called Hooks -- and the method it was looked for in");
 
+		// owo's real shape: the Fabric call and the Quilt call are alternatives of one @Group(min = 1, max = 1). The
+		// Fabric one binds, so the group is satisfied and the Quilt miss is not a miss.
 		MixinFit.Result fits = MixinFit.evaluate(mixin, name -> "net/minecraft/server/Main.class".equals(name) ? after : null);
 		assertEquals(MixinFit.Verdict.FIT, fits.verdict(), fits.unresolved().toString());
+	}
+
+	/** Judged member by member, as before, the Quilt alternative keeps the mixin PARTIAL -- what the live run showed. */
+	@Test
+	void switchedOffGroupsTheQuiltAlternativeKeepsItPartial() {
+		System.setProperty("forbric.mixinFit.groups", "off");
+		byte[] after = LifecycleHookInjector.forServer().transform(LifecycleHookInjector.SERVER_MAIN, serverMain(), null);
+
+		MixinFit.Result partial = MixinFit.evaluate(owoShapedMainMixin(),
+				name -> "net/minecraft/server/Main.class".equals(name) ? after : null);
+		assertEquals(MixinFit.Verdict.PARTIAL, partial.verdict());
+		assertEquals(List.of("@At(INVOKE) org.quiltmc.loader.impl.game.minecraft.Hooks.startServer in Main.main"),
+				partial.unresolved());
+	}
+
+	/**
+	 * owo-lib 0.13.1's own {@code MainMixin} and {@code MinecraftMixin}, against the real merged {@code Main} and
+	 * {@code Minecraft} as the kernel transforms them: both FIT. Before the group was read, both stayed PARTIAL on
+	 * their Quilt alternative after the Fabric call was put in -- a SUSPECTED finding on every boot.
+	 */
+	@Test
+	void owosOwnFreezeMixinsFitTheRealGameOnBothSides() throws Exception {
+		byte[] main = mergedBase("net/minecraft/server/Main.class");
+		byte[] minecraft = mergedBase("net/minecraft/client/Minecraft.class");
+		assumeTrue(main != null && minecraft != null, "staged merged base absent — skipping real-bytecode check");
+		assumeTrue(Files.isRegularFile(OWO), "sweep pack absent");
+
+		byte[] server = LifecycleHookInjector.forServer().transform(LifecycleHookInjector.SERVER_MAIN, main, null);
+		byte[] client = new ClientEntrypointHookInjector().transform("net.minecraft.client.Minecraft", minecraft, ctx());
+		try (ZipFile owo = new ZipFile(OWO.toFile())) {
+			MixinFit.Result mainMixin = MixinFit.evaluate(entry(owo, "io/wispforest/owo/mixin/MainMixin.class"),
+					name -> "net/minecraft/server/Main.class".equals(name) ? server : null);
+			assertEquals(MixinFit.Verdict.FIT, mainMixin.verdict(), mainMixin.unresolved().toString());
+			MixinFit.Result minecraftMixin = MixinFit.evaluate(entry(owo, "io/wispforest/owo/mixin/MinecraftMixin.class"),
+					name -> "net/minecraft/client/Minecraft.class".equals(name) ? client : null);
+			assertEquals(MixinFit.Verdict.FIT, minecraftMixin.verdict(), minecraftMixin.unresolved().toString());
+		}
 	}
 
 	// --- fixtures -------------------------------------------------------------------------------------------------
@@ -290,6 +355,29 @@ class FabricHooksCallTest {
 		mv.visitJumpInsn(Opcodes.IFNE, skip);
 		mv.visitInsn(Opcodes.ICONST_0);
 		mv.visitMethodInsn(Opcodes.INVOKESTATIC, SERVER_MOD_LOADER, "load", "(Z)V", false);
+		mv.visitLabel(skip);
+		mv.visitInsn(Opcodes.RETURN);
+		mv.visitMaxs(0, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** {@code main(String[])}: NeoForge's {@code ServerModLoader.load(false)} and then Forge's {@code load()}. */
+	private static byte[] serverMainBothForms() {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "net/minecraft/server/Main", null, "java/lang/Object", null);
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "main", "([Ljava/lang/String;)V",
+				null, null);
+		mv.visitCode();
+		Label skip = new Label();
+		mv.visitVarInsn(Opcodes.ALOAD, 0);
+		mv.visitInsn(Opcodes.ARRAYLENGTH);
+		mv.visitJumpInsn(Opcodes.IFNE, skip);
+		mv.visitInsn(Opcodes.ICONST_0);
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, SERVER_MOD_LOADER, "load", "(Z)V", false);
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, "net/minecraftforge/server/loading/ServerModLoader", "load", "()V",
+				false);
 		mv.visitLabel(skip);
 		mv.visitInsn(Opcodes.RETURN);
 		mv.visitMaxs(0, 0);
@@ -380,8 +468,9 @@ class FabricHooksCallTest {
 	}
 
 	/**
-	 * owo's {@code MainMixin.afterFabricHook}, as compiled: {@code @Inject(method = "main", at = @At(value = "INVOKE",
-	 * remap = false, target = Hooks.startServer, shift = AFTER))}.
+	 * owo's {@code MainMixin}, as compiled: {@code afterFabricHook} and {@code afterQuiltHook}, each
+	 * {@code @Inject(method = "main", at = @At(value = "INVOKE", remap = false, target = <loader>.Hooks.startServer,
+	 * shift = AFTER))} in the one {@code @Group(name = "serverFreezeHooks", min = 1, max = 1)}.
 	 */
 	private static byte[] owoShapedMainMixin() {
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
@@ -391,7 +480,14 @@ class FabricHooksCallTest {
 		targets.visit(null, "net/minecraft/server/Main");
 		targets.visitEnd();
 		mixin.visitEnd();
-		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, "afterFabricHook",
+		freezeHook(cw, "afterFabricHook", HOOKS);
+		freezeHook(cw, "afterQuiltHook", QUILT_HOOKS);
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	private static void freezeHook(ClassWriter cw, String name, String hooks) {
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, name,
 				"(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V", null, null);
 		AnnotationVisitor inject = mv.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Inject;", true);
 		AnnotationVisitor method = inject.visitArray("method");
@@ -401,7 +497,7 @@ class FabricHooksCallTest {
 		AnnotationVisitor at = ats.visitAnnotation(null, "Lorg/spongepowered/asm/mixin/injection/At;");
 		at.visit("value", "INVOKE");
 		at.visit("remap", false);
-		at.visit("target", "L" + HOOKS + ";startServer" + HOOK_DESC);
+		at.visit("target", "L" + hooks + ";startServer" + HOOK_DESC);
 		at.visitEnum("shift", "Lorg/spongepowered/asm/mixin/injection/At$Shift;", "AFTER");
 		at.visitEnd();
 		ats.visitEnd();
@@ -415,8 +511,6 @@ class FabricHooksCallTest {
 		mv.visitInsn(Opcodes.RETURN);
 		mv.visitMaxs(0, 0);
 		mv.visitEnd();
-		cw.visitEnd();
-		return cw.toByteArray();
 	}
 
 	private static TransformContext ctx() {
@@ -480,6 +574,12 @@ class FabricHooksCallTest {
 			if (insn instanceof MethodInsnNode call && call.owner.equals(owner) && call.name.equals(name)) return call;
 		}
 		return null;
+	}
+
+	private static byte[] entry(ZipFile zip, String name) throws Exception {
+		try (InputStream in = zip.getInputStream(zip.getEntry(name))) {
+			return in.readAllBytes();
+		}
 	}
 
 	private static byte[] mergedBase(String entry) throws Exception {
