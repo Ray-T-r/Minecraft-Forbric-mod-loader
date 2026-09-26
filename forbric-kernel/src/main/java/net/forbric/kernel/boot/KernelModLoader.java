@@ -224,6 +224,9 @@ public final class KernelModLoader {
 		// @Mod classes this side is not supposed to construct. They keep their container — the mod IS installed,
 		// and a neighbour asking about it must be told so — they simply do not run here.
 		Set<String> otherSide = new LinkedHashSet<>();
+		// NeoForge mod ids at least one of whose @Mod constructors threw. Kept apart from otherSide because one id
+		// can be in both: see settleNeo.
+		Set<String> failedNeo = new LinkedHashSet<>();
 		for (ModAnnotationScanner.ModClassInfo info : claimed) {
 			// NeoForge's @Mod declares which sides it belongs to, and the kernel constructed every class on every
 			// side regardless. Sodium's SodiumForgeMod says dist = {CLIENT}; on a dedicated server its constructor
@@ -253,6 +256,7 @@ public final class KernelModLoader {
 				built.add(mod);
 				if (mod.forgeHandle() != null) constructed.add(mod.modId());
 			} catch (Throwable t) {
+				if (info.family != Ecosystem.FORGE) failedNeo.add(safeId(info));
 				ForbricLog.warn("[Forbric/ModLoader] failed to construct @Mod " + info.className,
 						Reflect.unwrap(t));
 			}
@@ -283,11 +287,17 @@ public final class KernelModLoader {
 		// Presence aliases are deliberately kept: they have no @Mod class here by construction, so "did not
 		// construct" is their normal state, not a failure. And the withdrawn mod's FILE entry stays in the by-id
 		// map, because its jar really is present — what comes out is the container.
-		Set<String> neoBuilt = new LinkedHashSet<>(otherSide);
+		//
+		// Each id is settled from ALL of its @Mod classes (settleNeo): RollingGate's client-only class used to
+		// stand in for its common class that threw, and the mod read as fine everywhere a player could look.
+		Set<String> neoConstructed = new LinkedHashSet<>();
 		for (ConstructedMod mod : built) {
-			if (mod.forgeHandle() == null) neoBuilt.add(mod.modId());
+			if (mod.forgeHandle() == null) neoConstructed.add(mod.modId());
 		}
-		if (neoBuilt.size() != neo.size()) {
+		NeoSettlement settled = settleNeo(otherSide, neoConstructed, failedNeo);
+		Set<String> neoBuilt = settled.kept();
+		markPartlyConstructed(settled.degraded());
+		if (neoNeedsWithdrawal(neo.keySet(), neoBuilt)) {
 			List<String> droppedNeo = new ArrayList<>();
 			Map<String, NeoIdentity> keptNeo = keepConstructed(neo, neoBuilt, droppedNeo);
 			publishedNeo = Map.copyOf(keptNeo);
@@ -323,6 +333,67 @@ public final class KernelModLoader {
 			else dropped.add(entry.getKey());
 		}
 		return kept;
+	}
+
+	static final String NEO_TWIN_SWITCH = "forbric.neoTwinCtorFailure";
+
+	/**
+	 * What the NeoForge side keeps after construction: {@code kept} is every id whose container stays in
+	 * {@code ModList}, {@code degraded} the kept ids that also lost a constructor.
+	 */
+	record NeoSettlement(Set<String> kept, Set<String> degraded) {
+	}
+
+	/**
+	 * Settles each NeoForge mod id from what happened to ALL of its {@code @Mod} classes, not to any one of them.
+	 *
+	 * <p>A mod may ship several {@code @Mod} classes under one id, and the common shape is a common class plus a
+	 * {@code dist = CLIENT} one. This used to count an id as settled the moment ANY of its classes was other-side,
+	 * and then compared the count with the number of published containers. RollingGate is exactly that shape:
+	 * its common {@code RollingGate} threw, its client-only {@code RollingGateClient} put {@code rolling_gate} in
+	 * the other-side set, the counts matched, and nothing was withdrawn or reported — the Mods screen and the
+	 * compatibility report said OK while every rule it registers was missing, and {@code server_plus_plus}, which
+	 * requires it, was told its dependency was live. notenoughcrashes has the same pair of classes.
+	 *
+	 * <ul>
+	 *   <li>something of the id ran here: kept — and if something else of it threw, DEGRADED rather than
+	 *       withdrawn, because one id is ONE container and ONE mod bus, so withdrawing would also cut the
+	 *       listeners of the class that did construct (RollingGate on a client, where both classes run);</li>
+	 *   <li>nothing ran here and nothing threw: every class is other-side, and the mod keeps its container as a
+	 *       mod that is installed but does not run on this side — Sodium's CLIENT-only class on a server;</li>
+	 *   <li>nothing ran here and something threw: withdrawn, whatever else it has on the other side (RollingGate
+	 *       on a dedicated server).</li>
+	 * </ul>
+	 *
+	 * <p>{@code -Dforbric.neoTwinCtorFailure=off} goes back to letting any other-side class stand for the id.
+	 */
+	static NeoSettlement settleNeo(Set<String> otherSide, Set<String> constructed, Set<String> failed) {
+		Set<String> kept = new LinkedHashSet<>(constructed);
+		Set<String> degraded = new LinkedHashSet<>();
+		if ("off".equalsIgnoreCase(System.getProperty(NEO_TWIN_SWITCH, "on"))) {
+			kept.addAll(otherSide);
+			return new NeoSettlement(kept, degraded);
+		}
+		for (String id : otherSide) {
+			if (!failed.contains(id)) kept.add(id);
+		}
+		for (String id : failed) {
+			if (constructed.contains(id)) degraded.add(id);
+		}
+		return new NeoSettlement(kept, degraded);
+	}
+
+	/**
+	 * Whether any published NeoForge container has to come out.
+	 *
+	 * <p>By membership, not by count. The count compared the kept set's SIZE with the published map's, and the
+	 * kept set can hold an id the map never published — an other-side {@code @Mod} whose container could not be
+	 * built at all — so each such id cancelled out one NeoForge mod whose constructor threw, and that dead
+	 * container stayed. {@code -Dforbric.neoTwinCtorFailure=off} restores the count.
+	 */
+	static boolean neoNeedsWithdrawal(Set<String> published, Set<String> kept) {
+		if ("off".equalsIgnoreCase(System.getProperty(NEO_TWIN_SWITCH, "on"))) return kept.size() != published.size();
+		return !kept.containsAll(published);
 	}
 
 	/**
@@ -875,6 +946,21 @@ public final class KernelModLoader {
 	static void markWithdrawn(List<String> modIds, String why) {
 		for (String id : modIds) {
 			ModCatalog.mark(id, ModCatalog.Status.FAILED, why);
+		}
+	}
+
+	/**
+	 * Reports the NeoForge mods {@link #settleNeo} kept although one of their {@code @Mod} constructors threw.
+	 * DEGRADED, not FAILED: the container stays and the class that did construct keeps running, so "did not
+	 * finish loading" would be untrue — but OK, which is what these rows said before, is untrue too.
+	 */
+	static void markPartlyConstructed(Set<String> modIds) {
+		for (String id : modIds) {
+			ForbricLog.warn("[Forbric/ModLoader] NeoForge mod '%s' keeps its container although one of its @Mod "
+					+ "constructors threw: another @Mod class of the same id ran on this side and put its listeners "
+					+ "on the bus they share, so withdrawing would cut those too. Whatever the failed one sets up "
+					+ "is missing", id);
+			ModCatalog.mark(id, ModCatalog.Status.DEGRADED, "one of its @Mod constructors threw");
 		}
 	}
 }
