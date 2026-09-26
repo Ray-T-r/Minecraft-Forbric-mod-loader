@@ -24,6 +24,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
@@ -50,15 +51,25 @@ import net.forbric.kernel.util.ForbricLog;
  * TransformingClassLoader}, gets {@code KernelFmlTransformerView.contextLoader} between the two; the cast stays, so
  * if no view can be built the real loader comes back and the cast fails exactly as it always did.
  *
+ * <p>Only in a method that also names {@code "classTransformer"}, the field that walk reads next. The view is a
+ * {@code ClassLoader} whose constructor never ran, and HotSpot aborts the whole JVM (a {@code moduleEntry.cpp}
+ * guarantee, "The class loader has not been initialized correctly") the first time one is used as a loader —
+ * {@code Class.forName}, {@code loadClass}, {@code Proxy}, {@code defineClass}. A mod that casts the context loader
+ * and then loads through it used to get a {@code ClassCastException} it could catch; handing it the view would
+ * crash the game instead. LibJF's cast and its field name sit in the one method, {@code onLoad}.
+ *
  * <p>Only classes from jars arbitrated to NeoForge: nothing else can mean FML's loader by that name. A byte scan for
- * the class name rejects everything else before ASM parses it.
+ * the class name and the field name rejects everything else before ASM parses it.
  *
  * <p>{@code -Dforbric.fmlTransformerView=off} rewrites nothing.
  */
 public final class FmlContextLoaderRewriter implements ClassTransformer {
 	static final String TRANSFORMING_LOADER = "net/neoforged/fml/classloading/transformation/TransformingClassLoader";
 	static final String VIEW = "net/forbric/kernel/runtime/KernelFmlTransformerView";
+	/** The field of {@code TransformingClassLoader} a walk to the Mixin weaver reads first. */
+	static final String WALKED_FIELD = "classTransformer";
 	private static final byte[] MARKER = TRANSFORMING_LOADER.getBytes(StandardCharsets.UTF_8);
+	private static final byte[] FIELD_MARKER = WALKED_FIELD.getBytes(StandardCharsets.UTF_8);
 
 	private final Function<String, LoaderProbePolicy.Family> familyOf;
 
@@ -85,12 +96,15 @@ public final class FmlContextLoaderRewriter implements ClassTransformer {
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		// The family first: it is a map lookup and rejects almost every class, where the byte scan reads it whole.
 		if (classBytes == null || familyOf.apply(className) != LoaderProbePolicy.Family.NEOFORGE) return classBytes;
-		if (!MixinWeaverSlot.enabled() || !contains(classBytes, MARKER)) return classBytes;
+		if (!MixinWeaverSlot.enabled() || !contains(classBytes, MARKER) || !contains(classBytes, FIELD_MARKER)) {
+			return classBytes;
+		}
 
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
 		int hits = 0;
 		for (MethodNode method : node.methods) {
+			if (!walksToTheWeaver(method)) continue;
 			for (AbstractInsnNode insn : method.instructions.toArray()) {
 				if (!isContextLoaderCall(insn) || !isCastToTransformingLoader(next(insn))) continue;
 				method.instructions.insert(insn, new MethodInsnNode(Opcodes.INVOKESTATIC, VIEW, "contextLoader",
@@ -105,6 +119,17 @@ public final class FmlContextLoaderRewriter implements ClassTransformer {
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();
+	}
+
+	/**
+	 * Whether {@code method} names the field a walk to the Mixin weaver reads — the only use of the loader the view
+	 * can serve. Any other use loads through it, and the view cannot load anything without taking the JVM down.
+	 */
+	private static boolean walksToTheWeaver(MethodNode method) {
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof LdcInsnNode ldc && WALKED_FIELD.equals(ldc.cst)) return true;
+		}
+		return false;
 	}
 
 	private static boolean isContextLoaderCall(AbstractInsnNode insn) {

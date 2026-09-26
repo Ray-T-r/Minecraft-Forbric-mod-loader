@@ -89,6 +89,23 @@ class FmlContextLoaderRewriterTest {
 				"every other reader of the context loader keeps getting the real one");
 	}
 
+	/**
+	 * The view is a loader whose constructor never ran: used as one ({@code Class.forName(n, false, view)}), it
+	 * aborts the JVM where the cast used to throw a {@code ClassCastException} the mod could catch.
+	 */
+	@Test
+	void aCastThatLoadsThroughTheLoaderIsLeftAlone() {
+		byte[] in = castThenLoad();
+		assertSame(in, rewrite(in, LoaderProbePolicy.Family.NEOFORGE),
+				"only a method that reads classTransformer through it may be handed the view");
+	}
+
+	@Test
+	void theFieldNamedInAnotherMethodDoesNotCount() {
+		byte[] out = rewrite(fieldNamedElsewhere(), LoaderProbePolicy.Family.NEOFORGE);
+		assertEquals(-1, indexOfView(instructions(out, "onLoad")), "onLoad casts and loads; it reads no field");
+	}
+
 	@Test
 	void onlyNeoForgeModsAreRewritten() {
 		byte[] in = pluginShaped();
@@ -165,7 +182,10 @@ class FmlContextLoaderRewriterTest {
 		return code;
 	}
 
-	/** {@code (TransformingClassLoader) Thread.currentThread().getContextClassLoader()}, as LibJF opens onLoad. */
+	/**
+	 * {@code (TransformingClassLoader) Thread.currentThread().getContextClassLoader()}, as LibJF opens onLoad, and
+	 * then {@code TransformingClassLoader.class.getDeclaredField("classTransformer")}, as it goes on.
+	 */
 	private static byte[] pluginShaped() {
 		return method(mv -> {
 			mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Thread", "currentThread", "()Ljava/lang/Thread;", false);
@@ -173,19 +193,65 @@ class FmlContextLoaderRewriterTest {
 					"()Ljava/lang/ClassLoader;", false);
 			mv.visitTypeInsn(Opcodes.CHECKCAST, FmlContextLoaderRewriter.TRANSFORMING_LOADER);
 			mv.visitInsn(Opcodes.POP);
+			readsTheField(mv);
 			mv.visitInsn(Opcodes.RETURN);
 		});
 	}
 
-	/** The context loader, used as a plain ClassLoader; the class still names TransformingClassLoader elsewhere. */
+	/** The same cast, then {@code Class.forName("x", false, loader)}: a use the view cannot survive. */
+	private static byte[] castThenLoad() {
+		return method(mv -> castAndLoad(mv));
+	}
+
+	/** onLoad casts and loads; a second method of the class reads classTransformer from something else. */
+	private static byte[] fieldNamedElsewhere() {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, OWNER, null, "java/lang/Object", null);
+		MethodVisitor onLoad = cw.visitMethod(Opcodes.ACC_PUBLIC, "onLoad", "(Ljava/lang/String;)V", null, null);
+		onLoad.visitCode();
+		castAndLoad(onLoad);
+		onLoad.visitMaxs(0, 0);
+		onLoad.visitEnd();
+		MethodVisitor other = cw.visitMethod(Opcodes.ACC_PUBLIC, "other", "()V", null, null);
+		other.visitCode();
+		readsTheField(other);
+		other.visitInsn(Opcodes.RETURN);
+		other.visitMaxs(0, 0);
+		other.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	private static void castAndLoad(MethodVisitor mv) {
+		mv.visitLdcInsn("x");
+		mv.visitInsn(Opcodes.ICONST_0);
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Thread", "currentThread", "()Ljava/lang/Thread;", false);
+		mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Thread", "getContextClassLoader",
+				"()Ljava/lang/ClassLoader;", false);
+		mv.visitTypeInsn(Opcodes.CHECKCAST, FmlContextLoaderRewriter.TRANSFORMING_LOADER);
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Class", "forName",
+				"(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;", false);
+		mv.visitInsn(Opcodes.POP);
+		mv.visitInsn(Opcodes.RETURN);
+	}
+
+	/** {@code TransformingClassLoader.class.getDeclaredField("classTransformer")}, result dropped. */
+	private static void readsTheField(MethodVisitor mv) {
+		mv.visitLdcInsn(org.objectweb.asm.Type.getObjectType(FmlContextLoaderRewriter.TRANSFORMING_LOADER));
+		mv.visitLdcInsn(FmlContextLoaderRewriter.WALKED_FIELD);
+		mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Class", "getDeclaredField",
+				"(Ljava/lang/String;)Ljava/lang/reflect/Field;", false);
+		mv.visitInsn(Opcodes.POP);
+	}
+
+	/** The context loader, used as a plain ClassLoader; the method still names TransformingClassLoader and its field. */
 	private static byte[] contextLoaderOnly() {
 		return method(mv -> {
 			mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Thread", "currentThread", "()Ljava/lang/Thread;", false);
 			mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Thread", "getContextClassLoader",
 					"()Ljava/lang/ClassLoader;", false);
 			mv.visitInsn(Opcodes.POP);
-			mv.visitLdcInsn(org.objectweb.asm.Type.getObjectType(FmlContextLoaderRewriter.TRANSFORMING_LOADER));
-			mv.visitInsn(Opcodes.POP);
+			readsTheField(mv);
 			mv.visitInsn(Opcodes.RETURN);
 		});
 	}
@@ -202,6 +268,7 @@ class FmlContextLoaderRewriterTest {
 					new Object[] {"java/lang/ClassLoader"});
 			mv.visitTypeInsn(Opcodes.CHECKCAST, FmlContextLoaderRewriter.TRANSFORMING_LOADER);
 			mv.visitInsn(Opcodes.POP);
+			readsTheField(mv);
 			mv.visitInsn(Opcodes.RETURN);
 		});
 	}

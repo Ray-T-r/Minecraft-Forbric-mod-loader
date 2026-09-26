@@ -212,12 +212,17 @@ class FmlTransformerViewTest {
 		return out;
 	}
 
-	/** {@code return (TransformingClassLoader) Thread.currentThread().getContextClassLoader();} */
+	/**
+	 * {@code "classTransformer"; return (TransformingClassLoader) Thread.currentThread().getContextClassLoader();} —
+	 * the field name is what marks the method as one that walks to the weaver, which the rewriter requires.
+	 */
 	private static byte[] plugin() {
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, PROBE.replace('.', '/'), null, "java/lang/Object", null);
 		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "onLoad", "()Ljava/lang/Object;", null, null);
 		mv.visitCode();
+		mv.visitLdcInsn("classTransformer");
+		mv.visitInsn(Opcodes.POP);
 		mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Thread", "currentThread", "()Ljava/lang/Thread;", false);
 		mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Thread", "getContextClassLoader", "()Ljava/lang/ClassLoader;", false);
 		mv.visitTypeInsn(Opcodes.CHECKCAST, TRANSFORMING_LOADER);
