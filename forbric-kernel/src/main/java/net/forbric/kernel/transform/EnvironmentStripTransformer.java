@@ -17,6 +17,7 @@
 package net.forbric.kernel.transform;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -24,6 +25,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.objectweb.asm.AnnotationVisitor;
@@ -92,12 +94,23 @@ import net.forbric.kernel.util.ForbricLog;
  * <h2>A whole class for the other side</h2>
  *
  * <p>Fabric refuses to load it ("Cannot load class X in environment type SERVER"). Forbric has always loaded such
- * classes, and the merged base carries the client types they name, so by default the class is loaded unchanged and
- * reported once. {@code -Dforbric.envStrip=strict} refuses it as Fabric does.
+ * classes, so by default the class is passed on unchanged and reported once. That is a difference from Fabric, not a
+ * guarantee the class works: CreativeCore's {@code CreativeHudElement} (whole-class CLIENT) implements
+ * {@code HudElement}, which exists on no server. The report fires the first time the chain sees the class, which may
+ * be Mixin inspecting a hierarchy rather than the game defining it. {@code -Dforbric.envStrip=strict} refuses it as
+ * Fabric does.
  *
  * <p>{@code -Dforbric.envStrip=off}, or Fabric's own {@code -Dfabric.disableEnvironmentStrip}, turns all of it off.
  *
  * <p>Classes served from a superseded (rescue) jar are not stripped: that jar lost arbitration, so it has no family.
+ *
+ * <p>A jar a Fabric mod puts on the classpath at runtime through Fabric's own launcher
+ * ({@code FabricLauncherBase.getLauncher().addToClassPath}) is Fabric's too: Knot strips what it loads from it, so
+ * {@code KernelFabricLauncher} records it for this lookup ({@code -Dforbric.envStrip.runtimeJars=off} leaves it out).
+ * CustomSkinLoader's Fabric bootstrap is the one caller in the sweep packs; the common jar it adds carries no
+ * annotation today. What is NOT covered is a plain library -- a jar with no loader manifest, nested in a Fabric mod
+ * or not. It has no family, so its classes load as the jar has them, where Knot would strip them. Across the sweep
+ * pack, the popular pack and the merged pack no such jar carries the annotation.
  */
 public final class EnvironmentStripTransformer implements ClassTransformer {
 
@@ -201,13 +214,14 @@ public final class EnvironmentStripTransformer implements ClassTransformer {
 		String side = context.getEnvType().name();
 		Plan plan = Plan.read(classBytes, side);
 
-		if (plan.wholeClass) {
+		if (plan.wholeClass != null) {
 			String message = "Cannot load class " + className + " in environment type " + side;
 			if (mode == Mode.STRICT) throw new IllegalStateException(message);
 			if (wholeClassReported.add(className)) {
-				ForbricLog.warn("[Forbric/EnvStrip] %s is marked @Environment for the other side. Fabric Loader "
-						+ "refuses to load it on the %s; Forbric loads it unchanged, since the merged base carries the "
-						+ "types it names (-D%s=strict refuses it as Fabric does)", className, side, SWITCH);
+				// Not "it works": the types a client-only class names are usually just as absent here.
+				ForbricLog.warn("[Forbric/EnvStrip] %s is marked @Environment(%s) but this is the %s; Forbric loads "
+						+ "it unchanged instead of refusing it as Fabric Loader does (-D%s=strict refuses it)",
+						className, plan.wholeClass, side, SWITCH);
 			}
 			return classBytes;
 		}
@@ -257,7 +271,8 @@ public final class EnvironmentStripTransformer implements ClassTransformer {
 
 	/** What one class loses on this side: the reading pass of Fabric's {@code EnvironmentStrippingData}. */
 	static final class Plan {
-		boolean wholeClass;
+		/** The side the class as a whole is marked for, when that is not this one; {@code null} otherwise. */
+		String wholeClass;
 		final Set<String> interfaces = new HashSet<>();
 		/** {@code name + descriptor}, Fabric's key. */
 		final Set<String> fields = new HashSet<>();
@@ -272,10 +287,19 @@ public final class EnvironmentStripTransformer implements ClassTransformer {
 		static Plan read(byte[] classBytes, String side) {
 			Plan plan = new Plan();
 			new ClassReader(classBytes).accept(new ClassVisitor(Opcodes.ASM9) {
+				/** What the class really implements; an interface it does not list is nothing to remove. */
+				private Set<String> implemented = Set.of();
+
+				@Override
+				public void visit(int version, int access, String name, String signature, String superName,
+						String[] itfs) {
+					if (itfs != null) implemented = new HashSet<>(Arrays.asList(itfs));
+				}
+
 				@Override
 				public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
-					if (ENVIRONMENT.equals(descriptor)) return environment(side, () -> plan.wholeClass = true);
-					if (ENVIRONMENT_INTERFACE.equals(descriptor)) return environmentInterface(side, plan);
+					if (ENVIRONMENT.equals(descriptor)) return environment(side, value -> plan.wholeClass = value);
+					if (ENVIRONMENT_INTERFACE.equals(descriptor)) return environmentInterface(side, plan, implemented);
 					if (ENVIRONMENT_INTERFACES.equals(descriptor)) {
 						return new AnnotationVisitor(Opcodes.ASM9) {
 							@Override
@@ -284,7 +308,7 @@ public final class EnvironmentStripTransformer implements ClassTransformer {
 								return new AnnotationVisitor(Opcodes.ASM9) {
 									@Override
 									public AnnotationVisitor visitAnnotation(String unnamed, String nested) {
-										return environmentInterface(side, plan);
+										return environmentInterface(side, plan, implemented);
 									}
 								};
 							}
@@ -298,7 +322,7 @@ public final class EnvironmentStripTransformer implements ClassTransformer {
 					return new FieldVisitor(Opcodes.ASM9) {
 						@Override
 						public AnnotationVisitor visitAnnotation(String annotation, boolean visible) {
-							return ENVIRONMENT.equals(annotation) ? environment(side, () -> {
+							return ENVIRONMENT.equals(annotation) ? environment(side, value -> {
 								plan.fields.add(name + descriptor);
 								plan.described.add("field " + name + ":" + descriptor);
 							}) : null;
@@ -312,7 +336,7 @@ public final class EnvironmentStripTransformer implements ClassTransformer {
 					return new MethodVisitor(Opcodes.ASM9) {
 						@Override
 						public AnnotationVisitor visitAnnotation(String annotation, boolean visible) {
-							return ENVIRONMENT.equals(annotation) ? environment(side, () -> {
+							return ENVIRONMENT.equals(annotation) ? environment(side, value -> {
 								plan.methods.add(name + descriptor);
 								plan.described.add("method " + name + descriptor);
 							}) : null;
@@ -323,18 +347,26 @@ public final class EnvironmentStripTransformer implements ClassTransformer {
 			return plan;
 		}
 
-		/** {@code @Environment(value)}: any value that is not this side is a mismatch, exactly Fabric's test. */
-		private static AnnotationVisitor environment(String side, Runnable onMismatch) {
+		/**
+		 * {@code @Environment(value)}: any value that is not this side is a mismatch, exactly Fabric's test. The
+		 * mismatching value is handed on so a report can name it.
+		 */
+		private static AnnotationVisitor environment(String side, Consumer<String> onMismatch) {
 			return new AnnotationVisitor(Opcodes.ASM9) {
 				@Override
 				public void visitEnum(String name, String descriptor, String value) {
-					if ("value".equals(name) && !side.equals(value)) onMismatch.run();
+					if ("value".equals(name) && !side.equals(value)) onMismatch.accept(value);
 				}
 			};
 		}
 
-		/** {@code @EnvironmentInterface(value, itf)}: on a mismatch, {@code itf} leaves the interface list. */
-		private static AnnotationVisitor environmentInterface(String side, Plan plan) {
+		/**
+		 * {@code @EnvironmentInterface(value, itf)}: on a mismatch, {@code itf} leaves the interface list -- when it is
+		 * in the list. Fabric rewrites the class either way and the result is the same list; counting an absent one
+		 * would rewrite the class for nothing and report "removed interface X" for an X that was never there, the
+		 * second time the chain sees its own output included.
+		 */
+		private static AnnotationVisitor environmentInterface(String side, Plan plan, Set<String> implemented) {
 			return new AnnotationVisitor(Opcodes.ASM9) {
 				private boolean mismatch;
 				private Type itf;
@@ -351,7 +383,7 @@ public final class EnvironmentStripTransformer implements ClassTransformer {
 
 				@Override
 				public void visitEnd() {
-					if (!mismatch || itf == null) return;
+					if (!mismatch || itf == null || !implemented.contains(itf.getInternalName())) return;
 					plan.interfaces.add(itf.getInternalName());
 					plan.described.add("interface " + itf.getInternalName());
 				}

@@ -434,9 +434,10 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 	/**
 	 * Declares which owned jars belong to exactly one loader family, so {@link LoaderProbePolicy} can answer a
-	 * guest's platform probe for the loader that guest was actually loaded as. Jars absent from the map — the
-	 * merged base, the Forge/NeoForge runtime carriers, MC libraries, and any universal jar carrying more than
-	 * one manifest — are unowned and see every probe answer yes, as before. Call once, before any class loads.
+	 * guest's platform probe for the loader that guest was actually loaded as. A universal jar carrying more than one
+	 * manifest belongs to the one ecosystem {@code MultiLoaderArbiter} chose for it. Jars absent from the map — the
+	 * merged base, the Forge/NeoForge runtime carriers, MC libraries, and any jar declaring no loader at all — are
+	 * unowned and see every probe answer yes, as before. Call once, before any class loads.
 	 */
 	public void setJarFamilies(java.util.Map<java.nio.file.Path, LoaderProbePolicy.Family> byJar) {
 		jarFamilies.clear();
@@ -451,7 +452,8 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 	/**
 	 * The loader family of the jar {@code binaryName} is being defined from, or {@code null} if it is unowned —
-	 * the merged base, a runtime carrier, an MC library, a universal jar, or a kernel class.
+	 * the merged base, a runtime carrier, an MC library, a jar declaring no loader, or a kernel class. A universal jar
+	 * answers the ecosystem {@code MultiLoaderArbiter} chose for it.
 	 */
 	public LoaderProbePolicy.Family familyOfClass(String binaryName) {
 		return classFamilies.get(binaryName);
@@ -472,11 +474,32 @@ public final class ForbricClassLoader extends URLClassLoader {
 	 * about the few classes that need it.
 	 */
 	public LoaderProbePolicy.Family familyOfResource(String binaryName) {
-		if (jarFamilies.isEmpty()) return null;
+		if (jarFamilies.isEmpty() && runtimeJarFamilies.isEmpty()) return null;
 		String path = binaryName.replace('.', '/') + ".class";
 		URL resource = findResource(path);
 		if (resource == null) resource = rescueResource(path);
-		return resource == null ? null : familyOfUrl(resource);
+		if (resource == null) return null;
+		LoaderProbePolicy.Family family = familyOfUrl(resource);
+		return family != null ? family : familyOfUrl(resource, runtimeJarFamilies);
+	}
+
+	/**
+	 * Records a jar a loader's own launcher API put on the classpath after boot as that loader's, for
+	 * {@link #familyOfResource} only.
+	 *
+	 * <p>Fabric's {@code FabricLauncher.addToClassPath} is the case: Knot runs its transformer, environment stripping
+	 * included, over every class it loads from such a jar, so the strip has to know the jar is Fabric's. CustomSkinLoader's
+	 * Fabric bootstrap adds its common jar this way.
+	 *
+	 * <p>Deliberately NOT {@link #familyOfClass}: that answer bakes loader probes, and a runtime jar has always seen
+	 * every probe answer yes here. Nothing in the sweep packs needs that to change, so it does not.
+	 */
+	public void addRuntimeJarFamily(java.nio.file.Path jar, LoaderProbePolicy.Family family) {
+		try {
+			runtimeJarFamilies.put("jar:" + jar.toUri().toURL(), family);   // setJarFamilies' spelling
+		} catch (java.net.MalformedURLException impossible) {
+			// the caller has just added this same path as a URL
+		}
 	}
 
 	/**
@@ -490,13 +513,20 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 	/** The family of the jar a {@code jar:file:/…/x.jar!/a/B.class} URL points into, or {@code null}. */
 	private LoaderProbePolicy.Family familyOfUrl(URL resource) {
+		return familyOfUrl(resource, jarFamilies);
+	}
+
+	private static LoaderProbePolicy.Family familyOfUrl(URL resource,
+			java.util.Map<String, LoaderProbePolicy.Family> families) {
 		String url = resource.toString();
 		int bang = url.indexOf("!/");
-		return bang < 0 ? null : jarFamilies.get(url.substring(0, bang));
+		return bang < 0 ? null : families.get(url.substring(0, bang));
 	}
 
 	// Owned single-family jars, keyed by "jar:file:…!"-prefix; and the per-class answer derived from them.
 	private final ConcurrentHashMap<String, LoaderProbePolicy.Family> jarFamilies = new ConcurrentHashMap<>();
+	// Jars a launcher API added after boot, same keys; consulted by familyOfResource only (see addRuntimeJarFamily).
+	private final ConcurrentHashMap<String, LoaderProbePolicy.Family> runtimeJarFamilies = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<String, LoaderProbePolicy.Family> classFamilies = new ConcurrentHashMap<>();
 
 	// Classes synthesized by a transformer rather than read from a jar, keyed by binary name.

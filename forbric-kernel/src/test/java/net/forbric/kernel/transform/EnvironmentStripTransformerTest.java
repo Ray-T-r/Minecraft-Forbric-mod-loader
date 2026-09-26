@@ -26,9 +26,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.lang.reflect.Field;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -49,6 +52,8 @@ import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -56,11 +61,16 @@ import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.FrameNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
+import net.fabricmc.loader.impl.launch.FabricLauncher;
+import net.fabricmc.loader.impl.launch.FabricLauncherBase;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.classloading.LoaderProbePolicy.Family;
+import net.forbric.kernel.fabric.KernelFabricLauncher;
 
 /**
  * Pins {@link EnvironmentStripTransformer}: Fabric Loader's {@code @Environment} stripping, for Fabric-arbitrated
@@ -223,6 +233,58 @@ class EnvironmentStripTransformerTest {
 		return cw.toByteArray();
 	}
 
+	/**
+	 * A constructor that stores a client-only field and THEN branches, written with computed frames: the swap of
+	 * {@code PUTFIELD} for pops must leave the existing StackMapTable valid, which {@link #mixed} (no branches, so no
+	 * frames) cannot show. {@code new Branching(flag)} keeps {@code kept} at 0 or sets it to 3.
+	 */
+	static byte[] branching() {
+		String name = PKG + "Branching";
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER, name, null, "java/lang/Object", null);
+		FieldVisitor f = cw.visitField(Opcodes.ACC_PUBLIC, "clientField", "J", null, null);
+		environment(f.visitAnnotation(EnvironmentStripTransformer.ENVIRONMENT, false), "CLIENT");
+		f.visitEnd();
+		cw.visitField(Opcodes.ACC_PUBLIC, "kept", "I", null, null).visitEnd();
+
+		MethodVisitor init = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "(Z)V", null, null);
+		init.visitCode();
+		init.visitVarInsn(Opcodes.ALOAD, 0);
+		init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+		init.visitVarInsn(Opcodes.ALOAD, 0);
+		init.visitLdcInsn(11L);
+		init.visitFieldInsn(Opcodes.PUTFIELD, name, "clientField", "J");
+		Label skip = new Label();
+		init.visitVarInsn(Opcodes.ILOAD, 1);
+		init.visitJumpInsn(Opcodes.IFEQ, skip);
+		init.visitVarInsn(Opcodes.ALOAD, 0);
+		init.visitInsn(Opcodes.ICONST_3);
+		init.visitFieldInsn(Opcodes.PUTFIELD, name, "kept", "I");
+		init.visitLabel(skip);
+		init.visitInsn(Opcodes.RETURN);
+		init.visitMaxs(0, 0);
+		init.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** An {@code @EnvironmentInterface(CLIENT)} naming an interface the class does not implement. */
+	static byte[] unlistedInterface() {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER, PKG + "Unlisted", null, "java/lang/Object",
+				new String[] {"java/lang/Runnable"});
+		environmentInterface(cw.visitAnnotation(EnvironmentStripTransformer.ENVIRONMENT_INTERFACE, false), "CLIENT",
+				MISSING_ITF);
+		constructor(cw, init -> { });
+		MethodVisitor run = cw.visitMethod(Opcodes.ACC_PUBLIC, "run", "()V", null, null);
+		run.visitCode();
+		run.visitInsn(Opcodes.RETURN);
+		run.visitMaxs(0, 0);
+		run.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
 	/** A class marked {@code @Environment(side)} as a whole. */
 	static byte[] wholeClass(String internalName, String side) {
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
@@ -357,6 +419,43 @@ class EnvironmentStripTransformerTest {
 	}
 
 	@Test
+	void anInterfaceTheClassDoesNotImplementIsNothingToStrip() {
+		// Fabric would rewrite the class to the same interface list; counting it made the class look edited and the
+		// log say "removed interface" for one that was never there.
+		byte[] raw = unlistedInterface();
+		assertSame(raw, strip(ALL_FABRIC).transform("forbrictest.envstrip.Unlisted", raw, SERVER));
+		assertTrue(EnvironmentStripTransformer.Plan.read(raw, "SERVER").isEmpty());
+	}
+
+	@Test
+	void runningTheStripOnItsOwnOutputChangesNothing() {
+		// The chain can see a class twice (Mixin's view, then the definition once the soft cache let go). The second
+		// pass must be a no-op: the removed interface is no longer listed, so there is nothing left to remove.
+		EnvironmentStripTransformer strip = strip(ALL_FABRIC);
+		byte[] once = strip.transform("forbrictest.envstrip.Mixed", mixed(), SERVER);
+		assertSame(once, strip.transform("forbrictest.envstrip.Mixed", once, SERVER));
+	}
+
+	@Test
+	void anExistingStackMapTableSurvivesTheStoreBecomingPops() throws Exception {
+		byte[] raw = branching();
+		byte[] out = strip(ALL_FABRIC).transform("forbrictest.envstrip.Branching", raw, SERVER);
+
+		assertEquals(Set.of("kept" + "I"), fields(out));
+		boolean framed = false;
+		for (MethodNode m : node(out).methods) {
+			for (AbstractInsnNode insn : m.instructions) framed |= insn instanceof FrameNode;
+		}
+		assertTrue(framed, "the fixture must carry a frame for this to prove anything");
+
+		// The verifier checks every frame when it links the class; both branches then run.
+		Class<?> branching = Class.forName("forbrictest.envstrip.Branching", true, new Defining().offer(out));
+		Field kept = branching.getField("kept");
+		assertEquals(3, kept.getInt(branching.getConstructor(boolean.class).newInstance(true)));
+		assertEquals(0, kept.getInt(branching.getConstructor(boolean.class).newInstance(false)));
+	}
+
+	@Test
 	void onTheMatchingSideTheSameArrayComesBack() {
 		// Byte identity, not equality: the chain, the pre-mixin cache and the ledger all read "same array" as "no edit".
 		byte[] raw = mixed();
@@ -413,6 +512,26 @@ class EnvironmentStripTransformerTest {
 
 		// On its own side it is an ordinary class, member rules and all.
 		assertSame(raw, strip.transform("forbrictest.envstrip.WholeClient", raw, CLIENT));
+	}
+
+	@Test
+	void theWholeClassReportNamesTheSideAndDoesNotClaimTheClassWorks() {
+		// CreativeCore's CreativeHudElement is whole-class CLIENT and implements HudElement, which no server has:
+		// the old wording's "the merged base carries the types it names" was false for the very case at hand.
+		ByteArrayOutputStream log = new ByteArrayOutputStream();
+		PrintStream err = System.err;
+		try {
+			System.setErr(new PrintStream(log, true, StandardCharsets.UTF_8));
+			byte[] raw = wholeClass(PKG + "WholeReported", "CLIENT");
+			strip(ALL_FABRIC).transform("forbrictest.envstrip.WholeReported", raw, SERVER);
+		} finally {
+			System.setErr(err);
+		}
+		String text = log.toString(StandardCharsets.UTF_8);
+		assertTrue(text.contains("forbrictest.envstrip.WholeReported is marked @Environment(CLIENT) but this is the "
+				+ "SERVER; Forbric loads it unchanged instead of refusing it as Fabric Loader does "
+				+ "(-Dforbric.envStrip=strict refuses it)"), text);
+		assertFalse(text.contains("carries the types"), text);
 	}
 
 	@Test
@@ -516,6 +635,7 @@ class EnvironmentStripTransformerTest {
 
 		boolean phase = false;
 		boolean factory = false;
+		boolean byResource = false;
 		for (MethodNode m : boot.methods) {
 			if (!m.name.equals("launch")) continue;
 			for (AbstractInsnNode insn : m.instructions) {
@@ -524,10 +644,21 @@ class EnvironmentStripTransformerTest {
 				if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call
 						&& call.owner.equals("net/forbric/kernel/transform/EnvironmentStripTransformer")
 						&& call.name.equals("configured")) factory = true;
+				// loader::familyOfResource, the lookup Mixin's view and the definition share. loader::familyOfClass
+				// compiles and passes every other test here while leaving Mixin's view, and every mixin class,
+				// unstripped.
+				if (insn instanceof InvokeDynamicInsnNode indy) {
+					for (Object arg : indy.bsmArgs) {
+						if (arg instanceof Handle handle
+								&& handle.getOwner().equals("net/forbric/kernel/classloading/ForbricClassLoader")
+								&& handle.getName().equals("familyOfResource")) byResource = true;
+					}
+				}
 			}
 		}
 		assertTrue(factory, "KernelBoot.launch no longer builds the environment strip");
 		assertTrue(phase, "KernelBoot.launch no longer registers anything into ENV_STRIP");
+		assertTrue(byResource, "KernelBoot.launch no longer hands the strip ForbricClassLoader::familyOfResource");
 	}
 
 	// ------------------------------------------------------------------------------------------------ the loader
@@ -592,6 +723,50 @@ class EnvironmentStripTransformerTest {
 
 			assertThrows(NoClassDefFoundError.class, () -> Class.forName("forbrictest.envstrip.MethodOnly", true, loader));
 		}
+	}
+
+	/** Adds a jar through Fabric's launcher API, as CustomSkinLoader does, and asks what the strip sees it as. */
+	private static Family runtimeJarFamily(Path dir, String runtimeJarsSwitch, boolean define) throws Exception {
+		Path owned = jar(dir.resolve("some-fabric-mod.jar"), impl());
+		Path added = jar(dir.resolve("unpacked-at-prelaunch.jar"), methodOnly(PKG + "AddedLater"));
+		FabricLauncher before = FabricLauncherBase.getLauncher();
+		String old = System.getProperty(KernelFabricLauncher.RUNTIME_JARS_SWITCH);
+		try (ForbricClassLoader loader = new ForbricClassLoader(new URL[] {owned.toUri().toURL()},
+				EnvironmentStripTransformerTest.class.getClassLoader())) {
+			set(KernelFabricLauncher.RUNTIME_JARS_SWITCH, runtimeJarsSwitch);
+			loader.setJarFamilies(Map.of(owned, Family.FABRIC));
+			TransformChain chain = new TransformChain();
+			chain.register(TransformPhase.ENV_STRIP, strip(loader::familyOfResource));
+			loader.setTransformer((name, bytes) -> chain.applyBeforeMixin(name, bytes, SERVER));
+			KernelFabricLauncher.install(loader, EnvType.SERVER);
+
+			// CustomSkinLoader's Fabric bootstrap: FabricLauncherBase.getLauncher().addToClassPath(commonJar, ...).
+			FabricLauncherBase.getLauncher().addToClassPath(added, "forbrictest.");
+
+			Family family = loader.familyOfResource("forbrictest.envstrip.AddedLater");
+			if (define) {
+				Class<?> linked = Class.forName("forbrictest.envstrip.AddedLater", true, loader);
+				assertEquals(7, linked.getMethod("server").invoke(linked.getConstructor().newInstance()));
+				// Not what this changes: the probe answer still reads the class as unowned.
+				assertNull(loader.familyOfClass("forbrictest.envstrip.AddedLater"));
+			}
+			return family;
+		} finally {
+			FabricLauncherBase.setLauncher(before);
+			set(KernelFabricLauncher.RUNTIME_JARS_SWITCH, old);
+		}
+	}
+
+	@Test
+	void aJarAFabricModAddsAtRuntimeIsStrippedAsKnotStripsIt(@TempDir Path dir) throws Exception {
+		// Knot strips every class it loads, a jar added through its own addToClassPath included; left unowned here,
+		// a client-only member in such a jar would fail its class on a server the way CreativeCore's did.
+		assertEquals(Family.FABRIC, runtimeJarFamily(dir, null, true));
+	}
+
+	@Test
+	void switchedOffARuntimeJarIsLeftAsItWas(@TempDir Path dir) throws Exception {
+		assertNull(runtimeJarFamily(dir, "off", false));
 	}
 
 	// ------------------------------------------------------------------------------------------------ the real jar

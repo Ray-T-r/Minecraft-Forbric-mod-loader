@@ -23,6 +23,7 @@ import net.fabricmc.loader.impl.launch.FabricLauncher;
 import net.fabricmc.loader.impl.launch.FabricLauncherBase;
 
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.classloading.LoaderProbePolicy;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -35,8 +36,15 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>{@code allowedPrefixes} is accepted and ignored: it exists so Knot can keep a jar's packages from shadowing
  * another's, and the kernel has one flat loader with no per-jar package filter to express that against.
+ *
+ * <p>The jar is recorded as Fabric's for environment stripping: Knot strips what it loads from it like any other
+ * Fabric class, and a client-only member left in it on a server fails the class the way CreativeCore's did.
+ * {@code -Dforbric.envStrip.runtimeJars=off} leaves such a jar unstripped, as before.
  */
 public final class KernelFabricLauncher implements FabricLauncher {
+	/** {@code -Dforbric.envStrip.runtimeJars=off}: a jar added here is not recorded as Fabric's for the strip. */
+	public static final String RUNTIME_JARS_SWITCH = "forbric.envStrip.runtimeJars";
+
 	private final ForbricClassLoader loader;
 	private final EnvType envType;
 
@@ -54,6 +62,9 @@ public final class KernelFabricLauncher implements FabricLauncher {
 	public void addToClassPath(Path path, String... allowedPrefixes) {
 		try {
 			loader.addURL(path.toUri().toURL());
+			if (!"off".equalsIgnoreCase(System.getProperty(RUNTIME_JARS_SWITCH, "on").trim())) {
+				loader.addRuntimeJarFamily(path, LoaderProbePolicy.Family.FABRIC);
+			}
 			ForbricLog.info("[Forbric/Fabric] a mod added %s to the classpath at runtime", path.getFileName());
 		} catch (Throwable t) {
 			throw new RuntimeException("could not add " + path + " to the classpath", t);
