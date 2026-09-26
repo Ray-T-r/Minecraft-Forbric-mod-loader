@@ -111,7 +111,7 @@ class MixinWrapOperationShimTest {
 		byte[] target = StagedFabricMixinFixture.bytes(game(merged(), listener));
 		MixinFit.Result fit = MixinFit.evaluate(mixin, n -> n.equals(listener + ".class") ? target : null);
 		assertEquals(MixinFit.Verdict.PARTIAL, fit.verdict(), fit.reason());
-		assertTrue(fit.unresolved().contains("@At(INVOKE) ServerConfigurationPacketListenerImpl.decorator in handleConfigurationFinished"),
+		assertTrue(fit.unresolved().contains("@At(INVOKE) RegistryFriendlyByteBuf.decorator in handleConfigurationFinished"),
 				fit.unresolved().toString());
 		assertFalse(fit.shouldSuppress(), "PARTIAL is kept unless strict");
 	}
