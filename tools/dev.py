@@ -333,13 +333,49 @@ def write_argument_file(path, arguments):
 
 
 
-def java_command(java, argument_file, arguments, windows=None):
+def java_command(java, argument_file, arguments, windows=None, launcher=None):
     windows = os.name == 'nt' if windows is None else windows
-    # Windows Java's native @file parser can corrupt UTF-8 characters before the JVM starts.
-    # CreateProcessW preserves them; invoke Java directly (never through cmd.exe) for Unicode arguments.
-    if windows and any(not value.isascii() for value in [str(argument_file)] + list(arguments)):
-        return [java] + list(arguments)
-    return [java, '@' + str(argument_file)]
+    if not windows or all(value.isascii() for value in [str(argument_file)] + list(arguments)):
+        return [java, '@' + str(argument_file)]
+    # Both argv and @files pass through Windows Java's native codepage. Keep its command ASCII:
+    # URL-encoded manifest classpaths load the real jars; UTF-8 JSON carries application arguments.
+    launcher = Path(launcher or ROOT / 'forbric-kernel-installer/build/libs/forbric-dev-tools.jar')
+    if not launcher.exists():
+        raise RuntimeError('Unicode Windows launch needs the development tools jar; run prepare first')
+    cp_index = arguments.index('-cp')
+    vm_flags, properties = [], {}
+    for value in arguments[:cp_index]:
+        if value.isascii():
+            vm_flags.append(value)
+        elif value.startswith('-Djava.library.path='):
+            source = Path(value.split('=', 1)[1])
+            destination = argument_file.parent / '.forbric-natives'
+            shutil.copytree(source, destination, dirs_exist_ok=True)
+            vm_flags.append('-Djava.library.path=.forbric-natives')
+        elif value.startswith('-D') and '=' in value:
+            key, setting = value[2:].split('=', 1)
+            properties[key] = setting
+        else:
+            raise RuntimeError('Windows JVM options must be ASCII; use an ASCII output path for: ' + value)
+    entries = [Path(value) for value in arguments[cp_index + 1].split(';')] + [launcher]
+    urls = [entry.resolve().as_uri() + ('/' if entry.is_dir() else '') for entry in entries]
+    attribute = 'Class-Path: ' + ' '.join(urls)
+    lines = [attribute[:72]]
+    attribute = attribute[72:]
+    while attribute:
+        lines.append(' ' + attribute[:71])
+        attribute = attribute[71:]
+    manifest = 'Manifest-Version: 1.0\r\n' + '\r\n'.join(lines) + '\r\n\r\n'
+    classpath_jar = argument_file.parent / '.forbric-classpath.jar'
+    with zipfile.ZipFile(classpath_jar, 'w') as archive:
+        archive.writestr('META-INF/MANIFEST.MF', manifest)
+    configuration = argument_file.parent / '.forbric-launch.json'
+    configuration.write_text(json.dumps(dict(mainClass=arguments[cp_index + 2],
+                                             arguments=list(arguments[cp_index + 3:]),
+                                             properties=properties)), encoding='utf-8')
+    return [java] + vm_flags + ['-cp', classpath_jar.name,
+                              'net.forbric.installer.kernel.DevLaunch', configuration.name]
+
 
 def launch(args, java, env):
     mc, stage, instance, natives = options(args, env['FORBRIC_DEV_ARCH'])
@@ -374,6 +410,8 @@ def launch(args, java, env):
         print(json.dumps([java] + command, indent=2))
         return
     print(f'[dev] {args.command}: {instance}', flush=True)
+    if os.name == 'nt' and any(not value.isascii() for value in [str(argument_file)] + command):
+        gradle('forbric-kernel-installer', ['devToolsJar'], env)
     subprocess.run(java_command(java, argument_file, command), cwd=instance, env=env, check=True)
 
 

@@ -27,6 +27,8 @@
 
 # Gate bookkeeping and runtime output in any custom run/ instance directory.
 .forbric-gate.pid
+.forbric-java.args
+.forbric-launch.json
 /run/*/server.properties
 /run/*/eula.txt
 /run/*/usercache.json

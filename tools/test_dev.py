@@ -154,24 +154,47 @@ class DevelopmentWorkflowTest(unittest.TestCase):
             dev.launch_arguments('server', info, mc, stage, self.root, self.root)
 
     def test_java_launch_preserves_spaces_quotes_backslashes_and_unicode(self):
-        # Exercise Java's parser itself, rather than merely comparing an escape implementation to its output.
+        # Compile the actual UTF-8 bridge and exercise Java's manifest classpath resolution.
         source = self.root / 'EchoArgs.java'
-        source.write_text('class EchoArgs { public static void main(String[] a) { for (String s:a) '
+        source.write_text('public class EchoArgs { public static void main(String[] a) { for (String s:a) '
                           'System.out.println(java.util.Base64.getEncoder().encodeToString('
-                          's.getBytes(java.nio.charset.StandardCharsets.UTF_8))); } }')
+                          's.getBytes(java.nio.charset.StandardCharsets.UTF_8))); '
+                          'if (System.getProperty("forbric.test") != null) System.out.println('
+                          'java.util.Base64.getEncoder().encodeToString(System.getProperty("forbric.test")'
+                          '.getBytes(java.nio.charset.StandardCharsets.UTF_8))); } }')
+        classes, helper = self.root / 'classes', self.root / 'helper'
+        classes.mkdir()
+        helper.mkdir()
+        java = dev.java_bin()
+        env = dev.java_environment(java, minimum=21)
+        javac = str(Path(env['JAVA_HOME']) / 'bin' / ('javac.exe' if os.name == 'nt' else 'javac'))
+        subprocess.run([javac, '-d', str(classes), str(source)], check=True)
+        package = dev.ROOT / 'forbric-kernel-installer/src/main/java/net/forbric/installer/kernel'
+        subprocess.run([javac, '--release', '17', '-d', str(helper),
+                        str(package / 'Json.java'), str(package / 'DevLaunch.java')], check=True)
+        # Relocate after javac so the test does not itself depend on native compiler Unicode argv support.
+        unicode_classes = self.root / '中文目录' / 'classes'
+        unicode_classes.parent.mkdir()
+        classes.rename(unicode_classes)
         arguments = ['C:\\Users\\A B\\.minecraft', '中文路径', 'a"quoted"value', 'literal;classpath', '#leading-comment', '']
         path = self.root / 'command.args'
-        dev.write_argument_file(path, [str(source)] + arguments)
-        output = subprocess.check_output(dev.java_command(dev.java_bin(), path, [str(source)] + arguments), text=True)
-        self.assertEqual([base64.b64decode(line).decode('utf-8') for line in output.splitlines()], arguments)
+        for windows in (False, True):
+            if os.name == 'nt' and not windows:
+                continue  # UTF-8 native @file parsing is not available on every Windows system codepage.
+            command = ['-cp', str(unicode_classes), 'EchoArgs'] + arguments
+            dev.write_argument_file(path, command)
+            output = subprocess.check_output(dev.java_command(java, path, command, windows=windows, launcher=helper),
+                                             cwd=self.root, text=True)
+            self.assertEqual([base64.b64decode(line).decode('utf-8') for line in output.splitlines()], arguments)
+        command = ['-Dforbric.test=中文值', '-cp', str(unicode_classes), 'EchoArgs']
+        output = subprocess.check_output(dev.java_command(java, path, command, windows=True, launcher=helper),
+                                         cwd=self.root, text=True)
+        self.assertEqual(base64.b64decode(output.strip()).decode('utf-8'), '中文值')
 
-    def test_windows_uses_argfiles_for_ascii_and_native_arguments_for_unicode(self):
+    def test_windows_retains_argfiles_for_ascii_launches(self):
         path = self.root / 'command.args'
         self.assertEqual(dev.java_command('java', path, ['-cp', 'long;classpath'], windows=True),
                          ['java', '@' + str(path)])
-        self.assertEqual(dev.java_command('java', path, ['中文路径'], windows=True), ['java', '中文路径'])
-        self.assertEqual(dev.java_command('java', self.root / '中文目录' / 'args', ['ascii'], windows=True),
-                         ['java', 'ascii'])
         self.assertEqual(dev.java_command('java', path, ['中文路径'], windows=False),
                          ['java', '@' + str(path)])
 
