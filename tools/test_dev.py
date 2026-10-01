@@ -153,7 +153,7 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'missing Minecraft libraries; run prepare'):
             dev.launch_arguments('server', info, mc, stage, self.root, self.root)
 
-    def test_java_argfile_preserves_spaces_quotes_and_backslashes(self):
+    def test_java_launch_preserves_spaces_quotes_backslashes_and_unicode(self):
         # Exercise Java's parser itself, rather than merely comparing an escape implementation to its output.
         source = self.root / 'EchoArgs.java'
         source.write_text('class EchoArgs { public static void main(String[] a) { for (String s:a) '
@@ -162,8 +162,18 @@ class DevelopmentWorkflowTest(unittest.TestCase):
         arguments = ['C:\\Users\\A B\\.minecraft', '中文路径', 'a"quoted"value', 'literal;classpath', '#leading-comment', '']
         path = self.root / 'command.args'
         dev.write_argument_file(path, [str(source)] + arguments)
-        output = subprocess.check_output([dev.java_bin(), '@' + str(path)], text=True)
+        output = subprocess.check_output(dev.java_command(dev.java_bin(), path, [str(source)] + arguments), text=True)
         self.assertEqual([base64.b64decode(line).decode('utf-8') for line in output.splitlines()], arguments)
+
+    def test_windows_uses_argfiles_for_ascii_and_native_arguments_for_unicode(self):
+        path = self.root / 'command.args'
+        self.assertEqual(dev.java_command('java', path, ['-cp', 'long;classpath'], windows=True),
+                         ['java', '@' + str(path)])
+        self.assertEqual(dev.java_command('java', path, ['中文路径'], windows=True), ['java', '中文路径'])
+        self.assertEqual(dev.java_command('java', self.root / '中文目录' / 'args', ['ascii'], windows=True),
+                         ['java', 'ascii'])
+        self.assertEqual(dev.java_command('java', path, ['中文路径'], windows=False),
+                         ['java', '@' + str(path)])
 
     def test_doctor_is_read_only_and_not_ready_is_nonzero(self):
         with patch.object(dev, 'STATE', self.root / 'absent'), patch.dict(os.environ, {}, clear=True), \

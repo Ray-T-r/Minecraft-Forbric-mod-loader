@@ -64,7 +64,8 @@ python3 tools/dev.py client --jvm=-Xmx4G -- --width 1280 --height 720
 | Repeat `--jvm=...` | — | Additional JVM arguments |
 
 The portable launcher uses native Java classpath separators and a Java argument file, so Windows paths
-with spaces and long classpaths work. Only macOS receives `-XstartOnFirstThread`. Native libraries are
+with spaces and long classpaths work. Windows launches containing Unicode arguments use Java directly
+through the native Unicode process API to avoid argument-file decoding loss. Only macOS receives `-XstartOnFirstThread`. Native libraries are
 selected for the chosen JVM architecture. Developer launches use strict compatibility decisions.
 
 Gradle also accepts `-Pforbric.python=<executable>`, `-Pforbric.instance=<directory>` and

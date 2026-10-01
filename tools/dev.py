@@ -332,6 +332,15 @@ def write_argument_file(path, arguments):
                              .replace('\n', '\\n').replace('\r', '\\r') + '"' for a in arguments) + '\n', encoding='utf-8')
 
 
+
+def java_command(java, argument_file, arguments, windows=None):
+    windows = os.name == 'nt' if windows is None else windows
+    # Windows Java's native @file parser can corrupt UTF-8 characters before the JVM starts.
+    # CreateProcessW preserves them; invoke Java directly (never through cmd.exe) for Unicode arguments.
+    if windows and any(not value.isascii() for value in [str(argument_file)] + list(arguments)):
+        return [java] + list(arguments)
+    return [java, '@' + str(argument_file)]
+
 def launch(args, java, env):
     mc, stage, instance, natives = options(args, env['FORBRIC_DEV_ARCH'])
     if not ready(mc, stage, natives, env['FORBRIC_DEV_ARCH']):
@@ -365,7 +374,7 @@ def launch(args, java, env):
         print(json.dumps([java] + command, indent=2))
         return
     print(f'[dev] {args.command}: {instance}', flush=True)
-    subprocess.run([java, '@' + str(argument_file)], cwd=instance, env=env, check=True)
+    subprocess.run(java_command(java, argument_file, command), cwd=instance, env=env, check=True)
 
 
 def doctor(args):
