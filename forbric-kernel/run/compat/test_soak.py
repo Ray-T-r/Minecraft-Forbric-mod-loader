@@ -180,7 +180,8 @@ class SoakVerifierTest(unittest.TestCase):
                 def poll(self):return self.returncode
                 def wait(self):self.returncode=-9;return -9
             child=Child();clock=[0]
-            with patch.object(soak.os,'killpg') as kill,patch.object(soak.time,'monotonic',side_effect=lambda:clock[0]),patch.object(soak.time,'sleep',side_effect=lambda n:clock.__setitem__(0,clock[0]+n)):
+            # Model the POSIX driver's process-group API even when these self-tests run on Windows.
+            with patch.object(soak.os,'killpg',create=True) as kill,patch.object(soak.signal,'SIGKILL',9,create=True),patch.object(soak.time,'monotonic',side_effect=lambda:clock[0]),patch.object(soak.time,'sleep',side_effect=lambda n:clock.__setitem__(0,clock[0]+n)):
                 self.assertEqual(-9,soak.wait_for_client(child,log,7200))
                 self.assertEqual([(321,soak.signal.SIGTERM),(321,soak.signal.SIGKILL)],[call.args for call in kill.call_args_list])
                 self.assertLess(clock[0],7)
@@ -200,7 +201,7 @@ class SoakVerifierTest(unittest.TestCase):
             def exited(pid,value):
                 child.returncode=42
                 raise ProcessLookupError()
-            with patch.object(soak.os,'killpg',side_effect=exited),patch.object(soak.time,'sleep'):
+            with patch.object(soak.os,'killpg',side_effect=exited,create=True),patch.object(soak.time,'sleep'):
                 self.assertEqual(42,soak.wait_for_client(child,log,7200))
     def test_insufficient_measured_activity_is_rejected(self):
         with self.assertRaises(ValueError):self.check(*fixture(),seconds=60)
