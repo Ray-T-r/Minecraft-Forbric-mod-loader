@@ -1,89 +1,38 @@
-run/client-merged-pack/
-# The local reproduction of the compatibility POPULAR set: 37 third-party jars plus whatever the client writes.
-run/client-popular/
+# Local game instances. Keep probe source in canary/ (outside run/), and tools in run/compat/.
+/.dev/
+# Ignore whole instance trees so new game/mod output does not require another per-gate rule.
+/run/client-*/
+/run/server-*/
+/run/ac-client/
+/run/ac-server/
+/run/fab-client/
+/run/fab-server/
+/run/fnet-client/
+/run/fnet-server/
+/run/fhs-client/
+/run/fhs-server/
+/run/mp-client/
+/run/mp-server/
+/run/parity-*/
+/run/savedrop/
+/run/world-events-m49/
+/run/compat-world/
+/run/installed/
 
-# Gate bookkeeping: the pid of the server a gate started, so an interrupted run can be reaped by the next
-# one. Per-rundir and worthless the moment the machine reboots — never commit it.
+# Generated probe jars and hash manifests; their sources live in /canary/.
+/run/canary/
+/run/energy-api/
+/run/.gate-downloads/
+/run/.gate-clones/
+
+# Gate bookkeeping and runtime output in any custom run/ instance directory.
 .forbric-gate.pid
-
-# Gate rundirs created by gate-m10 / gate-m11. Nothing in a rundir needs to be committed: the launcher
-# writes eula.txt when it is missing, the gates write their own server.properties and stage their own mods,
-# and the server regenerates a fresh management-server-secret on every boot — which is why the rundirs that
-# ARE tracked show up as noise in every diff.
-run/server-config/
-run/server-forge-config/
-run/server-overlay/
-# Scratch rundir make-test-world.sh generates the m9 world fixture in. Deleted and rebuilt on every run.
-run/server-worldgen/
-# gate-m12 wipes and re-stages both of these on every run, world included.
-run/mp-server/
-run/mp-client/
-# gate-m18 stages its three canaries and a fresh world on every run.
-run/server-presence/
-# Ad-hoc rundirs for reproducing a single mod's behaviour. Staged by hand from a real install, never by a gate.
-run/client-phys*/
-
-# The rundirs that ARE tracked, minus the files the gates rewrite on every single run. These were committed
-# before the rule above existed and have dirtied `git status` ever since: server.properties is written by the
-# gate, eula.txt by the launcher, and the save/journeymap data by playing. Ignoring them is not enough on its
-# own — they had to be `git rm --cached`'d too, which is why they vanish from the tree in the same commit.
-run/*/server.properties
-run/*/eula.txt
-run/*/usercache.json
-run/*/banned-*.json
-run/*/ops.json
-run/*/whitelist.json
-run/*/.mixin.out/
-run/*/logs/
-
-# gate-m13 stages a Paper+Grim server and a client here on every run.
-run/ac-server/
-run/.gate-downloads/
-run/ac-client/
-# gate-m14 stages a pure Fabric server and a Forbric client here on every run.
-run/fab-server/
-run/fab-client/
-# gate-m15 stages a Forge-networking server and client here on every run.
-run/fnet-server/
-run/fnet-client/
-
-# gate-m16 stages a Forge-handshake server and client here on every run.
-run/fhs-server/
-run/fhs-client/
-
-# gate-m17 installs into a throwaway directory here on every run.
-run/installed/
-# JourneyMap's own output inside a tracked rundir — map tiles, chunk caches, waypoints — plus the two files
-# the client writes into client-kernel. These sat tracked for months alongside the rules above, because an
-# ignore rule has no effect on a file git already follows: the `git rm --cached` half was never done.
-run/*/journeymap/
-run/client-kernel/data/
-run/client-kernel/debug-profile.json
-
-# Per-gate copies of run/client-merged-pack, remade at the start of every parallel sweep. On APFS these are
-# clones: they share the original's blocks and cost nothing until a gate writes to one.
-run/.gate-clones/
-
-# Hash-bound compatibility gates own these instances and generated build manifests.
-run/server-transfer-m33/
-run/server-energy-m40/
-run/server-behavior-m35/
-run/server-mixin-outcome-m36/
-run/canary/m33-build-inputs.json
-run/canary/m35-build-inputs.json
-run/canary/m36-build-inputs.json
-run/canary/m37-build-inputs.json
-run/canary/m38-build-inputs.json
-run/canary/m41-build-inputs.json
-run/canary/m42-build-inputs.json
-run/canary/m43-build-inputs.json
-run/canary/m44-build-inputs.json
-run/canary/m45-build-inputs.json
-run/canary/m46-build-inputs.json
-run/canary/m47-build-inputs.json
-run/canary/m48-build-inputs.json
-run/canary/m49-build-inputs.json
-run/canary/m50-build-inputs.json
-run/canary/m51-build-inputs.json
-run/canary/m52-build-inputs.json
-run/canary/m53-build-inputs.json
+/run/*/server.properties
+/run/*/eula.txt
+/run/*/usercache.json
+/run/*/banned-*.json
+/run/*/ops.json
+/run/*/whitelist.json
+/run/*/.mixin.out/
+/run/*/logs/
+/run/*/journeymap/

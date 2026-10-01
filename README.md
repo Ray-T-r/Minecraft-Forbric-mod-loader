@@ -184,14 +184,33 @@ re-implemented, so there is no compatibility layer to code against.
 - [forbric-kernel/README.md](forbric-kernel/README.md) — a shorter summary of the kernel, which is what
   the installer installs.
 
-To build from source you need `git` and a JDK 21 or newer:
+To build the kernel from source you need `git` and a JDK 21 or newer. The kernel has its
+own Gradle build; boot-side compilation does not require the Fabric substrate:
 
 ```bash
 git clone https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader.git
 cd Minecraft-Forbric-mod-loader
-./bootstrap.sh
 cd forbric-kernel && ./gradlew build
 ```
+
+**A green build on a fresh clone does not mean the game can launch.** Without locally staged game jars,
+the runtime source set and transfer tests are skipped, and tests that need those jars may also skip.
+CI verifies the boot-side build and the separate loader build; it does not launch Minecraft.
+
+To run the current source in a development game, install **JDK 25+ and Python 3.9+**, then run from the
+repository root (Windows: replace `python3` with `py`):
+
+```bash
+python3 tools/dev.py client                 # automatically prepare dependencies, build and launch
+python3 tools/dev.py server --accept-eula   # a separate local server instance
+```
+
+Downloads, assembled jars and instances stay under the ignored `forbric-kernel/.dev/` directory.
+Gradle entry points are also available: `prepareDev`, then `runClient` or `runServer` in a separate invocation.
+See [the kernel development guide](forbric-kernel/run/README.md) for configuration and test coverage.
+`check` includes tool self-tests; `integrationTest` rejects skipped assertions and requires the full fixtures.
+Run `./bootstrap.sh` when building the first-generation `forbric-loader/` itself; standalone merge tools
+and the current kernel development workflow do not need it.
 
 ### Licence
 

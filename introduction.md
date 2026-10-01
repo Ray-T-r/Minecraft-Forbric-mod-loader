@@ -828,6 +828,19 @@ Forbric/
 
 ## 16. Build and test
 
+The current development entry point is `python3 tools/dev.py client` (Windows: `py tools/dev.py client`).
+It prepares isolated game inputs under `forbric-kernel/.dev/` with the installer's artifact pipeline, resolves
+libraries/assets and the pinned compile APIs, then builds and launches the current kernel. JDK 25+ and
+Python 3.9+ are required. Gradle exposes `prepareDev`, `runClient`, `runServer` and `devDoctor`; preparation
+and launch must be separate Gradle invocations because the game-side wiring is configured before tasks run.
+See [the development guide](forbric-kernel/run/README.md) for commands and configuration.
+
+`check` also runs development/evidence-tool self-tests and the packaged link gate's synthetic controls.
+`integrationTest` requires the staged game and transfer suites and rejects any skipped test; ordinary `test`
+still permits absent local fixtures and prints its executed/skipped counts. The complete integration suite
+requires its named mod fixtures in addition to the base game; preparing the game is not a claim that every
+compatibility pack or real-instance gate has run.
+
 ```sh
 cd forbric-kernel
 ./gradlew --offline jar        # boot jar; nests forbric-kernel-runtime.jar only when the staged artifacts exist

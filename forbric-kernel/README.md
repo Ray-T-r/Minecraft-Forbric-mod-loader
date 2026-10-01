@@ -3,6 +3,10 @@
 A **sovereign** unified Minecraft mod loader that runs **Fabric + traditional MinecraftForge + NeoForge**
 mods on one Minecraft 26.2 instance — a ground-up rewrite of the `forbric-loader` "weld".
 
+For source development, start with [the development guide](run/README.md). From the repository root,
+`python3 tools/dev.py client` prepares an isolated game environment and launches the current kernel.
+Gradle also exposes `prepareDev`, `runClient`, `runServer`, `toolTest` and `integrationTest`.
+
 ## Why a rewrite
 
 `../forbric-loader` reached tri-in-one by *welding three genuine sovereign loaders together*: real

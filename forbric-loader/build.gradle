@@ -126,8 +126,15 @@ tasks.withType(JavaCompile).configureEach {
 
 // The reused loader's builtin fabric.mod.json ships a ${version} placeholder Gradle must expand to the
 // real fabric-loader version (parsed from the substrate's FabricLoaderImpl, like fabric-loader's own build).
-def fabricLoaderVersion = (file("${fabricLoader}/src/main/java/net/fabricmc/loader/impl/FabricLoaderImpl.java")
-		.text =~ /VERSION\s*=\s*"(.*?)"/)[0][1]
+def substrateVersionSource = file("${fabricLoader}/src/main/java/net/fabricmc/loader/impl/FabricLoaderImpl.java")
+// Standalone merge tools do not need bootstrap. Only the loader's compilation/resources require the substrate.
+def fabricLoaderVersion = substrateVersionSource.isFile()
+		? (substrateVersionSource.text =~ /VERSION\s*=\s*"(.*?)"/)[0][1] : project.fabric_loader_ref
+tasks.named('compileJava') {
+	doFirst {
+		if (!substrateVersionSource.isFile()) throw new GradleException('Loader sources need ./bootstrap.sh from the repository root')
+	}
+}
 
 // --- Identity of the built loader jar ------------------------------------------------------------------
 // The substrate's own fabric.mod.json is what declares the builtin "fabricloader" mod, and Forbric ships a

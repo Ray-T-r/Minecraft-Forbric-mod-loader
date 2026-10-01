@@ -28,8 +28,10 @@ java {
 // 35MB file another session may be running from.
 // -Pforbric.stagedRoot wins; then FORBRIC_OLD, which is the one variable the run/ scripts also read, so a
 // second working tree needs exactly one export rather than a different knob per tool.
+def devStage = file('.dev/staged/run')
 def stagedRoot         = file(project.findProperty('forbric.stagedRoot')
-		?: (System.getenv('FORBRIC_OLD') ? System.getenv('FORBRIC_OLD') + '/run' : '../forbric-loader/run'))
+		?: (System.getenv('FORBRIC_OLD') ? System.getenv('FORBRIC_OLD') + '/run'
+				: (new File(devStage, 'merged-base/patched-mc-merged-26.2.jar').isFile() ? devStage : '../forbric-loader/run')))
 def stagedMergedBase   = new File(stagedRoot, 'merged-base/patched-mc-merged-26.2.jar')
 def stagedForgeRuntime = new File(stagedRoot, 'forge-runtime/forge-runtime.jar')
 def stagedNeoRuntime   = new File(stagedRoot, 'neoforge-runtime/neoforge-runtime.jar')
@@ -44,8 +46,9 @@ def stagedGameJars = [stagedMergedBase, stagedForgeRuntime, stagedNeoRuntime].fi
 // is missing its transfer component" -- a dedicated server exited 78 on a pack that launched before the bridge
 // existed. A machine that builds the game side must supply the API (-Pforbric.fabricApi=<fabric-api jar>) or the
 // build fails naming the file; a machine with no staged game jars builds neither half, exactly as before.
-def stagedFabricApi = file(project.findProperty('forbric.fabricApi') ?: new File(stagedRoot.parentFile.parentFile,
-		'forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar'))
+def devFabricApi = file('.dev/api/fabric-api-0.155.2+26.2.jar')
+def stagedFabricApi = file(project.findProperty('forbric.fabricApi') ?: (devFabricApi.isFile() ? devFabricApi
+		: new File(stagedRoot.parentFile.parentFile, 'forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar')))
 def transferApiModules = ['fabric-transfer-api-v1-', 'fabric-api-lookup-api-v1-', 'fabric-api-base-']
 def transferModulesDir = layout.buildDirectory.dir('transfer-api-compile')
 def extractTransferApis = tasks.register('extractTransferApis', Sync) {
@@ -78,12 +81,14 @@ def transferModuleFiles = files(fileTree(transferModulesDir) { include '*.jar' }
 // or a second working tree needs only the file dropped there. verifyRebornEnergy checks it on EVERY game-side build:
 // compileRuntimeJava's own up-to-date check sees only the jar's API, so a same-API file never re-ran it.
 def rebornEnergySha256 = '889afc438d3e4add5cfdac76517da7987a2c495e4731690a56f2c5dee775db59'
-def rebornEnergyDefaults = [new File(stagedRoot.parentFile.parentFile, 'forbric-kernel/run/energy-api/energy-5.0.0.jar'),
+def rebornEnergyDefaults = [file('.dev/api/energy-5.0.0.jar'),
+		new File(stagedRoot.parentFile.parentFile, 'forbric-kernel/run/energy-api/energy-5.0.0.jar'),
 		file('run/energy-api/energy-5.0.0.jar')]
 def stagedRebornEnergy = file(project.findProperty('forbric.rebornEnergy')
 		?: (rebornEnergyDefaults.find { it.isFile() } ?: rebornEnergyDefaults[0]))
 // Integration runs pass -Pforbric.requireTransfer=true: there a skipped transfer suite is a failure, not a pass.
-def requireTransfer = project.findProperty('forbric.requireTransfer') == 'true'
+def strictIntegration = gradle.startParameter.taskNames.any { it.tokenize(':').last() == 'integrationTest' }
+def requireTransfer = project.findProperty('forbric.requireTransfer') == 'true' || strictIntegration
 
 // Minecraft's OWN libraries, for the game-side set only. A game-side class cannot build a piece of text without
 // brigadier: net.minecraft.network.chat.Component extends com.mojang.brigadier.Message, so javac needs it to read
@@ -91,9 +96,14 @@ def requireTransfer = project.findProperty('forbric.requireTransfer') == 'true'
 // at runtime, and the kernel never ships it — so it is taken from the same local Minecraft install the staged
 // artifacts were derived from, and its absence is not fatal: it costs the game-side set, which already skips when
 // the staged jars are absent.
+def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+def defaultMinecraft = osName.contains('windows')
+		? new File(System.getenv('APPDATA') ?: System.getProperty('user.home') + '/AppData/Roaming', '.minecraft')
+		: new File(System.getProperty('user.home'), osName.contains('mac') ? 'Library/Application Support/minecraft' : '.minecraft')
+def devMinecraft = file('.dev/minecraft')
 def mcLibraries = file(project.findProperty('forbric.mcLibraries')
 		?: (System.getenv('MC_DIR') ? System.getenv('MC_DIR') + '/libraries'
-				: System.getProperty('user.home') + '/Library/Application Support/minecraft/libraries'))
+				: new File(devMinecraft.isDirectory() ? devMinecraft : defaultMinecraft, 'libraries')))
 // One jar PER PATTERN, never one across all of them: a single fileTree over several includes and a global
 // takeRight(1) keeps whichever name sorts last and silently drops the rest — with brigadier and datafixerupper
 // in the same tree, 'd' > 'b' and brigadier disappears. Last-by-NAME within a pattern is not version-aware
@@ -232,14 +242,16 @@ tasks.withType(JavaCompile).configureEach {
 tasks.named('compileRuntimeJava') {
 	onlyIf {
 		if (stagedGameJars.isEmpty()) {
-			logger.lifecycle('compileRuntimeJava: SKIPPED — staged game jars absent. Run ' +
-					'../forbric-loader/run/build-merged-base.sh + assemble-{minecraftforge,neoforge}-runtime.sh first.')
+			logger.lifecycle('compileRuntimeJava: SKIPPED — staged game jars absent. Run prepareDev first ' +
+						'(or python3 ../tools/dev.py prepare), then build in a second invocation.')
 			return false
 		}
 		return true
 	}
 	// Here rather than in extractTransferApis: with no jar that task has no source, and Gradle skips it unrun.
 	doFirst {
+		if (stagedGameJars.size() != 3) throw new GradleException("Incomplete staged game inputs: "
+				+ stagedGameJars.size() + "/3 under ${stagedRoot}. Run prepareDev before building the game side.")
 		if (!stagedFabricApi.isFile()) throw new GradleException("The kernel game side includes its transfer " +
 				"component and compiles it against Fabric API's transfer modules, but ${stagedFabricApi} does not " +
 				"exist. Pass -Pforbric.fabricApi=<a fabric-api jar for 26.2> (the compatibility pack's is the default).")
@@ -428,4 +440,107 @@ if (!stagedGameJars.isEmpty()) {
 // Emits the boot-side runtime classpath so launch scripts can compose it with the game classpath.
 tasks.register('printBootClasspath') {
 	doLast { println sourceSets.main.runtimeClasspath.asPath }
+}
+
+// Development workflow. Preparation runs in a separate invocation because runtime wiring is configured above.
+def devDriver = file('../tools/dev.py')
+def devPython = project.findProperty('forbric.python') ?: (osName.contains('windows') ? 'python' : 'python3')
+tasks.register('prepareDev', Exec) {
+	group = 'development'
+	description = 'Download and assemble isolated development game inputs using the installer pipeline.'
+	workingDir projectDir.parentFile
+	commandLine devPython, devDriver, 'prepare', '--java', System.getProperty('java.home')
+}
+tasks.register('devDoctor', Exec) {
+	group = 'development'
+	description = 'Read-only development prerequisite check; exit 2 means preparation is needed.'
+	workingDir projectDir.parentFile
+	commandLine devPython, devDriver, 'doctor', '--java', System.getProperty('java.home')
+}
+tasks.register('toolTest', Exec) {
+	group = 'verification'
+	description = 'Run portable development and compatibility tooling self-tests without staged game jars.'
+	workingDir projectDir.parentFile
+	commandLine devPython, devDriver, 'tool-test'
+}
+tasks.named('check') { dependsOn 'toolTest' }
+tasks.register('linkToolTest', Exec) {
+	group = 'verification'
+	description = 'Run the installer packaged-link-gate tests on synthetic jars, without game inputs or bootstrap.'
+	workingDir file('../forbric-kernel-installer')
+	commandLine(osName.contains('windows') ? ['cmd', '/d', '/c', 'gradlew.bat', 'linkGateTest'] : ['./gradlew', 'linkGateTest'])
+}
+tasks.named('check') { dependsOn 'linkToolTest' }
+def integrationExecutedSuites = Collections.synchronizedSet(new HashSet<String>())
+tasks.withType(Test).configureEach {
+	def suiteName = name
+	inputs.property('strictIntegration', strictIntegration)
+	// A previous permissive result must never bypass the no-skips verdict of an integration invocation.
+	outputs.upToDateWhen { !strictIntegration }
+	afterSuite { descriptor, result ->
+		if (descriptor.parent == null) {
+			if (strictIntegration) integrationExecutedSuites.add(suiteName)
+			logger.lifecycle("${name}: ${result.testCount} tests, ${result.skippedTestCount} skipped, ${result.failedTestCount} failed")
+			if (strictIntegration && (result.testCount == 0 || result.skippedTestCount > 0)) {
+				throw new GradleException("${name}: integrationTest requires executed assertions without skips; "
+						+ "provide the fixtures reported in build/reports/tests/${name}/index.html")
+			}
+		}
+	}
+}
+tasks.register('integrationTest') {
+	group = 'verification'
+	description = 'Run unit, transfer and tool tests strictly: missing game inputs or skipped assertions fail.'
+	dependsOn 'test', 'transferTest', 'toolTest', 'linkToolTest'
+	doFirst {
+		if (stagedGameJars.size() != 3) throw new GradleException('integrationTest needs prepareDev first')
+	}
+	doLast {
+		// Test callbacks are not invoked for NO-SOURCE tasks. Require concrete, nonempty results from both suites.
+		['test', 'transferTest'].each { suite ->
+			if (!integrationExecutedSuites.contains(suite)) {
+				throw new GradleException("integrationTest: ${suite} did not execute in this invocation; stale reports are not evidence")
+			}
+			def reports = fileTree("build/test-results/${suite}") { include 'TEST-*.xml' }.files
+			def totals = [tests: 0, skipped: 0, failures: 0, errors: 0]
+			def factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+			factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true)
+			reports.each { report ->
+				def root = factory.newDocumentBuilder().parse(report).documentElement
+				totals.keySet().each { key -> totals[key] += Integer.parseInt(root.getAttribute(key) ?: '0') }
+			}
+			if (totals.tests == 0 || totals.skipped > 0 || totals.failures > 0 || totals.errors > 0) {
+				throw new GradleException("integrationTest: ${suite} needs executed, passing assertions without skips: ${totals}")
+			}
+		}
+	}
+}
+tasks.register('writeDevClasspath') {
+	description = 'Write the current build paths for the portable launcher.'
+	doLast {
+		def destination = file('.dev/launch-build.json')
+		destination.parentFile.mkdirs()
+		destination.text = groovy.json.JsonOutput.toJson([
+				bootJar: tasks.named('jar').get().archiveFile.get().asFile.absolutePath,
+				dependencies: configurations.runtimeClasspath.files.collect { it.absolutePath }])
+	}
+}
+['Client', 'Server'].each { side ->
+	tasks.register("run${side}", Exec) {
+		group = 'development'
+		description = "Launch the current source-built kernel ${side.toLowerCase()} after prepareDev."
+		dependsOn 'jar', 'writeDevClasspath'
+		workingDir projectDir.parentFile
+		standardInput = System.in
+		doFirst {
+			if (stagedGameJars.size() != 3) throw new GradleException('Run prepareDev first, then runClient/runServer in a second invocation')
+			def arguments = [devPython, devDriver, side.toLowerCase(), '--no-build',
+					'--java', System.getProperty('java.home'), '--staged', stagedRoot.parentFile.absolutePath,
+					'--mc-dir', mcLibraries.parentFile.absolutePath]
+			if (project.hasProperty('forbric.instance')) arguments += ['--instance', file(project.property('forbric.instance')).absolutePath]
+			if (project.hasProperty('forbric.acceptEula')) arguments += ['--accept-eula']
+			if (project.hasProperty('forbric.dryRun')) arguments += ['--dry-run']
+			commandLine arguments
+		}
+	}
 }

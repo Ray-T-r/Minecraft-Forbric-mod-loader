@@ -1,5 +1,9 @@
 # `run/` — the pipeline that produces a runnable Forbric instance
 
+For current kernel development, start with [the kernel development guide](../../forbric-kernel/run/README.md).
+This directory still supplies the shared merge tools and staged artifacts, but its `launch-*.sh` scripts
+use the first-generation loader boot path. The current player installer is `../../forbric-kernel-installer/`.
+
 Forbric's loader is Apache-2.0 source. What it runs on top of is not: the Minecraft jar belongs to Mojang,
 and the MinecraftForge and NeoForge runtimes are LGPL. None of that is committed here. This directory holds
 the scripts that **fetch and assemble those pieces on your machine**, plus the launchers that put them
@@ -39,7 +43,8 @@ because which way each conflict resolved is a design decision worth reviewing ra
 MC 26.2 ships deobfuscated, so on 26.2 Forbric runs in identity mode — no intermediary remap. The 1.21.11
 launcher is the one that still needs an `intermediary` mapping and a Fabric profile for LWJGL natives.
 
-Each launcher reads your Minecraft directory from `$MC_DIR`, defaulting to the platform's usual location.
+Launchers read your Minecraft directory from `$MC_DIR`; several scripts default to the macOS location.
+Inspect the selected script's platform assumptions before using it on another operating system.
 
 ## Mod sources
 
@@ -75,4 +80,4 @@ run/assemble-minecraftforge-runtime.sh
 ```
 
 These scripts assume a working JDK, `git`, and network access to Mojang's and Forge's Maven repositories.
-They are development tools, not an installer — for that, see `../../forbric-installer/`.
+They are development tools — for the current installer, see `../../forbric-kernel-installer/`.

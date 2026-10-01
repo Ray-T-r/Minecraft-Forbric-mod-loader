@@ -81,6 +81,42 @@ tasks.register('buildMergeTools', Exec) {
 	outputs.file(mergeToolsJar)
 }
 
+// Development preparation needs the artifact builder and merge tools, not a player payload or Fabric substrate.
+// Avoid processResources here: that task intentionally builds the complete player installer payload.
+tasks.register('devToolsJar', Jar) {
+	group = 'development'
+	description = 'Build the portable development artifact preparer without the player payload.'
+	dependsOn 'compileJava', 'buildMergeTools'
+	archiveFileName = 'forbric-dev-tools.jar'
+	from sourceSets.main.output.classesDirs
+	into('forbric/tools') {
+		from(mergeToolsJar) { rename '.*', 'forbric-merge-tools.jar' }
+	}
+	manifest { attributes 'Main-Class': 'net.forbric.installer.kernel.DevPrepare' }
+}
+
+def linkGateClasses = tasks.register('compileLinkGateTest', JavaCompile) {
+	dependsOn 'compileJava'
+	source = fileTree('src/test/java') { include '**/MergedBaseLinkGateTest.java' }
+	classpath = files(sourceSets.main.output.classesDirs)
+	destinationDirectory = layout.buildDirectory.dir('link-gate-classes')
+}
+tasks.register('linkGateTest', JavaExec) {
+	group = 'verification'
+	description = 'Exercise the packaged merge link gate with synthetic positive and negative controls.'
+	dependsOn linkGateClasses, 'devToolsJar'
+	classpath = files(linkGateClasses.flatMap { it.destinationDirectory },
+			tasks.named('devToolsJar').flatMap { it.archiveFile })
+	mainClass = 'net.forbric.installer.kernel.MergedBaseLinkGateTest'
+	doFirst {
+		def scratch = layout.buildDirectory.dir('link-gate-test').get().asFile
+		scratch.deleteDir()
+		scratch.mkdirs()
+		args = [scratch.absolutePath]
+	}
+}
+tasks.named('check') { dependsOn 'linkGateTest' }
+
 tasks.register('bundleForbric') {
 	description = "Copy Forbric's own jars into the installer's resources, with a manifest describing them."
 	dependsOn 'buildForbricJars', 'buildLoaderJars', 'buildMergeTools'

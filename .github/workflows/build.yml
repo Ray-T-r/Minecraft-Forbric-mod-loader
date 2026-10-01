@@ -60,13 +60,43 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
       # No bootstrap step: the kernel does not compile the fabric-loader substrate. It vendors the small
       # net.fabricmc.api surface it needs and is otherwise its own code.
-      - name: Build and test
-        run: cd forbric-kernel && ./gradlew jar test
+      # check now includes portable Python tools and the packaged link gate's negative controls.
+      # This remains a boot-only check: the integrationTest task is for machines with prepared game fixtures.
+      - name: Build and check (boot only)
+        shell: bash
+        run: cd forbric-kernel && ./gradlew build
 
       - uses: actions/upload-artifact@v5
         with:
           name: forbric-kernel-jar
           path: forbric-kernel/build/libs/*.jar
           if-no-files-found: error
+
+  # Verify the new portable entry point and packaged merge link gate on each OS, without game downloads.
+  # Legacy Bash gate contracts remain covered by the Linux kernel job above.
+  development-tools:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Portable development and evidence tool tests
+        run: python tools/dev.py tool-test
+      - name: Packaged link gate positive and negative controls (no bootstrap)
+        shell: bash
+        run: ./forbric-kernel-installer/gradlew -p forbric-kernel-installer linkGateTest
