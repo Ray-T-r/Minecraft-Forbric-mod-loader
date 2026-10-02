@@ -1,315 +1,147 @@
-# Forbric
+# 别用 Forbric，用 Sinytra Connector 或者原版 Fabric / NeoForge / Forge
 
-English | [简体中文](README.zh-CN.md)
+**结论放最前面：别用 Forbric。**
 
-**One Minecraft instance that runs Fabric mods, Forge mods and NeoForge mods at the same time.**
+想同时跑 Fabric、Forge、NeoForge 模组，优先用 **Sinytra Connector**。它成熟、能跑你想要的模组就用它。
 
-Version 0.3.0 · Minecraft 26.2
+不想折腾兼容层，就直接用 **原版 Fabric**、**原版 NeoForge** 或 **原版 Forge**。三者分开装，各自稳定。Fabric 配 Fabric API，NeoForge 配 NeoForge，Forge 配 Forge。模组该放哪个加载器就放哪个，别混。
 
-## What it does
+Forbric 是什么？一个 0.3.0 的研究项目，自称一个实例跑三种模组，实际是没做完的胶水层。没支持，没路线图，兼容性靠运气，崩了让你自己看 `crash-analysis.txt`。它自己都说 Connector 成熟而它不成熟，Connector 能跑就用 Connector。翻译成人话：**别用 Forbric，用 Connector，或者老老实实用原版加载器。**
 
-Minecraft mods come in three kinds, and normally you have to pick one. A mod is built for **Fabric**, or
-for **Forge**, or for **NeoForge**, and it only works on the one it was built for. Put a Fabric mod into
-a Forge game and nothing happens. So most people keep several separate setups, and whichever one they
-start, most of their mods are sitting in the other ones.
+推荐顺序：
 
-Forbric is a fourth thing you install instead of those three. You put **every** mod into **one** folder —
-Fabric, Forge and NeoForge mixed together, no sorting — and Forbric opens each file, works out what kind
-it is, and loads it. All of them are running in the same world at the same time.
-
-It also gives you one list of everything you have installed. The pause menu and the title screen get a
-Forbric mods button, and from that list you can open a mod's own settings screen, whichever of the
-three it belongs to (for Fabric mods, only when Mod Menu is installed too).
-
-**You may have heard of Kilt or Sinytra Connector.** Those are mods you add to a normal loader, and they
-re-create one side's features inside the other — a translator in the room. Forbric is the loader itself.
-Fabric Loader and the loaders inside Forge and NeoForge never start; Forbric does their job — finding the
-mods, starting them, running them in order — and tries to do it the way each mod's own loader would. Your
-mods call the real Fabric API and the real Forge and NeoForge code; that part is not re-created. So this is
-not three loaders running side by side: it is one new loader that puts all three kinds of mods, and the
-real code they rely on, into one game.
-
-But Forge and NeoForge both change Minecraft, often in the same spots, and one game can hold only one
-version of each spot, so Forbric mostly keeps NeoForge's. Its own glue then keeps the other mods working:
-it passes game events on to Forge mods, moves Fabric mods' changes to where the code now sits, and lets
-mods from different loaders hand each other items, fluids and energy. That glue is translation too, and
-it is not finished, which is one reason some mods still fail.
-
-Connector is mature and Forbric is not, so if Connector already runs the mods you want, use Connector.
-Forbric is for the cases it cannot reach.
-
-## How to install
-
-### Before you start
-
-- **A launcher that starts versions from your `.minecraft/versions` folder.** Forbric has been tested
-  with **PCL2** on Windows. HMCL reads the same files and should work, but has not been tested yet. The
-  official Minecraft Launcher has not been tested either (see step 6). Prism Launcher and MultiMC keep
-  their own instances and will not see Forbric.
-- **Java.** If you can already play Minecraft, you have it. The installer finds the copy your launcher
-  downloaded, even if you never installed Java yourself.
-- **An internet connection**, and about 730 MB of free disk while it works (about 190 MB is kept
-  afterwards).
-
-You do **not** need to install Minecraft 26.2 first. If you do not have it, the installer downloads it.
-You also do **not** need Fabric, Forge or NeoForge, and you do not need to find any other files: the
-installer downloads and builds everything Forbric needs. Your mods still need their own prerequisites as
-usual, for example Fabric API for most Fabric mods.
-
-### Install
-
-1. Open the [latest release](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/releases/latest).
-
-2. Download **two** files into the **same folder**:
-
-   | You are on | Download |
-   | --- | --- |
-   | Windows | `forbric-kernel-installer-0.3.0.jar` **and** `Forbric-Installer.bat` |
-   | macOS | `forbric-kernel-installer-0.3.0.jar` **and** `Forbric-Installer.command` |
-   | Linux | `forbric-kernel-installer-0.3.0.jar` (run it with `java -jar`) |
-
-3. **Double-click the `.bat` (Windows) or the `.command` (macOS).** It looks for Java, including the copy
-   a launcher keeps in the usual Minecraft folder, and starts the installer with it. On some Windows PCs,
-   double-clicking the jar itself only flashes a black window, because Windows was once told to open
-   `.jar` files in a way that does not work; the script avoids that. If double-clicking the jar does open
-   the installer window, that is fine too: it is the same installer.
-
-   On macOS the first time, you may need to right-click the file and choose **Open**, then confirm. That
-   is macOS being careful about downloads, not an error.
-
-4. **A window opens.** The only field that matters is **Game directory** — the `.minecraft` folder your
-   launcher uses. It starts out filled in with the usual place for your system:
-
-   - Windows — `C:\Users\<your name>\AppData\Roaming\.minecraft`
-   - macOS — `~/Library/Application Support/minecraft`
-   - Linux — `~/.minecraft`
-
-   If your launcher keeps `.minecraft` somewhere else (PCL2 and HMCL can keep it in the same folder as the
-   launcher program), press **Browse…** next to Game directory and choose that folder.
-
-   Leave everything else alone. In particular, leave **Built artifacts** empty — it is only for developers
-   who built Forbric's game files from source.
-
-5. **Press Install and wait.** The first install takes several minutes. It is downloading Minecraft's,
-   Forge's and NeoForge's own files and putting them together on your computer, because those files
-   cannot legally be handed out ready-made. Stay connected while it runs. Installing again later reuses
-   what is already on disk and is quick.
-
-6. **Open your launcher.** A new version called **`26.2-forbric`** is in the list. Start it like any
-   other version. PCL2 shows it as a Fabric version; that is expected (see the next section).
-
-   The installer does not add it to the official Minecraft Launcher's list of installations. There you
-   would probably have to create a new installation and pick `26.2-forbric` yourself.
-
-> Want to check your computer before you press Install? Run this in the folder with the jar. It only
-> looks, and writes nothing:
->
-> ```bash
-> java -jar forbric-kernel-installer-0.3.0.jar --doctor
-> ```
-
-### Where to put mods
-
-**Fabric, Forge and NeoForge mods all go in the same `mods` folder.** Which folder that is depends on
-your launcher, not on Forbric:
-
-- If your launcher keeps each version separate (often called version isolation; PCL2 and HMCL can do
-  this): `.minecraft/versions/26.2-forbric/mods/`
-- Otherwise the shared `.minecraft/mods/` in the Game directory you chose. Every version that does not keep
-  its own folder uses this one, so Forbric will also try to load any mods already in it.
-
-The installer names both when it finishes. Not sure which one your launcher uses? Start the game once:
-a folder called `.forbric-kernel` appears next to the right `mods` folder.
-
-Your launcher may call `26.2-forbric` a Fabric version. That is on purpose: a launcher shows only one mod
-loader per version, so Forbric's version tells it Fabric. PCL2 reads this, treats `26.2-forbric` as a
-modded version and suggests Fabric builds first in its mod browser. Other launchers may show it as plain
-Minecraft. Either way, Forbric loads Fabric, Forge and NeoForge mods from the `mods` folder.
-
-One thing to watch: many mods come as a Fabric build, a Forge build and a NeoForge build. Put **one**
-build of each mod in the folder. If you add more than one, Forbric still runs only one of them. The first
-time this happens it writes its choice to `forbric-mods.txt` next to your `mods` folder, where you can pick
-the other build.
-
-The same goes for a prerequisite (library) mod that several of your mods need: one build is usually
-enough, because a Forge or NeoForge mod can normally use the Fabric build of its prerequisite and the
-other way round. Adding the prerequisite for both loaders does not give each mod its own copy: Forbric
-still runs only one. If one mod plugs straight into another (Iris into Sodium, for example), use the same
-loader's build of both. For Sodium, also see *A known crash* below.
-
-### Did it work?
-
-Open the pause menu. There is a button with **three overlapping squares**, and the tooltip says
-*Mods (Forbric)*. It opens one list of every mod you installed, each row labelled with the kind it is.
-Select a mod and press **Config**, or double-click the row, to open that mod's own settings.
-
-Fabric mods hand their settings screens to Mod Menu, so a Fabric mod gets a **Config** button in this list
-only when Mod Menu is installed too. With Mod Menu there are **two** mods buttons, on the title screen and in
-the pause menu. Use the one with three squares: it opens settings for all three kinds, while Mod Menu's own
-button opens settings only for Fabric mods.
-
-### If something goes wrong
-
-| What you see | What to do |
-| --- | --- |
-| **A window says a mod is missing something it needs** | It names the mod and what to install. Install it, or press **Launch anyway**. |
-| **A window says required mod features are unavailable** | Some part of a mod could not start. You can continue playing, or quit and remove that mod. |
-| **The game crashes** | Open the `.forbric-kernel` folder next to your `mods` folder. The `crash-analysis.txt` there names the mods most likely to blame; the full crash report is in `crash-reports/`. Remove those mods and try again. Using the NeoForge build of Sodium? See *A known crash* below. |
-| **A mod is installed but does nothing** | Open the Forbric mods list — a mod that did not finish loading is marked there. The same list is in `load-report.txt`, in the `.forbric-kernel` folder next to your `mods` folder. Often the mod was built for a different Minecraft version, or you have two builds of it. |
-| **A dedicated server will not start** and the log says the compatibility policy stopped it | A server has no screen to ask you on, so it stops instead. Remove the mod it names, or add `-Dforbric.compatibilityPolicy=continue` to the server's start command to run anyway. |
-| **Continuity loads, but glass still has borders between blocks** | In **Options → Resource Packs**, enable **Default Connected Textures** (included with Continuity). Its built-in packs are optional and are not enabled just by installing the mod. On 0.3.0 the Fabric build of Continuity can still leave the borders after that. That is a Forbric bug. It is fixed in the 0.3.1 beta, a pre-release on the Releases page, but not yet in a regular release. A NeoForge build of Continuity made for your Minecraft version is the other choice. |
-| **The install seems stuck** | Usually a proxy or VPN sitting between you and Mojang's servers. Run the `--doctor` check from the end of *Install*, then try again with the proxy or VPN off. |
-
-Something else? You can report it [here](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/issues/new?template=bug_report.yml).
-
-### Updating and uninstalling
-
-**To update**, run the new installer with the same settings. Your mods folder and worlds are left alone.
-The first install after updating from 0.2.0 builds Forbric's game files again, so it takes several minutes
-once more.
-
-**To uninstall**, delete `.minecraft/versions/26.2-forbric/`. If your launcher keeps each version
-separate, that folder also holds this version's mods, worlds and settings, so first copy out anything you
-want to keep. To get the disk space back as well, also delete `.minecraft/.forbric-build/` and
-`.minecraft/libraries/net/forbric/`.
-
-## What's new in 0.3.0
-
-**More mods work.** We picked three batches of about 100 random mods from Modrinth (popular ones and
-random ones, all three kinds) and started the game with each mod on its own. **80.5% loaded without errors
-on 0.2.0, 89.0% on 0.3.0** (no mod failing to load in the log). On 0.3.0, 91.8% got into a world, and
-79.1% also had no part reported as not working. This test checks that a mod loads and a world opens. It
-does not try each mod's features, and it does not test mods together.
-
-New:
-
-- **Mods from different loaders can pass items, fluids and energy to each other** — for example a Fabric
-  pipe or hopper can feed a NeoForge or Forge machine.
-- **A window before you play when part of a mod cannot work**, so you can choose to continue or quit
-  instead of finding out later.
-- **The Forbric mods list marks mods that did not finish loading**, and says why.
-- **After a crash, a `crash-analysis.txt`** names the mods most likely responsible.
-- **The warning windows speak 10 languages**, including Chinese, and suggest what to install.
-- Forbric now uses the full NeoForge release instead of a beta, so NeoForge mods that need a newer NeoForge
-  can load, and the title screen no longer says "beta".
-
-Fixed:
-
-- Crashes when smelting in a furnace, crafting or brewing with Fabric API installed, fighting the Ender
-  Dragon, using a flower pot, or placing a fluid from a Fabric or Forge mod.
-- Some mod sets left the game on a black screen at startup.
-- Dungeons did not generate, and a seed did not give the same terrain as vanilla Minecraft.
-- Item tooltips were missing enchantments, lore, attributes and durability.
-- Many Forge mods loaded but did nothing — their commands, key bindings, on-screen displays, settings files,
-  mobs and world changes now work.
-- Xaero's Minimap and World Map (Forge builds) crashed at startup.
-- Mods that crashed or failed on 0.2.0 and work now include Farmer's Delight Refabricated, Better End,
-  Better Nether, Entity Culling, More Culling, Friends & Foes, Repurposed Structures, Traveler's Backpack,
-  Shoulder Surfing and YetAnotherConfigLib.
-
-Worse than 0.2.0: in the same test, **Alex's Mobs Continued**, **Drippy Loading Screen**, **FancyMenu** and
-**Easy Magic** (NeoForge builds) worked on 0.2.0 and do not on 0.3.0.
-
-Changed for server owners: a dedicated server now stops at startup if a mod is missing a part it needs,
-because there is no screen to ask you on (see *If something goes wrong* above).
-
-## What we promise
-
-**Your existing Minecraft is not touched.** Forbric installs alongside everything else. Your Fabric,
-Forge and NeoForge setups, your worlds, and your other mod folders are exactly as they were.
-
-**Uninstalling is deleting a folder.** Nothing is scattered around your system, and nothing is left
-running when you are not playing.
-
-**Nothing is hidden.** All the source code is here and the licence is Apache-2.0. This repository
-contains no Minecraft, Forge or NeoForge code — all of that is fetched from their own servers and
-assembled on your machine when you install.
-
-And what we do **not** promise:
-
-**We cannot promise any particular mod works.** In our own test about one mod in ten still fails on its
-own, and mods that each work alone can still clash when put together.
-
-**Part of a mod can stop working without a crash.** When a piece of a mod cannot attach to the game,
-Forbric keeps the rest of the mod running instead of stopping, and usually tells you — in the window
-before you play and in the Forbric mods list. If a piece attaches but then behaves wrongly, neither
-Forbric nor our tests can tell.
-
-**A known crash:** the NeoForge build of Sodium crashes at startup unless Fabric API is also installed,
-and so do mods that need it, such as the NeoForge builds of Iris and Sodium Extra. This is a Forbric bug,
-not a mistake in how you installed them. Until it is fixed, put Fabric API in your `mods` folder as well, or
-use the Fabric builds of Sodium and of the mods that plug into it.
-
-**This is a research project at version 0.3.0.** There is no support, no roadmap, and things will change.
-
-Forbric is not affiliated with Mojang, FabricMC, MinecraftForge or NeoForged.
+1. **Sinytra Connector** —— 你想混 Fabric 和 NeoForge / Forge 模组时先试它。
+2. **原版 Fabric** —— 只玩 Fabric 模组，稳定，生态全。
+3. **原版 NeoForge** —— 只玩 NeoForge 模组，新版本首选。
+4. **原版 Forge** —— 只玩 Forge 模组，老整合包和老模组多。
+5. **Forbric** —— 以上都满足不了，而且你能接受狗屎稳定性、没支持、随时崩，再考虑。否则别碰。
 
 ---
 
-### For mod developers
+# Forbric：一个狗屎项目
 
-**Your mod does not need to change.** It calls the genuine Fabric API, MinecraftForge or NeoForge classes,
-so there is no compatibility layer to code against. What Forbric re-implements is the loader: class
-loading, mod discovery, load order, the lifecycle, the Mixin service, and Fabric Loader's API (Forbric
-carries Fabric Loader's public API types, which keep FabricMC's copyright, and implements them; Fabric
-Loader itself never runs). The game is different too: the installer builds one merged game jar from both
-Forge families' patches. What this means for your mod:
+**号称一个 Minecraft 实例能同时跑 Fabric、Forge 和 NeoForge 模组。听起来很牛逼，实际就是一个没做完的狗屎项目。**
 
-- **The game is one merged jar.** Where MinecraftForge and NeoForge patched the same method (about a
-  thousand of them), only one version was kept: NeoForge's in all but five, MinecraftForge's in those
-  five. An event whose call was lost that way — nearly always a MinecraftForge one, plus a few NeoForge
-  ones such as item tooltips and screen opening — reaches your listener only if Forbric re-emits it, and
-  one without a bridge never fires ([introduction.md §8](introduction.md#8-event-bridges)). Events whose
-  call survived the merge fire as usual. The coremods NeoForge itself ships are not loaded; Forbric
-  applies their rewrites itself.
-- **Mixins are applied to that merged code.** Forbric relaxes mods' mixin configs (`required: false`,
-  `defaultRequire: 0`), so an injector whose target is missing does nothing instead of failing, unless it
-  sets `require` itself. It moves an injector whose target moved, and drops a whole mixin when none of its
-  targets exist ([§7](introduction.md#7-mixin-on-the-merged-base)).
-- **Start-up runs in Forbric's order**, close to but not the same as each loader's native order
-  ([§3](introduction.md#3-boot-order)).
-- **Start-up extensions are not supported:** MinecraftForge's ModLauncher services
-  (`ITransformationService`, `ILaunchPluginService`) and `coremods.json`, NeoForge's
-  `ClassProcessorProvider`, and custom mod or dependency locators. Today they are skipped without a
-  warning.
+版本 0.3.0 · Minecraft 26.2
 
-More detail:
+## 它做什么
 
-- [introduction.md](introduction.md) — how Forbric works inside, for developers: boot order, how the
-  three kinds of mods are loaded together, what the installer builds, and how it is tested.
-- [forbric-kernel/README.md](forbric-kernel/README.md) — a shorter summary of the kernel, which is what
-  the installer installs.
+Minecraft 模组本来分三种，Fabric、Forge、NeoForge，各玩各的。正常人会分开装。Forbric 说：不用，你把三种模组全丢进一个 `mods` 文件夹，它自己猜、自己加载、自己擦屁股。
 
-To build the kernel from source you need `git` and a JDK 21 or newer. The kernel has its
-own Gradle build; boot-side compilation does not require the Fabric substrate:
+结果就是：它既不是 Fabric，也不是 Forge，也不是 NeoForge，而是一个第四种狗屎东西。它说 Fabric Loader、Forge、NeoForge 的加载器都不启动，它自己来。听起来像救世主，实际上就是一个巨大的胶水层，哪里漏了补哪里，补不上就崩溃。
 
-```bash
-git clone https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader.git
-cd Minecraft-Forbric-mod-loader
-cd forbric-kernel && ./gradlew build
-```
+你听过 Kilt 或 Sinytra Connector？人家至少是成熟方案。Forbric 说自己是加载器本身，不是翻译器。行吧，翻译器都当不明白，直接当加载器，真是狗屎勇气。
 
-**A green build on a fresh clone does not mean the game can launch.** Without locally staged game jars,
-the runtime source set and transfer tests are skipped, and tests that need those jars may also skip.
-CI verifies the boot-side build and the separate loader build; it does not launch Minecraft.
+Forge 和 NeoForge 改 Minecraft 经常改同一个地方，一个游戏只能留一个版本。Forbric 基本留 NeoForge 的，然后靠自己的胶水让 Forge 模组别死。物品、流体、能量互相传？听起来很美好，实际上就是“能传一点，但没传完”。所以有些模组还是废的。Connector 能跑就用 Connector，别碰这个狗屎项目。
 
-To run the current source in a development game, install **JDK 25+ and Python 3.9+**, then run from the
-repository root (Windows: replace `python3` with `py`):
+## 怎么安装
 
-```bash
-python3 tools/dev.py client                 # automatically prepare dependencies, build and launch
-python3 tools/dev.py server --accept-eula   # a separate local server instance
-```
+### 开始前
 
-Downloads, assembled jars and instances stay under the ignored `forbric-kernel/.dev/` directory.
-Gradle entry points are also available: `prepareDev`, then `runClient` or `runServer` in a separate invocation.
-See [the kernel development guide](forbric-kernel/run/README.md) for configuration and test coverage.
-`check` includes tool self-tests; `integrationTest` rejects skipped assertions and requires the full fixtures.
-Run `./bootstrap.sh` when building the first-generation `forbric-loader/` itself; standalone merge tools
-and the current kernel development workflow do not need it.
+- 要一个能从 `.minecraft/versions` 启动版本的启动器。PCL2 测过，HMCL 没测，官方启动器没测，Prism 和 MultiMC 看都看不到。狗屎兼容性。
+- 要 Java。没有？那你还玩什么 Minecraft。
+- 要联网，还要约 730 MB 空间。装完留 190 MB。就为了这狗屎东西。
 
-### Licence
+你不需要先装 Minecraft 26.2，不需要 Fabric、Forge、NeoForge，因为安装器会自己下。听起来贴心，实际就是它要折腾一堆文件，然后还不保证能跑。
 
-Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). The clean-room boundary is documented in
-[forbric-loader/CREDITS.md](forbric-loader/CREDITS.md) and
-[forbric-loader/MAPPINGS.md](forbric-loader/MAPPINGS.md).
+### 安装
+
+1. 打开最新 release。
+2. 下两个文件，Windows 下 `.jar` 和 `.bat`，macOS 下 `.jar` 和 `.command`，Linux 自己 `java -jar`。
+3. 双击脚本。Windows 有时候双击 jar 只闪黑窗，因为系统设置狗屎。macOS 第一次还要右键打开，不然它觉得你下的是病毒。
+4. 打开窗口，填 Game directory，也就是你的 `.minecraft`。填错就等着出问题。
+5. 按 Install，等几分钟。它在下载 Minecraft、Forge、NeoForge 的文件再拼起来。因为版权不能直接发，所以让你自己电脑遭罪。
+6. 启动器里会出现 `26.2-forbric`。PCL2 会把它当 Fabric。官方启动器不会自动加，你得自己建。真是狗屎体验。
+
+### 模组放哪
+
+Fabric、Forge、NeoForge 全丢同一个 `mods` 文件夹。哪个文件夹？看启动器。版本隔离就是 `.minecraft/versions/26.2-forbric/mods/`，否则就是 `.minecraft/mods/`。不确定？启动一次，看 `.forbric-kernel` 出现在哪。一个加载器连模组文件夹都要猜，狗屎。
+
+一个模组有 Fabric、Forge、NeoForge 三个构建？只放一个。放多了它也只跑一个，然后写个 `forbric-mods.txt` 让你自己选。前置库也一样，通常一个就够。Iris 接 Sodium 这种，得同一个加载器。Sodium 还有已知崩溃，下面说。
+
+### 成功了吗？
+
+打开暂停菜单，找三个重叠方块的按钮，提示 *Mods (Forbric)*。点开能看到所有模组。想开配置就选 Config 或双击。Fabric 模组还得装 Mod Menu 才有 Config。标题界面和暂停菜单可能有两个模组按钮，别点错，点三个方块的。一个模组列表都要教半天，真是狗屎。
+
+### 出问题了怎么办
+
+| 你看到的 | 该怎么做 |
+| --- | --- |
+| 说模组缺东西 | 装它说的前置，或者按 Launch anyway 硬上。 |
+| 说必需功能不可用 | 模组某部分起不来。继续玩或删模组，自己选。 |
+| 游戏崩溃 | 去 `.forbric-kernel` 看 `crash-analysis.txt`，再去 `crash-reports/` 看完整报告。删模组再试。Sodium 的 NeoForge 构建还会崩，看下面。 |
+| 模组装了但没反应 | 看 Forbric 模组列表，没加载完的会标出来。或者看 `load-report.txt`。多半是版本不对，或者你放了两个构建。 |
+| 专用服务器起不来 | 服务器没屏幕问你，所以直接停。删模组，或者加 `-Dforbric.compatibilityPolicy=continue` 硬跑。 |
+| Continuity 加载了玻璃还有边框 | 去资源包启用 Default Connected Textures。0.3.0 的 Fabric 构建还有 bug，0.3.1 beta 才修。 |
+| 安装卡住 | 多半是代理或 VPN。跑 `--doctor`，关代理再试。 |
+
+其他问题自己去 GitHub 报。反正 0.3.0 研究项目，没人保证理你。
+
+### 更新和卸载
+
+更新：用同样设置跑新安装器。模组和世界不动。从 0.2.0 更新后第一次还要重新构建，又等几分钟。
+
+卸载：删 `.minecraft/versions/26.2-forbric/`。要回收空间，再删 `.minecraft/.forbric-build/` 和 `.minecraft/libraries/net/forbric/`。卸载就是删文件夹，这点倒是还行，但整个项目还是狗屎。
+
+## 0.3.0 新内容
+
+**更多模组能用了。** 他们挑了三批各约 100 个模组单独测。0.2.0 有 80.5% 无错误加载，0.3.0 有 89.0%。91.8% 能进世界，79.1% 没有部分报错。注意，这只是能加载、能开世界，不测功能，也不测模组一起用。也就是说，数据看着像样，实际玩起来照样可能狗屎。
+
+新增：
+
+- 不同加载器能传物品、流体、能量。
+- 模组某部分不能工作时，进游戏前弹窗。
+- Forbric 模组列表标记没加载完的模组。
+- 崩溃后有 `crash-analysis.txt`。
+- 警告窗口支持 10 种语言。
+- 用完整 NeoForge 发布版，不再 beta。
+
+修复：
+
+- 熔炉、合成、酿造、打末影龙、花盆、放流体的崩溃。
+- 某些模组组合黑屏。
+- 地牢不生成、种子地形不对。
+- 物品工具提示缺附魔、描述、属性、耐久。
+- 很多 Forge 模组加载了但没反应。
+- Xaero 地图崩溃。
+- Farmer's Delight Refabricated、Better End、Better Nether 等现在能用。
+
+更差：
+
+- Alex's Mobs Continued、Drippy Loading Screen、FancyMenu、Easy Magic 的 NeoForge 构建，0.2.0 能用，0.3.0 反而不行。修一个坏一个，经典狗屎。
+
+服务器变更：专用服务器缺模组必需部分会直接停，因为没屏幕问你。
+
+## 我们承诺什么
+
+**不碰你现有 Minecraft。** Forbric 并排安装，原来的 Fabric、Forge、NeoForge、世界、模组文件夹都不动。
+**卸载就是删文件夹。** 不散落系统，不后台运行。
+**没有隐藏。** 源码在这，Apache-2.0，仓库不含 Minecraft、Forge、NeoForge 代码，安装时自己下自己拼。
+
+但我们**不**承诺：
+
+**任何特定模组能用。** 他们自己测试里约十分之一模组单独就失败，单独能用的放一起还可能冲突。
+**模组某部分可能不崩溃但就是坏了。** Forbric 会保留其余部分运行，然后告诉你。接上了但行为不对？它也不知道。
+**已知崩溃：** Sodium 的 NeoForge 构建启动崩溃，除非也装 Fabric API。Iris、Sodium Extra 的 NeoForge 构建也一样。是 Forbric 的 bug。要么加 Fabric API，要么用 Fabric 构建。
+**这是 0.3.0 研究项目。** 没支持，没路线图，东西会变。翻译：别指望它稳定。
+
+Forbric 和 Mojang、FabricMC、MinecraftForge、NeoForged 没关系。人家也不想背这锅。
+
+---
+
+### 给模组开发者
+
+**你的模组不用改。** 它调用真 Fabric API、MinecraftForge、NeoForge 类。Forbric 重实现的是加载器：类加载、模组发现、加载顺序、生命周期、Mixin 服务、Fabric Loader API。Fabric Loader 本身不跑。游戏也是合并的 jar。
+
+- **游戏是一个合并 jar。** MinecraftForge 和 NeoForge 改同一个方法的地方约一千个，基本只留 NeoForge，五个留 MinecraftForge。事件调用丢了，就得 Forbric 重新发，没桥接就永远不触发。
+- **Mixin 打到合并代码上。** 它放宽 `required: false`、`defaultRequire: 0`，目标没了就不做，除非你自己设 `require`。目标移动了就搬，目标全没了就丢整个 mixin。
+- **启动顺序是 Forbric 的**，接近但不等同各加载器原生顺序。
+- **不支持启动扩展。** ModLauncher 服务、`coremods.json`、`ClassProcessorProvider`、自定义定位器，全跳过，还不一定警告。狗屎。
+
+更多细节自己看 `introduction.md`、`forbric-kernel/README.md`。
+
+构建要 `git` 和 JDK 21+。开发要 JDK 25+ 和 Python 3.9+。全新克隆构建绿了不代表游戏能启动。CI 只验证构建，不启动 Minecraft。真是狗屎自信。
+
+### 许可证
+
+Apache-2.0，见 LICENSE 和 NOTICE。净室边界在 CREDITS.md 和 MAPPINGS.md。
