@@ -34,7 +34,7 @@ public final class FinalMixinApplications {
    EXTRAS+"injector/wrapoperation/WrapOperation;", EXTRAS+"injector/wrapmethod/WrapMethod;");
  private static final String MERGED = "Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;";
  private record Config(String name, boolean required, int minimum) { }
- private record Injector(String name, String desc, int minimum, boolean understood, boolean audited, String bodyHash) {
+ private record Injector(String name, String desc, int minimum, boolean understood, boolean grouped, boolean audited, String bodyHash) {
   String symbol() { return name+desc; }
  }
  private record Plan(String mixin, Config config, List<String> targets, List<Injector> injectors, boolean complete) { }
@@ -102,7 +102,7 @@ public final class FinalMixinApplications {
     // outside a named @Group, whose members are counted by the group and individually require nothing.
     Object declared=value(annotation,"require");int minimum=declared instanceof Number n?n.intValue():-1;
     if(minimum<0)minimum=grouped?0:config.minimum();
-    injectors.add(new Injector(method.name,method.desc,minimum,!grouped&&!sugar&&injecting.size()==1,STANDARD.contains(annotation.desc),
+    injectors.add(new Injector(method.name,method.desc,minimum,!grouped&&!sugar&&injecting.size()==1,grouped,STANDARD.contains(annotation.desc),
       MixinEquivalentImplementations.needsFingerprint(binary,method)?MixinInstructionFingerprint.hash(method):""));
    if(grouped||extension||injecting.size()!=1)complete=false;
    }
@@ -156,9 +156,13 @@ public final class FinalMixinApplications {
     else if(injector.understood()&&references>=0)
      state=references==0?(injector.minimum()==0?Outcome.OPTIONAL:Outcome.MISSING):Outcome.UNKNOWN;
     boolean lost=state==Outcome.MISSING||state==Outcome.NEVER_RUNS;
-    String replacement=lost?MixinEquivalentImplementations.proof(mixin,injector.name(),injector.desc(),injector.bodyHash(),target):null;
-    boolean pending=lost&&WatchdogDumpEquivalence.helperUnknown()
+    // Optional means a miss may continue, not that it should disappear from the log. A named group's absent
+    // alternative is not an independent miss, and an audited replacement is not a failed feature.
+    boolean optionalMiss=injector.minimum()==0&&!injector.grouped()&&(references==0||dead!=null);
+    String replacement=lost||optionalMiss?MixinEquivalentImplementations.proof(mixin,injector.name(),injector.desc(),injector.bodyHash(),target):null;
+    boolean replacementPending=(lost||optionalMiss)&&WatchdogDumpEquivalence.helperUnknown()
       &&WatchdogDumpEquivalence.candidate(mixin,injector.name(),injector.desc(),injector.bodyHash(),target);
+    boolean pending=lost&&replacementPending;
     if(pending)state=Outcome.UNKNOWN;
     if(replacement!=null)state=Outcome.EQUIVALENT;
     // Attached, but only inside a forwarding stub the merge kept for vanilla's signature, where the mod's own platform
@@ -173,9 +177,8 @@ public final class FinalMixinApplications {
     // replacement is seen; until then it is recorded as usual and resolved when SupersededMixins proves it.
     // An injector this does not model (sugar, a group) is still visibly unattached when nothing in the final class
     // calls its merged handler; that is the miss a superseding repair answers for, as much as a modelled one's.
-    boolean unattached=lost||state==Outcome.UNKNOWN&&!pending&&references==0;
+    boolean unattached=lost||optionalMiss||state==Outcome.UNKNOWN&&!pending&&references==0;
     String superseded=unattached?SupersededMixins.provedReplacement(mixin):null;
-    if(unattached&&superseded==null&&SupersededMixins.replacementFor(mixin)!=null)SupersededMixins.awaitProof(plan.config().name(),mixin);
     // Natively an injector below its require/defaultRequire throws InjectionError, an Error no config-level
     // `required:false` catches: the author declared that injection mandatory whatever the config says.
     boolean required=plan.config().required()||injector.minimum()>=1;
@@ -222,6 +225,19 @@ public final class FinalMixinApplications {
       List.of("target="+binary,"mixin="+mixin,"handler="+injector.symbol(),"original minimum="+injector.minimum(),
         references<0?"merged handler not identified ("+candidates.size()+" candidates)":"final handler references="+references,
         injector.understood()?"partial count":"grouped, sugar or several injector annotations")));
+    // Register after the finding exists: a replacement witness arriving here must resolve this observation,
+    // rather than resolve nothing and then leave a newly recorded loss behind.
+    if(unattached&&superseded==null&&SupersededMixins.replacementFor(mixin)!=null)SupersededMixins.awaitProof(plan.config().name(),mixin);
+    if(SupersededMixins.provedReplacement(mixin)==null&&replacement==null&&!replacementPending
+      &&(lost||optionalMiss||state==Outcome.UNKNOWN&&injector.minimum()>=1&&references<injector.minimum())) {
+     String reason=dead!=null?"attached only in "+dead+", so the injector never runs"
+       :references==0?"did not attach (final handler references=0)"
+       :references<0?"attachment could not be verified (merged handler candidates="+candidates.size()+")"
+       :"only "+references+" final handler reference(s), below the original minimum";
+     MixinCompatibility.warnInjection(plan.config().name(),mixin,injector.symbol(),binary,
+       reason+"; original minimum="+injector.minimum()+(injector.minimum()==0?"; optional injection skipped"
+         :state==Outcome.UNKNOWN?"; required injection could not be verified":"; required injection unavailable"));
+    }
    }
    // An old whole-mixin suspicion may concern another handler or target. Discharge it only after every
    // understood declaration has been observed on every target, and never erase a confirmed apply failure.

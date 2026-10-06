@@ -121,6 +121,7 @@ public final class KernelLoadReport {
 			// than where the suppression was decided, because the plugin does not exist yet at that point — and
 			// settled before failures() is read, so the first report is already the corrected one.
 			net.forbric.kernel.mixin.PluginDeclinedMixins.resolve();
+			net.forbric.kernel.mixin.MixinCompatibility.warnUnresolvedMixins();
 			net.forbric.api.CompatibilityFindings.observeInitializationFailures();
 			writeCompatibility(file);
 			net.forbric.kernel.ui.CompatibilityDecision.queue();

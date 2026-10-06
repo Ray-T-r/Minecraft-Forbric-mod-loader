@@ -503,8 +503,8 @@ public final class ForbricMixinService
 				//
 				// DIAGNOSTICS (-Dforbric.mixinDiagnostics): keep the injection requirements STRICT so every
 				// misfitting injection is reported, while still setting required=false so the launch survives to
-				// collect them all. Relaxing defaultRequire makes a non-matching injection SILENT, which is how a
-				// half-applied mixin (fabric-registry-sync's ScopedValue re-bind) hid until it crashed at runtime.
+				// collect them all. Mixin itself stays silent about a relaxed, non-matching injection; the final
+				// class audit emits a WARN with its owner, handler and target instead (FinalMixinApplications).
 				if (!DIAGNOSTICS) {
 					json = json.replaceAll("(\"requireAnnotations\"\\s*:\\s*)true", "$1false")
 							.replaceAll("(\"defaultRequire\"\\s*:\\s*)\\d+", "$10");

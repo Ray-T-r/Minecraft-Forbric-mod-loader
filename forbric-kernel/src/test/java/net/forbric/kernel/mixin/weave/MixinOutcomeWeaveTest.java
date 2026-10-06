@@ -25,7 +25,8 @@ import net.forbric.api.Ecosystem;
  * <ul>
  *   <li>required — a HEAD handler that must run, and an absent INVOKE anchor under {@code defaultRequire 1} that
  *       must become exactly one CONFIRMED, required loss;</li>
- *   <li>optional — the same pair with {@code require=0} on the absent one: it runs, and nothing is a loss;</li>
+	 *   <li>optional — the same pair with {@code require=0} on the absent one: the surviving handler runs, the
+	 *       missing one warns, and nothing is a required loss;</li>
  *   <li>declined — the plugin applies nothing: no handler runs, nothing is a loss;</li>
  *   <li>widened — an {@code @ModifyArg} written against {@code ValueCarrier.apply(String)} while the target calls
  *       {@code apply(String,String)}. {@code MixinAtWidenedCall} retargets it, so the argument changes;</li>
@@ -96,6 +97,22 @@ class MixinOutcomeWeaveTest {
 		WeaveHarness.Result declined = RUNS.get("declined");
 		assertFalse(declined.printed("present handler ran"), declined.describe());
 		assertTrue(losses(declined).isEmpty(), declined.findings().toString());
+	}
+
+	@Test void anAbsentOptionalHandlerWarnsWhileTheOtherHandlerStillExecutes() {
+		WeaveHarness.Result optional = RUNS.get("optional");
+		List<String> warnings = optional.output().lines().filter(line -> line.contains("[Forbric/WARN]") && line.contains("injection warning:")
+				&& line.contains(CONFIG) && line.contains("forbric.outcome.mixin.OptionalMixin")
+				&& line.contains("missing") && line.contains("forbric.outcome.OutcomeTarget")).toList();
+		assertEquals(1, warnings.size(), "the absent optional handler must be visible once in the real weave\n" + optional.describe());
+		assertTrue(warnings.getFirst().contains("forbricoutcome"), warnings.toString());
+		assertTrue(optional.printed("optional present handler ran"), optional.describe());
+		assertFalse(optional.printed("absent site executed"), optional.describe());
+		assertTrue(losses(optional).isEmpty(), "logging an optional miss must not make it required\n" + optional.describe());
+		assertFalse(optional.output().lines().anyMatch(line -> line.contains("[Forbric/WARN]") && line.contains(CONFIG)
+				&& line.contains("injection warning:") && line.contains("present(")), "the handler that actually attached must not warn\n" + optional.describe());
+		assertFalse(RUNS.get("declined").output().lines().anyMatch(line -> line.contains("[Forbric/WARN]")
+				&& line.contains("injection warning:") && line.contains(CONFIG)), "a plugin-declined mixin is not a missing injection\n" + RUNS.get("declined").describe());
 	}
 
 	private static boolean widenedHolds(WeaveHarness.Result run) {
