@@ -75,12 +75,15 @@ class MixinWrapOperationShimTest {
 		assertEquals(0, MixinWrapOperationShim.adapt(mixin, name -> target));
 	}
 
-	@Test void fabricNetworkingsCodecWrapsStayUnboundBecauseTheKernelServesThoseCodecs() throws Exception {
+	@Test void networkingWrapsUseTheSameStructuralRuleAsOtherGuests() throws Exception {
 		for (String[] pair : new String[][] {
 				{ "net/fabricmc/fabric/mixin/networking/ServerboundCustomPayloadPacketMixin", "net/minecraft/network/protocol/common/ServerboundCustomPayloadPacket" },
 				{ "net/fabricmc/fabric/mixin/networking/ServerConfigurationPacketListenerImplMixin", "net/minecraft/server/network/ServerConfigurationPacketListenerImpl" } }) {
 			ClassNode mixin = StagedFabricMixinFixture.mixin("fabric-networking-api-v1", pair[0]), target = game(merged(), pair[1]);
-			assertEquals(0, MixinWrapOperationShim.adapt(mixin, name -> target), pair[0] + " has the shape but no reviewed row");
+			assertEquals(1, MixinWrapOperationShim.adapt(mixin, name -> target), pair[0] + " preserves all appended call-site arguments");
+			for (MethodNode method : mixin.methods) if (MixinFit.injectorOf(method) != null) {
+				new Analyzer<>(new BasicVerifier()).analyze(mixin.name, method);
+			}
 		}
 	}
 
@@ -105,17 +108,16 @@ class MixinWrapOperationShimTest {
 	 * wrap there would put Fabric's lookup in front of the kernel's), and the verdict now says so instead of reading
 	 * FIT because a widened call exists. PARTIAL keeps the mixin by default; only -Dforbric.mixinFit=strict drops it.
 	 */
-	@Test void fabricNetworkingsDecoratorWrapIsReportedAsTheMissItIs() throws Exception {
+	@Test void theDecoratorWrapVerdictUsesTheSameStructuralProofAsApplication() throws Exception {
 		String name = "net/fabricmc/fabric/mixin/networking/ServerConfigurationPacketListenerImplMixin";
 		String listener = "net/minecraft/server/network/ServerConfigurationPacketListenerImpl";
 		byte[] mixin = StagedFabricMixinFixture.bytes(StagedFabricMixinFixture.mixin("fabric-networking-api-v1", name));
 		byte[] target = StagedFabricMixinFixture.bytes(game(merged(), listener));
 		MixinFit.Result fit = MixinFit.evaluate(mixin, n -> n.equals(listener + ".class") ? target : null);
-		assertEquals(MixinFit.Verdict.PARTIAL, fit.verdict(), fit.reason());
-		assertTrue(fit.unresolved().contains("@At(INVOKE) net.minecraft.network.RegistryFriendlyByteBuf.decorator in "
+		assertFalse(fit.unresolved().contains("@At(INVOKE) net.minecraft.network.RegistryFriendlyByteBuf.decorator in "
 				+ "ServerConfigurationPacketListenerImpl.handleConfigurationFinished"),
 				fit.unresolved().toString());
-		assertFalse(fit.shouldSuppress(), "PARTIAL is kept unless strict");
+		assertFalse(fit.shouldSuppress());
 	}
 
 	@Test void aRepeatedTypeIsAGuessAndIsRefused() {

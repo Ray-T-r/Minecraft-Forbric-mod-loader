@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.function.Function;
@@ -26,7 +25,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Wraps a reviewed {@code @WrapOperation} handler whose call the surviving carrier reordered or widened.
+ * Wraps an eligible {@code @WrapOperation} handler whose call the surviving carrier reordered or widened.
  *
  * <p>{@link MixinAtWidenedCall} moves an injection point onto a carrier's longer call only for injectors whose handler
  * does not mirror the call's arguments; this one does, and Mixin rejects it outright on any other shape. NeoForge's
@@ -50,12 +49,10 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <h2>When</h2>
  *
- * <p>Only for a handler in {@link #REVIEWED}, each row carrying why binding it is right. The structure below proves
- * the call is the same operation; it cannot prove that attaching a handler the merged game has been running WITHOUT is
- * wanted. fabric-networking's codec wraps have exactly this shape on NeoForge's four-argument
- * {@code CustomPacketPayload.codec}, and binding them would put Fabric's payload lookup in front of the kernel's
- * {@code PayloadInterop}, which already serves Fabric payloads and settles the ids both registries claim. A handler
- * whose loss was never replaced is a row here; one that was replaced is not.
+ * <p>The decision is structural for every guest: no mod, mixin or handler name is an admission key. The original
+ * handler and the original operation remain in the chain, and every carrier-only argument retains its call-site
+ * value. A handler can change the arguments it owns or skip the call, exactly as it could on its own platform.
+ * This does not make independently registered callbacks commute; combined-runtime behaviour is tested separately.
  *
  * <p>And then only on evidence the injection is dead and the operation is there: the named call is in none of the bodies the
  * injector selects; exactly one other descriptor of the same owner and name, with the same return type, is; and each
@@ -71,20 +68,6 @@ public final class MixinWrapOperationShim {
 	static final String OPERATION = "com/llamalad7/mixinextras/injector/wrapoperation/Operation";
 	private static final String GROUP = "Lorg/spongepowered/asm/mixin/injection/Group;";
 
-	/** {@code mixin#handler} → why binding it to the merged call is right. */
-	static final Map<String, String> REVIEWED = Map.ofEntries(
-			Map.entry("net/fabricmc/fabric/mixin/event/interaction/ServerGamePacketListenerImplMixin#onPickItemFromBlock",
-			"fabric-api's PlayerPickItemEvents.BLOCK never fired: nothing else posts it, and NeoForge's getCloneItemStack "
-					+ "only adds the player its block hook reads; the handler's own call still runs NeoForge's form"),
-			Map.entry("com/zurrtum/create/mixin/BlockItemMixin#checkSound", "Create placement sound context must receive the live context-aware sound query"),
-			Map.entry("com/zurrtum/create/mixin/BlockItemMixin#getGroup", "Create placement sounds must preserve the native world, position and player arguments"),
-			Map.entry("com/zurrtum/create/mixin/LivingEntityMixin#getBlockFallSound", "Create landing sounds must wrap the native contextual sound query"),
-			Map.entry("com/zurrtum/create/mixin/EntityMixin#getStepSound", "Create step sounds must wrap the native contextual sound query"),
-			Map.entry("com/zurrtum/create/client/mixin/MultiPlayerGameModeMixin#getHitSound", "Create hit sounds must wrap the native contextual sound query"),
-			Map.entry("com/zurrtum/create/client/mixin/LevelEventHandlerMixin#getBreakSound", "Create break sounds must wrap the native contextual sound query"),
-			Map.entry("com/zurrtum/create/client/mixin/ModelBlockRendererMixin#getLuminance", "Create block luminance must preserve native world and position"),
-			Map.entry("com/zurrtum/create/client/mixin/LightCoordsUtilMixin#getLuminance", "Create light coordinates must preserve native world and position"),
-			Map.entry("com/zurrtum/create/client/mixin/ModelBlockRendererMixin#collectParts", "Create model part collection must retain the native block rendering context"));
 
 	private MixinWrapOperationShim() {
 	}
@@ -99,7 +82,7 @@ public final class MixinWrapOperationShim {
 		if(old.name().equals(live.name)&&old.descriptor().equals(live.desc))return 0;
 		Type[] wanted=Type.getArgumentTypes(old.descriptor()), available=Type.getArgumentTypes(live.desc);
 		if(Arrays.equals(wanted,available)){CarpetMixinAdapter.set(at,"target","L"+live.owner+";"+live.name+live.desc);return 1;}
-		int[] mapping=embedding(wanted,available);if(mapping==null)return 0;
+		int[] mapping=argumentMapping(wanted,available);if(mapping==null)return 0;
 		Type[] params=Type.getArgumentTypes(handler.desc);int receiver=live.getOpcode()==Opcodes.INVOKESTATIC?0:1;
 		if(params.length<receiver+wanted.length+1||!params[receiver+wanted.length].equals(Type.getObjectType(OPERATION)))return 0;
 		for(int i=0;i<wanted.length;i++)if(!params[receiver+i].equals(wanted[i]))return 0;
@@ -147,7 +130,7 @@ public final class MixinWrapOperationShim {
 	}
 
 	private static Plan plan(String mixinName, MethodNode handler, List<MethodNode> declared) {
-		if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX) || !REVIEWED.containsKey(mixinName + "#" + handler.name)) return null;
+		if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX)) return null;
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
 		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
@@ -183,7 +166,7 @@ public final class MixinWrapOperationShim {
 		String merged = candidates.iterator().next();
 		Type[] wanted = Type.getArgumentTypes(named.descriptor());
 		Type[] available = Type.getArgumentTypes(merged);
-		int[] mapping = embedding(wanted, available);
+		int[] mapping = argumentMapping(wanted, available);
 		if (mapping == null) return null;
 
 		// The handler must be (receiver?, the named arguments, Operation, trailing captures) and return the call's type.
@@ -248,12 +231,12 @@ public final class MixinWrapOperationShim {
 		StringJoiner map = new StringJoiner(",");
 		for (int position : mapping) map.add(Integer.toString(position));
 		outer.instructions.add(new LdcInsnNode(map.toString()));
-		outer.instructions.add(new IntInsnNode(Opcodes.BIPUSH, available.length));
+		pushInt(outer, available.length);
 		outer.instructions.add(new TypeInsnNode(Opcodes.ANEWARRAY, "java/lang/Object"));
 		for (int j = 0; j < available.length; j++) {
 			if (mapped(mapping, j)) continue;
 			outer.instructions.add(new InsnNode(Opcodes.DUP));
-			outer.instructions.add(new IntInsnNode(Opcodes.BIPUSH, j));
+			pushInt(outer, j);
 			outer.instructions.add(new VarInsnNode(available[j].getOpcode(Opcodes.ILOAD), slots[receiver + j]));
 			box(outer, available[j]);
 			outer.instructions.add(new InsnNode(Opcodes.AASTORE));
@@ -273,7 +256,13 @@ public final class MixinWrapOperationShim {
 		for (int i = 0; i + 1 < at.values.size(); i += 2) {
 			if ("target".equals(at.values.get(i))) at.values.set(i + 1, "L" + named.owner() + ";" + named.name() + merged);
 		}
+		String originalName = handler.name;
 		handler.name = handler.name + MixinHandlerShim.INNER_SUFFIX;
+		// Ordinary helpers may call the injector directly too. They keep its original argument contract.
+		for (MethodNode caller : mixin.methods) for (AbstractInsnNode instruction : caller.instructions) {
+			if (instruction instanceof MethodInsnNode call && call.owner.equals(mixin.name)
+					&& call.name.equals(originalName) && call.desc.equals(handler.desc)) call.name = handler.name;
+		}
 		handler.visibleAnnotations = without(handler.visibleAnnotations, injector.desc);
 		handler.invisibleAnnotations = without(handler.invisibleAnnotations, injector.desc);
 		handler.visibleParameterAnnotations = null;
@@ -282,6 +271,16 @@ public final class MixinWrapOperationShim {
 				+ "(%s), and hands the handler its own argument order", mixin.name.replace('/', '.'), outer.name,
 				named.name(), merged, named.descriptor());
 		return outer;
+	}
+
+	/** Appended arguments have an exact positional contract, even when their types repeat. */
+	static int[] argumentMapping(Type[] wanted, Type[] available) {
+		if (available.length > wanted.length && Arrays.equals(wanted, Arrays.copyOf(available, wanted.length))) {
+			int[] mapping = new int[wanted.length];
+			for (int i = 0; i < mapping.length; i++) mapping[i] = i;
+			return mapping;
+		}
+		return embedding(wanted, available);
 	}
 
 	/** For each wanted argument, the one available argument of the same type; null when any is absent or shared. */
@@ -306,6 +305,12 @@ public final class MixinWrapOperationShim {
 	private static boolean mapped(int[] mapping, int position) {
 		for (int value : mapping) if (value == position) return true;
 		return false;
+	}
+
+	private static void pushInt(MethodNode method, int value) {
+		if (value >= -1 && value <= 5) method.instructions.add(new InsnNode(Opcodes.ICONST_0 + value));
+		else if (value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE) method.instructions.add(new IntInsnNode(Opcodes.BIPUSH, value));
+		else method.instructions.add(new IntInsnNode(Opcodes.SIPUSH, value));
 	}
 
 	private static void box(MethodNode method, Type type) {
