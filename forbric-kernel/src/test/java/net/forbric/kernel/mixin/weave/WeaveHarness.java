@@ -265,7 +265,7 @@ final class WeaveHarness {
 	private static String compileClasspath() {
 		List<String> entries = new ArrayList<>();
 		for (Class<?> anchor : List.of(org.spongepowered.asm.mixin.Mixin.class, org.objectweb.asm.tree.ClassNode.class,
-				org.objectweb.asm.Opcodes.class)) {
+				org.objectweb.asm.Opcodes.class, net.forbric.kernel.interop.PayloadInterop.class)) {
 			entries.add(Path.of(codeSource(anchor)).toString());
 		}
 		entries.add(mixinExtrasJar());

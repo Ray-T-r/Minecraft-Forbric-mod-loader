@@ -53,7 +53,7 @@ public final class FinalMixinApplications {
  private record DeferredDefinition(byte[] bytes,Renames names) { }
  private static volatile DeferredDefinition watchdog;
  private FinalMixinApplications() { }
- public static void reset() { CONFIGS.clear(); PLANS.clear(); TARGETS.clear(); OUTCOMES.clear(); DISCHARGED.clear(); watchdog=null;WatchdogDumpEquivalence.reset(); }
+ public static void reset() { CONFIGS.clear(); PLANS.clear(); TARGETS.clear(); OUTCOMES.clear(); DISCHARGED.clear(); watchdog=null;WatchdogDumpEquivalence.reset();MixinNativeEquivalence.reset(); }
 
  /** Whether the final classes already discharged a whole-mixin preflight suspicion about {@code mixin}. */
  static boolean discharged(String mixin) { return DISCHARGED.contains(mixin); }
@@ -82,6 +82,7 @@ public final class FinalMixinApplications {
 
  /** Called on the final adapter output handed to Mixin; no guessed pre-adapter descriptors. */
  static void remember(ClassNode mixin) {
+  MixinNativeEquivalence.remember(mixin);
   String binary=mixin.name.replace('/','.');Set<Config> configs=CONFIGS.get(binary);
   if(configs==null || configs.size()!=1)return; // Dynamic/ambiguous ownership is not a proved contract.
   Config config=configs.iterator().next();List<String> targets=MixinFit.mixinTargets(mixin).stream().map(n->n.replace('/','.')).toList();
@@ -134,7 +135,7 @@ public final class FinalMixinApplications {
   }
   if(!TARGETS.containsKey(binary))return;
   if(WatchdogDumpEquivalence.TARGET.equals(binary))watchdog=new DeferredDefinition(bytes.clone(),names);
-  ClassNode target=new ClassNode();new ClassReader(bytes).accept(target,ClassReader.SKIP_FRAMES|ClassReader.SKIP_DEBUG);
+  ClassNode target=new ClassNode();new ClassReader(bytes).accept(target,ClassReader.SKIP_FRAMES);
   Map<String,List<MethodNode>> merged=new HashMap<>();
   for(MethodNode method:target.methods)for(AnnotationNode annotation:annotations(method))if(annotation.desc.equals(MERGED)) {
    Object owner=value(annotation,"mixin");if(owner instanceof String mixin)merged.computeIfAbsent(mixin.replace('/','.'),k->new ArrayList<>()).add(method);
@@ -159,7 +160,8 @@ public final class FinalMixinApplications {
     // Optional means a miss may continue, not that it should disappear from the log. A named group's absent
     // alternative is not an independent miss, and an audited replacement is not a failed feature.
     boolean optionalMiss=injector.minimum()==0&&!injector.grouped()&&(references==0||dead!=null);
-    String replacement=lost||optionalMiss?MixinEquivalentImplementations.proof(mixin,injector.name(),injector.desc(),injector.bodyHash(),target):null;
+    String replacement=lost||optionalMiss||state==Outcome.UNKNOWN&&references==0
+      ?MixinEquivalentImplementations.proof(mixin,injector.name(),injector.desc(),injector.bodyHash(),target):null;
     boolean replacementPending=(lost||optionalMiss)&&WatchdogDumpEquivalence.helperUnknown()
       &&WatchdogDumpEquivalence.candidate(mixin,injector.name(),injector.desc(),injector.bodyHash(),target);
     boolean pending=lost&&replacementPending;

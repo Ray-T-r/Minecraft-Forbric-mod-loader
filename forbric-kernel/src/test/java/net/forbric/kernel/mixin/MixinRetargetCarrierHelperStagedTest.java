@@ -31,8 +31,13 @@ class MixinRetargetCarrierHelperStagedTest {
 	private static final Path SWEEP = Path.of(System.getProperty("user.dir"), "build", "compat-inputs", "sweep90", "mods").normalize();
 	private static final String G = "(Lnet/minecraft/client/gui/GuiGraphicsExtractor;)V";
 
+	/** This suite pins the legacy rule independently; execution-path proofs have their own positive/negative tests. */
+	@org.junit.jupiter.api.BeforeEach
+	void legacyRuleScope() { System.setProperty(MixinExecutionPathRetarget.PROPERTY, "off"); }
+
 	@AfterEach
 	void reset() {
+		System.clearProperty(MixinExecutionPathRetarget.PROPERTY);
 		System.clearProperty(MixinRetarget.SPLIT_PROPERTY);
 		MixinRetarget.reset();
 		MixinStubRebind.forget();

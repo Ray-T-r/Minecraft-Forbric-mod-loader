@@ -726,6 +726,7 @@ public final class KernelBoot {
 		// …and a tag a Fabric mod gave a fluid behaviour has that behaviour's fluid type where the merged
 		// EntityFluidInteraction turns tags into types, instead of the IllegalArgumentException fabric-api hit every tick.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFluidBehaviorInjector());
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFluidBreathingInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.UntrackedFluidEyeQueryInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.AxeStripCallbacksInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CompatPluginPlatformInjector());
@@ -996,6 +997,13 @@ public final class KernelBoot {
 					net.forbric.kernel.transform.ForgeCapabilityTokenInjector.create(loader);
 			if (tokens != null) chain.register(TransformPhase.COREMOD, tokens);
 		}
+
+		// Ordinary virtual method references expose their exact invocation for provenance-checked guest anchors.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.LambdaInvocationThunkInjector());
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ContextualDefaultMethodInjector(path -> {
+			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) { return in == null ? null : in.readAllBytes(); }
+			catch (java.io.IOException unavailable) { return null; }
+		}));
 
 		// LAST in the chain, because it has to see every edit the coremod phase made: a transformer that adds a
 		// branch leaves a frame of its own, and the recomputation must be over the final shape. A mod compiled

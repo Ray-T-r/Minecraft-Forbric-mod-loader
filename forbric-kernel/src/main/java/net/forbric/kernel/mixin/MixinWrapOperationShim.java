@@ -87,7 +87,7 @@ public final class MixinWrapOperationShim {
 		if(params.length<receiver+wanted.length+1||!params[receiver+wanted.length].equals(Type.getObjectType(OPERATION)))return 0;
 		for(int i=0;i<wanted.length;i++)if(!params[receiver+i].equals(wanted[i]))return 0;
 		var renamed=new MixinAtWidenedCall.Member(live.owner,live.name,old.descriptor());
-		mixin.methods.add(wrap(mixin,handler,new Plan(injector,at,renamed,live.desc,mapping,receiver==0)));return 1;
+		mixin.methods.add(wrap(mixin,handler,new Plan(injector,at,renamed,live.desc,mapping,receiver==0,null)));return 1;
 	}
 
 	static boolean enabled() {
@@ -98,14 +98,15 @@ public final class MixinWrapOperationShim {
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
 		if (!enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
 		List<MethodNode> declared = new ArrayList<>();
+		List<ClassNode> targetNodes = new ArrayList<>();
 		for (String targetName : MixinOverloadPin.targetsOf(mixin)) {
 			ClassNode target = targets.apply(targetName);
-			if (target != null && target.methods != null) declared.addAll(target.methods);
+			if (target != null && target.methods != null) { declared.addAll(target.methods); targetNodes.add(target); }
 		}
 		if (declared.isEmpty()) return 0;
 		int wrapped = 0;
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
-			Plan plan = plan(mixin.name, handler, declared);
+			Plan plan = plan(mixin.name, handler, declared, targetNodes.size() == 1 ? targetNodes.getFirst() : null);
 			if (plan == null) continue;
 			mixin.methods.add(wrap(mixin, handler, plan));
 			wrapped++;
@@ -120,16 +121,22 @@ public final class MixinWrapOperationShim {
 	 */
 	public static String wouldWrap(String mixinName, MethodNode handler, List<MethodNode> declared) {
 		if (!enabled() || mixinName == null || handler == null || declared == null) return null;
-		Plan plan = plan(mixinName, handler, declared);
+		Plan plan = plan(mixinName, handler, declared, null);
+		return plan == null ? null : "L" + plan.named().owner() + ";" + plan.named().name() + plan.merged();
+	}
+
+	public static String wouldWrap(ClassNode mixin, MethodNode handler, ClassNode target) {
+		if (!enabled()) return null;
+		Plan plan = plan(mixin.name, handler, target.methods, target);
 		return plan == null ? null : "L" + plan.named().owner() + ";" + plan.named().name() + plan.merged();
 	}
 
 	/** One wrap, decided: the injector and its point, the call it named, the merged call, and the argument mapping. */
 	private record Plan(AnnotationNode injector, AnnotationNode at, MixinAtWidenedCall.Member named, String merged,
-			int[] mapping, boolean staticCall) {
+			int[] mapping, boolean staticCall, Integer ordinal) {
 	}
 
-	private static Plan plan(String mixinName, MethodNode handler, List<MethodNode> declared) {
+	private static Plan plan(String mixinName, MethodNode handler, List<MethodNode> declared, ClassNode target) {
 		if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX)) return null;
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
@@ -141,7 +148,7 @@ public final class MixinWrapOperationShim {
 		List<AnnotationNode> points = MixinFit.atNodes(injector);
 		if (points.size() != 1) return null;
 		AnnotationNode at = points.getFirst();
-		if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value"))) || MixinFit.value(at, "ordinal") != null
+		if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value")))
 				|| MixinFit.value(at, "slice") != null) return null;
 		MixinAtWidenedCall.Member named = MixinAtWidenedCall.parse(MixinFit.asString(MixinFit.value(at, "target")));
 		if (named == null) return null;
@@ -168,6 +175,12 @@ public final class MixinWrapOperationShim {
 		Type[] available = Type.getArgumentTypes(merged);
 		int[] mapping = argumentMapping(wanted, available);
 		if (mapping == null) return null;
+		Integer ordinal = null;
+		if (MixinFit.value(at, "ordinal") instanceof Number n && n.intValue() >= 0) {
+			if (target == null || bodies.size() != 1) return null;
+			ordinal = InvocationOrdinals.correspondence(mixinName, target, bodies.getFirst(), named, merged, n.intValue());
+			if (ordinal == null) return null;
+		}
 
 		// The handler must be (receiver?, the named arguments, Operation, trailing captures) and return the call's type.
 		Type[] params = Type.getArgumentTypes(handler.desc);
@@ -182,7 +195,7 @@ public final class MixinWrapOperationShim {
 		for (MethodNode body : bodies) {
 			if (handlerStatic != ((body.access & Opcodes.ACC_STATIC) != 0)) return null;
 		}
-		return new Plan(injector, at, named, merged, mapping, staticCall);
+		return new Plan(injector, at, named, merged, mapping, staticCall, ordinal);
 	}
 
 	/** Builds the outer handler along {@code plan} and turns {@code handler} into its inner one. */
@@ -255,6 +268,7 @@ public final class MixinWrapOperationShim {
 
 		for (int i = 0; i + 1 < at.values.size(); i += 2) {
 			if ("target".equals(at.values.get(i))) at.values.set(i + 1, "L" + named.owner() + ";" + named.name() + merged);
+			if ("ordinal".equals(at.values.get(i)) && plan.ordinal() != null) at.values.set(i + 1, plan.ordinal());
 		}
 		String originalName = handler.name;
 		handler.name = handler.name + MixinHandlerShim.INNER_SUFFIX;

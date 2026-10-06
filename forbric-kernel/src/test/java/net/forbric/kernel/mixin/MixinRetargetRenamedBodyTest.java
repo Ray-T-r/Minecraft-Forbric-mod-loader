@@ -79,8 +79,13 @@ class MixinRetargetRenamedBodyTest {
 	private static final String TOOLTIP_ARGS = TOOLTIP.substring(1, TOOLTIP.indexOf(')'));
 	static final String MIXIN = "test/RenamedBodyMixin";
 
+	/** This suite pins the legacy rule independently; execution-path proofs have their own positive/negative tests. */
+	@org.junit.jupiter.api.BeforeEach
+	void legacyRuleScope() { System.setProperty(MixinExecutionPathRetarget.PROPERTY, "off"); }
+
 	@AfterEach
 	void reset() {
+		System.clearProperty(MixinExecutionPathRetarget.PROPERTY);
 		System.clearProperty(MixinRetarget.PROPERTY);
 		System.clearProperty(MixinRetarget.RENAME_CENSUS_PROPERTY);
 		System.clearProperty(MixinRetarget.UNCALLED_PROPERTY);

@@ -86,6 +86,53 @@ class MixinAtWidenedCallTest {
 		assertEquals(0, MixinAtWidenedCall.widen(mixin, name -> targetClass(LONG_DESC)));
 	}
 
+	@Test void namedSugarLocalKeepsItsScopeWhenOnlyTheCallGainsAnArgument() {
+		ClassNode mixin = mixin("Lorg/spongepowered/asm/mixin/injection/ModifyArg;");
+		MethodNode handler = mixin.methods.getFirst();
+		handler.desc = "(Ljava/util/List;Ljava/lang/Object;)Ljava/util/List;";
+		handler.visibleAnnotations.getFirst().values.addAll(List.of("index", 0));
+		AnnotationNode local = new AnnotationNode("Lcom/llamalad7/mixinextras/sugar/Local;");
+		local.values = new ArrayList<>(List.of("name", List.of("captured")));
+		handler.invisibleParameterAnnotations = new List[2];
+		handler.invisibleParameterAnnotations[1] = List.of(local);
+		ClassNode target = targetClass(LONG_DESC); MethodNode body = target.methods.getFirst();
+		var start = new org.objectweb.asm.tree.LabelNode(); var end = new org.objectweb.asm.tree.LabelNode();
+		body.instructions.insert(start); body.instructions.add(end);
+		body.localVariables = new ArrayList<>(List.of(new org.objectweb.asm.tree.LocalVariableNode("captured", "Ljava/lang/Object;", null, start, end, 2)));
+		assertEquals(1, MixinAtWidenedCall.widen(mixin, name -> target));
+		for (String name : List.of("missing", "ambiguous")) {
+			AnnotationNode point = MixinFit.atNodes(MixinFit.injectorOf(handler)).getFirst();
+			point.values.set(point.values.indexOf("target") + 1, SHORT);
+			if (name.equals("missing")) body.localVariables.clear();
+			else body.localVariables.addAll(List.of(new org.objectweb.asm.tree.LocalVariableNode("captured", "Ljava/lang/Object;", null, start, end, 2),
+					new org.objectweb.asm.tree.LocalVariableNode("captured", "Ljava/lang/Object;", null, start, end, 3)));
+			assertEquals(0, MixinAtWidenedCall.widen(mixin, ignored -> target));
+		}
+	}
+
+	@Test void actualFabricTagReplacementKeepsItsBuilderCaptureOnTheExpandedConstructor() throws Exception {
+		String configured = System.getProperty("forbric.fabricApi");
+		java.nio.file.Path api = configured == null ? TestFixtures.fabricApi() : java.nio.file.Path.of(configured);
+		java.nio.file.Path base = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+		TestFixtures.require(Fixture.STAGED, java.nio.file.Files.isRegularFile(api) && java.nio.file.Files.isRegularFile(base), "actual Fabric API and merged game required");
+		byte[] bytes = null;
+		try (var outer = new java.util.zip.ZipFile(api.toFile())) {
+			var module = outer.stream().filter(e -> e.getName().startsWith("META-INF/jars/fabric-data-generation-api-v1-")).findFirst().orElseThrow();
+			try (var inner = new java.util.zip.ZipInputStream(outer.getInputStream(module))) {
+				for (var entry = inner.getNextEntry(); entry != null; entry = inner.getNextEntry()) {
+					if (entry.getName().equals("net/fabricmc/fabric/mixin/datagen/TagsProviderMixin.class")) bytes = inner.readAllBytes();
+				}
+			}
+		}
+		assertNotNull(bytes); ClassNode mixin = MixinFit.parse(bytes), target;
+		try (var game = new java.util.zip.ZipFile(base.toFile())) {
+			target = new ClassNode(); new org.objectweb.asm.ClassReader(game.getInputStream(game.getEntry("net/minecraft/data/tags/TagsProvider.class"))).accept(target, 0);
+		}
+		assertEquals(1, MixinAtWidenedCall.widen(mixin, ignored -> target));
+		MethodNode handler = mixin.methods.stream().filter(m -> m.name.equals("addReplaced")).findFirst().orElseThrow();
+		assertTrue(MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(handler)).getFirst(), "target").toString().contains("Ljava/util/List;ZLjava/util/List;)V"));
+	}
+
 	@Test void fixedIndexMustNameAnOriginalArgumentAndGroupsStillDoNotMove() {
 		for (int index : List.of(-1, 1)) {
 			ClassNode mixin = mixin("Lorg/spongepowered/asm/mixin/injection/ModifyArg;");

@@ -403,6 +403,11 @@ public final class MergedBaseBuilder {
 				zos.write(e.getValue());
 				zos.closeEntry();
 			}
+			// Original bytes are non-executable provenance, not another definition of a game class. Generic
+			// injection migration can prove where a platform's operation came from without a method-name table.
+			writeNativeReferences(zos, "FABRIC", vanilla, outEntries);
+			writeNativeReferences(zos, "FORGE", forge, outEntries);
+			writeNativeReferences(zos, "NEOFORGE", neo, outEntries);
 		}
 
 		summarize(System.out);
@@ -425,6 +430,27 @@ public final class MergedBaseBuilder {
 			}
 			System.out.println("[merge] conflict report -> " + report);
 		}
+	}
+
+	private static void writeNativeReferences(ZipOutputStream output, String ecosystem,
+			Map<String, byte[]> original, Map<String, byte[]> merged) throws IOException {
+		String prefix = "META-INF/forbric/native-reference/" + ecosystem + "/";
+		StringBuilder index = new StringBuilder("# forbric-native-reference-v1\n");
+		for (Map.Entry<String, byte[]> entry : new java.util.TreeMap<>(original).entrySet()) {
+			String digest;
+			try {
+				digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(entry.getValue()));
+			} catch (java.security.NoSuchAlgorithmException impossible) { throw new AssertionError(impossible); }
+			index.append(entry.getKey()).append('\t').append(digest).append('\n');
+			if (!java.util.Arrays.equals(entry.getValue(), merged.get(entry.getKey()))) {
+				output.putNextEntry(new ZipEntry(prefix + entry.getKey() + ".class.bin"));
+				output.write(entry.getValue());
+				output.closeEntry();
+			}
+		}
+		output.putNextEntry(new ZipEntry(prefix + "index.tsv"));
+		output.write(index.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		output.closeEntry();
 	}
 
 	/**

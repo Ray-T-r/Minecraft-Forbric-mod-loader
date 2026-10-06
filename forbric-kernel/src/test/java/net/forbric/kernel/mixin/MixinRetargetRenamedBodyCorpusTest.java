@@ -99,8 +99,13 @@ class MixinRetargetRenamedBodyCorpusTest {
 			"net/fabricmc/fabric/mixin/item/ItemStackMixin#preAppendComponentTooltip -> addDetailsToTooltipComponents",
 			"taxfreelevels/", "net/fabricmc/fabric/mixin/item/ItemStackMixin#postTooltipsAdvanced -> addDetailsToTooltipTail");
 
+	/** This suite pins the legacy rule independently; execution-path proofs have their own positive/negative tests. */
+	@org.junit.jupiter.api.BeforeEach
+	void legacyRuleScope() { System.setProperty(MixinExecutionPathRetarget.PROPERTY, "off"); }
+
 	@AfterEach
 	void reset() {
+		System.clearProperty(MixinExecutionPathRetarget.PROPERTY);
 		System.clearProperty(MixinRetarget.RENAME_CENSUS_PROPERTY);
 		MixinStubRebind.forget();
 		MixinRetarget.reset();

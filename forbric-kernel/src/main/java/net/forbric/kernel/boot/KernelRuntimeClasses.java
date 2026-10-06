@@ -472,6 +472,8 @@ public final class KernelRuntimeClasses {
 		// Asked by the merged Fluid.getFluidType() (ForeignFluidTypeInjector) before NeoForge's throwing lookup, and by
 		// EntityFluidInteraction.getFluidTypeByTag before its throw (FabricFluidBehaviorInjector).
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidTypes", new Entry(Origin.COMPILED, List.of()));
+		// The shared breathe hook preserves the original drowning query and corrects adapter refill before its event.
+		CLASSES.put("net.forbric.kernel.runtime.KernelFluidBreathing", new Entry(Origin.COMPILED, List.of()));
 		// Asked in NeoForge's FluidInteractionRegistry.canInteract at each neighbour its own rules missed, handed
 		// MinecraftForge's map by its initializer and told of each addInteraction (FluidInteractionsInjector). Inserted
 		// calls with game-typed descriptors.

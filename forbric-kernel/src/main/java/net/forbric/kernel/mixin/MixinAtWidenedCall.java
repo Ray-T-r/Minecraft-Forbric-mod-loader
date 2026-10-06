@@ -30,6 +30,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.LocalVariableNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
@@ -445,7 +446,7 @@ public final class MixinAtWidenedCall {
 			if (REDIRECT.equals(injector.desc)) {
 				return "INVOKE".equals(atValue) && staticRedirect(handler, bodies, target, moved) ? moved : null;
 			}
-			return blind || singleArgumentAtFixedIndex(handler, injector, target) ? moved : null;
+			return blind || singleArgumentAtFixedIndex(handler, injector, target, moved, bodies) ? moved : null;
 		}
 		if ("NEW".equals(atValue) && blind && target.startsWith("(")) return widenedNewAcross(bodies, target);
 		return null;
@@ -478,15 +479,62 @@ public final class MixinAtWidenedCall {
 
 	/** A fixed prefix argument keeps its index/type when the carrier appends arguments. A full-arguments
 	 * handler or inferred index does not have this proof and is left unchanged. */
-	private static boolean singleArgumentAtFixedIndex(MethodNode handler, AnnotationNode injector, String target) {
+	private static boolean singleArgumentAtFixedIndex(MethodNode handler, AnnotationNode injector, String target,
+			String moved, List<MethodNode> bodies) {
 		Object rawIndex = MixinFit.value(injector, "index");
 		if (!(rawIndex instanceof Integer index) || index < 0) return false;
 		Member member = parse(target);
 		if (member == null) return false;
 		Type[] parameters = Type.getArgumentTypes(member.descriptor());
 		Type[] captured = Type.getArgumentTypes(handler.desc);
-		return index < parameters.length && captured.length == 1 && captured[0].equals(parameters[index])
-				&& Type.getReturnType(handler.desc).equals(parameters[index]);
+		if (index >= parameters.length || captured.length == 0 || !captured[0].equals(parameters[index])
+				|| !Type.getReturnType(handler.desc).equals(parameters[index])) return false;
+		if (captured.length == 1) return true;
+		// Sugar locals belong to the enclosing method, not the widened call's argument list. Keep them only
+		// when every additional parameter is an explicitly named/indexed, unique in-scope local at every site.
+		Member wide = parse(moved);
+		for (int parameter = 1; parameter < captured.length; parameter++) {
+			AnnotationNode local = explicitLocal(handler, parameter);
+			if (local == null) return false;
+			for (MethodNode body : bodies) for (AbstractInsnNode instruction : body.instructions) {
+				if (!(instruction instanceof MethodInsnNode call) || !call.owner.equals(wide.owner())
+						|| !call.name.equals(wide.name()) || !call.desc.equals(wide.descriptor())) continue;
+				if (!uniqueLocal(body, instruction, captured[parameter], local)) return false;
+			}
+		}
+		return true;
+	}
+
+	private static AnnotationNode explicitLocal(MethodNode method, int parameter) {
+		AnnotationNode found = null;
+		for (var annotations : List.of(method.visibleParameterAnnotations == null ? new List<?>[0] : method.visibleParameterAnnotations,
+				method.invisibleParameterAnnotations == null ? new List<?>[0] : method.invisibleParameterAnnotations)) {
+			if (parameter >= annotations.length || annotations[parameter] == null) continue;
+			for (Object value : annotations[parameter]) {
+				AnnotationNode annotation = (AnnotationNode) value;
+				if (!annotation.desc.equals("Lcom/llamalad7/mixinextras/sugar/Local;") || found != null) return null;
+				found = annotation;
+			}
+		}
+		if (found == null || Boolean.TRUE.equals(MixinFit.value(found, "argsOnly"))
+				|| MixinFit.value(found, "ordinal") instanceof Number n && n.intValue() >= 0) return null;
+		return found;
+	}
+
+	private static boolean uniqueLocal(MethodNode body, AbstractInsnNode site, Type type, AnnotationNode annotation) {
+		Object names = MixinFit.value(annotation, "name"), slot = MixinFit.value(annotation, "index");
+		List<?> selectedNames = names instanceof List<?> values ? values : List.of();
+		boolean indexed = slot instanceof Number n && n.intValue() >= 0;
+		if (!indexed && selectedNames.isEmpty() || body.localVariables == null) return false;
+		int position = body.instructions.indexOf(site), matches = 0;
+		for (LocalVariableNode local : body.localVariables) {
+			if (!local.desc.equals(type.getDescriptor()) || body.instructions.indexOf(local.start) > position
+					|| body.instructions.indexOf(local.end) <= position) continue;
+			if (indexed && local.index != ((Number) slot).intValue()) continue;
+			if (!selectedNames.isEmpty() && !selectedNames.contains(local.name)) continue;
+			matches++;
+		}
+		return matches == 1;
 	}
 
 	/** The target methods this injector's {@code method} selectors name, matched exactly as written. */

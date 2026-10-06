@@ -95,7 +95,7 @@ class MixinFitLivenessCensusStagedTest {
 			"apoli.mixins.json:legacy.hud_power.HudMixin FIT -> PARTIAL",
 			"architectury.mixins.json:MixinServerExplosion PARTIAL -> PARTIAL",
 			"balm.fabric.mixins.json:FabricCropBlockMixin PARTIAL -> PARTIAL",
-			"bettermounthud.mixins.json:HudMixin FIT -> PARTIAL",
+			"bettermounthud.mixins.json:HudMixin FIT -> FIT",
 			"configapi-fabric.mixins.json:event.ServerExplosionMixin PARTIAL -> PARTIAL",
 			"fabric-block-api-v1.mixins.json:LivingEntityMixin FIT -> PARTIAL",
 			"fabric-renderer-api-v1.mixins.json:block.particle.ScreenEffectRendererMixin FIT -> PARTIAL",
@@ -386,10 +386,8 @@ class MixinFitLivenessCensusStagedTest {
 	 * names that bind a lambda the handler was not written for, which Mixin rejects: loot-api's
 	 * {@code ReloadableServerRegistriesMixin} (suppressed by name; KernelLootBridge serves its callbacks) and
 	 * resource-conditions' {@code SimpleJsonResourceReloadListenerMixin} (SupersededMixins; KernelFabricConditions judges
-	 * the conditions at ConditionalOps' funnel). Both read FIT until the verdict asked whether the handler fits. The decorator
-	 * line is the anchor CreativeCore's required redirect also lost, but it is pinned here as fabric-networking's accepted
-	 * loss (its wrap stays unbound on purpose: PayloadInterop serves the play-phase channels), so this set could never have
-	 * flagged CreativeCore: a third-party mod's lost anchor shows only in the report of a corpus someone names.
+	 * the conditions at ConditionalOps' funnel). Both read FIT until the verdict asked whether the handler fits. Global widened-call contracts now retain networking wrappers and explicitly scoped sugar captures in tag generation.
+	 * A third-party mod's lost anchor shows only in the report of a corpus someone names.
 	 * A new line fails this, and so does one that stops being lost: delete it then.
 	 */
 	static final Set<String> FABRIC_API_LOST = Set.of(
@@ -402,7 +400,6 @@ class MixinFitLivenessCensusStagedTest {
 			"fabric-crash-report-info-v1.mixins.json:ServerWatchdogMixin | @At(INVOKE) java.lang.StringBuilder.append in ServerWatchdog.createWatchdogCrashReport",
 			"fabric-data-generation-api-v1.client.mixins.json:ModelProviderMixin | @At(INVOKE) net.minecraft.client.data.models.BlockModelGenerators.run in ModelProvider.run",
 			"fabric-data-generation-api-v1.client.mixins.json:ModelProviderMixin | @At(INVOKE) net.minecraft.client.data.models.ItemModelGenerators.run in ModelProvider.run",
-			"fabric-data-generation-api-v1.mixins.json:TagsProviderMixin | @At(INVOKE) net.minecraft.tags.TagFile.<init> in TagsProvider.lambda$run$5",
 			"fabric-entity-events-v1.mixins.json:LivingEntityMixin | @At(INVOKE) net.minecraft.world.level.Level.setBlock in LivingEntity.lambda$stopSleeping$0",
 			"fabric-entity-events-v1.mixins.json:LivingEntityMixin | @At(INVOKE) net.minecraft.world.level.block.BedBlock.getBedOrientation in LivingEntity.getBedOrientation",
 			"fabric-entity-events-v1.mixins.json:effect.LivingEntityMixin | @At(INVOKE) LivingEntity.canBeAffected in forceAddEffect",
@@ -427,8 +424,6 @@ class MixinFitLivenessCensusStagedTest {
 			"fabric-loot-api-v3.mixins.json:ReloadableServerRegistriesMixin | @Inject target ReloadableServerRegistries.lambda$scheduleRegistryLoad$0 binds lambda$scheduleRegistryLoad$0(Lnet/minecraft/world/level/storage/loot/LootDataType;Lnet/minecraft/resources/RegistryOps;Lnet/minecraft/server/packs/resources/ResourceManager;)Lnet/minecraft/core/WritableRegistry;, which the handler was not written for",
 			"fabric-model-loading-api-v1.mixins.json:ModelManagerMixin | @At(INVOKE) net.minecraft.client.resources.model.cuboid.CuboidModel.fromStream in ModelManager.lambda$loadBlockModels$2",
 			"fabric-networking-api-v1.mixins.json:ClientboundCustomPayloadPacketMixin | @At(INVOKE) net.minecraft.network.protocol.common.custom.CustomPacketPayload.codec in ClientboundCustomPayloadPacket.<clinit>",
-			"fabric-networking-api-v1.mixins.json:ServerConfigurationPacketListenerImplMixin | @At(INVOKE) net.minecraft.network.RegistryFriendlyByteBuf.decorator in ServerConfigurationPacketListenerImpl.handleConfigurationFinished",
-			"fabric-networking-api-v1.mixins.json:ServerboundCustomPayloadPacketMixin | @At(INVOKE) net.minecraft.network.protocol.common.custom.CustomPacketPayload.codec in ServerboundCustomPayloadPacket.<clinit>",
 			"fabric-object-builder-v1.client.mixins.json:HangingSignEditScreenMixin | @At(INVOKE) net.minecraft.resources.Identifier.withDefaultNamespace in HangingSignEditScreen.<init>",
 			"fabric-object-builder-v1.client.mixins.json:SignEditScreenMixin | @At(INVOKE) net.minecraft.resources.Identifier.withDefaultNamespace in SignEditScreen.<init>",
 			"fabric-registry-sync-v0.mixins.json:RegistryDataLoaderMixin | @At(INVOKE) RegistryDataLoader.load in load",

@@ -691,8 +691,14 @@ public final class MixinFit {
 					if (MixinAtWidenedCall.widenedIn(hit, atTarget) != null) { anywhere = true; break; }
 				}
 			} else if (!anywhere) {
-				anywhere = MixinAtWidenedCall.wouldMove(m, injector, target.methods, atValue, atTarget) != null
-						|| MixinWrapOperationShim.wouldWrap(mixin.name, m, target.methods) != null
+				ClassNode wideningTarget = target;
+				if (injector.desc.equals("Lorg/spongepowered/asm/mixin/injection/ModifyArg;")
+						&& org.objectweb.asm.Type.getArgumentTypes(m.desc).length > 1) {
+					ClassNode completeTarget = withLocals.get();
+					if (completeTarget != null) wideningTarget = completeTarget;
+				}
+				anywhere = MixinAtWidenedCall.wouldMove(m, injector, wideningTarget.methods, atValue, atTarget) != null
+						|| MixinWrapOperationShim.wouldWrap(mixin, m, target) != null
 						// …and MixinSubtypeOwnerRetarget's: the same call through another owner (Decoder.parse made as
 						// Codec.parse, Monster.lookAt made as Mob.lookAt through the field the merge widened).
 						|| MixinSubtypeOwnerRetarget.wouldMove(mixin.name, m, injector, atTarget, target,

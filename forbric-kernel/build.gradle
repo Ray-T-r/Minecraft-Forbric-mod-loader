@@ -316,6 +316,10 @@ tasks.named('compileModMenuApiJava') {
 
 test {
 	useJUnitPlatform()
+	// Transport proofs need the new hash-indexed base; an old base is an explicit negative control.
+	def predicateBase = file(project.findProperty('forbric.predicateBase') ?: stagedMergedBase)
+	inputs.files(predicateBase).withPropertyName('predicateNativeBase').optional()
+	systemProperty 'forbric.predicateBase', predicateBase.absolutePath
 	// These integration fixtures read the released Create Fly jar, so replacing it must invalidate the tests. A
 	// file collection, not inputs.file: a fresh clone (and CI) has no such jar, and the tests skip without it.
 	def createFlyFixture = file(project.findProperty('forbric.createFlyJar')

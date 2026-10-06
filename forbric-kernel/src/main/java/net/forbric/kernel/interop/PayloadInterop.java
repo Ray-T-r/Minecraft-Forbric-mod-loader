@@ -124,6 +124,22 @@ public final class PayloadInterop {
 	 * @return an object implementing the live {@code net.minecraft.network.codec.StreamCodec} interface.
 	 */
 	public static Object findCodec(Map<?, ?> localCodecs, Object id, Object protocol, Object packetFlow, Object fallback) {
+		return codec(localCodecs, id, protocol, packetFlow, fallback, null);
+	}
+
+	/** Final return arbitration: guest lookup/callbacks have already run, and their chosen codec remains a candidate. */
+	public static Object afterGuestCodec(Map<?, ?> localCodecs, Object id, Object protocol, Object packetFlow, Object fallback,
+			Object chosen) {
+		if (chosen != null && Proxy.isProxyClass(chosen.getClass())) {
+			InvocationHandler handler = Proxy.getInvocationHandler(chosen);
+			// An Operation may intentionally replace its id, receiver, flow or protocol. Its already unified result
+			// owns that complete context; the outer invocation must not replace it with the original inputs.
+			if (handler instanceof CodecInvocationHandler) return chosen;
+		}
+		return codec(localCodecs, id, protocol, packetFlow, fallback, chosen);
+	}
+
+	private static Object codec(Map<?, ?> localCodecs, Object id, Object protocol, Object packetFlow, Object fallback, Object chosen) {
 		bootstrapMirrors(loaderFor(id, protocol, packetFlow));
 		Object local = localCodecs != null ? localCodecs.get(id) : null;
 		Object fabricEntry = fabricTypeAndCodec(id, protocol, packetFlow);
@@ -132,20 +148,19 @@ public final class PayloadInterop {
 		Object forge = forgeCodec(id, packetFlow);
 		Object fallbackCodec = fallbackCodec(fallback, id);
 
-		Object direct = uniqueCodec(local, fabric, neo, forge, fallbackCodec);
+		Object direct = uniqueCodec(local, fabric, neo, forge, chosen, fallbackCodec);
 		probe(() -> "codec for " + id + " " + protocol + "/" + packetFlow + ": local=" + (local != null)
 				+ " fabric=" + (fabric != null) + " neo=" + (neo != null) + " forge=" + (forge != null)
 				+ " fallback=" + (fallbackCodec != null)
-				+ (direct != null ? " -> direct " + direct.getClass().getSimpleName() : " -> proxy"));
-		if (direct != null) return direct;
+				+ (direct != null ? " -> unified single candidate " + direct.getClass().getSimpleName() : " -> unified candidates"));
 
 		ClassLoader loader = loaderFor(id, protocol, packetFlow);
 		Class<?> streamCodec = load(loader, "net.minecraft.network.codec.StreamCodec");
 		if (streamCodec == null) {
-			return firstNonNull(local, fabric, neo, forge, fallbackCodec);
+			return direct != null ? direct : firstNonNull(chosen, local, fabric, neo, forge, fallbackCodec);
 		}
 
-		CandidateSet candidates = new CandidateSet(id, local, fabricEntry, fabric, neo, forge, fallbackCodec);
+		CandidateSet candidates = new CandidateSet(id, local, fabricEntry, fabric, neo, forge, chosen, fallbackCodec);
 		return Proxy.newProxyInstance(loader, new Class<?>[] { streamCodec }, new CodecInvocationHandler(candidates));
 	}
 
@@ -605,9 +620,9 @@ public final class PayloadInterop {
 		private final Object neo;
 		private final Object forge;
 		private final Object fallback;
+		private final Object guest;
 
-		private CandidateSet(Object id, Object local, Object fabricEntry, Object fabric, Object neo, Object forge,
-				Object fallback) {
+		private CandidateSet(Object id, Object local, Object fabricEntry, Object fabric, Object neo, Object forge, Object guest, Object fallback) {
 			this.id = id;
 			this.local = local;
 			this.fabricType = typeAndCodecType(fabricEntry);
@@ -615,21 +630,24 @@ public final class PayloadInterop {
 			this.neo = neo;
 			this.forge = forge;
 			this.fallback = fallback;
+			this.guest = guest;
 		}
-
 		private Object selectEncode(Object payload) {
 			if (payload != null) {
 				String payloadClass = payload.getClass().getName();
-				if (payloadClass.startsWith("net.neoforged.")) return firstNonNull(neo, local, fabric, fallback);
-				if (payloadClass.startsWith("net.fabricmc.")) return firstNonNull(fabric, local, neo, fallback);
+				if (payloadClass.startsWith("net.neoforged.")) return firstNonNull(neo, local, fabric, guest, fallback);
+				if (payloadClass.startsWith("net.fabricmc.")) return firstNonNull(fabric, local, neo, guest, fallback);
 				// A ForgePayload is Forge's own envelope for every channel it owns, minecraft:register included
 				// (ChannelListManager speaks it) — only Forge's codec knows how to write one.
-				if (payloadClass.startsWith("net.minecraftforge.")) return firstNonNull(forge, fallback);
+				if (payloadClass.startsWith("net.minecraftforge.")) return firstNonNull(forge, guest, fallback);
+				// An unknown guest payload may share an id with a known registry type. Its original chosen codec
+				// is retained rather than sending that Java object unconditionally into Fabric's encoder.
+				if (guest != null) return guest;
 				Object payloadType = invokeNoArg(payload, "type");
 				if (fabric != null && fabricType != null && fabricType.equals(payloadType)) return fabric;
 				if (fabric != null && !payloadClass.startsWith("net.neoforged.")) return fabric;
 			}
-			return firstNonNull(local, neo, fabric, forge, fallback);
+			return firstNonNull(local, neo, fabric, forge, guest, fallback);
 		}
 
 		private Object selectDecode() {
@@ -637,12 +655,12 @@ public final class PayloadInterop {
 			// decoding into the NeoForge/Fabric types the negotiator translates between. A channel only Forge knows
 			// — a Forge mod's own — reaches it because nobody earlier has a codec for that id.
 			if (isDinnerboneChannelRegistration(id)) {
-				return firstNonNull(neo, fabric, local, forge, fallback);
+				return firstNonNull(neo, fabric, local, forge, guest, fallback);
 			}
 			if (isCommonNegotiation(id)) {
-				return firstNonNull(neo, local, fabric, forge, fallback);
+				return firstNonNull(neo, local, fabric, forge, guest, fallback);
 			}
-			return firstNonNull(local, fabric, neo, forge, fallback);
+			return firstNonNull(local, fabric, neo, forge, guest, fallback);
 		}
 	}
 

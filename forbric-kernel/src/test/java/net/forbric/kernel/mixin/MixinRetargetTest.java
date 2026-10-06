@@ -47,8 +47,13 @@ class MixinRetargetTest {
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String OPERATION = "Lcom/llamalad7/mixinextras/injector/wrapoperation/Operation;";
 
+	/** This suite pins the legacy rule independently; execution-path proofs have their own positive/negative tests. */
+	@org.junit.jupiter.api.BeforeEach
+	void legacyRuleScope() { System.setProperty(MixinExecutionPathRetarget.PROPERTY, "off"); }
+
 	@AfterEach
 	void reset() {
+		System.clearProperty(MixinExecutionPathRetarget.PROPERTY);
 		System.clearProperty(MixinRetarget.PROPERTY);
 		System.clearProperty(MixinStubRebind.SUGAR_BOUNDARY_PROPERTY);
 		MixinRetarget.reset();

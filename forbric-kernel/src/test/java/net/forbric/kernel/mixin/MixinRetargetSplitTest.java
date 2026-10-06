@@ -38,8 +38,13 @@ class MixinRetargetSplitTest {
 	private static final String MIXIN = "test/HudMixin";
 	private static final String OTHER = "test/OtherHud";
 
+	/** This suite pins the legacy rule independently; execution-path proofs have their own positive/negative tests. */
+	@org.junit.jupiter.api.BeforeEach
+	void legacyRuleScope() { System.setProperty(MixinExecutionPathRetarget.PROPERTY, "off"); }
+
 	@AfterEach
 	void reset() {
+		System.clearProperty(MixinExecutionPathRetarget.PROPERTY);
 		System.clearProperty(MixinRetarget.PROPERTY);
 		System.clearProperty(MixinRetarget.SPLIT_PROPERTY);
 		MixinRetarget.reset();

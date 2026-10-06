@@ -90,6 +90,7 @@ public final class ForbricMixinService
 	public static void bind(ForbricClassLoader loader, EnvType side) {
 		gameLoader = loader;
 		envType = side;
+		NativeGameReferences.bind(loader);
 	}
 
 	/** The weaver Mixin handed us via {@link #offer}, or {@code null} before bootstrap. */
@@ -304,10 +305,19 @@ public final class ForbricMixinService
 		// …and an injection point on a call the kernel relocated out of its method (MinecraftForge's ItemStack.useOn)
 		// selects the one-call relay that now makes it.
 		MixinRelocatedCall.adapt(node, this::mergedBaseNodeWithCode);
-		// …and a reviewed @WrapOperation whose call the surviving carrier reordered or widened is wrapped, so it binds
+		// …and any structurally proven @WrapOperation whose call the carrier reordered or widened is wrapped, so it binds
 		// to the merged call and its handler still receives the arguments it was written for (never a @Redirect: it
 		// would replace the carrier's call).
 		MixinWrapOperationShim.adapt(node, this::mergedBaseNodeWithCode);
+		// A redirected collection source follows only a proved copy-prefix into a pure stream composition.
+		MixinCollectionSourceAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		// A copied shared value is preserved at the same proved result consumer, never replaced by a live value.
+		MixinSharedResultTransport.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
+		// A default predicate is transported only while its actual virtual dispatch and final body remain proved.
+		MixinDefaultPredicateAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinDefaultPredicateTransport.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
+		MixinReturnDecorationAdapter.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
+		MixinDefaultCallbackTransport.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
 		// …and a Fabric mod's wrap of vanilla's is(Items.SHEARS) also answers the carrier's canPerformAction(SHEARS_*)
 		// that replaced it in six merged bodies (BCLib's tag-based shears), with the carrier's answer as its original.
 		MixinShearsRelay.adapt(node, this::mergedBaseNodeWithCode);

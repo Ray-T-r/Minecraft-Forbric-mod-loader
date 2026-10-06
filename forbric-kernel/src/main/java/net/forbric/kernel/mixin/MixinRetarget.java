@@ -142,7 +142,7 @@ public final class MixinRetarget {
 	 * (R6) put behind a guard, {@code from} the handler and {@code to} where its body moves; or (R7) given a method of its
 	 * name that takes the replacement's arguments, {@code from} the handler and {@code to} the replacement it selects.
 	 */
-	public enum Element { SELECTOR, AT_TARGET, GUARD, PROJECT }
+	public enum Element { SELECTOR, AT_TARGET, GUARD, PROJECT, LOCAL_INDEX }
 
 	/** One rewrite inside one handler's injector annotation. */
 	public record Rewrite(String handler, Element element, String from, String to, String why) {
@@ -171,6 +171,12 @@ public final class MixinRetarget {
 
 	/** Computes R1 for {@code mixin} (parsed with code) against its targets, resolved through {@code resolver}. */
 	static Plan plan(ClassNode mixin, Function<String, byte[]> resolver) {
+		return plan(mixin, resolver, NativeGameReferences::reference);
+	}
+
+	/** A test may provide the verified source-class seam explicitly instead of changing process-wide readers. */
+	static Plan plan(ClassNode mixin, Function<String, byte[]> resolver,
+			java.util.function.BiFunction<net.forbric.api.Ecosystem, String, ClassNode> references) {
 		if (!enabled() || mixin.methods == null) return new Plan(mixin.name, List.of());
 		List<Rewrite> rewrites = new ArrayList<>();
 		List<String> targets = MixinFit.mixinTargets(mixin);
@@ -180,21 +186,31 @@ public final class MixinRetarget {
 		for (String targetName : targets) {
 			byte[] targetBytes = resolver.apply(targetName + ".class");
 			if (targetBytes == null) continue;
-			ClassNode target = MixinFit.parse(targetBytes);
+			ClassNode target = new ClassNode();
+			// Native/current local conservation needs the debug scopes, not just the instruction skeleton.
+			new ClassReader(targetBytes).accept(target, ClassReader.SKIP_FRAMES);
 			for (MethodNode handler : mixin.methods) {
 				AnnotationNode injector = MixinFit.injectorOf(handler);
 				if (injector == null) continue;
-				List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
-				List<Rewrite> own = new ArrayList<>();
-				for (String selector : selectors) {
-					Rewrite rewrite = rewriteFor(handler, injector, selector, target, resolver);
-					if (rewrite != null) own.add(rewrite);
-				}
-				own.addAll(swappedCallees(handler, injector, selectors, target, resolver));
-				own.addAll(renamedBodies(mixin, oneTarget, handler, injector, selectors, target, resolver, true));
+					List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
+					List<Rewrite> own = new ArrayList<>();
+					boolean executionPathMoved = false;
+					for (String selector : selectors) {
+						Rewrite rewrite = rewriteFor(handler, injector, selector, target, resolver);
+						if (rewrite != null) own.add(rewrite);
+					}
+					if (oneTarget && own.isEmpty()) {
+						own.addAll(MixinExecutionPathRetarget.plan(mixin, handler, injector, selectors, target,
+								references.apply(MixinStubRebind.ecosystemOf(mixin.name), target.name)));
+						executionPathMoved = !own.isEmpty();
+					}
+					if (!executionPathMoved) own.addAll(swappedCallees(handler, injector, selectors, target, resolver));
+					if (own.stream().noneMatch(r -> r.element() == Element.SELECTOR)) {
+						own.addAll(renamedBodies(mixin, oneTarget, handler, injector, selectors, target, resolver, true));
+					}
 				// The selector moves when the method is a stub, a rename or a split; the point moves only when the method
 				// keeps a body of its own and the call went one level down. Never both for one handler.
-				if (oneTarget && own.stream().noneMatch(r -> r.element() == Element.SELECTOR)) {
+					if (oneTarget && !executionPathMoved && own.stream().noneMatch(r -> r.element() == Element.SELECTOR)) {
 					own.addAll(movedCalls(mixin.name, handler, injector, selectors, target, resolver));
 				}
 				// Neither moved nor split: the method kept its body and the call its place, and only the callee changed.
@@ -1116,7 +1132,7 @@ public final class MixinRetarget {
 	 * such an argument; with {@code cancelsAsBefore} (a cancel leaves the method as it did, see {@link #renamedBodies})
 	 * a cancellable {@code @Inject} or a {@code @Cancellable} callback is allowed; any other sugar is not.
 	 */
-	private static boolean movableWhole(MethodNode handler, AnnotationNode injector, boolean argumentsInPlace,
+		static boolean movableWhole(MethodNode handler, AnnotationNode injector, boolean argumentsInPlace,
 			boolean cancelsAsBefore) {
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
@@ -1312,6 +1328,18 @@ public final class MixinRetarget {
 		if (node.methods == null) return 0;
 		int applied = 0;
 		for (Rewrite rewrite : plan.rewrites()) {
+			if (rewrite.element() == Element.LOCAL_INDEX) {
+				for (MethodNode handler : node.methods) if ((handler.name + handler.desc).equals(rewrite.handler())) {
+					AnnotationNode local = MixinStubRebind.sugar(handler, Integer.parseInt(rewrite.from()), LOCAL_SUGAR);
+					if (local == null) continue;
+					if (local.values == null) local.values = new ArrayList<>();
+					for (int i = local.values.size() - 2; i >= 0; i -= 2) if (Set.of("name", "ordinal", "index").contains(local.values.get(i))) {
+						local.values.remove(i + 1); local.values.remove(i);
+					}
+					local.values.addAll(List.of("index", Integer.parseInt(rewrite.to()))); applied++;
+				}
+				continue;
+			}
 			if (rewrite.element() == Element.GUARD) {
 				if (guard(node, rewrite)) applied++;
 				continue;
@@ -1321,7 +1349,7 @@ public final class MixinRetarget {
 				continue;
 			}
 			for (MethodNode m : node.methods) {
-				if (!m.name.equals(rewrite.handler())) continue;
+				if (!m.name.equals(rewrite.handler()) && !(m.name + m.desc).equals(rewrite.handler())) continue;
 				AnnotationNode injector = MixinFit.injectorOf(m);
 				if (injector == null || injector.values == null) continue;
 				if (rewrite.element() == Element.AT_TARGET) {

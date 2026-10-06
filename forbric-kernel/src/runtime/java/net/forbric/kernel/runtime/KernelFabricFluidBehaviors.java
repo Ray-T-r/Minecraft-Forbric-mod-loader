@@ -41,7 +41,9 @@ import net.minecraft.world.level.material.FluidState;
  * <p>So each registered tag gets one type of each family — {@link NeoType}, {@link ForgeType} — and a foreign fluid in
  * that tag gets it (the water and lava tags still win, as before). The type answers canSwim, canDrownIn and
  * supportsBoating from the behaviour, and has NeoForge's empty type's properties, today's answer, in everything else but
- * the push — but it is not air: {@code FluidType.isAir()} is final and true for the empty type itself only.
+	 * the push — but it is not air: {@code FluidType.isAir()} is final and true for the empty type itself only.
+	 * The shared breathing hook keeps the original refill amount for a non-drowning type manufactured here,
+	 * before posting NeoForge's breathe event; native types keep their defaults and that event still has the final say.
  * Pushing and fall distance are fabric-api's: its per-tick hook hands the entity to the behaviour, which pushes through
  * {@code applyCurrentTo(tag, …)} — the tracker of this same type, since the merged class tracks by type identity — and
  * scales the fall distance itself. NeoForge gathers a tracker's current only for a type that {@code canPushEntity},
@@ -53,8 +55,7 @@ import net.minecraft.world.level.material.FluidState;
  * derived from a registry name, and NeoForge's own {@code toString} prints "Unregistered FluidType" for one.
  * Not covered: travel through the fluid (the merged {@code travelInFluid} asks only water's type, so no fluid type's
  * {@code move} is reached, and fabric-api's {@code travelInCustomFluid} anchor is gone — a body moves as through lava,
- * as it did before); breathing in a fluid whose behaviour does not drown (NeoForge's {@code CommonHooks.onLivingBreathe}
- * refills air only in air, so the air bar holds while the eyes are in it, where on Fabric it refills); a behaviour on a
+	 * as it did before); a behaviour on a
  * tag holding a vanilla or NeoForge fluid (NeoForge answers those fluids; said once per tag, when the tag's fluids are
  * known the first time it is asked about — a question before tags are loaded, as a client's resource reload can ask,
  * says nothing); and a fluid in two behaviour tags (the first by tag name wins).
@@ -104,6 +105,9 @@ public final class KernelFabricFluidBehaviors {
 	static net.neoforged.neoforge.fluids.FluidType neoType(TagKey<Fluid> tag) {
 		return NEO.computeIfAbsent(tag, NeoType::new);
 	}
+
+	/** Provenance of a type manufactured by this adapter, independent of the fluid/tag/mod that uses it. */
+	public static boolean ownsNeoType(net.neoforged.neoforge.fluids.FluidType type) { return type instanceof NeoType; }
 
 	static net.minecraftforge.fluids.FluidType forgeType(TagKey<Fluid> tag) {
 		return FORGE.computeIfAbsent(tag, ForgeType::new);

@@ -45,8 +45,13 @@ class MixinRetargetExtractedHelperTest {
 	/** Highlighter's handler: extractSlot's own arguments and the callback. */
 	private static final String HANDLER = "(" + G + SLOT + "II" + MixinRetarget.CALLBACK_INFO + ")V";
 
+	/** This suite pins the legacy rule independently; execution-path proofs have their own positive/negative tests. */
+	@org.junit.jupiter.api.BeforeEach
+	void legacyRuleScope() { System.setProperty(MixinExecutionPathRetarget.PROPERTY, "off"); }
+
 	@AfterEach
 	void reset() {
+		System.clearProperty(MixinExecutionPathRetarget.PROPERTY);
 		System.clearProperty(MixinRetarget.PROPERTY);
 		System.clearProperty(MixinRetarget.EXTRACTED_HELPER_PROPERTY);
 		MixinRetarget.reset();
