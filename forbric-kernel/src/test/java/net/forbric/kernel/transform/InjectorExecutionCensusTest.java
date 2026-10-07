@@ -55,6 +55,7 @@ class InjectorExecutionCensusTest {
 	private static final String TRANSFORMER = Type.getInternalName(ClassTransformer.class);
 	private static final String ANNOTATION = Type.getDescriptor(ExecutesInjector.class);
 	private static final String EXECUTION = Type.getInternalName(InjectorExecution.class);
+	private static final String WEAVE = "net/forbric/kernel/mixin/weave/WeaveHarness";
 
 	private static final String NOT_CREDITED = "no test carrying @ExecutesInjector defines and runs its output yet";
 	/**
@@ -102,7 +103,7 @@ class InjectorExecutionCensusTest {
 		String exit = known.get("ExitHookInjector");
 		assertEquals(List.of(), new Claim("t/Real", Set.of(exit), Set.of(exit), true).problems(known));
 		assertEquals(List.of("t/Paper names ExitHookInjector in @ExecutesInjector but defines no class: it never calls "
-				+ "InjectorExecution.load or a defineClass"), new Claim("t/Paper", Set.of(exit), Set.of(exit), false).problems(known));
+				+ "InjectorExecution.load, WeaveHarness.run or a defineClass"), new Claim("t/Paper", Set.of(exit), Set.of(exit), false).problems(known));
 		assertEquals(List.of("t/Paper names ExitHookInjector in @ExecutesInjector but no code in it references that class"),
 				new Claim("t/Paper", Set.of(exit), Set.of(), true).problems(known));
 		assertEquals(List.of("t/Stale names net/forbric/kernel/transform/MethodBodyNeuter in @ExecutesInjector, which is "
@@ -148,12 +149,49 @@ class InjectorExecutionCensusTest {
 
 		assertEquals(List.of(
 				"net/forbric/kernel/transform/CensusPaperFixture names ExitHookInjector in @ExecutesInjector but defines no "
-						+ "class: it never calls InjectorExecution.load or a defineClass",
+						+ "class: it never calls InjectorExecution.load, WeaveHarness.run or a defineClass",
 				"net/forbric/kernel/transform/CensusPaperFixture names ExitHookInjector in @ExecutesInjector but no code in "
 						+ "it references that class",
 				"net/forbric/kernel/transform/CensusPaperFixture names LifecycleHookInjector in @ExecutesInjector but defines "
-						+ "no class: it never calls InjectorExecution.load or a defineClass"),
+						+ "no class: it never calls InjectorExecution.load, WeaveHarness.run or a defineClass"),
 				claims.get("net/forbric/kernel/transform/CensusPaperFixture").problems(injectors));
+	}
+
+
+	/** Running the real weaver defines output in its child JVM; merely building a fixture does not. */
+	@Test void theCensusDistinguishesWeavingFromFixturePreparation(@TempDir Path work) throws Exception {
+		Map<String, byte[]> compiled = InjectorExecution.compile(work, Map.of(
+				"net.forbric.kernel.mixin.weave.CensusWeaveFixture", """
+						package net.forbric.kernel.mixin.weave;
+						@net.forbric.kernel.transform.ExecutesInjector(net.forbric.kernel.transform.ExitHookInjector.class)
+						class CensusWeaveFixture {
+							Object run() throws Exception {
+								Class<?> injector = net.forbric.kernel.transform.ExitHookInjector.class;
+								return WeaveHarness.run(java.nio.file.Path.of("."), "woven", java.nio.file.Path.of("fixture.jar"),
+										"source.json", "fixture", net.forbric.api.Ecosystem.FABRIC, net.fabricmc.api.EnvType.SERVER,
+										"fixture.Probe", "run", java.util.Map.of());
+							}
+						}
+						""",
+				"net.forbric.kernel.mixin.weave.CensusPreparedFixture", """
+						package net.forbric.kernel.mixin.weave;
+						@net.forbric.kernel.transform.ExecutesInjector(net.forbric.kernel.transform.ExitHookInjector.class)
+						class CensusPreparedFixture {
+							Object run() throws Exception {
+								Class<?> injector = net.forbric.kernel.transform.ExitHookInjector.class;
+								return WeaveHarness.fixture(java.nio.file.Path.of("."), "prepared", java.util.List.of(),
+										java.util.Map.of(), java.util.List.of());
+							}
+						}
+						"""));
+		Map<String, Claim> claims = claims(compiled);
+		Map<String, String> injectors = injectors(classesBeside(ClassTransformer.class));
+		Claim woven = claims.get("net/forbric/kernel/mixin/weave/CensusWeaveFixture");
+		assertTrue(woven.definesClasses());
+		assertEquals(List.of(), woven.problems(injectors));
+		Claim prepared = claims.get("net/forbric/kernel/mixin/weave/CensusPreparedFixture");
+		assertFalse(prepared.definesClasses());
+		assertEquals(1, prepared.problems(injectors).size(), "fixture preparation alone must not earn execution credit");
 	}
 
 	static List<String> problems(Set<String> injectors, Set<String> executed, Set<String> allowlisted) {
@@ -186,7 +224,7 @@ class InjectorExecutionCensusTest {
 					continue;
 				}
 				if (!definesClasses) problems.add(test + " names " + injector + " in @ExecutesInjector but defines no class: "
-						+ "it never calls InjectorExecution.load or a defineClass");
+						+ "it never calls InjectorExecution.load, WeaveHarness.run or a defineClass");
 				if (!referenced.contains(claim)) problems.add(test + " names " + injector
 						+ " in @ExecutesInjector but no code in it references that class");
 			}
@@ -286,7 +324,8 @@ class InjectorExecutionCensusTest {
 	}
 
 	private static boolean definesClass(String owner, String name) {
-		return owner.equals(EXECUTION) && name.equals("load") || name.equals("defineClass") || name.equals("defineHiddenClass");
+		return owner.equals(EXECUTION) && name.equals("load") || owner.equals(WEAVE) && name.equals("run")
+				|| name.equals("defineClass") || name.equals("defineHiddenClass");
 	}
 
 	/** Every class file in the directory or jar {@code anchor} was loaded from, by internal name. */
