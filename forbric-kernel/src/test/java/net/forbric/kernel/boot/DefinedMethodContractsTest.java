@@ -78,6 +78,56 @@ class DefinedMethodContractsTest {
         assertFalse(DefinedMethodContracts.validates(new DefaultReceiver(), expected));
     }
 
+    @Test void identicalPureDefaultForwardersCanOptInWithoutRelaxingOrdinaryDispatch() throws Exception {
+        String base="fixture/contracts/ForwardBase",sub="fixture/contracts/ForwardSub";
+        byte[] original=forwarder(base,"java/lang/Object",false,false),duplicate=forwarder(sub,base,false,false);
+        ClassLoader loader=net.forbric.kernel.transform.InjectorExecution.load(java.util.Map.of(base,original,sub,duplicate));
+        Class<?> type=loader.loadClass(sub.replace('/','.'));Object receiver=type.getConstructor().newInstance();var expected=contract(original,"evaluate");
+        assertFalse(DefinedMethodContracts.validatesTransparentDispatch(receiver,expected));
+        DefinedMethodContracts.observe(loader,base,original);DefinedMethodContracts.observe(loader,sub,duplicate);
+        assertFalse(DefinedMethodContracts.validates(receiver,expected));
+        assertTrue(DefinedMethodContracts.validatesTransparentDispatch(receiver,expected));
+        DefinedMethodContracts.observe(loader,sub,forwarder(sub,base,true,false));
+        assertFalse(DefinedMethodContracts.validatesTransparentDispatch(receiver,expected));
+        DefinedMethodContracts.observe(loader,sub,forwarder(sub,base,false,true));
+        assertFalse(DefinedMethodContracts.validatesTransparentDispatch(receiver,expected));
+    }
+
+    @Test void covariantIdentityBridgesRequireEveryActualCalleeToRemainAnObservedIdentity()throws Exception{
+        var expected=contract(bytes(IdentityRoot.class),"self");IdentityChild receiver=new IdentityChild();
+        observe(IdentityRoot.class);assertFalse(DefinedMethodContracts.validatesTransparentDispatch(receiver,expected));
+        observe(IdentityChild.class);assertTrue(DefinedMethodContracts.validatesTransparentDispatch(receiver,expected));
+        assertFalse(DefinedMethodContracts.validates(receiver,expected));
+        observe(EffectfulIdentity.class);assertFalse(DefinedMethodContracts.validatesTransparentDispatch(new EffectfulIdentity(),expected));
+        ClassNode changed=parse(bytes(IdentityChild.class));for(MethodNode m:changed.methods)if(m.name.equals("self")&&(m.access&Opcodes.ACC_BRIDGE)==0)m.instructions.insert(new InsnNode(Opcodes.NOP));
+        // A NOP is not an effect, but the accepted identity grammar is deliberately closed.
+        DefinedMethodContracts.observe(IdentityChild.class.getClassLoader(),IdentityChild.class.getName(),write(changed));
+        assertFalse(DefinedMethodContracts.validatesTransparentDispatch(receiver,expected));
+    }
+
+    @Test void identicalTransparentBytesStillCannotBorrowADifferentLoadersObservation()throws Exception{
+        String name="fixture/contracts/IsolatedForward";byte[] code=forwarder(name,"java/lang/Object",false,false);
+        EqualLoader a=new EqualLoader(),b=new EqualLoader();Class<?> first=a.define(code),second=b.define(code);var expected=contract(code,"evaluate");
+        DefinedMethodContracts.observe(a,name,code);
+        assertTrue(DefinedMethodContracts.validatesTransparentDispatch(first.getConstructor().newInstance(),expected));
+        assertFalse(DefinedMethodContracts.validatesTransparentDispatch(second.getConstructor().newInstance(),expected));
+    }
+
+    public static class IdentityRoot { public IdentityRoot self(){return this;} }
+    public static class IdentityChild extends IdentityRoot { @Override public IdentityChild self(){return this;} }
+    public static class EffectfulIdentity extends IdentityChild {
+        static int effects;
+        @Override public EffectfulIdentity self(){effects++;return this;}
+    }
+    private static void observe(Class<?> type)throws Exception{DefinedMethodContracts.observe(type.getClassLoader(),type.getName(),bytes(type));}
+
+    private static byte[] forwarder(String name,String parent,boolean effectful,boolean synchronizedMethod){
+        ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_FRAMES|ClassWriter.COMPUTE_MAXS);String face=org.objectweb.asm.Type.getInternalName(DefaultRoute.class);
+        writer.visit(Opcodes.V21,Opcodes.ACC_PUBLIC,name,null,parent,new String[]{face});
+        var ctor=writer.visitMethod(Opcodes.ACC_PUBLIC,"<init>","()V",null,null);ctor.visitCode();ctor.visitVarInsn(Opcodes.ALOAD,0);ctor.visitMethodInsn(Opcodes.INVOKESPECIAL,parent,"<init>","()V",false);ctor.visitInsn(Opcodes.RETURN);ctor.visitMaxs(0,0);ctor.visitEnd();
+        var method=writer.visitMethod(Opcodes.ACC_PUBLIC|(synchronizedMethod?Opcodes.ACC_SYNCHRONIZED:0),"evaluate","(Ljava/lang/String;)I",null,null);method.visitCode();method.visitVarInsn(Opcodes.ALOAD,0);method.visitVarInsn(Opcodes.ALOAD,1);method.visitMethodInsn(Opcodes.INVOKESPECIAL,face,"evaluate","(Ljava/lang/String;)I",true);if(effectful){method.visitInsn(Opcodes.ICONST_1);method.visitInsn(Opcodes.IADD);}method.visitInsn(Opcodes.IRETURN);method.visitMaxs(0,0);method.visitEnd();writer.visitEnd();return writer.toByteArray();
+    }
+
     public interface DefaultRoute {
         default int evaluate(String input) { return input.length(); }
     }
