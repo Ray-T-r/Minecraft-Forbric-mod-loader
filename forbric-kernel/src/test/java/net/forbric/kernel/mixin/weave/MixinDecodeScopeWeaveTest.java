@@ -37,6 +37,34 @@ class MixinDecodeScopeWeaveTest {
   var on=WeaveHarness.run(work,"on",fixture,config,"decode",Ecosystem.FABRIC,EnvType.SERVER,"fixture.decode.Target","probe",Map.of());
   assertTrue(on.printedLine(WeaveHarnessMain.DONE+" 1:value:1;0:disabled:1;2:source-error:1;1:value:1;3:value:2;4:value:2;5:native-error:1;1:value:1;"),on.describe());WeaveHarness.assertWovenAndVerified(on,"fixture/decode/Target",fixture);
   var off=WeaveHarness.run(work,"off",fixture,config,"decode",Ecosystem.FABRIC,EnvType.SERVER,"fixture.decode.Target","probe",Map.of(MixinDecodeScopeAdapter.PROPERTY,"off"));
-  assertTrue(off.printedLine(WeaveHarnessMain.DONE+" 1:value:2;0:disabled:1;2:source-error:1;1:value:2;3:value:4;4:value:3;5:native-error:2;1:value:2;"),off.describe());
+ assertTrue(off.printedLine(WeaveHarnessMain.DONE+" 1:value:2;0:disabled:1;2:source-error:1;1:value:2;3:value:4;4:value:3;5:native-error:2;1:value:2;"),off.describe());
+ }
+ @Test void ignoredAndInvertedVerdictsKeepTheNativeFalseFallback()throws Exception{
+  for(boolean inverted:List.of(false,true)){
+   String scenario=inverted?"inverted":"ignored";Path directory=work.resolve(scenario);Map<String,String> files=new LinkedHashMap<>();
+   files.put("com.google.gson.JsonElement","package com.google.gson;public class JsonElement{public boolean isJsonObject(){return this instanceof JsonObject;}public JsonObject getAsJsonObject(){return (JsonObject)this;}}");
+   files.put("com.google.gson.JsonObject","package com.google.gson;public final class JsonObject extends JsonElement{public final boolean keep;public JsonObject(boolean keep){this.keep=keep;}}");
+   files.put("fixture.decode.Gate","package fixture.decode;import com.google.gson.*;public class Gate{public static int calls;public static boolean evaluate(JsonObject json){calls++;return json.keep;}}");
+   files.put("net.forbric.kernel.runtime.ScopeBridge","""
+    package net.forbric.kernel.runtime;import com.google.gson.*;import java.lang.invoke.*;import fixture.decode.Gate;
+    public class ScopeBridge {private static MethodHandle evaluator;static{try{evaluator=MethodHandles.lookup().findStatic(Gate.class,"evaluate",MethodType.methodType(boolean.class,JsonObject.class));}catch(Exception e){throw new AssertionError(e);}}
+     public static String parse(JsonElement input){if(!KernelSourceDecodeScopes.alreadyJudged(input,evaluator)&&!Gate.evaluate(input.getAsJsonObject()))return "native-disabled";return "value";}}
+    """);
+   files.put("fixture.decode.Target","""
+    package fixture.decode;import com.google.gson.*;import net.forbric.kernel.runtime.ScopeBridge;
+    public class Target{public static String load(JsonElement input){JsonElement json=input;return ScopeBridge.parse(json);}
+     public static String probe(){Gate.calls=0;String rejected=load(new JsonObject(false));int falseCalls=Gate.calls;Gate.calls=0;String kept=load(new JsonObject(true));return rejected+":"+falseCalls+";"+kept+":"+Gate.calls;}}
+    """);
+   String body=inverted?"if(json.isJsonObject()&&Gate.evaluate(json.getAsJsonObject()))ci.setReturnValue(\"source-disabled\");":"if(json.isJsonObject())Gate.evaluate(json.getAsJsonObject());";
+   files.put("fixture.decode.mixin.Guest","""
+    package fixture.decode.mixin;import fixture.decode.*;import com.google.gson.*;import org.spongepowered.asm.mixin.Mixin;import org.spongepowered.asm.mixin.injection.*;import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;import com.llamalad7.mixinextras.sugar.Local;
+    @Mixin(Target.class)public class Guest{@Inject(method="load",at=@At(value="INVOKE",target="Lnet/forbric/kernel/runtime/ScopeBridge;parse(Lcom/google/gson/JsonElement;)Ljava/lang/String;"),cancellable=true)
+     private static void guard(JsonElement input,CallbackInfoReturnable<String>ci,@Local(name="json")JsonElement json){BODY}}
+    """.replace("BODY",body));
+   List<Path> sources=new ArrayList<>();for(var file:files.entrySet()){Path path=directory.resolve("src").resolve(file.getKey().replace('.','/')+".java");Files.createDirectories(path.getParent());Files.writeString(path,file.getValue());sources.add(path);}
+   sources.add(Path.of(System.getProperty("user.dir"),"src/runtime/java/net/forbric/kernel/runtime/KernelSourceDecodeScopes.java"));String config="decode-negative.mixins.json";Path json=directory.resolve(config);Files.writeString(json,"{\"required\":true,\"package\":\"fixture.decode.mixin\",\"mixins\":[\"Guest\"]}");
+   Path fixture=WeaveHarness.fixture(directory,scenario,sources,Map.of(config,json),List.of("-g"));var run=WeaveHarness.run(directory,"on",fixture,config,"decode",Ecosystem.FABRIC,EnvType.SERVER,"fixture.decode.Target","probe",Map.of());
+   assertTrue(run.printedLine(WeaveHarnessMain.DONE+" native-disabled:2;"+(inverted?"source-disabled:1":"value:2")),run.describe());WeaveHarness.assertWovenAndVerified(run,"fixture/decode/Target",fixture);
+  }
  }
 }

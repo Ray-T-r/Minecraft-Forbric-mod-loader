@@ -21,7 +21,7 @@ public final class MixinDecodeScopeAdapter {
  /** Re-check the final call and its data flow, after every guest transformation, before recording ownership. */
  public static void certify(ClassNode owner){
   for(MethodNode method:owner.methods)for(var instruction:method.instructions){
-   if(!(instruction instanceof MethodInsnNode record)||!record.owner.equals(SCOPES)||!record.name.equals("record"))continue;
+   if(!(instruction instanceof MethodInsnNode record)||record.getOpcode()!=Opcodes.INVOKESTATIC||!record.owner.equals(SCOPES)||!record.name.equals("record")||!record.desc.equals("(ZLjava/lang/Object;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z"))continue;
    var code=DefaultMethodOverloadBridge.real(method);int index=code.indexOf(record);if(index<5)continue;
    if(!(code.get(index-1)instanceof LdcInsnNode descriptor&&descriptor.cst instanceof String desc)
      ||!(code.get(index-2)instanceof LdcInsnNode name&&name.cst instanceof String member)
@@ -32,8 +32,14 @@ public final class MixinDecodeScopeAdapter {
      ||!Type.getReturnType(desc).equals(Type.BOOLEAN_TYPE))continue;
    try{var frames=new Analyzer<>(new SourceInterpreter()).analyze(owner.name,method);var at=frames[method.instructions.indexOf(call)];var args=Type.getArgumentTypes(desc);
     if(args.length==0||!args[0].equals(Type.getObjectType(OBJECT))||at==null
-      ||!derived(method,frames,at.getStack(at.getStackSize()-args.length),input.var,new HashSet<>()))continue;
-    net.forbric.kernel.boot.KernelDecodeGuardWitnesses.register(new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(owner.name,method.name,method.desc,MixinInstructionFingerprint.hash(method)));
+      ||!derived(method,frames,at.getStack(at.getStackSize()-args.length),input.var,new HashSet<>())
+      ||!verdictFlow(owner,method,call,record,frames,true))continue;
+    List<net.forbric.kernel.boot.DefinedMethodContracts.MethodContract> dependencies=new ArrayList<>();
+    if(code.get(index+2)instanceof FieldInsnNode marker){
+     MethodNode consumer=owner.methods.stream().filter(m->markerBody(m,owner.name,marker.name)).findFirst().orElseThrow();MethodNode predicate=markerPredicateIntact(owner,consumer);
+     for(MethodNode dependency:List.of(consumer,predicate))dependencies.add(new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(owner.name,dependency.name,dependency.desc,MixinInstructionFingerprint.hash(dependency)));
+    }
+    net.forbric.kernel.boot.KernelDecodeGuardWitnesses.register(new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(owner.name,method.name,method.desc,MixinInstructionFingerprint.hash(method)),dependencies);
    }catch(AnalyzerException|RuntimeException unproved){ }
   }
  }
@@ -80,10 +86,76 @@ public final class MixinDecodeScopeAdapter {
   try { Frame<SourceValue>[] frames=new Analyzer<>(new SourceInterpreter()).analyze(owner.name,method);List<MethodInsnNode> found=new ArrayList<>();
    for(var i:method.instructions)if(i instanceof MethodInsnNode call&&call.getOpcode()==Opcodes.INVOKESTATIC&&Type.getReturnType(call.desc).equals(Type.BOOLEAN_TYPE)){
     Type[]passed=Type.getArgumentTypes(call.desc);if(passed.length==0||!passed[0].equals(Type.getObjectType(OBJECT)))continue;
-    var frame=frames[method.instructions.indexOf(call)];if(frame!=null&&derived(method,frames,frame.getStack(frame.getStackSize()-passed.length),slot,new HashSet<>()))found.add(call);
+    var frame=frames[method.instructions.indexOf(call)];if(frame!=null&&derived(method,frames,frame.getStack(frame.getStackSize()-passed.length),slot,new HashSet<>())&&verdictFlow(owner,method,call,null,frames,false))found.add(call);
    }
    return found.size()==1?new Guard(found.getFirst(),slot):null;
   }catch(AnalyzerException|RuntimeException unsupported){return null;}
+ }
+ /** A completed Boolean call owns decode only if false actually cancels it. Merely observing or discarding
+  * a verdict cannot disable the native fallback. These closed suffixes also prohibit input mutation between
+  * judgement and the original parse, and are rechecked against the final woven method. */
+ private static boolean verdictFlow(ClassNode owner,MethodNode method,MethodInsnNode evaluator,MethodInsnNode record,Frame<SourceValue>[] frames,boolean finalBody){
+  if(!method.tryCatchBlocks.isEmpty())return false;
+  var code=DefaultMethodOverloadBridge.real(method);int at=code.indexOf(record==null?evaluator:record);
+  if(at<0||at+1>=code.size()||!(code.get(at+1)instanceof JumpInsnNode keep)||keep.getOpcode()!=Opcodes.IFNE)return false;
+  AbstractInsnNode kept=next(keep.label);int accepted=code.indexOf(kept),rejected=at+2;
+  if(accepted<=rejected)return false;
+  Type[] args=Type.getArgumentTypes(method.desc);int[] slots=DefaultMethodOverloadBridge.slots(args,true);int ci=-1;
+  for(int i=0;i<args.length;i++)if(args[i].equals(Type.getObjectType("org/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable"))){if(ci!=-1)return false;ci=slots[i];}
+  if(ci>=0){
+   if(!Type.getReturnType(method.desc).equals(Type.VOID_TYPE)||accepted!=code.size()-1||kept.getOpcode()!=Opcodes.RETURN)return false;
+   AbstractInsnNode last=code.get(accepted-1);if(!(last instanceof MethodInsnNode cancel)||cancel.getOpcode()!=Opcodes.INVOKEVIRTUAL
+     ||!cancel.owner.equals("org/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable")||!cancel.name.equals("setReturnValue")||!cancel.desc.equals("(Ljava/lang/Object;)V"))return false;
+   var cancellation=frames[method.instructions.indexOf(cancel)];if(cancellation==null||cancellation.getStackSize()<2
+     ||!parameter(method,frames,cancellation.getStack(cancellation.getStackSize()-2),ci,new HashSet<>()))return false;
+   for(var instruction:code.subList(rejected,accepted)){
+    if(instruction instanceof JumpInsnNode||instruction instanceof TableSwitchInsnNode||instruction instanceof LookupSwitchInsnNode||instruction.getOpcode()>=Opcodes.IRETURN&&instruction.getOpcode()<=Opcodes.RETURN||instruction.getOpcode()==Opcodes.ATHROW)return false;
+    if(instruction instanceof MethodInsnNode call&&call!=cancel&&(call.owner.equals(OP)||call.owner.equals(cancel.owner)))return false;
+   }
+   return true;
+  }
+  if(!Type.getReturnType(method.desc).equals(Type.getObjectType(RESULT))||accepted!=rejected+3
+    ||!(code.get(rejected)instanceof FieldInsnNode marker)||marker.getOpcode()!=Opcodes.GETSTATIC||!marker.owner.equals(owner.name)||!marker.desc.equals("Ljava/lang/Object;")
+    ||!(code.get(rejected+1)instanceof MethodInsnNode success)||success.getOpcode()!=Opcodes.INVOKESTATIC||!success.owner.equals(RESULT)||!success.name.equals("success")||!success.desc.equals("(Ljava/lang/Object;)L"+RESULT+";")||code.get(rejected+2).getOpcode()!=Opcodes.ARETURN
+    ||!forwardedParse(method)||!parseTail(code.subList(accepted,code.size())))return false;
+  // The producer's original cancellation consumer remains a closed role after transport. At initial
+  // admission it still has @Inject; in the final class the immutable predicate must still call that body.
+  List<MethodNode> consumers=owner.methods.stream().filter(m->markerBody(m,owner.name,marker.name)).toList();
+  return consumers.size()==1&&(!finalBody||markerPredicateIntact(owner,consumers.getFirst())!=null);
+ }
+ private static boolean parameter(MethodNode method,Frame<SourceValue>[] frames,SourceValue value,int input,Set<AbstractInsnNode> active){
+  if(value==null||value.insns.size()!=1)return false;var instruction=value.insns.iterator().next();if(!active.add(instruction))return false;
+  try{var at=frames[method.instructions.indexOf(instruction)];if(at==null)return false;
+   if(instruction instanceof VarInsnNode variable){if(variable.getOpcode()==Opcodes.ALOAD){var local=at.getLocal(variable.var);return variable.var==input&&local.insns.isEmpty()||parameter(method,frames,local,input,active);}if(variable.getOpcode()==Opcodes.ASTORE)return parameter(method,frames,at.getStack(at.getStackSize()-1),input,active);}
+   return false;
+  }finally{active.remove(instruction);}
+ }
+ private static boolean parseTail(List<AbstractInsnNode> code){
+  if(code.size()!=18||!(code.get(15)instanceof MethodInsnNode call)||call.getOpcode()!=Opcodes.INVOKEINTERFACE||!call.owner.equals(OP)||!call.name.equals("call")||!call.desc.equals("([Ljava/lang/Object;)Ljava/lang/Object;")
+    ||!(code.get(16)instanceof TypeInsnNode cast)||cast.getOpcode()!=Opcodes.CHECKCAST||!cast.desc.equals(RESULT)||code.get(17).getOpcode()!=Opcodes.ARETURN)return false;
+  int p=0;if(!(code.get(p++)instanceof VarInsnNode op)||op.getOpcode()!=Opcodes.ALOAD||op.var!=3||integer(code.get(p++))!=3||!(code.get(p++)instanceof TypeInsnNode array)||array.getOpcode()!=Opcodes.ANEWARRAY||!array.desc.equals("java/lang/Object"))return false;
+  for(int i=0;i<3;i++)if(code.get(p++).getOpcode()!=Opcodes.DUP||integer(code.get(p++))!=i||!(code.get(p++)instanceof VarInsnNode input)||input.getOpcode()!=Opcodes.ALOAD||input.var!=i||code.get(p++).getOpcode()!=Opcodes.AASTORE)return false;
+  return true;
+ }
+ private static boolean markerBody(MethodNode method,String owner,String marker){
+  Type[] args=Type.getArgumentTypes(method.desc);if((method.access&Opcodes.ACC_STATIC)==0||args.length!=4||(args[0].getSort()!=Type.OBJECT&&args[0].getSort()!=Type.ARRAY)||(args[1].getSort()!=Type.OBJECT&&args[1].getSort()!=Type.ARRAY)||!args[2].equals(Type.getObjectType("java/lang/Object"))||!args[3].equals(Type.getObjectType(CI))||!Type.getReturnType(method.desc).equals(Type.VOID_TYPE)||!method.tryCatchBlocks.isEmpty())return false;
+  var code=DefaultMethodOverloadBridge.real(method);return code.size()==6&&code.get(0)instanceof VarInsnNode input&&input.getOpcode()==Opcodes.ALOAD&&input.var==2
+    &&code.get(1)instanceof FieldInsnNode field&&field.getOpcode()==Opcodes.GETSTATIC&&field.owner.equals(owner)&&field.name.equals(marker)&&field.desc.equals("Ljava/lang/Object;")
+    &&code.get(2)instanceof JumpInsnNode branch&&branch.getOpcode()==Opcodes.IF_ACMPNE&&next(branch.label)==code.getLast()
+    &&code.get(3)instanceof VarInsnNode ci&&ci.getOpcode()==Opcodes.ALOAD&&ci.var==3
+    &&code.get(4)instanceof MethodInsnNode cancel&&cancel.getOpcode()==Opcodes.INVOKEVIRTUAL&&cancel.owner.equals(CI)&&cancel.name.equals("cancel")&&cancel.desc.equals("()V")&&code.getLast().getOpcode()==Opcodes.RETURN;
+ }
+ private static MethodNode markerPredicateIntact(ClassNode owner,MethodNode consumer){
+  MethodNode found=null;
+  for(var method:owner.methods){if((method.access&Opcodes.ACC_STATIC)==0||!method.desc.equals("(Ljava/lang/Object;)Z")||!method.tryCatchBlocks.isEmpty())continue;
+   var code=DefaultMethodOverloadBridge.real(method);if(code.size()!=14)continue;
+   if(code.get(0)instanceof TypeInsnNode create&&create.getOpcode()==Opcodes.NEW&&create.desc.equals(CI)&&code.get(1).getOpcode()==Opcodes.DUP&&code.get(2)instanceof LdcInsnNode id&&id.cst instanceof String&&code.get(3).getOpcode()==Opcodes.ICONST_1
+     &&code.get(4)instanceof MethodInsnNode init&&init.getOpcode()==Opcodes.INVOKESPECIAL&&init.owner.equals(CI)&&init.name.equals("<init>")&&init.desc.equals("(Ljava/lang/String;Z)V")
+     &&code.get(5)instanceof VarInsnNode save&&save.getOpcode()==Opcodes.ASTORE&&save.var==1&&code.get(6).getOpcode()==Opcodes.ACONST_NULL&&code.get(7).getOpcode()==Opcodes.ACONST_NULL
+     &&code.get(8)instanceof VarInsnNode value&&value.getOpcode()==Opcodes.ALOAD&&value.var==0&&code.get(9)instanceof VarInsnNode ci&&ci.getOpcode()==Opcodes.ALOAD&&ci.var==1
+     &&code.get(10)instanceof MethodInsnNode call&&call.getOpcode()==Opcodes.INVOKESTATIC&&call.owner.equals(owner.name)&&call.name.equals(consumer.name)&&call.desc.equals(consumer.desc)
+     &&code.get(11)instanceof VarInsnNode read&&read.getOpcode()==Opcodes.ALOAD&&read.var==1&&code.get(12)instanceof MethodInsnNode verdict&&verdict.getOpcode()==Opcodes.INVOKEVIRTUAL&&verdict.owner.equals(CI)&&verdict.name.equals("isCancelled")&&verdict.desc.equals("()Z")&&code.get(13).getOpcode()==Opcodes.IRETURN){if(found!=null)return null;found=method;}
+  }return found;
  }
  private static boolean derived(MethodNode method,Frame<SourceValue>[]frames,SourceValue value,int input,Set<AbstractInsnNode> active){
   if(value==null)return false;if(value.insns.isEmpty())return false;if(value.insns.size()!=1)return false;var instruction=value.insns.iterator().next();if(!active.add(instruction))return false;
@@ -117,6 +189,8 @@ public final class MixinDecodeScopeAdapter {
  private static void finishScope(MethodNode method,Type result){method.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,SCOPES,"call","(Ljava/util/function/Supplier;)Ljava/lang/Object;",false));method.instructions.add(new TypeInsnNode(Opcodes.CHECKCAST,result.getInternalName()));method.instructions.add(new InsnNode(Opcodes.ARETURN));method.maxLocals=Arrays.stream(Type.getArgumentTypes(method.desc)).mapToInt(Type::getSize).sum();method.maxStack=method.maxLocals+6;}
  private static boolean forwardedParse(MethodNode method){
   Type[]args=Type.getArgumentTypes(method.desc);if(!args[0].equals(Type.getObjectType("com/mojang/serialization/Codec"))||!args[1].equals(Type.getObjectType("com/mojang/serialization/DynamicOps"))||!args[2].equals(Type.getObjectType("java/lang/Object")))return false;
+  // Loading the right slot does not forward the original parameter if the handler overwrote that slot.
+  for(var instruction:method.instructions)if(instruction instanceof VarInsnNode v&&v.getOpcode()==Opcodes.ASTORE&&v.var>=0&&v.var<=3||instruction instanceof IincInsnNode i&&i.var>=0&&i.var<=3)return false;
   var code=DefaultMethodOverloadBridge.real(method);List<MethodInsnNode>calls=code.stream().filter(i->i instanceof MethodInsnNode c&&c.owner.equals(OP)&&c.name.equals("call")).map(MethodInsnNode.class::cast).toList();if(calls.size()!=1)return false;
   int end=code.indexOf(calls.getFirst()),start=end-15;if(start<0)return false;int p=start;
   if(!(code.get(p++)instanceof VarInsnNode load)||load.getOpcode()!=Opcodes.ALOAD||load.var!=3||integer(code.get(p++))!=3||!(code.get(p++)instanceof TypeInsnNode array)||array.getOpcode()!=Opcodes.ANEWARRAY||!array.desc.equals("java/lang/Object"))return false;
