@@ -107,11 +107,18 @@ public final class DefinedMethodContracts {
         try{
             Class<?> expected=Class.forName(contract.owner(),false,receiver.getClass().getClassLoader());
             if(!expected.isInstance(receiver)||!observed(expected.getClassLoader(),contract))return false;
+            Method sourceMethod=declared(expected,contract.name(),contract.descriptor());if(!publicInstance(sourceMethod))return false;
             TransparentShape source=shape(expected.getClassLoader(),contract);if(source==null)return false;
             Method actual=dispatch(receiver.getClass(),contract.name(),contract.descriptor());if(actual==null)return false;
             if(source.kind()==1){
                 MethodContract witness=new MethodContract(actual.getDeclaringClass().getName(),actual.getName(),Type.getMethodDescriptor(actual),contract.fingerprint());
-                return source.equals(shape(actual.getDeclaringClass().getClassLoader(),witness))&&observed(actual.getDeclaringClass().getClassLoader(),witness);
+                if(!source.equals(shape(actual.getDeclaringClass().getClassLoader(),witness))||!observed(actual.getDeclaringClass().getClassLoader(),witness))return false;
+                // Identical symbolic owners can denote different interfaces in different defining loaders.
+                // Resolve both constant-pool targets in their callers' loaders and witness the actual default.
+                Class<?> before=Class.forName(source.owner().replace('/','.'),false,expected.getClassLoader()),after=Class.forName(source.owner().replace('/','.'),false,actual.getDeclaringClass().getClassLoader());
+                if(before!=after||!before.isInterface()||!before.isAssignableFrom(expected)||!after.isAssignableFrom(actual.getDeclaringClass()))return false;
+                Method target=symbolic(before,source.name(),source.descriptor());
+                return publicInstance(target)&&target.isDefault()&&observedMethod(target);
             }
             return source.kind()==2&&identity(receiver,actual,new HashSet<>());
         }catch(RuntimeException|ReflectiveOperationException|LinkageError unknown){return false;}
@@ -124,10 +131,13 @@ public final class DefinedMethodContracts {
         for(var entry:observation.transparent().entrySet()){
             MethodContract witness=entry.getKey();if(!witness.name().equals(method.getName())||!witness.descriptor().equals(descriptor)||!observed(method.getDeclaringClass().getClassLoader(),witness))continue;
             TransparentShape shape=entry.getValue();if(shape.kind()==2)return true;if(shape.kind()!=3)return false;
-            Class<?> calleeOwner=Class.forName(shape.owner().replace('/','.'),false,receiver.getClass().getClassLoader());
+            Class<?> calleeOwner=Class.forName(shape.owner().replace('/','.'),false,method.getDeclaringClass().getClassLoader());
             if(!calleeOwner.isInstance(receiver))return false;
+            // invokevirtual/interface resolves its symbolic member first. A private same-named member is
+            // nonvirtual even when a subclass exposes an identical public signature.
+            Method resolved=symbolic(calleeOwner,shape.name(),shape.descriptor());if(resolved==null||!Modifier.isPublic(resolved.getModifiers())||Modifier.isStatic(resolved.getModifiers()))return false;
             Method callee=dispatch(receiver.getClass(),shape.name(),shape.descriptor());
-            return callee!=null&&method.getReturnType().isAssignableFrom(callee.getReturnType())&&method.getReturnType()!=callee.getReturnType()&&identity(receiver,callee,active);
+            return callee!=null&&resolved.getReturnType()==callee.getReturnType()&&java.util.Arrays.equals(resolved.getParameterTypes(),callee.getParameterTypes())&&method.getReturnType().isAssignableFrom(callee.getReturnType())&&method.getReturnType()!=callee.getReturnType()&&identity(receiver,callee,active);
         }return false;
     }
 
@@ -137,10 +147,14 @@ public final class DefinedMethodContracts {
             if(found!=null)return null;found=method;
         }return found;
     }
+    private static Method declared(Class<?> owner,String name,String descriptor){Method found=null;for(Method method:owner.getDeclaredMethods())if(method.getName().equals(name)&&Type.getMethodDescriptor(method).equals(descriptor)){if(found!=null)return null;found=method;}return found;}
+    private static boolean publicInstance(Method method){return method!=null&&Modifier.isPublic(method.getModifiers())&&!Modifier.isStatic(method.getModifiers())&&!Modifier.isAbstract(method.getModifiers())&&!Modifier.isNative(method.getModifiers())&&!Modifier.isSynchronized(method.getModifiers());}
+    private static Method symbolic(Class<?> owner,String name,String descriptor){for(Class<?> type=owner;type!=null;type=type.getSuperclass()){Method found=declared(type,name,descriptor);if(found!=null)return found;}return dispatch(owner,name,descriptor);}
+    private static boolean observedMethod(Method method){Observation observation=observation(method.getDeclaringClass().getClassLoader(),method.getDeclaringClass().getName());return observation!=null&&observation.methods().stream().anyMatch(c->c.name().equals(method.getName())&&c.descriptor().equals(Type.getMethodDescriptor(method)));}
     private static TransparentShape shape(ClassLoader loader,MethodContract contract){Observation observation=observation(loader,contract.owner());return observation==null?null:observation.transparent().get(contract);}
     private static Observation observation(ClassLoader loader,String owner){var ledger=ledger(loader,false);return ledger==null?null:ledger.get(owner);}
     private static TransparentShape transparent(MethodNode method){
-        if((method.access&(Opcodes.ACC_STATIC|Opcodes.ACC_SYNCHRONIZED|Opcodes.ACC_NATIVE|Opcodes.ACC_ABSTRACT))!=0||!method.tryCatchBlocks.isEmpty())return null;
+        if((method.access&Opcodes.ACC_PUBLIC)==0||(method.access&(Opcodes.ACC_STATIC|Opcodes.ACC_SYNCHRONIZED|Opcodes.ACC_NATIVE|Opcodes.ACC_ABSTRACT))!=0||!method.tryCatchBlocks.isEmpty())return null;
         List<AbstractInsnNode> code=new java.util.ArrayList<>();for(var instruction:method.instructions)if(instruction.getOpcode()>=0)code.add(instruction);
         Type[] arguments=Type.getArgumentTypes(method.desc);Type result=Type.getReturnType(method.desc);
         if(code.isEmpty()||!(code.getFirst()instanceof VarInsnNode self)||self.getOpcode()!=Opcodes.ALOAD||self.var!=0)return null;

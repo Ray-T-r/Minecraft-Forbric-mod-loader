@@ -86,6 +86,8 @@ class DefinedMethodContractsTest {
         assertFalse(DefinedMethodContracts.validatesTransparentDispatch(receiver,expected));
         DefinedMethodContracts.observe(loader,base,original);DefinedMethodContracts.observe(loader,sub,duplicate);
         assertFalse(DefinedMethodContracts.validates(receiver,expected));
+        assertFalse(DefinedMethodContracts.validatesTransparentDispatch(receiver,expected),"the actual interface default has not been observed");
+        observe(DefaultRoute.class);
         assertTrue(DefinedMethodContracts.validatesTransparentDispatch(receiver,expected));
         DefinedMethodContracts.observe(loader,sub,forwarder(sub,base,true,false));
         assertFalse(DefinedMethodContracts.validatesTransparentDispatch(receiver,expected));
@@ -109,11 +111,43 @@ class DefinedMethodContractsTest {
         String name="fixture/contracts/IsolatedForward";byte[] code=forwarder(name,"java/lang/Object",false,false);
         EqualLoader a=new EqualLoader(),b=new EqualLoader();Class<?> first=a.define(code),second=b.define(code);var expected=contract(code,"evaluate");
         DefinedMethodContracts.observe(a,name,code);
+        observe(DefaultRoute.class);
         assertTrue(DefinedMethodContracts.validatesTransparentDispatch(first.getConstructor().newInstance(),expected));
         assertFalse(DefinedMethodContracts.validatesTransparentDispatch(second.getConstructor().newInstance(),expected));
     }
+    @Test void aPrivateExpectedIdentityCannotBecomeAVirtualContract()throws Exception{
+        observe(PrivateIdentity.class);observe(ExposedIdentity.class);
+        assertTrue(DefinedMethodContracts.observed(PrivateIdentity.class.getClassLoader(),contract(bytes(PrivateIdentity.class),"self")));
+        assertFalse(DefinedMethodContracts.validatesTransparentDispatch(new ExposedIdentity(),contract(bytes(PrivateIdentity.class),"self")));
+    }
+    @Test void sameNamedInterfaceDefaultsInDifferentLoadersAreDifferentCallTargets()throws Exception{
+        String face="fixture/contracts/SeparateCore",root="fixture/contracts/SeparateRoot",child="fixture/contracts/SeparateChild";
+        byte[] before=interfaceDefault(face,1),after=interfaceDefault(face,2),base=specialForwarder(root,"java/lang/Object",face),sub=specialForwarder(child,root,face);
+        Layer first=new Layer(getClass().getClassLoader(),java.util.Map.of(face,before,root,base)),second=new Layer(first,java.util.Map.of(face,after,child,sub));
+        Class<?> original=first.loadClass(root.replace('/','.')),actual=second.loadClass(child.replace('/','.'));Object receiver=actual.getConstructor().newInstance();
+        DefinedMethodContracts.observe(first,face,before);DefinedMethodContracts.observe(second,face,after);DefinedMethodContracts.observe(first,root,base);DefinedMethodContracts.observe(second,child,sub);
+        assertTrue((Integer)original.getMethod("evaluate").invoke(original.getConstructor().newInstance())==1);assertTrue((Integer)actual.getMethod("evaluate").invoke(receiver)==2);
+        assertFalse(DefinedMethodContracts.validatesTransparentDispatch(receiver,contract(base,"evaluate")));
+    }
+    @Test void aPrivateSymbolicCalleeCannotBeSubstitutedByASubclassPublicIdentity()throws Exception{
+        String base="fixture/contracts/PrivateCalleeBase",child="fixture/contracts/PrivateCalleeChild";byte[] first=privateCallee(base,org.objectweb.asm.Type.getInternalName(ObjectIdentity.class),base,true),second=privateCallee(child,base,base,false);
+        Layer loader=new Layer(getClass().getClassLoader(),java.util.Map.of(base,first,child,second));Class<?> type=loader.loadClass(child.replace('/','.'));Object receiver=type.getConstructor().newInstance();observe(ObjectIdentity.class);DefinedMethodContracts.observe(loader,base,first);DefinedMethodContracts.observe(loader,child,second);
+        assertFalse(ObjectIdentity.class.getMethod("self").invoke(receiver)==receiver,"the actual private member returns another object");
+        assertFalse(DefinedMethodContracts.validatesTransparentDispatch(receiver,contract(bytes(ObjectIdentity.class),"self")));
+    }
+    @Test void anAbstractSymbolicMemberMayDispatchToAnObservedConcreteIdentity()throws Exception{
+        String face="fixture/contracts/IdentityFace",base="fixture/contracts/AbstractIdentityBase",child="fixture/contracts/ConcreteIdentityChild";
+        ClassWriter contract=new ClassWriter(ClassWriter.COMPUTE_MAXS);contract.visit(Opcodes.V21,Opcodes.ACC_PUBLIC|Opcodes.ACC_INTERFACE|Opcodes.ACC_ABSTRACT,face,null,"java/lang/Object",null);contract.visitMethod(Opcodes.ACC_PUBLIC|Opcodes.ACC_ABSTRACT,"self","()L"+face+";",null,null).visitEnd();contract.visitEnd();byte[] faceBytes=contract.toByteArray();
+        ClassWriter parent=new ClassWriter(ClassWriter.COMPUTE_MAXS);parent.visit(Opcodes.V21,Opcodes.ACC_PUBLIC|Opcodes.ACC_ABSTRACT,base,null,org.objectweb.asm.Type.getInternalName(ObjectIdentity.class),new String[]{face});constructor(parent,org.objectweb.asm.Type.getInternalName(ObjectIdentity.class));var bridge=parent.visitMethod(Opcodes.ACC_PUBLIC,"self","()Ljava/lang/Object;",null,null);bridge.visitCode();bridge.visitVarInsn(Opcodes.ALOAD,0);bridge.visitMethodInsn(Opcodes.INVOKEINTERFACE,face,"self","()L"+face+";",true);bridge.visitInsn(Opcodes.ARETURN);bridge.visitMaxs(0,0);bridge.visitEnd();parent.visitEnd();byte[] parentBytes=parent.toByteArray();
+        ClassWriter implementation=new ClassWriter(ClassWriter.COMPUTE_MAXS);implementation.visit(Opcodes.V21,Opcodes.ACC_PUBLIC,child,null,base,null);constructor(implementation,base);var identity=implementation.visitMethod(Opcodes.ACC_PUBLIC,"self","()L"+face+";",null,null);identity.visitCode();identity.visitVarInsn(Opcodes.ALOAD,0);identity.visitInsn(Opcodes.ARETURN);identity.visitMaxs(0,0);identity.visitEnd();implementation.visitEnd();byte[] childBytes=implementation.toByteArray();
+        Layer loader=new Layer(getClass().getClassLoader(),java.util.Map.of(face,faceBytes,base,parentBytes,child,childBytes));Object receiver=loader.loadClass(child.replace('/','.')).getConstructor().newInstance();observe(ObjectIdentity.class);DefinedMethodContracts.observe(loader,base,parentBytes);
+        assertFalse(DefinedMethodContracts.validatesTransparentDispatch(receiver,contract(bytes(ObjectIdentity.class),"self")),"the actual concrete callee is unobserved");DefinedMethodContracts.observe(loader,child,childBytes);assertTrue(DefinedMethodContracts.validatesTransparentDispatch(receiver,contract(bytes(ObjectIdentity.class),"self")));assertTrue(ObjectIdentity.class.getMethod("self").invoke(receiver)==receiver);
+    }
 
     public static class IdentityRoot { public IdentityRoot self(){return this;} }
+    public static class PrivateIdentity {private Object self(){return this;}}
+    public static class ExposedIdentity extends PrivateIdentity {public Object self(){return this;}}
+    public static class ObjectIdentity {public Object self(){return this;}}
     public static class IdentityChild extends IdentityRoot { @Override public IdentityChild self(){return this;} }
     public static class EffectfulIdentity extends IdentityChild {
         static int effects;
@@ -147,6 +181,15 @@ class DefinedMethodContractsTest {
         @Override public boolean equals(Object other) { return other instanceof ClassLoader; }
         @Override public int hashCode() { return 1; }
     }
+    private static class Layer extends ClassLoader {
+        private final java.util.Map<String,byte[]> definitions;
+        Layer(ClassLoader parent,java.util.Map<String,byte[]> definitions){super(parent);this.definitions=definitions;}
+        @Override protected Class<?> loadClass(String name,boolean resolve)throws ClassNotFoundException{synchronized(getClassLoadingLock(name)){Class<?> type=findLoadedClass(name);if(type==null){byte[] code=definitions.get(name.replace('.','/'));type=code==null?super.loadClass(name,false):defineClass(name,code,0,code.length);}if(resolve)resolveClass(type);return type;}}
+    }
+    private static byte[] interfaceDefault(String name,int value){ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);writer.visit(Opcodes.V21,Opcodes.ACC_PUBLIC|Opcodes.ACC_INTERFACE|Opcodes.ACC_ABSTRACT,name,null,"java/lang/Object",null);var method=writer.visitMethod(Opcodes.ACC_PUBLIC,"evaluate","()I",null,null);method.visitCode();method.visitInsn(Opcodes.ICONST_0+value);method.visitInsn(Opcodes.IRETURN);method.visitMaxs(0,0);method.visitEnd();writer.visitEnd();return writer.toByteArray();}
+    private static byte[] specialForwarder(String name,String parent,String face){ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);writer.visit(Opcodes.V21,Opcodes.ACC_PUBLIC,name,null,parent,new String[]{face});constructor(writer,parent);var method=writer.visitMethod(Opcodes.ACC_PUBLIC,"evaluate","()I",null,null);method.visitCode();method.visitVarInsn(Opcodes.ALOAD,0);method.visitMethodInsn(Opcodes.INVOKESPECIAL,face,"evaluate","()I",true);method.visitInsn(Opcodes.IRETURN);method.visitMaxs(0,0);method.visitEnd();writer.visitEnd();return writer.toByteArray();}
+    private static byte[] privateCallee(String name,String parent,String base,boolean hidden){ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);writer.visit(Opcodes.V21,Opcodes.ACC_PUBLIC,name,null,parent,null);constructor(writer,parent);if(hidden){var outer=writer.visitMethod(Opcodes.ACC_PUBLIC,"self","()Ljava/lang/Object;",null,null);outer.visitCode();outer.visitVarInsn(Opcodes.ALOAD,0);outer.visitMethodInsn(Opcodes.INVOKEVIRTUAL,name,"self","()L"+name+";",false);outer.visitInsn(Opcodes.ARETURN);outer.visitMaxs(0,0);outer.visitEnd();var inner=writer.visitMethod(Opcodes.ACC_PRIVATE,"self","()L"+name+";",null,null);inner.visitCode();inner.visitTypeInsn(Opcodes.NEW,name);inner.visitInsn(Opcodes.DUP);inner.visitMethodInsn(Opcodes.INVOKESPECIAL,name,"<init>","()V",false);inner.visitInsn(Opcodes.ARETURN);inner.visitMaxs(0,0);inner.visitEnd();}else{var identity=writer.visitMethod(Opcodes.ACC_PUBLIC,"self","()L"+base+";",null,null);identity.visitCode();identity.visitVarInsn(Opcodes.ALOAD,0);identity.visitInsn(Opcodes.ARETURN);identity.visitMaxs(0,0);identity.visitEnd();}writer.visitEnd();return writer.toByteArray();}
+    private static void constructor(ClassWriter writer,String parent){var constructor=writer.visitMethod(Opcodes.ACC_PUBLIC,"<init>","()V",null,null);constructor.visitCode();constructor.visitVarInsn(Opcodes.ALOAD,0);constructor.visitMethodInsn(Opcodes.INVOKESPECIAL,parent,"<init>","()V",false);constructor.visitInsn(Opcodes.RETURN);constructor.visitMaxs(0,0);constructor.visitEnd();}
 
     private static byte[] bytes(Class<?> type) throws Exception {
         try (InputStream input = type.getResourceAsStream("/" + type.getName().replace('.', '/') + ".class")) {
