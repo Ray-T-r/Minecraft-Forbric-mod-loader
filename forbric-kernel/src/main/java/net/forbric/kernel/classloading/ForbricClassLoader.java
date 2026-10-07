@@ -60,6 +60,12 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 	private volatile BiFunction<String, byte[], byte[]> transformer = (n, b) -> b;
 	private volatile BiFunction<String, byte[], byte[]> mixinTransformer = (n, b) -> b;
+	private final java.util.concurrent.atomic.AtomicLong bytecodeConfiguration = new java.util.concurrent.atomic.AtomicLong();
+	private record ClassEpoch(long version,Thread registration){}
+	private final ConcurrentHashMap<String,java.util.concurrent.atomic.AtomicReference<ClassEpoch>> bytecodeEpochs=new ConcurrentHashMap<>();
+	private final Set<String> activeDefinitions=ConcurrentHashMap.newKeySet();
+	public record BytecodeGeneration(long configuration,Object target){}
+	private record PreMixinEntry(BytecodeGeneration generation,java.lang.ref.SoftReference<byte[]> bytes){}
 
 	public ForbricClassLoader(URL[] ownedJars, ClassLoader parent) {
 		super("forbric", ownedJars, parent);
@@ -97,12 +103,14 @@ public final class ForbricClassLoader extends URLClassLoader {
 		}
 		for (URL url : urls.getURLs()) addURL(url);
 		fallbackClassLoader = fallback;
+		bytecodeConfiguration.incrementAndGet();
 		preMixin.clear();
 	}
 
 	/** Installs the pre-mixin transform chain (Access, compat, the kernel redirectors). Call once, before any load. */
 	public void setTransformer(BiFunction<String, byte[], byte[]> transformer) {
 		this.transformer = transformer == null ? (n, b) -> b : transformer;
+		bytecodeConfiguration.incrementAndGet();
 		// Anything remembered before the chain existed was remembered UNTRANSFORMED. Mixin would then inspect
 		// bytes that do not match the ones this loader defines, which is the one way this cache could be wrong.
 		preMixin.clear();
@@ -120,21 +128,37 @@ public final class ForbricClassLoader extends URLClassLoader {
 	 * bounded by anything the kernel controls, so the JVM is left free to drop them under memory pressure. A drop
 	 * costs one rebuild, which is what every call used to cost.
 	 */
-	private final java.util.Map<String, java.lang.ref.SoftReference<byte[]>> preMixin = new ConcurrentHashMap<>();
+	private final java.util.Map<String, PreMixinEntry> preMixin = new ConcurrentHashMap<>();
 
 	/** False until the transform chain is installed; see {@link #setTransformer}. */
 	private volatile boolean chainInstalled;
 
-	private byte[] rememberedPreMixin(String name) {
-		java.lang.ref.SoftReference<byte[]> held = preMixin.get(name);
-		return held == null ? null : held.get();
+	private byte[] rememberedPreMixin(String name,BytecodeGeneration generation) {
+		PreMixinEntry held = preMixin.get(name);
+		return held == null || !held.generation.equals(generation) ? null : held.bytes.get();
 	}
 
-	private void rememberPreMixin(String name, byte[] bytes) {
+	private void rememberPreMixin(String name, byte[] bytes,BytecodeGeneration generation) {
 		// Never before the chain is installed: the answer would be the untransformed class, and it would then be
 		// handed out for the rest of the run.
-		if (chainInstalled) preMixin.put(name, new java.lang.ref.SoftReference<>(bytes));
+		if (chainInstalled) {
+			PreMixinEntry entry=new PreMixinEntry(generation,new java.lang.ref.SoftReference<>(bytes));preMixin.put(name,entry);
+			if(!isBytecodeGenerationCurrent(name,generation))preMixin.remove(name,entry);
+		}
 	}
+	private java.util.concurrent.atomic.AtomicReference<ClassEpoch> epoch(String name){return bytecodeEpochs.computeIfAbsent(name,ignored->new java.util.concurrent.atomic.AtomicReference<>(new ClassEpoch(0,null)));}
+	/** A lock-free inspection generation. Transform work must never hold a target's class-loading lock. */
+	public BytecodeGeneration bytecodeGeneration(String requested){String name=requested.replace('/','.');for(;;){ClassEpoch state=epoch(name).get();if(state.registration!=null){if(state.registration==Thread.currentThread())throw new IllegalStateException("Class-byte inspection during registration of "+name);java.util.concurrent.locks.LockSupport.parkNanos(100_000);continue;}long configuration=bytecodeConfiguration.get();if(epoch(name).get()==state)return new BytecodeGeneration(configuration,state);}}
+	public boolean isBytecodeGenerationCurrent(String requested,BytecodeGeneration generation){if(generation==null)return false;ClassEpoch state=epoch(requested.replace('/','.')).get();return state.registration==null&&generation.configuration==bytecodeConfiguration.get()&&generation.target==state;}
+	private void invalidateBytecode(String name){epoch(name).updateAndGet(state->new ClassEpoch(state.version+1,state.registration));preMixin.remove(name);}
+	/** Register metadata only while this loader has not defined/initiated the target. The callback must publish
+	 * its own plan atomically; arbitrary Runnable side effects cannot be rolled back by a bytecode cache. Even
+	 * when it throws, every reader built during the attempt is invalidated before inspection can resume. */
+	public boolean registerBeforeDefinition(String requested,Runnable registration){String name=requested.replace('/','.');java.util.Objects.requireNonNull(registration);synchronized(getClassLoadingLock(name)){
+		if(findLoadedClass(name)!=null||activeDefinitions.contains(name))return false;var epoch=epoch(name);ClassEpoch before=epoch.get();if(before.registration!=null)throw new IllegalStateException("Nested registration of "+name);
+		epoch.set(new ClassEpoch(before.version+1,Thread.currentThread()));preMixin.remove(name);
+		try{registration.run();return true;}finally{epoch.updateAndGet(state->new ClassEpoch(state.version+1,null));preMixin.remove(name);}
+	}}
 
 	/**
 	 * Jars that were SUPERSEDED by another copy of the same mod, consulted ONLY when a class is in no owned jar.
@@ -180,7 +204,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 		String binary = internalName.replace('/', '.');
 		generatedClasses.put(binary, bytes);
 		// Whatever Mixin was shown for this name before is no longer what the loader will define.
-		preMixin.remove(binary);
+		invalidateBytecode(binary);
 	}
 
 	/**
@@ -206,8 +230,13 @@ public final class ForbricClassLoader extends URLClassLoader {
 		// transformers compare binary names, so a slashed name would silently skip every repair and the caller
 		// would be handed bytes the game never runs — and the cache would hold two entries for one class.
 		String name = requested.replace('/', '.');
-		byte[] remembered = rememberedPreMixin(name);
-		if (remembered != null) return remembered;
+		for(;;){BytecodeGeneration generation=bytecodeGeneration(name);byte[] remembered=rememberedPreMixin(name,generation);
+			if(remembered!=null&&isBytecodeGenerationCurrent(name,generation))return remembered;
+			byte[] result=buildPreMixinClassBytes(name);if(!isBytecodeGenerationCurrent(name,generation))continue;
+			if(result!=null)rememberPreMixin(name,result,generation);if(isBytecodeGenerationCurrent(name,generation))return result;
+		}
+	}
+	private byte[] buildPreMixinClassBytes(String name){
 
 		String path = name.replace('.', '/') + ".class";
 		URL resource = findResource(path);
@@ -228,7 +257,6 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 			byte[] transformed = transformer.apply(name, raw);
 			byte[] result = transformed == null ? raw : transformed;
-			rememberPreMixin(name, result);
 			return result;
 		}
 
@@ -278,6 +306,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 		synchronized (getClassLoadingLock(binaryName)) {
 			Class<?> existing = findLoadedClass(binaryName);
 			if (existing != null) return existing;
+			if(epoch(binaryName).get().registration!=null)throw new IllegalStateException("Class definition during registration of "+binaryName);
 			definePackageIfNeeded(binaryName, null); // generated class, no owning jar
 			return define(binaryName, bytes, null);
 		}
@@ -324,6 +353,10 @@ public final class ForbricClassLoader extends URLClassLoader {
 	 * not generate it either, this returns {@code null} and the caller falls back to the parent.
 	 */
 	private Class<?> tryDefineGameClass(String name) {
+		if(epoch(name).get().registration!=null)throw new IllegalStateException("Class definition during registration of "+name);
+		boolean outer=activeDefinitions.add(name);try{return buildAndDefineGameClass(name);}finally{if(outer)activeDefinitions.remove(name);}
+	}
+	private Class<?> buildAndDefineGameClass(String name) {
 		String path = name.replace('.', '/') + ".class";
 		URL resource = findResource(path); // this loader's own URLs only
 		byte[] bytes = null;

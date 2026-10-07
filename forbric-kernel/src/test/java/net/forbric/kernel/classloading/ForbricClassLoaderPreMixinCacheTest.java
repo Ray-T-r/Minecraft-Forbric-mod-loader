@@ -19,6 +19,10 @@ package net.forbric.kernel.classloading;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.OutputStream;
 import java.net.URL;
@@ -44,6 +48,50 @@ import org.objectweb.asm.Opcodes;
  * Handing Mixin the untransformed class would have it weave against something the loader never defines.
  */
 class ForbricClassLoaderPreMixinCacheTest {
+	@Test void aLateRegistrationRebuildsCachedBytesAndRejectsDefinedTargets(@TempDir Path dir)throws Exception{
+		Path jar=jarWith(dir,"com/example/Late");java.util.concurrent.atomic.AtomicBoolean registered=new java.util.concurrent.atomic.AtomicBoolean();AtomicInteger transforms=new AtomicInteger();byte[] changed=classBytes("com/example/Changed");
+		try(ForbricClassLoader loader=new ForbricClassLoader(new URL[]{jar.toUri().toURL()},getClass().getClassLoader())){
+			loader.setTransformer((name,bytes)->{transforms.incrementAndGet();return registered.get()?changed:bytes;});byte[] initial=loader.getPreMixinClassBytes("com/example/Late");assertSame(initial,loader.getPreMixinClassBytes("com.example.Late"));assertEquals(1,transforms.get());
+			assertTrue(loader.registerBeforeDefinition("com/example/Late",()->registered.set(true)));assertArrayEquals(changed,loader.getPreMixinClassBytes("com.example.Late"));assertEquals(2,transforms.get());
+			loader.defineRuntimeClass("com.example.Defined",classBytes("com/example/Defined"));AtomicInteger mutation=new AtomicInteger();var generation=loader.bytecodeGeneration("com.example.Defined");assertFalse(loader.registerBeforeDefinition("com/example/Defined",mutation::incrementAndGet));assertEquals(0,mutation.get());assertTrue(loader.isBytecodeGenerationCurrent("com.example.Defined",generation));
+		}
+	}
+	@Test void aConcurrentOldReaderCannotReturnOrRepublishPreRegistrationBytes(@TempDir Path dir)throws Exception{
+		Path jar=jarWith(dir,"com/example/Late");java.util.concurrent.atomic.AtomicBoolean registered=new java.util.concurrent.atomic.AtomicBoolean();java.util.concurrent.CountDownLatch entered=new java.util.concurrent.CountDownLatch(1),release=new java.util.concurrent.CountDownLatch(1);AtomicInteger calls=new AtomicInteger();byte[] changed=classBytes("com/example/Changed");
+		try(ForbricClassLoader loader=new ForbricClassLoader(new URL[]{jar.toUri().toURL()},getClass().getClassLoader())){loader.setTransformer((name,bytes)->{boolean snapshot=registered.get();if(calls.incrementAndGet()==1){entered.countDown();await(release);}return snapshot?changed:bytes;});var workers=java.util.concurrent.Executors.newFixedThreadPool(2);
+			try{var stale=workers.submit(()->loader.getPreMixinClassBytes("com.example.Late"));assertTrue(entered.await(5,java.util.concurrent.TimeUnit.SECONDS));assertTrue(loader.registerBeforeDefinition("com/example/Late",()->registered.set(true)));byte[] current=loader.getPreMixinClassBytes("com.example.Late");assertArrayEquals(changed,current);release.countDown();assertArrayEquals(changed,stale.get(5,java.util.concurrent.TimeUnit.SECONDS));assertSame(current,loader.getPreMixinClassBytes("com/example/Late"));}
+			finally{release.countDown();workers.shutdownNow();}
+		}
+	}
+	@Test void aThrowingRegistrationDoesNotLeavePendingStateOrPublishItsTemporaryBytes(@TempDir Path dir)throws Exception{
+		Path jar=jarWith(dir,"com/example/Late");java.util.concurrent.atomic.AtomicBoolean state=new java.util.concurrent.atomic.AtomicBoolean();AtomicInteger calls=new AtomicInteger();
+		try(ForbricClassLoader loader=new ForbricClassLoader(new URL[]{jar.toUri().toURL()},getClass().getClassLoader())){loader.setTransformer((name,bytes)->{calls.incrementAndGet();return state.get()?classBytes("com/example/Temporary"):bytes;});byte[] original=loader.getPreMixinClassBytes("com.example.Late");
+			assertThrows(IllegalArgumentException.class,()->loader.registerBeforeDefinition("com/example/Late",()->{state.set(true);try{throw new IllegalArgumentException("registration failed");}finally{state.set(false);}}));assertArrayEquals(original,loader.getPreMixinClassBytes("com.example.Late"));assertEquals(2,calls.get());assertTrue(loader.registerBeforeDefinition("com.example.Late",()->{}));
+		}
+	}
+	private static void await(java.util.concurrent.CountDownLatch latch){try{if(!latch.await(5,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("cache test timed out");}catch(InterruptedException interrupted){Thread.currentThread().interrupt();throw new AssertionError(interrupted);}}
+	@Test void aReentrantPlanCannotRegisterAfterThisDefinitionsLocalBytesHaveBeenBuilt(@TempDir Path dir)throws Exception{
+		Path jar=jarWith(dir,"com/example/Late");AtomicInteger mutation=new AtomicInteger();java.util.concurrent.atomic.AtomicBoolean accepted=new java.util.concurrent.atomic.AtomicBoolean(true);
+		try(ForbricClassLoader loader=new ForbricClassLoader(new URL[]{jar.toUri().toURL()},getClass().getClassLoader())){loader.setTransformer((name,bytes)->{accepted.set(loader.registerBeforeDefinition(name,mutation::incrementAndGet));return bytes;});assertNotNull(loader.loadClass("com.example.Late"));assertFalse(accepted.get());assertEquals(0,mutation.get());assertFalse(loader.registerBeforeDefinition("com/example/Late",mutation::incrementAndGet));}
+	}
+	@Test void readersDoNotSeeTheMiddleOfARegistration(@TempDir Path dir)throws Exception{
+		Path jar=jarWith(dir,"com/example/Late");java.util.concurrent.CountDownLatch pending=new java.util.concurrent.CountDownLatch(1),release=new java.util.concurrent.CountDownLatch(1);java.util.concurrent.atomic.AtomicBoolean state=new java.util.concurrent.atomic.AtomicBoolean();AtomicInteger transforms=new AtomicInteger();byte[] changed=classBytes("com/example/Changed");
+		try(ForbricClassLoader loader=new ForbricClassLoader(new URL[]{jar.toUri().toURL()},getClass().getClassLoader())){loader.setTransformer((name,bytes)->{transforms.incrementAndGet();return state.get()?changed:bytes;});var workers=java.util.concurrent.Executors.newFixedThreadPool(2);
+			try{var registration=workers.submit(()->loader.registerBeforeDefinition("com.example.Late",()->{state.set(true);pending.countDown();await(release);}));assertTrue(pending.await(5,java.util.concurrent.TimeUnit.SECONDS));var reader=workers.submit(()->loader.getPreMixinClassBytes("com.example.Late"));Thread.sleep(20);assertFalse(reader.isDone());assertEquals(0,transforms.get());release.countDown();assertTrue(registration.get(5,java.util.concurrent.TimeUnit.SECONDS));assertArrayEquals(changed,reader.get(5,java.util.concurrent.TimeUnit.SECONDS));}
+			finally{release.countDown();workers.shutdownNow();}
+		}
+	}
+	@Test void aRegistrationCannotReentrantlyDefineItsOwnTarget(@TempDir Path dir)throws Exception{
+		Path jar=jarWith(dir,"com/example/Late");try(ForbricClassLoader loader=new ForbricClassLoader(new URL[]{jar.toUri().toURL()},getClass().getClassLoader())){loader.setTransformer((name,bytes)->bytes);
+			assertThrows(IllegalStateException.class,()->loader.registerBeforeDefinition("com.example.Late",()->loader.defineRuntimeClass("com.example.Late",classBytes("com/example/Late"))));assertFalse(loader.isClassLoadedByName("com.example.Late"));assertTrue(loader.registerBeforeDefinition("com.example.Late",()->{}));assertNotNull(loader.loadClass("com.example.Late"));
+		}
+	}
+	@Test void crossClassInspectionRunsWithoutHoldingAnotherTargetsClassLock(@TempDir Path dir)throws Exception{
+		Path jar=dir.resolve("two.jar");try(var output=new JarOutputStream(Files.newOutputStream(jar))){for(String name:java.util.List.of("A","B")){output.putNextEntry(new ZipEntry("com/example/"+name+".class"));output.write(classBytes("com/example/"+name));output.closeEntry();}}
+		try(ForbricClassLoader loader=new ForbricClassLoader(new URL[]{jar.toUri().toURL()},getClass().getClassLoader())){var seen=new java.util.concurrent.ConcurrentHashMap<String,AtomicInteger>();var barrier=new java.util.concurrent.CyclicBarrier(2);loader.setTransformer((name,bytes)->{if(seen.computeIfAbsent(name,ignored->new AtomicInteger()).incrementAndGet()==1){try{barrier.await(5,java.util.concurrent.TimeUnit.SECONDS);}catch(Exception failure){throw new AssertionError(failure);}assertNotNull(loader.getPreMixinClassBytes(name.endsWith("A")?"com.example.B":"com.example.A"));}return bytes;});var workers=java.util.concurrent.Executors.newFixedThreadPool(2);
+			try{var a=workers.submit(()->loader.getPreMixinClassBytes("com.example.A"));var b=workers.submit(()->loader.getPreMixinClassBytes("com.example.B"));assertNotNull(a.get(5,java.util.concurrent.TimeUnit.SECONDS));assertNotNull(b.get(5,java.util.concurrent.TimeUnit.SECONDS));}finally{workers.shutdownNow();}
+		}
+	}
 
 	private static byte[] classBytes(String internalName) {
 		ClassWriter cw = new ClassWriter(0);

@@ -89,6 +89,7 @@ public final class ForbricMixinService
 	/** Points the service at the transforming loader + side. Must be called before {@code MixinBootstrap.init()}. */
 	public static void bind(ForbricClassLoader loader, EnvType side) {
 		gameLoader = loader;
+		ADAPTER_CLASS_CACHE.clear();
 		envType = side;
 		NativeGameReferences.bind(loader);
 	}
@@ -104,6 +105,9 @@ public final class ForbricMixinService
 
 		return l;
 	}
+	/** Late structural plans register against their derived target, never a table of target names. Both bytecode
+	 * views share the loader's generation, so an in-flight old adapter reader cannot republish stale bytes. */
+	public static boolean registerBeforeDefinition(String target,Runnable registration){java.util.Objects.requireNonNull(registration);String binary=target.replace('/','.');ForbricClassLoader current=loader();return current.registerBeforeDefinition(binary,()->{try{registration.run();}finally{ADAPTER_CLASS_CACHE.remove(binary.replace('.','/')+".class");}});}
 
 	// --- IMixinService ---
 
@@ -599,7 +603,8 @@ public final class ForbricMixinService
 	private static final java.util.Map<java.nio.file.Path, String> BASE_DIGESTS = new java.util.concurrent.ConcurrentHashMap<>();
 
 	/** Cache for {@link #readAdapterClass}: ~70 configs re-request the same merged targets. */
-	private static final java.util.Map<String, byte[]> ADAPTER_CLASS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+	private record AdapterClass(ForbricClassLoader loader,ForbricClassLoader.BytecodeGeneration generation,byte[] bytes){}
+	private static final java.util.Map<String, AdapterClass> ADAPTER_CLASS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
 	private static final byte[] NOT_FOUND = new byte[0];
 
 	/**
@@ -616,27 +621,21 @@ public final class ForbricMixinService
 	 * <p>Falls back to the raw resource for a MIXIN's own class, which is not a game class and so is not transformed.
 	 */
 	private static byte[] readAdapterClass(String resourcePath) {
-		byte[] cached = ADAPTER_CLASS_CACHE.get(resourcePath);
-		if (cached != null) return cached == NOT_FOUND ? null : cached;
-
-		byte[] bytes = null;
-		if (resourcePath.endsWith(".class")) {
-			String className = resourcePath.substring(0, resourcePath.length() - ".class".length()).replace('/', '.');
-			try {
-				bytes = loader().getPreMixinClassBytes(className);
-			} catch (Throwable notAGameClass) {
-				bytes = null;
-			}
+		String className=resourcePath.endsWith(".class")?resourcePath.substring(0,resourcePath.length()-6).replace('/','.'):null;
+		String path=className==null?resourcePath:className.replace('.','/')+".class";
+		for(;;){ForbricClassLoader current=loader();var generation=className==null?null:current.bytecodeGeneration(className);
+			AdapterClass cached=ADAPTER_CLASS_CACHE.get(path);
+			if(cached!=null&&cached.loader==current&&java.util.Objects.equals(cached.generation,generation)&&current==gameLoader&&(className==null||current.isBytecodeGenerationCurrent(className,generation)))return cached.bytes==NOT_FOUND?null:cached.bytes;
+			byte[] bytes=null;
+			if(className!=null){try{bytes=current.getPreMixinClassBytes(className);}catch(Throwable notAGameClass){bytes=null;}}
+			if(bytes==null){try(InputStream input=current.getGameResourceAsStream(path)){bytes=input==null?null:input.readAllBytes();}catch(IOException unavailable){bytes=null;}}
+			if(current!=gameLoader||className!=null&&!current.isBytecodeGenerationCurrent(className,generation))continue;
+			AdapterClass entry=new AdapterClass(current,generation,bytes==null?NOT_FOUND:bytes);ADAPTER_CLASS_CACHE.put(path,entry);
+			if(current!=gameLoader||className!=null&&!current.isBytecodeGenerationCurrent(className,generation)){ADAPTER_CLASS_CACHE.remove(path,entry);continue;}
+			if(bytes!=null&&className!=null){ClassNode source=new ClassNode();new ClassReader(bytes).accept(source,ClassReader.EXPAND_FRAMES);net.forbric.kernel.boot.LootSourceCallbacks.offer(current,source,ForbricMixinService::readAdapterClass);}
+			if(current==gameLoader&&(className==null||current.isBytecodeGenerationCurrent(className,generation)))return bytes;
+			ADAPTER_CLASS_CACHE.remove(path,entry);
 		}
-		if (bytes == null) bytes = readGameResource(resourcePath);
-
-		ADAPTER_CLASS_CACHE.put(resourcePath, bytes == null ? NOT_FOUND : bytes);
-		if (bytes != null && resourcePath.endsWith(".class")) {
-			ClassNode source = new ClassNode();
-			new ClassReader(bytes).accept(source, ClassReader.EXPAND_FRAMES);
-			net.forbric.kernel.boot.LootSourceCallbacks.offer(loader(), source, ForbricMixinService::readAdapterClass);
-		}
-		return bytes;
 	}
 
 	/** Whether {@code name} looks like a mixin config file — the only resources the owned-target scan should read. */
