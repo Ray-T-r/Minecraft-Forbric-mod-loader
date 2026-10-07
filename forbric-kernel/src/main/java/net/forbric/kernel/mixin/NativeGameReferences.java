@@ -17,12 +17,12 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.ClassNode;
 
 /** Reads hash-pinned, non-executable original platform bytes emitted by the merged-base builder. */
-final class NativeGameReferences {
+public final class NativeGameReferences {
 	private static volatile NativeGameReferences active;
 	private final Function<String, byte[]> resources;
 	private final Map<Ecosystem, Map<String, String>> indexes = new EnumMap<>(Ecosystem.class);
 
-	NativeGameReferences(Function<String, byte[]> resources) {
+	public NativeGameReferences(Function<String, byte[]> resources) {
 		this.resources = resources;
 	}
 
@@ -45,7 +45,7 @@ final class NativeGameReferences {
 		return reader == null ? null : reader.get(ecosystem, owner);
 	}
 
-	synchronized ClassNode get(Ecosystem ecosystem, String owner) {
+	public synchronized ClassNode get(Ecosystem ecosystem, String owner) {
 		if (ecosystem == null || owner == null) return null;
 		String expected = indexes.computeIfAbsent(ecosystem, this::index).get(owner);
 		if (expected == null) return null;

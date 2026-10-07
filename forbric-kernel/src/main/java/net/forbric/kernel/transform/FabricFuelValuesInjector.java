@@ -154,10 +154,11 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 		if (!returnHooksEnabled()) return bytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
-		MethodNode body = null;
+		MethodNode body = concreteEntryBody(node);
+		boolean fromEntry = body != null;
 		boolean forwarded = false;
 		for (MethodNode method : node.methods) {
-			if (method.name.equals("vanillaBurnTimes") && method.desc.equals(BODY_DESC)
+			if (body == null && method.name.equals("vanillaBurnTimes") && method.desc.equals(BODY_DESC)
 					&& (method.access & Opcodes.ACC_STATIC) != 0) body = method;
 			if (method.name.equals("vanillaBurnTimes") && !method.desc.equals(BODY_DESC)) {
 				for (AbstractInsnNode insn : method.instructions) {
@@ -166,7 +167,7 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 				}
 			}
 		}
-		if (body == null || !forwarded) return bytes;
+		if (body == null || !forwarded && !fromEntry) return bytes;
 		AbstractInsnNode exit = null;
 		for (AbstractInsnNode insn : body.instructions) {
 			if (insn instanceof MethodInsnNode call && call.owner.equals(KERNEL_FUEL)) return bytes;   // already in
@@ -188,15 +189,53 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 		body.instructions.insert(head);
 		InsnList tail = new InsnList();
 		tail.add(join);
-		tail.add(new FrameNode(Opcodes.F_NEW, 2, new Object[] { BUILDER, Opcodes.INTEGER }, 1, new Object[] { FUEL_VALUES }));
+		java.util.List<Object> locals = new java.util.ArrayList<>();
+		for (org.objectweb.asm.Type argument : org.objectweb.asm.Type.getArgumentTypes(body.desc)) {
+			locals.add(switch (argument.getSort()) {
+				case org.objectweb.asm.Type.FLOAT -> Opcodes.FLOAT;
+				case org.objectweb.asm.Type.LONG -> Opcodes.LONG;
+				case org.objectweb.asm.Type.DOUBLE -> Opcodes.DOUBLE;
+				case org.objectweb.asm.Type.OBJECT -> argument.getInternalName();
+				case org.objectweb.asm.Type.ARRAY -> argument.getDescriptor();
+				default -> Opcodes.INTEGER;
+			});
+		}
+		tail.add(new FrameNode(Opcodes.F_NEW, locals.size(), locals.toArray(), 1, new Object[] { FUEL_VALUES }));
 		body.instructions.insertBefore(exit, tail);
 
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
-		ForbricLog.info("[Forbric/Fuel] FuelValues.vanillaBurnTimes(Builder, int) returns the fuel table populateFuelValues "
+		ForbricLog.info("[Forbric/Fuel] FuelValues.%s%s returns the fuel table populateFuelValues "
 				+ "hands it instead of rebuilding vanilla's, so the return hooks of both vanillaBurnTimes run on the table "
-				+ "the merged server uses");
+				+ "the merged server uses", body.name, body.desc);
 		return writer.toByteArray();
+	}
+
+	/** Follow the actual native entry through its own unambiguous forwarding chain; a restored facade may
+	 * now own the concrete build rather than the constructor closure it used to call. */
+	private static MethodNode concreteEntryBody(ClassNode owner) {
+		String entry = "(Lnet/minecraft/core/HolderLookup$Provider;Lnet/minecraft/world/flag/FeatureFlagSet;)L" + FUEL_VALUES + ";";
+		MethodNode method = owner.methods.stream().filter(m -> m.name.equals("vanillaBurnTimes") && m.desc.equals(entry)
+				&& (m.access & Opcodes.ACC_STATIC) != 0).findFirst().orElse(null);
+		java.util.Set<MethodNode> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		while (method != null && seen.add(method)) {
+			int builds = 0, returns = 0;
+			java.util.List<MethodInsnNode> delegates = new java.util.ArrayList<>();
+			for (AbstractInsnNode instruction : method.instructions) {
+				if (instruction.getOpcode() == Opcodes.ARETURN) returns++;
+				if (instruction instanceof MethodInsnNode call) {
+					if (call.owner.equals(BUILDER) && call.name.equals("build") && call.desc.equals("()L" + FUEL_VALUES + ";")) builds++;
+					if (call.getOpcode() == Opcodes.INVOKESTATIC && call.owner.equals(owner.name) && call.name.equals(method.name)
+							&& org.objectweb.asm.Type.getReturnType(call.desc).equals(org.objectweb.asm.Type.getObjectType(owner.name))) delegates.add(call);
+				}
+			}
+			if (builds == 1 && returns == 1) return method;
+			if (builds != 0 || delegates.size() != 1) return null;
+			MethodInsnNode edge = delegates.getFirst();
+			method = owner.methods.stream().filter(m -> m.name.equals(edge.name) && m.desc.equals(edge.desc)
+					&& (m.access & Opcodes.ACC_STATIC) != 0).findFirst().orElse(null);
+		}
+		return null;
 	}
 
 	private static AbstractInsnNode realPrevious(AbstractInsnNode insn) {

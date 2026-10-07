@@ -779,6 +779,10 @@ public final class KernelBoot {
 		// A MinecraftForge brewing recipe goes into the merged builder's NeoForge-typed list wrapped as NeoForge's.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeBrewingRecipesInjector());
 		// The merged game builds its fuels from NeoForge's data map; Fabric's fuel events run on that builder too.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NativeConstructorFacadeRestorer(path -> {
+			try (var in = loader.getGameResourceAsStream(path)) { return in == null ? null : in.readAllBytes(); }
+			catch (java.io.IOException missing) { return null; }
+		}));
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFuelValuesInjector());
 		// NeoForge's "Missing FluidModel" check runs inside the bake Fabric wraps, before Fabric adds its fluid models.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricFluidModelsInjector());
