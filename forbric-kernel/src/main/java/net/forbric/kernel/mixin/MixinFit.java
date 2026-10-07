@@ -303,6 +303,11 @@ public final class MixinFit {
 			java.util.function.Predicate<String> gameClass, MixinAddedMembers.View added,
 			NativeAbsentTargets.Context nativeView) {
 		ClassNode mixin = read(mixinBytes, false);
+		// Most checks need only annotation metadata. A same-mixin target also needs the body Mixin will add.
+		if (mixin.methods.stream().anyMatch(MixinFit::selfAddedCandidate)) {
+			mixin = new ClassNode();
+			new ClassReader(mixinBytes).accept(mixin, ClassReader.SKIP_FRAMES);
+		}
 		List<String> targets = mixinTargets(mixin);
 		if (targets.isEmpty()) return new Result(Verdict.FIT, List.of(), 0, 0, List.of());
 
@@ -471,6 +476,7 @@ public final class MixinFit {
 
 	private static List<Anchor> anchorsOf(ClassNode mixin, ClassNode target, Function<String, byte[]> resolver,
 			MixinAddedMembers.View added, String declared, NativeAbsentTargets.Context nativeView) {
+		ClassNode injectionTarget = withSelfAddedMethods(mixin, target);
 		// The target again with its local variable tables, read once and only if an injector needs it.
 		Supplier<ClassNode> withLocals = new Supplier<>() {
 			private ClassNode read;
@@ -482,6 +488,7 @@ public final class MixinFit {
 					if (bytes != null) {
 						read = new ClassNode();
 						new ClassReader(bytes).accept(read, ClassReader.SKIP_FRAMES);
+						read = withSelfAddedMethods(mixin, read);
 					}
 				}
 				return read;
@@ -534,13 +541,44 @@ public final class MixinFit {
 			AnnotationNode injector = injectorOf(m);
 			if (injector == null) continue;
 			int first = out.size();
-			injectorAnchors(mixin, m, injector, target, resolver, withLocals, nativeView, out);
+			injectorAnchors(mixin, m, injector, injectionTarget, resolver, withLocals, nativeView, out);
 			String group = groupOf(m);
 			if (group != null) {
 				for (int i = first; i < out.size(); i++) out.get(i).alternativeOf(group, m);
 			}
 		}
 		return countsGroups() ? settleGroups(out) : out;
+	}
+
+	/** An injector may select a concrete @Unique method which this same mixin adds before injection preparation.
+	 * Existing target members win. Abstract/shadow/injector methods cannot fabricate a target. */
+	static ClassNode withSelfAddedMethods(ClassNode mixin, ClassNode target) {
+		if (mixin == null || target == null) return target;
+		List<MethodNode> added = new ArrayList<>();
+		for (MethodNode method : mixin.methods) {
+			if (!selfAddedCandidate(method) || method.instructions == null || method.instructions.size() == 0) continue;
+			if (target.methods.stream().anyMatch(m -> m.name.equals(method.name) && m.desc.equals(method.desc))) continue;
+			added.add(method);
+		}
+		if (added.isEmpty()) return target;
+		ClassNode view = new ClassNode(); target.accept(view);
+		for (MethodNode method : added) {
+			MethodNode copy = new MethodNode(method.access, method.name, method.desc, method.signature,
+					method.exceptions == null ? null : method.exceptions.toArray(String[]::new));
+			method.accept(copy); view.methods.add(copy);
+		}
+		return view;
+	}
+
+	private static boolean selfAddedCandidate(MethodNode method) {
+		return !method.name.startsWith("<") && (method.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) == 0
+				&& injectorOf(method) == null
+				&& !has(method.visibleAnnotations, SHADOW_DESC) && !has(method.invisibleAnnotations, SHADOW_DESC)
+				&& !has(method.visibleAnnotations, OVERWRITE_DESC) && !has(method.invisibleAnnotations, OVERWRITE_DESC)
+				&& !has(method.visibleAnnotations, ACCESSOR_DESC) && !has(method.invisibleAnnotations, ACCESSOR_DESC)
+				&& !has(method.visibleAnnotations, INVOKER_DESC) && !has(method.invisibleAnnotations, INVOKER_DESC)
+				&& (has(method.visibleAnnotations, "Lorg/spongepowered/asm/mixin/Unique;")
+					|| has(method.invisibleAnnotations, "Lorg/spongepowered/asm/mixin/Unique;"));
 	}
 
 	/** Whether a mixin applied first adds the member to the target, by the name the mixin declares it or its home. */
@@ -1008,6 +1046,7 @@ public final class MixinFit {
 		for (String targetName : mixinTargets(mixin)) {
 			ClassNode target = targets.apply(targetName);
 			if (target == null || target.methods == null) return null;
+			target = withSelfAddedMethods(mixin, target);
 			Set<MethodNode> bound = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 			String refusal = null;
 			for (String selector : selectors) {
