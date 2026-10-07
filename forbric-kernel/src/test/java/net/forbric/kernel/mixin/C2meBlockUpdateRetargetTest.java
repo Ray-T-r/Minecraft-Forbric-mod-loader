@@ -20,7 +20,7 @@ import org.objectweb.asm.tree.*;
 class C2meBlockUpdateRetargetTest {
 
 	@AfterEach void reset() {
-		System.clearProperty(C2meBlockUpdateRetarget.PROPERTY);
+		System.clearProperty(MixinChunkStatusRetarget.PROPERTY);
 	}
 
 	@Test void shippedC2meBindsToTheLiveNotificationCheckWithoutChangingItsHandler() throws Exception {
@@ -34,7 +34,7 @@ class C2meBlockUpdateRetargetTest {
 		AnnotationNode injection = MixinFit.injectorOf(handler);
 		Object required = MixinFit.value(injection, "require");
 		assertEquals(1, MixinRetarget.apply(mixin, plan));
-		assertEquals(List.of(C2meBlockUpdateRetarget.HELPER), MixinFit.value(injection, "method"));
+		assertEquals(List.of(MixinChunkStatusRetarget.HELPER), MixinFit.value(injection, "method"));
 		assertEquals(required, MixinFit.value(injection, "require"));
 		assertArrayEquals(body, handler.instructions.toArray());
 		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(bytes(mixin), resources).verdict());
@@ -43,38 +43,38 @@ class C2meBlockUpdateRetargetTest {
 
 	@Test void vanillaAndTheDisabledRepairKeepTheOriginalSelector() throws Exception {
 		assertTrue(MixinRetarget.plan(mixin(), resources(level(true))).isEmpty());
-		System.setProperty(C2meBlockUpdateRetarget.PROPERTY, "off");
+		System.setProperty(MixinChunkStatusRetarget.PROPERTY, "off");
 		assertTrue(MixinRetarget.plan(mixin(), resources(level(false))).isEmpty());
 	}
 
 	@Test void missingHelperCallOrDuplicatedStatusCheckRefusesTheMove() throws Exception {
 		ClassNode target = level(false);
-		MethodNode original = method(target, C2meBlockUpdateRetarget.ORIGINAL);
+		MethodNode original = method(target, MixinChunkStatusRetarget.ORIGINAL);
 		for (AbstractInsnNode insn : original.instructions.toArray()) {
 			if (insn instanceof MethodInsnNode call && call.name.equals("markAndNotifyBlock")) original.instructions.remove(insn);
 		}
 		assertTrue(MixinRetarget.plan(mixin(), resources(target)).isEmpty());
 		target = level(false);
-		MethodNode helper = method(target, C2meBlockUpdateRetarget.HELPER);
+		MethodNode helper = method(target, MixinChunkStatusRetarget.HELPER);
 		helper.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "net/minecraft/server/level/FullChunkStatus",
-				"isOrAfter", "(" + C2meBlockUpdateRetarget.STATUS + ")Z", false));
+				"isOrAfter", "(" + MixinChunkStatusRetarget.STATUS + ")Z", false));
 		assertTrue(MixinRetarget.plan(mixin(), resources(target)).isEmpty());
 	}
 
 	@Test void aRestoredVanillaAnchorOrStaticHelperRefusesTheMove() throws Exception {
 		ClassNode target = level(false);
-		method(target, C2meBlockUpdateRetarget.ORIGINAL).instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
-				"net/minecraft/server/level/FullChunkStatus", "isOrAfter", "(" + C2meBlockUpdateRetarget.STATUS + ")Z", false));
+		method(target, MixinChunkStatusRetarget.ORIGINAL).instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
+				"net/minecraft/server/level/FullChunkStatus", "isOrAfter", "(" + MixinChunkStatusRetarget.STATUS + ")Z", false));
 		assertTrue(MixinRetarget.plan(mixin(), resources(target)).isEmpty());
 		target = level(false);
-		method(target, C2meBlockUpdateRetarget.HELPER).access |= Opcodes.ACC_STATIC;
+		method(target, MixinChunkStatusRetarget.HELPER).access |= Opcodes.ACC_STATIC;
 		assertTrue(MixinRetarget.plan(mixin(), resources(target)).isEmpty());
 	}
 
-	@Test void localCaptureSliceGroupAndDifferentModRefuseTheMove() throws Exception {
+	@Test void localCaptureSliceAndGroupRefuseTheMoveButNamesDoNotIdentifyTheContract() throws Exception {
 		ClassNode target = level(false);
 		ClassNode local = mixin();
-		handler(local).desc = "(" + C2meBlockUpdateRetarget.STATUS + "I)" + C2meBlockUpdateRetarget.STATUS;
+		handler(local).desc = "(" + MixinChunkStatusRetarget.STATUS + "I)" + MixinChunkStatusRetarget.STATUS;
 		assertTrue(MixinRetarget.plan(local, resources(target)).isEmpty());
 		ClassNode sliced = mixin();
 		MixinFit.injectorOf(handler(sliced)).values.addAll(List.of("slice", new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/Slice;")));
@@ -83,20 +83,21 @@ class C2meBlockUpdateRetargetTest {
 		handler(grouped).visibleAnnotations.add(new AnnotationNode(MixinRetarget.GROUP));
 		assertTrue(MixinRetarget.plan(grouped, resources(target)).isEmpty());
 		ClassNode other = mixin();
-		other.name = "another/mod/MixinWorld";
-		assertTrue(MixinRetarget.plan(other, resources(target)).isEmpty());
+		other.name = "another/library/WorldCallbacks";
+        handler(other).name = "aCompletelyDifferentHandler";
+		assertEquals(1, MixinRetarget.plan(other, resources(target)).rewrites().size());
 	}
 
 	private static ClassNode mixin() throws Exception {
 		Path jar = Path.of("build/compat-inputs/startup-20260930/c2me-notickvd.jar");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(jar), "C2ME 0.4.1-beta.1.0 notickvd fixture required");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
-			return MixinFit.parse(zip.getInputStream(zip.getEntry(C2meBlockUpdateRetarget.MIXIN + ".class")).readAllBytes());
+			return MixinFit.parse(zip.getInputStream(zip.getEntry("com/ishland/c2me/notickvd/mixin/MixinWorld" + ".class")).readAllBytes());
 		}
 	}
 
 	private static ClassNode level(boolean vanilla) throws Exception {
-		return StagedFabricMixinFixture.game(C2meBlockUpdateRetarget.LEVEL, vanilla);
+		return StagedFabricMixinFixture.game(MixinChunkStatusRetarget.LEVEL, vanilla);
 	}
 
 	private static MethodNode handler(ClassNode mixin) {
@@ -113,6 +114,6 @@ class C2meBlockUpdateRetargetTest {
 
 	private static Function<String, byte[]> resources(ClassNode level) {
 		byte[] bytes = bytes(level);
-		return name -> name.equals(C2meBlockUpdateRetarget.LEVEL + ".class") ? bytes : null;
+		return name -> name.equals(MixinChunkStatusRetarget.LEVEL + ".class") ? bytes : null;
 	}
 }

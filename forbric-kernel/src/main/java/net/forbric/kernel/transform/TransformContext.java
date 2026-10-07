@@ -23,11 +23,9 @@ import net.forbric.api.Ecosystem;
 /**
  * Immutable, per-invocation context handed to every {@link ClassTransformer}.
  *
- * <p><b>{@link #getEcosystem()} is attribution the chain does not yet fill in.</b> It was declared with the SPI and
- * never wired: {@code withSource} had no callers and {@code getEcosystem} no readers, so every transformer ran as
- * "unknown" and none could ask which ecosystem a class came from. That is a large part of why they identify
- * ecosystems by hardcoding their class names instead. It now names the one {@link Ecosystem} type rather than a
- * private four-valued enum that was missing NeoForge, so a consumer can be given one.
+ * <p>KernelBoot attributes every invocation from the actual resource selected by ForbricClassLoader.
+ * Class definition and Mixin's pre-definition bytecode inspection therefore receive the same metadata origin.
+ * Game classes, shared libraries and ambiguous origins remain unattributed rather than guessed from package names.
  *
  * <p>It lets transformers written for either ecosystem share one call signature: a Fabric built-in,
  * a Forge coremod, and a remapper all read the same environment, dev flag, canonical runtime

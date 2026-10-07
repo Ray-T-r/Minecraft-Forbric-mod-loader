@@ -103,7 +103,17 @@ class FabricBlockBreakMixinAdapterTest {
 		assertArrayEquals(before, StagedFabricMixinFixture.bytes(mixin));
 		System.clearProperty(FabricBlockBreakMixinAdapter.PROPERTY);
 		mixin.name = "another/ServerPlayerGameModeMixin";
-		assertEquals(0, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
+		method(mixin, "onBreak").name = "other$blockCallback";
+		assertEquals(1, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target), "same proven locals under another class and handler name");
+	}
+
+	@Test void anotherModsHarvestHandlerUsesTheSameProvenProducer() throws Exception {
+		ClassNode mixin = apoli();
+		mixin.name = "unrelated/HarvestMixin";
+		method(mixin, "modifyEffectiveTool").name = "other$toolDecision";
+		ClassNode target = merged();
+		assertEquals(1, FabricBlockBreakMixinAdapter.adapt(mixin, name -> target));
+		assertEquals(0, MixinFit.value(MixinFit.injectorOf(method(mixin, "other$toolDecision")), "ordinal"));
 	}
 
 	@Test void fabricApisAfterBreakFiresOnNeoForgesRemovalResultWithTheSameValues() throws Exception {
@@ -190,7 +200,7 @@ class FabricBlockBreakMixinAdapterTest {
 		Path jar = MODS.resolve("architectury-fabric-21.1.10.jar");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(jar), "popular-pack architectury fixture absent");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
-			return MixinFit.parse(zip.getInputStream(zip.getEntry(FabricBlockBreakMixinAdapter.ARCHITECTURY + ".class")).readAllBytes());
+			return MixinFit.parse(zip.getInputStream(zip.getEntry("dev/architectury/mixin/fabric/MixinServerPlayerGameMode" + ".class")).readAllBytes());
 		}
 	}
 
@@ -201,7 +211,7 @@ class FabricBlockBreakMixinAdapterTest {
 			ZipEntry nested = zip.getEntry("META-INF/jars/Apoli-Legacy-2.12.12+26.2.jar");
 			try (ZipInputStream in = new ZipInputStream(zip.getInputStream(nested))) {
 				for (ZipEntry entry; (entry = in.getNextEntry()) != null;) {
-					if (entry.getName().equals(FabricBlockBreakMixinAdapter.APOLI + ".class")) return MixinFit.parse(in.readAllBytes());
+					if (entry.getName().equals("io/github/apace100/apoli/mixin/ServerPlayerInteractionManagerMixin" + ".class")) return MixinFit.parse(in.readAllBytes());
 				}
 			}
 		}

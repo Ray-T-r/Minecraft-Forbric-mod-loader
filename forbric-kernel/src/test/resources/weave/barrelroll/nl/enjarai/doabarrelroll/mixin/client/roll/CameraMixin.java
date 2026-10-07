@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * A camera-roll mixin in Do a Barrel Roll's shape: its class and handler names, descriptors and injectors are the ones
- * BarrelRollCameraAdapter reviewed (vanilla ordinals 1, 2 and 3 of setRotation(FF), a shared tick delta, and a
+ * MixinCameraRollAdapter reviewed (vanilla ordinals 1, 2 and 3 of setRotation(FF), a shared tick delta, and a
  * name-only setRotation selector on the rotationYXZ roll); the bodies are the fixture's own.
  */
 @Mixin(Camera.class)

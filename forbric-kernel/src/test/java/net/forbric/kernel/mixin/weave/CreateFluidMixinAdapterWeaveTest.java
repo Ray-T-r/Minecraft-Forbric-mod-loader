@@ -16,17 +16,17 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.CreateFluidMixinAdapter;
+import net.forbric.kernel.mixin.MixinFluidInteractionAdapter;
 
 /**
- * {@code CreateFluidMixinAdapter} through the real weave: Create Fly's fluid reaction hook, a cancellable HEAD
+ * {@code MixinFluidInteractionAdapter} through the real weave: Create Fly's fluid reaction hook, a cancellable HEAD
  * {@code @Inject} on vanilla's {@code shouldSpreadLiquid}, on a merged LiquidBlock where onPlace asks MinecraftForge's
  * interaction registry and neighborChanged NeoForge's, and nothing calls shouldSpreadLiquid any more.
  *
  * <p>The probe places a fluid where the mod's registry reacts it and where it does not, then updates each from a
  * neighbour. Adapted, the mod's original handler guards both live registry calls: where it reacts, neither native
  * registry is asked and the fluid does not flow; elsewhere the native registry decides as before. With
- * {@code -Dforbric.createFluidMixins=off} the hook still binds — to the dead method — so it never runs: the reactive
+ * {@code -Dforbric.fluidInteractionCallbacks=off} the hook still binds — to the dead method — so it never runs: the reactive
  * fluid flows on both updates, and no finding says so.
  */
 class CreateFluidMixinAdapterWeaveTest {
@@ -34,7 +34,7 @@ class CreateFluidMixinAdapterWeaveTest {
 	private static final String CONFIG = "createfluid.mixins.json";
 	private static final String MOD = "create";
 	private static final String TARGET = "net/minecraft/world/level/block/LiquidBlock";
-	private static final String ADAPTER_LOG = "[Forbric/Create] original fluid interaction callback now guards both live carrier reaction sites";
+	private static final String ADAPTER_LOG = "[Forbric/Mixin] original fluid interaction callback now guards both live carrier reaction sites";
 
 	private static final String ADAPTED = WeaveHarnessMain.DONE + " place: create reacted lava | place: forge none water, flow water"
 			+ " | neighbor: create reacted lava | neighbor: neoforge none water, flow water";
@@ -61,7 +61,7 @@ class CreateFluidMixinAdapterWeaveTest {
 				SOURCES.resolve("com/zurrtum/create/mixin/LiquidBlockMixin.java")),
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(CreateFluidMixinAdapter.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinFluidInteractionAdapter.PROPERTY, "off"));
 	}
 
 	@Test void theOriginalHandlerGuardsBothLiveRegistryCalls() throws Exception {

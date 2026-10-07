@@ -16,17 +16,17 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.CreateInjectionAdapters;
+import net.forbric.kernel.mixin.MixinCarrierCallbackAdapters;
 
 /**
- * {@code CreateInjectionAdapters} through the real weave, on its PersistentEntitySectionManager$Callback rule: Create
+ * {@code MixinCarrierCallbackAdapters} through the real weave, on its PersistentEntitySectionManager$Callback rule: Create
  * Fly's section hook captures the section the entity left with an implicit {@code @Local long}, written for vanilla's
  * onMove, where one long is live at updateStatus. On the merged onMove NeoForge keeps the old key in a second long for
  * its own event, so the implicit capture has two candidates.
  *
  * <p>The probe moves a carriage from section 11 to 12 and reports who heard it. Adapted, the capture is pinned to the
  * slot that holds the old key: the mod hears "11->12" just before the status update, beside NeoForge's own event.
- * With {@code -Dforbric.createInjectionAdapters=off} the hook cannot bind, the mod hears nothing, and the hook is its
+ * With {@code -Dforbric.carrierCallbackAdapters=off} the hook cannot bind, the mod hears nothing, and the hook is its
  * required (SUSPECTED) loss. The adapter's other rules are not exercised here.
  */
 class CreateInjectionAdaptersWeaveTest {
@@ -54,7 +54,7 @@ class CreateInjectionAdaptersWeaveTest {
 				SOURCES.resolve("com/zurrtum/create/mixin/PersistentEntitySectionManagerCallbackMixin.java")),
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(CreateInjectionAdapters.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinCarrierCallbackAdapters.PROPERTY, "off"));
 	}
 
 	@Test void theCaptureIsPinnedToTheOldSectionKey() throws Exception {

@@ -92,17 +92,17 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinHandlerShim", Switch.own("forbric.mixinHandlerShim")),
 			Map.entry("MixinAnonymousRetarget", Switch.own("forbric.mixinAnonymousDrift")),
 			Map.entry("InterfaceDefaultConflictRepair", Switch.own("forbric.defaultConflictRepair")),
-			Map.entry("BarrelRollCameraAdapter", Switch.own("forbric.barrelRollCamera")),
+			Map.entry("MixinCameraRollAdapter", Switch.own("forbric.cameraRollCallbacks")),
 			Map.entry("ReplacedCallRedirects", Switch.own("forbric.replacedCallRedirects")), // ReplacedCallRedirectsWeaveTest
 			Map.entry("MixinTwinRebind", Switch.own("forbric.mixinTwinRebind")), // MixinTwinRebindWeaveTest
 			Map.entry("ThinnedCallOrdinals", Switch.own("forbric.thinnedCallOrdinals")), // ThinnedCallOrdinalsWeaveTest
-			Map.entry("GuiItemCaptureMixinAdapter", Switch.own("forbric.guiItemCaptureAnchor")),
+			Map.entry("MixinGuiItemCaptureAdapter", Switch.own("forbric.guiItemCaptureAnchor")),
 			Map.entry("KernelClientHookMixinAnchors", Switch.own("forbric.clientHookMixinAnchors")),
 			Map.entry("MixinShearsRelay", Switch.own("forbric.shearsRelay")),
 			Map.entry("InsertedLambdaArgumentShim", Switch.own("forbric.insertedLambdaArguments")),
-			Map.entry("CarpetMixinAdapter", Switch.own("forbric.carpetMixins")),
-			// CarpetFluidMixinAdapter stands down with CarpetMixinAdapter's switch, which both read through its enabled().
-			Map.entry("CarpetFluidMixinAdapter", new Switch(List.of("forbric.carpetMixins"), "net.forbric.kernel.mixin.CarpetMixinAdapter")),
+			Map.entry("MixinPlayerWorldCallbackAdapter", Switch.own("forbric.playerWorldCallbacks")),
+			// MixinFluidReactionAdapter stands down with MixinPlayerWorldCallbackAdapter's switch, which both read through its enabled().
+			Map.entry("MixinFluidReactionAdapter", new Switch(List.of("forbric.playerWorldCallbacks"), "net.forbric.kernel.mixin.MixinPlayerWorldCallbackAdapter")),
 			Map.entry("NativeCoremodParity", Switch.own("forbric.flowerPotRepair")), // NativeCoremodParityWeaveTest
 			Map.entry("PostMixinFixups", Switch.own("forbric.postMixinFixups")), // PostMixinFixupsWeaveTest
 			Map.entry("PostMixinCodecReturnArbitration", Switch.own("forbric.postMixinCodecArbitration")), // PostMixinCodecReturnArbitrationWeaveTest
@@ -123,16 +123,16 @@ class WeaveCoverageCensusTest {
 			Map.entry("FabricClientMixinAnchors", Switch.own("forbric.fabricClientAnchors")),
 			Map.entry("FabricBlockBreakMixinAdapter", Switch.own("forbric.fabricBlockBreak")),
 			Map.entry("FabricSectionCompilerMixinAdapter", Switch.own("forbric.fabricChunkRendering")),
-			Map.entry("CreateStructureMixinAdapter", Switch.own("forbric.createStructureMixin")),
-			Map.entry("CreateKeyboardMixinAdapter", Switch.own("forbric.createKeyboardMixin")),
-			Map.entry("ContinuitySpriteMixinAdapter", Switch.own("forbric.continuitySpriteSources")),
-			Map.entry("CreateFluidMixinAdapter", Switch.own("forbric.createFluidMixins")),
-			Map.entry("CreateInjectionAdapters", Switch.own("forbric.createInjectionAdapters")),
-			Map.entry("CreateInteractionMixinAdapters", Switch.own("forbric.createInteractionMixins")),
-			Map.entry("CreateContextualBlockAdapters", Switch.own("forbric.createContextualBlocks")),
-			Map.entry("CreateEntitySoundMixinAdapter", Switch.own("forbric.createEntitySounds")),
-			Map.entry("CreateBreathingMixinAdapter", Switch.own("forbric.createBreathingMixin")),
-			Map.entry("CreateHudMixinAdapter", Switch.own("forbric.createHudMixin")),
+			Map.entry("MixinStructurePlacementAdapter", Switch.own("forbric.structurePlacementCallbacks")),
+			Map.entry("MixinKeyActionAdapter", Switch.own("forbric.keyActionCallbacks")),
+			Map.entry("MixinSpriteLoaderCallbackAdapter", Switch.own("forbric.spriteLoaderCallbacks")),
+			Map.entry("MixinFluidInteractionAdapter", Switch.own("forbric.fluidInteractionCallbacks")),
+			Map.entry("MixinCarrierCallbackAdapters", Switch.own("forbric.carrierCallbackAdapters")),
+			Map.entry("MixinBlockInteractionAdapters", Switch.own("forbric.blockInteractionAdapters")),
+			Map.entry("MixinBlockQueryAdapters", Switch.own("forbric.blockQueryAdapters")),
+			Map.entry("MixinEntitySoundCallbackAdapter", Switch.own("forbric.entitySoundCallbacks")),
+			Map.entry("MixinBreathingCallbackAdapter", Switch.own("forbric.breathingCallbacks")),
+			Map.entry("MixinHudContextAdapter", Switch.own("forbric.hudContextCallbacks")),
 			// The injectors Mixin rejects outright, taken out at the end of getClassNode: MixinRefusedBindingWeaveTest.
 			Map.entry("GuestInjectorPruner", Switch.own("forbric.guestInjectorPruner.refused")));
 

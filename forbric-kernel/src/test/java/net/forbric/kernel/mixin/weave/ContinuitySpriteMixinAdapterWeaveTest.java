@@ -12,16 +12,16 @@ import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.ContinuitySpriteMixinAdapter;
+import net.forbric.kernel.mixin.MixinSpriteLoaderCallbackAdapter;
 
 /**
- * {@code ContinuitySpriteMixinAdapter} through the real weave, on a CLIENT run: Continuity's atlas hook, written for
+ * {@code MixinSpriteLoaderCallbackAdapter} through the real weave, on a CLIENT run: Continuity's atlas hook, written for
  * vanilla's {@code list(ResourceManager)} with a FAILHARD capture of the loader map, on a merged SpriteSourceList whose
  * body moved to the carrier's {@code list(ResourceManager, Set)} and left vanilla's name as a delegating stub.
  *
  * <p>The probe lists an atlas whose pack has an emissive texture for one sprite. Adapted, the hook runs on the body
  * that has the builder call and is handed the real loader map, so the list carries the emissive loader it added. With
- * {@code -Dforbric.continuitySpriteSources=off} the hook has no builder call to bind to in the stub: the list is
+ * {@code -Dforbric.spriteLoaderCallbacks=off} the hook has no builder call to bind to in the stub: the list is
  * the plain sprites and the hook is the mod's required loss. The mixin's constructor hook, which the adapter does not
  * touch, applies in both runs (the "ctm_overlay" source), so the control is not a mixin that failed to load.
  */
@@ -30,7 +30,7 @@ class ContinuitySpriteMixinAdapterWeaveTest {
 	private static final String CONFIG = "continuitysprite.mixins.json";
 	private static final String MOD = "continuity";
 	private static final String TARGET = "net/minecraft/client/renderer/texture/atlas/SpriteSourceList";
-	private static final String ADAPTER_LOG = "[Forbric/Continuity] atlas callbacks now use the metadata-aware list overload";
+	private static final String ADAPTER_LOG = "[Forbric/Mixin] atlas callbacks now use the metadata-aware list overload";
 
 	private static final String ADAPTED = WeaveHarnessMain.DONE + " emissive:glow_e, sprite:ctm_overlay, sprite:glow, sprite:stone";
 	private static final String UNADAPTED = WeaveHarnessMain.DONE + " sprite:ctm_overlay, sprite:glow, sprite:stone";
@@ -50,7 +50,7 @@ class ContinuitySpriteMixinAdapterWeaveTest {
 				// -g: the merged game and the mod both ship a LocalVariableTable, and the capture is checked against it.
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g"));
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(ContinuitySpriteMixinAdapter.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinSpriteLoaderCallbackAdapter.PROPERTY, "off"));
 	}
 
 	@Test void theHookRunsOnTheLiveOverloadWithTheRealLoaderMap() throws Exception {

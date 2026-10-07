@@ -3,7 +3,7 @@
 A read-only NeoForge probe (`c2merollprobe`) for two repairs, run on a client next to Do a Barrel Roll 3.8.4
 (+ cicada-lib, YACL, fabric-api) and C2ME 0.4.x:
 
-- **Camera roll** (`BarrelRollCameraAdapter`). While the kernel's elytra smoke flies the player
+- **Camera roll** (`MixinCameraRollAdapter`). While the kernel's elytra smoke flies the player
   (`-Dforbric.clientSmokeElytra=80 -Dforbric.clientSmokeElytraAltitude=200`), the probe sets DABR's roll to 45° and
   posts a 15° roll through NeoForge's `ViewportEvent.ComputeCameraAngles`. At `Camera.extractRenderState` it asserts
   that DABR's camera roll equals the player's roll at that frame's partial tick (negated, as DABR stores it; frames

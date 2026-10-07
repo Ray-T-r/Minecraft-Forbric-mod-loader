@@ -42,6 +42,12 @@
 - **中枢把各 Forge 系之间的分歧当作数据保留，不取平均把它抹掉**。早先一版统一的订阅者注册一下子弄坏了三样东西（见 `KernelEventSubscribers` 自己的 javadoc）。所以 `ForeignType` 只映射*名字*，两个 `ServerModLoader.load` 触发点保留各自不同的描述符和不同的钩子。
 - **不是每次归并都意味着漏了拆分。**`LoaderProbePolicy.Family` 故意只有两个取值：一个 NeoForge mod 探测 MinecraftForge 的 `FMLLoader` 时，仍然必须得到肯定的回答。
 
+## 兼容契约
+
+兼容转换按公开 API 契约和已证明的字节码结构匹配，不按第三方 mod 的 ID、包名、私有回调名或版本哈希放行。同一种回调结构换成新的 mod，仍使用同一个适配器；有歧义或无法证明安全的结构保持原样，并交给兼容性诊断。测试包含真实回调改包名、改方法名后的执行，以及必须拒绝的近似结构。
+
+工作线程通过已证明的启动、排空和退出流程，或 `ManagedWorkerResources.register` 注册生命周期，不再反射某个 mod 的懒加载单例。注册表初始化按完整循环记录回调，正常返回才发布；注册窗口关闭后只补新增对象，不重复初始化已有对象。公开 entrypoint 和 API 的名称仍作为协议边界保留。第三方 mod 互相争用同一指令的冲突会被报告，不再由加载器内置具名优先级决定谁丢功能。
+
 ## 共用部分（沿用，未重写）
 
 合并基底的流水线留在 `../forbric-loader` 里：`src/tools/{MergedBaseBuilder,MergedLinkChecker,

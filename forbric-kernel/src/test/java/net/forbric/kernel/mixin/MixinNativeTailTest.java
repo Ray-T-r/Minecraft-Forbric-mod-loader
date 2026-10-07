@@ -76,7 +76,7 @@ class MixinNativeTailTest {
 	void aSingleAtThatCannotCarryTwoOrdinalsIsLeftAndSaysSo() {
 		ClassNode mixin = mixin("test/NeoSingle", Ecosystem.NEOFORGE, "mixed", null);
 		AnnotationNode injector = MixinFit.injectorOf(mixin.methods.get(0));
-		CarpetMixinAdapter.set(injector, "at", at("TAIL", null));
+		MixinPlayerWorldCallbackAdapter.set(injector, "at", at("TAIL", null));
 		assertEquals(0, MixinNativeTail.adapt(mixin, repairedTargets()));
 		assertEquals("TAIL", MixinFit.value((AnnotationNode) MixinFit.value(injector, "at"), "value"));
 	}
@@ -108,7 +108,7 @@ class MixinNativeTailTest {
 		// handler on every return of the constructor, which was never split.
 		ClassNode mixin = mixin("test/NeoTwoMethods", Ecosystem.NEOFORGE, "guard", List.of(at("TAIL", null)));
 		AnnotationNode inject = MixinFit.injectorOf(mixin.methods.get(0));
-		CarpetMixinAdapter.set(inject, "method", List.of("guard", "<init>()V"));
+		MixinPlayerWorldCallbackAdapter.set(inject, "method", List.of("guard", "<init>()V"));
 		assertEquals(0, MixinNativeTail.adapt(mixin, repairedTargets()));
 	}
 

@@ -16,21 +16,21 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.CreateEntitySoundMixinAdapter;
-import net.forbric.kernel.transform.CreateSoundQueryInjector;
+import net.forbric.kernel.mixin.MixinEntitySoundCallbackAdapter;
+import net.forbric.kernel.transform.BlockSoundQueryInjector;
 
 /**
- * {@code CreateEntitySoundMixinAdapter} through the real weave, on its step-sound rule: Create Fly's EntityMixin wraps
+ * {@code MixinEntitySoundCallbackAdapter} through the real weave, on its step-sound rule: Create Fly's EntityMixin wraps
  * vanilla's {@code state.getSoundType()} in Entity.playStepSound so a block of the mod picks its sound group from the
  * level and the step's position. On the merged base the three step-sound methods hand the step to NeoForge's
  * {@code BlockState.playStepSound}, and NeoForge's IBlockExtension asks the state for the sound group itself.
  *
- * <p>The fixture's IBlockExtension is the merged one after KernelBoot's {@code CreateSoundQueryInjector}
- * ({@link PreMixinFixture}), so NeoForge's sound query asks the kernel's {@code KernelCreateSoundQuery}, compiled in from
- * {@code src/runtime/java}, which consults {@code CreateSoundScope}. The probe steps onto stone, onto the mod's running
+ * <p>The fixture's IBlockExtension is the merged one after KernelBoot's {@code BlockSoundQueryInjector}
+ * ({@link PreMixinFixture}), so NeoForge's sound query asks the kernel's {@code KernelBlockSoundQuery}, compiled in from
+ * {@code src/runtime/java}, which consults {@code BlockSoundCallbackScope}. The probe steps onto stone, onto the mod's running
  * belt, and onto stone with the belt muffled under it. Adapted, the mod's handler wraps each of the three native calls,
  * opens the scope around it and is asked from inside NeoForge's own query: the belt sounds "belt" at both volumes.
- * With {@code -Dforbric.createEntitySounds=off} the wrap has no getSoundType() call to bind to: the belt sounds its
+ * With {@code -Dforbric.entitySoundCallbacks=off} the wrap has no getSoundType() call to bind to: the belt sounds its
  * plain "metal" and the handler is the mod's required (SUSPECTED) loss. The landing-sound rule is not exercised here.
  */
 class CreateEntitySoundMixinAdapterWeaveTest {
@@ -39,7 +39,7 @@ class CreateEntitySoundMixinAdapterWeaveTest {
 	private static final String MOD = "create";
 	private static final String TARGET = "net/minecraft/world/entity/Entity";
 
-	private static final String SCOPE = "net/forbric/kernel/interop/CreateSoundScope";
+	private static final String SCOPE = "net/forbric/kernel/interop/BlockSoundCallbackScope";
 	/** The merged Entity's three step-sound methods, each making one native BlockState.playStepSound call. */
 	private static final List<String> HOSTS = List.of("playStepSound", "playCombinationStepSounds", "playMuffledStepSound");
 
@@ -68,15 +68,15 @@ class CreateEntitySoundMixinAdapterWeaveTest {
 				// The kernel's game-side hooks the adapted code reaches, which ForbricClassLoader must define from a jar it
 				// owns; a fresh clone has no compiled runtime source set, so the production sources are compiled in here.
 				Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelWrapOperations.java"),
-				Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelCreateSoundQuery.java")),
+				Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelBlockSoundQuery.java")),
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)),
-				// KernelCreateSoundQuery names the boot-side CreateSoundScope: resolved from source, not packed, since
+				// KernelBlockSoundQuery names the boot-side BlockSoundCallbackScope: resolved from source, not packed, since
 				// the loader always takes that package from the kernel.
 				List.of("-sourcepath", "src/main/java", "-implicit:none"));
-		// What the merged base's IBlockExtension is once KernelBoot's CreateSoundQueryInjector has run.
-		PreMixinFixture.transform(fixture, CreateSoundQueryInjector.TARGET, new CreateSoundQueryInjector(), EnvType.SERVER);
+		// What the merged base's IBlockExtension is once KernelBoot's BlockSoundQueryInjector has run.
+		PreMixinFixture.transform(fixture, BlockSoundQueryInjector.TARGET, new BlockSoundQueryInjector(), EnvType.SERVER);
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(CreateEntitySoundMixinAdapter.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinEntitySoundCallbackAdapter.PROPERTY, "off"));
 	}
 
 	@Test void theModsBlockPicksItsSoundInsideNeoForgesStepSound() throws Exception {
@@ -121,7 +121,7 @@ class CreateEntitySoundMixinAdapterWeaveTest {
 		return run.findings().stream().filter(f -> f.id().equals("mixin:" + CONFIG + ":com.zurrtum.create.mixin.EntityMixin")).toList();
 	}
 
-	/** Whether any method of the defined Entity opens the kernel's CreateSoundScope. */
+	/** Whether any method of the defined Entity opens the kernel's BlockSoundCallbackScope. */
 	private static boolean entersScope(WeaveHarness.Result run) throws Exception {
 		ClassNode node = new ClassNode();
 		new ClassReader(run.defined(TARGET)).accept(node, 0);

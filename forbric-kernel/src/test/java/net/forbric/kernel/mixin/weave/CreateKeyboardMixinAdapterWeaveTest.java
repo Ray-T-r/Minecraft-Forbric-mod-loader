@@ -12,17 +12,17 @@ import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.CreateKeyboardMixinAdapter;
+import net.forbric.kernel.mixin.MixinKeyActionAdapter;
 
 /**
- * {@code CreateKeyboardMixinAdapter} through the real weave, on a CLIENT run: Create Fly's key hooks, written for
+ * {@code MixinKeyActionAdapter} through the real weave, on a CLIENT run: Create Fly's key hooks, written for
  * vanilla's keyPress (the release at its sixth return, the press at its TAIL), on a merged keyPress where NeoForge
  * joined every exit into one {@code ClientHooks.onKeyInput} call.
  *
  * <p>The probe presses, repeats and releases one key and reports who heard each, in order. Adapted, the mod hears the
  * press and the repeat as presses after NeoForge's event and the release as a release just before it — once each,
  * because the adapter guards both handlers by the action they were written for. With
- * {@code -Dforbric.createKeyboardMixin=off} the release hook has no sixth return to bind to, so it is the mod's
+ * {@code -Dforbric.keyActionCallbacks=off} the release hook has no sixth return to bind to, so it is the mod's
  * required loss, and the TAIL hook reports the release as one more press.
  */
 class CreateKeyboardMixinAdapterWeaveTest {
@@ -51,7 +51,7 @@ class CreateKeyboardMixinAdapterWeaveTest {
 				SOURCES.resolve("com/zurrtum/create/client/mixin/KeyboardHandlerMixin.java")),
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(CreateKeyboardMixinAdapter.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinKeyActionAdapter.PROPERTY, "off"));
 	}
 
 	@Test void eachActionReachesTheModOnceAsWhatItWas() throws Exception {

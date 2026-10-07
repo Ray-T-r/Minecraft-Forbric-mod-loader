@@ -18,17 +18,17 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.BarrelRollCameraAdapter;
+import net.forbric.kernel.mixin.MixinCameraRollAdapter;
 
 /**
- * BarrelRollCameraAdapter through the real weave: Do a Barrel Roll's camera mixin, written for vanilla's four
+ * MixinCameraRollAdapter through the real weave: Do a Barrel Roll's camera mixin, written for vanilla's four
  * {@code setRotation(FF)} calls, on a camera whose ordinary and mirrored views go through the carrier's
  * {@code setRotation(FFF)} with the angles event's roll.
  *
  * <p>The probe aligns one camera per view with an event roll of 5 and a tick delta of 0.5 (40 degrees per tick while
  * flying), and reports the roll that reached the rotation and which of the mod's hooks ran. Adapted, each view's
  * hook runs on its own call, the shared tick delta still reaches the ordinary hook after its {@code @Share} slot moved,
- * and the roll is added on top of the event's. With {@code -Dforbric.barrelRollCamera=off} the same mixin binds by its
+ * and the roll is added on top of the event's. With {@code -Dforbric.cameraRollCallbacks=off} the same mixin binds by its
  * vanilla ordinals: the ordinary hook runs only for the bed, the mirrored and bed hooks bind nothing, so the camera
  * keeps the event's roll while flying and rolls while sleeping. (The roll modifier's name-only selector is still moved
  * off the delegating {@code setRotation(FF)} there, by MixinStubRebind; adapted, the adapter pins it first.)
@@ -42,7 +42,7 @@ class BarrelRollCameraAdapterWeaveTest {
 			+ " ordinary=25.0[ordinary] mirrored=-25.0[mirrored] sleeping=0.0[bed] minecart=0.0[]";
 	private static final String UNROLLED = WeaveHarnessMain.DONE
 			+ " ordinary=5.0[] mirrored=-5.0[] sleeping=20.0[ordinary] minecart=0.0[]";
-	private static final String ADAPTED_LOG = "[Forbric/Mixin] Do a Barrel Roll's camera roll now wraps the merged "
+	private static final String ADAPTED_LOG = "[Forbric/Mixin] The camera roll callback now wraps the merged "
 			+ "alignWithEntity's setRotation(FFF) calls";
 	private static final String STUB_REBIND_LOG = "CameraMixin: doABarrelRoll$setRoll now targets net.minecraft.client.Camera"
 			+ ".setRotation(FFF)V — Mixin bound its selector to the merge-added stub (FF)V";
@@ -59,7 +59,7 @@ class BarrelRollCameraAdapterWeaveTest {
 		assertEquals(6, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		fixture = WeaveHarness.fixture(work, "barrelroll", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(BarrelRollCameraAdapter.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinCameraRollAdapter.PROPERTY, "off"));
 	}
 
 	@Test void everyViewRollsOnTopOfTheEventsRoll() throws Exception {

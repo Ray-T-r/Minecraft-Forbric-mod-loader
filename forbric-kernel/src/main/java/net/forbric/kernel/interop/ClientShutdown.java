@@ -89,35 +89,12 @@ public final class ClientShutdown {
 		if (ran) return;
 		ran = true;
 		List<String> stopped = sweep(cl);
-		stopCreateWorkers(cl);
+		ManagedWorkerResources.close(cl);
 		ForbricLog.info("[Forbric/Shutdown] stopped %d config file-watcher(s) at exit so the JVM can end: %s",
 				stopped.size(), stopped);
 		startExitGuard(cl);
 	}
 
-	/** Stop the existing Create Fly pool through its native lifecycle; never call its lazy get(). */
-	static void stopCreateWorkers(ClassLoader cl) {
-		String owner = "com.zurrtum.create.client.flywheel.impl.task.FlwTaskExecutor";
-		if (cl instanceof net.forbric.kernel.classloading.ForbricClassLoader game
-				&& !game.isClassLoadedByName(owner)) return;
-		Class<?> holder = load(cl, owner);
-		if (holder == null) return;
-		try {
-			Field instance = holder.getDeclaredField("INSTANCE"); instance.setAccessible(true);
-			Object lazy = instance.get(null);
-			if (lazy == null) return;
-			Field reference = lazy.getClass().getDeclaredField("reference"); reference.setAccessible(true);
-			Object executor = ((java.util.concurrent.atomic.AtomicReference<?>) reference.get(lazy)).get();
-			if (executor == null || !executor.getClass().getName().equals(
-					"com.zurrtum.create.client.flywheel.impl.task.ParallelTaskExecutor")) return;
-			// Drain outstanding work before native stopWorkers wakes and joins the workers.
-			executor.getClass().getMethod("syncPoint").invoke(executor);
-			executor.getClass().getMethod("stopWorkers").invoke(executor);
-			ForbricLog.info("[Forbric/Shutdown] drained and stopped Create Fly's existing Flywheel worker pool");
-		} catch (Throwable failure) {
-			ForbricLog.warn("[Forbric/Shutdown] could not stop Create Fly's Flywheel worker pool", failure);
-		}
-	}
 
 	/**
 	 * One pass over every known watcher owner: stops whatever is running and returns a description of each watcher

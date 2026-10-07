@@ -12,7 +12,7 @@ import org.objectweb.asm.tree.*;
 
 @ResourceLock("system-properties")
 class GuiItemCaptureMixinAdapterTest {
-    @AfterEach void reset() { System.clearProperty(GuiItemCaptureMixinAdapter.PROPERTY); }
+    @AfterEach void reset() { System.clearProperty(MixinGuiItemCaptureAdapter.PROPERTY); }
     private static ClassNode read(Fixture kind, Path jar, String name) throws Exception {
         TestFixtures.require(kind, Files.isRegularFile(jar), "local fixture unavailable");
         try (ZipFile zip = new ZipFile(jar.toFile())) { ClassNode node = new ClassNode(); new ClassReader(zip.getInputStream(zip.getEntry(name + ".class"))).accept(node, 0); return node; }
@@ -22,13 +22,13 @@ class GuiItemCaptureMixinAdapterTest {
     }
     @Test void theCaptureSelectsTheSubmissionAndDoesNotMoveTheTooltipCallback() throws Exception {
         ClassNode mixin = mixin(), target = read(Fixture.STAGED, TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"), "net/minecraft/client/gui/GuiGraphicsExtractor");
-        assertEquals(1, GuiItemCaptureMixinAdapter.adapt(mixin, name -> target));
+        assertEquals(1, MixinGuiItemCaptureAdapter.adapt(mixin, name -> target));
         MethodNode capture = mixin.methods.stream().filter(m -> m.name.equals("itemglintrelight$captureGuiItem")).findFirst().orElseThrow();
         assertEquals("INVOKE", MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(capture)).getFirst(), "value"));
         MethodNode tooltip = mixin.methods.stream().filter(m -> m.name.equals("itemglintrelight$tooltipScheduled")).findFirst().orElseThrow();
         assertEquals("HEAD", MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(tooltip)).getFirst(), "value"));
-        assertEquals(0, GuiItemCaptureMixinAdapter.adapt(mixin, name -> target));
-        System.setProperty(GuiItemCaptureMixinAdapter.PROPERTY, "off");
-        assertEquals(0, GuiItemCaptureMixinAdapter.adapt(mixin(), name -> target));
+        assertEquals(0, MixinGuiItemCaptureAdapter.adapt(mixin, name -> target));
+        System.setProperty(MixinGuiItemCaptureAdapter.PROPERTY, "off");
+        assertEquals(0, MixinGuiItemCaptureAdapter.adapt(mixin(), name -> target));
     }
 }

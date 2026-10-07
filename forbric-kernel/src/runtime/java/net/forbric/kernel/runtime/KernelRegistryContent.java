@@ -179,55 +179,12 @@ public final class KernelRegistryContent {
 		}
 	}
 
-	/** The switch that leaves a mod's own whole-registry block pass exactly where the mod itself put it. */
-	static final String BLOCK_INFO_SWITCH = "forbric.blockInfoCaches";
-	private static final String LITHIUM_INITIALIZER =
-			"net.caffeinemc.mods.lithium.common.initialization.BlockInfoInitializer";
-
-	/**
-	 * Re-runs Lithium's own whole-registry block pass, now that every block really is registered.
-	 *
-	 * <p>Lithium does not compute its per-state flags lazily and does not compute them in {@code initCache()}. It
-	 * has one pass, {@code BlockInfoInitializer.initializeBlockInfo()}, which walks
-	 * {@code Block.BLOCK_STATE_REGISTRY} and calls {@code lithium$initializeFlags()} and
-	 * {@code lithium$initializePathNodeTypeCache()} on every state in it. Lithium fires that pass from a mixin on
-	 * {@code FuelValues.vanillaBurnTimes} — a point that, on a Fabric instance, is after everything is registered.
-	 *
-	 * <p>Here it is not. The kernel drives registration itself, and on the client the Forge-family mods register a
-	 * second wave inside the {@code Minecraft.<init>} window. Every state in that wave missed Lithium's one pass,
-	 * and Lithium throws rather than computing late: putting one into a chunk section dies with
-	 * {@code Could not initialize block state flags for Block{biomesoplenty:fir_leaves}}, as "Feature placement"
-	 * during worldgen, inside Lithium, naming a Biomes O' Plenty block. Nothing in that crash points at a pass
-	 * that ran too early.
-	 *
-	 * <p>This calls Lithium's own initialiser rather than reproducing what it computes — the flags are Lithium's
-	 * to define, and its pass is written to be run over the whole registry, so running it again is what it already
-	 * does to a state it has seen. Absent Lithium, there is nothing to run and that is not a failure.
-	 *
-	 * @return true when a mod's pass was re-run
-	 */
+	/** Completes proved registry element callbacks only for states added after their original walk. */
 	public static boolean initialiseBlockInfoCaches() {
-		if ("off".equalsIgnoreCase(System.getProperty(BLOCK_INFO_SWITCH, "on"))) return false;
-		Class<?> initializer;
-		try {
-			initializer = Class.forName(LITHIUM_INITIALIZER, true,
-					KernelRegistryContent.class.getClassLoader());
-		} catch (ClassNotFoundException | LinkageError absent) {
-			return false;
-		}
-		try {
-			initializer.getMethod("initializeBlockInfo").invoke(null);
-			ForbricLog.info("[Forbric/Lifecycle] re-ran Lithium's block-info pass over all %d mapped block state(s) "
-					+ "— it runs its only pass from FuelValues.vanillaBurnTimes, which is before the blocks the "
-					+ "kernel registers in the Minecraft.<init> window exist, and it throws rather than computing a "
-					+ "missed state's flags later", GameData.getBlockStateIDMap().size());
-			return true;
-		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Lifecycle] could not re-run Lithium's block-info pass — a block registered "
-					+ "after its own pass will throw \"Could not initialize block state flags\" the first time it is "
-					+ "put in a chunk", Reflect.unwrap(t));
-			return false;
-		}
+		if ("off".equalsIgnoreCase(System.getProperty("forbric.registryElementCallbacks", "on"))) return false;
+		int count = net.forbric.kernel.interop.RegistryElementCallbacks.complete(Block.BLOCK_STATE_REGISTRY);
+		if (count > 0) ForbricLog.info("[Forbric/Lifecycle] completed %d registry element callback(s) for late registrations", count);
+		return count > 0;
 	}
 
 	/**

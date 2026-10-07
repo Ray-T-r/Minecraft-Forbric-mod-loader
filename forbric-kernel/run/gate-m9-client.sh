@@ -73,8 +73,8 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #   -Dforbric.blockStateCaches=off -> 1 red ("every block state's cache is computed"). Off, a block a mod
 #                                      registered carries an uninitialised cache all run. Vanilla computes it
 #                                      lazily, so this is a hot-path repair, not a crash repair — the Lithium
-#                                      crash it was once credited with is forbric.blockInfoCaches, below.
-#   -Dforbric.blockInfoCaches=off  -> 1 red ("a mod's whole-registry block pass covers the late wave too"). Off,
+#                                      crash it was once credited with is forbric.registryElementCallbacks, below.
+#   -Dforbric.registryElementCallbacks=off  -> 1 red ("a mod's whole-registry block pass covers the late wave too"). Off,
 #                                      every block the kernel registers after Lithium's one pass (fired from
 #                                      FuelValues.vanillaBurnTimes) misses it, and Lithium throws rather than
 #                                      computing a missed state's flags later: verified on Windows as "Could not

@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
 
-import net.forbric.kernel.transform.CreateHudContextInjector;
-import net.forbric.kernel.transform.CreateSoundQueryInjector;
+import net.forbric.kernel.transform.HudContextQueryInjector;
+import net.forbric.kernel.transform.BlockSoundQueryInjector;
 import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import net.forbric.kernel.transform.InterfaceDefaultConflictRepair;
 import net.forbric.kernel.transform.ItemUseOnInjector;
@@ -26,7 +26,7 @@ class KernelBootChainTest {
 		assertEquals(Integer.MAX_VALUE, earlyReturns.sortIndex(), "registered LAST in the coremod phase");
 		assertTrue(earlyReturns.gated(), "registered only while VanillaEarlyReturns.enabled()");
 
-		for (Class<?> plain : java.util.List.of(ItemUseOnInjector.class, DuplicateLambdaPruneInjector.class)) {
+		for (Class<?> plain : java.util.List.of(ItemUseOnInjector.class, DuplicateLambdaPruneInjector.class, BlockSoundQueryInjector.class)) {
 			KernelBootChain.Registration r = KernelBootChain.registration(plain.getName());
 			assertEquals(TransformPhase.COREMOD, r.phase(), plain.getSimpleName());
 			assertEquals(0, r.sortIndex(), plain.getSimpleName());
@@ -43,8 +43,7 @@ class KernelBootChainTest {
 	}
 
 	@Test void refusesWhatItCannotReproduceFaithfully() {
-		assertRefused(CreateSoundQueryInjector.class, "only under a condition other than its own enabled()");
-		assertRefused(CreateHudContextInjector.class, "only under a condition other than its own enabled()");
+		assertRefused(HudContextQueryInjector.class, "only under a condition other than its own enabled()");
 		assertRefused(SpawnPositionCallsInjector.class, "constructed with arguments");
 		assertRefused(TransformChain.class, "is not registered as chain.register(PHASE, new X(...))");
 		assertRefused(InterfaceDefaultConflictRepair.class, "never constructs");

@@ -10,7 +10,7 @@ import org.objectweb.asm.tree.*;
 
 /** Preserve Fabric entity callbacks at the corresponding stage of the pinned NeoForge body. Effects,
  * flight and monster checks retain their original handlers; the clear-all veto wraps NeoForge's per-effect question, for
- * fabric-api and for each other reviewed row in {@link #CLEAR_ALL_VETOES} (balm's MOB_EFFECT_REMOVE). Occupancy bridges its audited handled-result
+ * fabric-api and for structurally proven stream-filter clear-and-restore wrappers. Occupancy bridges its audited handled-result
  * contract to the native bed setter, including native beds with no vanilla OCCUPIED property. The elytra flight tick
  * (EntityElytraEvents.CUSTOM with tickElytra) moves from vanilla's glider-slot choice to NeoForge's empty-glider guard
  * just before it: behind that guard, custom flight with no glider item never reached Fabric's tick. */
@@ -28,8 +28,8 @@ public final class FabricEntityMixinAnchors {
  private FabricEntityMixinAnchors() { }
  public static int adapt(ClassNode mixin,Function<String,ClassNode> targets) {
   if("off".equalsIgnoreCase(System.getProperty(PROPERTY,"on")))return 0;
-  if(!mixin.name.startsWith(BASE)&&CLEAR_ALL_VETOES.stream().anyMatch(v->v.mixin().equals(mixin.name))) {
-   // Another Fabric mod's own clear-all veto (balm's): only that row, on LivingEntity.
+  if(!mixin.name.startsWith(BASE)&&MixinFit.mixinTargets(mixin).equals(List.of(LIVING))) {
+   // Any mod's proven clear-and-restore veto, preserving its original predicate.
    ClassNode living=targets.apply(LIVING);MethodNode remove=living==null?null:method(living,"removeAllEffects","()Z");
    int changed=remove==null?0:earlyRemoveVeto(mixin,remove);
    if(changed>0)ForbricLog.info("[Forbric/Mixin] %s's clear-all effect veto now wraps NeoForge's per-effect EventHooks.onEffectRemoved "
@@ -197,14 +197,8 @@ public final class FabricEntityMixinAnchors {
  private static final String EFFECT_REMOVED="(L"+LIVING+";"+EFFECT+")Z";
  private static final String ALLOW_EARLY="net/fabricmc/fabric/api/entity/event/v1/effect/ServerMobEffectEvents$AllowEarlyRemove";
  private static final String CONTEXT="Lnet/fabricmc/fabric/api/entity/event/v1/effect/EffectEventContext;";
- /** {@code -Dforbric.balmEffectVeto=off} leaves balm's clear-all effect veto on the dead activeEffects.clear(). */
- public static final String BALM_VETO_PROPERTY="forbric.balmEffectVeto";
- static final String BALM_MIXIN="net/blay09/mods/balm/fabric/internal/mixin/LivingEntityMixin";
- /** balm-fabric 26.2.0.9's clearAllEffects handler and the MOB_EFFECT_REMOVE question its stream filter asks (lambda$clearAllEffects$0). */
- static final String BALM_HANDLER_BODY="a536e29d5ba35f91d65495dd7ace11ece4cef7e86ab37f4f7088e7a1b14b56d0";
- static final String BALM_QUESTION_BODY="554f63a416f6a64675e733d3a9293d4309e8239bcfaf5631de0c55a279b35973";
- private static final String BALM_EVENT="net/blay09/mods/balm/platform/event/Event";
- private static final String BALM_BEFORE="net/blay09/mods/balm/platform/event/callback/LivingEntityCallback$MobEffectCallback$Remove$Before";
+ /** Leaves structurally matched clear-and-restore wrappers on their original clear() anchor. */
+ public static final String CLEAR_VETO_PROPERTY="forbric.effectClearVeto";
  /**
   * A reviewed "clear every effect" veto: a Fabric mod wraps vanilla's activeEffects.clear() in removeAllEffects and puts
   * back what its listeners veto. NeoForge's body has no clear() — it asks EventHooks.onEffectRemoved once per effect and
@@ -212,8 +206,9 @@ public final class FabricEntityMixinAnchors {
   * keeps it, otherwise the mod's own question decides. A vetoed effect is also never handed to onEffectsRemoved, which
   * the clear()-and-put-back originals could not avoid.
   *
-  * <p>A row names the mixin and its dead wrap, how that handler is recognised as the one reviewed, the name of the wrap
-  * that replaces it, and {@code ask}: the mod's question, entered when NeoForge (and any inner wrap) said "remove", with
+  * <p>The Fabric API row retains its callback contract. Other mods are selected by the wrapper's data flow,
+  * and their original predicate is called without interpreting its API. Each question is entered when NeoForge
+  * (and any inner wrap) said "remove", with
   * an empty stack and locals {@code this, entity, instance, operation}, returning true to keep the effect on every path.
   */
  record ClearAllVeto(String mixin,String handler,String handlerDesc,String property,String generated,
@@ -222,12 +217,7 @@ public final class FabricEntityMixinAnchors {
    // fabric-api's ServerMobEffectEvents.ALLOW_EARLY_REMOVE, recognised by the calls its handler makes (every
    // fabric-entity-events-v1 this has run with); asked only on the server, with the command context Fabric passes.
    new ClearAllVeto(BASE+"effect/LivingEntityMixin","allowRemoveAllEffects","(Ljava/util/Map;L"+OPERATION+";)V",null,
-     "forbric$allowEarlyRemove",FabricEntityMixinAnchors::fabricVeto,FabricEntityMixinAnchors::askFabric),
-   // balm's MOB_EFFECT_REMOVE (Balm.events().onEvent(...) listeners, e.g. a mod keeping one effect through milk). Its
-   // question sits in a stream-filter lambda, so the handler AND that lambda are pinned by fingerprint and the question
-   // is asked here exactly as the lambda asks it: allowRemove(entity, the effect's holder, the instance).
-   new ClearAllVeto(BALM_MIXIN,"clearAllEffects","(Ljava/util/Map;L"+OPERATION+";Ljava/util/Map;)V",BALM_VETO_PROPERTY,
-     "forbric$balmAllowRemove",FabricEntityMixinAnchors::balmVeto,FabricEntityMixinAnchors::askBalm));
+     "forbric$allowEarlyRemove",FabricEntityMixinAnchors::fabricVeto,FabricEntityMixinAnchors::askFabric));
  private static int earlyRemoveVeto(ClassNode mixin,MethodNode remove) {
   if(countCalls(remove,"java/util/Map","clear","()V")!=0||countCalls(remove,"net/neoforged/neoforge/event/EventHooks","onEffectRemoved",EFFECT_REMOVED)!=1)return 0;
   int changed=0;
@@ -259,6 +249,12 @@ public final class FabricEntityMixinAnchors {
    veto.ask().accept(mixin,code);
    handler.maxStack=5;handler.maxLocals=4;mixin.methods.add(handler);changed++;
   }
+  if(!"off".equalsIgnoreCase(System.getProperty(CLEAR_VETO_PROPERTY,"on"))) {
+   for(MethodNode old:new ArrayList<>(mixin.methods)) {
+    org.objectweb.asm.Handle predicate=clearRestorePredicate(mixin,old);
+    if(predicate!=null)changed+=streamClearVeto(mixin,old,predicate);
+   }
+  }
   return changed;
  }
  /** The handler this reproduces: one clear() through the Operation, then one ALLOW_EARLY_REMOVE question per effect,
@@ -283,23 +279,84 @@ public final class FabricEntityMixinAnchors {
   code.add(new JumpInsnNode(Opcodes.IFNE,allowed));code.add(new InsnNode(Opcodes.ICONST_1));code.add(new InsnNode(Opcodes.IRETURN));
   code.add(allowed);code.add(new FrameNode(Opcodes.F_SAME,0,null,0,null));code.add(new InsnNode(Opcodes.ICONST_0));code.add(new InsnNode(Opcodes.IRETURN));
  }
- /** balm's clear(): collect what MOB_EFFECT_REMOVE vetoes, clear through the Operation, put those back, and drop them from
-  * the removed copy. Both bodies pinned: a balm that asks anything else, or asks it differently, is not reimplemented. */
- private static boolean balmVeto(ClassNode mixin,MethodNode old) {
-  MethodNode question=method(mixin,"lambda$clearAllEffects$0","(L"+LIVING+";Ljava/util/Map$Entry;)Z");
-  return question!=null&&BALM_HANDLER_BODY.equals(bodyHash(old))&&BALM_QUESTION_BODY.equals(bodyHash(question));
+ /** Recognise the complete clear-and-restore data flow, not a mod class or a release fingerprint.
+  * The predicate and its captured entity are retained; only the collection operation moves to each effect. */
+ static org.objectweb.asm.Handle clearRestorePredicate(ClassNode mixin,MethodNode old) {
+  if(!old.desc.equals("(Ljava/util/Map;L"+OPERATION+";Ljava/util/Map;)V")||(old.access&Opcodes.ACC_STATIC)!=0
+    ||hasGroup(old.visibleAnnotations)||hasGroup(old.invisibleAnnotations))return null;
+  AnnotationNode wrap=MixinFit.injectorOf(old);
+  if(wrap==null||!wrap.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;")
+    ||!List.of(List.of("removeAllEffects"),List.of("removeAllEffects()Z")).contains(MixinFit.stringList(MixinFit.value(wrap,"method")))
+    ||MixinFit.value(wrap,"slice")!=null)return null;
+  List<AnnotationNode> points=MixinFit.atNodes(wrap);
+  if(points.size()!=1||!"INVOKE".equals(MixinFit.value(points.getFirst(),"value"))
+    ||!"Ljava/util/Map;clear()V".equals(MixinFit.value(points.getFirst(),"target")))return null;
+  for(String key:List.of("ordinal","shift","by","opcode"))if(MixinFit.value(points.getFirst(),key)!=null)return null;
+  if(old.tryCatchBlocks!=null&&!old.tryCatchBlocks.isEmpty())return null;
+  List<AbstractInsnNode> c=code(old);
+  if(c.size()!=32||!var(c.get(0),Opcodes.ALOAD,0)||!type(c.get(1),Opcodes.CHECKCAST,LIVING)
+    ||!(c.get(2) instanceof VarInsnNode entity)||entity.getOpcode()!=Opcodes.ASTORE||entity.var<4
+    ||!var(c.get(3),Opcodes.ALOAD,1)||!call(c.get(4),"java/util/Map","entrySet","()Ljava/util/Set;")
+    ||!call(c.get(5),"java/util/Set","stream","()Ljava/util/stream/Stream;")||!var(c.get(6),Opcodes.ALOAD,entity.var)
+    ||!call(c.get(8),"java/util/stream/Stream","filter","(Ljava/util/function/Predicate;)Ljava/util/stream/Stream;")
+    ||!call(c.get(11),"java/util/stream/Collectors","toMap","(Ljava/util/function/Function;Ljava/util/function/Function;)Ljava/util/stream/Collector;")
+    ||!call(c.get(12),"java/util/stream/Stream","collect","(Ljava/util/stream/Collector;)Ljava/lang/Object;")
+    ||!type(c.get(13),Opcodes.CHECKCAST,"java/util/Map")||!(c.get(14) instanceof VarInsnNode kept)
+    ||kept.getOpcode()!=Opcodes.ASTORE||kept.var<4||kept.var==entity.var||!var(c.get(15),Opcodes.ALOAD,2)
+    ||c.get(16).getOpcode()!=Opcodes.ICONST_1||!type(c.get(17),Opcodes.ANEWARRAY,"java/lang/Object")
+    ||c.get(18).getOpcode()!=Opcodes.DUP||c.get(19).getOpcode()!=Opcodes.ICONST_0||!var(c.get(20),Opcodes.ALOAD,1)
+    ||c.get(21).getOpcode()!=Opcodes.AASTORE||!call(c.get(22),OPERATION,"call","([Ljava/lang/Object;)Ljava/lang/Object;")
+    ||c.get(23).getOpcode()!=Opcodes.POP||!var(c.get(24),Opcodes.ALOAD,1)||!var(c.get(25),Opcodes.ALOAD,kept.var)
+    ||!call(c.get(26),"java/util/Map","putAll","(Ljava/util/Map;)V")||!var(c.get(27),Opcodes.ALOAD,kept.var)
+    ||!var(c.get(28),Opcodes.ALOAD,3)||!call(c.get(30),"java/util/Map","forEach","(Ljava/util/function/BiConsumer;)V")
+    ||c.get(31).getOpcode()!=Opcodes.RETURN)return null;
+  org.objectweb.asm.Handle predicate=lambda(c.get(7),"(L"+LIVING+";)Ljava/util/function/Predicate;",
+    "(L"+LIVING+";Ljava/util/Map$Entry;)Z");
+  org.objectweb.asm.Handle key=lambda(c.get(9),"()Ljava/util/function/Function;","()Ljava/lang/Object;");
+  org.objectweb.asm.Handle value=lambda(c.get(10),"()Ljava/util/function/Function;","()Ljava/lang/Object;");
+  org.objectweb.asm.Handle cleanup=lambda(c.get(29),"(Ljava/util/Map;)Ljava/util/function/BiConsumer;",
+    "(Ljava/util/Map;Lnet/minecraft/core/Holder;"+EFFECT+")V");
+  if(predicate==null||predicate.getTag()!=Opcodes.H_INVOKESTATIC||!predicate.getOwner().equals(mixin.name)
+    ||key==null||key.getTag()!=Opcodes.H_INVOKEINTERFACE||!key.getOwner().equals("java/util/Map$Entry")||!key.getName().equals("getKey")
+    ||value==null||value.getTag()!=Opcodes.H_INVOKEINTERFACE||!value.getOwner().equals("java/util/Map$Entry")||!value.getName().equals("getValue")
+    ||cleanup==null||cleanup.getTag()!=Opcodes.H_INVOKESTATIC||!cleanup.getOwner().equals(mixin.name))return null;
+  MethodNode question=method(mixin,predicate.getName(),predicate.getDesc()),drop=method(mixin,cleanup.getName(),cleanup.getDesc());
+  if(question==null||(question.access&Opcodes.ACC_STATIC)==0||drop==null||(drop.access&Opcodes.ACC_STATIC)==0)return null;
+  List<AbstractInsnNode> d=code(drop);
+  return d.size()==5&&var(d.get(0),Opcodes.ALOAD,0)&&var(d.get(1),Opcodes.ALOAD,1)
+    &&call(d.get(2),"java/util/Map","remove","(Ljava/lang/Object;)Ljava/lang/Object;")
+    &&d.get(3).getOpcode()==Opcodes.POP&&d.get(4).getOpcode()==Opcodes.RETURN?predicate:null;
  }
- private static void askBalm(ClassNode mixin,InsnList code) {
-  LabelNode allowed=new LabelNode();
-  code.add(new FieldInsnNode(Opcodes.GETSTATIC,"net/blay09/mods/balm/fabric/platform/event/internal/FabricBalmSupplementalEvents","MOB_EFFECT_REMOVE","L"+BALM_EVENT+";"));
-  code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,BALM_EVENT,"invoker","()Ljava/lang/Object;",false));
-  code.add(new TypeInsnNode(Opcodes.CHECKCAST,BALM_BEFORE));
-  code.add(new VarInsnNode(Opcodes.ALOAD,1));
-  code.add(new VarInsnNode(Opcodes.ALOAD,2));code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"net/minecraft/world/effect/MobEffectInstance","getEffect","()Lnet/minecraft/core/Holder;",false));
-  code.add(new VarInsnNode(Opcodes.ALOAD,2));
-  code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,BALM_BEFORE,"allowRemove","(L"+LIVING+";Lnet/minecraft/core/Holder;"+EFFECT+")Z",true));
-  code.add(new JumpInsnNode(Opcodes.IFNE,allowed));code.add(new InsnNode(Opcodes.ICONST_1));code.add(new InsnNode(Opcodes.IRETURN));
-  code.add(allowed);code.add(new FrameNode(Opcodes.F_SAME,0,null,0,null));code.add(new InsnNode(Opcodes.ICONST_0));code.add(new InsnNode(Opcodes.IRETURN));
+ private static org.objectweb.asm.Handle lambda(AbstractInsnNode i,String desc,String implementationDesc) {
+  if(!(i instanceof InvokeDynamicInsnNode indy)||!indy.desc.equals(desc)
+    ||!indy.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")||!indy.bsm.getName().equals("metafactory")
+    ||indy.bsmArgs.length!=3||!(indy.bsmArgs[1] instanceof org.objectweb.asm.Handle handle)
+    ||!handle.getDesc().equals(implementationDesc))return null;
+  return handle;
+ }
+ private static boolean var(AbstractInsnNode i,int opcode,int slot){return i instanceof VarInsnNode v&&v.getOpcode()==opcode&&v.var==slot;}
+ private static boolean type(AbstractInsnNode i,int opcode,String desc){return i instanceof TypeInsnNode t&&t.getOpcode()==opcode&&t.desc.equals(desc);}
+ private static int streamClearVeto(ClassNode mixin,MethodNode old,org.objectweb.asm.Handle predicate) {
+  String desc="(L"+LIVING+";"+EFFECT+"L"+OPERATION+";)Z",name="forbric$clearVeto$"+old.name;
+  if(method(mixin,name,desc)!=null)return 0;
+  AnnotationNode wrap=MixinFit.injectorOf(old);AnnotationNode at=MixinFit.atNodes(wrap).getFirst();
+  MethodNode handler=new MethodNode(Opcodes.ACC_PRIVATE,name,desc,null,null);
+  handler.visibleAnnotations=new ArrayList<>(List.of(wrap));
+  if(old.visibleAnnotations!=null)old.visibleAnnotations.remove(wrap);if(old.invisibleAnnotations!=null)old.invisibleAnnotations.remove(wrap);
+  set(at,"target","Lnet/neoforged/neoforge/event/EventHooks;onEffectRemoved"+EFFECT_REMOVED);
+  InsnList c=handler.instructions;LabelNode ask=new LabelNode();
+  c.add(new VarInsnNode(Opcodes.ALOAD,3));c.add(new InsnNode(Opcodes.ICONST_2));c.add(new TypeInsnNode(Opcodes.ANEWARRAY,"java/lang/Object"));
+  c.add(new InsnNode(Opcodes.DUP));c.add(new InsnNode(Opcodes.ICONST_0));c.add(new VarInsnNode(Opcodes.ALOAD,1));c.add(new InsnNode(Opcodes.AASTORE));
+  c.add(new InsnNode(Opcodes.DUP));c.add(new InsnNode(Opcodes.ICONST_1));c.add(new VarInsnNode(Opcodes.ALOAD,2));c.add(new InsnNode(Opcodes.AASTORE));
+  c.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,OPERATION,"call","([Ljava/lang/Object;)Ljava/lang/Object;",true));
+  c.add(new TypeInsnNode(Opcodes.CHECKCAST,"java/lang/Boolean"));c.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"java/lang/Boolean","booleanValue","()Z",false));
+  c.add(new JumpInsnNode(Opcodes.IFEQ,ask));c.add(new InsnNode(Opcodes.ICONST_1));c.add(new InsnNode(Opcodes.IRETURN));
+  c.add(ask);c.add(new FrameNode(Opcodes.F_SAME,0,null,0,null));
+  c.add(new VarInsnNode(Opcodes.ALOAD,1));c.add(new VarInsnNode(Opcodes.ALOAD,2));
+  c.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"net/minecraft/world/effect/MobEffectInstance","getEffect","()Lnet/minecraft/core/Holder;",false));
+  c.add(new VarInsnNode(Opcodes.ALOAD,2));c.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"java/util/Map","entry","(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;",true));
+  c.add(MixinHandlerShim.callOwn(mixin,true,predicate.getName(),predicate.getDesc()));c.add(new InsnNode(Opcodes.IRETURN));
+  handler.maxStack=5;handler.maxLocals=4;mixin.methods.add(handler);return 1;
  }
  static String bodyHash(MethodNode original) { return MixinInstructionFingerprint.hash(original); }
 

@@ -16,10 +16,10 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.CreateContextualBlockAdapters;
+import net.forbric.kernel.mixin.MixinBlockQueryAdapters;
 
 /**
- * {@code CreateContextualBlockAdapters} through the real weave, on its block-receiver rule for explosion resistance:
+ * {@code MixinBlockQueryAdapters} through the real weave, on its block-receiver rule for explosion resistance:
  * Create Fly's ExplosionDamageCalculatorMixin wraps vanilla's {@code Block.getExplosionResistance()} so a block of the
  * mod answers with the calculator's level and position ({@code @Local(argsOnly)}); the merged calculator asks
  * NeoForge's {@code BlockState.getExplosionResistance(BlockGetter, BlockPos, Explosion)} instead.
@@ -27,7 +27,7 @@ import net.forbric.kernel.mixin.CreateContextualBlockAdapters;
  * <p>The probe asks how much a stone block and the mod's casing, standing reinforced, resist one explosion. Adapted, the
  * mod's handler wraps NeoForge's state call: the casing answers 1200 for the position it was handed, and stone still
  * answers 6 through the handler's original call, which the kernel's reordered Operation turns into NeoForge's. With
- * {@code -Dforbric.createContextualBlocks=off} the wrap has no call to bind to: the casing answers its plain 3 and the
+ * {@code -Dforbric.blockQueryAdapters=off} the wrap has no call to bind to: the casing answers its plain 3 and the
  * handler is the mod's required (SUSPECTED) loss. The friction and scaffolding rules are not exercised here.
  */
 class CreateContextualBlockAdaptersWeaveTest {
@@ -65,7 +65,7 @@ class CreateContextualBlockAdaptersWeaveTest {
 				Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelWrapOperations.java")),
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(CreateContextualBlockAdapters.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinBlockQueryAdapters.PROPERTY, "off"));
 	}
 
 	@Test void theModsBlockAnswersAtNeoForgesStateQuery() throws Exception {

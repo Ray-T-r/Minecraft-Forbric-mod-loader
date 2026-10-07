@@ -689,12 +689,14 @@ public final class KernelFabricEcosystem {
 	 * Invokes one entrypoint key, isolating failures per mod: a mod whose {@code onInitialize} throws is reported
 	 * and skipped rather than aborting the remaining mods' initialization (and with them the whole server boot).
 	 */
-	/** Spectre's NeoForge global-load phase does not discover Fabric's custom config entries. */
-	static void initializeSpectreConfigs() {
-		if (!net.forbric.kernel.transform.SpectreConfigContractInjector.needed()) return;
-		int count = invoke("spectrelib-config", net.forbric.kernel.interop.SpectreConfigInitializer.class,
-				net.forbric.kernel.interop.SpectreConfigInitializer::onInitializeConfig);
-		if (count > 0) ForbricLog.info("[Forbric/Spectre] initialized %d Fabric config entrypoint(s) before the selected NeoForge library loads global configs", count);
+	/** Public entrypoint protocol; private implementation names and the selected mod id are irrelevant. */
+	public static final String CONFIG_ENTRYPOINT_API = "com/illusivesoulworks/spectrelib/config/SpectreConfigInitializer";
+	static void initializeConfigEntrypoints() {
+		ClassLoader game = Thread.currentThread().getContextClassLoader();
+		if (game == null || game.getResource(CONFIG_ENTRYPOINT_API + ".class") != null) return;
+		int count = invoke("spectrelib-config", net.forbric.kernel.interop.ConfigEntrypointInitializer.class,
+				net.forbric.kernel.interop.ConfigEntrypointInitializer::onInitializeConfig);
+		if (count > 0) ForbricLog.info("[Forbric/Config] initialized %d declared config entrypoint(s) before global configuration loading", count);
 	}
 
 	private static <T> int invoke(String key, Class<T> type, java.util.function.Consumer<T> action) {

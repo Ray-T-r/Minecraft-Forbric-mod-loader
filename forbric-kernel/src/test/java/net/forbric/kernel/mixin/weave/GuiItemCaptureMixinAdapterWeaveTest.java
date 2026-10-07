@@ -20,10 +20,10 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.GuiItemCaptureMixinAdapter;
+import net.forbric.kernel.mixin.MixinGuiItemCaptureAdapter;
 
 /**
- * GuiItemCaptureMixinAdapter through the real weave: Item Glint Relight's TAIL capture of the GUI item's render state,
+ * MixinGuiItemCaptureAdapter through the real weave: Item Glint Relight's TAIL capture of the GUI item's render state,
  * on an {@code item} that builds and submits that state inside its non-empty branch.
  *
  * <p>The probe draws a diamond, an empty slot and a tooltip, and reports what the guest's handlers were handed. Adapted,
@@ -59,7 +59,7 @@ class GuiItemCaptureMixinAdapterWeaveTest {
 		assertEquals(11, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		fixture = WeaveHarness.fixture(work, "guiitemcapture", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g"));
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(GuiItemCaptureMixinAdapter.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinGuiItemCaptureAdapter.PROPERTY, "off"));
 	}
 
 	@Test void theDiamondIsCapturedWithTheStateTheGuiSubmitted() throws Exception {

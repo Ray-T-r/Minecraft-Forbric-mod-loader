@@ -1245,7 +1245,7 @@ them turned up a loss every player had.
   the callback at a different point than Fabric. The swap callback ran after NeoForge's `LivingSwapItemsEvent.Hands`
   had kept both stacks (the hands are written from those). The break callback ran before `playerWillDestroy`, while
   Fabric's runs after it and before `removeBlock`.
-- `CarpetMixinAdapter`: the swap callback now runs right before `CommonHooks.onLivingSwapHandItems`, after the spectator
+- `MixinPlayerWorldCallbackAdapter`: the swap callback now runs right before `CommonHooks.onLivingSwapHandItems`, after the spectator
   gate, which is before anything reads a hand, as on Fabric. The break callback runs at the `preventsBlockDrops` read:
   after `adjustedState` is stored, and before `mineBlock` and both of NeoForge's `removeBlock` branches. The authored
   handler receives vanilla's captured locals by `@Local` index (blockEntity 4, block 5, adjustedState 6; vanilla's 2,
@@ -1262,12 +1262,12 @@ them turned up a loss every player had.
   `ServerPlayerGameMode_scarpetEventsMixin`. The final class could not clear that row, because the handler takes
   `@Local` sugar. (That was `FinalMixinApplications` as this branch found it. Since the merge of #25 it can discharge
   a mixin whose sugared handler the final class calls, but only once that class is defined; the census's two lines
-  and its row come first either way.) `CarpetMixinAdapter.asLoaded` gives the census what Mixin will receive.
+  and its row come first either way.) `MixinPlayerWorldCallbackAdapter.asLoaded` gives the census what Mixin will receive.
 - Evidence: `CarpetMixinAdapterTest` (11): eight reshaped hosts each refuse the whole retarget, and removing any order
   check makes that test fail. The census through `unfitMixins` over the real `carpet.mixins.json` reports nothing
   with the adapters on and both stale rows with them off. A/B, kernel e0aa078c (a79061ff): 14/14 probe results equal
   native Fabric's. The control kernel 67aede69 (699c8214) gets 10/14, differing exactly on clear_main, the cancelled
-  bed (also 3 s later) and the cancelled TNT. With `-Dforbric.carpetMixins=off` it is 5/14. The Carpet gate grew from
+  bed (also 3 s later) and the cancelled TNT. With `-Dforbric.playerWorldCallbacks=off` it is 5/14. The Carpet gate grew from
   22 to 27 checks: a direct `Level.setBlock` under `impendingFillSkipUpdates` for the redirect, which nothing
   differentiated before; a script emptying a hand; the cancelled bed; the cancelled unstable TNT; and the native swap
   veto now expects one Scarpet event. Its baseline fails exactly 16 Carpet checks and 0 base-fluid ones, and

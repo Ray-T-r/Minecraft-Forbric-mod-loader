@@ -108,26 +108,6 @@ public final class MergedBaseMixinCompat {
 	 *       instead. FabricCreativePagerMixinAdapter keeps the original PageUp/PageDown callback and uses that
 	 *       same pager, while leaving the conflicting second page state out. With the bridge
 	 *       switched off, {@link #PINNED_CONTRACTS} has the mixin adapter leave out the mixins that rely on it.</li>
-	 *   <li><b>Shoulder Surfing {@code CapeLayerMixin} — the only entry here that arbitrates between two MODS
-	 *       rather than against the merged base.</b> Both it and CustomSkinLoader rewrite the SAME instruction:
-	 *       the {@code RenderTypes.entitySolid} call inside {@code CapeLayer.submit}. Shoulder Surfing gets there
-	 *       first, with an {@code @Redirect} — which does not wrap the call, it REPLACES it — and CustomSkinLoader's
-	 *       cape patch is raw ASM that scans for {@code INVOKESTATIC RenderTypes.entitySolid} and finds nothing
-	 *       left, reporting {@code matched protocol 776 but did not modify any bytecode}. Symptom: capes do not
-	 *       render with their alpha, which is the whole point of the patch.
-	 *       <p>This was originally written off as "CustomSkinLoader 15.0.1 versus MC 26.2, not ours", on the
-	 *       evidence that {@code CapeLayer.submit} is byte-identical between vanilla and the merge. That
-	 *       observation is true and the conclusion was wrong: the merge is innocent, but the conflict is real and
-	 *       it is ours to arbitrate, because we are the loader that put these two mods in one game.
-	 *       <p>Cost of this entry, measured rather than assumed: Shoulder Surfing's handler returns
-	 *       {@code entityTranslucentCullItemTarget} only when its {@code isPlayerTransparencyEnabled()} option is
-	 *       on, and plain {@code entitySolid} otherwise — so with that option at its default the mixin changes
-	 *       nothing at all while still consuming the call site. Suppressed, CustomSkinLoader's patch lands
-	 *       ({@code Transformed …CapeLayer with [customskinloader:render-patch]}, zero patch failures) and what
-	 *       is lost is one Shoulder Surfing option's effect on the cape specifically. Reverse it with
-	 *       {@code -Dforbric.keepMixins=shouldersurfing.common.mixins.json:CapeLayerMixin}, which restores the
-	 *       transparency option and re-breaks capes — the trade is genuinely two-sided, so it is left switchable
-	 *       rather than decided in code alone.</li>
 	 * </ul>
 	 *
 	 * <p>{@code fabric-resource-loader-v1}'s {@code PackRepositoryMixin} USED to be suppressed here — it made the
@@ -166,26 +146,8 @@ public final class MergedBaseMixinCompat {
 			"fabric-registry-sync-v0.mixins.json:MainMixin",
 			"fabric-registry-sync-v0.client.mixins.json:MinecraftMixin",
 			"fabric-loot-api-v3.mixins.json:ReloadableServerRegistriesMixin",
-			"fabric-creative-tab-api-v1.client.mixins.json:CreativeModeInventoryScreenMixin",
-			// MOD-vs-MOD, not merged-base: Shoulder Surfing's @Redirect deletes the call site CustomSkinLoader's
-			// raw-ASM cape patch needs. See the javadoc entry below — this one arbitrates between two mods.
-			"shouldersurfing.common.mixins.json:CapeLayerMixin",
-			// Essential's @Group(name=post_event, min=1) finds 0 injection sites in the merged Gui, and a mixin that
-			// FAILS TO APPLY costs its target every OTHER mod's mixins too — Mixin discards the whole transformed
-			// class and Gui reverts to raw vanilla bytes. fabric-screen-api-v1's GuiMixin adds `implements
-			// GuiExtensions` there, so the visible symptom was a ClassCastException from Fabric's own
-			// MinecraftMixin.onInit, naming neither Essential nor a group. MixinFit cannot predict this one: each
-			// member's anchor resolves, and only the GROUP's min=1 is unsatisfiable.
-			//
-			// And it CANNOT be relaxed the way defaultRequire is, which is worth writing down because the shape
-			// invites the attempt. Measured against sponge-mixin 0.17.3: InjectorGroupInfo.getMinRequired() is
-			// Math.max(minCallbackCount, 1) and setMinRequired rejects anything below 1 outright, so no value
-			// written into @Group(min=…) can make a non-empty group tolerate zero successes — rewriting the
-			// annotation is either clamped or an IllegalArgumentException. The only other lever is to strip @Group
-			// from guest mixins entirely, which would demote every group everywhere to independent injectors and
-			// silently discard their max checks too: a blast radius far wider than the one entry it would remove.
-			// So this stays a pin, by measurement rather than by omission.
-			"mixins.essential.json:events.Mixin_GuiDrawScreenEvent_Priority");
+			"fabric-creative-tab-api-v1.client.mixins.json:CreativeModeInventoryScreenMixin");
+
 
 	/**
 	 * A duck interface that {@code pin}, a {@link #SUPPRESSED_MIXINS} entry, implements on {@code target} (internal
@@ -241,63 +203,6 @@ public final class MergedBaseMixinCompat {
 	public static final Set<String> DISABLED_CONFIGS = Set.of();
 
 	/**
-	 * Mixins the {@link KernelGuestMixinAdapter} must NOT auto-suppress, as {@code <config>:<MixinEntry>} — the
-	 * inverse of {@link #SUPPRESSED_MIXINS}, for what the adapter structurally cannot see.
-	 *
-	 * <p>The adapter judges a mixin by its TARGET's provenance, which is the right signal for behaviour. It is the
-	 * wrong signal for a mixin that also contributes a duck-type INTERFACE, because the mod then casts the target to
-	 * that interface: suppressing it does not merely drop a feature, it makes the cast throw.
-	 *
-	 * <ul>
-	 *   <li><b>Jade {@code GuiGraphicsExtractorMixin}</b> — {@code implements JadeGuiGraphics} on the owned
-	 *       {@code GuiGraphicsExtractor}. Suppressed, Jade's {@code OverlayRenderer} threw
-	 *       {@code ClassCastException: GuiGraphicsExtractor cannot be cast to JadeGuiGraphics} on every frame it drew
-	 *       its overlay — which aborted {@code Minecraft.renderFrame} at {@code extract}, BEFORE {@code render} and
-	 *       {@code GpuSurface.present}, so the frame was never drawn OR presented. Symptom: Jade shows nothing when
-	 *       you look at a block, and from that moment the display freezes on the last good frame, so the game looks
-	 *       like it stopped responding to keys (input polling is fine — {@code Minecraft.run} calls
-	 *       {@code RenderSystem.pollEvents} BEFORE {@code runTick}, so the throw never blocks it). Safe to keep: the
-	 *       merged {@code GuiGraphicsExtractor} still has the {@code minecraft} field it {@code @Shadow}s and the
-	 *       {@code containsPointInScissor} method it injects into.</li>
-	 *   <li><b>Jade {@code FogRendererMixin}</b> — kept for a different reason: not a duck interface, just a
-	 *       measurement that came out the other way. The adapter auto-suppresses it because NeoForge won the merge
-	 *       of {@code FogRenderer.setupFog} ("forge hook lost" in the conflict report), and it had been pinned in
-	 *       {@link #SUPPRESSED_MIXINS} as UNDIAGNOSED. Diagnosed now: the mixin is four instructions that copy
-	 *       {@code FogData.renderDistanceStart/End} into two static fields on {@code JadeClient}, and the only
-	 *       reader guards on BOTH being 0 and returns early — so suppressing it cost exactly one thing, Jade's
-	 *       overlay no longer being distance-culled against fog, and cost it silently because Jade degrades by
-	 *       design. Kept it and measured: it applies with no partial-anchor warning and gate-m9 is green on all 41
-	 *       assertions. Note this entry only takes effect on the client; a dedicated server never loads
-	 *       {@code FogRenderer} at all, so the server gates cannot see it either way — which is why the pin it
-	 *       replaced was about freezing the SERVER surface and this one is not.</li>
-	 *   <li><b>resource-loader {@code SynchronizeRegistriesTaskMixin}</b> — the other former pin, and the one that
-	 *       was actually about the server. It and Jade's fog mixin were the ONLY two the adapter auto-suppresses
-	 *       server-side (the other 163 are client-only), so naming them in {@link #SUPPRESSED_MIXINS} froze the
-	 *       server surface against the derived rule. Nothing was ever wrong with this mixin: every shadow and
-	 *       anchor resolves, and it applies cleanly — it is 3 small injectors that let the server reuse the
-	 *       CLIENT's reported known-pack set when its own {@code requestedPacks} is a superset, instead of
-	 *       vanilla's stricter comparison. Measured with the pin lifted: gate-m2b 20/20, gate-m4 30/30, gate-m9
-	 *       39/39, and the three numbers the pin named — "Loaded 1585 recipes", {@code forge: 10}, {@code
-	 *       neoforge: 35} — all unmoved. Restored, because a half-disabled fabric-api module is worse than a
-	 *       measured one.
-	 *       <p><b>What that measurement does NOT cover, and the next person should not read into it:</b> every
-	 *       gate here negotiates over a MEMORY connection (singleplayer's integrated server) or boots a dedicated
-	 *       server nobody connects to. A real remote client and server with DIFFERENT pack sets — the case this
-	 *       mixin exists for — is still unexercised. Green here means "no regression in what is tested", not
-	 *       "correct in multiplayer".</li>
-	 *
-	 * <p>This is a hand list ON PURPOSE. The obvious generalisation — "keep every mixin that contributes a non-Mixin
-	 * interface" — was implemented and MEASURED: it keeps 27 mixins on a fabric-api + Jade client, including
-	 * {@code fabric-rendering-v1}'s {@code GuiRendererMixin}, and crashes the client during {@code Minecraft.<init>}
-	 * with {@code NullPointerException: Cannot invoke "java.util.Map.size()" because "m" is null} at
-	 * {@code GuiRenderer.handler$…$mutableSpecialElementRenderers} — i.e. it reintroduces the exact orphaned-@Shadow
-	 * archetype the adapter was built to prevent. fabric-api's renderer mixins contribute interfaces AND carry
-	 * behaviour that the merge broke, so "contributes an interface" cannot separate them from Jade's. A sound general
-	 * rule would have to prove the mixin's {@code @Shadow}n fields are still ASSIGNED in the merged target; until
-	 * that exists, entries are added here one measured mixin at a time. Extend without a rebuild via
-	 * {@code -Dforbric.keepMixins=<config>:<MixinEntry>,…}.
-	 */
-	/**
 	 * Pinned only while {@link net.forbric.kernel.transform.GuestInjectorPruner} is switched off. Each entry is a
 	 * mixin the pruner trims down to the injectors that fit; with the pruner off it would apply half, which is the
 	 * state that produced 4666 missingno block models — so the kill switch has to bring the whole-mixin pin back
@@ -306,8 +211,7 @@ public final class MergedBaseMixinCompat {
 	public static final List<String> SUPPRESSED_UNLESS_PRUNED = List.of(
 			"fabric-model-loading-api-v1.mixins.json:ModelManagerMixin");
 
+	/** Only framework contracts without a structural fit rule remain pinned. Guest mod mixins use MixinFit. */
 	public static final List<String> KEPT_MIXINS = List.of(
-			"jade.mixins.json:GuiGraphicsExtractorMixin",
-			"jade.mixins.json:FogRendererMixin",
 			"fabric-resource-loader-v1.mixins.json:SynchronizeRegistriesTaskMixin");
 }

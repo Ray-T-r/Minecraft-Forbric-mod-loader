@@ -16,10 +16,10 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.CreateStructureMixinAdapter;
+import net.forbric.kernel.mixin.MixinStructurePlacementAdapter;
 
 /**
- * {@code CreateStructureMixinAdapter} through the real weave: Create Fly's three StructureTemplate hooks, written for
+ * {@code MixinStructurePlacementAdapter} through the real weave: Create Fly's three StructureTemplate hooks, written for
  * vanilla's {@code placeEntities}, on a merged StructureTemplate whose placeInWorld hands its entities to NeoForge's
  * {@code addEntitiesToWorld} instead.
  *
@@ -27,7 +27,7 @@ import net.forbric.kernel.mixin.CreateStructureMixinAdapter;
  * code says whether all three hooks moved together: the processor is picked up before the entities are added
  * ({@code setProcessors}), applied to them while they are iterated ({@code getIterator}), and dropped afterwards
  * ({@code clearProcessors}) — a second placement that still sees it would mean the cleanup stayed behind. With
- * {@code -Dforbric.createStructureMixin=off} none of the three binds: both placements add plain entities and each
+ * {@code -Dforbric.structurePlacementCallbacks=off} none of the three binds: both placements add plain entities and each
  * hook is the mod's required loss — with MixinRetarget's R7 off too, since R7 now moves the two {@code @Inject}s (the
  * pickup's point, the cleanup's selector) along MergedBaseCalleeSwaps' REPLACED row for any Fabric mod. With only the
  * adapter off, R7 binds those two and the iterator wrap inside the method, this adapter's own move, is the one loss.
@@ -65,8 +65,8 @@ class CreateStructureMixinAdapterWeaveTest {
 				SOURCES.resolve("com/zurrtum/create/mixin/StructureTemplateMixin.java")),
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(CreateStructureMixinAdapter.PROPERTY, "off", "forbric.mixinRetarget.replacedCall", "off"));
-		r7Only = run("r7-only", Map.of(CreateStructureMixinAdapter.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinStructurePlacementAdapter.PROPERTY, "off", "forbric.mixinRetarget.replacedCall", "off"));
+		r7Only = run("r7-only", Map.of(MixinStructurePlacementAdapter.PROPERTY, "off"));
 	}
 
 	/** R7 alone: the pickup and the cleanup follow the replaced call, the iterator wrap is the adapter's and is lost. */

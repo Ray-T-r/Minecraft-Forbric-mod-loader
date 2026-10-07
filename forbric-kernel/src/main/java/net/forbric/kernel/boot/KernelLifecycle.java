@@ -770,7 +770,7 @@ public final class KernelLifecycle {
 			closeWindow = true;
 			// MOD buses only — buses.get(0) is the baseline, whose registries PassiveSeeder already registered at
 			// seed time; posting there re-collects them and fill() dies on "Attempted duplicate registration".
-			KernelFabricEcosystem.initializeSpectreConfigs();
+			KernelFabricEcosystem.initializeConfigEntrypoints();
 			postNeoNewRegistryEvent(cl, buses.subList(1, buses.size()));
 			// Isolated for the same reason KernelEventSubscribers.registerAll above is, and this one is wider.
 			// fireRegisterEvents resolves a GAME-side class reflectively, so a LinkageError inside it escapes to
@@ -2616,7 +2616,6 @@ public final class KernelLifecycle {
 				}
 			}
 			if (!bridged.isEmpty()) {
-				teachSodiumAboutFabricMods(configManager, loader);
 				ForbricLog.info("[Forbric/Sodium] handed %d Fabric mod(s) to Sodium's config registry %s — Sodium's "
 						+ "NeoForge build finds config users only through ModList, which a Fabric mod is not in, so "
 						+ "their Video Settings pages did not exist", bridged.size(), bridged);
@@ -2628,61 +2627,29 @@ public final class KernelLifecycle {
 		}
 	}
 
-	/**
-	 * Makes Sodium's "who is this mod" lookup survive a mod that is not in {@code ModList}.
-	 *
-	 * <p>Registering the entry point is only half of it. When a bridged mod's page calls the ONE-argument
-	 * {@code ConfigBuilder.registerModOptions(String)} — continuity's {@code registerOwnModOptions()} does —
-	 * Sodium resolves the name and version through {@code ConfigManager.modInfoFunction}, which on this build is
-	 * {@code ConfigLoaderForge::getModMetadata}: {@code ModList.get().getModContainerById(id).orElseThrow(...)}.
-	 * For a Fabric mod that throws, and it throws INSIDE {@code registerConfigsLate} during the loading overlay,
-	 * which is a crash to desktop:
-	 *   Description: Mod 'continuity' failed while registering config options.
-	 *   java.lang.NullPointerException: Mod with id continuity not found in ModList
-	 * Measured, on a live boot, from bridging one mod more than the one that was asked for.
-	 *
-	 * <p>So the existing function is WRAPPED rather than replaced: NeoForge mods keep resolving exactly as they
-	 * did, and only an id it cannot answer for falls through to the kernel's own view of that mod. It must never
-	 * return null — Sodium does {@code checkcast} then {@code modName()} with no null check — so an id neither
-	 * side knows rethrows the original failure instead of inventing a mod.
-	 *
-	 * <p>The version carries {@code KernelModMetadata}'s placeholder rule: a jar whose metadata still says
-	 * {@code ${version}} expects its loader to substitute it, and that string would otherwise be rendered
-	 * verbatim on the Video Settings page.
-	 */
-	@SuppressWarnings("unchecked")
-	private static void teachSodiumAboutFabricMods(Class<?> configManager, KernelFabricLoader loader) {
-		try {
-			Field field = configManager.getDeclaredField("modInfoFunction");
-			field.setAccessible(true);
-			java.util.function.Function<String, Object> delegate =
-					(java.util.function.Function<String, Object>) field.get(null);
-			if (delegate == null) return;
-
-			Constructor<?> metadata = Class.forName(SODIUM_CONFIG_MANAGER + "$ModMetadata", false, gameLoader)
-					.getConstructor(String.class, String.class);
-
-			field.set(null, (java.util.function.Function<String, Object>) modId -> {
+	/** Wraps a public configuration metadata provider with the kernel's cross-ecosystem view. */
+	public static java.util.function.Function<String, Object> configModInfoFunction(java.util.function.Function<String, Object> delegate) {
+		if (delegate == null) throw new NullPointerException("configuration metadata provider");
+		if ("off".equalsIgnoreCase(System.getProperty("forbric.sodiumConfigUsers", "on"))) return delegate;
+		return modId -> {
+			RuntimeException failure = null;
+			try { Object nativeMetadata = delegate.apply(modId); if (nativeMetadata != null) return nativeMetadata; }
+			catch (RuntimeException unknown) { failure = unknown; }
+			KernelFabricLoader loader = KernelFabricLoader.getInstanceOrNull();
+			Object fallback = null;
+			if (loader != null) {
 				try {
-					Object known = delegate.apply(modId);
-					if (known != null) return known;
-				} catch (RuntimeException notInModList) {
-					Object mine = fabricModMetadata(metadata, loader, modId);
-					// Neither side knows it: rethrow rather than hand Sodium a mod that does not exist.
-					if (mine == null) throw notInModList;
-					return mine;
+					Constructor<?> metadata = Class.forName(SODIUM_CONFIG_MANAGER + "$ModMetadata", false, gameLoader)
+							.getConstructor(String.class, String.class);
+					fallback = fabricModMetadata(metadata, loader, modId);
+				} catch (ReflectiveOperationException | LinkageError unsupportedApi) {
+					if (failure != null) failure.addSuppressed(unsupportedApi);
 				}
-				Object mine = fabricModMetadata(metadata, loader, modId);
-				if (mine == null) throw new IllegalStateException("no metadata for mod id " + modId);
-				return mine;
-			});
-			ForbricLog.info("[Forbric/Sodium] Sodium's mod-name lookup now falls back to the kernel for an id that "
-					+ "is not in ModList — its NeoForge build resolves names through ModList alone and throws for a "
-					+ "Fabric mod, inside registerConfigsLate, which ends the game rather than the page");
-		} catch (Throwable t) {
-			ForbricLog.warn("[Forbric/Sodium] could not extend Sodium's mod-name lookup — a bridged mod whose page "
-					+ "asks for its own name may still fail to register", unwrap(t));
-		}
+			}
+			if (fallback != null) return fallback;
+			if (failure != null) throw failure;
+			throw new IllegalStateException("no metadata for mod id " + modId);
+		};
 	}
 
 	/** One bridged mod as Sodium's {@code ModMetadata}, or null when the kernel does not know the id either. */

@@ -13,7 +13,7 @@ import tempfile
 import zipfile
 
 CHECKS = 27
-# Exactly these fail without the adapter (-Dforbric.carpetMixins=off): each needs a callback it restores.
+# Exactly these fail without the adapter (-Dforbric.playerWorldCallbacks=off): each needs a callback it restores.
 CARPET = {'fill.shape.false', 'fill.direct.lamp.false', 'fluid.blackstone.true', 'fluid.deepslate.true',
           'fluid.blackstone.neighbor', 'fluid.deepslate.neighbor',
           'swap.scarpetCancel.true', 'swap.scarpetCancel.false', 'swap.scarpetClearsMain', 'swap.nativeVeto',
@@ -93,7 +93,7 @@ def main():
             'view-distance=2\nsimulation-distance=2\nspawn-protection=0\n')
         env = dict(os.environ, FORBRIC_OLD=str(stage.parent), RUNDIR=str(run),
                    FORBRIC_COMPAT_POLICY='strict' if phase == 'fixed' else 'continue',
-                   FORBRIC_JVM='-Xmx2G' + (' -Dforbric.carpetMixins=off' if phase == 'baseline' else ''))
+                   FORBRIC_JVM='-Xmx2G' + (' -Dforbric.playerWorldCallbacks=off' if phase == 'baseline' else ''))
         with (run / 'console.log').open('w') as log:
             subprocess.run([str(kernel / 'run/launch-kernel-server.sh')], env=env,
                            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180)

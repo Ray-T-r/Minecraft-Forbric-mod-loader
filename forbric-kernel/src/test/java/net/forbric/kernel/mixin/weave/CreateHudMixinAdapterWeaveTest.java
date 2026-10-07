@@ -16,20 +16,20 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.CreateHudMixinAdapter;
-import net.forbric.kernel.transform.CreateHudContextInjector;
+import net.forbric.kernel.mixin.MixinHudContextAdapter;
+import net.forbric.kernel.transform.HudContextQueryInjector;
 
 /**
- * {@code CreateHudMixinAdapter} through the real weave, on a CLIENT run: Create Fly's train overlay wraps the
+ * {@code MixinHudContextAdapter} through the real weave, on a CLIENT run: Create Fly's train overlay wraps the
  * nextContextualInfoState() call in vanilla's extractHotbarAndDecorations. The merged Hud still declares that method, but
  * NeoForge's extractRenderState picks the contextual bar through updateContextualBarRenderer and never calls it.
  *
- * <p>The fixture's Hud is the merged one after KernelBoot's client-only {@code CreateHudContextInjector}
- * ({@link PreMixinFixture}), so updateContextualBarRenderer asks the kernel's {@code KernelCreateHudQuery}, compiled in
- * from {@code src/runtime/java}, which consults {@code CreateHudScope}. The probe draws one frame while riding a train and
+ * <p>The fixture's Hud is the merged one after KernelBoot's client-only {@code HudContextQueryInjector}
+ * ({@link PreMixinFixture}), so updateContextualBarRenderer asks the kernel's {@code KernelHudContextQuery}, compiled in
+ * from {@code src/runtime/java}, which consults {@code HudContextCallbackScope}. The probe draws one frame while riding a train and
  * one with the HUD hidden. Adapted, the wrap surrounds NeoForge's updateContextualBarRenderer call: the overlay is drawn
  * with the frame's graphics and the bar is hidden, while a hidden HUD keeps NeoForge's own answer. With
- * {@code -Dforbric.createHudMixin=off} the wrap binds to the dead vanilla method: no overlay, and the final audit says
+ * {@code -Dforbric.hudContextCallbacks=off} the wrap binds to the dead vanilla method: no overlay, and the final audit says
  * the injector never runs (SUSPECTED, not required).
  */
 class CreateHudMixinAdapterWeaveTest {
@@ -38,7 +38,7 @@ class CreateHudMixinAdapterWeaveTest {
 	private static final String MOD = "create";
 	private static final String TARGET = "net/minecraft/client/gui/Hud";
 
-	private static final String SCOPE = "net/forbric/kernel/interop/CreateHudScope";
+	private static final String SCOPE = "net/forbric/kernel/interop/HudContextCallbackScope";
 	/** NeoForge's live frame method, and vanilla's, which the merged game declares but never calls. */
 	private static final List<String> HOSTS = List.of("extractRenderState", "extractHotbarAndDecorations");
 
@@ -62,15 +62,15 @@ class CreateHudMixinAdapterWeaveTest {
 				// The kernel's game-side hooks the adapted code reaches, which ForbricClassLoader must define from a jar it
 				// owns; a fresh clone has no compiled runtime source set, so the production sources are compiled in here.
 				Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelWrapOperations.java"),
-				Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelCreateHudQuery.java")),
+				Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelHudContextQuery.java")),
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)),
-				// KernelCreateHudQuery names the boot-side CreateHudScope: resolved from source, not packed, since the
+				// KernelHudContextQuery names the boot-side HudContextCallbackScope: resolved from source, not packed, since the
 				// loader always takes that package from the kernel.
 				List.of("-sourcepath", "src/main/java", "-implicit:none"));
-		// What the merged base's Hud is once KernelBoot's CreateHudContextInjector (client only) has run.
-		PreMixinFixture.transform(fixture, CreateHudContextInjector.TARGET, new CreateHudContextInjector(), EnvType.CLIENT);
+		// What the merged base's Hud is once KernelBoot's HudContextQueryInjector (client only) has run.
+		PreMixinFixture.transform(fixture, HudContextQueryInjector.TARGET, new HudContextQueryInjector(), EnvType.CLIENT);
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(CreateHudMixinAdapter.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinHudContextAdapter.PROPERTY, "off"));
 	}
 
 	@Test void theOverlayIsDrawnAtNeoForgesContextualBarAndF1StillHidesIt() throws Exception {
@@ -117,7 +117,7 @@ class CreateHudMixinAdapterWeaveTest {
 		return run.findings().stream().filter(f -> f.id().equals("mixin:" + CONFIG + ":com.zurrtum.create.client.mixin.HudMixin")).toList();
 	}
 
-	/** Whether any method of the defined Hud opens the kernel's CreateHudScope. */
+	/** Whether any method of the defined Hud opens the kernel's HudContextCallbackScope. */
 	private static boolean entersScope(WeaveHarness.Result run) throws Exception {
 		ClassNode node = new ClassNode();
 		new ClassReader(run.defined(TARGET)).accept(node, 0);

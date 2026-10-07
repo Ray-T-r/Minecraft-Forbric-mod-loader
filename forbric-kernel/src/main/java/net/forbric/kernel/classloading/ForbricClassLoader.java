@@ -32,6 +32,9 @@ import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.api.DiscoveredMod;
+import net.forbric.api.Ecosystem;
+import net.forbric.kernel.transform.TransformContext;
 
 /**
  * The kernel's single sovereign transforming class loader — the one and only loader that defines the game +
@@ -57,6 +60,8 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 	/** One {@link ProtectionDomain} per owned jar, keyed by the jar URL's spelling. See {@link #domainFor}. */
 	private final Map<String, ProtectionDomain> domains = new ConcurrentHashMap<>();
+	public record ModOrigin(Ecosystem ecosystem, String modId) { }
+	private volatile Map<String, ModOrigin> modOrigins = Map.of();
 
 	private volatile BiFunction<String, byte[], byte[]> transformer = (n, b) -> b;
 	private volatile BiFunction<String, byte[], byte[]> mixinTransformer = (n, b) -> b;
@@ -70,6 +75,55 @@ public final class ForbricClassLoader extends URLClassLoader {
 	public ForbricClassLoader(URL[] ownedJars, ClassLoader parent) {
 		super("forbric", ownedJars, parent);
 		this.parent = parent;
+	}
+
+	/** Records the selected metadata, not package prefixes, as the source of transform provenance. */
+	public void setModOrigins(java.util.Collection<DiscoveredMod> mods) {
+		Map<String, ModOrigin> origins = new java.util.LinkedHashMap<>();
+		Set<String> ambiguous = new java.util.HashSet<>();
+		for (DiscoveredMod mod : mods) {
+			if (mod == null || mod.getSource() == null || mod.getSource().isBlank()) continue;
+			try {
+				String source = java.nio.file.Path.of(mod.getSource()).toAbsolutePath().normalize().toUri().toURL().toString();
+				if (ambiguous.contains(source)) continue;
+				ModOrigin origin = new ModOrigin(mod.getEcosystem(), mod.getId());
+				ModOrigin previous = origins.get(source);
+				if (previous != null && previous.ecosystem() != origin.ecosystem()) {
+					origins.remove(source); ambiguous.add(source);
+				} else if (previous != null && !java.util.Objects.equals(previous.modId(), origin.modId())) {
+					origins.put(source, new ModOrigin(origin.ecosystem(), null));
+				} else origins.put(source, origin);
+			} catch (java.net.MalformedURLException | java.nio.file.InvalidPathException ignored) {
+				// An unknown source remains unattributed; it must never be guessed from a class name.
+			}
+		}
+		modOrigins = Map.copyOf(origins);
+		bytecodeConfiguration.incrementAndGet();
+		preMixin.clear();
+	}
+
+	/** The actual winner of classpath lookup, equally available before definition and during Mixin inspection. */
+	public ModOrigin originOfResource(String binaryName) {
+		String path = binaryName.replace('.', '/') + ".class";
+		URL resource = findResource(path);
+		if (resource == null) resource = rescueResource(path);
+		if (resource == null) return null;
+		String source = jarUrlOf(resource);
+		ModOrigin jar = modOrigins.get(source);
+		if (jar != null || "jar".equals(resource.getProtocol())) return jar;
+		// Directory-backed development mods are attributed to their root, not to an individual class URL.
+		String url = resource.toString();
+		return url.endsWith(path) ? modOrigins.get(url.substring(0, url.length() - path.length())) : null;
+	}
+
+	public Ecosystem ecosystemOfResource(String binaryName) {
+		ModOrigin origin = originOfResource(binaryName);
+		return origin == null ? null : origin.ecosystem();
+	}
+
+	public TransformContext contextFor(String binaryName, TransformContext base) {
+		ModOrigin origin = originOfResource(binaryName);
+		return base.withSource(origin == null ? null : origin.ecosystem(), origin == null ? null : origin.modId());
 	}
 
 	/**

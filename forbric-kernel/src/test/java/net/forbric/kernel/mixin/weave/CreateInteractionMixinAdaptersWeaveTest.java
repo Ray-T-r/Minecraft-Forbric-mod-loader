@@ -16,10 +16,10 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.CreateInteractionMixinAdapters;
+import net.forbric.kernel.mixin.MixinBlockInteractionAdapters;
 
 /**
- * {@code CreateInteractionMixinAdapters} through the real weave, on its SignalGetter rule: Create Fly's interface mixin
+ * {@code MixinBlockInteractionAdapters} through the real weave, on its SignalGetter rule: Create Fly's interface mixin
  * wraps vanilla's {@code isRedstoneConductor} call in getSignal so a block of the mod decides whether weak power
  * passes through it; the merged getSignal asks NeoForge's {@code shouldCheckWeakPower(SignalGetter, BlockPos,
  * Direction)} instead.
@@ -27,7 +27,7 @@ import net.forbric.kernel.mixin.CreateInteractionMixinAdapters;
  * <p>The probe reads the signal at a stone block and at the mod's gearshift, a conducting block that says weak power
  * never passes, each beside a strongly powered neighbour. Adapted, the mod's handler wraps NeoForge's call: the
  * gearshift reads 0, and stone still reads 15 through the handler's original call, which the kernel's reordered
- * Operation turns into NeoForge's. With {@code -Dforbric.createInteractionMixins=off} the wrap has no call to bind
+ * Operation turns into NeoForge's. With {@code -Dforbric.blockInteractionAdapters=off} the wrap has no call to bind
  * to: the gearshift reads 15 and the handler is the mod's required (SUSPECTED) loss. The adapter's other three
  * rules are not exercised here.
  */
@@ -65,7 +65,7 @@ class CreateInteractionMixinAdaptersWeaveTest {
 				Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelWrapOperations.java")),
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(CreateInteractionMixinAdapters.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinBlockInteractionAdapters.PROPERTY, "off"));
 	}
 
 	@Test void theModsBlockDecidesAtNeoForgesWeakPowerQuery() throws Exception {

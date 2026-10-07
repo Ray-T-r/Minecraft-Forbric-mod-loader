@@ -28,7 +28,7 @@ class ContinuitySpriteMixinAdapterTest {
 	@Test void actualCallbacksMoveToTheLiveOverloadAndKeepTheOriginalLoaderMapArgument() throws Exception {
 		ClassNode mixin = mixin();
 		ClassNode target = StagedFabricMixinFixture.game("net/minecraft/client/renderer/texture/atlas/SpriteSourceList", false);
-		assertEquals(1, ContinuitySpriteMixinAdapter.adapt(mixin, name -> target));
+		assertEquals(1, MixinSpriteLoaderCallbackAdapter.adapt(mixin, name -> target));
 		MethodNode handler = StagedFabricMixinFixture.method(mixin, "continuity$afterLoadSources");
 		assertTrue(handler.desc.contains("Ljava/util/Set;"));
 		assertTrue(String.valueOf(MixinFit.value(MixinFit.injectorOf(handler), "method")).contains("Ljava/util/Set;"));
@@ -38,7 +38,7 @@ class ContinuitySpriteMixinAdapterTest {
 		assertNull(MixinFit.injectorOf(original));
 		assertTrue(handler.instructions.get(4) instanceof MethodInsnNode call && call.desc.equals(original.desc));
 		new Analyzer<>(new BasicVerifier()).analyze(mixin.name, handler);
-		assertEquals(0, ContinuitySpriteMixinAdapter.adapt(mixin, name -> target));
+		assertEquals(0, MixinSpriteLoaderCallbackAdapter.adapt(mixin, name -> target));
 	}
 
 	@Test void aChangedLocalMapLayoutIsRefused() throws Exception {
@@ -47,19 +47,19 @@ class ContinuitySpriteMixinAdapterTest {
 		for (MethodNode method : target.methods) for (AbstractInsnNode insn : method.instructions) {
 			if (insn instanceof VarInsnNode store && store.getOpcode() == Opcodes.ASTORE && store.var == 3) store.var = 6;
 		}
-		assertEquals(0, ContinuitySpriteMixinAdapter.adapt(mixin, name -> target));
+		assertEquals(0, MixinSpriteLoaderCallbackAdapter.adapt(mixin, name -> target));
 		assertNotNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin, "continuity$afterLoadSources")));
 	}
 
 	@Test void vanillaAndDisabledRepairKeepTheUpstreamMixin() throws Exception {
 		ClassNode vanilla = StagedFabricMixinFixture.game("net/minecraft/client/renderer/texture/atlas/SpriteSourceList", true);
-		assertEquals(0, ContinuitySpriteMixinAdapter.adapt(mixin(), name -> vanilla));
-		String previous = System.setProperty(ContinuitySpriteMixinAdapter.PROPERTY, "off");
+		assertEquals(0, MixinSpriteLoaderCallbackAdapter.adapt(mixin(), name -> vanilla));
+		String previous = System.setProperty(MixinSpriteLoaderCallbackAdapter.PROPERTY, "off");
 		try {
 			ClassNode merged = StagedFabricMixinFixture.game("net/minecraft/client/renderer/texture/atlas/SpriteSourceList", false);
-			assertEquals(0, ContinuitySpriteMixinAdapter.adapt(mixin(), name -> merged));
+			assertEquals(0, MixinSpriteLoaderCallbackAdapter.adapt(mixin(), name -> merged));
 		} finally {
-			if (previous == null) System.clearProperty(ContinuitySpriteMixinAdapter.PROPERTY); else System.setProperty(ContinuitySpriteMixinAdapter.PROPERTY, previous);
+			if (previous == null) System.clearProperty(MixinSpriteLoaderCallbackAdapter.PROPERTY); else System.setProperty(MixinSpriteLoaderCallbackAdapter.PROPERTY, previous);
 		}
 	}
 }

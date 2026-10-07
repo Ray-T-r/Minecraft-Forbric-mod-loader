@@ -31,7 +31,7 @@ class SharedFinalSourceActualTest {
     }
     private record Replay(ClassNode target,String key) { }
     @SuppressWarnings("unchecked") private static Replay replay()throws Exception{
-        Path definition=Path.of(System.getProperty("forbric.sharedFinalDefined",TestFixtures.stagedRoot().resolve("shared-final-definitions").toString()));TestFixtures.require(Fixture.STAGED,Files.exists(definition),"actual shared final definition: "+definition);
+        Path definition=Path.of(System.getProperty("forbric.sharedFinalDefined",TestFixtures.stagedRoot().resolve("shared-final-definitions").toString()));TestFixtures.require(Fixture.OPT_IN,Files.exists(definition),"actual shared final definition: "+definition);
         // Reuse the existing actual native alignment fixture, including its tracked source metrics and carrier view.
         Method factory=MixinSharedPredicateSeamTest.class.getDeclaredMethod("inputs");factory.setAccessible(true);Object inputs=factory.invoke(null);
         ClassNode mixin=(ClassNode)value(inputs,"guest");Function<String,ClassNode> classes=(Function<String,ClassNode>)value(inputs,"classes"),source=(Function<String,ClassNode>)value(inputs,"source"),carrier=(Function<String,ClassNode>)value(inputs,"carrier");

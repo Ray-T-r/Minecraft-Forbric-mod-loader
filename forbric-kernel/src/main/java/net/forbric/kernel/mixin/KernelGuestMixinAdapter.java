@@ -260,12 +260,23 @@ public final class KernelGuestMixinAdapter {
 				// What the mixins Mixin applies first add to the same targets: a @Shadow of one of those members binds,
 				// on Fabric and here (moreculling's shadow of the mesh field fabric-renderer-api adds).
 				MixinAddedMembers.View added = MixinAddedMembers.before(configName, mixin, resource);
-				// Judged as Mixin will receive it: Carpet's anchor adapters run when Mixin loads the class, after this
-				// read, so an anchor they move onto the merged game is not missing (CarpetMixinAdapter.asLoaded).
+				// Judged as Mixin will receive it: callback anchor adapters run when Mixin loads the class, after this
+				// read, so an anchor they move onto the merged game is not missing (MixinPlayerWorldCallbackAdapter.asLoaded).
 				byte[] judged = MixinDecodeScopeAdapter.asLoaded(ReplacedCallRedirects.asLoaded(
-						CarpetMixinAdapter.asLoaded(classBytes, resource), resource), resource);
+						MixinPlayerWorldCallbackAdapter.asLoaded(classBytes, resource), resource), resource);
 				MixinFit.Result fit = MixinFit.evaluate(judged, resource,
 						net.forbric.kernel.classloading.DelegationPolicy::alwaysGame, added, nativeView);
+				List<String> groupFailures = MixinGroupConstraints.failures(MixinFit.parse(judged), resource, added);
+				if (!groupFailures.isEmpty()) {
+					// Give a proven carrier retarget the same opportunity as other missing anchors.
+					if (retargeted(configName, pkg, mixin, pluginClass, classBytes, required, judged, fit,
+							resource, added, configMinimum, suppress, nativeView)) continue;
+					suppress.add(mixin);
+					report(MixinCompatibility.id(configName, pkg + "." + mixin), configName, pkg, mixin, pluginClass, classBytes,
+							"guest mixin " + mixin + " has unsatisfiable injection group bounds",
+							CompatibilityFinding.Confidence.CONFIRMED, true, groupFailures);
+					continue;
+				}
 				if (judged != classBytes) {
 					MixinFit.Result unadapted = MixinFit.evaluate(classBytes, resource,
 							net.forbric.kernel.classloading.DelegationPolicy::alwaysGame, added, nativeView);
@@ -381,7 +392,7 @@ public final class KernelGuestMixinAdapter {
 					continue;
 				}
 				suppress.add(mixin);
-				String optional = OptionalMixinDependencies.absent(MixinFit.parse(classBytes), net.forbric.api.ModPresence::isLoaded);
+				String optional = OptionalMixinDependencies.absent(configName, MixinFit.parse(classBytes), net.forbric.api.ModPresence::isLoaded);
 				if (optional != null) {
 					ForbricLog.info("[Forbric/Mixin] %s:%s is an optional %s integration; that mod is absent, so the "
 							+ "integration is not applicable on this boot", MixinConfigOwners.describe(configName), mixin, optional);
@@ -418,6 +429,14 @@ public final class KernelGuestMixinAdapter {
 		MixinRetarget.Adoption adoption = MixinRetarget.adopt(judged, fit, resource, bytes -> MixinFit.evaluate(bytes, resource,
 				net.forbric.kernel.classloading.DelegationPolicy::alwaysGame, added, nativeView));
 		if (adoption == null) return false;
+		List<String> groups = MixinGroupConstraints.failures(MixinFit.parse(adoption.rewritten()), resource, added);
+		if (!groups.isEmpty()) {
+			suppress.add(mixin);
+			report(MixinCompatibility.id(configName, pkg + "." + mixin), configName, pkg, mixin, pluginClass, classBytes,
+					"guest mixin " + mixin + " has unsatisfiable injection group bounds after carrier retargeting",
+					CompatibilityFinding.Confidence.CONFIRMED, true, groups);
+			return true;
+		}
 		MixinFit.Result after = adoption.after();
 		MixinRetarget.remember(adoption.plan());
 		ForbricLog.info("[Forbric/Mixin] retargeted guest mixin %s:%s — %s; verdict %s→%s",

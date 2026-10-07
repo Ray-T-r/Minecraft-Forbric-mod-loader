@@ -15,8 +15,8 @@ class JechWeaverBridgeTest {
     @Test void reflectionReplacementUsesTheCurrentDecoratorAndIsReadBackByThePipeline() throws Exception {
         var original=transformer();var earlier=transformer();var replacement=transformer();
         MixinWeaverSlot.install(original);MixinWeaverSlot.watch(()->earlier);
-        var holder=JechWeaverBridge.holder();assertSame(earlier,holder.mixinTransformer);
-        JechWeaverBridge.field().set(holder,replacement);
+        var holder=ReflectiveWeaverBridge.holder();assertSame(earlier,holder.mixinTransformer);
+        ReflectiveWeaverBridge.field().set(holder,replacement);
         assertSame(replacement,MixinWeaverSlot.currentOr(original));
     }
 }

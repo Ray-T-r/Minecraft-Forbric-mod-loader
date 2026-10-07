@@ -81,7 +81,7 @@ public final class MixinWrapOperationShim {
 		if(old==null||!old.owner().equals(live.owner)||!Type.getReturnType(old.descriptor()).equals(Type.getReturnType(live.desc)))return 0;
 		if(old.name().equals(live.name)&&old.descriptor().equals(live.desc))return 0;
 		Type[] wanted=Type.getArgumentTypes(old.descriptor()), available=Type.getArgumentTypes(live.desc);
-		if(Arrays.equals(wanted,available)){CarpetMixinAdapter.set(at,"target","L"+live.owner+";"+live.name+live.desc);return 1;}
+		if(Arrays.equals(wanted,available)){MixinPlayerWorldCallbackAdapter.set(at,"target","L"+live.owner+";"+live.name+live.desc);return 1;}
 		int[] mapping=argumentMapping(wanted,available);if(mapping==null)return 0;
 		Type[] params=Type.getArgumentTypes(handler.desc);int receiver=live.getOpcode()==Opcodes.INVOKESTATIC?0:1;
 		if(params.length<receiver+wanted.length+1||!params[receiver+wanted.length].equals(Type.getObjectType(OPERATION)))return 0;

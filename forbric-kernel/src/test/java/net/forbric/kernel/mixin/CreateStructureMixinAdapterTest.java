@@ -7,18 +7,18 @@ import org.junit.jupiter.api.Test;
 
 class CreateStructureMixinAdapterTest {
 	@Test void setupIterationAndCleanupMoveTogetherToTheCalledEntityPlacementBody() throws Exception {
-		var node = CreateGuestMixinFixture.mixin(CreateStructureMixinAdapter.MIXIN);
+		var node = CreateGuestMixinFixture.mixin("com/zurrtum/create/mixin/StructureTemplateMixin");
 		Map<String, String> hashes = new HashMap<>();
-		for (String name : List.of("setProcessors", "getIterator", "clearProcessors")) hashes.put(name, MixinInstructionFingerprint.hash(CarpetMixinAdapter.named(node, name)));
-		assertEquals(3, CreateStructureMixinAdapter.adapt(node, CarpetMixinAdapterTest::target));
-		for (String name : hashes.keySet()) assertEquals(hashes.get(name), MixinInstructionFingerprint.hash(CarpetMixinAdapter.named(node, name)));
-		for (String name : List.of("getIterator", "clearProcessors")) assertEquals(List.of(CreateStructureMixinAdapter.LIVE), MixinFit.value(MixinFit.injectorOf(CarpetMixinAdapter.named(node, name)), "method"));
+		for (String name : List.of("setProcessors", "getIterator", "clearProcessors")) hashes.put(name, MixinInstructionFingerprint.hash(MixinPlayerWorldCallbackAdapter.named(node, name)));
+		assertEquals(3, MixinStructurePlacementAdapter.adapt(node, CarpetMixinAdapterTest::target));
+		for (String name : hashes.keySet()) assertEquals(hashes.get(name), MixinInstructionFingerprint.hash(MixinPlayerWorldCallbackAdapter.named(node, name)));
+		for (String name : List.of("getIterator", "clearProcessors")) assertEquals(List.of(MixinStructurePlacementAdapter.LIVE), MixinFit.value(MixinFit.injectorOf(MixinPlayerWorldCallbackAdapter.named(node, name)), "method"));
 		CarpetMixinAdapterTest.verify(node);
-		assertEquals(0, CreateStructureMixinAdapter.adapt(node, CarpetMixinAdapterTest::target));
+		assertEquals(0, MixinStructurePlacementAdapter.adapt(node, CarpetMixinAdapterTest::target));
 	}
 	@Test void aMissingCallerRefusesAllThreeSelectorsTogether() throws Exception {
-		var node = CreateGuestMixinFixture.mixin(CreateStructureMixinAdapter.MIXIN); byte[] before = CarpetMixinAdapterTest.bytes(node);
-		assertEquals(0, CreateStructureMixinAdapter.adapt(node, name -> {var target=CarpetMixinAdapterTest.target(name);target.methods.removeIf(m->m.name.equals("placeInWorld"));return target;}));
+		var node = CreateGuestMixinFixture.mixin("com/zurrtum/create/mixin/StructureTemplateMixin"); byte[] before = CarpetMixinAdapterTest.bytes(node);
+		assertEquals(0, MixinStructurePlacementAdapter.adapt(node, name -> {var target=CarpetMixinAdapterTest.target(name);target.methods.removeIf(m->m.name.equals("placeInWorld"));return target;}));
 		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(node));
 	}
 }

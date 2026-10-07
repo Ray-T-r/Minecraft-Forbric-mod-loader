@@ -64,7 +64,7 @@ jar before treating the selection as final; metadata resolution alone cannot pro
 
 `carpet-gate.py --carpet <fabric-carpet-26.2+v260616.jar> --staged-root <forbric-loader/run>`
 compiles the Carpet probe and runs 27 behavior checks in isolated dedicated-server worlds. The baseline
-runs with `forbric.carpetMixins=off` and must fail exactly the 16 checks that need the adapter (fill shape
+runs with `forbric.playerWorldCallbacks=off` and must fail exactly the 16 checks that need the adapter (fill shape
 updates, a direct `Level.setBlock` under `impendingFillSkipUpdates` for the neighbour-update redirect, renewable
 blackstone and deepslate on, both Scarpet events and their native-Fabric order); vanilla's own lava/water reactions
 pass there, since placement no longer depends on the adapter (`FluidInteractionsInjector`), and the summary lists

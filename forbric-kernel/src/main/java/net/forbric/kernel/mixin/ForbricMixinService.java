@@ -288,19 +288,19 @@ public final class ForbricMixinService
 		// …and a single-point injector compiled with an array-valued `at` (another Mixin fork's shape) is given the
 		// shape this Mixin declares, before MixinExtras' pre-apply transformer casts it.
 		MixinAtShape.normalise(node);
-		CreateInjectionAdapters.adapt(node, this::mergedBaseNodeWithCode);
-		CreateContextualBlockAdapters.adapt(node, this::mergedBaseNodeWithCode);
-		CreateInteractionMixinAdapters.adapt(node, this::mergedBaseNodeWithCode);
-		CreateBreathingMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		CreateEntitySoundMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		CreateHudMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinCarrierCallbackAdapters.adapt(node, this::mergedBaseNodeWithCode);
+		MixinBlockQueryAdapters.adapt(node, this::mergedBaseNodeWithCode);
+		MixinBlockInteractionAdapters.adapt(node, this::mergedBaseNodeWithCode);
+		MixinBreathingCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinEntitySoundCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinHudContextAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricRegistryLoaderMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricRegistryInitializationMixinAdapter.adapt(node);
 		FabricFreezeHookMixinAdapter.adapt(node, this::mergedBaseNode);
 		FabricCreativePagerMixinAdapter.adapt(node);
 		KernelClientHookMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
-		GuiItemCaptureMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		BarrelRollCameraAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinGuiItemCaptureAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinCameraRollAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a redirect of a vanilla call the carrier replaced at the same place, whose handler only conditions it,
 		// forwards the carrier's call there instead.
 		ReplacedCallRedirects.adapt(node, this::mergedBaseNodeWithCode);
@@ -369,15 +369,15 @@ public final class ForbricMixinService
 		FabricBlockBreakMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricClientMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		FabricSoundMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		ContinuitySpriteMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinSpriteLoaderCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricFluidFlowMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		CreateFluidMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		CreateKeyboardMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		CreateStructureMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinFluidInteractionAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinKeyActionAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinStructurePlacementAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricSectionCompilerMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricBlockStateCodecMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		CarpetMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		CarpetFluidMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinPlayerWorldCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		MixinFluidReactionAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		// …and an @Inject anchored on a call the merged body makes through a subtype of the same method
 		// (Decoder.parse → Codec.parse: lithostitched's Fabric load predicates) moves to that one call.
 		MixinSubtypeOwnerRetarget.adapt(node, this::mergedBaseNodeWithCode);

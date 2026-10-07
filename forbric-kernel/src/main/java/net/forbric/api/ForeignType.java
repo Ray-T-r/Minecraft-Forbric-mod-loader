@@ -49,6 +49,7 @@ package net.forbric.api;
  * not average it away.
  */
 public enum ForeignType {
+	CONFIG_SPEC("net.minecraftforge.fml.config.IConfigSpec", "net.neoforged.fml.config.IConfigSpec"),
 	CLIENT_HOOKS("net.minecraftforge.client.ForgeHooksClient",
 			"net.neoforged.neoforge.client.ClientHooks"),
 	CLIENT_MOD_LOADER("net.minecraftforge.client.loading.ClientModLoader",

@@ -18,18 +18,18 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.CarpetMixinAdapter;
+import net.forbric.kernel.mixin.MixinPlayerWorldCallbackAdapter;
 
 /**
- * CarpetFluidMixinAdapter through the real weave: Carpet's renewable-blackstone rule, a TAIL hook on vanilla's
+ * MixinFluidReactionAdapter through the real weave: Carpet's renewable-blackstone rule, a TAIL hook on vanilla's
  * {@code shouldSpreadLiquid}, on a liquid block whose placement and neighbour change ask the two families' fluid
  * interaction registries instead and never call that method.
  *
  * <p>The probe places lava under blue ice, changes a neighbour of lava under blue ice, places lava in the open, and
  * places lava under blue ice in a cell a native interaction handles. Restored, the rule runs where the registries
  * answer "not handled": the first two cells turn to blackstone and fizz instead of ticking, the open cell ticks, and
- * the natively handled cell is left to the registry. With {@code -Dforbric.carpetMixins=off} (the switch this adapter
- * shares with CarpetMixinAdapter) the hook is woven into the method nothing calls: every lava cell just ticks, and
+ * the natively handled cell is left to the registry. With {@code -Dforbric.playerWorldCallbacks=off} (the switch this adapter
+ * shares with MixinPlayerWorldCallbackAdapter) the hook is woven into the method nothing calls: every lava cell just ticks, and
  * the final audit, seeing an attached injector, reports nothing.
  */
 class CarpetFluidMixinAdapterWeaveTest {
@@ -41,7 +41,7 @@ class CarpetFluidMixinAdapterWeaveTest {
 			+ " events=[fizz@0,64,0, fizz@10,64,0, tick@20,64,0]";
 	private static final String ONLY_TICKS = WeaveHarnessMain.DONE + " placed=air changed=air open=air handled=air"
 			+ " events=[tick@0,64,0, tick@10,64,0, tick@20,64,0]";
-	private static final String RESTORED = "[Forbric/Carpet] renewable blackstone now runs after unhandled native fluid interactions";
+	private static final String RESTORED = "[Forbric/Mixin] fluid reaction callbacks now follow the native interaction sites";
 
 	@TempDir static Path work;
 	private static Path fixture;
@@ -55,7 +55,7 @@ class CarpetFluidMixinAdapterWeaveTest {
 		assertEquals(16, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		fixture = WeaveHarness.fixture(work, "carpetfluid", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		restored = run("restored", Map.of());
-		off = run("carpet-off", Map.of(CarpetMixinAdapter.PROPERTY, "off"));
+		off = run("carpet-off", Map.of(MixinPlayerWorldCallbackAdapter.PROPERTY, "off"));
 	}
 
 	@Test void lavaUnderBlueIceTurnsToBlackstoneWhereTheRegistriesLeaveIt() throws Exception {
@@ -94,7 +94,7 @@ class CarpetFluidMixinAdapterWeaveTest {
 
 	/** The woven methods that no longer ask a registry themselves but hand the question to a merged Carpet wrap. */
 	private static List<String> wrapped(WeaveHarness.Result run) throws Exception {
-		return woven(run).methods.stream().filter(m -> calls(m, "forbric$carpetBlackstone$")).map(m -> m.name).sorted().toList();
+		return woven(run).methods.stream().filter(m -> calls(m, "forbric$unhandledFluidReaction$")).map(m -> m.name).sorted().toList();
 	}
 
 	private static boolean hooked(WeaveHarness.Result run, String method) throws Exception {

@@ -18,18 +18,18 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.CarpetMixinAdapter;
+import net.forbric.kernel.mixin.MixinPlayerWorldCallbackAdapter;
 
 /**
- * CarpetMixinAdapter through the real weave: Carpet's fill-without-updates hooks, written for vanilla's
+ * MixinPlayerWorldCallbackAdapter through the real weave: Carpet's fill-without-updates hooks, written for vanilla's
  * {@code Level.setBlock}, on a level whose setBlock hands the notification to NeoForge's {@code markAndNotifyBlock},
  * where the neighbour update and the UPDATE_KNOWN_SHAPE test now live.
  *
  * <p>The probe sets one block normally and one the way Carpet's fill does with updates turned off. Restored, both hooks
  * act in markAndNotifyBlock: the normal set updates neighbours and shapes, the fill updates neither. With
- * {@code -Dforbric.carpetMixins=off} both hooks name setBlock, which makes neither the call nor the constant: neither
+ * {@code -Dforbric.playerWorldCallbacks=off} both hooks name setBlock, which makes neither the call nor the constant: neither
  * attaches, the final audit confirms both lost, and the fill updates its neighbours and their shapes like any set. The
- * preflight fit check reads the mixin through the adapter too ({@code CarpetMixinAdapter.asLoaded}), so it calls the
+ * preflight fit check reads the mixin through the adapter too ({@code MixinPlayerWorldCallbackAdapter.asLoaded}), so it calls the
  * mixin partial only in the control.
  * (Carpet's hand-swap and block-break hooks, the adapter's other two cases, stay ClassNode-level.)
  */
@@ -40,7 +40,7 @@ class CarpetMixinAdapterWeaveTest {
 	private static final String LEVEL = "net/minecraft/world/level/Level";
 	private static final String QUIET_FILL = WeaveHarnessMain.DONE + " [neighbours@1,2,3, shapes@1,2,3]";
 	private static final String NOISY_FILL = WeaveHarnessMain.DONE + " [neighbours@1,2,3, shapes@1,2,3, neighbours@4,5,6, shapes@4,5,6]";
-	private static final String RESTORED = "[Forbric/Carpet] restored 2 callback(s) in carpet/mixins/Level_fillUpdatesMixin";
+	private static final String RESTORED = "[Forbric/Mixin] restored 2 callback(s) in carpet/mixins/Level_fillUpdatesMixin";
 	private static final String PARTIAL = "guest mixin carpet (" + CONFIG + "):Level_fillUpdatesMixin applies only partially";
 
 	@TempDir static Path work;
@@ -55,7 +55,7 @@ class CarpetMixinAdapterWeaveTest {
 		assertEquals(9, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		fixture = WeaveHarness.fixture(work, "carpetfill", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		restored = run("restored", Map.of());
-		off = run("carpet-off", Map.of(CarpetMixinAdapter.PROPERTY, "off"));
+		off = run("carpet-off", Map.of(MixinPlayerWorldCallbackAdapter.PROPERTY, "off"));
 	}
 
 	@Test void aFillWithUpdatesOffUpdatesNeitherNeighboursNorShapes() throws Exception {

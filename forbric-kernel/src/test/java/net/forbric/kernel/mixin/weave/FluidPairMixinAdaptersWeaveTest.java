@@ -24,7 +24,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.mixin.FabricFluidFlowMixinAdapter;
 
 /**
- * {@code FabricFluidFlowMixinAdapter} and {@code CreateFluidMixinAdapter} through the real weave TOGETHER, on one
+ * {@code FabricFluidFlowMixinAdapter} and {@code MixinFluidInteractionAdapter} through the real weave TOGETHER, on one
  * merged {@code LiquidBlock}: fabric-block-api's ALLOW veto and Create Fly's fluid reaction both hook vanilla's dead
  * {@code shouldSpreadLiquid} with a handler of the same name and descriptor, and both adapters keep that handler as
  * {@code shouldSpreadLiquid$forbricOriginal} for their wrappers to call.
@@ -59,7 +59,7 @@ class FluidPairMixinAdaptersWeaveTest {
 	private static final String TARGET = "net/minecraft/world/level/block/LiquidBlock";
 	private static final String HANDLER = "(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;"
 			+ "Lnet/minecraft/world/level/block/state/BlockState;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;)V";
-	private static final String CREATE_LOG = "[Forbric/Create] original fluid interaction callback now guards both live carrier reaction sites";
+	private static final String CREATE_LOG = "[Forbric/Mixin] original fluid interaction callback now guards both live carrier reaction sites";
 	private static final String FABRIC_LOG = "[Forbric/FluidFlow] Fabric's original ALLOW callback now guards both carrier interactions";
 	private static final String CONFLICT = "Method overwrite conflict";
 

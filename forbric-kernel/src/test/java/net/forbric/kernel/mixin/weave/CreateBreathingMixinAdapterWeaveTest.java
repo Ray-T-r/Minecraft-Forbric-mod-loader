@@ -16,20 +16,20 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.CreateBreathingMixinAdapter;
-import net.forbric.kernel.transform.CreateBreathingInjector;
+import net.forbric.kernel.mixin.MixinBreathingCallbackAdapter;
+import net.forbric.kernel.transform.BreathingCallbackInjector;
 
 /**
- * {@code CreateBreathingMixinAdapter} through the real weave: Create Fly's two breathing hooks, written against vanilla's
+ * {@code MixinBreathingCallbackAdapter} through the real weave: Create Fly's two breathing hooks, written against vanilla's
  * LivingEntity.baseTick (a wrap of isEyeInFluid(WATER) for the helmet in lava, a wrap of
  * MobEffectUtil.hasWaterBreathing for the backtank), on a merged baseTick that hands the whole calculation to NeoForge's
  * {@code CommonHooks.onLivingBreathe}.
  *
- * <p>The fixture's CommonHooks is the merged one after KernelBoot's {@code CreateBreathingInjector}
- * ({@link PreMixinFixture}), so NeoForge's calculation consults {@code CreateBreathingScope} at its start and at its
+ * <p>The fixture's CommonHooks is the merged one after KernelBoot's {@code BreathingCallbackInjector}
+ * ({@link PreMixinFixture}), so NeoForge's calculation consults {@code BreathingCallbackScope} at its start and at its
  * water-breathing check. The probe ticks a diver three times under water and once in lava. Adapted, one wrap around
  * NeoForge's call opens the scope with the mod's original handlers as callbacks: the backtank keeps the air at 10 and the
- * helmet acts in lava. With {@code -Dforbric.createBreathingMixin=off} neither wrap finds its vanilla call: the diver
+ * helmet acts in lava. With {@code -Dforbric.breathingCallbacks=off} neither wrap finds its vanilla call: the diver
  * loses air, the gear stays idle, and both handlers are the mod's required (SUSPECTED) losses.
  */
 class CreateBreathingMixinAdapterWeaveTest {
@@ -38,7 +38,7 @@ class CreateBreathingMixinAdapterWeaveTest {
 	private static final String MOD = "create";
 	private static final String TARGET = "net/minecraft/world/entity/LivingEntity";
 
-	private static final String SCOPE = "net/forbric/kernel/interop/CreateBreathingScope";
+	private static final String SCOPE = "net/forbric/kernel/interop/BreathingCallbackScope";
 	/** The one merged method whose NeoForge call the adapted wrap surrounds. */
 	private static final List<String> HOSTS = List.of("baseTick");
 
@@ -69,10 +69,10 @@ class CreateBreathingMixinAdapterWeaveTest {
 				// compiled runtime source set, so the production source is compiled in here.
 				Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelWrapOperations.java")),
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
-		// What the merged base's CommonHooks is once KernelBoot's CreateBreathingInjector has run.
-		PreMixinFixture.transform(fixture, CreateBreathingInjector.TARGET, new CreateBreathingInjector(), EnvType.SERVER);
+		// What the merged base's CommonHooks is once KernelBoot's BreathingCallbackInjector has run.
+		PreMixinFixture.transform(fixture, BreathingCallbackInjector.TARGET, new BreathingCallbackInjector(), EnvType.SERVER);
 		adapted = run("adapted", Map.of());
-		off = run("adapter-off", Map.of(CreateBreathingMixinAdapter.PROPERTY, "off"));
+		off = run("adapter-off", Map.of(MixinBreathingCallbackAdapter.PROPERTY, "off"));
 	}
 
 	@Test void theOriginalHandlersRunInsideNeoForgesAirCalculation() throws Exception {
@@ -119,7 +119,7 @@ class CreateBreathingMixinAdapterWeaveTest {
 		return run.findings().stream().filter(f -> f.id().equals("mixin:" + CONFIG + ":com.zurrtum.create.mixin.LivingEntityMixin")).toList();
 	}
 
-	/** Whether any method of the defined LivingEntity opens the kernel's CreateBreathingScope. */
+	/** Whether any method of the defined LivingEntity opens the kernel's BreathingCallbackScope. */
 	private static boolean entersScope(WeaveHarness.Result run) throws Exception {
 		ClassNode node = new ClassNode();
 		new ClassReader(run.defined(TARGET)).accept(node, 0);
