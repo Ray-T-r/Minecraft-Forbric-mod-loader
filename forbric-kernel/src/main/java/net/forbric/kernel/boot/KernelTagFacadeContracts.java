@@ -1,0 +1,22 @@
+/* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
+package net.forbric.kernel.boot;
+import java.lang.reflect.*;import java.util.*;import java.util.concurrent.ConcurrentHashMap;
+import org.objectweb.asm.Type;import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;import net.forbric.kernel.util.ForbricLog;
+/** A legacy tag facade may use its original container only while the actual typed path keeps its exact default. */
+public final class KernelTagFacadeContracts{
+ public record FieldShape(String owner,String name,String descriptor,int flags){}
+ public record MethodShape(MethodContract method,int flags){}
+ public record Schema(String collector,FieldShape field,MethodShape facade,MethodShape mapper,MethodShape typedActor,MethodShape taggedContainer,MethodShape typedContainer){}
+ private static final Map<String,Schema>SCHEMAS=new ConcurrentHashMap<>();private static final Set<String>DIAGNOSTICS=ConcurrentHashMap.newKeySet();
+ private KernelTagFacadeContracts(){}
+ public static void register(String key,Schema schema){Schema old=SCHEMAS.putIfAbsent(key,schema);if(old!=null&&!old.equals(schema))throw new IllegalStateException("ambiguous original tag facade");}
+ public static boolean permits(Object actor,Object container,String key){Schema s=SCHEMAS.get(key);if(s==null||actor==null||container==null)return false;try{ClassLoader loader=actor.getClass().getClassLoader();if(container.getClass().getClassLoader()!=loader)return decline(key,"different source container loader",false);
+  for(MethodShape method:List.of(s.facade(),s.mapper(),s.typedActor(),s.taggedContainer(),s.typedContainer()))if(!sameShape(loader,method))return decline(key,"final facade/container body or flags changed: "+method.method(),false);
+  if(!DefinedMethodContracts.validates(actor,s.typedActor().method())||!DefinedMethodContracts.validates(container,s.typedContainer().method())||!DefinedMethodContracts.validates(container,s.taggedContainer().method()))return decline(key,"native concrete typed/container dispatch retained",true);
+  Class<?>owner=Class.forName(s.field().owner().replace('/','.'),false,loader);Field field=owner.getDeclaredField(s.field().name());int mask=Modifier.PUBLIC|Modifier.PRIVATE|Modifier.PROTECTED|Modifier.STATIC|Modifier.FINAL|Modifier.VOLATILE; if(owner.getClassLoader()!=loader||!Type.getDescriptor(field.getType()).equals(s.field().descriptor())||(field.getModifiers()&mask)!=(s.field().flags()&mask))return decline(key,"actual container field shape changed",false);field.setAccessible(true);if(field.get(actor)!=container)return decline(key,"different actual container field",false);
+  var physical=KernelTagSourceContracts.schema(s.collector());if(physical==null||!KernelTagSourceContracts.validates(container,s.collector()))return decline(key,"final physical source view missing or changed",false);Class<?>physicalOwner=Class.forName(physical.owner().replace('/','.'),false,loader);Field ready=physicalOwner.getDeclaredField(physical.readyField()),map=physicalOwner.getDeclaredField(physical.mapField());ready.setAccessible(true);map.setAccessible(true);return ready.getBoolean(container)&&map.get(container)!=null;
+ }catch(ReflectiveOperationException|RuntimeException|LinkageError unknown){return decline(key,"source facade proof unavailable: "+unknown.getClass().getSimpleName(),false);}}
+ private static boolean sameShape(ClassLoader loader,MethodShape shape)throws ReflectiveOperationException{var c=shape.method();Class<?>owner=Class.forName(c.owner(),false,loader);if(owner.getClassLoader()!=loader||!DefinedMethodContracts.observed(loader,c))return false;for(Method method:owner.getDeclaredMethods())if(method.getName().equals(c.name())&&Type.getMethodDescriptor(method).equals(c.descriptor())){int mask=Modifier.PUBLIC|Modifier.PRIVATE|Modifier.PROTECTED|Modifier.STATIC|Modifier.FINAL|Modifier.SYNCHRONIZED|Modifier.NATIVE|Modifier.ABSTRACT;return(method.getModifiers()&mask)==(shape.flags()&mask)&&(method.getModifiers()&(Modifier.SYNCHRONIZED|Modifier.NATIVE|Modifier.ABSTRACT))==0;}return false;}
+ private static boolean decline(String key,String reason,boolean concrete){if(DIAGNOSTICS.add(key+":"+reason)){String message="[Forbric/Mixin] original tag facade container was not selected; native typed path retained: "+reason+" (source="+key+")";if(concrete)ForbricLog.info(message);else ForbricLog.warn(message);}return false;}
+ public static void resetForTests(){SCHEMAS.clear();DIAGNOSTICS.clear();}
+}

@@ -35,10 +35,13 @@ public final class KernelFluidPredicateSeams {
 	}
 	private KernelFluidPredicateSeams() { }
 	/** Called only by the kernel-owned concrete adapter, before it asks a guest behavior. */
-	static Boolean nativeDefault(Object adapter){
+	static MethodContract ownedDefault(StackWalker.StackFrame caller){return DefaultContracts.DEFAULTS.get(caller.getDeclaringClass()).get(caller.getMethodName()+caller.getDescriptor());}
+	static Boolean nativeDefault(Object adapter){return nativeDefault(adapter,null,CALLER.walk(frames->frames.skip(1).findFirst()).orElseThrow());}
+	static Boolean nativeDefault(Object adapter,Object subject){return nativeDefault(adapter,subject,CALLER.walk(frames->frames.skip(1).findFirst()).orElseThrow());}
+	private static Boolean nativeDefault(Object adapter,Object subject,StackWalker.StackFrame caller){
+		if(subject!=null&&KernelSharedPredicateScopes.active()){Boolean staged=KernelSharedPredicateScopes.answer(adapter,subject,caller);if(staged!=null)return staged;}
 		Scope scope=ACTIVE.get();if(scope==null)return null;
 		if(!(adapter instanceof net.neoforged.neoforge.fluids.FluidType type)||!KernelFabricFluidBehaviors.ownsNeoType(type))return null;
-		var caller=CALLER.walk(frames->frames.skip(1).findFirst()).orElseThrow();
 		if(!caller.getMethodName().equals(scope.question)||!caller.getDescriptor().equals(scope.descriptor))return null;
 		MethodContract contract=DefaultContracts.DEFAULTS.get(caller.getDeclaringClass()).get(scope.question+scope.descriptor);
 		if(contract==null||!DefinedMethodContracts.validates(adapter,contract)){scope.declined=new KernelPredicateSeams.Validation(false,false,"owned adapter final method witness is unavailable or changed: "+caller.getDeclaringClass().getName()+"."+scope.question+scope.descriptor);return null;}

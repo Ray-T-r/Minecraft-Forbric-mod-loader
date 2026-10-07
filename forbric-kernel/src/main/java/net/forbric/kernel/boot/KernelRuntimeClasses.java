@@ -473,9 +473,12 @@ public final class KernelRuntimeClasses {
 		// EntityFluidInteraction.getFluidTypeByTag before its throw (FabricFluidBehaviorInjector).
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidTypes", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFabricTagViews", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelTagFacadeSources", new Entry(Origin.COMPILED, List.of()));
 		// The shared breathe hook preserves the original drowning query and corrects adapter refill before its event.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidBreathing", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidPredicateSeams", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelSharedPredicateScopes", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelFluidPredicateIslands", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelSourceDecodeScopes", new Entry(Origin.COMPILED, List.of()));
 		// Asked in NeoForge's FluidInteractionRegistry.canInteract at each neighbour its own rules missed, handed
 		// MinecraftForge's map by its initializer and told of each addInteraction (FluidInteractionsInjector). Inserted
@@ -525,6 +528,9 @@ public final class KernelRuntimeClasses {
 		// Simultaneously a fabric-api HudElement and a NeoForge GuiLayer. It CANNOT be compiled: fabric-api is
 		// not on the game source set's classpath and will never be. See KernelHudBridge.
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudLayer", new Entry(Origin.GENERATED, List.of()));
+		// Generated class family: the closed source group derives the suffix from its executable body digest.
+		// LootSourceCallbacks offers the actual bytes; LootSourceContracts checks every final helper method.
+		CLASSES.put("net.forbric.kernel.runtime.generated.LootCallbacks$", new Entry(Origin.GENERATED, List.of()));
 	}
 
 	private KernelRuntimeClasses() {

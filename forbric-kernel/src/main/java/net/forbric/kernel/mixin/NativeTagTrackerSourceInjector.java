@@ -42,7 +42,7 @@ public final class NativeTagTrackerSourceInjector implements ClassTransformer{
 		MethodNode lookup=original.methods.stream().filter(m->Type.getArgumentTypes(m.desc).length==1&&Type.getArgumentTypes(m.desc)[0].equals(Type.getObjectType(template.fluid()))&&Type.getReturnType(m.desc).equals(Type.getObjectType(tracker))).findFirst().orElse(null);if(lookup==null)return false;
 		MethodInsnNode query=null;for(var i:lookup.instructions)if(i instanceof MethodInsnNode call&&call.desc.equals("(L"+tag+";)Z")){if(query!=null)return false;query=call;}if(query==null)return false;
 		ClassNode fluid=classes.apply(template.fluid());if(fluid==null)return false;MethodNode queryBody=method(fluid,query.name,query.desc),typeBody=method(fluid,template.typeGetter().name,template.typeGetter().desc);if(queryBody==null||typeBody==null)return false;
-		String id=MixinInstructionFingerprint.hash(sourceCtor)+":"+MixinInstructionFingerprint.hash(template.source())+":"+MixinInstructionFingerprint.hash(ctor)+":"+MixinInstructionFingerprint.hash(template.current());
+		String id=MixinInstructionFingerprint.hash(sourceCtor)+":"+MixinInstructionFingerprint.hash(template.source())+":"+MixinInstructionFingerprint.hash(ctor)+":"+MixinInstructionFingerprint.hash(template.current())+":"+MixinInstructionFingerprint.hash(queryBody)+":"+MixinInstructionFingerprint.hash(typeBody);
 		Map<String,String>names=new HashMap<>();for(MethodNode m:tagMethods)names.put(m.name+m.desc,prefix+m.name);
 		current.fields.add(new FieldNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_FINAL,sourceMap,MAP,null,null));current.fields.add(new FieldNode(Opcodes.ACC_PRIVATE,ready,"Z",null,null));
 		MethodNode extract=extract(current,sourceCtor,primary,tracker,sourceMap,prefix+"Extract",id);current.methods.add(extract);

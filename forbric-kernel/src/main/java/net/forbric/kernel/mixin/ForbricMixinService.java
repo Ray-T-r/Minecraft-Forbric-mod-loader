@@ -324,6 +324,15 @@ public final class ForbricMixinService
 		MixinDefaultCallbackTransport.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
 		MixinNativePredicateSeam.adapt(node, this::mergedBaseNodeWithCode,
 				owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner));
+		MixinSharedPredicateSeam.adapt(node, this::mergedBaseNodeWithCode,
+				owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner),
+				owner -> {
+					ClassNode original = NativeGameReferences.reference(net.forbric.api.Ecosystem.NEOFORGE, owner);
+					return original != null ? original : NativeGameReferences.runtime(net.forbric.api.Ecosystem.NEOFORGE, owner);
+				});
+		MixinCrossHostPredicateIsland.adapt(node, this::mergedBaseNodeWithCode,
+				owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner),
+				ForbricMixinService::registerBeforeDefinition);
 		MixinPredicateDelegateAdapter.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
 		MixinResourceContinuationAdapter.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
 		MixinUnusedArgumentObserverAdapter.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);

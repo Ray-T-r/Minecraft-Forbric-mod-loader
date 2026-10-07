@@ -320,6 +320,13 @@ test {
 	def predicateBase = file(project.findProperty('forbric.predicateBase') ?: stagedMergedBase)
 	inputs.files(predicateBase).withPropertyName('predicateNativeBase').optional()
 	systemProperty 'forbric.predicateBase', predicateBase.absolutePath
+	// Optional final-definition evidence lets the staged source-continuation test replay a real weave.
+	def sharedFinalDefined = project.findProperty('forbric.sharedFinalDefined')
+	if (sharedFinalDefined != null) {
+		def definitions = file(sharedFinalDefined)
+		inputs.files(fileTree(definitions)).withPropertyName('sharedFinalDefined').optional()
+		systemProperty 'forbric.sharedFinalDefined', definitions.absolutePath
+	}
 	// These integration fixtures read the released Create Fly jar, so replacing it must invalidate the tests. A
 	// file collection, not inputs.file: a fresh clone (and CI) has no such jar, and the tests skip without it.
 	def createFlyFixture = file(project.findProperty('forbric.createFlyJar')

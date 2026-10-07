@@ -74,6 +74,8 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinReturnDecorationAdapter", Switch.own("forbric.mixinReturnDecorations")), // MixinReturnDecorationWeaveTest
 			Map.entry("MixinDefaultCallbackTransport", Switch.own("forbric.mixinDefaultCallbacks")), // MixinDefaultCallbackTransportWeaveTest
 			Map.entry("MixinNativePredicateSeam", Switch.own("forbric.nativePredicateSeams")), // MixinNativePredicateSeamWeaveTest
+			Map.entry("MixinSharedPredicateSeam", Switch.own("forbric.sharedPredicateSeams")), // MixinSharedPredicateSeamWeaveTest
+			Map.entry("MixinCrossHostPredicateIsland", Switch.own("forbric.crossHostPredicateIslands")), // MixinCrossHostPredicateIslandWeaveTest
 			Map.entry("MixinPredicateDelegateAdapter", Switch.own("forbric.mixinPredicateDelegates")), // MixinPredicateDelegateWeaveTest
 			Map.entry("MixinResourceContinuationAdapter", Switch.own("forbric.mixinResourceContinuations")), // MixinResourceContinuationWeaveTest
 			Map.entry("MixinNullableCompositeCallback", Switch.own("forbric.mixinNullableCompositeCallbacks")), // MixinNullableCompositeWeaveTest

@@ -71,7 +71,7 @@ class MixinNativePredicateSeamWeaveTest{
 			@Mixin(State.class)public class ChangedDefaultMixin{@Inject(method="supports",at=@At("HEAD"),cancellable=true)private void altered(Owner owner,CallbackInfoReturnable<Boolean>ci){ci.setReturnValue(true);}}
 			"""));
 		// Compile the production runtime bridge against the renamed stand-ins, including its complete scope logic.
-		Path repository=Path.of(System.getProperty("user.dir"));files.add(repository.resolve("src/runtime/java/net/forbric/kernel/runtime/KernelFluidPredicateSeams.java"));files.add(repository.resolve("src/main/java/net/forbric/kernel/boot/KernelPredicateSeams.java"));
+		Path repository=Path.of(System.getProperty("user.dir"));files.add(repository.resolve("src/runtime/java/net/forbric/kernel/runtime/KernelFluidPredicateSeams.java"));files.add(repository.resolve("src/main/java/net/forbric/kernel/boot/KernelPredicateSeams.java"));files.add(repository.resolve("src/runtime/java/net/forbric/kernel/runtime/KernelSharedPredicateScopes.java"));files.add(repository.resolve("src/main/java/net/forbric/kernel/boot/KernelSharedPredicateContracts.java"));
 		Path config=write(sources,CONFIG,"{\"required\":false,\"minVersion\":\"0.8\",\"package\":\"fixture.seams.mixin\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"SourceMixin\",\"CounterMixin\"],\"injectors\":{\"defaultRequire\":0}}");
 		Path changed=write(sources,"changed.mixins.json","{\"required\":true,\"minVersion\":\"0.8\",\"package\":\"fixture.seams.mixin\",\"compatibilityLevel\":\"JAVA_21\",\"mixins\":[\"ChangedDefaultMixin\"]}");
 		Path rawFixture=WeaveHarness.fixture(work,"native-seam",files,Map.of(CONFIG,config,"changed.mixins.json",changed));Map<String,byte[]>base=entries(rawFixture);

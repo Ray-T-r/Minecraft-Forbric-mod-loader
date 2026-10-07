@@ -433,6 +433,8 @@ public final class ForbricClassLoader extends URLClassLoader {
 			Class<?> defined = defineClass(name, bytes, 0, bytes.length, domain);
 			definitionEvidence.defined(name, bytes);
 			net.forbric.kernel.boot.DefinedMethodContracts.observe(this, name, bytes);
+			net.forbric.kernel.boot.SharedFinalSourceContracts.observeDefinition(this, name, bytes);
+			net.forbric.kernel.mixin.MixinCrossHostPredicateIsland.observeDefinition(name, bytes);
 			net.forbric.kernel.mixin.FinalMixinApplications.onClassDefined(name, bytes);
 			net.forbric.kernel.mixin.SupersededMixins.observeDefinition(this, name, bytes);
 			net.forbric.kernel.boot.KernelHudBridge.observeDefinition(name, bytes);
