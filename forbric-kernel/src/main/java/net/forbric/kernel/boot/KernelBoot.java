@@ -349,6 +349,7 @@ public final class KernelBoot {
 		// on its own platform — and a universal jar answers as the ONE ecosystem it was arbitrated to. Plain
 		// libraries declare no manifest and stay unowned. See LoaderProbePolicy.
 		loader.setJarFamilies(probeFamilies(fabricJars, modJars));
+		RuntimeJarProvenance.register(loader, runtimeJars);
 		// …and a universal jar's ServiceLoader lists only the providers that loader could link, as on its own.
 		loader.setUniversalJars(universalJars(fabricJars, modJars));
 		LoaderProbePolicy.bindGuestLoader(loader);
