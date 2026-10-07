@@ -12,19 +12,22 @@ public final class MixinNullableCompositeCallback {
 	public static final String PROPERTY="forbric.mixinNullableCompositeCallbacks";
 	private static final String INJECT="Lorg/spongepowered/asm/mixin/injection/Inject;",LOCAL="Lcom/llamalad7/mixinextras/sugar/Local;";
 	private static final String CIR="Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;",SUFFIX="$forbricnullablecomposite";
-	private record Shape(ClassNode type,MethodNode empty){}
-	private record Plan(MethodNode host,MethodInsnNode lookup,int slot,Shape shape){}
+	static record Shape(ClassNode type,MethodNode empty){}
+	private record Plan(MethodNode host,MethodInsnNode lookup,int slot,Shape shape,MixinNullableLookupContracts.LookupProof proof){}
 	public record Installed(String mixin,String owner,String host,String descriptor,String handler,String outerDescriptor,String innerDescriptor){}
-	private record Evidence(Installed installed,ClassNode source,MethodNode original,Shape shape){}
-	private static String recordContract(Shape shape){
+	private record Evidence(Installed installed,ClassNode source,MethodNode original,Shape shape,String lookup){}
+	private static String recordContract(Shape shape,MixinNullableLookupContracts.LookupProof proof){
 		return net.forbric.kernel.boot.KernelCompositeCallbacks.register(shape.type.name,
 				shape.type.methods.stream().filter(m->(m.access&(Opcodes.ACC_ABSTRACT|Opcodes.ACC_NATIVE))==0)
-					.map(m->new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(shape.type.name,m.name,m.desc,MixinInstructionFingerprint.hash(m))).toList());
+					.map(m->new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(shape.type.name,m.name,m.desc,MixinInstructionFingerprint.hash(m))).toList(),proof.methods(),proof.fields());
 	}
 	private static final Map<String,Evidence> INSTALLED=new java.util.concurrent.ConcurrentHashMap<>();
 	private MixinNullableCompositeCallback(){}
-	public static int adapt(ClassNode mixin,Ecosystem ecosystem,Function<String,ClassNode> classes){return adapt(mixin,classes,owner->NativeGameReferences.reference(ecosystem,owner));}
+	public static int adapt(ClassNode mixin,Ecosystem ecosystem,Function<String,ClassNode> classes){return adapt(mixin,classes,owner->NativeGameReferences.reference(ecosystem,owner),owner->NativeGameReferences.reference(Ecosystem.NEOFORGE,owner),owner->NativeGameReferences.runtime(Ecosystem.NEOFORGE,owner));}
 	static int adapt(ClassNode mixin,Function<String,ClassNode> classes,Function<String,ClassNode> references){
+		return adapt(mixin,classes,references,owner->NativeGameReferences.reference(Ecosystem.NEOFORGE,owner),owner->NativeGameReferences.runtime(Ecosystem.NEOFORGE,owner));
+	}
+	public static int adapt(ClassNode mixin,Function<String,ClassNode> classes,Function<String,ClassNode> references,Function<String,ClassNode> nativeReferences,Function<String,ClassNode> runtimeReferences){
 		if("off".equalsIgnoreCase(System.getProperty(PROPERTY,"on")))return 0;
 		List<String> targets=MixinFit.mixinTargets(mixin);if(targets.size()!=1)return 0;
 		ClassNode target=classes.apply(targets.getFirst()),reference=references.apply(targets.getFirst());if(target==null||reference==null)return 0;
@@ -48,17 +51,19 @@ public final class MixinNullableCompositeCallback {
 				Shape shape=shape(classes.apply(Type.getReturnType(lookup.desc).getInternalName()),parameters[capture]);if(shape==null)continue;
 				AbstractInsnNode store=next(lookup);if(!(store instanceof VarInsnNode variable)||store.getOpcode()!=Opcodes.ASTORE)continue;
 				if(!sameLookupInputs(target.name,reference,original,nativeCalls.getFirst(),host,lookup))continue;
-				candidates.add(new Plan(host,lookup,variable.var,shape));
+				var helpers=MixinNullableLookupContracts.prove(reference,original,nativeCalls.getFirst(),target,host,lookup,shape,classes,references,nativeReferences,runtimeReferences);if(helpers==null)continue;
+				candidates.add(new Plan(host,lookup,variable.var,shape,helpers));
 			}
 			if(candidates.size()!=1)continue;Plan plan=candidates.getFirst();String originalName=handler.name,innerDescriptor=handler.desc;
 			ClassNode snapshot=new ClassNode();mixin.accept(snapshot);MethodNode originalBody=snapshot.methods.stream().filter(m->m.name.equals(originalName)&&m.desc.equals(innerDescriptor)).findFirst().orElseThrow();
 			MethodNode outer=wrap(mixin,handler,injection,points.getFirst(),capture,plan);added.add(outer);
 			Installed installed=new Installed(mixin.name,target.name,host.name,host.desc,originalName,outer.desc,innerDescriptor);
-			INSTALLED.put(target.name+"#"+host.name+host.desc+"#"+mixin.name,new Evidence(installed,snapshot,originalBody,plan.shape));
+			INSTALLED.put(target.name+"#"+host.name+host.desc+"#"+mixin.name,new Evidence(installed,snapshot,originalBody,plan.shape,"L"+plan.lookup.owner+";"+plan.lookup.name+plan.lookup.desc));
 		}
 		mixin.methods.addAll(added);return added.size();
 	}
 	/** A caller can stand an older kernel fallback down only after this precise migrated outer is in the final host. */
+	public static void certify(ClassNode target){for(MethodNode host:target.methods)installedOnFinalHost(target,host);}
 	public static boolean installedOnFinalHost(ClassNode target,MethodNode host){
 		for(Evidence evidence:INSTALLED.values()){
 			Installed plan=evidence.installed;
@@ -67,16 +72,26 @@ public final class MixinNullableCompositeCallback {
 				if(!outer.desc.equals(plan.outerDescriptor)||!mergedFrom(outer,plan.mixin)||!outer.name.endsWith("$"+plan.handler))continue;
 				long entries=Arrays.stream(host.instructions.toArray()).filter(i->i instanceof MethodInsnNode c&&c.owner.equals(target.name)&&c.name.equals(outer.name)&&c.desc.equals(outer.desc)).count();
 				List<MethodInsnNode> originals=Arrays.stream(outer.instructions.toArray()).filter(i->i instanceof MethodInsnNode c&&c.owner.equals(target.name)&&c.desc.equals(plan.innerDescriptor)&&c.name.contains(SUFFIX)).map(MethodInsnNode.class::cast).toList();
-				if(entries!=1||originals.size()!=1||!outerContract(outer,originals.getFirst(),evidence.shape))continue;
+				if(entries!=1||originals.size()!=1||!outerContract(outer,originals.getFirst(),evidence.shape)||!captureFromLookup(target,host,outer,evidence.lookup))continue;
 				MethodNode inner=target.methods.stream().filter(m->m.name.equals(originals.getFirst().name)&&m.desc.equals(plan.innerDescriptor)).findFirst().orElse(null);
-				if(inner!=null&&originalBody(target,inner,evidence))return true;
+				if(inner!=null&&originalBody(target,inner,evidence)){var key=(LdcInsnNode)DefaultMethodOverloadBridge.real(outer).get(1);var guest=target.methods.stream().filter(m->mergedFrom(m,evidence.installed.mixin)).map(m->new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(target.name,m.name,m.desc,MixinInstructionFingerprint.hash(m))).toList();net.forbric.kernel.boot.KernelCompositeCallbacks.certify((String)key.cst,new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(target.name,outer.name,outer.desc,MixinInstructionFingerprint.hash(outer)),new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(target.name,host.name,host.desc,MixinInstructionFingerprint.hash(host)),guest);return true;}
 			}
 		}return false;
 	}
+	private static boolean captureFromLookup(ClassNode target,MethodNode host,MethodNode outer,String lookup){
+		try{Frame<SourceValue>[] frames=new Analyzer<>(new SourceInterpreter()).analyze(target.name,host);for(var instruction:host.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(target.name)&&call.name.equals(outer.name)&&call.desc.equals(outer.desc)){Frame<SourceValue> at=frames[host.instructions.indexOf(call)];return at!=null&&at.getStackSize()>0&&lookupOrigin(host,frames,at.getStack(at.getStackSize()-1),lookup,new HashSet<>());}return false;}
+		catch(AnalyzerException|RuntimeException unproved){return false;}
+	}
+	private static boolean lookupOrigin(MethodNode host,Frame<SourceValue>[] frames,SourceValue value,String lookup,Set<AbstractInsnNode> active){if(value==null||value.insns.size()!=1)return false;var instruction=value.insns.iterator().next();if(!active.add(instruction))return false;try{Frame<SourceValue> at=frames[host.instructions.indexOf(instruction)];if(at==null)return false;
+		if(instruction instanceof MethodInsnNode call)return lookup.equals("L"+call.owner+";"+call.name+call.desc);
+		if(instruction instanceof VarInsnNode variable){if(variable.getOpcode()==Opcodes.ALOAD)return lookupOrigin(host,frames,at.getLocal(variable.var),lookup,active);if(variable.getOpcode()==Opcodes.ASTORE)return lookupOrigin(host,frames,at.getStack(at.getStackSize()-1),lookup,active);}
+		if(instruction instanceof TypeInsnNode cast&&cast.getOpcode()==Opcodes.CHECKCAST)return lookupOrigin(host,frames,at.getStack(at.getStackSize()-1),lookup,active);return false;
+	}finally{active.remove(instruction);}}
 	private static boolean outerContract(MethodNode outer,MethodInsnNode inner,Shape shape){
 		List<AbstractInsnNode> code=DefaultMethodOverloadBridge.real(outer);Type[] args=Type.getArgumentTypes(outer.desc);boolean isStatic=(outer.access&Opcodes.ACC_STATIC)!=0;int capture=args.length-1,offset=isStatic?0:1;
 		if(code.size()!=capture+10+offset||!(code.get(0)instanceof VarInsnNode value)||value.getOpcode()!=Opcodes.ALOAD||value.var!=DefaultMethodOverloadBridge.slots(args,isStatic)[capture]
-				||!(code.get(1)instanceof LdcInsnNode key)||!recordContract(shape).equals(key.cst)
+				||!(code.get(1)instanceof LdcInsnNode key)||!(key.cst instanceof String token)||!net.forbric.kernel.boot.KernelCompositeCallbacks.provesShape(token,shape.type.name,
+					shape.type.methods.stream().filter(m->(m.access&(Opcodes.ACC_ABSTRACT|Opcodes.ACC_NATIVE))==0).map(m->new net.forbric.kernel.boot.DefinedMethodContracts.MethodContract(shape.type.name,m.name,m.desc,MixinInstructionFingerprint.hash(m))).toList())
 				||!(code.get(2)instanceof MethodInsnNode proof)||!proof.owner.equals("net/forbric/kernel/boot/KernelCompositeCallbacks")||!proof.name.equals("permits")||!proof.desc.equals("(Ljava/lang/Object;Ljava/lang/String;)Z")
 				||!(code.get(3)instanceof JumpInsnNode guard)||guard.getOpcode()!=Opcodes.IFEQ||next(guard.label)!=code.getLast()
 				||!(code.get(4)instanceof VarInsnNode reload)||reload.getOpcode()!=Opcodes.ALOAD||reload.var!=value.var
@@ -154,11 +169,11 @@ public final class MixinNullableCompositeCallback {
 		}catch(AnalyzerException|RuntimeException unknown){return false;}
 	}
 	private static boolean prefix(Type[] original,Type[] current){return original.length<=current.length&&Arrays.equals(original,Arrays.copyOf(current,original.length));}
-	private static final class Keys{
+		static final class Keys{
 		final MethodNode method;final Frame<SourceValue>[] frames;final Map<Integer,String> parameters=new HashMap<>();
 		Keys(String owner,MethodNode method,Map<Integer,String> mapped)throws AnalyzerException{this.method=method;int slot=(method.access&Opcodes.ACC_STATIC)==0?1:0,index=0;if(slot==1)parameters.put(0,"this");for(Type type:Type.getArgumentTypes(method.desc)){parameters.put(slot,"parameter:"+index+++":"+type.getDescriptor());slot+=type.getSize();}if(mapped!=null)parameters.putAll(mapped);frames=new Analyzer<>(new SourceInterpreter()).analyze(owner,method);}
 		List<String> arguments(MethodInsnNode call){Frame<SourceValue> frame=frames[method.instructions.indexOf(call)];int count=Type.getArgumentTypes(call.desc).length+(call.getOpcode()==Opcodes.INVOKESTATIC?0:1);if(frame==null||frame.getStackSize()<count)return null;List<String> result=new ArrayList<>();for(int i=frame.getStackSize()-count;i<frame.getStackSize();i++){String key=key(frame.getStack(i),-1,new HashSet<>());if(key==null)return null;result.add(key);}return result;}
-		String key(SourceValue value,int parameter,Set<AbstractInsnNode> active){if(value==null)return null;if(value.insns.isEmpty())return parameters.get(parameter);if(value.insns.size()!=1)return null;AbstractInsnNode instruction=value.insns.iterator().next();if(!active.add(instruction))return null;try{Frame<SourceValue> at=frames[method.instructions.indexOf(instruction)];if(at==null)return null;int opcode=instruction.getOpcode();if(instruction instanceof VarInsnNode variable){if(opcode>=Opcodes.ILOAD&&opcode<=Opcodes.ALOAD)return key(at.getLocal(variable.var),variable.var,active);if(opcode>=Opcodes.ISTORE&&opcode<=Opcodes.ASTORE)return key(at.getStack(at.getStackSize()-1),-1,active);return null;}if(instruction instanceof FieldInsnNode field&&(opcode==Opcodes.GETFIELD||opcode==Opcodes.GETSTATIC)){String receiver=opcode==Opcodes.GETSTATIC?"static":key(at.getStack(at.getStackSize()-1),-1,active);return receiver==null?null:receiver+"/field:"+field.owner+":"+field.name+field.desc;}if(instruction instanceof MethodInsnNode call){List<String> args=new ArrayList<>();int count=Type.getArgumentTypes(call.desc).length+(opcode==Opcodes.INVOKESTATIC?0:1);for(int i=at.getStackSize()-count;i<at.getStackSize();i++){String key=key(at.getStack(i),-1,active);if(key==null)return null;args.add(key);}return "call:"+call.owner+":"+call.name+call.desc+"("+String.join(",",args)+")";}if(opcode>=Opcodes.IADD&&opcode<=Opcodes.DREM||opcode>=Opcodes.ISHL&&opcode<=Opcodes.LXOR){String left=key(at.getStack(at.getStackSize()-2),-1,active),right=key(at.getStack(at.getStackSize()-1),-1,active);return left==null||right==null?null:"binary:"+opcode+"("+left+","+right+")";}if(instruction instanceof LdcInsnNode literal)return"constant:"+literal.cst;if(opcode>=Opcodes.ICONST_M1&&opcode<=Opcodes.DCONST_1||opcode==Opcodes.ACONST_NULL)return"constant:"+opcode;return null;}finally{active.remove(instruction);}}
+		String key(SourceValue value,int parameter,Set<AbstractInsnNode> active){if(value==null)return null;if(value.insns.isEmpty())return parameters.get(parameter);if(value.insns.size()!=1)return null;AbstractInsnNode instruction=value.insns.iterator().next();if(!active.add(instruction))return null;try{Frame<SourceValue> at=frames[method.instructions.indexOf(instruction)];if(at==null)return null;int opcode=instruction.getOpcode();if(instruction instanceof VarInsnNode variable){if(opcode>=Opcodes.ILOAD&&opcode<=Opcodes.ALOAD)return key(at.getLocal(variable.var),variable.var,active);if(opcode>=Opcodes.ISTORE&&opcode<=Opcodes.ASTORE)return key(at.getStack(at.getStackSize()-1),-1,active);return null;}if(instruction instanceof FieldInsnNode field&&(opcode==Opcodes.GETFIELD||opcode==Opcodes.GETSTATIC)){String receiver=opcode==Opcodes.GETSTATIC?"static":key(at.getStack(at.getStackSize()-1),-1,active);return receiver==null?null:receiver+"/field:"+field.owner+":"+field.name+field.desc;}if(instruction instanceof MethodInsnNode call){List<String> args=new ArrayList<>();int count=Type.getArgumentTypes(call.desc).length+(opcode==Opcodes.INVOKESTATIC?0:1);for(int i=at.getStackSize()-count;i<at.getStackSize();i++){String key=key(at.getStack(i),-1,active);if(key==null)return null;args.add(key);}return "call:"+call.owner+":"+call.name+call.desc+"("+String.join(",",args)+")";}if(opcode>=Opcodes.IADD&&opcode<=Opcodes.DREM||opcode>=Opcodes.ISHL&&opcode<=Opcodes.LXOR){String left=key(at.getStack(at.getStackSize()-2),-1,active),right=key(at.getStack(at.getStackSize()-1),-1,active);return left==null||right==null?null:"binary:"+opcode+"("+left+","+right+")";}if(instruction instanceof TypeInsnNode cast&&opcode==Opcodes.CHECKCAST)return key(at.getStack(at.getStackSize()-1),-1,active);if(opcode>=Opcodes.I2L&&opcode<=Opcodes.I2S){String operand=key(at.getStack(at.getStackSize()-1),-1,active);return operand==null?null:"convert:"+opcode+"("+operand+")";}if(instruction instanceof LdcInsnNode literal)return"constant:"+literal.cst;if(opcode>=Opcodes.ICONST_M1&&opcode<=Opcodes.DCONST_1||opcode==Opcodes.ACONST_NULL)return"constant:"+opcode;return null;}finally{active.remove(instruction);}}
 	}
 	private static MethodNode wrap(ClassNode mixin,MethodNode handler,AnnotationNode injection,AnnotationNode point,int capture,Plan plan){
 		String original=handler.name,inner=MixinHandlerShim.asideName(mixin.name,original,SUFFIX);Type[] args=Type.getArgumentTypes(handler.desc);args[capture]=Type.getObjectType(plan.shape.type.name);
@@ -168,7 +183,7 @@ public final class MixinNullableCompositeCallback {
 		put(injection,"method",List.of(plan.host.name+plan.host.desc));
 		put(point,"target","L"+plan.lookup.owner+";"+plan.lookup.name+plan.lookup.desc);AnnotationNode local=MixinStubRebind.sugar(outer,capture,LOCAL);put(local,"index",plan.slot);remove(local,"name");remove(local,"ordinal");remove(local,"argsOnly");
 		int[] slots=DefaultMethodOverloadBridge.slots(args,(handler.access&Opcodes.ACC_STATIC)!=0);LabelNode done=new LabelNode();
-		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD,slots[capture]));outer.instructions.add(new LdcInsnNode(recordContract(plan.shape)));
+			outer.instructions.add(new VarInsnNode(Opcodes.ALOAD,slots[capture]));outer.instructions.add(new LdcInsnNode(recordContract(plan.shape,plan.proof)));
 		outer.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"net/forbric/kernel/boot/KernelCompositeCallbacks","permits","(Ljava/lang/Object;Ljava/lang/String;)Z",false));outer.instructions.add(new JumpInsnNode(Opcodes.IFEQ,done));
 		outer.instructions.add(new VarInsnNode(Opcodes.ALOAD,slots[capture]));outer.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,plan.shape.type.name,plan.shape.empty.name,plan.shape.empty.desc,false));outer.instructions.add(new JumpInsnNode(Opcodes.IFEQ,done));
 		if((handler.access&Opcodes.ACC_STATIC)==0)outer.instructions.add(new VarInsnNode(Opcodes.ALOAD,0));for(int i=0;i<capture;i++)outer.instructions.add(new VarInsnNode(args[i].getOpcode(Opcodes.ILOAD),slots[i]));outer.instructions.add(new InsnNode(Opcodes.ACONST_NULL));outer.instructions.add(MixinHandlerShim.callOwn(mixin,(handler.access&Opcodes.ACC_STATIC)!=0,inner,handler.desc));outer.instructions.add(done);outer.instructions.add(new FrameNode(Opcodes.F_SAME,0,null,0,null));outer.instructions.add(new InsnNode(Opcodes.RETURN));outer.maxLocals=slots[capture]+1;outer.maxStack=outer.maxLocals+1;

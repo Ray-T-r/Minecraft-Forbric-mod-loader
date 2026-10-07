@@ -8,6 +8,7 @@ public final class PostMixinCallbackPriority implements ClassTransformer {
  @Override public byte[] transform(String name,byte[]bytes,TransformContext context){
   if(bytes==null)return null;ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);
   int changed=HopperFabricStorageInjector.standDownMigratedCallbacks(node);
+  net.forbric.kernel.mixin.MixinNullableCompositeCallback.certify(node);
   net.forbric.kernel.mixin.MixinDecodeScopeAdapter.certify(node);if(changed==0)return bytes;
   ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);node.accept(writer);
   ForbricLog.info("[Forbric/Mixin] %s stands down %d older fallback(s); the final source callback, arguments and helper bodies own their original operation",name,changed);
