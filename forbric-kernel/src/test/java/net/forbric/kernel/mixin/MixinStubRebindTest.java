@@ -471,13 +471,13 @@ class MixinStubRebindTest {
 		MethodNode stub = new MethodNode(Opcodes.ACC_STATIC, "f", "(IILjava/io/InputStream;)V", null, null);
 		MethodNode body = new MethodNode(Opcodes.ACC_STATIC, "f", "(IILjava/io/InputStream;Z)V", null, null);
 		Type in = Type.getType("Ljava/io/InputStream;");
-		MixinStubRebind.Delegation straight = new MixinStubRebind.Delegation(body, new int[] { 0, 1, 2 });
-		MixinStubRebind.Delegation swapped = new MixinStubRebind.Delegation(body, new int[] { 1, 0, 2 });
+		MixinStubRebind.Delegation straight = new MixinStubRebind.Delegation(body, new int[] { 0, 1, 2 }, false);
+		MixinStubRebind.Delegation swapped = new MixinStubRebind.Delegation(body, new int[] { 1, 0, 2 }, false);
 		assertTrue(MixinStubRebind.argumentSurvives(in, null, stub, straight));
 		assertTrue(MixinStubRebind.argumentSurvives(Type.INT_TYPE, 1, stub, straight));
 		assertFalse(MixinStubRebind.argumentSurvives(Type.INT_TYPE, 0, stub, swapped), "the stub hands its first int over as the second");
 		assertFalse(MixinStubRebind.argumentSurvives(Type.INT_TYPE, null, stub, straight), "two ints and no ordinal: Mixin's own pick fails");
-		assertFalse(MixinStubRebind.argumentSurvives(in, null, stub, new MixinStubRebind.Delegation(body, new int[] { 0, 1, -1 })),
+		assertFalse(MixinStubRebind.argumentSurvives(in, null, stub, new MixinStubRebind.Delegation(body, new int[] { 0, 1, -1 }, false)),
 				"the stream is not passed through");
 	}
 
@@ -618,19 +618,22 @@ class MixinStubRebindTest {
 		assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(mixin, resolver).verdict(), "the rebind's switch");
 	}
 
-	/** A non-capturing lambda is a constant; a capturing one, or a string concatenation, is work the stub does. */
-	@Test void aLambdaStubIsAStubButACapturingOneIsNot() throws Exception {
+	/**
+	 * A non-capturing lambda is a constant; a capturing one is an argument the stub works out (a stub, but a computed
+	 * one, which the census keeps only where nothing calls it); a string concatenation is work of another kind.
+	 */
+	@Test void aLambdaStubIsAStubAndACapturingOneAComputedStub() throws Exception {
 		ClassNode language = merged("net/minecraft/locale/Language");
 		MethodNode stub = language.methods.stream().filter(m -> m.name.equals("loadFromJson")
 				&& m.desc.equals("(Ljava/io/InputStream;Ljava/util/function/BiConsumer;)V")).findFirst().orElseThrow();
-		assertNotNull(MixinStubRebind.delegation(language, stub));
+		assertFalse(MixinStubRebind.delegation(language, stub).computed());
 		org.objectweb.asm.tree.InvokeDynamicInsnNode indy = Arrays.stream(stub.instructions.toArray())
 				.filter(org.objectweb.asm.tree.InvokeDynamicInsnNode.class::isInstance).map(org.objectweb.asm.tree.InvokeDynamicInsnNode.class::cast)
 				.findFirst().orElseThrow();
 		String nonCapturing = indy.desc;
 		indy.desc = "(Ljava/lang/Object;)Ljava/util/function/BiConsumer;";
 		stub.instructions.insertBefore(indy, new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.ACONST_NULL));
-		assertNull(MixinStubRebind.delegation(language, stub), "a capturing lambda");
+		assertTrue(MixinStubRebind.delegation(language, stub).computed(), "a capturing lambda");
 		indy.desc = nonCapturing;
 		stub.instructions.remove(indy.getPrevious());
 		indy.bsm = new org.objectweb.asm.Handle(org.objectweb.asm.Opcodes.H_INVOKESTATIC, "java/lang/invoke/StringConcatFactory",

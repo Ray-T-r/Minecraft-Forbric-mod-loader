@@ -39,10 +39,17 @@ import net.forbric.kernel.util.ForbricLog;
  *       nothing else, with a static {@code (CallbackInfo)V} handler and no slice or locals capture — an empty hook has
  *       no inner instruction, local or second return to find — and, at HEAD, not cancellable: on the empty hook a
  *       cancel could no longer skip the freeze;</li>
+ *   <li>or it is the same {@code @Inject} on {@code bootStrap()}, at its one call of {@code freeze()}: just before it
+ *       (no shift, or {@code BEFORE}) is the freeze's HEAD, just after it ({@code AFTER}) its TAIL, since
+ *       {@code bootStrap()} runs nothing between that call and either edge of {@code freeze()}. Never cancellable
+ *       there: a cancel would return from {@code bootStrap()} without the freeze. LiquidBounce builds its creative
+ *       tabs from such an injector, and their initialisers ask {@code Minecraft.getInstance()}, which on Fabric is set
+ *       by then; left in {@code Bootstrap} it is null, the tabs' class initialisation fails, and the client dies on
+ *       the first class that touches it after the title screen;</li>
  *   <li>the hooks exist ({@code -Dforbric.fabricFreezePoint=off} removes them, and this then stands down).</li>
  * </ul>
- * An injector at an instruction inside {@code freeze()}, or on {@code bootStrap()} (yumi, ViaFabricPlus), is left in
- * {@code Bootstrap}: nothing found depends on it running later.
+ * An injector at any other instruction inside {@code freeze()} or {@code bootStrap()} is left in {@code Bootstrap}:
+ * ViaFabricPlus' registry hook before {@code createContents()} runs there and registers what it needs to.
  */
 public final class FabricFreezeHookMixinAdapter {
 	static final String BUILT_IN_REGISTRIES = "net/minecraft/core/registries/BuiltInRegistries";
@@ -50,6 +57,9 @@ public final class FabricFreezeHookMixinAdapter {
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String HANDLER_DESC = "(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V";
 	private static final Set<String> FREEZE = Set.of("freeze", "freeze()V", "L" + BUILT_IN_REGISTRIES + ";freeze()V");
+	private static final Set<String> BOOTSTRAP = Set.of("bootStrap", "bootStrap()V", "L" + BUILT_IN_REGISTRIES + ";bootStrap()V");
+	/** {@code bootStrap()}'s call of {@code freeze()}, as an {@code INVOKE} target may spell it. */
+	private static final Set<String> FREEZE_CALL = Set.of("freeze()V", "L" + BUILT_IN_REGISTRIES + ";freeze()V");
 	private static final Set<String> HEAD = Set.of("HEAD");
 	private static final Set<String> TAIL = Set.of("TAIL", "RETURN");
 
@@ -77,10 +87,9 @@ public final class FabricFreezeHookMixinAdapter {
 
 		List<MethodNode> head = new ArrayList<>(), tail = new ArrayList<>();
 		for (MethodNode handler : mixin.methods) {
-			AnnotationNode inject = injectOnFreeze(handler);
-			if (inject == null) continue;
-			String at = String.valueOf(MixinFit.value(MixinFit.atNodes(inject).getFirst(), "value"));
-			(HEAD.contains(at) ? head : tail).add(handler);
+			String hook = hookFor(handler);
+			if (hook == null) continue;
+			(FabricFreezePointInjector.HEAD_HOOK.equals(hook) ? head : tail).add(handler);
 		}
 		if (head.isEmpty() && tail.isEmpty()) return 0;
 		ClassNode target = targets.apply(BUILT_IN_REGISTRIES);
@@ -94,19 +103,25 @@ public final class FabricFreezeHookMixinAdapter {
 		List<String> handlers = new ArrayList<>();
 		for (MethodNode m : head) handlers.add(m.name + " (HEAD)");
 		for (MethodNode m : tail) handlers.add(m.name + " (TAIL)");
-		ForbricLog.info("[Forbric/RegistrySync] %s: injector(s) on BuiltInRegistries.freeze() wait for Fabric's registry "
-				+ "freeze point after the Fabric entrypoints, where fabric-registry-sync puts the freeze: %s",
+		ForbricLog.info("[Forbric/RegistrySync] %s: injector(s) on BuiltInRegistries.freeze() or at bootStrap()'s call of "
+				+ "it wait for Fabric's registry freeze point after the Fabric entrypoints, where fabric-registry-sync puts "
+				+ "the freeze: %s",
 				mixin.name, String.join(", ", handlers));
 		return head.size() + tail.size();
 	}
 
-	/** The handler's {@code @Inject} when it is one this adapter may move; null otherwise. */
-	static AnnotationNode injectOnFreeze(MethodNode handler) {
+	/**
+	 * The hook {@code handler}'s injector moves to — {@link FabricFreezePointInjector#HEAD_HOOK} or
+	 * {@link FabricFreezePointInjector#TAIL_HOOK} — or null when it is not one this adapter may move.
+	 */
+	static String hookFor(MethodNode handler) {
 		AnnotationNode inject = MixinFit.injectorOf(handler);
 		if (inject == null || !INJECT.equals(inject.desc)) return null;
 		if ((handler.access & Opcodes.ACC_STATIC) == 0 || !HANDLER_DESC.equals(handler.desc)) return null;
 		List<String> methods = MixinFit.stringList(MixinFit.value(inject, "method"));
-		if (methods.isEmpty() || !FREEZE.containsAll(methods)) return null;
+		if (methods.isEmpty()) return null;
+		boolean onFreeze = FREEZE.containsAll(methods), onBootStrap = BOOTSTRAP.containsAll(methods);
+		if (!onFreeze && !onBootStrap) return null;
 		for (int i = 0; i + 1 < inject.values.size(); i += 2) {
 			Object key = inject.values.get(i);
 			if ("target".equals(key) || "slice".equals(key)) return null;
@@ -119,24 +134,48 @@ public final class FabricFreezeHookMixinAdapter {
 		if (ats.size() != 1) return null;
 		AnnotationNode at = ats.getFirst();
 		Object value = MixinFit.value(at, "value");
-		if (!(value instanceof String point) || !(HEAD.contains(point) || TAIL.contains(point))) return null;
-		// A HEAD handler may cancel the freeze it runs in; on the empty hook its cancel would stop nothing.
-		if (HEAD.contains(point) && Boolean.TRUE.equals(MixinFit.value(inject, "cancellable"))) return null;
+		boolean cancellable = Boolean.TRUE.equals(MixinFit.value(inject, "cancellable"));
+		String hook;
+		if (onFreeze) {
+			if (!(value instanceof String point) || !(HEAD.contains(point) || TAIL.contains(point))) return null;
+			// A HEAD handler may cancel the freeze it runs in; on the empty hook its cancel would stop nothing.
+			if (HEAD.contains(point) && cancellable) return null;
+			hook = HEAD.contains(point) ? FabricFreezePointInjector.HEAD_HOOK : FabricFreezePointInjector.TAIL_HOOK;
+		} else {
+			// bootStrap()'s call of freeze(): right before it is the freeze's HEAD, right after it the TAIL. A cancel
+			// there returns from bootStrap() before the freeze (or before validate), which the empty hook cannot do.
+			if (!"INVOKE".equals(value) || cancellable) return null;
+			if (!(MixinFit.value(at, "target") instanceof String member) || !FREEZE_CALL.contains(member)) return null;
+			Object shift = MixinFit.value(at, "shift");
+			String side = shift instanceof String[] e && e.length == 2 ? e[1] : null;
+			if (shift != null && !"BEFORE".equals(side) && !"AFTER".equals(side)) return null;
+			hook = "AFTER".equals(side) ? FabricFreezePointInjector.TAIL_HOOK : FabricFreezePointInjector.HEAD_HOOK;
+		}
 		for (int i = 0; i + 1 < at.values.size(); i += 2) {
 			Object key = at.values.get(i);
 			Object v = at.values.get(i + 1);
 			if ("value".equals(key) || "remap".equals(key) || "id".equals(key)) continue;
+			if (onBootStrap && ("target".equals(key) || "shift".equals(key))) continue;
+			// bootStrap() calls freeze() once, and a void method has one return.
 			if ("ordinal".equals(key) && v instanceof Integer n && (n == -1 || n == 0)) continue;
 			return null;
 		}
-		return inject;
+		return hook;
 	}
 
 	private static void retarget(ClassNode mixin, MethodNode handler, String hook) {
 		AnnotationNode inject = MixinFit.injectorOf(handler);
+		// An injector at bootStrap()'s call of freeze() becomes the edge of the hook that call stood for: the empty
+		// hook calls nothing.
+		boolean atTheCall = "INVOKE".equals(MixinFit.value(MixinFit.atNodes(inject).getFirst(), "value"));
 		for (int i = 0; i + 1 < inject.values.size(); i += 2) {
 			if ("method".equals(inject.values.get(i))) {
 				inject.values.set(i + 1, new ArrayList<>(List.of(hook + FabricFreezePointInjector.HOOK_DESC)));
+			} else if (atTheCall && "at".equals(inject.values.get(i))) {
+				AnnotationNode edge = new AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");
+				edge.values = new ArrayList<>(List.of("value",
+						FabricFreezePointInjector.HEAD_HOOK.equals(hook) ? "HEAD" : "TAIL"));
+				inject.values.set(i + 1, new ArrayList<>(List.of(edge)));
 			}
 		}
 		MOVED.add(mixin.name + "#" + handler.name + " -> " + hook);

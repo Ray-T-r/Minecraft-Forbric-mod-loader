@@ -1,0 +1,1 @@
+{"required": true, "package": "com.example.xray.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["RendererMixin"], "injectors": {"defaultRequire": 1}}

@@ -85,7 +85,18 @@ class FabricFreezeHookMixinAdapterTest {
 					locals = LocalCapture.NO_CAPTURE)""", TAIL),
 			// Cancelling at TAIL only returns from a void method that has already frozen: nothing for the move to lose.
 			"CancellableTailMixin", new Moving("""
-					@Inject(method = "freeze()V", at = @At("TAIL"), cancellable = true)""", TAIL));
+					@Inject(method = "freeze()V", at = @At("TAIL"), cancellable = true)""", TAIL),
+			// bootStrap()'s call of freeze(): LiquidBounce's creative tabs hang right before it — the freeze's HEAD.
+			"BootStrapCallMixin", new Moving("""
+					@Inject(method = "bootStrap", at = @At(value = "INVOKE", \
+					target = "Lnet/minecraft/core/registries/BuiltInRegistries;freeze()V"))""", HEAD),
+			"BootStrapCallBeforeMixin", new Moving("""
+					@Inject(method = "bootStrap()V", at = @At(value = "INVOKE", target = "freeze()V", \
+					shift = At.Shift.BEFORE, ordinal = 0))""", HEAD),
+			// Right after it nothing has run since the freeze returned: its TAIL.
+			"BootStrapCallAfterMixin", new Moving("""
+					@Inject(method = "Lnet/minecraft/core/registries/BuiltInRegistries;bootStrap()V", at = @At(value = "INVOKE", \
+					target = "Lnet/minecraft/core/registries/BuiltInRegistries;freeze()V", shift = At.Shift.AFTER))""", TAIL));
 
 	/** One-handler mixins that stay where they are, by name: what its class body declares. */
 	private static final Map<String, String> STAYS = Map.ofEntries(
@@ -120,7 +131,30 @@ class FabricFreezeHookMixinAdapterTest {
 					@ModifyArg(method = "freeze()V", at = @At("HEAD"))""", HANDLER)),
 			// The same handler would run at the hook and in bootStrap(): it cannot be in both places at once.
 			Map.entry("AlsoBootStrapMixin", one("""
-					@Inject(method = {"freeze()V", "bootStrap()V"}, at = @At("TAIL"))""", HANDLER)));
+					@Inject(method = {"freeze()V", "bootStrap()V"}, at = @At("TAIL"))""", HANDLER)),
+			// ViaFabricPlus' registry hook: before the contents, not at the freeze; it registers what it needs there.
+			Map.entry("BootStrapContentsMixin", one("""
+					@Inject(method = "bootStrap", at = @At(value = "INVOKE", \
+					target = "Lnet/minecraft/core/registries/BuiltInRegistries;createContents()V"))""", HANDLER)),
+			Map.entry("BootStrapHeadMixin", one("""
+					@Inject(method = "bootStrap", at = @At("HEAD"))""", HANDLER)),
+			Map.entry("BootStrapTailMixin", one("""
+					@Inject(method = "bootStrap", at = @At("TAIL"))""", HANDLER)),
+			// A cancel before the call returns from bootStrap() unfrozen; the empty hook cannot do that.
+			Map.entry("BootStrapCancellableCallMixin", one("""
+					@Inject(method = "bootStrap", at = @At(value = "INVOKE", \
+					target = "Lnet/minecraft/core/registries/BuiltInRegistries;freeze()V"), cancellable = true)""", HANDLER)),
+			Map.entry("BootStrapCallByMixin", one("""
+					@Inject(method = "bootStrap", at = @At(value = "INVOKE", \
+					target = "Lnet/minecraft/core/registries/BuiltInRegistries;freeze()V", shift = At.Shift.BY, by = 1))""", HANDLER)),
+			// bootStrap() calls freeze() once; a second call would not be found.
+			Map.entry("BootStrapCallOrdinalMixin", one("""
+					@Inject(method = "bootStrap", at = @At(value = "INVOKE", \
+					target = "Lnet/minecraft/core/registries/BuiltInRegistries;freeze()V", ordinal = 1))""", HANDLER)),
+			// Some other freeze() — a registry's, not BuiltInRegistries'.
+			Map.entry("BootStrapOtherFreezeMixin", one("""
+					@Inject(method = "bootStrap", at = @At(value = "INVOKE", \
+					target = "Lnet/minecraft/core/WritableRegistry;freeze()Lnet/minecraft/core/Registry;"))""", HANDLER)));
 
 	/** Create Fly's shape under names no case lets move, for the conditions outside the mixin's own injectors. */
 	private static final List<String> CREATE_SHAPED = List.of("CreateShapedMixin", "TwiceMixin", "ForeignOwnedMixin",
@@ -250,6 +284,20 @@ class FabricFreezeHookMixinAdapterTest {
 		assertEquals(List.of(mixin.name + "#observe -> " + hook), rows(mixin));
 	}
 
+	/** On the empty hook there is no call of freeze() to find: the point becomes the edge of the hook it stood for. */
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("movingOffTheCall")
+	void anInjectorAtBootStrapsCallOfFreezeBecomesTheEdgeOfItsHook(String name) {
+		ClassNode mixin = fabric(name);
+		assertEquals(1, FabricFreezeHookMixinAdapter.adapt(mixin, hooked()), name);
+		var at = StagedFabricMixinFixture.at(mixin, "observe");
+		assertEquals(HEAD.equals(MOVES.get(name).hook()) ? "HEAD" : "TAIL", MixinFit.value(at, "value"));
+		assertEquals(List.of("value", MixinFit.value(at, "value")), at.values, name);
+		// What Mixin reads is the class file: the new point must survive being written.
+		ClassNode written = MixinFit.parse(StagedFabricMixinFixture.bytes(mixin));
+		assertEquals(MixinFit.value(at, "value"), MixinFit.value(StagedFabricMixinFixture.at(written, "observe"), "value"));
+	}
+
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("staying")
 	void anInjectorThatNeedsFreezesBodyOrMoreThanItsCallbackStays(String name) {
@@ -327,6 +375,10 @@ class FabricFreezeHookMixinAdapterTest {
 
 	static Stream<String> moving() {
 		return MOVES.keySet().stream().sorted();
+	}
+
+	static Stream<String> movingOffTheCall() {
+		return MOVES.keySet().stream().filter(name -> name.startsWith("BootStrapCall")).sorted();
 	}
 
 	static Stream<String> staying() {

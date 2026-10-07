@@ -5,8 +5,8 @@ import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
-/** Proven moved block-entity removal, a context-expanded call whose Fabric redirect is strictly a no-op, and Fabric's
- * per-screen draw events around NeoForge's screen-stack call. */
+/** Proven moved block-entity removal, a context-expanded call whose Fabric redirect is strictly a no-op, Fabric's
+ * per-screen draw events around NeoForge's screen-stack call, and any Fabric mod's callback before or after that draw. */
 public final class FabricClientMixinAnchors {
  public static final String PROPERTY="forbric.fabricClientAnchors";
  private FabricClientMixinAnchors(){}
@@ -16,7 +16,7 @@ public final class FabricClientMixinAnchors {
     ||mixin.name.equals("net/fabricmc/fabric/mixin/event/lifecycle/server/LevelChunkMixin"))return removal(mixin,targets);
   if(mixin.name.equals("net/fabricmc/fabric/mixin/client/renderer/block/render/LevelRendererMixin"))return render(mixin,targets);
   if(mixin.name.equals("net/fabricmc/fabric/mixin/screen/GuiMixin"))return screenExtract(mixin,targets);
-  return 0;
+  return screenDraw(mixin,targets);
  }
  private static final String SCREEN="net/minecraft/client/gui/screens/Screen",GRAPHICS="Lnet/minecraft/client/gui/GuiGraphicsExtractor;";
  private static final String OPERATION="com/llamalad7/mixinextras/injector/wrapoperation/Operation";
@@ -60,6 +60,38 @@ public final class FabricClientMixinAnchors {
   code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,OPERATION,"call","([Ljava/lang/Object;)Ljava/lang/Object;",true));code.add(new InsnNode(Opcodes.POP));
   event(code,"afterExtract","AfterExtract");
   code.add(new InsnNode(Opcodes.RETURN));moved.maxStack=7;moved.maxLocals=8;mixin.methods.add(moved);return 1;
+ }
+ /** A Fabric mod's {@code @Inject} just before or after Gui.extractRenderState's call of
+  * screen.extractRenderStateWithTooltipAndSubtitles. NeoForge's body draws the screen through ClientHooks.extractScreen
+  * instead (its layers, then the top screen), so the point bound nothing: LiquidBounce draws its whole browser menu
+  * there, and on Forbric the title screen showed its background and no menu. Before and after that one call are the
+  * points the mod meant — the screen about to be drawn, and drawn — and a callback's signature is the host method's, not
+  * the call's, so only the target moves. Only where the merged host makes that call once and the vanilla one not at all. */
+ private static int screenDraw(ClassNode mixin,Function<String,ClassNode> targets){
+  if(!List.of("net/minecraft/client/gui/Gui").equals(MixinFit.mixinTargets(mixin))||MixinStubRebind.ecosystemOf(mixin.name)!=net.forbric.api.Ecosystem.FABRIC)return 0;
+  String vanilla="L"+SCREEN+";extractRenderStateWithTooltipAndSubtitles("+GRAPHICS+"IIF)V",host="extractRenderState(Lnet/minecraft/client/DeltaTracker;ZZ)V";
+  List<AnnotationNode> points=new ArrayList<>();
+  for(MethodNode handler:mixin.methods){
+   AnnotationNode inject=MixinFit.injectorOf(handler);
+   if(inject==null||!inject.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;")||group(handler)||MixinFit.value(inject,"slice")!=null)continue;
+   List<String> selectors=MixinFit.stringList(MixinFit.value(inject,"method"));
+   if(selectors.size()!=1||!(selectors.getFirst().equals("extractRenderState")||selectors.getFirst().equals(host)))continue;
+   List<AnnotationNode> ats=MixinFit.atNodes(inject);if(ats.size()!=1)continue;AnnotationNode at=ats.getFirst();
+   if(!"INVOKE".equals(MixinFit.value(at,"value"))||!vanilla.equals(MixinFit.value(at,"target"))||MixinFit.value(at,"by")!=null)continue;
+   Object ordinal=MixinFit.value(at,"ordinal"),shift=MixinFit.value(at,"shift");
+   if(ordinal!=null&&!Integer.valueOf(0).equals(ordinal)&&!Integer.valueOf(-1).equals(ordinal))continue;
+   if(shift!=null&&!(shift instanceof String[] e&&e.length==2&&(e[1].equals("BEFORE")||e[1].equals("AFTER"))))continue;
+   points.add(at);
+  }
+  if(points.isEmpty())return 0;
+  ClassNode gui=targets.apply("net/minecraft/client/gui/Gui");MethodNode drawing=gui==null?null:find(gui,"extractRenderState","(Lnet/minecraft/client/DeltaTracker;ZZ)V");
+  if(drawing==null||calls(drawing,SCREEN,"extractRenderStateWithTooltipAndSubtitles")!=0)return 0;
+  int stacked=0;for(var i:drawing.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals("net/neoforged/neoforge/client/ClientHooks")&&c.name.equals("extractScreen")&&c.desc.equals(STACK_CALL))stacked++;
+  if(stacked!=1)return 0;
+  for(AnnotationNode at:points)set(at,"target","Lnet/neoforged/neoforge/client/ClientHooks;extractScreen"+STACK_CALL);
+  net.forbric.kernel.util.ForbricLog.info("[Forbric/Mixin] %s: %d injector(s) before or after the screen draw in Gui.extractRenderState now "
+    +"stand at NeoForge's ClientHooks.extractScreen, which draws the screen there",mixin.name.replace('/','.'),points.size());
+  return points.size();
  }
  /** {@code ScreenEvents.<name>(screen).invoker().<name>(screen, graphics, mouseX, mouseY, partialTick)} */
  private static void event(InsnList code,String name,String type){

@@ -629,6 +629,21 @@ public final class MixinFit {
 			if (!targetMethods.isEmpty() && refusal == null) hits.addAll(targetMethods); else misses.add(selector);
 		}
 		if (selectors.isEmpty()) return;
+		// The move MixinTwinRebind will make for an injector written for vanilla's signature of a method nothing in the
+		// merged game calls, onto the overload the carrier added in its place, judged here too so the verdict and the
+		// move cannot disagree: bound to vanilla's method it would read as never running, and an @Inject whose name binds
+		// the overload first as refused. Asked of the target with code: the plan counts each anchor in both bodies.
+		if (selectors.size() == 1 && MixinTwinRebind.mayMove(target.name, selectors.getFirst())) {
+			ClassNode code = withLocals.get();
+			MethodNode twin = code == null ? null : MixinTwinRebind.destination(mixin, m, code);
+			if (twin != null) {
+				MethodNode live = findMethod(target, twin.name, twin.desc, resolver);
+				hits = new ArrayList<>(List.of(live != null ? live : twin));
+				misses.clear();
+				refused.clear();
+				refusedIn.clear();
+			}
+		}
 		// The move InsertedLambdaArgumentShim will make for a selector naming a lambda the pruner dropped, judged
 		// here too: otherwise a one-injector mixin (fusion's sprite loader hook) is UNFIT, removed from its
 		// config, and never reaches the shim that would have given it the live lambda. Captured locals are

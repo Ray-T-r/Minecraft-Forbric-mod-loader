@@ -42,10 +42,6 @@ public final class MergedBaseFieldDrift {
 	}
 
 	public static final List<Drift> KNOWN = List.of(
-			new Drift("net/minecraft/client/KeyMapping", "MAP", "Ljava/util/Map;",
-					"both ecosystems replace vanilla's plain Map with their own KeyMappingLookup. A mod reading KeyMapping.MAP "
-							+ "as a Map cannot; the kernel instead routes the game's own readers at the lookup that registration "
-							+ "fills (see routeKeyMappingClickToPopulatedLookup)"),
 			new Drift("net/minecraft/util/random/WeightedList$Builder", "result", "Lcom/google/common/collect/ImmutableList$Builder;",
 					"re-typed to a plain List. Same shape as AttributeSupplier$Builder#builder was before its twin; no consumer "
 							+ "has been observed hitting it yet"));

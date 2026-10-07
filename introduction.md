@@ -288,7 +288,11 @@ Fabric and NeoForge need opposite states in the constructor, so the kernel has t
 - `ClientEntrypointHookInjector` → `KernelLifecycle.onClientEntrypoints()`, before `Options` exists: reopen the
   registries (and MinecraftForge's registry gates), construct MinecraftForge mods that were held back because they
   reached for `Minecraft` too early, run Fabric `main` then `client` entrypoints (Fabric's `Hooks.startClient`
-  order), re-close and re-freeze, open late CLIENT configs, then declare datapack registries.
+  order), re-close and re-freeze, open late CLIENT configs, then declare datapack registries. Around that freeze is
+  Fabric's registry freeze point: with fabric-registry-sync installed, a Fabric mod's `@Inject` at the HEAD or TAIL of
+  `BuiltInRegistries.freeze()`, or just before or after `bootStrap()`'s call of it, runs there
+  (`FabricFreezeHookMixinAdapter`), where native Fabric freezes — after the entrypoints, with `Minecraft.getInstance()`
+  set. LiquidBounce builds its creative tabs from such an injector; left in `Bootstrap` it found no client and died.
 - `NeoClientSetupHookInjector` at the merged base's `ClientModLoader.finish()` call →
   `KernelLifecycle.onNeoClientSetup()`, after `options` is assigned: verify the CLIENT_INIT bridges, preload the
   client resource manager (MinecraftForge runs mod loading inside the first reload, and its mods expect their
@@ -510,7 +514,11 @@ Mixin (via MixinWeaverSlot) → NativeCoremodParity → PostMixinFixups → Inte
 Notable repairs by family (read each class's javadoc for the case that motivated it):
 
 - **Merge invariants** — `ForbricMergedBaseCompatTransformer` (lambda bootstrap handles vs. static-ness, the
-  MinecraftForge `getFluidType()` bridge, key-mapping `MAP` initializer, and retargeting the base's baked-in
+  MinecraftForge `getFluidType()` bridge, key-mapping `MAP` initializer and vanilla's `KeyMapping.MAP` back as a view of
+  the mappings by key (`KernelKeyMappingMap`; both ecosystems re-type it, and LiquidBounce reads it on every key press in
+  a screen), vanilla's `FriendlyByteBuf.writeByte(int)` called again where NeoForge's recompile bound a byte-typed call to
+  its extension's `writeByte(byte)`, which only forwards there (14 sites in 10 network `write` methods; ViaFabricPlus'
+  ability-flag redirect anchors on vanilla's call; `-Dforbric.vanillaWriteByte=off`), and retargeting the base's baked-in
   calls to `net/forbric/loader/impl/…` onto `net.forbric.kernel.interop`), `DuplicateLambdaPruneInjector`
   (orphaned lambdas a name-only mixin selector would bind to), `WidenedFieldTwinInjector` (vanilla-descriptor
   twins of re-typed fields), `MethodBodyNeuter`.
@@ -657,7 +665,11 @@ spliced in, so "a Forge-family class" describes most of the jar.
 Rather than drop, the kernel moves a guest injector when the merge relocated what it wants. Each adapter is
 narrow and table- or proof-driven:
 
-`MixinRetarget` and `MixinStubRebind` (delegating stubs → the overload carrying the body), `MixinOverloadPin`
+`MixinRetarget` and `MixinStubRebind` (delegating stubs → the overload carrying the body; a stub that first works an
+argument out — `Player.doSweepAttack`'s hitbox, `EntityFluidInteraction.update`'s predicate,
+`Entity.restituteMovementAfterCollisions`' block position — only where every other caller of the body is a method that
+called the stub's signature in vanilla, so `MappedRegistry.register(int, …)`, which NeoForge's registry snapshot calls
+directly, keeps fabric-registry-sync's callback off it), `MixinOverloadPin`
 (a name-only `@Inject` that Mixin would bind to the other ecosystem's overload, declared first, is pinned to the one
 overload its handler fits — only when the first cannot take the handler; otherwise it is explained),
 `MixinMergedTwin` (`$forbricneo` renamed anonymous twins), `MixinAnonymousRetarget` + `MergedBaseAnonymousDrift`
@@ -707,21 +719,48 @@ or bed — fails too, as it did before the census. On a whole `RENAME` a handler
 every handler of its mixin that shares it in the same method. On the bytes alone R3 had moved injectors into unrelated
 methods of the same shape (text_styles' colour hook onto the shadow colour, ViaFabricPlus' item-use and hotbar-key
 hooks into other vanilla methods, goldenpotions' tab icon into another tab's lambda) and into the renamed tooltip body,
-where they read as fitting. Those four no longer move: ViaFabricPlus 5.0.2's two are confirmed required losses, beside
-the five it already had, so it still stops under the strict policy. `-Dforbric.mixinRetarget.renameCensus=off` moves on
+where they read as fitting. Those four no longer move by R3: ViaFabricPlus 5.0.2's two are redirects of calls NeoForge
+replaced in place, which `ReplacedCallRedirects` moves instead (below). `-Dforbric.mixinRetarget.renameCensus=off` moves on
 the bytes alone again, `-Dforbric.mixinRetarget.renameCensus.leftExit=off` keeps every handler that can cancel out of a
 piece, and `-Dforbric.mixinRetarget.renameCensus.uncalled=off` keeps every injector out of the `UNCALLED` body), and per-surface Fabric adapters
-(`FabricBlockBreakMixinAdapter`, `FabricEntityMixinAnchors`, `FabricClientMixinAnchors`,
-`FabricEnchantmentMixinAdapter`, `FabricMiningMixinAdapter`, `FabricSoundMixinAdapter`,
-`FabricServerLanguageMixinAdapter`). `GuestInjectorPruner` (COREMOD) trims individual injectors from a guest mixin
+(`FabricBlockBreakMixinAdapter`, `FabricEntityMixinAnchors`, `FabricClientMixinAnchors` — which also stands any Fabric
+`@Inject` just before or after `Gui.extractRenderState`'s screen draw at NeoForge's `ClientHooks.extractScreen`, where the
+merged body draws the screen; LiquidBounce draws its whole browser menu there — `FabricEnchantmentMixinAdapter`,
+`FabricMiningMixinAdapter`, `FabricSoundMixinAdapter`, `FabricServerLanguageMixinAdapter`), and `ReplacedCallRedirects`: a
+`@Redirect` of a vanilla call the carrier replaced in place with its own, whose handler only puts a condition around
+forwarding the vanilla call, moves onto the carrier's call and forwards that one, along a row that says where the two
+stand for each other, which operands carry the same values and why (ViaFabricPlus' hotbar keys —
+`KeyMapping.matches` → `isActiveAndMatches`, item use — `ItemStack.isSameItem` → `CommonHooks.canContinueUsing`, with the
+handler's own logic keeping vanilla's argument order, and shovel paths — `FLATTENABLES.get` → the state's
+`SHOVEL_FLATTEN` modification; only for the families whose own class made the vanilla call; `-Dforbric.replacedCallRedirects=off`), and `MixinTwinRebind`: an injector written for vanilla's signature of a method
+the merged base keeps but nothing in the merged game calls moves to the one overload the carrier added in its place,
+along a row of `carrier-twins.txt` (`CarrierTwinCensusTest`: vanilla's method is uncalled for the mod's family and is no
+carrier stub, the overload takes each of vanilla's parameters — matched one to one by local variable name and type —
+and every method that family's own game called vanilla's from calls the overload in the merged base). The handler is
+wrapped when it captures vanilla's arguments in other places than the overload has them: the outer takes the
+overload's arguments and hands the original vanilla's. It moves only while vanilla's method is still uncalled (no
+installed mod references it), only an `@Inject` capturing vanilla's arguments or none or an `@At`-driven kind whose
+contract is known (never a `@ModifyVariable`), and only where every `INVOKE`/`FIELD` point is held as often by both
+bodies. NeoForge gave `ModelBlockRenderer.shouldRenderFace` the block's own position and declared it before vanilla's,
+so LiquidBounce's X-Ray face test, selected by name and taking vanilla's four arguments, used to bind NeoForge's
+overload, be rejected there and take the whole block-renderer mixin with it; `-Dforbric.mixinTwinRebind=off`. And
+`ThinnedCallOrdinals`: where the carrier makes a vanilla call fewer times — it replaced some occurrences with calls of its
+own and kept the others — an `@At(INVOKE)` ordinal counted on vanilla's body is re-counted onto the merged occurrence
+that is the same call, along a reviewed row that maps each of vanilla's occurrences to the kept one or to none and names
+the call each kept occurrence is followed by (checked on both jars, and again on the live method). ViaFabricPlus' 1.12.2
+placement hook sits before the third `ItemStack.isEmpty()` of `MultiPlayerGameMode.performUseItemOn`; NeoForge and
+MinecraftForge ask `doesSneakBypassUse` of both hand stacks where vanilla asked `isEmpty`, so the merged body keeps only
+the third. Only for the families compiled against vanilla's count; `-Dforbric.thinnedCallOrdinals=off`.
+`GuestInjectorPruner` (COREMOD) trims individual injectors from a guest mixin
 class where the kernel replaces their function, and, at the end of the bytecode provider's adapters, the injectors the
 verdict found Mixin would reject outright (§7.3) — each only while the same rule still says so of the node Mixin is about
 to receive, so an injector an adapter already moved where it fits stays. Several adapters read shipped tables under
 `src/main/resources/net/forbric/kernel/mixin/` (`carrier-helpers.txt`, `carrier-renames.txt`, `carrier-stubs.txt`,
-`lambda-permutations.txt`, `uncalled-methods.txt`, `native-only-methods.txt`); `CarrierHelperCensusTest`,
-`CarrierRenameCensusTest`, `UncalledMethodCensusTest` and `NativeOnlyMethodsCensusTest` re-derive `carrier-helpers.txt`,
-`carrier-renames.txt`, `uncalled-methods.txt` and `native-only-methods.txt` from the staged jars (the last from the merged
-base, both patched games and vanilla's own jar) and pin them. A wrapper that renames a handler's body aside
+`carrier-twins.txt`, `lambda-permutations.txt`, `uncalled-methods.txt`, `native-only-methods.txt`); `CarrierHelperCensusTest`,
+`CarrierRenameCensusTest`, `CarrierTwinCensusTest`, `UncalledMethodCensusTest` and `NativeOnlyMethodsCensusTest` re-derive
+`carrier-helpers.txt`, `carrier-renames.txt`, `carrier-twins.txt`, `uncalled-methods.txt` and `native-only-methods.txt`
+from the staged jars (`native-only-methods.txt` from the merged base, both patched games and vanilla's own jar) and pin
+them. A wrapper that renames a handler's body aside
 (`MixinRetarget`'s guard and R7, `MixinAtWidenedCall`'s redirect, `MixinSubtypeOwnerRetarget`'s guard) adds a mark of
 the mixin class to the name, so two mixins on one target with the same handler name do not merge into one body.
 `MixinFitLivenessCensusStagedTest` also keeps a census of the anchors a Fabric mixin names that resolve on stock 26.2

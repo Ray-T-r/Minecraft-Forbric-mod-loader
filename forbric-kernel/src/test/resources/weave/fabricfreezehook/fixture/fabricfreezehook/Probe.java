@@ -13,6 +13,7 @@ import net.minecraft.server.Bootstrap;
 public class Probe {
 	public String run() throws ReflectiveOperationException {
 		Bootstrap.bootStrap();
+		Client.create();
 		Trace.add("kernel:open");
 		BuiltInRegistries.WRITABLE_REGISTRY.unfreeze();
 		Create.onInitialize();

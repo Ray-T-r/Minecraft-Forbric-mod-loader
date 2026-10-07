@@ -84,7 +84,7 @@ class MergedBaseRepairClaimsStagedTest {
 		byte[] real = bytesOf(KEY_MAPPING);
 		assertNotNull(real);
 		// The merge left MinecraftForge's KeyMapping.MAP without an initializer; give it one, and the repair that
-		// adds the initializer has nothing to do while the other two KeyMapping repairs still apply.
+		// adds the initializer has nothing to do while the other three KeyMapping repairs still apply.
 		chain.applyBeforeMixin(KEY_MAPPING, withForgeLookupInitialised(real), CTX);
 
 		AnchorLedger.Report report = chain.ledger().report();
@@ -93,7 +93,7 @@ class MergedBaseRepairClaimsStagedTest {
 		assertEquals(List.of(LOOKUP_CLAIM), missed, "exactly the one repair that declined, on its own line");
 		assertEquals(KEY_MAPPING, report.misses().get(0).className());
 		assertTrue(report.misses().get(0).cost().contains("never initialised"), report.misses().get(0).cost());
-		assertEquals(2, report.hit(), "the other two KeyMapping claims are hits");
+		assertEquals(3, report.hit(), "the other three KeyMapping claims are hits");
 	}
 
 	/** Binary name → class bytes for every fixed anchor of every claim. */

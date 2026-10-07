@@ -428,6 +428,11 @@ public final class KernelRuntimeClasses {
 		// view of it, because fabric-api reads that field DIRECTLY.
 		CLASSES.put("net.forbric.kernel.runtime.KernelParticleProviders", new Entry(Origin.COMPILED, List.of(
 				new Call("intKeyedView", Object.class, java.util.Map.class))));
+		// Both ecosystems re-type KeyMapping's vanilla MAP to their own KeyMappingLookup and the merge keeps neither
+		// vanilla's descriptor nor a value for it; a mod reading it as a Map died. The transformer adds the field back
+		// and this is its value: a view of vanilla's ALL by key.
+		CLASSES.put("net.forbric.kernel.runtime.KernelKeyMappingMap", new Entry(Origin.COMPILED, List.of(
+				new Call("vanillaView", Object.class, java.util.Map.class))));
 		// The merged base gave ChunkGenerator.featuresPerStep MinecraftForge's ClearableLazy descriptor and lost
 		// vanilla's, which fabric-api's biome API writes directly. The transformer puts vanilla's back; this is
 		// the one use that still needs MinecraftForge's type. See ForbricMergedBaseCompatTransformer.

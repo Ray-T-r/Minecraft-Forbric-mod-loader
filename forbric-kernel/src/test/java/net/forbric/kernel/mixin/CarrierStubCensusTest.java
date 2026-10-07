@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -24,7 +25,9 @@ import org.objectweb.asm.tree.MethodNode;
 
 /**
  * Re-derives {@code carrier-stubs.txt} — every merged-base method that is a pure delegating stub to a same-name overload
- * the CARRIER added (vanilla has the stub's signature and not the overload's) — and asserts the shipped table equals it.
+ * the CARRIER added (vanilla has the stub's signature and not the overload's), and one that works an argument out first
+ * where the carrier only pointed vanilla's own calls of that signature at the overload — and asserts the shipped table
+ * equals it.
  * MixinStubRebind moves an injector only along a row here: where vanilla has both overloads itself, a mod that chose the
  * short one meant it. Each row also says, per Forge family, what that carrier's OWN patched class has at the stub's
  * signature ({@link MixinStubRebind.Shape}) — whether a mod of that family was compiled against code there or against the
@@ -40,6 +43,10 @@ class CarrierStubCensusTest {
 	private static final Path FORGE = TestFixtures.forgeMergeInput();
 	private static final Path NEO = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
 	private static final Path VANILLA = MC.resolve("versions/26.2/26.2.jar");
+	private static final Path INTEROP = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
+	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
+	private static final Path KERNEL_MAIN = Path.of("build/classes/java/main");
+	private static final Path KERNEL_RUNTIME = Path.of("build/classes/java/runtime");
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base and vanilla jar required");
@@ -47,6 +54,9 @@ class CarrierStubCensusTest {
 		// The rows themselves need only the merged base and vanilla; each row's forge=/neo= columns need both carriers.
 		boolean carriers = Files.isRegularFile(FORGE) && Files.isRegularFile(NEO);
 		Map<String, ClassNode> vanilla = read(VANILLA, true);
+		// Who calls what, by name and descriptor whatever the owner: in vanilla, and in the merged game the kernel runs.
+		Map<String, Set<String>> vanillaCalls = callers(List.of(VANILLA));
+		Map<String, Set<String>> mergedCalls = null;   // read on the first stub that works an argument out
 		TreeSet<String> rows = new TreeSet<>();
 		try (ZipFile zip = new ZipFile(MERGED.toFile()); ZipFile forge = carriers ? new ZipFile(FORGE.toFile()) : null;
 				ZipFile neo = carriers ? new ZipFile(NEO.toFile()) : null) {
@@ -61,6 +71,22 @@ class CarrierStubCensusTest {
 					if ((stub.access & (org.objectweb.asm.Opcodes.ACC_BRIDGE | org.objectweb.asm.Opcodes.ACC_SYNTHETIC)) != 0) continue;
 					MixinStubRebind.Delegation delegation = MixinStubRebind.delegation(merged, stub);
 					if (delegation == null) continue;
+					// A stub that works an argument out heads a row only where the carrier pointed vanilla's own calls at
+					// the body and nothing else: every caller of the body in the merged game is a method that calls the
+					// stub's signature in vanilla. There a mod's injector runs exactly where it runs on vanilla; left on
+					// the stub, nothing reaches it (see MixinStubRebind.Delegation).
+					if (delegation.computed()) {
+						if (mergedCalls == null) {
+							TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(KERNEL_RUNTIME), "the merged game's callers include the kernel's");
+							mergedCalls = callers(List.of(MERGED, INTEROP, NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME));
+						}
+						String self = merged.name + "#" + stub.name + stub.desc;
+						Set<String> fromVanilla = vanillaCalls.getOrDefault(stub.name + stub.desc, Set.of());
+						Set<String> fromMerged = new java.util.HashSet<>(mergedCalls.getOrDefault(
+								delegation.delegate().name + delegation.delegate().desc, Set.of()));
+						fromMerged.remove(self);
+						if (fromMerged.isEmpty() || !fromVanilla.containsAll(fromMerged)) continue;
+					}
 					String delegate = delegation.delegate().desc;
 					if (!declares(original, stub.name, stub.desc) || declares(original, delegation.delegate().name, delegate)) continue;
 					String row = merged.name + "#" + stub.name + stub.desc + " -> " + delegate;
@@ -105,6 +131,14 @@ class CarrierStubCensusTest {
 		assertRow(rows, "net/minecraft/world/item/AxeItem#evaluateNewBlockState(", "forge=stub neo=overload-body");
 		assertRow(rows, "net/minecraft/client/multiplayer/ClientLevel#addBreakingBlockEffect(", "forge=descriptor-body neo=stub");
 		assertRow(rows, "net/minecraft/world/entity/player/Player#getDestroySpeed(", "forge=stub neo=stub");
+		// Stubs that work an argument out, which nothing in the merged game calls: LiquidBounce's sweep-attack sound, and
+		// ViaFabricPlus' old fluid physics and collision bounce, hang on the vanilla signature.
+		assertRow(rows, "net/minecraft/world/entity/player/Player#doSweepAttack(", "forge=body neo=stub");
+		assertRow(rows, "net/minecraft/world/entity/EntityFluidInteraction#update(", "forge=body neo=stub");
+		assertRow(rows, "net/minecraft/world/entity/Entity#restituteMovementAfterCollisions(", "forge=body neo=stub");
+		// Not one whose body NeoForge's own code calls besides: its registry snapshot calls MappedRegistry.register(int, …)
+		// directly, and fabric-registry-sync's add-entry callback stays on register(ResourceKey, …), where it fires on Fabric.
+		assertTrue(rows.stream().noneMatch(r -> r.startsWith("net/minecraft/core/MappedRegistry#register(")), rows.toString());
 	}
 
 	private static void assertRow(TreeSet<String> rows, String head, String columns) {
@@ -119,6 +153,52 @@ class CarrierStubCensusTest {
 		ClassNode node = new ClassNode();
 		new ClassReader(jar.getInputStream(entry).readAllBytes()).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		return node;
+	}
+
+	/**
+	 * Every method of {@code code} (jars or class directories) that calls a method or takes a handle to it, by the
+	 * callee's {@code name + descriptor} — whatever the owner, so a call through any type counts.
+	 */
+	private static Map<String, Set<String>> callers(List<Path> code) throws Exception {
+		Map<String, Set<String>> out = new HashMap<>();
+		for (Path source : code) {
+			List<byte[]> classes = new ArrayList<>();
+			if (Files.isDirectory(source)) {
+				try (java.util.stream.Stream<Path> files = Files.walk(source)) {
+					for (Path f : files.filter(p -> p.toString().endsWith(".class")).toList()) classes.add(Files.readAllBytes(f));
+				}
+			} else {
+				try (ZipFile zip = new ZipFile(source.toFile())) {
+					for (ZipEntry entry : Collections.list(zip.entries())) {
+						if (entry.getName().endsWith(".class") && !entry.getName().startsWith("META-INF/")) {
+							classes.add(zip.getInputStream(entry).readAllBytes());
+						}
+					}
+				}
+			}
+			for (byte[] bytes : classes) {
+				ClassNode node = new ClassNode();
+				new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+				for (MethodNode method : node.methods) {
+					if (method.instructions == null) continue;
+					String caller = node.name + "#" + method.name + method.desc;
+					for (org.objectweb.asm.tree.AbstractInsnNode insn : method.instructions) {
+						List<org.objectweb.asm.Handle> handles = new ArrayList<>();
+						if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call) {
+							out.computeIfAbsent(call.name + call.desc, k -> new java.util.HashSet<>()).add(caller);
+						} else if (insn instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy) {
+							for (Object argument : indy.bsmArgs) if (argument instanceof org.objectweb.asm.Handle h) handles.add(h);
+						} else if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc && ldc.cst instanceof org.objectweb.asm.Handle h) {
+							handles.add(h);
+						}
+						for (org.objectweb.asm.Handle h : handles) {
+							out.computeIfAbsent(h.getName() + h.getDesc(), k -> new java.util.HashSet<>()).add(caller);
+						}
+					}
+				}
+			}
+		}
+		return out;
 	}
 
 	private static boolean declares(ClassNode node, String name, String desc) {

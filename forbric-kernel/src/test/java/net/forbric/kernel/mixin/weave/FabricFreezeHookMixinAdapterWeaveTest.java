@@ -26,7 +26,9 @@ import net.forbric.kernel.transform.FabricFreezePointInjector;
  * — while the freeze itself stays in the native bootstrap (issue #52).
  *
  * <p>The guest is Create Fly's shape: at HEAD it creates its registries unless fabric-api is loaded (then its main
- * does), and at TAIL it reads them, whose holder registers into the root the first time it is touched. The probe boots
+ * does), and at TAIL it reads them, whose holder registers into the root the first time it is touched. Beside it,
+ * LiquidBounce's shape: an injector in {@code bootStrap()} at its call of {@code freeze()}, whose creative tabs need the
+ * client instance, which exists only after the bootstrap (the trace says whether it was there). The probe boots
  * the way the kernel does — bootstrap, open the root, the Fabric main, the HEAD hook, freeze, the TAIL hook — and every
  * step writes to one trace. {@link FabricFreezePointInjector} is on the run's pre-Mixin chain as KernelBoot registers
  * it. Three runs:
@@ -47,17 +49,22 @@ class FabricFreezeHookMixinAdapterWeaveTest {
 	private static final String SYNC_MOD = "fabric-registry-sync-v0";
 	private static final String BUILT_IN_REGISTRIES = "net/minecraft/core/registries/BuiltInRegistries";
 	private static final String FABRIC_API = "fixture.fabricfreezehook.fabricApi";
-	private static final String MOVED = "bootstrap:start,createContents,freeze,bootstrap:end,registrySync,kernel:open,main,"
-			+ "create:register,minecraft:root+create:arm_interaction_point_type,hook:head,create:head,kernel:freeze,"
-			+ "hook:tail,create:tail,create:arm_interaction_point_type+create:depot";
-	private static final String KEPT = "bootstrap:start,createContents,create:head,create:register,"
+	private static final String MOVED = "bootstrap:start,createContents,freeze,bootstrap:end,registrySync,client:new,"
+			+ "kernel:open,main,create:register,minecraft:root+create:arm_interaction_point_type,hook:head,create:head,"
+			+ "tabs:client,kernel:freeze,hook:tail,create:tail,create:arm_interaction_point_type+create:depot";
+	private static final String KEPT = "bootstrap:start,createContents,tabs:no-client,create:head,create:register,"
 			+ "minecraft:root+create:arm_interaction_point_type,freeze,create:tail,"
-			+ "create:arm_interaction_point_type+create:depot,bootstrap:end,kernel:open,main,hook:head,kernel:freeze,hook:tail";
+			+ "create:arm_interaction_point_type+create:depot,bootstrap:end,client:new,kernel:open,main,hook:head,"
+			+ "kernel:freeze,hook:tail";
 	private static final String FROZEN = "java.lang.IllegalStateException: Registry is already frozen (trying to add key "
 			+ "ResourceKey[minecraft:root / create:arm_interaction_point_type])";
 	private static final String ADAPTED = "[Forbric/RegistrySync] fixture/fabricfreezehook/mixin/BuiltInRegistriesMixin: "
-			+ "injector(s) on BuiltInRegistries.freeze() wait for Fabric's registry freeze point after the Fabric "
-			+ "entrypoints, where fabric-registry-sync puts the freeze: onInitialize (HEAD), afterFreeze (TAIL)";
+			+ "injector(s) on BuiltInRegistries.freeze() or at bootStrap()'s call of it wait for Fabric's registry freeze "
+			+ "point after the Fabric entrypoints, where fabric-registry-sync puts the freeze: onInitialize (HEAD), "
+			+ "afterFreeze (TAIL)";
+	private static final String ADAPTED_TABS = "[Forbric/RegistrySync] fixture/fabricfreezehook/mixin/CreativeTabsMixin: "
+			+ "injector(s) on BuiltInRegistries.freeze() or at bootStrap()'s call of it wait for Fabric's registry freeze "
+			+ "point after the Fabric entrypoints, where fabric-registry-sync puts the freeze: initializeTabs (HEAD)";
 	private static final String INSTALLED = "[WeaveHarness] pre-Mixin chain installed: COREMOD FabricFreezePointInjector "
 			+ "(behind its enabled())";
 	private static final String NOT_REGISTERED = "[WeaveHarness] pre-Mixin chain: FabricFreezePointInjector.enabled() is "
@@ -83,7 +90,10 @@ class FabricFreezeHookMixinAdapterWeaveTest {
 		assertTrue(adapted.printed(WeaveHarnessMain.REGISTERED + SYNC_CONFIG + ", " + CONFIG), adapted.describe());
 		assertEquals(List.of(), handlerCalls(adapted, "freeze"), "freeze() still calls a moved handler — "
 				+ adapted.describe());
-		assertEquals(List.of("onInitialize"), handlerCalls(adapted, FabricFreezePointInjector.HEAD_HOOK), adapted.describe());
+		assertEquals(List.of(), handlerCalls(adapted, "bootStrap"), "bootStrap() still calls a moved handler — "
+				+ adapted.describe());
+		assertEquals(List.of("onInitialize", "initializeTabs"), handlerCalls(adapted, FabricFreezePointInjector.HEAD_HOOK),
+				adapted.describe());
 		assertEquals(List.of("afterFreeze"), handlerCalls(adapted, FabricFreezePointInjector.TAIL_HOOK), adapted.describe());
 		assertTrue(WeaveHarness.hasMergedMethod(adapted.defined(BUILT_IN_REGISTRIES)), adapted.describe());
 		WeaveHarness.assertWovenAndVerified(adapted, BUILT_IN_REGISTRIES, fixture);
@@ -96,6 +106,7 @@ class FabricFreezeHookMixinAdapterWeaveTest {
 		assertTrue(off.printed("net.minecraft.server.Bootstrap.bootStrap(Bootstrap.java"),
 				"#52 dies in the bootstrap — " + off.describe());
 		assertEquals(List.of("onInitialize", "afterFreeze"), handlerCalls(off, "freeze"), off.describe());
+		assertEquals(List.of("initializeTabs"), handlerCalls(off, "bootStrap"), off.describe());
 		WeaveHarness.assertWovenAndVerified(off, BUILT_IN_REGISTRIES, fixture);
 	}
 
@@ -107,6 +118,7 @@ class FabricFreezeHookMixinAdapterWeaveTest {
 		assertFalse(withoutSync.printed(WeaveHarnessMain.REGISTERED + SYNC_CONFIG), withoutSync.describe());
 		assertFalse(withoutSync.printed("[Forbric/RegistrySync]"), withoutSync.describe());
 		assertEquals(List.of("onInitialize", "afterFreeze"), handlerCalls(withoutSync, "freeze"), withoutSync.describe());
+		assertEquals(List.of("initializeTabs"), handlerCalls(withoutSync, "bootStrap"), withoutSync.describe());
 		assertEquals(List.of(), handlerCalls(withoutSync, FabricFreezePointInjector.HEAD_HOOK), withoutSync.describe());
 		assertEquals(List.of(), handlerCalls(withoutSync, FabricFreezePointInjector.TAIL_HOOK), withoutSync.describe());
 		WeaveHarness.assertWovenAndVerified(withoutSync, BUILT_IN_REGISTRIES, fixture);
@@ -126,16 +138,18 @@ class FabricFreezeHookMixinAdapterWeaveTest {
 	 * the boot survives it.
 	 */
 	private static boolean adaptedHolds(WeaveHarness.Result run) {
-		return run.printed(WeaveHarnessMain.DONE + " " + MOVED) && run.printed(ADAPTED) && losses(run).isEmpty();
+		return run.printed(WeaveHarnessMain.DONE + " " + MOVED) && run.printed(ADAPTED) && run.printed(ADAPTED_TABS)
+				&& losses(run).isEmpty();
 	}
 
 	private static boolean offHolds(WeaveHarness.Result run) {
 		return run.printed(WeaveHarnessMain.THREW + "java.lang.ExceptionInInitializerError") && run.printed(FROZEN)
-				&& !run.printed(ADAPTED) && losses(run).isEmpty();
+				&& !run.printed(ADAPTED) && !run.printed(ADAPTED_TABS) && losses(run).isEmpty();
 	}
 
 	private static boolean withoutSyncHolds(WeaveHarness.Result run) {
-		return run.printed(WeaveHarnessMain.DONE + " " + KEPT) && !run.printed(ADAPTED) && losses(run).isEmpty();
+		return run.printed(WeaveHarnessMain.DONE + " " + KEPT) && !run.printed(ADAPTED) && !run.printed(ADAPTED_TABS)
+				&& losses(run).isEmpty();
 	}
 
 	private static List<WeaveHarness.Finding> losses(WeaveHarness.Result run) {
@@ -152,7 +166,8 @@ class FabricFreezeHookMixinAdapterWeaveTest {
 		return Stream.of(body.instructions.toArray())
 				.filter(insn -> insn instanceof MethodInsnNode call && call.owner.equals(BUILT_IN_REGISTRIES))
 				.map(insn -> ((MethodInsnNode) insn).name)
-				.filter(name -> name.endsWith("$onInitialize") || name.endsWith("$afterFreeze"))
+				.filter(name -> name.endsWith("$onInitialize") || name.endsWith("$afterFreeze")
+						|| name.endsWith("$initializeTabs"))
 				.map(name -> name.substring(name.lastIndexOf('$') + 1)).toList();
 	}
 

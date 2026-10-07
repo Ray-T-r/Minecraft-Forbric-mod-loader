@@ -301,6 +301,11 @@ public final class ForbricMixinService
 		KernelClientHookMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		GuiItemCaptureMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		BarrelRollCameraAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		// …and a redirect of a vanilla call the carrier replaced at the same place, whose handler only conditions it,
+		// forwards the carrier's call there instead.
+		ReplacedCallRedirects.adapt(node, this::mergedBaseNodeWithCode);
+		// …and an ordinal counted on a vanilla call the carrier makes fewer times names the occurrence it kept.
+		ThinnedCallOrdinals.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a locals capture that would throw an Error no handler sees is made to skip and warn instead.
 		MixinLocalsCapture.soften(node);
 		// …and an injection point naming a call the surviving carrier gave extra parameters is pointed at the
@@ -376,6 +381,11 @@ public final class ForbricMixinService
 		// …and an @Inject anchored on a call the merged body makes through a subtype of the same method
 		// (Decoder.parse → Codec.parse: lithostitched's Fabric load predicates) moves to that one call.
 		MixinSubtypeOwnerRetarget.adapt(node, this::mergedBaseNodeWithCode);
+		// …and an injector written for vanilla's signature of a method nothing in the merged game calls any more moves to
+		// the overload the carrier added in its place, still handed vanilla's arguments (LiquidBounce's X-Ray face test on
+		// ModelBlockRenderer.shouldRenderFace, which NeoForge gave the block's position). After the pin: a pinned selector
+		// spells vanilla's descriptor, and this reads both forms.
+		MixinTwinRebind.adapt(node, this::mergedBaseNodeWithCode);
 		// …and, LAST, a Fabric mod's injector that Mixin still binds to a carrier's delegating stub moves to the method
 		// carrying the body — Mixin binds a name-only selector to the FIRST declared overload, which is that stub.
 		// Last so every specific adapter above has had its say: FabricEntityMixinAnchors moves fabric-api's elytra

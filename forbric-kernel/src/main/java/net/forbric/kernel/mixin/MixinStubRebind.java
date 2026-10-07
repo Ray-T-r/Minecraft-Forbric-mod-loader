@@ -57,11 +57,15 @@ import net.forbric.kernel.util.ForbricLog;
  *       its static stayed null, and every block and item model on the client failed to bake. A mod whose carrier
  *       keeps the same stub itself (NeoForge mods on NeoForge's stubs) gets what it would get natively.
  *       {@code -Dforbric.mixinStubRebind.forgeFamily=off} moves Fabric mods' injectors only, as before;</li>
- *   <li>only a PURE stub: loads, constants, static fields, zero-argument static factories, non-capturing lambdas and
- *       method references (a constant, like a static field — NeoForge's {@code Language.loadFromJson(InputStream,
- *       BiConsumer)} passes a no-op component consumer) and argument construction, then one call to a same-name
- *       overload of the same class and static-ness, returning its result unchanged; the overload must have a body
- *       (an interface default forwarding to an abstract overload is no stub);</li>
+ *   <li>only a PURE stub: loads, constants, fields, lambdas and method references (a constant when they capture
+ *       nothing — NeoForge's {@code Language.loadFromJson(InputStream, BiConsumer)} passes a no-op component consumer;
+ *       {@code EntityFluidInteraction.update(Entity, boolean)} wraps its flag in the {@code Predicate} its body takes)
+ *       and argument construction — objects, and calls whose result is an argument: what vanilla's body computed
+ *       inline and the carrier now computes first, {@code Player.doSweepAttack}'s
+ *       {@code target.getBoundingBox().inflate(1, 0.25, 1)} or {@code Entity.restituteMovementAfterCollisions}'
+ *       {@code getOnPosLegacy()} — then one call to a same-name overload of the same class and static-ness, returning
+ *       its result unchanged; the overload must have a body (an interface default forwarding to an abstract overload
+ *       is no stub). A call whose result is not passed on is the stub doing something else, and makes it none;</li>
  *   <li>every {@code INVOKE}/{@code FIELD}/{@code NEW} anchor absent from the stub and present in the delegate
  *       ({@code HEAD}, {@code RETURN} and {@code TAIL} are equivalent on both: the stub returns what the delegate
  *       returns);</li>
@@ -950,14 +954,23 @@ public final class MixinStubRebind {
 		return s;
 	}
 
-	/** A stub's delegate, and for each stub parameter the delegate position it reaches unchanged (-1: not directly). */
-	record Delegation(MethodNode delegate, int[] positions) {
+	/**
+	 * A stub's delegate, and for each stub parameter the delegate position it reaches unchanged (-1: not directly).
+	 * {@code computed}: the stub works an argument out — a call, a field of an object, a lambda over what it captures —
+	 * rather than only loading, constructing and forwarding. Such a stub heads a row of {@code carrier-stubs.txt} only
+	 * where nothing in the merged game calls it (CarrierStubCensusTest): an injector there never runs. One the game
+	 * still calls runs its injectors for every caller it has, and the delegate may have callers of its own the stub
+	 * never stood for — NeoForge's registry snapshot calls {@code MappedRegistry.register(int, …)} directly, where
+	 * fabric-registry-sync's add-entry callback on {@code register(ResourceKey, …)} has no business firing.
+	 */
+	record Delegation(MethodNode delegate, int[] positions, boolean computed) {
 	}
 
 	/**
 	 * The one same-name overload {@code stub} forwards to, with the argument mapping, when {@code stub} is nothing else:
-	 * loads, constants, static fields, zero-argument static factories and argument construction feeding one call,
-	 * whose result is returned unchanged. Null otherwise.
+	 * loads, constants, fields, lambdas, and calls and constructions whose results are arguments, feeding one call,
+	 * whose result is returned unchanged. Null otherwise — a call whose result goes nowhere does something besides
+	 * forwarding.
 	 */
 	static Delegation delegation(ClassNode owner, MethodNode stub) {
 		if (stub.instructions == null || stub.instructions.size() == 0) return null;
@@ -969,6 +982,7 @@ public final class MixinStubRebind {
 		int slot = isStatic ? 0 : 1;
 		for (int i = 0; i < stubParams.length; i++) { if (slot < 256) paramBySlot[slot] = i; slot += stubParams[i].getSize(); }
 		List<Integer> stack = new ArrayList<>();   // each entry: the stub parameter it is, -1 synthesized, -2 this
+		boolean computed = false;
 		MethodInsnNode call = null;
 		MethodNode found = null;
 		int[] mapping = null;
@@ -986,10 +1000,20 @@ public final class MixinStubRebind {
 				stack.add(-1);
 			} else if (insn instanceof TypeInsnNode type && op == Opcodes.NEW) {
 				stack.add(-1);
-			} else if (insn instanceof InvokeDynamicInsnNode indy && Type.getArgumentTypes(indy.desc).length == 0
+			} else if (insn instanceof InvokeDynamicInsnNode indy
 					&& "java/lang/invoke/LambdaMetafactory".equals(indy.bsm.getOwner())
 					&& ("metafactory".equals(indy.bsm.getName()) || "altMetafactory".equals(indy.bsm.getName()))) {
-				stack.add(-1);   // a non-capturing lambda or method reference: a constant
+				// A lambda or method reference: a constant when it captures nothing, else built from what it captures
+				// (EntityFluidInteraction.update(Entity, boolean) wraps its flag in the Predicate the body takes).
+				int captured = Type.getArgumentTypes(indy.desc).length;
+				if (stack.size() < captured) return null;
+				for (int k = 0; k < captured; k++) stack.removeLast();
+				stack.add(-1);
+				computed |= captured > 0;
+			} else if (insn instanceof FieldInsnNode get && op == Opcodes.GETFIELD) {
+				if (stack.isEmpty()) return null;
+				stack.set(stack.size() - 1, -1);
+				computed = true;
 			} else if (op == Opcodes.DUP) {
 				if (stack.isEmpty()) return null;
 				stack.add(stack.getLast());
@@ -1003,13 +1027,22 @@ public final class MixinStubRebind {
 					for (int k = 0; k <= args.length; k++) stack.removeLast();   // the args and the dup'd instance
 					continue;
 				}
-				if (op == Opcodes.INVOKESTATIC && args.length == 0 && !(m.owner.equals(owner.name) && m.name.equals(stub.name))) {
-					stack.add(-1);
-					continue;
-				}
 				boolean delegationCall = m.owner.equals(owner.name) && m.name.equals(stub.name) && !m.desc.equals(stub.desc)
 						&& (op == Opcodes.INVOKESTATIC) == isStatic;
-				if (!delegationCall) return null;
+				if (!delegationCall) {
+					// Argument construction: a call whose result is an argument of the forward — a zero-argument static
+					// factory, or what vanilla's body computed inline and the carrier now computes first
+					// (Player.doSweepAttack's target.getBoundingBox().inflate(1, 0.25, 1), Entity's getOnPosLegacy()).
+					// A call whose result is not passed on (void, or popped) is the stub doing something else: no stub.
+					if (Type.getReturnType(m.desc).getSort() == Type.VOID) return null;
+					if (m.owner.equals(owner.name) && m.name.equals(stub.name)) return null;   // another overload of its own
+					int consumed = args.length + (op == Opcodes.INVOKESTATIC ? 0 : 1);
+					if (stack.size() < consumed) return null;
+					for (int k = 0; k < consumed; k++) stack.removeLast();
+					stack.add(-1);
+					computed |= consumed > 0;   // a zero-argument static factory is a constant
+					continue;
+				}
 				int receiver = isStatic ? 0 : 1;
 				if (stack.size() != args.length + receiver) return null;
 				if (!isStatic && stack.getFirst() != -2) return null;
@@ -1038,7 +1071,7 @@ public final class MixinStubRebind {
 		}
 		if (call == null || after == null || after.getOpcode() < Opcodes.IRETURN || after.getOpcode() > Opcodes.RETURN) return null;
 		for (AbstractInsnNode insn = after.getNext(); insn != null; insn = insn.getNext()) if (insn.getOpcode() >= 0) return null;
-		return new Delegation(found, mapping);
+		return new Delegation(found, mapping, computed);
 	}
 
 	/** A {@code @Local} that names nothing — no ordinal or index, not limited to the arguments: MixinExtras' implicit mode. */
