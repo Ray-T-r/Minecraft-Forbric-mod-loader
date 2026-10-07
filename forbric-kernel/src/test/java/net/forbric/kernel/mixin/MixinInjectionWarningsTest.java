@@ -210,7 +210,7 @@ class MixinInjectionWarningsTest {
 		assertEquals(CompatibilityFinding.Confidence.SUSPECTED, whole(MIXIN).confidence());
 	}
 
-	@Test void aProvedWholeMixinReplacementDoesNotWarnAboutItsMissingHandler() {
+	@Test void aTwoCallLootBridgeDoesNotHideUnprovedSourceHandlers() {
 		String replaced = "net.fabricmc.fabric.mixin.loot.ReloadableServerRegistriesMixin";
 		String registry = "net.minecraft.server.ReloadableServerRegistries";
 		prepare(replaced, registry, true, 1, -1);
@@ -222,10 +222,10 @@ class MixinInjectionWarningsTest {
 		repair.instructions.add(new InsnNode(Opcodes.RETURN));
 		target.methods.add(repair);
 		SupersededMixins.observeDefinition(registry, bytes(target));
-		assertNotNull(SupersededMixins.provedReplacement(replaced), "premise: both replacement calls were observed");
+		assertNull(SupersededMixins.provedReplacement(replaced), "two bridge calls do not prove the original source helper, provider projection and completion closure");
 		String log = captureErrors(() -> observe(replaced, registry, target));
-		assertTrue(warnings(log).isEmpty(), "a proved replacement must not be described as an ineffective feature\n" + log);
-		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
+		assertEquals(1, warnings(log).size(), "an unproved source handler must remain visible\n" + log);
+		assertFalse(CompatibilityFindings.confirmedRequired().isEmpty());
 	}
 
 	private static void prepare(String mixin, String target, boolean required, int minimum, int require) {
