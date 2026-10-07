@@ -130,10 +130,11 @@ public final class KernelMixinBootstrap {
 		// is `transformer`, one volatile read away.
 		MixinWeaverSlot.install(transformer);
 		var codecReturns = new net.forbric.kernel.transform.PostMixinCodecReturnArbitration();
+		var callbackPriority = new net.forbric.kernel.transform.PostMixinCallbackPriority();
 		loader.setMixinTransformer((name, bytes) -> net.forbric.kernel.transform.ForgeTransferShapeAudit.certify(name,
-				codecReturns.transform(name, conflicts.transform(name, bytes, PostMixinFixups.apply(name,
+				callbackPriority.transform(name, codecReturns.transform(name, conflicts.transform(name, bytes, PostMixinFixups.apply(name,
 						net.forbric.kernel.transform.NativeCoremodParity.apply(name,
-								MixinWeaverSlot.currentOr(transformer).transformClassBytes(name, name, bytes)))), null)));
+								MixinWeaverSlot.currentOr(transformer).transformClassBytes(name, name, bytes)))), null), null)));
 
 		// Leave PREINIT so the registered configs are prepared and their targets become weavable.
 		gotoPhase(MixinEnvironment.Phase.INIT);

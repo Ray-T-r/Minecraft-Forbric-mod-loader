@@ -262,7 +262,7 @@ public final class KernelGuestMixinAdapter {
 				MixinAddedMembers.View added = MixinAddedMembers.before(configName, mixin, resource);
 				// Judged as Mixin will receive it: Carpet's anchor adapters run when Mixin loads the class, after this
 				// read, so an anchor they move onto the merged game is not missing (CarpetMixinAdapter.asLoaded).
-				byte[] judged = CarpetMixinAdapter.asLoaded(classBytes, resource);
+				byte[] judged = MixinDecodeScopeAdapter.asLoaded(CarpetMixinAdapter.asLoaded(classBytes, resource), resource);
 				MixinFit.Result fit = MixinFit.evaluate(judged, resource,
 						net.forbric.kernel.classloading.DelegationPolicy::alwaysGame, added, nativeView);
 				if (judged != classBytes) {

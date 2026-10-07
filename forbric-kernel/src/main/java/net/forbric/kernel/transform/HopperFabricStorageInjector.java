@@ -165,4 +165,31 @@ public final class HopperFabricStorageInjector implements ClassTransformer {
 		while (next != null && next.getOpcode() < 0) next = next.getNext();
 		return next;
 	}
+
+	/** Final-Mixin only: an actually installed original callback owns this fallback now. Native routes remain. */
+	public static int standDownMigratedCallbacks(ClassNode node) {
+		int changed=0;
+		for(MethodNode method:node.methods){
+			if(!net.forbric.kernel.mixin.MixinNullableCompositeCallback.installedOnFinalHost(node,method))continue;
+			for(AbstractInsnNode instruction:method.instructions.toArray()){
+				if(!(instruction instanceof MethodInsnNode call)||call.getOpcode()!=Opcodes.INVOKESTATIC||!call.owner.equals(RUNTIME))continue;
+				if(call.name.equals("insert")&&call.desc.equals("(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z")){
+					AbstractInsnNode c=previous(call),b=previous(c),a=previous(b);
+					if(!argument(a,0)||!argument(b,1)||!argument(c,2))continue;
+					method.instructions.insertBefore(a,new InsnNode(Opcodes.ICONST_0));
+					method.instructions.remove(a);method.instructions.remove(b);method.instructions.remove(c);method.instructions.remove(call);changed++;
+				}else if(call.name.equals("extract")&&call.desc.equals("(Ljava/lang/Object;Ljava/lang/Object;)I")){
+					AbstractInsnNode b=previous(call),a=previous(b),dup=next(call),branch=next(dup),exit=next(branch),pop=next(exit);
+					if(!argument(a,0)||!argument(b,1)||dup==null||dup.getOpcode()!=Opcodes.DUP||!(branch instanceof JumpInsnNode jump)||jump.getOpcode()!=Opcodes.IFLT
+							||exit==null||exit.getOpcode()!=Opcodes.IRETURN||pop==null||pop.getOpcode()!=Opcodes.POP||next(jump.label)!=pop)continue;
+					long references=java.util.Arrays.stream(method.instructions.toArray()).filter(i->i instanceof JumpInsnNode other&&other.label==jump.label).count();
+					if(references!=1)continue;
+					for(AbstractInsnNode remove=a;remove!=null;){AbstractInsnNode following=remove.getNext();method.instructions.remove(remove);if(remove==pop)break;remove=following;}changed++;
+				}
+			}
+		}
+		return changed;
+	}
+	private static boolean argument(AbstractInsnNode instruction,int slot){return instruction instanceof VarInsnNode load&&load.getOpcode()==Opcodes.ALOAD&&load.var==slot;}
+	private static AbstractInsnNode previous(AbstractInsnNode instruction){if(instruction==null)return null;for(var before=instruction.getPrevious();before!=null;before=before.getPrevious())if(before.getOpcode()>=0)return before;return null;}
 }

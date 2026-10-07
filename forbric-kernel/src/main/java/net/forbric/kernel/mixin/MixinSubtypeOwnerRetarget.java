@@ -45,8 +45,8 @@ import org.objectweb.asm.tree.analysis.SourceValue;
  * <p>The anchor is moved to the subtype's call only where that is the same call: the pair is in {@link #SAME_METHOD}
  * (verified: the subtype does not redeclare it); the injector is an {@code @Inject}, which never sees the receiver; the
  * selected method makes no call with the recorded owner and exactly one with the subtype; and every {@code @Local} the
- * handler takes is named and covers that call. fabric-resource-conditions' own mixin at the same place is left out —
- * the kernel already asks Fabric's conditions at NeoForge's condition funnel, and asking twice would double every skip.
+ * handler takes is named and covers that call. A transported source decode guard records its completed evaluation
+ * within the parse scope, so the native condition funnel does not evaluate the same predicate/input twice.
  * {@code -Dforbric.mixinSubtypeOwner=off} leaves every injector as written.
  *
  * <h2>Through a field the merge widened</h2>
@@ -85,8 +85,6 @@ public final class MixinSubtypeOwnerRetarget {
 	static final String NARROW_SUFFIX = "$forbricnarrow";
 	/** Recorded owner → a subtype through which the merged game calls the same method (name and descriptor). */
 	static final Map<String, String> SAME_METHOD = Map.of("com/mojang/serialization/Decoder", "com/mojang/serialization/Codec");
-	private static final Set<String> LEFT_OUT = Set.of(
-			"net/fabricmc/fabric/mixin/resource/conditions/RegistryLoadTaskPendingRegistrationMixin");
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String LOCAL = "Lcom/llamalad7/mixinextras/sugar/Local;";
 
@@ -106,7 +104,7 @@ public final class MixinSubtypeOwnerRetarget {
 	}
 
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
-		if (!enabled() || LEFT_OUT.contains(mixin.name)) return 0;
+		if (!enabled()) return 0;
 		List<String> owners = MixinFit.mixinTargets(mixin);
 		if (owners.size() != 1) return 0;
 		ClassNode target = null;
@@ -151,7 +149,7 @@ public final class MixinSubtypeOwnerRetarget {
 	 */
 	static String wouldMove(String mixinName, MethodNode handler, AnnotationNode injector, String recorded,
 			ClassNode target, Function<String, ClassNode> classes) {
-		if (!enabled() || mixinName == null || LEFT_OUT.contains(mixinName) || injector == null || !INJECT.equals(injector.desc)
+		if (!enabled() || mixinName == null || injector == null || !INJECT.equals(injector.desc)
 				|| target == null || !candidate(recorded, target.name)) return null;
 		List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
 		if (selectors.size() != 1) return null;

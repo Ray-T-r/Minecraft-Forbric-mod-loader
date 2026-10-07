@@ -475,6 +475,7 @@ public final class KernelRuntimeClasses {
 		// The shared breathe hook preserves the original drowning query and corrects adapter refill before its event.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidBreathing", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidPredicateSeams", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelSourceDecodeScopes", new Entry(Origin.COMPILED, List.of()));
 		// Asked in NeoForge's FluidInteractionRegistry.canInteract at each neighbour its own rules missed, handed
 		// MinecraftForge's map by its initializer and told of each addInteraction (FluidInteractionsInjector). Inserted
 		// calls with game-typed descriptors.

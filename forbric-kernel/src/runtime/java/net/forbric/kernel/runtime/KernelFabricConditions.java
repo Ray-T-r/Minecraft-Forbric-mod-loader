@@ -112,7 +112,8 @@ public final class KernelFabricConditions {
 		return new Codec<Object>() {
 			@Override
 			public <T> DataResult<Pair<Object, T>> decode(DynamicOps<T> ops, T input) {
-				if (input instanceof JsonObject json && json.has(KEY)) {
+				if (input instanceof JsonObject json && json.has(KEY)
+						&& !KernelSourceDecodeScopes.alreadyJudged(input, evaluatorHandle())) {
 					Boolean keep = ask(json, ops);
 					if (Boolean.FALSE.equals(keep)) {
 						return DataResult.success(Pair.of((Object) Optional.empty(), ops.empty()));
@@ -158,9 +159,8 @@ public final class KernelFabricConditions {
 			int judged = JUDGED.incrementAndGet();
 			if (!announced) {
 				announced = true;
-				ForbricLog.info("[Forbric/Conditions] Fabric's own resource-condition evaluator is live — its two "
-						+ "mixins for this cannot apply on the merged base (one anchor was replaced by NeoForge's "
-						+ "patch, the other's descriptor moved), so the kernel calls %s directly", IMPL);
+				ForbricLog.info("[Forbric/Conditions] a native decode without a completed source guard asks Fabric's "
+						+ "resource-condition evaluator directly; completed source predicate/input scopes take precedence (%s)", IMPL);
 			}
 			if (!keep) {
 				ForbricLog.info("[Forbric/Conditions] %s said no to a data file — %d of %d element(s) carrying the "
@@ -253,7 +253,9 @@ public final class KernelFabricConditions {
 	 */
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	public static DataResult ifSuccessWithoutAForeignSkipMarker(DataResult parsed, java.util.function.Consumer consumer) {
-		return ((DataResult) withoutAForeignSkipMarker(parsed)).ifSuccess(consumer);
+		return consumer instanceof KernelSourceDecodeScopes.OwnedConsumer
+				? parsed.ifSuccess(consumer)
+				: ((DataResult) withoutAForeignSkipMarker(parsed)).ifSuccess(consumer);
 	}
 
 	public static DataResult<?> withoutAForeignSkipMarker(DataResult<?> parsed) {
