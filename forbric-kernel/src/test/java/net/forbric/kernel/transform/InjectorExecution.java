@@ -65,6 +65,11 @@ public final class InjectorExecution {
 	 *                path ending in {@code .java}, to its source text
 	 */
 	public static Map<String, byte[]> compile(Path work, Map<String, String> sources) throws IOException {
+		return compile(work, sources, List.of());
+	}
+
+	/** Additional dependencies belong to this fixture, rather than every test in the JVM. */
+	public static Map<String, byte[]> compile(Path work, Map<String, String> sources, List<Path> dependencies) throws IOException {
 		Path root = Files.createTempDirectory(Files.createDirectories(work), "src-");
 		List<Path> files = new ArrayList<>();
 		for (var source : new TreeMap<>(sources).entrySet()) {
@@ -74,11 +79,15 @@ public final class InjectorExecution {
 			Files.writeString(file, source.getValue(), StandardCharsets.UTF_8);
 			files.add(file);
 		}
-		return compile(work, files);
+		return compile(work, files, dependencies);
 	}
 
 	/** Compiles source files against the test's own classpath; returns every class written, by internal name. */
 	public static Map<String, byte[]> compile(Path work, List<Path> sources) throws IOException {
+		return compile(work, sources, List.of());
+	}
+
+	public static Map<String, byte[]> compile(Path work, List<Path> sources, List<Path> dependencies) throws IOException {
 		if (sources.isEmpty()) throw new IllegalArgumentException("nothing to compile");
 		var javac = ToolProvider.getSystemJavaCompiler();
 		if (javac == null) throw new AssertionError("no system Java compiler: run the tests on a JDK, not a JRE");
@@ -86,7 +95,10 @@ public final class InjectorExecution {
 		Path classes = Files.createTempDirectory(Files.createDirectories(work), "classes-");
 		List<String> args = new ArrayList<>(JAVAC);
 		// The test's classpath, so a stand-in may name a kernel type the way the real game class would.
-		args.addAll(List.of("-cp", System.getProperty("java.class.path"), "-d", classes.toString()));
+		String classpath = Stream.concat(Stream.of(System.getProperty("java.class.path")),
+				dependencies.stream().map(path -> path.toAbsolutePath().toString()))
+				.collect(java.util.stream.Collectors.joining(java.io.File.pathSeparator));
+		args.addAll(List.of("-cp", classpath, "-d", classes.toString()));
 		// A Writer, not run()'s byte stream: javac's messages follow the system language, and a zh run must still read.
 		StringWriter errors = new StringWriter();
 		boolean compiled;
@@ -167,12 +179,17 @@ public final class InjectorExecution {
 	 * state, the test reads back.
 	 */
 	public static ClassLoader load(Map<String, byte[]> classes) {
+		return load(classes, InjectorExecution.class.getClassLoader());
+	}
+
+	/** Keep transformed fixtures child-first while resolving their actual dependencies in an isolated parent. */
+	public static ClassLoader load(Map<String, byte[]> classes, ClassLoader parent) {
 		Map<String, byte[]> byBinaryName = new TreeMap<>();
 		for (var entry : classes.entrySet()) {
 			if (entry.getKey().indexOf('.') >= 0) throw new IllegalArgumentException("an internal name, not a binary one: " + entry.getKey());
 			byBinaryName.put(entry.getKey().replace('/', '.'), entry.getValue().clone());
 		}
-		return new ChildFirst(byBinaryName, InjectorExecution.class.getClassLoader());
+		return new ChildFirst(byBinaryName, parent);
 	}
 
 	/** Calls the one static method {@code name} of {@code owner} that accepts {@code args}; its throw is rethrown as is. */

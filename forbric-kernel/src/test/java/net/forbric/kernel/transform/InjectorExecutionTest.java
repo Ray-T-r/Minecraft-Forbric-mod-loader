@@ -150,6 +150,37 @@ class InjectorExecutionTest {
 		assertNotSame(Probe.class, copy, "a name in the map must be defined by the execution loader, not the parent");
 	}
 
+	@Test void fixtureDependenciesStayInTheSuppliedClasspathAndParent(@TempDir Path work) throws Throwable {
+		String originalClasspath = System.getProperty("java.class.path");
+		Map<String, byte[]> dependency = InjectorExecution.compile(work, Map.of(
+				"isolated_dependency.Base", "package isolated_dependency; public class Base {}"));
+		Path library = work.resolve("library");
+		for (var entry : dependency.entrySet()) {
+			Path target = library.resolve(entry.getKey() + ".class");
+			java.nio.file.Files.createDirectories(target.getParent());
+			java.nio.file.Files.write(target, entry.getValue());
+		}
+		Map<String, String> source = Map.of("fixture.UseDependency", """
+				package fixture;
+				public class UseDependency {
+					public static Object value() { return new isolated_dependency.Base(); }
+				}
+				""");
+		assertThrows(AssertionError.class, () -> InjectorExecution.compile(work, source));
+		Map<String, byte[]> classes = InjectorExecution.compile(work, source, java.util.List.of(library));
+		ClassLoader parent = InjectorExecution.load(dependency);
+		ClassLoader loader = InjectorExecution.load(classes, parent);
+		assertEquals("", InjectorExecution.verify(classes.get("fixture/UseDependency"), loader));
+		Object value = InjectorExecution.invokeStatic(loader.loadClass("fixture.UseDependency"), "value");
+		assertSame(parent.loadClass("isolated_dependency.Base"), value.getClass());
+		assertThrows(ClassNotFoundException.class,
+				() -> InjectorExecutionTest.class.getClassLoader().loadClass("isolated_dependency.Base"));
+		classes.putAll(dependency);
+		ClassLoader shadowing = InjectorExecution.load(classes, parent);
+		assertSame(shadowing, shadowing.loadClass("isolated_dependency.Base").getClassLoader());
+		assertEquals(originalClasspath, System.getProperty("java.class.path"));
+	}
+
 	@Test void transformRefusesAnInternalNameThatWouldMatchNothing() {
 		assertThrows(IllegalArgumentException.class,
 				() -> InjectorExecution.transform(PROBE_AT_HEAD, GREETER, new byte[0], EnvType.CLIENT));
