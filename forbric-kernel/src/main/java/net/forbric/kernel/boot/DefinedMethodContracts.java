@@ -124,6 +124,16 @@ public final class DefinedMethodContracts {
         }catch(RuntimeException|ReflectiveOperationException|LinkageError unknown){return false;}
     }
 
+    /** Opt-in only: an actual pure invokespecial interface-default forwarder may delegate to this exact
+     * final observed default, whose own body can contain branches. Concrete overrides remain rejected. */
+    public static boolean validatesDefaultDispatch(Object receiver,MethodContract expected){
+        if(receiver==null||expected==null)return false;try{
+            Class<?>source=Class.forName(expected.owner(),false,receiver.getClass().getClassLoader());if(!source.isInterface()||!source.isInstance(receiver)||!observed(source.getClassLoader(),expected))return false;Method original=declared(source,expected.name(),expected.descriptor());if(!publicInstance(original)||!original.isDefault())return false;Method actual=dispatch(receiver.getClass(),expected.name(),expected.descriptor());if(!publicInstance(actual))return false;if(actual.getDeclaringClass()==source)return true;
+            Observation finalDefinition=observation(actual.getDeclaringClass().getClassLoader(),actual.getDeclaringClass().getName());if(finalDefinition==null)return false;TransparentShape forwarding=null;for(var entry:finalDefinition.transparent().entrySet()){var witness=entry.getKey();if(witness.name().equals(actual.getName())&&witness.descriptor().equals(Type.getMethodDescriptor(actual))&&observed(actual.getDeclaringClass().getClassLoader(),witness)){if(forwarding!=null)return false;forwarding=entry.getValue();}}
+            if(forwarding==null||forwarding.kind()!=1||!forwarding.name().equals(expected.name())||!forwarding.descriptor().equals(expected.descriptor()))return false;Class<?>symbolicOwner=Class.forName(forwarding.owner().replace('/','.'),false,actual.getDeclaringClass().getClassLoader());if(!symbolicOwner.isInterface()||!symbolicOwner.isAssignableFrom(actual.getDeclaringClass()))return false;Method callee=symbolic(symbolicOwner,forwarding.name(),forwarding.descriptor());return publicInstance(callee)&&callee.isDefault()&&callee.getDeclaringClass()==source&&Type.getMethodDescriptor(callee).equals(expected.descriptor())&&observed(source.getClassLoader(),expected);
+        }catch(RuntimeException|ReflectiveOperationException|LinkageError unavailable){return false;}
+    }
+
     private static boolean identity(Object receiver,Method method,Set<String> active)throws ReflectiveOperationException{
         String descriptor=Type.getMethodDescriptor(method),key=method.getDeclaringClass().getName()+"#"+method.getName()+descriptor;
         if(!active.add(key)||method.getParameterCount()!=0||!method.getReturnType().isInstance(receiver))return false;
@@ -160,6 +170,7 @@ public final class DefinedMethodContracts {
         if(code.isEmpty()||!(code.getFirst()instanceof VarInsnNode self)||self.getOpcode()!=Opcodes.ALOAD||self.var!=0)return null;
         if(arguments.length==0&&(result.getSort()==Type.OBJECT||result.getSort()==Type.ARRAY)){
             if(code.size()==2&&code.getLast().getOpcode()==Opcodes.ARETURN)return new TransparentShape(2,"","","");
+            if(code.size()==3&&code.get(1)instanceof org.objectweb.asm.tree.TypeInsnNode cast&&cast.getOpcode()==Opcodes.CHECKCAST&&result.getSort()==Type.OBJECT&&cast.desc.equals(result.getInternalName())&&code.getLast().getOpcode()==Opcodes.ARETURN)return new TransparentShape(2,"","","");
             if(code.size()==3&&code.get(1)instanceof MethodInsnNode call&&(call.getOpcode()==Opcodes.INVOKEVIRTUAL||call.getOpcode()==Opcodes.INVOKEINTERFACE)&&call.name.equals(method.name)&&Type.getArgumentTypes(call.desc).length==0&&(Type.getReturnType(call.desc).getSort()==Type.OBJECT||Type.getReturnType(call.desc).getSort()==Type.ARRAY)&&code.getLast().getOpcode()==Opcodes.ARETURN)return new TransparentShape(3,call.owner,call.name,call.desc);
         }
         if(code.size()!=arguments.length+3||!(code.get(code.size()-2)instanceof MethodInsnNode call)||call.getOpcode()!=Opcodes.INVOKESPECIAL||!call.itf||!call.name.equals(method.name)||!call.desc.equals(method.desc)||code.getLast().getOpcode()!=result.getOpcode(Opcodes.IRETURN))return null;
