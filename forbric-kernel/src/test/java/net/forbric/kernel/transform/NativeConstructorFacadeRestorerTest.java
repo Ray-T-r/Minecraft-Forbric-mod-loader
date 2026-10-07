@@ -3,7 +3,6 @@ package net.forbric.kernel.transform;
 import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.*;import java.util.*;import java.util.zip.*;import net.fabricmc.api.EnvType;import net.forbric.api.Ecosystem;import net.forbric.kernel.TestFixtures;import net.forbric.kernel.mixin.*;import org.junit.jupiter.api.Test;import org.junit.jupiter.api.io.TempDir;import org.objectweb.asm.*;import org.objectweb.asm.tree.*;
 
-@ExecutesInjector(NativeConstructorFacadeRestorer.class)
 class NativeConstructorFacadeRestorerTest {
  @TempDir Path work;
  @Test void anIndexedConstructorClosureRestoresItsExactParameterScopeAndExecutesOnce()throws Throwable{
