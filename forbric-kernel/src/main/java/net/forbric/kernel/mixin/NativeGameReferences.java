@@ -20,10 +20,16 @@ import org.objectweb.asm.tree.ClassNode;
 public final class NativeGameReferences {
 	private static volatile NativeGameReferences active;
 	private final Function<String, byte[]> resources;
+	private final Function<String, byte[]> currentClasses;
+	private Function<String, net.forbric.kernel.classloading.LoaderProbePolicy.Family> resourceFamilies;
 	private final Map<Ecosystem, Map<String, String>> indexes = new EnumMap<>(Ecosystem.class);
 
 	public NativeGameReferences(Function<String, byte[]> resources) {
+		this(resources, null);
+	}
+	public NativeGameReferences(Function<String, byte[]> resources, Function<String, byte[]> currentClasses) {
 		this.resources = resources;
+		this.currentClasses = currentClasses;
 	}
 
 	static void bind(ForbricClassLoader loader) {
@@ -31,18 +37,31 @@ public final class NativeGameReferences {
 			active = null;
 			return;
 		}
-		active = new NativeGameReferences(path -> {
+		NativeGameReferences reader = new NativeGameReferences(path -> {
 			try (var stream = loader.getGameResourceAsStream(path)) {
 				return stream == null ? null : stream.readAllBytes();
 			} catch (IOException unavailable) {
 				return null;
 			}
-		});
+		}, owner -> loader.getPreMixinClassBytes(owner.replace('/', '.')));
+		reader.resourceFamilies=owner->loader.familyOfResource(owner.replace('/','.'));
+		active=reader;
 	}
 
 	static ClassNode reference(Ecosystem ecosystem, String owner) {
 		NativeGameReferences reader = active;
 		return reader == null ? null : reader.get(ecosystem, owner);
+	}
+	/** The authoritative current pipeline bytes, without defining or initializing a dependency class. */
+	public static ClassNode current(String owner) {
+		NativeGameReferences reader=active;if(reader==null||reader.currentClasses==null||owner==null)return null;
+		byte[]bytes=reader.currentClasses.apply(owner);if(bytes==null)return null;ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return owner.equals(node.name)?node:null;
+	}
+	/** Raw external platform helper, with resource-family provenance. It is separate from the indexed game view. */
+	public static ClassNode runtime(Ecosystem ecosystem,String owner){
+		NativeGameReferences reader=active;if(reader==null||reader.resourceFamilies==null||ecosystem==null||owner==null)return null;
+		var expected=net.forbric.kernel.classloading.LoaderProbePolicy.familyOf(ecosystem);
+		if(reader.resourceFamilies.apply(owner)!=expected)return null;byte[]bytes=reader.resources.apply(owner+".class");if(bytes==null)return null;ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return owner.equals(node.name)?node:null;
 	}
 
 	public synchronized ClassNode get(Ecosystem ecosystem, String owner) {

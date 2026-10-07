@@ -9,6 +9,8 @@ import java.util.HexFormat;
 import java.util.Map;
 import net.forbric.api.Ecosystem;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
@@ -43,6 +45,22 @@ class NativeGameReferencesTest {
   resources=index(bytes(OWNER,7));String text=new String(resources.get(PREFIX+"index.tsv"),StandardCharsets.UTF_8);
   resources.put(PREFIX+"index.tsv",(text+text.substring(text.indexOf('\n')+1)).getBytes(StandardCharsets.UTF_8));
   assertNull(new NativeGameReferences(resources::get).get(Ecosystem.FABRIC,OWNER));
+ }
+ @Test @ResourceLock("native-game-references")
+ void runtimeEvidenceUsesItsOwnedFamilyAndRawBytesWithoutDefiningTheClass(@TempDir java.nio.file.Path work) throws Exception {
+  java.nio.file.Path jar=work.resolve("platform.jar");byte[] raw=bytes(OWNER,7),current=bytes(OWNER,11);
+  try(var out=new java.util.zip.ZipOutputStream(java.nio.file.Files.newOutputStream(jar))){out.putNextEntry(new java.util.zip.ZipEntry(OWNER+".class"));out.write(raw);out.closeEntry();}
+  try(var loader=new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[]{jar.toUri().toURL()},getClass().getClassLoader())){
+   loader.setTransformer((name,input)->current);NativeGameReferences.bind(loader);
+   assertNull(NativeGameReferences.runtime(Ecosystem.NEOFORGE,OWNER),"unclassified resources are not platform evidence");
+   loader.addRuntimeJarFamily(jar,net.forbric.kernel.classloading.LoaderProbePolicy.Family.NEOFORGE);
+   var original=NativeGameReferences.runtime(Ecosystem.NEOFORGE,OWNER);var transformed=NativeGameReferences.current(OWNER);
+   assertNotNull(original);assertNotNull(transformed);
+   assertEquals(7,((org.objectweb.asm.tree.LdcInsnNode)original.methods.getFirst().instructions.getFirst()).cst);
+   assertEquals(11,((org.objectweb.asm.tree.LdcInsnNode)transformed.methods.getFirst().instructions.getFirst()).cst);
+   assertNull(NativeGameReferences.runtime(Ecosystem.FORGE,OWNER));assertNull(NativeGameReferences.reference(Ecosystem.NEOFORGE,OWNER),"raw external helpers cannot impersonate indexed game snapshots");
+   assertFalse(loader.isClassLoadedByName(OWNER.replace('/','.')));
+  }finally{NativeGameReferences.bind(null);}
  }
  private static Map<String,byte[]> index(byte[] source) throws Exception {
   Map<String,byte[]> result=new HashMap<>();String hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(source));
