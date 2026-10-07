@@ -318,6 +318,8 @@ public final class ForbricMixinService
 		MixinDefaultPredicateTransport.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
 		MixinReturnDecorationAdapter.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
 		MixinDefaultCallbackTransport.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
+		MixinNativePredicateSeam.adapt(node, this::mergedBaseNodeWithCode,
+				owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner));
 		// …and a Fabric mod's wrap of vanilla's is(Items.SHEARS) also answers the carrier's canPerformAction(SHEARS_*)
 		// that replaced it in six merged bodies (BCLib's tag-based shears), with the carrier's answer as its original.
 		MixinShearsRelay.adapt(node, this::mergedBaseNodeWithCode);

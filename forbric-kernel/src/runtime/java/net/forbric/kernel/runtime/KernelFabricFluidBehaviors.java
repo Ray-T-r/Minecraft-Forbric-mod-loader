@@ -236,14 +236,17 @@ public final class KernelFabricFluidBehaviors {
 		}
 
 		@Override public boolean canSwim(Entity entity) {
+			Boolean nativeDefault=KernelFluidPredicateSeams.nativeDefault(this);if(nativeDefault!=null)return nativeDefault;
 			return ask(Handles::canSwim, tag, entity);
 		}
 
 		@Override public boolean canDrownIn(LivingEntity entity) {
+			Boolean nativeDefault=KernelFluidPredicateSeams.nativeDefault(this);if(nativeDefault!=null)return nativeDefault;
 			return ask(Handles::canDrown, tag, entity);
 		}
 
 		@Override public boolean supportsBoating(AbstractBoat boat) {
+			Boolean nativeDefault=KernelFluidPredicateSeams.nativeDefault(this);if(nativeDefault!=null)return nativeDefault;
 			return ask(Handles::canBoat, tag, boat);
 		}
 
