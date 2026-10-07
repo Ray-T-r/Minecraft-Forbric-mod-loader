@@ -631,6 +631,11 @@ public final class ForbricMixinService
 		if (bytes == null) bytes = readGameResource(resourcePath);
 
 		ADAPTER_CLASS_CACHE.put(resourcePath, bytes == null ? NOT_FOUND : bytes);
+		if (bytes != null && resourcePath.endsWith(".class")) {
+			ClassNode source = new ClassNode();
+			new ClassReader(bytes).accept(source, ClassReader.EXPAND_FRAMES);
+			net.forbric.kernel.boot.LootSourceCallbacks.offer(loader(), source, ForbricMixinService::readAdapterClass);
+		}
 		return bytes;
 	}
 

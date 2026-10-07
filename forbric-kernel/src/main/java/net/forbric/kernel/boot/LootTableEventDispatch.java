@@ -25,25 +25,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import net.forbric.kernel.transform.LootTableEventBridgeInjector;
 import net.forbric.kernel.util.ForbricLog;
 
-/**
- * Fires fabric-loot-api-v3's {@code LootTableEvents.REPLACE}, {@code MODIFY} and {@code ALL_LOADED} for the
- * loot tables NeoForge's own {@code LootTableLoadEvent} has just let through.
- *
- * <p>This is the pinned {@code ReloadableServerRegistriesMixin.modifyLootTable} sequence, performed through
- * fabric's PUBLIC surface instead of from inside the lambda the mixin could not bind to (see
- * {@link LootTableEventBridgeInjector}): source from {@code LootUtil.SOURCES} (default {@code DATA_PACK}),
- * {@code REPLACE} — a non-null answer swaps the table and marks the source {@code REPLACED} — then
- * {@code FabricLootTableBuilder.copyOf}, {@code MODIFY} on the builder, and {@code build()}. {@code ALL_LOADED}
- * fires after the loot-table registry's tags are loaded, and the source map is cleared, exactly as the mixin's
- * {@code onLootTablesLoaded} does.
- *
- * <p>Boot side and {@code Object}-typed: the classes are resolved ONCE by name from the guest loader into
- * {@link MethodHandle}s, with {@link #bindForTest} as the seam. Without fabric-loot-api-v3 the dispatch is
- * identity and says so once at debug. The one judgement call, written down: NeoForge's hook runs FIRST, in its
- * own untouched code — so a NeoForge listener that cancels removes the table before Fabric sees it, and a
- * condition-failed {@code LootTable.EMPTY} never reaches {@code REPLACE}. The alternative (Fabric first) would
- * have meant editing NeoForge's path; this keeps it byte-identical.
- */
+/** Runs a proved original closed loot callback group through the native typed loot seam.
+ * The generated helper preserves mutable Event invokers, callbacks, exceptions and holder iteration. Older or
+ * unknown source groups use the public API fallback but remain reported as unproved; that fallback alone is
+ * not evidence of equivalence. Native cancellation is decided before either Fabric dispatch path. */
 public final class LootTableEventDispatch {
 	static final String EVENTS = "net.fabricmc.fabric.api.loot.v3.LootTableEvents";
 	static final String EVENT = "net.fabricmc.fabric.api.event.Event";
@@ -73,7 +58,10 @@ public final class LootTableEventDispatch {
 	 * @param sources  {@code LootUtil.SOURCES}, a thread-local {@code Map<Identifier, LootTableSource>}
 	 */
 	record Handles(MethodHandle replace, MethodHandle modify, MethodHandle loaded, MethodHandle copyOf,
-			MethodHandle build, Object dataPack, Object replaced, ThreadLocal<?> sources) {
+			MethodHandle build, Object dataPack, Object replaced, ThreadLocal<?> sources, MethodHandle bindHolders) {
+		Handles(MethodHandle replace,MethodHandle modify,MethodHandle loaded,MethodHandle copyOf,MethodHandle build,Object dataPack,Object replaced,ThreadLocal<?> sources){
+			this(replace,modify,loaded,copyOf,build,dataPack,replaced,sources,MethodHandles.dropArguments(MethodHandles.empty(MethodType.methodType(void.class)),0,Object.class));
+		}
 	}
 
 	private enum State { UNRESOLVED, PRESENT, ABSENT }
@@ -81,7 +69,8 @@ public final class LootTableEventDispatch {
 	private static volatile ClassLoader guestLoader;
 	private static volatile State state = State.UNRESOLVED;
 	private static volatile Handles handles;
-	private static volatile boolean warned;
+	private static volatile LootSourceCallbacks.Callbacks sourceCallbacks;
+
 
 	private static final AtomicInteger OFFERED = new AtomicInteger();
 	private static final AtomicInteger REPLACE_TOOK = new AtomicInteger();
@@ -97,10 +86,11 @@ public final class LootTableEventDispatch {
 
 	public static void bind(ClassLoader loader) {
 		guestLoader = loader;
+		LootSourceCallbacks.bind(loader);
 		synchronized (LootTableEventDispatch.class) {
 			state = State.UNRESOLVED;
 			handles = null;
-			warned = false;
+			sourceCallbacks=null;
 			OFFERED.set(0);
 			REPLACE_TOOK.set(0);
 			MODIFY_FIRED.set(0);
@@ -110,9 +100,10 @@ public final class LootTableEventDispatch {
 	/** Test seam: fabric-api is on no test classpath, so the handles have to be substitutable. */
 	static void bindForTest(Handles substitute) {
 		synchronized (LootTableEventDispatch.class) {
+			guestLoader=null;
 			handles = substitute;
+			sourceCallbacks=null;
 			state = substitute == null ? State.ABSENT : State.PRESENT;
-			warned = false;
 			OFFERED.set(0);
 			REPLACE_TOOK.set(0);
 			MODIFY_FIRED.set(0);
@@ -120,7 +111,7 @@ public final class LootTableEventDispatch {
 	}
 
 	/**
-	 * The pinned mixin's {@code modifyLootTable}, for one table NeoForge's hook has let through.
+	 * The original callback, for one table the native hooks have let through.
 	 *
 	 * @param provider the {@code HolderLookup.Provider} of the reload
 	 * @param key      {@code ResourceKey<LootTable>} of {@code id}
@@ -130,6 +121,8 @@ public final class LootTableEventDispatch {
 	 */
 	public static Object afterLoad(Object provider, Object key, Object id, Object table) {
 		if (!enabled() || table == null || !resolve()) return table;
+		LootSourceCallbacks.Callbacks original=sourceCallbacks;
+		if(original!=null){try{Object result=original.afterLoad().invoke(provider,id,table);OFFERED.incrementAndGet();return result;}catch(Throwable failure){throw propagate(failure);}}
 		Handles h = handles;
 		try {
 			Object source = h.dataPack();
@@ -151,31 +144,33 @@ public final class LootTableEventDispatch {
 			OFFERED.incrementAndGet();
 			return h.build().invoke(builder);
 		} catch (Throwable t) {
-			warnOnce("could not offer " + id + " to fabric-loot-api-v3 — NeoForge's table is kept as it is", t);
-			return table;
+			throw propagate(t);
 		}
 	}
 
-	/** The pinned mixin's {@code onLootTablesLoaded}: {@code ALL_LOADED}, then the source map is cleared. */
+	/** The original completion callback: ALL_LOADED, source cleanup, then holder binding. */
 	public static void allLoaded(Object resourceManager, Object registry) {
 		if (!enabled() || !resolve()) return;
+		LootSourceCallbacks.Callbacks original=sourceCallbacks;
+		if(original!=null){try{original.allLoaded().invoke(resourceManager,registry);OFFERED.set(0);return;}catch(Throwable failure){throw propagate(failure);}}
 		Handles h = handles;
 		try {
 			h.loaded().invoke(resourceManager, registry);
+			h.sources().remove();
+			h.bindHolders().invoke(registry);
 		} catch (Throwable t) {
-			warnOnce("LootTableEvents.ALL_LOADED threw — a listener, not the bridge", t);
-		} finally {
-			try {
-				h.sources().remove();
-			} catch (Throwable ignored) {
-				// the map is fabric's convenience for attribution; failing to clear it costs nothing here
-			}
+			throw propagate(t);
 		}
 		ForbricLog.info("[Forbric/LootBridge] offered %d loot table(s) to fabric-loot-api-v3: REPLACE took %d, MODIFY "
 				+ "fired %d, ALL_LOADED fired with %d entries — ReloadableServerRegistriesMixin's modifyLootTable cannot "
 				+ "bind on the merged base (NeoForge swapped the lambda's parameters and split its one map into two), so "
 				+ "the kernel fires the events from NeoForge's own LootTableLoadEvent seam", OFFERED.getAndSet(0),
 				REPLACE_TOOK.getAndSet(0), MODIFY_FIRED.getAndSet(0), sizeOf(registry));
+	}
+	@SuppressWarnings("unchecked") private static <T extends Throwable> RuntimeException propagate(Throwable failure)throws T{throw (T)failure;}
+	private static void bindHolders(MethodHandle elements,MethodHandle value,MethodHandle set,Object registry)throws Throwable{
+		java.util.stream.Stream<?> stream=(java.util.stream.Stream<?>)elements.invoke(registry);
+		stream.forEach(holder->{try{Object table=value.invoke(holder);set.invoke(table,holder);}catch(Throwable failure){throw propagate(failure);}});
 	}
 
 	private static int sizeOf(Object registry) {
@@ -186,21 +181,19 @@ public final class LootTableEventDispatch {
 		}
 	}
 
-	private static void warnOnce(String what, Throwable t) {
-		if (warned) return;
-		warned = true;
-		ForbricLog.warn("[Forbric/LootBridge] " + what + " (further failures are not repeated)", t);
-	}
 
 	private static synchronized boolean resolve() {
-		if (state == State.PRESENT) return true;
-		if (state == State.ABSENT) return false;
-
+		if (sourceCallbacks != null) return true;
 		ClassLoader loader = guestLoader;
 		if (loader == null) {
+			if(state==State.PRESENT)return true; // explicitly bound test handles need no guest class loader
 			state = State.ABSENT;
 			return false;
 		}
+		LootSourceCallbacks.Callbacks migrated=LootSourceCallbacks.callbacks(loader);
+		if(migrated!=null){sourceCallbacks=migrated;state=State.PRESENT;return true;}
+		if(state==State.PRESENT)return true;
+		if(state==State.ABSENT)return false;
 		try {
 			// Initialise LootTableEvents: its three Event fields are what everything below is bound to.
 			Class<?> events = Class.forName(EVENTS, true, loader);
@@ -217,6 +210,9 @@ public final class LootTableEventDispatch {
 			Class<?> provider = Class.forName(HOLDER_LOOKUP_PROVIDER, false, loader);
 			Class<?> resourceManager = Class.forName(RESOURCE_MANAGER, false, loader);
 			Class<?> registry = Class.forName(REGISTRY, false, loader);
+			Class<?> holder = Class.forName("net.minecraft.core.Holder",false,loader);
+			Class<?> reference = Class.forName("net.minecraft.core.Holder$Reference",false,loader);
+			Class<?> fabricTable = Class.forName("net.fabricmc.fabric.impl.loot.FabricLootTable",false,loader);
 
 			MethodHandles.Lookup lookup = MethodHandles.publicLookup();
 			MethodHandle invoker = lookup.findVirtual(event, "invoker", MethodType.methodType(Object.class));
@@ -229,6 +225,10 @@ public final class LootTableEventDispatch {
 					MethodType.methodType(void.class, resourceManager, registry));
 			MethodHandle copyOf = lookup.findStatic(builderApi, "copyOf", MethodType.methodType(builder, lootTable));
 			MethodHandle build = lookup.findVirtual(builder, "build", MethodType.methodType(lootTable));
+			MethodHandle elements=lookup.findVirtual(registry,"listElements",MethodType.methodType(java.util.stream.Stream.class));
+			MethodHandle value=lookup.findVirtual(reference,"value",MethodType.methodType(Object.class));
+			MethodHandle set=lookup.findVirtual(fabricTable,"fabric$setHolder",MethodType.methodType(void.class,holder));
+			MethodHandle binding=MethodHandles.insertArguments(MethodHandles.lookup().findStatic(LootTableEventDispatch.class,"bindHolders",MethodType.methodType(void.class,MethodHandle.class,MethodHandle.class,MethodHandle.class,Object.class)),0,elements,value,set);
 
 			Handles resolved = new Handles(
 					onCurrentInvoker(replace, invoker, events.getField("REPLACE").get(null), 4, Object.class),
@@ -238,7 +238,7 @@ public final class LootTableEventDispatch {
 					build.asType(MethodType.genericMethodType(1)),
 					source.getField("DATA_PACK").get(null),
 					source.getField("REPLACED").get(null),
-					(ThreadLocal<?>) lootUtil.getField("SOURCES").get(null));
+					(ThreadLocal<?>) lootUtil.getField("SOURCES").get(null),binding);
 			handles = resolved;
 			state = State.PRESENT;
 			return true;

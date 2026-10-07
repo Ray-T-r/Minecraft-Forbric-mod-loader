@@ -56,6 +56,7 @@ class LootTableEventBridgeInjectorExecutionTest {
 
 					public interface Registry<T> {
 						ResourceKey<? extends Registry<T>> key();
+						java.util.stream.Stream<Holder.Reference<T>> listElements();
 					}
 					""",
 			"net.minecraft.core.WritableRegistry", """
@@ -86,7 +87,9 @@ class LootTableEventBridgeInjectorExecutionTest {
 					import java.util.ArrayList;
 					import java.util.List;
 
-					public class LootTable {
+					public class LootTable implements net.fabricmc.fabric.impl.loot.FabricLootTable {
+						public net.minecraft.core.Holder<?> holder;
+						public void fabric$setHolder(net.minecraft.core.Holder<?> holder) { this.holder = holder; }
 						public final List<String> pools;
 
 						public LootTable(List<String> pools) {
@@ -129,6 +132,8 @@ class LootTableEventBridgeInjectorExecutionTest {
 					"""));
 
 	static {
+		STAND_INS.put("net.minecraft.core.Holder", "package net.minecraft.core; public interface Holder<T> { public static class Reference<T> implements Holder<T> { private final T value; public Reference(T value) { this.value=value; } public T value() { return value; } } }");
+		STAND_INS.put("net.fabricmc.fabric.impl.loot.FabricLootTable", "package net.fabricmc.fabric.impl.loot; public interface FabricLootTable { void fabric$setHolder(net.minecraft.core.Holder<?> holder); }");
 		STAND_INS.put("net.neoforged.neoforge.event.EventHooks", """
 				package net.neoforged.neoforge.event;
 
@@ -332,7 +337,7 @@ class LootTableEventBridgeInjectorExecutionTest {
 		}
 		Class<?> registryType = loader.loadClass("net.minecraft.core.WritableRegistry");
 		Object registries = InjectorExecution.getStatic(loader.loadClass("net.minecraft.core.registries.Registries"), "LOOT_TABLE");
-		Object registry = stub(registryType, Map.of("key", registries, "size", 2));
+		Object registry = stub(registryType, Map.of("key", registries, "size", 2, "listElements", java.util.stream.Stream.empty()));
 		Object provider = stub(loader.loadClass("net.minecraft.core.HolderLookup$Provider"), Map.of());
 		Object resources = stub(loader.loadClass("net.minecraft.server.packs.resources.ResourceManager"), Map.of());
 		Map<?, ?> loaded = (Map<?, ?>) InjectorExecution.invokeStatic(loader.loadClass(TARGET), "scheduleRegistryLoad", provider, resources, parsed,

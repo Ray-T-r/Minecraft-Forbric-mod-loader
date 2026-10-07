@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -37,7 +38,7 @@ import net.forbric.kernel.transform.LootTableEventBridgeInjector;
 
 /**
  * The pinned mixin's sequence, over fake handles: REPLACE before MODIFY, the builder copied from what REPLACE
- * chose, the source it reports, ALL_LOADED then the map cleared, identity when off or when a handle throws.
+ * chose, the source it reports, ALL_LOADED then source cleanup and holder binding, identity when off, and original exception propagation.
  */
 class LootTableEventDispatchTest {
 	// What the fakes saw
@@ -46,6 +47,7 @@ class LootTableEventDispatchTest {
 	private static Object replaceGotTable, replaceGotSource;
 	private static Object modifyGotBuilder, modifyGotSource;
 	private static boolean throwInReplace;
+	private static boolean throwInLoaded,throwInHolder;
 	private static final ThreadLocal<Map<Object, Object>> SOURCES = ThreadLocal.withInitial(HashMap::new);
 
 	private static final Object DATA_PACK = "DATA_PACK", REPLACED = "REPLACED", VANILLA = "VANILLA";
@@ -56,6 +58,7 @@ class LootTableEventDispatchTest {
 		replaceAnswer = null;
 		replaceGotTable = replaceGotSource = modifyGotBuilder = modifyGotSource = null;
 		throwInReplace = false;
+		throwInLoaded=throwInHolder=false;
 		SOURCES.remove();
 		MethodHandles.Lookup l = MethodHandles.lookup();
 		Class<?> me = LootTableEventDispatchTest.class;
@@ -65,7 +68,7 @@ class LootTableEventDispatchTest {
 				l.findStatic(me, "loaded", MethodType.methodType(void.class, Object.class, Object.class)),
 				l.findStatic(me, "copyOf", MethodType.methodType(Object.class, Object.class)),
 				l.findStatic(me, "build", MethodType.methodType(Object.class, Object.class)),
-				DATA_PACK, REPLACED, SOURCES));
+				DATA_PACK, REPLACED, SOURCES,l.findStatic(me,"holders",MethodType.methodType(void.class,Object.class))));
 	}
 
 	@AfterEach
@@ -90,7 +93,9 @@ class LootTableEventDispatchTest {
 
 	static void loaded(Object rm, Object registry) {
 		CALLS.add("loaded");
+		if(throwInLoaded)throw new IllegalStateException("loaded failed");
 	}
+	static void holders(Object registry){assertTrue(SOURCES.get().isEmpty(),"source attribution is removed before binding holders");CALLS.add("holders");if(throwInHolder)throw new IllegalStateException("holder failed");}
 
 	static Object copyOf(Object table) {
 		CALLS.add("copyOf");
@@ -143,17 +148,19 @@ class LootTableEventDispatchTest {
 	void allLoadedFiresTheEventThenClearsTheSourceMap() {
 		SOURCES.get().put("x", VANILLA);
 		LootTableEventDispatch.allLoaded("rm", "registry");
-		assertEquals(List.of("loaded"), CALLS);
+		assertEquals(List.of("loaded","holders"), CALLS);
 		assertTrue(SOURCES.get().isEmpty(), "the thread-local map is removed after ALL_LOADED, as the mixin does");
 	}
 
 	@Test
-	void aThrowingListenerLeavesNeoForgesTableUntouched() {
+	void aThrowingListenerPropagatesAndStopsLaterCallbacksLikeTheOriginalSource() {
 		throwInReplace = true;
 		Object table = "original";
-		assertSame(table, LootTableEventDispatch.afterLoad("provider", "key", "id", table));
+		assertEquals("listener blew up",assertThrows(IllegalStateException.class,()->LootTableEventDispatch.afterLoad("provider", "key", "id", table)).getMessage());
 		assertEquals(List.of("replace"), CALLS, "nothing after the failure runs — no half-modified table");
 	}
+	@Test void loadedFailureDoesNotClearSourceAttributionOrBindHolders(){SOURCES.get().put("kept",VANILLA);throwInLoaded=true;assertEquals("loaded failed",assertThrows(IllegalStateException.class,()->LootTableEventDispatch.allLoaded("rm","registry")).getMessage());assertEquals(List.of("loaded"),CALLS);assertEquals(VANILLA,SOURCES.get().get("kept"));}
+	@Test void holderFailurePropagatesAfterTheSourceWasCleared(){SOURCES.get().put("old",VANILLA);throwInHolder=true;assertEquals("holder failed",assertThrows(IllegalStateException.class,()->LootTableEventDispatch.allLoaded("rm","registry")).getMessage());assertEquals(List.of("loaded","holders"),CALLS);assertTrue(SOURCES.get().isEmpty());}
 
 	@Test
 	void withoutFabricTheDispatchIsIdentity() {

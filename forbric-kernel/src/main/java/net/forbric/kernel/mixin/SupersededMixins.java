@@ -96,25 +96,17 @@ public final class SupersededMixins {
 						+ "ejectItems and suckInItems instead (KernelFabricHopperStorage)",
 						"forbric.hopperFabricStorage", "net.minecraft.world.level.block.entity.HopperBlockEntity",
 						SupersededMixins::hopperAsksFabric));
-		map.put("net.fabricmc.fabric.mixin.loot.ReloadableServerRegistriesMixin",
-				new Replacement("KernelLootBridge supplies all Fabric loot REPLACE, MODIFY and ALL_LOADED callbacks "
-						+ "through the surviving native loot and tag loading calls",
-						"forbric.lootBridge", "net.minecraft.server.ReloadableServerRegistries",
-						SupersededMixins::lootCallbacksRouted));
 		return Map.copyOf(map);
 	}
 
 	private SupersededMixins() {
 	}
 
-	private static boolean lootCallbacksRouted(ClassNode node) {
-		int load = 0, tags = 0;
-		for (MethodNode method : node.methods) for (AbstractInsnNode instruction : method.instructions) {
-			if (!(instruction instanceof MethodInsnNode call) || !"net/forbric/kernel/runtime/KernelLootBridge".equals(call.owner)) continue;
-			if ("loadLootTable".equals(call.name)) load++;
-			if ("loadTagsForRegistry".equals(call.name)) tags++;
-		}
-		return load == 1 && tags == 1;
+	private static Map<String,Replacement> replacements(){
+		Map<String,Replacement> all=new LinkedHashMap<>(SUPERSEDED);
+		String source=net.forbric.kernel.boot.LootSourceCallbacks.sourceName();
+		if(source!=null)all.put(source,new Replacement("KernelLootBridge executes the original closed loot callback group through its generated helper and the native typed reload seam","forbric.lootBridge",net.forbric.kernel.boot.LootSourceCallbacks.targetName(),ignored->net.forbric.kernel.boot.LootSourceCallbacks.proved(source)));
+		return all;
 	}
 
 	static boolean enabled() {
@@ -128,14 +120,14 @@ public final class SupersededMixins {
 	 * entry back into an ordinary marked failure rather than merely changing the wording.
 	 */
 	public static String replacementFor(String mixinClass) {
-		Replacement replacement = enabled() ? SUPERSEDED.get(mixinClass) : null;
+		Replacement replacement = enabled() ? replacements().get(mixinClass) : null;
 		return replacement != null && replacement.switchedOn() ? replacement.words() : null;
 	}
 
 	/** The mixin classes with an entry, for the tests that check each claim is still true. */
 	static Map<String, String> all() {
 		Map<String, String> words = new LinkedHashMap<>();
-		SUPERSEDED.forEach((mixin, replacement) -> words.put(mixin, replacement.words()));
+		replacements().forEach((mixin, replacement) -> words.put(mixin, replacement.words()));
 		return words;
 	}
 
@@ -145,7 +137,7 @@ public final class SupersededMixins {
 	 */
 	static String provedReplacement(String mixinClass) {
 		String words = replacementFor(mixinClass);
-		return words == null || !PROVED.contains(mixinClass) ? null : words + "; seen in the defined " + SUPERSEDED.get(mixinClass).witnessClass();
+		return words == null || !PROVED.contains(mixinClass) || (mixinClass.equals(net.forbric.kernel.boot.LootSourceCallbacks.sourceName())&&!net.forbric.kernel.boot.LootSourceCallbacks.proved(mixinClass)) ? null : words + "; seen in the defined " + replacements().get(mixinClass).witnessClass();
 	}
 
 	/** A recorded failure of a superseded mixin: resolved now if its replacement is proved, else when it is. */
@@ -162,14 +154,19 @@ public final class SupersededMixins {
 	 * Every class the game loader defines passes here; the one that carries a replacement proves it or does not.
 	 * Never throws into the definition it observes.
 	 */
-	public static void observeDefinition(String binaryName, byte[] bytes) {
-		for (Map.Entry<String, Replacement> entry : SUPERSEDED.entrySet()) {
+	public static void observeDefinition(String binaryName, byte[] bytes) {observeDefinition(null,binaryName,bytes);}
+	public static void observeDefinition(ClassLoader definingLoader,String binaryName, byte[] bytes) {
+		net.forbric.kernel.boot.LootSourceCallbacks.observeDefinition(definingLoader,binaryName,bytes);
+		for (Map.Entry<String, Replacement> entry : replacements().entrySet()) {
 			Replacement replacement = entry.getValue();
-			if (!replacement.witnessClass().equals(binaryName) || !replacement.switchedOn()) continue;
+			boolean sourceCallback=entry.getKey().equals(net.forbric.kernel.boot.LootSourceCallbacks.sourceName());
+			if (sourceCallback&&!net.forbric.kernel.boot.LootSourceContracts.isWitness(binaryName))continue;
+			if ((!sourceCallback&&!replacement.witnessClass().equals(binaryName)) || !replacement.switchedOn()) continue;
 			try {
 				ClassNode node = new ClassNode();
 				new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 				if (!replacement.witness().test(node)) {
+					if(sourceCallback)continue; // a multi-class proof may still await its helper; the unresolved ledger remains loud
 					// Loud only when a failure is waiting on this proof: the class is defined on every boot, and a repair
 					// that was never meant to run (its mod absent) has nothing to supersede.
 					if (PENDING.containsKey(entry.getKey())) {
@@ -193,6 +190,7 @@ public final class SupersededMixins {
 	static void reset() {
 		PENDING.clear();
 		PROVED.clear();
+		net.forbric.kernel.boot.LootSourceCallbacks.reset();
 	}
 
 	private static void resolveAll(String mixinClass) {
@@ -203,7 +201,7 @@ public final class SupersededMixins {
 	private static void resolve(String config, String mixinClass) {
 		String words = replacementFor(mixinClass);
 		if (words == null) return;
-		String proof = words + "; seen in the defined " + SUPERSEDED.get(mixinClass).witnessClass();
+		String proof = words + "; seen in the defined " + replacements().get(mixinClass).witnessClass();
 		MixinCompatibility.resolve(config, mixinClass, proof);
 		// The replacement does the WHOLE mixin's job, so each of its injectors' own "no attachment" verdicts is
 		// resolved with it. Left standing, one of them stopped a strict dedicated server on the popular pack while
