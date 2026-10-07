@@ -73,6 +73,12 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinDefaultPredicateTransport", Switch.own("forbric.mixinDefaultPredicates")), // MixinDefaultPredicateTransportWeaveTest
 			Map.entry("MixinReturnDecorationAdapter", Switch.own("forbric.mixinReturnDecorations")), // MixinReturnDecorationWeaveTest
 			Map.entry("MixinDefaultCallbackTransport", Switch.own("forbric.mixinDefaultCallbacks")), // MixinDefaultCallbackTransportWeaveTest
+			Map.entry("MixinNativePredicateSeam", Switch.own("forbric.nativePredicateSeams")), // MixinNativePredicateSeamWeaveTest
+			Map.entry("MixinPredicateDelegateAdapter", Switch.own("forbric.mixinPredicateDelegates")), // MixinPredicateDelegateWeaveTest
+			Map.entry("MixinResourceContinuationAdapter", Switch.own("forbric.mixinResourceContinuations")), // MixinResourceContinuationWeaveTest
+			Map.entry("MixinNullableCompositeCallback", Switch.own("forbric.mixinNullableCompositeCallbacks")), // MixinNullableCompositeWeaveTest
+			Map.entry("MixinDecodeScopeAdapter", Switch.own("forbric.decodeSourceScopes")), // MixinDecodeScopeWeaveTest
+			Map.entry("MixinUnusedArgumentObserverAdapter", Switch.own("forbric.mixinUnusedArgumentObservers")), // MixinUnusedArgumentObserverWeaveTest
 			Map.entry("MixinRelocatedCall", Switch.own("forbric.mixinRelocatedCall")),
 			// soften() in MixinLocalsCaptureWeaveTest, softenRequirements() in MixinRequireFailSoftWeaveTest.
 			Map.entry("MixinLocalsCapture", Switch.own("forbric.localsFailSoft", "forbric.requireFailSoft")),
@@ -95,6 +101,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("NativeCoremodParity", Switch.own("forbric.flowerPotRepair")), // NativeCoremodParityWeaveTest
 			Map.entry("PostMixinFixups", Switch.own("forbric.postMixinFixups")), // PostMixinFixupsWeaveTest
 			Map.entry("PostMixinCodecReturnArbitration", Switch.own("forbric.postMixinCodecArbitration")), // PostMixinCodecReturnArbitrationWeaveTest
+			Map.entry("PostMixinCallbackPriority", Switch.own()), // MixinNullableCompositeWeaveTest's absent installed-callback control
 			// An audit with no switch: ForgeTransferShapeAuditWeaveTest's control is an unreviewed twin in the same run.
 			Map.entry("ForgeTransferShapeAudit", Switch.own()),
 			Map.entry("FabricRegistryInitializationMixinAdapter", Switch.own("forbric.fabricRegistryInitialization")),
@@ -136,7 +143,7 @@ class WeaveCoverageCensusTest {
 		assertEquals(Set.of("KernelGuestMixinAdapter"), configTime, "the config-time stages changed; place the new one in a list");
 		assertTrue(preMixin.size() >= 40, "the census could not read getClassNode's adapters: " + preMixin);
 		assertEquals(Set.of("NativeCoremodParity", "PostMixinFixups", "InterfaceDefaultConflictRepair",
-				"ForgeTransferShapeAudit", "PostMixinCodecReturnArbitration"), postMixin, "the post-Mixin stages changed; place the new one in a list");
+				"ForgeTransferShapeAudit", "PostMixinCodecReturnArbitration", "PostMixinCallbackPriority"), postMixin, "the post-Mixin stages changed; place the new one in a list");
 
 		Set<String> stages = new TreeSet<>(configTime);
 		stages.addAll(preMixin);

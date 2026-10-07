@@ -447,7 +447,6 @@ class MixinFitLivenessCensusStagedTest {
 			"fabric-rendering-v1.mixins.json:HudMixin | @At(INVOKE) Hud.extractTabList in extractRenderState",
 			"fabric-rendering-v1.mixins.json:HudMixin | @At(INVOKE) Hud.extractTitle in extractRenderState",
 			"fabric-rendering-v1.mixins.json:RenderPipelineBuilderMixin | @At(NEW) RenderPipeline$Builder.RenderPipeline$Snippet: handler wraps a 11-arg constructor, the call site constructs with 12 in buildSnippet",
-			"fabric-resource-conditions-api-v1.mixins.json:RegistryLoadTaskPendingRegistrationMixin | @At(INVOKE) com.mojang.serialization.Decoder.parse in RegistryLoadTask$PendingRegistration.loadFromResource",
 			"fabric-resource-conditions-api-v1.mixins.json:SimpleJsonResourceReloadListenerMixin | @Inject target SimpleJsonResourceReloadListener.lambda$scanDirectory$0 binds lambda$scanDirectory$0(Lnet/minecraft/resources/Identifier;Lnet/minecraft/resources/Identifier;Ljava/util/Map;Ljava/util/Optional;)V, which the handler was not written for",
 			"fabric-resource-loader-v1.mixins.json:server.LanguageMixin | @At(INVOKE) java.util.Map.copyOf in Language.loadDefault",
 			"fabric-screen-api-v1.mixins.json:GuiMixin | @At(INVOKE) net.minecraft.client.gui.screens.Screen.extractRenderStateWithTooltipAndSubtitles in Gui.extractRenderState",
