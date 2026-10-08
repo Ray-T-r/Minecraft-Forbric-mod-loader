@@ -104,8 +104,9 @@ class TransformerRegistrationOrderTest {
 		// server's tracking callbacks and the server cannot stop. Each repair's own test constructs it directly, so a
 		// merge of these lines that dropped one left every test green; one that kept both sides' copies is caught too.
 		// The order is free: all six give the same classes on the merged base.
-		for (String repair : List.of("net/forbric/kernel/transform/DragonPartsInjector",
-				"net/forbric/kernel/transform/ClientPartTrackingInjector",
+		assertEquals(0, Collections.frequency(order, "net/forbric/kernel/transform/DragonPartsInjector"),
+                "the old retype/empty-array rewrite is retired; both native APIs survive the merge");
+        for (String repair : List.of("net/forbric/kernel/transform/ClientPartTrackingInjector",
 				"net/forbric/kernel/transform/ForgePartTrackingInjector")) {
 			assertEquals(1, Collections.frequency(order, repair),
 					repair + " must be constructed exactly once in launch(). Full order: " + order);

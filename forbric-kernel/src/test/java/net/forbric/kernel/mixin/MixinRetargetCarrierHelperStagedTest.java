@@ -1,6 +1,7 @@
 package net.forbric.kernel.mixin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -10,12 +11,20 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Enumeration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.net.URL;
 import java.util.function.Function;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.*;
+import net.forbric.kernel.classloading.ForbricClassLoader;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.TestFixtures;
@@ -93,36 +102,47 @@ class MixinRetargetCarrierHelperStagedTest {
 		assertEquals(MixinFit.Verdict.FIT, after.verdict(), "after: " + after.unresolved());
 	}
 
-	/**
-	 * puzzleslib's FOG_COLOR hook: AFTER vanilla's final dest.set, which NeoForge absorbed into ClientHooks.getFogColor —
-	 * read from the carrier, as the kernel's own resolver serves it.
-	 */
-	@Test
-	void puzzleslibsFogColourFollowsTheSetIntoClientHooks() throws Exception {
-		Function<String, byte[]> merged = mergedResolver();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(NEO_RUNTIME), "staged neoforge-runtime.jar absent");
-		Function<String, byte[]> resolver = name -> {
-			byte[] bytes = merged.apply(name);
-			if (bytes != null) return bytes;
-			try {
-				return readFromJar(NEO_RUNTIME, name);
-			} catch (Exception e) {
-				return null;
-			}
-		};
-		String entry = "fuzs/puzzleslib/fabric/mixin/client/FogRendererFabricMixin";
-		byte[] mixin = fromJar(SWEEP.resolve("PuzzlesLib-v26.2.4-mc26.2.x-Fabric.jar"), entry + ".class");
-		MixinStubRebind.noteEcosystem(entry, Ecosystem.FABRIC);
-		MixinFit.Result before = MixinFit.evaluate(mixin, resolver);
-		assertEquals(MixinFit.Verdict.PARTIAL, before.verdict(), "premise: " + before.unresolved());
-
-		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixin), resolver);
-		assertEquals(1, plan.rewrites().size(), plan.describe());
-		assertEquals("Lnet/neoforged/neoforge/client/ClientHooks;getFogColor(Lnet/minecraft/client/Camera;F"
-				+ "Lnet/minecraft/client/multiplayer/ClientLevel;IFFFFLorg/joml/Vector4f;)V", plan.rewrites().get(0).to());
-		MixinFit.Result after = MixinFit.evaluate(MixinRetarget.rewritten(mixin, plan), resolver);
-		assertEquals(MixinFit.Verdict.FIT, after.verdict(), "after: " + after.unresolved());
-	}
+	/** The released callback stays after the original set, before the helper's later fluid/event effects. */
+    @Test
+    void puzzleslibsFogColourStaysAtTheSourceSetInsideClientHooks() throws Exception {
+        Function<String,byte[]> merged=mergedResolver();TestFixtures.requireFiles(Fixture.STAGED,"native carrier helper",NEO_RUNTIME);
+        Function<String,byte[]> resolver=path->{byte[] bytes=merged.apply(path);if(bytes!=null)return bytes;try{return readFromJar(NEO_RUNTIME,path);}catch(Exception unavailable){return null;}};
+        Function<String,ClassNode> classes=owner->{byte[] bytes=resolver.apply(owner+".class");return bytes==null?null:expanded(bytes);};
+        String entry="fuzs/puzzleslib/fabric/mixin/client/FogRendererFabricMixin",owner="net/minecraft/client/renderer/fog/FogRenderer";
+        byte[] bytes=fromJar(SWEEP.resolve("PuzzlesLib-v26.2.4-mc26.2.x-Fabric.jar"),entry+".class");MixinStubRebind.noteEcosystem(entry,Ecosystem.FABRIC);
+        ClassNode original=expanded(bytes);MethodNode callback=original.methods.stream().filter(m->m.name.equals("computeFogColor")&&MixinFit.injectorOf(m)!=null).findFirst().orElseThrow();
+        AnnotationNode injector=MixinFit.injectorOf(callback),at=MixinFit.atNodes(injector).getFirst();String member=MixinFit.asString(MixinFit.value(at,"target"));
+        ClassNode source=NativeCallTestEvidence.staged().apply(Ecosystem.FABRIC,owner),current=classes.apply(owner);assertNotNull(source);
+        MethodNode nativeHost=source.methods.stream().filter(m->m.name.equals("computeFogColor")).findFirst().orElseThrow();
+        assertTrue((callback.access&Opcodes.ACC_STATIC)!=0,"the released callback observes arguments without a host receiver");assertTrue((nativeHost.access&Opcodes.ACC_STATIC)==0,"the actual native host is an instance method");
+        assertEquals(MixinFit.Verdict.PARTIAL,MixinFit.evaluate(bytes,resolver).verdict());
+        assertTrue(NativeCallTestEvidence.plan(original,resolver).rewrites().stream().noneMatch(r->r.handler().equals(callback.name)),"AFTER the entire carrier helper would move this callback beyond fluid and event writes");
+        var seam=NativeCallbackSeam.derive(source,current,nativeHost,member,classes);assertNotNull(seam);assertEquals(seam.sourcePrefix(),seam.currentPrefix());assertEquals(6,seam.hostParameters().length);
+        try(var loader=new ForbricClassLoader(new URL[0],getClass().getClassLoader())){
+            ClassNode adapted=expanded(bytes);assertEquals(1,MixinAbsorbedCallbackTransport.adapt(adapted,classes,n->n.equals(owner)?source:null,loader));
+            MethodNode retained=adapted.methods.stream().filter(m->m.name.contains("$forbricsourcecallback")&&m.desc.equals(callback.desc)).findFirst().orElseThrow();
+            assertNull(MixinFit.injectorOf(retained));assertEquals(MixinInstructionFingerprint.hash(callback),MixinInstructionFingerprint.hash(retained),"the complete released event callback body remains unchanged");
+            for(MethodNode lambda:original.methods)if(lambda.name.startsWith("lambda$computeFogColor$"))assertEquals(MixinInstructionFingerprint.hash(lambda),MixinInstructionFingerprint.hash(NativeCallChanges.method(adapted,lambda.name+lambda.desc)),"the released mutable-float lambda closure stays intact");
+            MethodNode wrapper=adapted.methods.stream().filter(m->m.name.endsWith("$scope")).findFirst().orElseThrow();AnnotationNode wrap=MixinFit.injectorOf(wrapper);
+            assertEquals(List.of(seam.method()),MixinFit.stringList(MixinFit.value(wrap,"method")));assertEquals("L"+seam.helper()+";"+seam.helperMethod(),MixinFit.value(MixinFit.atNodes(wrap).getFirst(),"target"));
+            ClassNode helper=expanded(MixinAbsorbedCallbackTransport.transform(loader,seam.helper().replace('/','.'),resolver.apply(seam.helper()+".class")));MethodNode body=NativeCallChanges.method(helper,seam.helperMethod());
+            MethodInsnNode set=Arrays.stream(body.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).filter(c->NativeCallChanges.member(c).equals(member)).findFirst().orElseThrow();
+            AbstractInsnNode receiver=nextReal(set),fire=nextReal(receiver);assertTrue(receiver instanceof VarInsnNode load&&load.getOpcode()==Opcodes.ALOAD);assertTrue(fire instanceof MethodInsnNode call&&call.owner.equals("net/forbric/api/CallbackSeams$Token")&&call.name.equals("fire"),"the callback fires immediately after the original set, before any later SDK call");
+            List<String> nativeCalls=callMembers(NativeCallChanges.method(classes.apply(seam.helper()),seam.helperMethod()));assertEquals(nativeCalls,callMembers(body).stream().filter(c->!c.startsWith("Lnet/forbric/api/CallbackSeams")).toList(),"every native preparation/fluid/event call retains its order");
+            MethodNode cleaned=new MethodNode(body.access,body.name,body.desc,null,null);body.accept(cleaned);AbstractInsnNode[] real=Arrays.stream(cleaned.instructions.toArray()).filter(i->i.getOpcode()>=0).toArray(AbstractInsnNode[]::new);
+            for(int i=0;i<4;i++)cleaned.instructions.remove(real[i]);
+            MethodInsnNode copiedSet=Arrays.stream(cleaned.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).filter(c->NativeCallChanges.member(c).equals(member)).findFirst().orElseThrow();AbstractInsnNode token=nextReal(copiedSet),invoke=nextReal(token);cleaned.instructions.remove(token);cleaned.instructions.remove(invoke);
+            assertEquals(seam.helperHash(),MixinInstructionFingerprint.hash(cleaned),"removing only the certified transport yields the exact actual helper body");
+        }
+        ClassNode mutated=expanded(resolver.apply(seam.helper()+".class"));MethodNode wrong=NativeCallChanges.method(mutated,seam.helperMethod());MethodInsnNode set=Arrays.stream(wrong.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).filter(c->NativeCallChanges.member(c).equals(member)).findFirst().orElseThrow();
+        for(AbstractInsnNode i=set.getPrevious();i!=null;i=i.getPrevious())if(i instanceof VarInsnNode value&&value.getOpcode()==Opcodes.FLOAD){value.var++;break;}
+        try(var loader=new ForbricClassLoader(new URL[0],getClass().getClassLoader())){assertEquals(0,MixinAbsorbedCallbackTransport.adapt(expanded(bytes),n->n.equals(seam.helper())?mutated:classes.apply(n),n->n.equals(owner)?source:null,loader),"changed native setter operands cannot authorize this actual callback");}
+        ClassNode cancellable=expanded(bytes);AnnotationNode changed=MixinFit.injectorOf(cancellable.methods.stream().filter(m->m.name.equals(callback.name)).findFirst().orElseThrow());changed.values=new ArrayList<>(changed.values);changed.values.addAll(List.of("cancellable",true));
+        try(var loader=new ForbricClassLoader(new URL[0],getClass().getClassLoader())){assertEquals(0,MixinAbsorbedCallbackTransport.adapt(cancellable,classes,n->n.equals(owner)?source:null,loader),"cancellation cannot be moved into a helper");}
+    }
+    private static ClassNode expanded(byte[] bytes){ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.EXPAND_FRAMES);return node;}
+    private static AbstractInsnNode nextReal(AbstractInsnNode instruction){instruction=instruction.getNext();while(instruction!=null&&instruction.getOpcode()<0)instruction=instruction.getNext();return instruction;}
+    private static List<String> callMembers(MethodNode method){return Arrays.stream(method.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).map(NativeCallChanges::member).toList();}
 
 	/** fabric-rendering-v1's HudMixin: each anchor has one home, so R3 moves it and R4 never runs. */
 	@Test

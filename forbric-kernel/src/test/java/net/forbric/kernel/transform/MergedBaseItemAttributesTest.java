@@ -61,15 +61,14 @@ class MergedBaseItemAttributesTest {
 	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
 
 	@Test
-	void theStagedBaseStillReadsTheRawComponent() throws Exception {
+	void theRebuiltBaseAlreadyUsesTheNativeComputedAttributes() throws Exception {
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
 		ClassNode node = parse(readClass(MERGED_BASE));
 		List<MethodNode> each = overloads(node);
 		assertEquals(2, each.size(), "both forEachModifier overloads must still be there");
 		for (MethodNode m : each) {
-			assertTrue(readsRawComponent(m), "the base must still need the repair in " + m.desc
-					+ " — if upstream changed it, re-derive this test");
-			assertTrue(!callsNeoForge(m), "and must not already ask NeoForge");
+			assertFalse(readsRawComponent(m), "a coherent native producer must not read the raw component");
+			assertTrue(callsNeoForge(m), "the native computed attribute API is preserved");
 		}
 	}
 
@@ -113,7 +112,19 @@ class MergedBaseItemAttributesTest {
 		ClassNode before = parse(readClass(MERGED_BASE));
 		ClassNode after = parse(transform(readClass(MERGED_BASE)));
 		int removed = rawReads(before) - rawReads(after);
-		assertEquals(2, removed, "exactly the two reads in forEachModifier, and no others");
+		assertEquals(0, removed, "native computed readers need no edit; unrelated raw component reads remain intact");
+	}
+	@Test void anActualRawReaderRegressionIsStillRepairedWithoutOtherBodyChanges() throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
+		ClassNode nativeNode=parse(readClass(MERGED_BASE));java.util.Map<String,String> expected=new java.util.HashMap<>();
+		for(MethodNode m:overloads(nativeNode)){
+			expected.put(m.desc,net.forbric.kernel.mixin.MixinInstructionFingerprint.hash(m));
+			for(AbstractInsnNode i:m.instructions.toArray())if(i instanceof MethodInsnNode call&&call.name.equals("getAttributeModifiers")&&call.desc.equals("()Lnet/minecraft/world/item/component/ItemAttributeModifiers;")){
+				var raw=new org.objectweb.asm.tree.InsnList();raw.add(new FieldInsnNode(Opcodes.GETSTATIC,"net/minecraft/core/component/DataComponents","ATTRIBUTE_MODIFIERS","Lnet/minecraft/core/component/DataComponentType;"));raw.add(new FieldInsnNode(Opcodes.GETSTATIC,"net/minecraft/world/item/component/ItemAttributeModifiers","EMPTY","Lnet/minecraft/world/item/component/ItemAttributeModifiers;"));raw.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,ITEM_STACK,"getOrDefault","(Lnet/minecraft/core/component/DataComponentType;Ljava/lang/Object;)Ljava/lang/Object;",false));raw.add(new org.objectweb.asm.tree.TypeInsnNode(Opcodes.CHECKCAST,"net/minecraft/world/item/component/ItemAttributeModifiers"));m.instructions.insertBefore(i,raw);m.instructions.remove(i);
+			}
+		}
+		var writer=new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);nativeNode.accept(writer);
+		for(MethodNode m:overloads(parse(transform(writer.toByteArray()))))assertEquals(expected.get(m.desc),net.forbric.kernel.mixin.MixinInstructionFingerprint.hash(m));
 	}
 
 	@Test

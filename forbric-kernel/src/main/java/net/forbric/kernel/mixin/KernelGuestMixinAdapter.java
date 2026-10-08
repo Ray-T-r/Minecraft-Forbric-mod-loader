@@ -230,6 +230,7 @@ public final class KernelGuestMixinAdapter {
 		// The mixins the kernel leaves out by name (MergedBaseMixinCompat's hand list, -Dforbric.suppressMixins) never reach
 		// Mixin, and reportNamedSuppressions has their row: a verdict line about one, or a place in the PARTIAL count, would
 		// describe a mixin that is not there (fabric-loot-api's ReloadableServerRegistriesMixin read PARTIAL, then suppressed).
+		MergedBaseMixinCompat.discover(configName, configJson, resource);
 		List<String> named = ForbricMixinService.suppressedMixinsFor(configName);
 		Object defaultRequire = config.get(List.of("injectors", "defaultRequire"));
 		int configMinimum = defaultRequire instanceof Number n ? Math.max(0, n.intValue()) : 0;
@@ -262,8 +263,10 @@ public final class KernelGuestMixinAdapter {
 				MixinAddedMembers.View added = MixinAddedMembers.before(configName, mixin, resource);
 				// Judged as Mixin will receive it: callback anchor adapters run when Mixin loads the class, after this
 				// read, so an anchor they move onto the merged game is not missing (MixinPlayerWorldCallbackAdapter.asLoaded).
-				byte[] judged = MixinDecodeScopeAdapter.asLoaded(ReplacedCallRedirects.asLoaded(
-						MixinPlayerWorldCallbackAdapter.asLoaded(classBytes, resource), resource), resource);
+				byte[] judged = adaptedSourceProtocols(classBytes,resource);
+                judged = ForbricMixinService.absorbedCallbacksAsLoaded(judged, resource);
+                judged = MixinDecodeScopeAdapter.asLoaded(ReplacedCallRedirects.asLoaded(
+                        MixinPlayerWorldCallbackAdapter.asLoaded(judged, resource), resource), resource);
 				MixinFit.Result fit = MixinFit.evaluate(judged, resource,
 						net.forbric.kernel.classloading.DelegationPolicy::alwaysGame, added, nativeView);
 				List<String> groupFailures = MixinGroupConstraints.failures(MixinFit.parse(judged), resource, added);
@@ -842,6 +845,15 @@ public final class KernelGuestMixinAdapter {
 		}
 	}
 
+    private static byte[] adaptedSourceProtocols(byte[] bytes,Function<String,byte[]> resource) {
+        ClassNode node=MixinFit.parse(bytes);
+        int changed=FabricRegistryInitializationMixinAdapter.adapt(node);
+        changed+=FabricRegistryLoaderMixinAdapter.adapt(node,n->{byte[] b=resource.apply(n+".class");return b==null?null:MixinFit.parse(b);});
+        changed+=FabricCreativePagerMixinAdapter.adapt(node);
+        if(changed==0)return bytes;
+        org.objectweb.asm.ClassWriter writer=new org.objectweb.asm.ClassWriter(0);node.accept(writer);return writer.toByteArray();
+    }
+
 	/** The drifted anonymous target a PARTIAL verdict names, or null. */
 	private static String driftedTarget(MixinFit.Result fit) {
 		for (String reason : fit.unresolved()) {
@@ -889,7 +901,7 @@ public final class KernelGuestMixinAdapter {
 	 */
 	private static boolean isExplicitlyKept(String configName, String mixin) {
 		String entry = configName + ":" + mixin;
-		if (MergedBaseMixinCompat.enabled() && MergedBaseMixinCompat.KEPT_MIXINS.contains(entry)) return true;
+
 
 		String csv = System.getProperty("forbric.keepMixins");
 		if (csv == null || csv.isEmpty()) return false;

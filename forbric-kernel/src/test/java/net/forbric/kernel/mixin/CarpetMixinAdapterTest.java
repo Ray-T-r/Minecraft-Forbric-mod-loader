@@ -36,7 +36,12 @@ class CarpetMixinAdapterTest {
 		return root.resolve(name.startsWith("net/minecraftforge/")?"forge-runtime/forge-runtime.jar":name.startsWith("net/neoforged/")?"neoforge-runtime/neoforge-runtime.jar":"merged-base/patched-mc-merged-26.2.jar");
 	}
 	static ClassNode target(String name) {
-		try{return from(Fixture.STAGED,jarOf(name),name);}
+        try{
+            if(name.startsWith("java/")){try(var resource=ClassLoader.getSystemResourceAsStream(name+".class")){if(resource==null)return null;ClassNode node=new ClassNode();new ClassReader(resource).accept(node,0);return node;}}
+            TestFixtures.requireFiles(Fixture.STAGED,"current callback target declarations",jarOf(name));
+            try(ZipFile zip=new ZipFile(jarOf(name).toFile())){if(zip.getEntry(name+".class")==null)return null;}
+            return from(Fixture.STAGED,jarOf(name),name);
+        }
 		catch(org.opentest4j.TestAbortedException e){throw e;}
 		catch(Exception e){throw new AssertionError(e);}
 	}

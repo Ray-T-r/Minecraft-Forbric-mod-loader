@@ -1577,7 +1577,7 @@ public final class MixinFit {
 		return read(bytes, true);
 	}
 
-	static AnnotationNode injectorOf(MethodNode m) {
+	public static AnnotationNode injectorOf(MethodNode m) {
 		AnnotationNode a = firstOf(m.visibleAnnotations);
 		return a != null ? a : firstOf(m.invisibleAnnotations);
 	}
@@ -1591,7 +1591,7 @@ public final class MixinFit {
 	}
 
 	/** The {@code @At} annotations nested in an injector's {@code at}/{@code slice} values. */
-	static List<AnnotationNode> atNodes(AnnotationNode injector) {
+	public static List<AnnotationNode> atNodes(AnnotationNode injector) {
 		List<AnnotationNode> out = new ArrayList<>();
 		Object at = value(injector, "at");
 		if (at instanceof AnnotationNode single && AT_DESC.equals(single.desc)) {
@@ -1604,7 +1604,7 @@ public final class MixinFit {
 		return out;
 	}
 
-	static Object value(AnnotationNode a, String key) {
+	public static Object value(AnnotationNode a, String key) {
 		if (a == null || a.values == null) return null;
 		for (int i = 0; i + 1 < a.values.size(); i += 2) {
 			if (key.equals(a.values.get(i))) return a.values.get(i + 1);
@@ -1612,7 +1612,7 @@ public final class MixinFit {
 		return null;
 	}
 
-	static List<String> stringList(Object value) {
+	public static List<String> stringList(Object value) {
 		if (value instanceof String s) return List.of(s);
 		if (!(value instanceof List<?> list)) return Collections.emptyList();
 		List<String> out = new ArrayList<>();

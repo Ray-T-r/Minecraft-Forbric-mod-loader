@@ -27,6 +27,8 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.zip.ZipEntry;
@@ -95,7 +97,7 @@ public final class MergedBaseBuilder {
 		Path forgeRuntimeJar = args.length > 5 ? Path.of(args[5]) : null;
 		Path neoRuntimeJar = args.length > 6 ? Path.of(args[6]) : null;
 
-		new MergedBaseBuilder().run(vanillaJar, forgeJar, neoJar, outJar, report, forgeRuntimeJar, neoRuntimeJar);
+		new MergedBaseBuilder().run(vanillaJar, forgeJar, neoJar, outJar, report, forgeRuntimeJar, neoRuntimeJar, args.length > 7 ? Path.of(args[7]) : null);
 	}
 
 	private final List<String> conflicts = new ArrayList<>();
@@ -151,83 +153,11 @@ public final class MergedBaseBuilder {
 	private static final String CUSTOM_PAYLOAD_INTEROP =
 			"net/forbric/loader/impl/compat/ForbricCustomPayloadInterop";
 
-	/**
-	 * Structural (superclass) conflicts where empirically the Neo-base default is WRONG — a sibling class that
-	 * gets taken wholesale from Forge (for unrelated reasons) has a method SIGNATURE (not body instruction —
-	 * our hook scan only inspects instructions) typed to Forge's version of this class, so Neo's version at
-	 * runtime is not assignable and throws {@code VerifyError: Bad return type} (caught empirically for
-	 * {@code EnderDragon.getParts(): PartEntity[]} vs a Neo-based {@code EnderDragonPart}). Narrow, hand-verified
-	 * exceptions to the general "keep Neo" fallback — not a generic cross-reference solver.
-	 */
-	private static final Set<String> PREFER_FORGE_STRUCTURAL = Set.of(
-			"net/minecraft/world/entity/boss/enderdragon/EnderDragonPart");
-
-	/**
-	 * Classes taken from NeoForge WHOLESALE — no Forge method may be spliced in, however clearly it is "hooked".
-	 *
-	 * <p>These carry the custom-payload CODEC PLUMBING, which must come from exactly ONE pipeline: the one whose
-	 * payload registry is live at runtime. On the merged base that is NeoForge's — both
-	 * {@code ClientCommonPacketListenerImpl.handleCustomPayload} and {@code ServerCommonPacketListenerImpl
-	 * .handleCustomPayload} already resolve to Neo's (Forge's hook lost those sites; see merge-conflicts.txt), and
-	 * {@code ServerboundCustomPayloadPacket} already calls Neo's 4-arg
-	 * {@code CustomPacketPayload.codec(fallback, list, protocol, flow)}.
-	 *
-	 * <p>Without this pin, Forge's hooked {@code STREAM_CODEC} initializer wins in
-	 * {@code ClientboundCustomPayloadPacket} (it references {@code net.minecraftforge.network.ForgePayload}, so the
-	 * hook-reference signal splices it over Neo's), leaving the CLIENTBOUND encoder resolving codecs through Forge's
-	 * registry while every payload object comes from Neo's — {@code ClassCastException:
-	 * MinecraftUnregisterPayload cannot be cast to ForgePayload}, thrown on the first channel-registration packet,
-	 * i.e. the moment a world is joined. A coupled pair must not be split across pipelines.
-	 */
-	private static final Set<String> PREFER_NEO_WHOLESALE = Set.of(
-			"net/minecraft/network/protocol/common/ClientboundCustomPayloadPacket",
-			"net/minecraft/network/protocol/common/ServerboundCustomPayloadPacket");
-
-	/**
-	 * For each {@link #PREFER_FORGE_STRUCTURAL} class, the ecosystem supertype ITS OWN rebased ancestor uses —
-	 * elsewhere in the tree, an UNRELATED class may have a method whose signature was independently retyped by
-	 * each ecosystem's compiler to reference that same ancestor type (e.g. {@code EnderDragon.getParts()}
-	 * returns {@code PartEntity[]}, narrowed per-ecosystem because the array's element type, EnderDragonPart,
-	 * extends a different PartEntity per side). Used to keep such "same-name, retyped-per-ecosystem" method
-	 * pairs consistent with whichever ancestor we actually chose, instead of splicing in a redundant duplicate
-	 * typed to the ancestor we did NOT choose (which can never pass verification).
-	 */
-	private static final Map<String, String> STRUCTURAL_ANCESTOR_TYPE = Map.of(
-			"net/minecraft/world/entity/boss/enderdragon/EnderDragonPart", "net/minecraftforge/entity/PartEntity");
-
-	/**
-	 * For specific (class, method-key) pairs, ALWAYS take Forge's body, bypassing the normal per-method hook
-	 * vote (which would otherwise keep the base/Neo body since this is a "both hooked" conflict). Used when
-	 * MULTIPLE methods on a class must stay consistent with a field-type decision that isn't the class's
-	 * overall default: {@code ChunkGenerator} lazily-memoizes {@code featuresPerStep} — Forge wraps it in
-	 * {@code ClearableLazy}, Neo in its own {@code Lazy} — and while {@code applyBiomeDecoration} naturally
-	 * takes Forge's body already (only Forge hooks THAT specific method), {@code <init>} and
-	 * {@code refreshFeaturesPerStep} do NOT (both sides hook them, so the normal vote keeps Neo's) — leaving
-	 * the field NEO-initialized while the majority of its readers expect FORGE's type
-	 * ({@code AbstractMethodError}/NPE, caught empirically). Verified safe here because Forge's and Neo's
-	 * {@code lambda$new$1}/{@code lambda$new$2} helper methods (which the grafted {@code <init>} body
-	 * references) are IDENTICALLY NAMED AND SIGNATURED on both sides (the underlying computation is unchanged
-	 * source, only the memoization wrapper differs) — no synthetic-lambda numbering collision risk here, unlike
-	 * the general anonymous-class case.
-	 */
-	private static final Map<String, Set<String>> FORCE_FORGE_METHODS = Map.of(
-			"net/minecraft/world/level/chunk/ChunkGenerator", Set.of(
-					"<init>(Lnet/minecraft/world/level/biome/BiomeSource;Ljava/util/function/Function;)V",
-					"refreshFeaturesPerStep()V"),
-			// Chosen by measurement, not by direction. LostHookAttribution reads each conflict's body on both
-			// sides and names the hook the merge actually took, then asks whether any installed mod's constant
-			// pool names the event that hook posts. Of 995 conflicts, 773 lost no hook call at all, 8 are trades
-			// where both sides' hooks are waited for, and 9 gain a waited hook while giving up nothing waited.
-			// Six of those nine are already delivered by a bridge and two are the custom-payload seam the network
-			// interop injector owns, which leaves this one.
-			//
-			// It gains ChunkWatchEvent, which a mod in the test pack subscribes to, and gives up NeoForge's
-			// fireChunkSent, which nothing in that pack names. That is the whole justification: a whitelist entry
-			// is a TRADE, and this is one where the thing traded away has no waiter.
-			"net/minecraft/server/network/PlayerChunkSender", Set.of(
-					"sendChunk(Lnet/minecraft/server/network/ServerGamePacketListenerImpl;"
-							+ "Lnet/minecraft/server/level/ServerLevel;"
-							+ "Lnet/minecraft/world/level/chunk/LevelChunk;)V"));
+	/** Actual ancestor equivalence proofs and declarations, derived anew for each supplied artifact set. */
+	private ContractGraph declarationGraph, vanillaGraph, forgeGraph, neoGraph;
+	private final Map<String,ClassNode> generatedFieldProviders = new LinkedHashMap<>();
+	private final Map<String,String> superclassBridges = new LinkedHashMap<>();
+	private final Map<String,String[]> requiredAncestorCompositions = new LinkedHashMap<>();
 
 	/**
 	 * Concrete empty-collection impls for interface-typed exclusive-added fields the byte-merge left null.
@@ -246,6 +176,10 @@ public final class MergedBaseBuilder {
 
 	void run(Path vanillaJar, Path forgeJar, Path neoJar, Path outJar, Path report,
 			Path forgeRuntimeJar, Path neoRuntimeJar) throws IOException {
+		run(vanillaJar, forgeJar, neoJar, outJar, report, forgeRuntimeJar, neoRuntimeJar, null);
+	}
+	void run(Path vanillaJar, Path forgeJar, Path neoJar, Path outJar, Path report,
+			Path forgeRuntimeJar, Path neoRuntimeJar, Path libraries) throws IOException {
 		System.out.println("[merge] reading jars …");
 		Map<String, byte[]> vanilla = this.vanillaClasses = readClasses(vanillaJar);
 		Map<String, byte[]> forge = this.forgeClasses = readClasses(forgeJar);
@@ -266,6 +200,11 @@ public final class MergedBaseBuilder {
 		Map<String, byte[]> neoRuntime = neoRuntimeJar != null ? readClasses(neoRuntimeJar) : Map.of();
 		indexInterfaceDefaults(forgeRuntime);
 		indexInterfaceDefaults(neoRuntime);
+		declarationGraph = new ContractGraph(List.of(forgeRuntime, neoRuntime, neo, forge, vanilla), libraries);
+		vanillaGraph = new ContractGraph(List.of(vanilla));
+		forgeGraph = new ContractGraph(List.of(forge, forgeRuntime));
+		neoGraph = new ContractGraph(List.of(neo, neoRuntime));
+		proveAncestorContracts(vanilla, forge, neo, forgeRuntime, neoRuntime);
 		// A restored hook call has to link. Its owner lives in a runtime jar (ForgeEventFactory, EventHooks) or,
 		// for the few classes Forge bakes into its patched game, in that jar; without them nothing is restored.
 		hookContext = AdditiveMethodMerger.context(List.of(forgeRuntime, neoRuntime, forge, neo), reviewedRestorations);
@@ -313,6 +252,8 @@ public final class MergedBaseBuilder {
 			if (merged != null) outEntries.put(cls, merged);
 		}
 
+		for (ClassNode provider : generatedFieldProviders.values()) { ClassWriter bytes = new ClassWriter(ClassWriter.COMPUTE_MAXS); provider.accept(bytes); outEntries.put(provider.name, bytes.toByteArray()); }
+
 		// PASS 3: TRANSITIVE diamond-default resolution across every concrete class in the output — catches
 		// conflicts inherited through an interface hierarchy rather than declared directly (e.g. the vanilla
 		// PackResources interface itself gets BOTH IForgePackResources and IPackResourcesExtension spliced onto
@@ -322,6 +263,11 @@ public final class MergedBaseBuilder {
 		// is strictly additive and skips anything already explicitly overridden.
 		Map<String, ClassNode> allNodes = new LinkedHashMap<>();
 		for (Map.Entry<String, byte[]> e : outEntries.entrySet()) allNodes.put(e.getKey(), parse(e.getValue()));
+		for (ClassNode node : allNodes.values()) declarationGraph.replace(node);
+		MapContractRepair contractRepair = new MapContractRepair(declarationGraph, List.of(forge, neo, forgeRuntime, neoRuntime));
+		for (ClassNode node : allNodes.values()) if (contractRepair.repair(node) > 0) {
+			ClassWriter repaired = new ClassWriter(ClassWriter.COMPUTE_MAXS); node.accept(repaired); outEntries.put(node.name, repaired.toByteArray());
+		}
 		int transitiveFixed = 0;
 		for (Map.Entry<String, ClassNode> e : allNodes.entrySet()) {
 			ClassNode cn = e.getValue();
@@ -405,6 +351,13 @@ public final class MergedBaseBuilder {
 			}
 			// Original bytes are non-executable provenance, not another definition of a game class. Generic
 			// injection migration can prove where a platform's operation came from without a method-name table.
+			if (!requiredAncestorCompositions.isEmpty()) {
+				StringBuilder obligations = new StringBuilder("# forbric-required-ancestor-composition-v1\n");
+				for (var entry : requiredAncestorCompositions.entrySet()) obligations.append(entry.getKey()).append('\t')
+						.append(entry.getValue()[0]).append('\t').append(entry.getValue()[1]).append('\n');
+				zos.putNextEntry(new ZipEntry("META-INF/forbric/required-ancestor-compositions.tsv"));
+				zos.write(obligations.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)); zos.closeEntry();
+			}
 			writeNativeReferences(zos, "FABRIC", vanilla, outEntries);
 			writeNativeReferences(zos, "FORGE", forge, outEntries);
 			writeNativeReferences(zos, "NEOFORGE", neo, outEntries);
@@ -475,8 +428,6 @@ public final class MergedBaseBuilder {
 		if (FORGE_PKG.equals(override) && frg != null) { classesTakenForge++; return frg; }
 		if (NEO_PKG.equals(override) && neu != null) { classesTakenNeo++; return neu; }
 
-		// Coupled networking plumbing: never let a Forge method splice in here (see PREFER_NEO_WHOLESALE javadoc).
-		if (PREFER_NEO_WHOLESALE.contains(name)) { classesTakenNeo++; return neu; }
 
 		if (groupForgeHook && !groupNeoHook) { classesTakenForge++; return frg; } // whole family is Forge-only
 		if (groupNeoHook && !groupForgeHook) { classesTakenNeo++; return neu; }   // whole family is Neo-only
@@ -528,7 +479,7 @@ public final class MergedBaseBuilder {
 	 * merge that ignored AT-only widening picked Neo's still-package-private nested class to pair with Forge's
 	 * wholesale-copied {@code NamespacedWrapper}, which needs Forge's AT-widened version — IllegalAccessError.)
 	 */
-	private static boolean classHasHook(ClassNode cn, ClassNode vanillaCn, String pkg) {
+	private boolean classHasHook(ClassNode cn, ClassNode vanillaCn, String pkg) {
 		if (vanillaCn != null && cn.access != vanillaCn.access) return true;
 		for (String itf : cn.interfaces) if (itf.startsWith(pkg)) return true;
 		if (cn.superName != null && cn.superName.startsWith(pkg)) return true;
@@ -548,7 +499,7 @@ public final class MergedBaseBuilder {
 		Map<String, MethodNode> vanMethods = vanillaCn != null ? methodMap(vanillaCn) : Map.of();
 		for (MethodNode m : cn.methods) {
 			MethodNode vm = vanMethods.get(m.name + m.desc);
-			if (methodPatched(m, vm, pkg)) return true;
+			if (methodPatched(cn, m, vm, pkg)) return true;
 			// Same reasoning as fields: a new, hand-written (non-synthetic, non-bridge) method not present in
 			// vanilla — e.g. Forge's ItemTags.create(String,String) convenience overload — is a real API
 			// addition even when its own body stays within vanilla types.
@@ -556,6 +507,59 @@ public final class MergedBaseBuilder {
 			if (vanillaCn != null && vm == null && !synthetic) return true;
 		}
 		return false;
+	}
+
+	private boolean methodPatched(ClassNode owner, MethodNode method, MethodNode vanilla, String pkg) {
+		return methodPatched(method, vanilla, pkg) || addedCalleeOrHelper(owner, method, pkg, new HashSet<>());
+	}
+	private boolean addedCalleeOrHelper(ClassNode owner, MethodNode method, String pkg, Set<String> seen) {
+		if (!seen.add(method.name + method.desc)) return false;
+		ContractGraph own = FORGE_PKG.equals(pkg) ? forgeGraph : neoGraph;
+		ContractGraph other = FORGE_PKG.equals(pkg) ? neoGraph : forgeGraph;
+		for (AbstractInsnNode i : method.instructions) {
+			List<org.objectweb.asm.Handle> handles = new ArrayList<>();
+			if (i instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy) for (Object value : indy.bsmArgs)
+				if (value instanceof org.objectweb.asm.Handle handle) handles.add(handle);
+			if (i instanceof org.objectweb.asm.tree.MethodInsnNode call) {
+				if (call.owner.startsWith("net/minecraft/") && vanillaGraph.method(call.owner, call.name, call.desc) == null
+						&& own.method(call.owner, call.name, call.desc) != null && other.method(call.owner, call.name, call.desc) == null) return true;
+				if (call.owner.equals(owner.name)) handles.add(new org.objectweb.asm.Handle(org.objectweb.asm.Opcodes.H_INVOKESTATIC, call.owner, call.name, call.desc, false));
+			}
+			for (org.objectweb.asm.Handle handle : handles) if (handle.getOwner().equals(owner.name)) {
+				MethodNode helper = ContractGraph.ownMethod(owner, handle.getName(), handle.getDesc());
+				if (helper != null && (helper.access & (Opcodes.ACC_PRIVATE | Opcodes.ACC_SYNTHETIC)) != 0
+						&& (methodHasHook(helper, pkg) || addedCalleeOrHelper(owner, helper, pkg, seen))) return true;
+			}
+		}
+		return false;
+	}
+	private void proveAncestorContracts(Map<String,byte[]> vanilla,Map<String,byte[]> forge,Map<String,byte[]> neo,
+			Map<String,byte[]> forgeRuntime,Map<String,byte[]> neoRuntime) {
+		for (String name : forge.keySet()) {
+			if (!neo.containsKey(name)) continue;
+			ClassNode f = parse(forge.get(name)), n = parse(neo.get(name)), v = vanilla.containsKey(name) ? parse(vanilla.get(name)) : null;
+			if (Objects.equals(f.superName,n.superName) || v == null || Objects.equals(f.superName,v.superName) || Objects.equals(n.superName,v.superName)) continue;
+			ClassNode a = declarationGraph.node(f.superName), b = declarationGraph.node(n.superName);
+			if (!forgeRuntime.containsKey(f.superName) || !neoRuntime.containsKey(n.superName) || !EquivalentSuperclassBridge.equivalent(a,b)) {
+				// Mutable or behavior-different providers require protocol-aware composition at definition time.
+				// Publishing the exact unresolved obligation keeps a canonical byte shape from masquerading as completion.
+				requiredAncestorCompositions.put(name, new String[]{n.superName, f.superName});
+				structuralConflicts.add(name + " (required native ancestor composition: retained=" + n.superName + ", unresolved=" + f.superName + ")");
+				continue;
+			}
+			superclassBridges.put(f.superName,n.superName);declarationGraph.replace(EquivalentSuperclassBridge.bridge(a,b));declarationGraph.replace(f);
+			structuralConflicts.add(name + " (proved equivalent ancestor bridge: " + f.superName + " extends " + n.superName + ")");
+		}
+	}
+	private boolean compatibleReturnContracts(MethodNode a,MethodNode b,ClassNode owner) {
+		Type ar = Type.getReturnType(a.desc), br = Type.getReturnType(b.desc);
+		if (!java.util.Arrays.equals(Type.getArgumentTypes(a.desc),Type.getArgumentTypes(b.desc))) return false;
+		for (MethodNode method : List.of(a,b)) for (AbstractInsnNode i : method.instructions) if (i.getOpcode() == Opcodes.ARETURN) {
+			AbstractInsnNode previous = i.getPrevious();while(previous!=null&&previous.getOpcode()<0)previous=previous.getPrevious();
+			if (!(previous instanceof org.objectweb.asm.tree.FieldInsnNode field) || !field.owner.equals(owner.name)
+					|| !declarationGraph.assignable(Type.getType(field.desc),Type.getReturnType(method.desc))) return false;
+		}
+		return true;
 	}
 
 	/** {@link #methodHasHook} PLUS an AT-style access-flag widening vs {@code vanillaM} (may be null). */
@@ -839,7 +843,7 @@ public final class MergedBaseBuilder {
 		boolean baseIsForge;
 		if (superclassesDiffer && forgeRealSuper && neoRealSuper) {
 			structuralConflicts.add(name + " (superclass: forge=" + frgN.superName + " vs neo=" + neuN.superName + ")");
-			if (PREFER_FORGE_STRUCTURAL.contains(name)) {
+			if (superclassBridges.containsKey(frgN.superName) && superclassBridges.get(frgN.superName).equals(neuN.superName)) {
 				baseN = frgN; otherN = neuN; basePkg = FORGE_PKG; otherPkg = NEO_PKG; baseIsForge = true;
 			} else {
 				baseN = neuN; otherN = frgN; basePkg = NEO_PKG; otherPkg = FORGE_PKG; baseIsForge = false;
@@ -960,7 +964,7 @@ public final class MergedBaseBuilder {
 				// A same-NAME, different-DESC method already in the base is NOT a genuinely new method — it's
 				// the SAME conceptual method that each ecosystem's compiler retyped to ITS OWN extension type
 				// (e.g. getParts(): PartEntity[], narrowed per-ecosystem because the element type's ancestor
-				// was structurally rebased — see PREFER_FORGE_STRUCTURAL). Keeping BOTH as "overloads" leaves
+				// was structurally rebased by its proved ancestor bridge). Keeping BOTH as "overloads" leaves
 				// two methods whose bodies each expect a DIFFERENT, mutually exclusive ancestor for the same
 				// runtime value — only one can ever pass verification (caught empirically on
 				// EnderDragon.getParts()). Reconcile to whichever ancestor we ACTUALLY chose.
@@ -969,22 +973,13 @@ public final class MergedBaseBuilder {
 						.findFirst().orElse(null);
 				boolean handled = false;
 				if (staleSameName != null) {
-					String preferredType = preferredAncestorType(om.desc, staleSameName.desc);
-					if (preferredType != null) {
-						handled = true;
-						boolean omMatches = om.desc.contains(preferredType);
-						boolean staleMatches = staleSameName.desc.contains(preferredType);
-						if (omMatches && !staleMatches) {
-							int idx = baseN.methods.indexOf(staleSameName);
-							baseN.methods.set(idx, om);
-							baseMethods.remove(staleSameName.name + staleSameName.desc);
-							baseMethods.put(key, om);
-							splicedMethods++;
-						}
-						// else: the base's existing version already matches (or neither does) — keep it, drop `om`.
-					} else if (mentionsPkg(om.desc, otherPkg) && mentionsPkg(staleSameName.desc, basePkg)) {
-						handled = true; // no known ancestor preference either way — keep the base's own typing.
+					if (java.util.Arrays.equals(Type.getArgumentTypes(om.desc),Type.getArgumentTypes(staleSameName.desc))
+							&& mentionsPkg(om.desc, otherPkg) && mentionsPkg(staleSameName.desc, basePkg)
+							&& !compatibleReturnContracts(om, staleSameName, baseN)) {
+						throw new IllegalStateException("Cannot preserve retyped return contracts on " + name + "#" + om.name
+								+ ": " + om.desc + " versus " + staleSameName.desc);
 					}
+
 				}
 				if (!handled) {
 					baseN.methods.add(om);
@@ -994,18 +989,9 @@ public final class MergedBaseBuilder {
 				}
 				continue;
 			}
-			Set<String> forceForge = FORCE_FORGE_METHODS.get(name);
-			if (forceForge != null && forceForge.contains(key) && FORGE_PKG.equals(otherPkg)) {
-				// Hand-verified override (see FORCE_FORGE_METHODS): this method must agree with a field-type
-				// decision that isn't this class's overall default — take Forge's body unconditionally.
-				replaceMethod(baseN, key, om, baseMethods);
-				splicedMethods++;
-				recordAnonymousOverrides(name, om, otherPkg);
-				continue;
-			}
 
-			boolean otherHook = methodPatched(om, vm, otherPkg);
-			boolean baseHook = methodPatched(bm, vm, basePkg);
+			boolean otherHook = methodPatched(otherN, om, vm, otherPkg);
+			boolean baseHook = methodPatched(baseN, bm, vm, basePkg);
 			if (otherHook && !baseHook && writesBaseExclusiveFieldOtherDrops(name, bm, om, baseExclusiveAddedFields)) {
 				// The other side hooked this method (usually <init>) and base didn't — normally we'd take the
 				// other's body. But base's body is the ONLY one that initializes a base-exclusive added field
@@ -1021,6 +1007,12 @@ public final class MergedBaseBuilder {
 				splicedMethods++;
 				recordAnonymousOverrides(name, om, otherPkg);
 			} else if (otherHook && baseHook) {
+				MethodNode tail = TailHookComposition.merge(baseN, vm, bm, om, basePkg, otherPkg, declarationGraph);
+				if (tail != null) {
+					replaceMethod(baseN, key, tail, baseMethods); additiveMethodsMerged++;
+					additiveDecisions.add(name + "#" + key + " ACCEPTED native append-only tail hook; both ecosystem calls retained");
+					continue;
+				}
 				AdditiveMethodMerger.Result addition = AdditiveMethodMerger.merge(vm, bm, om, basePkg, otherPkg, hookContext);
 				additiveDecisions.add(name + "#" + key + (addition.accepted() ? " ACCEPTED " : " DECLINED ")
 						+ addition.reason());
@@ -1054,6 +1046,7 @@ public final class MergedBaseBuilder {
 		}
 
 		realignCapturedLambdas(baseN, parse(baseIsForge ? frg : neu), otherN, baseMethods);
+		FieldContractReconciler.reconcile(baseN, frgN, neuN, declarationGraph, generatedFieldProviders);
 		resolveDuplicateFieldNames(baseN);
 		resolveDiamondDefaults(baseN);
 		Set<String> allExclusiveAdded = new LinkedHashSet<>(baseExclusiveAddedFields);
@@ -1778,13 +1771,6 @@ public final class MergedBaseBuilder {
 		return desc != null && desc.contains("L" + pkg);
 	}
 
-	/** The {@link #STRUCTURAL_ANCESTOR_TYPE} value referenced by either descriptor, or null if neither is known. */
-	private static String preferredAncestorType(String descA, String descB) {
-		for (String type : STRUCTURAL_ANCESTOR_TYPE.values()) {
-			if (descA.contains("L" + type) || descB.contains("L" + type)) return type;
-		}
-		return null;
-	}
 
 	// --- jar io --------------------------------------------------------------------------------------
 

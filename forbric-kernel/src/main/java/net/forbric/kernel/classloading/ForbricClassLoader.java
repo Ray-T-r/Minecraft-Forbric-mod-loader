@@ -57,6 +57,12 @@ public final class ForbricClassLoader extends URLClassLoader {
 	private final ClassLoader parent;
 	private volatile ClassLoader fallbackClassLoader;
 	private final DefinedClassEvidence definitionEvidence = new DefinedClassEvidence();
+	private final RequiredAncestorCompositions ancestorCompositions = new RequiredAncestorCompositions();
+
+	/** Registers a source-protocol proof checked against the final bytes before defining a required class. */
+	public void registerAncestorComposition(net.forbric.api.AncestorComposition proof) {
+		ancestorCompositions.register(proof);
+	}
 
 	/** One {@link ProtectionDomain} per owned jar, keyed by the jar URL's spelling. See {@link #domainFor}. */
 	private final Map<String, ProtectionDomain> domains = new ConcurrentHashMap<>();
@@ -75,6 +81,12 @@ public final class ForbricClassLoader extends URLClassLoader {
 	public ForbricClassLoader(URL[] ownedJars, ClassLoader parent) {
 		super("forbric", ownedJars, parent);
 		this.parent = parent;
+	}
+
+	@Override
+	public void close() throws IOException {
+		try { super.close(); }
+		finally { net.forbric.api.ProtocolExtensions.release(this); net.forbric.api.VirtualProperties.release(this); net.forbric.kernel.mixin.MixinAbsorbedCallbackTransport.release(this); net.forbric.kernel.mixin.MixinOperationSeamTransport.release(this); }
 	}
 
 	/** Records the selected metadata, not package prefixes, as the source of transform provenance. */
@@ -311,7 +323,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 			byte[] transformed = transformer.apply(name, raw);
 			byte[] result = transformed == null ? raw : transformed;
-			return result;
+			return net.forbric.kernel.mixin.MixinOperationSeamTransport.transform(this, name, net.forbric.kernel.mixin.MixinAbsorbedCallbackTransport.transform(this, name, result));
 		}
 
 		try (InputStream in = parent.getResourceAsStream(path)) {
@@ -451,6 +463,8 @@ public final class ForbricClassLoader extends URLClassLoader {
 			}
 		}
 
+		bytes = net.forbric.kernel.mixin.MixinAbsorbedCallbackTransport.transform(this, name, bytes);
+		bytes = net.forbric.kernel.mixin.MixinOperationSeamTransport.transform(this, name, bytes);
 		byte[] woven = mixinTransformer.apply(name, bytes);
 		if (woven != null) bytes = woven;
 		if (bytes == null) return null;
@@ -483,12 +497,19 @@ public final class ForbricClassLoader extends URLClassLoader {
 	 */
 	private Class<?> define(String name, byte[] bytes, ProtectionDomain domain) {
 		traceDefine(name);
+		ancestorCompositions.verify(name, bytes, path -> {
+			try (InputStream input = getGameResourceAsStream(path)) { return input == null ? null : input.readAllBytes(); }
+			catch (IOException unavailable) { return null; }
+		});
 		try {
 			Class<?> defined = defineClass(name, bytes, 0, bytes.length, domain);
+			DefinedGetterFields.observe(this, name, bytes);
 			definitionEvidence.defined(name, bytes);
 			net.forbric.kernel.boot.DefinedMethodContracts.observe(this, name, bytes);
 			net.forbric.kernel.boot.SharedFinalSourceContracts.observeDefinition(this, name, bytes);
 			net.forbric.kernel.mixin.MixinCrossHostPredicateIsland.observeDefinition(name, bytes);
+			net.forbric.kernel.mixin.MixinAbsorbedCallbackTransport.observeDefinition(this, name, bytes);
+			net.forbric.kernel.mixin.MixinOperationSeamTransport.observeDefinition(this, name, bytes);
 			net.forbric.kernel.mixin.FinalMixinApplications.onClassDefined(name, bytes);
 			net.forbric.kernel.mixin.SupersededMixins.observeDefinition(this, name, bytes);
 			net.forbric.kernel.boot.KernelHudBridge.observeDefinition(name, bytes);

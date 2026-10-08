@@ -45,7 +45,6 @@ import net.forbric.kernel.transform.ClientPackHookInjector;
 import net.forbric.kernel.transform.ClientSmokeTickInjector;
 import net.forbric.kernel.transform.CommonNetworkInteropInjector;
 import net.forbric.kernel.transform.ForgeOverlayNeuterInjector;
-import net.forbric.kernel.transform.EntrypointCollectionBridgeInjector;
 import net.forbric.kernel.transform.DataPackHookInjector;
 import net.forbric.kernel.transform.DuplicateLambdaPruneInjector;
 import net.forbric.kernel.transform.ExitHookInjector;
@@ -340,11 +339,6 @@ public final class KernelBoot {
 		// platform-only class would otherwise get a bare NoClassDefFoundError. See ForbricClassLoader.setRescueJars
 		// for why this cannot shadow the winner, and for what it deliberately does not fix.
 		loader.setRescueJars(rescueUrls(dupes));
-		// Fabric mods declare their config screens through Mod Menu's API, which is a mod's, not Fabric's. Without Mod
-		// Menu installed, that declaration cannot even be linked and no Fabric mod has a Config button. Offered now,
-		// while the URLs are final and before any mod class can link against it. See ModMenuApiStandIn.
-		if (side == Side.CLIENT) ModMenuApiStandIn.install(loader);
-
 		// Every mod jar probes as the loader the arbiter gave it, so a mod cannot wander into a branch it never ran
 		// on its own platform — and a universal jar answers as the ONE ecosystem it was arbitrated to. Plain
 		// libraries declare no manifest and stay unowned. See LoaderProbePolicy.
@@ -356,6 +350,9 @@ public final class KernelBoot {
 		// …and a universal jar's ServiceLoader lists only the providers that loader could link, as on its own.
 		loader.setUniversalJars(universalJars(fabricJars, modJars));
 		LoaderProbePolicy.bindGuestLoader(loader);
+		// Service discovery sees the selected classpath and narrowed universal-jar declarations.
+		// Providers can offer an absent public API before any consumer links against it.
+		net.forbric.api.ProtocolExtensions.discover(loader, net.forbric.api.Side.parse(side.envType.name())).offerClasses();
 
 		// A mod that unpacks its real payload at preLaunch has no public API for adding it to the classpath and
 		// reaches into Fabric's internals for it. Installed before any mod class loads. See KernelFabricLauncher.
@@ -461,7 +458,12 @@ public final class KernelBoot {
 		// on their own, and remain the fallback when this is switched off.
 		boolean forgeCapabilities = net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled();
 		if (forgeCapabilities) {
-			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer());
+			var composition = new net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer(path -> {
+				try (var input = loader.getGameResourceAsStream(path)) { return input == null ? null : input.readAllBytes(); }
+				catch (java.io.IOException unavailable) { return null; }
+			}, transferInterop);
+			loader.registerAncestorComposition(composition);
+			chain.register(TransformPhase.COREMOD, composition);
 			if (transferInterop) chain.register(TransformPhase.COREMOD,
 					new net.forbric.kernel.transform.ForgeTransferCapabilityFallback());
 		} else {
@@ -699,6 +701,12 @@ public final class KernelBoot {
 		// Inert unless -Dforbric.eventChainAudit=<report>: wraps both families' bus dispatch for gate-m41.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.EventChainAuditInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CompatibilityPromptTickInjector());
+		net.forbric.kernel.interop.protocol.NativeEventProtocols.register();
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NativeDualEventInjector(path -> {
+			try (java.io.InputStream input = loader.getGameResourceAsStream(path)) {
+				return input == null ? null : input.readAllBytes();
+			} catch (java.io.IOException unavailable) { return null; }
+		}));
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PortalSpawnInjector());
 		// After merged-base compatibility: upgrade its owner-only redirect with the proven spawn input.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.SpawnerFinalizeInjector());
@@ -721,8 +729,6 @@ public final class KernelBoot {
 		// NeoForge's furnace tick calls MinecraftForge's instance canBurn/consumeFuel/burn as static; the ticked furnace
 		// is the receiver MinecraftForge's own tick uses.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FurnaceTickCallsInjector());
-		// The Ender Dragon's parts are NeoForge PartEntitys, as every part consumer in the merged game casts them.
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.DragonPartsInjector());
 		// The client's onTrackingStart is MinecraftForge's body: it read only MinecraftForge's getParts(), which a NeoForge
 		// mod's multipart entity leaves null, and the client disconnected on sight of one. NeoForge's parts are tracked too.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ClientPartTrackingInjector());
@@ -746,10 +752,6 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.CrossHostPredicateIslandInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.AxeStripCallbacksInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.MixinPluginPlatformInjector(loader::ecosystemOfResource));
-		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.MissingEntrypointInterfaceInjector(
-				KernelFabricEcosystem.CONFIG_ENTRYPOINT_API,
-				net.forbric.kernel.interop.ConfigEntrypointInitializer.class,
-				() -> loader.getResource(KernelFabricEcosystem.CONFIG_ENTRYPOINT_API + ".class") != null));
 		// Lava placed or flowing next to water: the merged LiquidBlock.onPlace (MinecraftForge's) asked MinecraftForge's
 		// registry, which the neuter below used to empty, so only water arriving next to lava reacted. It asks it whole
 		// now, as on MinecraftForge (vanilla's rules and MinecraftForge mods'; NeoForge's own placement runs no mod's).
@@ -784,8 +786,9 @@ public final class KernelBoot {
 				catch (java.io.IOException unavailable) { return null; }
 			};
 			java.util.function.BooleanSupplier pinned = () -> net.forbric.kernel.mixin.FabricCreativePagerMixinAdapter.enabled()
-					|| net.forbric.kernel.mixin.MergedBaseMixinCompat.pinInForce(
-							net.forbric.kernel.mixin.MergedBaseMixinCompat.CREATIVE_PAGER_PIN);
+					|| net.forbric.kernel.mixin.MergedBaseMixinCompat.contractSuppressed(
+							"net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen",
+							net.forbric.kernel.transform.CreativePagerBridgeInjector.API);
 			if (net.forbric.kernel.transform.CreativePagerBridgeInjector.enabled()) {
 				chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CreativePagerBridgeInjector(gameClass, pinned));
 			} else if (pinned.getAsBoolean() && gameClass.apply(net.forbric.kernel.transform.CreativePagerBridgeInjector.API) != null) {
@@ -950,11 +953,6 @@ public final class KernelBoot {
 		// tri-in-one instance and they fail in opposite directions, so a single switch that removes both is the only
 		// honest way to ask "is the arbitration the cause?" of a networking symptom.
 		// Declared configuration protocols are independent of network-channel arbitration.
-		chain.register(TransformPhase.COREMOD, new EntrypointCollectionBridgeInjector(
-				new EntrypointCollectionBridgeInjector.Contract("sodium:config_api_user",
-						"net.caffeinemc.mods.sodium.client.config.ConfigManager", "registerConfigEntryPoint", "setModInfoFunction",
-						new EntrypointCollectionBridgeInjector.Hook("net.forbric.kernel.boot.KernelLifecycle", "onSodiumConfigUsers"),
-						new EntrypointCollectionBridgeInjector.Hook("net.forbric.kernel.boot.KernelLifecycle", "configModInfoFunction"))));
 		if (!"off".equalsIgnoreCase(System.getProperty("forbric.commonNetworkInterop", "on"))) {
 			chain.register(TransformPhase.COREMOD, new CommonNetworkInteropInjector());
 			chain.register(TransformPhase.COREMOD, new ForgeOverlayNeuterInjector());
@@ -1032,6 +1030,10 @@ public final class KernelBoot {
 			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) { return in == null ? null : in.readAllBytes(); }
 			catch (java.io.IOException unavailable) { return null; }
 		}));
+
+		// Extensions join the configured pipeline after the core probes and before final frame recomputation.
+		net.forbric.api.ProtocolExtensions.forLoader(loader).registerTransformers(
+				net.forbric.kernel.interop.protocol.ProtocolTransformAdapters.registry(chain));
 
 		// LAST in the chain, because it has to see every edit the coremod phase made: a transformer that adds a
 		// branch leaves a frame of its own, and the recomputation must be over the final shape. A mod compiled

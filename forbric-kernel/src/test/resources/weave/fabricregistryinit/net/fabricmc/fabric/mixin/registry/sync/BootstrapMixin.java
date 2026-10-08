@@ -18,7 +18,7 @@ import net.minecraft.server.Bootstrap;
 public class BootstrapMixin {
 	@Inject(method = "bootStrap", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/Bootstrap;wrapStreams()V"))
 	private static void afterInitialize(CallbackInfo info) {
-		Trace.add("fabric:trackers");
+		net.fabricmc.fabric.impl.registry.sync.RegistrySyncManager.bootstrapRegistries();
 	}
 
 	@Redirect(method = "bootStrap", at = @At(value = "INVOKE", target = "Lnet/minecraft/core/registries/BuiltInRegistries;bootStrap()V"))

@@ -121,8 +121,10 @@ public final class FlowerPotRepairInjector implements ClassTransformer {
 	 * delegate, {@code getOrDefault}, supplier, cast — becomes {@code KernelFlowerPots.fullPotFor(fullPots, this, block)}.
 	 */
 	static int lookUpAllFamilies(ClassNode node) {
+		int publicLookup = decoratePublicLookup(node);
 		MethodNode use = method(node, "useItemOn", USE_ITEM_ON);
-		if (use == null) return 0;
+		if (use == null) return publicLookup;
+		for(AbstractInsnNode i:use.instructions)if(i instanceof MethodInsnNode call&&call.owner.equals(RUNTIME)&&call.name.equals("legacyPotOrNative"))return publicLookup;
 		// Real instructions only: a line-number label may sit inside the expression.
 		AbstractInsnNode[] code = java.util.Arrays.stream(use.instructions.toArray()).filter(insn -> insn.getOpcode() >= 0)
 				.toArray(AbstractInsnNode[]::new);
@@ -131,24 +133,32 @@ public final class FlowerPotRepairInjector implements ClassTransformer {
 			// fullPots, then: GETSTATIC BLOCKS, ALOAD item, INVOKEVIRTUAL getBlock, getKey, GETSTATIC BLOCKS, GETSTATIC AIR,
 			// getDelegateOrThrow, Map.getOrDefault, CHECKCAST Supplier, Supplier.get, CHECKCAST Block.
 			int at = i + 1;
-			if (at + 10 >= code.length) return 0;
-			if (!(code[at] instanceof FieldInsnNode registry) || !registry.owner.equals(FORGE_BLOCKS)) return 0;
-			if (!(code[at + 1] instanceof VarInsnNode item) || item.getOpcode() != Opcodes.ALOAD) return 0;
-			if (!(code[at + 2] instanceof MethodInsnNode getBlock) || !getBlock.name.equals("getBlock")) return 0;
+			if (at + 10 >= code.length) return publicLookup;
+			if (!(code[at] instanceof FieldInsnNode registry) || !registry.owner.equals(FORGE_BLOCKS)) return publicLookup;
+			if (!(code[at + 1] instanceof VarInsnNode item) || item.getOpcode() != Opcodes.ALOAD) return publicLookup;
+			if (!(code[at + 2] instanceof MethodInsnNode getBlock) || !getBlock.name.equals("getBlock")) return publicLookup;
 			if (!call(code[at + 3], "getKey") || !(code[at + 4] instanceof FieldInsnNode) || !(code[at + 5] instanceof FieldInsnNode)
 					|| !call(code[at + 6], "getDelegateOrThrow") || !call(code[at + 7], "getOrDefault")
 					|| !(code[at + 8] instanceof TypeInsnNode supplier) || !supplier.desc.equals("java/util/function/Supplier")
-					|| !call(code[at + 9], "get") || !(code[at + 10] instanceof TypeInsnNode block) || !block.desc.equals(BLOCK)) return 0;
-			InsnList lookup = new InsnList();
-			lookup.add(new VarInsnNode(Opcodes.ALOAD, 0));
-			lookup.add(new VarInsnNode(Opcodes.ALOAD, item.var));
-			lookup.add(new MethodInsnNode(getBlock.getOpcode(), getBlock.owner, getBlock.name, getBlock.desc, getBlock.itf));
-			lookup.add(new MethodInsnNode(Opcodes.INVOKESTATIC, RUNTIME, "fullPotFor", FULL_POT_FOR, false));
-			use.instructions.insertBefore(code[at], lookup);
-			for (int k = at; k <= at + 10; k++) use.instructions.remove(code[k]);
-			return 1;
+					|| !call(code[at + 9], "get") || !(code[at + 10] instanceof TypeInsnNode block) || !block.desc.equals(BLOCK)) return publicLookup;
+			// Keep the registry lookup and supplier effects. Save the already evaluated receiver and content once.
+			int empty=use.maxLocals++,content=use.maxLocals++;
+			InsnList receiver=new InsnList();receiver.add(new InsnNode(Opcodes.DUP));receiver.add(new VarInsnNode(Opcodes.ASTORE,empty));use.instructions.insertBefore(full,receiver);
+			InsnList plant=new InsnList();plant.add(new InsnNode(Opcodes.DUP));plant.add(new VarInsnNode(Opcodes.ASTORE,content));use.instructions.insert(code[at+2],plant);
+			InsnList lookup=new InsnList();lookup.add(new VarInsnNode(Opcodes.ALOAD,empty));lookup.add(new VarInsnNode(Opcodes.ALOAD,content));
+			lookup.add(new MethodInsnNode(Opcodes.INVOKESTATIC,RUNTIME,"legacyPotOrNative","(L"+BLOCK+";L"+OWNER+";L"+BLOCK+";)L"+BLOCK+";",false));use.instructions.insert(code[at+10],lookup);
+			return publicLookup+1;
 		}
-		return 0;
+		return publicLookup;
+	}
+	/** The public SDK query remains intact, including its non-empty-pot guard and native table read. */
+	private static int decoratePublicLookup(ClassNode node){
+		MethodNode query=method(node,"getFullPot","(L"+BLOCK+";)L"+BLOCK+";");if(query==null||(query.access&Opcodes.ACC_STATIC)!=0)return 0;
+		boolean table=false;for(AbstractInsnNode i:query.instructions)if(i instanceof MethodInsnNode call){if(call.owner.equals(RUNTIME))return 0;if(call.owner.equals("net/neoforged/neoforge/registries/GameData")&&call.name.equals("getFlowerPotBlockTable"))table=true;}
+		if(!table)return 0;int changed=0;
+		for(AbstractInsnNode i:query.instructions.toArray())if(i.getOpcode()==Opcodes.ARETURN){InsnList decorate=new InsnList();decorate.add(new VarInsnNode(Opcodes.ALOAD,0));decorate.add(new FieldInsnNode(Opcodes.GETFIELD,node.name,"fullPots","Ljava/util/Map;"));decorate.add(new VarInsnNode(Opcodes.ALOAD,0));decorate.add(new VarInsnNode(Opcodes.ALOAD,1));
+			decorate.add(new MethodInsnNode(Opcodes.INVOKESTATIC,RUNTIME,"fullPotOrNative","(L"+BLOCK+";Ljava/util/Map;L"+OWNER+";L"+BLOCK+";)L"+BLOCK+";",false));query.instructions.insertBefore(i,decorate);changed++;}
+		return changed>0?1:0;
 	}
 
 	/** {@code addPlant}: after NeoForge's check, {@code fullPots.put(id, supplier)}, as MinecraftForge's body does. */

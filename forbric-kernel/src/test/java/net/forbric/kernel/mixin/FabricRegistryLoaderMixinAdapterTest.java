@@ -21,7 +21,7 @@ class FabricRegistryLoaderMixinAdapterTest {
 		assertTrue(String.valueOf(MixinFit.value(MixinFit.injectorOf(wrap),"method")).contains("Executor;Ljava/util/List;"));
 		assertTrue(String.valueOf(MixinFit.value(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"supplyAsync")),"method")).contains("Executor;Z)"));
 		new Analyzer<>(new BasicVerifier()).analyze(mixin.name,wrap);
-		ClassNode runtime=MixinFit.parse(Files.readAllBytes(Path.of("build/classes/java/runtime/net/forbric/kernel/runtime/KernelWrapOperations.class")));
+		ClassNode runtime=MixinFit.parse(Files.readAllBytes(Path.of(System.getProperty("forbric.test.runtimeClasses","build/classes/java/runtime")).resolve("net/forbric/kernel/runtime/KernelWrapOperations.class")));
 		for(var i:wrap.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(runtime.name))assertTrue(runtime.methods.stream().anyMatch(m->m.name.equals(c.name)&&m.desc.equals(c.desc)),"the generated wrapper must link to the actual compiled game helper");
 		assertNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"wrapIsServerCall$forbricOriginal")));
 		assertEquals(0,FabricRegistryLoaderMixinAdapter.adapt(mixin,n->target));

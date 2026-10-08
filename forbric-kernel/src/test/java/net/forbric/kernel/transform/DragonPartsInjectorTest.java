@@ -1,138 +1,34 @@
+/* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.transform;
 
 import static org.junit.jupiter.api.Assertions.*;
-
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.List;
-
-import org.junit.jupiter.api.AfterEach;
+import java.util.*;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.parallel.ResourceLock;
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
-import org.objectweb.asm.tree.analysis.Analyzer;
-import org.objectweb.asm.tree.analysis.BasicVerifier;
 
-/** The Ender Dragon's parts, NeoForge-typed again on the merged base; on the real classes. */
-@ResourceLock("system-properties")
+/** The actual rebuilt base keeps both native part contracts; the retired compatibility name is inert. */
 class DragonPartsInjectorTest {
-	private static final Path STAGED = Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"));
-	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
-	private static final Path NEO = STAGED.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
-	private static final String PART = "net/minecraft/world/entity/boss/enderdragon/EnderDragonPart";
-	private static final String DRAGON = "net/minecraft/world/entity/boss/enderdragon/EnderDragon";
-	private static final String HITBOXES = "net/minecraft/client/renderer/debug/EntityHitboxDebugRenderer";
-
-	@AfterEach void reset() { System.clearProperty(DragonPartsInjector.PROPERTY); }
-
-	@Test void thePartIsANeoForgePartEntity() throws Exception {
-		byte[] original = NativeCoremodParityTest.read(MERGED, PART);
-		assertEquals(DragonPartsInjector.FORGE_PART, node(original).superName, "premise: the merge put it under MinecraftForge's");
-		byte[] out = new DragonPartsInjector().transform(DragonPartsInjector.PART, original, null);
-		ClassNode part = node(out);
-		assertEquals(DragonPartsInjector.NEO_PART, part.superName);
-		assertTrue(part.signature.startsWith("L" + DragonPartsInjector.NEO_PART + "<"), part.signature);
-		MethodNode ctor = part.methods.stream().filter(m -> m.name.equals("<init>")).findFirst().orElseThrow();
-		assertTrue(Arrays.stream(ctor.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode c && c.owner.equals(DragonPartsInjector.NEO_PART)
-				&& c.name.equals("<init>")), "its super constructor call is NeoForge's");
-		assertFalse(new String(out, java.nio.charset.StandardCharsets.ISO_8859_1).contains(DragonPartsInjector.FORGE_PART), "no Forge-typed reference is left");
-		assertSame(out, new DragonPartsInjector().transform(DragonPartsInjector.PART, out, null));
-	}
-
-	@Test void theDragonAnswersNeoForgesGetPartsAndMinecraftForgesWithNothing() throws Exception {
-		byte[] out = new DragonPartsInjector().transform(DragonPartsInjector.DRAGON, NativeCoremodParityTest.read(MERGED, DRAGON), null);
-		ClassNode dragon = node(out);
-		MethodNode neo = method(dragon, "getParts", DragonPartsInjector.NEO_GET_PARTS);
-		assertTrue(Arrays.stream(neo.instructions.toArray()).anyMatch(i -> i instanceof FieldInsnNode f && f.name.equals("subEntities")));
-		MethodNode forge = method(dragon, "getParts", DragonPartsInjector.FORGE_GET_PARTS);
-		List<AbstractInsnNode> real = Arrays.stream(forge.instructions.toArray()).filter(i -> i.getOpcode() >= 0).toList();
-		assertEquals(List.of(Opcodes.ICONST_0, Opcodes.ANEWARRAY, Opcodes.ARETURN), real.stream().map(AbstractInsnNode::getOpcode).toList(),
-				"no Forge-typed part exists any more: an empty array, which every Forge-typed caller in the game handles");
-		new Analyzer<>(new BasicVerifier()).analyze(DRAGON, neo);
-		new Analyzer<>(new BasicVerifier()).analyze(DRAGON, forge);
-		assertSame(out, new DragonPartsInjector().transform(DragonPartsInjector.DRAGON, out, null));
-	}
-
-	@Test void theDebugHitboxesReadNeoForgesParts() throws Exception {
-		byte[] out = new DragonPartsInjector().transform(DragonPartsInjector.HITBOXES, NativeCoremodParityTest.read(MERGED, HITBOXES), null);
-		assertFalse(new String(out, java.nio.charset.StandardCharsets.ISO_8859_1).contains(DragonPartsInjector.FORGE_PART));
-		MethodNode show = node(out).methods.stream().filter(m -> m.name.equals("showHitboxes")).findFirst().orElseThrow();
-		assertTrue(Arrays.stream(show.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode c && c.name.equals("getParts")
-				&& c.desc.equals(DragonPartsInjector.NEO_GET_PARTS)));
-		new Analyzer<>(new BasicVerifier()).analyze(HITBOXES, show);
-	}
-
-	@Test void neoForgesOwnClassesAreLeftAlone() throws Exception {
-		for (String name : List.of(PART, DRAGON)) {
-			byte[] own = NativeCoremodParityTest.read(NEO, name);
-			assertSame(own, new DragonPartsInjector().transform(name.replace('/', '.'), own, null), name);
-		}
-	}
-
-	@Test void theClientsTrackingCallbacksAreLeftToThePartTrackingRepairs() throws Exception {
-		// KernelBoot runs this repair with ClientPartTrackingInjector and ForgePartTrackingInjector. When it retyped these
-		// callbacks to NeoForge's parts, the first lost its anchor: a MinecraftForge mod's parts threw on sight, and
-		// NeoForge's stayed in partEntities, where the second's Level.getEntities casts them to MinecraftForge's PartEntity.
-		byte[] merged = NativeCoremodParityTest.read(MERGED, ClientPartTrackingInjector.CALLBACKS_INTERNAL);
-		byte[] out = new DragonPartsInjector().transform(ClientPartTrackingInjector.CALLBACKS, merged, null);
-		assertSame(merged, out, "the client's tracking callbacks are left as merged");
-		assertNotSame(out, new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS, out, null),
-				"the client part tracking still finds its anchor after this repair");
-	}
-
-	@Test void theThreePartRepairsComeOutTheSameInAnyOrder() throws Exception {
-		// TransformerRegistrationOrderTest pins that KernelBoot registers each of them, not in which order. That is safe
-		// only while every class any of them edits comes out byte for byte the same whichever runs first.
-		List<List<Integer>> orders = List.of(List.of(0, 1, 2), List.of(0, 2, 1), List.of(1, 0, 2), List.of(1, 2, 0),
-				List.of(2, 0, 1), List.of(2, 1, 0));
-		for (String name : List.of(PART, DRAGON, HITBOXES, ClientPartTrackingInjector.CALLBACKS_INTERNAL,
-				ForgePartTrackingInjector.SERVER_CALLBACKS_INTERNAL, ForgePartTrackingInjector.LEVEL_INTERNAL)) {
-			byte[] merged = NativeCoremodParityTest.read(MERGED, name);
-			byte[] first = null;
-			for (List<Integer> order : orders) {
-				byte[] bytes = merged;
-				for (int which : order) bytes = repair(which).transform(name.replace('/', '.'), bytes, null);
-				if (first == null) {
-					assertNotSame(merged, bytes, name + " is edited by one of them");
-					first = bytes;
-				} else {
-					assertArrayEquals(first, bytes, name + " comes out differently in the order " + order);
-				}
-			}
-		}
-	}
-
-	@Test void theSwitchLeavesAllThreeAlone() throws Exception {
-		System.setProperty(DragonPartsInjector.PROPERTY, "off");
-		for (String name : List.of(PART, DRAGON, HITBOXES)) {
-			byte[] merged = NativeCoremodParityTest.read(MERGED, name);
-			assertSame(merged, new DragonPartsInjector().transform(name.replace('/', '.'), merged, null), name);
-		}
-	}
-
-	private static ClassNode node(byte[] bytes) {
-		ClassNode node = new ClassNode();
-		new ClassReader(bytes).accept(node, 0);
-		return node;
-	}
-
-	private static MethodNode method(ClassNode node, String name, String desc) {
-		return node.methods.stream().filter(m -> m.name.equals(name) && m.desc.equals(desc)).findFirst().orElseThrow(() -> new AssertionError(name + desc));
-	}
-
-	private static ClassTransformer repair(int which) {
-		return switch (which) {
-			case 0 -> new DragonPartsInjector();
-			case 1 -> new ClientPartTrackingInjector();
-			default -> new ForgePartTrackingInjector(name -> {
-				try {
-					return NativeCoremodParityTest.read(MERGED, name);
-				} catch (Exception unreadable) {
-					return null;
-				}
-			});
-		};
-	}
+    private static final Path STAGED=Path.of(System.getProperty("forbric.stagedRoot","../forbric-loader/run"));
+    private static final Path MERGED=STAGED.resolve("merged-base/patched-mc-merged-26.2.jar"),FORGE=STAGED.resolve("merged-base/forge-runtime-interop.jar");
+    @Test void thePartIsANeoForgePartEntity()throws Exception{
+        byte[] original=NativeCoremodParityTest.read(MERGED,DragonPartsInjector.PART_INTERNAL);assertSame(original,new DragonPartsInjector().transform(DragonPartsInjector.PART,original,null));
+        assertEquals(DragonPartsInjector.FORGE_PART,node(original).superName);assertEquals(DragonPartsInjector.NEO_PART,node(NativeCoremodParityTest.read(FORGE,DragonPartsInjector.FORGE_PART)).superName,"the proved runtime ancestor bridge preserves both API types");
+    }
+    @Test void bothNativeGetPartsMethodsKeepTheActualSubEntities()throws Exception{
+        byte[] original=NativeCoremodParityTest.read(MERGED,DragonPartsInjector.DRAGON_INTERNAL);assertSame(original,new DragonPartsInjector().transform(DragonPartsInjector.DRAGON,original,null));ClassNode dragon=node(original);
+        for(String descriptor:List.of(DragonPartsInjector.NEO_GET_PARTS,DragonPartsInjector.FORGE_GET_PARTS)){
+            MethodNode getter=dragon.methods.stream().filter(m->m.name.equals("getParts")&&m.desc.equals(descriptor)).findFirst().orElseThrow();List<AbstractInsnNode> code=Arrays.stream(getter.instructions.toArray()).filter(i->i.getOpcode()>=0).toList();assertEquals(List.of(Opcodes.ALOAD,Opcodes.GETFIELD,Opcodes.ARETURN),code.stream().map(AbstractInsnNode::getOpcode).toList());assertEquals("[L"+DragonPartsInjector.PART_INTERNAL+";",((FieldInsnNode)code.get(1)).desc);
+        }
+    }
+    @Test void theDebugHitboxesKeepTheirNativePartApi()throws Exception{
+        byte[] original=NativeCoremodParityTest.read(MERGED,DragonPartsInjector.HITBOXES.replace('.','/'));assertSame(original,new DragonPartsInjector().transform(DragonPartsInjector.HITBOXES,original,null));assertTrue(node(original).methods.stream().flatMap(m->Arrays.stream(m.instructions.toArray())).anyMatch(i->i instanceof MethodInsnNode call&&call.name.equals("getParts")&&call.desc.equals(DragonPartsInjector.FORGE_GET_PARTS)));
+    }
+    @Test void theClientsTrackingCallbacksAreLeftToThePartTrackingRepairs()throws Exception{
+        byte[] original=NativeCoremodParityTest.read(MERGED,ClientPartTrackingInjector.CALLBACKS_INTERNAL);assertSame(original,new DragonPartsInjector().transform(ClientPartTrackingInjector.CALLBACKS,original,null));
+        assertSame(original,new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,original,null));
+        ForgePartTrackingInjector tracking=new ForgePartTrackingInjector(owner->{try{return NativeCoremodParityTest.read(MERGED,owner);}catch(Exception absent){return null;}});assertNotSame(original,tracking.transform(ClientPartTrackingInjector.CALLBACKS,original,null));
+    }
+    private static ClassNode node(byte[] bytes){ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return node;}
 }

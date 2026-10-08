@@ -188,11 +188,45 @@ class PrepareWorldTest {
             MethodInsnNode check = Arrays.stream(compatibility.instructions.toArray()).filter(instruction -> instruction instanceof MethodInsnNode call
                     && call.name.equals("hasConfirmedExperimentalWarning")).map(MethodInsnNode.class::cast).findFirst().orElseThrow();
             JumpInsnNode acknowledged = assertInstanceOf(JumpInsnNode.class, nextCode(check));
-            assertEquals(Opcodes.IFNE, acknowledged.getOpcode(), "true acknowledgement must jump to the no-warning branch");
+            assertEquals(Opcodes.IFEQ, acknowledged.getOpcode(), "the compiler normalizes the native boolean into a local");
+            assertEquals(Opcodes.ICONST_1, nextCode(acknowledged).getOpcode());
             assertEquals(Opcodes.ICONST_0, nextCode(acknowledged.label).getOpcode());
+            assertActualWarningDecision(compatibility,check);
             assertTrue(Arrays.stream(compatibility.instructions.toArray()).anyMatch(instruction -> instruction instanceof MethodInsnNode call
                     && call.name.equals("askForBackup")), "the prompt itself must remain in production");
         }
+    }
+
+    /** Execute the unchanged native warning CFG, retaining its branches but isolating its UI effects. */
+    private static void assertActualWarningDecision(MethodNode source,MethodInsnNode acknowledgement)throws Exception {
+        org.objectweb.asm.tree.VarInsnNode flag=null,old=null;
+        for(AbstractInsnNode instruction=acknowledgement;instruction!=null;instruction=instruction.getNext())if(instruction instanceof org.objectweb.asm.tree.VarInsnNode variable&&variable.getOpcode()==Opcodes.ISTORE){flag=variable;break;}
+        for(AbstractInsnNode instruction:source.instructions)if(instruction instanceof MethodInsnNode call&&call.name.equals("isOldCustomizedWorld"))old=assertInstanceOf(org.objectweb.asm.tree.VarInsnNode.class,nextCode(call));
+        assertNotNull(flag);assertNotNull(old);assertEquals(Opcodes.ISTORE,old.getOpcode());
+        AbstractInsnNode start=nextCode(flag),end=start;while(end!=null&&!(end instanceof org.objectweb.asm.tree.VarInsnNode load&&load.getOpcode()==Opcodes.ALOAD&&load.var==0))end=end.getNext();
+        assertNotNull(end);AbstractInsnNode labelBefore=end.getPrevious();while(labelBefore!=null&&!(labelBefore instanceof org.objectweb.asm.tree.LabelNode))labelBefore=labelBefore.getPrevious();
+        final org.objectweb.asm.tree.LabelNode noWarning=assertInstanceOf(org.objectweb.asm.tree.LabelNode.class,labelBefore);
+        java.util.Set<org.objectweb.asm.tree.LabelNode> destinations=new java.util.HashSet<>();java.util.Set<Integer> reads=new java.util.HashSet<>();
+        for(AbstractInsnNode instruction=start;instruction!=end;instruction=instruction.getNext()){
+            if(instruction instanceof JumpInsnNode jump)destinations.add(jump.label);
+            else if(instruction instanceof org.objectweb.asm.tree.VarInsnNode variable){assertEquals(Opcodes.ILOAD,variable.getOpcode());reads.add(variable.var);}
+            else assertTrue(instruction.getOpcode()<0,"warning guard contains an additional effect");
+        }
+        assertEquals(2,destinations.size());assertTrue(destinations.contains(noWarning));assertEquals(3,reads.size());
+        assertTrue(reads.contains(flag.var)&&reads.contains(old.var));
+        org.objectweb.asm.tree.LabelNode warning=destinations.stream().filter(label->label!=noWarning).findFirst().orElseThrow();
+        Map<org.objectweb.asm.tree.LabelNode,org.objectweb.asm.tree.LabelNode> labels=new java.util.IdentityHashMap<>();
+        for(AbstractInsnNode instruction:source.instructions)if(instruction instanceof org.objectweb.asm.tree.LabelNode label)labels.put(label,new org.objectweb.asm.tree.LabelNode());
+        MethodNode decision=new MethodNode(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC,"warning","(ZZZ)Z",null,null);
+        for(AbstractInsnNode instruction=start;instruction!=end;instruction=instruction.getNext())if(!(instruction instanceof org.objectweb.asm.tree.FrameNode||instruction instanceof org.objectweb.asm.tree.LineNumberNode||instruction==noWarning)){
+            AbstractInsnNode copy=instruction.clone(labels);if(copy instanceof org.objectweb.asm.tree.VarInsnNode variable)variable.var=variable.var==flag.var?0:variable.var==old.var?1:2;decision.instructions.add(copy);
+        }
+        decision.instructions.add(labels.get(noWarning));decision.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ICONST_0));decision.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.IRETURN));
+        decision.instructions.add(labels.get(warning));decision.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ICONST_1));decision.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.IRETURN));decision.maxLocals=3;
+        org.objectweb.asm.ClassWriter writer=new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_FRAMES|org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+        writer.visit(Opcodes.V17,Opcodes.ACC_PUBLIC,"proof/WorldWarning",null,"java/lang/Object",null);decision.accept(writer);writer.visitEnd();byte[] bytes=writer.toByteArray();
+        Class<?> proof=new ClassLoader(null){Class<?> define(){return defineClass("proof.WorldWarning",bytes,0,bytes.length);}}.define();
+        for(boolean confirmed:List.of(false,true))for(boolean customized:List.of(false,true))for(boolean unstable:List.of(false,true))assertEquals(!confirmed&&(customized||unstable),proof.getMethod("warning",boolean.class,boolean.class,boolean.class).invoke(null,confirmed,customized,unstable));
     }
 
     private static AbstractInsnNode nextCode(AbstractInsnNode instruction) {

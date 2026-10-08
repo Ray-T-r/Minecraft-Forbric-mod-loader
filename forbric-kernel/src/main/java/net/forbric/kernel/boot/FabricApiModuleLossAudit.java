@@ -96,7 +96,7 @@ public final class FabricApiModuleLossAudit {
 			new Loss("fabric-creative-tab-api-v1", "net/fabricmc/fabric/api/client/creativetab/v1/", Side.CLIENT,
 					"FabricCreativeModeInventoryScreen has nothing behind it on the creative screen — every call throws "
 							+ "AssertionError(\"Implemented by mixin\")",
-					() -> MergedBaseMixinCompat.pinInForce(MergedBaseMixinCompat.CREATIVE_PAGER_PIN)
+					() -> MergedBaseMixinCompat.contractSuppressed("net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen",CreativePagerBridgeInjector.API)
 							&& !CreativePagerBridgeInjector.enabled(),
 					"its mixin implementing FabricCreativeModeInventoryScreen is left out unless -Dforbric.pinnedContracts=off "
 							+ "keeps it, as nothing stands behind that interface on the creative screen (kept, its first "
@@ -104,7 +104,7 @@ public final class FabricApiModuleLossAudit {
 			// The CLASS, not the package: lithostitched names DynamicRegistries in the same package, which works.
 			new Loss("fabric-registry-sync-v0", "net/fabricmc/fabric/api/event/registry/DynamicRegistrySetupCallback", null,
 					"DynamicRegistrySetupCallback never fires (RegistryDataLoaderMixin is pinned)",
-					() -> MergedBaseMixinCompat.pinInForce(net.forbric.kernel.mixin.FabricRegistryLoaderMixinAdapter.PIN)),
+					() -> MergedBaseMixinCompat.protocolSuppressed("registry-loader")),
 			new Loss("fabric-item-api-v1", "net/fabricmc/fabric/api/item/v1/ItemComponentTooltipProviderRegistry", null,
 					"a component tooltip provider is drawn nowhere in normal tooltips and bunched above the item id in advanced ones",
 					() -> !GuestInjectorPruner.enabled() || !GuestInjectorPruner.fabricTooltipBridgeOn()));

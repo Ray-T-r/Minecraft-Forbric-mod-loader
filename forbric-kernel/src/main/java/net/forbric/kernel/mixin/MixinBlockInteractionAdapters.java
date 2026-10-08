@@ -41,13 +41,50 @@ public final class MixinBlockInteractionAdapters {
 		load(c,0,1,3);c.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,STATE,"getBlock","()L"+BLOCK+";",false));fixed(c,List.of(Type.getObjectType(target.name),Type.getObjectType(POS),Type.getObjectType(STATE)),new int[]{1,2,3},4);c.add(new VarInsnNode(Opcodes.ALOAD,3));finish(mixin,original,outer,inject,Opcodes.DRETURN,5);return 1;
 	}
 	private static int leftClick(ClassNode mixin,Function<String,ClassNode> targets){
-		MethodNode handler=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;L"+POS+";L"+OP+";Lnet/minecraft/core/Direction;)Z")
+        ClassNode target=targets.apply("net/minecraft/client/multiplayer/MultiPlayerGameMode");if(target==null)return 0;
+        Set<String> live=reachableMethods(target);int changed=0;
+        List<MethodNode> handlers=mixin.methods.stream().filter(m -> m.desc.equals("(Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;L"+POS+";L"+OP+";Lnet/minecraft/core/Direction;)Z")
                 && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation")
-                && MixinCallbackShape.selects(m,"lambda$startDestroyBlock$1(L"+STATE+";L"+POS+";Lnet/minecraft/core/Direction;I)Lnet/minecraft/network/protocol/Packet;")
-                && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;destroyBlock(L"+POS+";)Z"));ClassNode target=targets.apply("net/minecraft/client/multiplayer/MultiPlayerGameMode");if(handler==null||target==null)return 0;AnnotationNode inject=MixinFit.injectorOf(handler);if(inject==null)return 0;
-		List<MethodNode> hosts=target.methods.stream().filter(m->m.name.equals("lambda$startDestroyBlock$1")&&m.desc.contains("LeftClickBlock;")&&MixinPlayerWorldCallbackAdapter.count(m,"L"+target.name+";destroyBlock(L"+POS+";)Z")==1).toList();if(hosts.size()!=1)return 0;String selector=hosts.getFirst().name+hosts.getFirst().desc;
-		if(MixinFit.stringList(MixinFit.value(inject,"method")).equals(List.of(selector)))return 0;MixinPlayerWorldCallbackAdapter.set(inject,"method",List.of(selector));return 1;
+                && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;destroyBlock(L"+POS+";)Z")).toList();
+        Set<List<String>> selections=new HashSet<>();for(MethodNode handler:handlers)if(!selections.add(MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(handler),"method"))))return 0;
+		for(MethodNode handler:handlers) {
+        AnnotationNode inject=MixinFit.injectorOf(handler);List<String> source=MixinFit.stringList(MixinFit.value(inject,"method"));if(source.size()!=1)continue;
+        String authored=source.getFirst();int descriptor=authored.indexOf('(');if(descriptor<=0)continue;
+        String name=authored.substring(0,descriptor),desc=authored.substring(descriptor);
+		List<MethodNode> hosts=target.methods.stream().filter(m->m.name.equals(name)&&sameArgumentProjection(desc,m.desc)
+                &&live.contains(m.name+m.desc)&&MixinPlayerWorldCallbackAdapter.count(m,"L"+target.name+";destroyBlock(L"+POS+";)Z")==1).toList();if(hosts.size()!=1)continue;String selector=hosts.getFirst().name+hosts.getFirst().desc;
+		if(source.equals(List.of(selector)))continue;MixinPlayerWorldCallbackAdapter.set(inject,"method",List.of(selector));changed++;
+        }
+        return changed;
 	}
+    /** A retained alternate private body is not an active lambda implementation. Follow actual own calls/handles. */
+    private static Set<String> reachableMethods(ClassNode owner) {
+        Map<String,MethodNode> declarations=new HashMap<>();for(MethodNode method:owner.methods)declarations.put(method.name+method.desc,method);
+        Set<String> reached=new HashSet<>();Deque<String> pending=new ArrayDeque<>();
+        for(MethodNode method:owner.methods)if((method.access&Opcodes.ACC_PRIVATE)==0||method.name.equals("<clinit>"))pending.add(method.name+method.desc);
+        while(!pending.isEmpty()) {
+            String key=pending.removeFirst();if(!reached.add(key))continue;MethodNode method=declarations.get(key);if(method==null)continue;
+            for(var instruction:method.instructions) {
+                if(instruction instanceof MethodInsnNode call&&call.owner.equals(owner.name))pending.add(call.name+call.desc);
+                if(instruction instanceof InvokeDynamicInsnNode call)for(Object argument:call.bsmArgs)addReference(owner.name,argument,pending);
+                if(instruction instanceof LdcInsnNode literal)addReference(owner.name,literal.cst,pending);
+            }
+        }
+        return reached;
+    }
+    private static void addReference(String owner,Object value,Deque<String> pending) {
+        if(value instanceof Handle handle&&handle.getOwner().equals(owner)&&handle.getTag()>=Opcodes.H_INVOKEVIRTUAL)pending.add(handle.getName()+handle.getDesc());
+        else if(value instanceof ConstantDynamic constant){for(int i=0;i<constant.getBootstrapMethodArgumentCount();i++)addReference(owner,constant.getBootstrapMethodArgument(i),pending);}
+    }
+    /** Added carrier context may sit between original operands; the original parameter order and return survive. */
+    private static boolean sameArgumentProjection(String before,String after) {
+        try {
+            if(!Type.getReturnType(before).equals(Type.getReturnType(after)))return false;
+            Type[] source=Type.getArgumentTypes(before),current=Type.getArgumentTypes(after);int matched=0;
+            for(Type parameter:current)if(matched<source.length&&parameter.equals(source[matched]))matched++;
+            return matched==source.length;
+        }catch(IllegalArgumentException invalid){return false;}
+    }
 	private static int breaking(ClassNode mixin,Function<String,ClassNode> targets,boolean server){
 		MethodNode original=MixinCallbackShape.unique(mixin,m -> m.desc.equals(server?
                 "(Lnet/minecraft/server/level/ServerLevel;L"+POS+";ZL"+OP+";L"+STATE+";L"+BLOCK+";)Z":

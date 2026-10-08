@@ -1,5 +1,6 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.boot;
+import net.forbric.kernel.interop.protocol.modmenu.ModMenuApiStandIn;
 
 import static org.junit.jupiter.api.Assertions.*;
 

@@ -40,24 +40,14 @@ import org.objectweb.asm.ClassReader;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
-/**
- * Re-derives the set of ancestors the merge took away, and asserts the transformer's list EQUALS it.
- *
- * <p>The list in {@link MergedBaseFrameRecomputer} is a consequence of how the merged base was built, not a
- * judgement call: for every class in the merged base, whatever is in its ancestor chain in one ecosystem's
- * world and not in the merged one is a type some mod compiled against that ecosystem may still name in a
- * frame. A base rebuilt with different choices changes the answer, and it must change the build rather than
- * the player's game.
- *
- * <p>Equality, not "covers". An over-broad list would make the cheap byte gate fire on nearly every class that
- * loads, and a coverage assertion passes that happily.
- */
+/** The source/merged hierarchy census checks resource assignability directly; no list licenses a repair. */
 class MergedBaseLostAncestorsTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
 	private static final Path MERGED = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path FORGE_BASE = RUN.resolve("forge-patched/patched-mc-forge-26.2.jar");
 	private static final Path NEO_BASE = RUN.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
 	private static final Path FORGE_RT = RUN.resolve("forge-runtime/forge-runtime.jar");
+	private static final Path FORGE_INTEROP = RUN.resolve("merged-base/forge-runtime-interop.jar");
 	private static final Path NEO_RT = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
 	private static final Path CONFLICTS = RUN.resolve("merged-base/merge-conflicts.txt");
 
@@ -65,15 +55,10 @@ class MergedBaseLostAncestorsTest {
 	void theTransformersListIsExactlyWhatTheArtifactsSay() throws IOException {
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED) && Files.isRegularFile(FORGE_BASE)
 						&& Files.isRegularFile(NEO_BASE) && Files.isRegularFile(FORGE_RT)
-						&& Files.isRegularFile(NEO_RT),
+						&& Files.isRegularFile(FORGE_INTEROP) && Files.isRegularFile(NEO_RT),
 				"the merged base, both patched sides and both carriers must be staged");
 
-		Map<String, String> merged = supers(MERGED, FORGE_RT, NEO_RT);
-		// The hierarchy the game LOADS: the kernel rebases EnderDragonPart onto NeoForge's PartEntity at load time.
-		for (String owner : List.copyOf(merged.keySet())) {
-			String rebased = DragonPartsInjector.rebasedSuperclass(owner);
-			if (rebased != null) merged.put(owner, rebased);
-		}
+		Map<String, String> merged = supers(MERGED, FORGE_INTEROP, NEO_RT);
 		Map<String, String> forge = supers(FORGE_BASE, FORGE_RT);
 		Map<String, String> neo = supers(NEO_BASE, NEO_RT);
 
@@ -88,19 +73,16 @@ class MergedBaseLostAncestorsTest {
 			}
 		}
 
-		// This used to be `assumeTrue(lost.size() < 40, …)`, which turned a BADLY merged base — the one case
-		// where this test has something urgent to say — into a silent skip. It fails now, and it speaks only when
-		// the real oracle below is already broken: a future rebuild that legitimately loses forty types and
-		// updates LOST_ANCESTORS to match would otherwise go red here for the wrong reason, and this file's own
-		// javadoc says a rebuild with different choices is allowed to change the answer.
-		if (lost.size() >= 40 && !lost.equals(new TreeSet<>(MergedBaseFrameRecomputer.LOST_ANCESTORS))) {
-			org.junit.jupiter.api.Assertions.fail("this does not look like a merged base at all (" + lost.size()
-					+ " lost ancestors) — rebuild it before reading anything into this run");
-		}
-		assertEquals(lost, new TreeSet<>(MergedBaseFrameRecomputer.LOST_ANCESTORS),
-				"the transformer's at-risk set must be EXACTLY what the staged artifacts lost. A type that is "
-						+ "missing means a mod naming it still fails verification; a type that does not belong "
-						+ "makes the byte gate fire on classes that are fine");
+        MergedBaseFrameRecomputer frames = recomputer();
+        for (String owner : classesIn(MERGED)) for (Map<String,String> source : List.of(forge, neo)) {
+            if (!source.containsKey(owner)) continue;
+            for (String ancestor : chain(owner, source)) {
+                if (!merged.containsKey(ancestor)) continue;
+                try { assertEquals(chain(owner, merged).contains(ancestor), frames.assignable(ancestor, owner), owner + " -> " + ancestor); }
+                catch(TypeNotPresentException unresolved){throw new AssertionError(owner + " -> " + ancestor,unresolved);}
+            }
+        }
+        assertTrue(!lost.isEmpty(), "the fixture contains actual changed hierarchies");
 	}
 
 	/**
@@ -110,15 +92,14 @@ class MergedBaseLostAncestorsTest {
 	 */
 	@Test
 	void theTypeItemStackKeptIsNotInTheList() throws IOException {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED) && Files.isRegularFile(FORGE_RT) && Files.isRegularFile(NEO_RT),
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED) && Files.isRegularFile(FORGE_RT) && Files.isRegularFile(FORGE_INTEROP) && Files.isRegularFile(NEO_RT),
 				"staged jars absent");
-		Map<String, String> merged = supers(MERGED, FORGE_RT, NEO_RT);
+		Map<String, String> merged = supers(MERGED, FORGE_INTEROP, NEO_RT);
 
 		assertTrue(chain("net/minecraft/world/item/ItemStack", merged)
 						.contains("net/minecraftforge/common/capabilities/CapabilityProvider$ItemStacks"),
 				"if ItemStack ever stops extending it, this test is the one that should be rewritten first");
-		assertTrue(!MergedBaseFrameRecomputer.LOST_ANCESTORS
-				.contains("net/minecraftforge/common/capabilities/CapabilityProvider$ItemStacks"));
+		assertTrue(recomputer().assignable("net/minecraftforge/common/capabilities/CapabilityProvider$ItemStacks", "net/minecraft/world/item/ItemStack"));
 	}
 
 	/**
@@ -129,12 +110,8 @@ class MergedBaseLostAncestorsTest {
 	@Test
 	void everyStructuralConflictTheBuilderReportedIsAccountedFor() throws IOException {
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(CONFLICTS) && Files.isRegularFile(MERGED)
-				&& Files.isRegularFile(FORGE_RT) && Files.isRegularFile(NEO_RT), "the merge report is absent");
-		Map<String, String> merged = supers(MERGED, FORGE_RT, NEO_RT);
-		for (String owner : List.copyOf(merged.keySet())) {
-			String rebased = DragonPartsInjector.rebasedSuperclass(owner);
-			if (rebased != null) merged.put(owner, rebased);
-		}
+				&& Files.isRegularFile(FORGE_RT) && Files.isRegularFile(FORGE_INTEROP) && Files.isRegularFile(NEO_RT), "the merge report is absent");
+		Map<String, String> merged = supers(MERGED, FORGE_INTEROP, NEO_RT);
 
 		List<String> unaccounted = new ArrayList<>();
 		for (String line : Files.readAllLines(CONFLICTS, StandardCharsets.UTF_8)) {
@@ -150,7 +127,7 @@ class MergedBaseLostAncestorsTest {
 				while (to < line.length() && " )".indexOf(line.charAt(to)) < 0) to++;
 				String declared = line.substring(from, to);
 				if (mergedChain.contains(declared)) continue; // this side won; nothing was lost
-				if (!MergedBaseFrameRecomputer.LOST_ANCESTORS.contains(declared)) {
+				if (recomputer().assignable(declared, owner)) {
 					unaccounted.add(owner + " lost " + declared);
 				}
 			}
@@ -159,6 +136,17 @@ class MergedBaseLostAncestorsTest {
 				"the builder reported these superclass losses and the transformer does not know about them: "
 						+ unaccounted);
 	}
+
+    private static MergedBaseFrameRecomputer recomputer() {
+        return new MergedBaseFrameRecomputer(path -> {
+            for (Path file : List.of(MERGED, FORGE_INTEROP, NEO_RT)) try (ZipFile zip = new ZipFile(file.toFile())) {
+                var entry = zip.getEntry(path); if (entry == null) continue;
+                try (InputStream input = zip.getInputStream(entry)) { return input.readAllBytes(); }
+            } catch (IOException unavailable) { throw new java.io.UncheckedIOException("Reading actual hierarchy from " + file + " at " + path, unavailable); }
+            try (InputStream input = ClassLoader.getPlatformClassLoader().getResourceAsStream(path)) { return input == null ? null : input.readAllBytes(); }
+            catch (IOException unavailable) { return null; }
+        });
+    }
 
 	private static Set<String> chain(String owner, Map<String, String> supers) {
 		Set<String> out = new LinkedHashSet<>();

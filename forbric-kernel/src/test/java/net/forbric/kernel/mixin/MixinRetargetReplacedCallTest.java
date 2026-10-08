@@ -55,7 +55,7 @@ import org.objectweb.asm.tree.MethodNode;
 class MixinRetargetReplacedCallTest {
 	private static final String TEMPLATE = "net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplate";
 	private static final String MIXIN = "test/EntityProcessorMixin";
-	private static final MergedBaseCalleeSwaps.Replaced ROW = MergedBaseCalleeSwaps.REPLACED.getFirst();
+	private static MergedBaseCalleeSwaps.Replaced row() { return NativeCallTestEvidence.structureRow(); }
 	private static final String CALLBACK = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
 	private static final String CALLBACK_RETURNABLE = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 
@@ -78,25 +78,25 @@ class MixinRetargetReplacedCallTest {
 	@Test void moogsPlacementFollowsNeoForgesAddEntitiesToWorld() throws Exception {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
 		Function<String, byte[]> resolver = merged();
-		MixinFit.Result before = MixinFit.evaluate(moogsShaped(), resolver);
+		MixinFit.Result before = NativeCallTestEvidence.evaluate(moogsShaped(), resolver);
 		assertEquals(MixinFit.Verdict.PARTIAL, before.verdict());
 		assertEquals(List.of("@At(INVOKE) StructureTemplate.placeEntities in placeInWorld",
-				"@Inject target StructureTemplate." + ROW.vanilla() + " is gone: the carrier replaced it with addEntitiesToWorld, "
+				"@Inject target StructureTemplate." + row().vanilla() + " is gone: the carrier replaced it with addEntitiesToWorld, "
 						+ "and the name binds placeEntities" + forgeShape(resolver) + ", which the handler was not written for"),
 				before.unresolved().stream().distinct().toList(), "the HEAD selector is a miss too: Mixin rejects its descriptor");
 
-		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(moogsShaped()), resolver);
+		MixinRetarget.Plan plan = NativeCallTestEvidence.plan(MixinFit.parse(moogsShaped()), resolver);
 		assertEquals(List.of(MixinRetarget.Element.AT_TARGET, MixinRetarget.Element.AT_TARGET, MixinRetarget.Element.PROJECT),
 				plan.rewrites().stream().map(MixinRetarget.Rewrite::element).toList(), plan.describe());
-		assertEquals(ROW.replacementMember(), plan.rewrites().get(0).to());
+		assertEquals(row().replacementMember(), plan.rewrites().get(0).to());
 		byte[] rewritten = MixinRetarget.rewritten(moogsShaped(), plan);
-		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(rewritten, resolver).verdict());
+		assertEquals(MixinFit.Verdict.FIT, NativeCallTestEvidence.evaluate(rewritten, resolver).verdict());
 
 		ClassNode served = MixinFit.parse(rewritten);
 		MethodNode head = served.methods.stream().filter(m -> m.name.equals("processAndPlaceEntities")).findFirst().orElseThrow();
-		assertEquals(Type.getMethodDescriptor(Type.VOID_TYPE, append(Type.getArgumentTypes(ROW.replacement().substring(
-				ROW.replacement().indexOf('('))), Type.getType(CALLBACK))), head.desc);
-		assertEquals(List.of(ROW.replacement()), MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(head), "method")));
+		assertEquals(Type.getMethodDescriptor(Type.VOID_TYPE, append(Type.getArgumentTypes(row().replacement().substring(
+				row().replacement().indexOf('('))), Type.getType(CALLBACK))), head.desc);
+		assertEquals(List.of(row().replacement()), MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(head), "method")));
 		List<String> reads = new ArrayList<>();
 		for (AbstractInsnNode insn : head.instructions) if (insn instanceof MethodInsnNode call) reads.add(call.name);
 		assertEquals(List.of("getMirror", "getRotation", "getRotationPivot", "getBoundingBox", "shouldFinalizeEntities",
@@ -110,19 +110,19 @@ class MixinRetargetReplacedCallTest {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
 		System.setProperty(MixinRetarget.REPLACED_CALL_PROPERTY, "off");
 		Function<String, byte[]> resolver = merged();
-		assertTrue(MixinRetarget.plan(MixinFit.parse(moogsShaped()), resolver).isEmpty());
-		assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(moogsShaped(), resolver).verdict());
+		assertTrue(NativeCallTestEvidence.plan(MixinFit.parse(moogsShaped()), resolver).isEmpty());
+		assertEquals(MixinFit.Verdict.PARTIAL, NativeCallTestEvidence.evaluate(moogsShaped(), resolver).verdict());
 	}
 
 	/** Only the row's ecosystems: a NeoForge mod was compiled against addEntitiesToWorld, and its miss is its own. */
 	@Test void aModOfAnotherEcosystemIsLeftAlone() throws Exception {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.NEOFORGE);
 		Function<String, byte[]> resolver = merged();
-		assertTrue(MixinRetarget.plan(MixinFit.parse(moogsShaped()), resolver).isEmpty());
+		assertTrue(NativeCallTestEvidence.plan(MixinFit.parse(moogsShaped()), resolver).isEmpty());
 		assertEquals(List.of("@At(INVOKE) StructureTemplate.placeEntities in placeInWorld",
 				"@Inject target StructureTemplate.placeEntities binds placeEntities" + forgeShape(resolver)
 						+ ", which the handler was not written for"),
-				MixinFit.evaluate(moogsShaped(), resolver).unresolved().stream().distinct().toList(),
+				NativeCallTestEvidence.evaluate(moogsShaped(), resolver).unresolved().stream().distinct().toList(),
 				"the HEAD selector's miss is seen without the row: only the move is the row's");
 	}
 
@@ -134,9 +134,9 @@ class MixinRetargetReplacedCallTest {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
 		Function<String, byte[]> resolver = merged();
 		byte[] head = headOnly();
-		MixinFit.Result fit = MixinFit.evaluate(head, resolver);
+		MixinFit.Result fit = NativeCallTestEvidence.evaluate(head, resolver);
 		assertEquals(MixinFit.Verdict.UNFIT, fit.verdict(), fit.reason());
-		MixinRetarget.Adoption adoption = MixinRetarget.adopt(head, fit, resolver, b -> MixinFit.evaluate(b, resolver));
+		MixinRetarget.Adoption adoption = NativeCallTestEvidence.adopt(head, fit, resolver, b -> NativeCallTestEvidence.evaluate(b, resolver));
 		assertTrue(adoption != null, "the adapter takes R7's move for an UNFIT mixin");
 		assertEquals(MixinFit.Verdict.FIT, adoption.after().verdict());
 		assertEquals(List.of(MixinRetarget.Element.PROJECT), adoption.plan().rewrites().stream().map(MixinRetarget.Rewrite::element).toList());
@@ -146,14 +146,14 @@ class MixinRetargetReplacedCallTest {
 	@Test void withoutTheRuleTheHeadOnlyMixinStaysUnfit() throws Exception {
 		Function<String, byte[]> resolver = merged();
 		byte[] head = headOnly();
-		MixinFit.Result unknown = MixinFit.evaluate(head, resolver);
+		MixinFit.Result unknown = NativeCallTestEvidence.evaluate(head, resolver);
 		assertEquals(MixinFit.Verdict.UNFIT, unknown.verdict(), "a config two mods claim: no row applies, the miss is still seen");
-		assertNull(MixinRetarget.adopt(head, unknown, resolver, b -> MixinFit.evaluate(b, resolver)));
+		assertNull(NativeCallTestEvidence.adopt(head, unknown, resolver, b -> NativeCallTestEvidence.evaluate(b, resolver)));
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
 		System.setProperty(MixinRetarget.REPLACED_CALL_PROPERTY, "off");
-		MixinFit.Result fit = MixinFit.evaluate(head, resolver);
+		MixinFit.Result fit = NativeCallTestEvidence.evaluate(head, resolver);
 		assertEquals(MixinFit.Verdict.UNFIT, fit.verdict());
-		assertNull(MixinRetarget.adopt(head, fit, resolver, b -> MixinFit.evaluate(b, resolver)));
+		assertNull(NativeCallTestEvidence.adopt(head, fit, resolver, b -> NativeCallTestEvidence.evaluate(b, resolver)));
 	}
 
 	/**
@@ -165,16 +165,16 @@ class MixinRetargetReplacedCallTest {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
 		Function<String, byte[]> resolver = merged();
 		byte[] both = withRefusedInjector(headOnly());
-		MixinFit.Result fit = MixinFit.evaluate(both, resolver);
+		MixinFit.Result fit = NativeCallTestEvidence.evaluate(both, resolver);
 		assertEquals(MixinFit.Verdict.UNFIT, fit.verdict(), fit.reason());
 		assertEquals(2, fit.rejected().size(), fit.rejected().toString());
-		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(both), resolver);
-		MixinFit.Result after = MixinFit.evaluate(MixinRetarget.rewritten(both, plan), resolver);
+		MixinRetarget.Plan plan = NativeCallTestEvidence.plan(MixinFit.parse(both), resolver);
+		MixinFit.Result after = NativeCallTestEvidence.evaluate(MixinRetarget.rewritten(both, plan), resolver);
 		assertEquals(MixinFit.Verdict.PARTIAL, after.verdict(), "the plan does move the HEAD injector: " + after.reason());
 		assertEquals(List.of("onPlaceInWorld"), after.rejected().stream().map(MixinFit.Rejection::handler).toList());
-		assertNull(MixinRetarget.adopt(both, fit, resolver, b -> MixinFit.evaluate(b, resolver)));
-		assertNotNull(MixinRetarget.adopt(headOnly(), MixinFit.evaluate(headOnly(), resolver), resolver,
-				b -> MixinFit.evaluate(b, resolver)), "control: without the refused injector the rewrite is taken");
+		assertNull(NativeCallTestEvidence.adopt(both, fit, resolver, b -> NativeCallTestEvidence.evaluate(b, resolver)));
+		assertNotNull(NativeCallTestEvidence.adopt(headOnly(), NativeCallTestEvidence.evaluate(headOnly(), resolver), resolver,
+				b -> NativeCallTestEvidence.evaluate(b, resolver)), "control: without the refused injector the rewrite is taken");
 	}
 
 	/**
@@ -185,13 +185,13 @@ class MixinRetargetReplacedCallTest {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
 		Function<String, byte[]> resolver = merged();
 		byte[] three = withRefusedInjector(moogsShaped());
-		MixinFit.Result fit = MixinFit.evaluate(three, resolver);
+		MixinFit.Result fit = NativeCallTestEvidence.evaluate(three, resolver);
 		assertEquals(MixinFit.Verdict.PARTIAL, fit.verdict(), fit.reason());
-		MixinRetarget.Adoption adoption = MixinRetarget.adopt(three, fit, resolver, b -> MixinFit.evaluate(b, resolver));
+		MixinRetarget.Adoption adoption = NativeCallTestEvidence.adopt(three, fit, resolver, b -> NativeCallTestEvidence.evaluate(b, resolver));
 		assertNotNull(adoption);
 		assertEquals(List.of("onPlaceInWorld"), adoption.after().rejected().stream().map(MixinFit.Rejection::handler).toList());
 		MixinFit.Result withoutRejections = new MixinFit.Result(fit.verdict(), fit.unresolved(), fit.resolved(), fit.total(), fit.foreign());
-		assertNull(MixinRetarget.adopt(three, withoutRejections, resolver, b -> MixinFit.evaluate(b, resolver)),
+		assertNull(NativeCallTestEvidence.adopt(three, withoutRejections, resolver, b -> NativeCallTestEvidence.evaluate(b, resolver)),
 				"RED control: a rejection the verdict did not have is one the plan added");
 	}
 
@@ -220,7 +220,7 @@ class MixinRetargetReplacedCallTest {
 			ClassWriter writer = new ClassWriter(0);
 			mixin.accept(writer);
 			byte[] bytes = writer.toByteArray();
-			MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(bytes), resolver);
+			MixinRetarget.Plan plan = NativeCallTestEvidence.plan(MixinFit.parse(bytes), resolver);
 			ClassNode served = MixinFit.parse(MixinRetarget.rewritten(bytes, plan));
 			served.methods.stream().filter(m -> MixinFit.injectorOf(m) == null && m.name.startsWith("processAndPlaceEntities"))
 					.forEach(m -> asides.add(m.name));
@@ -249,10 +249,11 @@ class MixinRetargetReplacedCallTest {
 	/** A HEAD handler that captures something else than vanilla's arguments is not one the projection can serve. */
 	@Test void aHandlerNotWrittenForVanillasArgumentsIsLeftAlone() throws Exception {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
+		Function<String,byte[]> resolver=merged();
 		ClassNode mixin = MixinFit.parse(moogsShaped());
 		MethodNode head = mixin.methods.stream().filter(m -> m.name.equals("processAndPlaceEntities")).findFirst().orElseThrow();
 		head.desc = "(Lnet/minecraft/world/level/ServerLevelAccessor;" + CALLBACK + ")V";
-		MixinRetarget.Plan plan = MixinRetarget.plan(mixin, merged());
+		MixinRetarget.Plan plan = NativeCallTestEvidence.plan(mixin, resolver);
 		assertTrue(plan.rewrites().stream().noneMatch(r -> r.element() == MixinRetarget.Element.PROJECT), plan.describe());
 	}
 
@@ -272,11 +273,11 @@ class MixinRetargetReplacedCallTest {
 		AnnotationNode type = new AnnotationNode("Lorg/spongepowered/asm/mixin/Mixin;");
 		type.values = new ArrayList<>(List.of("value", new ArrayList<>(List.of(Type.getObjectType(TEMPLATE)))));
 		mixin.invisibleAnnotations = new ArrayList<>(List.of(type));
-		String caller = ROW.caller();
+		String caller = row().caller();
 		String around = "(" + caller.substring(caller.indexOf('(') + 1, caller.indexOf(')')) + CALLBACK_RETURNABLE + ")V";
-		mixin.methods.add(handler("captureContext", around, "placeInWorld", point("INVOKE", ROW.vanillaMember(), null), false));
-		mixin.methods.add(handler("clearContext", around, "placeInWorld", point("INVOKE", ROW.vanillaMember(), "AFTER"), false));
-		String vanilla = ROW.vanilla().substring(ROW.vanilla().indexOf('('));
+		mixin.methods.add(handler("captureContext", around, "placeInWorld", point("INVOKE", row().vanillaMember(), null), false));
+		mixin.methods.add(handler("clearContext", around, "placeInWorld", point("INVOKE", row().vanillaMember(), "AFTER"), false));
+		String vanilla = row().vanilla().substring(row().vanilla().indexOf('('));
 		mixin.methods.add(handler("processAndPlaceEntities", Type.getMethodDescriptor(Type.VOID_TYPE,
 				append(Type.getArgumentTypes(vanilla), Type.getType(CALLBACK))), "placeEntities", point("HEAD", null, null), true));
 		ClassWriter writer = new ClassWriter(0);

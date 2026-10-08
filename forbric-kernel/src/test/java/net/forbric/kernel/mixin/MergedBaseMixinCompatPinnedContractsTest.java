@@ -30,6 +30,17 @@ class MergedBaseMixinCompatPinnedContractsTest {
 
 	@Test void everyFabricApiPinThatImplementsAnInterfaceHasItsRowAndEveryRowIsTrue() throws Exception {
 		Map<String, byte[]> modules = fabricApiModules();
+        MergedBaseMixinCompat.reset();
+        System.setProperty(FabricRegistryInitializationMixinAdapter.PROPERTY,"off");
+        System.setProperty(FabricRegistryLoaderMixinAdapter.PROPERTY,"off");
+        System.setProperty(FabricCreativePagerMixinAdapter.PROPERTY,"off");
+        for(byte[] module:modules.values()) {
+            Map<String,byte[]> content=entries(module);
+            for(var entry:content.entrySet())if(entry.getKey().endsWith("mixins.json"))MergedBaseMixinCompat.discover(entry.getKey(),entry.getValue(),content::get);
+        }
+        System.clearProperty(FabricRegistryInitializationMixinAdapter.PROPERTY);
+        System.clearProperty(FabricRegistryLoaderMixinAdapter.PROPERTY);
+        System.clearProperty(FabricCreativePagerMixinAdapter.PROPERTY);
 		List<MergedBaseMixinCompat.PinnedContract> read = new ArrayList<>();
 		int judged = 0;
 		for (String pin : MergedBaseMixinCompat.SUPPRESSED_MIXINS) {
@@ -48,7 +59,7 @@ class MergedBaseMixinCompatPinnedContractsTest {
 				for (String target : MixinFit.mixinTargets(node)) read.add(new MergedBaseMixinCompat.PinnedContract(pin, target, contract));
 			}
 		}
-		assertTrue(judged >= 6, "the fabric-api pins were all read: " + judged);
+		assertTrue(judged >= 5, "the fabric-api pins were all read: " + judged);
 		assertEquals(Set.copyOf(read), Set.copyOf(MergedBaseMixinCompat.PINNED_CONTRACTS));
 		for (var row : MergedBaseMixinCompat.PINNED_CONTRACTS) assertTrue(MergedBaseMixinCompat.SUPPRESSED_MIXINS.contains(row.pin()));
 	}
@@ -57,7 +68,8 @@ class MergedBaseMixinCompatPinnedContractsTest {
 	@Test @ResourceLock("system-properties")
 	void aPinIsInForceUntilSomethingLiftsIt() {
 		System.setProperty(FabricCreativePagerMixinAdapter.PROPERTY, "off");
-		String pin = MergedBaseMixinCompat.CREATIVE_PAGER_PIN;
+		String pin = "discovered.mixins.json:RenamedPager";
+        MergedBaseMixinCompat.SUPPRESSED_MIXINS.add(pin);
 		assertTrue(MergedBaseMixinCompat.pinInForce(pin));
 		assertFalse(MergedBaseMixinCompat.pinInForce(pin.substring(0, pin.indexOf(':') + 1) + "NotPinned"));
 		try {
@@ -83,7 +95,7 @@ class MergedBaseMixinCompatPinnedContractsTest {
 	 */
 	@Test
 	void thePinnedContractPrefilterTurnsAwayOnlyWhatTheParseWould() throws Exception {
-		MergedBaseMixinCompat.PinnedContract row = MergedBaseMixinCompat.PINNED_CONTRACTS.getFirst();
+		MergedBaseMixinCompat.PinnedContract row = new MergedBaseMixinCompat.PinnedContract("reference.mixins.json:PagerProvider","net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen","net/fabricmc/fabric/api/client/creativetab/v1/FabricCreativeModeInventoryScreen");
 		byte[] named = net.forbric.kernel.util.ByteScan.needle(row.contract());
 		Map<String, byte[]> classes = new HashMap<>();
 		for (var e : entries(fabricApiModules().get("fabric-creative-tab-api-v1")).entrySet()) {

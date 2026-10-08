@@ -1,137 +1,68 @@
-/*
- * Copyright 2026 The Forbric Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+/* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.tools;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-import java.util.zip.ZipOutputStream;
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+import java.util.zip.*;
+import org.objectweb.asm.*;
+import org.objectweb.asm.tree.*;
 
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.FieldNode;
-import org.objectweb.asm.tree.MethodNode;
-import org.objectweb.asm.tree.FieldInsnNode;
-import org.objectweb.asm.tree.InsnNode;
-import org.objectweb.asm.tree.VarInsnNode;
-
-/**
- * Patches CROSS-RUNTIME-JAR interop gaps for the tri-in-one merged base: classes wholesale-copied from ONE
- * ecosystem's runtime jar (compiled with zero knowledge of the OTHER ecosystem) that no longer satisfy an
- * interface contract the MERGED game jar extended.
- *
- * <p><b>The gap, concretely.</b> {@code net.minecraft.core.Registry$PendingTags} is a plain vanilla interface;
- * NeoForge patches it to additionally {@code extends PendingTagsExtension<T>} (adding an abstract
- * {@code contents(): Map<TagKey<T>, List<Holder<T>>>}). {@code MergedBaseBuilder} correctly takes Neo's version
- * (only Neo hooks this interface) into the merged game jar. But {@code net.minecraftforge.registries.
- * NamespacedWrapper$3} — Forge's own compiled {@code Registry$PendingTags} implementation, living in
- * {@code forge-runtime.jar} (a SEPARATE jar {@code MergedBaseBuilder} never touches) — was compiled against
- * Forge's OWN (un-patched-by-Neo) understanding of that interface, so it lacks {@code contents()} entirely:
- * {@code AbstractMethodError} the first time NeoForge's own code (e.g. {@code ConditionContext}) calls it.
- *
- * <p><b>The fix.</b> {@code NamespacedWrapper$3} already carries a {@code val$newBindings} field of EXACTLY the
- * shape {@code contents()} must return ({@code ImmutableMap<TagKey<T>, List<Holder<T>>>}, itself a {@code Map}) —
- * a trivial delegating getter satisfies the contract with zero new logic. This class synthesizes exactly that.
- *
- * <p>Usage: {@code RuntimeInteropPatcher <forge-runtime.jar> <out.jar>}
- */
+/** Reconciles the writable runtime against the actual merged hierarchy and original peer contracts.
+ * Missing accessors need a native implementation witness and unique correlated storage; ancestor bridges need
+ * immutable layout, constructor and public-behavior equivalence. No implementation or field name is pinned. */
 public final class RuntimeInteropPatcher {
-	public static void main(String[] args) throws IOException {
-		if (args.length < 2) {
-			System.err.println("usage: RuntimeInteropPatcher <forge-runtime.jar> <out.jar>");
-			System.exit(2);
-		}
-		new RuntimeInteropPatcher().run(Path.of(args[0]), Path.of(args[1]));
-	}
-
-	/** internal class name -> the trivial delegating method(s) to add: name+desc -> the field to return. */
-	private static final Map<String, Map<String, String>> BRIDGE_METHODS = new LinkedHashMap<>();
-	static {
-		Map<String, String> namespacedWrapper3 = new LinkedHashMap<>();
-		// contents():Ljava/util/Map; -> return this.val$newBindings (an ImmutableMap, itself a Map).
-		namespacedWrapper3.put("contents()Ljava/util/Map;", "val$newBindings");
-		BRIDGE_METHODS.put("net/minecraftforge/registries/NamespacedWrapper$3", namespacedWrapper3);
-	}
-
-	void run(Path inJar, Path outJar) throws IOException {
-		int patched = 0;
-		Files.createDirectories(outJar.toAbsolutePath().getParent());
-		try (ZipFile zf = new ZipFile(inJar.toFile());
-				ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(outJar))) {
-			var entries = zf.entries();
-			while (entries.hasMoreElements()) {
-				ZipEntry e = entries.nextElement();
-				byte[] data = zf.getInputStream(e).readAllBytes();
-				String internalName = e.getName().endsWith(".class")
-						? e.getName().substring(0, e.getName().length() - 6) : null;
-
-				Map<String, String> bridges = internalName != null ? BRIDGE_METHODS.get(internalName) : null;
-				if (bridges != null) {
-					data = addBridgeMethods(data, bridges);
-					patched++;
-					System.out.println("[interop-patch] " + internalName + ": added " + bridges.size() + " bridge method(s)");
-				}
-
-				zos.putNextEntry(new ZipEntry(e.getName()));
-				zos.write(data);
-				zos.closeEntry();
-			}
-		}
-		System.out.println("[interop-patch] patched " + patched + " class(es) -> " + outJar);
-	}
-
-	private static byte[] addBridgeMethods(byte[] classBytes, Map<String, String> bridges) {
-		ClassNode cn = new ClassNode();
-		new ClassReader(classBytes).accept(cn, 0);
-
-		for (Map.Entry<String, String> e : bridges.entrySet()) {
-			String nameDesc = e.getKey();
-			String fieldName = e.getValue();
-			int split = nameDesc.indexOf('(');
-			String name = nameDesc.substring(0, split);
-			String desc = nameDesc.substring(split);
-
-			FieldNode field = findField(cn, fieldName);
-			if (field == null) {
-				throw new IllegalStateException("bridge field '" + fieldName + "' not found on " + cn.name);
-			}
-
-			MethodNode m = new MethodNode(Opcodes.ACC_PUBLIC, name, desc, null, null);
-			m.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
-			m.instructions.add(new FieldInsnNode(Opcodes.GETFIELD, cn.name, fieldName, field.desc));
-			m.instructions.add(new InsnNode(Opcodes.ARETURN));
-			m.maxStack = 1;
-			m.maxLocals = 1;
-			cn.methods.add(m);
-		}
-
-		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
-		cn.accept(cw);
-		return cw.toByteArray();
-	}
-
-	private static FieldNode findField(ClassNode cn, String name) {
-		for (FieldNode f : cn.fields) if (f.name.equals(name)) return f;
-		return null;
-	}
+    public static void main(String[] args)throws IOException{
+        if(args.length<4){System.err.println("usage: RuntimeInteropPatcher <runtime.jar> <out.jar> <merged-game.jar> <peer-runtime.jar> [libraries-dir]");System.exit(2);}
+        new RuntimeInteropPatcher().run(Path.of(args[0]),Path.of(args[1]),Path.of(args[2]),Path.of(args[3]),args.length>4?Path.of(args[4]):null);
+    }
+    void run(Path runtime,Path output,Path merged,Path peer,Path libraries)throws IOException{
+        Map<String,byte[]> own=classes(runtime),other=classes(peer),game=classes(merged);
+        ContractGraph graph=new ContractGraph(List.of(own,other,game),libraries);
+        Map<String,ClassNode> edited=new LinkedHashMap<>();
+        // The merged artifact carries exact native definitions as provenance. A changed ancestor establishes
+        // the demand; the two runtime definitions themselves must prove the bridge before anything is emitted.
+        try(ZipFile zip=new ZipFile(merged.toFile())){
+            for(var entry:game.entrySet()){
+                ClassNode current=parse(entry.getValue());ZipEntry reference=zip.getEntry("META-INF/forbric/native-reference/NEOFORGE/"+entry.getKey()+".class.bin");
+                if(reference==null)continue;ClassNode original=parse(zip.getInputStream(reference).readAllBytes());
+                if(Objects.equals(current.superName,original.superName)||!own.containsKey(current.superName)||!other.containsKey(original.superName))continue;
+                ClassNode a=parse(own.get(current.superName)),b=parse(other.get(original.superName));
+                if(!EquivalentSuperclassBridge.equivalent(a,b))throw new IOException("Cannot reconcile demanded runtime ancestors for "+current.name+": "+a.name+" versus "+b.name);
+                ClassNode bridge=EquivalentSuperclassBridge.bridge(a,b);ClassNode previous=edited.putIfAbsent(a.name,bridge);
+                if(previous!=null&&!previous.superName.equals(bridge.superName))throw new IOException("Incompatible peer ancestor demands on "+a.name);
+                graph.replace(bridge);System.out.println("[interop-contract] "+a.name+" extends "+b.name+": immutable constructor/public-behavior proof");
+            }
+        }
+        MapContractRepair accessors=new MapContractRepair(graph,List.of(own,other,game));List<String> missing=new ArrayList<>();
+        for(var entry:own.entrySet()){
+            ClassNode node=edited.getOrDefault(entry.getKey(),parse(entry.getValue()));graph.replace(node);
+            int added=accessors.repair(node)+EmptyArrayContractBridge.repair(node,graph);if(added>0)edited.put(node.name,node);
+            if((node.access&(Opcodes.ACC_ABSTRACT|Opcodes.ACC_INTERFACE))!=0)continue;
+            for(MethodNode required:graph.interfaceContracts(node).values()){
+                MethodNode method=graph.implementation(node.name,required.name,required.desc);
+                if((required.access&Opcodes.ACC_ABSTRACT)!=0&&(method==null||(method.access&Opcodes.ACC_ABSTRACT)!=0))
+                    missing.add(node.name+"#"+required.name+required.desc+" (no proved native accessor or implementation)");
+            }
+        }
+        if(!missing.isEmpty())throw new IOException("Runtime cannot satisfy the merged interface contracts:\n"+String.join("\n",missing));
+        Path absolute=output.toAbsolutePath();Files.createDirectories(absolute.getParent());Path temporary=Files.createTempFile(absolute.getParent(),"interop-contract-",".jar");
+        try{
+            try(ZipFile zip=new ZipFile(runtime.toFile());ZipOutputStream out=new ZipOutputStream(Files.newOutputStream(temporary))){
+                for(Enumeration<? extends ZipEntry> entries=zip.entries();entries.hasMoreElements();){ZipEntry entry=entries.nextElement();byte[] bytes=zip.getInputStream(entry).readAllBytes();
+                    String name=entry.getName().endsWith(".class")?entry.getName().substring(0,entry.getName().length()-6):null;
+                    if(name!=null&&edited.containsKey(name)){ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);edited.get(name).accept(writer);bytes=writer.toByteArray();}
+                    out.putNextEntry(new ZipEntry(entry.getName()));out.write(bytes);out.closeEntry();
+                }
+            }
+            Files.move(temporary,absolute,StandardCopyOption.REPLACE_EXISTING);
+        }finally{Files.deleteIfExists(temporary);}
+        System.out.println("[interop-contract] repaired "+edited.size()+" class(es) -> "+output);
+    }
+    private static ClassNode parse(byte[] bytes){ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return node;}
+    private static Map<String,byte[]> classes(Path jar)throws IOException{
+        Map<String,byte[]> result=new LinkedHashMap<>();try(ZipFile zip=new ZipFile(jar.toFile())){
+            for(Enumeration<? extends ZipEntry> entries=zip.entries();entries.hasMoreElements();){ZipEntry entry=entries.nextElement();if(entry.getName().endsWith(".class")&&!entry.getName().startsWith("META-INF/"))result.put(entry.getName().substring(0,entry.getName().length()-6),zip.getInputStream(entry).readAllBytes());}
+        }return result;
+    }
 }

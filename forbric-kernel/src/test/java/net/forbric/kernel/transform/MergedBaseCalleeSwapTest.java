@@ -16,6 +16,8 @@
 
 package net.forbric.kernel.transform;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -78,7 +80,7 @@ class MergedBaseCalleeSwapTest {
 	private static final Path MERGED = RUN.resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path FORGE_RT = RUN.resolve("forge-runtime/forge-runtime.jar");
 	private static final Path NEO_RT = RUN.resolve("neoforge-runtime/neoforge-runtime.jar");
-	private static final Path FORGE_PATCHED = RUN.resolve("forge-patched/patched-mc-forge-26.2.jar");
+	private static final Path FORGE_PATCHED = TestFixtures.forgeMergeInput();
 	private static final Path NEO_PATCHED = RUN.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
 
 	/** {@code owner.method | callee-owner.vanilla→merged desc}, one line per swap — 25 on the staged base. */
@@ -115,10 +117,6 @@ class MergedBaseCalleeSwapTest {
 	 * and composed at load time.
 	 */
 	static final Map<String, String> ADMITTED_NOT_REWRITTEN = Map.of(
-			"net/minecraft/server/level/ServerPlayer.teleport(Lnet/minecraft/world/level/portal/TeleportTransition;)Lnet/minecraft/server/level/ServerPlayer; | net/minecraft/server/level/ServerPlayer.unsetRemoved→revive ()V",
-			"Entity.revive() is where ForgeCapabilityCompositionTransformer re-attaches MinecraftForge's reviveCaps at load time, so "
-					+ "the merged callee is not a pure delegate once composed; rewriting the site back to unsetRemoved would drop "
-					+ "capability revival on every cross-dimension teleport",
 			"net/minecraft/client/data/models/EquipmentAssetProvider.run(Lnet/minecraft/data/CachedOutput;)Ljava/util/concurrent/CompletableFuture; | net/minecraft/client/data/models/EquipmentAssetProvider.bootstrap→registerModels (Ljava/util/function/BiConsumer;)V",
 			"client data generation only; NeoForge's registerModels is its mod-datagen extension point and no staged mixin anchors "
 					+ "on bootstrap — nothing to gain, and the extension point would be lost");
@@ -155,17 +153,45 @@ class MergedBaseCalleeSwapTest {
 	}
 
 	@Test
-	void everyKnownRowIsAmongTheSwapsTheCensusFinds() throws Exception {
-		Path vanilla = vanillaJar();
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "staged merged base absent");
-		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), "stock 26.2 absent: " + vanilla);
-		Set<String> found = new TreeSet<>();
-		for (Swap swap : swaps(vanilla)) found.add(swap.line());
-		for (MergedBaseCalleeSwaps.Swap row : MergedBaseCalleeSwaps.KNOWN) {
-			String line = row.target() + "." + row.method() + " | " + row.owner() + "." + row.vanillaName() + "→" + row.mergedName() + " " + row.desc();
-			assertTrue(found.contains(line), "KNOWN row is not a swap the merged base makes any more: " + line);
-		}
-	}
+	void observedRowsRequireAnActualNativeHandlerProofAndDoNotAuthorizeThemselves() throws Exception {
+        Path vanilla = vanillaJar();
+        TestFixtures.requireFiles(Fixture.STAGED, "actual call fixture", MERGED, NEO_RT);
+        TestFixtures.requireFiles(Fixture.MC_LIBRARIES, "stock game", vanilla);
+        String owner = "net/minecraft/world/level/chunk/LevelChunkSection";
+        Map<String, byte[]> bytes = new HashMap<>();
+        for (Path jar : List.of(MERGED, NEO_RT)) try (ZipFile zip = new ZipFile(jar.toFile())) {
+            for (var entry : java.util.Collections.list(zip.entries())) if (entry.getName().endsWith(".class"))
+                bytes.putIfAbsent(entry.getName(), zip.getInputStream(entry).readAllBytes());
+        }
+        byte[] mixin = predicateMixin(owner);
+        net.forbric.kernel.mixin.MixinStubRebind.noteEcosystem("census/ActualPredicate", Ecosystem.FABRIC);
+        var plan = net.forbric.kernel.mixin.NativeCallTestEvidence.plan(net.forbric.kernel.mixin.MixinFit.parse(mixin), bytes::get);
+        assertEquals(1, plan.rewrites().size(), plan.describe());
+        assertEquals("Lnet/minecraft/world/level/block/state/BlockState;isEmpty()Z", plan.rewrites().getFirst().to());
+        Set<String> found = new TreeSet<>(); for (Swap swap : swaps(vanilla)) found.add(swap.line());
+        assertTrue(found.contains(owner + ".setBlockState(IIILnet/minecraft/world/level/block/state/BlockState;Z)Lnet/minecraft/world/level/block/state/BlockState; | net/minecraft/world/level/block/state/BlockState.isAir→isEmpty ()Z"));
+        assertTrue(MergedBaseCalleeSwaps.KNOWN.stream().anyMatch(row -> row.target().equals(owner)
+            && row.method().startsWith("setBlockState(") && row.mergedName().equals("isEmpty")),
+            "the diagnostic observation must result from the explicit non-vacuous source-handler derivation");
+    }
+    private static byte[] predicateMixin(String owner) {
+        org.objectweb.asm.ClassWriter w = new org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_MAXS);
+        w.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "census/ActualPredicate", null, "java/lang/Object", null);
+        var annotation = w.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+        var targets = annotation.visitArray("value"); targets.visit(null, Type.getObjectType(owner)); targets.visitEnd(); annotation.visitEnd();
+        String state="net/minecraft/world/level/block/state/BlockState";
+        var handler = w.visitMethod(Opcodes.ACC_PRIVATE, "question", "(L" + state + ";)Z", null, null);
+        annotation = handler.visitAnnotation("Lorg/spongepowered/asm/mixin/injection/Redirect;", true);
+        var methods = annotation.visitArray("method"); methods.visit(null, "setBlockState"); methods.visitEnd();
+        var at = annotation.visitAnnotation("at", "Lorg/spongepowered/asm/mixin/injection/At;"); at.visit("value", "INVOKE"); at.visit("target", "L" + state + ";isAir()Z"); at.visitEnd(); annotation.visitEnd();
+        handler.visitCode(); org.objectweb.asm.Label yes = new org.objectweb.asm.Label(), no = new org.objectweb.asm.Label(), done = new org.objectweb.asm.Label();
+        for (String block : List.of("AIR", "CAVE_AIR", "VOID_AIR")) {
+            handler.visitVarInsn(Opcodes.ALOAD, 1); handler.visitFieldInsn(Opcodes.GETSTATIC, "net/minecraft/world/level/block/Blocks", block, "Lnet/minecraft/world/level/block/Block;");
+            handler.visitMethodInsn(Opcodes.INVOKEVIRTUAL, state, "is", "(Ljava/lang/Object;)Z", false);
+            handler.visitJumpInsn(block.equals("VOID_AIR") ? Opcodes.IFEQ : Opcodes.IFNE, block.equals("VOID_AIR") ? no : yes);
+        }
+        handler.visitLabel(yes); handler.visitInsn(Opcodes.ICONST_1); handler.visitJumpInsn(Opcodes.GOTO, done); handler.visitLabel(no); handler.visitInsn(Opcodes.ICONST_0); handler.visitLabel(done); handler.visitInsn(Opcodes.IRETURN); handler.visitMaxs(0, 0); handler.visitEnd(); w.visitEnd(); return w.toByteArray();
+    }
 
 	/**
 	 * Every {@link MergedBaseCalleeSwaps#SUBSTITUTED} row, proven against each ecosystem's own jar: for the ecosystems
@@ -180,8 +206,9 @@ class MergedBaseCalleeSwapTest {
 		Path vanilla = vanillaJar();
 		for (Path jar : List.of(MERGED, FORGE_PATCHED, NEO_PATCHED)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " absent");
-		assertTrue(!MergedBaseCalleeSwaps.SUBSTITUTED.isEmpty());
-		for (MergedBaseCalleeSwaps.Substitution row : MergedBaseCalleeSwaps.SUBSTITUTED) {
+		var derivedSubstitution=net.forbric.kernel.mixin.NativeCallTestEvidence.modelRow();
+		assertNotNull(derivedSubstitution);
+		for (MergedBaseCalleeSwaps.Substitution row : List.of(derivedSubstitution)) {
 			String where = row.target() + "." + row.method();
 			MethodNode merged = debugMethod(MERGED, row.target(), row.method());
 			assertTrue(merged != null, where + " is not in the merged base");
@@ -224,8 +251,9 @@ class MergedBaseCalleeSwapTest {
 		Path vanilla = vanillaJar();
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), MERGED + " absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), vanilla + " absent");
-		assertTrue(!MergedBaseCalleeSwaps.REPLACED.isEmpty());
-		for (MergedBaseCalleeSwaps.Replaced row : MergedBaseCalleeSwaps.REPLACED) {
+		var derivedReplacement=net.forbric.kernel.mixin.NativeCallTestEvidence.structureRow();
+		assertNotNull(derivedReplacement);
+		for (MergedBaseCalleeSwaps.Replaced row : List.of(derivedReplacement)) {
 			String where = row.owner() + "." + row.vanilla();
 			ClassNode before = debugClass(vanilla, row.owner()), after = debugClass(MERGED, row.owner());
 			MethodNode original = declared(before, row.vanilla());
@@ -334,9 +362,11 @@ class MergedBaseCalleeSwapTest {
 	 */
 	@Test
 	void thePrunersModelPremiseIsTheSubstitutionRow() {
-		assertTrue(MergedBaseCalleeSwaps.SUBSTITUTED.stream().anyMatch(row -> row.target().equals("net/minecraft/client/resources/model/ModelManager")
-				&& row.method().startsWith(GuestInjectorPruner.MODEL_LAMBDA + "(") && row.member().contains("CuboidModel;fromStream(")),
-				"GuestInjectorPruner prunes fabric's pair at " + GuestInjectorPruner.MODEL_LAMBDA + " because of this substitution");
+		TestFixtures.requireFiles(Fixture.STAGED,"native model substitution",MERGED);
+		var derived = net.forbric.kernel.mixin.NativeCallTestEvidence.modelRow();
+		assertTrue(List.of(derived).stream().anyMatch(row -> row.target().equals("net/minecraft/client/resources/model/ModelManager")
+				&& row.method().startsWith("lambda$loadBlockModels$2(") && row.member().contains("CuboidModel;fromStream(")),
+				"the released model callback fixture and the substitution derive from the same native call");
 	}
 
 	/** The indices, among real instructions, where the two bodies differ; every index when their lengths do. */

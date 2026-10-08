@@ -80,7 +80,7 @@ final class MergedBaseTool {
 	 */
 	ArtifactResult merge(JdkLocator.Jvm jvm, Path vanilla, Path forgePatched, Path neoPatched,
 	                     Path forgeRuntime, Path neoforgeRuntime, Path outJar, Path report,
-	                     String coordinate) throws IOException {
+	                     String coordinate, Path libraries) throws IOException {
 		if (BuildStamp.isFresh(outJar)) {
 			log.accept("[merge] up-to-date: " + outJar.getFileName());
 			return new ArtifactResult(coordinate, outJar, Util.sha1(outJar), Files.size(outJar));
@@ -94,7 +94,7 @@ final class MergedBaseTool {
 				"-cp", tools.toString(), MERGE_MAIN,
 				vanilla.toString(), forgePatched.toString(), neoPatched.toString(),
 				outJar.toString(), report.toString(),
-				forgeRuntime.toString(), neoforgeRuntime.toString()), "merged base");
+				forgeRuntime.toString(), neoforgeRuntime.toString(), libraries.toString()), "merged base");
 
 		if (!Files.isRegularFile(outJar) || Files.size(outJar) == 0) {
 			throw new IOException("the merge did not produce " + outJar);
@@ -109,7 +109,7 @@ final class MergedBaseTool {
 	 * Patches {@code forge-runtime.jar}'s own classes so they still satisfy the interfaces the merged base
 	 * widened on NeoForge's behalf. The result is what gets staged; the input is left alone.
 	 */
-	ArtifactResult interop(JdkLocator.Jvm jvm, Path forgeRuntime, Path outJar, String coordinate)
+	ArtifactResult interop(JdkLocator.Jvm jvm, Path forgeRuntime, Path outJar, String coordinate, Path mergedGame, Path neoRuntime, Path libraries)
 			throws IOException {
 		if (BuildStamp.isFresh(outJar)) {
 			log.accept("[interop] up-to-date: " + outJar.getFileName());
@@ -121,7 +121,7 @@ final class MergedBaseTool {
 		exec.runProcess(List.of(
 				jvm.javaBin().toString(),
 				"-cp", tools.toString(), INTEROP_MAIN,
-				forgeRuntime.toString(), outJar.toString()), "cross-runtime interop");
+				forgeRuntime.toString(), outJar.toString(), mergedGame.toString(), neoRuntime.toString(), libraries.toString()), "cross-runtime interop");
 
 		if (!Files.isRegularFile(outJar) || Files.size(outJar) == 0) {
 			throw new IOException("the interop patch did not produce " + outJar);

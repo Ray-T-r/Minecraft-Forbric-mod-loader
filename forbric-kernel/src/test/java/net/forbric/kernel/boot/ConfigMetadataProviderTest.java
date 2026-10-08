@@ -15,6 +15,7 @@ import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelFabricLoader;
 import net.forbric.kernel.fabric.KernelModContainer;
 import net.forbric.kernel.transform.InjectorExecution;
+import net.forbric.kernel.interop.protocol.sodium.SodiumProtocolExtension;
 
 @ResourceLock("KernelFabricEcosystem")
 @ResourceLock("system-properties")
@@ -43,22 +44,22 @@ class ConfigMetadataProviderTest {
     }
     @Test void unknownDeclaredModsUseTheRealPublicMetadataTypeAndNativeValuesWin() throws Exception {
         Object nativeValue=new Object();IllegalStateException missing=new IllegalStateException("not in native ModList");
-        Function<String,Object> provider=KernelLifecycle.configModInfoFunction(id->{if(id.equals("native_mod"))return nativeValue;throw missing;});
+        Function<String,Object> provider=SodiumProtocolExtension.metadataProvider(id->{if(id.equals("native_mod"))return nativeValue;throw missing;});
         assertSame(nativeValue,provider.apply("native_mod"));Object fallback=provider.apply("unknown_integration");
         assertEquals("An unfamiliar integration",fallback.getClass().getMethod("modName").invoke(fallback));
         assertEquals("1.2.3",fallback.getClass().getMethod("modVersion").invoke(fallback));
     }
     @Test void neitherViewKnowingAnIdPreservesTheNativeFailure() {
         IllegalArgumentException failure=new IllegalArgumentException("original provider does not know this id");
-        Function<String,Object> provider=KernelLifecycle.configModInfoFunction(id->{throw failure;});
+        Function<String,Object> provider=SodiumProtocolExtension.metadataProvider(id->{throw failure;});
         assertSame(failure,assertThrows(IllegalArgumentException.class,()->provider.apply("uninstalled_mod")));
-        Function<String,Object> empty=KernelLifecycle.configModInfoFunction(id->null);
+        Function<String,Object> empty=SodiumProtocolExtension.metadataProvider(id->null);
         assertThrows(IllegalStateException.class,()->empty.apply("uninstalled_mod"));
         AssertionError error=new AssertionError("provider error");
-        assertSame(error,assertThrows(AssertionError.class,()->KernelLifecycle.configModInfoFunction(id->{throw error;}).apply("unknown_integration")));
+        assertSame(error,assertThrows(AssertionError.class,()->SodiumProtocolExtension.metadataProvider(id->{throw error;}).apply("unknown_integration")));
     }
     @Test void disablingTheProtocolAlsoPreservesTheOriginalMetadataProvider() {
         System.setProperty("forbric.sodiumConfigUsers","off");
-        Function<String,Object> original=id->null;assertSame(original,KernelLifecycle.configModInfoFunction(original));
+        Function<String,Object> original=id->null;assertSame(original,SodiumProtocolExtension.metadataProvider(original));
     }
 }

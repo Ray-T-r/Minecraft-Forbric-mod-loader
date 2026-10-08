@@ -213,6 +213,32 @@ class ForgePartTrackingInjectorExecutionTest {
 					"""));
 
 	static {
+        STAND_INS.put("net.minecraftforge.entity.PartEntity", partEntity("net.minecraftforge.entity").replace("extends Entity {", "extends net.neoforged.neoforge.entity.PartEntity<T> {").replace("super(id, box)", "super(parent, id, box)"));
+        STAND_INS.put("fixture.ArbitraryDual", """
+            package fixture;
+            import net.minecraft.world.entity.Entity;
+            import net.minecraft.world.phys.AABB;
+            import net.minecraftforge.entity.PartEntity;
+            public class ArbitraryDual extends Entity {
+                public static final class EqualPart extends PartEntity<ArbitraryDual> {
+                    EqualPart(ArbitraryDual parent,int id){super(parent,id,new AABB(0,1));}
+                    @Override public boolean equals(Object other){return other instanceof Entity;}
+                    @Override public int hashCode(){return 1;}
+                }
+                public final PartEntity<?>[] parts={new EqualPart(this,61),new EqualPart(this,62)};
+                public ArbitraryDual(){super(60,new AABB(0,1));}
+                @Override public boolean isMultipartEntity(){return true;}
+                @Override public PartEntity<?>[] getParts(){return parts;}
+                @Override public net.neoforged.neoforge.entity.PartEntity<?>[] getNeoParts(){return parts;}
+            }
+            """);
+        STAND_INS.put("fixture.UnnamedSplit", """
+            package fixture;
+            public class UnnamedSplit extends ArbitraryDual {
+                private final net.neoforged.neoforge.entity.PartEntity<?>[] other={parts[1],new EqualPart(this,63),parts[0]};
+                @Override public net.neoforged.neoforge.entity.PartEntity<?>[] getNeoParts(){return other;}
+            }
+            """);
 		STAND_INS.put("net.minecraft.server.level.ServerLevel", """
 				package net.minecraft.server.level;
 
@@ -331,6 +357,8 @@ class ForgePartTrackingInjectorExecutionTest {
 				public class Level implements IForgeLevel {
 					public final List<Entity> entities = new ArrayList<>();
 					public final List<PartEntity<?>> forgeParts = new ArrayList<>();
+                    public final List<net.neoforged.neoforge.entity.PartEntity<?>> nativeParts=new ArrayList<>();
+                    public Collection<net.neoforged.neoforge.entity.PartEntity<?>> dragonParts(){return nativeParts;}
 
 					@Override
 					public Collection<PartEntity<?>> getPartEntities() {
@@ -343,10 +371,13 @@ class ForgePartTrackingInjectorExecutionTest {
 						for (Entity entity : entities) {
 							if (entity != except && selector.test(entity) && box.intersects(entity.getBoundingBox())) output.add(entity);
 						}
-						return output;
-					}
-				}
-				""");
+                        for(net.neoforged.neoforge.entity.PartEntity<?> part:dragonParts()){
+                            if(part!=except&&part.getParent()!=except&&selector.test(part)&&box.intersects(part.getBoundingBox()))output.add(part);
+                        }
+                        return output;
+                    }
+                }
+                """);
 	}
 
 	@AfterEach void reset() {
@@ -354,8 +385,12 @@ class ForgePartTrackingInjectorExecutionTest {
 	}
 
 	/** The merged shape: NeoForge's getter, and every override of it, under the name it shares with MinecraftForge's. */
-	private static Map<String, byte[]> merged(Path work) throws Exception {
-		Map<String, byte[]> classes = new HashMap<>(InjectorExecution.compile(work, STAND_INS));
+	private static Map<String, byte[]> merged(Path work) throws Exception {return merged(work,Map.of());}
+    private static Map<String, byte[]> merged(Path work,Map<String,String> overrides) throws Exception {
+		Map<String,String> sources=new HashMap<>(STAND_INS);sources.putAll(overrides);
+        sources.put("net.forbric.kernel.runtime.KernelMultipartViews",java.nio.file.Files.readString(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelMultipartViews.java")));
+        sources.put("net.forbric.api.VirtualGetters",java.nio.file.Files.readString(Path.of("src/main/java/net/forbric/api/VirtualGetters.java")));
+        Map<String, byte[]> classes = new HashMap<>(InjectorExecution.compile(work, sources));
 		String entity = ForgePartTrackingInjector.ENTITY;
 		SimpleRemapper rename = new SimpleRemapper(Map.of(entity + ".getNeoParts" + ForgePartTrackingInjector.NEO_GET_PARTS, "getParts")) {
 			@Override
@@ -422,8 +457,9 @@ class ForgePartTrackingInjectorExecutionTest {
 		callback(client, "onTrackingEnd", worm);
 		assertEquals(List.of(), InjectorExecution.invoke(client, "forgeParts"), "the client stops tracking its parts");
 
-		assertEquals(List.of("ForgeWorm#40"), InjectorExecution.invokeStatic(loader.loadClass(HITBOXES), "showHitboxes", worm),
-				"F3+B draws the entity and skips the parts it cannot read");
+		assertEquals(List.of("ForgeWorm#40", "PartEntity#41", "PartEntity#42"), InjectorExecution.invokeStatic(loader.loadClass(HITBOXES), "showHitboxes", worm),
+                "F3+B reads the public native arrays without dropping either family");
+        assertEquals(List.of("NeoWorm#50", "PartEntity#51", "PartEntity#52"), InjectorExecution.invokeStatic(loader.loadClass(HITBOXES), "showHitboxes", neoWorm));
 
 		Object level = level(loader, LEVEL);
 		Object[] parts = (Object[]) worm.getClass().getField("parts").get(worm);
@@ -462,6 +498,36 @@ class ForgePartTrackingInjectorExecutionTest {
 					target + " is left alone the second time");
 		}
 	}
+
+    @Test void sameNativeArrayIsVisitedOnceEvenWhenPartsCompareEqual(@TempDir Path work)throws Throwable{
+        Map<String,byte[]> classes=repaired(merged(work));ClassLoader loader=InjectorExecution.load(classes);Object owner=entity(loader,"fixture.ArbitraryDual"),level=level(loader,LEVEL);Object[] parts=(Object[])owner.getClass().getField("parts").get(owner);
+        addAll(level,"forgeParts",List.of(parts));addAll(level,"nativeParts",List.of(parts));Object box=InjectorExecution.construct(loader.loadClass("net.minecraft.world.phys.AABB"),0.0,2.0);java.util.concurrent.atomic.AtomicInteger calls=new java.util.concurrent.atomic.AtomicInteger();
+        List<?> found=(List<?>)InjectorExecution.invoke(level,"getEntities",null,box,(Predicate<Object>)value->{calls.incrementAndGet();return true;});assertEquals(2,found.size());assertSame(parts[0],found.get(0));assertSame(parts[1],found.get(1));assertEquals(2,calls.get(),"the additional SDK view does not repeat a native predicate");
+        calls.set(0);assertEquals(List.of(),InjectorExecution.invoke(level,"getEntities",null,box,(Predicate<Object>)value->{calls.incrementAndGet();return false;}));assertEquals(2,calls.get(),"rejected identities are also already processed");
+        assertEquals(List.of("ArbitraryDual#60","EqualPart#61","EqualPart#62"),InjectorExecution.invokeStatic(loader.loadClass(HITBOXES),"showHitboxes",owner));
+        Object server=level(loader,"net.minecraft.server.level.ServerLevel");callback(server,"onTrackingStart",owner);assertEquals(List.of(61,62),InjectorExecution.invoke(server,"forgeParts"));assertEquals(List.of(61,62),InjectorExecution.invoke(server,"neoForgeParts"));callback(server,"onTrackingEnd",owner);assertEquals(List.of(),InjectorExecution.invoke(server,"forgeParts"));assertEquals(List.of(),InjectorExecution.invoke(server,"neoForgeParts"));
+    }
+
+    @Test void distinctNativeArraysRetainThePrimaryApiOrderAndUseIdentity(@TempDir Path work)throws Throwable{
+        Map<String,byte[]> original=merged(work);Map<String,byte[]> classes=repaired(original);ClassLoader loader=InjectorExecution.load(classes);
+        Object owner=entity(loader,"fixture.UnnamedSplit");
+        assertEquals(List.of("UnnamedSplit#60","EqualPart#62","EqualPart#63","EqualPart#61"),InjectorExecution.invokeStatic(loader.loadClass(HITBOXES),"showHitboxes",owner),"the Neo canonical reader keeps its existing order and includes the other public view");
+        // Change only the native reader's published return descriptor; no entity name participates in the repair.
+        var node=new org.objectweb.asm.tree.ClassNode();new ClassReader(original.get(HITBOXES.replace('.','/'))).accept(node,0);
+        for(var method:node.methods)for(var instruction:method.instructions)if(instruction instanceof org.objectweb.asm.tree.MethodInsnNode call&&call.name.equals("getParts")&&call.desc.equals(ForgePartTrackingInjector.NEO_GET_PARTS))call.desc=ForgePartTrackingInjector.FORGE_GET_PARTS;
+        ClassWriter writer=new ClassWriter(0);node.accept(writer);byte[] forgeFirst=InjectorExecution.transform(new ForgePartTrackingInjector(original::get),HITBOXES,writer.toByteArray(),EnvType.CLIENT);
+        Map<String,byte[]> forgeClasses=new HashMap<>(classes);forgeClasses.put(HITBOXES.replace('.','/'),forgeFirst);ClassLoader forgeLoader=InjectorExecution.load(forgeClasses);
+        assertEquals("",InjectorExecution.verify(forgeFirst,forgeLoader));
+        assertEquals(List.of("UnnamedSplit#60","EqualPart#61","EqualPart#62","EqualPart#63"),InjectorExecution.invokeStatic(forgeLoader.loadClass(HITBOXES),"showHitboxes",entity(forgeLoader,"fixture.UnnamedSplit")),"the Forge canonical reader keeps Forge's order first");
+    }
+
+    @Test void debugOperationsRequiringTheNativePartTypeArePreserved(@TempDir Path work)throws Exception{
+        for(String body:List.of("drawn.add(part.getParent().describe());","if(part instanceof net.minecraftforge.entity.PartEntity<?>)drawn.add(part.describe());")){
+            String source=STAND_INS.get(HITBOXES).replace("drawn.add(part.describe());",body);
+            Map<String,byte[]> classes=merged(work.resolve(Integer.toString(body.hashCode())),Map.of(HITBOXES,source));byte[] original=classes.get(HITBOXES.replace('.','/'));
+            assertSame(original,InjectorExecution.transform(new ForgePartTrackingInjector(classes::get),HITBOXES,original,EnvType.CLIENT),"a receiver rewrite needs the shared public Entity contract, and a family type test cannot be widened");
+        }
+    }
 
 	@SuppressWarnings("unchecked")
 	private static void addAll(Object level, String field, List<Object> values) throws ReflectiveOperationException {

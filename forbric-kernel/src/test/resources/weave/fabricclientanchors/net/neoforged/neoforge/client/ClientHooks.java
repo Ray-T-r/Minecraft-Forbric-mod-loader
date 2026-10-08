@@ -12,6 +12,9 @@ public final class ClientHooks {
 
 	public static void extractScreen(Screen top, Stack<Screen> layers, GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
 		for (Screen layer : layers) graphics.draws.add("layer:" + layer.name());
+		extractTop(top, graphics, mouseX, mouseY, partialTick);
+	}
+	private static void extractTop(Screen top, GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
 		top.extractRenderStateWithTooltipAndSubtitles(graphics, mouseX, mouseY, partialTick);
 	}
 }

@@ -205,13 +205,45 @@ public final class TestFixtures {
 	 * its merge read the copy a Forbric launcher install keeps under {@code libraries/}, which is also where
 	 * run/build-merged-base.sh reads it by default.
 	 */
-	public static Path forgeMergeInput() {
-		Path staged = stagedRoot().resolve("forge-patched/patched-mc-forge-26.2.jar");
-		if (Files.isRegularFile(staged) && sameBuild(staged, stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"))) {
-			return staged;
-		}
-		return minecraftDir().resolve("libraries/net/forbric/patched-mc-forge/26.2-65.0.1/patched-mc-forge-26.2-65.0.1.jar");
-	}
+    private static final java.util.Map<String,Boolean> NATIVE_INPUT_MATCHES=new java.util.concurrent.ConcurrentHashMap<>();
+    public static Path forgeMergeInput() {
+        Path staged=stagedRoot().resolve("forge-patched/patched-mc-forge-26.2.jar");
+        Path merged=stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+        Path launcher=minecraftDir().resolve("libraries/net/forbric/patched-mc-forge/26.2-65.0.1/patched-mc-forge-26.2-65.0.1.jar");
+        try {
+            if(Files.isRegularFile(merged))try(ZipFile jar=new ZipFile(merged.toFile())){
+                var entry=jar.getEntry("META-INF/forbric/native-reference/FORGE/index.tsv");
+                if(entry!=null){
+                    String index;try(InputStream input=jar.getInputStream(entry)){index=new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}
+                    if(nativeInputMatches(staged,index))return staged;
+                    if(nativeInputMatches(launcher,index))return launcher;
+                    if(Files.isRegularFile(staged)||Files.isRegularFile(launcher))throw new AssertionFailedError("Neither Forge fixture matches the merged base's complete native-reference input index");
+                    return staged;
+                }
+            }
+        } catch(IOException unavailable){throw new java.io.UncheckedIOException("Reading the merged base's native input proof",unavailable);}
+        if(Files.isRegularFile(staged)&&sameBuild(staged,merged))return staged;
+        return launcher;
+    }
+    private static String digest(byte[] bytes){try{return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));}catch(java.security.NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}}
+    private static boolean nativeInputMatches(Path candidate,String index)throws IOException{
+        if(!Files.isRegularFile(candidate))return false;
+        String key=candidate.toAbsolutePath()+":"+Files.size(candidate)+":"+Files.getLastModifiedTime(candidate)+":"+digest(index.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Boolean known=NATIVE_INPUT_MATCHES.get(key);if(known!=null)return known;
+        boolean matches=true;String[] lines=index.split("\\R");
+        if(lines.length<2||!lines[0].equals("# forbric-native-reference-v1"))throw new AssertionFailedError("Malformed native-reference input index");
+        try(ZipFile jar=new ZipFile(candidate.toFile())){
+            for(int i=1;i<lines.length;i++){
+                if(lines[i].isBlank())continue;String[] row=lines[i].split("\\t",-1);
+                if(row.length!=2||!row[1].matches("[a-f0-9]{64}"))throw new AssertionFailedError("Malformed native-reference input row: "+lines[i]);
+                var entry=jar.getEntry(row[0]+".class");if(entry==null){matches=false;break;}
+                byte[] bytes;try(InputStream input=jar.getInputStream(entry)){bytes=input.readAllBytes();}
+                try{if(!row[1].equals(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)))){matches=false;break;}}
+                catch(java.security.NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}
+            }
+        }
+        NATIVE_INPUT_MATCHES.put(key,matches);return matches;
+    }
 
 	/** Whether both artifacts carry the same installer build pins ({@code <jar>.pins}), so came out of one build. */
 	private static boolean sameBuild(Path one, Path other) {

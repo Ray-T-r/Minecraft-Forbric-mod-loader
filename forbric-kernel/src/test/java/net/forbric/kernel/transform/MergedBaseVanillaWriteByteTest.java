@@ -88,7 +88,7 @@ class MergedBaseVanillaWriteByteTest {
 				}
 			}
 		}
-		assertEquals(14, repaired.values().stream().mapToInt(Integer::intValue).sum(), "sites: " + repaired);
+		assertEquals(15, repaired.values().stream().mapToInt(Integer::intValue).sum(), "source-coherent native packet bodies retain this additional vanilla-equivalent byte site: " + repaired);
 		assertTrue(repaired.containsKey(ABILITIES.replace('/', '.')), "ViaFabricPlus' packet: " + repaired);
 	}
 

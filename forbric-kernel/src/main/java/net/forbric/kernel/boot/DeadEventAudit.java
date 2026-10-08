@@ -173,11 +173,8 @@ public final class DeadEventAudit {
 
 	private static Map<String, String> partiallyPosted() {
 		Map<String, String> partial = new LinkedHashMap<>();
-		partial.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Pre",
-				"a conversion can be seen or prevented on 2 of the 10 paths that used to offer it — zombie to "
-						+ "drowned, villager to witch and the rest mostly convert without asking");
 		partial.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Post",
-				"a completed conversion is announced on 2 of its 7 paths, so a mod reacting to one will react "
+				"a completed conversion is announced on 3 of its 7 paths, so a mod reacting to one will react "
 						+ "to some conversions and not others");
 		partial.put("net/minecraftforge/event/entity/player/PlayerDestroyItemEvent",
 				"an item breaking is announced on 1 of its 4 paths — a mod that replaces or refunds broken "

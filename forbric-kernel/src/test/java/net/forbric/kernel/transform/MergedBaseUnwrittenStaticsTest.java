@@ -73,14 +73,15 @@ class MergedBaseUnwrittenStaticsTest {
 			// Read by a mod calling Ingredient.serializer() directly.
 			"net/minecraft/world/item/crafting/Ingredient.VANILLA_SERIALIZER",
 			"net/minecraft/client/particle/ParticleEngine.factories",
-			"net/minecraft/server/network/ServerConfigurationPacketListenerImpl.VANILLA_START",
-			"net/minecraft/world/item/ItemDisplayContext.ADD_CALLBACK"));
+			"net/minecraft/server/network/ServerConfigurationPacketListenerImpl.VANILLA_START"));
 
 	@Test
 	void theCensusHasNotChanged() throws Exception {
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent");
 
 		Set<String> found = unwrittenObjectStatics();
+		assertTrue(writesStatic(parse(readClass("net/minecraft/world/item/ItemDisplayContext.class")), "ADD_CALLBACK"),
+				"the actual native static initializer now retains the callback; it must not be reclassified as missing");
 
 		assertEquals(KNOWN, found,
 				"the set of static fields the merge leaves unassigned changed. A new entry means something else "

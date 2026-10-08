@@ -25,51 +25,9 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
-/**
- * A MinecraftForge mod's multipart entity is tracked, and found, where the merge kept NeoForge's bodies — the mirror
- * image of {@link ClientPartTrackingInjector}.
- *
- * <p>The merged {@code Entity} has one {@code isMultipartEntity()}, shared by both families, but two {@code getParts()},
- * one per family's {@code PartEntity}, and a mod overrides only its own: the other answers its interface default, null.
- * Four merged bodies ask {@code isMultipartEntity()} and then read only NeoForge's {@code getParts()}: the server's
- * {@code onTrackingStart} and {@code onTrackingEnd} and the client's {@code onTrackingEnd} (NeoForge's bodies; the merge
- * report lists them as "forge hook lost"), and the debug hitboxes (MinecraftForge's body, which {@link DragonPartsInjector}
- * retypes to NeoForge's). A MinecraftForge mod's multipart entity answers true and leaves NeoForge's {@code getParts()}
- * null, so it threw a NullPointerException when a server added it to a world or removed it, when the client stopped
- * tracking it, and on every frame with F3+B hitboxes on.
- *
- * <p>Its parts cannot go where NeoForge's do. {@code Level.getEntities}, its typed overload and {@code hasEntities} cast
- * everything {@code dragonParts()} holds to NeoForge's {@code PartEntity}, and so may any NeoForge mod that reads it; a
- * MinecraftForge part is not one. MinecraftForge keeps its own: {@code partEntities}
- * on both levels, typed to its {@code PartEntity} and read through {@code getPartEntities()}. The merged {@code ServerLevel}
- * and {@code ClientLevel} still carry both, and the client's {@code onTrackingStart} — MinecraftForge's body — still fills
- * the client's. What the merge lost is the rest of MinecraftForge's tracking, and its one live reader. Each edit is made
- * on the reviewed shape only:
- * <ul>
- *   <li>NeoForge's {@code getParts()} reads as no parts when it answers null, in all four methods.</li>
- *   <li>The server's {@code onTrackingStart} puts the entity's MinecraftForge parts into {@code ServerLevel.partEntities}
- *       by id, and both {@code onTrackingEnd}s take them out of their level's {@code partEntities}, as MinecraftForge's own
- *       callbacks do. The loop is a private static method added to the callbacks class, called just ahead of NeoForge's
- *       {@code if (entity.isMultipartEntity())}, so the callback's own control flow and frames are left as they are.</li>
- *   <li>{@code Level.getEntities(Entity, AABB, Predicate)} — NeoForge's body — also looks through
- *       {@code getPartEntities()}, as MinecraftForge's own does, before it returns. That is how native MinecraftForge
- *       finds a mod's parts: the client's crosshair picks one (so an attack or interaction is aimed at it), and a
- *       server-side projectile or explosion that asks the level for entities in a box meets it.</li>
- * </ul>
- *
- * <p>What a MinecraftForge mod's parts still do not get, and what each costs:
- * <ul>
- *   <li>{@code ServerLevel.getEntityOrPart} resolves NeoForge's parts only, so an attack or interaction packet the client
- *       sends for a MinecraftForge part is dropped. Native MinecraftForge drops it too (its {@code getEntityOrPart} never
- *       reads {@code partEntities}), which is why its multipart mods send their own packet; resolving it here would hit
- *       those mods' entities twice.</li>
- *   <li>The typed lookups — {@code getEntities(EntityTypeTest, …)}, {@code getEntitiesOfClass}, {@code hasEntities} — are
- *       NeoForge's bodies over {@code dragonParts()} and do not return them; native MinecraftForge's typed
- *       {@code getEntities} does. Nothing in vanilla attacks or interacts through those.</li>
- *   <li>F3+B draws no hitboxes for them: the debug renderer's loop is NeoForge-typed.</li>
- * </ul>
- * {@code -Dforbric.forgePartTracking=off} leaves all four classes as merged.
- */
+/** Completes the tracking and query obligations of both published multipart APIs. The retained
+ * native callback remains authoritative; missing map effects are added around its proved part loop.
+ * Queries and debug readers compose actual identities rather than predicting an entity's ecosystem. */
 public final class ForgePartTrackingInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.forgePartTracking";
 	static final String SERVER_CALLBACKS = "net.minecraft.server.level.ServerLevel$EntityCallbacks";
@@ -94,7 +52,7 @@ public final class ForgePartTrackingInjector implements ClassTransformer {
 	static final String UNTRACK = "forbric$untrackForgeParts";
 	static final String TRACK_DESC = "(L" + PARTS_MAP + ";L" + ENTITY + ";)V";
 	static final String FIND = "forbric$findForgeParts";
-	static final String FIND_DESC = "(L" + LEVEL_INTERNAL + ";L" + ENTITY + ";L" + AABB + ";Ljava/util/function/Predicate;Ljava/util/List;)V";
+	static final String FIND_DESC = "(L" + LEVEL_INTERNAL + ";L" + ENTITY + ";L" + AABB + ";Ljava/util/function/Predicate;Ljava/util/List;Ljava/util/Set;)V";
 	/** MinecraftForge's level extension, which declares getPartEntities(). */
 	static final String FORGE_LEVEL = "net/minecraftforge/common/extensions/IForgeLevel";
 
@@ -132,9 +90,9 @@ public final class ForgePartTrackingInjector implements ClassTransformer {
 		boolean level = LEVEL.equals(className);
 		if (!server && !client && !hitboxes && !level) return bytes;
 		ClassNode node = new ClassNode();
-		new ClassReader(bytes).accept(node, 0);
+		new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
 		int changed = server ? serverCallbacks(node, partEntities(SERVER_LEVEL)) : client ? clientCallbacks(node, partEntities(CLIENT_LEVEL))
-				: hitboxes ? hitboxes(node) : level(node);
+				: hitboxes ? hitboxes(node, gameClass) : level(node);
 		if (changed <= 0) return bytes;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
@@ -142,8 +100,7 @@ public final class ForgePartTrackingInjector implements ClassTransformer {
 						+ "partEntities, as MinecraftForge's do — they read only NeoForge's getParts(), which it leaves null, and threw"
 				: client ? "[Forbric/Entity] the client's onTrackingEnd takes a MinecraftForge mod's multipart entity's parts out of "
 						+ "partEntities, as MinecraftForge's does — it read only NeoForge's getParts(), which it leaves null, and threw"
-				: hitboxes ? "[Forbric/Entity] the debug hitboxes skip a multipart entity whose getParts() is null — a MinecraftForge "
-						+ "mod's threw on every frame"
+				: hitboxes ? "[Forbric/Entity] the debug hitboxes read both native part arrays once per identity"
 				: "[Forbric/Entity] Level.getEntities finds a MinecraftForge mod's multipart entity's parts through getPartEntities(), "
 						+ "as MinecraftForge's does");
 		return writer.toByteArray();
@@ -188,36 +145,67 @@ public final class ForgePartTrackingInjector implements ClassTransformer {
 		return 1;
 	}
 
-	/** ClientLevel$EntityCallbacks: onTrackingEnd tolerates a null NeoForge getParts() and untracks MinecraftForge's parts. */
-	static int clientCallbacks(ClassNode callbacks, Boolean partEntities) {
-		MethodNode end = method(callbacks, "onTrackingEnd", TRACKING_DESC);
-		if (end == null) return declined("ClientLevel$EntityCallbacks has no onTrackingEnd(Entity)");
-		if (!readsNeoForgeParts(end) || method(callbacks, UNTRACK, TRACK_DESC) != null) return 0;
-		if (partEntities == null) return declined("ClientLevel's class file could not be read");
-		if (!partEntities) return 0;
-		FieldInsnNode level = outerLevel(callbacks, CLIENT_LEVEL);
-		AbstractInsnNode block = neoForgeBlock(end);
-		if (level == null || block == null) {
-			return declined("the client's onTrackingEnd is not NeoForge's `if (entity.isMultipartEntity()) dragonParts.removeAll(…getParts())`");
-		}
-		tolerate(end, partsReads(end).get(0));
-		track(end, block, callbacks.name, level, UNTRACK);
-		callbacks.methods.add(trackingLoop(UNTRACK, false));
-		return 1;
-	}
+    /** Whichever canonical client direction reads Neo parts also mirrors the Forge map at its shared exit. */
+    static int clientCallbacks(ClassNode callbacks,Boolean partEntities){
+        if(partEntities==null)return declined("ClientLevel's class file could not be read");if(!partEntities)return 0;
+        FieldInsnNode level=outerLevel(callbacks,CLIENT_LEVEL);if(level==null)return declined("client callbacks have no outer level field");
+        record Plan(MethodNode method,AbstractInsnNode exit,MethodInsnNode read,String loop){}
+        List<Plan> plans=new ArrayList<>();
+        for(String direction:List.of("onTrackingStart","onTrackingEnd")){
+            MethodNode method=method(callbacks,direction,TRACKING_DESC);String loop=direction.equals("onTrackingStart")?TRACK:UNTRACK;
+            if(method==null)return declined("client callbacks have no "+direction+"(Entity)");if(calls(method,loop)||!readsNeoForgeParts(method))continue;
+            // A body already reading both native arrays belongs to the companion client repair.
+            if(partsReads(method).stream().anyMatch(read->read.desc.equals(FORGE_GET_PARTS)))continue;
+            AbstractInsnNode exit=canonicalPartExit(method);if(exit==null)return declined("client canonical part loop has no shared normal exit: "+direction);
+            plans.add(new Plan(method,exit,partsReads(method).getFirst(),loop));
+        }
+        for(Plan plan:plans){if(!tolerant(plan.read))tolerate(plan.method,plan.read);
+            InsnList call=trackingCall(callbacks.name,level,plan.loop);plan.method.instructions.insert(plan.exit,call);
+            if(method(callbacks,plan.loop,TRACK_DESC)==null)callbacks.methods.add(trackingLoop(plan.loop,plan.loop.equals(TRACK)));
+        }return plans.isEmpty()?0:1;
+    }
+    /** All existing branches retain their target frame and reach this anchor after the canonical part case. */
+    private static AbstractInsnNode canonicalPartExit(MethodNode method){
+        if(neoForgeBlock(method)==null)return null;MethodInsnNode read=partsReads(method).getFirst();
+        for(AbstractInsnNode at=read.getPrevious();at!=null;at=at.getPrevious())if(at instanceof MethodInsnNode asks&&asks.owner.equals(ENTITY)&&asks.name.equals("isMultipartEntity")&&next(asks)instanceof JumpInsnNode skip){
+            AbstractInsnNode anchor=skip.label;while(anchor.getNext()!=null&&anchor.getNext().getOpcode()<0)anchor=anchor.getNext();return anchor;
+        }return null;
+    }
 
-	/** EntityHitboxDebugRenderer: every getParts() the hitboxes read tolerates null, whichever family DragonPartsInjector left it. */
-	static int hitboxes(ClassNode renderer) {
-		int changed = 0;
-		for (MethodNode method : renderer.methods) {
-			for (MethodInsnNode read : partsReads(method)) {
-				if (tolerant(read)) continue;
-				tolerate(method, read);
-				changed++;
-			}
-		}
-		return changed;
-	}
+    /** A public Entity operation may consume the identity union of both native part APIs. */
+    static int hitboxes(ClassNode renderer, Function<String,byte[]> resources) {
+        int changed=0;
+        for(MethodNode method:renderer.methods){
+            List<MethodInsnNode> reads=partsReads(method);if(reads.isEmpty())continue;
+            for(AbstractInsnNode instruction:method.instructions)if(instruction instanceof MethodInsnNode call&&(call.owner.equals(FORGE_PART)||call.owner.equals(NEO_PART))
+                &&(call.getOpcode()!=Opcodes.INVOKEVIRTUAL || !entityMethod(resources,call.name,call.desc)))return declined("debug part operation has no shared Entity contract: "+call.owner+"."+call.name+call.desc);
+            if(method.desc.contains("L"+FORGE_PART)||method.desc.contains("L"+NEO_PART)||method.tryCatchBlocks.stream().anyMatch(handler->FORGE_PART.equals(handler.type)||NEO_PART.equals(handler.type)))return declined("debug method has a part-specific public or handler contract");
+            for(AbstractInsnNode instruction:method.instructions)if(instruction instanceof FieldInsnNode field&&((field.desc.contains("L"+FORGE_PART)||field.desc.contains("L"+NEO_PART))||field.owner.equals(FORGE_PART)||field.owner.equals(NEO_PART)))return declined("debug method has a part-specific field contract");
+            for(AbstractInsnNode instruction:method.instructions){
+                if(instruction instanceof MethodInsnNode call && !reads.contains(call) && (call.desc.contains("L"+FORGE_PART+";") || call.desc.contains("L"+NEO_PART+";")))return declined("debug operation consumes a part-specific argument or return");
+                if(instruction instanceof TypeInsnNode type && (type.desc.equals(FORGE_PART)||type.desc.equals(NEO_PART)) && type.getOpcode()!=Opcodes.CHECKCAST && type.getOpcode()!=Opcodes.ANEWARRAY)return declined("debug operation depends on a part-specific runtime type");
+            }
+            for(MethodInsnNode read:reads){
+                boolean forge=read.desc.equals(FORGE_GET_PARTS);method.instructions.insertBefore(read,new InsnNode(forge?Opcodes.ICONST_1:Opcodes.ICONST_0));
+                read.setOpcode(Opcodes.INVOKESTATIC);read.owner="net/forbric/kernel/runtime/KernelMultipartViews";read.name="parts";read.desc="(L"+ENTITY+";Z)[L"+ENTITY+";";read.itf=false;
+            }
+            for(AbstractInsnNode instruction:method.instructions){
+                if(instruction instanceof MethodInsnNode call&&(call.owner.equals(FORGE_PART)||call.owner.equals(NEO_PART)))call.owner=ENTITY;
+                else if(instruction instanceof TypeInsnNode type&&(type.getOpcode()==Opcodes.CHECKCAST||type.getOpcode()==Opcodes.ANEWARRAY))type.desc=sharedPartType(type.desc);
+                else if(instruction instanceof FrameNode frame){sharedFrame(frame.local);sharedFrame(frame.stack);}
+            }
+            if(method.localVariables!=null)for(var local:method.localVariables){local.desc=sharedPartType(local.desc);local.signature=null;}
+            changed++;
+        }return changed;
+    }
+    private static boolean entityMethod(Function<String,byte[]> resources,String name,String descriptor){
+        java.util.Set<String> seen=new java.util.HashSet<>();String owner=ENTITY;
+        while(owner!=null&&seen.add(owner)){byte[] bytes=resources.apply(owner);if(bytes==null)return false;ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.SKIP_CODE|ClassReader.SKIP_DEBUG|ClassReader.SKIP_FRAMES);
+            for(MethodNode method:node.methods)if(method.name.equals(name)&&method.desc.equals(descriptor)&&(method.access&(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC))==Opcodes.ACC_PUBLIC)return true;owner=node.superName;
+        }return false;
+    }
+    private static String sharedPartType(String type){return type==null?null:type.equals(FORGE_PART)||type.equals(NEO_PART)?ENTITY:type.replace("L"+FORGE_PART+";","L"+ENTITY+";").replace("L"+NEO_PART+";","L"+ENTITY+";");}
+    private static void sharedFrame(List<Object> entries){if(entries!=null)for(int i=0;i<entries.size();i++)if(entries.get(i)instanceof String type)entries.set(i,sharedPartType(type));}
 
 	/** Level: getEntities(Entity, AABB, Predicate) also returns the MinecraftForge parts getPartEntities() holds. */
 	static int level(ClassNode level) {
@@ -234,12 +222,27 @@ public final class ForgePartTrackingInjector implements ClassTransformer {
 		if (!(output instanceof VarInsnNode list) || list.getOpcode() != Opcodes.ALOAD || list.var < 4) {
 			return declined("getEntities(Entity, AABB, Predicate) does not end `return output`");
 		}
-		InsnList find = new InsnList();
-		for (int arg = 0; arg <= 3; arg++) find.add(new VarInsnNode(Opcodes.ALOAD, arg));
-		find.add(new VarInsnNode(Opcodes.ALOAD, list.var));
-		find.add(new MethodInsnNode(Opcodes.INVOKESTATIC, level.name, FIND, FIND_DESC, false));
-		get.instructions.insertBefore(output, find);
-		level.methods.add(findLoop(level.name));
+        List<VarInsnNode> nativeParts = new ArrayList<>();
+        for (AbstractInsnNode instruction : get.instructions) if (instruction instanceof TypeInsnNode cast && cast.getOpcode() == Opcodes.CHECKCAST && cast.desc.equals(NEO_PART)
+            && previous(cast) instanceof MethodInsnNode next && next.owner.equals("java/util/Iterator") && next.name.equals("next") && next.desc.equals("()Ljava/lang/Object;")
+            && next(cast) instanceof VarInsnNode store && store.getOpcode() == Opcodes.ASTORE) nativeParts.add(store);
+        if (nativeParts.size() > 1 || calls(get, "dragonParts") && nativeParts.size() != 1) return declined("the canonical part iteration has no unique actual element store");
+        int seen = get.maxLocals++;
+        InsnList initialize = new InsnList();
+        initialize.add(new TypeInsnNode(Opcodes.NEW, "java/util/IdentityHashMap")); initialize.add(new InsnNode(Opcodes.DUP));
+        initialize.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "java/util/IdentityHashMap", "<init>", "()V", false));
+        initialize.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "java/util/Collections", "newSetFromMap", "(Ljava/util/Map;)Ljava/util/Set;", false));
+        initialize.add(new VarInsnNode(Opcodes.ASTORE, seen)); get.instructions.insert(initialize);
+        for (VarInsnNode nativePart : nativeParts) {
+            InsnList visited = new InsnList(); visited.add(new VarInsnNode(Opcodes.ALOAD, seen)); visited.add(new VarInsnNode(Opcodes.ALOAD, nativePart.var));
+            visited.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/util/Set", "add", "(Ljava/lang/Object;)Z", true)); visited.add(new InsnNode(Opcodes.POP)); get.instructions.insert(nativePart, visited);
+        }
+        for (AbstractInsnNode instruction : get.instructions) if (instruction instanceof FrameNode frame) appendLocal(frame, seen, "java/util/Set");
+        InsnList find = new InsnList();
+        for (int arg = 0; arg <= 3; arg++) find.add(new VarInsnNode(Opcodes.ALOAD, arg));
+        find.add(new VarInsnNode(Opcodes.ALOAD, list.var)); find.add(new VarInsnNode(Opcodes.ALOAD, seen));
+        find.add(new MethodInsnNode(Opcodes.INVOKESTATIC, level.name, FIND, FIND_DESC, false));
+        get.instructions.insertBefore(output, find); level.methods.add(findLoop(level.name));
 		return 1;
 	}
 
@@ -295,15 +298,11 @@ public final class ForgePartTrackingInjector implements ClassTransformer {
 	}
 
 	/** {@code Callbacks.loop(Level.this.partEntities, entity);} ahead of NeoForge's multipart block: straight-line code only. */
-	private static void track(MethodNode method, AbstractInsnNode block, String owner, FieldInsnNode level, String loop) {
-		InsnList call = new InsnList();
-		call.add(new VarInsnNode(Opcodes.ALOAD, 0));
-		call.add(new FieldInsnNode(Opcodes.GETFIELD, level.owner, level.name, level.desc));
-		call.add(new FieldInsnNode(Opcodes.GETFIELD, Type.getType(level.desc).getInternalName(), "partEntities", "L" + PARTS_MAP + ";"));
-		call.add(new VarInsnNode(Opcodes.ALOAD, 1));
-		call.add(new MethodInsnNode(Opcodes.INVOKESTATIC, owner, loop, TRACK_DESC, false));
-		method.instructions.insertBefore(block, call);
-	}
+    private static InsnList trackingCall(String owner,FieldInsnNode level,String loop){
+        InsnList call=new InsnList();call.add(new VarInsnNode(Opcodes.ALOAD,0));call.add(new FieldInsnNode(Opcodes.GETFIELD,level.owner,level.name,level.desc));
+        call.add(new FieldInsnNode(Opcodes.GETFIELD,Type.getType(level.desc).getInternalName(),"partEntities","L"+PARTS_MAP+";"));call.add(new VarInsnNode(Opcodes.ALOAD,1));call.add(new MethodInsnNode(Opcodes.INVOKESTATIC,owner,loop,TRACK_DESC,false));return call;
+    }
+    private static void track(MethodNode method,AbstractInsnNode block,String owner,FieldInsnNode level,String loop){method.instructions.insertBefore(block,trackingCall(owner,level,loop));}
 
 	/**
 	 * MinecraftForge's own loop, put or remove by id:
@@ -362,48 +361,60 @@ public final class ForgePartTrackingInjector implements ClassTransformer {
 		MethodNode loop = new MethodNode(Opcodes.ASM9, Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, FIND, FIND_DESC, null, null);
 		LabelNode head = new LabelNode();
 		LabelNode done = new LabelNode();
-		Object[] locals = {LEVEL_INTERNAL, ENTITY, AABB, "java/util/function/Predicate", "java/util/List", "java/util/Iterator"};
+		Object[] locals = {LEVEL_INTERNAL, ENTITY, AABB, "java/util/function/Predicate", "java/util/List", "java/util/Set", "java/util/Iterator"};
 		InsnList code = loop.instructions;
+        code.add(new VarInsnNode(Opcodes.ALOAD, 5)); code.add(new VarInsnNode(Opcodes.ALOAD, 4));
+        code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/util/Set", "addAll", "(Ljava/util/Collection;)Z", true)); code.add(new InsnNode(Opcodes.POP));
 		code.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, level, "getPartEntities", "()Ljava/util/Collection;", false));
 		code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/util/Collection", "iterator", "()Ljava/util/Iterator;", true));
-		code.add(new VarInsnNode(Opcodes.ASTORE, 5));
+		code.add(new VarInsnNode(Opcodes.ASTORE, 6));
 		code.add(head);
 		code.add(new FrameNode(Opcodes.F_NEW, locals.length, locals, 0, new Object[0]));
-		code.add(new VarInsnNode(Opcodes.ALOAD, 5));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 6));
 		code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/util/Iterator", "hasNext", "()Z", true));
 		code.add(new JumpInsnNode(Opcodes.IFEQ, done));
-		code.add(new VarInsnNode(Opcodes.ALOAD, 5));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 6));
 		code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/util/Iterator", "next", "()Ljava/lang/Object;", true));
 		code.add(new TypeInsnNode(Opcodes.CHECKCAST, FORGE_PART));
-		code.add(new VarInsnNode(Opcodes.ASTORE, 6));
-		code.add(new VarInsnNode(Opcodes.ALOAD, 6));
+		code.add(new VarInsnNode(Opcodes.ASTORE, 7));
+        code.add(new VarInsnNode(Opcodes.ALOAD, 5)); code.add(new VarInsnNode(Opcodes.ALOAD, 7));
+        code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/util/Set", "add", "(Ljava/lang/Object;)Z", true));
+        code.add(new JumpInsnNode(Opcodes.IFEQ, head));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 7));
 		code.add(new VarInsnNode(Opcodes.ALOAD, 1));
 		code.add(new JumpInsnNode(Opcodes.IF_ACMPEQ, head));
-		code.add(new VarInsnNode(Opcodes.ALOAD, 6));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 7));
 		code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, FORGE_PART, "getParent", "()L" + ENTITY + ";", false));
 		code.add(new VarInsnNode(Opcodes.ALOAD, 1));
 		code.add(new JumpInsnNode(Opcodes.IF_ACMPEQ, head));
 		code.add(new VarInsnNode(Opcodes.ALOAD, 3));
-		code.add(new VarInsnNode(Opcodes.ALOAD, 6));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 7));
 		code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/util/function/Predicate", "test", "(Ljava/lang/Object;)Z", true));
 		code.add(new JumpInsnNode(Opcodes.IFEQ, head));
 		code.add(new VarInsnNode(Opcodes.ALOAD, 2));
-		code.add(new VarInsnNode(Opcodes.ALOAD, 6));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 7));
 		code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, FORGE_PART, "getBoundingBox", "()L" + AABB + ";", false));
 		code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, AABB, "intersects", "(L" + AABB + ";)Z", false));
 		code.add(new JumpInsnNode(Opcodes.IFEQ, head));
 		code.add(new VarInsnNode(Opcodes.ALOAD, 4));
-		code.add(new VarInsnNode(Opcodes.ALOAD, 6));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 7));
 		code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/util/List", "add", "(Ljava/lang/Object;)Z", true));
 		code.add(new InsnNode(Opcodes.POP));
 		code.add(new JumpInsnNode(Opcodes.GOTO, head));
 		code.add(done);
 		code.add(new FrameNode(Opcodes.F_NEW, locals.length, locals, 0, new Object[0]));
 		code.add(new InsnNode(Opcodes.RETURN));
-		loop.maxLocals = 7;
+		loop.maxLocals = 8;
 		return loop;
 	}
+
+    private static void appendLocal(FrameNode frame, int slot, String type) {
+        if (frame.type != Opcodes.F_NEW) throw new IllegalStateException("Part lookup frames must be expanded before adding a local");
+        int slots = 0; for (Object local : frame.local) slots += local.equals(Opcodes.LONG) || local.equals(Opcodes.DOUBLE) ? 2 : 1;
+        if (slots > slot) throw new IllegalStateException("Part lookup local overlaps the original frame");
+        while (slots++ < slot) frame.local.add(Opcodes.TOP); frame.local.add(type);
+    }
 
 	/** The callbacks' {@code this$0}: the GETFIELD of the outer level every callback body already makes. */
 	private static FieldInsnNode outerLevel(ClassNode callbacks, String levelType) {

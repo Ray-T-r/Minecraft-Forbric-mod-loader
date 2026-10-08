@@ -459,7 +459,6 @@ net/minecraft/client/gui/screens/worldselection/WorldCreationUiState#isGenerateS
 net/minecraft/client/gui/screens/worldselection/WorldOpenFlows#createFreshLevel(Ljava/lang/String;Lnet/minecraft/world/level/LevelSettings;Lnet/minecraft/world/level/levelgen/WorldOptions;Ljava/util/function/Function;Lnet/minecraft/client/gui/screens/Screen;)V 750af0f4=0
 net/minecraft/client/gui/screens/worldselection/WorldOpenFlows#openWorld(Ljava/lang/String;Ljava/lang/Runnable;)V 750af0f4=0
 net/minecraft/client/gui/screens/worldselection/WorldOpenFlows#openWorldCheckVersionCompatibility(Lnet/minecraft/world/level/storage/LevelStorageSource$LevelStorageAccess;Lnet/minecraft/world/level/storage/LevelSummary;Lcom/mojang/serialization/Dynamic;Ljava/lang/Runnable;)V 53d1a89c=0
-net/minecraft/client/gui/screens/worldselection/WorldOpenFlows#openWorldCheckWorldStemCompatibility(Lnet/minecraft/world/level/storage/LevelStorageSource$LevelStorageAccess;Lnet/minecraft/server/WorldStem;Lnet/minecraft/server/packs/repository/PackRepository;Ljava/lang/Runnable;)V 49dec0f5=0
 net/minecraft/client/gui/screens/worldselection/WorldSelectionList#getSelectedOpt()Ljava/util/Optional; 8379b599=0
 net/minecraft/client/gui/screens/worldselection/WorldSelectionList#handleNewLevels(Ljava/util/List;)V 0fd716e0=0
 net/minecraft/client/gui/screens/worldselection/WorldSelectionList#updateWidgetNarration(Lnet/minecraft/client/gui/narration/NarrationElementOutput;)V 1863067a=0
@@ -2110,6 +2109,7 @@ net/minecraft/world/entity/monster/cubemob/SulfurCube#knockback(DDDLnet/minecraf
 net/minecraft/world/entity/monster/cubemob/SulfurCube#maxUpStep()F 67d144f0=0
 net/minecraft/world/entity/monster/cubemob/SulfurCube#playerPush(Lnet/minecraft/world/entity/player/Player;)V c1d6f957=0
 net/minecraft/world/entity/monster/cubemob/SulfurCube#tickFuse()V 36b1e19d=0
+net/minecraft/world/entity/monster/cubemob/SulfurCube#travelInFluid(Lnet/minecraft/world/phys/Vec3;)V e2d69fc0=0 f852450b=0
 net/minecraft/world/entity/monster/cubemob/SulfurCube$SulfurCubeLookControl#tick()V 72b34d00=0
 net/minecraft/world/entity/monster/hoglin/Hoglin#getAmbientSound()Lnet/minecraft/sounds/SoundEvent; 00014e4a=0
 net/minecraft/world/entity/monster/hoglin/Hoglin#getWalkTargetValue(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/LevelReader;)F 92664f69=1

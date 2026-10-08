@@ -36,6 +36,14 @@ final class MixinExecutionPathRetarget {
 			members.add(member);
 		}
 		MethodNode original = reference == null ? null : MixinStubRebind.bound(reference, selector);
+        if(original!=null&&MixinRetarget.AT_DRIVEN.contains(injector.desc)&&MixinRetarget.movableWhole(handler,injector,true,false)
+                &&!java.util.stream.IntStream.range(0,Type.getArgumentTypes(handler.desc).length).anyMatch(parameter->MixinFit.sugar(handler,parameter))) {
+            MethodNode nativeBody=NativeOverloadBody.destination(target,reference,original,selected);
+            if(nativeBody!=null&&members.stream().allMatch(member->count(original,member)==1&&count(nativeBody,member)==1)
+                    &&MixinRetarget.handlerFits(handler,injector,target,original,original))
+                return List.of(new MixinRetarget.Rewrite(handler.name+handler.desc,MixinRetarget.Element.SELECTOR,selector,nativeBody.name+nativeBody.desc,
+                    "the same native caller forwards every source operand to one verified widened body; one added-context early exit retains the complete source CFG and local producers"));
+        }
 		if (original != null && original.desc.equals(selected.desc) && members.stream().allMatch(m -> count(original, m) == 1)
 				&& members.stream().allMatch(m -> !MixinFit.containsMember(selected, m))) {
 			List<MixinRetarget.Rewrite> edge = helperEdge(handler, injector, selector, selected, original, points, members, target);

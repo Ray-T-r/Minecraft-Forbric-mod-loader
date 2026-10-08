@@ -25,11 +25,7 @@ import org.objectweb.asm.tree.MethodNode;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
-/**
- * W5: the carrier's {@code AddReloadListenerEvent.getConditionContext()} invokes a Forge-typed accessor on
- * {@code ReloadableServerResources} that the merged class does not declare. The repair edits the CARRIER class,
- * turning that one invokevirtual into {@code invokestatic KernelForgeConditions.contextOf(RSR)}.
- */
+/** The reload event exposes the active context through the public Forge interface. */
 class MergedBaseForgeReloadContextTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path FORGE_RUNTIME = TestFixtures.stagedRoot().resolve("forge-runtime/forge-runtime.jar");
@@ -40,7 +36,7 @@ class MergedBaseForgeReloadContextTest {
 	private static final String KERNEL = "net/forbric/kernel/runtime/KernelForgeConditions";
 
 	@Test
-	void thePremiseTheCarrierAsksForAForgeTypedContextTheMergedClassDoesNotDeclare() throws Exception {
+	void theCarrierAndBothPublicContextDescriptorsAreRetained() throws Exception {
 		ClassNode event = parse(bytesOf(FORGE_RUNTIME, EVENT));
 		List<MethodInsnNode> asks = calls(event, RSR, "getConditionContext");
 		assertEquals(1, asks.size(), "one Forge-typed ask expected in the carrier");
@@ -49,9 +45,9 @@ class MergedBaseForgeReloadContextTest {
 		ClassNode resources = parse(bytesOf(MERGED_BASE, RSR));
 		List<String> declared = new ArrayList<>();
 		for (MethodNode method : resources.methods) if ("getConditionContext".equals(method.name)) declared.add(method.desc);
-		assertEquals(List.of("()" + NEO_CONTEXT), declared,
-				"the merged ReloadableServerResources declares only NeoForge's accessor; if it ever declares Forge's, "
-						+ "this repair is dead weight");
+		assertEquals(java.util.Set.of("()" + NEO_CONTEXT, "()" + FORGE_CONTEXT), java.util.Set.copyOf(declared),
+				"the merge retains both public return descriptors");
+		assertEquals(2, declared.size());
 	}
 
 	@Test

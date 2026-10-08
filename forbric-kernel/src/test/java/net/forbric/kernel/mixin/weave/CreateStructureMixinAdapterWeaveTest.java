@@ -51,7 +51,7 @@ class CreateStructureMixinAdapterWeaveTest {
 
 	@BeforeAll static void weave() throws Exception {
 		String structure = "net/minecraft/world/level/levelgen/structure/templatesystem/";
-		fixture = WeaveHarness.fixture(work, "createstructure", List.of(
+		List<Path> sources = new java.util.ArrayList<>(List.of(
 				SOURCES.resolve("net/minecraft/world/level/ServerLevelAccessor.java"),
 				SOURCES.resolve("net/minecraft/world/level/Level.java"),
 				SOURCES.resolve("net/minecraft/core/BlockPos.java"),
@@ -62,8 +62,15 @@ class CreateStructureMixinAdapterWeaveTest {
 				SOURCES.resolve(structure + "StructureTemplate.java"),
 				SOURCES.resolve("fixture/createstructure/ControlProcessor.java"),
 				SOURCES.resolve("fixture/createstructure/Probe.java"),
-				SOURCES.resolve("com/zurrtum/create/mixin/StructureTemplateMixin.java")),
-				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
+				SOURCES.resolve("com/zurrtum/create/mixin/StructureTemplateMixin.java")));
+        Path shared=Path.of("src/test/resources/weave/replacedcall");sources.addAll(List.of(shared.resolve("net/minecraft/world/level/block/Mirror.java"),shared.resolve("net/minecraft/world/level/block/Rotation.java"),shared.resolve("net/minecraft/world/level/levelgen/structure/BoundingBox.java")));
+        fixture=WeaveHarness.fixture(work,"createstructure",sources,Map.of(CONFIG,SOURCES.resolve(CONFIG)));
+        Path target=SOURCES.resolve(structure+"StructureTemplate.java"),nativeTarget=work.resolve("native/StructureTemplate.java");java.nio.file.Files.createDirectories(nativeTarget.getParent());
+        String nativeCode=java.nio.file.Files.readString(target)
+            .replace("addEntitiesToWorld(level, pos, settings, new ProblemReporter())", "placeEntities(level,pos,settings.getMirror(),settings.getRotation(),settings.getRotationPivot(),settings.getBoundingBox(),settings.shouldFinalizeEntities(),new ProblemReporter())")
+            .replace("private void addEntitiesToWorld(ServerLevelAccessor level, BlockPos pos, StructurePlaceSettings settings, ProblemReporter reporter)","private void placeEntities(ServerLevelAccessor level,BlockPos pos,net.minecraft.world.level.block.Mirror mirror,net.minecraft.world.level.block.Rotation rotation,BlockPos pivot,net.minecraft.world.level.levelgen.structure.BoundingBox box,boolean fin,ProblemReporter reporter)");
+        java.nio.file.Files.writeString(nativeTarget,nativeCode);List<Path> originalSources=new java.util.ArrayList<>(sources);originalSources.remove(target);originalSources.add(nativeTarget);
+        Path original=WeaveHarness.fixture(work,"original",originalSources,Map.of());fixture=NativeWeaveReferences.with(work,fixture,NativeWeaveReferences.classes(original));
 		adapted = run("adapted", Map.of());
 		off = run("adapter-off", Map.of(MixinStructurePlacementAdapter.PROPERTY, "off", "forbric.mixinRetarget.replacedCall", "off"));
 		r7Only = run("r7-only", Map.of(MixinStructurePlacementAdapter.PROPERTY, "off"));

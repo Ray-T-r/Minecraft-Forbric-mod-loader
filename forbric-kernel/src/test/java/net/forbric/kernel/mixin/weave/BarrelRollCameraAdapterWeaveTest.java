@@ -58,6 +58,15 @@ class BarrelRollCameraAdapterWeaveTest {
 		}
 		assertEquals(6, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		fixture = WeaveHarness.fixture(work, "barrelroll", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
+        ClassNode nativeCamera=new ClassNode();new ClassReader(Files.readAllBytes(work.resolve("barrelroll-classes/"+CAMERA+".class"))).accept(nativeCamera,0);
+        nativeCamera.methods.removeIf(method->method.name.equals("alignWithEntity"));
+        nativeCamera.methods.stream().filter(method->method.name.equals("nativeAlignment")).findFirst().orElseThrow().name="alignWithEntity";
+        org.objectweb.asm.ClassWriter writer=new org.objectweb.asm.ClassWriter(0);nativeCamera.accept(writer);byte[] nativeBytes=writer.toByteArray();
+        Path binary=work.resolve("native-camera.bin"),index=work.resolve("native-camera-index.tsv");Files.write(binary,nativeBytes);
+        Files.writeString(index,"# forbric-native-reference-v1\n"+CAMERA+"\t"+java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(nativeBytes))+"\n");
+        fixture=WeaveHarness.fixture(work,"barrelroll",sources,Map.of(CONFIG,SOURCES.resolve(CONFIG),
+                "META-INF/forbric/native-reference/FABRIC/index.tsv",index,
+                "META-INF/forbric/native-reference/FABRIC/"+CAMERA+".class.bin",binary));
 		adapted = run("adapted", Map.of());
 		off = run("adapter-off", Map.of(MixinCameraRollAdapter.PROPERTY, "off"));
 	}

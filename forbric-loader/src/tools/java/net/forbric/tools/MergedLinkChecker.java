@@ -80,6 +80,10 @@ public final class MergedLinkChecker {
 	private final Map<String, ClassNode> classes = new LinkedHashMap<>();
 	/** internal-names defined by the MERGED jar specifically — only refs INTO these are link-checked. */
 	private final Set<String> mergedOwned = new LinkedHashSet<>();
+	/** Explicit final-definition obligations are not accepted dangling references. */
+	private final Map<String, String> requiredAncestors = new LinkedHashMap<>();
+	private final Set<String> compositionReferences = new LinkedHashSet<>();
+	private final Set<String> compositionReportLines = new LinkedHashSet<>();
 
 	public static void main(String[] args) throws IOException {
 		Path baseline = null;
@@ -109,6 +113,7 @@ public final class MergedLinkChecker {
 		for (int i = 1; i < jars.size(); i++) c.loadPath(jars.get(i), false);
 		if (c.mergedOwned.isEmpty()) usage("the merged input contains no classes; no link check was performed");
 		List<String> dangling = c.check();
+		c.compositionReferences.stream().sorted().forEach(reference -> System.out.println("[REQUIRES-COMPOSITION] " + reference));
 
 		String scanned = "[link-check] loaded " + c.classes.size() + " classes ("
 				+ c.mergedOwned.size() + " from the merged jar); ";
@@ -157,7 +162,9 @@ public final class MergedLinkChecker {
 		}
 		List<String> fixed = new ArrayList<>();
 		for (String k : known) {
-			if (!stillDangling.contains(k)) {
+			if (c.compositionReportLines.contains(k)) {
+				System.out.println("[DEFERRED] " + k + " (explicit final-definition composition obligation)");
+			} else if (!stillDangling.contains(k)) {
 				System.out.println("[FIXED]    " + k);
 				fixed.add(k);
 			}
@@ -231,6 +238,7 @@ public final class MergedLinkChecker {
 
 	private void load(String jarPath, boolean merged) throws IOException {
 		try (ZipFile zf = new ZipFile(jarPath)) {
+			if (merged) readAncestorObligations(zf);
 			var entries = zf.entries();
 			int n = 0;
 			while (entries.hasMoreElements()) {
@@ -259,20 +267,62 @@ public final class MergedLinkChecker {
 					if (insn instanceof FieldInsnNode fi) {
 						if (!mergedOwned.contains(fi.owner)) continue;
 						if (!resolveField(fi.owner, fi.name, fi.desc)) {
-							reports.add(cn.name + "#" + m.name + m.desc + "  ->  FIELD " + fi.owner + "." + fi.name + " " + fi.desc);
-						}
+                            String report = cn.name + "#" + m.name + m.desc + "  ->  FIELD " + fi.owner + "." + fi.name + " " + fi.desc;
+                            if (requiresComposition(fi.owner, fi.name, fi.desc, true)) compositionReportLines.add(report); else reports.add(report);
+                        }
 					} else if (insn instanceof MethodInsnNode mi) {
 						if (!mergedOwned.contains(mi.owner)) continue;
 						if (mi.itf) continue; // interface dispatch: default/abstract resolution is looser, skip
 						if (!resolveMethod(mi.owner, mi.name, mi.desc)) {
-							reports.add(cn.name + "#" + m.name + m.desc + "  ->  METHOD " + mi.owner + "." + mi.name + mi.desc);
-						}
+                            String report = cn.name + "#" + m.name + m.desc + "  ->  METHOD " + mi.owner + "." + mi.name + mi.desc;
+                            if (requiresComposition(mi.owner, mi.name, mi.desc, false)) compositionReportLines.add(report); else reports.add(report);
+                        }
 					}
 				}
 			}
 		}
 		// De-dup and sort; the caller decides how each line is labelled and whether it is fatal.
 		return new LinkedHashSet<>(reports).stream().sorted().toList();
+	}
+
+	private void readAncestorObligations(ZipFile zip) throws IOException {
+		ZipEntry manifest = zip.getEntry("META-INF/forbric/required-ancestor-compositions.tsv");
+		if (manifest == null) return;
+		String text = new String(zip.getInputStream(manifest).readAllBytes(), StandardCharsets.UTF_8);
+		for (String line : text.split("\\R")) {
+			if (line.isBlank() || line.startsWith("#")) continue;
+			String[] row = line.split("\\t", -1);
+			if (row.length != 3) throw new IOException("Malformed ancestor obligation: " + line);
+			ZipEntry nativeEntry = zip.getEntry("META-INF/forbric/native-reference/FORGE/" + row[0] + ".class.bin");
+			ZipEntry currentEntry = zip.getEntry(row[0] + ".class");
+			if (nativeEntry == null || currentEntry == null) throw new IOException("Missing actual ancestor reference: " + line);
+			ClassNode nativeNode = new ClassNode(), current = new ClassNode();
+			new ClassReader(zip.getInputStream(nativeEntry).readAllBytes()).accept(nativeNode, ClassReader.SKIP_CODE);
+			new ClassReader(zip.getInputStream(currentEntry).readAllBytes()).accept(current, ClassReader.SKIP_CODE);
+			if (!row[0].equals(current.name) || !row[0].equals(nativeNode.name) || !row[1].equals(current.superName) || !row[2].equals(nativeNode.superName)) throw new IOException("Ancestor obligation differs from actual definitions: " + line);
+			requiredAncestors.put(row[0], row[2]);
+		}
+	}
+
+	private boolean requiresComposition(String owner, String name, String descriptor, boolean field) {
+		if (name.startsWith("<")) return false;
+		Set<String> seen = new LinkedHashSet<>();
+		for (String cursor = owner; cursor != null && seen.add(cursor); ) {
+			String ancestor = requiredAncestors.get(cursor);
+			if (ancestor != null && declaredAncestorMember(ancestor, name, descriptor, field, new LinkedHashSet<>())) {
+				compositionReferences.add(owner + "." + name + descriptor + " requires " + cursor + " native ancestor " + ancestor);
+				return true;
+			}
+			ClassNode node = classes.get(cursor); cursor = node == null ? null : node.superName;
+		}
+		return false;
+	}
+
+	private boolean declaredAncestorMember(String owner, String name, String descriptor, boolean field, Set<String> seen) {
+		if (owner == null || !seen.add(owner)) return false; ClassNode node = classes.get(owner); if (node == null) return false;
+		if (field) { for (FieldNode member : node.fields) if (member.name.equals(name) && member.desc.equals(descriptor) && (member.access & Opcodes.ACC_PRIVATE) == 0) return true; }
+		else { for (MethodNode member : node.methods) if (member.name.equals(name) && member.desc.equals(descriptor) && (member.access & (Opcodes.ACC_PRIVATE | Opcodes.ACC_ABSTRACT)) == 0) return true; }
+		return declaredAncestorMember(node.superName, name, descriptor, field, seen);
 	}
 
 	private boolean resolveField(String owner, String name, String desc) {

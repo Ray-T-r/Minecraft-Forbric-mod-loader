@@ -30,7 +30,7 @@ class MixinCallbackContractsTest {
         Map<String, Integer> carriers = Map.of("client/mixin/ClientPacketListenerMixin",1,"mixin/LevelChunkMixin",1,
                 "client/mixin/EntityFluidInteractionMixin",2,"client/mixin/ModelManagerMixin",1,"client/mixin/LoadBlockModelMixin",1,
                 "mixin/PersistentEntitySectionManagerCallbackMixin",1,"client/mixin/GuiRendererMixin",1,"mixin/ItemStackMixin",2);
-        carriers.forEach((entry,count) -> contracts.add(create(entry, "MixinCarrierCallbackAdapters",MixinCarrierCallbackAdapters::adapt, count)));
+        carriers.forEach((entry,count) -> contracts.add(create(entry, "MixinCarrierCallbackAdapters",(mixin,targets)->MixinCarrierCallbackAdapters.adapt(mixin,targets,(family,name)->CreateInjectionAdaptersTest.nativeTarget(name)), count)));
         for (String entry : List.of("LivingEntityMixin","ItemEntityMixin","ExperienceOrbMixin","AbstractBoatMixin","LeashableMixin","ExplosionDamageCalculatorMixin"))
             contracts.add(create("mixin/"+entry, "MixinBlockQueryAdapters",MixinBlockQueryAdapters::adapt, entry.equals("LivingEntityMixin")?2:1));
         for (var entry : Map.of("mixin/SignalGetterMixin",1,"mixin/EntityMixin",1,"client/mixin/MultiPlayerGameModeMixin",2,"mixin/ServerPlayerGameModeMixin",1).entrySet())
@@ -51,7 +51,7 @@ class MixinCallbackContractsTest {
         contracts.add(jar("GUI item","build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar",
                 "celia/adwadg/itemglintrelight/mixin/client/GuiGraphicsItemOutlineMixin","MixinGuiItemCaptureAdapter",MixinGuiItemCaptureAdapter::adapt,1));
         contracts.add(jar("camera roll","build/compat-inputs/c2me-barrel-20261001/do_a_barrel_roll-fabric-3.8.4+26.2.jar",
-                "nl/enjarai/doabarrelroll/mixin/client/roll/CameraMixin","MixinCameraRollAdapter",MixinCameraRollAdapter::adapt,4));
+                "nl/enjarai/doabarrelroll/mixin/client/roll/CameraMixin","MixinCameraRollAdapter",(mixin,targets)->MixinCameraRollAdapter.adapt(mixin,targets,(family,name)->CreateInjectionAdaptersTest.nativeTarget(name)),4));
         contracts.add(jar("chunk status","build/compat-inputs/startup-20260930/c2me-notickvd.jar",
                 "com/ishland/c2me/notickvd/mixin/MixinWorld","chunk status",(mixin,targets) -> {
                     Function<String,byte[]> resource = name -> {if (!name.endsWith(".class"))return null;

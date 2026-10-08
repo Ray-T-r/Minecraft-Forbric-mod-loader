@@ -33,6 +33,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
@@ -40,6 +41,9 @@ import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TryCatchBlockNode;
+import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.SourceInterpreter;
 
 /**
  * The data-map fallback's shape over the COMPILED game-side class, and the watch's registrations over a recording
@@ -47,8 +51,8 @@ import org.objectweb.asm.tree.TryCatchBlockNode;
  * three LOWEST-priority listeners through the four-argument overload.
  */
 class KernelNeoWorldgenTest {
-	private static final Path COMPILED = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime",
-			"net", "forbric", "kernel", "runtime", "KernelNeoWorldgen.class").normalize();
+	private static final Path RUNTIME = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
+	private static final Path COMPILED = RUNTIME.resolve("net/forbric/kernel/runtime/KernelNeoWorldgen.class");
 
 	@Test
 	void theFallbackAsksForTheLiveConditionContextAndFallsToEmptyOnlyInAHandler() throws Exception {
@@ -57,9 +61,16 @@ class KernelNeoWorldgenTest {
 		new ClassReader(Files.readAllBytes(COMPILED)).accept(node, 0);
 		MethodNode load = find(node, "loadDataMaps");
 		boolean live = false;
+		var frames=new Analyzer<>(new SourceInterpreter()).analyze(node.name,load);
 		List<FieldInsnNode> empties = new ArrayList<>();
 		for (AbstractInsnNode insn = load.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-			if (insn instanceof MethodInsnNode c && "net/minecraft/server/ReloadableServerResources".equals(c.owner) && "getConditionContext".equals(c.name)) live = true;
+			if (insn instanceof MethodInsnNode c && c.getOpcode()==Opcodes.INVOKESTATIC&&"net/forbric/api/VirtualGetters".equals(c.owner)&&"get".equals(c.name)) {
+                var frame=frames[load.instructions.indexOf(c)];int start=frame.getStackSize()-4;
+                Object[] expected={Type.getObjectType("net/minecraft/server/ReloadableServerResources"),"getConditionContext",Type.getObjectType("net/neoforged/neoforge/common/conditions/ICondition$IContext")};
+                for(int argument=0;argument<3;argument++){var origin=frame.getStack(start+argument);assertEquals(1,origin.insns.size());assertEquals(expected[argument],((LdcInsnNode)origin.insns.iterator().next()).cst);}
+                var receiver=frame.getStack(start+3);assertEquals(1,receiver.insns.size());assertTrue(receiver.insns.iterator().next() instanceof MethodInsnNode managers&&managers.name.equals("managers")&&managers.desc.equals("()Lnet/minecraft/server/ReloadableServerResources;"));
+                assertTrue(!insideAHandler(load,c),"the exact-return virtual getter is asked on the main path");live=true;
+            }
 			if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && "EMPTY".equals(f.name)
 					&& "net/neoforged/neoforge/common/conditions/ICondition$IContext".equals(f.owner)) empties.add(f);
 		}
@@ -143,7 +154,7 @@ class KernelNeoWorldgenTest {
 	}
 
 	private static URLClassLoader gameSideLoader() throws Exception {
-		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
+		Path compiled = RUNTIME;
 		Path run = TestFixtures.stagedRoot();
 		Path forgeRt = run.resolve("forge-runtime/forge-runtime.jar");
 		Path neoRt = run.resolve("neoforge-runtime/neoforge-runtime.jar");

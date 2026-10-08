@@ -163,9 +163,7 @@ class EntrypointResolveFailureTest {
 		try {
 			active.set(null, loader);
 			System.setProperty(KernelForeignShimContext.SWITCH, "off");
-			var invoke = KernelFabricEcosystem.class.getDeclaredMethod("invoke", String.class, Class.class, Consumer.class);
-			invoke.setAccessible(true);
-			return (int) invoke.invoke(null, "main", ModInitializer.class, (Consumer<ModInitializer>) ModInitializer::onInitialize);
+			return KernelFabricEcosystem.invokeEntrypoints("main", ModInitializer.class, ModInitializer::onInitialize);
 		} finally {
 			active.set(null, previous);
 			if (shim == null) System.clearProperty(KernelForeignShimContext.SWITCH); else System.setProperty(KernelForeignShimContext.SWITCH, shim);

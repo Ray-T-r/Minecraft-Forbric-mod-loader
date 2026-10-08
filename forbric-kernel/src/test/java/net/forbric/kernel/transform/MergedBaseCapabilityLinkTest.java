@@ -51,6 +51,10 @@ class MergedBaseCapabilityLinkTest {
 	private static final Set<String> KNOWN_UNRESOLVED = new TreeSet<>(List.of(
 			"net/minecraft/server/level/ServerLevel.getCapabilityDispatcher -> net/minecraft/server/level/ServerLevel.getCapabilities()Lnet/minecraftforge/common/capabilities/CapabilityDispatcher;",
 			"net/minecraft/server/level/ServerLevel.initCapabilities -> net/minecraft/server/level/ServerLevel.gatherCapabilities()V",
+			// The generic native dependency selection retains these real lifecycle calls; the required
+			// ancestor-composition manifest, and the positive whole-artifact test below, cover them.
+			"net/minecraft/world/entity/Entity.remove -> net/minecraft/world/entity/Entity.invalidateCaps()V",
+			"net/minecraft/world/entity/Entity.revive -> net/minecraft/world/entity/Entity.reviveCaps()V",
 			"net/minecraft/world/entity/LivingEntity.getCapability -> net/minecraft/world/entity/Entity.getCapability" + FORGE_GET,
 			"net/minecraft/world/entity/LivingEntity.invalidateCaps -> net/minecraft/world/entity/Entity.invalidateCaps()V",
 			"net/minecraft/world/entity/LivingEntity.reviveCaps -> net/minecraft/world/entity/Entity.reviveCaps()V",

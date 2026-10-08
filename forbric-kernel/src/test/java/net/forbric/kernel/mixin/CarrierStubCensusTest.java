@@ -45,8 +45,12 @@ class CarrierStubCensusTest {
 	private static final Path VANILLA = MC.resolve("versions/26.2/26.2.jar");
 	private static final Path INTEROP = TestFixtures.stagedRoot().resolve("merged-base/forge-runtime-interop.jar");
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar");
-	private static final Path KERNEL_MAIN = Path.of("build/classes/java/main");
-	private static final Path KERNEL_RUNTIME = Path.of("build/classes/java/runtime");
+	private static final Path KERNEL_MAIN = mainClasses();
+    private static Path mainClasses(){
+        try{return Path.of(MixinStubRebind.class.getProtectionDomain().getCodeSource().getLocation().toURI());}
+        catch(Exception invalid){throw new IllegalStateException("The census needs the actual compiled kernel",invalid);}
+    }
+	private static final Path KERNEL_RUNTIME = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "merged base and vanilla jar required");

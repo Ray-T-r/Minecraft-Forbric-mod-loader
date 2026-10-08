@@ -1,18 +1,26 @@
 {
   "schema": 2,
-  "baselineSha256": "642cc6d136c508f11cc246e8e9baf89e92e2db993e2d5d488537aedcdce45dbb",
-  "rawReferences": 24,
+  "baselineSha256": "ab5b26f50dac2e473e5443c83c9af2efc7722bb1552af7d2d323fbcbb308f9b3",
+  "rawReferences": 7,
   "pins": {
     "minecraft": "26.2",
     "forge": "26.2-65.0.1",
     "neoforge": "26.2.0.88"
   },
-  "toolCommit": "3be73b36de1a31952c27cccfaf95d82ce6ea632b",
+  "toolCommit": "ec86124409d0d03f30a17f2cbf3e5a37ad4b3c34",
   "toolSources": {
-    "MergedBaseBuilder.java": "2d2f4e5a7c1923814d0d85dadef5bf501f2828e7cde27ec035173aed458f8983",
-    "AdditiveMethodMerger.java": "afc3614fb41367bc8e2778671bd8f6fcc79bfc4fc8027cb40e5054f55b3eb1bd",
-    "RuntimeInteropPatcher.java": "bd8485e871b69df4f2f3272dc7299fa23f29ff5099b5c9483f65728184c9aeee",
-    "MergedLinkChecker.java": "211977054c3c5a1db585b753302b2d6b3d53e6e016dad97ce0833cf92ac24f9f"
+    "MergedBaseBuilder.java": "2888ec9a1e702d334b13e697b546b709065dfaf904214bab4d4fa25c6fd13276",
+    "AdditiveMethodMerger.java": "f8c551788edc6abb86d18abdc95001a9bcadc893710ce69cedf4c725895f17d7",
+    "RuntimeInteropPatcher.java": "b503f0bdee257d4303dea4ca828b908b77e2efc6a0215cc6c317b2744a679b2e",
+    "MergedLinkChecker.java": "187b3dfca3eca9d9d1ef23de8986050e7a692dad1d71f842084cc37126e4926c",
+    "ContractGraph.java": "7a3e86b7b4a59ee7f8ed8214f149c516f70975710147682b19ab754c2c8f536d",
+    "EquivalentSuperclassBridge.java": "fcc15bc602ec5e65466497e3869a4a883a6c9dd4b70c758d0527246d282b1791",
+    "MapContractRepair.java": "bc04bdf939e93edf656cf07368bda1ecef3fbcaea2ccc16ce90272b66c3cd8bb",
+    "FieldContractReconciler.java": "199a91325d1c50732adbf53a8ed413ef367b8cb0c536095cd08fb75c15cb2482",
+    "MemoizedSupplierContract.java": "60a3ea5bf0346a47788df0fa56139714a7641f0393de7564b1725d281813186d",
+    "NonNullReturnProof.java": "3c2a56c757e7cfb19518e3acbb98c078bceab7f742fcedb7547c5e4e44e31d8e",
+    "TailHookComposition.java": "3cd70795953b6130da88799ab4cafe50439148dd4e4d252703642a11ba9adee4",
+    "EmptyArrayContractBridge.java": "dc2d518411451a76a11178fef7212e85ffdd586fab5561d58e8aa43d88cdd1a0"
   },
   "mergeInputs": {
     "vanilla": {
@@ -21,7 +29,7 @@
     },
     "forge-patched": {
       "file": "patched-mc-forge-26.2.jar",
-      "sha256": "6e0e9d17ac1bd46990b6f2826f23a70ef2baad32cf724da14b2f6288f8624162"
+      "sha256": "daaa0756408811c6da23036697bf2fe1efc86f008ddccbb8a793fa21d19f6dbc"
     },
     "neo-patched": {
       "file": "patched-mc-neoforge-26.2.jar",
@@ -29,28 +37,42 @@
     },
     "forge-runtime": {
       "file": "forge-runtime.jar",
-      "sha256": "60558d445681de895d95bfa6ce0fe8b5540fc2c9c39ebb72aab75b7b4c5ce61c"
+      "sha256": "590978f8288207a992cfba4723ae76b57d624c98b58f040afd4a303fce575a73"
     },
     "neo-runtime": {
       "file": "neoforge-runtime.jar",
-      "sha256": "bde765325d1925e0bcfdaaf141fcda21612fcbd25ad3378ff45cff2826134b67"
+      "sha256": "d8b591acaa23e4ec3f2995900fa10584bc75a9977bfebd0ddb60aaf21437eaf0"
     }
   },
   "inputs": {
     "merged": {
-      "file": "patched-mc-merged-26.2.jar",
-      "sha256": "0d03b6c711c0eea06ada27eaefb463c7fdd5d85832552e177fd3cefe36023506"
+      "file": "merged-live-provider.jar",
+      "sha256": "f8dbc7aeaef10b46dba4c62bbb797263177eca6957539d7083309d6648fd3a6b"
     },
     "neoRuntime": {
       "file": "neoforge-runtime.jar",
-      "sha256": "bde765325d1925e0bcfdaaf141fcda21612fcbd25ad3378ff45cff2826134b67"
+      "sha256": "d8b591acaa23e4ec3f2995900fa10584bc75a9977bfebd0ddb60aaf21437eaf0"
     },
     "forgeInterop": {
-      "file": "forge-runtime-interop.jar",
-      "sha256": "d1b19f99e193a9715e997fceda9cd5c63dfbe96b87a51ea0ee2e2db0a3f5183a"
+      "file": "forge-runtime-live-provider-interop.jar",
+      "sha256": "8d2fb2ca90e24e0cc402613293d03cf73e944e391a5bcfb4faa638fd6e5ede8e"
     }
   },
-  "result": "dangling references: 24 (known 24, new 0); baseline entries now fixed: 0",
-  "reproduction": "inputs.merged and inputs.forgeInterop are the compatibility candidate (forbric-kernel/build/candidate/ in the compatibility-contracts worktree). Rebuilding with forbric-loader/run/build-merged-base.sh from toolCommit's toolSources (unchanged since) and mergeInputs gives the same 30472 merged entries and 2911 interop entries in the same order with the same CRCs, and a byte-identical merge-conflicts.txt; only zip entry timestamps differ, so the jar hashes themselves do not reproduce. The staged reference base f5b2866641dd... predates 6881f11 and is not the output of these tools.",
-  "review": "Raw-base exceptions only; runtime repairs must be checked separately. Includes capability members, anonymous switch field, Forge NBT builder, GameTest cleanup, condition context and world modifiers. No exception licenses a new reference."
+  "result": "dangling references: 7 (known 7, new 0); 16 raw references require explicit final-definition native ancestor composition; 3 former raw defects repaired",
+  "reproduction": "Build all 12 recorded tool sources, then merge the five mergeInputs and run actual-contract interop against the merged jar and peer runtime. Rebuilt artifacts and merge/interop/link logs in /tmp/forbric-contract-review-merge-20261008-v3. ZIP timestamps differ across rebuilds; compare entry contents and CRCs. The source snapshot is dirty and records exact SHA-256 for each compiled source.",
+  "review": "The 7 retained raw exceptions are the anonymous direction switch field, Forge NBT builder, and GameTest cleanup references. Native capability methods have an explicit manifest obligation proved from the original ancestor ABI; the kernel must certify actual state/constructor effects before final definition, and legacy refuses an unsupported obligation. Both SDK return descriptors are retained; their mutable data-view composition is validated separately at runtime. No exception licenses a new reference or a silently discarded protocol.",
+  "toolWorkingTree": "uncommitted sources: toolSources records the actual compiled snapshot; toolCommit is its base commit",
+  "requiredCompositions": [
+    "net/minecraft/server/level/ServerLevel.gatherCapabilities()V requires net/minecraft/world/level/Level native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Levels",
+    "net/minecraft/server/level/ServerLevel.getCapabilities()Lnet/minecraftforge/common/capabilities/CapabilityDispatcher; requires net/minecraft/world/level/Level native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Levels",
+    "net/minecraft/world/entity/Entity.invalidateCaps()V requires net/minecraft/world/entity/Entity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Entities",
+    "net/minecraft/world/entity/Entity.reviveCaps()V requires net/minecraft/world/entity/Entity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Entities",
+    "net/minecraft/world/entity/vehicle/boat/AbstractChestBoat.invalidateCaps()V requires net/minecraft/world/entity/Entity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Entities",
+    "net/minecraft/world/entity/vehicle/boat/AbstractChestBoat.reviveCaps()V requires net/minecraft/world/entity/Entity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Entities",
+    "net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.invalidateCaps()V requires net/minecraft/world/entity/Entity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Entities",
+    "net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.reviveCaps()V requires net/minecraft/world/entity/Entity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Entities",
+    "net/minecraft/world/level/block/entity/BlockEntity.deserializeCaps(Lnet/minecraft/core/HolderLookup$Provider;Lnet/minecraft/nbt/CompoundTag;)V requires net/minecraft/world/level/block/entity/BlockEntity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$BlockEntities",
+    "net/minecraft/world/level/block/entity/BlockEntity.invalidateCaps()V requires net/minecraft/world/level/block/entity/BlockEntity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$BlockEntities",
+    "net/minecraft/world/level/block/entity/BlockEntity.reviveCaps()V requires net/minecraft/world/level/block/entity/BlockEntity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$BlockEntities"
+  ]
 }

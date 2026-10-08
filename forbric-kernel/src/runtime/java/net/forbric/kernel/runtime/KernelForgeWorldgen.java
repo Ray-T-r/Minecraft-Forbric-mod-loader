@@ -550,7 +550,7 @@ public final class KernelForgeWorldgen {
 		try {
 			for (Map.Entry<ResourceKey<Biome>, Biome> entry : registries.lookupOrThrow(Registries.BIOME).entrySet()) {
 				biomes++;
-				net.neoforged.neoforge.common.world.ModifiableBiomeInfo.BiomeInfo original = entry.getValue().modifiableBiomeInfo().getOriginalBiomeInfo();
+				net.neoforged.neoforge.common.world.ModifiableBiomeInfo.BiomeInfo original = net.forbric.api.VirtualGetters.get(Biome.class, "modifiableBiomeInfo", net.neoforged.neoforge.common.world.ModifiableBiomeInfo.class, entry.getValue()).getOriginalBiomeInfo();
 				net.neoforged.neoforge.common.world.ModifiableBiomeInfo.BiomeInfo back = neoBiomeInfo(
 						net.minecraftforge.common.world.ModifiableBiomeInfo.BiomeInfo.Builder.copyOf(forgeBiomeInfo(original)).build());
 				List<Optional<JsonElement>> a = encodeBiome(original, registries), b = encodeBiome(back, registries);
@@ -561,7 +561,7 @@ public final class KernelForgeWorldgen {
 			}
 			for (Map.Entry<ResourceKey<Structure>, Structure> entry : registries.lookupOrThrow(Registries.STRUCTURE).entrySet()) {
 				structures++;
-				Structure.StructureSettings original = entry.getValue().modifiableStructureInfo().getOriginalStructureInfo().structureSettings();
+				Structure.StructureSettings original = net.forbric.api.VirtualGetters.get(Structure.class, "modifiableStructureInfo", net.neoforged.neoforge.common.world.ModifiableStructureInfo.class, entry.getValue()).getOriginalStructureInfo().structureSettings();
 				Structure.StructureSettings back = net.minecraftforge.common.world.ModifiableStructureInfo.StructureInfo.Builder.copyOf(
 						new net.minecraftforge.common.world.ModifiableStructureInfo.StructureInfo(original)).build().structureSettings();
 				if (!sameContent(List.of(encodeStructure(original, registries)),

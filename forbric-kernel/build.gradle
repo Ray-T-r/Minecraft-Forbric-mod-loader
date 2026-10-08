@@ -75,12 +75,8 @@ def transferModuleFiles = files(fileTree(transferModulesDir) { include '*.jar' }
 // side must supply it (-Pforbric.rebornEnergy=<energy jar>) or the build fails naming the file, so no game side can
 // quietly ship without the energy bridge.
 //
-// Nothing fetches it and *.jar is never committed, so the file is pinned by SHA-256: the bridge was written and tested
-// against exactly this build, and a different file at the same path must not be accepted silently. Without the
-// property it is taken from beside the staged tree, else from this checkout's own run/energy-api/, so a fresh clone
-// or a second working tree needs only the file dropped there. verifyRebornEnergy checks it on EVERY game-side build:
-// compileRuntimeJava's own up-to-date check sees only the jar's API, so a same-API file never re-ran it.
-def rebornEnergySha256 = '889afc438d3e4add5cfdac76517da7987a2c495e4731690a56f2c5dee775db59'
+// Builds accept any implementation/release that preserves the declared public binary API. A file hash is
+// identity evidence, not ABI compatibility; ApiJarContract checks members without initializing mod classes.
 def rebornEnergyDefaults = [file('.dev/api/energy-5.0.0.jar'),
 		new File(stagedRoot.parentFile.parentFile, 'forbric-kernel/run/energy-api/energy-5.0.0.jar'),
 		file('run/energy-api/energy-5.0.0.jar')]
@@ -294,18 +290,20 @@ tasks.named('compileRuntimeJava') {
 	}
 }
 // No outputs, so never up to date: it runs whenever the game side is built.
-def verifyRebornEnergy = tasks.register('verifyRebornEnergy') {
-	description = 'Checks the Team Reborn Energy jar the game side compiles against: present, and exactly the pinned 5.0.0 file.'
+def energyApiContract = file('src/main/resources/net/forbric/kernel/interop/protocol/energy.api-contract.txt')
+def verifyRebornEnergy = tasks.register('verifyRebornEnergy', JavaExec) {
+	description = 'Checks the energy adapter public binary API, independent of jar version or implementation hash.'
 	onlyIf { !stagedGameJars.isEmpty() }
-	doLast {
-		if (!stagedRebornEnergy.isFile()) throw new GradleException("The kernel game side includes its energy bridge " +
-				"and compiles it against Team Reborn Energy 5.0.0, but ${stagedRebornEnergy} does not exist. Pass " +
-				"-Pforbric.rebornEnergy=<energy-5.0.0.jar> or put the file in forbric-kernel/run/energy-api/ " +
-				"(team_reborn_energy 5.0.0, MIT, https://github.com/TechReborn/Energy; SHA-256 ${rebornEnergySha256}).")
-		def digest = java.security.MessageDigest.getInstance('SHA-256').digest(stagedRebornEnergy.bytes).encodeHex().toString()
-		if (digest != rebornEnergySha256) throw new GradleException("${stagedRebornEnergy} is not the Team Reborn Energy " +
-				"5.0.0 jar the energy bridge is built and tested against: its SHA-256 is ${digest}, expected " +
-				"${rebornEnergySha256}. Use that exact file; another Reborn build needs the bridge re-verified and this pin changed.")
+	dependsOn tasks.named('classes'), extractTransferApis
+	classpath = sourceSets.main.runtimeClasspath
+	mainClass = 'net.forbric.kernel.metadata.ApiJarContract'
+	inputs.file(energyApiContract).withPropertyName('energyApiContract')
+	inputs.files(stagedRebornEnergy).withPropertyName('energyApiImplementation').optional()
+	doFirst {
+		if (!stagedRebornEnergy.isFile()) throw new GradleException("The energy adapter needs a jar exposing its public API: " +
+				stagedRebornEnergy + ". Pass -Pforbric.rebornEnergy=<compatible energy API jar>.")
+		setArgs([energyApiContract.absolutePath, stagedRebornEnergy.absolutePath] +
+				transferModuleFiles.files.collect { it.absolutePath })
 	}
 }
 tasks.named('compileRuntimeJava') { dependsOn verifyRebornEnergy }

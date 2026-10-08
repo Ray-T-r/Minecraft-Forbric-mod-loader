@@ -108,8 +108,24 @@ public final class ForbricMixinService
 	/** Late structural plans register against their derived target, never a table of target names. Both bytecode
 	 * views share the loader's generation, so an in-flight old adapter reader cannot republish stale bytes. */
 	public static boolean registerBeforeDefinition(String target,Runnable registration){java.util.Objects.requireNonNull(registration);String binary=target.replace('/','.');ForbricClassLoader current=loader();return current.registerBeforeDefinition(binary,()->{try{registration.run();}finally{ADAPTER_CLASS_CACHE.remove(binary.replace('.','/')+".class");}});}
+	/** Preflight and the actual weaver must see the same offered callback transport. */
+	static byte[] absorbedCallbacksAsLoaded(byte[] bytes, java.util.function.Function<String,byte[]> resource) {
+		if(gameLoader==null||bytes==null)return bytes;
+		ClassNode source=new ClassNode();new ClassReader(bytes).accept(source,ClassReader.EXPAND_FRAMES);
+		int changed=MixinAbsorbedCallbackTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},
+			owner->NativeGameReferences.reference(MixinStubRebind.ecosystemOf(source.name),owner),loader());
+		changed+=MixinOperationSeamTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},NativeGameReferences::reference,loader());
+		if(changed==0)return bytes;org.objectweb.asm.ClassWriter out=new org.objectweb.asm.ClassWriter(0);source.accept(out);return out.toByteArray();
+	}
 
 	// --- IMixinService ---
+
+    /** Claims a complete original callback group against the actual current caller/bridge contract before config removal. */
+    public static boolean registerSourceCallbacks(ClassNode source) {
+        if(source==null||!MergedBaseMixinCompat.sourceMayBeClaimed(source.name))return false;
+        try { return net.forbric.kernel.boot.LootSourceCallbacks.offer(loader(),source,ForbricMixinService::readAdapterClass); }
+        catch(RuntimeException unavailable){ForbricLog.debug("[Forbric/Mixin] original callback group remains unclaimed: %s",unavailable.toString());return false;}
+    }
 
 	@Override
 	public String getName() {
@@ -329,6 +345,9 @@ public final class ForbricMixinService
 		MixinDefaultCallbackTransport.adapt(node, MixinStubRebind.ecosystemOf(node.name), this::mergedBaseNodeWithCode);
 		MixinNativePredicateSeam.adapt(node, this::mergedBaseNodeWithCode,
 				owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner));
+		MixinAbsorbedCallbackTransport.adapt(node, this::mergedBaseNodeWithCode,
+			owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner), loader());
+		MixinOperationSeamTransport.adapt(node, this::mergedBaseNodeWithCode,NativeGameReferences::reference,loader());
 		MixinSharedPredicateSeam.adapt(node, this::mergedBaseNodeWithCode,
 				owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner),
 				owner -> {
@@ -489,6 +508,7 @@ public final class ForbricMixinService
 		InputStream in = loader().getGameResourceAsStream(name);
 		if (in == null) return null;
 
+		if(isMixinConfigName(name))MergedBaseMixinCompat.discoverAll(ForbricMixinService::readGameResource);
 		boolean relax = isRelaxedConfig(name);
 		List<String> named = suppressedMixinsFor(name);
 		List<String> drop = new ArrayList<>(named);
@@ -501,6 +521,8 @@ public final class ForbricMixinService
 			byte[] bytes = source.readAllBytes();
 			String json = new String(bytes, StandardCharsets.UTF_8);
 			MixinCompatibility.rememberOriginalConfig(name, bytes);
+            MergedBaseMixinCompat.discover(name,bytes,ForbricMixinService::readGameResource);
+            named=suppressedMixinsFor(name);drop=new ArrayList<>(named);
 
 			if (scanForOwned) {
 				// Derive, from THIS config, the mixins that target a Forge/NeoForge-owned merged class — the general
@@ -651,7 +673,7 @@ public final class ForbricMixinService
 			if(current!=gameLoader||className!=null&&!current.isBytecodeGenerationCurrent(className,generation))continue;
 			AdapterClass entry=new AdapterClass(current,generation,bytes==null?NOT_FOUND:bytes);ADAPTER_CLASS_CACHE.put(path,entry);
 			if(current!=gameLoader||className!=null&&!current.isBytecodeGenerationCurrent(className,generation)){ADAPTER_CLASS_CACHE.remove(path,entry);continue;}
-			if(bytes!=null&&className!=null){ClassNode source=new ClassNode();new ClassReader(bytes).accept(source,ClassReader.EXPAND_FRAMES);net.forbric.kernel.boot.LootSourceCallbacks.offer(current,source,ForbricMixinService::readAdapterClass);}
+			if(bytes!=null&&className!=null){ClassNode source=new ClassNode();new ClassReader(bytes).accept(source,ClassReader.EXPAND_FRAMES);if(MergedBaseMixinCompat.sourceMayBeClaimed(source.name))net.forbric.kernel.boot.LootSourceCallbacks.offer(current,source,ForbricMixinService::readAdapterClass);}
 			if(current==gameLoader&&(className==null||current.isBytecodeGenerationCurrent(className,generation)))return bytes;
 			ADAPTER_CLASS_CACHE.remove(path,entry);
 		}
@@ -685,21 +707,7 @@ public final class ForbricMixinService
 
 		if (MergedBaseMixinCompat.enabled()) {
 			collectSuppressed(MergedBaseMixinCompat.SUPPRESSED_MIXINS, configName, out);
-			if (FabricRegistryLoaderMixinAdapter.enabled() && configName.equals("fabric-registry-sync-v0.mixins.json")) {
-				out.remove("RegistryDataLoaderMixin");
-			}
-			if (FabricRegistryInitializationMixinAdapter.enabled()) {
-				if (configName.equals("fabric-registry-sync-v0.mixins.json")) out.removeAll(List.of("BootstrapMixin","MainMixin"));
-				if (configName.equals("fabric-registry-sync-v0.client.mixins.json")) out.remove("MinecraftMixin");
-			}
-			if (FabricCreativePagerMixinAdapter.enabled() && configName.equals("fabric-creative-tab-api-v1.client.mixins.json")) {
-				out.remove("CreativeModeInventoryScreenMixin");
-			}
-			// The pruner trims these to the injectors that fit; switched off, the whole-mixin pin comes back so the
-			// kill switch reproduces the OLD behaviour and never the half-applied one.
-			if (!net.forbric.kernel.transform.GuestInjectorPruner.enabled()) {
-				collectSuppressed(MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED, configName, out);
-			}
+
 		}
 
 		String csv = System.getProperty("forbric.suppressMixins");
@@ -721,11 +729,9 @@ public final class ForbricMixinService
 	static String suppressionSource(String configName, String mixin) {
 		String entry = configName + ":" + mixin;
 		if (MergedBaseMixinCompat.enabled() && MergedBaseMixinCompat.SUPPRESSED_MIXINS.contains(entry)) {
-			return "MergedBaseMixinCompat.SUPPRESSED_MIXINS";
+			return "source protocol: " + MergedBaseMixinCompat.reason(configName,mixin);
 		}
-		if (MergedBaseMixinCompat.enabled() && MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED.contains(entry)) {
-			return "MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED (the injector pruner is off)";
-		}
+
 		return "-Dforbric.suppressMixins";
 	}
 
@@ -773,6 +779,7 @@ public final class ForbricMixinService
 	 * differential oracle, which relaxes every discovered guest mod's configs and excludes only infrastructure.)
 	 */
 	public static void setGuestConfigs(Collection<String> configs) {
+        MergedBaseMixinCompat.reset();
 		// Recorded BEFORE the relax gate, and unconditionally: this list is also what tells the guest-mixin adapter
 		// which classes some OTHER mod's mixin will add members to (see ForeignMixinTargets). That question is
 		// independent of whether configs are relaxed, so -Dforbric.relaxGuestMixins=off must not empty it.

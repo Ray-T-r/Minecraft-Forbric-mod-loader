@@ -194,7 +194,15 @@ class HookCallSiteCensusStagedTest {
 		List<String> both = HookCallSiteCensus.methodsCallingBothFamilies(List.of(base()));
 		System.out.println("[Forbric/Hooks] methods calling both ecosystems' event hooks: " + both.size());
 		List<String> unproved = new ArrayList<>();
-		for (String method : both) if (!bridgeStandsDown(method, classBytes(method.substring(0, method.indexOf('#'))))) unproved.add(method);
+        net.forbric.kernel.interop.protocol.NativeEventProtocols.register();
+        int bridged=0;
+        for(String method:both){
+            byte[] bytes=classBytes(method.substring(0,method.indexOf('#')));
+            if(!postsRegisteredBridgePair(method,bytes))continue;
+            bridged++;
+            if(!bridgeStandsDown(method,bytes))unproved.add(method);
+        }
+        assertTrue(bridged>0,"actual installed forward protocols must be measured");
 		assertEquals(List.of(), unproved,
 				"a method that posts through both families can deliver a bridged event twice to one subscriber, unless "
 						+ "the kernel proves the pair from its bytecode and stands its legacy forward down: " + unproved);
@@ -234,7 +242,15 @@ class HookCallSiteCensusStagedTest {
 	 * scopes the NeoForge call, and leaves anything else unchanged.
 	 */
 	private static boolean bridgeStandsDown(String method, byte[] bytes) {
-		if (!method.equals(PORTAL_OWNER + "#" + PORTAL_METHOD)) return false;
+        if(!method.equals(PORTAL_OWNER+"#"+PORTAL_METHOD)){
+            var transformer=new net.forbric.kernel.transform.NativeDualEventInjector(HookCallSiteCensusStagedTest::protocolBytes);
+            byte[] adapted=transformer.transform(method.substring(0,method.indexOf('#')).replace('/','.'),bytes,null);
+            if(adapted==bytes)return false;ClassNode node=new ClassNode();new ClassReader(adapted).accept(node,0);
+            String selector=method.substring(method.indexOf('#')+1);
+            for(MethodNode host:node.methods)if((host.name+host.desc).equals(selector))for(AbstractInsnNode instruction:host.instructions)
+                if(instruction instanceof MethodInsnNode call&&call.owner.equals(node.name)&&call.name.startsWith("forbric$nativeDelivery$"))return true;
+            return false;
+        }
 		byte[] adapted = new net.forbric.kernel.transform.PortalSpawnInjector()
 				.transform(PORTAL_OWNER.replace('/', '.'), bytes, null);
 		if (adapted == bytes) return false;
@@ -249,6 +265,25 @@ class HookCallSiteCensusStagedTest {
 		}
 		return false;
 	}
+
+    /** A dual hook method is a duplicate-forward risk only when it posts a protocol the kernel really forwards. */
+    private static boolean postsRegisteredBridgePair(String method,byte[] bytes){
+        if(method.equals(PORTAL_OWNER+"#"+PORTAL_METHOD))return true;
+        ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);String selector=method.substring(method.indexOf('#')+1);
+        for(MethodNode host:node.methods)if((host.name+host.desc).equals(selector))for(var contract:net.forbric.api.NativeEventDelivery.contracts()){
+            boolean source=false,target=false;
+            for(AbstractInsnNode instruction:host.instructions)if(instruction instanceof MethodInsnNode call){
+                if(call.owner.equals(contract.source().owner())&&call.name.equals(contract.source().name())&&call.desc.equals(contract.source().descriptor()))source=true;
+                if(call.owner.equals(contract.counterpart().owner())&&call.name.equals(contract.counterpart().name())&&call.desc.equals(contract.counterpart().descriptor()))target=true;
+            }
+            if(source&&target)return true;
+        }return false;
+    }
+    private static byte[] protocolBytes(String path){
+        for(Path jar:List.of(base(),root().resolve("merged-base/forge-runtime-interop.jar"),root().resolve("neoforge-runtime/neoforge-runtime.jar")))try(var zip=new java.util.zip.ZipFile(jar.toFile())){
+            var entry=zip.getEntry(path);if(entry!=null)try(var input=zip.getInputStream(entry)){return input.readAllBytes();}
+        }catch(Exception unavailable){return null;}return null;
+    }
 
 	private static byte[] classBytes(String owner) throws Exception {
 		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(base().toFile())) {

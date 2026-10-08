@@ -1,0 +1,9 @@
+# Public API used by the block-energy adapter. Implementations/releases may differ when this ABI is preserved.
+class team/reborn/energy/api/EnergyStorage public,interface
+field team/reborn/energy/api/EnergyStorage SIDED Lnet/fabricmc/fabric/api/lookup/v1/block/BlockApiLookup; public,static
+method team/reborn/energy/api/EnergyStorage supportsInsertion ()Z public,instance
+method team/reborn/energy/api/EnergyStorage supportsExtraction ()Z public,instance
+method team/reborn/energy/api/EnergyStorage insert (JLnet/fabricmc/fabric/api/transfer/v1/transaction/TransactionContext;)J public,instance
+method team/reborn/energy/api/EnergyStorage extract (JLnet/fabricmc/fabric/api/transfer/v1/transaction/TransactionContext;)J public,instance
+method team/reborn/energy/api/EnergyStorage getAmount ()J public,instance
+method team/reborn/energy/api/EnergyStorage getCapacity ()J public,instance

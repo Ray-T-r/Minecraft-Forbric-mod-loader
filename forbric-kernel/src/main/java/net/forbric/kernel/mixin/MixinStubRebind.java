@@ -200,6 +200,8 @@ public final class MixinStubRebind {
 		return !"off".equalsIgnoreCase(System.getProperty(SHARED_PROPERTY, "on"));
 	}
 
+    public static String configOf(String internalName){return CONFIGS.get(internalName);}
+
 	/** Records which family's mod declared {@code mixinInternalName}; null when the config's owner is ambiguous. */
 	public static void noteEcosystem(String mixinInternalName, Ecosystem ecosystem) {
 		if (mixinInternalName != null && ecosystem != null) ECOSYSTEMS.put(mixinInternalName, ecosystem);

@@ -149,7 +149,16 @@ had not been run for a day when that was last measured, and one of them had been
 why `gate-m0` now refuses to report on a test task that did not execute.
 
 The old `forbric-loader` is kept runnable as the **differential oracle**, and still builds the shared game
-artifacts the kernel consumes.
+artifacts the kernel consumes. It cannot certify removed mutable ancestors: a base declaring
+`required-ancestor-compositions.tsv` must use the kernel with registered composition proofs.
+
+## Generic compatibility and protocol extensions
+
+Mixin suppression, contributed interfaces, call relocation and local capture follow actual source/current bytecode and control-flow evidence. Class names, mod ids, handler names and fixed ordinals no longer authorize these compatibility rules. An unproved callback is never moved across another event's effects. Native-reference hashes establish provenance rather than pinning a mod release.
+
+Optional SDKs publish independent adapters through `META-INF/services/net.forbric.api.ProtocolExtension`, with one registry per game loader. Providers can offer absent APIs, register transforms, receive configuration lifecycle events and provide configuration screens. A merged artifact records removed stateful ancestors in `required-ancestor-compositions.tsv`; an `AncestorComposition` must prove that the final definition retains the state protocol or loading fails explicitly.
+
+The shared API also exposes `VirtualGetters` for public getters selected by their full JVM return type and `VirtualProperties` for mutable storage witnessed by a defined public getter. These work for any declaring class and preserve virtual dispatch; property writes require the actual getter/field proof before effects run. Extension providers must avoid linking game classes during construction and resolve game objects through `Context.gameLoader()`, as described in `ProtocolExtension`.
 
 ## Build & run
 

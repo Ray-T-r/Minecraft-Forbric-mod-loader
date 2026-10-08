@@ -205,7 +205,15 @@ class ClientPartTrackingInjectorExecutionTest {
 
 	/** The merged shape: NeoForge's getter, and every override of it, under the name it shares with MinecraftForge's. */
 	private static Map<String, byte[]> merged(Path work) throws Exception {
-		Map<String, byte[]> classes = new HashMap<>(InjectorExecution.compile(work, STAND_INS));
+		Map<String,String> source=new HashMap<>(STAND_INS);
+        source.put("net.minecraftforge.entity.PartEntity",partEntity("net.minecraftforge.entity").replace("extends Entity {","extends net.neoforged.neoforge.entity.PartEntity<T> {"));
+        source.put("net.minecraft.world.entity.boss.enderdragon.EnderDragon",source.get("net.minecraft.world.entity.boss.enderdragon.EnderDragon")
+            .replace("/** As DragonPartsInjector leaves it: NeoForge's getParts() has the parts, MinecraftForge's is empty. */","/** Both native descriptors keep the actual part array. */")
+            .replace("public final PartEntity<?>[] subEntities = {new PartEntity<>(11), new PartEntity<>(12)};","public final net.minecraftforge.entity.PartEntity<?>[] subEntities = {new net.minecraftforge.entity.PartEntity<>(11), new net.minecraftforge.entity.PartEntity<>(12)};")
+            .replace("return new net.minecraftforge.entity.PartEntity<?>[0];","return subEntities;"));
+        source.put("net.forbric.kernel.runtime.KernelMultipartViews",java.nio.file.Files.readString(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelMultipartViews.java")));
+        source.put("net.forbric.api.VirtualGetters",java.nio.file.Files.readString(Path.of("src/main/java/net/forbric/api/VirtualGetters.java")));
+        Map<String, byte[]> classes = new HashMap<>(InjectorExecution.compile(work, source));
 		String entity = ClientPartTrackingInjector.ENTITY;
 		SimpleRemapper rename = new SimpleRemapper(Map.of(entity + ".getNeoParts" + ClientPartTrackingInjector.NEO_GET_PARTS, "getParts")) {
 			@Override
@@ -213,7 +221,7 @@ class ClientPartTrackingInjectorExecutionTest {
 				return super.mapMethodName(entity, name, descriptor);
 			}
 		};
-		for (String name : List.of(entity, ClientPartTrackingInjector.DRAGON, "fixture/NeoSerpent")) {
+		for (String name : List.copyOf(classes.keySet())) {
 			ClassWriter writer = new ClassWriter(0);
 			new ClassReader(classes.get(name)).accept(new ClassRemapper(writer, rename), 0);
 			classes.put(name, writer.toByteArray());
@@ -252,7 +260,7 @@ class ClientPartTrackingInjectorExecutionTest {
 				"a NeoForge mod's parts go where NeoForge's onTrackingStart puts them");
 		assertEquals(List.of(List.of(), List.of(31, 32)), track(loader, "fixture.ForgeSerpent"),
 				"a MinecraftForge mod's parts keep MinecraftForge's tracking");
-		assertEquals(List.of(List.of(11, 12), List.of()), track(loader, "net.minecraft.world.entity.boss.enderdragon.EnderDragon"),
+		assertEquals(List.of(List.of(11, 12), List.of(11,12)), track(loader, "net.minecraft.world.entity.boss.enderdragon.EnderDragon"),
 				"the dragon's parts are added once, by its own case");
 
 		ClassLoader stock = InjectorExecution.load(original);

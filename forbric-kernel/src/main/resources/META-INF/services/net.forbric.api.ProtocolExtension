@@ -1,0 +1,6 @@
+net.forbric.kernel.interop.protocol.sodium.SodiumProtocolExtension
+net.forbric.kernel.interop.protocol.spectre.SpectreProtocolExtension
+net.forbric.kernel.interop.protocol.modmenu.ModMenuProtocolExtension
+net.forbric.kernel.interop.protocol.configapi.ConfigApiPortProtocolExtension
+
+net.forbric.kernel.interop.protocol.worlddata.WorldDataProtocolExtension

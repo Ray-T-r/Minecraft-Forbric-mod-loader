@@ -55,8 +55,7 @@ public class InitializationFailureProjectionTest {
 		String shim = System.getProperty(KernelForeignShimContext.SWITCH);
 		try {
 			active.set(null, loader); System.setProperty(KernelForeignShimContext.SWITCH, "off");
-			var invoke = KernelFabricEcosystem.class.getDeclaredMethod("invoke", String.class, Class.class, Consumer.class); invoke.setAccessible(true);
-			assertEquals(1, invoke.invoke(null, "main", ModInitializer.class, (Consumer<ModInitializer>) ModInitializer::onInitialize));
+			assertEquals(1, KernelFabricEcosystem.invokeEntrypoints("main", ModInitializer.class, ModInitializer::onInitialize));
 			assertEquals(1, constructorAttempts); assertEquals(1, entrypointAttempts); assertEquals(1, healthyRuns);
 			assertTrue(CompatibilityFindings.all().isEmpty(), "the per-mod catches only record raw status, without prompting or callbacks");
 			assertEquals(2, ModCatalog.failures().size());

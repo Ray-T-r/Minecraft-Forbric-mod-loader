@@ -27,9 +27,11 @@ public final class StagedGameClassLoader {
 
 	public static List<URL> urls() throws Exception {
 		Path run = TestFixtures.stagedRoot();
-		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").normalize();
+		Path compiled = Path.of(System.getProperty("forbric.test.runtimeClasses",
+				Path.of(System.getProperty("user.dir"), "build", "classes", "java", "runtime").toString())).normalize();
 		Path merged = run.resolve("merged-base/patched-mc-merged-26.2.jar"), neo = run.resolve("neoforge-runtime/neoforge-runtime.jar");
-		Path forge = run.resolve("forge-runtime/forge-runtime.jar");
+		Path forge = run.resolve("merged-base/forge-runtime-interop.jar");
+		if (!Files.isRegularFile(forge)) forge = run.resolve("forge-runtime/forge-runtime.jar");
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(merged) && Files.isRegularFile(neo) && Files.isRegularFile(forge),
 				"the staged game is absent");
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the compiled game side is absent");

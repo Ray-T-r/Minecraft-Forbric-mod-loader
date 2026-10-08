@@ -1,5 +1,8 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
-package net.forbric.kernel.fabric;
+package net.forbric.kernel.interop.protocol.modmenu;
+import net.forbric.kernel.fabric.FabricModMetadataParser;
+import net.forbric.kernel.fabric.KernelFabricLoader;
+import net.forbric.kernel.fabric.KernelModContainer;
 
 import static org.junit.jupiter.api.Assertions.*;
 

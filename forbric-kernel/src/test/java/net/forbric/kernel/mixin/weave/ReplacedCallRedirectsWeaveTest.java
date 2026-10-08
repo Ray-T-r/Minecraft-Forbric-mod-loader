@@ -55,6 +55,11 @@ class ReplacedCallRedirectsWeaveTest {
 		}
 		assertEquals(7, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		fixture = WeaveHarness.fixture(work, "replacedcallredirect", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
+        Path target=SOURCES.resolve("net/minecraft/world/entity/LivingEntity.java"),nativeTarget=work.resolve("native/LivingEntity.java");Files.createDirectories(nativeTarget.getParent());
+        Files.writeString(nativeTarget,Files.readString(target).replace("net.neoforged.neoforge.common.CommonHooks.canContinueUsing(this.useItem, hand)","ItemStack.isSameItem(hand,this.useItem)"));
+        sources=new java.util.ArrayList<>(sources);sources.remove(target);sources.add(nativeTarget);
+        Path original=WeaveHarness.fixture(work,"original",sources,Map.of());
+        fixture=NativeWeaveReferences.with(work,fixture,NativeWeaveReferences.classes(original));
 		moved = run("moved", Map.of());
 		movedOld = run("moved-old", Map.of(OLD_SERVER, "true"));
 		offOld = run("off-old", Map.of(OLD_SERVER, "true", ReplacedCallRedirects.PROPERTY, "off"));

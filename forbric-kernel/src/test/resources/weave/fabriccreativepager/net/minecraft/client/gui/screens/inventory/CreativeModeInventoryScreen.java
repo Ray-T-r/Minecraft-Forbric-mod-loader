@@ -25,6 +25,9 @@ public class CreativeModeInventoryScreen {
 		return true;
 	}
 
+    public int getCurrentPage(){return currentPage;}
+    public boolean switchToPage(int page){if(page<0||page>=PAGES)return false;currentPage=page;return true;}
+
 	/** The page the screen draws. */
 	public int drawnPage() {
 		return currentPage;

@@ -97,7 +97,7 @@ class MixinRetargetSubstitutedCallTest {
 		byte[] mixin = mixin(INJECT, CAPTURING, "BEFORE", true);
 		assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(mixin, resolver).verdict(), "premise: fromStream is not there");
 
-		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixin), resolver);
+		MixinRetarget.Plan plan = plan(MixinFit.parse(mixin), resolver);
 		assertEquals(2, plan.rewrites().size(), plan.describe());
 		MixinRetarget.Rewrite point = plan.rewrites().get(0);
 		assertEquals(MixinRetarget.Element.AT_TARGET, point.element());
@@ -107,11 +107,11 @@ class MixinRetargetSubstitutedCallTest {
 		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(MixinRetarget.rewritten(mixin, plan), resolver).verdict());
 
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
-		assertEquals(2, MixinRetarget.plan(MixinFit.parse(mixin), resolver).rewrites().size(), "vanilla calls fromStream too");
+		assertEquals(2, plan(MixinFit.parse(mixin), resolver).rewrites().size(), "vanilla calls fromStream too");
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.NEOFORGE);
-		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin), resolver).isEmpty(), "NeoForge's mods were compiled against parse");
+		assertTrue(plan(MixinFit.parse(mixin), resolver).isEmpty(), "NeoForge's mods were compiled against parse");
 		MixinStubRebind.forget();
-		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin), resolver).isEmpty(), "no known owner: no move");
+		assertTrue(plan(MixinFit.parse(mixin), resolver).isEmpty(), "no known owner: no move");
 	}
 
 	/** The served node: the annotation keeps the handler's name and moves to the guard; the body is renamed aside. */
@@ -119,7 +119,7 @@ class MixinRetargetSubstitutedCallTest {
 	void theServedNodeCarriesTheMovedPointOnTheGuard() throws Exception {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FORGE);
 		byte[] mixin = mixin(INJECT, CAPTURING, "BEFORE", true);
-		MixinRetarget.remember(MixinRetarget.plan(MixinFit.parse(mixin), resolver(manager(true, "modelId"))));
+		MixinRetarget.remember(plan(MixinFit.parse(mixin), resolver(manager(true, "modelId"))));
 		ClassNode node = new ClassNode();
 		new ClassReader(mixin).accept(node, ClassReader.EXPAND_FRAMES);
 		assertEquals(2, MixinRetarget.applyRemembered(MIXIN, node));
@@ -140,7 +140,7 @@ class MixinRetargetSubstitutedCallTest {
 	void aHandlerShapedByTheCallStays() {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
 		String redirect = "(" + READER + ")Lnet/minecraft/client/resources/model/cuboid/CuboidModel;";
-		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin(REDIRECT, redirect, null, false)),
+		assertTrue(plan(MixinFit.parse(mixin(REDIRECT, redirect, null, false)),
 				resolver(manager(true, "modelId"))).isEmpty());
 	}
 
@@ -149,12 +149,12 @@ class MixinRetargetSubstitutedCallTest {
 	void capturedLocalsMustBeTheLiveMethods() {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FORGE);
 		byte[] capturing = mixin(INJECT, CAPTURING, "BEFORE", true);
-		assertTrue(MixinRetarget.plan(MixinFit.parse(capturing), resolver(manager(false, "modelId"))).isEmpty(), "no table");
-		assertTrue(MixinRetarget.plan(MixinFit.parse(capturing), resolver(managerWithReaderInSlotOne())).isEmpty(),
+		assertTrue(plan(MixinFit.parse(capturing), resolver(manager(false, "modelId"))).isEmpty(), "no table");
+		assertTrue(plan(MixinFit.parse(capturing), resolver(managerWithReaderInSlotOne())).isEmpty(),
 				"slot 1 holds a Reader at the call, not the Identifier the handler takes");
-		assertEquals(2, MixinRetarget.plan(MixinFit.parse(mixin(INJECT, PLAIN, "BEFORE", false)),
+		assertEquals(2, plan(MixinFit.parse(mixin(INJECT, PLAIN, "BEFORE", false)),
 				resolver(manager(false, "modelId"))).rewrites().size(), "a handler that captures nothing needs no table");
-		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin(INJECT, CAPTURING, "BEFORE", false)),
+		assertTrue(plan(MixinFit.parse(mixin(INJECT, CAPTURING, "BEFORE", false)),
 				resolver(manager(true, "modelId"))).isEmpty(), "locals without a capture mode is not a handler Mixin accepts");
 	}
 
@@ -162,9 +162,9 @@ class MixinRetargetSubstitutedCallTest {
 	void onlyBeforeOrAfterTheCallMoves() {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FORGE);
 		Function<String, byte[]> resolver = resolver(manager(true, "modelId"));
-		assertEquals(2, MixinRetarget.plan(MixinFit.parse(mixin(INJECT, PLAIN, null, false)), resolver).rewrites().size());
-		assertEquals(2, MixinRetarget.plan(MixinFit.parse(mixin(INJECT, PLAIN, "AFTER", false)), resolver).rewrites().size());
-		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin(INJECT, PLAIN, "BY", false)), resolver).isEmpty());
+		assertEquals(2, plan(MixinFit.parse(mixin(INJECT, PLAIN, null, false)), resolver).rewrites().size());
+		assertEquals(2, plan(MixinFit.parse(mixin(INJECT, PLAIN, "AFTER", false)), resolver).rewrites().size());
+		assertTrue(plan(MixinFit.parse(mixin(INJECT, PLAIN, "BY", false)), resolver).isEmpty());
 	}
 
 	@Test
@@ -173,14 +173,14 @@ class MixinRetargetSubstitutedCallTest {
 		Function<String, byte[]> resolver = resolver(manager(true, "modelId"));
 		byte[] mixin = mixin(INJECT, CAPTURING, "BEFORE", true);
 		System.setProperty(MixinRetarget.SUBSTITUTED_CALL_GUARD_PROPERTY, "off");
-		MixinRetarget.Plan unguarded = MixinRetarget.plan(MixinFit.parse(mixin), resolver);
+		MixinRetarget.Plan unguarded = plan(MixinFit.parse(mixin), resolver);
 		assertEquals(List.of(MixinRetarget.Element.AT_TARGET), unguarded.rewrites().stream().map(MixinRetarget.Rewrite::element).toList());
 		System.clearProperty(MixinRetarget.SUBSTITUTED_CALL_GUARD_PROPERTY);
 		System.setProperty(MixinRetarget.SUBSTITUTED_CALL_PROPERTY, "off");
-		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin), resolver).isEmpty());
+		assertTrue(plan(MixinFit.parse(mixin), resolver).isEmpty());
 		System.clearProperty(MixinRetarget.SUBSTITUTED_CALL_PROPERTY);
 		System.setProperty(MixinRetarget.PROPERTY, "off");
-		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin), resolver).isEmpty());
+		assertTrue(plan(MixinFit.parse(mixin), resolver).isEmpty());
 	}
 
 	/**
@@ -228,7 +228,7 @@ class MixinRetargetSubstitutedCallTest {
 		assertEquals(MixinFit.Verdict.PARTIAL, raw.verdict(), "premise: " + raw.unresolved());
 		assertTrue(raw.unresolved().stream().anyMatch(u -> u.contains("fromStream")), raw.unresolved().toString());
 
-		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixin), resolver);
+		MixinRetarget.Plan plan = NativeCallTestEvidence.plan(MixinFit.parse(mixin), resolver);
 		assertEquals(List.of("deserializeModel:AT_TARGET", "deserializeModel:GUARD"),
 				plan.rewrites().stream().map(r -> r.handler() + ":" + r.element()).toList(), plan.describe());
 		assertEquals(PARSE, plan.rewrites().get(0).to());
@@ -258,9 +258,22 @@ class MixinRetargetSubstitutedCallTest {
 				"the model id is the local fusion captures at the parse call");
 
 		MixinStubRebind.noteEcosystem("com/supermartijn642/fusion/mixin/ModelManagerMixin", Ecosystem.NEOFORGE);
-		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin), resolver).rewrites().stream()
+		assertTrue(NativeCallTestEvidence.plan(MixinFit.parse(mixin), resolver).rewrites().stream()
 				.noneMatch(r -> r.element() == MixinRetarget.Element.AT_TARGET && PARSE.equals(r.to())));
 	}
+
+    private static MixinRetarget.Plan plan(ClassNode mixin, Function<String, byte[]> current) {
+        return MixinRetarget.plan(mixin, current, (family, owner) -> {
+            byte[] bytes = current.apply(owner + ".class"); if (bytes == null) return null;
+            ClassNode source = new ClassNode(); new ClassReader(bytes).accept(source, 0);
+            if (family != Ecosystem.NEOFORGE) for (MethodNode method : source.methods) for (var instruction : method.instructions)
+                if (instruction instanceof org.objectweb.asm.tree.MethodInsnNode call && ("L" + call.owner + ";" + call.name + call.desc).equals(PARSE)) {
+                    MixinFit.Member old = MixinFit.parseMember(FROM_STREAM); call.owner=old.owner();call.name=old.name();call.desc=old.desc();
+                }
+            ClassWriter writer = new ClassWriter(0); source.accept(writer);
+            return NativeCallTestEvidence.verified(family, owner, writer.toByteArray());
+        });
+    }
 
 	// --- fixtures ---
 

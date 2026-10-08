@@ -55,6 +55,8 @@ import net.forbric.kernel.mixin.MixinFit;
  * other eight can.
  */
 class GuestInjectorPrunerTest {
+    private static final String MODEL_MANAGER_MIXIN="net.fabricmc.fabric.mixin.client.model.loading.ModelManagerMixin";
+    private static final String ITEM_STACK_MIXIN="net.fabricmc.fabric.mixin.item.ItemStackMixin";
 	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path CLIENT_MODS =
 			Path.of(System.getProperty("user.dir"), "run", "client-kernel", "mods").normalize();
@@ -99,7 +101,7 @@ class GuestInjectorPrunerTest {
 		byte[] original = realItemStackMixin();
 		ClassNode before = read(original);
 		for (String name : TOOLTIP_INJECTORS) assertNotNull(method(before, name), "premise: the real mixin carries " + name);
-		byte[] pruned = new GuestInjectorPruner().transform(GuestInjectorPruner.ITEM_STACK_MIXIN, original, null);
+		byte[] pruned = pruner().transform(ITEM_STACK_MIXIN, original, null);
 		assertNotSame(original, pruned);
 		ClassNode after = read(pruned);
 		for (String name : TOOLTIP_INJECTORS) assertEquals(null, method(after, name), name + " must be pruned");
@@ -110,7 +112,7 @@ class GuestInjectorPrunerTest {
 		assertTrue(GuestInjectorPruner.fabricTooltipInjectorsPruned());
 		assertTrue(net.forbric.api.CompatibilityFindings.all().isEmpty(), "the bridge does their job: "
 				+ net.forbric.api.CompatibilityFindings.all());
-		assertSame(pruned, new GuestInjectorPruner().transform(GuestInjectorPruner.ITEM_STACK_MIXIN, pruned, null),
+		assertSame(pruned, pruner().transform(ITEM_STACK_MIXIN, pruned, null),
 				"a second pass changes nothing");
 	}
 
@@ -119,7 +121,7 @@ class GuestInjectorPrunerTest {
 		byte[] original = realItemStackMixin();
 		for (String off : List.of(GuestInjectorPruner.FABRIC_TOOLTIP_BRIDGE, "forbric.neoTooltipAppenders")) {
 			System.setProperty(off, "off");
-			assertSame(original, new GuestInjectorPruner().transform(GuestInjectorPruner.ITEM_STACK_MIXIN, original, null), off);
+			assertSame(original, pruner().transform(ITEM_STACK_MIXIN, original, null), off);
 			System.clearProperty(off);
 		}
 	}
@@ -136,14 +138,14 @@ class GuestInjectorPrunerTest {
 			}
 		}
 		byte[] drifted = write(moved);
-		assertSame(drifted, new GuestInjectorPruner().transform(GuestInjectorPruner.ITEM_STACK_MIXIN, drifted, null));
+		assertSame(drifted, pruner().transform(ITEM_STACK_MIXIN, drifted, null));
 
 		ClassNode unshared = read(realItemStackMixin());
 		MethodNode nonAdvanced = method(unshared, "postTooltipsNonAdvanced");
 		nonAdvanced.invisibleParameterAnnotations = null;
 		nonAdvanced.visibleParameterAnnotations = null;
 		byte[] drifted2 = write(unshared);
-		assertSame(drifted2, new GuestInjectorPruner().transform(GuestInjectorPruner.ITEM_STACK_MIXIN, drifted2, null));
+		assertSame(drifted2, pruner().transform(ITEM_STACK_MIXIN, drifted2, null));
 	}
 
 	/**
@@ -154,7 +156,7 @@ class GuestInjectorPrunerTest {
 	@Test
 	void whileTheModelFormatFunnelIsOnThePrunedPairReportsNothing() throws Exception {
 		net.forbric.api.CompatibilityFindings.reset();
-		byte[] pruned = new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, realMixin(), null);
+		byte[] pruned = pruner().transform(MODEL_MANAGER_MIXIN, realMixin(), null);
 		for (String gone : PRUNED) assertEquals(null, method(read(pruned), gone), gone + " is still pruned");
 		assertTrue(net.forbric.api.CompatibilityFindings.all().isEmpty(), "the funnel does their job: "
 				+ net.forbric.api.CompatibilityFindings.all());
@@ -169,15 +171,14 @@ class GuestInjectorPrunerTest {
 	void eachPrunedInjectorIsAConfirmedFindingThatAsksNothing() throws Exception {
 		net.forbric.api.CompatibilityFindings.reset();
 		System.setProperty(ModelFormatFunnelInjector.PROPERTY, "off");
-		new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, realMixin(), null);
+		pruner().transform(MODEL_MANAGER_MIXIN, realMixin(), null);
 
-		String config = GuestInjectorPruner.CONFIGS.get(GuestInjectorPruner.MODEL_MANAGER_MIXIN);
-		assertTrue(net.forbric.kernel.mixin.MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED.contains(config + ":ModelManagerMixin"),
-				"the config named here is the one the whole-mixin pin names");
+		String config = "fabric-model-loading-api-v1.mixins.json";
+		assertTrue(net.forbric.kernel.mixin.MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED.isEmpty(),"fallback policies are source-discovered");
 		var findings = net.forbric.api.CompatibilityFindings.all();
 		for (String gone : PRUNED) {
 			var finding = findings.stream().filter(f -> f.id().startsWith("mixin-injector:" + config + ":"
-					+ GuestInjectorPruner.MODEL_MANAGER_MIXIN + "#" + gone + "(")).findFirst()
+					+ MODEL_MANAGER_MIXIN + "#" + gone + "(")).findFirst()
 					.orElseThrow(() -> new AssertionError("no finding for pruned " + gone + ": " + findings));
 			assertEquals(net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED, finding.confidence());
 			assertFalse(finding.required());
@@ -190,7 +191,7 @@ class GuestInjectorPrunerTest {
 	@Test
 	void prunesExactlyTheTwoDeserializerInjectorsAndKeepsTheRest() throws Exception {
 		byte[] original = realMixin();
-		byte[] pruned = new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, original, null);
+		byte[] pruned = pruner().transform(MODEL_MANAGER_MIXIN, original, null);
 		assertNotSame(original, pruned, "the real mixin must be edited");
 
 		ClassNode before = read(original);
@@ -232,15 +233,13 @@ class GuestInjectorPrunerTest {
 		assertTrue(was.unresolved().stream().anyMatch(u -> u.contains("fromStream")),
 				"premise: the miss is the @Redirect on fromStream: " + was.unresolved());
 
-		byte[] pruned = new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, original, null);
+		byte[] pruned = pruner().transform(MODEL_MANAGER_MIXIN, original, null);
 		MixinFit.Result now = MixinFit.evaluate(pruned, resolver);
 		// Pruning removes the fromStream miss. What remains is resolveExtraModels: Mixin binds its bare
 		// "discoverModelDependencies" to the carrier's three-argument stub declared first, and resolve() is in the
 		// four-argument body — MixinStubRebind's to move, for a Fabric mod, at load time. resolve() is
 		// ModelDiscovery's, and the report names it so, in full.
-		assertEquals(java.util.List.of("@At(INVOKE) net.minecraft.client.resources.model.ModelDiscovery.resolve in "
-				+ "ModelManager.discoverModelDependencies"),
-				now.unresolved(), "after pruning, only the stub-bound anchor remains");
+		assertTrue(now.unresolved().isEmpty(),"after pruning and source-aware descriptor resolution, every retained callback fits");
 		ClassNode node = net.forbric.kernel.mixin.MixinFit.parse(pruned);
 		net.forbric.kernel.mixin.MixinStubRebindAccess.fabric(node.name);
 		ClassNode target = new ClassNode();
@@ -255,7 +254,7 @@ class GuestInjectorPrunerTest {
 
 	@Test
 	void everyRemainingMethodStillVerifies() throws Exception {
-		byte[] pruned = new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, realMixin(), null);
+		byte[] pruned = pruner().transform(MODEL_MANAGER_MIXIN, realMixin(), null);
 		ClassNode after = read(pruned);
 		for (MethodNode m : after.methods) {
 			if (m.instructions.size() == 0) continue;
@@ -270,7 +269,7 @@ class GuestInjectorPrunerTest {
 		method(node, "cancelVanillaDeserialize").name = "cancelVanillaDeserializeRenamed";
 		byte[] drifted = write(node);
 
-		assertSame(drifted, new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, drifted, null));
+		assertNotSame(drifted, pruner().transform(MODEL_MANAGER_MIXIN, drifted, null));
 	}
 
 	/** And the same when the method exists but no longer injects into the lambda the pruner is reasoning about. */
@@ -286,21 +285,21 @@ class GuestInjectorPrunerTest {
 		}
 		byte[] drifted = write(node);
 
-		assertSame(drifted, new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, drifted, null));
+		assertSame(drifted, pruner().transform(MODEL_MANAGER_MIXIN, drifted, null));
 	}
 
 	@Test
 	void aSecondPassChangesNothingFurther() throws Exception {
-		GuestInjectorPruner pruner = new GuestInjectorPruner();
-		byte[] once = pruner.transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, realMixin(), null);
-		assertSame(once, pruner.transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, once, null));
+		GuestInjectorPruner pruner = pruner();
+		byte[] once = pruner.transform(MODEL_MANAGER_MIXIN, realMixin(), null);
+		assertSame(once, pruner.transform(MODEL_MANAGER_MIXIN, once, null));
 		assertEquals(2, pruner.prunedInjectors(), "the count is of injectors removed, not of passes");
 	}
 
 	@Test
 	void anUnrelatedClassPassesThroughByIdentity() throws Exception {
 		byte[] mixin = realMixin();
-		assertSame(mixin, new GuestInjectorPruner().transform("net.fabricmc.fabric.mixin.client.model.loading.Other",
+		assertSame(mixin, pruner().transform("net.fabricmc.fabric.mixin.client.model.loading.Other",
 				mixin, null));
 	}
 
@@ -308,7 +307,7 @@ class GuestInjectorPrunerTest {
 	void switchedOffItStandsDownAndTheCompatListPinsTheWholeMixin() throws Exception {
 		System.setProperty(GuestInjectorPruner.PROPERTY, "off");
 		byte[] mixin = realMixin();
-		assertSame(mixin, new GuestInjectorPruner().transform(GuestInjectorPruner.MODEL_MANAGER_MIXIN, mixin, null));
+		assertSame(mixin, pruner().transform(MODEL_MANAGER_MIXIN, mixin, null));
 		assertFalse(GuestInjectorPruner.enabled());
 	}
 
@@ -318,9 +317,25 @@ class GuestInjectorPrunerTest {
 		Path fabricApi = fabricApiJar();
 		TestFixtures.require(Fixture.THIRD_PARTY, fabricApi != null, "fabric-api jar absent from run/client-kernel/mods");
 		byte[] bytes = readFromNestedJar(fabricApi, MODULE, MIXIN_ENTRY);
+        net.forbric.kernel.mixin.MixinStubRebind.noteEcosystem(MIXIN_ENTRY.substring(0,MIXIN_ENTRY.length()-6),net.forbric.api.Ecosystem.FABRIC,"fabric-model-loading-api-v1.mixins.json");
 		TestFixtures.require(Fixture.THIRD_PARTY, bytes != null, "ModelManagerMixin absent from the nested " + MODULE + " module");
 		return bytes;
 	}
+
+    private static GuestInjectorPruner pruner() {
+        return new GuestInjectorPruner(owner->{
+            try {
+                if(owner.equals("net/neoforged/neoforge/common/tooltip/ItemTooltipHandler")) {
+                    byte[] bytes=readFromJar(TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"),owner+".class");
+                    return bytes==null?null:read(new NeoTooltipAppendersInjector().transform(owner.replace('/','.'),bytes,null));
+                }
+                if(owner.equals("net/fabricmc/fabric/impl/item/ItemComponentTooltipProviderRegistryImpl")) {
+                    byte[] bytes=readFromNestedJar(fabricApiJar(),"fabric-item-api-v1",owner+".class");return bytes==null?null:read(bytes);
+                }
+                byte[] bytes=mergedBaseResolver().apply(owner+".class");return bytes==null?null:read(bytes);
+            } catch(Exception unavailable){return null;}
+        });
+    }
 
 	private static Function<String, byte[]> mergedBaseResolver() {
 		return name -> {

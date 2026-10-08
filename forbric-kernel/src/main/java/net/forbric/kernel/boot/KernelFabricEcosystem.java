@@ -460,7 +460,7 @@ public final class KernelFabricEcosystem {
 
 		EnvType envType = loader.getEnvironmentType();
 		PHASES_RAN.add("main");
-		int main = invoke("main", ModInitializer.class, ModInitializer::onInitialize);
+		int main = invokeEntrypoints("main", ModInitializer.class, ModInitializer::onInitialize);
 
 		if (envType == EnvType.CLIENT) {
 			ForbricLog.info("[Forbric/Fabric] invoked %d Fabric main entrypoint(s) in the %s window", main,
@@ -471,7 +471,7 @@ public final class KernelFabricEcosystem {
 			// before main dropped such an entry with a warning that it came too late.
 			adoptFabricStorage();
 			PHASES_RAN.add("server");
-			int server = invoke("server", DedicatedServerModInitializer.class,
+			int server = invokeEntrypoints("server", DedicatedServerModInitializer.class,
 					DedicatedServerModInitializer::onInitializeServer);
 			ForbricLog.info("[Forbric/Fabric] invoked %d Fabric main entrypoint(s) + %d server entrypoint(s)",
 					main, server);
@@ -614,7 +614,7 @@ public final class KernelFabricEcosystem {
 		if (!CLIENTS_RAN.compareAndSet(false, true)) return false;
 		PHASES_RAN.add("client");
 
-		int client = invoke("client", ClientModInitializer.class, ClientModInitializer::onInitializeClient);
+		int client = invokeEntrypoints("client", ClientModInitializer.class, ClientModInitializer::onInitializeClient);
 		ForbricLog.info("[Forbric/Fabric] invoked %d Fabric client entrypoint(s) (Minecraft.<init> window)", client);
 		reportActiveRenderer();
 		return true;
@@ -689,18 +689,9 @@ public final class KernelFabricEcosystem {
 	 * Invokes one entrypoint key, isolating failures per mod: a mod whose {@code onInitialize} throws is reported
 	 * and skipped rather than aborting the remaining mods' initialization (and with them the whole server boot).
 	 */
-	/** Public entrypoint protocol; private implementation names and the selected mod id are irrelevant. */
-	public static final String CONFIG_ENTRYPOINT_API = "com/illusivesoulworks/spectrelib/config/SpectreConfigInitializer";
-	static void initializeConfigEntrypoints() {
-		ClassLoader game = Thread.currentThread().getContextClassLoader();
-		if (game == null || game.getResource(CONFIG_ENTRYPOINT_API + ".class") != null) return;
-		int count = invoke("spectrelib-config", net.forbric.kernel.interop.ConfigEntrypointInitializer.class,
-				net.forbric.kernel.interop.ConfigEntrypointInitializer::onInitializeConfig);
-		if (count > 0) ForbricLog.info("[Forbric/Config] initialized %d declared config entrypoint(s) before global configuration loading", count);
-	}
-
-	private static <T> int invoke(String key, Class<T> type, java.util.function.Consumer<T> action) {
+	public static <T> int invokeEntrypoints(String key, Class<T> type, java.util.function.Consumer<T> action) {
 		int count = 0;
+		if (loader == null) return count;
 
 		for (EntrypointContainer<T> c : loader.getEntrypointContainers(key, type)) {
 			String id = c.getProvider().getMetadata().getId();

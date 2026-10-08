@@ -33,6 +33,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /** R1 over synthetic classes shaped like the merged {@code SimpleContainer.setItem} pair. */
@@ -248,7 +249,7 @@ class MixinRetargetTest {
 		assertTrue(MixinRetarget.plan(MixinFit.parse(mixinBytes), resolver(target(false))).isEmpty());
 	}
 
-	/** R2: the KNOWN isAir→isEmpty row, over a synthetic LevelChunkSection-shaped target. */
+	/** R2: source/current occurrence and complete default-body evidence, over a synthetic section. */
 	@Test
 	void aRedirectOnASwappedCalleeIsReboundToTheMergedName() {
 		String target = "net/minecraft/world/level/chunk/LevelChunkSection";
@@ -296,13 +297,23 @@ class MixinRetargetTest {
 		Function<String, byte[]> resolver = name -> (target + ".class").equals(name) ? targetBytes : null;
 
 		assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(mixinBytes, resolver).verdict(), "premise");
-		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixinBytes), resolver);
+		ClassNode nativeTarget = MixinFit.parse(targetBytes);
+        for (var i : nativeTarget.methods.getFirst().instructions) if (i instanceof MethodInsnNode call && call.name.equals("isEmpty")) call.name="isAir";
+        ClassWriter defaults = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        defaults.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, state, null, "java/lang/Object", null);
+        for (String name : List.of("isEmpty", "isSolid")) {
+            var body=defaults.visitMethod(Opcodes.ACC_PUBLIC,name,"()Z",null,null);body.visitCode();body.visitInsn(name.equals("isEmpty")?Opcodes.ICONST_0:Opcodes.ICONST_1);body.visitInsn(Opcodes.IRETURN);body.visitMaxs(0,0);body.visitEnd();
+        }
+        defaults.visitEnd();ClassNode nativeState=MixinFit.parse(defaults.toByteArray());
+        MixinStubRebind.noteEcosystem("test/SectionMixin", net.forbric.api.Ecosystem.FABRIC);
+        java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> references=(family,owner)->owner.equals(target)?nativeTarget:owner.equals(state)?nativeState:null;
+        MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixinBytes), resolver, references);
 		assertEquals(1, plan.rewrites().size(), plan.describe());
 		assertEquals(MixinRetarget.Element.AT_TARGET, plan.rewrites().get(0).element());
 		assertEquals("L" + state + ";isEmpty()Z", plan.rewrites().get(0).to());
 		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(MixinRetarget.rewritten(mixinBytes, plan), resolver).verdict());
 
-		// A miss with no KNOWN row is left alone: same shape, a callee the table does not name.
+		// A different complete predicate is left alone even at the same call site.
 		ClassWriter other = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
 		other.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, target, null, "java/lang/Object", null);
 		MethodVisitor ov = other.visitMethod(Opcodes.ACC_PUBLIC, method, desc, null, null);
@@ -316,7 +327,7 @@ class MixinRetargetTest {
 		ov.visitEnd();
 		other.visitEnd();
 		byte[] otherBytes = other.toByteArray();
-		assertTrue(MixinRetarget.plan(MixinFit.parse(mixinBytes), name -> (target + ".class").equals(name) ? otherBytes : null).isEmpty());
+		assertTrue(MixinRetarget.plan(MixinFit.parse(mixinBytes), name -> (target + ".class").equals(name) ? otherBytes : null, references).isEmpty());
 	}
 
 	@Test

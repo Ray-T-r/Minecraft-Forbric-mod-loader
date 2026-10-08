@@ -26,6 +26,17 @@ public class Camera {
 		if (mode == SLEEPING) setRotation(90.0F, 0.0F);
 	}
 
+    /** Source-platform counterpart embedded as non-executable native-reference evidence by the weave test. */
+    public void nativeAlignment(float partialTicks) {
+        if(mode==MINECART)setRotation(30.0F,10.0F);
+        else if(mode==ORDINARY||mode==MIRRORED) {
+            float yaw=30.0F,pitch=10.0F;
+            if(mode==ORDINARY)setRotation(yaw,pitch);
+            else setRotation(yaw+180.0F,-pitch);
+        }
+        if(mode==SLEEPING)setRotation(90.0F,0.0F);
+    }
+
 	protected void setRotation(float yaw, float pitch) {
 		setRotation(yaw, pitch, 0.0F);
 	}

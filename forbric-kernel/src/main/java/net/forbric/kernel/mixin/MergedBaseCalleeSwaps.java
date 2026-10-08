@@ -1,224 +1,121 @@
-/*
- * Copyright 2026 The Forbric Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+/* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.mixin;
 
-import java.util.List;
-import java.util.Set;
-
+import java.util.*;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import net.forbric.api.Ecosystem;
+import org.objectweb.asm.*;
+import org.objectweb.asm.tree.*;
 
-/**
- * Descriptor-identical callee swaps the merge made inside vanilla method bodies, and the few a guest mixin's
- * {@code @At(INVOKE)} may follow.
- *
- * <p>A second, narrower table, {@link #SUBSTITUTED}, holds the swaps that change the callee's owner, name or return
- * type as well: see {@link Substitution}. Only an {@code @Inject} may follow one of those.
- *
- * <p>A third, {@link #REPLACED}, holds a private vanilla method the carrier replaced outright — renamed and reshaped, at
- * its one call site — with one taking what vanilla's arguments are read from: see {@link Replaced}.
- *
- * <p>Where NeoForge's patch of a vanilla method replaces one call with another of the same descriptor on the
- * same owner — {@code BlockState.isAir()Z} → {@code isEmpty()Z} in {@code LevelChunkSection.setBlockState} —
- * a mixin anchored on the vanilla callee misses. The census in {@code MergedBaseCalleeSwapTest} finds every such
- * swap between stock 26.2 and the merged base and classifies each with a safety test: is the merged callee a
- * pure delegate of the vanilla one (or vice versa)? Today NONE is — every swap is a NeoForge behaviour change
- * ({@code isEmpty} is an overridable {@code IBlockStateExtension} default, not a rename) — so no base-side
- * call-site rewrite exists, and the census asserts that it must not.
- *
- * <p>What CAN be argued is per mixin, not per call site: fabric-block-api-v1's {@code modifyAirCheck} handler
- * body is exactly {@code is(AIR) || is(CAVE_AIR) || is(VOID_AIR)}, byte-for-byte the predicate NeoForge's
- * default {@code isEmpty} computes. Retargeting that {@code @Redirect} to {@code isEmpty} keeps NeoForge's
- * semantics on every block and only overrides a block-level {@code isEmpty} override — which the Fabric handler
- * could never honour on any loader. Each row here carries that argument in {@code because}; the census asserts
- * the rows are a subset of the swaps it finds, so a rebuild that removes the swap turns the row red.
- */
+/** Call changes derived from native/current program points; SDK or game-member names are not policy. */
 public final class MergedBaseCalleeSwaps {
-	/**
-	 * @param target      the class the mixin targets (internal name)
-	 * @param method      the target method, {@code name + descriptor}
-	 * @param owner       the callee's owner (internal name)
-	 * @param vanillaName the callee name the mixin anchors on
-	 * @param mergedName  the callee name the merged body calls instead
-	 * @param desc        the callee descriptor, identical on both sides
-	 * @param because     why following the swap is sound for the mixins that anchor here
-	 */
-	public record Swap(String target, String method, String owner, String vanillaName, String mergedName, String desc,
-			String because) {
-		public String vanillaMember() {
-			return "L" + owner + ";" + vanillaName + desc;
-		}
+ private MergedBaseCalleeSwaps(){}
+ public record Swap(String target,String method,String owner,String vanillaName,String mergedName,String desc,String because){
+  public String vanillaMember(){return "L"+owner+";"+vanillaName+desc;}
+  public String mergedMember(){return "L"+owner+";"+mergedName+desc;}
+ }
+ public record Substitution(String target,String method,String member,String replacement,Set<Ecosystem> ecosystems,String because){}
+ public record Replaced(String owner,String caller,String vanilla,String replacement,List<String> arguments,Set<Ecosystem> ecosystems,String because){
+  public String vanillaMember(){return "L"+owner+";"+vanilla;}
+  public String replacementMember(){return "L"+owner+";"+replacement;}
+ }
+ private record Readers(Function<String,ClassNode> current,BiFunction<Ecosystem,String,ClassNode> sources){}
+ private static final ThreadLocal<Readers> scoped=new ThreadLocal<>();
+ public interface Scope extends AutoCloseable { @Override void close(); }
+ static Scope using(Function<String,ClassNode> current,BiFunction<Ecosystem,String,ClassNode> sources){Readers before=scoped.get();scoped.set(new Readers(current,sources));return ()->{if(before==null)scoped.remove();else scoped.set(before);};}
+ private static Readers readers(){Readers readers=scoped.get();return readers!=null?readers:new Readers(NativeGameReferences::current,NativeGameReferences::reference);}
+ static ClassNode source(Ecosystem family,String owner){return readers().sources.apply(family,owner);}
+ static ClassNode current(String owner){return readers().current.apply(owner);}
+ static BiFunction<Ecosystem,String,ClassNode> sources(){return readers().sources;}
+ // Diagnostic views contain only rows actually derived on this loader. They never authorize a match.
+ private static final List<Swap> swaps=new ArrayList<>();private static final List<Substitution> substitutions=new ArrayList<>();private static final List<Replaced> replacements=new ArrayList<>();
+ private static final Map<MixinRetarget.Rewrite,Replaced> projections=Collections.synchronizedMap(new IdentityHashMap<>());
+ public static final List<Swap> KNOWN=Collections.unmodifiableList(swaps);
+ public static final List<Substitution> SUBSTITUTED=Collections.unmodifiableList(substitutions);
+ public static final List<Replaced> REPLACED=Collections.unmodifiableList(replacements);
+ private static synchronized <T> T observed(List<T> rows,T row){if(row!=null&&!rows.contains(row))rows.add(row);return row;}
+ static synchronized void reset(){swaps.clear();substitutions.clear();replacements.clear();projections.clear();}
+ static void projection(MixinRetarget.Rewrite rewrite,Replaced row){projections.put(rewrite,row);}
+ static Replaced projection(MixinRetarget.Rewrite rewrite){return projections.get(rewrite);}
 
-		public String mergedMember() {
-			return "L" + owner + ";" + mergedName + desc;
-		}
-	}
-
-	private static final String BLOCK_STATE = "net/minecraft/world/level/block/state/BlockState";
-	private static final String WHY = "fabric-block-api-v1's redirect handler is is(AIR)||is(CAVE_AIR)||is(VOID_AIR), "
-			+ "byte-for-byte NeoForge's default isEmpty; following the swap keeps NeoForge's block-level override";
-
-	public static final List<Swap> KNOWN = List.of(
-			new Swap("net/minecraft/world/level/chunk/LevelChunkSection",
-					"setBlockState(IIILnet/minecraft/world/level/block/state/BlockState;Z)Lnet/minecraft/world/level/block/state/BlockState;",
-					BLOCK_STATE, "isAir", "isEmpty", "()Z", WHY),
-			new Swap("net/minecraft/world/level/chunk/LevelChunkSection$1BlockCounter",
-					"accept(Lnet/minecraft/world/level/block/state/BlockState;I)V",
-					BLOCK_STATE, "isAir", "isEmpty", "()Z", WHY));
-
-	/**
-	 * One call the surviving carrier SUBSTITUTED for another inside a method whose body is otherwise the one the
-	 * listed ecosystems' mods were compiled against: same instructions, same local variable table, and at exactly one
-	 * instruction {@code member} there, {@code replacement} here, taking the same arguments. The callee's owner, name
-	 * and return type may all differ, which is why {@link Swap}'s rule (the handler's shape is the callee's, identical
-	 * on both sides) cannot cover it; what does not change is the program point, and an {@code @Inject} is bound to
-	 * nothing else. {@code MergedBaseCalleeSwapTest} proves every row against the reference jars instruction by
-	 * instruction, so a base or carrier rebuild that changes anything but that one call turns the row red.
-	 *
-	 * @param target      the class the mixin targets (internal name)
-	 * @param method      the target method, {@code name + descriptor}
-	 * @param member      the call the listed ecosystems' own jars make there, as an {@code @At} target
-	 * @param replacement the call the merged body makes at the same instruction instead, as an {@code @At} target
-	 * @param ecosystems  the mods compiled against {@code member} in this method
-	 * @param because     why the point before and after {@code replacement} means what it meant around {@code member}
-	 */
-	public record Substitution(String target, String method, String member, String replacement, Set<Ecosystem> ecosystems,
-			String because) {
-	}
-
-	public static final List<Substitution> SUBSTITUTED = List.of(
-			new Substitution("net/minecraft/client/resources/model/ModelManager",
-					"lambda$loadBlockModels$2(Ljava/util/Map$Entry;)Lcom/mojang/datafixers/util/Pair;",
-					"Lnet/minecraft/client/resources/model/cuboid/CuboidModel;fromStream(Ljava/io/Reader;)"
-							+ "Lnet/minecraft/client/resources/model/cuboid/CuboidModel;",
-					"Lnet/neoforged/neoforge/client/model/UnbakedModelParser;parse(Ljava/io/Reader;)"
-							+ "Lnet/minecraft/client/resources/model/UnbakedModel;",
-					Set.of(Ecosystem.FABRIC, Ecosystem.FORGE),
-					"both calls turn the model file's Reader into the model, on the thread that loads it, and that is the "
-							+ "whole of what the lambda does with them; NeoForge's parse reads it through CuboidModel.GSON, "
-							+ "whose UnbakedModel adapter is NeoForge's loader dispatch, and a model it does not own reaches "
-							+ "the same vanilla CuboidModel$Deserializer fromStream used (ModelFormatFunnelInjector). So "
-							+ "BEFORE the call is still 'this model's file is about to be parsed': fusion (MinecraftForge) "
-							+ "stores the model's id there, and its hook in that deserializer reads it back to name every "
-							+ "connected-texture model it builds"));
-
-	/**
-	 * A private vanilla method the surviving carrier REPLACED at its one call site with a method of its own that takes,
-	 * instead of vanilla's arguments, what they are read from. The method a mod names is gone from the merged base; the
-	 * caller makes the replacement's call where vanilla made its own, and nothing else calls either. So BEFORE and AFTER
-	 * that call, and HEAD, RETURN and TAIL of the one and of the other, are the same program points; and each vanilla
-	 * argument is {@code arguments}' reading of the replacement's: {@code $n} is its n-th parameter, {@code $n.g()D} a
-	 * no-argument {@code invokevirtual} on it — exactly what vanilla's caller computed at its call.
-	 * {@code MergedBaseCalleeSwapTest} proves every row against the vanilla and merged callers, argument by argument,
-	 * so a rebuild that changes the call, its arguments or the methods' callers turns the row red. MixinRetarget's R7
-	 * moves an {@code @Inject} along a row.
-	 *
-	 * @param owner       the class (internal name)
-	 * @param caller      the one method calling either, {@code name + descriptor}, the same in vanilla and the merged base
-	 * @param vanilla     the method the listed ecosystems' mods name, {@code name + descriptor}
-	 * @param replacement the carrier's method the merged caller calls in its place, {@code name + descriptor}
-	 * @param arguments   for each vanilla parameter, how it is read off the replacement's
-	 * @param ecosystems  the mods compiled against {@code vanilla}
-	 * @param because     why the replacement's points are the vanilla method's for those mods
-	 */
-	public record Replaced(String owner, String caller, String vanilla, String replacement, List<String> arguments,
-			Set<Ecosystem> ecosystems, String because) {
-		public String vanillaMember() {
-			return "L" + owner + ";" + vanilla;
-		}
-
-		public String replacementMember() {
-			return "L" + owner + ";" + replacement;
-		}
-	}
-
-	private static final String SETTINGS = "$2";
-	public static final List<Replaced> REPLACED = List.of(
-			new Replaced("net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplate",
-					"placeInWorld(Lnet/minecraft/world/level/ServerLevelAccessor;Lnet/minecraft/core/BlockPos;"
-							+ "Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/levelgen/structure/templatesystem/"
-							+ "StructurePlaceSettings;Lnet/minecraft/util/RandomSource;I)Z",
-					"placeEntities(Lnet/minecraft/world/level/ServerLevelAccessor;Lnet/minecraft/core/BlockPos;"
-							+ "Lnet/minecraft/world/level/block/Mirror;Lnet/minecraft/world/level/block/Rotation;"
-							+ "Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/levelgen/structure/BoundingBox;Z"
-							+ "Lnet/minecraft/util/ProblemReporter;)V",
-					"addEntitiesToWorld(Lnet/minecraft/world/level/ServerLevelAccessor;Lnet/minecraft/core/BlockPos;"
-							+ "Lnet/minecraft/world/level/levelgen/structure/templatesystem/StructurePlaceSettings;"
-							+ "Lnet/minecraft/util/ProblemReporter;)V",
-					List.of("$0", "$1", SETTINGS + ".getMirror()Lnet/minecraft/world/level/block/Mirror;",
-							SETTINGS + ".getRotation()Lnet/minecraft/world/level/block/Rotation;",
-							SETTINGS + ".getRotationPivot()Lnet/minecraft/core/BlockPos;",
-							SETTINGS + ".getBoundingBox()Lnet/minecraft/world/level/levelgen/structure/BoundingBox;",
-							SETTINGS + ".shouldFinalizeEntities()Z", "$3"),
-					Set.of(Ecosystem.FABRIC),
-					"NeoForge's placeInWorld hands the placement settings to addEntitiesToWorld where vanilla's read the "
-							+ "mirror, rotation, pivot, bounding box and finalize flag off them and called placeEntities, "
-							+ "under the same isIgnoreEntities check; both are private and that call is each one's only "
-							+ "caller. addEntitiesToWorld places the template's entities as placeEntities did, after "
-							+ "NeoForge's processEntityInfos has run the settings' processors over them: a HEAD injection "
-							+ "that cancels (MoogsStructureLib places processed entities itself and cancels) skips that "
-							+ "pass too, as it skipped vanilla's placement; one that does not leaves it running. "
-							+ "MinecraftForge's own shape (placeEntities taking the settings last) is a different "
-							+ "descriptor and stays where it is"));
-
-	private MergedBaseCalleeSwaps() {
-	}
-
-	/**
-	 * The {@link #REPLACED} row whose {@code vanilla} method {@code owner.name desc} is, for a mod of {@code ecosystem};
-	 * {@code desc} null matches by name. Null when none.
-	 */
-	public static Replaced replaced(String owner, String name, String desc, Ecosystem ecosystem) {
-		if (ecosystem == null) return null;
-		for (Replaced row : REPLACED) {
-			if (!row.owner().equals(owner) || !row.ecosystems().contains(ecosystem)) continue;
-			int paren = row.vanilla().indexOf('(');
-			if (row.vanilla().substring(0, paren).equals(name) && (desc == null || row.vanilla().substring(paren).equals(desc))) {
-				return row;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * The {@link #SUBSTITUTED} row for {@code anchor} (as the mod wrote it) in {@code target#method}, for a mod of
-	 * {@code ecosystem}; null when none. A mod of an ecosystem the row does not list was compiled against the
-	 * replacement, or against neither, and its anchor missing is what it would do natively.
-	 */
-	public static Substitution substitution(String target, String method, String anchor, Ecosystem ecosystem) {
-		if (ecosystem == null) return null;
-		MixinFit.Member want = MixinFit.parseMember(anchor);
-		if (want == null) return null;
-		for (Substitution row : SUBSTITUTED) {
-			if (!row.target().equals(target) || !row.method().equals(method) || !row.ecosystems().contains(ecosystem)) continue;
-			MixinFit.Member have = MixinFit.parseMember(row.member());
-			if (want.name().equals(have.name()) && (want.owner() == null || want.owner().equals(have.owner()))
-					&& (want.desc() == null || want.desc().equals(have.desc()))) return row;
-		}
-		return null;
-	}
-
-	/** The row for a miss of {@code owner.vanillaName desc} inside {@code target.method}, or null. */
-	public static Swap find(String target, String method, String owner, String vanillaName, String desc) {
-		for (Swap swap : KNOWN) {
-			if (swap.target().equals(target) && swap.method().equals(method) && swap.owner().equals(owner)
-					&& swap.vanillaName().equals(vanillaName) && swap.desc().equals(desc)) {
-				return swap;
-			}
-		}
-		return null;
-	}
+ public static Swap find(String target,String method,String owner,String vanillaName,String desc){return find(target,method,owner,vanillaName,desc,null,null,false);}
+ static Swap find(String target,String method,String owner,String vanillaName,String desc,Ecosystem family,MethodNode handler,boolean observation){
+  Readers readers=readers();ClassNode current=readers.current.apply(target);if(current==null)return null;
+  String wanted="L"+owner+";"+vanillaName+desc;MethodNode live=NativeCallChanges.method(current,method);if(live==null)return null;
+  List<Swap> candidates=new ArrayList<>();
+  for(Ecosystem ecosystem:family==null?List.of(Ecosystem.values()):List.of(family)){
+   ClassNode source=readers.sources.apply(ecosystem,target);MethodNode nativeMethod=NativeCallChanges.method(source,method);if(nativeMethod==null)continue;
+   List<NativeCallChanges.Site> old=NativeCallChanges.sites(source,nativeMethod).stream().filter(s->NativeCallChanges.member(s.call()).equals(wanted)).toList();
+   List<NativeCallChanges.Site> now=NativeCallChanges.sites(current,live);if(old.isEmpty()||now.stream().anyMatch(s->NativeCallChanges.member(s.call()).equals(wanted)))continue;
+   Set<String> names=new LinkedHashSet<>();for(var site:now)if(site.call().owner.equals(owner)&&site.call().desc.equals(desc)&&!site.call().name.equals(vanillaName))names.add(site.call().name);
+   for(String replacement:names){
+    List<NativeCallChanges.Site> calls=now.stream().filter(s->s.call().owner.equals(owner)&&s.call().name.equals(replacement)&&s.call().desc.equals(desc)).toList();
+    if(calls.size()!=old.size()||NativeCallChanges.sites(source,nativeMethod).stream().anyMatch(s->s.call().owner.equals(owner)&&s.call().name.equals(replacement)&&s.call().desc.equals(desc)))continue;
+    boolean aligned=true;for(var call:old){var matched=NativeCallChanges.match(call,calls,c->true);if(matched==null||matched.ordinal()!=call.ordinal()||!matched.operands().equals(call.operands())){aligned=false;break;}}
+    if(!aligned)continue;
+    Function<String,ClassNode> neo=n->{ClassNode indexed=readers.sources.apply(Ecosystem.NEOFORGE,n);return indexed!=null?indexed:NativeGameReferences.runtime(Ecosystem.NEOFORGE,n);};
+    boolean equivalent=observation||handler!=null&&NativeDefaultDelegate.equivalent(handler,calls.getFirst().call(),neo);
+    if(!equivalent)continue;
+    candidates.add(new Swap(target,method,owner,vanillaName,replacement,desc,"every native operand and guarded occurrence is retained; the handler equals the complete native default delegate"));
+   }
+  }
+  List<Swap> distinct=candidates.stream().distinct().toList();return distinct.size()==1?observed(swaps,distinct.getFirst()):null;
+ }
+ public static Substitution substitution(String target,String method,String anchor,Ecosystem family){
+  if(family==null)return null;Readers readers=readers();ClassNode current=readers.current.apply(target),source=readers.sources.apply(family,target);
+  MethodNode nativeMethod=NativeCallChanges.method(source,method),live=NativeCallChanges.method(current,method);if(nativeMethod==null||live==null)return null;
+  MixinFit.Member wanted=MixinFit.parseMember(anchor);if(wanted==null)return null;
+  List<NativeCallChanges.Site> old=NativeCallChanges.sites(source,nativeMethod).stream().filter(s->matches(s.call(),wanted)).toList();
+  List<NativeCallChanges.Site> now=NativeCallChanges.sites(current,live);if(old.size()!=1||now.stream().anyMatch(s->matches(s.call(),wanted)))return null;
+  List<NativeCallChanges.Site> candidates=now.stream().filter(s->s.call().getOpcode()==old.getFirst().call().getOpcode()
+   &&List.of(Type.getArgumentTypes(s.call().desc)).equals(List.of(Type.getArgumentTypes(old.getFirst().call().desc)))
+   &&s.operands().equals(old.getFirst().operands())&&NativeCallChanges.oneChangedCall(nativeMethod,live,old.getFirst().call(),s.call())).toList();
+  if(candidates.size()!=1)return null;
+  Set<Ecosystem> admitted=EnumSet.noneOf(Ecosystem.class);
+  for(Ecosystem peer:Ecosystem.values()){
+   ClassNode peerOwner=readers.sources.apply(peer,target);MethodNode peerMethod=NativeCallChanges.method(peerOwner,method);if(peerMethod==null)continue;
+   List<NativeCallChanges.Site> peerCalls=NativeCallChanges.sites(peerOwner,peerMethod).stream().filter(s->NativeCallChanges.member(s.call()).equals(NativeCallChanges.member(old.getFirst().call()))).toList();
+   if(peerCalls.size()==1&&NativeCallChanges.oneChangedCall(peerMethod,live,peerCalls.getFirst().call(),candidates.getFirst().call()))admitted.add(peer);
+  }
+  return observed(substitutions,new Substitution(target,method,NativeCallChanges.member(old.getFirst().call()),NativeCallChanges.member(candidates.getFirst().call()),Set.copyOf(admitted),"one actual call changed in an otherwise identical executable body, local scopes and exception CFG"));
+ }
+ public static Replaced replaced(String owner,String name,String desc,Ecosystem family){
+  if(family==null)return null;Readers readers=readers();ClassNode current=readers.current.apply(owner),source=readers.sources.apply(family,owner);if(current==null||source==null)return null;
+  List<Replaced> found=new ArrayList<>();
+  for(MethodNode old:source.methods){
+   if(!old.name.equals(name)||desc!=null&&!old.desc.equals(desc)||(old.access&Opcodes.ACC_PRIVATE)==0||NativeCallChanges.method(current,old.name+old.desc)!=null)continue;
+   String member="L"+owner+";"+old.name+old.desc;List<Map.Entry<MethodNode,NativeCallChanges.Site>> callers=callers(source,member);if(callers.size()!=1)continue;
+   MethodNode originalCaller=callers.getFirst().getKey(),live=NativeCallChanges.method(current,originalCaller.name+originalCaller.desc);if(live==null||((originalCaller.access^live.access)&Opcodes.ACC_STATIC)!=0)continue;
+   NativeCallChanges.Site oldCall=callers.getFirst().getValue();List<NativeCallChanges.Site> candidates=new ArrayList<>();
+   for(var call:NativeCallChanges.sites(current,live)){
+    MethodNode replacement=NativeCallChanges.method(current,call.call().name+call.call().desc);
+    if(!call.call().owner.equals(owner)||replacement==null||(replacement.access&Opcodes.ACC_PRIVATE)==0||((old.access^replacement.access)&Opcodes.ACC_STATIC)!=0
+      ||NativeCallChanges.method(source,replacement.name+replacement.desc)!=null||!Type.getReturnType(old.desc).equals(Type.getReturnType(replacement.desc))
+      ||callers(current,NativeCallChanges.member(call.call())).size()!=1)continue;
+    List<NativeCallChanges.Expr> originalInputs=new ArrayList<>(oldCall.operands()),providers=new ArrayList<>(call.operands());
+    if(oldCall.call().getOpcode()!=Opcodes.INVOKESTATIC){if(call.call().getOpcode()==Opcodes.INVOKESTATIC||!originalInputs.removeFirst().equals(providers.removeFirst()))continue;}
+    List<Type> types=List.of(Type.getArgumentTypes(replacement.desc));List<String> projected=NativeCallChanges.projection(originalInputs,providers,types);
+    if(projected==null||!provedGetters(projected,types,family,readers))continue;
+    if(NativeCallChanges.match(oldCall,List.of(call),c->true)!=null)candidates.add(call);
+   }
+   if(candidates.size()!=1)continue;var call=candidates.getFirst();List<NativeCallChanges.Expr> originalInputs=new ArrayList<>(oldCall.operands()),providers=new ArrayList<>(call.operands());
+   if(oldCall.call().getOpcode()!=Opcodes.INVOKESTATIC){originalInputs.removeFirst();providers.removeFirst();}
+   List<String> projection=NativeCallChanges.projection(originalInputs,providers,List.of(Type.getArgumentTypes(call.call().desc)));
+   found.add(new Replaced(owner,originalCaller.name+originalCaller.desc,old.name+old.desc,call.call().name+call.call().desc,projection,Set.of(family),"the native private body has one caller; the new private body's unique guarded call carries every native input through proved providers"));
+  }
+  return found.size()==1?observed(replacements,found.getFirst()):null;
+ }
+ private static boolean provedGetters(List<String> projection,List<Type> params,Ecosystem family,Readers readers){
+  for(String input:projection){int dot=input.indexOf('.');if(dot<0)continue;int p=Integer.parseInt(input.substring(1,dot));String getter=input.substring(dot+1);
+   ClassNode owner=readers.sources.apply(family,params.get(p).getInternalName());MethodNode method=NativeCallChanges.method(owner,getter);if(method==null||!method.tryCatchBlocks.isEmpty())return false;
+   List<AbstractInsnNode> code=Arrays.stream(method.instructions.toArray()).filter(i->i.getOpcode()>=0).toList();
+   if(code.size()==2 && (code.getFirst() instanceof LdcInsnNode || code.getFirst().getOpcode()>=Opcodes.ACONST_NULL&&code.getFirst().getOpcode()<=Opcodes.DCONST_1)
+      &&code.getLast().getOpcode()==Type.getReturnType(method.desc).getOpcode(Opcodes.IRETURN))continue;
+   if(code.size()!=3||!(code.getFirst() instanceof VarInsnNode self)||self.var!=0||self.getOpcode()!=Opcodes.ALOAD
+     ||!(code.get(1) instanceof FieldInsnNode field)||field.getOpcode()!=Opcodes.GETFIELD||code.getLast().getOpcode()!=Type.getReturnType(method.desc).getOpcode(Opcodes.IRETURN))return false;
+  }return true;
+ }
+ private static List<Map.Entry<MethodNode,NativeCallChanges.Site>> callers(ClassNode owner,String member){List<Map.Entry<MethodNode,NativeCallChanges.Site>> calls=new ArrayList<>();for(var method:owner.methods)for(var site:NativeCallChanges.sites(owner,method))if(NativeCallChanges.member(site.call()).equals(member))calls.add(Map.entry(method,site));return calls;}
+ private static boolean matches(MethodInsnNode call,MixinFit.Member wanted){return call.name.equals(wanted.name())&&(wanted.owner()==null||call.owner.equals(wanted.owner()))&&(wanted.desc()==null||call.desc.equals(wanted.desc()));}
 }

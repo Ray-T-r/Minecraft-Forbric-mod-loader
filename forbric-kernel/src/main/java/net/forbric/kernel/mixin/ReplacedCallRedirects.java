@@ -79,41 +79,9 @@ public final class ReplacedCallRedirects {
 			List<String> markers, String slice, int[] from, Set<Ecosystem> ecosystems, String because) {
 	}
 
-	private static final String ITEM_STACK = "Lnet/minecraft/world/item/ItemStack;";
-	public static final List<Site> SITES = List.of(
-			new Site("net/minecraft/client/gui/screens/inventory/AbstractContainerScreen",
-					"checkHotbarKeyPressed(Lnet/minecraft/client/input/KeyEvent;)Z",
-					"Lnet/minecraft/client/KeyMapping;matches(Lnet/minecraft/client/input/KeyEvent;)Z", Opcodes.INVOKEVIRTUAL,
-					"Lnet/minecraft/client/KeyMapping;isActiveAndMatches(Lcom/mojang/blaze3d/platform/InputConstants$Key;)Z",
-					Opcodes.INVOKEVIRTUAL, 2, new int[] { 0, 1 },
-					List.of("Lnet/minecraft/client/Options;keySwapOffhand:Lnet/minecraft/client/KeyMapping;",
-							"Lnet/minecraft/client/Options;keyHotbarSlots:[Lnet/minecraft/client/KeyMapping;"),
-					null, new int[] { 0, -1 }, Set.of(Ecosystem.FABRIC, Ecosystem.FORGE),
-					"NeoForge's checkHotbarKeyPressed reads the key once and asks each mapping isActiveAndMatches(key) where "
-							+ "vanilla asked matches(event): the same key comparison plus NeoForge's key-conflict context and "
-							+ "modifier, for the off-hand swap and then each hotbar slot, in vanilla's order"),
-			new Site("net/minecraft/world/entity/LivingEntity", "updatingUsingItem()V",
-					ITEM_STACK + "isSameItem(" + ITEM_STACK + ITEM_STACK + ")Z", Opcodes.INVOKESTATIC,
-					"Lnet/neoforged/neoforge/common/CommonHooks;canContinueUsing(" + ITEM_STACK + ITEM_STACK + ")Z",
-					Opcodes.INVOKESTATIC, 1, new int[] { 0 }, List.of(), null, new int[] { 1, 0 }, Set.of(Ecosystem.FABRIC),
-					"vanilla keeps using an item while isSameItem(the stack in hand, the stack in use); NeoForge asks "
-							+ "canContinueUsing(the stack in use, the stack in hand) — the item decides, by default whether they "
-							+ "are the same item — and keeps using it only while the stack in hand is the one in use. The "
-							+ "handler still sees the stacks in vanilla's order and forwards NeoForge's question"),
-			new Site("net/minecraft/world/item/ShovelItem",
-					"useOn(Lnet/minecraft/world/item/context/UseOnContext;)Lnet/minecraft/world/InteractionResult;",
-					"Ljava/util/Map;get(Ljava/lang/Object;)Ljava/lang/Object;", Opcodes.INVOKEINTERFACE,
-					"Lnet/minecraft/world/level/block/state/BlockState;getToolModifiedState("
-							+ "Lnet/minecraft/world/item/context/UseOnContext;Lnet/neoforged/neoforge/common/ItemAbility;Z)"
-							+ "Lnet/minecraft/world/level/block/state/BlockState;",
-					Opcodes.INVOKEVIRTUAL, 2, new int[] { 0 },
-					List.of("Lnet/neoforged/neoforge/common/ItemAbilities;SHOVEL_FLATTEN:Lnet/neoforged/neoforge/common/ItemAbility;"),
-					"Lnet/minecraft/world/item/ShovelItem;FLATTENABLES:Ljava/util/Map;", new int[] { -1, -1 },
-					Set.of(Ecosystem.FABRIC),
-					"vanilla's useOn looks the clicked block up in FLATTENABLES, null meaning no path; NeoForge's asks the state "
-							+ "for its SHOVEL_FLATTEN modification, which for a block that does not override it is that same "
-							+ "lookup (ShovelItem.getShovelPathingState) behind NeoForge's tool-modification event, and null "
-							+ "still means no path"));
+	/** Observations derived on demand; never a matching policy. */
+	private static final List<Site> observed = new java.util.concurrent.CopyOnWriteArrayList<>();
+	public static final List<Site> SITES = java.util.Collections.unmodifiableList(observed);
 
 	private ReplacedCallRedirects() {
 	}
@@ -128,24 +96,130 @@ public final class ReplacedCallRedirects {
 	}
 
 	private static int adapt(ClassNode mixin, Function<String, ClassNode> targets, boolean log) {
-		if (!enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
-		Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixin.name);
-		List<String> owners = MixinFit.mixinTargets(mixin);
-		if (ecosystem == null || owners.size() != 1) return 0;
-		int moved = 0;
-		for (Site site : SITES) {
-			if (!site.owner().equals(owners.getFirst()) || !site.ecosystems().contains(ecosystem)) continue;
-			ClassNode target = null;
-			for (MethodNode handler : List.copyOf(mixin.methods)) {
-				AnnotationNode redirect = MixinFit.injectorOf(handler);
-				if (redirect == null || !REDIRECT.equals(redirect.desc)) continue;
-				if (target == null) target = targets.apply(site.owner());
-				if (target == null || !hostHasTheSiteShape(target, site)) break;
-				if (move(mixin, handler, redirect, site, log)) moved++;
-			}
-		}
-		return moved;
-	}
+        return adapt(mixin, targets, NativeGameReferences::reference, log);
+    }
+
+    public static int adapt(ClassNode mixin, Function<String, ClassNode> targets,
+            java.util.function.BiFunction<Ecosystem, String, ClassNode> references) {
+        return adapt(mixin, targets, references, true);
+    }
+
+    private static int adapt(ClassNode mixin, Function<String, ClassNode> targets,
+            java.util.function.BiFunction<Ecosystem, String, ClassNode> references, boolean log) {
+        if (!enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
+        Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixin.name);
+        List<String> owners = MixinFit.mixinTargets(mixin);
+        if (ecosystem == null || owners.size() != 1) return 0;
+        ClassNode target = targets.apply(owners.getFirst()), source = references.apply(ecosystem, owners.getFirst());
+        if (target == null || source == null) return 0;
+        int moved = 0;
+        for (MethodNode handler : List.copyOf(mixin.methods)) {
+            AnnotationNode redirect = MixinFit.injectorOf(handler);
+            if (redirect == null || !REDIRECT.equals(redirect.desc)) continue;
+            Site site = derive(target, source, ecosystem, handler, redirect);
+            if (site != null && hostHasTheSiteShape(target, site) && move(mixin, handler, redirect, site, log)) {
+                observed.add(site); moved++;
+            }
+        }
+        return moved;
+    }
+
+    /** A source occurrence must have one guarded, result-consuming counterpart with the same data providers. */
+    static Site derive(ClassNode target, ClassNode source, Ecosystem ecosystem, MethodNode handler, AnnotationNode redirect) {
+        List<String> selectors = MixinFit.stringList(MixinFit.value(redirect, "method"));
+        List<AnnotationNode> points = MixinFit.atNodes(redirect);
+        if (selectors.size() != 1 || points.size() != 1) return null;
+        AnnotationNode at = points.getFirst(); String wanted = MixinFit.asString(MixinFit.value(at, "target"));
+        MixinFit.Member member = MixinFit.parseMember(wanted); if (member == null || member.owner() == null || member.desc() == null) return null;
+        String selector = selectors.getFirst(); int paren = selector.indexOf('(');
+        List<MethodNode> originals = source.methods.stream().filter(m -> paren >= 0 ? (m.name + m.desc).equals(selector) : m.name.equals(selector)).toList();
+        if (originals.size() != 1) return null; MethodNode original = originals.getFirst(), current = NativeCallChanges.method(target, original.name + original.desc);
+        if (current == null || ((current.access ^ original.access) & Opcodes.ACC_STATIC) != 0) return null;
+        List<NativeCallChanges.Site> before = NativeCallChanges.sites(source, original).stream().filter(s -> is(s.call(), member)).toList();
+        List<NativeCallChanges.Site> after = NativeCallChanges.sites(target, current);
+        if (before.isEmpty() || after.stream().anyMatch(s -> is(s.call(), member))) return null;
+        String slice = sourceSlice(redirect); if (MixinFit.value(redirect, "slice") != null && slice == null) return null;
+        if (slice != null) before = before.stream().filter(s -> readsBefore(original, s.call(), slice)).toList();
+        if (before.isEmpty()) return null;
+        List<NativeCallChanges.Site> matched = new ArrayList<>(); int[] from = null;
+        for (NativeCallChanges.Site old : before) {
+            List<NativeCallChanges.Site> counterparts = after.stream().filter(candidate -> {
+                MethodInsnNode call=candidate.call();
+                if (call.name.equals("<init>") || NativeCallChanges.sites(source, original).stream().anyMatch(s -> NativeCallChanges.member(s.call()).equals(NativeCallChanges.member(call)))) return false;
+                Type was = Type.getReturnType(old.call().desc), now = Type.getReturnType(call.desc);
+                if(!(was.equals(now) || was.getSort() == Type.OBJECT && now.getSort() == Type.OBJECT && narrowedTo(old.call(), now)))return false;
+                int[] projection=NativeCallChanges.carried(old.operands(),candidate.operands());
+                if(projection==null||!providerCoverage(old.operands(),candidate.operands()))return false;
+                return sameContext(source,original,old,target,current,candidate,projection);
+            }).toList();
+            NativeCallChanges.Site replacement=counterparts.size()==1?counterparts.getFirst():null;
+            if (replacement == null) return null;
+            int[] projection = NativeCallChanges.carried(old.operands(), replacement.operands());
+            if (projection == null || !providerCoverage(old.operands(), replacement.operands())) return null;
+            if (from != null && !java.util.Arrays.equals(from, projection)) return null;
+            from = projection; matched.add(replacement);
+        }
+        String replacement = NativeCallChanges.member(matched.getFirst().call());
+        if (matched.stream().anyMatch(s -> !NativeCallChanges.member(s.call()).equals(replacement))) return null;
+        int count = (int) after.stream().filter(s -> NativeCallChanges.member(s.call()).equals(replacement)).count();
+        int[] ordinals = matched.stream().mapToInt(NativeCallChanges.Site::ordinal).toArray();
+        return new Site(target.name, current.name + current.desc, wanted, before.getFirst().call().getOpcode(), replacement,
+            matched.getFirst().call().getOpcode(), count, ordinals, List.of(), slice, from, Set.of(ecosystem),
+            "the actual native occurrences have unique current CFG/result counterparts and their operand providers are conserved; the wrapper forwards the native operation");
+    }
+    private static boolean sameContext(ClassNode source,MethodNode original,NativeCallChanges.Site old,ClassNode target,
+            MethodNode current,NativeCallChanges.Site replacement,int[] projection){
+        Set<NativeCallChanges.Expr> providers=new java.util.HashSet<>(),originalProviders=new java.util.HashSet<>();for(var expression:replacement.operands())collectProviders(expression,providers);for(var expression:old.operands())collectProviders(expression,originalProviders);
+        var before=NativeCallChanges.context(source,original,old.call(),e->normalizeOperation(e,NativeCallChanges.member(old.call()),projection,false),originalProviders);
+        var after=NativeCallChanges.context(target,current,replacement.call(),e->normalizeOperation(e,NativeCallChanges.member(replacement.call()),projection,true),providers);
+        return before!=null&&before.equals(after)&&before.guards()!=null;
+    }
+    private static void collectProviders(NativeCallChanges.Expr expression,Set<NativeCallChanges.Expr> providers){
+        providers.add(expression);expression.inputs().forEach(input->collectProviders(input,providers));
+    }
+    private static NativeCallChanges.Expr normalizeOperation(NativeCallChanges.Expr expression,String member,int[] projection,boolean current){
+        List<NativeCallChanges.Expr> inputs=expression.inputs().stream().map(e->normalizeOperation(e,member,projection,current)).toList();
+        if(expression.kind().equals("call")&&expression.symbol().equals(member)){
+            List<NativeCallChanges.Expr> kept=new ArrayList<>();for(int p=0;p<projection.length;p++)if(projection[p]>=0){int at=current?projection[p]:p;if(at>=inputs.size())return new NativeCallChanges.Expr("unknown","projection");kept.add(inputs.get(at));}
+            return new NativeCallChanges.Expr("replacement-operation","",kept);
+        }return new NativeCallChanges.Expr(expression.kind(),expression.symbol(),inputs);
+    }
+    private static boolean narrowedTo(MethodInsnNode old, Type currentReturn) {
+        AbstractInsnNode next = nextReal(old);
+        return next instanceof org.objectweb.asm.tree.TypeInsnNode cast && cast.getOpcode() == Opcodes.CHECKCAST
+            && cast.desc.equals(currentReturn.getInternalName());
+    }
+    private static boolean providerCoverage(List<NativeCallChanges.Expr> old, List<NativeCallChanges.Expr> current) {
+        for (NativeCallChanges.Expr expression : old) {
+            if (expression.kind().equals("static-field") || expression.kind().equals("constant") || expression.kind().equals("literal")) continue;
+            if (!containsProvider(expression, current)) return false;
+        }
+        return true;
+    }
+    private static boolean containsProvider(NativeCallChanges.Expr expression, List<NativeCallChanges.Expr> providers) {
+        if (providers.contains(expression)) return true;
+        for (NativeCallChanges.Expr provider : providers) if (contains(provider, expression)) return true;
+        return expression.inputs().stream().anyMatch(input -> containsProvider(input, providers));
+    }
+    private static boolean contains(NativeCallChanges.Expr expression, NativeCallChanges.Expr part) {
+        return expression.equals(part) || expression.inputs().stream().anyMatch(input -> contains(input, part));
+    }
+    private static String sourceSlice(AnnotationNode redirect) {
+        Object value = MixinFit.value(redirect, "slice"); if (value == null) return null;
+        List<?> slices = value instanceof List<?> list ? list : List.of(value);
+        if (slices.size() != 1 || !(slices.getFirst() instanceof AnnotationNode slice)) return null;
+        if (!(MixinFit.value(slice, "from") instanceof AnnotationNode from) || !"FIELD".equals(MixinFit.value(from, "value"))) return null;
+        return MixinFit.asString(MixinFit.value(from, "target"));
+    }
+    private static boolean readsBefore(MethodNode method, AbstractInsnNode call, String member) {
+        for (AbstractInsnNode i : method.instructions) {
+            if (i == call) return false;
+            if (i instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
+                && ("L" + field.owner + ";" + field.name + ":" + field.desc).equals(member)) return true;
+        }
+        return false;
+    }
+    private static AbstractInsnNode nextReal(AbstractInsnNode i) { i = i.getNext(); while (i != null && i.getOpcode() < 0) i = i.getNext(); return i; }
 
 	/**
 	 * {@code bytes} as {@link #adapt} hands it to Mixin, or {@code bytes} itself when nothing changes: the census reads

@@ -15,6 +15,6 @@ public class MainMixin {
 	@Inject(method = "main", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/Util;startTimerHackThread()V"))
 	private static void afterModInit(CallbackInfo info) {
 		BuiltInRegistries.bootStrap();
-		Trace.add("fabric:postFreeze");
+		net.fabricmc.fabric.impl.registry.sync.trackers.vanilla.BlockInitTracker.postFreeze();
 	}
 }

@@ -453,8 +453,9 @@ The kernel game side compiles the energy bridge against the same jar (`-Pforbric
 else this checkout's own `forbric-kernel/run/energy-api/energy-5.0.0.jar`). Nothing fetches it and `*.jar` is not
 committed: take it from Team Reborn Energy's release (https://github.com/TechReborn/Energy, the project page in the
 jar's own `fabric.mod.json`). `verifyRebornEnergy` runs before every game-side compile and transfer-test run and fails
-naming the file when it is missing or when its SHA-256 is not
-`889afc438d3e4add5cfdac76517da7987a2c495e4731690a56f2c5dee775db59`; the runtime jar is checked to contain the energy
+naming any missing or incompatible public binary member. The contract is
+`src/main/resources/net/forbric/kernel/interop/protocol/energy.api-contract.txt`; a release with the same ABI is
+accepted regardless of its filename, version or archive hash. The runtime jar is checked to contain the energy
 classes and to bundle no `team/reborn/` entry. M33 also requires that its item/fluid-only pack logs no energy
 bridge activity.
 

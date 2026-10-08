@@ -48,7 +48,7 @@ public final class NativeGameReferences {
 		active=reader;
 	}
 
-	static ClassNode reference(Ecosystem ecosystem, String owner) {
+	public static ClassNode reference(Ecosystem ecosystem, String owner) {
 		NativeGameReferences reader = active;
 		return reader == null ? null : reader.get(ecosystem, owner);
 	}

@@ -118,16 +118,11 @@ class AccessCensusTest {
 				new ModCatalog.Entry(Ecosystem.NEOFORGE, "other", "Other", "1", "", List.of(), "other.jar", "", "")));
 		AccessCensus.unmatched("AW", "x.jar", "field com/example/Target nope J", true, true);
 		AccessCensus.unmatched("AW", "carrier:forge-runtime.jar", "field com/example/Target alsoNope J", true, true);
-		// A re-typing a named kernel repair already satisfies marks nobody: the ACCESS phase runs before the
-		// COREMOD one, so the widener looks before the repair has happened.
-		for (String satisfied : AccessCensus.allSatisfiedElsewhere().keySet()) {
-			AccessCensus.unmatched("AW", "satisfied.jar", satisfied, true, true);
-		}
 		AccessCensus.unmatched("AT", "other.jar", "public com/example/Target stale", false, false);
 		AccessCensus.unmatched("AT", "other.jar", "public com/example/Target overload(I)V", false, true);
 		AccessCensus.report();
 		assertEquals(1, ModCatalog.failures().size(), "the carrier's own directive marks nobody, a stale one marks "
-				+ "nobody, and neither does one the kernel already satisfies");
+				+ "nobody");
 		ModCatalog.Entry xmod = ModCatalog.failures().get(0);
 		assertEquals("xmod", xmod.modId());
 		assertEquals(ModCatalog.Status.DEGRADED, xmod.status());
@@ -141,24 +136,17 @@ class AccessCensusTest {
 		assertTrue(AccessCensus.entries().isEmpty());
 	}
 
-	/**
-	 * Every "already satisfied" row claims a repair does the directive's whole job. That claim is what makes the
-	 * row safe to suppress a report on, and it is the thing that rots: the repair gets renamed, or narrowed, or
-	 * deleted, and the row keeps quietly hiding a real loss. So the member it names has to still be named by a
-	 * repair in the transformer that is supposed to do it.
-	 */
 	@Test
-	void everySatisfiedRowNamesAMemberSomeRepairStillHandles() throws Exception {
-		String transformer = java.nio.file.Files.readString(java.nio.file.Path.of(
-				"src/main/java/net/forbric/kernel/transform/ForbricMergedBaseCompatTransformer.java"));
-		List<String> orphaned = new java.util.ArrayList<>();
-		for (String directive : AccessCensus.allSatisfiedElsewhere().keySet()) {
-			String[] parts = directive.split(" ");
-			// "field <owner> <name> <desc>" — the member name is what a repair has to still be about.
-			if (parts.length < 4 || !transformer.contains(parts[2])) orphaned.add(directive);
-		}
-		assertTrue(orphaned.isEmpty(), "these rows suppress an access-widener report on the strength of a repair "
-				+ "that no longer mentions the member: " + orphaned);
+	void aFormerRepairNameDoesNotHideAnUnrestoredAccessRule() {
+		ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FABRIC, "owner", "Owner", "1", "",
+				List.of(), "owner.jar", "", "")));
+		String directive = "field net/minecraft/world/level/chunk/ChunkGenerator featuresPerStep Ljava/util/function/Supplier;";
+		AccessCensus.unmatched("AW", "owner.jar", directive, true, true);
+		AccessCensus.report();
+		assertEquals(1, ModCatalog.failures().size());
+		assertTrue(ModCatalog.failures().getFirst().statusDetail().contains(directive));
+		AccessCensus.restored("AW", "owner.jar", directive);
+		assertTrue(AccessCensus.entries().isEmpty(), "only a replayed access rule can clear the miss");
 	}
 
 	private static byte[] sampleClass() {

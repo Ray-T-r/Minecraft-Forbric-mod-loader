@@ -51,7 +51,7 @@ class MixinRetargetReplacedCallWeaveTest {
 	private static WeaveHarness.Result headOff;
 
 	@BeforeAll static void weaveBoth() throws Exception {
-		fixture = WeaveHarness.fixture(work, "replacedcall", List.of(
+		List<Path> sources = List.of(
 				SOURCES.resolve("net/minecraft/world/level/ServerLevelAccessor.java"),
 				SOURCES.resolve("net/minecraft/core/BlockPos.java"),
 				SOURCES.resolve("net/minecraft/world/level/block/Mirror.java"),
@@ -62,8 +62,16 @@ class MixinRetargetReplacedCallWeaveTest {
 				SOURCES.resolve("net/minecraft/world/level/levelgen/structure/templatesystem/StructurePlaceSettings.java"),
 				SOURCES.resolve("net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplate.java"),
 				SOURCES.resolve("fixture/replacedcall/mixin/StructureTemplateMixin.java"),
-				SOURCES.resolve("fixture/replacedcall/head/StructureTemplateHeadMixin.java")),
-				Map.of(CONFIG, SOURCES.resolve(CONFIG), HEAD_CONFIG, SOURCES.resolve(HEAD_CONFIG)));
+				SOURCES.resolve("fixture/replacedcall/head/StructureTemplateHeadMixin.java"));
+        fixture=WeaveHarness.fixture(work,"replacedcall",sources,Map.of(CONFIG,SOURCES.resolve(CONFIG),HEAD_CONFIG,SOURCES.resolve(HEAD_CONFIG)));
+        Path target=SOURCES.resolve("net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplate.java");
+        String nativeCode=java.nio.file.Files.readString(target)
+            .replace("this.addEntitiesToWorld(level, position, settings, reporter)","this.placeEntities(level, position, settings.getMirror(),settings.getRotation(),settings.getRotationPivot(),settings.getBoundingBox(),settings.shouldFinalizeEntities(),reporter)")
+            .replace("private void addEntitiesToWorld(ServerLevelAccessor level, BlockPos position, StructurePlaceSettings settings,", "private void placeEntities(ServerLevelAccessor level, BlockPos position, Mirror mirror,Rotation rotation,BlockPos pivot,BoundingBox box,boolean finalizeEntities,");
+        Path nativeTarget=work.resolve("native/StructureTemplate.java");java.nio.file.Files.createDirectories(nativeTarget.getParent());java.nio.file.Files.writeString(nativeTarget,nativeCode);
+        List<Path> nativeSources=new java.util.ArrayList<>(sources);nativeSources.remove(target);nativeSources.add(nativeTarget);
+        Path original=WeaveHarness.fixture(work,"original",nativeSources,Map.of());
+        fixture=NativeWeaveReferences.with(work,fixture,NativeWeaveReferences.classes(original));
 		moved = run("moved", CONFIG, MOD, "on");
 		off = run("off", CONFIG, MOD, "off");
 		headMoved = run("head-moved", HEAD_CONFIG, HEAD_MOD, "on");

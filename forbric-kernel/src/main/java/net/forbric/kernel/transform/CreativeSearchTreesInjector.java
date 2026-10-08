@@ -145,10 +145,28 @@ public final class CreativeSearchTreesInjector implements ClassTransformer {
 			MethodNode method = find(node, rewrite[0], rewrite[1]);
 			if (method == null || (method.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0
 					|| !readsForgeStore(method)) continue;
-			replaceBody(method, rewrite[2], rewrite[3]);
+			if(rewrite[0].equals(READ)){if(!replaceReaderExpression(node,method))continue;}
+			else replaceBody(method, rewrite[2], rewrite[3]);
 			rewritten.add(rewrite[0]);
 		}
 		return rewritten;
+	}
+	/** Keep surrounding SDK/guest effects; only the disconnected map/future expression becomes a shared-store query. */
+	private static boolean replaceReaderExpression(ClassNode owner,MethodNode method){
+		List<AbstractInsnNode> code=java.util.Arrays.stream(method.instructions.toArray()).filter(i->i.getOpcode()>=0).toList();
+		for(int p=0;p+8<code.size();p++){
+			if(!(code.get(p)instanceof VarInsnNode self)||self.getOpcode()!=Opcodes.ALOAD||self.var!=0
+				||!(code.get(p+1)instanceof FieldInsnNode map)||map.getOpcode()!=Opcodes.GETFIELD||!map.owner.equals(owner.name)||!map.desc.equals("Ljava/util/Map;")
+				||!(code.get(p+2)instanceof VarInsnNode key)||key.getOpcode()!=Opcodes.ALOAD||key.var!=1
+				||!(code.get(p+3)instanceof VarInsnNode again)||again.getOpcode()!=Opcodes.ALOAD||again.var!=0
+				||!(code.get(p+4)instanceof FieldInsnNode empty)||empty.getOpcode()!=Opcodes.GETFIELD||!empty.owner.equals(owner.name)||!empty.desc.equals("Ljava/util/concurrent/CompletableFuture;")
+				||!(code.get(p+5)instanceof MethodInsnNode get)||!get.owner.equals("java/util/Map")||!get.name.equals("getOrDefault")||!get.desc.equals("(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
+				||!(code.get(p+6)instanceof org.objectweb.asm.tree.TypeInsnNode future)||future.getOpcode()!=Opcodes.CHECKCAST||!future.desc.equals("java/util/concurrent/CompletableFuture")
+				||!(code.get(p+7)instanceof MethodInsnNode join)||!join.owner.equals("java/util/concurrent/CompletableFuture")||!join.name.equals("join")||!join.desc.equals("()Ljava/lang/Object;")
+				||!(code.get(p+8)instanceof org.objectweb.asm.tree.TypeInsnNode tree)||tree.getOpcode()!=Opcodes.CHECKCAST||!tree.desc.equals("net/minecraft/client/searchtree/SearchTree"))continue;
+			InsnList query=new InsnList();query.add(new VarInsnNode(Opcodes.ALOAD,0));query.add(new VarInsnNode(Opcodes.ALOAD,1));query.add(new MethodInsnNode(Opcodes.INVOKESTATIC,HELPER,"tree","(L"+TREES+";"+KEY+")"+TREE,false));method.instructions.insertBefore(code.get(p),query);
+			for(int i=p;i<=p+8;i++)method.instructions.remove(code.get(i));method.maxStack=Math.max(method.maxStack,2);return true;
+		}return false;
 	}
 
 	/** Whether this body still goes to MinecraftForge's registry or map — the merged shape, not yet rewritten. */

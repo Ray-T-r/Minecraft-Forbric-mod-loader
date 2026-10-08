@@ -38,6 +38,9 @@ public final class KernelFluidTypes {
 	/** The type for {@code fluid} when NeoForge's own lookup would throw for it, else null (NeoForge answers it). */
 	public static FluidType foreignType(Fluid fluid) {
 		if (fluid == null || isNative(fluid)) return null;
+		return taggedType(fluid);
+	}
+	private static FluidType taggedType(Fluid fluid) {
 		FluidState state = fluid.defaultFluidState();
 		try {
 			if (state.is(FluidTags.WATER)) return NeoForgeMod.WATER_TYPE.value();
@@ -49,6 +52,9 @@ public final class KernelFluidTypes {
 		}
 		return NeoForgeMod.EMPTY_TYPE.value();
 	}
+	/** Entered only at the actual SDK lookup's proved unsupported branch; namespace guesses are unnecessary. */
+	public static FluidType foreignNeoLookup(Fluid fluid){FluidType type=taggedType(fluid);return (FluidType)net.forbric.api.LookupOutcomes.foreign(fluid,FluidType.class,type);}
+	public static net.minecraftforge.fluids.FluidType foreignForgeLookup(Fluid fluid){var type=forgeType(fluid);return (net.minecraftforge.fluids.FluidType)net.forbric.api.LookupOutcomes.foreign(fluid,net.minecraftforge.fluids.FluidType.class,type);}
 
 	/**
 	 * The merged {@code EntityFluidInteraction.getFluidTypeByTag} answer for a tag other than water and lava: the type
@@ -105,7 +111,7 @@ public final class KernelFluidTypes {
 	/** MinecraftForge's side of behaviourType: its type for the behaviour NeoForge's answer is, or null. */
 	static net.minecraftforge.fluids.FluidType forgeBehaviourType(Fluid fluid, FluidState state) {
 		try {
-			if (KernelFabricFluidBehaviors.tagOf(state) != null && fluid.getFluidType() instanceof KernelFabricFluidBehaviors.NeoType behaviour) {
+			if (KernelFabricFluidBehaviors.tagOf(state) != null && net.forbric.api.VirtualGetters.get(Fluid.class, "getFluidType", FluidType.class, fluid) instanceof KernelFabricFluidBehaviors.NeoType behaviour) {
 				return KernelFabricFluidBehaviors.forgeType(behaviour.tag);
 			}
 			return null;

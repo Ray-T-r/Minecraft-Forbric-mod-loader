@@ -51,10 +51,10 @@ class FabricRegistryInitializationMixinAdapterWeaveTest {
 
 	@Test void theKernelKeepsTheFreezeAndFabricKeepsItsTrackers() throws Exception {
 		assertTrue(adaptedHolds(adapted), adapted.describe() + "\nfindings: " + adapted.findings());
-		assertTrue(adapted.printed("[Forbric/RegistrySync] restored Fabric's bootstrap state-ID and block-item trackers"),
+		assertTrue(adapted.printed("[Forbric/RegistrySync] retained net/fabricmc/fabric/mixin/registry/sync/BootstrapMixin's bootstrap tracker callback"),
 				adapted.describe());
-		assertTrue(adapted.printed("[Forbric/RegistrySync] restored net/fabricmc/fabric/mixin/registry/sync/MainMixin "
-				+ "post-freeze trackers without repeating BuiltInRegistries.bootStrap"), adapted.describe());
+		assertTrue(adapted.printed("[Forbric/RegistrySync] retained net/fabricmc/fabric/mixin/registry/sync/MainMixin's "
+				+ "post-freeze callback without repeating the registry bootstrap"), adapted.describe());
 		for (String target : List.of(BOOTSTRAP, MAIN)) {
 			assertTrue(WeaveHarness.hasMergedMethod(adapted.defined(target)), target + " was not woven — " + adapted.describe());
 			WeaveHarness.assertWovenAndVerified(adapted, target, fixture);
@@ -91,7 +91,7 @@ class FabricRegistryInitializationMixinAdapterWeaveTest {
 
 	private static WeaveHarness.Result run(String label, String adapter) throws Exception {
 		return WeaveHarness.run(work, label, fixture, CONFIG, MOD, Ecosystem.FABRIC, EnvType.SERVER,
-				"fixture.fabricregistryinit.Probe", "run", Map.of(FabricRegistryInitializationMixinAdapter.PROPERTY, adapter));
+				"fixture.fabricregistryinit.Probe", "run", Map.of(FabricRegistryInitializationMixinAdapter.PROPERTY,adapter,"forbric.mergedBaseCompat","off"));
 	}
 
 	private static List<Path> sources() throws Exception {

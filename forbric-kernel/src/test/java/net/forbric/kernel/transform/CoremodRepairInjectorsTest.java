@@ -40,9 +40,11 @@ class CoremodRepairInjectorsTest {
 		assertTrue(store.getPrevious() instanceof VarInsnNode load && load.var == 1, "potted = the plant, as vanilla");
 		assertNotNull(find(ctor, FieldInsnNode.class, f -> f.name.equals("POTTED_BY_CONTENT")), "and in POTTED_BY_CONTENT, as vanilla");
 		MethodNode use = method(node, "useItemOn", FlowerPotRepairInjector.USE_ITEM_ON);
-		assertNull(find(use, MethodInsnNode.class, c -> c.name.equals("getDelegateOrThrow") || c.name.equals("getOrDefault")));
-		assertNull(find(use, TypeInsnNode.class, t -> t.desc.equals("java/util/function/Supplier")));
-		assertNotNull(find(use, MethodInsnNode.class, c -> c.owner.equals(FlowerPotRepairInjector.RUNTIME) && c.name.equals("fullPotFor")));
+		assertEquals(net.forbric.kernel.mixin.MixinInstructionFingerprint.hash(method(node(original),"useItemOn",FlowerPotRepairInjector.USE_ITEM_ON)),net.forbric.kernel.mixin.MixinInstructionFingerprint.hash(use),"the public native query and all interaction effects stay intact");
+        MethodNode lookup=method(node,"getFullPot","(L"+FlowerPotRepairInjector.BLOCK+";)L"+FlowerPotRepairInjector.BLOCK+";");
+        assertNotNull(find(lookup,MethodInsnNode.class,c->c.name.equals("getFlowerPotBlockTable")),"the original public SDK lookup remains");
+        assertNotNull(find(lookup,MethodInsnNode.class,c->c.owner.equals(FlowerPotRepairInjector.RUNTIME)&&c.name.equals("fullPotOrNative")),"explicit SDK additions decorate its actual result");
+        new Analyzer<>(new BasicVerifier()).analyze(node.name,lookup);
 		MethodNode add = method(node, "addPlant", FlowerPotRepairInjector.ADD_PLANT);
 		assertNotNull(find(add, MethodInsnNode.class, c -> c.name.equals("put")));
 		for (MethodNode m : List.of(ctor, use, add)) new Analyzer<>(new BasicVerifier()).analyze(node.name, m);

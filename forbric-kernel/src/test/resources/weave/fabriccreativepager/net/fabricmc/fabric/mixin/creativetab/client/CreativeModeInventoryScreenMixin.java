@@ -13,7 +13,7 @@ import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
  * calls that turn it) and a key handler that calls those two and touches nothing else of the mixin.
  */
 @Mixin(CreativeModeInventoryScreen.class)
-public abstract class CreativeModeInventoryScreenMixin {
+public abstract class CreativeModeInventoryScreenMixin implements net.fabricmc.fabric.api.client.creativetab.v1.FabricCreativeModeInventoryScreen {
 	private static final int PAGE_UP = 266;
 	private static final int PAGE_DOWN = 267;
 
@@ -30,6 +30,9 @@ public abstract class CreativeModeInventoryScreenMixin {
 		fabricPage++;
 		return true;
 	}
+
+    public int getCurrentPage(){return fabricPage;}
+    public boolean switchToPage(int page){if(page<0)return false;fabricPage=page;return true;}
 
 	@Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
 	private void keyPressed(int key, CallbackInfoReturnable<Boolean> info) {

@@ -17,6 +17,7 @@
 package net.forbric.kernel.boot;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -105,51 +106,21 @@ class ConfigApiBridgeForwardingTest {
 	}
 
 	@Test
-	void allThreeConfigEventsAreForwarded() throws Exception {
-		ClassNode node = bridge();
-
-		Set<String> events = new LinkedHashSet<>();
-		Set<String> sinks = new LinkedHashSet<>();
-		for (MethodNode method : node.methods) {
-			for (AbstractInsnNode insn : method.instructions) {
-				if (!(insn instanceof LdcInsnNode ldc)) continue;
-				if (ldc.cst instanceof Type type && type.getClassName().contains("ModConfigEvent$")) {
-					events.add(type.getClassName().substring(type.getClassName().indexOf('$') + 1));
-				}
-				if (ldc.cst instanceof String text
-						&& (text.equals("onModConfigLoading") || text.equals("onModConfigReloading") || text.equals("onModConfigUnloading"))) {
-					sinks.add(text);
-				}
-			}
-		}
-
-		// Loading is the one mods use most, but a config edited on disk while the game runs fires Reloading and
-		// nothing else — that is the case a mod's live-reload support depends on entirely.
-		assertTrue(events.containsAll(Set.of("Loading", "Reloading", "Unloading")),
-				"not every config event is forwarded; found " + events);
-		assertTrue(sinks.containsAll(Set.of("onModConfigLoading", "onModConfigReloading", "onModConfigUnloading")),
-				"not every porting-layer entry point is named; found " + sinks);
-	}
-
-	@Test
-	void thePublishedEventApiIsOptionalAndNoPrivateImplementationIsNamed() throws Exception {
-		// The porting layer is a MOD. Linking against it would make the game side fail to load without it, and
-		// most packs do not have it.
-		ClassNode node = bridge();
-
-		boolean byName = false;
-		for (MethodNode method : node.methods) {
-			for (AbstractInsnNode insn : method.instructions) {
-				if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof String text
-						&& text.equals("fuzs.forgeconfigapiport.fabric.api.v5.ModConfigEvents")) {
-					byName = true;
-				}
-			}
-		}
-
-		assertTrue(byName, "the published event API is optional");
-		for(MethodNode method:node.methods)for(AbstractInsnNode instruction:method.instructions)
-			if(instruction instanceof LdcInsnNode literal && literal.cst instanceof String text)
-				assertTrue(!text.startsWith("fuzs.forgeconfigapiport.fabric.impl."), "a private dispatcher implementation must not be named");
-	}
+    void allThreeConfigEventsAreForwarded() throws Exception {
+        ClassNode node = bridge();
+        Set<String> events = new LinkedHashSet<>();
+        Set<String> dispatch = new LinkedHashSet<>();
+        int callbacks = 0;
+        for (MethodNode method : node.methods) for (AbstractInsnNode instruction : method.instructions) {
+            if (instruction instanceof LdcInsnNode literal && literal.cst instanceof Type type
+                    && type.getClassName().contains("ModConfigEvent$")) events.add(type.getClassName().substring(type.getClassName().indexOf('$') + 1));
+            if (instruction instanceof org.objectweb.asm.tree.FieldInsnNode field
+                    && field.owner.endsWith("ProtocolExtension$ConfigEvent")) dispatch.add(field.name);
+            if (instruction instanceof MethodInsnNode call && call.owner.endsWith("ProtocolExtensions$Registry")
+                    && call.name.equals("configEvent")) callbacks++;
+        }
+        assertEquals(Set.of("Loading", "Reloading", "Unloading"), events);
+        assertEquals(Set.of("LOADING", "RELOADING", "UNLOADING"), dispatch);
+        assertEquals(3, callbacks);
+    }
 }

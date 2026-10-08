@@ -25,8 +25,6 @@ public final class MixinPlayerWorldCallbackAdapter {
 	static final String STACK = "Lnet/minecraft/world/item/ItemStack;";
 	static final String OLD_FILL = "setBlock(" + POS + STATE + "II)Z";
 	static final String LIVE_FILL = "markAndNotifyBlock(" + POS + "Lnet/minecraft/world/level/chunk/LevelChunk;" + STATE + STATE + "II)V";
-	/** markAndNotifyBlock(pos, chunk, oldState, newState, flags, updateLimit): the slot of {@code flags}. */
-	static final int FLAGS = 5;
 	static final String SHAPES = STATE + "updateNeighbourShapes(Lnet/minecraft/world/level/LevelAccessor;" + POS + "II)V";
 	static final String HANDS = "Lnet/neoforged/neoforge/event/entity/living/LivingSwapItemsEvent$Hands;";
 	static final String HAND_READ = "L" + PLAYER + ";getItemInHand(Lnet/minecraft/world/InteractionHand;)" + STACK;
@@ -102,8 +100,9 @@ public final class MixinPlayerWorldCallbackAdapter {
 		while (guard != null && !(guard instanceof JumpInsnNode)) guard = previous(guard);
 		AbstractInsnNode known = null;
 		for (var i : live.instructions) if (i instanceof IntInsnNode c && c.operand == 16) known = c;
-		if (guard == null || !gates(live, previous(previous(guard)), Opcodes.ICONST_1, Opcodes.IFEQ, notifies)
-				|| !gates(live, known, Opcodes.BIPUSH, Opcodes.IFNE, first(live, SHAPES))) return 0;
+        int flags = maskParameter(live, known);
+		if (flags < 0 || guard == null || !gates(live, previous(previous(guard)), flags, Opcodes.ICONST_1, Opcodes.IFEQ, notifies)
+				|| !gates(live, known, flags, Opcodes.BIPUSH, Opcodes.IFNE, first(live, SHAPES))) return 0;
 		AnnotationNode a = MixinFit.injectorOf(flag), b = MixinFit.injectorOf(notify);
 		if (!"(I)I".equals(flag.desc) || !("(L"+LEVEL+";"+POS+"L"+BLOCK+";)V").equals(notify.desc)
 				|| !selects(a, OLD_FILL) || !selects(b, OLD_FILL)
@@ -163,7 +162,7 @@ public final class MixinPlayerWorldCallbackAdapter {
 		// mineBlock), so the callback goes where they split: right after playerWillDestroy stored adjustedState, before
 		// durability and removal. A cancelled break then keeps playerWillDestroy's effects as on Fabric (a bed's other
 		// half, unstable TNT), and NeoForge's own break event, earlier, can still veto before the callback runs.
-		VarInsnNode entity = storedFrom(host, 4, BLOCK_ENTITY), block = storedFrom(host, 5, GET_BLOCK), adjusted = storedFrom(host, 6, WILL_DESTROY);
+		VarInsnNode entity = storedResult(host, BLOCK_ENTITY), block = storedResult(host, GET_BLOCK), adjusted = storedResult(host, WILL_DESTROY);
 		MethodInsnNode anchor = first(host, DROPS);
 		if (entity == null || block == null || adjusted == null || !(next(adjusted) instanceof VarInsnNode self) || self.getOpcode() != Opcodes.ALOAD
 				|| self.var != 0 || !(next(self) instanceof FieldInsnNode player) || player.getOpcode() != Opcodes.GETFIELD
@@ -172,7 +171,7 @@ public final class MixinPlayerWorldCallbackAdapter {
 		if (index(host, first(host, BREAK_EVENT)) > at || index(host, entity) > at || index(host, block) > at) return 0;
 		for (var i : host.instructions) if (i instanceof MethodInsnNode c && (MINE.equals(member(c)) || REMOVE.equals(member(c))) && index(host, c) < at) return 0;
 		remove(inject, "locals"); set(ats.getFirst(), "target", DROPS);
-		handler.invisibleParameterAnnotations = local(5, 2, 4, 5, 6); handler.invisibleAnnotableParameterCount = 5;
+		handler.invisibleParameterAnnotations = local(5, 2, entity.var, block.var, adjusted.var); handler.invisibleAnnotableParameterCount = 5;
 		return 1;
 	}
 
@@ -184,13 +183,37 @@ public final class MixinPlayerWorldCallbackAdapter {
     }
 
 	/** Whether {@code bit} is the operand of {@code flags & bit} whose {@code jump} skips past {@code guarded}. */
-	private static boolean gates(MethodNode m, AbstractInsnNode bit, int operand, int jump, AbstractInsnNode guarded) {
+	private static boolean gates(MethodNode m, AbstractInsnNode bit, int flagsSlot, int operand, int jump, AbstractInsnNode guarded) {
 		if (bit == null || guarded == null || bit.getOpcode() != operand || !(previous(bit) instanceof VarInsnNode flags)
-				|| flags.getOpcode() != Opcodes.ILOAD || flags.var != FLAGS || next(bit) == null || next(bit).getOpcode() != Opcodes.IAND
+				|| flags.getOpcode() != Opcodes.ILOAD || flags.var != flagsSlot || next(bit) == null || next(bit).getOpcode() != Opcodes.IAND
 				|| !(next(next(bit)) instanceof JumpInsnNode skip) || skip.getOpcode() != jump) return false;
 		int at = index(m, guarded);
 		return index(m, skip) < at && at < index(m, skip.label);
 	}
+    /** Derives the mask operand from the actual parameter load, rejecting aliases/writes and non-int parameters. */
+    private static int maskParameter(MethodNode method,AbstractInsnNode bit) {
+        if(bit==null||!(previous(bit) instanceof VarInsnNode load)||load.getOpcode()!=Opcodes.ILOAD)return -1;
+        int slot=(method.access&org.objectweb.asm.Opcodes.ACC_STATIC)==0?1:0;
+        boolean parameter=false;
+        for(org.objectweb.asm.Type type:org.objectweb.asm.Type.getArgumentTypes(method.desc)) {
+            if(slot==load.var&&type.equals(org.objectweb.asm.Type.INT_TYPE))parameter=true;
+            slot+=type.getSize();
+        }
+        if(!parameter)return -1;
+        for(var instruction:method.instructions) {
+            if(instruction instanceof VarInsnNode variable&&variable.var==load.var&&variable.getOpcode()==Opcodes.ISTORE)return -1;
+            if(instruction instanceof IincInsnNode increment&&increment.var==load.var)return -1;
+        }
+        return load.var;
+    }
+    /** Locals come from their unique producer calls; debug names and numeric slot layouts are irrelevant. */
+    private static VarInsnNode storedResult(MethodNode method,String member) {
+        if(count(method,member)!=1)return null;
+        MethodInsnNode call=first(method,member);
+        if(!(next(call) instanceof VarInsnNode store)||store.getOpcode()!=Opcodes.ASTORE)return null;
+        return storedFrom(method,store.var,member);
+    }
+
 	/** The one store into {@code slot}, when it directly takes the result of the one call of {@code member}. */
 	static VarInsnNode storedFrom(MethodNode m, int slot, String member) {
 		VarInsnNode store = null;

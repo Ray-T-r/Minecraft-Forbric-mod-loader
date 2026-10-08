@@ -85,42 +85,26 @@ class ForgePartTrackingInjectorTest {
 		assertSame(out, injector(MERGED).transform(ForgePartTrackingInjector.SERVER_CALLBACKS, out, null));
 	}
 
-	@Test void theClientsOnTrackingEndUntracksMinecraftForgesPartsAndToleratesANullNeoForgeGetParts() throws Exception {
-		byte[] merged = NativeCoremodParityTest.read(MERGED, CLIENT_CALLBACKS);
-		ClassNode original = node(merged);
-		assertEquals(List.of(NEO_GET_PARTS), partsRead(method(original, "onTrackingEnd", TRACKING_DESC)),
-				"premise: the merged onTrackingEnd is NeoForge's, reading only NeoForge's parts");
-		assertEquals(List.of(FORGE_GET_PARTS), partsRead(method(original, "onTrackingStart", TRACKING_DESC)),
-				"premise: the merged onTrackingStart is MinecraftForge's, filling MinecraftForge's partEntities");
+    @Test void theClientsOnTrackingEndUntracksMinecraftForgesPartsAndToleratesANullNeoForgeGetParts() throws Exception {
+        byte[] merged=NativeCoremodParityTest.read(MERGED,CLIENT_CALLBACKS);ClassNode original=node(merged);
+        for(String direction:List.of("onTrackingStart","onTrackingEnd"))assertEquals(List.of(NEO_GET_PARTS),partsRead(method(original,direction,TRACKING_DESC)));
+        byte[] out=injector(MERGED).transform(ForgePartTrackingInjector.CLIENT_CALLBACKS,merged,null);ClassNode repaired=node(out);
+        for(String direction:List.of("onTrackingStart","onTrackingEnd")){
+            String helper=direction.equals("onTrackingStart")?ForgePartTrackingInjector.TRACK:ForgePartTrackingInjector.UNTRACK;
+            MethodNode method=method(repaired,direction,TRACKING_DESC);
+            assertTrue(calls(method,helper),"each direction reaches the missing map effect at the shared native exit");
+            assertLoop(method(repaired,helper,ForgePartTrackingInjector.TRACK_DESC),direction.equals("onTrackingStart")?"put":"remove");
+            new Analyzer<>(new BasicVerifier()).analyze(CLIENT_CALLBACKS,method);
+        }
+        assertSame(out,injector(MERGED).transform(ForgePartTrackingInjector.CLIENT_CALLBACKS,out,null));
+    }
 
-		// As the game runs it: ClientPartTrackingInjector has already been through onTrackingStart.
-		byte[] tracked = new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS, merged, null);
-		byte[] out = injector(MERGED).transform(ForgePartTrackingInjector.CLIENT_CALLBACKS, tracked, null);
-		ClassNode repaired = node(out);
-		assertBlock(method(repaired, "onTrackingEnd", TRACKING_DESC), CLIENT_CALLBACKS, ForgePartTrackingInjector.UNTRACK);
-		assertLoop(method(repaired, ForgePartTrackingInjector.UNTRACK, ForgePartTrackingInjector.TRACK_DESC), "remove");
-		assertEquals(real(method(node(tracked), "onTrackingStart", TRACKING_DESC)).stream().map(AbstractInsnNode::getOpcode).toList(),
-				real(method(repaired, "onTrackingStart", TRACKING_DESC)).stream().map(AbstractInsnNode::getOpcode).toList(),
-				"onTrackingStart is ClientPartTrackingInjector's, and left to it");
-		for (MethodNode method : repaired.methods) new Analyzer<>(new BasicVerifier()).analyze(CLIENT_CALLBACKS, method);
-		assertSame(out, injector(MERGED).transform(ForgePartTrackingInjector.CLIENT_CALLBACKS, out, null));
-	}
-
-	@Test void theHitboxesTolerateANullGetParts() throws Exception {
-		byte[] merged = NativeCoremodParityTest.read(MERGED, HITBOXES);
-		byte[] retyped = new DragonPartsInjector().transform(DragonPartsInjector.HITBOXES, merged, null);
-		byte[] out = injector(MERGED).transform(ForgePartTrackingInjector.HITBOXES, retyped, null);
-		MethodNode show = node(out).methods.stream().filter(m -> m.name.equals("showHitboxes")).findFirst().orElseThrow();
-		assertEquals(List.of(NEO_GET_PARTS), partsRead(show), "DragonPartsInjector's retype, as the game runs it");
-		assertTolerant(show, NEO_GET_PARTS);
-		new Analyzer<>(new BasicVerifier()).analyze(HITBOXES, show);
-		assertSame(out, injector(MERGED).transform(ForgePartTrackingInjector.HITBOXES, out, null));
-
-		// Without the retype the loop reads MinecraftForge's getParts(), which a NeoForge mod's entity leaves null.
-		MethodNode forge = node(injector(MERGED).transform(ForgePartTrackingInjector.HITBOXES, merged, null)).methods.stream()
-				.filter(m -> m.name.equals("showHitboxes")).findFirst().orElseThrow();
-		assertTolerant(forge, FORGE_GET_PARTS);
-	}
+    @Test void theHitboxesTolerateANullGetParts() throws Exception {
+        byte[] original=NativeCoremodParityTest.read(MERGED,HITBOXES),out=injector(MERGED).transform(ForgePartTrackingInjector.HITBOXES,original,null);
+        MethodNode show=node(out).methods.stream().filter(m->m.name.equals("showHitboxes")).findFirst().orElseThrow();
+        assertTrue(Arrays.stream(show.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode call&&call.owner.equals("net/forbric/kernel/runtime/KernelMultipartViews")&&call.name.equals("parts")),"the actual loop reads both native arrays with identity deduplication");
+        assertTrue(partsRead(show).isEmpty());new Analyzer<>(new BasicVerifier()).analyze(HITBOXES,show);assertSame(out,injector(MERGED).transform(ForgePartTrackingInjector.HITBOXES,out,null));
+    }
 
 	@Test void getEntitiesAlsoLooksThroughGetPartEntitiesBeforeItReturns() throws Exception {
 		byte[] merged = NativeCoremodParityTest.read(MERGED, LEVEL);
@@ -136,7 +120,8 @@ class ForgePartTrackingInjectorTest {
 		assertTrue(code.get(ret - 2) instanceof MethodInsnNode find && find.getOpcode() == Opcodes.INVOKESTATIC
 				&& find.name.equals(ForgePartTrackingInjector.FIND) && find.owner.equals(LEVEL), "just before `return output`");
 		assertEquals(List.of(0, 1, 2, 3, ((VarInsnNode) code.get(ret - 1)).var),
-				code.subList(ret - 7, ret - 2).stream().map(i -> ((VarInsnNode) i).var).toList(), "(this, except, bb, selector, output)");
+                code.subList(ret - 8, ret - 3).stream().map(i -> ((VarInsnNode) i).var).toList(), "original arguments and output precede the visited identity set");
+        assertTrue(code.get(ret-3) instanceof VarInsnNode seen && seen.getOpcode()==Opcodes.ALOAD);
 		MethodNode find = method(repaired, ForgePartTrackingInjector.FIND, ForgePartTrackingInjector.FIND_DESC);
 		assertTrue(calls(find, "getPartEntities") && calls(find, "getParent") && calls(find, "intersects"), "MinecraftForge's own loop");
 		assertTrue(Arrays.stream(find.instructions.toArray()).anyMatch(i -> i instanceof TypeInsnNode cast && cast.getOpcode() == Opcodes.CHECKCAST
@@ -202,15 +187,16 @@ class ForgePartTrackingInjectorTest {
 		try (Server repaired = new Server(true)) {
 			Object dragon = repaired.dragon(2);
 			repaired.track(dragon);
-			assertTrue(repaired.partEntities().isEmpty(), "its MinecraftForge getParts() is empty: NeoForge's loop alone tracks its parts");
+			assertEquals(Set.of(1,2),new HashSet<>(repaired.partEntities().keySet()),"both native getParts descriptors retain the same actual parts");
+            assertEquals(List.of(1,2),repaired.ids(repaired.getEntities(null)),"overlapping part registries produce each identity once");
 		}
 	}
 
 	@Test void aMinecraftForgeModsMultipartEntityLeavesTheClientCleanly() throws Exception {
 		try (Client merged = new Client(false)) {
 			Object entity = merged.multipart("fixture.ForgeMultipartEntity", "fixture.ForgePart", 2);
-			merged.start(entity);
-			assertEquals(Set.of(1, 2), new HashSet<>(merged.partEntities().keySet()), "premise: MinecraftForge's onTrackingStart tracks them");
+            assertThrewOnNullParts(assertThrows(InvocationTargetException.class,()->merged.start(entity)),"onTrackingStart");
+            merged.partEntities().put(1,merged.parts(entity)[0]);
 			assertThrewOnNullParts(assertThrows(InvocationTargetException.class, () -> merged.end(entity),
 					"control: as merged, NeoForge's getParts() answers null for a MinecraftForge mod's entity"), "onTrackingEnd");
 		}
@@ -234,18 +220,17 @@ class ForgePartTrackingInjectorTest {
 		}
 	}
 
-	@Test void theHitboxesOfAMinecraftForgeModsMultipartEntityAreDrawnWithoutThrowing() throws Exception {
-		try (Hitboxes merged = new Hitboxes(false)) {
-			Object entity = merged.multipart("fixture.ForgeMultipartEntity", "fixture.ForgePart", 2);
-			assertThrewOnNullParts(assertThrows(InvocationTargetException.class, () -> merged.show(entity),
-					"control: with F3+B on, NeoForge's getParts() answers null for a MinecraftForge mod's entity"), "showHitboxes");
-		}
-		try (Hitboxes repaired = new Hitboxes(true)) {
-			int forge = repaired.show(repaired.multipart("fixture.ForgeMultipartEntity", "fixture.ForgePart", 2));
-			int neo = repaired.show(repaired.multipart("fixture.NeoMultipartEntity", "fixture.NeoPart", 2));
-			assertEquals(neo - 2, forge, "NeoForge's parts get a box each; MinecraftForge's none, and nothing throws");
-		}
-	}
+    @Test void theHitboxesOfAMinecraftForgeModsMultipartEntityAreDrawnWithoutThrowing() throws Exception {
+        try(Hitboxes merged=new Hitboxes(false)){
+            assertTrue(merged.show(merged.multipart("fixture.ForgeMultipartEntity","fixture.ForgePart",2))>0,"the actual native Forge renderer already draws its own API");
+            assertThrewOnNullParts(assertThrows(InvocationTargetException.class,()->merged.show(merged.multipart("fixture.NeoMultipartEntity","fixture.NeoPart",2))),"showHitboxes");
+        }
+        try(Hitboxes repaired=new Hitboxes(true)){
+            int forge=repaired.show(repaired.multipart("fixture.ForgeMultipartEntity","fixture.ForgePart",2));
+            int neo=repaired.show(repaired.multipart("fixture.NeoMultipartEntity","fixture.NeoPart",2));
+            assertEquals(forge,neo,"both APIs draw the same number of actual part boxes");
+        }
+    }
 
 	/** The merged game, both carriers and the libraries they link against, with some classes defined from given bytes. */
 	private abstract static class Game implements AutoCloseable {
@@ -280,14 +265,15 @@ class ForgePartTrackingInjectorTest {
 		}
 
 		/** An Ender Dragon with {@code count} parts in its subEntities. */
-		Object dragon(int count) throws Exception {
-			Class<?> partClass = type(DRAGON_PART);
-			Object parts = Array.newInstance(partClass, count);
-			for (int i = 0; i < count; i++) Array.set(parts, i, bareEntity(loader, partClass, i + 1));
-			Object dragon = bareEntity(loader, type(DRAGON), 0);
-			field(type(DRAGON), "subEntities").set(dragon, parts);
-			return dragon;
-		}
+        Object dragon(int count) throws Exception {
+            Class<?> partClass=type(DRAGON_PART);Object parts=Array.newInstance(partClass,count);Object dragon=bareEntity(loader,type(DRAGON),0);
+            for(int i=0;i<count;i++){
+                Object part=bareEntity(loader,partClass,i+1);
+                for(Class<?> owner=partClass;owner!=null;owner=owner.getSuperclass())for(Field state:owner.getDeclaredFields())if(state.getName().equals("parent")){state.setAccessible(true);state.set(part,dragon);}
+                field(type(ENTITY),"bb").set(part,box(loader,i,0,0,i+1,1,1));Array.set(parts,i,part);
+            }
+            field(type(DRAGON),"subEntities").set(dragon,parts);return dragon;
+        }
 
 		Object[] parts(Object entity) throws Exception {
 			return (Object[]) field(entity.getClass(), "parts").get(entity);
@@ -394,7 +380,7 @@ class ForgePartTrackingInjectorTest {
 		@Override Map<Integer, Object> partEntities() throws Exception { return (Map<Integer, Object>) field(type(CLIENT_LEVEL), "partEntities").get(level); }
 	}
 
-	/** The renderer as the game runs it (DragonPartsInjector's retype), its hitboxes repaired or not, and what it draws. */
+	/** The renderer's native Forge body or the proved public Entity view, and the actual boxes each draws. */
 	private static final class Hitboxes implements AutoCloseable {
 		final URLClassLoader loader;
 		private final Object renderer;
@@ -403,7 +389,7 @@ class ForgePartTrackingInjectorTest {
 
 		Hitboxes(boolean repaired) throws Exception {
 			Map<String, byte[]> defined = new HashMap<>();
-			byte[] hitboxes = new DragonPartsInjector().transform(DragonPartsInjector.HITBOXES, NativeCoremodParityTest.read(MERGED, HITBOXES), null);
+			byte[] hitboxes = NativeCoremodParityTest.read(MERGED, HITBOXES);
 			if (repaired) hitboxes = injector(MERGED).transform(ForgePartTrackingInjector.HITBOXES, hitboxes, null);
 			defined.put(dotted(HITBOXES), withoutInitializer(hitboxes));
 			loader = gameLoader(defined);
@@ -457,9 +443,9 @@ class ForgePartTrackingInjectorTest {
 	private static URLClassLoader gameLoader(Map<String, byte[]> defined) throws Exception {
 		TestFixtures.require(Fixture.JAVA_25, Runtime.version().feature() >= 25, "the merged game is class-file 69, which only Java 25 links");
 		for (Path jar : List.of(MERGED, NEO_CARRIER, FORGE_CARRIER)) TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), jar + " absent");
-		// The dragon as the game runs it: its parts NeoForge PartEntitys, its MinecraftForge getParts() empty.
-		defined.put(dotted(DRAGON_PART), new DragonPartsInjector().transform(DragonPartsInjector.PART, NativeCoremodParityTest.read(MERGED, DRAGON_PART), null));
-		defined.put(dotted(DRAGON), withoutInitializer(new DragonPartsInjector().transform(DragonPartsInjector.DRAGON, NativeCoremodParityTest.read(MERGED, DRAGON), null)));
+		// The actual coherent runtime hierarchy supports both native part arrays.
+		defined.put(dotted(DRAGON_PART), NativeCoremodParityTest.read(MERGED, DRAGON_PART));
+		defined.put(dotted(DRAGON), withoutInitializer(NativeCoremodParityTest.read(MERGED, DRAGON)));
 		for (String name : List.of(ENTITY, "net/minecraft/world/entity/LivingEntity", "net/minecraft/world/entity/Mob", LEVEL)) {
 			defined.putIfAbsent(dotted(name), withoutInitializer(NativeCoremodParityTest.read(MERGED, name)));
 		}
@@ -486,6 +472,9 @@ class ForgePartTrackingInjectorTest {
 			Path library = newestUnder(pattern);
 			if (library != null) urls.add(library.toUri().toURL());
 		}
+        Map<String,String> helperSources=Map.of("net.forbric.kernel.runtime.KernelMultipartViews",Files.readString(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelMultipartViews.java")),
+            "net.forbric.api.VirtualGetters",Files.readString(Path.of("src/main/java/net/forbric/api/VirtualGetters.java")));
+        for(var entry:InjectorExecution.compile(Files.createTempDirectory("multipart-actual-helper"),helperSources,urls.stream().map(url->{try{return Path.of(url.toURI());}catch(Exception bad){throw new IllegalStateException(bad);}}).toList()).entrySet())defined.put(dotted(entry.getKey()),entry.getValue());
 		return new URLClassLoader(urls.toArray(URL[]::new), ClassLoader.getPlatformClassLoader()) {
 			@Override protected Class<?> findClass(String name) throws ClassNotFoundException {
 				byte[] bytes = defined.get(name);

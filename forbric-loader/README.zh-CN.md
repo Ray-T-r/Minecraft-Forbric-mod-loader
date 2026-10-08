@@ -59,3 +59,5 @@ Forbric 中接触游戏的那一半，作为一个**独立的、由 Knot 加载�
 
 - MinecraftForge 和 NeoForge 运行时，以及 Forbric 加载的打过补丁或合并后的 Minecraft 基底，都**在运行时提供，从不提交到这里**。`run/` 下的脚本从上游 Maven 获取它们并在本地组装；仓库忽略 `*.jar`。分发的只有 Forbric 自己的净室字节码。
 - Forbric 不走 FML 自己的启动路径。驱动通过反射预置 FML 环境，剩下的交给游戏自己的客户端 mod 加载流程，因为 ModLauncher 的模块层和转换型类加载器会和 Knot 打架。
+
+旧版启动路径会拒绝带有未验证状态父类要求的合并基底（`META-INF/forbric/required-ancestor-compositions.tsv`）。这些产物应使用内核加载器，由注册的状态协议对最终类定义进行验证。

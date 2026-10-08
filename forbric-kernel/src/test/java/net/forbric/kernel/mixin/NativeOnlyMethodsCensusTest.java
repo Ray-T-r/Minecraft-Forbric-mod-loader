@@ -363,11 +363,19 @@ class NativeOnlyMethodsCensusTest {
 				new Lost(Ecosystem.FORGE, "net/minecraft/gametest/framework/GameTestHelper", "addCleanup"),
 				new Lost(Ecosystem.NEOFORGE, "net/minecraft/world/entity/boss/enderdragon/EnderDragon",
 						"getParts()[Lnet/neoforged/neoforge/entity/PartEntity;"));
+        int retained=0,missing=0;
 		for (Lost lost : cases) {
 			String method = lost.selector();
 			assertTrue(declares(platforms.get(lost.platform()).get(lost.owner()), method),
 					lost.platform().displayName() + " declares " + lost.owner() + "#" + method);
-			assertFalse(declares(methods(merged.get(lost.owner() + ".class")), method), "…and the merged base does not");
+            if(declares(methods(merged.get(lost.owner()+".class")),method)){
+                retained++;
+                var context=new NativeAbsentTargets.Context(merged::get,0,lost.platform(),owner->mergedMembers,mod(lost.platform(),"retained"));
+                MixinFit.Result result=MixinFit.evaluate(injecting("Retained",lost.owner(),method),merged::get,n->true,MixinAddedMembers.View.NONE,context);
+                assertEquals(MixinFit.Verdict.FIT,result.verdict(),"the rebuilt base retained this native public API: "+lost+" "+result);
+                assertEquals(List.of(),result.nativeAbsent());continue;
+            }
+            missing++;
 			assertFalse(declares(platforms.get(Ecosystem.FABRIC).get(lost.owner()), method), "…nor vanilla");
 
 			Map<String, byte[]> classes = new HashMap<>(merged);
@@ -394,6 +402,7 @@ class NativeOnlyMethodsCensusTest {
 			CompatibilityFindings.reset();
 			MixinConfigOwners.reset();
 		}
+        assertTrue(retained>0,"the new base preserves former native losses");assertTrue(missing>0,"remaining actual deficits are still reported");
 	}
 
 	private record Lost(Ecosystem platform, String owner, String selector) {

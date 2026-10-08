@@ -31,67 +31,12 @@ import org.objectweb.asm.tree.MethodNode;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Removes named injector methods from a GUEST MIXIN class before Mixin reads it, so that a mixin whose other
- * injectors fit the merged base can apply instead of being pinned whole.
- *
- * <p>The one entry so far is fabric-model-loading-api-v1's {@code ModelManagerMixin}. NeoForge won the byte-merge
- * of {@code ModelManager.lambda$loadBlockModels$2} and replaced vanilla's {@code CuboidModel.fromStream(Reader)}
- * there with its own {@code UnbakedModelParser.parse(Reader)} — the dispatch point for NeoForge {@code "loader"}
- * model formats. Fabric's {@code @Redirect cancelVanillaDeserialize} targets {@code fromStream}, so it cannot
- * bind; its sibling {@code @ModifyArg actuallyDeserializeModel} at {@code Pair.of} DOES bind and hands an
- * already-consumed {@code Reader} to Fabric's deserializer registry. Every one of the 4666 block models then dies
- * on {@code JsonParseException: JSON data was null or empty} and the whole world renders as the missingno
- * checkerboard — the measured PARTIAL that made {@link net.forbric.kernel.mixin.MergedBaseMixinCompat} pin the
- * mixin. Pinning it cost every {@code ModelLoadingPlugin}: block-state resolvers, extra models and per-model
- * modifiers registered by Fabric mods were never called.
- *
- * <p>The two deserializer injectors are the ONLY ones that cannot fit. The other eight — plugin preparation at
- * reload HEAD, the on-load model and block-state modifiers, the thread-local dispatcher around collect and bake,
- * extra-model resolution and the post-upload capture — anchor on instructions the merged {@code ModelManager}
- * still has. Removing the pair from the mixin's bytes lets Mixin apply the rest as written, while NeoForge's
- * parser keeps the call site, so NeoForge {@code "loader"} models keep working too. What the pair did —
- * dispatch Fabric's {@code fabric:type} custom model formats ({@code UnbakedModelDeserializer}) — is done by
- * {@link ModelFormatFunnelInjector} inside NeoForge's own deserializer, so nothing is recorded for them while it is
- * on. With it off, each removed injector is a confirmed finding naming that loss: Traveler's Backpack's backpacks
- * are {@code fabric:type} models, and without the funnel every one of them fails to bake.
- *
- * <p>NeoForge's substitution at that site is a census-pinned row of
- * {@link net.forbric.kernel.mixin.MergedBaseCalleeSwaps#SUBSTITUTED}. MixinRetarget moves an {@code @Inject} along it
- * (fusion's capture of the model id before the parse), because such a handler sees only the point; it never moves
- * this pair, whose handlers are the call and its argument, and {@code parse} is not {@code fromStream}.
- *
- * <p>Guest mixin classes reach the transform chain through {@code ForbricClassLoader.getPreMixinClassBytes},
- * which is also what {@link net.forbric.kernel.mixin.MixinFit} and Mixin itself read, so the pruned bytes are
- * the only bytes anyone judges or applies. Both methods must be present, each carrying an injector annotation
- * whose {@code method} list names {@code lambda$loadBlockModels$2}; a fabric-api that reshapes either leaves the
- * class untouched, with a warning, and the whole mixin then reads PARTIAL as it did before this class existed.
- *
- * <p>{@code -Dforbric.guestInjectorPruner=off} restores the previous behaviour EXACTLY: the pruner stands down and
- * {@code MergedBaseMixinCompat.SUPPRESSED_UNLESS_PRUNED} puts the whole-mixin pin back — never the half-applied
- * state.
- *
- * <p>The second entry is fabric-item-api-v1's {@code ItemStackMixin}. Its five tooltip injectors thread one
- * {@code @Share("index")} through vanilla's {@code addDetailsToTooltip}, which NeoForge turned into a dispatcher over
- * its own appender lists: three bound in a renamed body nothing calls, one drew every Fabric line at once above the
- * item id in advanced tooltips, one bound nowhere. The kernel draws Fabric's component tooltips from NeoForge's
- * appenders instead ({@code KernelNeoTooltips}), so the five go — only while that bridge is on, or they would draw
- * the same lines twice — and {@code hookDamage} (custom damage handlers) applies as written. Nothing is recorded for
- * them: the bridge does their job, and {@code FabricApiModuleLossAudit} names a mod's use of the registry when it
- * is off.
- *
- * <p>The table names injectors the kernel replaces. The other kind of entry is found, not listed: an {@code @Inject}
- * that Mixin will reject outright ({@link net.forbric.kernel.mixin.MixinFit.Rejection} -- the one method its name binds
- * on the merged base is not one its handler was written for, its {@code @At} is sure to find a point there, and Mixin
- * throws "Invalid descriptor" at that point whatever {@code require} says). Kept in a mixin, it failed the mixin's
- * application to that class with every injector still to come, and a config that stays required with it.
- * {@code KernelGuestMixinAdapter} answers it for every mixin it keeps on its verdict -- a PARTIAL one, one kept for its
- * misses on another mod's class, an UNFIT one kept because another mod's mixin targets the class -- and remembers such
- * an injector when nothing else in the mixin calls it and no target binds it as written ({@link #rememberRefused}).
- * {@link #pruneRefused} removes it from the node the bytecode provider hands Mixin -- after every mixin adapter has
- * run, and only while the same rule still says Mixin rejects it there -- so the rest of the mixin applies. Each removal
- * is a confirmed finding naming the binding; it is required when the author's own count for the injector is at least
- * one. {@code -Dforbric.guestInjectorPruner.refused=off} keeps such a mixin whole in front of Mixin, as before; with the
- * whole pruner off the adapter leaves it out instead, never half-applied.
+ * Removes a complete source callback protocol only when the actual current bridge carries it. Source/config and
+ * private handler names do not decide eligibility. The null parser redirect and direct API reader callback close
+ * atomically, and their captured Reader must be the current parser's consumed SSA value. Shared tooltip callbacks
+ * must delegate to one closed provider helper, share the same index, and have an actual carrier appender splice
+ * and matching provider declarations. Opaque bodies remain intact. Rejected-injector pruning is a separate,
+ * existing per-handler decision made after all adapters have had their opportunity.
  */
 public final class GuestInjectorPruner implements ClassTransformer {
 	public static final String PROPERTY = "forbric.guestInjectorPruner";
@@ -99,90 +44,159 @@ public final class GuestInjectorPruner implements ClassTransformer {
 	/** {@code -Dforbric.guestInjectorPruner.refused=off}: an injector Mixin rejects outright stays in its mixin. */
 	public static final String REFUSED_PROPERTY = "forbric.guestInjectorPruner.refused";
 
-	static final String MODEL_MANAGER_MIXIN = "net.fabricmc.fabric.mixin.client.model.loading.ModelManagerMixin";
-	static final String MODEL_LAMBDA = "lambda$loadBlockModels$2";
-	static final String ITEM_STACK_MIXIN = "net.fabricmc.fabric.mixin.item.ItemStackMixin";
 	private static final String SHARED_INDEX = "Lcom/llamalad7/mixinextras/sugar/ref/LocalIntRef;";
 
-	/**
-	 * One injector method to remove, and the target-method selector its annotation must carry: a prefix, or with
-	 * {@code exact} the whole selector — {@code addDetailsToTooltip} is also the prefix of the two renamed bodies.
-	 */
-	record Prune(String name, String desc, String selectorPrefix, boolean exact) {
-		Prune(String name, String desc, String selectorPrefix) {
-			this(name, desc, selectorPrefix, false);
-		}
+    private record Group(String protocol,List<MethodNode> methods,String selector) { }
+    private final java.util.function.Function<String,ClassNode> classes;
+    public GuestInjectorPruner(){this(net.forbric.kernel.mixin.NativeGameReferences::current);}
+    public GuestInjectorPruner(java.util.function.Function<String,ClassNode> classes){this.classes=classes;}
 
-		String key() {
-			return name + desc;
-		}
-	}
+    /** Pure source inspection, also used by the config policy when this transformer is disabled. */
+    public static boolean unsafeWithoutPruning(ClassNode node){return modelPair(node)!=null;}
+    public static boolean unsafeWithoutPruning(ClassNode node,java.util.function.Function<String,ClassNode> classes){Group group=modelPair(node);return group!=null&&readerWasConsumed(node,group,classes);}
+    private static boolean readerWasConsumed(ClassNode node,Group group,java.util.function.Function<String,ClassNode> classes) {
+        List<String> targets=net.forbric.kernel.mixin.MixinFit.mixinTargets(node);if(targets.size()!=1)return false;
+        ClassNode target=classes.apply(targets.getFirst());if(target==null)return false;
+        List<MethodNode> hosts=target.methods.stream().filter(method->(method.name+method.desc).equals(group.selector())||method.name.equals(group.selector())).toList();
+        if(hosts.size()!=1)return false;
+        int old=0;org.objectweb.asm.tree.MethodInsnNode parse=null,consumer=null;
+        MethodNode host=hosts.getFirst();
+        for(var instruction:host.instructions)if(instruction instanceof org.objectweb.asm.tree.MethodInsnNode call) {
+            if(call.owner.equals("net/minecraft/client/resources/model/cuboid/CuboidModel")&&call.name.equals("fromStream")&&call.desc.startsWith("(Ljava/io/Reader;)"))old++;
+            if(call.owner.equals("net/neoforged/neoforge/client/model/UnbakedModelParser")&&call.name.equals("parse")&&call.desc.equals("(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/UnbakedModel;")) {if(parse!=null)return false;parse=call;}
+            if(call.owner.equals("com/mojang/datafixers/util/Pair")&&call.name.equals("of")&&call.desc.equals("(Ljava/lang/Object;Ljava/lang/Object;)Lcom/mojang/datafixers/util/Pair;")){if(consumer!=null)return false;consumer=call;}
+        }
+        if(old!=0||parse==null||consumer==null||host.instructions.indexOf(parse)>=host.instructions.indexOf(consumer))return false;
+        MethodNode argument=group.methods().get(1);AnnotationNode local=argument.invisibleParameterAnnotations[1].getFirst();
+        Object named=net.forbric.kernel.mixin.MixinFit.value(local,"name"),index=net.forbric.kernel.mixin.MixinFit.value(local,"index");
+        List<String> names=net.forbric.kernel.mixin.MixinFit.stringList(named);
+        int slot=-1;
+        if(index instanceof Integer explicit&&explicit>=0)slot=explicit;
+        else if(!names.isEmpty()&&host.localVariables!=null)for(var declaration:host.localVariables) {
+            int point=host.instructions.indexOf(consumer);
+            if(!declaration.desc.equals("Ljava/io/Reader;")||!names.contains(declaration.name)
+                    ||host.instructions.indexOf(declaration.start)>point||host.instructions.indexOf(declaration.end)<=point)continue;
+            if(slot>=0&&slot!=declaration.index)return false;slot=declaration.index;
+        }
+        if(slot<0)return false;
+        try {
+            var frames=new org.objectweb.asm.tree.analysis.Analyzer<>(new ReaderOrigins()).analyze(target.name,host);
+            var consumed=frames[host.instructions.indexOf(parse)];var at=frames[host.instructions.indexOf(consumer)];
+            if(consumed==null||at==null||consumed.getStackSize()==0||slot>=at.getLocals())return false;
+            var reader=consumed.getStack(consumed.getStackSize()-1);var captured=at.getLocal(slot);
+            return reader.insns.size()==1&&reader.insns.equals(captured.insns);
+        }catch(org.objectweb.asm.tree.analysis.AnalyzerException|RuntimeException unknown){return false;}
+    }
+    private static final class ReaderOrigins extends org.objectweb.asm.tree.analysis.SourceInterpreter {
+        ReaderOrigins(){super(org.objectweb.asm.Opcodes.ASM9);}
+        @Override public org.objectweb.asm.tree.analysis.SourceValue copyOperation(org.objectweb.asm.tree.AbstractInsnNode instruction,org.objectweb.asm.tree.analysis.SourceValue value){return value;}
+        @Override public org.objectweb.asm.tree.analysis.SourceValue newParameterValue(boolean instance,int slot,org.objectweb.asm.Type type){return new org.objectweb.asm.tree.analysis.SourceValue(type.getSize(),new org.objectweb.asm.tree.VarInsnNode(type.getOpcode(org.objectweb.asm.Opcodes.ILOAD),slot));}
+    }
 
-	static final Map<String, List<Prune>> TABLE = Map.of(MODEL_MANAGER_MIXIN, List.of(
-			new Prune("cancelVanillaDeserialize",
-					"(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/cuboid/CuboidModel;", MODEL_LAMBDA),
-			new Prune("actuallyDeserializeModel",
-					"(Ljava/lang/Object;Ljava/io/Reader;)Ljava/lang/Object;", MODEL_LAMBDA)),
-			ITEM_STACK_MIXIN, List.of(
-			new Prune("preAppendComponentTooltip", "(Lnet/minecraft/core/component/DataComponentType;Lnet/minecraft/world/item/Item$TooltipContext;"
-					+ "Lnet/minecraft/world/item/component/TooltipDisplay;Lnet/minecraft/world/item/TooltipFlag;Ljava/util/function/Consumer;"
-					+ SHARED_INDEX + ")Lnet/minecraft/core/component/DataComponentType;", "addDetailsToTooltip", true),
-			new Prune("preShouldDisplay", "(Lnet/minecraft/core/component/DataComponentType;Lnet/minecraft/world/item/Item$TooltipContext;"
-					+ "Lnet/minecraft/world/item/component/TooltipDisplay;Lnet/minecraft/world/item/TooltipFlag;Ljava/util/function/Consumer;"
-					+ SHARED_INDEX + ")Lnet/minecraft/core/component/DataComponentType;", "addDetailsToTooltip", true),
-			new Prune("preAttributeModifiers", "(Lnet/minecraft/world/item/Item$TooltipContext;Lnet/minecraft/world/item/component/TooltipDisplay;"
-					+ "Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/item/TooltipFlag;Ljava/util/function/Consumer;"
-					+ "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;" + SHARED_INDEX + ")V", "addDetailsToTooltip", true),
-			new Prune("postTooltipsAdvanced", "(Lnet/minecraft/world/item/Item$TooltipContext;Lnet/minecraft/world/item/component/TooltipDisplay;"
-					+ "Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/item/TooltipFlag;Ljava/util/function/Consumer;"
-					+ "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;" + SHARED_INDEX + ")V", "addDetailsToTooltip", true),
-			new Prune("postTooltipsNonAdvanced", "(ZLnet/minecraft/world/item/Item$TooltipContext;Lnet/minecraft/world/item/component/TooltipDisplay;"
-					+ "Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/item/TooltipFlag;Ljava/util/function/Consumer;"
-					+ SHARED_INDEX + ")Z", "addDetailsToTooltip", true)));
+    public static boolean wouldPrune(ClassNode node){return modelPair(node)!=null || tooltipGroup(node)!=null;}
+    private static Group modelPair(ClassNode node) {
+        if(node==null)return null;
+        MethodNode redirect=null,argument=null;
+        for(MethodNode method:node.methods) {
+            AnnotationNode inject=net.forbric.kernel.mixin.MixinFit.injectorOf(method);if(inject==null)continue;
+            if(allAnnotations(method).stream().anyMatch(annotation->annotation.desc.equals("Lorg/spongepowered/asm/mixin/injection/Group;")))continue;
+            List<org.objectweb.asm.tree.AbstractInsnNode> body=code(method);
+            if(inject.desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;") && method.desc.equals("(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/cuboid/CuboidModel;")
+                    && body.size()==2&&body.get(0).getOpcode()==org.objectweb.asm.Opcodes.ACONST_NULL&&body.get(1).getOpcode()==org.objectweb.asm.Opcodes.ARETURN
+                    && point(inject,"Lnet/minecraft/client/resources/model/cuboid/CuboidModel;fromStream(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/cuboid/CuboidModel;")) {
+                if(redirect!=null)return null;redirect=method;
+            }
+            if(inject.desc.equals("Lorg/spongepowered/asm/mixin/injection/ModifyArg;")&&method.desc.equals("(Ljava/lang/Object;Ljava/io/Reader;)Ljava/lang/Object;")
+                    &&body.size()==3&&body.get(0) instanceof org.objectweb.asm.tree.VarInsnNode reader&&reader.getOpcode()==org.objectweb.asm.Opcodes.ALOAD&&reader.var==1
+                    &&body.get(1) instanceof org.objectweb.asm.tree.MethodInsnNode parse&&parse.getOpcode()==org.objectweb.asm.Opcodes.INVOKESTATIC
+                    &&parse.owner.equals("net/fabricmc/fabric/api/client/model/loading/v1/UnbakedModelDeserializer")&&parse.name.equals("deserialize")
+                    &&parse.desc.equals("(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/UnbakedModel;")&&body.get(2).getOpcode()==org.objectweb.asm.Opcodes.ARETURN
+                    &&Integer.valueOf(1).equals(net.forbric.kernel.mixin.MixinFit.value(inject,"index"))
+                    &&point(inject,"Lcom/mojang/datafixers/util/Pair;of(Ljava/lang/Object;Ljava/lang/Object;)Lcom/mojang/datafixers/util/Pair;")) {
+                if(argument!=null)return null;argument=method;
+            }
+        }
+        if(redirect==null||argument==null||!redirect.tryCatchBlocks.isEmpty()||!argument.tryCatchBlocks.isEmpty())return null;
+        var selectors=net.forbric.kernel.mixin.MixinFit.stringList(net.forbric.kernel.mixin.MixinFit.value(net.forbric.kernel.mixin.MixinFit.injectorOf(redirect),"method"));
+        var other=net.forbric.kernel.mixin.MixinFit.stringList(net.forbric.kernel.mixin.MixinFit.value(net.forbric.kernel.mixin.MixinFit.injectorOf(argument),"method"));
+        if(selectors.size()!=1||!selectors.equals(other)||argument.invisibleParameterAnnotations==null||argument.invisibleParameterAnnotations.length!=2
+                ||argument.invisibleParameterAnnotations[1]==null||argument.invisibleParameterAnnotations[1].size()!=1
+                ||!argument.invisibleParameterAnnotations[1].getFirst().desc.equals("Lcom/llamalad7/mixinextras/sugar/Local;"))return null;
+        return new Group("reader-deserializer",List.of(redirect,argument),selectors.getFirst());
+    }
+    private static boolean point(AnnotationNode injector,String target) {
+        if(net.forbric.kernel.mixin.MixinFit.value(injector,"slice")!=null)return false;
+        var ats=net.forbric.kernel.mixin.MixinFit.atNodes(injector);
+        return ats.size()==1&&"INVOKE".equals(net.forbric.kernel.mixin.MixinFit.value(ats.getFirst(),"value"))
+                &&target.equals(net.forbric.kernel.mixin.MixinFit.value(ats.getFirst(),"target"))
+                &&net.forbric.kernel.mixin.MixinFit.value(ats.getFirst(),"shift")==null
+                &&net.forbric.kernel.mixin.MixinFit.value(ats.getFirst(),"by")==null
+                &&net.forbric.kernel.mixin.MixinFit.value(ats.getFirst(),"args")==null;
+    }
+    private static List<org.objectweb.asm.tree.AbstractInsnNode> code(MethodNode method){return java.util.Arrays.stream(method.instructions.toArray()).filter(i->i.getOpcode()>=0).toList();}
+    private static Group tooltipGroup(ClassNode node) {
+        if(node==null)return null;
+        String protocol="net/fabricmc/fabric/impl/item/ItemComponentTooltipProviderRegistryImpl";
+        MethodNode helper=null;
+        for(MethodNode method:node.methods) {
+            if(net.forbric.kernel.mixin.MixinFit.injectorOf(method)!=null||!method.desc.endsWith(SHARED_INDEX+")V"))continue;
+            Set<String> dispatch=new java.util.HashSet<>();boolean closed=true;
+            for(var instruction:method.instructions) {
+                if(instruction instanceof org.objectweb.asm.tree.FieldInsnNode)closed=false;
+                if(instruction instanceof org.objectweb.asm.tree.MethodInsnNode call) {
+                    if(call.owner.equals(protocol)&&Set.of("hasModdedEntries","onFirst","onLast","onBefore","onAfter").contains(call.name))dispatch.add(call.name);
+                    else if(!(call.owner.equals("net/fabricmc/fabric/impl/item/VanillaTooltipProviderOrder")&&call.name.equals("getVanillaOrder")
+                            ||call.owner.equals("com/llamalad7/mixinextras/sugar/ref/LocalIntRef")&&Set.of("get","set").contains(call.name)
+                            ||call.owner.equals("java/util/List")&&Set.of("size","get").contains(call.name)
+                            ||call.owner.equals("java/util/HashSet")&&Set.of("<init>","add").contains(call.name)))closed=false;
+                }
+            }
+            if(closed&&dispatch.equals(Set.of("hasModdedEntries","onFirst","onLast","onBefore","onAfter"))) {
+                if(helper!=null)return null;helper=method;
+            }
+        }
+        if(helper==null)return null;
+        List<MethodNode> group=new ArrayList<>();String selector=null,share=null;
+        for(MethodNode method:node.methods) {
+            AnnotationNode injector=net.forbric.kernel.mixin.MixinFit.injectorOf(method);if(injector==null)continue;
+            int calls=0;boolean closed=!method.tryCatchBlocks.isEmpty()?false:true;
+            for(var instruction:method.instructions)if(instruction.getOpcode()>=0) {
+                if(instruction instanceof org.objectweb.asm.tree.MethodInsnNode call) {
+                    if(call.owner.equals(node.name)&&call.name.equals(helper.name)&&call.desc.equals(helper.desc))calls++;
+                    else closed=false;
+                }else if(instruction instanceof org.objectweb.asm.tree.FieldInsnNode field) {
+                    if(field.getOpcode()!=org.objectweb.asm.Opcodes.GETSTATIC||!field.desc.equals("Lnet/minecraft/core/component/DataComponentType;"))closed=false;
+                }else if(!(instruction instanceof org.objectweb.asm.tree.VarInsnNode||instruction instanceof org.objectweb.asm.tree.JumpInsnNode
+                        ||instruction.getOpcode()==org.objectweb.asm.Opcodes.ACONST_NULL||instruction.getOpcode()==org.objectweb.asm.Opcodes.RETURN
+                        ||instruction.getOpcode()==org.objectweb.asm.Opcodes.ARETURN||instruction.getOpcode()==org.objectweb.asm.Opcodes.IRETURN))closed=false;
+            }
+            if(calls==0)continue;
+            if(calls!=1||!closed||!method.desc.contains(SHARED_INDEX)||allAnnotations(method).stream().anyMatch(annotation->annotation.desc.equals("Lorg/spongepowered/asm/mixin/injection/Group;")))return null;
+            org.objectweb.asm.Type[] parameters=org.objectweb.asm.Type.getArgumentTypes(method.desc);
+            int shared=-1;for(int p=0;p<parameters.length;p++)if(parameters[p].getDescriptor().equals(SHARED_INDEX)){if(shared>=0)return null;shared=p;}
+            if(shared<0||method.invisibleParameterAnnotations==null||shared>=method.invisibleParameterAnnotations.length
+                    ||method.invisibleParameterAnnotations[shared]==null||method.invisibleParameterAnnotations[shared].size()!=1)return null;
+            AnnotationNode sugar=method.invisibleParameterAnnotations[shared].getFirst();
+            Object sharedValue=net.forbric.kernel.mixin.MixinFit.value(sugar,"value");
+            if(!sugar.desc.equals("Lcom/llamalad7/mixinextras/sugar/Share;")||!(sharedValue instanceof String id)||share!=null&&!share.equals(id))return null;
+            share=id;
+            var selectors=net.forbric.kernel.mixin.MixinFit.stringList(net.forbric.kernel.mixin.MixinFit.value(injector,"method"));
+            if(selectors.size()!=1||selector!=null&&!selector.equals(selectors.getFirst()))return null;
+            selector=selectors.getFirst();group.add(method);
+        }
+        return group.isEmpty()?null:new Group("component-tooltip",List.copyOf(group),selector);
+    }
 
-	/** The mixin config each entry is declared in, which names the owning mod on the finding. */
-	static final Map<String, String> CONFIGS = Map.of(MODEL_MANAGER_MIXIN, "fabric-model-loading-api-v1.mixins.json",
-			ITEM_STACK_MIXIN, "fabric-item-api-v1.mixins.json");
-
-	/** Whether an entry applies on this boot, beyond the pruner's own switch. */
-	private static final Map<String, BooleanSupplier> ACTIVE = Map.of(MODEL_MANAGER_MIXIN, () -> true,
-			ITEM_STACK_MIXIN, GuestInjectorPruner::fabricTooltipBridgeOn);
-
-	/** What is lost when an entry's class loads and is not pruned. */
-	private static final Map<String, String> COSTS = Map.of(MODEL_MANAGER_MIXIN,
-			"the whole mixin stays pinned, so every Fabric ModelLoadingPlugin -- block-state resolvers, extra "
-					+ "models, model modifiers -- is registered and never called",
-			ITEM_STACK_MIXIN, "fabric-item-api's tooltip injectors stay in addDetailsToTooltip, where NeoForge's dispatcher "
-					+ "makes none of the calls they anchor on (R3 moves none of them: they share an index), so they bind nowhere, "
-					+ "the kernel's tooltip bridge stands down, and a Fabric mod's component tooltips are drawn nowhere");
-
-	/** Why an entry's injectors cannot stay, for the log line. */
-	private static final Map<String, String> REASONS = Map.of(MODEL_MANAGER_MIXIN,
-			"NeoForge replaced CuboidModel.fromStream with UnbakedModelParser.parse at that site, so fabric's @Redirect "
-					+ "could not bind while its @ModifyArg did and re-read a consumed Reader (every block model missingno)",
-			ITEM_STACK_MIXIN, "NeoForge's ItemStack draws tooltips from its appender lists, where the kernel draws "
-					+ "Fabric's component tooltip providers now; these would have drawn them a second time, or nowhere");
-
-	/** What happens to an entry's mixin when a reshaped fabric-api leaves it untouched. */
-	private static final Map<String, String> DRIFT = Map.of(MODEL_MANAGER_MIXIN, "it will read PARTIAL and apply half — the state that made every block "
-					+ "model missingno",
-			ITEM_STACK_MIXIN, "its tooltip injectors bind nowhere on NeoForge's dispatcher and the kernel's tooltip bridge "
-					+ "stands down; Fabric component tooltip providers are drawn nowhere");
-
-	/** The finding a removed injector records, or none when a kernel repair does its job. */
-	private static final Map<String, String> LOSSES = Map.of(MODEL_MANAGER_MIXIN,
-			"the kernel removed this injector: NeoForge's UnbakedModelParser now reads block models at its call site, so "
-					+ "Fabric's fabric:type custom model formats (UnbakedModelDeserializer) are not consulted — the "
-					+ "kernel's own dispatch of them is off (-D" + ModelFormatFunnelInjector.PROPERTY + "=off)");
-
-	/**
-	 * The finding an entry's removed injectors record on this boot, or null when something does their job:
-	 * the model pair's {@code fabric:type} dispatch is {@link ModelFormatFunnelInjector}'s while it is on.
-	 */
-	static String lossOf(String mixin) {
-		if (MODEL_MANAGER_MIXIN.equals(mixin) && ModelFormatFunnelInjector.enabled()) return null;
-		return LOSSES.get(mixin);
-	}
+    private static boolean providerDeclarations(ClassNode providers) {
+        String ends="(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/Item$TooltipContext;Lnet/minecraft/world/item/component/TooltipDisplay;Ljava/util/function/Consumer;Lnet/minecraft/world/item/TooltipFlag;)V";
+        String sides="(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/core/component/DataComponentType;Lnet/minecraft/world/item/Item$TooltipContext;Lnet/minecraft/world/item/component/TooltipDisplay;Ljava/util/function/Consumer;Lnet/minecraft/world/item/TooltipFlag;Ljava/util/Set;)V";
+        for(String name:List.of("hasModdedEntries","onFirst","onLast","onBefore","onAfter")) {
+            String desc=name.equals("hasModdedEntries")?"()Z":name.equals("onFirst")||name.equals("onLast")?ends:sides;
+            if(providers.methods.stream().noneMatch(method->method.name.equals(name)&&method.desc.equals(desc)
+                    &&(method.access&(org.objectweb.asm.Opcodes.ACC_STATIC|org.objectweb.asm.Opcodes.ACC_PUBLIC))==(org.objectweb.asm.Opcodes.ACC_STATIC|org.objectweb.asm.Opcodes.ACC_PUBLIC)))return false;
+        }
+        return true;
+    }
 
 	private static volatile boolean fabricTooltipsPruned;
 
@@ -230,71 +244,35 @@ public final class GuestInjectorPruner implements ClassTransformer {
 	}
 
 	@Override
-	public AnchorSet anchors() {
-		List<AnchorSet.Anchor> anchors = new ArrayList<>();
-		for (String mixin : TABLE.keySet()) {
-			if (!ACTIVE.get(mixin).getAsBoolean()) continue;
-			anchors.add(new AnchorSet.Anchor(mixin, AnchorSet.Severity.REQUIRED, COSTS.get(mixin)));
-		}
-		return AnchorSet.of(anchors.toArray(new AnchorSet.Anchor[0]));
-	}
+    public AnchorSet anchors(){return AnchorSet.scanned("closed Reader and shared component-tooltip callback protocols");}
 
-	@Override
-	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
-		if (classBytes == null || classBytes.length == 0) return classBytes;
-		List<Prune> prunes = TABLE.get(className);
-		if (prunes == null || !enabled() || !ACTIVE.get(className).getAsBoolean()) return classBytes;
-
-		ClassNode node = new ClassNode();
-		new ClassReader(classBytes).accept(node, 0);
-		if (node.methods == null) return classBytes;
-
-		// Both-or-nothing: the pair only makes sense together. Half of it gone is exactly the half-applied state
-		// this class exists to avoid, so any drift in either stands the whole edit down.
-		List<MethodNode> victims = new ArrayList<>();
-		for (Prune prune : prunes) {
-			MethodNode found = null;
-			for (MethodNode m : node.methods) {
-				if (prune.name().equals(m.name) && prune.desc().equals(m.desc)) { found = m; break; }
-			}
-			if (found == null) {
-				// Absent on a second pass is what idempotence looks like; absent on the first is drift.
-				if (alreadyPruned(node, prunes)) {
-					if (ITEM_STACK_MIXIN.equals(className)) fabricTooltipsPruned = true;
-					return classBytes;
-				}
-				ForbricLog.warn("[Forbric/GuestInjectorPruner] %s has no %s%s — fabric-api reshaped the mixin, leaving "
-						+ "it untouched (%s)", className, prune.name(), prune.desc(), DRIFT.get(className));
-				return classBytes;
-			}
-			if (!(prune.exact() ? isInjectorExactlyInto(found, prune.selectorPrefix()) : isInjectorInto(found, prune.selectorPrefix()))) {
-				ForbricLog.warn("[Forbric/GuestInjectorPruner] %s.%s no longer injects into %s — fabric-api reshaped "
-						+ "the mixin, leaving it untouched (%s)", className, prune.name(), prune.selectorPrefix(), DRIFT.get(className));
-				return classBytes;
-			}
-			victims.add(found);
-		}
-
-		node.methods.removeAll(victims);
-		pruned += victims.size();
-		if (ITEM_STACK_MIXIN.equals(className)) fabricTooltipsPruned = true;
-		// Removed, so never run: a confirmed finding for each where nothing does its job, naming what is not
-		// covered. The log line below is not the report.
-		String loss = lossOf(className);
-		for (MethodNode victim : loss == null ? List.<MethodNode>of() : victims) {
-			net.forbric.kernel.mixin.MixinCompatibility.recordRemovedInjector(CONFIGS.get(className), className,
-					victim.name, victim.desc, loss,
-					List.of("kernel pruned " + victim.name + victim.desc + " from " + className,
-							"target selector " + prunes.get(0).selectorPrefix(), "source=GuestInjectorPruner"));
-		}
-		ForbricLog.info("[Forbric/GuestInjectorPruner] pruned %d injector(s) from %s — %s; the other %d injector(s) "
-				+ "apply as written", victims.size(), className, REASONS.get(className), countInjectors(node));
-
-		// Only whole methods were removed: no instruction, frame or local changed, so nothing needs recomputing.
-		ClassWriter writer = new ClassWriter(0);
-		node.accept(writer);
-		return writer.toByteArray();
-	}
+    @Override public byte[] transform(String className,byte[] classBytes,TransformContext context) {
+        if(classBytes==null||classBytes.length==0||!enabled())return classBytes;
+        ClassNode node=new ClassNode();new ClassReader(classBytes).accept(node,0);
+        if(!node.name.replace('/','.').equals(className))return classBytes;
+        Group group=modelPair(node);
+        if(group!=null&&!readerWasConsumed(node,group,classes))return classBytes;
+        if(group==null && fabricTooltipBridgeOn())group=tooltipGroup(node);
+        if(group==null)return classBytes;
+        if(group.protocol().equals("component-tooltip")) {
+            ClassNode current=classes.apply("net/neoforged/neoforge/common/tooltip/ItemTooltipHandler");
+            ClassNode providers=classes.apply("net/fabricmc/fabric/impl/item/ItemComponentTooltipProviderRegistryImpl");
+            if(current==null||providers==null||!providerDeclarations(providers)||!NeoTooltipAppendersInjector.aroundSpliced()) {
+                ForbricLog.warn("[Forbric/GuestInjectorPruner] retained %s's original tooltip callbacks: the actual carrier appender replacement has not been proved",node.name);
+                return classBytes;
+            }
+        }
+        node.methods.removeAll(group.methods());pruned+=group.methods().size();
+        if(group.protocol().equals("component-tooltip"))fabricTooltipsPruned=true;
+        String loss=group.protocol().equals("reader-deserializer")&&!ModelFormatFunnelInjector.enabled()
+                ?"the original fabric:type custom model deserializer callback was removed while the model-format funnel is disabled":null;
+        String config=net.forbric.kernel.mixin.MixinStubRebind.configOf(node.name);
+        for(MethodNode victim:loss==null?List.<MethodNode>of():group.methods())
+            net.forbric.kernel.mixin.MixinCompatibility.recordRemovedInjector(config,node.name.replace('/','.'),victim.name,victim.desc,loss,
+                    List.of("closed source protocol="+group.protocol(),"source=GuestInjectorPruner"));
+        ForbricLog.info("[Forbric/GuestInjectorPruner] removed the %d closed %s callback(s) in %s; remaining callbacks retain their original bodies",group.methods().size(),group.protocol(),node.name);
+        ClassWriter writer=new ClassWriter(0);node.accept(writer);return writer.toByteArray();
+    }
 
 	/** Whether {@code m} carries an injector annotation whose {@code method} list has a selector starting with {@code prefix}. */
 	static boolean isInjectorInto(MethodNode m, String prefix) {
@@ -345,15 +323,6 @@ public final class GuestInjectorPruner implements ClassTransformer {
 		if (m.visibleAnnotations != null) out.addAll(m.visibleAnnotations);
 		if (m.invisibleAnnotations != null) out.addAll(m.invisibleAnnotations);
 		return out;
-	}
-
-	private static boolean alreadyPruned(ClassNode node, List<Prune> prunes) {
-		for (Prune p : prunes) {
-			for (MethodNode m : node.methods) {
-				if (p.name().equals(m.name) && p.desc().equals(m.desc)) return false;
-			}
-		}
-		return true;
 	}
 
 	private static int countInjectors(ClassNode node) {

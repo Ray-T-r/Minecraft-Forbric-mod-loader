@@ -33,6 +33,15 @@ public class PersistentEntitySectionManager {
 			}
 		}
 
+        /** Native counterpart: only the computed destination key is a long local at the original callback point. */
+        public void nativeMove() {
+            long newSectionPos=entity.sectionKey();
+            if(newSectionPos!=this.currentSectionKey) {
+                this.currentSectionKey=newSectionPos;
+                this.updateStatus(Visibility.TRACKED,Visibility.TICKING);
+            }
+        }
+
 		private void updateStatus(Visibility from, Visibility to) {
 			Trail.add("status " + from + "->" + to);
 		}

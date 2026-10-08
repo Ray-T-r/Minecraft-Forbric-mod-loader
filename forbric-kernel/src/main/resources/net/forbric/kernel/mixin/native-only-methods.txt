@@ -11,7 +11,7 @@
 #                                    excludes them is not answered for
 # <id> <owner>#<name><descriptor>    a method the platform declares and the merged class does not
 # <id> merged-only <owner>           a class in vanilla's packages the platform does not have
-base e49c632a278e14644a64cf1b37760f7ac5513d588e76401ca00de343062d66dd
+base 2828a8ad124e5e8df8324a554537c0894383af480eecc3286ee99191f9984e19
 fabric com/mojang/blaze3d/opengl/DirectStateAccess$Core#bindFrameBufferTextures(I[I[IIII)V
 fabric com/mojang/blaze3d/opengl/DirectStateAccess$Emulated#bindFrameBufferTextures(I[I[IIII)V
 fabric com/mojang/blaze3d/vulkan/VulkanRenderPass#<init>(Lcom/mojang/blaze3d/vulkan/VulkanDevice;Lcom/mojang/blaze3d/vulkan/VulkanCommandEncoder;Lorg/lwjgl/vulkan/VkCommandBuffer;Lcom/mojang/blaze3d/vulkan/checkpoints/CheckpointExtension$CheckpointStorage;Lcom/mojang/blaze3d/systems/RenderPass$RenderArea;IIZLjava/util/function/Supplier;)V
@@ -54,7 +54,6 @@ fabric merged-only com/mojang/blaze3d/opengl/GlStateManager$StencilState
 fabric merged-only net/minecraft/client/gui/screens/options/controls/KeyBindsList$KeyEntry$1
 fabric merged-only net/minecraft/client/renderer/block/ModelBlockRenderer$1
 fabric merged-only net/minecraft/client/renderer/block/dispatch/multipart/MultiPartModel$GeometryKey
-fabric merged-only net/minecraft/data/tags/TagAppender$1$forbricneo
 fabric merged-only net/minecraft/gametest/framework/GameTestHelper$5
 fabric merged-only net/minecraft/nbt/CompoundTag$3
 fabric merged-only net/minecraft/network/protocol/common/custom/CustomPacketPayload$1$forbricneo
@@ -67,6 +66,7 @@ fabric merged-only net/minecraft/world/level/block/entity/AbstractFurnaceBlockEn
 fabric merged-only net/minecraft/world/level/block/entity/BrewingStandBlockEntity$2
 fabric merged-only net/minecraft/world/level/block/entity/ChiseledBookShelfBlockEntity$1
 fabric merged-only net/minecraft/world/level/block/entity/HopperBlockEntity$1
+fabric merged-only net/minecraft/world/level/chunk/ChunkGenerator$forbricProvider$a79ebeca
 fabric merged-only net/minecraft/world/level/saveddata/SavedDataType$Factory
 fabric net/minecraft/client/KeyMapping#lambda$registerMapping$0(Lcom/mojang/blaze3d/platform/InputConstants$Key;)Ljava/util/List;
 fabric net/minecraft/client/Screenshot#lambda$grab$3(Lcom/mojang/blaze3d/platform/NativeImage;Ljava/io/File;Ljava/util/function/Consumer;)V
@@ -105,7 +105,6 @@ fabric net/minecraft/client/gui/screens/options/OptionsSubScreen#lambda$init$0(L
 fabric net/minecraft/client/gui/screens/options/WorldOptionsScreen#lambda$init$1(Lnet/minecraft/client/gui/screens/options/WorldOptionsScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 fabric net/minecraft/client/gui/screens/options/controls/KeyBindsList#access$500(Lnet/minecraft/client/gui/screens/options/controls/KeyBindsList;)Lnet/minecraft/client/Minecraft;
 fabric net/minecraft/client/gui/screens/options/controls/KeyBindsList$KeyEntry#lambda$new$2(Lnet/minecraft/client/KeyMapping;Lnet/minecraft/client/gui/screens/options/controls/KeyBindsList;Lnet/minecraft/client/gui/components/Button;)V
-fabric net/minecraft/client/gui/screens/options/controls/KeyBindsList$KeyEntry#lambda$new$3(Lnet/minecraft/network/chat/Component;Ljava/util/function/Supplier;)Lnet/minecraft/network/chat/MutableComponent;
 fabric net/minecraft/client/gui/screens/packs/PackSelectionScreen#lambda$init$2(Lnet/minecraft/client/gui/screens/packs/PackSelectionScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 fabric net/minecraft/client/gui/screens/reporting/AbstractReportScreen#lambda$init$0(Lnet/minecraft/client/gui/screens/reporting/AbstractReportScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 fabric net/minecraft/client/gui/screens/reporting/ChatSelectionScreen#access$1000(Lnet/minecraft/client/gui/screens/reporting/ChatSelectionScreen;)Lnet/minecraft/client/gui/Font;
@@ -441,7 +440,6 @@ fabric net/minecraft/world/entity/animal/fox/Fox#access$000(Lnet/minecraft/world
 fabric net/minecraft/world/entity/animal/fox/Fox#access$100(Lnet/minecraft/world/entity/animal/fox/Fox;)Lnet/minecraft/util/RandomSource;
 fabric net/minecraft/world/entity/animal/frog/Tadpole#lambda$ageUp$0(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/entity/animal/frog/Frog;)V
 fabric net/minecraft/world/entity/animal/pig/Pig#lambda$thunderHit$0(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/entity/monster/zombie/ZombifiedPiglin;)V
-fabric net/minecraft/world/entity/monster/cubemob/SulfurCube#travelInFluid(Lnet/minecraft/world/phys/Vec3;)V
 fabric net/minecraft/world/entity/monster/piglin/PiglinAi#lambda$initRideHoglinActivity$0(Lnet/minecraft/world/entity/monster/piglin/Piglin;)Z
 fabric net/minecraft/world/entity/monster/skeleton/Skeleton#lambda$doFreezeConversion$0(Lnet/minecraft/world/entity/monster/skeleton/Stray;)V
 fabric net/minecraft/world/entity/npc/villager/Villager#lambda$thunderHit$0(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/entity/monster/Witch;)V
@@ -455,10 +453,6 @@ fabric net/minecraft/world/item/ItemStack$2#<init>()V
 fabric net/minecraft/world/item/Items#lambda$registerBlock$1(Ljava/util/function/BiFunction;Lnet/minecraft/world/level/block/Block;Lnet/minecraft/world/item/Item$Properties;)Lnet/minecraft/world/item/Item;
 fabric net/minecraft/world/item/component/ResolvableProfile#lambda$create$2(Lnet/minecraft/world/entity/player/PlayerSkin$Patch;Ljava/lang/String;)Lnet/minecraft/world/item/component/ResolvableProfile$Dynamic;
 fabric net/minecraft/world/item/component/ResolvableProfile#lambda$create$3(Lnet/minecraft/world/item/component/ResolvableProfile$Partial;Lnet/minecraft/world/entity/player/PlayerSkin$Patch;)Lnet/minecraft/world/item/component/ResolvableProfile$Dynamic;
-fabric net/minecraft/world/item/enchantment/EnchantmentHelper#lambda$getAvailableEnchantmentResults$0(Lnet/minecraft/world/item/ItemStack;ZLnet/minecraft/core/Holder;)Z
-fabric net/minecraft/world/item/enchantment/EnchantmentHelper#lambda$getAvailableEnchantmentResults$1(ILjava/util/List;Lnet/minecraft/core/Holder;)V
-fabric net/minecraft/world/item/enchantment/EnchantmentHelper#lambda$processEquipmentDropChance$1(Lnet/minecraft/world/level/storage/loot/LootContext;Lorg/apache/commons/lang3/mutable/MutableFloat;ILnet/minecraft/util/RandomSource;Lnet/minecraft/world/item/enchantment/TargetedConditionalEffect;)V
-fabric net/minecraft/world/item/enchantment/EnchantmentHelper#lambda$processEquipmentDropChance$3(Lnet/minecraft/world/level/storage/loot/LootContext;Lorg/apache/commons/lang3/mutable/MutableFloat;ILnet/minecraft/util/RandomSource;Lnet/minecraft/world/item/enchantment/TargetedConditionalEffect;)V
 fabric net/minecraft/world/level/block/Blocks#lambda$static$132(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;)Z
 fabric net/minecraft/world/level/block/Blocks#lambda$static$133(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/entity/EntityType;)Z
 fabric net/minecraft/world/level/block/Blocks#lambda$static$134(Lnet/minecraft/world/level/block/state/BlockBehaviour$Properties;)Lnet/minecraft/world/level/block/Block;
@@ -636,19 +630,13 @@ forge merged-only com/mojang/blaze3d/opengl/GlStateManager$StencilState
 forge merged-only net/minecraft/client/gui/screens/options/controls/KeyBindsList$KeyEntry$1
 forge merged-only net/minecraft/client/renderer/block/ModelBlockRenderer$1
 forge merged-only net/minecraft/client/renderer/block/dispatch/multipart/MultiPartModel$GeometryKey
-forge merged-only net/minecraft/data/tags/TagAppender$1$forbricneo
 forge merged-only net/minecraft/network/protocol/common/custom/CustomPacketPayload$1$forbricneo
 forge merged-only net/minecraft/world/inventory/AbstractFurnaceMenu$2
 forge merged-only net/minecraft/world/level/block/entity/ChiseledBookShelfBlockEntity$1
 forge merged-only net/minecraft/world/level/block/entity/HopperBlockEntity$1
+forge merged-only net/minecraft/world/level/chunk/ChunkGenerator$forbricProvider$a79ebeca
 forge merged-only net/minecraft/world/level/saveddata/SavedDataType$Factory
-forge net/minecraft/client/KeyMapping#getDefaultKeyModifier()Lnet/minecraftforge/client/settings/KeyModifier;
-forge net/minecraft/client/KeyMapping#getKeyConflictContext()Lnet/minecraftforge/client/settings/IKeyConflictContext;
-forge net/minecraft/client/KeyMapping#getKeyModifier()Lnet/minecraftforge/client/settings/KeyModifier;
-forge net/minecraft/client/KeyMapping#setKeyConflictContext(Lnet/minecraftforge/client/settings/IKeyConflictContext;)V
-forge net/minecraft/client/KeyMapping#setKeyModifierAndCode(Lnet/minecraftforge/client/settings/KeyModifier;Lcom/mojang/blaze3d/platform/InputConstants$Key;)V
 forge net/minecraft/client/Options$3#<init>(Lnet/minecraft/client/Options;Ljava/util/HashSet;Ljava/io/PrintWriter;)V
-forge net/minecraft/client/Screenshot#lambda$grab$3(Lcom/mojang/blaze3d/platform/NativeImage;Ljava/io/File;Lnet/minecraftforge/client/event/ScreenshotEvent;Ljava/util/function/Consumer;)V
 forge net/minecraft/client/data/models/model/ModelTemplate#lambda$create$0(Ljava/util/Map;)Lcom/google/gson/JsonElement;
 forge net/minecraft/client/data/models/model/ModelTemplate#lambda$create$1(Lcom/google/gson/JsonObject;Lnet/minecraft/resources/Identifier;)V
 forge net/minecraft/client/data/models/model/ModelTemplate#lambda$create$2(Lcom/google/gson/JsonObject;Lnet/minecraft/client/data/models/model/TextureSlot;Lnet/minecraft/client/resources/model/sprite/Material;)V
@@ -673,9 +661,6 @@ forge net/minecraft/client/gui/screens/dialog/input/InputControlHandlers$TextInp
 forge net/minecraft/client/gui/screens/friends/FriendsOverlayScreen#lambda$init$0(Lnet/minecraft/client/gui/screens/friends/FriendsOverlayScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 forge net/minecraft/client/gui/screens/friends/FriendsOverlayScreen#lambda$new$0(Lnet/minecraft/client/gui/screens/friends/FriendsOverlayScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 forge net/minecraft/client/gui/screens/friends/FriendsOverlayScreen#lambda$new$1(Lnet/minecraft/client/gui/screens/friends/FriendsOverlayScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
-forge net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen#getCurrentPage()Lnet/minecraftforge/client/gui/CreativeTabsScreenPage;
-forge net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen#lambda$init$2(Lnet/minecraftforge/client/gui/CreativeTabsScreenPage;)Z
-forge net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen#setCurrentPage(Lnet/minecraftforge/client/gui/CreativeTabsScreenPage;)V
 forge net/minecraft/client/gui/screens/multiplayer/RestrictionsScreen#lambda$init$4(Lnet/minecraft/client/gui/screens/multiplayer/RestrictionsScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 forge net/minecraft/client/gui/screens/multiplayer/ServerReconfigScreen#lambda$init$1(Lnet/minecraft/client/gui/screens/multiplayer/ServerReconfigScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 forge net/minecraft/client/gui/screens/multiplayer/WarningScreen#lambda$init$1(Lnet/minecraft/client/gui/screens/multiplayer/WarningScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
@@ -683,8 +668,6 @@ forge net/minecraft/client/gui/screens/options/LanguageSelectScreen#access$200(L
 forge net/minecraft/client/gui/screens/options/OptionsScreen#lambda$init$12(Lnet/minecraft/client/gui/screens/options/OptionsScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 forge net/minecraft/client/gui/screens/options/OptionsSubScreen#lambda$init$0(Lnet/minecraft/client/gui/screens/options/OptionsSubScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 forge net/minecraft/client/gui/screens/options/WorldOptionsScreen#lambda$init$1(Lnet/minecraft/client/gui/screens/options/WorldOptionsScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
-forge net/minecraft/client/gui/screens/options/controls/KeyBindsList$KeyEntry#lambda$new$2(Lnet/minecraft/client/gui/screens/options/controls/KeyBindsList;Lnet/minecraft/client/gui/components/Button;)V
-forge net/minecraft/client/gui/screens/options/controls/KeyBindsList$KeyEntry#lambda$new$3(Lnet/minecraft/network/chat/Component;Ljava/util/function/Supplier;)Lnet/minecraft/network/chat/MutableComponent;
 forge net/minecraft/client/gui/screens/packs/PackSelectionScreen#lambda$init$2(Lnet/minecraft/client/gui/screens/packs/PackSelectionScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 forge net/minecraft/client/gui/screens/reporting/AbstractReportScreen#lambda$init$0(Lnet/minecraft/client/gui/screens/reporting/AbstractReportScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 forge net/minecraft/client/gui/screens/reporting/ChatSelectionScreen#access$1000(Lnet/minecraft/client/gui/screens/reporting/ChatSelectionScreen;)Lnet/minecraft/client/gui/Font;
@@ -703,8 +686,6 @@ forge net/minecraft/client/gui/screens/worldselection/ConfirmExperimentalFeature
 forge net/minecraft/client/gui/screens/worldselection/EditWorldScreen#lambda$new$14(Lnet/minecraft/client/gui/screens/worldselection/EditWorldScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 forge net/minecraft/client/gui/screens/worldselection/ExperimentsScreen#lambda$init$6(Lnet/minecraft/client/gui/screens/worldselection/ExperimentsScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
 forge net/minecraft/client/gui/screens/worldselection/SelectWorldScreen#lambda$init$1(Lnet/minecraft/client/gui/screens/worldselection/SelectWorldScreen;Lnet/minecraft/client/gui/components/AbstractWidget;)V
-forge net/minecraft/client/multiplayer/ClientLevel#getModelDataManager()Lnet/minecraftforge/client/model/data/ModelDataManager;
-forge net/minecraft/client/multiplayer/MultiPlayerGameMode#lambda$startDestroyBlock$1(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraftforge/event/entity/player/PlayerInteractEvent$LeftClickBlock;Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/Direction;I)Lnet/minecraft/network/protocol/Packet;
 forge net/minecraft/client/multiplayer/chat/ChatLog#lambda$new$0(II)[Lnet/minecraft/client/multiplayer/chat/LoggedChatEvent;
 forge net/minecraft/client/renderer/block/BuiltInBlockModels#lambda$createMobHead$0(Lnet/minecraft/world/level/block/SkullBlock$Types;Ljava/lang/Integer;)Lnet/minecraft/client/renderer/block/model/BlockModel$Unbaked;
 forge net/minecraft/client/renderer/block/BuiltInBlockModels#lambda$createMobWallHead$0(Lnet/minecraft/world/level/block/SkullBlock$Types;Lnet/minecraft/core/Direction;)Lnet/minecraft/client/renderer/block/model/BlockModel$Unbaked;
@@ -721,7 +702,6 @@ forge net/minecraft/client/renderer/block/dispatch/BlockStateModelDispatcher#lam
 forge net/minecraft/client/renderer/block/dispatch/BlockStateModelDispatcher#lambda$instantiate$2(Lnet/minecraft/world/level/block/state/StateDefinition;Ljava/util/Map;Lnet/minecraft/client/renderer/block/dispatch/BlockStateModelDispatcher$MultiPartDefinition;)V
 forge net/minecraft/client/renderer/texture/atlas/SpriteSourceList#lambda$list$0(Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/client/renderer/texture/atlas/SpriteSource$Output;Lnet/minecraft/client/renderer/texture/atlas/SpriteSource;)V
 forge net/minecraft/client/resources/model/ModelBakery#lambda$bakeModels$3(Lnet/minecraft/client/resources/model/ModelBakery$MissingModels;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;)Lnet/minecraft/client/resources/model/ModelBakery$BakingResult;
-forge net/minecraft/core/MappedRegistry$3#getPending(Lnet/minecraft/tags/TagKey;)Ljava/util/List;
 forge net/minecraft/core/RegistrySetBuilder$BuildState$1#registryLookup(Lnet/minecraft/resources/ResourceKey;)Ljava/util/Optional;
 forge net/minecraft/core/RegistrySetBuilder$UniversalLookup#lambda$getOrCreate$0(Ljava/lang/Object;)Ljava/lang/Object;
 forge net/minecraft/core/component/DataComponentInitializers#lambda$createInitializerForRegistry$0(Lnet/minecraft/core/HolderLookup$RegistryLookup;Ljava/util/List;Ljava/util/Set;Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/core/component/DataComponentMap$Builder;)V
@@ -956,7 +936,6 @@ forge net/minecraft/network/codec/ByteBufCodecs$33#encode(Lio/netty/buffer/ByteB
 forge net/minecraft/resources/RegistryDataLoader$1#<init>(Lnet/minecraft/server/packs/resources/ResourceManager;)V
 forge net/minecraft/server/ReloadableServerRegistries#lambda$scheduleRegistryLoad$0(Lnet/minecraft/world/level/storage/loot/LootDataType;Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/resources/RegistryOps;)Lnet/minecraft/core/WritableRegistry;
 forge net/minecraft/server/ReloadableServerRegistries#lambda$scheduleRegistryLoad$1(Lnet/minecraft/core/WritableRegistry;Lnet/minecraft/world/level/storage/loot/LootDataType;Lnet/minecraft/resources/Identifier;Lnet/minecraft/world/level/storage/loot/Validatable;)V
-forge net/minecraft/server/ReloadableServerResources#getConditionContext()Lnet/minecraftforge/common/crafting/conditions/ICondition$IContext;
 forge net/minecraft/server/ServerScoreboard#lambda$load$0(Lnet/minecraft/server/ServerScoreboard;Lnet/minecraft/world/scores/Objective$Packed;)V
 forge net/minecraft/server/ServerScoreboard#lambda$load$1(Lnet/minecraft/server/ServerScoreboard;Lnet/minecraft/world/scores/Scoreboard$PackedScore;)V
 forge net/minecraft/server/ServerScoreboard#lambda$load$3(Lnet/minecraft/server/ServerScoreboard;Lnet/minecraft/world/scores/PlayerTeam$Packed;)V
@@ -989,45 +968,20 @@ forge net/minecraft/util/BoundedFloatFunction$1#<init>(F)V
 forge net/minecraft/util/BoundedFloatFunction$2#<init>()V
 forge net/minecraft/util/BoundedFloatFunction$2#apply(Ljava/lang/Float;)F
 forge net/minecraft/world/attribute/EnvironmentAttributeProbe#lambda$valueProbeFactory$0(Lnet/minecraft/world/attribute/EnvironmentAttribute;)Lnet/minecraft/world/attribute/EnvironmentAttributeProbe$ValueProbe;
-forge net/minecraft/world/entity/Mob#jumpInFluid(Lnet/minecraftforge/fluids/FluidType;)V
-forge net/minecraft/world/entity/Mob#lambda$jumpInFluid$0(Lnet/minecraftforge/fluids/FluidType;)V
-forge net/minecraft/world/entity/SpawnPlacements#lambda$fireSpawnPlacementEvent$1(Lnet/minecraft/world/entity/EntityType;Lnet/minecraftforge/event/entity/SpawnPlacementRegisterEvent$MergedSpawnPredicate;)V
 forge net/minecraft/world/entity/ai/behavior/SetWalkTargetFromBlockMemory#lambda$create$1(Lnet/minecraft/world/entity/ai/behavior/declarative/BehaviorBuilder$Instance;ILnet/minecraft/world/entity/ai/memory/MemoryModuleType;IFILnet/minecraft/world/entity/ai/behavior/declarative/MemoryAccessor;Lnet/minecraft/world/entity/ai/behavior/declarative/MemoryAccessor;Lnet/minecraft/world/entity/ai/behavior/declarative/MemoryAccessor;)Lnet/minecraft/world/entity/ai/behavior/declarative/Trigger;
 forge net/minecraft/world/entity/ai/behavior/SetWalkTargetFromBlockMemory#lambda$create$2(Lnet/minecraft/world/entity/ai/behavior/declarative/BehaviorBuilder$Instance;Lnet/minecraft/world/entity/ai/behavior/declarative/MemoryAccessor;Lnet/minecraft/world/entity/ai/behavior/declarative/MemoryAccessor;ILnet/minecraft/world/entity/ai/memory/MemoryModuleType;ILnet/minecraft/world/entity/ai/behavior/declarative/MemoryAccessor;FILnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/entity/npc/villager/Villager;J)Z
-forge net/minecraft/world/entity/ai/behavior/Swim#lambda$shouldSwim$0(Lnet/minecraft/world/entity/Mob;Lnet/minecraftforge/fluids/FluidType;Ljava/lang/Double;)Z
-forge net/minecraft/world/entity/ai/goal/FloatGoal#lambda$canUse$0(Lnet/minecraftforge/fluids/FluidType;Ljava/lang/Double;)Z
-forge net/minecraft/world/entity/animal/bee/Bee#jumpInFluid(Lnet/minecraftforge/fluids/FluidType;)V
-forge net/minecraft/world/entity/animal/fox/Fox$FoxFloatGoal#lambda$canUse$0(Lnet/minecraftforge/fluids/FluidType;Ljava/lang/Double;)Z
 forge net/minecraft/world/entity/animal/frog/Tadpole#lambda$ageUp$0(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/entity/animal/frog/Frog;)V
 forge net/minecraft/world/entity/monster/CrossbowAttackMob#lambda$performCrossbowAttack$1(Lnet/minecraft/world/item/ItemStack;)Z
-forge net/minecraft/world/entity/monster/cubemob/MagmaCube#jumpInFluid(Lnet/minecraftforge/fluids/FluidType;)V
-forge net/minecraft/world/entity/monster/cubemob/MagmaCube#lambda$jumpInFluid$0(Lnet/minecraftforge/fluids/FluidType;)Z
-forge net/minecraft/world/entity/monster/cubemob/MagmaCube#lambda$jumpInFluid$1(Lnet/minecraftforge/fluids/FluidType;)V
-forge net/minecraft/world/entity/projectile/arrow/AbstractArrow#lambda$tick$0(Lnet/minecraftforge/fluids/FluidType;Ljava/lang/Double;)Z
 forge net/minecraft/world/entity/raid/Raider#access$000(Lnet/minecraft/world/entity/raid/Raider;)Lnet/minecraft/util/RandomSource;
 forge net/minecraft/world/entity/raid/Raider#access$200(Lnet/minecraft/world/entity/raid/Raider;)Z
 forge net/minecraft/world/entity/vehicle/minecart/MinecartSpawner$1#getSpawnerEntity()Lnet/minecraft/world/entity/Entity;
-forge net/minecraft/world/item/AxeItem#canPerformAction(Lnet/minecraft/world/item/ItemStack;Lnet/minecraftforge/common/ToolAction;)Z
-forge net/minecraft/world/item/FishingRodItem#canPerformAction(Lnet/minecraft/world/item/ItemStack;Lnet/minecraftforge/common/ToolAction;)Z
-forge net/minecraft/world/item/HoeItem#canPerformAction(Lnet/minecraft/world/item/ItemStack;Lnet/minecraftforge/common/ToolAction;)Z
 forge net/minecraft/world/item/Item$Properties#lambda$delayedHolderComponent$0(Lnet/minecraft/core/component/DataComponentType;Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/core/component/DataComponentMap$Builder;Lnet/minecraft/core/HolderLookup$Provider;Lnet/minecraft/resources/ResourceKey;)V
 forge net/minecraft/world/item/Item$TooltipContext$2#<init>(Lnet/minecraft/world/level/Level;)V
-forge net/minecraft/world/item/Items#lambda$registerBlock$1([Lnet/minecraft/world/level/block/Block;Lnet/minecraft/world/level/block/Block;Lnet/minecraft/world/item/Item$Properties;)Lnet/minecraft/world/item/Item;
-forge net/minecraft/world/item/Items$1#removeFromBlockToItemMap(Ljava/util/Map;Lnet/minecraft/world/item/Item;)V
-forge net/minecraft/world/item/ShearsItem#canPerformAction(Lnet/minecraft/world/item/ItemStack;Lnet/minecraftforge/common/ToolAction;)Z
-forge net/minecraft/world/item/ShovelItem#canPerformAction(Lnet/minecraft/world/item/ItemStack;Lnet/minecraftforge/common/ToolAction;)Z
 forge net/minecraft/world/item/component/ResolvableProfile#lambda$create$2(Lnet/minecraft/world/entity/player/PlayerSkin$Patch;Ljava/lang/String;)Lnet/minecraft/world/item/component/ResolvableProfile$Dynamic;
 forge net/minecraft/world/item/component/ResolvableProfile#lambda$create$3(Lnet/minecraft/world/item/component/ResolvableProfile$Partial;Lnet/minecraft/world/entity/player/PlayerSkin$Patch;)Lnet/minecraft/world/item/component/ResolvableProfile$Dynamic;
-forge net/minecraft/world/item/enchantment/EnchantmentHelper#lambda$getAvailableEnchantmentResults$0(Lnet/minecraft/world/item/ItemStack;ZLnet/minecraft/core/Holder;)Z
-forge net/minecraft/world/item/enchantment/EnchantmentHelper#lambda$getAvailableEnchantmentResults$1(ILjava/util/List;Lnet/minecraft/core/Holder;)V
-forge net/minecraft/world/item/enchantment/EnchantmentHelper#lambda$processEquipmentDropChance$1(Lnet/minecraft/world/level/storage/loot/LootContext;Lorg/apache/commons/lang3/mutable/MutableFloat;ILnet/minecraft/util/RandomSource;Lnet/minecraft/world/item/enchantment/TargetedConditionalEffect;)V
-forge net/minecraft/world/item/enchantment/EnchantmentHelper#lambda$processEquipmentDropChance$3(Lnet/minecraft/world/level/storage/loot/LootContext;Lorg/apache/commons/lang3/mutable/MutableFloat;ILnet/minecraft/util/RandomSource;Lnet/minecraft/world/item/enchantment/TargetedConditionalEffect;)V
-forge net/minecraft/world/level/biome/Biome#modifiableBiomeInfo()Lnet/minecraftforge/common/world/ModifiableBiomeInfo;
 forge net/minecraft/world/level/block/ChiseledBookShelfBlock#lambda$createBlockStateDefinition$0(Lnet/minecraft/world/level/block/state/StateDefinition$Builder;Lnet/minecraft/world/level/block/state/properties/Property;)V
 forge net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity$2#<clinit>()V
 forge net/minecraft/world/level/block/entity/SpawnerBlockEntity$1#getSpawnerBlockEntity()Lnet/minecraft/world/level/block/entity/BlockEntity;
-forge net/minecraft/world/level/levelgen/structure/Structure#modifiableStructureInfo()Lnet/minecraftforge/common/world/ModifiableStructureInfo;
-forge net/minecraft/world/level/material/Fluid#getFluidType()Lnet/minecraftforge/fluids/FluidType;
 forge net/minecraft/world/level/portal/PortalShape#lambda$static$0(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;)Z
 library 00383ea16c8de3d089ff3c66585eddbf3ffd804c3126717fea91ba0403621d30 com.mojang:datafixerupper:10.0.21
 library 746576ea99a514f6b217eff588048d5ecfb3dffa2ce16f271a5618bc92b7adca com.mojang:logging:1.7.12
@@ -1037,17 +991,15 @@ library c9ca67f21d9058784bec87679b174694775e1c0f4ea7260a3089334ce01c7702 com.moj
 library d8b40639cb0b12d4de9e2b6c4bd5b6738bab758aefc83f16554dc211583ce2b5 com.mojang:text2speech:1.19.12
 library d9febb826f38a58ccf9e6084edff9a50305878bf495a6746c00d5989ff954eb9 com.mojang:patchy:2.2.10
 library e2b3d9019eab9e6eae007a98641dc58309c208d61955538a10df957e9468dfdb com.mojang:jtracy:1.0.37
-neoforge merged-only net/minecraft/data/tags/TagAppender$1$forbricneo
 neoforge merged-only net/minecraft/gametest/framework/GameTestHelper$5
 neoforge merged-only net/minecraft/nbt/CompoundTag$3
 neoforge merged-only net/minecraft/network/protocol/common/custom/CustomPacketPayload$1$forbricneo
 neoforge merged-only net/minecraft/world/item/crafting/Ingredient$1
 neoforge merged-only net/minecraft/world/level/block/entity/BrewingStandBlockEntity$2
+neoforge merged-only net/minecraft/world/level/chunk/ChunkGenerator$forbricProvider$a79ebeca
 neoforge net/minecraft/client/gui/screens/packs/PackSelectionModel#lambda$findNewPacks$0(Lnet/minecraft/server/packs/repository/Pack;)Z
 neoforge net/minecraft/client/gui/screens/packs/PackSelectionModel#lambda$new$0(Lnet/minecraft/server/packs/repository/Pack;)Z
 neoforge net/minecraft/client/gui/screens/packs/PackSelectionModel#lambda$new$1(Lnet/minecraft/server/packs/repository/Pack;)Z
-neoforge net/minecraft/client/gui/screens/worldselection/WorldOpenFlows#lambda$openWorldCheckWorldStemCompatibility$0(ZLnet/minecraft/server/WorldStem;Lnet/minecraft/world/level/storage/LevelStorageSource$LevelStorageAccess;Lnet/minecraft/server/packs/repository/PackRepository;Ljava/lang/Runnable;)V
-neoforge net/minecraft/client/renderer/texture/SpriteLoader#lambda$loadAndStitch$0(Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/resources/Identifier;Ljava/util/Set;)Ljava/util/List;
 neoforge net/minecraft/data/tags/TagAppender$1#<init>(Lnet/minecraft/tags/TagBuilder;)V
 neoforge net/minecraft/data/tags/TagAppender$1#add(Lnet/minecraft/tags/TagEntry;)Lnet/minecraft/data/tags/TagAppender;
 neoforge net/minecraft/data/tags/TagAppender$1#remove(Lnet/minecraft/resources/ResourceKey;)Lnet/minecraft/data/tags/TagAppender;
@@ -1055,8 +1007,7 @@ neoforge net/minecraft/data/tags/TagAppender$1#remove(Lnet/minecraft/tags/TagKey
 neoforge net/minecraft/data/tags/TagAppender$1#replace(Z)Lnet/minecraft/data/tags/TagAppender;
 neoforge net/minecraft/network/protocol/common/custom/CustomPacketPayload$1#<init>(Ljava/util/Map;Lnet/minecraft/network/ConnectionProtocol;Lnet/minecraft/network/protocol/PacketFlow;Lnet/minecraft/network/protocol/common/custom/CustomPacketPayload$FallbackProvider;)V
 neoforge net/minecraft/server/network/ServerLoginPacketListenerImpl$1#<init>(Lnet/minecraft/server/network/ServerLoginPacketListenerImpl;Ljava/lang/String;Ljava/lang/String;)V
-neoforge net/minecraft/world/entity/boss/enderdragon/EnderDragon#getParts()[Lnet/neoforged/neoforge/entity/PartEntity;
-neoforge net/minecraft/world/entity/monster/cubemob/SulfurCube#travelInFluid(Lnet/minecraft/world/phys/Vec3;)V
+neoforge net/minecraft/world/item/Items#lambda$registerBlock$1(Lnet/minecraft/world/level/block/Block;[Lnet/minecraft/world/level/block/Block;Lnet/minecraft/world/item/Item$Properties;)Lnet/minecraft/world/item/Item;
 platform fabric minecraft=26.2
 platform forge forge=65.0.1 minecraft=26.2
 platform neoforge minecraft=26.2 neoforge=26.2.0.88

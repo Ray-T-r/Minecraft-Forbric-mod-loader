@@ -16,22 +16,9 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Points an injector at the merged body's occurrence of a vanilla call where the carrier makes that call fewer times than
- * vanilla — it replaced some occurrences with calls of its own and kept the others — so an ordinal the mod counted on
- * vanilla's body names the same call on the merged one.
- *
- * <p>ViaFabricPlus' 1.12.2 block placement hooks {@code MultiPlayerGameMode.performUseItemOn} before its third
- * {@code ItemStack.isEmpty()}. Vanilla asks {@code isEmpty} of the main- and off-hand stacks for the sneak check, then of
- * the stack in the hand before its cooldown; NeoForge (and MinecraftForge) ask {@code doesSneakBypassUse} of the two hand
- * stacks instead, so the merged body's only {@code isEmpty} is vanilla's third. Ordinal 2 found nothing there, the
- * required injector bound nowhere, and the strict policy stopped the client as soon as a world loaded.
- *
- * <p>Only along a {@link Site} row, which maps each of vanilla's occurrences to the merged one or to none, says why, and
- * names the call each kept occurrence is followed by; only while the merged method makes the call exactly as often as the
- * row keeps, each occurrence followed by that call; only for a mod of a listed ecosystem (one compiled against vanilla's
- * count); only an {@code @At(INVOKE)} with an ordinal and no slice, in an injector with one selector binding the row's
- * method. Any injector kind: the point lands on the same call, with the same arguments and the same result.
- * {@code -Dforbric.thinnedCallOrdinals=off} leaves every ordinal as compiled.
+ * Recounts a retained invocation only from verified source/current bytes. Receiver and argument origins,
+ * continuation operations and branch destinations must identify every surviving occurrence uniquely and in
+ * source order. Slices, callback groups, unavailable references and ambiguous origins remain untouched.
  */
 public final class ThinnedCallOrdinals {
 	public static final String PROPERTY = "forbric.thinnedCallOrdinals";
@@ -55,16 +42,6 @@ public final class ThinnedCallOrdinals {
 		}
 	}
 
-	public static final List<Site> SITES = List.of(
-			new Site("net/minecraft/client/multiplayer/MultiPlayerGameMode",
-					"performUseItemOn(Lnet/minecraft/client/player/LocalPlayer;Lnet/minecraft/world/InteractionHand;"
-							+ "Lnet/minecraft/world/phys/BlockHitResult;)Lnet/minecraft/world/InteractionResult;",
-					"Lnet/minecraft/world/item/ItemStack;isEmpty()Z", new int[] {-1, -1, 0},
-					"Lnet/minecraft/client/player/LocalPlayer;getCooldowns()Lnet/minecraft/world/item/ItemCooldowns;",
-					Set.of(Ecosystem.FABRIC),
-					"vanilla asks isEmpty of the main- and off-hand stacks for the sneak check, then of the stack in the hand "
-							+ "before its cooldown; NeoForge and MinecraftForge ask doesSneakBypassUse of the two hand stacks "
-							+ "instead and keep the third, the merged body's only one"));
 
 	private ThinnedCallOrdinals() {
 	}
@@ -75,41 +52,43 @@ public final class ThinnedCallOrdinals {
 
 	/** Re-counts every eligible point of {@code mixin}; returns how many. {@code targets} must return nodes WITH code. */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
-		if (!enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
-		Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixin.name);
-		List<String> owners = MixinOverloadPin.targetsOf(mixin);
-		if (ecosystem == null || owners.size() != 1) return 0;
-		int moved = 0;
-		for (Site site : SITES) {
-			if (!site.owner().equals(owners.getFirst()) || !site.ecosystems().contains(ecosystem)) continue;
-			ClassNode target = null;
-			for (MethodNode handler : mixin.methods) {
-				AnnotationNode injector = MixinFit.injectorOf(handler);
-				if (injector == null || MixinFit.value(injector, "slice") != null) continue;
-				List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
-				if (selectors.size() != 1) continue;
-				if (target == null) target = targets.apply(site.owner());
-				if (target == null || target.methods == null) return moved;
-				MethodNode bound = MixinStubRebind.bound(target, selectors.getFirst());
-				if (bound == null || !site.method().equals(bound.name + bound.desc) || !hostHasTheSiteShape(bound, site)) continue;
-				for (AnnotationNode at : MixinFit.atNodes(injector)) {
-					if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value")))
-							|| !sameMember(MixinFit.asString(MixinFit.value(at, "target")), site.call())
-							|| !(MixinFit.value(at, "ordinal") instanceof Integer ordinal)
-							|| ordinal < 0 || ordinal >= site.ordinals().length) continue;
-					int merged = site.ordinals()[ordinal];
-					if (merged < 0 || merged == ordinal) continue;
-					set(at, "ordinal", merged);
-					moved++;
-					ForbricLog.info("[Forbric/Mixin] %s: %s's point on %s in %s.%s is the merged body's occurrence %d of that "
-							+ "call, where vanilla's was %d — %s", mixin.name.replace('/', '.'), handler.name,
-							callName(site.call()), site.owner().replace('/', '.'), bound.name, merged,
-							ordinal, site.because());
-				}
-			}
-		}
-		return moved;
-	}
+        return adapt(mixin, targets, NativeGameReferences::reference);
+    }
+
+    /** The source seam supplies hash-verified native bytes in production and explicit original bytes in tests. */
+    static int adapt(ClassNode mixin, Function<String, ClassNode> targets,
+            java.util.function.BiFunction<Ecosystem, String, ClassNode> references) {
+        if (!enabled() || mixin == null || mixin.methods == null || targets == null || references == null) return 0;
+        Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixin.name);
+        List<String> owners = MixinOverloadPin.targetsOf(mixin);
+        if (ecosystem == null || owners.size() != 1) return 0;
+        ClassNode current = targets.apply(owners.getFirst()), original = references.apply(ecosystem, owners.getFirst());
+        if (current == null || original == null) return 0;
+        int moved = 0;
+        for (MethodNode handler : mixin.methods) {
+            AnnotationNode injector = MixinFit.injectorOf(handler);
+            if (injector == null || MixinFit.value(injector, "slice") != null || MixinFit.groupOf(handler) != null) continue;
+            List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
+            if (selectors.size() != 1) continue;
+            MethodNode before = MixinStubRebind.bound(original, selectors.getFirst());
+            MethodNode after = MixinStubRebind.bound(current, selectors.getFirst());
+            if (before == null || after == null) continue;
+            for (AnnotationNode at : MixinFit.atNodes(injector)) {
+                if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value")))
+                        || !(MixinFit.value(at, "ordinal") instanceof Integer ordinal) || ordinal < 0) continue;
+                String member = MixinFit.asString(MixinFit.value(at, "target"));
+                MixinFit.Member wanted = MixinFit.parseMember(member);
+                if (wanted == null || wanted.owner() == null || wanted.desc() == null) continue;
+                int live = CallOccurrenceAlignment.retainedOrdinal(original, before, current, after, member, ordinal);
+                if (live < 0 || live == ordinal) continue;
+                set(at, "ordinal", live); moved++;
+                ForbricLog.info("[Forbric/Mixin] %s: %s's ordinal %d → %d is proved from native/current operand "
+                        + "origins and the same next operation in %s.%s", mixin.name, handler.name, ordinal, live,
+                        current.name, after.name);
+            }
+        }
+        return moved;
+    }
 
 	/** Whether {@code method} makes the row's call exactly as often as the row keeps, each followed by the row's next call. */
 	static boolean hostHasTheSiteShape(MethodNode method, Site site) {

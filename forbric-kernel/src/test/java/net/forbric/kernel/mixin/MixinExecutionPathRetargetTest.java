@@ -179,7 +179,7 @@ class MixinExecutionPathRetargetTest {
 	private static void assertActual(String module, String name, String targetName, Map<String, String> handlers) throws Exception {
 		ClassNode mixin = StagedFabricMixinFixture.mixin(module, name), target = gameWithDebug(targetName, false);
 		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
-		MixinRetarget.Plan plan = plan(mixin, target, gameWithDebug(targetName, true));
+		MixinRetarget.Plan plan = NativeCallTestEvidence.plan(mixin,path->path.equals(target.name+".class")?StagedFabricMixinFixture.bytes(target):null);
 		for (var expected : handlers.entrySet()) assertTrue(plan.rewrites().stream().anyMatch(r -> r.handler().startsWith(expected.getKey() + "(")
 				&& r.to().contains(expected.getValue() + "(")), expected + "\n" + plan.describe());
 	}

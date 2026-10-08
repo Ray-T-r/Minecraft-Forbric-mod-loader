@@ -65,15 +65,31 @@ import net.forbric.kernel.util.ForbricLog;
  * constructor may write it); {@code BlockEntity.setRemoved} / {@code Entity.remove} → {@code invalidateCaps};
  * {@code Entity.revive} → {@code reviveCaps}; the {@code "ForgeCaps"} save/load funnels before the single
  * RETURN of {@code BlockEntity.saveAdditional/loadAdditional} and {@code Entity.saveWithoutId/load}. Saves read
- * the field without creating it (Forge's lazy {@code serializeCaps} answers the parked data likewise); loads
- * create it, parking the tag for replay on the first query — Forge's documented lazy semantics.
+ * the field without creating it; loads create the provider and replay through Forge's own deserializer.
+ * The verified native constructor gather is restored using the provider's actual eager mode.
  *
  * <p>Registered BEFORE the merged-base compat transformer, so its bare-return {@code invalidateCaps/reviveCaps}
  * stubs stand down on their own and stay the fallback for {@code -Dforbric.forgeCapabilities=off}. Each root
  * and call site stands down independently and is counted; the census line says how many landed.
  */
-public final class ForgeCapabilityCompositionTransformer implements ClassTransformer {
+public final class ForgeCapabilityCompositionTransformer implements ClassTransformer, net.forbric.api.AncestorComposition {
 	public static final String PROPERTY = "forbric.forgeCapabilities";
+	private final java.util.function.Function<String, byte[]> resources;
+	private final net.forbric.kernel.mixin.NativeGameReferences nativeReferences;
+	private final boolean transferFallback;
+	private final Map<String, ForgeCapabilityProtocol.Certificate> certificates = new java.util.concurrent.ConcurrentHashMap<>();
+	public ForgeCapabilityCompositionTransformer() { this(null); }
+	public ForgeCapabilityCompositionTransformer(java.util.function.Function<String, byte[]> resources) { this(resources, false); }
+	public ForgeCapabilityCompositionTransformer(java.util.function.Function<String, byte[]> resources, boolean transferFallback) {
+		this.resources = resources;
+		this.transferFallback = transferFallback;
+		this.nativeReferences = resources == null ? null : new net.forbric.kernel.mixin.NativeGameReferences(resources);
+	}
+	@Override public boolean proves(net.forbric.api.AncestorComposition.Requirement requirement, byte[] finalDefinition,
+			java.util.function.Function<String, byte[]> reader) {
+		ForgeCapabilityProtocol.Certificate certificate = certificates.get(requirement.owner());
+		return enabled() && certificate != null && certificate.proves(requirement, finalDefinition, reader);
+	}
 
 	static final String ENTITY = "net/minecraft/world/entity/Entity";
 	static final String BLOCK_ENTITY = "net/minecraft/world/level/block/entity/BlockEntity";
@@ -166,6 +182,8 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 		if (!TARGETS.contains(internal)) return classBytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
+		ClassNode before = new ClassNode();
+		new ClassReader(classBytes).accept(before, 0);
 		boolean changed = false;
 		if (ROOTS.contains(internal)) changed = compose(node);
 		if (BLOCK_ENTITY.equals(internal)) {
@@ -182,6 +200,10 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 			changed |= saveFunnel(node, "saveWithoutId", "(" + VALUE_OUTPUT + ")V", "saveEntity", "Entity.saveWithoutId -> ForgeCaps");
 			changed |= loadFunnel(node, "load", "(" + VALUE_INPUT + ")V", "Entity.load <- ForgeCaps");
 		}
+		if (ROOTS.contains(internal) && nativeReferences != null) {
+			ClassNode original = nativeReferences.get(net.forbric.api.Ecosystem.FORGE, internal);
+			changed |= ForgeCapabilityProtocol.restoreConstructorGather(node, original);
+		}
 		if (SERVER_LEVEL.equals(internal)) changed |= initServerLevelCapabilities(node);
 		if (LEVEL_CHUNK.equals(internal)) changed |= initLevelChunkProvider(node);
 		String lost = LOST_INITIALIZERS.get(internal);
@@ -189,6 +211,17 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 		if (!changed) return classBytes;
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
+		if (ROOTS.contains(internal) && nativeReferences != null) {
+			ClassNode original = nativeReferences.get(net.forbric.api.Ecosystem.FORGE, internal);
+			ClassNode expected = node;
+			if (transferFallback) {
+				expected = new ClassNode();
+				byte[] extended = new ForgeTransferCapabilityFallback().transform(className, writer.toByteArray(), context);
+				new ClassReader(extended).accept(expected, 0);
+			}
+			ForgeCapabilityProtocol.Certificate certificate = ForgeCapabilityProtocol.certificate(before, expected, original, resources);
+			if (certificate != null) certificates.put(internal, certificate);
+		}
 		return writer.toByteArray();
 	}
 
@@ -233,7 +266,7 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 							"(" + AS_FIELD_DESC + ")V", false),
 					new InsnNode(Opcodes.RETURN));
 		}
-		// gatherCapabilities(): creating the provider IS the gather in lazy mode
+		// gatherCapabilities(): creating and initializing the eager provider performs the native gather
 		added += add(node, "gatherCapabilities", "()V", 1, 1,
 				new VarInsnNode(Opcodes.ALOAD, 0),
 				new MethodInsnNode(Opcodes.INVOKEVIRTUAL, node.name, ACCESSOR, ACCESSOR_DESC, false),

@@ -809,7 +809,11 @@ class KernelGuestMixinAdapterTest {
 
 	// --- a pinned mixin's interface, relied on from another mod's config -----------------------------------------
 
-	private static final MergedBaseMixinCompat.PinnedContract PINNED = MergedBaseMixinCompat.PINNED_CONTRACTS.getFirst();
+	private static final MergedBaseMixinCompat.PinnedContract PINNED = new MergedBaseMixinCompat.PinnedContract(
+            "framework.mixins.json:PagerProvider", "net/minecraft/client/gui/screens/inventory/CreativeModeInventoryScreen",
+            "net/fabricmc/fabric/api/client/creativetab/v1/FabricCreativeModeInventoryScreen");
+    @org.junit.jupiter.api.BeforeEach void discoveredPinFixture(){MergedBaseMixinCompat.reset();MergedBaseMixinCompat.SUPPRESSED_MIXINS.add(PINNED.pin());MergedBaseMixinCompat.PINNED_CONTRACTS.add(PINNED);}
+    @org.junit.jupiter.api.AfterEach void clearPinFixture(){MergedBaseMixinCompat.reset();}
 
 	/**
 	 * The pinned contract in miniature, shaped as fabric-api writes it: one method only its implementer supplies

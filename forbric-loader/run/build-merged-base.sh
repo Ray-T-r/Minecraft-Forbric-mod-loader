@@ -39,11 +39,19 @@ TOOL_SOURCES=(
   "$PROJECT/src/tools/java/net/forbric/tools/AdditiveMethodMerger.java"
   "$PROJECT/src/tools/java/net/forbric/tools/RuntimeInteropPatcher.java"
   "$PROJECT/src/tools/java/net/forbric/tools/MergedLinkChecker.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/ContractGraph.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/EquivalentSuperclassBridge.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/MapContractRepair.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/FieldContractReconciler.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/MemoizedSupplierContract.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/NonNullReturnProof.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/TailHookComposition.java"
+  "$PROJECT/src/tools/java/net/forbric/tools/EmptyArrayContractBridge.java"
 )
 javac --release 17 -cp "$CP" -d "$BUILD" "${TOOL_SOURCES[@]}"
 
 echo "[build-merged-base] vanilla=$(basename "$VANILLA")  forge=$(basename "$FORGE")  neo=$(basename "$NEO")"
-java -Xmx4g -cp "$BUILD:$CP" net.forbric.tools.MergedBaseBuilder "$VANILLA" "$FORGE" "$NEO" "$OUT" "$REPORT" "$FORGE_RT" "$NEO_RT"
+java -Xmx4g -cp "$BUILD:$CP" net.forbric.tools.MergedBaseBuilder "$VANILLA" "$FORGE" "$NEO" "$OUT" "$REPORT" "$FORGE_RT" "$NEO_RT" "$MC/libraries"
 echo "[build-merged-base] merged base -> $OUT ($(du -h "$OUT" | cut -f1))"
 
 # Cross-runtime-jar interop: forge-runtime.jar's own compiled classes (wholesale, never touched by the merge
@@ -52,7 +60,7 @@ echo "[build-merged-base] merged base -> $OUT ($(du -h "$OUT" | cut -f1))"
 # single-ecosystem Forge deployment still uses standalone).
 FORGE_RT_PATCHED="${FORGE_RT_PATCHED:-$HERE/merged-base/forge-runtime-interop.jar}"
 echo "[build-merged-base] patching cross-runtime interop gaps into $FORGE_RT_PATCHED"
-java -cp "$BUILD:$CP" net.forbric.tools.RuntimeInteropPatcher "$FORGE_RT" "$FORGE_RT_PATCHED"
+java -cp "$BUILD:$CP" net.forbric.tools.RuntimeInteropPatcher "$FORGE_RT" "$FORGE_RT_PATCHED" "$OUT" "$NEO_RT" "$MC/libraries"
 
 # What the merge left pointing at nothing. A reference into a merged class that resolves nowhere is a
 # NoSuchMethodError or NoSuchFieldError waiting for whichever mod reaches it first, named after the mod rather
@@ -62,10 +70,9 @@ java -cp "$BUILD:$CP" net.forbric.tools.RuntimeInteropPatcher "$FORGE_RT" "$FORG
 # obfuscated and SRG-named classes whose references resolve nowhere by design, and the count goes from 24 to
 # over sixteen thousand.
 #
-# ENFORCED AGAINST A BASELINE, not against zero. There are known dangling references today — Forge's biome and
-# structure modifiers, its datapack condition context, and the capability methods the merge dropped — and failing
-# on the total would only mean nobody can rebuild the base. So the known set lives in a committed file and the
-# exit code means exactly one thing: this merge broke a reference it did not break before.
+# Known raw dangling references live in a committed baseline, so the exit code detects newly broken references.
+# Removed stateful ancestors require explicit final-definition composition certificates separately; they cannot
+# be licensed by adding raw references to this baseline.
 #
 # It used to end in `|| echo`, which is the same as not running it: the number appeared in scrollback and nothing
 # ever compared it to anything. A check whose result nobody compares reads green forever.

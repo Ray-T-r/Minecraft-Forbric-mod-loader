@@ -9,6 +9,9 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox;
 public class StructurePlaceSettings {
 	private final Mirror mirror;
 	private final Rotation rotation;
+	private final BlockPos pivot = new BlockPos(1,2,3);
+	private final BoundingBox box = new BoundingBox(16);
+	private final boolean finalizeEntities = true;
 
 	public StructurePlaceSettings(Mirror mirror, Rotation rotation) {
 		this.mirror = mirror;
@@ -24,15 +27,15 @@ public class StructurePlaceSettings {
 	}
 
 	public BlockPos getRotationPivot() {
-		return new BlockPos(1, 2, 3);
+		return pivot;
 	}
 
 	public BoundingBox getBoundingBox() {
-		return new BoundingBox(16);
+		return box;
 	}
 
 	public boolean shouldFinalizeEntities() {
-		return true;
+		return finalizeEntities;
 	}
 
 	public boolean isIgnoreEntities() {

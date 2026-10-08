@@ -55,7 +55,7 @@ class ReplacedCallRedirectsTest {
 	/** ViaFabricPlus' hotbar keys: the KeyEvent only reaches the call, so the handler takes NeoForge's key instead. */
 	@Test void aHotbarKeyRedirectForwardsNeoForgesKeyCheck() throws Exception {
 		ClassNode mixin = hotbar("HotbarMixin", Ecosystem.FABRIC, false);
-		assertEquals(1, ReplacedCallRedirects.adapt(mixin, merged(SCREEN)));
+		assertEquals(1, adapt(mixin, merged(SCREEN)));
 		MethodNode handler = handler(mixin);
 		assertEquals("(L" + KEY_MAPPING + ";L" + KEY + ";)Z", handler.desc);
 		AnnotationNode at = StagedFabricMixinFixture.at(mixin, "redirected");
@@ -65,13 +65,13 @@ class ReplacedCallRedirectsTest {
 		assertEquals(0, calls(handler, MATCHES));
 		assertTrue(handler.localVariables.stream().anyMatch(l -> l.index == 2 && l.desc.equals("L" + KEY + ";")), "the key's slot is named");
 		verify(mixin, handler);
-		assertEquals(0, ReplacedCallRedirects.adapt(mixin, merged(SCREEN)), "a moved redirect is not moved again");
+		assertEquals(0, adapt(mixin, merged(SCREEN)), "a moved redirect is not moved again");
 	}
 
 	/** Vanilla passed (in hand, in use); NeoForge passes (in use, in hand): the handler's own test keeps vanilla's meaning. */
 	@Test void anItemUseRedirectKeepsVanillasOrderAndForwardsNeoForgesQuestion() throws Exception {
 		ClassNode mixin = itemUse("ItemUseMixin", Ecosystem.FABRIC);
-		assertEquals(1, ReplacedCallRedirects.adapt(mixin, merged(LIVING)));
+		assertEquals(1, adapt(mixin, merged(LIVING)));
 		MethodNode handler = handler(mixin);
 		assertEquals("(L" + STACK + ";L" + STACK + ";)Z", handler.desc);
 		AnnotationNode at = StagedFabricMixinFixture.at(mixin, "redirected");
@@ -92,7 +92,7 @@ class ReplacedCallRedirectsTest {
 	/** ViaFabricPlus' shovel: no path on old servers; otherwise the call that asks the block, slice dropped. */
 	@Test void aShovelPathRedirectForwardsTheToolModification() throws Exception {
 		ClassNode mixin = shovel("ShovelMixin", false);
-		assertEquals(1, ReplacedCallRedirects.adapt(mixin, merged(SHOVEL)));
+		assertEquals(1, adapt(mixin, merged(SHOVEL)));
 		MethodNode handler = handler(mixin);
 		assertEquals("(L" + STATE + ";Lnet/minecraft/world/item/context/UseOnContext;Lnet/neoforged/neoforge/common/ItemAbility;Z)L"
 				+ STATE + ";", handler.desc);
@@ -125,7 +125,7 @@ class ReplacedCallRedirectsTest {
 	/** A row moves only its listed families' mods, only on the shape it was written for, and only while switched on. */
 	@Test void theFamilyTheHostAndTheSwitchDecide() throws Exception {
 		assertUntouched(hotbar("NeoForgeMixin", Ecosystem.NEOFORGE, false), merged(SCREEN), "NeoForge mods call NeoForge's");
-		assertEquals(1, ReplacedCallRedirects.adapt(hotbar("ForgeHotbarMixin", Ecosystem.FORGE, false), merged(SCREEN)),
+		assertEquals(1, adapt(hotbar("ForgeHotbarMixin", Ecosystem.FORGE, false), merged(SCREEN)),
 				"MinecraftForge's own screen still calls matches(KeyEvent)");
 		assertUntouched(itemUse("ForgeItemUseMixin", Ecosystem.FORGE), merged(LIVING), "MinecraftForge's own asks ForgeHooks");
 		assertUntouched(hotbar("VanillaHostMixin", Ecosystem.FABRIC, false), vanilla(SCREEN), "vanilla's call is there");
@@ -145,7 +145,7 @@ class ReplacedCallRedirectsTest {
 			for (Object[] c : cases) {
 				ClassNode mixin = MixinFit.parse(zip.getInputStream(zip.getEntry(c[0] + ".class")).readAllBytes());
 				MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
-				assertEquals(1, ReplacedCallRedirects.adapt(mixin, merged((String) c[1])), (String) c[0]);
+				assertEquals(1, adapt(mixin, merged((String) c[1])), (String) c[0]);
 				MethodNode handler = StagedFabricMixinFixture.method(mixin, (String) c[2]);
 				assertEquals(c[3], MixinFit.value(StagedFabricMixinFixture.at(mixin, (String) c[2]), "target"));
 				verify(mixin, handler);
@@ -282,7 +282,7 @@ class ReplacedCallRedirectsTest {
 
 	private static void assertUntouched(ClassNode mixin, Function<String, ClassNode> targets, String why) {
 		byte[] before = StagedFabricMixinFixture.bytes(mixin);
-		assertEquals(0, ReplacedCallRedirects.adapt(mixin, targets), why);
+		assertEquals(0, adapt(mixin, targets), why);
 		assertArrayEquals(before, StagedFabricMixinFixture.bytes(mixin), why + " — the mixin was rewritten");
 	}
 
@@ -333,4 +333,6 @@ class ReplacedCallRedirectsTest {
 		new Analyzer<>(new BasicVerifier()).analyze(reread.name, reread.methods.stream()
 				.filter(m -> m.name.equals(handler.name)).findFirst().orElseThrow());
 	}
+    private static int adapt(ClassNode mixin, java.util.function.Function<String,ClassNode> targets){return ReplacedCallRedirects.adapt(mixin,targets,NativeCallTestEvidence.staged());}
+
 }

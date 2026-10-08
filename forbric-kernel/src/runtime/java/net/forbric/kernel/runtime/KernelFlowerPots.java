@@ -29,32 +29,31 @@ import net.neoforged.neoforge.registries.GameData;
  * vanilla or Fabric pot is in that table too: NeoForge's (Block, Properties) constructor names the vanilla empty pot.
  */
 public final class KernelFlowerPots {
-	private static volatile boolean warned;
-
 	private KernelFlowerPots() {
 	}
 
-	/** The full pot {@code content} makes in {@code self}'s empty pot, or air. Never throws. */
+	/** The full pot {@code content} makes in {@code self}'s empty pot, or air. Supplier failures remain visible. */
 	public static Block fullPotFor(Map<?, ?> explicit, FlowerPotBlock self, Block content) {
-		try {
 			if (explicit != null && !explicit.isEmpty()) {
 				Identifier key = BuiltInRegistries.BLOCK.getKey(content);
 				// An unregistered block answers the default key (air); that is not a request for the air slot.
 				boolean aliased = content != Blocks.AIR && key.equals(BuiltInRegistries.BLOCK.getDefaultKey());
-				if (!aliased && explicit.get(key) instanceof Supplier<?> supplier && supplier.get() instanceof Block full) {
-					return full;
+				if (!aliased && explicit.containsKey(key)) {
+					return (Block)((Supplier<?>)explicit.get(key)).get();
 				}
 			}
 			Block full = GameData.getFlowerPotBlockTable().get(self.getEmptyPot(), content);
 			return full != null ? full : Blocks.AIR;
-		} catch (Throwable failure) {
-			if (!warned) {
-				warned = true;
-				ForbricLog.warn("[Forbric/FlowerPot] could not look up the full pot for %s (%s); the pot stays empty",
-						content, Reflect.unwrap(failure));
-			}
-			return Blocks.AIR;
-		}
+	}
+	/** Decorates the SDK's already computed answer; native guards and table reads have already happened once. */
+	public static Block fullPotOrNative(Block nativeAnswer,Map<?,?> explicit,FlowerPotBlock empty,Block content){
+		if(explicit!=null&&!explicit.isEmpty()){Identifier key=BuiltInRegistries.BLOCK.getKey(content);boolean aliased=content!=Blocks.AIR&&key.equals(BuiltInRegistries.BLOCK.getDefaultKey());
+			if(!aliased&&explicit.containsKey(key))return (Block)((Supplier<?>)explicit.get(key)).get();}
+		return nativeAnswer;
+	}
+	/** A legacy query has already evaluated its explicit supplier. Only its absent-entry AIR answer needs the shared table. */
+	public static Block legacyPotOrNative(Block nativeAnswer,FlowerPotBlock empty,Block content){
+		if(nativeAnswer!=Blocks.AIR)return nativeAnswer;Block full=GameData.getFlowerPotBlockTable().get(empty,content);return full==null?nativeAnswer:full;
 	}
 
 	/**

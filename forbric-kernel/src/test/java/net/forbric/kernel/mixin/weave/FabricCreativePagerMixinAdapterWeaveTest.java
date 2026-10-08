@@ -89,7 +89,7 @@ class FabricCreativePagerMixinAdapterWeaveTest {
 
 	private static WeaveHarness.Result run(String label, String adapter) throws Exception {
 		return WeaveHarness.run(work, label, fixture, CONFIG, MOD, Ecosystem.FABRIC, EnvType.CLIENT,
-				"fixture.fabriccreativepager.Probe", "run", Map.of(FabricCreativePagerMixinAdapter.PROPERTY, adapter));
+				"fixture.fabriccreativepager.Probe", "run", Map.of(FabricCreativePagerMixinAdapter.PROPERTY,adapter,"forbric.mergedBaseCompat","off"));
 	}
 
 	private static List<Path> sources() throws Exception {

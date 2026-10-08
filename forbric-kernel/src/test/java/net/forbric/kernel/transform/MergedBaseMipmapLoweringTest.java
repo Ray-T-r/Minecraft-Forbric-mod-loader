@@ -1,205 +1,60 @@
-/*
- * Copyright 2026 The Forbric Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+/* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.transform;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-
+import static org.junit.jupiter.api.Assertions.*;
+import java.nio.file.*;
+import java.util.*;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.parallel.ResourceLock;
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.tree.AbstractInsnNode;
-import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.FieldInsnNode;
-import org.objectweb.asm.tree.InsnNode;
-import org.objectweb.asm.tree.JumpInsnNode;
-import org.objectweb.asm.tree.LabelNode;
-import org.objectweb.asm.tree.MethodInsnNode;
-import org.objectweb.asm.tree.MethodNode;
-import org.objectweb.asm.tree.analysis.Analyzer;
-import org.objectweb.asm.tree.analysis.BasicVerifier;
-
+import org.junit.jupiter.api.io.TempDir;
+import org.objectweb.asm.*;
+import org.objectweb.asm.tree.*;
+import org.objectweb.asm.tree.analysis.*;
+import net.fabricmc.api.EnvType;
 import net.forbric.kernel.TestFixtures;
-import net.forbric.kernel.TestFixtures.Fixture;
 
-/**
- * Lowering an atlas's mip level to fit its smallest sprite is vanilla behaviour. MinecraftForge patches
- * {@code SpriteLoader.stitch} to gate it on {@code ForgeConfig.CLIENT.allowMipmapLowering()}, whose default is
- * FALSE, and the byte merge kept that half — so one ecosystem's opt-out bound all three.
- *
- * <p>What it cost: the Logistics mod's own atlas holds an 8x8 sprite, the GPU refused the upload
- * ("mipLevels must be at most 4 for a texture of width 8 and height 8"), the FIRST resource reload died, vanilla
- * dropped every pack and reloaded into the same failure, and the client rendered a black screen for the rest of
- * the run — no crash report and no further log line.
- */
-@ResourceLock("system-properties")
 class MergedBaseMipmapLoweringTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
-	private static final String SPRITE_LOADER = "net/minecraft/client/renderer/texture/SpriteLoader";
-	private static final String FORGE_CLIENT = "net/minecraftforge/common/ForgeConfig$Client";
-
-	@Test
-	void theRealMergedBaseHasTheGateAndLosesItAndStaysVerifiable() throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED_BASE), "staged merged base absent — skipping real-bytecode check");
-		ClassNode before = parse(readClass(SPRITE_LOADER + ".class"));
-		assertEquals(1, gateCount(before),
-				"the merged base must still carry MinecraftForge's opt-in gate — if it stopped, re-derive this test");
-
-		byte[] out = transform(readClass(SPRITE_LOADER + ".class"));
-		ClassNode after = parse(out);
-		assertEquals(0, gateCount(after), "no call to allowMipmapLowering may survive");
-		assertFalse(namesForgeClientConfig(after), "and nothing may still read ForgeConfig.CLIENT for it");
-
-		for (MethodNode method : after.methods) new Analyzer<>(new BasicVerifier()).analyze(after.name, method);
-	}
-
-	@Test
-	void theGateBecomesAConstantTrueSoTheBranchAlwaysLowers() {
-		byte[] out = transform(spriteLoaderWithGate());
-		MethodNode stitch = method(parse(out), "stitch", "()I");
-		assertNotNull(stitch);
-		// ICONST_1 where the two-instruction read used to be: same stack shape at the branch, no new jump, so the
-		// frames this transformer does not recompute still describe the method.
-		AbstractInsnNode first = firstReal(stitch);
-		assertEquals(Opcodes.ICONST_1, first.getOpcode(), "the gate must be a constant true");
-		assertEquals(Opcodes.IFEQ, first.getNext().getOpcode(), "and MinecraftForge's own branch must still be there");
-	}
-
-	@Test
-	void theSwitchLeavesMinecraftForgesGateInPlace() {
-		byte[] in = spriteLoaderWithGate();
-		System.setProperty(ForbricMergedBaseCompatTransformer.MIPMAP_PROPERTY, "off");
-		try {
-			assertSame(in, transform(in), "-Dforbric.mipmapLowering=off must hand the decision back to the config");
-		} finally {
-			System.clearProperty(ForbricMergedBaseCompatTransformer.MIPMAP_PROPERTY);
-		}
-	}
-
-	@Test
-	void aSecondPassLeavesTheRepairedClassAlone() {
-		byte[] once = transform(spriteLoaderWithGate());
-		assertSame(once, transform(once), "there is no gate left to force");
-	}
-
-	@Test
-	void otherClassesAreNotTouched() {
-		ClassNode node = new ClassNode();
-		node.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "net/minecraft/client/renderer/texture/NotSpriteLoader", null,
-				"java/lang/Object", null);
-		node.methods.add(gatedStitch());
-		byte[] in = write(node);
-		assertSame(in, new ForbricMergedBaseCompatTransformer().transform(node.name.replace('/', '.'), in, null));
-	}
-
-	// --- helpers -------------------------------------------------------------------------------------------------
-
-	private static int gateCount(ClassNode node) {
-		int count = 0;
-		for (MethodNode method : node.methods) {
-			for (AbstractInsnNode insn : method.instructions) {
-				if (insn instanceof MethodInsnNode call && FORGE_CLIENT.equals(call.owner)
-						&& "allowMipmapLowering".equals(call.name)) {
-					count++;
-				}
-			}
-		}
-		return count;
-	}
-
-	private static boolean namesForgeClientConfig(ClassNode node) {
-		for (MethodNode method : node.methods) {
-			for (AbstractInsnNode insn : method.instructions) {
-				if (insn instanceof FieldInsnNode field && field.desc.contains("ForgeConfig$Client")) return true;
-			}
-		}
-		return false;
-	}
-
-	/** {@code if (ForgeConfig.CLIENT.allowMipmapLowering()) return 3; return 4;} — MinecraftForge's shape. */
-	private static MethodNode gatedStitch() {
-		MethodNode stitch = new MethodNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "stitch", "()I", null, null);
-		LabelNode skip = new LabelNode();
-		stitch.instructions.add(new FieldInsnNode(Opcodes.GETSTATIC, "net/minecraftforge/common/ForgeConfig",
-				"CLIENT", "L" + FORGE_CLIENT + ";"));
-		stitch.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, FORGE_CLIENT, "allowMipmapLowering",
-				"()Z", false));
-		stitch.instructions.add(new JumpInsnNode(Opcodes.IFEQ, skip));
-		stitch.instructions.add(new InsnNode(Opcodes.ICONST_3));
-		stitch.instructions.add(new InsnNode(Opcodes.IRETURN));
-		stitch.instructions.add(skip);
-		stitch.instructions.add(new InsnNode(Opcodes.ICONST_4));
-		stitch.instructions.add(new InsnNode(Opcodes.IRETURN));
-		stitch.maxStack = 1;
-		stitch.maxLocals = 0;
-		return stitch;
-	}
-
-	private static byte[] spriteLoaderWithGate() {
-		ClassNode node = new ClassNode();
-		node.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, SPRITE_LOADER, null, "java/lang/Object", null);
-		node.methods.add(gatedStitch());
-		return write(node);
-	}
-
-	private static AbstractInsnNode firstReal(MethodNode method) {
-		for (AbstractInsnNode insn : method.instructions) if (insn.getOpcode() >= 0) return insn;
-		throw new AssertionError("no instructions");
-	}
-
-	private static MethodNode method(ClassNode node, String name, String desc) {
-		for (MethodNode m : node.methods) if (m.name.equals(name) && m.desc.equals(desc)) return m;
-		return null;
-	}
-
-	private static byte[] transform(byte[] bytes) {
-		return new ForbricMergedBaseCompatTransformer().transform(SPRITE_LOADER.replace('/', '.'), bytes, null);
-	}
-
-	private static ClassNode parse(byte[] bytes) {
-		ClassNode node = new ClassNode();
-		new ClassReader(bytes).accept(node, 0);
-		return node;
-	}
-
-	private static byte[] write(ClassNode node) {
-		ClassWriter writer = new ClassWriter(0);
-		node.accept(writer);
-		return writer.toByteArray();
-	}
-
-	private static byte[] readClass(String entry) throws Exception {
-		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
-			ZipEntry found = zip.getEntry(entry);
-			assertNotNull(found, entry + " is not in the merged base");
-			try (InputStream in = zip.getInputStream(found)) {
-				return in.readAllBytes();
-			}
-		}
-	}
+    @TempDir Path root;
+    @Test void theRealGateKeepsItsGetterAndOnlyTheSelectedLevelIsBounded() throws Exception {
+        Path base=TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+        TestFixtures.requireFiles(TestFixtures.Fixture.STAGED,"real atlas allocation",base);
+        byte[] raw;try(var zip=new java.util.zip.ZipFile(base.toFile())){raw=zip.getInputStream(zip.getEntry("net/minecraft/client/renderer/texture/SpriteLoader.class")).readAllBytes();}
+        byte[] result=new ForbricMergedBaseCompatTransformer().transform("net.minecraft.client.renderer.texture.SpriteLoader",raw,null);
+        assertNotSame(raw,result);ClassNode after=parse(result);int getter=0,bound=0;
+        for(var method:after.methods){new Analyzer<>(new BasicVerifier()).analyze(after.name,method);for(var instruction:method.instructions)if(instruction instanceof MethodInsnNode call){if(call.name.equals("allowMipmapLowering"))getter++;if(call.owner.equals("net/forbric/api/MipLevelLimits"))bound++;}}
+        assertEquals(1,getter);assertEquals(1,bound);
+    }
+    private Map<String,byte[]> fixture(boolean valid) throws Exception {
+        return InjectorExecution.compile(root,Map.of(
+            "net.minecraft.util.Mth","package net.minecraft.util; public class Mth {public static int log2(int size){return 31-Integer.numberOfLeadingZeros(size);}}",
+            "net.minecraft.client.renderer.texture.Stitcher","package net.minecraft.client.renderer.texture; public class Stitcher {public final int level; public Stitcher(int w,int h,int selected,int other){level=selected;}}",
+            "unknown.images.Atlas","""
+                package unknown.images;
+                public class Atlas {
+                    public static boolean configured; public static int calls;
+                    public static boolean policy(){calls++; return configured;}
+                    public int stitch(int requested,int imageSize){
+                        int maximum=%s; int selected;
+                        if(maximum<requested && policy()) selected=maximum; else selected=requested;
+                        return new net.minecraft.client.renderer.texture.Stitcher(16,16,selected,0).level;
+                    }
+                }
+                """.formatted(valid?"net.minecraft.util.Mth.log2(imageSize)":"imageSize")));
+    }
+    @Test void arbitraryAtlasNamesPreserveConfigurationEffectsAndStayWithinImageLimits() throws Throwable {
+        Map<String,byte[]> classes=new HashMap<>(fixture(true));byte[] raw=classes.get("unknown/images/Atlas");
+        byte[] out=InjectorExecution.transform(new ForbricMergedBaseCompatTransformer(),"unknown.images.Atlas",raw,EnvType.CLIENT);
+        assertNotSame(raw,out);classes.put("unknown/images/Atlas",out);ClassLoader loader=InjectorExecution.load(classes);
+        assertEquals("",InjectorExecution.verify(out,loader));Class<?> atlas=loader.loadClass("unknown.images.Atlas");Object receiver=InjectorExecution.construct(atlas);
+        assertEquals(3,InjectorExecution.invoke(receiver,"stitch",4,8));assertEquals(1,atlas.getField("calls").get(null));
+        atlas.getField("configured").set(null,true);assertEquals(3,InjectorExecution.invoke(receiver,"stitch",4,8));assertEquals(2,atlas.getField("calls").get(null));
+        assertEquals(2,InjectorExecution.invoke(receiver,"stitch",2,8));assertEquals(2,atlas.getField("calls").get(null),"valid original path does not consult configuration");
+        assertSame(out,new ForbricMergedBaseCompatTransformer().transform("unknown.images.Atlas",out,null));
+    }
+    @Test void unrelatedIntegerBoundsAndTheOffControlDoNotChangeTheMethod() throws Exception {
+        byte[] invalid=fixture(false).get("unknown/images/Atlas");assertSame(invalid,new ForbricMergedBaseCompatTransformer().transform("unknown.images.Atlas",invalid,null));
+        byte[] valid=fixture(true).get("unknown/images/Atlas");String old=System.setProperty(ForbricMergedBaseCompatTransformer.MIPMAP_PROPERTY,"off");
+        try{assertSame(valid,new ForbricMergedBaseCompatTransformer().transform("unknown.images.Atlas",valid,null));}
+        finally{if(old==null)System.clearProperty(ForbricMergedBaseCompatTransformer.MIPMAP_PROPERTY);else System.setProperty(ForbricMergedBaseCompatTransformer.MIPMAP_PROPERTY,old);}
+    }
+    private static ClassNode parse(byte[] bytes){ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return node;}
 }

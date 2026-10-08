@@ -33,13 +33,11 @@ class ThinnedCallOrdinalsWeaveTest {
 	private static final String TARGET = "net/minecraft/client/multiplayer/MultiPlayerGameMode";
 	private static final String HOOKED = WeaveHarnessMain.DONE + " block,old-client:stone,use:stone";
 	private static final String PLAIN = WeaveHarnessMain.DONE + " block,use:stone";
-	private static final String MOVED_LOG = "[Forbric/Mixin] com.example.oldclient.mixin.PlaceMixin: place's point on "
-			+ "ItemStack.isEmpty in net.minecraft.client.multiplayer.MultiPlayerGameMode.performUseItemOn is the merged body's "
-			+ "occurrence 0 of that call, where vanilla's was 2";
+	private static final String MOVED_LOG = "[Forbric/Mixin] com/example/oldclient/mixin/PlaceMixin: place's ordinal 2 → 0 is proved";
 
 	@TempDir static Path work;
 	private static Path fixture;
-	private static WeaveHarness.Result moved, off;
+	private static WeaveHarness.Result moved, off, nativeRun;
 
 	@BeforeAll static void weaveBothWays() throws Exception {
 		List<Path> sources;
@@ -47,12 +45,24 @@ class ThinnedCallOrdinalsWeaveTest {
 			sources = walk.filter(p -> p.toString().endsWith(".java")).sorted().toList();
 		}
 		assertEquals(10, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
-		fixture = WeaveHarness.fixture(work, "thinnedcall", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
+		Path nativeSource = Files.createDirectories(work.resolve("native-source")).resolve("MultiPlayerGameMode.java");
+		Files.writeString(nativeSource, Files.readString(SOURCES.resolve(TARGET + ".java")).replace("doesSneakBypassUse()", "isEmpty()"));
+		List<Path> originalSources = new java.util.ArrayList<>(sources);
+		originalSources.remove(SOURCES.resolve(TARGET + ".java")); originalSources.add(nativeSource);
+		Path nativeFixture = WeaveHarness.fixture(work, "native-thinnedcall", originalSources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
+		byte[] original;
+		try (var zip = new java.util.zip.ZipFile(nativeFixture.toFile())) { original = zip.getInputStream(zip.getEntry(TARGET + ".class")).readAllBytes(); }
+		Path binary = work.resolve("native.bin"), index = work.resolve("native-index.tsv"); Files.write(binary, original);
+		Files.writeString(index, "# forbric-native-reference-v1\n" + TARGET + "\t" + java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(original)) + "\n");
+		String prefix = "META-INF/forbric/native-reference/FABRIC/";
+		fixture = WeaveHarness.fixture(work, "thinnedcall", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG), prefix + "index.tsv", index, prefix + TARGET + ".class.bin", binary));
+		nativeRun = WeaveHarness.run(work, "native", nativeFixture, CONFIG, MOD, Ecosystem.FABRIC, EnvType.CLIENT, "fixture.thinnedcall.Probe", "probe", Map.of());
 		moved = run("moved", Map.of());
 		off = run("off", Map.of(ThinnedCallOrdinals.PROPERTY, "off"));
 	}
 
 	@Test void theHookRunsBeforeTheStackInTheHandIsUsed() throws Exception {
+		assertTrue(nativeRun.printedLine(HOOKED), nativeRun.describe());
 		assertTrue(movedHolds(moved), moved.describe() + "\nfindings: " + moved.findings());
 		WeaveHarness.assertWovenAndVerified(moved, TARGET, fixture);
 	}

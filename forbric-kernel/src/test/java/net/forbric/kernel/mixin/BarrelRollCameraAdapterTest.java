@@ -17,7 +17,8 @@ class BarrelRollCameraAdapterTest {
 	@AfterEach void reset(){System.clearProperty(MixinCameraRollAdapter.PROPERTY);}
 	@Test void actualModBindsOrdinaryMirroredAndBedCallsAndKeepsShareSlotValid() throws Exception {
 		ClassNode mixin=mixin(),camera=camera();var ordinary=handler(mixin,"doABarrelRoll$addRoll1");
-		assertEquals(4,MixinCameraRollAdapter.adapt(mixin,n->camera));
+		int changed=MixinCameraRollAdapter.adapt(mixin,n->n.equals(MixinCameraRollAdapter.CAMERA)?camera:event(),(family,n)->nativeCamera());
+        assertEquals(4,changed);
 		assertEquals("(Lnet/minecraft/client/Camera;FFFLcom/llamalad7/mixinextras/sugar/ref/LocalFloatRef;)Z",ordinary.desc);
 		assertTrue(ordinary.instructions.iterator().hasNext());
 		assertTrue(java.util.stream.StreamSupport.stream(Spliterators.spliteratorUnknownSize(ordinary.instructions.iterator(),0),false).anyMatch(i->i instanceof VarInsnNode v&&v.getOpcode()==Opcodes.ALOAD&&v.var==5));
@@ -26,14 +27,18 @@ class BarrelRollCameraAdapterTest {
 		assertEquals(List.of("setRotation(FFF)V"),MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(handler(mixin,"doABarrelRoll$setRoll")),"method")));
 		for(var m:mixin.methods)new Analyzer<>(new BasicVerifier()).analyze(mixin.name,m);
 		ClassWriter w=new ClassWriter(ClassWriter.COMPUTE_MAXS);mixin.accept(w);ClassNode reread=new ClassNode();new ClassReader(w.toByteArray()).accept(reread,ClassReader.EXPAND_FRAMES);for(var m:reread.methods)new Analyzer<>(new BasicVerifier()).analyze(reread.name,m);
-		assertEquals(0,MixinCameraRollAdapter.adapt(mixin,n->camera));
+		assertEquals(0,MixinCameraRollAdapter.adapt(mixin,n->n.equals(MixinCameraRollAdapter.CAMERA)?camera:event(),(family,n)->nativeCamera()));
+        assertEquals(0,MixinCameraRollAdapter.adapt(reread,n->n.equals(MixinCameraRollAdapter.CAMERA)?camera:event(),(family,n)->nativeCamera()));
 	}
 	@Test void vanillaShapeOffSwitchAndUnexpectedCarrierShapeRemainUntouched() throws Exception {
-		ClassNode mixin=mixin(),camera=camera();System.setProperty(MixinCameraRollAdapter.PROPERTY,"off");assertEquals(0,MixinCameraRollAdapter.adapt(mixin,n->camera));reset();
+		ClassNode mixin=mixin(),camera=camera();System.setProperty(MixinCameraRollAdapter.PROPERTY,"off");assertEquals(0,MixinCameraRollAdapter.adapt(mixin,n->n.equals(MixinCameraRollAdapter.CAMERA)?camera:event(),(family,n)->nativeCamera()));reset();
 		MethodNode align=handler(camera,"alignWithEntity");for(var i:align.instructions)if(i instanceof MethodInsnNode c&&c.name.equals("setRotation"))c.desc="(FF)V";
-		assertEquals(0,MixinCameraRollAdapter.adapt(mixin,n->camera));
+		assertEquals(0,MixinCameraRollAdapter.adapt(mixin,n->n.equals(MixinCameraRollAdapter.CAMERA)?camera:event(),(family,n)->nativeCamera()));
 		assertEquals(MixinCameraRollAdapter.SHORT,MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(handler(mixin,"doABarrelRoll$addRoll1"))).getFirst(),"target"));
 	}
+    private static ClassNode nativeCamera(){try{return read(Fixture.MC_LIBRARIES,TestFixtures.vanillaJar(),MixinCameraRollAdapter.CAMERA);}catch(Exception invalid){return null;}}
+    private static ClassNode event(){try{return read(Fixture.STAGED,TestFixtures.stagedRoot().resolve("neoforge-runtime/neoforge-runtime.jar"),"net/neoforged/neoforge/client/event/ViewportEvent$ComputeCameraAngles");}catch(Exception invalid){return null;}}
+
 	private static void check(ClassNode n,String name,String target,int ordinal){AnnotationNode at=MixinFit.atNodes(MixinFit.injectorOf(handler(n,name))).getFirst();assertEquals(target,MixinFit.value(at,"target"));assertEquals(ordinal,MixinFit.value(at,"ordinal"));}
 	private static MethodNode handler(ClassNode n,String name){return n.methods.stream().filter(m->m.name.equals(name)).findFirst().orElseThrow();}
 	private static ClassNode mixin() throws Exception {return read(Fixture.THIRD_PARTY,Path.of("build/compat-inputs/c2me-barrel-20261001/do_a_barrel_roll-fabric-3.8.4+26.2.jar"),"nl/enjarai/doabarrelroll/mixin/client/roll/CameraMixin");}

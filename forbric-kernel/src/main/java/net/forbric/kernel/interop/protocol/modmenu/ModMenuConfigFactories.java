@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package net.forbric.kernel.fabric;
+package net.forbric.kernel.interop.protocol.modmenu;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;

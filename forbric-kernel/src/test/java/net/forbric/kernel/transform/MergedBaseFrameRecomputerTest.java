@@ -142,12 +142,9 @@ class MergedBaseFrameRecomputerTest {
 	 * The cheap gate matches it by prefix; the precise check must not.
 	 */
 	@Test
-	void theTypeItemStackKeptIsNotTreatedAsLost() {
-		assertFalse(MergedBaseFrameRecomputer.LOST_ANCESTORS
-						.contains("net/minecraftforge/common/capabilities/CapabilityProvider$ItemStacks"),
-				"ItemStack still extends it — rewriting a class for naming it would be work for nothing, and "
-						+ "would widen a frame that was already right");
-	}
+    void theTypeItemStackKeptIsNotTreatedAsLost() throws Exception {
+        assertTrue(recomputer().assignable("net/minecraftforge/common/capabilities/CapabilityProvider$ItemStacks", "net/minecraft/world/item/ItemStack"));
+    }
 
 	/** Named in the constant pool but never in a frame: the gate fires, the precise check must not. */
 	@Test

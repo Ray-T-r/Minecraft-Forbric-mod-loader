@@ -25,6 +25,7 @@ public class Probe {
 		ScreenEvents.afterExtract(inventory).register((screen, graphics, x, y, tick) -> graphics.draws.add("after:" + screen.name()));
 		GuiGraphicsExtractor graphics = new GuiGraphicsExtractor();
 		gui.extractRenderState(graphics, 3, 4, 0.5f);
+		graphics = gui.lastGraphics;
 
 		SubmitNodeCollector collector = new SubmitNodeCollector();
 		new LevelRenderer().submitBlockDestroyAnimation(new PoseStack(), collector, new LevelRenderState());

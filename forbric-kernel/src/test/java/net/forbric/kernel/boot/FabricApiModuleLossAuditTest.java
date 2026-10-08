@@ -48,6 +48,37 @@ class FabricApiModuleLossAuditTest {
 	private static final String SETUP_CALLBACK = "net/fabricmc/fabric/api/event/registry/DynamicRegistrySetupCallback";
 
 	private List<ModCatalog.Entry> previous;
+    private static final String SOURCE_PIN="source-structure.mixins.json:PagerProtocol";
+    /** Discovery uses executable source state ownership; naming the API without its provider supplies no evidence. */
+    private static void discoverPagerProvider() {
+        ClassWriter writer=new ClassWriter(0);String owner="fixture/PagerProtocol";
+        writer.visit(Opcodes.V21,Opcodes.ACC_PUBLIC,owner,null,"java/lang/Object",new String[]{CREATIVE});
+        var mixin=writer.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;",true);var targets=mixin.visitArray("targets");targets.visit(null,"net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen");targets.visitEnd();mixin.visitEnd();
+        writer.visitField(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,"ownPage","I",null,null).visitEnd();
+        var getter=writer.visitMethod(Opcodes.ACC_PUBLIC,"getCurrentPage","()I",null,null);getter.visitCode();getter.visitFieldInsn(Opcodes.GETSTATIC,owner,"ownPage","I");getter.visitInsn(Opcodes.IRETURN);getter.visitMaxs(1,1);getter.visitEnd();
+        var setter=writer.visitMethod(Opcodes.ACC_PUBLIC,"switchToPage","(I)Z",null,null);setter.visitCode();setter.visitVarInsn(Opcodes.ILOAD,1);setter.visitFieldInsn(Opcodes.PUTSTATIC,owner,"ownPage","I");setter.visitInsn(Opcodes.ICONST_1);setter.visitInsn(Opcodes.IRETURN);setter.visitMaxs(1,2);setter.visitEnd();writer.visitEnd();byte[] source=writer.toByteArray();
+        byte[] config="{\"package\":\"fixture\",\"client\":[\"PagerProtocol\"]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        net.forbric.kernel.mixin.KernelGuestMixinAdapter.unfitMixins("source-structure.mixins.json",config,path->path.equals(owner+".class")?source:null,net.fabricmc.api.EnvType.CLIENT);
+    }
+
+    private static void discoverRegistryProvider() {
+        String owner="fixture/RegistryContext";
+        org.objectweb.asm.tree.ClassNode source=new org.objectweb.asm.tree.ClassNode();source.version=Opcodes.V21;source.access=Opcodes.ACC_PUBLIC;source.name=owner;source.superName="java/lang/Object";
+        var mixin=new org.objectweb.asm.tree.AnnotationNode("Lorg/spongepowered/asm/mixin/Mixin;");mixin.values=new java.util.ArrayList<>(List.of("targets",List.of("net.minecraft.resources.RegistryDataLoader")));source.visibleAnnotations=new java.util.ArrayList<>(List.of(mixin));
+        source.fields.add(new org.objectweb.asm.tree.FieldNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC|Opcodes.ACC_FINAL,"context","Ljava/lang/ScopedValue;",null,null));
+        var init=new org.objectweb.asm.tree.MethodNode(Opcodes.ACC_STATIC,"<clinit>","()V",null,null);init.instructions.add(new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKESTATIC,"java/lang/ScopedValue","newInstance","()Ljava/lang/ScopedValue;",false));init.instructions.add(new org.objectweb.asm.tree.FieldInsnNode(Opcodes.PUTSTATIC,owner,"context","Ljava/lang/ScopedValue;"));init.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.RETURN));init.maxStack=1;source.methods.add(init);
+        var handler=new org.objectweb.asm.tree.MethodNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,"bindContext","(Ljava/lang/Object;Ljava/util/List;Ljava/util/List;Ljava/util/concurrent/Executor;Lcom/llamalad7/mixinextras/injector/wrapoperation/Operation;)Ljava/util/concurrent/CompletableFuture;",null,null);
+        var at=new org.objectweb.asm.tree.AnnotationNode("Lorg/spongepowered/asm/mixin/injection/At;");at.values=new java.util.ArrayList<>(List.of("value","INVOKE","target","Lnet/minecraft/resources/RegistryDataLoader;load(Lnet/minecraft/resources/RegistryDataLoader$LoaderFactory;Ljava/util/List;Ljava/util/List;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;"));
+        var inject=new org.objectweb.asm.tree.AnnotationNode("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;");inject.values=new java.util.ArrayList<>(List.of("method",List.of("load"),"at",List.of(at)));handler.visibleAnnotations=new java.util.ArrayList<>(List.of(inject));handler.instructions.add(new org.objectweb.asm.tree.FieldInsnNode(Opcodes.GETSTATIC,owner,"context","Ljava/lang/ScopedValue;"));handler.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ICONST_1));handler.instructions.add(new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKESTATIC,"java/lang/Boolean","valueOf","(Z)Ljava/lang/Boolean;",false));handler.instructions.add(new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKESTATIC,"java/lang/ScopedValue","where","(Ljava/lang/ScopedValue;Ljava/lang/Object;)Ljava/lang/ScopedValue$Carrier;",false));
+        for(int slot:new int[]{4,0,1,2,3})handler.instructions.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD,slot));
+        String delegate="(Lcom/llamalad7/mixinextras/injector/wrapoperation/Operation;Ljava/lang/Object;Ljava/util/List;Ljava/util/List;Ljava/util/concurrent/Executor;)Ljava/lang/Object;";
+        handler.instructions.add(new org.objectweb.asm.tree.InvokeDynamicInsnNode("call",delegate.substring(0,delegate.indexOf(')')+1)+"Ljava/lang/ScopedValue$CallableOp;",new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC,"java/lang/invoke/LambdaMetafactory","metafactory","(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",false),org.objectweb.asm.Type.getMethodType("()Ljava/lang/Object;"),new org.objectweb.asm.Handle(Opcodes.H_INVOKESTATIC,owner,"invokeOriginal",delegate,false),org.objectweb.asm.Type.getMethodType("()Ljava/lang/Object;")));
+        handler.instructions.add(new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKEVIRTUAL,"java/lang/ScopedValue$Carrier","call","(Ljava/lang/ScopedValue$CallableOp;)Ljava/lang/Object;",false));handler.instructions.add(new org.objectweb.asm.tree.TypeInsnNode(Opcodes.CHECKCAST,"java/util/concurrent/CompletableFuture"));handler.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ARETURN));handler.maxStack=6;handler.maxLocals=5;source.methods.add(handler);
+        var invoke=new org.objectweb.asm.tree.MethodNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,"invokeOriginal",delegate,null,null);invoke.instructions.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD,0));invoke.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ICONST_4));invoke.instructions.add(new org.objectweb.asm.tree.TypeInsnNode(Opcodes.ANEWARRAY,"java/lang/Object"));for(int slot=1;slot<=4;slot++){invoke.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.DUP));invoke.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ICONST_0+slot-1));invoke.instructions.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD,slot));invoke.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.AASTORE));}invoke.instructions.add(new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKEINTERFACE,"com/llamalad7/mixinextras/injector/wrapoperation/Operation","call","([Ljava/lang/Object;)Ljava/lang/Object;",true));invoke.instructions.add(new org.objectweb.asm.tree.InsnNode(Opcodes.ARETURN));invoke.maxStack=6;invoke.maxLocals=5;source.methods.add(invoke);
+        ClassWriter writer=new ClassWriter(0);source.accept(writer);byte[] bytes=writer.toByteArray();
+        byte[] config="{\"package\":\"fixture\",\"mixins\":[\"RegistryContext\"]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        net.forbric.kernel.mixin.KernelGuestMixinAdapter.unfitMixins("source-context.mixins.json",config,path->path.equals(owner+".class")?bytes:null,net.fabricmc.api.EnvType.SERVER);
+    }
 
 	@AfterEach
 	void forget() {
@@ -114,6 +145,7 @@ class FabricApiModuleLossAuditTest {
 	void aClientOnlySurfaceIsALossOnTheClientAndNotOnTheServer() {
 		publish(entry("pager", "pager.jar", ""));
 		System.setProperty(CreativePagerBridgeInjector.PROPERTY, "off");
+        discoverPagerProvider();
 		FabricApiModuleLossAudit.note("pager.jar", classNaming(CREATIVE));
 		FabricApiModuleLossAudit.report(Side.DEDICATED_SERVER);
 		assertTrue(ModCatalog.failures().isEmpty(), "a dedicated server never opens the creative screen");
@@ -139,6 +171,7 @@ class FabricApiModuleLossAuditTest {
 		assertTrue(ModCatalog.failures().isEmpty(), "the bridge backs the interface from NeoForge's pager: " + ModCatalog.failures());
 
 		System.setProperty(CreativePagerBridgeInjector.PROPERTY, "off");
+        discoverPagerProvider();
 		FabricApiModuleLossAudit.report(Side.CLIENT);
 		ModCatalog.Entry pager = degraded("pager");
 		assertTrue(pager != null && pager.statusDetail().contains("AssertionError"), String.valueOf(pager));
@@ -150,6 +183,7 @@ class FabricApiModuleLossAuditTest {
 	void aModImplementingTheCreativeInterfaceIsToldItsMixinIsLeftOut() {
 		publish(entry("owo", "owo.jar", ""), entry("caller", "caller.jar", ""));
 		System.setProperty(CreativePagerBridgeInjector.PROPERTY, "off");
+        discoverPagerProvider();
 		FabricApiModuleLossAudit.note("owo.jar", classImplementing(CREATIVE));
 		FabricApiModuleLossAudit.note("caller.jar", classNaming(CREATIVE));
 		FabricApiModuleLossAudit.report(Side.CLIENT);
@@ -167,7 +201,8 @@ class FabricApiModuleLossAuditTest {
 	void theCreativePagerRowIsNoLossWhileFabricsOwnMixinApplies() {
 		publish(entry("owo", "owo.jar", ""), entry("caller", "caller.jar", ""));
 		System.setProperty(CreativePagerBridgeInjector.PROPERTY, "off");
-		System.setProperty("forbric.keepMixins", net.forbric.kernel.mixin.MergedBaseMixinCompat.CREATIVE_PAGER_PIN);
+        discoverPagerProvider();
+		System.setProperty("forbric.keepMixins", SOURCE_PIN);
 		try {
 			FabricApiModuleLossAudit.note("owo.jar", classImplementing(CREATIVE));
 			FabricApiModuleLossAudit.note("caller.jar", classNaming(CREATIVE));
@@ -239,6 +274,7 @@ class FabricApiModuleLossAuditTest {
 		String before = System.setProperty(net.forbric.kernel.mixin.FabricRegistryLoaderMixinAdapter.PROPERTY, "off");
 		try {
 		publish(entry("fabric-registry-sync-v0", "module.jar", ""), entry("consumer", "consumer.jar", ""));
+        discoverRegistryProvider();
 		FabricApiModuleLossAudit.note("module.jar", classNaming(SETUP_CALLBACK));
 		FabricApiModuleLossAudit.note("consumer.jar", classNaming(SETUP_CALLBACK));
 		FabricApiModuleLossAudit.report(Side.DEDICATED_SERVER);

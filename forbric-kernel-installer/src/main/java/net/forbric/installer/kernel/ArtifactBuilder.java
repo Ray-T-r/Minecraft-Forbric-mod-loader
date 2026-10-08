@@ -129,9 +129,9 @@ final class ArtifactBuilder {
 				forgeRuntime.file, neoRuntime.file,
 				out.resolve("patched-mc-merged-" + mcVersion + ".jar"),
 				out.resolve("merge-conflicts.txt"),
-				MERGED + ":" + mcVersion);
+				MERGED + ":" + mcVersion, mcDir.resolve("libraries"));
 		ArtifactResult interop = merge.interop(jvm, forgeRuntime.file,
-				out.resolve("forge-runtime-interop.jar"), FORGE_RUNTIME + ":" + mcVersion);
+				out.resolve("forge-runtime-interop.jar"), FORGE_RUNTIME + ":" + mcVersion, merged.file, neoRuntime.file, mcDir.resolve("libraries"));
 		// After the interop patch, not before: the check resolves against what actually gets staged.
 		merge.linkCheck(jvm, merged.file, neoRuntime.file, interop.file);
 

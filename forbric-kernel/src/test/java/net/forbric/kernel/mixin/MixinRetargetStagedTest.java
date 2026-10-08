@@ -62,7 +62,7 @@ class MixinRetargetStagedTest {
 			assertEquals(MixinFit.Verdict.PARTIAL, raw.verdict(), entry + " premise: " + raw.unresolved());
 			assertTrue(raw.unresolved().stream().anyMatch(u -> u.contains("setChanged")), raw.unresolved().toString());
 
-			MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixin), resolver);
+			MixinRetarget.Plan plan = NativeCallTestEvidence.plan(MixinFit.parse(mixin), resolver);
 			assertEquals(1, plan.rewrites().size(), entry + ": " + plan.describe());
 			assertEquals(SET_ITEM_STUB, plan.rewrites().get(0).from());
 			assertEquals(SET_ITEM_DELEGATE, plan.rewrites().get(0).to());
@@ -80,7 +80,7 @@ class MixinRetargetStagedTest {
 			byte[] mixin = nested("fabric-block-api-v1", entry);
 			MixinFit.Result raw = MixinFit.evaluate(mixin, resolver);
 			assertEquals(MixinFit.Verdict.PARTIAL, raw.verdict(), entry + " premise: " + raw.unresolved());
-			MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixin), resolver);
+			MixinRetarget.Plan plan = NativeCallTestEvidence.plan(MixinFit.parse(mixin), resolver);
 			assertEquals(1, plan.rewrites().size(), entry + ": " + plan.describe());
 			assertEquals(MixinRetarget.Element.AT_TARGET, plan.rewrites().get(0).element());
 			assertEquals("Lnet/minecraft/world/level/block/state/BlockState;isEmpty()Z", plan.rewrites().get(0).to());
@@ -95,7 +95,7 @@ class MixinRetargetStagedTest {
 		Function<String, byte[]> resolver = mergedResolver();
 		byte[] mixin = nested("fabric-content-registries-v0", FUEL_VALUES_MIXIN);
 		assertEquals(MixinFit.Verdict.PARTIAL, MixinFit.evaluate(mixin, resolver).verdict(), "premise");
-		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixin), resolver);
+		MixinRetarget.Plan plan = NativeCallTestEvidence.plan(MixinFit.parse(mixin), resolver);
 		assertTrue(plan.isEmpty(), "moving it would make MixinExtras fail the @Local capture at apply time: " + plan.describe());
 	}
 

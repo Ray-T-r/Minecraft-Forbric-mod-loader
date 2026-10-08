@@ -90,7 +90,15 @@ RuntimeInteropPatcher}` + `run/{build-merged-base,assemble-*-runtime}.sh` 产出
 
 其余闸门（`m8`、`m10`、`m11`、`m18`–`m23`）各自锁定一个曾经发布出去的缺陷。上次统计时，二十五个闸门里有十六个已有一天没跑过，其中一个一直是红的。所以 `gate-m0` 现在拒绝为没有实际执行的测试任务出报告。
 
-旧的 `forbric-loader` 仍保持可运行，用作**差分对照基准**，并且仍负责构建内核所用的共享游戏产物。
+旧的 `forbric-loader` 仍保持可运行，用作**差分对照基准**，并且仍负责构建内核所用的共享游戏产物。它无法验证被移除的有状态父类；声明 `required-ancestor-compositions.tsv` 的基底必须使用已注册状态协议证明的内核。
+
+## 通用兼容规则与协议扩展
+
+Mixin 的跳过、接口保留、调用重定位和局部变量选择来自实际源字节码、当前目标和控制流证据。类名、mod id、处理器名或固定 ordinal 不再作为这批兼容规则的许可条件；无法证明的回调不会被搬到另一个事件顺序。原生参考索引中的哈希用于验证证据来源，不用于限制某个 mod 版本。
+
+可选 SDK 通过 `META-INF/services/net.forbric.api.ProtocolExtension` 提供独立协议适配器，每个游戏类加载器拥有自己的注册表。新增协议可以提供缺失 API、注册转换、接收配置生命周期和提供配置界面。合并掉有状态父类时，产物会声明 `required-ancestor-compositions.tsv` 要求；`AncestorComposition` 必须证明最终定义保留了该状态协议，否则加载会明确失败。
+
+共享 API 提供 `VirtualGetters`，按完整 JVM 返回类型选择公开 getter；`VirtualProperties` 根据已定义的公开 getter 证明可写存储。它们可以用于任意声明类，并保留虚调用分派；属性写入前必须先获得实际 getter/字段证据。协议提供者在构造时不能链接游戏类，应通过 `Context.gameLoader()` 解析游戏对象，具体约定见 `ProtocolExtension`。
 
 ## 构建与运行
 

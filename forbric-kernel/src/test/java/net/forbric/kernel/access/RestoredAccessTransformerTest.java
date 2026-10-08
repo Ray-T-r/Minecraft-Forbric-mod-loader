@@ -74,13 +74,13 @@ class RestoredAccessTransformerTest {
 		var aw = ClassTweakerTransformer.createFrom(List.of(new ClassTweakerTransformer.File("fabric-biome-api.jar",
 				rules.getBytes(StandardCharsets.UTF_8))), (name, bytes) -> fail("unexpected generated class"));
 		byte[] early = aw.transform(owner.replace('/', '.'), original, CONTEXT);
-		assertFalse(AccessCensus.entries().isEmpty(), "negative control: the raw base must reproduce the early miss");
+		assertTrue(AccessCensus.entries().isEmpty(), "the builder now preserves the native Supplier field, so its explicit rule applies immediately");
 		byte[] repaired = new net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer()
 				.transform(owner.replace('/', '.'), early, CONTEXT);
 		byte[] result = new RestoredAccessTransformer(aw, null).transform(owner, repaired, CONTEXT);
 		var node = new org.objectweb.asm.tree.ClassNode();
 		new org.objectweb.asm.ClassReader(result).accept(node, 0);
-		var field = node.fields.stream().filter(f -> f.name.equals("featuresPerStep")).findFirst().orElseThrow();
+		var field = node.fields.stream().filter(f -> f.name.equals("featuresPerStep") && f.desc.equals(SUPPLIER)).findFirst().orElseThrow();
 		assertEquals(SUPPLIER, field.desc);
 		assertTrue((field.access & Opcodes.ACC_PUBLIC) != 0);
 		assertEquals(0, field.access & Opcodes.ACC_FINAL);

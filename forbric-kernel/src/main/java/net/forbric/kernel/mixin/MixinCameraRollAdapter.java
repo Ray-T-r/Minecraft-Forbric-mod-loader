@@ -4,6 +4,7 @@ package net.forbric.kernel.mixin;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 
 import org.objectweb.asm.Opcodes;
@@ -13,38 +14,16 @@ import org.objectweb.asm.tree.*;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Puts The camera roll callback back on the calls the merged {@code Camera.alignWithEntity} makes.
- *
- * <p>Vanilla aligns the camera with four {@code setRotation(FF)} calls: minecart, ordinary view, mirrored view, bed.
- * the source {@code CameraMixin} wraps ordinals 1, 2 and 3 of that call and stores the roll each case should add, then
- * adds it inside {@code setRotation} with a {@code @ModifyArg} on {@code Quaternionf.rotationYXZ}. NeoForge's
- * {@code alignWithEntity} posts {@code ViewportEvent.ComputeCameraAngles} and makes the ordinary and mirrored calls
- * through its own {@code setRotation(FFF)} with the event's roll, so on the merged base:
- * <ul>
- *   <li>ordinal 1 of {@code setRotation(FF)} is the bed call and ordinals 2 and 3 do not exist: the ordinary-view
- *       hook bound the bed call (it ran only while sleeping), the mirrored and bed hooks bound nothing, and no roll
- *       was ever stored while flying;</li>
- *   <li>the name-only {@code setRotation} selector of the {@code @ModifyArg} binds the first declared overload, the
- *       two-argument one that only delegates, so even a stored roll was never added.</li>
- * </ul>
- * The player rolls; the camera does not.
- *
- * <p>This moves the ordinary and mirrored wraps to ordinals 0 and 1 of {@code setRotation(FFF)} (each handler gains the
- * carrier's roll as an extra, unused parameter, so its {@code @Share} slot moves by one), the bed wrap to ordinal 1 of
- * {@code setRotation(FF)}, and pins the {@code @ModifyArg} to {@code setRotation(FFF)V}. The event roll still reaches
- * {@code rotationYXZ} and the source handler adds its own on top, as it does over vanilla's zero.
- *
- * <p>Only the exact shape is adapted: a merged {@code alignWithEntity} that posts the event and calls
- * {@code (FF), (FFF), (FFF), (FF)} in that order, and the source four handlers as written. Anything else is left alone.
- * {@code -Dforbric.cameraRollCallbacks=off} turns it off.
+ * Relates a source condition wrapper on a two-float call to the current call by native operand origins and CFG
+ * conditions. A widened call is admitted only when its short overload completely delegates with a zero default.
+ * Pure getter/constructor projections identify event birth operands; event dispatch and its changed live values
+ * remain in place. Missing references, ambiguous points and unknown projections retain the original callback.
  */
 public final class MixinCameraRollAdapter {
 	public static final String PROPERTY = "forbric.cameraRollCallbacks";
 	static final String CAMERA = "net/minecraft/client/Camera";
 	static final String SHORT = "L" + CAMERA + ";setRotation(FF)V";
 	static final String LONG = "L" + CAMERA + ";setRotation(FFF)V";
-	private static final String EVENT = "net/neoforged/neoforge/client/event/ViewportEvent$ComputeCameraAngles";
-	private static final String SHARE = "Lcom/llamalad7/mixinextras/sugar/ref/LocalFloatRef;";
 
 	private MixinCameraRollAdapter() { }
 
@@ -52,54 +31,76 @@ public final class MixinCameraRollAdapter {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
 	}
 
-	/** @return the number of injectors moved: 4, or 0 when anything differs from the shape this was written for */
-	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
-		if (!enabled() || !MixinCallbackShape.targets(mixin, CAMERA)) return 0;
-		ClassNode camera = targets.apply(CAMERA);
-		if (camera == null) return 0;
-		MethodNode align = method(camera, "alignWithEntity", "(F)V");
-		if (align == null) return 0;
-		// The carrier shape: minecart, ordinary (event roll), mirrored (event roll), bed.
-		List<String> rotations = new ArrayList<>();
-		boolean event = false;
-		for (AbstractInsnNode insn : align.instructions) {
-			if (!(insn instanceof MethodInsnNode call)) continue;
-			if (EVENT.equals(call.owner) && "getRoll".equals(call.name)) event = true;
-			if (CAMERA.equals(call.owner) && "setRotation".equals(call.name)) rotations.add(call.desc);
-		}
-		if (!event || !rotations.equals(List.of("(FF)V", "(FFF)V", "(FFF)V", "(FF)V"))) return 0;
-
-		MethodNode ordinary = MixinCallbackShape.unique(mixin, m -> m.desc.equals("(L" + CAMERA + ";FF" + SHARE + ")Z") && wraps(m, 1));
-		MethodNode mirrored = MixinCallbackShape.unique(mixin, m -> m.desc.equals("(L" + CAMERA + ";FF)Z") && wraps(m, 2));
-		MethodNode bed = MixinCallbackShape.unique(mixin, m -> m.desc.equals("(L" + CAMERA + ";FF)Z") && wraps(m, 3));
-		MethodNode roll = MixinCallbackShape.unique(mixin, m -> m.desc.equals("(F)F") && MixinCallbackShape.kind(m, "ModifyArg") && MixinCallbackShape.selects(m, "setRotation")
-                && MixinCallbackShape.plainPoint(m, "INVOKE", "Lorg/joml/Quaternionf;rotationYXZ(FFF)Lorg/joml/Quaternionf;"));
-		if (ordinary == null || mirrored == null || bed == null || roll == null
-				|| !wraps(ordinary, 1) || !wraps(mirrored, 2) || !wraps(bed, 3)) return 0;
-		AnnotationNode modifier = MixinFit.injectorOf(roll);
-		if (modifier == null || !modifier.desc.endsWith("/ModifyArg;")
-				|| !MixinFit.stringList(MixinFit.value(modifier, "method")).equals(List.of("setRotation"))) return 0;
-
-		widen(ordinary);
-		widen(mirrored);
-		retarget(ordinary, LONG, 0);
-		retarget(mirrored, LONG, 1);
-		retarget(bed, SHORT, 1);
-		set(modifier, "method", new ArrayList<>(List.of("setRotation(FFF)V")));
-		ForbricLog.info("[Forbric/Mixin] The camera roll callback now wraps the merged alignWithEntity's "
-				+ "setRotation(FFF) calls and adds its roll in setRotation(FFF) — its vanilla ordinals bound the bed call "
-				+ "or nothing, so the camera never rolled");
-		return 4;
-	}
-
-	private static boolean wraps(MethodNode method, int ordinal) {
-		AnnotationNode wrap = MixinFit.injectorOf(method);
-		if (wrap == null || !MixinCallbackShape.instance(method) || !MixinCallbackShape.kind(method, "WrapWithCondition") || !MixinCallbackShape.point(method, "INVOKE", SHORT)
-				|| !MixinFit.stringList(MixinFit.value(wrap, "method")).equals(List.of("alignWithEntity"))) return false;
-		List<AnnotationNode> at = MixinFit.atNodes(wrap);
-		return at.size() == 1 && SHORT.equals(MixinFit.value(at.getFirst(), "target"))
-				&& Integer.valueOf(ordinal).equals(MixinFit.value(at.getFirst(), "ordinal"));
-	}
+	/** Returns the number of source callbacks whose complete correspondence was proved. */
+    public static int adapt(ClassNode mixin,Function<String,ClassNode> targets) {
+        return adapt(mixin,targets,NativeGameReferences::reference);
+    }
+    public static int adapt(ClassNode mixin,Function<String,ClassNode> targets,
+            java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> references) {
+        List<String> owners=MixinFit.mixinTargets(mixin);
+        if(!enabled()||owners.size()!=1)return 0;
+        ClassNode camera=targets.apply(owners.getFirst()),source=references.apply(MixinStubRebind.ecosystemOf(mixin.name),owners.getFirst());
+        if(camera==null||source==null)return 0;
+        record Move(MethodNode handler,CallOccurrenceAlignment.Match match) { }
+        List<Move> moves=new ArrayList<>();
+        for(MethodNode handler:mixin.methods) {
+            if(handler.attrs!=null&&handler.attrs.stream().anyMatch(attribute->attribute.type.equals("ForbricNativeCallMatched")))continue;
+            AnnotationNode inject=MixinFit.injectorOf(handler);
+            if(inject==null||!MixinCallbackShape.instance(handler)||!MixinCallbackShape.kind(handler,"WrapWithCondition")
+                    ||MixinFit.atNodes(inject).size()!=1)continue;
+            AnnotationNode at=MixinFit.atNodes(inject).getFirst();
+            String member=MixinFit.asString(MixinFit.value(at,"target"));MixinFit.Member wanted=MixinFit.parseMember(member);
+            List<String> selectors=MixinFit.stringList(MixinFit.value(inject,"method"));
+            if(wanted==null||!camera.name.equals(wanted.owner())||!"(FF)V".equals(wanted.desc())||selectors.size()!=1
+                    ||!MixinCallbackShape.point(handler,"INVOKE",member))continue;
+            MethodNode nativeAlign=MixinStubRebind.bound(source,selectors.getFirst()),align=MixinStubRebind.bound(camera,selectors.getFirst());
+            if(nativeAlign==null||align==null||!nativeAlign.desc.equals(align.desc))return 0;
+            Object value=MixinFit.value(MixinFit.atNodes(inject).getFirst(),"ordinal");if(!(value instanceof Integer ordinal)||ordinal<0)return 0;
+            Type[] arguments=Type.getArgumentTypes(handler.desc);
+            if(arguments.length<3||!arguments[0].equals(Type.getObjectType(camera.name))||!arguments[1].equals(Type.FLOAT_TYPE)
+                    ||!arguments[2].equals(Type.FLOAT_TYPE)||!Type.getReturnType(handler.desc).equals(Type.BOOLEAN_TYPE))return 0;
+            CallOccurrenceAlignment.Match match=CallOccurrenceAlignment.prefixCall(source,nativeAlign,camera,align,member,ordinal,targets);
+            if(match==null)return 0;
+            if(!match.call().desc.equals("(FF)V")&&(!match.call().desc.equals("(FFF)V")||!shortDelegate(camera,wanted,match.call())))return 0;
+            moves.add(new Move(handler,match));
+        }
+        if(moves.isEmpty())return 0;
+        Set<String> claimed=new java.util.HashSet<>();
+        for(Move move:moves)if(!claimed.add(CallOccurrenceAlignment.member(move.match().call())+"#"+move.match().ordinal()))return 0;
+        MethodNode roll=MixinCallbackShape.unique(mixin,m->m.desc.equals("(F)F")&&MixinCallbackShape.kind(m,"ModifyArg")
+                &&MixinCallbackShape.plainPoint(m,"INVOKE","Lorg/joml/Quaternionf;rotationYXZ(FFF)Lorg/joml/Quaternionf;"));
+        int changed=0;
+        for(Move move:moves) {
+            if(move.match().call().desc.equals("(FFF)V"))widen(move.handler());
+            retarget(move.handler(),CallOccurrenceAlignment.member(move.match().call()),move.match().ordinal());changed++;
+            if(move.handler().attrs==null)move.handler().attrs=new ArrayList<>();
+            move.handler().attrs.add(new MatchedAttribute());
+        }
+        if(roll!=null) {
+            List<MethodNode> candidates=camera.methods.stream().filter(m->MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(roll),"method")).stream().anyMatch(selector->selector.equals(m.name)||selector.equals(m.name+m.desc))
+                    &&java.util.Arrays.stream(m.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode call&&call.owner.equals("org/joml/Quaternionf")
+                        &&call.name.equals("rotationYXZ")&&call.desc.equals("(FFF)Lorg/joml/Quaternionf;"))).toList();
+            if(candidates.size()==1){set(MixinFit.injectorOf(roll),"method",new ArrayList<>(List.of(candidates.getFirst().name+candidates.getFirst().desc)));changed++;}
+        }
+        ForbricLog.info("[Forbric/Mixin] The camera roll callback now wraps the merged alignWithEntity's setRotation(FFF) calls; "
+                +"native/current operand origins and control-flow conditions determine every occurrence");
+        return changed;
+    }
+    /** The current short overload must still be the complete original argument forwarding plus a zero default. */
+    private static boolean shortDelegate(ClassNode owner,MixinFit.Member source,MethodInsnNode destination) {
+        MethodNode shortMethod=method(owner,source.name(),source.desc());if(shortMethod==null||!shortMethod.tryCatchBlocks.isEmpty())return false;
+        List<AbstractInsnNode> code=Arrays.stream(shortMethod.instructions.toArray()).filter(i->i.getOpcode()>=0).toList();
+        return code.size()==6&&code.get(0) instanceof VarInsnNode self&&self.getOpcode()==Opcodes.ALOAD&&self.var==0
+                &&code.get(1) instanceof VarInsnNode a&&a.getOpcode()==Opcodes.FLOAD&&a.var==1
+                &&code.get(2) instanceof VarInsnNode b&&b.getOpcode()==Opcodes.FLOAD&&b.var==2&&code.get(3).getOpcode()==Opcodes.FCONST_0
+                &&code.get(4) instanceof MethodInsnNode call&&call.getOpcode()==destination.getOpcode()&&call.owner.equals(destination.owner)
+                &&call.name.equals(destination.name)&&call.desc.equals(destination.desc)&&code.get(5).getOpcode()==Opcodes.RETURN;
+    }
+    /** Non-executable metadata makes an already adapted short call distinguishable from its original ordinal. */
+    private static final class MatchedAttribute extends org.objectweb.asm.Attribute {
+        MatchedAttribute(){super("ForbricNativeCallMatched");}
+        @Override protected org.objectweb.asm.ByteVector write(org.objectweb.asm.ClassWriter writer,byte[] code,int length,int maxStack,int maxLocals){return new org.objectweb.asm.ByteVector().putByte(1);}
+    }
 
 	private static void retarget(MethodNode method, String target, int ordinal) {
 		AnnotationNode at = MixinFit.atNodes(MixinFit.injectorOf(method)).getFirst();
@@ -131,6 +132,7 @@ public final class MixinCameraRollAdapter {
 		List<Type> args = new ArrayList<>(Arrays.asList(Type.getArgumentTypes(method.desc)));
 		args.add(3, Type.FLOAT_TYPE);
 		method.desc = Type.getMethodDescriptor(Type.getReturnType(method.desc), args.toArray(Type[]::new));
+        method.signature=null;
 		for (AbstractInsnNode insn : method.instructions) {
 			if (insn instanceof VarInsnNode var && var.var >= 4) var.var++;
 			if (insn instanceof IincInsnNode inc && inc.var >= 4) inc.var++;

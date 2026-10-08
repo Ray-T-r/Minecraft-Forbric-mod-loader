@@ -85,6 +85,9 @@ public final class KernelRuntimeClasses {
 	private static final Map<String, Entry> CLASSES = new LinkedHashMap<>();
 
 	static {
+		// Bytecode readers compose the two native part arrays without choosing an entity family.
+		CLASSES.put("net.forbric.kernel.runtime.KernelMultipartViews", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelModifiableDataViews", new Entry(Origin.COMPILED, List.of()));
 		// The full-power game-side lookup Forge's EventBus needs to spin listener lambdas. See KernelGameLookup.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameLookupHelper", new Entry(Origin.COMPILED, List.of(
 				new Call("lookup", MethodHandles.Lookup.class))));
@@ -433,11 +436,6 @@ public final class KernelRuntimeClasses {
 		// and this is its value: a view of vanilla's ALL by key.
 		CLASSES.put("net.forbric.kernel.runtime.KernelKeyMappingMap", new Entry(Origin.COMPILED, List.of(
 				new Call("vanillaView", Object.class, java.util.Map.class))));
-		// The merged base gave ChunkGenerator.featuresPerStep MinecraftForge's ClearableLazy descriptor and lost
-		// vanilla's, which fabric-api's biome API writes directly. The transformer puts vanilla's back; this is
-		// the one use that still needs MinecraftForge's type. See ForbricMergedBaseCompatTransformer.
-		CLASSES.put("net.forbric.kernel.runtime.KernelChunkGenerator", new Entry(Origin.COMPILED, List.of(
-				new Call("invalidate", void.class, java.util.function.Supplier.class))));
 		// NeoForge worldgen the merge left with no driver: its data maps (nothing named DataMapLoader at all),
 		// its biome/structure modifier pass, and the monster-room mob pick that the kernel used to answer by
 		// neutering the whole dungeon feature. Its two entry points are called from REWRITTEN CALL SITES, so

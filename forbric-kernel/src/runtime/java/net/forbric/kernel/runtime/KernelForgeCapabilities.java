@@ -45,8 +45,8 @@ import net.minecraftforge.event.AttachCapabilitiesEvent;
  * synthesised method is branch-free — the frame recomputer never touches these classes.
  *
  * <p>Everything else — gathering, dispatching, LazyOptional invalidation, NBT (de)serialisation, lazy replay —
- * is Forge's {@code CapabilityProvider}/{@code CapabilityDispatcher} code, in Forge's own lazy mode: the
- * {@code AttachCapabilitiesEvent} fires on the first query or deserialise, not in the constructor.
+ * is Forge's {@code CapabilityProvider}/{@code CapabilityDispatcher} code. The removed native providers use
+ * eager mode; the transformer restores their constructor gather boundary, so attach events retain that timing.
  * {@code -Dforbric.forgeCapabilities=off} means nothing references this class.
  */
 public final class KernelForgeCapabilities {
@@ -59,7 +59,7 @@ public final class KernelForgeCapabilities {
 	@SuppressWarnings({ "rawtypes", "unchecked" })
 	abstract static class Composed extends CapabilityProvider.AsField {
 		Composed(Object owner) {
-			super((ICapabilityProviderImpl) owner, true);
+			super((ICapabilityProviderImpl) owner, false);
 		}
 
 		public CapabilityDispatcher dispatcher() {
@@ -140,8 +140,7 @@ public final class KernelForgeCapabilities {
 
 	@SuppressWarnings("rawtypes")
 	private static CapabilityProvider.AsField create(CapabilityProvider.AsField field) {
-		// Forge's LevelChunk constructor does exactly this after newing its AsField; in lazy mode it defers the
-		// gather until the first query, so the AttachCapabilitiesEvent fires then.
+		// Forge's AsField protocol initializes the dispatcher through its own gather implementation.
 		field.initInternal();
 		return field;
 	}

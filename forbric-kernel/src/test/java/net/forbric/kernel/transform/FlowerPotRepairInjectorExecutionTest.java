@@ -446,6 +446,28 @@ class FlowerPotRepairInjectorExecutionTest {
 				"a repaired pot is left alone");
 	}
 
+    @Test void theLivePublicSdkQueryRetainsNativeEffectsAndReportsBadExplicitSuppliers(@TempDir Path work)throws Throwable{
+        Map<String,String> sources=new HashMap<>(STAND_INS);
+        String pot=sources.get(POT);
+        pot=pot.replace("public class FlowerPotBlock extends Block {", "public class FlowerPotBlock extends Block {public static int nativeQueries;public Block getFullPot(Block content){nativeQueries++;if(getEmptyPot()!=this)throw new IllegalStateException(\"not empty\");Block result=net.neoforged.neoforge.registries.GameData.getFlowerPotBlockTable().get(this,content);return result==null?Blocks.AIR:result;}");
+        String old="getEmptyPot().fullPots.getOrDefault(\n\t\t\t\tForgeRegistries.BLOCKS.getKey(blockItem.getBlock()), ForgeRegistries.BLOCKS.getDelegateOrThrow(Blocks.AIR)).get()";
+        int begin=pot.indexOf("getEmptyPot().fullPots.getOrDefault("),end=pot.indexOf(".get()",begin)+6;
+        assertTrue(begin>=0&&end>begin);pot=pot.substring(0,begin)+"getEmptyPot().getFullPot(blockItem.getBlock())"+pot.substring(end);
+        sources.put(POT,pot);sources.put("net/forbric/kernel/runtime/KernelFlowerPots.java",Files.readString(HOOK_SOURCE));
+        Map<String,byte[]> classes=new HashMap<>(InjectorExecution.compile(work,sources));classes.put(FlowerPotRepairInjector.OWNER,InjectorExecution.transform(new FlowerPotRepairInjector(),POT,classes.get(FlowerPotRepairInjector.OWNER),EnvType.SERVER));
+        ClassLoader loader=InjectorExecution.load(classes);Class<?> type=loader.loadClass(POT);Object empty=block(loader,"FLOWER_POT"),content=block(loader,"POPPY"),full=block(loader,"POTTED_POPPY");
+        InjectorExecution.invokeStatic(loader.loadClass("net.forbric.kernel.runtime.KernelFlowerPots"),"rebuildTable");
+        assertSame(full,InjectorExecution.invoke(empty,"getFullPot",content));assertEquals(1,InjectorExecution.getStatic(type,"nativeQueries"));
+        InjectorExecution.invokeStatic(loader.loadClass("fixture.RoseMod"),"register");Class<?> rose=loader.loadClass("fixture.RoseMod");Object roseContent=InjectorExecution.getStatic(rose,"ROSE");
+        assertSame(InjectorExecution.getStatic(rose,"POTTED_ROSE"),InjectorExecution.invoke(empty,"getFullPot",roseContent));assertEquals(2,InjectorExecution.getStatic(type,"nativeQueries"),"the original SDK table query executes even when an explicit SDK entry wins");
+        Object id=loader.loadClass("net.minecraft.resources.Identifier").getConstructor(String.class).newInstance("fixture:broken");
+        Object bad=InjectorExecution.construct(loader.loadClass("net.minecraft.world.level.block.Block"),InjectorExecution.construct(loader.loadClass("net.minecraft.world.level.block.state.BlockBehaviour$Properties")));
+        Object registry=InjectorExecution.getStatic(loader.loadClass("net.minecraft.core.registries.BuiltInRegistries"),"BLOCK");InjectorExecution.invoke(registry,"register","fixture:broken",bad);
+        java.util.concurrent.atomic.AtomicInteger supplierCalls=new java.util.concurrent.atomic.AtomicInteger();java.util.function.Supplier<Object> supplier=()->{supplierCalls.incrementAndGet();throw new IllegalStateException("supplier failed");};InjectorExecution.invoke(empty,"addPlant",id,supplier);
+        assertEquals("supplier failed",assertThrows(IllegalStateException.class,()->InjectorExecution.invoke(empty,"getFullPot",bad)).getMessage());assertEquals(1,supplierCalls.get());assertEquals(3,InjectorExecution.getStatic(type,"nativeQueries"));
+        assertEquals("not empty",assertThrows(IllegalStateException.class,()->InjectorExecution.invoke(full,"getFullPot",content)).getMessage(),"the original public query's guard stays ahead of the added resolver");
+    }
+
 	@Test void switchedOffThePotIsLeftAsMerged(@TempDir Path work) throws Exception {
 		byte[] bytes = compile(work).get(FlowerPotRepairInjector.OWNER);
 		System.setProperty(NativeCoremodParity.FLOWER_POT, "off");

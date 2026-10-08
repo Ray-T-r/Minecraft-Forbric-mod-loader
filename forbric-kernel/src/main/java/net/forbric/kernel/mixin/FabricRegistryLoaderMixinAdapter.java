@@ -10,8 +10,6 @@ import net.forbric.kernel.util.ForbricLog;
 /** Keeps Fabric's server/client ScopedValue binding across the carrier's added tags and leniency arguments. */
 public final class FabricRegistryLoaderMixinAdapter {
 	public static final String PROPERTY="forbric.fabricRegistryLoader";
-	public static final String PIN="fabric-registry-sync-v0.mixins.json:RegistryDataLoaderMixin";
-	private static final String MIXIN="net/fabricmc/fabric/mixin/registry/sync/RegistryDataLoaderMixin";
 	private static final String TARGET="net/minecraft/resources/RegistryDataLoader";
 	private static final String FACTORY="L"+TARGET+"$LoaderFactory;";
 	private static final String ARGS="Ljava/util/List;Ljava/util/List;Ljava/util/concurrent/Executor;";
@@ -21,8 +19,18 @@ public final class FabricRegistryLoaderMixinAdapter {
 	private FabricRegistryLoaderMixinAdapter() { }
 	public static boolean enabled(){return !"off".equalsIgnoreCase(System.getProperty(PROPERTY,"on"));}
 
+    static boolean matches(ClassNode mixin) {
+        return MixinCallbackShape.targets(mixin,TARGET) && mixin.fields.stream().anyMatch(f->f.desc.equals("Ljava/lang/ScopedValue;"))
+                && mixin.methods.stream().anyMatch(m->m.desc.equals("(Ljava/lang/Object;"+ARGS+"L"+OP+";)"+FUTURE)
+                    && MixinCallbackShape.kind(m,"WrapOperation")
+                    && invokes(m,"java/lang/ScopedValue","where")&&invokes(m,"java/lang/ScopedValue$Carrier","call")
+                    && MixinCallbackShape.plainPoint(m,"INVOKE","L"+TARGET+";load("+FACTORY+ARGS+")"+FUTURE));
+    }
+
+    private static boolean invokes(MethodNode method,String owner,String name){for(var instruction:method.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(owner)&&call.name.equals(name))return true;return false;}
+
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
-		if(!enabled()||!MIXIN.equals(mixin.name)||mixin.methods.stream().anyMatch(m->m.name.equals("wrapIsServerCall$forbricOriginal")))return 0;
+		if(!enabled()||!MixinCallbackShape.targets(mixin,TARGET))return 0;
 		ClassNode target=targets.apply(TARGET);if(target==null)return 0;
 		String publicLive="load("+RM+ARGS+"Ljava/util/List;)"+FUTURE;
 		String privateLive="load("+FACTORY+ARGS+"Z)"+FUTURE;
@@ -31,15 +39,16 @@ public final class FabricRegistryLoaderMixinAdapter {
 		if(publicMethod==null||privateMethod==null)return 0;
 		long calls=java.util.stream.StreamSupport.stream(publicMethod.instructions.spliterator(),false).filter(i->i instanceof MethodInsnNode c&&c.owner.equals(TARGET)&&(c.name+c.desc).equals(privateLive)).count();
 		if(calls!=1)return 0;
-		MethodNode original=mixin.methods.stream().filter(m->m.name.equals("wrapIsServerCall")&&m.desc.equals("(Ljava/lang/Object;"+ARGS+"L"+OP+";)"+FUTURE)).findFirst().orElse(null);
-		MethodNode supply=mixin.methods.stream().filter(m->m.name.equals("supplyAsync")).findFirst().orElse(null);
-		if(original==null||supply==null||MixinFit.injectorOf(original)==null||MixinFit.injectorOf(supply)==null)return 0;
+		MethodNode original=MixinCallbackShape.unique(mixin,m->m.desc.equals("(Ljava/lang/Object;"+ARGS+"L"+OP+";)"+FUTURE)&&MixinCallbackShape.kind(m,"WrapOperation")&&MixinCallbackShape.plainPoint(m,"INVOKE","L"+TARGET+";load("+FACTORY+ARGS+")"+FUTURE));
+		MethodNode supply=MixinCallbackShape.unique(mixin,m->m.desc.equals("(Ljava/util/function/Supplier;)Ljava/util/function/Supplier;")&&MixinCallbackShape.kind(m,"ModifyArg")&&MixinCallbackShape.plainPoint(m,"INVOKE","Ljava/util/concurrent/CompletableFuture;supplyAsync(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;"));
+		if(original==null||supply==null||MixinFit.injectorOf(original)==null||MixinFit.injectorOf(supply)==null
+                ||(original.access&Opcodes.ACC_STATIC)==0||(supply.access&Opcodes.ACC_STATIC)==0)return 0;
 		AnnotationNode annotation=MixinFit.injectorOf(original);
 		set(annotation,"method",List.of(publicLive));
 		for(AnnotationNode at:MixinFit.atNodes(annotation))set(at,"target","L"+TARGET+";"+privateLive);
 		set(MixinFit.injectorOf(supply),"method",List.of(privateLive));
-		original.visibleAnnotations.remove(annotation);original.name="wrapIsServerCall$forbricOriginal";
-		MethodNode wrapper=new MethodNode(Opcodes.ASM9,Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,"wrapIsServerCall",
+		String handlerName=original.name;MixinCarrierCallbackAdapters.removeInjector(original,annotation);original.name+="$forbricOriginal";
+		MethodNode wrapper=new MethodNode(Opcodes.ASM9,Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,handlerName,
 				"(Ljava/lang/Object;"+ARGS+"ZL"+OP+";)"+FUTURE,null,null);
 		wrapper.visibleAnnotations=new ArrayList<>(List.of(annotation));
 		// Keep @Coerce on LoaderFactory, which the upstream handler deliberately types as Object.

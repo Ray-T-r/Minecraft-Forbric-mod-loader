@@ -30,7 +30,12 @@ class ThinnedCallOrdinalsTest {
 	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final Path VIAFABRICPLUS = Path.of("../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar");
-	private static final ThinnedCallOrdinals.Site SITE = ThinnedCallOrdinals.SITES.getFirst();
+	private static final ThinnedCallOrdinals.Site SITE = new ThinnedCallOrdinals.Site(
+            "net/minecraft/client/multiplayer/MultiPlayerGameMode",
+            "performUseItemOn(Lnet/minecraft/client/player/LocalPlayer;Lnet/minecraft/world/InteractionHand;Lnet/minecraft/world/phys/BlockHitResult;)Lnet/minecraft/world/InteractionResult;",
+            "Lnet/minecraft/world/item/ItemStack;isEmpty()Z", new int[] {-1, -1, 0},
+            "Lnet/minecraft/client/player/LocalPlayer;getCooldowns()Lnet/minecraft/world/item/ItemCooldowns;",
+            java.util.Set.of(Ecosystem.FABRIC), "Released source fixture; production derives this mapping");
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String SLICE = "Lorg/spongepowered/asm/mixin/injection/Slice;";
 
@@ -64,7 +69,7 @@ class ThinnedCallOrdinalsTest {
 		ClassNode mixin = read(VIAFABRICPLUS, "com/viaversion/viafabricplus/injection/mixin/features/v1_12_2/MixinMultiPlayerGameMode");
 		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
 		assertEquals(List.of(2), ordinals(mixin, "interactBlock1_12_2"));
-		assertEquals(1, ThinnedCallOrdinals.adapt(mixin, name -> target));
+		assertEquals(1, ThinnedCallOrdinals.adapt(mixin, name -> target, (family, owner) -> uncheckedRead(VANILLA, owner)));
 		assertEquals(List.of(0), ordinals(mixin, "interactBlock1_12_2"));
 	}
 
@@ -89,8 +94,8 @@ class ThinnedCallOrdinalsTest {
 		assertEquals(0, ThinnedCallOrdinals.adapt(mixin("com/example/fabric/OffMixin", 2), name -> target));
 		System.clearProperty(ThinnedCallOrdinals.PROPERTY);
 		ClassNode moved = mixin("com/example/fabric/MovedMixin", 2);
-		assertEquals(1, ThinnedCallOrdinals.adapt(moved, name -> target));
-		assertEquals(List.of(0), ordinals(moved, "hook"));
+		assertEquals(0, ThinnedCallOrdinals.adapt(moved, name -> target));
+		assertEquals(List.of(2), ordinals(moved, "hook"));
 	}
 
 	/** The row's method making the row's call {@code times} times, each followed by the row's next call. */
@@ -168,4 +173,8 @@ class ThinnedCallOrdinalsTest {
 			return node;
 		}
 	}
+    private static ClassNode uncheckedRead(Path jar, String owner) {
+        try { return read(jar, owner); } catch (Exception unavailable) { return null; }
+    }
+
 }

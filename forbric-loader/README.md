@@ -102,3 +102,5 @@ time, before Knot exists.
 - Forbric does not run FML's own startup path. The drivers seed the FML environment reflectively and let
   the game's own client mod-loading flow do the rest, because ModLauncher's module layer and transforming
   class loader would fight Knot.
+
+The legacy launch path rejects a merged base with unresolved stateful-ancestor requirements (`META-INF/forbric/required-ancestor-compositions.tsv`). Use the kernel loader, which checks registered composition protocols against final class definitions, for these artifacts.

@@ -32,7 +32,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 class CreativeSearchTreesInjectorTest {
 	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path NEOFORGE_PATCHED = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
-	private static final Path HELPER_CLASS = Path.of("build/classes/java/runtime/net/forbric/kernel/runtime/KernelCreativeSearch.class");
+	private static final Path HELPER_CLASS = Path.of(System.getProperty("forbric.test.runtimeClasses","build/classes/java/runtime")).resolve("net/forbric/kernel/runtime/KernelCreativeSearch.class");
 	private static final String TREES = CreativeSearchTreesInjector.TREES;
 
 	@AfterEach void reset() { System.clearProperty(CreativeSearchTreesInjector.PROPERTY); }
@@ -63,22 +63,14 @@ class CreativeSearchTreesInjectorTest {
 		ClassNode before = node(original);
 		ClassNode after = node(out);
 
-		String[][] rewritten = {
-				{"updateCreativeTooltips", CreativeSearchTreesInjector.NAMES_DESC, "updateNames"},
-				{"updateCreativeTags", CreativeSearchTreesInjector.TAGS_DESC, "updateTags"},
-				{"getSearchTree", CreativeSearchTreesInjector.READ_DESC, "tree"}};
-		for (String[] row : rewritten) {
-			assertTrue(calls(method(before, row[0], row[1])).stream()
-					.anyMatch(call -> call.startsWith(CreativeSearchTreesInjector.FORGE_REGISTRY + ".")
-							|| row[0].equals("getSearchTree")),
-					"premise: as merged, " + row[0] + " is MinecraftForge's body");
-			MethodNode repaired = method(after, row[0], row[1]);
-			List<String> calls = calls(repaired);
-			assertEquals(1, calls.size(), row[0] + " is now one call: " + calls);
-			assertTrue(calls.get(0).startsWith(CreativeSearchTreesInjector.HELPER + "." + row[2] + "("), calls::toString);
-			new Analyzer<>(new BasicVerifier()).analyze(TREES, repaired);
-		}
-
+		for(String[] producer:List.of(new String[]{"updateCreativeTooltips",CreativeSearchTreesInjector.NAMES_DESC},new String[]{"updateCreativeTags",CreativeSearchTreesInjector.TAGS_DESC})){
+            MethodNode nativeProducer=method(before,producer[0],producer[1]),kept=method(after,producer[0],producer[1]);
+            assertEquals(net.forbric.kernel.mixin.MixinInstructionFingerprint.hash(nativeProducer),net.forbric.kernel.mixin.MixinInstructionFingerprint.hash(kept),"the actual producers already delegate to the keyed store");
+            assertTrue(calls(kept).stream().anyMatch(call->call.startsWith(TREES+"."+producer[0])&&call.contains(CreativeSearchTreesInjector.KEY)),calls(kept).toString());
+        }
+        MethodNode reader=method(after,"getSearchTree",CreativeSearchTreesInjector.READ_DESC);
+        assertEquals(List.of(CreativeSearchTreesInjector.HELPER+".tree(L"+TREES+";"+CreativeSearchTreesInjector.KEY+")"+CreativeSearchTreesInjector.TREE),calls(reader));
+        new Analyzer<>(new BasicVerifier()).analyze(TREES,reader);
 		// What the creative screen calls is exactly as merged.
 		for (String[] keyed : new String[][] {
 				{"updateCreativeTooltips", "(Lnet/minecraft/core/HolderLookup$Provider;Ljava/util/List;"
@@ -107,7 +99,7 @@ class CreativeSearchTreesInjectorTest {
 				new DuplicateLambdaPruneInjector().transform(CreativeSearchTreesInjector.TARGET, original, null), null);
 		byte[] repairFirst = new DuplicateLambdaPruneInjector().transform(CreativeSearchTreesInjector.TARGET,
 				new CreativeSearchTreesInjector().transform(CreativeSearchTreesInjector.TARGET, original, null), null);
-		assertFalse(forgeLambdas(node(pruneFirst)).isEmpty(), "premise: a prune that runs first still sees them called");
+		assertEquals(List.of(),forgeLambdas(node(pruneFirst)),"the new canonical producers already leave the other producer lambdas uncalled");
 		assertEquals(List.of(), forgeLambdas(node(repairFirst)), "after the rewrite they are orphans and go");
 	}
 
@@ -141,6 +133,6 @@ class CreativeSearchTreesInjectorTest {
 				linked++;
 			}
 		}
-		assertEquals(3, linked);
+		assertEquals(1, linked,"only the disconnected Forge reader needs an adapter on this source-proved base");
 	}
 }

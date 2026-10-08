@@ -9,8 +9,11 @@ import net.neoforged.neoforge.client.ClientHooks;
 public class Gui {
 	public Screen screen;
 	public final Stack<Screen> layers = new Stack<>();
+	public GuiGraphicsExtractor lastGraphics;
 
 	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+		graphics = new GuiGraphicsExtractor();
+		lastGraphics = graphics;
 		if (screen != null) ClientHooks.extractScreen(screen, layers, graphics, mouseX, mouseY, partialTick);
 	}
 }

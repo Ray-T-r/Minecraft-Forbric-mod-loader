@@ -16,13 +16,9 @@
 
 package net.forbric.kernel.runtime;
 
-import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
-import net.forbric.kernel.util.ForbricLog;
-import net.forbric.kernel.util.Reflect;
 import net.minecraft.client.gui.screens.Screen;
 
 import net.neoforged.bus.api.BusBuilder;
@@ -37,7 +33,7 @@ import net.neoforged.fml.event.config.ModConfigEvent;
 
 /**
  * Connects the mod-ID form of the published config API to the carrier's container form.
- * Config events use the optional library's public v5 event API; private dispatch implementations are irrelevant.
+ * Configuration events are delivered to discoverable protocol extensions.
  */
 public final class KernelConfigApiBridge {
 
@@ -45,12 +41,6 @@ public final class KernelConfigApiBridge {
 	}
 
 	private static final Map<String, ModContainer> CONTAINERS = new ConcurrentHashMap<>();
-
-	/** The optional public config event protocol. */
-	private static final String EVENTS_API = "fuzs.forgeconfigapiport.fabric.api.v5.ModConfigEvents";
-
-	/** One line per boot, on the first event that actually lands, rather than one per mod per config. */
-	private static final AtomicBoolean ANNOUNCED = new AtomicBoolean();
 
 	static ModContainer containerFor(String modId) {
 		return CONTAINERS.computeIfAbsent(modId, id -> {
@@ -67,46 +57,15 @@ public final class KernelConfigApiBridge {
 		});
 	}
 
-	/**
-	 * Forwards this container's config events to the porting layer's dispatcher.
-	 *
-	 * <p>The port ships its own {@code ConfigTracker} to call these three methods; under Forbric the carrier's
-	 * class wins that name and the port's never loads, so nothing called them. Reflection, because the porting
-	 * layer is a MOD — it may not be installed, and the game side must not link against it.
-	 *
-	 * <p>Failure is per-event and logged once: a mod whose config callback throws must not take the config load
-	 * down with it.
-	 */
 	private static void forwardConfigEvents(IEventBus bus) {
-		Class<?> api;
-		try { api = Class.forName(EVENTS_API, false, KernelConfigApiBridge.class.getClassLoader()); }
-		catch (ClassNotFoundException absent) { return; }
-		forward(bus, api, ModConfigEvent.Loading.class, "loading", "Loading", "onModConfigLoading");
-		forward(bus, api, ModConfigEvent.Reloading.class, "reloading", "Reloading", "onModConfigReloading");
-		forward(bus, api, ModConfigEvent.Unloading.class, "unloading", "Unloading", "onModConfigUnloading");
-	}
-
-	private static <E extends ModConfigEvent> void forward(IEventBus bus, Class<?> api, Class<E> event,
-			String accessor, String callbackType, String callbackMethod) {
-		Method eventFor, invoker, sink;
-		try {
-			eventFor = api.getMethod(accessor, String.class);
-			invoker = Class.forName("net.fabricmc.fabric.api.event.Event", false, api.getClassLoader()).getMethod("invoker");
-			sink = Class.forName(EVENTS_API + "$" + callbackType, false, api.getClassLoader()).getMethod(callbackMethod, ModConfig.class);
-		} catch (ReflectiveOperationException incompatible) {
-			ForbricLog.warn("[Forbric/ConfigApi] public config event contract is unavailable", incompatible); return;
-		}
-		AtomicBoolean warned = new AtomicBoolean();
-		bus.addListener(EventPriority.NORMAL, false, event, e -> {
-			try {
-				ModConfig config = e.getConfig(); Object declared = eventFor.invoke(null, config.getModId());
-				sink.invoke(invoker.invoke(declared), config);
-				if (ANNOUNCED.compareAndSet(false, true)) ForbricLog.info("[Forbric/ConfigApi] config events reach their declared public callbacks");
-			} catch (Throwable failure) {
-				if (warned.compareAndSet(false, true)) ForbricLog.warn("[Forbric/ConfigApi] could not deliver " + callbackMethod, Reflect.unwrap(failure));
-			}
-		});
-	}
+        var protocols = net.forbric.api.ProtocolExtensions.forLoader(KernelConfigApiBridge.class.getClassLoader());
+        bus.addListener(EventPriority.NORMAL, false, ModConfigEvent.Loading.class,
+            event -> protocols.configEvent(net.forbric.api.ProtocolExtension.ConfigEvent.LOADING, event.getConfig()));
+        bus.addListener(EventPriority.NORMAL, false, ModConfigEvent.Reloading.class,
+            event -> protocols.configEvent(net.forbric.api.ProtocolExtension.ConfigEvent.RELOADING, event.getConfig()));
+        bus.addListener(EventPriority.NORMAL, false, ModConfigEvent.Unloading.class,
+            event -> protocols.configEvent(net.forbric.api.ProtocolExtension.ConfigEvent.UNLOADING, event.getConfig()));
+    }
 
 	/**
 	 * The mod-ID-keyed 3-arg registration the porting layer compiled against.

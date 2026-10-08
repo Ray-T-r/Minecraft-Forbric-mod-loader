@@ -56,8 +56,14 @@ class UncalledMethodCensusTest {
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 	private static final Path FORGE = STAGED.resolve("forge-patched/patched-mc-forge-26.2.jar");
 	private static final Path NEOFORGE = STAGED.resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
-	private static final Path KERNEL_MAIN = Path.of("build/classes/java/main");
-	private static final Path KERNEL_RUNTIME = Path.of("build/classes/java/runtime");
+	private static final Path KERNEL_MAIN = mainClasses();
+	private static final Path KERNEL_RUNTIME = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
+    private static Path mainClasses() {
+        String configured=System.getProperty("forbric.test.mainClasses");
+        if(configured!=null)return Path.of(configured);
+        try{return Path.of(MergedBaseUncalledMethods.class.getProtectionDomain().getCodeSource().getLocation().toURI());}
+        catch(Exception invalid){throw new IllegalStateException("The census needs the actual compiled kernel classes",invalid);}
+    }
 
 	/** What the hierarchy and override checks need of a class: its supertypes and its methods' access, by name+desc. */
 	private record Shape(String superName, List<String> interfaces, Map<String, Integer> methods) {

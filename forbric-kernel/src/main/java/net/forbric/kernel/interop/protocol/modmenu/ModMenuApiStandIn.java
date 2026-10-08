@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package net.forbric.kernel.boot;
+package net.forbric.kernel.interop.protocol.modmenu;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -64,12 +64,12 @@ public final class ModMenuApiStandIn {
 	/** Mod Menu's "this mod has no config screen" factory, which the API's default returns. */
 	public static final String NULL_FACTORY = "com/terraformersmc/modmenu/util/NullScreenFactory";
 	/** Where the game-side jar carries the stand-in's class files, each with {@code .bin} appended to its name. */
-	static final String RESOURCES = "META-INF/forbric/modmenu-api/";
+	public static final String RESOURCES = "META-INF/forbric/modmenu-api/";
 	/**
 	 * All of Mod Menu 20.0.3's API package, so a mod naming any part of it links, and the one internal class the API
 	 * itself returns: the {@code NullScreenFactory} its default factory is, which is how a reader tells "no config".
 	 */
-	static final List<String> CLASSES = List.of(API,
+	public static final List<String> CLASSES = List.of(API,
 			"com/terraformersmc/modmenu/api/ConfigScreenFactory",
 			"com/terraformersmc/modmenu/api/UpdateChecker",
 			"com/terraformersmc/modmenu/api/UpdateInfo",
