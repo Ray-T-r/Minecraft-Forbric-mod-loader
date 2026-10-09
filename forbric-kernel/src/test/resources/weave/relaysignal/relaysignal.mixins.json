@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.relay.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["RelayDampMixin"], "injectors": {"defaultRequire": 1}}

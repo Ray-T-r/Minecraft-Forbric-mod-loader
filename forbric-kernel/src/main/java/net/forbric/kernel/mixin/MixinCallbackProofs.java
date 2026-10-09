@@ -580,16 +580,120 @@ final class MixinCallbackProofs {
 	static Map<Integer, Integer> parameterLocals(MethodNode handler, String nativeDesc, MethodNode live, IntUnaryOperator nativeParameter) {
 		MixinHandlerShape shape = MixinHandlerShape.of(handler, nativeDesc, live);
 		if (shape == null) return null;
-		Type[] nativeTypes = Type.getArgumentTypes(nativeDesc), liveTypes = Type.getArgumentTypes(live.desc);
-		int[] liveSlots = slots(live);
+		Map<Integer, Integer> result = new LinkedHashMap<>();
+		for (MixinHandlerShape.Extra local : shape.locals()) {
+			int slot = parameterSlot(local, nativeDesc, live, nativeParameter);
+			if (slot < 0) return null;
+			result.put(local.parameter(), slot);
+		}
+		return result;
+	}
+
+	/**
+	 * {@link #parameterLocals}' rule for one {@code @Local}: an {@code argsOnly} one with no discriminator, of a type that
+	 * is one parameter of {@code nativeDesc} and one of {@code live} (the same one by {@code nativeParameter}, when given),
+	 * is that parameter's slot of {@code live}; -1 for any other.
+	 */
+	private static int parameterSlot(MixinHandlerShape.Extra local, String nativeDesc, MethodNode live, IntUnaryOperator nativeParameter) {
+		AnnotationNode sugar = local.sugar();
+		if (!Boolean.TRUE.equals(MixinFit.value(sugar, "argsOnly")) || discriminated(sugar)) return -1;
+		int nativePosition = only(Type.getArgumentTypes(nativeDesc), local.type()), livePosition = only(Type.getArgumentTypes(live.desc), local.type());
+		if (nativePosition < 0 || livePosition < 0 || nativeParameter != null && nativeParameter.applyAsInt(livePosition) != nativePosition) return -1;
+		return slots(live)[livePosition];
+	}
+
+	/** Whether a {@code @Local} names its slot by {@code index}, {@code ordinal} or {@code name} rather than by its type alone. */
+	private static boolean discriminated(AnnotationNode sugar) {
+		return MixinFit.value(sugar, "index") instanceof Number n && n.intValue() >= 0
+				|| MixinFit.value(sugar, "ordinal") instanceof Number o && o.intValue() >= 0 || !MixinFit.stringList(MixinFit.value(sugar, "name")).isEmpty();
+	}
+
+	/**
+	 * Which native parameter each parameter of a method of {@code liveDesc} carries, where the platform kept the native
+	 * method {@code nativeDesc}'s parameters, in their order, and inserted its own among them (the same return): live
+	 * position {@code j} carries native position {@code k} only where every order-keeping placement of the native
+	 * parameters among the live ones puts {@code k} at {@code j} — the leftmost and the rightmost placement agree there,
+	 * so no type that repeats can be paired by guess. -1 for a live parameter no placement fixes. Null when the native
+	 * parameters cannot be placed at all.
+	 */
+	static IntUnaryOperator projection(String nativeDesc, String liveDesc) {
+		Type[] source, current;
+		try {
+			if (!Type.getReturnType(nativeDesc).equals(Type.getReturnType(liveDesc))) return null;
+			source = Type.getArgumentTypes(nativeDesc);
+			current = Type.getArgumentTypes(liveDesc);
+		} catch (RuntimeException invalid) {
+			return null;
+		}
+		int[] leftmost = new int[source.length], rightmost = new int[source.length];
+		for (int k = 0, j = 0; k < source.length; k++, j++) {
+			while (j < current.length && !current[j].equals(source[k])) j++;
+			if (j == current.length) return null;
+			leftmost[k] = j;
+		}
+		for (int k = source.length - 1, j = current.length - 1; k >= 0; k--, j--) {
+			while (!current[j].equals(source[k])) j--;
+			rightmost[k] = j;
+		}
+		int[] carried = new int[current.length];
+		java.util.Arrays.fill(carried, -1);
+		for (int k = 0; k < source.length; k++) if (leftmost[k] == rightmost[k]) carried[leftmost[k]] = k;
+		return j -> j >= 0 && j < carried.length ? carried[j] : -1;
+	}
+
+	/**
+	 * The {@code @Local}s of {@code handler}, written for the one point {@code nativePoint} of the native method
+	 * {@code reference}, read where the live method {@code live} makes, at each of {@code livePoints}, the call that took
+	 * that point's place: each {@code @Local} — annotated, or a target argument Mixin appends, read against the method it
+	 * was written for as the {@code @Local(argsOnly = true)} it stands for — to the one slot of {@code live} that holds its
+	 * value at every live point. With the native body ({@code reference}; {@code nativeDesc} is its descriptor either way)
+	 * by producer ({@link #correspondLocals}), {@code nativeParameter} telling which native parameter a live one carries.
+	 * Without it nothing records what a local held natively, and an {@code ordinal}, {@code index} or {@code name}
+	 * describes the native body's locals, not the live one's: an {@code argsOnly} one is its parameter
+	 * ({@link #parameterSlot}); any other is the local of its type the live call is itself handed, the value the platform
+	 * passes where the native call stood ({@link MixinLocalOriginProof#atCall}), and where the call is handed none, the
+	 * slot MixinExtras' own reading names at the live point ({@link MixinLocalOriginProof#slot}). Handler parameter to
+	 * live slot; null when the handler has an extra that is no {@code @Local}, the call is handed two locals of one
+	 * captured type, or any {@code @Local} is not read so.
+	 */
+	static Map<Integer, Integer> replacedCallLocals(MethodNode handler, String nativeOwner, MethodNode reference, AbstractInsnNode nativePoint,
+			String nativeDesc, String liveOwner, MethodNode live, List<? extends AbstractInsnNode> livePoints, IntUnaryOperator nativeParameter) {
+		if (live == null || livePoints == null || livePoints.isEmpty()) return null;
+		MixinHandlerShape shape = MixinHandlerShape.of(handler, reference != null ? reference.desc : nativeDesc, reference);
+		if (shape == null || shape.extras().stream().anyMatch(extra -> extra.role() != MixinHandlerShape.Role.LOCAL)) return null;
+		Map<Integer, Integer> result = null;
+		for (AbstractInsnNode point : livePoints) {
+			Map<Integer, Integer> one;
+			if (reference != null) one = nativePoint == null ? null
+					: correspondLocals(handler, nativeOwner, reference, nativePoint, liveOwner, live, point, nativeParameter);
+			else one = unrecordedLocals(shape, nativeDesc, liveOwner, live, point, nativeParameter);
+			if (one == null || result != null && !result.equals(one)) return null;   // one annotation reads one slot at every point
+			result = one;
+		}
+		return result;
+	}
+
+	/** {@link #replacedCallLocals} without the native body, at one live point. */
+	private static Map<Integer, Integer> unrecordedLocals(MixinHandlerShape shape, String nativeDesc, String liveOwner, MethodNode live,
+			AbstractInsnNode point, IntUnaryOperator nativeParameter) {
+		int at = live.instructions.indexOf(point);
+		if (at < 0) return null;
 		Map<Integer, Integer> result = new LinkedHashMap<>();
 		for (MixinHandlerShape.Extra local : shape.locals()) {
 			AnnotationNode sugar = local.sugar();
-			if (!Boolean.TRUE.equals(MixinFit.value(sugar, "argsOnly")) || MixinFit.value(sugar, "index") instanceof Number n && n.intValue() >= 0
-					|| MixinFit.value(sugar, "ordinal") instanceof Number o && o.intValue() >= 0 || !MixinFit.stringList(MixinFit.value(sugar, "name")).isEmpty()) return null;
-			int nativePosition = only(nativeTypes, local.type()), livePosition = only(liveTypes, local.type());
-			if (nativePosition < 0 || livePosition < 0 || nativeParameter != null && nativeParameter.applyAsInt(livePosition) != nativePosition) return null;
-			result.put(local.parameter(), liveSlots[livePosition]);
+			int slot = -1;
+			if (Boolean.TRUE.equals(MixinFit.value(sugar, "argsOnly"))) slot = parameterSlot(local, nativeDesc, live, nativeParameter);
+			else {
+				if (point instanceof MethodInsnNode call) for (int candidate : MixinLocalOriginProof.typedSlots(live, at, local.type(), false)) {
+					MixinLocalOriginProof.CallValue handed = MixinLocalOriginProof.atCall(liveOwner, live, call, candidate);
+					if (handed == null || handed.operand() < 0) continue;
+					if (slot >= 0) return null;   // the call is handed two of them: which one is a guess
+					slot = candidate;
+				}
+				if (slot < 0) slot = MixinLocalOriginProof.slot(sugar, local.type(), live, at);
+			}
+			if (slot < 0) return null;
+			result.put(local.parameter(), slot);
 		}
 		return result;
 	}

@@ -53,10 +53,35 @@ final class MixinCallbackShape {
     /**
      * Whether the handler's operands and return are {@code descriptor}'s and its extras exactly {@code extras}
      * ({@link MixinHandlerShape}): the callback contract by platform types and parameter roles, not by one mod's descriptor.
+     * Read alone: a target argument the handler appends is no {@code @Local}; an adapter that knows the method the
+     * handler is written for reads it there ({@link #shape(MethodNode, MethodNode, String, MixinHandlerShape.Want...)}).
      */
     static boolean shape(MethodNode method, String descriptor, MixinHandlerShape.Want... extras) {
-        MixinHandlerShape shape = MixinHandlerShape.of(method);
+        return shape(method, null, descriptor, extras);
+    }
+    /**
+     * {@link #shape(MethodNode, String, MixinHandlerShape.Want...)}, the handler read against {@code written}, the method
+     * it is written for (the native one when at hand, else the one its selectors bind; null: read alone): a target argument
+     * it appends after its operands is that method's parameter, the {@code @Local(argsOnly = true)} it is equivalent to
+     * ({@link MixinHandlerShape#of(MethodNode, String, MethodNode)}), and is served wherever that {@code @Local} is.
+     */
+    static boolean shape(MethodNode method, MethodNode written, String descriptor, MixinHandlerShape.Want... extras) {
+        MixinHandlerShape shape = read(method, written);
         return shape != null && shape.matches(descriptor, extras);
+    }
+    /**
+     * Whether the handler's operands and return are {@code descriptor}'s and every extra is a {@code @Local} — annotated,
+     * or a target argument read against {@code written} as the one it stands for — whatever ones and however many: which
+     * value each reads is then proved where the callback moves, never assumed from a list one mod declared.
+     */
+    static boolean captures(MethodNode method, MethodNode written, String descriptor) {
+        MixinHandlerShape shape = read(method, written);
+        return shape != null && shape.operands(descriptor)
+                && shape.extras().stream().allMatch(extra -> extra.role() == MixinHandlerShape.Role.LOCAL);
+    }
+    /** The handler read against {@code written} (its descriptor and body); alone where {@code written} is null. */
+    static MixinHandlerShape read(MethodNode method, MethodNode written) {
+        return written == null ? MixinHandlerShape.of(method) : MixinHandlerShape.of(method, written.desc, written);
     }
     /**
      * Whether the handler's one {@code @At} is a {@code kind} point at {@code target} (an {@code Lowner;name(desc)}
