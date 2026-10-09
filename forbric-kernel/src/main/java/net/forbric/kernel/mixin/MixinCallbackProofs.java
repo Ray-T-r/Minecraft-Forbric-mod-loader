@@ -458,6 +458,70 @@ final class MixinCallbackProofs {
 	}
 
 	/**
+	 * Without the native body: each {@code @Local} must be an {@code argsOnly} one with no discriminator, whose type is one
+	 * parameter of the native descriptor {@code nativeDesc} and one parameter of {@code live} — MixinExtras then reads the
+	 * one parameter of that type in either method; {@code nativeParameter} (live position to native position), when
+	 * given, must say it is the same argument. Handler parameter to live slot; null when any {@code @Local} is not of
+	 * that form.
+	 */
+	static Map<Integer, Integer> parameterLocals(MethodNode handler, String nativeDesc, MethodNode live, IntUnaryOperator nativeParameter) {
+		MixinHandlerShape shape = MixinHandlerShape.of(handler);
+		if (shape == null) return null;
+		Type[] nativeTypes = Type.getArgumentTypes(nativeDesc), liveTypes = Type.getArgumentTypes(live.desc);
+		int[] liveSlots = slots(live);
+		Map<Integer, Integer> result = new LinkedHashMap<>();
+		for (MixinHandlerShape.Extra local : shape.locals()) {
+			AnnotationNode sugar = local.sugar();
+			if (!Boolean.TRUE.equals(MixinFit.value(sugar, "argsOnly")) || MixinFit.value(sugar, "index") instanceof Number n && n.intValue() >= 0
+					|| MixinFit.value(sugar, "ordinal") instanceof Number o && o.intValue() >= 0 || !MixinFit.stringList(MixinFit.value(sugar, "name")).isEmpty()) return null;
+			int nativePosition = only(nativeTypes, local.type()), livePosition = only(liveTypes, local.type());
+			if (nativePosition < 0 || livePosition < 0 || nativeParameter != null && nativeParameter.applyAsInt(livePosition) != nativePosition) return null;
+			result.put(local.parameter(), liveSlots[livePosition]);
+		}
+		return result;
+	}
+
+	private static int only(Type[] types, Type type) {
+		int found = -1;
+		for (int i = 0; i < types.length; i++) if (types[i].equals(type)) { if (found >= 0) return -1; found = i; }
+		return found;
+	}
+
+	/**
+	 * Which argument of {@code nativeCall} (made in {@code nativeCaller}) each argument of {@code liveCall} (made in
+	 * {@code liveCaller}) carries: argument {@code j} of the live call is argument {@code k} of the native call when both
+	 * are produced by the same expression, and no other native argument is. -1 where none or several are. The callers
+	 * must take the same parameters, so a parameter is the same value in both.
+	 */
+	static int[] argumentCorrespondence(String nativeOwner, MethodNode nativeCaller, MethodInsnNode nativeCall, String liveOwner,
+			MethodNode liveCaller, MethodInsnNode liveCall) {
+		int[] none = new int[Type.getArgumentTypes(liveCall.desc).length];
+		java.util.Arrays.fill(none, -1);
+		if (!nativeCaller.desc.equals(liveCaller.desc) || ((nativeCaller.access ^ liveCaller.access) & Opcodes.ACC_STATIC) != 0) return none;
+		Frame<SourceValue>[] before = sources(nativeOwner, nativeCaller), after = sources(liveOwner, liveCaller);
+		if (before == null || after == null) return none;
+		int was = nativeCaller.instructions.indexOf(nativeCall), now = liveCaller.instructions.indexOf(liveCall);
+		if (was < 0 || now < 0 || before[was] == null || after[now] == null) return none;
+		String[] nativeArguments = arguments(nativeCaller, before[was], nativeCall, before), liveArguments = arguments(liveCaller, after[now], liveCall, after);
+		int[] mapping = none.clone();
+		for (int j = 0; j < liveArguments.length; j++) {
+			if (liveArguments[j] == null) continue;
+			int found = -1;
+			for (int k = 0; k < nativeArguments.length; k++) if (liveArguments[j].equals(nativeArguments[k])) found = found == -1 ? k : -2;
+			mapping[j] = found < 0 ? -1 : found;
+		}
+		return mapping;
+	}
+
+	private static String[] arguments(MethodNode caller, Frame<SourceValue> frame, MethodInsnNode call, Frame<SourceValue>[] frames) {
+		int count = Type.getArgumentTypes(call.desc).length;
+		String[] out = new String[count];
+		IntFunction<String> names = parameters(caller, IntUnaryOperator.identity());
+		for (int i = 0; i < count; i++) out[i] = top(caller, frames, frame, count - 1 - i, names, 0, new HashSet<>());
+		return out;
+	}
+
+	/**
 	 * Points each {@code @Local} of {@code mapping} (handler parameter to slot) at its slot of {@code live} at
 	 * {@code livePoint}, where MixinExtras' own reading of the annotation would name another: the slot becomes the
 	 * {@code index}, and {@code ordinal} and {@code name} — which MixinExtras reads before an index — are dropped.

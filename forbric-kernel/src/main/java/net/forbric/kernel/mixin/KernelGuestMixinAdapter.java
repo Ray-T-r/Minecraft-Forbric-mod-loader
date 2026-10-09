@@ -267,6 +267,9 @@ public final class KernelGuestMixinAdapter {
                 judged = ForbricMixinService.absorbedCallbacksAsLoaded(judged, resource);
                 judged = MixinDecodeScopeAdapter.asLoaded(ReplacedCallRedirects.asLoaded(
                         MixinPlayerWorldCallbackAdapter.asLoaded(judged, resource), resource), resource);
+				// …and a callback on a vanilla method the merged class no longer declares (StructureTemplate.placeEntities),
+				// which binds nothing as compiled, is judged where the adapter moves it.
+				judged = MixinStructurePlacementAdapter.asLoaded(judged, resource);
 				MixinFit.Result fit = MixinFit.evaluate(judged, resource,
 						net.forbric.kernel.classloading.DelegationPolicy::alwaysGame, added, nativeView);
 				List<String> groupFailures = MixinGroupConstraints.failures(MixinFit.parse(judged), resource, added);

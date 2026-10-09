@@ -1,18 +1,50 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.mixin;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.IntUnaryOperator;
+
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
+
 import net.forbric.api.Ecosystem;
 
-/** Keep authored entity processor setup, iteration and cleanup on the same live placement call. */
+/**
+ * Moves a mod's callbacks on vanilla's {@code StructureTemplate.placeEntities} to the method the merged game calls in its
+ * place.
+ *
+ * <p>NeoForge's {@code placeInWorld} calls {@code addEntitiesToWorld(level, pos, settings, reporter)} where vanilla's called
+ * {@code placeEntities(level, pos, mirror, rotation, pivot, box, finalize, reporter)}, and nothing in the merged game calls
+ * vanilla's method any more. Each injector written for it is moved on its own, whatever else the mixin holds:
+ * <ul>
+ * <li>an {@code @Inject} at the call in {@code placeInWorld}: its point names the call the merged method makes there;
+ * <li>an injector inside {@code placeEntities} — at a call, field access or allocation, or the method's head or tail —
+ * whose handler does not take {@code placeEntities}' own parameters ({@code @WrapOperation} and the other call-driven
+ * injectors take the call's operands; an {@code @Inject} only its {@code CallbackInfo}): it selects
+ * {@code addEntitiesToWorld}, where each of its points is found as often as vanilla's body had it.
+ * </ul>
+ * The replacement is proved, not assumed: exactly one merged method calls {@code addEntitiesToWorld}, and where the class
+ * the mod was compiled against is at hand, that method calls vanilla's once in it. Which method a handler was written
+ * for is read off that class (or, without it, off a selector that spells the descriptor). A {@code @Local} the handler
+ * asks for moves only to the slot proved to hold what the native slot held ({@link MixinCallbackProofs#correspondLocals});
+ * without the native class only an {@code argsOnly} parameter of a type each method has once is read the same way.
+ * Two handlers of one kind at the same point are left as they are.
+ */
 public final class MixinStructurePlacementAdapter {
 	public static final String PROPERTY = "forbric.structurePlacementCallbacks";
 	static final String TARGET = "net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplate";
 	static final String OLD = "placeEntities(Lnet/minecraft/world/level/ServerLevelAccessor;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/Mirror;Lnet/minecraft/world/level/block/Rotation;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/levelgen/structure/BoundingBox;ZLnet/minecraft/util/ProblemReporter;)V";
 	static final String LIVE = "addEntitiesToWorld(Lnet/minecraft/world/level/ServerLevelAccessor;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/levelgen/structure/templatesystem/StructurePlaceSettings;Lnet/minecraft/util/ProblemReporter;)V";
+	private static final String CALLBACK = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
+	private static final Set<String> BODY = Set.of("Inject", "WrapOperation", "Redirect", "ModifyArg", "ModifyExpressionValue", "WrapWithCondition");
+	private static final Set<MixinHandlerShape.Role> EXTRAS = Set.of(MixinHandlerShape.Role.LOCAL, MixinHandlerShape.Role.SHARE, MixinHandlerShape.Role.CANCELLABLE);
+
 	private MixinStructurePlacementAdapter() { }
 
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
@@ -28,32 +60,148 @@ public final class MixinStructurePlacementAdapter {
 		if (!MixinCallbackShape.targets(mixin, TARGET) || "off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY))) return 0;
 		ClassNode target = targets.apply(TARGET), source = references == null ? null : references.apply(MixinStubRebind.ecosystemOf(mixin.name), TARGET);
 		MethodNode place = target == null ? null : MixinPlayerWorldCallbackAdapter.selector(target, LIVE);
-		MethodNode set = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(Lnet/minecraft/world/level/ServerLevelAccessor;Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/levelgen/structure/templatesystem/StructurePlaceSettings;Lnet/minecraft/util/RandomSource;ILorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;)V") && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && (MixinCallbackShape.plainPoint(m, "INVOKE", "L" + TARGET + ";" + OLD) || MixinCallbackShape.plainPoint(m, "INVOKE", "L" + TARGET + ";" + LIVE))
-                && MixinCallbackShape.binds(m, target, "placeInWorld(Lnet/minecraft/world/level/ServerLevelAccessor;Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/levelgen/structure/templatesystem/StructurePlaceSettings;Lnet/minecraft/util/RandomSource;I)Z")),
-                iterate = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(Ljava/util/List;L" + MixinWrapOperationShim.OPERATION + ";)Ljava/util/Iterator;", MixinHandlerShape.Want.local("Lnet/minecraft/world/level/ServerLevelAccessor;"))
-                        && MixinCallbackShape.kind(m, "WrapOperation") && MixinCallbackShape.plainPoint(m, "INVOKE", "Ljava/util/List;iterator()Ljava/util/Iterator;") && authoredFor(m, source)),
-                clear = MixinCallbackShape.unique(mixin, m -> (MixinCallbackShape.shape(m, "(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V")
-                        || MixinCallbackShape.shape(m, LIVE.substring(LIVE.indexOf('('), LIVE.indexOf(')'))+"Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V") && MixinCallbackShape.binds(m, target, LIVE))
-                        && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.plainPoint(m, "TAIL", null) && (authoredFor(m, source) || MixinCallbackShape.binds(m, target, LIVE)));
-		if (place == null || set == null || iterate == null || clear == null
-				|| MixinPlayerWorldCallbackAdapter.count(place, "Ljava/util/List;iterator()Ljava/util/Iterator;") != 1) return 0;
-		int callers = 0;
-		for (MethodNode method : target.methods) if (method.name.equals("placeInWorld")) callers += MixinPlayerWorldCallbackAdapter.count(method, "L" + TARGET + ";" + LIVE);
-		if (callers != 1) return 0;
-		AnnotationNode a = MixinFit.injectorOf(set), b = MixinFit.injectorOf(iterate), c = MixinFit.injectorOf(clear);
-		// MixinRetarget's R7 may already have moved the two @Injects along MergedBaseCalleeSwaps' REPLACED row (the pickup's
-		// point, the TAIL's selector, behind a method of its name); the iterator wrap inside the method is this adapter's.
-		boolean cleared = MixinCallbackShape.binds(clear, target, LIVE);
-		if (a == null || b == null || !authoredFor(iterate, source) || !(cleared || authoredFor(clear, source))) return 0;
-		List<AnnotationNode> points = MixinFit.atNodes(a);
-		Object point = points.size() == 1 ? MixinFit.value(points.getFirst(), "target") : null;
-		boolean picked = ("L" + TARGET + ";" + LIVE).equals(point);
-		if (!picked && !("L" + TARGET + ";" + OLD).equals(point)) return 0;
-		// Only selectors change: Level remains the first argument, so the iterator's args-only local is unchanged.
-		if (!picked) MixinPlayerWorldCallbackAdapter.set(points.getFirst(), "target", "L" + TARGET + ";" + LIVE);
-		MixinPlayerWorldCallbackAdapter.set(b, "method", List.of(LIVE));
-		if (!cleared) MixinPlayerWorldCallbackAdapter.set(c, "method", List.of(LIVE));
-		return 1 + (picked ? 0 : 1) + (cleared ? 0 : 1);
+		if (place == null) return 0;
+		// The one merged call of addEntitiesToWorld is the replacement; natively, its method called placeEntities once.
+		MethodNode caller = null;
+		MethodInsnNode liveCall = null;
+		int calls = 0;
+		for (MethodNode method : target.methods) for (AbstractInsnNode instruction : method.instructions)
+			if (instruction instanceof MethodInsnNode call && MixinPlayerWorldCallbackAdapter.member(call).equals("L" + TARGET + ";" + LIVE)) {
+				calls++;
+				caller = method;
+				liveCall = call;
+			}
+		if (calls != 1) return 0;
+		MethodNode nativeCaller = source == null ? null : MixinPlayerWorldCallbackAdapter.selector(source, caller.name + caller.desc);
+		if (source != null && (nativeCaller == null || MixinPlayerWorldCallbackAdapter.count(nativeCaller, "L" + TARGET + ";" + OLD) != 1)) return 0;
+		MethodInsnNode nativeCall = nativeCaller == null ? null : MixinPlayerWorldCallbackAdapter.first(nativeCaller, "L" + TARGET + ";" + OLD);
+		MethodNode nativeBody = source == null ? null : MixinPlayerWorldCallbackAdapter.selector(source, OLD);
+		int[] arguments = nativeCall == null ? null
+				: MixinCallbackProofs.argumentCorrespondence(source.name, nativeCaller, nativeCall, target.name, caller, liveCall);
+		IntUnaryOperator nativeParameter = arguments == null ? null : j -> arguments[j];
+
+		List<Runnable> moves = new ArrayList<>();
+		int changed = 0;
+		String callerMember = caller.name + caller.desc;
+		final MethodNode host = caller;
+		final MethodInsnNode hostCall = liveCall;
+		MethodNode pick = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.kind(m, "Inject") && pointsAtTheCall(m)
+				&& MixinCallbackShape.binds(m, target, callerMember));
+		if (pick != null && callerMember.equals(MixinTargetSelectors.nativeMember(pick, source, TARGET))) {
+			MixinHandlerShape shape = MixinHandlerShape.of(pick);
+			String callback = Type.getReturnType(caller.desc).equals(Type.VOID_TYPE) ? CALLBACK : MixinHandlerShape.RETURNABLE;
+			Map<Integer, Integer> locals = shape.locals().isEmpty() ? Map.of() : nativeCall == null ? null
+					: MixinCallbackProofs.correspondLocals(pick, source.name, nativeCaller, nativeCall, target.name, caller, liveCall, IntUnaryOperator.identity());
+			String parameters = caller.desc.substring(1, caller.desc.indexOf(')'));
+			if ((shape.operands("(" + callback + ")V") || shape.operands("(" + parameters + callback + ")V")) && extrasServed(shape) && locals != null) {
+				AnnotationNode at = MixinFit.atNodes(MixinFit.injectorOf(pick)).getFirst();
+				boolean moved = ("L" + TARGET + ";" + OLD).equals(MixinFit.value(at, "target"));
+				if (moved) changed++;
+				moves.add(() -> {
+					if (moved) MixinPlayerWorldCallbackAdapter.set(at, "target", "L" + TARGET + ";" + LIVE);
+					MixinCallbackProofs.pinLocals(pick, host, hostCall, locals);
+				});
+			}
+		}
+		Map<String, List<MethodNode>> roles = new LinkedHashMap<>();
+		for (MethodNode handler : mixin.methods) {
+			AnnotationNode injector = MixinFit.injectorOf(handler);
+			if (injector == null) continue;
+			String kind = injector.desc.substring(injector.desc.lastIndexOf('/') + 1, injector.desc.length() - 1);
+			if (!BODY.contains(kind) || !MixinCallbackShape.kind(handler, kind) || !authoredFor(handler, source)) continue;
+			StringBuilder role = new StringBuilder(kind);
+			for (AnnotationNode at : MixinFit.atNodes(injector)) role.append('|').append(at.values);
+			roles.computeIfAbsent(role.toString(), key -> new ArrayList<>()).add(handler);
+		}
+		for (List<MethodNode> role : roles.values()) {
+			if (role.size() != 1) continue;
+			MethodNode handler = role.getFirst();
+			MixinHandlerShape shape = MixinHandlerShape.of(handler);
+			if (shape.kind().equals("Inject") && !shape.operands("(" + CALLBACK + ")V") || !extrasServed(shape)) continue;
+			List<AnnotationNode> ats = MixinFit.atNodes(MixinFit.injectorOf(handler));
+			if (ats.isEmpty() || !ats.stream().allMatch(at -> found(nativeBody, place, at))) continue;
+			Map<Integer, Integer> locals;
+			AbstractInsnNode livePoint = null;
+			if (shape.locals().isEmpty()) locals = Map.of();
+			else if (ats.size() != 1) continue;
+			else {
+				List<AbstractInsnNode> now = MixinCallbackProofs.points(place, ats.getFirst());
+				if (now == null || now.size() != 1) continue;
+				livePoint = now.getFirst();
+				if (nativeBody != null) {
+					List<AbstractInsnNode> was = MixinCallbackProofs.points(nativeBody, ats.getFirst());
+					locals = was == null || was.size() != 1 ? null : MixinCallbackProofs.correspondLocals(handler, source.name, nativeBody,
+							was.getFirst(), target.name, place, livePoint, nativeParameter == null ? j -> -1 : nativeParameter);
+				} else locals = MixinCallbackProofs.parameterLocals(handler, OLD.substring(OLD.indexOf('(')), place, null);
+			}
+			if (locals == null) continue;
+			changed++;
+			AbstractInsnNode point = livePoint;
+			moves.add(() -> {
+				MixinPlayerWorldCallbackAdapter.set(MixinFit.injectorOf(handler), "method", List.of(LIVE));
+				if (point != null) MixinCallbackProofs.pinLocals(handler, place, point, locals);
+			});
+		}
+		moves.forEach(Runnable::run);
+		return changed;
+	}
+
+	/**
+	 * The mixin as this adapter will hand it to Mixin, for judging whether it fits before Mixin loads it
+	 * ({@code KernelGuestMixinAdapter}): a mixin whose only callbacks are on vanilla's {@code placeEntities} binds nothing
+	 * in the merged class as compiled, and would otherwise be left out as dead weight before this adapter ever saw it.
+	 */
+	public static byte[] asLoaded(byte[] bytes, Function<String, byte[]> resource) {
+		try {
+			ClassNode mixin = new ClassNode();
+			new org.objectweb.asm.ClassReader(bytes).accept(mixin, 0);
+			if (!MixinCallbackShape.targets(mixin, TARGET)) return bytes;
+			Function<String, ClassNode> targets = name -> {
+				byte[] found = resource.apply(name + ".class");
+				if (found == null) return null;
+				ClassNode node = new ClassNode();
+				new org.objectweb.asm.ClassReader(found).accept(node, 0);
+				return node;
+			};
+			if (adapt(mixin, targets) == 0) return bytes;
+			org.objectweb.asm.ClassWriter out = new org.objectweb.asm.ClassWriter(0);
+			mixin.accept(out);
+			return out.toByteArray();
+		} catch (RuntimeException unreadable) {
+			return bytes;
+		}
+	}
+
+	/** One {@code @At(INVOKE)} at vanilla's call of {@code placeEntities}, or at the merged call it was already moved to. */
+	private static boolean pointsAtTheCall(MethodNode handler) {
+		List<AnnotationNode> ats = MixinFit.atNodes(MixinFit.injectorOf(handler));
+		if (ats.size() != 1) return false;
+		AnnotationNode at = ats.getFirst();
+		Object target = MixinFit.value(at, "target"), ordinal = MixinFit.value(at, "ordinal");
+		return "INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value")))
+				&& (("L" + TARGET + ";" + OLD).equals(target) || ("L" + TARGET + ";" + LIVE).equals(target))
+				&& MixinFit.value(at, "by") == null && MixinFit.value(at, "opcode") == null && MixinFit.value(at, "args") == null
+				&& (ordinal == null || ordinal instanceof Number n && n.intValue() <= 0);
+	}
+
+	/** The handler's extras are ones a moved handler still receives: proved {@code @Local}s, {@code @Share}, {@code @Cancellable}. */
+	private static boolean extrasServed(MixinHandlerShape shape) {
+		return shape.extras().stream().allMatch(extra -> EXTRAS.contains(extra.role()));
+	}
+
+	/**
+	 * Whether {@code at} finds its point in {@code place} as it did in vanilla's body: as many instructions in each when that
+	 * body is at hand; without it, one instruction, or the method's head or tail.
+	 */
+	private static boolean found(MethodNode nativeBody, MethodNode place, AnnotationNode at) {
+		List<AbstractInsnNode> now = MixinCallbackProofs.points(place, at);
+		if (now == null || now.isEmpty()) return false;
+		if (nativeBody != null) {
+			List<AbstractInsnNode> was = MixinCallbackProofs.points(nativeBody, at);
+			return was != null && was.size() == now.size();
+		}
+		String value = MixinFit.asString(MixinFit.value(at, "value"));
+		return now.size() == 1 || "HEAD".equals(value) || "TAIL".equals(value);
 	}
 
 	/** Whether the handler was written for the native {@code placeEntities}, the method the merged game no longer calls. */
