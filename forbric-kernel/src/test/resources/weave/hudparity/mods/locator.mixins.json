@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.locator.mixin", "compatibilityLevel": "JAVA_21", "client": ["LocatorMixin"], "injectors": {"defaultRequire": 1}}

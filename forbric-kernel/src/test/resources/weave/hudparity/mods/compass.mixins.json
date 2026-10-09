@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.compass.mixin", "compatibilityLevel": "JAVA_21", "client": ["CompassMixin"], "injectors": {"defaultRequire": 1}}
