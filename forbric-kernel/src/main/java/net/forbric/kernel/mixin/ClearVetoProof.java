@@ -9,6 +9,8 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.BasicInterpreter;
+import org.objectweb.asm.tree.analysis.BasicValue;
 import org.objectweb.asm.tree.analysis.Frame;
 import org.objectweb.asm.tree.analysis.Interpreter;
 import org.objectweb.asm.tree.analysis.Value;
@@ -27,9 +29,15 @@ import org.objectweb.asm.tree.analysis.Value;
  *   <li>a call the model does not know (the question, a listener, a mod's API) outside the per-effect parts — a lambda
  *       run over the original effects, or a loop over an iterator of them;</li>
  *   <li>any such call in the bookkeeping over the decided effects (the retained map's own loops and lambdas);</li>
- *   <li>a value carried from one effect to the next (a local written in a loop and live at its head), an aggregate
+ *   <li>a value carried from one effect to the next (a local written in a loop and live at its head, an element of an
+ *       array made outside the loop and written in it), an aggregate
  *       ({@code size}, {@code isEmpty}, {@code count}, {@code anyMatch}) that reaches a decision, a collection handed
  *       to an unknown call, a field write, a throw, a try block;</li>
+ *   <li>an effect that is not the one being decided: one taken from an iterator outside the loop that iterates it
+ *       (the first effect, {@code iterator().next()}), a second one taken in the same round, one taken inside a lambda
+ *       run per effect — used for anything at all, a comparison, a test, a lookup, a removal through its iterator;
+ *       and whether more effects follow ({@code hasNext()}) deciding anything but the end of its own loop, which may
+ *       be left no other way ({@code break} or {@code return} out of it decides later effects from earlier ones);</li>
  *   <li>anything put into the effect map that is not one of its own original entries, any growth of a host local, and
  *       the original operation called other than once, outside loops, on the effect map itself.</li>
  * </ul>
@@ -59,7 +67,12 @@ final class ClearVetoProof {
 		}
 	}
 
-	enum K { UNINIT, PRIM, SIZE, THIS, OPQ, OP, SRC, TMAP, TCOLL, VIEW, ITER, STREAM, ELEM, ARRAY, LAMBDA, COLLECTOR, TOP }
+	/**
+	 * Kinds of abstract value. {@code PICK} is anything computed from an effect that is not the one being decided (one
+	 * taken once per clear, or a second one in a round), reference or primitive; {@code MORE} is an iterator's
+	 * {@code hasNext()}, which may decide only the end of that iterator's own loop.
+	 */
+	enum K { UNINIT, PRIM, SIZE, THIS, OPQ, OP, SRC, TMAP, TCOLL, VIEW, ITER, STREAM, ELEM, ARRAY, LAMBDA, COLLECTOR, PICK, MORE, TOP }
 
 	enum Part { ENTRY, KEY, VALUE }
 
@@ -83,6 +96,10 @@ final class ClearVetoProof {
 
 		static V elem(Part part) {
 			return new V(K.ELEM, 1, null, part, null, List.of());
+		}
+
+		static V pick(int size) {
+			return new V(K.PICK, size, null, null, null, List.of());
 		}
 
 		/** Site identity by instruction object, not by its (mutable) contents. */
@@ -111,17 +128,66 @@ final class ClearVetoProof {
 		}
 	}
 
+	/**
+	 * The handler's control flow, known before its values are: each instruction's strongly connected component, whether
+	 * it lies on a loop, and how many {@code Iterator.next()} calls each loop makes.
+	 */
+	record Cfg(List<List<Integer>> succ, int[] comp, boolean[] cyclic, Map<Integer, Integer> nexts) {
+		static Cfg of(String owner, MethodNode m) throws AnalyzerException {
+			int n = m.instructions.size();
+			List<List<Integer>> succ = new ArrayList<>();
+			for (int i = 0; i < n; i++) succ.add(new ArrayList<>());
+			new Analyzer<BasicValue>(new BasicInterpreter()) {
+				@Override protected void newControlFlowEdge(int from, int to) {
+					succ.get(from).add(to);
+				}
+
+				@Override protected boolean newControlFlowExceptionEdge(int from, int to) {
+					succ.get(from).add(to);
+					return true;
+				}
+			}.analyze(owner, m);
+			int[] comp = scc(succ, n);
+			Map<Integer, Integer> sizes = new HashMap<>();
+			for (int c : comp) sizes.merge(c, 1, Integer::sum);
+			boolean[] cyclic = new boolean[n];
+			for (int i = 0; i < n; i++) {
+				cyclic[i] = sizes.get(comp[i]) > 1;
+				for (int s : succ.get(i)) if (s == i) cyclic[i] = true;
+			}
+			Map<Integer, Integer> nexts = new HashMap<>();
+			for (int i = 0; i < n; i++)
+				if (cyclic[i] && m.instructions.get(i) instanceof MethodInsnNode c && c.owner.equals("java/util/Iterator") && c.name.equals("next"))
+					nexts.merge(comp[i], 1, Integer::sum);
+			return new Cfg(succ, comp, cyclic, nexts);
+		}
+
+		/** Whether a {@code next()} here takes the effect of a round: it is the one {@code next()} of a loop. */
+		boolean round(int i) {
+			return i >= 0 && cyclic[i] && nexts.getOrDefault(comp[i], 0) == 1;
+		}
+	}
+
 	/** What one proof run learned, across the handler and every lambda it analysed. */
 	static final class Facts {
 		final ClassNode mixin;
 		final MethodNode main;
+		final Cfg cfg;
 		final Set<String> violations = new LinkedHashSet<>();
 		final Map<AbstractInsnNode, Temp> temps = new IdentityHashMap<>();
 		final Map<AbstractInsnNode, Set<V>> arrays = new IdentityHashMap<>();
 		final Map<AbstractInsnNode, Set<AbstractInsnNode>> arrayStores = new IdentityHashMap<>();
 		final Set<AbstractInsnNode> opaqueMain = Collections.newSetFromMap(new IdentityHashMap<>());
 		final Set<AbstractInsnNode> startsMain = Collections.newSetFromMap(new IdentityHashMap<>());
-		final Map<AbstractInsnNode, Dom> nextMain = new IdentityHashMap<>();
+		/** The handler's round {@code next()} calls, each with the iterator it advances. */
+		final Map<AbstractInsnNode, V> rounds = new IdentityHashMap<>();
+		/** The handler's jumps on an iterator's {@code hasNext()}, each with that iterator. */
+		final Map<AbstractInsnNode, V> moreJumps = new IdentityHashMap<>();
+		/** The handler's {@code Iterator.remove()} calls, each with the iterator it removes through. */
+		final Map<AbstractInsnNode, V> removals = new IdentityHashMap<>();
+		/** The arrays the handler's own body makes, and its stores into arrays, each with the array stored into. */
+		final Set<AbstractInsnNode> mainArrays = Collections.newSetFromMap(new IdentityHashMap<>());
+		final Map<AbstractInsnNode, V> arrayWrites = new IdentityHashMap<>();
 		final Set<MethodInsnNode> opCalls = Collections.newSetFromMap(new IdentityHashMap<>());
 		/** Mutations of the effect map: kind and the instruction (and for putAll the temp site it restores). */
 		final Set<List<Object>> recv = new LinkedHashSet<>();
@@ -132,9 +198,10 @@ final class ClearVetoProof {
 		int askedAnalysed;
 		final Deque<Handle> analysing = new ArrayDeque<>();
 
-		Facts(ClassNode mixin, MethodNode main) {
+		Facts(ClassNode mixin, MethodNode main, Cfg cfg) {
 			this.mixin = mixin;
 			this.main = main;
+			this.cfg = cfg;
 		}
 
 		void no(String why) {
@@ -151,29 +218,20 @@ final class ClearVetoProof {
 		for (int i = 2; i < params.length; i++)
 			if (!params[i].getDescriptor().equals("Ljava/util/Map;")) return new Verdict("captures a host local that is not a map", null, List.of());
 		if (handler.tryCatchBlocks != null && !handler.tryCatchBlocks.isEmpty()) return new Verdict("has a try block", null, List.of());
-		Facts facts = new Facts(mixin, handler);
-		List<V> values = new ArrayList<>();
-		values.add(V.of(K.THIS));
-		values.add(new V(K.SRC, 1, 1, null, Dom.SOURCE, List.of()));
-		values.add(V.of(K.OP));
-		for (int i = 2; i < params.length; i++) values.add(new V(K.SRC, 1, i + 1, null, Dom.SOURCE, List.of()));
-		Interp main = new Interp(facts, Ctx.MAIN, handler, values);
-		List<int[]> edges = new ArrayList<>();
+		Facts facts;
 		try {
-			new Analyzer<V>(main) {
-				@Override protected void newControlFlowEdge(int from, int to) {
-					edges.add(new int[] {from, to});
-				}
-
-				@Override protected boolean newControlFlowExceptionEdge(int from, int to) {
-					edges.add(new int[] {from, to});
-					return true;
-				}
-			}.analyze(mixin.name, handler);
+			// The loops first: whether a next() takes a round's effect is known where its value is made.
+			facts = new Facts(mixin, handler, Cfg.of(mixin.name, handler));
+			List<V> values = new ArrayList<>();
+			values.add(V.of(K.THIS));
+			values.add(new V(K.SRC, 1, 1, null, Dom.SOURCE, List.of()));
+			values.add(V.of(K.OP));
+			for (int i = 2; i < params.length; i++) values.add(new V(K.SRC, 1, i + 1, null, Dom.SOURCE, List.of()));
+			new Analyzer<>(new Interp(facts, Ctx.MAIN, handler, values)).analyze(mixin.name, handler);
 		} catch (AnalyzerException | RuntimeException unreadable) {
 			return new Verdict("unreadable: " + unreadable.getMessage(), null, List.of());
 		}
-		loops(facts, handler, edges);
+		loops(facts, handler);
 		if (!facts.violations.isEmpty()) return new Verdict(facts.violations.iterator().next(), null, List.of());
 		if (facts.opCalls.size() > 1) return new Verdict("calls the original operation more than once", null, List.of());
 		return new Verdict(null, direct(facts), List.copyOf(facts.opCalls));
@@ -210,34 +268,59 @@ final class ClearVetoProof {
 	/**
 	 * Per-effect parts of the handler body: every unknown call sits in a loop that iterates the original effects (and no
 	 * decided ones), no iteration starts and no original operation inside a loop, and no local carries a value from one
-	 * round to the next.
+	 * round to the next. A loop that takes a round's effect is left only when its iterator runs out: its one test of
+	 * {@code hasNext()} is the only edge out of it, and no other test of {@code hasNext()} decides anything; an
+	 * {@code Iterator.remove()} removes the round's effect of the loop it is in.
 	 */
-	private static void loops(Facts f, MethodNode m, List<int[]> edges) {
+	private static void loops(Facts f, MethodNode m) {
 		int n = m.instructions.size();
-		List<List<Integer>> succ = new ArrayList<>();
-		for (int i = 0; i < n; i++) succ.add(new ArrayList<>());
-		for (int[] e : edges) succ.get(e[0]).add(e[1]);
-		int[] comp = scc(succ, n);
-		Map<Integer, Integer> sizes = new HashMap<>();
-		for (int c : comp) sizes.merge(c, 1, Integer::sum);
-		boolean[] cyclic = new boolean[n];
-		for (int i = 0; i < n; i++) {
-			cyclic[i] = sizes.get(comp[i]) > 1;
-			for (int s : succ.get(i)) if (s == i) cyclic[i] = true;
-		}
-		Map<Integer, Boolean> sourceLoop = new HashMap<>(), decidedLoop = new HashMap<>();
-		for (var e : f.nextMain.entrySet()) {
-			int i = m.instructions.indexOf(e.getKey());
-			if (!cyclic[i]) continue;
-			(e.getValue() == Dom.SOURCE ? sourceLoop : decidedLoop).put(comp[i], true);
-		}
+		List<List<Integer>> succ = f.cfg.succ();
+		int[] comp = f.cfg.comp();
+		boolean[] cyclic = f.cfg.cyclic();
+		// Each loop that takes a round's effect, with the iterator it advances (one per loop: it makes one next()).
+		Map<Integer, V> roundOf = new HashMap<>();
+		for (var e : f.rounds.entrySet()) roundOf.put(comp[m.instructions.indexOf(e.getKey())], e.getValue());
 		for (AbstractInsnNode insn : f.opaqueMain) {
 			int i = m.instructions.indexOf(insn);
-			if (!cyclic[i] || !sourceLoop.containsKey(comp[i]) || decidedLoop.containsKey(comp[i]))
-				f.no("calls " + describe(insn) + " outside a per-effect part");
+			V round = cyclic[i] ? roundOf.get(comp[i]) : null;
+			if (round == null || round.dom() != Dom.SOURCE) f.no("calls " + describe(insn) + " outside a per-effect part");
 		}
 		for (AbstractInsnNode insn : f.startsMain) if (cyclic[m.instructions.indexOf(insn)]) f.no("iterates a collection inside a loop");
 		for (MethodInsnNode insn : f.opCalls) if (cyclic[m.instructions.indexOf(insn)]) f.no("calls the original operation inside a loop");
+		Map<Integer, Integer> tests = new HashMap<>();
+		for (var e : f.moreJumps.entrySet()) {
+			int i = m.instructions.indexOf(e.getKey());
+			V round = cyclic[i] ? roundOf.get(comp[i]) : null;
+			boolean leaves = false;
+			for (int s : succ.get(i)) if (comp[s] != comp[i]) leaves = true;
+			if (round == null || !round.equals(e.getValue()) || !leaves) f.no("decides on whether more effects follow other than to end their loop");
+			else tests.merge(comp[i], 1, Integer::sum);
+		}
+		for (var e : roundOf.entrySet())
+			if (tests.getOrDefault(e.getKey(), 0) != 1) f.no("ends a loop over effects other than by one test of whether more follow");
+		for (int i = 0; i < n; i++) {
+			V round = cyclic[i] ? roundOf.get(comp[i]) : null;
+			if (round == null) continue;
+			for (int s : succ.get(i)) {
+				if (comp[s] == comp[i]) continue;
+				V tested = f.moreJumps.get(m.instructions.get(i));
+				if (tested == null || !tested.equals(round)) f.no("leaves a loop over effects before they run out");
+			}
+		}
+		for (var e : f.removals.entrySet()) {
+			int i = m.instructions.indexOf(e.getKey());
+			V round = cyclic[i] ? roundOf.get(comp[i]) : null;
+			if (round == null || !round.equals(e.getValue())) f.no("removes through an iterator an effect that is not the round's");
+		}
+		// The heap: an array element written in a loop outlives the round unless the array was made in that round.
+		for (var e : f.arrayWrites.entrySet()) {
+			int i = m.instructions.indexOf(e.getKey());
+			if (!cyclic[i]) continue;
+			V array = e.getValue();
+			AbstractInsnNode made = array.kind() == K.ARRAY ? (AbstractInsnNode) array.site() : null;
+			int at = made != null && f.mainArrays.contains(made) ? m.instructions.indexOf(made) : -1;
+			if (at < 0 || !cyclic[at] || comp[at] != comp[i]) f.no("carries a value from one round to the next through an array");
+		}
 		// Liveness: a local written in a loop and live where the loop is entered carries a value between rounds.
 		List<Set<Integer>> live = liveIn(m, succ);
 		Map<Integer, Set<Integer>> written = new HashMap<>();
@@ -411,26 +494,29 @@ final class ClearVetoProof {
 			switch (op) {
 				case Opcodes.IFEQ: case Opcodes.IFNE: case Opcodes.IFLT: case Opcodes.IFGE: case Opcodes.IFGT: case Opcodes.IFLE:
 				case Opcodes.TABLESWITCH: case Opcodes.LOOKUPSWITCH:
-					decide(value);
+					decide(insn, value);
 					return null;
 				case Opcodes.IFNULL: case Opcodes.IFNONNULL:
 					if (value.kind() == K.TOP) f.no("tests a value of two kinds");
+					if (value.kind() == K.PICK) f.no("tests an effect taken once per clear, not the one being decided");
 					return null;
 				case Opcodes.IRETURN: case Opcodes.LRETURN: case Opcodes.FRETURN: case Opcodes.DRETURN: case Opcodes.ARETURN:
-					if (value.kind() == K.SIZE || value.kind() == K.TOP) f.no("returns an aggregate of the effects");
+					if (value.kind() == K.SIZE || value.kind() == K.TOP || value.kind() == K.MORE) f.no("returns an aggregate of the effects");
+					if (value.kind() == K.PICK) f.no("returns an effect taken once per clear, not the one being decided");
 					return null;
 				case Opcodes.PUTSTATIC: f.no("writes a static field"); return null;
 				case Opcodes.GETFIELD:
 					if (!inert(value)) f.no("reads a field of a collection");
 					return newValue(Type.getType(((FieldInsnNode) insn).desc));
-				case Opcodes.NEWARRAY: return V.of(K.OPQ);
-				case Opcodes.ANEWARRAY:
+				case Opcodes.NEWARRAY: case Opcodes.ANEWARRAY:
+					if (tainted(value)) f.no("sizes an array by an aggregate of the effects");
 					f.arrays.computeIfAbsent(insn, k -> new LinkedHashSet<>());
+					if (method == f.main) f.mainArrays.add(insn);
 					return new V(K.ARRAY, 1, insn, null, null, List.of());
 				case Opcodes.ARRAYLENGTH: return V.prim(1);
 				case Opcodes.ATHROW: f.no("throws"); return null;
 				case Opcodes.CHECKCAST: return value;
-				case Opcodes.INSTANCEOF: return value.kind() == K.SIZE ? value : V.prim(1);
+				case Opcodes.INSTANCEOF: return value.kind() == K.PICK ? V.pick(1) : value.kind() == K.SIZE ? value : V.prim(1);
 				case Opcodes.MONITORENTER: case Opcodes.MONITOREXIT: f.no("synchronizes"); return null;
 				case Opcodes.I2L: case Opcodes.I2D: case Opcodes.F2L: case Opcodes.F2D: case Opcodes.LNEG: case Opcodes.DNEG:
 				case Opcodes.L2D: case Opcodes.D2L:
@@ -444,42 +530,72 @@ final class ClearVetoProof {
 			int op = insn.getOpcode();
 			switch (op) {
 				case Opcodes.AALOAD:
+					if (tainted(b)) f.no("indexes an array by an aggregate of the effects");
 					if (a.kind() != K.ARRAY && a.kind() != K.OPQ || a.kind() == K.ARRAY && !f.arrays.get((AbstractInsnNode) a.site()).stream().allMatch(this::inert))
 						f.no("reads an element of an array of collections");
 					return V.of(K.OPQ);
-				case Opcodes.IALOAD: case Opcodes.BALOAD: case Opcodes.CALOAD: case Opcodes.SALOAD: case Opcodes.FALOAD: return V.prim(1);
-				case Opcodes.LALOAD: case Opcodes.DALOAD: return V.prim(2);
+				case Opcodes.IALOAD: case Opcodes.BALOAD: case Opcodes.CALOAD: case Opcodes.SALOAD: case Opcodes.FALOAD:
+				case Opcodes.LALOAD: case Opcodes.DALOAD:
+					if (tainted(b)) f.no("indexes an array by an aggregate of the effects");
+					return V.prim(op == Opcodes.LALOAD || op == Opcodes.DALOAD ? 2 : 1);
 				case Opcodes.IF_ICMPEQ: case Opcodes.IF_ICMPNE: case Opcodes.IF_ICMPLT: case Opcodes.IF_ICMPGE: case Opcodes.IF_ICMPGT:
 				case Opcodes.IF_ICMPLE:
-					decide(a);
-					decide(b);
+					decide(insn, a);
+					decide(insn, b);
 					return null;
 				case Opcodes.IF_ACMPEQ: case Opcodes.IF_ACMPNE:
 					if (a.kind() == K.TOP || b.kind() == K.TOP) f.no("compares a value of two kinds");
+					if (a.kind() == K.PICK || b.kind() == K.PICK) f.no("compares an effect taken once per clear, not the one being decided");
 					return null;
 				case Opcodes.PUTFIELD: f.no("writes a field"); return null;
 				case Opcodes.LADD: case Opcodes.LSUB: case Opcodes.LMUL: case Opcodes.LDIV: case Opcodes.LREM: case Opcodes.LSHL:
 				case Opcodes.LSHR: case Opcodes.LUSHR: case Opcodes.LAND: case Opcodes.LOR: case Opcodes.LXOR: case Opcodes.DADD:
 				case Opcodes.DSUB: case Opcodes.DMUL: case Opcodes.DDIV: case Opcodes.DREM:
-					return taint(a.kind() == K.SIZE ? a : b, 2);
+					return taint(strongest(a, b), 2);
 				default:
-					return taint(a.kind() == K.SIZE ? a : b, 1);
+					return taint(strongest(a, b), 1);
 			}
 		}
 
+		/** The operand whose kind the result of an operation on both carries: two kinds, a taken effect, an aggregate. */
+		private static V strongest(V a, V b) {
+			for (K k : List.of(K.TOP, K.PICK, K.SIZE, K.MORE)) {
+				if (a.kind() == k) return a;
+				if (b.kind() == k) return b;
+			}
+			return a;
+		}
+
+		/**
+		 * An array store. Its index and a primitive value must not come from an aggregate (a load hands back a plain
+		 * value). The handler's own stores are judged by {@link #loops}: one inside a loop must go to an array made in the
+		 * same round. A lambda run per effect may write only an array it made itself.
+		 */
 		@Override public V ternaryOperation(AbstractInsnNode insn, V array, V index, V value) {
+			if (tainted(index)) f.no("indexes an array by an aggregate of the effects");
 			if (insn.getOpcode() == Opcodes.AASTORE) {
 				if (array.kind() == K.ARRAY) {
 					f.arrays.get((AbstractInsnNode) array.site()).add(value);
 					f.arrayStores.computeIfAbsent((AbstractInsnNode) array.site(), k -> Collections.newSetFromMap(new IdentityHashMap<>())).add(insn);
 				} else if (!inert(value)) f.no("stores a collection into an array");
-			}
+			} else if (tainted(value)) f.no("stores an aggregate of the effects into an array");
+			if (method == f.main) f.arrayWrites.put(insn, array);
+			else if (array.kind() != K.ARRAY || !method.instructions.contains((AbstractInsnNode) array.site()))
+				f.no("writes an array it did not make inside a per-effect part");
 			return null;
+		}
+
+		/** A value drawn from more than the effect being decided, or of two kinds. */
+		private static boolean tainted(V v) {
+			return v.kind() == K.SIZE || v.kind() == K.MORE || v.kind() == K.PICK || v.kind() == K.TOP;
 		}
 
 		@Override public V naryOperation(AbstractInsnNode insn, List<? extends V> values) {
 			if (insn instanceof InvokeDynamicInsnNode indy) return indy(indy, values);
-			if (insn.getOpcode() == Opcodes.MULTIANEWARRAY) return V.of(K.OPQ);
+			if (insn.getOpcode() == Opcodes.MULTIANEWARRAY) {
+				if (values.stream().anyMatch(Interp::tainted)) f.no("sizes an array by an aggregate of the effects");
+				return V.of(K.OPQ);
+			}
 			MethodInsnNode c = (MethodInsnNode) insn;
 			return call(insn, c.owner, c.name, c.desc, c.getOpcode() == Opcodes.INVOKESTATIC, new ArrayList<>(values), ctx);
 		}
@@ -490,19 +606,37 @@ final class ClearVetoProof {
 
 		@Override public V merge(V a, V b) {
 			if (a.equals(b)) return a;
-			boolean pa = a.kind() == K.PRIM || a.kind() == K.SIZE, pb = b.kind() == K.PRIM || b.kind() == K.SIZE;
-			if (pa && pb && a.size() == b.size()) return a.kind() == K.SIZE ? a : b.kind() == K.SIZE ? b : a;
+			// Primitives: an aggregate wins, and a hasNext() that meets anything else is no longer just its loop's test.
+			boolean pa = a.kind() == K.PRIM || a.kind() == K.SIZE || a.kind() == K.MORE, pb = b.kind() == K.PRIM || b.kind() == K.SIZE || b.kind() == K.MORE;
+			if (pa && pb && a.size() == b.size()) return a.kind() == K.PRIM && b.kind() == K.PRIM ? a : new V(K.SIZE, a.size(), null, null, null, List.of());
 			return new V(K.TOP, Math.min(a.size(), b.size()), null, null, null, List.of());
 		}
 
 		private V taint(V v, int size) {
 			if (v.kind() == K.TOP) f.no("computes with a value of two kinds");
-			return v.kind() == K.SIZE ? new V(K.SIZE, size, null, null, null, List.of()) : V.prim(size);
+			return switch (v.kind()) {
+				case SIZE, MORE -> new V(K.SIZE, size, null, null, null, List.of());
+				case PICK -> V.pick(size);
+				default -> V.prim(size);
+			};
 		}
 
-		private void decide(V v) {
-			if (v.kind() == K.SIZE) f.no("decides on an aggregate of the effects");
-			if (v.kind() == K.TOP) f.no("decides on a value of two kinds");
+		/**
+		 * A branch on {@code v}. Only the handler's own {@code IFEQ}/{@code IFNE} on an iterator's {@code hasNext()} is
+		 * kept for {@link #loops} to judge: it may be the end of that iterator's loop and nothing else.
+		 */
+		private void decide(AbstractInsnNode insn, V v) {
+			switch (v.kind()) {
+				case SIZE -> f.no("decides on an aggregate of the effects");
+				case TOP -> f.no("decides on a value of two kinds");
+				case PICK -> f.no("decides on an effect taken once per clear, not the one being decided");
+				case MORE -> {
+					if (method == f.main && ctx == Ctx.MAIN && (insn.getOpcode() == Opcodes.IFEQ || insn.getOpcode() == Opcodes.IFNE))
+						f.moreJumps.put(insn, (V) v.extra().getFirst());
+					else f.no("decides on whether more effects follow other than to end their loop");
+				}
+				default -> { }
+			}
 		}
 
 		/** A value an unknown call may see: nothing that holds or iterates the effects. */
@@ -603,8 +737,12 @@ final class ClearVetoProof {
 					f.analysing.pop();
 				}
 			}
-			// A method reference: the call it names, as if made here.
-			return call(site, h.getOwner(), h.getName(), h.getDesc(), isStatic, args, role);
+			// A method reference: the call it names, as if made here. Its answer is the per-effect answer, unread by any
+			// instruction here, so an answer drawn from more than the one effect is refused now.
+			V answer = call(site, h.getOwner(), h.getName(), h.getDesc(), isStatic, args, role);
+			if (answer != null && (answer.kind() == K.PICK || answer.kind() == K.SIZE || answer.kind() == K.MORE))
+				f.no("answers for each effect from more than that effect");
+			return answer;
 		}
 
 		V call(AbstractInsnNode site, String owner, String name, String desc, boolean isStatic, List<V> args, Ctx in) {
@@ -612,6 +750,7 @@ final class ClearVetoProof {
 				f.no("uses a value of two kinds");
 				return result(desc);
 			}
+			if (args.stream().anyMatch(v -> v.kind() == K.PICK)) return picked(owner, name, desc, isStatic, args);
 			V recv = isStatic || args.isEmpty() ? null : args.get(0);
 			// The original operation.
 			if (recv != null && recv.kind() == K.OP) {
@@ -682,6 +821,22 @@ final class ClearVetoProof {
 			return newValue(Type.getReturnType(desc));
 		}
 
+		/**
+		 * A call handed an effect taken once per clear. The effect's own accessors and pure functions pass the taint on to
+		 * their result, for a branch or a comparison to refuse; anything else that would see it is refused here.
+		 */
+		private V picked(String owner, String name, String desc, boolean isStatic, List<V> args) {
+			boolean accessor = !isStatic && args.size() == 1 && args.getFirst().kind() == K.PICK
+					&& (owner.equals(ENTRY) && (name.equals("getKey") || name.equals("getValue") || name.equals("hashCode"))
+							|| owner.equals("net/minecraft/world/effect/MobEffectInstance") && name.equals("getEffect"));
+			if (accessor || pure(owner)) {
+				Type ret = Type.getReturnType(desc);
+				return ret.getSort() == Type.VOID ? null : V.pick(ret.getSize());
+			}
+			f.no("hands an effect taken once per clear to " + owner.replace('/', '.') + "." + name);
+			return result(desc);
+		}
+
 		private V mapCall(AbstractInsnNode site, V map, String name, String desc, List<V> args, Ctx in) {
 			boolean local = map.kind() == K.SRC && !Integer.valueOf(1).equals(map.site());
 			boolean temp = map.kind() == K.TMAP;
@@ -744,7 +899,7 @@ final class ClearVetoProof {
 			switch (name) {
 				case "iterator":
 					starts(site, in);
-					return new V(K.ITER, 1, null, part, dom(coll), List.of(base));
+					return new V(K.ITER, 1, site, part, dom(coll), List.of(base));
 				case "stream":
 					starts(site, in);
 					return new V(K.STREAM, 1, null, part, dom(coll), List.of(base, List.of()));
@@ -805,13 +960,24 @@ final class ClearVetoProof {
 			if (base.kind() == K.TMAP || base.kind() == K.TCOLL) f.temps.get((AbstractInsnNode) base.site()).dom = Dom.DECIDED;
 		}
 
+		/**
+		 * An iterator: its {@code next()} is the round's effect only as the one {@code next()} of a loop in the handler's
+		 * own body; anywhere else (before or after the loop, a second one in the round, inside a lambda run per effect) it
+		 * is an effect taken once per clear, not the one being decided.
+		 */
 		private V iteratorCall(AbstractInsnNode site, V it, String name, List<V> args, Ctx in) {
+			boolean own = method == f.main && in == Ctx.MAIN;
 			switch (name) {
-				case "hasNext": return V.prim(1);
+				case "hasNext": return new V(K.MORE, 1, null, null, null, List.of(it));
 				case "next":
-					if (method == f.main && in == Ctx.MAIN) f.nextMain.put(site, it.dom());
-					return V.elem(it.part());
+					if (own && f.cfg.round(f.main.instructions.indexOf(site))) {
+						f.rounds.put(site, it);
+						return V.elem(it.part());
+					}
+					return V.pick(1);
 				case "remove":
+					if (own) f.removals.put(site, it);
+					else f.no("removes through an iterator inside a per-effect part");
 					recv((V) it.extra().getFirst(), "remove", site, null);
 					markDecided((V) it.extra().getFirst());
 					return null;
