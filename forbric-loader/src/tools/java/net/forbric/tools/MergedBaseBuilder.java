@@ -1021,7 +1021,7 @@ public final class MergedBaseBuilder {
 					additiveDecisions.add(name + "#" + key + " ACCEPTED native append-only tail hook; both ecosystem calls retained");
 					continue;
 				}
-				AdditiveMethodMerger.Result addition = AdditiveMethodMerger.merge(vm, bm, om, basePkg, otherPkg, hookContext);
+				AdditiveMethodMerger.Result addition = AdditiveMethodMerger.merge(name, vm, bm, om, basePkg, otherPkg, hookContext);
 				additiveDecisions.add(name + "#" + key + (addition.accepted() ? " ACCEPTED " : " DECLINED ")
 						+ addition.reason());
 				if (addition.accepted()) {

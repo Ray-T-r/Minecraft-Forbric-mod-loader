@@ -11,14 +11,17 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.commons.AnalyzerAdapter;
 import org.objectweb.asm.tree.*;
 
 /**
- * A deliberately small three-input merge. Two shapes are composed, and nothing else:
+ * A deliberately small three-input merge. Three shapes are composed, and nothing else:
  * <ul>
  *   <li><b>entry prefixes</b>: both sides prepend stack-neutral, static void hook calls to an otherwise EXACT
  *       vanilla body. The accepted prefixes load only unchanged parameters and literals, never write locals or
@@ -28,13 +31,20 @@ import org.objectweb.asm.tree.*;
  *       and handler ranges agree by construction. A site holds both calls when the hook's arguments are plain
  *       loads (including {@code this}) and constants, and its result is either nothing or threaded back through
  *       the local it read, behind an Optional refusal guard that is repeated between the two calls.</li>
+ *   <li><b>a leading hook block</b>: the base family changed the method only by routing it through members it
+ *       added (it calls nothing of its own family here), and the other family's first change is one inserted
+ *       hook block, after a straight-line preamble the two bodies share instruction for instruction. The block
+ *       is plain loads, one static hook call and either nothing, a boolean early exit or a nullable early return
+ *       of the hook's answer. Both bodies executed the same instructions from the method's entry to that point,
+ *       so the block reads the same values; the base body is kept verbatim after it. See
+ *       {@link #leadingHookBlock}.</li>
  * </ul>
  * The original body may contain branches, switches, lambdas and handlers: their operands, control-flow targets
  * and exception regions must all agree, including local-variable slots. No local renumbering, arbitrary
  * instruction splicing, constructor merging or predicate composition is attempted. A refusal leaves the existing
  * merge decision intact and names why.
  *
- * <p>Before either grammar is tried, each side is aligned with VANILLA. A vanilla call one side removed and the
+ * <p>Before any grammar is tried, each side is aligned with VANILLA. A vanilla call one side removed and the
  * other kept is refused (one side replaced vanilla behaviour its hook now performs), and so are hooks the two
  * families post at different points of the vanilla computation (fall damage is the reference counterexample).
  *
@@ -64,6 +74,25 @@ final class AdditiveMethodMerger {
 		 * in every runtime configuration, including the repair's own off switch, since the base cannot see either.
 		 */
 		boolean reviewed(MethodInsnNode alongside, MethodInsnNode restored);
+
+		/**
+		 * The event classes {@code restored} constructs, read from its own definition, or null when that definition
+		 * cannot be read. A leading hook block is restored without a reviewed stand-down only when this is known.
+		 */
+		default Set<String> constructedEvents(MethodInsnNode restored) {
+			return null;
+		}
+
+		/**
+		 * Whether the family whose classes live under {@code familyPackage} declares an event that corresponds to
+		 * {@code event} by nested name ({@code FillBucketEvent}; {@code ServerTickEvent$Pre} for
+		 * {@code TickEvent$ServerTickEvent$Pre}). The runtime's compensation for a lost hook is a forward from the
+		 * surviving family's counterpart event, so where none is declared there is nothing to forward from.
+		 * Answering true when unsure only refuses.
+		 */
+		default boolean declaresCounterpart(String familyPackage, String event) {
+			return true;
+		}
 	}
 
 	private static final String PORTAL_HOOK = "onTrySpawnPortal(Lnet/minecraft/world/level/LevelAccessor;"
@@ -89,6 +118,7 @@ final class AdditiveMethodMerger {
 	/** Resolves hook owners, on demand, from the first of {@code classSets} that holds them. */
 	static Context context(List<Map<String, byte[]>> classSets, Set<String> reviewed) {
 		Map<String, Set<String>> statics = new HashMap<>();
+		Map<String, List<List<String>>> eventNames = new HashMap<>();
 		return new Context() {
 			@Override public boolean resolvesStatic(String owner, String name, String descriptor) {
 				return statics.computeIfAbsent(owner, o -> {
@@ -108,10 +138,80 @@ final class AdditiveMethodMerger {
 			@Override public boolean reviewed(MethodInsnNode alongside, MethodInsnNode restored) {
 				return reviewed.contains(restorationKey(alongside, restored));
 			}
+
+			@Override public Set<String> constructedEvents(MethodInsnNode restored) {
+				for (Map<String, byte[]> classes : classSets) {
+					byte[] bytes = classes.get(restored.owner);
+					if (bytes == null) continue;
+					ClassNode node = new ClassNode();
+					new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+					for (MethodNode m : node.methods) {
+						if (!m.name.equals(restored.name) || !m.desc.equals(restored.desc) || (m.access & Opcodes.ACC_STATIC) == 0) continue;
+						return events(m, familyRoot(restored.owner));
+					}
+					return null;
+				}
+				return null;
+			}
+
+			@Override public boolean declaresCounterpart(String familyPackage, String event) {
+				List<List<String>> declared = eventNames.computeIfAbsent(familyPackage, family -> {
+					List<List<String>> names = new ArrayList<>();
+					for (Map<String, byte[]> classes : classSets) {
+						for (String name : classes.keySet()) if (isEventName(name, family)) names.add(nestedName(name));
+					}
+					return names;
+				});
+				List<String> wanted = nestedName(event);
+				for (List<String> candidate : declared) if (correspond(candidate, wanted)) return true;
+				return false;
+			}
 		};
 	}
 
+	/** The event classes a hook's own body constructs: {@code NEW} of its family's classes under an event package. */
+	static Set<String> events(MethodNode hook, String family) {
+		Set<String> out = new TreeSet<>();
+		if (hook.instructions == null) return out;
+		for (AbstractInsnNode instruction : hook.instructions) {
+			if (instruction instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW && isEventName(type.desc, family)) {
+				out.add(type.desc);
+			}
+		}
+		return out;
+	}
+
+	/** {@code net/minecraftforge/} for {@code net/minecraftforge/event/ForgeEventFactory}: a family's namespace root. */
+	static String familyRoot(String owner) {
+		int first = owner.indexOf('/'), second = first < 0 ? -1 : owner.indexOf('/', first + 1);
+		return second < 0 ? owner : owner.substring(0, second + 1);
+	}
+
+	private static boolean isEventName(String internalName, String family) {
+		return internalName.startsWith(family) && internalName.contains("/event/");
+	}
+
+	/** {@code [TickEvent, ServerTickEvent, Pre]} for {@code net/minecraftforge/event/TickEvent$ServerTickEvent$Pre}. */
+	private static List<String> nestedName(String internalName) {
+		return List.of(internalName.substring(internalName.lastIndexOf('/') + 1).split("\\$"));
+	}
+
+	/** One nested name is the other's tail, whole: the families nest the same event under different outer classes. */
+	static boolean correspond(List<String> a, List<String> b) {
+		List<String> shorter = a.size() <= b.size() ? a : b, longer = shorter == a ? b : a;
+		return !shorter.isEmpty() && longer.subList(longer.size() - shorter.size(), longer.size()).equals(shorter);
+	}
+
 	static Result merge(MethodNode vanilla, MethodNode base, MethodNode other,
+			String basePackage, String otherPackage, Context context) {
+		return merge(null, vanilla, base, other, basePackage, otherPackage, context);
+	}
+
+	/**
+	 * {@code owner} is the class the merged method is written into. Only a leading hook block needs it: the frame
+	 * it adds after its early exit names {@code this} by that class. Without it, that grammar declines.
+	 */
+	static Result merge(String owner, MethodNode vanilla, MethodNode base, MethodNode other,
 			String basePackage, String otherPackage, Context context) {
 		if (vanilla == null) return refused("no vanilla method");
 		if (vanilla.name.startsWith("<")) return refused("constructor or class initializer");
@@ -123,7 +223,7 @@ final class AdditiveMethodMerger {
 		List<AbstractInsnNode> otherCode = code(other);
 		if (original.isEmpty()) return refused("no vanilla instructions");
 
-		// Where each side left vanilla, before asking whether either grammar fits: these two refusals hold for
+		// Where each side left vanilla, before asking whether any grammar fits: these two refusals hold for
 		// every grammar, present or future, so they are not left to the grammar being too narrow to accept.
 		String replaced = replacedByOneSide(original, baseCode, otherCode);
 		if (replaced != null) return refused(replaced);
@@ -137,7 +237,9 @@ final class AdditiveMethodMerger {
 		String notEntry = entryShape(vanilla, base, other, basePackage, otherPackage);
 		if (notEntry == null) return entryPrefixes(original, base, other, basePackage, otherPackage, context);
 		Result paired = pairedHooks(base, other, basePackage, otherPackage, context);
-		return paired != null ? paired : refused(notEntry);
+		if (paired != null) return paired;
+		Result leading = leadingHookBlock(owner, vanilla, base, other, basePackage, otherPackage, context);
+		return leading != null ? leading : refused(notEntry);
 	}
 
 	/** Why the two bodies are not both vanilla behind a void-hook prefix, or null when they are. */
@@ -288,7 +390,7 @@ final class AdditiveMethodMerger {
 	 * targets, because each pipeline renumbers both; they keep every other operand. Deterministic, so two sides that
 	 * agree outside their hook owners align identically. Only hook POSITIONS are read from it, and only to refuse:
 	 * near a hook, a recompiled side can align one instruction either way, which changes a reported vanilla index
-	 * but can never make either grammar accept a body that is not what that grammar describes.
+	 * but can never make a grammar accept a body that is not what that grammar describes.
 	 */
 	private record Alignment(int[] toVanilla) {
 		static Alignment of(List<AbstractInsnNode> vanilla, List<AbstractInsnNode> side) {
@@ -532,6 +634,264 @@ final class AdditiveMethodMerger {
 		merged.maxStack = Math.max(base.maxStack, other.maxStack);
 		return new Result(merged, "paired hooks at identical vanilla points, base then other: " + observers
 				+ " observer(s), " + guarded + " guarded result(s)", pairs.size(), pairs.size());
+	}
+
+	/**
+	 * One leading hook block of the other body, as code positions: {@code [start, end)}, its hook call, the jump that
+	 * skips its exit (null for an observer), and the local its answer passes through (-1 unless it returns one).
+	 */
+	private record Block(int start, int call, int end, JumpInsnNode guard, int answer, String kind) { }
+
+	/**
+	 * The leading-hook-block grammar, or null when the method is not that shape: the base family changed it without
+	 * referring to anything of its own family, and the other family's first change, right after the instructions the
+	 * two bodies share from the entry, is a hook block. From there on every refusal names what could not be proved.
+	 *
+	 * <p>What is proved, in this order:
+	 * <ol>
+	 *   <li>the shared preamble is vanilla, straight-line code from the method's entry: no branch, switch, return or
+	 *       throw, no handler covering it, nothing branching into it in either body. Both bodies therefore execute
+	 *       exactly those instructions before the block, and its loads read the same values in either;</li>
+	 *   <li>the block sits between two vanilla instructions, so it was inserted and replaced nothing;</li>
+	 *   <li>it is all of the other family's change that refers to the family: nothing of it is left half restored;</li>
+	 *   <li>nothing branches into the block, only its own guard reaches the instruction after it, no handler covers
+	 *       it, and the local its answer passes through is touched nowhere else in the other body;</li>
+	 *   <li>the hook links, and either its restoration is reviewed, or the events it constructs are known and the base
+	 *       family declares no counterpart of any of them: the runtime compensates a lost hook by forwarding the
+	 *       surviving family's counterpart event, and with none there is nothing it can be forwarding already;</li>
+	 *   <li>the merged method's frame after the block's exit is the base body's own state at that point, derived
+	 *       from its frames, with an empty operand stack.</li>
+	 * </ol>
+	 * The base family posts nothing of its own in this body, so no order between the two families is decided here.
+	 * Whatever else the other family changed by routing calls to members it added stays lost, as before.
+	 */
+	private static Result leadingHookBlock(String owner, MethodNode vanilla, MethodNode base, MethodNode other,
+			String basePackage, String otherPackage, Context context) {
+		if (references(base, basePackage, Set.of())) return null;
+		List<AbstractInsnNode> vc = code(vanilla), bc = code(base), oc = code(other);
+		int p = 0;
+		while (p < bc.size() && p < oc.size() && straight(bc.get(p)) && instruction(bc.get(p)).equals(instruction(oc.get(p)))) p++;
+		// The block's first loads can equal the base's next instructions (both load the same parameter), and then
+		// the shared run swallowed them. Loads have no effect, so give them back to the block until one starts.
+		Block block = block(oc, p, otherPackage);
+		while (block == null && p > 0 && plainPush(oc.get(p - 1))) block = block(oc, --p, otherPackage);
+		if (block == null) return null;
+		MethodInsnNode call = (MethodInsnNode) oc.get(block.call());
+		String hook = call.owner + "." + call.name + call.desc;
+		String refusal = "leading hook block not composable: ";
+		if (p >= vc.size() || p >= bc.size() || block.end() >= oc.size()) {
+			return refused(refusal + hook + " does not sit between two vanilla instructions");
+		}
+		for (int i = 0; i < p; i++) {
+			if (!shape(vc.get(i)).equals(shape(oc.get(i)))) return refused(refusal + "the preamble before " + hook + " is not vanilla");
+		}
+		if (!shape(vc.get(p)).equals(shape(oc.get(block.end())))) {
+			return refused(refusal + hook + " replaces vanilla code instead of preceding it");
+		}
+		Set<AbstractInsnNode> inBlock = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+		inBlock.addAll(oc.subList(block.start(), block.end()));
+		if (references(other, otherPackage, inBlock)) {
+			return refused(refusal + "the other family changes more of this method than " + hook);
+		}
+
+		Map<LabelNode, Integer> basePositions = positions(base), otherPositions = positions(other);
+		for (int target : targets(base, basePositions)) {
+			if (target <= p) return refused(refusal + "a branch or handler enters the shared preamble before " + hook);
+		}
+		for (TryCatchBlockNode handler : base.tryCatchBlocks) {
+			if (target(basePositions, handler.start) < p) return refused(refusal + "a handler covers the shared preamble before " + hook);
+		}
+		for (AbstractInsnNode instruction : other.instructions) {
+			List<LabelNode> destinations = new ArrayList<>();
+			if (instruction instanceof JumpInsnNode jump) destinations.add(jump.label);
+			else if (instruction instanceof TableSwitchInsnNode table) { destinations.add(table.dflt); destinations.addAll(table.labels); }
+			else if (instruction instanceof LookupSwitchInsnNode lookup) { destinations.add(lookup.dflt); destinations.addAll(lookup.labels); }
+			for (LabelNode destination : destinations) {
+				int target = target(otherPositions, destination);
+				if (target < block.end() || (target == block.end() && instruction != block.guard())) {
+					return refused(refusal + "a branch other than its own guard enters or ends " + hook + "'s block");
+				}
+			}
+		}
+		for (TryCatchBlockNode handler : other.tryCatchBlocks) {
+			if (target(otherPositions, handler.handler) <= block.end() || target(otherPositions, handler.start) < block.end()) {
+				return refused(refusal + "a handler covers or enters " + hook + "'s block");
+			}
+		}
+		if (block.answer() >= 0) {
+			if (block.answer() < argumentSlots(other)) return refused(refusal + hook + " answers through a parameter");
+			for (AbstractInsnNode instruction : oc) {
+				if (inBlock.contains(instruction)) continue;
+				int slot = instruction instanceof VarInsnNode var ? var.var : instruction instanceof IincInsnNode inc ? inc.var : -1;
+				boolean wide = instruction instanceof VarInsnNode var && (var.getOpcode() == Opcodes.LLOAD || var.getOpcode() == Opcodes.DLOAD
+						|| var.getOpcode() == Opcodes.LSTORE || var.getOpcode() == Opcodes.DSTORE);
+				if (slot == block.answer() || (wide && slot + 1 == block.answer())) {
+					return refused(refusal + "the other body uses the local " + hook + " answers through outside its block");
+				}
+			}
+		}
+
+		if (!context.resolvesStatic(call.owner, call.name, call.desc)) return refused("leading hook does not resolve: " + hook);
+		if (!context.reviewed(null, call)) {
+			Set<String> events = context.constructedEvents(call);
+			if (events == null || events.isEmpty()) {
+				return refused(refusal + "what " + hook + " posts cannot be read, and restoring it is not reviewed");
+			}
+			for (String event : events) {
+				if (context.declaresCounterpart(basePackage, event)) {
+					return refused("leading hook block composes, but the base family declares a counterpart of " + event
+							+ " the runtime may already forward: restoring " + hook);
+				}
+			}
+		}
+
+		if (owner == null && (base.access & Opcodes.ACC_STATIC) == 0) {
+			return refused(refusal + "the owner class is unknown, so no frame after " + hook + " can name this");
+		}
+		MethodNode merged = expanded(owner == null ? "java/lang/Object" : owner, base);
+		List<AbstractInsnNode> mergedCode = code(merged);
+		List<Object> locals = localsBefore(owner == null ? "java/lang/Object" : owner, merged, mergedCode.get(p));
+		if (locals == null) return refused(refusal + "the base body is not at an empty stack where " + hook + " goes");
+		LabelNode resume = new LabelNode();
+		Map<LabelNode, LabelNode> labels = new HashMap<>();
+		if (block.guard() != null) labels.put(block.guard().label, resume);
+		int answer = block.answer() < 0 ? -1 : Math.max(merged.maxLocals, base.maxLocals);
+		InsnList additions = new InsnList();
+		for (int i = block.start(); i < block.end(); i++) {
+			AbstractInsnNode copy = oc.get(i).clone(labels);
+			if (answer >= 0 && copy instanceof VarInsnNode var && var.var == block.answer()) var.var = answer;
+			additions.add(copy);
+		}
+		if (block.guard() != null) {
+			additions.add(resume);
+			additions.add(new FrameNode(Opcodes.F_NEW, locals.size(), locals.toArray(), 0, new Object[0]));
+		}
+		// Right after the preamble's last instruction and BEFORE the labels that open the base's next region, as
+		// the entry grammar inserts: a handler range starting there does not cover the block.
+		if (p == 0) merged.instructions.insert(additions);
+		else merged.instructions.insert(mergedCode.get(p - 1), additions);
+		if (answer >= 0) merged.maxLocals = answer + 1;
+		merged.maxStack = Math.max(merged.maxStack, Math.max(base.maxStack, other.maxStack));
+		return new Result(merged, "leading hook block after a shared vanilla preamble of " + p + " instruction(s), "
+				+ block.kind() + ": restored " + hook, 0, 1);
+	}
+
+	/** The block of {@link #leadingHookBlock} starting at {@code start}, or null when none starts there. */
+	private static Block block(List<AbstractInsnNode> code, int start, String hookPackage) {
+		int call = start;
+		while (call < code.size() && plainPush(code.get(call))) call++;
+		if (call >= code.size() || !isHook(code.get(call), hookPackage)) return null;
+		MethodInsnNode hook = (MethodInsnNode) code.get(call);
+		if (call - start != Type.getArgumentTypes(hook.desc).length) return null;
+		Type result = Type.getReturnType(hook.desc);
+		int at = call + 1;
+		if (result.getSort() == Type.VOID) return new Block(start, call, at, null, -1, "observer");
+		if (at >= code.size()) return null;
+		if (result.getSort() == Type.BOOLEAN && code.get(at) instanceof JumpInsnNode guard
+				&& (guard.getOpcode() == Opcodes.IFEQ || guard.getOpcode() == Opcodes.IFNE)) {
+			int exit = at + 1;
+			if (exit < code.size() && code.get(exit).getOpcode() == Opcodes.RETURN) return new Block(start, call, exit + 1, guard, -1, "veto");
+			if (exit + 1 < code.size() && plainPush(code.get(exit)) && code.get(exit + 1).getOpcode() >= Opcodes.IRETURN
+					&& code.get(exit + 1).getOpcode() <= Opcodes.ARETURN) {
+				return new Block(start, call, exit + 2, guard, -1, "veto");
+			}
+			return null;
+		}
+		if ((result.getSort() == Type.OBJECT || result.getSort() == Type.ARRAY) && at + 4 < code.size()
+				&& code.get(at) instanceof VarInsnNode store && store.getOpcode() == Opcodes.ASTORE
+				&& code.get(at + 1) instanceof VarInsnNode test && test.getOpcode() == Opcodes.ALOAD && test.var == store.var
+				&& code.get(at + 2) instanceof JumpInsnNode guard && guard.getOpcode() == Opcodes.IFNULL
+				&& code.get(at + 3) instanceof VarInsnNode answer && answer.getOpcode() == Opcodes.ALOAD && answer.var == store.var
+				&& code.get(at + 4).getOpcode() == Opcodes.ARETURN) {
+			return new Block(start, call, at + 5, guard, store.var, "answer");
+		}
+		return null;
+	}
+
+	/** Control continues to the next instruction and only there: no branch, switch, return or throw. */
+	private static boolean straight(AbstractInsnNode instruction) {
+		int op = instruction.getOpcode();
+		return !(instruction instanceof JumpInsnNode) && !(instruction instanceof TableSwitchInsnNode)
+				&& !(instruction instanceof LookupSwitchInsnNode) && !(op >= Opcodes.IRETURN && op <= Opcodes.RETURN)
+				&& op != Opcodes.ATHROW && op != Opcodes.RET;
+	}
+
+	/** A straight instruction with every operand, local slots included; the key two bodies share it by. */
+	private static Object instruction(AbstractInsnNode instruction) {
+		int op = instruction.getOpcode();
+		if (instruction instanceof VarInsnNode n) return List.of(op, n.var);
+		if (instruction instanceof IincInsnNode n) return List.of(op, n.var, n.incr);
+		if (instruction instanceof MethodInsnNode n) return List.of(op, n.owner, n.name, n.desc, n.itf);
+		if (instruction instanceof InvokeDynamicInsnNode n) {
+			List<Object> args = new ArrayList<>();
+			for (Object arg : n.bsmArgs) args.add(constant(arg));
+			return List.of(op, n.name, n.desc, n.bsm, args);
+		}
+		if (instruction instanceof LdcInsnNode n) return List.of(op, constant(n.cst));
+		if (instruction instanceof MultiANewArrayInsnNode n) return List.of(op, n.desc, n.dims);
+		return shape(instruction);
+	}
+
+	/** Whether the method refers to {@code pkg} anywhere outside {@code skipped}: calls, fields, types, handles. */
+	private static boolean references(MethodNode method, String pkg, Set<AbstractInsnNode> skipped) {
+		for (AbstractInsnNode instruction : method.instructions) {
+			if (skipped.contains(instruction)) continue;
+			if (instruction instanceof MethodInsnNode n && n.owner.startsWith(pkg)) return true;
+			if (instruction instanceof FieldInsnNode n && n.owner.startsWith(pkg)) return true;
+			if (instruction instanceof TypeInsnNode n && n.desc.startsWith(pkg)) return true;
+			if (instruction instanceof MultiANewArrayInsnNode n && n.desc.contains("L" + pkg)) return true;
+			if (instruction instanceof LdcInsnNode n && n.cst instanceof Type t && t.getDescriptor().contains("L" + pkg)) return true;
+			if (instruction instanceof InvokeDynamicInsnNode n) {
+				if (n.bsm.getOwner().startsWith(pkg)) return true;
+				for (Object arg : n.bsmArgs) {
+					if (arg instanceof org.objectweb.asm.Handle h && h.getOwner().startsWith(pkg)) return true;
+					if (arg instanceof Type t && t.getDescriptor().contains("L" + pkg)) return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** The local slots {@code this} and the parameters occupy. */
+	private static int argumentSlots(MethodNode method) {
+		return (Type.getArgumentsAndReturnSizes(method.desc) >> 2) - ((method.access & Opcodes.ACC_STATIC) != 0 ? 1 : 0);
+	}
+
+	/** A copy of {@code method} whose frames are all expanded, so a frame can be added without re-basing the next. */
+	private static MethodNode expanded(String owner, MethodNode method) {
+		ClassNode holder = new ClassNode();
+		holder.visit(Opcodes.V17, Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER, owner, null, "java/lang/Object", null);
+		MethodNode copy = new MethodNode(Opcodes.ASM9, method.access, method.name, method.desc, method.signature,
+				method.exceptions.toArray(String[]::new));
+		method.accept(copy);
+		holder.methods.add(copy);
+		ClassWriter writer = new ClassWriter(0);
+		holder.accept(writer);
+		ClassNode read = new ClassNode();
+		new ClassReader(writer.toByteArray()).accept(read, ClassReader.EXPAND_FRAMES);
+		return read.methods.get(0);
+	}
+
+	/**
+	 * The locals in frame form just before {@code at} in a method with expanded frames, or null when the operand
+	 * stack is not empty there or nothing falls through to it. Derived from the method's own frames and the
+	 * instructions since the last one, never from a class hierarchy.
+	 */
+	private static List<Object> localsBefore(String owner, MethodNode method, AbstractInsnNode at) {
+		AnalyzerAdapter adapter = new AnalyzerAdapter(Opcodes.ASM9, owner, method.access, method.name, method.desc, null) { };
+		for (AbstractInsnNode instruction : method.instructions) {
+			if (instruction == at) break;
+			instruction.accept(adapter);
+		}
+		if (adapter.locals == null || adapter.stack == null || !adapter.stack.isEmpty()) return null;
+		List<Object> locals = new ArrayList<>();
+		for (int i = 0; i < adapter.locals.size(); i++) {
+			Object type = adapter.locals.get(i);
+			locals.add(type);
+			if (Opcodes.LONG.equals(type) || Opcodes.DOUBLE.equals(type)) i++;
+		}
+		while (!locals.isEmpty() && Opcodes.TOP.equals(locals.get(locals.size() - 1))) locals.remove(locals.size() - 1);
+		return locals;
 	}
 
 	/** One stack value from nothing, with no side effect and no bootstrap to run. */
