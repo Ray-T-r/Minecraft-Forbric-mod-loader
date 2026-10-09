@@ -2,12 +2,14 @@
 package net.forbric.kernel.mixin;
 
 import java.util.*;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.transform.VanillaEarlyReturns;
 
 /**
@@ -24,15 +26,17 @@ import net.forbric.kernel.transform.VanillaEarlyReturns;
  * verification. Item Glint Relight's capture of {@code GuiGraphicsExtractor.item}'s render state was the first seen;
  * the same fold is on thousands of merged methods.
  *
- * <p>Decided on the target alone, for any class and method: the handler is an {@code @Inject} at {@code TAIL} with a
- * locals capture, whose leading parameters are exactly the target method's arguments and its callback and whose other
- * parameters are all captured locals (no sugar); the tail's frame does not declare them (so Mixin cannot capture them
- * there); and exactly one edge into the tail carries them — by the data flow, every captured slot holds a value there,
- * and the method's table names those slots, first after the arguments, with the captured types, at the instruction that
- * leaves for the tail. That instruction must be a call (or its result's {@code pop}, or a {@code goto} right after one):
- * the point becomes {@code INVOKE} that call, {@code AFTER} (with the ordinal that singles it out), still inside the
- * locals' scope and still after everything the body did. A handler is moved only where it is the mixin's one TAIL capture
- * on that method. {@code -Dforbric.guiItemCaptureAnchor=off} leaves every TAIL as compiled.
+ * <p>Decided for any class and method, by comparing the tail the mod was compiled against with the merged one: the
+ * handler is an {@code @Inject} at {@code TAIL} with a locals capture, whose leading parameters are exactly the target
+ * method's arguments and its callback and whose other parameters are all captured locals (no sugar); the native tail
+ * serves the capture ({@link #tailServes}, when the class the mod was compiled against is at hand); the merged tail's
+ * frame does not declare them (so Mixin cannot capture them there); and exactly one edge into the tail carries them —
+ * by the data flow, every captured slot holds a value there, and the method's table names those slots, first after the
+ * arguments, with the captured types, at the instruction that leaves for the tail. That instruction must be a call (or
+ * its result's {@code pop}, or a {@code goto} right after one): the point becomes {@code INVOKE} that call, {@code AFTER}
+ * (with the ordinal that singles it out, counted over the merged body and marked so — {@link CurrentBodyOrdinals}),
+ * still inside the locals' scope and still after everything the body did. A handler is moved only where it is the
+ * mixin's one TAIL capture on that method. {@code -Dforbric.guiItemCaptureAnchor=off} leaves every TAIL as compiled.
  */
 public final class MixinGuiItemCaptureAdapter {
     public static final String PROPERTY = "forbric.guiItemCaptureAnchor";
@@ -41,11 +45,22 @@ public final class MixinGuiItemCaptureAdapter {
     private MixinGuiItemCaptureAdapter() { }
 
     public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
+        return adapt(mixin, targets, NativeGameReferences::reference);
+    }
+
+    /**
+     * {@code references} gives the class the mod was compiled against. With it, a capture moves only where that class's own
+     * tail serves it ({@link #tailServes}) and the merged tail does not: a capture its native tail could not serve either —
+     * a NeoForge mod's on NeoForge's own folded body, where CAPTURE_FAILSOFT skips the handler natively — stays as
+     * compiled, as it runs natively. Without that class the merged tail is the only evidence there is.
+     */
+    static int adapt(ClassNode mixin, Function<String, ClassNode> targets, BiFunction<Ecosystem, String, ClassNode> references) {
         if ("off".equalsIgnoreCase(System.getProperty(PROPERTY, "on")) || mixin == null || mixin.methods == null) return 0;
         List<String> owners = MixinFit.mixinTargets(mixin);
         if (owners.size() != 1) return 0;
         ClassNode target = targets.apply(owners.getFirst());
         if (target == null) return 0;
+        ClassNode source = references == null ? null : references.apply(MixinStubRebind.ecosystemOf(mixin.name), owners.getFirst());
         Map<MethodNode, List<MethodNode>> captures = new IdentityHashMap<>();
         for (MethodNode handler : mixin.methods) {
             MethodNode bound = tailCapture(handler, target);
@@ -56,15 +71,48 @@ public final class MixinGuiItemCaptureAdapter {
             if (capture.getValue().size() != 1) continue;
             MethodNode handler = capture.getValue().getFirst();
             List<Type> captured = MixinHandlerShape.of(handler).extras().stream().map(MixinHandlerShape.Extra::type).toList();
+            if (source != null) {
+                MethodNode written = MixinTargetSelectors.one(handler, source);
+                if (written == null || !tailServes(source, written, captured)) continue;
+            }
             Point point = bodyEnd(target, capture.getKey(), captured);
             if (point == null) continue;
             AnnotationNode at = MixinFit.atNodes(MixinFit.injectorOf(handler)).getFirst();
             at.values = new ArrayList<>(List.of("value", "INVOKE", "target", point.member(),
                     "shift", new String[] {"Lorg/spongepowered/asm/mixin/injection/At$Shift;", "AFTER"}));
             if (point.ordinal() >= 0) { at.values.add("ordinal"); at.values.add(point.ordinal()); }
+            // The call and its ordinal are counted over the merged body: no later pass may read them as a native count.
+            CurrentBodyOrdinals.mark(handler);
             changed++;
         }
         return changed;
+    }
+
+    /**
+     * Whether Mixin can capture {@code captured} at {@code method}'s tail (its last return): the frame there, if the body
+     * declares one, holds them first after the arguments, and by the data flow every one holds a value there and the
+     * method's table names it, in that order, in scope at the tail.
+     */
+    static boolean tailServes(ClassNode owner, MethodNode method, List<Type> captured) {
+        AbstractInsnNode tail = method == null || method.instructions == null ? null : VanillaEarlyReturns.lastReturn(method);
+        if (tail == null) return false;
+        int first = (method.access & Opcodes.ACC_STATIC) == 0 ? 1 : 0;
+        for (Type argument : Type.getArgumentTypes(method.desc)) first += argument.getSize();
+        FrameNode tailFrame = null;
+        for (AbstractInsnNode insn = tail.getPrevious(); insn != null && insn.getOpcode() < 0; insn = insn.getPrevious())
+            if (insn instanceof FrameNode frame && tailFrame == null) tailFrame = frame;
+        if (tailFrame != null) {
+            List<List<Object>> declared = VanillaEarlyReturns.stateAt(owner.name, method, tailFrame);
+            if (declared == null || !holds(declared.get(0), first, captured)) return false;
+        }
+        Frame<BasicValue>[] frames;
+        try {
+            frames = new Analyzer<>(new BasicInterpreter()).analyze(owner.name, method);
+        } catch (AnalyzerException | RuntimeException unanalysable) {
+            return false;
+        }
+        int at = method.instructions.indexOf(tail);
+        return frames[at] != null && carries(method, frames[at], at, first, captured);
     }
 
     /** The one method of {@code target} a TAIL locals-capture handler binds, when its operands are that method's; else null. */
