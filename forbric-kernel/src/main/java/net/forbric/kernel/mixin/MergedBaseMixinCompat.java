@@ -67,7 +67,30 @@ public final class MergedBaseMixinCompat {
             return "source implements a second creative pager, and its keyboard callback could not share the carrier pager";
         if(ForbricMixinService.registerSourceCallbacks(node))
             return "the complete original callback group is registered on its proved current caller/bridge contract; final definitions witness its retained bodies";
+        String loot=bridgedLootDispatch(node,resources);
+        if(loot!=null)return loot;
         return null;
+    }
+    /**
+     * A source that fires the loot reload's public events itself, from the class whose reload the kernel's loot bridge
+     * fires them for, and whose callback group was not proved for the generated helper (another build, a fork, a
+     * recompile). The bridge then asks fabric-loot-api's public events itself, so they still fire once: a source left in
+     * would fire them a second time, or half-apply on the reordered merged lambdas. Decided by what the source dispatches,
+     * never by which build of which module it is; the injectors that neither dispatch nor share the dispatchers' state
+     * are named in the reason, since they go with it.
+     */
+    private static String bridgedLootDispatch(ClassNode node,Function<String,byte[]> resources) {
+        String seam=net.forbric.kernel.transform.LootTableEventBridgeInjector.TARGET_INTERNAL;
+        if(!net.forbric.kernel.transform.LootTableEventBridgeInjector.enabled()||!MixinFit.mixinTargets(node).contains(seam))return null;
+        Map<MethodNode,Set<String>> dispatchers=net.forbric.kernel.transform.LootTableEventBridgeInjector.dispatchers(node);
+        if(dispatchers.isEmpty())return null;
+        if(!net.forbric.kernel.transform.LootTableEventBridgeInjector.routable(parse(resources.apply(seam+".class"))))return null;
+        Set<String> events=new TreeSet<>();for(Set<String> fired:dispatchers.values())events.addAll(fired);
+        List<String> outside=net.forbric.kernel.transform.LootTableEventBridgeInjector.outsideDispatchGroup(node,dispatchers.keySet(),m->MixinFit.injectorOf(m)!=null)
+                .stream().map(m->m.name).toList();
+        return "source dispatches LootTableEvents "+events+" on the loot reload the kernel's loot bridge dispatches them from; its "
+                +"callback group is not proved equivalent, so the bridge asks fabric-loot-api's public events once instead"
+                +(outside.isEmpty()?"":"; left out with it, outside that group: "+outside);
     }
     private static ClassNode copy(ClassNode node){org.objectweb.asm.ClassWriter writer=new org.objectweb.asm.ClassWriter(0);node.accept(writer);return MixinFit.parse(writer.toByteArray());}
     private static ClassNode parse(byte[] bytes){return bytes==null?null:MixinFit.parse(bytes);}
