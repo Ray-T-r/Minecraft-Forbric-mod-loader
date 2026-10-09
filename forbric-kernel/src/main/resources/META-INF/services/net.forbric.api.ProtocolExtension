@@ -1,4 +1,3 @@
-net.forbric.kernel.interop.protocol.spectre.SpectreProtocolExtension
 net.forbric.kernel.interop.protocol.modmenu.ModMenuProtocolExtension
 net.forbric.kernel.interop.protocol.configapi.ConfigApiPortProtocolExtension
 
