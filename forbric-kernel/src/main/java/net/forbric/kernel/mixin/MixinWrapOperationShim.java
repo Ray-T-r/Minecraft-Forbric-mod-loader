@@ -177,7 +177,8 @@ public final class MixinWrapOperationShim {
 		if (mapping == null) return null;
 		Integer ordinal = null;
 		if (MixinFit.value(at, "ordinal") instanceof Number n && n.intValue() >= 0) {
-			if (target == null || bodies.size() != 1) return null;
+			// The correspondence reads the ordinal as a native count; one already counted over the merged body is not.
+			if (target == null || bodies.size() != 1 || CurrentBodyOrdinals.counted(handler)) return null;
 			ordinal = InvocationOrdinals.correspondence(mixinName, target, bodies.getFirst(), named, merged, n.intValue());
 			if (ordinal == null) return null;
 		}
@@ -270,6 +271,7 @@ public final class MixinWrapOperationShim {
 			if ("target".equals(at.values.get(i))) at.values.set(i + 1, "L" + named.owner() + ";" + named.name() + merged);
 			if ("ordinal".equals(at.values.get(i)) && plan.ordinal() != null) at.values.set(i + 1, plan.ordinal());
 		}
+		if (plan.ordinal() != null) CurrentBodyOrdinals.mark(outer);
 		String originalName = handler.name;
 		handler.name = handler.name + MixinHandlerShim.INNER_SUFFIX;
 		// Ordinary helpers may call the injector directly too. They keep its original argument contract.

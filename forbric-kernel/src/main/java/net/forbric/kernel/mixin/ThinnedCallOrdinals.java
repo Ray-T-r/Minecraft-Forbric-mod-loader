@@ -18,7 +18,9 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * Recounts a retained invocation only from verified source/current bytes. Receiver and argument origins,
  * continuation operations and branch destinations must identify every surviving occurrence uniquely and in
- * source order. Slices, callback groups, unavailable references and ambiguous origins remain untouched.
+ * source order. Slices, callback groups, unavailable references and ambiguous origins remain untouched, and so does a
+ * handler whose ordinal an earlier pass already counted over the current body ({@link CurrentBodyOrdinals}); a handler
+ * this pass re-counts is marked the same way.
  */
 public final class ThinnedCallOrdinals {
 	public static final String PROPERTY = "forbric.thinnedCallOrdinals";
@@ -66,6 +68,9 @@ public final class ThinnedCallOrdinals {
         if (current == null || original == null) return 0;
         int moved = 0;
         for (MethodNode handler : mixin.methods) {
+            // An ordinal an earlier pass already counted over the merged body is not a native count: translating it
+            // again would read merged occurrence n as native occurrence n and land on another call.
+            if (CurrentBodyOrdinals.counted(handler)) continue;
             AnnotationNode injector = MixinFit.injectorOf(handler);
             if (injector == null || MixinFit.value(injector, "slice") != null || MixinFit.groupOf(handler) != null) continue;
             List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
@@ -82,6 +87,7 @@ public final class ThinnedCallOrdinals {
                 int live = CallOccurrenceAlignment.retainedOrdinal(original, before, current, after, member, ordinal);
                 if (live < 0 || live == ordinal) continue;
                 set(at, "ordinal", live); moved++;
+                CurrentBodyOrdinals.mark(handler);
                 ForbricLog.info("[Forbric/Mixin] %s: %s's ordinal %d → %d is proved from native/current operand "
                         + "origins and the same next operation in %s.%s", mixin.name, handler.name, ordinal, live,
                         current.name, after.name);

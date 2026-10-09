@@ -392,6 +392,8 @@ public final class ReplacedCallRedirects {
 		set(at, "target", site.merged());
 		if (mergedOrdinal == null) remove(at, "ordinal");
 		else set(at, "ordinal", mergedOrdinal);
+		// The point now counts the merged body's calls; no later pass may read it as a native count.
+		CurrentBodyOrdinals.mark(handler);
 		remove(redirect, "slice");
 		if (log) {
 			ForbricLog.info("[Forbric/Mixin] %s: %s redirects %s in %s.%s where the merged body calls it instead of %s — %s",

@@ -44,7 +44,8 @@ public final class MixinCameraRollAdapter {
         record Move(MethodNode handler,CallOccurrenceAlignment.Match match) { }
         List<Move> moves=new ArrayList<>();
         for(MethodNode handler:mixin.methods) {
-            if(handler.attrs!=null&&handler.attrs.stream().anyMatch(attribute->attribute.type.equals("ForbricNativeCallMatched")))continue;
+            // Already counted over the current body (by this pass or another): its ordinal is no longer a native count.
+            if(CurrentBodyOrdinals.counted(handler))continue;
             AnnotationNode inject=MixinFit.injectorOf(handler);
             if(inject==null||!MixinCallbackShape.instance(handler)||!MixinCallbackShape.kind(handler,"WrapWithCondition")
                     ||MixinFit.atNodes(inject).size()!=1)continue;
@@ -73,8 +74,8 @@ public final class MixinCameraRollAdapter {
         for(Move move:moves) {
             if(move.match().call().desc.equals("(FFF)V"))widen(move.handler());
             retarget(move.handler(),CallOccurrenceAlignment.member(move.match().call()),move.match().ordinal());changed++;
-            if(move.handler().attrs==null)move.handler().attrs=new ArrayList<>();
-            move.handler().attrs.add(new MatchedAttribute());
+            // The ordinal now counts the merged body: ThinnedCallOrdinals must not read it as a native count again.
+            CurrentBodyOrdinals.mark(move.handler());
         }
         if(roll!=null) {
             List<MethodNode> candidates=camera.methods.stream().filter(m->MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(roll),"method")).stream().anyMatch(selector->selector.equals(m.name)||selector.equals(m.name+m.desc))
@@ -95,11 +96,6 @@ public final class MixinCameraRollAdapter {
                 &&code.get(2) instanceof VarInsnNode b&&b.getOpcode()==Opcodes.FLOAD&&b.var==2&&code.get(3).getOpcode()==Opcodes.FCONST_0
                 &&code.get(4) instanceof MethodInsnNode call&&call.getOpcode()==destination.getOpcode()&&call.owner.equals(destination.owner)
                 &&call.name.equals(destination.name)&&call.desc.equals(destination.desc)&&code.get(5).getOpcode()==Opcodes.RETURN;
-    }
-    /** Non-executable metadata makes an already adapted short call distinguishable from its original ordinal. */
-    private static final class MatchedAttribute extends org.objectweb.asm.Attribute {
-        MatchedAttribute(){super("ForbricNativeCallMatched");}
-        @Override protected org.objectweb.asm.ByteVector write(org.objectweb.asm.ClassWriter writer,byte[] code,int length,int maxStack,int maxLocals){return new org.objectweb.asm.ByteVector().putByte(1);}
     }
 
 	private static void retarget(MethodNode method, String target, int ordinal) {
