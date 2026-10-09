@@ -45,7 +45,7 @@ public final class MixinKeyActionAdapter {
 	private MixinKeyActionAdapter() { }
 
 	public static boolean enabled() {
-		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
+		return !"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY, "on"));
 	}
 
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {

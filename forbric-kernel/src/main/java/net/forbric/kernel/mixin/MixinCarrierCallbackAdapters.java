@@ -15,7 +15,7 @@ public final class MixinCarrierCallbackAdapters {
         return adapt(mixin,targets,NativeGameReferences::reference);
     }
     public static int adapt(ClassNode mixin,Function<String,ClassNode> targets,java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> references) {
-        if ("off".equalsIgnoreCase(System.getProperty(PROPERTY)) || mixin == null) return 0;
+        if ("off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY)) || mixin == null) return 0;
         List<String> owners = MixinFit.mixinTargets(mixin);
         if (owners.size() != 1) return 0;
         return renameOperation(mixin,targets) + fluid(mixin,targets) + models(mixin,targets)

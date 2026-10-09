@@ -9,7 +9,7 @@ public final class MixinHudContextAdapter {
 	private static final String HUD="net/minecraft/client/gui/Hud", GRAPHICS="net/minecraft/client/gui/GuiGraphicsExtractor", DELTA="net/minecraft/client/DeltaTracker", OP=MixinWrapOperationShim.OPERATION, SCOPE="net/forbric/kernel/interop/HudContextCallbackScope";
 	private MixinHudContextAdapter() { }
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
-		if(!MixinCallbackShape.targets(mixin,HUD)||"off".equalsIgnoreCase(System.getProperty(PROPERTY)))return 0;
+		if(!MixinCallbackShape.targets(mixin,HUD)||"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY)))return 0;
         MethodNode original=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(L"+HUD+";L"+OP+";L"+GRAPHICS+";L"+DELTA+";)L"+HUD+"$ContextualInfo;")
                 && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation")
                 && MixinCallbackShape.selects(m,"extractHotbarAndDecorations(L"+GRAPHICS+";L"+DELTA+";)V")

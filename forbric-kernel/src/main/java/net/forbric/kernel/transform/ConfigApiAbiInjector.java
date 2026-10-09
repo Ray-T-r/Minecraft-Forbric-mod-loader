@@ -78,7 +78,7 @@ public final class ConfigApiAbiInjector implements ClassTransformer {
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
 		if (classBytes == null || classBytes.length == 0) return classBytes;
 		if (ForeignType.CONFIG_TRACKER.binary(Ecosystem.NEOFORGE).equals(className)) return leaveAnOpenConfigOpen(classBytes);
-		if ("off".equalsIgnoreCase(System.getProperty(SWITCH, "on"))) return classBytes;
+		if ("off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(SWITCH, "on"))) return classBytes;
 		if (!ByteScan.containsAny(classBytes, API_NAMES)) return classBytes;
 		ClassNode node = new ClassNode(); new ClassReader(classBytes).accept(node, 0);
 		boolean changed = routeRegistrationsThroughTheBridge(node);

@@ -6,7 +6,8 @@ import net.forbric.api.ForeignType;
 
 /** Compatibility name for the retired single-family multipart rewrite. The merge now proves a shared
  * ancestor hierarchy and keeps both native array-return descriptors; retyping or emptying either loses API.
- * That bridge is a build-time artifact with no runtime switch (the old {@code -Dforbric.dragonParts} is gone);
+ * That bridge is a build-time artifact with no runtime switch (the old {@code -Dforbric.dragonParts} is gone, and
+ * {@link net.forbric.kernel.util.ForbricSwitches} warns at boot that setting it has no effect);
  * the loader reports it as it takes effect ({@code PlatformAncestorBridges}, "[Forbric/Hierarchy]"). */
 @Deprecated
 public final class DragonPartsInjector implements ClassTransformer {

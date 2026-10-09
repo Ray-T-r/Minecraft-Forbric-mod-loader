@@ -45,7 +45,7 @@ public final class MixinPlayerWorldCallbackAdapter {
 	static final String GET_BLOCK = STATE + "getBlock()L" + BLOCK + ";";
 	private MixinPlayerWorldCallbackAdapter() { }
 
-	public static boolean enabled() { return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on")); }
+	public static boolean enabled() { return !"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY, "on")); }
 
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
 		int changed = repair(mixin, targets);

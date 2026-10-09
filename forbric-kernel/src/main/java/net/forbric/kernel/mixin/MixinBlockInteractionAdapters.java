@@ -9,7 +9,7 @@ public final class MixinBlockInteractionAdapters {
 	private static final String STATE="net/minecraft/world/level/block/state/BlockState", BLOCK="net/minecraft/world/level/block/Block", POS="net/minecraft/core/BlockPos", OP=MixinWrapOperationShim.OPERATION;
 	private MixinBlockInteractionAdapters() { }
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
-		if("off".equalsIgnoreCase(System.getProperty(PROPERTY)))return 0;
+		if("off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY)))return 0;
         List<String> owners=MixinFit.mixinTargets(mixin);if(owners.size()!=1)return 0;
         return switch(owners.getFirst()){
             case "net/minecraft/world/level/SignalGetter"->signal(mixin,targets);

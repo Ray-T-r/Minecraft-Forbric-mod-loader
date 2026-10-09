@@ -9,7 +9,7 @@ public final class MixinBreathingCallbackAdapter {
 	private static final String LIVING="net/minecraft/world/entity/LivingEntity", LEVEL="net/minecraft/server/level/ServerLevel", OP=MixinWrapOperationShim.OPERATION, SCOPE="net/forbric/kernel/interop/BreathingCallbackScope";
 	private MixinBreathingCallbackAdapter() { }
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
-		if(!MixinCallbackShape.targets(mixin,LIVING)||"off".equalsIgnoreCase(System.getProperty(PROPERTY)))return 0;
+		if(!MixinCallbackShape.targets(mixin,LIVING)||"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY)))return 0;
 		MethodNode lava=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(L"+LIVING+";Lnet/minecraft/tags/TagKey;L"+OP+";L"+LEVEL+";)Z")
                 && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.selects(m,"baseTick()V")
                 && MixinCallbackShape.plainPoint(m,"INVOKE","L"+LIVING+";isEyeInFluid(Lnet/minecraft/tags/TagKey;)Z")),

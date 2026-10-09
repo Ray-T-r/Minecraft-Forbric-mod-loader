@@ -12,7 +12,7 @@ public final class MixinBlockQueryAdapters {
 	private static final String STATE="net/minecraft/world/level/block/state/BlockState", BLOCK="net/minecraft/world/level/block/Block", OP=MixinWrapOperationShim.OPERATION;
 	private MixinBlockQueryAdapters() { }
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> targets) {
-        if("off".equalsIgnoreCase(System.getProperty(PROPERTY)) || MixinFit.mixinTargets(mixin).size()!=1)return 0;
+        if("off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY)) || MixinFit.mixinTargets(mixin).size()!=1)return 0;
         return blockReceiver(mixin,targets,"getFriction") + blockReceiver(mixin,targets,"getExplosionResistance")
                 + (MixinCallbackShape.targets(mixin,"net/minecraft/world/entity/LivingEntity")?scaffolding(mixin,targets):0);
 	}

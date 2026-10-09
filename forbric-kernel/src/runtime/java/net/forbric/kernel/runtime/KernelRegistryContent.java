@@ -24,7 +24,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
+import net.forbric.kernel.transform.RegistryElementCallbackInjector;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.ForbricSwitches;
 import net.forbric.kernel.util.Reflect;
 import net.minecraft.core.IdMapper;
 import net.minecraft.core.Registry;
@@ -181,7 +183,7 @@ public final class KernelRegistryContent {
 
 	/** Completes proved registry element callbacks only for states added after their original walk. */
 	public static boolean initialiseBlockInfoCaches() {
-		if ("off".equalsIgnoreCase(System.getProperty("forbric.registryElementCallbacks", "on"))) return false;
+		if ("off".equalsIgnoreCase(ForbricSwitches.get(RegistryElementCallbackInjector.PROPERTY, "on"))) return false;
 		return net.forbric.kernel.interop.RegistryElementCallbacks.completeLateRegistrations(Block.BLOCK_STATE_REGISTRY) > 0;
 	}
 

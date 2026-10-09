@@ -28,7 +28,7 @@ public final class MixinCameraRollAdapter {
 	private MixinCameraRollAdapter() { }
 
 	public static boolean enabled() {
-		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
+		return !"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY, "on"));
 	}
 
 	/** Returns the number of source callbacks whose complete correspondence was proved. */

@@ -141,6 +141,9 @@ public final class KernelBoot {
 	 * (and any unrecognized token) is forwarded to the game's {@code Main.main}.
 	 */
 	public static void launch(Side side, String[] args) throws Throwable {
+		// Before any switch is read: a renamed or retired -Dforbric.* flag is named in the log even when the mechanism
+		// it controls never runs in this session.
+		net.forbric.kernel.util.ForbricSwitches.announce();
 		net.forbric.api.CompatibilityFindings.reset();
 		net.forbric.kernel.discovery.MetadataFailures.reset();
 		net.forbric.kernel.ui.CompatibilityDecision.reset();

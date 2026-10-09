@@ -14,7 +14,7 @@ public final class MixinStructurePlacementAdapter {
 	private MixinStructurePlacementAdapter() { }
 
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
-		if (!MixinCallbackShape.targets(mixin, TARGET) || "off".equalsIgnoreCase(System.getProperty(PROPERTY))) return 0;
+		if (!MixinCallbackShape.targets(mixin, TARGET) || "off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY))) return 0;
 		ClassNode target = targets.apply(TARGET);
 		MethodNode place = target == null ? null : MixinPlayerWorldCallbackAdapter.selector(target, LIVE);
 		MethodNode set = MixinCallbackShape.unique(mixin, m -> m.desc.equals("(Lnet/minecraft/world/level/ServerLevelAccessor;Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/levelgen/structure/templatesystem/StructurePlaceSettings;Lnet/minecraft/util/RandomSource;ILorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;)V") && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && (MixinCallbackShape.plainPoint(m, "INVOKE", "L" + TARGET + ";" + OLD) || MixinCallbackShape.plainPoint(m, "INVOKE", "L" + TARGET + ";" + LIVE))

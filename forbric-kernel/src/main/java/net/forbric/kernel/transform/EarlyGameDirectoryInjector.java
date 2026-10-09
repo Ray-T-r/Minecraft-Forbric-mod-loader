@@ -18,7 +18,7 @@ public final class EarlyGameDirectoryInjector implements ClassTransformer {
     public EarlyGameDirectoryInjector(Function<String, ClassNode> declarations) { this.declarations = declarations; }
     @Override public AnchorSet anchors() { return AnchorSet.scanned("a unique declared directory getter in a Mixin plugin initializer"); }
     @Override public byte[] transform(String name, byte[] bytes, TransformContext context) {
-        if (bytes == null || "off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return bytes;
+        if (bytes == null || "off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY, "on"))) return bytes;
         if (!ByteScan.contains(bytes, PLUGIN_MARKER)) return bytes;
         ClassReader reader = new ClassReader(bytes);
         if (!java.util.Arrays.asList(reader.getInterfaces()).contains(PLUGIN)) return bytes;

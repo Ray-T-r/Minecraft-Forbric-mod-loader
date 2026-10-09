@@ -249,7 +249,7 @@ public final class FabricEntityMixinAnchors {
    veto.ask().accept(mixin,code);
    handler.maxStack=5;handler.maxLocals=4;mixin.methods.add(handler);changed++;
   }
-  if(!"off".equalsIgnoreCase(System.getProperty(CLEAR_VETO_PROPERTY,"on"))) {
+  if(!"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(CLEAR_VETO_PROPERTY,"on"))) {
    for(MethodNode old:new ArrayList<>(mixin.methods)) {
     org.objectweb.asm.Handle predicate=clearRestorePredicate(mixin,old);
     if(predicate!=null)changed+=streamClearVeto(mixin,old,predicate);

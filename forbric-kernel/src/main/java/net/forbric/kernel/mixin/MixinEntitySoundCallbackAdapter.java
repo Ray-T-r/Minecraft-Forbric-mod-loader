@@ -10,7 +10,7 @@ public final class MixinEntitySoundCallbackAdapter {
 	private MixinEntitySoundCallbackAdapter() { }
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
 		boolean fall=MixinCallbackShape.targets(mixin,"net/minecraft/world/entity/LivingEntity");
-        if((!fall&&!MixinCallbackShape.targets(mixin,"net/minecraft/world/entity/Entity"))||"off".equalsIgnoreCase(System.getProperty(PROPERTY)))return 0;
+        if((!fall&&!MixinCallbackShape.targets(mixin,"net/minecraft/world/entity/Entity"))||"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY)))return 0;
 		MethodNode original=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(L"+STATE+";L"+OP+";"+(fall?"III":"L"+POS+";")+")Lnet/minecraft/world/level/block/SoundType;")
                 && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation")
                 && MixinCallbackShape.selects(m,fall?"playBlockFallSound()V":"playStepSound(L"+POS+";L"+STATE+";)V")

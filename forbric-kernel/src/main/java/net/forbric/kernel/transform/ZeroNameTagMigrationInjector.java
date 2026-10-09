@@ -23,7 +23,7 @@ public final class ZeroNameTagMigrationInjector implements ClassTransformer {
     public ZeroNameTagMigrationInjector(Function<String, ClassNode> declarations) { this.declarations = declarations; }
     @Override public AnchorSet anchors() { return AnchorSet.scanned("proved zero-distance uses of a removed platform attribute"); }
     @Override public byte[] transform(String name, byte[] bytes, TransformContext context) {
-        if (bytes == null || "off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return bytes;
+        if (bytes == null || "off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY, "on"))) return bytes;
         if (!ByteScan.contains(bytes, LEGACY_FIELD)) return bytes;
         ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, 0);
         List<FieldInsnNode> reads = new ArrayList<>();

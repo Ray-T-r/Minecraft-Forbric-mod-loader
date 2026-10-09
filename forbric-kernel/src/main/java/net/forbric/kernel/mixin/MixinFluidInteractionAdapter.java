@@ -15,7 +15,7 @@ public final class MixinFluidInteractionAdapter {
 	private MixinFluidInteractionAdapter() { }
 
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
-		if (!MixinCallbackShape.targets(mixin, TARGET) || "off".equalsIgnoreCase(System.getProperty(PROPERTY))) return 0;
+		if (!MixinCallbackShape.targets(mixin, TARGET) || "off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY))) return 0;
 		MethodNode original = MixinCallbackShape.unique(mixin, m -> MixinFluidReactionAdapter.HANDLER.equals(m.desc) && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject")
                 && MixinCallbackShape.selects(m, "shouldSpreadLiquid(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;)Z")
                 && MixinCallbackShape.plainPoint(m, "HEAD", null));

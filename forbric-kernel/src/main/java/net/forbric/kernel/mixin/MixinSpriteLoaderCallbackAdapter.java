@@ -22,7 +22,7 @@ public final class MixinSpriteLoaderCallbackAdapter {
 	private MixinSpriteLoaderCallbackAdapter() { }
 
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
-		if (!MixinCallbackShape.targets(mixin, TARGET) || "off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return 0;
+		if (!MixinCallbackShape.targets(mixin, TARGET) || "off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY, "on"))) return 0;
 		ClassNode target = targets.apply(TARGET);
 		if (target == null) return 0;
 		MethodNode live = target.methods.stream().filter(m -> (m.name + m.desc).equals(LIVE)).findFirst().orElse(null);

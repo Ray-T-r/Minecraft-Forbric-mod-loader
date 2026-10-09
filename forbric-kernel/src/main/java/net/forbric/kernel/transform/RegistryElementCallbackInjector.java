@@ -12,6 +12,8 @@ import net.forbric.kernel.util.ForbricLog;
  * The only optional guard tests whether the element class implements that exact callback interface.
  * A local batch is published only at the root's normal return; an aborted walk publishes nothing. */
 public final class RegistryElementCallbackInjector implements ClassTransformer {
+    /** {@code -Dforbric.registryElementCallbacks=off} leaves every walk, and its late completion, where the mod put it. */
+    public static final String PROPERTY="forbric.registryElementCallbacks";
     private static final String REGISTRY_OWNER="net/minecraft/world/level/block/Block", REGISTRY="BLOCK_STATE_REGISTRY";
     private static final String REGISTRY_DESC="Lnet/minecraft/core/IdMapper;", ELEMENT="net/minecraft/world/level/block/state/BlockState";
     private static final byte[][] CANDIDATE={ByteScan.needle(REGISTRY)};
@@ -20,7 +22,7 @@ public final class RegistryElementCallbackInjector implements ClassTransformer {
     public RegistryElementCallbackInjector(Function<String,ClassNode> declarations){this.declarations=declarations;}
     @Override public AnchorSet anchors(){return AnchorSet.scanned("closed per-element registry initializer loops");}
     @Override public byte[] transform(String name,byte[] bytes,TransformContext context){
-        if(bytes==null||!ByteScan.containsAny(bytes,CANDIDATE)||"off".equalsIgnoreCase(System.getProperty("forbric.registryElementCallbacks","on")))return bytes;
+        if(bytes==null||!ByteScan.containsAny(bytes,CANDIDATE)||"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY,"on")))return bytes;
         ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.EXPAND_FRAMES);boolean changed=false;
         for(MethodNode method:node.methods){
             List<Loop> loops=loops(method);if(loops.isEmpty())continue;

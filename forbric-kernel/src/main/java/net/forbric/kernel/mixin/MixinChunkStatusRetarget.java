@@ -31,7 +31,7 @@ final class MixinChunkStatusRetarget {
 	static MixinRetarget.Rewrite plan(String mixin, MethodNode handler, AnnotationNode injector,
 			List<String> selectors, ClassNode target) {
 		if (!LEVEL.equals(target.name)
-				|| "off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return null;
+				|| "off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY, "on"))) return null;
 		if (!("(" + STATUS + ")" + STATUS).equals(handler.desc)
 				|| (handler.access & Opcodes.ACC_STATIC) != 0
 				|| !"Lorg/spongepowered/asm/mixin/injection/ModifyArg;".equals(injector.desc)
