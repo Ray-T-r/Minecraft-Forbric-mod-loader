@@ -127,9 +127,13 @@ public final class ForbricMixinService
         catch(RuntimeException unavailable){ForbricLog.debug("[Forbric/Mixin] original callback group remains unclaimed: %s",unavailable.toString());return false;}
     }
 
+	/**
+	 * {@code "Forbric"} to Mixin, the kernel and anything else without a platform of its own; to a mod's code, the name
+	 * its own platform's service reports. See {@link MixinPlatformIdentity}.
+	 */
 	@Override
 	public String getName() {
-		return "Forbric";
+		return MixinPlatformIdentity.serviceName();
 	}
 
 	@Override

@@ -76,6 +76,9 @@ test	net.forbric.kernel.mixin.GuestMixinPolicyStagedTest	thirdPartyRedirectConfl
 test	net.forbric.kernel.mixin.GuiItemCaptureMixinAdapterTest	theCaptureSelectsTheSubmissionAndDoesNotMoveTheTooltipCallback()	[fixture:third-party] local fixture unavailable
 test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualFusionSpriteLoaderHookFollowsNeoForgesLiveLambda()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualLitematicaOpaqueAndTranslucentHandlersFollowThePrunedLiveLambda()	[fixture:third-party] local merged mod pack: run/client-merged-pack/mods
+test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	jecharactersOwnHookWrapsTheWeaverTheClassPipelineReads()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
+test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	onALoaderWithoutKnotsFieldTheHookFails()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
+test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	switchedOffItsHookGoesIntoAFieldTheClassPipelineDoesNotRead()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
 test	net.forbric.kernel.mixin.KernelClientHookMixinAnchorsTest	fancyMenusOriginalInitializerFollowsTheLiveRelayWithoutChangingItsShift()	[fixture:third-party] local game or mod fixture unavailable
 test	net.forbric.kernel.mixin.KernelClientHookMixinAnchorsTest	originalHooksAndDisabledAdapterAreLeftAsCompiled()	[fixture:third-party] local game or mod fixture unavailable
 test	net.forbric.kernel.mixin.MergedBaseMixinCompatPinnedContractsTest	thePinnedContractPrefilterTurnsAwayOnlyWhatTheParseWould()	[fixture:third-party] build/compat-inputs/sweep90/mods/owo-lib-0.13.1+26.2.jar is not present beside this checkout or the staged one
@@ -185,6 +188,7 @@ test	net.forbric.kernel.mixin.SourceProtocolPolicyTest	anOpaqueFreezeReplacement
 test	net.forbric.kernel.mixin.SourceProtocolPolicyTest	disabledAdapterFallsBackFromTheActualSourceAndTheSameNameAloneDoesNothing()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-registry-sync-v0-7.1.1+c7bd5b8e9e.jar absent
 test	net.forbric.kernel.mixin.SourceProtocolPolicyTest	renamedConfigurationClassAndCallbacksStillRetainTheirOriginalTrackerBodies()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-registry-sync-v0-7.1.1+c7bd5b8e9e.jar absent
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsTest	releasedViaFabricPlusCountsOnTheMergedBody()	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.weave.ControlifyPlatformWeaveTest	eachBuildOfControlifyLoadsItsOwnPlatformHalfUnrewritten()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/controlify-3.5.3+mc26.2-universal.jar
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aLookupThatBreaksAnswersNoBehaviourType()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aQuestionDuringTheFirstResolveWaitsForIt()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aRegisteredTagAnswersNeoForgesQuestionsFromItsBehaviour()	[fixture:third-party] sweep pack absent

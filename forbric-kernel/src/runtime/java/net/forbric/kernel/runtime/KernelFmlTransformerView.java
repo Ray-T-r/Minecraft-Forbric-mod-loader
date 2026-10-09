@@ -120,12 +120,20 @@ public final class KernelFmlTransformerView {
 			TransformingClassLoader loader = allocate(TransformingClassLoader.class);
 			write(TransformingClassLoader.class, "classTransformer", loader, new ClassTransformer(set, null));
 
-			MixinWeaverSlot.watch(() -> {
+			// Writable too: a wrapper a guest put into another view (Knot's, on the game loader) is written here, so a
+			// NeoForge mod walking this view afterwards wraps that wrapper, as it would on one platform's single field.
+			MixinWeaverSlot.watch("FML's FMLMixinClassProcessor.transformer", () -> {
 				try {
 					return transformer.get(processor);
 				} catch (IllegalAccessException impossible) {
 					// setAccessible(true) above; answering "no replacement" keeps the kernel's own weaver.
 					return null;
+				}
+			}, replacement -> {
+				try {
+					transformer.set(processor, replacement);
+				} catch (IllegalAccessException impossible) {
+					// setAccessible(true) above; the view keeps what it held, and the slot still weaves the replacement.
 				}
 			});
 			view = loader;

@@ -72,6 +72,16 @@ public final class WeaveHarnessMain {
 		for (MixinConfigOwners.Owned one : ordered) if (!configs.contains(one.config())) configs.add(one.config());
 		MixinConfigOwners.publish(ordered);
 		publishPresence(ordered);
+		// Opt-in, so every other run keeps an unattributed fixture: the fixture jar is the configs' owners' own jar, as a
+		// boot records it for every selected mod (one ecosystem per run; two claiming it leave it unattributed).
+		if ("on".equals(System.getProperty(ORIGINS))) {
+			List<DiscoveredMod> owners = new ArrayList<>();
+			for (MixinConfigOwners.Owned one : ordered) {
+				owners.add(new DiscoveredMod(one.ecosystem(), one.modId(), "1.0", one.modId(), List.of(), List.of(one.config()),
+						null, fixture.toString()));
+			}
+			loader.setModOrigins(owners);
+		}
 		System.out.println(REGISTERED + String.join(", ", configs));
 		if ("off".equals(System.getProperty("forbric.weaveHarness.bootstrap"))) {
 			System.out.println("[WeaveHarness] bootstrap skipped (control run)");
@@ -125,6 +135,9 @@ public final class WeaveHarnessMain {
 
 	/** What every fixture mod's manifest requires: {@code id=constraint,...}. */
 	static final String REQUIRES = "forbric.weaveHarness.requires";
+
+	/** {@code on}: the loader attributes the fixture jar to the configs' owners, as KernelBoot's setModOrigins does. */
+	static final String ORIGINS = "forbric.weaveHarness.origins";
 
 	private static String flat(String text) {
 		return text.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');

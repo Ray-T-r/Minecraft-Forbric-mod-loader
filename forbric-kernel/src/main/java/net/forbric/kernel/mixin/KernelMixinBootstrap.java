@@ -129,6 +129,9 @@ public final class KernelMixinBootstrap {
 		// the way NeoForge lets it (LibJF's ASM layer) must be the one that weaves from then on. With no wrapper it
 		// is `transformer`, one volatile read away.
 		MixinWeaverSlot.install(transformer);
+		// Knot's delegate.mixinTransformer on the loader is a view of that slot too, seeded before any plugin can read it
+		// (Mixin constructs config plugins when it first selects, on the first class woven below). See MixinPlatformIdentity.
+		loader.knotDelegate().attach();
 		var codecReturns = new net.forbric.kernel.transform.PostMixinCodecReturnArbitration();
 		var callbackPriority = new net.forbric.kernel.transform.PostMixinCallbackPriority();
 		loader.setMixinTransformer((name, bytes) -> net.forbric.kernel.transform.ForgeTransferShapeAudit.certify(name,

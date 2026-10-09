@@ -70,6 +70,20 @@ public final class ForbricClassLoader extends URLClassLoader {
 	public record ModOrigin(Ecosystem ecosystem, String modId) { }
 	private volatile Map<String, ModOrigin> modOrigins = Map.of();
 
+	/**
+	 * Fabric's Knot keeps its weaver at {@code KnotClassLoader.delegate.mixinTransformer}, and a Fabric mod that
+	 * decorates the weaver reaches it by reflection on whatever loader defined its classes: this field by name, then
+	 * that field on the object it holds. Same name here, holding an object with Knot's field, which the class pipeline
+	 * reads back. See {@link net.forbric.kernel.mixin.MixinPlatformIdentity}.
+	 */
+	private final net.forbric.kernel.mixin.MixinPlatformIdentity.KnotDelegate delegate =
+			new net.forbric.kernel.mixin.MixinPlatformIdentity.KnotDelegate();
+
+	/** What {@code delegate} holds, for the Mixin bootstrap to attach once the weaver exists. */
+	public net.forbric.kernel.mixin.MixinPlatformIdentity.KnotDelegate knotDelegate() {
+		return delegate;
+	}
+
 	private volatile BiFunction<String, byte[], byte[]> transformer = (n, b) -> b;
 	private volatile BiFunction<String, byte[], byte[]> mixinTransformer = (n, b) -> b;
 	private final java.util.concurrent.atomic.AtomicLong bytecodeConfiguration = new java.util.concurrent.atomic.AtomicLong();
@@ -150,6 +164,25 @@ public final class ForbricClassLoader extends URLClassLoader {
 	public Ecosystem ecosystemOfResource(String binaryName) {
 		ModOrigin origin = originOfResource(binaryName);
 		return origin == null ? null : origin.ecosystem();
+	}
+
+	/**
+	 * The ecosystem whose code a class this loader defined is: the arbitrated family of the jar it was defined from
+	 * ({@link #familyOfClass}), else the selected mod that owns its class file ({@link #ecosystemOfResource}). Null for
+	 * a class another loader defined, and for one no single ecosystem owns — the merged base, a runtime carrier, a
+	 * library, a jar two ecosystems claim.
+	 */
+	public Ecosystem ecosystemOfClass(Class<?> type) {
+		if (type == null || type.getClassLoader() != this) return null;
+		LoaderProbePolicy.Family family = familyOfClass(type.getName());
+		if (family != null) {
+			return switch (family) {
+				case FABRIC -> Ecosystem.FABRIC;
+				case FORGE -> Ecosystem.FORGE;
+				case NEOFORGE -> Ecosystem.NEOFORGE;
+			};
+		}
+		return ecosystemOfResource(type.getName());
 	}
 
 	public TransformContext contextFor(String binaryName, TransformContext base) {

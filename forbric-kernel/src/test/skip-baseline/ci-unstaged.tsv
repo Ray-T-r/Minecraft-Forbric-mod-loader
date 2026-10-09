@@ -251,6 +251,9 @@ test	net.forbric.kernel.mixin.GuiItemCaptureMixinAdapterTest	theCaptureSelectsTh
 test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualFusionSpriteLoaderHookFollowsNeoForgesLiveLambda()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualLitematicaOpaqueAndTranslucentHandlersFollowThePrunedLiveLambda()	[fixture:third-party] local merged mod pack: run/client-merged-pack/mods
 test	net.forbric.kernel.mixin.InvocationOrdinalsTest	theActualPayloadOrdinalsKeepTheirOriginalProtocolFields()	[fixture:mc-libraries] actual game required
+test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	jecharactersOwnHookWrapsTheWeaverTheClassPipelineReads()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
+test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	onALoaderWithoutKnotsFieldTheHookFails()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
+test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	switchedOffItsHookGoesIntoAFieldTheClassPipelineDoesNotRead()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
 test	net.forbric.kernel.mixin.KernelClientHookMixinAnchorsTest	fancyMenusOriginalInitializerFollowsTheLiveRelayWithoutChangingItsShift()	[fixture:third-party] local game or mod fixture unavailable
 test	net.forbric.kernel.mixin.KernelClientHookMixinAnchorsTest	originalHooksAndDisabledAdapterAreLeftAsCompiled()	[fixture:third-party] local game or mod fixture unavailable
 test	net.forbric.kernel.mixin.KeyActionExitsTest	vanillaReleaseIsOrdinalFourAndItsFinalReturnOrdinalFive()	[fixture:staged] actual game required
@@ -529,6 +532,7 @@ test	net.forbric.kernel.mixin.WatchdogDumpEquivalenceTest	aDefinedUnknownHelperI
 test	net.forbric.kernel.mixin.WatchdogDumpEquivalenceTest	actualDefinitionIsPendingUntilTheActualHelperIsDefinedAndRechecksChangedHelpers()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.WatchdogDumpEquivalenceTest	bothActualUpstreamRenderersRetainEveryFrameBeyondTheJdkEightFrameLimit()	[fixture:staged] local merged mod pack and staged NeoForge carrier: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.WatchdogDumpEquivalenceTest	helperFirstAndUnknownHandlerOrCallerBodiesCannotBorrowTheProof()	[fixture:staged] staged NeoForge carrier: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
+test	net.forbric.kernel.mixin.weave.ControlifyPlatformWeaveTest	eachBuildOfControlifyLoadsItsOwnPlatformHalfUnrewritten()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/controlify-3.5.3+mc26.2-universal.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	aliasesUnknownValuesAndChangedDomainDefinitionsKeepTheSourceUnproved()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/build/ci-missing-api.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	anAdditionalOpsReadOrMemoEscapeKeepsTheSourceUnproved()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/build/ci-missing-api.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	anAlteredMemoProducerCleanupOrAdditionalInjectorCannotBeDeclaredEquivalent()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/build/ci-missing-api.jar
