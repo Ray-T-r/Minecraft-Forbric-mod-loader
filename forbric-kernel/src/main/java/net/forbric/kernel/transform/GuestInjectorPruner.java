@@ -46,6 +46,26 @@ public final class GuestInjectorPruner implements ClassTransformer {
 
 	private static final String SHARED_INDEX = "Lcom/llamalad7/mixinextras/sugar/ref/LocalIntRef;";
 
+	/** The source API each closed protocol's callback calls: the reader-deserializer pair's model deserializer, and the
+	 * component-tooltip helper's provider registry. */
+	private static final String MODEL_DESERIALIZER = "net/fabricmc/fabric/api/client/model/loading/v1/UnbakedModelDeserializer";
+	private static final String TOOLTIP_PROVIDERS = "net/fabricmc/fabric/impl/item/ItemComponentTooltipProviderRegistryImpl";
+
+	/**
+	 * Neither protocol matches without a method call owned by its source API, and a call's owner is a CONSTANT_Utf8
+	 * entry of the class's constant pool. A class naming neither provably carries no prunable group, so it is handed
+	 * back before it is parsed: the pruner runs for every class the game loads.
+	 */
+	private static final byte[][] PROTOCOL_OWNERS = {
+			net.forbric.kernel.util.ByteScan.poolEntry(MODEL_DESERIALIZER), net.forbric.kernel.util.ByteScan.poolEntry(TOOLTIP_PROVIDERS)};
+
+	private final java.util.concurrent.atomic.LongAdder parsedClasses = new java.util.concurrent.atomic.LongAdder();
+
+	/** How many classes this instance parsed: the ones the constant-pool prefilter could not rule out. */
+	long classesParsed() {
+		return parsedClasses.sum();
+	}
+
     private record Group(String protocol,List<MethodNode> methods,String selector) { }
     private final java.util.function.Function<String,ClassNode> classes;
     public GuestInjectorPruner(){this(net.forbric.kernel.mixin.NativeGameReferences::current);}
@@ -109,7 +129,7 @@ public final class GuestInjectorPruner implements ClassTransformer {
             if(inject.desc.equals("Lorg/spongepowered/asm/mixin/injection/ModifyArg;")&&method.desc.equals("(Ljava/lang/Object;Ljava/io/Reader;)Ljava/lang/Object;")
                     &&body.size()==3&&body.get(0) instanceof org.objectweb.asm.tree.VarInsnNode reader&&reader.getOpcode()==org.objectweb.asm.Opcodes.ALOAD&&reader.var==1
                     &&body.get(1) instanceof org.objectweb.asm.tree.MethodInsnNode parse&&parse.getOpcode()==org.objectweb.asm.Opcodes.INVOKESTATIC
-                    &&parse.owner.equals("net/fabricmc/fabric/api/client/model/loading/v1/UnbakedModelDeserializer")&&parse.name.equals("deserialize")
+                    &&parse.owner.equals(MODEL_DESERIALIZER)&&parse.name.equals("deserialize")
                     &&parse.desc.equals("(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/UnbakedModel;")&&body.get(2).getOpcode()==org.objectweb.asm.Opcodes.ARETURN
                     &&Integer.valueOf(1).equals(net.forbric.kernel.mixin.MixinFit.value(inject,"index"))
                     &&point(inject,"Lcom/mojang/datafixers/util/Pair;of(Ljava/lang/Object;Ljava/lang/Object;)Lcom/mojang/datafixers/util/Pair;")) {
@@ -136,7 +156,7 @@ public final class GuestInjectorPruner implements ClassTransformer {
     private static List<org.objectweb.asm.tree.AbstractInsnNode> code(MethodNode method){return java.util.Arrays.stream(method.instructions.toArray()).filter(i->i.getOpcode()>=0).toList();}
     private static Group tooltipGroup(ClassNode node) {
         if(node==null)return null;
-        String protocol="net/fabricmc/fabric/impl/item/ItemComponentTooltipProviderRegistryImpl";
+        String protocol=TOOLTIP_PROVIDERS;
         MethodNode helper=null;
         for(MethodNode method:node.methods) {
             if(net.forbric.kernel.mixin.MixinFit.injectorOf(method)!=null||!method.desc.endsWith(SHARED_INDEX+")V"))continue;
@@ -248,7 +268,8 @@ public final class GuestInjectorPruner implements ClassTransformer {
 
     @Override public byte[] transform(String className,byte[] classBytes,TransformContext context) {
         if(classBytes==null||classBytes.length==0||!enabled())return classBytes;
-        ClassNode node=new ClassNode();new ClassReader(classBytes).accept(node,0);
+        if(!net.forbric.kernel.util.ByteScan.namesAny(classBytes,PROTOCOL_OWNERS))return classBytes;
+        ClassNode node=new ClassNode();new ClassReader(classBytes).accept(node,0);parsedClasses.increment();
         if(!node.name.replace('/','.').equals(className))return classBytes;
         Group group=modelPair(node);
         if(group!=null&&!readerWasConsumed(node,group,classes))return classBytes;
@@ -256,7 +277,7 @@ public final class GuestInjectorPruner implements ClassTransformer {
         if(group==null)return classBytes;
         if(group.protocol().equals("component-tooltip")) {
             ClassNode current=classes.apply("net/neoforged/neoforge/common/tooltip/ItemTooltipHandler");
-            ClassNode providers=classes.apply("net/fabricmc/fabric/impl/item/ItemComponentTooltipProviderRegistryImpl");
+            ClassNode providers=classes.apply(TOOLTIP_PROVIDERS);
             if(current==null||providers==null||!providerDeclarations(providers)||!NeoTooltipAppendersInjector.aroundSpliced()) {
                 ForbricLog.warn("[Forbric/GuestInjectorPruner] retained %s's original tooltip callbacks: the actual carrier appender replacement has not been proved",node.name);
                 return classBytes;
