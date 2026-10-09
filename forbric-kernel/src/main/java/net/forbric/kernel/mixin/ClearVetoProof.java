@@ -35,7 +35,8 @@ import org.objectweb.asm.tree.analysis.Value;
  *       to an unknown call, a field write, a throw, a try block;</li>
  *   <li>an effect that is not the one being decided: one taken from an iterator outside the loop that iterates it
  *       (the first effect, {@code iterator().next()}), a second one taken in the same round, one taken inside a lambda
- *       run per effect — used for anything at all, a comparison, a test, a lookup, a removal through its iterator;
+ *       run per effect — in a comparison, a test, a lookup, an array index, any call but its own accessors and pure
+ *       functions, a removal through its iterator;
  *       and whether more effects follow ({@code hasNext()}) deciding anything but the end of its own loop, which may
  *       be left no other way ({@code break} or {@code return} out of it decides later effects from earlier ones);</li>
  *   <li>anything put into the effect map that is not one of its own original entries, any growth of a host local, and
