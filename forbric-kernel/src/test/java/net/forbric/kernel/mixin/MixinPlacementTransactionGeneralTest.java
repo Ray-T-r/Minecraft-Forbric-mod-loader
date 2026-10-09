@@ -142,6 +142,12 @@ class MixinPlacementTransactionGeneralTest {
 		source.handler("first", "(" + CONTEXT + CIR + ")V", INJECT, "method", List.of("useOn"), "at", List.of(at("INVOKE", CALL))).code(RETURN);
 		source.handler("second", "(" + CONTEXT + CIR + ")V", INJECT, "method", List.of("useOn"), "at", List.of(at("INVOKE", CALL))).code(RETURN);
 		assertUntouched(source.build(), VANILLA);
+		// The same with an explicit shift: two points spelled alike are one point, however the enum value is held.
+		CallbackSourceFixture shifted = new CallbackSourceFixture("org/example/builder/mixin/ShiftedTwiceMixin", STACK);
+		for (String name : List.of("first", "second"))
+			shifted.handler(name, "(" + CONTEXT + CIR + ")V", INJECT, "method", List.of("useOn"),
+					"at", List.of(at("INVOKE", CALL, "shift", new String[]{"Lorg/spongepowered/asm/mixin/injection/At$Shift;", "BEFORE"}))).code(RETURN);
+		assertUntouched(shifted.build(), VANILLA);
 	}
 
 	@Test void withoutTheClassTheModWasCompiledAgainstNothingMoves() throws Exception {

@@ -168,13 +168,21 @@ final class MixinCallbackProofs {
 		for (MethodNode method : mixin.methods) {
 			AnnotationNode injector = MixinFit.injectorOf(method);
 			if (injector == null || !role.test(method)) continue;
-			StringBuilder key = new StringBuilder(injector.desc);
-			for (AnnotationNode at : MixinFit.atNodes(injector)) key.append('|').append(at.values);
+			StringBuilder key = new StringBuilder(injector.desc).append(describe(MixinTargetSelectors.selectors(method)));
+			for (AnnotationNode at : MixinFit.atNodes(injector)) key.append('|').append(describe(at.values));
 			byPoint.computeIfAbsent(key.toString(), k -> new ArrayList<>()).add(method);
 		}
 		List<MethodNode> out = new ArrayList<>();
 		for (List<MethodNode> handlers : byPoint.values()) if (handlers.size() == 1) out.add(handlers.getFirst());
 		return out;
+	}
+
+	/** An annotation value spelled by content: enum arrays, lists and nested annotations included. */
+	private static String describe(Object value) {
+		if (value instanceof Object[] array) return java.util.Arrays.stream(array).map(MixinCallbackProofs::describe).toList().toString();
+		if (value instanceof List<?> list) return list.stream().map(MixinCallbackProofs::describe).toList().toString();
+		if (value instanceof AnnotationNode annotation) return annotation.desc + describe(annotation.values);
+		return String.valueOf(value);
 	}
 
 	/** The descriptor of the constructor that initialises {@code allocation}; null when not exactly one does. */
