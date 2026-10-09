@@ -300,9 +300,10 @@ public final class KernelLifecycle {
 		// Same moment, same reason: vanilla fills every block state's cache in Bootstrap, before any mod has
 		// registered a block, and the kernel drives registration itself.
 		contentCall(cl, "initialiseBlockStateCaches", "initialise the block state caches");
-		// Third, and AFTER the id map is whole, because the mod pass it re-runs walks that map: a mod whose own
-		// "every block exists now" pass ran before the kernel's last wave of registrations never saw those blocks.
-		contentCall(cl, "initialiseBlockInfoCaches", "re-run the mods' whole-registry block passes");
+		// Third, and AFTER the id map is whole, because the completion walks those registries: a mod whose own
+		// "every element exists now" pass ran before the kernel's last wave of registrations never saw those elements,
+		// so each element registered since gets that pass's per-element callback now, once.
+		contentCall(cl, "initialiseBlockInfoCaches", "complete the mods' whole-registry passes for late registrations");
 	}
 
 	/**

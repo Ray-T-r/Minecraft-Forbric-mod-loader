@@ -181,10 +181,13 @@ public final class KernelRegistryContent {
 		}
 	}
 
-	/** Completes proved registry element callbacks only for states added after their original walk. */
+	/**
+	 * Completes proved registry element callbacks for every element added after its original walk, in every registry
+	 * such a walk covered — the block-state registry for Lithium's pass, but whichever registry a mod walked.
+	 */
 	public static boolean initialiseBlockInfoCaches() {
 		if ("off".equalsIgnoreCase(ForbricSwitches.get(RegistryElementCallbackInjector.PROPERTY, "on"))) return false;
-		return net.forbric.kernel.interop.RegistryElementCallbacks.completeLateRegistrations(Block.BLOCK_STATE_REGISTRY) > 0;
+		return net.forbric.kernel.interop.RegistryElementCallbacks.completeLateRegistrations() > 0;
 	}
 
 	/**

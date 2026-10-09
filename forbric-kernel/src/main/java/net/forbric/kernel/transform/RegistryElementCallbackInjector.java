@@ -8,105 +8,180 @@ import org.objectweb.asm.tree.*;
 import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
 
-/** Recognises complete registry walks with one unconditionally executed callback per element.
- * The only optional guard tests whether the element class implements that exact callback interface.
- * A local batch is published only at the root's normal return; an aborted walk publishes nothing. */
+/**
+ * Lets an element registered after a mod's whole-registry pass receive the per-element callback that pass gave every
+ * element it saw.
+ *
+ * <p>The kernel registers Forge-family content in more than one wave; on the client the last one is inside
+ * {@code Minecraft.<init>}, after the point where a Fabric instance has already registered everything. A Fabric mod that
+ * initialises per-element state in one pass at "everything is registered now" therefore misses the later elements, and
+ * a mod that throws rather than computing a missed element later crashes on the first one it meets.
+ *
+ * <p>{@link RegistryWalkProof} decides, from data flow and control flow, which methods are complete walks of a platform
+ * registry giving each element an unconditional interface callback; it does not care how the walk was written. Each
+ * proved root records, in a batch local to that call, which elements received which callback, and publishes the batch
+ * only at a normal return. {@code RegistryElementCallbacks.completeLateRegistrations()} later gives each recorded
+ * callback, once, to every element of that registry the walk did not see.
+ */
 public final class RegistryElementCallbackInjector implements ClassTransformer {
     /** {@code -Dforbric.registryElementCallbacks=off} leaves every walk, and its late completion, where the mod put it. */
-    public static final String PROPERTY="forbric.registryElementCallbacks";
-    private static final String REGISTRY_OWNER="net/minecraft/world/level/block/Block", REGISTRY="BLOCK_STATE_REGISTRY";
-    private static final String REGISTRY_DESC="Lnet/minecraft/core/IdMapper;", ELEMENT="net/minecraft/world/level/block/state/BlockState";
-    private static final byte[][] CANDIDATE={ByteScan.needle(REGISTRY)};
-    private static final String HOOK="net/forbric/kernel/interop/RegistryElementCallbacks";
-    private final Function<String,ClassNode> declarations;
-    public RegistryElementCallbackInjector(Function<String,ClassNode> declarations){this.declarations=declarations;}
-    @Override public AnchorSet anchors(){return AnchorSet.scanned("closed per-element registry initializer loops");}
-    @Override public byte[] transform(String name,byte[] bytes,TransformContext context){
-        if(bytes==null||!ByteScan.containsAny(bytes,CANDIDATE)||"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY,"on")))return bytes;
-        ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.EXPAND_FRAMES);boolean changed=false;
-        for(MethodNode method:node.methods){
-            List<Loop> loops=loops(method);if(loops.isEmpty())continue;
-            // The token occupies slot 0. Shift the original reference-only locals and their expanded stack maps.
-            // This avoids reflective hierarchy loading by COMPUTE_FRAMES for arbitrary guest interfaces.
-            for(AbstractInsnNode i:method.instructions){
-                if(i instanceof VarInsnNode variable)variable.var++;
-                if(i instanceof FrameNode frame){if(frame.local==null)frame.local=new ArrayList<>();frame.local.addFirst("java/lang/Object");}
-            }
-            if(method.localVariables!=null)for(LocalVariableNode local:method.localVariables)local.index++;
-            for(List<LocalVariableAnnotationNode> annotations:Arrays.asList(method.visibleLocalVariableAnnotations,method.invisibleLocalVariableAnnotations))
-                if(annotations!=null)for(LocalVariableAnnotationNode annotation:annotations)
-                    for(int j=0;j<annotation.index.size();j++)annotation.index.set(j,annotation.index.get(j)+1);
-            method.maxLocals++;
-            InsnList begin=new InsnList();begin.add(new LdcInsnNode(Type.getObjectType(node.name)));begin.add(new LdcInsnNode(method.name));
-            begin.add(new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"begin","(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Object;",false));
-            begin.add(new VarInsnNode(Opcodes.ASTORE,0));method.instructions.insert(begin);
-            for(Loop loop:loops){
-                InsnList declare=new InsnList();declare.add(new VarInsnNode(Opcodes.ALOAD,0));
-                declare.add(new LdcInsnNode(Type.getObjectType(loop.callback.owner)));declare.add(new LdcInsnNode(loop.callback.name));
-                declare.add(new FieldInsnNode(Opcodes.GETSTATIC,REGISTRY_OWNER,REGISTRY,REGISTRY_DESC));
-                declare.add(new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"declare","(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;Ljava/lang/Object;)V",false));
-                method.instructions.insertBefore(loop.registryRead,declare);
-                method.instructions.insertBefore(loop.callback,new InsnNode(Opcodes.DUP));
-                InsnList record=new InsnList();record.add(new VarInsnNode(Opcodes.ALOAD,0));
-                record.add(new LdcInsnNode(Type.getObjectType(loop.callback.owner)));record.add(new LdcInsnNode(loop.callback.name));
-                record.add(new FieldInsnNode(Opcodes.GETSTATIC,REGISTRY_OWNER,REGISTRY,REGISTRY_DESC));
-                record.add(new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"completed","(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;Ljava/lang/Object;)V",false));
-                method.instructions.insert(loop.callback,record);
-            }
-            AbstractInsnNode exit=WorkerPoolShape.code(method).getLast();
-            InsnList commit=new InsnList();commit.add(new VarInsnNode(Opcodes.ALOAD,0));
-            commit.add(new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"commit","(Ljava/lang/Object;)V",false));method.instructions.insertBefore(exit,commit);
-            changed=true;
-            // The only trace this mechanism leaves at transform time; the late-registration completion logs its own count.
-            ForbricLog.info("[Forbric/RegistryCallbacks] %s.%s is a closed walk of the block-state registry with %d per-element "
-                    +"callback(s) — a state registered after the walk will receive the same callback(s) once",
-                    node.name.replace('/','.'),method.name,loops.size());
+    public static final String PROPERTY = "forbric.registryElementCallbacks";
+    /**
+     * A walk reads a registry field, so its type is one of the class's constant-pool names, and calls a walk method,
+     * so that method's descriptor is one too. Asked of the pool alone: this runs for every class the game loads.
+     */
+    private static final List<String> POOL_NAMES = new ArrayList<>(RegistryWalkProof.REGISTRY_TYPES);
+    private static final int REGISTRY_NAMES = POOL_NAMES.size();
+    static { POOL_NAMES.addAll(List.of("()Ljava/util/Iterator;", "(Ljava/util/function/Consumer;)V", "(I)Ljava/lang/Object;")); }
+    private static final byte[][] POOL_ENTRIES = POOL_NAMES.stream().map(ByteScan::poolEntry).toArray(byte[][]::new);
+    private static final String HOOK = "net/forbric/kernel/interop/RegistryElementCallbacks";
+    private static final String CONSUMER = "Ljava/util/function/Consumer;";
+    private final Function<String, ClassNode> declarations;
+
+    public RegistryElementCallbackInjector(Function<String, ClassNode> declarations) { this.declarations = declarations; }
+
+    @Override public AnchorSet anchors() { return AnchorSet.scanned("complete per-element walks of platform registries"); }
+
+    @Override public byte[] transform(String name, byte[] bytes, TransformContext context) {
+        if (bytes == null || !namesAWalk(bytes) || "off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY, "on"))) return bytes;
+        ClassNode node = new ClassNode();
+        new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
+        boolean changed = false;
+        for (MethodNode method : node.methods) {
+            RegistryWalkProof.Proof proof = RegistryWalkProof.prove(node, method, declarations);
+            if (proof == null || !instrument(node, method, proof)) continue;
+            changed = true;
+            // The only trace this mechanism leaves at transform time; the late completion logs its own count.
+            Map<RegistryWalkProof.Field, Integer> callbacks = new LinkedHashMap<>();
+            for (RegistryWalkProof.Walk walk : proof.walks()) callbacks.merge(walk.registry(), walk.callbacks().size(), Integer::sum);
+            callbacks.forEach((registry, count) -> ForbricLog.info("[Forbric/RegistryCallbacks] %s.%s is a closed walk of the %s "
+                    + "registry with %d per-element callback(s) — an element registered after the walk will receive the same "
+                    + "callback(s) once", node.name.replace('/', '.'), method.name, registry.label(), count));
         }
-        if(!changed)return bytes;ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);node.accept(writer);return writer.toByteArray();
+        if (!changed) return bytes;
+        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        node.accept(writer);
+        return writer.toByteArray();
     }
-    private record Loop(FieldInsnNode registryRead,MethodInsnNode callback){}
-    private List<Loop> loops(MethodNode method){
-        if((method.access&(Opcodes.ACC_STATIC|Opcodes.ACC_ABSTRACT|Opcodes.ACC_NATIVE|Opcodes.ACC_SYNCHRONIZED))!=Opcodes.ACC_STATIC
-                ||!method.desc.equals("()V")||method.name.startsWith("<")||!method.tryCatchBlocks.isEmpty())return List.of();
-        List<AbstractInsnNode> c=WorkerPoolShape.code(method);List<Loop> result=new ArrayList<>();Set<String> signatures=new HashSet<>();int i=0;
-        while(i<c.size()-1){
-            Type guarded=null;JumpInsnNode guard=null;
-            if(c.get(i) instanceof LdcInsnNode literal&&literal.cst instanceof Type type){
-                if(i+3>=c.size()||type.getSort()!=Type.OBJECT||!(c.get(i+1) instanceof LdcInsnNode element)
-                        ||!Type.getObjectType(ELEMENT).equals(element.cst)
-                        ||!call(c.get(i+2),Opcodes.INVOKEVIRTUAL,"java/lang/Class","isAssignableFrom","(Ljava/lang/Class;)Z")
-                        ||!(c.get(i+3) instanceof JumpInsnNode jump)||jump.getOpcode()!=Opcodes.IFEQ)return List.of();
-                guarded=type;guard=jump;i+=4;
+
+    private static boolean namesAWalk(byte[] bytes) {
+        boolean[] found = ByteScan.constantPoolNames(bytes, POOL_ENTRIES);
+        boolean registry = false, walk = false;
+        for (int i = 0; i < found.length; i++) if (found[i]) { if (i < REGISTRY_NAMES) registry = true; else walk = true; }
+        return registry && walk;
+    }
+
+    /** Gives the root a batch token in a new local, then records each walk's declaration, completions and commit. */
+    private static boolean instrument(ClassNode owner, MethodNode method, RegistryWalkProof.Proof proof) {
+        boolean instance = (method.access & Opcodes.ACC_STATIC) == 0;
+        int token = Type.getArgumentsAndReturnSizes(method.desc) >> 2;
+        if (!instance) token--;
+        if (!openSlot(method, token)) return false;
+
+        InsnList begin = new InsnList();
+        begin.add(new LdcInsnNode(Type.getObjectType(owner.name)));
+        begin.add(new LdcInsnNode(method.name));
+        begin.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK, "begin", "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Object;", false));
+        begin.add(new VarInsnNode(Opcodes.ASTORE, token));
+        method.instructions.insert(begin);
+
+        for (RegistryWalkProof.Walk walk : proof.walks()) {
+            // Declared where the walk starts, so an empty registry still declares it and a skipped walk does not.
+            InsnList start = new InsnList();
+            for (RegistryWalkProof.Callback callback : walk.callbacks()) {
+                if (walk.form() != RegistryWalkProof.Form.FOR_EACH) { start.add(declare(token, callback, walk.registry())); continue; }
+                // The consumer is on the stack: wrap it so each element it returns from normally is recorded.
+                start.add(row(token, callback, walk.registry()));
+                start.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK, "recording", "(" + CONSUMER
+                        + "Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;Ljava/lang/Object;)" + CONSUMER, false));
             }
-            // registry.iterator -> local; hasNext gate -> next/cast/store -> one callback -> same gate.
-            if(i+14>=c.size()||!(c.get(i) instanceof FieldInsnNode registry)||registry.getOpcode()!=Opcodes.GETSTATIC
-                    ||!registry.owner.equals(REGISTRY_OWNER)||!registry.name.equals(REGISTRY)||!registry.desc.equals(REGISTRY_DESC)
-                    ||!call(c.get(i+1),Opcodes.INVOKEVIRTUAL,"net/minecraft/core/IdMapper","iterator","()Ljava/util/Iterator;")
-                    ||!(c.get(i+2) instanceof VarInsnNode iterator)||iterator.getOpcode()!=Opcodes.ASTORE
-                    ||!var(c.get(i+3),Opcodes.ALOAD,iterator.var)
-                    ||!call(c.get(i+4),Opcodes.INVOKEINTERFACE,"java/util/Iterator","hasNext","()Z")
-                    ||!(c.get(i+5) instanceof JumpInsnNode empty)||empty.getOpcode()!=Opcodes.IFEQ
-                    ||!var(c.get(i+6),Opcodes.ALOAD,iterator.var)
-                    ||!call(c.get(i+7),Opcodes.INVOKEINTERFACE,"java/util/Iterator","next","()Ljava/lang/Object;")
-                    ||!cast(c.get(i+8),ELEMENT)||!(c.get(i+9) instanceof VarInsnNode element)||element.getOpcode()!=Opcodes.ASTORE
-                    ||element.var==iterator.var||!var(c.get(i+10),Opcodes.ALOAD,element.var)
-                    ||!(c.get(i+11) instanceof TypeInsnNode contractCast)||contractCast.getOpcode()!=Opcodes.CHECKCAST
-                    ||!(c.get(i+12) instanceof MethodInsnNode callback)||callback.getOpcode()!=Opcodes.INVOKEINTERFACE||!callback.itf
-                    ||!callback.owner.equals(contractCast.desc)||!callback.desc.equals("()V")
-                    ||!(c.get(i+13) instanceof JumpInsnNode back)||back.getOpcode()!=Opcodes.GOTO
-                    ||nextReal(back.label)!=c.get(i+3)||nextReal(empty.label)!=c.get(i+14)
-                    ||guard!=null&&(nextReal(guard.label)!=c.get(i+14)||!guarded.getInternalName().equals(callback.owner))
-                    ||!signatures.add(callback.owner+"#"+callback.name))return List.of();
-            ClassNode contract=declarations.apply(callback.owner);
-            MethodNode member=contract==null?null:WorkerPoolShape.method(contract,callback.name,"()V");
-            if(contract==null||(contract.access&(Opcodes.ACC_PUBLIC|Opcodes.ACC_INTERFACE))!=(Opcodes.ACC_PUBLIC|Opcodes.ACC_INTERFACE)
-                    ||member==null||(member.access&(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC))!=Opcodes.ACC_PUBLIC)return List.of();
-            result.add(new Loop(registry,callback));i+=14;
+            if (walk.form() == RegistryWalkProof.Form.ITERATOR) method.instructions.insert(walk.start(), start);
+            else method.instructions.insertBefore(walk.start(), start);
+            for (RegistryWalkProof.Callback callback : walk.callbacks())
+                if (callback.call() != null) completed(method, token, callback, walk.registry());
         }
-        return !result.isEmpty()&&i==c.size()-1&&c.get(i).getOpcode()==Opcodes.RETURN?result:List.of();
+        for (AbstractInsnNode exit : proof.returns()) {
+            InsnList commit = new InsnList();
+            commit.add(new VarInsnNode(Opcodes.ALOAD, token));
+            commit.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK, "commit", "(Ljava/lang/Object;)V", false));
+            method.instructions.insertBefore(exit, commit);
+        }
+        return true;
     }
-    private static AbstractInsnNode nextReal(AbstractInsnNode i){while(i!=null&&i.getOpcode()<0)i=i.getNext();return i;}
-    private static boolean cast(AbstractInsnNode i,String owner){return i instanceof TypeInsnNode t&&t.getOpcode()==Opcodes.CHECKCAST&&t.desc.equals(owner);}
-    private static boolean var(AbstractInsnNode i,int opcode,int slot){return i instanceof VarInsnNode v&&v.getOpcode()==opcode&&v.var==slot;}
-    private static boolean call(AbstractInsnNode i,int opcode,String owner,String name,String desc){return i instanceof MethodInsnNode m&&m.getOpcode()==opcode&&m.owner.equals(owner)&&m.name.equals(name)&&m.desc.equals(desc);}
+
+    private static InsnList row(int token, RegistryWalkProof.Callback callback, RegistryWalkProof.Field registry) {
+        InsnList row = new InsnList();
+        row.add(new VarInsnNode(Opcodes.ALOAD, token));
+        row.add(new LdcInsnNode(Type.getObjectType(callback.contract())));
+        row.add(new LdcInsnNode(callback.member()));
+        row.add(new FieldInsnNode(Opcodes.GETSTATIC, registry.owner(), registry.name(), registry.desc()));
+        return row;
+    }
+
+    private static InsnList declare(int token, RegistryWalkProof.Callback callback, RegistryWalkProof.Field registry) {
+        InsnList declare = row(token, callback, registry);
+        declare.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK, "declare", "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;Ljava/lang/Object;)V", false));
+        return declare;
+    }
+
+    /** Keeps the callback's receiver, and once the callback returned, records that element against it. */
+    private static void completed(MethodNode method, int token, RegistryWalkProof.Callback callback, RegistryWalkProof.Field registry) {
+        MethodInsnNode call = callback.call();
+        method.instructions.insertBefore(call, new InsnNode(Opcodes.DUP));
+        InsnList record = new InsnList();
+        int result = Type.getReturnType(call.desc).getSize();
+        // A callback's result is discarded by the mod; move it above the kept element so the element is consumed first.
+        if (result == 1) record.add(new InsnNode(Opcodes.SWAP));
+        else if (result == 2) { record.add(new InsnNode(Opcodes.DUP2_X1)); record.add(new InsnNode(Opcodes.POP2)); }
+        InsnList row = row(token, callback, registry);
+        record.add(row);
+        record.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK, "completed",
+                "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;Ljava/lang/Object;)V", false));
+        method.instructions.insert(call, record);
+    }
+
+    /**
+     * Opens local {@code slot} (the first after the parameters) for the token: every later local moves up by one, and each
+     * expanded stack map frame gains the token's entry where that slot starts. Moving the method's own locals rather than
+     * appending avoids computing frames, which would load arbitrary guest types.
+     */
+    private static boolean openSlot(MethodNode method, int slot) {
+        List<FrameNode> frames = new ArrayList<>();
+        for (AbstractInsnNode insn : method.instructions) {
+            if (!(insn instanceof FrameNode frame)) continue;
+            if (frame.type != Opcodes.F_NEW) return false;
+            frames.add(frame);
+            if (position(frame.local, slot) < 0) return false;
+        }
+        for (FrameNode frame : frames) {
+            List<Object> local = frame.local == null ? new ArrayList<>() : new ArrayList<>(frame.local);
+            int at = position(local, slot);
+            int covered = 0;
+            for (int i = 0; i < at; i++) covered += local.get(i) == Opcodes.LONG || local.get(i) == Opcodes.DOUBLE ? 2 : 1;
+            while (covered < slot) { local.add(at++, Opcodes.TOP); covered++; }
+            local.add(at, "java/lang/Object");
+            frame.local = local;
+        }
+        for (AbstractInsnNode insn : method.instructions) {
+            if (insn instanceof VarInsnNode variable && variable.var >= slot) variable.var++;
+            else if (insn instanceof IincInsnNode increment && increment.var >= slot) increment.var++;
+        }
+        if (method.localVariables != null) for (LocalVariableNode local : method.localVariables) if (local.index >= slot) local.index++;
+        for (List<LocalVariableAnnotationNode> annotations : Arrays.asList(method.visibleLocalVariableAnnotations, method.invisibleLocalVariableAnnotations))
+            if (annotations != null) for (LocalVariableAnnotationNode annotation : annotations)
+                for (int j = 0; j < annotation.index.size(); j++) if (annotation.index.get(j) >= slot) annotation.index.set(j, annotation.index.get(j) + 1);
+        method.maxLocals++;
+        return true;
+    }
+
+    /** The list position whose entry starts at {@code slot}, or the end when the frame stops before it; -1 if an entry straddles it. */
+    private static int position(List<Object> local, int slot) {
+        if (local == null) return 0;
+        int covered = 0, at = 0;
+        while (at < local.size() && covered < slot) {
+            Object type = local.get(at++);
+            covered += type == Opcodes.LONG || type == Opcodes.DOUBLE ? 2 : 1;
+        }
+        return covered > slot ? -1 : at;
+    }
 }
