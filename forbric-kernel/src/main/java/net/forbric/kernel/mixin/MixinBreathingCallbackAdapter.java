@@ -130,8 +130,9 @@ public final class MixinBreathingCallbackAdapter {
 	 */
 	private static MethodNode kept(ClassNode mixin, ClassNode living, MethodNode host, MethodInsnNode hookCall, ClassNode source,
 			MethodNode reference, String call, String operands, boolean effectsOnly) {
+		// The point as Mixin reads it in vanilla's baseTick, when at hand: without it only a target spelling owner and descriptor names the call.
 		MethodNode handler = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.kind(m, "WrapOperation")
-				&& MixinCallbackShape.binds(m, living, "baseTick()V") && MixinCallbackShape.plainPoint(m, "INVOKE", call)
+				&& MixinCallbackShape.binds(m, living, "baseTick()V") && MixinCallbackShape.plainPoint(m, "INVOKE", call, reference)
 				&& MixinHandlerShape.of(m).operands(operands));
 		if (handler == null || !MixinCallbackShape.instance(handler) || !MixinCallbackShape.noReceiver(handler)) return null;
 		MixinHandlerShape shape = MixinHandlerShape.of(handler);

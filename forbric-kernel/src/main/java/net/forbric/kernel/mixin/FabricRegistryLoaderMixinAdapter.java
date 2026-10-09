@@ -105,13 +105,17 @@ public final class FabricRegistryLoaderMixinAdapter {
 		return moves.size();
 	}
 
-	/** The one INVOKE point of a wrap, as written, when it names a static method of the target. */
+	/**
+	 * The one INVOKE point of a wrap, spelled {@code Lowner;name(desc)}, when it names a method of the target: read as
+	 * Mixin reads a target ({@link MixinFit#parseMember}), so whitespace or a dotted owner name the same member — the same
+	 * reading {@code matches} makes through {@link MixinCallbackShape#plainPoint}.
+	 */
 	private static String invokeTarget(MethodNode handler){
 		List<AnnotationNode> ats=MixinFit.atNodes(MixinFit.injectorOf(handler));
 		if(ats.size()!=1||!"INVOKE".equals(MixinFit.value(ats.getFirst(),"value")))return null;
 		for(String key:List.of("shift","by","opcode","args","ordinal"))if(MixinFit.value(ats.getFirst(),key)!=null)return null;
-		Object target=MixinFit.value(ats.getFirst(),"target");
-		return target instanceof String s&&s.startsWith("L"+TARGET+";")&&s.indexOf('(')>0?s:null;
+		MixinFit.Member member=MixinFit.parseMember(MixinFit.asString(MixinFit.value(ats.getFirst(),"target")));
+		return member!=null&&TARGET.equals(member.owner())&&member.desc()!=null&&member.desc().startsWith("(")?"L"+TARGET+";"+member.name()+member.desc():null;
 	}
 	private static boolean calledAnywhere(ClassNode target,String key){
 		for(MethodNode m:target.methods)for(AbstractInsnNode i:m.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(TARGET)&&(c.name+c.desc).equals(key))return true;

@@ -8,9 +8,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.AnnotationNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
@@ -22,19 +25,42 @@ import org.objectweb.asm.tree.MethodNode;
  * extras each asks for; which value an extra receives is a fact about the target body — the slot MixinExtras resolves a
  * {@code @Local} to ({@link #localSlots}) and its producer there ({@link #proveLocals}, by MixinLocalOriginProof) —
  * never a property of the extra list one mod happened to declare.
+ *
+ * <p>Where the operands end is the injector's own rule (Mixin 0.8.7's {@code Injector.validateParams}, MixinExtras
+ * 0.5.4's injectors): after the {@code CallbackInfo} of an {@code @Inject} and the {@code Operation} of a
+ * {@code @WrapOperation}; after the one value a {@code @ModifyConstant}, {@code @ModifyVariable},
+ * {@code @ModifyExpressionValue} or {@code @ModifyReturnValue} modifies and the {@code Args} of a {@code @ModifyArgs};
+ * after the instruction's operands for a {@code @Redirect}, {@code @WrapWithCondition} or {@code @ModifyReceiver} (the
+ * receiver, unless the access is static, then the arguments or the stored value). A {@code @ModifyArg} takes no more
+ * than the call's arguments. Every unannotated value after the operands but an {@code @Inject}'s is a target argument
+ * ({@link Role#ARGUMENT}): the {@code k}-th value appended is the target method's {@code k}-th parameter.
+ *
+ * <p>Read against the method it is written for ({@link #of(MethodNode, String, MethodNode)}), a target argument is what
+ * a {@code @Local(argsOnly = true)} of its type and position would read: it becomes an implicit {@code @Local}
+ * ({@link Extra#implicit}), served, proved and moved exactly as the annotated one is. Read alone ({@link #of(MethodNode)}),
+ * nothing says which method it is a parameter of, so it is no {@code @Local}.
  */
 final class MixinHandlerShape {
 	static final String OPERATION = "Lcom/llamalad7/mixinextras/injector/wrapoperation/Operation;";
 	static final String CALLBACK = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
 	static final String RETURNABLE = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
+	static final String ARGS = "Lorg/spongepowered/asm/mixin/injection/invoke/arg/Args;";
 	private static final String SUGAR = "Lcom/llamalad7/mixinextras/sugar/";
-	private static final String LOCAL = SUGAR + "Local;", SHARE = SUGAR + "Share;", CANCELLABLE = SUGAR + "Cancellable;";
+	static final String LOCAL = SUGAR + "Local;";
+	private static final String SHARE = SUGAR + "Share;", CANCELLABLE = SUGAR + "Cancellable;";
+	private static final String COERCE = "Lorg/spongepowered/asm/mixin/injection/Coerce;";
 
 	/** What an extra asks for. {@code CAPTURED}: a local Mixin's {@code locals} capture fills; {@code ARGUMENT}: a target argument appended unannotated. */
 	enum Role { LOCAL, SHARE, CANCELLABLE, SUGAR, CAPTURED, ARGUMENT }
 
-	/** One extra: the handler parameter, its type, what it asks for, and the sugar annotation that says so (null for none). */
-	record Extra(int parameter, Type type, Role role, AnnotationNode sugar) { }
+	/**
+	 * One extra: the handler parameter, its type, what it asks for, and the sugar annotation that says so (null for none).
+	 * {@code implicit}: a target argument read as the {@code @Local(argsOnly = true)} it is equivalent to — role
+	 * {@code LOCAL}, its {@code sugar} that equivalent annotation, which the handler itself does not carry.
+	 */
+	record Extra(int parameter, Type type, Role role, AnnotationNode sugar, boolean implicit) {
+		Extra(int parameter, Type type, Role role, AnnotationNode sugar) { this(parameter, type, role, sugar, false); }
+	}
 
 	/** An extra an adapter can serve: a role and a type. */
 	record Want(Role role, Type type) {
@@ -59,30 +85,123 @@ final class MixinHandlerShape {
 		this.extras = extras;
 	}
 
-	/** The shape of an injector handler; null for a method without an injector. */
+	/** The shape of an injector handler; null for a method without an injector. Target arguments stay {@link Role#ARGUMENT}s. */
 	static MixinHandlerShape of(MethodNode handler) {
+		return of(handler, null, null, false);
+	}
+
+	/**
+	 * The shape of a handler read against the method it is written for, whose descriptor is {@code targetDesc}: each target
+	 * argument it appends is that method's parameter at its position, an implicit {@code @Local(argsOnly = true)}
+	 * ({@link Extra#implicit}). {@code body}, when given, is a body holding the instruction the handler's point names — the
+	 * written-for method or one the point is found in alike — and settles whether a redirected access is static where the
+	 * types alone do not. Null for a method without an injector, and for a handler whose appended values are not that
+	 * method's parameters (Mixin refuses it there).
+	 */
+	static MixinHandlerShape of(MethodNode handler, String targetDesc, MethodNode body) {
+		return targetDesc == null ? of(handler) : of(handler, targetDesc, body, true);
+	}
+
+	private static MixinHandlerShape of(MethodNode handler, String targetDesc, MethodNode body, boolean bound) {
 		AnnotationNode injector = handler == null ? null : MixinFit.injectorOf(handler);
 		if (injector == null) return null;
 		String kind = injector.desc.substring(injector.desc.lastIndexOf('/') + 1, injector.desc.length() - 1);
 		Type[] parameters = Type.getArgumentTypes(handler.desc);
+		Type returns = Type.getReturnType(handler.desc);
 		int sugar = parameters.length;
 		for (int i = 0; i < parameters.length; i++) if (MixinFit.sugar(handler, i)) { sugar = i; break; }
 		int end = switch (kind) {
 			case "Inject" -> after(parameters, CALLBACK, RETURNABLE);
 			case "WrapOperation", "WrapMethod" -> after(parameters, OPERATION, null);
-			default -> sugar;
+			case "ModifyConstant", "ModifyVariable", "ModifyExpressionValue", "ModifyReturnValue" -> 1;
+			case "ModifyArgs" -> after(parameters, ARGS, null);
+			case "Redirect", "WrapWithCondition", "ModifyReceiver" -> instructionOperands(handler, injector, parameters, sugar, returns, body);
+			default -> sugar;   // @ModifyArg: one argument, or exactly the call's arguments (Mixin 0.8.7 ModifyArgInjector)
 		};
 		end = Math.min(end < 0 ? sugar : end, sugar);
+		Type[] arguments = bound ? Type.getArgumentTypes(targetDesc) : null;
 		List<Extra> extras = new ArrayList<>();
 		for (int i = end; i < parameters.length; i++) {
-			AnnotationNode annotation = annotation(handler, i);
-			Role role = annotation == null ? ("Inject".equals(kind) ? Role.CAPTURED : Role.ARGUMENT)
-					: LOCAL.equals(annotation.desc) ? Role.LOCAL : SHARE.equals(annotation.desc) ? Role.SHARE
-					: CANCELLABLE.equals(annotation.desc) ? Role.CANCELLABLE : Role.SUGAR;
-			extras.add(new Extra(i, parameters[i], role, annotation));
+			AnnotationNode annotation = annotation(handler, i, SUGAR);
+			if (annotation != null) {
+				Role role = LOCAL.equals(annotation.desc) ? Role.LOCAL : SHARE.equals(annotation.desc) ? Role.SHARE
+						: CANCELLABLE.equals(annotation.desc) ? Role.CANCELLABLE : Role.SUGAR;
+				extras.add(new Extra(i, parameters[i], role, annotation));
+			} else if ("Inject".equals(kind)) {
+				extras.add(new Extra(i, parameters[i], Role.CAPTURED, null));
+			} else if (!bound) {
+				extras.add(new Extra(i, parameters[i], Role.ARGUMENT, null));
+			} else {
+				// Mixin hands over the target's arguments in order, from its first, each of exactly the declared type
+				// unless @Coerce widens it (which a typed @Local cannot read).
+				int position = i - end;
+				if (position >= arguments.length || !arguments[position].equals(parameters[i]) || annotation(handler, i, COERCE) != null) return null;
+				extras.add(new Extra(i, parameters[i], Role.LOCAL, argumentLocal(arguments, position), true));
+			}
 		}
-		return new MixinHandlerShape(handler, kind, Type.getReturnType(handler.desc),
-				List.of(Arrays.copyOf(parameters, end)), List.copyOf(extras));
+		return new MixinHandlerShape(handler, kind, returns, List.of(Arrays.copyOf(parameters, end)), List.copyOf(extras));
+	}
+
+	/**
+	 * The {@code @Local} that reads parameter {@code position} of a method taking {@code arguments}, as MixinExtras reads
+	 * one: {@code argsOnly}, and an {@code ordinal} among the parameters of its type only where there are several.
+	 */
+	private static AnnotationNode argumentLocal(Type[] arguments, int position) {
+		AnnotationNode local = new AnnotationNode(LOCAL);
+		local.values = new ArrayList<>(List.of("argsOnly", Boolean.TRUE));
+		int ordinal = 0, same = 0;
+		for (int i = 0; i < arguments.length; i++) if (arguments[i].equals(arguments[position])) { same++; if (i < position) ordinal++; }
+		if (same > 1) { local.values.add("ordinal"); local.values.add(ordinal); }
+		return local;
+	}
+
+	/**
+	 * How many leading parameters a handler takes from the instruction its one point names: an instance access's receiver
+	 * then the call's arguments, or the field's value for a write, or nothing more for a read. -1 where that does not
+	 * settle it: a point naming no member with a descriptor, a variant with {@code args}, or a receiver neither the
+	 * instruction ({@code body}, {@code opcode}) nor the types tell apart from a first target argument.
+	 */
+	private static int instructionOperands(MethodNode handler, AnnotationNode injector, Type[] parameters, int sugar, Type returns, MethodNode body) {
+		List<AnnotationNode> ats = MixinFit.atNodes(injector);
+		if (ats.size() != 1 || MixinFit.value(ats.getFirst(), "args") != null) return -1;
+		AnnotationNode at = ats.getFirst();
+		String value = MixinFit.asString(MixinFit.value(at, "value"));
+		MixinFit.Member member = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target")));
+		if (value == null || member == null || member.desc() == null) return -1;
+		List<Type> plain;
+		Boolean isStatic = null;
+		if ("INVOKE".equals(value) && member.desc().startsWith("(")) {
+			plain = List.of(Type.getArgumentTypes(member.desc()));
+		} else if ("FIELD".equals(value) && !member.desc().startsWith("(")) {
+			plain = Type.VOID_TYPE.equals(returns) ? List.of(Type.getType(member.desc())) : List.of();
+			if (MixinFit.value(at, "opcode") instanceof Number opcode)
+				isStatic = opcode.intValue() == Opcodes.GETSTATIC || opcode.intValue() == Opcodes.PUTSTATIC ? Boolean.TRUE
+						: opcode.intValue() == Opcodes.GETFIELD || opcode.intValue() == Opcodes.PUTFIELD ? Boolean.FALSE : null;
+		} else return -1;
+		if (isStatic == null && body != null) {
+			List<AbstractInsnNode> found = MixinCallbackProofs.points(body, at);
+			if (found != null) for (AbstractInsnNode instruction : found) {
+				boolean one = instruction instanceof MethodInsnNode call ? call.getOpcode() == Opcodes.INVOKESTATIC
+						: instruction instanceof FieldInsnNode field && (field.getOpcode() == Opcodes.GETSTATIC || field.getOpcode() == Opcodes.PUTSTATIC);
+				if (isStatic != null && isStatic != one) { isStatic = null; break; }
+				isStatic = one;
+			}
+		}
+		boolean asStatic = leads(handler, parameters, 0, plain, sugar);
+		boolean asInstance = member.owner() != null && sugar > 0 && parameters[0].equals(Type.getObjectType(member.owner()))
+				&& leads(handler, parameters, 1, plain, sugar);
+		if (isStatic != null) return isStatic ? (asStatic ? plain.size() : -1) : (asInstance ? plain.size() + 1 : -1);
+		// A coerced first parameter may be a widened receiver: the types alone cannot say.
+		if (sugar > 0 && annotation(handler, 0, COERCE) != null) return -1;
+		return asStatic == asInstance ? -1 : asStatic ? plain.size() : plain.size() + 1;
+	}
+
+	/** Whether parameters {@code from..} before {@code sugar} start with exactly {@code plain}, none of them coerced. */
+	private static boolean leads(MethodNode handler, Type[] parameters, int from, List<Type> plain, int sugar) {
+		if (from + plain.size() > sugar) return false;
+		for (int i = 0; i < plain.size(); i++)
+			if (!parameters[from + i].equals(plain.get(i)) || annotation(handler, from + i, COERCE) != null) return false;
+		return true;
 	}
 
 	/** {@code "Inject"}, {@code "WrapOperation"}, … : the injector annotation's simple name. */
@@ -130,7 +249,7 @@ final class MixinHandlerShape {
 		return served;
 	}
 
-	/** The {@code @Local} extras, in declaration order. */
+	/** The {@code @Local} extras, in declaration order: the annotated ones and, read against a method, the implicit ones. */
 	List<Extra> locals() {
 		return extras.stream().filter(extra -> extra.role() == Role.LOCAL).toList();
 	}
@@ -162,6 +281,34 @@ final class MixinHandlerShape {
 		return MixinLocalOriginProof.prove(handler, owner, reference, point, current, currentPoint);
 	}
 
+	/**
+	 * Gives each implicit {@code @Local} of {@code handler} among {@code slots} (handler parameter to slot) — a mapped
+	 * parameter that carries no sugar — the annotation {@code @Local(index = slot)}: once its selector or point moves to
+	 * another method, the value Mixin would append there is that method's argument, no longer the one the handler was
+	 * written to read. Sugar must follow every value Mixin hands over, so the parameters from the first such one on must
+	 * all be sugar or mapped; false (and nothing changed) otherwise. True when there was nothing to annotate.
+	 */
+	static boolean annotateImplicit(MethodNode handler, Map<Integer, Integer> slots) {
+		int count = Type.getArgumentTypes(handler.desc).length;
+		List<Integer> implicit = slots.keySet().stream().filter(p -> p >= 0 && p < count && annotation(handler, p, SUGAR) == null).sorted().toList();
+		if (implicit.isEmpty()) return true;
+		for (int p = implicit.getFirst(); p < count; p++) if (annotation(handler, p, SUGAR) == null && !slots.containsKey(p)) return false;
+		if (handler.invisibleParameterAnnotations == null) {
+			@SuppressWarnings("unchecked") List<AnnotationNode>[] table = new List[count];
+			handler.invisibleParameterAnnotations = table;
+		} else if (handler.invisibleParameterAnnotations.length < count) {
+			handler.invisibleParameterAnnotations = Arrays.copyOf(handler.invisibleParameterAnnotations, count);
+		}
+		if (handler.invisibleAnnotableParameterCount > 0) handler.invisibleAnnotableParameterCount = count;
+		for (int parameter : implicit) {
+			AnnotationNode local = new AnnotationNode(LOCAL);
+			local.values = new ArrayList<>(List.of("index", slots.get(parameter)));
+			if (handler.invisibleParameterAnnotations[parameter] == null) handler.invisibleParameterAnnotations[parameter] = new ArrayList<>();
+			handler.invisibleParameterAnnotations[parameter].add(local);
+		}
+		return true;
+	}
+
 	/** The index just past the first parameter of descriptor {@code a} or {@code b}; -1 when there is none. */
 	private static int after(Type[] parameters, String a, String b) {
 		for (int i = 0; i < parameters.length; i++) {
@@ -171,10 +318,11 @@ final class MixinHandlerShape {
 		return -1;
 	}
 
-	private static AnnotationNode annotation(MethodNode handler, int parameter) {
+	/** Parameter {@code parameter}'s annotation whose descriptor starts with {@code prefix}; null for none. */
+	private static AnnotationNode annotation(MethodNode handler, int parameter, String prefix) {
 		for (List<AnnotationNode>[] table : Arrays.asList(handler.visibleParameterAnnotations, handler.invisibleParameterAnnotations)) {
 			if (table == null || parameter >= table.length || table[parameter] == null) continue;
-			for (AnnotationNode annotation : table[parameter]) if (annotation.desc.startsWith(SUGAR)) return annotation;
+			for (AnnotationNode annotation : table[parameter]) if (annotation.desc.startsWith(prefix)) return annotation;
 		}
 		return null;
 	}

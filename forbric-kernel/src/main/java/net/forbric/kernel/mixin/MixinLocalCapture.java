@@ -31,8 +31,11 @@ final class MixinLocalCapture {
 	 */
 	static Map<Integer, Integer> slots(MethodNode handler, String owner, MethodNode nativeHost, AbstractInsnNode nativePoint,
 			MethodNode merged, AbstractInsnNode mergedPoint) {
-		MixinHandlerShape shape = MixinHandlerShape.of(handler);
-		if (shape == null || merged == null || mergedPoint == null) return null;
+		if (merged == null || mergedPoint == null) return null;
+		// Read against the method it was written for: a target argument it appends is that method's, an implicit @Local.
+		MethodNode written = nativeHost != null ? nativeHost : merged;
+		MixinHandlerShape shape = MixinHandlerShape.of(handler, written.desc, written);
+		if (shape == null) return null;
 		List<MixinHandlerShape.Extra> locals = shape.locals();
 		Map<Integer, Integer> result = new LinkedHashMap<>();
 		if (locals.isEmpty()) return result;
@@ -87,9 +90,9 @@ final class MixinLocalCapture {
 		return null;
 	}
 
-	/** A {@code @Local} that reads exactly {@code slot}, whatever the original asked for to name it. */
+	/** A {@code @Local} that reads exactly {@code slot}, whatever the original asked for to name it (or nothing: a target argument). */
 	static AnnotationNode at(AnnotationNode original, int slot) {
-		AnnotationNode local = new AnnotationNode(original.desc);
+		AnnotationNode local = new AnnotationNode(original == null ? MixinHandlerShape.LOCAL : original.desc);
 		local.values = new java.util.ArrayList<>(List.of("index", slot));
 		return local;
 	}

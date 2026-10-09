@@ -58,15 +58,18 @@ public final class MixinCameraRollAdapter {
             if(inject==null||!MixinCallbackShape.instance(handler)||!MixinCallbackShape.kind(handler,"WrapWithCondition")
                     ||MixinFit.atNodes(inject).size()!=1)continue;
             AnnotationNode at=MixinFit.atNodes(inject).getFirst();
-            String member=MixinFit.asString(MixinFit.value(at,"target"));MixinFit.Member wanted=MixinFit.parseMember(member);
-            if(wanted==null||!camera.name.equals(wanted.owner())||!"(FF)V".equals(wanted.desc())
-                    ||!MixinCallbackShape.point(handler,"INVOKE",member))continue;
+            // The call the target names as Mixin resolves it (whitespace, a dotted owner; no owner, where the native method
+            // makes that call on the camera alone), counted below by that member.
+            MixinFit.Member wanted=MixinFit.parseMember(MixinFit.asString(MixinFit.value(at,"target")));
+            if(wanted==null||wanted.owner()!=null&&!camera.name.equals(wanted.owner())||!"(FF)V".equals(wanted.desc()))continue;
+            String member="L"+camera.name+";"+wanted.name()+wanted.desc();
             // However the selectors are written: several bound methods are not one alignment; none is a miss.
             List<MethodNode> nativeBound=MixinTargetSelectors.bound(handler,source),bound=MixinTargetSelectors.bound(handler,camera);
             if(nativeBound==null||bound==null||nativeBound.size()>1||bound.size()>1)continue;
             MethodNode nativeAlign=nativeBound.isEmpty()?null:nativeBound.getFirst(),align=bound.isEmpty()?null:bound.getFirst();
             // A handler this cannot prove stays as compiled; it does not cost the mixin's other handlers their move.
             if(nativeAlign==null||align==null||!nativeAlign.desc.equals(align.desc))continue;
+            if(!MixinCallbackShape.point(handler,"INVOKE",member,nativeAlign))continue;
             Type[] arguments=Type.getArgumentTypes(handler.desc);
             if(arguments.length<3||!arguments[0].equals(Type.getObjectType(camera.name))||!arguments[1].equals(Type.FLOAT_TYPE)
                     ||!arguments[2].equals(Type.FLOAT_TYPE)||!Type.getReturnType(handler.desc).equals(Type.BOOLEAN_TYPE))continue;
@@ -92,7 +95,7 @@ public final class MixinCameraRollAdapter {
         Set<String> claimed=new java.util.HashSet<>();
         for(Move move:moves)for(var match:move.matches())if(!claimed.add(CallOccurrenceAlignment.member(match.call())+"#"+match.ordinal()))return 0;
         MethodNode roll=MixinCallbackShape.unique(mixin,m->MixinCallbackShape.shape(m,"(F)F")&&MixinCallbackShape.kind(m,"ModifyArg")
-                &&MixinCallbackShape.plainPoint(m,"INVOKE","Lorg/joml/Quaternionf;rotationYXZ(FFF)Lorg/joml/Quaternionf;"));
+                &&MixinCallbackShape.plainPoint(m,"INVOKE","Lorg/joml/Quaternionf;rotationYXZ(FFF)Lorg/joml/Quaternionf;",MixinTargetSelectors.one(m,source)));
         int changed=0;
         for(Move move:moves) {
             // Per merged overload: one handler for all of its calls when the handler wrapped every occurrence and they are

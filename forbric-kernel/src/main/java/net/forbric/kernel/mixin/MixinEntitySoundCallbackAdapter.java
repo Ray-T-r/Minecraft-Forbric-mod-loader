@@ -16,8 +16,12 @@ import net.forbric.api.Ecosystem;
  * muffled or combination steps, which vanilla plays without calling it.
  *
  * <p>Each {@code @Local} the handler captures is read where the wrap now stands, in the same method, at the slot holding
- * the value it captured at the vanilla call ({@link MixinLocalCapture}), never by the position it was declared in. Any
- * other extra — a target argument, {@code @Share}, other sugar — is not served, and the handler is left as written.
+ * the value it captured at the vanilla call ({@link MixinLocalCapture}), never by the position it was declared in; a
+ * target argument Mixin appends after the {@code Operation} is the {@code @Local(argsOnly = true)} it stands for
+ * ({@link MixinHandlerShape#of(MethodNode, String, MethodNode)}) and is read the same way. Any other extra —
+ * {@code @Share}, other sugar — is not served, and the handler is left as written. The point is read as Mixin reads its
+ * target: whitespace and a dotted owner name the same call, and a target without an owner or descriptor names it where
+ * vanilla's method makes no other such call ({@link MixinCallbackShape#names}).
  */
 public final class MixinEntitySoundCallbackAdapter {
 	public static final String PROPERTY="forbric.entitySoundCallbacks";
@@ -36,11 +40,11 @@ public final class MixinEntitySoundCallbackAdapter {
 		List<MethodNode> wraps=mixin.methods.stream().filter(m->MixinCallbackShape.kind(m,"WrapOperation")&&at(m,VANILLA)).toList();
 		if(wraps.size()!=1)return 0;MethodNode original=wraps.getFirst();
 		MixinHandlerShape shape=MixinHandlerShape.of(original);
-		if(shape==null||!shape.operands("(L"+STATE+";L"+OP+";)L"+SOUND+";")||shape.extras().stream().anyMatch(e->e.role()!=MixinHandlerShape.Role.LOCAL))return 0;
+		if(shape==null||!shape.operands("(L"+STATE+";L"+OP+";)L"+SOUND+";"))return 0;
 		List<MethodNode> hosts=MixinTargetSelectors.bound(original,target);if(hosts==null||hosts.isEmpty())return 0;
 		ClassNode nativeClass=references==null?null:references.apply(MixinStubRebind.ecosystemOf(mixin.name),owner);
 		List<MethodNode> natives=nativeClass==null?null:MixinTargetSelectors.bound(original,nativeClass);
-		MixinFit.Member playback=null;Map<Integer,Integer> captures=null;
+		MixinFit.Member playback=null;Map<Integer,Integer> captures=null;List<MixinHandlerShape.Extra> extras=null;
 		for(MethodNode host:hosts){
 			if(host.instructions==null||calls(host,VANILLA).size()>0)return 0;   // the vanilla query is here: the wrap binds as written
 			MixinFit.Member found=null;for(MixinFit.Member seam:PLAYBACK)if(!calls(host,seam).isEmpty()){if(found!=null)return 0;found=seam;}
@@ -48,7 +52,13 @@ public final class MixinEntitySoundCallbackAdapter {
 			MethodNode nativeHost=null;
 			if(natives!=null){List<MethodNode> paired=natives.stream().filter(m->m.name.equals(host.name)).toList();if(paired.size()!=1)return 0;nativeHost=paired.getFirst();
 				// One playback call where vanilla queried once: the occurrences pair in order.
-				if(calls(nativeHost,VANILLA).size()!=calls(host,found).size())return 0;}
+				if(calls(nativeHost,VANILLA).size()!=calls(host,found).size()||!selectsOnly(original,nativeHost,VANILLA))return 0;}
+			else if(!spelled(original,VANILLA))return 0;   // a point without owner or descriptor names VANILLA only where vanilla's body says so
+			// The captures, read against the method the wrap was written for: a target argument it appends is an implicit @Local.
+			MethodNode written=nativeHost!=null?nativeHost:host;
+			MixinHandlerShape read=MixinHandlerShape.of(original,written.desc,written);
+			if(read==null||read.extras().stream().anyMatch(e->e.role()!=MixinHandlerShape.Role.LOCAL))return 0;
+			if(extras==null)extras=read.extras();
 			List<MethodInsnNode> at=calls(host,found);
 			for(int i=0;i<at.size();i++){
 				Map<Integer,Integer> proved=MixinLocalCapture.slots(original,target.name,nativeHost,nativeHost==null?null:calls(nativeHost,VANILLA).get(i),host,at.get(i));
@@ -56,11 +66,10 @@ public final class MixinEntitySoundCallbackAdapter {
 				captures=proved;
 			}
 		}
-		if(playback==null||captures==null)return 0;
+		if(playback==null||captures==null||extras==null)return 0;
 		AnnotationNode injector=MixinFit.injectorOf(original);boolean stat=(original.access&Opcodes.ACC_STATIC)!=0;
 		List<String> methods=new ArrayList<>();for(MethodNode host:hosts)methods.add(host.name+host.desc);
 		MixinPlayerWorldCallbackAdapter.set(injector,"method",methods);MixinPlayerWorldCallbackAdapter.set(MixinFit.atNodes(injector).getFirst(),"target","L"+playback.owner()+";"+playback.name()+playback.desc());
-		List<MixinHandlerShape.Extra> extras=shape.extras();
 		// The wrapper: (state, playback arguments, Operation, the handler's captures at their proven slots) → void.
 		Type[] playArgs=Type.getArgumentTypes(playback.desc());
 		List<Type> wrapperParams=new ArrayList<>();wrapperParams.add(Type.getObjectType(STATE));wrapperParams.addAll(List.of(playArgs));wrapperParams.add(Type.getObjectType(OP));for(var extra:extras)wrapperParams.add(extra.type());
@@ -87,15 +96,26 @@ public final class MixinEntitySoundCallbackAdapter {
 		wrapper.tryCatchBlocks.add(new TryCatchBlockNode(start,end,fail,null));wrapper.maxStack=8+captured.size()*2;wrapper.maxLocals=prev+2;mixin.methods.add(wrapper);
 		return 1;
 	}
-	/** Whether the handler's one point is an INVOKE of {@code member}, however the target is spelled, on every occurrence. */
+	/**
+	 * Whether the handler's one point is an INVOKE that may name {@code member}, on every occurrence, however the target
+	 * is spelled: whitespace, a dotted owner, and — told apart per method by {@link #selectsOnly} — no owner or no descriptor.
+	 */
 	private static boolean at(MethodNode handler,MixinFit.Member member){
 		AnnotationNode injector=MixinFit.injectorOf(handler);if(injector==null||MixinFit.atNodes(injector).size()!=1)return false;
 		AnnotationNode point=MixinFit.atNodes(injector).getFirst();
 		if(!"INVOKE".equals(MixinFit.value(point,"value"))||MixinFit.value(point,"shift")!=null||MixinFit.value(point,"by")!=null||MixinFit.value(point,"opcode")!=null||MixinFit.value(point,"args")!=null)return false;
 		Object ordinal=MixinFit.value(point,"ordinal");if(ordinal!=null&&!Integer.valueOf(-1).equals(ordinal))return false;
-		MixinFit.Member named=MixinFit.parseMember(MixinFit.asString(MixinFit.value(point,"target")));
-		return named!=null&&member.owner().equals(named.owner())&&member.name().equals(named.name())&&member.desc().equals(named.desc());
+		return MixinCallbackShape.covers(point,member(member));
 	}
+	/** Whether the handler's point selects, in the vanilla body {@code nativeHost}, exactly the calls of {@code member}. */
+	private static boolean selectsOnly(MethodNode handler,MethodNode nativeHost,MixinFit.Member member){
+		return MixinCallbackShape.names(MixinFit.atNodes(MixinFit.injectorOf(handler)).getFirst(),member(member),nativeHost);
+	}
+	/** Whether the handler's point spells {@code member} with its owner and descriptor, so no body is needed to read it. */
+	private static boolean spelled(MethodNode handler,MixinFit.Member member){
+		return MixinCallbackShape.names(MixinFit.atNodes(MixinFit.injectorOf(handler)).getFirst(),member(member),null);
+	}
+	private static String member(MixinFit.Member member){return "L"+member.owner()+";"+member.name()+member.desc();}
 	private static List<MethodInsnNode> calls(MethodNode method,MixinFit.Member member){List<MethodInsnNode> found=new ArrayList<>();for(var i:method.instructions)if(i instanceof MethodInsnNode call&&call.owner.equals(member.owner())&&call.name.equals(member.name())&&call.desc.equals(member.desc()))found.add(call);return found;}
 	private static void leave(InsnList c,int slot){c.add(new VarInsnNode(Opcodes.ALOAD,slot));c.add(new MethodInsnNode(Opcodes.INVOKESTATIC,SCOPE,"leave","(Ljava/lang/Object;)V",false));}
 	/** {@code (captures..., Object[] [state, pos, original]) → the handler's sound group}, its original run on the state it passes on. */

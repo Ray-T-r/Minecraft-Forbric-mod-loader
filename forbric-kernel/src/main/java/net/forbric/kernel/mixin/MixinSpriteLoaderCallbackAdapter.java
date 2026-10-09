@@ -89,7 +89,7 @@ public final class MixinSpriteLoaderCallbackAdapter {
 		AnnotationNode at = points.getFirst();
 		String member = MixinFit.asString(MixinFit.value(at, "target"));
 		Object ordinal = MixinFit.value(at, "ordinal");
-		if (member == null || !MixinCallbackShape.beforePoint(handler, "INVOKE", member)
+		if (MixinFit.parseMember(member) == null || !MixinCallbackShape.beforePoint(handler, "INVOKE", null)
 				|| ordinal != null && !Integer.valueOf(0).equals(ordinal) && !Integer.valueOf(-1).equals(ordinal)) return null;
 		MethodNode stub = MixinTargetSelectors.one(handler, target);
 		// As MixinStubRebind moves along a row: only for a mod whose own platform ran that signature as code (a NeoForge mod
@@ -105,9 +105,11 @@ public final class MixinSpriteLoaderCallbackAdapter {
 		if (shape == null || !shape.returns().equals(Type.VOID_TYPE) || !shape.operands().equals(operands) || shape.extras().isEmpty()
 				|| shape.extras().stream().anyMatch(extra -> extra.role() != MixinHandlerShape.Role.CAPTURED)) return null;
 		MethodNode body = delegation.delegate();
-		if (MixinPlayerWorldCallbackAdapter.count(stub, member) != 0 || MixinPlayerWorldCallbackAdapter.count(body, member) != 1) return null;
+		// What the point selects as Mixin reads its target (however it is spelled): nothing in the stub, one call in the body.
+		List<AbstractInsnNode> inStub = MixinCallbackShape.selected(at, stub), inBody = MixinCallbackShape.selected(at, body);
+		if (!inStub.isEmpty() || inBody.size() != 1 || !(inBody.getFirst() instanceof MethodInsnNode)) return null;
 		List<Type> captured = shape.extras().stream().map(MixinHandlerShape.Extra::type).toList();
-		if (!capturedAt(target.name, body, MixinPlayerWorldCallbackAdapter.first(body, member), captured)) return null;
+		if (!capturedAt(target.name, body, inBody.getFirst(), captured)) return null;
 		return new Capture(handler, stub, delegation, captured);
 	}
 

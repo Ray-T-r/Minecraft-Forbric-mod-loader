@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.crypt.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["CryptMixin"], "injectors": {"defaultRequire": 1}}

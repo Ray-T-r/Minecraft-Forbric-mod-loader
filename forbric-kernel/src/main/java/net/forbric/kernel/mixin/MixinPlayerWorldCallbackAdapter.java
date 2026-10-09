@@ -48,16 +48,27 @@ public final class MixinPlayerWorldCallbackAdapter {
 	public static boolean enabled() { return !"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY, "on")); }
 
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
-		int changed = repair(mixin, targets);
+		return adapt(mixin, targets, NativeGameReferences::reference);
+	}
+
+	/** {@code references} gives the class the mod was compiled against, in which a point it writes without an owner is read. */
+	static int adapt(ClassNode mixin, Function<String, ClassNode> targets, java.util.function.BiFunction<net.forbric.api.Ecosystem, String, ClassNode> references) {
+		int changed = repair(mixin, targets, references);
 		if (changed > 0) ForbricLog.info("[Forbric/Mixin] restored %d callback(s) in %s", changed, mixin.name);
 		return changed;
 	}
 
 	static int repair(ClassNode mixin, Function<String, ClassNode> targets) {
+		return repair(mixin, targets, NativeGameReferences::reference);
+	}
+
+	private static int repair(ClassNode mixin, Function<String, ClassNode> targets, java.util.function.BiFunction<net.forbric.api.Ecosystem, String, ClassNode> references) {
 		if (!enabled()) return 0;
-        if (MixinCallbackShape.targets(mixin, LEVEL)) return fill(mixin, targets.apply(LEVEL));
-        if (MixinCallbackShape.targets(mixin, "net/minecraft/server/network/ServerGamePacketListenerImpl")) return swap(mixin, targets.apply("net/minecraft/server/network/ServerGamePacketListenerImpl"));
-        if (MixinCallbackShape.targets(mixin, GAME_MODE)) return blockBreak(mixin, targets.apply(GAME_MODE));
+		java.util.function.Function<String, ClassNode> natives = owner -> references == null ? null : references.apply(MixinStubRebind.ecosystemOf(mixin.name), owner);
+        if (MixinCallbackShape.targets(mixin, LEVEL)) return fill(mixin, targets.apply(LEVEL), natives.apply(LEVEL));
+        String packets = "net/minecraft/server/network/ServerGamePacketListenerImpl";
+        if (MixinCallbackShape.targets(mixin, packets)) return swap(mixin, targets.apply(packets), natives.apply(packets));
+        if (MixinCallbackShape.targets(mixin, GAME_MODE)) return blockBreak(mixin, targets.apply(GAME_MODE), natives.apply(GAME_MODE));
         return 0;
 	}
 
@@ -88,25 +99,26 @@ public final class MixinPlayerWorldCallbackAdapter {
 	 * update), one of them alone, C2ME's status threshold, a wrap or a redirect of any other call of the tail alike. The
 	 * class the mod was compiled against, when at hand, proves the operation was setBlock's and its flags tests unchanged.
 	 */
-	private static int fill(ClassNode mixin, ClassNode target) {
+	private static int fill(ClassNode mixin, ClassNode target, ClassNode nativeLevel) {
 		if (target == null) return 0;
-		List<MethodNode> moving = MixinChunkStatusRetarget.movable(mixin, target,
-				NativeGameReferences.reference(MixinStubRebind.ecosystemOf(mixin.name), LEVEL));
+		List<MethodNode> moving = MixinChunkStatusRetarget.movable(mixin, target, nativeLevel);
 		if (moving == null || moving.isEmpty()) return 0;
 		for (MethodNode handler : moving) set(MixinFit.injectorOf(handler), "method", List.of(LIVE_FILL));
 		return moving.size();
 	}
 
-	private static int swap(ClassNode mixin, ClassNode target) {
+	private static int swap(ClassNode mixin, ClassNode target, ClassNode source) {
+		// The point is read as Mixin reads it in the native handlePlayerAction, when at hand (MixinCallbackShape#names).
+		MethodNode written = source == null ? null : selector(source, SWAP_HOST);
 		MethodNode handler = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(Lnet/minecraft/network/protocol/game/ServerboundPlayerActionPacket;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V")
                 && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, target, SWAP_HOST)
-                && MixinCallbackShape.beforePoint(m, "INVOKE", HAND_READ));
+                && MixinCallbackShape.beforePoint(m, "INVOKE", HAND_READ, written));
 		MethodNode host = target == null ? null : selector(target, SWAP_HOST);
 		if (handler == null || host == null) return 0;
 		AnnotationNode inject = MixinFit.injectorOf(handler);
 		if (!MixinCallbackShape.binds(handler, target, SWAP_HOST)) return 0;
 		List<AnnotationNode> ats = MixinFit.atNodes(inject);
-		if (ats.size() != 1 || !HAND_READ.equals(MixinFit.value(ats.getFirst(), "target"))
+		if (ats.size() != 1 || !MixinCallbackShape.names(ats.getFirst(), HAND_READ, written)
 				|| !Integer.valueOf(1).equals(MixinFit.value(ats.getFirst(), "ordinal")) || count(host, HAND_READ) != 1
 				|| count(host, SWAP_EVENT) != 1 || count(host, SWAP_VETO) != 1 || count(host, TO_OFF_HAND) != 1
 				|| count(host, TO_MAIN_HAND) != 1 || count(host, HAND_WRITE) != 2) return 0;
@@ -134,9 +146,11 @@ public final class MixinPlayerWorldCallbackAdapter {
 	 * entity or the block by type (the only local of its type there). Cancellable or not: the new point runs it on the path
 	 * that removes the block either way. Each value it asks for is handed over by the merged slot its producer stored.
 	 */
-	private static int blockBreak(ClassNode mixin, ClassNode target) {
+	private static int blockBreak(ClassNode mixin, ClassNode target, ClassNode source) {
+		// The point is read as Mixin reads it in the native destroyBlock, when at hand (MixinCallbackShape#names).
+		MethodNode written = source == null ? null : selector(source, BREAK_HOST);
 		MethodNode handler = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject")
-                && MixinCallbackShape.binds(m, target, BREAK_HOST) && MixinCallbackShape.beforePoint(m, "INVOKE", OLD_REMOVE)
+                && MixinCallbackShape.binds(m, target, BREAK_HOST) && MixinCallbackShape.beforePoint(m, "INVOKE", OLD_REMOVE, written)
                 && breakExtras(m) != null);
 		MethodNode host = target == null ? null : selector(target, BREAK_HOST);
 		if (handler == null || host == null) return 0;
@@ -146,7 +160,7 @@ public final class MixinPlayerWorldCallbackAdapter {
 				|| count(host, DROPS) != 1 || count(host, MINE) != 1 || count(host, REMOVE) != 2) return 0;
 		List<AnnotationNode> ats = MixinFit.atNodes(inject);
 		Object ordinal = ats.size() == 1 ? MixinFit.value(ats.getFirst(), "ordinal") : null;
-		if (ats.size() != 1 || !OLD_REMOVE.equals(MixinFit.value(ats.getFirst(), "target"))
+		if (ats.size() != 1 || !MixinCallbackShape.names(ats.getFirst(), OLD_REMOVE, written)
 				|| ordinal != null && !Integer.valueOf(0).equals(ordinal) && !Integer.valueOf(-1).equals(ordinal)) return 0;
 		List<String> wanted = breakExtras(handler);
 		// Vanilla's anchor is right before removeBlock, after playerWillDestroy, and the handler captures (blockEntity,

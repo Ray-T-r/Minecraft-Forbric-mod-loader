@@ -20,7 +20,7 @@ public final class MixinCarrierCallbackAdapters {
         if ("off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY)) || mixin == null) return 0;
         List<String> owners = MixinFit.mixinTargets(mixin);
         if (owners.size() != 1) return 0;
-        return renameOperation(mixin,targets) + fluid(mixin,targets,references) + models(mixin,targets,references)
+        return renameOperation(mixin,targets,references) + fluid(mixin,targets,references) + models(mixin,targets,references)
                 + modelParser(mixin,targets,references) + section(mixin,targets,references) + placement(mixin,targets,references);
     }
 	private static final String MODELS = "net/minecraft/client/resources/model/ModelManager";
@@ -39,7 +39,9 @@ public final class MixinCarrierCallbackAdapters {
 		ClassNode target=targets.apply(MODELS),source=references==null?null:references.apply(MixinStubRebind.ecosystemOf(mixin.name),MODELS);
 		if(target==null)return 0;
 		int changed=0;
-		for(MethodNode handler:MixinCallbackProofs.alone(mixin,m->(MixinCallbackShape.kind(m,"Inject")||MixinCallbackShape.kind(m,"ModifyArg"))&&atTheCall(m,FROM_STREAM))){
+		// Each handler's point is read, and told apart, in the method it was written for: vanilla's, else the one it binds here.
+		Function<MethodNode,MethodNode> written=m->source!=null?MixinTargetSelectors.one(m,source):MixinTargetSelectors.one(m,target);
+		for(MethodNode handler:MixinCallbackProofs.alone(mixin,written,m->(MixinCallbackShape.kind(m,"Inject")||MixinCallbackShape.kind(m,"ModifyArg"))&&atTheCall(m,FROM_STREAM,written.apply(m)))){
 			MethodNode host=MixinTargetSelectors.one(handler,target);
 			if(host==null||MixinPlayerWorldCallbackAdapter.count(host,PARSE)!=1||MixinPlayerWorldCallbackAdapter.count(host,FROM_STREAM)!=0)continue;
 			MethodNode reference=source==null?null:MixinTargetSelectors.one(handler,source);
@@ -53,11 +55,14 @@ public final class MixinCarrierCallbackAdapters {
 		}
 		return changed;
 	}
-	/** One {@code @At(INVOKE)} at {@code call}: no ordinal past the first, no {@code by}, {@code opcode} or {@code args}. */
-	private static boolean atTheCall(MethodNode handler,String call){
+	/**
+	 * One {@code @At(INVOKE)} at {@code call}, its target read as Mixin reads it in {@code body} (the method it was written
+	 * for, or null: {@link MixinCallbackShape#names}): no ordinal past the first, no {@code by}, {@code opcode} or {@code args}.
+	 */
+	private static boolean atTheCall(MethodNode handler,String call,MethodNode body){
 		List<AnnotationNode> ats=MixinFit.atNodes(MixinFit.injectorOf(handler));if(ats.size()!=1)return false;AnnotationNode at=ats.getFirst();
 		Object ordinal=MixinFit.value(at,"ordinal");
-		return "INVOKE".equals(MixinFit.asString(MixinFit.value(at,"value")))&&call.equals(MixinFit.value(at,"target"))&&MixinFit.value(at,"by")==null
+		return "INVOKE".equals(MixinFit.asString(MixinFit.value(at,"value")))&&MixinCallbackShape.names(at,call,body)&&MixinFit.value(at,"by")==null
 				&&MixinFit.value(at,"opcode")==null&&MixinFit.value(at,"args")==null&&(ordinal==null||ordinal instanceof Number n&&n.intValue()<=0);
 	}
 	/**
@@ -75,28 +80,49 @@ public final class MixinCarrierCallbackAdapters {
 		return locals==null?null:new MixinCallbackProofs.Landing(locals,live);
 	}
     /** Any same-host call of a pure platform delegate can carry the original Operation; lambda names do not identify it. */
-    private static int renameOperation(ClassNode mixin,Function<String,ClassNode> targets) {
+    private static int renameOperation(ClassNode mixin,Function<String,ClassNode> targets,BiFunction<Ecosystem,String,ClassNode> references) {
         List<String> owners=MixinFit.mixinTargets(mixin);if(owners.size()!=1)return 0;
         ClassNode target=targets.apply(owners.getFirst());if(target==null)return 0;
+        ClassNode source=references==null?null:references.apply(MixinStubRebind.ecosystemOf(mixin.name),owners.getFirst());
         int changed=0;
         for(MethodNode handler:List.copyOf(mixin.methods)) {
             if(!MixinCallbackShape.kind(handler,"WrapOperation"))continue;
             AnnotationNode injector=MixinFit.injectorOf(handler);
             List<AnnotationNode> points=MixinFit.atNodes(injector);if(points.size()!=1)continue;
-            MixinFit.Member member=MixinFit.parseMember(MixinFit.asString(MixinFit.value(points.getFirst(),"target")));
-            if(member==null||member.owner()==null||member.desc()==null)continue;
-            MethodNode host=MixinTargetSelectors.one(handler,target);if(host==null||MixinFit.containsMember(host,MixinFit.asString(MixinFit.value(points.getFirst(),"target"))))continue;
+            AnnotationNode at=points.getFirst();
+            MixinFit.Member member=wrapped(handler,at,source);
+            if(member==null)continue;
+            String spelled=MixinFit.asString(MixinFit.value(at,"target"));
+            MethodNode host=MixinTargetSelectors.one(handler,target);if(host==null||MixinFit.containsMember(host,spelled))continue;
             List<MethodInsnNode> calls=new ArrayList<>();
             for(var instruction:host.instructions)if(instruction instanceof MethodInsnNode call&&pureDelegate(call,member,targets))calls.add(call);
             if(calls.size()!=1)continue;
             long sourceCount=mixin.methods.stream().filter(other->other.desc.equals(handler.desc)&&MixinCallbackShape.kind(other,"WrapOperation")
                     &&MixinTargetSelectors.one(other,target)==host
                     &&MixinFit.atNodes(MixinFit.injectorOf(other)).size()==1
-                    &&member.equals(MixinFit.parseMember(MixinFit.asString(MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(other)).getFirst(),"target"))))).count();
+                    &&member.equals(wrapped(other,MixinFit.atNodes(MixinFit.injectorOf(other)).getFirst(),source))).count();
             if(sourceCount!=1)continue;
-            changed+=MixinWrapOperationShim.adaptExplicit(mixin,handler,calls.getFirst());
+            // The rename is made from the member the point names: spelled out, as Mixin resolved it where it was written.
+            MixinPlayerWorldCallbackAdapter.set(at,"target","L"+member.owner()+";"+member.name()+member.desc());
+            int renamed=MixinWrapOperationShim.adaptExplicit(mixin,handler,calls.getFirst());
+            if(renamed==0)MixinPlayerWorldCallbackAdapter.set(at,"target",spelled);
+            changed+=renamed;
         }
         return changed;
+    }
+    /**
+     * The call a wrap's point names, as Mixin resolves its target: spelled with owner and descriptor, that member; without
+     * the owner, the one owner whose call of that name and descriptor the method it was written for makes ({@code source},
+     * the class the mod was compiled against); null otherwise.
+     */
+    private static MixinFit.Member wrapped(MethodNode handler,AnnotationNode at,ClassNode source){
+        MixinFit.Member member=MixinFit.parseMember(MixinFit.asString(MixinFit.value(at,"target")));
+        if(member==null||member.desc()==null||!member.desc().startsWith("("))return null;
+        if(member.owner()!=null)return member;
+        Set<String> owners=new HashSet<>();
+        for(AbstractInsnNode selected:MixinCallbackShape.selected(at,source==null?null:MixinTargetSelectors.one(handler,source)))
+            if(selected instanceof MethodInsnNode call)owners.add(call.owner);
+        return owners.size()==1?new MixinFit.Member(owners.iterator().next(),member.name(),member.desc()):null;
     }
     private static boolean pureDelegate(MethodInsnNode call,MixinFit.Member wanted,Function<String,ClassNode> targets) {
         if(!call.owner.equals(wanted.owner()))return false;
@@ -159,7 +185,8 @@ public final class MixinCarrierCallbackAdapters {
 		if(live==null)return 0;
 		String declared="(Lnet/minecraft/world/entity/Entity;Z"+CALLBACK+")V";
 		int changed=0;
-		for(MethodNode handler:MixinCallbackProofs.alone(mixin,m->MixinCallbackShape.kind(m,"Inject")&&MixinCallbackShape.binds(m,target,FLUID_NATIVE))){
+		MethodNode written=reference!=null?reference:live;
+		for(MethodNode handler:MixinCallbackProofs.alone(mixin,m->written,m->MixinCallbackShape.kind(m,"Inject")&&MixinCallbackShape.binds(m,target,FLUID_NATIVE))){
 			MixinHandlerShape shape=MixinHandlerShape.of(handler);
 			boolean arguments=shape.operands(declared);
 			if(!arguments&&!shape.operands("("+CALLBACK+")V"))continue;
@@ -211,7 +238,8 @@ public final class MixinCarrierCallbackAdapters {
 		String callback=Type.getReturnType(nativeDesc).equals(Type.VOID_TYPE)?CALLBACK:RETURNABLE;
 		String declared=nativeDesc.substring(0,nativeDesc.indexOf(')'))+callback+")V";
 		int changed=0;
-		for(MethodNode handler:MixinCallbackProofs.alone(mixin,m->MixinCallbackShape.kind(m,"Inject")&&MixinCallbackShape.binds(m,target,DISCOVER))){
+		MethodNode written=reference!=null?reference:live;
+		for(MethodNode handler:MixinCallbackProofs.alone(mixin,m->written,m->MixinCallbackShape.kind(m,"Inject")&&MixinCallbackShape.binds(m,target,DISCOVER))){
 			MixinHandlerShape shape=MixinHandlerShape.of(handler);
 			boolean arguments=shape.operands(declared);
 			if(!arguments&&!shape.operands("("+callback+")V"))continue;
@@ -235,14 +263,15 @@ public final class MixinCarrierCallbackAdapters {
             if(!MixinCallbackShape.kind(handler,"Inject"))continue;
             AnnotationNode injector=MixinFit.injectorOf(handler);
             List<AnnotationNode> points=MixinFit.atNodes(injector);if(points.size()!=1)continue;
-            String member=MixinFit.asString(MixinFit.value(points.getFirst(),"target"));
-            if(!"INVOKE".equals(MixinFit.value(points.getFirst(),"value"))||member==null)continue;
+            AnnotationNode point=points.getFirst();
+            if(!"INVOKE".equals(MixinFit.asString(MixinFit.value(point,"value")))||MixinFit.parseMember(MixinFit.asString(MixinFit.value(point,"target")))==null)continue;
             MethodNode old=MixinTargetSelectors.one(handler,reference),live=MixinTargetSelectors.one(handler,target);if(old==null||live==null)continue;
-            List<MethodInsnNode> before=invocations(old,member),after=invocations(live,member);if(before.size()!=1||after.size()!=1)continue;
+            // The calls its target names, read as Mixin reads a target, however it is spelled.
+            List<AbstractInsnNode> before=calls(MixinCallbackShape.selected(point,old)),after=calls(MixinCallbackShape.selected(point,live));if(before.size()!=1||after.size()!=1)continue;
             long declarations=mixin.methods.stream().filter(other->other.desc.equals(handler.desc)&&MixinCallbackShape.kind(other,"Inject")
                     &&MixinTargetSelectors.one(other,target)==live
                     &&MixinFit.atNodes(MixinFit.injectorOf(other)).size()==1
-                    &&member.equals(MixinFit.asString(MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(other)).getFirst(),"target")))).count();
+                    &&calls(MixinCallbackShape.selected(MixinFit.atNodes(MixinFit.injectorOf(other)).getFirst(),live)).equals(after)).count();
             if(declarations!=1)continue;
             Map<Integer,Integer> mapping=MixinLocalOriginProof.prove(handler,target.name,old,before.getFirst(),live,after.getFirst());
             if(mapping==null)mapping=CallOccurrenceAlignment.prefixLocals(handler,target.name,old,before.getFirst(),live,after.getFirst());
@@ -255,7 +284,7 @@ public final class MixinCarrierCallbackAdapters {
         }
         return changed;
     }
-    private static List<MethodInsnNode> invocations(MethodNode method,String member){List<MethodInsnNode> result=new ArrayList<>();for(var instruction:method.instructions)if(instruction instanceof MethodInsnNode call&&CallOccurrenceAlignment.member(call).equals(member))result.add(call);return result;}
+    private static List<AbstractInsnNode> calls(List<AbstractInsnNode> selected){return selected.stream().filter(i->i instanceof MethodInsnNode).toList();}
 
 	private static MethodNode delegate(ClassNode mixin,MethodNode handler,List<Type> params,int inserted) {
 		AnnotationNode annotation=MixinFit.injectorOf(handler);Type[] old=Type.getArgumentTypes(handler.desc);boolean stat=(handler.access&Opcodes.ACC_STATIC)!=0;

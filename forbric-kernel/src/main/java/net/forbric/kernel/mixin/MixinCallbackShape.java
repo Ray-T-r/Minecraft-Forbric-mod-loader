@@ -4,7 +4,14 @@ package net.forbric.kernel.mixin;
 import java.util.List;
 import java.util.function.Predicate;
 import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.tree.*;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.AnnotationNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.IincInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
 
 /** Structural source contracts for callback relocation. Class and handler names never identify a contract. */
 final class MixinCallbackShape {
@@ -51,30 +58,101 @@ final class MixinCallbackShape {
         MixinHandlerShape shape = MixinHandlerShape.of(method);
         return shape != null && shape.matches(descriptor, extras);
     }
-    static boolean point(MethodNode method, String kind, String target) {
+    /**
+     * Whether the handler's one {@code @At} is a {@code kind} point at {@code target} (an {@code Lowner;name(desc)}
+     * member, or null for a point that names none), unshifted. The target is compared as Mixin resolves it, not as it is
+     * spelled ({@link #names}); {@code body} — the method the handler was written for, null when not at hand — is what
+     * lets a target without an owner or a descriptor name that member.
+     */
+    static boolean point(MethodNode method, String kind, String target, MethodNode body) {
         AnnotationNode injector = MixinFit.injectorOf(method);
         if (injector == null) return false;
         List<AnnotationNode> ats = MixinFit.atNodes(injector);
         if (ats.size() != 1) return false;
         AnnotationNode at = ats.getFirst();
-        return kind.equals(MixinFit.value(at, "value"))
-                && (target == null || target.equals(MixinFit.value(at, "target")))
+        return kind.equals(MixinFit.asString(MixinFit.value(at, "value")))
+                && (target == null || names(at, target, body))
                 && MixinFit.value(at, "shift") == null && MixinFit.value(at, "by") == null
                 && MixinFit.value(at, "opcode") == null && MixinFit.value(at, "args") == null;
     }
-    static boolean beforePoint(MethodNode method, String kind, String target) {
+    static boolean point(MethodNode method, String kind, String target) {
+        return point(method, kind, target, null);
+    }
+    /** {@link #point}, also with a shift that keeps it before the instruction ({@code BEFORE}, or {@code NONE} spelled out). */
+    static boolean beforePoint(MethodNode method, String kind, String target, MethodNode body) {
         AnnotationNode injector = MixinFit.injectorOf(method);
         if (injector == null || MixinFit.atNodes(injector).size() != 1) return false;
         AnnotationNode at = MixinFit.atNodes(injector).getFirst();
         Object shift = MixinFit.value(at, "shift");
-        return kind.equals(MixinFit.value(at, "value")) && target.equals(MixinFit.value(at, "target"))
+        return kind.equals(MixinFit.asString(MixinFit.value(at, "value"))) && (target == null || names(at, target, body))
                 && (shift == null || shift instanceof String[] value && value.length == 2 && (value[1].equals("BEFORE") || value[1].equals("NONE")))
                 && MixinFit.value(at, "by") == null && MixinFit.value(at, "opcode") == null && MixinFit.value(at, "args") == null;
     }
-    static boolean plainPoint(MethodNode method, String kind, String target) {
-        if (!point(method, kind, target)) return false;
+    static boolean beforePoint(MethodNode method, String kind, String target) {
+        return beforePoint(method, kind, target, null);
+    }
+    /** {@link #point} on every occurrence: no ordinal (or -1). */
+    static boolean plainPoint(MethodNode method, String kind, String target, MethodNode body) {
+        if (!point(method, kind, target, body)) return false;
         Object ordinal = MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(method)).getFirst(), "ordinal");
         return ordinal == null || Integer.valueOf(-1).equals(ordinal);
+    }
+    static boolean plainPoint(MethodNode method, String kind, String target) {
+        return plainPoint(method, kind, target, null);
+    }
+
+    /**
+     * Whether {@code at}'s target can name {@code member} ({@code Lowner;name(desc)}, or {@code Lowner;name:desc} for a
+     * field) as Mixin resolves a target ({@link MixinFit#parseMember}: whitespace dropped, a dotted owner read as the
+     * class): the same name, and the same owner and descriptor wherever the target gives them.
+     */
+    static boolean covers(AnnotationNode at, String member) {
+        MixinFit.Member named = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target"))), wanted = MixinFit.parseMember(member);
+        return named != null && wanted != null && named.name().equals(wanted.name())
+                && (named.owner() == null || named.owner().equals(wanted.owner()))
+                && (named.desc() == null || named.desc().equals(wanted.desc()));
+    }
+
+    /**
+     * Whether {@code at}'s target names {@code member} and nothing else. Spelled with its owner and descriptor, it names
+     * that member however it is written ({@link #covers}). Without the owner (which matches the name on any class) or the
+     * descriptor (any overload), it names that member only where it selects exactly that member's instructions in
+     * {@code body}, the method the handler was written for, and that body has at least one: there Mixin injects at the
+     * same instructions. Null {@code body}: only the full spelling names it.
+     */
+    static boolean names(AnnotationNode at, String member, MethodNode body) {
+        if (!covers(at, member)) return false;
+        MixinFit.Member named = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target")));
+        if (named.owner() != null && named.desc() != null) return true;
+        List<AbstractInsnNode> selected = selected(at, body);
+        if (selected.isEmpty()) return false;
+        MixinFit.Member wanted = MixinFit.parseMember(member);
+        for (AbstractInsnNode instruction : selected) {
+            boolean same = instruction instanceof MethodInsnNode call ? call.owner.equals(wanted.owner()) && call.desc.equals(wanted.desc())
+                    : instruction instanceof FieldInsnNode field && field.owner.equals(wanted.owner()) && field.desc.equals(wanted.desc());
+            if (!same) return false;   // the target also selects another member here
+        }
+        return true;
+    }
+
+    /**
+     * The calls and field accesses of {@code body} whose member {@code at}'s target names as Mixin matches one — the name,
+     * and the owner and descriptor wherever the target gives them — before any {@code ordinal} picks among them. Empty
+     * for no body, or a target that names no member.
+     */
+    static List<AbstractInsnNode> selected(AnnotationNode at, MethodNode body) {
+        MixinFit.Member named = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target")));
+        if (named == null || body == null || body.instructions == null) return List.of();
+        List<AbstractInsnNode> found = new java.util.ArrayList<>();
+        for (AbstractInsnNode instruction : body.instructions) {
+            String owner, name, desc;
+            if (instruction instanceof MethodInsnNode call) { owner = call.owner; name = call.name; desc = call.desc; }
+            else if (instruction instanceof FieldInsnNode field) { owner = field.owner; name = field.name; desc = field.desc; }
+            else continue;
+            if (name.equals(named.name()) && (named.owner() == null || named.owner().equals(owner)) && (named.desc() == null || named.desc().equals(desc)))
+                found.add(instruction);
+        }
+        return found;
     }
     static boolean instance(MethodNode method) { return (method.access & Opcodes.ACC_STATIC) == 0; }
     static boolean noReceiver(MethodNode method) {

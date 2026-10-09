@@ -67,10 +67,11 @@ final class MixinCallbackProofs {
 				if (value.equals("TAIL") && !found.isEmpty()) found = new ArrayList<>(List.of(found.getLast()));
 			}
 			case "INVOKE", "INVOKE_ASSIGN" -> {
+				// As Mixin's MemberInfo matches a call: the name, and the owner and descriptor wherever the target gives them.
 				MixinFit.Member member = MixinFit.parseMember(target);
-				if (member == null || member.desc() == null || !member.desc().startsWith("(")) return null;
+				if (member == null || member.desc() != null && !member.desc().startsWith("(")) return null;
 				for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof MethodInsnNode call
-						&& call.name.equals(member.name()) && call.desc.equals(member.desc())
+						&& call.name.equals(member.name()) && (member.desc() == null || call.desc.equals(member.desc()))
 						&& (member.owner() == null || call.owner.equals(member.owner()))) found.add(instruction);
 			}
 			case "FIELD" -> {
@@ -133,15 +134,18 @@ final class MixinCallbackProofs {
 	/**
 	 * Where {@code handler}, written for the native method {@code reference} (null when the class the mod was compiled
 	 * against is not at hand; {@code nativeDesc} is that method's descriptor), lands when its selector is moved to
-	 * {@code live}: every {@code @At} must be {@link #found} there; its extras may only be {@code @Local}s, {@code @Share}s
-	 * and {@code @Cancellable}s; and each {@code @Local} must be proved — by {@link #correspondLocals} at the one point of
+	 * {@code live}: every {@code @At} must be {@link #found} there; its extras may only be {@code @Local}s (a target
+	 * argument Mixin appends counting as the {@code @Local(argsOnly = true)} it stands for), {@code @Share}s and
+	 * {@code @Cancellable}s; and each {@code @Local} must be proved — by {@link #correspondLocals} at the one point of
 	 * its one {@code @At} when the native body is at hand, else as an {@code argsOnly} parameter ({@link #parameterLocals}).
 	 * {@code nativeParameter} maps a live parameter position to the native one it carries. Null when it does not land.
 	 */
 	static Landing land(MethodNode handler, String referenceOwner, MethodNode reference, String liveOwner, MethodNode live,
 			IntUnaryOperator nativeParameter, String nativeDesc) {
-		MixinHandlerShape shape = MixinHandlerShape.of(handler);
-		if (shape == null || live == null) return null;
+		if (live == null) return null;
+		// Read against the method it was written for: a target argument it appends is that method's, an implicit @Local.
+		MixinHandlerShape shape = MixinHandlerShape.of(handler, reference != null ? reference.desc : nativeDesc, reference != null ? reference : live);
+		if (shape == null) return null;
 		List<AnnotationNode> ats = MixinFit.atNodes(MixinFit.injectorOf(handler));
 		if (ats.isEmpty() || !ats.stream().allMatch(at -> found(reference, live, at))) return null;
 		if (!shape.extras().stream().allMatch(extra -> extra.role() == MixinHandlerShape.Role.LOCAL
@@ -161,20 +165,50 @@ final class MixinCallbackProofs {
 
 	/**
 	 * The handlers of {@code mixin} that {@code role} accepts and that are the only handler of their injector kind at their
-	 * {@code @At}s: a callback adapter moves a handler only when it is alone at its point, and leaves several as compiled.
+	 * point: a callback adapter moves a handler only when it is alone there, and leaves several as compiled. Where a
+	 * handler is, is what Mixin makes of it, never how it is spelled: {@code body} gives the method its selectors bind
+	 * (the body it was written for), and in it each {@code @At} is the instructions it selects ({@link #points}) and its
+	 * shift — {@code "update"} and {@code "update(Lnet/…/Entity;Z)V"}, a dotted owner, a bare ordinal 0 on the only call:
+	 * one point. A point not read off a body (none bound, a point this does not model, nothing selected) is its target
+	 * resolved to a member ({@link MixinFit#parseMember}) and its other values, defaults written out.
 	 */
-	static List<MethodNode> alone(ClassNode mixin, java.util.function.Predicate<MethodNode> role) {
-		Map<String, List<MethodNode>> byPoint = new LinkedHashMap<>();
+	static List<MethodNode> alone(ClassNode mixin, java.util.function.Function<MethodNode, MethodNode> body, java.util.function.Predicate<MethodNode> role) {
+		record Point(String kind, MethodNode bound, Object selectors, List<Object> ats) { }
+		Map<Point, List<MethodNode>> byPoint = new LinkedHashMap<>();
 		for (MethodNode method : mixin.methods) {
 			AnnotationNode injector = MixinFit.injectorOf(method);
 			if (injector == null || !role.test(method)) continue;
-			StringBuilder key = new StringBuilder(injector.desc).append(describe(MixinTargetSelectors.selectors(method)));
-			for (AnnotationNode at : MixinFit.atNodes(injector)) key.append('|').append(describe(at.values));
-			byPoint.computeIfAbsent(key.toString(), k -> new ArrayList<>()).add(method);
+			MethodNode bound = body == null ? null : body.apply(method);
+			List<Object> ats = new ArrayList<>();
+			for (AnnotationNode at : MixinFit.atNodes(injector)) ats.add(where(bound, at));
+			Point key = new Point(injector.desc, bound, bound != null ? "" : describe(MixinTargetSelectors.selectors(method)), ats);
+			byPoint.computeIfAbsent(key, k -> new ArrayList<>()).add(method);
 		}
 		List<MethodNode> out = new ArrayList<>();
 		for (List<MethodNode> handlers : byPoint.values()) if (handlers.size() == 1) out.add(handlers.getFirst());
 		return out;
+	}
+
+	/** Where {@code at} injects in {@code bound}: the instructions it selects and how it shifts from them; else its resolved spelling. */
+	private static Object where(MethodNode bound, AnnotationNode at) {
+		Object shift = MixinFit.asString(MixinFit.value(at, "shift")), by = MixinFit.value(at, "by");
+		String moved = (shift == null ? "NONE" : shift) + "/" + (by == null ? 0 : by);
+		List<AbstractInsnNode> selected = bound == null ? null : points(bound, at);
+		if (selected != null && !selected.isEmpty()) {
+			// Every point modelled here injects before what it selects, but INVOKE_ASSIGN, which injects after the call's result.
+			List<Integer> indices = new ArrayList<>();
+			for (AbstractInsnNode instruction : selected) indices.add(bound.instructions.indexOf(instruction));
+			return indices + ("INVOKE_ASSIGN".equals(MixinFit.asString(MixinFit.value(at, "value"))) ? "@assign/" : "@") + moved;
+		}
+		StringBuilder spelled = new StringBuilder(String.valueOf(MixinFit.asString(MixinFit.value(at, "value")))).append('|');
+		MixinFit.Member member = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target")));
+		spelled.append(member == null ? describe(MixinFit.value(at, "target")) : member.owner() + ";" + member.name() + ";" + member.desc());
+		Object ordinal = MixinFit.value(at, "ordinal"), opcode = MixinFit.value(at, "opcode");
+		spelled.append('|').append(ordinal instanceof Number n && n.intValue() >= 0 ? n.intValue() : -1)
+				.append('|').append(opcode instanceof Number n && n.intValue() >= 0 ? n.intValue() : -1)
+				.append('|').append(moved).append('|').append(describe(MixinFit.value(at, "args")))
+				.append('|').append(describe(MixinFit.value(at, "id"))).append('|').append(describe(MixinFit.value(at, "desc")));
+		return spelled.toString();
 	}
 
 	/** An annotation value spelled by content: enum arrays, lists and nested annotations included. */
@@ -488,7 +522,7 @@ final class MixinCallbackProofs {
 	 */
 	static Map<Integer, Integer> correspondLocals(MethodNode handler, String nativeOwner, MethodNode nativeMethod, AbstractInsnNode nativePoint,
 			String liveOwner, MethodNode live, AbstractInsnNode livePoint, IntUnaryOperator nativeParameter) {
-		MixinHandlerShape shape = MixinHandlerShape.of(handler);
+		MixinHandlerShape shape = nativeMethod == null ? null : MixinHandlerShape.of(handler, nativeMethod.desc, nativeMethod);
 		if (shape == null) return null;
 		Map<Integer, Integer> result = new LinkedHashMap<>();
 		if (shape.locals().isEmpty()) return result;
@@ -544,7 +578,7 @@ final class MixinCallbackProofs {
 	 * that form.
 	 */
 	static Map<Integer, Integer> parameterLocals(MethodNode handler, String nativeDesc, MethodNode live, IntUnaryOperator nativeParameter) {
-		MixinHandlerShape shape = MixinHandlerShape.of(handler);
+		MixinHandlerShape shape = MixinHandlerShape.of(handler, nativeDesc, live);
 		if (shape == null) return null;
 		Type[] nativeTypes = Type.getArgumentTypes(nativeDesc), liveTypes = Type.getArgumentTypes(live.desc);
 		int[] liveSlots = slots(live);
@@ -603,13 +637,20 @@ final class MixinCallbackProofs {
 	/**
 	 * Points each {@code @Local} of {@code mapping} (handler parameter to slot) at its slot of {@code live} at
 	 * {@code livePoint}, where MixinExtras' own reading of the annotation would name another: the slot becomes the
-	 * {@code index}, and {@code ordinal} and {@code name} — which MixinExtras reads before an index — are dropped.
-	 * Returns how many were pinned.
+	 * {@code index}, and {@code ordinal} and {@code name} — which MixinExtras reads before an index — are dropped. A
+	 * target argument the handler took unannotated (an implicit {@code @Local}) is given {@code @Local(index = slot)}:
+	 * moved, Mixin would otherwise append the new method's argument there. Returns how many were pinned.
 	 */
 	static int pinLocals(MethodNode handler, MethodNode live, AbstractInsnNode livePoint, Map<Integer, Integer> mapping) {
 		int at = live.instructions.indexOf(livePoint), pinned = 0;
 		Type[] parameters = Type.getArgumentTypes(handler.desc);
+		// A target argument read as its @Local (MixinHandlerShape's implicit one) has no annotation to pin: it is given one.
+		java.util.Set<Integer> implicit = new HashSet<>();
+		for (int parameter : mapping.keySet()) if (!MixinFit.sugar(handler, parameter)) implicit.add(parameter);
+		if (!MixinHandlerShape.annotateImplicit(handler, mapping)) return 0;
+		pinned += implicit.size();
 		for (var entry : mapping.entrySet()) {
+			if (implicit.contains(entry.getKey())) continue;
 			AnnotationNode local = MixinStubRebind.sugar(handler, entry.getKey(), MixinRetarget.LOCAL_SUGAR);
 			if (local == null || MixinLocalOriginProof.slot(local, parameters[entry.getKey()], live, at) == entry.getValue()) continue;
 			if (local.values != null) for (int i = local.values.size() - 2; i >= 0; i -= 2)

@@ -68,10 +68,11 @@ final class MixinPlacementTransactionAdapter {
 		Proofs proofs = new Proofs(source.name, vanilla, call, callAt, repeated);
 		if (!proofs.prefix()) return 0;
 
-		List<MethodNode> entries = MixinCallbackProofs.alone(mixin, m -> MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, target, USE_ON)
-				&& atTheCall(m));
-		List<MethodNode> exits = MixinCallbackProofs.alone(mixin, m -> MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, target, USE_ON)
-				&& !atTheCall(m) && proofs.after(m, live) >= 0);
+		// Every handler here is written for vanilla's useOn: its points are read, and told apart, in that body.
+		List<MethodNode> entries = MixinCallbackProofs.alone(mixin, m -> vanilla, m -> MixinCallbackShape.kind(m, "Inject")
+				&& MixinCallbackShape.binds(m, target, USE_ON) && atTheCall(m, vanilla));
+		List<MethodNode> exits = MixinCallbackProofs.alone(mixin, m -> vanilla, m -> MixinCallbackShape.kind(m, "Inject")
+				&& MixinCallbackShape.binds(m, target, USE_ON) && !atTheCall(m, vanilla) && proofs.after(m, live) >= 0);
 		List<Runnable> moves = new ArrayList<>();
 		for (MethodNode entry : entries) {
 			Map<Integer, Integer> locals = proofs.locals(entry, callAt);
@@ -100,13 +101,16 @@ final class MixinPlacementTransactionAdapter {
 		return shape.operands("(L" + CONTEXT + ";L" + CIR + ";)V") || shape.operands("(L" + CIR + ";)V");
 	}
 
-	/** One {@code @At(INVOKE)} before vanilla's {@code Item.useOn} call: no later ordinal, no {@code by}, {@code opcode} or {@code args}. */
-	private static boolean atTheCall(MethodNode handler) {
+	/**
+	 * One {@code @At(INVOKE)} before vanilla's {@code Item.useOn} call, its target read as Mixin reads it in vanilla's
+	 * {@code useOn} ({@link MixinCallbackShape#names}): no later ordinal, no {@code by}, {@code opcode} or {@code args}.
+	 */
+	private static boolean atTheCall(MethodNode handler, MethodNode vanilla) {
 		List<AnnotationNode> ats = MixinFit.atNodes(MixinFit.injectorOf(handler));
 		if (ats.size() != 1) return false;
 		AnnotationNode at = ats.getFirst();
 		Object ordinal = MixinFit.value(at, "ordinal");
-		return "INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value"))) && CALL.equals(MixinFit.value(at, "target")) && before(at)
+		return "INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value"))) && MixinCallbackShape.names(at, CALL, vanilla) && before(at)
 				&& MixinFit.value(at, "opcode") == null && MixinFit.value(at, "args") == null && (ordinal == null || ordinal instanceof Number n && n.intValue() <= 0);
 	}
 

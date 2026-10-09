@@ -22,18 +22,20 @@ public final class MixinBlockInteractionAdapters {
         List<String> owners=MixinFit.mixinTargets(mixin);if(owners.size()!=1)return 0;
         Function<String,ClassNode> sources=owner->references==null?null:references.apply(MixinStubRebind.ecosystemOf(mixin.name),owner);
         return switch(owners.getFirst()){
-            case "net/minecraft/world/level/SignalGetter"->signal(mixin,targets);
+            case "net/minecraft/world/level/SignalGetter"->signal(mixin,targets,sources);
             case "net/minecraft/world/entity/Entity"->bounce(mixin,targets,sources);
-            case "net/minecraft/client/multiplayer/MultiPlayerGameMode"->leftClick(mixin,targets,sources)+breaking(mixin,targets,false);
-            case "net/minecraft/server/level/ServerPlayerGameMode"->breaking(mixin,targets,true);
+            case "net/minecraft/client/multiplayer/MultiPlayerGameMode"->leftClick(mixin,targets,sources)+breaking(mixin,targets,sources,false);
+            case "net/minecraft/server/level/ServerPlayerGameMode"->breaking(mixin,targets,sources,true);
             default->0;
         };
 	}
-	private static int signal(ClassNode mixin,Function<String,ClassNode> targets){
-		ClassNode target=targets.apply("net/minecraft/world/level/SignalGetter");
+	/** The method of the class the mod was compiled against that the handler binds: where a point it writes without an owner is read. */
+	private static MethodNode written(MethodNode handler,ClassNode source){return source==null?null:MixinTargetSelectors.one(handler,source);}
+	private static int signal(ClassNode mixin,Function<String,ClassNode> targets,Function<String,ClassNode> sources){
+		ClassNode target=targets.apply("net/minecraft/world/level/SignalGetter"),source=sources.apply("net/minecraft/world/level/SignalGetter");
 		MethodNode original=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(L"+STATE+";Lnet/minecraft/world/level/BlockGetter;L"+POS+";L"+OP+";)Z",MixinHandlerShape.Want.local("Lnet/minecraft/core/Direction;"))
                 && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.binds(m,target,"getSignal(L"+POS+";Lnet/minecraft/core/Direction;)I")
-                && MixinCallbackShape.plainPoint(m,"INVOKE","L"+STATE+";isRedstoneConductor(Lnet/minecraft/world/level/BlockGetter;L"+POS+";)Z"));MethodNode host=target==null?null:MixinCarrierCallbackAdapters.named(target,"getSignal");
+                && MixinCallbackShape.plainPoint(m,"INVOKE","L"+STATE+";isRedstoneConductor(Lnet/minecraft/world/level/BlockGetter;L"+POS+";)Z",written(m,source)));MethodNode host=target==null?null:MixinCarrierCallbackAdapters.named(target,"getSignal");
 		String live="L"+STATE+";shouldCheckWeakPower(Lnet/minecraft/world/level/SignalGetter;L"+POS+";Lnet/minecraft/core/Direction;)Z";
 		if(original==null||host==null||Type.getArgumentTypes(original.desc).length!=5||!Type.getArgumentTypes(original.desc)[3].equals(Type.getObjectType(OP))||MixinPlayerWorldCallbackAdapter.count(host,live)!=1)return 0;
 		AnnotationNode inject=MixinFit.injectorOf(original);if(inject==null)return 0;MixinPlayerWorldCallbackAdapter.set(MixinFit.atNodes(inject).getFirst(),"target",live);
@@ -42,7 +44,7 @@ public final class MixinBlockInteractionAdapters {
 		load(c,0,1,2,3);c.add(new VarInsnNode(Opcodes.ALOAD,5));c.add(new InsnNode(Opcodes.ICONST_1));c.add(new LdcInsnNode("0,1"));c.add(new InsnNode(Opcodes.ICONST_3));c.add(new TypeInsnNode(Opcodes.ANEWARRAY,"java/lang/Object"));c.add(new InsnNode(Opcodes.DUP));c.add(new InsnNode(Opcodes.ICONST_2));c.add(new VarInsnNode(Opcodes.ALOAD,4));c.add(new InsnNode(Opcodes.AASTORE));reordered(c);c.add(new VarInsnNode(Opcodes.ALOAD,4));finish(mixin,original,outer,inject,Opcodes.IRETURN,6);return 1;
 	}
 	private static int bounce(ClassNode mixin,Function<String,ClassNode> targets,Function<String,ClassNode> sources){
-		MethodNode original=MixinCallbackShape.unique(mixin,m->MixinCallbackShape.shape(m,"(Lnet/minecraft/world/entity/Entity;L"+BLOCK+";L"+OP+";)D",MixinHandlerShape.Want.local("L"+STATE+";")) && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/world/entity/Entity;getBlockBounciness(L"+BLOCK+";)D"));ClassNode target=targets.apply("net/minecraft/world/entity/Entity");if(original==null||target==null)return 0;
+		MethodNode original=MixinCallbackShape.unique(mixin,m->MixinCallbackShape.shape(m,"(Lnet/minecraft/world/entity/Entity;L"+BLOCK+";L"+OP+";)D",MixinHandlerShape.Want.local("L"+STATE+";")) && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/world/entity/Entity;getBlockBounciness(L"+BLOCK+";)D",written(m,sources.apply("net/minecraft/world/entity/Entity"))));ClassNode target=targets.apply("net/minecraft/world/entity/Entity");if(original==null||target==null)return 0;
 		if(!original.desc.equals("(Lnet/minecraft/world/entity/Entity;L"+BLOCK+";L"+OP+";L"+STATE+";)D"))return 0;
 		String authored=MixinTargetSelectors.nativeMember(original,sources.apply(target.name),target.name);if(authored==null)return 0;String hostName=authored.substring(0,authored.indexOf('('));
 		String call="getBlockBounciness(L"+POS+";L"+STATE+";)D";List<MethodNode> hosts=target.methods.stream().filter(m->m.name.equals(hostName)&&MixinPlayerWorldCallbackAdapter.count(m,"L"+target.name+";"+call)==1).toList();if(hosts.size()!=1)return 0;
@@ -53,10 +55,11 @@ public final class MixinBlockInteractionAdapters {
 	private static int leftClick(ClassNode mixin,Function<String,ClassNode> targets,Function<String,ClassNode> sources){
         ClassNode target=targets.apply("net/minecraft/client/multiplayer/MultiPlayerGameMode");if(target==null)return 0;
         Set<String> live=reachableMethods(target);int changed=0;
+        ClassNode written=sources.apply(target.name);
         List<MethodNode> handlers=mixin.methods.stream().filter(m -> MixinCallbackShape.shape(m,"(Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;L"+POS+";L"+OP+";)Z",MixinHandlerShape.Want.local("Lnet/minecraft/core/Direction;"))
                 && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation")
-                && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;destroyBlock(L"+POS+";)Z")).toList();
-        ClassNode source=handlers.isEmpty()?null:sources.apply(target.name);
+                && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;destroyBlock(L"+POS+";)Z",written(m,written))).toList();
+        ClassNode source=handlers.isEmpty()?null:written;
         // Two handlers written for one native method are ambiguous, whatever each selector looks like.
         Map<MethodNode,String> authored=new HashMap<>();Set<String> selections=new HashSet<>();
         for(MethodNode handler:handlers){String member=MixinTargetSelectors.nativeMember(handler,source,target.name);authored.put(handler,member);
@@ -99,13 +102,13 @@ public final class MixinBlockInteractionAdapters {
             return matched==source.length;
         }catch(IllegalArgumentException invalid){return false;}
     }
-	private static int breaking(ClassNode mixin,Function<String,ClassNode> targets,boolean server){
-		String owner=server?"net/minecraft/server/level/ServerPlayerGameMode":"net/minecraft/client/multiplayer/MultiPlayerGameMode";ClassNode target=targets.apply(owner);
+	private static int breaking(ClassNode mixin,Function<String,ClassNode> targets,Function<String,ClassNode> sources,boolean server){
+		String owner=server?"net/minecraft/server/level/ServerPlayerGameMode":"net/minecraft/client/multiplayer/MultiPlayerGameMode";ClassNode target=targets.apply(owner),source=sources.apply(owner);
 		MethodNode original=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,server?
                 "(Lnet/minecraft/server/level/ServerLevel;L"+POS+";ZL"+OP+";)Z":
                 "(Lnet/minecraft/world/level/Level;L"+POS+";L"+STATE+";IL"+OP+";)Z",MixinHandlerShape.Want.local("L"+STATE+";"),MixinHandlerShape.Want.local("L"+BLOCK+";"))
                 && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.binds(m,target,"destroyBlock(L"+POS+";)Z")
-                && MixinCallbackShape.plainPoint(m,"INVOKE",server?"Lnet/minecraft/server/level/ServerLevel;removeBlock(L"+POS+";Z)Z":"Lnet/minecraft/world/level/Level;setBlock(L"+POS+";L"+STATE+";I)Z"));MethodNode host=target==null?null:MixinCarrierCallbackAdapters.named(target,"destroyBlock");
+                && MixinCallbackShape.plainPoint(m,"INVOKE",server?"Lnet/minecraft/server/level/ServerLevel;removeBlock(L"+POS+";Z)Z":"Lnet/minecraft/world/level/Level;setBlock(L"+POS+";L"+STATE+";I)Z",written(m,source)));MethodNode host=target==null?null:MixinCarrierCallbackAdapters.named(target,"destroyBlock");
 		if(original==null||host==null||MixinFit.injectorOf(original)==null||Type.getArgumentTypes(original.desc).length!=(server?6:7))return 0;
 		List<MethodInsnNode> calls=new ArrayList<>();for(var i:host.instructions)if(i instanceof MethodInsnNode call&&(server?call.owner.equals(owner)&&call.name.equals("removeBlock"):call.owner.equals(STATE)&&call.name.equals("onDestroyedByPlayer")))calls.add(call);
 		if(calls.isEmpty()||(!server&&calls.size()!=1)||calls.stream().map(c->c.desc).distinct().count()!=1)return 0;

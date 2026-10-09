@@ -275,17 +275,50 @@ class MixinCallbackSelectorSpellingTest {
 		return out;
 	}
 
-	/** The local the adapter hands over must be a {@code @Local}: the same type left unannotated is another parameter. */
+	/**
+	 * A value appended unannotated after a wrap's {@code Operation} is the target's argument at its position — Mixin hands
+	 * it over only where the target has one. {@code baseTick()} has none, so Create's unannotated {@code ServerLevel} is no
+	 * argument and no {@code @Local}: Mixin refuses it, and the adapter leaves it so.
+	 */
 	@Test void anUnannotatedExtraIsNotTheLocalAnAdapterSupplies() throws Exception {
-		for (var contract : List.of(create("mixin/LivingEntityMixin", MixinBreathingCallbackAdapter::adapt, 2),
-				create("client/mixin/HudMixin", MixinHudContextAdapter::adapt, 1), create("mixin/EntityMixin", MixinEntitySoundCallbackAdapter::adapt, 1))) {
-			ClassNode mixin = unrelatedNames(contract.source().read());
-			for (MethodNode method : mixin.methods) if (MixinFit.injectorOf(method) != null && method.desc.contains(MixinHandlerShape.OPERATION)) {
+		var contract = create("mixin/LivingEntityMixin", MixinBreathingCallbackAdapter::adapt, 2);
+		ClassNode mixin = withoutWrapAnnotations(unrelatedNames(contract.source().read()));
+		byte[] before = CarpetMixinAdapterTest.bytes(mixin);
+		assertEquals(0, contract.adapter().apply(mixin, MixinCallbackSelectorSpellingTest::target), contract.id());
+		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(mixin));
+	}
+
+	/**
+	 * Create's HUD and step-sound wraps ask for their target's arguments with {@code @Local(argsOnly = true)}; the same
+	 * handlers written without the annotation take them as the arguments MixinExtras appends after the {@code Operation}
+	 * (WrapOperationInjector's captureTargetArgs) — the same values. Each adapter serves that form, and serves it exactly
+	 * as the annotated one: the adapted classes are the same bytes.
+	 */
+	@Test void anUnannotatedTargetArgumentIsTheArgsOnlyLocalItStandsFor() throws Exception {
+		for (var contract : List.of(create("client/mixin/HudMixin", MixinHudContextAdapter::adapt, 1), create("mixin/EntityMixin", MixinEntitySoundCallbackAdapter::adapt, 1))) {
+			ClassNode annotated = unrelatedNames(contract.source().read()), bare = unrelatedNames(contract.source().read());
+			assertEquals(contract.count(), contract.adapter().apply(annotated, MixinCallbackSelectorSpellingTest::target), contract.id());
+			// The wrap the adapter moved asked for its target's leading arguments with @Local(argsOnly = true): the same
+			// wrap without those annotations takes them as appended arguments.
+			Set<String> moved = new HashSet<>();
+			for (MethodNode method : annotated.methods) if (method.name.endsWith("$forbricOriginal")) moved.add(method.name.substring(0, method.name.length() - "$forbricOriginal".length()));
+			assertEquals(1, moved.size(), contract.id());
+			for (MethodNode method : bare.methods) if (moved.contains(method.name)) {
+				assertTrue(Arrays.stream(method.invisibleParameterAnnotations).filter(Objects::nonNull).flatMap(List::stream)
+						.allMatch(a -> a.desc.equals(MixinHandlerShape.LOCAL) && List.of("argsOnly", true).equals(a.values)), "premise: only argsOnly locals");
 				method.invisibleParameterAnnotations = null; method.visibleParameterAnnotations = null;
 			}
-			byte[] before = CarpetMixinAdapterTest.bytes(mixin);
-			assertEquals(0, contract.adapter().apply(mixin, MixinCallbackSelectorSpellingTest::target), contract.id());
-			assertArrayEquals(before, CarpetMixinAdapterTest.bytes(mixin));
+			assertEquals(contract.count(), contract.adapter().apply(bare, MixinCallbackSelectorSpellingTest::target), contract.id());
+			CarpetMixinAdapterTest.verify(bare);
+			assertArrayEquals(CarpetMixinAdapterTest.bytes(annotated), CarpetMixinAdapterTest.bytes(bare), contract.id() + ": adapted as the @Local form is");
+			assertEquals(0, contract.adapter().apply(bare, MixinCallbackSelectorSpellingTest::target), "idempotence");
 		}
+	}
+
+	private static ClassNode withoutWrapAnnotations(ClassNode mixin) {
+		for (MethodNode method : mixin.methods) if (MixinFit.injectorOf(method) != null && method.desc.contains(MixinHandlerShape.OPERATION)) {
+			method.invisibleParameterAnnotations = null; method.visibleParameterAnnotations = null;
+		}
+		return mixin;
 	}
 }

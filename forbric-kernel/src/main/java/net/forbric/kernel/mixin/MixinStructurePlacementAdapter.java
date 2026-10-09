@@ -84,7 +84,8 @@ public final class MixinStructurePlacementAdapter {
 		String callerMember = caller.name + caller.desc;
 		final MethodNode host = caller;
 		final MethodInsnNode hostCall = liveCall;
-		MethodNode pick = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.kind(m, "Inject") && pointsAtTheCall(m)
+		final MethodNode callerNative = nativeCaller;
+		MethodNode pick = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.kind(m, "Inject") && pointsAtTheCall(m, callerNative, host)
 				&& MixinCallbackShape.binds(m, target, callerMember));
 		if (pick != null && callerMember.equals(MixinTargetSelectors.nativeMember(pick, source, TARGET))) {
 			MixinHandlerShape shape = MixinHandlerShape.of(pick);
@@ -94,7 +95,7 @@ public final class MixinStructurePlacementAdapter {
 			String parameters = caller.desc.substring(1, caller.desc.indexOf(')'));
 			if ((shape.operands("(" + callback + ")V") || shape.operands("(" + parameters + callback + ")V")) && extrasServed(shape) && locals != null) {
 				AnnotationNode at = MixinFit.atNodes(MixinFit.injectorOf(pick)).getFirst();
-				boolean moved = ("L" + TARGET + ";" + OLD).equals(MixinFit.value(at, "target"));
+				boolean moved = MixinCallbackShape.names(at, "L" + TARGET + ";" + OLD, nativeCaller);
 				if (moved) changed++;
 				moves.add(() -> {
 					if (moved) MixinPlayerWorldCallbackAdapter.set(at, "target", "L" + TARGET + ";" + LIVE);
@@ -103,7 +104,9 @@ public final class MixinStructurePlacementAdapter {
 			}
 		}
 		IntUnaryOperator bodyParameter = nativeParameter == null ? j -> -1 : nativeParameter;
-		for (MethodNode handler : MixinCallbackProofs.alone(mixin, m -> body(m) && authoredFor(m, source))) {
+		// Each was written for vanilla's placeEntities: read, and told apart, in that body (or where it lands, without it).
+		MethodNode written = nativeBody != null ? nativeBody : place;
+		for (MethodNode handler : MixinCallbackProofs.alone(mixin, m -> written, m -> body(m) && authoredFor(m, source))) {
 			MixinHandlerShape shape = MixinHandlerShape.of(handler);
 			if (shape.kind().equals("Inject") && !shape.operands("(" + CALLBACK + ")V")) continue;
 			MixinCallbackProofs.Landing landing = MixinCallbackProofs.land(handler, source == null ? null : source.name, nativeBody, target.name, place,
@@ -148,14 +151,18 @@ public final class MixinStructurePlacementAdapter {
 		}
 	}
 
-	/** One {@code @At(INVOKE)} at vanilla's call of {@code placeEntities}, or at the merged call it was already moved to. */
-	private static boolean pointsAtTheCall(MethodNode handler) {
+	/**
+	 * One {@code @At(INVOKE)} at vanilla's call of {@code placeEntities} (read in {@code nativeCaller}, the method that made
+	 * it, when at hand), or at the merged call it was already moved to (read in {@code liveCaller}): the target as Mixin
+	 * resolves it ({@link MixinCallbackShape#names}), not as it is spelled.
+	 */
+	private static boolean pointsAtTheCall(MethodNode handler, MethodNode nativeCaller, MethodNode liveCaller) {
 		List<AnnotationNode> ats = MixinFit.atNodes(MixinFit.injectorOf(handler));
 		if (ats.size() != 1) return false;
 		AnnotationNode at = ats.getFirst();
-		Object target = MixinFit.value(at, "target"), ordinal = MixinFit.value(at, "ordinal");
+		Object ordinal = MixinFit.value(at, "ordinal");
 		return "INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value")))
-				&& (("L" + TARGET + ";" + OLD).equals(target) || ("L" + TARGET + ";" + LIVE).equals(target))
+				&& (MixinCallbackShape.names(at, "L" + TARGET + ";" + OLD, nativeCaller) || MixinCallbackShape.names(at, "L" + TARGET + ";" + LIVE, liveCaller))
 				&& MixinFit.value(at, "by") == null && MixinFit.value(at, "opcode") == null && MixinFit.value(at, "args") == null
 				&& (ordinal == null || ordinal instanceof Number n && n.intValue() <= 0);
 	}
