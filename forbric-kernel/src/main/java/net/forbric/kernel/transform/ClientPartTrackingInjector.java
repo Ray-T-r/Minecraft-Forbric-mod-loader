@@ -25,7 +25,13 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 /** Completes a Forge-canonical client tracking body with the other native part view. Existing
  * identities in the native collection are retained once, so no game entity class needs a special case.
- * A Neo-canonical body is handled by the companion Forge map repair. */
+ * A Neo-canonical body is handled by the companion Forge map repair.
+ *
+ * <p>The outcome is judged by {@link #CLAIM} on the class this transformer hands back, not by whether it edited.
+ * Which family's {@code onTrackingStart} the merge keeps moves with the merge tools: a Neo-canonical body already
+ * registers a NeoForge mod's parts in {@code dragonParts} and never reads MinecraftForge's array, so it needs no edit
+ * here, and that is not a missing repair. A body that neither tracks NeoForge's parts nor can be repaired reports
+ * nothing, which is the real miss. */
 public final class ClientPartTrackingInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.clientPartTracking";
 	static final String CALLBACKS = "net.minecraft.client.multiplayer.ClientLevel$EntityCallbacks";
@@ -43,10 +49,74 @@ public final class ClientPartTrackingInjector implements ClassTransformer {
 
 	@Override public String name() { return "forbric-client-part-tracking"; }
 
+	static final String CLAIM = "forbric-client-part-tracking#neoForgePartsTracked";
+
 	@Override public AnchorSet anchors() {
 		if (!enabled()) return AnchorSet.scanned("the client's part tracking explicitly left as merged with -D" + PROPERTY + "=off");
-		return AnchorSet.of(new AnchorSet.Anchor(CALLBACKS, AnchorSet.Severity.REQUIRED,
-				"a NeoForge mod's multipart entity disconnects the client with a network protocol error when it comes into view"));
+		return AnchorSet.scanned("ClientLevel$EntityCallbacks, judged by the " + CLAIM + " claim");
+	}
+
+	@Override public List<Claim> claims() {
+		if (!enabled()) return List.of();
+		return List.of(new Claim(CLAIM, AnchorSet.of(new AnchorSet.Anchor(CALLBACKS, AnchorSet.Severity.REQUIRED,
+				"a NeoForge mod's multipart entity disconnects the client with a network protocol error when it comes into view"))));
+	}
+
+	@Override public byte[] transform(String className, byte[] bytes, TransformContext context, ClaimReporter reporter) {
+		byte[] result = transform(className, bytes, context);
+		if (enabled() && CALLBACKS.equals(className) && result != null && tracksNeoForgeParts(result)) reporter.hit(CLAIM);
+		return result;
+	}
+
+	/**
+	 * Whether {@code bytes}' {@code onTrackingStart} leaves the client tracking a NeoForge mod's multipart entity: it
+	 * reads NeoForge's {@code getParts()} and reaches {@code ClientLevel.dragonParts}, where NeoForge's own client
+	 * registers them, and every MinecraftForge {@code getParts()} array it reads is tested for null before anything uses
+	 * it. That array is null for every NeoForge mod's entity, and dereferencing it is what disconnected the client.
+	 * True on NeoForge's own body, on this repair's edit of MinecraftForge's, and on any merge that already composes the
+	 * two; false on MinecraftForge's unrepaired body.
+	 */
+	static boolean tracksNeoForgeParts(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		try { new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES); } catch (RuntimeException unreadable) { return false; }
+		if (!CALLBACKS_INTERNAL.equals(node.name)) return false;
+		MethodNode start = method(node, "onTrackingStart", TRACKING_START_DESC);
+		if (start == null) return false;
+		boolean neo = false, dragonParts = false;
+		for (AbstractInsnNode insn : start.instructions) {
+			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD && field.owner.equals(LEVEL)
+					&& field.name.equals("dragonParts") && field.desc.equals("Ljava/util/List;")) dragonParts = true;
+			if (!(insn instanceof MethodInsnNode call) || !call.owner.equals(ENTITY) || !call.name.equals("getParts")) continue;
+			if (call.desc.equals(NEO_GET_PARTS)) neo = true;
+			else if (call.desc.equals(FORGE_GET_PARTS) && !nullTested(call)) return false;
+		}
+		return neo && dragonParts;
+	}
+
+	/**
+	 * Whether the array {@code read} returns is tested for null before it is used: stored and then tested
+	 * ({@code parts = e.getParts(); if (parts != null)}), tested as it is stored
+	 * ({@code if ((parts = e.getParts()) != null)}), or replaced by an empty array when null
+	 * ({@code requireNonNullElse(e.getParts(), new T[0])}).
+	 */
+	private static boolean nullTested(MethodInsnNode read) {
+		AbstractInsnNode after = next(read);
+		if (after instanceof VarInsnNode store && store.getOpcode() == Opcodes.ASTORE) {
+			return next(store) instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var == store.var
+					&& nullJump(next(load));
+		}
+		if (after != null && after.getOpcode() == Opcodes.DUP) {
+			AbstractInsnNode test = next(after);
+			if (test instanceof VarInsnNode store && store.getOpcode() == Opcodes.ASTORE) test = next(store);
+			return nullJump(test);
+		}
+		return after != null && after.getOpcode() == Opcodes.ICONST_0 && next(after) instanceof TypeInsnNode empty
+				&& empty.getOpcode() == Opcodes.ANEWARRAY && next(empty) instanceof MethodInsnNode orElse
+				&& orElse.owner.equals("java/util/Objects") && orElse.name.equals("requireNonNullElse");
+	}
+
+	private static boolean nullJump(AbstractInsnNode insn) {
+		return insn != null && (insn.getOpcode() == Opcodes.IFNULL || insn.getOpcode() == Opcodes.IFNONNULL);
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
@@ -150,7 +220,7 @@ public final class ClientPartTrackingInjector implements ClassTransformer {
 	}
 
 	private static AbstractInsnNode next(AbstractInsnNode insn) {
-		AbstractInsnNode at = insn.getNext();
+		AbstractInsnNode at = insn == null ? null : insn.getNext();
 		while (at != null && at.getOpcode() < 0) at = at.getNext();
 		return at;
 	}
