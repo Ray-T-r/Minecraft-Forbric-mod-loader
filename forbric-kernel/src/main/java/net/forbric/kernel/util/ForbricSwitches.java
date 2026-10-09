@@ -48,7 +48,10 @@ public final class ForbricSwitches {
 			Map.entry("forbric.createInteractionMixins", "forbric.blockInteractionAdapters"),
 			Map.entry("forbric.createKeyboardMixin", "forbric.keyActionCallbacks"),
 			Map.entry("forbric.createStructureMixin", "forbric.structurePlacementCallbacks"),
-			Map.entry("forbric.irisEarlyGamePath", "forbric.earlyGameDirectory"),
+			// Both kept a config plugin's platform provider from defining game classes during Mixin's preparation; the
+			// general mechanism that replaced them is the loader's.
+			Map.entry("forbric.earlyGameDirectory", "forbric.deferLinkTimeTypes"),
+			Map.entry("forbric.irisEarlyGamePath", "forbric.deferLinkTimeTypes"),
 			Map.entry("forbric.portingLayerAbi", "forbric.configApiAbi"),
 			Map.entry("forbric.sodiumConfigUsers", "forbric.crossEcosystemDeclarations"));
 

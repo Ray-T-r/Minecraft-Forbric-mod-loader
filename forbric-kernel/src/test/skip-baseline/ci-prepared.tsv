@@ -203,7 +203,6 @@ test	net.forbric.kernel.transform.ConfigApiAbiInjectorTest	nothingAboutTheFrames
 test	net.forbric.kernel.transform.ConfigApiAbiInjectorTest	theSpecAdapterGainsTheMethodTheCarrierCallsOnEveryRegistration()	[fixture:third-party] ForgeConfigAPIPort not staged — skipping the real-bytecode check
 test	net.forbric.kernel.transform.ConfigApiAbiInjectorTest	theStaticTrackerFieldReadIsKeptSoTheStackStillBalances()	[fixture:third-party] ForgeConfigAPIPort not staged — skipping the real-bytecode check
 test	net.forbric.kernel.transform.CreativePagerBridgeInjectorTest	owoLibsMixinFitsOnlyOnceTheBridgeRan()	[fixture:third-party] build/compat-inputs/sweep90/mods/owo-lib-0.13.1+26.2.jar is not present beside this checkout or the staged one
-test	net.forbric.kernel.transform.EarlyGameDirectoryInjectorTest	theRealPluginRetainsTheSameDirectoryContract()	[fixture:third-party] real plugin directory contract: build/compat-inputs/player-loading/mods/iris-neoforge-1.11.4+mc26.2.jar
 test	net.forbric.kernel.transform.EnvironmentStripTransformerTest	creativeCoresLoaderLosesExactlyTheOneMethodNativeFabricRemoves()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.transform.FabricHooksCallTest	owosOwnFreezeMixinsFitTheRealGameOnBothSides()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.transform.FmlContextLoaderRewriterTest	libJfsOwnMixinPluginIsRewrittenAtItsOneCast()	[fixture:third-party] the sweep90 pack (build/compat-inputs) is not linked into this checkout
