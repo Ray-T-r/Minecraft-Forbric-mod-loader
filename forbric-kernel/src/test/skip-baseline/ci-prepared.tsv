@@ -9,6 +9,7 @@ test	net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest	[1] true	[fixtur
 test	net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest	[2] false	[fixture:third-party] stage the popular compatibility pack and the boot jar (or set fixture overrides): $ROOT/forbric-kernel/build/compat-inputs/popular/mods/badpackets-forge-0.12.2.jar, $ROOT/forbric
 test	net.forbric.kernel.boot.MultiLoaderEntrypointsTest	actualBisonAquariusAndBannerstoneUseTheirExecutableFamilies()	[fixture:third-party] requires the prepared random baseline jars
 test	net.forbric.kernel.boot.PassiveSeederFileConfigTest	theRealLithiumFindsUnlitCampfiresOverride()	[fixture:third-party] the player's pack is not here
+test	net.forbric.kernel.classloading.VerifierTypeDeferralTest	theRealProviderBehindAModsTwoConfigPluginsDefinesNoGameTypeInsideTheWeave(Path)	[fixture:third-party] a mod whose config plugins reach its platform provider: build/compat-inputs/player-loading/mods/iris-neoforge-1.11.4+mc26.2.jar
 test	net.forbric.kernel.interop.CreateWorkerShutdownTest	realFlywheelWorkersDrainAndJoinWithoutCallingTheLazyFactory()	[fixture:third-party] Create Fly jar absent: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.interop.PayloadInteropPlayChannelsTest	everyNameTheRecordingSpellsExistsWhereItIsSpelled()	[fixture:third-party] fabric-api's networking module absent
 test	net.forbric.kernel.metadata.forge.ModsTomlParserTest	theFixtureIsTheManifestLibjfShips()	[fixture:third-party] the sweep's LibJF jar is not staged here

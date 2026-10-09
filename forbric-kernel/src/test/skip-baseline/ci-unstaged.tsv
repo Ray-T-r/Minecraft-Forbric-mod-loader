@@ -114,6 +114,7 @@ test	net.forbric.kernel.boot.ResultBridgeFidelityTest	thePortalBridgeCarriesARef
 test	net.forbric.kernel.boot.RuntimeMixinConfigsTest	minecraftForgesRuntimeDeclaresNone()	[fixture:staged] staged MinecraftForge runtime absent
 test	net.forbric.kernel.boot.RuntimeMixinConfigsTest	neoForgesRuntimeJarContributesItsOwnAccessorConfig()	[fixture:staged] staged NeoForge runtime absent
 test	net.forbric.kernel.boot.WorldgenCanaryDataTest	theTwoCarriersPlaceDifferentNonOverworldBlocks()	[fixture:staged] build canaries with forbric-loader/run/build-testmods.sh
+test	net.forbric.kernel.classloading.VerifierTypeDeferralTest	theRealProviderBehindAModsTwoConfigPluginsDefinesNoGameTypeInsideTheWeave(Path)	[fixture:third-party] a mod whose config plugins reach its platform provider: build/compat-inputs/player-loading/mods/iris-neoforge-1.11.4+mc26.2.jar
 test	net.forbric.kernel.compat.PrepareWorldTest	theCarrierReadsThisFlagAndUsesItToSuppressOnlyTheExperimentalBackupPrompt()	[fixture:staged] requires current staged merged base
 test	net.forbric.kernel.interop.CreateWorkerShutdownTest	realFlywheelWorkersDrainAndJoinWithoutCallingTheLazyFactory()	[fixture:third-party] Create Fly jar absent: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.interop.PayloadInteropPlayChannelsTest	everyNameTheRecordingSpellsExistsWhereItIsSpelled()	[fixture:third-party] fabric-api's networking module absent

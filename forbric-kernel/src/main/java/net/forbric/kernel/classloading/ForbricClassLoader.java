@@ -76,6 +76,24 @@ public final class ForbricClassLoader extends URLClassLoader {
 	private record ClassEpoch(long version,Thread registration){}
 	private final ConcurrentHashMap<String,java.util.concurrent.atomic.AtomicReference<ClassEpoch>> bytecodeEpochs=new ConcurrentHashMap<>();
 	private final Set<String> activeDefinitions=ConcurrentHashMap.newKeySet();
+	/**
+	 * {@code -Dforbric.deferLinkTimeTypes=off}: a class defined while a Mixin weave is open is defined exactly as
+	 * written, and verifying it may define game classes before any mixin can reach them. See {@link VerifierTypeDeferral}.
+	 */
+	public static final String DEFER_LINK_TIME_TYPES = "forbric.deferLinkTimeTypes";
+	/** A Mixin weave open on this thread, and what the classes defined inside it had deferred. */
+	private static final class OpenWeave {
+		final String name;
+		final List<String> classes = new java.util.ArrayList<>();
+		final Set<String> types = new java.util.TreeSet<>();
+		int casts;
+
+		OpenWeave(String name) {
+			this.name = name;
+		}
+	}
+	/** The Mixin weaves open on this thread, innermost last. Per loader: another loader's weave is not ours. */
+	private final ThreadLocal<java.util.ArrayDeque<OpenWeave>> weaving = ThreadLocal.withInitial(java.util.ArrayDeque::new);
 	public record BytecodeGeneration(long configuration,Object target){}
 	private record PreMixinEntry(BytecodeGeneration generation,java.lang.ref.SoftReference<byte[]> bytes){}
 
@@ -466,9 +484,21 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 		bytes = net.forbric.kernel.mixin.MixinAbsorbedCallbackTransport.transform(this, name, bytes);
 		bytes = net.forbric.kernel.mixin.MixinOperationSeamTransport.transform(this, name, bytes);
-		byte[] woven = mixinTransformer.apply(name, bytes);
+		java.util.ArrayDeque<OpenWeave> open = weaving.get();
+		OpenWeave weave = new OpenWeave(name);
+		open.addLast(weave);
+		byte[] woven;
+		try {
+			woven = mixinTransformer.apply(name, bytes);
+		} finally {
+			open.removeLast();
+		}
+		if (!weave.classes.isEmpty()) reportDeferrals(weave);
 		if (woven != null) bytes = woven;
 		if (bytes == null) return null;
+		// Defined from inside another class's weave -- where Mixin builds and consults every config plugin, and where
+		// it refuses to weave anything else. Verifying this class must not define classes Mixin cannot weave yet.
+		if (!open.isEmpty()) bytes = deferLinkTimeTypes(bytes, open.peekLast(), name);
 
 		definePackageIfNeeded(name, resource);
 		Class<?> defined = define(name, bytes, domainFor(resource));
@@ -477,6 +507,56 @@ public final class ForbricClassLoader extends URLClassLoader {
 		if (resource != null && !runtimeJarFamilies.isEmpty())
 			ancestorBridges.observe(bytes, familyOfUrl(resource, runtimeJarFamilies), this::carrierOfClass);
 		return defined;
+	}
+
+	/**
+	 * {@code bytes} rewritten so that verifying it resolves no class this loader has yet to define. Reached only for a
+	 * class defined while {@code weave} is open on this thread; what it deferred is reported with that weave.
+	 */
+	private byte[] deferLinkTimeTypes(byte[] bytes, OpenWeave weave, String name) {
+		if ("off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(DEFER_LINK_TIME_TYPES, "on"))) return bytes;
+		VerifierTypeDeferral.Result result = VerifierTypeDeferral.rewrite(bytes, this::notYetDefined, this::supertypesOf);
+		if (!result.changed()) return bytes;
+		weave.classes.add(name);
+		for (String type : result.deferred()) weave.types.add(type.replace('/', '.'));
+		weave.casts += result.casts();
+		return result.bytes();
+	}
+
+	/** One line per weave that had classes defined inside it whose verification would have defined others. */
+	private static void reportDeferrals(OpenWeave weave) {
+		ForbricLog.info("[Forbric/Mixin] while Mixin wove %s (it weaves nothing else until that returns, and the first "
+				+ "weave is where it builds every config plugin), %d class(es) were defined whose verification could have "
+				+ "defined %s, which Mixin would have had to leave unwoven. Those checks now run with the code (%d cast(s)), "
+				+ "so those classes are defined later, with their mixins. Deferred in: %s", weave.name, weave.classes.size(),
+				abbreviate(weave.types), weave.casts, abbreviate(weave.classes));
+	}
+
+	private static String abbreviate(java.util.Collection<String> names) {
+		List<String> all = List.copyOf(names);
+		return all.size() <= 12 ? all.toString() : all.subList(0, 12) + " and " + (all.size() - 12) + " more";
+	}
+
+	/** A class this loader would define from its own jars and has not defined yet. Internal name. */
+	private boolean notYetDefined(String internalName) {
+		return findLoadedClass(internalName.replace('/', '.')) == null && findResource(internalName + ".class") != null;
+	}
+
+	/** The direct supertypes of a class in this loader's own jars, read from its bytes without defining it. */
+	private String[] supertypesOf(String internalName) {
+		URL resource = findResource(internalName + ".class");
+		byte[] bytes = resource == null ? null : read(resource);
+		if (bytes == null) return null;
+		try {
+			org.objectweb.asm.ClassReader reader = new org.objectweb.asm.ClassReader(bytes);
+			String[] interfaces = reader.getInterfaces();
+			String[] all = new String[interfaces.length + 1];
+			all[0] = reader.getSuperName();
+			System.arraycopy(interfaces, 0, all, 1, interfaces.length);
+			return all;
+		} catch (RuntimeException unreadable) {
+			return null;
+		}
 	}
 
 	/** The platform runtime carrier this loader serves {@code internalName} from, or null. */
