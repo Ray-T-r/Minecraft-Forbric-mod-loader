@@ -161,6 +161,22 @@ public class LeadingHookBlockTest {
 	}
 
 	@Test
+	void aBaseThatPostsItsOwnHookAtTheSameAnchorIsNotThisShapeEither() {
+		// Both families hook right after the shared preamble, so no stage difference refuses it first: only the rule that
+		// the base posts nothing of its own here keeps a renamed counterpart of the other's event from firing twice.
+		MethodNode base = vanilla("routed");
+		InsnList own = new InsnList();
+		own.add(new VarInsnNode(Opcodes.ALOAD, 4));
+		own.add(new VarInsnNode(Opcodes.LLOAD, 2));
+		own.add(new MethodInsnNode(Opcodes.INVOKESTATIC, NEO, "notice", "(Ljava/lang/String;J)V", false));
+		base.instructions.insert(executable(base).get(PREAMBLE - 1), own);
+		AdditiveMethodMerger.Result result = merge(vanilla("vanillaJoin"), framed(base), withBlock(vanilla("otherRouted"), answerBlock(5)),
+				UNCOMPENSATED);
+		assertFalse(result.accepted(), result.reason());
+		assertFalse(result.reason().startsWith("leading"), result.reason());
+	}
+
+	@Test
 	void anArgumentComputedInsideTheBlockIsNotAPlainOperand() {
 		InsnList block = answerBlock(5);
 		block.insert(block.getFirst(), new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/String", "trim", "()Ljava/lang/String;", false));
