@@ -63,7 +63,7 @@ public final class MergedBaseMixinCompat {
             return "source callback repeats or defers the kernel-owned registry freeze; its tracker protocol could not be adapted";
         if(FabricRegistryLoaderMixinAdapter.matches(node)&&FabricRegistryLoaderMixinAdapter.adapt(copy(node),name->parse(resources.apply(name+".class")))==0)
             return "registry-loader: source ScopedValue callback propagation does not fit the current registry-loader overloads";
-        if(FabricCreativePagerMixinAdapter.matches(node)&&FabricCreativePagerMixinAdapter.adapt(copy(node))==0)
+        if(FabricCreativePagerMixinAdapter.matches(node)&&FabricCreativePagerMixinAdapter.adapt(copy(node),name->parse(resources.apply(name+".class")))==0)
             return "source implements a second creative pager, and its keyboard callback could not share the carrier pager";
         if(ForbricMixinService.registerSourceCallbacks(node))
             return "the complete original callback group is registered on its proved current caller/bridge contract; final definitions witness its retained bodies";

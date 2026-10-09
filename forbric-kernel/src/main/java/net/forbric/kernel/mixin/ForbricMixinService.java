@@ -317,7 +317,7 @@ public final class ForbricMixinService
 		FabricRegistryLoaderMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricRegistryInitializationMixinAdapter.adapt(node);
 		FabricFreezeHookMixinAdapter.adapt(node, this::mergedBaseNode);
-		FabricCreativePagerMixinAdapter.adapt(node);
+		FabricCreativePagerMixinAdapter.adapt(node, this::mergedBaseNode);
 		KernelClientHookMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);
 		MixinGuiItemCaptureAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinCameraRollAdapter.adapt(node, this::mergedBaseNodeWithCode);

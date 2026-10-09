@@ -849,7 +849,7 @@ public final class KernelGuestMixinAdapter {
         ClassNode node=MixinFit.parse(bytes);
         int changed=FabricRegistryInitializationMixinAdapter.adapt(node);
         changed+=FabricRegistryLoaderMixinAdapter.adapt(node,n->{byte[] b=resource.apply(n+".class");return b==null?null:MixinFit.parse(b);});
-        changed+=FabricCreativePagerMixinAdapter.adapt(node);
+        changed+=FabricCreativePagerMixinAdapter.adapt(node,n->{byte[] b=resource.apply(n+".class");return b==null?null:MixinFit.parse(b);});
         if(changed==0)return bytes;
         org.objectweb.asm.ClassWriter writer=new org.objectweb.asm.ClassWriter(0);node.accept(writer);return writer.toByteArray();
     }

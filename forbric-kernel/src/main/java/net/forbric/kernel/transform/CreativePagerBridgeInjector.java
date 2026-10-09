@@ -91,6 +91,17 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 			{"getSelectedTab", "()" + TAB, null},
 			{"setSelectedTab", "(" + TAB + ")Z", "setSelectedTab"}};
 
+	/**
+	 * Every member this bridge can give the screen, as {@code name + descriptor}: the interface rows and Fabric's private
+	 * {@code updateSelection()V}. A guest's own body for one of them is a second pager the bridge stands in for.
+	 */
+	public static Set<String> suppliedMembers() {
+		Set<String> out = new LinkedHashSet<>();
+		for (String[] api : API_METHODS) out.add(api[0] + api[1]);
+		out.add(UPDATE_SELECTION + "()V");
+		return out;
+	}
+
 	private final Function<String, byte[]> gameClass;
 	private final BooleanSupplier pinInForce;
 
