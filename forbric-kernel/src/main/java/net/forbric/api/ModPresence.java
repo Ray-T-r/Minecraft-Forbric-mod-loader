@@ -58,7 +58,9 @@ import net.forbric.kernel.util.ForbricLog;
  * <p><b>Presence only, still.</b> {@code getModContainerById} is deliberately left alone. There genuinely is no
  * NeoForge container for a Fabric mod, and inventing one would hand a caller a container with no event bus and no
  * config where it expects a real one. The hub answers the question that has one true answer, and declines the one
- * that does not — which is the shape every later domain should copy.
+ * that does not — which is the shape every later domain should copy. The one place a Fabric mod does get a bus-less
+ * container is scoped to a class that has just enumerated it out of {@code ModList} for its declarations and looks it
+ * up again by id ({@code DeclarationReaderModListInjector}); nowhere else.
  */
 public final class ModPresence {
 	/**

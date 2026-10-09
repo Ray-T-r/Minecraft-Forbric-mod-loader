@@ -96,8 +96,8 @@ final class KernelModMetadata {
 
 	/** As {@link #propertiesOf(String)}, preferring what the mod's own jar declared. See {@link #resolve}. */
 	static Map<String, Object> propertiesOf(String modId, DiscoveredMod declared) {
-		DiscoveredMod mod = resolve(modId, declared);
-		return mod == null ? Map.of() : mod.getModProperties();
+		// A Fabric mod has no table of its own; it answers with what its fabric.mod.json declares, in this spelling.
+		return net.forbric.kernel.boot.CrossEcosystemDeclarations.declarationsOf(resolve(modId, declared));
 	}
 
 	/**

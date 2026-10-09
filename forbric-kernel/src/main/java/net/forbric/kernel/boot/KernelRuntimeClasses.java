@@ -480,6 +480,10 @@ public final class KernelRuntimeClasses {
 		// The shared breathe hook preserves the original drowning query and corrects adapter refill before its event.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidBreathing", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidPredicateSeams", new Entry(Origin.COMPILED, List.of()));
+		// A class that reads [modproperties] out of a Forge-family ModList calls these instead of that ModList
+		// (DeclarationReaderModListInjector). Rewritten calls with the family's own ModList/IModInfo descriptors.
+		CLASSES.put("net.forbric.kernel.runtime.KernelDeclarationReaders", new Entry(Origin.COMPILED, List.of()));
+		CLASSES.put("net.forbric.kernel.runtime.KernelForgeDeclarationReaders", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelSharedPredicateScopes", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidPredicateIslands", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelSourceDecodeScopes", new Entry(Origin.COMPILED, List.of()));

@@ -890,6 +890,17 @@ public final class KernelBoot {
 		// Each family's ModList.isLoaded can only see its own family's mods, and that answer is a compatibility
 		// branch far more often than a display string — a wrong "no" disables an integration in silence.
 		chain.register(TransformPhase.COREMOD, new ForeignModPresenceInjector());
+		// The same wall one step further: a library that finds its users by reading [modproperties] out of its own
+		// family's ModList never meets a Fabric mod, which is in no such list. In a class that does both, ModList
+		// also answers with the Fabric mods that declare something (CrossEcosystemDeclarations); nowhere else.
+		if (CrossEcosystemDeclarations.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.DeclarationReaderModListInjector());
+		} else {
+			ForbricLog.warn("[Forbric/Declarations] -D%s=off — a Forge-family library reading [modproperties] out of "
+					+ "ModList meets no Fabric mod, and a Fabric mod reading entrypoints meets no Forge-family "
+					+ "declaration (a Fabric mod's Sodium options page is missing next to a NeoForge Sodium)",
+					CrossEcosystemDeclarations.SWITCH);
+		}
 		// A Fabric "porting layer" ships its own net.neoforged.* so Fabric mods can use that API; under Forbric the
 		// carrier's copy wins, and the port's own compiled call sites then meet an API it was not built against.
 		// PortingLayerAudit reports every such skew; this adapts the one that is fatal.

@@ -108,6 +108,17 @@ public final class KernelModMetadata implements ModMetadata {
 	 */
 	public static KernelModMetadata builtin(String id, String version, String name,
 			Map<String, CustomValue> customValues) {
+		return builtin(id, version, name, customValues, Map.of());
+	}
+
+	/**
+	 * The same synthetic mod, also carrying the entrypoints the other family's metadata declares in its own spelling
+	 * (see {@code CrossEcosystemDeclarations.fabricEntrypoints}): a Forge-family mod that names its Sodium options
+	 * class in {@code [modproperties]} is read by a Fabric Sodium through {@code getEntrypointContainers}, exactly as
+	 * that mod's own Fabric build would have declared it.
+	 */
+	public static KernelModMetadata builtin(String id, String version, String name,
+			Map<String, CustomValue> customValues, Map<String, List<EntrypointDecl>> entrypoints) {
 		Version parsed;
 
 		try {
@@ -118,8 +129,8 @@ public final class KernelModMetadata implements ModMetadata {
 
 		return new KernelModMetadata("builtin", id, List.of(), parsed, ModEnvironment.UNIVERSAL, List.of(), name, "",
 				List.of(), List.of(), ContactInformation.EMPTY, List.of(), Map.of(),
-				customValues == null ? Map.of() : Map.copyOf(customValues), Map.of(), List.of(),
-				null, List.of(), Map.of());
+				customValues == null ? Map.of() : Map.copyOf(customValues),
+				entrypoints == null ? Map.of() : Map.copyOf(entrypoints), List.of(), null, List.of(), Map.of());
 	}
 
 	// --- loader-facing (kernel) ---

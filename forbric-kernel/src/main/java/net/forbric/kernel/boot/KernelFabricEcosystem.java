@@ -223,7 +223,8 @@ public final class KernelFabricEcosystem {
 		// entrypoints, no mixins, no assets, all of which the winner already provides.
 		for (DuplicateModArbiter.Alias alias : dupes.aliasesFor(Ecosystem.FABRIC)) {
 			fabric.register(KernelModContainer.presence(KernelModMetadata.builtin(alias.modId(), alias.version(),
-					alias.modId(), foreignCustomValues(alias.modId())), presenceSource(alias.modId(), dupes)));
+					alias.modId(), foreignCustomValues(alias.modId()), foreignEntrypoints(alias.modId())),
+					presenceSource(alias.modId(), dupes)));
 			ForbricLog.info("[Forbric/Fabric] presence alias '%s' %s — its Fabric jar lost arbitration, but the "
 					+ "winning jar supplies the classes; isModLoaded now answers", alias.modId(), alias.version());
 		}
@@ -231,17 +232,27 @@ public final class KernelFabricEcosystem {
 		// The same identity problem across ECOSYSTEMS. A Fabric mod asking isModLoaded("jei") next to a NeoForge
 		// JEI was told no, because each loader only ever knew its own family's mods; the answer is almost always a
 		// compatibility branch, so a wrong no silently disables an integration that would have worked. Presence
-		// only, exactly like the arbitration aliases above: identity, no entrypoints, no mixins, no assets — the
-		// mod is really loaded, by the other family's lifecycle, which owns everything else about it.
+		// only, exactly like the arbitration aliases above: identity, no lifecycle entrypoints, no mixins, no assets —
+		// the mod is really loaded, by the other family's lifecycle, which owns everything else about it. What it
+		// DECLARES to other mods does cross, in Fabric's spelling: its [modproperties] as custom values, and the
+		// class names it declares under a namespaced key as entrypoints of that key (CrossEcosystemDeclarations).
 		int foreign = 0;
+		int declaring = 0;
 		for (DiscoveredMod mod : ModPresence.forgeFamilyMods()) {
 			if (mod.getId() == null || mod.getId().isBlank()) continue;
 			if (fabric.getModContainer(mod.getId()).isPresent()) continue;
+			Map<String, List<KernelModMetadata.EntrypointDecl>> entrypoints =
+					CrossEcosystemDeclarations.fabricEntrypoints(mod.getModProperties());
 			fabric.register(KernelModContainer.presence(KernelModMetadata.builtin(mod.getId(),
 					mod.getVersion() == null ? "0" : mod.getVersion(),
 					mod.getDisplayName() == null ? mod.getId() : mod.getDisplayName(),
-					customValuesOf(mod)), loadedFrom(mod)));
+					customValuesOf(mod), entrypoints), loadedFrom(mod)));
 			foreign++;
+			if (!entrypoints.isEmpty()) declaring++;
+		}
+		if (declaring > 0) {
+			ForbricLog.info("[Forbric/Fabric] %d Forge-family mod(s) name a class under a namespaced [modproperties] "
+					+ "key; a Fabric mod reading that key's entrypoints now meets them", declaring);
 		}
 		if (foreign > 0) {
 			ForbricLog.info("[Forbric/Fabric] %d Forge-family mod(s) registered for presence only — a Fabric mod "
@@ -264,6 +275,8 @@ public final class KernelFabricEcosystem {
 		// graph's input decides where a Forge-family mod waiting on it lands. Handing it the Fabric order would
 		// reorder NeoForge and MinecraftForge mods as a side effect.
 		List<DiscoveredMod> fabricMods = new ArrayList<>();
+		Map<String, Map<String, Object>> entrypointNames = new LinkedHashMap<>();
+		int declaringFabric = 0;
 		for (ModContainer container : registered) {
 			if (!(container instanceof KernelModContainer kernel) || kernel.getJar() == null) continue;
 			String id = kernel.getMetadata().getId();
@@ -272,12 +285,26 @@ public final class KernelFabricEcosystem {
 			if (id == null || id.isBlank() || ModPresence.isLoaded(id)) continue;
 			// The provides aliases ride along. FabricLoader resolves them itself, but the Forge-family lists and
 			// ModPresence are built from THIS list, and every LibJF module is named through an alias.
+			// So does what the mod declares to other mods, in the [modproperties] spelling a Forge-family reader asks
+			// for: its custom values here, and its entrypoint names beside them (CrossEcosystemDeclarations decides
+			// under which keys those are offered). The seeded LoadingModList and every kernel-built IModInfo describe
+			// the mod from this object.
+			Map<String, Object> declared = CrossEcosystemDeclarations.customProperties(kernel.getMetadata().getCustomValues());
+			Map<String, Object> names = CrossEcosystemDeclarations.entrypointNames(kernel.getMetadata().getEntrypoints());
+			if (!names.isEmpty()) entrypointNames.put(id, names);
+			if (!declared.isEmpty() || !names.isEmpty()) declaringFabric++;
 			fabricMods.add(new DiscoveredMod(Ecosystem.FABRIC, id,
 					String.valueOf(kernel.getMetadata().getVersion()), kernel.getMetadata().getName(),
 					unifiedDependencies(kernel.getMetadata()), List.of(), null, kernel.getJar().toString())
-					.withAliases(List.copyOf(kernel.getMetadata().getProvides())));
+					.withAliases(List.copyOf(kernel.getMetadata().getProvides()))
+					.withModProperties(declared));
 		}
+		CrossEcosystemDeclarations.publishFabricEntrypointNames(entrypointNames);
 		ModPresence.publishFabric(fabricMods);
+		if (declaringFabric > 0) {
+			ForbricLog.info("[Forbric/Fabric] %d Fabric mod(s) declare custom values or namespaced entrypoints; a "
+					+ "Forge-family mod reading [modproperties] now reads them there", declaringFabric);
+		}
 
 		List<Path> jars = new ArrayList<>();
 		for (Path jar : discovery.getClasspathJars()) {
@@ -847,6 +874,15 @@ public final class KernelFabricEcosystem {
 		if (id == null) return Map.of();
 		for (DiscoveredMod mod : ModPresence.forgeFamilyMods()) {
 			if (id.equals(mod.getId())) return customValuesOf(mod);
+		}
+		return Map.of();
+	}
+
+	/** The winning Forge-family jar's declared entrypoints, for an alias; see {@link CrossEcosystemDeclarations}. */
+	private static Map<String, List<KernelModMetadata.EntrypointDecl>> foreignEntrypoints(String id) {
+		if (id == null) return Map.of();
+		for (DiscoveredMod mod : ModPresence.forgeFamilyMods()) {
+			if (id.equals(mod.getId())) return CrossEcosystemDeclarations.fabricEntrypoints(mod.getModProperties());
 		}
 		return Map.of();
 	}

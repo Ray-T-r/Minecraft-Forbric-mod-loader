@@ -49,7 +49,8 @@ public final class ForbricSwitches {
 			Map.entry("forbric.createKeyboardMixin", "forbric.keyActionCallbacks"),
 			Map.entry("forbric.createStructureMixin", "forbric.structurePlacementCallbacks"),
 			Map.entry("forbric.irisEarlyGamePath", "forbric.earlyGameDirectory"),
-			Map.entry("forbric.portingLayerAbi", "forbric.configApiAbi"));
+			Map.entry("forbric.portingLayerAbi", "forbric.configApiAbi"),
+			Map.entry("forbric.sodiumConfigUsers", "forbric.crossEcosystemDeclarations"));
 
 	/** Retired name → why setting it changes nothing. */
 	static final Map<String, String> RETIRED = Map.of(
