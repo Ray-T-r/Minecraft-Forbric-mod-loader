@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.lectern.mixin", "compatibilityLevel": "JAVA_21", "client": ["LecternTailMixin"], "injectors": {"defaultRequire": 1}}

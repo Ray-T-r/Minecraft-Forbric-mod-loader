@@ -706,7 +706,7 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 	 * The full locals and stack {@code at} declares, decoded from the method's initial frame and every compressed
 	 * frame before it. Null when the chain does not decode (a CHOP past the start), which no javac output has.
 	 */
-	static List<List<Object>> stateAt(String owner, MethodNode method, FrameNode at) {
+	public static List<List<Object>> stateAt(String owner, MethodNode method, FrameNode at) {
 		List<Object> locals = initialLocals(owner, method);
 		List<Object> stack = new ArrayList<>();
 		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
@@ -756,7 +756,7 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 
 	// --- small helpers ---
 
-	static AbstractInsnNode lastReturn(MethodNode method) {
+	public static AbstractInsnNode lastReturn(MethodNode method) {
 		for (AbstractInsnNode insn = method.instructions.getLast(); insn != null; insn = insn.getPrevious()) {
 			if (isReturn(insn)) return insn;
 		}
