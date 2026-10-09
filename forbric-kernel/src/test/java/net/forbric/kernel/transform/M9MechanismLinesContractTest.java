@@ -3,16 +3,8 @@ package net.forbric.kernel.transform;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -21,6 +13,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.tree.ClassNode;
 
 import net.fabricmc.api.EnvType;
+import net.forbric.kernel.GateLogContract;
 import net.forbric.kernel.interop.RegistryElementCallbacks;
 
 /**
@@ -29,7 +22,8 @@ import net.forbric.kernel.interop.RegistryElementCallbacks;
  * changed their wording, and every m9 run would have gone red whether the repairs worked or not.
  *
  * <p>So this reads the gate's own patterns out of {@code run/gate-m9-client.sh} and greps (with the real
- * {@code grep -acE}, as the gate does) what the mechanisms actually print when they are run here. Every fixture
+ * {@code grep -acE}, as the gate does) what the mechanisms actually print when they are run here. The one line the
+ * gate cannot see in its pack, the late completion's, is pinned here on the real code path. Every fixture
  * uses names no mod has; the only real names are the platform's: the atlas loader the mip repair must bound, and
  * the block-state registry the walk is over. Each positive has a look-alike that the mechanism must leave alone,
  * and whose output the same gate pattern must not accept.
@@ -42,6 +36,11 @@ class M9MechanismLinesContractTest {
 	private static final String WALKER = "unknown/cachecontract/EarlyWalker";
 	private static final String LOOP = "if(CacheElement.class.isAssignableFrom(BlockState.class)) for(BlockState state:Block.BLOCK_STATE_REGISTRY) ((CacheElement)state).initializeDerivedState();";
 	private static final TransformContext CLIENT = new TransformContext(EnvType.CLIENT, false, "intermediary");
+	/**
+	 * The late completion's line. gate-m9 cannot assert it: in that pack the walk runs at world start, after the
+	 * last registration, so nothing is ever late there (measured). It is pinned here instead, on the real path.
+	 */
+	private static final String LATE_COMPLETION = "\\[Forbric/Lifecycle\\] completed [1-9][0-9]* registry element callback\\(s\\) for late registrations";
 
 	@TempDir Path root;
 
@@ -122,7 +121,7 @@ class M9MechanismLinesContractTest {
 	// ---- the late block-state callback -------------------------------------------------------------------------
 
 	@Test
-	void aRecognisedWalkAndItsLateCompletionAreBothWhatTheGateSees() throws Throwable {
+	void aRecognisedWalkIsWhatTheGateSeesAndItsLateCompletionSaysHowMany() throws Throwable {
 		Map<String, byte[]> classes = walker(LOOP);
 		byte[] raw = classes.get(WALKER);
 		String[] instrumented = new String[1];
@@ -143,13 +142,13 @@ class M9MechanismLinesContractTest {
 
 		String[] completed = new String[1];
 		assertEquals(1, capture(() -> RegistryElementCallbacks.completeLateRegistrations(registry), completed));
-		assertEquals(1, grep(gatePattern("a mod's whole-registry block pass covers the late wave too"), completed[0]), completed[0]);
+		assertEquals(1, grep(LATE_COMPLETION, completed[0]), completed[0]);
 		assertEquals(1, state.getField("calls").getInt(late));
 		assertEquals(1, state.getField("calls").getInt(first), "the walk's own element is not called again");
 
 		String[] nothingLate = new String[1];
 		assertEquals(0, capture(() -> RegistryElementCallbacks.completeLateRegistrations(registry), nothingLate));
-		assertEquals(0, grep(gatePattern("a mod's whole-registry block pass covers the late wave too"), nothingLate[0]),
+		assertEquals(0, grep(LATE_COMPLETION, nothingLate[0]),
 				"nothing completed is not reported as a completion: " + nothingLate[0]);
 	}
 
@@ -171,7 +170,7 @@ class M9MechanismLinesContractTest {
 		InjectorExecution.invoke(registry, "add", late);
 		String[] completed = new String[1];
 		assertEquals(0, capture(() -> RegistryElementCallbacks.completeLateRegistrations(registry), completed));
-		assertEquals(0, grep(gatePattern("a mod's whole-registry block pass covers the late wave too"), completed[0]), completed[0]);
+		assertEquals(0, grep(LATE_COMPLETION, completed[0]), completed[0]);
 		assertEquals(0, state.getField("calls").getInt(late));
 	}
 
@@ -238,54 +237,7 @@ class M9MechanismLinesContractTest {
 
 	// ---- the gate's own patterns, and grep ---------------------------------------------------------------------
 
-	/** The pattern of the {@code check}/{@code check_absent} the gate names {@code what}, exactly as bash hands it to grep. */
-	static String gatePattern(String what) throws Exception {
-		List<String> joined = new ArrayList<>();
-		StringBuilder line = new StringBuilder();
-		for (String raw : Files.readAllLines(GATE)) {
-			if (raw.endsWith("\\")) { line.append(raw, 0, raw.length() - 1).append(' '); continue; }
-			joined.add(line.append(raw).toString());
-			line.setLength(0);
-		}
-		Pattern check = Pattern.compile("^\\s*(?:check|check_absent)\\s+\"" + Pattern.quote(what)
-				+ "\"\\s+(?:'([^']*)'|\"((?:[^\"\\\\]|\\\\.)*)\")\\s+\"\\$LOG\"");
-		String found = null;
-		for (String candidate : joined) {
-			Matcher m = check.matcher(candidate);
-			if (!m.find()) continue;
-			assertNull(found, "gate-m9 names \"" + what + "\" twice");
-			// Double quotes: bash removes a backslash only before $ ` " \ and newline; the rest reach grep as written.
-			found = m.group(1) != null ? m.group(1) : m.group(2).replaceAll("\\\\([$`\"\\\\])", "$1");
-		}
-		assertNotNull(found, "gate-m9 has no check named \"" + what + "\"");
-		return found;
-	}
-
-	/** How many lines of {@code text} {@code grep -acE pattern} counts, as the gate's check() does. */
-	private int grep(String pattern, String text) throws Exception {
-		Path log = Files.writeString(Files.createTempFile(root, "boot", ".log"), text);
-		Process grep = new ProcessBuilder("grep", "-acE", pattern, log.toString()).redirectErrorStream(true).start();
-		assertTrue(grep.waitFor(15, TimeUnit.SECONDS), "grep timed out");
-		String count = new String(grep.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
-		return Integer.parseInt(count);
-	}
-
-	/**
-	 * Runs {@code body} with System.out/err captured into {@code out[0]}. ForbricLog has no log4j binding under
-	 * test, so its INFO lines go to System.out and its WARN/ERROR lines to System.err; both are kept.
-	 */
-	private static <T> T capture(Callable<T> body, String[] out) throws Exception {
-		PrintStream originalOut = System.out, originalErr = System.err;
-		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-		PrintStream sink = new PrintStream(buffer, true, StandardCharsets.UTF_8);
-		System.setOut(sink);
-		System.setErr(sink);
-		try {
-			return body.call();
-		} finally {
-			System.setOut(originalOut);
-			System.setErr(originalErr);
-			out[0] = buffer.toString(StandardCharsets.UTF_8);
-		}
-	}
+	private static String gatePattern(String what) throws Exception { return GateLogContract.pattern(GATE, what); }
+	private int grep(String pattern, String text) throws Exception { return GateLogContract.count(root, pattern, text); }
+	private static <T> T capture(java.util.concurrent.Callable<T> body, String[] out) throws Exception { return GateLogContract.capture(body, out); }
 }

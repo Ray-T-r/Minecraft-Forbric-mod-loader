@@ -74,13 +74,14 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #                                      registered carries an uninitialised cache all run. Vanilla computes it
 #                                      lazily, so this is a hot-path repair, not a crash repair — the Lithium
 #                                      crash it was once credited with is forbric.registryElementCallbacks, below.
-#   -Dforbric.registryElementCallbacks=off  -> 2 red ("a closed block-state walk is instrumented", "a mod's whole-registry
-#                                      block pass covers the late wave too"). Off,
-#                                      every block the kernel registers after Lithium's one pass (fired from
-#                                      FuelValues.vanillaBurnTimes) misses it, and Lithium throws rather than
-#                                      computing a missed state's flags later: verified on Windows as "Could not
-#                                      initialize block state flags for Block{biomesoplenty:fir_leaves}" during
-#                                      feature placement. The blockstate→id map half is M26's.
+#   -Dforbric.registryElementCallbacks=off  -> 1 red ("a closed block-state walk is instrumented"). Off, a block
+#                                      registered after Lithium's one pass (fired from FuelValues.vanillaBurnTimes)
+#                                      misses it, and Lithium throws rather than computing a missed state's flags
+#                                      later: verified on Windows as "Could not initialize block state flags for
+#                                      Block{biomesoplenty:fir_leaves}" during feature placement. In THIS pack the
+#                                      pass now fires at world start, after the last registration, so there is no
+#                                      late wave for the switch to lose — see the check itself, below.
+#                                      The blockstate→id map half is M26's.
 #   -Dforbric.splitterPacketContext=off -> 2 red ("NeoForge's splitter encodes in Fabric's packet context",
 #                                      and the anchor census noticing a repair that was handed its target and
 #                                      declined — which is the switch working, said twice).
@@ -783,17 +784,22 @@ check "every block state's cache is computed" \
   "\[Forbric/Lifecycle\] initialised [1-9][0-9]* block state cache\(s\)" "$LOG"
 
 # Lithium computes its per-state flags in ONE pass, fired from FuelValues.vanillaBurnTimes, and throws rather
-# than computing a state it missed later. The kernel registers blocks after that point, so every state added
-# after the walk has to get the same callback. The kernel does not know whose walk it is: it recognises any
-# closed per-element walk of the block-state registry (an iterator loop with one unconditional interface callback
-# per element and nothing else in the method), records which states it reached, and later runs the same
-# callback on the states it did not. Two lines, two halves: the walk was recognised at transform time, and the
-# late wave was actually completed. (This pack has no traditional-Forge mod, so it has no SECOND wave of
-# registrations: that half, and the blockstate→id map it also broke, are asserted in M26, which does.)
+# than computing a state it missed later. Any state registered after that pass needs the same callback. The
+# kernel does not know whose pass it is: it recognises any closed per-element walk of the block-state registry
+# (an iterator loop with one unconditional interface callback per element and nothing else in the method),
+# records which states it reached, and at each registration close runs the same callback on the states it did
+# not ("[Forbric/Lifecycle] completed N registry element callback(s) for late registrations").
+#
+# Measured on this pack (2026-10-09): the pass fires at WORLD START, from the kernel's fuel bridge running
+# vanillaBurnTimes' return hooks, i.e. after the last registration window. So every state exists when it walks,
+# nothing is late, and the completion line correctly never appears here — the old "re-ran Lithium's pass over
+# all N states" check only passed because the old repair ran Lithium's pass itself, early. What this pack CAN
+# assert is that the walk is recognised and that Lithium never meets a state without its flags. The late
+# completion itself, and the line it prints, are M9MechanismLinesContractTest's.
 check "a closed block-state walk is instrumented" \
   "\[Forbric/RegistryCallbacks\] [^ ]+ is a closed walk of the block-state registry with [1-9][0-9]* per-element callback\(s\)" "$LOG"
-check "a mod's whole-registry block pass covers the late wave too" \
-  "\[Forbric/Lifecycle\] completed [1-9][0-9]* registry element callback\(s\) for late registrations" "$LOG"
+check_absent "no block state is left without a mod's per-state flags" \
+  "Could not initialize block state flags" "$LOG"
 
 check "NeoForge's splitter encodes in Fabric's packet context" \
   "\[Forbric/Net\] .*GenericPacketSplitter.encode now runs inside the connection's Fabric packet context" "$LOG"
