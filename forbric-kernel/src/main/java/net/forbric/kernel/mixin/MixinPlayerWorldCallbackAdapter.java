@@ -23,9 +23,7 @@ public final class MixinPlayerWorldCallbackAdapter {
 	static final String BLOCK = "net/minecraft/world/level/block/Block";
 	static final String ENTITY = "Lnet/minecraft/world/level/block/entity/BlockEntity;";
 	static final String STACK = "Lnet/minecraft/world/item/ItemStack;";
-	static final String OLD_FILL = "setBlock(" + POS + STATE + "II)Z";
-	static final String LIVE_FILL = "markAndNotifyBlock(" + POS + "Lnet/minecraft/world/level/chunk/LevelChunk;" + STATE + STATE + "II)V";
-	static final String SHAPES = STATE + "updateNeighbourShapes(Lnet/minecraft/world/level/LevelAccessor;" + POS + "II)V";
+	static final String LIVE_FILL = MixinChunkStatusRetarget.HELPER;
 	static final String HANDS = "Lnet/neoforged/neoforge/event/entity/living/LivingSwapItemsEvent$Hands;";
 	static final String HAND_READ = "L" + PLAYER + ";getItemInHand(Lnet/minecraft/world/InteractionHand;)" + STACK;
 	static final String HAND_WRITE = "L" + PLAYER + ";setItemInHand(Lnet/minecraft/world/InteractionHand;" + STACK + ")V";
@@ -241,7 +239,6 @@ public final class MixinPlayerWorldCallbackAdapter {
 	static int count(MethodNode m, String member) { int n=0;for(var i:m.instructions)if(i instanceof MethodInsnNode c && member.equals(member(c)))n++;return n; }
 	static MethodInsnNode first(MethodNode m, String member) { for(var i:m.instructions)if(i instanceof MethodInsnNode c && member.equals(member(c)))return c;return null; }
 	static int index(MethodNode m, AbstractInsnNode i) { return i == null ? -1 : m.instructions.indexOf(i); }
-	static int constants(MethodNode m,int value) { int n=0;for(var i:m.instructions)if(i instanceof IntInsnNode c && c.operand==value)n++;return n; }
 	static AbstractInsnNode next(AbstractInsnNode n) { do {n=n.getNext();}while(n!=null&&n.getOpcode()<0);return n; }
 	static AbstractInsnNode previous(AbstractInsnNode n) { do {n=n.getPrevious();}while(n!=null&&n.getOpcode()<0);return n; }
 	static void set(AnnotationNode a,String key,Object value) { if(a.values==null)a.values=new ArrayList<>();for(int i=0;i<a.values.size();i+=2)if(key.equals(a.values.get(i))){a.values.set(i+1,value);return;}a.values.add(key);a.values.add(value); }
