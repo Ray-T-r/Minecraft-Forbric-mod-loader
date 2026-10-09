@@ -657,15 +657,16 @@ final class ClearVetoProof {
 				V[] known = staticCall(site, owner, name, desc, args, in);
 				if (known != null) return known[0];
 			}
+			boolean inertArgs = args.stream().allMatch(this::inert);
+			if (pure(owner) && inertArgs) return result(desc);
 			if (owner.startsWith("java/util/") || owner.equals("java/lang/Iterable")) {
 				f.no("uses " + owner.replace('/', '.') + "." + name + " on a collection it cannot see");
 				return result(desc);
 			}
-			for (V v : args) if (!inert(v)) {
+			if (!inertArgs) {
 				f.no("hands a collection to " + owner.replace('/', '.') + "." + name);
 				return result(desc);
 			}
-			if (pure(owner)) return result(desc);
 			// A call the model does not know: the question, a listener, anything. Allowed only per effect.
 			switch (in) {
 				case QUESTION -> { }

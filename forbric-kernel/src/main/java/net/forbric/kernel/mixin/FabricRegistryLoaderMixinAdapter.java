@@ -46,8 +46,8 @@ public final class FabricRegistryLoaderMixinAdapter {
 
     private static boolean invokes(MethodNode method,String owner,String name){for(var instruction:method.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(owner)&&call.name.equals(name))return true;return false;}
 
-	/** One injector's move: its new selector, and for a wrap the widened callee and the extra parameter types. */
-	private record Move(MethodNode handler,AnnotationNode injector,MethodNode host,MethodNode callee,MethodNode dead,boolean wrap){}
+	/** One injector's move: the live method it now selects, and for a wrap the widened callee it now names. */
+	private record Move(MethodNode handler,AnnotationNode injector,MethodNode host,MethodNode callee,boolean wrap){}
 
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
 		if(!enabled()||!MixinCallbackShape.targets(mixin,TARGET))return 0;
@@ -68,7 +68,7 @@ public final class FabricRegistryLoaderMixinAdapter {
 			MethodNode host=host(target,MixinFit.stringList(MixinFit.value(injector,"method")));
 			MethodNode live=host==null?null:delegateCalling(target,host,widened);
 			if(live==null||(handler.access&Opcodes.ACC_STATIC)==0||!handlerDescribes(handler,calleeKey))return 0;
-			moves.add(new Move(handler,injector,live,widened,null,true));
+			moves.add(new Move(handler,injector,live,widened,true));
 		}
 		if(deadCallees.isEmpty())return 0;
 		// Then every other injector that selects a dead callee itself: it moves into the widened body, as long as the
@@ -90,7 +90,7 @@ public final class FabricRegistryLoaderMixinAdapter {
 				String point=(String)MixinFit.value(at,"target");
 				if(point==null||occurrences(widened,point)!=1)return 0;
 			}
-			moves.add(new Move(handler,injector,widened,null,null,false));
+			moves.add(new Move(handler,injector,widened,null,false));
 		}
 		for(Move move:moves){
 			if(!move.wrap()){set(move.injector(),"method",new ArrayList<>(List.of(move.host().name+move.host().desc)));continue;}
@@ -98,8 +98,8 @@ public final class FabricRegistryLoaderMixinAdapter {
 			for(AnnotationNode at:MixinFit.atNodes(move.injector()))set(at,"target","L"+TARGET+";"+move.callee().name+move.callee().desc);
 			mixin.methods.add(wrapper(mixin,move.handler(),move.injector(),move.callee()));
 		}
-		ForbricLog.info("[Forbric/RegistrySync] restored the native Fabric registry loader callback and its async "
-				+ "ScopedValue propagation on the carrier overloads, preserving pending tags and the leniency flag");
+		ForbricLog.info("[Forbric/RegistrySync] restored the native Fabric registry loader callback of %s on the carrier "
+				+ "overloads its own selectors map to, preserving pending tags and the leniency flag",mixin.name.replace('/','.'));
 		for(Move move:moves)ForbricLog.info("[Forbric/RegistrySync] %s.%s now selects %s%s",mixin.name.replace('/','.'),
 				move.wrap()?move.handler().name.replace("$forbricOriginal",""):move.handler().name,move.host().name,move.host().desc);
 		return moves.size();
