@@ -773,6 +773,15 @@ public final class KernelLifecycle {
 			// areRegistriesLoaded() refuse to register render layers. The only report was one WARN saying the
 			// registration window "could not register ecosystem content", which names none of that.
 			closeWindow = true;
+			// Every Forge-family mod is constructed and no registry event has fired: the point a library's winning
+			// Forge-family build has seen its own consumers declare themselves and has not yet read what they declared.
+			// A custom key only its losing Fabric build dispatched from preLaunch is dispatched here, before any main.
+			try {
+				KernelFabricEcosystem.dispatchArbitratedAwayKeys(net.forbric.kernel.fabric.EntrypointDispatchScan.Phase.PRE_INIT);
+			} catch (Throwable t) {
+				ForbricLog.warn("[Forbric/Lifecycle] could not dispatch the entrypoint keys a superseded build dispatched",
+						unwrap(t));
+			}
 			// MOD buses only — buses.get(0) is the baseline, whose registries PassiveSeeder already registered at
 			// seed time; posting there re-collects them and fill() dies on "Attempted duplicate registration".
 			net.forbric.api.ProtocolExtensions.forLoader(cl).beforeConfigurationLoading();

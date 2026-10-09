@@ -42,6 +42,7 @@ import net.forbric.api.Side;
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModPresence;
+import net.forbric.kernel.fabric.EntrypointDispatchScan;
 import net.forbric.kernel.fabric.FabricModDiscovery;
 import net.forbric.kernel.mixin.MixinConfigOwners;
 import net.forbric.kernel.fabric.KernelFabricLoader;
@@ -488,6 +489,7 @@ public final class KernelFabricEcosystem {
 		EnvType envType = loader.getEnvironmentType();
 		PHASES_RAN.add("main");
 		int main = invokeEntrypoints("main", ModInitializer.class, ModInitializer::onInitialize);
+		dispatchArbitratedAwayKeys(EntrypointDispatchScan.Phase.MAIN);
 
 		if (envType == EnvType.CLIENT) {
 			ForbricLog.info("[Forbric/Fabric] invoked %d Fabric main entrypoint(s) in the %s window", main,
@@ -500,6 +502,7 @@ public final class KernelFabricEcosystem {
 			PHASES_RAN.add("server");
 			int server = invokeEntrypoints("server", DedicatedServerModInitializer.class,
 					DedicatedServerModInitializer::onInitializeServer);
+			dispatchArbitratedAwayKeys(EntrypointDispatchScan.Phase.SERVER);
 			ForbricLog.info("[Forbric/Fabric] invoked %d Fabric main entrypoint(s) + %d server entrypoint(s)",
 					main, server);
 		}
@@ -642,6 +645,7 @@ public final class KernelFabricEcosystem {
 		PHASES_RAN.add("client");
 
 		int client = invokeEntrypoints("client", ClientModInitializer.class, ClientModInitializer::onInitializeClient);
+		dispatchArbitratedAwayKeys(EntrypointDispatchScan.Phase.CLIENT);
 		ForbricLog.info("[Forbric/Fabric] invoked %d Fabric client entrypoint(s) (Minecraft.<init> window)", client);
 		reportActiveRenderer();
 		return true;
@@ -710,6 +714,72 @@ public final class KernelFabricEcosystem {
 	 */
 	public static boolean mainsRunInConstructor() {
 		return !"off".equalsIgnoreCase(System.getProperty(MAIN_WINDOW_SWITCH, "on"));
+	}
+
+	/** Every entrypoint key a discovered Fabric mod declares, for working out which of them nothing dispatches. */
+	public static Set<String> declaredEntrypointKeys() {
+		KernelFabricLoader current = loader;
+		return current == null ? Set.of() : current.entrypointKeys();
+	}
+
+	/**
+	 * Dispatches, at {@code phase}, the custom keys only a library build that lost arbitration would have dispatched
+	 * (see {@link ArbitratedAwayDispatchers}): each declared entrypoint of the key that is of the losing build's
+	 * entrypoint type gets the call that build made on it. Failures are the entrypoint's own, as for {@code main}.
+	 *
+	 * @return how many entrypoints were invoked
+	 */
+	public static int dispatchArbitratedAwayKeys(EntrypointDispatchScan.Phase phase) {
+		KernelFabricLoader current = loader;
+		if (current == null) return 0;
+		int total = 0;
+		for (ArbitratedAwayDispatchers.Orphan orphan
+				: ArbitratedAwayDispatchers.due(phase, current.getEnvironmentType() == EnvType.CLIENT)) {
+			if (current.hasEntrypoints(orphan.key())) total += dispatchOrphan(current, orphan);
+		}
+		return total;
+	}
+
+	private static int dispatchOrphan(KernelFabricLoader current, ArbitratedAwayDispatchers.Orphan orphan) {
+		EntrypointDispatchScan.Dispatch dispatch = orphan.dispatch();
+		Class<?> type;
+		java.lang.reflect.Method contract;
+		try {
+			// Through the loader the entrypoints link against: a type only the losing build has is served from it there.
+			type = Class.forName(dispatch.type().replace('/', '.'), false, current.entrypointLoader());
+			contract = type.getMethod(dispatch.method());
+			try {
+				contract.setAccessible(true);
+			} catch (RuntimeException closed) {
+				// A public method of a public type needs none; anything else fails on invoke, per entrypoint.
+			}
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/Fabric] could not dispatch the '%s' entrypoints %s's losing build dispatched: %s",
+					dispatch.key(), orphan.library(), String.valueOf(t));
+			return 0;
+		}
+		int count = invokeContract(dispatch.key(), type, contract);
+		ForbricLog.info("[Forbric/Fabric] dispatched %d '%s' entrypoint(s) through %s.%s in place of %s's losing build "
+				+ "(%s)", count, dispatch.key(), type.getSimpleName(), contract.getName(), orphan.library(),
+				orphan.losingBuild().getFileName());
+		return count;
+	}
+
+	private static <T> int invokeContract(String key, Class<T> type, java.lang.reflect.Method contract) {
+		return invokeEntrypoints(key, type, entrypoint -> {
+			try {
+				contract.invoke(entrypoint);
+			} catch (java.lang.reflect.InvocationTargetException failure) {
+				throw KernelFabricEcosystem.<RuntimeException>rethrow(failure.getCause());
+			} catch (IllegalAccessException denied) {
+				throw new IllegalStateException(denied);
+			}
+		});
+	}
+
+	@SuppressWarnings("unchecked")
+	private static <E extends Throwable> E rethrow(Throwable failure) throws E {
+		throw (E) failure;
 	}
 
 	/**

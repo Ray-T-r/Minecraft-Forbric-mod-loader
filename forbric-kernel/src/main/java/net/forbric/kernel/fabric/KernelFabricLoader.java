@@ -594,7 +594,13 @@ public final class KernelFabricLoader implements FabricLoader {
 		return out.toArray(new String[0]);
 	}
 
-	private ClassLoader entrypointLoader() {
+	/** Every entrypoint key some mod declares. */
+	public Set<String> entrypointKeys() {
+		return Set.copyOf(entrypointsByKey.keySet());
+	}
+
+	/** The loader entrypoint classes, and the types they implement, are resolved through. */
+	public ClassLoader entrypointLoader() {
 		ClassLoader loader = gameLoader;
 		return loader != null ? loader : Thread.currentThread().getContextClassLoader();
 	}

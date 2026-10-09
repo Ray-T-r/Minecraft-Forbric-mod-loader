@@ -386,7 +386,10 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
 - **Residuals** — the losing ecosystem gets a presence-only alias so `isLoaded(id)` still answers
   (`Decision.aliases`); the other ecosystem's build of a mod that did load may lend a missing class as a last
   resort (`rescueJars`); `ArbitratedAwayClasses` measures what the losing build had that the winner lacks.
-  `MergeReport` writes `.forbric-kernel/merge-report.txt` explaining each decision.
+  `ArbitratedAwayDispatchers` covers the one behaviour such a build takes with it: a custom Fabric entrypoint key
+  only the losing Fabric build dispatched (`EntrypointDispatchScan` reads key, type, invoked method and the
+  lifecycle phase that reaches it from that build's bytecode) is dispatched by the kernel in its place, and only
+  when the winner does not dispatch it itself. `MergeReport` writes `.forbric-kernel/merge-report.txt` explaining each decision.
 - `-Dforbric.crossJarArbitration=off` disables it entirely.
 
 ### 4.4 Answering "which loader am I on?" and "is X installed?"

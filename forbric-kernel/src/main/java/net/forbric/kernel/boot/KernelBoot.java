@@ -299,6 +299,15 @@ public final class KernelBoot {
 		// Fabric mods (+ extracted JiJ children). Also Mojmap on this game version. Creates the FabricLoader.
 		List<Path> fabricJars = KernelFabricEcosystem.build(fabricScan, side.envType, gameDir, gameVersion,
 				gameArgs.toArray(new String[0]), dupes, gameJar);
+		// Which custom entrypoint keys the Fabric mods just declared only a build arbitration did NOT load would have
+		// dispatched; the lifecycle dispatches them in its place (ArbitratedAwayDispatchers says when and why).
+		try {
+			ArbitratedAwayDispatchers.record(dupes, KernelFabricEcosystem.declaredEntrypointKeys());
+		} catch (Throwable t) {
+			ForbricLog.warn("[Forbric/DupeId] could not work out which entrypoint keys a superseded build dispatched — "
+					+ "a Fabric mod integrating with a library whose other build loaded may go uninitialised: %s",
+					String.valueOf(t));
+		}
 
 		// Game-side bundled libraries (MixinExtras) and the kernel's own runtime jar. The latter also carries
 		// the kernel's client assets -- the Mods button's icon lives in it -- so its extracted path is handed to
