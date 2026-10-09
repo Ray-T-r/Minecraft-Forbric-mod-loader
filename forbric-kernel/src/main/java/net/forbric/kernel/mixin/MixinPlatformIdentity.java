@@ -1,6 +1,8 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.mixin;
 
+import java.util.Iterator;
+
 import org.spongepowered.asm.mixin.transformer.IMixinTransformer;
 
 import net.forbric.api.Ecosystem;
@@ -21,13 +23,15 @@ import net.forbric.kernel.util.ForbricSwitches;
  * shape its check had — Controlify's switch threw "Unknown mixin service: Forbric", a one-sided
  * {@code "Knot/Fabric".equals(...)} quietly picked its Forge half on a Fabric build.
  *
- * <p>So {@link ForbricMixinService#getName} answers the code that asks: the first frame past it that is not the
- * JDK's. When the game loader defined that class from a mod jar it attributes to one ecosystem, the answer is that
- * ecosystem's native name, as its own loader would give it. Everything else — Mixin itself, the kernel, the merged
- * base and the runtime carriers, an unattributed library, a jar two ecosystems claim — is told {@code "Forbric"}, as
- * before. Because the answer is made where the name is read, it holds however the mod asks: a switch or a single
- * comparison, a helper or a base class elsewhere in its jar, a value kept in a static, a method reference handed to a
- * JDK API, reflection.
+ * <p>So {@link ForbricMixinService#getName} answers the code that asks: the nearest frame past it whose class the game
+ * loader defined from a mod jar it attributes to one ecosystem, and the answer is that ecosystem's native name, as its
+ * own loader would give it. The JDK's frames are passed over on the way, and so is game-side code no single ecosystem
+ * owns — a library bundled without a loader manifest, say, whose plugin base class reads the name in its constructor,
+ * the merged base, a carrier, a jar two ecosystems claim — since such code has no platform of its own and runs on its
+ * caller's. With no owned frame before the walk leaves the game loader — Mixin asking, the kernel asking, either of
+ * them calling such unowned code directly — the answer is {@code "Forbric"}, as before. Because the answer is made
+ * where the name is read, it holds however the mod asks: a switch or a single comparison, a helper or a base class in
+ * its jar or a library's, a value kept in a static, a method reference handed to a JDK API, reflection.
  *
  * <h2>Knot's weaver field</h2>
  *
@@ -60,7 +64,7 @@ public final class MixinPlatformIdentity {
 	/** What {@link ForbricMixinService#getName} answers its caller. Call only from there: the caller is found by frame. */
 	static String serviceName() {
 		if (!enabled()) return KERNEL_SERVICE;
-		String platform = nativeServiceName(ecosystemOf(asker()));
+		String platform = nativeServiceName(askingEcosystem());
 		return platform != null ? platform : KERNEL_SERVICE;
 	}
 
@@ -74,24 +78,38 @@ public final class MixinPlatformIdentity {
 		};
 	}
 
-	/** The ecosystem whose code {@code type} is, or null when the game loader did not define it from one mod's jar. */
-	static Ecosystem ecosystemOf(Class<?> type) {
-		return type != null && type.getClassLoader() instanceof ForbricClassLoader game ? game.ecosystemOfClass(type) : null;
-	}
-
 	/**
-	 * The class whose code called {@link ForbricMixinService#getName}: the first frame past that call that is not the
-	 * JDK's. Reflection and lambda frames are not shown to a walker, so a method reference handed to {@code Optional.map}
-	 * or a {@code Method.invoke} is answered for the code that set it up.
+	 * The ecosystem of the code that called {@link ForbricMixinService#getName}, or null when that code has none.
+	 *
+	 * <p>Walks out from the call, frame by frame:
+	 * <ul>
+	 *   <li>The JDK's frames are passed over. Reflection and lambda frames are not even shown to a walker, so a method
+	 *       reference handed to {@code Optional.map} or a {@code Method.invoke} is answered for the code that set it up.</li>
+	 *   <li>So is code the game loader defined that no single ecosystem owns ({@link ForbricClassLoader#ecosystemOfClass}
+	 *       is null): a library a mod bundles without a loader manifest, the merged base, a runtime carrier. It has no
+	 *       platform of its own; natively it is loaded into the one platform there is, and here it runs on the platform
+	 *       of whoever drives it. A plugin whose base class lives in such a library is answered for the plugin.</li>
+	 *   <li>The first game-side frame that is owned answers.</li>
+	 *   <li>A frame from outside the game loader ends the walk unanswered: the loader's own machinery — Mixin, the kernel
+	 *       — runs on nobody's behalf, so a library it calls directly is told the kernel's name, as before.</li>
+	 * </ul>
 	 */
-	static Class<?> asker() {
-		return FRAMES.walk(frames -> frames
-				.dropWhile(frame -> !(frame.getDeclaringClass() == ForbricMixinService.class && "getName".equals(frame.getMethodName())))
-				.skip(1)
-				.<Class<?>>map(StackWalker.StackFrame::getDeclaringClass)
-				.filter(type -> !jdk(type))
-				.findFirst()
-				.orElse(null));
+	static Ecosystem askingEcosystem() {
+		return FRAMES.walk(frames -> {
+			Iterator<Class<?>> callers = frames
+					.dropWhile(frame -> !(frame.getDeclaringClass() == ForbricMixinService.class && "getName".equals(frame.getMethodName())))
+					.skip(1)
+					.<Class<?>>map(StackWalker.StackFrame::getDeclaringClass)
+					.filter(type -> !jdk(type))
+					.iterator();
+			while (callers.hasNext()) {
+				Class<?> caller = callers.next();
+				if (!(caller.getClassLoader() instanceof ForbricClassLoader game)) return null;
+				Ecosystem owner = game.ecosystemOfClass(caller);
+				if (owner != null) return owner;
+			}
+			return null;
+		});
 	}
 
 	private static boolean jdk(Class<?> type) {

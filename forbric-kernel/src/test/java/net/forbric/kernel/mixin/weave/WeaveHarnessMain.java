@@ -58,6 +58,10 @@ public final class WeaveHarnessMain {
 
 		List<URL> owned = new ArrayList<>();
 		owned.add(fixture.toUri().toURL());
+		// Opt-in, so every other run's loader owns exactly what it did: jars beside the fixture that no mod is recorded for.
+		for (String library : System.getProperty(LIBRARIES, "").split(java.io.File.pathSeparator)) {
+			if (!library.isBlank()) owned.add(Path.of(library).toUri().toURL());
+		}
 		if (!mixinExtras.isEmpty()) owned.add(Path.of(mixinExtras).toUri().toURL());
 		ForbricClassLoader loader = new ForbricClassLoader(owned.toArray(URL[]::new), ClassLoader.getSystemClassLoader());
 		// KernelBoot puts the chain on the loader before Mixin exists, so Mixin is only ever shown its output.
@@ -138,6 +142,12 @@ public final class WeaveHarnessMain {
 
 	/** {@code on}: the loader attributes the fixture jar to the configs' owners, as KernelBoot's setModOrigins does. */
 	static final String ORIGINS = "forbric.weaveHarness.origins";
+
+	/**
+	 * Jars, {@code File.pathSeparator}-separated, the loader owns beside the fixture and attributes to no mod, as a boot
+	 * leaves a library bundled without a loader manifest.
+	 */
+	static final String LIBRARIES = "forbric.weaveHarness.libraries";
 
 	private static String flat(String text) {
 		return text.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
