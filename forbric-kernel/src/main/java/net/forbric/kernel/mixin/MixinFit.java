@@ -1399,6 +1399,9 @@ public final class MixinFit {
 		// writes "…EntityRenderer.createRenderState ()Lnet/…/EntityRenderState;" with a space before the descriptor.
 		// Keeping it turned the name into "createRenderState " and no instruction ever matched — the same
 		// cries-wolf failure as the dotted owner below, and visible in the report as a tell-tale double space.
+		// A point with no target at all (MixinExtras' EXPRESSION, NEW by class) names no member: an adapter
+		// that asked about one must not throw inside Mixin's read of the mixin, which drops the whole mixin.
+		if (target == null) return null;
 		String s = target.replaceAll("\\s+", "");
 		if (s.isEmpty() || s.indexOf('*') >= 0) return null;
 
