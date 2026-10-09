@@ -51,6 +51,28 @@ class ForgeOptionsInjectorTest {
 		assertTrue(store >= 0 && store < load, "the map exists before the constructor's first load: store=" + store + " load=" + load);
 	}
 
+	/**
+	 * The repair is judged by its claim, which reports the END STATE: a class already keeping unknown keys (whether the
+	 * merge did it or this injector) hits it without an edit; a drifted class that this injector cannot repair does not.
+	 */
+	@Test void theClaimReportsTheEndStateNotWhetherThisInjectorEdited() throws Exception {
+		byte[] original = real();
+		java.util.Set<String> hits = new java.util.HashSet<>();
+		byte[] result = transformer.transform(ForgeOptionsInjector.TARGET, original, null, hits::add);
+		assertEquals(java.util.Set.of(ForgeOptionsInjector.CLAIM), hits, "the real merged Options keeps unknown keys");
+		assertTrue(ForgeOptionsInjector.keepsUnknownKeys(result));
+		ClassNode drifted = read(original);
+		drifted.fields.removeIf(f -> f.name.equals("unknownKeys"));
+		for (MethodNode m : drifted.methods) for (var i : m.instructions.toArray())
+			if (i instanceof FieldInsnNode f && f.name.equals("unknownKeys")) m.instructions.set(i, new InsnNode(Opcodes.NOP));
+		ClassWriter out = new ClassWriter(0); drifted.accept(out); byte[] bytes = out.toByteArray();
+		hits.clear();
+		assertSame(bytes, transformer.transform(ForgeOptionsInjector.TARGET, bytes, null, hits::add));
+		assertEquals(java.util.Set.of(), hits, "a class that neither keeps the keys nor can be repaired is a real miss");
+		System.setProperty("forbric.forgeClientInit", "off");
+		assertEquals(List.of(), transformer.claims(), "switched off, the repair stands down and claims nothing");
+	}
+
 	@Test void disabledAndDriftedClassesStayUntouched() throws Exception {
 		byte[] original=real();
 		System.setProperty("forbric.forgeClientInit","off");

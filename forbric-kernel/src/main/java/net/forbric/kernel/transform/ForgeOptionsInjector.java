@@ -16,10 +16,57 @@ public final class ForgeOptionsInjector implements ClassTransformer {
 	static final String HELPER = "net/forbric/kernel/runtime/KernelForgeOptions";
 	static final String WRITE = "(Ljava/util/Map;[Lnet/minecraft/client/KeyMapping;Ljava/io/PrintWriter;)V";
 
+	static final String CLAIM = "forbric-forge-options#keptUnknownKeys";
+
 	@Override public String name() { return "forbric-forge-options"; }
+	/**
+	 * The outcome is judged by {@link #CLAIM}, not by whether this transformer edited the class: a merged base that
+	 * already kept MinecraftForge's load()/save() (load() reaching load(boolean), the map allocated before the
+	 * constructor's first load) needs no edit, and that is not a missing repair.
+	 */
 	@Override public AnchorSet anchors() {
-		return AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
-				"saved Forge key bindings are erased before their keys are registered"));
+		return AnchorSet.scanned("net.minecraft.client.Options, judged by the " + CLAIM + " claim");
+	}
+	@Override public List<Claim> claims() {
+		if ("off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"))) return List.of();
+		return List.of(new Claim(CLAIM, AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
+				"saved Forge key bindings are erased before their keys are registered"))));
+	}
+	@Override public byte[] transform(String className, byte[] bytes, TransformContext context, ClaimReporter reporter) {
+		byte[] result = transform(className, bytes, context);
+		if (result != bytes || TARGET.equals(className) && keepsUnknownKeys(bytes)) reporter.hit(CLAIM);
+		return result;
+	}
+
+	/**
+	 * Whether {@code bytes} already keep unknown key bindings for the late registration window: load() delegates to
+	 * load(boolean), save() reads the map, and every constructor that loads allocates the map before its first load.
+	 */
+	static boolean keepsUnknownKeys(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		try { new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES); } catch (RuntimeException unreadable) { return false; }
+		if (!OPTIONS.equals(node.name)) return false;
+		MethodNode load = method(node, "load", "()V"), save = method(node, "save", "()V");
+		if (load == null || save == null || method(node, "load", "(Z)V") == null) return false;
+		if (Arrays.stream(load.instructions.toArray()).noneMatch(i -> i instanceof MethodInsnNode c && c.owner.equals(OPTIONS)
+				&& c.name.equals("load") && c.desc.equals("(Z)V"))) return false;
+		if (Arrays.stream(save.instructions.toArray()).noneMatch(i -> i instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETFIELD
+				&& f.owner.equals(OPTIONS) && f.name.equals("unknownKeys"))) return false;
+		boolean anyLoad = false;
+		for (MethodNode constructor : node.methods) {
+			if (!constructor.name.equals("<init>")) continue;
+			List<AbstractInsnNode> insns = instructions(constructor);
+			int write = -1, firstLoad = -1;
+			for (int i = 0; i < insns.size(); i++) {
+				if (write < 0 && insns.get(i) instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTFIELD && f.owner.equals(OPTIONS)
+						&& f.name.equals("unknownKeys")) write = i;
+				if (firstLoad < 0 && insns.get(i) instanceof MethodInsnNode c && c.owner.equals(OPTIONS) && c.name.equals("load")) firstLoad = i;
+			}
+			if (firstLoad < 0) continue;
+			anyLoad = true;
+			if (write < 0 || write > firstLoad) return false;
+		}
+		return anyLoad;
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
