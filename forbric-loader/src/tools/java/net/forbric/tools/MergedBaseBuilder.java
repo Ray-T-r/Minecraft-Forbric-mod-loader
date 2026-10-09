@@ -510,9 +510,17 @@ public final class MergedBaseBuilder {
 	}
 
 	private boolean methodPatched(ClassNode owner, MethodNode method, MethodNode vanilla, String pkg) {
-		return methodPatched(method, vanilla, pkg) || addedCalleeOrHelper(owner, method, pkg, new HashSet<>());
+		return methodPatched(method, vanilla, pkg) || addedCalleeOrCapturedHook(owner, method, pkg, new HashSet<>());
 	}
-	private boolean addedCalleeOrHelper(ClassNode owner, MethodNode method, String pkg, Set<String> seen) {
+	/**
+	 * Whether the body changes behaviour through what it CALLS rather than through its own references: a member its
+	 * platform added to a game class (NeoForge's extension methods and overloads are hooks written that way), or a
+	 * captured lambda that does either. A captured lambda is part of its capturing method — realignCapturedLambdas keeps
+	 * the two on one side — so its change is the caller's. A named private helper is not: it is merged on its own, by
+	 * its own name, so a hook inside it is kept or lost with that helper and says nothing about this body. Counting it
+	 * here turned a vanilla-identical caller into a "both sides changed it" conflict and dropped the other side's hook.
+	 */
+	private boolean addedCalleeOrCapturedHook(ClassNode owner, MethodNode method, String pkg, Set<String> seen) {
 		if (!seen.add(method.name + method.desc)) return false;
 		ContractGraph own = FORGE_PKG.equals(pkg) ? forgeGraph : neoGraph;
 		ContractGraph other = FORGE_PKG.equals(pkg) ? neoGraph : forgeGraph;
@@ -527,8 +535,8 @@ public final class MergedBaseBuilder {
 			}
 			for (org.objectweb.asm.Handle handle : handles) if (handle.getOwner().equals(owner.name)) {
 				MethodNode helper = ContractGraph.ownMethod(owner, handle.getName(), handle.getDesc());
-				if (helper != null && (helper.access & (Opcodes.ACC_PRIVATE | Opcodes.ACC_SYNTHETIC)) != 0
-						&& (methodHasHook(helper, pkg) || addedCalleeOrHelper(owner, helper, pkg, seen))) return true;
+				if (helper != null && (helper.access & Opcodes.ACC_SYNTHETIC) != 0
+						&& (methodHasHook(helper, pkg) || addedCalleeOrCapturedHook(owner, helper, pkg, seen))) return true;
 			}
 		}
 		return false;
@@ -1197,12 +1205,13 @@ public final class MergedBaseBuilder {
 			for (MethodNode m : cn.methods) {
 				if (!m.name.equals("<init>") || m.instructions == null) continue;
 				if (delegatesToSisterConstructor(m, cn.name)) continue; // the delegated-to ctor gets the init instead
-				for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-					int op = insn.getOpcode();
-					if (op < Opcodes.IRETURN || op > Opcodes.RETURN) continue; // insert before every return
-					m.instructions.insertBefore(insn, emitDefaultInit(cn.name, fName, fDesc, implType));
-					injectedAny = true;
-				}
+				// Where javac runs a field initializer: right after the superclass constructor, before any statement of
+				// the constructor body. Initializing it at the end instead left it null for every method the body
+				// calls — Options' constructor calls load(), and the other platform's load reads its own field.
+				AbstractInsnNode superCall = superConstructorCall(m);
+				if (superCall == null) continue;
+				m.instructions.insert(superCall, emitDefaultInit(cn.name, fName, fDesc, implType));
+				injectedAny = true;
 			}
 			if (injectedAny) exclusiveFieldsInitialized++;
 		}
@@ -1218,6 +1227,23 @@ public final class MergedBaseBuilder {
 		init.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, implType, "<init>", "()V", false));
 		init.add(new FieldInsnNode(Opcodes.PUTFIELD, owner, fName, fDesc));
 		return init;
+	}
+
+	/**
+	 * The {@code INVOKESPECIAL <init>} that initializes {@code this} — the one no {@code NEW} is waiting for. Objects a
+	 * constructor creates are NEWed before their own {@code <init>}, and javac nests the pairs, so a stack of pending
+	 * NEWs tells the two apart. Null when there is none (not a constructor body javac could have written).
+	 */
+	private static AbstractInsnNode superConstructorCall(MethodNode m) {
+		int pendingNew = 0;
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() == Opcodes.NEW) pendingNew++;
+			else if (insn instanceof MethodInsnNode mi && mi.getOpcode() == Opcodes.INVOKESPECIAL && mi.name.equals("<init>")) {
+				if (pendingNew == 0) return insn;
+				pendingNew--;
+			}
+		}
+		return null;
 	}
 
 	/** Whether {@code m} chains to another constructor of the SAME class ({@code this(...)}) rather than super. */

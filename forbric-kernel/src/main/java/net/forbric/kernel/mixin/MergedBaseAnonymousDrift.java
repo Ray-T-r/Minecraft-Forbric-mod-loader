@@ -78,6 +78,7 @@ public final class MergedBaseAnonymousDrift {
 			"net/minecraft/network/codec/ByteBufCodecs$31");
 
 	public static final Set<String> CAPTURE_ONLY = Set.of(
+			"net/minecraft/client/Options$3",
 			"net/minecraft/client/gui/components/ChatComponent$1",
 			"net/minecraft/data/tags/TagAppender$1",
 			"net/minecraft/locale/Language$1",

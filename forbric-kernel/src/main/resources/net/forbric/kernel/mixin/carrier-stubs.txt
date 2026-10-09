@@ -6,6 +6,7 @@
 # overload is there: a name-only selector only). stub (the carrier keeps the same stub) and absent never move.
 net/minecraft/client/Camera#setRotation(FF)V -> (FFF)V forge=stub neo=stub
 net/minecraft/client/KeyMapping#forAllKeyMappings(Lcom/mojang/blaze3d/platform/InputConstants$Key;Ljava/util/function/Consumer;)V -> (Lcom/mojang/blaze3d/platform/InputConstants$Key;Ljava/util/function/Consumer;Z)V forge=body neo=stub
+net/minecraft/client/Options#load()V -> (Z)V forge=stub neo=body
 net/minecraft/client/gui/GuiGraphicsExtractor#tooltip(Lnet/minecraft/client/gui/Font;Ljava/util/List;IILnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipPositioner;Lnet/minecraft/resources/Identifier;)V -> (Lnet/minecraft/client/gui/Font;Ljava/util/List;IILnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipPositioner;Lnet/minecraft/resources/Identifier;Lnet/minecraft/world/item/ItemStack;)V forge=stub neo=stub
 net/minecraft/client/gui/Hud#extractSelectedItemName(Lnet/minecraft/client/gui/GuiGraphicsExtractor;)V -> (Lnet/minecraft/client/gui/GuiGraphicsExtractor;I)V forge=body neo=stub
 net/minecraft/client/gui/font/GlyphRenderTypes#select(Lnet/minecraft/client/gui/Font$DisplayMode;)Lnet/minecraft/client/renderer/rendertype/RenderType; -> (Lnet/minecraft/client/gui/Font$DisplayMode;Z)Lnet/minecraft/client/renderer/rendertype/RenderType; forge=body neo=stub

@@ -22,7 +22,7 @@ final class NativeOwnedComponentInitializers implements Opcodes {
             for(MethodNode original:source.methods)if(original.name.equals("<init>")){
                 if(writes(original,field)==0)continue;List<AbstractInsnNode> init=allocation(original,field);MethodNode target=method(node,original.name+original.desc),nativeCtor=method(canonical,original.name+original.desc);
                 List<AbstractInsnNode> peerInit=target==null?null:allocation(target,peer),nativeInit=nativeCtor==null?null:allocation(nativeCtor,peer);
-                String currentPrefix=peerInit==null?null:prefix(target,peerInit),nativePrefix=nativeInit==null?null:prefix(nativeCtor,nativeInit);
+                String currentPrefix=peerInit==null?null:prefix(target,peerInit,canonical),nativePrefix=nativeInit==null?null:prefix(nativeCtor,nativeInit);
                 if(init==null||prefix(original,init)==null||currentPrefix==null||!currentPrefix.equals(nativePrefix)
                     ||!localConstructor(((TypeInsnNode)init.get(1)).desc,((MethodInsnNode)init.get(4)).desc,resources)){valid=false;break;}
                 plans.put(target,init);
@@ -48,7 +48,14 @@ final class NativeOwnedComponentInitializers implements Opcodes {
     }
     private static boolean container(String name){return Set.of("java/util/HashMap","java/util/HashSet","java/util/ArrayList","java/util/LinkedHashMap","java/util/LinkedHashSet","java/util/concurrent/ConcurrentHashMap").contains(name);}
     /** The allocation runs once on an unconditional constructor prefix. No later edge may re-enter it. */
-    private static String prefix(MethodNode method,List<AbstractInsnNode> allocation){
+    private static String prefix(MethodNode method,List<AbstractInsnNode> allocation){return prefix(method,allocation,null);}
+    /**
+     * As above, comparing against {@code canonical}'s native constructor: a merged constructor also carries the
+     * merge's default initializers for fields the native class does not declare ({@code this.f = new C()} with a
+     * no-argument C, placed after the superclass constructor where javac puts field initializers). They write nothing
+     * the native constructor reads, so they are left out of the prefix being proved equal.
+     */
+    private static String prefix(MethodNode method,List<AbstractInsnNode> allocation,ClassNode canonical){
         if(!method.tryCatchBlocks.isEmpty())return null;List<AbstractInsnNode> code=code(method);int end=code.indexOf(allocation.getLast());
         if(end<0)return null;Map<LabelNode,Integer> labels=new IdentityHashMap<>();int position=0;
         for(AbstractInsnNode i:method.instructions){if(i instanceof LabelNode label)labels.put(label,position);if(i.getOpcode()>=0)position++;}
@@ -60,8 +67,18 @@ final class NativeOwnedComponentInitializers implements Opcodes {
             if(i instanceof LookupSwitchInsnNode lookup&&(labels.getOrDefault(lookup.dflt,Integer.MAX_VALUE)<=end||lookup.labels.stream().anyMatch(label->labels.getOrDefault(label,Integer.MAX_VALUE)<=end)))return null;
         }
         MethodNode prefix=new MethodNode(method.access,method.name,method.desc,null,null);
-        for(int index=0;index<=end;index++)prefix.instructions.add(code.get(index).clone(new HashMap<>()));
+        for(int index=0;index<=end;index++){
+            if(canonical!=null&&index+4<end&&foreignDefault(code,index,canonical)){index+=4;continue;}
+            prefix.instructions.add(code.get(index).clone(new HashMap<>()));
+        }
         return MixinInstructionFingerprint.hash(prefix);
+    }
+    /** {@code ALOAD 0; NEW C; DUP; INVOKESPECIAL C.<init>()V; PUTFIELD f} where {@code canonical} declares no field f. */
+    private static boolean foreignDefault(List<AbstractInsnNode> code,int at,ClassNode canonical){
+        return code.get(at)instanceof VarInsnNode a&&a.getOpcode()==ALOAD&&a.var==0&&code.get(at+1)instanceof TypeInsnNode t&&t.getOpcode()==NEW
+            &&code.get(at+2).getOpcode()==DUP&&code.get(at+3)instanceof MethodInsnNode c&&c.getOpcode()==INVOKESPECIAL&&c.owner.equals(t.desc)
+            &&c.name.equals("<init>")&&c.desc.equals("()V")&&code.get(at+4)instanceof FieldInsnNode f&&f.getOpcode()==PUTFIELD&&f.owner.equals(canonical.name)
+            &&canonical.fields.stream().noneMatch(declared->declared.name.equals(f.name)&&declared.desc.equals(f.desc));
     }
     private static List<AbstractInsnNode> allocation(MethodNode m,FieldInsnNode field){
         List<AbstractInsnNode> code=code(m),found=null;for(int i=5;i<code.size();i++)if(code.get(i)instanceof FieldInsnNode f&&f.getOpcode()==PUTFIELD&&f.owner.equals(field.owner)&&f.name.equals(field.name)&&f.desc.equals(field.desc)){

@@ -11,7 +11,7 @@
 #                                    excludes them is not answered for
 # <id> <owner>#<name><descriptor>    a method the platform declares and the merged class does not
 # <id> merged-only <owner>           a class in vanilla's packages the platform does not have
-base 2828a8ad124e5e8df8324a554537c0894383af480eecc3286ee99191f9984e19
+base 4fd5b9e67ce2c15642dc50a61d66cdcb0cd137ebc653e97feb41e83a9d204d1b
 fabric com/mojang/blaze3d/opengl/DirectStateAccess$Core#bindFrameBufferTextures(I[I[IIII)V
 fabric com/mojang/blaze3d/opengl/DirectStateAccess$Emulated#bindFrameBufferTextures(I[I[IIII)V
 fabric com/mojang/blaze3d/vulkan/VulkanRenderPass#<init>(Lcom/mojang/blaze3d/vulkan/VulkanDevice;Lcom/mojang/blaze3d/vulkan/VulkanCommandEncoder;Lorg/lwjgl/vulkan/VkCommandBuffer;Lcom/mojang/blaze3d/vulkan/checkpoints/CheckpointExtension$CheckpointStorage;Lcom/mojang/blaze3d/systems/RenderPass$RenderArea;IIZLjava/util/function/Supplier;)V
@@ -69,6 +69,7 @@ fabric merged-only net/minecraft/world/level/block/entity/HopperBlockEntity$1
 fabric merged-only net/minecraft/world/level/chunk/ChunkGenerator$forbricProvider$a79ebeca
 fabric merged-only net/minecraft/world/level/saveddata/SavedDataType$Factory
 fabric net/minecraft/client/KeyMapping#lambda$registerMapping$0(Lcom/mojang/blaze3d/platform/InputConstants$Key;)Ljava/util/List;
+fabric net/minecraft/client/Options$3#<init>(Lnet/minecraft/client/Options;Ljava/io/PrintWriter;)V
 fabric net/minecraft/client/Screenshot#lambda$grab$3(Lcom/mojang/blaze3d/platform/NativeImage;Ljava/io/File;Ljava/util/function/Consumer;)V
 fabric net/minecraft/client/data/models/model/ModelTemplate#lambda$create$0(Ljava/util/Map;)Lcom/google/gson/JsonElement;
 fabric net/minecraft/client/data/models/model/ModelTemplate#lambda$create$1(Lcom/google/gson/JsonObject;Lnet/minecraft/resources/Identifier;)V
@@ -636,7 +637,6 @@ forge merged-only net/minecraft/world/level/block/entity/ChiseledBookShelfBlockE
 forge merged-only net/minecraft/world/level/block/entity/HopperBlockEntity$1
 forge merged-only net/minecraft/world/level/chunk/ChunkGenerator$forbricProvider$a79ebeca
 forge merged-only net/minecraft/world/level/saveddata/SavedDataType$Factory
-forge net/minecraft/client/Options$3#<init>(Lnet/minecraft/client/Options;Ljava/util/HashSet;Ljava/io/PrintWriter;)V
 forge net/minecraft/client/data/models/model/ModelTemplate#lambda$create$0(Ljava/util/Map;)Lcom/google/gson/JsonElement;
 forge net/minecraft/client/data/models/model/ModelTemplate#lambda$create$1(Lcom/google/gson/JsonObject;Lnet/minecraft/resources/Identifier;)V
 forge net/minecraft/client/data/models/model/ModelTemplate#lambda$create$2(Lcom/google/gson/JsonObject;Lnet/minecraft/client/data/models/model/TextureSlot;Lnet/minecraft/client/resources/model/sprite/Material;)V
@@ -997,6 +997,7 @@ neoforge merged-only net/minecraft/network/protocol/common/custom/CustomPacketPa
 neoforge merged-only net/minecraft/world/item/crafting/Ingredient$1
 neoforge merged-only net/minecraft/world/level/block/entity/BrewingStandBlockEntity$2
 neoforge merged-only net/minecraft/world/level/chunk/ChunkGenerator$forbricProvider$a79ebeca
+neoforge net/minecraft/client/Options$3#<init>(Lnet/minecraft/client/Options;Ljava/io/PrintWriter;)V
 neoforge net/minecraft/client/gui/screens/packs/PackSelectionModel#lambda$findNewPacks$0(Lnet/minecraft/server/packs/repository/Pack;)Z
 neoforge net/minecraft/client/gui/screens/packs/PackSelectionModel#lambda$new$0(Lnet/minecraft/server/packs/repository/Pack;)Z
 neoforge net/minecraft/client/gui/screens/packs/PackSelectionModel#lambda$new$1(Lnet/minecraft/server/packs/repository/Pack;)Z

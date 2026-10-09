@@ -19,7 +19,7 @@ import org.objectweb.asm.tree.analysis.*;
 /** Executes independently named owners; an allocation shape alone cannot certify its constructor path. */
 class NativeOwnedComponentInitializersTest implements Opcodes {
     private static final String OWNER="future/storage/Owner",COMPONENT="future/storage/Component",PEER="future/storage/Peer";
-    private enum Shape { PURE, CONDITIONAL, CONDITIONAL_PEER, CHANGED_PREFIX, UNCOVERED }
+    private enum Shape { PURE, CONDITIONAL, CONDITIONAL_PEER, CHANGED_PREFIX, UNCOVERED, MERGED_DEFAULT, NATIVE_DECLARED }
     private record World(Class<?> owner,Class<?> component,Class<?> peer) {
         Object create(boolean enabled)throws Exception{return owner.getConstructor(boolean.class).newInstance(enabled);}
         Object get(Object receiver,Class<?> result)throws Exception{
@@ -54,6 +54,20 @@ class NativeOwnedComponentInitializersTest implements Opcodes {
             if(shape==Shape.CONDITIONAL_PEER){assertNull(world.get(world.create(false),world.peer));assertNotNull(world.get(world.create(true),world.peer));}
         }
     }
+    /**
+     * The merge puts its default initializer for a field only the other platform declares right after the superclass
+     * constructor, inside the prefix being proved. It writes nothing the native constructor has, so the proof still holds;
+     * the same instructions writing a field the native class DOES declare are a real difference and refuse the proof.
+     */
+    @Test void aMergeDefaultForAFieldTheNativeClassLacksIsNotADifferentPrefix()throws Exception{
+        byte[] source=owner(true,Shape.PURE),current=owner(false,Shape.MERGED_DEFAULT);
+        byte[] repaired=new ModifiableDataViewsTransformer(resources(source,owner(false,Shape.PURE),false)).transform(OWNER,current,null);
+        assertNotSame(current,repaired);World world=world(repaired,false);Object receiver=world.create(false);
+        assertSame(receiver,world.component.getField("owner").get(world.get(receiver,world.component)));
+        assertNotNull(world.owner.getField("mergedExtra").get(receiver));
+        assertSame(current,new ModifiableDataViewsTransformer(resources(source,owner(false,Shape.NATIVE_DECLARED),false)).transform(OWNER,current,null),
+                "a field the native class declares is part of the native prefix");
+    }
     @Test void opaqueComponentEffectsAndAnUncoveredSourceWriterRefuseTheWholeRecovery()throws Exception{
         byte[] source=owner(true,Shape.PURE),current=owner(false,Shape.PURE);
         World sourceWorld=world(source,true);sourceWorld.create(false);assertEquals(1,sourceWorld.owner.getField("effects").getInt(null));
@@ -80,7 +94,9 @@ class NativeOwnedComponentInitializersTest implements Opcodes {
         for(String[] getter:List.of(new String[]{"owned",COMPONENT},new String[]{"peer",PEER})){
             MethodVisitor m=w.visitMethod(ACC_PUBLIC,"component","()L"+getter[1]+";",null,null);m.visitCode();m.visitVarInsn(ALOAD,0);m.visitFieldInsn(GETFIELD,OWNER,getter[0],"L"+getter[1]+";");m.visitInsn(ARETURN);m.visitMaxs(0,0);m.visitEnd();
         }
+        if(shape==Shape.MERGED_DEFAULT||shape==Shape.NATIVE_DECLARED)w.visitField(ACC_PUBLIC,"mergedExtra","Ljava/util/Map;",null,null).visitEnd();
         MethodVisitor m=w.visitMethod(ACC_PUBLIC,"<init>","(Z)V",null,null);m.visitCode();superCall(m);if(shape==Shape.CHANGED_PREFIX)m.visitInsn(NOP);
+        if(shape==Shape.MERGED_DEFAULT){m.visitVarInsn(ALOAD,0);m.visitTypeInsn(NEW,"java/util/HashMap");m.visitInsn(DUP);m.visitMethodInsn(INVOKESPECIAL,"java/util/HashMap","<init>","()V",false);m.visitFieldInsn(PUTFIELD,OWNER,"mergedExtra","Ljava/util/Map;");}
         Label endPeer=new Label();if(shape==Shape.CONDITIONAL_PEER){m.visitVarInsn(ILOAD,1);m.visitJumpInsn(IFEQ,endPeer);}allocation(m,PEER,"peer",false);m.visitLabel(endPeer);
         if(original){Label end=new Label();if(shape==Shape.CONDITIONAL){m.visitVarInsn(ILOAD,1);m.visitJumpInsn(IFEQ,end);}allocation(m,COMPONENT,"owned",false);m.visitLabel(end);}
         m.visitInsn(RETURN);m.visitMaxs(0,0);m.visitEnd();
