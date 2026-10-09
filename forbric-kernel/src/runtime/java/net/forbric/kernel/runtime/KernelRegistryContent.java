@@ -182,9 +182,7 @@ public final class KernelRegistryContent {
 	/** Completes proved registry element callbacks only for states added after their original walk. */
 	public static boolean initialiseBlockInfoCaches() {
 		if ("off".equalsIgnoreCase(System.getProperty("forbric.registryElementCallbacks", "on"))) return false;
-		int count = net.forbric.kernel.interop.RegistryElementCallbacks.complete(Block.BLOCK_STATE_REGISTRY);
-		if (count > 0) ForbricLog.info("[Forbric/Lifecycle] completed %d registry element callback(s) for late registrations", count);
-		return count > 0;
+		return net.forbric.kernel.interop.RegistryElementCallbacks.completeLateRegistrations(Block.BLOCK_STATE_REGISTRY) > 0;
 	}
 
 	/**

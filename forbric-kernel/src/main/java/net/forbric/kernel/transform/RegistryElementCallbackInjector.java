@@ -6,6 +6,7 @@ import java.util.function.Function;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import net.forbric.kernel.util.ByteScan;
+import net.forbric.kernel.util.ForbricLog;
 
 /** Recognises complete registry walks with one unconditionally executed callback per element.
  * The only optional guard tests whether the element class implements that exact callback interface.
@@ -54,6 +55,10 @@ public final class RegistryElementCallbackInjector implements ClassTransformer {
             InsnList commit=new InsnList();commit.add(new VarInsnNode(Opcodes.ALOAD,0));
             commit.add(new MethodInsnNode(Opcodes.INVOKESTATIC,HOOK,"commit","(Ljava/lang/Object;)V",false));method.instructions.insertBefore(exit,commit);
             changed=true;
+            // The only trace this mechanism leaves at transform time; the late-registration completion logs its own count.
+            ForbricLog.info("[Forbric/RegistryCallbacks] %s.%s is a closed walk of the block-state registry with %d per-element "
+                    +"callback(s) — a state registered after the walk will receive the same callback(s) once",
+                    node.name.replace('/','.'),method.name,loops.size());
         }
         if(!changed)return bytes;ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);node.accept(writer);return writer.toByteArray();
     }

@@ -5,6 +5,7 @@ import java.util.*;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
+import net.forbric.kernel.util.ForbricLog;
 
 /** Preserves the original configuration decision, then bounds the selected level by its proved image limit. */
 final class AtlasMipBoundsRepair {
@@ -38,6 +39,11 @@ final class AtlasMipBoundsRepair {
 			bound.add(new MethodInsnNode(Opcodes.INVOKESTATIC, LIMITS, "bounded", "(II)I", false));
 			bound.add(new VarInsnNode(Opcodes.ISTORE, selected));
 			method.instructions.insertBefore(next(plan.join), bound); method.maxStack = Math.max(method.maxStack, 2); changed = true;
+			// One line per bounded allocation. A proof that rejects a method is otherwise invisible, and the class
+			// that must be bounded carries a REQUIRED anchor for that case; this is the positive evidence.
+			ForbricLog.info("[Forbric/MergedBaseCompat] %s.%s bounds the mip level it allocates by the image-size limit "
+					+ "it computed — a policy that refuses to lower the level can no longer allocate levels its smallest "
+					+ "image cannot hold", node.name.replace('/', '.'), method.name);
 		}
 		return changed;
 	}

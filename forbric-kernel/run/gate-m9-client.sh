@@ -74,7 +74,8 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #                                      registered carries an uninitialised cache all run. Vanilla computes it
 #                                      lazily, so this is a hot-path repair, not a crash repair — the Lithium
 #                                      crash it was once credited with is forbric.registryElementCallbacks, below.
-#   -Dforbric.registryElementCallbacks=off  -> 1 red ("a mod's whole-registry block pass covers the late wave too"). Off,
+#   -Dforbric.registryElementCallbacks=off  -> 2 red ("a closed block-state walk is instrumented", "a mod's whole-registry
+#                                      block pass covers the late wave too"). Off,
 #                                      every block the kernel registers after Lithium's one pass (fired from
 #                                      FuelValues.vanillaBurnTimes) misses it, and Lithium throws rather than
 #                                      computing a missed state's flags later: verified on Windows as "Could not
@@ -141,13 +142,15 @@ check_absent "no repair was handed its target and declined" "Forbric/Anchor\] .*
 # pack: 23 matched nothing — 16 AT lines naming members this Minecraft does not have at all (journeymap's
 # SRG-named fields and 1.x members), 6 AT methods whose name is there under another descriptor (an overload this
 # Minecraft lacks or a merge re-typing — not judged: bagus_lib's Model.animate, YACL's and Jade's constructors,
-# sophisticatedcore's recipe builders), all of which a native loader ignores the same and which mark nobody — and
-# The featuresPerStep request initially misses before COREMOD restores its descriptor. The access-only replay
-# now applies the missed directive to the actual restored member before Mixin; require that evidence and no
-# remaining ecosystem re-typing, rather than pinning the former unresolved diagnostic as a success.
+# sophisticatedcore's recipe builders), all of which a native loader ignores the same and which mark nobody.
+# Every access WIDENER found its member. fabric-biome-api's featuresPerStep one used to miss at ACCESS and be
+# replayed after a COREMOD repair gave the field vanilla's descriptor back; the merged base now keeps both
+# descriptors itself, so it matches first time and nothing is replayed. "0 AW" holds either way, which is the
+# point: it asserts the outcome (no widener left unmatched), not which path got it there. The replay itself is
+# RestoredAccessTransformerTest's.
 check        "the access census ran"               "Forbric/Access\] [0-9]+ directive\(s\) matched nothing across [1-9][0-9]* transformed class" "$LOG"
 check        "no directive remains re-typed by an ecosystem" "Forbric/Access\] [0-9]+ directive\(s\) matched nothing.*: 0 re-typed by an ecosystem" "$LOG"
-check        "access rules reached restored members" "Forbric/Access\] replayed [1-9][0-9]* previously unmatched directive" "$LOG"
+check        "every access widener reached its member" "Forbric/Access\] [0-9]+ directive\(s\) matched nothing across [0-9]+ transformed class\(es\) \([0-9]+ AT, 0 AW\)" "$LOG"
 check "the window title was read"      "ClientSmoke\] window title: Minecraft"     "$LOG"
 check_absent "…and it names no single loader" "ClientSmoke\] window title: .*(NeoForge|Forge|Fabric)" "$LOG"
 check "left the world cleanly"        "ClientSmoke\] clean disconnect observed"    "$LOG"
@@ -160,8 +163,11 @@ step "the merge did not leave one ecosystem's opt-out binding the other two (cli
 # (NeoForge) has an 8x8 sprite in its own atlas, so the GPU refused the upload, the FIRST resource reload died,
 # Minecraft dropped every pack, reloaded into the same failure -- and the client rendered a BLACK SCREEN for the
 # rest of the run with no crash report and no further log line. That is the worst report shape there is.
+# The repair keeps MinecraftForge's getter and bounds the level SpriteLoader hands the Stitcher by the image-size
+# limit the method itself computed (found by a dataflow proof, not by name). It says so once per bounded method;
+# if the proof ever rejects SpriteLoader, its REQUIRED anchor makes the census above say "made no edit" instead.
 check "an atlas may lower its mip level again" \
-  'Forbric/MergedBaseCompat\] SpriteLoader lowers an atlas' "$LOG"
+  'Forbric/MergedBaseCompat\] net\.minecraft\.client\.renderer\.texture\.SpriteLoader\.[^ ]+ bounds the mip level it allocates' "$LOG"
 check_absent "no resource reload was abandoned" 'Caught error loading resourcepacks' "$LOG"
 check_absent "no atlas was refused by the GPU" 'mipLevels must be at most' "$LOG"
 # MinecraftForge writes a modified binding as key.keyboard.o:CONTROL_OR_COMMAND and then hands that whole string
@@ -660,14 +666,15 @@ PY_MALILIB
 
 step "an access directive the kernel already satisfies does not mark its mod (must PASS)"
 # fabric-biome-api's widener asks for ChunkGenerator.featuresPerStep as vanilla's Supplier. MinecraftForge
-# re-typed that field to its own ClearableLazy so refreshFeaturesPerStep() has something to invalidate, and the
-# merge kept only that declaration — so the widener matches nothing and the mod was marked.
+# re-typed that field to its own ClearableLazy so refreshFeaturesPerStep() has something to invalidate, and a
+# merge that kept only that declaration left the widener matching nothing and the mod marked.
 #
-# It loses nothing: the COREMOD repair gives the field vanilla's descriptor back AND makes it public non-final,
-# which is the widener's whole job. The ACCESS phase simply runs first. Both halves are asserted because either
-# alone passes with the judgement broken — the line must SAY what the field is now, and no row may be marked.
-check "the restored directive was replayed" \
-  "Forbric/Access\] replayed [1-9][0-9]* previously unmatched directive" "$LOG"
+# The merged base now keeps BOTH descriptors (the Supplier view reads the live provider cell), so the widener
+# matches at ACCESS and makes the field public non-final, which is its whole job. There is no replay left to
+# count -- a "replayed >= 1" check here would be pinning the old two-step path, not the outcome. Asserted: the
+# directive is not reported unmatched in any form, and no row is marked for it.
+check_absent "fabric-biome-api's widener is not left unmatched" \
+  "Forbric/Access\] AW directive from [^ ]*fabric-biome-api" "$LOG"
 check_absent "and its mod is not marked for it" \
   "Forbric/Access\] AW directive from fabric-biome-api.*the mod is marked" "$LOG"
 
@@ -776,11 +783,17 @@ check "every block state's cache is computed" \
   "\[Forbric/Lifecycle\] initialised [1-9][0-9]* block state cache\(s\)" "$LOG"
 
 # Lithium computes its per-state flags in ONE pass, fired from FuelValues.vanillaBurnTimes, and throws rather
-# than computing a state it missed later. The kernel registers blocks after that point, so the pass has to run
-# again over the whole map. (This pack has no traditional-Forge mod, so it has no SECOND wave of registrations:
-# that half, and the blockstate→id map it also broke, are asserted in M26, which does.)
+# than computing a state it missed later. The kernel registers blocks after that point, so every state added
+# after the walk has to get the same callback. The kernel does not know whose walk it is: it recognises any
+# closed per-element walk of the block-state registry (an iterator loop with one unconditional interface callback
+# per element and nothing else in the method), records which states it reached, and later runs the same
+# callback on the states it did not. Two lines, two halves: the walk was recognised at transform time, and the
+# late wave was actually completed. (This pack has no traditional-Forge mod, so it has no SECOND wave of
+# registrations: that half, and the blockstate→id map it also broke, are asserted in M26, which does.)
+check "a closed block-state walk is instrumented" \
+  "\[Forbric/RegistryCallbacks\] [^ ]+ is a closed walk of the block-state registry with [1-9][0-9]* per-element callback\(s\)" "$LOG"
 check "a mod's whole-registry block pass covers the late wave too" \
-  "\[Forbric/Lifecycle\] re-ran Lithium's block-info pass over all [1-9][0-9]* mapped block state\(s\)" "$LOG"
+  "\[Forbric/Lifecycle\] completed [1-9][0-9]* registry element callback\(s\) for late registrations" "$LOG"
 
 check "NeoForge's splitter encodes in Fabric's packet context" \
   "\[Forbric/Net\] .*GenericPacketSplitter.encode now runs inside the connection's Fabric packet context" "$LOG"

@@ -3,6 +3,7 @@ package net.forbric.kernel.interop;
 
 import java.lang.reflect.*;
 import java.util.*;
+import net.forbric.kernel.util.ForbricLog;
 
 /** Completes the original per-element callback for registrations made after a successful closed registry walk. */
 public final class RegistryElementCallbacks {
@@ -55,6 +56,12 @@ public final class RegistryElementCallbacks {
             }
         }
         batch.committed=true;batch.registries.clear();
+    }
+    /** {@link #complete}, saying how many late registrations it completed when that is any; the kernel's lifecycle calls this. */
+    public static int completeLateRegistrations(Object registry){
+        int count=complete(registry);
+        if(count>0)ForbricLog.info("[Forbric/Lifecycle] completed %d registry element callback(s) for late registrations",count);
+        return count;
     }
     /** Each original root initializes new identities once; snapshots and in-flight identities make reentry harmless. */
     public static int complete(Object registry){
