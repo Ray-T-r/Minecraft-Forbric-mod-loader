@@ -17,6 +17,40 @@ class CallOccurrenceAlignmentTest {
     private static final String MEMBER = "L" + THING + ";test()Z";
     @AfterEach void clear() { MixinStubRebind.forget(); }
 
+    static int first(int value) { return value; }
+    static int second(int value) { return -value; }
+    static void sink(int value) { }
+    /**
+     * The loop's own condition is a stack phi (a conditional expression), so each of its alternatives is guarded by the
+     * loop branch that consumes it, and describing that branch describes the phi again.
+     */
+    static int loopCarried(boolean pick, int n) {
+        int i = 0;
+        while ((pick ? first(i) : second(i)) < n) {
+            sink(pick ? first(i) : second(i));
+            i++;
+        }
+        return i;
+    }
+
+    /** Describing a loop whose condition is a conditional expression ends — with a description or as unprovable — instead of overflowing the stack. */
+    @Test void describingALoopWhoseConditionIsAConditionalExpressionTerminates() throws Exception {
+        ClassNode node = new ClassNode();
+        try (var in = CallOccurrenceAlignmentTest.class.getResourceAsStream("CallOccurrenceAlignmentTest.class")) {
+            new org.objectweb.asm.ClassReader(in.readAllBytes()).accept(node, 0);
+        }
+        MethodNode loop = node.methods.stream().filter(m -> m.name.equals("loopCarried")).findFirst().orElseThrow();
+        List<AbstractInsnNode> all = new ArrayList<>();
+        for (AbstractInsnNode instruction : loop.instructions) all.add(instruction);
+        String sink = "L" + node.name + ";sink(I)V";
+        long start = System.nanoTime();
+        assertDoesNotThrow(() -> CallOccurrenceAlignment.effects(node.name, loop).apply(all));
+        // The thinned-ordinal path: describing the sink call's operand describes the phi, its guards, the loop branch,
+        // and the loop condition's own phi — which before the cycle guard recursed until the stack overflowed.
+        assertDoesNotThrow(() -> CallOccurrenceAlignment.retainedOrdinal(node, loop, node, loop, sink, 0));
+        assertTrue(System.nanoTime() - start < 5_000_000_000L, "describing one method must not take seconds");
+    }
+
     @Test void arbitraryGameNamesAndShiftedTemporaryLocalsAreDerived() {
         ClassNode original = owner(0, 1, 2), current = owner(2), mixin = mixin(2);
         assertEquals(1, ThinnedCallOrdinals.adapt(mixin, n -> current, (family, n) -> original));

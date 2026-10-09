@@ -219,6 +219,11 @@ final class CallOccurrenceAlignment {
         final java.util.function.Function<String, ClassNode> declarations;
         final Map<AbstractInsnNode, String> cached = new IdentityHashMap<>();
         final Set<AbstractInsnNode> visiting = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        /** Origins whose guards are being described: a loop makes a guard's operand a phi of the origin itself. */
+        final Set<AbstractInsnNode> guarding = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        final Map<AbstractInsnNode, List<String>> guardCache = new IdentityHashMap<>();
+        /** Deeper than this, a description is not evidence anyone can compare; it is answered as unprovable. */
+        static final int MAX_GUARD_DEPTH = 32;
         Evidence(MethodNode method, Frame<SourceValue>[] frames, Set<AbstractInsnNode> parameters) {
             this(method, frames, parameters, null);
         }
@@ -366,16 +371,28 @@ final class CallOccurrenceAlignment {
             }
             return source;
         }
+        /**
+         * The conditions that decide whether {@code call} is reached. A loop-carried value's guard can depend on the value
+         * itself (the condition compares a phi whose alternatives are guarded by that same condition): re-entering an
+         * origin whose guards are already being described, or nesting deeper than {@link #MAX_GUARD_DEPTH}, answers null
+         * — unprovable — instead of recursing until the stack overflows.
+         */
         List<String> guards(AbstractInsnNode call) {
+            if (guardCache.containsKey(call)) return guardCache.get(call);
+            if (guarding.size() >= MAX_GUARD_DEPTH || !guarding.add(call)) return null;
             List<String> guards = new ArrayList<>();
-            for (var instruction : method.instructions) if (instruction instanceof JumpInsnNode branch && branch.getOpcode() != Opcodes.GOTO
-                    && branch.getOpcode() != Opcodes.JSR) {
-                boolean taken = reaches(branch.label, call), other = reaches(branch.getNext(), call);
-                if (taken == other) continue;
-                String operands = inputs(branch, branch.getOpcode() >= Opcodes.IF_ICMPEQ && branch.getOpcode() <= Opcodes.IF_ACMPNE ? 2 : 1);
-                if (operands == null) return null;
-                guards.add(branch.getOpcode() + ":" + taken + ":" + operands);
-            }
+            try {
+                for (var instruction : method.instructions) if (instruction instanceof JumpInsnNode branch && branch.getOpcode() != Opcodes.GOTO
+                        && branch.getOpcode() != Opcodes.JSR) {
+                    boolean taken = reaches(branch.label, call), other = reaches(branch.getNext(), call);
+                    if (taken == other) continue;
+                    String operands = inputs(branch, branch.getOpcode() >= Opcodes.IF_ICMPEQ && branch.getOpcode() <= Opcodes.IF_ACMPNE ? 2 : 1);
+                    if (operands == null) { guards = null; break; }
+                    guards.add(branch.getOpcode() + ":" + taken + ":" + operands);
+                }
+            } finally { guarding.remove(call); }
+            // Only a description reached outside any enclosing cycle is final; one cut short by an enclosing guard is not cached.
+            if (guards != null || guarding.isEmpty()) guardCache.put(call, guards);
             return guards;
         }
         boolean reaches(AbstractInsnNode start, AbstractInsnNode target) {
