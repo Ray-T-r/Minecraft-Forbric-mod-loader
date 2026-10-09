@@ -86,7 +86,14 @@ public final class ZeroNameTagMigrationInjector implements ClassTransformer {
                 seen.get(i).addAll(values.get(i).insns);
             }
         }
-        @Override public SourceValue copyOperation(AbstractInsnNode instruction, SourceValue value) { return value; }
+        /**
+         * A copy keeps its producers, so a value is followed through locals and DUPs. A value with none (a parameter,
+         * {@code this}, a caught exception) gets its load as producer instead: merged with a constant 0 at a join, an
+         * empty set would vanish and leave the 0 looking proved.
+         */
+        @Override public SourceValue copyOperation(AbstractInsnNode instruction, SourceValue value) {
+            return value.insns.isEmpty() ? super.copyOperation(instruction, value) : value;
+        }
         @Override public SourceValue unaryOperation(AbstractInsnNode instruction, SourceValue value) {
             consume(instruction, List.of(value));
             return instruction.getOpcode() == Opcodes.CHECKCAST ? value : super.unaryOperation(instruction, value);

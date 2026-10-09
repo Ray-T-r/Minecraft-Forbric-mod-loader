@@ -338,6 +338,27 @@ class ZeroNameTagMigrationDataflowTest {
 				mod, "the distance is zero on one path and eight on the other");
 	}
 
+	@Test void aZeroOrAnArgumentInOneExpression(@TempDir Path work) throws Exception {
+		String mod = "display/decoys/Usher";
+		assertLeftAlone(build(work, mod, entity("Usher",
+				"public void conceal(boolean hide, double distance) { getAttribute(NeoForgeMod.NAMETAG_DISTANCE).setBaseValue(hide ? 0 : distance); }")),
+				mod, "the distance is zero on one path and the caller's argument on the other");
+	}
+
+	@Test void aZeroLocalThatOneBranchSetsToAnArgument(@TempDir Path work) throws Exception {
+		String mod = "display/decoys/Steward";
+		assertLeftAlone(build(work, mod, entity("Steward",
+				"public void conceal(boolean far, double distance) { double range = 0; if (far) range = distance; getAttribute(NeoForgeMod.NAMETAG_DISTANCE).setBaseValue(range); }")),
+				mod, "an argument merged with a zero is not a proved zero");
+	}
+
+	@Test void anIntZeroLocalThatOneBranchSetsToAnArgumentThenWidened(@TempDir Path work) throws Exception {
+		String mod = "display/decoys/Warden";
+		assertLeftAlone(build(work, mod, entity("Warden",
+				"public void conceal(boolean far, int distance) { int range = 0; if (far) range = distance; getAttribute(NeoForgeMod.NAMETAG_DISTANCE).setBaseValue(range); }")),
+				mod, "an argument merged with a zero is not a proved zero, widened or not");
+	}
+
 	@Test void aDistanceThatIsNotAConstant(@TempDir Path work) throws Exception {
 		String mod = "display/decoys/Beacon";
 		assertLeftAlone(build(work, mod, entity("Beacon",
