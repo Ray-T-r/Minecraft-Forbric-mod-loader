@@ -72,6 +72,110 @@ public final class ByteScan {
 		return false;
 	}
 
+	/**
+	 * The bytes a class file stores {@code name} as in a {@code CONSTANT_Utf8} entry: the JVM's modified UTF-8, in which
+	 * {@code U+0000} takes two bytes and a supplementary character is its two surrogates, three bytes each. For ASCII it
+	 * is {@link #needle}; for any other name it is what {@link #constantPoolNames} has to compare against, where the
+	 * standard UTF-8 (or ASCII, which turns the character into {@code ?}) of a non-ASCII name would never match.
+	 */
+	public static byte[] poolEntry(String name) {
+		java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream(name.length());
+		for (int i = 0; i < name.length(); i++) {
+			char c = name.charAt(i);
+			if (c >= 0x0001 && c <= 0x007F) {
+				out.write(c);
+			} else if (c <= 0x07FF) {
+				out.write(0xC0 | (c >> 6));
+				out.write(0x80 | (c & 0x3F));
+			} else {
+				out.write(0xE0 | (c >> 12));
+				out.write(0x80 | ((c >> 6) & 0x3F));
+				out.write(0x80 | (c & 0x3F));
+			}
+		}
+		return out.toByteArray();
+	}
+
+	/**
+	 * Which of {@code entries} ({@link #poolEntry} encodings of names) are, exactly, one of the class file's
+	 * {@code CONSTANT_Utf8} entries.
+	 *
+	 * <p>Every name a class declares or uses is such an entry: its own name, each member's name and descriptor, and
+	 * the class, name and descriptor of every field or method it references, by instruction or by method handle. So
+	 * an entry reported absent is provably not one of those names, and a present one is an exact entry rather than a
+	 * substring hit. The walk reads the constant pool once and compares only entries of an entry's length; it never
+	 * reaches fields, methods or code, which {@link #containsAny} has to scan byte by byte. That difference is most of
+	 * the cost of a question asked of every class the game loads.
+	 *
+	 * <p>A class this walk cannot read (no magic, a pool that is empty, truncated or carries an unknown tag, or no
+	 * room after it for the class header) reports every entry present, so the caller goes on to parse it and fails,
+	 * or not, exactly as it would have without asking.
+	 */
+	public static boolean[] constantPoolNames(byte[] classBytes, byte[][] entries) {
+		boolean[] found = new boolean[entries.length];
+		return walk(classBytes, entries, found, false) ? found : everything(found);
+	}
+
+	/** Whether any of {@code entries} is exactly one of the class file's {@code CONSTANT_Utf8} entries; see
+	 * {@link #constantPoolNames}, including that an unreadable class answers yes. Stops at the first one found. */
+	public static boolean namesAny(byte[] classBytes, byte[][] entries) {
+		boolean[] found = new boolean[entries.length];
+		if (!walk(classBytes, entries, found, true)) return entries.length > 0;
+		for (boolean present : found) if (present) return true;
+		return false;
+	}
+
+	/** Marks {@code found}; false when the pool cannot be read. With {@code first}, returns at the first match. */
+	private static boolean walk(byte[] classBytes, byte[][] entries, boolean[] found, boolean first) {
+		if (classBytes == null || classBytes.length < 10 || u4(classBytes, 0) != 0xCAFEBABE) return false;
+		try {
+			int count = u2(classBytes, 8), at = 10;
+			if (count == 0) return false;
+			for (int index = 1; index < count; index++) {
+				switch (classBytes[at] & 0xFF) {
+					case 1 -> { // Utf8: u2 length, then the bytes
+						int length = u2(classBytes, at + 1), start = at + 3;
+						if (start + length > classBytes.length) return false;
+						for (int n = 0; n < entries.length; n++) {
+							if (!found[n] && entries[n].length == length && matchesAt(classBytes, start, entries[n])) {
+								found[n] = true;
+								if (first) return true;
+							}
+						}
+						at = start + length;
+					}
+					case 7, 8, 16, 19, 20 -> at += 3; // Class, String, MethodType, Module, Package
+					case 15 -> at += 4; // MethodHandle
+					case 3, 4, 9, 10, 11, 12, 17, 18 -> at += 5; // Integer, Float, the refs, NameAndType, (Invoke)Dynamic
+					case 5, 6 -> { // Long, Double take two slots
+						at += 9;
+						index++;
+					}
+					default -> {
+						return false;
+					}
+				}
+			}
+			// access_flags, this_class, super_class and interfaces_count follow the pool in every class file.
+			return at + 8 <= classBytes.length;
+		} catch (IndexOutOfBoundsException unreadable) {
+			return false;
+		}
+	}
+
+	private static boolean[] everything(boolean[] found) {
+		java.util.Arrays.fill(found, true);
+		return found;
+	}
+
+	private static int u2(byte[] bytes, int at) {
+		return ((bytes[at] & 0xFF) << 8) | (bytes[at + 1] & 0xFF);
+	}
+
+	private static int u4(byte[] bytes, int at) {
+		return (u2(bytes, at) << 16) | u2(bytes, at + 2);
+	}
+
 	private static boolean matchesAt(byte[] haystack, int at, byte[] needle) {
 		for (int i = 0; i < needle.length; i++) {
 			if (haystack[at + i] != needle[i]) return false;
