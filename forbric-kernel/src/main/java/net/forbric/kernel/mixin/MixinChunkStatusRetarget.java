@@ -32,10 +32,14 @@ final class MixinChunkStatusRetarget {
 			List<String> selectors, ClassNode target) {
 		if (!LEVEL.equals(target.name)
 				|| "off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY, "on"))) return null;
-		if (!("(" + STATUS + ")" + STATUS).equals(handler.desc)
+		// One selector, however written, that Mixin binds to setBlock(BlockPos, BlockState, int, int) alone: the rewrite
+		// replaces that selector string.
+		if (!MixinCallbackShape.shape(handler, "(" + STATUS + ")" + STATUS)
 				|| (handler.access & Opcodes.ACC_STATIC) != 0
 				|| !"Lorg/spongepowered/asm/mixin/injection/ModifyArg;".equals(injector.desc)
-				|| !List.of(ORIGINAL).equals(selectors)) return null;
+				|| selectors.size() != 1) return null;
+		List<MethodNode> bound = MixinTargetSelectors.bound(selectors, target, false);
+		if (bound == null || bound.size() != 1 || !ORIGINAL.equals(bound.getFirst().name + bound.getFirst().desc)) return null;
 		if (MixinFit.value(injector, "slice") != null || MixinFit.value(injector, "target") != null
 				|| annotatedParameters(handler.visibleParameterAnnotations)
 				|| annotatedParameters(handler.invisibleParameterAnnotations)) return null;
@@ -54,7 +58,7 @@ final class MixinChunkStatusRetarget {
 				|| CarrierHelpers.occurrences(original, ANCHOR) != 0
 				|| CarrierHelpers.occurrences(original, "L" + LEVEL + ";" + HELPER) != 1
 				|| CarrierHelpers.occurrences(helper, ANCHOR) != 1) return null;
-		return new MixinRetarget.Rewrite(handler.name, MixinRetarget.Element.SELECTOR, ORIGINAL, HELPER,
+		return new MixinRetarget.Rewrite(handler.name, MixinRetarget.Element.SELECTOR, selectors.getFirst(), HELPER,
 				"The chunk notification threshold callback follows the check into markAndNotifyBlock");
 	}
 

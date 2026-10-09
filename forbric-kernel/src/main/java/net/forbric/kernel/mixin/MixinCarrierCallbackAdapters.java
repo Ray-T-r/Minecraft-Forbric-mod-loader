@@ -23,10 +23,11 @@ public final class MixinCarrierCallbackAdapters {
     }
 	private static int modelParser(ClassNode mixin,Function<String,ClassNode> targets){
         if(!MixinCallbackShape.targets(mixin,"net/minecraft/client/resources/model/ModelManager"))return 0;
-		MethodNode handler=MixinCallbackShape.unique(mixin, m -> m.desc.equals("(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;Lnet/minecraft/resources/Identifier;Ljava/io/Reader;)V")
-                && MixinCallbackShape.kind(m,"Inject") && MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(m),"method")).size()==1
+        ClassNode target=targets.apply("net/minecraft/client/resources/model/ModelManager");
+		MethodNode handler=MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m,"(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;)V",MixinHandlerShape.Want.local("Lnet/minecraft/resources/Identifier;"),MixinHandlerShape.Want.local("Ljava/io/Reader;"))
+                && MixinCallbackShape.kind(m,"Inject") && MixinTargetSelectors.one(m,target)!=null
                 && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/client/resources/model/cuboid/CuboidModel;fromStream(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/cuboid/CuboidModel;")
-                && Boolean.TRUE.equals(MixinFit.value(MixinFit.injectorOf(m),"cancellable")));ClassNode target=targets.apply("net/minecraft/client/resources/model/ModelManager");MethodNode host=target==null||handler==null?null:MixinStubRebind.bound(target,MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(handler),"method")).getFirst());if(handler==null||host==null||MixinFit.injectorOf(handler)==null)return 0;
+                && Boolean.TRUE.equals(MixinFit.value(MixinFit.injectorOf(m),"cancellable")));MethodNode host=handler==null?null:MixinTargetSelectors.one(handler,target);if(handler==null||host==null||MixinFit.injectorOf(handler)==null)return 0;
 		String live="Lnet/neoforged/neoforge/client/model/UnbakedModelParser;parse(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/UnbakedModel;";if(MixinPlayerWorldCallbackAdapter.count(host,live)!=1)return 0;
 		AnnotationNode at=MixinFit.atNodes(MixinFit.injectorOf(handler)).getFirst();if(live.equals(MixinFit.value(at,"target")))return 0;MixinPlayerWorldCallbackAdapter.set(at,"target",live);return 1;
 	}
@@ -37,16 +38,16 @@ public final class MixinCarrierCallbackAdapters {
         int changed=0;
         for(MethodNode handler:List.copyOf(mixin.methods)) {
             if(!MixinCallbackShape.kind(handler,"WrapOperation"))continue;
-            AnnotationNode injector=MixinFit.injectorOf(handler);List<String> selectors=MixinFit.stringList(MixinFit.value(injector,"method"));
-            List<AnnotationNode> points=MixinFit.atNodes(injector);if(selectors.size()!=1||points.size()!=1)continue;
+            AnnotationNode injector=MixinFit.injectorOf(handler);
+            List<AnnotationNode> points=MixinFit.atNodes(injector);if(points.size()!=1)continue;
             MixinFit.Member member=MixinFit.parseMember(MixinFit.asString(MixinFit.value(points.getFirst(),"target")));
             if(member==null||member.owner()==null||member.desc()==null)continue;
-            MethodNode host=MixinStubRebind.bound(target,selectors.getFirst());if(host==null||MixinFit.containsMember(host,MixinFit.asString(MixinFit.value(points.getFirst(),"target"))))continue;
+            MethodNode host=MixinTargetSelectors.one(handler,target);if(host==null||MixinFit.containsMember(host,MixinFit.asString(MixinFit.value(points.getFirst(),"target"))))continue;
             List<MethodInsnNode> calls=new ArrayList<>();
             for(var instruction:host.instructions)if(instruction instanceof MethodInsnNode call&&pureDelegate(call,member,targets))calls.add(call);
             if(calls.size()!=1)continue;
             long sourceCount=mixin.methods.stream().filter(other->other.desc.equals(handler.desc)&&MixinCallbackShape.kind(other,"WrapOperation")
-                    &&MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(other),"method")).equals(selectors)
+                    &&MixinTargetSelectors.one(other,target)==host
                     &&MixinFit.atNodes(MixinFit.injectorOf(other)).size()==1
                     &&member.equals(MixinFit.parseMember(MixinFit.asString(MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(other)).getFirst(),"target"))))).count();
             if(sourceCount!=1)continue;
@@ -103,10 +104,10 @@ public final class MixinCarrierCallbackAdapters {
 		String live="update(Lnet/minecraft/world/entity/Entity;Ljava/util/function/Predicate;)V";
 		MethodNode host=target==null?null:MixinPlayerWorldCallbackAdapter.selector(target,live);
 		if(host==null||MixinPlayerWorldCallbackAdapter.count(host,"Lnet/minecraft/core/BlockPos$MutableBlockPos;getY()I")!=1)return 0;
-		MethodNode clear=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(Lnet/minecraft/world/entity/Entity;ZLorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V")
-                && MixinCallbackShape.kind(m,"Inject") && MixinCallbackShape.selects(m,"update(Lnet/minecraft/world/entity/Entity;Z)V") && MixinCallbackShape.plainPoint(m,"HEAD",null)),
-                update=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(Lnet/minecraft/world/entity/Entity;ZLorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;Lnet/minecraft/world/level/material/FluidState;)V")
-                        && MixinCallbackShape.kind(m,"Inject") && MixinCallbackShape.selects(m,"update(Lnet/minecraft/world/entity/Entity;Z)V") && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/core/BlockPos$MutableBlockPos;getY()I"));if(clear==null||update==null)return 0;List<MethodNode> handlers=List.of(clear,update);
+		MethodNode clear=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(Lnet/minecraft/world/entity/Entity;ZLorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V")
+                && MixinCallbackShape.kind(m,"Inject") && MixinCallbackShape.binds(m,target,"update(Lnet/minecraft/world/entity/Entity;Z)V") && MixinCallbackShape.plainPoint(m,"HEAD",null)),
+                update=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(Lnet/minecraft/world/entity/Entity;ZLorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V",MixinHandlerShape.Want.local("Lnet/minecraft/world/level/material/FluidState;"))
+                        && MixinCallbackShape.kind(m,"Inject") && MixinCallbackShape.binds(m,target,"update(Lnet/minecraft/world/entity/Entity;Z)V") && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/core/BlockPos$MutableBlockPos;getY()I"));if(clear==null||update==null)return 0;List<MethodNode> handlers=List.of(clear,update);
 		for(MethodNode method:handlers){if(method==null||!method.desc.startsWith("(Lnet/minecraft/world/entity/Entity;Z"))return 0;int omitted=((method.access&Opcodes.ACC_STATIC)==0?1:0)+Type.getArgumentTypes(method.desc)[0].getSize();
                 for(var i:method.instructions){if(i instanceof VarInsnNode v&&v.var==omitted)return 0;if(i instanceof IincInsnNode increment&&increment.var==omitted)return 0;}}
 		for(MethodNode method:handlers){MixinPlayerWorldCallbackAdapter.set(MixinFit.injectorOf(method),"method",List.of(live));method.desc=method.desc.replace("Entity;Z","Entity;Ljava/util/function/Predicate;");method.signature=null;
@@ -117,9 +118,10 @@ public final class MixinCarrierCallbackAdapters {
 	}
 	private static int models(ClassNode mixin,Function<String,ClassNode> targets) {
         if(!MixinCallbackShape.targets(mixin,"net/minecraft/client/resources/model/ModelManager"))return 0;
-		MethodNode handler=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(Ljava/util/Map;Lnet/minecraft/client/resources/model/BlockStateModelLoader$LoadedModels;Lnet/minecraft/client/resources/model/ClientItemInfoLoader$LoadedClientInfos;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;Lnet/minecraft/client/resources/model/ModelDiscovery;)V")
-                && MixinCallbackShape.kind(m,"Inject") && MixinCallbackShape.selects(m,"discoverModelDependencies")
-                && MixinCallbackShape.plainPoint(m,"NEW","(Lnet/minecraft/client/resources/model/ResolvedModel;Ljava/util/Map;)Lnet/minecraft/client/resources/model/ModelManager$ResolvedModels;"));ClassNode target=targets.apply("net/minecraft/client/resources/model/ModelManager");
+        ClassNode target=targets.apply("net/minecraft/client/resources/model/ModelManager");
+		MethodNode handler=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(Ljava/util/Map;Lnet/minecraft/client/resources/model/BlockStateModelLoader$LoadedModels;Lnet/minecraft/client/resources/model/ClientItemInfoLoader$LoadedClientInfos;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;)V",MixinHandlerShape.Want.local("Lnet/minecraft/client/resources/model/ModelDiscovery;"))
+                && MixinCallbackShape.kind(m,"Inject") && MixinCallbackShape.binds(m,target,"discoverModelDependencies(Ljava/util/Map;Lnet/minecraft/client/resources/model/BlockStateModelLoader$LoadedModels;Lnet/minecraft/client/resources/model/ClientItemInfoLoader$LoadedClientInfos;)Lnet/minecraft/client/resources/model/ModelManager$ResolvedModels;")
+                && MixinCallbackShape.plainPoint(m,"NEW","(Lnet/minecraft/client/resources/model/ResolvedModel;Ljava/util/Map;)Lnet/minecraft/client/resources/model/ModelManager$ResolvedModels;"));
 		if(handler==null||target==null||handler.name.endsWith("$forbricOriginal")||MixinFit.injectorOf(handler)==null)return 0;
 		String extra="Lnet/neoforged/neoforge/client/model/standalone/StandaloneModelLoader$LoadedModels;";
 		List<MethodNode> hosts=target.methods.stream().filter(m->m.name.equals("discoverModelDependencies")&&m.desc.contains(extra)).toList();
@@ -144,14 +146,14 @@ public final class MixinCarrierCallbackAdapters {
         int changed=0;
         for(MethodNode handler:mixin.methods) {
             if(!MixinCallbackShape.kind(handler,"Inject"))continue;
-            AnnotationNode injector=MixinFit.injectorOf(handler);List<String> selectors=MixinFit.stringList(MixinFit.value(injector,"method"));
-            List<AnnotationNode> points=MixinFit.atNodes(injector);if(selectors.size()!=1||points.size()!=1)continue;
+            AnnotationNode injector=MixinFit.injectorOf(handler);
+            List<AnnotationNode> points=MixinFit.atNodes(injector);if(points.size()!=1)continue;
             String member=MixinFit.asString(MixinFit.value(points.getFirst(),"target"));
             if(!"INVOKE".equals(MixinFit.value(points.getFirst(),"value"))||member==null)continue;
-            MethodNode old=MixinStubRebind.bound(reference,selectors.getFirst()),live=MixinStubRebind.bound(target,selectors.getFirst());if(old==null||live==null)continue;
+            MethodNode old=MixinTargetSelectors.one(handler,reference),live=MixinTargetSelectors.one(handler,target);if(old==null||live==null)continue;
             List<MethodInsnNode> before=invocations(old,member),after=invocations(live,member);if(before.size()!=1||after.size()!=1)continue;
             long declarations=mixin.methods.stream().filter(other->other.desc.equals(handler.desc)&&MixinCallbackShape.kind(other,"Inject")
-                    &&MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(other),"method")).equals(selectors)
+                    &&MixinTargetSelectors.one(other,target)==live
                     &&MixinFit.atNodes(MixinFit.injectorOf(other)).size()==1
                     &&member.equals(MixinFit.asString(MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(other)).getFirst(),"target")))).count();
             if(declarations!=1)continue;
@@ -179,11 +181,13 @@ public final class MixinCarrierCallbackAdapters {
 	}
 	private static int gui(ClassNode mixin,Function<String,ClassNode> targets) {
         if(!MixinCallbackShape.targets(mixin,"net/minecraft/client/gui/render/GuiRenderer"))return 0;
-		MethodNode handler=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(L"+OP+";)Lcom/google/common/collect/ImmutableMap$Builder;") && MixinCallbackShape.kind(m,"WrapOperation")
-                && MixinCallbackShape.selects(m,"<init>") && MixinCallbackShape.plainPoint(m,"INVOKE","Lcom/google/common/collect/ImmutableMap;builder()Lcom/google/common/collect/ImmutableMap$Builder;"));ClassNode target=targets.apply("net/minecraft/client/gui/render/GuiRenderer");if(handler==null||target==null||!handler.desc.equals("(L"+OP+";)Lcom/google/common/collect/ImmutableMap$Builder;"))return 0;
+        ClassNode target=targets.apply("net/minecraft/client/gui/render/GuiRenderer");
+		MethodNode handler=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(L"+OP+";)Lcom/google/common/collect/ImmutableMap$Builder;") && MixinCallbackShape.kind(m,"WrapOperation")
+                && constructor(m,target) && MixinCallbackShape.plainPoint(m,"INVOKE","Lcom/google/common/collect/ImmutableMap;builder()Lcom/google/common/collect/ImmutableMap$Builder;"));if(handler==null||target==null||!handler.desc.equals("(L"+OP+";)Lcom/google/common/collect/ImmutableMap$Builder;"))return 0;
 		String owner="net/forbric/kernel/runtime/KernelForgePipRenderers";
 		int calls=0;for(MethodNode method:target.methods)if(method.name.equals("<init>"))calls+=MixinPlayerWorldCallbackAdapter.count(method,"L"+owner+";build(Ljava/util/List;)Ljava/util/Map;");
-		if(calls!=1)return 0;AnnotationNode annotation=MixinFit.injectorOf(handler);if(annotation==null)return 0;
+		// The point moves to the build call, so the constructor the selector binds must be the one that makes it.
+		if(calls!=1||MixinPlayerWorldCallbackAdapter.count(MixinTargetSelectors.one(handler,target),"L"+owner+";build(Ljava/util/List;)Ljava/util/Map;")!=1)return 0;AnnotationNode annotation=MixinFit.injectorOf(handler);if(annotation==null)return 0;
 		MixinPlayerWorldCallbackAdapter.set(MixinFit.atNodes(annotation).getFirst(),"target","L"+owner+";build(Ljava/util/List;)Ljava/util/Map;");
 		MethodNode outer=new MethodNode(Opcodes.ACC_PRIVATE,handler.name,"(Ljava/util/List;L"+OP+";)Ljava/util/Map;",null,null);outer.visibleAnnotations=new ArrayList<>(List.of(annotation));
 		handler.name+="$forbricOriginal";removeInjector(handler,annotation);
@@ -197,6 +201,8 @@ public final class MixinCarrierCallbackAdapters {
 	}
 
 	private static int placement(ClassNode mixin,Function<String,ClassNode> targets) { return MixinPlacementTransactionAdapter.adapt(mixin,targets); }
+	/** Whether the handler's injector binds one method of {@code target}, a constructor. */
+	private static boolean constructor(MethodNode handler,ClassNode target){MethodNode bound=MixinTargetSelectors.one(handler,target);return bound!=null&&bound.name.equals("<init>");}
 	static MethodNode named(ClassNode c,String name){return c.methods.stream().filter(m->m.name.equals(name)).findFirst().orElse(null);}
 	static void removeInjector(MethodNode handler,AnnotationNode annotation){if(handler.visibleAnnotations!=null)handler.visibleAnnotations.remove(annotation);if(handler.invisibleAnnotations!=null)handler.invisibleAnnotations.remove(annotation);MixinCallbackShape.uniqueMember(handler);}
 }

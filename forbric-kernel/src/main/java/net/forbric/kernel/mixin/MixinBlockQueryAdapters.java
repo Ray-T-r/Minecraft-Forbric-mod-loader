@@ -17,11 +17,12 @@ public final class MixinBlockQueryAdapters {
                 + (MixinCallbackShape.targets(mixin,"net/minecraft/world/entity/LivingEntity")?scaffolding(mixin,targets):0);
 	}
 	private static int blockReceiver(ClassNode mixin,Function<String,ClassNode> targets,String query) {
-		MethodNode original=MixinCallbackShape.unique(mixin,m -> m.desc.startsWith("(L"+BLOCK+";L"+OP+";") && Type.getReturnType(m.desc).equals(Type.FLOAT_TYPE)
+		// Operands are the wrapped call's; whatever extras the handler asks for are passed through unchanged.
+		MethodNode original=MixinCallbackShape.unique(mixin,m -> MixinHandlerShape.of(m)!=null && MixinHandlerShape.of(m).operands("(L"+BLOCK+";L"+OP+";)F")
                 && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.plainPoint(m,"INVOKE","L"+BLOCK+";"+query+"()F"));if(original==null||!original.desc.startsWith("(L"+BLOCK+";L"+OP+";"))return 0;
 		AnnotationNode inject=MixinFit.injectorOf(original);if(inject==null)return 0;List<AnnotationNode> points=MixinFit.atNodes(inject);if(points.size()!=1)return 0;
-		List<MethodInsnNode> calls=new ArrayList<>();List<String> selectors=MixinFit.stringList(MixinFit.value(inject,"method"));
-		for(String targetName:MixinFit.mixinTargets(mixin)){ClassNode target=targets.apply(targetName);if(target==null)return 0;for(MethodNode host:target.methods)if(selectors.contains(host.name)||selectors.contains(host.name+host.desc))for(var instruction:host.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(STATE)&&call.name.equals(query)&&Type.getReturnType(call.desc).equals(Type.FLOAT_TYPE))calls.add(call);}
+		List<MethodInsnNode> calls=new ArrayList<>();
+		for(String targetName:MixinFit.mixinTargets(mixin)){ClassNode target=targets.apply(targetName);if(target==null)return 0;List<MethodNode> bound=MixinTargetSelectors.bound(original,target);if(bound==null)return 0;for(MethodNode host:bound)for(var instruction:host.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(STATE)&&call.name.equals(query)&&Type.getReturnType(call.desc).equals(Type.FLOAT_TYPE))calls.add(call);}
 		if(calls.size()!=1)return 0;MethodInsnNode live=calls.getFirst();Type[] nativeArgs=Type.getArgumentTypes(live.desc),old=Type.getArgumentTypes(original.desc);
         if (Arrays.stream(nativeArgs).anyMatch(t -> t.getSort()!=Type.OBJECT && t.getSort()!=Type.ARRAY)) return 0;
         boolean stat=(original.access&Opcodes.ACC_STATIC)!=0;
@@ -39,9 +40,10 @@ public final class MixinBlockQueryAdapters {
 		c.add(MixinHandlerShim.callOwn(mixin,stat,original.name,original.desc));c.add(new InsnNode(Opcodes.FRETURN));outer.maxLocals=slot;outer.maxStack=slot+12;mixin.methods.add(outer);return 1;
 	}
 	static int scaffolding(ClassNode mixin,Function<String,ClassNode> targets){
-		MethodNode original=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(L"+STATE+";Ljava/lang/Object;L"+OP+";)Z") && MixinCallbackShape.instance(m)
-                && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.selects(m,"handleOnClimbable(Lnet/minecraft/world/phys/Vec3;)Lnet/minecraft/world/phys/Vec3;")
-                && MixinCallbackShape.plainPoint(m,"INVOKE","L"+STATE+";is(Ljava/lang/Object;)Z"));ClassNode target=targets.apply("net/minecraft/world/entity/LivingEntity");
+		ClassNode target=targets.apply("net/minecraft/world/entity/LivingEntity");
+		MethodNode original=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(L"+STATE+";Ljava/lang/Object;L"+OP+";)Z") && MixinCallbackShape.instance(m)
+                && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.binds(m,target,"handleOnClimbable(Lnet/minecraft/world/phys/Vec3;)Lnet/minecraft/world/phys/Vec3;")
+                && MixinCallbackShape.plainPoint(m,"INVOKE","L"+STATE+";is(Ljava/lang/Object;)Z"));
 		if(original==null||target==null||!original.desc.equals("(L"+STATE+";Ljava/lang/Object;L"+OP+";)Z"))return 0;
 		MethodNode host=MixinCarrierCallbackAdapters.named(target,"handleOnClimbable");String live="L"+STATE+";isScaffolding(Lnet/minecraft/world/entity/LivingEntity;)Z";
 		AnnotationNode inject=MixinFit.injectorOf(original);if(host==null||inject==null||MixinPlayerWorldCallbackAdapter.count(host,live)!=1)return 0;

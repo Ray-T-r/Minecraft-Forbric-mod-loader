@@ -11,10 +11,12 @@ public final class MixinEntitySoundCallbackAdapter {
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
 		boolean fall=MixinCallbackShape.targets(mixin,"net/minecraft/world/entity/LivingEntity");
         if((!fall&&!MixinCallbackShape.targets(mixin,"net/minecraft/world/entity/Entity"))||"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY)))return 0;
-		MethodNode original=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(L"+STATE+";L"+OP+";"+(fall?"III":"L"+POS+";")+")Lnet/minecraft/world/level/block/SoundType;")
+		String targetName=fall?"net/minecraft/world/entity/LivingEntity":"net/minecraft/world/entity/Entity";ClassNode target=targets.apply(targetName);
+		MixinHandlerShape.Want[] extras=fall?new MixinHandlerShape.Want[]{MixinHandlerShape.Want.local("I"),MixinHandlerShape.Want.local("I"),MixinHandlerShape.Want.local("I")}:new MixinHandlerShape.Want[]{MixinHandlerShape.Want.local("L"+POS+";")};
+		MethodNode original=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(L"+STATE+";L"+OP+";)Lnet/minecraft/world/level/block/SoundType;",extras)
                 && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation")
-                && MixinCallbackShape.selects(m,fall?"playBlockFallSound()V":"playStepSound(L"+POS+";L"+STATE+";)V")
-                && MixinCallbackShape.plainPoint(m,"INVOKE","L"+STATE+";getSoundType()Lnet/minecraft/world/level/block/SoundType;"));String targetName=fall?"net/minecraft/world/entity/LivingEntity":"net/minecraft/world/entity/Entity";ClassNode target=targets.apply(targetName);
+                && MixinCallbackShape.binds(m,target,fall?"playBlockFallSound()V":"playStepSound(L"+POS+";L"+STATE+";)V")
+                && MixinCallbackShape.plainPoint(m,"INVOKE","L"+STATE+";getSoundType()Lnet/minecraft/world/level/block/SoundType;"));
 		if(original==null||target==null||MixinFit.injectorOf(original)==null||!Type.getReturnType(original.desc).equals(Type.getObjectType("net/minecraft/world/level/block/SoundType")))return 0;
 		String callDesc=fall?"(Lnet/minecraft/world/level/Level;L"+POS+";Lnet/minecraft/world/entity/LivingEntity;)V":"(Lnet/minecraft/world/level/Level;L"+POS+";Lnet/minecraft/world/entity/Entity;FF)V";
 		List<String> hosts=new ArrayList<>();for(MethodNode method:target.methods)if((fall?Set.of("playBlockFallSound"):Set.of("playStepSound","playCombinationStepSounds","playMuffledStepSound")).contains(method.name)&&MixinPlayerWorldCallbackAdapter.count(method,"L"+STATE+";"+(fall?"playFallSound":"playStepSound")+callDesc)>0)hosts.add(method.name+method.desc);

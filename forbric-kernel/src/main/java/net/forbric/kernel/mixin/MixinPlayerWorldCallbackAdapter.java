@@ -43,6 +43,8 @@ public final class MixinPlayerWorldCallbackAdapter {
 	static final String MINE = STACK + "mineBlock(L" + LEVEL + ";" + STATE + POS + "Lnet/minecraft/world/entity/player/Player;)V";
 	static final String BLOCK_ENTITY = "L" + SERVER_LEVEL + ";getBlockEntity(" + POS + ")" + ENTITY;
 	static final String GET_BLOCK = STATE + "getBlock()L" + BLOCK + ";";
+	static final String SWAP_HOST = "handlePlayerAction(Lnet/minecraft/network/protocol/game/ServerboundPlayerActionPacket;)V";
+	static final String BREAK_HOST = "destroyBlock(" + POS + ")Z";
 	private MixinPlayerWorldCallbackAdapter() { }
 
 	public static boolean enabled() { return !"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY, "on")); }
@@ -85,10 +87,10 @@ public final class MixinPlayerWorldCallbackAdapter {
 	private static int fill(ClassNode mixin, ClassNode target) {
 		if (target == null) return 0;
 		MethodNode old = selector(target, OLD_FILL), live = selector(target, LIVE_FILL);
-		MethodNode flag = MixinCallbackShape.unique(mixin, m -> m.desc.equals("(I)I") && MixinCallbackShape.kind(m, "ModifyConstant") && MixinCallbackShape.selects(m, OLD_FILL)
+		MethodNode flag = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(I)I") && MixinCallbackShape.kind(m, "ModifyConstant") && MixinCallbackShape.binds(m, target, OLD_FILL)
                 && constantSixteen(MixinFit.injectorOf(m))),
-                notify = MixinCallbackShape.unique(mixin, m -> m.desc.equals("(L"+LEVEL+";"+POS+"L"+BLOCK+";)V")
-                        && MixinCallbackShape.kind(m, "Redirect") && MixinCallbackShape.selects(m, OLD_FILL)
+                notify = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(L"+LEVEL+";"+POS+"L"+BLOCK+";)V")
+                        && MixinCallbackShape.kind(m, "Redirect") && MixinCallbackShape.binds(m, target, OLD_FILL)
                         && MixinCallbackShape.plainPoint(m, "INVOKE", "L" + LEVEL + ";updateNeighborsAt(" + POS + "L" + BLOCK + ";)V"));
 		String update = "L" + LEVEL + ";updateNeighborsAt(" + POS + "L" + BLOCK + ";)V";
 		if (old == null || live == null || flag == null || notify == null || count(old, update) != 0 || count(old, "L" + LEVEL + ";" + LIVE_FILL) != 1
@@ -105,7 +107,7 @@ public final class MixinPlayerWorldCallbackAdapter {
 				|| !gates(live, known, flags, Opcodes.BIPUSH, Opcodes.IFNE, first(live, SHAPES))) return 0;
 		AnnotationNode a = MixinFit.injectorOf(flag), b = MixinFit.injectorOf(notify);
 		if (!"(I)I".equals(flag.desc) || !("(L"+LEVEL+";"+POS+"L"+BLOCK+";)V").equals(notify.desc)
-				|| !selects(a, OLD_FILL) || !selects(b, OLD_FILL)
+				|| !MixinCallbackShape.binds(flag, target, OLD_FILL) || !MixinCallbackShape.binds(notify, target, OLD_FILL)
 				|| !"Lorg/spongepowered/asm/mixin/injection/ModifyConstant;".equals(a.desc)
 				|| !"Lorg/spongepowered/asm/mixin/injection/Redirect;".equals(b.desc)) return 0;
 		List<AnnotationNode> points = MixinFit.atNodes(b);
@@ -115,13 +117,13 @@ public final class MixinPlayerWorldCallbackAdapter {
 	}
 
 	private static int swap(ClassNode mixin, ClassNode target) {
-		MethodNode handler = MixinCallbackShape.unique(mixin, m -> m.desc.equals("(Lnet/minecraft/network/protocol/game/ServerboundPlayerActionPacket;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V")
-                && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.selects(m, "handlePlayerAction")
+		MethodNode handler = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(Lnet/minecraft/network/protocol/game/ServerboundPlayerActionPacket;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V")
+                && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, target, SWAP_HOST)
                 && MixinCallbackShape.beforePoint(m, "INVOKE", HAND_READ));
-		MethodNode host = target == null ? null : selector(target, "handlePlayerAction(Lnet/minecraft/network/protocol/game/ServerboundPlayerActionPacket;)V");
+		MethodNode host = target == null ? null : selector(target, SWAP_HOST);
 		if (handler == null || host == null) return 0;
 		AnnotationNode inject = MixinFit.injectorOf(handler);
-		if (!selects(inject, "handlePlayerAction")) return 0;
+		if (!MixinCallbackShape.binds(handler, target, SWAP_HOST)) return 0;
 		List<AnnotationNode> ats = MixinFit.atNodes(inject);
 		if (ats.size() != 1 || !HAND_READ.equals(MixinFit.value(ats.getFirst(), "target"))
 				|| !Integer.valueOf(1).equals(MixinFit.value(ats.getFirst(), "ordinal")) || count(host, HAND_READ) != 1
@@ -145,13 +147,14 @@ public final class MixinPlayerWorldCallbackAdapter {
 	}
 
 	private static int blockBreak(ClassNode mixin, ClassNode target) {
-		MethodNode handler = MixinCallbackShape.unique(mixin, m -> m.desc.equals("(" + POS + CIR + ENTITY + "L" + BLOCK + ";" + STATE + ")V")
-                && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.selects(m, "destroyBlock")
+		MethodNode handler = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(" + POS + CIR + ")V", MixinHandlerShape.Want.captured(ENTITY),
+                        MixinHandlerShape.Want.captured("L" + BLOCK + ";"), MixinHandlerShape.Want.captured(STATE))
+                && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, target, BREAK_HOST)
                 && MixinCallbackShape.beforePoint(m, "INVOKE", OLD_REMOVE));
-		MethodNode host = target == null ? null : selector(target, "destroyBlock(" + POS + ")Z");
+		MethodNode host = target == null ? null : selector(target, BREAK_HOST);
 		if (handler == null || host == null) return 0;
 		AnnotationNode inject = MixinFit.injectorOf(handler);
-		if (!("(" + POS + CIR + ENTITY + "L" + BLOCK + ";" + STATE + ")V").equals(handler.desc) || !selects(inject, "destroyBlock")
+		if (!("(" + POS + CIR + ENTITY + "L" + BLOCK + ";" + STATE + ")V").equals(handler.desc) || !MixinCallbackShape.binds(handler, target, BREAK_HOST)
 				|| handler.visibleParameterAnnotations != null || handler.invisibleParameterAnnotations != null
 				|| count(host, OLD_REMOVE) != 0 || count(host, BREAK_EVENT) != 1 || count(host, WILL_DESTROY) != 1
 				|| count(host, DROPS) != 1 || count(host, MINE) != 1 || count(host, REMOVE) != 2) return 0;
@@ -229,7 +232,6 @@ public final class MixinPlayerWorldCallbackAdapter {
 		}
 		return result;
 	}
-	static boolean selects(AnnotationNode a, String selector) { return a != null && MixinFit.stringList(MixinFit.value(a,"method")).equals(List.of(selector)); }
 	static MethodNode named(ClassNode c, String name) { return c.methods.stream().filter(m -> m.name.equals(name)).findFirst().orElse(null); }
 	static MethodNode selector(ClassNode c, String s) { return c.methods.stream().filter(m -> (m.name+m.desc).equals(s)).findFirst().orElse(null); }
 	static String member(MethodInsnNode c) { return "L"+c.owner+";"+c.name+c.desc; }

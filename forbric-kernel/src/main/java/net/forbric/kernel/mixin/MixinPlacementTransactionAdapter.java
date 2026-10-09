@@ -11,13 +11,14 @@ final class MixinPlacementTransactionAdapter {
 	private static final String CONTEXT="net/minecraft/world/item/context/UseOnContext", CIR="org/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable", REF="com/llamalad7/mixinextras/sugar/ref/LocalRef";
 	static int adapt(ClassNode mixin,Function<String,ClassNode> targets) {
 		String selector="useOn(L"+CONTEXT+";)Lnet/minecraft/world/InteractionResult;";
-        MethodNode cache=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(L"+CONTEXT+";L"+CIR+";Lnet/minecraft/world/item/Item;L"+REF+";)V") && MixinCallbackShape.instance(m)
-                && MixinCallbackShape.kind(m,"Inject") && MixinCallbackShape.selects(m,selector)
-                && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/world/item/Item;"+selector)),
-                use=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(L"+CONTEXT+";L"+CIR+";Lnet/minecraft/world/entity/player/Player;L"+REF+";)V") && MixinCallbackShape.instance(m)
-                        && MixinCallbackShape.kind(m,"Inject") && MixinCallbackShape.selects(m,selector)
-                        && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/world/InteractionResult$Success;wasItemInteraction()Z"));
+		if(!MixinCallbackShape.targets(mixin,"net/minecraft/world/item/ItemStack"))return 0;
 		ClassNode target=targets.apply("net/minecraft/world/item/ItemStack");
+        MethodNode cache=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(L"+CONTEXT+";L"+CIR+";)V",MixinHandlerShape.Want.local("Lnet/minecraft/world/item/Item;"),MixinHandlerShape.Want.share("L"+REF+";")) && MixinCallbackShape.instance(m)
+                && MixinCallbackShape.kind(m,"Inject") && MixinCallbackShape.binds(m,target,selector)
+                && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/world/item/Item;"+selector)),
+                use=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(L"+CONTEXT+";L"+CIR+";)V",MixinHandlerShape.Want.local("Lnet/minecraft/world/entity/player/Player;"),MixinHandlerShape.Want.share("L"+REF+";")) && MixinCallbackShape.instance(m)
+                        && MixinCallbackShape.kind(m,"Inject") && MixinCallbackShape.binds(m,target,selector)
+                        && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/world/InteractionResult$Success;wasItemInteraction()Z"));
 		if(!MixinCallbackShape.targets(mixin,"net/minecraft/world/item/ItemStack")||cache==null||use==null||target==null||Type.getArgumentTypes(cache.desc).length!=4||Type.getArgumentTypes(use.desc).length!=4)return 0;
 		if(MixinFit.injectorOf(cache)==null||MixinFit.injectorOf(use)==null)return 0;
         if(!contextSnapshot(cache) || !MixinCallbackShape.noReceiver(use)) return 0;

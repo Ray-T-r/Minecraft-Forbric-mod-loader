@@ -16,15 +16,15 @@ public final class MixinFluidInteractionAdapter {
 
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
 		if (!MixinCallbackShape.targets(mixin, TARGET) || "off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY))) return 0;
-		MethodNode original = MixinCallbackShape.unique(mixin, m -> MixinFluidReactionAdapter.HANDLER.equals(m.desc) && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject")
-                && MixinCallbackShape.selects(m, "shouldSpreadLiquid(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;)Z")
-                && MixinCallbackShape.plainPoint(m, "HEAD", null));
 		ClassNode target = targets.apply(TARGET);
+		MethodNode original = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, MixinFluidReactionAdapter.HANDLER) && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject")
+                && MixinCallbackShape.binds(m, target, MixinFluidReactionAdapter.SPREAD)
+                && MixinCallbackShape.plainPoint(m, "HEAD", null));
 		if (original == null || target == null || (original.access & Opcodes.ACC_STATIC) != 0
 				|| !MixinFluidReactionAdapter.HANDLER.equals(original.desc)) return 0;
 		AnnotationNode injection = MixinFit.injectorOf(original);
 		List<AnnotationNode> points = injection == null ? List.of() : MixinFit.atNodes(injection);
-		if (!MixinPlayerWorldCallbackAdapter.selects(injection, "shouldSpreadLiquid(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;)Z") || points.size() != 1
+		if (!MixinCallbackShape.binds(original, target, MixinFluidReactionAdapter.SPREAD) || points.size() != 1
 				|| !"HEAD".equals(MixinFit.value(points.getFirst(), "value"))
 				|| !Boolean.TRUE.equals(MixinFit.value(injection, "cancellable"))) return 0;
 		// Only a closed static predicate followed by setReturnValue(false) is transported; its owner and method name are immaterial.

@@ -10,12 +10,13 @@ public final class MixinBreathingCallbackAdapter {
 	private MixinBreathingCallbackAdapter() { }
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
 		if(!MixinCallbackShape.targets(mixin,LIVING)||"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY)))return 0;
-		MethodNode lava=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(L"+LIVING+";Lnet/minecraft/tags/TagKey;L"+OP+";L"+LEVEL+";)Z")
-                && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.selects(m,"baseTick()V")
+		ClassNode living=targets.apply(LIVING),hooks=targets.apply("net/neoforged/neoforge/common/CommonHooks");
+		MethodNode lava=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(L"+LIVING+";Lnet/minecraft/tags/TagKey;L"+OP+";)Z",MixinHandlerShape.Want.local("L"+LEVEL+";"))
+                && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.binds(m,living,"baseTick()V")
                 && MixinCallbackShape.plainPoint(m,"INVOKE","L"+LIVING+";isEyeInFluid(Lnet/minecraft/tags/TagKey;)Z")),
-                water=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(L"+LIVING+";L"+OP+";L"+LEVEL+";)Z")
-                        && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.selects(m,"baseTick()V")
-                        && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/world/effect/MobEffectUtil;hasWaterBreathing(L"+LIVING+";)Z"));ClassNode living=targets.apply(LIVING),hooks=targets.apply("net/neoforged/neoforge/common/CommonHooks");
+                water=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(L"+LIVING+";L"+OP+";)Z",MixinHandlerShape.Want.local("L"+LEVEL+";"))
+                        && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation") && MixinCallbackShape.binds(m,living,"baseTick()V")
+                        && MixinCallbackShape.plainPoint(m,"INVOKE","Lnet/minecraft/world/effect/MobEffectUtil;hasWaterBreathing(L"+LIVING+";)Z"));
 		if(lava==null||water==null||living==null||hooks==null||MixinFit.injectorOf(lava)==null||MixinFit.injectorOf(water)==null)return 0;
 		String nativeDesc="(L"+LIVING+";L"+LEVEL+";II)V", nativeCall="L"+hooks.name+";onLivingBreathe"+nativeDesc;
 		MethodNode host=MixinCarrierCallbackAdapters.named(living,"baseTick");if(host==null||MixinPlayerWorldCallbackAdapter.count(host,nativeCall)!=1)return 0;

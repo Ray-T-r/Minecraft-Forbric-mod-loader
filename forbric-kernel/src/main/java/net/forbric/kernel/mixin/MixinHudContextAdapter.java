@@ -10,10 +10,11 @@ public final class MixinHudContextAdapter {
 	private MixinHudContextAdapter() { }
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
 		if(!MixinCallbackShape.targets(mixin,HUD)||"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY)))return 0;
-        MethodNode original=MixinCallbackShape.unique(mixin,m -> m.desc.equals("(L"+HUD+";L"+OP+";L"+GRAPHICS+";L"+DELTA+";)L"+HUD+"$ContextualInfo;")
+        ClassNode target=targets.apply(HUD);
+        MethodNode original=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(L"+HUD+";L"+OP+";)L"+HUD+"$ContextualInfo;",MixinHandlerShape.Want.local("L"+GRAPHICS+";"),MixinHandlerShape.Want.local("L"+DELTA+";"))
                 && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m,"WrapOperation")
-                && MixinCallbackShape.selects(m,"extractHotbarAndDecorations(L"+GRAPHICS+";L"+DELTA+";)V")
-                && MixinCallbackShape.plainPoint(m,"INVOKE","L"+HUD+";nextContextualInfoState()L"+HUD+"$ContextualInfo;"));ClassNode target=targets.apply(HUD);MethodNode host=target==null?null:MixinPlayerWorldCallbackAdapter.selector(target,"extractRenderState(L"+GRAPHICS+";L"+DELTA+";)V");
+                && MixinCallbackShape.binds(m,target,"extractHotbarAndDecorations(L"+GRAPHICS+";L"+DELTA+";)V")
+                && MixinCallbackShape.plainPoint(m,"INVOKE","L"+HUD+";nextContextualInfoState()L"+HUD+"$ContextualInfo;"));MethodNode host=target==null?null:MixinPlayerWorldCallbackAdapter.selector(target,"extractRenderState(L"+GRAPHICS+";L"+DELTA+";)V");
 		if(original==null||host==null||MixinFit.injectorOf(original)==null||!Type.getReturnType(original.desc).equals(Type.getObjectType(HUD+"$ContextualInfo"))||MixinPlayerWorldCallbackAdapter.count(host,"L"+HUD+";updateContextualBarRenderer()V")!=1)return 0;
 		AnnotationNode inject=MixinFit.injectorOf(original);MixinPlayerWorldCallbackAdapter.set(inject,"method",List.of(host.name+host.desc));MixinPlayerWorldCallbackAdapter.set(MixinFit.atNodes(inject).getFirst(),"target","L"+HUD+";updateContextualBarRenderer()V");
 		MethodNode callback=callback(mixin,original);mixin.methods.add(callback);

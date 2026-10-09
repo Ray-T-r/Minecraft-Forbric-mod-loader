@@ -39,13 +39,13 @@ public final class MixinSpriteLoaderCallbackAdapter {
 					&& "builder".equals(call.name)) anchors++;
 		}
 		if (!mapAtThree || anchors != 1) return 0;
-		MethodNode original = MixinCallbackShape.unique(mixin, m -> ("(" + RESOURCE + CALLBACK + "Ljava/util/Map;)V").equals(m.desc)
-                && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.selects(m, OLD)
+		MethodNode original = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(" + RESOURCE + CALLBACK + ")V", MixinHandlerShape.Want.captured("Ljava/util/Map;"))
+                && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, target, OLD)
                 && MixinCallbackShape.plainPoint(m, "INVOKE", "Lcom/google/common/collect/ImmutableList;builder()Lcom/google/common/collect/ImmutableList$Builder;") && MixinCallbackShape.instance(m));
 		if (original == null || original.visibleAnnotations == null) return 0;
 		AnnotationNode inject = original.visibleAnnotations.stream()
 				.filter(a -> "Lorg/spongepowered/asm/mixin/injection/Inject;".equals(a.desc)).findFirst().orElse(null);
-		if (inject == null || !List.of(OLD).equals(MixinFit.value(inject, "method"))) return 0;
+		if (inject == null || !MixinCallbackShape.binds(original, target, OLD)) return 0;
 		String handlerName = original.name;
 		original.name += "$forbricOriginal";
 		original.visibleAnnotations.remove(inject);
@@ -65,8 +65,10 @@ public final class MixinSpriteLoaderCallbackAdapter {
 		int changed = 0;
 		for (MethodNode method : mixin.methods) {
 			if (method.visibleAnnotations == null) continue;
+			// Every callback Mixin binds to the old listing alone, however its selector is written, follows it.
+			boolean old = MixinCallbackShape.binds(method, target, OLD);
 			for (AnnotationNode annotation : method.visibleAnnotations) {
-				if (!List.of(OLD).equals(MixinFit.value(annotation, "method"))) continue;
+				if (!old || annotation != MixinFit.injectorOf(method)) continue;
 				for (int i = 0; i < annotation.values.size(); i += 2) {
 					if ("method".equals(annotation.values.get(i))) annotation.values.set(i + 1, List.of(LIVE));
 				}

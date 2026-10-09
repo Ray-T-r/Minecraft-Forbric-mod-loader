@@ -21,6 +21,13 @@ public final class MixinFluidReactionAdapter {
 	static final String OPERATION = "com/llamalad7/mixinextras/injector/wrapoperation/Operation";
 	static final String HANDLER = "(L" + LEVEL + ";" + POS + STATE + CIR + ")V";
 	static final String INTERACT = "(L" + LEVEL + ";" + POS + ")Z";
+	/**
+	 * The native method the fluid callbacks are written for, however their selectors spell it. Its bare name stays a
+	 * string of the kernel (joined at class initialisation, not folded into one constant): the uncalled-method census
+	 * reads a kernel string naming a method as a repair that may make its callbacks run, and these adapters are that
+	 * repair for shouldSpreadLiquid — without it, MixinFit would call the very callbacks they relocate dead.
+	 */
+	static final String SPREAD = String.join("", "shouldSpreadLiquid", "(L" + LEVEL + ";" + POS + STATE + ")Z");
 	static final List<String> REGISTRIES = List.of(
 			ForeignType.FLUID_INTERACTION_REGISTRY.internal(Ecosystem.NEOFORGE),
 			ForeignType.FLUID_INTERACTION_REGISTRY.internal(Ecosystem.FORGE));
@@ -41,12 +48,12 @@ public final class MixinFluidReactionAdapter {
 	}
 
 	private static int afterUnhandled(ClassNode mixin, Function<String, ClassNode> targets) {
-		MethodNode original = MixinCallbackShape.unique(mixin, m -> HANDLER.equals(m.desc) && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.selects(m, "shouldSpreadLiquid") && MixinCallbackShape.plainPoint(m, "TAIL", null));
 		ClassNode target = targets.apply(LIQUID);
+		MethodNode original = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, HANDLER) && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, target, SPREAD) && MixinCallbackShape.plainPoint(m, "TAIL", null));
 		if (original == null || target == null || (original.access & Opcodes.ACC_STATIC)!=0 || !HANDLER.equals(original.desc)) return 0;
 		AnnotationNode inject = MixinFit.injectorOf(original);
 		List<AnnotationNode> ats = inject == null ? List.of() : MixinFit.atNodes(inject);
-		if (!selects(inject, "shouldSpreadLiquid") || ats.size()!=1 || !"TAIL".equals(MixinFit.value(ats.getFirst(),"value"))) return 0;
+		if (!MixinCallbackShape.binds(original, target, SPREAD) || ats.size()!=1 || !"TAIL".equals(MixinFit.value(ats.getFirst(),"value"))) return 0;
 		List<MethodNode> hosts = new ArrayList<>(); List<MethodInsnNode> calls = new ArrayList<>();
 		for (String name : List.of("onPlace", "neighborChanged")) {
 			MethodNode host = named(target,name); if(host==null)return 0;
@@ -96,14 +103,15 @@ public final class MixinFluidReactionAdapter {
 	}
 
 	private static int flowingReaction(ClassNode mixin, Function<String,ClassNode> targets) {
-		MethodNode original=MixinCallbackShape.unique(mixin, m -> HANDLER.equals(m.desc) && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.selects(m, "shouldSpreadLiquid") && MixinCallbackShape.plainPoint(m, "INVOKE", "L"+FLUID_STATE+";isSource()Z"));ClassNode liquid=targets.apply(LIQUID);
+		ClassNode liquid=targets.apply(LIQUID);
+		MethodNode original=MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, HANDLER) && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, liquid, SPREAD) && MixinCallbackShape.plainPoint(m, "INVOKE", "L"+FLUID_STATE+";isSource()Z"));
 		if(original==null||liquid==null||(original.access&Opcodes.ACC_STATIC)!=0||!HANDLER.equals(original.desc))return 0;
         // Moving a mixin to the registries is safe only for this closed callback and its target sound helper.
         // Extra fields, interfaces or target methods still belong to LiquidBlock and cannot move with it.
         if(!mixin.fields.isEmpty() || !mixin.interfaces.isEmpty() || !"java/lang/Object".equals(mixin.superName)
                 || mixin.methods.stream().anyMatch(m -> m!=original && !m.name.equals("<init>") && !(m.name.equals("fizz") && m.desc.equals("(Lnet/minecraft/world/level/LevelAccessor;"+POS+")V") && shadow(m)))) return 0;
 		AnnotationNode inject=MixinFit.injectorOf(original);
-		if(!selects(inject,"shouldSpreadLiquid"))return 0;
+		if(!MixinCallbackShape.binds(original,liquid,SPREAD))return 0;
 		List<AnnotationNode> oldAt=MixinFit.atNodes(inject);
 		if(oldAt.size()!=1||!("L"+FLUID_STATE+";isSource()Z").equals(MixinFit.value(oldAt.getFirst(),"target")))return 0;
 		// Vanilla has a real shouldSpreadLiquid caller, so this adaptation is only for the registry carriers.

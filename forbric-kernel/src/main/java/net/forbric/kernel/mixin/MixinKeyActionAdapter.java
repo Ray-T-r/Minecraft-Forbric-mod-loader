@@ -65,9 +65,9 @@ public final class MixinKeyActionAdapter {
 		if (exits == null) return 0;
 		int changed = 0;
 		for (MethodNode handler : candidates) {
-			String selector = MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(handler), "method")).getFirst();
-			MethodNode bound = MixinStubRebind.bound(current, selector), nativeBound = MixinStubRebind.bound(original, selector);
-			if (bound != host || nativeBound != source) continue;
+			// However the selector is written, it must bind keyPress alone, natively and in the merged class.
+			MethodNode bound = MixinTargetSelectors.one(handler, current), nativeBound = MixinTargetSelectors.one(handler, original);
+			if (host == null || source == null || bound != host || nativeBound != source) continue;
 			if (relocate(mixin, handler, exits)) changed++;
 		}
 		return changed;
@@ -76,9 +76,9 @@ public final class MixinKeyActionAdapter {
 	/** An unconditional, single-point {@code @Inject} at a RETURN ordinal or TAIL, without captured locals or sugar. */
 	private static boolean candidate(MethodNode handler) {
 		if (CurrentBodyOrdinals.counted(handler) || !MixinCallbackShape.kind(handler, "Inject")
-				|| !(HANDLER.equals(handler.desc) || BARE.equals(handler.desc))) return false;
+				|| !(MixinCallbackShape.shape(handler, HANDLER) || MixinCallbackShape.shape(handler, BARE))) return false;
 		AnnotationNode injector = MixinFit.injectorOf(handler);
-		if (MixinFit.stringList(MixinFit.value(injector, "method")).size() != 1 || MixinFit.value(injector, "locals") != null) return false;
+		if (MixinFit.value(injector, "locals") != null) return false;
 		if (MixinCallbackShape.point(handler, "TAIL", null)) return true;
 		return MixinCallbackShape.point(handler, "RETURN", null)
 				&& MixinFit.value(MixinFit.atNodes(injector).getFirst(), "ordinal") instanceof Integer ordinal && ordinal >= 0;

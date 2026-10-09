@@ -51,10 +51,12 @@ public final class MixinCameraRollAdapter {
                     ||MixinFit.atNodes(inject).size()!=1)continue;
             AnnotationNode at=MixinFit.atNodes(inject).getFirst();
             String member=MixinFit.asString(MixinFit.value(at,"target"));MixinFit.Member wanted=MixinFit.parseMember(member);
-            List<String> selectors=MixinFit.stringList(MixinFit.value(inject,"method"));
-            if(wanted==null||!camera.name.equals(wanted.owner())||!"(FF)V".equals(wanted.desc())||selectors.size()!=1
+            if(wanted==null||!camera.name.equals(wanted.owner())||!"(FF)V".equals(wanted.desc())
                     ||!MixinCallbackShape.point(handler,"INVOKE",member))continue;
-            MethodNode nativeAlign=MixinStubRebind.bound(source,selectors.getFirst()),align=MixinStubRebind.bound(camera,selectors.getFirst());
+            // However the selectors are written: several bound methods are not one alignment; none is a miss.
+            List<MethodNode> nativeBound=MixinTargetSelectors.bound(handler,source),bound=MixinTargetSelectors.bound(handler,camera);
+            if(nativeBound==null||bound==null||nativeBound.size()>1||bound.size()>1)continue;
+            MethodNode nativeAlign=nativeBound.isEmpty()?null:nativeBound.getFirst(),align=bound.isEmpty()?null:bound.getFirst();
             if(nativeAlign==null||align==null||!nativeAlign.desc.equals(align.desc))return 0;
             Object value=MixinFit.value(MixinFit.atNodes(inject).getFirst(),"ordinal");if(!(value instanceof Integer ordinal)||ordinal<0)return 0;
             Type[] arguments=Type.getArgumentTypes(handler.desc);
@@ -68,7 +70,7 @@ public final class MixinCameraRollAdapter {
         if(moves.isEmpty())return 0;
         Set<String> claimed=new java.util.HashSet<>();
         for(Move move:moves)if(!claimed.add(CallOccurrenceAlignment.member(move.match().call())+"#"+move.match().ordinal()))return 0;
-        MethodNode roll=MixinCallbackShape.unique(mixin,m->m.desc.equals("(F)F")&&MixinCallbackShape.kind(m,"ModifyArg")
+        MethodNode roll=MixinCallbackShape.unique(mixin,m->MixinCallbackShape.shape(m,"(F)F")&&MixinCallbackShape.kind(m,"ModifyArg")
                 &&MixinCallbackShape.plainPoint(m,"INVOKE","Lorg/joml/Quaternionf;rotationYXZ(FFF)Lorg/joml/Quaternionf;"));
         int changed=0;
         for(Move move:moves) {
@@ -78,8 +80,11 @@ public final class MixinCameraRollAdapter {
             CurrentBodyOrdinals.mark(move.handler());
         }
         if(roll!=null) {
-            List<MethodNode> candidates=camera.methods.stream().filter(m->MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(roll),"method")).stream().anyMatch(selector->selector.equals(m.name)||selector.equals(m.name+m.desc))
-                    &&java.util.Arrays.stream(m.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode call&&call.owner.equals("org/joml/Quaternionf")
+            // The roll modifier was written for the method its selector binds natively; in the merged class that method's
+            // name family may carry the rotation in another overload (setRotation(FF) now delegates to setRotation(FFF)).
+            List<MethodNode> nativeRoll=MixinTargetSelectors.bound(roll,source);
+            Set<String> family=nativeRoll==null?Set.of():nativeRoll.stream().map(m->m.name).collect(java.util.stream.Collectors.toSet());
+            List<MethodNode> candidates=camera.methods.stream().filter(m->family.contains(m.name)&&java.util.Arrays.stream(m.instructions.toArray()).anyMatch(i->i instanceof MethodInsnNode call&&call.owner.equals("org/joml/Quaternionf")
                         &&call.name.equals("rotationYXZ")&&call.desc.equals("(FFF)Lorg/joml/Quaternionf;"))).toList();
             if(candidates.size()==1){set(MixinFit.injectorOf(roll),"method",new ArrayList<>(List.of(candidates.getFirst().name+candidates.getFirst().desc)));changed++;}
         }

@@ -15,14 +15,16 @@ public final class MixinGuiItemCaptureAdapter {
     private MixinGuiItemCaptureAdapter() { }
     public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
         if (!MixinCallbackShape.targets(mixin, GUI) || "off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return 0;
-        MethodNode capture = MixinCallbackShape.unique(mixin, m -> m.desc.equals("(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/level/Level;Lnet/minecraft/world/item/ItemStack;IIILorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;Lnet/minecraft/client/renderer/item/TrackingItemStackRenderState;)V")
-                && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.selects(m, METHOD) && MixinCallbackShape.plainPoint(m, "TAIL", null) && MixinCallbackShape.instance(m));
+        ClassNode target = targets.apply(GUI);
+        MethodNode capture = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/level/Level;Lnet/minecraft/world/item/ItemStack;IIILorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V",
+                        MixinHandlerShape.Want.captured("Lnet/minecraft/client/renderer/item/TrackingItemStackRenderState;"))
+                && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, target, METHOD) && MixinCallbackShape.plainPoint(m, "TAIL", null) && MixinCallbackShape.instance(m));
         if (capture == null || !capture.desc.endsWith("Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;Lnet/minecraft/client/renderer/item/TrackingItemStackRenderState;)V")) return 0;
         AnnotationNode injector = MixinFit.injectorOf(capture);
-        if (injector == null || !MixinFit.stringList(MixinFit.value(injector, "method")).equals(List.of(METHOD))) return 0;
+        if (injector == null || !MixinCallbackShape.binds(capture, target, METHOD)) return 0;
         List<AnnotationNode> ats = MixinFit.atNodes(injector);
         if (ats.size() != 1 || !"TAIL".equals(MixinFit.value(ats.getFirst(), "value"))) return 0;
-        ClassNode target = targets.apply(GUI); if (target == null) return 0;
+        if (target == null) return 0;
         MethodNode method = target.methods.stream().filter(m -> (m.name + m.desc).equals(METHOD)).findFirst().orElse(null);
         if (method == null) return 0;
         int submits = 0, allocations = 0;
