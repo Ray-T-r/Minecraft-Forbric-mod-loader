@@ -314,6 +314,11 @@ tasks.named('compileModMenuApiJava') {
 
 test {
 	useJUnitPlatform()
+	// Gradle's default test-worker heap is 512 MB. Several staged tests hold the whole merged base in memory
+	// (ForgeCapabilityProtocolTest, ModifiableDataViewsTransformerTest, ForgeCapabilityTokenInjectorExecutionTest,
+	// FurnaceTickCallsInjectorTest: 480-509 MB live, measured with -Xlog:gc), so the default left a few MB of headroom
+	// and a G1 humongous allocation after an unrelated test could end the worker with OutOfMemoryError.
+	maxHeapSize = '1g'
 	// Transport proofs need the new hash-indexed base; an old base is an explicit negative control.
 	def predicateBase = file(project.findProperty('forbric.predicateBase') ?: stagedMergedBase)
 	inputs.files(predicateBase).withPropertyName('predicateNativeBase').optional()
