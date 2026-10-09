@@ -97,6 +97,19 @@ public final class KernelForgePipRenderers {
 		return renderers;
 	}
 
+	/**
+	 * The plain map from the builder {@code GuiRenderer.<init>} makes where vanilla makes it — which guest injectors may
+	 * have replaced, wrapped or filled — plus the constructor list's renderers and MinecraftForge's registrations
+	 * ({@link #build(List)}). A state class registered twice keeps the later renderer, as {@link #build(List)} always
+	 * has: never a throw inside the game's own constructor.
+	 */
+	public static Map<Class<? extends PictureInPictureRenderState>, PictureInPictureRenderer<?>> complete(
+			ImmutableMap.Builder<Class<? extends PictureInPictureRenderState>, PictureInPictureRenderer<?>> builder,
+			Map<Class<? extends PictureInPictureRenderState>, PictureInPictureRenderer<?>> registered) {
+		builder.putAll(registered);
+		return builder.buildKeepingLast();
+	}
+
 	/** The merged close() only closes pools; plain renderers retain vanilla's whole-GuiRenderer lifetime. */
 	public static void close(Map<?, ? extends PictureInPictureRenderer<?>> renderers) {
 		Set<PictureInPictureRenderer<?>> closed = Collections.newSetFromMap(new IdentityHashMap<>());

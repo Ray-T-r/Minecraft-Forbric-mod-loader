@@ -3616,20 +3616,39 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			}
 		}
 
+		// Vanilla fills the map from ImmutableMap.builder(), the one point in this constructor a guest can hook: Create
+		// wraps it to add its renderers, SuperMartijn642's core lib injects before it to swap the renderer list, others
+		// modify or redirect it. NeoForge's constructor has no builder at all, so every such injector bound nothing. The
+		// map is built in vanilla's shape: the builder is made where a guest expects it, after the list is final, and the
+		// list's renderers and MinecraftForge's registrations are added to whatever builder the guests' injectors hand
+		// back. One injection point serves every injector form, and the kernel writes no adapter for any of them.
+		int builder = init.maxLocals;
 		int appended = 0;
 		for (AbstractInsnNode insn : init.instructions.toArray()) {
 			if (insn.getOpcode() != Opcodes.RETURN) continue;
 			InsnList assign = new InsnList();
+			LabelNode live = new LabelNode(), end = new LabelNode();
+			assign.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "com/google/common/collect/ImmutableMap", "builder",
+					"()Lcom/google/common/collect/ImmutableMap$Builder;", false));
+			assign.add(new VarInsnNode(Opcodes.ASTORE, builder));
+			assign.add(live);
 			assign.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			assign.add(new VarInsnNode(Opcodes.ALOAD, builder));
 			assign.add(new VarInsnNode(Opcodes.ALOAD, listSlot));
 			assign.add(new MethodInsnNode(Opcodes.INVOKESTATIC, PIP_BUILDER_OWNER, "build", "(Ljava/util/List;)Ljava/util/Map;",
 					false));
+			assign.add(new MethodInsnNode(Opcodes.INVOKESTATIC, PIP_BUILDER_OWNER, "complete",
+					"(Lcom/google/common/collect/ImmutableMap$Builder;Ljava/util/Map;)Ljava/util/Map;", false));
 			assign.add(new FieldInsnNode(Opcodes.PUTFIELD, node.name, renderers.name, renderers.desc));
+			assign.add(end);
 			init.instructions.insertBefore(insn, assign);
+			if (init.localVariables != null) init.localVariables.add(new LocalVariableNode("builder",
+					"Lcom/google/common/collect/ImmutableMap$Builder;", null, live, end, builder));
 			appended++;
 		}
 		if (appended == 0) return false;
-		init.maxStack = Math.max(init.maxStack, 2);
+		init.maxLocals = builder + 1;
+		init.maxStack = Math.max(init.maxStack, 3);
 		for (MethodNode method : node.methods) {
 			if (!"close".equals(method.name) || !"()V".equals(method.desc)) continue;
 			for (AbstractInsnNode insn : method.instructions.toArray()) {

@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.plate.mixin", "compatibilityLevel": "JAVA_21", "client": ["PlateMixin"], "injectors": {"defaultRequire": 1}}

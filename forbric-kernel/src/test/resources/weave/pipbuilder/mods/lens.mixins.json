@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.lens.mixin", "compatibilityLevel": "JAVA_21", "client": ["LensMixin"], "injectors": {"defaultRequire": 1}}

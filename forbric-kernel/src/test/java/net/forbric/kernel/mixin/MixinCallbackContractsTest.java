@@ -29,7 +29,7 @@ class MixinCallbackContractsTest {
         List<Contract> contracts = new ArrayList<>();
         Map<String, Integer> carriers = Map.of("client/mixin/ClientPacketListenerMixin",1,"mixin/LevelChunkMixin",1,
                 "client/mixin/EntityFluidInteractionMixin",2,"client/mixin/ModelManagerMixin",1,"client/mixin/LoadBlockModelMixin",1,
-                "mixin/PersistentEntitySectionManagerCallbackMixin",1,"client/mixin/GuiRendererMixin",1,"mixin/ItemStackMixin",2);
+                "mixin/PersistentEntitySectionManagerCallbackMixin",1,"client/mixin/GuiRendererMixin",0,"mixin/ItemStackMixin",2);
         carriers.forEach((entry,count) -> contracts.add(create(entry, "MixinCarrierCallbackAdapters",(mixin,targets)->MixinCarrierCallbackAdapters.adapt(mixin,targets,(family,name)->CreateInjectionAdaptersTest.nativeTarget(name)), count)));
         for (String entry : List.of("LivingEntityMixin","ItemEntityMixin","ExperienceOrbMixin","AbstractBoatMixin","LeashableMixin","ExplosionDamageCalculatorMixin"))
             contracts.add(create("mixin/"+entry, "MixinBlockQueryAdapters",MixinBlockQueryAdapters::adapt, entry.equals("LivingEntityMixin")?2:1));

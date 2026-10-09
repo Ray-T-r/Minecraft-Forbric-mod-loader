@@ -21,7 +21,7 @@ public final class MixinCarrierCallbackAdapters {
         List<String> owners = MixinFit.mixinTargets(mixin);
         if (owners.size() != 1) return 0;
         return renameOperation(mixin,targets) + fluid(mixin,targets,references) + models(mixin,targets,references)
-                + modelParser(mixin,targets,references) + section(mixin,targets,references) + gui(mixin,targets) + placement(mixin,targets,references);
+                + modelParser(mixin,targets,references) + section(mixin,targets,references) + placement(mixin,targets,references);
     }
 	private static final String MODELS = "net/minecraft/client/resources/model/ModelManager";
 	private static final String FROM_STREAM = "Lnet/minecraft/client/resources/model/cuboid/CuboidModel;fromStream(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/cuboid/CuboidModel;";
@@ -266,30 +266,7 @@ public final class MixinCarrierCallbackAdapters {
 		handler.name+="$forbricOriginal";removeInjector(handler,annotation);handler.visibleParameterAnnotations=null;handler.invisibleParameterAnnotations=null;
 		outer.instructions.add(MixinHandlerShim.callOwn(mixin,stat,handler.name,handler.desc));outer.instructions.add(new InsnNode(Type.getReturnType(handler.desc).getOpcode(Opcodes.IRETURN)));outer.maxLocals=slot;outer.maxStack=slot+2;mixin.methods.add(outer);return outer;
 	}
-	private static int gui(ClassNode mixin,Function<String,ClassNode> targets) {
-        if(!MixinCallbackShape.targets(mixin,"net/minecraft/client/gui/render/GuiRenderer"))return 0;
-        ClassNode target=targets.apply("net/minecraft/client/gui/render/GuiRenderer");
-		MethodNode handler=MixinCallbackShape.unique(mixin,m -> MixinCallbackShape.shape(m,"(L"+OP+";)Lcom/google/common/collect/ImmutableMap$Builder;") && MixinCallbackShape.kind(m,"WrapOperation")
-                && constructor(m,target) && MixinCallbackShape.plainPoint(m,"INVOKE","Lcom/google/common/collect/ImmutableMap;builder()Lcom/google/common/collect/ImmutableMap$Builder;"));if(handler==null||target==null||!handler.desc.equals("(L"+OP+";)Lcom/google/common/collect/ImmutableMap$Builder;"))return 0;
-		String owner="net/forbric/kernel/runtime/KernelForgePipRenderers";
-		int calls=0;for(MethodNode method:target.methods)if(method.name.equals("<init>"))calls+=MixinPlayerWorldCallbackAdapter.count(method,"L"+owner+";build(Ljava/util/List;)Ljava/util/Map;");
-		// The point moves to the build call, so the constructor the selector binds must be the one that makes it.
-		if(calls!=1||MixinPlayerWorldCallbackAdapter.count(MixinTargetSelectors.one(handler,target),"L"+owner+";build(Ljava/util/List;)Ljava/util/Map;")!=1)return 0;AnnotationNode annotation=MixinFit.injectorOf(handler);if(annotation==null)return 0;
-		MixinPlayerWorldCallbackAdapter.set(MixinFit.atNodes(annotation).getFirst(),"target","L"+owner+";build(Ljava/util/List;)Ljava/util/Map;");
-		MethodNode outer=new MethodNode(Opcodes.ACC_PRIVATE,handler.name,"(Ljava/util/List;L"+OP+";)Ljava/util/Map;",null,null);outer.visibleAnnotations=new ArrayList<>(List.of(annotation));
-		handler.name+="$forbricOriginal";removeInjector(handler,annotation);
-		MethodNode builder=new MethodNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,"forbric$rendererBuilder","(Ljava/util/Map;[Ljava/lang/Object;)Ljava/lang/Object;",null,null);
-		builder.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"com/google/common/collect/ImmutableMap","builder","()Lcom/google/common/collect/ImmutableMap$Builder;",false));builder.instructions.add(new VarInsnNode(Opcodes.ALOAD,0));builder.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"com/google/common/collect/ImmutableMap$Builder","putAll","(Ljava/util/Map;)Lcom/google/common/collect/ImmutableMap$Builder;",false));builder.instructions.add(new InsnNode(Opcodes.ARETURN));builder.maxStack=2;builder.maxLocals=2;MixinCallbackShape.uniqueMember(builder);mixin.methods.add(builder);
-		InsnList code=outer.instructions;
-		// The native registration event runs once; the source builder adds its exact singleton instances.
-		code.add(new VarInsnNode(Opcodes.ALOAD,2));code.add(new InsnNode(Opcodes.ICONST_1));code.add(new TypeInsnNode(Opcodes.ANEWARRAY,"java/lang/Object"));code.add(new InsnNode(Opcodes.DUP));code.add(new InsnNode(Opcodes.ICONST_0));code.add(new VarInsnNode(Opcodes.ALOAD,1));code.add(new InsnNode(Opcodes.AASTORE));code.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE,OP,"call","([Ljava/lang/Object;)Ljava/lang/Object;",true));code.add(new TypeInsnNode(Opcodes.CHECKCAST,"java/util/Map"));code.add(new VarInsnNode(Opcodes.ASTORE,3));
-		code.add(new VarInsnNode(Opcodes.ALOAD,0));code.add(new VarInsnNode(Opcodes.ALOAD,3));code.add(new InvokeDynamicInsnNode("call","(Ljava/util/Map;)L"+OP+";",new Handle(Opcodes.H_INVOKESTATIC,"java/lang/invoke/LambdaMetafactory","metafactory","(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",false),Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;"),new Handle(Opcodes.H_INVOKESTATIC,mixin.name,builder.name,builder.desc,false),Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;")));
-		code.add(MixinHandlerShim.callOwn(mixin,false,handler.name,handler.desc));code.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,"com/google/common/collect/ImmutableMap$Builder","build","()Lcom/google/common/collect/ImmutableMap;",false));code.add(new InsnNode(Opcodes.ARETURN));outer.maxStack=6;outer.maxLocals=4;mixin.methods.add(outer);return 1;
-	}
-
 	private static int placement(ClassNode mixin,Function<String,ClassNode> targets,BiFunction<Ecosystem,String,ClassNode> references) { return MixinPlacementTransactionAdapter.adapt(mixin,targets,references); }
-	/** Whether the handler's injector binds one method of {@code target}, a constructor. */
-	private static boolean constructor(MethodNode handler,ClassNode target){MethodNode bound=MixinTargetSelectors.one(handler,target);return bound!=null&&bound.name.equals("<init>");}
 	static MethodNode named(ClassNode c,String name){return c.methods.stream().filter(m->m.name.equals(name)).findFirst().orElse(null);}
 	static void removeInjector(MethodNode handler,AnnotationNode annotation){if(handler.visibleAnnotations!=null)handler.visibleAnnotations.remove(annotation);if(handler.invisibleAnnotations!=null)handler.invisibleAnnotations.remove(annotation);MixinCallbackShape.uniqueMember(handler);}
 }

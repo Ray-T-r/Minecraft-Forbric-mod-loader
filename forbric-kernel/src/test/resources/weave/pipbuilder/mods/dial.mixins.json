@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.dial.mixin", "compatibilityLevel": "JAVA_21", "client": ["DialMixin"], "injectors": {"defaultRequire": 1}}

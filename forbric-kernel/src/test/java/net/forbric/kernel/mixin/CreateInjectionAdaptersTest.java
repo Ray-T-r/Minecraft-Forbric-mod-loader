@@ -6,7 +6,7 @@ import org.objectweb.asm.*;import org.objectweb.asm.tree.*;
 
 class CreateInjectionAdaptersTest {
 	@Test void releasedCallbacksKeepTheirBodiesAndBindToTheReviewedLiveOperations()throws Exception {
-		Map<String,Integer> expected=Map.of("client/mixin/ClientPacketListenerMixin",1,"mixin/LevelChunkMixin",1,"client/mixin/EntityFluidInteractionMixin",2,"client/mixin/ModelManagerMixin",1,"mixin/PersistentEntitySectionManagerCallbackMixin",1,"client/mixin/GuiRendererMixin",1,"mixin/ItemStackMixin",2);
+		Map<String,Integer> expected=Map.of("client/mixin/ClientPacketListenerMixin",1,"mixin/LevelChunkMixin",1,"client/mixin/EntityFluidInteractionMixin",2,"client/mixin/ModelManagerMixin",1,"mixin/PersistentEntitySectionManagerCallbackMixin",1,"client/mixin/GuiRendererMixin",0,"mixin/ItemStackMixin",2);
 		for(var entry:expected.entrySet()){
 			var node=CreateGuestMixinFixture.mixin("com/zurrtum/create/"+entry.getKey());
 			Map<String,String> bodies=new HashMap<>();for(var method:node.methods)bodies.put(method.name+method.desc,MixinInstructionFingerprint.hash(method));
