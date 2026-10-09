@@ -28,9 +28,28 @@ final class MixinCallbackShape {
                 && MixinFit.value(injector, "target") == null
                 && !grouped(method.visibleAnnotations) && !grouped(method.invisibleAnnotations);
     }
+    /**
+     * Whether the injector's selector list is spelled exactly {@code selector}. A spelling is not a binding: callback
+     * adapters that have the target class ask {@link #binds}; this stays for adapters that are given none.
+     */
     static boolean selects(MethodNode method, String selector) {
         AnnotationNode injector = MixinFit.injectorOf(method);
         return injector != null && List.of(selector).equals(MixinFit.stringList(MixinFit.value(injector, "method")));
+    }
+    /**
+     * Whether Mixin binds the handler's injector to {@code member} ({@code name + desc}) of {@code target} and to nothing
+     * else, however its selectors are written ({@link MixinTargetSelectors}).
+     */
+    static boolean binds(MethodNode method, ClassNode target, String member) {
+        return target != null && MixinTargetSelectors.bindsOnly(method, target, member);
+    }
+    /**
+     * Whether the handler's operands and return are {@code descriptor}'s and its extras exactly {@code extras}
+     * ({@link MixinHandlerShape}): the callback contract by platform types and parameter roles, not by one mod's descriptor.
+     */
+    static boolean shape(MethodNode method, String descriptor, MixinHandlerShape.Want... extras) {
+        MixinHandlerShape shape = MixinHandlerShape.of(method);
+        return shape != null && shape.matches(descriptor, extras);
     }
     static boolean point(MethodNode method, String kind, String target) {
         AnnotationNode injector = MixinFit.injectorOf(method);
