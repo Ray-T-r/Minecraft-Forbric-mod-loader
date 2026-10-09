@@ -94,6 +94,23 @@ class StubLocalsCaptureTest {
 		assertUntouched(twice, target, "two captures on one stub");
 	}
 
+	/** The row's columns decide per ecosystem: MinecraftForge ran list(ResourceManager) as the body, NeoForge keeps the stub. */
+	@Test void aModWhosePlatformKeepsTheSameStubGetsWhatItGetsNatively() throws Exception {
+		ClassNode target = target();
+		// Names of their own, so the families noted for them reach no other test's mixins.
+		ClassNode neo = named(continuity(), "org/example/stubcapture/NeoForgeCapture"), forge = named(continuity(), "org/example/stubcapture/ForgeCapture");
+		MixinStubRebind.noteEcosystem(neo.name, net.forbric.api.Ecosystem.NEOFORGE);
+		assertUntouched(neo, target, "a NeoForge mod: NeoForge's own list(ResourceManager) is this stub");
+		MixinStubRebind.noteEcosystem(forge.name, net.forbric.api.Ecosystem.FORGE);
+		assertEquals(1, adapt(forge, target), "a MinecraftForge mod: its platform ran that signature as the body");
+	}
+
+	private static ClassNode named(ClassNode mixin, String name) {
+		ClassNode renamed = new ClassNode();
+		mixin.accept(new org.objectweb.asm.commons.ClassRemapper(renamed, new org.objectweb.asm.commons.SimpleRemapper(Opcodes.ASM9, mixin.name, name)));
+		return renamed;
+	}
+
 	private static void assertUntouched(ClassNode mixin, ClassNode target, String why) {
 		byte[] before = CarpetMixinAdapterTest.bytes(mixin);
 		assertEquals(0, adapt(mixin, target), why);

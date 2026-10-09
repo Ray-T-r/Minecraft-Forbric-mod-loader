@@ -32,8 +32,9 @@ import net.forbric.kernel.util.ForbricLog;
  * the mod's handler the stub's arguments (read off the stub's own forwarding) and the locals. Continuity's capture of the
  * atlas loader map was the first seen.
  *
- * <p>Proved for each handler: Mixin binds it to one method that heads a carrier-stubs row and purely forwards every one of
- * its arguments to the body ({@link MixinStubRebind#delegation}); its operands are exactly the stub's arguments and
+ * <p>Proved for each handler: Mixin binds it to one method that heads a carrier-stubs row — one the mod's own platform ran
+ * as code, as MixinStubRebind reads the row — and purely forwards every one of its arguments to the body
+ * ({@link MixinStubRebind#delegation}); its operands are exactly the stub's arguments and
  * callback and every other parameter is a captured local; its one point is an {@code INVOKE} (no shift, no occurrence past
  * the first) the stub does not make and the body makes once; and at that call the body's locals after its arguments, in
  * slot order, begin with locals of exactly the captured types — each holding a value on every path there (a local the table
@@ -60,7 +61,7 @@ public final class MixinSpriteLoaderCallbackAdapter {
 		if (target == null || !MixinStubRebind.ownsCarrierStub(target.name)) return 0;
 		Map<MethodNode, List<Capture>> byStub = new IdentityHashMap<>();
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
-			Capture capture = capture(handler, target);
+			Capture capture = capture(mixin, handler, target);
 			if (capture != null) byStub.computeIfAbsent(capture.stub(), s -> new ArrayList<>()).add(capture);
 		}
 		int changed = 0;
@@ -79,7 +80,7 @@ public final class MixinSpriteLoaderCallbackAdapter {
 		return changed;
 	}
 
-	private static Capture capture(MethodNode handler, ClassNode target) {
+	private static Capture capture(ClassNode mixin, MethodNode handler, ClassNode target) {
 		if (!MixinCallbackShape.kind(handler, "Inject") || !MixinCallbackShape.instance(handler)) return null;
 		AnnotationNode inject = MixinFit.injectorOf(handler);
 		if (!(MixinFit.value(inject, "locals") instanceof String[] locals) || locals.length != 2 || !locals[1].startsWith("CAPTURE_")) return null;
@@ -91,7 +92,10 @@ public final class MixinSpriteLoaderCallbackAdapter {
 		if (member == null || !MixinCallbackShape.beforePoint(handler, "INVOKE", member)
 				|| ordinal != null && !Integer.valueOf(0).equals(ordinal) && !Integer.valueOf(-1).equals(ordinal)) return null;
 		MethodNode stub = MixinTargetSelectors.one(handler, target);
-		if (stub == null || !MixinStubRebind.isCarrierStub(target, stub)) return null;
+		// As MixinStubRebind moves along a row: only for a mod whose own platform ran that signature as code (a NeoForge mod
+		// on a stub NeoForge keeps itself gets what it gets natively). Unknown ecosystem: the row alone.
+		net.forbric.api.Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixin.name);
+		if (stub == null || (ecosystem != null ? !MixinStubRebind.isStubOverBody(target, stub, ecosystem) : !MixinStubRebind.isCarrierStub(target, stub))) return null;
 		MixinStubRebind.Delegation delegation = MixinStubRebind.delegation(target, stub);
 		if (delegation == null) return null;
 		for (int position : delegation.positions()) if (position < 0) return null;
