@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.drifter.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["DriftMixin"], "injectors": {"defaultRequire": 1}}
