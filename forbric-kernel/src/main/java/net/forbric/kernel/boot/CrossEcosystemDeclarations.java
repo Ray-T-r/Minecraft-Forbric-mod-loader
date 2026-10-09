@@ -70,6 +70,13 @@ import net.forbric.kernel.util.ForbricSwitches;
  * {@code fabric} namespace is excluded: {@code fabric:provides} and its kin are Fabric METADATA fields written as
  * properties.
  *
+ * <h2>When adding the Fabric mods fails</h2>
+ *
+ * <p>The readers this feeds run inside a library's own startup — a config loader inside {@code Minecraft.<init>}, with no
+ * handler of its own around the walk — so the game-side hooks never let a failure of theirs escape: the reader gets
+ * exactly what its own {@code ModList} answered, as if no Fabric mod declared anything, and the failure is a
+ * {@code SUSPECTED} finding naming the reader ({@link #readerFailed}).
+ *
  * <p>{@code -Dforbric.crossEcosystemDeclarations=off} turns all of it off, in both directions; the old
  * {@code -Dforbric.sodiumConfigUsers} is honoured as its former name.
  */
@@ -190,7 +197,49 @@ public final class CrossEcosystemDeclarations {
 	public static void resetForTests() {
 		NAME_READS.clear();
 		OTHER_READS.clear();
+		REPORTED.clear();
 		fabricNames = Map.of();
+	}
+
+	// ---- a reader the Fabric mods could not be added for -------------------------------------------------------------
+
+	private static final Set<String> REPORTED = ConcurrentHashMap.newKeySet();
+	private static final StackWalker FRAMES = StackWalker.getInstance();
+
+	/**
+	 * Called by a game-side declaration-reader hook that could not add the declaring Fabric mods to what a
+	 * Forge-family {@code ModList} answered — the hook then hands the reader that native answer unchanged. Records,
+	 * once per reader class and hook, a {@code SUSPECTED} finding naming the reader: it is running, with its own
+	 * family's mods, and only the Fabric mods that declare its keys are missing from what it sees. A
+	 * {@link VirtualMachineError} is not a failure of the hook and is rethrown; nothing else ever leaves this method,
+	 * since it runs inside the hook's own guard.
+	 */
+	public static void readerFailed(String hook, Throwable failure) {
+		if (failure instanceof VirtualMachineError fatal) throw fatal;
+		try {
+			String reader = readerClass();
+			String id = "declaration-readers:" + hook + ":" + reader;
+			if (!REPORTED.add(id)) return;
+			String detail = reader + " reads mods' [modproperties] out of ModList." + hook + ", and adding the Fabric "
+					+ "mods that declare the same keys failed; it was given ModList's own answer, without them";
+			ForbricLog.warn("[Forbric/Declarations] %s: %s", detail, String.valueOf(failure));
+			net.forbric.api.CompatibilityFindings.record(new net.forbric.api.CompatibilityFinding(id, "forbric",
+					"Mod integration", "CrossEcosystemDeclarations",
+					net.forbric.api.CompatibilityFinding.Confidence.SUSPECTED, false, detail,
+					List.of("reader=" + reader, "hook=ModList." + hook, String.valueOf(failure))));
+		} catch (VirtualMachineError fatal) {
+			throw fatal;
+		} catch (Throwable unreported) {
+			// The reader already has its native answer; failing to report that must not take it away.
+		}
+	}
+
+	/** The class that called a hook: the first frame that is neither the kernel's nor the JDK's own. */
+	private static String readerClass() {
+		return FRAMES.walk(frames -> frames.map(StackWalker.StackFrame::getClassName)
+				.filter(name -> !name.startsWith("net.forbric.kernel.") && !name.startsWith("java.")
+						&& !name.startsWith("jdk.") && !name.startsWith("sun."))
+				.findFirst().orElse("an unnamed reader"));
 	}
 
 	/** A Fabric mod's custom values, plus the entrypoint names under each key a reader asks for by name. */

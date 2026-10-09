@@ -40,6 +40,14 @@ import net.neoforged.neoforgespi.language.IModInfo;
  *
  * <p>Everything here is a view: nothing is written into {@code ModList}, so no other class, and no handshake, ever
  * sees a Fabric mod in it.
+ *
+ * <p><b>Never a new failure.</b> A reader is typically a library's startup code — a config loader running inside
+ * {@code Minecraft.<init>} with no handler around its walk — so anything thrown here would be a startup crash that
+ * the native call could never have caused. Each hook therefore makes the native call first, outside any guard (what it
+ * throws is the reader's own business, exactly as without this class), and adds the Fabric mods inside one: if that
+ * part throws, the reader gets the native answer unchanged and the failure is a {@code SUSPECTED} finding naming it
+ * ({@code CrossEcosystemDeclarations.readerFailed}). The same holds for the reader's own callback applied to a Fabric
+ * mod's container: natively it never ran on one.
  */
 public final class KernelDeclarationReaders {
 	/** One declaring Fabric mod, built once per published Fabric list so a reader always meets the same objects. */
@@ -56,59 +64,115 @@ public final class KernelDeclarationReaders {
 	/** Replaces {@code ModList.getMods()}. */
 	public static List<IModInfo> getMods(ModList list) {
 		List<IModInfo> mods = list.getMods();
-		List<Declarer> extra = absentFrom(list);
-		if (extra.isEmpty()) return mods;
-		List<IModInfo> all = new ArrayList<>(mods.size() + extra.size());
-		all.addAll(mods);
-		for (Declarer declarer : extra) all.add(declarer.info());
-		return all;
+		try {
+			List<Declarer> extra = absentFrom(list);
+			if (extra.isEmpty()) return mods;
+			List<IModInfo> all = new ArrayList<>(mods.size() + extra.size());
+			all.addAll(mods);
+			for (Declarer declarer : extra) all.add(declarer.info());
+			return all;
+		} catch (Throwable failure) {
+			CrossEcosystemDeclarations.readerFailed("getMods", failure);
+			return mods;
+		}
 	}
 
 	/** Replaces {@code ModList.getSortedMods()}. */
 	public static List<ModContainer> getSortedMods(ModList list) {
 		List<ModContainer> mods = list.getSortedMods();
-		List<Declarer> extra = absentFrom(list);
-		if (extra.isEmpty()) return mods;
-		List<ModContainer> all = new ArrayList<>(mods.size() + extra.size());
-		all.addAll(mods);
-		for (Declarer declarer : extra) all.add(declarer.container());
-		return all;
+		try {
+			List<Declarer> extra = absentFrom(list);
+			if (extra.isEmpty()) return mods;
+			List<ModContainer> all = new ArrayList<>(mods.size() + extra.size());
+			all.addAll(mods);
+			for (Declarer declarer : extra) all.add(declarer.container());
+			return all;
+		} catch (Throwable failure) {
+			CrossEcosystemDeclarations.readerFailed("getSortedMods", failure);
+			return mods;
+		}
 	}
 
 	/** Replaces {@code ModList.getModContainerById(String)}. */
 	public static Optional<? extends ModContainer> getModContainerById(ModList list, String id) {
 		Optional<? extends ModContainer> native_ = list.getModContainerById(id);
 		if (native_.isPresent()) return native_;
-		Declarer declarer = byId(id);
-		return declarer == null ? native_ : Optional.of(declarer.container());
+		try {
+			Declarer declarer = byId(id);
+			return declarer == null ? native_ : Optional.of(declarer.container());
+		} catch (Throwable failure) {
+			CrossEcosystemDeclarations.readerFailed("getModContainerById", failure);
+			return native_;
+		}
 	}
 
 	/** Replaces {@code ModList.getModFileById(String)}. */
 	public static IModFileInfo getModFileById(ModList list, String id) {
 		IModFileInfo native_ = list.getModFileById(id);
-		if (native_ != null || nativelyAnswers(list, id)) return native_;
-		Declarer declarer = byId(id);
-		return declarer == null ? null : declarer.info().getOwningFile();
+		if (native_ != null) return native_;
+		try {
+			if (nativelyAnswers(list, id)) return native_;
+			Declarer declarer = byId(id);
+			return declarer == null ? native_ : declarer.info().getOwningFile();
+		} catch (Throwable failure) {
+			CrossEcosystemDeclarations.readerFailed("getModFileById", failure);
+			return native_;
+		}
 	}
 
-	/** Replaces {@code ModList.forEachModContainer(BiConsumer)}. */
+	/**
+	 * Replaces {@code ModList.forEachModContainer(BiConsumer)}. The reader's action runs on each declaring Fabric mod
+	 * inside the same guard: natively it never ran on one, so a Fabric mod it cannot handle is skipped, not thrown.
+	 */
 	public static void forEachModContainer(ModList list, BiConsumer<String, ModContainer> action) {
 		list.forEachModContainer(action);
-		for (Declarer declarer : absentFrom(list)) action.accept(declarer.id(), declarer.container());
+		for (Declarer declarer : absentOrNone(list, "forEachModContainer")) {
+			try {
+				action.accept(declarer.id(), declarer.container());
+			} catch (Throwable failure) {
+				CrossEcosystemDeclarations.readerFailed("forEachModContainer", failure);
+			}
+		}
 	}
 
-	/** Replaces {@code ModList.forEachModInOrder(Consumer)}. */
+	/** Replaces {@code ModList.forEachModInOrder(Consumer)}; guarded as {@link #forEachModContainer} is. */
 	public static void forEachModInOrder(ModList list, Consumer<ModContainer> action) {
 		list.forEachModInOrder(action);
-		for (Declarer declarer : absentFrom(list)) action.accept(declarer.container());
+		for (Declarer declarer : absentOrNone(list, "forEachModInOrder")) {
+			try {
+				action.accept(declarer.container());
+			} catch (Throwable failure) {
+				CrossEcosystemDeclarations.readerFailed("forEachModInOrder", failure);
+			}
+		}
 	}
 
-	/** Replaces {@code ModList.applyForEachModContainer(Function)}. */
+	/**
+	 * Replaces {@code ModList.applyForEachModContainer(Function)}. As lazy as the native stream: the reader's function
+	 * reaches a declaring Fabric mod when the stream does, and a Fabric mod it cannot handle is left out, not thrown.
+	 */
 	public static <T> Stream<T> applyForEachModContainer(ModList list, Function<ModContainer, T> function) {
 		Stream<T> native_ = list.applyForEachModContainer(function);
-		List<Declarer> extra = absentFrom(list);
+		List<Declarer> extra = absentOrNone(list, "applyForEachModContainer");
 		if (extra.isEmpty()) return native_;
-		return Stream.concat(native_, extra.stream().map(declarer -> function.apply(declarer.container())));
+		return Stream.concat(native_, extra.stream().flatMap(declarer -> {
+			try {
+				return Stream.of(function.apply(declarer.container()));
+			} catch (Throwable failure) {
+				CrossEcosystemDeclarations.readerFailed("applyForEachModContainer", failure);
+				return Stream.<T>empty();
+			}
+		}));
+	}
+
+	/** {@link #absentFrom}, or none when that cannot be told — the reader then gets the native answer alone. */
+	private static List<Declarer> absentOrNone(ModList list, String hook) {
+		try {
+			return absentFrom(list);
+		} catch (Throwable failure) {
+			CrossEcosystemDeclarations.readerFailed(hook, failure);
+			return List.of();
+		}
 	}
 
 	/**
