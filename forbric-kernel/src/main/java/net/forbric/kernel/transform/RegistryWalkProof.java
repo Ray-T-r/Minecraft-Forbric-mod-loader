@@ -22,13 +22,17 @@ import org.objectweb.asm.tree.analysis.*;
  *
  * <p>What is proved, and why each part is needed for the replay to be the mod's own work:
  * <ul>
- * <li>The walk reaches every element: an iterator loop leaves normally only when {@code hasNext()} is false, an index
- *     loop starts at 0, steps by exactly 1 and leaves only when the index reaches {@code size()}; {@code forEach} visits
- *     every element by contract. No exception handler covers the walk, so a failing element ends the method.</li>
+ * <li>The walk reaches every element: an iterator loop leaves normally only when {@code hasNext()} is false; an index
+ *     loop starts at 0, reads the element in every iteration before it steps by exactly 1, and leaves only when the
+ *     index reaches the {@code size()} of the registry it reads (not a constant, a parameter, or another registry's
+ *     size); {@code forEach} visits every element by contract. No exception handler covers the walk, so a failing
+ *     element ends the method.</li>
  * <li>Each element is given each callback exactly once, unconditionally: the callback lies on every path from taking an
- *     element to the end of that iteration and on no inner cycle, and the element flows nowhere else (no condition, no
- *     argument, no field read). A conditional or repeated callback is the mod deciding per element, which a replay
- *     cannot reproduce.</li>
+ *     element to the end of that iteration (in a consumer, on every path to its return) and on no inner cycle, and the
+ *     element flows nowhere else (no condition, no argument, no field read). A conditional or repeated callback is the
+ *     mod deciding per element, which a replay cannot reproduce; so is a condition that never reads the element, such
+ *     as a static flag, around the callback or around the read itself, because the replay would run where the mod's
+ *     walk did not.</li>
  * <li>A normal return of the method means every walk finished, or was skipped only because the element type cannot
  *     carry the callback interface at all; after a walk the method does nothing observable but further walks. The late
  *     replay runs after the method, so work ordered after the callbacks could not keep its order.</li>
@@ -196,9 +200,12 @@ final class RegistryWalkProof {
         int start = flow.index(zero), inc = flow.index(step), element = flow.index(byId);
         if (loop == null || loop.nodes.contains(start) || !loop.nodes.contains(inc) || !loop.nodes.contains(element)
                 || !loop.enteredOnlyAfter(flow, start)) return null;
-        // Exactly one step per element, after the element was read and before the exit test reads the index again.
+        // Exactly one step per element, after the element was read and before the exit test reads the index again. And no
+        // step in an iteration that did not read the element: a condition around the read itself never sees the element,
+        // so nothing per-element would notice that the step skipped one.
         if (loop.inInnerCycle(flow, inc) || loop.reachesIterationEnd(flow, element, inc)
-                || loop.reachesWithinIteration(flow, inc, element, -1) || loop.reachesAcrossIterations(flow, inc, element, loop.testNodes()))
+                || loop.reachesWithinIteration(flow, inc, element, -1) || loop.reachesAcrossIterations(flow, inc, element, loop.testNodes())
+                || loop.reachesWithinIteration(flow, loop.header, inc, element))
             return null;
         Facts facts = new Facts();
         facts.form = Form.INDEXED; facts.registry = registry; facts.start = zero;
