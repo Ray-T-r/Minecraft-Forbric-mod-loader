@@ -37,8 +37,22 @@ import org.objectweb.asm.tree.analysis.*;
  *     carry the callback interface at all; after a walk the method does nothing observable but further walks. The late
  *     replay runs after the method, so work ordered after the callbacks could not keep its order.</li>
  * </ul>
- * Registries are recognised by their platform types ({@code net/minecraft/core} registry types read from a platform
- * class's static field); the callback contract only by being a public interface with a public no-argument member.
+ *
+ * <p>What is recognised, by platform facts only; anything else is left exactly as the mod wrote it:
+ * <ul>
+ * <li>The registry: a {@code net/minecraft/core} registry type read, in the walking method, straight from a static
+ *     field of a platform class (Minecraft, NeoForge, MinecraftForge, Fabric), possibly through locals and casts. A
+ *     registry the mod cached in a field of its own, or was handed as a parameter, is not recognised.</li>
+ * <li>The callback: a call ON THE ELEMENT of a public no-argument member of a public interface (an
+ *     {@code invokeinterface} whose receiver is the element, its result discarded), the way a mixin-added contract is
+ *     called. The replay invokes exactly that member on each late element and nothing else, so a static helper the
+ *     element is passed to ({@code Helper.init(element)}), a method of the element's own class
+ *     ({@code invokevirtual}), or any argument beside the receiver is not recognised.</li>
+ * <li>The index step: one {@code iinc} of 1 ({@code i++}, {@code ++i}, {@code i += 1}). {@code i = i + 1} compiles to
+ *     a load, an add and a store instead, and is not recognised.</li>
+ * <li>A walk nested in another (each block's states, inside a walk of the blocks) is not: the outer element flows into
+ *     the inner walk, not only into a callback.</li>
+ * </ul>
  */
 final class RegistryWalkProof {
     private RegistryWalkProof() { }

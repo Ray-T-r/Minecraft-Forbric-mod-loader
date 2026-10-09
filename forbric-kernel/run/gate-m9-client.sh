@@ -811,10 +811,14 @@ check "every block state's cache is computed" \
 
 # Lithium computes its per-state flags in ONE pass, fired from FuelValues.vanillaBurnTimes, and throws rather
 # than computing a state it missed later. Any state registered after that pass needs the same callback. The
-# kernel does not know whose pass it is: it recognises any closed per-element walk of the block-state registry
-# (an iterator loop with one unconditional interface callback per element and nothing else in the method),
-# records which states it reached, and at each registration close runs the same callback on the states it did
-# not ("[Forbric/Lifecycle] completed N registry element callback(s) for late registrations").
+# kernel does not know whose pass it is: it recognises any closed per-element walk of a platform registry, proved
+# from data and control flow (RegistryWalkProof) whatever loop the mod wrote -- an iterator loop, an index loop
+# over size()/byId, or forEach on the registry or its sequential stream -- that gives every element the same
+# public no-argument interface callback(s) exactly once and unconditionally, and after which the method does
+# nothing observable but further walks. It records which elements each walk reached, and at each registration
+# close runs the same callback on the ones it did not ("[Forbric/Lifecycle] completed N registry element
+# callback(s) for late registrations"). In this pack the walker is Lithium's, over the block-state registry,
+# which is the one the check below names.
 #
 # Measured on this pack (2026-10-09): the pass fires at WORLD START, from the kernel's fuel bridge running
 # vanillaBurnTimes' return hooks, i.e. after the last registration window. So every state exists when it walks,
