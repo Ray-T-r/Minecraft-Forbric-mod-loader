@@ -16,8 +16,9 @@ public final class FabricClientMixinAnchors {
  private static int removal(ClassNode mixin,Function<String,ClassNode> targets){
   String owner="net/minecraft/world/level/chunk/LevelChunk",desc="(Lnet/minecraft/core/BlockPos;L"+owner+"$EntityCreationType;)Lnet/minecraft/world/level/block/entity/BlockEntity;";
   if(!MixinCallbackShape.targets(mixin,owner))return 0;
-  MethodNode handler=MixinCallbackShape.unique(mixin,method->method.desc.equals("(Ljava/util/Map;Ljava/lang/Object;)Ljava/lang/Object;")&&MixinFit.injectorOf(method)!=null&&MixinFit.injectorOf(method).desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;"));ClassNode target=targets.apply(owner);
-  if(handler==null||target==null||group(handler))return 0;MethodNode host=find(target,"getBlockEntity",desc);if(host==null)return 0;
+  MethodNode handler=MixinCallbackShape.unique(mixin,method->method.desc.equals("(Ljava/util/Map;Ljava/lang/Object;)Ljava/lang/Object;")&&MixinFit.injectorOf(method)!=null&&MixinFit.injectorOf(method).desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;"));
+  if(handler==null||group(handler))return 0;ClassNode target=targets.apply(owner); // the handler first, then the target's code
+  if(target==null)return 0;MethodNode host=find(target,"getBlockEntity",desc);if(host==null)return 0;
   AnnotationNode injector=MixinFit.injectorOf(handler);if(injector==null||!injector.desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;"))return 0;
   if(!MixinFit.stringList(MixinFit.value(injector,"method")).equals(List.of("getBlockEntity"+desc)))return 0;
   Object slice=MixinFit.value(injector,"slice");
@@ -48,10 +49,8 @@ public final class FabricClientMixinAnchors {
   * an ordered part of the wider list). A handler with a body, a value to return, a group or a slice is not touched.
   */
  private static int render(ClassNode mixin,Function<String,ClassNode> targets){
-  List<ClassNode> classes=new ArrayList<>();
-  for(String name:MixinFit.mixinTargets(mixin)){ClassNode target=targets.apply(name);if(target!=null)classes.add(target);}
-  if(classes.isEmpty())return 0;
-  int moved=0;
+  // The handlers first: resolving a target with code is the expensive part, and almost no mixin has an empty redirect.
+  List<EmptyRedirect> empty=new ArrayList<>();
   for(MethodNode handler:mixin.methods){
    if(!MixinCallbackShape.kind(handler,"Redirect")||group(handler))continue;
    List<AbstractInsnNode> code=new ArrayList<>();for(var i:handler.instructions)if(i.getOpcode()>=0)code.add(i);
@@ -62,6 +61,15 @@ public final class FabricClientMixinAnchors {
    for(String key:List.of("ordinal","shift","by","args","opcode"))if(MixinFit.value(at,key)!=null)plain=false;
    MixinAtWidenedCall.Member named=MixinAtWidenedCall.parse((String)MixinFit.value(at,"target"));
    if(!plain||named==null||Type.getReturnType(named.descriptor()).getSort()!=Type.VOID)continue;
+   empty.add(new EmptyRedirect(handler,redirect,at,named));
+  }
+  if(empty.isEmpty())return 0;
+  List<ClassNode> classes=new ArrayList<>();
+  for(String name:MixinFit.mixinTargets(mixin)){ClassNode target=targets.apply(name);if(target!=null)classes.add(target);}
+  if(classes.isEmpty())return 0;
+  int moved=0;
+  for(EmptyRedirect candidate:empty){
+   MethodNode handler=candidate.handler();AnnotationNode redirect=candidate.redirect(),at=candidate.at();MixinAtWidenedCall.Member named=candidate.named();
    List<MethodNode> hosts=new ArrayList<>();
    for(String selector:MixinFit.stringList(MixinFit.value(redirect,"method")))for(ClassNode target:classes){MethodNode host=selected(target,selector);if(host!=null&&!hosts.contains(host))hosts.add(host);}
    if(hosts.isEmpty())continue;
@@ -96,6 +104,8 @@ public final class FabricClientMixinAnchors {
   }
   return moved;
  }
+ /** A handler that is nothing but {@code return}, redirecting one plain INVOKE of a void call. */
+ private record EmptyRedirect(MethodNode handler,AnnotationNode redirect,AnnotationNode at,MixinAtWidenedCall.Member named){}
  /** Whether {@code wide} takes {@code named}'s parameters, in order, among more. */
  private static boolean within(String named,String wide){
   Type[] own=Type.getArgumentTypes(named),all=Type.getArgumentTypes(wide);
