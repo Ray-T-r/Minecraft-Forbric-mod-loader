@@ -275,7 +275,11 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 				+ "connection-initialisation guard) intentionally inert since NeoForge 26.2.0.88");
 	}
 
-	/** Claim ids, one per branch of {@link #transform}; each is reported beside its {@code changed = true}. */
+	/**
+	 * Claim ids, one per branch of {@link #transform}; each is reported beside its {@code changed = true}, except
+	 * {@link #CLAIM_START_NEXT_TASK}, which is reported when the method ends up starting tasks through MinecraftForge's
+	 * context, edited here or already merged that way ({@link #startsTasksThroughForgesContext}).
+	 */
 	static final String CLAIM_FABRIC_ADDON = "forbric-common-network-interop#fabricAddonHandle";
 	static final String CLAIM_FINISH_TASK = "forbric-common-network-interop#finishCurrentTask";
 	static final String CLAIM_CLIENT_COMMON_PAYLOAD = "forbric-common-network-interop#clientCommonHandlePayload";
@@ -432,11 +436,13 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 			} else if (serverConfig && m.name.equals(START_NEXT_TASK)) {
 				if (startTasksThroughForgesContext(node, m)) {
 					changed = true;
-					reporter.hit(CLAIM_START_NEXT_TASK);
 					ForbricLog.info("[Forbric/Net] %s.%s now starts configuration tasks through MinecraftForge's task "
 							+ "context — its own tasks refuse the vanilla overload, and every other task reaches it "
 							+ "through the interface default that delegates back", className, START_NEXT_TASK);
 				}
+				// Judged on the end state, not on the edit: a merge that kept MinecraftForge's own body already starts
+				// every task through the context, and needs nothing from this repair.
+				if (startsTasksThroughForgesContext(m)) reporter.hit(CLAIM_START_NEXT_TASK);
 			} else if (clientConfig && m.name.equals(HANDLE_CONFIG_FINISHED)) {
 				if (completeForgeConfiguration(m)) {
 					bumpStack(m, 1);
@@ -617,6 +623,25 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Whether {@code startNextTask} starts tasks only through the {@code ConfigurationTaskContext} overload: it makes
+	 * at least one such call with a context that is not the null constant, and no call to the {@code Consumer}
+	 * overload MinecraftForge's own tasks refuse. True on MinecraftForge's own body and on this repair's edit of the
+	 * vanilla one, however the context reaches the call; false while any task is still handed the Consumer overload.
+	 */
+	static boolean startsTasksThroughForgesContext(MethodNode m) {
+		boolean context = false;
+		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (!(insn instanceof MethodInsnNode call) || !CONFIGURATION_TASK.equals(call.owner) || !TASK_START.equals(call.name)) continue;
+			if (TASK_START_CONSUMER_DESC.equals(call.desc)) return false;
+			if (!("(" + FORGE_TASK_CONTEXT + ")V").equals(call.desc)) continue;
+			AbstractInsnNode argument = previousOpcode(call);
+			if (argument == null || argument.getOpcode() == Opcodes.ACONST_NULL) return false;
+			context = true;
+		}
+		return context;
 	}
 
 	/** {@code interop.onClientConfigurationFinished(this);} after NeoForge's own finish, before the reply goes out. */
