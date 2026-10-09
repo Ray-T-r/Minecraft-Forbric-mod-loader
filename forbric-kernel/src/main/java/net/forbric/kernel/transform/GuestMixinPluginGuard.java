@@ -167,6 +167,12 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 			code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, GUARD, "rememberPlugin", "(Ljava/lang/Object;)V", false));
 		}
 
+		// A postApply that does something is where a raw post-Mixin patch lives; ContendedCallSites looks at the
+		// target on either side of it. Outside the try/catch like rememberPlugin: neither hook throws, and the
+		// handler's frame stays "the starting locals, one Throwable".
+		boolean observed = observesPostApply(method);
+		if (observed) code.add(postApplyHook("beforePostApply"));
+
 		code.add(start);
 		code.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		int slot = 1;
@@ -176,6 +182,7 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 		}
 		// The alias is private, so invokespecial is both correct and immune to a subclass overriding it.
 		code.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, owner.name, method.name, method.desc, false));
+		if (observed) code.add(postApplyHook("afterPostApply"));
 		code.add(new InsnNode(returnType.getOpcode(Opcodes.IRETURN)));
 		code.add(end);
 
@@ -187,10 +194,70 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 		code.add(new VarInsnNode(Opcodes.ALOAD, slot));
 		code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, GUARD, "report",
 				"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V", false));
+		if (observed) {
+			code.add(new VarInsnNode(Opcodes.ALOAD, 2));
+			code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, GUARD, "abandonPostApply", "(Ljava/lang/Object;)V", false));
+		}
 		code.add(fallback(returnType));
 		code.add(new InsnNode(returnType.getOpcode(Opcodes.IRETURN)));
 
 		return wrapper;
+	}
+
+	/** {@code postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo)}. */
+	static final String POST_APPLY_DESC = "(Ljava/lang/String;Lorg/objectweb/asm/tree/ClassNode;Ljava/lang/String;"
+			+ "Lorg/spongepowered/asm/mixin/extensibility/IMixinInfo;)V";
+	private static final String HOOK_DESC = "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/String;)V";
+
+	/**
+	 * Whether the wrapper of {@code method} (still under its own name) reports to {@link
+	 * net.forbric.kernel.mixin.ContendedCallSites}: a {@code postApply} of Mixin's shape whose body does anything at
+	 * all. Most plugins' {@code postApply} is a bare {@code return}, and those get no hook and pay nothing.
+	 */
+	static boolean observesPostApply(MethodNode method) {
+		if (!"postApply".equals(method.name.startsWith(ALIAS_PREFIX) ? method.name.substring(ALIAS_PREFIX.length()) : method.name)
+				|| !POST_APPLY_DESC.equals(method.desc) || !net.forbric.kernel.mixin.ContendedCallSites.enabled()) {
+			return false;
+		}
+		for (org.objectweb.asm.tree.AbstractInsnNode insn : method.instructions) {
+			if (insn.getOpcode() >= 0 && insn.getOpcode() != Opcodes.RETURN) return true;
+		}
+		return false;
+	}
+
+	/** {@code GUARD.<hook>(this, targetClassName, targetClass, mixinClassName)}. */
+	private static InsnList postApplyHook(String hook) {
+		InsnList call = new InsnList();
+		for (int slot = 0; slot <= 3; slot++) call.add(new VarInsnNode(Opcodes.ALOAD, slot));
+		call.add(new MethodInsnNode(Opcodes.INVOKESTATIC, GUARD, hook, HOOK_DESC, false));
+		return call;
+	}
+
+	/** Called from a guarded {@code postApply} before its body runs. Never throws into the guest. */
+	public static void beforePostApply(Object plugin, String target, Object targetClass, String mixin) {
+		try {
+			net.forbric.kernel.mixin.ContendedCallSites.before(plugin, target, targetClass, mixin);
+		} catch (Throwable ignored) {
+			// deliberately silent: an observation must not cost the guest its patch
+		}
+	}
+
+	/** Called from a guarded {@code postApply} after its body returned. Never throws into the guest. */
+	public static void afterPostApply(Object plugin, String target, Object targetClass, String mixin) {
+		try {
+			net.forbric.kernel.mixin.ContendedCallSites.after(plugin, target, targetClass, mixin);
+		} catch (Throwable ignored) {
+			// deliberately silent: an observation must not cost the guest its patch
+		}
+	}
+
+	/** Called from a guarded {@code postApply}'s handler, after its body threw. */
+	public static void abandonPostApply(Object targetClass) {
+		try {
+			net.forbric.kernel.mixin.ContendedCallSites.forget(targetClass);
+		} catch (Throwable ignored) {
+			// bookkeeping only
+		}
 	}
 
 	/** The value that means "this plugin had no opinion", by return type. */

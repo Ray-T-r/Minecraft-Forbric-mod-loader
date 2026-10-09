@@ -245,6 +245,7 @@ test	net.forbric.kernel.mixin.FmlTransformerViewTest	withoutTheInitialiserFixThe
 test	net.forbric.kernel.mixin.FmlTransformerViewTest	withoutTheRewriteTheCastFailsAsItAlwaysDid()	[fixture:staged] staged runtime classes/carrier absent
 test	net.forbric.kernel.mixin.GuestMixinPolicyStagedTest	essentialGuiGroupCannotPoisonAnotherModsGuiContract()	[fixture:third-party] Essential fixture absent
 test	net.forbric.kernel.mixin.GuestMixinPolicyStagedTest	jadeDuckContractKeepsItsAssignedShadowAndResolvedCallbackWithoutAnAllowlist()	[fixture:third-party] Jade fixture absent
+test	net.forbric.kernel.mixin.GuestMixinPolicyStagedTest	thirdPartyRedirectConflictsHaveNoLoaderChosenWinner()	[fixture:third-party] Shoulder Surfing and CustomSkinLoader fixtures absent
 test	net.forbric.kernel.mixin.GuiItemCaptureMixinAdapterTest	theCaptureSelectsTheSubmissionAndDoesNotMoveTheTooltipCallback()	[fixture:third-party] local fixture unavailable
 test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualFusionSpriteLoaderHookFollowsNeoForgesLiveLambda()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualLitematicaOpaqueAndTranslucentHandlersFollowThePrunedLiveLambda()	[fixture:third-party] local merged mod pack: run/client-merged-pack/mods

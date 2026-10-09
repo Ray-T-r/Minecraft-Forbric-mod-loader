@@ -1,0 +1,1 @@
+{"required": true, "package": "com.example.glassmod.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["StageGlassMixin"], "injectors": {"defaultRequire": 1}}

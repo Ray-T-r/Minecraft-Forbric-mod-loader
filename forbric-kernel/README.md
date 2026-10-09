@@ -82,7 +82,10 @@ a particular mod's lazy singleton. Closed registry initializer walks record succ
 batch, publish only on normal return, and initialize only newly registered identities after the registration
 window closes. Public entrypoint and API names (such as config-screen or config-registration protocols) remain
 explicit adapter contracts. Conflicts between independent mods are reported rather than settled by a built-in
-mod priority list.
+mod priority list, and the game keeps the outcome Mixin itself gives the two mods: two mods' mixins on one
+method (`MixinOverlapLint`), and one mod's injector taking a call that another mod's raw post-Mixin patch looks for
+(`ContendedCallSites`: Mixin runs every injector before any config plugin's `postApply`, so the injector keeps the
+call and the patch finds nothing, as it does with both mods in any game that runs Mixin's own applicator).
 
 ## Shared assets (kept, not rewritten)
 

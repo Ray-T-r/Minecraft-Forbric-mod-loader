@@ -136,7 +136,10 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinBreathingCallbackAdapter", Switch.own("forbric.breathingCallbacks")),
 			Map.entry("MixinHudContextAdapter", Switch.own("forbric.hudContextCallbacks")),
 			// The injectors Mixin rejects outright, taken out at the end of getClassNode: MixinRefusedBindingWeaveTest.
-			Map.entry("GuestInjectorPruner", Switch.own("forbric.guestInjectorPruner.refused")));
+			Map.entry("GuestInjectorPruner", Switch.own("forbric.guestInjectorPruner.refused")),
+			// Records each mixin's call-point injectors for the contention report; changes no mixin. Its off control
+			// in ContendedCallSitesWeaveTest weaves the same bytes and reports nothing.
+			Map.entry("ContendedCallSites", Switch.own("forbric.contendedCallSites")));
 
 	private static final String NO_SCENARIO = "no weave scenario yet; ClassNode-level tests only";
 	/** Only shrinks. Every row is a stage whose output no CI test has yet run through the real weave. */

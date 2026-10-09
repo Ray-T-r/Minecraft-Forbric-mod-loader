@@ -202,4 +202,97 @@ class GuestMixinPluginGuardTest {
 		assertFalse(GuestMixinPluginGuard.declaresThePluginInterface(new byte[0]));
 		assertFalse(GuestMixinPluginGuard.declaresThePluginInterface(null));
 	}
+
+	// --- postApply, where a raw post-Mixin patch lives ------------------------------------------------------------
+
+	/** A bare-return postApply (most plugins') gets the plain wrapper: nothing to observe, nothing paid. */
+	@Test
+	void aPostApplyThatDoesNothingIsNotObserved() {
+		byte[] out = guard.transform(NAME, postApplyPlugin(false, false), ctx());
+		assertFalse(calls(out, "beforePostApply") || calls(out, "afterPostApply") || calls(out, "abandonPostApply"),
+				"an empty postApply has no patch whose call site another mod could have taken");
+	}
+
+	/**
+	 * A postApply with a body is observed on both sides of it, and a throw out of it is still contained — the
+	 * hand-written handler frame has to hold with the hooks in place, so the class is defined and called.
+	 */
+	@Test
+	void aPostApplyThatPatchesIsObservedAndAThrowIsStillContained() throws Exception {
+		byte[] out = guard.transform(NAME, postApplyPlugin(true, true), ctx());
+		assertTrue(calls(out, "beforePostApply") && calls(out, "afterPostApply") && calls(out, "abandonPostApply"));
+		Object plugin = define(out);
+		plugin.getClass().getMethod("postApply", String.class, org.objectweb.asm.tree.ClassNode.class, String.class,
+				org.spongepowered.asm.mixin.extensibility.IMixinInfo.class)
+				.invoke(plugin, "a.Target", new org.objectweb.asm.tree.ClassNode(), "a.mixin.TargetMixin", null);
+	}
+
+	/** And one that works runs its body once, between the two observations, and returns normally. */
+	@Test
+	void anObservedPostApplyStillRunsItsBody() throws Exception {
+		Object plugin = define(guard.transform(NAME, postApplyPlugin(true, false), ctx()));
+		org.objectweb.asm.tree.ClassNode target = new org.objectweb.asm.tree.ClassNode();
+		plugin.getClass().getMethod("postApply", String.class, org.objectweb.asm.tree.ClassNode.class, String.class,
+				org.spongepowered.asm.mixin.extensibility.IMixinInfo.class)
+				.invoke(plugin, "a.Target", target, "a.mixin.TargetMixin", null);
+		assertTrue("patched".equals(target.sourceFile), "the plugin's own postApply body did not run");
+	}
+
+	private static Object define(byte[] bytes) throws Exception {
+		Class<?> type = new ClassLoader(GuestMixinPluginGuardTest.class.getClassLoader()) {
+			Class<?> define(byte[] b) {
+				return defineClass(NAME, b, 0, b.length);
+			}
+		}.define(bytes);
+		return type.getDeclaredConstructor().newInstance();
+	}
+
+	private static boolean calls(byte[] bytes, String hook) {
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(bytes).accept(node, 0);
+		for (org.objectweb.asm.tree.MethodNode method : node.methods) {
+			for (org.objectweb.asm.tree.AbstractInsnNode insn : method.instructions) {
+				if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call && call.name.equals(hook)) return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * A plugin whose {@code postApply} has Mixin's descriptor and either a bare {@code return} or a body: it marks the
+	 * target ({@code sourceFile = "patched"}), or throws.
+	 */
+	private static byte[] postApplyPlugin(boolean body, boolean throwing) {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, NAME.replace('.', '/'), null, "java/lang/Object",
+				new String[] {PLUGIN_INTERFACE});
+		MethodVisitor ctor = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		ctor.visitCode();
+		ctor.visitVarInsn(Opcodes.ALOAD, 0);
+		ctor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+		ctor.visitInsn(Opcodes.RETURN);
+		ctor.visitMaxs(0, 0);
+		ctor.visitEnd();
+
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "postApply", GuestMixinPluginGuard.POST_APPLY_DESC, null, null);
+		mv.visitCode();
+		if (throwing) {
+			mv.visitTypeInsn(Opcodes.NEW, "java/lang/IllegalStateException");
+			mv.visitInsn(Opcodes.DUP);
+			mv.visitLdcInsn("raw patch blew up");
+			mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/IllegalStateException", "<init>", "(Ljava/lang/String;)V", false);
+			mv.visitInsn(Opcodes.ATHROW);
+		} else {
+			if (body) {
+				mv.visitVarInsn(Opcodes.ALOAD, 2);
+				mv.visitLdcInsn("patched");
+				mv.visitFieldInsn(Opcodes.PUTFIELD, "org/objectweb/asm/tree/ClassNode", "sourceFile", "Ljava/lang/String;");
+			}
+			mv.visitInsn(Opcodes.RETURN);
+		}
+		mv.visitMaxs(0, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
 }

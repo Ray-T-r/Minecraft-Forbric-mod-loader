@@ -420,6 +420,9 @@ public final class ForbricMixinService
 		net.forbric.kernel.transform.GuestInjectorPruner.pruneRefused(node,
 				(mixin, handler) -> MixinFit.stillRejected(mixin, handler, this::mergedBaseNodeWithCode));
 		FinalMixinApplications.remember(node);
+		// The call sites its injectors take, as they will apply: a raw post-Mixin patch of another mod that finds one
+		// gone is reported as a contention between the two (ContendedCallSites), not arbitrated.
+		ContendedCallSites.remember(node);
 		// …and, after remember has the author's own counts, an injector-level require/allow on a relaxed guest mixin
 		// stops being able to abandon the whole target class: the mod is reported, the class is defined.
 		if (!DIAGNOSTICS) MixinLocalsCapture.softenRequirements(node, ForbricMixinService::allOwnersRelaxed);

@@ -384,11 +384,37 @@ assert_eq "only the known plugin-clinit casualties load too early" \
 check_absent "no registry load failure"     "Failed to load registries due to errors"          "$LOG"
 check_absent "no crash report"              "Preparing crash report"                           "$LOG"
 # Raw-ASM bytecode patching, the kind CustomSkinLoader does instead of Mixin, fails SILENTLY at WARN and takes a
-# whole feature with it. Two ways it has happened here, both fixed and both invisible without this line: the
-# protocol version reading 0 so it picked a pre-1.20.2 patch variant (see run/game-metadata-jar.sh), and Shoulder
-# Surfing's @Redirect DELETING the call site the cape patch scans for (see MergedBaseMixinCompat). Any new one is
-# a mod losing a feature, so it must be a decision rather than a line nobody reads.
-check_absent "no bytecode patch failed"     "did not modify any bytecode"                      "$LOG"
+# whole feature with it, so the SET of patches that found nothing to change is pinned: a new one must be a decision
+# rather than a line nobody reads. The protocol version reading 0 (a pre-1.20.2 patch variant, see
+# run/game-metadata-jar.sh) was the first; it is fixed and stays out.
+#
+# One is expected, and it is not Forbric's to settle. Shoulder Surfing's @Redirect takes the RenderTypes.entitySolid
+# call in CapeLayer.submit, and CustomSkinLoader's cape patch runs from its mixin config plugin's postApply, which
+# Mixin calls only after every injector has been applied. A Fabric game with both mods weaves the same bytes, and so
+# does a NeoForge one: CustomSkinLoader's NeoForge class processor runs after FML's simple-processor group, which runs
+# after neoforge:mixin. This pack used to pin Shoulder Surfing's mixin out by name, which was a built-in mod priority
+# list; now ContendedCallSites names the two mods and the call instead. The capes lose CustomSkinLoader's alpha here
+# exactly as they do with both mods on either loader. CustomSkinLoader says it twice, once for the submit variant and
+# once for the cape-layer group that variant belongs to; nothing else in its render patch may join them.
+PATCH_NOOPS=$(grep -aoE "Patch '[^']+' matched protocol [0-9]+ but did not modify any bytecode" "$LOG" \
+  | sed -E "s/Patch '([^']+)'.*/\1/" | sort -u | paste -sd, -)
+assert_eq "only the reported cape contention leaves a bytecode patch with nothing to change" \
+  "customskinloader:render-patch:cape-layer,customskinloader:render-patch:cape-layer.submit.v2" "$PATCH_NOOPS"
+check "the cape call site contention is reported, naming both mods" \
+  "Forbric/CallSite\] contended call site net\.minecraft\.client\.renderer\.entity\.layers\.CapeLayer\.submit -> RenderTypes\.entitySolid: shouldersurfing's @Redirect .* before customskinloader-bootstrap's post-Mixin patch" "$LOG"
+python3 - "$RUNDIR/.forbric-kernel/compatibility-report.json" <<'PY_CONTENTION'
+import json, pathlib, sys
+report = json.loads(pathlib.Path(sys.argv[1]).read_text())
+rows = [row for row in report['findings'] if row['source'] == 'ContendedCallSites']
+want = 'call-site-contention:net.minecraft.client.renderer.entity.layers.CapeLayer.submit'
+ok = (sorted(row['modId'] for row in rows) == ['customskinloader-bootstrap', 'shouldersurfing']
+      and all(row['id'].startswith(want) and 'RenderTypes;entitySolid' in row['id'] for row in rows)
+      and all(row['confidence'] == 'SUSPECTED' and not row['required'] for row in rows))
+print('[kernel] PASS the contention is in the compatibility report once per mod, as a suspicion' if ok
+      else '[kernel] FAIL the contention is not reported once per mod as a suspicion: ' + str(rows))
+raise SystemExit(0 if ok else 1)
+PY_CONTENTION
+[ $? -eq 0 ] || FAIL=1
 
 step "the pack is honestly provisioned (must PASS)"
 # A genuine NeoForge refuses to launch when a mod's versionRange on neoforge is not satisfied. The kernel parses
