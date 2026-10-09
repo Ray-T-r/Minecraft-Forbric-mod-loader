@@ -13,8 +13,11 @@ import net.forbric.kernel.boot.DefinedMethodContracts.MethodContract;
 /** A source invocation's exact operands identify one call through two current gateways, including inherited ones. */
 final class OperationCallGraph implements Opcodes {
     record Plan(String host,String hostMethod,String firstOwner,String firstMethod,String gateway,int gatewayOpcode,String parentHash,
-                String helper,String helperMethod,String forwarded,int forwardOrdinal,String helperHash,String member,List<MethodContract> getters,List<Integer> gatewayInputs,List<Integer> helperInputs) {
+                String helper,String helperMethod,String forwarded,int forwardOrdinal,String helperHash,String member,List<MethodContract> getters,List<Integer> gatewayInputs,List<Integer> helperInputs,
+                List<Integer> operandSources) {
         String graph(){return firstOwner+"#"+firstMethod+"->"+helper+"#"+helperMethod+"@"+forwardOrdinal+":"+member+":"+parentHash+":"+helperHash;}
+        /** The gateway operand the moved call's operand {@code k} is, unchanged, or -1 (an instance call's receiver is 0 on both). */
+        int gatewaySource(int operand){return operand>=0&&operand<operandSources.size()?operandSources.get(operand):-1;}
     }
     record Expr(String type,String kind,String symbol,List<Expr> inputs) { }
     record Declaration(ClassNode owner,MethodNode method) { }
@@ -49,7 +52,8 @@ final class OperationCallGraph implements Opcodes {
                 if(gatewayInputs.isEmpty())continue;
                 List<MethodContract> getters=new ArrayList<>();getters.addAll(now.getters);getters.addAll(inside.getters);getters.addAll(terminal.getters);
                 plans.add(new Plan(target.name,host.name+host.desc,parent.owner.name,parent.method.name+parent.method.desc,NativeCallChanges.member(gateway),gateway.getOpcode(),MixinInstructionFingerprint.hash(parent.method),
-                    helper.owner.name,helper.method.name+helper.method.desc,forwardMember,ordinal,MixinInstructionFingerprint.hash(helper.method),member,List.copyOf(new LinkedHashSet<>(getters)),List.copyOf(gatewayInputs),List.copyOf(helperInputs)));
+                    helper.owner.name,helper.method.name+helper.method.desc,forwardMember,ordinal,MixinInstructionFingerprint.hash(helper.method),member,List.copyOf(new LinkedHashSet<>(getters)),List.copyOf(gatewayInputs),List.copyOf(helperInputs),
+                    passedThrough(inputs,terminal.operands(moved.getFirst()),carried)));
             }
         }
         return plans.size()==1?plans.getFirst():null;
@@ -64,6 +68,18 @@ final class OperationCallGraph implements Opcodes {
             if(calls.size()==1&&nativeEvidence!=null&&carried.equals(nativeEvidence.operands(calls.getFirst())))return true;
         }
         return false;
+    }
+    /**
+     * For each operand of the moved call, the one gateway operand it is: the source's operand in that position, and
+     * reached from the gateway through parameters alone. A parameter carries the very expression its caller passed, so
+     * the moved operand is that object only when nothing on the way computed a new value from it. -1 otherwise.
+     */
+    private static List<Integer> passedThrough(List<Expr> source,List<Expr> moved,List<Expr> carried){
+        List<Integer> result=new ArrayList<>();
+        for(int k=0;k<moved.size();k++){int found=-1;boolean twice=false;
+            if(k<source.size()&&source.get(k).equals(moved.get(k)))for(int a=0;a<carried.size();a++)if(carried.get(a)==moved.get(k)){twice|=found!=-1;found=a;}
+            result.add(twice?-1:found);}
+        return List.copyOf(result);
     }
     private static boolean recurs(MethodNode method,String owner){return Arrays.stream(method.instructions.toArray()).anyMatch(instruction->instruction instanceof MethodInsnNode call&&call.owner.equals(owner)&&call.name.equals(method.name)&&call.desc.equals(method.desc));}
     private static boolean loopsAcross(MethodNode method,MethodInsnNode point){int at=method.instructions.indexOf(point);for(AbstractInsnNode instruction:method.instructions)if(instruction instanceof JumpInsnNode branch&&method.instructions.indexOf(instruction)>at&&method.instructions.indexOf(branch.label)<=at)return true;return false;}

@@ -178,12 +178,18 @@ test	net.forbric.kernel.mixin.FabricBlockStateCodecMixinAdapterTest	aHandlerThat
 test	net.forbric.kernel.mixin.FabricBlockStateCodecMixinAdapterTest	bothRedirectsMakeTheCallTheyReplaceAndHandBothCodecsToTheKernel()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricBlockStateCodecMixinAdapterTest	theOffSwitchLeavesFabricsCodecsInPlace()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricBlockStateCodecMixinAdapterTest	vanillaHasNoNeoForgeCodecToKeep()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	aCallbackReadingTheDrawsLocalsReceivesTheGatewaysOwnValues()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	aLocalTheDrawDoesNotProvablyReceiveLeavesTheCallbackAlone()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	aLocalWhoseOperandTheCarrierComputesDifferentlyIsRefused()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	aScreenExtractHandlerThatDrawsTwiceIsCarriedAsWritten()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	aSourceCallbackAtTheScreenDrawUsesTheActualInheritedGateway()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	actualDedicatedServerRemovalUsesTheSameProvenMapWithoutChangingItsCallbackBody()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	nativeVanillaAndDisabledClientAdaptersRemainUnchanged()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	onlyTheActualNoopRedirectCanSuppressTheContextExpandedRenderingCall()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceBuildDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	removedBlockEntityTargetsItsActualMapAndNeverThePendingNbtMap()	[fixture:staged] actual Fabric API fixture required
-test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	screenExtractIsLeftAloneWhereFabricsOwnAnchorExistsOrTheHandlerChanged()	[fixture:mc-libraries] actual game required
+test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	screenExtractIsLeftAloneWhereFabricsOwnAnchorExistsOrItsHandlerDoesNotVerify()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	sourceScreenEventsKeepTheirEntireBodyAroundTheActualTopDraw()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	theActualMiningHandlerHasOneNativeDecisionAndOneExplicitFabricFallback()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	unmatchedSignaturesMissingNativePointsAndAVanillaHostRemainUnchanged()	[fixture:staged] actual game required

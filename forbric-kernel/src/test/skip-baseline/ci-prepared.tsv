@@ -59,6 +59,8 @@ test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	apolisHarvestModi
 test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	architecturysBreakHandlerCapturesNeoForgesFrameAndStillGetsItsTwoValues()	[fixture:third-party] popular-pack architectury fixture absent
 test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	theSwitchAndOtherMixinsAreLeftAlone()	[fixture:third-party] popular-pack architectury fixture absent
 test	net.forbric.kernel.mixin.FabricBlockBreakMixinAdapterTest	vanillasOwnBodyIsWhatBothWereWrittenFor()	[fixture:third-party] popular-pack architectury fixture absent
+test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceBuildDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:third-party] ../build/lb-vfp/jars/liquidbounce-0.40.1+26.2-20260925.jar absent
+test	net.forbric.kernel.mixin.FabricClientMixinAnchorsTest	releasedLiquidBounceDrawsItsMenuWithTheCanvasTheGatewayDraws()	[fixture:third-party] ../build/lb-vfp/jars/liquidbounce-9889fe2.jar absent
 test	net.forbric.kernel.mixin.FabricCreativePagerMixinAdapterTest	keyboardKeepsItsExactBodyAndTheSecondPagerStateIsRemoved()	[fixture:third-party] build/compat-inputs/player-loading/api/fabric-creative-tab-api-v1-5.0.15+6468574f9e.jar absent
 test	net.forbric.kernel.mixin.FabricFluidFlowMixinAdapterTest	bothLiveCarrierPathsCallTheOriginalFabricVetoAndKeepTheirNativeOperations()	[fixture:third-party] actual current Fabric Block API fixture required
 test	net.forbric.kernel.mixin.FabricFluidFlowMixinAdapterTest	changedOrVanillaCarrierIsNotRewritten()	[fixture:third-party] actual current Fabric Block API fixture required

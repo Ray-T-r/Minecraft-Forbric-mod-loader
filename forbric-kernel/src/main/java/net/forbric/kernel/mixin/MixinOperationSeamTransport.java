@@ -13,6 +13,8 @@ import net.forbric.kernel.classloading.ForbricClassLoader;
 /** Keep a guest's full source body and Operation at the proved top invocation inside inherited gateways. */
 public final class MixinOperationSeamTransport implements Opcodes {
     public static final String PROPERTY="forbric.operationSeams";
+    /** Off keeps a callback with {@code @Local} parameters where it was written, as before they were carried. */
+    public static final String LOCALS_PROPERTY="forbric.operationSeams.locals";
     private static final String API="net/forbric/api/OperationSeams",NATIVE=API+"$NativeOperation",INVOCATION=API+"$Invocation";
     private static final String OP="com/llamalad7/mixinextras/injector/wrapoperation/Operation",CI="org/spongepowered/asm/mixin/injection/callback/CallbackInfo";
     private static final Handle META=new Handle(H_INVOKESTATIC,"java/lang/invoke/LambdaMetafactory","metafactory","(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",false);
@@ -56,20 +58,24 @@ public final class MixinOperationSeamTransport implements Opcodes {
             boolean wrap=injector.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;");String shift=MixinFit.asString(MixinFit.value(at,"shift"));if(wrap&&shift!=null||!wrap&&shift!=null&&!List.of("BEFORE","NONE","AFTER").contains(shift))continue;
             MixinFit.Member wanted=MixinFit.parseMember(member);if(wanted==null)continue;Type[] operands=callTypes(wanted,anchors(original,member).stream().findFirst().map(call->call.getOpcode()).orElse(INVOKEVIRTUAL));
             Type[] hostArgs=Type.getArgumentTypes(original.desc),parameters=Type.getArgumentTypes(handler.desc);int own=wrap?operands.length+1:1;
+            // MixinExtras' @Local parameters trail the injector's own shape; each is proved against the source host below.
+            int first=trailingLocals(handler,parameters);if(first<0||first<parameters.length&&"off".equalsIgnoreCase(System.getProperty(LOCALS_PROPERTY,"on")))continue;
+            Type[] declared=Arrays.copyOf(parameters,first);
             Type[] base=wrap?Arrays.copyOf(operands,own):new Type[]{Type.getObjectType(CI)};if(wrap)base[operands.length]=Type.getObjectType(OP);
-            boolean full=parameters.length==own+hostArgs.length&&(wrap?Arrays.equals(hostArgs,Arrays.copyOfRange(parameters,own,parameters.length)):Arrays.equals(hostArgs,Arrays.copyOf(parameters,hostArgs.length))&&parameters[hostArgs.length].equals(Type.getObjectType(CI)));
-            if(parameters.length!=own&&!full||wrap&&!Arrays.equals(base,Arrays.copyOf(parameters,own))||!wrap&&!full&&!Arrays.equals(base,parameters))continue;
+            boolean full=declared.length==own+hostArgs.length&&(wrap?Arrays.equals(hostArgs,Arrays.copyOfRange(declared,own,declared.length)):Arrays.equals(hostArgs,Arrays.copyOf(declared,hostArgs.length))&&declared[hostArgs.length].equals(Type.getObjectType(CI)));
+            if(declared.length!=own&&!full||wrap&&!Arrays.equals(base,Arrays.copyOf(declared,own))||!wrap&&!full&&!Arrays.equals(base,declared))continue;
             if(!wrap&&((handler.access^original.access)&ACC_STATIC)!=0)continue;
             String identity=mixin.name+":"+handler.name+":"+MixinInstructionFingerprint.hash(handler)+":";
             Installed known=plans(loader).stream().filter(plan->plan.key.startsWith(identity)&&plan.graph.hostMethod().equals(original.name+original.desc)&&plan.graph.member().equals(member)&&compatible(plan,classes)).findFirst().orElse(null);
             if(known!=null){mixin.methods.set(mixin.methods.indexOf(handler),copy(known.retained));mixin.methods.add(copy(known.bridge));mixin.methods.add(copy(known.wrapper));changed++;continue;}
             OperationCallGraph.Plan graph=OperationCallGraph.derive(source,target,selectors.getFirst(),member,current,natives);if(graph==null)continue;
-            String key=mixin.name+":"+handler.name+":"+MixinInstructionFingerprint.hash(handler)+":"+graph.graph();
+            List<Capture> captures=captures(source.name,original,member,handler,parameters,first,"AFTER".equals(shift),graph);if(captures==null)continue;
+            String key=mixin.name+":"+handler.name+":"+MixinInstructionFingerprint.hash(handler)+":"+graph.graph()+(captures.isEmpty()?"":"|locals="+captures);
             Installed existing=plans(loader).stream().filter(plan->plan.key.equals(key)).findFirst().orElse(null);
             if(existing!=null){mixin.methods.set(mixin.methods.indexOf(handler),copy(existing.retained));mixin.methods.add(copy(existing.bridge));mixin.methods.add(copy(existing.wrapper));changed++;continue;}
-            MethodNode retained=copy(handler);retained.name=MixinHandlerShim.asideName(mixin.name,handler.name,"$forbricoperation");removeInjector(retained);MixinCallbackShape.uniqueMember(retained);
+            MethodNode retained=copy(handler);retained.name=MixinHandlerShim.asideName(mixin.name,handler.name,"$forbricoperation");removeInjector(retained);removeSugar(retained);MixinCallbackShape.uniqueMember(retained);
             String callbackId=MixinFit.asString(MixinFit.value(injector,"id")),pointId=MixinFit.asString(MixinFit.value(at,"id"));callbackId=(callbackId==null||callbackId.isEmpty()?original.name:callbackId)+(pointId==null||pointId.isEmpty()?"":":"+pointId);
-            MethodNode bridge=bridge(mixin.name,retained,hostArgs,operands,wrap,full,"AFTER".equals(shift),callbackId),wrapper=wrapper(mixin.name,bridge,hostArgs,graph,key,injector);
+            MethodNode bridge=bridge(mixin.name,retained,hostArgs,operands,wrap,full,"AFTER".equals(shift),callbackId,captures),wrapper=wrapper(mixin.name,bridge,hostArgs,graph,key,injector,captures);
             Installed installed=new Installed(mixin.name,key,handler.name,handler.desc,graph,retained,bridge,wrapper,current);
             List<String> owners=new ArrayList<>(new TreeSet<>(List.of(graph.firstOwner(),graph.helper())));
             if(!register(loader,owners,0,()->{synchronized(PLANS){Map<String,Installed> registry=PLANS.computeIfAbsent(loader,ignored->new LinkedHashMap<>());registry.putIfAbsent(key,installed);}OperationSeams.register(loader,key,graph.host(),graph.helper(),graph.graph(),installed::witnessed,graph.gatewayInputs().stream().mapToInt(Integer::intValue).toArray(),graph.helperInputs().stream().mapToInt(Integer::intValue).toArray(),installed::declined);}))continue;
@@ -80,21 +86,63 @@ public final class MixinOperationSeamTransport implements Opcodes {
     private static boolean register(ForbricClassLoader loader,List<String> owners,int at,Runnable action){if(at==owners.size()){action.run();return true;}boolean[] result={false};return loader.registerBeforeDefinition(owners.get(at),()->result[0]=register(loader,owners,at+1,action))&&result[0];}
     private static boolean verified(String owner,MethodNode method){try{new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(owner,method);return true;}catch(org.objectweb.asm.tree.analysis.AnalyzerException|RuntimeException invalid){return false;}}
     private static boolean compatible(Installed plan,Function<String,ClassNode> current){for(var pair:List.of(Map.entry(plan.graph.firstOwner(),plan.parentOriginal),Map.entry(plan.graph.helper(),plan.helperOriginal))){MethodNode actual=NativeCallChanges.method(current.apply(pair.getKey()),pair.getValue().name+pair.getValue().desc);if(actual==null)return false;String hash=MixinInstructionFingerprint.hash(actual);if(!hash.equals(MixinInstructionFingerprint.hash(pair.getValue()))&&plan.emitted.stream().noneMatch(value->value.owner().replace('.','/').equals(pair.getKey())&&value.name().equals(actual.name)&&value.descriptor().equals(actual.desc)&&value.fingerprint().equals(hash)))return false;}return plan.graph.getters().stream().allMatch(value->{MethodNode getter=NativeCallChanges.method(current.apply(value.owner().replace('.','/')),value.name()+value.descriptor());boolean valid=getter!=null&&MixinInstructionFingerprint.hash(getter).equals(value.fingerprint());return valid;});}
-    private static boolean closed(MethodNode method,AnnotationNode injector){if(injector==null||!(injector.desc.equals(MixinRetarget.INJECT)||injector.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;"))||Type.getReturnType(method.desc)!=Type.VOID_TYPE||Boolean.TRUE.equals(MixinFit.value(injector,"cancellable"))||MixinFit.value(injector,"slice")!=null||MixinFit.value(injector,"locals")!=null||method.invisibleParameterAnnotations!=null||method.visibleParameterAnnotations!=null||(method.access&(ACC_ABSTRACT|ACC_NATIVE|ACC_SYNCHRONIZED))!=0)return false;List<AnnotationNode> all=new ArrayList<>();if(method.visibleAnnotations!=null)all.addAll(method.visibleAnnotations);if(method.invisibleAnnotations!=null)all.addAll(method.invisibleAnnotations);return all.stream().filter(a->FinalMixinApplications.isInjector(a.desc)).count()==1&&all.stream().noneMatch(a->a.desc.endsWith("/Group;"));}
-    private static MethodNode bridge(String owner,MethodNode retained,Type[] host,Type[] operands,boolean wrap,boolean full,boolean after,String callbackId) {
-        Type[] signature=Arrays.copyOf(host,host.length+2);signature[host.length]=Type.getType(Object.class);signature[host.length+1]=Type.getType(Object[].class);
+    /** An injector with a slice, a cancel, a locals capture, more than one injector or a group stays where it is; any
+     * Mixin or MixinExtras parameter annotation but {@code @Local} does too. Other parameter annotations (Kotlin's
+     * nullability, for one) mean nothing to either and are kept on the retained body. */
+    private static boolean closed(MethodNode method,AnnotationNode injector){if(injector==null||!(injector.desc.equals(MixinRetarget.INJECT)||injector.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;"))||Type.getReturnType(method.desc)!=Type.VOID_TYPE||Boolean.TRUE.equals(MixinFit.value(injector,"cancellable"))||MixinFit.value(injector,"slice")!=null||MixinFit.value(injector,"locals")!=null||!inertParameters(method)||(method.access&(ACC_ABSTRACT|ACC_NATIVE|ACC_SYNCHRONIZED))!=0)return false;List<AnnotationNode> all=new ArrayList<>();if(method.visibleAnnotations!=null)all.addAll(method.visibleAnnotations);if(method.invisibleAnnotations!=null)all.addAll(method.invisibleAnnotations);return all.stream().filter(a->FinalMixinApplications.isInjector(a.desc)).count()==1&&all.stream().noneMatch(a->a.desc.endsWith("/Group;"));}
+    private static boolean inertParameters(MethodNode method){for(List<AnnotationNode>[] all:Arrays.asList(method.visibleParameterAnnotations,method.invisibleParameterAnnotations))if(all!=null)for(List<AnnotationNode> list:all)if(list!=null)for(AnnotationNode annotation:list)if(!annotation.desc.equals(MixinRetarget.LOCAL_SUGAR)&&(annotation.desc.startsWith("Lorg/spongepowered/")||annotation.desc.startsWith("Lcom/llamalad7/")))return false;return true;}
+    /** Where the run of {@code @Local} parameters that ends the handler begins (its length when there is none); -1 when a
+     * {@code @Local} stands before another parameter or captures a mutable reference, which a copy cannot carry back. */
+    private static int trailingLocals(MethodNode handler,Type[] parameters){
+        int first=parameters.length;while(first>0&&MixinStubRebind.sugar(handler,first-1,MixinRetarget.LOCAL_SUGAR)!=null)first--;
+        for(int i=0;i<parameters.length;i++){boolean local=MixinStubRebind.sugar(handler,i,MixinRetarget.LOCAL_SUGAR)!=null;
+            if(local&&i<first||i>=first&&parameters[i].getSort()==Type.OBJECT&&parameters[i].getInternalName().startsWith("com/llamalad7/mixinextras/sugar/ref/"))return -1;}
+        return first;
+    }
+    /** One {@code @Local}: the host's own argument {@code host}, or the gateway operand {@code gateway} of type {@code carried}. */
+    record Capture(Type type,int host,int gateway,Type carried){@Override public String toString(){return host>=0?"arg"+host:"gateway"+gateway+carried.getDescriptor();}}
+    /**
+     * Each trailing {@code @Local}'s value, proved where MixinExtras would read it in the source host: the slot its
+     * discriminators name at the injection point is either the host's untouched argument, or the slot the source call's
+     * operand was loaded from — and that operand reaches the carrier's moved call unchanged from one gateway operand,
+     * which the wrapper holds. A slot the call never receives, an ambiguous one, or a carrier that computes the operand
+     * on the way declines the whole callback; nothing is matched on a type or a debug name alone.
+     */
+    private static List<Capture> captures(String owner,MethodNode original,String member,MethodNode handler,Type[] parameters,int first,boolean after,OperationCallGraph.Plan graph){
+        List<Capture> result=new ArrayList<>();if(first==parameters.length)return result;
+        List<MethodInsnNode> calls=anchors(original,member);if(calls.size()!=1)return null;MethodInsnNode call=calls.getFirst();
+        // Shift AFTER reads the locals at the node after the call; the call itself leaves every slot as it was.
+        int point=original.instructions.indexOf(call)+(after?1:0);Type[] gateway=callTypes(MixinFit.parseMember(graph.gateway()),graph.gatewayOpcode());
+        for(int i=first;i<parameters.length;i++){
+            int slot=MixinLocalOriginProof.slot(MixinStubRebind.sugar(handler,i,MixinRetarget.LOCAL_SUGAR),parameters[i],original,point);if(slot<0)return null;
+            MixinLocalOriginProof.CallValue value=MixinLocalOriginProof.atCall(owner,original,call,slot);if(value==null)return null;
+            if(value.parameter()>=0){result.add(new Capture(parameters[i],value.parameter(),-1,null));continue;}
+            int operand=graph.gatewaySource(value.operand());if(operand<0)return null;Type carried=gateway[operand];
+            if(!carried.equals(parameters[i])&&(carried.getSort()<Type.ARRAY||parameters[i].getSort()<Type.ARRAY))return null;
+            result.add(new Capture(parameters[i],-1,operand,carried));
+        }
+        return List.copyOf(result);
+    }
+    private static void removeSugar(MethodNode method){for(List<AnnotationNode>[] all:Arrays.asList(method.visibleParameterAnnotations,method.invisibleParameterAnnotations))if(all!=null)for(List<AnnotationNode> list:all)if(list!=null)list.removeIf(a->a.desc.startsWith("Lcom/llamalad7/mixinextras/sugar/"));}
+    private static MethodNode bridge(String owner,MethodNode retained,Type[] host,Type[] operands,boolean wrap,boolean full,boolean after,String callbackId,List<Capture> captures) {
+        List<Type> held=captures.stream().filter(capture->capture.gateway()>=0).map(Capture::carried).toList();
+        Type[] signature=Arrays.copyOf(host,host.length+held.size()+2);for(int i=0;i<held.size();i++)signature[host.length+i]=held.get(i);signature[signature.length-2]=Type.getType(Object.class);signature[signature.length-1]=Type.getType(Object[].class);
         boolean instance=(retained.access&ACC_STATIC)==0;MethodNode bridge=new MethodNode(ACC_PRIVATE|(retained.access&ACC_STATIC),retained.name+"$invoke",Type.getMethodDescriptor(Type.getType(Object.class),signature),null,null);
-        int[] locals=slots(signature,instance);InsnList code=bridge.instructions;
-        if(!wrap&&after)invokeNative(code,locals[host.length],locals[host.length+1]);
+        int[] locals=slots(signature,instance);InsnList code=bridge.instructions;int operation=locals[signature.length-2],arguments=locals[signature.length-1];
+        if(!wrap&&after)invokeNative(code,operation,arguments);
         if(instance)code.add(new VarInsnNode(ALOAD,0));
-        if(wrap){for(int i=0;i<operands.length;i++)arrayLoad(code,locals[host.length+1],i,operands[i]);code.add(new VarInsnNode(ALOAD,locals[host.length]));code.add(new TypeInsnNode(CHECKCAST,NATIVE));code.add(new InvokeDynamicInsnNode("call","(L"+NATIVE+";)L"+OP+";",META,Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;"),new Handle(H_INVOKEINTERFACE,NATIVE,"invoke","([Ljava/lang/Object;)Ljava/lang/Object;",true),Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;")));}
+        if(wrap){for(int i=0;i<operands.length;i++)arrayLoad(code,arguments,i,operands[i]);code.add(new VarInsnNode(ALOAD,operation));code.add(new TypeInsnNode(CHECKCAST,NATIVE));code.add(new InvokeDynamicInsnNode("call","(L"+NATIVE+";)L"+OP+";",META,Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;"),new Handle(H_INVOKEINTERFACE,NATIVE,"invoke","([Ljava/lang/Object;)Ljava/lang/Object;",true),Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;")));}
         else{if(full)for(int i=0;i<host.length;i++)code.add(new VarInsnNode(host[i].getOpcode(ILOAD),locals[i]));code.add(new TypeInsnNode(NEW,CI));code.add(new InsnNode(DUP));code.add(new LdcInsnNode(callbackId));code.add(new InsnNode(ICONST_0));code.add(new MethodInsnNode(INVOKESPECIAL,CI,"<init>","(Ljava/lang/String;Z)V",false));}
         if(full&&wrap)for(int i=0;i<host.length;i++)code.add(new VarInsnNode(host[i].getOpcode(ILOAD),locals[i]));
+        int next=host.length;for(Capture capture:captures){
+            if(capture.host()>=0){code.add(new VarInsnNode(host[capture.host()].getOpcode(ILOAD),locals[capture.host()]));continue;}
+            code.add(new VarInsnNode(capture.carried().getOpcode(ILOAD),locals[next++]));if(!capture.carried().equals(capture.type()))code.add(new TypeInsnNode(CHECKCAST,capture.type().getInternalName()));
+        }
         code.add(new MethodInsnNode(instance?INVOKESPECIAL:INVOKESTATIC,owner,retained.name,retained.desc,false));
-        if(!wrap&&!after)invokeNative(code,locals[host.length],locals[host.length+1]);code.add(new InsnNode(ACONST_NULL));code.add(new InsnNode(ARETURN));bridge.maxLocals=end(signature,instance);bridge.maxStack=bridge.maxLocals+10;MixinCallbackShape.uniqueMember(bridge);return bridge;
+        if(!wrap&&!after)invokeNative(code,operation,arguments);code.add(new InsnNode(ACONST_NULL));code.add(new InsnNode(ARETURN));bridge.maxLocals=end(signature,instance);bridge.maxStack=bridge.maxLocals+10;MixinCallbackShape.uniqueMember(bridge);return bridge;
     }
     private static void invokeNative(InsnList code,int operation,int arguments){code.add(new VarInsnNode(ALOAD,operation));code.add(new TypeInsnNode(CHECKCAST,NATIVE));code.add(new VarInsnNode(ALOAD,arguments));code.add(new MethodInsnNode(INVOKEINTERFACE,NATIVE,"invoke","([Ljava/lang/Object;)Ljava/lang/Object;",true));code.add(new InsnNode(POP));}
-    private static MethodNode wrapper(String owner,MethodNode bridge,Type[] host,OperationCallGraph.Plan graph,String key,AnnotationNode source) {
+    private static MethodNode wrapper(String owner,MethodNode bridge,Type[] host,OperationCallGraph.Plan graph,String key,AnnotationNode source,List<Capture> captures) {
         MixinFit.Member gateway=MixinFit.parseMember(graph.gateway());Type[] args=callTypes(gateway,graph.gatewayOpcode());
         Type[] signature=Arrays.copyOf(args,args.length+1+host.length);signature[args.length]=Type.getObjectType(OP);System.arraycopy(host,0,signature,args.length+1,host.length);
         boolean instance=(bridge.access&ACC_STATIC)==0;MethodNode wrapper=new MethodNode(ACC_PRIVATE|(bridge.access&ACC_STATIC),bridge.name+"$scope",Type.getMethodDescriptor(Type.VOID_TYPE,signature),null,null);int[] locals=slots(signature,instance);
@@ -102,6 +150,8 @@ public final class MixinOperationSeamTransport implements Opcodes {
         for(String option:List.of("expect","allow","order","remap","constraints")){Object value=MixinFit.value(source,option);if(value!=null)annotation.values.addAll(List.of(option,value));}
         InsnList code=wrapper.instructions;code.add(new LdcInsnNode(Type.getObjectType(graph.host())));code.add(new LdcInsnNode(Type.getObjectType(graph.helper())));code.add(new LdcInsnNode(key));
         List<Type> captured=new ArrayList<>();if(instance){code.add(new VarInsnNode(ALOAD,0));captured.add(Type.getObjectType(owner));}for(int i=0;i<host.length;i++){code.add(new VarInsnNode(host[i].getOpcode(ILOAD),locals[args.length+1+i]));captured.add(host[i]);}
+        // A @Local proved to be a gateway operand is the value the host hands its gateway, before any wrap downstream.
+        for(Capture capture:captures)if(capture.gateway()>=0){code.add(new VarInsnNode(capture.carried().getOpcode(ILOAD),locals[capture.gateway()]));captured.add(capture.carried());}
         code.add(new InvokeDynamicInsnNode("invoke",Type.getMethodDescriptor(Type.getObjectType(INVOCATION),captured.toArray(Type[]::new)),META,Type.getMethodType("(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"),new Handle(instance?H_INVOKEVIRTUAL:H_INVOKESTATIC,owner,bridge.name,bridge.desc,false),Type.getMethodType("(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")));
         code.add(new VarInsnNode(ALOAD,locals[args.length]));code.add(new InvokeDynamicInsnNode("invoke","(L"+OP+";)L"+NATIVE+";",META,Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;"),new Handle(H_INVOKEINTERFACE,OP,"call","([Ljava/lang/Object;)Ljava/lang/Object;",true),Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;")));
         array(code,args,locals);code.add(new MethodInsnNode(INVOKESTATIC,API,"scoped","(Ljava/lang/Class;Ljava/lang/Class;Ljava/lang/String;L"+INVOCATION+";L"+NATIVE+";[Ljava/lang/Object;)Ljava/lang/Object;",false));code.add(new InsnNode(POP));code.add(new InsnNode(RETURN));wrapper.maxLocals=end(signature,instance);wrapper.maxStack=wrapper.maxLocals+10;return wrapper;

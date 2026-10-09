@@ -75,7 +75,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinDefaultCallbackTransport", Switch.own("forbric.mixinDefaultCallbacks")), // MixinDefaultCallbackTransportWeaveTest
 			Map.entry("MixinNativePredicateSeam", Switch.own("forbric.nativePredicateSeams")), // MixinNativePredicateSeamWeaveTest
 			Map.entry("MixinAbsorbedCallbackTransport", new Switch(List.of("forbric.mixinAbsorbedCall"), "net.forbric.kernel.mixin.MergedBaseAbsorbedCalls")), // MixinAbsorbedCallbackTransportWeaveTest
-			Map.entry("MixinOperationSeamTransport", Switch.own("forbric.operationSeams")), // MixinOperationSeamTransportWeaveTest
+			Map.entry("MixinOperationSeamTransport", Switch.own("forbric.operationSeams", "forbric.operationSeams.locals")), // MixinOperationSeamTransportWeaveTest
 			Map.entry("MixinSharedPredicateSeam", Switch.own("forbric.sharedPredicateSeams")), // MixinSharedPredicateSeamWeaveTest
 			Map.entry("MixinCrossHostPredicateIsland", Switch.own("forbric.crossHostPredicateIslands")), // MixinCrossHostPredicateIslandWeaveTest
 			Map.entry("MixinPredicateDelegateAdapter", Switch.own("forbric.mixinPredicateDelegates")), // MixinPredicateDelegateWeaveTest

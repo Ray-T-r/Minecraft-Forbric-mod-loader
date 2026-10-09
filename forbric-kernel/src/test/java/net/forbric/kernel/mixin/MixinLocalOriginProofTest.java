@@ -55,6 +55,42 @@ class MixinLocalOriginProofTest {
 		assertEquals("(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;" + TYPE + ")V", handler.desc);
 	}
 
+	/** A local is what a call receives only as the operand loaded from that very slot, or as the untouched parameter. */
+	@Test void aLocalAtACallIsTheOperandLoadedFromItsSlotOrAnUntouchedParameter() {
+		MethodNode plain = called("plain");
+		MethodInsnNode call = point(plain);
+		assertEquals(new MixinLocalOriginProof.CallValue(-1, 0), MixinLocalOriginProof.atCall(OWNER, plain, call, 3), "the builder handed over");
+		assertEquals(new MixinLocalOriginProof.CallValue(0, -1), MixinLocalOriginProof.atCall(OWNER, plain, call, 1), "the first parameter");
+		assertEquals(new MixinLocalOriginProof.CallValue(1, -1), MixinLocalOriginProof.atCall(OWNER, plain, call, 2), "the second parameter");
+		assertNull(MixinLocalOriginProof.atCall(OWNER, plain, call, 4), "a builder of the same type the call never sees");
+		assertNull(MixinLocalOriginProof.atCall(OWNER, plain, call, 0), "the receiver is no local capture");
+		MethodNode overwritten = called("overwritten");
+		assertNull(MixinLocalOriginProof.atCall(OWNER, overwritten, point(overwritten), 3), "the slot was refilled after the call's operand was read");
+		MethodNode twice = called("twice");
+		assertNull(MixinLocalOriginProof.atCall(OWNER, twice, point(twice), 3), "two operands from one slot name no single operand");
+		MethodNode reassigned = called("reassigned");
+		assertEquals(new MixinLocalOriginProof.CallValue(-1, 1), MixinLocalOriginProof.atCall(OWNER, reassigned, point(reassigned), 1),
+				"a reassigned parameter is no longer the argument, only the operand loaded from it");
+	}
+
+	/** {@code run(String, int)}: {@code builder=new StringBuilder(); other=new StringBuilder(); anchor(builder, text, count)}. */
+	private static MethodNode called(String variant) {
+		ClassNode owner = new ClassNode(); owner.name = OWNER; owner.superName = "java/lang/Object"; owner.version = Opcodes.V21; owner.access = Opcodes.ACC_PUBLIC;
+		MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "run", "(Ljava/lang/String;I)V", null, null); owner.methods.add(method);
+		InsnList code = method.instructions;
+		if (variant.equals("reassigned")) { code.add(new LdcInsnNode("other")); code.add(new VarInsnNode(Opcodes.ASTORE, 1)); }
+		allocation(method, 3, false); allocation(method, 4, false);
+		code.add(new VarInsnNode(Opcodes.ALOAD, 3));
+		if (variant.equals("overwritten")) allocation(method, 3, false);
+		if (variant.equals("twice")) code.add(new VarInsnNode(Opcodes.ALOAD, 3));
+		code.add(new VarInsnNode(Opcodes.ALOAD, 1)); code.add(new VarInsnNode(Opcodes.ILOAD, 2));
+		code.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "example/Action", "anchor", "(" + TYPE + (variant.equals("twice") ? TYPE : "") + "Ljava/lang/String;I)V", false));
+		code.add(new InsnNode(Opcodes.RETURN));
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS); owner.accept(writer);
+		ClassNode parsed = new ClassNode(); new ClassReader(writer.toByteArray()).accept(parsed, ClassReader.SKIP_FRAMES);
+		return parsed.methods.getFirst();
+	}
+
 	private static Map<Integer, Integer> prove(MethodNode handler, MethodNode original, MethodNode current) {
 		return MixinLocalOriginProof.prove(handler, OWNER, original, point(original), current, point(current));
 	}

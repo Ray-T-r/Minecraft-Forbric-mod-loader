@@ -30,18 +30,10 @@ final class MixinLocalOriginProof {
 			if (local == null) { if (MixinFit.sugar(handler, i)) return null; continue; }
 			Type type = parameters[i];
 			if (type.getSort() == Type.OBJECT && type.getInternalName().startsWith("com/llamalad7/mixinextras/sugar/ref/")) return null;
-			List<Integer> slots = candidates(reference, original, type, Boolean.TRUE.equals(MixinFit.value(local, "argsOnly")));
-			Object index = MixinFit.value(local, "index");
-			List<String> names = MixinFit.stringList(MixinFit.value(local, "name"));
-			if (index instanceof Number n && n.intValue() >= 0) slots = slots.stream().filter(s -> s == n.intValue()).toList();
-			if (!names.isEmpty()) slots = slots.stream().filter(s -> reference.localVariables.stream().anyMatch(v -> v.index == s
-					&& names.contains(v.name) && live(reference, v, original))).toList();
-			if (MixinFit.value(local, "ordinal") instanceof Number ordinal && ordinal.intValue() >= 0) {
-				int value = ordinal.intValue(); slots = value < slots.size() ? List.of(slots.get(value)) : List.of();
-			}
-			if (slots.size() != 1) return null;
-			String origin = before.local(original, slots.getFirst());
-			TypeInsnNode sourceAllocation = before.allocation(before.frames[original].getLocal(slots.getFirst()), new HashSet<>());
+			int named = slot(local, type, reference, original);
+			if (named < 0) return null;
+			String origin = before.local(original, named);
+			TypeInsnNode sourceAllocation = before.allocation(before.frames[original].getLocal(named), new HashSet<>());
 			if (origin == null && (sourceAllocation == null || !roles.containsKey(sourceAllocation))) return null;
 			List<Integer> matched = new ArrayList<>();
 			for (int slot : candidates(current, present, type, Boolean.TRUE.equals(MixinFit.value(local, "argsOnly")))) {
@@ -70,14 +62,9 @@ final class MixinLocalOriginProof {
 		Type[] captures = Type.getArgumentTypes(handler.desc);
 		for (int i = 0; i < captures.length; i++) {
 			AnnotationNode local = MixinStubRebind.sugar(handler, i, MixinRetarget.LOCAL_SUGAR); if (local == null) continue;
-			List<Integer> slots = candidates(reference, oldPoint, captures[i], Boolean.TRUE.equals(MixinFit.value(local, "argsOnly")));
-			List<String> names = MixinFit.stringList(MixinFit.value(local, "name"));
-			if (!names.isEmpty()) slots = slots.stream().filter(s -> reference.localVariables.stream().anyMatch(v -> v.index == s
-					&& names.contains(v.name) && live(reference, v, oldPoint))).toList();
-			if (MixinFit.value(local, "index") instanceof Number n && n.intValue() >= 0) slots = slots.stream().filter(s -> s == n.intValue()).toList();
-			if (MixinFit.value(local, "ordinal") instanceof Number n && n.intValue() >= 0) slots = n.intValue() < slots.size() ? List.of(slots.get(n.intValue())) : List.of();
-			if (slots.size() != 1) return Map.of();
-			TypeInsnNode allocation = before.allocation(old.getLocal(slots.getFirst()), new HashSet<>()); if (allocation != null) wanted.add(allocation);
+			int slot = slot(local, captures[i], reference, oldPoint);
+			if (slot < 0) return Map.of();
+			TypeInsnNode allocation = before.allocation(old.getLocal(slot), new HashSet<>()); if (allocation != null) wanted.add(allocation);
 		}
 		Map<TypeInsnNode, TypeInsnNode> roles = new IdentityHashMap<>();
 		int operands = Type.getArgumentTypes(originalCall.desc).length + (originalCall.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1);
@@ -110,6 +97,80 @@ final class MixinLocalOriginProof {
 		if (!oldCtor.call().desc.equals(nowCtor.call().desc) || oldCtor.arguments().size() != nowCtor.arguments().size()) return false;
 		for (int i = 0; i < oldCtor.arguments().size(); i++) if (!pairInputs(before, oldCtor.arguments().get(i), after,
 				nowCtor.arguments().get(i), wanted, roles, depth + 1)) return false;
+		return true;
+	}
+
+	/**
+	 * The one slot a {@code @Local} of {@code type} names at instruction {@code point} of {@code reference}, read the way
+	 * MixinExtras reads it: {@code argsOnly} limits it to the parameters, {@code index} and {@code name} (live in the
+	 * debug scope) filter, {@code ordinal} picks among what is left, and with none of them the type must be unique.
+	 * -1 when no slot, or more than one, answers.
+	 */
+	static int slot(AnnotationNode local, Type type, MethodNode reference, int point) {
+		List<Integer> slots = candidates(reference, point, type, Boolean.TRUE.equals(MixinFit.value(local, "argsOnly")));
+		if (MixinFit.value(local, "index") instanceof Number n && n.intValue() >= 0) slots = slots.stream().filter(s -> s == n.intValue()).toList();
+		List<String> names = MixinFit.stringList(MixinFit.value(local, "name"));
+		if (!names.isEmpty()) slots = slots.stream().filter(s -> reference.localVariables != null && reference.localVariables.stream()
+				.anyMatch(v -> v.index == s && names.contains(v.name) && live(reference, v, point))).toList();
+		if (MixinFit.value(local, "ordinal") instanceof Number ordinal && ordinal.intValue() >= 0) {
+			int value = ordinal.intValue(); slots = value < slots.size() ? List.of(slots.get(value)) : List.of();
+		}
+		return slots.size() == 1 ? slots.getFirst() : -1;
+	}
+
+	/**
+	 * What a local slot holds at {@code call}, as one of two values the call itself can hand over: {@code parameter},
+	 * the method's own parameter, untouched on every path to the call; or {@code operand}, the call's operand that was
+	 * loaded from this very slot with nothing in between able to change the slot. Operand indices count an instance
+	 * call's receiver as 0. Anything else — a value the call never receives, a reassigned parameter, two operands loaded
+	 * from the one slot — is null: a matching type or debug name is not proof that a value reaches the call.
+	 */
+	record CallValue(int parameter, int operand) { }
+
+	static CallValue atCall(String owner, MethodNode method, MethodInsnNode call, int slot) {
+		Frame<SourceValue>[] frames;
+		try { frames = new Analyzer<>(new SourceInterpreter()).analyze(owner, method); }
+		catch (AnalyzerException | RuntimeException invalid) { return null; }
+		int at = method.instructions.indexOf(call);
+		Frame<SourceValue> frame = at < 0 ? null : frames[at];
+		if (frame == null || slot < 0 || slot >= frame.getLocals()) return null;
+		SourceValue held = frame.getLocal(slot);
+		int position = 0, parameter = (method.access & Opcodes.ACC_STATIC) == 0 ? 1 : 0;
+		if (slot < parameter) return null;
+		for (Type argument : Type.getArgumentTypes(method.desc)) {
+			// No store on any path leaves a parameter slot without a producer.
+			if (parameter == slot && held.insns.isEmpty()) return new CallValue(position, -1);
+			parameter += argument.getSize(); position++;
+		}
+		return held.insns.isEmpty() ? null : operand(method, frames, frame, call, slot, held);
+	}
+
+	private static CallValue operand(MethodNode method, Frame<SourceValue>[] frames, Frame<SourceValue> frame, MethodInsnNode call,
+			int slot, SourceValue held) {
+		int operands = Type.getArgumentTypes(call.desc).length + (call.getOpcode() == Opcodes.INVOKESTATIC ? 0 : 1), found = -1;
+		if (frame.getStackSize() < operands) return null;
+		int at = method.instructions.indexOf(call);
+		for (int k = 0; k < operands; k++) {
+			SourceValue value = frame.getStack(frame.getStackSize() - operands + k);
+			if (value.insns.size() != 1 || !(value.insns.iterator().next() instanceof VarInsnNode load) || load.var != slot
+					|| load.getOpcode() < Opcodes.ILOAD || load.getOpcode() > Opcodes.ALOAD) continue;
+			int from = method.instructions.indexOf(load);
+			Frame<SourceValue> loaded = from < 0 ? null : frames[from];
+			if (loaded == null || !held.equals(loaded.getLocal(slot)) || !straight(method, from, at, slot)) continue;
+			if (found >= 0) return null;
+			found = k;
+		}
+		return found < 0 ? null : new CallValue(-1, found);
+	}
+
+	/** Between the load and the call nothing branches, stores to the slot, or increments it. */
+	private static boolean straight(MethodNode method, int from, int to, int slot) {
+		for (int i = from + 1; i < to; i++) {
+			AbstractInsnNode instruction = method.instructions.get(i);
+			if (instruction instanceof JumpInsnNode || instruction instanceof TableSwitchInsnNode || instruction instanceof LookupSwitchInsnNode
+					|| instruction instanceof VarInsnNode store && store.var == slot && store.getOpcode() >= Opcodes.ISTORE && store.getOpcode() <= Opcodes.ASTORE
+					|| instruction instanceof IincInsnNode increment && increment.var == slot) return false;
+		}
 		return true;
 	}
 

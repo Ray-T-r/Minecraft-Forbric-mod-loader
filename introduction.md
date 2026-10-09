@@ -726,10 +726,16 @@ where they read as fitting. Those four no longer move by R3: ViaFabricPlus 5.0.2
 replaced in place, which `ReplacedCallRedirects` moves instead (below). `-Dforbric.mixinRetarget.renameCensus=off` moves on
 the bytes alone again, `-Dforbric.mixinRetarget.renameCensus.leftExit=off` keeps every handler that can cancel out of a
 piece, and `-Dforbric.mixinRetarget.renameCensus.uncalled=off` keeps every injector out of the `UNCALLED` body), and per-surface Fabric adapters
-(`FabricBlockBreakMixinAdapter`, `FabricEntityMixinAnchors`, `FabricClientMixinAnchors` — which also stands any Fabric
-`@Inject` just before or after `Gui.extractRenderState`'s screen draw at NeoForge's `ClientHooks.extractScreen`, where the
-merged body draws the screen; LiquidBounce draws its whole browser menu there — `FabricEnchantmentMixinAdapter`,
-`FabricMiningMixinAdapter`, `FabricSoundMixinAdapter`, `FabricServerLanguageMixinAdapter`), and `ReplacedCallRedirects`: a
+(`FabricBlockBreakMixinAdapter`, `FabricEntityMixinAnchors`, `FabricClientMixinAnchors`, `FabricEnchantmentMixinAdapter`,
+`FabricMiningMixinAdapter`, `FabricSoundMixinAdapter`, `FabricServerLanguageMixinAdapter`), and `MixinOperationSeamTransport`:
+a Fabric callback just before or after a call the mod's own game makes in the host method, where the merged host makes it
+through an inherited gateway instead (`Gui.extractRenderState`'s screen draw, which the merged `Gui` makes through
+`ForgeLayerInstance.drawScreen`), keeps its whole body and runs around that one call inside the gateway. A MixinExtras
+`@Local` it takes goes with it only when the mod's own game proves the value: the host's own untouched argument, or the
+very slot the call's operand was loaded from, where the carrier passes that operand from the gateway to the call
+unchanged; the callback then receives what the merged host hands the gateway. LiquidBounce draws its whole browser menu
+there, with the draw's canvas as a `@Local`; `-Dforbric.operationSeams.locals=off` leaves such callbacks where they were
+written. And `ReplacedCallRedirects`: a
 `@Redirect` of a vanilla call the carrier replaced in place with its own, whose handler only puts a condition around
 forwarding the vanilla call, moves onto the carrier's call and forwards that one, along a row that says where the two
 stand for each other, which operands carry the same values and why (ViaFabricPlus' hotbar keys —
