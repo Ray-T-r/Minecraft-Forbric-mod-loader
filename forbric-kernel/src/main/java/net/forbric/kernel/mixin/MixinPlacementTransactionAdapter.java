@@ -9,6 +9,9 @@ import org.objectweb.asm.tree.*;
 /** Keep placement context across the whole native placement transaction, including cancellation and rollback. */
 final class MixinPlacementTransactionAdapter {
 	private static final String CONTEXT="net/minecraft/world/item/context/UseOnContext", CIR="org/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable", REF="com/llamalad7/mixinextras/sugar/ref/LocalRef";
+	static int adapt(ClassNode mixin,Function<String,ClassNode> targets,java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> references) {
+		return adapt(mixin,targets);
+	}
 	static int adapt(ClassNode mixin,Function<String,ClassNode> targets) {
 		String selector="useOn(L"+CONTEXT+";)Lnet/minecraft/world/InteractionResult;";
 		if(!MixinCallbackShape.targets(mixin,"net/minecraft/world/item/ItemStack"))return 0;

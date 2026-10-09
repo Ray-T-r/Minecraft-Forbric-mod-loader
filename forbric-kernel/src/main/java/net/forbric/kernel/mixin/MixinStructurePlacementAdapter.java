@@ -2,7 +2,6 @@
 package net.forbric.kernel.mixin;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -103,43 +102,17 @@ public final class MixinStructurePlacementAdapter {
 				});
 			}
 		}
-		Map<String, List<MethodNode>> roles = new LinkedHashMap<>();
-		for (MethodNode handler : mixin.methods) {
-			AnnotationNode injector = MixinFit.injectorOf(handler);
-			if (injector == null) continue;
-			String kind = injector.desc.substring(injector.desc.lastIndexOf('/') + 1, injector.desc.length() - 1);
-			if (!BODY.contains(kind) || !MixinCallbackShape.kind(handler, kind) || !authoredFor(handler, source)) continue;
-			StringBuilder role = new StringBuilder(kind);
-			for (AnnotationNode at : MixinFit.atNodes(injector)) role.append('|').append(at.values);
-			roles.computeIfAbsent(role.toString(), key -> new ArrayList<>()).add(handler);
-		}
-		for (List<MethodNode> role : roles.values()) {
-			if (role.size() != 1) continue;
-			MethodNode handler = role.getFirst();
+		IntUnaryOperator bodyParameter = nativeParameter == null ? j -> -1 : nativeParameter;
+		for (MethodNode handler : MixinCallbackProofs.alone(mixin, m -> body(m) && authoredFor(m, source))) {
 			MixinHandlerShape shape = MixinHandlerShape.of(handler);
-			if (shape.kind().equals("Inject") && !shape.operands("(" + CALLBACK + ")V") || !extrasServed(shape)) continue;
-			List<AnnotationNode> ats = MixinFit.atNodes(MixinFit.injectorOf(handler));
-			if (ats.isEmpty() || !ats.stream().allMatch(at -> found(nativeBody, place, at))) continue;
-			Map<Integer, Integer> locals;
-			AbstractInsnNode livePoint = null;
-			if (shape.locals().isEmpty()) locals = Map.of();
-			else if (ats.size() != 1) continue;
-			else {
-				List<AbstractInsnNode> now = MixinCallbackProofs.points(place, ats.getFirst());
-				if (now == null || now.size() != 1) continue;
-				livePoint = now.getFirst();
-				if (nativeBody != null) {
-					List<AbstractInsnNode> was = MixinCallbackProofs.points(nativeBody, ats.getFirst());
-					locals = was == null || was.size() != 1 ? null : MixinCallbackProofs.correspondLocals(handler, source.name, nativeBody,
-							was.getFirst(), target.name, place, livePoint, nativeParameter == null ? j -> -1 : nativeParameter);
-				} else locals = MixinCallbackProofs.parameterLocals(handler, OLD.substring(OLD.indexOf('(')), place, null);
-			}
-			if (locals == null) continue;
+			if (shape.kind().equals("Inject") && !shape.operands("(" + CALLBACK + ")V")) continue;
+			MixinCallbackProofs.Landing landing = MixinCallbackProofs.land(handler, source == null ? null : source.name, nativeBody, target.name, place,
+					nativeBody == null ? null : bodyParameter, OLD.substring(OLD.indexOf('(')));
+			if (landing == null) continue;
 			changed++;
-			AbstractInsnNode point = livePoint;
 			moves.add(() -> {
 				MixinPlayerWorldCallbackAdapter.set(MixinFit.injectorOf(handler), "method", List.of(LIVE));
-				if (point != null) MixinCallbackProofs.pinLocals(handler, place, point, locals);
+				landing.pin(handler, place);
 			});
 		}
 		moves.forEach(Runnable::run);
@@ -189,19 +162,12 @@ public final class MixinStructurePlacementAdapter {
 		return shape.extras().stream().allMatch(extra -> EXTRAS.contains(extra.role()));
 	}
 
-	/**
-	 * Whether {@code at} finds its point in {@code place} as it did in vanilla's body: as many instructions in each when that
-	 * body is at hand; without it, one instruction, or the method's head or tail.
-	 */
-	private static boolean found(MethodNode nativeBody, MethodNode place, AnnotationNode at) {
-		List<AbstractInsnNode> now = MixinCallbackProofs.points(place, at);
-		if (now == null || now.isEmpty()) return false;
-		if (nativeBody != null) {
-			List<AbstractInsnNode> was = MixinCallbackProofs.points(nativeBody, at);
-			return was != null && was.size() == now.size();
-		}
-		String value = MixinFit.asString(MixinFit.value(at, "value"));
-		return now.size() == 1 || "HEAD".equals(value) || "TAIL".equals(value);
+	/** An injector kind this adapter moves into {@code addEntitiesToWorld}, written as Mixin reads it (no slice, group or dynamic target). */
+	private static boolean body(MethodNode handler) {
+		AnnotationNode injector = MixinFit.injectorOf(handler);
+		if (injector == null) return false;
+		String kind = injector.desc.substring(injector.desc.lastIndexOf('/') + 1, injector.desc.length() - 1);
+		return BODY.contains(kind) && MixinCallbackShape.kind(handler, kind);
 	}
 
 	/** Whether the handler was written for the native {@code placeEntities}, the method the merged game no longer calls. */

@@ -106,6 +106,77 @@ final class MixinCallbackProofs {
 		return List.copyOf(found);
 	}
 
+	/**
+	 * Whether {@code at} finds its point in {@code live} as it did in {@code reference}, the native body a handler was
+	 * written for: as many instructions in each when that body is at hand; without it, one instruction, or the method's
+	 * head or tail.
+	 */
+	static boolean found(MethodNode reference, MethodNode live, AnnotationNode at) {
+		List<AbstractInsnNode> now = points(live, at);
+		if (now == null || now.isEmpty()) return false;
+		if (reference != null) {
+			List<AbstractInsnNode> was = points(reference, at);
+			return was != null && was.size() == now.size();
+		}
+		String value = MixinFit.asString(MixinFit.value(at, "value"));
+		return now.size() == 1 || "HEAD".equals(value) || "TAIL".equals(value);
+	}
+
+	/** Where a handler written for a native body lands in the live one: the {@code @Local}s it asks for, and the live point. */
+	record Landing(Map<Integer, Integer> locals, AbstractInsnNode point) {
+		/** Pins each proved {@code @Local} of {@code handler} to its slot of {@code live} ({@link #pinLocals}). */
+		void pin(MethodNode handler, MethodNode live) {
+			if (point != null && !locals.isEmpty()) pinLocals(handler, live, point, locals);
+		}
+	}
+
+	/**
+	 * Where {@code handler}, written for the native method {@code reference} (null when the class the mod was compiled
+	 * against is not at hand; {@code nativeDesc} is that method's descriptor), lands when its selector is moved to
+	 * {@code live}: every {@code @At} must be {@link #found} there; its extras may only be {@code @Local}s, {@code @Share}s
+	 * and {@code @Cancellable}s; and each {@code @Local} must be proved — by {@link #correspondLocals} at the one point of
+	 * its one {@code @At} when the native body is at hand, else as an {@code argsOnly} parameter ({@link #parameterLocals}).
+	 * {@code nativeParameter} maps a live parameter position to the native one it carries. Null when it does not land.
+	 */
+	static Landing land(MethodNode handler, String referenceOwner, MethodNode reference, String liveOwner, MethodNode live,
+			IntUnaryOperator nativeParameter, String nativeDesc) {
+		MixinHandlerShape shape = MixinHandlerShape.of(handler);
+		if (shape == null || live == null) return null;
+		List<AnnotationNode> ats = MixinFit.atNodes(MixinFit.injectorOf(handler));
+		if (ats.isEmpty() || !ats.stream().allMatch(at -> found(reference, live, at))) return null;
+		if (!shape.extras().stream().allMatch(extra -> extra.role() == MixinHandlerShape.Role.LOCAL
+				|| extra.role() == MixinHandlerShape.Role.SHARE || extra.role() == MixinHandlerShape.Role.CANCELLABLE)) return null;
+		if (shape.locals().isEmpty()) return new Landing(Map.of(), null);
+		if (ats.size() != 1) return null;
+		List<AbstractInsnNode> now = points(live, ats.getFirst());
+		if (now == null || now.size() != 1) return null;
+		Map<Integer, Integer> locals;
+		if (reference != null) {
+			List<AbstractInsnNode> was = points(reference, ats.getFirst());
+			locals = was == null || was.size() != 1 ? null
+					: correspondLocals(handler, referenceOwner, reference, was.getFirst(), liveOwner, live, now.getFirst(), nativeParameter);
+		} else locals = parameterLocals(handler, nativeDesc, live, nativeParameter);
+		return locals == null ? null : new Landing(locals, now.getFirst());
+	}
+
+	/**
+	 * The handlers of {@code mixin} that {@code role} accepts and that are the only handler of their injector kind at their
+	 * {@code @At}s: a callback adapter moves a handler only when it is alone at its point, and leaves several as compiled.
+	 */
+	static List<MethodNode> alone(ClassNode mixin, java.util.function.Predicate<MethodNode> role) {
+		Map<String, List<MethodNode>> byPoint = new LinkedHashMap<>();
+		for (MethodNode method : mixin.methods) {
+			AnnotationNode injector = MixinFit.injectorOf(method);
+			if (injector == null || !role.test(method)) continue;
+			StringBuilder key = new StringBuilder(injector.desc);
+			for (AnnotationNode at : MixinFit.atNodes(injector)) key.append('|').append(at.values);
+			byPoint.computeIfAbsent(key.toString(), k -> new ArrayList<>()).add(method);
+		}
+		List<MethodNode> out = new ArrayList<>();
+		for (List<MethodNode> handlers : byPoint.values()) if (handlers.size() == 1) out.add(handlers.getFirst());
+		return out;
+	}
+
 	/** The descriptor of the constructor that initialises {@code allocation}; null when not exactly one does. */
 	private static String constructorOf(MethodNode method, Frame<SourceValue>[] frames, TypeInsnNode allocation) {
 		String found = null;
