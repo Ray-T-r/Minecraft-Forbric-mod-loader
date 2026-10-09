@@ -21,6 +21,19 @@ final class NativeCallChanges {
             for(Type type:Type.getArgumentTypes(method.desc)){Expr value=evidence.value(frame.getLocal(slot));if(value==null)return null;values.add(value);slot+=type.getSize();}return values;
         }catch(AnalyzerException|RuntimeException invalid){return null;}
     }
+    /**
+     * What each local slot holds at {@code point}, as the expression that produced it (a parameter, a call on its inputs,
+     * an allocation, a constant, …); slots whose value is not one such expression are absent. Null when the method does
+     * not analyse or {@code point} is not in it.
+     */
+    static Map<Integer,Expr> localsAt(String owner,MethodNode method,AbstractInsnNode point) {
+        try {Origins origins=new Origins();var frames=new Analyzer<>(origins).analyze(owner,method);Evidence evidence=new Evidence(method,frames,origins.parameters);
+            int at=method.instructions.indexOf(point);Frame<SourceValue> frame=at<0?null:frames[at];if(frame==null)return null;
+            Map<Integer,Expr> values=new LinkedHashMap<>();
+            for(int slot=0;slot<frame.getLocals();slot++){SourceValue value=frame.getLocal(slot);if(value==null)continue;Expr expression=evidence.value(value);if(expression!=null)values.put(slot,expression);}
+            return values;
+        }catch(AnalyzerException|RuntimeException invalid){return null;}
+    }
     /** The actual effects leading to this occurrence, with argument-producing carrier conversions kept out of the operation census. */
     static Context context(ClassNode owner,MethodNode method,MethodInsnNode point,Function<Expr,Expr> normalize,Set<Expr> providers) {
         try {

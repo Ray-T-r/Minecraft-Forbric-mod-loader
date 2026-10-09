@@ -28,8 +28,10 @@ import net.forbric.kernel.transform.BlockSoundQueryInjector;
  * <p>The fixture's IBlockExtension is the merged one after KernelBoot's {@code BlockSoundQueryInjector}
  * ({@link PreMixinFixture}), so NeoForge's sound query asks the kernel's {@code KernelBlockSoundQuery}, compiled in from
  * {@code src/runtime/java}, which consults {@code BlockSoundCallbackScope}. The probe steps onto stone, onto the mod's running
- * belt, and onto stone with the belt muffled under it. Adapted, the mod's handler wraps each of the three native calls,
- * opens the scope around it and is asked from inside NeoForge's own query: the belt sounds "belt" at both volumes.
+ * belt, and onto stone with the belt muffled under it. Adapted, the mod's handler wraps the native call in the one method
+ * its selector names, playStepSound, opens the scope around it and is asked from inside NeoForge's own query: the belt
+ * sounds "belt" when stepped on. The muffled belt sounds its plain "metal", as on vanilla, where the muffled and
+ * combination steps never call playStepSound and the mod's wrap never sees them.
  * With {@code -Dforbric.entitySoundCallbacks=off} the wrap has no getSoundType() call to bind to: the belt sounds its
  * plain "metal" and the handler is the mod's required (SUSPECTED) loss. The landing-sound rule is not exercised here.
  */
@@ -42,8 +44,10 @@ class CreateEntitySoundMixinAdapterWeaveTest {
 	private static final String SCOPE = "net/forbric/kernel/interop/BlockSoundCallbackScope";
 	/** The merged Entity's three step-sound methods, each making one native BlockState.playStepSound call. */
 	private static final List<String> HOSTS = List.of("playStepSound", "playCombinationStepSounds", "playMuffledStepSound");
+	/** Of those, the one the mod's selector names. */
+	private static final List<String> SELECTED = List.of("playStepSound");
 
-	private static final String ADAPTED = WeaveHarnessMain.DONE + " stone 0.15, belt 0.15, stone 0.15, belt 0.05";
+	private static final String ADAPTED = WeaveHarnessMain.DONE + " stone 0.15, belt 0.15, stone 0.15, metal 0.05";
 	private static final String UNADAPTED = WeaveHarnessMain.DONE + " stone 0.15, metal 0.15, stone 0.15, metal 0.05";
 
 	@TempDir static Path work;
@@ -97,7 +101,7 @@ class CreateEntitySoundMixinAdapterWeaveTest {
 	}
 
 	private static boolean adaptedHolds(WeaveHarness.Result run) throws Exception {
-		return returned(run, ADAPTED) && losses(run).isEmpty() && hostsCallingTheMod(run).equals(HOSTS) && entersScope(run);
+		return returned(run, ADAPTED) && losses(run).isEmpty() && hostsCallingTheMod(run).equals(SELECTED) && entersScope(run);
 	}
 
 	private static boolean offHolds(WeaveHarness.Result run) throws Exception {
