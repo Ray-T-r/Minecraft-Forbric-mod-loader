@@ -1,6 +1,7 @@
 package net.forbric.kernel.boot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -14,7 +15,12 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.LookupSwitchInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TableSwitchInsnNode;
 import org.objectweb.asm.tree.TypeInsnNode;
 
 import net.forbric.kernel.transform.ClassTransformer;
@@ -93,6 +99,60 @@ class TransformerRegistrationOrderTest {
 		assertTrue(composition < compat,
 				"capability composition must be registered before the compat transformer, so the latter's "
 						+ "lifecycle stubs stand down on their own. Full order: " + order);
+	}
+
+	/**
+	 * The merged base lists Entity/BlockEntity/Level in required-ancestor-compositions.tsv and the loader refuses to
+	 * define them without a registered proof; the capability composition is that proof. It used to be constructed
+	 * and registered only when -Dforbric.forgeCapabilities was on, so off stopped the game at the first Entity.
+	 * Pinned on the compiled launch(): the construction and the registration are one straight line that no branch
+	 * enters, leaves or skips — whatever decides dispatch must happen inside the transformer.
+	 */
+	@Test
+	void theCapabilityCompositionIsRegisteredAsTheAncestorProofOnEveryLaunch() throws Exception {
+		MethodNode launch = launch();
+		List<AbstractInsnNode> code = List.of(launch.instructions.toArray());
+		int created = -1, registered = -1;
+		for (int i = 0; i < code.size(); i++) {
+			AbstractInsnNode insn = code.get(i);
+			if (insn.getOpcode() == Opcodes.NEW && insn instanceof TypeInsnNode t
+					&& t.desc.equals("net/forbric/kernel/transform/ForgeCapabilityCompositionTransformer")) {
+				assertEquals(-1, created, "constructed once");
+				created = i;
+			}
+			if (insn instanceof MethodInsnNode call && call.name.equals("registerAncestorComposition")
+					&& call.owner.equals("net/forbric/kernel/classloading/ForbricClassLoader")) {
+				assertEquals(-1, registered, "registered once");
+				registered = i;
+			}
+		}
+		assertTrue(created >= 0 && registered > created, "the composition must be constructed, then registered as the proof");
+		for (int i = 0; i < code.size(); i++) {
+			for (LabelNode target : targets(code.get(i))) {
+				int to = code.indexOf(target);
+				assertFalse(i > created && i < registered, "a branch between constructing and registering the proof");
+				assertFalse(to > created && to <= registered, "a branch into the middle of the registration");
+				assertFalse(i < created && to > registered, "a branch that can skip registering the ancestor-composition proof");
+			}
+		}
+	}
+
+	private static List<LabelNode> targets(AbstractInsnNode insn) {
+		if (insn instanceof JumpInsnNode jump) return List.of(jump.label);
+		List<LabelNode> out = new ArrayList<>();
+		if (insn instanceof TableSwitchInsnNode table) { out.add(table.dflt); out.addAll(table.labels); }
+		if (insn instanceof LookupSwitchInsnNode lookup) { out.add(lookup.dflt); out.addAll(lookup.labels); }
+		return out;
+	}
+
+	private static MethodNode launch() throws Exception {
+		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
+				"net", "forbric", "kernel", "boot", "KernelBoot.class");
+		assertTrue(Files.isRegularFile(compiled), "KernelBoot not found in the compiled src/main classes");
+		ClassNode cn = new ClassNode();
+		new ClassReader(Files.readAllBytes(compiled)).accept(cn, ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
+		return cn.methods.stream().filter(m -> m.name.equals("launch") && m.instructions != null && m.instructions.size() > 0)
+				.findFirst().orElseThrow(() -> new AssertionError("KernelBoot.launch() not found"));
 	}
 
 	@Test

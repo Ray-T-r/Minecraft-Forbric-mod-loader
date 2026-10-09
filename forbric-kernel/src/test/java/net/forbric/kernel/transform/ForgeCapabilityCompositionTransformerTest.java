@@ -167,21 +167,113 @@ class ForgeCapabilityCompositionTransformerTest {
 	}
 
 	@Test
-	void theCompatStubsStandDownWhenTheShimRanFirstAndReturnWhenItIsOff() throws Exception {
-		for (String root : ROOTS) {
-			byte[] composed = shim(root);
-			ClassNode both = parse(new ForbricMergedBaseCompatTransformer().transform(root.replace('/', '.'), composed, null));
-			for (String name : List.of("invalidateCaps", "reviveCaps")) {
-				List<MethodNode> declared = both.methods.stream().filter(m -> name.equals(m.name) && "()V".equals(m.desc)).toList();
-				assertEquals(1, declared.size(), root + " must declare " + name + " exactly once after both transformers");
-				assertTrue(declared.getFirst().instructions.size() > 1 && calls(declared.getFirst(), "KernelForgeCapabilities"),
-						"the shim's delegate must survive; a bare-return stub would silently drop every LazyOptional invalidation");
+	void theCompatStubsStandDownBehindTheCompositionWhetherOrNotDispatchIsOn() throws Exception {
+		for (boolean dispatch : new boolean[] { true, false }) {
+			ForgeCapabilityCompositionTransformer composition = new ForgeCapabilityCompositionTransformer(null, false, dispatch);
+			for (String root : ROOTS) {
+				byte[] composed = composition.transform(root.replace('/', '.'), bytesOf(root), null);
+				ClassNode both = parse(new ForbricMergedBaseCompatTransformer().transform(root.replace('/', '.'), composed, null));
+				for (String name : List.of("invalidateCaps", "reviveCaps")) {
+					List<MethodNode> declared = both.methods.stream().filter(m -> name.equals(m.name) && "()V".equals(m.desc)).toList();
+					assertEquals(1, declared.size(), root + " must declare " + name + " exactly once after both transformers");
+					assertTrue(declared.getFirst().instructions.size() > 1 && calls(declared.getFirst(), "KernelForgeCapabilities"),
+							"the shim's delegate must survive; a bare-return stub would silently drop every LazyOptional invalidation");
+				}
 			}
 		}
+	}
+
+	/**
+	 * {@code -Dforbric.forgeCapabilities=off} used to skip the roots entirely. The rebuilt merged base lists each root
+	 * in required-ancestor-compositions.tsv, and the loader refuses to define one that no composition proves — so off
+	 * stopped the game at the first Entity. Off now means: the roots are composed exactly as with dispatch on, except
+	 * that the accessor builds the inert provider, and none of the dispatch call sites is inserted anywhere.
+	 */
+	@Test
+	void withDispatchOffTheRootsAreComposedWithTheInertFactoryAndNothingElseIsTouched() throws Exception {
 		System.setProperty(ForgeCapabilityCompositionTransformer.PROPERTY, "off");
-		byte[] bytes = bytesOf(ForgeCapabilityCompositionTransformer.ENTITY);
-		assertSame(bytes, new ForgeCapabilityCompositionTransformer().transform(ForgeCapabilityCompositionTransformer.ENTITY.replace('/', '.'), bytes, null));
-		assertTrue(new ForgeCapabilityCompositionTransformer().anchors().anchors().isEmpty(), "off is a request, not a missed anchor");
+		ForgeCapabilityCompositionTransformer fromSwitch = new ForgeCapabilityCompositionTransformer(null, true);
+		assertFalse(fromSwitch.dispatches(), "the two-argument constructor reads the switch");
+		assertFalse(fromSwitch.transferFallback(), "the transfer fallback edits a dispatching getCapability: never expected while off");
+		ForgeCapabilityCompositionTransformer off = new ForgeCapabilityCompositionTransformer(null, false, false);
+		ForgeCapabilityCompositionTransformer on = new ForgeCapabilityCompositionTransformer(null, false, true);
+		for (String root : ROOTS) {
+			ClassNode before = parse(bytesOf(root));
+			byte[] once = off.transform(root.replace('/', '.'), bytesOf(root), null);
+			ClassNode inert = parse(once);
+			ClassNode dispatching = parse(on.transform(root.replace('/', '.'), bytesOf(root), null));
+			assertEquals(dispatching.interfaces, inert.interfaces, root + ": the same provider interface");
+			assertEquals(fields(dispatching), fields(inert), root + ": the same composed state field");
+			// Every method the composition adds is there, and only the accessor's factory differs.
+			for (MethodNode added : dispatching.methods) {
+				if (find(before, added.name, added.desc) != null) continue;
+				MethodNode twin = find(inert, added.name, added.desc);
+				assertNotNull(twin, root + " lacks " + added.name + added.desc + " with dispatch off");
+				assertEquals(added.access, twin.access, added.name);
+				if (ForgeCapabilityCompositionTransformer.ACCESSOR.equals(added.name)) {
+					assertEquals(List.of("KernelForgeCapabilities." + ForgeCapabilityCompositionTransformer.INERT_FACTORY),
+							runtimeCalls(twin), root + ": the accessor must build the inert provider");
+					assertFalse(runtimeCalls(added).contains("KernelForgeCapabilities." + ForgeCapabilityCompositionTransformer.INERT_FACTORY));
+				} else {
+					assertEquals(tokens(added), tokens(twin), root + "." + added.name + added.desc + " must be the very same delegate");
+				}
+			}
+			// No dispatch call site: every method the base already had is byte-for-byte what it was.
+			for (MethodNode existing : before.methods) {
+				assertEquals(tokens(existing), tokens(find(inert, existing.name, existing.desc)),
+						root + "." + existing.name + existing.desc + " must not gain a capability call site with dispatch off");
+			}
+			assertSame(once, off.transform(root.replace('/', '.'), once, null), root + ": a second pass changes nothing");
+		}
+		// Look-alikes: the classes only dispatch needs are left exactly as they are.
+		for (String target : ForgeCapabilityCompositionTransformer.TARGETS) {
+			if (ROOTS.contains(target)) continue;
+			byte[] bytes = bytesOf(target);
+			assertSame(bytes, off.transform(target.replace('/', '.'), bytes, null), target + " is a dispatch site, not a required root");
+			assertTrue(on.transform(target.replace('/', '.'), bytes, null) != bytes, "premise: with dispatch on " + target + " is rewired");
+		}
+		List<AnchorSet.Anchor> anchors = off.anchors().anchors();
+		assertEquals(ROOTS.stream().map(r -> r.replace('/', '.')).sorted().toList(), anchors.stream().map(AnchorSet.Anchor::binaryName).sorted().toList(),
+				"off still owes the three roots; it owes nothing else");
+		assertTrue(anchors.stream().allMatch(a -> a.severity() == AnchorSet.Severity.REQUIRED));
+	}
+
+	/** A class shaped like a root but not named by the composition is not composed, whatever the switch says. */
+	@Test
+	void aClassThatIsNotARootIsNeverComposed() throws Exception {
+		ClassNode lookalike = parse(bytesOf(ForgeCapabilityCompositionTransformer.ENTITY));
+		lookalike.name = "fixture/stateful/HolderRoot";
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+		lookalike.accept(writer);
+		byte[] bytes = writer.toByteArray();
+		for (boolean dispatch : new boolean[] { true, false }) {
+			assertSame(bytes, new ForgeCapabilityCompositionTransformer(null, false, dispatch).transform("fixture.stateful.HolderRoot", bytes, null));
+		}
+	}
+
+	private static List<String> fields(ClassNode node) {
+		List<String> out = new ArrayList<>();
+		for (org.objectweb.asm.tree.FieldNode f : node.fields) out.add(f.access + " " + f.name + f.desc);
+		return out;
+	}
+
+	private static List<String> runtimeCalls(MethodNode method) {
+		List<String> out = new ArrayList<>();
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof MethodInsnNode call && call.owner.equals(ForgeCapabilityCompositionTransformer.RUNTIME)) {
+				out.add("KernelForgeCapabilities." + call.name);
+			}
+		}
+		return out;
+	}
+
+	private static List<String> tokens(MethodNode method) {
+		assertNotNull(method);
+		org.objectweb.asm.util.Textifier text = new org.objectweb.asm.util.Textifier();
+		method.accept(new org.objectweb.asm.util.TraceMethodVisitor(text));
+		List<String> out = new ArrayList<>();
+		for (Object line : text.getText()) out.add(String.valueOf(line).trim());
+		return out;
 	}
 
 	/**

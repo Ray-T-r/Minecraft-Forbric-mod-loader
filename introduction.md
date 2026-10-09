@@ -459,8 +459,11 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
 - **Capabilities** — the merge put `Entity`/`BlockEntity`/`Level` under NeoForge's attachment hierarchy, so
   `transform.ForgeCapabilityCompositionTransformer` composes MinecraftForge's `CapabilityProvider` into those root
   types and `ForgeCapabilityTokenInjector` drives Forge's `CapabilityTokenSubclass` plugin
-  (`-Dforbric.forgeCapabilities=off`). `CapabilityUseAudit` lists the jars that use MinecraftForge capabilities and
-  marks them DEGRADED if the composition is off or did not land on every root type.
+  (`-Dforbric.forgeCapabilities=off`). The switch turns off dispatch only: the merged base lists those three roots in
+  `required-ancestor-compositions.tsv` and the loader refuses to define one without the composition's proof, so off
+  still composes them, with an inert provider that fires no `AttachCapabilitiesEvent` and answers every ask empty.
+  `CapabilityUseAudit` lists the jars that use MinecraftForge capabilities and marks them DEGRADED if dispatch is off
+  or the composition did not land on every root type.
 - **Enum extensions** — `ForgeEnumExtensionInjector` drives MinecraftForge's own processor (unconditional; it
   declines everything unless Forge's mod list holds more than two mods).
 - **Configs** — `KernelForgeConfigLoad` opens genuine MinecraftForge configs one at a time, keeping Forge's reader,

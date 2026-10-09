@@ -69,26 +69,56 @@ import net.forbric.kernel.util.ForbricLog;
  * The verified native constructor gather is restored using the provider's actual eager mode.
  *
  * <p>Registered BEFORE the merged-base compat transformer, so its bare-return {@code invalidateCaps/reviveCaps}
- * stubs stand down on their own and stay the fallback for {@code -Dforbric.forgeCapabilities=off}. Each root
+ * stubs stand down on their own and stay the fallback for a root this composition could not reach. Each root
  * and call site stands down independently and is counted; the census line says how many landed.
+ *
+ * <p>{@code -Dforbric.forgeCapabilities=off} turns off capability DISPATCH, never the composition. The merged
+ * base names each root whose stateful superclass it removed ({@code required-ancestor-compositions.tsv}), and the
+ * loader refuses to define such a root unless a registered {@code AncestorComposition} proves its final bytes —
+ * this transformer is that proof. So with the switch off the roots still get the interface, the field, the
+ * accessor and every delegate, and the proof still runs; only the accessor's factory changes, to
+ * {@code KernelForgeCapabilities.inert}, whose provider never fires {@code AttachCapabilitiesEvent} and answers
+ * every {@code getCapability} empty. The lifecycle call sites (the constructor gather, invalidate/revive, the
+ * {@code ForgeCaps} funnels, ServerLevel, LevelChunk, the lost initializers) are dispatch and are not inserted.
  */
 public final class ForgeCapabilityCompositionTransformer implements ClassTransformer, net.forbric.api.AncestorComposition {
 	public static final String PROPERTY = "forbric.forgeCapabilities";
 	private final java.util.function.Function<String, byte[]> resources;
 	private final net.forbric.kernel.mixin.NativeGameReferences nativeReferences;
 	private final boolean transferFallback;
+	private final boolean dispatch;
 	private final Map<String, ForgeCapabilityProtocol.Certificate> certificates = new java.util.concurrent.ConcurrentHashMap<>();
 	public ForgeCapabilityCompositionTransformer() { this(null); }
 	public ForgeCapabilityCompositionTransformer(java.util.function.Function<String, byte[]> resources) { this(resources, false); }
-	public ForgeCapabilityCompositionTransformer(java.util.function.Function<String, byte[]> resources, boolean transferFallback) {
+	/** Dispatch follows {@code -Dforbric.forgeCapabilities}, read once, here. */
+	public ForgeCapabilityCompositionTransformer(java.util.function.Function<String, byte[]> resources, boolean transferInterop) {
+		this(resources, transferInterop, enabled());
+	}
+	/**
+	 * @param transferInterop whether the kernel's transfer bridge is on; Forge's transfer fallback edits the composed
+	 *                        {@code getCapability}, so it is expected (and registered) only when dispatch is on too
+	 * @param dispatch        whether capabilities are attached and answered; the roots are composed either way
+	 */
+	public ForgeCapabilityCompositionTransformer(java.util.function.Function<String, byte[]> resources, boolean transferInterop,
+			boolean dispatch) {
 		this.resources = resources;
-		this.transferFallback = transferFallback;
+		this.dispatch = dispatch;
+		this.transferFallback = transferInterop && dispatch;
 		this.nativeReferences = resources == null ? null : new net.forbric.kernel.mixin.NativeGameReferences(resources);
 	}
+	/** A proof of the final definition, which the switch does not change: an inert root is still a composed one. */
 	@Override public boolean proves(net.forbric.api.AncestorComposition.Requirement requirement, byte[] finalDefinition,
 			java.util.function.Function<String, byte[]> reader) {
 		ForgeCapabilityProtocol.Certificate certificate = certificates.get(requirement.owner());
-		return enabled() && certificate != null && certificate.proves(requirement, finalDefinition, reader);
+		return certificate != null && certificate.proves(requirement, finalDefinition, reader);
+	}
+	/** Whether capabilities are attached and answered (false under {@code -Dforbric.forgeCapabilities=off}). */
+	public boolean dispatches() {
+		return dispatch;
+	}
+	/** Whether this instance expects {@link ForgeTransferCapabilityFallback} after it; the kernel registers it iff so. */
+	public boolean transferFallback() {
+		return transferFallback;
 	}
 
 	static final String ENTITY = "net/minecraft/world/entity/Entity";
@@ -133,6 +163,10 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 	static final String FIELD = "forbric$forgeCaps";
 	static final String ACCESSOR = "forbric$caps";
 	static final String ACCESSOR_DESC = "()" + AS_FIELD_DESC;
+	/** {@code KernelForgeCapabilities.inert}: the accessor's factory when dispatch is off. */
+	static final String INERT_FACTORY = "inert";
+	private static final String INERT_COST = "the root's merged definition requires the composed provider state, and "
+			+ "without it the loader refuses to define the class at all";
 
 	private static final Set<String> COMPOSED = Collections.synchronizedSet(new LinkedHashSet<>());
 	private static final List<String> REWIRED = Collections.synchronizedList(new ArrayList<>());
@@ -144,7 +178,10 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 
 	@Override
 	public AnchorSet anchors() {
-		if (!enabled()) return AnchorSet.scanned("switched off by -D" + PROPERTY);
+		if (!dispatch) return AnchorSet.of(
+				new AnchorSet.Anchor(ENTITY.replace('/', '.'), AnchorSet.Severity.REQUIRED, INERT_COST),
+				new AnchorSet.Anchor(BLOCK_ENTITY.replace('/', '.'), AnchorSet.Severity.REQUIRED, INERT_COST),
+				new AnchorSet.Anchor(LEVEL.replace('/', '.'), AnchorSet.Severity.REQUIRED, INERT_COST));
 		return AnchorSet.of(
 				new AnchorSet.Anchor(ENTITY.replace('/', '.'), AnchorSet.Severity.REQUIRED,
 						"no Forge mod can attach or read a capability on an entity; Forge-patched players and horses link to nothing"),
@@ -164,11 +201,12 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 						"bookshelf.itemHandler stays null: every Forge ITEM_HANDLER ask on a chiseled bookshelf NPEs"));
 	}
 
+	/** The switch: whether capability dispatch is on. It never decides whether the roots are composed. */
 	public static boolean enabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
 	}
 
-	/** The roots composed so far this boot (for the audit that names mods losing the feature). */
+	/** The roots composed WITH dispatch so far this boot (for the audit that names mods losing the feature). */
 	public static Set<String> composedRoots() {
 		synchronized (COMPOSED) {
 			return Set.copyOf(COMPOSED);
@@ -177,15 +215,37 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 
 	@Override
 	public byte[] transform(String className, byte[] classBytes, TransformContext context) {
-		if (!enabled() || classBytes == null || classBytes.length == 0) return classBytes;
+		if (classBytes == null || classBytes.length == 0) return classBytes;
 		String internal = className.replace('.', '/');
-		if (!TARGETS.contains(internal)) return classBytes;
+		// Off: only the roots, whose definition requires the composition. Every other target here is dispatch.
+		if (!(dispatch ? TARGETS : ROOTS).contains(internal)) return classBytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
 		ClassNode before = new ClassNode();
 		new ClassReader(classBytes).accept(before, 0);
 		boolean changed = false;
-		if (ROOTS.contains(internal)) changed = compose(node);
+		if (ROOTS.contains(internal)) changed = compose(node, dispatch);
+		if (dispatch) changed |= dispatchSites(node, internal);
+		if (!changed) return classBytes;
+		ClassWriter writer = new ClassWriter(0);
+		node.accept(writer);
+		if (ROOTS.contains(internal) && nativeReferences != null) {
+			ClassNode original = nativeReferences.get(net.forbric.api.Ecosystem.FORGE, internal);
+			ClassNode expected = node;
+			if (transferFallback) {
+				expected = new ClassNode();
+				byte[] extended = new ForgeTransferCapabilityFallback().transform(className, writer.toByteArray(), context);
+				new ClassReader(extended).accept(expected, 0);
+			}
+			ForgeCapabilityProtocol.Certificate certificate = ForgeCapabilityProtocol.certificate(before, expected, original, resources);
+			if (certificate != null) certificates.put(internal, certificate);
+		}
+		return writer.toByteArray();
+	}
+
+	/** The call sites that attach, answer, invalidate and persist capabilities: dispatch, so only when it is on. */
+	private boolean dispatchSites(ClassNode node, String internal) {
+		boolean changed = false;
 		if (BLOCK_ENTITY.equals(internal)) {
 			changed |= insertAfterCall(node, "setRemoved", "()V", BLOCK_ENTITY, "invalidateCapabilities", "()V",
 					callOnThis(BLOCK_ENTITY, "invalidateCaps"), "BlockEntity.setRemoved -> invalidateCaps");
@@ -208,28 +268,16 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 		if (LEVEL_CHUNK.equals(internal)) changed |= initLevelChunkProvider(node);
 		String lost = LOST_INITIALIZERS.get(internal);
 		if (lost != null) changed |= replayLostInitializer(node, lost);
-		if (!changed) return classBytes;
-		ClassWriter writer = new ClassWriter(0);
-		node.accept(writer);
-		if (ROOTS.contains(internal) && nativeReferences != null) {
-			ClassNode original = nativeReferences.get(net.forbric.api.Ecosystem.FORGE, internal);
-			ClassNode expected = node;
-			if (transferFallback) {
-				expected = new ClassNode();
-				byte[] extended = new ForgeTransferCapabilityFallback().transform(className, writer.toByteArray(), context);
-				new ClassReader(extended).accept(expected, 0);
-			}
-			ForgeCapabilityProtocol.Certificate certificate = ForgeCapabilityProtocol.certificate(before, expected, original, resources);
-			if (certificate != null) certificates.put(internal, certificate);
-		}
-		return writer.toByteArray();
+		return changed;
 	}
 
 	// ---- E3: the composition itself
 
-	private static boolean compose(ClassNode node) {
+	private static boolean compose(ClassNode node, boolean dispatch) {
 		if (hasMethod(node, "getCapability", GET_CAPABILITY_DESC)) return false;   // rebuilt base, or second pass
-		String helper = ENTITY.equals(node.name) ? "entity" : BLOCK_ENTITY.equals(node.name) ? "blockEntity" : "level";
+		// The accessor's factory is the one thing the switch changes here: the inert provider never gathers.
+		String helper = !dispatch ? INERT_FACTORY
+				: ENTITY.equals(node.name) ? "entity" : BLOCK_ENTITY.equals(node.name) ? "blockEntity" : "level";
 		if (!node.interfaces.contains(PROVIDER_IMPL)) node.interfaces.add(PROVIDER_IMPL);
 		if (!hasField(node, FIELD)) node.fields.add(new FieldNode(Opcodes.ACC_PRIVATE, FIELD, AS_FIELD_DESC, null, null));
 		int added = 0;
@@ -299,6 +347,12 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 					new MethodInsnNode(Opcodes.INVOKESTATIC, RUNTIME, "serializeBlockEntity",
 							"(" + AS_FIELD_DESC + VALUE_OUTPUT + "Ljava/lang/Object;)" + COMPOUND_TAG, false),
 					new InsnNode(Opcodes.ARETURN));
+		}
+		if (!dispatch) {
+			ForbricLog.info("[Forbric/Capabilities] gave %s the composed MinecraftForge provider state its merged definition "
+					+ "requires (+%d method(s)), with dispatch off by -D%s=off: no AttachCapabilitiesEvent is fired and every "
+					+ "getCapability on it answers empty", node.name.replace('/', '.'), added, PROPERTY);
+			return true;
 		}
 		COMPOSED.add(node.name);
 		ForbricLog.info("[Forbric/Capabilities] composed MinecraftForge capabilities into %s: +%d method(s) — the merge put "

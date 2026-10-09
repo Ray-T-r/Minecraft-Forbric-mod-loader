@@ -455,20 +455,24 @@ public final class KernelBoot {
 		// is still being built can see it.
 		// MinecraftForge's capability provider, composed into Entity/BlockEntity/Level the way Forge composes it into
 		// LevelChunk. BEFORE the compat transformer: its bare-return invalidateCaps/reviveCaps stubs then stand down
-		// on their own, and remain the fallback when this is switched off.
-		boolean forgeCapabilities = net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.enabled();
-		if (forgeCapabilities) {
-			var composition = new net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer(path -> {
-				try (var input = loader.getGameResourceAsStream(path)) { return input == null ? null : input.readAllBytes(); }
-				catch (java.io.IOException unavailable) { return null; }
-			}, transferInterop);
-			loader.registerAncestorComposition(composition);
-			chain.register(TransformPhase.COREMOD, composition);
-			if (transferInterop) chain.register(TransformPhase.COREMOD,
-					new net.forbric.kernel.transform.ForgeTransferCapabilityFallback());
-		} else {
-			ForbricLog.warn("[Forbric/Capabilities] -D%s=off — MinecraftForge capabilities are not composed into the merged "
-					+ "root types and ForgeCapabilities cannot initialise; storage, pipe and machine mods stay inert",
+		// on their own, and remain the fallback for a root the composition could not reach.
+		// Registered on EVERY launch, as the transformer and as the loader's ancestor-composition proof: the merged
+		// base requires those roots composed (required-ancestor-compositions.tsv) and the loader refuses to define one
+		// without a proof. -Dforbric.forgeCapabilities=off is read by the transformer and turns off only dispatch.
+		var composition = new net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer(path -> {
+			try (var input = loader.getGameResourceAsStream(path)) { return input == null ? null : input.readAllBytes(); }
+			catch (java.io.IOException unavailable) { return null; }
+		}, transferInterop);
+		loader.registerAncestorComposition(composition);
+		chain.register(TransformPhase.COREMOD, composition);
+		boolean forgeCapabilities = composition.dispatches();
+		// The fallback edits the composed getCapability; the composition's proof expects it exactly when it says so.
+		if (composition.transferFallback()) chain.register(TransformPhase.COREMOD,
+				new net.forbric.kernel.transform.ForgeTransferCapabilityFallback());
+		if (!forgeCapabilities) {
+			ForbricLog.warn("[Forbric/Capabilities] -D%s=off — MinecraftForge capability dispatch is off: Entity, BlockEntity "
+					+ "and Level still carry the composed provider state their merged definition requires, but nothing is "
+					+ "attached or answered and ForgeCapabilities cannot initialise; storage, pipe and machine mods stay inert",
 					net.forbric.kernel.transform.ForgeCapabilityCompositionTransformer.PROPERTY);
 		}
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricModelContextTransformer(path -> {

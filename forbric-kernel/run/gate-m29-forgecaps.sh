@@ -4,7 +4,9 @@
 # under "ForgeCaps", and initialise ForgeCapabilities at all (its tokens need Forge's launch plugin).
 # Boot 1 (shim ON) asserts nine canary lines + the kernel's composition lines and the absence of every error
 # signature; boot 2 (-Dforbric.forgeCapabilities=off) is the RED demonstration and the attribution proof: the
-# attached-handler line is absent and load-report.txt names forbriclive DEGRADED.
+# attached-handler line is absent and load-report.txt names forbriclive DEGRADED. The switch turns off DISPATCH only:
+# the merged base requires Entity/BlockEntity/Level composed (required-ancestor-compositions.tsv), so boot 2 also
+# asserts the roots still get the (inert) composition and the loader never refuses to define one.
 # RED control for boot 1: M29_EXTRA_JVM='-Dforbric.forgeCapabilities=off' (every CAPS line goes red).
 # GATE-PARALLEL: rundirs=server-forgecaps mem=1500
 set -uo pipefail
@@ -71,7 +73,9 @@ check "server stopped cleanly" 'All dimensions are saved' "$LOG"
 
 step "boot 2: -Dforbric.forgeCapabilities=off names the mod that loses the feature"
 boot "$OFF_LOG" "-Dforbric.forgeCapabilities=off"
-check "the kernel says it is off" 'forgeCapabilities=off — MinecraftForge capabilities are not composed' "$OFF_LOG"
+check "the kernel says it is off" 'forgeCapabilities=off — MinecraftForge capability dispatch is off' "$OFF_LOG"
+check "the roots still get the inert composition their definition requires" 'Capabilities\] gave net\.minecraft\.world\.entity\.Entity the composed MinecraftForge provider state .* with dispatch off' "$OFF_LOG"
+check_absent "no root refused for a missing ancestor composition" 'Unresolved stateful ancestor composition' "$OFF_LOG"
 check_absent "no attached handler without the shim" 'ForbricLive/CAPS\] attached handler present=true' "$OFF_LOG"
 check "the audit names the mod as inert" 'Capabilities\] .* will find it inert .* Marked DEGRADED: \[.*forbriclive' "$OFF_LOG"
 check "forbriclive is named in the load report" 'forbriclive' "$RUNDIR/.forbric-kernel/load-report.txt"

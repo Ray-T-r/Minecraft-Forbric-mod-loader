@@ -90,7 +90,7 @@ public final class CapabilityUseAudit {
 		}
 		String why = shimActive
 				? "this instance did not compose MinecraftForge capabilities into " + simple(missing)
-				: "-Dforbric.forgeCapabilities=off: this instance does not carry MinecraftForge capabilities";
+				: "-Dforbric.forgeCapabilities=off: this instance does not dispatch MinecraftForge capabilities";
 		java.util.List<String> named = new java.util.ArrayList<>();
 		for (net.forbric.api.ModCatalog.Entry entry : net.forbric.api.ModCatalog.everything()) {
 			if (entry.jar() == null || !users.contains(entry.jar())) continue;

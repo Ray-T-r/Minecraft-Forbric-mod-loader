@@ -47,7 +47,11 @@ import net.minecraftforge.event.AttachCapabilitiesEvent;
  * <p>Everything else — gathering, dispatching, LazyOptional invalidation, NBT (de)serialisation, lazy replay —
  * is Forge's {@code CapabilityProvider}/{@code CapabilityDispatcher} code. The removed native providers use
  * eager mode; the transformer restores their constructor gather boundary, so attach events retain that timing.
- * {@code -Dforbric.forgeCapabilities=off} means nothing references this class.
+ *
+ * <p>{@code -Dforbric.forgeCapabilities=off} switches off dispatch, not the composition the roots' merged definition
+ * requires: their accessor then calls {@link #inert} instead, whose provider is Forge's own with no listeners to
+ * ask — it never fires {@code AttachCapabilitiesEvent}, its dispatcher stays null, and every {@code getCapability}
+ * answers {@code LazyOptional.empty()}.
  */
 public final class KernelForgeCapabilities {
 	public static final String PROPERTY = "forbric.forgeCapabilities";
@@ -121,6 +125,28 @@ public final class KernelForgeCapabilities {
 		}
 	}
 
+	/**
+	 * Dispatch off: the composed state with nothing to gather. Forge's own gather reads
+	 * {@code shouldFireAttachCapabilitiesEvent()} first and, on false, marks the provider initialized with no
+	 * dispatcher — so the event is never built and every ask answers empty.
+	 */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	static final class Inert extends Composed {
+		Inert(Object owner) {
+			super(owner);
+		}
+
+		@Override
+		protected AttachCapabilitiesEvent fireAttachCapabilitiesEvent(ICapabilityProviderImpl owner) {
+			throw new IllegalStateException("MinecraftForge capability dispatch is off (-D" + PROPERTY + "=off)");
+		}
+
+		@Override
+		protected boolean shouldFireAttachCapabilitiesEvent() {
+			return false;
+		}
+	}
+
 	// ---- the accessor's one branch, held here so the synthesised forbric$caps() has none
 
 	@SuppressWarnings("rawtypes")
@@ -136,6 +162,12 @@ public final class KernelForgeCapabilities {
 	@SuppressWarnings("rawtypes")
 	public static CapabilityProvider.AsField level(CapabilityProvider.AsField existing, Object owner) {
 		return existing != null ? existing : create(new Levels(owner));
+	}
+
+	/** The accessor's factory for every root when {@code -Dforbric.forgeCapabilities=off}. */
+	@SuppressWarnings("rawtypes")
+	public static CapabilityProvider.AsField inert(CapabilityProvider.AsField existing, Object owner) {
+		return existing != null ? existing : create(new Inert(owner));
 	}
 
 	@SuppressWarnings("rawtypes")

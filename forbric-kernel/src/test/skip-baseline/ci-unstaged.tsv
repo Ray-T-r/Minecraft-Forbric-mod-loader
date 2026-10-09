@@ -542,6 +542,8 @@ test	net.forbric.kernel.mixin.weave.NativeSourcePredicateIslandWeaveTest	theUpst
 test	net.forbric.kernel.runtime.EnergyUnitsTest	aLongRequestIsClampedBeforeAnythingMoves()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.runtime.EnergyUnitsTest	aProviderAnswerMustLieWithinItsRequest()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.runtime.EnergyUnitsTest	readsSaturateAtTheIntLimit()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.runtime.ForgeCapabilityDispatchOffExecutionTest	theInertProviderNeverReachesTheAttachBusAndAnswersEveryAskEmpty()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.ForgeCapabilityDispatchOffExecutionTest	withDispatchOffTheRequiredRootsDefineThroughTheRealLoader()	[fixture:staged] the staged game is absent
 test	net.forbric.kernel.runtime.ForgeClientConsumerFlowTest	bothContributorsMutateTheSameMapInNeoThenForgeOrder()	[fixture:game-side] runtime source set not compiled
 test	net.forbric.kernel.runtime.ForgeClientConsumerFlowTest	contributorFailurePropagatesAndDoesNotPretendTheOtherFamilyRan()	[fixture:game-side] runtime source set not compiled
 test	net.forbric.kernel.runtime.ForgeClientConsumerFlowTest	factoryIllegalArgumentsIncludingTheSameMessageAreNeverSwallowed()	[fixture:game-side] runtime source set not compiled
@@ -856,17 +858,20 @@ test	net.forbric.kernel.transform.ForgeBindingsLookupInjectorTest	theRealBinding
 test	net.forbric.kernel.transform.ForgeBlockTintInjectorTest	theActualMergedClassHasExactlyThisSeam()	[fixture:staged] requires merged base
 test	net.forbric.kernel.transform.ForgeBlockTintInjectorTest	typedFunnelPostsNeoBeforeAskingForgeWithTheEventsBlockColors()	[fixture:game-side] requires runtime source set
 test	net.forbric.kernel.transform.ForgeBrewingRecipesInjectorTest	theForgeRecipeIsWrappedBeforeItIsAppended()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/item/alchemy/PotionBrewing$Builder.class)
+test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	aClassThatIsNotARootIsNeverComposed()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	aSecondPassChangesNothingFurther()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	everyLostCallSiteIsReCreatedOnceAtForgesOwnBoundary()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	everyRootGetsTheFieldTheAccessorTheInterfaceAndEveryDelegate()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	serverLevelGathersAfterAttachmentsAndLevelChunkWritesForgesProvider()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	theAccessorCreatesOnceAndSavesReadWithoutCreating()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	theCensusOfLostInitializersMatchesTheTable()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	theCompatStubsStandDownWhenTheShimRanFirstAndReturnWhenItIsOff()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	theCompatStubsStandDownBehindTheCompositionWhetherOrNotDispatchIsOn()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	theFrameRecomputerLeavesTheComposedRootsAlone()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	theLostConstructorInitializersAreReplayedRightAfterSuper()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.transform.ForgeCapabilityCompositionTransformerTest	withDispatchOffTheRootsAreComposedWithTheInertFactoryAndNothingElseIsTouched()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.ForgeCapabilityProtocolTest	actualSourceStateAndFinalDelegatesProveEveryRequiredRoot()	[fixture:staged] composition source and platform: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.ForgeCapabilityProtocolTest	anAdditionalSourceProviderStateEffectInvalidatesTheCertificate()	[fixture:staged] composition source and platform: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.transform.ForgeCapabilityProtocolTest	withDispatchOffEveryRowOfTheRealManifestIsStillProvedAndLostStateIsStillRejected()	[fixture:staged] composition source and platform: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.ForgeCapabilityTokenInjectorTest	everyOtherClassPassesByHeaderOnly()	[fixture:staged] staged Forge carrier absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.transform.ForgeCapabilityTokenInjectorTest	theBaseTokensGetTypeIsNoLongerFinal()	[fixture:staged] staged Forge carrier absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.transform.ForgeCapabilityTokenInjectorTest	theItemHandlerTokenGetsAGetTypeReturningItsTypeArgument()	[fixture:staged] staged Forge carrier absent: $ROOT/forbric-loader/run/forge-runtime/forge-runtime.jar
