@@ -49,6 +49,7 @@ final class MixinHandlerShape {
 	static final String LOCAL = SUGAR + "Local;";
 	private static final String SHARE = SUGAR + "Share;", CANCELLABLE = SUGAR + "Cancellable;";
 	private static final String COERCE = "Lorg/spongepowered/asm/mixin/injection/Coerce;";
+	private static final String MODIFY_RECEIVER = "Lcom/llamalad7/mixinextras/injector/ModifyReceiver;";
 
 	/** What an extra asks for. {@code CAPTURED}: a local Mixin's {@code locals} capture fills; {@code ARGUMENT}: a target argument appended unannotated. */
 	enum Role { LOCAL, SHARE, CANCELLABLE, SUGAR, CAPTURED, ARGUMENT }
@@ -104,6 +105,7 @@ final class MixinHandlerShape {
 
 	private static MixinHandlerShape of(MethodNode handler, String targetDesc, MethodNode body, boolean bound) {
 		AnnotationNode injector = handler == null ? null : MixinFit.injectorOf(handler);
+		if (injector == null && handler != null) injector = receiverModifier(handler);
 		if (injector == null) return null;
 		String kind = injector.desc.substring(injector.desc.lastIndexOf('/') + 1, injector.desc.length() - 1);
 		Type[] parameters = Type.getArgumentTypes(handler.desc);
@@ -115,7 +117,7 @@ final class MixinHandlerShape {
 			case "WrapOperation", "WrapMethod" -> after(parameters, OPERATION, null);
 			case "ModifyConstant", "ModifyVariable", "ModifyExpressionValue", "ModifyReturnValue" -> 1;
 			case "ModifyArgs" -> after(parameters, ARGS, null);
-			case "Redirect", "WrapWithCondition", "ModifyReceiver" -> instructionOperands(handler, injector, parameters, sugar, returns, body);
+			case "Redirect", "WrapWithCondition", "ModifyReceiver" -> instructionOperands(handler, kind, injector, parameters, sugar, returns, body);
 			default -> sugar;   // @ModifyArg: one argument, or exactly the call's arguments (Mixin 0.8.7 ModifyArgInjector)
 		};
 		end = Math.min(end < 0 ? sugar : end, sugar);
@@ -143,6 +145,16 @@ final class MixinHandlerShape {
 	}
 
 	/**
+	 * MixinExtras' {@code @ModifyReceiver}, which {@link MixinFit#injectorOf} does not read: its operands are read here
+	 * like any injector's, so a callback adapter never takes one of its values for another role.
+	 */
+	private static AnnotationNode receiverModifier(MethodNode handler) {
+		for (List<AnnotationNode> annotations : Arrays.asList(handler.visibleAnnotations, handler.invisibleAnnotations))
+			if (annotations != null) for (AnnotationNode annotation : annotations) if (MODIFY_RECEIVER.equals(annotation.desc)) return annotation;
+		return null;
+	}
+
+	/**
 	 * The {@code @Local} that reads parameter {@code position} of a method taking {@code arguments}, as MixinExtras reads
 	 * one: {@code argsOnly}, and an {@code ordinal} among the parameters of its type only where there are several.
 	 */
@@ -158,10 +170,16 @@ final class MixinHandlerShape {
 	/**
 	 * How many leading parameters a handler takes from the instruction its one point names: an instance access's receiver
 	 * then the call's arguments, or the field's value for a write, or nothing more for a read. -1 where that does not
-	 * settle it: a point naming no member with a descriptor, a variant with {@code args}, or a receiver neither the
-	 * instruction ({@code body}, {@code opcode}) nor the types tell apart from a first target argument.
+	 * settle it: a point naming no member with a descriptor, a variant with {@code args}, an access the injector does not
+	 * take, a field access not known to be a read or a write, or a receiver neither the instruction ({@code body},
+	 * {@code opcode}) nor the types tell apart from a first target argument.
+	 *
+	 * <p>Whether a field access hands over the value is what the instruction is, as Mixin and MixinExtras read it off the
+	 * instruction they inject at ({@link #fieldAccess}): a {@code PUTFIELD}/{@code PUTSTATIC} hands over the value written,
+	 * a {@code GETFIELD}/{@code GETSTATIC} none. The handler's return type is no witness of that: a
+	 * {@code @WrapWithCondition} returns a boolean and a {@code @ModifyReceiver} its receiver whichever it wraps.
 	 */
-	private static int instructionOperands(MethodNode handler, AnnotationNode injector, Type[] parameters, int sugar, Type returns, MethodNode body) {
+	private static int instructionOperands(MethodNode handler, String kind, AnnotationNode injector, Type[] parameters, int sugar, Type returns, MethodNode body) {
 		List<AnnotationNode> ats = MixinFit.atNodes(injector);
 		if (ats.size() != 1 || MixinFit.value(ats.getFirst(), "args") != null) return -1;
 		AnnotationNode at = ats.getFirst();
@@ -173,10 +191,10 @@ final class MixinHandlerShape {
 		if ("INVOKE".equals(value) && member.desc().startsWith("(")) {
 			plain = List.of(Type.getArgumentTypes(member.desc()));
 		} else if ("FIELD".equals(value) && !member.desc().startsWith("(")) {
-			plain = Type.VOID_TYPE.equals(returns) ? List.of(Type.getType(member.desc())) : List.of();
-			if (MixinFit.value(at, "opcode") instanceof Number opcode)
-				isStatic = opcode.intValue() == Opcodes.GETSTATIC || opcode.intValue() == Opcodes.PUTSTATIC ? Boolean.TRUE
-						: opcode.intValue() == Opcodes.GETFIELD || opcode.intValue() == Opcodes.PUTFIELD ? Boolean.FALSE : null;
+			int[] access = fieldAccess(kind, at, returns, body);
+			if (access == null) return -1;
+			plain = access[0] == 1 ? List.of(Type.getType(member.desc())) : List.of();
+			isStatic = access[1] < 0 ? null : access[1] == 1;
 		} else return -1;
 		if (isStatic == null && body != null) {
 			List<AbstractInsnNode> found = MixinCallbackProofs.points(body, at);
@@ -194,6 +212,40 @@ final class MixinHandlerShape {
 		// A coerced first parameter may be a widened receiver: the types alone cannot say.
 		if (sugar > 0 && annotation(handler, 0, COERCE) != null) return -1;
 		return asStatic == asInstance ? -1 : asStatic ? plain.size() : plain.size() + 1;
+	}
+
+	/**
+	 * What field access the point {@code at} of a {@code kind} injector selects: {@code {write, static}}, write 1 for a
+	 * {@code PUTFIELD}/{@code PUTSTATIC} and 0 for a {@code GETFIELD}/{@code GETSTATIC}, static 1/0, or -1 where only
+	 * the kind of access is known. Read off the point's {@code opcode}, else off the instructions it selects in
+	 * {@code body} (all of one kind); where neither says, off what the injector itself can be: a
+	 * {@code @WrapWithCondition} wraps only an instruction that leaves nothing (a write), and Mixin's {@code @Redirect}
+	 * of a read returns the field's value, of a write nothing. Null where nothing settles it (a {@code @ModifyReceiver}
+	 * takes a read and a write alike), the selected instructions differ, or the injector cannot take the access (a
+	 * {@code @WrapWithCondition} of a read, a {@code @ModifyReceiver} of a static field).
+	 */
+	private static int[] fieldAccess(String kind, AnnotationNode at, Type returns, MethodNode body) {
+		List<Integer> opcodes = new ArrayList<>();
+		if (MixinFit.value(at, "opcode") instanceof Number opcode && opcode.intValue() >= 0) opcodes.add(opcode.intValue());
+		else if (body != null) {
+			List<AbstractInsnNode> found = MixinCallbackProofs.points(body, at);
+			if (found != null) for (AbstractInsnNode instruction : found) if (instruction instanceof FieldInsnNode field) opcodes.add(field.getOpcode());
+		}
+		int write = -1, statik = -1;
+		for (int opcode : opcodes) {
+			int one = opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC ? 1 : opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC ? 0 : -1;
+			int alone = opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC ? 1 : 0;
+			if (one < 0 || write >= 0 && write != one || statik >= 0 && statik != alone) return null;
+			write = one;
+			statik = alone;
+		}
+		if (write < 0) write = switch (kind) {
+			case "WrapWithCondition" -> 1;
+			case "Redirect" -> Type.VOID_TYPE.equals(returns) ? 1 : 0;
+			default -> -1;
+		};
+		if (write < 0 || "WrapWithCondition".equals(kind) && write == 0 || "ModifyReceiver".equals(kind) && statik == 1) return null;
+		return new int[]{write, statik};
 	}
 
 	/** Whether parameters {@code from..} before {@code sugar} start with exactly {@code plain}, none of them coerced. */
