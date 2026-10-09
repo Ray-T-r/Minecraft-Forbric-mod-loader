@@ -174,6 +174,11 @@ final class MixinLocalOriginProof {
 		return true;
 	}
 
+	/** The slots of {@code type} a {@code @Local} could name at {@code point}: the parameters, then the debug locals live there. */
+	static List<Integer> typedSlots(MethodNode method, int point, Type type, boolean argsOnly) {
+		return candidates(method, point, type, argsOnly);
+	}
+
 	private static List<Integer> candidates(MethodNode method, int point, Type type, boolean argsOnly) {
 		Set<Integer> slots = new TreeSet<>();
 		int slot = (method.access & Opcodes.ACC_STATIC) == 0 ? 1 : 0;
