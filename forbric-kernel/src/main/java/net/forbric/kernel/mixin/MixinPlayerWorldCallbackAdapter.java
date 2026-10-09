@@ -84,36 +84,19 @@ public final class MixinPlayerWorldCallbackAdapter {
 		}
 	}
 
+	/**
+	 * Every injector of a Level mixin that describes one operation of setBlock's notification tail follows it into
+	 * markAndNotifyBlock, decided by {@link MixinChunkStatusRetarget#movable}: Carpet's fill hooks (the 16 and the neighbour
+	 * update), one of them alone, C2ME's status threshold, a wrap or a redirect of any other call of the tail alike. The
+	 * class the mod was compiled against, when at hand, proves the operation was setBlock's and its flags tests unchanged.
+	 */
 	private static int fill(ClassNode mixin, ClassNode target) {
 		if (target == null) return 0;
-		MethodNode old = selector(target, OLD_FILL), live = selector(target, LIVE_FILL);
-		MethodNode flag = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(I)I") && MixinCallbackShape.kind(m, "ModifyConstant") && MixinCallbackShape.binds(m, target, OLD_FILL)
-                && constantSixteen(MixinFit.injectorOf(m))),
-                notify = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(L"+LEVEL+";"+POS+"L"+BLOCK+";)V")
-                        && MixinCallbackShape.kind(m, "Redirect") && MixinCallbackShape.binds(m, target, OLD_FILL)
-                        && MixinCallbackShape.plainPoint(m, "INVOKE", "L" + LEVEL + ";updateNeighborsAt(" + POS + "L" + BLOCK + ";)V"));
-		String update = "L" + LEVEL + ";updateNeighborsAt(" + POS + "L" + BLOCK + ";)V";
-		if (old == null || live == null || flag == null || notify == null || count(old, update) != 0 || count(old, "L" + LEVEL + ";" + LIVE_FILL) != 1
-				|| count(live, update) != 1 || constants(live, 16) != 1 || constants(old, 16) != 0 || count(live, SHAPES) < 1) return 0;
-		// Both hooks must keep their meaning in the moved body: the neighbour update runs only under flags & 1
-		// (UPDATE_NEIGHBORS), and the 16 is the flags bit (UPDATE_KNOWN_SHAPE) whose test skips the shape updates.
-		MethodInsnNode notifies = first(live, update);
-		AbstractInsnNode guard = notifies;
-		while (guard != null && !(guard instanceof JumpInsnNode)) guard = previous(guard);
-		AbstractInsnNode known = null;
-		for (var i : live.instructions) if (i instanceof IntInsnNode c && c.operand == 16) known = c;
-        int flags = maskParameter(live, known);
-		if (flags < 0 || guard == null || !gates(live, previous(previous(guard)), flags, Opcodes.ICONST_1, Opcodes.IFEQ, notifies)
-				|| !gates(live, known, flags, Opcodes.BIPUSH, Opcodes.IFNE, first(live, SHAPES))) return 0;
-		AnnotationNode a = MixinFit.injectorOf(flag), b = MixinFit.injectorOf(notify);
-		if (!"(I)I".equals(flag.desc) || !("(L"+LEVEL+";"+POS+"L"+BLOCK+";)V").equals(notify.desc)
-				|| !MixinCallbackShape.binds(flag, target, OLD_FILL) || !MixinCallbackShape.binds(notify, target, OLD_FILL)
-				|| !"Lorg/spongepowered/asm/mixin/injection/ModifyConstant;".equals(a.desc)
-				|| !"Lorg/spongepowered/asm/mixin/injection/Redirect;".equals(b.desc)) return 0;
-		List<AnnotationNode> points = MixinFit.atNodes(b);
-		if (points.size() != 1 || !update.equals(MixinFit.value(points.getFirst(), "target"))) return 0;
-		set(a, "method", List.of(LIVE_FILL)); set(b, "method", List.of(LIVE_FILL));
-		return 2;
+		List<MethodNode> moving = MixinChunkStatusRetarget.movable(mixin, target,
+				NativeGameReferences.reference(MixinStubRebind.ecosystemOf(mixin.name), LEVEL));
+		if (moving == null || moving.isEmpty()) return 0;
+		for (MethodNode handler : moving) set(MixinFit.injectorOf(handler), "method", List.of(LIVE_FILL));
+		return moving.size();
 	}
 
 	private static int swap(ClassNode mixin, ClassNode target) {
@@ -178,37 +161,6 @@ public final class MixinPlayerWorldCallbackAdapter {
 		return 1;
 	}
 
-    private static boolean constantSixteen(AnnotationNode injector) {
-        Object constants = MixinFit.value(injector, "constant");
-        List<?> rows = constants instanceof List<?> list ? list : constants instanceof AnnotationNode node ? List.of(node) : List.of();
-        if (rows.size() != 1 || !(rows.getFirst() instanceof AnnotationNode constant) || !Integer.valueOf(16).equals(MixinFit.value(constant, "intValue"))) return false;
-        return constant.values.size() == 2;
-    }
-
-	/** Whether {@code bit} is the operand of {@code flags & bit} whose {@code jump} skips past {@code guarded}. */
-	private static boolean gates(MethodNode m, AbstractInsnNode bit, int flagsSlot, int operand, int jump, AbstractInsnNode guarded) {
-		if (bit == null || guarded == null || bit.getOpcode() != operand || !(previous(bit) instanceof VarInsnNode flags)
-				|| flags.getOpcode() != Opcodes.ILOAD || flags.var != flagsSlot || next(bit) == null || next(bit).getOpcode() != Opcodes.IAND
-				|| !(next(next(bit)) instanceof JumpInsnNode skip) || skip.getOpcode() != jump) return false;
-		int at = index(m, guarded);
-		return index(m, skip) < at && at < index(m, skip.label);
-	}
-    /** Derives the mask operand from the actual parameter load, rejecting aliases/writes and non-int parameters. */
-    private static int maskParameter(MethodNode method,AbstractInsnNode bit) {
-        if(bit==null||!(previous(bit) instanceof VarInsnNode load)||load.getOpcode()!=Opcodes.ILOAD)return -1;
-        int slot=(method.access&org.objectweb.asm.Opcodes.ACC_STATIC)==0?1:0;
-        boolean parameter=false;
-        for(org.objectweb.asm.Type type:org.objectweb.asm.Type.getArgumentTypes(method.desc)) {
-            if(slot==load.var&&type.equals(org.objectweb.asm.Type.INT_TYPE))parameter=true;
-            slot+=type.getSize();
-        }
-        if(!parameter)return -1;
-        for(var instruction:method.instructions) {
-            if(instruction instanceof VarInsnNode variable&&variable.var==load.var&&variable.getOpcode()==Opcodes.ISTORE)return -1;
-            if(instruction instanceof IincInsnNode increment&&increment.var==load.var)return -1;
-        }
-        return load.var;
-    }
     /** Locals come from their unique producer calls; debug names and numeric slot layouts are irrelevant. */
     private static VarInsnNode storedResult(MethodNode method,String member) {
         if(count(method,member)!=1)return null;
