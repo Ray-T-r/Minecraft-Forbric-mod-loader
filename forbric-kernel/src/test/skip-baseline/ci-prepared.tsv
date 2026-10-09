@@ -211,7 +211,6 @@ test	net.forbric.kernel.transform.EnvironmentStripTransformerTest	creativeCoresL
 test	net.forbric.kernel.transform.FabricHooksCallTest	owosOwnFreezeMixinsFitTheRealGameOnBothSides()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.transform.FmlContextLoaderRewriterTest	libJfsOwnMixinPluginIsRewrittenAtItsOneCast()	[fixture:third-party] the sweep90 pack (build/compat-inputs) is not linked into this checkout
 test	net.forbric.kernel.transform.MergedBaseSnippetFunnelTest	fabricRenderingsSnippetWrapFitsAfterTheFunnel()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
-test	net.forbric.kernel.transform.MixinPluginPlatformInjectorTest	actualPluginsKeepValidLocalsAndNativeBranches()	[fixture:third-party] local mod fixture absent
 test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	aRegistriesThatTookFabricsModifierHandsFabricRegistriesVanillasDirectory()	[fixture:third-party] build/compat-inputs/sweep90/mods/fabric-api-0.161.0+26.2.jar absent — skipping real-bytes check
 test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	everyOtherRegistryEndsWhereItsOwnLoaderPutsIt()	[fixture:third-party] build/compat-inputs/sweep90/mods/fabric-api-0.161.0+26.2.jar absent — skipping real-bytes check
 test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	forceHandsFabricRegistriesVanillasDirectoryWithoutAsking()	[fixture:third-party] build/compat-inputs/sweep90/mods/fabric-api-0.161.0+26.2.jar absent — skipping real-bytes check
