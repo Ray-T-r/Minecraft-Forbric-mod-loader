@@ -65,10 +65,11 @@ import net.forbric.kernel.util.ForbricSwitches;
  * <h2>What crosses, Forge family to Fabric</h2>
  *
  * <p>Properties reach Fabric as custom values ({@code KernelFabricEcosystem.customValuesOf}). A namespaced property whose
- * value is a class name (or a list of them) is also an entrypoint under that key ({@link #fabricEntrypoints}); a Fabric
- * reader then type-checks and constructs it through its own entrypoint machinery, and skips what does not fit. The
- * {@code fabric} namespace is excluded: {@code fabric:provides} and its kin are Fabric METADATA fields written as
- * properties.
+ * value names a class the mod's own jar defines (or a list of them) is also an entrypoint under that key
+ * ({@link #fabricEntrypoints(DiscoveredMod)}); a Fabric reader then type-checks and constructs it through its own
+ * entrypoint machinery, and skips what does not fit. A value that is not provably one of the mod's classes stays a
+ * property only. The {@code fabric} namespace is excluded: {@code fabric:provides} and its kin are Fabric METADATA
+ * fields written as properties.
  *
  * <h2>When adding the Fabric mods fails</h2>
  *
@@ -292,34 +293,160 @@ public final class CrossEcosystemDeclarations {
 
 	/**
 	 * A Forge-family mod's {@code [modproperties]} table as the Fabric entrypoints it declares: each namespaced key
-	 * outside the {@code fabric} namespace whose value is a class name or a list of class names. Empty when the switch
-	 * is off.
+	 * outside the {@code fabric} namespace whose value is a class name, or a list of nothing but class names, that the
+	 * mod's OWN jar defines. A property is a property first; it is an entrypoint only when it is provably one of the
+	 * mod's classes. A string that merely looks like a name ({@code example.com}, a package, another mod's class) is
+	 * left a property, so no Fabric reader of that key is ever handed something to construct that was never a class
+	 * of this mod — and no "cannot load entrypoint" finding is raised against the mod for a value that was never a
+	 * class name. All or nothing per key: a list with one element its jar does not define is not a list of class
+	 * declarations.
+	 *
+	 * <p>A mod with no {@code source} at all was not discovered from a jar (the boot drops such a Forge-family mod
+	 * before publishing it), so there is nothing to look in; its table is judged by shape alone, as
+	 * {@link #fabricEntrypoints(Map)} judges a bare table. A source that is named but cannot be read defines nothing.
+	 * Empty when the switch is off.
+	 */
+	public static Map<String, List<EntrypointDecl>> fabricEntrypoints(DiscoveredMod mod) {
+		if (mod == null) return Map.of();
+		Map<String, List<String>> named = classShapedValues(mod.getModProperties());
+		if (named.isEmpty() || mod.getSource() == null) return entrypointsOf(named);
+		Set<String> wanted = new java.util.LinkedHashSet<>();
+		for (List<String> classes : named.values()) {
+			for (String name : classes) wanted.add(classFile(name));
+		}
+		Set<String> defined = classFilesIn(mod.getSource(), wanted);
+		named.entrySet().removeIf(entry -> {
+			for (String name : entry.getValue()) {
+				if (defined.contains(classFile(name))) continue;
+				ForbricLog.debug("[Forbric/Fabric] %s: [modproperties] '%s' = %s names no class in its own jar — it stays "
+						+ "a property and is not offered as a Fabric entrypoint", mod.getId(), entry.getKey(), name);
+				return true;
+			}
+			return false;
+		});
+		return entrypointsOf(named);
+	}
+
+	/**
+	 * A bare {@code [modproperties]} table — one whose mod has no jar to look in — as the Fabric entrypoints it
+	 * declares, judged by shape alone: each namespaced key outside the {@code fabric} namespace whose value is shaped
+	 * like a class name or a list of nothing but class names ({@link #classShaped}). Empty when the switch is off.
 	 */
 	public static Map<String, List<EntrypointDecl>> fabricEntrypoints(Map<String, Object> modProperties) {
-		if (!enabled() || modProperties == null || modProperties.isEmpty()) return Map.of();
+		return entrypointsOf(classShapedValues(modProperties));
+	}
+
+	private static Map<String, List<EntrypointDecl>> entrypointsOf(Map<String, List<String>> named) {
+		if (named.isEmpty()) return Map.of();
 		Map<String, List<EntrypointDecl>> out = new LinkedHashMap<>();
+		named.forEach((key, classes) -> {
+			List<EntrypointDecl> decls = new ArrayList<>(classes.size());
+			for (String name : classes) decls.add(new EntrypointDecl("default", name));
+			out.put(key, List.copyOf(decls));
+		});
+		return Collections.unmodifiableMap(out);
+	}
+
+	/** Each namespaced key outside {@code fabric:} whose value is shaped like a class name or a list of them. */
+	private static Map<String, List<String>> classShapedValues(Map<String, Object> modProperties) {
+		if (!enabled() || modProperties == null || modProperties.isEmpty()) return new LinkedHashMap<>();
+		Map<String, List<String>> named = new LinkedHashMap<>();
 		for (Map.Entry<String, Object> entry : modProperties.entrySet()) {
 			String key = entry.getKey();
 			if (!namespaced(key) || key.startsWith("fabric:")) continue;
 			List<String> classes = classNames(entry.getValue());
-			if (classes.isEmpty()) continue;
-			List<EntrypointDecl> decls = new ArrayList<>(classes.size());
-			for (String name : classes) decls.add(new EntrypointDecl("default", name));
-			out.put(key, List.copyOf(decls));
+			if (!classes.isEmpty()) named.put(key, classes);
 		}
-		return out.isEmpty() ? Map.of() : Collections.unmodifiableMap(out);
+		return named;
 	}
 
-	/** A string, or a non-empty list of nothing but strings; anything else is not a class declaration. */
+	/** A class-shaped string, or a non-empty list of nothing but class-shaped strings; anything else is not one. */
 	private static List<String> classNames(Object value) {
-		if (value instanceof String single) return single.isBlank() ? List.of() : List.of(single);
+		if (value instanceof String single) return classShaped(single) ? List.of(single) : List.of();
 		if (!(value instanceof List<?> list) || list.isEmpty()) return List.of();
 		List<String> names = new ArrayList<>(list.size());
 		for (Object element : list) {
-			if (!(element instanceof String name) || name.isBlank()) return List.of();
+			if (!(element instanceof String name) || !classShaped(name)) return List.of();
 			names.add(name);
 		}
 		return names;
+	}
+
+	/**
+	 * Whether {@code value} is spelled the way a Fabric entrypoint names a class: a binary class name — Java
+	 * identifiers joined by {@code .}, a nested class after {@code $} — optionally followed by {@code ::member}, the
+	 * default language adapter's spelling for a static field or method. No keyword or literal is an identifier, so
+	 * {@code true} or {@code a.null.B} is not one; nor is anything with a space, a slash, a dash or a leading digit.
+	 */
+	public static boolean classShaped(String value) {
+		if (value == null || value.isEmpty()) return false;
+		int member = value.indexOf("::");
+		if (member >= 0 && !identifier(value.substring(member + 2))) return false;
+		String type = member < 0 ? value : value.substring(0, member);
+		if (type.isEmpty() || type.startsWith(".") || type.endsWith(".")) return false;
+		for (String segment : type.split("\\.", -1)) {
+			if (!identifier(segment)) return false;
+		}
+		return true;
+	}
+
+	private static boolean identifier(String segment) {
+		if (segment.isEmpty() || !Character.isJavaIdentifierStart(segment.codePointAt(0))) return false;
+		for (int i = Character.charCount(segment.codePointAt(0)); i < segment.length(); ) {
+			int codePoint = segment.codePointAt(i);
+			if (!Character.isJavaIdentifierPart(codePoint)) return false;
+			i += Character.charCount(codePoint);
+		}
+		return !RESERVED.contains(segment);
+	}
+
+	/** Words that can never be an identifier, so never a package or class name. */
+	private static final Set<String> RESERVED = Set.of("abstract", "assert", "boolean", "break", "byte", "case",
+			"catch", "char", "class", "const", "continue", "default", "do", "double", "else", "enum", "extends", "final",
+			"finally", "float", "for", "goto", "if", "implements", "import", "instanceof", "int", "interface", "long",
+			"native", "new", "package", "private", "protected", "public", "return", "short", "static", "strictfp",
+			"super", "switch", "synchronized", "this", "throw", "throws", "transient", "try", "void", "volatile", "while",
+			"true", "false", "null", "_");
+
+	/** The class file a declared name stands for: its class part, before any {@code ::member}. */
+	static String classFile(String declared) {
+		int member = declared.indexOf("::");
+		return (member < 0 ? declared : declared.substring(0, member)).replace('.', '/') + ".class";
+	}
+
+	/**
+	 * Which of {@code entries} the jar (or class directory) at {@code source} holds, also as a multi-release version
+	 * of the class. Nothing when the source cannot be read: a class the jar cannot be shown to define is not its own.
+	 */
+	private static Set<String> classFilesIn(String source, Set<String> entries) {
+		Set<String> found = new java.util.HashSet<>();
+		try {
+			java.nio.file.Path path = java.nio.file.Path.of(source);
+			if (java.nio.file.Files.isDirectory(path)) {
+				for (String entry : entries) {
+					if (java.nio.file.Files.isRegularFile(path.resolve(entry))) found.add(entry);
+				}
+				return found;
+			}
+			if (!java.nio.file.Files.isRegularFile(path)) return found;
+			try (java.util.zip.ZipFile jar = new java.util.zip.ZipFile(path.toFile())) {
+				for (String entry : entries) {
+					if (jar.getEntry(entry) != null) found.add(entry);
+				}
+				if (found.size() == entries.size()) return found;
+				for (java.util.Enumeration<? extends java.util.zip.ZipEntry> all = jar.entries(); all.hasMoreElements(); ) {
+					String name = all.nextElement().getName();
+					if (!name.startsWith("META-INF/versions/")) continue;
+					int slash = name.indexOf('/', "META-INF/versions/".length());
+					if (slash > 0 && entries.contains(name.substring(slash + 1))) found.add(name.substring(slash + 1));
+				}
+			}
+		} catch (java.io.IOException | RuntimeException unreadable) {
+			ForbricLog.debug("[Forbric/Fabric] could not read %s to see which classes it defines: %s", source,
+					String.valueOf(unreadable));
+			return Set.of();
+		}
+		return found;
 	}
 
 	// ---- value shapes ----------------------------------------------------------------------------------------------

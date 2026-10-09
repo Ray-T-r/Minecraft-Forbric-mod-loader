@@ -236,14 +236,14 @@ public final class KernelFabricEcosystem {
 		// only, exactly like the arbitration aliases above: identity, no lifecycle entrypoints, no mixins, no assets —
 		// the mod is really loaded, by the other family's lifecycle, which owns everything else about it. What it
 		// DECLARES to other mods does cross, in Fabric's spelling: its [modproperties] as custom values, and the
-		// class names it declares under a namespaced key as entrypoints of that key (CrossEcosystemDeclarations).
+		// classes of its own jar it names under a namespaced key as entrypoints of that key (CrossEcosystemDeclarations).
 		int foreign = 0;
 		int declaring = 0;
 		for (DiscoveredMod mod : ModPresence.forgeFamilyMods()) {
 			if (mod.getId() == null || mod.getId().isBlank()) continue;
 			if (fabric.getModContainer(mod.getId()).isPresent()) continue;
 			Map<String, List<KernelModMetadata.EntrypointDecl>> entrypoints =
-					CrossEcosystemDeclarations.fabricEntrypoints(mod.getModProperties());
+					CrossEcosystemDeclarations.fabricEntrypoints(mod);
 			fabric.register(KernelModContainer.presence(KernelModMetadata.builtin(mod.getId(),
 					mod.getVersion() == null ? "0" : mod.getVersion(),
 					mod.getDisplayName() == null ? mod.getId() : mod.getDisplayName(),
@@ -952,7 +952,7 @@ public final class KernelFabricEcosystem {
 	private static Map<String, List<KernelModMetadata.EntrypointDecl>> foreignEntrypoints(String id) {
 		if (id == null) return Map.of();
 		for (DiscoveredMod mod : ModPresence.forgeFamilyMods()) {
-			if (id.equals(mod.getId())) return CrossEcosystemDeclarations.fabricEntrypoints(mod.getModProperties());
+			if (id.equals(mod.getId())) return CrossEcosystemDeclarations.fabricEntrypoints(mod);
 		}
 		return Map.of();
 	}
