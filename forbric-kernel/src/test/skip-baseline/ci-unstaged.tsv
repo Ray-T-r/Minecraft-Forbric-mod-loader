@@ -160,7 +160,7 @@ test	net.forbric.kernel.mixin.CreateInjectionAdaptersTest	interactionsKeepNative
 test	net.forbric.kernel.mixin.CreateInjectionAdaptersTest	nativeBreathingSoundAndHudScopesPreserveTheOriginalCallbacks()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateInjectionAdaptersTest	releasedCallbacksKeepTheirBodiesAndBindToTheReviewedLiveOperations()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateInjectionAdaptersTest	twoReferencedPredictionImplementationsRemainAmbiguous()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.mixin.CreateKeyboardMixinAdapterTest	releasedNativeBodiesDispatchReleasePressAndRepeatExactlyOnce()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.CreateKeyboardMixinAdapterTest	releasedHooksRunWhereVanillasFinalReturnRuns()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateKeyboardMixinAdapterTest	vanillaKeepsTheOriginalReturnSelectors()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateStructureMixinAdapterTest	aMissingCallerRefusesAllThreeSelectorsTogether()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.CreateStructureMixinAdapterTest	setupIterationAndCleanupMoveTogetherToTheCalledEntityPlacementBody()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
@@ -245,6 +245,7 @@ test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualLitematicaOpa
 test	net.forbric.kernel.mixin.InvocationOrdinalsTest	theActualPayloadOrdinalsKeepTheirOriginalProtocolFields()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.KernelClientHookMixinAnchorsTest	fancyMenusOriginalInitializerFollowsTheLiveRelayWithoutChangingItsShift()	[fixture:third-party] local game or mod fixture unavailable
 test	net.forbric.kernel.mixin.KernelClientHookMixinAnchorsTest	originalHooksAndDisabledAdapterAreLeftAsCompiled()	[fixture:third-party] local game or mod fixture unavailable
+test	net.forbric.kernel.mixin.KeyActionExitsTest	vanillaReleaseIsOrdinalFourAndItsFinalReturnOrdinalFive()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.LambdaPermutationCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	[fixture:staged] merged base and vanilla jar required
 test	net.forbric.kernel.mixin.LootSupersessionProofTest	aNameOrAnUnmodifiedLoaderCannotResolveTheMissingLootMixin()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.LootSupersessionProofTest	aStructurallyProvedSourceGroupWaitsForEveryActualDefinition()	[fixture:staged] current raw loot source: $ROOT/forbric-kernel/build/ci-missing-api.jar

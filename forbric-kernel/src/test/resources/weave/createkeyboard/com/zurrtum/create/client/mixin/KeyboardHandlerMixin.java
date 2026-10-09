@@ -10,8 +10,10 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Shaped like Create Fly's KeyboardHandlerMixin, written against vanilla's keyPress: the release reaches the mod at
- * vanilla's sixth return, the press and the repeat at the method's TAIL, both through one helper told which it was.
+ * Shaped like Create Fly's KeyboardHandlerMixin, written against vanilla's keyPress: one hook at its sixth return
+ * ({@code RETURN} ordinal 5) and one at its TAIL, both through one helper told which it was. In vanilla 26.2 the sixth
+ * return IS the final return — the key release returns at the fifth — so natively both hooks run on a press and on a
+ * repeat, and neither on a release.
  */
 @Mixin(KeyboardHandler.class)
 public class KeyboardHandlerMixin {

@@ -5,7 +5,7 @@ import net.neoforged.neoforge.client.ClientHooks;
 
 /**
  * A stand-in for the merged base's KeyboardHandler: NeoForge joins vanilla's separate release and press exits into one
- * ClientHooks.onKeyInput call at the end of keyPress, so the method has two returns where vanilla has more than five.
+ * ClientHooks.onKeyInput call at the end of keyPress, so the method has two returns where vanilla has six.
  */
 public class KeyboardHandler {
 	private final long window;

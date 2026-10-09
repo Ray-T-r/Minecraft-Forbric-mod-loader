@@ -1,4 +1,4 @@
-package fixture.createkeyboard;
+package fixture.keyexits;
 
 import net.minecraft.client.KeyboardHandler;
 import net.minecraft.client.input.KeyEvent;

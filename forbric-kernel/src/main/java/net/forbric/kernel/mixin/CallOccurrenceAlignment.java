@@ -140,6 +140,53 @@ final class CallOccurrenceAlignment {
         return result;
     }
 
+    /**
+     * Describes each side effect of a straight-line run of {@code method} — a call, a field write, a local store — by
+     * its operation and the origins of its operands, never by local slot numbers: two bodies that keep a temporary in
+     * different locals describe the same run identically. Operand producers (loads, constants, arithmetic, reads) are
+     * described through the effects that consume them. The method is analysed once; a run with any opaque operation or
+     * operand origin, or any run of an unanalysable method, is described as null.
+     */
+    static java.util.function.Function<List<AbstractInsnNode>, List<String>> effects(String owner, MethodNode method) {
+        Evidence evidence;
+        try {
+            Origins origins = new Origins();
+            evidence = new Evidence(method, new Analyzer<>(origins).analyze(owner, method), origins.parameters);
+        } catch (AnalyzerException | RuntimeException invalid) { return run -> null; }
+        return run -> effects(evidence, run);
+    }
+
+    private static List<String> effects(Evidence evidence, List<AbstractInsnNode> run) {
+        try {
+            List<String> effects = new ArrayList<>();
+            for (AbstractInsnNode instruction : run) {
+                int opcode = instruction.getOpcode();
+                if (opcode < 0 || producesOnly(opcode)) continue;
+                String effect = null;
+                if (instruction instanceof MethodInsnNode call) effect = evidence.call(call);
+                else if (instruction instanceof FieldInsnNode field && (opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC)) {
+                    String inputs = evidence.inputs(field, opcode == Opcodes.PUTFIELD ? 2 : 1);
+                    if (inputs != null) effect = "put:" + field.owner + "." + field.name + field.desc + inputs;
+                } else if (opcode >= Opcodes.ISTORE && opcode <= Opcodes.ASTORE) {
+                    String inputs = evidence.inputs(instruction, 1);
+                    if (inputs != null) effect = "store:" + opcode + inputs;
+                } else if (instruction instanceof IincInsnNode increment) effect = "iinc:" + increment.incr;
+                if (effect == null) return null;
+                effects.add(effect);
+            }
+            return effects;
+        } catch (RuntimeException invalid) { return null; }
+    }
+
+    /** Operations whose only effect is a value on the stack (or a stack shuffle): their consumers describe them. */
+    private static boolean producesOnly(int opcode) {
+        return opcode == Opcodes.NOP || opcode >= Opcodes.ACONST_NULL && opcode <= Opcodes.SALOAD
+                || opcode >= Opcodes.POP && opcode <= Opcodes.SWAP || opcode >= Opcodes.IADD && opcode <= Opcodes.LXOR
+                || opcode >= Opcodes.I2L && opcode <= Opcodes.DCMPG || opcode == Opcodes.GETSTATIC || opcode == Opcodes.GETFIELD
+                || opcode == Opcodes.NEW || opcode == Opcodes.ARRAYLENGTH || opcode == Opcodes.CHECKCAST
+                || opcode == Opcodes.INSTANCEOF;
+    }
+
     private static List<Occurrence> occurrences(String owner, MethodNode method, String member) {
         try {
             Origins origins = new Origins();

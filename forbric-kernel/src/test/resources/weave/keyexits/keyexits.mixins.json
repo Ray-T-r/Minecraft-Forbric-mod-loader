@@ -1,0 +1,1 @@
+{"required": true, "package": "com.example.keyecho.mixin", "compatibilityLevel": "JAVA_21", "client": ["EchoKeysMixin"], "injectors": {"defaultRequire": 1}}

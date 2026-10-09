@@ -40,7 +40,7 @@ class MixinCallbackContractsTest {
         contracts.add(create("mixin/EntityMixin","MixinEntitySoundCallbackAdapter",MixinEntitySoundCallbackAdapter::adapt,1));
         contracts.add(create("client/mixin/HudMixin","MixinHudContextAdapter",MixinHudContextAdapter::adapt,1));
         contracts.add(create("mixin/LiquidBlockMixin","MixinFluidInteractionAdapter",MixinFluidInteractionAdapter::adapt,2));
-        contracts.add(create("client/mixin/KeyboardHandlerMixin","MixinKeyActionAdapter",MixinKeyActionAdapter::adapt,2));
+        contracts.add(create("client/mixin/KeyboardHandlerMixin","MixinKeyActionAdapter",(mixin,targets)->MixinKeyActionAdapter.adapt(mixin,targets,(family,name)->CreateInjectionAdaptersTest.nativeTarget(name)),2));
         contracts.add(create("mixin/StructureTemplateMixin","MixinStructurePlacementAdapter",MixinStructurePlacementAdapter::adapt,3));
         for (String entry : CarpetMixinAdapterTest.NAMES)
             contracts.add(new Contract(entry, "player/world and fluid reactions", () -> CarpetMixinAdapterTest.mixin(entry),
@@ -101,6 +101,8 @@ class MixinCallbackContractsTest {
             assertEquals(0,contract.adapter().apply(grouped,MixinCallbackContractsTest::target));
             assertArrayEquals(before,CarpetMixinAdapterTest.bytes(grouped));
             if(contract.id().equals("chunk status")) return; // Independent argument modifiers compose; this per-handler plan has no class-level ambiguity.
+            // Each key hook names its own native return; a duplicate names the same one and moves the same way.
+            if(contract.kind().equals("MixinKeyActionAdapter")) return;
             ClassNode ambiguous=unrelatedNames(contract.source().read());
             for(MethodNode method:new ArrayList<>(ambiguous.methods)) if(MixinFit.injectorOf(method)!=null) {
                 MethodNode copy=new MethodNode(method.access,method.name+"Duplicate",method.desc,method.signature,method.exceptions.toArray(String[]::new));
