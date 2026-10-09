@@ -7,18 +7,38 @@ class CallbackSeamsTest {
  static class Host{}static class Helper{}static class Other{}
  private final ClassLoader loader=Host.class.getClassLoader();
  @AfterEach void release(){CallbackSeams.release(loader);}
- @Test void absentOrFailedFinalWitnessCannotArmAScope(){
-  assertThrows(IllegalStateException.class,()->CallbackSeams.enter(Host.class,Helper.class,"missing",()->fail("unproved callback")));
-  CallbackSeams.register(loader,"false",Host.class.getName(),Helper.class.getName(),ignored->false);
-  assertThrows(IllegalStateException.class,()->CallbackSeams.enter(Host.class,Helper.class,"false",()->fail("changed final body")));
+ /** A declined invocation runs the helper as written: no scope is armed, nothing throws, and the site reports once. */
+ private static void invoke(Class<?> host,Class<?> helper,String key,Runnable callback){
+  try(var scope=CallbackSeams.enter(host,helper,key,callback)){CallbackSeams.Token token=CallbackSeams.beginHelper(helper,key);token.fire();scope.complete();}
+ }
+ @Test void absentOrFailedFinalWitnessDeclinesEveryInvocationAndReportsTheSiteOnce(){
+  invoke(Host.class,Helper.class,"missing",()->fail("unproved callback"));
+  List<String> reports=new ArrayList<>();AtomicBoolean valid=new AtomicBoolean(false);
+  CallbackSeams.register(loader,"false",Host.class.getName(),Helper.class.getName(),ignored->valid.get(),(owner,key,reason)->{assertSame(loader,owner);reports.add(key+": "+reason);});
+  for(int i=0;i<3;i++)invoke(Host.class,Helper.class,"false",()->fail("changed final body"));
+  assertEquals(List.of("false: the final body witness does not hold"),reports);
+  CallbackSeams.beginHelper(Helper.class,"false").fire();
+  AtomicInteger called=new AtomicInteger();valid.set(true);invoke(Host.class,Helper.class,"false",called::incrementAndGet);
+  assertEquals(1,called.get(),"a proof that holds again arms the scope as before");assertEquals(1,reports.size());
+  CallbackSeams.register(loader,"reporter",Host.class.getName(),Helper.class.getName(),ignored->false,(owner,key,reason)->{throw new IllegalStateException("broken report");});
+  assertDoesNotThrow(()->invoke(Host.class,Helper.class,"reporter",()->fail("changed final body")),"a failing report never reaches the host");
+ }
+ @Test void aProvedScopeWhoseHelperSkipsOrRepeatsItsSourceCallReportsInsteadOfThrowing(){
+  List<String> reports=new ArrayList<>();AtomicInteger called=new AtomicInteger();
+  CallbackSeams.register(loader,"unreached",Host.class.getName(),Helper.class.getName(),ignored->true,(owner,key,reason)->reports.add(key));
+  for(int i=0;i<2;i++)try(var scope=CallbackSeams.enter(Host.class,Helper.class,"unreached",called::incrementAndGet)){CallbackSeams.beginHelper(Helper.class,"unreached");scope.complete();}
+  assertEquals(List.of("unreached"),reports);assertEquals(0,called.get());
+  CallbackSeams.register(loader,"repeated",Host.class.getName(),Helper.class.getName(),ignored->true,(owner,key,reason)->reports.add(key));
+  try(var scope=CallbackSeams.enter(Host.class,Helper.class,"repeated",called::incrementAndGet)){var token=CallbackSeams.beginHelper(Helper.class,"repeated");token.fire();token.fire();scope.complete();}
+  assertEquals(List.of("unreached","repeated"),reports);assertEquals(1,called.get());
  }
  @Test void theImmediateClaimIgnoresDirectAndRecursiveHelpersAndChecksTheActualHostAndHelper(){
   AtomicInteger called=new AtomicInteger();CallbackSeams.register(loader,"scope",Host.class.getName(),Helper.class.getName(),ignored->true);
   CallbackSeams.beginHelper(Helper.class,"scope").fire();assertEquals(0,called.get());
-  assertThrows(IllegalStateException.class,()->CallbackSeams.enter(Other.class,Helper.class,"scope",called::incrementAndGet));
+  invoke(Other.class,Helper.class,"scope",called::incrementAndGet);assertEquals(0,called.get(),"another host is declined, not armed");
   try(var scope=CallbackSeams.enter(Host.class,Helper.class,"scope",called::incrementAndGet)){
    var outer=CallbackSeams.beginHelper(Helper.class,"scope");CallbackSeams.beginHelper(Helper.class,"scope").fire();assertEquals(0,called.get());
-   outer.fire();scope.complete();assertEquals(1,called.get());assertThrows(IllegalStateException.class,outer::fire);
+   outer.fire();scope.complete();assertEquals(1,called.get());outer.fire();assertEquals(1,called.get(),"a second firing is skipped");
   }
   CallbackSeams.beginHelper(Helper.class,"scope").fire();assertEquals(1,called.get());
  }
@@ -35,7 +55,7 @@ class CallbackSeamsTest {
  @Test void sameNamedClassesAndLoadersWithCustomEqualityCannotReuseAnotherLoadersWitness(){
   var a=new OperationSeamsTest.SameLoader();var b=new OperationSeamsTest.SameLoader();Class<?> first=a.marker(),second=b.marker();
   CallbackSeams.register(a,"identity",first.getName(),first.getName(),ignored->true);
-  try{assertThrows(IllegalStateException.class,()->CallbackSeams.enter(second,second,"identity",()->fail("foreign loader")));assertThrows(IllegalStateException.class,()->CallbackSeams.enter(first,second,"identity",()->fail("foreign helper")));}
+  try{invoke(second,second,"identity",()->fail("foreign loader"));invoke(first,second,"identity",()->fail("foreign helper"));}
   finally{CallbackSeams.release(a);CallbackSeams.release(b);}
  }
  @Test void anotherThreadCannotClaimAPendingHostScope()throws Exception{

@@ -90,6 +90,20 @@ public final class MixinCompatibility {
 				+ (evidence == null || evidence.isEmpty() ? "" : "; evidence=" + evidence));
 	}
 
+	/**
+	 * A transported source callback or Operation its seam declined at run time, because another mixin changed the
+	 * carrier helper or the host's call into it. The game keeps running with the carrier's code as written and only
+	 * this handler is lost, at this one site: CONFIRMED (the decline was observed) and not necessary on the prompt's
+	 * terms, like a NEVER_RUNS injector, so it marks the mod's row and never asks the player to quit.
+	 */
+	static void recordDeclinedSeam(String config, String mixin, String name, String desc, String site, String detail,
+			List<String> evidence) {
+		CompatibilityFindings.record(new CompatibilityFinding("mixin-seam:" + config + ":" + mixin + "#" + name + desc,
+				owner(config), "Mixin injection " + name, "mixin:" + config, CompatibilityFinding.Confidence.CONFIRMED,
+				false, detail, evidence));
+		warnInjection(config, mixin, name + desc, site, detail);
+	}
+
 	/** Actual injection misses stay visible in latest.log, including originally optional injectors. */
 	static void warnInjection(String config, String mixin, String handler, String target, String reason) {
 		// Definitions may be observed again when a deferred replacement is checked. One line per observation,

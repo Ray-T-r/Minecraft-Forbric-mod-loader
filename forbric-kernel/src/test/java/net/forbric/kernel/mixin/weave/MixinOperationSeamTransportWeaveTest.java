@@ -35,6 +35,7 @@ class MixinOperationSeamTransportWeaveTest implements Opcodes {
         assertTrue(on.printed("[Operation] -1 [pre:layer, draw:layer:99, post:layer, pre:top, cancel:top]"),on.describe());
         assertTrue(on.printed("[Operation] direct [pre:top, draw:top:7, post:top]"),on.describe());
         assertFalse(on.output().contains("injection warning"),on.describe());
+        assertFalse(on.printed("skipped at"),on.describe());assertTrue(on.findings().stream().noneMatch(f->f.id().startsWith("mixin-seam:")),on.findings().toString());
         WeaveHarness.assertWovenAndVerified(on,"unknown/Dispatch",fixture);
         Path second=work.resolve("src/second/Listener.java");Files.createDirectories(second.getParent());Files.writeString(second,"""
             package second;import unknown.*;import com.llamalad7.mixinextras.injector.wrapoperation.*;import org.spongepowered.asm.mixin.*;import org.spongepowered.asm.mixin.injection.*;
@@ -70,7 +71,31 @@ class MixinOperationSeamTransportWeaveTest implements Opcodes {
             """);files.add(observer);Path changedConfig=work.resolve("changed.mixins.json");Files.writeString(changedConfig,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"observer\",\"mixins\":[\"Changed\"]}");
         Path changed=WeaveHarness.fixture(work,"changed-helper",files,Map.of("operation.mixins.json",config,"changed.mixins.json",changedConfig),List.of("-g"));changed=NativeWeaveReferences.with(work,changed,Map.of("unknown/Dispatch",source()));
         var mutated=WeaveHarness.run(work,"changed-helper",changed,List.of(configs.getFirst(),new WeaveHarness.Config("changed.mixins.json","changed-operation",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of());
-        assertTrue(mutated.printed("Operation transport has no final body witness"),mutated.describe());assertFalse(mutated.printed("before:top"),mutated.describe());
+        // Another mod's mixin into the carrier helper coexists natively: the host still draws, the gateway and helper
+        // run as written (with that mixin), and only the transported operation is skipped -- reported once, naming it.
+        assertTrue(mutated.printed("[Operation] 1 [observer:layer, pre:layer, draw:layer:99, post:layer, observer:top, pre:top, draw:top:1, post:top]"),mutated.describe());
+        assertTrue(mutated.printed("[Operation] 3 [observer:layer, pre:layer, draw:layer:99, post:layer, observer:top, pre:top, draw:top:3, post:top]"),mutated.describe());
+        assertTrue(mutated.printed("[Operation] -1 [observer:layer, pre:layer, draw:layer:99, post:layer, observer:top, pre:top, cancel:top]"),mutated.describe());
+        assertTrue(mutated.printed("[Operation] direct [observer:top, pre:top, draw:top:7, post:top]"),mutated.describe());
+        assertFalse(mutated.printed("before:top"),mutated.describe());
+        List<String> warnings=mutated.output().lines().filter(line->line.contains("source operation skipped at")).toList();
+        assertEquals(1,warnings.size(),mutated.describe());
+        assertTrue(warnings.getFirst().contains("mixin=unrelated.Subscriber")&&warnings.getFirst().contains("unknown.Gateway.once")&&warnings.getFirst().contains("observer.Changed"),mutated.describe());
+        List<WeaveHarness.Finding> findings=mutated.findings().stream().filter(f->f.id().startsWith("mixin-seam:operation.mixins.json:unrelated.Subscriber#arbitrary(")).toList();
+        assertEquals(1,findings.size(),mutated.findings()+"\n"+mutated.describe());
+        assertEquals("unknown-operation",findings.getFirst().modId());assertEquals("CONFIRMED",findings.getFirst().confidence());assertFalse(findings.getFirst().required());
+        assertFalse(mutated.printed("final body witness"),mutated.describe());
+        files.remove(observer);
+        // A look-alike into another method of the same gateway/helper class leaves the proved bodies alone.
+        Path neighbour=work.resolve("src/observer/Neighbour.java");Files.writeString(neighbour,"""
+            package observer;import unknown.*;import org.spongepowered.asm.mixin.*;import org.spongepowered.asm.mixin.injection.*;import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+            @Mixin(Gateway.class)public class Neighbour{@Inject(method="direct",at=@At("HEAD"))private void beside(Context context,int value,CallbackInfo ci){audit.OperationProbe.log.add("neighbour");}}
+            """);files.add(neighbour);Path neighbourConfig=work.resolve("neighbour.mixins.json");Files.writeString(neighbourConfig,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"observer\",\"mixins\":[\"Neighbour\"]}");
+        Path alike=WeaveHarness.fixture(work,"look-alike",files,Map.of("operation.mixins.json",config,"neighbour.mixins.json",neighbourConfig),List.of("-g"));alike=NativeWeaveReferences.with(work,alike,Map.of("unknown/Dispatch",source()));
+        var alikeRun=WeaveHarness.run(work,"look-alike",alike,List.of(configs.getFirst(),new WeaveHarness.Config("neighbour.mixins.json","neighbour-operation",Ecosystem.NEOFORGE)),List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of());
+        assertTrue(alikeRun.printed("[Operation] 1 [pre:layer, draw:layer:99, post:layer, pre:top, before:top:1, draw:replacement:11, after:top, post:top]"),alikeRun.describe());
+        assertTrue(alikeRun.printed("[Operation] direct [neighbour, pre:top, draw:top:7, post:top]"),alikeRun.describe());
+        assertFalse(alikeRun.printed("skipped at"),alikeRun.describe());assertTrue(alikeRun.findings().stream().noneMatch(f->f.id().startsWith("mixin-seam:")),alikeRun.findings().toString());
     }
     private static byte[] source(){ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_FRAMES|ClassWriter.COMPUTE_MAXS);writer.visit(V21,ACC_PUBLIC,"unknown/Dispatch",null,"java/lang/Object",null);writer.visitField(ACC_PRIVATE,"widget","Lunknown/Widget;",null,null).visitEnd();MethodVisitor method=writer.visitMethod(ACC_PUBLIC,"draw","(I)V",null,null);method.visitCode();method.visitTypeInsn(NEW,"unknown/Context");method.visitInsn(DUP);method.visitMethodInsn(INVOKESPECIAL,"unknown/Context","<init>","()V",false);method.visitVarInsn(ASTORE,2);method.visitVarInsn(ALOAD,0);method.visitFieldInsn(GETFIELD,"unknown/Dispatch","widget","Lunknown/Widget;");method.visitVarInsn(ALOAD,2);method.visitVarInsn(ILOAD,1);method.visitMethodInsn(INVOKEVIRTUAL,"unknown/Widget","present","(Lunknown/Context;I)V",false);method.visitInsn(RETURN);method.visitMaxs(0,0);method.visitEnd();writer.visitEnd();return writer.toByteArray();}
 }

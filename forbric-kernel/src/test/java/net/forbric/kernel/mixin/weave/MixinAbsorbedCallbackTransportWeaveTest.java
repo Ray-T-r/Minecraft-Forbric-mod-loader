@@ -35,6 +35,7 @@ class MixinAbsorbedCallbackTransportWeaveTest implements Opcodes {
   assertTrue(result.printed("[Seam] -99 [set:2:-99, throw:source]"),result.describe());
   assertTrue(result.printed("[Seam] 2 [set:2:2, set:0:12, event:12, callback:2:2:12, event:112]"),result.describe());
   assertTrue(result.printed("[Seam] direct [set:0:3, event:3]"),result.describe());
+  assertNotDeclined(result);
   WeaveHarness.assertWovenAndVerified(result,"unknown/Processor",fixture);
   Path secondSource=work.resolve("src/guestsecond/SubscriberTwo.java");Files.createDirectories(secondSource.getParent());Files.writeString(secondSource,code.get("guest.Subscriber").replace("package guest;","package guestsecond;").replace("class Subscriber{","class SubscriberTwo{").replace("callback:","second:").replace("box.value+=100","box.value+=1000"));
   Path secondConfig=work.resolve("second.mixins.json");Files.writeString(secondConfig,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"guestsecond\",\"mixins\":[\"SubscriberTwo\"]}");
@@ -56,10 +57,50 @@ class MixinAbsorbedCallbackTransportWeaveTest implements Opcodes {
    """);files.add(observer);Path observerConfig=work.resolve("observer.mixins.json");Files.writeString(observerConfig,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"guest2\",\"mixins\":[\"Observer\"]}");
   Path changed=WeaveHarness.fixture(work,"changed-helper",files,Map.of("seam.mixins.json",config,"observer.mixins.json",observerConfig,"META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/unknown/Processor.class.bin",binary),List.of("-g"));
   var mutated=WeaveHarness.run(work,"changed-helper",changed,List.of(configs.getFirst(),new WeaveHarness.Config("observer.mixins.json","unknown-observer",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.SeamProbe","run",Map.of());
-  assertTrue(mutated.printed("[Seam] 1 [throw:Extracted callback has no final body witness:"),mutated.describe());
-  assertFalse(mutated.printed("callback:2:"),mutated.describe());
+  // Another mod's mixin into the extracted helper coexists natively: the host still runs, the helper runs as written
+  // (with that mixin), and only the transported callback is skipped at this site -- reported once, naming the mixin.
+  assertTrue(mutated.printed("[Seam] 1 [observer, set:2:1, observer, set:0:11, event:11, event:11]"),mutated.describe());
+  assertTrue(mutated.printed("[Seam] 13 [observer, set:2:13, observer, set:0:23, event:23, event:23]"),mutated.describe());
+  assertTrue(mutated.printed("[Seam] -99 [observer, set:2:-99, throw:source]"),mutated.describe());
+  assertTrue(mutated.printed("[Seam] 2 [observer, set:2:2, observer, set:0:12, event:12, event:12]"),mutated.describe());
   assertTrue(mutated.printed("[Seam] direct [observer, set:0:3, event:3]"),mutated.describe());
+  assertFalse(mutated.printed("callback:2:"),mutated.describe());
+  assertDeclinedOnce(mutated,"guest2.Observer");
   files.remove(observer);
+  // Another mod wrapping the host's call into the helper: the proof of the Operation chain fails the same way.
+  Path around=work.resolve("src/guest3/Around.java");Files.createDirectories(around.getParent());Files.writeString(around,"""
+   package guest3;import com.llamalad7.mixinextras.injector.wrapoperation.*;@org.spongepowered.asm.mixin.Mixin(unknown.Processor.class)public class Around{
+    @WrapOperation(method="process",at=@org.spongepowered.asm.mixin.injection.At(value="INVOKE",target="Lunknown/Carrier;apply(Lunknown/Box;JI)V"))
+    private static void around(unknown.Box box,long seed,int value,Operation<Void> original){audit.SeamProbe.log.add("around:"+value);original.call(box,seed,value);}}
+   """);files.add(around);Path aroundConfig=work.resolve("around.mixins.json");Files.writeString(aroundConfig,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"guest3\",\"mixins\":[\"Around\"]}");
+  Path wrapped=WeaveHarness.fixture(work,"wrapped-call",files,Map.of("seam.mixins.json",config,"around.mixins.json",aroundConfig,"META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/unknown/Processor.class.bin",binary),List.of("-g"));
+  var wrappedRun=WeaveHarness.run(work,"wrapped-call",wrapped,List.of(configs.getFirst(),new WeaveHarness.Config("around.mixins.json","unknown-around",Ecosystem.NEOFORGE)),List.of(),EnvType.SERVER,"audit.SeamProbe","run",Map.of());
+  assertTrue(wrappedRun.printed("[Seam] 1 [around:1, set:2:1, set:0:11, event:11, event:11]"),wrappedRun.describe());
+  assertTrue(wrappedRun.printed("[Seam] 13 [around:13, set:2:13, set:0:23, event:23, event:23]"),wrappedRun.describe());
+  assertFalse(wrappedRun.printed("callback:2:"),wrappedRun.describe());
+  assertDeclinedOnce(wrappedRun,"guest3.Around");
+  files.remove(around);
+  // Look-alikes that leave the proved bodies alone keep the transported callback: another method of the helper's
+  // class, and the host method itself away from the helper call.
+  Path carrier=work.resolve("src/unknown/Carrier.java");Files.writeString(carrier,code.get("unknown.Carrier").replace("box.post();}}","box.post();}public static void idle(Box box){box.post();}}"));
+  Path neighbour=work.resolve("src/guest4/Neighbour.java"),bystander=work.resolve("src/guest4/Bystander.java");Files.createDirectories(neighbour.getParent());
+  Files.writeString(neighbour,"""
+   package guest4;@org.spongepowered.asm.mixin.Mixin(unknown.Carrier.class)public class Neighbour{
+    @org.spongepowered.asm.mixin.injection.Inject(method="idle",at=@org.spongepowered.asm.mixin.injection.At("HEAD"))
+    private static void beside(unknown.Box box,org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci){audit.SeamProbe.log.add("neighbour");}}
+   """);
+  Files.writeString(bystander,"""
+   package guest4;@org.spongepowered.asm.mixin.Mixin(unknown.Processor.class)public class Bystander{
+    @org.spongepowered.asm.mixin.injection.Inject(method="process",at=@org.spongepowered.asm.mixin.injection.At("HEAD"))
+    private static void first(unknown.Box box,long seed,int value,org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci){audit.SeamProbe.log.add("bystander");}}
+   """);files.add(neighbour);files.add(bystander);Path neighbourConfig=work.resolve("neighbour.mixins.json");Files.writeString(neighbourConfig,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"guest4\",\"mixins\":[\"Neighbour\",\"Bystander\"]}");
+  Path alike=WeaveHarness.fixture(work,"look-alike",files,Map.of("seam.mixins.json",config,"neighbour.mixins.json",neighbourConfig,"META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/unknown/Processor.class.bin",binary),List.of("-g"));
+  var alikeRun=WeaveHarness.run(work,"look-alike",alike,List.of(configs.getFirst(),new WeaveHarness.Config("neighbour.mixins.json","unknown-neighbour",Ecosystem.NEOFORGE)),List.of(),EnvType.SERVER,"audit.SeamProbe","run",Map.of());
+  assertTrue(alikeRun.printed("[Seam] 1 [bystander, set:2:1, set:0:11, event:11, callback:2:1:11, event:111]"),alikeRun.describe());
+  assertTrue(alikeRun.printed("[Seam] -1 [bystander]"),alikeRun.describe());
+  assertNotDeclined(alikeRun);
+  WeaveHarness.assertWovenAndVerified(alikeRun,"unknown/Processor",alike);
+  Files.writeString(carrier,code.get("unknown.Carrier"));files.remove(neighbour);files.remove(bystander);
   Files.writeString(work.resolve("src/guest/Subscriber.java"),code.get("guest.Subscriber").replace("method=\"process\"", "id=\"custom\",method=\"process\"").replace("value=\"INVOKE\"", "id=\"point\",value=\"INVOKE\"").replace("equals(\"process\")", "equals(\"custom:point\")"));
   Path identified=WeaveHarness.fixture(work,"identified",files,Map.of("seam.mixins.json",config,"META-INF/forbric/native-reference/FABRIC/index.tsv",index,"META-INF/forbric/native-reference/FABRIC/unknown/Processor.class.bin",binary),List.of("-g"));
   var identifiedRun=WeaveHarness.run(work,"identified",identified,configs,List.of(),EnvType.SERVER,"audit.SeamProbe","run",Map.of());
@@ -81,6 +122,21 @@ class MixinAbsorbedCallbackTransportWeaveTest implements Opcodes {
 
 
 
+ }
+ /** One warning and one CONFIRMED, not-required finding for the transported handler's site, naming what broke it. */
+ private static void assertDeclinedOnce(WeaveHarness.Result run,String breaker){
+  List<String> warnings=run.output().lines().filter(line->line.contains("source callback skipped at")).toList();
+  assertEquals(1,warnings.size(),run.describe());
+  assertTrue(warnings.getFirst().contains("mixin=guest.Subscriber")&&warnings.getFirst().contains("unknown.Carrier.apply")&&warnings.getFirst().contains(breaker),run.describe());
+  List<WeaveHarness.Finding> findings=run.findings().stream().filter(f->f.id().startsWith("mixin-seam:seam.mixins.json:guest.Subscriber#after(")).toList();
+  assertEquals(1,findings.size(),run.findings()+"\n"+run.describe());
+  assertEquals("unknown-callback",findings.getFirst().modId());assertEquals("CONFIRMED",findings.getFirst().confidence());assertFalse(findings.getFirst().required());
+  assertTrue(findings.getFirst().detail().contains(breaker),findings.toString());
+  assertFalse(run.printed("final body witness"),run.describe());
+ }
+ private static void assertNotDeclined(WeaveHarness.Result run){
+  assertFalse(run.printed("skipped at"),run.describe());
+  assertTrue(run.findings().stream().noneMatch(f->f.id().startsWith("mixin-seam:")),run.findings().toString());
  }
  static byte[] source(){return source(true);}
  static byte[] source(boolean stat){ClassWriter w=new ClassWriter(ClassWriter.COMPUTE_FRAMES|ClassWriter.COMPUTE_MAXS);w.visit(V21,ACC_PUBLIC,"unknown/Processor",null,"java/lang/Object",null);MethodVisitor m=w.visitMethod(ACC_PUBLIC|(stat?ACC_STATIC:0),"process","(Lunknown/Box;JI)V",null,null);m.visitCode();LabelNodeMarker(m,stat?3:4);m.visitVarInsn(ALOAD,stat?0:1);m.visitVarInsn(LLOAD,stat?1:2);m.visitVarInsn(ILOAD,stat?3:4);m.visitMethodInsn(INVOKEVIRTUAL,"unknown/Box","set","(JI)V",false);m.visitInsn(RETURN);m.visitMaxs(0,0);m.visitEnd();w.visitEnd();return w.toByteArray();}

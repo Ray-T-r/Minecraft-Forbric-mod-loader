@@ -60,12 +60,22 @@ class OperationSeamsTest {
   events.clear();apply(recursive[0],new Object[]{"direct"});assertEquals(List.of("native:direct"),events);
   AtomicInteger sourceCalls=new AtomicInteger(),nativeCalls=new AtomicInteger();AtomicReference<Throwable> failure=new AtomicReference<>();scoped("recursive",(operation,values)->{sourceCalls.incrementAndGet();return original(operation,values);},values->{Thread thread=new Thread(()->{try{selected(v->apply(a->{nativeCalls.incrementAndGet();return null;},v),new Object[]{"thread"});}catch(Throwable failed){failure.set(failed);}});thread.start();thread.join();return null;},"outer");assertNull(failure.get());assertEquals(0,sourceCalls.get());assertEquals(1,nativeCalls.get());
  }
- @Test void missingChangedWrongHostAndDifferentLoaderWitnessesAreRefused()throws Throwable{
-  OperationSeams.Invocation source=(operation,values)->fail("unproved source");OperationSeams.NativeOperation gateway=values->fail("unproved gateway");
-  assertThrows(IllegalStateException.class,()->scoped("missing",source,gateway));AtomicBoolean valid=new AtomicBoolean(true);OperationSeams.register(loader,"changing",Host.class.getName(),Helper.class.getName(),graph,ignored->valid.get());valid.set(false);assertThrows(IllegalStateException.class,()->scoped("changing",source,gateway));
-  register("wrong");assertThrows(IllegalStateException.class,()->OperationSeams.scoped(Foreign.class,Helper.class,"wrong",source,gateway,new Object[0]));assertThrows(IllegalStateException.class,()->OperationSeams.scoped(Host.class,Foreign.class,"wrong",source,gateway,new Object[0]));
+ /** Declined, never refused: the native gateway runs exactly as written, the source is skipped, the site reports once. */
+ @Test void missingChangedWrongHostAndDifferentLoaderWitnessesRunTheNativeGatewayAlone()throws Throwable{
+  OperationSeams.Invocation source=(operation,values)->fail("unproved source");List<String> events=new ArrayList<>();
+  OperationSeams.NativeOperation gateway=values->selected(v->apply(actual->{events.add("native:"+actual[0]);return "native";},v),values);
+  assertEquals("native",scoped("missing",source,gateway,"a"));
+  List<String> reports=new ArrayList<>();AtomicBoolean valid=new AtomicBoolean(true);
+  OperationSeams.register(loader,"changing",Host.class.getName(),Helper.class.getName(),graph,ignored->valid.get(),new int[0],new int[0],(owner,key,reason)->{assertSame(loader,owner);reports.add(key+": "+reason);});valid.set(false);
+  assertEquals("native",scoped("changing",source,gateway,"b"));assertEquals("native",scoped("changing",source,gateway,"c"));
+  assertEquals(List.of("changing: the final body witness does not hold"),reports);
+  register("wrong");assertEquals("native",OperationSeams.scoped(Foreign.class,Helper.class,"wrong",source,gateway,new Object[]{"d"}));assertEquals("native",OperationSeams.scoped(Host.class,Foreign.class,"wrong",source,gateway,new Object[]{"e"}));
   SameLoader a=new SameLoader(),b=new SameLoader();Class<?> first=a.marker(),second=b.marker();assertEquals(first.getName(),second.getName());OperationSeams.register(a,"identity",first.getName(),first.getName(),graph,ignored->true);
-  try{assertThrows(IllegalStateException.class,()->OperationSeams.scoped(first,second,"identity",source,gateway,new Object[0]));assertThrows(IllegalStateException.class,()->OperationSeams.scoped(second,second,"identity",source,gateway,new Object[0]));}finally{OperationSeams.release(a);OperationSeams.release(b);}
+  try{assertEquals("native",OperationSeams.scoped(first,second,"identity",source,gateway,new Object[]{"f"}));assertEquals("native",OperationSeams.scoped(second,second,"identity",source,gateway,new Object[]{"g"}));}finally{OperationSeams.release(a);OperationSeams.release(b);}
+  OperationSeams.register(loader,"reporter",Host.class.getName(),Helper.class.getName(),graph,ignored->false,new int[0],new int[0],(owner,key,reason)->{throw new IllegalStateException("broken report");});
+  assertEquals("native",scoped("reporter",source,gateway,"h"),"a failing report never reaches the host");
+  assertEquals(List.of("native:a","native:b","native:c","native:d","native:e","native:f","native:g","native:h"),events);
+  valid.set(true);assertEquals("guest",scoped("changing",(operation,values)->"guest",gateway,"i"),"a proof that holds again scopes the source as before");assertEquals(1,reports.size());
  }
  static class SameLoader extends ClassLoader {
   @Override public boolean equals(Object ignored){return true;}@Override public int hashCode(){return 1;}

@@ -18,10 +18,29 @@ public final class MixinOperationSeamTransport implements Opcodes {
     private static final Handle META=new Handle(H_INVOKESTATIC,"java/lang/invoke/LambdaMetafactory","metafactory","(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",false);
     private static final Map<ClassLoader,Map<String,Installed>> PLANS=Collections.synchronizedMap(new IdentityHashMap<>());
     private static final class Installed {
-        final String source,key;final OperationCallGraph.Plan graph;final MethodNode retained,bridge,wrapper,parentOriginal,helperOriginal;
+        final String source,key,injectorName,injectorDesc;final OperationCallGraph.Plan graph;final MethodNode retained,bridge,wrapper,parentOriginal,helperOriginal;
         volatile List<MethodContract> emitted=List.of(),host=List.of();
-        Installed(String source,String key,OperationCallGraph.Plan graph,MethodNode retained,MethodNode bridge,MethodNode wrapper,Function<String,ClassNode> current){this.source=source;this.key=key;this.graph=graph;this.retained=copy(retained);this.bridge=copy(bridge);this.wrapper=copy(wrapper);this.parentOriginal=copy(NativeCallChanges.method(current.apply(graph.firstOwner()),graph.firstMethod()));this.helperOriginal=copy(NativeCallChanges.method(current.apply(graph.helper()),graph.helperMethod()));}
+        /** What the final definitions say broke the witness, named when each class is defined. */
+        volatile String hostDrift;final Map<MethodContract,String> drift=new java.util.concurrent.ConcurrentHashMap<>();
+        Installed(String source,String key,String injectorName,String injectorDesc,OperationCallGraph.Plan graph,MethodNode retained,MethodNode bridge,MethodNode wrapper,Function<String,ClassNode> current){this.source=source;this.key=key;this.injectorName=injectorName;this.injectorDesc=injectorDesc;this.graph=graph;this.retained=copy(retained);this.bridge=copy(bridge);this.wrapper=copy(wrapper);this.parentOriginal=copy(NativeCallChanges.method(current.apply(graph.firstOwner()),graph.firstMethod()));this.helperOriginal=copy(NativeCallChanges.method(current.apply(graph.helper()),graph.helperMethod()));}
         boolean witnessed(ClassLoader loader){return host.size()==3&&!emitted.isEmpty()&&host.stream().allMatch(value->DefinedMethodContracts.observed(loader,value))&&emitted.stream().allMatch(value->DefinedMethodContracts.observed(loader,value))&&graph.getters().stream().allMatch(value->DefinedMethodContracts.observed(loader,value));}
+        String site(){return graph.host().replace('/','.')+"."+graph.hostMethod();}
+        String helperName(){return graph.helper().replace('/','.')+"."+graph.helperMethod();}
+        /** The first failing conjunct of {@link #witnessed}, in its order; null when it holds. */
+        String broken(ClassLoader loader){
+            if(host.size()!=3)return hostDrift!=null?hostDrift:"the transported handler, bridge or wrapper of "+source.replace('/','.')+" has not reached "+site()+" unchanged";
+            if(emitted.isEmpty())return "the gateway "+graph.firstOwner().replace('/','.')+"."+graph.firstMethod()+" and helper "+helperName()+" were not instrumented before their definition";
+            for(MethodContract value:host)if(!DefinedMethodContracts.observed(loader,value))return "the transported "+value.owner()+"."+value.name()+value.descriptor()+" was redefined";
+            for(MethodContract value:emitted)if(!DefinedMethodContracts.observed(loader,value))return drift.getOrDefault(value,"the final body of "+value.owner()+"."+value.name()+value.descriptor()+" is not the body Forbric instrumented");
+            for(MethodContract value:graph.getters())if(!DefinedMethodContracts.observed(loader,value))return "the proved getter "+value.owner()+"."+value.name()+value.descriptor()+" changed";
+            return null;
+        }
+        /** OperationSeams' once-per-site report: the operation is skipped there, the carrier gateway runs as written. */
+        void declined(ClassLoader loader,String ignoredKey,String reason){
+            String broken=broken(loader),cause=broken==null?reason:broken;
+            SeamDeclines.report(source,injectorName,injectorDesc,site(),"source operation skipped at "+site()+", whose call it wraps the merged game moved into "
+                +helperName()+": "+cause+"; the carrier's gateway runs as written",List.of("transport=operation seam","host="+site(),"helper="+helperName(),"declined="+reason,"cause="+cause));
+        }
     }
     private MixinOperationSeamTransport() { }
     public static void release(ClassLoader loader){PLANS.remove(loader);OperationSeams.release(loader);}
@@ -51,9 +70,9 @@ public final class MixinOperationSeamTransport implements Opcodes {
             MethodNode retained=copy(handler);retained.name=MixinHandlerShim.asideName(mixin.name,handler.name,"$forbricoperation");removeInjector(retained);MixinCallbackShape.uniqueMember(retained);
             String callbackId=MixinFit.asString(MixinFit.value(injector,"id")),pointId=MixinFit.asString(MixinFit.value(at,"id"));callbackId=(callbackId==null||callbackId.isEmpty()?original.name:callbackId)+(pointId==null||pointId.isEmpty()?"":":"+pointId);
             MethodNode bridge=bridge(mixin.name,retained,hostArgs,operands,wrap,full,"AFTER".equals(shift),callbackId),wrapper=wrapper(mixin.name,bridge,hostArgs,graph,key,injector);
-            Installed installed=new Installed(mixin.name,key,graph,retained,bridge,wrapper,current);
+            Installed installed=new Installed(mixin.name,key,handler.name,handler.desc,graph,retained,bridge,wrapper,current);
             List<String> owners=new ArrayList<>(new TreeSet<>(List.of(graph.firstOwner(),graph.helper())));
-            if(!register(loader,owners,0,()->{synchronized(PLANS){Map<String,Installed> registry=PLANS.computeIfAbsent(loader,ignored->new LinkedHashMap<>());registry.putIfAbsent(key,installed);}OperationSeams.register(loader,key,graph.host(),graph.helper(),graph.graph(),installed::witnessed,graph.gatewayInputs().stream().mapToInt(Integer::intValue).toArray(),graph.helperInputs().stream().mapToInt(Integer::intValue).toArray());}))continue;
+            if(!register(loader,owners,0,()->{synchronized(PLANS){Map<String,Installed> registry=PLANS.computeIfAbsent(loader,ignored->new LinkedHashMap<>());registry.putIfAbsent(key,installed);}OperationSeams.register(loader,key,graph.host(),graph.helper(),graph.graph(),installed::witnessed,graph.gatewayInputs().stream().mapToInt(Integer::intValue).toArray(),graph.helperInputs().stream().mapToInt(Integer::intValue).toArray(),installed::declined);}))continue;
             mixin.methods.set(mixin.methods.indexOf(handler),retained);mixin.methods.add(bridge);mixin.methods.add(wrapper);changed++;
         }
         return changed;
@@ -107,10 +126,22 @@ public final class MixinOperationSeamTransport implements Opcodes {
     }
     private static MethodNode nativeBridge(String owner,String name,MethodInsnNode call){MethodNode method=new MethodNode(ACC_PRIVATE|ACC_STATIC,name,"([Ljava/lang/Object;)Ljava/lang/Object;",null,null);Type[] args=callTypes(new MixinFit.Member(call.owner,call.name,call.desc),call.getOpcode());for(int i=0;i<args.length;i++)arrayLoad(method.instructions,0,i,args[i]);method.instructions.add(new MethodInsnNode(call.getOpcode(),call.owner,call.name,call.desc,call.itf));method.instructions.add(new InsnNode(ACONST_NULL));method.instructions.add(new InsnNode(ARETURN));method.maxLocals=1;method.maxStack=Arrays.stream(args).mapToInt(Type::getSize).sum()+4;return method;}
     private static MethodNode callWrapper(String owner,String name,MethodInsnNode call,MethodNode direct,OperationCallGraph.Plan graph,String kind){Type[] args=callTypes(new MixinFit.Member(call.owner,call.name,call.desc),call.getOpcode());MethodNode method=new MethodNode(ACC_PRIVATE|ACC_STATIC,name,Type.getMethodDescriptor(Type.VOID_TYPE,args),null,null);InsnList code=method.instructions;code.add(new LdcInsnNode(Type.getObjectType(graph.helper())));code.add(new LdcInsnNode(graph.graph()));code.add(new InvokeDynamicInsnNode("invoke","()L"+NATIVE+";",META,Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;"),new Handle(H_INVOKESTATIC,owner,direct.name,direct.desc,false),Type.getMethodType("([Ljava/lang/Object;)Ljava/lang/Object;")));array(code,args,slots(args,false));code.add(new MethodInsnNode(INVOKESTATIC,API,kind,"(Ljava/lang/Class;Ljava/lang/String;L"+NATIVE+";[Ljava/lang/Object;)Ljava/lang/Object;",false));code.add(new InsnNode(POP));code.add(new InsnNode(RETURN));method.maxLocals=end(args,false);method.maxStack=method.maxLocals+8;return method;}
-    public static void observeDefinition(ClassLoader loader,String binary,byte[] bytes){List<Installed> installed=plans(loader).stream().filter(plan->plan.graph.host().equals(binary.replace('.','/'))).toList();if(installed.isEmpty())return;ClassNode owner=MixinFit.parse(bytes);
+    public static void observeDefinition(ClassLoader loader,String binary,byte[] bytes){observeEmitted(loader,binary,bytes);List<Installed> installed=plans(loader).stream().filter(plan->plan.graph.host().equals(binary.replace('.','/'))).toList();if(installed.isEmpty())return;ClassNode owner=MixinFit.parse(bytes);
         for(Installed plan:installed){List<MethodNode> expected=List.of(plan.retained,plan.bridge,plan.wrapper);Map<String,String> renamed=new HashMap<>();List<MethodContract> witnesses=new ArrayList<>();boolean valid=true;
             for(MethodNode method:expected){List<MethodNode> found=owner.methods.stream().filter(actual->actual.desc.equals(method.desc)&&actual.name.contains(method.name)&&merged(actual,plan.source)).toList();if(found.size()!=1){valid=false;break;}renamed.put(method.name,found.getFirst().name);}
             if(valid)for(MethodNode method:expected){MethodNode actual=NativeCallChanges.method(owner,renamed.get(method.name)+method.desc),normalized=copy(method);normalize(normalized,plan.source,owner.name,renamed);if(!MixinInstructionFingerprint.hash(normalized).equals(MixinInstructionFingerprint.hash(actual))){valid=false;break;}witnesses.add(contract(owner.name,actual));}if(valid)plan.host=List.copyOf(witnesses);
+            plan.hostDrift=valid?null:"the transported handler, bridge or wrapper of "+plan.source.replace('/','.')+" did not reach "+plan.site()+" unchanged";
+        }
+    }
+    /** Names who changed an instrumented gateway or helper after Forbric instrumented it, from its final definition. */
+    private static void observeEmitted(ClassLoader loader,String binary,byte[] bytes){
+        String owner=binary.replace('/','.');ClassNode node=null;
+        for(Installed plan:plans(loader))for(MethodContract value:plan.emitted){
+            if(!value.owner().equals(owner))continue;
+            if(DefinedMethodContracts.observed(loader,value)){plan.drift.remove(value);continue;}
+            if(node==null)node=MixinFit.parse(bytes);MethodNode actual=NativeCallChanges.method(node,value.name()+value.descriptor());String name=owner+"."+value.name()+value.descriptor();
+            plan.drift.put(value,actual==null?"the instrumented "+name+" is missing from its defined class"
+                :"the final body of "+name+" is not the body Forbric instrumented"+SeamDeclines.changedBy(SeamDeclines.contributors(node,actual,Set.of())));
         }
     }
     private static ClassNode unwrapped(ClassLoader loader,ClassNode node){if(node==null)return null;ClassNode result=new ClassNode();node.accept(result);Set<String> restored=new HashSet<>();for(Installed plan:plans(loader)){for(var pair:List.of(Map.entry(plan.graph.firstOwner(),plan.parentOriginal),Map.entry(plan.graph.helper(),plan.helperOriginal)))if(pair.getKey().equals(node.name)&&restored.add(pair.getValue().name+pair.getValue().desc)){MethodNode method=NativeCallChanges.method(result,pair.getValue().name+pair.getValue().desc);if(method!=null&&plan.emitted.stream().anyMatch(value->value.owner().replace('.','/').equals(node.name)&&value.name().equals(method.name)&&value.descriptor().equals(method.desc)&&value.fingerprint().equals(MixinInstructionFingerprint.hash(method))))result.methods.set(result.methods.indexOf(method),copy(pair.getValue()));}}return result;}

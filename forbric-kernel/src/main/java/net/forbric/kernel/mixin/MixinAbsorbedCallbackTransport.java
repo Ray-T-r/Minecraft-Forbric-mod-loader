@@ -19,17 +19,35 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
     private static final Map<ClassLoader,Map<String,Installed>> PLANS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final java.util.concurrent.atomic.AtomicLong ORDER = new java.util.concurrent.atomic.AtomicLong();
     private static final class Installed {
-        final String key, source; final NativeCallbackSeam.Plan plan; final MethodNode handler, bridge, wrapper, originalHelper;
+        final String key, source, injectorName, injectorDesc; final NativeCallbackSeam.Plan plan; final MethodNode handler, bridge, wrapper, originalHelper;
         final int priority,order;final long sequence=ORDER.getAndIncrement();
         volatile MethodContract helper; volatile List<MethodContract> host = List.of();
-        Installed(String key,String source,NativeCallbackSeam.Plan plan,MethodNode handler,MethodNode bridge,MethodNode wrapper,MethodNode originalHelper,int priority,int order) {
-            this.key=key;this.source=source;this.plan=plan;this.handler=copy(handler);this.bridge=copy(bridge);this.wrapper=copy(wrapper);
+        /** What the final definitions say broke the witness, named when each class is defined; null while it holds. */
+        volatile String helperDrift, hostDrift;
+        Installed(String key,String source,String injectorName,String injectorDesc,NativeCallbackSeam.Plan plan,MethodNode handler,MethodNode bridge,MethodNode wrapper,MethodNode originalHelper,int priority,int order) {
+            this.key=key;this.source=source;this.injectorName=injectorName;this.injectorDesc=injectorDesc;this.plan=plan;this.handler=copy(handler);this.bridge=copy(bridge);this.wrapper=copy(wrapper);
             this.originalHelper=copy(originalHelper);
             this.priority=priority;this.order=order;
         }
         boolean witnessed(ClassLoader loader) {
             return helper!=null && host.size()>=5 && DefinedMethodContracts.observed(loader,helper)
                 && host.stream().allMatch(method->DefinedMethodContracts.observed(loader,method));
+        }
+        String helperName(){return plan.helper().replace('/','.')+"."+plan.helperMethod();}
+        String site(){return plan.host().replace('/','.')+"."+plan.method();}
+        /** The first failing conjunct of {@link #witnessed}, in its order; null when it holds. */
+        String broken(ClassLoader loader) {
+            if(helper==null)return "the carrier helper "+helperName()+" was not instrumented before its definition";
+            if(!DefinedMethodContracts.observed(loader,helper))return helperDrift!=null?helperDrift:"the final body of "+helperName()+" is not the body Forbric instrumented";
+            if(host.size()<5)return hostDrift!=null?hostDrift:"the transported callback's host "+site()+" is not proved";
+            if(!host.stream().allMatch(method->DefinedMethodContracts.observed(loader,method)))return "the proved methods of "+site()+" were redefined";
+            return null;
+        }
+        /** CallbackSeams' once-per-site report: the callback is skipped there, the carrier helper runs as written. */
+        void declined(ClassLoader loader,String ignoredKey,String reason) {
+            String broken=broken(loader),cause=broken==null?reason:broken;
+            SeamDeclines.report(source,injectorName,injectorDesc,site(),"source callback skipped at "+site()+", whose call it follows the merged game moved into "
+                +helperName()+": "+cause+"; the carrier's helper runs as written",List.of("transport=extracted callback","host="+site(),"helper="+helperName(),"declined="+reason,"cause="+cause));
         }
     }
     private MixinAbsorbedCallbackTransport() { }
@@ -63,14 +81,14 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
             MethodNode bridge=bridge(mixin.name,retained,nativeMethod,full,id), wrapper=wrapper(mixin.name,bridge,plan,key);
             AnnotationNode wrap=MixinFit.injectorOf(wrapper);
             for(String attribute:List.of("require","expect","allow","remap","order"))if(MixinFit.value(annotation,attribute)!=null){int position=wrap.values.indexOf(attribute);if(position>=0)wrap.values.set(position+1,MixinFit.value(annotation,attribute));else{wrap.values.add(attribute);wrap.values.add(MixinFit.value(annotation,attribute));}}
-            Installed installed=new Installed(key,mixin.name,plan,retained,bridge,wrapper,NativeCallChanges.method(unwrapped.apply(plan.helper()),plan.helperMethod()),priority(mixin),MixinFit.value(annotation,"order") instanceof Integer order?order:1000);
+            Installed installed=new Installed(key,mixin.name,originalName,handler.desc,plan,retained,bridge,wrapper,NativeCallChanges.method(unwrapped.apply(plan.helper()),plan.helperMethod()),priority(mixin),MixinFit.value(annotation,"order") instanceof Integer order?order:1000);
             if(!loader.registerBeforeDefinition(plan.helper(),()->{
                 synchronized(PLANS){Map<String,Installed> registry=PLANS.computeIfAbsent(loader,ignored->new LinkedHashMap<>());
                     if(registry.values().stream().anyMatch(p->p.plan.helper().equals(plan.helper())&&p.plan.helperMethod().equals(plan.helperMethod())&&!p.plan.helperHash().equals(plan.helperHash())))
                         throw new IllegalStateException("Conflicting extracted callback source body");
                     registry.putIfAbsent(key,installed);
                 }
-                CallbackSeams.register(loader,key,plan.host(),plan.helper(),installed::witnessed);
+                CallbackSeams.register(loader,key,plan.host(),plan.helper(),installed::witnessed,installed::declined);
             }))continue;
             mixin.methods.set(mixin.methods.indexOf(handler),retained);mixin.methods.add(bridge);mixin.methods.add(wrapper);changed++;
         }
@@ -133,6 +151,8 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
     }
     /** Successful definitions witness unchanged source handler and generated callback/operation bridges. */
     public static void observeDefinition(ClassLoader loader,String binary,byte[] bytes) {
+        List<Installed> helpers=plans(loader).stream().filter(p->p.plan.helper().equals(binary.replace('.','/'))).toList();
+        if(!helpers.isEmpty()){ClassNode node=MixinFit.parse(bytes);for(Installed plan:helpers)plan.helperDrift=helperDrift(loader,node,plan);}
         List<Installed> plans=plans(loader).stream().filter(p->p.plan.host().equals(binary.replace('.','/'))).toList();if(plans.isEmpty())return;ClassNode node=MixinFit.parse(bytes);
         for(Installed plan:plans){List<MethodContract> witnesses=new ArrayList<>();Map<String,String> renamed=new HashMap<>();
             List<MethodNode> expected=List.of(plan.handler,plan.bridge,plan.wrapper);boolean valid=true;
@@ -140,12 +160,24 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
             if(valid)for(MethodNode original:expected){MethodNode actual=node.methods.stream().filter(m->m.name.equals(renamed.get(original.name))&&m.desc.equals(original.desc)).findFirst().orElseThrow(), normalized=copy(original);normalize(normalized,plan.source,node.name,renamed);
                 if(!MixinInstructionFingerprint.hash(normalized).equals(MixinInstructionFingerprint.hash(actual))){valid=false;break;}witnesses.add(contract(node.name,actual));}
             if(valid)plan.host=List.copyOf(witnesses);
+            plan.hostDrift=valid?null:"the transported handler, bridge or wrapper of "+plan.source.replace('/','.')+" did not reach "+plan.site()+" unchanged";
         }
         Set<CallbackOperationProof.Wrapper> wrappers=new HashSet<>();
         for(Installed plan:plans)if(plan.host.size()==3){MethodContract wrapper=plan.host.get(2);wrappers.add(new CallbackOperationProof.Wrapper(wrapper.name(),wrapper.descriptor(),(plan.wrapper.access&ACC_STATIC)!=0));}
+        Set<String> transported=new HashSet<>();for(Installed plan:plans)transported.add(plan.source.replace('/','.'));
         for(Installed plan:plans)if(plan.host.size()==3){var bridge=CallbackOperationProof.prove(node,plan.plan.method(),plan.plan.helper(),plan.plan.helperMethod(),wrappers);
             if(bridge.size()>=2){List<MethodContract> complete=new ArrayList<>(plan.host);complete.addAll(bridge);plan.host=List.copyOf(complete);}
+            else{MethodNode caller=NativeCallChanges.method(node,plan.plan.method());
+                plan.hostDrift="the call to "+plan.helperName()+" in "+plan.site()+" no longer runs directly through the transported Operation"
+                    +SeamDeclines.changedBy(caller==null?List.of():SeamDeclines.contributors(node,caller,transported));}
         }
+    }
+    /** Names who changed the carrier helper after it was instrumented, from its final definition; null if nobody did. */
+    private static String helperDrift(ClassLoader loader,ClassNode node,Installed plan){
+        if(plan.helper==null||DefinedMethodContracts.observed(loader,plan.helper))return null;
+        MethodNode actual=NativeCallChanges.method(node,plan.plan.helperMethod());
+        return actual==null?"the carrier helper "+plan.helperName()+" is missing from its defined class"
+            :"the final body of "+plan.helperName()+" is not the body Forbric instrumented"+SeamDeclines.changedBy(SeamDeclines.contributors(node,actual,Set.of()));
     }
     private static List<Installed> plans(ClassLoader loader){synchronized(PLANS){Map<String,Installed> plans=PLANS.get(loader);return plans==null?List.of():List.copyOf(plans.values());}}
     private static int priority(ClassNode source){List<AnnotationNode> annotations=new ArrayList<>();if(source.visibleAnnotations!=null)annotations.addAll(source.visibleAnnotations);if(source.invisibleAnnotations!=null)annotations.addAll(source.invisibleAnnotations);for(var annotation:annotations)if(annotation.desc.equals("Lorg/spongepowered/asm/mixin/Mixin;")&&MixinFit.value(annotation,"priority")instanceof Integer value)return value;return 1000;}
