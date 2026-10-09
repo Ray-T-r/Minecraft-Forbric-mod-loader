@@ -129,20 +129,28 @@ public final class MixinPlayerWorldCallbackAdapter {
 		return 1;
 	}
 
+	/**
+	 * A callback right before vanilla's {@code removeBlock} in {@code destroyBlock}, however it reaches the locals there:
+	 * Mixin's locals capture of a leading run of them (block entity, block, adjusted state — vanilla's slots after the
+	 * argument, in order; a handler may stop after any of them, or capture none), or MixinExtras' {@code @Local} of the block
+	 * entity or the block by type (the only local of its type there). Cancellable or not: the new point runs it on the path
+	 * that removes the block either way. Each value it asks for is handed over by the merged slot its producer stored.
+	 */
 	private static int blockBreak(ClassNode mixin, ClassNode target) {
-		MethodNode handler = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, "(" + POS + CIR + ")V", MixinHandlerShape.Want.captured(ENTITY),
-                        MixinHandlerShape.Want.captured("L" + BLOCK + ";"), MixinHandlerShape.Want.captured(STATE))
-                && MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, target, BREAK_HOST)
-                && MixinCallbackShape.beforePoint(m, "INVOKE", OLD_REMOVE));
+		MethodNode handler = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.instance(m) && MixinCallbackShape.kind(m, "Inject")
+                && MixinCallbackShape.binds(m, target, BREAK_HOST) && MixinCallbackShape.beforePoint(m, "INVOKE", OLD_REMOVE)
+                && breakExtras(m) != null);
 		MethodNode host = target == null ? null : selector(target, BREAK_HOST);
 		if (handler == null || host == null) return 0;
 		AnnotationNode inject = MixinFit.injectorOf(handler);
-		if (!("(" + POS + CIR + ENTITY + "L" + BLOCK + ";" + STATE + ")V").equals(handler.desc) || !MixinCallbackShape.binds(handler, target, BREAK_HOST)
-				|| handler.visibleParameterAnnotations != null || handler.invisibleParameterAnnotations != null
+		if (!MixinCallbackShape.binds(handler, target, BREAK_HOST)
 				|| count(host, OLD_REMOVE) != 0 || count(host, BREAK_EVENT) != 1 || count(host, WILL_DESTROY) != 1
 				|| count(host, DROPS) != 1 || count(host, MINE) != 1 || count(host, REMOVE) != 2) return 0;
 		List<AnnotationNode> ats = MixinFit.atNodes(inject);
-		if (ats.size() != 1 || !OLD_REMOVE.equals(MixinFit.value(ats.getFirst(), "target")) || !Boolean.TRUE.equals(MixinFit.value(inject, "cancellable"))) return 0;
+		Object ordinal = ats.size() == 1 ? MixinFit.value(ats.getFirst(), "ordinal") : null;
+		if (ats.size() != 1 || !OLD_REMOVE.equals(MixinFit.value(ats.getFirst(), "target"))
+				|| ordinal != null && !Integer.valueOf(0).equals(ordinal) && !Integer.valueOf(-1).equals(ordinal)) return 0;
+		List<String> wanted = breakExtras(handler);
 		// Vanilla's anchor is right before removeBlock, after playerWillDestroy, and the handler captures (blockEntity,
 		// block, adjustedState). Here NeoForge removes the block in two branches (creative, and survival after
 		// mineBlock), so the callback goes where they split: right after playerWillDestroy stored adjustedState, before
@@ -157,8 +165,51 @@ public final class MixinPlayerWorldCallbackAdapter {
 		if (index(host, first(host, BREAK_EVENT)) > at || index(host, entity) > at || index(host, block) > at) return 0;
 		for (var i : host.instructions) if (i instanceof MethodInsnNode c && (MINE.equals(member(c)) || REMOVE.equals(member(c))) && index(host, c) < at) return 0;
 		remove(inject, "locals"); set(ats.getFirst(), "target", DROPS);
-		handler.invisibleParameterAnnotations = local(5, 2, entity.var, block.var, adjusted.var); handler.invisibleAnnotableParameterCount = 5;
+		java.util.Map<String, Integer> slots = java.util.Map.of(ENTITY, entity.var, "L" + BLOCK + ";", block.var, STATE, adjusted.var);
+		int operands = org.objectweb.asm.Type.getArgumentTypes(handler.desc).length - wanted.size();
+		@SuppressWarnings("unchecked") List<AnnotationNode>[] annotations = new List[operands + wanted.size()];
+		for (int n = 0; n < wanted.size(); n++) {
+			AnnotationNode local = new AnnotationNode("Lcom/llamalad7/mixinextras/sugar/Local;");
+			local.values = new ArrayList<>(List.of("index", slots.get(wanted.get(n))));
+			annotations[operands + n] = new ArrayList<>(List.of(local));
+		}
+		handler.visibleParameterAnnotations = null; handler.visibleAnnotableParameterCount = 0;
+		handler.invisibleParameterAnnotations = wanted.isEmpty() ? null : annotations;
+		handler.invisibleAnnotableParameterCount = wanted.isEmpty() ? 0 : annotations.length;
 		return 1;
+	}
+
+	/**
+	 * The locals a break callback asks for, by type, when it asks the way vanilla's {@code destroyBlock} can serve before
+	 * {@code removeBlock}: no extras; a locals capture of a leading run of (block entity, block, adjusted state); or
+	 * {@code @Local}s by type alone of the block entity and the block, each at most once. Null for anything else.
+	 */
+	private static List<String> breakExtras(MethodNode handler) {
+		MixinHandlerShape shape = MixinHandlerShape.of(handler);
+		if (shape == null || !shape.operands(BREAK_HOST.substring(BREAK_HOST.indexOf('(')).replace(")Z", CIR + ")V"))) return null;
+		List<MixinHandlerShape.Extra> extras = shape.extras();
+		// The rewrite gives the extras their @Local and nothing else: a parameter annotated otherwise (a @Coerce) stays as compiled.
+		for (List<AnnotationNode>[] table : java.util.Arrays.asList(handler.visibleParameterAnnotations, handler.invisibleParameterAnnotations)) {
+			if (table != null) for (int p = 0; p < table.length; p++) {
+				if (table[p] == null || table[p].isEmpty()) continue;
+				int at = p;
+				if (table[p].size() != 1 || extras.stream().noneMatch(e -> e.parameter() == at && e.role() == MixinHandlerShape.Role.LOCAL)) return null;
+			}
+		}
+		List<String> captured = List.of(ENTITY, "L" + BLOCK + ";", STATE), wanted = new ArrayList<>();
+		boolean capturing = MixinFit.value(MixinFit.injectorOf(handler), "locals") != null;
+		for (int n = 0; n < extras.size(); n++) {
+			MixinHandlerShape.Extra extra = extras.get(n);
+			String type = extra.type().getDescriptor();
+			if (extra.role() == MixinHandlerShape.Role.CAPTURED) {
+				if (!capturing || n >= captured.size() || !captured.get(n).equals(type) || wanted.size() != n) return null;
+			} else if (extra.role() == MixinHandlerShape.Role.LOCAL) {
+				AnnotationNode local = extra.sugar();
+				if (STATE.equals(type) || !captured.contains(type) || wanted.contains(type) || local.values != null && !local.values.isEmpty()) return null;
+			} else return null;
+			wanted.add(type);
+		}
+		return wanted;
 	}
 
     /** Locals come from their unique producer calls; debug names and numeric slot layouts are irrelevant. */
