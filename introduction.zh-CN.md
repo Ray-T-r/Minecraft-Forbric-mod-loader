@@ -199,7 +199,7 @@ Fabric 和 NeoForge 在构造函数里需要的状态正好相反，所以内核
 - **偏好** —— 顶层重复：`-Dforbric.dupeIdPreference`，未设置时回退到 `multiLoaderPreference`。内嵌重复：`-Dforbric.nestedDupePreference`，默认 NeoForge、Fabric、MinecraftForge —— 之所以这样排，是因为多加载器库针对各加载器的构建会把该加载器缺少的阶段换成存根，而这个顺序能让调用空方法的调用方最少（javadoc 里记录了定下这个顺序的两个案例）。
 - **覆盖设置** —— `-Dforbric.modOwner=sodium=fabric,…` 或 `<rundir>/forbric-mods.txt`（每行一条 `<mod id> = <loader>`；实例第一次出现重复时，内核会写出一份带注释的模板）。命令行优先于文件。
 - **关掉的 jar** —— `<rundir>/forbric-disabled.txt` 列出 `mods/` 里的 jar 文件名（注释和写错的行与 `forbric-mods.txt` 的处理方式相同）。`DisabledMods` 让这些 jar 不进入扫描，所以它们不会成为声明；它们进入 `Decision.suppressedJars`，但绝不进入 `rescueJars`；`-Dforbric.crossJarArbitration=off` 时仍会缓存一份只含这些 jar 的决定。`load-report.txt` 会列出它们。
-- **残留处理** —— 落败的生态会得到一个仅在场的别名，让 `isLoaded(id)` 仍能作答（`Decision.aliases`）；对于已加载的 mod，它在另一个生态的构建可以作为最后手段借出缺失的类（`rescueJars`）；`ArbitratedAwayClasses` 统计落败构建里有、胜出方却缺少的内容；`ArbitratedAwayDispatchers` 补上落败构建带走的那一种行为：只有落败的 Fabric 构建会分发的自定义入口 key（`EntrypointDispatchScan` 从它的字节码读出 key、入口类型、调用的方法和到达分发点的生命周期阶段），在胜出方自己不分发时由内核代为分发。`MergeReport` 写出 `.forbric-kernel/merge-report.txt`，逐条解释每项决定。
+- **残留处理** —— 落败的生态会得到一个仅在场的别名，让 `isLoaded(id)` 仍能作答（`Decision.aliases`）；对于已加载的 mod，它在另一个生态的构建可以作为最后手段借出缺失的类（`rescueJars`）；`ArbitratedAwayClasses` 统计落败构建里有、胜出方却缺少的内容；`ArbitratedAwayDispatchers` 补上落败构建带走的那一种行为：只有落败的 Fabric 构建会分发的自定义入口 key（`EntrypointDispatchScan` 从它的字节码读出 key、入口类型、调用的方法和到达分发点的生命周期阶段），在胜出方自己不提到这个 key 时由内核代为分发。从 `main`、`client`、`server` 到达的 key 在该阶段的入口之间分发，位置就是落败构建自己那个入口本来所在的位置：按 Fabric Loader 的顺序，即库的 id 排在哪里（`ArbitratedAwayDispatchers.place`）。落败构建持有某个已声明的 key、而它有一处查询的 key 或类型不是常量时，不去猜，记一条 SUSPECTED finding。`MergeReport` 写出 `.forbric-kernel/merge-report.txt`，逐条解释每项决定。
 - `-Dforbric.crossJarArbitration=off` 会完全关闭这一机制。
 
 ### 4.4 回答“我在哪个加载器上？”和“X 装了吗？”

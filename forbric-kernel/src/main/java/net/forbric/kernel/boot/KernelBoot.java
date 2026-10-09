@@ -302,7 +302,8 @@ public final class KernelBoot {
 		// Which custom entrypoint keys the Fabric mods just declared only a build arbitration did NOT load would have
 		// dispatched; the lifecycle dispatches them in its place (ArbitratedAwayDispatchers says when and why).
 		try {
-			ArbitratedAwayDispatchers.record(dupes, KernelFabricEcosystem.declaredEntrypointKeys());
+			ArbitratedAwayDispatchers.record(dupes, KernelFabricEcosystem.declaredEntrypointKeys(),
+					KernelFabricEcosystem.knownModIds());
 		} catch (Throwable t) {
 			ForbricLog.warn("[Forbric/DupeId] could not work out which entrypoint keys a superseded build dispatched — "
 					+ "a Fabric mod integrating with a library whose other build loaded may go uninitialised: %s",

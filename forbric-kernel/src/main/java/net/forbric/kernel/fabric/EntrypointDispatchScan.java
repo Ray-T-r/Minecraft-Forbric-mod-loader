@@ -150,6 +150,26 @@ public final class EntrypointDispatchScan {
 		}
 	}
 
+	/**
+	 * What one jar's code says about the keys asked about.
+	 *
+	 * @param dispatches   the dispatches derived for them ({@link #scan})
+	 * @param undetermined the query sites whose key or type no constant reaches — computed at run time, read through
+	 *                     a method, or a parameter no caller in the jar binds — so what they dispatch could not be
+	 *                     derived; each named as {@code owner.method}
+	 * @param named        which of the keys asked about the jar holds as a string constant (an {@code ldc} operand or a
+	 *                     constant field's value) — what a query of it could have read
+	 */
+	public record Report(List<Dispatch> dispatches, List<String> undetermined, Set<String> named) {
+		static final Report NONE = new Report(List.of(), List.of(), Set.of());
+
+		public Report {
+			dispatches = List.copyOf(dispatches);
+			undetermined = List.copyOf(undetermined);
+			named = java.util.Collections.unmodifiableSet(new java.util.TreeSet<>(named));
+		}
+	}
+
 	/** Every dispatch the jar makes, with phases from its own {@code fabric.mod.json}. Unreadable classes are skipped. */
 	public static List<Dispatch> scan(Path jar) throws IOException {
 		return scan(jar, null);
@@ -160,6 +180,11 @@ public final class EntrypointDispatchScan {
 	 * the common case and costs one read of the jar.
 	 */
 	public static List<Dispatch> scan(Path jar, Set<String> keys) throws IOException {
+		return report(jar, keys).dispatches();
+	}
+
+	/** {@link #scan(Path, Set)}, together with the queries it could not derive and the keys the jar holds. */
+	public static Report report(Path jar, Set<String> keys) throws IOException {
 		Map<String, byte[]> classes = new LinkedHashMap<>();
 		Map<String, List<String>> entrypoints = new LinkedHashMap<>();
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
@@ -184,7 +209,7 @@ public final class EntrypointDispatchScan {
 				}
 			}
 		}
-		return scan(classes, entrypoints, keys);
+		return report(classes, entrypoints, keys);
 	}
 
 	/**
@@ -192,12 +217,20 @@ public final class EntrypointDispatchScan {
 	 * the keys of interest ({@code null} for every key).
 	 */
 	public static List<Dispatch> scan(Map<String, byte[]> classes, Map<String, List<String>> entrypoints, Set<String> keys) {
-		if (keys != null && keys.isEmpty()) return List.of();
-		if (!anyClassNames(classes, QUERY_NAMES)) return List.of();
+		return report(classes, entrypoints, keys).dispatches();
+	}
+
+	/** The pure half of {@link #report(Path, Set)}; with {@code keys} null, {@link Report#named} is empty. */
+	public static Report report(Map<String, byte[]> classes, Map<String, List<String>> entrypoints, Set<String> keys) {
+		if (keys != null && keys.isEmpty()) return Report.NONE;
+		if (!anyClassNames(classes, QUERY_NAMES)) return Report.NONE;
 		// A key the jar dispatches is a string constant somewhere in it, or this cannot name the dispatch anyway.
-		if (keys != null && !anyClassNames(classes, poolEntries(keys))) return List.of();
-		List<Dispatch> found = new Analysis(classes).run(entrypoints);
-		return keys == null ? found : found.stream().filter(dispatch -> keys.contains(dispatch.key())).toList();
+		if (keys != null && !anyClassNames(classes, poolEntries(keys))) return Report.NONE;
+		Analysis analysis = new Analysis(classes);
+		List<Dispatch> found = analysis.run(entrypoints);
+		if (keys == null) return new Report(found, analysis.undetermined(), Set.of());
+		return new Report(found.stream().filter(dispatch -> keys.contains(dispatch.key())).toList(), analysis.undetermined(),
+				analysis.constantsAmong(keys));
 	}
 
 	private static boolean anyClassNames(Map<String, byte[]> classes, byte[][] entries) {
@@ -387,6 +420,8 @@ public final class EntrypointDispatchScan {
 		private final Map<String, Set<Sink>> forwards = new HashMap<>();
 		/** What each method binds: queries whose key and type are both constants there. */
 		private final Map<String, Set<Sink>> binds = new HashMap<>();
+		/** The methods holding a query, or a call into a forwarding method, whose key or type is no constant there. */
+		private final Set<String> lost = new HashSet<>();
 
 		Analysis(Map<String, byte[]> classes) {
 			for (byte[] bytes : classes.values()) {
@@ -522,6 +557,7 @@ public final class EntrypointDispatchScan {
 			Frame<Val>[] frames = framesOf(ref);
 			Set<Sink> forwarded = new LinkedHashSet<>();
 			Set<Sink> bound = new LinkedHashSet<>();
+			boolean dropped = false;
 			if (frames != null) {
 				for (int i = 0; i < method.instructions.size(); i++) {
 					if (!(method.instructions.get(i) instanceof MethodInsnNode call) || frames[i] == null) continue;
@@ -529,29 +565,76 @@ public final class EntrypointDispatchScan {
 					if (isQuery(call)) {
 						Sink sink = new Sink(argument(frame, call, 0), argument(frame, call, 1),
 								call.name.equals("invokeEntrypoints") ? argument(frame, call, 2) : Arg.ABSENT);
-						classify(sink, forwarded, bound);
+						dropped |= !classify(sink, forwarded, bound);
 						continue;
 					}
 					for (String target : resolve(call)) {
 						for (Sink callee : forwards.getOrDefault(target, Set.of())) {
-							classify(new Sink(substitute(callee.key(), frame, call), substitute(callee.type(), frame, call),
+							dropped |= !classify(new Sink(substitute(callee.key(), frame, call), substitute(callee.type(), frame, call),
 									substitute(callee.consumer(), frame, call)), forwarded, bound);
 						}
+					}
+				}
+			} else {
+				// Not analysable: a query in it, or a call handing it on, binds nothing that can be named.
+				for (AbstractInsnNode insn : method.instructions) {
+					if (insn instanceof MethodInsnNode call && (isQuery(call)
+							|| resolve(call).stream().anyMatch(target -> forwards.containsKey(target)))) {
+						dropped = true;
+						break;
 					}
 				}
 			}
 			if (forwarded.isEmpty()) forwards.remove(ref); else forwards.put(ref, forwarded);
 			if (bound.isEmpty()) binds.remove(ref); else binds.put(ref, bound);
+			if (dropped) lost.add(ref); else lost.remove(ref);
 		}
 
-		private static void classify(Sink sink, Set<Sink> forwarded, Set<Sink> bound) {
+		/** Files {@code sink} as bound or forwarded; false when neither, i.e. its key or type is computed at run time. */
+		private static boolean classify(Sink sink, Set<Sink> forwarded, Set<Sink> bound) {
 			int key = sink.key().kind(), type = sink.type().kind();
 			if (key == STR && type == CLS) {
 				bound.add(sink);
+				return true;
 			} else if ((key == STR || key == PARAM) && (type == CLS || type == PARAM)) {
 				forwarded.add(sink);
+				return true;
 			}
 			// Anything else is a key or type computed at run time: not a dispatch this can name.
+			return false;
+		}
+
+		/**
+		 * The query sites whose dispatch could not be derived: a key or type no constant reaches where it is asked
+		 * for or where a caller hands it on, and a forwarding method no caller in the jar binds (it is called only
+		 * from a lambda, or from outside the jar). After {@link #run}.
+		 */
+		List<String> undetermined() {
+			Set<String> sites = new java.util.TreeSet<>();
+			for (String ref : lost) sites.add(site(ref));
+			for (String ref : forwards.keySet()) {
+				if (callers.getOrDefault(ref, Set.of()).isEmpty()) sites.add(site(ref));
+			}
+			return List.copyOf(sites);
+		}
+
+		/**
+		 * Which of {@code strings} the jar holds as a string constant: an {@code ldc} operand in some method or a
+		 * constant field's value — not a name a class merely declares or references.
+		 */
+		Set<String> constantsAmong(Set<String> strings) {
+			Set<String> found = new LinkedHashSet<>();
+			for (ClassNode node : nodes.values()) {
+				for (FieldNode field : node.fields) {
+					if (field.value instanceof String string && strings.contains(string)) found.add(string);
+				}
+				for (MethodNode method : node.methods) {
+					for (AbstractInsnNode insn : method.instructions) {
+						if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof String string && strings.contains(string)) found.add(string);
+					}
+				}
+			}
+			return found;
 		}
 
 		private static Arg argument(Frame<Val> frame, MethodInsnNode call, int index) {
