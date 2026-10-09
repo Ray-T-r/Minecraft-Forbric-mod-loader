@@ -5,10 +5,11 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 
 /** Compatibility name for the retired single-family multipart rewrite. The merge now proves a shared
- * ancestor hierarchy and keeps both native array-return descriptors; retyping or emptying either loses API. */
+ * ancestor hierarchy and keeps both native array-return descriptors; retyping or emptying either loses API.
+ * That bridge is a build-time artifact with no runtime switch (the old {@code -Dforbric.dragonParts} is gone);
+ * the loader reports it as it takes effect ({@code PlatformAncestorBridges}, "[Forbric/Hierarchy]"). */
 @Deprecated
 public final class DragonPartsInjector implements ClassTransformer {
-    public static final String PROPERTY="forbric.dragonParts";
     static final String PART="net.minecraft.world.entity.boss.enderdragon.EnderDragonPart";
     static final String DRAGON="net.minecraft.world.entity.boss.enderdragon.EnderDragon";
     static final String HITBOXES="net.minecraft.client.renderer.debug.EntityHitboxDebugRenderer";

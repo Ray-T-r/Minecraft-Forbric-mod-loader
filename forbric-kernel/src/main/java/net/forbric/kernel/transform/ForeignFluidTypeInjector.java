@@ -15,6 +15,7 @@ public final class ForeignFluidTypeInjector implements ClassTransformer {
     static final String TYPE=ForeignType.FLUID_TYPE.internal(Ecosystem.NEOFORGE),FORGE_TYPE=ForeignType.FLUID_TYPE.internal(Ecosystem.FORGE);
     static final String RUNTIME="net/forbric/kernel/runtime/KernelFluidTypes",SCOPES="net/forbric/api/LookupOutcomes";
     static final String NEO_HOOKS="net/neoforged/neoforge/common/CommonHooks",FORGE_HOOKS="net/minecraftforge/common/ForgeHooks";
+    private static final Set<String> REPORTED=java.util.concurrent.ConcurrentHashMap.newKeySet();
     static boolean enabled(){return !"off".equalsIgnoreCase(System.getProperty(PROPERTY,"on"));}
     @Override public String name(){return "forbric-foreign-fluid-types";}
     @Override public AnchorSet anchors(){return !enabled()?AnchorSet.scanned("foreign fluid lookups disabled with -D"+PROPERTY):AnchorSet.of(new AnchorSet.Anchor(FLUID,AnchorSet.Severity.REQUIRED,"foreign fluid types require an uncached fallback for each retained SDK getter"));}
@@ -23,7 +24,10 @@ public final class ForeignFluidTypeInjector implements ClassTransformer {
         if(!owner.equals(FLUID_INTERNAL)&&!owner.equals(NEO_HOOKS)&&!owner.equals(FORGE_HOOKS))return bytes;
         ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.EXPAND_FRAMES);int changed;
         if(owner.equals(FLUID_INTERNAL))changed=repair(node);else changed=unsupportedDefault(node,owner.equals(NEO_HOOKS)?TYPE:FORGE_TYPE,owner.equals(NEO_HOOKS)?"foreignNeoLookup":"foreignForgeLookup");
-        if(changed==0)return bytes;ClassWriter out=new ClassWriter(ClassWriter.COMPUTE_MAXS);node.accept(out);ForbricLog.debug("[Forbric/Fluid] %s: %d source-proved lookup/cache contract(s) repaired",binary,changed);return out.toByteArray();
+        if(changed==0)return bytes;ClassWriter out=new ClassWriter(ClassWriter.COMPUTE_MAXS);node.accept(out);
+        if(REPORTED.add(owner))ForbricLog.info("[Forbric/Fluid] %s: %d source-proved fluid-type lookup/cache contract(s) repaired — a fluid with no type of "
+                +"a platform's own gets the one its fluid tags imply, instead of \"Mod fluids must override getFluidType\"",binary,changed);
+        return out.toByteArray();
     }
     static int repair(ClassNode fluid){
         int changed=0;for(String type:List.of(TYPE,FORGE_TYPE)){MethodNode getter=find(fluid,"getFluidType","()L"+type+";");if(getter!=null&&cacheScope(fluid,getter,type))changed++;}

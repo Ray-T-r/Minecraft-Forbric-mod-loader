@@ -1071,7 +1071,9 @@ the findings were crashes every release player can hit; the rest were features t
   MinecraftForge's instance `canBurn/consumeFuel/burn` as static — `FurnaceTickCallsInjector`); crafting any remainder
   with fabric-api installed (a class tweaker's `FabricItem` default against `IForgeItem`'s — the default-conflict
   repair now judges against the jar's own bytes and settles through NeoForge's `ItemInstance` overload); the Ender
-  Dragon (its parts were MinecraftForge `PartEntity`s, every consumer NeoForge's — `DragonPartsInjector`); a Fabric or
+  Dragon (its parts were MinecraftForge `PartEntity`s, every consumer NeoForge's — first `DragonPartsInjector`, now the
+  merged base's proved ancestor bridge, MinecraftForge's `PartEntity` extending NeoForge's, which the loader reports as
+  `[Forbric/Hierarchy]` when it defines the edge, `PlatformAncestorBridges`); a Fabric or
   MinecraftForge mod's fluid ("Mod fluids must override getFluidType" on place or touch — `ForeignFluidTypeInjector`).
   Also MinecraftForge's `ParticleEngine.registerParticleGroup` on NeoForge's engine (46bd2aa).
 - **Stub-first injectors** (92732c0, gate M46): Mixin binds a name-only selector to the FIRST declared overload, which

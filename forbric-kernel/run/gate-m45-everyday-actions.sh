@@ -8,7 +8,11 @@
 #   smelting — NeoForge's furnace tick calls MinecraftForge's instance canBurn/consumeFuel/burn as static: every furnace
 #     threw on its first smelt (FurnaceTickCallsInjector calls them on the ticked furnace).
 #   the Ender Dragon — its parts were MinecraftForge PartEntitys while every consumer is NeoForge-typed; NeoForge's
-#     getParts() answered null, so adding a dragon threw and a server holding one could not stop (DragonPartsInjector).
+#     getParts() answered null, so adding a dragon threw and a server holding one could not stop. No runtime rewrite
+#     repairs this any more: the merged-base builder proves MinecraftForge's PartEntity and NeoForge's immutable
+#     behavioural equivalents and bridges one onto the other (EquivalentSuperclassBridge / RuntimeInteropPatcher), and
+#     EnderDragon keeps both getParts() descriptors over its one part array. The loader reports that ancestor edge as it
+#     defines it ("[Forbric/Hierarchy] …", PlatformAncestorBridges — any cross-platform-carrier superclass, no names).
 # A dedicated server with a probe mod (canary/everyday-actions) and the unmodified fabric-item-api-v1:
 #   remainders through ItemStack, Item(ItemStack) and NeoForge's Item(ItemInstance) (control); a cake crafted from its
 #   recipe leaves three buckets; an idle furnace ticks (control) and a lit one smelts raw iron; a brewing stand makes
@@ -22,15 +26,15 @@
 #     override getFluidType" at the first entity to touch one: 'Ticking entity' took the server down
 #     (ForeignFluidTypeInjector gives it the type its fluid tags imply).
 #
-#   1. positive — STRICT, every case passes, zero confirmed required findings, no exception on stop.
-#   2. off — -Dforbric.defaultConflictRepair=off -Dforbric.furnaceTickCalls=off -Dforbric.dragonParts=off
-#      -Dforbric.foreignFluidTypes=off -Dforbric.fabricFuel=off -Dforbric.forgePartTracking=off: exactly the
-#      repaired cases fail and the controls hold.
-#      forgePartTracking is in that list because since 86c93b6c the dragon's null NeoForge getParts() is guarded twice:
-#      ForgePartTrackingInjector reads it as no parts in the server's tracking callbacks. With only dragonParts off the
-#      dragon is then added without its parts (dragon.add still fails: part lookup=null), and hurting it through a part
-#      and removing it no longer throw, so dragon.hurt and dragon.remove passed and the first nightly went red on the
-#      control, not on a repair. Both switched off, the three dragon cases fail as they did before (measured).
+#   1. positive — STRICT, every case passes, zero confirmed required findings, no exception on stop; each runtime
+#      repair logs its line, and the loader reports the PartEntity ancestor bridge in effect.
+#   2. off — -Dforbric.defaultConflictRepair=off -Dforbric.furnaceTickCalls=off -Dforbric.foreignFluidTypes=off
+#      -Dforbric.fabricFuel=off -Dforbric.forgePartTracking=off: exactly the runtime-repaired cases fail and the controls
+#      hold. The dragon is now a control here: its fix is the merged base's bridge, which has no runtime switch, so the
+#      three dragon cases must PASS with every runtime repair off and the bridge line must still appear. forgePartTracking
+#      stays off to show the dragon does not lean on that runtime guard (it reads a null NeoForge getParts() as "no
+#      parts"; with the bridge the dragon's NeoForge getParts() answers its real parts, so the guard is never needed).
+#      The old -Dforbric.dragonParts switch was removed with the runtime rewrite it controlled.
 # Not covered here: a client (the dragon's parts in the client's entity lookups), and a native server as an oracle.
 # GATE-PARALLEL: rundirs=server-everyday-m45 mem=2000
 set -uo pipefail
@@ -39,7 +43,12 @@ set -uo pipefail
 SERVER_DIR="$KERNEL/run/server-everyday-m45"
 RESULTS="$BUILD/verification/m45-everyday-actions"
 FAIL=0
-REPAIRED="{'remainder.stack', 'remainder.item', 'craft.cake', 'furnace.smelt', 'brewing.awkward', 'fuel.fabric', 'fuel.exclusion', 'fluid.minecraftForgeType', 'fluid.untagged', 'fluid.water', 'dragon.add', 'dragon.hurt', 'dragon.remove'}"
+# The cases a runtime repair (switched off in phase 2) is responsible for. The dragon's three are not among them: the
+# merged base's ancestor bridge carries them, and phase 2 asserts they hold without any runtime repair.
+REPAIRED="{'remainder.stack', 'remainder.item', 'craft.cake', 'furnace.smelt', 'brewing.awkward', 'fuel.fabric', 'fuel.exclusion', 'fluid.minecraftForgeType', 'fluid.untagged', 'fluid.water'}"
+# The loader's line for the bridge the dragon's parts depend on: MinecraftForge's PartEntity, as served, extends
+# NeoForge's. Both names are the platforms' public API types, and the line is the generic cross-carrier edge report.
+PART_BRIDGE='\[Forbric/Hierarchy\] net\.minecraftforge\.entity\.PartEntity, served by the FORGE runtime, extends net\.neoforged\.neoforge\.entity\.PartEntity, served by the NEOFORGE runtime'
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 
 kernel_jar
@@ -92,16 +101,18 @@ then echo "[kernel] PASS positive: zero confirmed required findings under STRICT
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 check "positive: Item's remainder conflict was settled" 'Item inherits getCraftingRemainder.*gave it one that asks getCraftingRemainder\(Lnet/minecraft/world/item/ItemInstance' "$RESULTS/positive.log"
 check "positive: the furnace tick was bridged" 'tick calls canBurn, consumeFuel, burn on the furnace it ticks' "$RESULTS/positive.log"
-check "positive: the dragon's parts are NeoForge's" 'EnderDragonPart is a NeoForge PartEntity' "$RESULTS/positive.log"
-check "positive: foreign fluids get a NeoForge type" 'gets the one its fluid tags imply' "$RESULTS/positive.log"
+check "positive: the dragon's parts are both platforms' PartEntity (the merged base's ancestor bridge is in effect)" "$PART_BRIDGE" "$RESULTS/positive.log"
+check "positive: foreign fluids get a NeoForge type" 'Forbric/Fluid\] .*gets the one its fluid tags imply' "$RESULTS/positive.log"
 check "positive: Fabric's fuel events run on NeoForge's fuel builder" 'Forbric/Fuel\] DataMapHooks.populateFuelValues runs fabric-content-registries' "$RESULTS/positive.log"
 
-step "2. off: the same server with the repairs switched off"
-run_server off continue "-Dforbric.defaultConflictRepair=off -Dforbric.furnaceTickCalls=off -Dforbric.dragonParts=off -Dforbric.foreignFluidTypes=off -Dforbric.fabricFuel=off -Dforbric.forgePartTracking=off"
-judge off "failed == $REPAIRED" "exactly the repaired cases fail; the controls hold"
+step "2. off: the same server with the runtime repairs switched off"
+run_server off continue "-Dforbric.defaultConflictRepair=off -Dforbric.furnaceTickCalls=off -Dforbric.foreignFluidTypes=off -Dforbric.fabricFuel=off -Dforbric.forgePartTracking=off"
+judge off "failed == $REPAIRED" "exactly the runtime-repaired cases fail; the controls and the dragon hold"
+check "off: the PartEntity bridge has no runtime switch and is still in effect" "$PART_BRIDGE" "$RESULTS/off.log"
+check_absent "off: the foreign-fluid repair really was switched off" 'Forbric/Fluid\] .*gets the one its fluid tags imply' "$RESULTS/off.log"
 
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M45 EVERYDAY GATE GREEN — crafting, smelting, brewing, mod fluids and the dragon work, each by its repair"
+  echo "[kernel] ✅ M45 EVERYDAY GATE GREEN — crafting, smelting, brewing and mod fluids work, each by its repair; the dragon by the merged base's ancestor bridge"
 else
   echo "[kernel] ❌ M45 GATE RED — inspect $RESULTS"
 fi
