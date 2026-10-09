@@ -945,6 +945,10 @@ test	net.forbric.kernel.transform.FurnaceTickCallsInjectorTest	eitherCarriersOwn
 test	net.forbric.kernel.transform.FurnaceTickCallsInjectorTest	theFurnaceIsTheMergedBasesOnlyStaticInstanceMismatch()	[fixture:staged] actual game required
 test	net.forbric.kernel.transform.FurnaceTickCallsInjectorTest	theSwitchLeavesTheFurnaceAlone()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.class)
 test	net.forbric.kernel.transform.FurnaceTickCallsInjectorTest	theTickCallsEachInstanceMethodOnTheFurnaceItTicks()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.class)
+test	net.forbric.kernel.transform.GuestInjectorPrunerGateLinesTest	aRenamedCopyIsReportedByItsOwnNameAndNotAsTheGatesMixin()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
+test	net.forbric.kernel.transform.GuestInjectorPrunerGateLinesTest	switchedOffNothingIsPrunedAndTheGateLineIsAbsent()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
+test	net.forbric.kernel.transform.GuestInjectorPrunerGateLinesTest	theRealItemMixinPrintsTheLineTheGateReads()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
+test	net.forbric.kernel.transform.GuestInjectorPrunerGateLinesTest	theRealModelLoadingMixinPrintsTheLineTheGateReads()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	aSecondPassChangesNothingFurther()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	aTooltipInjectorAlreadyMovedOrWithoutItsSharedIndexIsNotGuessed()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	anUnrelatedClassPassesThroughByIdentity()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods

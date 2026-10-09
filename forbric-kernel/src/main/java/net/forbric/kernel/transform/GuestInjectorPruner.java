@@ -291,7 +291,9 @@ public final class GuestInjectorPruner implements ClassTransformer {
         for(MethodNode victim:loss==null?List.<MethodNode>of():group.methods())
             net.forbric.kernel.mixin.MixinCompatibility.recordRemovedInjector(config,node.name.replace('/','.'),victim.name,victim.desc,loss,
                     List.of("closed source protocol="+group.protocol(),"source=GuestInjectorPruner"));
-        ForbricLog.info("[Forbric/GuestInjectorPruner] removed the %d closed %s callback(s) in %s; remaining callbacks retain their original bodies",group.methods().size(),group.protocol(),node.name);
+        // The gates read this line (gate-m9, m14, m51): how many injectors went, from which mixin, and how many stay.
+        ForbricLog.info("[Forbric/GuestInjectorPruner] pruned %d injector(s) from %s — its closed %s callback protocol; the other %d injector(s) "
+                +"apply as written, with their original bodies",group.methods().size(),className,group.protocol(),countInjectors(node));
         ClassWriter writer=new ClassWriter(0);node.accept(writer);return writer.toByteArray();
     }
 
