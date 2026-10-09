@@ -6,6 +6,7 @@ import java.util.function.Function;
 import net.forbric.api.NativeEventDelivery;
 import net.forbric.api.NativeEventDelivery.Contract;
 import net.forbric.api.NativeEventDelivery.Hook;
+import net.forbric.kernel.util.ByteScan;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.*;
@@ -15,13 +16,25 @@ import org.objectweb.asm.tree.analysis.*;
 public final class NativeDualEventInjector implements ClassTransformer {
     private static final String API="net/forbric/api/NativeEventDelivery",SCOPE=API+"$Scope";
     private final Function<String,byte[]> resources;
+    /** The classes {@link #read} parsed, by internal name: the contracts' hook owners and the owners of fields an
+     * operand proof reads. They are the game's own resources, which do not change during a run, so each is parsed once
+     * per run rather than once per loaded class. The threads that load classes share them, so they are only ever read:
+     * member lookups and forward instruction walks, never an InsnList index (built lazily) and never an Analyzer
+     * (which runs on the input class's methods alone). A missing resource is not remembered, as before. */
+    private final Map<String,ClassNode> parsed=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.LongAdder inputsParsed=new java.util.concurrent.atomic.LongAdder();
+    private volatile Prefilter prefilter;
     public NativeDualEventInjector(Function<String,byte[]> resources){this.resources=resources;}
     @Override public String name(){return "forbric-native-dual-events";}
     @Override public AnchorSet anchors(){return AnchorSet.scanned("registered native observer contracts, proved control flow and operands");}
+    /** How many input classes this instance parsed: the ones the constant-pool prefilter could not rule out. */
+    long classesParsed(){return inputsParsed.sum();}
     @Override public byte[] transform(String name,byte[] input,TransformContext context){
-        if(input==null||input.length<10||NativeEventDelivery.contracts().isEmpty())return input;
-        ClassNode node=new ClassNode();new ClassReader(input).accept(node,ClassReader.EXPAND_FRAMES);int changes=0;
-        for(Contract contract:NativeEventDelivery.contracts()){
+        List<Contract> contracts=NativeEventDelivery.contracts();
+        if(input==null||input.length<10||contracts.isEmpty())return input;
+        List<Contract> candidates=prefilter(contracts).candidates(input);if(candidates.isEmpty())return input;
+        ClassNode node=new ClassNode();new ClassReader(input).accept(node,ClassReader.EXPAND_FRAMES);inputsParsed.increment();int changes=0;
+        for(Contract contract:candidates){
             if(node.name.equals(contract.source().owner())){
                 MethodNode hook=method(node,contract.source());MethodInsnNode constructor=construction(hook,contract);
                 if(constructor!=null){
@@ -42,7 +55,32 @@ public final class NativeDualEventInjector implements ClassTransformer {
         }
         if(changes==0)return input;ClassWriter writer=new ClassWriter(ClassWriter.COMPUTE_MAXS);node.accept(writer);return writer.toByteArray();
     }
-    private ClassNode read(String owner){byte[] bytes=resources.apply(owner+".class");if(bytes==null)return null;ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.EXPAND_FRAMES);return owner.equals(node.name)?node:null;}
+    /** A class can change under a contract only by declaring its source hook (it IS the source owner) or by calling
+     * it; either way the hook's owner, name and descriptor are CONSTANT_Utf8 entries of its constant pool. A class
+     * missing any of the three provably cannot match, so it is not parsed. */
+    private record Prefilter(List<Contract> contracts,byte[][] needles){
+        static Prefilter of(List<Contract> contracts){
+            return new Prefilter(contracts,contracts.stream().flatMap(c->java.util.stream.Stream.of(c.source().owner(),c.source().name(),c.source().descriptor()))
+                .map(ByteScan::poolEntry).toArray(byte[][]::new));
+        }
+        /** The contracts, in registration-snapshot order, whose source hook this class could declare or call. */
+        List<Contract> candidates(byte[] input){
+            boolean[] named=ByteScan.constantPoolNames(input,needles);List<Contract> out=List.of();
+            for(int i=0;i<contracts.size();i++)if(named[3*i]&&named[3*i+1]&&named[3*i+2]){if(out.isEmpty())out=new ArrayList<>(1);out.add(contracts.get(i));}
+            return out;
+        }
+    }
+    private Prefilter prefilter(List<Contract> contracts){
+        Prefilter current=prefilter;
+        if(current==null||current.contracts()!=contracts)prefilter=current=Prefilter.of(contracts);
+        return current;
+    }
+    private ClassNode read(String owner){
+        ClassNode cached=parsed.get(owner);if(cached!=null)return cached;
+        byte[] bytes=resources.apply(owner+".class");if(bytes==null)return null;ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.EXPAND_FRAMES);
+        if(!owner.equals(node.name))return null;
+        ClassNode raced=parsed.putIfAbsent(owner,node);return raced==null?node:raced;
+    }
     private static MethodNode method(ClassNode owner,Hook hook){if(owner==null)return null;return owner.methods.stream().filter(m->m.name.equals(hook.name())&&m.desc.equals(hook.descriptor())).findFirst().orElse(null);}
     private static boolean publicStatic(MethodNode method){return method!=null&&(method.access&(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC|Opcodes.ACC_ABSTRACT|Opcodes.ACC_NATIVE))==(Opcodes.ACC_PUBLIC|Opcodes.ACC_STATIC);}
     /** The public source hook constructs exactly its contract event and immediately dispatches that instance. */

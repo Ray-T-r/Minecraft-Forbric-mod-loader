@@ -18,13 +18,18 @@ public final class NativeEventDelivery {
         }
     }
     private static final Map<String,Contract> CONTRACTS=new ConcurrentHashMap<>();
+    /** The sorted, immutable view {@link #contracts()} hands out, rebuilt only when a new contract arrives: the
+     * transform chain asks for it once per loaded class. A new identity means the contract set changed. */
+    private static volatile List<Contract> snapshot=List.of();
     private static final ThreadLocal<ArrayDeque<Scope>> SCOPES=new ThreadLocal<>();
     private NativeEventDelivery() { }
     public static void register(Contract contract) {
         Contract old=CONTRACTS.putIfAbsent(contract.id(),contract);
         if(old!=null&&!old.equals(contract))throw new IllegalArgumentException("Conflicting native delivery contract: "+contract.id());
+        if(old==null)refresh();
     }
-    public static List<Contract> contracts(){return CONTRACTS.values().stream().sorted(Comparator.comparing(Contract::id)).toList();}
+    private static synchronized void refresh(){snapshot=CONTRACTS.values().stream().sorted(Comparator.comparing(Contract::id)).toList();}
+    public static List<Contract> contracts(){return snapshot;}
     /** Called only from a wrapper whose counterpart's completed invocation was proved to dominate the source call. */
     public static Scope begin(String id){
         if(!CONTRACTS.containsKey(id))throw new IllegalStateException("Unregistered native event contract: "+id);
