@@ -9,7 +9,9 @@ import net.forbric.api.UnifiedDependency;
 import org.objectweb.asm.tree.*;
 
 /** Recognises a pure integration only when its owner declares the dependency optional.
- * Namespaced selectors alone are not evidence that losing an injector is harmless. */
+ * Namespaced selectors alone are not evidence that losing an injector is harmless. An undeclared integration whose
+ * injectors natively require nothing ({@code "defaultRequire": -1} included) into a method the mod's own platform
+ * lacks too never reaches this: {@link NativeAbsentTargets} drops it as native Mixin does, and MixinFit calls it FIT. */
 final class OptionalMixinDependencies {
     private OptionalMixinDependencies() { }
 

@@ -63,6 +63,11 @@ import net.forbric.kernel.util.ForbricLog;
  * initializers, its other methods, its interfaces, the handler itself — is merged as usual. A {@code @Group} counts
  * its members together and needs at least one injection, so a grouped injector is never silently empty. The config's
  * own {@code required} flag only decides whether one of those errors is fatal; it makes no injector mandatory.
+ * A config's {@code defaultRequire} below 0 requires nothing either: {@code InjectionInfo} carries it as the count,
+ * and no check fails on a count of 0 or less. That is the {@code "defaultRequire": -1} mods write so their injectors
+ * into another mod's added methods may find nothing when that mod is not installed — a selector such as
+ * {@code otherMod$cached} on a vanilla class, which no platform declares either — and {@code mergeFrom} keeps it in
+ * a child config, since it replaces only a 0 with the parent's.
  * Measured on native Fabric 0.19.5 with Not Enough Crashes alone and {@code -Dmixin.debug.export=true}: the server
  * reaches Done, Mixin logs nothing about the injector, and the woven {@code BlockEntity} carries {@code noNBT}, its
  * constructor initializer, the lambda and the merged handler, with no call to the handler anywhere.
@@ -189,11 +194,21 @@ public final class NativeAbsentTargets {
 	static final String MINECRAFT = "minecraft";
 
 	/**
+	 * {@link Context#defaultRequire} when the config's default cannot be known: it may come from a {@code parent}.
+	 * Never what a mod's own negative value means — that requires nothing, and is read as 0
+	 * ({@link KernelGuestMixinAdapter#declaredDefaultRequire}).
+	 */
+	static final int UNKNOWN_DEFAULT_REQUIRE = -1;
+
+	/**
 	 * What one evaluation needs to ask.
 	 *
 	 * @param raw            the merged base's bytes before the transform chain, by resource path
-	 * @param defaultRequire the config's {@code injectors.defaultRequire} as the mod wrote it — negative when that
-	 *                       cannot be known (a config that inherits it from a {@code parent})
+	 * @param defaultRequire how many injections the config's {@code injectors.defaultRequire} makes native Mixin require,
+	 *                       as {@link KernelGuestMixinAdapter#declaredDefaultRequire} reads it: 0 or more — the
+	 *                       {@code -1} a mod writes requires none, so it is 0 here — or
+	 *                       {@link #UNKNOWN_DEFAULT_REQUIRE} when that cannot be known (a config that may inherit it
+	 *                       from a {@code parent})
 	 * @param platform       the owning mod's ecosystem, whose game is the native one; null when no single mod owns the
 	 *                       config, which asks nothing
 	 * @param base           the members digest of the jar serving a class, by internal name; null for no jar
@@ -203,7 +218,7 @@ public final class NativeAbsentTargets {
 	public record Context(Function<String, byte[]> raw, int defaultRequire, Ecosystem platform,
 			Function<String, String> base, DiscoveredMod mod) {
 		/** Asks nothing: every caller that predates this. */
-		public static final Context NONE = new Context(null, -1, null, null, null);
+		public static final Context NONE = new Context(null, UNKNOWN_DEFAULT_REQUIRE, null, null, null);
 	}
 
 	/**
@@ -427,7 +442,9 @@ public final class NativeAbsentTargets {
 
 	/**
 	 * How many injections native Mixin requires of this injector, as {@code InjectionInfo.parseRequirements} decides
-	 * it; negative when a {@code @Group} decides instead, or when the config's default could not be read.
+	 * it: its own {@code require} when that is 0 or more, else the config's default ({@code defaultRequire}, 0 or more
+	 * as {@link Context#defaultRequire} carries it); negative when a {@code @Group} decides instead, or when the config's
+	 * default could not be known ({@link #UNKNOWN_DEFAULT_REQUIRE}).
 	 */
 	static int nativeMinimum(MethodNode handler, AnnotationNode injector, int defaultRequire) {
 		if (MixinFit.groupOf(handler) != null) return -1;

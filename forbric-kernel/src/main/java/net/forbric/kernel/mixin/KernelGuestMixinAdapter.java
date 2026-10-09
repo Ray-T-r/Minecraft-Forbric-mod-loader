@@ -942,21 +942,32 @@ public final class KernelGuestMixinAdapter {
 	}
 
 	/**
-	 * The config's {@code injectors.defaultRequire} as the mod wrote it — read here, from the bytes the mod shipped,
-	 * because the relaxation rewrites it to 0 before Mixin sees it — or 0, Mixin's default. Negative when a
-	 * {@code parent} config may supply it ({@code MixinConfig.InjectorOptions.mergeFrom} takes the parent's for a 0):
-	 * an unknown requirement never counts as none.
+	 * How many injections the config's {@code injectors.defaultRequire} makes native Mixin require of an injector that
+	 * names no {@code require} of its own and is in no {@code @Group} — read here, from the bytes the mod shipped, because
+	 * the relaxation rewrites it to 0 before Mixin sees it. 0 when the config does not say, Mixin's default.
+	 *
+	 * <p>Any value the mod wrote below 0 is 0 too, not an unknown. Mixin fails an injector only on a count above 0 that
+	 * finds no target ({@code TargetSelectors.validate}) or on fewer injections than the count
+	 * ({@code InjectionInfo.postInject}), so the {@code "defaultRequire": -1} mods write to say "my injectors may find
+	 * nothing" requires exactly nothing — and {@code MixinConfig.InjectorOptions.mergeFrom} replaces only a 0 with the
+	 * parent's, so that -1 stands in a child config as well. Read as an unknown, it made every compatibility injector
+	 * aimed at another mod's added method a loss the merge never caused, and marked the mod DEGRADED when that mod was
+	 * not installed.
+	 *
+	 * <p>{@link NativeAbsentTargets#UNKNOWN_DEFAULT_REQUIRE} only when the count cannot be known: a value that is not a
+	 * number, or a 0 — written or by omission — in a config with a {@code parent}, which may supply another. An unknown
+	 * requirement never counts as none.
 	 */
 	static int declaredDefaultRequire(UnmodifiableConfig config) {
 		Object declared;
 		try {
 			declared = config.get(List.of("injectors", "defaultRequire"));
 		} catch (RuntimeException notAnObject) {
-			return -1;
+			return NativeAbsentTargets.UNKNOWN_DEFAULT_REQUIRE;
 		}
-		if (declared != null && !(declared instanceof Number)) return -1;
+		if (declared != null && !(declared instanceof Number)) return NativeAbsentTargets.UNKNOWN_DEFAULT_REQUIRE;
 		int value = declared == null ? 0 : ((Number) declared).intValue();
-		if (value == 0 && config.get(List.of("parent")) != null) return -1;
-		return value;
+		if (value == 0 && config.get(List.of("parent")) != null) return NativeAbsentTargets.UNKNOWN_DEFAULT_REQUIRE;
+		return Math.max(0, value);
 	}
 }

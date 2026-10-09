@@ -410,12 +410,25 @@ class NativeAbsentTargetsTest {
 		assertFalse(NativeAbsentTargets.nativeLacks(null, BLOCK_ENTITY, "populateCrashReport", null, raw, rows), "nor no platform");
 	}
 
-	@Test void theConfigsDefaultIsReadAsTheModWroteIt() {
+	/**
+	 * The count native Mixin requires: what the mod wrote, where anything below 0 requires nothing (the {@code -1} mods
+	 * write is no unknown), and unknown only where a parent may supply it ({@code mergeFrom} replaces only a 0).
+	 */
+	@Test void theConfigsDefaultIsReadAsMixinCountsIt() {
+		int unknown = NativeAbsentTargets.UNKNOWN_DEFAULT_REQUIRE;
 		assertEquals(0, KernelGuestMixinAdapter.declaredDefaultRequire(parse("{}")));
 		assertEquals(1, KernelGuestMixinAdapter.declaredDefaultRequire(parse("{\"injectors\":{\"defaultRequire\":1}}")));
-		assertEquals(-1, KernelGuestMixinAdapter.declaredDefaultRequire(parse("{\"parent\":\"p.mixins.json\"}")),
+		assertEquals(0, KernelGuestMixinAdapter.declaredDefaultRequire(parse("{\"injectors\":{\"defaultRequire\":-1}}")),
+				"-1 requires nothing: no Mixin check fails on a count of 0 or less");
+		assertEquals(0, KernelGuestMixinAdapter.declaredDefaultRequire(parse("{\"injectors\":{\"defaultRequire\":-5}}")));
+		assertEquals(unknown, KernelGuestMixinAdapter.declaredDefaultRequire(parse("{\"parent\":\"p.mixins.json\"}")),
 				"a parent may supply it: unknown, never none");
+		assertEquals(unknown, KernelGuestMixinAdapter.declaredDefaultRequire(
+				parse("{\"parent\":\"p\",\"injectors\":{\"defaultRequire\":0}}")), "a written 0 is replaced by the parent's too");
+		assertEquals(unknown, KernelGuestMixinAdapter.declaredDefaultRequire(parse("{\"injectors\":{\"defaultRequire\":\"x\"}}")));
 		assertEquals(2, KernelGuestMixinAdapter.declaredDefaultRequire(parse("{\"parent\":\"p\",\"injectors\":{\"defaultRequire\":2}}")));
+		assertEquals(0, KernelGuestMixinAdapter.declaredDefaultRequire(parse("{\"parent\":\"p\",\"injectors\":{\"defaultRequire\":-1}}")),
+				"a child's own -1 is not replaced by the parent's");
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
