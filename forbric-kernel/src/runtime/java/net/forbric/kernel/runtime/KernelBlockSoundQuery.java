@@ -5,5 +5,6 @@ import net.forbric.kernel.interop.BlockSoundCallbackScope;
 
 public final class KernelBlockSoundQuery {
 	private KernelBlockSoundQuery() { }
-	public static SoundType sound(BlockState state,LevelReader level,BlockPos pos,Entity entity){return (SoundType)BlockSoundCallbackScope.query(state,pos,()->state.getSoundType(level,pos,entity));}
+	/** The open callbacks' answer, composed; the native query answers for the state the innermost one passes on. */
+	public static SoundType sound(BlockState state,LevelReader level,BlockPos pos,Entity entity){return (SoundType)BlockSoundCallbackScope.compose(state,pos,passed->((BlockState)passed).getSoundType(level,pos,entity));}
 }

@@ -14,9 +14,24 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 public final class KernelWrapOperations {
 	private KernelWrapOperations() {
 	}
-	/** The original callback has already made its pure native boolean query; preserve that value exactly. */
-	public static <R> Operation<R> constant(R value) { return args -> value; }
+	/**
+	 * The original callback has already made its pure native boolean query; preserve that value exactly. A value an
+	 * outer callback frame is handed while inner frames are still open is their answer, computed when the handler asks.
+	 */
+	@SuppressWarnings("unchecked")
+	public static <R> Operation<R> constant(R value) {
+		return args -> (R) net.forbric.kernel.interop.CallbackFrames.Deferred.resolve(value);
+	}
 	public static <R> Operation<R> supplied(java.util.function.Supplier<R> nativeQuery) { return args -> nativeQuery.get(); }
+
+	/**
+	 * The original of a wrapped receiver-only call ({@code state.getSoundType()}, {@code hud.nextContextualInfoState()}),
+	 * run on the receiver the handler passes: {@code original} is the next callback frame inward or the native call.
+	 */
+	@SuppressWarnings("unchecked")
+	public static <R> Operation<R> applied(java.util.function.Function<Object, ?> original) {
+		return args -> (R) original.apply(args[0]);
+	}
 
 	/**
 	 * @param original the merged call's operation

@@ -4,5 +4,6 @@ import net.minecraft.client.gui.Hud;import net.forbric.kernel.interop.HudContext
 
 public final class KernelHudContextQuery {
 	private KernelHudContextQuery() { }
-	public static Object next(Hud hud){return HudContextCallbackScope.query(hud,()->hud.nextContextualInfoState());}
+	/** The open callbacks' answer, composed; the native selection runs on the HUD the innermost one passes on. */
+	public static Object next(Hud hud){return HudContextCallbackScope.compose(hud,passed->((Hud)passed).nextContextualInfoState());}
 }
