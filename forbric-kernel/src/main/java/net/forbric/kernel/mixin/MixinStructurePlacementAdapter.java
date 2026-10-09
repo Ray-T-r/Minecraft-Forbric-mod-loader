@@ -126,9 +126,12 @@ public final class MixinStructurePlacementAdapter {
 	 */
 	public static byte[] asLoaded(byte[] bytes, Function<String, byte[]> resource) {
 		try {
+			// Every guest mixin passes through here: read its @Mixin alone first, the code only for StructureTemplate's.
+			ClassNode head = new ClassNode();
+			new org.objectweb.asm.ClassReader(bytes).accept(head, org.objectweb.asm.ClassReader.SKIP_CODE);
+			if (!MixinCallbackShape.targets(head, TARGET)) return bytes;
 			ClassNode mixin = new ClassNode();
 			new org.objectweb.asm.ClassReader(bytes).accept(mixin, 0);
-			if (!MixinCallbackShape.targets(mixin, TARGET)) return bytes;
 			Function<String, ClassNode> targets = name -> {
 				byte[] found = resource.apply(name + ".class");
 				if (found == null) return null;
