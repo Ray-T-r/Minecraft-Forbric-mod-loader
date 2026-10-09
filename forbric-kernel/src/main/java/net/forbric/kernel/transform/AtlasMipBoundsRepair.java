@@ -10,14 +10,22 @@ import net.forbric.kernel.util.ForbricLog;
 /** Preserves the original configuration decision, then bounds the selected level by its proved image limit. */
 final class AtlasMipBoundsRepair {
 	private static final String LIMITS = "net/forbric/api/MipLevelLimits", STITCHER = "net/minecraft/client/renderer/texture/Stitcher";
+	/** Methods that reached the data-flow analysis: only the ones that construct a Stitcher at all. */
+	private static final java.util.concurrent.atomic.LongAdder ANALYZED = new java.util.concurrent.atomic.LongAdder();
 	private AtlasMipBoundsRepair() { }
+	static long methodsAnalyzed() { return ANALYZED.sum(); }
 	static boolean apply(ClassNode node) {
 		boolean changed = false;
 		for (MethodNode method : node.methods) {
 			if (method.instructions == null || (method.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) continue;
-			boolean already = false;
-			for (var instruction : method.instructions) if (instruction instanceof MethodInsnNode call && call.owner.equals(LIMITS)) already = true;
-			if (already) continue;
+			// allocationLevels only ever reports the level of a Stitcher.<init>(IIII)V call, so a method without one
+			// cannot be repaired: skip it in the linear scan that runs anyway, before the per-instruction analysis.
+			boolean already = false, allocates = false;
+			for (var instruction : method.instructions) if (instruction instanceof MethodInsnNode call) {
+				if (call.owner.equals(LIMITS)) already = true;
+				else if (allocation(call)) allocates = true;
+			}
+			if (already || !allocates) continue;
 			Set<Integer> allocated = allocationLevels(node, method); if (allocated.size() != 1) continue;
 			int selected = allocated.iterator().next();
 			List<Plan> plans = new ArrayList<>();
@@ -77,14 +85,17 @@ final class AtlasMipBoundsRepair {
 		}
 		return decision == 1 ? new Plan(comparison, join, limit.var) : null;
 	}
+	private static boolean allocation(MethodInsnNode call) {
+		return call.getOpcode() == Opcodes.INVOKESPECIAL && call.owner.equals(STITCHER) && call.name.equals("<init>") && call.desc.equals("(IIII)V");
+	}
 	private static Set<Integer> allocationLevels(ClassNode owner, MethodNode method) {
 		Set<Integer> levels = new HashSet<>();
 		try {
+			ANALYZED.increment();
 			Frame<SourceValue>[] frames = new Analyzer<>(new SourceInterpreter()).analyze(owner.name, method);
 			int index = 0;
 			for (var instruction : method.instructions) {
-				if (instruction instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL && call.owner.equals(STITCHER)
-						&& call.name.equals("<init>") && call.desc.equals("(IIII)V")) {
+				if (instruction instanceof MethodInsnNode call && allocation(call)) {
 					Frame<SourceValue> frame = frames[index]; if (frame == null) return Set.of();
 					SourceValue value = frame.getStack(frame.getStackSize() - 2);
 					if (value.insns.size() != 1 || !(value.insns.iterator().next() instanceof VarInsnNode load) || load.getOpcode() != Opcodes.ILOAD) return Set.of();

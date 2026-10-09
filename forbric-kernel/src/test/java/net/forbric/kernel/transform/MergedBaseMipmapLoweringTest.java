@@ -56,5 +56,31 @@ class MergedBaseMipmapLoweringTest {
         try{assertSame(valid,new ForbricMergedBaseCompatTransformer().transform("unknown.images.Atlas",valid,null));}
         finally{if(old==null)System.clearProperty(ForbricMergedBaseCompatTransformer.MIPMAP_PROPERTY);else System.setProperty(ForbricMergedBaseCompatTransformer.MIPMAP_PROPERTY,old);}
     }
+    /** The repair runs on every class the merged-base pass parses; a method that constructs no Stitcher cannot be
+     * repaired, so it never reaches the per-instruction data-flow analysis. */
+    @Test void onlyAMethodThatConstructsTheAllocationIsAnalyzed() throws Exception {
+        Map<String,byte[]> lookalike=InjectorExecution.compile(root,Map.of(
+            "net.minecraft.util.Mth","package net.minecraft.util; public class Mth {public static int log2(int size){return 31-Integer.numberOfLeadingZeros(size);}}",
+            "unknown.images.Canvas","package unknown.images; public class Canvas {public final int level; public Canvas(int w,int h,int selected,int other){level=selected;}}",
+            "unknown.images.Mural","""
+                package unknown.images;
+                public class Mural {
+                    public static boolean configured;
+                    public static boolean policy(){return configured;}
+                    public int stitch(int requested,int imageSize){
+                        int maximum=net.minecraft.util.Mth.log2(imageSize); int selected;
+                        if(maximum<requested && policy()) selected=maximum; else selected=requested;
+                        return new Canvas(16,16,selected,0).level;
+                    }
+                }
+                """));
+        byte[] mural=lookalike.get("unknown/images/Mural");long before=AtlasMipBoundsRepair.methodsAnalyzed();
+        assertSame(mural,new ForbricMergedBaseCompatTransformer().transform("unknown.images.Mural",mural,null),"the same decision around another constructor is left alone");
+        assertFalse(AtlasMipBoundsRepair.apply(parse(mural)));
+        assertEquals(before,AtlasMipBoundsRepair.methodsAnalyzed(),"no method of the look-alike was analyzed");
+        ClassNode atlas=parse(fixture(true).get("unknown/images/Atlas"));before=AtlasMipBoundsRepair.methodsAnalyzed();
+        assertTrue(AtlasMipBoundsRepair.apply(atlas),"the allocating method is still repaired");
+        assertEquals(before+1,AtlasMipBoundsRepair.methodsAnalyzed(),"only stitch(), of <init>/policy()/stitch(), was analyzed");
+    }
     private static ClassNode parse(byte[] bytes){ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return node;}
 }
