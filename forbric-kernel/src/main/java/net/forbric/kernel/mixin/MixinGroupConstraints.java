@@ -8,7 +8,8 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 
 /** Proves impossible native @Group bounds before one failed mixin discards a target's other mixins.
- * Unknown custom points, slices and wildcard selectors never become zero. The minimum uses an upper bound;
+ * Selectors bind as Mixin binds them and member points select as Mixin resolves them, however either is written;
+ * unknown custom points, slices and selector forms Mixin's own reading cannot settle never become zero. The minimum uses an upper bound;
  * the maximum uses a lower bound from plain @Inject callbacks whose descriptor fits the selected method. */
 public final class MixinGroupConstraints {
     private static final String GROUP = "Lorg/spongepowered/asm/mixin/injection/Group;";
@@ -54,23 +55,22 @@ public final class MixinGroupConstraints {
 
     private static Count count(MethodNode handler, AnnotationNode injector, ClassNode target, MixinAddedMembers.View added) {
         if (MixinFit.value(injector, "slice") != null) return null;
-        List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
-        if (selectors.isEmpty()) return null;
-        Set<MethodNode> selected = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (String selector : selectors) {
-            if (selector.contains("*") || selector.startsWith("/") || selector.startsWith("@") || selector.contains(";")) return null;
-            int paren = selector.indexOf('(');
-            String name = paren < 0 ? selector : selector.substring(0, paren);
-            String desc = paren < 0 ? null : selector.substring(paren);
-            List<MethodNode> named = target.methods.stream().filter(m -> m.name.equals(name) && (desc == null || m.desc.equals(desc))).toList();
-            // Bare-name overload binding depends on Mixin's injector and mapping rules. Do not guess it.
-            if (named.size() > 1) return null;
+        // The methods the selectors bind, as Mixin binds them however they are written (MixinTargetSelectors): a bare
+        // name its first declared method, a quantifier or a pattern every match. A form Mixin refuses, or one this does
+        // not model, is unknown.
+        List<MixinTargetSelectors.Reach> reach = MixinTargetSelectors.reach(handler, target);
+        List<MethodNode> bound = MixinTargetSelectors.bound(handler, target);
+        if (reach == null || bound == null) return null;
+        for (MixinTargetSelectors.Reach one : reach) {
+            if (!one.matched().isEmpty()) continue;
             // The earlier mixin's body is not available through View. Its future method is unknown, not absent.
-            // For a bare name View cannot enumerate descriptors, so absence on the base cannot prove zero either.
-            if(named.isEmpty() && (desc==null && added!=MixinAddedMembers.View.NONE
-                    || desc!=null && added.method(target.name,name,desc)))return null;
-            selected.addAll(named);
+            // Unless the selector spells its descriptor View cannot enumerate it, so absence on the base proves nothing.
+            String spelled = one.spelled();
+            if (spelled == null ? added != MixinAddedMembers.View.NONE
+                    : added.method(target.name, spelled.substring(0, spelled.indexOf('(')), spelled.substring(spelled.indexOf('(')))) return null;
         }
+        Set<MethodNode> selected = Collections.newSetFromMap(new IdentityHashMap<>());
+        selected.addAll(bound);
         List<AnnotationNode> points = MixinFit.atNodes(injector);
         if (points.isEmpty()) return null;
         int upper = 0, lower = 0;
@@ -97,10 +97,14 @@ public final class MixinGroupConstraints {
         List<AbstractInsnNode> hits = new ArrayList<>();
         String member = target instanceof String s ? s : null;
         if (MixinFit.value(at,"slice") != null) return null;
+        // A member point names its member as Mixin resolves the target (MixinFit.parseMember: an owner prefix, a dotted
+        // owner, whitespace; the owner or the descriptor left out matches any). A wildcard, a quantifier or a dynamic
+        // reference is not modelled: unknown.
         if (Set.of("INVOKE","INVOKE_ASSIGN","FIELD").contains(kind)) {
-            if (member == null || !member.startsWith("L") || member.indexOf(';') < 1 || member.contains("*")
+            if (member == null || MixinFit.parseMember(member) == null
                     || member.contains("{") || member.contains("}") || member.contains("@")) return null;
         }
+        List<AbstractInsnNode> named = MixinCallbackShape.selected(at, method);
         if (kind.equals("NEW") && (member == null || member.contains(";") || member.contains("(") || member.contains("*"))) return null;
         int opcode = integer(at, "opcode", -1);
         for (AbstractInsnNode instruction : method.instructions) {
@@ -109,10 +113,8 @@ public final class MixinGroupConstraints {
             switch (kind) {
                 case "HEAD" -> { hits.add(instruction); return hits; }
                 case "RETURN", "TAIL" -> matches = instruction.getOpcode() >= Opcodes.IRETURN && instruction.getOpcode() <= Opcodes.RETURN;
-                case "INVOKE", "INVOKE_ASSIGN" -> matches = instruction instanceof MethodInsnNode call && member != null
-                        && member.equals("L" + call.owner + ";" + call.name + call.desc);
-                case "FIELD" -> matches = instruction instanceof FieldInsnNode field && member != null
-                        && member.equals("L" + field.owner + ";" + field.name + ":" + field.desc);
+                case "INVOKE", "INVOKE_ASSIGN" -> matches = instruction instanceof MethodInsnNode && named.contains(instruction);
+                case "FIELD" -> matches = instruction instanceof FieldInsnNode && named.contains(instruction);
                 case "NEW" -> matches = instruction instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW
                         && member != null && member.equals(type.desc);
                 default -> { return null; }

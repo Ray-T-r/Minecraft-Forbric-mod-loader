@@ -551,7 +551,8 @@ public final class MixinFit {
 	}
 
 	/** An injector may select a concrete @Unique method which this same mixin adds before injection preparation.
-	 * Existing target members win. Abstract/shadow/injector methods cannot fabricate a target. */
+	 * Existing target members win. Abstract/shadow/injector methods cannot fabricate a target. Each added copy carries
+	 * {@code @MixinMerged}, as Mixin marks what it merges: a selector allowed several matches passes over it there. */
 	static ClassNode withSelfAddedMethods(ClassNode mixin, ClassNode target) {
 		if (mixin == null || target == null) return target;
 		List<MethodNode> added = new ArrayList<>();
@@ -565,7 +566,10 @@ public final class MixinFit {
 		for (MethodNode method : added) {
 			MethodNode copy = new MethodNode(method.access, method.name, method.desc, method.signature,
 					method.exceptions == null ? null : method.exceptions.toArray(String[]::new));
-			method.accept(copy); view.methods.add(copy);
+			method.accept(copy);
+			if (copy.visibleAnnotations == null) copy.visibleAnnotations = new ArrayList<>();
+			copy.visibleAnnotations.add(new AnnotationNode("Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;"));
+			view.methods.add(copy);
 		}
 		return view;
 	}
