@@ -11,15 +11,23 @@ final class NativeCallbackSeam {
                 int[] hostParameters, String sourcePrefix, String currentPrefix, String helperHash) { }
     private record Feed(List<AbstractInsnNode> instructions, List<String> wires) { }
     private NativeCallbackSeam() { }
-    static Plan derive(ClassNode original, ClassNode current, MethodNode source, String member,
+    /**
+     * {@code target} is the {@code @At(INVOKE)} target as the mod wrote it. It selects calls as Mixin matches one
+     * ({@link MixinCallbackShape#selected}: whitespace, a dotted owner, and an owner or descriptor left out all read as
+     * Mixin reads them), in {@code source}, the method the handler was written for: there it must select exactly one
+     * call, and that call's member is the one followed into the helper and named by the plan. The merged method must
+     * keep no call the target would still select.
+     */
+    static Plan derive(ClassNode original, ClassNode current, MethodNode source, String target,
             Function<String, ClassNode> classes) {
         if (original == null || current == null || source == null
                 || !Type.getReturnType(source.desc).equals(Type.VOID_TYPE)) return null;
         MethodNode live = NativeCallChanges.method(current, source.name + source.desc);
         if (live == null || ((live.access ^ source.access) & Opcodes.ACC_STATIC) != 0) return null;
         if (!source.tryCatchBlocks.isEmpty() || !live.tryCatchBlocks.isEmpty()) return null;
-        List<MethodInsnNode> old = calls(source).stream().filter(c -> NativeCallChanges.member(c).equals(member)).toList();
-        if (old.size() != 1 || calls(live).stream().anyMatch(c -> NativeCallChanges.member(c).equals(member))) return null;
+        List<MethodInsnNode> old = selectedCalls(target, source);
+        if (old.size() != 1 || !selectedCalls(target, live).isEmpty()) return null;
+        String member = NativeCallChanges.member(old.getFirst());
         Feed sourceFeed = feed(old.getFirst()); if (sourceFeed == null || !finalCall(source, old.getFirst())) return null;
         String sourcePrefix = prefix(source, sourceFeed.instructions.getFirst()); if (sourcePrefix == null) return null;
         Plan found = null;
@@ -100,6 +108,10 @@ final class NativeCallbackSeam {
         return next != null && next.getOpcode() == Opcodes.RETURN;
     }
     private static List<MethodInsnNode> calls(MethodNode method) { return real(method).stream().filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).toList(); }
+    /** The calls of {@code method} an {@code @At(INVOKE)} {@code target} selects, as Mixin matches it. */
+    private static List<MethodInsnNode> selectedCalls(String target, MethodNode method) {
+        return MixinCallbackShape.selected(target, method).stream().filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).toList();
+    }
     private static List<AbstractInsnNode> real(MethodNode method) { return Arrays.stream(method.instructions.toArray()).filter(i -> i.getOpcode() >= 0).toList(); }
     private static AbstractInsnNode previous(AbstractInsnNode at) { at=at.getPrevious();while(at!=null&&at.getOpcode()<0)at=at.getPrevious();return at; }
     private static AbstractInsnNode next(AbstractInsnNode at) { at=at.getNext();while(at!=null&&at.getOpcode()<0)at=at.getNext();return at; }
