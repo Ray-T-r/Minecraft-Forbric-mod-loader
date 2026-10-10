@@ -104,6 +104,14 @@ public final class MixinSubtypeOwnerRetarget {
 	}
 
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
+		return adapt(mixin, targets, mixin == null ? null : owner -> MixinBindings.nativeClass(mixin.name, owner));
+	}
+
+	/**
+	 * {@link #adapt(ClassNode, Function)}, a point written without its descriptor read where its handler was written:
+	 * in {@code natives}' class, the class the mod was compiled against (by internal name; null, or answering null: none).
+	 */
+	static int adapt(ClassNode mixin, Function<String, ClassNode> targets, Function<String, ClassNode> natives) {
 		if (!enabled()) return 0;
 		List<String> owners = MixinFit.mixinTargets(mixin);
 		if (owners.size() != 1) return 0;
@@ -114,17 +122,16 @@ public final class MixinSubtypeOwnerRetarget {
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
 			AnnotationNode injector = MixinFit.injectorOf(handler);
 			if (injector == null || !injector.desc.equals(INJECT)) continue;
-			List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
-			if (selectors.size() != 1) continue;
 			for (AnnotationNode at : MixinFit.atNodes(injector)) {
 				if (!"INVOKE".equals(MixinFit.value(at, "value"))) continue;
 				String recorded = MixinFit.asString(MixinFit.value(at, "target"));
 				if (!candidate(recorded, owners.getFirst())) continue;
 				if (target == null) target = targets.apply(owners.getFirst());
 				if (target == null) return moved;
-				MethodNode host = select(target, selectors.getFirst());
+				// The one method the selectors bind, as Mixin binds them, however they are written.
+				MethodNode host = MixinTargetSelectors.one(handler, target);
 				if (host == null) continue;
-				Move move = decide(handler, injector, at, recorded, target, host, targets);
+				Move move = decide(handler, injector, at, recorded, target, host, targets, natives);
 				if (move == null) continue;
 				String name = handler.name;
 				setValue(at, "target", move.target());
@@ -151,15 +158,14 @@ public final class MixinSubtypeOwnerRetarget {
 			ClassNode target, Function<String, ClassNode> classes) {
 		if (!enabled() || mixinName == null || injector == null || !INJECT.equals(injector.desc)
 				|| target == null || !candidate(recorded, target.name)) return null;
-		List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
-		if (selectors.size() != 1) return null;
 		ClassNode full = classes.apply(target.name);
 		if (full == null) return null;
-		MethodNode host = select(full, selectors.getFirst());
+		MethodNode host = MixinTargetSelectors.one(handler, full);
 		if (host == null) return null;
+		Function<String, ClassNode> natives = owner -> MixinBindings.nativeClass(mixinName, owner);
 		for (AnnotationNode at : MixinFit.atNodes(injector)) {
 			if (!"INVOKE".equals(MixinFit.value(at, "value")) || !recorded.equals(MixinFit.asString(MixinFit.value(at, "target")))) continue;
-			Move move = decide(handler, injector, at, recorded, full, host, classes);
+			Move move = decide(handler, injector, at, recorded, full, host, classes, natives);
 			if (move != null) return move.target();
 		}
 		return null;
@@ -170,8 +176,11 @@ public final class MixinSubtypeOwnerRetarget {
 	 * the target is read, which for most mixins it then never is.
 	 */
 	private static boolean candidate(String recorded, String targetName) {
-		if (recorded == null || !recorded.startsWith("L") || recorded.indexOf(';') < 0) return false;
-		String owner = recorded.substring(1, recorded.indexOf(';'));
+		// The owner a point names however it is written (an owner prefix, a dotted owner, whitespace). A point that names
+		// none already matches the call through any owner, as Mixin matches it: nothing to move.
+		MixinFit.Member named = MixinFit.parseMember(recorded);
+		if (named == null || named.owner() == null || named.desc() != null && !named.desc().startsWith("(")) return false;
+		String owner = named.owner();
 		if (SAME_METHOD.containsKey(owner)) return true;
 		if (!retypedFieldEnabled()) return false;
 		for (WidenedFieldTwinInjector.Narrowed field : WidenedFieldTwinInjector.narrowed()) {
@@ -182,12 +191,11 @@ public final class MixinSubtypeOwnerRetarget {
 
 	/** The move for one point, or null: the subtype pair first, then a field the merge widened. */
 	private static Move decide(MethodNode handler, AnnotationNode injector, AnnotationNode at, String recorded,
-			ClassNode target, MethodNode host, Function<String, ClassNode> classes) {
-		String owner = recorded.substring(1, recorded.indexOf(';'));
-		String member = recorded.substring(recorded.indexOf(';') + 1);
-		int paren = member.indexOf('(');
-		if (paren < 0) return null;
-		String name = member.substring(0, paren), desc = member.substring(paren);
+			ClassNode target, MethodNode host, Function<String, ClassNode> classes, Function<String, ClassNode> natives) {
+		String member = named(handler, at, recorded, target.name, natives);
+		if (member == null) return null;
+		int semi = member.indexOf(';'), paren = member.indexOf('(');
+		String owner = member.substring(1, semi), name = member.substring(semi + 1, paren), desc = member.substring(paren);
 		String subtype = SAME_METHOD.get(owner);
 		if (subtype != null) {
 			List<MethodInsnNode> through = new ArrayList<>();
@@ -198,9 +206,23 @@ public final class MixinSubtypeOwnerRetarget {
 				else if (call.owner.equals(subtype)) through.add(call);
 			}
 			if (direct != 0 || through.size() != 1 || !localsCover(handler, host, through.getFirst())) return null;
-			return new Move("L" + subtype + ";" + member, null, null, simple(subtype) + "." + name);
+			return new Move("L" + subtype + ";" + name + desc, null, null, simple(subtype) + "." + name);
 		}
 		return retypedField(handler, injector, at, owner, name, desc, target, host, classes);
+	}
+
+	/**
+	 * The method a point names, {@code Lowner;name(desc)}: spelled out however it is written, or — a point without its
+	 * descriptor — the one method whose calls it selects in the method the handler was written for, in the class the mod
+	 * was compiled against ({@code natives}). Null when neither decides it.
+	 */
+	private static String named(MethodNode handler, AnnotationNode at, String recorded, String targetName, Function<String, ClassNode> natives) {
+		MixinFit.Member named = MixinFit.parseMember(recorded);
+		if (named == null || named.owner() == null) return null;
+		if (named.desc() != null) return named.desc().startsWith("(") ? "L" + named.owner() + ";" + named.name() + named.desc() : null;
+		MethodNode written = MixinCallbackShape.written(handler, natives == null ? null : natives.apply(targetName));
+		String member = MixinCallbackShape.member(at, written);
+		return member != null && member.indexOf('(') > 0 ? member : null;
 	}
 
 	/** The move along a NARROW row of {@link WidenedFieldTwinInjector}, or null; see the class comment. */
@@ -387,16 +409,6 @@ public final class MixinSubtypeOwnerRetarget {
 		outer.maxStack = Math.max(slot, 2);
 		handler.name = inner;
 		return outer;
-	}
-
-	/** The one method a name-only (or name+descriptor) selector picks in the target, as Mixin would: the first declared. */
-	private static MethodNode select(ClassNode target, String selector) {
-		int paren = selector.indexOf('(');
-		String name = paren < 0 ? selector : selector.substring(0, paren), desc = paren < 0 ? null : selector.substring(paren);
-		for (MethodNode method : target.methods) {
-			if (method.name.equals(name) && (desc == null || method.desc.equals(desc))) return method;
-		}
-		return null;
 	}
 
 	private static FieldNode declared(ClassNode target, String name, String desc) {
