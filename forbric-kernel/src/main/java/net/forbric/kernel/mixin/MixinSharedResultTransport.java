@@ -49,25 +49,28 @@ public final class MixinSharedResultTransport {
             AnnotationNode at = points.getFirst();
             if (!"INVOKE".equals(MixinFit.value(at, "value")) || MixinFit.value(at, "shift") != null
                     || MixinFit.value(at, "ordinal") instanceof Number n && n.intValue() >= 0) continue;
-            Object oldTarget = MixinFit.value(at, "target");
-            if (!(oldTarget instanceof String member)) continue;
-            List<MethodNode> hosts = selected(current, injection);
-            if (hosts.size() != 1) continue;
-            MethodNode host = hosts.getFirst();
-            List<MethodNode> originals = reference.methods.stream().filter(m -> m.name.equals(host.name) && m.desc.equals(host.desc)).toList();
-            if (originals.size() != 1) continue;
-            List<MethodInsnNode> originalCalls = calls(originals.getFirst(), member), stillOriginal = calls(host, member);
-            if (originalCalls.size() != 1 || !stillOriginal.isEmpty()) continue;
+            // The host is the one method Mixin binds in the merged class, and the method the redirect was written for —
+            // the one it binds in the class the mod was compiled against — is that same member: however the selector
+            // is spelled, never by comparing its spelling with a name.
+            List<MethodNode> hosts = MixinTargetSelectors.bound(handler, current);
+            if (hosts == null || hosts.size() != 1) continue;
+            MethodNode host = hosts.getFirst(), original = MixinCallbackShape.written(handler, reference);
+            if (original == null || !original.name.equals(host.name) || !original.desc.equals(host.desc)) continue;
+            // The point selects one call in the written method, which is then the member it names however it is
+            // written; the merged host no longer makes that call. (A shorter spelling may match another call there —
+            // the reason to move it: the point is rewritten to the live call in full.)
+            List<MethodInsnNode> originalCalls = MixinCallbackShape.invocations(at, original);
+            if (originalCalls.size() != 1 || !calls(host, target(originalCalls.getFirst())).isEmpty()) continue;
             MethodInsnNode originalCall = originalCalls.getFirst();
             Source source = source(handler, originalCall);
             if (source == null) continue;
             List<MethodInsnNode> candidates = calls(host, target(source.operation()));
             if (candidates.size() != 1 || candidates.getFirst().getOpcode() == Opcodes.INVOKESTATIC
-                    || !ConsumedResultRegions.same(current.name, originals.getFirst(), originalCall, host, candidates.getFirst())) continue;
-            if (hasHeadProducer(mixin, injection, source.share()))
+                    || !ConsumedResultRegions.same(current.name, original, originalCall, host, candidates.getFirst())) continue;
+            if (hasHeadProducer(mixin, current, host, source.share()))
                 added.add(wrap(mixin, handler, injection, at, originalCall, candidates.getFirst(), source.capture()));
             else {
-                Closed closed = closed(mixin, handler, injection, source, originals.getFirst(), originalCall, host, candidates.getFirst(), current.name);
+                Closed closed = closed(mixin, handler, source, original, originalCall, host, candidates.getFirst(), current);
                 if (closed != null) added.addAll(wrapClosed(mixin, handler, injection, at, candidates.getFirst(), closed));
             }
         }
@@ -77,9 +80,9 @@ public final class MixinSharedResultTransport {
     private record Source(MethodInsnNode operation, int capture, String share) { }
     private record Closed(MethodNode producer, AnnotationNode injection, MethodInsnNode projection) { }
 
-    private static Closed closed(ClassNode mixin, MethodNode consumer, AnnotationNode consumerInjection, Source source,
+    private static Closed closed(ClassNode mixin, MethodNode consumer, Source source,
                                  MethodNode original, MethodInsnNode originalConsumer, MethodNode host,
-                                 MethodInsnNode live, String owner) {
+                                 MethodInsnNode live, ClassNode current) {
         if (Type.getArgumentTypes(originalConsumer.desc).length != 0) return null;
         List<Closed> matches = new ArrayList<>();
         for (MethodNode producer : mixin.methods) {
@@ -90,21 +93,21 @@ public final class MixinSharedResultTransport {
             if (injecting.size() != 1 || !injecting.getFirst().desc.equals(WRAP)
                     || all.stream().anyMatch(a -> a.desc.equals("Lorg/spongepowered/asm/mixin/injection/Group;"))) continue;
             AnnotationNode injection = injecting.getFirst();
-            if (!Objects.equals(MixinFit.value(injection, "method"), MixinFit.value(consumerInjection, "method"))
-                    || MixinFit.value(injection, "slice") != null) continue;
+            // On the same host: the producer binds that one method in the merged class, as the consumer does. Its
+            // injector is taken off below, so a producer that also binds another method is not this producer.
+            if (MixinTargetSelectors.one(producer, current) != host || MixinFit.value(injection, "slice") != null) continue;
             List<AnnotationNode> points = MixinFit.atNodes(injection);
             if (points.size() != 1) continue;
             AnnotationNode at = points.getFirst();
             if (!"INVOKE".equals(MixinFit.value(at, "value")) || MixinFit.value(at, "shift") != null
                     || MixinFit.value(at, "ordinal") instanceof Number number && number.intValue() >= 0) continue;
-            Object raw = MixinFit.value(at, "target"); if (!(raw instanceof String target)) continue;
-            List<MethodInsnNode> projections = calls(original, target);
-            if (projections.size() != 1 || !calls(host, target).isEmpty()) continue;
+            List<MethodInsnNode> projections = MixinCallbackShape.invocations(at, original);
+            if (projections.size() != 1 || !calls(host, target(projections.getFirst())).isEmpty()) continue;
             MethodInsnNode projection = projections.getFirst();
             if (projection.getOpcode() == Opcodes.INVOKESTATIC || Type.getArgumentTypes(projection.desc).length != 0
                     || !Type.getReturnType(projection.desc).equals(Type.getObjectType(originalConsumer.owner))
                     || !projection.owner.equals(live.owner) || !pureProducer(producer, projection, source.share())) continue;
-            if (!ConsumedResultRegions.closedReceiver(owner, original, projection, originalConsumer, host, live)) continue;
+            if (!ConsumedResultRegions.closedReceiver(current.name, original, projection, originalConsumer, host, live)) continue;
             matches.add(new Closed(producer, injection, projection));
         }
         return matches.size() == 1 ? matches.getFirst() : null;
@@ -214,11 +217,13 @@ public final class MixinSharedResultTransport {
         return new Source(operation, inputs, key);
     }
 
-    private static boolean hasHeadProducer(ClassNode mixin, AnnotationNode consumer, String share) {
+    /** Whether an {@code @Inject} at {@code HEAD} that also binds {@code host} in the merged class sets the share there. */
+    private static boolean hasHeadProducer(ClassNode mixin, ClassNode current, MethodNode host, String share) {
         for (MethodNode producer : mixin.methods) {
             AnnotationNode injection = MixinFit.injectorOf(producer);
-            if (injection == null || !injection.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;")
-                    || !Objects.equals(MixinFit.value(injection, "method"), MixinFit.value(consumer, "method"))) continue;
+            if (injection == null || !injection.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;")) continue;
+            List<MethodNode> bound = MixinTargetSelectors.bound(producer, current);
+            if (bound == null || !bound.contains(host)) continue;
             List<AnnotationNode> at = MixinFit.atNodes(injection);
             if (at.size() != 1 || !"HEAD".equals(MixinFit.value(at.getFirst(), "value"))) continue;
             for (int index = 0; index < Type.getArgumentTypes(producer.desc).length; index++) {
@@ -274,10 +279,6 @@ public final class MixinSharedResultTransport {
     private static List<AnnotationNode> annotations(MethodNode method) {
         List<AnnotationNode> out = new ArrayList<>(); if (method.visibleAnnotations != null) out.addAll(method.visibleAnnotations);
         if (method.invisibleAnnotations != null) out.addAll(method.invisibleAnnotations); return out;
-    }
-    private static List<MethodNode> selected(ClassNode owner, AnnotationNode injection) {
-        Object raw = MixinFit.value(injection, "method"); List<?> selectors = raw instanceof List<?> list ? list : List.of(raw);
-        return owner.methods.stream().filter(m -> selectors.contains(m.name) || selectors.contains(m.name + m.desc)).toList();
     }
     private static List<MethodInsnNode> calls(MethodNode host, String target) {
         List<MethodInsnNode> out = new ArrayList<>(); for (var instruction : host.instructions)

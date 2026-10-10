@@ -246,6 +246,13 @@ final class MixinCallbackShape {
         }
         return found;
     }
+
+    /**
+     * The calls of {@code body} an {@code INVOKE}-family point ({@code INVOKE}, {@code INVOKE_ASSIGN}) selects: {@link #calls}.
+     * One call there means the target, however it is written, names that call's member in {@code body}; none means the
+     * point no longer selects anything in it.
+     */
+    static List<MethodInsnNode> invocations(AnnotationNode at, MethodNode body) { return calls(at, body); }
     static boolean instance(MethodNode method) { return (method.access & Opcodes.ACC_STATIC) == 0; }
     static boolean noReceiver(MethodNode method) {
         for (var instruction : method.instructions) {
