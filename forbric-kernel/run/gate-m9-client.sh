@@ -367,19 +367,19 @@ check "loot-modifier scan ran and hid the two indexes" "loot-modifier directory 
 # rule); a mod compiled against another NeoForge/MinecraftForge would be named here and DEGRADED on its row.
 check "abi audit ran and found no dangling Forge-family reference" "AbiAudit\] scanned [1-9][0-9]* jar\(s\) in [0-9]+ ms: 0 with dangling" "$LOG"
 check_absent "join negotiation succeeded"   "Network Protocol Error"                           "$LOG"
-# Same treatment for "was loaded too early": pin the SET, because two are upstream behaviour and a third would be
-# ours. Mixin's select() runs selectConfigs -> Extensions.select -> prepareConfigs, so EVERY guest config plugin
+# Same treatment for "was loaded too early": pin the SET, so a new name is a decision rather than a line nobody reads. Mixin's select() runs selectConfigs -> Extensions.select -> prepareConfigs, so EVERY guest config plugin
 # is constructed before ANY config is prepared. A game class that a plugin's static initialiser loads therefore
 # misses every mixin — on any Mixin platform, genuine Fabric and NeoForge included. Measured here with
 # -Dforbric.traceClassDefine=net.minecraft.world.level.BlockGetter, which named the chain Mixin will not:
 #   PluginHandle.<init> -> IrisMixinPlugin.<clinit> -> IrisPlatformHelpers.<clinit> -> ServiceLoader.findFirst()
 #   -> defining IrisForgeHelpers -> loadClass(BlockGetter).
-# Cost is lithium's raycast optimisation and a duck interface nothing in this pack calls. The kernel could defer
-# plugin construction behind a lazy proxy and beat upstream here — deliberately not done: no real loader does
-# that, and fidelity to the genuine contract is worth more than two recovered mixins.
+# On the genuine platforms that costs lithium's raycast optimisation. Under the kernel it no longer happens: a class
+# defined while Mixin is weaving (IrisForgeHelpers here) has the types it only mentions deferred to link time
+# (VerifierTypeDeferral) instead of loaded by the verifier, so BlockGetter is not loaded early and the set is empty.
+# Plugin construction itself is still the genuine contract; any name that appears here now is ours.
 TOO_EARLY=$(grep -aoE 'Critical problem: [^ ]+ from mod' "$LOG" | sed -E 's/Critical problem: (.*) from mod/\1/' | sort -u | paste -sd, -)
-assert_eq "only the known plugin-clinit casualties load too early" \
-  "lithium.mixins.json:world.raycast.BlockGetterMixin" \
+assert_eq "no plugin-clinit casualty loads too early" \
+  "" \
   "$TOO_EARLY"
 check_absent "no registry load failure"     "Failed to load registries due to errors"          "$LOG"
 check_absent "no crash report"              "Preparing crash report"                           "$LOG"
@@ -455,7 +455,7 @@ fi
 
 step "the lost BlockGetter interface injection still has no consumer (must PASS)"
 # fabric-block-getter-api-v2's BlockGetterMixin is one of the two mixins lost to a plugin <clinit> loading its
-# target early (pinned in the set above). It is an EMPTY interface-injection mixin: its whole job is to make
+# target early on the genuine platforms (see the set above). It is an EMPTY interface-injection mixin: its whole job is to make
 # net.minecraft.world.level.BlockGetter implement FabricBlockGetter (getBlockEntityRenderData, hasBiomes,
 # getBiomeFabric). Losing it costs nothing while nothing casts to that interface — and today nothing does. The
 # only jar in this pack that implements it is Fabric Sodium's LevelSliceMixin, and Fabric Sodium LOSES
