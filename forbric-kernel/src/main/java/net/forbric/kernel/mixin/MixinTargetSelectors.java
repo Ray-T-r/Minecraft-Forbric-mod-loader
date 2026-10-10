@@ -164,6 +164,33 @@ final class MixinTargetSelectors {
 	}
 
 	/**
+	 * The one method the handler binds in {@code target}, the class Mixin applies it to, where that is the method it was
+	 * written for: when no selector's binding there hangs on declaration order ({@link #unambiguous}), the method it binds;
+	 * when one does — a bare name shared by overloads binds whichever {@code target} declares first — only where
+	 * {@code nativeClass} (the class the mod was compiled against, read only then; null or a null result when missing)
+	 * binds the handler to that same member. Null otherwise.
+	 */
+	static MethodNode boundAsWritten(MethodNode handler, ClassNode target, java.util.function.Supplier<ClassNode> nativeClass) {
+		MethodNode bound = one(handler, target);
+		if (bound == null || unambiguous(handler, target) != null) return bound;
+		ClassNode original = nativeClass == null ? null : nativeClass.get();
+		MethodNode written = original == null ? null : one(handler, original);
+		return written != null && written.name.equals(bound.name) && written.desc.equals(bound.desc) ? bound : null;
+	}
+
+	/** {@code read}, asked at most once: a class the mod was compiled against, fetched only by the first question that needs it. */
+	static java.util.function.Supplier<ClassNode> once(java.util.function.Supplier<ClassNode> read) {
+		return new java.util.function.Supplier<>() {
+			private boolean asked;
+			private ClassNode node;
+			@Override public ClassNode get() {
+				if (!asked) { asked = true; node = read.get(); }
+				return node;
+			}
+		};
+	}
+
+	/**
 	 * For a caller that has no class to bind against: whether every selector of the handler, as Mixin parses it, can only
 	 * name {@code nameAndDesc} of {@code owner} — the same name, the owner and the descriptor wherever it gives them, and
 	 * no quantifier or pattern. Whitespace, a dotted owner or an owner prefix are then the same selector; a bare name is
