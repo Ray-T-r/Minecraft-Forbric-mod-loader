@@ -20,11 +20,14 @@ public final class MixinUnusedArgumentObserverAdapter {
         if("off".equalsIgnoreCase(System.getProperty(PROPERTY,"on")))return 0;List<String> owners=MixinFit.mixinTargets(mixin);if(owners.size()!=1)return 0;
         ClassNode current=classes.apply(owners.getFirst()),old=references.apply(owners.getFirst());if(current==null||old==null)return 0;
         List<MethodNode> wrappers=new ArrayList<>();for(MethodNode handler:new ArrayList<>(mixin.methods)) {
-            Source source=source(handler);if(source==null||!typedShares(mixin,source))continue;
-            List<String> selectors=MixinFit.stringList(MixinFit.value(source.injection(),"method"));if(selectors.size()!=1)continue;
-            MethodNode original=MixinStubRebind.bound(old,selectors.getFirst()),host=MixinStubRebind.bound(current,selectors.getFirst());
+            Source source=source(handler);if(source==null)continue;
+            // The method the handler binds in the class it was written against and in the merged one, as Mixin binds its
+            // selectors there, however they are spelled: one method of one name in both. Every sharer of its value must
+            // bind that same merged method.
+            MethodNode original=MixinTargetSelectors.one(handler,old),host=MixinTargetSelectors.one(handler,current);
+            if(original==null||host==null||!original.name.equals(host.name)||!typedShares(mixin,source,current,host))continue;
             MethodNode originalConsumer=declared(old,source.consumer().name,source.consumer().desc),consumer=declared(current,source.consumer().name,source.consumer().desc);
-            if(original==null||host==null||originalConsumer==null||consumer==null||!unused(originalConsumer)||!unused(consumer))continue;
+            if(originalConsumer==null||consumer==null||!unused(originalConsumer)||!unused(consumer))continue;
             List<MethodInsnNode> calls=calls(original).stream().filter(c->same(c,source.consumer())&&previous(c)instanceof FieldInsnNode f&&same(f,source.constant())).toList();
             if(calls.size()!=1||calls(host).stream().anyMatch(c->same(c,source.consumer())))continue;
             List<AbstractInsnNode> before=code(original);int position=before.indexOf(calls.getFirst());if(position<12||!oldGuard(before,position,source))continue;
@@ -75,12 +78,15 @@ public final class MixinUnusedArgumentObserverAdapter {
         List<Mapping> matches=new ArrayList<>();for(MethodInsnNode call:calls(method))if(Arrays.asList(Type.getArgumentTypes(call.desc)).contains(tag)){Mapping match=mapping(call,source,classes,visited);if(match!=null)matches.add(match);}
         return matches.size()==1?matches.getFirst():null;
     }
-    /** No share reference escapes. Every write is JVM-typed as the old parameter or null. */
-    private static boolean typedShares(ClassNode mixin,Source source) {
+    /**
+     * No share reference escapes. Every write is JVM-typed as the old parameter or null. Every sharer of the key is on the
+     * source's host: its injector binds {@code host} of {@code current}, and nothing else, however its selectors are spelled.
+     */
+    private static boolean typedShares(ClassNode mixin,Source source,ClassNode current,MethodNode host) {
         String tag=Type.getArgumentTypes(source.handler().desc)[0].getDescriptor();boolean writer=false;
         for(MethodNode method:mixin.methods)for(int index=0;index<Type.getArgumentTypes(method.desc).length;index++) {
             AnnotationNode annotation=parameter(method,index);if(annotation==null||!SHARE.equals(annotation.desc)||!source.share().equals(MixinFit.value(annotation,"value")))continue;
-            AnnotationNode injection=MixinFit.injectorOf(method);if(injection==null||!Objects.equals(MixinFit.value(injection,"method"),MixinFit.value(source.injection(),"method"))||MixinFit.value(annotation,"namespace")!=null)return false;
+            AnnotationNode injection=MixinFit.injectorOf(method);if(injection==null||MixinTargetSelectors.one(method,current)!=host||MixinFit.value(annotation,"namespace")!=null)return false;
             int[] slots=DefaultMethodOverloadBridge.slots(Type.getArgumentTypes(method.desc),(method.access&Opcodes.ACC_STATIC)!=0);int reference=slots[index];Sources interpreter=new Sources(method);Frame<SourceValue>[] frames;
             try{frames=new Analyzer<>(interpreter).analyze(mixin.name,method);}catch(AnalyzerException|RuntimeException invalid){return false;}
             AbstractInsnNode token=interpreter.parameters.get(reference);
@@ -127,8 +133,10 @@ public final class MixinUnusedArgumentObserverAdapter {
     private static MethodNode declared(ClassNode owner,String name,String desc){return owner.methods.stream().filter(m->m.name.equals(name)&&m.desc.equals(desc)).findFirst().orElse(null);}
     private static List<AbstractInsnNode> code(MethodNode method){return DefaultMethodOverloadBridge.real(method);}
     private static List<MethodInsnNode> calls(MethodNode method){return Arrays.stream(method.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).toList();}
-    private static FieldInsnNode field(String value){if(value==null)return null;int owner=value.indexOf(';'),desc=value.indexOf(':',owner);return owner>1&&desc>owner?new FieldInsnNode(Opcodes.GETSTATIC,value.substring(1,owner),value.substring(owner+1,desc),value.substring(desc+1)):null;}
-    private static MethodInsnNode member(String value){if(value==null)return null;int owner=value.indexOf(';'),desc=value.indexOf('(',owner);return owner>1&&desc>owner?new MethodInsnNode(Opcodes.INVOKEVIRTUAL,value.substring(1,owner),value.substring(owner+1,desc),value.substring(desc),false):null;}
+    /** A {@code @Definition}'s field, read as Mixin reads a member ({@link MixinFit#parseMember}): any spelling of one owner, name and type. */
+    private static FieldInsnNode field(String value){MixinFit.Member m=MixinFit.parseMember(value);return m!=null&&m.owner()!=null&&m.desc()!=null&&!m.desc().startsWith("(")?new FieldInsnNode(Opcodes.GETSTATIC,m.owner(),m.name(),m.desc()):null;}
+    /** A {@code @Definition}'s method, read as Mixin reads a member: any spelling of one owner, name and descriptor. */
+    private static MethodInsnNode member(String value){MixinFit.Member m=MixinFit.parseMember(value);return m!=null&&m.owner()!=null&&m.desc()!=null&&m.desc().startsWith("(")?new MethodInsnNode(Opcodes.INVOKEVIRTUAL,m.owner(),m.name(),m.desc(),false):null;}
     private static String member(MethodInsnNode call){return "L"+call.owner+";"+call.name+call.desc;}
     private static boolean same(MethodInsnNode a,MethodInsnNode b){return a.getOpcode()==b.getOpcode()&&a.owner.equals(b.owner)&&a.name.equals(b.name)&&a.desc.equals(b.desc)&&a.itf==b.itf;}
     private static boolean same(FieldInsnNode a,FieldInsnNode b){return a.getOpcode()==b.getOpcode()&&a.owner.equals(b.owner)&&a.name.equals(b.name)&&a.desc.equals(b.desc);}

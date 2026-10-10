@@ -54,7 +54,8 @@ public final class MixinDecodeScopeAdapter {
   List<MethodNode> added=new ArrayList<>();int changed=0;
   for(MethodNode handler:new ArrayList<>(mixin.methods)){
    AnnotationNode injection=MixinFit.injectorOf(handler);if(injection==null||(handler.access&Opcodes.ACC_STATIC)==0||MixinFit.value(injection,"slice")!=null)continue;
-   var selectors=MixinFit.stringList(MixinFit.value(injection,"method"));if(selectors.size()!=1)continue;MethodNode host=MixinStubRebind.bound(target,selectors.getFirst());if(host==null||(host.access&Opcodes.ACC_STATIC)==0)continue;
+   // The one method Mixin binds the handler's selectors to, however they are spelled.
+   MethodNode host=MixinTargetSelectors.one(handler,target);if(host==null||(host.access&Opcodes.ACC_STATIC)==0)continue;
    var points=MixinFit.atNodes(injection);if(points.size()!=1||!"INVOKE".equals(MixinFit.value(points.getFirst(),"value"))||MixinFit.value(points.getFirst(),"ordinal")!=null||MixinFit.value(points.getFirst(),"shift")!=null)continue;
    Type[] arguments=Type.getArgumentTypes(handler.desc);int input=-1;
    if(INJECT.equals(injection.desc)&&Boolean.TRUE.equals(MixinFit.value(injection,"cancellable"))){
@@ -208,11 +209,12 @@ public final class MixinDecodeScopeAdapter {
   return matches.size()==1?matches.getFirst():null;
  }
  private static MethodInsnNode consumerSink(ClassNode target,MethodNode host,MethodNode source){
-  String selector=MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(source),"method")).stream().findFirst().orElse(null);if(selector==null)return null;
+  // The consumer's host is the one method Mixin binds its selectors to, however they are spelled.
+  MethodNode bound=MixinTargetSelectors.one(source,target);if(bound==null)return null;
   List<MethodInsnNode>parses=new ArrayList<>(),sinks=new ArrayList<>();for(var i:host.instructions)if(i instanceof MethodInsnNode call){if(call.owner.equals("com/mojang/serialization/Codec")&&call.name.equals("parse")&&call.desc.equals("(Lcom/mojang/serialization/DynamicOps;Ljava/lang/Object;)L"+RESULT+";"))parses.add(call);if(call.owner.equals(RESULT)&&call.name.equals("ifSuccess")||call.owner.equals("net/forbric/kernel/runtime/KernelFabricConditions")&&call.name.equals("ifSuccessWithoutAForeignSkipMarker"))sinks.add(call);}
   if(parses.size()!=1||sinks.size()!=1)return null;var sink=sinks.getFirst();
   try{Frame<SourceValue>[]frames=new Analyzer<>(new SourceInterpreter()).analyze(target.name,host);var frame=frames[host.instructions.indexOf(sink)];if(frame==null||frame.getStackSize()<2)return null;var parsed=frame.getStack(frame.getStackSize()-2);if(parsed.insns.size()!=1||!parsed.insns.contains(parses.getFirst()))return null;var consumer=frame.getStack(frame.getStackSize()-1);if(consumer.insns.size()!=1||!(consumer.insns.iterator().next()instanceof InvokeDynamicInsnNode lambda))return null;
-   List<Handle> handles=Arrays.stream(lambda.bsmArgs).filter(v->v instanceof Handle h&&h.getOwner().equals(target.name)&&h.getTag()==Opcodes.H_INVOKESTATIC).map(Handle.class::cast).toList();if(handles.size()!=1)return null;Handle implementation=handles.getFirst();MethodNode body=target.methods.stream().filter(m->m.name.equals(implementation.getName())&&m.desc.equals(implementation.getDesc())).findFirst().orElse(null);if(body==null||(body.access&Opcodes.ACC_PRIVATE)==0||!selector.equals(body.name)&&!selector.equals(body.name+body.desc))return null;
+   List<Handle> handles=Arrays.stream(lambda.bsmArgs).filter(v->v instanceof Handle h&&h.getOwner().equals(target.name)&&h.getTag()==Opcodes.H_INVOKESTATIC).map(Handle.class::cast).toList();if(handles.size()!=1)return null;Handle implementation=handles.getFirst();MethodNode body=target.methods.stream().filter(m->m.name.equals(implementation.getName())&&m.desc.equals(implementation.getDesc())).findFirst().orElse(null);if(body==null||(body.access&Opcodes.ACC_PRIVATE)==0||body!=bound)return null;
    return sink;
   }catch(AnalyzerException|RuntimeException unsupported){return null;}
  }
