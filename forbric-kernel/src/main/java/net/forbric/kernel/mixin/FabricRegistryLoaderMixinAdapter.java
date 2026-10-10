@@ -27,7 +27,10 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>Every injector is read as Mixin reads it, never by spelling. Whether an injector is written for a dead loader is
  * the one method its selectors bind in the class the mod was compiled against ({@link MixinCallbackShape#written}), so a
- * bare name is the overload Mixin binds there, whatever the merged class declares beside it; only without that class (or
+ * bare name is the overload Mixin binds there, whatever the merged class declares beside it. One written there for a
+ * live method stays as written only where the merged class binds it to that same method, or to its twin widened by the
+ * parameters the carrier appended to the dead loader (the loader's own lambda), and to one that still runs there;
+ * otherwise nothing moves. Only without that class (or
  * where its selectors bind no single method there) is it read by the methods it matches in the merged class
  * ({@link MixinTargetSelectors#reach}): an owner prefix, a dotted owner or whitespace is the same selector, and one that
  * binds a single method but matches several (a bare name shared by the dead loader and its live overloads) names neither
@@ -114,9 +117,15 @@ public final class FabricRegistryLoaderMixinAdapter {
 				String key=compiled.name+compiled.desc;
 				MethodNode here=MixinTargetSelectors.one(handler,target);
 				if(!deadCallees.contains(key)){
-					// Written for a live method: not this repair's case — unless the merged class binds it to a dead loader
-					// instead, which nothing here can map for certain.
-					if(here!=null&&deadCallees.contains(here.name+here.desc))return 0;
+					// Written for a live method: not this repair's case, and left as written only where the merged class
+					// binds it to that same method, or to its twin widened by exactly the parameters the carrier appended to
+					// the dead loader (the loader's own lambda, widened with it, which the moved wrap now runs) — and to one
+					// that still runs there. Bound to a dead loader or to what only a dead loader reaches, to another overload
+					// (a merge declaring its overloads in another order) or to nothing, it would silently serve another
+					// method or none, which nothing here can map for certain: the whole mixin is left alone.
+					String bound=here==null?null:here.name+here.desc;
+					if(here==null||!key.equals(bound)&&!widenedAlike(compiled,here,widenedOf)
+							||deadCallees.contains(bound)||onlyDeadReach(target,here,deadCallees))return 0;
 					continue;
 				}
 				dead=key;reach=List.of();
@@ -173,6 +182,42 @@ public final class FabricRegistryLoaderMixinAdapter {
 		String named=MixinCallbackShape.member(ats.getFirst(),MixinCallbackShape.written(handler,source));
 		MixinFit.Member member=MixinFit.parseMember(named);
 		return member!=null&&TARGET.equals(member.owner())&&member.desc()!=null&&member.desc().startsWith("(")?named:null;
+	}
+	/**
+	 * Whether {@code merged} is {@code written} with parameters appended, and those exactly the ones the carrier appended
+	 * to a dead loader in widening it ({@code widenedOf}): the same widening the moved wrap follows, not merely some
+	 * overload whose parameters happen to extend the native one's.
+	 */
+	private static boolean widenedAlike(MethodNode written,MethodNode merged,Map<String,MethodNode> widenedOf){
+		if(!written.name.equals(merged.name)||!MixinAtWidenedCall.widens(written.desc,merged.desc))return false;
+		List<Type> base=List.of(Type.getArgumentTypes(written.desc)),wide=List.of(Type.getArgumentTypes(merged.desc));
+		List<Type> appended=wide.subList(base.size(),wide.size());
+		for(Map.Entry<String,MethodNode> loader:widenedOf.entrySet()){
+			List<Type> dead=List.of(Type.getArgumentTypes(loader.getKey().substring(loader.getKey().indexOf('(')))),
+					widened=List.of(Type.getArgumentTypes(loader.getValue().desc));
+			if(widened.size()>dead.size()&&widened.subList(dead.size(),widened.size()).equals(appended))return true;
+		}
+		return false;
+	}
+	/**
+	 * Whether {@code method} is referenced in {@code target} — called, or handed to a lambda factory — and only from dead
+	 * loaders, so it runs only if they do: the dead loader's own lambda, beside its widened twin.
+	 */
+	private static boolean onlyDeadReach(ClassNode target,MethodNode method,Set<String> deadCallees){
+		boolean referenced=false;
+		for(MethodNode m:target.methods)for(AbstractInsnNode i:m.instructions){
+			if(!references(i,method))continue;
+			if(!deadCallees.contains(m.name+m.desc))return false;
+			referenced=true;
+		}
+		return referenced;
+	}
+	private static boolean references(AbstractInsnNode instruction,MethodNode method){
+		if(instruction instanceof MethodInsnNode call)return call.owner.equals(TARGET)&&call.name.equals(method.name)&&call.desc.equals(method.desc);
+		if(instruction instanceof InvokeDynamicInsnNode indy)for(Object argument:indy.bsmArgs)
+			if(argument instanceof org.objectweb.asm.Handle handle&&handle.getOwner().equals(TARGET)&&handle.getName().equals(method.name)
+					&&handle.getDesc().equals(method.desc))return true;
+		return false;
 	}
 	private static boolean calledAnywhere(ClassNode target,String key){
 		for(MethodNode m:target.methods)for(AbstractInsnNode i:m.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(TARGET)&&(c.name+c.desc).equals(key))return true;

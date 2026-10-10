@@ -31,7 +31,10 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * the dead loader beside four live overloads (which once refused the whole mixin) and where it no longer declares it at
  * all (which once left the companion to bind a live overload Mixin picks). Compiled against vanilla, whose first
  * {@code load} is the resource-manager entry, the same bare name is that entry's companion and stays as written; and
- * where the merged class would bind it to the dead loader instead, nothing can map it and the whole mixin is left alone.
+ * where the merged class would bind it to the dead loader instead, nothing can map it and the whole mixin is left alone —
+ * as it is where the merged class would bind it to another overload (the networked entry, or the entry's own widening by
+ * a list of pending tags) or to the dead loader's own lambda. A companion on that lambda, bound in the merged class to
+ * its twin widened by exactly the loader's appended parameters, runs where the moved wrap runs and stays as written.
  */
 class RegistryLoaderCompanionBindingTest {
 	private static final String LOADER = "net/minecraft/resources/RegistryDataLoader";
@@ -42,6 +45,13 @@ class RegistryLoaderCompanionBindingTest {
 	private static final String NETWORKED = "load(Ljava/util/Map;Lnet/minecraft/server/packs/resources/ResourceProvider;" + ARGS + ")" + FUTURE;
 	private static final String DEAD = "load(" + FACTORY + ARGS + ")" + FUTURE;
 	private static final String LIVE = "load(" + FACTORY + ARGS + "Z)" + FUTURE;
+	private static final String ENTRY = "load(Lnet/minecraft/server/packs/resources/ResourceManager;" + ARGS + ")" + FUTURE;
+	/** The resource-manager entry's own widening, by a trailing list of pending tags: not the loader's. */
+	private static final String ENTRY_PENDING = "load(Lnet/minecraft/server/packs/resources/ResourceManager;" + ARGS + "Ljava/util/List;)" + FUTURE;
+	/** The private loader's own lambda, and its twin in the widened loader. */
+	private static final String LAMBDA_DEAD = "lambda$load$0(Ljava/util/List;" + FACTORY + "Ljava/util/List;Ljava/util/concurrent/Executor;)" + FUTURE;
+	private static final String LAMBDA_LIVE = "lambda$load$0(Ljava/util/List;" + FACTORY + "Ljava/util/List;Ljava/util/concurrent/Executor;Z)" + FUTURE;
+	private static final String CONTEXT = "createContext(Ljava/util/List;Ljava/util/List;)Lnet/minecraft/resources/RegistryOps$RegistryInfoLookup;";
 	private static final String OP = "com/llamalad7/mixinextras/injector/wrapoperation/Operation";
 	private static final String CIR = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 	private static final BiFunction<Ecosystem, String, ClassNode> STAGED = NativeCallTestEvidence.staged();
@@ -91,6 +101,44 @@ class RegistryLoaderCompanionBindingTest {
 		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(mixin));
 	}
 
+	/**
+	 * Written for the resource-manager entry, but bound to another live overload in a merged class that declares that one
+	 * first: left as written, the companion would silently serve the networked entry. Nothing can map it, so the whole
+	 * mixin is left alone — the wrap too.
+	 */
+	@Test void aCompanionTheMergedClassWouldBindToAnotherLiveOverloadLeavesTheMixinAlone() throws Exception {
+		assertLeftAlone("load", ENTRY, first(merged(false, false), NETWORKED), NETWORKED);
+	}
+
+	/**
+	 * The same, bound to the entry's own widening (a trailing list of pending tags): its parameters extend the entry's,
+	 * but not by the ones the carrier appended to the loader the wrap follows, so it is another overload all the same.
+	 */
+	@Test void aCompanionTheMergedClassWouldBindToAnotherWideningOfItsEntryLeavesTheMixinAlone() throws Exception {
+		assertLeftAlone("load", ENTRY, first(merged(false, false), ENTRY_PENDING), ENTRY_PENDING);
+	}
+
+	/**
+	 * Written for the private loader's own lambda: where the merged class binds the bare name to that lambda's twin in the
+	 * widened loader — widened by exactly the loader's appended parameters — the companion runs where the moved wrap now
+	 * runs, and stays as written while the wrap moves.
+	 */
+	@Test void aCompanionOnTheLoadersOwnLambdaBoundToItsWidenedTwinStaysAsWritten() throws Exception {
+		ClassNode reordered = first(merged(false, false), LAMBDA_LIVE);
+		ClassNode mixin = mixin(inject("lambda$load$0", CONTEXT));
+		MethodNode companion = handler(mixin, "onSupply");
+		assertEquals(LAMBDA_DEAD, name(MixinCallbackShape.written(companion, natives(false).apply(Ecosystem.FABRIC, LOADER))), "premise: vanilla's lambda");
+		assertEquals(LAMBDA_LIVE, name(MixinTargetSelectors.one(companion, reordered)), "premise: the merge binds its widened twin");
+		byte[] before = CarpetMixinAdapterTest.bytes(annotated(MixinFit.injectorOf(companion)));
+		assertEquals(1, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> reordered, natives(false)), "the wrap alone moves");
+		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(annotated(MixinFit.injectorOf(handler(mixin, "onSupply")))), "the companion is left as written");
+	}
+
+	/** The same lambda, where the merged class declares the dead loader's own copy first: it would never run. */
+	@Test void aCompanionTheMergedClassWouldBindToTheDeadLoadersLambdaLeavesTheMixinAlone() throws Exception {
+		assertLeftAlone("lambda$load$0", LAMBDA_DEAD, first(merged(false, false), LAMBDA_DEAD), LAMBDA_DEAD);
+	}
+
 	/** Without the class the mod was compiled against, a bare name shared by the dead loader and live ones names neither. */
 	@Test void withoutTheNativeClassABareNameCompanionLeavesTheMixinAlone() throws Exception {
 		ClassNode mixin = mixin(inject("load", "supplyAsync(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;)" + FUTURE));
@@ -130,6 +178,24 @@ class RegistryLoaderCompanionBindingTest {
 		} catch (Exception unreadable) {
 			throw new AssertionError(unreadable);
 		}
+	}
+
+	/**
+	 * A CallbackInfoReturnable-only companion with {@code selector}, which vanilla binds to {@code written} and
+	 * {@code reordered} to {@code bound}: the adapter moves nothing and the mixin stays byte for byte as it was.
+	 */
+	private static void assertLeftAlone(String selector, String written, ClassNode reordered, String bound) throws Exception {
+		ClassNode mixin = mixin(inject(selector, "supplyAsync(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;)" + FUTURE));
+		MethodNode companion = handler(mixin, "onSupply");
+		assertEquals(written, name(MixinCallbackShape.written(companion, natives(false).apply(Ecosystem.FABRIC, LOADER))), "premise: what vanilla binds");
+		assertEquals(bound, name(MixinTargetSelectors.one(companion, reordered)), "premise: what the merge binds");
+		byte[] before = CarpetMixinAdapterTest.bytes(mixin);
+		assertEquals(0, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> reordered, natives(false)));
+		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(mixin));
+	}
+
+	private static String name(MethodNode method) {
+		return method == null ? null : method.name + method.desc;
 	}
 
 	private static ClassNode first(ClassNode node, String member) {
