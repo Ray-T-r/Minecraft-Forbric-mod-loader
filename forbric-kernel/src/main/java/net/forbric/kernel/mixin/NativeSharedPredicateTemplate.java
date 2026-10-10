@@ -23,9 +23,10 @@ final class NativeSharedPredicateTemplate {
    Member question,String dispatchKey,Leaf first,Leaf second,Site getterSite,Value interaction,String sourceSchema){ }
  private static final String TYPE="L"+ForeignType.FLUID_TYPE.internal(Ecosystem.NEOFORGE)+";";
  private NativeSharedPredicateTemplate(){ }
- static Plan derive(ClassNode source,ClassNode current,Member under,Member ground,List<String>selectors,
+ /** {@code written}: the one method of {@code source} the pair's selectors bind there, as Mixin binds them ({@link MixinTargetSelectors#one}). */
+ static Plan derive(ClassNode source,ClassNode current,Member under,Member ground,MethodNode written,
    Function<String,ClassNode>classes,Function<String,ClassNode>sourceClasses,Function<String,ClassNode>carrier){try{
-  if(selectors.size()!=1)return null;List<MethodNode>targets=source.methods.stream().filter(m->selectors.getFirst().equals(m.name)||selectors.getFirst().equals(m.name+m.desc)).toList();if(targets.size()!=1)return null;MethodNode old=targets.getFirst(),live=find(current,old.name,old.desc);if(live==null||!old.desc.equals("()V")||!old.tryCatchBlocks.isEmpty()||!live.tryCatchBlocks.isEmpty())return null;
+  if(written==null||!source.methods.contains(written))return null;MethodNode old=written,live=find(current,old.name,old.desc);if(live==null||!old.desc.equals("()V")||!old.tryCatchBlocks.isEmpty()||!live.tryCatchBlocks.isEmpty())return null;
   ClassNode carrierHost=carrier.apply(current.name);MethodNode carrierBody=carrierHost==null?null:find(carrierHost,live.name,live.desc);if(carrierBody==null||!sameBody(carrierBody,live))return null;
   MethodInsnNode first=unique(old,under),second=unique(old,ground);if(first==null||second==null||!(previous(first)instanceof VarInsnNode self&&self.getOpcode()==Opcodes.ALOAD&&self.var==0)||!(next(first)instanceof JumpInsnNode underExit&&underExit.getOpcode()==Opcodes.IFEQ))return null;
   AbstractInsnNode guardLoad=next(underExit),guardCall=next(guardLoad),guardExit=next(guardCall);if(!(guardLoad instanceof VarInsnNode g&&g.getOpcode()==Opcodes.ALOAD&&g.var==0)||!(guardCall instanceof MethodInsnNode guard&&guard.desc.equals("()Z"))||!(guardExit instanceof JumpInsnNode gate&&gate.getOpcode()==Opcodes.IFNE&&next(gate.label)==next(underExit.label)))return null;
