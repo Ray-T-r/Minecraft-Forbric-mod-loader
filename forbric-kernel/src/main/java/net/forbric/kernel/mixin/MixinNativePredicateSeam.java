@@ -46,13 +46,15 @@ public final class MixinNativePredicateSeam {
 				||MixinFit.value(injector,"slice")!=null||has(handler,"Lorg/spongepowered/asm/mixin/injection/Group;"))return null;
 		Type[]args=Type.getArgumentTypes(handler.desc);if(args.length!=3||!args[2].equals(Type.getObjectType(OP))||!Type.getReturnType(handler.desc).equals(Type.BOOLEAN_TYPE))return null;
 		List<AnnotationNode>ats=MixinFit.atNodes(injector);if(ats.size()!=1||!"INVOKE".equals(MixinFit.value(ats.getFirst(),"value"))||MixinFit.value(ats.getFirst(),"ordinal")!=null||MixinFit.value(ats.getFirst(),"shift")!=null)return null;
-		Member anchor=parse(MixinFit.asString(MixinFit.value(ats.getFirst(),"target")));if(anchor==null||!anchor.owner().equals(args[0].getInternalName())||!anchor.descriptor().equals("("+args[1].getDescriptor()+")Z"))return null;
-		List<String>selectors=MixinFit.stringList(MixinFit.value(injector,"method"));if(selectors.isEmpty())return null;Atom shared=null;MethodInsnNode query=null;List<String>methods=new ArrayList<>();Contract contract=null;
-		for(String selector:selectors){
-			List<MethodNode>old=original.methods.stream().filter(m->selector.equals(m.name)||selector.equals(m.name+m.desc)).toList();if(old.size()!=1)return null;MethodNode nativeBody=old.getFirst();
+		// The methods the wrap was written for: those its selectors bind, as Mixin binds them, in the native class.
+		List<MethodNode>bodies=MixinTargetSelectors.bound(handler,original);if(bodies==null||bodies.isEmpty())return null;Atom shared=null;MethodInsnNode query=null;List<String>methods=new ArrayList<>();Contract contract=null;
+		for(MethodNode nativeBody:bodies){
 			MethodNode live=current.methods.stream().filter(m->m.name.equals(nativeBody.name)&&m.desc.equals(nativeBody.desc)).findFirst().orElse(null);if(live==null||(live.access&Opcodes.ACC_STATIC)!=0)return null;
-			List<MethodInsnNode>anchors=new ArrayList<>();for(var i:nativeBody.instructions)if(i instanceof MethodInsnNode call&&same(call,anchor))anchors.add(call);if(anchors.size()!=1)return null;
-			MethodInsnNode atom=anchors.getFirst();if(!(previous(atom)instanceof FieldInsnNode constant&&constant.getOpcode()==Opcodes.GETSTATIC&&constant.desc.equals(args[1].getDescriptor()))||!(previous(constant)instanceof VarInsnNode state&&state.getOpcode()==Opcodes.ALOAD))return null;
+			// Its atom: the one call the point selects there, however its target is spelled; a call on the handler's
+			// receiver type taking the handler's operand, as the wrap's operands say.
+			List<AbstractInsnNode>anchors=MixinCallbackShape.pointSelected(ats.getFirst(),nativeBody);if(anchors.size()!=1||!(anchors.getFirst()instanceof MethodInsnNode atom)
+					||!atom.owner.equals(args[0].getInternalName())||!atom.desc.equals("("+args[1].getDescriptor()+")Z"))return null;
+			if(!(previous(atom)instanceof FieldInsnNode constant&&constant.getOpcode()==Opcodes.GETSTATIC&&constant.desc.equals(args[1].getDescriptor()))||!(previous(constant)instanceof VarInsnNode state&&state.getOpcode()==Opcodes.ALOAD))return null;
 			List<MethodInsnNode>candidates=new ArrayList<>();
 			for(var i:live.instructions)if(i instanceof MethodInsnNode call&&(call.getOpcode()==Opcodes.INVOKEVIRTUAL||call.getOpcode()==Opcodes.INVOKEINTERFACE)
 					&&call.desc.equals("("+args[0].getDescriptor()+")Z")&&previous(call)instanceof VarInsnNode load&&load.getOpcode()==Opcodes.ALOAD&&load.var==state.var
@@ -155,8 +157,6 @@ public final class MixinNativePredicateSeam {
 	}
 	private static Object pop(List<Object>stack){return stack.removeLast();}private static Object peek(List<Object>stack){return stack.getLast();}private static Value asValue(Object object){if(!(object instanceof Value value))throw new IllegalArgumentException();return value;}
 	private static boolean has(MethodNode method,String annotation){return method.visibleAnnotations!=null&&method.visibleAnnotations.stream().anyMatch(a->a.desc.equals(annotation))||method.invisibleAnnotations!=null&&method.invisibleAnnotations.stream().anyMatch(a->a.desc.equals(annotation));}
-	private static Member parse(String selector){if(selector==null||!selector.startsWith("L"))return null;int owner=selector.indexOf(';'),desc=selector.indexOf('(',owner);return owner>0&&desc>owner?new Member(selector.substring(1,owner),selector.substring(owner+1,desc),selector.substring(desc)):null;}
-	private static boolean same(MethodInsnNode call,Member member){return call.owner.equals(member.owner())&&call.name.equals(member.name())&&call.desc.equals(member.descriptor());}
 	private static AbstractInsnNode previous(AbstractInsnNode insn){for(var i=insn.getPrevious();i!=null;i=i.getPrevious())if(i.getOpcode()>=0)return i;return null;}
 	private static void set(AnnotationNode annotation,String key,Object value){if(annotation.values==null)annotation.values=new ArrayList<>();for(int i=0;i<annotation.values.size();i+=2)if(annotation.values.get(i).equals(key)){annotation.values.set(i+1,value);return;}annotation.values.add(key);annotation.values.add(value);}
 }
