@@ -51,6 +51,18 @@ final class MixinCallbackShape {
         return target != null && MixinTargetSelectors.bindsOnly(method, target, member);
     }
     /**
+     * {@link #binds}, for an adapter whose caller may have no class to bind against: with {@code target} at hand, the
+     * method Mixin binds there; without it, the member every selector as Mixin parses it can only name
+     * ({@link MixinTargetSelectors#spellsOnly}) — never the selector's spelling.
+     */
+    static boolean selectsMember(MethodNode method, ClassNode target, String owner, String member) {
+        return target != null ? binds(method, target, member) : MixinTargetSelectors.spellsOnly(method, owner, member);
+    }
+    /** The method the handler was written for: the one its injector binds in {@code nativeClass}, the class the mod was compiled against; null without it. */
+    static MethodNode written(MethodNode method, ClassNode nativeClass) {
+        return nativeClass == null ? null : MixinTargetSelectors.one(method, nativeClass);
+    }
+    /**
      * Whether the handler's operands and return are {@code descriptor}'s and its extras exactly {@code extras}
      * ({@link MixinHandlerShape}): the callback contract by platform types and parameter roles, not by one mod's descriptor.
      * Read alone: a target argument the handler appends is no {@code @Local}; an adapter that knows the method the
@@ -158,6 +170,40 @@ final class MixinCallbackShape {
             if (!same) return false;   // the target also selects another member here
         }
         return true;
+    }
+
+    /**
+     * {@link #names} in every one of {@code bodies}, for an injector that binds several methods: spelled with its owner
+     * and descriptor, the member wherever it is; otherwise only when each body (and there is at least one) decides it.
+     */
+    static boolean namesInEach(AnnotationNode at, String member, List<MethodNode> bodies) {
+        if (!covers(at, member)) return false;
+        MixinFit.Member named = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target")));
+        if (named.owner() != null && named.desc() != null) return true;
+        if (bodies == null || bodies.isEmpty()) return false;
+        for (MethodNode body : bodies) if (!names(at, member, body)) return false;
+        return true;
+    }
+
+    /**
+     * The one member {@code at}'s target names, spelled {@code Lowner;name(desc)} ({@code Lowner;name:desc} for a field):
+     * with its owner and descriptor spelled out, that member; without either, the one member whose instructions it
+     * selects in {@code body}, the method the handler was written for ({@link #selected}). Null when it names no member,
+     * when the body is missing or selects nothing, or when it selects more than one member there.
+     */
+    static String member(AnnotationNode at, MethodNode body) {
+        MixinFit.Member named = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target")));
+        if (named == null) return null;
+        if (named.owner() != null && named.desc() != null)
+            return "L" + named.owner() + ";" + named.name() + (named.desc().startsWith("(") ? "" : ":") + named.desc();
+        String found = null;
+        for (AbstractInsnNode instruction : selected(at, body)) {
+            String spelled = instruction instanceof MethodInsnNode call ? "L" + call.owner + ";" + call.name + call.desc
+                    : instruction instanceof FieldInsnNode field ? "L" + field.owner + ";" + field.name + ":" + field.desc : null;
+            if (spelled == null || found != null && !found.equals(spelled)) return null;
+            found = spelled;
+        }
+        return found;
     }
 
     /**

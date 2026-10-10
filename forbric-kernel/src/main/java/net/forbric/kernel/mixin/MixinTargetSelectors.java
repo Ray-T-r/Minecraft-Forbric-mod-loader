@@ -98,6 +98,63 @@ final class MixinTargetSelectors {
 	}
 
 	/**
+	 * What one selector can reach in a class: every declared method it matches exactly (before its quantifier picks among
+	 * them), whether it binds at most one — Mixin's default for a selector without a quantifier, which then binds the
+	 * FIRST declared match, so which method that is depends on declaration order — and the {@code name + desc} it spells
+	 * when it pins both (null otherwise), which is what it names in a class that does not declare it.
+	 */
+	record Reach(List<MethodNode> matched, boolean single, String spelled) { }
+
+	/** Each selector's {@link Reach} in {@code target}, in the injector's order; null as {@link #bound} is. */
+	static List<Reach> reach(MethodNode handler, ClassNode target) {
+		List<String> selectors = selectors(handler);
+		if (selectors == null || selectors.isEmpty() || target == null || target.methods == null) return null;
+		List<Reach> out = new ArrayList<>();
+		for (String selector : selectors) {
+			ITargetSelector one = parse(selector, target);
+			if (one == null) return null;
+			ITargetSelector member = one.configure(ITargetSelector.Configure.SELECT_MEMBER);
+			List<MethodNode> matched = new ArrayList<>();
+			for (MethodNode method : target.methods) if (member.match(ElementNode.of(target, method)).isExactMatch()) matched.add(method);
+			String spelled = one instanceof MemberInfo info && member.getMaxMatchCount() <= 1 && info.getName() != null
+					&& info.getDesc() != null && info.getDesc().startsWith("(") ? info.getName() + info.getDesc() : null;
+			out.add(new Reach(List.copyOf(matched), member.getMaxMatchCount() <= 1, spelled));
+		}
+		return out;
+	}
+
+	/**
+	 * The one method the handler binds in {@code target} where that does not hang on declaration order: no selector that
+	 * binds one method could match another of the class. A bare name shared by overloads binds whichever is declared first,
+	 * which is the merge's order, not necessarily the one the mod was compiled against; null then, and as {@link #one}.
+	 */
+	static MethodNode unambiguous(MethodNode handler, ClassNode target) {
+		List<Reach> reach = reach(handler, target);
+		if (reach == null) return null;
+		for (Reach r : reach) if (r.single() && r.matched().size() > 1) return null;
+		return one(handler, target);
+	}
+
+	/**
+	 * For a caller that has no class to bind against: whether every selector of the handler, as Mixin parses it, can only
+	 * name {@code nameAndDesc} of {@code owner} — the same name, the owner and the descriptor wherever it gives them, and
+	 * no quantifier or pattern. Whitespace, a dotted owner or an owner prefix are then the same selector; a bare name is
+	 * read as the method of that name, which a class at hand would decide ({@link #bindsOnly}).
+	 */
+	static boolean spellsOnly(MethodNode handler, String owner, String nameAndDesc) {
+		List<String> selectors = selectors(handler);
+		int paren = nameAndDesc.indexOf('(');
+		if (selectors == null || selectors.isEmpty() || paren < 0) return false;
+		String name = nameAndDesc.substring(0, paren), desc = nameAndDesc.substring(paren);
+		for (String selector : selectors) {
+			if (!(parse(selector, null) instanceof MemberInfo info) || info.configure(ITargetSelector.Configure.SELECT_MEMBER).getMaxMatchCount() > 1
+					|| !name.equals(info.getName())
+					|| info.getOwner() != null && !info.getOwner().equals(owner) || info.getDesc() != null && !info.getDesc().equals(desc)) return false;
+		}
+		return true;
+	}
+
+	/**
 	 * The member ({@code name + desc}) the handler was written for in a class the merged game may no longer declare it in:
 	 * the one method its injector binds in {@code nativeClass}, the class the mod was compiled against. Where that class is
 	 * missing or binds nothing, only a selector pinning the descriptor decides it — every selector Mixin accepts, its owner
