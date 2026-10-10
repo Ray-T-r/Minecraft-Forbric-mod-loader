@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
@@ -39,15 +40,24 @@ public final class MixinCollectionSourceAdapter {
 
 	/** Providers must include the getter holder's complete instructions and its class initializer. */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> classes) {
+		return adapt(mixin, classes, owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(mixin == null ? null : mixin.name), owner));
+	}
+
+	/**
+	 * {@link #adapt(ClassNode, Function)} with {@code references} giving the class the mod was compiled against, read only
+	 * where a selector's binding or a shortened {@code @At} target needs it to say what the mod wrote.
+	 */
+	static int adapt(ClassNode mixin, Function<String, ClassNode> classes, Function<String, ClassNode> references) {
 		if (!enabled() || mixin == null) return 0;
 		List<String> targets = MixinFit.mixinTargets(mixin);
 		if (targets.size() != 1) return 0;
 		ClassNode target = classes.apply(targets.getFirst());
 		if (target == null) return 0;
+		Supplier<ClassNode> nativeTarget = MixinTargetSelectors.once(() -> references == null ? null : references.apply(targets.getFirst()));
 		List<MethodNode> added = new ArrayList<>();
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
 			AnnotationNode injector = MixinFit.injectorOf(handler);
-			Plan plan = plan(handler, injector, target, classes);
+			Plan plan = plan(handler, injector, target, classes, nativeTarget);
 			if (plan == null) continue;
 			added.add(wrap(mixin, handler, injector, plan));
 			ForbricLog.info("[Forbric/Mixin] %s.%s follows a proved collection copy-prefix into %s.%s; the original redirect replaces only that prefix and native suffixes remain",
@@ -57,7 +67,8 @@ public final class MixinCollectionSourceAdapter {
 		return added.size();
 	}
 
-	private static Plan plan(MethodNode handler, AnnotationNode injector, ClassNode target, Function<String, ClassNode> classes) {
+	private static Plan plan(MethodNode handler, AnnotationNode injector, ClassNode target, Function<String, ClassNode> classes,
+			Supplier<ClassNode> nativeTarget) {
 		if (injector == null || !REDIRECT.equals(injector.desc) || !handler.desc.equals("()" + LIST)
 				|| (handler.access & Opcodes.ACC_STATIC) == 0
 				|| (handler.access & (Opcodes.ACC_SYNCHRONIZED | Opcodes.ACC_NATIVE | Opcodes.ACC_ABSTRACT)) != 0
@@ -68,18 +79,20 @@ public final class MixinCollectionSourceAdapter {
 		Object opcode = MixinFit.value(at, "opcode"), ordinal = MixinFit.value(at, "ordinal");
 		if (opcode instanceof Number n && n.intValue() != -1 && n.intValue() != Opcodes.GETSTATIC) return null;
 		if (ordinal instanceof Number n && n.intValue() > 0 || MixinFit.value(at, "shift") != null) return null;
-		Field original = field(MixinFit.asString(MixinFit.value(at, "target")));
+		// The field the redirect names, as Mixin resolves its target: spelled in full, that field; shortened, the one field
+		// it selects in the method the mod was compiled against (the merged body no longer reads it).
+		String named = MixinCallbackShape.pointMember(at, null);
+		if (named == null) named = MixinCallbackShape.pointMember(at, MixinCallbackShape.written(handler, nativeTarget.get()));
+		Field original = field(named);
 		if (original == null || !LIST.equals(original.desc())) return null;
 		ClassNode originalOwner = classes.apply(original.owner());
 		if (originalOwner == null || originalOwner.fields.stream().noneMatch(f -> f.name.equals(original.name())
 				&& f.desc.equals(original.desc()) && (f.access & Opcodes.ACC_STATIC) != 0)) return null;
-		List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
-		if (selectors.size() != 1) return null;
-		List<MethodNode> bodies = target.methods.stream().filter(m -> selectors.getFirst().equals(m.name)
-				|| selectors.getFirst().equals(m.name + m.desc)).toList();
-		if (bodies.size() != 1) return null;
+		// The method Mixin binds the wrap to in the merged target, which must be the one the mod wrote it for.
+		MethodNode body = MixinTargetSelectors.boundAsWritten(handler, target, nativeTarget);
+		if (body == null) return null;
 		List<Plan> candidates = new ArrayList<>();
-		for (var insn : bodies.getFirst().instructions) {
+		for (var insn : body.instructions) {
 			if (insn instanceof FieldInsnNode f && same(f, original)) return null;
 			if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC || !call.desc.equals("()" + STREAM)) continue;
 			ClassNode owner = classes.apply(call.owner);
@@ -246,10 +259,11 @@ public final class MixinCollectionSourceAdapter {
 	private static boolean same(FieldInsnNode instruction, Field field) {
 		return instruction.owner.equals(field.owner()) && instruction.name.equals(field.name()) && instruction.desc.equals(field.desc());
 	}
-	private static Field field(String selector) {
-		if (selector == null || !selector.startsWith("L")) return null;
-		int semicolon = selector.indexOf(';'), colon = selector.indexOf(':', semicolon);
-		return semicolon > 1 && colon > semicolon + 1 ? new Field(selector.substring(1, semicolon), selector.substring(semicolon + 1, colon), selector.substring(colon + 1)) : null;
+	/** The field {@link MixinCallbackShape#pointMember} resolved; null for none, or for a method. */
+	private static Field field(String member) {
+		MixinFit.Member parsed = MixinFit.parseMember(member);
+		return parsed == null || parsed.owner() == null || parsed.desc() == null || parsed.desc().startsWith("(") ? null
+				: new Field(parsed.owner(), parsed.name(), parsed.desc());
 	}
 	private static void set(AnnotationNode annotation, String key, Object value) {
 		if (annotation.values == null) annotation.values = new ArrayList<>();
