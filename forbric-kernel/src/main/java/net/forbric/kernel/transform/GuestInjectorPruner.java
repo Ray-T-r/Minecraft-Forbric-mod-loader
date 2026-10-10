@@ -66,28 +66,53 @@ public final class GuestInjectorPruner implements ClassTransformer {
 		return parsedClasses.sum();
 	}
 
-    private record Group(String protocol,List<MethodNode> methods,String selector) { }
+    private record Group(String protocol,List<MethodNode> methods) { }
+    /** The two points of the reader-deserializer protocol: the old parser call it drops, and the pair that takes the Reader. */
+    private static final String FROM_STREAM="Lnet/minecraft/client/resources/model/cuboid/CuboidModel;fromStream(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/cuboid/CuboidModel;";
+    private static final String PAIR_OF="Lcom/mojang/datafixers/util/Pair;of(Ljava/lang/Object;Ljava/lang/Object;)Lcom/mojang/datafixers/util/Pair;";
     private final java.util.function.Function<String,ClassNode> classes;
+    /** (mixin, owner) → the class the mixin's mod was compiled against: what a point spelled without its owner or descriptor names. */
+    private final java.util.function.BiFunction<String,String,ClassNode> natives;
     public GuestInjectorPruner(){this(net.forbric.kernel.mixin.NativeGameReferences::current);}
-    public GuestInjectorPruner(java.util.function.Function<String,ClassNode> classes){this.classes=classes;}
+    public GuestInjectorPruner(java.util.function.Function<String,ClassNode> classes){this(classes,net.forbric.kernel.mixin.MixinBindings::nativeClass);}
+    public GuestInjectorPruner(java.util.function.Function<String,ClassNode> classes,java.util.function.BiFunction<String,String,ClassNode> natives){this.classes=classes;this.natives=natives;}
 
-    /** Pure source inspection, also used by the config policy when this transformer is disabled. */
-    public static boolean unsafeWithoutPruning(ClassNode node){return modelPair(node)!=null;}
-    public static boolean unsafeWithoutPruning(ClassNode node,java.util.function.Function<String,ClassNode> classes){Group group=modelPair(node);return group!=null&&readerWasConsumed(node,group,classes);}
-    private static boolean readerWasConsumed(ClassNode node,Group group,java.util.function.Function<String,ClassNode> classes) {
+    /** The config policy's question when this transformer is disabled: whether the mixin carries the closed pair, proved on its target. */
+    public static boolean unsafeWithoutPruning(ClassNode node,java.util.function.Function<String,ClassNode> classes){return unsafeWithoutPruning(node,classes,owner->net.forbric.kernel.mixin.MixinBindings.nativeClass(node.name,owner));}
+    /**
+     * {@link #unsafeWithoutPruning(ClassNode, java.util.function.Function)}, a point written without its owner or descriptor
+     * read in {@code natives}' class (the class the mod was compiled against, by internal name): the gate reads the pair as
+     * the pruner it stands in for does.
+     */
+    public static boolean unsafeWithoutPruning(ClassNode node,java.util.function.Function<String,ClassNode> classes,java.util.function.Function<String,ClassNode> natives){Group group=modelPair(node);return group!=null&&readerWasConsumed(node,group,classes,natives==null?null:(mixin,owner)->natives.apply(owner));}
+    /**
+     * The pair's host is the one method both callbacks bind in the target, as Mixin binds them, however each selector is
+     * written. Its Pair.of point is read there, where Mixin injects; its fromStream point must select nothing there, and
+     * name the old parser call: spelled out, or read in the method it was written for, in the class the mod was compiled
+     * against.
+     */
+    private static boolean readerWasConsumed(ClassNode node,Group group,java.util.function.Function<String,ClassNode> classes,
+            java.util.function.BiFunction<String,String,ClassNode> natives) {
         List<String> targets=net.forbric.kernel.mixin.MixinFit.mixinTargets(node);if(targets.size()!=1)return false;
         ClassNode target=classes.apply(targets.getFirst());if(target==null)return false;
-        List<MethodNode> hosts=target.methods.stream().filter(method->(method.name+method.desc).equals(group.selector())||method.name.equals(group.selector())).toList();
-        if(hosts.size()!=1)return false;
+        MethodNode redirect=group.methods().get(0),argument=group.methods().get(1);
+        if(!net.forbric.kernel.mixin.MixinBindings.sameHost(redirect,argument,target))return false;
+        MethodNode host=net.forbric.kernel.mixin.MixinBindings.bound(redirect,target);
+        AnnotationNode dropped=onlyAt(redirect),paired=onlyAt(argument);
+        if(!net.forbric.kernel.mixin.MixinBindings.names(paired,PAIR_OF,host))return false;
+        if(net.forbric.kernel.mixin.MixinBindings.selected(dropped,host).stream().anyMatch(org.objectweb.asm.tree.MethodInsnNode.class::isInstance))return false;
+        if(!net.forbric.kernel.mixin.MixinBindings.names(dropped,FROM_STREAM,null)) {
+            ClassNode nativeClass=natives==null?null:natives.apply(node.name,target.name);
+            if(!net.forbric.kernel.mixin.MixinBindings.names(dropped,FROM_STREAM,net.forbric.kernel.mixin.MixinBindings.bound(redirect,nativeClass)))return false;
+        }
         int old=0;org.objectweb.asm.tree.MethodInsnNode parse=null,consumer=null;
-        MethodNode host=hosts.getFirst();
         for(var instruction:host.instructions)if(instruction instanceof org.objectweb.asm.tree.MethodInsnNode call) {
             if(call.owner.equals("net/minecraft/client/resources/model/cuboid/CuboidModel")&&call.name.equals("fromStream")&&call.desc.startsWith("(Ljava/io/Reader;)"))old++;
             if(call.owner.equals("net/neoforged/neoforge/client/model/UnbakedModelParser")&&call.name.equals("parse")&&call.desc.equals("(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/UnbakedModel;")) {if(parse!=null)return false;parse=call;}
             if(call.owner.equals("com/mojang/datafixers/util/Pair")&&call.name.equals("of")&&call.desc.equals("(Ljava/lang/Object;Ljava/lang/Object;)Lcom/mojang/datafixers/util/Pair;")){if(consumer!=null)return false;consumer=call;}
         }
         if(old!=0||parse==null||consumer==null||host.instructions.indexOf(parse)>=host.instructions.indexOf(consumer))return false;
-        MethodNode argument=group.methods().get(1);AnnotationNode local=argument.invisibleParameterAnnotations[1].getFirst();
+        AnnotationNode local=argument.invisibleParameterAnnotations[1].getFirst();
         Object named=net.forbric.kernel.mixin.MixinFit.value(local,"name"),index=net.forbric.kernel.mixin.MixinFit.value(local,"index");
         List<String> names=net.forbric.kernel.mixin.MixinFit.stringList(named);
         int slot=-1;
@@ -113,7 +138,12 @@ public final class GuestInjectorPruner implements ClassTransformer {
         @Override public org.objectweb.asm.tree.analysis.SourceValue newParameterValue(boolean instance,int slot,org.objectweb.asm.Type type){return new org.objectweb.asm.tree.analysis.SourceValue(type.getSize(),new org.objectweb.asm.tree.VarInsnNode(type.getOpcode(org.objectweb.asm.Opcodes.ILOAD),slot));}
     }
 
-    public static boolean wouldPrune(ClassNode node){return modelPair(node)!=null || tooltipGroup(node)!=null;}
+    /**
+     * The reader-deserializer pair by its shape alone: a redirect that drops the old parser's model and an argument
+     * modifier handing the captured Reader to the model deserializer, each pointed (however the point is spelled) at its
+     * protocol call. Whether they share a host, and what a point without its owner or descriptor names, takes the target:
+     * {@link #readerWasConsumed}.
+     */
     private static Group modelPair(ClassNode node) {
         if(node==null)return null;
         MethodNode redirect=null,argument=null;
@@ -123,7 +153,7 @@ public final class GuestInjectorPruner implements ClassTransformer {
             List<org.objectweb.asm.tree.AbstractInsnNode> body=code(method);
             if(inject.desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;") && method.desc.equals("(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/cuboid/CuboidModel;")
                     && body.size()==2&&body.get(0).getOpcode()==org.objectweb.asm.Opcodes.ACONST_NULL&&body.get(1).getOpcode()==org.objectweb.asm.Opcodes.ARETURN
-                    && point(inject,"Lnet/minecraft/client/resources/model/cuboid/CuboidModel;fromStream(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/cuboid/CuboidModel;")) {
+                    && point(inject,FROM_STREAM)) {
                 if(redirect!=null)return null;redirect=method;
             }
             if(inject.desc.equals("Lorg/spongepowered/asm/mixin/injection/ModifyArg;")&&method.desc.equals("(Ljava/lang/Object;Ljava/io/Reader;)Ljava/lang/Object;")
@@ -132,29 +162,35 @@ public final class GuestInjectorPruner implements ClassTransformer {
                     &&parse.owner.equals(MODEL_DESERIALIZER)&&parse.name.equals("deserialize")
                     &&parse.desc.equals("(Ljava/io/Reader;)Lnet/minecraft/client/resources/model/UnbakedModel;")&&body.get(2).getOpcode()==org.objectweb.asm.Opcodes.ARETURN
                     &&Integer.valueOf(1).equals(net.forbric.kernel.mixin.MixinFit.value(inject,"index"))
-                    &&point(inject,"Lcom/mojang/datafixers/util/Pair;of(Ljava/lang/Object;Ljava/lang/Object;)Lcom/mojang/datafixers/util/Pair;")) {
+                    &&point(inject,PAIR_OF)) {
                 if(argument!=null)return null;argument=method;
             }
         }
         if(redirect==null||argument==null||!redirect.tryCatchBlocks.isEmpty()||!argument.tryCatchBlocks.isEmpty())return null;
-        var selectors=net.forbric.kernel.mixin.MixinFit.stringList(net.forbric.kernel.mixin.MixinFit.value(net.forbric.kernel.mixin.MixinFit.injectorOf(redirect),"method"));
-        var other=net.forbric.kernel.mixin.MixinFit.stringList(net.forbric.kernel.mixin.MixinFit.value(net.forbric.kernel.mixin.MixinFit.injectorOf(argument),"method"));
-        if(selectors.size()!=1||!selectors.equals(other)||argument.invisibleParameterAnnotations==null||argument.invisibleParameterAnnotations.length!=2
+        if(argument.invisibleParameterAnnotations==null||argument.invisibleParameterAnnotations.length!=2
                 ||argument.invisibleParameterAnnotations[1]==null||argument.invisibleParameterAnnotations[1].size()!=1
                 ||!argument.invisibleParameterAnnotations[1].getFirst().desc.equals("Lcom/llamalad7/mixinextras/sugar/Local;"))return null;
-        return new Group("reader-deserializer",List.of(redirect,argument),selectors.getFirst());
+        return new Group("reader-deserializer",List.of(redirect,argument));
     }
-    private static boolean point(AnnotationNode injector,String target) {
+    /** The injector's one {@code @At}. */
+    private static AnnotationNode onlyAt(MethodNode method){return net.forbric.kernel.mixin.MixinFit.atNodes(net.forbric.kernel.mixin.MixinFit.injectorOf(method)).getFirst();}
+    /** One unshifted INVOKE point, without a slice, whose target can name {@code member} however it is spelled. */
+    private static boolean point(AnnotationNode injector,String member) {
         if(net.forbric.kernel.mixin.MixinFit.value(injector,"slice")!=null)return false;
         var ats=net.forbric.kernel.mixin.MixinFit.atNodes(injector);
         return ats.size()==1&&"INVOKE".equals(net.forbric.kernel.mixin.MixinFit.value(ats.getFirst(),"value"))
-                &&target.equals(net.forbric.kernel.mixin.MixinFit.value(ats.getFirst(),"target"))
+                &&net.forbric.kernel.mixin.MixinBindings.covers(ats.getFirst(),member)
                 &&net.forbric.kernel.mixin.MixinFit.value(ats.getFirst(),"shift")==null
                 &&net.forbric.kernel.mixin.MixinFit.value(ats.getFirst(),"by")==null
                 &&net.forbric.kernel.mixin.MixinFit.value(ats.getFirst(),"args")==null;
     }
     private static List<org.objectweb.asm.tree.AbstractInsnNode> code(MethodNode method){return java.util.Arrays.stream(method.instructions.toArray()).filter(i->i.getOpcode()>=0).toList();}
-    private static Group tooltipGroup(ClassNode node) {
+    /**
+     * The shared-index tooltip callbacks, which only move together: each delegates once to the one closed provider
+     * helper, and shares its index under one {@code @Share} name. They are one group only on one host — the one method
+     * of the mixin's target every callback binds, as Mixin binds each, however its selector is written.
+     */
+    private static Group tooltipGroup(ClassNode node,java.util.function.Function<String,ClassNode> classes) {
         if(node==null)return null;
         String protocol=TOOLTIP_PROVIDERS;
         MethodNode helper=null;
@@ -176,7 +212,7 @@ public final class GuestInjectorPruner implements ClassTransformer {
             }
         }
         if(helper==null)return null;
-        List<MethodNode> group=new ArrayList<>();String selector=null,share=null;
+        List<MethodNode> group=new ArrayList<>();String share=null;
         for(MethodNode method:node.methods) {
             AnnotationNode injector=net.forbric.kernel.mixin.MixinFit.injectorOf(method);if(injector==null)continue;
             int calls=0;boolean closed=!method.tryCatchBlocks.isEmpty()?false:true;
@@ -199,12 +235,17 @@ public final class GuestInjectorPruner implements ClassTransformer {
             AnnotationNode sugar=method.invisibleParameterAnnotations[shared].getFirst();
             Object sharedValue=net.forbric.kernel.mixin.MixinFit.value(sugar,"value");
             if(!sugar.desc.equals("Lcom/llamalad7/mixinextras/sugar/Share;")||!(sharedValue instanceof String id)||share!=null&&!share.equals(id))return null;
-            share=id;
-            var selectors=net.forbric.kernel.mixin.MixinFit.stringList(net.forbric.kernel.mixin.MixinFit.value(injector,"method"));
-            if(selectors.size()!=1||selector!=null&&!selector.equals(selectors.getFirst()))return null;
-            selector=selectors.getFirst();group.add(method);
+            share=id;group.add(method);
         }
-        return group.isEmpty()?null:new Group("component-tooltip",List.copyOf(group),selector);
+        return group.isEmpty()||!oneHost(node,group,classes)?null:new Group("component-tooltip",List.copyOf(group));
+    }
+    /** Whether every callback binds the one same method of the mixin's one target, each as Mixin binds it. */
+    private static boolean oneHost(ClassNode node,List<MethodNode> callbacks,java.util.function.Function<String,ClassNode> classes) {
+        List<String> targets=net.forbric.kernel.mixin.MixinFit.mixinTargets(node);if(targets.size()!=1)return false;
+        ClassNode target=classes.apply(targets.getFirst());
+        MethodNode host=net.forbric.kernel.mixin.MixinBindings.bound(callbacks.getFirst(),target);if(host==null)return false;
+        for(MethodNode callback:callbacks)if(net.forbric.kernel.mixin.MixinBindings.bound(callback,target)!=host)return false;
+        return true;
     }
 
     private static boolean providerDeclarations(ClassNode providers) {
@@ -272,8 +313,8 @@ public final class GuestInjectorPruner implements ClassTransformer {
         ClassNode node=new ClassNode();new ClassReader(classBytes).accept(node,0);parsedClasses.increment();
         if(!node.name.replace('/','.').equals(className))return classBytes;
         Group group=modelPair(node);
-        if(group!=null&&!readerWasConsumed(node,group,classes))return classBytes;
-        if(group==null && fabricTooltipBridgeOn())group=tooltipGroup(node);
+        if(group!=null&&!readerWasConsumed(node,group,classes,natives))return classBytes;
+        if(group==null && fabricTooltipBridgeOn())group=tooltipGroup(node,classes);
         if(group==null)return classBytes;
         if(group.protocol().equals("component-tooltip")) {
             ClassNode current=classes.apply("net/neoforged/neoforge/common/tooltip/ItemTooltipHandler");
@@ -296,50 +337,6 @@ public final class GuestInjectorPruner implements ClassTransformer {
                 +"apply as written, with their original bodies",group.methods().size(),className,group.protocol(),countInjectors(node));
         ClassWriter writer=new ClassWriter(0);node.accept(writer);return writer.toByteArray();
     }
-
-	/** Whether {@code m} carries an injector annotation whose {@code method} list has a selector starting with {@code prefix}. */
-	static boolean isInjectorInto(MethodNode m, String prefix) {
-		for (AnnotationNode a : allAnnotations(m)) {
-			if (!INJECTOR_DESCS.contains(a.desc)) continue;
-			List<Object> values = a.values;
-			if (values == null) continue;
-			for (int i = 0; i + 1 < values.size(); i += 2) {
-				if (!"method".equals(values.get(i))) continue;
-				Object v = values.get(i + 1);
-				if (v instanceof List<?> list) {
-					for (Object s : list) if (s instanceof String str && str.startsWith(prefix)) return true;
-				} else if (v instanceof String str && str.startsWith(prefix)) {
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * Whether {@code m} carries an injector annotation whose {@code method} list is exactly {@code selector}, and a
-	 * {@code @Share} parameter — the shape of fabric-item-api's five, which only move together.
-	 */
-	static boolean isInjectorExactlyInto(MethodNode m, String selector) {
-		boolean shared = false;
-		for (List<AnnotationNode> parameter : m.invisibleParameterAnnotations == null ? new List[0] : m.invisibleParameterAnnotations) {
-			if (parameter != null) for (AnnotationNode a : parameter) shared |= "Lcom/llamalad7/mixinextras/sugar/Share;".equals(a.desc);
-		}
-		for (List<AnnotationNode> parameter : m.visibleParameterAnnotations == null ? new List[0] : m.visibleParameterAnnotations) {
-			if (parameter != null) for (AnnotationNode a : parameter) shared |= "Lcom/llamalad7/mixinextras/sugar/Share;".equals(a.desc);
-		}
-		if (!shared) return false;
-		for (AnnotationNode a : allAnnotations(m)) {
-			if (!INJECTOR_DESCS.contains(a.desc) || a.values == null) continue;
-			for (int i = 0; i + 1 < a.values.size(); i += 2) {
-				if (!"method".equals(a.values.get(i))) continue;
-				Object v = a.values.get(i + 1);
-				if (v instanceof List<?> list) return list.size() == 1 && selector.equals(list.get(0));
-				return selector.equals(v);
-			}
-		}
-		return false;
-	}
 
 	private static List<AnnotationNode> allAnnotations(MethodNode m) {
 		List<AnnotationNode> out = new ArrayList<>();
