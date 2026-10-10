@@ -267,6 +267,19 @@ final class MixinTargetSelectors {
 	}
 
 	/**
+	 * Whether a member point's {@code @At} target, as Mixin reads it ({@code TargetSelector.parseAndValidate}: a
+	 * {@link MemberMatcher} for a pattern, a {@link MemberInfo} otherwise), is the plain member reference
+	 * {@link MixinFit#parseMember} reads: a {@code MemberInfo} with the same owner, name and descriptor. False for a
+	 * pattern, a dynamic or nested selector, a form Mixin rejects, and a quantified name, which Mixin reads with the
+	 * quantifier stripped — for all of these the plain reading's instructions are not the ones Mixin selects.
+	 */
+	static boolean readsAsMember(String target) {
+		MixinFit.Member read = target == null ? null : MixinFit.parseMember(target);
+		return read != null && parse(target, null) instanceof MemberInfo info && java.util.Objects.equals(read.owner(), info.getOwner())
+				&& java.util.Objects.equals(read.name(), info.getName()) && java.util.Objects.equals(read.desc(), info.getDesc());
+	}
+
+	/**
 	 * One selector as Mixin parses and validates it for {@code target}; null when Mixin rejects it (malformed, or an owner
 	 * other than the target) or it is a form this does not model. {@code target} null skips the owner check.
 	 */

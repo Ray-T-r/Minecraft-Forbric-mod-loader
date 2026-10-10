@@ -98,10 +98,11 @@ public final class MixinGroupConstraints {
         String member = target instanceof String s ? s : null;
         if (MixinFit.value(at,"slice") != null) return null;
         // A member point names its member as Mixin resolves the target (MixinFit.parseMember: an owner prefix, a dotted
-        // owner, whitespace; the owner or the descriptor left out matches any). A wildcard, a quantifier or a dynamic
-        // reference is not modelled: unknown.
+        // owner, whitespace; the owner or the descriptor left out matches any). A pattern, a wildcard, a quantifier or
+        // a dynamic reference is not modelled: unknown, never "selects nothing" — Mixin reads a pattern
+        // ("/ignite/", "name=/^ignite$/") as a MemberMatcher, which the plain reading would match against no call.
         if (Set.of("INVOKE","INVOKE_ASSIGN","FIELD").contains(kind)) {
-            if (member == null || MixinFit.parseMember(member) == null
+            if (member == null || !MixinTargetSelectors.readsAsMember(member)
                     || member.contains("{") || member.contains("}") || member.contains("@")) return null;
         }
         List<AbstractInsnNode> named = MixinCallbackShape.selected(at, method);
