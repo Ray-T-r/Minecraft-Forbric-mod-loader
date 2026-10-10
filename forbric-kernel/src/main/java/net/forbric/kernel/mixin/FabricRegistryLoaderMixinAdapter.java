@@ -25,11 +25,14 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>All or nothing per mixin: when one injector that names a dead overload cannot be mapped (an ambiguous name-only
  * selector, two widened candidates, captured locals the move would shift), nothing moves.
  *
- * <p>Every injector is read as Mixin reads it, never by spelling: a selector by the methods it matches in the merged class
- * ({@link MixinTargetSelectors#reach}), so an owner prefix, a dotted owner or whitespace is the same selector, and one that
+ * <p>Every injector is read as Mixin reads it, never by spelling. Whether an injector is written for a dead loader is
+ * the one method its selectors bind in the class the mod was compiled against ({@link MixinCallbackShape#written}), so a
+ * bare name is the overload Mixin binds there, whatever the merged class declares beside it; only without that class (or
+ * where its selectors bind no single method there) is it read by the methods it matches in the merged class
+ * ({@link MixinTargetSelectors#reach}): an owner prefix, a dotted owner or whitespace is the same selector, and one that
  * binds a single method but matches several (a bare name shared by the dead loader and its live overloads) names neither
- * for certain; a point by the member it names ({@link MixinCallbackShape#member}) — one written without its owner or
- * descriptor in the method it was written for in the class the mod was compiled against — and, once moved, by what it
+ * for certain. A point is the member it names ({@link MixinCallbackShape#member}) — one written without its owner or
+ * descriptor in the method it was written for in the class the mod was compiled against — and, once moved, what it
  * selects in the widened body ({@link MixinCallbackShape#selected}).
  */
 public final class FabricRegistryLoaderMixinAdapter {
@@ -91,6 +94,21 @@ public final class FabricRegistryLoaderMixinAdapter {
 			List<MixinTargetSelectors.Reach> reach=MixinTargetSelectors.reach(handler,target);
 			if(reach==null)continue;
 			String dead=null;boolean other=false;
+			// Which loader it was written for is decided where it was written: the one method its injector binds in the
+			// class the mod was compiled against. A bare name binds the first method of that name there, whatever the
+			// merged class declares beside it or no longer declares.
+			MethodNode compiled=MixinCallbackShape.written(handler,source);
+			if(compiled!=null){
+				String key=compiled.name+compiled.desc;
+				MethodNode here=MixinTargetSelectors.one(handler,target);
+				if(!deadCallees.contains(key)){
+					// Written for a live method: not this repair's case — unless the merged class binds it to a dead loader
+					// instead, which nothing here can map for certain.
+					if(here!=null&&deadCallees.contains(here.name+here.desc))return 0;
+					continue;
+				}
+				dead=key;reach=List.of();
+			}
 			for(MixinTargetSelectors.Reach selector:reach){
 				List<String> matched=selector.matched().stream().map(m->m.name+m.desc).toList();
 				String hit=matched.stream().filter(deadCallees::contains).findFirst().orElse(null);
