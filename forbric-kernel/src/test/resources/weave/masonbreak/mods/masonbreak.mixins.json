@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.mason.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["MasonChiselMixin"], "injectors": {"defaultRequire": 1}}
