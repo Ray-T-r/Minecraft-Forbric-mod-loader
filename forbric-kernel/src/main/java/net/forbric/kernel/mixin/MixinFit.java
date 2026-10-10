@@ -637,7 +637,7 @@ public final class MixinFit {
 		// merged game calls, onto the overload the carrier added in its place, judged here too so the verdict and the
 		// move cannot disagree: bound to vanilla's method it would read as never running, and an @Inject whose name binds
 		// the overload first as refused. Asked of the target with code: the plan counts each anchor in both bodies.
-		if (selectors.size() == 1 && MixinTwinRebind.mayMove(target.name, selectors.getFirst())) {
+		if (MixinTwinRebind.mayMove(target, m)) {
 			ClassNode code = withLocals.get();
 			MethodNode twin = code == null ? null : MixinTwinRebind.destination(mixin, m, code);
 			if (twin != null) {

@@ -50,8 +50,9 @@ import net.forbric.kernel.util.ForbricLog;
  *       and every method the ecosystem's own game calls vanilla's from calls that overload in the merged base;</li>
  *   <li>only while vanilla's method is still uncalled ({@link MergedBaseUncalledMethods}: no installed mod references it
  *       and nothing in its class calls it);</li>
- *   <li>one selector naming the method alone or with vanilla's descriptor, and binding vanilla's method or the overload
- *       (never a third); no slice, no other Mixin or MixinExtras annotation on the handler ({@code @Group}, an
+ *   <li>selectors naming the method alone or with vanilla's descriptor, however Mixin reads them (an owner prefix, a
+ *       dotted owner, whitespace, several spellings of it), and binding vanilla's method or the overload (never a third,
+ *       never several); no slice, no other Mixin or MixinExtras annotation on the handler ({@code @Group}, an
  *       expression's {@code @Definition}) or its parameters ({@code @Local}, {@code @Coerce});</li>
  *   <li>an {@code @Inject} taking vanilla's arguments or none, then its callback, capturing no locals; or an
  *       {@code @At}-driven kind whose own contract can be told ({@link MixinStubRebind#intrinsicArity}), then a prefix of
@@ -154,12 +155,13 @@ public final class MixinTwinRebind {
 	}
 
 	/**
-	 * Whether a single selector of a mixin on {@code owner} names a method that heads a row — the cheap question asked of
-	 * every injector before the plan reads the target's code.
+	 * Whether the handler's selectors bind, in {@code target} (read with or without code), a method that heads a row —
+	 * the cheap question asked of every injector before the plan reads the target's code.
 	 */
-	static boolean mayMove(String owner, String selector) {
-		String[] split = split(selector);
-		return split != null && owns(owner) && rows().containsKey(owner + "#" + split[0]);
+	static boolean mayMove(ClassNode target, MethodNode handler) {
+		if (target == null || !owns(target.name)) return false;
+		MethodNode bound = MixinTargetSelectors.one(handler, target);
+		return bound != null && rows().containsKey(target.name + "#" + bound.name);
 	}
 
 	/** Moves every injector of {@code mixin} that a row moves; returns how many. {@code targets} must return nodes WITH code. */
@@ -210,17 +212,26 @@ public final class MixinTwinRebind {
 		if (!inject && !MixinRetarget.AT_DRIVEN.contains(injector.desc)) return null;
 		if (otherInjectionAnnotation(handler, injector) || sugar(handler) || MixinFit.value(injector, "slice") != null
 				|| MixinFit.value(injector, "locals") != null || MixinFit.value(injector, "target") != null) return null;
-		List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
-		if (selectors.size() != 1) return null;
-		String[] split = split(selectors.getFirst());
-		if (split == null) return null;
-		Row row = row(target.name, split[0], split[1]);
+		// The one method the selectors bind, as Mixin binds them however they are written; and the descriptor they pin,
+		// where they pin one — the row is the one vanilla's descriptor heads, or for a name alone the only one.
+		MethodNode bound = MixinTargetSelectors.one(handler, target);
+		List<MixinTargetSelectors.Reach> reach = MixinTargetSelectors.reach(handler, target);
+		if (bound == null || reach == null) return null;
+		String desc = null;
+		for (MixinTargetSelectors.Reach one : reach) {
+			if (!one.single()) return null;   // a quantifier or a pattern: no one method of the name
+			String spelled = one.spelled();
+			if (spelled == null) continue;
+			String pinned = spelled.substring(spelled.indexOf('('));
+			if (desc != null && !desc.equals(pinned)) return null;
+			desc = pinned;
+		}
+		Row row = row(target.name, bound.name, desc);
 		if (row == null || !row.ecosystems().contains(ecosystem)) return null;
 		MethodNode vanilla = declared(target, row.name(), row.vanilla());
 		MethodNode overload = declared(target, row.name(), row.overload());
 		if (vanilla == null || overload == null || empty(vanilla) || empty(overload)) return null;
 		if (MergedBaseUncalledMethods.neverRuns(target, vanilla, ecosystem) == null) return null;
-		MethodNode bound = MixinStubRebind.bound(target, selectors.getFirst());
 		if (bound != vanilla && bound != overload) return null;
 
 		Type[] params = Type.getArgumentTypes(handler.desc);
@@ -392,18 +403,6 @@ public final class MixinTwinRebind {
 		List<AnnotationNode> kept = new ArrayList<>();
 		for (AnnotationNode a : annotations) if (!a.desc.equals(desc)) kept.add(a);
 		return kept.isEmpty() ? null : kept;
-	}
-
-	/** {@code {name, descriptor or null}} of a selector naming a method alone or with its descriptor; null for any other form. */
-	private static String[] split(String selector) {
-		String s = selector.trim();
-		if (s.indexOf('*') >= 0 || s.startsWith("/") || s.indexOf(' ') >= 0 || s.indexOf('=') >= 0) return null;
-		int semi = s.indexOf(';');
-		if (s.startsWith("L") && semi > 0 && (s.indexOf('(') < 0 || semi < s.indexOf('('))) s = s.substring(semi + 1);
-		int paren = s.indexOf('(');
-		String name = paren < 0 ? s : s.substring(0, paren);
-		if (name.isEmpty() || name.indexOf(':') >= 0) return null;
-		return new String[] {name, paren < 0 ? null : s.substring(paren)};
 	}
 
 	private static MethodNode declared(ClassNode target, String name, String desc) {
