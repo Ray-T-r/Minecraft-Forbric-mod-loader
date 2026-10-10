@@ -86,16 +86,13 @@ public final class MixinDefaultCallbackTransport {
     }
 
     private static boolean dormantSource(Source source, ClassNode current, ClassNode original) {
-        List<String> selectors = MixinFit.stringList(MixinFit.value(source.inject(), "method"));
-        if (selectors.size() != 1) return false;
-        List<MethodNode> old = original.methods.stream().filter(m -> selectors.contains(m.name) || selectors.contains(m.name + m.desc)).toList();
-        if (old.size() != 1) return false;
-        MethodNode host = old.getFirst();
-        if ((host.access & Opcodes.ACC_PRIVATE) == 0 || !Type.getReturnType(host.desc).equals(Type.BOOLEAN_TYPE)) return false;
+        // The host is the one method the callback binds in the class the mod was compiled against, as Mixin binds it.
+        MethodNode host = MixinCallbackShape.written(source.handler(), original);
+        if (host == null || (host.access & Opcodes.ACC_PRIVATE) == 0 || !Type.getReturnType(host.desc).equals(Type.BOOLEAN_TYPE)) return false;
         Type[] hostArgs = Type.getArgumentTypes(host.desc), handlerArgs = Type.getArgumentTypes(source.handler().desc);
         if (hostArgs.length != 2 || !hostArgs[0].equals(handlerArgs[0]) || !hostArgs[1].equals(handlerArgs[1])) return false;
-        String anchor = MixinFit.asString(MixinFit.value(MixinFit.atNodes(source.inject()).getFirst(), "target"));
-        List<MethodInsnNode> points = calls(host).stream().filter(call -> member(call).equals(anchor)).toList();
+        // The anchor, however written, selects one call there.
+        List<MethodInsnNode> points = MixinCallbackShape.invocations(MixinFit.atNodes(source.inject()).getFirst(), host);
         if (points.size() != 1 || !Type.getReturnType(points.getFirst().desc).equals(handlerArgs[3])) return false;
         AbstractInsnNode stored = next(points.getFirst());
         if (!(stored instanceof VarInsnNode store) || store.getOpcode() != Opcodes.ASTORE) return false;
@@ -235,7 +232,6 @@ public final class MixinDefaultCallbackTransport {
     private static boolean jump(AbstractInsnNode instruction, int opcode, AbstractInsnNode target) { return instruction instanceof JumpInsnNode jump && jump.getOpcode() == opcode && next(jump.label) == target; }
     private static AbstractInsnNode next(AbstractInsnNode instruction) { do { instruction = instruction.getNext(); } while (instruction != null && instruction.getOpcode() < 0); return instruction; }
     private static List<MethodInsnNode> calls(MethodNode method) { return Arrays.stream(method.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).toList(); }
-    private static String member(MethodInsnNode call) { return "L" + call.owner + ";" + call.name + call.desc; }
     private static AnnotationNode parameter(MethodNode method, int index) {
         List<AnnotationNode> all = new ArrayList<>();
         if (method.visibleParameterAnnotations != null && index < method.visibleParameterAnnotations.length && method.visibleParameterAnnotations[index] != null) all.addAll(method.visibleParameterAnnotations[index]);
