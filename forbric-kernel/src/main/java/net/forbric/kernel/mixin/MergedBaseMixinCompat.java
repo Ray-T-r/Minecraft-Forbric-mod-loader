@@ -59,7 +59,7 @@ public final class MergedBaseMixinCompat {
     private static String refusal(ClassNode node,Function<String,byte[]> resources) {
         if(!net.forbric.kernel.transform.GuestInjectorPruner.enabled()&&net.forbric.kernel.transform.GuestInjectorPruner.unsafeWithoutPruning(node,name->parse(resources.apply(name+".class"))))
             return "source has a closed consuming-Reader callback pair which cannot remain half-applied while pruning is disabled";
-        if(FabricRegistryInitializationMixinAdapter.conflicts(node)&&FabricRegistryInitializationMixinAdapter.adapt(copy(node))==0)
+        if(FabricRegistryInitializationMixinAdapter.conflicts(node)&&FabricRegistryInitializationMixinAdapter.adapt(copy(node),name->parse(resources.apply(name+".class")))==0)
             return "source callback repeats or defers the kernel-owned registry freeze; its tracker protocol could not be adapted";
         if(FabricRegistryLoaderMixinAdapter.matches(node)&&FabricRegistryLoaderMixinAdapter.adapt(copy(node),name->parse(resources.apply(name+".class")))==0)
             return "registry-loader: source ScopedValue callback propagation does not fit the current registry-loader overloads";

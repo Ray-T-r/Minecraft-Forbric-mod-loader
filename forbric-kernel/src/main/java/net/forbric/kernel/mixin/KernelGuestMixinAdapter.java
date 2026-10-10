@@ -850,7 +850,7 @@ public final class KernelGuestMixinAdapter {
 
     private static byte[] adaptedSourceProtocols(byte[] bytes,Function<String,byte[]> resource) {
         ClassNode node=MixinFit.parse(bytes);
-        int changed=FabricRegistryInitializationMixinAdapter.adapt(node);
+        int changed=FabricRegistryInitializationMixinAdapter.adapt(node,n->{byte[] b=resource.apply(n+".class");return b==null?null:MixinFit.parse(b);});
         changed+=FabricRegistryLoaderMixinAdapter.adapt(node,n->{byte[] b=resource.apply(n+".class");return b==null?null:MixinFit.parse(b);});
         changed+=FabricCreativePagerMixinAdapter.adapt(node,n->{byte[] b=resource.apply(n+".class");return b==null?null:MixinFit.parse(b);});
         if(changed==0)return bytes;

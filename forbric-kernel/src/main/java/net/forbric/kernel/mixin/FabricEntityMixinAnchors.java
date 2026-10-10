@@ -13,7 +13,10 @@ import org.objectweb.asm.tree.*;
  * fabric-api and for any mod's clear() wrap that {@link ClearVetoProof} proves decides effect by effect. Occupancy bridges its audited handled-result
  * contract to the native bed setter, including native beds with no vanilla OCCUPIED property. The elytra flight tick
  * (EntityElytraEvents.CUSTOM with tickElytra) moves from vanilla's glider-slot choice to NeoForge's empty-glider guard
- * just before it: behind that guard, custom flight with no glider item never reached Fabric's tick. */
+ * just before it: behind that guard, custom flight with no glider item never reached Fabric's tick.
+ *
+ * <p>Every injector is read as Mixin reads it, never by spelling: its selectors by the method they bind in the merged class,
+ * its point by the member it names in the method it was written for ({@link MixinCallbackShape#names}). */
 public final class FabricEntityMixinAnchors {
  public static final String PROPERTY="forbric.fabricEntityAnchors";
  /** {@code -Dforbric.fabricElytraTickAnchor=off} leaves fabric-api's elytra flight tick at the glider-slot choice. */
@@ -27,62 +30,70 @@ public final class FabricEntityMixinAnchors {
  private static final String CIR="Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
  private FabricEntityMixinAnchors() { }
  public static int adapt(ClassNode mixin,Function<String,ClassNode> targets) {
+  return adapt(mixin,targets,NativeGameReferences::reference);
+ }
+ /** {@code references} gives the class the mod was compiled against, where a point written without its owner or
+  * descriptor is read ({@link MixinCallbackShape#names}); without it, only a point spelled with both names a member.
+  * Selectors are bound as Mixin binds them in the merged class ({@link MixinCallbackShape#binds}), never by spelling. */
+ static int adapt(ClassNode mixin,Function<String,ClassNode> targets,java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> references) {
   if("off".equalsIgnoreCase(System.getProperty(PROPERTY,"on")))return 0;
+  Function<String,ClassNode> sources=owner->references==null?null:references.apply(MixinStubRebind.ecosystemOf(mixin.name),owner);
   if(!mixin.name.startsWith(BASE)&&MixinFit.mixinTargets(mixin).equals(List.of(LIVING))) {
    // Any mod's proven clear-and-restore veto, preserving its original predicate.
    ClassNode living=targets.apply(LIVING);MethodNode remove=living==null?null:method(living,"removeAllEffects","()Z");
-   int changed=remove==null?0:earlyRemoveVeto(mixin,remove);
+   int changed=remove==null?0:earlyRemoveVeto(mixin,living,remove,sources.apply(LIVING));
    if(changed>0)ForbricLog.info("[Forbric/Mixin] %s's clear-all effect veto now wraps NeoForge's per-effect EventHooks.onEffectRemoved "
      +"— the merged removeAllEffects has no activeEffects.clear() for its wrap to bind to",mixin.name.replace('/','.'));
    return changed;
   }
   if(!List.of(BASE+"effect/LivingEntityMixin",BASE+"elytra/LivingEntityMixin",BASE+"ServerPlayerMixin",BASE+"LivingEntityMixin").contains(mixin.name))return 0;
-  ClassNode target=targets.apply(mixin.name.equals(BASE+"ServerPlayerMixin")?"net/minecraft/server/level/ServerPlayer":LIVING);if(target==null)return 0;int changed=0;
+  String owner=mixin.name.equals(BASE+"ServerPlayerMixin")?"net/minecraft/server/level/ServerPlayer":LIVING;
+  ClassNode target=targets.apply(owner);if(target==null)return 0;int changed=0;ClassNode source=sources.apply(owner);
   if(mixin.name.equals(BASE+"effect/LivingEntityMixin")) {
    MethodNode force=method(target,"forceAddEffect","("+EFFECT+ENTITY+")V");
    String old="L"+LIVING+";canBeAffected("+EFFECT+")Z";
    String moved="Lnet/neoforged/neoforge/common/CommonHooks;canMobEffectBeApplied(L"+LIVING+";"+EFFECT+ENTITY+")Z";
    if(force!=null && countCalls(force,LIVING,"canBeAffected","("+EFFECT+")Z")==0
       && countCalls(force,"net/neoforged/neoforge/common/CommonHooks","canMobEffectBeApplied","(L"+LIVING+";"+EFFECT+ENTITY+")Z")==1)
-    changed+=move(mixin,"beforeForceAddEffect","("+EFFECT+ENTITY+CI+")V","forceAddEffect",null,"INVOKE",old,"INVOKE",moved);
+    changed+=move(mixin,target,source,"beforeForceAddEffect","("+EFFECT+ENTITY+CI+")V","forceAddEffect("+EFFECT+ENTITY+")V",null,"INVOKE",old,"INVOKE",moved);
    MethodNode remove=method(target,"removeAllEffects","()Z");
    if(remove!=null && countCalls(remove,"com/google/common/collect/Maps","newHashMap","(Ljava/util/Map;)Ljava/util/HashMap;")==0
       && countCalls(remove,"java/util/HashMap","<init>","(I)V")==1
       && countCalls(remove,"java/util/Map","isEmpty","()Z")==1
       && remove.instructions.iterator().hasNext() && countNew(remove,"java/util/HashMap")==1)
-    changed+=move(mixin,"beforeRemoveAllEffects","("+CIR+")V","removeAllEffects",null,"INVOKE",
+    changed+=move(mixin,target,source,"beforeRemoveAllEffects","("+CIR+")V","removeAllEffects()Z",null,"INVOKE",
       "Lcom/google/common/collect/Maps;newHashMap(Ljava/util/Map;)Ljava/util/HashMap;","NEW","java/util/HashMap");
-   if(remove!=null)changed+=earlyRemoveVeto(mixin,remove);
+   if(remove!=null)changed+=earlyRemoveVeto(mixin,target,remove,source);
   } else if(mixin.name.equals(BASE+"elytra/LivingEntityMixin")) {
    MethodNode plain=method(target,"canGlide","()Z"),extended=method(target,"canGlide","(Z)Z");
    if(delegatesToAttributePath(plain) && attributeAfterMovementChecks(extended))
-    changed+=move(mixin,"injectElytraCheck","("+CIR+")V","canGlide","canGlide(Z)Z","FIELD",
+    changed+=move(mixin,target,source,"injectElytraCheck","("+CIR+")V","canGlide()Z","canGlide(Z)Z","FIELD",
       "Lnet/minecraft/world/entity/EquipmentSlot;VALUES:Ljava/util/List;","FIELD",
       "Lnet/neoforged/neoforge/common/NeoForgeMod;GLIDING_FLIGHT:Lnet/minecraft/core/Holder;");
    if(!"off".equalsIgnoreCase(System.getProperty(TICK_PROPERTY,"on"))&&damageChoiceBehindEmptyGuard(method(target,"updateFallFlying","()V"))
      &&plainPoint(mixin,"injectElytraTick","("+CI+")V")) {
-    int tick=move(mixin,"injectElytraTick","("+CI+")V","updateFallFlying()V",null,"INVOKE",GET_RANDOM,"INVOKE","Ljava/util/List;isEmpty()Z");
+    int tick=move(mixin,target,source,"injectElytraTick","("+CI+")V","updateFallFlying()V",null,"INVOKE",GET_RANDOM,"INVOKE","Ljava/util/List;isEmpty()Z");
     if(tick>0)ForbricLog.info("[Forbric/Mixin] fabric-api's elytra flight tick now runs before NeoForge's empty-glider guard in "
       +"LivingEntity.updateFallFlying — custom flight without a glider item reaches EntityElytraEvents.CUSTOM(entity, true) again");
     changed+=tick;
    }
   }
-  if(mixin.name.equals(BASE+"ServerPlayerMixin"))changed+=sleepLambda(mixin,target);
-  if(mixin.name.equals(BASE+"LivingEntityMixin"))changed+=bedOccupation(mixin,target);
-  if(mixin.name.equals(BASE+"LivingEntityMixin"))changed+=sleepDirection(mixin,target);
+  if(mixin.name.equals(BASE+"ServerPlayerMixin"))changed+=sleepLambda(mixin,target,source);
+  if(mixin.name.equals(BASE+"LivingEntityMixin"))changed+=bedOccupation(mixin,target,source);
+  if(mixin.name.equals(BASE+"LivingEntityMixin"))changed+=sleepDirection(mixin,target,source);
   if(changed>0)ForbricLog.info("[Forbric/Mixin] restored %d entity callback anchor(s) in %s at the corresponding native decision stage",changed,mixin.name.replace('/','.'));
   return changed;
  }
- private static int sleepLambda(ClassNode mixin,ClassNode target) {
+ private static int sleepLambda(ClassNode mixin,ClassNode target,ClassNode source) {
   MethodNode handler=method(mixin,"hasNoMonstersNearby","(Ljava/util/List;Lnet/minecraft/core/BlockPos;)Z");
   MethodNode host=method(target,"startSleepInBed","(Lnet/minecraft/core/BlockPos;)Lcom/mojang/datafixers/util/Either;");
   if(handler==null||host==null||hasGroup(handler.visibleAnnotations)||hasGroup(handler.invisibleAnnotations)
     ||countCalls(host,"java/util/List","isEmpty","()Z")!=0)return 0;
   AnnotationNode inject=MixinFit.injectorOf(handler);
   if(inject==null||!inject.desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;")
-    ||!MixinFit.stringList(MixinFit.value(inject,"method")).equals(List.of("startSleepInBed")))return 0;
+    ||!MixinCallbackShape.binds(handler,target,host.name+host.desc))return 0;
   List<AnnotationNode> points=MixinFit.atNodes(inject);
-  if(points.size()!=1||!"Ljava/util/List;isEmpty()Z".equals(MixinFit.value(points.getFirst(),"target")))return 0;
+  if(points.size()!=1||!MixinCallbackShape.names(points.getFirst(),"Ljava/util/List;isEmpty()Z",MixinCallbackShape.written(handler,source)))return 0;
   List<AbstractInsnNode> body=code(host);if(body.size()<4||!(body.get(0) instanceof VarInsnNode self)||self.var!=0||self.getOpcode()!=Opcodes.ALOAD
     ||!(body.get(1) instanceof VarInsnNode pos)||pos.var!=1||pos.getOpcode()!=Opcodes.ALOAD
     ||!(body.get(2) instanceof InvokeDynamicInsnNode capture)||!capture.bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")
@@ -92,7 +103,9 @@ public final class FabricEntityMixinAnchors {
   for(Object argument:capture.bsmArgs)if(argument instanceof org.objectweb.asm.Handle h && h.getOwner().equals(target.name)
     &&h.getName().startsWith("lambda$startSleepInBed$")&&h.getDesc().equals(host.desc)
     &&(h.getTag()==Opcodes.H_INVOKEVIRTUAL||h.getTag()==Opcodes.H_INVOKESPECIAL)) {
-   MethodNode lambda=method(target,h.getName(),h.getDesc());if(lambda!=null&&countCalls(lambda,"java/util/List","isEmpty","()Z")==1)matches.add(lambda);
+   MethodNode lambda=method(target,h.getName(),h.getDesc());
+   // The one List.isEmpty there, and nothing else the point, as written, selects in it.
+   if(lambda!=null&&countCalls(lambda,"java/util/List","isEmpty","()Z")==1&&MixinCallbackShape.selected(points.getFirst(),lambda).size()==1)matches.add(lambda);
   }
   if(matches.size()!=1)return 0;
   set(inject,"method",new ArrayList<>(List.of(matches.getFirst().name+matches.getFirst().desc)));return 1;
@@ -103,17 +116,21 @@ public final class FabricEntityMixinAnchors {
  private static final String BED_CALL="(L"+LEVEL+";"+POSITION+"L"+LIVING+";Z)V";
  // Exact instruction body in Fabric API 0.155.2's occupancy redirect. Frame/debug/access metadata is ignored.
  private static final String BED_BODY="f783fdec79ad88be77806d13c6c1804729677aa315cf9e8d6f1156351efee6e0";
- private static int bedOccupation(ClassNode mixin,ClassNode target) {
+ private static int bedOccupation(ClassNode mixin,ClassNode target,ClassNode source) {
   MethodNode old=method(mixin,"setOccupiedState","(L"+LEVEL+";"+POSITION+"L"+STATE+";I)Z");
   if(old==null||hasGroup(old.visibleAnnotations)||hasGroup(old.invisibleAnnotations)||!bodyHash(old).equals(BED_BODY))return 0;
   AnnotationNode redirect=MixinFit.injectorOf(old);
   if(redirect==null||!redirect.desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;"))return 0;
-  List<String> selectors=MixinFit.stringList(MixinFit.value(redirect,"method"));
-  if(!new java.util.HashSet<>(selectors).equals(java.util.Set.of("startSleeping","lambda$stopSleeping$0")))return 0;
+  // The methods Mixin binds the redirect to in the merged class (the sleep start and the wake-up lambda), however its
+  // selectors are written: each one of them must have lost vanilla's setBlock to NeoForge's setBedOccupied.
+  List<MethodNode> hosts=MixinTargetSelectors.bound(old,target);
+  if(hosts==null||hosts.isEmpty())return 0;
+  List<MethodNode> written=source==null?null:MixinTargetSelectors.bound(old,source);
   List<AnnotationNode> points=MixinFit.atNodes(redirect);
-  if(points.size()!=1||!("L"+LEVEL+";setBlock("+POSITION+"L"+STATE+";I)Z").equals(MixinFit.value(points.getFirst(),"target")))return 0;
-  for(String name:selectors){MethodNode host=method(target,name,"("+POSITION+")V");
-   if(host==null||countCalls(host,LEVEL,"setBlock","("+POSITION+"L"+STATE+";I)Z")!=0||countCalls(host,STATE,"setBedOccupied",BED_CALL)!=1)return 0;
+  if(points.size()!=1||!MixinCallbackShape.namesInEach(points.getFirst(),"L"+LEVEL+";setBlock("+POSITION+"L"+STATE+";I)Z",written))return 0;
+  for(MethodNode host:hosts){
+   if((host.access&Opcodes.ACC_STATIC)!=0||countCalls(host,LEVEL,"setBlock","("+POSITION+"L"+STATE+";I)Z")!=0
+     ||countCalls(host,STATE,"setBedOccupied",BED_CALL)!=1)return 0;
   }
   String desc="(L"+STATE+";L"+LEVEL+";"+POSITION+"L"+LIVING+";Z)V";
   if(method(mixin,"forbric$setBedOccupied",desc)!=null)return 0;
@@ -148,7 +165,7 @@ public final class FabricEntityMixinAnchors {
   * (isBed, getBedDirection) and never calls it, so the wrap bound nowhere. The same event is asked on the answer:
   * when the entity has a sleeping position, the native direction (FACING for a vanilla bed, the block's own for a
   * modded one, null for a non-bed spot) goes through the listeners, as vanilla's did. */
- private static int sleepDirection(ClassNode mixin,ClassNode target) {
+ private static int sleepDirection(ClassNode mixin,ClassNode target,ClassNode source) {
   MethodNode host=method(target,"getBedOrientation","()"+DIRECTION);
   if(host==null||countCalls(host,"net/minecraft/world/level/block/BedBlock","getBedOrientation","(Lnet/minecraft/world/level/BlockGetter;"+POSITION+")"+DIRECTION)!=0
     ||countCalls(host,STATE,"isBed","(Lnet/minecraft/world/level/BlockGetter;"+POSITION+"L"+LIVING+";)Z")!=1
@@ -158,10 +175,11 @@ public final class FabricEntityMixinAnchors {
   if(old==null||hasGroup(old.visibleAnnotations)||hasGroup(old.invisibleAnnotations)||!bodyHash(old).equals(SLEEP_DIRECTION_BODY))return 0;
   AnnotationNode wrap=MixinFit.injectorOf(old);
   if(wrap==null||!wrap.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;")
-    ||!MixinFit.stringList(MixinFit.value(wrap,"method")).equals(List.of("getBedOrientation")))return 0;
+    ||!MixinCallbackShape.binds(old,target,host.name+host.desc))return 0;
   List<AnnotationNode> points=MixinFit.atNodes(wrap);
   if(points.size()!=1||!"INVOKE".equals(MixinFit.value(points.getFirst(),"value"))
-    ||!("Lnet/minecraft/world/level/block/BedBlock;getBedOrientation(Lnet/minecraft/world/level/BlockGetter;"+POSITION+")"+DIRECTION).equals(MixinFit.value(points.getFirst(),"target")))return 0;
+    ||!MixinCallbackShape.names(points.getFirst(),"Lnet/minecraft/world/level/block/BedBlock;getBedOrientation(Lnet/minecraft/world/level/BlockGetter;"+POSITION+")"+DIRECTION,
+      MixinCallbackShape.written(old,source)))return 0;
   String desc="("+DIRECTION+")"+DIRECTION;
   if(method(mixin,"forbric$modifySleepingDirection",desc)!=null)return 0;
   if(old.visibleAnnotations!=null)old.visibleAnnotations.remove(wrap);if(old.invisibleAnnotations!=null)old.invisibleAnnotations.remove(wrap);
@@ -220,7 +238,7 @@ public final class FabricEntityMixinAnchors {
    // fabric-entity-events-v1 this has run with); asked only on the server, with the command context Fabric passes.
    new ClearAllVeto(BASE+"effect/LivingEntityMixin","allowRemoveAllEffects","(Ljava/util/Map;L"+OPERATION+";)V",null,
      "forbric$allowEarlyRemove",FabricEntityMixinAnchors::fabricVeto,FabricEntityMixinAnchors::askFabric));
- private static int earlyRemoveVeto(ClassNode mixin,MethodNode remove) {
+ private static int earlyRemoveVeto(ClassNode mixin,ClassNode living,MethodNode remove,ClassNode source) {
   if(countCalls(remove,"java/util/Map","clear","()V")!=0||countCalls(remove,"net/neoforged/neoforge/event/EventHooks","onEffectRemoved",EFFECT_REMOVED)!=1)return 0;
   int changed=0;
   for(ClearAllVeto veto:CLEAR_ALL_VETOES) {
@@ -229,9 +247,10 @@ public final class FabricEntityMixinAnchors {
    if(old==null||hasGroup(old.visibleAnnotations)||hasGroup(old.invisibleAnnotations))continue;
    AnnotationNode wrap=MixinFit.injectorOf(old);
    if(wrap==null||!wrap.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;")
-     ||!List.of(List.of("removeAllEffects"),List.of("removeAllEffects()Z")).contains(MixinFit.stringList(MixinFit.value(wrap,"method"))))continue;
+     ||!MixinCallbackShape.binds(old,living,"removeAllEffects()Z"))continue;
    List<AnnotationNode> points=MixinFit.atNodes(wrap);
-   if(points.size()!=1||!"INVOKE".equals(MixinFit.value(points.getFirst(),"value"))||!"Ljava/util/Map;clear()V".equals(MixinFit.value(points.getFirst(),"target"))
+   if(points.size()!=1||!"INVOKE".equals(MixinFit.value(points.getFirst(),"value"))
+     ||!MixinCallbackShape.names(points.getFirst(),MAP_CLEAR,MixinCallbackShape.written(old,source))
      ||MixinFit.value(points.getFirst(),"ordinal")!=null||MixinFit.value(wrap,"slice")!=null)continue;
    if(!veto.recognised().test(mixin,old))continue;
    String desc="(L"+LIVING+";"+EFFECT+"L"+OPERATION+";)Z";
@@ -253,7 +272,7 @@ public final class FabricEntityMixinAnchors {
   }
   if(!"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(CLEAR_VETO_PROPERTY,"on"))) {
    for(MethodNode old:new ArrayList<>(mixin.methods)) {
-    if(!clearWrap(old))continue;
+    if(!clearWrap(old,living,source))continue;
     ClearVetoProof.Verdict proof=ClearVetoProof.prove(mixin,old);
     if(!proof.proved()){
      ForbricLog.debug("[Forbric/Mixin] %s.%s wraps activeEffects.clear() but is not a per-effect veto (%s) — left as written",
@@ -265,16 +284,19 @@ public final class FabricEntityMixinAnchors {
   }
   return changed;
  }
- /** A guest @WrapOperation of vanilla's activeEffects.clear() in removeAllEffects, unconditioned: the point the proof judges. */
- static boolean clearWrap(MethodNode old) {
+ private static final String MAP_CLEAR="Ljava/util/Map;clear()V";
+ /** A guest @WrapOperation of vanilla's activeEffects.clear() in removeAllEffects, unconditioned: the point the proof judges.
+  * Bound as Mixin binds its selectors in the merged {@code living}; its point read as Mixin reads a target, an owner-less or
+  * descriptor-less one in the method it was written for in {@code source} (the class the mod was compiled against). */
+ static boolean clearWrap(MethodNode old,ClassNode living,ClassNode source) {
   if(hasGroup(old.visibleAnnotations)||hasGroup(old.invisibleAnnotations))return false;
   AnnotationNode wrap=MixinFit.injectorOf(old);
   if(wrap==null||!wrap.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;")
-    ||!List.of(List.of("removeAllEffects"),List.of("removeAllEffects()Z")).contains(MixinFit.stringList(MixinFit.value(wrap,"method")))
+    ||!MixinCallbackShape.binds(old,living,"removeAllEffects()Z")
     ||MixinFit.value(wrap,"slice")!=null)return false;
   List<AnnotationNode> points=MixinFit.atNodes(wrap);
   if(points.size()!=1||!"INVOKE".equals(MixinFit.value(points.getFirst(),"value"))
-    ||!"Ljava/util/Map;clear()V".equals(MixinFit.value(points.getFirst(),"target")))return false;
+    ||!MixinCallbackShape.names(points.getFirst(),MAP_CLEAR,MixinCallbackShape.written(old,source)))return false;
   for(String key:List.of("ordinal","shift","by","opcode"))if(MixinFit.value(points.getFirst(),key)!=null)return false;
   return true;
  }
@@ -379,18 +401,20 @@ public final class FabricEntityMixinAnchors {
  }
  static String bodyHash(MethodNode original) { return MixinInstructionFingerprint.hash(original); }
 
- private static int move(ClassNode mixin,String handlerName,String handlerDesc,String selector,String replacementSelector,
-   String oldKind,String oldTarget,String newKind,String newTarget) {
+ /** Moves the handler's one point from {@code oldTarget} to {@code newTarget} when Mixin binds it to {@code member}
+  * ({@code name + desc}) of the merged {@code target} and its point names {@code oldTarget} — read as Mixin reads a target,
+  * one without its owner or descriptor in the method it was written for in {@code source}. */
+ private static int move(ClassNode mixin,ClassNode target,ClassNode source,String handlerName,String handlerDesc,String member,
+   String replacementSelector,String oldKind,String oldTarget,String newKind,String newTarget) {
   MethodNode handler=method(mixin,handlerName,handlerDesc);if(handler==null)return 0;
   if(hasGroup(handler.visibleAnnotations)||hasGroup(handler.invisibleAnnotations))return 0;
   AnnotationNode injector=MixinFit.injectorOf(handler);
   if(injector==null||!injector.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;"))return 0;
-  List<String> selected=MixinFit.stringList(MixinFit.value(injector,"method"));
-  if(selected.size()!=1||!selected.getFirst().equals(selector))return 0;
+  if(!MixinCallbackShape.binds(handler,target,member))return 0;
   List<AnnotationNode> points=MixinFit.atNodes(injector);
   if(points.size()!=1)return 0;
   AnnotationNode at=points.getFirst();
-  if(!oldKind.equals(MixinFit.value(at,"value"))||!oldTarget.equals(MixinFit.value(at,"target")))return 0;
+  if(!oldKind.equals(MixinFit.value(at,"value"))||!MixinCallbackShape.names(at,oldTarget,MixinCallbackShape.written(handler,source)))return 0;
   if(!oldKind.equals(newKind)&&(MixinFit.value(at,"shift")!=null||MixinFit.value(at,"by")!=null))return 0;
   set(at,"value",newKind);set(at,"target",newTarget);
   if(replacementSelector!=null)set(injector,"method",new ArrayList<>(List.of(replacementSelector)));

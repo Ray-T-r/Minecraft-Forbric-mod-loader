@@ -24,6 +24,13 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>All or nothing per mixin: when one injector that names a dead overload cannot be mapped (an ambiguous name-only
  * selector, two widened candidates, captured locals the move would shift), nothing moves.
+ *
+ * <p>Every injector is read as Mixin reads it, never by spelling: a selector by the methods it matches in the merged class
+ * ({@link MixinTargetSelectors#reach}), so an owner prefix, a dotted owner or whitespace is the same selector, and one that
+ * binds a single method but matches several (a bare name shared by the dead loader and its live overloads) names neither
+ * for certain; a point by the member it names ({@link MixinCallbackShape#member}) — one written without its owner or
+ * descriptor in the method it was written for in the class the mod was compiled against — and, once moved, by what it
+ * selects in the widened body ({@link MixinCallbackShape#selected}).
  */
 public final class FabricRegistryLoaderMixinAdapter {
 	public static final String PROPERTY="forbric.fabricRegistryLoader";
@@ -50,8 +57,13 @@ public final class FabricRegistryLoaderMixinAdapter {
 	private record Move(MethodNode handler,AnnotationNode injector,MethodNode host,MethodNode callee,boolean wrap){}
 
 	public static int adapt(ClassNode mixin,Function<String,ClassNode> targets){
+		return adapt(mixin,targets,NativeGameReferences::reference);
+	}
+	/** {@code references} gives the class the mod was compiled against, where a point without its owner or descriptor is read. */
+	static int adapt(ClassNode mixin,Function<String,ClassNode> targets,java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> references){
 		if(!enabled()||!MixinCallbackShape.targets(mixin,TARGET))return 0;
 		ClassNode target=targets.apply(TARGET);if(target==null)return 0;
+		ClassNode source=references==null?null:references.apply(MixinStubRebind.ecosystemOf(mixin.name),TARGET);
 		List<Move> moves=new ArrayList<>();
 		Set<String> deadCallees=new LinkedHashSet<>();
 		Map<String,MethodNode> widenedOf=new HashMap<>();
@@ -59,13 +71,13 @@ public final class FabricRegistryLoaderMixinAdapter {
 		for(MethodNode handler:mixin.methods){
 			if(!MixinCallbackShape.kind(handler,"WrapOperation"))continue;
 			AnnotationNode injector=MixinFit.injectorOf(handler);
-			String callee=invokeTarget(handler);if(callee==null)continue;
+			String callee=invokeTarget(handler,source);if(callee==null)continue;
 			String calleeKey=callee.substring(callee.indexOf(';')+1);
 			if(calledAnywhere(target,calleeKey))continue; // the call is live: the wrap binds as written
 			MethodNode widened=widenedLive(target,calleeKey);
 			if(widened==null)continue; // nothing replaced it here: not this repair's case
 			deadCallees.add(calleeKey);widenedOf.put(calleeKey,widened);
-			MethodNode host=host(target,MixinFit.stringList(MixinFit.value(injector,"method")));
+			MethodNode host=MixinTargetSelectors.unambiguous(handler,target);
 			MethodNode live=host==null?null:delegateCalling(target,host,widened);
 			if(live==null||(handler.access&Opcodes.ACC_STATIC)==0||!handlerDescribes(handler,calleeKey))return 0;
 			moves.add(new Move(handler,injector,live,widened,true));
@@ -76,19 +88,32 @@ public final class FabricRegistryLoaderMixinAdapter {
 		for(MethodNode handler:mixin.methods){
 			AnnotationNode injector=MixinFit.injectorOf(handler);
 			if(injector==null||injector.desc.equals(WRAP)&&moves.stream().anyMatch(m->m.handler()==handler))continue;
-			List<String> selectors=MixinFit.stringList(MixinFit.value(injector,"method"));
-			String dead=null;
-			for(String selector:selectors)for(String key:deadCallees){
-				if(strip(selector).equals(key))dead=key;
-				// A bare name shared by the dead overload and the live ones names neither for certain.
-				else if(strip(selector).equals(key.substring(0,key.indexOf('('))))return 0;
+			List<MixinTargetSelectors.Reach> reach=MixinTargetSelectors.reach(handler,target);
+			if(reach==null)continue;
+			String dead=null;boolean other=false;
+			for(MixinTargetSelectors.Reach selector:reach){
+				List<String> matched=selector.matched().stream().map(m->m.name+m.desc).toList();
+				String hit=matched.stream().filter(deadCallees::contains).findFirst().orElse(null);
+				// A carrier that no longer declares the dead overload at all: a selector pinning it still names it.
+				if(hit==null&&matched.isEmpty()&&deadCallees.contains(selector.spelled()))hit=selector.spelled();
+				if(hit==null){other=true;continue;}
+				// A selector binding one method that matches the dead overload and live ones names neither for certain.
+				if(matched.size()>1&&selector.single())return 0;
+				// One binding them all (a quantifier) binds the live overloads already: not this repair's case.
+				if(matched.size()>1){other=true;continue;}
+				if(dead!=null&&!dead.equals(hit))return 0;
+				dead=hit;
 			}
 			if(dead==null)continue;
-			if(selectors.size()!=1||!plain(handler,injector)||!hostBlind(handler,injector))return 0;
+			if(other||!plain(handler,injector)||!hostBlind(handler,injector))return 0;
 			MethodNode widened=widenedOf.get(dead);
+			MethodNode written=source==null?null:find(source,dead.substring(0,dead.indexOf('(')),dead.substring(dead.indexOf('(')));
 			for(AnnotationNode at:MixinFit.atNodes(injector)){
-				String point=(String)MixinFit.value(at,"target");
-				if(point==null||occurrences(widened,point)!=1)return 0;
+				// The member the point names where it was written, and exactly one instruction of it in the widened body.
+				String member=MixinCallbackShape.member(at,written);
+				List<AbstractInsnNode> there=MixinCallbackShape.selected(at,widened);
+				if(member==null||there.size()!=1||!(there.getFirst() instanceof MethodInsnNode call)
+						||!("L"+call.owner+";"+call.name+call.desc).equals(member))return 0;
 			}
 			moves.add(new Move(handler,injector,widened,null,false));
 		}
@@ -107,15 +132,17 @@ public final class FabricRegistryLoaderMixinAdapter {
 
 	/**
 	 * The one INVOKE point of a wrap, spelled {@code Lowner;name(desc)}, when it names a method of the target: read as
-	 * Mixin reads a target ({@link MixinFit#parseMember}), so whitespace or a dotted owner name the same member — the same
-	 * reading {@code matches} makes through {@link MixinCallbackShape#plainPoint}.
+	 * Mixin reads a target ({@link MixinCallbackShape#member}), so whitespace or a dotted owner name the same member, and
+	 * one without its owner or descriptor names what it selects in the method the wrap was written for in {@code source},
+	 * the class the mod was compiled against.
 	 */
-	private static String invokeTarget(MethodNode handler){
+	private static String invokeTarget(MethodNode handler,ClassNode source){
 		List<AnnotationNode> ats=MixinFit.atNodes(MixinFit.injectorOf(handler));
 		if(ats.size()!=1||!"INVOKE".equals(MixinFit.value(ats.getFirst(),"value")))return null;
 		for(String key:List.of("shift","by","opcode","args","ordinal"))if(MixinFit.value(ats.getFirst(),key)!=null)return null;
-		MixinFit.Member member=MixinFit.parseMember(MixinFit.asString(MixinFit.value(ats.getFirst(),"target")));
-		return member!=null&&TARGET.equals(member.owner())&&member.desc()!=null&&member.desc().startsWith("(")?"L"+TARGET+";"+member.name()+member.desc():null;
+		String named=MixinCallbackShape.member(ats.getFirst(),MixinCallbackShape.written(handler,source));
+		MixinFit.Member member=MixinFit.parseMember(named);
+		return member!=null&&TARGET.equals(member.owner())&&member.desc()!=null&&member.desc().startsWith("(")?named:null;
 	}
 	private static boolean calledAnywhere(ClassNode target,String key){
 		for(MethodNode m:target.methods)for(AbstractInsnNode i:m.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(TARGET)&&(c.name+c.desc).equals(key))return true;
@@ -131,18 +158,6 @@ public final class FabricRegistryLoaderMixinAdapter {
 			found=m;
 		}
 		return found;
-	}
-	/** The target method a selector names: name and descriptor, or a name only when exactly one method carries it. */
-	private static MethodNode host(ClassNode target,List<String> selectors){
-		if(selectors.size()!=1)return null;
-		String selector=strip(selectors.getFirst());
-		List<MethodNode> found=new ArrayList<>();
-		for(MethodNode m:target.methods)if(selector.equals(m.name+m.desc)||selector.equals(m.name))found.add(m);
-		return found.size()==1?found.getFirst():null;
-	}
-	private static String strip(String selector){
-		int paren=selector.indexOf('('),semi=selector.indexOf(';');
-		return semi>=0&&(paren<0||semi<paren)&&selector.startsWith("L")?selector.substring(semi+1):selector;
 	}
 	/** {@code host} when it calls {@code widened}, else the same-named overload it delegates to that does, followed. */
 	private static MethodNode delegateCalling(ClassNode target,MethodNode host,MethodNode widened){
@@ -193,11 +208,6 @@ public final class FabricRegistryLoaderMixinAdapter {
 				||injector.desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;")||injector.desc.startsWith("Lcom/llamalad7/mixinextras/injector/");
 		Type[] params=Type.getArgumentTypes(handler.desc);
 		return params.length==1&&params[0].getInternalName().startsWith("org/spongepowered/asm/mixin/injection/callback/CallbackInfo");
-	}
-	private static int occurrences(MethodNode body,String point){
-		MixinAtWidenedCall.Member member=MixinAtWidenedCall.parse(point);if(member==null)return 0;
-		int n=0;for(AbstractInsnNode i:body.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(member.owner())&&c.name.equals(member.name())&&c.desc.equals(member.descriptor()))n++;
-		return n;
 	}
 	/** The handler renamed aside, and under its name a wrap shaped for the widened call that passes the extras through. */
 	private static MethodNode wrapper(ClassNode mixin,MethodNode original,AnnotationNode annotation,MethodNode widened){

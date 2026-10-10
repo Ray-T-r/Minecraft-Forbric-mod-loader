@@ -41,8 +41,10 @@ import org.objectweb.asm.tree.VarInsnNode;
  * stays bound to it and a copy of its body answers the carrier's call.
  *
  * <p>Only a Fabric mod's handler — NeoForge's and MinecraftForge's mods were written against the carrier call — and only
- * the reviewed shape: a {@code @WrapOperation} on {@code ItemStack.is(Object)Z} with one selector naming a row's method,
- * no ordinal, slice or {@code @Group}, and a handler that is exactly {@code (ItemStack, Object, Operation) → boolean}
+ * the reviewed shape: a {@code @WrapOperation} on {@code ItemStack.is(Object)Z} — its point read as Mixin reads a target, so
+ * whitespace, a dotted owner, or (where the method it was written for, in the class the mod was compiled against, decides
+ * it) no owner or descriptor name the same call — bound by its selectors, as Mixin binds them in the merged class, to a
+ * row's method, no ordinal, slice or {@code @Group}, and a handler that is exactly {@code (ItemStack, Object, Operation) → boolean}
  * with no sugar, of the target method's static-ness. The merged method must make the row's carrier call exactly once,
  * with the row's constant. {@code -Dforbric.shearsRelay=off} relays nothing.
  */
@@ -101,6 +103,11 @@ public final class MixinShearsRelay {
 
 	/** Relays every eligible handler of a Fabric mod's {@code mixin}; returns how many. {@code targets} must return nodes WITH code. */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
+		return adapt(mixin, targets, NativeGameReferences::reference);
+	}
+
+	/** {@code references} gives the class the mod was compiled against, where a point without its owner or descriptor is read. */
+	static int adapt(ClassNode mixin, Function<String, ClassNode> targets, java.util.function.BiFunction<Ecosystem, String, ClassNode> references) {
 		if (!enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
 		if (MixinStubRebind.ecosystemOf(mixin.name) != Ecosystem.FABRIC) return 0;
 		List<String> targetNames = MixinOverloadPin.targetsOf(mixin);
@@ -109,26 +116,27 @@ public final class MixinShearsRelay {
 		if (ROWS.stream().noneMatch(row -> row.target().equals(targetName))) return 0;
 		ClassNode target = targets.apply(targetName);
 		if (target == null || target.methods == null) return 0;
+		ClassNode source = references == null ? null : references.apply(Ecosystem.FABRIC, targetName);
 		int relayed = 0;
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
 			if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX) || handler.name.endsWith(ADDED_SUFFIX)) continue;
-			if (relay(mixin, handler, target)) relayed++;
+			if (relay(mixin, handler, target, source)) relayed++;
 		}
 		return relayed;
 	}
 
-	private static boolean relay(ClassNode mixin, MethodNode handler, ClassNode target) {
+	private static boolean relay(ClassNode mixin, MethodNode handler, ClassNode target, ClassNode source) {
 		if (!HANDLER_DESC.equals(handler.desc) || grouped(handler)) return false;
 		AnnotationNode injector = MixinFit.injectorOf(handler);
 		if (injector == null || !WRAP_OPERATION.equals(injector.desc) || MixinFit.value(injector, "slice") != null) return false;
 		List<AnnotationNode> points = MixinFit.atNodes(injector);
 		if (points.size() != 1) return false;
 		AnnotationNode at = points.getFirst();
-		if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value"))) || !VANILLA_TARGET.equals(MixinFit.asString(MixinFit.value(at, "target")))
+		if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value")))
+				|| !MixinCallbackShape.names(at, VANILLA_TARGET, MixinCallbackShape.written(handler, source))
 				|| MixinFit.value(at, "ordinal") != null || MixinFit.value(at, "slice") != null) return false;
-		List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
-		if (selectors.size() != 1) return false;
-		MethodNode body = selected(target, selectors.getFirst());
+		// The one method Mixin binds the selectors to in the merged class, however they are written.
+		MethodNode body = MixinTargetSelectors.one(handler, target);
 		if (body == null) return false;
 		Row row = ROWS.stream().filter(r -> r.target().equals(target.name) && r.method().equals(body.name)).findFirst().orElse(null);
 		if (row == null || carrierCalls(body, row) != 1) return false;
@@ -201,17 +209,6 @@ public final class MixinShearsRelay {
 			if (insn instanceof MethodInsnNode call && call.owner.equals(ITEM_STACK) && call.name.equals("is") && call.desc.equals("(Ljava/lang/Object;)Z")) calls++;
 		}
 		return calls;
-	}
-
-	/** The one method of {@code target} a selector names: {@code name} or {@code name + desc}. Null when none or several. */
-	private static MethodNode selected(ClassNode target, String selector) {
-		MethodNode found = null;
-		for (MethodNode method : target.methods) {
-			if (!selector.equals(method.name) && !selector.equals(method.name + method.desc)) continue;
-			if (found != null) return null;
-			found = method;
-		}
-		return found;
 	}
 
 	private static boolean grouped(MethodNode handler) {

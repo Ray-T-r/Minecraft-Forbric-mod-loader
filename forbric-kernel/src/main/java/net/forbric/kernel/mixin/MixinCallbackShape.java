@@ -36,14 +36,6 @@ final class MixinCallbackShape {
                 && !grouped(method.visibleAnnotations) && !grouped(method.invisibleAnnotations);
     }
     /**
-     * Whether the injector's selector list is spelled exactly {@code selector}. A spelling is not a binding: callback
-     * adapters that have the target class ask {@link #binds}; this stays for adapters that are given none.
-     */
-    static boolean selects(MethodNode method, String selector) {
-        AnnotationNode injector = MixinFit.injectorOf(method);
-        return injector != null && List.of(selector).equals(MixinFit.stringList(MixinFit.value(injector, "method")));
-    }
-    /**
      * Whether Mixin binds the handler's injector to {@code member} ({@code name + desc}) of {@code target} and to nothing
      * else, however its selectors are written ({@link MixinTargetSelectors}).
      */

@@ -36,7 +36,7 @@ import net.forbric.kernel.util.ForbricLog;
  * and replaces it whole — so this moves one only along a {@link Site} row, which says where the carrier's call stands
  * for vanilla's and why, and only a handler whose own work is the condition:
  * <ul>
- *   <li>a {@code @Redirect} at the row's call in the row's method, one selector, one point (its ordinal mapped by the
+ *   <li>a {@code @Redirect} at the row's call, its selectors binding the row's method and nothing else, one point (its ordinal mapped by the
  *       row, a slice only where the row names it), no {@code @Group}, no parameter annotations, the handler's descriptor
  *       the vanilla call's;</li>
  *   <li>exactly one call of the vanilla member in the handler, taking every parameter, unchanged and in order;</li>
@@ -49,6 +49,11 @@ import net.forbric.kernel.util.ForbricLog;
  * </ul>
  * The handler's descriptor becomes the carrier's call's ({@code -Dforbric.replacedCallRedirects=off} leaves every one as
  * compiled).
+ *
+ * <p>The redirect is read as Mixin reads it, never by its spelling: its selectors by the method they bind (in the class
+ * the mod was compiled against, and the same method in the merged one), its point and its slice's start by the member each
+ * names in the method it was written for ({@link MixinCallbackShape#member}) — whitespace, a dotted owner, and a target
+ * without its owner or descriptor that selects only that member's instructions there are the same redirect.
  */
 public final class ReplacedCallRedirects {
 	public static final String PROPERTY = "forbric.replacedCallRedirects";
@@ -117,7 +122,7 @@ public final class ReplacedCallRedirects {
             AnnotationNode redirect = MixinFit.injectorOf(handler);
             if (redirect == null || !REDIRECT.equals(redirect.desc)) continue;
             Site site = derive(target, source, ecosystem, handler, redirect);
-            if (site != null && hostHasTheSiteShape(target, site) && move(mixin, handler, redirect, site, log)) {
+            if (site != null && hostHasTheSiteShape(target, site) && move(mixin, target, handler, redirect, site, log)) {
                 observed.add(site); moved++;
             }
         }
@@ -126,19 +131,19 @@ public final class ReplacedCallRedirects {
 
     /** A source occurrence must have one guarded, result-consuming counterpart with the same data providers. */
     static Site derive(ClassNode target, ClassNode source, Ecosystem ecosystem, MethodNode handler, AnnotationNode redirect) {
-        List<String> selectors = MixinFit.stringList(MixinFit.value(redirect, "method"));
         List<AnnotationNode> points = MixinFit.atNodes(redirect);
-        if (selectors.size() != 1 || points.size() != 1) return null;
-        AnnotationNode at = points.getFirst(); String wanted = MixinFit.asString(MixinFit.value(at, "target"));
-        MixinFit.Member member = MixinFit.parseMember(wanted); if (member == null || member.owner() == null || member.desc() == null) return null;
-        String selector = selectors.getFirst(); int paren = selector.indexOf('(');
-        List<MethodNode> originals = source.methods.stream().filter(m -> paren >= 0 ? (m.name + m.desc).equals(selector) : m.name.equals(selector)).toList();
-        if (originals.size() != 1) return null; MethodNode original = originals.getFirst(), current = NativeCallChanges.method(target, original.name + original.desc);
+        if (points.size() != 1) return null;
+        // The method the redirect was written for: the one its selectors bind in the class the mod was compiled against.
+        MethodNode original = MixinTargetSelectors.one(handler, source);
+        if (original == null) return null;
+        AnnotationNode at = points.getFirst(); String wanted = MixinCallbackShape.member(at, original);
+        MixinFit.Member member = MixinFit.parseMember(wanted); if (member == null || member.owner() == null || member.desc() == null || !member.desc().startsWith("(")) return null;
+        MethodNode current = NativeCallChanges.method(target, original.name + original.desc);
         if (current == null || ((current.access ^ original.access) & Opcodes.ACC_STATIC) != 0) return null;
         List<NativeCallChanges.Site> before = NativeCallChanges.sites(source, original).stream().filter(s -> is(s.call(), member)).toList();
         List<NativeCallChanges.Site> after = NativeCallChanges.sites(target, current);
         if (before.isEmpty() || after.stream().anyMatch(s -> is(s.call(), member))) return null;
-        String slice = sourceSlice(redirect); if (MixinFit.value(redirect, "slice") != null && slice == null) return null;
+        String slice = sourceSlice(redirect, original); if (MixinFit.value(redirect, "slice") != null && slice == null) return null;
         if (slice != null) before = before.stream().filter(s -> readsBefore(original, s.call(), slice)).toList();
         if (before.isEmpty()) return null;
         List<NativeCallChanges.Site> matched = new ArrayList<>(); int[] from = null;
@@ -204,12 +209,14 @@ public final class ReplacedCallRedirects {
     private static boolean contains(NativeCallChanges.Expr expression, NativeCallChanges.Expr part) {
         return expression.equals(part) || expression.inputs().stream().anyMatch(input -> contains(input, part));
     }
-    private static String sourceSlice(AnnotationNode redirect) {
+    /** The field the redirect's one slice starts from, {@code Lowner;name:desc}, as its {@code from} names it in {@code original}. */
+    private static String sourceSlice(AnnotationNode redirect, MethodNode original) {
         Object value = MixinFit.value(redirect, "slice"); if (value == null) return null;
         List<?> slices = value instanceof List<?> list ? list : List.of(value);
         if (slices.size() != 1 || !(slices.getFirst() instanceof AnnotationNode slice)) return null;
         if (!(MixinFit.value(slice, "from") instanceof AnnotationNode from) || !"FIELD".equals(MixinFit.value(from, "value"))) return null;
-        return MixinFit.asString(MixinFit.value(from, "target"));
+        String member = MixinCallbackShape.member(from, original);
+        return member != null && member.indexOf(':') > 0 ? member : null;
     }
     private static boolean readsBefore(MethodNode method, AbstractInsnNode call, String member) {
         for (AbstractInsnNode i : method.instructions) {
@@ -275,18 +282,20 @@ public final class ReplacedCallRedirects {
 		return call.owner.equals(member.owner()) && call.name.equals(member.name()) && call.desc.equals(member.desc());
 	}
 
-	private static boolean move(ClassNode mixin, MethodNode handler, AnnotationNode redirect, Site site, boolean log) {
+	private static boolean move(ClassNode mixin, ClassNode target, MethodNode handler, AnnotationNode redirect, Site site, boolean log) {
 		if (annotated(handler.visibleAnnotations, GROUP) || annotated(handler.invisibleAnnotations, GROUP)) return false;
 		if (parameterAnnotated(handler.visibleParameterAnnotations) || parameterAnnotated(handler.invisibleParameterAnnotations)) return false;
 		for (int i = 0; i + 1 < redirect.values.size(); i += 2) if (!INJECTOR_KEYS.contains(redirect.values.get(i))) return false;
-		List<String> selectors = MixinFit.stringList(MixinFit.value(redirect, "method"));
 		String name = site.method().substring(0, site.method().indexOf('('));
-		if (selectors.size() != 1 || !(selectors.getFirst().equals(name) || selectors.getFirst().equals(site.method()))) return false;
+		// Bound, in the merged class, to the row's method itself, however the selectors are written.
+		if (!MixinCallbackShape.binds(handler, target, site.method())) return false;
 		List<AnnotationNode> points = MixinFit.atNodes(redirect);
 		if (points.size() != 1) return false;
 		AnnotationNode at = points.getFirst();
 		for (int i = 0; i + 1 < at.values.size(); i += 2) if (!AT_KEYS.contains(at.values.get(i))) return false;
-		if (!"INVOKE".equals(MixinFit.value(at, "value")) || !site.vanilla().equals(MixinFit.value(at, "target"))) return false;
+		// The row's member is the one the point names in the method it was written for (derive): its spelling may omit
+		// the owner or descriptor, never contradict them.
+		if (!"INVOKE".equals(MixinFit.value(at, "value")) || !MixinCallbackShape.covers(at, site.vanilla())) return false;
 		Object slice = MixinFit.value(redirect, "slice");
 		if (slice != null && !theRowsSlice(slice, site)) return false;
 		Object ordinal = MixinFit.value(at, "ordinal");
@@ -483,7 +492,7 @@ public final class ReplacedCallRedirects {
 			if (!"value".equals(key) && !"target".equals(key) && !"opcode".equals(key)) return false;
 		}
 		Object opcode = MixinFit.value(from, "opcode");
-		return "FIELD".equals(MixinFit.value(from, "value")) && site.slice().equals(MixinFit.value(from, "target"))
+		return "FIELD".equals(MixinFit.value(from, "value")) && MixinCallbackShape.covers(from, site.slice())
 				&& (opcode == null || Integer.valueOf(Opcodes.GETSTATIC).equals(opcode));
 	}
 

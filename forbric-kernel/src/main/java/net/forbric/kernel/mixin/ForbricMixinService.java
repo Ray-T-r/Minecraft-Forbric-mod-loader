@@ -316,7 +316,7 @@ public final class ForbricMixinService
 		MixinEntitySoundCallbackAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		MixinHudContextAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		FabricRegistryLoaderMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
-		FabricRegistryInitializationMixinAdapter.adapt(node);
+		FabricRegistryInitializationMixinAdapter.adapt(node, this::mergedBaseNode);
 		FabricFreezeHookMixinAdapter.adapt(node, this::mergedBaseNode);
 		FabricCreativePagerMixinAdapter.adapt(node, this::mergedBaseNode);
 		KernelClientHookMixinAnchors.adapt(node, this::mergedBaseNodeWithCode);

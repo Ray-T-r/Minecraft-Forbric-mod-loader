@@ -31,7 +31,11 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code @Redirect} taking exactly (receiver, arguments), {@code @ModifyExpressionValue} taking exactly the result,
  * {@code @ModifyArg} with one parameter and {@code @ModifyArgs} with its {@code Args}. No sugar parameter, no slice, no
  * {@code @Group}, and every {@code @At} of the injector must be that call. An {@code @Inject} (it takes {@code useOn}'s
- * own parameters and callback) or a handler that captures {@code useOn}'s locals is left as compiled.
+ * own parameters and callback) or a handler that captures {@code useOn}'s locals is left as compiled. The injector is
+ * recognised as Mixin reads it, never by spelling: its selectors by the method they bind in the target, its points by the
+ * member they name — whitespace and a dotted owner are the same target, and one without its owner or descriptor names
+ * the call where the method it was written for, in the class the mod was compiled against, decides it
+ * ({@link MixinCallbackShape#names}); in the relay it must still select exactly the call.
  *
  * <p>The proof is the relay itself: the target's pre-mixin bytes must declare it with exactly
  * {@code aload_1; aload_2; <the call>; areturn}, and {@code useOn} must no longer make the call. Without both — the
@@ -76,6 +80,12 @@ public final class MixinRelocatedCall {
 
 	/** Moves every eligible injector in {@code mixin}; returns how many. {@code targets} must return nodes WITH code. */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
+		return adapt(mixin, targets, NativeGameReferences::reference);
+	}
+
+	/** {@code references} gives the class the mod was compiled against, where a point without its owner or descriptor is read. */
+	static int adapt(ClassNode mixin, Function<String, ClassNode> targets,
+			java.util.function.BiFunction<net.forbric.api.Ecosystem, String, ClassNode> references) {
 		if (!enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
 		int moved = 0;
 		for (String targetName : MixinOverloadPin.targetsOf(mixin)) {
@@ -83,8 +93,9 @@ public final class MixinRelocatedCall {
 				if (!relocation.owner().equals(targetName)) continue;
 				ClassNode target = targets.apply(targetName);
 				if (target == null || !relocated(target, relocation)) continue;
+				ClassNode source = references == null ? null : references.apply(MixinStubRebind.ecosystemOf(mixin.name), targetName);
 				for (MethodNode handler : mixin.methods) {
-					if (move(handler, relocation)) {
+					if (move(handler, target, source, relocation)) {
 						moved++;
 						ForbricLog.info("[Forbric/Mixin] %s: %s now wraps %s.%s in %s — MinecraftForge's %s makes that call "
 								+ "outside its own body, and the kernel routes it through that one method",
@@ -114,22 +125,22 @@ public final class MixinRelocatedCall {
 		return true;
 	}
 
-	private static boolean move(MethodNode handler, Relocation relocation) {
+	private static boolean move(MethodNode handler, ClassNode target, ClassNode source, Relocation relocation) {
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
 		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
 		if (annotations.stream().anyMatch(a -> GROUP.equals(a.desc))) return false;
 		AnnotationNode injector = MixinFit.injectorOf(handler);
 		if (injector == null || !KINDS.containsKey(injector.desc)) return false;
-		List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
-		if (selectors.size() != 1 || !(selectors.getFirst().equals(relocation.method())
-				|| selectors.getFirst().equals(relocation.method() + relocation.methodDesc()))) return false;
 		if (MixinFit.value(injector, "slice") != null || MixinFit.value(injector, "target") != null) return false;
+		if (!MixinCallbackShape.binds(handler, target, relocation.method() + relocation.methodDesc())) return false;
 		List<AnnotationNode> points = MixinFit.atNodes(injector);
 		if (points.isEmpty()) return false;
+		MethodNode written = MixinCallbackShape.written(handler, source), relay = method(target, relocation.relay(), relocation.relayDesc());
 		for (AnnotationNode at : points) {
 			if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value")))
-					|| !relocation.callTarget().equals(MixinFit.value(at, "target"))) return false;
+					|| !MixinCallbackShape.names(at, relocation.callTarget(), written)
+					|| MixinCallbackShape.selected(at, relay).size() != 1) return false;
 		}
 		if (hasParameterAnnotations(handler.visibleParameterAnnotations)
 				|| hasParameterAnnotations(handler.invisibleParameterAnnotations)) return false;
