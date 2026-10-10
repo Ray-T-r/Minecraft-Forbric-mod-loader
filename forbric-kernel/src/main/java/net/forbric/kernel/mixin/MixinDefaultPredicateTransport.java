@@ -85,13 +85,10 @@ public final class MixinDefaultPredicateTransport {
 		List<AnnotationNode> ats = MixinFit.atNodes(injector);
 		if (ats.size() != 1 || !"MIXINEXTRAS:EXPRESSION".equals(MixinFit.value(ats.getFirst(), "value"))
 				|| MixinFit.value(ats.getFirst(), "ordinal") != null || MixinFit.value(ats.getFirst(), "shift") != null) return null;
-		List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
-		if (selectors.size() != 1) return null;
-		List<MethodNode> live = current.methods.stream().filter(m -> selectors.getFirst().equals(m.name) || selectors.getFirst().equals(m.name + m.desc)).toList();
-		if (live.size() != 1) return null;
-		MethodNode body = live.getFirst();
-		MethodNode nativeBody = original.methods.stream().filter(m -> m.name.equals(body.name) && m.desc.equals(body.desc)).findFirst().orElse(null);
-		if (nativeBody == null) return null;
+		// The one method Mixin binds in the merged class, and the same member bound in the class the mod was compiled
+		// against: as Mixin reads the selector, however it is spelled.
+		MethodNode body = MixinTargetSelectors.one(handler, current), nativeBody = MixinCallbackShape.written(handler, original);
+		if (body == null || nativeBody == null || !body.name.equals(nativeBody.name) || !body.desc.equals(nativeBody.desc)) return null;
 		List<TypeInsnNode> oldAtoms = atoms(nativeBody, atomicType);
 		if (oldAtoms.size() != 1 || !atoms(body, atomicType).isEmpty()) return null;
 		Region region = region(nativeBody, oldAtoms.getFirst());
