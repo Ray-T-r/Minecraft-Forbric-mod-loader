@@ -30,6 +30,8 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.TestFixtures;
+import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.transform.FabricFreezePointInjector;
 
 /**
@@ -57,7 +59,12 @@ class FabricFreezeHookSpellingTest {
 
 	private Supplier<Boolean> registrySync;
 
+	/**
+	 * Every case reads the staged merged {@code BuiltInRegistries}, and its native classes through the merged base's
+	 * native-reference index; Create Fly's mixin is its own third-party fixture.
+	 */
 	@BeforeEach void registrySyncIsInTheGame() {
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
 		registrySync = FabricFreezeHookMixinAdapter.registrySyncPresent;
 		FabricFreezeHookMixinAdapter.registrySyncPresent = () -> true;
 	}

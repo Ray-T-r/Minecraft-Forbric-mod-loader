@@ -8,12 +8,15 @@ import java.util.List;
 import java.util.function.BiFunction;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 
 import net.forbric.api.Ecosystem;
+import net.forbric.kernel.TestFixtures;
+import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
  * Whether a registry-loader companion was written for the dead private loader is decided where it was written: the one
@@ -42,6 +45,11 @@ class RegistryLoaderCompanionBindingTest {
 	private static final String OP = "com/llamalad7/mixinextras/injector/wrapoperation/Operation";
 	private static final String CIR = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 	private static final BiFunction<Ecosystem, String, ClassNode> STAGED = NativeCallTestEvidence.staged();
+
+	/** Every case reads the staged merged loader, and its native classes through the merged base's native-reference index. */
+	@BeforeEach void stagedMergedBase() {
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
+	}
 
 	@AfterEach void reset() {
 		MixinStubRebind.forget();
@@ -117,6 +125,8 @@ class RegistryLoaderCompanionBindingTest {
 			ClassNode node = StagedFabricMixinFixture.game(LOADER, false);
 			if (withoutDead) assertTrue(node.methods.removeIf(m -> (m.name + m.desc).equals(DEAD)), "premise: the merge declares the dead loader");
 			return deadFirst ? first(node, DEAD) : node;
+		} catch (RuntimeException unchecked) {
+			throw unchecked; // a missing fixture's skip among them
 		} catch (Exception unreadable) {
 			throw new AssertionError(unreadable);
 		}

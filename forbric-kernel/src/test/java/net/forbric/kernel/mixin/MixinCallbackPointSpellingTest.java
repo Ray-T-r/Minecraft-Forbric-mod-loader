@@ -15,6 +15,8 @@ import org.junit.jupiter.api.TestFactory;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
 
+import net.forbric.kernel.TestFixtures;
+import net.forbric.kernel.TestFixtures.Fixture;
 import net.forbric.kernel.mixin.MixinCallbackSelectorSpellingTest.Contract;
 
 /**
@@ -131,6 +133,8 @@ class MixinCallbackPointSpellingTest {
 	 * it is the one call, and moves.
 	 */
 	@Test void aPointWithoutItsOwnerThatSelectsMoreIsAnotherCallback() throws Exception {
+		TestFixtures.requireFiles(Fixture.MC_LIBRARIES, "vanilla Minecraft 26.2", TestFixtures.vanillaJar());
+		TestFixtures.requireFiles(Fixture.THIRD_PARTY, "Create Fly", java.nio.file.Path.of(System.getProperty("forbric.createFlyJar", "build/compat-inputs/create-fly/create-fly.jar")));
 		String hud = "net/minecraft/client/gui/Hud", gui = "net/minecraft/client/gui/Gui";
 		ClassNode vanilla = CreateInjectionAdaptersTest.nativeTarget(hud), crowded = new ClassNode();
 		vanilla.accept(crowded);

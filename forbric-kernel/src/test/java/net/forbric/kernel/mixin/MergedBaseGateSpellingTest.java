@@ -14,6 +14,7 @@ import java.util.stream.Stream;
 import java.util.zip.ZipFile;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -51,6 +52,16 @@ class MergedBaseGateSpellingTest {
 	private static final BiFunction<Ecosystem, String, ClassNode> STAGED = NativeCallTestEvidence.staged();
 	/** As at discovery: the adapters ask with the mixin's family, not noted yet, and the config's family answers. */
 	private static final BiFunction<Ecosystem, String, ClassNode> NATIVES = (asked, owner) -> STAGED.apply(asked != null ? asked : Ecosystem.FABRIC, owner);
+
+	/**
+	 * Every case reads fabric-registry-sync's released mixins and judges them against the staged merged base, with the
+	 * native classes of its native-reference index; the loader cases also against vanilla's own classes.
+	 */
+	@BeforeEach void fixtures() {
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
+		TestFixtures.requireFiles(Fixture.MC_LIBRARIES, "vanilla Minecraft 26.2", TestFixtures.vanillaJar());
+		TestFixtures.requireFiles(Fixture.THIRD_PARTY, "fabric-registry-sync's released mixins", REGISTRY_SYNC);
+	}
 
 	@AfterEach void reset() {
 		MixinStubRebind.forget();
@@ -96,6 +107,8 @@ class MergedBaseGateSpellingTest {
 		ClassNode crowded = PointRespelling.copy(STAGED.apply(Ecosystem.FABRIC, BOOTSTRAP));
 		try {
 			assertEquals(1, PointRespelling.crowd(bootstrap(), m -> atTargets(m).contains(FREEZE), crowded, false), "premise");
+		} catch (RuntimeException unchecked) {
+			throw unchecked; // a missing fixture's skip among them
 		} catch (Exception unreadable) {
 			throw new AssertionError(unreadable);
 		}
@@ -166,6 +179,8 @@ class MergedBaseGateSpellingTest {
 		for (PointRespelling.Form form : PointRespelling.allForms()) {
 			try {
 				if (respell(member.equals(FREEZE) ? bootstrap() : loader(), member, form, NATIVES) == 1) forms.add(form);
+			} catch (RuntimeException unchecked) {
+				throw unchecked; // a missing fixture's skip among them
 			} catch (Exception unreadable) {
 				throw new AssertionError(unreadable);
 			}

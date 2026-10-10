@@ -465,6 +465,8 @@ class AdapterPointSpellingTest {
 
 	/** A per-effect clear veto that is not balm's: a loop over a snapshot ({@link PerEffectClearVetoTest#snapshotLoop}). */
 	private static ClassNode clearVeto() {
+		// Not a third-party jar, but adapted against the staged merged LivingEntity and its native-reference index.
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar"));
 		ClassNode mixin = PerEffectClearVetoTest.mixin("org/example/effects/mixin/RespelledVetoMixin");
 		mixin.methods.add(PerEffectClearVetoTest.snapshotLoop("keepWarded", false, false));
 		return mixin;

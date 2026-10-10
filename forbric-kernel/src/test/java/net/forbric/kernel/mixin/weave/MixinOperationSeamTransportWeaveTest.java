@@ -7,6 +7,8 @@ import net.fabricmc.api.EnvType;import net.forbric.api.Ecosystem;import net.forb
 
 class MixinOperationSeamTransportWeaveTest implements Opcodes {
     @TempDir Path work;
+    /** The guest mixin configs declare compatibilityLevel JAVA_25, which Mixin refuses to set on an older runtime. */
+    @org.junit.jupiter.api.BeforeEach void java25(){net.forbric.kernel.TestFixtures.require(net.forbric.kernel.TestFixtures.Fixture.JAVA_25,Runtime.version().feature()>=25,"the guest mixin configs declare compatibilityLevel JAVA_25, which Mixin sets only on Java 25");}
     @Test void theOriginalOperationCanReplaceTheReceiverSkipOrRepeatOnlyTheTopDrawAfterNativeCancellation()throws Exception {
         Map<String,String> sources=new LinkedHashMap<>();
         sources.put("audit.OperationProbe","""
