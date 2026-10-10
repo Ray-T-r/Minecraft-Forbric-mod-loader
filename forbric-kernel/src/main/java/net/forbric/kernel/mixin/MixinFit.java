@@ -623,12 +623,13 @@ public final class MixinFit {
 			// lands only on an overload the handler takes strictly, so a pinned selector is never a refused one.
 			MethodNode pinned = selectors.size() == 1 ? MixinOverloadPin.destination(mixin, m, selector, target) : null;
 			if (pinned != null) pinnedAs = pinned.name + pinned.desc;
-			List<MethodNode> targetMethods = pinned != null ? List.of(pinned) : resolveSelector(target, selector, resolver);
+			List<MethodNode> targetMethods = pinned != null ? List.of(pinned)
+					: resolveSelector(target, selector, resolver, (m.access & Opcodes.ACC_STATIC) != 0);
 			String refusal = targetMethods.isEmpty() || pinned != null ? null
 					: refusedBinding(mixin, m, injector, selector, target);
 			if (refusal != null) {
 				refused.add(refusal);
-				refusedIn.add(firstNamed(target, boundName(selector)));
+				refusedIn.add(boundByName(target, selector));
 			}
 			if (!targetMethods.isEmpty() && refusal == null) hits.addAll(targetMethods); else misses.add(selector);
 		}
@@ -999,10 +1000,9 @@ public final class MixinFit {
 	 */
 	static String refusedBinding(ClassNode mixin, MethodNode handler, AnnotationNode injector, String selector, ClassNode target) {
 		if (!asksHandlerFit() || !INJECT_DESC.equals(injector.desc) || target.methods == null) return null;
-		String name = boundName(selector);
-		if (name == null) return null;
-		MethodNode bound = firstNamed(target, name);
+		MethodNode bound = boundByName(target, selector);
 		if (bound == null || handlerFits(handler, bound.desc) || surrogateBinds(mixin, handler, bound.desc)) return null;
+		String name = bound.name;
 		String binds = "binds " + bound.name + bound.desc + ", which the handler was not written for";
 		MergedBaseCalleeSwaps.Replaced row = MergedBaseCalleeSwaps.replaced(target.name, name, null,
 				MixinStubRebind.ecosystemOf(mixin.name));
@@ -1070,14 +1070,9 @@ public final class MixinFit {
 			Set<MethodNode> bound = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 			String refusal = null;
 			for (String selector : selectors) {
-				String name = boundName(selector);
-				if (name == null) return null;
-				for (MethodNode method : target.methods) {
-					if (method.name.equals(name)) {
-						bound.add(method);
-						break;
-					}
-				}
+				if (!MixinTargetSelectors.byNameAlone(selector, target)) return null;
+				MethodNode named = boundByName(target, selector);
+				if (named != null) bound.add(named);
 				String refused = refusedBinding(mixin, handler, injector, selector, target);
 				if (refused != null) refusal = refused;
 			}
@@ -1088,11 +1083,15 @@ public final class MixinFit {
 		return reason;
 	}
 
-	/** The method a name binds in {@code target}: the first it declares of that name, as Mixin's default quantifier takes. */
-	private static MethodNode firstNamed(ClassNode target, String name) {
-		if (name == null || target.methods == null) return null;
-		for (MethodNode m : target.methods) if (m.name.equals(name)) return m;
-		return null;
+	/**
+	 * The method a selector binds by its name alone, as Mixin binds it — the first {@code target} declares of that name,
+	 * however the selector is written ({@link MixinTargetSelectors#byNameAlone}); null for a selector of another form, and
+	 * where the name binds nothing.
+	 */
+	private static MethodNode boundByName(ClassNode target, String selector) {
+		if (target.methods == null || !MixinTargetSelectors.byNameAlone(selector, target)) return null;
+		List<MethodNode> bound = MixinTargetSelectors.bound(List.of(selector), target, false);
+		return bound == null || bound.isEmpty() ? null : bound.getFirst();
 	}
 
 	/** {@link #findsAPoint}, or true with {@code -Dforbric.mixinFit.rejectionPoint=off}. */
@@ -1216,16 +1215,6 @@ public final class MixinFit {
 		return false;
 	}
 
-	/** The method name a selector binds by name alone ({@code name} or {@code Lowner;name}), or null for any other form. */
-	private static String boundName(String selector) {
-		String name = selector.trim();
-		int semi = name.indexOf(';');
-		if (name.startsWith("L") && semi > 0) name = name.substring(semi + 1);
-		if (name.isEmpty()) return null;
-		for (char c : name.toCharArray()) if ("(*{}+/ =:".indexOf(c) >= 0) return null;
-		return name;
-	}
-
 	/**
 	 * Whether Mixin's {@code @Inject} accepts {@code handler} on a method of {@code desc}: its arguments then the
 	 * callback its return calls for, or that callback alone. True when the handler takes no callback (not judged).
@@ -1306,35 +1295,29 @@ public final class MixinFit {
 	}
 
 	/**
-	 * A Mixin method selector: {@code name}, {@code name(desc)ret}, or {@code Lowner;name(desc)ret}. A bare name
-	 * resolves to the FIRST declared method of that name, as Mixin binds it. Anything with a wildcard or a shape this does not
-	 * understand resolves to the first method, and to "resolved" if there is none to compare against — see the
-	 * conservatism note on the class.
+	 * The methods a Mixin method selector binds in {@code target}, decided by Mixin's own selector classes
+	 * ({@link MixinTargetSelectors}) so the verdict meets the binding Mixin will make, however the selector is written: a
+	 * bare name binds the FIRST declared method of that name, a descriptor that method; an owner prefix, a dotted owner or
+	 * whitespace change neither; a quantifier or a pattern ({@code /^with/ desc=/CommandSourceStack;$/},
+	 * fabric-permission-api-v1's catch of every withX() builder) every method it matches. Only methods the target
+	 * declares: Mixin injects into nothing it inherits. A selector naming another owner binds nothing in this target, nor
+	 * does one Mixin refuses here (a quantifier whose minimum is not met) or that no class binds (a dynamic selector).
+	 *
+	 * <p>A quantifier or a pattern that matches nothing is not judged: it resolves to the first method, and to "resolved"
+	 * if there is none to compare against — see the conservatism note on the class.
 	 */
 	static List<MethodNode> resolveSelector(ClassNode target, String selector,
 			Function<String, byte[]> resolver) {
-		if (selector == null || selector.isBlank()) return List.of();
-		String s = selector.trim();
-		if (s.indexOf('*') >= 0) return firstMethod(target, resolver);  // wildcard: not our business to judge
+		return resolveSelector(target, selector, resolver, false);
+	}
 
-		// Strip a fully-qualified owner prefix: Lnet/minecraft/Foo;bar()V
-		int semi = s.indexOf(';');
-		if (s.startsWith("L") && semi > 0) s = s.substring(semi + 1);
-
-		int paren = s.indexOf('(');
-		String name = paren >= 0 ? s.substring(0, paren) : s;
-		String desc = paren >= 0 ? s.substring(paren) : null;
-		if (name.isEmpty()) return firstMethod(target, resolver);
-
-		// Mixin's full target-selector grammar also allows a REGEX name (/^with/) and an explicit
-		// `desc=` clause. fabric-permission-api-v1's CommandSourceStackMixin uses both at once
-		// (`/^with/ desc=/CommandSourceStack;$/`) to catch every withX() builder. Matching those means
-		// implementing Mixin's selector engine; treating them as a plain method name means reporting a
-		// miss for a selector Mixin resolves fine. Un-judgeable → RESOLVED, per the class conservatism note.
-		if (name.charAt(0) == '/' || name.indexOf(' ') >= 0 || name.indexOf('=') >= 0) {
-			return firstMethod(target, resolver);
-		}
-		return findMethods(target, name, desc, resolver);
+	/** {@link #resolveSelector(ClassNode, String, Function)} for a handler of the given staticness. */
+	static List<MethodNode> resolveSelector(ClassNode target, String selector, Function<String, byte[]> resolver,
+			boolean staticHandler) {
+		if (selector == null || selector.isBlank() || MixinTargetSelectors.namesAnotherOwner(selector, target)) return List.of();
+		List<MethodNode> bound = MixinTargetSelectors.bound(List.of(selector), target, staticHandler);
+		if (bound == null) return List.of();
+		return !bound.isEmpty() || MixinTargetSelectors.bindsOneMember(selector, target) ? bound : firstMethod(target, resolver);
 	}
 
 	/**

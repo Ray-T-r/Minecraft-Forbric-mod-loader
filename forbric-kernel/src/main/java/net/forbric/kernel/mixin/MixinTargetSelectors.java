@@ -241,6 +241,32 @@ final class MixinTargetSelectors {
 	}
 
 	/**
+	 * Whether one selector, as Mixin parses it for {@code target}, binds by its name alone: a member selector with a name
+	 * and no descriptor, configured to bind one method — the first {@code target} declares of that name. An owner prefix
+	 * (the target's), a dotted owner or whitespace leave it that; a descriptor, a quantifier, a pattern, a form Mixin
+	 * rejects, or an owner other than {@code target} do not.
+	 */
+	static boolean byNameAlone(String selector, ClassNode target) {
+		return bindsOneMember(selector, target) && parse(selector, target) instanceof MemberInfo info && info.getDesc() == null;
+	}
+
+	/**
+	 * Whether one selector, as Mixin parses it for {@code target}, is a member selector configured to bind one method: a
+	 * name, with its descriptor or without (then the first declared of that name), however the owner and whitespace are
+	 * written — no quantifier, no pattern, no form Mixin rejects, no owner other than {@code target}.
+	 */
+	static boolean bindsOneMember(String selector, ClassNode target) {
+		return selector != null && parse(selector, target) instanceof MemberInfo info && info.getName() != null
+				&& info.configure(ITargetSelector.Configure.SELECT_MEMBER).getMaxMatchCount() <= 1;
+	}
+
+	/** Whether one selector, as Mixin parses it, names an owner other than {@code target}: Mixin binds nothing there with it. */
+	static boolean namesAnotherOwner(String selector, ClassNode target) {
+		return selector != null && target != null && parse(selector, null) instanceof MemberInfo info
+				&& info.getOwner() != null && !info.getOwner().equals(target.name);
+	}
+
+	/**
 	 * One selector as Mixin parses and validates it for {@code target}; null when Mixin rejects it (malformed, or an owner
 	 * other than the target) or it is a form this does not model. {@code target} null skips the owner check.
 	 */
