@@ -4,6 +4,20 @@
 加载器：Forbric main `11ca1ffa`，用 `forbric-kernel-installer` 装进 Mac 官方目录 `~/Library/Application Support/minecraft`（版本 `26.2-forbric`）
 下面的历史测试保留当时结果；后续修复及验证单独记录，不回写原始统计。
 
+## 130 个纯 Fabric mod 复测：只在 Forbric 失败的从 7 个降到 0 个（服务端，2026-10-11）
+
+还是 2026-10-03 那 165 个 jar，原生一侧的结果直接沿用（原生启动器的 SHA-256 一样）。Forbric 一侧换成 main `6d1dd0f2` 加上下面这条修复后的内核（SHA-256 `ce609c8a…`），合并基底用这棵树自己的 `tools/dev.py prepare --no-assets` 现建。证据在 `forbric-kernel/run/compat/reports/2026-10-11-pure-fabric-server/`。**仍然只测了服务端。**
+
+| | 2026-10-03 | 2026-10-11 |
+|---|---|---|
+| 单独跑（各带依赖，200 tick） | 119 两边都过 · 7 只在 Forbric 失败 · 4 两边都失败 | **126 两边都过 · 0 只在 Forbric 失败** · 4 两边都失败 · 0 只在原生失败 |
+| 原生能单独跑的 126 个一起（159 jar，1200 tick） | 原生 Done，Forbric 被策略拒绝 | **两边都跑满** |
+| 全部 130 个一起（165 jar） | 两边都起不来 | 两边都起不来，原因还是那 4 个两边都失败的 mod |
+
+- 当时那 7 个都已在 2026-10-05 修好，现在全部两边都过。
+- 复测途中发现一个新的回退：在 main `6d1dd0f2` 上，naturalist 只在 Forbric 失败（10-03 时两边都过）。原因是合并工具的一次改动让方块物品不再和方块关联，Fabric 初始化时 `Blocks.MELON.asItem()` 拿到的是空气。已修：让 MinecraftForge 物品注册表自己维护的方块→物品映射直接就是游戏读取的那一张，所有注册路径在注册当下就关联好。不认任何 mod 名字。
+- 那 4 个两边都失败的仍是 mod 自己的问题。
+
 ## 130 个纯 Fabric mod：原生 Fabric 与 Forbric 同字节对照（服务端，2026-10-03）
 
 用 `PICK_LOADER=fabric PICK_COUNT=130 PICK_SIDE=server`、种子 `20261003` 抽了 49 个热门 + 81 个随机的纯 Fabric 服务端主体，连同依赖共 165 个 jar（sha1 已固定）。同一组 jar 分别跑原生 Fabric Loader 0.19.5 和 Forbric（内核 SHA-256 `80ad82d1…`，strict 策略）专用服，判据是到 `Done` 后实测跑满 tick 数。证据在 `forbric-kernel/run/compat/reports/2026-10-03-pure-fabric-server/`，工具是 `run/compat/fabric-ab.py` 和 `native-controls.py run-set`。**只测了服务端，客户端、联机和渲染没测。**
@@ -15,7 +29,7 @@
 | 原生能单独跑的 126 个一起（159 jar） | 原生 Done，Forbric 被策略拒绝；ddmin 22 次启动缩到 4 个主体，都在上面那 7 个里，**没有新的组合冲突** |
 | 两边都能单独跑的 119 个一起（149 jar） | 两边都跑满 1200 tick |
 
-只在 Forbric 失败的 7 个（都是 Forbric 的缺陷，未修）：
+只在 Forbric 失败的 7 个（都是 Forbric 的缺陷；当时未修，2026-10-05 已修，见上面的复测）：
 
 - notenoughcrashes：它的一个 mixin 目标在原版里本来就不存在，原生静默跳过，Forbric 却算成必需损失并拒绝启动（误报）。
 - debugify、EnhancedVisuals（经 CreativeCore）、MoogsEndStructures（经 MoogsStructureLib）：合并基底的方法体或描述符和原版不同，mixin 锚点找不到。
