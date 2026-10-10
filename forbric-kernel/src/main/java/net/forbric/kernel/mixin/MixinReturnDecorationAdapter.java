@@ -41,7 +41,7 @@ public final class MixinReturnDecorationAdapter {
 			if (annotations(handler).stream().anyMatch(a -> a.desc.equals("Lorg/spongepowered/asm/mixin/injection/Group;"))) continue;
 			List<AnnotationNode> points = MixinFit.atNodes(injection);
 			if (points.size() != 1 || !"MIXINEXTRAS:EXPRESSION".equals(MixinFit.value(points.getFirst(), "value"))) continue;
-			ReturnLocal source = source(handler, injection, original);
+			ReturnLocal source = source(handler, original);
 			if (source == null) continue;
 			// A resolving original body remains authoritative.
 			if (current.methods.stream().anyMatch(m -> m.name.equals(source.method.name) && m.desc.equals(source.method.desc)
@@ -130,7 +130,7 @@ public final class MixinReturnDecorationAdapter {
 		return read;
 	}
 
-	private static ReturnLocal source(MethodNode handler, AnnotationNode injection, ClassNode original) {
+	private static ReturnLocal source(MethodNode handler, ClassNode original) {
 		List<String> expressions = annotations(handler).stream().filter(a -> a.desc.equals(EXPRESSION))
 				.flatMap(a -> MixinFit.stringList(MixinFit.value(a, "value")).stream()).toList();
 		if (expressions.size() != 1 || !expressions.getFirst().matches("return [A-Za-z_$][A-Za-z0-9_$]*")) return null;
@@ -139,10 +139,10 @@ public final class MixinReturnDecorationAdapter {
 				&& id.equals(MixinFit.value(a, "id"))).toList();
 		if (definitions.size() != 1 || !(MixinFit.value(definitions.getFirst(), "local") instanceof List<?> locals)
 				|| locals.size() != 1 || !(locals.getFirst() instanceof AnnotationNode local)) return null;
-		List<String> selectors = MixinFit.stringList(MixinFit.value(injection, "method"));
-		List<MethodNode> methods = original.methods.stream().filter(m -> selectors.contains(m.name) || selectors.contains(m.name + m.desc)).toList();
-		if (methods.size() != 1 || Type.getReturnType(methods.getFirst().desc).getSort() != Type.OBJECT) return null;
-		MethodNode method = methods.getFirst(); List<VarInsnNode> returned = new ArrayList<>();
+		// The method the callback was written for: the one its selectors bind, as Mixin binds them, in the native class.
+		MethodNode method = MixinTargetSelectors.one(handler, original);
+		if (method == null || Type.getReturnType(method.desc).getSort() != Type.OBJECT) return null;
+		List<VarInsnNode> returned = new ArrayList<>();
 		for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof VarInsnNode value
 				&& value.getOpcode() == Opcodes.ALOAD && next(value) != null && next(value).getOpcode() == Opcodes.ARETURN) {
 			List<LocalVariableNode> candidates = selectedLocals(method, value, Type.getReturnType(method.desc), local);
