@@ -85,15 +85,22 @@ final class MixinNativeEquivalence {
     }
 
     static String proof(String mixin, String name, String descriptor, String fingerprint, ClassNode target) {
+        return proof(mixin, name, descriptor, fingerprint, target, owner -> MixinBindings.nativeClass(mixin.replace('.', '/'), owner));
+    }
+
+    /**
+     * {@link #proof(String, String, String, String, ClassNode)}, a point written without its descriptor read in
+     * {@code natives}' class: the class the mod was compiled against, by internal name (null: none).
+     */
+    static String proof(String mixin, String name, String descriptor, String fingerprint, ClassNode target,
+                        java.util.function.Function<String, ClassNode> natives) {
         Plan plan = PLANS.get(mixin.replace('/', '.') + "#" + name + descriptor);
         if (plan == null || !plan.fingerprint().equals(fingerprint)
                 || plan.targets().stream().noneMatch(t -> t.replace('.', '/').equals(target.name))) return null;
-        List<MethodNode> selected = target.methods.stream()
-                .filter(method -> plan.selectors().stream().anyMatch(selector -> selects(selector, target.name, method)))
-                .toList();
-        if (selected.size() != 1) return null;
-        MethodNode method = selected.getFirst();
-        if (knownDead(target, method)) return null;
+        // The method the handler's selectors bind, as Mixin binds them, however they are written — and only where that
+        // does not hang on declaration order: a bare name two overloads share is no unambiguous proof.
+        MethodNode method = MixinTargetSelectors.unambiguous(plan.original(), target);
+        if (method == null || knownDead(target, method) || !returnsWhatItReplaces(plan.original(), natives, target.name)) return null;
         Body nativeBody = nativeRegion(method, target.name, plan.body().call().member());
         if (nativeBody == null) return null;
         Value expected = bind(plan.body().returned(), plan, method, nativeBody, target.name);
@@ -437,27 +444,43 @@ final class MixinNativeEquivalence {
         List<?> points = atValue instanceof List<?> list ? list : List.of(atValue == null ? "" : atValue);
         if (points.size() != 1 || !(points.getFirst() instanceof AnnotationNode at)
                 || !"INVOKE".equals(value(at, "value"))) return null;
-        Object member = value(at, "target");
-        if (!(member instanceof String target) || !target.startsWith("L") || target.indexOf(';') < 0
-                || target.indexOf('(') < 0) return null;
-        try {
-            if (!Type.getReturnType(target.substring(target.indexOf('('))).equals(Type.getReturnType(method.desc))) return null;
-        } catch (IllegalArgumentException malformed) { return null; }
+        // The point names a method however it is written (MixinFit.parseMember): an owner, a dotted owner, whitespace, or
+        // neither owner nor descriptor. Where it spells the descriptor, the handler returns what that call returns; where
+        // it does not, the call it selects where it was written decides that, when a proof is asked (returnsWhatItReplaces).
+        MixinFit.Member named = MixinFit.parseMember(MixinFit.asString(value(at, "target")));
+        if (named == null || named.desc() != null && !named.desc().startsWith("(")
+                || named.desc() != null && !returns(named.desc(), method.desc)) return null;
         // A constrained occurrence/slice cannot be replaced by a proof about the unconstrained function.
         Integer ordinal = integer(value(at, "ordinal"));
         if (ordinal != null && ordinal >= 0 || value(at, "shift") != null || value(injection, "slice") != null) return null;
         return injection;
     }
 
-    private static boolean selects(String selector, String owner, MethodNode method) {
-        if (selector.startsWith("L")) {
-            int separator = selector.indexOf(';');
-            if (separator < 0 || !selector.substring(1, separator).equals(owner)) return false;
-            selector = selector.substring(separator + 1);
-        }
-        int descriptor = selector.indexOf('(');
-        return descriptor < 0 ? selector.equals(method.name)
-                : selector.substring(0, descriptor).equals(method.name) && selector.substring(descriptor).equals(method.desc);
+    /** Whether a call of {@code called} returns what the handler {@code handler} returns in its place. */
+    private static boolean returns(String called, String handler) {
+        try {
+            return Type.getReturnType(called).equals(Type.getReturnType(handler));
+        } catch (IllegalArgumentException malformed) { return false; }
+    }
+
+    /**
+     * Whether the handler returns what the call its point names returns. A point spelling its descriptor was checked
+     * when the plan was made; one without it names the one call it selects in the method the handler was written for,
+     * in {@code natives}' class for {@code owner}, the class the mod was compiled against — without that class, or with
+     * no single call there, it is no proof.
+     */
+    private static boolean returnsWhatItReplaces(MethodNode handler, java.util.function.Function<String, ClassNode> natives, String owner) {
+        AnnotationNode at = (AnnotationNode) points(injection(handler)).getFirst();
+        MixinFit.Member named = MixinFit.parseMember(MixinFit.asString(value(at, "target")));
+        if (named.desc() != null) return true;
+        MethodNode written = MixinCallbackShape.written(handler, natives == null ? null : natives.apply(owner));
+        String member = MixinCallbackShape.member(at, written);
+        return member != null && member.indexOf('(') > 0 && returns(member.substring(member.indexOf('(')), handler.desc);
+    }
+
+    private static List<?> points(AnnotationNode injection) {
+        Object atValue = value(injection, "at");
+        return atValue instanceof List<?> list ? list : List.of(atValue);
     }
 
     private static void add(List<AnnotationNode> out, List<AnnotationNode>[] annotations, int index) {
