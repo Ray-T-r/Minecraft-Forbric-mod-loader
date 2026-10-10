@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -50,16 +51,26 @@ import net.forbric.kernel.util.ForbricLog;
  * </ul>
  * An injector at any other instruction inside {@code freeze()} or {@code bootStrap()} is left in {@code Bootstrap}:
  * ViaFabricPlus' registry hook before {@code createContents()} runs there and registers what it needs to.
+ *
+ * <p>Selectors and points are read as Mixin reads them, never by how they are spelled. An injector is on
+ * {@code freeze()} or on {@code bootStrap()} when Mixin binds it to that one method of the merged
+ * {@code BuiltInRegistries} ({@link MixinCallbackShape#binds}): a bare name, a descriptor, an owner prefix, a dotted
+ * owner, whitespace, or an array of several such spellings are then the same injector. Its point is at the call of
+ * {@code freeze()} when its target names {@code BuiltInRegistries.freeze()} and nothing else
+ * ({@link MixinCallbackShape#names}) and selects one instruction, read in the {@code bootStrap()} the handler was
+ * written for — the one in the class the mod was compiled against when that is at hand, else the one it binds in the
+ * class it applies to — so a target without its owner or descriptor is that call only where no other owner's
+ * {@code freeze} and no other overload is called there.
  */
 public final class FabricFreezeHookMixinAdapter {
 	static final String BUILT_IN_REGISTRIES = "net/minecraft/core/registries/BuiltInRegistries";
 	static final String REGISTRY_SYNC_CONFIG = "fabric-registry-sync-v0.mixins.json";
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String HANDLER_DESC = "(Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V";
-	private static final Set<String> FREEZE = Set.of("freeze", "freeze()V", "L" + BUILT_IN_REGISTRIES + ";freeze()V");
-	private static final Set<String> BOOTSTRAP = Set.of("bootStrap", "bootStrap()V", "L" + BUILT_IN_REGISTRIES + ";bootStrap()V");
-	/** {@code bootStrap()}'s call of {@code freeze()}, as an {@code INVOKE} target may spell it. */
-	private static final Set<String> FREEZE_CALL = Set.of("freeze()V", "L" + BUILT_IN_REGISTRIES + ";freeze()V");
+	private static final String FREEZE = "freeze()V";
+	private static final String BOOTSTRAP = "bootStrap()V";
+	/** {@code bootStrap()}'s call of {@code freeze()}: the member an {@code INVOKE} target there must name. */
+	private static final String FREEZE_CALL = "L" + BUILT_IN_REGISTRIES + ";" + FREEZE;
 	private static final Set<String> HEAD = Set.of("HEAD");
 	private static final Set<String> TAIL = Set.of("TAIL", "RETURN");
 
@@ -78,25 +89,35 @@ public final class FabricFreezeHookMixinAdapter {
 		return List.copyOf(new java.util.TreeSet<>(MOVED));
 	}
 
-	/** Rewrites eligible injectors of {@code mixin} in place; returns how many. Idempotent. */
+	/**
+	 * Rewrites eligible injectors of {@code mixin} in place; returns how many. Idempotent. {@code targets} gives the
+	 * merged {@code BuiltInRegistries}, where the selectors bind; a point is read in the class the mod was compiled
+	 * against ({@link NativeGameReferences}).
+	 */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
+		return adapt(mixin, targets, NativeGameReferences::reference);
+	}
+
+	/** {@code references} gives the class the mod was compiled against, where a point is read; null (or a null answer): none at hand. */
+	static int adapt(ClassNode mixin, Function<String, ClassNode> targets, BiFunction<Ecosystem, String, ClassNode> references) {
 		if (!FabricFreezePointInjector.enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
 		if (!List.of(BUILT_IN_REGISTRIES).equals(MixinFit.mixinTargets(mixin))) return 0;
 		if (MixinStubRebind.ecosystemOf(mixin.name) != Ecosystem.FABRIC) return 0;
 		if (!Boolean.TRUE.equals(registrySyncPresent.get())) return 0;
-
-		List<MethodNode> head = new ArrayList<>(), tail = new ArrayList<>();
-		for (MethodNode handler : mixin.methods) {
-			String hook = hookFor(handler);
-			if (hook == null) continue;
-			(FabricFreezePointInjector.HEAD_HOOK.equals(hook) ? head : tail).add(handler);
-		}
-		if (head.isEmpty() && tail.isEmpty()) return 0;
 		ClassNode target = targets.apply(BUILT_IN_REGISTRIES);
 		if (target == null || !hasHook(target, FabricFreezePointInjector.HEAD_HOOK)
 				|| !hasHook(target, FabricFreezePointInjector.TAIL_HOOK)) {
 			return 0;
 		}
+		ClassNode source = references == null ? null : references.apply(Ecosystem.FABRIC, BUILT_IN_REGISTRIES);
+
+		List<MethodNode> head = new ArrayList<>(), tail = new ArrayList<>();
+		for (MethodNode handler : mixin.methods) {
+			String hook = hookFor(handler, target, source);
+			if (hook == null) continue;
+			(FabricFreezePointInjector.HEAD_HOOK.equals(hook) ? head : tail).add(handler);
+		}
+		if (head.isEmpty() && tail.isEmpty()) return 0;
 
 		for (MethodNode handler : head) retarget(mixin, handler, FabricFreezePointInjector.HEAD_HOOK);
 		for (MethodNode handler : tail) retarget(mixin, handler, FabricFreezePointInjector.TAIL_HOOK);
@@ -112,15 +133,16 @@ public final class FabricFreezeHookMixinAdapter {
 
 	/**
 	 * The hook {@code handler}'s injector moves to — {@link FabricFreezePointInjector#HEAD_HOOK} or
-	 * {@link FabricFreezePointInjector#TAIL_HOOK} — or null when it is not one this adapter may move.
+	 * {@link FabricFreezePointInjector#TAIL_HOOK} — or null when it is not one this adapter may move. {@code target} is
+	 * the merged {@code BuiltInRegistries} its selectors bind in; {@code source}, or null, the one the mod was compiled
+	 * against, where its point is read.
 	 */
-	static String hookFor(MethodNode handler) {
+	static String hookFor(MethodNode handler, ClassNode target, ClassNode source) {
 		AnnotationNode inject = MixinFit.injectorOf(handler);
 		if (inject == null || !INJECT.equals(inject.desc)) return null;
 		if ((handler.access & Opcodes.ACC_STATIC) == 0 || !HANDLER_DESC.equals(handler.desc)) return null;
-		List<String> methods = MixinFit.stringList(MixinFit.value(inject, "method"));
-		if (methods.isEmpty()) return null;
-		boolean onFreeze = FREEZE.containsAll(methods), onBootStrap = BOOTSTRAP.containsAll(methods);
+		boolean onFreeze = MixinCallbackShape.binds(handler, target, FREEZE);
+		boolean onBootStrap = MixinCallbackShape.binds(handler, target, BOOTSTRAP);
 		if (!onFreeze && !onBootStrap) return null;
 		for (int i = 0; i + 1 < inject.values.size(); i += 2) {
 			Object key = inject.values.get(i);
@@ -145,7 +167,10 @@ public final class FabricFreezeHookMixinAdapter {
 			// bootStrap()'s call of freeze(): right before it is the freeze's HEAD, right after it the TAIL. A cancel
 			// there returns from bootStrap() before the freeze (or before validate), which the empty hook cannot do.
 			if (!"INVOKE".equals(value) || cancellable) return null;
-			if (!(MixinFit.value(at, "target") instanceof String member) || !FREEZE_CALL.contains(member)) return null;
+			// The call it names, read in the bootStrap() it was written for: that member and nothing else, called once.
+			MethodNode written = writtenBootStrap(handler, target, source);
+			if (!MixinCallbackShape.names(at, FREEZE_CALL, written)
+					|| written != null && MixinCallbackShape.selected(at, written).size() != 1) return null;
 			Object shift = MixinFit.value(at, "shift");
 			String side = shift instanceof String[] e && e.length == 2 ? e[1] : null;
 			if (shift != null && !"BEFORE".equals(side) && !"AFTER".equals(side)) return null;
@@ -156,11 +181,23 @@ public final class FabricFreezeHookMixinAdapter {
 			Object v = at.values.get(i + 1);
 			if ("value".equals(key) || "remap".equals(key) || "id".equals(key)) continue;
 			if (onBootStrap && ("target".equals(key) || "shift".equals(key))) continue;
-			// bootStrap() calls freeze() once, and a void method has one return.
+			// bootStrap() calls freeze() once (its point selects one call where that method is at hand), and a void
+			// method has one return.
 			if ("ordinal".equals(key) && v instanceof Integer n && (n == -1 || n == 0)) continue;
 			return null;
 		}
 		return hook;
+	}
+
+	/**
+	 * The {@code bootStrap()} the handler was written for, with its code: the one its injector binds in {@code source},
+	 * the class the mod was compiled against; without that class, the one it binds in {@code target}, where Mixin
+	 * injects, when that was read with its code. Null when neither gives it.
+	 */
+	private static MethodNode writtenBootStrap(MethodNode handler, ClassNode target, ClassNode source) {
+		MethodNode written = source != null ? MixinCallbackShape.written(handler, source) : MixinTargetSelectors.one(handler, target);
+		return written == null || written.instructions == null || written.instructions.size() == 0
+				|| !(written.name + written.desc).equals(BOOTSTRAP) ? null : written;
 	}
 
 	private static void retarget(ClassNode mixin, MethodNode handler, String hook) {
