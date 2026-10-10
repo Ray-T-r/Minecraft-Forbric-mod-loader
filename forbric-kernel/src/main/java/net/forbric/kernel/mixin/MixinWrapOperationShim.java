@@ -77,7 +77,7 @@ public final class MixinWrapOperationShim {
 		AnnotationNode injector=MixinFit.injectorOf(handler);
 		if(injector==null||!WRAP_OPERATION.equals(injector.desc)||MixinFit.atNodes(injector).size()!=1)return 0;
 		AnnotationNode at=MixinFit.atNodes(injector).getFirst();
-		MixinAtWidenedCall.Member old=MixinAtWidenedCall.parse(MixinFit.asString(MixinFit.value(at,"target")));
+		MixinAtWidenedCall.Member old=named(at);
 		if(old==null||!old.owner().equals(live.owner)||!Type.getReturnType(old.descriptor()).equals(Type.getReturnType(live.desc)))return 0;
 		if(old.name().equals(live.name)&&old.descriptor().equals(live.desc))return 0;
 		Type[] wanted=Type.getArgumentTypes(old.descriptor()), available=Type.getArgumentTypes(live.desc);
@@ -97,16 +97,15 @@ public final class MixinWrapOperationShim {
 	/** Wraps every eligible handler in {@code mixin}; returns how many. {@code targets} must return nodes WITH code. */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
 		if (!enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
-		List<MethodNode> declared = new ArrayList<>();
 		List<ClassNode> targetNodes = new ArrayList<>();
 		for (String targetName : MixinOverloadPin.targetsOf(mixin)) {
 			ClassNode target = targets.apply(targetName);
-			if (target != null && target.methods != null) { declared.addAll(target.methods); targetNodes.add(target); }
+			if (target != null && target.methods != null && !target.methods.isEmpty()) targetNodes.add(target);
 		}
-		if (declared.isEmpty()) return 0;
+		if (targetNodes.isEmpty()) return 0;
 		int wrapped = 0;
 		for (MethodNode handler : new ArrayList<>(mixin.methods)) {
-			Plan plan = plan(mixin.name, handler, declared, targetNodes.size() == 1 ? targetNodes.getFirst() : null);
+			Plan plan = plan(mixin.name, handler, targetNodes, targetNodes.size() == 1 ? targetNodes.getFirst() : null);
 			if (plan == null) continue;
 			mixin.methods.add(wrap(mixin, handler, plan));
 			wrapped++;
@@ -121,13 +120,16 @@ public final class MixinWrapOperationShim {
 	 */
 	public static String wouldWrap(String mixinName, MethodNode handler, List<MethodNode> declared) {
 		if (!enabled() || mixinName == null || handler == null || declared == null) return null;
-		Plan plan = plan(mixinName, handler, declared, null);
+		// No class to bind against: the methods alone, under no owner, so a selector naming an owner binds none of them.
+		ClassNode view = new ClassNode();
+		view.methods = new ArrayList<>(declared);
+		Plan plan = plan(mixinName, handler, List.of(view), null);
 		return plan == null ? null : "L" + plan.named().owner() + ";" + plan.named().name() + plan.merged();
 	}
 
 	public static String wouldWrap(ClassNode mixin, MethodNode handler, ClassNode target) {
 		if (!enabled()) return null;
-		Plan plan = plan(mixin.name, handler, target.methods, target);
+		Plan plan = plan(mixin.name, handler, List.of(target), target);
 		return plan == null ? null : "L" + plan.named().owner() + ";" + plan.named().name() + plan.merged();
 	}
 
@@ -136,7 +138,7 @@ public final class MixinWrapOperationShim {
 			int[] mapping, boolean staticCall, Integer ordinal) {
 	}
 
-	private static Plan plan(String mixinName, MethodNode handler, List<MethodNode> declared, ClassNode target) {
+	private static Plan plan(String mixinName, MethodNode handler, List<ClassNode> classes, ClassNode target) {
 		if (handler.name.endsWith(MixinHandlerShim.INNER_SUFFIX)) return null;
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
@@ -150,10 +152,10 @@ public final class MixinWrapOperationShim {
 		AnnotationNode at = points.getFirst();
 		if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value")))
 				|| MixinFit.value(at, "slice") != null) return null;
-		MixinAtWidenedCall.Member named = MixinAtWidenedCall.parse(MixinFit.asString(MixinFit.value(at, "target")));
+		MixinAtWidenedCall.Member named = named(at);
 		if (named == null) return null;
 
-		List<MethodNode> bodies = selected(injector, declared);
+		List<MethodNode> bodies = selected(handler, classes);
 		if (bodies.isEmpty()) return null;
 		Set<String> candidates = new LinkedHashSet<>();
 		Boolean staticCall = null;
@@ -369,19 +371,30 @@ public final class MixinWrapOperationShim {
 		return moved;
 	}
 
-	/** The target methods this injector's {@code method} selectors name, matched as written. */
-	private static List<MethodNode> selected(AnnotationNode injector, List<MethodNode> declared) {
-		List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
+	/**
+	 * The target methods the handler's injector binds, in each target class as Mixin binds it
+	 * ({@link MixinTargetSelectors}): owner-qualified, dotted, spaced or bare — a bare name binding the first method of
+	 * that name the class declares. A class where Mixin would refuse the selectors contributes none.
+	 */
+	private static List<MethodNode> selected(MethodNode handler, List<ClassNode> classes) {
 		List<MethodNode> bodies = new ArrayList<>();
-		for (MethodNode body : declared) {
-			for (String selector : selectors) {
-				if (selector.equals(body.name) || selector.equals(body.name + body.desc)) {
-					bodies.add(body);
-					break;
-				}
-			}
+		for (ClassNode target : classes) {
+			List<MethodNode> bound = MixinTargetSelectors.bound(handler, target);
+			if (bound != null) bodies.addAll(bound);
 		}
 		return bodies;
+	}
+
+	/**
+	 * The call the {@code @At} names, read as Mixin reads a target ({@link MixinFit#parseMember}: whitespace dropped, a
+	 * dotted owner the class): only a target that spells its owner and a method descriptor, since this shim decides on
+	 * the merged bodies alone, where a shorter target already matches the carrier's other form of the call.
+	 */
+	private static MixinAtWidenedCall.Member named(AnnotationNode at) {
+		MixinFit.Member member = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target")));
+		if (member == null || member.owner() == null || member.owner().isEmpty() || member.desc() == null
+				|| !member.desc().startsWith("(")) return null;
+		return new MixinAtWidenedCall.Member(member.owner(), member.name(), member.desc());
 	}
 
 	private static List<AnnotationNode> without(List<AnnotationNode> annotations, String desc) {
