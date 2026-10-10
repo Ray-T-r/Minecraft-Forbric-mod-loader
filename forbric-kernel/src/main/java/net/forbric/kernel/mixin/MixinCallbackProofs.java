@@ -518,7 +518,9 @@ final class MixinCallbackProofs {
 	 * MixinExtras resolves in {@code nativeMethod} at {@code nativePoint} held: the one slot of the same type whose value is
 	 * produced by the same expression — the same calls of the same members, field reads, allocations, constants and
 	 * parameters, all the way down. {@code nativeParameter} maps a live parameter position to the native parameter it
-	 * carries, or -1. Handler parameter to live slot; null when any {@code @Local} is not proved.
+	 * carries, or -1. Two {@code @Local}s that name different native slots never share a live one: two native locals
+	 * whose producers spell alike (one state read twice) are two values. Handler parameter to live slot; null when any
+	 * {@code @Local} is not proved.
 	 */
 	static Map<Integer, Integer> correspondLocals(MethodNode handler, String nativeOwner, MethodNode nativeMethod, AbstractInsnNode nativePoint,
 			String liveOwner, MethodNode live, AbstractInsnNode livePoint, IntUnaryOperator nativeParameter) {
@@ -532,6 +534,7 @@ final class MixinCallbackProofs {
 		if (was < 0 || now < 0 || before[was] == null || after[now] == null) return null;
 		IntFunction<String> nativeNames = parameters(nativeMethod, IntUnaryOperator.identity());
 		IntFunction<String> liveNames = parameters(live, nativeParameter);
+		Map<Integer, Integer> nativeSlots = new HashMap<>();   // live slot to the native slot read from it
 		for (MixinHandlerShape.Extra local : shape.locals()) {
 			int slot = MixinLocalOriginProof.slot(local.sugar(), local.type(), nativeMethod, was);
 			if (slot < 0 || slot >= before[was].getLocals()) return null;
@@ -545,6 +548,8 @@ final class MixinCallbackProofs {
 				match = candidate;
 			}
 			if (match < 0) return null;
+			Integer other = nativeSlots.putIfAbsent(match, slot);
+			if (other != null && other != slot) return null;
 			result.put(local.parameter(), match);
 		}
 		return result;
@@ -648,13 +653,11 @@ final class MixinCallbackProofs {
 	 * was written for as the {@code @Local(argsOnly = true)} it stands for — to the one slot of {@code live} that holds its
 	 * value at every live point. With the native body ({@code reference}; {@code nativeDesc} is its descriptor either way)
 	 * by producer ({@link #correspondLocals}), {@code nativeParameter} telling which native parameter a live one carries.
-	 * Without it nothing records what a local held natively, and an {@code ordinal}, {@code index} or {@code name}
-	 * describes the native body's locals, not the live one's: an {@code argsOnly} one is its parameter
-	 * ({@link #parameterSlot}); any other is the local of its type the live call is itself handed, the value the platform
-	 * passes where the native call stood ({@link MixinLocalOriginProof#atCall}), and where the call is handed none, the
-	 * slot MixinExtras' own reading names at the live point ({@link MixinLocalOriginProof#slot}). Handler parameter to
-	 * live slot; null when the handler has an extra that is no {@code @Local}, the call is handed two locals of one
-	 * captured type, or any {@code @Local} is not read so.
+	 * Without it nothing records what a body local held natively, and an {@code ordinal}, {@code index} or {@code name}
+	 * describes the native body's locals, not the live one's: each is read only as far as the merged body and the
+	 * native descriptor answer it ({@link #unrecordedLocals}). Handler parameter to live slot; null when the handler has
+	 * an extra that is no {@code @Local}, any {@code @Local} is not read so, or two {@code @Local}s that name different
+	 * native locals would read one slot.
 	 */
 	static Map<Integer, Integer> replacedCallLocals(MethodNode handler, String nativeOwner, MethodNode reference, AbstractInsnNode nativePoint,
 			String nativeDesc, String liveOwner, MethodNode live, List<? extends AbstractInsnNode> livePoints, IntUnaryOperator nativeParameter) {
@@ -666,36 +669,166 @@ final class MixinCallbackProofs {
 			Map<Integer, Integer> one;
 			if (reference != null) one = nativePoint == null ? null
 					: correspondLocals(handler, nativeOwner, reference, nativePoint, liveOwner, live, point, nativeParameter);
-			else one = unrecordedLocals(shape, nativeDesc, liveOwner, live, point, nativeParameter);
+			else one = unrecordedLocals(handler, shape, nativeDesc, liveOwner, live, point, nativeParameter);
 			if (one == null || result != null && !result.equals(one)) return null;   // one annotation reads one slot at every point
 			result = one;
 		}
 		return result;
 	}
 
-	/** {@link #replacedCallLocals} without the native body, at one live point. */
-	private static Map<Integer, Integer> unrecordedLocals(MixinHandlerShape shape, String nativeDesc, String liveOwner, MethodNode live,
-			AbstractInsnNode point, IntUnaryOperator nativeParameter) {
+	/**
+	 * {@link #replacedCallLocals} without the native body, at one live point: each {@code @Local} read only as far as the
+	 * merged body and the native descriptor {@code nativeDesc} answer it.
+	 * <ul>
+	 * <li>An {@code argsOnly} one is its parameter ({@link #parameterSlot}).
+	 * <li>One with no {@code ordinal}, {@code index} or {@code name} — natively the one local of its type — is the local of
+	 * its type the live call is itself handed, the value the platform passes where the native call stood
+	 * ({@link MixinLocalOriginProof#atCall}); where the call is handed none, the slot MixinExtras' own reading names at the
+	 * live point ({@link MixinLocalOriginProof#slot}).
+	 * <li>A discriminator is read only where it means the same in both bodies ({@link #discriminatedSlot}), never by the
+	 * positions the platform's own locals shift: an {@code ordinal} among, or an {@code index} of, the native parameters;
+	 * a {@code name}, the variable's own; the first {@code ordinal} past the parameters, on the undiscriminated capture's
+	 * premise, as the one local the call is handed. A later {@code ordinal}, or the {@code index} of a body local, only the
+	 * native body answers: refused.
+	 * </ul>
+	 * Two {@code @Local}s read one slot only when they name one native local — the same native parameter, or the same
+	 * discriminator — so two different native locals are never read from one ({@link #nativeLocal}). Null when any
+	 * {@code @Local} is not read so.
+	 */
+	private static Map<Integer, Integer> unrecordedLocals(MethodNode handler, MixinHandlerShape shape, String nativeDesc, String liveOwner,
+			MethodNode live, AbstractInsnNode point, IntUnaryOperator nativeParameter) {
 		int at = live.instructions.indexOf(point);
 		if (at < 0) return null;
 		Map<Integer, Integer> result = new LinkedHashMap<>();
+		Map<Integer, String> named = new HashMap<>();
 		for (MixinHandlerShape.Extra local : shape.locals()) {
 			AnnotationNode sugar = local.sugar();
-			int slot = -1;
+			int slot;
 			if (Boolean.TRUE.equals(MixinFit.value(sugar, "argsOnly"))) slot = parameterSlot(local, nativeDesc, live, nativeParameter);
 			else {
-				if (point instanceof MethodInsnNode call) for (int candidate : MixinLocalOriginProof.typedSlots(live, at, local.type(), false)) {
-					MixinLocalOriginProof.CallValue handed = MixinLocalOriginProof.atCall(liveOwner, live, call, candidate);
-					if (handed == null || handed.operand() < 0) continue;
-					if (slot >= 0) return null;   // the call is handed two of them: which one is a guess
-					slot = candidate;
-				}
-				if (slot < 0) slot = MixinLocalOriginProof.slot(sugar, local.type(), live, at);
+				List<Integer> handed = handed(liveOwner, live, point, at, local.type());
+				if (discriminated(sugar)) slot = discriminatedSlot(handler, local, nativeDesc, live, at, nativeParameter, handed);
+				else if (handed.size() > 1) slot = -1;   // the call is handed two of them: which one is a guess
+				else slot = handed.size() == 1 ? handed.getFirst() : MixinLocalOriginProof.slot(sugar, local.type(), live, at);
 			}
 			if (slot < 0) return null;
+			String names = nativeLocal(slot, sugar, live, nativeParameter);
+			String other = named.putIfAbsent(slot, names);
+			if (other != null && !other.equals(names)) return null;   // two native locals would be read from one slot
 			result.put(local.parameter(), slot);
 		}
 		return result;
+	}
+
+	/** The body locals (not parameters) of {@code type} the call at {@code point}, instruction {@code at} of {@code live}, is itself handed. */
+	private static List<Integer> handed(String liveOwner, MethodNode live, AbstractInsnNode point, int at, Type type) {
+		List<Integer> out = new ArrayList<>();
+		if (point instanceof MethodInsnNode call) for (int candidate : MixinLocalOriginProof.typedSlots(live, at, type, false)) {
+			MixinLocalOriginProof.CallValue value = MixinLocalOriginProof.atCall(liveOwner, live, call, candidate);
+			if (value != null && value.operand() >= 0) out.add(candidate);
+		}
+		return out;
+	}
+
+	/**
+	 * A non-{@code argsOnly} {@code @Local} that names its local by {@code ordinal}, {@code index} or {@code name}, read at
+	 * instruction {@code at} of {@code live} without the native body, where the call there is {@code handed} the body
+	 * locals of its type. A discriminator describes the native body, and the platform's own locals shift every position
+	 * in it, so it is read only where it means the same in both bodies:
+	 * <ul>
+	 * <li>a {@code name} is the variable's own: the slot MixinExtras' reading of it names in the merged body — a parameter
+	 * the native method has ({@code nativeParameter}), or a body local the call is handed when it is handed any; never
+	 * with an {@code index}, which is a position;
+	 * <li>an {@code index} of the slot of a native parameter of its type (the slots the native descriptor gives the method
+	 * the handler can be written for: an instance method for an instance handler) is that parameter where the live
+	 * method takes it;
+	 * <li>an {@code ordinal} counts the native parameters of its type first, in their order: one within them is that
+	 * parameter where the live method takes it. The first past them names the first body local of its type, whose rank
+	 * the merged body does not keep: it is read, only when the call is handed exactly one local of its type, as that one —
+	 * the premise an undiscriminated capture is read on, that the platform passes the native value where its call stood,
+	 * not a proof. A later one names a second body local, which only the native body orders.
+	 * </ul>
+	 * -1 where only the native body could say which local it names.
+	 */
+	private static int discriminatedSlot(MethodNode handler, MixinHandlerShape.Extra local, String nativeDesc, MethodNode live, int at,
+			IntUnaryOperator nativeParameter, List<Integer> handed) {
+		AnnotationNode sugar = local.sugar();
+		Type type = local.type();
+		Type[] nativeArguments = Type.getArgumentTypes(nativeDesc);
+		int index = MixinFit.value(sugar, "index") instanceof Number n && n.intValue() >= 0 ? n.intValue() : -1;
+		int ordinal = MixinFit.value(sugar, "ordinal") instanceof Number o && o.intValue() >= 0 ? o.intValue() : -1;
+		if (!MixinFit.stringList(MixinFit.value(sugar, "name")).isEmpty()) {
+			if (index >= 0) return -1;
+			int slot = MixinLocalOriginProof.slot(sugar, type, live, at);
+			if (slot < 0) return -1;
+			int position = position(live, slot);
+			if (position >= 0) {
+				int carried = nativeParameter == null ? -1 : nativeParameter.applyAsInt(position);
+				return carried >= 0 && carried < nativeArguments.length && nativeArguments[carried].equals(type) ? slot : -1;
+			}
+			return handed.isEmpty() || handed.contains(slot) ? slot : -1;
+		}
+		if (index >= 0) {
+			// MixinExtras filters by index first, which leaves one slot: an ordinal past 0 then names nothing.
+			int parameter = parameterAt(nativeDesc, nativeStatic(handler, live), index);
+			if (parameter < 0 || !nativeArguments[parameter].equals(type) || ordinal > 0) return -1;
+			return liveSlotOf(parameter, live, nativeParameter);
+		}
+		List<Integer> typed = new ArrayList<>();
+		for (int i = 0; i < nativeArguments.length; i++) if (nativeArguments[i].equals(type)) typed.add(i);
+		if (ordinal < typed.size()) return liveSlotOf(typed.get(ordinal), live, nativeParameter);
+		return ordinal == typed.size() && handed.size() == 1 ? handed.getFirst() : -1;
+	}
+
+	/**
+	 * Which native local a {@code @Local} read to {@code slot} of {@code live} names, as far as the merged body says: the
+	 * native parameter a live parameter carries ({@code nativeParameter}); otherwise only its discriminator — two that
+	 * differ name two native locals, two alike (an undiscriminated pair: the one local of their type) one.
+	 */
+	private static String nativeLocal(int slot, AnnotationNode sugar, MethodNode live, IntUnaryOperator nativeParameter) {
+		int position = position(live, slot);
+		int carried = position < 0 || nativeParameter == null ? -1 : nativeParameter.applyAsInt(position);
+		if (carried >= 0) return "parameter " + carried;
+		Object index = MixinFit.value(sugar, "index"), ordinal = MixinFit.value(sugar, "ordinal");
+		List<String> names = new ArrayList<>(MixinFit.stringList(MixinFit.value(sugar, "name")));
+		java.util.Collections.sort(names);
+		return "local index " + (index instanceof Number n && n.intValue() >= 0 ? n.intValue() : -1)
+				+ " ordinal " + (ordinal instanceof Number o && o.intValue() >= 0 ? o.intValue() : -1) + " name " + names;
+	}
+
+	/** The position of the parameter of {@code method} held in {@code slot}; -1 for {@code this} or a body local. */
+	private static int position(MethodNode method, int slot) {
+		int[] slots = slots(method);
+		for (int i = 0; i < slots.length; i++) if (slots[i] == slot) return i;
+		return -1;
+	}
+
+	/** The position of the parameter of a method of {@code desc} (static or not) held in {@code slot}; -1 for none. */
+	private static int parameterAt(String desc, boolean isStatic, int slot) {
+		int next = isStatic ? 0 : 1, position = 0;
+		for (Type argument : Type.getArgumentTypes(desc)) {
+			if (next == slot) return position;
+			next += argument.getSize();
+			position++;
+		}
+		return -1;
+	}
+
+	/**
+	 * Whether the native method a handler is written for is static: an instance handler is written for an instance method
+	 * (Mixin refuses it on a static one); a static handler's is read off the live method that took its place.
+	 */
+	private static boolean nativeStatic(MethodNode handler, MethodNode live) {
+		return (handler.access & Opcodes.ACC_STATIC) != 0 && (live.access & Opcodes.ACC_STATIC) != 0;
+	}
+
+	/** The slot of {@code live}'s one parameter that carries native parameter {@code parameter} ({@code nativeParameter}); -1 for none or several. */
+	private static int liveSlotOf(int parameter, MethodNode live, IntUnaryOperator nativeParameter) {
+		if (nativeParameter == null) return -1;
+		int[] slots = slots(live);
+		int found = -1;
+		for (int j = 0; j < slots.length; j++) if (nativeParameter.applyAsInt(j) == parameter) { if (found >= 0) return -1; found = slots[j]; }
+		return found;
 	}
 
 	private static int only(Type[] types, Type type) {

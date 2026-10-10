@@ -11,10 +11,11 @@ import net.forbric.api.Ecosystem;
  * whatever {@code @Local}s it asks for — annotated, or the target arguments Mixin appends after its {@code Operation},
  * which are the {@code @Local(argsOnly = true)}s they stand for ({@link MixinCallbackShape#captures}) — never a list one
  * mod happened to declare. Each is proved to the slot holding its value where the replacement call stands
- * ({@link MixinCallbackProofs#replacedCallLocals}: by producer when the class the mod was compiled against is at hand)
- * and handed on by a {@code @Local} of that slot; a handler whose selector moves instead has them proved and pinned where
- * it lands ({@link MixinCallbackProofs#land}). A handler with any other extra, or a capture that is not proved, stays as
- * written.
+ * ({@link MixinCallbackProofs#replacedCallLocals}: by producer when the class the mod was compiled against is at hand;
+ * without it an {@code ordinal}, {@code index} or {@code name} only where it means the same in the merged body, and never
+ * two native locals read from one slot) and handed on by a {@code @Local} of that slot; a handler whose selector moves
+ * instead has them proved and pinned where it lands ({@link MixinCallbackProofs#land}). A handler with any other extra,
+ * or a capture that is not proved, stays as written.
  */
 public final class MixinBlockInteractionAdapters {
 	public static final String PROPERTY="forbric.blockInteractionAdapters";
@@ -29,7 +30,8 @@ public final class MixinBlockInteractionAdapters {
 	 * {@code references} gives the class the mod was compiled against. The bounce and left-click hosts are found by the
 	 * native method the handler was written for, which a bare name, a wildcard or a pattern names only in that class
 	 * ({@link MixinTargetSelectors#nativeMember}); without it only a selector spelling the descriptor names it. Its body is
-	 * also where each capture's value is read; without it a capture is proved only as far as the live body can say.
+	 * also where each capture's value is read; without it a capture is read only as far as the live body and the native
+	 * descriptor say, and one whose discriminator only the native body answers is refused.
 	 */
 	static int adapt(ClassNode mixin,Function<String,ClassNode> targets,BiFunction<Ecosystem,String,ClassNode> references){
 		if("off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(PROPERTY)))return 0;
