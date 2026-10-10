@@ -48,33 +48,36 @@ public final class MixinResourceContinuationAdapter {
         return recipe!=null&&recipe.indexOf('\u0001')==recipe.lastIndexOf('\u0001')&&recipe.indexOf('\u0001')>=0?new Source(method,injection,field,name,parse,transform,recipe,separator.operand):null;
     }
     private static Move move(Source source,ClassNode target,ClassNode reference,Function<String,ClassNode> classes) {
-        List<String> selectors=MixinFit.stringList(MixinFit.value(source.injection(),"method"));if(selectors.size()!=1)return null;
-        List<MethodNode> current=target.methods.stream().filter(m->selectors.contains(m.name)||selectors.contains(m.name+m.desc)).toList();
-        String oldTarget=MixinFit.asString(MixinFit.value(MixinFit.atNodes(source.injection()).getFirst(),"target"));List<Move> matches=new ArrayList<>();
+        // The host is the one method Mixin binds in the merged class, and the method the wrap was written for — the one it
+        // binds in the class the mod was compiled against — is that same member: however the selector is spelled. One
+        // host, since the point is rewritten for every method the injector binds.
+        MethodNode host=MixinTargetSelectors.one(source.handler(),target),old=MixinCallbackShape.written(source.handler(),reference);
+        if(host==null||old==null||!host.name.equals(old.name)||!host.desc.equals(old.desc))return null;
+        AnnotationNode point=MixinFit.atNodes(source.injection()).getFirst();List<Move> matches=new ArrayList<>();
         int hole=source.recipe().indexOf('\u0001');String prefix=source.recipe().substring(0,hole),suffix=source.recipe().substring(hole+1);
         ClassNode value=classes.apply(source.parse().owner),names=classes.apply(source.name().owner);if(value==null||names==null||(value.access&Opcodes.ACC_FINAL)==0||(names.access&Opcodes.ACC_FINAL)==0)return null;
         MethodNode nameGetter=declared(names,source.name().name,source.name().desc);if(nameGetter==null||pureField(nameGetter,names)==null)return null;
         MethodNode parse=declared(value,source.parse().name,source.parse().desc),transform=declared(value,source.transform().name,source.transform().desc);if(parse==null||transform==null)return null;
         List<AbstractInsnNode> p=code(parse);if(p.size()!=4||!load(p.get(0),0)||!(p.get(1)instanceof IntInsnNode delimiter)||delimiter.operand!=source.separator()||!(p.get(2)instanceof MethodInsnNode split)||split.getOpcode()!=Opcodes.INVOKESTATIC||!split.owner.equals(value.name)||!split.desc.equals("(Ljava/lang/String;C)L"+value.name+";")||p.get(3).getOpcode()!=Opcodes.ARETURN)return null;
-        MethodNode splitter=declared(value,split.name,split.desc);MethodInsnNode defaultFactory=splitter==null?null:splitter(splitter,value.name);if(defaultFactory==null||!member(defaultFactory).equals(oldTarget))return null;
+        MethodNode splitter=declared(value,split.name,split.desc);MethodInsnNode defaultFactory=splitter==null?null:splitter(splitter,value.name);if(defaultFactory==null)return null;
         MethodNode defaultMethod=declared(value,defaultFactory.name,defaultFactory.desc);String defaultNamespace=defaultMethod==null?null:defaultNamespace(defaultMethod,value.name);if(defaultNamespace==null)return null;
         FieldOwner sourceField=field(target,source.field().name,source.field().desc,classes,new HashSet<>());if(sourceField==null||(sourceField.field().access&Opcodes.ACC_FINAL)==0)return null;
-        for(MethodNode host:current) {
-            MethodNode old=declared(reference,host.name,host.desc);if(old==null)continue;
-            List<MethodInsnNode> olds=calls(old).stream().filter(c->member(c).equals(oldTarget)).toList();if(olds.size()!=1||calls(host).stream().anyMatch(c->member(c).equals(oldTarget)))continue;
-            if(!(previous(olds.getFirst())instanceof InvokeDynamicInsnNode originalRecipe)||!source.recipe().equals(recipe(originalRecipe))||!sameNameProducer(previous(originalRecipe),source,target))continue;
-            AbstractInsnNode oldSink=next(olds.getFirst());if(!(oldSink instanceof FieldInsnNode oldField)||oldField.getOpcode()!=Opcodes.PUTFIELD)continue;
-            for(MethodInsnNode call:calls(host)) {
-                if(!same(call,source.parse())||!(previous(call)instanceof InvokeDynamicInsnNode input)||!("\u0001"+suffix).equals(recipe(input))||!sameNameProducer(previous(input),source,target))continue;
-                AbstractInsnNode literal=next(call),tail=literal==null?null:next(literal),sink=tail==null?null:next(tail);
-                if(!(literal instanceof LdcInsnNode constant)||!prefix.equals(constant.cst)||!(tail instanceof MethodInsnNode continuation)||continuation.getOpcode()!=Opcodes.INVOKEVIRTUAL||!continuation.owner.equals(value.name)||!continuation.desc.equals("(Ljava/lang/String;)L"+value.name+";")||!(sink instanceof FieldInsnNode newField)||!same(oldField,newField))continue;
-                MethodNode updater=declared(value,continuation.name,continuation.desc);Properties properties=properties(value,updater,transform);if(properties==null)continue;
-                MethodNode namespaceGetter=fieldGetter(value,properties.namespace()),pathGetter=fieldGetter(value,properties.path());if(namespaceGetter==null||pathGetter==null)continue;
-                LinkedHashSet<MethodNode> closure=closure(value,List.of(parse,transform,updater,defaultMethod,namespaceGetter,pathGetter));if(closure==null)continue;
-                List<DefinedMethodContracts.MethodContract> bodies=new ArrayList<>();for(MethodNode method:closure)bodies.add(contract(value,method));bodies.add(contract(names,nameGetter));
-                var plan=new KernelResourceContinuations.Plan(new KernelResourceContinuations.FieldContract(sourceField.owner(),source.field().name,source.field().desc),contract(names,nameGetter),contract(value,namespaceGetter),contract(value,pathGetter),bodies,prefix,suffix,defaultNamespace,(char)source.separator());
-                matches.add(new Move(continuation,plan,KernelResourceContinuations.register(plan)));
-            }
+        // The point, however written, selects one call in the written method — the default factory the splitter
+        // falls back to — and the merged host no longer makes that call.
+        List<MethodInsnNode> olds=MixinCallbackShape.invocations(point,old);String named=olds.size()==1?member(olds.getFirst()):null;
+        if(named==null||!named.equals(member(defaultFactory))||calls(host).stream().anyMatch(c->member(c).equals(named)))return null;
+        if(!(previous(olds.getFirst())instanceof InvokeDynamicInsnNode originalRecipe)||!source.recipe().equals(recipe(originalRecipe))||!sameNameProducer(previous(originalRecipe),source,target))return null;
+        AbstractInsnNode oldSink=next(olds.getFirst());if(!(oldSink instanceof FieldInsnNode oldField)||oldField.getOpcode()!=Opcodes.PUTFIELD)return null;
+        for(MethodInsnNode call:calls(host)) {
+            if(!same(call,source.parse())||!(previous(call)instanceof InvokeDynamicInsnNode input)||!("\u0001"+suffix).equals(recipe(input))||!sameNameProducer(previous(input),source,target))continue;
+            AbstractInsnNode literal=next(call),tail=literal==null?null:next(literal),sink=tail==null?null:next(tail);
+            if(!(literal instanceof LdcInsnNode constant)||!prefix.equals(constant.cst)||!(tail instanceof MethodInsnNode continuation)||continuation.getOpcode()!=Opcodes.INVOKEVIRTUAL||!continuation.owner.equals(value.name)||!continuation.desc.equals("(Ljava/lang/String;)L"+value.name+";")||!(sink instanceof FieldInsnNode newField)||!same(oldField,newField))continue;
+            MethodNode updater=declared(value,continuation.name,continuation.desc);Properties properties=properties(value,updater,transform);if(properties==null)continue;
+            MethodNode namespaceGetter=fieldGetter(value,properties.namespace()),pathGetter=fieldGetter(value,properties.path());if(namespaceGetter==null||pathGetter==null)continue;
+            LinkedHashSet<MethodNode> closure=closure(value,List.of(parse,transform,updater,defaultMethod,namespaceGetter,pathGetter));if(closure==null)continue;
+            List<DefinedMethodContracts.MethodContract> bodies=new ArrayList<>();for(MethodNode method:closure)bodies.add(contract(value,method));bodies.add(contract(names,nameGetter));
+            var plan=new KernelResourceContinuations.Plan(new KernelResourceContinuations.FieldContract(sourceField.owner(),source.field().name,source.field().desc),contract(names,nameGetter),contract(value,namespaceGetter),contract(value,pathGetter),bodies,prefix,suffix,defaultNamespace,(char)source.separator());
+            matches.add(new Move(continuation,plan,KernelResourceContinuations.register(plan)));
         }
         return matches.size()==1?matches.getFirst():null;
     }
