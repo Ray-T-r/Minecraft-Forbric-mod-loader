@@ -76,8 +76,20 @@ final class MixinNativeEquivalence {
             Body body = body(handler, mixin.name, bindings, true);
             if (selectors.isEmpty() || body == null || targets.isEmpty()) continue;
             PLANS.put(prefix + handler.name + handler.desc, new Plan(Set.copyOf(targets), selectors,
-                    MixinInstructionFingerprint.hash(handler), handler, bindings, body));
+                    MixinInstructionFingerprint.hash(handler), snapshot(handler), bindings, body));
         }
+    }
+
+    /**
+     * The handler as remembered, apart from the node handed on: Mixin goes on to consume that node (it takes the
+     * injector annotation off the handler it merges), so a proof asked once the target class is defined would otherwise
+     * read a handler that no longer says which method it binds or where.
+     */
+    private static MethodNode snapshot(MethodNode handler) {
+        MethodNode copy = new MethodNode(Opcodes.ASM9, handler.access, handler.name, handler.desc, handler.signature,
+                handler.exceptions == null ? null : handler.exceptions.toArray(String[]::new));
+        handler.accept(copy);
+        return copy;
     }
 
     static boolean needsFingerprint(MethodNode handler) {
