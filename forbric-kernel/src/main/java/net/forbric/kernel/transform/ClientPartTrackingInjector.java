@@ -20,7 +20,6 @@ import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LineNumberNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
-import org.objectweb.asm.tree.TypeInsnNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 /** Completes a Forge-canonical client tracking body with the other native part view. Existing
@@ -69,54 +68,22 @@ public final class ClientPartTrackingInjector implements ClassTransformer {
 	}
 
 	/**
-	 * Whether {@code bytes}' {@code onTrackingStart} leaves the client tracking a NeoForge mod's multipart entity: it
-	 * reads NeoForge's {@code getParts()} and reaches {@code ClientLevel.dragonParts}, where NeoForge's own client
-	 * registers them, and every MinecraftForge {@code getParts()} array it reads is tested for null before anything uses
-	 * it. That array is null for every NeoForge mod's entity, and dereferencing it is what disconnected the client.
-	 * True on NeoForge's own body, on this repair's edit of MinecraftForge's, and on any merge that already composes the
-	 * two; false on MinecraftForge's unrepaired body.
+	 * Whether {@code bytes}' {@code onTrackingStart} leaves the client tracking a NeoForge mod's multipart entity, judged
+	 * by where its values go ({@link ClientPartTrackingFlow}): what NeoForge's {@code getParts()} returns reaches an add
+	 * into {@code ClientLevel.dragonParts}, where NeoForge's own client registers the parts, and every array
+	 * MinecraftForge's {@code getParts()} returns is tested for null on every path before anything consumes it. That
+	 * array is null for every NeoForge mod's entity, and dereferencing it is what disconnected the client. Vanilla's
+	 * EnderDragon case reads {@code dragonParts} in every 26.2 body, so reading the list is not the question; NeoForge's
+	 * parts arriving in it is. True on NeoForge's own body, on this repair's edit of MinecraftForge's, and on any merge
+	 * that already composes the two however it is written; false on MinecraftForge's unrepaired body and on a body that
+	 * reads NeoForge's parts without registering them.
 	 */
 	static boolean tracksNeoForgeParts(byte[] bytes) {
 		ClassNode node = new ClassNode();
 		try { new ClassReader(bytes).accept(node, ClassReader.SKIP_FRAMES); } catch (RuntimeException unreadable) { return false; }
 		if (!CALLBACKS_INTERNAL.equals(node.name)) return false;
 		MethodNode start = method(node, "onTrackingStart", TRACKING_START_DESC);
-		if (start == null) return false;
-		boolean neo = false, dragonParts = false;
-		for (AbstractInsnNode insn : start.instructions) {
-			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD && field.owner.equals(LEVEL)
-					&& field.name.equals("dragonParts") && field.desc.equals("Ljava/util/List;")) dragonParts = true;
-			if (!(insn instanceof MethodInsnNode call) || !call.owner.equals(ENTITY) || !call.name.equals("getParts")) continue;
-			if (call.desc.equals(NEO_GET_PARTS)) neo = true;
-			else if (call.desc.equals(FORGE_GET_PARTS) && !nullTested(call)) return false;
-		}
-		return neo && dragonParts;
-	}
-
-	/**
-	 * Whether the array {@code read} returns is tested for null before it is used: stored and then tested
-	 * ({@code parts = e.getParts(); if (parts != null)}), tested as it is stored
-	 * ({@code if ((parts = e.getParts()) != null)}), or replaced by an empty array when null
-	 * ({@code requireNonNullElse(e.getParts(), new T[0])}).
-	 */
-	private static boolean nullTested(MethodInsnNode read) {
-		AbstractInsnNode after = next(read);
-		if (after instanceof VarInsnNode store && store.getOpcode() == Opcodes.ASTORE) {
-			return next(store) instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD && load.var == store.var
-					&& nullJump(next(load));
-		}
-		if (after != null && after.getOpcode() == Opcodes.DUP) {
-			AbstractInsnNode test = next(after);
-			if (test instanceof VarInsnNode store && store.getOpcode() == Opcodes.ASTORE) test = next(store);
-			return nullJump(test);
-		}
-		return after != null && after.getOpcode() == Opcodes.ICONST_0 && next(after) instanceof TypeInsnNode empty
-				&& empty.getOpcode() == Opcodes.ANEWARRAY && next(empty) instanceof MethodInsnNode orElse
-				&& orElse.owner.equals("java/util/Objects") && orElse.name.equals("requireNonNullElse");
-	}
-
-	private static boolean nullJump(AbstractInsnNode insn) {
-		return insn != null && (insn.getOpcode() == Opcodes.IFNULL || insn.getOpcode() == Opcodes.IFNONNULL);
+		return start != null && ClientPartTrackingFlow.tracksNeoForgeParts(node, start);
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
