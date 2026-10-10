@@ -231,7 +231,12 @@ final class MixinCallbackShape {
      * for no body, or a target that names no member.
      */
     static List<AbstractInsnNode> selected(AnnotationNode at, MethodNode body) {
-        MixinFit.Member named = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target")));
+        return selected(MixinFit.asString(MixinFit.value(at, "target")), body);
+    }
+
+    /** {@link #selected(AnnotationNode, MethodNode)} for a target given as the string an {@code @At} would carry. */
+    static List<AbstractInsnNode> selected(String target, MethodNode body) {
+        MixinFit.Member named = MixinFit.parseMember(target);
         if (named == null || body == null || body.instructions == null) return List.of();
         List<AbstractInsnNode> found = new java.util.ArrayList<>();
         for (AbstractInsnNode instruction : body.instructions) {

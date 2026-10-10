@@ -649,12 +649,13 @@ public final class MixinFit {
 		// config, and never reaches the shim that would have given it the live lambda. Captured locals are
 		// proven from the local variable table, which the plain read skipped. MixinHandlerShim's first: a selector
 		// spelling vanilla's descriptor of a lambda whose captures the merge reordered lands on the one live lambda.
-		if (hits.isEmpty() && selectors.size() == 1) {
-			MethodNode shimmed = MixinHandlerShim.destination(m, target);
-			if (shimmed == null) shimmed = InsertedLambdaArgumentShim.destination(m, target);
+		if (hits.isEmpty()) {
+			// The shim reads every selector as Mixin does: several spellings of the one dropped lambda move together.
+			MethodNode shimmed = selectors.size() == 1 ? MixinHandlerShim.destination(m, target) : null;
+			if (shimmed == null) shimmed = InsertedLambdaArgumentShim.destination(mixin, m, target);
 			ClassNode locals = shimmed == null ? withLocals.get() : null;
 			if (shimmed == null && locals != null) {
-				MethodNode twin = InsertedLambdaArgumentShim.destination(m, locals);
+				MethodNode twin = InsertedLambdaArgumentShim.destination(mixin, m, locals);
 				if (twin != null) shimmed = findMethod(target, twin.name, twin.desc, resolver);
 				if (shimmed == null) shimmed = twin;
 			}

@@ -20,6 +20,14 @@ public final class InsertedLambdaArgumentShim {
     private InsertedLambdaArgumentShim() {}
 
     public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
+        return adapt(mixin, targets, mixin == null ? null : natives(mixin));
+    }
+
+    /**
+     * {@link #adapt(ClassNode, Function)}, reading a selector that does not spell the dropped lambda's descriptor in
+     * {@code natives}' class (the class the mod was compiled against, by internal name; null, or answering null: none).
+     */
+    public static int adapt(ClassNode mixin, Function<String, ClassNode> targets, Function<String, ClassNode> natives) {
         if (mixin == null || targets == null || "off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return 0;
         List<String> owners = MixinOverloadPin.targetsOf(mixin);
         if (owners.size() != 1) return 0;
@@ -27,7 +35,7 @@ public final class InsertedLambdaArgumentShim {
         if (target == null) return 0;
         List<MethodNode> added = new ArrayList<>();
         for (MethodNode handler : List.copyOf(mixin.methods)) {
-            Plan plan = plan(handler, target);
+            Plan plan = plan(handler, target, natives);
             if (plan == null) continue;
             AnnotationNode inject = plan.inject(); MethodNode method = plan.live(); String name = method.name;
             Type[] oldArgs = plan.oldArgs(), newArgs = plan.newArgs(), captured = plan.captured();
@@ -81,24 +89,40 @@ public final class InsertedLambdaArgumentShim {
      * the shim ever runs. {@code target} must carry code, and its local variable table when the handler captures.
      */
     public static MethodNode destination(MethodNode handler, ClassNode target) {
+        return destination(null, handler, target);
+    }
+
+    /**
+     * {@link #destination(MethodNode, ClassNode)} for a handler of {@code mixin}, whose selector {@link #adapt} reads in
+     * the class the mod was compiled against where it does not spell the lambda's descriptor.
+     */
+    public static MethodNode destination(ClassNode mixin, MethodNode handler, ClassNode target) {
         if (handler == null || target == null || "off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return null;
-        Plan plan = plan(handler, target);
+        Plan plan = plan(handler, target, mixin == null ? null : natives(mixin));
         return plan == null ? null : plan.live();
     }
 
+    /** The classes {@code mixin}'s mod was compiled against: its own platform's native game, where one is recorded. */
+    private static Function<String, ClassNode> natives(ClassNode mixin) {
+        return owner -> MixinBindings.nativeClass(mixin.name, owner);
+    }
+
     static Plan plan(MethodNode handler, ClassNode target) {
+        return plan(handler, target, null);
+    }
+
+    static Plan plan(MethodNode handler, ClassNode target, Function<String, ClassNode> natives) {
         AnnotationNode inject = MixinFit.injectorOf(handler);
         if (inject == null || !INJECT.equals(inject.desc) || (handler.access & Opcodes.ACC_PRIVATE) == 0
                 || !Type.getReturnType(handler.desc).equals(Type.VOID_TYPE) || hasExtraContract(handler)) return null;
-        List<String> selectors = MixinFit.stringList(MixinFit.value(inject, "method"));
-        if (selectors.size() != 1 || MixinFit.value(inject, "slice") != null) return null;
+        if (MixinFit.value(inject, "slice") != null) return null;
         Object locals = MixinFit.value(inject, "locals");
         boolean capturing = locals != null && (!(locals instanceof String[] e) || !e[1].equals("NO_CAPTURE"));
         if (capturing && !(locals instanceof String[] mode && mode[1].startsWith("CAPTURE_"))) return null;
-        String selector = selectors.getFirst(); int split = selector.indexOf('(');
-        if (!selector.startsWith("lambda$") || split < 0) return null;
-        String name = selector.substring(0, split), oldDesc = selector.substring(split);
-        if (!DuplicateLambdaPruneInjector.droppedDescriptors(target.name, name).contains(oldDesc)) return null;
+        String dropped = dropped(handler, target, natives);
+        if (dropped == null) return null;
+        int split = dropped.indexOf('(');
+        String name = dropped.substring(0, split), oldDesc = dropped.substring(split);
         List<MethodNode> live = target.methods.stream().filter(m -> m.name.equals(name)).toList();
         if (live.size() != 1) return null;
         MethodNode method = live.getFirst();
@@ -121,6 +145,28 @@ public final class InsertedLambdaArgumentShim {
         int[] mapping = uniqueEmbedding(oldArgs, newArgs);
         if (mapping == null) return null;
         return new Plan(inject, method, oldArgs, newArgs, callback, captured, mapping);
+    }
+
+    /**
+     * The lambda ({@code name + desc}) the handler's selectors name as Mixin reads them, where it is one the pruner
+     * dropped from {@code target}: spelled with its descriptor — whitespace, an owner prefix (the target's) or a dotted
+     * owner, one spelling or several of the same member — or bound by a bare name in the class the mod was compiled
+     * against. Null for anything else: another owner, a pattern, a member the pruner did not drop.
+     */
+    private static String dropped(MethodNode handler, ClassNode target, Function<String, ClassNode> natives) {
+        String member = MixinTargetSelectors.nativeMember(handler, null, target.name);
+        if (member == null && natives != null) {
+            // A bare name binds the live lambda in the merged class: only where the pruner dropped a lambda of the name
+            // it reaches there is the class the mod was compiled against worth reading.
+            List<MixinTargetSelectors.Reach> reach = MixinTargetSelectors.reach(handler, target);
+            boolean pruned = reach != null && !reach.isEmpty() && reach.stream().allMatch(r -> r.matched().stream()
+                    .anyMatch(m -> !DuplicateLambdaPruneInjector.droppedDescriptors(target.name, m.name).isEmpty()));
+            if (pruned) member = MixinTargetSelectors.nativeMember(handler, natives.apply(target.name), target.name);
+        }
+        if (member == null || !member.startsWith("lambda$")) return null;
+        int split = member.indexOf('(');
+        return split > 0 && DuplicateLambdaPruneInjector.droppedDescriptors(target.name, member.substring(0, split))
+                .contains(member.substring(split)) ? member : null;
     }
 
     static int[] uniqueEmbedding(Type[] oldArgs, Type[] newArgs) {
@@ -168,16 +214,16 @@ public final class InsertedLambdaArgumentShim {
     }
 
     /**
-     * {@link #localsAtAnchor} for the call {@code s} names ({@code Lowner;name(desc)}), whatever the injector says —
-     * MixinRetarget asks it about the call an anchor is about to be moved to.
+     * {@link #localsAtAnchor} at every call {@code s} selects in {@code target}, as Mixin matches an {@code @At(INVOKE)}
+     * target ({@link MixinCallbackShape#selected}: its name, and its owner and descriptor wherever it gives them, however
+     * it spells them), whatever the injector says — MixinRetarget asks it about the call an anchor is about to be moved to.
      */
     static boolean localsAtCall(String s, MethodNode target, Type[] captured) {
         if (target.localVariables == null || target.localVariables.isEmpty()) return false;
         int first = (target.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
         for (Type arg : Type.getArgumentTypes(target.desc)) first += arg.getSize();
         boolean any = false;
-        for (AbstractInsnNode insn : target.instructions) {
-            if (!(insn instanceof MethodInsnNode c) || !s.equals("L" + c.owner + ";" + c.name + c.desc)) continue;
+        for (AbstractInsnNode insn : calls(s, target)) {
             any = true;
             int index = target.instructions.indexOf(insn), slot = first;
             for (Type local : captured) {
@@ -201,9 +247,16 @@ public final class InsertedLambdaArgumentShim {
         Object shift = MixinFit.value(at, "shift");
         if (shift != null && (!(shift instanceof String[] e) || !Set.of("NONE", "BEFORE", "AFTER").contains(e[1]))) return false;
         Object member = MixinFit.value(at, "target"); if (!(member instanceof String s)) return false;
-        int hits = 0;
-        for (var i : target.instructions) if (i instanceof MethodInsnNode c && s.equals("L" + c.owner + ";" + c.name + c.desc)) hits++;
+        int hits = calls(s, target).size();
         Object ordinal = MixinFit.value(at, "ordinal");
         return ordinal == null ? hits > 0 : ordinal instanceof Integer n && (n == -1 ? hits > 0 : n >= 0 && n < hits);
+    }
+
+    /** The calls of {@code method} an {@code @At(INVOKE)} target {@code s} selects, before any ordinal picks among them. */
+    private static List<MethodInsnNode> calls(String s, MethodNode method) {
+        List<MethodInsnNode> calls = new ArrayList<>();
+        for (AbstractInsnNode selected : MixinCallbackShape.selected(s, method))
+            if (selected instanceof MethodInsnNode call) calls.add(call);
+        return calls;
     }
 }
