@@ -141,6 +141,7 @@ public final class MixinStubRebind {
 	private static final String SHARE = "Lcom/llamalad7/mixinextras/sugar/Share;";
 	private static final String REDIRECT = "Lorg/spongepowered/asm/mixin/injection/Redirect;";
 	private static final String GROUP = "Lorg/spongepowered/asm/mixin/injection/Group;";
+	private static final String DEFINITION = "Lcom/llamalad7/mixinextras/expression/Definition;";
 	private static final String MODIFY_VARIABLE = "Lorg/spongepowered/asm/mixin/injection/ModifyVariable;";
 	private static final String MODIFY_ARG = "Lorg/spongepowered/asm/mixin/injection/ModifyArg;";
 	private static final String MODIFY_ARGS = "Lorg/spongepowered/asm/mixin/injection/ModifyArgs;";
@@ -309,19 +310,23 @@ public final class MixinStubRebind {
 	/**
 	 * Whether {@code handler} may be injected into {@code method}: any selector of any annotation on it that names
 	 * target methods — not only the injectors MixinFit reads; MixinExtras' {@code @ModifyReceiver} or a library's own
-	 * injector shares values too — binds it, or cannot be read (a wildcard, a regex, a {@code @Desc} target). Left on
-	 * the stub, such a sharer would keep a value of its own while the rest of its group moved.
+	 * injector shares values too — binds it as Mixin binds selectors ({@link MixinTargetSelectors}: any spelling, a
+	 * wildcard or a pattern included), or cannot be read (a {@code @Desc} target, a selector Mixin would refuse). Left on
+	 * the stub, such a sharer would keep a value of its own while the rest of its group moved. A MixinExtras
+	 * {@code @Definition}'s {@code method} names a member its expression calls, never a target method.
 	 */
 	static boolean mayBind(MethodNode handler, ClassNode target, MethodNode method) {
 		List<AnnotationNode> annotations = new ArrayList<>();
 		if (handler.visibleAnnotations != null) annotations.addAll(handler.visibleAnnotations);
 		if (handler.invisibleAnnotations != null) annotations.addAll(handler.invisibleAnnotations);
 		for (AnnotationNode annotation : annotations) {
+			if (DEFINITION.equals(annotation.desc)) continue;
 			Object selectors = MixinFit.value(annotation, "method");
 			if (selectors == null && MixinFit.value(annotation, "target") != null) return true;   // @Desc: not read here
-			for (String selector : MixinFit.stringList(selectors)) {
-				if (plainSelector(selector) == null || bound(target, selector) == method) return true;
-			}
+			List<String> written = MixinFit.stringList(selectors);
+			if (written.isEmpty()) continue;
+			List<MethodNode> bound = MixinTargetSelectors.bound(written, target, (handler.access & Opcodes.ACC_STATIC) != 0);
+			if (bound == null || bound.contains(method)) return true;
 		}
 		return false;
 	}
@@ -416,9 +421,13 @@ public final class MixinStubRebind {
 		if (variable && !modifyVariableEnabled()) return null;
 		if (!inject && !variable && !MixinRetarget.AT_DRIVEN.contains(injector.desc)) return null;
 		if (MixinFit.value(injector, "locals") != null || MixinFit.value(injector, "slice") != null) return null;
+		// One selector, of the two forms a row is about: a name alone (bound to the first declared overload) or with its
+		// descriptor. Which it is, and the method it binds, are read as Mixin reads them, however it is spelled.
 		List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
 		if (selectors.size() != 1) return null;
-		MethodNode stub = bound(target, selectors.getFirst());
+		MixinTargetSelectors.Pinned pinned = MixinTargetSelectors.pinned(selectors.getFirst(), target);
+		if (pinned == null || pinned.name() == null) return null;
+		MethodNode stub = MixinTargetSelectors.one(handler, target);
 		if (stub == null) return null;
 		Delegation delegation = delegation(target, stub);
 		if (delegation == null) return null;
@@ -427,7 +436,7 @@ public final class MixinStubRebind {
 		Row row = carrierStubs().get(target.name + "#" + stub.name + stub.desc + " -> " + delegate.desc);
 		// And only where the mod's own platform ran this selector on code: a NeoForge mod on NeoForge's stub was
 		// compiled against the stub and gets exactly that.
-		if (row == null || !row.moves(ecosystem, selectorDescriptor(selectors.getFirst()) == null)) return null;
+		if (row == null || !row.moves(ecosystem, pinned.desc() == null)) return null;
 
 		List<AnnotationNode> points = MixinFit.atNodes(injector);
 		if (points.isEmpty()) return null;
@@ -930,30 +939,15 @@ public final class MixinStubRebind {
 		return carrierStubs;
 	}
 
-	/** The target method Mixin binds {@code selector} to: the first declared of that name, or the one with that descriptor. */
+	/**
+	 * The target method Mixin binds one {@code selector} to, for a caller holding the selector rather than its handler: read
+	 * as Mixin reads it ({@link MixinTargetSelectors#single}) — a bare name binds the first declared method of that name,
+	 * a descriptor the one it names, however the selector is written (owner prefix, dotted owner, whitespace), and an owner
+	 * other than {@code target} binds nothing. Null for a pattern or quantifier. A caller holding the handler asks
+	 * {@link MixinTargetSelectors#one} instead, which also reads an array of spellings as the one method it binds.
+	 */
 	static MethodNode bound(ClassNode target, String selector) {
-		String s = plainSelector(selector);
-		if (s == null) return null;
-		int paren = s.indexOf('(');
-		String name = paren < 0 ? s : s.substring(0, paren), desc = paren < 0 ? null : s.substring(paren);
-		for (MethodNode m : target.methods) if (m.name.equals(name) && (desc == null || m.desc.equals(desc))) return m;
-		return null;
-	}
-
-	/** The descriptor {@code selector} spells, or null for a name-only one. */
-	private static String selectorDescriptor(String selector) {
-		String s = plainSelector(selector);
-		int paren = s == null ? -1 : s.indexOf('(');
-		return paren < 0 ? null : s.substring(paren);
-	}
-
-	/** {@code selector} without an owner prefix; null for the forms this does not reason about (wildcards, regexes). */
-	private static String plainSelector(String selector) {
-		String s = selector.trim();
-		if (s.indexOf('*') >= 0 || s.startsWith("/") || s.indexOf(' ') >= 0 || s.indexOf('=') >= 0) return null;
-		int semi = s.indexOf(';');
-		if (s.startsWith("L") && semi > 0) s = s.substring(semi + 1);
-		return s;
+		return MixinTargetSelectors.single(selector, target);
 	}
 
 	/**

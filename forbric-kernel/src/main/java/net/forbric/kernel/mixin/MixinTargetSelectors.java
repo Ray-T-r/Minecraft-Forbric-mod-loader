@@ -91,6 +91,34 @@ final class MixinTargetSelectors {
 		return bound != null && bound.size() == 1 ? bound.getFirst() : null;
 	}
 
+	/**
+	 * What a member selector pins, as Mixin parses it: its name and its descriptor, each null where the selector leaves it
+	 * open (a bare name has no descriptor; an owner prefix, a dotted owner or whitespace change neither).
+	 */
+	record Pinned(String name, String desc) { }
+
+	/**
+	 * {@code selector} as Mixin parses it for {@code target}, where it is a member selector configured to bind at most one
+	 * method (its first declared match): the name and descriptor it pins. Null for a pattern, a quantifier, a nested or a
+	 * dynamic form — whose binding also depends on the handler's staticness — and for one Mixin rejects (malformed, or an
+	 * owner other than {@code target}; {@code target} null skips the owner check).
+	 */
+	static Pinned pinned(String selector, ClassNode target) {
+		if (selector == null || !(parse(selector, target) instanceof MemberInfo info)
+				|| info.configure(ITargetSelector.Configure.SELECT_MEMBER).getMaxMatchCount() > 1) return null;
+		return new Pinned(info.getName(), info.getDesc());
+	}
+
+	/**
+	 * The method of {@code target} one selector binds, for a caller holding a selector rather than a handler: where it is
+	 * {@link #pinned}, its first declared exact match, as Mixin binds it; null where it is not, or matches nothing.
+	 */
+	static MethodNode single(String selector, ClassNode target) {
+		if (target == null || target.methods == null || pinned(selector, target) == null) return null;
+		List<MethodNode> bound = bound(List.of(selector), target, false);
+		return bound != null && bound.size() == 1 ? bound.getFirst() : null;
+	}
+
 	/** Whether the handler's injector binds the method {@code nameAndDesc} of {@code target}, and nothing else. */
 	static boolean bindsOnly(MethodNode handler, ClassNode target, String nameAndDesc) {
 		MethodNode bound = one(handler, target);
