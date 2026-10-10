@@ -247,7 +247,8 @@ final class MixinTargetSelectors {
 	 * rejects, or an owner other than {@code target} do not.
 	 */
 	static boolean byNameAlone(String selector, ClassNode target) {
-		return bindsOneMember(selector, target) && parse(selector, target) instanceof MemberInfo info && info.getDesc() == null;
+		Pinned pinned = pinned(selector, target);
+		return pinned != null && pinned.name() != null && pinned.desc() == null;
 	}
 
 	/**
@@ -256,8 +257,8 @@ final class MixinTargetSelectors {
 	 * written — no quantifier, no pattern, no form Mixin rejects, no owner other than {@code target}.
 	 */
 	static boolean bindsOneMember(String selector, ClassNode target) {
-		return selector != null && parse(selector, target) instanceof MemberInfo info && info.getName() != null
-				&& info.configure(ITargetSelector.Configure.SELECT_MEMBER).getMaxMatchCount() <= 1;
+		Pinned pinned = pinned(selector, target);
+		return pinned != null && pinned.name() != null;
 	}
 
 	/** Whether one selector, as Mixin parses it, names an owner other than {@code target}: Mixin binds nothing there with it. */

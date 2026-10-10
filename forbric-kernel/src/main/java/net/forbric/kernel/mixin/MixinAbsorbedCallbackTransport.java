@@ -69,7 +69,7 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
             // was compiled against.
             MethodNode nativeMethod=MixinCallbackShape.written(handler,source);if(nativeMethod==null)continue;
             // The member the point names there, however it is written: the one call it selects in that method.
-            List<MethodInsnNode> named=MixinCallbackShape.invocations(at,nativeMethod);if(named.size()!=1)continue;
+            List<MethodInsnNode> named=MixinCallbackShape.calls(at,nativeMethod);if(named.size()!=1)continue;
             String member=NativeCallChanges.member(named.getFirst());
             // A static callback may observe an instance host's arguments without capturing its receiver.
             if((nativeMethod.access&ACC_STATIC)!=0&&(handler.access&ACC_STATIC)==0)continue;

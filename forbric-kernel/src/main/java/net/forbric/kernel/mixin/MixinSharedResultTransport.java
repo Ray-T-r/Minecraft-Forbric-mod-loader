@@ -59,7 +59,7 @@ public final class MixinSharedResultTransport {
             // The point selects one call in the written method, which is then the member it names however it is
             // written; the merged host no longer makes that call. (A shorter spelling may match another call there —
             // the reason to move it: the point is rewritten to the live call in full.)
-            List<MethodInsnNode> originalCalls = MixinCallbackShape.invocations(at, original);
+            List<MethodInsnNode> originalCalls = MixinCallbackShape.calls(at, original);
             if (originalCalls.size() != 1 || !calls(host, target(originalCalls.getFirst())).isEmpty()) continue;
             MethodInsnNode originalCall = originalCalls.getFirst();
             Source source = source(handler, originalCall);
@@ -101,7 +101,7 @@ public final class MixinSharedResultTransport {
             AnnotationNode at = points.getFirst();
             if (!"INVOKE".equals(MixinFit.value(at, "value")) || MixinFit.value(at, "shift") != null
                     || MixinFit.value(at, "ordinal") instanceof Number number && number.intValue() >= 0) continue;
-            List<MethodInsnNode> projections = MixinCallbackShape.invocations(at, original);
+            List<MethodInsnNode> projections = MixinCallbackShape.calls(at, original);
             if (projections.size() != 1 || !calls(host, target(projections.getFirst())).isEmpty()) continue;
             MethodInsnNode projection = projections.getFirst();
             if (projection.getOpcode() == Opcodes.INVOKESTATIC || Type.getArgumentTypes(projection.desc).length != 0

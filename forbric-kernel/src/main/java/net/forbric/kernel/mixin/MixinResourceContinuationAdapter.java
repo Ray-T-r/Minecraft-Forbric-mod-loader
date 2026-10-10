@@ -64,7 +64,7 @@ public final class MixinResourceContinuationAdapter {
         FieldOwner sourceField=field(target,source.field().name,source.field().desc,classes,new HashSet<>());if(sourceField==null||(sourceField.field().access&Opcodes.ACC_FINAL)==0)return null;
         // The point, however written, selects one call in the written method — the default factory the splitter
         // falls back to — and the merged host no longer makes that call.
-        List<MethodInsnNode> olds=MixinCallbackShape.invocations(point,old);String named=olds.size()==1?member(olds.getFirst()):null;
+        List<MethodInsnNode> olds=MixinCallbackShape.calls(point,old);String named=olds.size()==1?member(olds.getFirst()):null;
         if(named==null||!named.equals(member(defaultFactory))||calls(host).stream().anyMatch(c->member(c).equals(named)))return null;
         if(!(previous(olds.getFirst())instanceof InvokeDynamicInsnNode originalRecipe)||!source.recipe().equals(recipe(originalRecipe))||!sameNameProducer(previous(originalRecipe),source,target))return null;
         AbstractInsnNode oldSink=next(olds.getFirst());if(!(oldSink instanceof FieldInsnNode oldField)||oldField.getOpcode()!=Opcodes.PUTFIELD)return null;

@@ -92,7 +92,7 @@ public final class MixinDefaultCallbackTransport {
         Type[] hostArgs = Type.getArgumentTypes(host.desc), handlerArgs = Type.getArgumentTypes(source.handler().desc);
         if (hostArgs.length != 2 || !hostArgs[0].equals(handlerArgs[0]) || !hostArgs[1].equals(handlerArgs[1])) return false;
         // The anchor, however written, selects one call there.
-        List<MethodInsnNode> points = MixinCallbackShape.invocations(MixinFit.atNodes(source.inject()).getFirst(), host);
+        List<MethodInsnNode> points = MixinCallbackShape.calls(MixinFit.atNodes(source.inject()).getFirst(), host);
         if (points.size() != 1 || !Type.getReturnType(points.getFirst().desc).equals(handlerArgs[3])) return false;
         AbstractInsnNode stored = next(points.getFirst());
         if (!(stored instanceof VarInsnNode store) || store.getOpcode() != Opcodes.ASTORE) return false;
