@@ -61,18 +61,22 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
         for(MethodNode handler:List.copyOf(mixin.methods)) {
             AnnotationNode annotation=MixinFit.injectorOf(handler);
             if(!closed(handler,annotation))continue;
-            List<String> selectors=MixinFit.stringList(MixinFit.value(annotation,"method"));List<AnnotationNode> ats=MixinFit.atNodes(annotation);
-            if(selectors.size()!=1||ats.size()!=1)continue;AnnotationNode at=ats.getFirst();
+            List<AnnotationNode> ats=MixinFit.atNodes(annotation);
+            if(ats.size()!=1)continue;AnnotationNode at=ats.getFirst();
             if(!"INVOKE".equals(MixinFit.value(at,"value"))||!"AFTER".equals(MixinFit.asString(MixinFit.value(at,"shift")))
                 || MixinFit.value(at,"ordinal") instanceof Integer ordinal&&(ordinal>0||ordinal< -1) || MixinFit.value(at,"args")!=null)continue;
-            List<MethodNode> methods=source.methods.stream().filter(m->selectors.getFirst().equals(m.name)||selectors.getFirst().equals(m.name+m.desc)).toList();
-            if(methods.size()!=1)continue;MethodNode nativeMethod=methods.getFirst();
+            // The method the callback was written for: the one its selectors bind, as Mixin binds them, in the class the mod
+            // was compiled against.
+            MethodNode nativeMethod=MixinCallbackShape.written(handler,source);if(nativeMethod==null)continue;
+            // The member the point names there, however it is written: the one call it selects in that method.
+            List<MethodInsnNode> named=MixinCallbackShape.invocations(at,nativeMethod);if(named.size()!=1)continue;
+            String member=NativeCallChanges.member(named.getFirst());
             // A static callback may observe an instance host's arguments without capturing its receiver.
             if((nativeMethod.access&ACC_STATIC)!=0&&(handler.access&ACC_STATIC)==0)continue;
             Type[] nativeArgs=Type.getArgumentTypes(nativeMethod.desc), handlerArgs=Type.getArgumentTypes(handler.desc);
             boolean full=handlerArgs.length==nativeArgs.length+1&&Arrays.equals(nativeArgs,Arrays.copyOf(handlerArgs,handlerArgs.length-1));
             if(!full&&handlerArgs.length!=1||handlerArgs.length==0||!handlerArgs[handlerArgs.length-1].equals(Type.getObjectType(CI)))continue;
-            NativeCallbackSeam.Plan plan=NativeCallbackSeam.derive(source,target,nativeMethod,MixinFit.asString(MixinFit.value(at,"target")),unwrapped);if(plan==null)continue;
+            NativeCallbackSeam.Plan plan=NativeCallbackSeam.derive(source,target,nativeMethod,member,unwrapped);if(plan==null)continue;
             String key=mixin.name+":"+handler.name+":"+plan.host()+"."+plan.method()+":"+plan.helper()+"."+plan.helperMethod()+":"+plan.member()+":"+plan.sourcePrefix()+":"+MixinInstructionFingerprint.hash(handler)+":"+plan.helperHash();
             String originalName=handler.name, keptName=MixinHandlerShim.asideName(mixin.name,originalName,"$forbricsourcecallback");
             MethodNode retained=copy(handler);retained.name=keptName;removeInjector(retained);
