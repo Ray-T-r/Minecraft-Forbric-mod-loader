@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
 import com.electronwill.nightconfig.json.JsonFormat;
@@ -39,6 +40,11 @@ public final class MergedBaseMixinCompat {
         try(var reader=new InputStreamReader(new ByteArrayInputStream(configBytes),StandardCharsets.UTF_8)) {
             UnmodifiableConfig config=JsonFormat.fancyInstance().createParser().parse(reader);
             Object packageValue=config.get(List.of("package"));if(!(packageValue instanceof String pkg))return;
+            // The class each mixin was compiled against, where the adapters read a point written without its owner or
+            // descriptor: the declaring mod's family, published before any config is read, since a mixin's own family is
+            // noted only after this runs.
+            net.forbric.api.Ecosystem family=MixinConfigOwners.ecosystemOf(configName);
+            BiFunction<net.forbric.api.Ecosystem,String,ClassNode> natives=(asked,owner)->NativeGameReferences.reference(asked!=null?asked:family,owner);
             for(String section:List.of("mixins","client","server")) {
                 Object entries=config.get(List.of(section));if(!(entries instanceof List<?> list))continue;
                 for(Object value:list)if(value instanceof String entry) {
@@ -46,7 +52,7 @@ public final class MergedBaseMixinCompat {
                     ClassNode node=new ClassNode();new org.objectweb.asm.ClassReader(bytes).accept(node,org.objectweb.asm.ClassReader.EXPAND_FRAMES);
                     String identity=configName+":"+entry;SOURCES.put(identity,node.name.replace('/','.'));
                     if(!enabled()||explicitlyKept(identity))continue;
-                    String reason=refusal(node,resources);
+                    String reason=refusal(node,resources,natives);
                     if(reason==null)continue;
                     SUPPRESSED_MIXINS.add(identity);REASONS.put(identity,reason);
                     for(String target:MixinFit.mixinTargets(node))for(String contract:MixinFit.contributedInterfaces(node)) {
@@ -56,12 +62,18 @@ public final class MergedBaseMixinCompat {
             }
         }catch(Exception unreadable){net.forbric.kernel.util.ForbricLog.debug("[Forbric/Mixin] cannot inspect source protocols in %s: %s",configName,unreadable.toString());}
     }
-    private static String refusal(ClassNode node,Function<String,byte[]> resources) {
-        if(!net.forbric.kernel.transform.GuestInjectorPruner.enabled()&&net.forbric.kernel.transform.GuestInjectorPruner.unsafeWithoutPruning(node,name->parse(resources.apply(name+".class"))))
+    /**
+     * Why the source mixin is refused, or null. {@code natives} gives the class the mod was compiled against: each gate
+     * recognises a protocol with the same reading of its points as the adapter it guards, so a point written without its
+     * owner or descriptor is recognised — and refused when it cannot be adapted — exactly where the adapter would serve it.
+     */
+    static String refusal(ClassNode node,Function<String,byte[]> resources,BiFunction<net.forbric.api.Ecosystem,String,ClassNode> natives) {
+        Function<String,ClassNode> classes=name->parse(resources.apply(name+".class"));
+        if(!net.forbric.kernel.transform.GuestInjectorPruner.enabled()&&net.forbric.kernel.transform.GuestInjectorPruner.unsafeWithoutPruning(node,classes))
             return "source has a closed consuming-Reader callback pair which cannot remain half-applied while pruning is disabled";
-        if(FabricRegistryInitializationMixinAdapter.conflicts(node)&&FabricRegistryInitializationMixinAdapter.adapt(copy(node),name->parse(resources.apply(name+".class")))==0)
+        if(FabricRegistryInitializationMixinAdapter.conflicts(node,natives)&&FabricRegistryInitializationMixinAdapter.adapt(copy(node),classes,natives)==0)
             return "source callback repeats or defers the kernel-owned registry freeze; its tracker protocol could not be adapted";
-        if(FabricRegistryLoaderMixinAdapter.matches(node)&&FabricRegistryLoaderMixinAdapter.adapt(copy(node),name->parse(resources.apply(name+".class")))==0)
+        if(FabricRegistryLoaderMixinAdapter.matches(node,natives)&&FabricRegistryLoaderMixinAdapter.adapt(copy(node),classes,natives)==0)
             return "registry-loader: source ScopedValue callback propagation does not fit the current registry-loader overloads";
         if(FabricCreativePagerMixinAdapter.matches(node)&&FabricCreativePagerMixinAdapter.adapt(copy(node),name->parse(resources.apply(name+".class")))==0)
             return "source implements a second creative pager, and its keyboard callback could not share the carrier pager";

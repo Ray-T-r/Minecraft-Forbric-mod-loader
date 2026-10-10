@@ -46,12 +46,24 @@ public final class FabricRegistryLoaderMixinAdapter {
 	private FabricRegistryLoaderMixinAdapter() { }
 	public static boolean enabled(){return !"off".equalsIgnoreCase(System.getProperty(PROPERTY,"on"));}
 
+    /**
+     * Whether the mixin carries the ScopedValue propagation protocol around the private loader's call, its point read as
+     * {@link #adapt} reads it — one without its owner or descriptor in the method it was written for, in the class the
+     * mod was compiled against ({@link NativeGameReferences}) — so a gate refusing what cannot be adapted sees every
+     * spelling the adapter would serve.
+     */
     static boolean matches(ClassNode mixin) {
-        return MixinCallbackShape.targets(mixin,TARGET) && mixin.fields.stream().anyMatch(f->f.desc.equals("Ljava/lang/ScopedValue;"))
+        return matches(mixin,NativeGameReferences::reference);
+    }
+    /** {@code references} gives the class the mod was compiled against; null (or a null answer): none at hand. */
+    static boolean matches(ClassNode mixin,java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> references) {
+        if(!MixinCallbackShape.targets(mixin,TARGET))return false;
+        ClassNode source=references==null?null:references.apply(MixinStubRebind.ecosystemOf(mixin.name),TARGET);
+        return mixin.fields.stream().anyMatch(f->f.desc.equals("Ljava/lang/ScopedValue;"))
                 && mixin.methods.stream().anyMatch(m->m.desc.equals("(Ljava/lang/Object;"+ARGS+"L"+OP+";)"+FUTURE)
                     && MixinCallbackShape.kind(m,"WrapOperation")
                     && invokes(m,"java/lang/ScopedValue","where")&&invokes(m,"java/lang/ScopedValue$Carrier","call")
-                    && MixinCallbackShape.plainPoint(m,"INVOKE","L"+TARGET+";load("+FACTORY+ARGS+")"+FUTURE));
+                    && MixinCallbackShape.plainPoint(m,"INVOKE","L"+TARGET+";load("+FACTORY+ARGS+")"+FUTURE,MixinCallbackShape.written(m,source)));
     }
 
     private static boolean invokes(MethodNode method,String owner,String name){for(var instruction:method.instructions)if(instruction instanceof MethodInsnNode call&&call.owner.equals(owner)&&call.name.equals(name))return true;return false;}

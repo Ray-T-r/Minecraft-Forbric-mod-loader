@@ -24,9 +24,20 @@ public final class FabricRegistryInitializationMixinAdapter {
     private static final String BOOTSTRAP="net/minecraft/server/Bootstrap";
     private FabricRegistryInitializationMixinAdapter() { }
     public static boolean enabled(){return !"off".equalsIgnoreCase(System.getProperty(PROPERTY,"on"));}
-    /** Recognizes the conflicting lifecycle protocol without a mixin/config/handler name. */
+    /**
+     * Recognizes the conflicting lifecycle protocol without a mixin/config/handler name, its points read as {@link #adapt}
+     * reads them: one without its owner or descriptor in the method it was written for, in the class the mod was compiled
+     * against ({@link NativeGameReferences}) — a gate that saw only the full spelling would let a deferred freeze written
+     * another way through unrefused when it cannot be adapted.
+     */
     static boolean conflicts(ClassNode mixin) {
-        return deferredFreeze(mixin) != null || postFreeze(mixin) != null;
+        return conflicts(mixin,NativeGameReferences::reference);
+    }
+    /** {@code references} gives the class the mod was compiled against; null (or a null answer): none at hand. */
+    static boolean conflicts(ClassNode mixin,BiFunction<Ecosystem,String,ClassNode> references) {
+        if(mixin==null)return false;
+        ClassNode source=MixinCallbackShape.targets(mixin,BOOTSTRAP)&&references!=null?references.apply(MixinStubRebind.ecosystemOf(mixin.name),BOOTSTRAP):null;
+        return deferredFreeze(mixin,source) != null || postFreeze(mixin) != null;
     }
     /** Without the merged class: selectors by the member they can only name, points only when spelled with owner and descriptor. */
     public static int adapt(ClassNode mixin){
@@ -61,9 +72,6 @@ public final class FabricRegistryInitializationMixinAdapter {
         if(MixinCallbackShape.targets(mixin,"net/minecraft/client/Minecraft"))set(MixinFit.injectorOf(after),"at",List.of(at("RETURN")));
         ForbricLog.info("[Forbric/RegistrySync] retained %s's post-freeze callback without repeating the registry bootstrap",mixin.name);
         return 1;
-    }
-    private static MethodNode deferredFreeze(ClassNode mixin) {
-        return deferredFreeze(mixin,null);
     }
     /** {@code source}: the {@code Bootstrap} the mod was compiled against, where a point without its owner or descriptor is read; or null. */
     private static MethodNode deferredFreeze(ClassNode mixin,ClassNode source) {
