@@ -63,7 +63,8 @@ public final class LootSourceContracts implements Opcodes {
         MethodNode nativeTags=single(original.methods,m->calls(m,"net/minecraft/tags/TagLoader","loadTagsForRegistry",TAGS)==1);
         MethodNode tags=single(current.methods,m->calls(m,BRIDGE,"loadTagsForRegistry",TAGS)==1);
         MethodNode load=single(current.methods,m->calls(m,BRIDGE,"loadLootTable",LOAD)==1);
-        if(nativeTags==null||!selected(nativeTags,inputs.consumerSelector())||tags==null||!tags.desc.equals("(L"+DATA+";Lnet/minecraft/resources/RegistryOps;Lnet/minecraft/server/packs/resources/ResourceManager;)L"+REGISTRY+";")||load==null||!load.desc.equals("(L"+DATA+";L"+PROVIDER+";Ljava/util/Map;L"+ID+";Ljava/util/Optional;)V")||!nativeTags.tryCatchBlocks.isEmpty()||!tags.tryCatchBlocks.isEmpty()||!load.tryCatchBlocks.isEmpty())return null;
+        // The consumer and the completion are on one host, the native tag loader: each binds it, as Mixin binds them there.
+        if(nativeTags==null||inputs.consumer().bound(original)!=nativeTags||inputs.completion().bound(original)!=nativeTags||tags==null||!tags.desc.equals("(L"+DATA+";Lnet/minecraft/resources/RegistryOps;Lnet/minecraft/server/packs/resources/ResourceManager;)L"+REGISTRY+";")||load==null||!load.desc.equals("(L"+DATA+";L"+PROVIDER+";Ljava/util/Map;L"+ID+";Ljava/util/Optional;)V")||!nativeTags.tryCatchBlocks.isEmpty()||!tags.tryCatchBlocks.isEmpty()||!load.tryCatchBlocks.isEmpty())return null;
         if(total(current,BRIDGE,"loadLootTable",LOAD)!=1||total(current,BRIDGE,"loadTagsForRegistry",TAGS)!=1)return null;
         // Completion is on the same actual registry returned after registration and tags; nothing follows the seam.
         List<AbstractInsnNode> t=code(tags);int at=index(t,BRIDGE,"loadTagsForRegistry",TAGS);if(at<2||at!=t.size()-3||t.getLast().getOpcode()!=ARETURN)return null;
@@ -89,7 +90,8 @@ public final class LootSourceContracts implements Opcodes {
         if(captured!=1)return null;
         // Native reload owns a single serialization-context creation and passes that very ops object through the async graph.
         MethodNode reload=single(original.methods,m->calls(m,PROVIDER,"createSerializationContext","(Lcom/mojang/serialization/DynamicOps;)Lnet/minecraft/resources/RegistryOps;")==1);
-        if(reload==null||!selected(reload,inputs.producerSelector())||!reload.tryCatchBlocks.isEmpty()||calls(reload,"java/util/concurrent/CompletableFuture","thenApplyAsync","(Ljava/util/function/Function;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;")!=1)return null;
+        // The producer and its cleanup are on one host, the native reload: each binds it, as Mixin binds them there.
+        if(reload==null||inputs.producer().bound(original)!=reload||inputs.cleanup().bound(original)!=reload||!reload.tryCatchBlocks.isEmpty()||calls(reload,"java/util/concurrent/CompletableFuture","thenApplyAsync","(Ljava/util/function/Function;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;")!=1)return null;
         List<AbstractInsnNode> r=code(reload);int origin=index(r,PROVIDER,"createSerializationContext","(Lcom/mojang/serialization/DynamicOps;)Lnet/minecraft/resources/RegistryOps;");
         if(origin<2||!(r.get(origin-2) instanceof VarInsnNode provider&&provider.getOpcode()==ALOAD)||!(r.get(origin+1) instanceof VarInsnNode ops&&ops.getOpcode()==ASTORE))return null;
         int forwarded=0;for(int i=0;i<r.size();i++)if(r.get(i) instanceof InvokeDynamicInsnNode d&&d.desc.startsWith("(Lnet/minecraft/resources/RegistryOps;")){if(i<3||!(r.get(i-3) instanceof VarInsnNode capturedOps&&capturedOps.getOpcode()==ALOAD&&capturedOps.var==ops.var))return null;forwarded++;}
@@ -99,7 +101,7 @@ public final class LootSourceContracts implements Opcodes {
         MethodInsnNode each=null;for(AbstractInsnNode instruction:nativeTags.instructions)if(instruction instanceof MethodInsnNode c&&c.owner.equals("java/util/Map")&&c.name.equals("forEach")){if(each!=null)return null;each=c;}
         List<AbstractInsnNode> nativeCode=code(nativeTags);int mapEach=index(nativeCode,"java/util/Map","forEach","(Ljava/util/function/BiConsumer;)V");if(mapEach<4||!(nativeCode.get(mapEach-4) instanceof VarInsnNode entries&&entries.getOpcode()==ALOAD)||!namedLocal(nativeTags,inputs.elementsLocal(),entries.var,each))return null;
         String sourcePrefix="(L"+DATA+";Lnet/minecraft/server/packs/resources/ResourceManager;Lnet/minecraft/resources/RegistryOps;)";if(!nativeTags.desc.startsWith(sourcePrefix))return null;
-        MethodNode actualReload=single(current.methods,m->selected(m,inputs.producerSelector()));if(actualReload==null||!closedAsyncDomain(current,actualReload,tags))return null;
+        MethodNode actualReload=inputs.producer().bound(current);if(actualReload==null||inputs.cleanup().bound(current)!=actualReload||!closedAsyncDomain(current,actualReload,tags))return null;
         Set<MethodNode> roots=new LinkedHashSet<>(List.of(tags,load,actualReload));for(MethodNode m:current.methods)if(m.name.equals("<clinit>"))roots.add(m);return roots;
     }
     private static MethodNode registrationConsumer(ClassNode owner,MethodNode root){MethodNode found=null;for(AbstractInsnNode i:root.instructions)if(i instanceof InvokeDynamicInsnNode d&&d.bsmArgs.length==3&&d.bsmArgs[1] instanceof Handle h&&h.getOwner().equals(owner.name)){
@@ -125,7 +127,6 @@ public final class LootSourceContracts implements Opcodes {
     }
     private static Handle implementation(InvokeDynamicInsnNode d){return d.bsmArgs.length==3&&d.bsmArgs[1]instanceof Handle h&&h.getTag()==H_INVOKESTATIC?h:null;}
     private static boolean aload(AbstractInsnNode i,int slot){return i instanceof VarInsnNode v&&v.getOpcode()==ALOAD&&v.var==slot;}
-    private static boolean selected(MethodNode method,String selector){return method.name.equals(selector)||(method.name+method.desc).equals(selector);}
     private static boolean namedLocal(MethodNode method,String name,int slot,AbstractInsnNode anchor){if(anchor==null||method.localVariables==null)return false;int point=method.instructions.indexOf(anchor);int found=0;for(LocalVariableNode local:method.localVariables)if(local.name.equals(name)&&local.index==slot&&method.instructions.indexOf(local.start)<=point&&point<method.instructions.indexOf(local.end))found++;return found==1;}
     private static int nextOpcode(AbstractInsnNode node){while(node!=null&&node.getOpcode()<0)node=node.getNext();return node==null?-1:node.getOpcode();}
     private static int total(ClassNode c,String o,String n,String d){return c.methods.stream().mapToInt(m->calls(m,o,n,d)).sum();}

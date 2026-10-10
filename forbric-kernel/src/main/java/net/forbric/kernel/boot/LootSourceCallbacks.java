@@ -31,7 +31,20 @@ public final class LootSourceCallbacks implements Opcodes {
 
     /** The only rewritten expression is the unique private WeakHashMap.get(ops) provider projection. */
     public record Plan(String sourceName,String targetName,String helperName,byte[] helperBytes,Map<String,String> helperMethods, NativeInputs nativeInputs) {}
-    public record NativeInputs(String producerSelector,String consumerSelector,String opsLocal,String elementsLocal) {}
+    /**
+     * The four callbacks' hosts, as each injector names them: its {@code method} selectors and whether its handler is
+     * static, which is what Mixin binds against a class. The producer and its cleanup share one host, and so do the
+     * consumer and the completion: each pair binds one same method, never decided by how either selector is written
+     * ({@link LootSourceContracts} binds them in the class the source was compiled against and in the current one).
+     */
+    public record NativeInputs(Selection producer,Selection cleanup,Selection consumer,Selection completion,String opsLocal,String elementsLocal) {}
+    /** One injector's {@code method} selectors as written, and whether its handler is static. */
+    public record Selection(List<String> selectors,boolean staticHandler) {
+        public Selection{selectors=List.copyOf(selectors);}
+        static Selection of(MethodNode handler){Object value=field(injection(handler),"method");List<String> selectors=new ArrayList<>();if(value instanceof String one)selectors.add(one);else if(value instanceof List<?> list)for(Object element:list)if(element instanceof String selector)selectors.add(selector);return new Selection(selectors,(handler.access&ACC_STATIC)!=0);}
+        /** The one method of {@code target} these selectors bind, as Mixin binds them; null for none, several, or a form Mixin refuses. */
+        public MethodNode bound(ClassNode target){List<MethodNode> bound=net.forbric.kernel.mixin.MixinBindings.bound(selectors,target,staticHandler);return bound!=null&&bound.size()==1?bound.getFirst():null;}
+    }
     public record Callbacks(MethodHandle afterLoad,MethodHandle allLoaded) {}
 
     public static synchronized void bind(ClassLoader loader){gameLoader=loader;reset();}
@@ -80,10 +93,10 @@ public final class LootSourceCallbacks implements Opcodes {
         MethodNode put=single(injectors,m->count(m,"java/util/WeakHashMap","put")==1);
         MethodNode consume=single(injectors,m->count(m,"java/util/Map","replaceAll")==1);
         MethodNode remove=single(injectors,m->count(m,"java/util/concurrent/CompletableFuture","thenApply")==1);
-        if(put==null||consume==null||remove==null||Set.of(put,consume,remove,all).size()!=4||!sameSelector(put,remove))return null;
-        NativeInputs inputs=new NativeInputs(selector(put),selector(consume),localName(remove,4),localName(consume,4));if(inputs.producerSelector==null||inputs.consumerSelector==null||inputs.opsLocal==null||inputs.elementsLocal==null)return null;
+        if(put==null||consume==null||remove==null||Set.of(put,consume,remove,all).size()!=4)return null;
+        NativeInputs inputs=new NativeInputs(Selection.of(put),Selection.of(remove),Selection.of(consume),Selection.of(all),localName(remove,4),localName(consume,4));if(selector(put)==null||selector(consume)==null||inputs.opsLocal==null||inputs.elementsLocal==null)return null;
         if(!memoProducer(input,put,memo)||!memoCleanup(input,remove,memo)||!mapConsumer(input,consume,value))return null;
-        if(!allContext(all)||!sameSelector(consume,all)||!anchor(consume,"INVOKE","Ljava/util/Map;forEach(Ljava/util/function/BiConsumer;)V")||!anchor(all,"RETURN",null))return null;
+        if(!allContext(all)||!anchor(consume,"INVOKE","Ljava/util/Map;forEach(Ljava/util/function/BiConsumer;)V")||!anchor(all,"RETURN",null))return null;
         if(!anchor(put,"INVOKE","L"+PROVIDER+";createSerializationContext(Lcom/mojang/serialization/DynamicOps;)L"+OPS+";")
                 ||!anchor(remove,"INVOKE","Ljava/util/concurrent/CompletableFuture;thenApplyAsync(Ljava/util/function/Function;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;"))return null;
         List<AbstractInsnNode> expr=providerRead(value,input.name,memo);if(expr==null)return null;
@@ -189,7 +202,6 @@ public final class LootSourceCallbacks implements Opcodes {
     private static AnnotationNode injection(MethodNode m){return annotations(m).stream().filter(a->a.desc.equals("Lorg/spongepowered/asm/mixin/injection/Inject;")||a.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;")).findFirst().orElse(null);}
     private static String selector(MethodNode m){Object value=field(injection(m),"method");return value instanceof List<?> list&&list.size()==1&&list.getFirst() instanceof String name?name:null;}
     private static String localName(MethodNode m,int parameter){List<AnnotationNode> list=new ArrayList<>();if(m.visibleParameterAnnotations!=null&&m.visibleParameterAnnotations.length>parameter&&m.visibleParameterAnnotations[parameter]!=null)list.addAll(m.visibleParameterAnnotations[parameter]);if(m.invisibleParameterAnnotations!=null&&m.invisibleParameterAnnotations.length>parameter&&m.invisibleParameterAnnotations[parameter]!=null)list.addAll(m.invisibleParameterAnnotations[parameter]);List<AnnotationNode> locals=list.stream().filter(a->a.desc.equals("Lcom/llamalad7/mixinextras/sugar/Local;")).toList();if(locals.size()!=1)return null;AnnotationNode local=locals.getFirst();if(local.values==null||local.values.size()!=2||!local.values.getFirst().equals("name"))return null;Object names=field(local,"name");return names instanceof List<?> l&&l.size()==1&&l.getFirst() instanceof String name?name:null;}
-    private static boolean sameSelector(MethodNode a,MethodNode b){return Objects.equals(field(injection(a),"method"),field(injection(b),"method"));}
     private static boolean anchor(MethodNode m,String kind,String target){Object raw=field(injection(m),"at");AnnotationNode at=raw instanceof AnnotationNode a?a:raw instanceof List<?> l&&l.size()==1&&l.getFirst() instanceof AnnotationNode a?a:null;return at!=null&&kind.equals(field(at,"value"))&&Objects.equals(target,field(at,"target"))&&field(at,"ordinal")==null&&field(at,"shift")==null&&field(at,"args")==null;}
     private static String target(ClassNode n){List<AnnotationNode> all=new ArrayList<>();if(n.visibleAnnotations!=null)all.addAll(n.visibleAnnotations);if(n.invisibleAnnotations!=null)all.addAll(n.invisibleAnnotations);for(AnnotationNode a:all)if(a.desc.equals("Lorg/spongepowered/asm/mixin/Mixin;")){Object v=field(a,"value");if(v instanceof List<?> l&&l.size()==1&&l.getFirst() instanceof Type t)return t.getInternalName();}return null;}
     private static String digest(String value){try{return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));}catch(java.security.NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}}
