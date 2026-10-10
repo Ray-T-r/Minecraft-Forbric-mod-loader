@@ -81,8 +81,8 @@ test	net.forbric.kernel.boot.KernelTransferInteropTest	aBuiltGameSideAlwaysCarri
 test	net.forbric.kernel.boot.KernelTransferInteropTest	onlyTheRebornHalfOfTheGameSideNamesTeamRebornEnergy()	[fixture:game-side] no staged game jars, so no game side was built
 test	net.forbric.kernel.boot.LaunchInputCheckTest	theStagedMergedBaseAndBothStagedCarrierSpellingsPass()	[fixture:staged] staged game artifacts absent: $ROOT/forbric-loader/run
 test	net.forbric.kernel.boot.MergedLambdaCaptureTest	noCapturedLambdaComesFromTheOtherSideOfTheMerge()	[fixture:staged] the merged base and both patched sides must be staged
-test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	everyPublicMemberMatchesModMenu()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/ModMenuApi.class
-test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	everyTypeIsTheSameKindOfType()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/ModMenuApi.class
+test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	everyPublicMemberMatchesModMenu()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/UpdateChannel.class
+test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	everyTypeIsTheSameKindOfType()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/UpdateChannel.class
 test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	theNullScreenFactoryMatchesModMenu()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/util/NullScreenFactory.class
 test	net.forbric.kernel.boot.ModMenuApiStandInShapeTest	theStandInIsTheWholeApiPackageAndOnlyIt()	[fixture:game-side] the Mod Menu API stand-in is compiled before the tests: build/classes/java/modMenuApi/com/terraformersmc/modmenu/api/ModMenuApi.class
 test	net.forbric.kernel.boot.MultiLoaderEntrypointsTest	actualBisonAquariusAndBannerstoneUseTheirExecutableFamilies()	[fixture:third-party] requires the prepared random baseline jars
@@ -1002,6 +1002,19 @@ test	net.forbric.kernel.mixin.MixinCarrierCallbackGeneralTest	oneCapturedIdentif
 test	net.forbric.kernel.mixin.MixinCarrierCallbackGeneralTest	theDiscoveryCapturedByOrdinalIsProved()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinCarrierCallbackGeneralTest	twoCallbacksAtOnePointStay()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinCollectionSourceAdapterTest	theRealFabricRegistryRedirectFollowsTheProvedNativeCopyAndDimensionSuffix()	[fixture:staged] actual Fabric API required
+test	net.forbric.kernel.mixin.MixinCollectionSourceSpellingTest	theRegistryRedirectWrittenAnotherWayIsAdaptedAsReleased()	[fixture:staged] staged merged base, NeoForge runtime and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	aBareNameTheCompiledAgainstClassBindsToAnotherOverloadIsLeftAlone()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	aBareNameTheCompiledAgainstClassBindsToTheFirstDeclaredMovesTheSameIsland()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	aSelectorBindingAnotherMethodIsLeftAlone()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	aTargetNamingAnotherOwnersMemberIsLeftAlone()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	another overload / dotted owner, no descriptor	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	another overload / no descriptor	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	another overload / released spelling still moved	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	another owner / no owner	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	another owner / released spelling still moved	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	selectorsWrittenAnotherWayMoveTheSameIsland()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	targetsWrittenAnotherWayMoveTheSameIsland()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandSpellingTest	theReleasedModifierUnderOtherNamesIsMoved()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandTest	actualDefaultClosureIncludesItsPrivateOrPublicIdentityAndTheBoundSpecialType()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandTest	lateRejectionAndPublicationFailureKeepTheSourceAndPlanUnchanged()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinCrossHostPredicateIslandTest	theActualPriorBreathingDecorationIsKeptAsFallbackAndAnUnknownDecorationIsRejected()	[fixture:staged] whole predicate source/current/native: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
@@ -1013,11 +1026,35 @@ test	net.forbric.kernel.mixin.MixinDecodeScopeAdapterTest	finalCertificationRech
 test	net.forbric.kernel.mixin.MixinDecodeScopeAdapterTest	ignoredInvertedAndWrongCallbackVerdictsCannotOwnTheNativeFallback()	[fixture:staged] actual Fabric API and indexed game base required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinDecodeScopeAdapterTest	preflightChecksTheAdaptedClosedPairAndTheOffControlLeavesItUntouched()	[fixture:staged] actual Fabric API and indexed game base required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinDecodeScopeAdapterTest	theActualRegistryGuardAndClosedJsonMarkerPairAreTransported()	[fixture:staged] actual Fabric API and indexed game base required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	aConsumerBindingAnotherMethodIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	aGuardNamingAnotherOwnerIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	aJsonGuardBindingAnotherMethodIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	consumer only, dotted-owner selector	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	consumer only, owner prefix with whitespace	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	consumer only, owner-qualified selector	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	consumer only, selector in two spellings	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	dotted-owner selector	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	owner prefix with whitespace	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	owner-qualified selector	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	selector in two spellings	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDecodeScopeSpellingTest	theReleasedGuardsUnderOtherNamesAreScoped()	[fixture:staged] indexed game base required: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportSpellingTest	aBareNameBindsTheFirstMethodOfThatName()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportSpellingTest	aBareNameWhoseFirstMethodIsAnotherOverloadIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportSpellingTest	aSelectorForALookAlikeOrAnotherOwnerIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportSpellingTest	aSelectorWrittenAnotherWayBindsTheSameHost()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportSpellingTest	aShortAnchorThatAlsoSelectsAnotherCallIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportSpellingTest	anAnchorWrittenAnotherWayNamesTheSameCall()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportSpellingTest	theRenamedCallbackTransportsAsShipped()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportTest	aHandleToTheSameSignatureOnAnotherOwnerDoesNotBlockTheActualRepair()	[fixture:staged] actual API and indexed native runtimes required
 test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportTest	actualSourceTagsExtendTheExactNativeDefaultAndKeepTheOriginalBody()	[fixture:staged] actual API and indexed native runtimes required
 test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportTest	bootstrapLdcAndNestedDynamicReferencesKeepTheSourceCallbackOnItsOriginalOwner()	[fixture:staged] actual API and indexed native runtimes required
 test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportTest	callbackEffectsThisUseOrAStillLiveSourceAreRejected()	[fixture:staged] actual API and indexed native runtimes required
 test	net.forbric.kernel.mixin.MixinDefaultCallbackTransportTest	receiverStateRoleAndFullPropertyMemberMustMatch()	[fixture:staged] actual API and indexed native runtimes required
+test	net.forbric.kernel.mixin.MixinDefaultPredicateTransportSpellingTest	aBareNameBindsTheFirstMethodOfThatName()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDefaultPredicateTransportSpellingTest	aBareNameWhoseFirstMethodIsAnotherOverloadIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDefaultPredicateTransportSpellingTest	aSelectorForAnotherMethodOrOwnerIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDefaultPredicateTransportSpellingTest	aSelectorWrittenAnotherWayBindsTheSameBody()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinDefaultPredicateTransportSpellingTest	theRenamedModifierTransportsAsShipped()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinDefaultPredicateTransportTest	aDifferentDefaultAlgorithmOpaqueGetterAndMutableProjectionAreRefused()	[fixture:staged] native-referenced merged base required
 test	net.forbric.kernel.mixin.MixinDefaultPredicateTransportTest	anOldBaseWithoutNativeReferencesAndTheExplicitSwitchRefuseTheMove()	[fixture:staged] native-referenced merged base required
 test	net.forbric.kernel.mixin.MixinDefaultPredicateTransportTest	changedTruthPolarityAndChangedTrueContinuationAreRefused()	[fixture:staged] native-referenced merged base required
@@ -1062,6 +1099,14 @@ test	net.forbric.kernel.mixin.MixinMergedTwinTest	theMergedBaseReallyCarriesTheT
 test	net.forbric.kernel.mixin.MixinNativeEquivalenceTest	actualSourceRedirectAndCarrierCallDispatchTheSameStackSensitiveOverrideOnce()	[fixture:staged] actual Fabric API source contract required
 test	net.forbric.kernel.mixin.MixinNativeEquivalenceTest	actualUpstreamBrewingRedirectHasTheSameCapturedReceiverInTheCarrier()	[fixture:staged] actual Fabric API source contract required
 test	net.forbric.kernel.mixin.MixinNativeEquivalenceTest	actualUpstreamFurnaceCopiedSharedReceiverCannotBorrowTheLiveStackCall()	[fixture:staged] actual Fabric API source contract required
+test	net.forbric.kernel.mixin.MixinNativePredicateSeamSpellingTest	aSelectorBindingAnotherMethodIsLeftAlone()	[fixture:staged] hash-pinned native predicate base, runtimes and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinNativePredicateSeamSpellingTest	aShortTargetThatAlsoNamesAnotherMemberThereIsLeftAlone()	[fixture:staged] hash-pinned native predicate base, runtimes and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinNativePredicateSeamSpellingTest	aTargetNamingAnotherOwnersMemberIsLeftAlone()	[fixture:staged] hash-pinned native predicate base, runtimes and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinNativePredicateSeamSpellingTest	bareNamesTheCompiledAgainstClassBindsToAnotherOverloadAreLeftAlone()	[fixture:staged] hash-pinned native predicate base, runtimes and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinNativePredicateSeamSpellingTest	bareNamesTheCompiledAgainstClassBindsToTheFirstDeclaredAreAdaptedAsReleased()	[fixture:staged] hash-pinned native predicate base, runtimes and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinNativePredicateSeamSpellingTest	selectorsWrittenAnotherWayAreAdaptedAsReleased()	[fixture:staged] hash-pinned native predicate base, runtimes and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinNativePredicateSeamSpellingTest	targetsWrittenAnotherWayAreAdaptedAsReleased()	[fixture:staged] hash-pinned native predicate base, runtimes and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinNativePredicateSeamSpellingTest	theReleasedWrapUnderOtherNamesIsAdapted()	[fixture:staged] hash-pinned native predicate base, runtimes and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinNativePredicateSeamTest	aChangedContinuationOrAnEffectfulCurrentQueryFailsClosed()	[fixture:staged] hash-pinned native predicate base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinNativePredicateSeamTest	actualSourceBoatAtomsMoveOnlyAfterTheirWholeControlFlowAndDefaultDispatchAreProved()	[fixture:staged] hash-pinned native predicate base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinNativePredicateSeamTest	missingNativeRootAndDisabledControlKeepTheOriginalHandler()	[fixture:staged] hash-pinned native predicate base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -1073,6 +1118,46 @@ test	net.forbric.kernel.mixin.MixinNullableCompositeCallbackTest	anUnrelatedReco
 test	net.forbric.kernel.mixin.MixinNullableCompositeCallbackTest	bothActualSourceCallbacksKeepTheirBodiesAndCaptureTheAbsentRecord()	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinNullableCompositeCallbackTest	changedLookupInputsAndTheOffControlLeaveTheAffectedCallbackAlone()	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinNullableCompositeCallbackTest	missingNativeOriginsAndAConstructorWhichDropsTheNullableOperandAreRejected()	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	aSelectorBindingAnotherMethodLeavesThatFallback()	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	aTargetNamingAnotherOwnerLeavesThatFallback()	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	another overload in the merged method / dotted owner, no descriptor	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	another overload in the merged method / no descriptor	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	another overload natively / dotted owner, no descriptor	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	another overload natively / no descriptor	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	another overload natively / released spelling still followed	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	another owner in the merged method / no owner	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	another owner natively / no owner	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	another owner natively / released spelling still followed	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	dotted owner	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	dotted owner, no descriptor	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	dotted-owner selector	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	no descriptor	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	no owner	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	owner prefix with whitespace	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	owner-qualified selector	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	selector in two spellings	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	theReleasedFallbacksUnderOtherNamesFollowTheLookup()	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinNullableCompositeSpellingTest	with whitespace	[fixture:staged] actual API/indexed base/runtime required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	aSelectorBindingAnotherMethodOrTwoIsLeftAlone()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	aTargetNamingAnotherOwnerIsLeftAlone()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	another overload in the merged method / dotted owner, no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	another overload in the merged method / no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	another overload natively / dotted owner, no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	another overload natively / no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	another overload natively / released spelling still carried	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	another owner in the merged method / no owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	another owner natively / no owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	another owner natively / released spelling still carried	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	dotted owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	dotted owner, no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	dotted-owner selector	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	no descriptor	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	no owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	owner prefix with whitespace	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	owner-qualified selector	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	selector in two spellings	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	theReleasedWrapUnderOtherNamesIsCarried()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinOperationSeamSpellingTest	with whitespace	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinOverloadPinTest	theRealMergedServerIsPinnedToVanillasOverload()	[fixture:staged] the merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinPlacementTransactionGeneralTest	aCancellableHandlerAtTheCallTakingOnlyItsCallbackAndThePositionStaysCancellable()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinPlacementTransactionGeneralTest	aLaterHandlerThatCancelsStays()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -1087,6 +1172,26 @@ test	net.forbric.kernel.mixin.MixinPredicateDelegateAdapterTest	actualSourceAndN
 test	net.forbric.kernel.mixin.MixinPredicateDelegateAdapterTest	changedFinalPredicateOrMapProviderRunsOnlyTheOriginalNativeOperation()	[fixture:staged] actual predicate inputs required
 test	net.forbric.kernel.mixin.MixinPredicateDelegateAdapterTest	changedOperationInputsOrAnOverridableMapProviderCannotBeLifted()	[fixture:staged] actual predicate inputs required
 test	net.forbric.kernel.mixin.MixinPredicateDelegateAdapterTest	nativePathPrefixQualifiedQueryGroupingAndNegativeControlsStayNative()	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	aSelectorBindingAnotherMethodIsLeftAlone()	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	aTargetNamingAnotherOwnerIsLeftAlone()	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	another overload in the merged method / dotted owner, no descriptor	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	another overload in the merged method / no descriptor	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	another overload natively / dotted owner, no descriptor	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	another overload natively / no descriptor	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	another overload natively / released spelling still lifted	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	another owner in the merged method / no owner	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	another owner natively / no owner	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	another owner natively / released spelling still lifted	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	dotted owner	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	dotted owner, no descriptor	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	dotted-owner selector	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	no descriptor	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	no owner	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	owner prefix with whitespace	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	owner-qualified selector	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	selector in two spellings	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	theReleasedWrapUnderOtherNamesIsLifted()	[fixture:staged] actual predicate inputs required
+test	net.forbric.kernel.mixin.MixinPredicateDelegateSpellingTest	with whitespace	[fixture:staged] actual predicate inputs required
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	anInjectAtTheCallStaysPut()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	fabricsUseOnWrapSelectsTheRelayAndItsUseWrapStays()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinRelocatedCallTest	nothingMovesWithoutTheRelay()	[fixture:staged] actual Fabric API fixture required
@@ -1095,6 +1200,13 @@ test	net.forbric.kernel.mixin.MixinResourceContinuationAdapterTest	bothActualSou
 test	net.forbric.kernel.mixin.MixinResourceContinuationAdapterTest	changedPathRecipeOperationInputOrAmbiguousContinuationIsRejected()	[fixture:staged] actual resource inputs required
 test	net.forbric.kernel.mixin.MixinResourceContinuationAdapterTest	changedPrefixPartialOrFinalApiBodyRetainsTheActualNativeContinuationOnce()	[fixture:staged] actual resource inputs required
 test	net.forbric.kernel.mixin.MixinResourceContinuationAdapterTest	nullSourceNameStillThrowsTheOriginalCallbackNpe()	[fixture:staged] actual resource inputs required
+test	net.forbric.kernel.mixin.MixinResourceContinuationSpellingTest	aBareConstructorNameBindsTheFirstConstructor()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinResourceContinuationSpellingTest	aBareConstructorNameWhoseFirstConstructorIsAnotherIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinResourceContinuationSpellingTest	aPointWrittenAnotherWayNamesTheSameCall()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinResourceContinuationSpellingTest	aSelectorForAnotherMethodOrOwnerIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinResourceContinuationSpellingTest	aSelectorWrittenAnotherWayBindsTheSameConstructor()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinResourceContinuationSpellingTest	aShortPointThatAlsoSelectsAnotherCallIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinResourceContinuationSpellingTest	theRenamedWrapFollowsTheContinuationAsShipped()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinRetargetCarrierHelperStagedTest	betterMountHudsFoodRedirectMovesToExtractFoodLevel()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.mixin.MixinRetargetCarrierHelperStagedTest	fabricRenderingsHudMixinPlanIsTheSameWithTheSplitRuleOnOrOff()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.mixin.MixinRetargetCarrierHelperStagedTest	highlightersSlotMarkFollowsTheDecorationsIntoRenderSlotContents()	[fixture:staged] staged merged base absent
@@ -1121,6 +1233,12 @@ test	net.forbric.kernel.mixin.MixinReturnDecorationAdapterTest	aChangedNativePre
 test	net.forbric.kernel.mixin.MixinReturnDecorationAdapterTest	aNewComputationBeforeTheSnapshotCannotMoveTheCallbackPastItsOriginalValue()	[fixture:staged] actual API and native-indexed game required
 test	net.forbric.kernel.mixin.MixinReturnDecorationAdapterTest	actualPositionCallbackFollowsTheConservedReturnBeforeItsNativeSnapshot()	[fixture:staged] actual API and native-indexed game required
 test	net.forbric.kernel.mixin.MixinReturnDecorationAdapterTest	missingLocalMetadataAndCancellationCannotBeMoved()	[fixture:staged] actual API and native-indexed game required
+test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	aBareNameTheCompiledAgainstClassBindsToAnotherOverloadIsLeftAlone()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	aBareNameTheCompiledAgainstClassBindsToTheFirstDeclaredFollowsTheSameReturn()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	aSelectorBindingAnotherMethodIsLeftAlone()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	aSelectorNamingAnotherOwnersMethodIsLeftAlone()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	selectorsWrittenAnotherWayFollowTheSameReturn()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	theReleasedCallbackUnderOtherNamesFollowsTheReturn()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamSpellingTest	aGroundSelectorBindingAnotherMethodLeavesThePair()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamSpellingTest	anAnchorNamingAnotherOwnersMemberLeavesThePair()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamSpellingTest	another overload / dotted owner, no descriptor	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
@@ -1143,6 +1261,14 @@ test	net.forbric.kernel.mixin.MixinSharedPredicateSeamSpellingTest	with whitespa
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamTest	actualApiKeepsBothBodiesAndBindsOneExplicitRefAfterTheCompleteNativeProof()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamTest	changedCarrierContinuationQuestionAndGuardRefuseTheOriginalPair()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamTest	missingRootsMissingRecordsAndOffLeaveTheOriginalHandlers()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	aBareNameBindsTheFirstMethodOfThatName()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	aBareNameWhoseFirstMethodIsAnotherOverloadIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	aConsumerWrittenForAnotherMethodOrOwnerIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	aProducerOnAnotherMethodIsNotTheConsumersProducer()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	aShortPointThatAlsoSelectsAnotherCallIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	eachPointWrittenAnotherWayNamesTheSameCall()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	eitherSelectorWrittenAnotherWayBindsTheSameHost()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	theRenamedGroupsTransportAsShipped()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	actualCraftingClosedGroupPreservesBothSourceBodiesAndProjectionInvocation()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	actualSourceSharedSnapshotIsExecutedOnceAtTheConservedCarrierResultRegion()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	ambiguousResultCallAndChangedConsumerBranchAreRejected()	[fixture:staged] actual API and indexed base required
@@ -1163,6 +1289,18 @@ test	net.forbric.kernel.mixin.MixinStructurePlacementGeneralTest	aTailCallbackTa
 test	net.forbric.kernel.mixin.MixinStructurePlacementGeneralTest	aWrapAtACallTheMergedBodyNoLongerMakesStays()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinStructurePlacementGeneralTest	anotherInjectorKindAtACallBothBodiesMakeMoves()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinStructurePlacementGeneralTest	twoCallbacksAtOnePointStayAsCompiled()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aBareNameTheMergedClassBindsToTheBodyStays()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aRowReadsTheSelectorsFormHoweverItIsWritten()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aSelectorBindingAnotherMethodStays()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aSelectorNamingAnotherOwnerStays()	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aShareGroupSpelledThreeWaysMovesWhole()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aSharerOnAnotherMethodOrUnreadableDecidesTheGroupByWhatItBinds()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	dotted owner	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	owner prefix	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	owner prefix with whitespace	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	the stub's descriptor, dotted	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	the stub's descriptor, with whitespace	[fixture:staged] actual Fabric API fixture required
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	theReleasedCheckUnderOtherNamesMovesOntoTheBody()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aBareNameThePinPointsAtAStubThenMovesOntoTheBody()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aByTypeLocalIsLeftWhereTheBodyDoesNotDecideIt()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aByTypeLocalMixinLosesAtALoopsExitIsLeft()	[fixture:staged] actual game required
@@ -1193,6 +1331,8 @@ test	net.forbric.kernel.mixin.MixinStubRebindTest	owosLangHooksMoveTogetherToThe
 test	net.forbric.kernel.mixin.MixinStubRebindTest	owosVerdictFollowsTheGroup()	[fixture:staged] owo and the merged base required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	theSwitchMovesNothing()	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindTest	theVerdictFollowsTheRebind()	[fixture:third-party] malilib absent from the merged pack
+test	net.forbric.kernel.mixin.MixinSubtypeOwnerRetargetSpellingTest	aPointOrHostTheMoveCannotTellAsTheSameCallStaysAsWritten()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinSubtypeOwnerRetargetSpellingTest	thePredicatePointWrittenAnotherWayStillFollowsTheCallThroughCodec()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinSubtypeOwnerRetargetTest	codecDoesNotRedeclareParse()	[fixture:mc-libraries] Minecraft's DataFixerUpper required
 test	net.forbric.kernel.mixin.MixinSubtypeOwnerRetargetTest	debugifysFixFollowsTheArchersOwnLookThroughTheWidenedField()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinSubtypeOwnerRetargetTest	thePredicateCheckMovesToTheSameCallThroughCodec()	[fixture:third-party] lithostitched's Fabric jar required
@@ -1209,6 +1349,20 @@ test	net.forbric.kernel.mixin.MixinTwinRebindTest	releasedLiquidBounceMovesItsFa
 test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverAdapterTest	aWrongTypedShareWriteOrChangedGuardDeclinesTheMove()	[fixture:staged] actual unused-argument observer inputs required
 test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverAdapterTest	actualBodyReadsTheSharedTagExactlyOnceWithoutChangingItsInstructions()	[fixture:staged] actual unused-argument observer inputs required
 test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverAdapterTest	anOldConsumerThatUsesItsTagIsNotAnUnusedArgumentObserver()	[fixture:staged] actual unused-argument observer inputs required
+test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverSpellingTest	aDefinitionNamingAnotherOwnersMemberIsLeftAlone()	[fixture:staged] actual unused-argument observer inputs required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverSpellingTest	aSharerOnAnotherMethodLeavesTheObserver()	[fixture:staged] actual unused-argument observer inputs required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverSpellingTest	anObserverNamingAnotherOwnerIsLeftAlone()	[fixture:staged] actual unused-argument observer inputs required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverSpellingTest	definitionsWrittenAnotherWayAreTheSameMembers()	[fixture:staged] actual unused-argument observer inputs required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverSpellingTest	dotted-owner selector	[fixture:staged] actual unused-argument observer inputs required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverSpellingTest	owner prefix with whitespace	[fixture:staged] actual unused-argument observer inputs required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverSpellingTest	owner-qualified selector	[fixture:staged] actual unused-argument observer inputs required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverSpellingTest	selector in two spellings	[fixture:staged] actual unused-argument observer inputs required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverSpellingTest	sharersSpelledDifferentlyFromOneAnotherAreOneHost()	[fixture:staged] actual unused-argument observer inputs required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinUnusedArgumentObserverSpellingTest	theReleasedObserverUnderOtherNamesIsCarried()	[fixture:staged] actual unused-argument observer inputs required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinWrapOperationShimSpellingTest	aPointWrittenAnotherWayNamesTheSameCall()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinWrapOperationShimSpellingTest	aSelectorForAnotherMethodOrOwnerIsLeftAlone()	[fixture:staged] staged merged base required: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.MixinWrapOperationShimSpellingTest	aSelectorWrittenAnotherWayBindsTheSameBody()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinWrapOperationShimSpellingTest	theRenamedWrapBindsNeoForgesCallAsShipped()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinWrapOperationShimTest	networkingWrapsUseTheSameStructuralRuleAsOtherGuests()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinWrapOperationShimTest	pickBlockWrapBindsToNeoForgesCallAndHandsTheHandlerItsOwnOrder()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.MixinWrapOperationShimTest	theDecoratorWrapVerdictUsesTheSameStructuralProofAsApplication()	[fixture:staged] actual Fabric API fixture required
@@ -1303,6 +1457,25 @@ test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	thePreviousEffectKeptInAn
 test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	theSameLoopGoingOnIsReplayed()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	theSameTestMadeForEachEffectIsReplayed()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.TakenEffectClearVetoTest	twoEffectsTakenInOneRoundAreLeftAlone()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aSelectorBindingAnotherMethodOrTwoKeepsItsOrdinal()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aShortTargetThatAlsoCountsAnotherCallInTheMergedBodyKeepsItsOrdinal()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aTargetNamingAnotherOwnerKeepsItsOrdinal()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	another overload / dotted owner, no descriptor	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	another overload / no descriptor	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	another overload / released spelling still recounted	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	another owner / no owner	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	another owner / released spelling still recounted	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	dotted owner	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	dotted owner, no descriptor	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	dotted-owner selector	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	no descriptor	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	no owner	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	owner prefix with whitespace	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	owner-qualified selector	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	selector in two spellings	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	selectorAndTargetBothWrittenAnotherWayAreRecounted()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	theReleasedHookUnderOtherNamesIsRecounted()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	with whitespace	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsTest	releasedViaFabricPlusCountsOnTheMergedBody()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsTest	theRowIsWhatVanillaAndTheMergedBaseSay()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.UncalledMethodCensusTest	theShippedTableIsExactlyWhatTheArtifactsSay()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar required
@@ -1311,6 +1484,8 @@ test	net.forbric.kernel.mixin.WatchdogDumpEquivalenceTest	actualDefinitionIsPend
 test	net.forbric.kernel.mixin.WatchdogDumpEquivalenceTest	bothActualUpstreamRenderersRetainEveryFrameBeyondTheJdkEightFrameLimit()	[fixture:staged] local merged mod pack and staged NeoForge carrier: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.WatchdogDumpEquivalenceTest	helperFirstAndUnknownHandlerOrCallerBodiesCannotBorrowTheProof()	[fixture:staged] staged NeoForge carrier: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.mixin.weave.ControlifyPlatformWeaveTest	eachBuildOfControlifyLoadsItsOwnPlatformHalfUnrewritten()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/controlify-3.5.3+mc26.2-universal.jar
+test	net.forbric.kernel.mixin.weave.LootSourceCallbacksSpellingTest	aPairWhoseCallbacksBindTwoMethodsIsNoGroup()	[fixture:staged] verified native loot target and compiled typed seam: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.mixin.weave.LootSourceCallbacksSpellingTest	eachPairSpelledApartIsStillOneHost()	[fixture:staged] verified native loot target and compiled typed seam: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	aliasesUnknownValuesAndChangedDomainDefinitionsKeepTheSourceUnproved()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	anAdditionalOpsReadOrMemoEscapeKeepsTheSourceUnproved()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.weave.LootSourceCallbacksWeaveTest	anAlteredMemoProducerCleanupOrAdditionalInjectorCannotBeDeclaredEquivalent()	[fixture:staged] raw loot callback group: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
@@ -1760,6 +1935,8 @@ test	net.forbric.kernel.transform.GuestInjectorPrunerGateLinesTest	aRenamedCopyI
 test	net.forbric.kernel.transform.GuestInjectorPrunerGateLinesTest	switchedOffNothingIsPrunedAndTheGateLineIsAbsent()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerGateLinesTest	theRealItemMixinPrintsTheLineTheGateReads()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerGateLinesTest	theRealModelLoadingMixinPrintsTheLineTheGateReads()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
+test	net.forbric.kernel.transform.GuestInjectorPrunerSpellingTest	theRealModelPairRespelledIsStillPrunedWhole()	[fixture:third-party] fabric-api jar absent: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.transform.GuestInjectorPrunerSpellingTest	theRealTooltipGroupRespelledStillGoesTogether()	[fixture:third-party] fabric-api jar absent: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	aSecondPassChangesNothingFurther()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	aTooltipInjectorAlreadyMovedOrWithoutItsSharedIndexIsNotGuessed()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
 test	net.forbric.kernel.transform.GuestInjectorPrunerTest	anUnrelatedClassPassesThroughByIdentity()	[fixture:third-party] fabric-api jar absent from run/client-kernel/mods
@@ -2001,7 +2178,7 @@ test	net.forbric.kernel.transform.ModuleClassLoaderInitInjectorTest	theCarriersI
 test	net.forbric.kernel.transform.ModuleClassLoaderInitInjectorTest	unpatchedItIsErroneousOnThisJvmAndPatchedItInitialises()	[fixture:staged] NeoForge carrier not staged
 test	net.forbric.kernel.transform.NativeConstructorFacadeRestorerTest	actualFuelFacadeBodyMatchesTheOriginalExactlyAndRetainsAllThreeContextArguments()	[fixture:staged] native-indexed game required
 test	net.forbric.kernel.transform.NativeCoremodParityTest	biomeAndStructureReadsGoThroughNeoForgesModifiedView()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/biome/Biome.class)
-test	net.forbric.kernel.transform.NativeCoremodParityTest	everyFinalizeSpawnInNeoForgesListIsRedirectedAndNothingElse()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/NaturalSpawner.class)
+test	net.forbric.kernel.transform.NativeCoremodParityTest	everyFinalizeSpawnInNeoForgesListIsRedirectedAndNothingElse()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/entity/raid/Raid.class)
 test	net.forbric.kernel.transform.NativeCoremodParityTest	everyFlowerPotReadGoesThroughTheGetterExceptTheGetter()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/FlowerPotBlock.class)
 test	net.forbric.kernel.transform.NativeCoremodParityTest	theTargetListIsNeoForgesAndMinecraftForgesLessTheTrialSpawner()	[fixture:staged] staged MinecraftForge carrier: $ROOT/forbric-loader/run/merged-base/forge-runtime-interop.jar
 test	net.forbric.kernel.transform.NativeCoremodParityTest	theTrialSpawnersNeoForgeHookIsRoutedThroughBothFamilies()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/entity/trialspawner/TrialSpawner.class)

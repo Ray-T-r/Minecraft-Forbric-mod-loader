@@ -671,6 +671,8 @@ test	net.forbric.kernel.mixin.MixinRetargetSubstitutedCallTest	fusionsRealMixinO
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	aWrapStillBoundToOtherIsCallsKeepsThemAndAnswersTheCarrierToo()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	aWrapWhoseCallIsGoneMovesToTheCarrierCall()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	onlyAFabricModsReviewedShapeIsRelayed()	[fixture:third-party] sweep pack absent
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aShareGroupSpelledThreeWaysMovesWhole()	[fixture:third-party] build/compat-inputs/sweep90/mods/owo-lib-0.13.1+26.2.jar absent
+test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aSharerOnAnotherMethodOrUnreadableDecidesTheGroupByWhatItBinds()	[fixture:third-party] build/compat-inputs/sweep90/mods/owo-lib-0.13.1+26.2.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aByTypeLocalIsLeftWhereTheBodyDoesNotDecideIt()	[fixture:third-party] build/compat-inputs/sweep90/mods/fusion-1.3.15a-forge-mc26.2.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aNeoForgeModsMixinIsLeftAsNeoForgeWouldHaveIt()	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aPairVanillaAlreadyHasStaysWhereTheModPutIt()	[fixture:third-party] local merged mod pack: run/client-merged-pack/mods
@@ -686,6 +688,8 @@ test	net.forbric.kernel.mixin.MixinStubRebindTest	owosLangHooksMoveTogetherToThe
 test	net.forbric.kernel.mixin.MixinStubRebindTest	owosVerdictFollowsTheGroup()	[fixture:third-party] owo and the merged base required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	theSwitchMovesNothing()	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindTest	theVerdictFollowsTheRebind()	[fixture:third-party] malilib absent from the merged pack
+test	net.forbric.kernel.mixin.MixinSubtypeOwnerRetargetSpellingTest	aPointOrHostTheMoveCannotTellAsTheSameCallStaysAsWritten()	[fixture:third-party] lithostitched's Fabric jar required
+test	net.forbric.kernel.mixin.MixinSubtypeOwnerRetargetSpellingTest	thePredicatePointWrittenAnotherWayStillFollowsTheCallThroughCodec()	[fixture:third-party] lithostitched's Fabric jar required
 test	net.forbric.kernel.mixin.MixinSubtypeOwnerRetargetTest	thePredicateCheckMovesToTheSameCallThroughCodec()	[fixture:third-party] lithostitched's Fabric jar required
 test	net.forbric.kernel.mixin.MixinSubtypeOwnerRetargetTest	vanillasOwnCallTheSwitchAndAMissingLocalAreLeftAlone()	[fixture:third-party] lithostitched's Fabric jar required
 test	net.forbric.kernel.mixin.MixinTailCaptureNativeTest	aCaptureTheNativeTailCouldNotServeEitherStaysAsCompiled()	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
@@ -710,6 +714,25 @@ test	net.forbric.kernel.mixin.StubLocalsCaptureTest	aBareNameBindsTheStubAndTheC
 test	net.forbric.kernel.mixin.StubLocalsCaptureTest	aModWhosePlatformKeepsTheSameStubGetsWhatItGetsNatively()	[fixture:third-party] real fixture required: build/compat-inputs/player-loading/mods/continuity-3.0.1+26.2.jar
 test	net.forbric.kernel.mixin.StubLocalsCaptureTest	anUnrelatedInjectorOnTheSameStubIsNotTouched()	[fixture:third-party] real fixture required: build/compat-inputs/player-loading/mods/continuity-3.0.1+26.2.jar
 test	net.forbric.kernel.mixin.StubLocalsCaptureTest	capturesTheBodyCannotServeStayAsCompiled()	[fixture:third-party] real fixture required: build/compat-inputs/player-loading/mods/continuity-3.0.1+26.2.jar
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aSelectorBindingAnotherMethodOrTwoKeepsItsOrdinal()	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aShortTargetThatAlsoCountsAnotherCallInTheMergedBodyKeepsItsOrdinal()	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	aTargetNamingAnotherOwnerKeepsItsOrdinal()	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	another overload / dotted owner, no descriptor	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	another overload / no descriptor	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	another overload / released spelling still recounted	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	another owner / no owner	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	another owner / released spelling still recounted	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	dotted owner	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	dotted owner, no descriptor	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	dotted-owner selector	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	no descriptor	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	no owner	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	owner prefix with whitespace	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	owner-qualified selector	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	selector in two spellings	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	selectorAndTargetBothWrittenAnotherWayAreRecounted()	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	theReleasedHookUnderOtherNamesIsRecounted()	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
+test	net.forbric.kernel.mixin.ThinnedCallOrdinalsSpellingTest	with whitespace	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
 test	net.forbric.kernel.mixin.ThinnedCallOrdinalsTest	releasedViaFabricPlusCountsOnTheMergedBody()	[fixture:third-party] ../build/lb-vfp/jars/ViaFabricPlus-5.0.2.jar absent
 test	net.forbric.kernel.mixin.weave.ControlifyPlatformWeaveTest	eachBuildOfControlifyLoadsItsOwnPlatformHalfUnrewritten()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/controlify-3.5.3+mc26.2-universal.jar
 test	net.forbric.kernel.runtime.KernelFabricFluidBehaviorsTest	aLookupThatBreaksAnswersNoBehaviourType()	[fixture:third-party] sweep pack absent
