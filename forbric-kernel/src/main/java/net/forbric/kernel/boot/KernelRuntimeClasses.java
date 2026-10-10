@@ -155,6 +155,11 @@ public final class KernelRuntimeClasses {
 				new Call("startCreativeTabProbe", void.class),
 				new Call("linkBlockItems", int.class),
 				new Call("logRegisteredContent", void.class))));
+		// Called from MinecraftForge's item callbacks (BlockItemLinkInjector): the live item registry's block->item map is
+		// Item.BY_BLOCK. Object-typed on purpose — linking this class here must load no game class. See KernelBlockItemLinks.
+		CLASSES.put("net.forbric.kernel.runtime.KernelBlockItemLinks", new Entry(Origin.COMPILED, List.of(
+				new Call("blockToItemMap", Object.class, Object.class, Object.class),
+				new Call("clear", void.class, Object.class, Object.class))));
 		// Loading NeoForge's configs: the early pass and the late pass that catches what it could not have seen.
 		// WHICH types each covers stays boot-side, where lateConfigTypes has a test. See KernelConfigLoad.
 		// Key mappings a mod registered on a bus that is not in ModList, so the one fan-out from Options.<init>

@@ -566,6 +566,11 @@ public final class KernelBoot {
 		if (net.forbric.kernel.transform.ForgeAttributeValidationInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeAttributeValidationInjector());
 		}
+		// MinecraftForge's item add-callback links each block item into its live registry's block->item map, which on
+		// MinecraftForge is Item.BY_BLOCK; the merged Item is NeoForge's and reads another map, so Block.asItem() was AIR
+		// until the window closed — after the Fabric mains (Naturalist's Ingredient.of(Blocks.MELON.asItem()) stopped the
+		// server). The live registry now gets Item.BY_BLOCK as that map.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.BlockItemLinkInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeWorldModifierInjector());
 
 		// Client only: hand the kernel the live PackRepository at the vanilla-woven

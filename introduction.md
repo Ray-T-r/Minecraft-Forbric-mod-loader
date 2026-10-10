@@ -258,8 +258,8 @@ Both sides run the same steps (comments in the source number them):
      `-Dforbric.fabricMainInConstructor=off`; see §3.5);
   8. attribute events, spawn placements, `BlockEntityTypeAddBlocksEvent`, modded game-rule categories, NeoForge's
      tooltip appenders;
-  9. `closeRegistrationWindow` (in a `finally`): link block→item, **freeze**, rebuild NeoForge's blockstate→id map,
-     re-sort NeoForge's creative tabs.
+  9. `closeRegistrationWindow` (in a `finally`): link any block item still unlinked (normally none; §9.4),
+     **freeze**, rebuild NeoForge's blockstate→id map, re-sort NeoForge's creative tabs.
 - **2a–2c3** verify the REGISTRATION bridges; publish the NeoForge baseline in `ModList`; load STARTUP/COMMON
   (and on the client CLIENT) configs; wire both carriers' own `@EventBusSubscriber` classes; install the client
   reload-listener bridge.
@@ -888,6 +888,23 @@ merge mutating a list fabric-api has frozen (`KernelPackRepair` documents both).
   (`RegistrySyncParityInjector.forGameLoader`). Without fabric-api that method named a class that is not there, and
   `getMethods()` and every lookup that reached `NamespacedWrapper` (`getOptional`, `keySet`, …) threw
   `NoClassDefFoundError`.
+- **Block → item** — `Block.asItem()` reads `Item.BY_BLOCK`. On MinecraftForge that map is the `block_to_item` map of
+  the live (`RegistryManager.ACTIVE`) item registry, which the item add-callback fills through each `BlockItem`'s
+  `registerBlocks` as items are added — the builtin ones inside `Bootstrap` — so MinecraftForge's `Items.registerItem`
+  does not link them itself. The merged `Items` is MinecraftForge's, but the merged `Item` is NeoForge's and takes
+  `BY_BLOCK` from NeoForge's `GameData.getBlockItemMap()`, so the callback filled a map nothing read, and every block
+  answered AIR until the registration window closed — after the Fabric `main` entrypoints; `asItem()` caches its first
+  answer, so a block asked by then kept AIR. `BlockItemLinkInjector` makes `GameData$ItemCallbacks.onCreate` give the
+  live registry NeoForge's map (`KernelBlockItemLinks`; every other stage keeps a map of its own), so every add links
+  where `asItem()` looks: the builtin items, a Fabric mod's `Registry.register` and NeoForge's `RegisterEvent` through
+  the wrapper, a MinecraftForge mod's `RegisterEvent` and the client's held-back MinecraftForge mods straight into the
+  `ForgeRegistry`. An override unlinks the item it replaces, and a `RegistryEntryAddedCallback` listener already sees
+  the link. MinecraftForge clears that map and re-adds every entry when it re-syncs the live registry (world close, a
+  save's or a server's ids); `onClear` now leaves the shared map alone, which Fabric never clears, and the re-adds
+  relink every block item anyway. An entry other code put there by hand survives a re-sync only for a block that no
+  registered `BlockItem` claims; a remap of a registered block's item is overwritten by the re-add, as on
+  MinecraftForge. The sweep when the window closes
+  stays as a net and normally links nothing (`-Dforbric.blockItemLinks=off`).
 - **Datapack registries** — `KernelLifecycle.registerDataPackRegistries` posts `DataPackRegistryEvent.NewRegistry`,
   declares MinecraftForge's biome/structure modifier registries and mirrors Fabric dynamic registries both ways.
 - **Data maps** — NeoForge data maps are loaded (`KernelNeoDataMapWatch`, `KernelNeoWorldgen`). Every holder-based

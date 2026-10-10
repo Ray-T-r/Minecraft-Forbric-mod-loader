@@ -276,8 +276,9 @@ public final class KernelRegistryContent {
 	 * <p>{@code Block.asItem()} resolves through {@code Item.byBlock(this)}, which is a plain
 	 * {@code BY_BLOCK.get(block)}. The merged {@code BlockItem} constructor only stores its block; it never adds
 	 * itself to that map. In Forge the map is filled by the ITEMS registry's ADD-CALLBACK
-	 * ({@code GameData.ItemCallbacks} → {@code BlockItem.registerBlocks}), and the kernel registers content
-	 * without running those callbacks — so for every modded block {@code asItem()} fell through to AIR.
+	 * ({@code GameData.ItemCallbacks} → {@code BlockItem.registerBlocks}), and on the merged game that callback
+	 * linked into its own registry's map, not the one {@code Item.byBlock} reads — so for every modded block
+	 * {@code asItem()} fell through to AIR.
 	 *
 	 * <p>That is invisible in the registry dump (the blocks and their items both register fine, and gate-m4
 	 * counted them) but breaks anything that goes block→item. It is why Macaw's Bridges was unreachable: its
@@ -287,6 +288,11 @@ public final class KernelRegistryContent {
 	 * going through {@code asItem()} were equally affected.
 	 *
 	 * <p>{@code putIfAbsent} so an entry vanilla already established always wins.
+	 *
+	 * <p>Normally this finds nothing left: since {@code BlockItemLinkInjector} the map that callback links into is
+	 * {@code Item.BY_BLOCK} itself ({@link KernelBlockItemLinks}), so every block item is linked as it registers. The
+	 * walk stays as the net under {@code -Dforbric.blockItemLinks=off} and under a merge that moves the map again; a
+	 * non-zero count here means some add did not link.
 	 *
 	 * @return how many links were made
 	 */

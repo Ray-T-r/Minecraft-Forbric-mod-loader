@@ -1000,7 +1000,8 @@ public final class KernelLifecycle {
 	 * Closes the registration window and redoes the bookkeeping the open window invalidated.
 	 *
 	 * <p>Each of these four is a failure the kernel has already paid for once, so they are named rather than
-	 * folded: {@code linkBlockItems} fills {@code Item.BY_BLOCK} (without it {@code Block.asItem()} is AIR and a
+	 * folded: {@code linkBlockItems} links any block item still missing from {@code Item.BY_BLOCK} (normally none: the
+	 * item registry's add-callback links each one as it is added; without either, {@code Block.asItem()} is AIR and a
 	 * mod's creative tab collapses to empty), {@code freeze} also latches {@code registriesLoaded},
 	 * {@code rebuildNeoForgeBlockStateIds} re-adds the blockstate ids the open window's clear callback dropped, and
 	 * {@code sortNeoCreativeTabs} puts window-registered tabs into the strip the creative screen actually reads.
@@ -1065,13 +1066,15 @@ public final class KernelLifecycle {
 	}
 
 	/**
-	 * Fills {@code Item.BY_BLOCK} for every registered {@code BlockItem} — the block→item link.
+	 * Links any registered {@code BlockItem} still missing from {@code Item.BY_BLOCK} — a net for the block→item link.
 	 *
 	 * <p>{@code Block.asItem()} resolves through {@code Item.byBlock(this)}, which is a plain
 	 * {@code BY_BLOCK.get(block)}. The merged {@code BlockItem} constructor only stores its block; it never adds
-	 * itself to that map. In Forge the map is filled by the ITEMS registry's ADD-CALLBACK
-	 * ({@code GameData.ItemCallbacks} -> {@code BlockItem.registerBlocks}), and the kernel registers content without
-	 * running those callbacks — so for every modded block {@code asItem()} fell through to AIR.
+	 * itself to that map. As on MinecraftForge, the ITEMS registry's ADD-CALLBACK ({@code GameData.ItemCallbacks} ->
+	 * {@code BlockItem.registerBlocks}) links each one as it is added, into the map {@code BlockItemLinkInjector} makes
+	 * {@code Item.BY_BLOCK} itself; before that, the callback filled a map nothing read and every modded block's
+	 * {@code asItem()} fell through to AIR until this sweep. Normally it now links nothing
+	 * ({@code -Dforbric.blockItemLinks=off} brings the late links back).
 	 *
 	 * <p>That is invisible in the registry dump (the blocks and their items both register fine, and gate-m4 counted
 	 * them) but breaks anything that goes block→item. It is why Macaw's Bridges was unreachable: its creative tab
