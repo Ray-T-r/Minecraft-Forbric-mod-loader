@@ -73,17 +73,19 @@ public final class ThinnedCallOrdinals {
             if (CurrentBodyOrdinals.counted(handler)) continue;
             AnnotationNode injector = MixinFit.injectorOf(handler);
             if (injector == null || MixinFit.value(injector, "slice") != null || MixinFit.groupOf(handler) != null) continue;
-            List<String> selectors = MixinFit.stringList(MixinFit.value(injector, "method"));
-            if (selectors.size() != 1) continue;
-            MethodNode before = MixinStubRebind.bound(original, selectors.getFirst());
-            MethodNode after = MixinStubRebind.bound(current, selectors.getFirst());
-            if (before == null || after == null) continue;
+            // The one method the handler binds natively and in the merged class, as Mixin binds its selectors however
+            // they are spelled: the same method on both sides (CallOccurrenceAlignment also holds it to one descriptor).
+            MethodNode before = MixinTargetSelectors.one(handler, original);
+            MethodNode after = MixinTargetSelectors.one(handler, current);
+            if (before == null || after == null || !before.name.equals(after.name)) continue;
             for (AnnotationNode at : MixinFit.atNodes(injector)) {
                 if (!"INVOKE".equals(MixinFit.asString(MixinFit.value(at, "value")))
                         || !(MixinFit.value(at, "ordinal") instanceof Integer ordinal) || ordinal < 0) continue;
-                String member = MixinFit.asString(MixinFit.value(at, "target"));
-                MixinFit.Member wanted = MixinFit.parseMember(member);
-                if (wanted == null || wanted.owner() == null || wanted.desc() == null) continue;
+                // The call the point counts, as Mixin resolves its target: spelled out, however written; without an
+                // owner or a descriptor, the one method it selects in the native body. In the merged body it must
+                // select that method's calls alone, or its ordinal there counts other calls too.
+                String member = MixinCallbackShape.invoked(at, before);
+                if (member == null || !onlyCallsOf(MixinCallbackShape.calls(at, after), member)) continue;
                 int live = CallOccurrenceAlignment.retainedOrdinal(original, before, current, after, member, ordinal);
                 if (live < 0 || live == ordinal) continue;
                 set(at, "ordinal", live); moved++;
@@ -119,6 +121,11 @@ public final class ThinnedCallOrdinals {
 			if (insn instanceof MethodInsnNode call) return call;
 		}
 		return null;
+	}
+
+	private static boolean onlyCallsOf(List<MethodInsnNode> calls, String member) {
+		for (MethodInsnNode call : calls) if (!("L" + call.owner + ";" + call.name + call.desc).equals(member)) return false;
+		return true;
 	}
 
 	private static boolean matches(MethodInsnNode call, String member) {

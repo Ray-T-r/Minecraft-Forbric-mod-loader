@@ -52,9 +52,14 @@ public final class MixinOperationSeamTransport implements Opcodes {
         Function<String,ClassNode> current=owner->unwrapped(loader,classes.apply(owner));int changed=0;
         for(MethodNode handler:List.copyOf(mixin.methods)) {
             AnnotationNode injector=MixinFit.injectorOf(handler);if(!closed(handler,injector)||!verified(mixin.name,handler))continue;
-            List<String> selectors=MixinFit.stringList(MixinFit.value(injector,"method"));List<AnnotationNode> ats=MixinFit.atNodes(injector);if(selectors.size()!=1||ats.size()!=1)continue;
-            AnnotationNode at=ats.getFirst();String member=MixinFit.asString(MixinFit.value(at,"target"));if(!"INVOKE".equals(MixinFit.value(at,"value"))||member==null||MixinFit.value(at,"by")!=null||MixinFit.value(at,"args")!=null||MixinFit.value(at,"ordinal") instanceof Integer ordinal&&ordinal>0)continue;
-            MethodNode original=MixinStubRebind.bound(source,selectors.getFirst());if(original==null||Type.getReturnType(original.desc)!=Type.VOID_TYPE)continue;
+            List<AnnotationNode> ats=MixinFit.atNodes(injector);if(ats.size()!=1)continue;
+            AnnotationNode at=ats.getFirst();if(!"INVOKE".equals(MixinFit.value(at,"value"))||MixinFit.value(at,"target")==null||MixinFit.value(at,"by")!=null||MixinFit.value(at,"args")!=null||MixinFit.value(at,"ordinal") instanceof Integer ordinal&&ordinal>0)continue;
+            // The host natively and in the merged class, as Mixin binds the handler's selectors however they are spelled.
+            MethodNode original=MixinTargetSelectors.one(handler,source),host=MixinTargetSelectors.one(handler,target);if(original==null||host==null||!original.name.equals(host.name)||Type.getReturnType(original.desc)!=Type.VOID_TYPE)continue;
+            // The wrapped call as Mixin resolves the point's target in the native host (an owner- or descriptor-less one where
+            // that body selects one method's calls alone), read from here on in its one spelling; the merged host must keep
+            // no call the point selects, or Mixin injects there as written.
+            String member=MixinCallbackShape.invoked(at,original);if(member==null||!MixinCallbackShape.calls(at,host).isEmpty())continue;
             boolean wrap=injector.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;");String shift=MixinFit.asString(MixinFit.value(at,"shift"));if(wrap&&shift!=null||!wrap&&shift!=null&&!List.of("BEFORE","NONE","AFTER").contains(shift))continue;
             MixinFit.Member wanted=MixinFit.parseMember(member);if(wanted==null)continue;Type[] operands=callTypes(wanted,anchors(original,member).stream().findFirst().map(call->call.getOpcode()).orElse(INVOKEVIRTUAL));
             Type[] hostArgs=Type.getArgumentTypes(original.desc),parameters=Type.getArgumentTypes(handler.desc);int own=wrap?operands.length+1:1;
@@ -68,7 +73,7 @@ public final class MixinOperationSeamTransport implements Opcodes {
             String identity=mixin.name+":"+handler.name+":"+MixinInstructionFingerprint.hash(handler)+":";
             Installed known=plans(loader).stream().filter(plan->plan.key.startsWith(identity)&&plan.graph.hostMethod().equals(original.name+original.desc)&&plan.graph.member().equals(member)&&compatible(plan,classes)).findFirst().orElse(null);
             if(known!=null){mixin.methods.set(mixin.methods.indexOf(handler),copy(known.retained));mixin.methods.add(copy(known.bridge));mixin.methods.add(copy(known.wrapper));changed++;continue;}
-            OperationCallGraph.Plan graph=OperationCallGraph.derive(source,target,selectors.getFirst(),member,current,natives);if(graph==null)continue;
+            OperationCallGraph.Plan graph=OperationCallGraph.derive(source,target,original,host,member,current,natives);if(graph==null)continue;
             List<Capture> captures=captures(source.name,original,member,handler,parameters,first,"AFTER".equals(shift),graph);if(captures==null)continue;
             String key=mixin.name+":"+handler.name+":"+MixinInstructionFingerprint.hash(handler)+":"+graph.graph()+(captures.isEmpty()?"":"|locals="+captures);
             Installed existing=plans(loader).stream().filter(plan->plan.key.equals(key)).findFirst().orElse(null);

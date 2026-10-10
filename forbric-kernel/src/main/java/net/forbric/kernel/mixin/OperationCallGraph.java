@@ -26,7 +26,14 @@ final class OperationCallGraph implements Opcodes {
         return derive(source,target,selector,member,classes,NativeGameReferences::reference);
     }
     static Plan derive(ClassNode source,ClassNode target,String selector,String member,Function<String,ClassNode> classes,BiFunction<Ecosystem,String,ClassNode> natives) {
-        MethodNode nativeHost=MixinStubRebind.bound(source,selector),host=MixinStubRebind.bound(target,selector);
+        return derive(source,target,MixinStubRebind.bound(source,selector),MixinStubRebind.bound(target,selector),member,classes,natives);
+    }
+    /**
+     * The plan for a callback at {@code member} ({@code Lowner;name(desc)}, as the point resolves it) in {@code nativeHost},
+     * the method its injector binds in {@code source}, the class it was written against, which the merged game moved out
+     * of {@code host}, the method the injector binds in {@code target}. The caller binds both as Mixin binds the handler.
+     */
+    static Plan derive(ClassNode source,ClassNode target,MethodNode nativeHost,MethodNode host,String member,Function<String,ClassNode> classes,BiFunction<Ecosystem,String,ClassNode> natives) {
         MixinFit.Member wanted=MixinFit.parseMember(member);
         if(nativeHost==null||host==null||wanted==null||!nativeHost.desc.equals(host.desc)||Type.getReturnType(wanted.desc())!=Type.VOID_TYPE)return null;
         List<MethodInsnNode> original=anchors(nativeHost,member);if(original.size()!=1||!anchors(host,member).isEmpty())return null;

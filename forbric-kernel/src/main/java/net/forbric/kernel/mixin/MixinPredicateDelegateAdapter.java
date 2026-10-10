@@ -32,12 +32,15 @@ public final class MixinPredicateDelegateAdapter {
         List<MethodNode> added=new ArrayList<>();int changed=0;
         for(MethodNode handler:new ArrayList<>(mixin.methods)) {
             Source source=source(handler);if(source==null)continue;
-            List<String> selectors=MixinFit.stringList(MixinFit.value(source.injection(),"method"));if(selectors.size()!=1)continue;
-            MethodNode before=MixinStubRebind.bound(original,selectors.getFirst()),after=MixinStubRebind.bound(current,selectors.getFirst());
-            if(before==null||after==null||!before.desc.equals(after.desc)||!before.desc.equals("(Ljava/lang/String;)V"))continue;
-            String anchor=MixinFit.asString(MixinFit.value(MixinFit.atNodes(source.injection()).getFirst(),"target"));
-            List<MethodInsnNode> oldCalls=calls(before).stream().filter(c->member(c).equals(anchor)).toList();
-            if(oldCalls.size()!=1||calls(after).stream().anyMatch(c->member(c).equals(anchor)))continue;
+            // The host natively and in the merged class, as Mixin binds the handler's selectors however they are spelled.
+            MethodNode before=MixinTargetSelectors.one(handler,original),after=MixinTargetSelectors.one(handler,current);
+            if(before==null||after==null||!before.name.equals(after.name)||!before.desc.equals(after.desc)||!before.desc.equals("(Ljava/lang/String;)V"))continue;
+            // The wrapped call as Mixin resolves the point's target in the native host (an owner- or descriptor-less one
+            // where that body selects one method's calls alone): one call there, and none it selects in the merged host.
+            AnnotationNode point=MixinFit.atNodes(source.injection()).getFirst();
+            if(MixinCallbackShape.invoked(point,before)==null)continue;
+            List<MethodInsnNode> oldCalls=MixinCallbackShape.calls(point,before);
+            if(oldCalls.size()!=1||!MixinCallbackShape.calls(point,after).isEmpty())continue;
             if(!captureAtOriginal(source,before,oldCalls.getFirst()))continue;
             List<MethodInsnNode> providers=calls(before).stream().filter(MixinPredicateDelegateAdapter::mapProvider).toList();if(providers.size()!=1)continue;
             List<MethodInsnNode> delegates=calls(after).stream().filter(c->c.getOpcode()==Opcodes.INVOKESTATIC

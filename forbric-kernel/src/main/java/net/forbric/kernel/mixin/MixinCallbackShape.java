@@ -217,6 +217,35 @@ final class MixinCallbackShape {
         }
         return found;
     }
+
+    /**
+     * {@link #selected} as an {@code INVOKE}-family point selects in {@code body}: the calls alone, since Mixin's
+     * {@code BeforeInvoke} never matches a field access of the same name.
+     */
+    static List<MethodInsnNode> calls(AnnotationNode at, MethodNode body) {
+        List<MethodInsnNode> calls = new java.util.ArrayList<>();
+        for (AbstractInsnNode instruction : selected(at, body)) if (instruction instanceof MethodInsnNode call) calls.add(call);
+        return calls;
+    }
+
+    /**
+     * The one method an {@code INVOKE}-family point's target names, spelled {@code Lowner;name(desc)}: spelled with its
+     * owner and descriptor, that method however it is written; without either, the one method whose calls it selects in
+     * {@code body}, the method the handler was written for ({@link #calls}). Null for a field target, and where the body
+     * is missing, selects no call, or selects calls of more than one method.
+     */
+    static String invoked(AnnotationNode at, MethodNode body) {
+        MixinFit.Member named = MixinFit.parseMember(MixinFit.asString(MixinFit.value(at, "target")));
+        if (named == null || named.desc() != null && !named.desc().startsWith("(")) return null;
+        if (named.owner() != null && named.desc() != null) return "L" + named.owner() + ";" + named.name() + named.desc();
+        String found = null;
+        for (MethodInsnNode call : calls(at, body)) {
+            String spelled = "L" + call.owner + ";" + call.name + call.desc;
+            if (found != null && !found.equals(spelled)) return null;
+            found = spelled;
+        }
+        return found;
+    }
     static boolean instance(MethodNode method) { return (method.access & Opcodes.ACC_STATIC) == 0; }
     static boolean noReceiver(MethodNode method) {
         for (var instruction : method.instructions) {
