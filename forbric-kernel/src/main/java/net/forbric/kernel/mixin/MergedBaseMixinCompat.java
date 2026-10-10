@@ -69,7 +69,9 @@ public final class MergedBaseMixinCompat {
      */
     static String refusal(ClassNode node,Function<String,byte[]> resources,BiFunction<net.forbric.api.Ecosystem,String,ClassNode> natives) {
         Function<String,ClassNode> classes=name->parse(resources.apply(name+".class"));
-        if(!net.forbric.kernel.transform.GuestInjectorPruner.enabled()&&net.forbric.kernel.transform.GuestInjectorPruner.unsafeWithoutPruning(node,classes))
+        // The pair is proved through the host's local variable table (the callback's @Local names the Reader), which
+        // MixinFit.parse drops; read the host whole, as the pruner's own lookup does, or the check never fires.
+        if(!net.forbric.kernel.transform.GuestInjectorPruner.enabled()&&net.forbric.kernel.transform.GuestInjectorPruner.unsafeWithoutPruning(node,name->whole(resources.apply(name+".class"))))
             return "source has a closed consuming-Reader callback pair which cannot remain half-applied while pruning is disabled";
         if(FabricRegistryInitializationMixinAdapter.conflicts(node,natives)&&FabricRegistryInitializationMixinAdapter.adapt(copy(node),classes,natives)==0)
             return "source callback repeats or defers the kernel-owned registry freeze; its tracker protocol could not be adapted";
@@ -106,6 +108,7 @@ public final class MergedBaseMixinCompat {
     }
     private static ClassNode copy(ClassNode node){org.objectweb.asm.ClassWriter writer=new org.objectweb.asm.ClassWriter(0);node.accept(writer);return MixinFit.parse(writer.toByteArray());}
     private static ClassNode parse(byte[] bytes){return bytes==null?null:MixinFit.parse(bytes);}
+    private static ClassNode whole(byte[] bytes){if(bytes==null)return null;ClassNode node=new ClassNode();new org.objectweb.asm.ClassReader(bytes).accept(node,0);return node;}
     private static boolean explicitlyKept(String identity){for(String value:System.getProperty("forbric.keepMixins","").split(","))if(value.trim().equals(identity))return true;return false;}
     public static boolean sourceMayBeClaimed(String name){return enabled()&&SOURCES.entrySet().stream().anyMatch(entry->entry.getValue().equals(name.replace('/','.'))&&!explicitlyKept(entry.getKey()));}
     static String reason(String config,String entry){return REASONS.get(config+":"+entry);}

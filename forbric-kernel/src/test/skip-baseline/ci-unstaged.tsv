@@ -1248,6 +1248,7 @@ test	net.forbric.kernel.mixin.PerEffectClearVetoTest	puttingBackSomethingElseIsL
 test	net.forbric.kernel.mixin.PerEffectClearVetoTest	theSwitchLeavesAProvedVetoAlone()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.PerEffectClearVetoTest	theWholeMapHandedToAnApiIsLeftAlone()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.PostMixinFixupsAliasTargetTest	everyShippedFabricRegistrySyncHasExactlyTheWarningsCheckRepaired()	[fixture:third-party] no fabric-registry-sync in the compatibility packs on this machine
+test	net.forbric.kernel.mixin.PrunerOffWholeMixinRefusalTest	theRealModelPairIsLeftOutWholeOnlyWhileThePrunerIsOff()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	aBareNameCompanionWrittenForALoaderTheMergeDroppedStillFollowsTheWrap()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	aBareNameCompanionWrittenForTheDeadLoaderFollowsTheWrap()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	aBareNameCompanionWrittenForTheResourceManagerEntryStaysAsWritten()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar

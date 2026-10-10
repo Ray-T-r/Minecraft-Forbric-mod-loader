@@ -51,10 +51,9 @@ class ForbricMixinServiceTest {
 	}
 
 	/**
-	 * The {@code ModelManagerMixin} pin is conditional on the pruner: trimmed to the injectors that fit by default,
-	 * pinned whole only when {@code -Dforbric.guestInjectorPruner=off}. The kill switch has to reproduce the OLD
-	 * behaviour (pinned, block models load, plugins dead) and never the half-applied one (4666 missingno models),
-	 * which is what an unconditional removal of the pin would have shipped.
+	 * No configuration is suppressed by name, with the pruner on or off. Leaving the reader-deserializer pair out
+	 * whole while the pruner is off is decided from the mixin's source (PrunerOffWholeMixinRefusalTest), not from a
+	 * config identity listed here.
 	 */
     @Test void noConfigurationIdentityIsSuppressedWithoutItsSourceProtocol() {
         MergedBaseMixinCompat.reset();
