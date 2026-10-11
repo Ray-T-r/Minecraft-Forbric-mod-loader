@@ -175,6 +175,30 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 
 	private static final Set<String> COMPOSED = Collections.synchronizedSet(new LinkedHashSet<>());
 	private static final List<String> REWIRED = Collections.synchronizedList(new ArrayList<>());
+	/** The repairs that found the merged base already carrying their code, each reported once. */
+	private static final Set<String> STOOD_BY = Collections.synchronizedSet(new java.util.HashSet<>());
+
+	/**
+	 * Says, once, that a dispatch-site repair found MinecraftForge's own code already in the class it was handed and
+	 * did nothing. Silent standing-down left a log in which "the base carries it" and "the class was never reached"
+	 * read the same, so a gate could only assert the repair's own line, which a base that keeps both sides' edits
+	 * never prints. In a boot each class passes once, so what it was handed is the merged base's own bytes.
+	 */
+	private static void standsBy(String repair, String message) {
+		if (STOOD_BY.add(repair)) ForbricLog.info("[Forbric/Capabilities] %s", message);
+	}
+
+	/** The repairs that stood by because the class already carried their code, by the label they rewire under. */
+	static Set<String> stoodBy() {
+		synchronized (STOOD_BY) {
+			return Set.copyOf(STOOD_BY);
+		}
+	}
+
+	/** Test seam: forget which repairs stood by, so one test's class does not answer for another's. */
+	static void forgetStandingBy() {
+		STOOD_BY.clear();
+	}
 
 	@Override
 	public String name() {
@@ -444,7 +468,11 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 
 	private static boolean initServerLevelCapabilities(ClassNode node) {
 		int inits = 0;
-		if (constructorCallsInitCapabilities(node)) return false;
+		if (constructorCallsInitCapabilities(node)) {
+			standsBy("ServerLevel.<init> -> initCapabilities", "ServerLevel.<init> already gathers MinecraftForge level "
+					+ "capabilities in the merged base's own bytes — the repair stands by");
+			return false;
+		}
 		MethodInsnNode anchor = null;
 		MethodNode ctor = null;
 		for (MethodNode method : node.methods) {
@@ -474,7 +502,12 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 	// ---- E5: LevelChunk.<init> writes Forge's AsField$LevelChunks into its final capProvider
 
 	private static boolean initLevelChunkProvider(ClassNode node) {
-		if (!hasField(node, "capProvider") || writesCapProvider(node)) return false;
+		if (!hasField(node, "capProvider")) return false;
+		if (writesCapProvider(node)) {
+			standsBy("LevelChunk.<init> -> capProvider", "LevelChunk.<init> already writes Forge's own capability provider "
+					+ "in the merged base's own bytes — the repair stands by");
+			return false;
+		}
 		String desc = "(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/level/ChunkPos;Lnet/minecraft/world/level/chunk/UpgradeData;"
 				+ "Lnet/minecraft/world/ticks/LevelChunkTicks;Lnet/minecraft/world/ticks/LevelChunkTicks;J[Lnet/minecraft/world/level/chunk/LevelChunkSection;"
 				+ "Lnet/minecraft/world/level/chunk/LevelChunk$PostLoadProcessor;Lnet/minecraft/world/level/levelgen/blending/BlendingData;)V";
@@ -538,7 +571,12 @@ public final class ForgeCapabilityCompositionTransformer implements ClassTransfo
 	 * the second pass, or a base that has stopped losing it — either way nothing to do.
 	 */
 	static boolean replayLostInitializer(ClassNode node, String field) {
-		if (constructorAssigns(node, field)) return false;
+		if (constructorAssigns(node, field)) {
+			String owner = node.name.replace('/', '.');
+			standsBy(owner + ".<init> assigns " + field, owner + ".<init> already assigns " + field
+					+ " in the merged base's own bytes — the repair stands by");
+			return false;
+		}
 		MethodNode revive = findMethod(node, "reviveCaps", "()V");
 		if (revive == null) {
 			ForbricLog.warn("[Forbric/Capabilities] %s has no reviveCaps() to copy %s's initializer from — not repaired",

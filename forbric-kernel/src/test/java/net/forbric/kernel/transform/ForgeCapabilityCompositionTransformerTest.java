@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -666,6 +667,43 @@ class ForgeCapabilityCompositionTransformerTest {
 	}
 
 	/** The class with every constructor's {@code this.initCapabilities()} taken out, as a merge that lost it leaves it. */
+	/**
+	 * A dispatch-site repair that finds MinecraftForge's own code already there says so, and one that lands does not.
+	 * Standing down silently left gate-m29 able to assert only the repair's own line, which a base that keeps both
+	 * sides' edits never prints, so the gate read a working class as a missing repair. The ServerLevel case is built
+	 * both ways from the staged class (its own gather present, and taken out), so it holds on either kind of base.
+	 */
+	@Test
+	void aRepairThatFindsTheBasesOwnCodeSaysItStandsByAndOneThatLandsDoesNot() throws Exception {
+		ForgeCapabilityCompositionTransformer on = new ForgeCapabilityCompositionTransformer(null, false, true);
+		String server = ForgeCapabilityCompositionTransformer.SERVER_LEVEL;
+		byte[] stripped = withoutInitCapabilities(bytesOf(server));
+		byte[] carrying = on.transform(server.replace('/', '.'), stripped, null);
+		assertTrue(ForgeCapabilityCompositionTransformer.carriesNatively(parse(carrying)), "premise: the repair restores the gather");
+		try {
+			ForgeCapabilityCompositionTransformer.forgetStandingBy();
+			on.transform(server.replace('/', '.'), stripped, null);
+			assertFalse(ForgeCapabilityCompositionTransformer.stoodBy().contains("ServerLevel.<init> -> initCapabilities"),
+					"a ServerLevel that lost its gather is repaired, not stood by");
+
+			ForgeCapabilityCompositionTransformer.forgetStandingBy();
+			assertSame(carrying, on.transform(server.replace('/', '.'), carrying, null), "the gather is there: nothing to do");
+			assertTrue(ForgeCapabilityCompositionTransformer.stoodBy().contains("ServerLevel.<init> -> initCapabilities"),
+					"and the repair says it stands by");
+
+			for (Map.Entry<String, String> lost : ForgeCapabilityCompositionTransformer.LOST_INITIALIZERS.entrySet()) {
+				ClassNode node = parse(bytesOf(lost.getKey()));
+				ForgeCapabilityCompositionTransformer.forgetStandingBy();
+				boolean replayed = ForgeCapabilityCompositionTransformer.replayLostInitializer(node, lost.getValue());
+				String label = lost.getKey().replace('/', '.') + ".<init> assigns " + lost.getValue();
+				assertEquals(!replayed, ForgeCapabilityCompositionTransformer.stoodBy().contains(label),
+						label + ": stands by exactly when it does not replay");
+			}
+		} finally {
+			ForgeCapabilityCompositionTransformer.forgetStandingBy();
+		}
+	}
+
 	private static byte[] withoutInitCapabilities(byte[] bytes) {
 		ClassNode node = parse(bytes);
 		for (MethodNode m : node.methods) {
