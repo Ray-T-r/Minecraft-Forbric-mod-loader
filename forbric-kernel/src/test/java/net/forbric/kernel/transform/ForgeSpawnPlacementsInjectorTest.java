@@ -58,18 +58,47 @@ class ForgeSpawnPlacementsInjectorTest {
 	@Test void syntheticPostIsOneDescriptorPreservingExchange() throws Exception {
 		ClassNode node = fixture(); method(node).instructions.insertBefore(post(node), new LabelNode()); exchange(write(node));
 	}
+	/**
+	 * The real merged registration: NeoForge's reviewed body (15 instructions) gets its post exchanged for the bridge;
+	 * a body that already posts MinecraftForge's own registration first — a merge that kept both sides' edits — is left
+	 * exactly as it is, and the claim still lands, because MinecraftForge's registration reaches the table.
+	 */
 	@Test void realMergedSeedAndWritebackRemainUnchanged() throws Exception {
 		byte[] original = staged("merged-base/patched-mc-merged-26.2.jar", INTERNAL);
-		assertEquals(15, opcodes(method(parse(original))).size()); exchange(original);
+		MethodNode host = method(parse(original));
+		if (ForgeSpawnPlacementsInjector.postsMinecraftForgesEvent(host)) {
+			int forgePost = -1, neoPost = -1;
+			List<org.objectweb.asm.tree.AbstractInsnNode> code = Arrays.stream(host.instructions.toArray()).filter(i -> i.getOpcode() >= 0).toList();
+			for (int i = 0; i < code.size(); i++) {
+				if (code.get(i) instanceof MethodInsnNode call && call.name.startsWith("post")) {
+					if (call.owner.equals(LOADER)) neoPost = i; else if (forgePost < 0) forgePost = i;
+				}
+			}
+			assertTrue(forgePost >= 0 && forgePost < neoPost, "MinecraftForge's registration is posted before NeoForge's");
+			java.util.Set<String> hits = new java.util.HashSet<>();
+			assertSame(original, injector.transform(TARGET, original, context(), hits::add), "posting MinecraftForge's event again would post it twice");
+			assertEquals(java.util.Set.of(ForgeSpawnPlacementsInjector.CLAIM), hits);
+		} else {
+			assertEquals(15, opcodes(host).size()); exchange(original);
+		}
 	}
 	@Test void repeatedTransformAndDisabledRepairAreIdentityOperations() {
 		byte[] original = write(fixture()), changed = injector.transform(TARGET, original, context()); assertNotSame(original, changed);
-		assertSame(changed, injector.transform(TARGET, changed, context()));
-		assertEquals(TARGET, injector.anchors().anchors().getFirst().binaryName());
-		assertEquals(AnchorSet.Severity.REQUIRED, injector.anchors().anchors().getFirst().severity());
+		java.util.Set<String> hits = new java.util.HashSet<>();
+		assertSame(changed, injector.transform(TARGET, changed, context(), hits::add));
+		assertEquals(java.util.Set.of(ForgeSpawnPlacementsInjector.CLAIM), hits, "an already bridged body is still the end state");
+		AnchorSet.Anchor anchor = injector.claims().getFirst().anchors().anchors().getFirst();
+		assertEquals(TARGET, anchor.binaryName());
+		assertEquals(AnchorSet.Severity.REQUIRED, anchor.severity());
+		hits.clear(); injector.transform(TARGET, write(fixture()), context(), hits::add);
+		assertEquals(java.util.Set.of(ForgeSpawnPlacementsInjector.CLAIM), hits);
+		hits.clear(); ClassNode unbridgeable = fixture(); post(unbridgeable).desc = "(Ljava/lang/Object;)V";
+		injector.transform(TARGET, write(unbridgeable), context(), hits::add);
+		assertEquals(java.util.Set.of(), hits, "a body neither bridged nor posting MinecraftForge's event is a miss");
 		System.setProperty("forbric.forgeSpawnPlacements", "off");
 		assertSame(original, injector.transform(TARGET, original, context())); assertSame(changed, injector.transform(TARGET, changed, context()));
 		assertTrue(injector.anchors().anchors().isEmpty());
+		assertTrue(injector.claims().isEmpty());
 	}
 	@Test void unexpectedProducerOrPostShapesStandDown() {
 		reject("instance method", n -> method(n).access &= ~Opcodes.ACC_STATIC);
