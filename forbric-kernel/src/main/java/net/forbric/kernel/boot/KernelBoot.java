@@ -1251,6 +1251,15 @@ public final class KernelBoot {
 		neuter.add(new MethodBodyNeuter.Target(ForeignType.SERVER_LIFECYCLE_HOOKS.binary(Ecosystem.FORGE),
 				FORGE_RUN_MODIFIERS, FORGE_RUN_MODIFIERS_DESC, "MinecraftForge's modifiers run inside NeoForge's "
 						+ "single pass (KernelForgeWorldgen); its own pass would be a second one"));
+		// MinecraftForge's own mod-pack finder, on every side. The kernel serves each Forge-family mod's data/ to the
+		// server repository itself (DataPackHookInjector, as forbric/data/<mod> over the carriers) and its assets to
+		// the client's (KernelClientPacks); Forge's finder offers every mod in its ModList again as mod:<id>. On a base
+		// whose configurePackRepository asks only NeoForge nothing reaches it; a merge that keeps MinecraftForge's call
+		// there (and in CreateWorldScreen) put a second copy of each mod's data under a new id -- an existing world
+		// auto-enabled ~50 of them on load, above the kernel's ordering, and loaded the same files twice.
+		neuter.add(new MethodBodyNeuter.Target(FORGE_RESOURCE_PACK_LOADER, "loadResourcePacks",
+				FORGE_LOAD_RESOURCE_PACKS_DESC, "the kernel serves Forge-family mods' own packs itself (DataPackHookInjector, "
+						+ "KernelClientPacks); MinecraftForge's finder would offer each a second time as mod:<id>"));
 		addSideNeuters(side, neuter);
 		return neuter;
 	}
@@ -1300,6 +1309,10 @@ public final class KernelBoot {
 				FORGE_CLIENT_BEGIN_DESC, "kernel owns client mod loading (MinecraftForge's Minecraft.<init> window is "
 						+ "onClientEntrypoints)"));
 	}
+
+	/** MinecraftForge's {@code ResourcePackLoader.loadResourcePacks(PackRepository, boolean)}. */
+	static final String FORGE_RESOURCE_PACK_LOADER = "net.minecraftforge.resource.ResourcePackLoader";
+	static final String FORGE_LOAD_RESOURCE_PACKS_DESC = "(Lnet/minecraft/server/packs/repository/PackRepository;Z)V";
 
 	/** MinecraftForge's {@code ServerLifecycleHooks.runModifiers(MinecraftServer)}. */
 	static final String FORGE_RUN_MODIFIERS = "runModifiers";

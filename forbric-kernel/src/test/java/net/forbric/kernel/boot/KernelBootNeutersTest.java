@@ -101,6 +101,25 @@ class KernelBootNeutersTest {
 		}
 	}
 
+	/**
+	 * MinecraftForge's own mod-pack finder is emptied on both sides: the kernel serves those packs, and a merged
+	 * configurePackRepository that kept MinecraftForge's call offered every mod's data a second time as mod:&lt;id&gt;.
+	 * The pack-name list the rest of the merged game may still ask for is left whole.
+	 */
+	@Test void onEverySideMinecraftForgesOwnModPackFinderIsEmptied() throws Exception {
+		String loader = KernelBoot.FORGE_RESOURCE_PACK_LOADER;
+		byte[] original = read(FORGE_CARRIER, loader.replace('.', '/'));
+		assertTrue(real(method(original, "loadResourcePacks", KernelBoot.FORGE_LOAD_RESOURCE_PACKS_DESC)).size() > 1,
+				"premise: the carrier's loadResourcePacks adds a pack finder");
+		for (KernelBoot.Side side : KernelBoot.Side.values()) {
+			byte[] served = KernelBoot.neuters(side, true).transform(loader, original, null);
+			assertEquals(List.of(Opcodes.RETURN),
+					real(method(served, "loadResourcePacks", KernelBoot.FORGE_LOAD_RESOURCE_PACKS_DESC)), side.toString());
+			assertEquals(real(method(original, "getPackNames", "()Ljava/util/List;")),
+					real(method(served, "getPackNames", "()Ljava/util/List;")), side + ": getPackNames stays whole");
+		}
+	}
+
 	private static MethodNode method(byte[] bytes, String name, String desc) {
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
