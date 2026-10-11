@@ -173,6 +173,29 @@ class LostHookAttributionTest {
 		assertEquals(0, LostHookAttribution.unobservedOccurrences(census));
 	}
 
+	/**
+	 * A lambda the splice carried under a fresh name keeps its calls; a merged lambda of the same name holding another
+	 * body does not. Counting by caller name alone rewarded a lambda collision (MinecraftForge's body under NeoForge's
+	 * name) and charged the correct rename as a loss.
+	 */
+	@Test void aLambdaCarriedUnderAFreshNameKeepsItsCalls() {
+		String hook = "net/minecraftforge/client/gui/ModListScreen#open()V", neoCall = "net/neoforged/neoforge/client/ClientHooks#report()V";
+		ClassNode source = classNode("game/Pause", methodNode("lambda$menu$11", "(I)V", hook));
+		ClassNode renamed = classNode("game/Pause", methodNode("lambda$menu$11", "(I)V", neoCall),
+				methodNode("lambda$menu$11$forbricforge", "(I)V", hook));
+		var kept = LostHookAttribution.platformCensus(Map.of(source.name, source), Map.of(renamed.name, renamed), List.of());
+		assertEquals(0, LostHookAttribution.rawLostOccurrences(kept), "moved to its own name, not lost");
+		// Negative control: without the carried copy, the merged lambda of that name is another body and the call is lost.
+		ClassNode collided = classNode("game/Pause", methodNode("lambda$menu$11", "(I)V", neoCall));
+		var lost = LostHookAttribution.platformCensus(Map.of(source.name, source), Map.of(collided.name, collided), List.of());
+		assertEquals(1, LostHookAttribution.rawLostOccurrences(lost));
+		// And the other family's census sees its own lambda's call lost when the name holds MinecraftForge's body.
+		ClassNode neoSource = classNode("game/Pause", methodNode("lambda$menu$11", "(I)V", neoCall));
+		ClassNode forgeUnderNeoName = classNode("game/Pause", methodNode("lambda$menu$11", "(I)V", hook));
+		assertEquals(1, LostHookAttribution.rawLostOccurrences(LostHookAttribution.platformCensus(Map.of(neoSource.name, neoSource),
+				Map.of(forgeUnderNeoName.name, forgeUnderNeoName), List.of())));
+	}
+
 	/** The hooks a residual splice still lacks are attributed like a row's, by the bodies, to the family that lost them. */
 	@Test void aResidualSpliceIsAttributedToTheFamilyWhoseHookTheMergedBodyLacks() throws Exception {
 		String forge = "net/minecraftforge/common/ForgeHooks", neo = "net/neoforged/neoforge/event/EventHooks";

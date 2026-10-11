@@ -223,6 +223,11 @@ public final class LostHookAttribution {
 	 * Repeated calls and opcode/itf are counted: overlap is a multiset comparison inside an exact matching caller,
 	 * not a claim that the same control-flow site survived. Missing callers are unobserved, not raw losses.
 	 * Membership only labels a caller; every caller is scanned the same way whatever the report says about it.
+	 *
+	 * <p>A caller's calls count as kept in the merged class's method of its name and in the copy the edit splice
+	 * carried under a fresh name ({@code <name>$forbricforge} or {@code <name>$forbricneo}, a lambda whose name the
+	 * base side gives a different body): moving a lambda's calls to its own name is not losing them, and keeping a
+	 * lambda under a name another body owns is not keeping them, so the count rewards neither.
 	 */
 	static PlatformCensus platformCensus(Map<String, ClassNode> source, Map<String, ClassNode> merged,
 			List<Conflict> conflicts, List<Splice> splices) {
@@ -246,6 +251,7 @@ public final class LostHookAttribution {
 				if (spliceResidual) residualCallers++;
 				if (counterpart == null) missingCallers++;
 				Map<String, Map<String, Integer>> mergedCalls = counterpart == null ? Map.of() : platformCallForms(counterpart);
+				if (counterpart != null) mergedCalls = withCarriedCopies(mergedCalls, merged.get(cn.name), original);
 				for (var call : originalCalls.entrySet()) {
 					Map<String, Integer> originalForms = call.getValue(), mergedForms = mergedCalls.getOrDefault(call.getKey(), Map.of());
 					int originalCount = occurrences(originalForms), mergedCount = occurrences(mergedForms);
@@ -264,6 +270,20 @@ public final class LostHookAttribution {
 		}
 		return new PlatformCensus(source.size(), methods, callers, listedCallers, residualCallers, missingMethods, missingCallers,
 				List.copyOf(rows));
+	}
+
+	/** The merged calls of a caller, its carried copies' added ({@link #platformCensus}). */
+	private static Map<String, Map<String, Integer>> withCarriedCopies(Map<String, Map<String, Integer>> calls, ClassNode merged,
+			MethodNode original) {
+		Map<String, Map<String, Integer>> out = new TreeMap<>();
+		calls.forEach((symbol, forms) -> out.put(symbol, new TreeMap<>(forms)));
+		for (String family : List.of("forge", "neo")) {
+			MethodNode copy = method(merged, original.name + "$forbric" + family + original.desc);
+			if (copy == null) continue;
+			platformCallForms(copy).forEach((symbol, forms) -> forms.forEach((form, n) ->
+					out.computeIfAbsent(symbol, k -> new TreeMap<>()).merge(form, n, Integer::sum)));
+		}
+		return out;
 	}
 
 	/** Every direct invocation of either platform namespace, including non-event APIs and constructors. */

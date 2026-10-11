@@ -277,6 +277,30 @@ public class EditSpliceClassChecksTest {
 		assertEquals(List.of(1, 100, 200, 2), CALLS, "MinecraftForge's button runs its lambda, NeoForge's runs vanilla's");
 	}
 
+	/**
+	 * When both sides hooked the lambda itself, its name keeps NeoForge's body and MinecraftForge's lives on under the
+	 * fresh name its spliced capturer carried: the report says so instead of calling MinecraftForge's hook lost.
+	 */
+	@Test
+	void aLambdaBothSidesHookedWhoseOtherBodyACapturerCarriedIsNotReportedLost() throws Exception {
+		MethodNode vanillaBuild = new M(MENU, Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "build", "(I)I")
+				.line(10, rec(1)).line(11, runStatic(MENU, "lambda$build$0")).line(12, returnX(false)).done();
+		MethodNode neoBuild = new M(MENU, Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "build", "(I)I")
+				.line(10, rec(1)).line(11, mark(NEO, 200)).line(12, runStatic(MENU, "lambda$build$0")).line(13, returnX(false)).done();
+		MethodNode forgeBuild = new M(MENU, Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "build", "(I)I")
+				.line(10, rec(1)).line(11, runStatic(MENU, "lambda$build$0")).line(12, runStatic(MENU, "lambda$build$1"))
+				.line(13, returnX(false)).done();
+		ClassNode vanilla = type(MENU, vanillaBuild, lambda("lambda$build$0", true, rec(2)));
+		ClassNode neo = type(MENU, neoBuild, lambda("lambda$build$0", true, mark(NEO, 202)));
+		ClassNode forge = type(MENU, forgeBuild, lambda("lambda$build$0", true, mark(FORGE, 100)), lambda("lambda$build$1", true, mark(FORGE, 102)));
+		Build b = build(vanilla, forge, neo, patch(hunk(10, 10, "F", "A", "B", "R")), patch(hunk(10, 10, "N", "A", "B", "R")));
+		assertTrue(b.report.contains(MENU + "#build(I)I SPLICED"), b.report);
+		assertTrue(b.report.contains(MENU + "#lambda$build$0()V (forge body carried as lambda$build$0$forbricforge for its spliced capturer)"), b.report);
+		assertFalse(b.report.contains(MENU + "#lambda$build$0()V (forge hook lost)"), b.report);
+		assertEquals(7, call(b.load(MENU), null, "build", 7));
+		assertEquals(List.of(1, 100, 200, 202), CALLS, "MinecraftForge's button runs its own lambda, NeoForge's its own");
+	}
+
 	private static final String SPAWN = "net/minecraft/demo/Spawn";
 
 	@Test

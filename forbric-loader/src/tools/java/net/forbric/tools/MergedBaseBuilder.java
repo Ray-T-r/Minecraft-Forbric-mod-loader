@@ -1208,6 +1208,15 @@ public final class MergedBaseBuilder {
 			if (r != null) recordSplice(name + "#" + pending.get(i).key(), r);
 			if (r != null && r.accepted()) for (EditSplicer.Carried unit : r.carried()) carriedUnits.add(new CarriedUnit(name, pending.get(i).key(), unit));
 		}
+		// A lambda both sides hooked keeps the base's body under its name, but where a spliced capturer carried the
+		// other side's body under the fresh name, that side's code still runs: the row says where, not that it is lost.
+		String otherFamily = baseIsForge ? "neo" : "forge";
+		for (PendingSplice p : pending) {
+			String fresh = p.other().name + "$forbric" + otherFamily;
+			if (fallbackReason != null || !baseMethods.containsKey(fresh + p.other().desc)) continue;
+			int row = conflicts.lastIndexOf(name + "#" + p.key() + " (" + otherFamily + " hook lost)");
+			if (row >= 0) conflicts.set(row, name + "#" + p.key() + " (" + otherFamily + " body carried as " + fresh + " for its spliced capturer)");
+		}
 	}
 
 	/**
