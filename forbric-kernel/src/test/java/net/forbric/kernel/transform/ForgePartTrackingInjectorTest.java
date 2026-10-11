@@ -85,17 +85,32 @@ class ForgePartTrackingInjectorTest {
 		assertSame(out, injector(MERGED).transform(ForgePartTrackingInjector.SERVER_CALLBACKS, out, null));
 	}
 
+    /**
+     * Each client direction ends up making MinecraftForge's map effect exactly once — natively, in a body the merge wrote
+     * with MinecraftForge's own loop, or through the added loop at the shared native exit of a body that read only
+     * NeoForge's parts — and dereferences no part array of either family unchecked. The client repair runs first, as the
+     * kernel registers them; a direction reading both families' parts is that repair's.
+     */
     @Test void theClientsOnTrackingEndUntracksMinecraftForgesPartsAndToleratesANullNeoForgeGetParts() throws Exception {
         byte[] merged=NativeCoremodParityTest.read(MERGED,CLIENT_CALLBACKS);ClassNode original=node(merged);
-        for(String direction:List.of("onTrackingStart","onTrackingEnd"))assertEquals(List.of(NEO_GET_PARTS),partsRead(method(original,direction,TRACKING_DESC)));
-        byte[] out=injector(MERGED).transform(ForgePartTrackingInjector.CLIENT_CALLBACKS,merged,null);ClassNode repaired=node(out);
+        byte[] client=new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,merged,null);
+        byte[] out=injector(MERGED).transform(ForgePartTrackingInjector.CLIENT_CALLBACKS,client,null);ClassNode repaired=node(out);
+        boolean companionEdited=false;
         for(String direction:List.of("onTrackingStart","onTrackingEnd")){
+            List<String> reads=partsRead(method(original,direction,TRACKING_DESC));
+            assertTrue(reads.contains(NEO_GET_PARTS),"premise: the merged "+direction+" reads NeoForge's parts: "+reads);
             String helper=direction.equals("onTrackingStart")?ForgePartTrackingInjector.TRACK:ForgePartTrackingInjector.UNTRACK;
             MethodNode method=method(repaired,direction,TRACKING_DESC);
-            assertTrue(calls(method,helper),"each direction reaches the missing map effect at the shared native exit");
-            assertLoop(method(repaired,helper,ForgePartTrackingInjector.TRACK_DESC),direction.equals("onTrackingStart")?"put":"remove");
+            boolean nativeForge=reads.contains(FORGE_GET_PARTS);
+            assertNotEquals(nativeForge,calls(method,helper),direction+" makes MinecraftForge's map effect once: natively or at the shared native exit");
+            if(!nativeForge){
+                companionEdited=true;
+                assertLoop(method(repaired,helper,ForgePartTrackingInjector.TRACK_DESC),direction.equals("onTrackingStart")?"put":"remove");
+            }
+            assertEquals(Set.of(),ClientPartTrackingFlow.analyze(repaired,method,true).unchecked(),direction+" dereferences no part array unchecked");
             new Analyzer<>(new BasicVerifier()).analyze(CLIENT_CALLBACKS,method);
         }
+        assertTrue(companionEdited,"premise: some direction still reads NeoForge's parts alone, which is the companion repair's");
         assertSame(out,injector(MERGED).transform(ForgePartTrackingInjector.CLIENT_CALLBACKS,out,null));
     }
 
@@ -193,12 +208,25 @@ class ForgePartTrackingInjectorTest {
 	}
 
 	@Test void aMinecraftForgeModsMultipartEntityLeavesTheClientCleanly() throws Exception {
+		// Control: a direction the client repair leaves reading NeoForge's parts unchecked throws on a MinecraftForge mod's
+		// entity, whose NeoForge getParts() answers null; one it already made tolerant (a body reading both families'
+		// parts) tracks the entity without the companion. The data-flow judgement and the running body must agree.
+		ClassNode clientRepaired = node(new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,
+				NativeCoremodParityTest.read(MERGED, CLIENT_CALLBACKS), null));
+		boolean startUnsafe = !ClientPartTrackingFlow.analyze(clientRepaired, method(clientRepaired, "onTrackingStart", TRACKING_DESC), true).unchecked().isEmpty();
+		boolean endUnsafe = !ClientPartTrackingFlow.analyze(clientRepaired, method(clientRepaired, "onTrackingEnd", TRACKING_DESC), true).unchecked().isEmpty();
+		assertTrue(startUnsafe || endUnsafe, "premise: some direction is left to the companion repair");
 		try (Client merged = new Client(false)) {
 			Object entity = merged.multipart("fixture.ForgeMultipartEntity", "fixture.ForgePart", 2);
-            assertThrewOnNullParts(assertThrows(InvocationTargetException.class,()->merged.start(entity)),"onTrackingStart");
-            merged.partEntities().put(1,merged.parts(entity)[0]);
-			assertThrewOnNullParts(assertThrows(InvocationTargetException.class, () -> merged.end(entity),
+			if (startUnsafe) assertThrewOnNullParts(assertThrows(InvocationTargetException.class, () -> merged.start(entity)), "onTrackingStart");
+			else {
+				merged.start(entity);
+				assertEquals(Set.of(1, 2), new HashSet<>(merged.partEntities().keySet()), "a body reading both families' parts tracks it natively");
+			}
+			merged.partEntities().put(1, merged.parts(entity)[0]);
+			if (endUnsafe) assertThrewOnNullParts(assertThrows(InvocationTargetException.class, () -> merged.end(entity),
 					"control: as merged, NeoForge's getParts() answers null for a MinecraftForge mod's entity"), "onTrackingEnd");
+			else merged.end(entity);
 		}
 		try (Client repaired = new Client(true)) {
 			Object entity = repaired.multipart("fixture.ForgeMultipartEntity", "fixture.ForgePart", 2);

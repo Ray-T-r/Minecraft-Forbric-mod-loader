@@ -136,9 +136,12 @@ class ClientPartTrackingFlowTest {
 
 	// --- MinecraftForge's array: tested on every path, judged by flow ----------------------------------------------------
 
-	/** Tested on one path only: when the entity is not multipart the loop still walks an array nobody tested. */
+	/**
+	 * Tested on one path only: when the entity is not multipart the loop still walks an array nobody tested. The judge
+	 * rejects it; since it also registers NeoForge's parts, the repair makes the array tolerant and the end state holds.
+	 */
 	@Test void aMinecraftForgeArrayTestedOnOnlyOnePathIsAMiss() {
-		assertMiss(callbacks((mv, exit) -> {
+		assertJudgedUntrackedUntilRepaired(callbacks((mv, exit) -> {
 			addAllNeoForgesParts(mv);
 			Label loop = new Label();
 			mv.visitVarInsn(Opcodes.ALOAD, 1);
@@ -155,9 +158,12 @@ class ClientPartTrackingFlowTest {
 		}));
 	}
 
-	/** {@code if (parts != null) return; parts.length}: the array is used on the side of the test that knows it is null. */
+	/**
+	 * {@code if (parts != null) return; parts.length}: the array is used on the side of the test that knows it is null. The
+	 * judge rejects it; the repair makes the array tolerant, as for any body that registers both families' parts.
+	 */
 	@Test void theSideOfTheTestThatKnowsTheArrayIsNullIsNotRefined() {
-		assertMiss(callbacks((mv, exit) -> {
+		assertJudgedUntrackedUntilRepaired(callbacks((mv, exit) -> {
 			addAllNeoForgesParts(mv);
 			Label tested = new Label();
 			mv.visitVarInsn(Opcodes.ALOAD, 1);
@@ -278,10 +284,14 @@ class ClientPartTrackingFlowTest {
 
 	// --- the staged platform body, edited into the probe -----------------------------------------------------------------
 
-	/** The staged NeoForge body with NeoForge's parts sent to {@code players}: its dragon case still reads dragonParts. */
+	/**
+	 * The staged body, as the repair leaves it, with NeoForge's parts sent to {@code players}: its dragon case still reads
+	 * dragonParts. (The merge may keep NeoForge's body, which tracks as it is, or MinecraftForge's with NeoForge's
+	 * registration spliced in, which tracks once the repair has made its arrays null-tolerant.)
+	 */
 	@Test void theStagedBodyWithNeoForgesPartsSentToAnotherListIsAMissTheGateSees() throws Exception {
-		byte[] staged = NativeCoremodParityTest.read(MERGED, CALLBACKS_INTERNAL);
-		assertTrue(ClientPartTrackingInjector.tracksNeoForgeParts(staged), "premise: the staged body tracks NeoForge's parts");
+		byte[] staged = new ClientPartTrackingInjector().transform(CALLBACKS, NativeCoremodParityTest.read(MERGED, CALLBACKS_INTERNAL), null);
+		assertTrue(ClientPartTrackingInjector.tracksNeoForgeParts(staged), "premise: the staged body, as the repair leaves it, tracks NeoForge's parts");
 		byte[] elsewhere = editStagedRegistration(staged, (method, list, read) -> list.name = "players");
 		assertMissTheGateSees(elsewhere);
 	}
@@ -301,9 +311,12 @@ class ClientPartTrackingFlowTest {
 		assertMissTheGateSees(counted);
 	}
 
-	/** The companion MinecraftForge repair wraps NeoForge's read in requireNonNullElse; the parts still arrive. */
+	/**
+	 * The companion MinecraftForge repair, run after this one as the kernel registers them, wraps NeoForge's read in
+	 * requireNonNullElse where it edits; the parts still arrive.
+	 */
 	@Test void theStagedBodyAfterTheCompanionRepairStillTracksNeoForgesParts() throws Exception {
-		ClassNode node = node(NativeCoremodParityTest.read(MERGED, CALLBACKS_INTERNAL));
+		ClassNode node = node(new ClientPartTrackingInjector().transform(CALLBACKS, NativeCoremodParityTest.read(MERGED, CALLBACKS_INTERNAL), null));
 		assertEquals(1, ForgePartTrackingInjector.clientCallbacks(node, true), "premise: the companion repair edits the staged body");
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
@@ -320,6 +333,14 @@ class ClientPartTrackingFlowTest {
 	private static void assertMiss(byte[] callbacks) {
 		assertFalse(ClientPartTrackingInjector.tracksNeoForgeParts(callbacks));
 		assertEquals(Set.of(), hits(callbacks));
+	}
+
+	/** The judge rejects the body as written; the repair makes its part arrays null-tolerant, and then the end state holds. */
+	private static void assertJudgedUntrackedUntilRepaired(byte[] callbacks) {
+		assertFalse(ClientPartTrackingInjector.tracksNeoForgeParts(callbacks));
+		byte[] repaired = new ClientPartTrackingInjector().transform(CALLBACKS, callbacks, null);
+		assertNotSame(callbacks, repaired, "the body registers NeoForge's parts, so tolerating the array is the whole repair");
+		assertHit(repaired);
 	}
 
 	private void assertMissTheGateSees(byte[] callbacks) throws Exception {

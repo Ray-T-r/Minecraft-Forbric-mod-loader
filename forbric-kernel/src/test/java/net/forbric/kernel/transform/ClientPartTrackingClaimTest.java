@@ -22,9 +22,11 @@ import org.objectweb.asm.Opcodes;
 
 /**
  * The client part-tracking repair is judged by its end state, not by whether it edited. Which family's
- * {@code onTrackingStart} the merge keeps moves with the merge tools: the staged base keeps NeoForge's body, which
- * already registers a NeoForge mod's parts in {@code dragonParts} and never reads MinecraftForge's array, and the ledger
- * used to score "handed the class, made no edit" as a missing repair there (gate-m9's two anchor checks went red).
+ * {@code onTrackingStart} the merge keeps moves with the merge tools: a base may keep NeoForge's body, which already
+ * registers a NeoForge mod's parts in {@code dragonParts} and never reads MinecraftForge's array, and the ledger used to
+ * score "handed the class, made no edit" as a missing repair there (gate-m9's two anchor checks went red); a base that
+ * keeps both sides' edits writes MinecraftForge's loop and NeoForge's registration into one body, which the repair only
+ * makes null-tolerant.
  *
  * <p>The claim holds on every body that tracks NeoForge's parts and null-tests MinecraftForge's: NeoForge's own,
  * this repair's edit of MinecraftForge's, and a composed body written another way. It does not hold on a body that
@@ -54,13 +56,15 @@ class ClientPartTrackingClaimTest {
 
 	@AfterEach void reset() { System.clearProperty(ClientPartTrackingInjector.PROPERTY); }
 
-	@Test void theStagedNeoForgeBodyLandsTheClaimWithoutAnEditAndTheLedgerIsClean() throws Exception {
+	@Test void theStagedBodyLandsTheClaimAndTheLedgerIsClean() throws Exception {
 		byte[] merged = NativeCoremodParityTest.read(MERGED, CALLBACKS_INTERNAL);
-		assertTrue(ClientPartTrackingInjector.tracksNeoForgeParts(merged), "premise: the staged merge keeps a body that tracks NeoForge's parts");
+		boolean tracked = ClientPartTrackingInjector.tracksNeoForgeParts(merged);
 		TransformChain chain = chain();
 		String[] out = new String[1];
 		byte[] result = GateLogContract.capture(() -> chain.applyBeforeMixin(CALLBACKS, merged, CLIENT), out);
-		assertSame(merged, result, "there is nothing to edit");
+		if (tracked) assertSame(merged, result, "a staged body that already tracks NeoForge's parts has nothing to edit");
+		else assertNotSame(merged, result, "a staged body that does not track yet is the repair's to edit");
+		assertTrue(ClientPartTrackingInjector.tracksNeoForgeParts(result), "either way, the end state holds");
 		AnchorLedger.Report report = chain.ledger().report();
 		assertTrue(report.clean(), () -> "the end state holds, so nothing is missing: " + report.misses());
 		assertEquals(1, report.hit(), "the claim is the one anchor, and it landed");
@@ -93,9 +97,30 @@ class ClientPartTrackingClaimTest {
 		assertEquals(Set.of(ClientPartTrackingInjector.CLAIM), hits);
 	}
 
-	/** It reads NeoForge's parts into dragonParts, but still walks MinecraftForge's array unchecked: a NeoForge mod's entity throws. */
-	@Test void aLookAlikeThatStillWalksMinecraftForgesArrayUncheckedIsAMissTheGateSees() throws Exception {
+	/**
+	 * It reads NeoForge's parts into dragonParts, but still walks MinecraftForge's array unchecked: a NeoForge mod's entity
+	 * throws, so the judge rejects it as written. It is the shape a merge that keeps both sides' edits writes, and the
+	 * repair makes the array null-tolerant; then the end state holds and the ledger is clean.
+	 */
+	@Test void aLookAlikeThatStillWalksMinecraftForgesArrayUncheckedIsRepairedUntilItTracks() throws Exception {
 		byte[] lookAlike = callbacks(Shape.BOTH_READS_FORGE_UNCHECKED);
+		assertFalse(ClientPartTrackingInjector.tracksNeoForgeParts(lookAlike), "as written, a NeoForge mod's entity throws in MinecraftForge's loop");
+		TransformChain chain = chain();
+		String[] out = new String[1];
+		byte[] repaired = GateLogContract.capture(() -> chain.applyBeforeMixin(CALLBACKS, lookAlike, CLIENT), out);
+		assertNotSame(lookAlike, repaired);
+		assertTrue(ClientPartTrackingInjector.tracksNeoForgeParts(repaired));
+		AnchorLedger.Report report = chain.ledger().report();
+		assertTrue(report.clean(), () -> "the end state holds: " + report.misses());
+		assertEquals(0, GateLogContract.count(root, gatePattern("no repair was handed its target and declined"), out[0]), out[0]);
+	}
+
+	/**
+	 * Both families read, MinecraftForge's array walked unchecked, and NeoForge's parts only counted: tolerating a null
+	 * array cannot make NeoForge's parts arrive, so the repair declines and the ledger prints the line the gate looks for.
+	 */
+	@Test void aLookAlikeThatReadsBothButNeverRegistersNeoForgesPartsIsAMissTheGateSees() throws Exception {
+		byte[] lookAlike = callbacks(Shape.BOTH_READS_NEO_NOT_REGISTERED);
 		TransformChain chain = chain();
 		String[] out = new String[1];
 		assertSame(lookAlike, GateLogContract.capture(() -> chain.applyBeforeMixin(CALLBACKS, lookAlike, CLIENT), out));
@@ -131,7 +156,7 @@ class ClientPartTrackingClaimTest {
 
 	private static String gatePattern(String what) throws Exception { return GateLogContract.pattern(GATE, what); }
 
-	private enum Shape { COMPOSED_TESTED_AS_STORED, BOTH_READS_FORGE_UNCHECKED, FORGE_TESTED_NEO_NEVER_READ, NEO_READ_NOT_REGISTERED }
+	private enum Shape { COMPOSED_TESTED_AS_STORED, BOTH_READS_FORGE_UNCHECKED, BOTH_READS_NEO_NOT_REGISTERED, FORGE_TESTED_NEO_NEVER_READ, NEO_READ_NOT_REGISTERED }
 
 	/**
 	 * ClientLevel$EntityCallbacks with only {@code this$0} and {@code onTrackingStart(Entity)}, written for a shape. The
@@ -151,7 +176,7 @@ class ClientPartTrackingClaimTest {
 		if (forge) {
 			mv.visitVarInsn(Opcodes.ALOAD, 1);
 			mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, ENTITY, "getParts", FORGE_GET_PARTS, false);
-			if (shape == Shape.BOTH_READS_FORGE_UNCHECKED) {
+			if (shape == Shape.BOTH_READS_FORGE_UNCHECKED || shape == Shape.BOTH_READS_NEO_NOT_REGISTERED) {
 				mv.visitVarInsn(Opcodes.ASTORE, 2);
 			} else {
 				// if ((parts = entity.getParts()) != null)
@@ -175,7 +200,7 @@ class ClientPartTrackingClaimTest {
 			mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/util/Arrays", "asList", "([Ljava/lang/Object;)Ljava/util/List;", false);
 			mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, "java/util/List", "addAll", "(Ljava/util/Collection;)Z", true);
 			mv.visitInsn(Opcodes.POP);
-		} else if (shape == Shape.NEO_READ_NOT_REGISTERED) {
+		} else if (shape == Shape.NEO_READ_NOT_REGISTERED || shape == Shape.BOTH_READS_NEO_NOT_REGISTERED) {
 			// NeoForge's parts are read, but only counted: nothing reaches dragonParts.
 			mv.visitVarInsn(Opcodes.ALOAD, 1);
 			mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, ENTITY, "getParts", NEO_GET_PARTS, false);

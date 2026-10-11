@@ -44,6 +44,8 @@ import org.objectweb.asm.tree.analysis.Value;
  *       a value that is not null. Moving it (locals, {@code DUP}, {@code CHECKCAST}) or comparing its identity is not a
  *       use; anything else is, conservatively.</li>
  * </ul>
+ * The repair asks the second question of NeoForge's arrays too, for a body that reads both families' parts: NeoForge's
+ * {@code getParts()} is just as null for a MinecraftForge mod's entity.
  */
 final class ClientPartTrackingFlow {
 	private static final String ENTITY = ClientPartTrackingInjector.ENTITY;
@@ -61,13 +63,32 @@ final class ClientPartTrackingFlow {
 
 	/** Whether {@code start} adds NeoForge's parts into dragonParts and null-tests every MinecraftForge part array it reads. */
 	static boolean tracksNeoForgeParts(ClassNode owner, MethodNode start) {
-		Flows flows = new Flows(owner, 0, null);
+		Analysis analysis = analyze(owner, start, false);
+		return analysis != null && analysis.registers() && analysis.unchecked().isEmpty();
+	}
+
+	/**
+	 * What {@code start} does with the parts it reads.
+	 *
+	 * @param registers whether NeoForge's parts reach an add into dragonParts
+	 * @param unchecked the watched {@code getParts()} reads that some path consumes before testing them for null
+	 */
+	record Analysis(boolean registers, Set<AbstractInsnNode> unchecked) {
+	}
+
+	/**
+	 * The analysis of {@code start}, or null when it cannot be read. MinecraftForge's reads are always watched for a null
+	 * test; with {@code bothFamilies} NeoForge's are too — each family's array is null for the other family's entity, so a
+	 * body that reads both must test both.
+	 */
+	static Analysis analyze(ClassNode owner, MethodNode start, boolean bothFamilies) {
+		Flows flows = new Flows(owner, 0, null, bothFamilies);
 		try {
 			new FlowAnalyzer(flows).analyze(owner.name, start);
 		} catch (AnalyzerException | RuntimeException unreadable) {
-			return false;
+			return null;
 		}
-		return flows.registers && !flows.unchecked;
+		return new Analysis(flows.registers, Set.copyOf(flows.unchecked));
 	}
 
 	/**
@@ -78,9 +99,10 @@ final class ClientPartTrackingFlow {
 	 *                one of its elements
 	 * @param dragon  {@code ClientLevel.dragonParts} itself
 	 * @param adder   a function that adds what it is applied to into dragonParts
-	 * @param forge   the MinecraftForge {@code getParts()} reads this may be, not yet tested for null on this path
+	 * @param untested the watched {@code getParts()} reads this may be, not yet tested for null on this path: MinecraftForge's
+	 *                 for the claim, both families' for {@link #analyze(ClassNode, MethodNode, boolean)} with both watched
 	 */
-	record Flow(int size, Set<AbstractInsnNode> origins, boolean neo, boolean dragon, boolean adder, Set<AbstractInsnNode> forge)
+	record Flow(int size, Set<AbstractInsnNode> origins, boolean neo, boolean dragon, boolean adder, Set<AbstractInsnNode> untested)
 			implements Value {
 		static Flow plain(int size, AbstractInsnNode origin) {
 			return new Flow(size, origin == null ? Set.of() : Set.of(origin), false, false, false, Set.of());
@@ -95,13 +117,13 @@ final class ClientPartTrackingFlow {
 		}
 
 		Flow withNeo() {
-			return neo ? this : new Flow(size, origins, true, dragon, adder, forge);
+			return neo ? this : new Flow(size, origins, true, dragon, adder, untested);
 		}
 
 		Flow tested(Set<AbstractInsnNode> reads) {
-			Set<AbstractInsnNode> left = new LinkedHashSet<>(forge);
+			Set<AbstractInsnNode> left = new LinkedHashSet<>(untested);
 			left.removeAll(reads);
-			return left.size() == forge.size() ? this : new Flow(size, origins, neo, dragon, adder, Set.copyOf(left));
+			return left.size() == untested.size() ? this : new Flow(size, origins, neo, dragon, adder, Set.copyOf(left));
 		}
 	}
 
@@ -162,14 +184,14 @@ final class ClientPartTrackingFlow {
 		 * test that knows the value is not null is refined: what falls through {@code IFNULL}, what jumps on {@code IFNONNULL}.
 		 */
 		@Override public void initJumpTarget(int opcode, LabelNode target) {
-			if (tested == null || tested.forge().isEmpty()) return;
+			if (tested == null || tested.untested().isEmpty()) return;
 			if (opcode == Opcodes.IFNULL && target == null) {
 				unrefined = new Frame<>(this);
-				refine(tested.forge());
+				refine(tested.untested());
 			} else if (opcode == Opcodes.IFNULL) {
 				if (unrefined != null) init(unrefined);
 			} else if (opcode == Opcodes.IFNONNULL && target != null) {
-				refine(tested.forge());
+				refine(tested.untested());
 			}
 		}
 
@@ -200,14 +222,20 @@ final class ClientPartTrackingFlow {
 		private final ClassNode owner;
 		private final int depth;
 		private final Map<Integer, Flow> parameters;
+		private final boolean watchNeo;
 		boolean registers;
-		boolean unchecked;
+		final Set<AbstractInsnNode> unchecked = new LinkedHashSet<>();
 
 		Flows(ClassNode owner, int depth, Map<Integer, Flow> parameters) {
+			this(owner, depth, parameters, false);
+		}
+
+		Flows(ClassNode owner, int depth, Map<Integer, Flow> parameters, boolean watchNeo) {
 			super(Opcodes.ASM9);
 			this.owner = owner;
 			this.depth = depth;
 			this.parameters = parameters;
+			this.watchNeo = watchNeo;
 		}
 
 		@Override public Flow newValue(Type type) {
@@ -307,7 +335,9 @@ final class ClientPartTrackingFlow {
 			Type result = Type.getReturnType(call.desc);
 			if (result.getSort() == Type.VOID) return null;
 			if (call.owner.equals(ENTITY) && call.name.equals("getParts")) {
-				if (call.desc.equals(ClientPartTrackingInjector.NEO_GET_PARTS)) return new Flow(1, Set.of(insn), true, false, false, Set.of());
+				if (call.desc.equals(ClientPartTrackingInjector.NEO_GET_PARTS)) {
+					return new Flow(1, Set.of(insn), true, false, false, watchNeo ? Set.of(insn) : Set.of());
+				}
 				if (call.desc.equals(ClientPartTrackingInjector.FORGE_GET_PARTS)) return new Flow(1, Set.of(insn), false, false, false, Set.of(insn));
 			}
 			if (call.owner.equals(LEVEL) && call.name.equals("dragonParts") && Type.getArgumentCount(call.desc) == 0 && !isStatic) {
@@ -327,13 +357,13 @@ final class ClientPartTrackingFlow {
 			if (first.equals(second)) return first;
 			Flow merged = new Flow(first.size() == second.size() ? first.size() : 1, union(first.origins(), second.origins()),
 					first.neo() || second.neo(), first.dragon() || second.dragon(), first.adder() || second.adder(),
-					union(first.forge(), second.forge()));
+					union(first.untested(), second.untested()));
 			return merged.equals(first) ? first : merged;
 		}
 
 		/** Something consumes {@code value}; that is the dereference the null test must come before. */
 		private void use(Flow value) {
-			if (value != null && !value.forge().isEmpty()) unchecked = true;
+			if (value != null && !value.untested().isEmpty()) unchecked.addAll(value.untested());
 		}
 
 		/** A bound {@code dragonParts::add}, or a lambda of this class whose body adds what it is applied to into dragonParts. */

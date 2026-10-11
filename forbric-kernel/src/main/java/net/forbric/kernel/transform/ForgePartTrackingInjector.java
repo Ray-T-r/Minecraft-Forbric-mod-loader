@@ -279,7 +279,7 @@ public final class ForgePartTrackingInjector implements ClassTransformer {
 	}
 
 	/** {@code Objects.requireNonNullElse(entity.getParts(), new PartEntity[0])}: no branch, so no frame to add. */
-	private static void tolerate(MethodNode method, MethodInsnNode read) {
+	static void tolerate(MethodNode method, MethodInsnNode read) {
 		String part = read.desc.substring(4, read.desc.length() - 1);
 		InsnList empty = new InsnList();
 		empty.add(new InsnNode(Opcodes.ICONST_0));

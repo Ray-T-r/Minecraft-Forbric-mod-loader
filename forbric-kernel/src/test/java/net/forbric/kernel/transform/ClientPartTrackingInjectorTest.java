@@ -58,16 +58,27 @@ class ClientPartTrackingInjectorTest {
 
 	@AfterEach void reset() { System.clearProperty(ClientPartTrackingInjector.PROPERTY); }
 
+    /**
+     * Whichever body the merge keeps — NeoForge's alone, or MinecraftForge's with NeoForge's registration spliced in — the
+     * client repair and its companion leave onTrackingStart registering NeoForge's parts in dragonParts and MinecraftForge's
+     * in partEntities, each exactly once, with no part array of either family dereferenced before a null test.
+     */
     @Test void theMergedCallbackAddsNeoForgesPartsAndSkipsMinecraftForgesWhenNull() throws Exception {
         byte[] merged=NativeCoremodParityTest.read(MERGED,CALLBACKS);
-        assertEquals(List.of(NEO_GET_PARTS),partsRead(method(node(merged),"onTrackingStart",START_DESC)),"the current merge retains NeoForge's dependency-coherent body");
-        assertSame(merged,new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,merged,null));
-        byte[] repaired=forgeRepair().transform(ClientPartTrackingInjector.CALLBACKS,merged,null);
+        List<String> reads=partsRead(method(node(merged),"onTrackingStart",START_DESC));
+        assertTrue(reads.contains(NEO_GET_PARTS),"premise: the merge keeps NeoForge's registration: "+reads);
+        byte[] client=new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,merged,null);
+        if(!reads.contains(FORGE_GET_PARTS))assertSame(merged,client,"NeoForge's body alone is the companion repair's");
+        byte[] repaired=forgeRepair().transform(ClientPartTrackingInjector.CALLBACKS,client,null);
         ClassNode node=node(repaired);MethodNode start=method(node,"onTrackingStart",START_DESC);
-        assertEquals(List.of(NEO_GET_PARTS),partsRead(start),"the canonical read order remains intact");
-        assertTrue(real(start).stream().anyMatch(i->i instanceof MethodInsnNode call&&call.name.equals(ForgePartTrackingInjector.TRACK)));
-        assertTrue(real(method(node,ForgePartTrackingInjector.TRACK,ForgePartTrackingInjector.TRACK_DESC)).stream().anyMatch(i->i instanceof MethodInsnNode call&&call.desc.equals(FORGE_GET_PARTS)));
+        assertEquals(reads,partsRead(start),"the canonical reads remain, in their order");
+        assertTrue(ClientPartTrackingInjector.tracksNeoForgeParts(repaired),"NeoForge's parts reach dragonParts and MinecraftForge's array is null-tested");
+        assertEquals(Set.of(),ClientPartTrackingFlow.analyze(node,start,true).unchecked(),"no part array of either family is dereferenced unchecked");
+        boolean helper=real(start).stream().anyMatch(i->i instanceof MethodInsnNode call&&call.name.equals(ForgePartTrackingInjector.TRACK));
+        assertNotEquals(reads.contains(FORGE_GET_PARTS),helper,"MinecraftForge's parts reach partEntities once: natively or through the added loop");
+        if(helper)assertTrue(real(method(node,ForgePartTrackingInjector.TRACK,ForgePartTrackingInjector.TRACK_DESC)).stream().anyMatch(i->i instanceof MethodInsnNode call&&call.desc.equals(FORGE_GET_PARTS)));
         new Analyzer<>(new BasicVerifier()).analyze(CALLBACKS,start);
+        assertSame(repaired,new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,repaired,null));
         assertSame(repaired,forgeRepair().transform(ClientPartTrackingInjector.CALLBACKS,repaired,null));
     }
     private static ForgePartTrackingInjector forgeRepair(){return new ForgePartTrackingInjector(owner->{
@@ -87,9 +98,19 @@ class ClientPartTrackingInjectorTest {
 	}
 
 	@Test void aNeoForgeModsMultipartEntityIsTrackedInsteadOfDisconnectingTheClient() throws Exception {
+        // The claim's judge and the running body agree: a merged body it accepts tracks the parts unrepaired, and one it
+        // rejects is the disconnect itself.
+        boolean judged=ClientPartTrackingInjector.tracksNeoForgeParts(NativeCoremodParityTest.read(MERGED,CALLBACKS));
         try(Game merged=new Game(false)){
-            Object entity=merged.multipart("fixture.NeoMultipartEntity","fixture.NeoPart",2);merged.startTracking(entity);
-            assertEquals(List.of(1,2),merged.ids(merged.dragonParts()),"the actual Neo canonical body already tracks its own view");
+            Object entity=merged.multipart("fixture.NeoMultipartEntity","fixture.NeoPart",2);
+            if(judged){
+                merged.startTracking(entity);
+                assertEquals(List.of(1,2),merged.ids(merged.dragonParts()),"a merged body the claim accepts already tracks NeoForge's parts");
+            }else{
+                InvocationTargetException thrown=assertThrows(InvocationTargetException.class,()->merged.startTracking(entity),
+                        "control: a merged body the claim rejects disconnects the client on a NeoForge mod's entity");
+                assertInstanceOf(NullPointerException.class,thrown.getCause());
+            }
         }
 		try (Game repaired = new Game(true)) {
 			Object entity = repaired.multipart("fixture.NeoMultipartEntity", "fixture.NeoPart", 2);

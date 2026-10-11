@@ -24,7 +24,8 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 /** Completes a Forge-canonical client tracking body with the other native part view. Existing
  * identities in the native collection are retained once, so no game entity class needs a special case.
- * A Neo-canonical body is handled by the companion Forge map repair.
+ * A Neo-canonical body is handled by the companion Forge map repair. A body that already registers both families' parts
+ * (a merge that keeps both sides' edits) gets neither registration again, only tolerance of either family's null array.
  *
  * <p>The outcome is judged by {@link #CLAIM} on the class this transformer hands back, not by whether it edited.
  * Which family's {@code onTrackingStart} the merge keeps moves with the merge tools: a Neo-canonical body already
@@ -92,29 +93,33 @@ public final class ClientPartTrackingInjector implements ClassTransformer {
 		// Expanded, so the one frame this adds is written out against whatever precedes it rather than computed by hand.
 		new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
 		MethodNode start = method(node, "onTrackingStart", TRACKING_START_DESC);
-		int changed = start == null ? declined("ClientLevel$EntityCallbacks has no onTrackingStart(Entity)") : track(start);
+		int changed = start == null ? declined("ClientLevel$EntityCallbacks has no onTrackingStart(Entity)") : track(node, start);
 		if (changed <= 0) return bytes;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
-		ForbricLog.info("[Forbric/Entity] the client's onTrackingStart adds a multipart entity's NeoForge parts to dragonParts, "
-				+ "as NeoForge's does — it read only MinecraftForge's getParts(), which a NeoForge mod's entity leaves null, "
-				+ "and the client disconnected when one came into view");
 		return writer.toByteArray();
 	}
 
 	/**
 	 * onTrackingStart: NeoForge's registration at the head of MinecraftForge's multipart block, and MinecraftForge's loop
-	 * skipped when its parts are null. 0 when the method already reads NeoForge's parts (NeoForge's own body, or this edit).
+	 * skipped when its parts are null. 0 when the method reads NeoForge's parts alone (NeoForge's own body, the companion
+	 * repair's), and a body that reads both families' parts — this edit, or a merge that keeps both registrations — is
+	 * only made to tolerate either family's null array ({@link #tolerateComposed}).
 	 */
-	static int track(MethodNode start) {
+	static int track(ClassNode owner, MethodNode start) {
 		MethodInsnNode forgeParts = null;
+		boolean neoParts = false;
 		for (AbstractInsnNode insn : start.instructions) {
 			if (!(insn instanceof MethodInsnNode call) || !call.owner.equals(ENTITY) || !call.name.equals("getParts")) continue;
-			if (call.desc.equals(NEO_GET_PARTS)) return 0;
+			if (call.desc.equals(NEO_GET_PARTS)) {
+				neoParts = true;
+				continue;
+			}
 			if (!call.desc.equals(FORGE_GET_PARTS)) return declined("onTrackingStart calls getParts" + call.desc);
 			if (forgeParts != null) return declined("onTrackingStart reads MinecraftForge's getParts() twice");
 			forgeParts = call;
 		}
+		if (neoParts) return forgeParts == null ? 0 : tolerateComposed(owner, start);
 		if (forgeParts == null) return declined("onTrackingStart reads no getParts()");
 
 		// if (entity.isMultipartEntity()) { PartEntity<?>[] parts = entity.getParts(); for (...) ... }
@@ -164,7 +169,33 @@ public final class ClientPartTrackingInjector implements ClassTransformer {
 		guard.add(new VarInsnNode(Opcodes.ALOAD, parts.var));
 		guard.add(new JumpInsnNode(Opcodes.IFNULL, skip.label));
 		start.instructions.insert(store, guard);
+		ForbricLog.info("[Forbric/Entity] the client's onTrackingStart adds a multipart entity's NeoForge parts to dragonParts, "
+				+ "as NeoForge's does — it read only MinecraftForge's getParts(), which a NeoForge mod's entity leaves null, "
+				+ "and the client disconnected when one came into view");
 		return 1;
+	}
+
+	/**
+	 * A body that already registers both families' parts — MinecraftForge's loop into {@code partEntities} and NeoForge's
+	 * into {@code dragonParts}, as a merge that keeps both sides' edits writes it — still dereferences each family's array
+	 * unchecked, and each is null for the other family's entity: a NeoForge mod's entity disconnects the client in
+	 * MinecraftForge's loop, a MinecraftForge mod's in NeoForge's {@code Arrays.asList}. Every read some path consumes
+	 * before a null test ({@link ClientPartTrackingFlow#analyze} with both families watched) becomes
+	 * {@code Objects.requireNonNullElse(entity.getParts(), new PartEntity[0])}: no branch, so no frame, and the
+	 * registrations themselves are left exactly as the merge wrote them. 0 when every read is already tested (this repair's
+	 * own edit, or a composed body written null-safely); declined when NeoForge's parts never reach dragonParts, which
+	 * tolerating a null cannot fix.
+	 */
+	static int tolerateComposed(ClassNode owner, MethodNode start) {
+		ClientPartTrackingFlow.Analysis flow = ClientPartTrackingFlow.analyze(owner, start, true);
+		if (flow == null) return declined("onTrackingStart reads both families' parts and could not be analysed");
+		if (flow.unchecked().isEmpty()) return 0;
+		if (!flow.registers()) return declined("onTrackingStart reads NeoForge's parts but never adds them to dragonParts");
+		for (AbstractInsnNode read : flow.unchecked()) ForgePartTrackingInjector.tolerate(start, (MethodInsnNode) read);
+		ForbricLog.info("[Forbric/Entity] the client's onTrackingStart registers both families' parts and now tolerates "
+				+ "either family's null array (%d read(s)) — each family's getParts() is null for the other's multipart entity, "
+				+ "and dereferencing it disconnected the client", flow.unchecked().size());
+		return flow.unchecked().size();
 	}
 
 	private static boolean loadsEntity(AbstractInsnNode insn) {
