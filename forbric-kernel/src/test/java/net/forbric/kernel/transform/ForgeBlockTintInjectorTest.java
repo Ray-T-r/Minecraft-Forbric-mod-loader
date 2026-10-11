@@ -18,6 +18,8 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.analysis.Analyzer;
@@ -53,18 +55,50 @@ class ForgeBlockTintInjectorTest {
 		assertSame(bytes, INJECTOR.transform(ForgeBlockTintInjector.TARGET, bytes, null));
 	}
 
+	/**
+	 * The real merged createDefault posts NeoForge's registration once and reaches MinecraftForge's once: through the
+	 * funnel, or — where a merge kept MinecraftForge's own edit — by calling ForgeHooksClient.onBlockColorsInit itself,
+	 * which is then left exactly as it is. Either way the claim lands.
+	 */
 	@Test void theActualMergedClassHasExactlyThisSeam() throws Exception {
 		Path jar = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "requires merged base");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			byte[] before = zip.getInputStream(zip.getEntry(ForgeBlockTintInjector.TARGET.replace('.', '/') + ".class")).readAllBytes();
 			assertEquals(1, posts(createDefault(before), ForeignType.FML_MOD_LOADER.internal(Ecosystem.NEOFORGE)));
-			byte[] after = INJECTOR.transform(ForgeBlockTintInjector.TARGET, before, null);
+			long nativeForge = forgeRegistrations(createDefault(before));
+			java.util.Set<String> hits = new java.util.HashSet<>();
+			byte[] after = INJECTOR.transform(ForgeBlockTintInjector.TARGET, before, null, hits::add);
+			assertEquals(java.util.Set.of(ForgeBlockTintInjector.CLAIM), hits);
+			if (nativeForge > 0) {
+				assertEquals(1, nativeForge, "MinecraftForge's registration, once");
+				assertSame(before, after, "funnelling NeoForge's post too would register MinecraftForge's tints twice");
+				return;
+			}
 			assertNotSame(before, after);
 			assertEquals(opcodes(createDefault(before)), opcodes(createDefault(after)));
 			assertEquals(1, posts(createDefault(after), ForgeBlockTintInjector.HOOK));
 			assertSame(after, INJECTOR.transform(ForgeBlockTintInjector.TARGET, after, null));
 		}
+	}
+
+	/** A body that hands its colors to MinecraftForge before NeoForge's post is never funnelled, and satisfies the claim. */
+	@Test void aBodyThatAlreadyAsksMinecraftForgeStandsDown() {
+		ClassNode node = parse(fixture(1, true));
+		MethodNode method = createDefault(node);
+		InsnList forge = new InsnList();
+		forge.add(new InsnNode(Opcodes.ACONST_NULL));
+		forge.add(new MethodInsnNode(Opcodes.INVOKESTATIC, ForeignType.CLIENT_HOOKS.internal(Ecosystem.FORGE), "onBlockColorsInit",
+				"(L" + ForgeBlockTintInjector.TARGET.replace('.', '/') + ";)V", false));
+		method.instructions.insert(forge);
+		ClassWriter out = new ClassWriter(ClassWriter.COMPUTE_MAXS); node.accept(out);
+		byte[] bytes = out.toByteArray();
+		java.util.Set<String> hits = new java.util.HashSet<>();
+		assertSame(bytes, INJECTOR.transform(ForgeBlockTintInjector.TARGET, bytes, null, hits::add));
+		assertEquals(java.util.Set.of(ForgeBlockTintInjector.CLAIM), hits);
+		hits.clear();
+		INJECTOR.transform(ForgeBlockTintInjector.TARGET, fixture(2, true), null, hits::add);
+		assertEquals(java.util.Set.of(), hits, "an ambiguous body neither funnelled nor asking MinecraftForge is a miss");
 	}
 
 	@Test void typedFunnelPostsNeoBeforeAskingForgeWithTheEventsBlockColors() throws Exception {
@@ -85,7 +119,14 @@ class ForgeBlockTintInjectorTest {
 
 	private static ClassNode parse(byte[] bytes) { ClassNode n = new ClassNode(); new ClassReader(bytes).accept(n, 0); return n; }
 	private static MethodNode createDefault(byte[] bytes) {
-		return parse(bytes).methods.stream().filter(m -> m.name.equals("createDefault")).findFirst().orElseThrow();
+		return createDefault(parse(bytes));
+	}
+	private static MethodNode createDefault(ClassNode node) {
+		return node.methods.stream().filter(m -> m.name.equals("createDefault")).findFirst().orElseThrow();
+	}
+	private static long forgeRegistrations(MethodNode method) {
+		return Arrays.stream(method.instructions.toArray()).filter(i -> i instanceof MethodInsnNode call
+				&& call.owner.equals(ForeignType.CLIENT_HOOKS.internal(Ecosystem.FORGE)) && call.name.equals("onBlockColorsInit")).count();
 	}
 	private static List<Integer> opcodes(MethodNode m) {
 		return Arrays.stream(m.instructions.toArray()).filter(i -> i.getOpcode() >= 0).map(i -> i.getOpcode()).toList();

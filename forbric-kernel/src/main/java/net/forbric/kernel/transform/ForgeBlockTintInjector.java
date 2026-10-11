@@ -14,22 +14,72 @@ import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 
-/** Redirect one post call without changing the event object, descriptor or surrounding instructions. */
+/**
+ * Redirect one post call without changing the event object, descriptor or surrounding instructions.
+ *
+ * <p>A {@code createDefault} that already hands its BlockColors to MinecraftForge itself — a merge that keeps both sides'
+ * edits writes {@code ForgeHooksClient.onBlockColorsInit(colors)} right before NeoForge's post — is left alone: the funnel
+ * would register every MinecraftForge mod's block tints a second time. The outcome is judged by {@link #CLAIM}: the live
+ * BlockColors reaches MinecraftForge's registration, through the funnel or natively.
+ */
 public final class ForgeBlockTintInjector implements ClassTransformer {
 	static final String TARGET = "net.minecraft.client.color.block.BlockColors";
 	static final String HOOK = "net/forbric/kernel/runtime/KernelForgeBlockColors";
 	static final String POST = "(Lnet/neoforged/bus/api/Event;)V";
+	static final String CLAIM = "forbric-forge-block-tints#minecraftForgeRegistersBlockTints";
 
 	@Override public String name() { return "forbric-forge-block-tints"; }
 	@Override public AnchorSet anchors() {
-		return AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
-				"MinecraftForge block tint registrations would never populate the live block colors"));
+		if (!enabled()) return AnchorSet.scanned("MinecraftForge client init switched off by -Dforbric.forgeClientInit=off");
+		return AnchorSet.scanned("BlockColors, judged by the " + CLAIM + " claim");
+	}
+
+	@Override public List<Claim> claims() {
+		if (!enabled()) return List.of();
+		return List.of(new Claim(CLAIM, AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
+				"MinecraftForge block tint registrations would never populate the live block colors"))));
+	}
+
+	private static boolean enabled() { return !"off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on")); }
+
+	@Override public byte[] transform(String name, byte[] bytes, TransformContext context, ClaimReporter reporter) {
+		byte[] result = transform(name, bytes, context);
+		if (enabled() && TARGET.equals(name) && result != null && result.length > 0 && reachesMinecraftForge(result)) reporter.hit(CLAIM);
+		return result;
+	}
+
+	/** Whether {@code createDefault} hands its BlockColors to MinecraftForge: through the funnel, or itself. */
+	static boolean reachesMinecraftForge(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		try { new ClassReader(bytes).accept(node, 0); } catch (RuntimeException unreadable) { return false; }
+		for (var method : node.methods) {
+			if (!method.name.equals("createDefault")) continue;
+			for (var instruction : method.instructions) {
+				if (instruction instanceof MethodInsnNode call && (call.owner.equals(HOOK) && call.name.equals("postBlockTintSources")
+						|| isForgeRegistration(call))) return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isForgeRegistration(MethodInsnNode call) {
+		return call.owner.equals(ForeignType.CLIENT_HOOKS.internal(Ecosystem.FORGE)) && call.name.equals("onBlockColorsInit");
 	}
 
 	@Override public byte[] transform(String name, byte[] bytes, TransformContext context) {
-		if (!TARGET.equals(name) || "off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"))) return bytes;
+		if (!TARGET.equals(name) || !enabled()) return bytes;
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, 0);
+		for (var method : node.methods) {
+			if (!method.name.equals("createDefault")) continue;
+			for (var instruction : method.instructions) {
+				if (instruction instanceof MethodInsnNode call && isForgeRegistration(call)) {
+					// The body delivers what the bridge stands for; record it so the client-init audit does not name it missing.
+					EventBridges.installed(GameEventBridge.BLOCK_TINT_SOURCES);
+					return bytes;
+				}
+			}
+		}
 		List<MethodInsnNode> candidates = new ArrayList<>();
 		int repaired = 0;
 		for (var method : node.methods) {
