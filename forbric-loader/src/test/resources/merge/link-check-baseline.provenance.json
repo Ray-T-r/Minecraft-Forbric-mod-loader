@@ -7,9 +7,9 @@
     "forge": "26.2-65.0.1",
     "neoforge": "26.2.0.88"
   },
-  "toolCommit": "1cff21660f9a4761bc0de536ea032f7234a53f52",
+  "toolCommit": "df0eb1f4f0a5e68f43d0bb19038bdf0bbd70e03d",
   "toolSources": {
-    "MergedBaseBuilder.java": "774944ee3892382da53b1a54aa4b09690567e88002b9ccad2dfb33b3de86e2e1",
+    "MergedBaseBuilder.java": "37467bb6680f167a41e5751d34ccb491f5fd6ed70e9523ad3e2aa3bd84d3d99e",
     "AdditiveMethodMerger.java": "02c966264ae6b29671c4c2f9c3b99a2fef7d49301d261e555e5b2d659e7fffbd",
     "RuntimeInteropPatcher.java": "b503f0bdee257d4303dea4ca828b908b77e2efc6a0215cc6c317b2744a679b2e",
     "MergedLinkChecker.java": "187b3dfca3eca9d9d1ef23de8986050e7a692dad1d71f842084cc37126e4926c",
@@ -22,7 +22,7 @@
     "TailHookComposition.java": "3cd70795953b6130da88799ab4cafe50439148dd4e4d252703642a11ba9adee4",
     "EmptyArrayContractBridge.java": "dc2d518411451a76a11178fef7212e85ffdd586fab5561d58e8aa43d88cdd1a0",
     "PatchLineProvenance.java": "b152efc2759da76597ae28a01cf2de486f243561a3435ed8cf03cfe12f51e4a6",
-    "EditSplicer.java": "ad11dcb3b71d6c2e28f78eace913cbd8cf99059a23746d4c0d0f29f663d93bdf"
+    "EditSplicer.java": "8a020659d026f43368e3e07871a1e9ccf93f358f8923eec25ec42dbd20d7e945"
   },
   "mergeInputs": {
     "vanilla": {
@@ -57,7 +57,7 @@
   "inputs": {
     "merged": {
       "file": "patched-mc-merged-26.2.jar",
-      "sha256": "d889081b59f093db1987d2e46e10d705750666cb9876148aa3987e02c7d6991a"
+      "sha256": "ab7651bfed5ab221a1dd78f76fbec2db3845bc70d13684fea292795e1e4a00bf"
     },
     "neoRuntime": {
       "file": "neoforge-runtime.jar",
@@ -65,16 +65,16 @@
     },
     "forgeInterop": {
       "file": "forge-runtime-interop.jar",
-      "sha256": "92432b88e3ba65a3dda0810352c6c02a820b8f7f3457bbf0c91c121f1f4266d7"
+      "sha256": "00da473c3e45905588c3ab50a2bae6602ae93c4abb44f83acb4a1ab5cc156380"
     }
   },
   "mergeReport": {
     "file": "merge-conflicts.txt",
-    "sha256": "32ad0ee9469fffe7d1376ce744c198586b52ead20f7cb94e629805eb91d5753c"
+    "sha256": "513432dbbc3596962a2af2dc56df7d9aec6fb45c62237263a3980c755944aa88"
   },
   "result": "dangling references: 7 (known 7, new 0); 17 raw references require explicit final-definition native ancestor composition; baseline entries now fixed: 0",
   "reproduction": "inputs.merged, inputs.forgeInterop and mergeReport are what forbric-loader/run/build-merged-base.sh wrote from the seven mergeInputs with the toolSources at toolCommit (committed, link check enforced); evidence.py merge-provenance recorded that build beside the merged base, and this record is folded from it. Re-running run/check-merged-links.sh on inputs.merged, inputs.neoRuntime and inputs.forgeInterop gives the result above. ZIP timestamps differ across rebuilds; compare entry contents and CRCs.",
-  "review": "The 7 retained raw exceptions are unchanged: the anonymous direction switch field, the Forge NBT builder and the GameTest cleanup references. The edit splice carries MinecraftForge's own runs into methods both ecosystems patched, among them capability calls (gatherCapabilities, getCapabilities, serializeCaps) in Entity, BlockEntity and ClientLevel, whose declaring ancestor the merged class does not extend: 17 references require explicit final-definition native ancestor composition. This build differs from the one before it (tools 358b2ab7) in two lambda bodies only, MultiPlayerGameMode and KeyBindsList$KeyEntry, which the merge now leaves on the side that edited them because both sides compile them as one vanilla lambda; neither references anything the merged jar and its carriers lack, so the dangling references and the composition obligations are the same. They are composition obligations the kernel must certify before final definition, not baseline exceptions; no exception licenses a new reference or a silently discarded protocol.",
+  "review": "The 7 retained raw exceptions are unchanged: the anonymous direction switch field, the Forge NBT builder and the GameTest cleanup references. The edit splice carries MinecraftForge's own runs into methods both ecosystems patched, among them capability calls (gatherCapabilities, getCapabilities, serializeCaps) in Entity, BlockEntity and ClientLevel, whose declaring ancestor the merged class does not extend: 17 references require explicit final-definition native ancestor composition. This build differs from the one before it (tools 1cff2166) in its report only: the merged jar and the interop jar hold the same entries with the same contents. The report now names each lambda body the capturer realignment displaced while it carried its own side's edit (eight rows), and lists the two lambdas left as one vanilla lambda on both sides, so the dangling references and the composition obligations are the same. They are composition obligations the kernel must certify before final definition, not baseline exceptions; no exception licenses a new reference or a silently discarded protocol.",
   "toolWorkingTree": "committed sources: toolSources are the files at toolCommit",
   "requiredCompositions": [
     "net/minecraft/client/multiplayer/ClientLevel.gatherCapabilities()V requires net/minecraft/world/level/Level native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Levels",
