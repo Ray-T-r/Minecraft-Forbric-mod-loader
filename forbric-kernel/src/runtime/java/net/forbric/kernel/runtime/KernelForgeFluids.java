@@ -37,7 +37,9 @@ import net.minecraftforge.client.extensions.common.IClientFluidTypeExtensions;
  * no tint source it asks {@code getTintColor()} instead of {@code -1}. The byte merge kept NeoForge's tesselate,
  * which has neither ask, so every MinecraftForge modded fluid drew as the missing texture. The transformer
  * re-inserts both asks as calls here (six instructions after the model's {@code ASTORE}, and the {@code ICONST_M1}
- * replaced by a call pushing an int) — stack-shape identical to Forge's own.
+ * replaced by a call pushing an int) — stack-shape identical to Forge's own. A merged body that keeps Forge's own
+ * model ask (the edit-splicing merge does) has that one call routed to {@link #modelFromExtensions} instead, so the
+ * model is still asked once, counted, and switchable.
  *
  * <p>Hot path: this runs once per fluid tesselation, the same cost genuine Forge pays. The count line is gated by
  * a contains-check before an add, and only the first sighting of a fluid logs. Forge's {@code DEFAULT} extension
@@ -58,29 +60,52 @@ public final class KernelForgeFluids {
 	public static FluidModel model(FluidModel model, FluidState state, BlockAndTintGetter level, BlockPos pos) {
 		if ("off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return model;
 		try {
-			IClientFluidTypeExtensions extensions = IClientFluidTypeExtensions.of(state);
-			Fluid fluid = state.getType();
-			// Counted before the DEFAULT short-circuit, so a vanilla fluid in view proves the funnel is on the render
-			// path even when no Forge fluid exists to answer; the contains-check keeps the hot path cheap.
-			boolean first = !ASKED.contains(fluid) && ASKED.add(fluid);
-			if (extensions == IClientFluidTypeExtensions.DEFAULT) {
-				if (first) report(fluid);
-				return model;
-			}
-			FluidModel own = extensions.getModel(state, level, pos, model);
-			if (first) {
-				if (own != null && own != model) ANSWERED.add(fluid);
-				report(fluid);
-			}
-			return own == null ? model : own;
+			return ask(IClientFluidTypeExtensions.of(state), state, level, pos, model);
 		} catch (Throwable t) {
-			if (!failureReported) {
-				failureReported = true;
-				ForbricLog.warn("[Forbric/Fluids] MinecraftForge fluid extensions threw while choosing a model — "
-						+ "NeoForge's model is used", Reflect.unwrap(t));
-			}
+			return failed(t, model);
+		}
+	}
+
+	/**
+	 * Site A where the merged body asks MinecraftForge itself ({@code IClientFluidTypeExtensions.of(state)} already in
+	 * hand, then {@code getModel}): the transformer routes that one call here with the same stack shape, so the ask
+	 * happens once, is counted like the funnel's, and {@code -Dforbric.forgeFluidModels=off} still returns the model.
+	 */
+	public static FluidModel modelFromExtensions(IClientFluidTypeExtensions extensions, FluidState state, BlockAndTintGetter level,
+			BlockPos pos, FluidModel model) {
+		if ("off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"))) return model;
+		try {
+			return ask(extensions, state, level, pos, model);
+		} catch (Throwable t) {
+			return failed(t, model);
+		}
+	}
+
+	private static FluidModel ask(IClientFluidTypeExtensions extensions, FluidState state, BlockAndTintGetter level, BlockPos pos,
+			FluidModel model) {
+		Fluid fluid = state.getType();
+		// Counted before the DEFAULT short-circuit, so a vanilla fluid in view proves the funnel is on the render
+		// path even when no Forge fluid exists to answer; the contains-check keeps the hot path cheap.
+		boolean first = !ASKED.contains(fluid) && ASKED.add(fluid);
+		if (extensions == IClientFluidTypeExtensions.DEFAULT) {
+			if (first) report(fluid);
 			return model;
 		}
+		FluidModel own = extensions.getModel(state, level, pos, model);
+		if (first) {
+			if (own != null && own != model) ANSWERED.add(fluid);
+			report(fluid);
+		}
+		return own == null ? model : own;
+	}
+
+	private static FluidModel failed(Throwable t, FluidModel model) {
+		if (!failureReported) {
+			failureReported = true;
+			ForbricLog.warn("[Forbric/Fluids] MinecraftForge fluid extensions threw while choosing a model — "
+					+ "NeoForge's model is used", Reflect.unwrap(t));
+		}
+		return model;
 	}
 
 	private static void report(Fluid fluid) {

@@ -41,6 +41,12 @@ class KernelForgeFluidsTest {
 		String m = model();
 		assertTrue(m.indexOf("return model;") < m.indexOf("try {"), "off-switch answers the model before any Forge call");
 		assertTrue(m.contains("catch (Throwable t)") && m.substring(m.indexOf("catch (Throwable t)")).contains("return model;"));
+		// The entry the merged body's own Forge ask is routed through holds the same switch and the same fallback.
+		String routed = s.substring(s.indexOf("public static FluidModel modelFromExtensions("), s.indexOf("private static FluidModel ask("));
+		assertTrue(routed.indexOf("return model;") > 0 && routed.indexOf("return model;") < routed.indexOf("try {"),
+				"off-switch answers the model before the routed Forge ask");
+		assertTrue(routed.contains("catch (Throwable t)") && routed.substring(routed.indexOf("catch (Throwable t)")).contains("failed(t, model)"));
+		assertTrue(s.substring(s.indexOf("private static FluidModel failed(")).contains("return model;"), "a failure answers the model");
 		String tint = s.substring(s.indexOf("public static int tintColor("));
 		assertTrue(tint.contains("return -1;"));
 		assertTrue(tint.indexOf("return -1;") < tint.indexOf("try {"));

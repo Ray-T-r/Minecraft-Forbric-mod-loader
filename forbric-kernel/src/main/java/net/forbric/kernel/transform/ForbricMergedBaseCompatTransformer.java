@@ -465,6 +465,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			+ FLUID_STATE + ")V";
 	private static final String FLUID_MODEL_FUNNEL_DESC = "(" + FLUID_MODEL + FLUID_STATE
 			+ "Lnet/minecraft/client/renderer/block/BlockAndTintGetter;Lnet/minecraft/core/BlockPos;)" + FLUID_MODEL;
+	/** MinecraftForge's own model ask, {@code IClientFluidTypeExtensions.getModel(state, level, pos, model)}. */
+	private static final String FORGE_FLUID_EXTENSIONS = "net/minecraftforge/client/extensions/common/IClientFluidTypeExtensions";
+	private static final String FORGE_FLUID_GET_MODEL_DESC = "(" + FLUID_STATE
+			+ "Lnet/minecraft/client/renderer/block/BlockAndTintGetter;Lnet/minecraft/core/BlockPos;" + FLUID_MODEL + ")" + FLUID_MODEL;
 	private static final String WEIGHTED_VARIANTS = "net/minecraft/client/renderer/block/dispatch/WeightedVariants";
 	private static final String BLOCK_STATE_MODEL = "net/minecraft/client/renderer/block/dispatch/BlockStateModel";
 	/** NeoForge-only: MinecraftForge composes its ingredient codec in ForgeHooks, so ForeignType has no pair. */
@@ -1031,7 +1035,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * <ul>
 	 * <li>A: after the single {@code FluidStateModelSet.get(FluidState)} and its {@code ASTORE n}, insert
 	 * {@code ALOAD n; ALOAD 5; ALOAD 1; ALOAD 2; INVOKESTATIC KernelForgeFluids.model; ASTORE n} — stack empty in,
-	 * empty out, no label crossed (locals: this=0, level=1, pos=2, output=3, blockState=4, fluidState=5).</li>
+	 * empty out, no label crossed (locals: this=0, level=1, pos=2, output=3, blockState=4, fluidState=5). Where the
+	 * merged body already carries Forge's own {@code getModel} ask stored back into slot n (the edit-splicing merge
+	 * keeps it), that one {@code INVOKEINTERFACE} becomes {@code INVOKESTATIC KernelForgeFluids.modelFromExtensions}
+	 * with the same stack shape instead — one ask, still counted, still switchable.</li>
 	 * <li>B: the {@code IFNULL} after {@code FluidModel.fluidTintSource()} targets {@code ICONST_M1; ISTORE k}; the
 	 * constant becomes {@code ALOAD 5; INVOKESTATIC KernelForgeFluids.tintColor} — an int is pushed on both arms,
 	 * the label keeps its empty-stack frame.</li>
@@ -1077,14 +1084,29 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		}
 
 		int slot = modelStore.var;
-		InsnList funnel = new InsnList();
-		funnel.add(new VarInsnNode(Opcodes.ALOAD, slot));
-		funnel.add(new VarInsnNode(Opcodes.ALOAD, 5));
-		funnel.add(new VarInsnNode(Opcodes.ALOAD, 1));
-		funnel.add(new VarInsnNode(Opcodes.ALOAD, 2));
-		funnel.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FORGE_FLUIDS, "model", FLUID_MODEL_FUNNEL_DESC, false));
-		funnel.add(new VarInsnNode(Opcodes.ASTORE, slot));
-		tesselate.instructions.insert(modelStore, funnel);
+		// Site A is already there when the merged body carries MinecraftForge's own ask, answer stored back into the
+		// model's slot (a merge that keeps both sides' edits does). A funnel on top would ask Forge a second time,
+		// handing it its own answer as the default; instead that one ask is routed through the helper — same stack
+		// shape, the extensions it already holds — so it stays counted and -Dforbric.forgeFluidModels=off still holds.
+		List<MethodInsnNode> nativeAsks = nativeForgeModelAsks(tesselate, slot);
+		if (nativeAsks.size() > 1) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] FluidRenderer.tesselate asks MinecraftForge for a fluid model %d "
+					+ "times — leaving it unbridged rather than editing half of it", nativeAsks.size());
+			return false;
+		}
+		if (nativeAsks.size() == 1) {
+			tesselate.instructions.set(nativeAsks.getFirst(), new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FORGE_FLUIDS,
+					"modelFromExtensions", "(L" + FORGE_FLUID_EXTENSIONS + ";" + FORGE_FLUID_GET_MODEL_DESC.substring(1), false));
+		} else {
+			InsnList funnel = new InsnList();
+			funnel.add(new VarInsnNode(Opcodes.ALOAD, slot));
+			funnel.add(new VarInsnNode(Opcodes.ALOAD, 5));
+			funnel.add(new VarInsnNode(Opcodes.ALOAD, 1));
+			funnel.add(new VarInsnNode(Opcodes.ALOAD, 2));
+			funnel.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_FORGE_FLUIDS, "model", FLUID_MODEL_FUNNEL_DESC, false));
+			funnel.add(new VarInsnNode(Opcodes.ASTORE, slot));
+			tesselate.instructions.insert(modelStore, funnel);
+		}
 
 		InsnList tint = new InsnList();
 		tint.add(new VarInsnNode(Opcodes.ALOAD, 5));
@@ -1092,10 +1114,29 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		tesselate.instructions.insert(minusOne, tint);
 		tesselate.instructions.remove(minusOne);
 		tesselate.maxStack = Math.max(tesselate.maxStack, 4);
-		ForbricLog.info("[Forbric/MergedBaseCompat] FluidRenderer.tesselate now asks a MinecraftForge fluid's client "
-				+ "extensions for its model and tint — the merge kept NeoForge's tesselate, which never asks, so every "
-				+ "Forge modded fluid drew as the missing texture");
+		if (nativeAsks.isEmpty()) {
+			ForbricLog.info("[Forbric/MergedBaseCompat] FluidRenderer.tesselate now asks a MinecraftForge fluid's client "
+					+ "extensions for its model and tint — the merge kept NeoForge's tesselate, which never asks, so every "
+					+ "Forge modded fluid drew as the missing texture");
+		} else {
+			ForbricLog.info("[Forbric/MergedBaseCompat] FluidRenderer.tesselate now asks a MinecraftForge fluid's client "
+					+ "extensions for its tint — the merged body asks Forge for the model itself (routed through the "
+					+ "kernel's helper) but kept NeoForge's tint fallback, so every Forge modded fluid without a tint "
+					+ "source drew untinted");
+		}
 		return true;
+	}
+
+	/** MinecraftForge's own {@code getModel} asks in {@code method} whose answer is stored back into {@code slot}. */
+	private static List<MethodInsnNode> nativeForgeModelAsks(MethodNode method, int slot) {
+		List<MethodInsnNode> asks = new ArrayList<>();
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKEINTERFACE
+					&& FORGE_FLUID_EXTENSIONS.equals(call.owner) && "getModel".equals(call.name)
+					&& FORGE_FLUID_GET_MODEL_DESC.equals(call.desc)
+					&& nextReal(call) instanceof VarInsnNode store && store.getOpcode() == Opcodes.ASTORE && store.var == slot) asks.add(call);
+		}
+		return asks;
 	}
 
 	/**
