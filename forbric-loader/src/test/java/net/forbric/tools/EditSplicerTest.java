@@ -161,6 +161,7 @@ public class EditSplicerTest {
 		Loader loader = new Loader();
 		loader.define(FORGE_HOOKS, hookClass(FORGE_HOOKS, 100, 5));
 		loader.define(NEO_HOOKS, hookClass(NEO_HOOKS, 200, 6));
+		loader.define(TRACKER, trackerClass());
 		Object returned = loader.define(OWNER, bytes).getMethod("compute", int.class).invoke(null, x);
 		List<Integer> out = new ArrayList<>(CALLS);
 		out.add((Integer) returned);
@@ -205,6 +206,49 @@ public class EditSplicerTest {
 		check.instructions.add(fine);
 		check.instructions.add(new InsnNode(Opcodes.RETURN));
 		cn.methods.add(check);
+		// static int twice(int x): records mark + 2 and answers 2 * x.
+		MethodNode twice = new MethodNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "twice", "(I)I", null, null);
+		twice.instructions.add(new IntInsnNode(Opcodes.SIPUSH, mark + 2));
+		twice.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/forbric/tools/EditSplicerTest", "record", "(I)V", false));
+		twice.instructions.add(new VarInsnNode(Opcodes.ILOAD, 0));
+		twice.instructions.add(new InsnNode(Opcodes.ICONST_2));
+		twice.instructions.add(new InsnNode(Opcodes.IMUL));
+		twice.instructions.add(new InsnNode(Opcodes.IRETURN));
+		cn.methods.add(twice);
+		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+		cn.accept(writer);
+		return writer.toByteArray();
+	}
+
+	private static final String TRACKER = "net/minecraftforge/EditSplicerProbeTracker";
+
+	/** An object a static field holds, with a begin/end pair: {@code INSTANCE.begin(int)} records 110, {@code end(int)} 120. */
+	private static byte[] trackerClass() {
+		ClassNode cn = new ClassNode();
+		cn.version = Opcodes.V17;
+		cn.access = Opcodes.ACC_PUBLIC;
+		cn.name = TRACKER;
+		cn.superName = "java/lang/Object";
+		cn.fields.add(new FieldNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL, "INSTANCE", "L" + TRACKER + ";", null, null));
+		MethodNode init = new MethodNode(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		init.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		init.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false));
+		init.instructions.add(new InsnNode(Opcodes.RETURN));
+		cn.methods.add(init);
+		MethodNode clinit = new MethodNode(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+		clinit.instructions.add(new TypeInsnNode(Opcodes.NEW, TRACKER));
+		clinit.instructions.add(new InsnNode(Opcodes.DUP));
+		clinit.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, TRACKER, "<init>", "()V", false));
+		clinit.instructions.add(new FieldInsnNode(Opcodes.PUTSTATIC, TRACKER, "INSTANCE", "L" + TRACKER + ";"));
+		clinit.instructions.add(new InsnNode(Opcodes.RETURN));
+		cn.methods.add(clinit);
+		for (String name : List.of("begin", "end")) {
+			MethodNode m = new MethodNode(Opcodes.ACC_PUBLIC, name, "(I)V", null, null);
+			m.instructions.add(new IntInsnNode(Opcodes.SIPUSH, name.equals("begin") ? 110 : 120));
+			m.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/forbric/tools/EditSplicerTest", "record", "(I)V", false));
+			m.instructions.add(new InsnNode(Opcodes.RETURN));
+			cn.methods.add(m);
+		}
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 		cn.accept(writer);
 		return writer.toByteArray();
@@ -429,6 +473,14 @@ public class EditSplicerTest {
 			return this;
 		}
 
+		/** A local named {@code name} in {@code slot} from here to the end of the method. */
+		Body local(String name, int slot) {
+			LabelNode from = new LabelNode();
+			m.instructions.add(from);
+			m.localVariables.add(new LocalVariableNode(name, "I", null, from, end, slot));
+			return this;
+		}
+
 		Body handler(LabelNode s, LabelNode e, LabelNode h, String type) {
 			m.tryCatchBlocks.add(new TryCatchBlockNode(s, e, h, type));
 			return this;
@@ -442,6 +494,11 @@ public class EditSplicerTest {
 
 	private static AbstractInsnNode[] rec(int value) {
 		return new AbstractInsnNode[] { new IntInsnNode(Opcodes.SIPUSH, value),
+				new MethodInsnNode(Opcodes.INVOKESTATIC, RECORD_OWNER, "record", "(I)V", false) };
+	}
+
+	private static AbstractInsnNode[] recLocal(int slot) {
+		return new AbstractInsnNode[] { new VarInsnNode(Opcodes.ILOAD, slot),
 				new MethodInsnNode(Opcodes.INVOKESTATIC, RECORD_OWNER, "record", "(I)V", false) };
 	}
 
@@ -626,5 +683,193 @@ public class EditSplicerTest {
 		EditSplicer.Result r = splice(neo, TWO_ADDED_NEO, forge, TWO_ADDED_FORGE, true);
 		assertTrue(r.accepted(), r.reason() + " " + r.conflicts() + " " + r.refused());
 		assertEquals(List.of(1, 100, 101, 201, 300, 2, 7), run(r.method(), 7));
+	}
+
+	// ---- rule: paired withholding -----------------------------------------------------------------------------
+
+	/**
+	 * record(1); doubled = x * 2; [A] record(2); [B] record(3); record(4); [C] return x. MinecraftForge adds
+	 * {@code a} before record(2), {@code b} before record(3) and {@code c} before the return (null leaves a place
+	 * empty).
+	 */
+	private static MethodNode threePlaces(AbstractInsnNode[] a, AbstractInsnNode[] b, AbstractInsnNode[] c) {
+		Body body = new Body().line(10, rec(1)).line(11, new VarInsnNode(Opcodes.ILOAD, 0), new InsnNode(Opcodes.ICONST_2),
+				new InsnNode(Opcodes.IMUL), new VarInsnNode(Opcodes.ISTORE, 1)).local("doubled", 1);
+		int line = 12;
+		if (a != null) body.line(line++, a);
+		body.line(line++, rec(2));
+		if (b != null) body.line(line++, b);
+		body.line(line++, rec(3));
+		body.line(line++, rec(4));
+		if (c != null) body.line(line++, c);
+		body.line(line, returnX());
+		return body.done();
+	}
+
+	/** NeoForge rewrote record(2) and record(3) (vanilla lines 12 and 13) into record(22), record(33). */
+	private static MethodNode rewrittenBase() {
+		return new Body().line(10, rec(1)).line(11, new VarInsnNode(Opcodes.ILOAD, 0), new InsnNode(Opcodes.ICONST_2),
+				new InsnNode(Opcodes.IMUL), new VarInsnNode(Opcodes.ISTORE, 1)).local("doubled", 1)
+				.line(12, rec(22)).line(13, rec(33)).line(14, rec(4)).line(15, returnX()).done();
+	}
+
+	private static final String REWRITTEN = patch("_", 10, 6, " A", " D", "-B", "-C", "+B2", "+C2", " F", " R");
+
+	private static MethodNode vanillaBase() {
+		return threePlaces(null, null, null);
+	}
+
+	@Test
+	void aCopyOfCodeWhoseTwinWasNotCarriedIsWithheld() {
+		// javac copies a finally block into every exit; carrying only the copies that could be placed runs the hook
+		// on some paths and not others. Here the copy before record(3) has no place (NeoForge rewrote both lines
+		// around it), so the identical copy before record(2) is withheld too.
+		MethodNode forge = threePlaces(check(FORGE_HOOKS, 1), check(FORGE_HOOKS, 1), null);
+		String forgePatch = patch("10", 10, 6, " A", " D", "+K", " B", "+K", " C", " F", " R");
+		EditSplicer.Result r = splice(rewrittenBase(), REWRITTEN, forge, forgePatch, true);
+		assertFalse(r.accepted(), "one copy alone must not be carried: " + r.spliced());
+		assertTrue(hasOutcome(r.refused(), "withheld", "copy of the same code"), r.refused().toString());
+	}
+
+	/** Negative control: where both copies have a place, both are carried. */
+	@Test
+	void bothCopiesAreCarriedWhenBothHaveAPlace() throws Exception {
+		MethodNode forge = threePlaces(check(FORGE_HOOKS, 1), check(FORGE_HOOKS, 1), null);
+		String forgePatch = patch("10", 10, 6, " A", " D", "+K", " B", "+K", " C", " F", " R");
+		EditSplicer.Result r = splice(vanillaBase(), NO_PATCH, forge, forgePatch, true);
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals(List.of(1, 101, 2, 101, 3, 4, 7), run(r.method(), 7));
+	}
+
+	private static AbstractInsnNode[] tracker(String method, int slot) {
+		return new AbstractInsnNode[] { new FieldInsnNode(Opcodes.GETSTATIC, TRACKER, "INSTANCE", "L" + TRACKER + ";"),
+				new VarInsnNode(Opcodes.ILOAD, slot), new MethodInsnNode(Opcodes.INVOKEVIRTUAL, TRACKER, method, "(I)V", false) };
+	}
+
+	@Test
+	void theEndOfABeginEndPairOnOneStaticObjectIsWithheldWhenItsBeginWasNotCarried() {
+		// begin() has no place in the base; end() alone would end what was never begun.
+		MethodNode forge = threePlaces(null, tracker("begin", 1), tracker("end", 0));
+		String forgePatch = patch("10", 10, 6, " A", " D", " B", "+K", " C", " F", "+E", " R");
+		EditSplicer.Result r = splice(rewrittenBase(), REWRITTEN, forge, forgePatch, true);
+		assertFalse(r.accepted(), "end() must not be carried without begin(): " + r.spliced());
+		assertTrue(hasOutcome(r.refused(), "withheld", "EditSplicerProbeTracker"), r.refused().toString());
+	}
+
+	/** Negative control: when begin() has its place, the pair is carried. */
+	@Test
+	void aBeginEndPairIsCarriedWhenBothHalvesHaveAPlace() throws Exception {
+		MethodNode forge = threePlaces(null, tracker("begin", 1), tracker("end", 0));
+		String forgePatch = patch("10", 10, 6, " A", " D", " B", "+K", " C", " F", "+E", " R");
+		EditSplicer.Result r = splice(vanillaBase(), NO_PATCH, forge, forgePatch, true);
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals(List.of(1, 2, 110, 3, 4, 120, 7), run(r.method(), 7));
+	}
+
+	/** record(1); r = FORGE.twice(x); [second]; record(2); return x — r in slot 2. */
+	private static MethodNode resultAndUse(AbstractInsnNode... second) {
+		return new Body().line(10, rec(1))
+				.line(11, new VarInsnNode(Opcodes.ILOAD, 0), new MethodInsnNode(Opcodes.INVOKESTATIC, FORGE_HOOKS, "twice", "(I)I", false),
+						new VarInsnNode(Opcodes.ISTORE, 2)).local("r", 2)
+				.line(12, second).line(13, rec(2)).line(14, returnX()).done();
+	}
+
+	@Test
+	void aStatementWhoseResultALaterStatementOfItsRunReadsIsWithheldWithIt() {
+		// The second statement reads a local with no name, so it has no place; the first would fire the hook and
+		// drop its answer.
+		MethodNode forge = resultAndUse(new VarInsnNode(Opcodes.ILOAD, 2), new VarInsnNode(Opcodes.ILOAD, 4), new InsnNode(Opcodes.IADD),
+				new MethodInsnNode(Opcodes.INVOKESTATIC, RECORD_OWNER, "record", "(I)V", false));
+		EditSplicer.Result r = splice(method(Statement.call(10, 1), Statement.call(11, 2), Statement.returnArg(12)), NO_PATCH,
+				forge, patch("10", 10, 3, " A", "+T", "+U", " B", " R"), true);
+		assertFalse(r.accepted(), r.spliced().toString());
+		assertTrue(hasOutcome(r.refused(), "withheld", "reads what it computes"), r.refused().toString());
+	}
+
+	/** Negative control: when the reader has its place, both statements are carried. */
+	@Test
+	void aStatementAndTheOneReadingItsResultAreCarriedTogether() throws Exception {
+		MethodNode forge = resultAndUse(recLocal(2));
+		EditSplicer.Result r = splice(method(Statement.call(10, 1), Statement.call(11, 2), Statement.returnArg(12)), NO_PATCH,
+				forge, patch("10", 10, 3, " A", "+T", "+U", " B", " R"), true);
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals(List.of(1, 102, 14, 2, 7), run(r.method(), 7));
+	}
+
+	// ---- rule: dead output -------------------------------------------------------------------------------------
+
+	/** record(1); [added: base's line 11]; record(x); return 0. */
+	private static MethodNode recordsX(AbstractInsnNode... added) {
+		return new Body().line(10, rec(1)).line(11, added).line(12, recLocal(0))
+				.line(13, new InsnNode(Opcodes.ICONST_0), new InsnNode(Opcodes.IRETURN)).done();
+	}
+
+	private static AbstractInsnNode[] doubleX() {
+		return new AbstractInsnNode[] { new VarInsnNode(Opcodes.ILOAD, 0),
+				new MethodInsnNode(Opcodes.INVOKESTATIC, FORGE_HOOKS, "twice", "(I)I", false), new VarInsnNode(Opcodes.ISTORE, 0) };
+	}
+
+	@Test
+	void aHookWhoseResultTheBaseOverwritesBeforeReadingIsRefused() {
+		// MinecraftForge's hook adjusts x, which its own body then records; NeoForge assigns x itself at the same
+		// point, so the hook's answer would reach nothing.
+		MethodNode neo = recordsX(new IntInsnNode(Opcodes.BIPUSH, 50), new VarInsnNode(Opcodes.ISTORE, 0));
+		MethodNode forge = recordsX(doubleX());
+		EditSplicer.Result r = splice(neo, ADDED_AT_11_NEO, forge, ADDED_AT_11_FORGE, true);
+		assertFalse(r.accepted(), r.spliced().toString());
+		assertTrue(hasOutcome(r.refused(), "insert", "reaches nothing in the base"), r.refused().toString());
+	}
+
+	/** Negative control: when the base reads x after the hook, the hook is carried and its answer used. */
+	@Test
+	void aHookWhoseResultTheBaseReadsIsCarried() throws Exception {
+		MethodNode neo = recordsX(check(NEO_HOOKS, 0));
+		MethodNode forge = recordsX(doubleX());
+		EditSplicer.Result r = splice(neo, ADDED_AT_11_NEO, forge, ADDED_AT_11_FORGE, true);
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals(List.of(1, 102, 201, 14, 0), run(r.method(), 7));
+	}
+
+	// ---- rule: reach-back --------------------------------------------------------------------------------------
+
+	/**
+	 * {@code if (x == 0) record(1); else { record(2); [inElse] } [atJoin] return x;} where the then-branch jumps to
+	 * the join, past whatever the else-branch added.
+	 */
+	private static MethodNode branches(AbstractInsnNode[] inElse, AbstractInsnNode[] atJoin) {
+		LabelNode otherwise = new LabelNode(), join = new LabelNode();
+		Body b = new Body().line(10, new VarInsnNode(Opcodes.ILOAD, 0), new JumpInsnNode(Opcodes.IFNE, otherwise))
+				.line(11, rec(1)).line(11, new JumpInsnNode(Opcodes.GOTO, join))
+				.label(otherwise).line(12, rec(2));
+		int line = 13;
+		if (inElse != null) b.line(line++, inElse);
+		b.label(join);
+		if (atJoin != null) b.line(line++, atJoin);
+		b.line(line, returnX());
+		return b.done();
+	}
+
+	@Test
+	void aRunTheBaseWouldReachFromABranchThatSkippedItIsRefused() {
+		// NeoForge's record(200) sits in the else-branch; the then-branch jumps past it. The kept MinecraftForge body
+		// has its own code at the join, which both branches reach, and the run would go after it.
+		MethodNode forge = branches(null, rec(100));
+		MethodNode neo = branches(rec(200), null);
+		String patch = "@@ -10,4 +%s,5 @@\n C\n T\n E\n+X\n R\n";
+		EditSplicer.Result r = splice(forge, "--- a/X.java\n+++ b/X.java\n" + patch.formatted("10"), neo,
+				"--- a/X.java\n+++ b/X.java\n" + patch.formatted("_"), false);
+		assertFalse(r.accepted(), r.spliced().toString());
+		assertTrue(hasOutcome(r.refused(), "insert", "could not reach it"), r.refused().toString());
+	}
+
+	/** Negative control: with nothing of the base's at the join, the run is placed where only the else-branch runs it. */
+	@Test
+	void aRunInABranchIsCarriedWhereOnlyThatBranchReachesIt() throws Exception {
+		MethodNode forge = branches(null, null);
+		MethodNode neo = branches(rec(200), null);
+		EditSplicer.Result r = splice(forge, NO_PATCH, neo, "--- a/X.java\n+++ b/X.java\n@@ -10,4 +_,5 @@\n C\n T\n E\n+X\n R\n", false);
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals(List.of(1, 0), run(r.method(), 0));
+		assertEquals(List.of(2, 200, 7), run(r.method(), 7));
 	}
 }
