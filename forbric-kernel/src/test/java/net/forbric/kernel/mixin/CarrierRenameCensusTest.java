@@ -134,13 +134,45 @@ class CarrierRenameCensusTest {
 				+ "Lnet/minecraft/server/network/config/SynchronizeRegistriesTask; x2 | RENAME | FABRIC"));
 		assertTrue(shipped.contains(configuration + "Lnet/minecraft/server/network/config/SynchronizeRegistriesTask;<init>(Ljava/util/List;"
 				+ "Lnet/minecraft/core/LayeredRegistryAccess;)V x1 | RENAME | FABRIC"), "fabric-resource-loader's known-packs anchor, made once");
-		// Everything the census reads of the four jars: no row names a call the reference's method never made.
+		// Everything the census reads of the four jars: no row names a call the reference's method never made. Vanilla
+		// makes no carrier's call, and neither carrier makes the other's, so a carrier's own call is a row's member only
+		// for that carrier's own mods: the merge renamed one of that carrier's own lambdas because the other side's
+		// lambda of the same name and descriptor was kept (the body moved, its carrier calls with it). An anchor on such
+		// a call, in a Fabric mod or the other carrier's, would have missed on its own game.
 		for (String row : shipped) {
-			CarrierRenames.Row parsed = CarrierRenames.Row.parse(row);
-			assertNotNull(parsed, row);
-			assertFalse(parsed.member().startsWith("Lnet/neoforged/") || parsed.member().startsWith("Lnet/minecraftforge/"),
-					"a carrier's own call moved nowhere: " + row);
+			assertTrue(ownsItsCarrierCalls(row), "a carrier's own call moved for another ecosystem's mods: " + row);
 		}
+	}
+
+	/**
+	 * The rule above, held against rows it must refuse: a carrier's call in a row tagged with vanilla's or the other
+	 * carrier's mods, or shared with them, is a call those mods' games never made.
+	 */
+	@Test void aCarrierCallIsARowOnlyForThatCarriersOwnMods() {
+		String head = "net/minecraft/world/entity/SpawnPlacements#lambda$fireSpawnPlacementEvent$0(Ljava/util/Map;"
+				+ "Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/entity/SpawnPlacements$Data;)V -> "
+				+ "lambda$fireSpawnPlacementEvent$0$forbricforge(Ljava/util/Map;Lnet/minecraft/world/entity/EntityType;"
+				+ "Lnet/minecraft/world/entity/SpawnPlacements$Data;)V : ";
+		String forge = head + "Lnet/minecraftforge/event/entity/SpawnPlacementRegisterEvent$MergedSpawnPredicate;<init>("
+				+ "Lnet/minecraft/world/entity/SpawnPlacements$SpawnPredicate;Lnet/minecraft/world/entity/SpawnPlacementType;"
+				+ "Lnet/minecraft/world/level/levelgen/Heightmap$Types;)V x1 | RENAME | ";
+		String neo = head + "Lnet/neoforged/neoforge/event/entity/RegisterSpawnPlacementsEvent$MergedSpawnPredicate;<init>("
+				+ "Lnet/minecraft/world/entity/SpawnPlacements$SpawnPredicate;Lnet/minecraft/world/entity/SpawnPlacementType;"
+				+ "Lnet/minecraft/world/level/levelgen/Heightmap$Types;)V x1 | RENAME | ";
+		assertTrue(ownsItsCarrierCalls(forge + "FORGE"));
+		assertTrue(ownsItsCarrierCalls(neo + "NEOFORGE"));
+		for (String wrong : List.of(forge + "FABRIC", forge + "NEOFORGE", forge + "FABRIC,FORGE", neo + "FORGE", neo + "FABRIC,NEOFORGE")) {
+			assertFalse(ownsItsCarrierCalls(wrong), wrong);
+		}
+	}
+
+	/** Whether {@code row}'s member, when it is a carrier's own call, is tagged with that carrier's mods alone. */
+	private static boolean ownsItsCarrierCalls(String row) {
+		CarrierRenames.Row parsed = CarrierRenames.Row.parse(row);
+		assertNotNull(parsed, row);
+		if (parsed.member().startsWith("Lnet/minecraftforge/")) return parsed.ecosystems().equals(Set.of(Ecosystem.FORGE));
+		if (parsed.member().startsWith("Lnet/neoforged/")) return parsed.ecosystems().equals(Set.of(Ecosystem.NEOFORGE));
+		return true;
 	}
 
 	/**
