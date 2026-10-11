@@ -52,6 +52,46 @@ class PackFinderRedirectTest {
 				"the redirect target must still call NeoForge, or it recurses into itself");
 	}
 
+	/**
+	 * A method that already asks MinecraftForge's mods for pack finders itself — a merge that keeps both sides' edits
+	 * writes ForgeEventFactory.addPackFindersServer back next to NeoForge's call — keeps NeoForge's call: through the
+	 * kernel MinecraftForge's mods would be asked twice. A method beside it that does not is still redirected.
+	 */
+	@Test
+	void aMethodThatAlreadyAsksMinecraftForgeIsLeftAlone() {
+		ClassWriter cw = new ClassWriter(0);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "net/minecraft/client/gui/screens/worldselection/CreateWorldScreen", null, "java/lang/Object", null);
+		for (boolean asksForge : List.of(true, false)) {
+			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, asksForge ? "open" : "settings", DESC, null, null);
+			mv.visitCode();
+			mv.visitVarInsn(Opcodes.ALOAD, 0);
+			mv.visitVarInsn(Opcodes.ALOAD, 1);
+			mv.visitVarInsn(Opcodes.ILOAD, 2);
+			mv.visitMethodInsn(Opcodes.INVOKESTATIC, NEO_LOADER, "populatePackRepository", DESC, false);
+			if (asksForge) {
+				mv.visitInsn(Opcodes.ACONST_NULL);
+				mv.visitMethodInsn(Opcodes.INVOKESTATIC, "net/minecraftforge/event/ForgeEventFactory", "addPackFindersServer",
+						"(Ljava/util/function/Consumer;)V", false);
+			}
+			mv.visitInsn(Opcodes.RETURN);
+			mv.visitMaxs(4, 4);
+			mv.visitEnd();
+		}
+		cw.visitEnd();
+		byte[] before = cw.toByteArray();
+		byte[] out = new ForbricMergedBaseCompatTransformer(name -> null)
+				.transform("net.minecraft.client.gui.screens.worldselection.CreateWorldScreen", before, CTX);
+		ClassNode node = new ClassNode();
+		new ClassReader(out == null ? before : out).accept(node, 0);
+		for (MethodNode m : node.methods) {
+			List<String> calls = new ArrayList<>();
+			for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof MethodInsnNode mi && mi.name.equals("populatePackRepository")) calls.add(mi.owner);
+			}
+			assertEquals(List.of(m.name.equals("open") ? NEO_LOADER : KERNEL), calls, m.name);
+		}
+	}
+
 	private static byte[] transform(String owner) {
 		ClassWriter cw = new ClassWriter(0);
 		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, owner, null, "java/lang/Object", null);

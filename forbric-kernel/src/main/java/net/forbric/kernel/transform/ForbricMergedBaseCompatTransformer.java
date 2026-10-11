@@ -341,7 +341,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 					letTheAtlasLowerItsMipLevelLikeVanilla(node));
 			changed |= claim(reporter, "wrapTheStreamsVanillaWraps", wrapTheStreamsVanillaWraps(node));
 			changed |= claim(reporter, "returnFromANestedBootstrapBeforeItsTail", returnFromANestedBootstrapBeforeItsTail(node));
-		changed |= claim(reporter, "letBothEcosystemsSetBurnTime", letBothEcosystemsSetBurnTime(node));
+		changed |= claim(reporter, "letBothEcosystemsSetBurnTime", letBothEcosystemsSetBurnTime(node), bothEcosystemsSetBurnTime(node));
 		changed |= claim(reporter, "letMinecraftForgeSeeSpawnerMobs", letMinecraftForgeSeeSpawnerMobs(node));
 		changed |= claim(reporter, "letMinecraftForgeAddPackFinders", letMinecraftForgeAddPackFinders(node));
 			changed |= namedOldLoader && adoptInteropHooksTheBaseStillNamesAfterTheOldLoader(node);
@@ -2877,6 +2877,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * own loader gives it. The six arguments are read from the frame the call site already has: the stack is
 	 * {@code this}, the player and flag are the ones MinecraftForge's call is loading, and the context and display
 	 * are the method's first parameter and its display local — so a listener asking for either gets the real one.
+	 *
+	 * <p>A body that already calls NeoForge's {@code EventHooks.onItemTooltip} itself — a merge that keeps both sides'
+	 * edits writes it right after MinecraftForge's — is left as it is: a second post would show every NeoForge tooltip
+	 * line twice. It satisfies the claim ({@link #tooltipAlreadyPostsNeoForge}).
 	 */
 	private static boolean postNeoForgesItemTooltipEvent(ClassNode node) {
 		if (!ITEM_STACK.equals(node.name)) return false;
@@ -3877,13 +3881,16 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * not carry, so the receiver is pushed before the call and the descriptor widened. Only in INSTANCE methods:
 	 * in a static one, slot 0 is the first parameter and pushing it would hand NeoForge an ItemStack typed as a
 	 * FuelValues.
+	 *
+	 * <p>A method that already asks NeoForge's {@code EventHooks.getItemBurnTime} itself — a merge that keeps both
+	 * sides' edits can write both families' calls into one body — is left alone: the kernel would ask NeoForge twice.
 	 */
 	private static boolean letBothEcosystemsSetBurnTime(ClassNode node) {
 		if (!FUEL_VALUES.equals(node.name)) return false;
 		int redirected = 0;
 		for (MethodNode method : node.methods) {
 			if ((method.access & Opcodes.ACC_STATIC) != 0) continue;
-			if (method.instructions == null) continue;
+			if (method.instructions == null || callsAny(method, NEO_EVENT_HOOKS, "getItemBurnTime")) continue;
 			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
 						|| !"net/minecraftforge/event/ForgeEventFactory".equals(call.owner)
@@ -3904,6 +3911,33 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "(%d call site(s)) — the merge kept only MinecraftForge's hook, so NeoForge's "
 				+ "FurnaceFuelBurnTimeEvent was posted nowhere", redirected);
 		return true;
+	}
+
+	/** Whether {@code method} calls {@code owner.name} with any descriptor. */
+	private static boolean callsAny(MethodNode method, String owner, String name) {
+		if (method.instructions == null) return false;
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && owner.equals(call.owner) && name.equals(call.name)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * The burn-time claim's end state: every instance method of {@code FuelValues} that asks MinecraftForge's hook asks
+	 * NeoForge's as well — through the kernel, or by calling {@code EventHooks.getItemBurnTime} itself.
+	 */
+	private static boolean bothEcosystemsSetBurnTime(ClassNode node) {
+		if (!FUEL_VALUES.equals(node.name)) return false;
+		boolean any = false;
+		for (MethodNode method : node.methods) {
+			if ((method.access & Opcodes.ACC_STATIC) != 0) continue;
+			if (callsAny(method, KERNEL_FUEL_VALUES, "burnDuration")) { any = true; continue; }
+			if (callsAny(method, "net/minecraftforge/event/ForgeEventFactory", "getItemBurnTime")) {
+				if (!callsAny(method, NEO_EVENT_HOOKS, "getItemBurnTime")) return false;
+				any = true;
+			}
+		}
+		return any;
 	}
 
 	/**
@@ -3948,6 +3982,10 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * <p>Four call sites, in two client screens and two {@code ServerPacksSource} factories, and no single class
 	 * to anchor on — hence a scanned claim rather than a fixed one. MinecraftForge's own call site is gone from
 	 * all of them and NeoForge's survived, so a Forge-family mod contributing a data pack is never asked.
+	 *
+	 * <p>A method that already asks MinecraftForge itself — a merge that keeps both sides' edits writes
+	 * {@code ForgeEventFactory.addPackFinders*} back into {@code CreateWorldScreen.openCreateWorldScreen} — is left
+	 * alone there: the kernel would ask MinecraftForge's mods for their finders a second time.
 	 */
 	private static boolean letMinecraftForgeAddPackFinders(ClassNode node) {
 		// Not the redirect TARGET itself. Its whole body is a call to the method being redirected, so rewriting
@@ -3957,7 +3995,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		if (KERNEL_PACK_FINDERS.equals(node.name)) return false;
 		int redirected = 0;
 		for (MethodNode method : node.methods) {
-			if (method.instructions == null) continue;
+			if (method.instructions == null || asksMinecraftForgeForPackFinders(method)) continue;
 			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 				if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESTATIC
 						|| !NEO_RESOURCE_PACK_LOADER.equals(call.owner)
@@ -3973,6 +4011,15 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "(%d call site(s)) — the merge kept only NeoForge's, so MinecraftForge mods were never asked "
 				+ "for pack finders", node.name, redirected);
 		return true;
+	}
+
+	/** Whether {@code method} asks MinecraftForge's mods for pack finders itself. */
+	private static boolean asksMinecraftForgeForPackFinders(MethodNode method) {
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && "net/minecraftforge/event/ForgeEventFactory".equals(call.owner)
+					&& call.name.startsWith("addPackFinders")) return true;
+		}
+		return false;
 	}
 
 }
