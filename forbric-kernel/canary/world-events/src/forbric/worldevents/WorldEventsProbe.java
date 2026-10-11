@@ -72,6 +72,15 @@ public final class WorldEventsProbe {
 	private static LivingEntity expiring, leaving;
 
 	private static void hear(String what) { heard.merge(what, 1, Integer::sum); }
+
+	/**
+	 * Exactly once, not at least once: where the merged game posts MinecraftForge's event itself, a bridge that forwards
+	 * NeoForge's as well hands the listener the same event twice, and "at least once" holds either way.
+	 */
+	private static void heardOnce(String what, String which) {
+		int times = heard.getOrDefault(what, 0);
+		require(times == 1, which + " was heard " + times + " time(s), not once");
+	}
 	private static boolean tagged(net.minecraft.world.entity.Entity entity, String tag) { return entity != null && entity.entityTags().contains(tag); }
 
 	public WorldEventsProbe(IEventBus bus) {
@@ -83,7 +92,10 @@ public final class WorldEventsProbe {
 		MobEffectEvent.Added.BUS.addListener((Consumer<MobEffectEvent.Added>) e -> { if (tagged(e.getEntity(), "m49_effect")) hear("effect.added"); });
 		MobEffectEvent.Expired.BUS.addListener((Consumer<MobEffectEvent.Expired>) e -> { if (tagged(e.getEntity(), "m49_effect")) hear("effect.expired"); });
 		MobEffectEvent.Applicable.BUS.addListener((Consumer<MobEffectEvent.Applicable>) e -> {
-			if (tagged(e.getEntity(), "m49_immune") && e.getEffectInstance().is(MobEffects.SLOWNESS)) e.setResult(Result.DENY);
+			if (tagged(e.getEntity(), "m49_immune") && e.getEffectInstance().is(MobEffects.SLOWNESS)) {
+				hear("applicable.deny");
+				e.setResult(Result.DENY);
+			}
 		});
 		LivingConversionEvent.Pre.BUS.addListener((Predicate<LivingConversionEvent.Pre>) e -> tagged(e.getEntity(), "m49_noconvert"));
 		LivingConversionEvent.Post.BUS.addListener((Consumer<LivingConversionEvent.Post>) e -> {
@@ -134,26 +146,28 @@ public final class WorldEventsProbe {
 		test("entity.section", () -> {
 			LivingEntity pig = pig(level, "m49_move");
 			pig.setPos(pig.getX() + 32, pig.getY(), pig.getZ());
-			require(heard.getOrDefault("entity.section", 0) > 0, "a section move was not heard");
+			heardOnce("entity.section", "a section move");
 		});
-		test("player.wakeup", () -> { player.stopSleepInBed(true, true); require(heard.getOrDefault("player.wakeup", 0) > 0, "waking was not heard"); });
+		test("player.wakeup", () -> { player.stopSleepInBed(true, true); heardOnce("player.wakeup", "waking"); });
 		test("effect.added", () -> {
 			expiring = pig(level, "m49_effect");
 			expiring.addEffect(new MobEffectInstance(MobEffects.SPEED, 2));
-			require(heard.getOrDefault("effect.added", 0) > 0, "an added effect was not heard");
+			heardOnce("effect.added", "an added effect");
 		});
 		leaving = pig(level, "m49_leave");
 		test("applicable.control", () -> require(pig(level, null).addEffect(new MobEffectInstance(MobEffects.SLOWNESS, 100)), "an untouched effect did not apply"));
 		test("applicable.deny", () -> {
 			LivingEntity pig = pig(level, "m49_immune");
 			require(!pig.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, 100)) && !pig.hasEffect(MobEffects.SLOWNESS), "a denied effect applied");
+			heardOnce("applicable.deny", "the denied effect's applicability question");
 		});
 		test("conversion.control", () -> {
 			LivingEntity pig = pig(level, null);
 			((net.minecraft.world.entity.animal.pig.Pig) pig).thunderHit(level, EntityTypes.LIGHTNING_BOLT.create(level, EntitySpawnReason.COMMAND));
 			require(pig.isRemoved(), "an untouched pig did not convert");
 		});
-		test("conversion.post", () -> require(heard.getOrDefault("conversion.post", 0) > 0, "the finished conversion was not heard"));
+		// The control pig's conversion is the only one so far.
+		test("conversion.post", () -> heardOnce("conversion.post", "the finished conversion"));
 		test("drown.neo", () -> {
 			LivingEntity zombie = drown(level);
 			require(zombie.isRemoved() && heard.getOrDefault("drown.neo", 0) == 1, "NeoForge heard the zombie drown "
@@ -215,11 +229,14 @@ public final class WorldEventsProbe {
 	}
 
 	private static void check(ServerLevel level) {
-		test("effect.expired", () -> require(heard.getOrDefault("effect.expired", 0) > 0 && !expiring.hasEffect(MobEffects.SPEED), "an expired effect was not heard"));
+		test("effect.expired", () -> {
+			require(!expiring.hasEffect(MobEffects.SPEED), "the effect did not run out");
+			heardOnce("effect.expired", "an expired effect");
+		});
 		test("entity.leave", () -> {
 			// Discarded a second after it was added, once the held chunk tracks it: leaving is only posted for a tracked entity.
 			leaving.discard();
-			require(heard.getOrDefault("entity.leave", 0) > 0, "an entity leaving the level was not heard");
+			heardOnce("entity.leave", "an entity leaving the level");
 		});
 	}
 

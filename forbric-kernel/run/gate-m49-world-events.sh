@@ -10,7 +10,9 @@
 # a tick (a projectile's impact, a critical hit). Chunk loads and tag reloads are heard at startup; an entity leaving
 # the level and an effect running out are checked a second later. Untouched controls beside each answer.
 #
-#   1. positive — STRICT, every case passes, zero confirmed required findings.
+#   1. positive — STRICT, every case passes, zero confirmed required findings. Every case the merged base can decide
+#      with its own MinecraftForge call is heard exactly once (or carries a value a second delivery would change), so
+#      a bridge that forwards an event the base already delivered is red here, not just in the off phase.
 #   2. off — -Dforbric.unifiedEvents=off -Dforbric.neoConversionPost=off: exactly the repaired cases fail and the
 #      controls hold — the repaired cases being those whose hook the merged base does not call itself, read from it.
 # Not covered here: chunk unloads, permissions (needs a real connected player), anvils (needs an open anvil menu).
