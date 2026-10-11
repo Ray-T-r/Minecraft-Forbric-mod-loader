@@ -54,12 +54,13 @@ class DeadEventAuditTest {
 	private static final String KEYS = "net/minecraftforge/client/event/RegisterKeyMappingsEvent";
 	private static final String TABS = "net/minecraftforge/event/BuildCreativeModeTabContentsEvent";
 	/**
-	 * A CLIENT event with no bridge.
+	 * A CLIENT event with no bridge that the merged game still never posts.
 	 *
 	 * <p>It used to be {@code AddGuiOverlayLayersEvent}; that one is bridged now, and a bridged event is reported
-	 * through the pending path instead, so a test written on it would silently be testing the other half.
+	 * through the pending path instead, so a test written on it would silently be testing the other half. Then it was
+	 * {@code AddFramePassEvent}, until the merge kept both families' edits in Minecraft's constructor and posted it again.
 	 */
-	private static final String OVERLAYS = "net/minecraftforge/client/event/AddFramePassEvent";
+	private static final String SKULLS = "net/minecraftforge/client/event/EntityRenderersEvent$CreateSkullModels";
 	private static final String CREATE_FLUID_SOURCE = "net/minecraftforge/event/level/BlockEvent$CreateFluidSourceEvent";
 	private static final String FLUID_PLACE_BLOCK = "net/minecraftforge/event/level/BlockEvent$FluidPlaceBlockEvent";
 	private static final String NEO_TOOLTIP = "net/neoforged/neoforge/event/entity/player/ItemTooltipEvent";
@@ -202,15 +203,15 @@ class DeadEventAuditTest {
 				"a late pass has not run when the audit does; reporting it would name every client mod on every boot");
 	}
 
-	/** The five client events no bridge carries yet: a mod waiting on one is named, with what it loses. */
+	/** A client event no bridge carries and the merged game never posts: a mod waiting on one is named, with its cost. */
 	@Test
 	void aStillDeadClientEventNamesTheMod() {
 		List<DeadEventAudit.Finding> findings = DeadEventAudit.audit(
-				Map.of("hudmod", Set.of(OVERLAYS)), EnumSet.noneOf(GameEventBridge.class));
+				Map.of("skullmod", Set.of(SKULLS)), EnumSet.noneOf(GameEventBridge.class));
 
 		assertEquals(1, findings.size());
-		assertEquals("hudmod", findings.get(0).modId());
-		assertTrue(findings.get(0).cost().contains("never run"), findings.get(0).cost());
+		assertEquals("skullmod", findings.get(0).modId());
+		assertTrue(findings.get(0).cost().contains("never render"), findings.get(0).cost());
 	}
 
 	/**

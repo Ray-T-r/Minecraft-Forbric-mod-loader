@@ -84,10 +84,11 @@ public final class DeadEventAudit {
 						+ "and block-logging mods record nothing");
 		dead.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$RightClickBlock",
 				"right-clicking a block is neither observed nor preventable");
-		dead.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$LeftClickBlock",
-				"left-clicking a block is neither observed nor preventable");
-		dead.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$RightClickItem",
-				"using an item in hand is neither observed nor preventable");
+		// LeftClickBlock and RightClickItem were rows here too. The merge now keeps both families' edits in a method
+		// both patched, and HookCallSiteCensus finds ServerPlayerGameMode (and MultiPlayerGameMode) calling
+		// MinecraftForge's onLeftClickBlock and onItemRightClick again, so neither is "never posted". Both are BRIDGED as well, which is consulted first, so the rows were
+		// unreachable from the audit anyway; where the native call shares a path with NeoForge's, the bridge stands
+		// down for that event (NativeDualEventInjector) rather than posting it a second time.
 		// ServerGamePacketListenerImpl carries NeoForge's chat decorator and no MinecraftForge chat hook.
 		dead.put("net/minecraftforge/event/ServerChatEvent",
 				"chat messages cannot be seen, edited or blocked — chat-formatting and moderation mods do nothing");
@@ -112,28 +113,23 @@ public final class DeadEventAudit {
 		// carries yet. The merged consumers read only NeoForge's tables at these sites, so the Forge event would
 		// be delivered into nothing; they are named here so a waiting mod is named at boot rather than found in
 		// a screenshot. Each is a candidate adapter for a later round.
-				dead.put("net/minecraftforge/client/event/AddFramePassEvent",
-				"extra render frame passes a MinecraftForge mod adds never run — the merged frame graph asks only "
-						+ "NeoForge's event");
+		// AddFramePassEvent and EntityRenderersEvent$AddLayers were rows here as well, until the merge began keeping
+		// both families' edits in a method both patched: the census now finds Minecraft.<init> calling
+		// ForgeEventFactoryClient.onInitLevelRenderer and EntityRenderDispatcher.onResourceManagerReload calling its
+		// onGatherLayers again, so neither row can still say the event is never posted.
 		dead.put("net/minecraftforge/client/event/EntityRenderersEvent$CreateSkullModels",
 				"custom skull block models a MinecraftForge mod registers never render — the merged skull renderer "
 						+ "reads only NeoForge's map");
-		dead.put("net/minecraftforge/client/event/EntityRenderersEvent$AddLayers",
-				"render layers a MinecraftForge mod adds to existing entity renderers — armour, capes, overlays — "
-						+ "never draw; the merged EntityRenderDispatcher posts only NeoForge's AddLayers");
 		// The two fluid events the merged FlowingFluid/LavaFluid post only for NeoForge (EventHooks
 		// .canCreateFluidSource at bc 110, fireFluidPlaceBlockEvent at three sites). Deliberately not bridged by the
 		// fluid-rendering repair: that is event multiplexing, and it is named here instead so a listener is told.
 		dead.put("net/minecraftforge/event/level/BlockEvent$CreateFluidSourceEvent",
 				"infinite-source formation cannot be observed or vetoed — the merged FlowingFluid.canConvertToSource "
 						+ "asks only NeoForge's EventHooks.canCreateFluidSource");
-						// The other side of the ledger: the merged ItemStack.getTooltipLines calls only MinecraftForge's
-		// ForgeEventFactory.onItemTooltip (javap: one invokestatic, none into net/neoforged), so NeoForge's event is
-		// the dead one here. ItemStack#onDestroyed is NOT a row: it is an extension hook on both sides
-		// (IForgeItemStack.onDestroyed survived) and cannot be a subscriber finding.
-		dead.put("net/neoforged/neoforge/event/entity/player/ItemTooltipEvent",
-				"item tooltips cannot be extended by NeoForge mods — the merged getTooltipLines calls only "
-						+ "MinecraftForge's onItemTooltip");
+		// NeoForge's ItemTooltipEvent was the one row on the other side of the ledger: the merged
+		// ItemStack.getTooltipLines called only MinecraftForge's onItemTooltip. With both families' edits kept in a
+		// method both patched it calls NeoForge's EventHooks.onItemTooltip too, so the event is posted natively; the
+		// kernel's tooltip repair stands down there (ForbricMergedBaseCompatTransformer) instead of posting it again.
 		// EntityPlaceEvent was a row here too, for the reason routePlaceItemHookToNeoForge states: ItemStack.useOn
 		// was sent to NeoForge's onPlaceItemIntoWorld so that placing anything works at all. True of useOn, and
 		// the census finds ReplaceDisk#apply still calling ForgeEventFactory.onBlockPlace — so the event is
@@ -173,23 +169,31 @@ public final class DeadEventAudit {
 
 	private static Map<String, String> partiallyPosted() {
 		Map<String, String> partial = new LinkedHashMap<>();
+		// Regenerated from HookCallSiteCensus.erosion once the merge began keeping both families' edits in a method
+		// both patched: PlayerDestroyItemEvent, NeighborNotifyEvent, BlockFeatureGrowEvent and MobEffectEvent
+		// $Applicable got every call site back and left; four that had lost all of theirs (LivingConversionEvent$Pre,
+		// EntityLeaveLevelEvent, LevelEvent$Unload, PlayLevelSoundEvent$AtEntity) got some back and joined, and
+		// LivingConversionEvent$Post went from 3 of 7 to 4.
 		partial.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Post",
-				"a completed conversion is announced on 3 of its 7 paths, so a mod reacting to one will react "
-						+ "to some conversions and not others");
-		partial.put("net/minecraftforge/event/entity/player/PlayerDestroyItemEvent",
-				"an item breaking is announced on 1 of its 4 paths — a mod that replaces or refunds broken "
-						+ "tools will do it for some breakages only");
-		partial.put("net/minecraftforge/event/level/BlockEvent$NeighborNotifyEvent",
-				"block updates reaching neighbours are visible on 1 of the 4 paths that used to report them");
-		partial.put("net/minecraftforge/event/level/BlockFeatureGrowEvent",
-				"a feature growing is observable on 1 of its 3 paths — saplings and the rest differ");
+				"a completed conversion is announced on 4 of its 7 paths — not for pigs, hoglins or piglins — so a "
+						+ "mod reacting to one will react to some conversions and not others");
+		partial.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Pre",
+				"whether a mob may convert is asked on 5 of its 10 paths — not for lightning, a piglin or hoglin "
+						+ "zombifying, or a zombie villager being cured — so a mod that stops conversions stops some");
 		partial.put("net/minecraftforge/event/entity/living/LivingFallEvent",
 				"fall damage can be modified on 2 of its 3 paths; the one that is gone is the one most entities "
 						+ "take, so this reads as a mod that works for horses and llamas only");
-		partial.put("net/minecraftforge/event/entity/living/MobEffectEvent$Applicable",
-				"whether an effect may apply is asked on 1 of its 2 paths");
 		partial.put("net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent",
 				"placement by an entity is announced on 1 of its 2 paths");
+		partial.put("net/minecraftforge/event/entity/EntityLeaveLevelEvent",
+				"an entity leaving a level is announced on 1 of its 2 paths, the server's: a mod is never told on "
+						+ "the client");
+		partial.put("net/minecraftforge/event/level/LevelEvent$Unload",
+				"a level going away is announced on 2 of its 3 paths — not when a server stops — so what a mod "
+						+ "releases on unload is kept at shutdown");
+		partial.put("net/minecraftforge/event/PlayLevelSoundEvent$AtEntity",
+				"a sound played at an entity can be changed or silenced on 2 of its 3 paths — not the local "
+						+ "player's own sounds");
 		return Map.copyOf(partial);
 	}
 
