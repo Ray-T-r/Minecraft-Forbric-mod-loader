@@ -26,10 +26,10 @@ import org.objectweb.asm.Opcodes;
 @ResourceLock("system-properties")
 class EventChainAuditTest {
 	private static final String NEO_PROBE = "probe.NeoProbe", FORGE_PROBE = "probe.ForgeProbe", MOD_CODE = "probe.ModCode",
-			GAME_CODE = "probe.GameCode";
+			GAME_CODE = "probe.GameCode", NEO_CHILD = "probe.NeoChild", FORGE_CHILD = "probe.ForgeChild";
 	private static final String FORGE_INTERNAL = FORGE_PROBE.replace('.', '/');
-	private Object neoBus, forgeBus;
-	private Class<?> neoProbe, forgeProbe;
+	private Object neoBus, forgeBus, forgeChildBus;
+	private Class<?> neoProbe, forgeProbe, neoChild, forgeChild;
 	private Method post, fire, setCanceled;
 
 	@BeforeEach void buses() throws Exception {
@@ -42,10 +42,12 @@ class EventChainAuditTest {
 		assertFalse(log4j.isBlank(), "the build passes the log4j-api jar the real buses need");
 		var loader = new AuditedBuses(List.of(staged.resolve("neoforge-runtime/neoforge-runtime.jar"), staged.resolve("forge-runtime/forge-runtime.jar"), Path.of(log4j)));
 		neoProbe = loader.loadClass(NEO_PROBE); forgeProbe = loader.loadClass(FORGE_PROBE);
+		neoChild = loader.loadClass(NEO_CHILD); forgeChild = loader.loadClass(FORGE_CHILD);
 		neoBus = loader.loadClass("net.neoforged.bus.api.BusBuilder").getMethod("builder").invoke(null);
 		neoBus = neoBus.getClass().getMethod("build").invoke(neoBus);
 		Class<?> cancellableBus = loader.loadClass("net.minecraftforge.eventbus.api.bus.CancellableEventBus");
 		forgeBus = cancellableBus.getMethod("create", Class.class).invoke(null, forgeProbe);
+		forgeChildBus = cancellableBus.getMethod("create", Class.class).invoke(null, forgeChild);
 		post = cancellableBus.getMethod("post", loader.loadClass("net.minecraftforge.eventbus.internal.Event"));
 		fire = cancellableBus.getMethod("fire", loader.loadClass("net.minecraftforge.eventbus.internal.Event"));
 		setCanceled = loader.loadClass("net.neoforged.bus.api.ICancellableEvent").getMethod("setCanceled", boolean.class);
@@ -328,6 +330,85 @@ class EventChainAuditTest {
 		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
 	}
 
+	/**
+	 * Each family's own listener posts a second event inside its first (a login registering client commands). With the
+	 * game delivering MinecraftForge's first event natively, MinecraftForge's own listener has delivered the second inside
+	 * it: forwarding NeoForge's second as well is a second delivery, standing down for it is observed.
+	 */
+	@Test void aCascadeUnderTheGamesOwnDispatchPairsWithWhatNeoForgesListenerPosted() throws Exception {
+		forgeCascade();
+		addNeo(standDown());
+		addNeoChildCascade();
+		bridgeChild();
+		game("forgeThenNeo", covered(), forgeEvent());
+		assertEquals(1, EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE).observed.sum(), EventChainAudit.json());
+		var child = EventChainAudit.pair("NEO:" + NEO_CHILD, "FORGE:" + FORGE_CHILD);
+		assertNotNull(child, EventChainAudit.json());
+		assertEquals(1, child.withNative.sum(), "the cascade's forward was a second delivery: " + EventChainAudit.json());
+		assertEquals(1, EventChainAudit.violations().nativeAndForwarded());
+	}
+
+	@Test void standingDownForACascadeTheGamesOwnDispatchDeliveredIsObserved() throws Exception {
+		forgeCascade();
+		addNeo(standDown());
+		addNeoChildCascade();
+		bridgeChildStandsDown();
+		game("forgeThenNeo", covered(), forgeEvent());
+		var stood = EventChainAudit.nativePair("NEO:" + NEO_CHILD, "FORGE:" + FORGE_CHILD);
+		assertNotNull(stood, EventChainAudit.json());
+		assertEquals(1, stood.observed.sum(), "standing down for it is observed beside MinecraftForge's own: " + EventChainAudit.json());
+		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
+	}
+
+	/** The same under a forward: what MinecraftForge's own listener posts inside the forwarded event is native too. */
+	@Test void aCascadeUnderAForwardPairsWithWhatNeoForgesListenerPosted() throws Exception {
+		forgeCascade();
+		addNeoChildCascade();
+		bridgeChild();
+		bridge(1, true, false);
+		postNeo();
+		var child = EventChainAudit.pair("NEO:" + NEO_CHILD, "FORGE:" + FORGE_CHILD);
+		assertNotNull(child, EventChainAudit.json());
+		assertEquals(1, child.withNative.sum(), EventChainAudit.json());
+		assertEquals(1, EventChainAudit.violations().nativeAndForwarded());
+	}
+
+	/** MinecraftForge's own listener of the first event: posts the second one, as code that is not the kernel's. */
+	private void forgeCascade() throws Exception {
+		Method modPost = neoProbe.getClassLoader().loadClass(MOD_CODE).getMethod("post", Object.class, Object.class);
+		Predicate<Object> listener = event -> { invoke(modPost, null, forgeChildBus, forgeChildEvent()); return false; };
+		forgeBus.getClass().getMethod("addListener", Predicate.class).invoke(forgeBus, listener);
+		Predicate<Object> childListener = event -> false;
+		forgeChildBus.getClass().getMethod("addListener", Predicate.class).invoke(forgeChildBus, childListener);
+	}
+
+	/** NeoForge's own listener of the first event, ahead of the bridges: posts the second one. */
+	private void addNeoChildCascade() throws Exception {
+		Class<?> priority = neoBus.getClass().getClassLoader().loadClass("net.neoforged.bus.api.EventPriority");
+		Consumer<Object> listener = event -> { try { postNeo(neoChild.getConstructor().newInstance()); } catch (Exception e) { throw new IllegalStateException(e); } };
+		neoBus.getClass().getMethod("addListener", priority, boolean.class, Class.class, Consumer.class)
+				.invoke(neoBus, priority.getField("HIGHEST").get(null), false, neoProbe, listener);
+	}
+
+	/** The second event's bridge: forwards it, or (standing down) is told it was delivered natively. */
+	private void bridgeChild() throws Exception {
+		addNeoChild(event -> invoke(post, forgeChildBus, forgeChildEvent()));
+	}
+
+	private void bridgeChildStandsDown() throws Exception {
+		addNeoChild(event -> EventChainAudit.nativelyDelivered(event, Set.of(FORGE_CHILD.replace('.', '/'))));
+	}
+
+	private void addNeoChild(Consumer<Object> listener) throws Exception {
+		Class<?> priority = neoBus.getClass().getClassLoader().loadClass("net.neoforged.bus.api.EventPriority");
+		neoBus.getClass().getMethod("addListener", priority, boolean.class, Class.class, Consumer.class)
+				.invoke(neoBus, priority.getField("LOWEST").get(null), false, neoChild, listener);
+	}
+
+	private Object forgeChildEvent() {
+		try { return forgeChild.getConstructor().newInstance(); } catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
+	}
+
 	private Object newNeoBus() throws Exception {
 		Object builder = neoBus.getClass().getClassLoader().loadClass("net.neoforged.bus.api.BusBuilder").getMethod("builder").invoke(null);
 		return builder.getClass().getMethod("build").invoke(builder);
@@ -422,6 +503,9 @@ class EventChainAuditTest {
 			for (Path path : jarPaths) jars.add(new JarFile(path.toFile(), true, java.util.zip.ZipFile.OPEN_READ, Runtime.version()));
 			generated.put(NEO_PROBE, event("probe/NeoProbe", "net/neoforged/bus/api/Event", "net/neoforged/bus/api/ICancellableEvent"));
 			generated.put(FORGE_PROBE, event("probe/ForgeProbe", "net/minecraftforge/eventbus/api/event/MutableEvent",
+					"net/minecraftforge/eventbus/api/event/characteristic/Cancellable"));
+			generated.put(NEO_CHILD, event("probe/NeoChild", "net/neoforged/bus/api/Event", "net/neoforged/bus/api/ICancellableEvent"));
+			generated.put(FORGE_CHILD, event("probe/ForgeChild", "net/minecraftforge/eventbus/api/event/MutableEvent",
 					"net/minecraftforge/eventbus/api/event/characteristic/Cancellable"));
 			generated.put(MOD_CODE, modCode());
 			generated.put(GAME_CODE, gameCode());

@@ -59,7 +59,12 @@ import net.forbric.kernel.util.ForbricLog;
  * forward, not as one of the game's.
  *
  * <p>A mod-bus post fans one event out to every mod's bus, one dispatch each from the same call site: those dispatches
- * are one post ({@code distinct}), and pair with the game's own MinecraftForge dispatch as one.
+ * are one post ({@code distinct}), and pair with the game's own MinecraftForge dispatch as one. And two dispatches that
+ * pair as one delivery pair their nested dispatches as well: what one family's own listeners posted inside it against
+ * what the other family's posted inside its counterpart, so a cascade the game delivers natively under MinecraftForge's
+ * dispatch and a bridge forwards again from NeoForge's is delivered twice too. The same holds under a forward: what
+ * MinecraftForge's own listeners post inside a forwarded dispatch pairs with what NeoForge's posted in the dispatch it
+ * was forwarded from.
  *
  * <p>What this does not see: composites that call both families' hooks one after the other at a call site
  * (portal, spawner, loot, fuel, tooltips) are not nested posts; their chains have their own gates. Result fields
@@ -88,6 +93,8 @@ public final class EventChainAudit {
 		String caller; int callerBci = -1;
 		/** Dispatches that finished directly inside this one, most recent first: see {@link #pairWithSiblings}. */
 		ArrayDeque<Sibling> siblings;
+		/** The kernel's forwards that finished inside this one, with what they in turn contained. */
+		List<Sibling> forwards;
 		/** Entered as the root of a deferred forward: a kernel forward made after the dispatch it was owed for. */
 		boolean deferredRoot;
 		Frame(boolean neo, Object event) { this.neo = neo; this.event = event; this.type = event.getClass(); }
@@ -102,12 +109,19 @@ public final class EventChainAudit {
 		Set<String> forwarded, natively;
 		/** MinecraftForge classes already paired across this dispatch and a sibling. */
 		Set<String> paired = Set.of();
+		/** What finished inside it (most recent first), and the kernel's forwards among that, for pairing a cascade. */
+		ArrayDeque<Sibling> children;
+		List<Sibling> forwards;
+		/** Whether this dispatch was already paired as one delivery with the other family's. */
+		boolean matched;
 		Sibling(Frame frame, String outerKey) {
 			this.neo = frame.neo; this.type = frame.type.getName(); this.outerKey = outerKey; this.event = frame.event;
 			this.caller = frame.caller; this.callerBci = frame.callerBci;
 			if (frame.children.isEmpty()) this.forwarded = Set.of();
 			else { Set<String> names = new HashSet<>(); for (Class<?> c : frame.children.keySet()) names.add(c.getName()); this.forwarded = names; }
 			this.natively = frame.natively;
+			this.children = frame.siblings;
+			this.forwards = frame.forwards;
 		}
 		boolean relatesTo(String forge) { return forwarded.contains(forge) || natively.contains(forge); }
 		void pair(String forge) { if (paired.isEmpty()) paired = new HashSet<>(2); paired.add(forge); }
@@ -118,6 +132,11 @@ public final class EventChainAudit {
 		void absorb(Sibling next) {
 			if (!next.forwarded.isEmpty()) { forwarded = new HashSet<>(forwarded); forwarded.addAll(next.forwarded); }
 			if (!next.natively.isEmpty()) { natively = new LinkedHashSet<>(natively); natively.addAll(next.natively); }
+			if (next.children != null) {
+				if (children == null) children = new ArrayDeque<>();
+				for (Iterator<Sibling> it = next.children.descendingIterator(); it.hasNext(); ) children.addFirst(it.next());
+			}
+			if (next.forwards != null) { if (forwards == null) forwards = new ArrayList<>(); forwards.addAll(next.forwards); }
 		}
 	}
 
@@ -343,6 +362,9 @@ public final class EventChainAudit {
 		for (var entry : frame.incidental.entrySet())
 			INCIDENTAL.computeIfAbsent(outerKey + " -> " + key(!neo, entry.getKey()), k -> new LongAdder()).add(entry.getValue());
 		Sibling done = new Sibling(frame, outerKey);
+		// What MinecraftForge's own listeners posted inside a forward pairs with what NeoForge's posted in the dispatch it
+		// was forwarded from (the cascade both families' listeners run under one delivery).
+		if (frame.neo && frame.forwards != null) for (Sibling forward : frame.forwards) pairNested(done, forward);
 		if (parent != null && parent.neo != neo && frame.kernelPoster) {
 			outer.asForward.increment();
 			Child child = parent.children.computeIfAbsent(frame.type, k -> new Child());
@@ -350,6 +372,8 @@ public final class EventChainAudit {
 			child.byListener.merge(frame.parentListener, 1, Integer::sum);
 			if (cancelled) child.cancelled++;
 			if (failure != null) child.failed++;
+			if (parent.forwards == null) parent.forwards = new ArrayList<>(2);
+			parent.forwards.add(done);
 			return;
 		}
 		if (frame.deferredRoot) {
@@ -421,6 +445,38 @@ public final class EventChainAudit {
 			NativePair pair = NATIVES.get(neo.outerKey + " -> " + inner);
 			if (pair != null) pair.observed.increment();
 		}
+		pairNested(neo, nativeForge);
+	}
+
+	/**
+	 * Two dispatches paired as one delivery — the game's own MinecraftForge dispatch beside a stand-down, or a forward
+	 * and the NeoForge dispatch it came from — pair what each family's listeners posted inside them: a NeoForge dispatch
+	 * nested in the one that forwarded, or stood down for, MinecraftForge class F, with a MinecraftForge dispatch of F
+	 * nested in the other that was not a kernel forward. Each pairs once; so paired, a stand-down is observed and a
+	 * forward was a second delivery.
+	 */
+	private static void pairNested(Sibling neo, Sibling forge) {
+		if (!neo.neo || forge.neo || neo.children == null || forge.children == null) return;
+		if (neo.matched && forge.matched) return;
+		neo.matched = true;
+		forge.matched = true;
+		for (Sibling inner : neo.children) {
+			if (!inner.neo) continue;
+			for (String name : new ArrayList<>(inner.forwarded.isEmpty() ? inner.natively : union(inner.forwarded, inner.natively))) {
+				if (inner.paired.contains(name)) continue;
+				for (Sibling candidate : forge.children) {
+					if (candidate.neo || !candidate.type.equals(name) || candidate.paired.contains(name)) continue;
+					credit(inner, name, candidate);
+					break;
+				}
+			}
+		}
+	}
+
+	private static Set<String> union(Set<String> a, Set<String> b) {
+		Set<String> out = new LinkedHashSet<>(a);
+		out.addAll(b);
+		return out;
 	}
 
 	private static String key(boolean neo, Class<?> type) { return key(neo, type.getName()); }

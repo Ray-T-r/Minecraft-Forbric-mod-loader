@@ -32,8 +32,8 @@ class NativeDualEventInjectorExecutionTest {
 	static final NativeDualEventInjector.Families FAMILIES = new NativeDualEventInjector.Families("late/forge/", "late/forge/bus/",
 			"late/neo/", "late/neo/bus/Bus", "late/neo/bus/Loader", "late/neo/bus/Event");
 	static final String FORGE_EVENT = "late/forge/ForgeTouch";
-	/** Bridged as well: an atlas-like mod-bus event. */
-	static final Set<String> BRIDGED = Set.of(FORGE_EVENT, "late/forge/ForgeStitched");
+	/** Bridged as well: an atlas-like mod-bus event, and a login with the commands both families' own listeners post. */
+	static final Set<String> BRIDGED = Set.of(FORGE_EVENT, "late/forge/ForgeStitched", "late/forge/ForgeLogin", "late/forge/ForgeCommands");
 	private static final List<String> TRANSFORMED = List.of("late/game/Callers", "late/neo/Hooks", "late/forge/Factory");
 
 	static Map<String, byte[]> classes(Path work) throws Exception {
@@ -73,7 +73,25 @@ class NativeDualEventInjectorExecutionTest {
 						}
 						""",
 				"late.neo.Stitched", "package late.neo; public class Stitched extends late.neo.bus.Event { public final Object who; public Stitched(Object who){this.who=who;} }",
+				"late.neo.NeoLogin", "package late.neo; public class NeoLogin extends NeoTouch { public NeoLogin(Object who){super(who);} }",
+				"late.neo.NeoCommands", "package late.neo; public class NeoCommands extends NeoTouch { public NeoCommands(Object who){super(who);} }",
+				// NeoForge's own listener of its login, registering client commands by posting their event.
+				"late.neo.Commands", """
+						package late.neo;
+						public final class Commands {
+						    public static void register(Object who) { Hooks.BUS.post(new NeoCommands(who)); }
+						}
+						""",
 				"late.forge.ForgeStitched", "package late.forge; public class ForgeStitched extends ForgeTouch { public ForgeStitched(Object who){super(who);} }",
+				"late.forge.ForgeLogin", "package late.forge; public class ForgeLogin extends ForgeTouch { public ForgeLogin(Object who){super(who);} }",
+				"late.forge.ForgeCommands", "package late.forge; public class ForgeCommands extends ForgeTouch { public ForgeCommands(Object who){super(who);} }",
+				// MinecraftForge's own listener of its login, the same.
+				"late.forge.Commands", """
+						package late.forge;
+						public final class Commands {
+						    public static void register(Object who) { Factory.BUS.post(new ForgeCommands(who)); }
+						}
+						""",
 				"late.neo.NeoTouch", "package late.neo; public class NeoTouch { public final Object who; public boolean canceled; public NeoTouch(Object who){this.who=who;} }",
 				"late.neo.Hooks", """
 						package late.neo;
@@ -89,8 +107,10 @@ class NativeDualEventInjectorExecutionTest {
 						        for (Consumer<Object> listener : List.copyOf(LISTENERS)) listener.accept(event);
 						        return event;
 						    };
+						    static { LISTENERS.add(event -> { if (event instanceof NeoLogin login) Commands.register(login.who); }); }
 						    public static boolean touch(Object who) { return ((NeoTouch) BUS.post(new NeoTouch(who))).canceled; }
 						    public static void stitched(Object who) { late.neo.bus.Loader.postEvent(new Stitched(who)); }
+						    public static void login(Object who) { BUS.post(new NeoLogin(who)); }
 						}
 						""",
 				"late.forge.bus.ForgeBus", "package late.forge.bus; public interface ForgeBus { boolean post(Object event); }",
@@ -109,8 +129,9 @@ class NativeDualEventInjectorExecutionTest {
 						        for (Consumer<Object> listener : List.copyOf(LISTENERS)) listener.accept(event);
 						        return ((ForgeTouch) event).canceled;
 						    };
+						    static { LISTENERS.add(event -> { if (event instanceof ForgeLogin login) Commands.register(login.who); }); }
 						    public static void stitched(Object who) { BUS.post(new ForgeStitched(who)); }
-
+						    public static void login(Object who) { BUS.post(new ForgeLogin(who)); }
 						    public static boolean touch(Object who) { return BUS.post(new ForgeTouch(who)); }
 						    public static boolean touchIf(Object who, boolean when) { if (!when) return false; return BUS.post(new ForgeTouch(who)); }
 						    public static boolean touchShared() { return BUS.post(ForgeTouch.SHARED); }
@@ -134,6 +155,15 @@ class NativeDualEventInjectorExecutionTest {
 						        late.neo.bus.Loader.MODS.get(1).add(event -> {
 						            Object who = ((late.neo.Stitched) event).who;
 						            if (!covered(event, "late/forge/ForgeStitched", () -> late.forge.Factory.stitched(who))) late.forge.Factory.stitched(who);
+						        });
+						        late.neo.Hooks.LISTENERS.add(event -> {
+						            if (!(event instanceof late.neo.NeoLogin login) || login.canceled) return;
+						            if (!covered(event, "late/forge/ForgeLogin", () -> late.forge.Factory.login(login.who))) late.forge.Factory.login(login.who);
+						        });
+						        late.neo.Hooks.LISTENERS.add(event -> {
+						            if (!(event instanceof late.neo.NeoCommands commands) || commands.canceled) return;
+						            Runnable forward = () -> late.forge.Factory.BUS.post(new late.forge.ForgeCommands(commands.who));
+						            if (!covered(event, "late/forge/ForgeCommands", forward)) forward.run();
 						        });
 						        late.neo.Hooks.LISTENERS.add(event -> {
 						            if (event.getClass() != late.neo.NeoTouch.class) return;
@@ -176,6 +206,8 @@ class NativeDualEventInjectorExecutionTest {
 						    public static void stitchedAfter(Object who) { Hooks.stitched(who); Factory.stitched(who); }
 						    public static void stitchedInline(Object who) { Factory.stitched(who); late.neo.bus.Loader.postEvent(new late.neo.Stitched(who)); }
 						    public static void stitchedNeoOnly(Object who) { Hooks.stitched(who); }
+						    public static void loginBoth(Object who) { Factory.login(who); Hooks.login(who); }
+						    public static void loginNeoOnly(Object who) { Hooks.login(who); }
 						}
 						""");
 	}
@@ -419,6 +451,35 @@ class NativeDualEventInjectorExecutionTest {
 		Object alone = new Object();
 		after.runFor(alone, "stitchedNeoOnly");
 		assertEquals(1, after.typed("late/forge/Factory", "ForgeStitched", alone), "no native call: the bridge forwards, once");
+	}
+
+	/**
+	 * Each family's own listener of its login posts its client-commands event. The game delivers MinecraftForge's login
+	 * natively before NeoForge's, so MinecraftForge's own listener has delivered the commands event once already; the
+	 * commands NeoForge's own listener posts inside NeoForge's login are not forwarded again. Commands posted anywhere else
+	 * still are.
+	 */
+	@Test
+	void whatMinecraftForgesOwnListenerPostsInsideANativeDeliveryIsNotForwardedAgain(@TempDir Path work) throws Exception {
+		Map<String, byte[]> classes = classes(work);
+		World before = world(classes, false);
+		Object who = new Object();
+		before.runFor(who, "loginBoth");
+		assertEquals(2, before.typed("late/forge/Factory", "ForgeLogin", who), "premise: the login twice");
+		assertEquals(3, before.typed("late/forge/Factory", "ForgeCommands", who),
+				"premise: the commands from each MinecraftForge login, and the forward of NeoForge's");
+
+		World after = world(classes, true);
+		Object subject = new Object();
+		after.runFor(subject, "loginBoth");
+		assertEquals(1, after.typed("late/forge/Factory", "ForgeLogin", subject), "the native login is the one delivery");
+		assertEquals(1, after.typed("late/forge/Factory", "ForgeCommands", subject),
+				"MinecraftForge's own listener delivered the commands inside it; NeoForge's are not forwarded again");
+		assertEquals(1, after.typed("late/neo/Hooks", "NeoCommands", subject), "NeoForge's own listener still posted its own");
+
+		Object posted = new Object();
+		after.type("late/neo/Commands").getMethod("register", Object.class).invoke(null, posted);
+		assertEquals(1, after.typed("late/forge/Factory", "ForgeCommands", posted), "commands posted on their own: forwarded, once");
 	}
 
 	private static int excused(World world) throws Exception {

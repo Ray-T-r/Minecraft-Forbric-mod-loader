@@ -35,6 +35,15 @@ import java.util.concurrent.atomic.AtomicInteger;
  * caller settles it where it leaves the native delivery's path ({@link #bypassed}): delivered there on a NeoForge-only
  * way out, excused on a shared one, and never asked for once the native call has run.
  *
+ * <p>And a cascade: what each family's OWN code posts while its event is being dispatched. MinecraftForge's own listener of
+ * its login event registers client commands by posting their event, and NeoForge's own listener of its login event does
+ * the same with NeoForge's. Where the game delivers MinecraftForge's event natively before NeoForge's, a recording also
+ * keeps the MinecraftForge events MinecraftForge's own (instrumented) classes constructed inside that dispatch, and the
+ * scope around the NeoForge call takes them for the events it covers; what NeoForge's own (instrumented) classes
+ * construct while that call is dispatching is the scope's cascade. A bridge stands down for a NeoForge cascade event
+ * whose MinecraftForge counterpart the native dispatch already cascaded: MinecraftForge's own listener delivered it, once,
+ * as it does on MinecraftForge.
+ *
  * <p>Identity, not class: a listener of the outer event may post another event of the same class, and that one has no
  * native counterpart. Construction inside a wrapped hook is captured only while that hook is not itself dispatching
  * ({@link #dispatching}), so an event a listener constructs is never taken for the hook's own. Caller and mod names
@@ -47,6 +56,11 @@ public final class NativeEventDelivery {
 	private static final ThreadLocal<Map<String, Set<String>>> PENDING = new ThreadLocal<>();
 	/** Per thread: caller group → what bridges that stood down for a faithful native delivery still owe. */
 	private static final ThreadLocal<Map<String, List<Owed>>> OWED = new ThreadLocal<>();
+	/**
+	 * Per thread: caller group → MinecraftForge event a recorded delivery dispatched → the MinecraftForge events
+	 * MinecraftForge's own classes constructed inside that dispatch (its cascade).
+	 */
+	private static final ThreadLocal<Map<String, Map<String, Set<String>>>> CASCADED = new ThreadLocal<>();
 	/** Scopes and recordings open on any thread: the hot paths read these volatiles and return while nothing is open. */
 	private static final AtomicInteger OPEN = new AtomicInteger(), RECORDING = new AtomicInteger();
 	/** The {@code ;}-joined event lists wrappers pass, parsed once each. */
@@ -87,6 +101,8 @@ public final class NativeEventDelivery {
 		if (pending != null && pending.remove(group) != null && pending.isEmpty()) PENDING.remove();
 		Map<String, List<Owed>> owed = OWED.get();
 		if (owed != null && owed.remove(group) != null && owed.isEmpty()) OWED.remove();
+		Map<String, Map<String, Set<String>>> cascaded = CASCADED.get();
+		if (cascaded != null && cascaded.remove(group) != null && cascaded.isEmpty()) CASCADED.remove();
 	}
 
 	/**
@@ -153,10 +169,15 @@ public final class NativeEventDelivery {
 		return recordings == null ? null : recordings.peekLast();
 	}
 
-	/** Inserted right after an instrumented MinecraftForge hook constructs an event. */
+	/**
+	 * Inserted right after an instrumented MinecraftForge hook constructs an event: the recorded delivery's own while it
+	 * is not dispatching, part of its cascade while it is.
+	 */
 	public static void nativeConstructed(Object event) {
 		Recording recording = innermostRecording();
-		if (recording != null && recording.depth == 0 && event != null) recording.add(event);
+		if (recording == null || event == null) return;
+		if (recording.depth == 0) recording.add(event);
+		else recording.cascade(event);
 	}
 
 	/** Inserted right before an instrumented MinecraftForge hook posts. */
@@ -177,6 +198,9 @@ public final class NativeEventDelivery {
 		private final Set<String> candidates;
 		private final Thread thread;
 		private Set<String> delivered = Set.of();
+		/** The delivered event being dispatched now, and per delivered event what MinecraftForge's own classes cascaded. */
+		private String current;
+		private Map<String, Set<String>> cascades = Map.of();
 		private int depth;
 		private boolean closed;
 
@@ -194,9 +218,17 @@ public final class NativeEventDelivery {
 
 		private void add(Object event) {
 			String name = event.getClass().getName().replace('.', '/');
-			if (!candidates.contains(name) || delivered.contains(name)) return;
+			if (!candidates.contains(name)) return;
+			current = name;
+			if (delivered.contains(name)) return;
 			if (delivered.isEmpty()) delivered = new HashSet<>(2);
 			delivered.add(name);
+		}
+
+		private void cascade(Object event) {
+			if (current == null) return;
+			if (cascades.isEmpty()) cascades = new HashMap<>(2);
+			cascades.computeIfAbsent(current, k -> new HashSet<>(2)).add(event.getClass().getName().replace('.', '/'));
 		}
 
 		@Override
@@ -210,6 +242,13 @@ public final class NativeEventDelivery {
 			closed = true;
 			RECORDING.decrementAndGet();
 			if (recordings.isEmpty()) RECORDINGS.remove();
+			if (!cascades.isEmpty()) {
+				Map<String, Map<String, Set<String>>> cascaded = CASCADED.get();
+				if (cascaded == null) CASCADED.set(cascaded = new HashMap<>());
+				Map<String, Set<String>> mine = cascaded.computeIfAbsent(group, k -> new HashMap<>());
+				// The latest delivery of an event is the one a NeoForge call after it pairs with.
+				mine.putAll(cascades);
+			}
 			if (delivered.isEmpty()) return;
 			Map<String, Set<String>> pending = PENDING.get();
 			if (pending == null) PENDING.set(pending = new HashMap<>());
@@ -272,9 +311,20 @@ public final class NativeEventDelivery {
 			covers = new HashSet<>(definite);
 			covers.addAll(faithful);
 		}
+		Set<String> cascade = Set.of();
+		Map<String, Map<String, Set<String>>> cascaded = group == null ? null : CASCADED.get();
+		Map<String, Set<String>> mine = cascaded == null ? null : cascaded.get(group);
+		if (mine != null) {
+			for (String covered : covers) {
+				Set<String> under = mine.get(covered);
+				if (under == null) continue;
+				if (cascade.isEmpty()) cascade = new HashSet<>(under);
+				else cascade.addAll(under);
+			}
+		}
 		ArrayDeque<Scope> scopes = SCOPES.get();
 		if (scopes == null) SCOPES.set(scopes = new ArrayDeque<>());
-		Scope scope = new Scope(covers, definite, group, recorded, Thread.currentThread());
+		Scope scope = new Scope(covers, definite, group, recorded, cascade, Thread.currentThread());
 		scopes.addLast(scope);
 		OPEN.incrementAndGet();
 		return scope;
@@ -286,10 +336,15 @@ public final class NativeEventDelivery {
 		return scopes == null ? null : scopes.peekLast();
 	}
 
-	/** Inserted right after an instrumented NeoForge hook constructs an event: captured while it is not dispatching. */
+	/**
+	 * Inserted right after an instrumented NeoForge hook constructs an event: captured as the call's own while it is not
+	 * dispatching, as its cascade while it is (only where the native delivery before it cascaded something).
+	 */
 	public static void constructed(Object event) {
 		Scope scope = innermost();
-		if (scope != null && scope.depth == 0 && event != null) scope.add(event);
+		if (scope == null || event == null) return;
+		if (scope.depth == 0) scope.add(event);
+		else scope.addCascade(event);
 	}
 
 	/** Inserted right before an instrumented NeoForge hook posts: what listeners construct from here on is theirs. */
@@ -337,6 +392,8 @@ public final class NativeEventDelivery {
 				if (deferred != null) scope.owe(forgeEvents, deferred);
 				return intersection(forgeEvents, scope.covers);
 			}
+			// A NeoForge cascade event whose MinecraftForge counterpart the native dispatch cascaded already.
+			if (scope.cascadeHolds(event) && !Collections.disjoint(scope.cascade, forgeEvents)) return intersection(forgeEvents, scope.cascade);
 		}
 		return Set.of();
 	}
@@ -355,19 +412,34 @@ public final class NativeEventDelivery {
 		private final String group;
 		private final Set<String> recorded;
 		private final Thread thread;
-		private Object[] events = new Object[2];
+		/** The MinecraftForge events the native delivery before this call cascaded, and NeoForge's own cascade here. */
+		private final Set<String> cascade;
+		private Object[] events = new Object[2], cascadeEvents;
 		private Set<String> used = Set.of();
 		private List<Owed> owed = List.of();
-		private int size;
+		private int size, cascadeSize;
 		private int depth;
 		private boolean closed;
 
-		private Scope(Set<String> covers, Set<String> definite, String group, Set<String> recorded, Thread thread) {
+		private Scope(Set<String> covers, Set<String> definite, String group, Set<String> recorded, Set<String> cascade, Thread thread) {
 			this.covers = covers;
 			this.definite = definite;
 			this.group = group;
 			this.recorded = recorded;
+			this.cascade = cascade;
 			this.thread = thread;
+		}
+
+		private void addCascade(Object event) {
+			if (cascade.isEmpty() || cascadeHolds(event)) return;
+			if (cascadeEvents == null) cascadeEvents = new Object[2];
+			else if (cascadeSize == cascadeEvents.length) cascadeEvents = Arrays.copyOf(cascadeEvents, cascadeSize * 2);
+			cascadeEvents[cascadeSize++] = event;
+		}
+
+		private boolean cascadeHolds(Object event) {
+			for (int i = 0; i < cascadeSize; i++) if (cascadeEvents[i] == event) return true;
+			return false;
 		}
 
 		/**

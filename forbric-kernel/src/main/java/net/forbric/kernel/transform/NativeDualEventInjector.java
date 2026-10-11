@@ -42,8 +42,10 @@ import org.objectweb.asm.tree.analysis.*;
  * <ul>
  *   <li>Proved, when the F-site's hook delivers on every path to a normal return: in the caller's control-flow graph
  *       with its exception edges, the F-site's normal completion dominates the N-site, or the F-site post-dominates the
- *       N-site's normal completion; either way the N-site cannot run again without the F-site. Only the NeoForge call
- *       changes.</li>
+ *       N-site's normal completion; either way the N-site cannot run again without the F-site. An F-site that dominates
+ *       is recorded as well, for its cascade (what MinecraftForge's own listeners post inside its dispatch): a NeoForge
+ *       event NeoForge's own listeners post inside the NeoForge call, whose MinecraftForge counterpart that cascade
+ *       holds, is delivered natively too.</li>
  *   <li>Recorded, for any other F-site that can run BEFORE the N-site: its call is wrapped so that what the
  *       MinecraftForge hook actually constructs (at its own level, not its listeners') is committed for the caller,
  *       and the N-site's scope covers it. A hook that posts only under a condition, or a pair of calls both families
@@ -302,8 +304,11 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			for (Site forge : forgeSites) {
 				int f = forge.index(), n = neo.index();
 				if (!forge.always().isEmpty() && (dominates(flow, f, n) || postDominates(flow, f, n))) {
-					// Proved from the bytecode alone: the caller is left exactly as it was apart from the NeoForge call.
+					// Proved from the bytecode alone. A delivery that comes first is recorded as well, for its cascade: what
+					// MinecraftForge's own listeners post inside it, which NeoForge's own listeners post again inside the
+					// NeoForge call (a bridge stands down for those too).
 					proved.addAll(forge.always());
+					if (dominates(flow, f, n)) recorded.add(forge);
 				} else if (flow.reachesFrom(f, n)) {
 					candidates.addAll(forge.maybe());
 					recorded.add(forge);
