@@ -25,10 +25,19 @@ class DragonPartsInjectorTest {
     @Test void theDebugHitboxesKeepTheirNativePartApi()throws Exception{
         byte[] original=NativeCoremodParityTest.read(MERGED,DragonPartsInjector.HITBOXES.replace('.','/'));assertSame(original,new DragonPartsInjector().transform(DragonPartsInjector.HITBOXES,original,null));assertTrue(node(original).methods.stream().flatMap(m->Arrays.stream(m.instructions.toArray())).anyMatch(i->i instanceof MethodInsnNode call&&call.name.equals("getParts")&&call.desc.equals(DragonPartsInjector.FORGE_GET_PARTS)));
     }
+    /**
+     * The dragon repair never touches the client's tracking callbacks; the two part-tracking repairs own them, run in the
+     * kernel's order. Which of the two edits depends on the body the merge keeps: NeoForge's alone is the companion's (the
+     * client repair stands down on it), a composed one is first made null-tolerant by the client repair.
+     */
     @Test void theClientsTrackingCallbacksAreLeftToThePartTrackingRepairs()throws Exception{
         byte[] original=NativeCoremodParityTest.read(MERGED,ClientPartTrackingInjector.CALLBACKS_INTERNAL);assertSame(original,new DragonPartsInjector().transform(ClientPartTrackingInjector.CALLBACKS,original,null));
-        assertSame(original,new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,original,null));
-        ForgePartTrackingInjector tracking=new ForgePartTrackingInjector(owner->{try{return NativeCoremodParityTest.read(MERGED,owner);}catch(Exception absent){return null;}});assertNotSame(original,tracking.transform(ClientPartTrackingInjector.CALLBACKS,original,null));
+        byte[] client=new ClientPartTrackingInjector().transform(ClientPartTrackingInjector.CALLBACKS,original,null);
+        boolean neoOnly=true;
+        for(MethodNode method:node(original).methods)if(method.name.equals("onTrackingStart")&&method.desc.equals(ClientPartTrackingInjector.TRACKING_START_DESC))
+            for(var insn:method.instructions)if(insn instanceof MethodInsnNode call&&call.name.equals("getParts")&&call.desc.equals(ClientPartTrackingInjector.FORGE_GET_PARTS))neoOnly=false;
+        if(neoOnly)assertSame(original,client,"NeoForge's body alone is the companion repair's");
+        ForgePartTrackingInjector tracking=new ForgePartTrackingInjector(owner->{try{return NativeCoremodParityTest.read(MERGED,owner);}catch(Exception absent){return null;}});assertNotSame(client,tracking.transform(ClientPartTrackingInjector.CALLBACKS,client,null),"the companion repair still has a NeoForge-only direction to complete");
     }
     private static ClassNode node(byte[] bytes){ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return node;}
 }
