@@ -187,6 +187,8 @@ public enum ForeignType {
 			"net.neoforged.neoforge.registries.RegisterEvent"),
 	REGISTRY_MANAGER("net.minecraftforge.registries.RegistryManager",
 			"net.neoforged.neoforge.registries.RegistryManager"),
+	RESOURCE_PACK_LOADER("net.minecraftforge.resource.ResourcePackLoader",
+			"net.neoforged.neoforge.resource.ResourcePackLoader"),
 	SERVER_LIFECYCLE_HOOKS("net.minecraftforge.server.ServerLifecycleHooks",
 			"net.neoforged.neoforge.server.ServerLifecycleHooks"),
 	SERVER_MOD_LOADER("net.minecraftforge.server.loading.ServerModLoader",

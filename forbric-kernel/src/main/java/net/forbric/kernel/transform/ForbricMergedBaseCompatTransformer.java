@@ -433,7 +433,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String KERNEL_FUEL_VALUES = "net/forbric/kernel/runtime/KernelFuelValues";
 	private static final String KERNEL_SPAWNER_FINALIZE = "net/forbric/kernel/runtime/KernelSpawnerFinalize";
 	private static final String KERNEL_PACK_FINDERS = "net/forbric/kernel/runtime/KernelPackFinders";
-	private static final String NEO_RESOURCE_PACK_LOADER = "net/neoforged/neoforge/resource/ResourcePackLoader";
+	private static final String NEO_RESOURCE_PACK_LOADER = ForeignType.RESOURCE_PACK_LOADER.internal(Ecosystem.NEOFORGE);
 	private static final String BASE_SPAWNER = "net/minecraft/world/level/BaseSpawner";
 	private static final String NEO_EVENT_HOOKS = "net/neoforged/neoforge/event/EventHooks";
 	private static final String FUEL_VALUES = "net/minecraft/world/level/block/entity/FuelValues";

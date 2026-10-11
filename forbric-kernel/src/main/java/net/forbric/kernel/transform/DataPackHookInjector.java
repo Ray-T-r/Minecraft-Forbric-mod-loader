@@ -48,7 +48,7 @@ import net.forbric.kernel.util.ForbricLog;
  * may need to reach 2.
  */
 public final class DataPackHookInjector implements ClassTransformer {
-	private static final String TARGET = "net.neoforged.neoforge.resource.ResourcePackLoader";
+	private static final String TARGET = net.forbric.api.ForeignType.RESOURCE_PACK_LOADER.binary(net.forbric.api.Ecosystem.NEOFORGE);
 	private static final String METHOD = "populatePackRepository";
 	private static final String DESC =
 			"(Lnet/minecraft/server/packs/repository/PackRepository;Lnet/minecraft/server/packs/PackType;Z)V";

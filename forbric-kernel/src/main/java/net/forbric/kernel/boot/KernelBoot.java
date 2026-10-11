@@ -1311,7 +1311,7 @@ public final class KernelBoot {
 	}
 
 	/** MinecraftForge's {@code ResourcePackLoader.loadResourcePacks(PackRepository, boolean)}. */
-	static final String FORGE_RESOURCE_PACK_LOADER = "net.minecraftforge.resource.ResourcePackLoader";
+	static final String FORGE_RESOURCE_PACK_LOADER = ForeignType.RESOURCE_PACK_LOADER.binary(Ecosystem.FORGE);
 	static final String FORGE_LOAD_RESOURCE_PACKS_DESC = "(Lnet/minecraft/server/packs/repository/PackRepository;Z)V";
 
 	/** MinecraftForge's {@code ServerLifecycleHooks.runModifiers(MinecraftServer)}. */
