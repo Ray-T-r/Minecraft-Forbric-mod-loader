@@ -25,7 +25,8 @@ import org.objectweb.asm.tree.*;
 
 /**
  * What only the whole merged class shows about its edit splices, through the builder on synthetic three-way classes:
- * captured lambdas put back on their capturer's side when the capturer was spliced, and the lambda audit. Every merged class is
+ * captured lambdas put back on their capturer's side when the capturer was spliced, a carried read of a field
+ * nothing writes withheld (again and again until nothing changes), and the lambda audit. Every merged class is
  * defined and run, and the order of the probe calls is compared with what both patches together mean.
  */
 public class EditSpliceClassChecksTest {
@@ -140,6 +141,11 @@ public class EditSpliceClassChecksTest {
 		cn.superName = "java/lang/Object";
 		cn.sourceFile = name.substring(name.lastIndexOf('/') + 1) + ".java";
 		cn.methods.addAll(List.of(methods));
+		return cn;
+	}
+
+	private static ClassNode withField(ClassNode cn, String field) {
+		cn.fields.add(new FieldNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, field, "Ljava/lang/Integer;", null, null));
 		return cn;
 	}
 
@@ -296,6 +302,105 @@ public class EditSpliceClassChecksTest {
 		Class<?> c = b.load(SPAWN);
 		assertEquals(7, call(c, c.getConstructor().newInstance(), "spawn", 7));
 		assertEquals(List.of(1, 200, 2, 100, 3), CALLS);
+	}
+
+	// ---- a carried read of a field nothing writes ----------------------------------------------------------------
+
+	private static final String TITLE = "net/minecraft/demo/Title";
+
+	/** {@code notice = FORGE.make(value)}, or with {@code fromUnnamedLocal} the value from a local without a name. */
+	private static AbstractInsnNode[] writeNotice(String field, boolean fromUnnamedLocal) {
+		return new AbstractInsnNode[] { fromUnnamedLocal ? new VarInsnNode(Opcodes.ILOAD, 4) : new IntInsnNode(Opcodes.SIPUSH, 42),
+				new MethodInsnNode(Opcodes.INVOKESTATIC, FORGE, "make", "(I)Ljava/lang/Integer;", false),
+				new FieldInsnNode(Opcodes.PUTSTATIC, TITLE, field, "Ljava/lang/Integer;") };
+	}
+
+	private static AbstractInsnNode[] showNotice(String owner, String field) {
+		return new AbstractInsnNode[] { new FieldInsnNode(Opcodes.GETSTATIC, owner, field, "Ljava/lang/Integer;"),
+				new MethodInsnNode(Opcodes.INVOKESTATIC, FORGE, "show", "(Ljava/lang/Integer;)V", false) };
+	}
+
+	/**
+	 * TitleScreen's shape: MinecraftForge's setup writes its private field notice and its render shows it; NeoForge
+	 * adds a mark to each. {@code writerCarried} false makes MinecraftForge's writer read a local without a name, so
+	 * its run has no place and setup keeps NeoForge's body.
+	 */
+	private Build title(boolean writerCarried) throws Exception {
+		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
+		ClassNode vanilla = type(TITLE,
+				new M(TITLE, st, "setup", "()V").line(20, rec(10)).line(21, ret()).done(),
+				new M(TITLE, st, "render", "(I)I").line(30, rec(1)).line(31, rec(2)).line(32, returnX(false)).done());
+		ClassNode forge = withField(type(TITLE,
+				new M(TITLE, st, "setup", "()V").line(20, rec(10)).line(21, writeNotice("notice", !writerCarried)).line(22, ret()).done(),
+				new M(TITLE, st, "render", "(I)I").line(31, rec(1)).line(32, showNotice(TITLE, "notice")).line(33, rec(2))
+						.line(34, returnX(false)).done()), "notice");
+		ClassNode neo = type(TITLE,
+				new M(TITLE, st, "setup", "()V").line(20, rec(10)).line(21, mark(NEO, 200)).line(22, ret()).done(),
+				new M(TITLE, st, "render", "(I)I").line(31, rec(1)).line(32, mark(NEO, 201)).line(33, rec(2)).line(34, returnX(false)).done());
+		String patch = patch(hunk(20, 20, "W", "A", "R"), hunk(30, 31, "S", "A", "B", "R"));
+		return build(vanilla, forge, neo, patch, patch);
+	}
+
+	@Test
+	void aCarriedReadOfAFieldWhoseWriterWasNotCarriedIsWithheld() throws Exception {
+		Build b = title(false);
+		assertTrue(b.report.contains(TITLE + "#setup()V NOT SPLICED"), b.report);
+		assertTrue(b.report.contains("x withheld L32-32 it reads notice, which nothing in the merged class writes"), b.report);
+		assertTrue(b.report.contains(TITLE + "#render(I)I (forge hook lost)"), b.report);
+		Class<?> c = b.load(TITLE);
+		call(c, null, "setup");
+		assertEquals(7, call(c, null, "render", 7), "no NullPointerException from showing a notice nothing set");
+		assertEquals(List.of(10, 200, 1, 201, 2), CALLS);
+	}
+
+	/** Negative control: when MinecraftForge's writer is carried, so is its reader. */
+	@Test
+	void aCarriedReadOfAFieldACarriedRunWritesIsKept() throws Exception {
+		Build b = title(true);
+		assertTrue(b.report.contains(TITLE + "#setup()V SPLICED"), b.report);
+		assertTrue(b.report.contains(TITLE + "#render(I)I SPLICED"), b.report);
+		assertFalse(b.report.contains("which nothing in the merged class writes"), b.report);
+		Class<?> c = b.load(TITLE);
+		call(c, null, "setup");
+		assertEquals(7, call(c, null, "render", 7));
+		assertEquals(List.of(10, 200, 1, 42, 201, 2), CALLS);
+	}
+
+	@Test
+	void withholdingIsRepeatedUntilNoCarriedReadIsLeftWithoutAWriter() throws Exception {
+		// MinecraftForge's p computes a from b, and q shows a. b's writer has no place, so p's run is withheld; that
+		// takes away a's only writer, so q's run is withheld in the next round. Each method is arbitrated and
+		// reported once, by the round that stands.
+		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
+		AbstractInsnNode[] aFromB = { new FieldInsnNode(Opcodes.GETSTATIC, TITLE, "b", "Ljava/lang/Integer;"),
+				new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I", false),
+				new MethodInsnNode(Opcodes.INVOKESTATIC, FORGE, "make", "(I)Ljava/lang/Integer;", false),
+				new FieldInsnNode(Opcodes.PUTSTATIC, TITLE, "a", "Ljava/lang/Integer;") };
+		ClassNode vanilla = type(TITLE,
+				new M(TITLE, st, "setup", "()V").line(20, rec(10)).line(21, ret()).done(),
+				new M(TITLE, st, "p", "(I)I").line(30, rec(1)).line(31, rec(2)).line(32, returnX(false)).done(),
+				new M(TITLE, st, "q", "(I)I").line(40, rec(3)).line(41, rec(4)).line(42, returnX(false)).done());
+		ClassNode forge = withField(withField(type(TITLE,
+				new M(TITLE, st, "setup", "()V").line(20, rec(10)).line(21, writeNotice("b", true)).line(22, ret()).done(),
+				new M(TITLE, st, "p", "(I)I").line(31, rec(1)).line(32, aFromB).line(33, rec(2)).line(34, returnX(false)).done(),
+				new M(TITLE, st, "q", "(I)I").line(42, rec(3)).line(43, showNotice(TITLE, "a")).line(44, rec(4)).line(45, returnX(false)).done()),
+				"a"), "b");
+		ClassNode neo = type(TITLE,
+				new M(TITLE, st, "setup", "()V").line(20, rec(10)).line(21, mark(NEO, 200)).line(22, ret()).done(),
+				new M(TITLE, st, "p", "(I)I").line(31, rec(1)).line(32, mark(NEO, 201)).line(33, rec(2)).line(34, returnX(false)).done(),
+				new M(TITLE, st, "q", "(I)I").line(42, rec(3)).line(43, mark(NEO, 202)).line(44, rec(4)).line(45, returnX(false)).done());
+		String patch = patch(hunk(20, 20, "W", "A", "R"), hunk(30, 31, "S", "A", "B", "R"), hunk(40, 42, "S", "A", "B", "R"));
+		Build b = build(vanilla, forge, neo, patch, patch);
+		assertTrue(b.report.contains("x withheld L32-32 it reads b, which nothing in the merged class writes"), b.report);
+		assertTrue(b.report.contains("x withheld L43-43 it reads a, which nothing in the merged class writes"), b.report);
+		assertEquals(1, b.occurrences(TITLE + "#p(I)I (forge hook lost)"), b.report);
+		assertEquals(1, b.occurrences(TITLE + "#q(I)I (forge hook lost)"), b.report);
+		assertEquals(1, b.occurrences(TITLE + "#p(I)I DECLINED"), b.report);
+		Class<?> c = b.load(TITLE);
+		call(c, null, "setup");
+		assertEquals(7, call(c, null, "p", 7));
+		assertEquals(7, call(c, null, "q", 7));
+		assertEquals(List.of(10, 200, 1, 201, 2, 3, 202, 4), CALLS);
 	}
 
 	// ---- the lambda audit ------------------------------------------------------------------------------------------

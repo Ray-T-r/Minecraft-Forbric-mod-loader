@@ -1070,13 +1070,13 @@ public final class MergedBaseBuilder {
 			}
 		}
 
+		Set<String> allExclusiveAdded = new LinkedHashSet<>(baseExclusiveAddedFields);
+		allExclusiveAdded.addAll(otherExclusiveAddedFields);
 		settleSplices(name, baseN, baseMethods, otherN, baseIsForge ? frg : neu, baseIsForge ? neu : frg, baseIsForge,
-				basePkg, otherPkg);
+				basePkg, otherPkg, allExclusiveAdded);
 		FieldContractReconciler.reconcile(baseN, frgN, neuN, declarationGraph, generatedFieldProviders);
 		resolveDuplicateFieldNames(baseN);
 		resolveDiamondDefaults(baseN);
-		Set<String> allExclusiveAdded = new LinkedHashSet<>(baseExclusiveAddedFields);
-		allExclusiveAdded.addAll(otherExclusiveAddedFields);
 		injectMissingExclusiveFieldInits(baseN, allExclusiveAdded);
 		auditBaseAddedFieldWriters(baseN, baseExclusiveAddedFields);
 
@@ -1093,11 +1093,19 @@ public final class MergedBaseBuilder {
 	/** How a class's splices are being settled: see {@link #settleSplices}. */
 	private enum SettleMode { SPLICE, PROBE, KEEP, FALLBACK }
 
+	private static final int MAX_SETTLE_ROUNDS = 64;
+
 	/**
 	 * Splices every pending method of the class, puts captured lambdas back on their capturer's side, and checks what
-	 * only the whole merged class shows.
+	 * only the whole merged class shows, merging the class's splices again until nothing changes.
 	 *
-	 * <p>The class's method handles into itself are audited ({@link #auditCapturedLambdas}). Findings the splices
+	 * <p>A carried unit that reads a private field of the class nothing will write is a {@code NullPointerException}
+	 * waiting in the merged body: its own side's writer did not survive the merge (a refused splice of that writer, a
+	 * method the other side's body won). Every such unit is withheld and its method spliced again without it, which
+	 * may withhold the units that belong with it, refuse the whole method and so take away a writer another splice
+	 * relied on; the check runs again until no unit is added.
+	 *
+	 * <p>Then the class's method handles into itself are audited ({@link #auditCapturedLambdas}). Findings the splices
 	 * introduced fail them all: the class is merged again without splicing (each pending method gets the arbitration it
 	 * had before edit splicing) and every splice is reported refused by the audit. A finding the class has without the
 	 * splices as well (two sides capturing one lambda, a named helper the merge took from the other side) is not the
@@ -1108,7 +1116,8 @@ public final class MergedBaseBuilder {
 	 * arbitrated and reported once, by the round that stands.
 	 */
 	private void settleSplices(String name, ClassNode baseN, Map<String, MethodNode> baseMethods, ClassNode otherN,
-			byte[] baseSideBytes, byte[] otherSideBytes, boolean baseIsForge, String basePkg, String otherPkg) {
+			byte[] baseSideBytes, byte[] otherSideBytes, boolean baseIsForge, String basePkg, String otherPkg,
+			Set<String> exclusiveAdded) {
 		List<PendingSplice> pending = List.copyOf(pendingSplices);
 		pendingSplices.clear();
 		Map<String, MethodNode> otherMethods = methodMap(parse(otherSideBytes));
@@ -1117,6 +1126,7 @@ public final class MergedBaseBuilder {
 		Map<String, MethodNode> baseSideMethods = pending.isEmpty() ? Map.of() : methodMap(parse(baseSideBytes));
 		String source = PatchLineProvenance.sourcePath(name, baseN.sourceFile);
 		Rewind rewind = new Rewind(baseN, baseMethods);
+		Map<String, Map<EditSplicer.RunId, String>> withheld = new LinkedHashMap<>();
 		SettleMode mode = splicer == null || pending.isEmpty() ? SettleMode.FALLBACK : SettleMode.SPLICE;
 		List<EditSplicer.Result> results = new ArrayList<>(), lastSpliceResults = List.of();
 		Set<String> lastSpliced = Set.of();
@@ -1130,7 +1140,7 @@ public final class MergedBaseBuilder {
 			for (PendingSplice p : pending) {
 				EditSplicer.Result r = !splicing ? null : splicer.splice(new EditSplicer.Input(baseN, p.base(), p.other(), source,
 						baseIsForge ? forgeProvenance : neoProvenance, baseIsForge ? neoProvenance : forgeProvenance,
-						!baseIsForge, baseMethods, otherMethods, baseSideMethods, memberOrigin));
+						!baseIsForge, baseMethods, otherMethods, baseSideMethods, memberOrigin, withheld.get(p.key())));
 				results.add(r);
 				if (r != null && r.accepted()) spliced.add(p.key());
 				applySplice(name, baseN, baseMethods, p, r, basePkg, otherPkg, baseIsForge);
@@ -1146,6 +1156,13 @@ public final class MergedBaseBuilder {
 				break;
 			}
 			if (mode == SettleMode.KEEP || mode == SettleMode.FALLBACK || spliced.isEmpty()) break;
+			if (round + 1 >= MAX_SETTLE_ROUNDS) {
+				fallbackReason = "withholding runs that read fields nothing writes did not settle";
+				lastSpliceResults = results;
+				mode = SettleMode.FALLBACK;
+				continue;
+			}
+			if (withholdUnwrittenReads(name, baseN, pending, results, exclusiveAdded, withheld)) continue;
 			Set<String> findings = auditCapturedLambdas(baseN, methodMap(pristine), otherMethods, spliced, contested);
 			if (findings.isEmpty()) break;
 			spliceFindings = findings;
@@ -1242,6 +1259,61 @@ public final class MergedBaseBuilder {
 			accessWidened = widened;
 			lambdasRealigned = realigned;
 		}
+	}
+
+	/**
+	 * Withholds, per method, every carried unit that reads a private field of this class nothing will write: no method
+	 * of the merged class writes it, it has no constant value, no other field shares its name (a retyped pair is the
+	 * field-contract and duplicate-field passes' to settle), the exclusive-field pass will not give it a default, and
+	 * no class of its nest in either patched game writes it. Only the class and its nest can write a private field, so
+	 * no writer here is no writer anywhere; a field anything else may write is left alone. True when a unit was added.
+	 */
+	private boolean withholdUnwrittenReads(String name, ClassNode baseN, List<PendingSplice> pending,
+			List<EditSplicer.Result> results, Set<String> exclusiveAdded, Map<String, Map<EditSplicer.RunId, String>> withheld) {
+		Map<String, FieldNode> declared = fieldMap(baseN);
+		Map<String, Integer> sameName = new LinkedHashMap<>();
+		for (FieldNode f : baseN.fields) sameName.merge(f.name, 1, Integer::sum);
+		Set<String> written = new LinkedHashSet<>();
+		for (MethodNode m : baseN.methods) written.addAll(writtenFieldKeys(m, name));
+		Set<String> nestWrites = null;
+		boolean grew = false;
+		for (int i = 0; i < pending.size(); i++) {
+			EditSplicer.Result r = results.get(i);
+			if (r == null || !r.accepted()) continue;
+			for (EditSplicer.Carried unit : r.carried()) {
+				for (String read : unit.fieldReads()) {
+					FieldNode f = declared.get(read);
+					if (f == null || (f.access & Opcodes.ACC_PRIVATE) == 0 || f.value != null || sameName.get(f.name) > 1) continue;
+					if (written.contains(read) || (exclusiveAdded.contains(read) && defaultInitializable(f.desc))) continue;
+					if (nestWrites == null) nestWrites = nestWrites(name);
+					if (nestWrites.contains(read)) continue;
+					String why = "it reads " + f.name + ", which nothing in the merged class writes";
+					if (withheld.computeIfAbsent(pending.get(i).key(), k -> new LinkedHashMap<>()).putIfAbsent(unit.id(), why) == null) grew = true;
+					break;
+				}
+			}
+		}
+		return grew;
+	}
+
+	/** Whether {@link #injectMissingExclusiveFieldInits} gives a field of this type a default instance. */
+	private static boolean defaultInitializable(String desc) {
+		if (!desc.startsWith("L") || !desc.endsWith(";")) return false;
+		String type = desc.substring(1, desc.length() - 1);
+		return INTERFACE_DEFAULT_IMPLS.containsKey(type) || hasPublicNoArgConstructor(type);
+	}
+
+	/** The fields of {@code owner} ("name desc") a class of its nest, in either patched game, writes. */
+	private Set<String> nestWrites(String owner) {
+		String nest = topLevel(owner);
+		Set<String> out = new LinkedHashSet<>();
+		for (Map<String, byte[]> side : List.of(forgeClasses, neoClasses)) {
+			for (Map.Entry<String, byte[]> e : side.entrySet()) {
+				if (e.getKey().equals(owner) || !topLevel(e.getKey()).equals(nest)) continue;
+				for (MethodNode m : parse(e.getValue()).methods) out.addAll(writtenFieldKeys(m, owner));
+			}
+		}
+		return out;
 	}
 
 	/**

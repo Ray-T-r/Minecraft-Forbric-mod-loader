@@ -93,6 +93,9 @@ import org.objectweb.asm.tree.analysis.SourceValue;
  * merged class's current method of that name is never the reference: the per-method merge may have put the other
  * side's body there, and the merge puts it back on the base's side once the class is merged.
  *
+ * <p>The caller may withhold units for reasons only the whole class shows ({@link Input#withheld}); each carried unit
+ * is reported with the owner's fields it reads ({@link Carried}).
+ *
  * <p>A run that replaced vanilla lines replaces the base's copy of those lines only when the base left them vanilla.
  * When the base changed the same lines too, the two edits are kept once when they are the same instructions, and
  * otherwise the run is reported as a conflict and the base's edit stands. When both patches added a member of the
@@ -115,8 +118,24 @@ final class EditSplicer {
 	/** One carried-over or refused run, for the report. */
 	record Outcome(String kind, int firstLine, int lastLine, String detail) { }
 
+	/**
+	 * One carried unit, for the caller's whole-class checks: its identity, its lines, and the fields of the owner it
+	 * reads ({@code GETFIELD}/{@code GETSTATIC}, as "name desc"), its own instructions and those of every lambda it
+	 * brought along under a fresh name.
+	 */
+	record Carried(RunId id, int firstLine, int lastLine, Set<String> fieldReads) { }
+
 	record Result(MethodNode method, List<MethodNode> addedMethods, List<Outcome> spliced, List<Outcome> conflicts,
-			List<Outcome> refused, String reason) {
+			List<Outcome> refused, String reason, List<Carried> carried) {
+		Result {
+			if (carried == null) carried = List.of();
+		}
+
+		Result(MethodNode method, List<MethodNode> addedMethods, List<Outcome> spliced, List<Outcome> conflicts,
+				List<Outcome> refused, String reason) {
+			this(method, addedMethods, spliced, conflicts, refused, reason, List.of());
+		}
+
 		boolean accepted() {
 			return method != null;
 		}
@@ -147,14 +166,29 @@ final class EditSplicer {
 		MemberOrigin NONE = (owner, name, method) -> false;
 	}
 
-	/** Both sides of one method, with everything a splice needs to read. */
+	/**
+	 * Both sides of one method, with everything a splice needs to read. {@code ownerMethods} is the merged class as it
+	 * stands, {@code otherMethods} and {@code baseMethods} each side's class as its patch compiled it. {@code withheld}
+	 * names units the caller found it cannot carry (a whole-class reason this method cannot see) with the reason: they
+	 * are left out like any refused unit, and the units that belong with them are withheld too.
+	 */
 	record Input(ClassNode owner, MethodNode base, MethodNode other, String sourcePath,
 			PatchLineProvenance baseProvenance, PatchLineProvenance otherProvenance, boolean otherIsForge,
 			Map<String, MethodNode> ownerMethods, Map<String, MethodNode> otherMethods,
-			Map<String, MethodNode> baseMethods, MemberOrigin members) {
+			Map<String, MethodNode> baseMethods, MemberOrigin members, Map<RunId, String> withheld) {
 		Input {
 			if (baseMethods == null) baseMethods = ownerMethods;
 			if (members == null) members = MemberOrigin.NONE;
+			withheld = withheld == null ? Map.of() : Map.copyOf(withheld);
+		}
+
+		/** Nothing withheld. */
+		Input(ClassNode owner, MethodNode base, MethodNode other, String sourcePath,
+				PatchLineProvenance baseProvenance, PatchLineProvenance otherProvenance, boolean otherIsForge,
+				Map<String, MethodNode> ownerMethods, Map<String, MethodNode> otherMethods,
+				Map<String, MethodNode> baseMethods, MemberOrigin members) {
+			this(owner, base, other, sourcePath, baseProvenance, otherProvenance, otherIsForge, ownerMethods, otherMethods,
+					baseMethods, members, Map.of());
 		}
 
 		/** Without a member oracle: no member counts as added by both, and the merged class is the base side. */
@@ -419,13 +453,17 @@ final class EditSplicer {
 			return blocks.stream().anyMatch(b -> !b.insertionOnly());
 		}
 
-		Span span() {
-			return new Span(start, end);
+		RunId id() {
+			return new RunId(start, end);
 		}
 	}
 
-	/** A unit's identity across planning rounds: the other body never changes, so its code indices do not. */
-	private record Span(int start, int end) { }
+	/**
+	 * A unit's identity: the code indices of its first and last instruction in the other body. The other body never
+	 * changes, so the identity holds across planning rounds and across calls that splice the same method again (with
+	 * some units withheld, see {@link Input#withheld}).
+	 */
+	record RunId(int start, int end) { }
 
 	/** A base local a unit writes: its slot in the other body, the base slot it maps to, and its name. */
 	private record Store(int otherSlot, int baseSlot, String name) { }
@@ -499,7 +537,7 @@ final class EditSplicer {
 	}
 
 	/** One planning round's outcome: a final result, or the units to leave out of the next round. */
-	private record Attempt(Result result, Map<Span, Outcome> exclude) {
+	private record Attempt(Result result, Map<RunId, Outcome> exclude) {
 		static Attempt done(Result result) {
 			return new Attempt(result, Map.of());
 		}
@@ -525,7 +563,7 @@ final class EditSplicer {
 		if (!hasLines(base) || !hasLines(other)) return refuse("no line numbers");
 		// Every round plans from scratch without the units earlier rounds left out, so nothing a left-out unit
 		// planned (its declared locals, carried lambdas, claimed base lines) survives into the result.
-		Map<Span, Outcome> excluded = new LinkedHashMap<>();
+		Map<RunId, Outcome> excluded = new LinkedHashMap<>();
 		for (int round = 0; round < MAX_ROUNDS; round++) {
 			Attempt attempt = attempt(in, excluded);
 			if (attempt.result() != null) return attempt.result();
@@ -535,7 +573,7 @@ final class EditSplicer {
 		return refuse("leaving runs out did not settle");
 	}
 
-	private Attempt attempt(Input in, Map<Span, Outcome> excluded) {
+	private Attempt attempt(Input in, Map<RunId, Outcome> excluded) {
 		List<Outcome> spliced = new ArrayList<>(), conflicts = new ArrayList<>(), refused = new ArrayList<>();
 		MethodNode base = copy(in.base());
 		MethodNode other = in.other();
@@ -562,14 +600,16 @@ final class EditSplicer {
 		// a planned unit that pairs with one of them is withheld.
 		List<Run> lost = new ArrayList<>();
 		// Statements that could be carried on their own but follow one of their run that was not.
-		Map<Span, Outcome> orphaned = new LinkedHashMap<>();
+		Map<RunId, Outcome> orphaned = new LinkedHashMap<>();
 
 		for (Run run : runs) {
 			boolean predecessorLost = false;
 			for (Run unit : run.replacement() ? List.of(run) : statements(o, run)) {
 				int first = o.line.get(unit.start()), last = o.line.get(unit.end());
 				String kind = unit.replacement() ? "replace" : "insert";
-				Outcome left = excluded.get(unit.span());
+				Outcome left = excluded.get(unit.id());
+				String withheldByCaller = in.withheld().get(unit.id());
+				if (left == null && withheldByCaller != null) left = new Outcome("withheld", first, last, withheldByCaller);
 				if (left != null) {
 					refused.add(left);
 					lost.add(unit);
@@ -585,7 +625,7 @@ final class EditSplicer {
 						plans.add(plan);
 						// A statement runs after the one before it in its own body; carried without it, it runs in a
 						// state its own body never produces. Left out in the next round, which plans without it.
-						if (predecessorLost) orphaned.put(unit.span(), new Outcome(kind, first, last,
+						if (predecessorLost) orphaned.put(unit.id(), new Outcome(kind, first, last,
 								"the statement before it in the same run was not carried"));
 					} else if (conflicts.size() > conflictsBefore && !conflicts.get(conflicts.size() - 1).kind().equals("same-edit")) {
 						lost.add(unit);
@@ -600,9 +640,9 @@ final class EditSplicer {
 		}
 		if (!orphaned.isEmpty()) return new Attempt(null, orphaned);
 		if (plans.isEmpty()) return Attempt.done(new Result(null, List.of(), spliced, conflicts, refused, "no run could be carried over"));
-		Map<Span, Outcome> withheld = pairedWithholding(st, plans, lost);
+		Map<RunId, Outcome> withheld = pairedWithholding(st, plans, lost);
 		if (!withheld.isEmpty()) return new Attempt(null, withheld);
-		Map<Span, Outcome> misplaced = passedRunTargets(st, plans);
+		Map<RunId, Outcome> misplaced = passedRunTargets(st, plans);
 		if (!misplaced.isEmpty()) return new Attempt(null, misplaced);
 
 		// Base code reachable before the splice must stay reachable: a carried run that ends in a return or throw
@@ -620,16 +660,16 @@ final class EditSplicer {
 					return Attempt.done(new Result(null, List.of(), List.of(), conflicts, refused, "splice would make base code unreachable"));
 			}
 			// A carried unit nothing in the result reaches is a hook that silently never runs.
-			Map<Span, Outcome> stranded = new LinkedHashMap<>();
+			Map<RunId, Outcome> stranded = new LinkedHashMap<>();
 			for (Plan p : plans) {
 				if (o.stack(p.run().start()) < 0 || after[base.instructions.indexOf(firstReal(p.runStart()))] != null) continue;
-				stranded.put(p.run().span(), refusal(st, p, "nothing in the base reaches it where it would go"));
+				stranded.put(p.run().id(), refusal(st, p, "nothing in the base reaches it where it would go"));
 			}
 			if (!stranded.isEmpty()) return new Attempt(null, stranded);
 		} catch (AnalyzerException e) {
 			return Attempt.done(new Result(null, List.of(), List.of(), conflicts, refused, "spliced body does not analyze: " + e.getMessage()));
 		}
-		Map<Span, Outcome> flow = flowChecks(st, plans, base);
+		Map<RunId, Outcome> flow = flowChecks(st, plans, base);
 		if (!flow.isEmpty()) return new Attempt(null, flow);
 
 		for (Plan p : plans) spliced.add(new Outcome(p.kind(), o.line.get(p.run().start()), o.line.get(p.run().end()), "carried over"));
@@ -643,7 +683,9 @@ final class EditSplicer {
 		if (finished == null) return Attempt.done(new Result(null, List.of(), List.of(), conflicts, refused, "frames could not be computed"));
 		String verify = verify(in.owner(), finished);
 		if (verify != null) return Attempt.done(new Result(null, List.of(), List.of(), conflicts, refused, "does not verify: " + verify));
-		return Attempt.done(new Result(finished, List.copyOf(st.addedMethods.values()), spliced, conflicts, refused, "spliced"));
+		List<Carried> carried = new ArrayList<>();
+		for (Plan p : plans) carried.add(new Carried(p.run().id(), o.line.get(p.run().start()), o.line.get(p.run().end()), fieldReads(st, p)));
+		return Attempt.done(new Result(finished, List.copyOf(st.addedMethods.values()), spliced, conflicts, refused, "spliced", carried));
 	}
 
 	private static final class Refusal extends RuntimeException {
@@ -1179,7 +1221,7 @@ final class EditSplicer {
 	 * alone runs a hook on some paths but not others, ends what was never begun, or fires a hook whose answer is
 	 * dropped.
 	 */
-	private static Map<Span, Outcome> pairedWithholding(Planning st, List<Plan> plans, List<Run> lost) {
+	private static Map<RunId, Outcome> pairedWithholding(Planning st, List<Plan> plans, List<Run> lost) {
 		if (lost.isEmpty()) return Map.of();
 		Annotated o = st.o;
 		Frame<SourceValue>[] sources = st.otherSources();
@@ -1190,7 +1232,7 @@ final class EditSplicer {
 			if (!keys.isEmpty()) lostCode.putIfAbsent(keys, r);
 			if (sources != null) for (String field : staticReceivers(sources, o, r)) lostReceivers.putIfAbsent(field, r);
 		}
-		Map<Span, Outcome> out = new LinkedHashMap<>();
+		Map<RunId, Outcome> out = new LinkedHashMap<>();
 		for (Plan p : plans) {
 			Run u = p.run();
 			String why = null;
@@ -1214,7 +1256,7 @@ final class EditSplicer {
 					break;
 				}
 			}
-			if (why != null) out.put(u.span(), new Outcome("withheld", o.line.get(u.start()), o.line.get(u.end()), why));
+			if (why != null) out.put(u.id(), new Outcome("withheld", o.line.get(u.start()), o.line.get(u.end()), why));
 		}
 		return out;
 	}
@@ -1261,13 +1303,13 @@ final class EditSplicer {
 	 * A run inserted past a label that another inserted run jumps to would be entered by that jump. Labels found or
 	 * made for later runs' jumps are only known once every run is planned, so this is checked last.
 	 */
-	private static Map<Span, Outcome> passedRunTargets(Planning st, List<Plan> plans) {
-		Map<Span, Outcome> out = new LinkedHashMap<>();
+	private static Map<RunId, Outcome> passedRunTargets(Planning st, List<Plan> plans) {
+		Map<RunId, Outcome> out = new LinkedHashMap<>();
 		for (Plan p : plans) {
 			if (p.run().replacement()) continue;
 			for (AbstractInsnNode n = labelBlockStart(p.anchorReal()); n != p.insertBefore() && n != null; n = n.getNext()) {
 				if (!(n instanceof LabelNode l) || !st.runTargets.contains(l)) continue;
-				out.put(p.run().span(), new Outcome(p.kind(), st.o.line.get(p.run().start()), st.o.line.get(p.run().end()),
+				out.put(p.run().id(), new Outcome(p.kind(), st.o.line.get(p.run().start()), st.o.line.get(p.run().end()),
 						"another carried run jumps to where this run would go"));
 				break;
 			}
@@ -1286,12 +1328,12 @@ final class EditSplicer {
 	 * instruction that can reach the run in the other body. Otherwise the base routes code into the run that could
 	 * not reach it there (a run that lived in one branch, placed where every branch meets).
 	 */
-	private Map<Span, Outcome> flowChecks(Planning st, List<Plan> plans, MethodNode result) {
+	private Map<RunId, Outcome> flowChecks(Planning st, List<Plan> plans, MethodNode result) {
 		Annotated o = st.o, b = st.b;
 		Flow theirs = st.otherFlow(), ours = new Flow(result);
 		Map<Integer, Integer> back = new HashMap<>();
 		st.match.forEach((oi, bi) -> back.put(bi, oi));
-		Map<Span, Outcome> out = new LinkedHashMap<>();
+		Map<RunId, Outcome> out = new LinkedHashMap<>();
 		for (List<Plan> group : groups(plans)) {
 			Plan head = group.get(0), tail = group.get(group.size() - 1);
 			int from = ours.index(head.runStart()), to = ours.index(tail.anchorLabel());
@@ -1302,21 +1344,41 @@ final class EditSplicer {
 			for (Plan p : group) {
 				for (Store s : p.stores()) {
 					if (!liveAfterThem.get(s.otherSlot()) || liveAfterUs.get(s.baseSlot())) continue;
-					out.put(p.run().span(), refusal(st, p, "local '" + s.name()
+					out.put(p.run().id(), refusal(st, p, "local '" + s.name()
 							+ "' it writes is read after it in its own body, but its result reaches nothing in the base"));
 					break;
 				}
 			}
-			if (out.containsKey(head.run().span())) continue;
+			if (out.containsKey(head.run().id())) continue;
 			BitSet reachUs = ours.canReach(ours.index(firstReal(head.runStart())));
 			BitSet reachThem = theirs.canReach(theirs.index(o.code.get(head.run().start())));
 			for (int i = reachUs.nextSetBit(0); i >= 0; i = reachUs.nextSetBit(i + 1)) {
 				Integer bi = b.position.get(ours.nodes[i]);
 				Integer oi = bi == null ? null : back.get(bi);
 				if (oi == null || reachThem.get(theirs.index(o.code.get(oi)))) continue;
-				out.put(head.run().span(), refusal(st, head, "the base routes code into the run that could not reach it"));
+				out.put(head.run().id(), refusal(st, head, "the base routes code into the run that could not reach it"));
 				break;
 			}
+		}
+		return out;
+	}
+
+	/**
+	 * The fields of the owner a carried unit reads: its own instructions, and every lambda it carries under a fresh
+	 * name (those are new code in the merged class; a lambda it shares with the base by name is not).
+	 */
+	private static Set<String> fieldReads(Planning st, Plan p) {
+		String owner = st.in.owner().name;
+		Set<String> out = new LinkedHashSet<>();
+		List<AbstractInsnNode> code = new ArrayList<>(st.o.code.subList(p.run().start(), p.run().end() + 1));
+		p.lambdaRenames().forEach((key, to) -> {
+			MethodNode carried = to.equals(key.substring(0, key.indexOf('('))) ? null
+					: st.addedMethods.get(to + key.substring(key.indexOf('(')));
+			if (carried != null) for (AbstractInsnNode n : carried.instructions) code.add(n);
+		});
+		for (AbstractInsnNode n : code) {
+			if (n instanceof FieldInsnNode f && f.owner.equals(owner)
+					&& (f.getOpcode() == Opcodes.GETFIELD || f.getOpcode() == Opcodes.GETSTATIC)) out.add(f.name + " " + f.desc);
 		}
 		return out;
 	}

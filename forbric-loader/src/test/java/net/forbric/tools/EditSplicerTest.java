@@ -1040,4 +1040,30 @@ public class EditSplicerTest {
 		System.arraycopy(b, 0, out, a.length, b.length);
 		return out;
 	}
+
+	// ---- the caller's whole-class view: carried reads, withheld units ------------------------------------------
+
+	@Test
+	void aUnitTheCallerWithholdsIsLeftOutAndReported() throws Exception {
+		// MinecraftForge adds two statements; the first reads the probe's field count. The caller (which sees the
+		// whole merged class) withholds that one by its identity, and the method is spliced again without it.
+		AbstractInsnNode[] readsCount = { new FieldInsnNode(Opcodes.GETSTATIC, OWNER, "count", "I"),
+				new MethodInsnNode(Opcodes.INVOKESTATIC, RECORD_OWNER, "record", "(I)V", false) };
+		MethodNode neo = withTwoAdded(check(NEO_HOOKS, 0), rec(300));
+		MethodNode forge = withTwoAdded(rec(100), readsCount);
+		EditSplicer.Result first = splice(neo, TWO_ADDED_NEO, forge, TWO_ADDED_FORGE, true);
+		assertTrue(first.accepted(), first.reason() + " " + first.refused());
+		assertEquals(2, first.carried().size(), first.carried().toString());
+		EditSplicer.Carried reader = first.carried().get(1);
+		assertEquals(java.util.Set.of("count I"), reader.fieldReads());
+		assertEquals(java.util.Set.of(), first.carried().get(0).fieldReads());
+
+		Map<String, MethodNode> ms = methods(neo), os = methods(forge);
+		EditSplicer.Result again = new EditSplicer(new ContractGraph(List.of(Map.of()))).splice(new EditSplicer.Input(owner(neo), neo, forge,
+				SOURCE, PatchLineProvenance.of(Map.of(SOURCE, TWO_ADDED_NEO)), PatchLineProvenance.of(Map.of(SOURCE, TWO_ADDED_FORGE)),
+				true, ms, os, ms, EditSplicer.MemberOrigin.NONE, Map.of(reader.id(), "it reads count, which nothing writes")));
+		assertTrue(again.accepted(), again.reason() + " " + again.refused());
+		assertTrue(hasOutcome(again.refused(), "withheld", "it reads count"), again.refused().toString());
+		assertEquals(List.of(1, 100, 201, 300, 2, 7), run(again.method(), 7));
+	}
 }
