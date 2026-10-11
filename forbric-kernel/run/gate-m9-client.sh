@@ -764,8 +764,11 @@ check "the failure is resolved as superseded, by the repair seen in the defined 
 check_absent "and its mod is not marked" \
   "Forbric/Mixin\].*SimpleJsonResourceReloadListenerMixin.*is marked" "$LOG"
 # M9_SUPERSEDED_MIXIN_END
+# KernelFabricConditions.ask announces its first verdict once; 2b9c8baa reworded that line (it used to read
+# "Fabric's own resource-condition evaluator is live") and this check went on asking for the old words, so it was
+# red on every run since. Same line, same call site, the current wording.
 check "and the conditions are still judged by someone" \
-  "Forbric/Conditions\] Fabric's own resource-condition evaluator is live" "$LOG"
+  "Forbric/Conditions\] a native decode without a completed source guard asks Fabric's resource-condition evaluator directly" "$LOG"
 
 step "each carrier's own screens have their own text (must PASS)"
 # The carriers keep a second translation table beside Minecraft's, because the text on it -- the loading screen,
