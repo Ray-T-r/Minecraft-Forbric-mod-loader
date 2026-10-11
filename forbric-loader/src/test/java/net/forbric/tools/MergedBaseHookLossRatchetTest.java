@@ -40,7 +40,9 @@ import org.objectweb.asm.tree.ClassNode;
  * overwrites or never consumes, a reader that was itself a conflict, a replacement of lines the base's own code
  * feeds), runs both bodies use to replace the vanilla code they dropped, and a run whose call reads a field nothing
  * that runs writes: 76 more calls in 34 callers, each one a hook that used to fire and have its answer dropped,
- * now reported instead, and one fewer where a run is now placed correctly (509). A merge-tool change may lower these
+ * now reported instead, and one fewer where a run is now placed correctly (509). Leaving a lambda both sides compile
+ * as one vanilla lambda on the side that edited it, instead of forcing its capturer's side back onto it, gave
+ * MultiPlayerGameMode's finishing break its isLeftClickBlockCancelled back (508). A merge-tool change may lower these
  * numbers and never raise them; when one lowers them, lower the ceilings with it.
  * A caller the merged base no longer has is unobserved, not lost, so the census must observe every caller too, or a
  * merge that dropped a whole method would move its calls out of the count.
@@ -52,7 +54,7 @@ import org.objectweb.asm.tree.ClassNode;
  * record this skips like the other staged tests; FORBRIC_COMPAT_FIXTURES_REQUIRED=1 makes the absence a failure.
  */
 class MergedBaseHookLossRatchetTest {
-	static final long FORGE_RAW_LOST_CEILING = 509;
+	static final long FORGE_RAW_LOST_CEILING = 508;
 	static final long NEO_RAW_LOST_CEILING = 15;
 
 	private record Staged(Path root, String build, Map<String, ClassNode> forge, Map<String, ClassNode> neo,
