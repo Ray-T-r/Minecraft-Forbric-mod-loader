@@ -81,6 +81,31 @@ class KernelForgeClientInitRuntimeTest {
 		}
 	}
 
+	/**
+	 * A merged base that kept MinecraftForge's own client init ahead of NeoForge's: that call runs MinecraftForge's half at
+	 * its own place, NeoForge's call takes the capture, and the whole is exactly the composition — MinecraftForge's init
+	 * and its registration event once each, its listener in NeoForge's published graph.
+	 */
+	@Test
+	void aMergedBasesOwnForgeCallRunsAsTheForgeHalfAndNeoForgesCallTakesItsCapture() throws Exception {
+		try (var fixture = fixture()) {
+			Object listener = fixture.listeners().getFirst();
+			fixture.installBridge();
+			fixture.initForge();
+			assertEquals(List.of("forge:init", "forge:post", "scratch:close", "options:true"), fixture.trace(),
+					"MinecraftForge's half, where its call was");
+			assertEquals(0, fixture.count("neoCalls"));
+			fixture.init();
+			assertEquals(List.of("forge:init", "forge:post", "scratch:close", "options:true", "neo:init",
+					"graph:add", "neo:update"), fixture.trace());
+			assertEquals(1, fixture.count("forgeCalls"), "MinecraftForge's init runs once");
+			assertEquals(1, fixture.count("forgePosts"), "its registration event is posted once: the legacy bridge sees the capture");
+			assertEquals(1, fixture.count("neoCalls"));
+			assertSame(listener, fixture.realListeners().getFirst(), "Neo's list replacement must retain the capture");
+			assertNull(fixture.drain());
+		}
+	}
+
 	@Test
 	void anEmptyCaptureStillSuppressesTheLegacyPost() throws Exception {
 		try (var fixture = fixture()) {

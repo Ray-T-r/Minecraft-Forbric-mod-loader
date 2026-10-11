@@ -44,6 +44,12 @@ final class KernelForgeClientInitFixture implements AutoCloseable {
 				minecraft.getClass(), resources.getClass()), null, minecraft, resources);
 	}
 
+	/** The call a merged base that kept MinecraftForge's own client init makes in its place. */
+	void initForge() throws Exception {
+		call(type("net.forbric.kernel.runtime.KernelForgeClientInit").getMethod("initForgeClientHooks",
+				minecraft.getClass(), resources.getClass()), null, minecraft, resources);
+	}
+
 	void geometry() throws Exception {
 		call(type("net.forbric.kernel.runtime.KernelForgeClientInit").getMethod("initGeometryLoaders"), null);
 	}
