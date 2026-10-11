@@ -73,8 +73,10 @@ judge positive "not failed" "all 12 cases pass"
 if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r['confirmedRequired']==0 else 1)" "$RESULTS/positive-compatibility.json" 2>/dev/null
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
-check "positive: the Hurt and Damage seams went into both bodies" 'Forbric/Damage\] net.minecraft.world.entity.LivingEntity: MinecraftForge.s Hurt and Damage' "$RESULTS/positive.log"
-check "…and the player's attack seam" 'Forbric/Damage\] net.minecraft.world.entity.player.Player: .*player Attack in hurtServer' "$RESULTS/positive.log"
+# A merge that keeps both sides' edits may already call some of MinecraftForge's hooks itself; the seams then go in
+# only where a hook is missing, and a native player attack is told to the forward instead of seamed.
+check "positive: Hurt and Damage are asked in LivingEntity (seams, or the merged body's own calls)" 'Forbric/Damage\] net.minecraft.world.entity.LivingEntity: MinecraftForge.s (Hurt and Damage back|Hurt, Damage already asked)' "$RESULTS/positive.log"
+check "…and the player's attack (seam, or the merged body's own call told to the forward)" 'Forbric/Damage\] net.minecraft.world.entity.player.Player: (.*player Attack in hurtServer|the player Attack forward told)' "$RESULTS/positive.log"
 check_absent "positive: no damage forward or seam failed" 'forward failed|failed inside the damage pipeline' "$RESULTS/positive.log"
 
 step "2. off: the same server with the bridges and the seams switched off"

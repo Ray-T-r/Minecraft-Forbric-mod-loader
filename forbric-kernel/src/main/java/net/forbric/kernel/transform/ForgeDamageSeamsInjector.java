@@ -107,10 +107,20 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 		if (placed.isEmpty()) return bytes;
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
-		ForbricLog.info("[Forbric/Damage] %s: MinecraftForge's %s back in NeoForge's damage pipeline — nothing called "
-				+ "them on the merged base", className, String.join(", ", placed));
+		boolean told = placed.remove(FORWARD_TOLD);
+		if (!placed.isEmpty()) {
+			ForbricLog.info("[Forbric/Damage] %s: MinecraftForge's %s back in NeoForge's damage pipeline — nothing called "
+					+ "them on the merged base", className, String.join(", ", placed));
+		}
+		if (told) {
+			ForbricLog.info("[Forbric/Damage] %s: the player Attack forward told the merged hurtServer asks players itself",
+					className);
+		}
 		return writer.toByteArray();
 	}
+
+	/** What {@link #repair} reports for telling the attack forward about a native player attack. */
+	static final String FORWARD_TOLD = "the attack forward told";
 
 	/**
 	 * Whether {@code bytes} asks every MinecraftForge damage hook its class owes, natively or through a seam: Hurt and
@@ -154,7 +164,7 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 				// Asked natively, at MinecraftForge's own position; the forward off NeoForge's incoming-damage event must
 				// still leave players to it, or a player is attacked twice. Only a NeoForge pipeline has that forward.
 				if (hurt != null && calls(hurt, NEO_COMMON_HOOKS, "onLivingDamagePre") == 1 && noteSeam(node)) {
-					placed.add("player Attack forward told the merged hurtServer asks players itself");
+					placed.add(FORWARD_TOLD);
 				}
 			} else if (server != null && attackSeam(server) && noteSeam(node)) placed.add("player Attack in hurtServer");
 		}
