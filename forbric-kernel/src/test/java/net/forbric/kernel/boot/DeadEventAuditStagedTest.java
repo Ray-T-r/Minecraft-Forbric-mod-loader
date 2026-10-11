@@ -16,6 +16,7 @@
 
 package net.forbric.kernel.boot;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,45 +27,93 @@ import java.nio.file.Path;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import net.forbric.api.GameEventBridge;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
+import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TypeInsnNode;
 
 /**
- * The premise of the NeoForge ItemTooltipEvent row, pinned on the staged merged base: getTooltipLines posts
- * MinecraftForge's event and none of NeoForge's. If a merge or a repair ever brings NeoForge's back, this goes
- * red in the over-report-safe direction and the row is deleted.
+ * The NeoForge ItemTooltipEvent, pinned on the staged merged base by what a player sees: each family's tooltip event is
+ * posted exactly once per tooltip, and the audit's table agrees with the bytecode about whether NeoForge's is posted.
+ *
+ * <p>This used to pin a premise instead — "getTooltipLines posts MinecraftForge's event and none of NeoForge's" — the
+ * reason for a dead-table row and for the kernel's tooltip repair. A merge that keeps both families' edits in a method
+ * both patched gives getTooltipLines NeoForge's call back, so the premise stopped being true and both had to follow:
+ * the row went, and the repair stands down where the call is native. What must hold on either base is the outcome:
+ * one MinecraftForge event and one NeoForge event per tooltip, never none and never two.
  */
 class DeadEventAuditStagedTest {
-	@Test
-	void theMergedItemStackPostsOnlyMinecraftForgesTooltipEvent() throws Exception {
+	private static final String ITEM_STACK = "net/minecraft/world/item/ItemStack";
+	private static final String NEO_TOOLTIP = "net/neoforged/neoforge/event/entity/player/ItemTooltipEvent";
+	private static final String FORGE_TOOLTIP = "net/minecraftforge/event/entity/player/ItemTooltipEvent";
+	private static final String REPAIR = "net/forbric/kernel/runtime/KernelItemTooltips";
+
+	private static ClassNode itemStack(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+		return node;
+	}
+
+	private static byte[] stagedItemStack() throws Exception {
 		Path merged = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar").normalize();
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(merged), "staged merged base absent");
-		ClassNode node = new ClassNode();
 		try (ZipFile zip = new ZipFile(merged.toFile())) {
-			ZipEntry entry = zip.getEntry("net/minecraft/world/item/ItemStack.class");
+			ZipEntry entry = zip.getEntry(ITEM_STACK + ".class");
 			assertNotNull(entry, "ItemStack is missing from the staged merged base " + merged);
 			try (InputStream in = zip.getInputStream(entry)) {
-				new ClassReader(in).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+				return in.readAllBytes();
 			}
 		}
-		boolean forge = false, neo = false, found = false;
+	}
+
+	/** {MinecraftForge deliveries, NeoForge deliveries} of the tooltip event in getTooltipLines. */
+	private static int[] deliveries(ClassNode node) {
+		int forge = 0, neo = 0;
+		boolean found = false;
 		for (MethodNode m : node.methods) {
 			if (!m.name.equals("getTooltipLines")) continue;
 			found = true;
 			for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (insn instanceof TypeInsnNode type && type.desc.equals(NEO_TOOLTIP)) neo++;
+				if (insn instanceof TypeInsnNode type && type.desc.equals(FORGE_TOOLTIP)) forge++;
 				if (!(insn instanceof MethodInsnNode call)) continue;
-				if ("net/minecraftforge/event/ForgeEventFactory".equals(call.owner) && "onItemTooltip".equals(call.name)) forge = true;
-				if (call.owner.startsWith("net/neoforged/")) neo = true;
+				String returned = Type.getReturnType(call.desc).getInternalName();
+				if (call.owner.startsWith("net/minecraftforge/") && returned.equals(FORGE_TOOLTIP)) forge++;
+				if (call.owner.startsWith("net/neoforged/") && returned.equals(NEO_TOOLTIP)) neo++;
+				if (call.owner.equals(REPAIR) && call.name.equals("postNeoForge")) neo++;
 			}
 		}
 		assertTrue(found, "ItemStack.getTooltipLines is gone");
-		assertTrue(forge, "MinecraftForge's onItemTooltip is the one the merge kept");
-		assertFalse(neo, "NeoForge's ItemTooltipEvent is posted after all — delete the DeadEventAudit row");
+		return new int[] {forge, neo};
+	}
+
+	@Test
+	void eachFamilysTooltipEventIsPostedOncePerTooltip() throws Exception {
+		byte[] staged = stagedItemStack();
+		byte[] repaired = new ForbricMergedBaseCompatTransformer().transform(ITEM_STACK.replace('/', '.'), staged, null);
+		int[] after = deliveries(itemStack(repaired));
+		assertEquals(1, after[0], "MinecraftForge's ItemTooltipEvent, once");
+		assertEquals(1, after[1], "NeoForge's ItemTooltipEvent, once — natively, or by the repair where the merge kept "
+				+ "only MinecraftForge's call; both would draw every NeoForge mod's tooltip line twice");
+	}
+
+	@Test
+	void theAuditTablesAgreeWithTheBaseAboutNeoForgesTooltipEvent() throws Exception {
+		boolean posted = deliveries(itemStack(stagedItemStack()))[1] > 0;
+		if (posted) {
+			assertFalse(DeadEventAudit.DEAD.containsKey(NEO_TOOLTIP), "the merged base posts NeoForge's ItemTooltipEvent, "
+					+ "so a row calling it never posted would accuse every NeoForge tooltip mod falsely");
+		} else {
+			assertEquals(GameEventBridge.ITEM_TOOLTIP, DeadEventAudit.BRIDGED.get(NEO_TOOLTIP),
+					"the merged base never posts NeoForge's ItemTooltipEvent, so the repair delivers it and the audit must know");
+		}
 	}
 }

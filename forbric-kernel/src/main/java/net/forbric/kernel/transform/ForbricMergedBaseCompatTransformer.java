@@ -319,7 +319,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "surviveTheMissingForgeModelDataManager", surviveTheMissingForgeModelDataManager(node));
 			changed |= claim(reporter, "dropTheWindowTitlesLoaderBrand", dropTheWindowTitlesLoaderBrand(node));
 			changed |= claim(reporter, "keepTheSaveOffTheTeardownsFailurePath", keepTheSaveOffTheTeardownsFailurePath(node));
-			changed |= claim(reporter, "postNeoForgesItemTooltipEvent", postNeoForgesItemTooltipEvent(node));
+			changed |= claim(reporter, "postNeoForgesItemTooltipEvent", postNeoForgesItemTooltipEvent(node), tooltipAlreadyPostsNeoForge(node));
 			changed |= claim(reporter, "askNeoForgeWhatAnItemsAttributesAre", askNeoForgeWhatAnItemsAttributesAre(node), attributesAlreadyComputed(node));
 			changed |= claim(reporter, "readTheSpawnReasonThatIsActuallyWritten", readTheSpawnReasonThatIsActuallyWritten(node));
 			changed |= claim(reporter, "giveTheUnwrittenLoggerAValue", giveTheUnwrittenLoggerAValue(node));
@@ -2838,6 +2838,14 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		boolean changed = false;
 		for (MethodNode method : node.methods) {
 			if (!"getTooltipLines".equals(method.name)) continue;
+			// A merge that keeps both families' edits gives getTooltipLines NeoForge's own event call back; posting
+			// another here would hand every NeoForge listener the tooltip twice and draw each of its lines twice.
+			if (postsNeoForgesTooltipEvent(method)) {
+				EventBridges.deliveredNatively(GameEventBridge.ITEM_TOOLTIP);
+				ForbricLog.info("[Forbric/MergedBaseCompat] %s.getTooltipLines already posts NeoForge's ItemTooltipEvent "
+						+ "beside MinecraftForge's — the tooltip repair stands down rather than post it twice", node.name);
+				return false;
+			}
 			// Already posted: a second pass over a repaired class must leave it exactly as it is, or the event
 			// fires twice and every NeoForge tooltip line appears twice.
 			for (AbstractInsnNode insn : method.instructions.toArray()) {
@@ -2875,6 +2883,30 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 					+ "call, so a NeoForge mod's tooltip lines went into a list nobody built", node.name);
 		}
 		return changed;
+	}
+
+	private static final String NEO_ITEM_TOOLTIP_EVENT = "net/neoforged/neoforge/event/entity/player/ItemTooltipEvent";
+
+	/** Whether ItemStack's getTooltipLines already constructs NeoForge's ItemTooltipEvent, natively. */
+	private static boolean tooltipAlreadyPostsNeoForge(ClassNode node) {
+		if (!ITEM_STACK.equals(node.name)) return false;
+		for (MethodNode method : node.methods) {
+			if ("getTooltipLines".equals(method.name) && postsNeoForgesTooltipEvent(method)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Whether {@code method} delivers NeoForge's ItemTooltipEvent itself: it constructs one, or calls a NeoForge hook
+	 * that hands one back. Read off the descriptor, the way the event leaves NeoForge's own hook.
+	 */
+	private static boolean postsNeoForgesTooltipEvent(MethodNode method) {
+		for (AbstractInsnNode insn : method.instructions.toArray()) {
+			if (insn instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW && NEO_ITEM_TOOLTIP_EVENT.equals(type.desc)) return true;
+			if (insn instanceof MethodInsnNode call && call.owner.startsWith("net/neoforged/")
+					&& Type.getReturnType(call.desc).getDescriptor().equals("L" + NEO_ITEM_TOOLTIP_EVENT + ";")) return true;
+		}
+		return false;
 	}
 
 	/** The {@code n} consecutive ALOADs immediately before {@code call}, in source order, or fewer. */

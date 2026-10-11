@@ -27,7 +27,9 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -40,14 +42,15 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /**
  * Covers the tooltip repair, whose whole symptom was a load-report row.
  *
- * <p>The merged {@code ItemStack.getTooltipLines} carries exactly ONE event call and it is MinecraftForge's
- * {@code ForgeEventFactory.onItemTooltip}. NeoForge's {@code ItemTooltipEvent} is never constructed, so every
- * NeoForge mod that adds a line to an item's tooltip adds it to nothing — Architectury and RarityCore both do,
- * and neither produced any other visible sign.
+ * <p>The merged {@code ItemStack.getTooltipLines} used to carry exactly ONE event call, MinecraftForge's
+ * {@code ForgeEventFactory.onItemTooltip}, so NeoForge's {@code ItemTooltipEvent} was never constructed and every
+ * NeoForge mod that adds a line to an item's tooltip added it to nothing. A merge that keeps both families' edits gives
+ * the method NeoForge's {@code EventHooks.onItemTooltip} back, and there the repair has to stand down, or every NeoForge
+ * tooltip line is drawn twice.
  *
  * <p>Asserted against the REAL merged base rather than a fixture, because the thing being claimed is a fact about
- * that jar: that there is one Forge call there and no NeoForge one. A fixture would let the repair keep passing
- * after the merge changed underneath it.
+ * that jar; the shape the repair exists for is then derived from it by taking NeoForge's call away, so the repair's
+ * own work is exercised whichever shape the staged base has.
  */
 class MergedBaseItemTooltipTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
@@ -55,21 +58,30 @@ class MergedBaseItemTooltipTest {
 	private static final String BRIDGE = "net/forbric/kernel/runtime/KernelItemTooltips";
 	private static final String FORGE_FACTORY = "net/minecraftforge/event/ForgeEventFactory";
 
+	private static final String NEO_TOOLTIP = "Lnet/neoforged/neoforge/event/entity/player/ItemTooltipEvent;";
+
 	@Test
-	void theMergedBaseOnlyEverAsksMinecraftForge() throws Exception {
+	void theRepairLeavesExactlyOneNeoForgeTooltipEventOnTheStagedBase() throws Exception {
 		byte[] bytes = readMergedBase();
 
-		MethodNode tooltip = tooltipLines(parse(bytes));
-		assertNotNull(tooltip, "the merged ItemStack must still have getTooltipLines");
-		assertEquals(1, calls(tooltip, FORGE_FACTORY, "onItemTooltip"),
-				"MinecraftForge's is the one call the merge kept");
-		assertEquals(0, calls(tooltip, "net/neoforged/neoforge/common/NeoForge", "post"),
-				"and NeoForge's event is constructed nowhere — which is the defect");
+		MethodNode before = tooltipLines(parse(bytes));
+		assertNotNull(before, "the merged ItemStack must still have getTooltipLines");
+		assertEquals(1, calls(before, FORGE_FACTORY, "onItemTooltip"), "MinecraftForge's call, once");
+		int nativeNeo = nativeNeoForgeCalls(before);
+		assertTrue(nativeNeo <= 1, "the merge posts NeoForge's event at most once");
+
+		MethodNode after = tooltipLines(parse(transform(bytes)));
+		assertEquals(1, nativeNeoForgeCalls(after) + calls(after, BRIDGE, "postNeoForge"),
+				"one NeoForge ItemTooltipEvent per tooltip: the native call, or the repair where the merge kept none");
+		assertEquals(nativeNeo == 0 ? 1 : 0, calls(after, BRIDGE, "postNeoForge"),
+				"the repair posts exactly where the merged body does not");
 	}
 
 	@Test
 	void theRepairPostsNeoForgesEventWithTheRealContextAndDisplay() throws Exception {
-		byte[] bytes = readMergedBase();
+		// The shape the repair is for, derived from the staged body by taking NeoForge's own call out of the family:
+		// the same instruction to an owner outside NeoForge's namespace is, to the repair, no NeoForge delivery at all.
+		byte[] bytes = withoutNeoForgesCall(readMergedBase());
 
 		MethodNode tooltip = tooltipLines(parse(transform(bytes)));
 		assertNotNull(tooltip);
@@ -90,6 +102,49 @@ class MergedBaseItemTooltipTest {
 		assertEquals(0, loads.get(0).var, "the stack is this");
 		assertEquals(1, loads.get(4).var, "the Item.TooltipContext is the method's own first parameter");
 		assertTrue(loads.get(5).var > 3, "the TooltipDisplay is a local the method computed, not a parameter");
+	}
+
+	/**
+	 * gate-m9 asks whether a NeoForge mod can add a tooltip line by the line either outcome prints: the repair's when it
+	 * posts, the merged-base transformer's when the base already does. Both must match what the code prints, and the
+	 * repair's own line is pinned on the derived single-family body, so neither half can rot unseen.
+	 */
+	@Test
+	void theGateRecognisesBothWaysTheEventGetsPosted(@org.junit.jupiter.api.io.TempDir Path scratch) throws Exception {
+		String pattern = net.forbric.kernel.GateLogContract.pattern(Path.of("run/gate-m9-client.sh"),
+				"a NeoForge mod can add a line to an item's tooltip");
+		String[] log = new String[1];
+		byte[] staged = readMergedBase();
+		net.forbric.kernel.GateLogContract.capture(() -> transform(staged), log);
+		boolean nativeNeo = nativeNeoForgeCalls(tooltipLines(parse(staged))) > 0;
+		assertEquals(nativeNeo ? 1 : 0, net.forbric.kernel.GateLogContract.count(scratch, pattern, log[0]),
+				"the stand-down line, exactly when the staged base posts NeoForge's event itself: " + log[0]);
+		String repairLine = "[Render thread/INFO]: [Forbric/Tooltips] NeoForge's ItemTooltipEvent is posted beside "
+				+ "MinecraftForge's, on the same tooltip list — the merged getTooltipLines carries only MinecraftForge's call\\n";
+		assertEquals(1, net.forbric.kernel.GateLogContract.count(scratch, pattern, repairLine.replace("\\n", "\n")),
+				"the repair's own first-post line (KernelItemTooltips)");
+	}
+
+	/** NeoForge hook calls in {@code method} that hand back NeoForge's ItemTooltipEvent. */
+	private static int nativeNeoForgeCalls(MethodNode method) {
+		int found = 0;
+		for (AbstractInsnNode insn : method.instructions.toArray()) {
+			if (insn instanceof MethodInsnNode call && call.owner.startsWith("net/neoforged/")
+					&& Type.getReturnType(call.desc).getDescriptor().equals(NEO_TOOLTIP)) found++;
+		}
+		return found;
+	}
+
+	private static byte[] withoutNeoForgesCall(byte[] bytes) {
+		ClassNode node = parse(bytes);
+		MethodNode tooltip = tooltipLines(node);
+		for (AbstractInsnNode insn : tooltip.instructions.toArray()) {
+			if (insn instanceof MethodInsnNode call && call.owner.startsWith("net/neoforged/")
+					&& Type.getReturnType(call.desc).getDescriptor().equals(NEO_TOOLTIP)) call.owner = "test/elsewhere/Hooks";
+		}
+		ClassWriter writer = new ClassWriter(0);
+		node.accept(writer);
+		return writer.toByteArray();
 	}
 
 	/** Twice would post the event twice, and every NeoForge mod's tooltip line would appear twice. */

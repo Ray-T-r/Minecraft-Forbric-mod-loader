@@ -88,9 +88,11 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #                                      Off, a Fabric codec reading PacketContext.get() from inside NeoForge's
 #                                      splitter sees null; with Polymer in the pack that is update_recipes
 #                                      failing to encode and the client disconnected at world join.
-#   -Dforbric.itemTooltipBridge=off -> 1 red ("a NeoForge mod can add a line to an item's tooltip"). Off, the
-#                                      merged getTooltipLines posts only MinecraftForge's event and every
-#                                      NeoForge mod's tooltip line goes into a list nobody built.
+#   -Dforbric.itemTooltipBridge=off -> 1 red ("a NeoForge mod can add a line to an item's tooltip") on a base whose
+#                                      getTooltipLines carries only MinecraftForge's call. Off, it posts only
+#                                      MinecraftForge's event and every NeoForge mod's tooltip line goes into a list
+#                                      nobody built. A base that posts NeoForge's natively stays green: the switch
+#                                      turns off the repair, not the game's own call.
 #   -Dforbric.fabricMainInConstructor=off -> 2 red ("Fabric main entrypoints run where Fabric runs them",
 #                                                   "and not in the pre-Minecraft window"). Off, a Fabric mod that
 #                                                   caches Minecraft.getInstance() from onInitialize caches null:
@@ -834,8 +836,10 @@ check_absent "no block state is left without a mod's per-state flags" \
 check "NeoForge's splitter encodes in Fabric's packet context" \
   "\[Forbric/Net\] .*GenericPacketSplitter.encode now runs inside the connection's Fabric packet context" "$LOG"
 
+# Either the repair posts NeoForge's event, or the merged base posts it natively and the repair stood down (a merge
+# that keeps both families' edits gives getTooltipLines NeoForge's call back); the gate asks for the outcome.
 check "a NeoForge mod can add a line to an item's tooltip" \
-  "\[Forbric/Tooltips\] NeoForge's ItemTooltipEvent is posted beside MinecraftForge's" "$LOG"
+  "\[Forbric/(Tooltips\] NeoForge's ItemTooltipEvent is posted|MergedBaseCompat\] [^ ]+\.getTooltipLines already posts NeoForge's ItemTooltipEvent) beside MinecraftForge's" "$LOG"
 
 check "Fabric main entrypoints run where Fabric runs them" \
   "\[Render thread/INFO\]: \[Forbric/Fabric\] invoked [1-9][0-9]* Fabric main entrypoint\(s\) in the Minecraft.<init> window" "$LOG"
