@@ -33,13 +33,26 @@ import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 
 /**
- * Re-emits NeoForge's server start/stop on traditional MinecraftForge's hooks.
+ * Re-emits NeoForge's server start/stop on traditional MinecraftForge's hooks, where the merged game does not call
+ * them itself.
  *
- * <p>The merged base's {@code runServer} calls only NeoForge's {@code ServerLifecycleHooks}; MinecraftForge's is
- * dead code. That costs Forge-family mods the lifecycle events they expect, and it costs the SERVER something
- * worse: MinecraftForge's login gate, which {@code handleServerLogin} reads, is never opened. Every connection —
- * including the local client's to its own integrated server — is refused with "Server is still starting", so
- * singleplayer cannot enter a world at all.
+ * <p>A merged base whose {@code runServer} and {@code initServer} call only NeoForge's {@code ServerLifecycleHooks}
+ * leaves MinecraftForge's as dead code. That costs Forge-family mods the lifecycle events they expect, and it costs
+ * the SERVER something worse: MinecraftForge's login gate, which {@code handleServerLogin} reads, is never opened.
+ * Every connection — including the local client's to its own integrated server — is refused with "Server is still
+ * starting", so singleplayer cannot enter a world at all.
+ *
+ * <h2>Where the merged game calls MinecraftForge's hook itself</h2>
+ *
+ * <p>A base whose merge keeps both families' edits can call MinecraftForge's hook natively on the same path as
+ * NeoForge's ({@code runServer} asking both families' {@code handleServerStarted} and {@code handleServerStopping},
+ * {@code initServer} both {@code handleServerStarting}). Forwarding there too delivered every one of these events
+ * twice to each MinecraftForge mod, PermissionAPI was initialised twice, and so on. These forwards are
+ * {@code DeadEventAudit.BRIDGED} rows, so {@code NativeDualEventInjector} scopes such a NeoForge call with the
+ * MinecraftForge event delivered natively there, and the forward installed through {@code GameEventMultiplexer}'s
+ * guard stands down for exactly that event. What the kernel does at server start for itself, rather than for
+ * MinecraftForge, is no forward and must not stand down with one: {@link #installStartedDuties} holds it, on NeoForge's
+ * bus itself.
  *
  * <h2>Ordering, which is the whole point of this class</h2>
  *
@@ -74,23 +87,54 @@ public final class KernelGameServerLifecycle {
 	/**
 	 * NeoForge {@code ServerStartedEvent} → MinecraftForge {@code handleServerStarted}, gate forced open first.
 	 *
+	 * <p>Only the forward: it stands down where the merged game already called MinecraftForge's hook on this path.
+	 *
 	 * @param neoBus NeoForge's {@code IEventBus}, handed over untyped from the boot side
 	 */
 	public static void installStarted(Object neoBus) {
 		subscribe((IEventBus) neoBus, ServerStartedEvent.class, "handleServerStarted", true,
-				server -> {
-					ServerLifecycleHooks.handleServerStarted(server);
-					// The world is up, so whatever failed on the way there — a mixin applying to a class first
-					// loaded at world creation, a deferred task on the server thread — is known now. Integrated
-					// servers post this too, so the client's world load is covered.
-					net.forbric.kernel.boot.DeadEventAudit.judgePending();
-					net.forbric.kernel.boot.KernelLoadReport.write();
-					if (!net.forbric.kernel.boot.KernelFabricEcosystem.physicalSide().isClient()
-							&& !net.forbric.kernel.ui.CompatibilityDecision.check(false)) {
-						net.forbric.kernel.util.ForbricLog.error("[Forbric/Compatibility] FATAL: a required feature failed during world loading; stopping the server normally");
-						server.halt(false);
-					}
-				});
+				server -> ServerLifecycleHooks.handleServerStarted(server));
+	}
+
+	/**
+	 * What the kernel does once a server is up, whoever delivered MinecraftForge's {@code ServerStartedEvent}.
+	 *
+	 * <p>Registered on NeoForge's bus itself, never on the guarded view a forward gets, and after the forward, so it
+	 * runs once per start whether the forward ran or stood down: the gate opened (idempotent; a native
+	 * {@code handleServerStarted} opens it as its last action), the pending dead-event judgement, the load report, and
+	 * on a dedicated server the compatibility decision.
+	 *
+	 * @param neoBus NeoForge's {@code IEventBus} itself, not a bridge's guarded view of it
+	 */
+	public static void installStartedDuties(Object neoBus) {
+		installStartedDuties(neoBus, server -> {
+			// The world is up, so whatever failed on the way there — a mixin applying to a class first loaded at world
+			// creation, a deferred task on the server thread — is known now. Integrated servers post this too, so the
+			// client's world load is covered.
+			net.forbric.kernel.boot.DeadEventAudit.judgePending();
+			net.forbric.kernel.boot.KernelLoadReport.write();
+			if (!net.forbric.kernel.boot.KernelFabricEcosystem.physicalSide().isClient()
+					&& !net.forbric.kernel.ui.CompatibilityDecision.check(false)) {
+				net.forbric.kernel.util.ForbricLog.error("[Forbric/Compatibility] FATAL: a required feature failed during world loading; stopping the server normally");
+				server.halt(false);
+			}
+		});
+	}
+
+	/** {@link #installStartedDuties(Object)} with the kernel's own work handed in, so a test can see it run. */
+	static void installStartedDuties(Object neoBus, Consumer<MinecraftServer> duties) {
+		AtomicBoolean warned = new AtomicBoolean();
+		Consumer<ServerStartedEvent> listener = neoEvent -> {
+			forceAllowLogins();
+			try {
+				duties.accept(serverOf(neoEvent));
+			} catch (Throwable t) {
+				if (warned.compareAndSet(false, true)) {
+					ForbricLog.warn("[Forbric/EventMux] the kernel's own server-started work failed", Reflect.unwrap(t));
+				}
+			}
+		};
+		((IEventBus) neoBus).addListener(EventPriority.LOWEST, false, ServerStartedEvent.class, listener);
 	}
 
 	/** NeoForge {@code ServerStoppingEvent} → MinecraftForge {@code handleServerStopping}. */
@@ -124,8 +168,8 @@ public final class KernelGameServerLifecycle {
 	 * per-world SERVER config is never unloaded, so opening a second singleplayer world in the same session reads
 	 * the FIRST world's values, and each world stacks another file watcher that is never closed.
 	 *
-	 * <p>{@code currentServer} is cleared explicitly as well, because the kernel's about-to-start bridge is what
-	 * sets it (Forge's own about-to-start hook never runs here) and the clearing half has to match.
+	 * <p>{@code currentServer} is cleared explicitly as well, because where the merged game does not call Forge's own
+	 * about-to-start hook the kernel's about-to-start bridge is what sets it, and the clearing half has to match.
 	 */
 	public static void installStopped(Object neoBus) {
 		subscribe((IEventBus) neoBus, ServerStoppedEvent.class, "handleServerStopped", false,

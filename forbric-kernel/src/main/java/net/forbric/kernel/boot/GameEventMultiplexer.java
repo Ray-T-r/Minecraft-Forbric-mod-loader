@@ -235,16 +235,26 @@ public final class GameEventMultiplexer {
 					bus -> soundBridge(cl, "installAtEntity").invoke(null, bus));
 			install(cl, neoBus, GameEventBridge.PLAY_SOUND_AT_POSITION,
 					bus -> soundBridge(cl, "installAtPosition").invoke(null, bus));
-			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
-			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
-			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so
-			// the local player's integrated-server connection is rejected "Server is still starting" and singleplayer
-			// world-join fails. Re-emit the dropped Forge hook off NeoForge's surviving ServerStarted/Stopping events.
+			// Server-lifecycle hooks. A merged base whose runServer calls only NeoForge's ServerLifecycleHooks
+			// .handleServerStarted leaves MinecraftForge's login gate (ServerLifecycleHooks.handleServerLogin →
+			// `if (!allowLogins.get())`) permanently CLOSED, so the local player's integrated-server connection is
+			// rejected "Server is still starting" and singleplayer world-join fails; these re-emit the dropped Forge
+			// hooks off NeoForge's events. A base that calls a Forge hook natively on the same path (one that keeps
+			// both families' edits in initServer and runServer) has these as BRIDGED rows, so each forward stands down
+			// for the event the native call delivered.
 			install(cl, neoBus, GameEventBridge.SERVER_ABOUT_TO_START,
 					bus -> aboutToStartBridge(cl).invoke(null, bus));
 			install(cl, neoBus, GameEventBridge.SERVER_STARTING,
 					bus -> lifecycleBridge(cl, "installStarting").invoke(null, bus));
 			install(cl, neoBus, GameEventBridge.SERVER_STARTED, bus -> lifecycleBridge(cl, "installStarted").invoke(null, bus));
+			// The kernel's own work at server start is no forward, so it goes on NeoForge's bus itself, after the
+			// forward, and runs whether the forward ran or stood down.
+			try {
+				lifecycleBridge(cl, "installStartedDuties").invoke(null, neoBus);
+			} catch (Throwable t) {
+				ForbricLog.warn("[Forbric/EventMux] the kernel's server-started work did not install — no dead-event "
+						+ "judgement, load report or compatibility decision once a world is up", Reflect.unwrap(t));
+			}
 			install(cl, neoBus, GameEventBridge.SERVER_STOPPING,
 					bus -> lifecycleBridge(cl, "installStopping").invoke(null, bus));
 			install(cl, neoBus, GameEventBridge.SERVER_STOPPED,

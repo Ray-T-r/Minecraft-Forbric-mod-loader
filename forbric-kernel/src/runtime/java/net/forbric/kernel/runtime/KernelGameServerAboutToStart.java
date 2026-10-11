@@ -39,6 +39,13 @@ import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
  * modifiers, and it posts its own {@code ServerAboutToStartEvent}. Nothing was calling it, so Forge mods' server
  * configs stayed at their defaults on both ends of every connection and no Forge mod ever received that event.
  *
+ * <p>A merged {@code initServer} that keeps both families' edits calls it natively, ahead of NeoForge's
+ * about-to-start. Then everything this class reproduces has already happened — the server recorded, the SERVER
+ * configs loaded (with their file watchers), the event posted — and doing it again loaded every config twice and
+ * posted the event twice. The forward is a {@code DeadEventAudit.BRIDGED} row, so {@code NativeDualEventInjector}
+ * scopes that NeoForge call with MinecraftForge's event and the whole listener stands down for it: there is no part
+ * of this re-emission the native hook leaves undone.
+ *
  * <h2>Why the method is not forwarded whole</h2>
  *
  * <p>Because the middle step always throws here. The biome-modifier pass looks up a datapack registry

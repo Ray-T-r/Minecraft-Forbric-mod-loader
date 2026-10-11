@@ -94,6 +94,21 @@ check_absent() {
   else printf '[kernel] FAIL %s (present x%s)\n' "$what" "$got"; FAIL=1; fi
 }
 
+# check_exactly <what> <grep-pattern> <file> <count> — fails unless the pattern appears exactly that many times.
+#
+# For events a mod must hear once per occurrence. "At least once" is what check asserts, and it stays green when the
+# kernel forwards an event the merged game already delivered natively: every MinecraftForge server lifecycle event
+# reached the canary twice, its SERVER config loaded twice, and every gate that looked passed.
+check_exactly() {
+  local what="$1" pat="$2" file="$3" want="$4" got
+  if ! readable "$file"; then
+    printf '[kernel] FAIL %s (no log to read: %s)\n' "$what" "$file"; FAIL=1; return
+  fi
+  got=$(grep -acE "$pat" "$file" 2>/dev/null || true)
+  if [ "${got:-0}" -eq "$want" ]; then printf '[kernel] PASS %s (%s)\n' "$what" "$got"
+  else printf '[kernel] FAIL %s (want exactly %s got %s)\n' "$what" "$want" "${got:-0}"; FAIL=1; fi
+}
+
 # check_kept_up <what> <server-log> — the one performance assertion this project has.
 #
 # WHY IT IS TWO ASSERTIONS. "Can't keep up! Is the server overloaded?" is vanilla's own line, and it is the only

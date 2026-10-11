@@ -310,6 +310,17 @@ public final class DeadEventAudit {
 		// down where the merged game tracks natively, and these two were the first to need it.
 		map.put("net/minecraftforge/event/entity/player/PlayerEvent$StartTracking", GameEventBridge.START_TRACKING);
 		map.put("net/minecraftforge/event/entity/player/PlayerEvent$StopTracking", GameEventBridge.STOP_TRACKING);
+		// The server lifecycle has been bridged all along (KernelGameServerAboutToStart, KernelGameServerLifecycle). A
+		// merged initServer and runServer that keep both families' edits call MinecraftForge's hooks natively on the
+		// same path as NeoForge's, and without these rows each forward delivered its event a second time: every
+		// MinecraftForge mod's about-to-start, starting and started listeners ran twice, its SERVER configs loaded twice
+		// with two watchers each, and PermissionAPI was initialised twice.
+		String server = "net/minecraftforge/event/server/";
+		map.put(server + "ServerAboutToStartEvent", GameEventBridge.SERVER_ABOUT_TO_START);
+		map.put(server + "ServerStartingEvent", GameEventBridge.SERVER_STARTING);
+		map.put(server + "ServerStartedEvent", GameEventBridge.SERVER_STARTED);
+		map.put(server + "ServerStoppingEvent", GameEventBridge.SERVER_STOPPING);
+		map.put(server + "ServerStoppedEvent", GameEventBridge.SERVER_STOPPED);
 		// The registration events lifted by the Phase 1 A repairs. ForgeHooksClient.initClientHooks posts the
 		// first eleven (three directly, eight through the Forge managers' init()); the merged Minecraft.<init>
 		// now calls it through KernelForgeClientInit. The next three have one redirect each.

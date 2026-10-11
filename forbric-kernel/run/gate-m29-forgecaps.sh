@@ -54,6 +54,14 @@ check "the ITEM_HANDLER token got its getType" 'Capabilities\] capability token 
 check "injectCapabilities ran"         'Capabilities\] ran MinecraftForge.s injectCapabilities' "$LOG"
 check "the audit reports the composed feature, not a gap" 'Capabilities\] [1-9][0-9]* mod jar\(s\) use MinecraftForge.s capability system — composed into' "$LOG"
 
+step "boot 1: MinecraftForge's server lifecycle reaches the canary once per event"
+# A merged initServer and runServer that keep both families' edits call MinecraftForge's lifecycle hooks natively;
+# the kernel's forwards stand down there. Before they did, each event arrived twice and the SERVER config loaded twice
+# with two file watchers (two RELOADING lines per edit), and nothing here counted.
+check_exactly "ServerStartingEvent once" 'ForbricLive\] ServerStartingEvent RECEIVED' "$LOG" 1
+check_exactly "ServerStartedEvent once"  'ForbricLive\] ServerStartedEvent RECEIVED' "$LOG" 1
+check_exactly "the SERVER config loads once" 'ForbricLive/CFG\] LOADING forbriclive-server\.toml' "$LOG" 1
+
 step "boot 1: twelve canary probes"
 check "AttachCapabilitiesEvent delivered"      'ForbricLive/CAPS\] AttachCapabilitiesEvent\.BlockEntities RECEIVED for BellBlockEntity' "$LOG"
 check "attached handler read back"             'ForbricLive/CAPS\] attached handler present=true slots=1' "$LOG"

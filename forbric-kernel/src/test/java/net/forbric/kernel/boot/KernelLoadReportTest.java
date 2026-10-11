@@ -167,17 +167,29 @@ class KernelLoadReportTest {
 		TestFixtures.require(Fixture.GAME_SIDE, java.nio.file.Files.isRegularFile(compiled), "runtime helper not compiled");
 		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
 		new org.objectweb.asm.ClassReader(java.nio.file.Files.readAllBytes(compiled)).accept(node, 0);
-		boolean writes = false;
+		// The report is the kernel's own work at server start, not part of the forward to MinecraftForge's hook: the
+		// forward stands down where the merged game already called that hook, and the report must not go with it.
+		boolean writes = false, forwardWrites = false;
 		for (org.objectweb.asm.tree.MethodNode m : node.methods) {
-			if (!m.name.startsWith("lambda$installStarted$")) continue;
-			boolean hook = false;
+			boolean duty = m.name.startsWith("lambda$installStartedDuties$"), forward = m.name.startsWith("lambda$installStarted$");
+			if (!duty && !forward) continue;
 			for (org.objectweb.asm.tree.AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call && "handleServerStarted".equals(call.name)) hook = true;
 				if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call && "net/forbric/kernel/boot/KernelLoadReport".equals(call.owner)
-						&& "write".equals(call.name)) writes |= hook;
+						&& "write".equals(call.name)) {
+					writes |= duty;
+					forwardWrites |= forward;
+				}
 			}
 		}
-		assertTrue(writes, "installStarted's listener writes the report AFTER MinecraftForge's handleServerStarted");
+		assertTrue(writes, "the kernel's server-started work writes the report");
+		assertFalse(forwardWrites, "the forward to MinecraftForge's handleServerStarted, which stands down where the base calls"
+				+ " it natively, does not carry the report");
+		// AFTER MinecraftForge's handleServerStarted: the work is registered after the forward, on the same event and
+		// priority, and a native call precedes NeoForge's in the merged runServer.
+		String multiplexer = java.nio.file.Files.readString(java.nio.file.Path.of(System.getProperty("user.dir"), "src", "main", "java",
+				"net", "forbric", "kernel", "boot", "GameEventMultiplexer.java"));
+		int forwardInstall = multiplexer.indexOf("\"installStarted\")"), dutyInstall = multiplexer.indexOf("\"installStartedDuties\")");
+		assertTrue(forwardInstall >= 0 && dutyInstall > forwardInstall, "the kernel's work is installed after the started forward");
 	}
 
 	@Test

@@ -273,15 +273,19 @@ class HookCallSiteCensusStagedTest {
 	}
 
 	/**
-	 * Pairs the widened census finds on the staged base this branch builds: 15 through NeoForge's hook classes, 12
-	 * through its other static hooks (CommonHooks), 7 inline posts on its bus and the portal. Hook classes alone found 17
-	 * on an earlier base, and the 21 other ones were never checked.
+	 * Pairs the widened census finds on the staged base this branch builds: 15 through NeoForge's hook classes, 19
+	 * through its other static hooks (CommonHooks, and the seven server-lifecycle calls initServer and runServer pair with
+	 * MinecraftForge's ServerLifecycleHooks), 7 inline posts on its bus and the portal. Hook classes alone found 17 on an
+	 * earlier base, and the 21 other ones were never checked; MinecraftForge's facade classes alone found 35, and the
+	 * lifecycle pairs, which delivered every server event twice, were never checked either.
 	 */
-	private static final int MEASURED_PAIRS = 35;
+	private static final int MEASURED_PAIRS = 42;
 
 	/**
-	 * Methods of the merged base that call a MinecraftForge hook class and deliver through NeoForge in any of the ways
-	 * the kernel stands down for: a static call into NeoForge's namespace, or an inline post on its bus.
+	 * Methods of the merged base that call a MinecraftForge hook and deliver through NeoForge in any of the ways the
+	 * kernel stands down for: a static call into NeoForge's namespace, or an inline post on its bus. A MinecraftForge hook
+	 * is any static call into its namespace outside its bus package, as NativeDualEventInjector reads one: its facade
+	 * classes alone left out ServerLifecycleHooks, whose pairs delivered every server lifecycle event twice.
 	 */
 	private static List<String> candidateMethods() throws Exception {
 		List<String> out = new ArrayList<>();
@@ -298,7 +302,7 @@ class HookCallSiteCensusStagedTest {
 					boolean forge = false, neo = false;
 					for (AbstractInsnNode insn : m.instructions) {
 						if (!(insn instanceof MethodInsnNode call)) continue;
-						if (call.getOpcode() == Opcodes.INVOKESTATIC && HookCallSiteCensus.isHookClass(call.owner, "net/minecraftforge/")) forge = true;
+						if (call.getOpcode() == Opcodes.INVOKESTATIC && forgeHook(call.owner)) forge = true;
 						if (call.getOpcode() == Opcodes.INVOKESTATIC && call.owner.startsWith("net/neoforged/") || inlineNeoPost(call)) neo = true;
 					}
 					if (forge && neo) out.add(node.name + "#" + m.name + m.desc);
@@ -306,6 +310,11 @@ class HookCallSiteCensusStagedTest {
 			}
 		}
 		return out;
+	}
+
+	/** A static call's owner MinecraftForge hooks live in: its namespace, outside the package of its buses. */
+	private static boolean forgeHook(String owner) {
+		return owner.startsWith("net/minecraftforge/") && !owner.startsWith("net/minecraftforge/eventbus/");
 	}
 
 	private static boolean inlineNeoPost(MethodInsnNode call) {
@@ -438,7 +447,7 @@ class HookCallSiteCensusStagedTest {
 				if (!(m.instructions.get(i) instanceof MethodInsnNode call)) continue;
 				if (inlineNeoPost(call)) inlinePosts.add(i);
 				if (call.getOpcode() != Opcodes.INVOKESTATIC) continue;
-				if (HookCallSiteCensus.isHookClass(call.owner, "net/minecraftforge/")) forgeCalls.add(i);
+				if (forgeHook(call.owner)) forgeCalls.add(i);
 				if (call.owner.startsWith("net/neoforged/")) neoCalls.add(i);
 			}
 			Map<Integer, Set<Integer>> edges = edges(node.name, m);

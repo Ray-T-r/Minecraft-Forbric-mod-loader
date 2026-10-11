@@ -118,8 +118,14 @@ check "a MinecraftForge mod's command reaches the live dispatcher" \
   "ForbricLive\] RegisterCommandsEvent RECEIVED - /forbriclive registered into the live dispatcher \([1-9][0-9]*" "$LOG"
 # handleServerStarting is also the only caller of PermissionAPI.initializePermissionAPI, so its absence made
 # every permission question any Forge mod asked NPE inside Forge's own API.
-check "and ServerStartingEvent, which also initialises PermissionAPI" \
-  "ForbricLive\] ServerStartingEvent RECEIVED" "$LOG"
+check_exactly "and ServerStartingEvent, which also initialises PermissionAPI, once" \
+  "ForbricLive\] ServerStartingEvent RECEIVED" "$LOG" 1
+# Once each, not at least once. A merged initServer and runServer that keep both families' edits call MinecraftForge's
+# lifecycle hooks natively, and the kernel's forwards delivered each event a second time (and loaded every SERVER
+# config twice, with two file watchers) while ">= 1" stayed green. RED control: delete the server-lifecycle rows from
+# DeadEventAudit.BRIDGED and every line below counts 2.
+check_exactly "ServerStartedEvent reaches it once" "ForbricLive\] ServerStartedEvent RECEIVED" "$LOG" 1
+check_exactly "its per-world SERVER config loads once" "ForbricLive/CFG\] LOADING forbriclive-server\.toml" "$LOG" 1
 
 # B9: a seeded MinecraftForge ModFile used to carry a null SecureJar, so getFilePath/findResource — which
 # ShoulderSurfing-Forge and collective call on EVERY mod file from their own listeners — NPE'd inside Forge's own
