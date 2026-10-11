@@ -478,4 +478,111 @@ public class EditSpliceClassChecksTest {
 		assertEquals(7, call(c, c.getConstructor().newInstance(), "build", 7));
 		assertEquals(List.of(1, 100, 200, 2), CALLS);
 	}
+
+	// ---- a carried call into a method that reads a field no running code writes -----------------------------------
+
+	private static final String BREW = "net/minecraft/demo/Brew", RECIPES = "net/minecraft/demo/Recipes";
+
+	/** Merges several classes with edit splicing on, each side's patch given per class. */
+	private Map<String, byte[]> buildAll(List<ClassNode> vanilla, List<ClassNode> forge, List<ClassNode> neo, Map<String, String> forgePatches,
+			Map<String, String> neoPatches, StringBuilder report) throws Exception {
+		Map<String, byte[]> v = new LinkedHashMap<>(), f = new LinkedHashMap<>(), n = new LinkedHashMap<>();
+		for (ClassNode c : vanilla) v.put(c.name, bytes(c));
+		for (ClassNode c : forge) f.put(c.name, bytes(c));
+		for (ClassNode c : neo) n.put(c.name, bytes(c));
+		MergedBaseBuilder builder = new MergedBaseBuilder();
+		Map<String, String> fp = new LinkedHashMap<>(), np = new LinkedHashMap<>();
+		forgePatches.forEach((cls, text) -> fp.put(cls + ".java", text));
+		neoPatches.forEach((cls, text) -> np.put(cls + ".java", text));
+		builder.forgeProvenance = PatchLineProvenance.of(fp);
+		builder.neoProvenance = PatchLineProvenance.of(np);
+		Path merged = directory.resolve("merged-all.jar"), out = directory.resolve("report-all.txt");
+		builder.run(jar("v.jar", v), jar("f.jar", f), jar("n.jar", n), merged, out, jar("fr.jar", Map.of(FORGE, hooks(FORGE))),
+				jar("nr.jar", Map.of(NEO, hooks(NEO))));
+		report.append(Files.readString(out));
+		Map<String, byte[]> classes = new LinkedHashMap<>();
+		try (ZipFile zip = new ZipFile(merged.toFile())) {
+			for (ClassNode c : vanilla) classes.put(c.name, zip.getInputStream(zip.getEntry(c.name + ".class")).readAllBytes());
+		}
+		return classes;
+	}
+
+	/**
+	 * BrewingStand's shape: MinecraftForge's run in {@code Brew.place} calls {@code Recipes.valid()}, which reads
+	 * MinecraftForge's private {@code Recipes.list}. Its only writer is the private {@code Recipes.load()};
+	 * {@code initialized} says whether MinecraftForge's class initializer calls it (in its own game a method the merge
+	 * kept from NeoForge called it, so in the merged game nothing does).
+	 */
+	private Map<String, byte[]> brew(boolean initialized, StringBuilder report) throws Exception {
+		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
+		AbstractInsnNode[] callValid = { new MethodInsnNode(Opcodes.INVOKESTATIC, RECIPES, "valid", "()I", false),
+				new MethodInsnNode(Opcodes.INVOKESTATIC, RECORD, "record", "(I)V", false) };
+		ClassNode vanillaBrew = type(BREW, new M(BREW, st, "place", "(I)I").line(10, rec(1)).line(11, rec(2)).line(12, returnX(false)).done());
+		ClassNode neoBrew = type(BREW, new M(BREW, st, "place", "(I)I").line(10, rec(1)).line(11, mark(NEO, 200)).line(12, rec(2)).line(13, returnX(false)).done());
+		ClassNode forgeBrew = type(BREW, new M(BREW, st, "place", "(I)I").line(10, rec(1)).line(11, callValid).line(12, rec(2)).line(13, returnX(false)).done());
+		ClassNode vanillaRecipes = type(RECIPES, constructor());
+		ClassNode forgeRecipes = type(RECIPES, constructor());
+		forgeRecipes.fields.add(new FieldNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, "list", "Ljava/lang/Integer;", null, null));
+		MethodNode load = new MethodNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, "load", "()V", null, null);
+		load.instructions.add(new IntInsnNode(Opcodes.SIPUSH, 42));
+		load.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, FORGE, "make", "(I)Ljava/lang/Integer;", false));
+		load.instructions.add(new FieldInsnNode(Opcodes.PUTSTATIC, RECIPES, "list", "Ljava/lang/Integer;"));
+		load.instructions.add(new InsnNode(Opcodes.RETURN));
+		MethodNode valid = new MethodNode(st, "valid", "()I", null, null);
+		valid.instructions.add(new FieldInsnNode(Opcodes.GETSTATIC, RECIPES, "list", "Ljava/lang/Integer;"));
+		valid.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I", false));
+		valid.instructions.add(new InsnNode(Opcodes.IRETURN));
+		forgeRecipes.methods.addAll(List.of(load, valid));
+		if (initialized) {
+			MethodNode clinit = new MethodNode(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+			clinit.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, RECIPES, "load", "()V", false));
+			clinit.instructions.add(new InsnNode(Opcodes.RETURN));
+			forgeRecipes.methods.add(clinit);
+		}
+		String brewPatch = patch(hunk(10, 10, "B", "A", "B", "R"));
+		return buildAll(List.of(vanillaBrew, vanillaRecipes), List.of(forgeBrew, forgeRecipes), List.of(neoBrew, type(RECIPES, constructor())),
+				Map.of(BREW, brewPatch, RECIPES, patch(hunk(1, 1, "L", "A"))), Map.of(BREW, brewPatch), report);
+	}
+
+	private static Class<?> load(Map<String, byte[]> classes, String name) throws Exception {
+		class Loader extends ClassLoader {
+			Loader() {
+				super(EditSpliceClassChecksTest.class.getClassLoader());
+			}
+
+			Class<?> define(String internal, byte[] code) {
+				return defineClass(internal.replace('/', '.'), code, 0, code.length);
+			}
+		}
+		Loader loader = new Loader();
+		loader.define(FORGE, hooks(FORGE));
+		loader.define(NEO, hooks(NEO));
+		Class<?> wanted = null;
+		for (var e : classes.entrySet()) {
+			Class<?> c = loader.define(e.getKey(), e.getValue());
+			if (e.getKey().equals(name)) wanted = c;
+		}
+		return wanted;
+	}
+
+	@Test
+	void aCarriedCallIntoAMethodReadingAFieldNoRunningCodeWritesIsWithheld() throws Exception {
+		StringBuilder report = new StringBuilder();
+		Map<String, byte[]> classes = brew(false, report);
+		assertTrue(report.toString().contains("x withheld L11-11 it calls Recipes.valid, which reads Recipes.list, which no code that runs"),
+				report.toString());
+		assertEquals(7, call(load(classes, BREW), null, "place", 7), "no NullPointerException from a field only an uncalled method writes");
+		assertEquals(List.of(1, 200, 2), CALLS);
+	}
+
+	/** Negative control: when something that runs writes the field (the class initializer), the call is carried. */
+	@Test
+	void aCarriedCallIntoAMethodReadingAFieldRunningCodeWritesIsKept() throws Exception {
+		StringBuilder report = new StringBuilder();
+		Map<String, byte[]> classes = brew(true, report);
+		assertFalse(report.toString().contains("no code that runs"), report.toString());
+		assertTrue(report.toString().contains(BREW + "#place(I)I SPLICED"), report.toString());
+		assertEquals(7, call(load(classes, BREW), null, "place", 7));
+		assertEquals(List.of(1, 42, 200, 2), CALLS);
+	}
 }

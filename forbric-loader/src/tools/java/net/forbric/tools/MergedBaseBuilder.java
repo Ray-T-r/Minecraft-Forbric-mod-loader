@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -128,6 +129,17 @@ public final class MergedBaseBuilder {
 	private EditSplicer.MemberOrigin memberOrigin = EditSplicer.MemberOrigin.NONE;
 	private final List<String> spliceDecisions = new ArrayList<>();
 	private final Map<String, Integer> spliceRefusals = new TreeMap<>();
+	/** One unit a final splice carried, for the whole-jar check after every class is merged. */
+	private record CarriedUnit(String owner, String method, EditSplicer.Carried unit) { }
+	private final List<CarriedUnit> carriedUnits = new ArrayList<>();
+	/**
+	 * Units withheld before the merge starts, by class, method and unit, with the reason: what the whole-jar check of an
+	 * earlier merge found (see {@link #unwrittenThroughCalls}).
+	 */
+	private Map<String, Map<String, Map<EditSplicer.RunId, String>>> preWithheld = Map.of();
+	/** Merges already run before this one to settle {@link #preWithheld}. */
+	private int earlierMerges;
+	private static final int MAX_MERGES = 8;
 	private int methodsSpliced, runsSpliced, runsConflicting, runsRefused, runsSameEdit;
 
 	public MergedBaseBuilder() {
@@ -275,6 +287,25 @@ public final class MergedBaseBuilder {
 			boolean[] gh = groupHooks.get(topLevel(cls));
 			byte[] merged = mergeClass(cls, vanilla.get(cls), forge.get(cls), neo.get(cls), gh[0], gh[1]);
 			if (merged != null) outEntries.put(cls, merged);
+		}
+
+		// A carried unit that calls a method reading a private field no writer that can run writes is a
+		// NullPointerException waiting in the merged game, and only the whole jar shows it: merge again with it withheld.
+		Map<String, Map<String, Map<EditSplicer.RunId, String>>> unwritten = unwrittenThroughCalls(outEntries, List.of(forgeRuntime, neoRuntime));
+		if (!unwritten.isEmpty()) {
+			if (earlierMerges + 1 >= MAX_MERGES) throw new IllegalStateException("withholding carried runs that read fields nothing writes did not settle");
+			int units = unwritten.values().stream().mapToInt(m -> m.values().stream().mapToInt(Map::size).sum()).sum();
+			System.out.println("[merge] withholding " + units + " carried run(s) that reach a field no running code writes; merging again");
+			MergedBaseBuilder next = new MergedBaseBuilder(reviewedRestorations);
+			next.forgeProvenance = forgeProvenance;
+			next.neoProvenance = neoProvenance;
+			next.earlierMerges = earlierMerges + 1;
+			Map<String, Map<String, Map<EditSplicer.RunId, String>>> all = new LinkedHashMap<>();
+			for (var source : List.of(preWithheld, unwritten)) source.forEach((cls, methods) -> methods.forEach((method, ids) ->
+					all.computeIfAbsent(cls, k -> new LinkedHashMap<>()).computeIfAbsent(method, k -> new LinkedHashMap<>()).putAll(ids)));
+			next.preWithheld = all;
+			next.run(vanillaJar, forgeJar, neoJar, outJar, report, forgeRuntimeJar, neoRuntimeJar, libraries);
+			return;
 		}
 
 		for (ClassNode provider : generatedFieldProviders.values()) { ClassWriter bytes = new ClassWriter(ClassWriter.COMPUTE_MAXS); provider.accept(bytes); outEntries.put(provider.name, bytes.toByteArray()); }
@@ -1127,6 +1158,7 @@ public final class MergedBaseBuilder {
 		String source = PatchLineProvenance.sourcePath(name, baseN.sourceFile);
 		Rewind rewind = new Rewind(baseN, baseMethods);
 		Map<String, Map<EditSplicer.RunId, String>> withheld = new LinkedHashMap<>();
+		preWithheld.getOrDefault(name, Map.of()).forEach((method, ids) -> withheld.put(method, new LinkedHashMap<>(ids)));
 		SettleMode mode = splicer == null || pending.isEmpty() ? SettleMode.FALLBACK : SettleMode.SPLICE;
 		List<EditSplicer.Result> results = new ArrayList<>(), lastSpliceResults = List.of();
 		Set<String> lastSpliced = Set.of();
@@ -1174,7 +1206,119 @@ public final class MergedBaseBuilder {
 			EditSplicer.Result r = results.get(i);
 			if (fallbackReason != null) r = undone(lastSpliceResults.get(i), fallbackReason);
 			if (r != null) recordSplice(name + "#" + pending.get(i).key(), r);
+			if (r != null && r.accepted()) for (EditSplicer.Carried unit : r.carried()) carriedUnits.add(new CarriedUnit(name, pending.get(i).key(), unit));
 		}
+	}
+
+	/**
+	 * Every carried unit that reaches a private field no code that can run writes: one the unit reads of its own class,
+	 * or one a method it calls reads, or a method that one calls (two levels). A writer can run when it is a class
+	 * initializer, a method anything outside the class may call (not private, not a constructor), or a constructor or
+	 * private method that something in the merged jar or a runtime invokes or names in a method handle. A field with a
+	 * constant value is written. A writer only a dropped body called (a constructor the merge kept from one side while
+	 * the other side's factory won) does not count. Owner -> method -> unit -> why.
+	 */
+	private Map<String, Map<String, Map<EditSplicer.RunId, String>>> unwrittenThroughCalls(Map<String, byte[]> merged,
+			List<Map<String, byte[]>> runtimes) {
+		Map<String, Map<String, Map<EditSplicer.RunId, String>>> out = new LinkedHashMap<>();
+		if (carriedUnits.isEmpty()) return out;
+		Set<String> called = new HashSet<>();
+		for (byte[] bytes : merged.values()) collectCalls(bytes, called);
+		for (Map<String, byte[]> runtime : runtimes) for (byte[] bytes : runtime.values()) collectCalls(bytes, called);
+		Map<String, java.util.Optional<ClassNode>> parsed = new HashMap<>();
+		java.util.function.Function<String, ClassNode> node = n -> parsed.computeIfAbsent(n,
+				k -> merged.containsKey(k) ? java.util.Optional.of(parse(merged.get(k))) : java.util.Optional.empty()).orElse(null);
+		Map<String, List<String>> nests = new HashMap<>();
+		for (String cls : merged.keySet()) nests.computeIfAbsent(topLevel(cls), k -> new ArrayList<>()).add(cls);
+		for (CarriedUnit cu : carriedUnits) {
+			String why = null;
+			for (String read : cu.unit().fieldReads()) {
+				int space = read.indexOf(' ');
+				if (unwritten(node, nests, called, cu.owner(), read.substring(0, space), read.substring(space + 1))) {
+					why = "it reads " + read.substring(0, space) + ", which no code that runs in the merged game writes";
+					break;
+				}
+			}
+			java.util.ArrayDeque<String[]> work = new java.util.ArrayDeque<>();
+			for (String call : cu.unit().invokes()) work.add(new String[] { call, "1", call });
+			Set<String> seen = new HashSet<>();
+			while (why == null && !work.isEmpty()) {
+				String[] item = work.poll();
+				if (!seen.add(item[0])) continue;
+				int dot = item[0].lastIndexOf('.', item[0].indexOf(' ')), space = item[0].indexOf(' ');
+				String owner = item[0].substring(0, dot), mname = item[0].substring(dot + 1, space), desc = item[0].substring(space + 1);
+				ClassNode cn = node.apply(owner);
+				if (cn == null) continue;
+				MethodNode m = null;
+				for (MethodNode x : cn.methods) if (x.name.equals(mname) && x.desc.equals(desc)) m = x;
+				if (m == null || m.instructions == null) continue;
+				for (AbstractInsnNode insn : m.instructions) {
+					if (insn instanceof org.objectweb.asm.tree.FieldInsnNode f && f.owner.equals(owner)
+							&& (f.getOpcode() == Opcodes.GETFIELD || f.getOpcode() == Opcodes.GETSTATIC)
+							&& unwritten(node, nests, called, owner, f.name, f.desc)) {
+						String via = item[2].substring(0, item[2].indexOf(' '));
+						why = "it calls " + via.substring(via.lastIndexOf('/') + 1) + ", which reads "
+								+ owner.substring(owner.lastIndexOf('/') + 1) + "." + f.name + ", which no code that runs in the merged game writes";
+						break;
+					}
+					if (insn instanceof org.objectweb.asm.tree.MethodInsnNode c && Integer.parseInt(item[1]) < 2)
+						work.add(new String[] { c.owner + "." + c.name + " " + c.desc, "2", item[2] });
+				}
+			}
+			if (why != null) out.computeIfAbsent(cu.owner(), k -> new LinkedHashMap<>()).computeIfAbsent(cu.method(), k -> new LinkedHashMap<>())
+					.put(cu.unit().id(), why);
+		}
+		return out;
+	}
+
+	/** Whether private field {@code name desc} of {@code owner} has no writer that can run (see {@link #unwrittenThroughCalls}). */
+	private static boolean unwritten(java.util.function.Function<String, ClassNode> node, Map<String, List<String>> nests, Set<String> called,
+			String owner, String name, String desc) {
+		ClassNode cn = node.apply(owner);
+		if (cn == null) return false;
+		FieldNode field = null;
+		for (FieldNode f : cn.fields) if (f.name.equals(name) && f.desc.equals(desc)) field = f;
+		if (field == null || (field.access & Opcodes.ACC_PRIVATE) == 0 || field.value != null) return false;
+		for (String member : nests.getOrDefault(topLevel(owner), List.of(owner))) {
+			ClassNode n = node.apply(member);
+			if (n == null) continue;
+			for (MethodNode w : n.methods) {
+				if (!writtenFieldKeys(w, owner).contains(name + " " + desc)) continue;
+				if (w.name.equals("<clinit>")) return false;
+				if ((w.access & Opcodes.ACC_PRIVATE) == 0 && !w.name.equals("<init>")) return false;
+				if (called.contains(member + "." + w.name + " " + w.desc)) return false;
+			}
+		}
+		return true;
+	}
+
+	/** Every method a class invokes or names in a method handle, as "owner.name desc". */
+	private static void collectCalls(byte[] bytes, Set<String> called) {
+		new ClassReader(bytes).accept(new org.objectweb.asm.ClassVisitor(Opcodes.ASM9) {
+			@Override
+			public org.objectweb.asm.MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
+				return new org.objectweb.asm.MethodVisitor(Opcodes.ASM9) {
+					@Override
+					public void visitMethodInsn(int opcode, String owner, String mname, String mdesc, boolean itf) {
+						called.add(owner + "." + mname + " " + mdesc);
+					}
+
+					@Override
+					public void visitInvokeDynamicInsn(String iname, String idesc, org.objectweb.asm.Handle bsm, Object... args) {
+						for (Object arg : args) handle(arg);
+					}
+
+					@Override
+					public void visitLdcInsn(Object value) {
+						handle(value);
+					}
+
+					private void handle(Object value) {
+						if (value instanceof org.objectweb.asm.Handle h) called.add(h.getOwner() + "." + h.getName() + " " + h.getDesc());
+					}
+				};
+			}
+		}, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 	}
 
 	/** A splice the class-level checks took back: reported refused, its carried runs as undone. */
