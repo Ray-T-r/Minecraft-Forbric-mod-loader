@@ -235,6 +235,34 @@ class DeadEventAuditTest {
 		assertEquals(Set.of(), DeadEventAudit.forgeEventsOf(GameEventBridge.SERVER_TICK_PRE), "an unlisted bridge is not guarded");
 	}
 
+	/**
+	 * The sound events: never posted natively on the merged base, so each is a bridged row with a bridge of its own. A
+	 * listener is a finding exactly while its own bridge is missing, and is guarded by its own bridge only: one bridge
+	 * for the pair would let a native entity sound stand down a position sound's forward.
+	 */
+	@Test
+	void eachSoundEventIsBridgedOnItsOwnAndNamedOnlyWhileItsBridgeIsMissing() {
+		String atEntity = "net/minecraftforge/event/PlayLevelSoundEvent$AtEntity";
+		String atPosition = "net/minecraftforge/event/PlayLevelSoundEvent$AtPosition";
+		assertFalse(DeadEventAudit.DEAD.containsKey(atEntity), "a bridged event is not also claimed dead");
+		assertFalse(DeadEventAudit.DEAD.containsKey(atPosition));
+		assertEquals(GameEventBridge.PLAY_SOUND_AT_ENTITY, DeadEventAudit.BRIDGED.get(atEntity));
+		assertEquals(GameEventBridge.PLAY_SOUND_AT_POSITION, DeadEventAudit.BRIDGED.get(atPosition));
+		assertEquals(Set.of(atEntity), DeadEventAudit.forgeEventsOf(GameEventBridge.PLAY_SOUND_AT_ENTITY));
+		assertEquals(Set.of(atPosition), DeadEventAudit.forgeEventsOf(GameEventBridge.PLAY_SOUND_AT_POSITION));
+		assertTrue(DeadEventAudit.forwardedForgeEvents().containsAll(Set.of(atEntity, atPosition)),
+				"the stand-down looks for both on a NeoForge delivery's path");
+
+		Map<String, Set<String>> subscribed = Map.of("soundmod", Set.of(atEntity, atPosition));
+		assertTrue(DeadEventAudit.audit(subscribed,
+						EnumSet.of(GameEventBridge.PLAY_SOUND_AT_ENTITY, GameEventBridge.PLAY_SOUND_AT_POSITION)).isEmpty(),
+				"both bridges in: the mod is asked about every sound");
+		List<DeadEventAudit.Finding> half = DeadEventAudit.audit(subscribed, EnumSet.of(GameEventBridge.PLAY_SOUND_AT_ENTITY));
+		assertEquals(1, half.size(), "only the event whose bridge did not install is waiting: " + half);
+		assertEquals(atPosition, half.get(0).event());
+		assertEquals(GameEventBridge.PLAY_SOUND_AT_POSITION.cost(), half.get(0).cost());
+	}
+
 	/** The two fluid events the fluid-rendering repair deliberately does not bridge: a listener is told, per event. */
 	@Test
 	void theDeadFluidEventNamesTheModWithItsCostAndTheOtherNoLongerDoes() {

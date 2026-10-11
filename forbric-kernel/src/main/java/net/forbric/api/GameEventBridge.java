@@ -197,6 +197,12 @@ public enum GameEventBridge {
 	ENTITY_PLACE_BLOCK(Pass.GAME_BUS, "BlockEvent.EntityPlaceEvent",
 			"a MinecraftForge mod cannot see or refuse a block being placed — the other half of every protection "
 					+ "rule, and of every block-logging mod's record"),
+	PLAY_SOUND_AT_ENTITY(Pass.GAME_BUS, "PlayLevelSoundEvent.AtEntity",
+			"a MinecraftForge mod cannot change or silence a sound played at an entity — footstep, muffling and "
+					+ "sound-replacement mods are loaded and do nothing"),
+	PLAY_SOUND_AT_POSITION(Pass.GAME_BUS, "PlayLevelSoundEvent.AtPosition",
+			"a MinecraftForge mod cannot change or silence a sound played at a position — block, explosion and "
+					+ "ambient sounds play exactly as vanilla would"),
 	CLIENT_TICK_PRE(Pass.CLIENT_GAME_BUS, "ClientTickEvent.Pre",
 			"a MinecraftForge mod polls its key bindings from the client tick (consumeClick drains a counter and "
 					+ "has to be drained every tick), so its keys bind, appear in the Controls screen and do "

@@ -134,7 +134,8 @@ class GameEventMultiplexerStandDownTest {
 				java.nio.file.Files.isDirectory(runtime), "game-side classes absent: " + runtime);
 		String bus = GameEventMultiplexer.NEO_BUS.replace('.', '/');
 		for (String bridge : List.of("KernelGameEntityEvents", "KernelGameWorldEvents", "KernelGameServerEvents",
-				"KernelGamePlayerTrackingEvents", "KernelGameBlockEvents", "KernelGamePlayerEvents", "KernelGameDamageEvents")) {
+				"KernelGamePlayerTrackingEvents", "KernelGameBlockEvents", "KernelGamePlayerEvents", "KernelGameDamageEvents",
+				"KernelGameSoundEvents")) {
 			Path file = runtime.resolve("net/forbric/kernel/runtime/" + bridge + ".class");
 			org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
 			new org.objectweb.asm.ClassReader(java.nio.file.Files.readAllBytes(file)).accept(node, 0);

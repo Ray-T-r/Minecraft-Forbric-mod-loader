@@ -228,6 +228,13 @@ public final class GameEventMultiplexer {
 			// snapshot list it drains is NeoForge-typed, so the MinecraftForge event went with it.
 			install(cl, neoBus, GameEventBridge.ENTITY_PLACE_BLOCK,
 					bus -> blockBridge(cl, "installEntityPlace").invoke(null, bus));
+			// Playing a sound. ServerLevel's and ClientLevel's playSeededSound and LocalPlayer.playSound ask only
+			// NeoForge's PlayLevelSoundEvent and play what it ends with; MinecraftForge rewrote the same vanilla lines
+			// and the merge keeps NeoForge's rewrite. The answer — cancel, sound, source, volume, pitch — is carried back.
+			install(cl, neoBus, GameEventBridge.PLAY_SOUND_AT_ENTITY,
+					bus -> soundBridge(cl, "installAtEntity").invoke(null, bus));
+			install(cl, neoBus, GameEventBridge.PLAY_SOUND_AT_POSITION,
+					bus -> soundBridge(cl, "installAtPosition").invoke(null, bus));
 			// Server-lifecycle hooks: the merged base's runServer calls only NeoForge's ServerLifecycleHooks
 			// .handleServerStarted (Neo won that byte-merge); MinecraftForge's is dead. That leaves MinecraftForge's
 			// login gate (ServerLifecycleHooks.handleServerLogin → `if (!allowLogins.get())`) permanently CLOSED, so
@@ -475,6 +482,12 @@ public final class GameEventMultiplexer {
 	/** One entry point on the game-side cancellable-block bridge. Complete literal, for the reason above. */
 	private static Method blockBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameBlockEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
+	/** One entry point on the game-side sound bridge. Complete literal, for the reason above. */
+	private static Method soundBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameSoundEvents", true, cl)
 				.getMethod(entry, Object.class);
 	}
 

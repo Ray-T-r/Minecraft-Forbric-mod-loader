@@ -320,6 +320,10 @@ public final class KernelRuntimeClasses {
 				new Call("installAnvilUpdate", void.class, Object.class),
 				new Call("installAnvilRepair", void.class, Object.class),
 				new Call("installToolModification", void.class, Object.class))));
+		// MinecraftForge's PlayLevelSoundEvent from NeoForge's, at every place the merged game plays a sound.
+		CLASSES.put("net.forbric.kernel.runtime.KernelGameSoundEvents", new Entry(Origin.COMPILED, List.of(
+				new Call("installAtEntity", void.class, Object.class),
+				new Call("installAtPosition", void.class, Object.class))));
 		// NeoForge's conversion Post (and MinecraftForge's, through the forward) from the merged Zombie's Forge lambdas.
 		CLASSES.put("net.forbric.kernel.runtime.KernelConversions", new Entry(Origin.COMPILED, List.of()));
 		// fabric-content-registries' fuel events on NeoForge's fuel builder; FabricFuelValuesInjector calls apply.
