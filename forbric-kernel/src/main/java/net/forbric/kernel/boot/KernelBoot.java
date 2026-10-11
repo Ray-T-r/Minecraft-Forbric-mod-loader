@@ -936,6 +936,10 @@ public final class KernelBoot {
 		// anchor resolution can reach them. Every Fabric mod's HUD element silently drew nothing. Matches only
 		// GuiLayerManager, which a dedicated server never loads.
 		chain.register(TransformPhase.COREMOD, new HudElementBridgeInjector());
+		// Client only, and only on a base whose Hud also kept MinecraftForge's overlay tree: drop its own build and its
+		// own draw, which returns before NeoForge's layer manager draws, so the manager stays the one HUD pipeline and
+		// the kernel's build (KernelForgeOverlayLayers) puts MinecraftForge's stack on it.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ForgeHudPipelineInjector());
 
 		// Both sides: route ReloadableServerRegistries' two loot seams through the kernel so fabric-loot-api-v3's
 		// LootTableEvents fire from NeoForge's own LootTableLoadEvent point — its mixin cannot fit the merged base.
