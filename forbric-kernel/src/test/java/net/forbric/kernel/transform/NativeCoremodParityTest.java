@@ -98,6 +98,20 @@ class NativeCoremodParityTest {
 		verify(rewritten);
 	}
 
+	/** A trial spawner method that already calls MinecraftForge's own spawner hook keeps NeoForge's, not posting Forge's twice. */
+	@Test void aTrialSpawnerThatAlreadyPostsMinecraftForgesFinalizationIsLeftNative() throws Exception {
+		ClassNode node = new ClassNode();
+		new ClassReader(read(MERGED, NativeCoremodParity.TRIAL_SPAWNER)).accept(node, 0);
+		for (MethodNode method : node.methods) for (AbstractInsnNode insn : method.instructions.toArray()) {
+			if (insn instanceof MethodInsnNode call && call.owner.equals(NativeCoremodParity.NEO_HOOKS) && call.name.equals(NativeCoremodParity.NEO_SPAWNER_HOOK)) {
+				method.instructions.insert(new MethodInsnNode(Opcodes.INVOKESTATIC, SpawnerFinalizeInjector.FORGE, SpawnerFinalizeInjector.FORGE_HOOK,
+						SpawnerFinalizeInjector.FORGE_DESC, false));
+			}
+		}
+		assertEquals(0, NativeCoremodParity.routeTrialSpawner(node));
+		assertEquals(1, calls(node, NativeCoremodParity.NEO_HOOKS, NativeCoremodParity.NEO_SPAWNER_HOOK));
+	}
+
 	@Test void theTargetListIsNeoForgesAndMinecraftForgesLessTheTrialSpawner() throws Exception {
 		TestFixtures.requireFiles(Fixture.STAGED, "staged MinecraftForge carrier", FORGE);
 		try (ZipFile zip = new ZipFile(FORGE.toFile())) {

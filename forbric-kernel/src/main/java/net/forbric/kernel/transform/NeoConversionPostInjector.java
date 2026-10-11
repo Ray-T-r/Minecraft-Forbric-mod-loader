@@ -16,7 +16,7 @@ import org.objectweb.asm.tree.MethodNode;
  * MinecraftForge's event: drowning, a husk's conversion and a villager's zombification never told NeoForge mods, so
  * what they carry over on it was lost. Each {@code ForgeEventFactory.onLivingConvert} call there goes to
  * {@code KernelConversions.onLivingConvert} instead, which tells both, each once. Same descriptor, one instruction:
- * nothing else in the lambda moves. {@code -Dforbric.neoConversionPost=off} leaves {@code Zombie} as merged.
+ * nothing else in the lambda moves. A lambda that already posts NeoForge's Post itself is left as it is. {@code -Dforbric.neoConversionPost=off} leaves {@code Zombie} as merged.
  */
 public final class NeoConversionPostInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.neoConversionPost";
@@ -52,6 +52,9 @@ public final class NeoConversionPostInjector implements ClassTransformer {
 	static int repair(ClassNode node) {
 		int moved = 0;
 		for (MethodNode method : node.methods) {
+			// A lambda that already posts NeoForge's Post itself (a merge that keeps both sides' edits can write both
+			// families' calls into one body) would tell NeoForge twice through the kernel.
+			if (postsNeoForgesConversion(method)) continue;
 			for (AbstractInsnNode insn : method.instructions) {
 				if (insn instanceof MethodInsnNode call && call.owner.equals(FORGE) && call.name.equals("onLivingConvert")
 						&& call.desc.equals(DESC)) {
@@ -61,5 +64,13 @@ public final class NeoConversionPostInjector implements ClassTransformer {
 			}
 		}
 		return moved;
+	}
+
+	private static boolean postsNeoForgesConversion(MethodNode method) {
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof MethodInsnNode call && call.owner.equals("net/neoforged/neoforge/event/EventHooks")
+					&& call.name.equals("onLivingConvert")) return true;
+		}
+		return false;
 	}
 }

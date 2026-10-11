@@ -243,10 +243,19 @@ public final class NativeCoremodParity {
 		return redirected;
 	}
 
+	/**
+	 * The trial spawner's NeoForge finalization hook goes to the kernel, which posts MinecraftForge's event too — except in
+	 * a method that already calls MinecraftForge's own spawner hook (a merge that keeps both sides' edits can write both
+	 * families' calls into one body), where it would post MinecraftForge's a second time.
+	 */
 	static int routeTrialSpawner(ClassNode node) {
-		int routed = 0;
+		int routed = 0, native_ = 0;
 		for (MethodNode method : node.methods) {
 			if (method.instructions == null) continue;
+			if (SpawnerFinalizeInjector.carriesForgeFinalize(method)) {
+				native_++;
+				continue;
+			}
 			for (AbstractInsnNode insn : method.instructions) {
 				if (insn.getOpcode() == Opcodes.INVOKESTATIC && insn instanceof MethodInsnNode call && call.owner.equals(NEO_HOOKS)
 						&& call.name.equals(NEO_SPAWNER_HOOK) && call.desc.equals(NEO_SPAWNER_DESC)) {
@@ -256,7 +265,7 @@ public final class NativeCoremodParity {
 				}
 			}
 		}
-		if (routed == 0) {
+		if (routed == 0 && native_ == 0) {
 			report(node.name, "finalize-spawn-trial", "the trial spawner does not call NeoForge's spawner finalization hook "
 					+ "on this base; MinecraftForge's finalization event is not posted for its mobs");
 		}
