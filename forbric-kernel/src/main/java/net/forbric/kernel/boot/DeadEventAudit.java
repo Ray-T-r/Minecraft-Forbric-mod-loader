@@ -340,8 +340,9 @@ public final class DeadEventAudit {
 	}
 
 	/**
-	 * The rest of what the bridges on NeoForge's game bus re-post: every forwarding bridge without a {@link #BRIDGED}
-	 * row, with the MinecraftForge events its forward constructs (read from its game-side class and the hooks it calls).
+	 * The rest of what the bridges on NeoForge's buses re-post: every forwarding bridge without a {@link #BRIDGED} row,
+	 * game bus or mod bus, with the MinecraftForge events its forward constructs (read from its game-side class and the
+	 * hooks it calls).
 	 *
 	 * <p>The stand-down is only as complete as this inventory. {@code NativeDualEventInjector} looks only for these
 	 * events on a path that also posts NeoForge's, and {@link GameEventMultiplexer#guarded} guards only a bridge with
@@ -403,11 +404,16 @@ public final class DeadEventAudit {
 		map.put(client + "CustomizeGuiOverlayEvent$BossEventProgress", GameEventBridge.BOSS_EVENT_PROGRESS);
 		map.put(client + "ScreenEvent$Render$Pre", GameEventBridge.SCREEN_RENDER_PRE);
 		map.put(client + "ScreenEvent$Render$Post", GameEventBridge.SCREEN_RENDER_POST);
+		// The two forwards on NeoForge's mod bus. The merged TextureAtlas.upload and ModelManager.apply call MinecraftForge's
+		// hook as well as NeoForge's, so without these rows every MinecraftForge mod saw each atlas stitched, and the models
+		// baked, twice.
+		map.put(client + "TextureStitchEvent$Post", GameEventBridge.TEXTURE_STITCHED);
+		map.put(client + "ModelEvent$BakingCompleted", GameEventBridge.MODELS_BAKED);
 		return Map.copyOf(map);
 	}
 
 	/**
-	 * The MinecraftForge events a bridge re-posts from a NeoForge event on the game bus: every {@link #BRIDGED} or
+	 * The MinecraftForge events a bridge re-posts from a NeoForge event on a NeoForge bus: every {@link #BRIDGED} or
 	 * {@link #STAND_DOWN} key in MinecraftForge's namespace whose bridge {@link GameEventMultiplexer} installs, and
 	 * therefore guards. What {@code NativeDualEventInjector} looks for on a path that also posts NeoForge's. The rows
 	 * landed by class transformers (client init, registration, the HUD, tooltips) forward from no NeoForge event and
@@ -423,9 +429,10 @@ public final class DeadEventAudit {
 		return Set.copyOf(out);
 	}
 
-	/** Whether {@code bridge} is installed on NeoForge's game bus by {@link GameEventMultiplexer}. */
+	/** Whether {@code bridge} is installed on one of NeoForge's buses, game or mod, by {@link GameEventMultiplexer}. */
 	private static boolean forwards(GameEventBridge bridge) {
-		return bridge.pass() == GameEventBridge.Pass.GAME_BUS || bridge.pass() == GameEventBridge.Pass.CLIENT_GAME_BUS;
+		return bridge.pass() == GameEventBridge.Pass.GAME_BUS || bridge.pass() == GameEventBridge.Pass.CLIENT_GAME_BUS
+				|| bridge.pass() == GameEventBridge.Pass.CLIENT_MOD_BUS;
 	}
 
 	/** The MinecraftForge events {@code bridge} re-posts, none when it has no {@link #BRIDGED} or {@link #STAND_DOWN} row. */

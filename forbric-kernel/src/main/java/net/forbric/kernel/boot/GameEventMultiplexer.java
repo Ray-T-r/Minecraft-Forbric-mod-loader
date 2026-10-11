@@ -395,11 +395,11 @@ public final class GameEventMultiplexer {
 					.getMethod("install", Object.class).invoke(null, modBus);
 			EventBridges.installed(GameEventBridge.CLIENT_RELOAD_LISTENERS);
 			ForbricLog.info("[Forbric/EventMux] installed the Neo→Forge client reload-listener bridge");
-			// An atlas stitched and the models baked: NeoForge posts both on this bus and nothing calls MinecraftForge's.
-			Class.forName("net.forbric.kernel.runtime.KernelGameClientResourceEvents", true, cl)
-					.getMethod("install", Object.class).invoke(null, modBus);
-			EventBridges.installed(GameEventBridge.TEXTURE_STITCHED);
-			EventBridges.installed(GameEventBridge.MODELS_BAKED);
+			// An atlas stitched and the models baked: NeoForge posts both on this bus. Each forward goes on the guarded view
+			// of it, so where the merged game calls MinecraftForge's hook as well (TextureAtlas.upload, ModelManager.apply)
+			// it stands down for that post, across every mod's dispatch of it, instead of delivering it a second time.
+			install(cl, modBus, GameEventBridge.TEXTURE_STITCHED, bus -> resourceBridge(cl, "installStitched").invoke(null, bus));
+			install(cl, modBus, GameEventBridge.MODELS_BAKED, bus -> resourceBridge(cl, "installBaked").invoke(null, bus));
 			EventBridges.verify(GameEventBridge.Pass.CLIENT_MOD_BUS);
 		} catch (ClassNotFoundException single) {
 			ForbricLog.debug("[Forbric/EventMux] only one Forge family present — no reload-listener bridge needed");
@@ -495,6 +495,12 @@ public final class GameEventMultiplexer {
 				.getMethod(entry, Object.class);
 	}
 
+	/** One entry point on the game-side client resource bridge (mod bus). Complete literal, for the reason above. */
+	private static Method resourceBridge(ClassLoader cl, String entry) throws Exception {
+		return Class.forName("net.forbric.kernel.runtime.KernelGameClientResourceEvents", true, cl)
+				.getMethod(entry, Object.class);
+	}
+
 	/** One entry point on the game-side sound bridge. Complete literal, for the reason above. */
 	private static Method soundBridge(ClassLoader cl, String entry) throws Exception {
 		return Class.forName("net.forbric.kernel.runtime.KernelGameSoundEvents", true, cl)
@@ -570,8 +576,8 @@ public final class GameEventMultiplexer {
 	 * The bus a bridge installs on.
 	 *
 	 * <p>A bridge whose MinecraftForge events are {@link DeadEventAudit#BRIDGED} or {@link DeadEventAudit#STAND_DOWN} rows
-	 * (every bridge on the game bus but the portal's) may meet a merged method that now
-	 * delivers one of them natively on the same path as the NeoForge event the bridge forwards from. For those, the
+	 * (every forwarding bridge on the game bus but the portal's, and the two forwards on the client mod bus) may meet a
+	 * merged method that now delivers one of them natively on the same path as the NeoForge event the bridge forwards from. For those, the
 	 * bridge is handed a view of NeoForge's bus whose four-argument {@code addListener} wraps the listener: for an event
 	 * {@code NativeDualEventInjector} scoped as natively delivered with one of this bridge's events, the forward is
 	 * skipped; every other event, nested ones of the same class included, reaches the bridge as before. The bridge

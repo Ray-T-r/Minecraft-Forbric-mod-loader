@@ -295,7 +295,8 @@ public final class KernelRuntimeClasses {
 				new Call("installScreenRenderPost", void.class, Object.class))));
 		// An atlas stitched and the models baked, on NeoForge's mod bus, for MinecraftForge mods; client-only.
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameClientResourceEvents", new Entry(Origin.COMPILED, List.of(
-				new Call("install", void.class, Object.class))));
+				new Call("installStitched", void.class, Object.class),
+				new Call("installBaked", void.class, Object.class))));
 		// The rest of the world and entity events the merged game posts only NeoForge's version of (MinecraftForge side).
 		CLASSES.put("net.forbric.kernel.runtime.KernelGameWorldEvents", new Entry(Origin.COMPILED, List.of(
 				new Call("installChunkLoad", void.class, Object.class),

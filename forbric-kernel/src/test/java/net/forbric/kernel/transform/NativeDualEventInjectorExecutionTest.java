@@ -29,10 +29,11 @@ import org.objectweb.asm.tree.MethodNode;
  */
 @ExecutesInjector(NativeDualEventInjector.class)
 class NativeDualEventInjectorExecutionTest {
-	static final NativeDualEventInjector.Families FAMILIES =
-			new NativeDualEventInjector.Families("late/forge/", "late/forge/bus/", "late/neo/", "late/neo/bus/Bus");
+	static final NativeDualEventInjector.Families FAMILIES = new NativeDualEventInjector.Families("late/forge/", "late/forge/bus/",
+			"late/neo/", "late/neo/bus/Bus", "late/neo/bus/Loader", "late/neo/bus/Event");
 	static final String FORGE_EVENT = "late/forge/ForgeTouch";
-	static final Set<String> BRIDGED = Set.of(FORGE_EVENT);
+	/** Bridged as well: an atlas-like mod-bus event. */
+	static final Set<String> BRIDGED = Set.of(FORGE_EVENT, "late/forge/ForgeStitched");
 	private static final List<String> TRANSFORMED = List.of("late/game/Callers", "late/neo/Hooks", "late/forge/Factory");
 
 	static Map<String, byte[]> classes(Path work) throws Exception {
@@ -56,6 +57,23 @@ class NativeDualEventInjectorExecutionTest {
 	private static Map<String, String> sources() {
 		return pairs(
 				"late.neo.bus.Bus", "package late.neo.bus; public interface Bus { Object post(Object event); }",
+				"late.neo.bus.Event", "package late.neo.bus; public class Event { }",
+				// NeoForge's mod-bus dispatcher: one event, every mod's listeners, one dispatch per mod.
+				"late.neo.bus.Loader", """
+						package late.neo.bus;
+						import java.util.*;
+						import java.util.function.Consumer;
+						public final class Loader {
+						    public static final List<List<Consumer<Object>>> MODS = List.of(new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+						    public static final Map<Object,Integer> POSTED = new IdentityHashMap<>();
+						    public static void postEvent(Event event) {
+						        POSTED.merge(((late.neo.Stitched) event).who, 1, Integer::sum);
+						        for (List<Consumer<Object>> mod : MODS) for (Consumer<Object> listener : List.copyOf(mod)) listener.accept(event);
+						    }
+						}
+						""",
+				"late.neo.Stitched", "package late.neo; public class Stitched extends late.neo.bus.Event { public final Object who; public Stitched(Object who){this.who=who;} }",
+				"late.forge.ForgeStitched", "package late.forge; public class ForgeStitched extends ForgeTouch { public ForgeStitched(Object who){super(who);} }",
 				"late.neo.NeoTouch", "package late.neo; public class NeoTouch { public final Object who; public boolean canceled; public NeoTouch(Object who){this.who=who;} }",
 				"late.neo.Hooks", """
 						package late.neo;
@@ -64,12 +82,15 @@ class NativeDualEventInjectorExecutionTest {
 						public final class Hooks {
 						    public static final List<Consumer<Object>> LISTENERS = new ArrayList<>();
 						    public static final Map<Object,Integer> POSTED = new IdentityHashMap<>();
+						    public static final Map<String,Integer> TYPED = new HashMap<>();
 						    public static final late.neo.bus.Bus BUS = event -> {
 						        POSTED.merge(((NeoTouch) event).who, 1, Integer::sum);
+						        TYPED.merge(event.getClass().getSimpleName() + "@" + System.identityHashCode(((NeoTouch) event).who), 1, Integer::sum);
 						        for (Consumer<Object> listener : List.copyOf(LISTENERS)) listener.accept(event);
 						        return event;
 						    };
 						    public static boolean touch(Object who) { return ((NeoTouch) BUS.post(new NeoTouch(who))).canceled; }
+						    public static void stitched(Object who) { late.neo.bus.Loader.postEvent(new Stitched(who)); }
 						}
 						""",
 				"late.forge.bus.ForgeBus", "package late.forge.bus; public interface ForgeBus { boolean post(Object event); }",
@@ -81,11 +102,14 @@ class NativeDualEventInjectorExecutionTest {
 						public final class Factory {
 						    public static final List<Consumer<Object>> LISTENERS = new ArrayList<>();
 						    public static final Map<Object,Integer> POSTED = new IdentityHashMap<>();
+						    public static final Map<String,Integer> TYPED = new HashMap<>();
 						    public static final late.forge.bus.ForgeBus BUS = event -> {
 						        POSTED.merge(((ForgeTouch) event).who, 1, Integer::sum);
+						        TYPED.merge(event.getClass().getSimpleName() + "@" + System.identityHashCode(((ForgeTouch) event).who), 1, Integer::sum);
 						        for (Consumer<Object> listener : List.copyOf(LISTENERS)) listener.accept(event);
 						        return ((ForgeTouch) event).canceled;
 						    };
+						    public static void stitched(Object who) { BUS.post(new ForgeStitched(who)); }
 
 						    public static boolean touch(Object who) { return BUS.post(new ForgeTouch(who)); }
 						    public static boolean touchIf(Object who, boolean when) { if (!when) return false; return BUS.post(new ForgeTouch(who)); }
@@ -106,6 +130,11 @@ class NativeDualEventInjectorExecutionTest {
 						        });
 						    }
 						    public static void install() {
+						        // The atlas bridge sits on one mod's bus, as the kernel's sits on its own container's.
+						        late.neo.bus.Loader.MODS.get(1).add(event -> {
+						            Object who = ((late.neo.Stitched) event).who;
+						            if (!covered(event, "late/forge/ForgeStitched", () -> late.forge.Factory.stitched(who))) late.forge.Factory.stitched(who);
+						        });
 						        late.neo.Hooks.LISTENERS.add(event -> {
 						            if (event.getClass() != late.neo.NeoTouch.class) return;
 						            late.neo.NeoTouch neo = (late.neo.NeoTouch) event;
@@ -143,6 +172,10 @@ class NativeDualEventInjectorExecutionTest {
 						    public static void vanillaTurnedExit(Object who, boolean flag) { Hooks.touch(who); if (flag) { System.identityHashCode(who); return; } Factory.touch(who); }
 						    public static void cancelledExit(Object who, Object gate) { if (Hooks.touch(who)) return; if (gate == null) return; Factory.touch(who); }
 						    public static void unjudged(Object who, Object gate) { Hooks.touch(who); if (gate == null) return; Factory.touch(who); }
+						    public static void stitchedBoth(Object who) { Factory.stitched(who); Hooks.stitched(who); }
+						    public static void stitchedAfter(Object who) { Hooks.stitched(who); Factory.stitched(who); }
+						    public static void stitchedInline(Object who) { Factory.stitched(who); late.neo.bus.Loader.postEvent(new late.neo.Stitched(who)); }
+						    public static void stitchedNeoOnly(Object who) { Hooks.stitched(who); }
 						}
 						""");
 	}
@@ -205,6 +238,13 @@ class NativeDualEventInjectorExecutionTest {
 
 		Object call(String method, Object who) throws Exception {
 			return type("late/game/Callers").getMethod(method, Object.class).invoke(null, who);
+		}
+
+		/** How many {@code type} events {@code owner}'s bus dispatched for {@code who}. */
+		int typed(String owner, String type, Object who) throws Exception {
+			@SuppressWarnings("unchecked")
+			Map<String, Integer> typed = (Map<String, Integer>) type(owner).getField("TYPED").get(null);
+			return typed.getOrDefault(type + "@" + System.identityHashCode(who), 0);
 		}
 
 		int count(String owner, Object who) throws Exception {
@@ -354,6 +394,31 @@ class NativeDualEventInjectorExecutionTest {
 		assertArrayEquals(new int[] {2, 1}, after.run("unjudged", new Object()),
 				"the control: no MinecraftForge body to judge against, so the forward is kept beside the native call");
 		assertArrayEquals(new int[] {1, 1}, after.run("unjudged", (Object) null));
+	}
+
+	/**
+	 * NeoForge's mod-bus dispatcher is a NeoForge post too: one event fanned out to every mod's bus. Where the caller
+	 * calls MinecraftForge's hook beside it, the bridge on one mod's bus stands down for that post across the fan-out,
+	 * through a NeoForge hook or posted inline; without the native call it still forwards, once.
+	 */
+	@Test
+	void aModBusPostTheGameAlsoDeliversNativelyIsForwardedNoMore(@TempDir Path work) throws Exception {
+		Map<String, byte[]> classes = classes(work);
+		World before = world(classes, false);
+		Object who = new Object();
+		before.runFor(who, "stitchedBoth");
+		assertEquals(2, before.typed("late/forge/Factory", "ForgeStitched", who), "premise: the forward beside the native call");
+
+		World after = world(classes, true);
+		for (String caller : List.of("stitchedBoth", "stitchedAfter", "stitchedInline")) {
+			Object subject = new Object();
+			after.runFor(subject, caller);
+			assertEquals(1, after.typed("late/forge/Factory", "ForgeStitched", subject), caller + ": the native call is the one delivery");
+			assertEquals(1, after.count("late/neo/bus/Loader", subject), caller + ": one mod-bus post, to every mod");
+		}
+		Object alone = new Object();
+		after.runFor(alone, "stitchedNeoOnly");
+		assertEquals(1, after.typed("late/forge/Factory", "ForgeStitched", alone), "no native call: the bridge forwards, once");
 	}
 
 	private static int excused(World world) throws Exception {

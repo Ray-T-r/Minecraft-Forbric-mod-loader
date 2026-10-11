@@ -58,6 +58,9 @@ import net.forbric.kernel.util.ForbricLog;
  * the game's own dispatch, excused, or forwarded late — and a deferred forward's MinecraftForge dispatch counts as a
  * forward, not as one of the game's.
  *
+ * <p>A mod-bus post fans one event out to every mod's bus, one dispatch each from the same call site: those dispatches
+ * are one post ({@code distinct}), and pair with the game's own MinecraftForge dispatch as one.
+ *
  * <p>What this does not see: composites that call both families' hooks one after the other at a call site
  * (portal, spawner, loot, fuel, tooltips) are not nested posts; their chains have their own gates. Result fields
  * other than cancellation are not compared.
@@ -93,12 +96,14 @@ public final class EventChainAudit {
 	/** A finished dispatch that was not a kernel forward, kept beside its siblings for {@link #pairWithSiblings}. */
 	private static final class Sibling {
 		final boolean neo; final String type, outerKey, caller; final int callerBci;
+		/** The event dispatched: a mod-bus fan-out dispatches the same one to every mod's bus. */
+		final Object event;
 		/** For a NeoForge dispatch: the MinecraftForge classes kernel code forwarded, and those a bridge stood down for. */
-		final Set<String> forwarded, natively;
+		Set<String> forwarded, natively;
 		/** MinecraftForge classes already paired across this dispatch and a sibling. */
 		Set<String> paired = Set.of();
 		Sibling(Frame frame, String outerKey) {
-			this.neo = frame.neo; this.type = frame.type.getName(); this.outerKey = outerKey;
+			this.neo = frame.neo; this.type = frame.type.getName(); this.outerKey = outerKey; this.event = frame.event;
 			this.caller = frame.caller; this.callerBci = frame.callerBci;
 			if (frame.children.isEmpty()) this.forwarded = Set.of();
 			else { Set<String> names = new HashSet<>(); for (Class<?> c : frame.children.keySet()) names.add(c.getName()); this.forwarded = names; }
@@ -106,6 +111,14 @@ public final class EventChainAudit {
 		}
 		boolean relatesTo(String forge) { return forwarded.contains(forge) || natively.contains(forge); }
 		void pair(String forge) { if (paired.isEmpty()) paired = new HashSet<>(2); paired.add(forge); }
+		/** The next mod's dispatch of the same mod-bus post: one post, so one sibling. */
+		boolean continuedBy(Frame frame) {
+			return neo && frame.neo && event == frame.event && Objects.equals(caller, frame.caller) && callerBci == frame.callerBci;
+		}
+		void absorb(Sibling next) {
+			if (!next.forwarded.isEmpty()) { forwarded = new HashSet<>(forwarded); forwarded.addAll(next.forwarded); }
+			if (!next.natively.isEmpty()) { natively = new LinkedHashSet<>(natively); natively.addAll(next.natively); }
+		}
 	}
 
 	/** How many finished sibling dispatches back a native MinecraftForge dispatch is looked for. */
@@ -140,6 +153,8 @@ public final class EventChainAudit {
 	static final class Outer {
 		final LongAdder posts = new LongAdder(), withoutForward = new LongAdder(), withoutForwardCancelled = new LongAdder(),
 				failures = new LongAdder(), asForward = new LongAdder();
+		/** Posts, a mod-bus fan-out counted once. */
+		final LongAdder distinct = new LongAdder();
 	}
 
 	private static final ThreadLocal<ArrayDeque<Frame>> STACK = ThreadLocal.withInitial(ArrayDeque::new);
@@ -290,6 +305,10 @@ public final class EventChainAudit {
 		Outer outer = OUTERS.computeIfAbsent(outerKey, k -> new Outer());
 		outer.posts.increment();
 		Frame parent = stack.peek();
+		ArrayDeque<Sibling> level = parent == null ? ROOT_SIBLINGS.get() : parent.siblings;
+		Sibling previous = level == null ? null : level.peekFirst();
+		boolean fanOut = previous != null && previous.continuedBy(frame);
+		if (!fanOut) outer.distinct.increment();
 		if (failure != null) outer.failures.increment();
 		if (frame.children.isEmpty()) {
 			if (FORWARDED_OUTERS.contains(outerKey)) {
@@ -341,6 +360,12 @@ public final class EventChainAudit {
 		if (parent != null && parent.neo != neo) parent.incidental.merge(frame.type, 1, Integer::sum);
 		ArrayDeque<Sibling> siblings = parent == null ? ROOT_SIBLINGS.get()
 				: parent.siblings != null ? parent.siblings : (parent.siblings = new ArrayDeque<>());
+		if (fanOut) {
+			// The next mod's dispatch of one mod-bus post: folded into the post's sibling, paired as one.
+			siblings.removeFirst();
+			previous.absorb(done);
+			done = previous;
+		}
 		pairWithSiblings(done, siblings);
 		siblings.addFirst(done);
 		if (siblings.size() > SIBLING_WINDOW) siblings.removeLast();
@@ -501,7 +526,7 @@ public final class EventChainAudit {
 			Outer o = OUTERS.get(all.get(i));
 			out.append(i == 0 ? "\n" : ",\n").append("    {\"event\": ").append(quote(all.get(i))).append(", \"posts\": ").append(o.posts.sum())
 					.append(", \"asForward\": ").append(o.asForward.sum()).append(", \"withoutForwardCancelled\": ")
-					.append(o.withoutForwardCancelled.sum()).append('}');
+					.append(o.withoutForwardCancelled.sum()).append(", \"distinct\": ").append(o.distinct.sum()).append('}');
 		}
 		out.append(all.isEmpty() ? "],\n" : "\n  ],\n").append("  \"forwardedOuters\": [");
 		List<String> outers = new ArrayList<>(FORWARDED_OUTERS); Collections.sort(outers);

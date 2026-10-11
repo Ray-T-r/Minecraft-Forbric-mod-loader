@@ -216,9 +216,9 @@ class DeadEventAuditTest {
 	}
 
 	/**
-	 * What the stand-down looks for: the MinecraftForge events a bridge on NeoForge's game bus re-posts. A row landed by
-	 * a class transformer forwards from no NeoForge event, so it is not in it; entity tracking and the level tick are,
-	 * now that their bridges are rows.
+	 * What the stand-down looks for: the MinecraftForge events a bridge on one of NeoForge's buses re-posts. A row landed
+	 * by a class transformer forwards from no NeoForge event, so it is not in it; entity tracking and the level tick are,
+	 * now that their bridges are rows, and so are the two forwards on the client mod bus.
 	 */
 	@Test
 	void theForwardedSetIsTheGameBusBridgesMinecraftForgeEvents() {
@@ -235,23 +235,29 @@ class DeadEventAuditTest {
 		}
 		assertEquals(Set.of("net/minecraftforge/event/TickEvent$ServerTickEvent$Pre"), DeadEventAudit.forgeEventsOf(GameEventBridge.SERVER_TICK_PRE),
 				"the server tick's bridge stands down for exactly its own event");
-		assertEquals(Set.of(), DeadEventAudit.forgeEventsOf(GameEventBridge.TEXTURE_STITCHED),
-				"a mod-bus bridge forwards nothing on the game bus, so nothing guards it");
+		assertEquals(Set.of("net/minecraftforge/client/event/TextureStitchEvent$Post"), DeadEventAudit.forgeEventsOf(GameEventBridge.TEXTURE_STITCHED),
+				"a forward on the mod bus stands down for exactly its own event too");
+		assertEquals(Set.of("net/minecraftforge/client/event/ModelEvent$BakingCompleted"), DeadEventAudit.forgeEventsOf(GameEventBridge.MODELS_BAKED));
+		assertEquals(Set.of(), DeadEventAudit.forgeEventsOf(GameEventBridge.CLIENT_RELOAD_LISTENERS),
+				"the reload-listener bridge hands MinecraftForge's own registrations to NeoForge's graph and posts nothing");
 	}
 
 	/**
 	 * Every bridge on NeoForge's game bus can stand down. A bridge whose events are in neither table is handed NeoForge's
 	 * bus unguarded and its events are never looked for, so wherever a merged method calls its MinecraftForge hook natively
 	 * beside NeoForge's, a mod receives the event twice — measured on an edit-spliced base for the server, player, client
-	 * and render ticks and a dozen more, all bridges no row named. The portal is the one exception, and it is composed
-	 * by {@code PortalSpawnInjector} instead.
+	 * and render ticks and a dozen more, all bridges no row named; and on the client mod bus, each atlas stitched and the
+	 * models baked. The portal is the one exception on the game bus, composed by {@code PortalSpawnInjector} instead;
+	 * the reload-listener bridge is the one on the mod bus, and posts no event of its own.
 	 */
 	@Test
 	void everyBridgeOnTheGameBusHasEventsItCanStandDownFor() {
 		List<GameEventBridge> unguarded = new ArrayList<>();
 		for (GameEventBridge bridge : GameEventBridge.values()) {
-			boolean onTheGameBus = bridge.pass() == GameEventBridge.Pass.GAME_BUS || bridge.pass() == GameEventBridge.Pass.CLIENT_GAME_BUS;
-			if (onTheGameBus && bridge != GameEventBridge.PORTAL_SPAWN && DeadEventAudit.forgeEventsOf(bridge).isEmpty()) unguarded.add(bridge);
+			boolean onABus = bridge.pass() == GameEventBridge.Pass.GAME_BUS || bridge.pass() == GameEventBridge.Pass.CLIENT_GAME_BUS
+					|| bridge.pass() == GameEventBridge.Pass.CLIENT_MOD_BUS;
+			if (onABus && bridge != GameEventBridge.PORTAL_SPAWN && bridge != GameEventBridge.CLIENT_RELOAD_LISTENERS
+					&& DeadEventAudit.forgeEventsOf(bridge).isEmpty()) unguarded.add(bridge);
 		}
 		assertEquals(List.of(), unguarded, "bridges that can never stand down for the game's own delivery of their event");
 		assertEquals(Set.of(), DeadEventAudit.forgeEventsOf(GameEventBridge.PORTAL_SPAWN), "the portal's composition is its injector's");

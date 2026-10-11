@@ -307,6 +307,32 @@ class EventChainAuditTest {
 		assertTrue(EventChainAudit.json().contains("\"alsoForwarded\": 0, \"excused\": 1, \"deferred\": 1}"), EventChainAudit.json());
 	}
 
+	/**
+	 * A mod-bus post dispatches one event to every mod's bus from one call site: one post, however many dispatches, and
+	 * the bridge on one mod's bus that stands down for it pairs with the game's own MinecraftForge dispatch as one.
+	 */
+	@Test void aModBusFanOutIsOnePostAndPairsOnce() throws Exception {
+		forgeListener(false);
+		Object[] buses = {newNeoBus(), neoBus, newNeoBus()};
+		addNeo(standDown());
+		for (int turn = 0; turn < 2; turn++) {
+			Method fan = neoProbe.getClassLoader().loadClass(GAME_CODE).getMethod("fanOutThenForge", Object[].class, Object.class, Object.class, Object.class);
+			fan.invoke(null, buses, covered(), forgeBus, forgeEvent());
+		}
+		var outer = EventChainAudit.outer("NEO:" + NEO_PROBE);
+		assertEquals(6, outer.posts.sum(), "three mods' dispatches per post");
+		assertEquals(2, outer.distinct.sum(), "and two posts: " + EventChainAudit.json());
+		var natively = EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE);
+		assertEquals(2, natively.outerPosts.sum());
+		assertEquals(2, natively.observed.sum(), "each post pairs with the game's own dispatch beside it: " + EventChainAudit.json());
+		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
+	}
+
+	private Object newNeoBus() throws Exception {
+		Object builder = neoBus.getClass().getClassLoader().loadClass("net.neoforged.bus.api.BusBuilder").getMethod("builder").invoke(null);
+		return builder.getClass().getMethod("build").invoke(builder);
+	}
+
 	@Test void nothingCrossesWhenNoBridgeIsInstalled() throws Exception {
 		forgeListener(false);
 		postNeo(); invoke(post, forgeBus, forgeEvent());
@@ -461,6 +487,29 @@ class EventChainAuditTest {
 			wrapped.visitMethodInsn(Opcodes.INVOKEINTERFACE, "net/minecraftforge/eventbus/api/bus/CancellableEventBus", "post",
 					"(Lnet/minecraftforge/eventbus/internal/Event;)Z", true);
 			wrapped.visitInsn(Opcodes.POP); wrapped.visitInsn(Opcodes.RETURN); wrapped.visitMaxs(0, 0); wrapped.visitEnd();
+			// A mod-bus post: one NeoForge event to every mod's bus from one call site, then MinecraftForge's own dispatch.
+			MethodVisitor fan = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "fanOutThenForge",
+					"([Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V", null, null);
+			fan.visitCode();
+			fan.visitInsn(Opcodes.ICONST_0); fan.visitVarInsn(Opcodes.ISTORE, 4);
+			org.objectweb.asm.Label head = new org.objectweb.asm.Label(), end = new org.objectweb.asm.Label();
+			fan.visitLabel(head);
+			fan.visitFrame(Opcodes.F_APPEND, 1, new Object[] {Opcodes.INTEGER}, 0, null);
+			fan.visitVarInsn(Opcodes.ILOAD, 4); fan.visitVarInsn(Opcodes.ALOAD, 0); fan.visitInsn(Opcodes.ARRAYLENGTH);
+			fan.visitJumpInsn(Opcodes.IF_ICMPGE, end);
+			fan.visitVarInsn(Opcodes.ALOAD, 0); fan.visitVarInsn(Opcodes.ILOAD, 4); fan.visitInsn(Opcodes.AALOAD);
+			fan.visitTypeInsn(Opcodes.CHECKCAST, "net/neoforged/bus/api/IEventBus");
+			fan.visitVarInsn(Opcodes.ALOAD, 1); fan.visitTypeInsn(Opcodes.CHECKCAST, "net/neoforged/bus/api/Event");
+			fan.visitMethodInsn(Opcodes.INVOKEINTERFACE, "net/neoforged/bus/api/IEventBus", "post",
+					"(Lnet/neoforged/bus/api/Event;)Lnet/neoforged/bus/api/Event;", true);
+			fan.visitInsn(Opcodes.POP); fan.visitIincInsn(4, 1); fan.visitJumpInsn(Opcodes.GOTO, head);
+			fan.visitLabel(end);
+			fan.visitFrame(Opcodes.F_CHOP, 1, null, 0, null);
+			fan.visitVarInsn(Opcodes.ALOAD, 2); fan.visitTypeInsn(Opcodes.CHECKCAST, "net/minecraftforge/eventbus/api/bus/CancellableEventBus");
+			fan.visitVarInsn(Opcodes.ALOAD, 3); fan.visitTypeInsn(Opcodes.CHECKCAST, "net/minecraftforge/eventbus/internal/Event");
+			fan.visitMethodInsn(Opcodes.INVOKEINTERFACE, "net/minecraftforge/eventbus/api/bus/CancellableEventBus", "post",
+					"(Lnet/minecraftforge/eventbus/internal/Event;)Z", true);
+			fan.visitInsn(Opcodes.POP); fan.visitInsn(Opcodes.RETURN); fan.visitMaxs(0, 0); fan.visitEnd();
 			for (String name : List.of("neoThenForge", "forgeThenNeo", "neoOnly", "forgeOnly")) {
 				MethodVisitor mv = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, name, desc, null, null);
 				mv.visitCode();

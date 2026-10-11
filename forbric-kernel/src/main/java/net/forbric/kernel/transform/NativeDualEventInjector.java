@@ -77,14 +77,22 @@ public final class NativeDualEventInjector implements ClassTransformer {
 	 * The two families: whose hooks deliver natively (MinecraftForge) and whose events the bridges forward from
 	 * (NeoForge), by namespace and bus type.
 	 *
-	 * @param forge    MinecraftForge's namespace, with a trailing slash
-	 * @param forgeBus the package MinecraftForge's buses live in; a {@code post} on a type there is a MinecraftForge post
-	 * @param neo      NeoForge's namespace
-	 * @param neoBus   NeoForge's bus interface; a {@code post} on it is a NeoForge post
+	 * @param forge        MinecraftForge's namespace, with a trailing slash
+	 * @param forgeBus     the package MinecraftForge's buses live in; a {@code post} on a type there is a MinecraftForge post
+	 * @param neo          NeoForge's namespace
+	 * @param neoBus       NeoForge's bus interface; a {@code post} on it is a NeoForge post
+	 * @param neoModLoader NeoForge's mod-bus dispatcher, or null: a static method of it that takes a {@code neoEvent}
+	 *                     fans that event out to every mod's bus, and is a NeoForge post as well
+	 * @param neoEvent     the type every NeoForge event extends
 	 */
-	public record Families(String forge, String forgeBus, String neo, String neoBus) {
+	public record Families(String forge, String forgeBus, String neo, String neoBus, String neoModLoader, String neoEvent) {
 		public static final Families DEFAULT = new Families("net/minecraftforge/", "net/minecraftforge/eventbus/",
-				"net/neoforged/", "net/neoforged/bus/api/IEventBus");
+				"net/neoforged/", "net/neoforged/bus/api/IEventBus", "net/neoforged/fml/ModLoader", "net/neoforged/bus/api/Event");
+
+		/** Without a mod-bus dispatcher: only {@code post} on the bus interface is a NeoForge post. */
+		public Families(String forge, String forgeBus, String neo, String neoBus) {
+			this(forge, forgeBus, neo, neoBus, null, null);
+		}
 	}
 
 	private final Function<String, byte[]> resources;
@@ -125,7 +133,9 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		this.bridged = Set.copyOf(bridged);
 		this.families = Objects.requireNonNull(families);
 		this.callerPrefixes = new byte[][] {ByteScan.poolEntry(families.forge()), ByteScan.poolEntry(families.neo())};
-		this.neoHookNeedles = new byte[][] {ByteScan.poolEntry(families.neoBus()), ByteScan.poolEntry("post")};
+		this.neoHookNeedles = families.neoModLoader() == null
+				? new byte[][] {ByteScan.poolEntry(families.neoBus()), ByteScan.poolEntry("post")}
+				: new byte[][] {ByteScan.poolEntry(families.neoBus()), ByteScan.poolEntry("post"), ByteScan.poolEntry(families.neoModLoader())};
 		this.forgeHookPrefixes = new byte[][] {ByteScan.poolEntry(families.forgeBus())};
 		this.post = new byte[][] {ByteScan.poolEntry("post")};
 	}
@@ -148,6 +158,8 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		if (input == null || input.length < 10 || bridged.isEmpty()) return input;
 		String internal = name.replace('.', '/');
 		try {
+			// The mod-bus dispatcher is what a NeoForge post goes through, not a hook that constructs one.
+			if (internal.equals(families.neoModLoader())) return input;
 			if (internal.startsWith(families.neo())) return instrumentNeoHooks(input);
 			if (internal.startsWith(families.forge())) {
 				return internal.startsWith(families.forgeBus()) ? input : instrumentForgeHooks(input);
@@ -192,7 +204,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 					boolean forge, neo;
 					@Override public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
 						if (forgeCandidate(opcode, owner, name)) forge = true;
-						if (neoCandidate(opcode, owner, name)) neo = true;
+						if (neoCandidate(opcode, owner, name, descriptor)) neo = true;
 						if (forge && neo) found[0] = true;
 					}
 				};
@@ -206,16 +218,30 @@ public final class NativeDualEventInjector implements ClassTransformer {
 				|| forgePost(owner, name);
 	}
 
-	private boolean neoCandidate(int opcode, String owner, String name) {
-		return (opcode == Opcodes.INVOKESTATIC && owner.startsWith(families.neo())) || neoPost(owner, name);
+	private boolean neoCandidate(int opcode, String owner, String name, String desc) {
+		return (opcode == Opcodes.INVOKESTATIC && owner.startsWith(families.neo())) || neoPost(owner, name, desc);
 	}
 
 	private boolean forgePost(String owner, String name) {
 		return owner.startsWith(families.forgeBus()) && name.equals("post");
 	}
 
-	private boolean neoPost(String owner, String name) {
-		return owner.equals(families.neoBus()) && name.equals("post");
+	/**
+	 * A NeoForge post: {@code post} on its bus interface, or a static method of its mod-bus dispatcher that takes an
+	 * event (which fans the event out to every mod's bus, phase by phase).
+	 */
+	private boolean neoPost(String owner, String name, String desc) {
+		if (owner.equals(families.neoBus()) && name.equals("post")) return true;
+		return families.neoModLoader() != null && owner.equals(families.neoModLoader()) && eventArgument(desc) >= 0;
+	}
+
+	/** The index of the first argument of {@code desc} whose type is NeoForge's event type, or -1. */
+	private int eventArgument(String desc) {
+		if (families.neoEvent() == null) return -1;
+		String event = "L" + families.neoEvent() + ";";
+		Type[] args = Type.getArgumentTypes(desc);
+		for (int i = 0; i < args.length; i++) if (args[i].getDescriptor().equals(event)) return i;
+		return -1;
 	}
 
 	/**
@@ -231,13 +257,13 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		for (AbstractInsnNode instruction : method.instructions) {
 			if (!(instruction instanceof MethodInsnNode call)) continue;
 			if (forgeCandidate(call.getOpcode(), call.owner, call.name)) forgeCalls.add(call);
-			if (neoCandidate(call.getOpcode(), call.owner, call.name)) neoCalls.add(call);
+			if (neoCandidate(call.getOpcode(), call.owner, call.name, call.desc)) neoCalls.add(call);
 		}
 		if (forgeCalls.isEmpty() || neoCalls.isEmpty()) return 0;
 		List<Site> neoSites = new ArrayList<>();
 		for (MethodInsnNode call : neoCalls) {
-			boolean inline = neoPost(call.owner, call.name);
-			if (inline ? inlineWrappable(call) : neoDelivers(call.owner, call.name, call.desc, 0)) {
+			boolean inline = neoPost(call.owner, call.name, call.desc);
+			if (inline ? handedOver(call) >= 0 : neoDelivers(call.owner, call.name, call.desc, 0)) {
 				neoSites.add(new Site(call, method.instructions.indexOf(call), inline, Set.of(), Set.of()));
 			}
 		}
@@ -255,7 +281,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			Set<String> maybe, always;
 			boolean inline = forgePost(call.owner, call.name);
 			if (inline) {
-				String event = inlineWrappable(call) ? postedEvent(method, flow, call) : null;
+				String event = handedOver(call) >= 0 ? postedEvent(method, flow, call) : null;
 				maybe = always = event != null && bridged.contains(event) ? Set.of(event) : Set.of();
 			} else {
 				maybe = bridgedOf(forgeMaybe(call.owner, call.name, call.desc, 0));
@@ -363,16 +389,22 @@ public final class NativeDualEventInjector implements ClassTransformer {
 		return null;
 	}
 
-	/** An inline post whose last argument, the event, is an object a wrapper can hand over. */
-	private static boolean inlineWrappable(MethodInsnNode call) {
-		if (call.getOpcode() != Opcodes.INVOKEINTERFACE && call.getOpcode() != Opcodes.INVOKEVIRTUAL) return false;
+	/**
+	 * Which of an inline post's wrapper parameters is the event it posts, or -1 when none can be handed over: a bus's
+	 * {@code post} takes it last (after the receiver, the wrapper's first parameter), the mod-bus dispatcher takes it as
+	 * its event-typed argument.
+	 */
+	private int handedOver(MethodInsnNode call) {
 		Type[] args = Type.getArgumentTypes(call.desc);
-		return args.length > 0 && args[args.length - 1].getSort() == Type.OBJECT;
+		if (call.getOpcode() == Opcodes.INVOKEINTERFACE || call.getOpcode() == Opcodes.INVOKEVIRTUAL) {
+			return args.length > 0 && args[args.length - 1].getSort() == Type.OBJECT ? args.length : -1;
+		}
+		return call.getOpcode() == Opcodes.INVOKESTATIC && neoPost(call.owner, call.name, call.desc) ? eventArgument(call.desc) : -1;
 	}
 
-	/** A wrapper's descriptor: the call's own, with an inline post's receiver as its first parameter. */
+	/** A wrapper's descriptor: the call's own, with an inline post's receiver, if it has one, as its first parameter. */
 	private static String wrapperDesc(MethodInsnNode call, boolean inline) {
-		return inline ? "(L" + call.owner + ";" + call.desc.substring(1) : call.desc;
+		return inline && call.getOpcode() != Opcodes.INVOKESTATIC ? "(L" + call.owner + ";" + call.desc.substring(1) : call.desc;
 	}
 
 	private boolean wrapNeo(ClassNode owner, Site site, String proved, String group, String candidates, String faithful, boolean itf) {
@@ -397,7 +429,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 				open.add(new LdcInsnNode(Type.getObjectType(call.owner)));
 				open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "begin", "(" + strings + "Ljava/lang/Class;)L" + SCOPE + ";", false));
 			}
-			owner.methods.add(wrapper(name, desc, call, open, SCOPE, site.inline() ? "capture" : null));
+			owner.methods.add(wrapper(name, desc, call, open, SCOPE, site.inline() ? "capture" : null, handedOver(call)));
 		} else if (!calls(existing, API, "begin")) {
 			return false;
 		}
@@ -418,7 +450,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			open.add(new LdcInsnNode(candidates));
 			open.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, "record",
 					"(Ljava/lang/String;Ljava/lang/String;)L" + RECORDING + ";", false));
-			owner.methods.add(wrapper(name, desc, call, open, RECORDING, site.inline() ? "delivered" : null));
+			owner.methods.add(wrapper(name, desc, call, open, RECORDING, site.inline() ? "delivered" : null, handedOver(call)));
 		} else if (!calls(existing, API, "record")) {
 			return false;
 		}
@@ -440,19 +472,21 @@ public final class NativeDualEventInjector implements ClassTransformer {
 	}
 
 	/**
-	 * {@code static ret name(args) { T guard = <open>; [guard.<handOver>(lastArg);] try { return call(args); } finally {
-	 * guard.close(); } }}, with {@code T} the scope or recording type {@code open} leaves on the stack.
+	 * {@code static ret name(args) { T guard = <open>; [guard.<handOver>(event);] try { return call(args); } finally {
+	 * guard.close(); } }}, with {@code T} the scope or recording type {@code open} leaves on the stack and {@code event}
+	 * the wrapper's parameter {@code handOverParameter}.
 	 */
-	private static MethodNode wrapper(String name, String desc, MethodInsnNode call, InsnList open, String guardType, String handOver) {
+	private static MethodNode wrapper(String name, String desc, MethodInsnNode call, InsnList open, String guardType, String handOver,
+			int handOverParameter) {
 		MethodNode method = new MethodNode(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, name, desc, null, null);
 		Type[] args = Type.getArgumentTypes(desc);
 		Type result = Type.getReturnType(desc);
 		List<Object> locals = new ArrayList<>();
 		int slot = 0, last = 0;
-		for (Type arg : args) {
-			locals.add(frameType(arg));
-			last = slot;
-			slot += arg.getSize();
+		for (int i = 0; i < args.length; i++) {
+			locals.add(frameType(args[i]));
+			if (i == handOverParameter) last = slot;
+			slot += args[i].getSize();
 		}
 		int guard = slot, value = guard + 1;
 		locals.add(guardType);
@@ -550,7 +584,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 				if (!(forge.instructions.get(i) instanceof MethodInsnNode call) || forgeFlow.frames[i] == null) continue;
 				if (!forgeCandidate(call.getOpcode(), call.owner, call.name)) continue;
 				boolean delivers = forgePost(call.owner, call.name)
-						? inlineWrappable(call) && event.equals(postedEvent(forge, forgeFlow, call))
+						? handedOver(call) >= 0 && event.equals(postedEvent(forge, forgeFlow, call))
 						: forgeMaybe(call.owner, call.name, call.desc, 0).contains(event);
 				if (delivers) out.add(i);
 			}
@@ -767,7 +801,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 	private boolean constructsAndPosts(MethodNode hook) {
 		boolean posts = false, constructs = false;
 		for (AbstractInsnNode instruction : hook.instructions) {
-			if (instruction instanceof MethodInsnNode call && neoPost(call.owner, call.name)) posts = true;
+			if (instruction instanceof MethodInsnNode call && neoPost(call.owner, call.name, call.desc)) posts = true;
 			if (instruction instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW && type.desc.startsWith(families.neo())) {
 				constructs = true;
 			}
@@ -807,20 +841,20 @@ public final class NativeDualEventInjector implements ClassTransformer {
 	 */
 	private byte[] instrumentNeoHooks(byte[] input) {
 		boolean[] named = ByteScan.constantPoolNames(input, neoHookNeedles);
-		if (!named[0] || !named[1]) return input;
-		return instrument(input, families.neo(), (owner, name) -> neoPost(owner, name), "constructed", "dispatching",
+		if (!(named[0] && named[1]) && !(named.length > 2 && named[2])) return input;
+		return instrument(input, families.neo(), this::neoPost, "constructed", "dispatching",
 				"dispatched", true);
 	}
 
 	/** The same for MinecraftForge's hooks, reporting to the recording a caller opened around a call into one. */
 	private byte[] instrumentForgeHooks(byte[] input) {
 		if (!ByteScan.constantPoolPrefixes(input, forgeHookPrefixes)[0] || !ByteScan.constantPoolNames(input, post)[0]) return input;
-		return instrument(input, families.forge(), this::forgePost, "nativeConstructed", "nativeDispatching",
+		return instrument(input, families.forge(), (owner, name, desc) -> forgePost(owner, name), "nativeConstructed", "nativeDispatching",
 				"nativeDispatched", false);
 	}
 
 	private interface PostTest {
-		boolean posts(String owner, String name);
+		boolean posts(String owner, String name, String desc);
 	}
 
 	private byte[] instrument(byte[] input, String namespace, PostTest post, String constructed, String dispatching,
@@ -837,7 +871,7 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			}
 			List<MethodInsnNode> posts = new ArrayList<>();
 			for (AbstractInsnNode instruction : method.instructions) {
-				if (instruction instanceof MethodInsnNode call && post.posts(call.owner, call.name)) posts.add(call);
+				if (instruction instanceof MethodInsnNode call && post.posts(call.owner, call.name, call.desc)) posts.add(call);
 			}
 			if (posts.isEmpty()) continue;
 			Frame<SourceValue>[] frames;
