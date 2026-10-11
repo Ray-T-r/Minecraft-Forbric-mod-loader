@@ -515,6 +515,9 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			if (flow.frames[i] == null || (always && !flow.onEveryPath(i, exits))) continue;
 			if (posts && instruction instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW
 					&& type.desc.startsWith(families.forge())) out.add(type.desc);
+			// An event its class keeps one instance of and posts every time (MinecraftForge's client tick posts
+			// TickEvent.ClientTickEvent.Pre.INSTANCE): delivered the same as one constructed for the post.
+			if (posts && singleton(instruction, families.forge()) != null) out.add(singleton(instruction, families.forge()));
 			if (instruction instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
 					&& call.owner.startsWith(families.forge()) && !call.owner.startsWith(families.forgeBus())
 					&& !(call.owner + "." + call.name + call.desc).equals(owner + "." + name + desc)) {
@@ -522,6 +525,15 @@ public final class NativeDualEventInjector implements ClassTransformer {
 			}
 		}
 		return Set.copyOf(out);
+	}
+
+	/**
+	 * The class whose own one instance {@code instruction} reads — {@code GETSTATIC C.f : LC;} with {@code C} in
+	 * {@code namespace} — or null. A hook that posts that instance delivers a {@code C} without constructing one.
+	 */
+	static String singleton(AbstractInsnNode instruction, String namespace) {
+		return instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
+				&& field.owner.startsWith(namespace) && field.desc.equals("L" + field.owner + ";") ? field.owner : null;
 	}
 
 	/**
@@ -652,6 +664,18 @@ public final class NativeDualEventInjector implements ClassTransformer {
 				report.add(new InsnNode(Opcodes.DUP));
 				report.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, constructed, "(Ljava/lang/Object;)V", false));
 				method.instructions.insert(init, report);
+			}
+			// MinecraftForge's hooks also post an event class's one instance; reported the same way, so a recording
+			// around such a hook commits what it delivered. NeoForge's are left as they are: a scope captures by
+			// identity, and an instance shared by every post is no one post's event.
+			if (!neo) {
+				for (AbstractInsnNode instruction : method.instructions.toArray()) {
+					if (singleton(instruction, namespace) == null) continue;
+					InsnList report = new InsnList();
+					report.add(new InsnNode(Opcodes.DUP));
+					report.add(new MethodInsnNode(Opcodes.INVOKESTATIC, API, constructed, "(Ljava/lang/Object;)V", false));
+					method.instructions.insert(instruction, report);
+				}
 			}
 			for (MethodInsnNode call : posts) {
 				method.instructions.insertBefore(call, new MethodInsnNode(Opcodes.INVOKESTATIC, API, dispatching, "()V", false));

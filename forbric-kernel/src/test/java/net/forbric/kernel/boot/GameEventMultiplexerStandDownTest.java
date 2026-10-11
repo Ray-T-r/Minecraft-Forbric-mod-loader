@@ -119,8 +119,9 @@ class GameEventMultiplexerStandDownTest {
 		assertEquals(stand.raw().hashCode(), stand.view().hashCode());
 		assertTrue(stand.view().toString().contains("stand-down"));
 
-		Stand tick = stand(work, GameEventBridge.SERVER_TICK_PRE);
-		assertSame(tick.raw(), tick.view(), "no BRIDGED row, no native counterpart to stand down for: NeoForge's own bus");
+		Stand portal = stand(work, GameEventBridge.PORTAL_SPAWN);
+		assertSame(portal.raw(), portal.view(), "no row, nothing to stand down for (PortalSpawnInjector composes the portal): "
+				+ "NeoForge's own bus");
 	}
 
 	/**
@@ -135,7 +136,9 @@ class GameEventMultiplexerStandDownTest {
 		String bus = GameEventMultiplexer.NEO_BUS.replace('.', '/');
 		for (String bridge : List.of("KernelGameEntityEvents", "KernelGameWorldEvents", "KernelGameServerEvents",
 				"KernelGamePlayerTrackingEvents", "KernelGameBlockEvents", "KernelGamePlayerEvents", "KernelGameDamageEvents",
-				"KernelGameSoundEvents")) {
+				"KernelGameSoundEvents", "KernelGameTickEvents", "KernelGameLevelEvents", "KernelGameResultBridges",
+				"KernelGameClientTickEvents", "KernelGameRenderFrameEvents", "KernelGameScreenMouseEvents",
+				"KernelGameClientNetworkEvents", "KernelGameClientEvents")) {
 			Path file = runtime.resolve("net/forbric/kernel/runtime/" + bridge + ".class");
 			org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
 			new org.objectweb.asm.ClassReader(java.nio.file.Files.readAllBytes(file)).accept(node, 0);

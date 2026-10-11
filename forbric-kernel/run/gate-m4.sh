@@ -22,9 +22,10 @@
 # relaxes every discovered guest mod's configs, so it soft-skips with a warning and the mod still loads.
 #
 # Both game-event families ticking 1:1 in the same loop (the B-5 shape, past all public prior art) is proven by the
-# kernel's GameEventMultiplexer: it subscribes to NeoForge's ServerTickEvent (the surviving merged hook) and
-# re-emits MinecraftForge's, logging once at 20 forwards — so 20 forwards means both families ticked 20 times, once
-# each. Real mods don't count ticks, so this proof is kernel-instrumented rather than canary-emitted.
+# kernel's GameEventMultiplexer: it subscribes to NeoForge's ServerTickEvent and re-emits MinecraftForge's, logging
+# once at 20 forwards — so 20 forwards means both families ticked 20 times, once each. Real mods don't count ticks, so
+# this proof is kernel-instrumented rather than canary-emitted. On a base whose tickServer calls MinecraftForge's tick
+# hooks itself (one that keeps both families' edits), the bridges stand down for those ticks and say so instead.
 # GATE-PARALLEL: rundirs=server-tri-real mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -58,17 +59,40 @@ done
 seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
+# Which way MinecraftForge's server tick reaches it, read from the base this run boots: a merge that keeps both families'
+# edits of MinecraftServer.tickServer calls MinecraftForge's tick hooks itself beside NeoForge's, and the tick bridges
+# then stand down (forwarding as well would tick every MinecraftForge mod twice); a base that kept only NeoForge's
+# leaves the bridges to forward every tick. Each way is asserted exactly below, and the other way's line is absent.
+TICK_NATIVE=no
+merged_calls net.minecraft.server.MinecraftServer tickServer net/minecraftforge/event/ForgeEventFactory.onPreServerTick
+case $? in
+  0) TICK_NATIVE=yes ;;
+  1) ;;
+  *) echo "[kernel] FAIL cannot read MinecraftServer.tickServer from the merged base"; exit 1 ;;
+esac
+merged_calls net.minecraft.server.MinecraftServer tickServer net/minecraftforge/event/ForgeEventFactory.onPostServerTick
+case $? in
+  0) [ "$TICK_NATIVE" = yes ] || { echo "[kernel] FAIL the merged tickServer calls MinecraftForge's Post tick but not its Pre"; exit 1; } ;;
+  1) [ "$TICK_NATIVE" = no ] || { echo "[kernel] FAIL the merged tickServer calls MinecraftForge's Pre tick but not its Post"; exit 1; } ;;
+  *) echo "[kernel] FAIL cannot read MinecraftServer.tickServer from the merged base"; exit 1 ;;
+esac
+echo "[kernel] the merged tickServer calls MinecraftForge's tick hooks itself: $TICK_NATIVE"
+STOOD_PRE='TickEvent.ServerTickEvent.Pre itself on the path of NeoForge.s net.neoforged.neoforge.event.tick.ServerTickEvent.Pre'
+STOOD_POST='TickEvent.ServerTickEvent.Post itself on the path of NeoForge.s net.neoforged.neoforge.event.tick.ServerTickEvent.Post'
+if [ "$TICK_NATIVE" = yes ]; then TICKED="$STOOD_POST"; else TICKED='bridged 20 ServerTickEvent.Post to MinecraftForge'; fi
+
 step "boot all three ecosystems in one instance, run until both families have ticked 20×"
 : > "$LOG"
 # Stop as soon as the 1:1 tick proof lands (real mods boot slower than the old canaries, so a fixed timer would
 # either cut ticking short or waste minutes); fall back to a hard cap so a stuck boot fails loudly instead of hanging.
 (
   for i in $(seq 1 150); do
-    grep -q 'bridged 20 ServerTickEvent.Post to MinecraftForge' "$LOG" 2>/dev/null && break
+    grep -qE "$TICKED" "$LOG" 2>/dev/null && break
     grep -qE 'Failed to start the minecraft server|Encountered an unexpected exception' "$LOG" 2>/dev/null && break
     sleep 1
   done
-  sleep 2
+  # Twenty ticks past the first either way: a stand-down line is printed on the first tick, the forward's at the 20th.
+  sleep 3
   echo stop
 ) | RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
@@ -130,8 +154,17 @@ check "Fabric mod content (Jade)"              "registered content: jade: [1-9][
 check "Jade server plugins load"               "Start loading plugin from Jade" "$LOG"
 
 step "BOTH game-event families tick in the same loop (must PASS — the B-5 1:1 shape)"
-check "NeoForge+Forge tick 1:1 (Pre)"          "bridged 20 ServerTickEvent.Pre to MinecraftForge — 1:1 from NeoForge" "$LOG"
-check "NeoForge+Forge tick 1:1 (Post)"         "bridged 20 ServerTickEvent.Post to MinecraftForge — 1:1 from NeoForge" "$LOG"
+if [ "$TICK_NATIVE" = yes ]; then
+  # The merged tickServer posts both families' ticks itself, once each per tick; the bridges stand down for them.
+  check "MinecraftForge's Pre tick comes from the game, the bridge stands down"  "$STOOD_PRE" "$LOG"
+  check "MinecraftForge's Post tick comes from the game, the bridge stands down" "$STOOD_POST" "$LOG"
+  check_absent "and nothing forwards a second Pre tick"  "bridged 20 ServerTickEvent.Pre" "$LOG"
+  check_absent "and nothing forwards a second Post tick" "bridged 20 ServerTickEvent.Post" "$LOG"
+else
+  check "NeoForge+Forge tick 1:1 (Pre)"          "bridged 20 ServerTickEvent.Pre to MinecraftForge — 1:1 from NeoForge" "$LOG"
+  check "NeoForge+Forge tick 1:1 (Post)"         "bridged 20 ServerTickEvent.Post to MinecraftForge — 1:1 from NeoForge" "$LOG"
+  check_absent "and no tick bridge stands down"  "ServerTickEvent.P[a-z]+ itself on the path" "$LOG"
+fi
 # The tick bridges are only two of five. The other three were installed in the same try{} and summed into one
 # unasserted number, so a setup failure in the first one silently skipped the rest -- including the one whose
 # absence leaves MinecraftForge's login gate permanently closed. Assert the whole declared set, by count.
@@ -178,6 +211,7 @@ check "the control booted"                     "Done \(" "$CONTROL"
 check "the control says it installed no bridges" "installing no bridges" "$CONTROL"
 check_absent "and MinecraftForge gets no forwarded Pre tick"  "bridged 20 ServerTickEvent.Pre"  "$CONTROL"
 check_absent "and MinecraftForge gets no forwarded Post tick" "bridged 20 ServerTickEvent.Post" "$CONTROL"
+check_absent "and no bridge is there to stand down"           "itself on the path of NeoForge" "$CONTROL"
 
 step "M4 result"
 if [ "$FAIL" -eq 0 ]; then

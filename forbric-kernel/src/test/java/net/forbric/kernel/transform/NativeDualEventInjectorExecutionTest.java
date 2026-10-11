@@ -66,7 +66,7 @@ class NativeDualEventInjectorExecutionTest {
 						}
 						""",
 				"late.forge.bus.ForgeBus", "package late.forge.bus; public interface ForgeBus { boolean post(Object event); }",
-				"late.forge.ForgeTouch", "package late.forge; public class ForgeTouch { public final Object who; public boolean canceled; public ForgeTouch(Object who){this.who=who;} }",
+				"late.forge.ForgeTouch", "package late.forge; public class ForgeTouch { public static final ForgeTouch SHARED = new ForgeTouch(new Object()); public final Object who; public boolean canceled; public ForgeTouch(Object who){this.who=who;} }",
 				"late.forge.Factory", """
 						package late.forge;
 						import java.util.*;
@@ -81,6 +81,8 @@ class NativeDualEventInjectorExecutionTest {
 						    };
 						    public static boolean touch(Object who) { return BUS.post(new ForgeTouch(who)); }
 						    public static boolean touchIf(Object who, boolean when) { if (!when) return false; return BUS.post(new ForgeTouch(who)); }
+						    public static boolean touchShared() { return BUS.post(ForgeTouch.SHARED); }
+						    public static boolean touchSharedIf(boolean when) { if (!when) return false; return BUS.post(ForgeTouch.SHARED); }
 						}
 						""",
 				"late.bridge.Bridge", """
@@ -112,6 +114,9 @@ class NativeDualEventInjectorExecutionTest {
 						    public static void forgeInline(Object who) { Factory.BUS.post(new late.forge.ForgeTouch(who)); Hooks.touch(who); }
 						    public static boolean neoOnly(Object who) { return Hooks.touch(who); }
 						    public static boolean cancelledFirst(Object who) { if (Factory.touch(who)) return true; return Hooks.touch(who); }
+						    public static void sharedFirst(Object who) { Factory.touchShared(); Hooks.touch(who); }
+						    public static void sharedAfter(Object who) { Hooks.touch(who); Factory.touchShared(); }
+						    public static void sharedIf(Object who, boolean when) { Factory.touchSharedIf(when); Hooks.touch(who); }
 						}
 						""");
 	}
@@ -209,6 +214,29 @@ class NativeDualEventInjectorExecutionTest {
 		// The documented limit: a native call that follows only sometimes cannot be known when the bridge decides, so
 		// the forward is kept and that path still delivers twice. Losing the event on the other path would be worse.
 		assertArrayEquals(new int[] {2, 1}, after.run("skippableAfter", true));
+	}
+
+	/**
+	 * A MinecraftForge hook that posts its event class's one instance instead of constructing one — MinecraftForge's
+	 * client tick posts {@code TickEvent.ClientTickEvent.Pre.INSTANCE} — delivers that event natively all the same. The
+	 * forward for the NeoForge event beside it is the second delivery the stand-down exists to skip, proved from either
+	 * order and recorded when the hook posts only sometimes.
+	 */
+	@Test
+	void aHookThatPostsItsEventsOneInstanceIsANativeDeliveryToo(@TempDir Path work) throws Exception {
+		Map<String, byte[]> classes = classes(work);
+		World before = world(classes, false);
+		assertArrayEquals(new int[] {1, 1}, before.run("sharedFirst"), "premise: the bridge forwards beside the native post");
+		World after = world(classes, true);
+		Object shared = after.type("late/forge/ForgeTouch").getField("SHARED").get(null);
+		Object sharedWho = shared.getClass().getField("who").get(shared);
+		for (String caller : List.of("sharedFirst", "sharedAfter")) {
+			int nativeBefore = after.count("late/forge/Factory", sharedWho);
+			assertArrayEquals(new int[] {0, 1}, after.run(caller), caller + ": the native post was the delivery, so the bridge stood down");
+			assertEquals(nativeBefore + 1, after.count("late/forge/Factory", sharedWho), caller + ": and the native post happened");
+		}
+		assertArrayEquals(new int[] {0, 1}, after.run("sharedIf", true), "the conditional hook posted its instance: recorded, covered");
+		assertArrayEquals(new int[] {1, 1}, after.run("sharedIf", false), "it did not: the forward is the only delivery");
 	}
 
 	@Test

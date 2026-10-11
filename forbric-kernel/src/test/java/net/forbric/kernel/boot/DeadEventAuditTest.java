@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -229,10 +230,48 @@ class DeadEventAuditTest {
 		assertFalse(forwarded.contains(KEYS), "client-init rows are landed by a transformer, not forwarded from NeoForge");
 		assertFalse(forwarded.contains(TABS), "registration rows likewise");
 		for (String event : forwarded) {
-			GameEventBridge bridge = DeadEventAudit.BRIDGED.get(event);
+			GameEventBridge bridge = DeadEventAudit.BRIDGED.containsKey(event) ? DeadEventAudit.BRIDGED.get(event) : DeadEventAudit.STAND_DOWN.get(event);
 			assertTrue(DeadEventAudit.forgeEventsOf(bridge).contains(event), event + " must be guarded on " + bridge);
 		}
-		assertEquals(Set.of(), DeadEventAudit.forgeEventsOf(GameEventBridge.SERVER_TICK_PRE), "an unlisted bridge is not guarded");
+		assertEquals(Set.of("net/minecraftforge/event/TickEvent$ServerTickEvent$Pre"), DeadEventAudit.forgeEventsOf(GameEventBridge.SERVER_TICK_PRE),
+				"the server tick's bridge stands down for exactly its own event");
+		assertEquals(Set.of(), DeadEventAudit.forgeEventsOf(GameEventBridge.TEXTURE_STITCHED),
+				"a mod-bus bridge forwards nothing on the game bus, so nothing guards it");
+	}
+
+	/**
+	 * Every bridge on NeoForge's game bus can stand down. A bridge whose events are in neither table is handed NeoForge's
+	 * bus unguarded and its events are never looked for, so wherever a merged method calls its MinecraftForge hook natively
+	 * beside NeoForge's, a mod receives the event twice — measured on an edit-spliced base for the server, player, client
+	 * and render ticks and a dozen more, all bridges no row named. The portal is the one exception, and it is composed
+	 * by {@code PortalSpawnInjector} instead.
+	 */
+	@Test
+	void everyBridgeOnTheGameBusHasEventsItCanStandDownFor() {
+		List<GameEventBridge> unguarded = new ArrayList<>();
+		for (GameEventBridge bridge : GameEventBridge.values()) {
+			boolean onTheGameBus = bridge.pass() == GameEventBridge.Pass.GAME_BUS || bridge.pass() == GameEventBridge.Pass.CLIENT_GAME_BUS;
+			if (onTheGameBus && bridge != GameEventBridge.PORTAL_SPAWN && DeadEventAudit.forgeEventsOf(bridge).isEmpty()) unguarded.add(bridge);
+		}
+		assertEquals(List.of(), unguarded, "bridges that can never stand down for the game's own delivery of their event");
+		assertEquals(Set.of(), DeadEventAudit.forgeEventsOf(GameEventBridge.PORTAL_SPAWN), "the portal's composition is its injector's");
+	}
+
+	/**
+	 * The stand-down rows are not the dead-event judgement's: a listener for one of their events is never a finding on
+	 * their account, not even while its bridge is missing (a client bridge always is on a dedicated server) — only the
+	 * dead and partly-posted tables speak for an event there — and no event is in both bridge tables.
+	 */
+	@Test
+	void standDownRowsAreNeverAFinding() {
+		Set<String> both = new java.util.TreeSet<>(DeadEventAudit.STAND_DOWN.keySet());
+		both.retainAll(DeadEventAudit.BRIDGED.keySet());
+		assertEquals(Set.of(), both, "an event in both tables");
+		Map<String, Set<String>> subscribed = Map.of("somemod", DeadEventAudit.STAND_DOWN.keySet());
+		for (DeadEventAudit.Finding finding : DeadEventAudit.audit(subscribed, Set.of())) {
+			assertTrue(DeadEventAudit.DEAD.containsKey(finding.event()) || DeadEventAudit.PARTIAL.containsKey(finding.event()),
+					"no bridge installed, and a finding no dead or partly-posted row speaks for: " + finding);
+		}
 	}
 
 	/**

@@ -273,13 +273,17 @@ class HookCallSiteCensusStagedTest {
 	}
 
 	/**
-	 * Pairs the widened census finds on the staged base this branch builds: 15 through NeoForge's hook classes, 19
+	 * Pairs the widened census finds on the staged base this branch builds: 24 through NeoForge's hook classes, 19
 	 * through its other static hooks (CommonHooks, and the seven server-lifecycle calls initServer and runServer pair with
-	 * MinecraftForge's ServerLifecycleHooks), 7 inline posts on its bus and the portal. Hook classes alone found 17 on an
+	 * MinecraftForge's ServerLifecycleHooks), 15 inline posts on its bus and the portal. Hook classes alone found 17 on an
 	 * earlier base, and the 21 other ones were never checked; MinecraftForge's facade classes alone found 35, and the
-	 * lifecycle pairs, which delivered every server event twice, were never checked either.
+	 * lifecycle pairs, which delivered every server event twice, were never checked either. The 17 above the 42 measured
+	 * before are the events of bridges that had no row until DeadEventAudit.STAND_DOWN — the level's load, save and unload, the
+	 * client's log-in and log-out, fog, overlays and screen events, all looked for nowhere. The ticks pair too but the
+	 * census cannot see them: its pairing is by name, and MinecraftForge nests its ticks in TickEvent where NeoForge does
+	 * not; gate-m41's audit counts those on the buses.
 	 */
-	private static final int MEASURED_PAIRS = 42;
+	private static final int MEASURED_PAIRS = 59;
 
 	/**
 	 * Methods of the merged base that call a MinecraftForge hook and deliver through NeoForge in any of the ways the

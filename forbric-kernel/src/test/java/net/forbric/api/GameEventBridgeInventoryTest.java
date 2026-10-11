@@ -233,7 +233,8 @@ class GameEventBridgeInventoryTest {
 		assertTrue(Files.exists(audit), "DeadEventAudit's source is part of this checkout: " + audit);
 		String bridged = Files.readString(audit);
 		bridged = bridged.substring(bridged.indexOf("private static Map<String, GameEventBridge> bridged()"));
-		bridged = bridged.substring(0, bridged.indexOf("\n\tprivate DeadEventAudit()"));
+		// bridged()'s own body: the stand-down table after it is not the dead-event judgement's, and names client bridges.
+		bridged = bridged.substring(0, bridged.indexOf("return Map.copyOf(map);"));
 		for (GameEventBridge bridge : GameEventBridge.values()) {
 			if (bridge.pass() != GameEventBridge.Pass.CLIENT_GAME_BUS) continue;
 			assertTrue(!bridged.contains("GameEventBridge." + bridge.name()),

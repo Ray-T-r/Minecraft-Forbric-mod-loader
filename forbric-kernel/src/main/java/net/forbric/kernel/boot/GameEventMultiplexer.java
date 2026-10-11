@@ -569,7 +569,8 @@ public final class GameEventMultiplexer {
 	/**
 	 * The bus a bridge installs on.
 	 *
-	 * <p>A bridge whose MinecraftForge events are {@link DeadEventAudit#BRIDGED} rows may meet a merged method that now
+	 * <p>A bridge whose MinecraftForge events are {@link DeadEventAudit#BRIDGED} or {@link DeadEventAudit#STAND_DOWN} rows
+	 * (every bridge on the game bus but the portal's) may meet a merged method that now
 	 * delivers one of them natively on the same path as the NeoForge event the bridge forwards from. For those, the
 	 * bridge is handed a view of NeoForge's bus whose four-argument {@code addListener} wraps the listener: for an event
 	 * {@code NativeDualEventInjector} scoped as natively delivered with one of this bridge's events, the forward is
@@ -640,13 +641,30 @@ public final class GameEventMultiplexer {
 		}
 	}
 
-	/** One bridge listener that stands down for an event the merged game delivered natively on its path. */
-	record StandDownListener(java.util.function.Consumer<Object> forward, java.util.Set<String> forgeEvents)
-			implements java.util.function.Consumer<Object> {
+	/**
+	 * One bridge listener that stands down for an event the merged game delivered natively on its path. It says so
+	 * the first time, naming the MinecraftForge events, because a bridge that stands down forwards nothing and its own
+	 * proof lines (the ticks' 1:1 count) never print: the line is what a gate reads instead.
+	 */
+	static final class StandDownListener implements java.util.function.Consumer<Object> {
+		private final java.util.function.Consumer<Object> forward;
+		private final java.util.Set<String> forgeEvents;
+		private final java.util.concurrent.atomic.AtomicBoolean said = new java.util.concurrent.atomic.AtomicBoolean();
+
+		StandDownListener(java.util.function.Consumer<Object> forward, java.util.Set<String> forgeEvents) {
+			this.forward = forward;
+			this.forgeEvents = forgeEvents;
+		}
+
 		@Override
 		public void accept(Object event) {
 			if (net.forbric.api.NativeEventDelivery.covered(event, forgeEvents)) {
 				EventChainAudit.nativelyDelivered(event, forgeEvents);
+				if (said.compareAndSet(false, true)) {
+					ForbricLog.info("[Forbric/EventMux] the merged game delivered %s itself on the path of NeoForge's %s — "
+							+ "its bridge stands down there instead of delivering it a second time",
+							String.join(", ", new java.util.TreeSet<>(forgeEvents)), event.getClass().getName());
+				}
 				return;
 			}
 			forward.accept(event);

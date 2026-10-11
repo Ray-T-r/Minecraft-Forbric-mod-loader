@@ -340,15 +340,85 @@ public final class DeadEventAudit {
 	}
 
 	/**
-	 * The MinecraftForge events a bridge re-posts from a NeoForge event on the game bus: every {@link #BRIDGED} key in
-	 * MinecraftForge's namespace whose bridge {@link GameEventMultiplexer} installs, and therefore guards. What
-	 * {@code NativeDualEventInjector} looks for on a path that also posts NeoForge's. The rows landed by class
-	 * transformers (client init, registration, the HUD, tooltips) forward from no NeoForge event and are left out.
+	 * The rest of what the bridges on NeoForge's game bus re-post: every forwarding bridge without a {@link #BRIDGED}
+	 * row, with the MinecraftForge events its forward constructs (read from its game-side class and the hooks it calls).
+	 *
+	 * <p>The stand-down is only as complete as this inventory. {@code NativeDualEventInjector} looks only for these
+	 * events on a path that also posts NeoForge's, and {@link GameEventMultiplexer#guarded} guards only a bridge with
+	 * events here or in {@link #BRIDGED}. A bridge with neither could never stand down, and a merge that keeps both
+	 * families' edits calls MinecraftForge's hook natively beside NeoForge's at many of these sites: measured with the
+	 * event-chain audit on the edit-spliced base, every MinecraftForge mod received the server, player, client and
+	 * render ticks, each level's load, save and unload, the client's log-in and log-out, system chat, mouse buttons,
+	 * fog and block overlays twice — once from the game and once from the bridge.
+	 *
+	 * <p>Not {@link #BRIDGED}, because that table is also the dead-event judgement's, and none of these is "never
+	 * posted": each bridge here installs on every boot of its side, and a CLIENT_GAME_BUS row there would name every mod
+	 * listening for its event DEGRADED on every dedicated server, which never installs it. The portal bridge is not here
+	 * either: {@code PortalSpawnInjector} composes its two families' calls itself.
+	 */
+	static final Map<String, GameEventBridge> STAND_DOWN = standDown();
+
+	private static Map<String, GameEventBridge> standDown() {
+		Map<String, GameEventBridge> map = new LinkedHashMap<>();
+		String event = "net/minecraftforge/event/", client = "net/minecraftforge/client/event/";
+		map.put(event + "TickEvent$ServerTickEvent$Pre", GameEventBridge.SERVER_TICK_PRE);
+		map.put(event + "TickEvent$ServerTickEvent$Post", GameEventBridge.SERVER_TICK_POST);
+		map.put(event + "TickEvent$PlayerTickEvent$Pre", GameEventBridge.PLAYER_TICK_PRE);
+		map.put(event + "TickEvent$PlayerTickEvent$Post", GameEventBridge.PLAYER_TICK_POST);
+		map.put(event + "entity/player/PlayerEvent$PlayerRespawnEvent", GameEventBridge.PLAYER_RESPAWN);
+		map.put(event + "entity/player/PlayerEvent$PlayerChangedDimensionEvent", GameEventBridge.PLAYER_CHANGED_DIMENSION);
+		map.put(event + "level/LevelEvent$Load", GameEventBridge.LEVEL_LOAD);
+		map.put(event + "level/LevelEvent$Unload", GameEventBridge.LEVEL_UNLOAD);
+		map.put(event + "level/LevelEvent$Save", GameEventBridge.LEVEL_SAVE);
+		map.put(event + "entity/living/LivingEntityUseItemEvent$Finish", GameEventBridge.ITEM_USE_FINISH);
+		map.put(event + "TickEvent$ClientTickEvent$Pre", GameEventBridge.CLIENT_TICK_PRE);
+		map.put(event + "TickEvent$ClientTickEvent$Post", GameEventBridge.CLIENT_TICK_POST);
+		map.put(event + "TickEvent$RenderTickEvent$Pre", GameEventBridge.RENDER_FRAME_PRE);
+		map.put(event + "TickEvent$RenderTickEvent$Post", GameEventBridge.RENDER_FRAME_POST);
+		map.put(client + "ScreenEvent$MouseButtonPressed$Pre", GameEventBridge.SCREEN_MOUSE_PRESSED_PRE);
+		map.put(client + "ScreenEvent$MouseButtonReleased$Pre", GameEventBridge.SCREEN_MOUSE_RELEASED_PRE);
+		map.put(client + "ScreenEvent$MouseDragged$Pre", GameEventBridge.SCREEN_MOUSE_DRAG_PRE);
+		map.put(client + "ScreenEvent$MouseScrolled$Post", GameEventBridge.SCREEN_MOUSE_SCROLL_POST);
+		map.put(client + "ClientPlayerNetworkEvent$LoggingIn", GameEventBridge.CLIENT_LOGGING_IN);
+		map.put(client + "ClientPlayerNetworkEvent$LoggingOut", GameEventBridge.CLIENT_LOGGING_OUT);
+		map.put(client + "ClientPlayerNetworkEvent$Clone", GameEventBridge.CLIENT_PLAYER_CLONE);
+		map.put(client + "RegisterClientCommandsEvent", GameEventBridge.CLIENT_COMMANDS);
+		map.put(client + "ClientChatReceivedEvent", GameEventBridge.CLIENT_CHAT_RECEIVED);
+		map.put(client + "ClientChatReceivedEvent$Player", GameEventBridge.CLIENT_CHAT_RECEIVED);
+		map.put(client + "SystemMessageReceivedEvent", GameEventBridge.CLIENT_CHAT_RECEIVED);
+		map.put(client + "ClientChatEvent", GameEventBridge.CLIENT_CHAT_SEND);
+		map.put(client + "InputEvent$Key", GameEventBridge.KEY_INPUT);
+		map.put(client + "ScreenEvent$Init$Pre", GameEventBridge.SCREEN_INIT_PRE);
+		map.put(client + "ScreenEvent$Init$Post", GameEventBridge.SCREEN_INIT_POST);
+		map.put(client + "ScreenEvent$KeyPressed$Pre", GameEventBridge.SCREEN_KEY_PRESSED_PRE);
+		map.put(client + "ScreenEvent$KeyPressed$Post", GameEventBridge.SCREEN_KEY_PRESSED_POST);
+		map.put(client + "ScreenEvent$KeyReleased$Pre", GameEventBridge.SCREEN_KEY_RELEASED_PRE);
+		map.put(client + "ScreenEvent$KeyReleased$Post", GameEventBridge.SCREEN_KEY_RELEASED_POST);
+		map.put(client + "InputEvent$MouseButton$Pre", GameEventBridge.MOUSE_BUTTON_PRE);
+		map.put(client + "InputEvent$InteractionKeyMappingTriggered", GameEventBridge.INTERACTION_KEY);
+		map.put(client + "ViewportEvent$RenderFog", GameEventBridge.RENDER_FOG);
+		map.put(client + "ViewportEvent$ComputeFogColor", GameEventBridge.FOG_COLOR);
+		map.put(client + "ComputeFovModifierEvent", GameEventBridge.FOV_MODIFIER);
+		map.put(client + "RenderBlockScreenEffectEvent", GameEventBridge.BLOCK_OVERLAY);
+		map.put(client + "CustomizeGuiOverlayEvent$BossEventProgress", GameEventBridge.BOSS_EVENT_PROGRESS);
+		map.put(client + "ScreenEvent$Render$Pre", GameEventBridge.SCREEN_RENDER_PRE);
+		map.put(client + "ScreenEvent$Render$Post", GameEventBridge.SCREEN_RENDER_POST);
+		return Map.copyOf(map);
+	}
+
+	/**
+	 * The MinecraftForge events a bridge re-posts from a NeoForge event on the game bus: every {@link #BRIDGED} or
+	 * {@link #STAND_DOWN} key in MinecraftForge's namespace whose bridge {@link GameEventMultiplexer} installs, and
+	 * therefore guards. What {@code NativeDualEventInjector} looks for on a path that also posts NeoForge's. The rows
+	 * landed by class transformers (client init, registration, the HUD, tooltips) forward from no NeoForge event and
+	 * are left out.
 	 */
 	public static Set<String> forwardedForgeEvents() {
 		Set<String> out = new java.util.TreeSet<>();
-		for (Map.Entry<String, GameEventBridge> row : BRIDGED.entrySet()) {
-			if (row.getKey().startsWith(FORGE) && forwards(row.getValue())) out.add(row.getKey());
+		for (Map<String, GameEventBridge> table : List.of(BRIDGED, STAND_DOWN)) {
+			for (Map.Entry<String, GameEventBridge> row : table.entrySet()) {
+				if (row.getKey().startsWith(FORGE) && forwards(row.getValue())) out.add(row.getKey());
+			}
 		}
 		return Set.copyOf(out);
 	}
@@ -358,11 +428,13 @@ public final class DeadEventAudit {
 		return bridge.pass() == GameEventBridge.Pass.GAME_BUS || bridge.pass() == GameEventBridge.Pass.CLIENT_GAME_BUS;
 	}
 
-	/** The MinecraftForge events {@code bridge} re-posts, none when it is not a {@link #BRIDGED} row. */
+	/** The MinecraftForge events {@code bridge} re-posts, none when it has no {@link #BRIDGED} or {@link #STAND_DOWN} row. */
 	static Set<String> forgeEventsOf(GameEventBridge bridge) {
 		Set<String> out = new java.util.TreeSet<>();
-		for (Map.Entry<String, GameEventBridge> row : BRIDGED.entrySet()) {
-			if (row.getValue() == bridge && row.getKey().startsWith(FORGE) && forwards(bridge)) out.add(row.getKey());
+		for (Map<String, GameEventBridge> table : List.of(BRIDGED, STAND_DOWN)) {
+			for (Map.Entry<String, GameEventBridge> row : table.entrySet()) {
+				if (row.getValue() == bridge && row.getKey().startsWith(FORGE) && forwards(bridge)) out.add(row.getKey());
+			}
 		}
 		return Set.copyOf(out);
 	}
