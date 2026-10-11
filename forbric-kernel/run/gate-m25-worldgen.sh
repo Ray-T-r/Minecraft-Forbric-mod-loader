@@ -2,7 +2,7 @@
 # M25 — two independent biome-modifier pipelines must leave their own blocks in saved overworld chunks.
 # Green since Phase 1 D: MinecraftForge's biome modifiers ride inside NeoForge's single pass (KernelForgeWorldgen).
 # RED demonstration: M25_NO_DATA=1 ./gate-m25-worldgen.sh removes data/ from BOTH staged canaries;
-# the NeoForge control, served-pack checks and both block probes must fail. No source jar is changed.
+# the NeoForge control, served-pack and enabled-pack checks and both block probes must fail. No source jar is changed.
 # Negative control (second boot, fresh world): -Dforbric.forgeWorldgen=off — every MinecraftForge claim goes red
 # (no bridging line, probe = false, no end_stone, forbriclive named in load-report.txt) while NeoForge's stay green.
 # TEETH (recorded 2026-09-20): with the switch off the Forge half read 0 end_stone / probe = false; NeoForge purpur
@@ -68,6 +68,15 @@ check "world finished saving" 'All dimensions are saved' "$LOG"
 check "NeoForge loaded a nonempty modifier registry" "applied NeoForge's [1-9][0-9]* biome modifier" "$LOG"
 check "Forge canary data was served" 'DataPacks\] served .*forbric/data/forbriclive' "$LOG"
 check "NeoForge canary data was served" 'DataPacks\] served .*forbric/data/forbricneolive' "$LOG"
+# Served is not enabled: a world plays only the packs it selects. This is vanilla's own line from
+# configurePackRepository, the auto-add of a pack no config lists, and it is how a MinecraftForge mod's data reaches a
+# NEW world here. The merged configurePackRepository asks only NeoForge for its mod-pack names, and that is right:
+# MinecraftForge's getModPacks names its mod files, and on an instance with no MinecraftForge mod that list is empty
+# and it throws "Attempted to retrieve mod packs before they were loaded in!" (measured on a base that carried the
+# call: the server dies loading its world). RED with M25_NO_DATA=1: a canary without data/ is not served, so it is
+# not enabled either.
+check "a new world enables the MinecraftForge canary's data pack by default" \
+  'Found new data pack forbric/data/forbriclive, loading it automatically' "$LOG"
 check "NeoForge probe ran"          'ForbricNeoLive/WORLDGEN\] probe ran: plains has [0-9]+ feature' "$LOG"
 check "NeoForge probe saw its feature" 'ForbricNeoLive/WORLDGEN\] plains underground_ores has forbricneolive:probe = true' "$LOG"
 
