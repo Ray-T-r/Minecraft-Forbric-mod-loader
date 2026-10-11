@@ -108,18 +108,25 @@ class ForgeCapabilityCompositionTransformerTest {
 	/**
 	 * Each lifecycle site carries MinecraftForge's hook exactly once: re-created where the merged body lost it, and
 	 * left alone where the merged body kept Forge's own statement (the edit-splicing merge keeps the {@code ForgeCaps}
-	 * save and load in both roots) — a funnel on top of the native statement serializes twice and replays twice.
+	 * saves of both roots, BlockEntity's load and BlockEntity.setRemoved's {@code invalidateCaps}) — a funnel on top of
+	 * the native statement serializes twice and replays twice, and a second invalidation runs twice.
 	 */
 	@Test
 	void everyLostCallSiteIsReCreatedOnceAtForgesOwnBoundary() throws Exception {
 		String save = "(" + ForgeCapabilityCompositionTransformer.VALUE_OUTPUT + ")V", load = "(" + ForgeCapabilityCompositionTransformer.VALUE_INPUT + ")V";
 		ClassNode be = parse(shim(ForgeCapabilityCompositionTransformer.BLOCK_ENTITY));
-		assertFollows(find(be, "setRemoved", "()V"), "invalidateCapabilities", "invalidateCaps");
 		ClassNode entity = parse(shim(ForgeCapabilityCompositionTransformer.ENTITY));
-		assertFollows(find(entity, "remove", "(Lnet/minecraft/world/entity/Entity$RemovalReason;)V"), "setRemoved", "invalidateCaps");
-		assertFollows(find(entity, "revive", "()V"), "unsetRemoved", "reviveCaps");
 		ClassNode beBase = parse(bytesOf(ForgeCapabilityCompositionTransformer.BLOCK_ENTITY));
 		ClassNode entityBase = parse(bytesOf(ForgeCapabilityCompositionTransformer.ENTITY));
+		assertInvokedOnce(beBase, be, "setRemoved", "()V", "invalidateCapabilities", "invalidateCaps");
+		assertInvokedOnce(entityBase, entity, "remove", "(Lnet/minecraft/world/entity/Entity$RemovalReason;)V", "setRemoved", "invalidateCaps");
+		assertInvokedOnce(entityBase, entity, "revive", "()V", "unsetRemoved", "reviveCaps");
+		// Negative control: NeoForge's own bodies carry none of MinecraftForge's lifecycle calls, so each is re-created.
+		ClassNode beNeo = parse(new ForgeCapabilityCompositionTransformer().transform(
+				ForgeCapabilityCompositionTransformer.BLOCK_ENTITY.replace('/', '.'), neoBytesOf(ForgeCapabilityCompositionTransformer.BLOCK_ENTITY), null));
+		assertEquals(0, count(find(parse(neoBytesOf(ForgeCapabilityCompositionTransformer.BLOCK_ENTITY)), "setRemoved", "()V"), "invalidateCaps"),
+				"premise: NeoForge's BlockEntity.setRemoved does not invalidate MinecraftForge's capabilities");
+		assertFollows(find(beNeo, "setRemoved", "()V"), "invalidateCapabilities", "invalidateCaps");
 		assertPersistedOnce(beBase, be, "saveAdditional", save, "saveBlockEntity");
 		assertPersistedOnce(beBase, be, "loadAdditional", load, "load");
 		assertPersistedOnce(entityBase, entity, "saveWithoutId", save, "saveEntity");
@@ -146,6 +153,20 @@ class ForgeCapabilityCompositionTransformerTest {
 				new Analyzer<>(new BasicVerifier()).analyze(node.name, m);
 			}
 		}
+	}
+
+	/**
+	 * Exactly one {@code inserted} call in {@code name}: the base's own, left where the merge put it, or the kernel's,
+	 * right after {@code anchor} — never both.
+	 */
+	private static void assertInvokedOnce(ClassNode base, ClassNode shimmed, String name, String desc, String anchor, String inserted) {
+		if (count(find(base, name, desc), inserted) == 0) {
+			assertFollows(find(shimmed, name, desc), anchor, inserted);
+			return;
+		}
+		assertEquals(1, count(find(base, name, desc), inserted), base.name + "." + name + " calls " + inserted + " once itself");
+		assertEquals(1, count(find(shimmed, name, desc), inserted),
+				base.name + "." + name + " keeps MinecraftForge's own " + inserted + " — a second one would run it twice");
 	}
 
 	/** Exactly one ForgeCaps persistence in {@code name}: the base's own statement, or the kernel's funnel — never both. */
