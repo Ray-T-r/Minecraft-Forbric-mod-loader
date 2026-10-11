@@ -191,7 +191,7 @@ net/minecraft/client/KeyboardHandler#charTyped(JLnet/minecraft/client/input/Char
 net/minecraft/client/KeyboardHandler#copyRecreateCommand(ZZ)V 306eb245=0
 net/minecraft/client/KeyboardHandler#preeditCallback(JLnet/minecraft/client/input/PreeditEvent;)V 15afd99c=0 2a61c5ba=1 944055a8=1
 net/minecraft/client/Minecraft#allowsTelemetry()Z 00287d54=0
-net/minecraft/client/Minecraft#continueAttack(Z)V a713dc40=0 c22ce1fa=1 f2933142=0
+net/minecraft/client/Minecraft#continueAttack(Z)V 0562c498=2 a713dc40=0 c22ce1fa=1 f2933142=0
 net/minecraft/client/Minecraft#createUserApiService(Lcom/mojang/authlib/yggdrasil/YggdrasilAuthenticationService;Lnet/minecraft/client/main/GameConfig;)Lcom/mojang/authlib/minecraft/UserApiService; 35fa9a15=0
 net/minecraft/client/Minecraft#getGameProfile()Lcom/mojang/authlib/GameProfile; 4cb4da28=0
 net/minecraft/client/Minecraft#getMusicVolume()F 67d1b94f=0
@@ -1657,7 +1657,7 @@ net/minecraft/world/entity/Leashable#setLeashedTo(Lnet/minecraft/world/entity/En
 net/minecraft/world/entity/Leashable#tickLeash(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/entity/Entity;)V 0fd716fb=0 a98e707f=0
 net/minecraft/world/entity/LightningBolt#clearCopperOnLightningStrike(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;)V 33b5dfd8=0
 net/minecraft/world/entity/LightningBolt#spawnFire(I)V 67734f48=0 90c2033c=0
-net/minecraft/world/entity/LivingEntity#actuallyHurt(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)V 78f507f5=0
+net/minecraft/world/entity/LivingEntity#actuallyHurt(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)V 1cdff1cc=1 78f507f5=0
 net/minecraft/world/entity/LivingEntity#canAttack(Lnet/minecraft/world/entity/LivingEntity;)Z 00287d54=0
 net/minecraft/world/entity/LivingEntity#canBeAffected(Lnet/minecraft/world/effect/MobEffectInstance;)Z 00287d54=0@3:9dc02918,1@3:ec82b37c,2@3:88466d72 00287d55=0@3:8e967c79,1@3:1fe86b1d,2@3:7b85af1d,T@3:8b3ee5af
 net/minecraft/world/entity/LivingEntity#completeUsingItem()V 2bbff09a=0@3:09107fc3,T@3:bc487fd2 5d42358d=1

@@ -3,6 +3,7 @@ package net.forbric.kernel.transform;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -186,8 +187,17 @@ class ForgeCapabilityCompositionTransformerTest {
 		return n;
 	}
 
+	/**
+	 * ServerLevel's constructor gathers MinecraftForge's capabilities once, at its end, as MinecraftForge's own
+	 * constructor does. Where the kernel restores the call it goes right after NeoForge's LevelAttachmentsSavedData.init.
+	 * Where the merged base carries MinecraftForge's own call (a merge that keeps both sides' edits puts MinecraftForge's
+	 * end-of-constructor statement first at the shared end), the kernel leaves it, and only NeoForge's own
+	 * end-of-constructor statements may follow it: no vanilla code runs on an ungathered level.
+	 */
 	@Test
 	void serverLevelGathersAfterAttachmentsAndLevelChunkWritesForgesProvider() throws Exception {
+		byte[] staged = bytesOf(ForgeCapabilityCompositionTransformer.SERVER_LEVEL);
+		boolean nativeCall = ForgeCapabilityCompositionTransformer.carriesNatively(parse(staged));
 		ClassNode server = parse(shim(ForgeCapabilityCompositionTransformer.SERVER_LEVEL));
 		int inits = 0;
 		for (MethodNode m : server.methods) {
@@ -197,8 +207,15 @@ class ForgeCapabilityCompositionTransformerTest {
 					inits++;
 					AbstractInsnNode load = realPrevious(insn), anchor = realPrevious(load);
 					assertTrue(load instanceof VarInsnNode v && v.var == 0);
-					assertTrue(anchor instanceof MethodInsnNode a && "init".equals(a.name) && a.owner.endsWith("LevelAttachmentsSavedData"),
-							"initCapabilities must follow LevelAttachmentsSavedData.init, Forge's own slot at the constructor's end");
+					if (!nativeCall) {
+						assertTrue(anchor instanceof MethodInsnNode a && "init".equals(a.name) && a.owner.endsWith("LevelAttachmentsSavedData"),
+								"initCapabilities must follow LevelAttachmentsSavedData.init, Forge's own slot at the constructor's end");
+						continue;
+					}
+					for (AbstractInsnNode after = insn.getNext(); after != null && after.getOpcode() != Opcodes.RETURN; after = after.getNext()) {
+						if (after instanceof MethodInsnNode later) assertTrue(later.owner.startsWith("net/neoforged/"),
+								"only NeoForge's own end-of-constructor statements follow MinecraftForge's gather, found " + later.owner + "." + later.name);
+					}
 				}
 			}
 		}
@@ -302,6 +319,15 @@ class ForgeCapabilityCompositionTransformerTest {
 			if (on.transform(target.replace('/', '.'), bytes, null) != bytes) rewiredOn++;
 			else assertTrue(ForgeCapabilityCompositionTransformer.carriesNatively(parse(bytes)),
 					"premise: with dispatch on " + target + " is rewired, or its merged body carries Forge's own code natively");
+		}
+		if (rewiredOn == 0) {
+			// Every dispatch site of this base carries MinecraftForge's own code. The premise then comes from the base's
+			// ServerLevel with its own gather taken out: dispatch on rewires it, and off must leave it exactly as it is.
+			byte[] stripped = withoutInitCapabilities(bytesOf(ForgeCapabilityCompositionTransformer.SERVER_LEVEL));
+			String server = ForgeCapabilityCompositionTransformer.SERVER_LEVEL.replace('/', '.');
+			assertNotSame(stripped, on.transform(server, stripped, null), "premise: dispatch on rewires a ServerLevel that lost its gather");
+			assertSame(stripped, off.transform(server, stripped, null), "off leaves that ServerLevel alone");
+			rewiredOn++;
 		}
 		assertTrue(rewiredOn > 0, "premise: with dispatch on, some dispatch site is rewired — else off leaving them alone proves nothing");
 		List<AnchorSet.Anchor> anchors = off.anchors().anchors();
@@ -637,6 +663,22 @@ class ForgeCapabilityCompositionTransformerTest {
 			if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETFIELD && field.equals(f.name)) return true;
 		}
 		return false;
+	}
+
+	/** The class with every constructor's {@code this.initCapabilities()} taken out, as a merge that lost it leaves it. */
+	private static byte[] withoutInitCapabilities(byte[] bytes) {
+		ClassNode node = parse(bytes);
+		for (MethodNode m : node.methods) {
+			if (!"<init>".equals(m.name)) continue;
+			for (AbstractInsnNode insn : m.instructions.toArray()) {
+				if (!(insn instanceof MethodInsnNode call) || !"initCapabilities".equals(call.name)) continue;
+				m.instructions.remove(realPrevious(insn));
+				m.instructions.remove(insn);
+			}
+		}
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+		node.accept(writer);
+		return writer.toByteArray();
 	}
 
 	private static AbstractInsnNode realPrevious(AbstractInsnNode insn) {

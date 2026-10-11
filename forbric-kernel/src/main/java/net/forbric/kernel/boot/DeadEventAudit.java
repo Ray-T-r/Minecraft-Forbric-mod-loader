@@ -139,6 +139,15 @@ public final class DeadEventAudit {
 		// rows were unreachable anyway; FluidPlaceBlockEvent is posted from MinecraftForge's own
 		// FluidInteractionRegistry, which this layer cannot prove is reached but can no longer claim is not.
 		// A row here says "the merged game never posts this", and none of the three could still say it.
+		// The two sound events joined once the splice stopped carrying a MinecraftForge rewrite of the vanilla play call
+		// over NeoForge's own handling of the same sound (it dropped what NeoForge's listeners set): every place the
+		// merged game plays a sound now asks only NeoForge, and nothing bridges the MinecraftForge event.
+		dead.put("net/minecraftforge/event/PlayLevelSoundEvent$AtEntity",
+				"a sound played at an entity cannot be changed or silenced by a MinecraftForge mod — ServerLevel, "
+						+ "ClientLevel and LocalPlayer ask only NeoForge's PlayLevelSoundEvent");
+		dead.put("net/minecraftforge/event/PlayLevelSoundEvent$AtPosition",
+				"a sound played at a position cannot be changed or silenced by a MinecraftForge mod — ServerLevel and "
+						+ "ClientLevel ask only NeoForge's PlayLevelSoundEvent");
 		return Map.copyOf(dead);
 	}
 
@@ -175,7 +184,11 @@ public final class DeadEventAudit {
 		// EntityLeaveLevelEvent, LevelEvent$Unload, PlayLevelSoundEvent$AtEntity) got some back and joined, and
 		// LivingConversionEvent$Post went from 3 of 7 to 4. Regenerated again once the splice carried an insertion
 		// statement by statement: ClientLevel's tracking end now posts EntityLeaveLevelEvent too (2 of 2), so it left,
-		// and the pig's lightning conversion keeps MinecraftForge's onLivingConvert (Post is 5 of 7 now).
+		// and the pig's lightning conversion keeps MinecraftForge's onLivingConvert (Post is 5 of 7 now). Regenerated
+		// once the splice stopped carrying runs whose answer the kept body drops: PlayLevelSoundEvent$AtEntity lost
+		// its last paths and moved to DEAD; the level tick (MinecraftServer.tickChildren), the click that starts
+		// mining a block on the client (MultiPlayerGameMode.startDestroyBlock) and a huge mushroom's growth
+		// (MushroomBlock.growMushroom) are posted from fewer places and joined.
 		partial.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Post",
 				"a completed conversion is announced on 5 of its 7 paths — not for hoglins or piglins — so a "
 						+ "mod reacting to one will react to some conversions and not others");
@@ -190,9 +203,17 @@ public final class DeadEventAudit {
 		partial.put("net/minecraftforge/event/level/LevelEvent$Unload",
 				"a level going away is announced on 2 of its 3 paths — not when a server stops — so what a mod "
 						+ "releases on unload is kept at shutdown");
-		partial.put("net/minecraftforge/event/PlayLevelSoundEvent$AtEntity",
-				"a sound played at an entity can be changed or silenced on 2 of its 3 paths — not the local "
-						+ "player's own sounds");
+		partial.put("net/minecraftforge/event/TickEvent$LevelTickEvent$Pre",
+				"the level tick is posted natively for the client's level only, not for a server level — server "
+						+ "levels reach MinecraftForge mods only through the level-tick bridge");
+		partial.put("net/minecraftforge/event/TickEvent$LevelTickEvent$Post",
+				"as the level tick's pre half: posted natively for the client's level only");
+		partial.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$LeftClickBlock",
+				"a left click on a block is announced on 3 of its 5 paths — not when the client starts mining a "
+						+ "block, so a client-side cancel of a fresh click does nothing");
+		partial.put("net/minecraftforge/event/level/BlockFeatureGrowEvent",
+				"a feature growing from a bonemealed plant can be changed or stopped on 2 of its 3 paths — not for a "
+						+ "huge mushroom");
 		return Map.copyOf(partial);
 	}
 
@@ -276,6 +297,11 @@ public final class DeadEventAudit {
 		map.put("net/minecraftforge/client/event/AddGuiOverlayLayersEvent", GameEventBridge.GUI_OVERLAY_LAYERS);
 		map.put("net/minecraftforge/event/level/BlockEvent$EntityPlaceEvent",
 				GameEventBridge.ENTITY_PLACE_BLOCK);
+		// The level tick has been bridged all along (KernelGameTickEvents); a row here makes the audit consult the
+		// bridge for it, and lets the bridge stand down where the merged game posts MinecraftForge's level tick
+		// itself on the same path as NeoForge's (the client's Minecraft.tick), instead of delivering it twice.
+		map.put("net/minecraftforge/event/TickEvent$LevelTickEvent$Pre", GameEventBridge.LEVEL_TICK_PRE);
+		map.put("net/minecraftforge/event/TickEvent$LevelTickEvent$Post", GameEventBridge.LEVEL_TICK_POST);
 		// Entity tracking is bridged too (KernelGamePlayerTrackingEvents). Rows here because this table is also what
 		// NativeDualEventInjector and the bridge guard read: a bridge whose events are not listed can never stand
 		// down where the merged game tracks natively, and these two were the first to need it.
