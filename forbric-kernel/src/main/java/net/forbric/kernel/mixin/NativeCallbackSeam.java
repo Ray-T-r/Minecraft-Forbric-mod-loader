@@ -20,6 +20,20 @@ final class NativeCallbackSeam {
      */
     static Plan derive(ClassNode original, ClassNode current, MethodNode source, String target,
             Function<String, ClassNode> classes) {
+        return derive(original, List.of(), current, source, target, classes);
+    }
+
+    /**
+     * {@link #derive(ClassNode, ClassNode, MethodNode, String, Function)}, where the merged method may reach the helper
+     * by the way one of {@code peers} reaches its own copy of the call instead: {@code peers} are the same class as other
+     * ecosystems compiled it natively. A merge that keeps another ecosystem's own edit in front of the helper (its hook,
+     * re-deriving the very operands the call is handed) leaves a prefix no longer the source's, but exactly that
+     * ecosystem's — where its own body makes the same call, final, from the same operand wires. Locals other than the
+     * parameters and those wires are compared as the variables they are (their def-use webs, by first appearance), as
+     * a merge gives a kept edit's own local a fresh slot where that ecosystem's compiler reused one.
+     */
+    static Plan derive(ClassNode original, List<ClassNode> peers, ClassNode current, MethodNode source, String target,
+            Function<String, ClassNode> classes) {
         if (original == null || current == null || source == null
                 || !Type.getReturnType(source.desc).equals(Type.VOID_TYPE)) return null;
         MethodNode live = NativeCallChanges.method(current, source.name + source.desc);
@@ -29,12 +43,26 @@ final class NativeCallbackSeam {
         if (old.size() != 1 || !selectedCalls(target, live).isEmpty()) return null;
         String member = NativeCallChanges.member(old.getFirst());
         Feed sourceFeed = feed(old.getFirst()); if (sourceFeed == null || !finalCall(source, old.getFirst())) return null;
-        String sourcePrefix = prefix(source, sourceFeed.instructions.getFirst()); if (sourcePrefix == null) return null;
+        Set<Integer> fixed = fixedSlots(source, sourceFeed);
+        String sourcePrefix = prefix(source, sourceFeed.instructions.getFirst(), fixed); if (sourcePrefix == null) return null;
+        // Each native way to the call: the source's own, then each peer whose body makes the same call, once and final,
+        // from the same wires.
+        List<String> natives = new ArrayList<>(List.of(sourcePrefix));
+        for (ClassNode peer : peers == null ? List.<ClassNode>of() : peers) {
+            MethodNode peerMethod = peer == null ? null : NativeCallChanges.method(peer, source.name + source.desc);
+            if (peerMethod == null || ((peerMethod.access ^ source.access) & Opcodes.ACC_STATIC) != 0 || !peerMethod.tryCatchBlocks.isEmpty()) continue;
+            List<MethodInsnNode> own = selectedCalls(target, peerMethod);
+            if (own.size() != 1 || !NativeCallChanges.member(own.getFirst()).equals(member) || !finalCall(peerMethod, own.getFirst())) continue;
+            Feed peerFeed = feed(own.getFirst());
+            if (peerFeed == null || !peerFeed.wires.equals(sourceFeed.wires)) continue;
+            String peerPrefix = prefix(peerMethod, peerFeed.instructions.getFirst(), fixed);
+            if (peerPrefix != null && !natives.contains(peerPrefix)) natives.add(peerPrefix);
+        }
         Plan found = null;
         for (MethodInsnNode edge : calls(live)) {
             if (edge.getOpcode() != Opcodes.INVOKESTATIC || !Type.getReturnType(edge.desc).equals(Type.VOID_TYPE) || !finalCall(live, edge)) continue;
             Feed currentFeed = feed(edge); if (currentFeed == null) continue;
-            String currentPrefix = prefix(live, currentFeed.instructions.getFirst()); if (!sourcePrefix.equals(currentPrefix)) continue;
+            String currentPrefix = prefix(live, currentFeed.instructions.getFirst(), fixed); if (!natives.contains(currentPrefix)) continue;
             ClassNode helper = classes.apply(edge.owner); MethodNode body = NativeCallChanges.method(helper, edge.name + edge.desc);
             if (body == null || (body.access & (Opcodes.ACC_STATIC | Opcodes.ACC_PUBLIC)) != (Opcodes.ACC_STATIC | Opcodes.ACC_PUBLIC)
                     || (body.access & (Opcodes.ACC_NATIVE | Opcodes.ACC_ABSTRACT | Opcodes.ACC_SYNCHRONIZED)) != 0) continue;
@@ -57,8 +85,9 @@ final class NativeCallbackSeam {
                 if (projection[p] < 0) complete = false; hostSlot += hostArgs[p].getSize();
             }
             if (!complete) continue;
+            // The native prefix the current one is: the source's, or the peer's the merge kept.
             Plan candidate = new Plan(current.name, source.name + source.desc, member, helper.name, body.name + body.desc,
-                projection, sourcePrefix, currentPrefix, MixinInstructionFingerprint.hash(body));
+                projection, currentPrefix, currentPrefix, MixinInstructionFingerprint.hash(body));
             if (found != null) return null; found = candidate;
         }
         return found;
@@ -85,9 +114,18 @@ final class NativeCallbackSeam {
                 ||at instanceof IincInsnNode increment&&inputs.contains(increment.var))return false;
         }return false;
     }
-    private static String prefix(MethodNode source, AbstractInsnNode until) {
+    /** The receiver and parameter slots, and every local the call's operand wires read: compared by number. */
+    private static Set<Integer> fixedSlots(MethodNode method, Feed feed) {
+        Set<Integer> fixed = new HashSet<>();
+        int slots = (Type.getArgumentsAndReturnSizes(method.desc) >> 2) - ((method.access & Opcodes.ACC_STATIC) != 0 ? 1 : 0);
+        for (int slot = 0; slot < slots; slot++) fixed.add(slot);
+        for (String wire : feed.wires) if (wire.startsWith("local:")) fixed.add(Integer.parseInt(wire.substring(6)));
+        return fixed;
+    }
+    private static String prefix(MethodNode source, AbstractInsnNode until, Set<Integer> fixed) {
         MethodNode copy = new MethodNode(source.access, source.name, source.desc, null, null); source.accept(copy);
         List<AbstractInsnNode> code = real(source), cloned = real(copy); int index = code.indexOf(until); if (index < 0) return null;
+        int[] variables = variables(source, code, index, fixed);
         AbstractInsnNode cut = cloned.get(index); Set<LabelNode> removed = Collections.newSetFromMap(new IdentityHashMap<>());
         for (AbstractInsnNode i = cut; i != null; i = i.getNext()) if (i instanceof LabelNode label) removed.add(label);
         // A source-prefix branch into the argument feed is retained as the shared end of this prefix.
@@ -101,7 +139,62 @@ final class NativeCallbackSeam {
         for (AbstractInsnNode i = cut; i != null;) { AbstractInsnNode next = i.getNext(); copy.instructions.remove(i); i = next; }
         copy.instructions.add(end); copy.instructions.add(new InsnNode(Opcodes.RETURN));
         copy.tryCatchBlocks.clear(); copy.localVariables = null;
+        // Every other local as the variable it is, numbered by first appearance: a body's own locals consistently renamed
+        // (or one slot reused for two variables where the other body gives each its own) is the same code. A body that
+        // cannot be analysed keeps its slot numbers, and so matches only a prefix written exactly alike.
+        for (int i = 0; variables != null && i < index; i++) {
+            if (variables[i] < 0) continue;
+            if (cloned.get(i) instanceof VarInsnNode local) local.var = variables[i];
+            else if (cloned.get(i) instanceof IincInsnNode increment) increment.var = variables[i];
+        }
         return MixinInstructionFingerprint.hash(copy);
+    }
+    /**
+     * Per executable instruction before {@code end}: for a load, store or increment of a local outside {@code fixed}, the
+     * number of the variable it touches — the def-use web of the stores reaching its loads, by first appearance — else -1.
+     * Null when the method cannot be analysed, or a value stored at or past {@code end} reaches a load before it.
+     */
+    private static int[] variables(MethodNode method, List<AbstractInsnNode> code, int end, Set<Integer> fixed) {
+        boolean own = false;
+        for (int i = 0; i < end && !own; i++)
+            own = code.get(i) instanceof VarInsnNode local && local.getOpcode() != Opcodes.RET && !fixed.contains(local.var)
+                    || code.get(i) instanceof IincInsnNode increment && !fixed.contains(increment.var);
+        if (!own) { int[] none = new int[end]; Arrays.fill(none, -1); return none; }
+        org.objectweb.asm.tree.analysis.Frame<org.objectweb.asm.tree.analysis.SourceValue>[] frames;
+        try { frames = new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.SourceInterpreter()).analyze("java/lang/Object", method); }
+        catch (org.objectweb.asm.tree.analysis.AnalyzerException | RuntimeException unanalysable) { return null; }
+        int[] parent = new int[end];
+        for (int i = 0; i < end; i++) parent[i] = i;
+        Map<AbstractInsnNode, Integer> at = new IdentityHashMap<>();
+        for (int i = 0; i < end; i++) at.put(code.get(i), i);
+        for (int i = 0; i < end; i++) {
+            AbstractInsnNode instruction = code.get(i);
+            int var = instruction instanceof VarInsnNode local && local.getOpcode() != Opcodes.RET ? local.var
+                    : instruction instanceof IincInsnNode increment ? increment.var : -1;
+            boolean reads = instruction instanceof IincInsnNode || instruction.getOpcode() >= Opcodes.ILOAD && instruction.getOpcode() <= Opcodes.ALOAD;
+            if (var < 0 || fixed.contains(var) || !reads) continue;
+            var frame = frames[method.instructions.indexOf(instruction)];
+            if (frame == null) continue;
+            for (AbstractInsnNode store : frame.getLocal(var).insns) {
+                Integer from = at.get(store);
+                // A value stored at or past the end reaches a load before it only round a loop back from the call.
+                if (from == null) return null;
+                parent[root(parent, from)] = root(parent, i);
+            }
+        }
+        int[] variables = new int[end];
+        Map<Integer, Integer> numbers = new HashMap<>();
+        for (int i = 0; i < end; i++) {
+            AbstractInsnNode instruction = code.get(i);
+            int var = instruction instanceof VarInsnNode local && local.getOpcode() != Opcodes.RET ? local.var
+                    : instruction instanceof IincInsnNode increment ? increment.var : -1;
+            variables[i] = var < 0 || fixed.contains(var) ? -1 : numbers.computeIfAbsent(root(parent, i), r -> 1024 + 2 * numbers.size());
+        }
+        return variables;
+    }
+    private static int root(int[] parent, int i) {
+        while (parent[i] != i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+        return i;
     }
     private static boolean finalCall(MethodNode method, MethodInsnNode call) {
         AbstractInsnNode next = next(call); if (next != null && (next.getOpcode() == Opcodes.POP || next.getOpcode() == Opcodes.POP2)) next = next(next);

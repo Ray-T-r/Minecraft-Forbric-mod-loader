@@ -102,7 +102,12 @@ class MixinRetargetCarrierHelperStagedTest {
 		assertEquals(MixinFit.Verdict.FIT, after.verdict(), "after: " + after.unresolved());
 	}
 
-	/** The released callback stays after the original set, before the helper's later fluid/event effects. */
+	/**
+	 * The released callback stays after the original set, before the helper's later fluid/event effects. The merged
+	 * method may reach the helper as another ecosystem's own body reaches its set (an edit-spliced base keeps
+	 * MinecraftForge's getFogColor hook in front of NeoForge's helper): that native way counts as the source's; a
+	 * prefix no native body has does not.
+	 */
     @Test
     void puzzleslibsFogColourStaysAtTheSourceSetInsideClientHooks() throws Exception {
         Function<String,byte[]> merged=mergedResolver();TestFixtures.requireFiles(Fixture.STAGED,"native carrier helper",NEO_RUNTIME);
@@ -117,9 +122,15 @@ class MixinRetargetCarrierHelperStagedTest {
         assertTrue((callback.access&Opcodes.ACC_STATIC)!=0,"the released callback observes arguments without a host receiver");assertTrue((nativeHost.access&Opcodes.ACC_STATIC)==0,"the actual native host is an instance method");
         assertEquals(MixinFit.Verdict.PARTIAL,MixinFit.evaluate(bytes,resolver).verdict());
         assertTrue(NativeCallTestEvidence.plan(original,resolver).rewrites().stream().noneMatch(r->r.handler().equals(callback.name)),"AFTER the entire carrier helper would move this callback beyond fluid and event writes");
-        var seam=NativeCallbackSeam.derive(source,current,nativeHost,member,classes);assertNotNull(seam);assertEquals(seam.sourcePrefix(),seam.currentPrefix());assertEquals(6,seam.hostParameters().length);
+        java.util.function.Function<String,List<ClassNode>> peers=n->java.util.stream.Stream.of(Ecosystem.FORGE,Ecosystem.NEOFORGE).map(e->NativeCallTestEvidence.staged().apply(e,n)).filter(java.util.Objects::nonNull).toList();
+        var seam=NativeCallbackSeam.derive(source,peers.apply(owner),current,nativeHost,member,classes);assertNotNull(seam);assertEquals(seam.sourcePrefix(),seam.currentPrefix());assertEquals(6,seam.hostParameters().length);
+        // A merged prefix that is no native body's — one constant changed on the way — proves nothing, peers or not.
+        ClassNode drifted=expanded(resolver.apply(owner+".class"));MethodNode drift=NativeCallChanges.method(drifted,seam.method());
+        AbstractInsnNode constant=Arrays.stream(drift.instructions.toArray()).filter(i->i instanceof LdcInsnNode ldc&&ldc.cst instanceof Float).findFirst().orElseThrow();
+        drift.instructions.set(constant,new LdcInsnNode(((Float)((LdcInsnNode)constant).cst)+1.0f));
+        assertNull(NativeCallbackSeam.derive(source,peers.apply(owner),drifted,nativeHost,member,classes),"a prefix no native body has");
         try(var loader=new ForbricClassLoader(new URL[0],getClass().getClassLoader())){
-            ClassNode adapted=expanded(bytes);assertEquals(1,MixinAbsorbedCallbackTransport.adapt(adapted,classes,n->n.equals(owner)?source:null,loader));
+            ClassNode adapted=expanded(bytes);assertEquals(1,MixinAbsorbedCallbackTransport.adapt(adapted,classes,n->n.equals(owner)?source:null,peers,loader));
             MethodNode retained=adapted.methods.stream().filter(m->m.name.contains("$forbricsourcecallback")&&m.desc.equals(callback.desc)).findFirst().orElseThrow();
             assertNull(MixinFit.injectorOf(retained));assertEquals(MixinInstructionFingerprint.hash(callback),MixinInstructionFingerprint.hash(retained),"the complete released event callback body remains unchanged");
             for(MethodNode lambda:original.methods)if(lambda.name.startsWith("lambda$computeFogColor$"))assertEquals(MixinInstructionFingerprint.hash(lambda),MixinInstructionFingerprint.hash(NativeCallChanges.method(adapted,lambda.name+lambda.desc)),"the released mutable-float lambda closure stays intact");
@@ -136,9 +147,9 @@ class MixinRetargetCarrierHelperStagedTest {
         }
         ClassNode mutated=expanded(resolver.apply(seam.helper()+".class"));MethodNode wrong=NativeCallChanges.method(mutated,seam.helperMethod());MethodInsnNode set=Arrays.stream(wrong.instructions.toArray()).filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast).filter(c->NativeCallChanges.member(c).equals(member)).findFirst().orElseThrow();
         for(AbstractInsnNode i=set.getPrevious();i!=null;i=i.getPrevious())if(i instanceof VarInsnNode value&&value.getOpcode()==Opcodes.FLOAD){value.var++;break;}
-        try(var loader=new ForbricClassLoader(new URL[0],getClass().getClassLoader())){assertEquals(0,MixinAbsorbedCallbackTransport.adapt(expanded(bytes),n->n.equals(seam.helper())?mutated:classes.apply(n),n->n.equals(owner)?source:null,loader),"changed native setter operands cannot authorize this actual callback");}
+        try(var loader=new ForbricClassLoader(new URL[0],getClass().getClassLoader())){assertEquals(0,MixinAbsorbedCallbackTransport.adapt(expanded(bytes),n->n.equals(seam.helper())?mutated:classes.apply(n),n->n.equals(owner)?source:null,peers,loader),"changed native setter operands cannot authorize this actual callback");}
         ClassNode cancellable=expanded(bytes);AnnotationNode changed=MixinFit.injectorOf(cancellable.methods.stream().filter(m->m.name.equals(callback.name)).findFirst().orElseThrow());changed.values=new ArrayList<>(changed.values);changed.values.addAll(List.of("cancellable",true));
-        try(var loader=new ForbricClassLoader(new URL[0],getClass().getClassLoader())){assertEquals(0,MixinAbsorbedCallbackTransport.adapt(cancellable,classes,n->n.equals(owner)?source:null,loader),"cancellation cannot be moved into a helper");}
+        try(var loader=new ForbricClassLoader(new URL[0],getClass().getClassLoader())){assertEquals(0,MixinAbsorbedCallbackTransport.adapt(cancellable,classes,n->n.equals(owner)?source:null,peers,loader),"cancellation cannot be moved into a helper");}
     }
     private static ClassNode expanded(byte[] bytes){ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.EXPAND_FRAMES);return node;}
     private static AbstractInsnNode nextReal(AbstractInsnNode instruction){instruction=instruction.getNext();while(instruction!=null&&instruction.getOpcode()<0)instruction=instruction.getNext();return instruction;}

@@ -113,7 +113,8 @@ public final class ForbricMixinService
 		if(gameLoader==null||bytes==null)return bytes;
 		ClassNode source=new ClassNode();new ClassReader(bytes).accept(source,ClassReader.EXPAND_FRAMES);
 		int changed=MixinAbsorbedCallbackTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},
-			owner->NativeGameReferences.reference(MixinStubRebind.ecosystemOf(source.name),owner),loader());
+			owner->NativeGameReferences.reference(MixinStubRebind.ecosystemOf(source.name),owner),
+			owner->NativeGameReferences.peers(MixinStubRebind.ecosystemOf(source.name),owner),loader());
 		changed+=MixinOperationSeamTransport.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},NativeGameReferences::reference,loader());
 		if(changed==0)return bytes;org.objectweb.asm.ClassWriter out=new org.objectweb.asm.ClassWriter(0);source.accept(out);return out.toByteArray();
 	}
@@ -351,7 +352,8 @@ public final class ForbricMixinService
 		MixinNativePredicateSeam.adapt(node, this::mergedBaseNodeWithCode,
 				owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner));
 		MixinAbsorbedCallbackTransport.adapt(node, this::mergedBaseNodeWithCode,
-			owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner), loader());
+			owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner),
+			owner -> NativeGameReferences.peers(MixinStubRebind.ecosystemOf(node.name), owner), loader());
 		MixinOperationSeamTransport.adapt(node, this::mergedBaseNodeWithCode,NativeGameReferences::reference,loader());
 		MixinSharedPredicateSeam.adapt(node, this::mergedBaseNodeWithCode,
 				owner -> NativeGameReferences.reference(MixinStubRebind.ecosystemOf(node.name), owner),

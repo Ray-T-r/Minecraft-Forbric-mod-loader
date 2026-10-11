@@ -53,6 +53,11 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
     private MixinAbsorbedCallbackTransport() { }
     public static void release(ClassLoader loader) { PLANS.remove(loader);CallbackSeams.release(loader); }
     public static int adapt(ClassNode mixin, Function<String,ClassNode> current, Function<String,ClassNode> originals, ForbricClassLoader loader) {
+        return adapt(mixin, current, originals, owner -> List.of(), loader);
+    }
+    /** {@code peers}: the target as the other ecosystems compiled it natively, whose own way to the call a merge may keep. */
+    public static int adapt(ClassNode mixin, Function<String,ClassNode> current, Function<String,ClassNode> originals,
+            Function<String,List<ClassNode>> peers, ForbricClassLoader loader) {
         if (!MergedBaseAbsorbedCalls.enabled() || loader==null) return 0;
         List<String> targets=MixinFit.mixinTargets(mixin);if(targets.size()!=1)return 0;
         ClassNode source=originals.apply(targets.getFirst()), target=current.apply(targets.getFirst());if(source==null||target==null)return 0;
@@ -76,7 +81,7 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
             Type[] nativeArgs=Type.getArgumentTypes(nativeMethod.desc), handlerArgs=Type.getArgumentTypes(handler.desc);
             boolean full=handlerArgs.length==nativeArgs.length+1&&Arrays.equals(nativeArgs,Arrays.copyOf(handlerArgs,handlerArgs.length-1));
             if(!full&&handlerArgs.length!=1||handlerArgs.length==0||!handlerArgs[handlerArgs.length-1].equals(Type.getObjectType(CI)))continue;
-            NativeCallbackSeam.Plan plan=NativeCallbackSeam.derive(source,target,nativeMethod,member,unwrapped);if(plan==null)continue;
+            NativeCallbackSeam.Plan plan=NativeCallbackSeam.derive(source,peers.apply(targets.getFirst()),target,nativeMethod,member,unwrapped);if(plan==null)continue;
             String key=mixin.name+":"+handler.name+":"+plan.host()+"."+plan.method()+":"+plan.helper()+"."+plan.helperMethod()+":"+plan.member()+":"+plan.sourcePrefix()+":"+MixinInstructionFingerprint.hash(handler)+":"+plan.helperHash();
             String originalName=handler.name, keptName=MixinHandlerShim.asideName(mixin.name,originalName,"$forbricsourcecallback");
             MethodNode retained=copy(handler);retained.name=keptName;removeInjector(retained);

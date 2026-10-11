@@ -19,8 +19,11 @@ class MergedBaseAbsorbedCallsTest {
             assertTrue(CarrierHelpers.edges(NativeCallChanges.method(read(nativeJar,owner),signature),member).contains(CarrierHelpers.Shape.TAIL));
             assertNull(MergedBaseAbsorbedCalls.find(owner,signature,member,Ecosystem.FABRIC),"the hook continues with fluid/event writes; AFTER-hook changes observable callback ordering");
             var source=read(nativeJar,owner);var current=read(merged,owner);
-            var seam=NativeCallbackSeam.derive(source,current,NativeCallChanges.method(source,signature),member,n->{ClassNode node=read(merged,n);return node!=null?node:read(runtime,n);});
-            assertNotNull(seam,"the original set remains the helper's unconditional first effect, with exactly the same input wires and host prefix");
+            // The merged method may reach the helper as MinecraftForge's own body reaches its set (an edit-spliced base keeps
+            // its getFogColor hook in front of NeoForge's helper): the other ecosystems' native bodies are its peers.
+            var peers=java.util.stream.Stream.of(Ecosystem.FORGE,Ecosystem.NEOFORGE).map(e->NativeCallTestEvidence.staged().apply(e,owner)).filter(java.util.Objects::nonNull).toList();
+            var seam=NativeCallbackSeam.derive(source,peers,current,NativeCallChanges.method(source,signature),member,n->{ClassNode node=read(merged,n);return node!=null?node:read(runtime,n);});
+            assertNotNull(seam,"the original set remains the helper's unconditional first effect, with exactly the same input wires and a host prefix a native body has");
             assertEquals(owner,seam.host());
             assertEquals(6,seam.hostParameters().length,"every original host argument is available to the unchanged callback");
         }

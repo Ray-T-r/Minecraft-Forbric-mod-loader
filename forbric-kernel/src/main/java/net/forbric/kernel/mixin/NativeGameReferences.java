@@ -52,6 +52,16 @@ public final class NativeGameReferences {
 		NativeGameReferences reader = active;
 		return reader == null ? null : reader.get(ecosystem, owner);
 	}
+	/** {@code owner} as every ecosystem other than {@code ecosystem} compiled it natively, where a reference exists. */
+	public static java.util.List<ClassNode> peers(Ecosystem ecosystem, String owner) {
+		java.util.List<ClassNode> peers = new java.util.ArrayList<>();
+		for (Ecosystem other : Ecosystem.values()) {
+			if (other == ecosystem) continue;
+			ClassNode peer = reference(other, owner);
+			if (peer != null) peers.add(peer);
+		}
+		return peers;
+	}
 	/** The authoritative current pipeline bytes, without defining or initializing a dependency class. */
 	public static ClassNode current(String owner) {
 		NativeGameReferences reader=active;if(reader==null||reader.currentClasses==null||owner==null)return null;
