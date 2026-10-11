@@ -196,10 +196,15 @@ class AdditiveMethodMergerStagedTest {
 		}
 	}
 
+	/** FORBRIC_OLD's run tree, or this module's own run/ without it. */
+	static Path stagedRun() {
+		String old = System.getenv("FORBRIC_OLD");
+		return old == null ? Path.of("run") : Path.of(old, "run");
+	}
+
 	/** The same staged inputs the kernel's structural tests read: FORBRIC_OLD's run tree and the launcher's vanilla jar. */
 	static Path jar(String side) {
-		String old = System.getenv("FORBRIC_OLD");
-		Path run = old == null ? Path.of("run") : Path.of(old, "run");
+		Path run = stagedRun();
 		String mc = System.getenv("MC_DIR");
 		Path path = switch (side) {
 			case "vanilla" -> Path.of(mc != null && !mc.isBlank() ? mc : System.getProperty("user.home")

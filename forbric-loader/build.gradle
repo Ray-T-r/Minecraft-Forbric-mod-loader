@@ -203,6 +203,9 @@ processResources {
 test {
 	dependsOn tasks.named('toolsClasses')
 	useJUnitPlatform()
+	// The staged merge-loss ratchet holds both patched games and the merged base in memory at once, as the census
+	// tool does; Gradle's 512 MB default for test workers runs out, 1 GB (the kernel's setting) does not.
+	maxHeapSize = '1g'
 }
 
 // The game-touching half of Forbric — the Forge-family runtime drivers (impl/forge/minecraftforge for the
