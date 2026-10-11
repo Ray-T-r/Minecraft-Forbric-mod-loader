@@ -53,8 +53,12 @@ import net.forbric.kernel.util.ForbricLog;
  * invulnerability-frame call, whose parameter and container already differ by a reduction other mods may modify.
  *
  * <p>Applied to {@code LivingEntity} and {@code Player} (which overrides it the same way), only where the method opens
- * with the invulnerability check and reads the parameter only after the armour call. Registered after
- * {@code ForgeDamageSeamsInjector}, so the read lands ahead of its seam. {@code -Dforbric.vanillaDamageRead=off}.
+ * with the invulnerability check and armours the container's amount rather than the parameter. A read of the
+ * parameter before armour does not make the body vanilla's: the edit-splicing merge keeps MinecraftForge's
+ * {@code damage = ForgeHooks.onLivingHurt(this, source, damage)} right after the check, whose result NeoForge's body
+ * never reads again, so a mod rewriting that first read would still change nothing. Registered after
+ * {@code ForgeDamageSeamsInjector}, and placed right after the invulnerability check, so the read lands ahead of
+ * MinecraftForge's Hurt — the seam's or the merged body's own. {@code -Dforbric.vanillaDamageRead=off}.
  */
 public final class VanillaDamageReadInjector implements ClassTransformer {
 	public static final String PROPERTY = "forbric.vanillaDamageRead";
@@ -109,7 +113,7 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 				|| !load(code.get(2), Opcodes.ALOAD, 2)
 				|| !(code.get(3) instanceof MethodInsnNode invulnerable) || !invulnerable.name.equals("isInvulnerableTo")
 				|| code.get(4).getOpcode() != Opcodes.IFNE) return false;
-		int armour = -1, firstRead = -1;
+		int armour = -1;
 		FieldInsnNode containers = null;   // the body's own reference to the stack, owner as the body spells it
 		for (int i = 0; i < code.size(); i++) {
 			AbstractInsnNode insn = code.get(i);
@@ -117,10 +121,12 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 					&& field.name.equals("damageContainers") && field.desc.equals("Ljava/util/Stack;")) containers = field;
 			if (insn instanceof MethodInsnNode call && call.owner.equals(HELPER) && call.name.equals("vanillaRead")) return false;
 			if (armour < 0 && insn instanceof MethodInsnNode call && call.name.equals("getDamageAfterArmorAbsorb")) armour = i;
-			if (firstRead < 0 && load(insn, Opcodes.FLOAD, 3)) firstRead = i;
 		}
-		// Vanilla's shape (a read before armour) needs nothing; no armour call at all is not this method's shape.
-		if (armour < 0 || containers == null || (firstRead >= 0 && firstRead < armour)) return false;
+		// No armour call at all, or no container, is not this method's shape. Vanilla's flow armours the parameter
+		// itself (its float argument is `fload 3`), so a mod changing the parameter changes the damage: nothing to do.
+		// NeoForge's body armours the container's amount; there a read of the parameter before armour — such as
+		// MinecraftForge's own Hurt hook, which a merge keeping both sides' edits carries — feeds nothing it applies.
+		if (armour < 1 || containers == null || load(code.get(armour - 1), Opcodes.FLOAD, 3)) return false;
 
 		InsnList read = new InsnList();
 		read.add(new VarInsnNode(Opcodes.ALOAD, 0));
