@@ -7,11 +7,13 @@
 # per NeoForge listener (no bridge installed twice, no one-to-one forward that sometimes posts twice), a cancel on
 # the inner bus carried back to the outer event, and no failure inside the forward. A bridge that stands down because
 # the merged game delivered MinecraftForge's event itself on that path forwards nothing; the audit lists it as a
-# native delivery, and one the kernel forwarded as well in the same dispatch is a violation (nativeAndForwarded).
+# native delivery, pairs it with the game's own MinecraftForge dispatch beside it (observed), and counts a forward the
+# game delivered natively as well as a violation (nativeAndForwarded).
 #
-#   1. breadth — the 97-mod client enters a world, drives a container screen with the mouse, and leaves: every
-#      tick, level, entity, tracking, lifecycle and screen-mouse bridge must be seen forwarding, or standing down for
-#      the game's own delivery of the same event, and nothing may violate the rules above.
+#   1. breadth — the 97-mod client enters a world, drives a container screen with the mouse, and leaves: every post
+#      of every tick, level, entity, tracking, lifecycle and screen-mouse bridge's NeoForge event must be forwarded
+#      exactly once or stood down for with the game's own MinecraftForge dispatch seen beside it, and nothing may
+#      violate the rules above — including a forward the game also delivered natively.
 #   2. cancel — a dedicated server with a NeoForge mod whose MinecraftForge listener vetoes one tagged entity
 #      joining the level: the entity must stay out, an untagged one must get in, and the audit must see the veto
 #      carried back from MinecraftForge's event to NeoForge's.
@@ -59,18 +61,24 @@ import json, sys
 report = json.load(open(sys.argv[1]))
 v = report['violations']
 assert all(v[k] == 0 for k in ('duplicated', 'multiplicityDrift', 'cancelLost', 'innerFailures', 'unbalanced', 'nativeAndForwarded')), v
-seen, native = {}, {}
+outers = {o['event']: o for o in report['outers']}
+simple = lambda key: key.rsplit('.', 1)[-1]
+seen, native, observed, keys = {}, {}, {}, {}
 for pair in report['pairs']:
     assert pair['outer'].startswith('NEO:') and pair['inner'].startswith('FORGE:'), pair
-    seen.setdefault(pair['outer'].rsplit('.', 1)[-1], 0)
-    seen[pair['outer'].rsplit('.', 1)[-1]] += pair['forwardedOnce']
+    seen[simple(pair['outer'])] = seen.get(simple(pair['outer']), 0) + pair['forwardedOnce']
+    keys.setdefault(simple(pair['outer']), set()).add(pair['outer'])
 # A merge that keeps both families' edits delivers some of these MinecraftForge events from the game itself, and the
 # bridge then stands down for exactly those posts (PlayerList.placeNewPlayer, Commands.<init>, initServer and
-# runServer, ServerEntity's pairing). Seen standing down is seen working: the event reached MinecraftForge once.
+# runServer, ServerEntity's pairing). A stand-down is the bridge's own word, so the audit pairs each one with the game's
+# own MinecraftForge dispatch of that event beside it (same game method, same thread): observed.
+nativeInner = {}
 for pair in report['natives']:
     assert pair['outer'].startswith('NEO:') and pair['inner'].startswith('FORGE:') and pair['alsoForwarded'] == 0, pair
-    native.setdefault(pair['outer'].rsplit('.', 1)[-1], 0)
-    native[pair['outer'].rsplit('.', 1)[-1]] += pair['outerPosts']
+    native[simple(pair['outer'])] = native.get(simple(pair['outer']), 0) + pair['outerPosts']
+    observed[simple(pair['outer'])] = observed.get(simple(pair['outer']), 0) + pair['observed']
+    keys.setdefault(simple(pair['outer']), set()).add(pair['outer'])
+    nativeInner.setdefault(pair['inner'], []).append(pair)
 required = ['ServerTickEvent$Pre', 'ServerTickEvent$Post', 'LevelTickEvent$Pre', 'LevelTickEvent$Post',
             'PlayerTickEvent$Pre', 'PlayerTickEvent$Post', 'ClientTickEvent$Pre', 'ClientTickEvent$Post',
             'RenderFrameEvent$Pre', 'RenderFrameEvent$Post', 'EntityJoinLevelEvent', 'LevelEvent$Load',
@@ -80,9 +88,27 @@ required = ['ServerTickEvent$Pre', 'ServerTickEvent$Post', 'LevelTickEvent$Pre',
             'ScreenEvent$MouseButtonReleased$Pre', 'ScreenEvent$MouseDragged$Pre', 'ScreenEvent$MouseScrolled$Post']
 missing = [name for name in required if seen.get(name, 0) < 1 and native.get(name, 0) < 1]
 assert not missing, ('bridges never seen forwarding or standing down for a native delivery', missing, sorted(seen), sorted(native))
+# Every post of a required bridge's NeoForge event is accounted for: forwarded exactly once, or stood down for with
+# the game's own MinecraftForge dispatch seen beside it (a cancelled post is not forwarded, by design). So a forward
+# that stops on a path the game does not deliver natively is red even while other posts stand down, and so is a
+# stand-down no MinecraftForge dispatch backs.
+unaccounted = {}
+for name in required:
+    posts = sum(outers[k]['posts'] for k in keys[name])
+    cancelled = sum(outers[k]['withoutForwardCancelled'] for k in keys[name])
+    if seen.get(name, 0) + native.get(name, 0) + cancelled != posts or observed.get(name, 0) != native.get(name, 0):
+        unaccounted[name] = {'posts': posts, 'forwardedOnce': seen.get(name, 0), 'stoodDown': native.get(name, 0),
+                             'observed': observed.get(name, 0), 'cancelled': cancelled}
+assert not unaccounted, ('required bridges whose posts are not each forwarded once or stood down for a seen native dispatch', unaccounted)
+# And by count, independent of the pairing: no MinecraftForge event is credited with more native deliveries than it
+# had dispatches that were not kernel forwards.
+for inner, pairs in nativeInner.items():
+    dispatched = outers.get(inner, {'posts': 0, 'asForward': 0})
+    stood = sum(p['outerPosts'] for p in pairs)
+    assert dispatched['posts'] - dispatched['asForward'] >= stood, ('stand-downs outnumber the native dispatches', inner, dispatched, stood)
 natively = sorted(name for name in required if seen.get(name, 0) < 1)
-print(f"[kernel] {len(report['pairs'])} forwarding pairs, {len(required)} required bridges seen ({len(natively)} only "
-      f"standing down for the game's own delivery: {natively}), violations {v}; "
+print(f"[kernel] {len(report['pairs'])} forwarding pairs, {len(required)} required bridges accounted for post by post "
+      f"({len(natively)} only standing down for the game's own delivery: {natively}), violations {v}; "
       f"{len(report['incidental'])} incidental pair(s) not judged")
 PY
 then echo "[kernel] PASS every forward in the client session was exactly once, carried and clean"

@@ -25,7 +25,8 @@ import org.objectweb.asm.Opcodes;
  */
 @ResourceLock("system-properties")
 class EventChainAuditTest {
-	private static final String NEO_PROBE = "probe.NeoProbe", FORGE_PROBE = "probe.ForgeProbe", MOD_CODE = "probe.ModCode";
+	private static final String NEO_PROBE = "probe.NeoProbe", FORGE_PROBE = "probe.ForgeProbe", MOD_CODE = "probe.ModCode",
+			GAME_CODE = "probe.GameCode";
 	private static final String FORGE_INTERNAL = FORGE_PROBE.replace('.', '/');
 	private Object neoBus, forgeBus;
 	private Class<?> neoProbe, forgeProbe;
@@ -136,9 +137,11 @@ class EventChainAuditTest {
 		assertNotNull(natively, EventChainAudit.json());
 		assertEquals(1, natively.outerPosts.sum());
 		assertEquals(0, natively.alsoForwarded.sum());
+		assertEquals(0, natively.observed.sum(),
+				"no MinecraftForge dispatch of the event happened beside it: the stand-down is the bridge's word only");
 		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
 		assertTrue(EventChainAudit.json().contains("\"natives\": [\n    {\"outer\": \"NEO:" + NEO_PROBE + "\", \"inner\": \"FORGE:"
-				+ FORGE_PROBE + "\", \"outerPosts\": 1, \"alsoForwarded\": 0}"), EventChainAudit.json());
+				+ FORGE_PROBE + "\", \"outerPosts\": 1, \"observed\": 0, \"alsoForwarded\": 0}"), EventChainAudit.json());
 
 		postNeo();
 		assertEquals(1, pair().forwardedOnce.sum(), "outside the scope the same bridge forwards");
@@ -160,11 +163,125 @@ class EventChainAuditTest {
 		assertFalse(EventChainAudit.violations().clean());
 	}
 
+	/**
+	 * The game's own MinecraftForge dispatch beside a stand-down — posted by the same game method after the NeoForge
+	 * one, the order a delivery proved from the caller's control flow has — is what makes the stand-down observed.
+	 */
+	@Test void aStandDownBesideTheGamesOwnDispatchIsObserved() throws Exception {
+		forgeListener(false);
+		addNeo(standDown());
+		for (int turn = 0; turn < 3; turn++) game("neoThenForge", covered(), forgeEvent());
+		var natively = EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE);
+		assertEquals(3, natively.outerPosts.sum(), EventChainAudit.json());
+		assertEquals(3, natively.observed.sum(), "each turn of the game method pairs its own two dispatches: " + EventChainAudit.json());
+		assertNull(EventChainAudit.pair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE));
+		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
+		assertTrue(EventChainAudit.json().contains("{\"event\": \"FORGE:" + FORGE_PROBE + "\", \"posts\": 3, \"asForward\": 0"),
+				"the report carries the inner event's dispatches that were not kernel forwards: " + EventChainAudit.json());
+	}
+
+	/**
+	 * Where the kernel wrapped the NeoForge call in a scope (a synthetic method of the game class around it), the call
+	 * is still the game method's: a dispatch through the wrapper pairs with the native one beside the wrapper's call.
+	 */
+	@Test void aDispatchThroughTheKernelsWrapperIsTheGameMethodsOwn() throws Exception {
+		forgeListener(false);
+		addNeo(standDown());
+		game("wrappedNeoThenForge", covered(), forgeEvent());
+		assertEquals(1, EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE).observed.sum(), EventChainAudit.json());
+	}
+
+	/** The same where MinecraftForge's call comes first in the method — a delivery recorded as it happened. */
+	@Test void aStandDownAfterTheGamesOwnDispatchIsObserved() throws Exception {
+		forgeListener(false);
+		addNeo(standDown());
+		for (int turn = 0; turn < 3; turn++) game("forgeThenNeo", covered(), forgeEvent());
+		var natively = EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE);
+		assertEquals(3, natively.observed.sum(), "a Forge dispatch pairs with the NeoForge one after it, never the turn before's: "
+				+ EventChainAudit.json());
+		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
+	}
+
+	/**
+	 * The defect a stand-down count cannot see: nothing recognised the game's MinecraftForge call, so no scope opened, the
+	 * bridge forwarded, and the game posted its own as well. The pair looks like a clean forward; beside it is the native
+	 * dispatch from the same method, so the forward was a second delivery.
+	 */
+	@Test void aForwardTheGameAlsoDeliveredItselfIsDeliveredTwice() throws Exception {
+		forgeListener(false);
+		bridge(1, true, false);
+		game("neoThenForge", neoProbe.getConstructor().newInstance(), forgeEvent());
+		assertEquals(1, pair().forwardedOnce.sum());
+		assertEquals(1, pair().withNative.sum(), EventChainAudit.json());
+		assertEquals(1, EventChainAudit.violations().nativeAndForwarded());
+		assertFalse(EventChainAudit.violations().clean());
+
+		EventChainAudit.reset();
+		game("forgeThenNeo", neoProbe.getConstructor().newInstance(), forgeEvent());
+		assertEquals(1, pair().withNative.sum(), "in either order: " + EventChainAudit.json());
+	}
+
+	/**
+	 * Controls for the pairing: a MinecraftForge dispatch from another method, a NeoForge forward and a MinecraftForge
+	 * dispatch the same method makes on different turns of a loop, and a forward with nothing beside it are not
+	 * double delivery.
+	 */
+	@Test void dispatchesThatAreNotOneDeliveryAreNotPaired() throws Exception {
+		forgeListener(false);
+		bridge(1, true, false);
+		game("neoOnly", neoProbe.getConstructor().newInstance(), null);
+		game("forgeOnly", null, forgeEvent());
+		game("neoOnly", neoProbe.getConstructor().newInstance(), null);
+		assertEquals(2, pair().forwardedOnce.sum());
+		assertEquals(0, pair().withNative.sum(), "a native dispatch from another method is another occurrence: " + EventChainAudit.json());
+		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
+	}
+
+	/**
+	 * One method, MinecraftForge's call first: a turn where it posted and the bridge stood down, a turn where it did not
+	 * and the bridge forwarded, and another turn like the first. The third turn's MinecraftForge dispatch comes right
+	 * after the second turn's forward, but from the earlier call site: it starts a new turn, not a second delivery of
+	 * the forward's event.
+	 */
+	@Test void aLaterTurnsDispatchIsNotPairedWithAnEarlierTurnsForward() throws Exception {
+		forgeListener(false);
+		addNeo(standDown());
+		game("forgeThenNeo", covered(), forgeEvent());
+		game("forgeThenNeo", neoProbe.getConstructor().newInstance(), null);
+		game("forgeThenNeo", covered(), forgeEvent());
+		assertEquals(1, pair().forwardedOnce.sum(), EventChainAudit.json());
+		assertEquals(0, pair().withNative.sum(), "the forward pairs with no later turn's dispatch: " + EventChainAudit.json());
+		assertEquals(2, EventChainAudit.nativePair("NEO:" + NEO_PROBE, "FORGE:" + FORGE_PROBE).observed.sum(), EventChainAudit.json());
+		assertTrue(EventChainAudit.violations().clean(), EventChainAudit.json());
+	}
+
 	@Test void nothingCrossesWhenNoBridgeIsInstalled() throws Exception {
 		forgeListener(false);
 		postNeo(); invoke(post, forgeBus, forgeEvent());
 		assertEquals(0, EventChainAudit.pairCount());
 		assertTrue(EventChainAudit.violations().clean());
+	}
+
+	private Consumer<Object> standDown() {
+		return new GameEventMultiplexer.StandDownListener(event -> invoke(post, forgeBus, forgeEvent()), Set.of(FORGE_INTERNAL));
+	}
+
+	/** A NeoForge event a scope captured as the one a native MinecraftForge delivery covers; the scope is left open. */
+	private Object covered() throws Exception {
+		Object event = neoProbe.getConstructor().newInstance();
+		scopes.add(net.forbric.api.NativeEventDelivery.begin(FORGE_INTERNAL, null, ""));
+		scopes.get(scopes.size() - 1).capture(event);
+		return event;
+	}
+
+	private final List<net.forbric.api.NativeEventDelivery.Scope> scopes = new ArrayList<>();
+
+	@AfterEach void closeScopes() { for (int i = scopes.size() - 1; i >= 0; i--) scopes.get(i).close(); scopes.clear(); }
+
+	/** Calls one of the game method stand-ins: each posts from its own two call sites, in its own order. */
+	private void game(String method, Object neoEvent, Object forgeEvent) throws Exception {
+		Method m = neoProbe.getClassLoader().loadClass(GAME_CODE).getMethod(method, Object.class, Object.class, Object.class, Object.class);
+		m.invoke(null, neoBus, neoEvent, forgeBus, forgeEvent);
 	}
 
 	private EventChainAudit.Pair pair() {
@@ -229,6 +346,7 @@ class EventChainAuditTest {
 			generated.put(FORGE_PROBE, event("probe/ForgeProbe", "net/minecraftforge/eventbus/api/event/MutableEvent",
 					"net/minecraftforge/eventbus/api/event/characteristic/Cancellable"));
 			generated.put(MOD_CODE, modCode());
+			generated.put(GAME_CODE, gameCode());
 		}
 		@Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
 			synchronized (getClassLoadingLock(name)) {
@@ -262,6 +380,66 @@ class EventChainAuditTest {
 			post.visitVarInsn(Opcodes.ALOAD, 1); post.visitTypeInsn(Opcodes.CHECKCAST, "net/minecraftforge/eventbus/internal/Event");
 			post.visitMethodInsn(Opcodes.INVOKEINTERFACE, "net/minecraftforge/eventbus/api/bus/CancellableEventBus", "post", "(Lnet/minecraftforge/eventbus/internal/Event;)Z", true);
 			post.visitInsn(Opcodes.POP); post.visitInsn(Opcodes.RETURN); post.visitMaxs(2, 2); post.visitEnd(); writer.visitEnd();
+			return writer.toByteArray();
+		}
+		/**
+		 * A game class: each method posts the NeoForge event, MinecraftForge's, or both in its own order, from its own
+		 * call sites — the shape of a merged method that kept one or both families' hooks.
+		 */
+		private static byte[] gameCode() {
+			ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+			writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "probe/GameCode", null, "java/lang/Object", null);
+			String desc = "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V";
+			// The kernel's own wrapper around one NeoForge call of a game method, as NativeDualEventInjector writes it.
+			String wrapper = net.forbric.kernel.transform.NativeDualEventInjector.WRAPPER_PREFIX + "probe";
+			MethodVisitor wrap = writer.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, wrapper,
+					"(Ljava/lang/Object;Ljava/lang/Object;)V", null, null);
+			wrap.visitCode();
+			wrap.visitVarInsn(Opcodes.ALOAD, 0); wrap.visitTypeInsn(Opcodes.CHECKCAST, "net/neoforged/bus/api/IEventBus");
+			wrap.visitVarInsn(Opcodes.ALOAD, 1); wrap.visitTypeInsn(Opcodes.CHECKCAST, "net/neoforged/bus/api/Event");
+			wrap.visitMethodInsn(Opcodes.INVOKEINTERFACE, "net/neoforged/bus/api/IEventBus", "post",
+					"(Lnet/neoforged/bus/api/Event;)Lnet/neoforged/bus/api/Event;", true);
+			wrap.visitInsn(Opcodes.POP); wrap.visitInsn(Opcodes.RETURN); wrap.visitMaxs(0, 0); wrap.visitEnd();
+			MethodVisitor wrapped = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "wrappedNeoThenForge", desc, null, null);
+			wrapped.visitCode();
+			wrapped.visitVarInsn(Opcodes.ALOAD, 0); wrapped.visitVarInsn(Opcodes.ALOAD, 1);
+			wrapped.visitMethodInsn(Opcodes.INVOKESTATIC, "probe/GameCode", wrapper, "(Ljava/lang/Object;Ljava/lang/Object;)V", false);
+			wrapped.visitVarInsn(Opcodes.ALOAD, 2); wrapped.visitTypeInsn(Opcodes.CHECKCAST, "net/minecraftforge/eventbus/api/bus/CancellableEventBus");
+			wrapped.visitVarInsn(Opcodes.ALOAD, 3); wrapped.visitTypeInsn(Opcodes.CHECKCAST, "net/minecraftforge/eventbus/internal/Event");
+			wrapped.visitMethodInsn(Opcodes.INVOKEINTERFACE, "net/minecraftforge/eventbus/api/bus/CancellableEventBus", "post",
+					"(Lnet/minecraftforge/eventbus/internal/Event;)Z", true);
+			wrapped.visitInsn(Opcodes.POP); wrapped.visitInsn(Opcodes.RETURN); wrapped.visitMaxs(0, 0); wrapped.visitEnd();
+			for (String name : List.of("neoThenForge", "forgeThenNeo", "neoOnly", "forgeOnly")) {
+				MethodVisitor mv = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, name, desc, null, null);
+				mv.visitCode();
+				for (String step : switch (name) {
+					case "neoThenForge" -> List.of("neo", "forge");
+					case "forgeThenNeo" -> List.of("forge", "neo");
+					case "neoOnly" -> List.of("neo");
+					default -> List.of("forge");
+				}) {
+					// A null event skips that family's post, as a hook that posts only under a condition does.
+					org.objectweb.asm.Label skip = new org.objectweb.asm.Label();
+					mv.visitVarInsn(Opcodes.ALOAD, step.equals("neo") ? 1 : 3);
+					mv.visitJumpInsn(Opcodes.IFNULL, skip);
+					if (step.equals("neo")) {
+						mv.visitVarInsn(Opcodes.ALOAD, 0); mv.visitTypeInsn(Opcodes.CHECKCAST, "net/neoforged/bus/api/IEventBus");
+						mv.visitVarInsn(Opcodes.ALOAD, 1); mv.visitTypeInsn(Opcodes.CHECKCAST, "net/neoforged/bus/api/Event");
+						mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, "net/neoforged/bus/api/IEventBus", "post",
+								"(Lnet/neoforged/bus/api/Event;)Lnet/neoforged/bus/api/Event;", true);
+					} else {
+						mv.visitVarInsn(Opcodes.ALOAD, 2); mv.visitTypeInsn(Opcodes.CHECKCAST, "net/minecraftforge/eventbus/api/bus/CancellableEventBus");
+						mv.visitVarInsn(Opcodes.ALOAD, 3); mv.visitTypeInsn(Opcodes.CHECKCAST, "net/minecraftforge/eventbus/internal/Event");
+						mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, "net/minecraftforge/eventbus/api/bus/CancellableEventBus", "post",
+								"(Lnet/minecraftforge/eventbus/internal/Event;)Z", true);
+					}
+					mv.visitInsn(Opcodes.POP);
+					mv.visitLabel(skip);
+					mv.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+				}
+				mv.visitInsn(Opcodes.RETURN); mv.visitMaxs(0, 0); mv.visitEnd();
+			}
+			writer.visitEnd();
 			return writer.toByteArray();
 		}
 		private static byte[] event(String name, String superName, String marker) {

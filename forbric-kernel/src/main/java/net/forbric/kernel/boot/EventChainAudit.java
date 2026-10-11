@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
+import net.forbric.kernel.transform.NativeDualEventInjector;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -41,10 +42,15 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>A bridge that stands down because the merged game delivered the MinecraftForge event itself on the same path
  * ({@code NativeEventDelivery}) forwards nothing, so it leaves no pair. It reports the stand-down here instead
- * ({@link #nativelyDelivered}), and the report lists those native deliveries per (outer event, inner event) pair:
- * a bridge seen standing down is a bridge whose event reached MinecraftForge's listeners once, from the game. A
- * dispatch in which one bridge stood down for an event and kernel code forwarded the same event anyway delivered it
- * twice, and is counted as {@code nativeAndForwarded}.
+ * ({@link #nativelyDelivered}), and the report lists those native deliveries per (outer event, inner event) pair. A
+ * stand-down is the bridge's own account, not an observation, so the audit checks it against the buses: the game's
+ * own MinecraftForge dispatch of that event is a dispatch of the same class made by the same game method as the
+ * NeoForge one, a sibling of it (same thread, same enclosing dispatch or none), from the call site on the other side
+ * of it in that method's code, within the last few such dispatches. Each stand-down paired with one is counted as
+ * {@code observed}. The same pairing finds a forward the game ALSO delivered natively — the stand-down that never
+ * happened, because nothing recognised the game's call — and counts it on the forwarding pair as {@code withNative}.
+ * Both that and a dispatch in which one bridge stood down for an event while kernel code forwarded it anyway are
+ * {@code nativeAndForwarded}: the event reached MinecraftForge's listeners twice.
  *
  * <p>What this does not see: composites that call both families' hooks one after the other at a call site
  * (portal, spawner, loot, fuel, tooltips) are not nested posts; their chains have their own gates. Result fields
@@ -69,8 +75,33 @@ public final class EventChainAudit {
 		boolean kernelPoster; int parentListener = -1;
 		/** MinecraftForge event classes a bridge stood down for in this dispatch, delivered natively instead. */
 		Set<String> natively = Set.of();
+		/** The game method that posted this (first frame outside the buses and both loaders), and the call's offset in it. */
+		String caller; int callerBci = -1;
+		/** Dispatches that finished directly inside this one, most recent first: see {@link #pairWithSiblings}. */
+		ArrayDeque<Sibling> siblings;
 		Frame(boolean neo, Object event) { this.neo = neo; this.event = event; this.type = event.getClass(); }
 	}
+
+	/** A finished dispatch that was not a kernel forward, kept beside its siblings for {@link #pairWithSiblings}. */
+	private static final class Sibling {
+		final boolean neo; final String type, outerKey, caller; final int callerBci;
+		/** For a NeoForge dispatch: the MinecraftForge classes kernel code forwarded, and those a bridge stood down for. */
+		final Set<String> forwarded, natively;
+		/** MinecraftForge classes already paired across this dispatch and a sibling. */
+		Set<String> paired = Set.of();
+		Sibling(Frame frame, String outerKey) {
+			this.neo = frame.neo; this.type = frame.type.getName(); this.outerKey = outerKey;
+			this.caller = frame.caller; this.callerBci = frame.callerBci;
+			if (frame.children.isEmpty()) this.forwarded = Set.of();
+			else { Set<String> names = new HashSet<>(); for (Class<?> c : frame.children.keySet()) names.add(c.getName()); this.forwarded = names; }
+			this.natively = frame.natively;
+		}
+		boolean relatesTo(String forge) { return forwarded.contains(forge) || natively.contains(forge); }
+		void pair(String forge) { if (paired.isEmpty()) paired = new HashSet<>(2); paired.add(forge); }
+	}
+
+	/** How many finished sibling dispatches back a native MinecraftForge dispatch is looked for. */
+	private static final int SIBLING_WINDOW = 8;
 
 	private static final class Child {
 		int posts, cancelled, failed;
@@ -78,6 +109,8 @@ public final class EventChainAudit {
 	}
 
 	static final class Pair {
+		/** Forwards the game also delivered natively: a sibling MinecraftForge dispatch of the class from the same method. */
+		final LongAdder withNative = new LongAdder();
 		final LongAdder outerPosts = new LongAdder(), forwardedOnce = new LongAdder(), duplicated = new LongAdder(),
 				innerCancelled = new LongAdder(), cancelCarried = new LongAdder(), cancelLost = new LongAdder(),
 				innerFailures = new LongAdder(), singleInvocations = new LongAdder(), multiInvocations = new LongAdder();
@@ -86,17 +119,22 @@ public final class EventChainAudit {
 		volatile String duplicatedExample, cancelLostExample;
 	}
 
-	/** One (outer event, natively delivered inner event) pair: dispatches a bridge stood down in. */
+	/**
+	 * One (outer event, natively delivered inner event) pair: dispatches a bridge stood down in, those the game's own
+	 * dispatch of the inner event was seen beside ({@link #pairWithSiblings}), and those kernel code forwarded anyway.
+	 */
 	static final class NativePair {
-		final LongAdder outerPosts = new LongAdder(), alsoForwarded = new LongAdder();
+		final LongAdder outerPosts = new LongAdder(), observed = new LongAdder(), alsoForwarded = new LongAdder();
 	}
 
 	static final class Outer {
 		final LongAdder posts = new LongAdder(), withoutForward = new LongAdder(), withoutForwardCancelled = new LongAdder(),
-				failures = new LongAdder();
+				failures = new LongAdder(), asForward = new LongAdder();
 	}
 
 	private static final ThreadLocal<ArrayDeque<Frame>> STACK = ThreadLocal.withInitial(ArrayDeque::new);
+	/** Per thread: dispatches that finished outside any other dispatch, most recent first. */
+	private static final ThreadLocal<ArrayDeque<Sibling>> ROOT_SIBLINGS = ThreadLocal.withInitial(ArrayDeque::new);
 	private static final Map<String, Pair> PAIRS = new ConcurrentHashMap<>();
 	private static final Map<String, NativePair> NATIVES = new ConcurrentHashMap<>();
 	private static final Map<String, Outer> OUTERS = new ConcurrentHashMap<>();
@@ -153,16 +191,43 @@ public final class EventChainAudit {
 			Runtime.getRuntime().addShutdownHook(new Thread(EventChainAudit::write, "forbric-event-chain-audit"));
 		ArrayDeque<Frame> stack = STACK.get();
 		Frame frame = new Frame(neo, event), parent = stack.peek();
-		if (parent != null && parent.neo != neo) { frame.kernelPoster = postedByKernel(); frame.parentListener = parent.listener; }
+		boolean kernel = poster(frame);
+		if (parent != null && parent.neo != neo) { frame.kernelPoster = kernel; frame.parentListener = parent.listener; }
 		stack.push(frame);
 	}
 
-	/** Whether the first frame below the buses, the hook facades and this class is kernel code. */
-	static boolean postedByKernel() {
-		return WALKER.walk(frames -> frames.map(StackWalker.StackFrame::getClassName).filter(name -> !name.equals(EventChainAudit.class.getName())
-				&& !name.startsWith("net.minecraftforge.eventbus.") && !name.startsWith("net.neoforged.bus.") && !name.startsWith("java.")
-				&& !name.startsWith("jdk.") && !name.startsWith("sun.") && !FACADES.contains(name)).findFirst()
-				.map(name -> name.startsWith("net.forbric.kernel.")).orElse(false));
+	private static boolean belowTheBus(String name) {
+		return !name.equals(EventChainAudit.class.getName()) && !name.startsWith("net.minecraftforge.eventbus.") && !name.startsWith("net.neoforged.bus.")
+				&& !name.startsWith("java.") && !name.startsWith("jdk.") && !name.startsWith("sun.") && !FACADES.contains(name);
+	}
+
+	/**
+	 * One walk for both questions about who posted {@code frame}. Answers whether the first frame below the buses, the
+	 * hook facades and this class is kernel code (a kernel forward), and records in the frame the first method outside
+	 * the buses and both loaders' own code — the game method whose call it is, whichever family's helper made the post
+	 * — with the call's bytecode offset there.
+	 */
+	private static boolean poster(Frame frame) {
+		return WALKER.walk(frames -> {
+			Boolean kernel = null;
+			for (Iterator<StackWalker.StackFrame> it = frames.iterator(); it.hasNext(); ) {
+				StackWalker.StackFrame f = it.next();
+				String name = f.getClassName();
+				if (!belowTheBus(name)) continue;
+				if (kernel == null) kernel = name.startsWith("net.forbric.kernel.");
+				if (name.startsWith("net.minecraftforge.") || name.startsWith("net.neoforged.")) continue;
+				// The kernel's own wrapper around one call of a game method (NativeDualEventInjector's scope or recording)
+				// sits between the hook and that method; the call is the method's, at the site the wrapper replaced.
+				String method = f.getMethodName();
+				if (method.startsWith(NativeDualEventInjector.WRAPPER_PREFIX) || method.startsWith(NativeDualEventInjector.SOURCE_PREFIX)) continue;
+				// By name: the descriptor needs a walker that retains class references. Overloads of one name share it,
+				// and the call-site order in pairWithSiblings still keeps their turns apart.
+				frame.caller = name + "#" + method;
+				frame.callerBci = f.getByteCodeIndex();
+				break;
+			}
+			return kernel != null && kernel;
+		});
 	}
 
 	private static void exit(boolean neo, Object event, boolean cancelled, boolean cancellable, Throwable failure) {
@@ -219,17 +284,79 @@ public final class EventChainAudit {
 		for (var entry : frame.incidental.entrySet())
 			INCIDENTAL.computeIfAbsent(outerKey + " -> " + key(!neo, entry.getKey()), k -> new LongAdder()).add(entry.getValue());
 		Frame parent = stack.peek();
-		if (parent != null && parent.neo != neo) {
-			if (!frame.kernelPoster) { parent.incidental.merge(frame.type, 1, Integer::sum); return; }
+		if (parent != null && parent.neo != neo && frame.kernelPoster) {
+			outer.asForward.increment();
 			Child child = parent.children.computeIfAbsent(frame.type, k -> new Child());
 			child.posts++;
 			child.byListener.merge(frame.parentListener, 1, Integer::sum);
 			if (cancelled) child.cancelled++;
 			if (failure != null) child.failed++;
+			return;
+		}
+		if (parent != null && parent.neo != neo) parent.incidental.merge(frame.type, 1, Integer::sum);
+		ArrayDeque<Sibling> siblings = parent == null ? ROOT_SIBLINGS.get()
+				: parent.siblings != null ? parent.siblings : (parent.siblings = new ArrayDeque<>());
+		Sibling done = new Sibling(frame, outerKey);
+		pairWithSiblings(done, siblings);
+		siblings.addFirst(done);
+		if (siblings.size() > SIBLING_WINDOW) siblings.removeLast();
+	}
+
+	/**
+	 * Pairs a finished dispatch with the other family's dispatch of the same event that the same game method made
+	 * beside it: a NeoForge dispatch that forwarded, or stood down for, MinecraftForge class F, and a MinecraftForge
+	 * dispatch of F that was not a kernel forward. Siblings only — same thread, same enclosing dispatch or none — and
+	 * from the same method, the earlier one's call site before the later one's in that method's code (a loop's next
+	 * turn calls from the same sites again, so a later dispatch from an earlier site starts a new turn). Looked for
+	 * among the last {@value #SIBLING_WINDOW} siblings, stopping at the previous dispatch of the same kind from that
+	 * method, and each side pairs once. A stand-down so paired is {@code observed}; a forward so paired was delivered
+	 * twice ({@code withNative}).
+	 */
+	private static void pairWithSiblings(Sibling done, ArrayDeque<Sibling> siblings) {
+		if (done.caller == null || siblings.isEmpty()) return;
+		if (!done.neo) {
+			for (Sibling earlier : siblings) {
+				if (!done.caller.equals(earlier.caller)) continue;
+				if (earlier.neo && earlier.relatesTo(done.type)) {
+					if (earlier.callerBci < done.callerBci && !earlier.paired.contains(done.type)) credit(earlier, done.type, done);
+					return;
+				}
+				if (!earlier.neo && earlier.type.equals(done.type)) return;
+			}
+			return;
+		}
+		for (String forge : done.forwarded) pairBack(done, forge, siblings);
+		for (String forge : done.natively) if (!done.forwarded.contains(forge)) pairBack(done, forge, siblings);
+	}
+
+	private static void pairBack(Sibling neo, String forge, ArrayDeque<Sibling> siblings) {
+		for (Sibling earlier : siblings) {
+			if (!neo.caller.equals(earlier.caller)) continue;
+			if (!earlier.neo && earlier.type.equals(forge)) {
+				if (earlier.callerBci < neo.callerBci && !earlier.paired.contains(forge)) credit(neo, forge, earlier);
+				return;
+			}
+			if (earlier.neo && earlier.type.equals(neo.type)) return;
 		}
 	}
 
-	private static String key(boolean neo, Class<?> type) { return (neo ? "NEO:" : "FORGE:") + type.getName(); }
+	private static void credit(Sibling neo, String forge, Sibling nativeForge) {
+		neo.pair(forge);
+		nativeForge.pair(forge);
+		String inner = key(false, forge);
+		if (neo.forwarded.contains(forge)) {
+			Pair pair = PAIRS.get(neo.outerKey + " -> " + inner);
+			if (pair != null) pair.withNative.increment();
+		}
+		if (neo.natively.contains(forge)) {
+			NativePair pair = NATIVES.get(neo.outerKey + " -> " + inner);
+			if (pair != null) pair.observed.increment();
+		}
+	}
+
+	private static String key(boolean neo, Class<?> type) { return key(neo, type.getName()); }
+
+	private static String key(boolean neo, String type) { return (neo ? "NEO:" : "FORGE:") + type; }
 
 	private static boolean cancellable(Object event) { return probe(event.getClass()).isPresent(); }
 
@@ -270,6 +397,7 @@ public final class EventChainAudit {
 		long duplicated = 0, drift = 0, lost = 0, failures = 0, twice = 0;
 		for (Pair pair : PAIRS.values()) {
 			duplicated += pair.duplicated.sum(); drift += pair.drift(); lost += pair.cancelLost.sum(); failures += pair.innerFailures.sum();
+			twice += pair.withNative.sum();
 		}
 		for (NativePair pair : NATIVES.values()) twice += pair.alsoForwarded.sum();
 		return new Violations(duplicated, drift, lost, failures, UNBALANCED.sum(), twice);
@@ -285,7 +413,10 @@ public final class EventChainAudit {
 
 	static long incidental(String outer, String inner) { LongAdder n = INCIDENTAL.get(outer + " -> " + inner); return n == null ? 0 : n.sum(); }
 
-	static void reset() { PAIRS.clear(); NATIVES.clear(); OUTERS.clear(); FORWARDED_OUTERS.clear(); INCIDENTAL.clear(); UNBALANCED.reset(); STACK.remove(); }
+	static void reset() {
+		PAIRS.clear(); NATIVES.clear(); OUTERS.clear(); FORWARDED_OUTERS.clear(); INCIDENTAL.clear(); UNBALANCED.reset(); STACK.remove();
+		ROOT_SIBLINGS.remove();
+	}
 
 	public static synchronized String json() {
 		Violations v = violations();
@@ -303,7 +434,8 @@ public final class EventChainAudit {
 					.append(", \"duplicated\": ").append(p.duplicated.sum()).append(", \"innerCancelled\": ").append(p.innerCancelled.sum())
 					.append(", \"cancelCarried\": ").append(p.cancelCarried.sum()).append(", \"cancelLost\": ").append(p.cancelLost.sum())
 					.append(", \"innerFailures\": ").append(p.innerFailures.sum()).append(", \"singleInvocations\": ").append(p.singleInvocations.sum())
-					.append(", \"multiInvocations\": ").append(p.multiInvocations.sum()).append(", \"multiplicityDrift\": ").append(p.drift());
+					.append(", \"multiInvocations\": ").append(p.multiInvocations.sum()).append(", \"multiplicityDrift\": ").append(p.drift())
+					.append(", \"withNative\": ").append(p.withNative.sum());
 			if (p.duplicatedExample != null) out.append(", \"duplicatedExample\": ").append(quote(p.duplicatedExample));
 			if (p.cancelLostExample != null) out.append(", \"cancelLostExample\": ").append(quote(p.cancelLostExample));
 			out.append('}');
@@ -313,9 +445,20 @@ public final class EventChainAudit {
 		for (int i = 0; i < natives.size(); i++) {
 			NativePair p = NATIVES.get(natives.get(i)); String[] ends = natives.get(i).split(" -> ");
 			out.append(i == 0 ? "\n" : ",\n").append("    {\"outer\": ").append(quote(ends[0])).append(", \"inner\": ").append(quote(ends[1]))
-					.append(", \"outerPosts\": ").append(p.outerPosts.sum()).append(", \"alsoForwarded\": ").append(p.alsoForwarded.sum()).append('}');
+					.append(", \"outerPosts\": ").append(p.outerPosts.sum()).append(", \"observed\": ").append(p.observed.sum())
+					.append(", \"alsoForwarded\": ").append(p.alsoForwarded.sum()).append('}');
 		}
-		out.append(natives.isEmpty() ? "],\n" : "\n  ],\n").append("  \"forwardedOuters\": [");
+		out.append(natives.isEmpty() ? "],\n" : "\n  ],\n").append("  \"outers\": [");
+		// Every dispatch of every event either bus saw, so a gate can put a pair's counts against all of its outer
+		// event's posts and a native pair's against all of its inner event's dispatches that were not kernel forwards.
+		List<String> all = new ArrayList<>(OUTERS.keySet()); Collections.sort(all);
+		for (int i = 0; i < all.size(); i++) {
+			Outer o = OUTERS.get(all.get(i));
+			out.append(i == 0 ? "\n" : ",\n").append("    {\"event\": ").append(quote(all.get(i))).append(", \"posts\": ").append(o.posts.sum())
+					.append(", \"asForward\": ").append(o.asForward.sum()).append(", \"withoutForwardCancelled\": ")
+					.append(o.withoutForwardCancelled.sum()).append('}');
+		}
+		out.append(all.isEmpty() ? "],\n" : "\n  ],\n").append("  \"forwardedOuters\": [");
 		List<String> outers = new ArrayList<>(FORWARDED_OUTERS); Collections.sort(outers);
 		for (int i = 0; i < outers.size(); i++) {
 			Outer o = OUTERS.get(outers.get(i)); if (o == null) continue;
