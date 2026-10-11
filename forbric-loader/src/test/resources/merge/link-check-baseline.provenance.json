@@ -7,9 +7,9 @@
     "forge": "26.2-65.0.1",
     "neoforge": "26.2.0.88"
   },
-  "toolCommit": "cdf61c75a6c015cf9a04734a6794aefb73f98369",
+  "toolCommit": "83dc32e86a6bec356812654d91cbcaf73bc0645a",
   "toolSources": {
-    "MergedBaseBuilder.java": "744777e4c9a21919cb3467ca4f6c4c194cedbda640be574702d71cd72a1f0353",
+    "MergedBaseBuilder.java": "41334cdfdbd3e7ba2f7feb19f09443b3a3f6202eda8616bd1ce1fb04545e8391",
     "AdditiveMethodMerger.java": "02c966264ae6b29671c4c2f9c3b99a2fef7d49301d261e555e5b2d659e7fffbd",
     "RuntimeInteropPatcher.java": "b503f0bdee257d4303dea4ca828b908b77e2efc6a0215cc6c317b2744a679b2e",
     "MergedLinkChecker.java": "187b3dfca3eca9d9d1ef23de8986050e7a692dad1d71f842084cc37126e4926c",
@@ -22,7 +22,7 @@
     "TailHookComposition.java": "3cd70795953b6130da88799ab4cafe50439148dd4e4d252703642a11ba9adee4",
     "EmptyArrayContractBridge.java": "dc2d518411451a76a11178fef7212e85ffdd586fab5561d58e8aa43d88cdd1a0",
     "PatchLineProvenance.java": "cf6be565e917655999788f10b27b9bb2aac356d91d71f34fe4dc8fb01b75b9c1",
-    "EditSplicer.java": "3dfcb60232e678458476a08822a2adfa3bbc56766a2d52a00f2a6ab38b5ff0e6"
+    "EditSplicer.java": "2a2bc599191e0124e2577d3acad489068e60803ebe3b71b04ad68c0cf548456d"
   },
   "mergeInputs": {
     "vanilla": {
@@ -57,7 +57,7 @@
   "inputs": {
     "merged": {
       "file": "patched-mc-merged-26.2.jar",
-      "sha256": "01c8d9033a00b6631103f08cce4fd7ed2ff09c914ff5a26c554c9b53a0cb651d"
+      "sha256": "1b70614e0dfa10b8121a57b1d280e7ef39ae56f3bab1eb66b8f5b958950472c5"
     },
     "neoRuntime": {
       "file": "neoforge-runtime.jar",
@@ -65,22 +65,21 @@
     },
     "forgeInterop": {
       "file": "forge-runtime-interop.jar",
-      "sha256": "6eb6b940cd0c4aad63048fa9e482f40b8def94f08d37ca472f01ed083f5d1aea"
+      "sha256": "cfefb6400fc5d67e5a3ad68d9043077f1375b2a2331cc2e7ca49c4ec27905d79"
     }
   },
   "mergeReport": {
     "file": "merge-conflicts.txt",
-    "sha256": "56635f0881150b445e566029fe5dd91634a6e5a0dca5bca10210d99718146e38"
+    "sha256": "d6ec017b2bbaeb05b36be6d9ae028462e63cd7d0f30b65dd52480ea9fcbb1c48"
   },
-  "result": "dangling references: 7 (known 7, new 0); 18 raw references require explicit final-definition native ancestor composition; baseline entries now fixed: 0",
+  "result": "dangling references: 7 (known 7, new 0); 17 raw references require explicit final-definition native ancestor composition; baseline entries now fixed: 0",
   "reproduction": "inputs.merged, inputs.forgeInterop and mergeReport are what forbric-loader/run/build-merged-base.sh wrote from the seven mergeInputs with the toolSources at toolCommit (committed, link check enforced); evidence.py merge-provenance recorded that build beside the merged base, and this record is folded from it. Re-running run/check-merged-links.sh on inputs.merged, inputs.neoRuntime and inputs.forgeInterop gives the result above. ZIP timestamps differ across rebuilds; compare entry contents and CRCs.",
-  "review": "The 7 retained raw exceptions are unchanged: the anonymous direction switch field, the Forge NBT builder and the GameTest cleanup references. The edit splice now carries MinecraftForge's own runs into methods both ecosystems patched, among them capability calls (gatherCapabilities, getCapabilities, serializeCaps, deserializeCaps) in Entity, BlockEntity and ClientLevel, whose declaring ancestor the merged class does not extend: the references that require explicit final-definition native ancestor composition went from 11 to 18. They are composition obligations the kernel must certify before final definition, not baseline exceptions; no exception licenses a new reference or a silently discarded protocol.",
+  "review": "The 7 retained raw exceptions are unchanged: the anonymous direction switch field, the Forge NBT builder and the GameTest cleanup references. The edit splice carries MinecraftForge's own runs into methods both ecosystems patched, among them capability calls (gatherCapabilities, getCapabilities, serializeCaps) in Entity, BlockEntity and ClientLevel, whose declaring ancestor the merged class does not extend. Since the splice reports an edit that acts on a member both patches added as a conflict, Entity#load no longer carries MinecraftForge's ForgeData/ForgeCaps reads, so Entity.deserializeCaps is no longer referenced and the references that require explicit final-definition native ancestor composition went from 18 to 17. They are composition obligations the kernel must certify before final definition, not baseline exceptions; no exception licenses a new reference or a silently discarded protocol.",
   "toolWorkingTree": "committed sources: toolSources are the files at toolCommit",
   "requiredCompositions": [
     "net/minecraft/client/multiplayer/ClientLevel.gatherCapabilities()V requires net/minecraft/world/level/Level native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Levels",
     "net/minecraft/server/level/ServerLevel.gatherCapabilities()V requires net/minecraft/world/level/Level native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Levels",
     "net/minecraft/server/level/ServerLevel.getCapabilities()Lnet/minecraftforge/common/capabilities/CapabilityDispatcher; requires net/minecraft/world/level/Level native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Levels",
-    "net/minecraft/world/entity/Entity.deserializeCaps(Lnet/minecraft/core/HolderLookup$Provider;Lnet/minecraft/nbt/CompoundTag;)V requires net/minecraft/world/entity/Entity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Entities",
     "net/minecraft/world/entity/Entity.gatherCapabilities()V requires net/minecraft/world/entity/Entity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Entities",
     "net/minecraft/world/entity/Entity.invalidateCaps()V requires net/minecraft/world/entity/Entity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Entities",
     "net/minecraft/world/entity/Entity.reviveCaps()V requires net/minecraft/world/entity/Entity native ancestor net/minecraftforge/common/capabilities/CapabilityProvider$Entities",
