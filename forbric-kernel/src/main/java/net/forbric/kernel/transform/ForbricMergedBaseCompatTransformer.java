@@ -191,7 +191,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("askNeoForgeWhatAnItemsAttributesAre", ITEM_STACK,
 				"an item's attributes are read off the raw component — elytra flight and every NeoForge attribute modifier stop working"));
 		out.add(fixed("readTheSpawnReasonThatIsActuallyWritten", "net/minecraft/world/entity/Mob",
-				"Mob.getSpawnReason() reads a field the game does not always write — spawn-reason logic sees null"));
+				"Mob.getSpawnReason() reads a field the game never writes, or never restores from a save — spawn-reason logic sees null"));
 		out.add(scanned("giveTheUnwrittenLoggerAValue", "any class with a static final Logger the merge left unassigned"));
 		// The capability composition (E) runs first in the same phase and composes the three roots itself on every
 		// launch — -Dforbric.forgeCapabilities=off turns off its dispatch, not the composition the roots' merged
@@ -309,7 +309,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "translateAGuestsPrivateSkipMarker", translateAGuestsPrivateSkipMarker(node));
 			changed |= claim(reporter, "serveDefaultAttributesBothEcosystems", serveDefaultAttributesBothEcosystems(node));
 			changed |= claim(reporter, "restoreForgeClientInit", restoreForgeClientInit(node));
-			changed |= claim(reporter, "restoreForgeGeometryReload", restoreForgeGeometryReload(node), geometryAlreadyReloads(node));
+			changed |= claim(reporter, "restoreForgeGeometryReload", restoreForgeGeometryReload(node), forgeGeometryReloadAlreadyInPlace(node));
 			changed |= claim(reporter, "nameTheReloadListenersNeoForgeRefusesToName", nameTheReloadListenersNeoForgeRefusesToName(node));
 			changed |= claim(reporter, "dropInterfaceDefaultShadowingOverrides", dropInterfaceDefaultShadowingOverrides(node));
 			changed |= claim(reporter, "tolerateEmptyCreativeTabStacks", tolerateEmptyCreativeTabStacks(node));
@@ -1682,7 +1682,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	/**
 	 * Whether {@code ModelManager.reload} already initialises MinecraftForge's geometry loaders: through this repair, or
 	 * — where a merge kept MinecraftForge's own edit — by calling {@code GeometryLoaderManager.init()} itself, which is
-	 * MinecraftForge's first statement there. Either satisfies the repair's claim.
+	 * MinecraftForge's first statement there. Either way the repair adds no second init; whether the claim is met is
+	 * {@link #forgeGeometryReloadAlreadyInPlace}, which also asks that the init come first.
 	 */
 	private static boolean geometryReloadsFirst(MethodNode method) {
 		for (AbstractInsnNode instruction : method.instructions) {
@@ -1695,14 +1696,25 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return false;
 	}
 
-	/** {@link #geometryReloadsFirst} on the class's reload, for the claim. */
-	private static boolean geometryAlreadyReloads(ClassNode node) {
+	/**
+	 * Whether {@code ModelManager.reload} already starts by initialising MinecraftForge's geometry loaders, where
+	 * MinecraftForge's own {@code reload} does: its first instruction is MinecraftForge's
+	 * {@code GeometryLoaderManager.init()} (the edit-spliced merge carries that statement into the kept body) or the
+	 * kernel's {@code initGeometryLoaders()} this repair puts there. {@link #restoreForgeGeometryReload} then has
+	 * nothing to restore and leaves the method alone, and the claim is met rather than declined.
+	 */
+	static boolean forgeGeometryReloadAlreadyInPlace(ClassNode node) {
 		if (!"net/minecraft/client/resources/model/ModelManager".equals(node.name)
 				|| "off".equalsIgnoreCase(System.getProperty("forbric.forgeClientInit", "on"))) return false;
 		MethodNode method = findMethod(node, "reload", "(Lnet/minecraft/server/packs/resources/PreparableReloadListener$SharedState;"
 				+ "Ljava/util/concurrent/Executor;Lnet/minecraft/server/packs/resources/PreparableReloadListener$PreparationBarrier;"
 				+ "Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;");
-		return method != null && (method.access & Opcodes.ACC_STATIC) == 0 && geometryReloadsFirst(method);
+		if (method == null || (method.access & Opcodes.ACC_STATIC) != 0) return false;
+		AbstractInsnNode first = method.instructions.getFirst();
+		while (first != null && first.getOpcode() < 0) first = first.getNext();
+		return first instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC && "()V".equals(call.desc)
+				&& (("net/minecraftforge/client/model/geometry/GeometryLoaderManager".equals(call.owner) && "init".equals(call.name))
+						|| ("net/forbric/kernel/runtime/KernelForgeClientInit".equals(call.owner) && "initGeometryLoaders".equals(call.name)));
 	}
 
 	/**
