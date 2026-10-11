@@ -1065,11 +1065,14 @@ public final class MergedBaseBuilder {
 		}
 
 		Map<String, MethodNode> otherMethods = methodMap(parse(baseIsForge ? neu : frg));
+		// The base side's own methods as its patch compiled them: the merged class's may already hold the other
+		// side's body under the same name, and a splice compares what each side's edit captures.
+		Map<String, MethodNode> baseSideMethods = pendingSplices.isEmpty() ? Map.of() : methodMap(parse(baseIsForge ? frg : neu));
 		String source = PatchLineProvenance.sourcePath(name, baseN.sourceFile);
 		for (PendingSplice p : pendingSplices) {
 			EditSplicer.Result r = splicer.splice(new EditSplicer.Input(baseN, p.base(), p.other(), source,
 					baseIsForge ? forgeProvenance : neoProvenance, baseIsForge ? neoProvenance : forgeProvenance,
-					!baseIsForge, baseMethods, otherMethods));
+					!baseIsForge, baseMethods, otherMethods, baseSideMethods));
 			recordSplice(name + "#" + p.key(), r);
 			if (r.accepted()) {
 				replaceMethod(baseN, p.key(), r.method(), baseMethods);

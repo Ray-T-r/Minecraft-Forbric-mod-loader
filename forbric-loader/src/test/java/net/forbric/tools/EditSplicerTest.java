@@ -158,6 +158,21 @@ public class EditSplicerTest {
 		m.instructions.add(new InsnNode(Opcodes.ICONST_0));
 		m.instructions.add(new InsnNode(Opcodes.IRETURN));
 		cn.methods.add(m);
+		// static void check(int x): records mark + 1 and throws when x == veto.
+		MethodNode check = new MethodNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "check", "(I)V", null, null);
+		LabelNode fine = new LabelNode();
+		check.instructions.add(new IntInsnNode(Opcodes.SIPUSH, mark + 1));
+		check.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/forbric/tools/EditSplicerTest", "record", "(I)V", false));
+		check.instructions.add(new VarInsnNode(Opcodes.ILOAD, 0));
+		check.instructions.add(new IntInsnNode(Opcodes.SIPUSH, veto));
+		check.instructions.add(new JumpInsnNode(Opcodes.IF_ICMPNE, fine));
+		check.instructions.add(new TypeInsnNode(Opcodes.NEW, "java/lang/IllegalStateException"));
+		check.instructions.add(new InsnNode(Opcodes.DUP));
+		check.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "java/lang/IllegalStateException", "<init>", "()V", false));
+		check.instructions.add(new InsnNode(Opcodes.ATHROW));
+		check.instructions.add(fine);
+		check.instructions.add(new InsnNode(Opcodes.RETURN));
+		cn.methods.add(check);
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
 		cn.accept(writer);
 		return writer.toByteArray();
@@ -352,5 +367,176 @@ public class EditSplicerTest {
 		assertTrue(r.accepted(), r.reason());
 		assertEquals(before, run(EditSplicer.copy(neo), 3));
 		assertEquals(forgeSize, forge.instructions.size());
+	}
+
+	// ---- a body written line by line, for shapes the statement helpers cannot build ----------------------------
+
+	private static final String RECORD_OWNER = "net/forbric/tools/EditSplicerTest";
+
+	private static final class Body {
+		final MethodNode m = new MethodNode(Opcodes.ASM9, Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "compute", "(I)I", null, null);
+		final LabelNode start = new LabelNode(), end = new LabelNode();
+
+		Body() {
+			m.instructions.add(start);
+			m.localVariables = new ArrayList<>(List.of(new LocalVariableNode("x", "I", null, start, end, 0)));
+			m.maxStack = 4;
+			m.maxLocals = 6;
+		}
+
+		Body line(int line, AbstractInsnNode... code) {
+			LabelNode label = new LabelNode();
+			m.instructions.add(label);
+			m.instructions.add(new LineNumberNode(line, label));
+			for (AbstractInsnNode n : code) m.instructions.add(n);
+			return this;
+		}
+
+		Body label(LabelNode l) {
+			m.instructions.add(l);
+			return this;
+		}
+
+		Body handler(LabelNode s, LabelNode e, LabelNode h, String type) {
+			m.tryCatchBlocks.add(new TryCatchBlockNode(s, e, h, type));
+			return this;
+		}
+
+		MethodNode done() {
+			m.instructions.add(end);
+			return m;
+		}
+	}
+
+	private static AbstractInsnNode[] rec(int value) {
+		return new AbstractInsnNode[] { new IntInsnNode(Opcodes.SIPUSH, value),
+				new MethodInsnNode(Opcodes.INVOKESTATIC, RECORD_OWNER, "record", "(I)V", false) };
+	}
+
+	/** {@code HOOKS.check(local)}. */
+	private static AbstractInsnNode[] check(String hooks, int slot) {
+		return new AbstractInsnNode[] { new VarInsnNode(Opcodes.ILOAD, slot),
+				new MethodInsnNode(Opcodes.INVOKESTATIC, hooks, "check", "(I)V", false) };
+	}
+
+	private static AbstractInsnNode[] returnX() {
+		return new AbstractInsnNode[] { new VarInsnNode(Opcodes.ILOAD, 0), new InsnNode(Opcodes.IRETURN) };
+	}
+
+	private static String patch(String dialect, int from, int count, String... body) {
+		int added = 0;
+		for (String b : body) if (b.startsWith("+")) added++;
+		int removed = 0;
+		for (String b : body) if (b.startsWith("-")) removed++;
+		return "--- a/X.java\n+++ b/X.java\n@@ -" + from + "," + count + " +" + (dialect.equals("_") ? "_" : String.valueOf(from)) + ","
+				+ (count + added - removed) + " @@\n" + String.join("\n", body) + "\n";
+	}
+
+	private static boolean hasOutcome(List<EditSplicer.Outcome> outcomes, String kind, String detail) {
+		return outcomes.stream().anyMatch(o -> o.kind().equals(kind) && (detail == null || o.detail().contains(detail)));
+	}
+
+	// ---- rule: exception coverage at the real insertion position ----------------------------------------------
+
+	/**
+	 * {@code try { record(1); [check] } catch (Throwable t) { record(9); } return x;} with MinecraftForge's
+	 * {@code check(x)} after the region ({@code inside} false) or inside it; NeoForge left the method vanilla.
+	 */
+	private static MethodNode guardedCheck(String hooks, boolean withCheck, boolean inside) {
+		Body b = new Body();
+		LabelNode tryStart = new LabelNode(), tryEnd = new LabelNode(), handler = new LabelNode(), done = new LabelNode();
+		b.label(tryStart).line(10, rec(1));
+		int line = 11;
+		if (withCheck && inside) b.line(line++, check(hooks, 0));
+		b.label(tryEnd);
+		if (withCheck && !inside) b.line(line++, check(hooks, 0));
+		b.line(withCheck ? 10 : 10, new JumpInsnNode(Opcodes.GOTO, done));
+		b.label(handler).line(line++, new InsnNode(Opcodes.POP)).line(line - 1, rec(9));
+		b.label(done).line(line, returnX());
+		b.handler(tryStart, tryEnd, handler, "java/lang/Throwable");
+		return b.done();
+	}
+
+	@Test
+	void aRunOutsideARegionWhoseEndLabelPrecedesTheAnchorIsInsertedAfterThatLabel() throws Exception {
+		// The base's try region ends at a label right in front of the vanilla goto the run is anchored at. Inserting
+		// at the start of that label block would put MinecraftForge's check inside the region and let the handler
+		// swallow what it throws; in its own body nothing catches it.
+		MethodNode neo = guardedCheck(NEO_HOOKS, false, false);
+		MethodNode forge = guardedCheck(FORGE_HOOKS, true, false);
+		String forgePatch = patch("10", 10, 3, " A", "+C", " B", " R");
+		EditSplicer.Result r = splice(neo, NO_PATCH, forge, forgePatch, true);
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals(List.of(1, 101, 7), run(r.method(), 7));
+		Exception thrown = assertThrows(java.lang.reflect.InvocationTargetException.class, () -> run(r.method(), 5));
+		assertInstanceOf(IllegalStateException.class, thrown.getCause(), "the handler must not catch the carried check");
+		assertEquals(List.of(1, 101), CALLS);
+	}
+
+	/** Negative control: the same check inside the region in its own body is inserted inside it in the base. */
+	@Test
+	void aRunInsideTheRegionInItsOwnBodyStaysInsideIt() throws Exception {
+		MethodNode neo = guardedCheck(NEO_HOOKS, false, false);
+		MethodNode forge = guardedCheck(FORGE_HOOKS, true, true);
+		String forgePatch = patch("10", 10, 3, " A", "+C", " B", " R");
+		EditSplicer.Result r = splice(neo, NO_PATCH, forge, forgePatch, true);
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals(List.of(1, 101, 7), run(r.method(), 7));
+		assertEquals(List.of(1, 101, 9, 5), run(r.method(), 5));
+	}
+
+	// ---- rule: statement-level carry of insertion-only runs ---------------------------------------------------
+
+	/** record(1); [line 11]; [line 12]; record(2); return x. */
+	private static MethodNode withTwoAdded(AbstractInsnNode[] first, AbstractInsnNode[] second) {
+		return new Body().line(10, rec(1)).line(11, first).line(12, second).line(13, rec(2)).line(14, returnX()).done();
+	}
+
+	private static final String TWO_ADDED_NEO = patch("_", 10, 3, " A", "+N", "+S", " B", " R");
+	private static final String TWO_ADDED_FORGE = patch("10", 10, 3, " A", "+F", "+S", " B", " R");
+
+	@Test
+	void aStatementTheBaseAlreadyInsertedIsKeptOnceWhileTheRestOfTheRunIsCarried() throws Exception {
+		// Both sides moved the same statement (record(300)) in front of record(2) and put their own hook before it:
+		// the hook is carried, the shared statement is the same edit and runs once.
+		MethodNode neo = withTwoAdded(check(NEO_HOOKS, 0), rec(300));
+		MethodNode forge = withTwoAdded(check(FORGE_HOOKS, 0), rec(300));
+		EditSplicer.Result r = splice(neo, TWO_ADDED_NEO, forge, TWO_ADDED_FORGE, true);
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertTrue(hasOutcome(r.conflicts(), "same-edit", null), r.conflicts().toString());
+		assertEquals(List.of(1, 101, 201, 300, 2, 7), run(r.method(), 7));
+	}
+
+	/** Negative control: when the second statements differ, the whole run is carried, statement by statement. */
+	@Test
+	void aRunWhoseStatementsTheBaseDoesNotHaveIsCarriedWhole() throws Exception {
+		MethodNode neo = withTwoAdded(check(NEO_HOOKS, 0), rec(300));
+		MethodNode forge = withTwoAdded(check(FORGE_HOOKS, 0), rec(301));
+		EditSplicer.Result r = splice(neo, TWO_ADDED_NEO, forge, TWO_ADDED_FORGE, true);
+		assertTrue(r.accepted(), r.reason() + " " + r.refused());
+		assertEquals(List.of(1, 101, 301, 201, 300, 2, 7), run(r.method(), 7));
+	}
+
+	@Test
+	void aStatementAfterOneThatWasNotCarriedIsNotCarriedEither() {
+		// The first statement reads a local with no name, so it has no place; the check runs after it in its own
+		// body and is not carried without it.
+		MethodNode neo = withTwoAdded(check(NEO_HOOKS, 0), rec(300));
+		MethodNode forge = withTwoAdded(new AbstractInsnNode[] { new VarInsnNode(Opcodes.ILOAD, 4), new InsnNode(Opcodes.POP) },
+				check(FORGE_HOOKS, 0));
+		EditSplicer.Result r = splice(neo, TWO_ADDED_NEO, forge, TWO_ADDED_FORGE, true);
+		assertFalse(r.accepted(), r.spliced().toString());
+		assertTrue(hasOutcome(r.refused(), "insert", "local with no name"), r.refused().toString());
+		assertTrue(hasOutcome(r.refused(), "insert", "statement before it"), r.refused().toString());
+	}
+
+	/** Negative control: with a first statement that is carried, the one after it is carried too. */
+	@Test
+	void aStatementAfterACarriedOneIsCarried() throws Exception {
+		MethodNode neo = withTwoAdded(check(NEO_HOOKS, 0), rec(300));
+		MethodNode forge = withTwoAdded(rec(100), check(FORGE_HOOKS, 0));
+		EditSplicer.Result r = splice(neo, TWO_ADDED_NEO, forge, TWO_ADDED_FORGE, true);
+		assertTrue(r.accepted(), r.reason() + " " + r.conflicts() + " " + r.refused());
+		assertEquals(List.of(1, 100, 101, 201, 300, 2, 7), run(r.method(), 7));
 	}
 }
