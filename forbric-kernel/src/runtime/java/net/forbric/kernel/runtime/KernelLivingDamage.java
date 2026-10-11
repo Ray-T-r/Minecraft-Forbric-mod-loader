@@ -86,6 +86,15 @@ public final class KernelLivingDamage {
 	}
 
 	/**
+	 * The merged body's own MinecraftForge Damage call, routed here where the Hurt seam is this repair's: the same
+	 * answer as {@link #damage(LivingEntity, DamageContainer, DamageSource, float)}, so a zero-damage hit Hurt recorded
+	 * is skipped as MinecraftForge's own body skips it (it returns before Damage).
+	 */
+	public static float damage(LivingEntity entity, DamageSource source, float amount, DamageContainer container) {
+		return damage(entity, container, source, amount);
+	}
+
+	/**
 	 * Vanilla's first read of {@code actuallyHurt}'s damage, which a mod may have rewritten ({@code read}), against the
 	 * parameter as it came ({@code param}); VanillaDamageReadInjector places it before armour. A rewrite moves the
 	 * container by the same amount; no rewrite changes nothing, so NeoForge's own amount stays exactly as it was.

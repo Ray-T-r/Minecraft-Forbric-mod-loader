@@ -54,6 +54,12 @@ class ForgeDamageSeamsInjectorTest {
 			MethodInsnNode damage = hooks(hurt, "damage").getFirst();
 			assertTrue(damage.getNext() instanceof VarInsnNode store && store.getOpcode() == Opcodes.FSTORE && store.var == 3,
 					"the Damage answer replaces the health damage the body goes on to apply");
+			// The Hurt seam lets a zero-damage hit go on through NeoForge's pipeline and records it, because MinecraftForge
+			// returns before Damage on it; only a Damage the kernel asks reads that record, so a seamed Hurt needs it.
+			if (hooks(hurt, "hurt").getFirst().owner.equals(ForgeDamageSeamsInjector.RUNTIME)) {
+				assertEquals(ForgeDamageSeamsInjector.RUNTIME, damage.owner,
+						owner + ": with Hurt the seam's, Damage is asked through the kernel too, the merged body's own call included");
+			}
 			new Analyzer<>(new BasicVerifier()).analyze(owner, hurt);
 			assertSame(out, new ForgeDamageSeamsInjector().transform(owner.replace('/', '.'), out, null), "a second pass changes nothing");
 			assertTrue(ForgeDamageSeamsInjector.asksEveryHook(out), owner + ": the claim's end state holds");
@@ -65,7 +71,8 @@ class ForgeDamageSeamsInjectorTest {
 	 * which NeoForge's armour reads; MinecraftForge's own call stores it in the damage local, which only works where the
 	 * armour call reads that local. Where a merge spliced MinecraftForge's call into NeoForge's container-reading body,
 	 * the answer is stored and never read: a LivingHurtEvent listener's new amount is lost (only "zero ends the hit"
-	 * survives). That is a defect of the merged body, not of this repair, which stands down on a native call.
+	 * survives). The merge refuses that run now (its result reaches nothing in the base), and the seam asks Hurt
+	 * instead; either way the answer must reach the armour call.
 	 */
 	@Test void minecraftForgesHurtAnswerIsTheDamageArmourReduces() throws Exception {
 		for (String owner : List.of(LIVING, PLAYER)) {

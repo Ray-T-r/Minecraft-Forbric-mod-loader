@@ -44,9 +44,11 @@ import org.objectweb.asm.tree.VarInsnNode;
  *
  * <p>Each seam is placed only when its proof holds and no MinecraftForge call is already there — each on its own: a
  * merge that keeps both sides' edits may already call some of MinecraftForge's hooks natively (the edit-spliced base
- * calls {@code onLivingHurt} in both bodies, {@code onLivingDamage} in {@code LivingEntity}'s and {@code onPlayerAttack}
- * at the head of {@code hurtServer}) and lose another, and only the lost ones get a seam. A native player attack is
- * still told to the attack forward, which otherwise asks players a second time. The outcome is judged by {@link #CLAIM}
+ * calls {@code onLivingDamage} in {@code LivingEntity}'s {@code actuallyHurt} and {@code onPlayerAttack} at the head of
+ * {@code hurtServer}, and refuses {@code onLivingHurt}, whose answer NeoForge's body would never read) and lose another,
+ * and only the lost ones get a seam. Where Hurt gets a seam and Damage is the body's own call, that call is routed
+ * through the kernel so the zero-damage hits MinecraftForge returns on before Damage still skip it. A native player
+ * attack is still told to the attack forward, which otherwise asks players a second time. The outcome is judged by {@link #CLAIM}
  * on the class this hands back — every hook asked, natively or through a seam — not by whether it edited.
  * {@code -Dforbric.forgeDamageSeams=off} leaves both classes as merged (the attack forward then asks every entity).
  */
@@ -109,8 +111,8 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 		node.accept(writer);
 		boolean told = placed.remove(FORWARD_TOLD);
 		if (!placed.isEmpty()) {
-			ForbricLog.info("[Forbric/Damage] %s: MinecraftForge's %s back in NeoForge's damage pipeline — nothing called "
-					+ "them on the merged base", className, String.join(", ", placed));
+			ForbricLog.info("[Forbric/Damage] %s: MinecraftForge's %s back in NeoForge's damage pipeline, where MinecraftForge "
+					+ "asks them", className, String.join(", ", placed));
 		}
 		if (told) {
 			ForbricLog.info("[Forbric/Damage] %s: the player Attack forward told the merged hurtServer asks players itself",
@@ -174,7 +176,10 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 	/**
 	 * Hurt after the invulnerability check, Damage after the health damage is read back — each unless the body
 	 * already asks it, natively or through this repair. The Hurt seam records the zero-damage hits Damage must then
-	 * skip, so it goes in only where Damage is this repair's too.
+	 * skip (MinecraftForge returns before Damage on them), so it goes in only where Damage is this repair's too: a
+	 * seam of its own, or the merged body's own Damage call routed through the kernel, which reads that record. A
+	 * merge that kept MinecraftForge's Damage and refused its Hurt (the Hurt answer was stored where NeoForge's body
+	 * never reads it) leaves exactly that body.
 	 *
 	 * @return what was placed ("Hurt and Damage in actuallyHurt", or one of them), or null when nothing was
 	 */
@@ -184,7 +189,6 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 		boolean seamedHurt = calls(method, RUNTIME, "hurt") != 0, seamedDamage = calls(method, RUNTIME, "damage") != 0;
 		boolean wantHurt = !nativeHurt && !seamedHurt, wantDamage = !nativeDamage && !seamedDamage;
 		if (!wantHurt && !wantDamage) return null;
-		if (wantHurt && nativeDamage) return null;
 		List<AbstractInsnNode> code = code(method);
 		// aload0 aload1 aload2 invokevirtual isInvulnerableTo; ifne <end>
 		if (code.size() < 5 || !load(code.get(0), Opcodes.ALOAD, 0) || !load(code.get(1), Opcodes.ALOAD, 1)
@@ -206,9 +210,56 @@ public final class ForgeDamageSeamsInjector implements ClassTransformer {
 			}
 		}
 		if (stores != 1) return null;
+		MethodInsnNode own = null;
+		if (wantHurt && nativeDamage) {
+			own = nativeDamageAfter(method, store);
+			if (own == null) return null;
+		}
 		if (wantHurt) hurtSeam(method, code.get(4));
 		if (wantDamage) damageSeam(method, store);
+		if (own != null) {
+			routeDamage(method, own);
+			return "Hurt and Damage in actuallyHurt (Damage the merged body's own call, asked through the kernel)";
+		}
 		return wantHurt && wantDamage ? "Hurt and Damage in actuallyHurt" : wantHurt ? "Hurt in actuallyHurt" : "Damage in actuallyHurt";
+	}
+
+	/**
+	 * The body's own {@code damage = ForgeHooks.onLivingDamage(this, source, damage)}, when it is the only Damage call,
+	 * reads and writes the health-damage local and comes after the one place that local is read back from the container:
+	 * MinecraftForge's own Damage at MinecraftForge's position. Anything else is null.
+	 */
+	private static MethodInsnNode nativeDamageAfter(MethodNode method, AbstractInsnNode store) {
+		if (calls(method, FORGE_HOOKS, "onLivingDamage") != 1) return null;
+		boolean after = false;
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn == store) after = true;
+			if (!(insn instanceof MethodInsnNode call) || !call.owner.equals(FORGE_HOOKS) || !call.name.equals("onLivingDamage")) continue;
+			if (!after || call.getOpcode() != Opcodes.INVOKESTATIC || !call.desc.equals("(L" + LIVING + ";" + SOURCE + "F)F")) return null;
+			AbstractInsnNode amount = real(call.getPrevious(), false), source = amount == null ? null : real(amount.getPrevious(), false);
+			AbstractInsnNode self = source == null ? null : real(source.getPrevious(), false), result = real(call.getNext(), true);
+			return load(self, Opcodes.ALOAD, 0) && load(source, Opcodes.ALOAD, 2) && load(amount, Opcodes.FLOAD, 3)
+					&& load(result, Opcodes.FSTORE, 3) ? call : null;
+		}
+		return null;
+	}
+
+	/** The nearest real instruction from {@code insn} on, forwards or backwards. */
+	private static AbstractInsnNode real(AbstractInsnNode insn, boolean forwards) {
+		while (insn != null && insn.getOpcode() < 0) insn = forwards ? insn.getNext() : insn.getPrevious();
+		return insn;
+	}
+
+	/**
+	 * The body's own Damage call asks through the kernel, with the hit's container: a zero-damage hit the Hurt seam
+	 * recorded is skipped as MinecraftForge skips it, and the answer reaches the container NeoForge's Post reads.
+	 */
+	private static void routeDamage(MethodNode method, MethodInsnNode own) {
+		InsnList read = new InsnList();
+		container(read);
+		method.instructions.insertBefore(own, read);
+		method.instructions.set(own, new MethodInsnNode(Opcodes.INVOKESTATIC, RUNTIME, "damage",
+				"(L" + LIVING + ";" + SOURCE + "FL" + CONTAINER + ";)F", false));
 	}
 
 	/** Right after the invulnerability check's {@code ifne}: ask Hurt, and end the hit on its answer. */

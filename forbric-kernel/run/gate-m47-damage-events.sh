@@ -75,7 +75,7 @@ then echo "[kernel] PASS positive: zero confirmed required findings under STRICT
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 # A merge that keeps both sides' edits may already call some of MinecraftForge's hooks itself; the seams then go in
 # only where a hook is missing, and a native player attack is told to the forward instead of seamed.
-check "positive: Hurt and Damage are asked in LivingEntity (seams, or the merged body's own calls)" 'Forbric/Damage\] net.minecraft.world.entity.LivingEntity: MinecraftForge.s (Hurt and Damage back|Hurt, Damage already asked)' "$RESULTS/positive.log"
+check "positive: Hurt and Damage are asked in LivingEntity (seams, or the merged body's own calls)" 'Forbric/Damage\] net.minecraft.world.entity.LivingEntity: MinecraftForge.s (Hurt and Damage in actuallyHurt|Hurt, Damage already asked)' "$RESULTS/positive.log"
 check "…and the player's attack (seam, or the merged body's own call told to the forward)" 'Forbric/Damage\] net.minecraft.world.entity.player.Player: (.*player Attack in hurtServer|the player Attack forward told)' "$RESULTS/positive.log"
 check_absent "positive: no damage forward or seam failed" 'forward failed|failed inside the damage pipeline' "$RESULTS/positive.log"
 

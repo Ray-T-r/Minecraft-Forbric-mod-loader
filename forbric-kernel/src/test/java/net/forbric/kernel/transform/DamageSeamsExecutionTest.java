@@ -256,6 +256,35 @@ class DamageSeamsExecutionTest {
 				"premise: as merged, MinecraftForge's listeners are never asked");
 	}
 
+	/**
+	 * A merge that kept MinecraftForge's Damage call in NeoForge's body and refused its Hurt (whose answer that body never
+	 * reads): the seam asks Hurt, and the body's own Damage call is asked through the kernel. A zero-damage hit goes on
+	 * through NeoForge's pipeline, but MinecraftForge returns on it before Damage, so Damage is not asked; every other
+	 * hit is asked exactly as the fully seamed body asks it.
+	 */
+	@Test void aMergedBodysOwnDamageCallSkipsTheZeroHitsMinecraftForgeEndsAtHurt(@TempDir Path work) throws Throwable {
+		String check = "Preconditions.checkArgument(amount >= 0, \"negative damage\");";
+		Map<String, String> sources = new HashMap<>(STAND_INS);
+		assertTrue(sources.get(LIVING).contains(check));
+		sources.put(LIVING, sources.get(LIVING).replace(check,
+				check + " amount = net.minecraftforge.common.ForgeHooks.onLivingDamage(this, source, amount);"));
+		sources.put("net/forbric/kernel/runtime/KernelLivingDamage.java", Files.readString(HOOK_SOURCE));
+		Map<String, byte[]> merged = InjectorExecution.compile(work, sources);
+		String internal = LIVING.replace('.', '/');
+		byte[] seamed = InjectorExecution.transform(new ForgeDamageSeamsInjector(), LIVING, merged.get(internal), EnvType.SERVER);
+		assertNotSame(merged.get(internal), seamed, "Hurt is missing, so the repair edits the body");
+		Map<String, byte[]> game = new HashMap<>(merged);
+		game.put(internal, seamed);
+		ClassLoader loader = InjectorExecution.load(game);
+		assertEquals("", InjectorExecution.verify(seamed, loader));
+		assertEquals("[Hurt 8.0, armour 8.0, Damage 4.0] health 16.0", hit(loader, "arrow", 8));
+		assertEquals("[Hurt 8.0] health 20.0", hit(loader, "ghost", 8), "a Hurt answer of zero still ends the hit");
+		assertEquals("[Hurt 0.0, armour 0.0] health 20.0", hit(loader, "arrow", 0),
+				"a zero-damage hit is not asked Damage, as MinecraftForge's own body returns before it");
+		assertEquals("[armour 0.0, Damage 0.0] health 20.0", hit(InjectorExecution.load(merged), "arrow", 0),
+				"premise: as merged, Hurt is never asked and the body's own Damage is asked on a zero-damage hit");
+	}
+
 	@Test void aFabricModChangingTheFirstReadChangesTheDamageThatIsArmoured(@TempDir Path work) throws Throwable {
 		Game game = game(work);
 		ClassLoader loader = InjectorExecution.load(withFabricModifier(game.seamed()));
