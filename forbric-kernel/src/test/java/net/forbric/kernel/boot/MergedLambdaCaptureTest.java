@@ -16,6 +16,7 @@
 
 package net.forbric.kernel.boot;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -65,8 +67,10 @@ import org.objectweb.asm.tree.VarInsnNode;
  * it. The per-method merge then gives the name the body of the side that edited it, as for any method both sides
  * have, and the capturer runs that lambda with the edit in it (MinecraftForge's guard in
  * {@code KeyBindsList$KeyEntry.lambda$new$0}, under NeoForge's constructor). The builder proves it from each
- * side's patch and the vanilla capture site; this test checks it against vanilla's own class
- * ({@link #onlyTheOtherSideEdited}), and PauseScreen's lambda, which shares no code with vanilla's, still fails.
+ * side's patch and the vanilla capture site, and names every lambda it proved in its report. This test accepts such a
+ * capture only when both hold: the builder named it, and vanilla's own class shows it independently
+ * ({@link #onlyTheOtherSideEdited}). A capture the test would let through that the builder did not prove fails, so
+ * the check cannot quietly grow wider than the rule it is checking.
  *
  * <p>This is a property of the ARTIFACT, so it is asserted against the artifact rather than against the tool: the
  * builder that produces it is in another module, is run by shell scripts and by the installer, and the thing that
@@ -77,6 +81,9 @@ class MergedLambdaCaptureTest {
 	private static final Path MERGED = STAGED.resolve("merged-base/patched-mc-merged-26.2.jar");
 	private static final Path NEO = patched("patched-mc-neoforge-26.2.jar", "neoforge-patched");
 	private static final Path FORGE = patched("patched-mc-forge-26.2.jar", "forge-patched");
+	private static final Path REPORT = STAGED.resolve("merged-base/merge-conflicts.txt");
+	/** The heading MergedBaseBuilder.KEPT_AS_ONE_SECTION writes above the lambdas it proved one lambda on both sides. */
+	private static final String KEPT_AS_ONE = "=== lambdas both sides compile as one vanilla lambda";
 
 	/** The installer's own build output when this checkout ran it, else the side staged beside the merged base. */
 	private static Path patched(String jar, String stagedDirectory) {
@@ -101,6 +108,7 @@ class MergedLambdaCaptureTest {
 
 		List<String> wrong = new ArrayList<>();
 		List<String> editedByTheOtherSide = new ArrayList<>();
+		Set<String> proved = keptAsOne(REPORT);
 		Map<String, byte[]> vanilla = null;
 		int twoSided = 0;
 		for (Map.Entry<String, byte[]> e : merged.entrySet()) {
@@ -143,9 +151,12 @@ class MergedLambdaCaptureTest {
 							if (vanilla == null && Files.isRegularFile(TestFixtures.vanillaJar())) vanilla = classesIn(TestFixtures.vanillaJar());
 							byte[] vb = vanilla == null ? null : vanilla.get(e.getKey());
 							Map<String, MethodNode> vm = vb == null ? Map.of() : index(parse(vb));
-							if (onlyTheOtherSideEdited(mc.name, key, vm.get(m.name + m.desc), vm.get(key), want, theirs,
+							if (onlyTheOtherSideEdited(mc.name, key, vm, vm.get(m.name + m.desc), m, want, theirs,
 									other.get(m.name + m.desc))) {
 								editedByTheOtherSide.add(mc.name + "." + key);
+								if (!proved.contains(mc.name + "#" + key)) wrong.add(mc.name + "." + m.name + m.desc
+										+ " captures " + key + " from the other side, and the merge report does not name it"
+										+ " as one vanilla lambda on both sides");
 								continue;
 							}
 							wrong.add(mc.name + "." + m.name + m.desc + " kept "
@@ -168,26 +179,88 @@ class MergedLambdaCaptureTest {
 	@Test
 	void onlyAVanillaLambdaTheOtherSideOnlyAddedCodeToIsAccepted() {
 		String owner = "net/minecraft/demo/Screen", key = "lambda$init$0()V";
-		MethodNode capturer = capturer(owner, "lambda$init$0"), vanillaLambda = lambda(false, call("record", 2));
-		MethodNode own = lambda(false, call("record", 2)), edited = lambda(false, call("guard", 100), call("record", 2));
-		assertTrue(onlyTheOtherSideEdited(owner, key, capturer, vanillaLambda, own, edited, capturer),
+		MethodNode capturer = capturer(owner, "lambda$init$0"), vanillaLambda = lambda("lambda$init$0", false, call("record", 2));
+		Map<String, MethodNode> vanilla = Map.of(key, vanillaLambda);
+		MethodNode own = lambda("lambda$init$0", false, call("record", 2));
+		MethodNode edited = lambda("lambda$init$0", false, call("guard", 100), call("record", 2));
+		assertTrue(onlyTheOtherSideEdited(owner, key, vanilla, capturer, capturer, own, edited, capturer),
 				"vanilla's lambda, left alone by the capturer's compile, with the other compile's code added");
-		assertFalse(onlyTheOtherSideEdited(owner, key, capturer, vanillaLambda, own, lambda(false, call("open", 100)), capturer),
+		assertFalse(onlyTheOtherSideEdited(owner, key, vanilla, capturer, capturer, own,
+				lambda("lambda$init$0", false, call("open", 100)), capturer),
 				"PauseScreen's collision: the other compile's lambda of that name is code of its own");
-		assertFalse(onlyTheOtherSideEdited(owner, key, capturer, vanillaLambda, lambda(false, call("veto", 200), call("record", 2)),
-				edited, capturer), "the capturer's compile edited it too, so the other body drops that edit");
-		assertFalse(onlyTheOtherSideEdited(owner, key, capturer, vanillaLambda, own, edited, lambda(false, call("record", 2))),
-				"the other compile's method of that name does not capture it");
-		assertFalse(onlyTheOtherSideEdited(owner, key, capturer, vanillaLambda, own, lambda(true, call("guard", 100), call("record", 2)),
-				capturer), "a static body under the name the capturer's handle reaches as an instance method");
-		assertFalse(onlyTheOtherSideEdited(owner, key, capturer, vanillaLambda, own, lambda(false, call("record", 2)), capturer),
-				"nothing added is no edit: the bodies would have been equal");
+		assertFalse(onlyTheOtherSideEdited(owner, key, vanilla, capturer, capturer,
+				lambda("lambda$init$0", false, call("veto", 200), call("record", 2)), edited, capturer),
+				"the capturer's compile edited it too, so the other body drops that edit");
+		assertFalse(onlyTheOtherSideEdited(owner, key, vanilla, capturer, capturer, own, edited,
+				lambda("init", false, call("record", 2))), "the other compile's method of that name does not capture it");
+		assertFalse(onlyTheOtherSideEdited(owner, key, vanilla, capturer, capturer, own,
+				lambda("lambda$init$0", true, call("guard", 100), call("record", 2)), capturer),
+				"a static body under the name the capturer's handle reaches as an instance method");
+		assertFalse(onlyTheOtherSideEdited(owner, key, vanilla, capturer, capturer, own,
+				lambda("lambda$init$0", false, call("record", 2)), capturer), "nothing added is no edit: the bodies would have been equal");
 	}
 
-	private static MethodNode lambda(boolean isStatic, org.objectweb.asm.tree.InsnList... statements) {
+	/**
+	 * The builder's own negative controls, which a check by name let through. Vanilla's {@code build} captures two
+	 * lambdas; NeoForge's is vanilla's; MinecraftForge captures one of its own first, so its numbering shifts.
+	 */
+	@Test
+	void aRenumberedCollisionAnEmptyVanillaLambdaAndAReplacedCallAreRefused() {
+		String owner = "net/minecraft/demo/Mine", key = "lambda$build$1()V";
+		MethodNode vanillaBuild = capturer(owner, "lambda$build$0", "lambda$build$1");
+		MethodNode forgeBuild = capturer(owner, "lambda$build$0", "lambda$build$1", "lambda$build$2");
+		// Vanilla's two lambdas do the same thing. MinecraftForge's lambda$build$1 is vanilla's FIRST lambda with its
+		// guard, captured at vanilla's first capture; NeoForge's lambda$build$1 is vanilla's second.
+		MethodNode first = lambda("lambda$build$0", false, call("record", 2)), second = lambda("lambda$build$1", false, call("record", 2));
+		Map<String, MethodNode> vanilla = Map.of("lambda$build$0()V", first, key, second);
+		assertFalse(onlyTheOtherSideEdited(owner, key, vanilla, vanillaBuild, vanillaBuild,
+				lambda("lambda$build$1", false, call("record", 2)),
+				lambda("lambda$build$1", false, call("guard", 101), call("record", 2)), forgeBuild),
+				"a renumbered collision whose lambdas share vanilla's code: the captures are at different places");
+		// The same collision where MinecraftForge's captures line up one for one, so only the code can tell.
+		assertFalse(onlyTheOtherSideEdited(owner, key, Map.of("lambda$build$0()V", first, key, lambda("lambda$build$1", false)),
+				vanillaBuild, vanillaBuild, lambda("lambda$build$1", false), lambda("lambda$build$1", false, call("openModsScreen", 7)),
+				vanillaBuild), "an empty vanilla lambda: any other body ending in a return has all of its code");
+		MethodNode recordOne = recordCall(false), recordTwo = recordCall(true);
+		assertFalse(onlyTheOtherSideEdited(owner, key, Map.of("lambda$build$0()V", first, key, recordOne), vanillaBuild, vanillaBuild,
+				recordCall(false), recordTwo, vanillaBuild),
+				"vanilla's call replaced by another overload: the other compile changed vanilla's code, it did not only add");
+		// The control: the same shapes with captures that line up and code only added.
+		assertTrue(onlyTheOtherSideEdited(owner, key, vanilla, vanillaBuild, vanillaBuild,
+				lambda("lambda$build$1", false, call("record", 2)),
+				lambda("lambda$build$1", false, call("guard", 101), call("record", 2)), vanillaBuild),
+				"vanilla's second lambda, guarded by the other compile at the same capture");
+	}
+
+	@Test
+	void theReportsListOfLambdasKeptAsOneIsReadFromItsOwnSectionOnly(@org.junit.jupiter.api.io.TempDir Path directory)
+			throws IOException {
+		Path report = directory.resolve("merge-conflicts.txt");
+		Files.writeString(report, String.join("\n", "[merge] summary", "",
+				"=== both-modified methods where one side's hook is LOST (see suffix for which) ===",
+				"game/A#lambda$a$0()V (forge hook lost)", "",
+				KEPT_AS_ONE + " (left on the side that edited it) ===", "game/B#lambda$b$1()V", "", 
+				"=== edit splice: both ecosystems' edits kept in one body ===", "game/C#c()V SPLICED", ""));
+		assertEquals(Set.of("game/B#lambda$b$1()V"), keptAsOne(report));
+		assertEquals(Set.of(), keptAsOne(directory.resolve("absent.txt")), "no report proves nothing");
+	}
+
+	private static MethodNode lambda(String name, boolean isStatic, org.objectweb.asm.tree.InsnList... statements) {
 		MethodNode m = new MethodNode(org.objectweb.asm.Opcodes.ACC_PRIVATE | org.objectweb.asm.Opcodes.ACC_SYNTHETIC
-				| (isStatic ? org.objectweb.asm.Opcodes.ACC_STATIC : 0), "lambda$init$0", "()V", null, null);
+				| (isStatic ? org.objectweb.asm.Opcodes.ACC_STATIC : 0), name, "()V", null, null);
 		for (org.objectweb.asm.tree.InsnList statement : statements) m.instructions.add(statement);
+		m.instructions.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.RETURN));
+		return m;
+	}
+
+	/** {@code Hooks.record(this)}, or with {@code twice} the two-argument overload {@code Hooks.record(this, this)}. */
+	private static MethodNode recordCall(boolean twice) {
+		MethodNode m = new MethodNode(org.objectweb.asm.Opcodes.ACC_PRIVATE | org.objectweb.asm.Opcodes.ACC_SYNTHETIC,
+				"lambda$build$1", "()V", null, null);
+		m.instructions.add(new VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, 0));
+		if (twice) m.instructions.add(new VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, 0));
+		m.instructions.add(new MethodInsnNode(org.objectweb.asm.Opcodes.INVOKESTATIC, "net/minecraft/demo/Hooks", "record",
+				twice ? "(Ljava/lang/Object;Ljava/lang/Object;)V" : "(Ljava/lang/Object;)V", false));
 		m.instructions.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.RETURN));
 		return m;
 	}
@@ -199,50 +272,108 @@ class MergedLambdaCaptureTest {
 		return list;
 	}
 
-	private static MethodNode capturer(String owner, String lambda) {
+	/** An instance method capturing each named instance lambda of {@code owner} through one functional interface. */
+	private static MethodNode capturer(String owner, String... lambdas) {
 		MethodNode m = new MethodNode(org.objectweb.asm.Opcodes.ACC_PUBLIC, "init", "()V", null, null);
-		m.instructions.add(new VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, 0));
-		m.instructions.add(new InvokeDynamicInsnNode("run", "(L" + owner + ";)Ljava/lang/Runnable;",
-				new Handle(org.objectweb.asm.Opcodes.H_INVOKESTATIC, "java/lang/invoke/LambdaMetafactory", "metafactory",
-						"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
-								+ "Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)"
-								+ "Ljava/lang/invoke/CallSite;", false),
-				org.objectweb.asm.Type.getType("()V"), new Handle(org.objectweb.asm.Opcodes.H_INVOKESPECIAL, owner, lambda, "()V", false),
-				org.objectweb.asm.Type.getType("()V")));
-		m.instructions.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.POP));
+		for (String lambda : lambdas) {
+			m.instructions.add(new VarInsnNode(org.objectweb.asm.Opcodes.ALOAD, 0));
+			m.instructions.add(new InvokeDynamicInsnNode("run", "(L" + owner + ";)Ljava/lang/Runnable;",
+					new Handle(org.objectweb.asm.Opcodes.H_INVOKESTATIC, "java/lang/invoke/LambdaMetafactory", "metafactory",
+							"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
+									+ "Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)"
+									+ "Ljava/lang/invoke/CallSite;", false),
+					org.objectweb.asm.Type.getType("()V"), new Handle(org.objectweb.asm.Opcodes.H_INVOKESPECIAL, owner, lambda, "()V", false),
+					org.objectweb.asm.Type.getType("()V")));
+			m.instructions.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.POP));
+		}
 		m.instructions.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.RETURN));
 		return m;
 	}
 
 	/**
-	 * Whether {@code key} is one vanilla lambda that only the other compile edited: vanilla's own method of the
-	 * capturer's name captures a lambda of that name, and so does the other compile's; the capturer's compile has
-	 * vanilla's lambda exactly; and the other compile's has every instruction of it in order, with code of its own
-	 * added and the same static flag. A lambda the other compile wrote itself under a colliding name shares no such
-	 * sequence with vanilla's.
+	 * Whether {@code key} is one vanilla lambda that only the other compile edited, judged as the builder judges it but
+	 * against vanilla's own class instead of the patches.
+	 *
+	 * <p>Which vanilla lambda it is comes from where it is captured, never from its name (the two compiles number their
+	 * lambdas independently): vanilla's capturer, the capturer's compile and the other compile each capture lambdas that
+	 * look like this capture (the same interface, the same lambda descriptor, the same handle kind, the number aside)
+	 * the same number of times, and both compiles capture {@code key} at the same one of those places, the n-th; the
+	 * vanilla lambda is the one vanilla captures n-th. Then the capturer's compile has that vanilla lambda exactly; the
+	 * other compile has every one of its instructions, in order, with code of its own added; all three share the
+	 * static flag; and the vanilla lambda has code beyond its return, since an empty lambda's code is in every body.
 	 */
-	static boolean onlyTheOtherSideEdited(String owner, String key, MethodNode vanillaCapturer, MethodNode vanillaLambda,
-			MethodNode own, MethodNode theirs, MethodNode theirCapturer) {
-		if (vanillaCapturer == null || vanillaLambda == null || theirCapturer == null) return false;
-		if (!captures(vanillaCapturer, owner, key) || !captures(theirCapturer, owner, key)) return false;
-		if ((own.access & org.objectweb.asm.Opcodes.ACC_STATIC) != (theirs.access & org.objectweb.asm.Opcodes.ACC_STATIC)) return false;
-		if (!body(own).equals(body(vanillaLambda))) return false;
-		String[] vanillaCode = body(vanillaLambda).split(";"), theirCode = body(theirs).split(";");
-		if (theirCode.length <= vanillaCode.length) return false;
+	static boolean onlyTheOtherSideEdited(String owner, String key, Map<String, MethodNode> vanilla, MethodNode vanillaCapturer,
+			MethodNode ownCapturer, MethodNode own, MethodNode theirs, MethodNode theirCapturer) {
+		if (vanillaCapturer == null || ownCapturer == null || theirCapturer == null || own == null || theirs == null) return false;
+		InvokeDynamicInsnNode ownCapture = onlyCaptureOf(ownCapturer, owner, key), theirCapture = onlyCaptureOf(theirCapturer, owner, key);
+		if (ownCapture == null || theirCapture == null) return false;
+		String shape = shape(ownCapture, owner);
+		if (!shape.equals(shape(theirCapture, owner))) return false;
+		List<InvokeDynamicInsnNode> inVanilla = alike(vanillaCapturer, owner, shape), inOwn = alike(ownCapturer, owner, shape),
+				inTheirs = alike(theirCapturer, owner, shape);
+		if (inVanilla.size() != inOwn.size() || inOwn.size() != inTheirs.size()) return false;
+		int place = inOwn.indexOf(ownCapture);
+		if (place < 0 || place != inTheirs.indexOf(theirCapture)) return false;
+		Handle named = ownHandle(inVanilla.get(place), owner);
+		MethodNode vanillaLambda = named == null ? null : vanilla.get(named.getName() + named.getDesc());
+		if (vanillaLambda == null) return false;
+		int isStatic = vanillaLambda.access & org.objectweb.asm.Opcodes.ACC_STATIC;
+		if ((own.access & org.objectweb.asm.Opcodes.ACC_STATIC) != isStatic || (theirs.access & org.objectweb.asm.Opcodes.ACC_STATIC) != isStatic) return false;
+		List<String> vanillaCode = instructions(vanillaLambda), ownCode = instructions(own), theirCode = instructions(theirs);
+		if (!ownCode.equals(vanillaCode) || theirCode.size() <= vanillaCode.size()) return false;
+		if (vanillaCode.stream().allMatch(MergedLambdaCaptureTest::isReturn)) return false;
 		int matched = 0;
-		for (String instruction : theirCode) if (matched < vanillaCode.length && instruction.equals(vanillaCode[matched])) matched++;
-		return matched == vanillaCode.length;
+		for (String instruction : theirCode) if (matched < vanillaCode.size() && instruction.equals(vanillaCode.get(matched))) matched++;
+		return matched == vanillaCode.size();
 	}
 
-	private static boolean captures(MethodNode method, String owner, String key) {
-		if (method.instructions == null) return false;
+	/** The one call site of {@code method} that captures {@code key}, or null when there is none or more than one. */
+	private static InvokeDynamicInsnNode onlyCaptureOf(MethodNode method, String owner, String key) {
+		InvokeDynamicInsnNode found = null;
+		if (method.instructions == null) return null;
 		for (AbstractInsnNode insn : method.instructions) {
 			if (!(insn instanceof InvokeDynamicInsnNode indy)) continue;
-			for (Object arg : indy.bsmArgs) {
-				if (arg instanceof Handle h && h.getOwner().equals(owner) && (h.getName() + h.getDesc()).equals(key)) return true;
-			}
+			Handle h = ownHandle(indy, owner);
+			if (h == null || !(h.getName() + h.getDesc()).equals(key)) continue;
+			if (found != null) return null;
+			found = indy;
 		}
-		return false;
+		return found;
+	}
+
+	/** The call sites of {@code method} that look like one another: {@link #shape} without the lambda's number. */
+	private static List<InvokeDynamicInsnNode> alike(MethodNode method, String owner, String shape) {
+		List<InvokeDynamicInsnNode> out = new ArrayList<>();
+		if (method.instructions == null) return out;
+		for (AbstractInsnNode insn : method.instructions) if (insn instanceof InvokeDynamicInsnNode indy && shape(indy, owner).equals(shape)) out.add(indy);
+		return out;
+	}
+
+	private static String shape(InvokeDynamicInsnNode indy, String owner) {
+		Handle h = ownHandle(indy, owner);
+		return indy.name + indy.desc + (h == null ? "" : "|" + h.getTag() + " " + h.getName().replaceAll("\\$\\d+$", "") + h.getDesc());
+	}
+
+	private static Handle ownHandle(InvokeDynamicInsnNode indy, String owner) {
+		for (Object arg : indy.bsmArgs) if (arg instanceof Handle h && h.getOwner().equals(owner)) return h;
+		return null;
+	}
+
+	private static boolean isReturn(String instruction) {
+		int opcode = Integer.parseInt(instruction.substring(0, instruction.indexOf(':')));
+		return opcode >= org.objectweb.asm.Opcodes.IRETURN && opcode <= org.objectweb.asm.Opcodes.RETURN;
+	}
+
+	/** The lambdas the merge report names as one vanilla lambda on both sides ({@code owner#name(desc)}). */
+	static Set<String> keptAsOne(Path report) throws IOException {
+		Set<String> out = new java.util.LinkedHashSet<>();
+		if (!Files.isRegularFile(report)) return out;
+		boolean in = false;
+		for (String line : Files.readAllLines(report)) {
+			if (line.startsWith("===")) { in = line.startsWith(KEPT_AS_ONE); continue; }
+			if (in && !line.isBlank()) out.add(line.trim());
+		}
+		return out;
 	}
 
 	private static Map<String, byte[]> classesIn(Path jar) throws IOException {
@@ -272,10 +403,16 @@ class MergedLambdaCaptureTest {
 
 	/** Two compiles of one source differ in debug info and frames, so equality is over opcodes and operands. */
 	private static String body(MethodNode m) {
-		if (m.instructions == null) return "";
-		StringBuilder sb = new StringBuilder();
+		return String.join(";", instructions(m));
+	}
+
+	/** Each instruction's opcode and operands, one entry per instruction (a descriptor's own ';' stays inside it). */
+	private static List<String> instructions(MethodNode m) {
+		List<String> out = new ArrayList<>();
+		if (m.instructions == null) return out;
 		for (AbstractInsnNode i : m.instructions) {
 			if (i.getOpcode() < 0) continue;
+			StringBuilder sb = new StringBuilder();
 			sb.append(i.getOpcode()).append(':');
 			if (i instanceof MethodInsnNode c) sb.append(c.owner).append('.').append(c.name).append(c.desc);
 			else if (i instanceof FieldInsnNode f) sb.append(f.owner).append('.').append(f.name).append(f.desc);
@@ -288,8 +425,8 @@ class MergedLambdaCaptureTest {
 				}
 			} else if (i instanceof IntInsnNode n) sb.append(n.operand);
 			else if (i instanceof VarInsnNode v) sb.append(v.var);
-			sb.append(';');
+			out.add(sb.toString());
 		}
-		return sb.toString();
+		return out;
 	}
 }
