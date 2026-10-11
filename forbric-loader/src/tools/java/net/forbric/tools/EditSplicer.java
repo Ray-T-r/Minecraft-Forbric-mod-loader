@@ -66,49 +66,64 @@ import org.objectweb.asm.tree.analysis.SourceValue;
  * <ul>
  *   <li>It sits at a statement boundary on both sides: the operand stack is empty where it starts and where its
  *       anchor starts, in the other body and at the insertion point of the base body.</li>
+ *   <li>Its place among the base's own code between the same two vanilla instructions follows what that code is:
+ *       a base rewrite of a vanilla line before the run stays before it, one of a line after it stays after it, and
+ *       only the base's insertions at the same point are ordered by family. In a constructor it comes after the call
+ *       that initializes {@code this}, on both sides.</li>
  *   <li>Its control flow is self-contained: every jump out of it lands on its anchor or on a vanilla instruction
  *       the alignment maps; nothing outside jumps into its middle; its exception regions lie wholly inside it; and
- *       the exception regions covering it are the same, by type and count, in its own body and at the place it is
- *       inserted in the base. That place is chosen among the labels in front of the anchor, never past one that a
- *       jump or a handler lands on, because an instruction inserted before a region's end label is inside it.</li>
+ *       the exception regions covering it, its own left out, are the same, by type and count, in its own body and at
+ *       the place it is inserted in the base. That place is chosen among the labels in front of the anchor: never
+ *       past one that a vanilla jump, a switch or a handler lands on, and always past one that only the base's own
+ *       inserted code jumps to (the run is reached where the base's own branches meet).</li>
  *   <li>A base jump retargeted into it (its counterpart enters the run in the other body) landed on the very
- *       instruction the run is inserted before, so no base code it used to skip is now on its path; and every base
- *       instruction that can reach it in the result has a counterpart that can reach it in its own body.</li>
- *   <li>Every local it reads that it did not declare itself is found in the base body by name and descriptor,
- *       live at the insertion point. Locals it declares get fresh slots. A base local it writes that its own body
- *       reads afterwards is still read afterwards in the result: a hook result nothing reads is a lost hook.</li>
+ *       instruction the run is inserted before, and a switch is retargeted case by case; every base instruction that
+ *       can reach it in the result has a counterpart that can reach it in its own body.</li>
+ *   <li>Every local it reads holds what it holds in its own body: a local its own side's code wrote is read from a
+ *       unit that was carried or that the base already has, never from the base's local of the same name; a local
+ *       it declares gets a fresh slot, unless it replaces the vanilla declaration of that local, whose slot it
+ *       takes. Every read its own body makes of what it writes still reads it in the result.</li>
  *   <li>Something in the result reaches it.</li>
- *   <li>In a constructor it comes after the call that initializes {@code this}, on both sides.</li>
  * </ul>
  *
  * An insertion-only run is carried statement by statement (boundaries where the stack is empty, the line changes
  * and no jump or region crosses), so a statement the base already inserted at the same point is kept once while
  * the rest of the run is carried, on the side of the base's copy that its own order puts it; a statement after one
- * that could not be carried is not carried either. A copy counts only when the lambdas it captures have the same
- * bodies on both sides.
+ * that could not be carried is not carried either. A base statement counts as a copy only when it is the same code
+ * with its jumps landing on the same places, it starts and ends at statement boundaries, nothing in the base skips
+ * it or lands inside it, every local it reads holds the same definition (the vanilla one, or a copy's), and the
+ * lambdas it captures have the same bodies on both sides.
  *
  * <p>A lambda a carried run captures keeps its name only when the base side's own lambda of that name does the same
- * thing, the lambdas it captures in turn included, or the base side has no lambda of that name and the merged class
- * holds the other side's own; otherwise it is carried under a fresh name. Where the base side has the name, the
- * merged class's current method of that name is never the reference: the per-method merge may have put the other
- * side's body there, and the merge puts it back on the base's side once the class is merged.
+ * thing (the same instructions with the same jump targets and exception table), the lambdas it captures in turn
+ * included, or the base side has no lambda of that name and the merged class holds the other side's own; otherwise
+ * it is carried under a fresh name. Where the base side has the name, the merged class's current method of that
+ * name is never the reference: the per-method merge may have put the other side's body there, and the merge puts it
+ * back on the base's side once the class is merged.
  *
  * <p>The caller may withhold units for reasons only the whole class shows ({@link Input#withheld}); each carried unit
- * is reported with the owner's fields it reads ({@link Carried}).
+ * is reported with the owner's fields it reads and the methods it calls ({@link Carried}).
  *
- * <p>A run that replaced vanilla lines replaces the base's copy of those lines only when the base left them vanilla.
- * When the base changed the same lines too, the two edits are kept once when they are the same instructions, and
- * otherwise the run is reported as a conflict and the base's edit stands. When both patches added a member of the
- * same name (vanilla's hierarchy lacks it, both patched hierarchies have it) and both edits of this method act on
- * it, the two sides reimplemented one feature and running both runs it twice: a conflict, the base's edit stands.
- * A run inserted where the base inserted its own run goes first when it is MinecraftForge's, so on every shared
- * insertion point MinecraftForge's code runs before NeoForge's.
+ * <p>A run that replaced vanilla lines replaces the base's copy of those lines only when the base left them vanilla
+ * and none of the base's own code feeds them; it takes the slot of a vanilla local it declares again. When the base
+ * changed the same lines too, the two edits are kept once when they are the same code, and otherwise the run is
+ * reported as a conflict and the base's edit stands. When both patches added a member of the same name (vanilla's
+ * hierarchy lacks it, both patched hierarchies have it) and both edits of this method act on it, or both bodies
+ * dropped the vanilla code that follows the same point and each put its own code there, the two sides reimplemented
+ * one feature and running both runs it twice: a conflict, the base's edit stands. A run inserted where the base
+ * inserted its own run goes first when it is MinecraftForge's, so on every shared insertion point MinecraftForge's
+ * code runs before NeoForge's.
+ *
+ * <p>Vanilla lines the other side removed without adding anything in their place are removed from the base too
+ * (when the base left them vanilla) once something of the same hunk is carried, or once a statement the patch moved
+ * from there is carried; a statement both sides moved away from the same place is kept once, at the base's new
+ * place.
  *
  * <p>Runs that belong together are carried together or not at all: when one copy of the same code (javac
- * duplicates a finally block into every exit), one call on an object a static field holds (a begin/end pair) or a
- * statement reading what an earlier statement of its run computed could not be carried, the planned runs that pair
- * with it are withheld and the method is planned again without them. Nothing here keys on a class, method or mod
- * name.
+ * duplicates a finally block into every exit), one call on an object a static field holds (a begin/end pair), a
+ * statement reading what another statement computed, or the removal a moved statement relies on could not be
+ * carried, the planned units that pair with it are withheld and the method is planned again without them. Nothing
+ * here keys on a class, method or mod name.
  *
  * <p>The result is verified ({@link SimpleVerifier} over the merge's declaration graph) with frames recomputed for
  * this method alone; a method that does not verify is refused whole and the caller keeps its existing decision.
@@ -119,11 +134,19 @@ final class EditSplicer {
 	record Outcome(String kind, int firstLine, int lastLine, String detail) { }
 
 	/**
-	 * One carried unit, for the caller's whole-class checks: its identity, its lines, and the fields of the owner it
-	 * reads ({@code GETFIELD}/{@code GETSTATIC}, as "name desc"), its own instructions and those of every lambda it
-	 * brought along under a fresh name.
+	 * One carried unit, for the caller's whole-class checks: its identity, its lines, the fields of the owner it reads
+	 * ({@code GETFIELD}/{@code GETSTATIC}, as "name desc") and the methods it invokes ("owner.name desc"), its own
+	 * instructions and those of every lambda it brought along under a fresh name.
 	 */
-	record Carried(RunId id, int firstLine, int lastLine, Set<String> fieldReads) { }
+	record Carried(RunId id, int firstLine, int lastLine, Set<String> fieldReads, Set<String> invokes) {
+		Carried {
+			if (invokes == null) invokes = Set.of();
+		}
+
+		Carried(RunId id, int firstLine, int lastLine, Set<String> fieldReads) {
+			this(id, firstLine, lastLine, fieldReads, Set.of());
+		}
+	}
 
 	record Result(MethodNode method, List<MethodNode> addedMethods, List<Outcome> spliced, List<Outcome> conflicts,
 			List<Outcome> refused, String reason, List<Carried> carried) {
@@ -170,16 +193,28 @@ final class EditSplicer {
 	 * Both sides of one method, with everything a splice needs to read. {@code ownerMethods} is the merged class as it
 	 * stands, {@code otherMethods} and {@code baseMethods} each side's class as its patch compiled it. {@code withheld}
 	 * names units the caller found it cannot carry (a whole-class reason this method cannot see) with the reason: they
-	 * are left out like any refused unit, and the units that belong with them are withheld too.
+	 * are left out like any refused unit, and the units that belong with them are withheld too. {@code vanilla} is the
+	 * method as vanilla compiled it, or null: with it, vanilla code that both bodies dropped at the place a run goes
+	 * (an {@code if (false)} in front of it, an early return) is seen, and so is vanilla code only the other side
+	 * dropped there.
 	 */
 	record Input(ClassNode owner, MethodNode base, MethodNode other, String sourcePath,
 			PatchLineProvenance baseProvenance, PatchLineProvenance otherProvenance, boolean otherIsForge,
 			Map<String, MethodNode> ownerMethods, Map<String, MethodNode> otherMethods,
-			Map<String, MethodNode> baseMethods, MemberOrigin members, Map<RunId, String> withheld) {
+			Map<String, MethodNode> baseMethods, MemberOrigin members, Map<RunId, String> withheld, MethodNode vanilla) {
 		Input {
 			if (baseMethods == null) baseMethods = ownerMethods;
 			if (members == null) members = MemberOrigin.NONE;
 			withheld = withheld == null ? Map.of() : Map.copyOf(withheld);
+		}
+
+		/** Without the vanilla method. */
+		Input(ClassNode owner, MethodNode base, MethodNode other, String sourcePath,
+				PatchLineProvenance baseProvenance, PatchLineProvenance otherProvenance, boolean otherIsForge,
+				Map<String, MethodNode> ownerMethods, Map<String, MethodNode> otherMethods,
+				Map<String, MethodNode> baseMethods, MemberOrigin members, Map<RunId, String> withheld) {
+			this(owner, base, other, sourcePath, baseProvenance, otherProvenance, otherIsForge, ownerMethods, otherMethods,
+					baseMethods, members, withheld, null);
 		}
 
 		/** Nothing withheld. */
@@ -309,7 +344,8 @@ final class EditSplicer {
 		final List<PatchLineProvenance.Origin> origin = new ArrayList<>();
 		final List<Integer> line = new ArrayList<>();
 		final List<String> key = new ArrayList<>();
-		Frame<BasicValue>[] frames;
+		/** The operand stack depth before each instruction (by code index), -1 where it is unreachable. */
+		int[] stackDepth;
 
 		Annotated(MethodNode method) {
 			this.method = method;
@@ -330,9 +366,7 @@ final class EditSplicer {
 		}
 
 		int stack(int i) {
-			if (frames == null) return -1;
-			Frame<BasicValue> f = frames[method.instructions.indexOf(code.get(i))];
-			return f == null ? -1 : f.getStackSize();
+			return stackDepth == null ? -1 : stackDepth[i];
 		}
 	}
 
@@ -349,7 +383,27 @@ final class EditSplicer {
 			a.origin.add(source == null ? null : provenance.origin(source, line));
 		}
 		for (AbstractInsnNode n : a.code) a.key.add(key(n, method, a));
-		a.frames = new Analyzer<>(new BasicInterpreter()).analyze(owner, method);
+		// Read by code index: labels inserted into the base later must not shift what a frame belongs to.
+		Frame<BasicValue>[] frames = new Analyzer<>(new BasicInterpreter()).analyze(owner, method);
+		a.stackDepth = new int[a.code.size()];
+		for (int i = 0; i < a.code.size(); i++) {
+			Frame<BasicValue> f = frames[method.instructions.indexOf(a.code.get(i))];
+			a.stackDepth[i] = f == null ? -1 : f.getStackSize();
+		}
+		return a;
+	}
+
+	/** The vanilla method annotated like a patched body: every instruction vanilla, with no line of its own. */
+	private static Annotated annotateVanilla(String owner, MethodNode method) {
+		Annotated a = new Annotated(method);
+		for (AbstractInsnNode n = method.instructions.getFirst(); n != null; n = n.getNext()) {
+			if (n.getOpcode() < 0) continue;
+			a.position.put(n, a.code.size());
+			a.code.add(n);
+			a.line.add(0);
+			a.origin.add(null);
+		}
+		for (AbstractInsnNode n : a.code) a.key.add(key(n, method, a));
 		return a;
 	}
 
@@ -465,19 +519,35 @@ final class EditSplicer {
 	 */
 	record RunId(int start, int end) { }
 
-	/** A base local a unit writes: its slot in the other body, the base slot it maps to, and its name. */
-	private record Store(int otherSlot, int baseSlot, String name) { }
-
 	private record Plan(String kind, Run run, AbstractInsnNode insertBefore, AbstractInsnNode anchorReal,
 			List<AbstractInsnNode> removeFromBase, Map<LabelNode, LabelNode> labels, LabelNode anchorLabel,
 			LabelNode runStart, Map<AbstractInsnNode, Integer> slotFor, List<JumpRetarget> entryRetargets,
-			Map<String, String> lambdaRenames, List<Store> stores) { }
+			Map<String, String> lambdaRenames, Map<AbstractInsnNode, AbstractInsnNode> clones) { }
 
-	/** A base jump that must enter the inserted run rather than skip to the anchor. */
-	private record JumpRetarget(AbstractInsnNode jump, LabelNode from) { }
+	/**
+	 * A base jump that must enter the inserted run rather than skip to the anchor: for a switch, the positions in its
+	 * targets (cases in order, then the default) whose counterparts enter the run, each with the label it lands on
+	 * when the run is planned. A target an earlier unit of the same run already took keeps that unit's start: the
+	 * statements of one run go to one place in order, and a jump enters the first.
+	 */
+	private record JumpRetarget(AbstractInsnNode jump, List<Integer> indices, List<LabelNode> from) {
+		JumpRetarget(AbstractInsnNode jump, List<Integer> indices) {
+			this(jump, indices, indices.stream().map(k -> targets(jump).get(k)).toList());
+		}
+	}
 
 	/** A member an edit acts on; which two count as one is {@link #sameMember}'s question. */
 	private record Member(String owner, String name, boolean method, String desc) { }
+
+	/**
+	 * Vanilla lines the other side's patch removed without anything of its own compiled in their place, and the base
+	 * instructions that removing them from the base takes away. Identified by a negative {@link RunId} (the other
+	 * body's code indices are never negative); its lines are the other side's vanilla line numbers.
+	 */
+	private record Deletion(PatchLineProvenance.Block block, RunId id, int firstLine, int lastLine, List<AbstractInsnNode> remove) { }
+
+	/** What became of a deletion: carried, the base removed the lines too, lost, or the lines carry no code. */
+	private enum Verdict { CARRIED, BOTH, LOST, NONE }
 
 	/** Everything one planning round shares between the runs it plans. */
 	private static final class Planning {
@@ -489,14 +559,27 @@ final class EditSplicer {
 		final int[] nextSlot;
 		final Map<String, MethodNode> addedMethods = new LinkedHashMap<>();
 		final Set<AbstractInsnNode> claimed = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
-		/** Labels a base jump, switch or handler lands on: an insertion never moves past one. */
-		final Set<LabelNode> pinned = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
-		/** Base labels the inserted runs' own jumps land on: pinned the same way. */
+		/** Base labels the inserted runs' own jumps land on: an insertion never moves past one. */
 		final Set<LabelNode> runTargets = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+		/** Other code index -> base code index, for every instruction of a unit the base already has (a same-edit). */
+		final Map<Integer, Integer> sameEditCopy = new HashMap<>();
+		/** Other code indices of the units planned so far in this round. */
+		final Set<Integer> plannedOther = new HashSet<>();
+		/** Base instructions a deletion takes away: no run is anchored on one. */
+		final Set<AbstractInsnNode> deleted = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+		/** This round's deletions and, by block id, what became of each. */
+		List<Deletion> deletions = List.of();
+		final Map<Integer, Verdict> verdicts = new HashMap<>();
+		final Map<RunId, Outcome> deletionOutcomes = new LinkedHashMap<>();
+		private final Map<RunId, java.util.Optional<Deletion>> moved = new HashMap<>();
 		private Set<Member> baseActsOn;
-		private Frame<SourceValue>[] otherSources;
-		private boolean otherSourcesTried;
-		private Flow otherFlow;
+		private Frame<SourceValue>[] otherSources, baseSources;
+		private boolean otherSourcesTried, baseSourcesTried, vanillaTried;
+		private Flow otherFlow, baseFlow;
+		/** The vanilla method's instructions, and the other's and the base's vanilla code aligned with them. */
+		private Annotated v;
+		private Map<Integer, Integer> otherToVanilla, baseToVanilla;
+		private Set<Integer> vanillaInOther, vanillaInBase;
 
 		Planning(Input in, Annotated o, Annotated b, Map<Integer, Integer> match, MethodNode base) {
 			this.in = in;
@@ -506,8 +589,6 @@ final class EditSplicer {
 			this.oInit = initCall(o);
 			this.bInit = initCall(b);
 			this.nextSlot = new int[] { Math.max(base.maxLocals, maxSlot(base) + 1) };
-			for (AbstractInsnNode n : base.instructions) pinned.addAll(targets(n));
-			for (TryCatchBlockNode t : base.tryCatchBlocks) pinned.add(t.handler);
 		}
 
 		/** What the base's own edits in this method act on, its lambdas' bodies included. */
@@ -522,6 +603,7 @@ final class EditSplicer {
 			return baseActsOn;
 		}
 
+		/** The other body's source frames, by {@code instructions.indexOf} (that body never changes). */
 		Frame<SourceValue>[] otherSources() {
 			if (!otherSourcesTried) {
 				otherSourcesTried = true;
@@ -530,9 +612,65 @@ final class EditSplicer {
 			return otherSources;
 		}
 
+		/** The base body's source frames before any splice, by code index; null when it did not analyze. */
+		Frame<SourceValue>[] baseSources() {
+			if (!baseSourcesTried) {
+				baseSourcesTried = true;
+				Frame<SourceValue>[] raw = sources(in.owner().name, b.method);
+				if (raw != null) {
+					@SuppressWarnings("unchecked")
+					Frame<SourceValue>[] byCode = new Frame[b.code.size()];
+					for (int i = 0; i < b.code.size(); i++) byCode[i] = raw[b.method.instructions.indexOf(b.code.get(i))];
+					baseSources = byCode;
+				}
+			}
+			return baseSources;
+		}
+
 		Flow otherFlow() {
 			if (otherFlow == null) otherFlow = new Flow(o.method);
 			return otherFlow;
+		}
+
+		Flow baseFlow() {
+			if (baseFlow == null) baseFlow = new Flow(b.method);
+			return baseFlow;
+		}
+
+		/** Whether the vanilla method is known and both bodies' vanilla code is aligned with it. */
+		boolean vanilla() {
+			if (!vanillaTried) {
+				vanillaTried = true;
+				MethodNode vm = in.vanilla();
+				if (vm != null && vm.instructions.size() > 0 && vm.desc.equals(o.method.desc)) {
+					try {
+						v = annotateVanilla(in.owner().name, vm);
+						otherToVanilla = align(o, v);
+						baseToVanilla = align(b, v);
+						vanillaInOther = new HashSet<>(otherToVanilla.values());
+						vanillaInBase = new HashSet<>(baseToVanilla.values());
+					} catch (RuntimeException e) {
+						v = null;
+					}
+				}
+			}
+			return v != null;
+		}
+
+		private Map<Integer, Integer> back;
+
+		/** Base code index -> other code index, for the vanilla instructions the alignment maps. */
+		Map<Integer, Integer> back() {
+			if (back == null) {
+				back = new HashMap<>();
+				match.forEach((oi, bi) -> back.put(bi, oi));
+			}
+			return back;
+		}
+
+		/** The deletion a unit moves a statement out of: every line it adds is a line that deletion removed. */
+		Deletion moved(Run unit) {
+			return moved.computeIfAbsent(unit.id(), k -> java.util.Optional.ofNullable(movedFrom(this, unit))).orElse(null);
 		}
 	}
 
@@ -595,6 +733,24 @@ final class EditSplicer {
 		List<Run> runs = runs(o);
 		if (runs.isEmpty()) return Attempt.done(refuse("the other side added nothing here"));
 		Planning st = new Planning(in, o, b, match, base);
+		// Vanilla lines the other side removed and put nothing of its own in place of. Settled before the runs: a
+		// statement the patch moved is carried only together with its removal from the old place.
+		st.deletions = deletions(st);
+		for (Deletion d : st.deletions) {
+			Outcome left = excluded.get(d.id());
+			if (left != null) {
+				st.verdicts.put(d.block().id(), Verdict.LOST);
+				st.deletionOutcomes.put(d.id(), left);
+				continue;
+			}
+			try {
+				st.verdicts.put(d.block().id(), planDeletion(st, d));
+			} catch (Refusal r) {
+				st.verdicts.put(d.block().id(), Verdict.LOST);
+				st.deletionOutcomes.put(d.id(), new Outcome("delete", d.firstLine(), d.lastLine(), r.getMessage()));
+			}
+			if (st.verdicts.get(d.block().id()) == Verdict.CARRIED) st.deleted.addAll(d.remove());
+		}
 		List<Plan> plans = new ArrayList<>();
 		// Units that were not carried (refused, left out, or a conflict other than the base already having them):
 		// a planned unit that pairs with one of them is withheld.
@@ -623,6 +779,7 @@ final class EditSplicer {
 					Plan plan = plan(st, unit, conflicts);
 					if (plan != null) {
 						plans.add(plan);
+						for (int i = unit.start(); i <= unit.end(); i++) st.plannedOther.add(i);
 						// A statement runs after the one before it in its own body; carried without it, it runs in a
 						// state its own body never produces. Left out in the next round, which plans without it.
 						if (predecessorLost) orphaned.put(unit.id(), new Outcome(kind, first, last,
@@ -638,17 +795,30 @@ final class EditSplicer {
 				}
 			}
 		}
+		// A deletion a moved statement relied on is not carried without that statement: the statement would vanish.
+		for (Run unit : lost) {
+			Deletion d = st.moved(unit);
+			if (d != null && st.verdicts.get(d.block().id()) == Verdict.CARRIED) orphaned.putIfAbsent(d.id(), new Outcome("withheld",
+					d.firstLine(), d.lastLine(), "the statement it moves (L" + o.line.get(unit.start()) + ") was not carried"));
+		}
 		if (!orphaned.isEmpty()) return new Attempt(null, orphaned);
 		if (plans.isEmpty()) return Attempt.done(new Result(null, List.of(), spliced, conflicts, refused, "no run could be carried over"));
 		Map<RunId, Outcome> withheld = pairedWithholding(st, plans, lost);
 		if (!withheld.isEmpty()) return new Attempt(null, withheld);
 		Map<RunId, Outcome> misplaced = passedRunTargets(st, plans);
 		if (!misplaced.isEmpty()) return new Attempt(null, misplaced);
+		List<Deletion> applied = appliedDeletions(st, plans);
+		for (Deletion d : st.deletions) {
+			Outcome why = st.deletionOutcomes.get(d.id());
+			if (why == null || !wanted(st, d, plans)) continue;
+			if (why.kind().equals("both-changed")) conflicts.add(why); else refused.add(why);
+		}
 
 		// Base code reachable before the splice must stay reachable: a carried run that ends in a return or throw
 		// would otherwise silently cut off what the base does after it.
 		Set<AbstractInsnNode> reachable = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 		for (int i = 0; i < b.code.size(); i++) if (b.stack(i) >= 0) reachable.add(b.code.get(i));
+		for (Deletion d : applied) for (AbstractInsnNode n : d.remove()) base.instructions.remove(n);
 		for (Plan p : plans) apply(base, other, p);
 		base.maxLocals = Math.max(base.maxLocals, st.nextSlot[0]);
 		base.maxStack = Math.max(base.maxStack, other.maxStack) + 4;
@@ -672,6 +842,7 @@ final class EditSplicer {
 		Map<RunId, Outcome> flow = flowChecks(st, plans, base);
 		if (!flow.isEmpty()) return new Attempt(null, flow);
 
+		for (Deletion d : applied) spliced.add(new Outcome("delete", d.firstLine(), d.lastLine(), "carried over"));
 		for (Plan p : plans) spliced.add(new Outcome(p.kind(), o.line.get(p.run().start()), o.line.get(p.run().end()), "carried over"));
 		for (var e : st.declared.entrySet()) {
 			LocalVariableNode lv = e.getKey();
@@ -684,7 +855,8 @@ final class EditSplicer {
 		String verify = verify(in.owner(), finished);
 		if (verify != null) return Attempt.done(new Result(null, List.of(), List.of(), conflicts, refused, "does not verify: " + verify));
 		List<Carried> carried = new ArrayList<>();
-		for (Plan p : plans) carried.add(new Carried(p.run().id(), o.line.get(p.run().start()), o.line.get(p.run().end()), fieldReads(st, p)));
+		for (Plan p : plans) carried.add(new Carried(p.run().id(), o.line.get(p.run().start()), o.line.get(p.run().end()), fieldReads(st, p),
+				invokes(st, p)));
 		return Attempt.done(new Result(finished, List.copyOf(st.addedMethods.values()), spliced, conflicts, refused, "spliced", carried));
 	}
 
@@ -801,11 +973,13 @@ final class EditSplicer {
 		else throw new Refusal(endsMethod ? "run ends the method" : "the vanilla instruction after the run has no counterpart");
 		if (bNext >= 0 && bPrev >= bNext) throw new Refusal("alignment out of order");
 		if (st.oInit >= 0 && run.start() <= st.oInit) throw new Refusal("run precedes this() initialization");
-		if (st.bInit >= 0 && (bNext >= 0 ? bNext : bPrev + 1) <= st.bInit) throw new Refusal("anchor precedes this() initialization in the base");
 
+		// The base's own code between the run's neighbours: up to the base's counterpart of the instruction after the
+		// run or, when that has none, the base's inserted code right after the counterpart of the one before it.
+		int windowEnd = bNext >= 0 ? bNext : bPrev + 1;
+		if (bNext < 0) while (windowEnd < b.code.size() && b.added(windowEnd)) windowEnd++;
 		List<Integer> baseAdded = new ArrayList<>(), baseVanilla = new ArrayList<>();
-		if (bNext >= 0) for (int i = bPrev + 1; i < bNext; i++) (b.added(i) ? baseAdded : baseVanilla).add(i);
-		List<String> runKeys = o.key.subList(run.start(), run.end() + 1);
+		for (int i = bPrev + 1; i < windowEnd; i++) (b.added(i) ? baseAdded : baseVanilla).add(i);
 		int first = o.line.get(run.start()), last = o.line.get(run.end());
 
 		AbstractInsnNode insertBefore = null;
@@ -813,25 +987,72 @@ final class EditSplicer {
 		int anchor;
 		String kind = run.replacement() ? "replace" : "insert";
 		List<AbstractInsnNode> remove = new ArrayList<>();
+		int removedFrom = -1, removedTo = -1;
 		if (!run.replacement()) {
-			if (!baseAdded.isEmpty() && indexOfCopy(st, baseAdded, run.start(), run.end(), 0) >= 0) {
+			int copy = baseAdded.isEmpty() ? -1 : indexOfCopy(st, baseAdded, run.start(), run.end(), 0, windowEnd, true);
+			if (copy >= 0) {
+				sameEdit(st, run, baseAdded.get(copy));
 				conflicts.add(new Outcome("same-edit", first, last, "the base already has this inserted code"));
 				return null;
 			}
-			if (reimplemented(st, run, first, last, conflicts)) return null;
-			if (bNext >= 0) {
-				// Between the base's copies of the statements of this run that the base inserted too: after the one
-				// before it, before the one after it, so that the run's own order holds around what both share.
-				shared = shared(st, run, baseAdded, bPrev, bNext);
-				if (shared == null) throw new Refusal("the base has the statements it shares with this run in another order");
-				anchor = shared.hi();
-				// MinecraftForge's code goes before NeoForge's on a shared insertion point.
-				if (in.otherIsForge()) while (anchor - 1 >= shared.lo() && b.added(anchor - 1)) anchor--;
-			} else {
-				anchor = bPrev + 1;
-				if (!in.otherIsForge()) while (anchor < b.code.size() && b.added(anchor)) anchor++;
-				if (anchor >= b.code.size()) throw new Refusal("nothing follows the insertion point in the base");
+			// A unit that ends the method the way the base already ends it (a patch that moves the closing brace puts the
+			// implicit return on a line of its own) is the base's own ending.
+			if (nextV >= o.code.size() && run.end() == run.parentEnd() && windowEnd + run.end() - run.start() == b.code.size() - 1
+					&& isCopy(st, run.start(), run.end(), windowEnd, -1, false)) {
+				sameEdit(st, run, windowEnd);
+				conflicts.add(new Outcome("same-edit", first, last, "the base ends the method the same way"));
+				return null;
 			}
+			Deletion moved = st.moved(run);
+			if (moved != null) {
+				Verdict verdict = st.verdicts.get(moved.block().id());
+				if (verdict == Verdict.LOST)
+					throw new Refusal("it moves vanilla L" + moved.firstLine() + ", whose removal from its old place was not carried");
+				if (verdict == Verdict.BOTH || verdict == Verdict.NONE) {
+					// The base removed the same vanilla statement from its place too: it moved it as well, or dropped it.
+					List<Integer> everyAdded = new ArrayList<>();
+					for (int i = 0; i < b.code.size(); i++) if (b.added(i)) everyAdded.add(i);
+					int at = indexOfCopy(st, everyAdded, run.start(), run.end(), 0, -1, true);
+					if (at >= 0) {
+						sameEdit(st, run, everyAdded.get(at));
+						conflicts.add(new Outcome("same-edit", first, last, "both patches moved this statement from vanilla L" + moved.firstLine()));
+						return null;
+					}
+					conflicts.add(new Outcome("base-deleted", first, last, "the base removed vanilla L" + moved.firstLine()
+							+ ", which this run moves here, and put it nowhere else"));
+					return null;
+				}
+			}
+			if (reimplemented(st, run, first, last, conflicts)) return null;
+			String dropped = droppedAround(st, run, prevM, nextM);
+			if ("both".equals(dropped)) {
+				conflicts.add(baseAdded.isEmpty()
+						? new Outcome("base-deleted", first, last, "both bodies drop the vanilla code at this place and the base puts nothing there")
+						: new Outcome("both-reimplemented", first, last, "both bodies drop the vanilla code at this place and each puts its own code"
+								+ " there; lost " + calls(o, run.start(), run.end()) + ", kept " + calls(b, baseAdded)));
+				return null;
+			}
+			if (dropped != null) throw new Refusal("its own body drops vanilla code at its place that the base keeps");
+			// Between the base's copies of the statements of this run that the base inserted too: after the one before
+			// it, before the one after it, so that the run's own order holds around what both share.
+			shared = shared(st, run, baseAdded, bPrev + 1, windowEnd);
+			if (shared == null) throw new Refusal("the base has the statements it shares with this run in another order");
+			// The base's own code in the window: a rewrite of a vanilla line before the run stays before it, one of a
+			// line after it stays after it; only the base's insertions share the run's place.
+			int lo = shared.lo(), hi = shared.hi();
+			for (int i = bPrev + 1; i < windowEnd; i++) {
+				int side = sideOf(st, i, run, prevM, nextM);
+				if (side < 0) lo = Math.max(lo, i + 1);
+				else if (side > 0) hi = Math.min(hi, i);
+			}
+			if (st.bInit >= 0 && hi <= st.bInit) throw new Refusal("anchor precedes this() initialization in the base");
+			if (st.bInit >= 0) lo = Math.max(lo, st.bInit + 1);
+			if (lo > hi) throw new Refusal("the base rewrote vanilla lines on both sides of the run's place in an order it cannot sit in");
+			anchor = hi;
+			// MinecraftForge's code goes before NeoForge's on a shared insertion point.
+			if (in.otherIsForge()) while (anchor - 1 >= lo && b.added(anchor - 1) && b.origin.get(anchor - 1).block().insertionOnly()) anchor--;
+			while (anchor < b.code.size() && st.deleted.contains(b.code.get(anchor))) anchor++;
+			if (anchor >= b.code.size()) throw new Refusal("nothing follows the insertion point in the base");
 		} else {
 			// The base's own edits in this stretch: an insertion next to the replaced lines is the base's and stays;
 			// a base edit that removed any of the same vanilla lines is a competing rewrite of them.
@@ -846,8 +1067,10 @@ final class EditSplicer {
 				if (block.removedVanilla().stream().anyMatch(replacedLines::contains)) competing.add(i);
 			}
 			if (!competing.isEmpty()) {
-				if (baseVanilla.isEmpty() && competing.stream().map(b.key::get).toList().equals(runKeys)
-						&& sameLambdas(st, run.start(), run.end(), competing, 0)) {
+				if (baseVanilla.isEmpty() && competing.size() == run.end() - run.start() + 1
+						&& competing.get(competing.size() - 1) - competing.get(0) == competing.size() - 1
+						&& isCopy(st, run.start(), run.end(), competing.get(0), windowEnd, false)) {
+					sameEdit(st, run, competing.get(0));
 					conflicts.add(new Outcome("same-edit", first, last, "the base made the same replacement"));
 					return null;
 				}
@@ -872,6 +1095,22 @@ final class EditSplicer {
 				}
 				if (baseVanilla.get(baseVanilla.size() - 1) - baseVanilla.get(0) + 1 != baseVanilla.size())
 					throw new Refusal("the replaced base lines are interleaved with base edits");
+				// The base's own code computes what the replaced lines read: the base edits the same data flow (it
+				// adjusts the values a vanilla call consumes), and the run would drop what it computed.
+				Frame<SourceValue>[] baseSources = st.baseSources();
+				for (int i : baseVanilla) {
+					int slot = loadSlot(b.code.get(i));
+					if (slot < 0) continue;
+					Frame<SourceValue> f = baseSources == null ? null : baseSources[i];
+					if (f == null) throw new Refusal("the base lines it replaces could not be analyzed");
+					for (AbstractInsnNode src : f.getLocal(slot).insns) {
+						Integer at = b.position.get(src);
+						if (at == null || !b.added(at)) continue;
+						conflicts.add(new Outcome("both-changed", first, last, "the base's own code (L" + b.line.get(at)
+								+ ") computes what the vanilla lines this run replaces read; lost " + calls(o, run.start(), run.end())));
+						return null;
+					}
+				}
 				for (int i : baseVanilla) remove.add(b.code.get(i));
 				int s = baseVanilla.get(0), e = baseVanilla.get(baseVanilla.size() - 1);
 				if (b.stack(s) != 0 || (bNext < b.code.size() && b.stack(bNext) != 0)) throw new Refusal("replaced base lines are not a statement");
@@ -890,6 +1129,9 @@ final class EditSplicer {
 				}
 				insertBefore = b.code.get(s);
 				anchor = s;
+				removedFrom = s;
+				removedTo = e;
+				if (st.bInit >= 0 && anchor <= st.bInit) throw new Refusal("anchor precedes this() initialization in the base");
 			}
 		}
 		// Statement boundaries.
@@ -926,27 +1168,28 @@ final class EditSplicer {
 				bj = shared == null ? null : shared.copyOf().get(i);
 				if (bj == null) continue;
 			}
-			for (LabelNode target : targets(o.code.get(i))) {
-				int t = o.at(target);
+			List<LabelNode> theirTargets = targets(o.code.get(i));
+			List<Integer> entering = new ArrayList<>();
+			for (int k = 0; k < theirTargets.size(); k++) {
+				int t = o.at(theirTargets.get(k));
 				if (t > run.start() && t <= run.end()) throw new Refusal("other code jumps into the middle of the run");
-				if (t == run.start()) {
-					// An entry into the run: its base counterpart must enter the inserted copy too. It may only have
-					// landed on the instruction the run now precedes: one that landed further on skipped base code
-					// that the run, which falls into that code, would now put on its path.
-					if (bj == null) throw new Refusal("a jump into the run has no base counterpart");
-					AbstractInsnNode bJump = b.code.get(bj);
-					LabelNode from = null;
-					boolean skipped = false;
-					for (LabelNode l : targets(bJump)) {
-						int at = b.at(l);
-						if (at == anchor) from = l;
-						else if (bNext >= 0 && at == bNext) skipped = true;
-					}
-					if (from == null) throw new Refusal(skipped ? "the run routes base code into base code that could not reach it"
-							: "a jump into the run maps to a base jump elsewhere");
-					entries.add(new JumpRetarget(bJump, from));
-				}
+				if (t == run.start()) entering.add(k);
 			}
+			if (entering.isEmpty()) continue;
+			// An entry into the run: its base counterpart must enter the inserted copy too, case by case for a switch.
+			// It may only have landed on the instruction the run now precedes: one that landed further on skipped base
+			// code that the run, which falls into that code, would now put on its path.
+			if (bj == null) throw new Refusal("a jump into the run has no base counterpart");
+			AbstractInsnNode bJump = b.code.get(bj);
+			List<LabelNode> ourTargets = targets(bJump);
+			if (ourTargets.size() != theirTargets.size()) throw new Refusal("a jump into the run maps to a base jump elsewhere");
+			for (int k : entering) {
+				int at = b.at(ourTargets.get(k));
+				if (at == anchor) continue;
+				throw new Refusal(bNext >= 0 && at == bNext ? "the run routes base code into base code that could not reach it"
+						: "a jump into the run maps to a base jump elsewhere");
+			}
+			entries.add(new JumpRetarget(bJump, entering));
 		}
 		for (TryCatchBlockNode tcb : o.method.tryCatchBlocks) {
 			int s = o.at(tcb.start), e = o.at(tcb.end), h = o.at(tcb.handler);
@@ -957,23 +1200,25 @@ final class EditSplicer {
 			if (!sIn && s <= run.start() && e > run.start() && e <= run.end()) throw new Refusal("an exception region straddles the run");
 		}
 		// Exception regions: the run must be covered by the same regions, by caught type and count, in the base as in
-		// its own body. An instruction inserted before node X is inside [start, end) iff start is before X and end is
-		// not before X, so a region whose end label sits in front of the anchor contains whatever is inserted before
-		// that label. The insertion point is therefore chosen among the labels in front of the anchor.
-		Map<String, Integer> want = coverage(o.method, o.code.get(run.start()));
+		// its own body; its own regions, which come along with it, left out. An instruction inserted before node X is
+		// inside [start, end) iff start is before X and end is not before X, so a region whose end label sits in front
+		// of the anchor contains whatever is inserted before that label. The insertion point is therefore chosen among
+		// the labels in front of the anchor.
+		Map<String, Integer> want = coverage(o, run);
 		if (!run.replacement()) {
-			insertBefore = insertionPoint(st, b.code.get(anchor), want);
+			insertBefore = insertionPoint(st, anchor, want, entries);
 			if (insertBefore == null) throw new Refusal("the run is covered by different exception regions in the two bodies");
 		} else if (!coverageBefore(b.method, insertBefore).equals(want)) {
 			throw new Refusal("the run is covered by different exception regions in the two bodies");
 		}
 
 		// Locals: one base slot per instruction. A local the run (or an earlier carried run) declared gets a fresh
-		// slot; any other is found in the base by name and descriptor, live where the run goes.
+		// slot, or the slot of the vanilla local a replacement declares again; a local its own side's code wrote is
+		// read from the unit that wrote it; any other is found in the base by name and descriptor, live where the run
+		// goes.
 		Map<AbstractInsnNode, Integer> slotFor = new IdentityHashMap<>();
 		Map<LocalVariableNode, Integer> declaredHere = new IdentityHashMap<>();
 		Map<Integer, Integer> temporaries = new HashMap<>();
-		List<Store> stores = new ArrayList<>();
 		int params = paramSlots(o.method);
 		int[] cursor = { st.nextSlot[0] };
 		for (int i = run.start(); i <= run.end(); i++) {
@@ -982,17 +1227,18 @@ final class EditSplicer {
 			if (slot < 0) continue;
 			boolean store = n.getOpcode() >= Opcodes.ISTORE && n.getOpcode() <= Opcodes.ASTORE;
 			LocalVariableNode lv = local(o.method, slot, store ? next(n) : n);
+			Integer fromCopy = store ? null : readFromItsSide(st, run, i, slot, lv);
 			int mapped;
-			// Whether the slot is one the base itself has (a parameter, or a local found by name): only a write into
-			// such a slot is a result the base's own code may or may not go on to read.
-			boolean baseLocal = false;
 			if (lv != null && st.declared.containsKey(lv)) {
 				mapped = st.declared.get(lv);
 			} else if (lv != null && declaredInside(o, lv, run)) {
-				mapped = declaredHere.computeIfAbsent(lv, x -> { int f = cursor[0]; cursor[0] += Type.getType(x.desc).getSize(); return f; });
+				Integer again = removedFrom < 0 ? null : declaredAgain(b, lv, removedFrom, removedTo);
+				mapped = again != null ? again
+						: declaredHere.computeIfAbsent(lv, x -> { int f = cursor[0]; cursor[0] += Type.getType(x.desc).getSize(); return f; });
+			} else if (fromCopy != null) {
+				mapped = fromCopy;
 			} else if (lv == null && slot < params) {
 				mapped = slot;
-				baseLocal = true;
 			} else if (lv == null) {
 				// A store with no table entry: a compiler temporary that lives only inside the run.
 				if (!store && !temporaries.containsKey(slot)) throw new Refusal("run reads a local with no name");
@@ -1002,11 +1248,8 @@ final class EditSplicer {
 				if (bl == null && slot < params) mapped = slot;
 				else if (bl == null) throw new Refusal("local '" + lv.name + "' is not live at the insertion point in the base");
 				else mapped = bl.index;
-				baseLocal = true;
 			}
 			slotFor.put(n, mapped);
-			if ((store || n instanceof IincInsnNode) && baseLocal)
-				stores.add(new Store(slot, mapped, lv != null ? lv.name : "#" + slot));
 		}
 
 		// Methods and classes the run reaches.
@@ -1030,7 +1273,191 @@ final class EditSplicer {
 		st.declared.putAll(declaredHere);
 		AbstractInsnNode anchorReal = anchor < b.code.size() ? b.code.get(anchor) : insertBefore;
 		return new Plan(kind, run, insertBefore, anchorReal, remove, labels, anchorLabel, new LabelNode(), slotFor, entries,
-				lambdaRenames, stores);
+				lambdaRenames, new IdentityHashMap<>());
+	}
+
+	/** Records that the base already has a unit: each of its instructions has the base copy's at the same offset. */
+	private static void sameEdit(Planning st, Run unit, int baseStart) {
+		for (int i = unit.start(); i <= unit.end(); i++) st.sameEditCopy.put(i, baseStart + i - unit.start());
+	}
+
+	/**
+	 * The base slot a read of the run must use when its own side's code outside the run wrote what it reads: the slot
+	 * of the base's copy of that code when the base already has it. Code of its side that was carried writes the slot
+	 * the run finds by name or declaration anyway; code that was not carried wrote a value the base never computes,
+	 * and the base's local of the same name holds something else.
+	 */
+	private static Integer readFromItsSide(Planning st, Run run, int at, int slot, LocalVariableNode lv) {
+		Annotated o = st.o;
+		Frame<SourceValue>[] frames = st.otherSources();
+		if (frames == null) return null;
+		Frame<SourceValue> f = frames[o.method.instructions.indexOf(o.code.get(at))];
+		if (f == null) return null;
+		Integer mapped = null;
+		for (AbstractInsnNode src : f.getLocal(slot).insns) {
+			Integer si = o.position.get(src);
+			if (si == null || (si >= run.start() && si <= run.end()) || !o.added(si) || st.plannedOther.contains(si)) continue;
+			Integer copy = st.sameEditCopy.get(si);
+			if (copy == null) throw new Refusal("it reads local '" + (lv == null ? "#" + slot : lv.name) + "' that L" + o.line.get(si)
+					+ " of its side writes, which was not carried");
+			int baseSlot = slotOf(st.b.code.get(copy));
+			if (mapped != null && mapped != baseSlot) throw new Refusal("it reads local '" + (lv == null ? "#" + slot : lv.name)
+					+ "' from two places the base holds in different slots");
+			mapped = baseSlot;
+		}
+		return mapped;
+	}
+
+	/** The local slot an instruction accesses, or -1. */
+	private static int slotOf(AbstractInsnNode n) {
+		return n instanceof VarInsnNode v ? v.var : n instanceof IincInsnNode inc ? inc.var : -1;
+	}
+
+	/** The slot a load (or an increment) reads, or -1. */
+	private static int loadSlot(AbstractInsnNode n) {
+		if (n instanceof IincInsnNode inc) return inc.var;
+		if (n instanceof VarInsnNode v && v.getOpcode() >= Opcodes.ILOAD && v.getOpcode() <= Opcodes.ALOAD) return v.var;
+		return -1;
+	}
+
+	/** The slot a store (or an increment) writes, or -1. */
+	private static int storeSlot(AbstractInsnNode n) {
+		if (n instanceof IincInsnNode inc) return inc.var;
+		if (n instanceof VarInsnNode v && v.getOpcode() >= Opcodes.ISTORE && v.getOpcode() <= Opcodes.ASTORE) return v.var;
+		return -1;
+	}
+
+	/**
+	 * The base slot of the vanilla local that the replaced base lines {@code s..e} declare under the name and type a
+	 * replacement declares again: vanilla code after the lines reads that slot, so the replacement must write it.
+	 */
+	private static Integer declaredAgain(Annotated b, LocalVariableNode lv, int s, int e) {
+		Integer found = null;
+		for (LocalVariableNode bl : b.method.localVariables) {
+			if (!bl.name.equals(lv.name) || !bl.desc.equals(lv.desc)) continue;
+			int start = b.at(bl.start);
+			if (start <= s || start > e + 1) continue;
+			if (found != null && found != bl.index) return null;
+			found = bl.index;
+		}
+		return found;
+	}
+
+	/**
+	 * Where a base instruction between the run's neighbours belongs relative to the run: -1 before it (the base's
+	 * code for a vanilla line before the run's place), 1 after it (for a line after it), 0 at the run's own place (an
+	 * insertion of the base's own at the same point).
+	 */
+	private static int sideOf(Planning st, int bi, Run run, int prevM, int nextM) {
+		Annotated b = st.b;
+		List<Integer> lines;
+		if (b.added(bi)) {
+			PatchLineProvenance.Block block = b.origin.get(bi).block();
+			if (block.insertionOnly()) return 0;
+			lines = block.removedVanilla();
+		} else {
+			PatchLineProvenance.Origin origin = b.origin.get(bi);
+			if (origin == null) throw new Refusal("base code next to the run has no line");
+			lines = List.of(origin.vanilla());
+		}
+		List<PatchLineProvenance.Block> own = new ArrayList<>(run.blocks());
+		int before = own.get(0).vanillaBefore(), after = own.get(own.size() - 1).vanillaAfter();
+		Integer shift = localShift(st, before, after, false);
+		if (shift == null) throw new Refusal("no aligned vanilla line next to the run");
+		int min = java.util.Collections.min(lines), max = java.util.Collections.max(lines);
+		if (max - shift <= before) return -1;
+		if (min - shift >= after) return 1;
+		throw new Refusal("the base rewrote vanilla lines at the run's own place");
+	}
+
+	/**
+	 * Base vanilla line minus other vanilla line around the other's vanilla lines {@code from..to}: the offset most of
+	 * the aligned instructions within a few lines of them show. A majority, not the nearest pair: two identical
+	 * instructions of neighbouring lines (a {@code this} load) may be aligned across the line the base rewrote. Null
+	 * when no aligned instruction is near, or two offsets are equally common. {@code byBase} reads {@code from..to} in
+	 * the base's numbering instead.
+	 */
+	private static Integer localShift(Planning st, int from, int to, boolean byBase) {
+		Map<Integer, Integer> votes = new HashMap<>();
+		for (var e : st.match.entrySet()) {
+			PatchLineProvenance.Origin x = st.o.origin.get(e.getKey()), y = st.b.origin.get(e.getValue());
+			if (x == null || y == null || x.added() || y.added()) continue;
+			int line = byBase ? y.vanilla() : x.vanilla();
+			if (line < from - 8 || line > to + 8) continue;
+			votes.merge(y.vanilla() - x.vanilla(), 1, Integer::sum);
+		}
+		Integer best = null;
+		int bestVotes = 0;
+		boolean tie = false;
+		for (var e : votes.entrySet()) {
+			if (e.getValue() > bestVotes) { best = e.getKey(); bestVotes = e.getValue(); tie = false; }
+			else if (e.getValue() == bestVotes) tie = true;
+		}
+		return tie ? null : best;
+	}
+
+	/**
+	 * Whether the unit stands in for vanilla code its own body dropped at its place: the vanilla method has calls or
+	 * field writes between the run's two aligned neighbours that the other body lacks (an {@code if (false)} in front
+	 * of a vanilla statement, an early return), and the unit acts on a member that dropped code acts on (it calls a
+	 * method the dropped code calls, or writes a field it writes): it reimplements that code. Null when it does not
+	 * (or the vanilla method is unknown), "both" when the base dropped that code too, "other" when the base keeps it.
+	 * A hook that merely sits in front of dropped code, sharing nothing with it, is not standing in for it. Code the
+	 * other side's patch removed outright is its own deletion, not dropped here; only calls and field writes count,
+	 * which a recompile never loses.
+	 */
+	private static String droppedAround(Planning st, Run unit, int prevM, int nextM) {
+		if (!st.vanilla()) return null;
+		// The vanilla positions of the run's neighbours, read from where the alignment is solid (three instructions in a
+		// row): a lone common instruction (a {@code this} load) may be aligned into the dropped code itself.
+		Integer from = prevM < 0 ? Integer.valueOf(-1) : solid(st, prevM, -1);
+		Integer to = nextM >= st.o.code.size() ? Integer.valueOf(st.v.code.size()) : solid(st, nextM, 1);
+		if (from == null || to == null || from >= to) return null;
+		Set<Integer> removedByPatch = new HashSet<>();
+		for (PatchLineProvenance.Block block : st.in.otherProvenance().blocks(st.in.sourcePath())) removedByPatch.addAll(block.removedVanilla());
+		Map<Integer, Integer> vanillaToBase = new HashMap<>();
+		st.baseToVanilla.forEach((bi, vi) -> vanillaToBase.put(vi, bi));
+		Set<String> ours = new HashSet<>();
+		for (int i = unit.start(); i <= unit.end(); i++) if (acts(st.o.code.get(i))) ours.add(st.o.key.get(i));
+		boolean any = false, baseKeeps = false;
+		for (int k = from + 1; k < to; k++) {
+			if (st.vanillaInOther.contains(k) || !acts(st.v.code.get(k)) || !ours.contains(st.v.key.get(k))) continue;
+			Integer bi = vanillaToBase.get(k);
+			if (bi != null) {
+				PatchLineProvenance.Origin origin = st.b.origin.get(bi);
+				Integer shift = origin == null || origin.added() ? null : shiftAround(st, List.of(origin.vanilla()), true);
+				if (shift != null && removedByPatch.contains(origin.vanilla() - shift)) continue;
+				baseKeeps = true;
+			}
+			any = true;
+		}
+		return !any ? null : baseKeeps ? "other" : "both";
+	}
+
+	/**
+	 * The vanilla index of the first instruction from {@code at} on (in direction {@code step}) whose alignment with
+	 * the vanilla method continues for three instructions in a row, or up to either method's edge; null when there is
+	 * none.
+	 */
+	private static Integer solid(Planning st, int at, int step) {
+		for (int k = at; k >= 0 && k < st.o.code.size(); k += step) {
+			Integer x = st.otherToVanilla.get(k);
+			if (x == null) continue;
+			boolean run = true;
+			for (int i = 1; i < 3 && run; i++) {
+				int ok = k + i * step, ov = x + i * step;
+				if (ok < 0 || ok >= st.o.code.size() || ov < 0 || ov >= st.v.code.size()) break;
+				run = Integer.valueOf(ov).equals(st.otherToVanilla.get(ok));
+			}
+			if (run) return x;
+		}
+		return null;
+	}
+
+	/** A call or a field write: what dropping vanilla code drops, and what a recompile keeps. */
+	private static boolean acts(AbstractInsnNode n) {
+		return n instanceof MethodInsnNode || n instanceof InvokeDynamicInsnNode
+				|| (n instanceof FieldInsnNode f && (f.getOpcode() == Opcodes.PUTFIELD || f.getOpcode() == Opcodes.PUTSTATIC));
 	}
 
 	/**
@@ -1043,17 +1470,17 @@ final class EditSplicer {
 	private record Shared(int lo, int hi, Map<Integer, Integer> copyOf, Set<Integer> uncopied) { }
 
 	/** Copies are matched in the run's order; null when they leave no room for the statement. */
-	private static Shared shared(Planning st, Run run, List<Integer> baseAdded, int bPrev, int bNext) {
-		int lo = bPrev + 1, hi = bNext;
+	private static Shared shared(Planning st, Run run, List<Integer> baseAdded, int lo, int hi) {
 		Map<Integer, Integer> copyOf = new HashMap<>();
 		Set<Integer> uncopied = new HashSet<>();
-		if (run.start() == run.parentStart() && run.end() == run.parentEnd() || bNext < 0) return new Shared(lo, hi, copyOf, uncopied);
+		int windowEnd = hi;
+		if (run.start() == run.parentStart() && run.end() == run.parentEnd()) return new Shared(lo, hi, copyOf, uncopied);
 		int cursor = 0;
 		for (Run s : statements(st.o, new Run(run.parentStart(), run.parentEnd(), Set.of()))) {
 			if (s.start() == run.start()) continue;
-			int at = indexOfCopy(st, baseAdded, s.start(), s.end(), cursor);
+			int at = indexOfCopy(st, baseAdded, s.start(), s.end(), cursor, windowEnd, true);
 			if (at < 0) {
-				if (indexOfCopy(st, baseAdded, s.start(), s.end(), 0) >= 0) for (int i = s.start(); i <= s.end(); i++) uncopied.add(i);
+				if (indexOfCopy(st, baseAdded, s.start(), s.end(), 0, windowEnd, true) >= 0) for (int i = s.start(); i <= s.end(); i++) uncopied.add(i);
 				continue;
 			}
 			cursor = at + s.end() - s.start() + 1;
@@ -1063,6 +1490,150 @@ final class EditSplicer {
 			else hi = Math.min(hi, copyStart);
 		}
 		return lo <= hi ? new Shared(lo, hi, copyOf, uncopied) : null;
+	}
+
+	// ---------------------------------------------------------------------------------------------------------
+	// Deletions: vanilla lines the other side removed and compiled nothing of its own in place of
+
+	/** The other side's removals in this method whose added lines (if any) compiled to nothing. */
+	private static List<Deletion> deletions(Planning st) {
+		Annotated o = st.o;
+		int minLine = Integer.MAX_VALUE, maxLine = Integer.MIN_VALUE;
+		Set<Integer> compiled = new HashSet<>(o.line);
+		for (int i = 0; i < o.code.size(); i++) {
+			PatchLineProvenance.Origin origin = o.origin.get(i);
+			if (origin == null || origin.added()) continue;
+			minLine = Math.min(minLine, origin.vanilla());
+			maxLine = Math.max(maxLine, origin.vanilla());
+		}
+		List<Deletion> out = new ArrayList<>();
+		if (minLine > maxLine) return out;
+		for (PatchLineProvenance.Block block : st.in.otherProvenance().blocks(st.in.sourcePath())) {
+			if (block.removedVanilla().isEmpty() || block.addedPatched().stream().anyMatch(compiled::contains)) continue;
+			if (block.vanillaAfter() < minLine || block.vanillaBefore() > maxLine) continue;
+			int lo = java.util.Collections.min(block.removedVanilla()), hi = java.util.Collections.max(block.removedVanilla());
+			out.add(new Deletion(block, new RunId(-1 - block.id(), -1 - block.id()), lo, hi, new ArrayList<>()));
+		}
+		return out;
+	}
+
+	/**
+	 * What a deletion does to the base: removes the base's copy of the lines when the base left them vanilla
+	 * ({@link Verdict#CARRIED}, filling {@link Deletion#remove}); nothing when the base removed them too
+	 * ({@link Verdict#BOTH}) or they carry no code ({@link Verdict#NONE}); and when the base rewrote them, the
+	 * base's rewrite stands ({@link Verdict#LOST}, with a both-changed outcome). Throws when the base's copy cannot
+	 * be taken out on its own.
+	 */
+	private static Verdict planDeletion(Planning st, Deletion d) {
+		Annotated b = st.b;
+		Integer shift = shiftAround(st, d.block().removedVanilla(), false);
+		if (shift == null) throw new Refusal("no aligned vanilla line next to the lines it removes");
+		Set<Integer> lines = new HashSet<>();
+		for (int line : d.block().removedVanilla()) lines.add(line + shift);
+		List<Integer> found = new ArrayList<>();
+		for (int i = 0; i < b.code.size(); i++) {
+			PatchLineProvenance.Origin origin = b.origin.get(i);
+			if (origin != null && !origin.added() && lines.contains(origin.vanilla())) found.add(i);
+		}
+		if (found.isEmpty()) {
+			for (PatchLineProvenance.Block block : st.in.baseProvenance().blocks(st.in.sourcePath())) {
+				if (block.removedVanilla().stream().noneMatch(lines::contains)) continue;
+				for (int i = 0; i < b.code.size(); i++) {
+					if (!b.added(i) || b.origin.get(i).block() != block) continue;
+					st.deletionOutcomes.put(d.id(), new Outcome("both-changed", d.firstLine(), d.lastLine(),
+							"the base rewrote the vanilla lines this removal deletes; kept " + calls(b, List.of(i))));
+					return Verdict.LOST;
+				}
+				return Verdict.BOTH;
+			}
+			return Verdict.NONE;
+		}
+		int s = found.get(0), e = found.get(found.size() - 1);
+		if (e - s + 1 != found.size()) throw new Refusal("the base's copy of the lines is interleaved with base edits");
+		if (b.stack(s) != 0 || (e + 1 < b.code.size() && b.stack(e + 1) != 0)) throw new Refusal("the lines it removes are not a statement in the base");
+		for (int i = s; i <= e; i++) {
+			AbstractInsnNode n = b.code.get(i);
+			int op = n.getOpcode();
+			if ((op >= Opcodes.IRETURN && op <= Opcodes.RETURN) || op == Opcodes.ATHROW) throw new Refusal("the lines it removes leave the method");
+			for (LabelNode l : targets(n)) {
+				int t = b.at(l);
+				if (t < s || t > e + 1) throw new Refusal("the lines it removes jump out of themselves");
+			}
+		}
+		for (int j = 0; j < b.code.size(); j++) {
+			if (j >= s && j <= e) continue;
+			for (LabelNode l : targets(b.code.get(j))) {
+				int t = b.at(l);
+				if (t > s && t <= e) throw new Refusal("a base jump lands inside the lines it removes");
+			}
+		}
+		for (TryCatchBlockNode tcb : b.method.tryCatchBlocks) {
+			for (LabelNode l : List.of(tcb.start, tcb.end, tcb.handler)) {
+				int t = b.at(l);
+				if (t > s && t <= e) throw new Refusal("an exception region boundary lies inside the lines it removes");
+			}
+		}
+		// What the removed lines compute must not be read afterwards: in the other body nothing reads it.
+		Flow flow = st.baseFlow();
+		BitSet live = flow.liveAtExits(flow.index(b.code.get(s)), flow.index(b.code.get(e)) + 1);
+		for (int i = s; i <= e; i++) {
+			int slot = storeSlot(b.code.get(i));
+			if (slot >= 0 && live.get(slot)) throw new Refusal("the base reads what the lines it removes compute");
+		}
+		for (int i = s; i <= e; i++) d.remove().add(b.code.get(i));
+		return Verdict.CARRIED;
+	}
+
+	/** Base vanilla line minus other vanilla line around {@code lines} (the base's numbering when {@code byBase}). */
+	private static Integer shiftAround(Planning st, List<Integer> lines, boolean byBase) {
+		return localShift(st, java.util.Collections.min(lines), java.util.Collections.max(lines), byBase);
+	}
+
+	/**
+	 * The deletion a unit moves a statement out of: every line of the unit is an added line whose text is a line that
+	 * one deletion of this method removed, by the patch's own record. Null when it is not a moved statement.
+	 */
+	private static Deletion movedFrom(Planning st, Run unit) {
+		Annotated o = st.o;
+		Deletion from = null;
+		Set<Integer> seen = new HashSet<>();
+		for (int i = unit.start(); i <= unit.end(); i++) {
+			int line = o.line.get(i);
+			if (!seen.add(line)) continue;
+			PatchLineProvenance.Origin origin = o.origin.get(i);
+			if (origin == null || !origin.added()) return null;
+			String text = origin.block().addedText(line);
+			if (text == null || text.isBlank()) return null;
+			Deletion match = null;
+			for (Deletion d : st.deletions) {
+				if (!d.block().removedText().contains(text)) continue;
+				if (match != null && match != d) return null;
+				match = d;
+			}
+			if (match == null || (from != null && from != match)) return null;
+			from = match;
+		}
+		return from;
+	}
+
+	/** The deletions carried with this round's plans. */
+	private static List<Deletion> appliedDeletions(Planning st, List<Plan> plans) {
+		List<Deletion> out = new ArrayList<>();
+		for (Deletion d : st.deletions) if (st.verdicts.get(d.block().id()) == Verdict.CARRIED && wanted(st, d, plans)) out.add(d);
+		return out;
+	}
+
+	/**
+	 * Whether a deletion goes with what this round carries: something of its hunk is carried (the patch author made
+	 * the removal beside it), or a statement moved out of it. A removal nothing carried relies on is left alone: what
+	 * it was removed for may live in a method of the other side the merge did not keep.
+	 */
+	private static boolean wanted(Planning st, Deletion d, List<Plan> plans) {
+		for (Plan p : plans) {
+			if (st.moved(p.run()) == d) return true;
+			for (PatchLineProvenance.Block block : p.run().blocks()) if (block.hunk() == d.block().hunk()) return true;
+		}
+		return false;
 	}
 
 	/**
@@ -1216,10 +1787,10 @@ final class EditSplicer {
 	/**
 	 * Planned units that belong with a unit that was not carried, by the code itself: the same instructions (locals
 	 * the compiler did not name left out, so javac's copies of one finally block compare equal), a call on an object
-	 * loaded from the same static field (the two halves of a begin/end pair), or, within one run, a statement whose
-	 * result a later statement reads (a hook fired by one statement and decided on by the next). Carrying such a unit
-	 * alone runs a hook on some paths but not others, ends what was never begun, or fires a hook whose answer is
-	 * dropped.
+	 * loaded from the same static field (the two halves of a begin/end pair), or a unit whose result the unit that was
+	 * not carried reads, in the same run or any other (a hook fired by one statement and decided on by another).
+	 * Carrying such a unit alone runs a hook on some paths but not others, ends what was never begun, or fires a hook
+	 * whose answer is dropped.
 	 */
 	private static Map<RunId, Outcome> pairedWithholding(Planning st, List<Plan> plans, List<Run> lost) {
 		if (lost.isEmpty()) return Map.of();
@@ -1251,8 +1822,9 @@ final class EditSplicer {
 			}
 			if (why == null && sources != null) {
 				for (Run r : lost) {
-					if (r.parentStart() != u.parentStart() || r.start() <= u.end() || !readsWhatItWrites(sources, o, r, u)) continue;
-					why = "L" + o.line.get(r.start()) + "-" + o.line.get(r.end()) + " of the same run reads what it computes, and was not carried";
+					if (r.id().equals(u.id()) || !readsWhatItWrites(sources, o, r, u)) continue;
+					why = "L" + o.line.get(r.start()) + "-" + o.line.get(r.end()) + (r.parentStart() == u.parentStart() ? " of the same run" : "")
+							+ " reads what it computes, and was not carried";
 					break;
 				}
 			}
@@ -1318,15 +1890,20 @@ final class EditSplicer {
 	}
 
 	/**
-	 * What only the finished body can show, per group of adjacent units of one run.
+	 * What only the finished body can show.
 	 *
-	 * <p>Dead output: a local the run writes that its own body reads after it must be read after it in the result
-	 * too. Otherwise a hook's answer is computed and dropped (the kept body overwrites the local before reading it,
-	 * or reads its own source of the value instead).
+	 * <p>Dead output: every read its own body makes, outside the unit, of a value the unit writes into a local must
+	 * still read the copied write in the result: the base's counterpart of a vanilla read, or the copy of a read in
+	 * another carried unit. Otherwise a hook's answer is computed and dropped where its own body uses it (the kept
+	 * body overwrites the local first, reads its own source of the value instead, or no longer has the read at all).
+	 * This is per read, by reaching definitions: one read of the base's own in between does not keep it alive. The
+	 * base's counterpart read may also read a value the base computed from the copied write (its own hook adjusting
+	 * the result further): that composes the two, and the write still reaches the read.
 	 *
-	 * <p>Reach-back: every base instruction the alignment maps that can reach the run in the result must map to an
-	 * instruction that can reach the run in the other body. Otherwise the base routes code into the run that could
-	 * not reach it there (a run that lived in one branch, placed where every branch meets).
+	 * <p>Reach-back, per group of adjacent units of one run: every base instruction the alignment maps that can
+	 * reach the run in the result must map to an instruction that can reach the run in the other body. Otherwise the
+	 * base routes code into the run that could not reach it there (a run that lived in one branch, placed where every
+	 * branch meets).
 	 */
 	private Map<RunId, Outcome> flowChecks(Planning st, List<Plan> plans, MethodNode result) {
 		Annotated o = st.o, b = st.b;
@@ -1334,21 +1911,17 @@ final class EditSplicer {
 		Map<Integer, Integer> back = new HashMap<>();
 		st.match.forEach((oi, bi) -> back.put(bi, oi));
 		Map<RunId, Outcome> out = new LinkedHashMap<>();
+		Frame<SourceValue>[] theirSources = st.otherSources(), ourSources = sources(st.in.owner().name, result);
+		Set<AbstractInsnNode> kept = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+		for (AbstractInsnNode n : result.instructions) kept.add(n);
+		Map<Integer, AbstractInsnNode> copies = new HashMap<>();
+		for (Plan p : plans) for (int i = p.run().start(); i <= p.run().end(); i++) copies.put(i, p.clones().get(o.code.get(i)));
+		for (Plan p : plans) {
+			String why = theirSources == null || ourSources == null ? null : deadOutput(st, p, theirSources, ourSources, result, kept, copies);
+			if (why != null) out.put(p.run().id(), refusal(st, p, why));
+		}
 		for (List<Plan> group : groups(plans)) {
-			Plan head = group.get(0), tail = group.get(group.size() - 1);
-			int from = ours.index(head.runStart()), to = ours.index(tail.anchorLabel());
-			BitSet liveAfterUs = ours.liveAtExits(from, to);
-			int theirFrom = theirs.index(pseudoBlockStart(o.code.get(head.run().start())));
-			int theirTo = theirs.index(o.code.get(tail.run().end())) + 1;
-			BitSet liveAfterThem = theirs.liveAtExits(theirFrom, theirTo);
-			for (Plan p : group) {
-				for (Store s : p.stores()) {
-					if (!liveAfterThem.get(s.otherSlot()) || liveAfterUs.get(s.baseSlot())) continue;
-					out.put(p.run().id(), refusal(st, p, "local '" + s.name()
-							+ "' it writes is read after it in its own body, but its result reaches nothing in the base"));
-					break;
-				}
-			}
+			Plan head = group.get(0);
 			if (out.containsKey(head.run().id())) continue;
 			BitSet reachUs = ours.canReach(ours.index(firstReal(head.runStart())));
 			BitSet reachThem = theirs.canReach(theirs.index(o.code.get(head.run().start())));
@@ -1364,23 +1937,109 @@ final class EditSplicer {
 	}
 
 	/**
+	 * Whether the value local {@code slot} holds just before {@code at} is, or was computed from, {@code write}:
+	 * through the stores that reach it, the values they stored and, for any instruction that produced one, every
+	 * value on the operand stack when it ran (an over-approximation: an unrelated value deeper on the stack counts).
+	 */
+	private static boolean dependsOnLocal(Frame<SourceValue>[] frames, MethodNode m, AbstractInsnNode at, int slot, AbstractInsnNode write,
+			Set<AbstractInsnNode> seen, int depth) {
+		Frame<SourceValue> f = frames[m.instructions.indexOf(at)];
+		if (f == null || slot >= f.getLocals()) return false;
+		for (AbstractInsnNode src : f.getLocal(slot).insns) {
+			if (src == write) return true;
+			if (depth >= 16 || !seen.add(src)) continue;
+			if (src instanceof IincInsnNode) {
+				if (dependsOnLocal(frames, m, src, slot, write, seen, depth + 1)) return true;
+			} else if (src instanceof VarInsnNode) {
+				Frame<SourceValue> g = frames[m.instructions.indexOf(src)];
+				if (g != null && g.getStackSize() > 0 && dependsOnValue(frames, m, g.getStack(g.getStackSize() - 1), write, seen, depth + 1)) return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean dependsOnValue(Frame<SourceValue>[] frames, MethodNode m, SourceValue value, AbstractInsnNode write,
+			Set<AbstractInsnNode> seen, int depth) {
+		for (AbstractInsnNode producer : value.insns) {
+			if (depth >= 16 || !seen.add(producer)) continue;
+			if (producer instanceof VarInsnNode load && load.getOpcode() >= Opcodes.ILOAD && load.getOpcode() <= Opcodes.ALOAD) {
+				if (dependsOnLocal(frames, m, producer, load.var, write, seen, depth + 1)) return true;
+				continue;
+			}
+			Frame<SourceValue> g = frames[m.instructions.indexOf(producer)];
+			if (g == null) continue;
+			for (int i = 0; i < g.getStackSize(); i++) if (dependsOnValue(frames, m, g.getStack(i), write, seen, depth + 1)) return true;
+		}
+		return false;
+	}
+
+	/** Why a carried unit's write is lost where its own body reads it, or null. */
+	private static String deadOutput(Planning st, Plan p, Frame<SourceValue>[] theirs, Frame<SourceValue>[] ours, MethodNode result,
+			Set<AbstractInsnNode> kept, Map<Integer, AbstractInsnNode> copies) {
+		Annotated o = st.o, b = st.b;
+		for (int i = p.run().start(); i <= p.run().end(); i++) {
+			AbstractInsnNode write = o.code.get(i);
+			int slot = storeSlot(write);
+			if (slot < 0) continue;
+			AbstractInsnNode copy = p.clones().get(write);
+			int reads = 0;
+			List<Integer> lost = new ArrayList<>();
+			for (int j = 0; j < o.code.size(); j++) {
+				if (j >= p.run().start() && j <= p.run().end()) continue;
+				AbstractInsnNode read = o.code.get(j);
+				if (loadSlot(read) != slot) continue;
+				Frame<SourceValue> f = theirs[o.method.instructions.indexOf(read)];
+				if (f == null || !f.getLocal(slot).insns.contains(write)) continue;
+				reads++;
+				AbstractInsnNode there = copies.get(j);
+				if (there == null && !o.added(j)) {
+					Integer bj = st.match.get(j);
+					if (bj != null && kept.contains(b.code.get(bj))) there = b.code.get(bj);
+				}
+				int thereSlot = there == null ? -1 : loadSlot(there);
+				if (thereSlot < 0 || !dependsOnLocal(ours, result, there, thereSlot, copy, new HashSet<>(), 0)) lost.add(o.line.get(j));
+			}
+			if (lost.isEmpty()) continue;
+			String name = localName(o.method, slot, write, true);
+			name = name.startsWith("#") ? name : name.substring(0, name.indexOf(':'));
+			return "local '" + name + "' it writes is read after it in its own body (L" + lost.get(0) + "), but "
+					+ (lost.size() == reads ? "its result reaches nothing in the base" : "that read does not read it in the base");
+		}
+		return null;
+	}
+
+	/**
 	 * The fields of the owner a carried unit reads: its own instructions, and every lambda it carries under a fresh
 	 * name (those are new code in the merged class; a lambda it shares with the base by name is not).
 	 */
 	private static Set<String> fieldReads(Planning st, Plan p) {
 		String owner = st.in.owner().name;
 		Set<String> out = new LinkedHashSet<>();
+		for (AbstractInsnNode n : carriedCode(st, p)) {
+			if (n instanceof FieldInsnNode f && f.owner.equals(owner)
+					&& (f.getOpcode() == Opcodes.GETFIELD || f.getOpcode() == Opcodes.GETSTATIC)) out.add(f.name + " " + f.desc);
+		}
+		return out;
+	}
+
+	/** The methods a carried unit invokes, as "owner.name desc": its own instructions and every lambda it carries anew. */
+	private static Set<String> invokes(Planning st, Plan p) {
+		Set<String> out = new LinkedHashSet<>();
+		for (AbstractInsnNode n : carriedCode(st, p)) {
+			if (n instanceof MethodInsnNode c) out.add(c.owner + "." + c.name + " " + c.desc);
+		}
+		return out;
+	}
+
+	/** A carried unit's own instructions and those of every lambda it carries under a fresh name. */
+	private static List<AbstractInsnNode> carriedCode(Planning st, Plan p) {
 		List<AbstractInsnNode> code = new ArrayList<>(st.o.code.subList(p.run().start(), p.run().end() + 1));
 		p.lambdaRenames().forEach((key, to) -> {
 			MethodNode carried = to.equals(key.substring(0, key.indexOf('('))) ? null
 					: st.addedMethods.get(to + key.substring(key.indexOf('(')));
 			if (carried != null) for (AbstractInsnNode n : carried.instructions) code.add(n);
 		});
-		for (AbstractInsnNode n : code) {
-			if (n instanceof FieldInsnNode f && f.owner.equals(owner)
-					&& (f.getOpcode() == Opcodes.GETFIELD || f.getOpcode() == Opcodes.GETSTATIC)) out.add(f.name + " " + f.desc);
-		}
-		return out;
+		return code;
 	}
 
 	private static Outcome refusal(Planning st, Plan p, String why) {
@@ -1638,11 +2297,33 @@ final class EditSplicer {
 		}
 	}
 
+	/**
+	 * A method's instructions as {@link #key} reads them, each jump and switch with the positions it lands on, and its
+	 * exception table: two bodies that differ only in where a branch goes, or in what a handler covers, differ here.
+	 */
 	private static String bodyKey(MethodNode m) {
 		StringBuilder sb = new StringBuilder();
 		Annotated a = new Annotated(m);
-		for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) if (n.getOpcode() >= 0) sb.append(key(n, m, a)).append(';');
+		Map<AbstractInsnNode, Integer> at = new IdentityHashMap<>();
+		for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) if (n.getOpcode() >= 0) at.put(n, at.size());
+		for (AbstractInsnNode n = m.instructions.getFirst(); n != null; n = n.getNext()) {
+			if (n.getOpcode() < 0) continue;
+			sb.append(key(n, m, a));
+			for (LabelNode l : targets(n)) sb.append('>').append(realIndex(at, l));
+			sb.append(';');
+		}
+		for (TryCatchBlockNode t : m.tryCatchBlocks) sb.append('[').append(realIndex(at, t.start)).append(',').append(realIndex(at, t.end))
+				.append(',').append(realIndex(at, t.handler)).append(' ').append(t.type).append(']');
 		return sb.toString();
+	}
+
+	/** The position of the first real instruction at or after a label, or -1 at the method's end. */
+	private static int realIndex(Map<AbstractInsnNode, Integer> at, LabelNode label) {
+		for (AbstractInsnNode n = label; n != null; n = n.getNext()) {
+			Integer i = at.get(n);
+			if (i != null) return i;
+		}
+		return -1;
 	}
 
 	private static boolean isAnonymousSibling(String owner, String type) {
@@ -1722,24 +2403,105 @@ final class EditSplicer {
 	}
 
 	/**
-	 * Where, from list position {@code from} on, the base's inserted instructions {@code baseAdded} hold a copy of
-	 * the other body's instructions {@code oStart..oEnd}: the same instructions, and every lambda of the class they
-	 * capture with the same body on both sides (the alignment key leaves lambda bodies out, and two sides that both
-	 * capture {@code lambda$m$0} may each have put their own code in it). -1 when there is none.
+	 * Where, from list position {@code from} on, the base's inserted instructions {@code baseAdded} hold a copy of the
+	 * other body's instructions {@code oStart..oEnd} ({@link #isCopy}), as a list position; -1 when there is none.
+	 * The copy's instructions must be consecutive in the base body.
 	 */
-	private static int indexOfCopy(Planning st, List<Integer> baseAdded, int oStart, int oEnd, int from) {
+	private static int indexOfCopy(Planning st, List<Integer> baseAdded, int oStart, int oEnd, int from, int windowEnd, boolean statement) {
 		List<String> baseKeys = baseAdded.stream().map(st.b.key::get).toList();
 		List<String> keys = st.o.key.subList(oStart, oEnd + 1);
-		for (int at = indexOfSequence(baseKeys, keys, from); at >= 0; at = indexOfSequence(baseKeys, keys, at + 1))
-			if (sameLambdas(st, oStart, oEnd, baseAdded, at)) return at;
+		for (int at = indexOfSequence(baseKeys, keys, from); at >= 0; at = indexOfSequence(baseKeys, keys, at + 1)) {
+			int bStart = baseAdded.get(at);
+			if (baseAdded.get(at + keys.size() - 1) - bStart != keys.size() - 1) continue;
+			if (isCopy(st, oStart, oEnd, bStart, windowEnd, statement)) return at;
+		}
 		return -1;
 	}
 
-	/** Whether the lambdas instructions {@code oStart..oEnd} capture have the bodies of the base's, from {@code at} on. */
-	private static boolean sameLambdas(Planning st, int oStart, int oEnd, List<Integer> base, int at) {
-		for (int i = oStart; i <= oEnd; i++) {
-			if (st.o.code.get(i) instanceof InvokeDynamicInsnNode od && st.b.code.get(base.get(at + i - oStart)) instanceof InvokeDynamicInsnNode bd
+	/**
+	 * Whether the base's instructions from {@code bStart} are a copy of the other body's {@code oStart..oEnd}: the same
+	 * instructions; each jump landing inside the copy at the same offset, right after it, or on the base's counterpart
+	 * of the vanilla instruction the other lands on; every local read holding the same definition (the vanilla one,
+	 * one of the copy's own, or the base's copy of a statement already found the same); and every lambda of the class
+	 * captured with the same body on both sides (the key leaves lambda bodies out, and two sides that both capture
+	 * {@code lambda$m$0} may each have put their own code in it).
+	 *
+	 * <p>A {@code statement} copy must also start and end where the base's operand stack is empty, and nothing else in
+	 * the base may land inside it or skip from before it to past it within the window up to {@code windowEnd}, unless
+	 * it is a vanilla jump whose counterpart skips the other's statement the same way: a copy inside a branch of the
+	 * base's own runs only when that branch does.
+	 */
+	private static boolean isCopy(Planning st, int oStart, int oEnd, int bStart, int windowEnd, boolean statement) {
+		Annotated o = st.o, b = st.b;
+		int len = oEnd - oStart + 1, bEnd = bStart + len - 1;
+		if (bStart < 0 || bEnd >= b.code.size()) return false;
+		for (int k = 0; k < len; k++) if (!o.key.get(oStart + k).equals(b.key.get(bStart + k))) return false;
+		if (statement && (b.stack(bStart) != 0 || (bEnd + 1 < b.code.size() && b.stack(bEnd + 1) != 0))) return false;
+		for (int k = 0; k < len; k++) {
+			List<LabelNode> theirs = targets(o.code.get(oStart + k)), ours = targets(b.code.get(bStart + k));
+			if (theirs.size() != ours.size()) return false;
+			for (int j = 0; j < theirs.size(); j++) {
+				int t = o.at(theirs.get(j)), u = b.at(ours.get(j));
+				boolean tIn = t >= oStart && t <= oEnd + 1, uIn = u >= bStart && u <= bEnd + 1;
+				if (tIn != uIn) return false;
+				if (tIn ? t - oStart != u - bStart : t < 0 || !Integer.valueOf(u).equals(st.match.get(t))) return false;
+			}
+		}
+		if (statement) {
+			int reach = Math.max(bEnd + 1, windowEnd);
+			for (int j = 0; j < b.code.size(); j++) {
+				if (j >= bStart && j <= bEnd) continue;
+				for (LabelNode l : targets(b.code.get(j))) {
+					int u = b.at(l);
+					if (u > bStart && u <= bEnd) return false;
+					if (j < bStart && u > bEnd && u <= reach && !skipsAlike(st, j, l, oStart, oEnd)) return false;
+				}
+			}
+			for (TryCatchBlockNode t : b.method.tryCatchBlocks) {
+				int h = b.at(t.handler);
+				if (h > bStart && h <= bEnd) return false;
+			}
+		}
+		for (int k = 0; k < len; k++) {
+			if (o.code.get(oStart + k) instanceof InvokeDynamicInsnNode od && b.code.get(bStart + k) instanceof InvokeDynamicInsnNode bd
 					&& !sameLambdas(st.in, od, bd, 0)) return false;
+		}
+		return sameLocals(st, oStart, oEnd, bStart);
+	}
+
+	/** Whether base jump {@code j}'s target {@code l} has a counterpart that skips {@code oStart..oEnd} from before it. */
+	private static boolean skipsAlike(Planning st, int j, LabelNode l, int oStart, int oEnd) {
+		Integer oj = st.back().get(j);
+		if (oj == null || oj >= oStart) return false;
+		List<LabelNode> ours = targets(st.b.code.get(j)), theirs = targets(st.o.code.get(oj));
+		if (ours.size() != theirs.size()) return false;
+		for (int k = 0; k < ours.size(); k++) if (ours.get(k) == l && st.o.at(theirs.get(k)) <= oEnd) return false;
+		return true;
+	}
+
+	/** Whether each local the copy reads holds the same definition on both sides (see {@link #isCopy}). */
+	private static boolean sameLocals(Planning st, int oStart, int oEnd, int bStart) {
+		Annotated o = st.o, b = st.b;
+		for (int k = 0; k <= oEnd - oStart; k++) {
+			AbstractInsnNode theirs = o.code.get(oStart + k), ours = b.code.get(bStart + k);
+			int theirSlot = loadSlot(theirs), ourSlot = loadSlot(ours);
+			if (theirSlot < 0) continue;
+			Frame<SourceValue>[] oSources = st.otherSources(), bSources = st.baseSources();
+			if (oSources == null || bSources == null || ourSlot < 0) return false;
+			Frame<SourceValue> of = oSources[o.method.instructions.indexOf(theirs)], bf = bSources[bStart + k];
+			if (of == null || bf == null) return false;
+			Set<AbstractInsnNode> mapped = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+			for (AbstractInsnNode src : of.getLocal(theirSlot).insns) {
+				Integer si = o.position.get(src);
+				if (si == null) return false;
+				Integer bi = si >= oStart && si <= oEnd ? Integer.valueOf(bStart + si - oStart)
+						: !o.added(si) ? st.match.get(si) : st.sameEditCopy.get(si);
+				if (bi == null) return false;
+				mapped.add(b.code.get(bi));
+			}
+			Set<AbstractInsnNode> actual = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+			actual.addAll(bf.getLocal(ourSlot).insns);
+			if (!mapped.equals(actual)) return false;
 		}
 		return true;
 	}
@@ -1765,17 +2527,45 @@ final class EditSplicer {
 	}
 
 	/**
-	 * Where an insertion before the anchor goes: the first node, from the start of the label block in front of the
-	 * anchor, before which the exception coverage is {@code want}. It never moves past a label a jump, switch or
-	 * handler lands on (that would put the run on those paths), nor past one an inserted run jumps to; null when no
-	 * such node has the coverage.
+	 * Where an insertion before the anchor goes: the first node, in the label/line block in front of the anchor,
+	 * before which the exception coverage is {@code want}, never past a label a vanilla jump, a switch, a handler or
+	 * an inserted run lands on (those paths skip the run, as their counterparts do, or are retargeted into it
+	 * explicitly). A base jump of its own inserted code that skips only more of that code (the end of an
+	 * {@code if} the base inserted in front of the vanilla instruction) is the base's own branches meeting again
+	 * where the run goes: the run precedes that instruction on every path in its own body, so such a jump that lands
+	 * after the insertion point is pointed at the run ({@code joins}). Null when no node has the coverage.
 	 */
-	private static AbstractInsnNode insertionPoint(Planning st, AbstractInsnNode anchorReal, Map<String, Integer> want) {
-		for (AbstractInsnNode x = labelBlockStart(anchorReal); ; x = x.getNext()) {
-			if (coverageBefore(st.b.method, x).equals(want)) return x;
-			if (x == anchorReal) return null;
-			if (x instanceof LabelNode l && (st.pinned.contains(l) || st.runTargets.contains(l))) return null;
+	private static AbstractInsnNode insertionPoint(Planning st, int anchor, Map<String, Integer> want, List<JumpRetarget> joins) {
+		Annotated b = st.b;
+		AbstractInsnNode anchorReal = b.code.get(anchor);
+		Set<LabelNode> pins = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+		Map<AbstractInsnNode, List<Integer>> joining = new IdentityHashMap<>();
+		for (int j = 0; j < b.code.size(); j++) {
+			List<LabelNode> ts = targets(b.code.get(j));
+			for (int k = 0; k < ts.size(); k++) {
+				int u = b.at(ts.get(k));
+				boolean join = b.added(j) && j < anchor && u > j;
+				for (int i = j + 1; join && i < u; i++) if (!b.added(i)) join = false;
+				if (join) joining.computeIfAbsent(b.code.get(j), x -> new ArrayList<>()).add(k);
+				else pins.add(ts.get(k));
+			}
 		}
+		for (TryCatchBlockNode t : b.method.tryCatchBlocks) pins.add(t.handler);
+		pins.addAll(st.runTargets);
+		AbstractInsnNode at = null;
+		for (AbstractInsnNode x = labelBlockStart(anchorReal); at == null; x = x.getNext()) {
+			if (coverageBefore(b.method, x).equals(want)) at = x;
+			else if (x == anchorReal || (x instanceof LabelNode l && pins.contains(l))) return null;
+		}
+		Set<LabelNode> behind = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+		for (AbstractInsnNode x = at; x != anchorReal; x = x.getNext()) if (x instanceof LabelNode l) behind.add(l);
+		for (var e : joining.entrySet()) {
+			List<LabelNode> ts = targets(e.getKey());
+			List<Integer> into = new ArrayList<>();
+			for (int k : e.getValue()) if (behind.contains(ts.get(k))) into.add(k);
+			if (!into.isEmpty()) joins.add(new JumpRetarget(e.getKey(), into));
+		}
+		return at;
 	}
 
 	/** A label that points at this real instruction (an existing one when there is one). */
@@ -1794,11 +2584,17 @@ final class EditSplicer {
 		return List.of();
 	}
 
-	/** The exception regions, by caught type, that cover a real instruction. */
-	private static Map<String, Integer> coverage(MethodNode m, AbstractInsnNode at) {
-		int p = m.instructions.indexOf(at);
+	/**
+	 * The exception regions, by caught type, that cover the run's first instruction in its own body, its own regions
+	 * left out: a region that starts and has its handler inside the run comes along with it, so the base needs none.
+	 */
+	private static Map<String, Integer> coverage(Annotated o, Run run) {
+		MethodNode m = o.method;
+		int p = m.instructions.indexOf(o.code.get(run.start()));
 		Map<String, Integer> types = new TreeMap<>();
 		for (TryCatchBlockNode t : m.tryCatchBlocks) {
+			int s = o.at(t.start), h = o.at(t.handler);
+			if (s >= run.start() && s <= run.end() && h >= run.start() && h <= run.end()) continue;
 			if (m.instructions.indexOf(t.start) <= p && p < m.instructions.indexOf(t.end))
 				types.merge(String.valueOf(t.type), 1, Integer::sum);
 		}
@@ -1835,6 +2631,7 @@ final class EditSplicer {
 		for (AbstractInsnNode n : source) {
 			if (n instanceof FrameNode || n instanceof LineNumberNode) continue;
 			AbstractInsnNode c = n.clone(labels);
+			p.clones().put(n, c);
 			Integer slot = p.slotFor().get(n);
 			if (slot != null && c instanceof VarInsnNode v) v.var = slot;
 			if (slot != null && c instanceof IincInsnNode i) i.var = slot;
@@ -1857,7 +2654,7 @@ final class EditSplicer {
 		base.instructions.insertBefore(p.insertBefore(), p.anchorLabel());
 		for (AbstractInsnNode n : p.removeFromBase()) base.instructions.remove(n);
 		base.tryCatchBlocks.addAll(0, inner);
-		for (JumpRetarget r : p.entryRetargets()) retarget(r.jump(), r.from(), runStart);
+		for (JumpRetarget r : p.entryRetargets()) retarget(r, runStart);
 	}
 
 	private static AbstractInsnNode realAt(MethodNode m, int index) {
@@ -1876,10 +2673,18 @@ final class EditSplicer {
 		return n;
 	}
 
-	private static void retarget(AbstractInsnNode jump, LabelNode from, LabelNode to) {
-		if (jump instanceof JumpInsnNode j && j.label == from) j.label = to;
-		if (jump instanceof TableSwitchInsnNode t) { if (t.dflt == from) t.dflt = to; t.labels.replaceAll(l -> l == from ? to : l); }
-		if (jump instanceof LookupSwitchInsnNode t) { if (t.dflt == from) t.dflt = to; t.labels.replaceAll(l -> l == from ? to : l); }
+	/**
+	 * Points the entering targets of a base jump at the inserted run; a switch's other cases keep theirs, and so does a
+	 * target an earlier unit already pointed at itself.
+	 */
+	private static void retarget(JumpRetarget r, LabelNode to) {
+		for (int n = 0; n < r.indices().size(); n++) {
+			int k = r.indices().get(n);
+			if (targets(r.jump()).get(k) != r.from().get(n)) continue;
+			if (r.jump() instanceof JumpInsnNode j) j.label = to;
+			if (r.jump() instanceof TableSwitchInsnNode t) { if (k == t.labels.size()) t.dflt = to; else t.labels.set(k, to); }
+			if (r.jump() instanceof LookupSwitchInsnNode t) { if (k == t.labels.size()) t.dflt = to; else t.labels.set(k, to); }
+		}
 	}
 
 	private static LabelNode firstLabel(MethodNode m) {

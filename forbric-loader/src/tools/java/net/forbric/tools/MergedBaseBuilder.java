@@ -1140,7 +1140,7 @@ public final class MergedBaseBuilder {
 			for (PendingSplice p : pending) {
 				EditSplicer.Result r = !splicing ? null : splicer.splice(new EditSplicer.Input(baseN, p.base(), p.other(), source,
 						baseIsForge ? forgeProvenance : neoProvenance, baseIsForge ? neoProvenance : forgeProvenance,
-						!baseIsForge, baseMethods, otherMethods, baseSideMethods, memberOrigin, withheld.get(p.key())));
+						!baseIsForge, baseMethods, otherMethods, baseSideMethods, memberOrigin, withheld.get(p.key()), p.vanilla()));
 				results.add(r);
 				if (r != null && r.accepted()) spliced.add(p.key());
 				applySplice(name, baseN, baseMethods, p, r, basePkg, otherPkg, baseIsForge);
