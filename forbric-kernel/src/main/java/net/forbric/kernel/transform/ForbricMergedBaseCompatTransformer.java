@@ -2261,21 +2261,23 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 *
 	 * <p>Only the read moves. The field declaration stays, because an access widener or a mixin may name it, and
 	 * removing it would cost more than the dead field does.
+	 *
+	 * <p>A merge that keeps both sides' edits may write {@code spawnReason} too — the edit-spliced base keeps
+	 * MinecraftForge's {@code this.spawnReason = reason} in {@code finalizeSpawn}, next to NeoForge's
+	 * {@code this.spawnType = reason} — but only there: a mob loaded from its save data still gets {@code spawnType}
+	 * alone, and {@code getSpawnReason()} answers null for it. So a {@code spawnReason} producer only makes the field
+	 * live when it is its own: every store into it must be matched, in the same method, by a store of the same unchanged
+	 * value into {@code spawnType} ({@link #spawnTypeCarriesSpawnReason}). Then {@code spawnType} holds everything
+	 * {@code spawnReason} ever does, and more, and the read moves; otherwise it is left alone.
 	 */
 	private static boolean readTheSpawnReasonThatIsActuallyWritten(ClassNode node) {
 		if (!"net/minecraft/world/entity/Mob".equals(node.name)) return false;
 		if (!hasField(node, "spawnReason", SPAWN_REASON) || !hasField(node, "spawnType", SPAWN_REASON)) return false;
 
-		// If anything ever writes spawnReason, the field is live and must be left alone — the same guard the
-		// particle-map reroute uses, and for the same reason: a future base may keep the other family's producer.
-		for (MethodNode method : node.methods) {
-			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTFIELD
-						&& node.name.equals(field.owner) && "spawnReason".equals(field.name)) {
-					return false;
-				}
-			}
-		}
+		// If anything writes spawnReason that spawnType does not also receive, the field is live and must be left
+		// alone — the same guard the particle-map reroute uses, and for the same reason: a future base may keep the
+		// other family's producer.
+		if (!spawnTypeCarriesSpawnReason(node)) return false;
 
 		boolean changed = false;
 		for (MethodNode method : node.methods) {
@@ -2294,6 +2296,40 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 					+ "command, natural) all took the same branch. It now reads the field the game writes");
 		}
 		return changed;
+	}
+
+	/**
+	 * Whether every {@code this.spawnReason = x} in {@code Mob} sits in a method that also does {@code this.spawnType = x}
+	 * with the same local {@code x}, which that method never reassigns. True when nothing writes {@code spawnReason}.
+	 */
+	private static boolean spawnTypeCarriesSpawnReason(ClassNode node) {
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				if (!(insn instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.PUTFIELD
+						|| !node.name.equals(field.owner) || !"spawnReason".equals(field.name)) continue;
+				int local = storedLocal(field);
+				if (local < 0) return false;
+				boolean matched = false;
+				for (AbstractInsnNode other = method.instructions.getFirst(); other != null; other = other.getNext()) {
+					if (other instanceof VarInsnNode store && store.var == local && store.getOpcode() >= Opcodes.ISTORE
+							&& store.getOpcode() <= Opcodes.ASTORE) return false;
+					if (other instanceof FieldInsnNode twin && twin.getOpcode() == Opcodes.PUTFIELD && node.name.equals(twin.owner)
+							&& "spawnType".equals(twin.name) && SPAWN_REASON.equals(twin.desc) && storedLocal(twin) == local) matched = true;
+				}
+				if (!matched) return false;
+			}
+		}
+		return true;
+	}
+
+	/** The local {@code put} stores into {@code this} ({@code aload 0; aload n; putfield}), or -1 for any other value. */
+	private static int storedLocal(FieldInsnNode put) {
+		AbstractInsnNode value = put.getPrevious();
+		while (value != null && value.getOpcode() < 0) value = value.getPrevious();
+		AbstractInsnNode receiver = value == null ? null : value.getPrevious();
+		while (receiver != null && receiver.getOpcode() < 0) receiver = receiver.getPrevious();
+		return value instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD
+				&& receiver instanceof VarInsnNode self && self.getOpcode() == Opcodes.ALOAD && self.var == 0 ? load.var : -1;
 	}
 
 	/**
