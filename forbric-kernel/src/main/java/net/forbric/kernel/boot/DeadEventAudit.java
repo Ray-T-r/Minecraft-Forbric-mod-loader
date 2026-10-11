@@ -188,7 +188,11 @@ public final class DeadEventAudit {
 		// once the splice stopped carrying runs whose answer the kept body drops: PlayLevelSoundEvent$AtEntity lost
 		// its last paths and moved to DEAD; the level tick (MinecraftServer.tickChildren), the click that starts
 		// mining a block on the client (MultiPlayerGameMode.startDestroyBlock) and a huge mushroom's growth
-		// (MushroomBlock.growMushroom) are posted from fewer places and joined.
+		// (MushroomBlock.growMushroom) are posted from fewer places and joined. Regenerated once the merge stopped
+		// forcing NeoForge's copy of a lambda both sides compile as one vanilla lambda onto its capturer: the client's
+		// finishing break (MultiPlayerGameMode.lambda$continueDestroyBlock$1) asks isLeftClickBlockCancelled again, and
+		// HookCallSiteCensusStagedTest now checks each row's count against every hook that posts the event — the
+		// LeftClickBlock row had left out onLeftClickBlockHold's path.
 		partial.put("net/minecraftforge/event/entity/living/LivingConversionEvent$Post",
 				"a completed conversion is announced on 5 of its 7 paths — not for hoglins or piglins — so a "
 						+ "mod reacting to one will react to some conversions and not others");
@@ -209,8 +213,8 @@ public final class DeadEventAudit {
 		partial.put("net/minecraftforge/event/TickEvent$LevelTickEvent$Post",
 				"as the level tick's pre half: posted natively for the client's level only");
 		partial.put("net/minecraftforge/event/entity/player/PlayerInteractEvent$LeftClickBlock",
-				"a left click on a block is announced on 3 of its 5 paths — not when the client starts mining a "
-						+ "block, so a client-side cancel of a fresh click does nothing");
+				"a left click on a block is announced on 5 of its 6 paths — not when a survival player starts "
+						+ "mining a block on the client");
 		partial.put("net/minecraftforge/event/level/BlockFeatureGrowEvent",
 				"a feature growing from a bonemealed plant can be changed or stopped on 2 of its 3 paths — not for a "
 						+ "huge mushroom");

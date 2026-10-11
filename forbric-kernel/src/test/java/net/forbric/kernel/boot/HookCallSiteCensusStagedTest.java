@@ -170,6 +170,9 @@ class HookCallSiteCensusStagedTest {
 		// hook -> the events it posts, so an eroded hook can be named by what a mod actually subscribes to.
 		Map<String, Set<String>> eventsOfHook = new TreeMap<>();
 		Set<String> measured = new TreeSet<>();
+		// event -> {call sites the merged base kept, call sites MinecraftForge's own game has}, over every hook that
+		// posts it: the "N of its M paths" a row says.
+		Map<String, int[]> paths = new TreeMap<>();
 		int eroded = 0;
 		for (String hookClass : List.of("net/minecraftforge/event/ForgeEventFactory",
 				"net/minecraftforge/client/event/ForgeEventFactoryClient")) {
@@ -177,17 +180,37 @@ class HookCallSiteCensusStagedTest {
 			census.postersOf().forEach((event, posters) -> posters.forEach(
 					poster -> eventsOfHook.computeIfAbsent(poster, k -> new TreeSet<>()).add(event)));
 			for (HookCallSiteCensus.Erosion e : HookCallSiteCensus.erosion(hookClass, before, base())) {
+				for (String event : eventsOfHook.getOrDefault(e.hook(), Set.of())) {
+					int[] kept = paths.computeIfAbsent(event, k -> new int[2]);
+					kept[0] += e.after();
+					kept[1] += e.before();
+				}
 				if (!e.partial()) continue;
 				eroded++;
 				measured.addAll(eventsOfHook.getOrDefault(e.hook(), Set.of()));
 			}
 		}
 		System.out.println("[Forbric/Hooks] partially kept hooks: " + eroded + ", events they post: " + measured.size());
+		for (String event : measured) System.out.println("[Forbric/Hooks] partly posted: " + event + " on "
+				+ paths.get(event)[0] + " of its " + paths.get(event)[1] + " paths");
 		// The denominator: a run that found no erosion would make the equality below vacuously true against an
 		// empty table, which is how a generator stops generating without anyone noticing.
 		assertTrue(eroded > 0, "no hook lost part of its call sites — verify the scan before believing it");
 		assertEquals(measured, new TreeSet<>(DeadEventAudit.PARTIAL.keySet()),
 				"the partially-posted table and the call-site counts disagree; the table is the one that is wrong");
+		// And the numbers a row gives are the census's, not a count someone made by hand: every call site of every
+		// hook that posts the event, in MinecraftForge's own game and in the merged base.
+		int stated = 0;
+		java.util.regex.Pattern ratio = java.util.regex.Pattern.compile("(\\d+) of its (\\d+) paths");
+		for (Map.Entry<String, String> row : DeadEventAudit.PARTIAL.entrySet()) {
+			java.util.regex.Matcher m = ratio.matcher(row.getValue());
+			if (!m.find()) continue;
+			stated++;
+			int[] kept = paths.get(row.getKey());
+			assertEquals(kept[0] + " of its " + kept[1] + " paths", m.group(0), row.getKey()
+					+ ": the row's count is not the call sites' — regenerate it from the line this test prints");
+		}
+		assertTrue(stated > 0, "no partly-posted row states how many paths it has — the count check checked nothing");
 	}
 
 	@Test
