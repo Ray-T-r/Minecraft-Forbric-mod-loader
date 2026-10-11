@@ -38,6 +38,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /** The composition shim over the real staged roots, and every call site it re-creates. */
 class ForgeCapabilityCompositionTransformerTest {
 	private static final Path MERGED = TestFixtures.stagedRoot().resolve("merged-base/patched-mc-merged-26.2.jar");
+	private static final Path NEO = TestFixtures.stagedRoot().resolve("neoforge-patched/patched-mc-neoforge-26.2.jar");
 	private static final List<String> ROOTS = List.of(ForgeCapabilityCompositionTransformer.ENTITY,
 			ForgeCapabilityCompositionTransformer.BLOCK_ENTITY, ForgeCapabilityCompositionTransformer.LEVEL);
 
@@ -94,30 +95,74 @@ class ForgeCapabilityCompositionTransformerTest {
 			else if (insn.getOpcode() == Opcodes.DUP_X1) ops.add("DUP_X1");
 		}
 		assertEquals(List.of("GET forbric$forgeCaps", "CALL net/forbric/kernel/runtime/KernelForgeCapabilities.blockEntity", "DUP_X1", "PUT forbric$forgeCaps"), ops);
-		MethodNode save = find(be, "saveAdditional", "(" + ForgeCapabilityCompositionTransformer.VALUE_OUTPUT + ")V");
-		MethodNode load = find(be, "loadAdditional", "(" + ForgeCapabilityCompositionTransformer.VALUE_INPUT + ")V");
+		// The funnels exist for a body that lost MinecraftForge's ForgeCaps statement: NeoForge's own BlockEntity is
+		// exactly that body (what the merge kept before it spliced both sides' edits).
+		ClassNode lost = parse(new ForgeCapabilityCompositionTransformer().transform(
+				ForgeCapabilityCompositionTransformer.BLOCK_ENTITY.replace('/', '.'), neoBytesOf(ForgeCapabilityCompositionTransformer.BLOCK_ENTITY), null));
+		MethodNode save = find(lost, "saveAdditional", "(" + ForgeCapabilityCompositionTransformer.VALUE_OUTPUT + ")V");
+		MethodNode load = find(lost, "loadAdditional", "(" + ForgeCapabilityCompositionTransformer.VALUE_INPUT + ")V");
 		assertTrue(reads(save, "forbric$forgeCaps") && !calls(save, "forbric$caps"), "saving must not create a provider — Forge's lazy serializeCaps answers the parked data");
 		assertTrue(calls(load, "forbric$caps") && !reads(load, "forbric$forgeCaps"), "loading creates it, parking the tag for replay");
 	}
 
+	/**
+	 * Each lifecycle site carries MinecraftForge's hook exactly once: re-created where the merged body lost it, and
+	 * left alone where the merged body kept Forge's own statement (the edit-splicing merge keeps the {@code ForgeCaps}
+	 * save and load in both roots) — a funnel on top of the native statement serializes twice and replays twice.
+	 */
 	@Test
 	void everyLostCallSiteIsReCreatedOnceAtForgesOwnBoundary() throws Exception {
+		String save = "(" + ForgeCapabilityCompositionTransformer.VALUE_OUTPUT + ")V", load = "(" + ForgeCapabilityCompositionTransformer.VALUE_INPUT + ")V";
 		ClassNode be = parse(shim(ForgeCapabilityCompositionTransformer.BLOCK_ENTITY));
 		assertFollows(find(be, "setRemoved", "()V"), "invalidateCapabilities", "invalidateCaps");
-		assertEquals(1, count(find(be, "saveAdditional", "(" + ForgeCapabilityCompositionTransformer.VALUE_OUTPUT + ")V"), "saveBlockEntity"));
-		assertEquals(1, count(find(be, "loadAdditional", "(" + ForgeCapabilityCompositionTransformer.VALUE_INPUT + ")V"), "load"));
 		ClassNode entity = parse(shim(ForgeCapabilityCompositionTransformer.ENTITY));
 		assertFollows(find(entity, "remove", "(Lnet/minecraft/world/entity/Entity$RemovalReason;)V"), "setRemoved", "invalidateCaps");
 		assertFollows(find(entity, "revive", "()V"), "unsetRemoved", "reviveCaps");
-		assertEquals(1, count(find(entity, "saveWithoutId", "(" + ForgeCapabilityCompositionTransformer.VALUE_OUTPUT + ")V"), "saveEntity"));
-		assertEquals(1, count(find(entity, "load", "(" + ForgeCapabilityCompositionTransformer.VALUE_INPUT + ")V"), "load"));
-		for (MethodNode m : List.of(find(be, "saveAdditional", "(" + ForgeCapabilityCompositionTransformer.VALUE_OUTPUT + ")V"),
-				find(entity, "saveWithoutId", "(" + ForgeCapabilityCompositionTransformer.VALUE_OUTPUT + ")V"))) {
-			int returns = 0;
-			for (AbstractInsnNode insn : m.instructions) if (insn.getOpcode() == Opcodes.RETURN) returns++;
-			assertEquals(1, returns, "the RETURN count is unchanged by the funnel");
-			new Analyzer<>(new BasicVerifier()).analyze(entity.name, m);
+		ClassNode beBase = parse(bytesOf(ForgeCapabilityCompositionTransformer.BLOCK_ENTITY));
+		ClassNode entityBase = parse(bytesOf(ForgeCapabilityCompositionTransformer.ENTITY));
+		assertPersistedOnce(beBase, be, "saveAdditional", save, "saveBlockEntity");
+		assertPersistedOnce(beBase, be, "loadAdditional", load, "load");
+		assertPersistedOnce(entityBase, entity, "saveWithoutId", save, "saveEntity");
+		assertPersistedOnce(entityBase, entity, "load", load, "load");
+		// Negative control: on NeoForge's own bodies, which carry no ForgeCaps statement, the funnels go in.
+		for (String root : List.of(ForgeCapabilityCompositionTransformer.BLOCK_ENTITY, ForgeCapabilityCompositionTransformer.ENTITY)) {
+			ClassNode neo = parse(neoBytesOf(root));
+			ClassNode funnelled = parse(new ForgeCapabilityCompositionTransformer().transform(root.replace('/', '.'), neoBytesOf(root), null));
+			boolean isEntity = ForgeCapabilityCompositionTransformer.ENTITY.equals(root);
+			for (String[] site : isEntity ? new String[][] { { "saveWithoutId", save, "saveEntity" }, { "load", load, "load" } }
+					: new String[][] { { "saveAdditional", save, "saveBlockEntity" }, { "loadAdditional", load, "load" } }) {
+				assertFalse(ForgeCapabilityCompositionTransformer.persistsForgeCaps(find(neo, site[0], site[1])), "premise: " + root + "." + site[0] + " lost ForgeCaps");
+				assertEquals(1, runtimeCount(find(funnelled, site[0], site[1]), site[2]), root + "." + site[0] + " gets the funnel");
+			}
 		}
+		for (ClassNode node : List.of(be, entity, parse(new ForgeCapabilityCompositionTransformer().transform(
+				ForgeCapabilityCompositionTransformer.BLOCK_ENTITY.replace('/', '.'), neoBytesOf(ForgeCapabilityCompositionTransformer.BLOCK_ENTITY), null)))) {
+			for (String name : List.of("saveAdditional", "saveWithoutId")) {
+				MethodNode m = find(node, name, save);
+				if (m == null) continue;
+				int returns = 0;
+				for (AbstractInsnNode insn : m.instructions) if (insn.getOpcode() == Opcodes.RETURN) returns++;
+				assertEquals(1, returns, "the RETURN count is unchanged by the funnel");
+				new Analyzer<>(new BasicVerifier()).analyze(node.name, m);
+			}
+		}
+	}
+
+	/** Exactly one ForgeCaps persistence in {@code name}: the base's own statement, or the kernel's funnel — never both. */
+	private static void assertPersistedOnce(ClassNode base, ClassNode shimmed, String name, String desc, String helper) {
+		boolean nativeStatement = ForgeCapabilityCompositionTransformer.persistsForgeCaps(find(base, name, desc));
+		int funnels = runtimeCount(find(shimmed, name, desc), helper);
+		assertEquals(nativeStatement ? 0 : 1, funnels, base.name + "." + name + (nativeStatement
+				? " keeps MinecraftForge's own ForgeCaps statement — a funnel on top persists twice"
+				: " lost the ForgeCaps statement — the funnel must re-create it"));
+	}
+
+	private static int runtimeCount(MethodNode method, String name) {
+		int n = 0;
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof MethodInsnNode call && call.owner.equals(ForgeCapabilityCompositionTransformer.RUNTIME) && name.equals(call.name)) n++;
+		}
+		return n;
 	}
 
 	@Test
@@ -225,17 +270,57 @@ class ForgeCapabilityCompositionTransformerTest {
 			}
 			assertSame(once, off.transform(root.replace('/', '.'), once, null), root + ": a second pass changes nothing");
 		}
-		// Look-alikes: the classes only dispatch needs are left exactly as they are.
+		// Look-alikes: the classes only dispatch needs are left exactly as they are. The premise that keeps this from
+		// being vacuous: with dispatch on, each one is rewired — unless the merged base already carries
+		// MinecraftForge's own code there, in which case dispatch on leaves it alone too — and at least one is.
+		int rewiredOn = 0;
 		for (String target : ForgeCapabilityCompositionTransformer.TARGETS) {
 			if (ROOTS.contains(target)) continue;
 			byte[] bytes = bytesOf(target);
 			assertSame(bytes, off.transform(target.replace('/', '.'), bytes, null), target + " is a dispatch site, not a required root");
-			assertTrue(on.transform(target.replace('/', '.'), bytes, null) != bytes, "premise: with dispatch on " + target + " is rewired");
+			if (on.transform(target.replace('/', '.'), bytes, null) != bytes) rewiredOn++;
+			else assertTrue(ForgeCapabilityCompositionTransformer.carriesNatively(parse(bytes)),
+					"premise: with dispatch on " + target + " is rewired, or its merged body carries Forge's own code natively");
 		}
+		assertTrue(rewiredOn > 0, "premise: with dispatch on, some dispatch site is rewired — else off leaving them alone proves nothing");
 		List<AnchorSet.Anchor> anchors = off.anchors().anchors();
 		assertEquals(ROOTS.stream().map(r -> r.replace('/', '.')).sorted().toList(), anchors.stream().map(AnchorSet.Anchor::binaryName).sorted().toList(),
 				"off still owes the three roots; it owes nothing else");
 		assertTrue(anchors.stream().allMatch(a -> a.severity() == AnchorSet.Severity.REQUIRED));
+	}
+
+	/**
+	 * A dispatch site whose merged body already carries MinecraftForge's own code is handed back untouched, so a
+	 * REQUIRED anchor there would put "its anchor is gone" in every boot log for a class that works. With a reader
+	 * over the base the books stay clean on the staged base: each site is REQUIRED exactly when the base lacks the
+	 * code and the transformer then edits it; without a reader every site stays REQUIRED.
+	 */
+	@Test
+	void aSiteTheBaseCarriesNativelyIsAHedgeAndTheBooksStayClean() throws Exception {
+		java.util.function.Function<String, byte[]> reader = path -> {
+			try {
+				return bytesOf(path.substring(0, path.length() - ".class".length()));
+			} catch (Exception | AssertionError absent) {
+				return null;
+			}
+		};
+		ForgeCapabilityCompositionTransformer reading = new ForgeCapabilityCompositionTransformer(reader, false, true);
+		java.util.Map<String, AnchorSet.Severity> severity = new java.util.HashMap<>();
+		for (AnchorSet.Anchor anchor : reading.anchors().anchors()) severity.put(anchor.binaryName(), anchor.severity());
+		assertEquals(ForgeCapabilityCompositionTransformer.TARGETS.size(), severity.size());
+		for (String target : ForgeCapabilityCompositionTransformer.TARGETS) {
+			boolean carried = !ROOTS.contains(target) && ForgeCapabilityCompositionTransformer.carriesNatively(parse(bytesOf(target)));
+			assertEquals(carried ? AnchorSet.Severity.HEDGE : AnchorSet.Severity.REQUIRED, severity.get(target.replace('/', '.')), target);
+		}
+		for (AnchorSet.Anchor anchor : new ForgeCapabilityCompositionTransformer(null, false, true).anchors().anchors()) {
+			assertEquals(AnchorSet.Severity.REQUIRED, anchor.severity(), anchor.binaryName() + ": nothing to read, nothing to hedge");
+		}
+		TransformChain chain = new TransformChain();
+		chain.register(TransformPhase.COREMOD, reading);
+		TransformContext context = new TransformContext(net.fabricmc.api.EnvType.CLIENT, false, "intermediary");
+		for (String target : ForgeCapabilityCompositionTransformer.TARGETS) chain.applyBeforeMixin(target.replace('/', '.'), bytesOf(target), context);
+		AnchorLedger.Report report = chain.ledger().report();
+		assertTrue(report.clean(), () -> "a REQUIRED capability site was handed back untouched: " + report.misses());
 	}
 
 	/** A class shaped like a root but not named by the composition is not composed, whatever the switch says. */
@@ -287,11 +372,20 @@ class ForgeCapabilityCompositionTransformerTest {
 		for (var lost : ForgeCapabilityCompositionTransformer.LOST_INITIALIZERS.entrySet()) {
 			String owner = lost.getKey();
 			String field = lost.getValue();
-			ClassNode before = parse(bytesOf(owner));
+			byte[] lostShape = bytesOf(owner);
+			if (ForgeCapabilityCompositionTransformer.carriesNatively(parse(lostShape))) {
+				// The edit-splicing merge keeps MinecraftForge's initializer in the constructor. A replay on top would
+				// create the handlers twice; the repair stands down and the class is handed back untouched.
+				assertSame(lostShape, new ForgeCapabilityCompositionTransformer().transform(owner.replace('/', '.'), lostShape, null),
+						owner + " keeps " + field + "'s constructor initializer: the replay must stand down");
+				// The replay itself is then proved on the body that lost it: the same class, that statement taken out.
+				lostShape = withoutConstructorInitializer(parse(lostShape), field);
+			}
+			ClassNode before = parse(lostShape);
 			for (MethodNode ctor : before.methods) {
 				if ("<init>".equals(ctor.name)) assertFalse(assigns(ctor, owner, field), "premise: " + owner + ".<init> lost " + field);
 			}
-			ClassNode after = parse(shim(owner));
+			ClassNode after = parse(new ForgeCapabilityCompositionTransformer().transform(owner.replace('/', '.'), lostShape, null));
 			int repaired = 0;
 			for (MethodNode ctor : after.methods) {
 				if (!"<init>".equals(ctor.name)) continue;
@@ -325,8 +419,10 @@ class ForgeCapabilityCompositionTransformerTest {
 
 	/**
 	 * The census that pins {@code LOST_INITIALIZERS}: across the WHOLE merged base, every field assigned in a
-	 * {@code reviveCaps()} but in no constructor. If the merge tool ever fixes one, or a carrier bump adds one, this
-	 * is where it shows.
+	 * {@code reviveCaps()} but in no constructor must be in the table — a carrier bump that adds one shows here. And
+	 * every table entry must be either lost in this base or initialized by the base's own constructor (the edit-splicing
+	 * merge keeps all three, so the census is empty there): an entry that is neither names a field this base no longer
+	 * has in this shape, and the repair would be silently aimed at nothing.
 	 */
 	@Test
 	void theCensusOfLostInitializersMatchesTheTable() throws Exception {
@@ -351,8 +447,65 @@ class ForgeCapabilityCompositionTransformerTest {
 				}
 			}
 		}
-		assertEquals(new java.util.TreeMap<>(ForgeCapabilityCompositionTransformer.LOST_INITIALIZERS), found,
-				"fields assigned in reviveCaps() but in no constructor — the table must name exactly these");
+		for (var lost : found.entrySet()) {
+			assertEquals(lost.getValue(), ForgeCapabilityCompositionTransformer.LOST_INITIALIZERS.get(lost.getKey()),
+					"fields assigned in reviveCaps() but in no constructor — the table must name every one: " + found);
+		}
+		for (var entry : ForgeCapabilityCompositionTransformer.LOST_INITIALIZERS.entrySet()) {
+			if (found.containsKey(entry.getKey())) continue;   // lost here: the replay covers it
+			ClassNode node = parse(bytesOf(entry.getKey()));
+			MethodNode revive = find(node, "reviveCaps", "()V");
+			assertTrue(revive != null && assigns(revive, node.name, entry.getValue()),
+					entry + ": reviveCaps() no longer re-creates the field the table names");
+			assertTrue(ForgeCapabilityCompositionTransformer.carriesNatively(node),
+					entry + " is neither lost nor initialized by a constructor in this base");
+		}
+	}
+
+	/**
+	 * {@code node} with the constructor statement that initializes {@code field} taken out — the exact straight-line
+	 * sequence {@code reviveCaps()} re-creates it with, which is what a merge that dropped the initializer left.
+	 */
+	private static byte[] withoutConstructorInitializer(ClassNode node, String field) {
+		MethodNode revive = find(node, "reviveCaps", "()V");
+		assertNotNull(revive, node.name + " has no reviveCaps()");
+		List<String> sequence = new ArrayList<>();
+		boolean started = false;
+		for (AbstractInsnNode insn : revive.instructions) {
+			if (insn.getOpcode() < 0) continue;
+			if (!started) {
+				started = insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL && "reviveCaps".equals(call.name);
+				continue;
+			}
+			sequence.add(text(insn));
+			if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTFIELD && field.equals(f.name)) break;
+		}
+		int removed = 0;
+		for (MethodNode ctor : node.methods) {
+			if (!"<init>".equals(ctor.name)) continue;
+			List<AbstractInsnNode> code = new ArrayList<>();
+			for (AbstractInsnNode insn : ctor.instructions) if (insn.getOpcode() >= 0) code.add(insn);
+			for (int i = 0; i + sequence.size() <= code.size(); i++) {
+				boolean match = true;
+				for (int j = 0; j < sequence.size() && match; j++) match = sequence.get(j).equals(text(code.get(i + j)));
+				if (!match) continue;
+				for (int j = 0; j < sequence.size(); j++) ctor.instructions.remove(code.get(i + j));
+				removed++;
+				break;
+			}
+		}
+		assertTrue(removed > 0, node.name + ": no constructor carries reviveCaps()'s own initializer for " + field);
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+		node.accept(writer);
+		return writer.toByteArray();
+	}
+
+	private static String text(AbstractInsnNode insn) {
+		org.objectweb.asm.util.Textifier text = new org.objectweb.asm.util.Textifier();
+		insn.accept(new org.objectweb.asm.util.TraceMethodVisitor(text));
+		StringBuilder out = new StringBuilder();
+		for (Object line : text.getText()) out.append(line);
+		return out.toString().trim();
 	}
 
 	/** A reviveCaps whose assignment sits behind a branch is not an initializer; the repair must stand down whole. */
@@ -491,8 +644,17 @@ class ForgeCapabilityCompositionTransformerTest {
 	}
 
 	private static byte[] bytesOf(String internal) throws Exception {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED), "staged merged base absent");
-		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
+		return entry(MERGED, internal);
+	}
+
+	/** NeoForge's own patched class: the body the merge kept whole before it spliced both sides' edits. */
+	private static byte[] neoBytesOf(String internal) throws Exception {
+		return entry(NEO, internal);
+	}
+
+	private static byte[] entry(Path jar, String internal) throws Exception {
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(jar), "staged jar absent: " + jar);
+		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			ZipEntry entry = zip.getEntry(internal + ".class");
 			assertNotNull(entry, internal);
 			try (InputStream in = zip.getInputStream(entry)) {
