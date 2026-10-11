@@ -328,6 +328,124 @@ public class EditSpliceClassChecksTest {
 		assertEquals(List.of(1, 200, 2, 100, 3), CALLS);
 	}
 
+	// ---- a lambda that is one lambda on both sides ---------------------------------------------------------------
+
+	private static final String MINE = "net/minecraft/demo/Mine";
+
+	/** A static lambda of MINE written line by line, as javac writes one: every statement on its own line. */
+	private static MethodNode lineLambda(String name, Object... linesAndCode) {
+		M m = new M(MINE, Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, name, "()V");
+		for (int i = 0; i < linesAndCode.length; i += 2) m.line((Integer) linesAndCode[i], (AbstractInsnNode[]) linesAndCode[i + 1]);
+		return m.done();
+	}
+
+	/**
+	 * MultiPlayerGameMode.continueDestroyBlock's shape. Both sides hook {@code mine}, so it is spliced. MinecraftForge also
+	 * puts its own guard in front of vanilla's statement inside the lambda {@code mine} captures; its lambda keeps that
+	 * name, because it is vanilla's lambda captured where vanilla captures it. NeoForge's lambda is vanilla's. The
+	 * per-method merge gives the lambda MinecraftForge's body (only MinecraftForge edited it), and the spliced capturer
+	 * must keep running it: forcing NeoForge's back on its capturer took MinecraftForge's guard out of the merged game.
+	 */
+	@Test
+	void aLambdaOnlyTheOtherSideEditedKeepsTheEditUnderItsSplicedCapturer() throws Exception {
+		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
+		ClassNode vanilla = type(MINE, new M(MINE, st, "mine", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$mine$0"))
+				.line(12, returnX(false)).done(), lineLambda("lambda$mine$0", 20, rec(2), 21, ret()));
+		ClassNode neo = type(MINE, new M(MINE, st, "mine", "(I)I").line(10, rec(1)).line(11, mark(NEO, 200))
+				.line(12, runStatic(MINE, "lambda$mine$0")).line(13, returnX(false)).done(), lineLambda("lambda$mine$0", 21, rec(2), 22, ret()));
+		ClassNode forge = type(MINE, new M(MINE, st, "mine", "(I)I").line(10, rec(1)).line(11, mark(FORGE, 100))
+				.line(12, runStatic(MINE, "lambda$mine$0")).line(13, returnX(false)).done(),
+				lineLambda("lambda$mine$0", 21, mark(FORGE, 101), 22, rec(2), 23, ret()));
+		Build b = build(vanilla, forge, neo, patch(hunk(10, 10, "F", "A", "B", "R"), hunk(19, 20, "G", "H", "L", "E")),
+				patch(hunk(10, 10, "N", "A", "B", "R")));
+		assertTrue(b.report.contains(MINE + "#mine(I)I SPLICED"), b.report);
+		assertFalse(b.report.contains("lambda audit refused"), b.report);
+		assertTrue(b.report.contains("lambdas-realigned-to-their-capturer=0 lambdas-kept-as-one-on-both-sides=1"), b.report);
+		assertEquals(7, call(b.load(MINE), null, "mine", 7));
+		assertEquals(List.of(1, 100, 200, 101, 2), CALLS, "MinecraftForge's guard inside the lambda still runs");
+	}
+
+	/**
+	 * The same lambda under a capturer the splice did not take. MinecraftForge edited only the lambda, so its {@code mine}
+	 * adds nothing of its own and the splice refuses it; the merge keeps NeoForge's {@code mine}, which captures the
+	 * lambda by the name both sides give vanilla's lambda. MinecraftForge's guard inside it stays.
+	 */
+	@Test
+	void aLambdaOnlyTheOtherSideEditedKeepsTheEditUnderTheBasesUnsplicedCapturer() throws Exception {
+		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
+		ClassNode vanilla = type(MINE, new M(MINE, st, "mine", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$mine$0"))
+				.line(12, returnX(false)).done(), lineLambda("lambda$mine$0", 20, rec(2), 21, ret()));
+		ClassNode neo = type(MINE, new M(MINE, st, "mine", "(I)I").line(10, rec(1)).line(11, mark(NEO, 200))
+				.line(12, runStatic(MINE, "lambda$mine$0")).line(13, returnX(false)).done(), lineLambda("lambda$mine$0", 21, rec(2), 22, ret()));
+		ClassNode forge = type(MINE, new M(MINE, st, "mine", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$mine$0"))
+				.line(12, returnX(false)).done(), lineLambda("lambda$mine$0", 20, mark(FORGE, 101), 21, rec(2), 22, ret()));
+		Build b = build(vanilla, forge, neo, patch(hunk(19, 19, "G", "H", "L", "E")), patch(hunk(10, 10, "N", "A", "B", "R")));
+		assertTrue(b.report.contains(MINE + "#mine(I)I NOT SPLICED"), b.report);
+		assertTrue(b.report.contains("lambdas-realigned-to-their-capturer=0 lambdas-kept-as-one-on-both-sides=1"), b.report);
+		assertEquals(7, call(b.load(MINE), null, "mine", 7));
+		assertEquals(List.of(1, 200, 101, 2), CALLS, "MinecraftForge's guard inside the lambda still runs under NeoForge's capturer");
+	}
+
+	/**
+	 * Negative control: a name collision whose two lambdas carry the same vanilla code. Vanilla's {@code build} captures
+	 * two lambdas that do the same thing. MinecraftForge adds a lambda of its own in front of them, so its numbering
+	 * shifts: its {@code lambda$build$1} is vanilla's FIRST lambda with a MinecraftForge guard added, captured at
+	 * vanilla's first capture, while NeoForge's {@code lambda$build$1} is vanilla's second. Each lambda's vanilla code is
+	 * vanilla's second lambda's code, so only the capture site tells them apart: NeoForge's spliced {@code build} must
+	 * run vanilla's second lambda at its second capture, not MinecraftForge's guard.
+	 */
+	@Test
+	void aNameCollisionWhoseLambdasCarryTheSameVanillaCodeIsStillForcedBack() throws Exception {
+		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
+		ClassNode vanilla = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$build$0"))
+				.line(12, runStatic(MINE, "lambda$build$1")).line(13, returnX(false)).done(),
+				lineLambda("lambda$build$0", 20, rec(2), 21, ret()), lineLambda("lambda$build$1", 30, rec(2), 31, ret()));
+		ClassNode neo = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, mark(NEO, 200))
+				.line(12, runStatic(MINE, "lambda$build$0")).line(13, runStatic(MINE, "lambda$build$1")).line(14, returnX(false)).done(),
+				lineLambda("lambda$build$0", 21, rec(2), 22, ret()), lineLambda("lambda$build$1", 31, rec(2), 32, ret()));
+		ClassNode forge = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$build$0"))
+				.line(12, runStatic(MINE, "lambda$build$1")).line(13, runStatic(MINE, "lambda$build$2")).line(14, returnX(false)).done(),
+				lineLambda("lambda$build$0", 43, mark(FORGE, 100), 44, ret()),
+				lineLambda("lambda$build$1", 21, mark(FORGE, 101), 22, rec(2), 23, ret()), lineLambda("lambda$build$2", 32, rec(2), 33, ret()));
+		// MinecraftForge's patch: the capture of its own lambda after line 10, a guard inside vanilla's first lambda, and
+		// its own lambda's two lines past vanilla's end.
+		String forgePatch = patch(hunk(10, 10, "F", "A", "B", "C", "R"), hunk(19, 20, "G", "H", "L", "E"),
+				"@@ -40,1 +42,3 @@\n Z\n+P\n+Q\n");
+		Build b = build(vanilla, forge, neo, forgePatch, patch(hunk(10, 10, "N", "A", "B", "C", "R")));
+		assertTrue(b.report.contains(MINE + "#build(I)I SPLICED"), b.report);
+		assertTrue(b.report.contains("lambdas-kept-as-one-on-both-sides=0"), b.report);
+		assertEquals(7, call(b.load(MINE), null, "build", 7));
+		assertEquals(List.of(1, 100, 200, 2, 2), CALLS, "each of NeoForge's captures runs vanilla's lambda of its place");
+	}
+
+	/**
+	 * Negative control for the lambda's own code: a collision whose capture the alignment places at the wrong vanilla
+	 * capture. MinecraftForge deleted vanilla's first capture, so its only lambda, {@code lambda$build$0}, is vanilla's
+	 * SECOND lambda with a MinecraftForge guard added. Its capture instruction looks exactly like vanilla's first (both
+	 * capture a lambda of {@code build} through the same interface), so matching MinecraftForge's body with vanilla's
+	 * pairs it with vanilla's first capture, the same one NeoForge's {@code lambda$build$0} is captured at. Only the
+	 * lambdas' own code shows that MinecraftForge's is not vanilla's first lambda, and NeoForge's first capture must
+	 * run vanilla's first lambda.
+	 */
+	@Test
+	void aCollisionTheCaptureAlignmentCannotTellApartIsForcedBackByTheLambdasOwnCode() throws Exception {
+		int st = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC;
+		ClassNode vanilla = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$build$0"))
+				.line(12, runStatic(MINE, "lambda$build$1")).line(13, returnX(false)).done(),
+				lineLambda("lambda$build$0", 20, rec(2), 21, ret()), lineLambda("lambda$build$1", 30, rec(3), 31, ret()));
+		ClassNode neo = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, mark(NEO, 200))
+				.line(12, runStatic(MINE, "lambda$build$0")).line(13, runStatic(MINE, "lambda$build$1")).line(14, returnX(false)).done(),
+				lineLambda("lambda$build$0", 21, rec(2), 22, ret()), lineLambda("lambda$build$1", 31, rec(3), 32, ret()));
+		ClassNode forge = type(MINE, new M(MINE, st, "build", "(I)I").line(10, rec(1)).line(11, runStatic(MINE, "lambda$build$0"))
+				.line(12, returnX(false)).done(), lineLambda("lambda$build$0", 29, mark(FORGE, 101), 30, rec(3), 31, ret()));
+		// MinecraftForge's patch: vanilla line 11 (the first capture) deleted, a guard added in front of line 30.
+		String forgePatch = patch("@@ -10,3 +10,2 @@\n A\n-B\n C\n", "@@ -29,3 +28,4 @@\n H\n+G\n L\n E\n");
+		Build b = build(vanilla, forge, neo, forgePatch, patch(hunk(10, 10, "N", "A", "B", "C", "R")));
+		assertTrue(b.report.contains("lambdas-kept-as-one-on-both-sides=0"), b.report);
+		assertEquals(7, call(b.load(MINE), null, "build", 7));
+		assertEquals(List.of(1, 200, 2, 3), CALLS, "NeoForge's first capture runs vanilla's first lambda");
+	}
+
 	// ---- a carried read of a field nothing writes ----------------------------------------------------------------
 
 	private static final String TITLE = "net/minecraft/demo/Title";
@@ -448,7 +566,7 @@ public class EditSpliceClassChecksTest {
 	@Test
 	void theAuditFindsAStaticHandleToAnInstanceLambda() {
 		ClassNode merged = audited(lambda("lambda$use$0", false, mark(FORGE, 100)));
-		Set<String> findings = MergedBaseBuilder.auditCapturedLambdas(merged, methods(), methods(), Set.of("use()V"), Set.of());
+		Set<String> findings = MergedBaseBuilder.auditCapturedLambdas(merged, methods(), methods(), Set.of("use()V"), Set.of(), Set.of());
 		assertEquals(Set.of("use()V -> lambda$use$0()V: a static handle names an instance method"), findings);
 	}
 
@@ -456,7 +574,7 @@ public class EditSpliceClassChecksTest {
 	void theAuditFindsBaseSideCodeCapturingTheOtherSidesLambda() {
 		MethodNode base = lambda("lambda$use$0", true, rec(2)), other = lambda("lambda$use$0", true, mark(FORGE, 100));
 		ClassNode merged = audited(lambda("lambda$use$0", true, mark(FORGE, 100)));
-		Set<String> findings = MergedBaseBuilder.auditCapturedLambdas(merged, methods(base), methods(other), Set.of("use()V"), Set.of());
+		Set<String> findings = MergedBaseBuilder.auditCapturedLambdas(merged, methods(base), methods(other), Set.of("use()V"), Set.of(), Set.of());
 		assertEquals(Set.of("use()V -> lambda$use$0()V: base-side code captures the other side's lambda of that name"), findings);
 	}
 
@@ -465,9 +583,9 @@ public class EditSpliceClassChecksTest {
 	void theAuditAcceptsTheBasesLambdaAndLeavesAContestedOneToItsReport() {
 		MethodNode base = lambda("lambda$use$0", true, rec(2)), other = lambda("lambda$use$0", true, mark(FORGE, 100));
 		assertEquals(Set.of(), MergedBaseBuilder.auditCapturedLambdas(audited(lambda("lambda$use$0", true, rec(2))),
-				methods(base), methods(other), Set.of("use()V"), Set.of()));
+				methods(base), methods(other), Set.of("use()V"), Set.of(), Set.of()));
 		assertEquals(Set.of(), MergedBaseBuilder.auditCapturedLambdas(audited(lambda("lambda$use$0", true, mark(FORGE, 100))),
-				methods(base), methods(other), Set.of("use()V"), Set.of("lambda$use$0()V")));
+				methods(base), methods(other), Set.of("use()V"), Set.of("lambda$use$0()V"), Set.of()));
 	}
 
 	private static final String BOTH = "net/minecraft/demo/Both";

@@ -152,7 +152,7 @@ public final class MergedBaseBuilder {
 	}
 	private int classesTakenVanilla, classesTakenForge, classesTakenNeo, classesMerged, classesForgeOnly;
 	private int splicedMethods, splicedFields, mergedInterfaces, conflictMethods, conflictFields;
-	private int lambdasRealigned;
+	private int lambdasRealigned, lambdasKeptAsOne;
 	private int superclassRebased, diamondDefaultsResolved, duplicateFieldsResolved, fieldInitPreserved;
 	private int collisionMethodsDropped, classAccessWidened, bridgedConstructors, exclusiveFieldsInitialized;
 	private int divergentAnonymousMaterialized, divergentAnonymousCallSitesRewritten;
@@ -1103,7 +1103,7 @@ public final class MergedBaseBuilder {
 
 		Set<String> allExclusiveAdded = new LinkedHashSet<>(baseExclusiveAddedFields);
 		allExclusiveAdded.addAll(otherExclusiveAddedFields);
-		settleSplices(name, baseN, baseMethods, otherN, baseIsForge ? frg : neu, baseIsForge ? neu : frg, baseIsForge,
+		settleSplices(name, baseN, baseMethods, otherN, baseIsForge ? frg : neu, baseIsForge ? neu : frg, van, baseIsForge,
 				basePkg, otherPkg, allExclusiveAdded);
 		FieldContractReconciler.reconcile(baseN, frgN, neuN, declarationGraph, generatedFieldProviders);
 		resolveDuplicateFieldNames(baseN);
@@ -1147,8 +1147,8 @@ public final class MergedBaseBuilder {
 	 * arbitrated and reported once, by the round that stands.
 	 */
 	private void settleSplices(String name, ClassNode baseN, Map<String, MethodNode> baseMethods, ClassNode otherN,
-			byte[] baseSideBytes, byte[] otherSideBytes, boolean baseIsForge, String basePkg, String otherPkg,
-			Set<String> exclusiveAdded) {
+			byte[] baseSideBytes, byte[] otherSideBytes, byte[] vanillaBytes, boolean baseIsForge, String basePkg,
+			String otherPkg, Set<String> exclusiveAdded) {
 		List<PendingSplice> pending = List.copyOf(pendingSplices);
 		pendingSplices.clear();
 		Map<String, MethodNode> otherMethods = methodMap(parse(otherSideBytes));
@@ -1156,6 +1156,7 @@ public final class MergedBaseBuilder {
 		// side's body under the same name, and a splice compares what each side's edit captures.
 		Map<String, MethodNode> baseSideMethods = pending.isEmpty() ? Map.of() : methodMap(parse(baseSideBytes));
 		String source = PatchLineProvenance.sourcePath(name, baseN.sourceFile);
+		Map<String, MethodNode> vanillaMethods = vanillaBytes == null ? Map.of() : methodMap(parse(vanillaBytes));
 		Rewind rewind = new Rewind(baseN, baseMethods);
 		Map<String, Map<EditSplicer.RunId, String>> withheld = new LinkedHashMap<>();
 		preWithheld.getOrDefault(name, Map.of()).forEach((method, ids) -> withheld.put(method, new LinkedHashMap<>(ids)));
@@ -1178,11 +1179,14 @@ public final class MergedBaseBuilder {
 				applySplice(name, baseN, baseMethods, p, r, basePkg, otherPkg, baseIsForge);
 			}
 			ClassNode pristine = parse(baseSideBytes);
-			Set<String> contested = realignCapturedLambdas(baseN, pristine, otherN, baseMethods, spliced);
+			LambdaSides sides = new LambdaSides(name, source, methodMap(pristine), methodMap(otherN), vanillaMethods,
+					baseIsForge ? forgeProvenance : neoProvenance, baseIsForge ? neoProvenance : forgeProvenance);
+			Realigned realigned = realignCapturedLambdas(baseN, sides, baseMethods, spliced);
 			if (mode == SettleMode.PROBE) {
 				// The class without splices: the findings it has too were not the splices' doing.
 				Set<String> introduced = new LinkedHashSet<>(spliceFindings);
-				introduced.removeAll(auditCapturedLambdas(baseN, methodMap(pristine), otherMethods, lastSpliced, contested));
+				introduced.removeAll(auditCapturedLambdas(baseN, sides.base(), otherMethods, lastSpliced, realigned.contested(),
+						realigned.oneLambda()));
 				if (introduced.isEmpty()) { mode = SettleMode.KEEP; continue; }
 				fallbackReason = "the class's lambda audit refused its splices: " + introduced.iterator().next();
 				break;
@@ -1195,7 +1199,8 @@ public final class MergedBaseBuilder {
 				continue;
 			}
 			if (withholdUnwrittenReads(name, baseN, pending, results, exclusiveAdded, withheld)) continue;
-			Set<String> findings = auditCapturedLambdas(baseN, methodMap(pristine), otherMethods, spliced, contested);
+			Set<String> findings = auditCapturedLambdas(baseN, sides.base(), otherMethods, spliced, realigned.contested(),
+					realigned.oneLambda());
 			if (findings.isEmpty()) break;
 			spliceFindings = findings;
 			lastSpliceResults = results;
@@ -1375,7 +1380,7 @@ public final class MergedBaseBuilder {
 		private final List<MethodNode> methods;
 		private final Map<String, MethodNode> index;
 		private final Map<MethodNode, Integer> access = new java.util.IdentityHashMap<>();
-		private final int conflictCount, structuralCount, decisionCount, merged, lost, preserved, widened, realigned;
+		private final int conflictCount, structuralCount, decisionCount, merged, lost, preserved, widened, realigned, keptAsOne;
 		private final Map<String, Integer> declines;
 
 		Rewind(ClassNode cls, Map<String, MethodNode> live) {
@@ -1393,6 +1398,7 @@ public final class MergedBaseBuilder {
 			preserved = fieldInitPreserved;
 			widened = accessWidened;
 			realigned = lambdasRealigned;
+			keptAsOne = lambdasKeptAsOne;
 		}
 
 		void restore() {
@@ -1411,6 +1417,7 @@ public final class MergedBaseBuilder {
 			fieldInitPreserved = preserved;
 			accessWidened = widened;
 			lambdasRealigned = realigned;
+			lambdasKeptAsOne = keptAsOne;
 		}
 	}
 
@@ -1478,11 +1485,13 @@ public final class MergedBaseBuilder {
 	 *   <li>base-side code must capture the base's lambda: in a method that is the base side's (in {@code baseSide},
 	 *       or its body is the base side's and not the other side's), a lambda of the base side's name must not
 	 *       resolve to the other side's body, unless the two do the same thing. A lambda {@code contested} (captured
-	 *       from both sides' surviving methods, already reported) is not a finding here.</li>
+	 *       from both sides' surviving methods, already reported) is not a finding here, and neither is one in
+	 *       {@code oneLambda}: the realignment proved that both sides' lambdas of that name are one vanilla lambda
+	 *       captured at the same vanilla place, so either side's body is that lambda.</li>
 	 * </ul>
 	 */
 	static Set<String> auditCapturedLambdas(ClassNode merged, Map<String, MethodNode> pristine, Map<String, MethodNode> other,
-			Set<String> baseSide, Set<String> contested) {
+			Set<String> baseSide, Set<String> contested, Set<String> oneLambda) {
 		Map<String, MethodNode> methods = methodMap(merged);
 		Set<String> findings = new LinkedHashSet<>();
 		for (MethodNode m : merged.methods) {
@@ -1513,7 +1522,7 @@ public final class MergedBaseBuilder {
 					};
 					if (!kindFits) findings.add(where + "a " + (h.getTag() == Opcodes.H_INVOKESTATIC ? "static" : "non-static")
 							+ " handle names a" + (isStatic ? " static" : "n instance") + " method");
-					if (!base || !h.getName().startsWith("lambda$") || contested.contains(target)) continue;
+					if (!base || !h.getName().startsWith("lambda$") || contested.contains(target) || oneLambda.contains(target)) continue;
 					MethodNode baseOwn = pristine.get(target), otherOwn = other.get(target);
 					if (baseOwn == null || otherOwn == null) continue;
 					String now = bodyText(t);
@@ -1601,18 +1610,30 @@ public final class MergedBaseBuilder {
 	 * whose body matches neither (rewritten, repaired elsewhere in this builder) is left alone, because its side is
 	 * not a fact. A lambda forced to a side takes what it captures to that side too.
 	 *
+	 * <p>A name both sides give the SAME lambda is not forced, though. MinecraftForge's
+	 * {@code MultiPlayerGameMode.lambda$continueDestroyBlock$1} is vanilla's lambda of that name with MinecraftForge's own
+	 * guard in front of its {@code destroyBlock}, captured where vanilla captures it; NeoForge's is vanilla's unchanged.
+	 * Forcing NeoForge's back onto the spliced capturer took MinecraftForge's edit out of the merged game for no
+	 * collision at all. So a lambda is first asked whether it is one lambda on both sides ({@link #oneVanillaLambda}):
+	 * each side's capturer captures it at an instruction its own patch did not add that matches the same instruction of
+	 * the vanilla capturer, and each side's lambda is that vanilla lambda's code, all of it, with only its own patch's
+	 * code added. Then its name means the same lambda in both compiles, the per-method merge already decided it by the
+	 * same rules as any method both sides have (the side that edited it wins, both edits are spliced), and that decision
+	 * stands. PauseScreen's collision is not one: MinecraftForge's {@code lambda$createPauseMenu$11} is code its patch
+	 * added, captured on a line its patch added.
+	 *
 	 * <p>The displaced body is not re-homed: its only caller was the capturing method that lost, so nothing kept
 	 * can still reach it. When a lambda is genuinely captured from BOTH sides' surviving methods the choice is
-	 * real, and that is recorded as a conflict instead of being made silently. Returns those contested names.
+	 * real, and that is recorded as a conflict instead of being made silently. Returns those contested names, and the
+	 * names left as merged because they are one lambda on both sides.
 	 */
-	private Set<String> realignCapturedLambdas(ClassNode baseN, ClassNode pristineBase, ClassNode otherN,
-			Map<String, MethodNode> baseMethods, Set<String> spliced) {
-		// The base side as it was BEFORE the method merge ran: baseN is mutated in place, so its own index no
-		// longer tells you what the base compile said. Getting this wrong is silent — the pass simply never fires.
-		Map<String, MethodNode> pristine = methodMap(pristineBase);
-		Map<String, MethodNode> otherMethods = methodMap(otherN);
+	private Realigned realignCapturedLambdas(ClassNode baseN, LambdaSides sides, Map<String, MethodNode> baseMethods,
+			Set<String> spliced) {
+		// sides.base() is the base side as it was BEFORE the method merge ran: baseN is mutated in place, so its own
+		// index no longer tells you what the base compile said. Getting this wrong is silent — the pass simply never fires.
+		Map<String, MethodNode> pristine = sides.base(), otherMethods = sides.other();
 		Map<String, String> claimedBy = new LinkedHashMap<>();
-		Set<String> contested = new LinkedHashSet<>();
+		Set<String> contested = new LinkedHashSet<>(), oneLambda = new LinkedHashSet<>();
 		for (MethodNode m : new ArrayList<>(baseN.methods)) {
 			if (m.instructions == null) continue;
 			String key = m.name + m.desc;
@@ -1625,24 +1646,42 @@ public final class MergedBaseBuilder {
 				// lambdas, and every lambda a carried run captures is either renamed or does what the base's does.
 				side = "base";
 			} else {
-				// Which compile is this body from? Only a body that IS one of the two answers the question.
-				MethodNode inBase = pristine.get(key), inOther = otherMethods.get(key);
-				String kept = bodyText(m);
-				boolean fromBase = inBase != null && kept.equals(bodyText(inBase));
-				boolean fromOther = inOther != null && kept.equals(bodyText(inOther));
-				if (fromBase == fromOther) continue; // neither, or indistinguishable: not a fact, leave it
-				side = fromBase ? "base" : "other";
+				side = sideOf(m, pristine.get(key), otherMethods.get(key));
+				if (side == null) continue; // neither, or indistinguishable: not a fact, leave it
 			}
-			realignCaptures(baseN, m, side, side.equals("base") ? pristine : otherMethods, baseMethods, spliced, claimedBy,
-					contested, 0);
+			realignCaptures(baseN, m, side, sides, baseMethods, spliced, claimedBy, contested, oneLambda, 0);
 		}
-		return contested;
+		return new Realigned(contested, oneLambda);
 	}
 
+	/** Which compile a kept body is from: "base", "other", or null when it is neither or both. */
+	private static String sideOf(MethodNode kept, MethodNode inBase, MethodNode inOther) {
+		String body = bodyText(kept);
+		boolean fromBase = inBase != null && body.equals(bodyText(inBase));
+		boolean fromOther = inOther != null && body.equals(bodyText(inOther));
+		return fromBase == fromOther ? null : fromBase ? "base" : "other";
+	}
+
+	/**
+	 * One class's two sides and vanilla, for the realignment: each side's methods as its patch compiled them, the vanilla
+	 * methods (empty when vanilla lacks the class), and each side's patch provenance of the class's source file (null
+	 * when edit splicing is off).
+	 */
+	record LambdaSides(String owner, String source, Map<String, MethodNode> base, Map<String, MethodNode> other,
+			Map<String, MethodNode> vanilla, PatchLineProvenance baseProvenance, PatchLineProvenance otherProvenance) {
+		Map<String, MethodNode> of(String side) {
+			return side.equals("base") ? base : other;
+		}
+	}
+
+	/** What the realignment left as merged: names captured from both sides, and names that are one lambda on both. */
+	record Realigned(Set<String> contested, Set<String> oneLambda) { }
+
 	/** Puts every lambda {@code m} captures on {@code side}, and what each of those captures after it. */
-	private void realignCaptures(ClassNode baseN, MethodNode m, String side, Map<String, MethodNode> sideMethods,
+	private void realignCaptures(ClassNode baseN, MethodNode m, String side, LambdaSides sides,
 			Map<String, MethodNode> baseMethods, Set<String> spliced, Map<String, String> claimedBy, Set<String> contested,
-			int depth) {
+			Set<String> oneLambda, int depth) {
+		Map<String, MethodNode> sideMethods = sides.of(side);
 		for (AbstractInsnNode insn : m.instructions) {
 			if (!(insn instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy)) continue;
 			for (Object arg : indy.bsmArgs) {
@@ -1660,6 +1699,7 @@ public final class MergedBaseBuilder {
 					continue;
 				}
 				MethodNode now = have;
+				String nowSide = side;
 				if (spliced.contains(key)) {
 					// A spliced lambda already holds the base's body and the other side's edits.
 					if (!side.equals("base")) {
@@ -1668,13 +1708,79 @@ public final class MergedBaseBuilder {
 						continue;
 					}
 				} else if (!bodyText(have).equals(bodyText(want))) {
-					replaceMethod(baseN, key, want, baseMethods);
-					lambdasRealigned++;
-					now = want;
+					if (oneVanillaLambda(sides, m.name + m.desc, key)) {
+						// One lambda under one name on both sides: the per-method merge's decision stands, and what the
+						// kept body captures follows the compile it is from.
+						oneLambda.add(key);
+						lambdasKeptAsOne++;
+						nowSide = sideOf(have, sides.base().get(key), sides.other().get(key));
+						if (nowSide == null) continue;
+					} else {
+						replaceMethod(baseN, key, want, baseMethods);
+						lambdasRealigned++;
+						now = want;
+					}
 				}
-				if (depth < 8) realignCaptures(baseN, now, side, sideMethods, baseMethods, spliced, claimedBy, contested, depth + 1);
+				if (depth < 8) realignCaptures(baseN, now, nowSide, sides, baseMethods, spliced, claimedBy, contested, oneLambda,
+						depth + 1);
 			}
 		}
+	}
+
+	/**
+	 * Whether {@code lambda} (name and descriptor) is one vanilla lambda on both sides, as {@code capturer} captures it.
+	 * Both sides' capturers capture it at an instruction their own patch did not add, and those two instructions match
+	 * the same capture in the vanilla capturer; both sides' lambdas have the static flag of the vanilla lambda that
+	 * capture names; and each side's lambda is that vanilla lambda's code, every instruction of it and no other vanilla
+	 * code, with only its own patch's code added ({@link EditSplicer#matchVanilla}). Matching is by what the code is,
+	 * the way a splice aligns a patched body with vanilla, never by a line number: the two decompiles and vanilla's own
+	 * compile number their lines differently. Anything unknown — a side without the capturer or the lambda, vanilla
+	 * without the class, no patch provenance — is not proof.
+	 */
+	static boolean oneVanillaLambda(LambdaSides sides, String capturer, String lambda) {
+		if (sides.source() == null || sides.baseProvenance() == null || sides.otherProvenance() == null) return false;
+		MethodNode vanillaCapturer = sides.vanilla().get(capturer);
+		MethodNode baseLambda = sides.base().get(lambda), otherLambda = sides.other().get(lambda);
+		if (vanillaCapturer == null || vanillaCapturer.instructions.size() == 0 || baseLambda == null || otherLambda == null) return false;
+		AbstractInsnNode atBase = vanillaCapture(sides.owner(), sides.base().get(capturer), sides.baseProvenance(), sides.source(),
+				vanillaCapturer, lambda);
+		AbstractInsnNode atOther = vanillaCapture(sides.owner(), sides.other().get(capturer), sides.otherProvenance(), sides.source(),
+				vanillaCapturer, lambda);
+		if (atBase == null || atBase != atOther) return false;
+		org.objectweb.asm.Handle named = null;
+		for (Object arg : ((org.objectweb.asm.tree.InvokeDynamicInsnNode) atBase).bsmArgs) {
+			if (arg instanceof org.objectweb.asm.Handle h && h.getOwner().equals(sides.owner())) { named = h; break; }
+		}
+		MethodNode vanillaLambda = named == null ? null : sides.vanilla().get(named.getName() + named.getDesc());
+		if (vanillaLambda == null || vanillaLambda.instructions.size() == 0) return false;
+		int isStatic = vanillaLambda.access & Opcodes.ACC_STATIC;
+		if ((baseLambda.access & Opcodes.ACC_STATIC) != isStatic || (otherLambda.access & Opcodes.ACC_STATIC) != isStatic) return false;
+		return EditSplicer.matchVanilla(baseLambda, sides.baseProvenance(), sides.source(), vanillaLambda).whole()
+				&& EditSplicer.matchVanilla(otherLambda, sides.otherProvenance(), sides.source(), vanillaLambda).whole();
+	}
+
+	/**
+	 * The vanilla capturer's instruction that {@code capturer}'s capture of {@code lambda} is: every such capture in it is
+	 * vanilla code by its side's provenance and matches one and the same vanilla instruction. Null otherwise.
+	 */
+	private static AbstractInsnNode vanillaCapture(String owner, MethodNode capturer, PatchLineProvenance provenance, String source,
+			MethodNode vanillaCapturer, String lambda) {
+		if (capturer == null || capturer.instructions == null || capturer.instructions.size() == 0) return null;
+		EditSplicer.VanillaMatch match = null;
+		AbstractInsnNode found = null;
+		for (AbstractInsnNode insn : capturer.instructions) {
+			if (!(insn instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy)) continue;
+			boolean captures = false;
+			for (Object arg : indy.bsmArgs) {
+				if (arg instanceof org.objectweb.asm.Handle h && h.getOwner().equals(owner) && (h.getName() + h.getDesc()).equals(lambda)) captures = true;
+			}
+			if (!captures) continue;
+			if (match == null) match = EditSplicer.matchVanilla(capturer, provenance, source, vanillaCapturer);
+			AbstractInsnNode counterpart = match.counterparts().get(indy);
+			if (counterpart == null || (found != null && found != counterpart)) return null;
+			found = counterpart;
+		}
+		return found;
 	}
 
 	/** A body rendered for equality across two compiles of the same source: opcodes and their operands. */
@@ -2424,6 +2530,7 @@ public final class MergedBaseBuilder {
 				+ " duplicate-fields-resolved=" + duplicateFieldsResolved + " field-init-preserved=" + fieldInitPreserved
 				+ " bridged-constructors=" + bridgedConstructors + " exclusive-fields-initialized=" + exclusiveFieldsInitialized
 				+ " lambdas-realigned-to-their-capturer=" + lambdasRealigned
+				+ " lambdas-kept-as-one-on-both-sides=" + lambdasKeptAsOne
 				+ " divergent-anonymous-materialized=" + divergentAnonymousMaterialized
 				+ " (call sites repointed=" + divergentAnonymousCallSitesRewritten + ")"
 				+ " custom-payload-interop=" + customPayloadInteropPatched);

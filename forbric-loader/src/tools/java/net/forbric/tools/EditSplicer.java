@@ -2241,6 +2241,40 @@ final class EditSplicer {
 	}
 
 	/**
+	 * A patched method's vanilla code matched with the vanilla method's, the way a splice aligns a patched body with the
+	 * vanilla method: every instruction its own patch did not add (by provenance) paired with its counterpart in the
+	 * vanilla method where the alignment finds one. {@code unmatchedPatched} counts the patched body's vanilla-origin
+	 * instructions with no counterpart, {@code unmatchedVanilla} the vanilla method's instructions nothing pairs with.
+	 */
+	record VanillaMatch(Map<AbstractInsnNode, AbstractInsnNode> counterparts, int unmatchedPatched, int unmatchedVanilla) {
+		/** The vanilla method's code, all of it and nothing else, is the patched body's vanilla code: its patch only added. */
+		boolean whole() {
+			return !counterparts.isEmpty() && unmatchedPatched == 0 && unmatchedVanilla == 0;
+		}
+	}
+
+	/** Matches the vanilla code of {@code patched} (its side's {@code provenance} of {@code source}) with {@code vanilla}. */
+	static VanillaMatch matchVanilla(MethodNode patched, PatchLineProvenance provenance, String source, MethodNode vanilla) {
+		Annotated p = new Annotated(patched);
+		int line = 0;
+		for (AbstractInsnNode n = patched.instructions.getFirst(); n != null; n = n.getNext()) {
+			if (n instanceof LineNumberNode ln) line = ln.line;
+			if (n.getOpcode() < 0) continue;
+			p.position.put(n, p.code.size());
+			p.code.add(n);
+			p.line.add(line);
+			p.origin.add(source == null ? null : provenance.origin(source, line));
+		}
+		for (AbstractInsnNode n : p.code) p.key.add(key(n, patched, p));
+		Annotated v = annotateVanilla(null, vanilla);
+		Map<AbstractInsnNode, AbstractInsnNode> counterparts = new IdentityHashMap<>();
+		align(p, v).forEach((pi, vi) -> counterparts.put(p.code.get(pi), v.code.get(vi)));
+		int vanillaOrigin = 0;
+		for (int i = 0; i < p.code.size(); i++) if (!p.added(i)) vanillaOrigin++;
+		return new VanillaMatch(counterparts, vanillaOrigin - counterparts.size(), v.code.size() - counterparts.size());
+	}
+
+	/**
 	 * Whether two methods of {@code owner} do the same thing: the same static flag, the same instructions (lambdas
 	 * without their number, locals by name), and through every method handle into the class, the same kind of
 	 * handle to a method that again does the same thing. The left method's handles resolve among
