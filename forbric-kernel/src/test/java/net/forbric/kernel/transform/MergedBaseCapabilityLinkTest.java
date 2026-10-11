@@ -46,7 +46,8 @@ class MergedBaseCapabilityLinkTest {
 	 * Pinned from the staged base on 2026-09-20: every capability call on a root type that the merge left dangling
 	 * — the four inside the roots themselves, and the super calls of the three Forge-patched overriders whose own
 	 * super is a root (the other seven overriders reach a declaring intermediate class). Re-read a diff, never
-	 * re-bless it.
+	 * re-bless it. Re-read on 2026-10-11 for the edit-splicing merge: eight calls added, none removed, all of them
+	 * MinecraftForge statements the merge now keeps instead of dropping.
 	 */
 	private static final Set<String> KNOWN_UNRESOLVED = new TreeSet<>(List.of(
 			"net/minecraft/server/level/ServerLevel.getCapabilityDispatcher -> net/minecraft/server/level/ServerLevel.getCapabilities()Lnet/minecraftforge/common/capabilities/CapabilityDispatcher;",
@@ -72,7 +73,21 @@ class MergedBaseCapabilityLinkTest {
 			"net/minecraft/world/entity/vehicle/boat/ChestBoat.reviveCaps -> net/minecraft/world/entity/vehicle/boat/AbstractChestBoat.reviveCaps()V",
 			"net/minecraft/world/entity/vehicle/minecart/AbstractMinecartContainer.getCapability -> net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.getCapability" + FORGE_GET,
 			"net/minecraft/world/entity/vehicle/minecart/AbstractMinecartContainer.invalidateCaps -> net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.invalidateCaps()V",
-			"net/minecraft/world/entity/vehicle/minecart/AbstractMinecartContainer.reviveCaps -> net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.reviveCaps()V"));
+			"net/minecraft/world/entity/vehicle/minecart/AbstractMinecartContainer.reviveCaps -> net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.reviveCaps()V",
+			// 2026-10-11, the edit-splicing merge: MinecraftForge's own lifecycle statements kept inside bodies both
+			// ecosystems patched — the constructor gathers and the ForgeCaps save/load. Each calls a delegate the
+			// composition adds (afterTheShimAndTheCompatTransformerNothingDangles), and the composition's own
+			// gather/funnel stands down on each of these bodies so none of them runs twice. Entity.lambda$load$1 is
+			// MinecraftForge's ForgeCaps lambda carried in under the name NeoForge's NeoForgeData lambda already had, so
+			// both reads now call it — a merge defect, reported, not repaired here; fixing it moves this entry's name.
+			"net/minecraft/client/multiplayer/ClientLevel.<init> -> net/minecraft/client/multiplayer/ClientLevel.gatherCapabilities()V",
+			"net/minecraft/world/entity/Entity.<init> -> net/minecraft/world/entity/Entity.gatherCapabilities()V",
+			"net/minecraft/world/entity/Entity.lambda$load$1 -> net/minecraft/world/entity/Entity.deserializeCaps(Lnet/minecraft/core/HolderLookup$Provider;Lnet/minecraft/nbt/CompoundTag;)V",
+			"net/minecraft/world/entity/Entity.saveWithoutId -> net/minecraft/world/entity/Entity.serializeCaps(Lnet/minecraft/core/HolderLookup$Provider;)Lnet/minecraft/nbt/CompoundTag;",
+			"net/minecraft/world/level/block/entity/BlockEntity.<init> -> net/minecraft/world/level/block/entity/BlockEntity.gatherCapabilities()V",
+			"net/minecraft/world/level/block/entity/BlockEntity.loadAdditional -> net/minecraft/world/level/block/entity/BlockEntity.getCapabilities()Lnet/minecraftforge/common/capabilities/CapabilityDispatcher;",
+			"net/minecraft/world/level/block/entity/BlockEntity.saveAdditional -> net/minecraft/world/level/block/entity/BlockEntity.getCapabilities()Lnet/minecraftforge/common/capabilities/CapabilityDispatcher;",
+			"net/minecraft/world/level/block/entity/BlockEntity.saveAdditional -> net/minecraft/world/level/block/entity/BlockEntity.serializeCaps(Lnet/minecraft/world/level/storage/ValueOutput;)Lnet/minecraft/nbt/CompoundTag;"));
 
 	@Test
 	void untransformedTheDanglingSetIsExactlyTheKnownOne() throws Exception {
