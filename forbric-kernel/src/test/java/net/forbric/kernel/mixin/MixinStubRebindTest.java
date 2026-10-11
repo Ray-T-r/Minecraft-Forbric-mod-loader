@@ -892,7 +892,8 @@ class MixinStubRebindTest {
 
 	/**
 	 * An allow bounds a @ModifyVariable by what its name can match in the body — torrential's first store of `speed` is
-	 * one, every store of it eight — and an INVOKE_STRING point by every call of its member: they still move within it.
+	 * one, every store of it as many as the body makes (eight where the merged body posts one break-speed event, nine
+	 * where it keeps both ecosystems') — and an INVOKE_STRING point by every call of its member: they still move within it.
 	 */
 	@Test void anAllowIsCountedForLocalAndStringPointsToo() throws Exception {
 		ClassNode player = merged("net/minecraft/world/entity/player/Player");
@@ -901,13 +902,22 @@ class MixinStubRebindTest {
 		MixinStubRebind.noteEcosystem(first.name, Ecosystem.FABRIC);
 		assertEquals(1, MixinStubRebind.adapt(first, name -> player), "the first store of speed");
 
+		// Every store of speed, counted off the body the point is read in: one fewer than that is too few, that many is enough.
+		MethodNode host = player.methods.stream().filter(m -> m.name.equals("getDestroySpeed") && m.desc.equals("(" + STATE + POS + ")F"))
+				.findFirst().orElseThrow();
+		java.util.Set<Integer> named = new java.util.HashSet<>();
+		for (org.objectweb.asm.tree.LocalVariableNode local : host.localVariables) if (local.name.equals("speed")) named.add(local.index);
+		int stores = 0;
+		for (var instruction : host.instructions)
+			if (instruction instanceof org.objectweb.asm.tree.VarInsnNode store && store.getOpcode() == Opcodes.FSTORE && named.contains(store.var)) stores++;
+		assertTrue(stores > 1, "premise: speed is stored more than once");
 		ClassNode every = conduit("(F" + STATE + ")F", "speed", 0);
 		AnnotationNode variable = MixinFit.injectorOf(every.methods.getFirst());
 		variable.values.set(variable.values.indexOf("at") + 1, at("STORE"));
-		variable.values.addAll(List.of("allow", 1));
-		assertEquals(0, MixinStubRebind.adapt(every, name -> player), "every store of speed: eight");
-		variable.values.set(variable.values.indexOf("allow") + 1, 8);
-		assertEquals(1, MixinStubRebind.adapt(every, name -> player), "within eight");
+		variable.values.addAll(List.of("allow", stores - 1));
+		assertEquals(0, MixinStubRebind.adapt(every, name -> player), "every store of speed: " + stores);
+		variable.values.set(variable.values.indexOf("allow") + 1, stores);
+		assertEquals(1, MixinStubRebind.adapt(every, name -> player), "within " + stores);
 
 		ClassNode string = synthetic("com/example/PlayerStringMixin", "net/minecraft/world/entity/player/Player", "onAttribute",
 				"(" + CALLBACK_INFO_RETURNABLE + ")V", false, injector(INJECT, "getDestroySpeed", List.of(at("INVOKE_STRING", "target",
