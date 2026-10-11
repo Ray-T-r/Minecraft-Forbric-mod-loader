@@ -76,16 +76,30 @@ class NativeOwnedComponentInitializersTest implements Opcodes {
         assertSame(otherCurrent,new ModifiableDataViewsTransformer(resources(otherSource,otherCurrent,false)).transform(OWNER,otherCurrent,null),"an unsupported source writer cannot be silently skipped while another constructor is repaired");
         World other=world(otherSource,false);Object receiver=other.owner.getConstructor().newInstance();assertNull(other.component.getField("owner").get(other.get(receiver,other.component)));
     }
-    @Test void actualClientLevelRestoresItsIndependentNativeComponentAtTheVerifiedPeerBoundary()throws Exception{
+    /**
+     * The real ClientLevel: MinecraftForge's constructor allocates its own ModelDataManager where NeoForge's allocates
+     * NeoForge's. Whatever the staged base carries, after the transformer every constructor that allocates NeoForge's
+     * allocates MinecraftForge's exactly once. A base whose merge dropped it gets it back as the source-owned
+     * six-instruction allocation right after NeoForge's, at the verified peer boundary; a base that kept it (the edit
+     * splice carries MinecraftForge's constructor run into the kept body) is left byte for byte as it is, since a second
+     * allocation would replace the component a mod already holds.
+     */
+    @Test void actualClientLevelAllocatesItsIndependentNativeComponentOnceBesideEveryPeer()throws Exception{
         Function<String,byte[]> resources=stagedResources();String owner="net/minecraft/client/multiplayer/ClientLevel";byte[] raw=resources.apply(owner+".class");
-        var transformer=new ModifiableDataViewsTransformer(resources);byte[] repaired=transformer.transform(owner,raw,null);assertNotSame(raw,repaired);
-        ClassNode before=parse(raw),after=parse(repaired);String field="modelDataManager",forge="Lnet/minecraftforge/client/model/data/ModelDataManager;",neo="Lnet/neoforged/neoforge/client/model/data/ModelDataManager;";
-        assertEquals(0,writes(before,field,forge));assertEquals(1,writes(after,field,forge));assertEquals(writes(before,field,neo),writes(after,field,neo));
+        var transformer=new ModifiableDataViewsTransformer(resources);byte[] repaired=transformer.transform(owner,raw,null);
+        ClassNode before=parse(raw),after=parse(repaired);String field="modelDataManager",forge="Lnet/minecraftforge/client/model/data/ModelDataManager;",neo="Lnet/neoforged/neoforge/model/data/ModelDataManager;";
+        boolean kept=writes(before,field,forge)>0;
+        if(kept)assertSame(raw,repaired,"the base already allocates MinecraftForge's component; nothing may be restored over it");
+        else assertNotSame(raw,repaired,"the base lost MinecraftForge's component; the verified allocation must be restored");
+        assertEquals(writes(before,field,neo),writes(after,field,neo));int peers=0;
         for(MethodNode ctor:after.methods)if(ctor.name.equals("<init>")){
             new Analyzer<>(new BasicVerifier()).analyze(owner,ctor);List<AbstractInsnNode> code=Arrays.stream(ctor.instructions.toArray()).filter(i->i.getOpcode()>=0).toList();
-            int peer=-1,lost=-1;for(int i=0;i<code.size();i++)if(code.get(i)instanceof FieldInsnNode f&&f.getOpcode()==PUTFIELD&&f.name.equals(field)){if(f.desc.equals(neo))peer=i;if(f.desc.equals(forge))lost=i;}
-            if(peer>=0)assertEquals(peer+6,lost,"only the source-owned six-instruction allocation follows the unchanged canonical boundary");
+            int peer=-1,lost=-1,allocations=0;for(int i=0;i<code.size();i++)if(code.get(i)instanceof FieldInsnNode f&&f.getOpcode()==PUTFIELD&&f.name.equals(field)){if(f.desc.equals(neo))peer=i;if(f.desc.equals(forge)){lost=i;allocations++;}}
+            if(peer<0)continue;peers++;
+            assertEquals(1,allocations,"every constructor that allocates NeoForge's component allocates MinecraftForge's exactly once");
+            if(!kept)assertEquals(peer+6,lost,"only the source-owned six-instruction allocation follows the unchanged canonical boundary");
         }
+        assertTrue(peers>0,"ClientLevel allocates NeoForge's component in some constructor; that is the premise");
         assertArrayEquals(repaired,transformer.transform(owner,repaired,null));
     }
     private static byte[] owner(boolean original,Shape shape){
